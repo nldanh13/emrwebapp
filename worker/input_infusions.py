@@ -393,6 +393,13 @@ def main():
     force_reinput_infusions = bool(target_options.get('force_reinput_infusions'))
     cleanup_orphan_infusions = bool(target_options.get('cleanup_orphan_infusions'))
     config = load_config()
+    # Dịch truyền ưu tiên tài khoản EMR riêng nếu đã cấu hình, để có thể chạy
+    # song song với chăm sóc (tài khoản chính) mà không đăng nhập trùng phiên.
+    # Không cấu hình -> giữ nguyên hành vi cũ (dùng tài khoản chính).
+    if config.get('infusion_username'):
+        config['username'] = config['infusion_username']
+    if config.get('infusion_password'):
+        config['password'] = config['infusion_password']
     if target_options.get('direct_emr_sync') or target_options.get('visible_browser'):
         config['headless'] = False
         _log('[i] Chế độ đồng bộ trực tiếp: mở Chrome để kiểm tra / nhập / sửa dịch truyền trên EMR.')

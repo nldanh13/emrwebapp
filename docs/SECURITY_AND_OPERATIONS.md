@@ -10,6 +10,7 @@ Bản hiện tại phù hợp cho mạng nội bộ có kiểm soát. Không cô
 
 - `EMR_PASSWORD_FILE`
 - `EMR_HCHANH_PASSWORD_FILE`
+- `EMR_INFUSION_PASSWORD_FILE` (tùy chọn, tài khoản dịch truyền song song — xem `PARALLEL_CARE_INFUSION.md`)
 - `EMR_USERS_FILE`
 
 Bật `EMR_REQUIRE_SECRET_ENV=1` để từ chối mật khẩu rõ trong cấu hình. Không lưu cookie, mật khẩu hoặc token vào database nghiệp vụ.

@@ -16,10 +16,15 @@ const activeTaskMap = new Map();
 /** Set taskId đã được người dùng yêu cầu huỷ. Giữ cờ tới khi task thật sự kết thúc. */
 const cancelRequestedTasks = new Set();
 
-const parsedMaxHeavyJobs = Number.parseInt(process.env.MAX_HEAVY_JOBS || '1', 10);
+// MAX_HEAVY_JOBS mặc định 2 để cho phép chăm sóc + dịch truyền chạy song song
+// (xem docs/PARALLEL_CARE_INFUSION.md) khi đã cấu hình tài khoản EMR thứ hai.
+// Trần này CHỈ giới hạn tổng số tác vụ nặng cùng lúc; việc không cho 2 tác vụ
+// dùng CHUNG một tài khoản EMR chạy song song (tránh 1 phiên đăng nhập bị dùng
+// bởi 2 trình duyệt cùng lúc) do accountChains bên dưới đảm nhiệm riêng.
+const parsedMaxHeavyJobs = Number.parseInt(process.env.MAX_HEAVY_JOBS || '2', 10);
 const MAX_HEAVY_JOBS = Number.isFinite(parsedMaxHeavyJobs) && parsedMaxHeavyJobs > 0
   ? parsedMaxHeavyJobs
-  : 1;
+  : 2;
 let activeHeavyJobs = 0;
 const heavyWaiters = [];
 
@@ -41,6 +46,28 @@ function _releaseHeavySlot() {
   } else {
     activeHeavyJobs = Math.max(0, activeHeavyJobs - 1);
   }
+}
+
+/**
+ * Hai tác vụ nặng dùng CÙNG accountKey (cùng tài khoản đăng nhập EMR) không
+ * bao giờ được chạy Selenium/HTTP session cùng lúc, kể cả khi MAX_HEAVY_JOBS
+ * cho phép nhiều tác vụ song song tổng thể. Mỗi accountKey có một chuỗi
+ * (chain) Promise riêng — tác vụ sau chỉ thật sự bắt đầu khi tác vụ trước
+ * trên CÙNG accountKey đã xong (thành công hay lỗi đều được, giống enqueue()
+ * chính ở trên). Các accountKey khác nhau (vd 'default' và 'infusion') chạy
+ * hoàn toàn độc lập, không chờ nhau.
+ */
+const accountChains = new Map();
+
+function _runExclusiveByAccount(accountKey, taskFn) {
+  const key = accountKey || 'default';
+  const prev = accountChains.get(key) || Promise.resolve();
+  const run = prev.then(taskFn, taskFn);
+  const cleanup = run.catch(() => {}).finally(() => {
+    if (accountChains.get(key) === cleanup) accountChains.delete(key);
+  });
+  accountChains.set(key, cleanup);
+  return run;
 }
 
 function safeError(err) {
@@ -96,11 +123,19 @@ function enqueue(sid, taskFn, options = {}) {
   return next;
 }
 
+/**
+ * options.accountKey: tài khoản EMR mà taskFn sẽ đăng nhập/sử dụng (vd
+ * 'infusion' cho dịch truyền dùng EMR_INFUSION_USERNAME/PASSWORD). Không
+ * truyền = 'default' (tài khoản chính, dùng chung cho phần lớn tác vụ).
+ * Chỉ đặt accountKey khác 'default' khi tác vụ THẬT SỰ dùng một tài khoản
+ * đăng nhập EMR khác — nếu không, hai tác vụ có thể vô tình cùng đăng nhập
+ * một tài khoản song song.
+ */
 function enqueueHeavy(sid, taskFn, options = {}) {
   return enqueue(sid, async () => {
     await _acquireHeavySlot();
     try {
-      return await taskFn();
+      return await _runExclusiveByAccount(options.accountKey, taskFn);
     } finally {
       _releaseHeavySlot();
     }
@@ -131,6 +166,7 @@ function getQueueStatus() {
     max_heavy_jobs: MAX_HEAVY_JOBS,
     active_heavy_jobs: activeHeavyJobs,
     heavy_waiters: heavyWaiters.length,
+    active_account_lanes: [...accountChains.keys()],
     queued_sessions: queues.size,
     cancellable_sessions: cancelMap.size,
   };

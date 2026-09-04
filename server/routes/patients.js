@@ -1053,6 +1053,10 @@ async function runInputTask(req, res, ctx, { scriptName, taskName, targetsFilePr
 
   try {
     ensureSessionAssets(ctx.dir, ROOT_DIR);
+    // Dịch truyền dùng tài khoản EMR riêng (EMR_INFUSION_USERNAME/PASSWORD) nên
+    // được gắn accountKey riêng để chạy song song an toàn với các tác vụ khác
+    // (chăm sóc, thủ thuật...) đang dùng tài khoản chính. Xem docs/PARALLEL_CARE_INFUSION.md.
+    const accountKey = (taskName || scriptName) === 'input_infusions' ? 'infusion' : 'default';
     await enqueueHeavy(ctx.sid, async () => {
       let result;
       try {
@@ -1210,7 +1214,7 @@ async function runInputTask(req, res, ctx, { scriptName, taskName, targetsFilePr
       failRunningTask(ctx.TASK_PROGRESS_PATH, taskName || scriptName, pythonError);
       updateInputScopeAudit(auditPath, { status: 'failed', error: pythonError });
       return res.status(500).json({ status: 'error', message: pythonError });
-    });
+    }, { accountKey });
   } catch (err) {
     safeUnlink(targetsPath);
     if (processedPathForWorker !== ctx.PROCESSED_PATH) safeUnlink(processedPathForWorker);
