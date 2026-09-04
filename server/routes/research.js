@@ -3463,6 +3463,20 @@ function jsonShort(value, max = 3000) {
   }
 }
 
+// index.patients (Hành chánh) giữ 1 dòng mới nhất theo mã BN, không phân biệt
+// theo đợt nằm viện. Nếu bệnh nhân tái nhập viện, index có thể đã cập nhật
+// admission_time của đợt MỚI trong khi file discharge/surgery/order_history còn
+// là dữ liệu của đợt CŨ (chưa ai fetch lại cho đợt mới). Chỉ nhận dữ liệu lấy
+// TỪ lúc nhập khoa hiện tại trở về sau — tránh gán nhầm dữ liệu đợt cũ vào kho
+// nghiên cứu (khác với Hành chánh, dữ liệu nghiên cứu phải đúng, không thể tự
+// quét bù lại như module khác nên bắt buộc phải lọc ở đây).
+function hchanhSharedDataMatchesEncounter(payload, meta) {
+  const fetchedAt = parseAnyDate(payload?._meta?.fetched_at);
+  const admissionAt = parseAnyDate(meta?.admission_time);
+  if (!fetchedAt || !admissionAt) return true; // thiếu mốc để so sánh, giữ hành vi cũ
+  return fetchedAt.getTime() >= admissionAt.getTime();
+}
+
 function flattenHchanhIntoResearchRun(ctx, runDir) {
   const index = readHchanhIndex(ctx);
   const patients = Object.values(index?.patients || {});
@@ -3475,8 +3489,8 @@ function flattenHchanhIntoResearchRun(ctx, runDir) {
     if (!maBn) continue;
     const all = readHchanhPatientAll(ctx, maBn) || {};
     if (all.profile) profileRows.push(hchanhProfileRow(all.profile, meta));
-    if (all.discharge) dischargeRows.push(hchanhDischargeRow(all.discharge, meta));
-    const surgeries = Array.isArray(all.surgery?.surgeries) ? all.surgery.surgeries : [];
+    if (all.discharge && hchanhSharedDataMatchesEncounter(all.discharge, meta)) dischargeRows.push(hchanhDischargeRow(all.discharge, meta));
+    const surgeries = (all.surgery && hchanhSharedDataMatchesEncounter(all.surgery, meta) && Array.isArray(all.surgery?.surgeries)) ? all.surgery.surgeries : [];
     for (const item of surgeries) {
       const detail = item.detail || {};
       surgeryRows.push({
@@ -3500,7 +3514,7 @@ function flattenHchanhIntoResearchRun(ctx, runDir) {
         'Raw JSON': jsonShort(item),
       });
     }
-    const historyRows = Array.isArray(all.order_history?.rows) ? all.order_history.rows : [];
+    const historyRows = (all.order_history && hchanhSharedDataMatchesEncounter(all.order_history, meta) && Array.isArray(all.order_history?.rows)) ? all.order_history.rows : [];
     for (const item of historyRows) {
       orderRows.push({
         'Mã BN': maBn,
@@ -4225,6 +4239,14 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
 
     const output = readJsonSafe(outPath, {}) || {};
     const workerTrace = Array.isArray(output?._case_trace) ? output._case_trace : [];
+    // Không ghi lại dữ liệu Nghiên cứu vừa quét vào kho dùng chung của Hành
+    // chánh: kho đó đóng dấu "fetched_at" bằng thời điểm ghi (bây giờ), trong
+    // khi Nghiên cứu có thể đang xử lý một đợt nằm viện CŨ (không theo thứ tự
+    // thời gian thực). Nếu ghi vào đây, Kiểm hồ sơ (đọc lại kho này và chỉ tin
+    // dữ liệu có fetched_at mới hơn thời điểm ra viện của ca đang kiểm) có thể
+    // bị đánh lừa nhận nhầm dữ liệu đợt cũ là dữ liệu đợt hiện tại — dữ liệu
+    // Kiểm hồ sơ/Nghiên cứu phải luôn đúng nên không đánh đổi lấy việc tránh
+    // quét lại ở đây.
     if (!saveRaw) {
       try { fs.rmSync(inputPath, { force: true }); } catch (_) {}
       try { fs.rmSync(outPath, { force: true }); } catch (_) {}
@@ -5034,15 +5056,20 @@ function normalizeRunOutputs(runDir, { sourceRunId = '', force = false } = {}) {
     }
     firstLabByEncounter.set(key, bucket);
   }
-  const firstSurgeryByEncounter = new Map();
+  // Đặt tên khác với hàm firstSurgeryByEncounter import ở đầu file (dùng cho
+  // medication linkage, dòng ~4861 trong cùng hàm này) — trùng tên biến const
+  // sẽ khiến JS coi cả hàm này nằm trong "vùng chết tạm thời" (TDZ) của tên đó
+  // ngay từ đầu, làm lệnh gọi hàm import ở trên ném lỗi "Cannot access before
+  // initialization" mỗi khi chạy nhánh không lấy từ cache.
+  const firstSurgeryByEncounterMap = new Map();
   for (const surg of surgeryResults) {
     const timeStr = String(surg.surgery_datetime || surg.surgery_date || '');
     const upsert = (key) => {
       if (!key) return;
-      const old = firstSurgeryByEncounter.get(key);
+      const old = firstSurgeryByEncounterMap.get(key);
       const oldTime = old ? String(old.surgery_datetime || old.surgery_date || '') : '';
       if (!old || (timeStr && timeStr.localeCompare(oldTime) < 0)) {
-        firstSurgeryByEncounter.set(key, surg);
+        firstSurgeryByEncounterMap.set(key, surg);
       }
     };
     // Chỉ ghép theo đúng lượt điều trị. Dòng thiếu encounter_id phải được xử lý thủ công,
@@ -5059,7 +5086,7 @@ function normalizeRunOutputs(runDir, { sourceRunId = '', force = false } = {}) {
   const analysisReady = finalEncounters.map(enc => {
     const p = patientByCode.get(enc.patient_code) || {};
     const labs = firstLabByEncounter.get(enc.encounter_id) || {};
-    const surg = firstSurgeryByEncounter.get(enc.encounter_id) || {};
+    const surg = firstSurgeryByEncounterMap.get(enc.encounter_id) || {};
     const diagnosisText = [enc.diagnosis_raw, enc.admission_diagnosis, enc.discharge_diagnosis, imagingTextByEncounter.get(enc.encounter_id) || ''].join('\n');
     const sDate = surg.surgery_datetime || surg.surgery_date || enc.surgery_date || '';
 
