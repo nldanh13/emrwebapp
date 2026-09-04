@@ -57,6 +57,12 @@ function normalizeSnapshot(snapshot = {}) {
     xq: Number(src.xq || src.so_xq || 0) || 0,
     ct: Number(src.ct || src.so_ct || 0) || 0,
     mri: Number(src.mri || src.so_mri || 0) || 0,
+    // Trạng thái KSĐ/GPB + hạn 48h + note bìa tại thời điểm xếp/nộp — hồ sơ cũ
+    // chưa có thì để rỗng, không suy đoán ngược.
+    ksd_status: cleanText(src.ksd_status, 30),
+    gpb_status: cleanText(src.gpb_status, 30),
+    handover_deadline: cleanText(src.handover_deadline, 60),
+    cover_note: cleanText(src.cover_note, 1000),
   };
 }
 
@@ -64,7 +70,7 @@ function mergeSnapshotMissingFields(existingSnapshot = {}, incomingSnapshot = {}
   const existing = normalizeSnapshot(existingSnapshot);
   const incoming = normalizeSnapshot(incomingSnapshot);
   const merged = { ...existing };
-  for (const key of ['ho_ten', 'ma_bn', 'so_luu_tru', 'so_luu_tru_in', 'storage_kind', 'admission_date', 'discharge_date']) {
+  for (const key of ['ho_ten', 'ma_bn', 'so_luu_tru', 'so_luu_tru_in', 'storage_kind', 'admission_date', 'discharge_date', 'ksd_status', 'gpb_status', 'handover_deadline', 'cover_note']) {
     if (!merged[key] && incoming[key]) merged[key] = incoming[key];
   }
   // Snapshot là dữ liệu lịch sử tại thời điểm xếp/nộp. Không ghi đè số cũ bằng 0
@@ -84,6 +90,38 @@ function emptyStore() {
   };
 }
 
+function normalizeDiscrepancy(entry = {}) {
+  return {
+    id: cleanText(entry.id, 200) || `disc_${crypto.randomUUID()}`,
+    content: cleanText(entry.content, 2000),
+    reported_by: cleanText(entry.reported_by, 200),
+    reported_at: entry.reported_at || nowIso(),
+    related_people: cleanText(entry.related_people, 500),
+    resolution: cleanText(entry.resolution, 2000),
+    status: ['open', 'resolved'].includes(entry.status) ? entry.status : 'open',
+    history: Array.isArray(entry.history) ? entry.history.slice(-200).map(h => ({
+      by: cleanText(h?.by, 200),
+      at: h?.at || nowIso(),
+      note: cleanText(h?.note, 1000),
+    })) : [],
+  };
+}
+
+// Ảnh trạng thái hồ sơ tại đúng thời điểm bàn giao (spec mục 10: "lưu ảnh chụp
+// trạng thái hồ sơ tại thời điểm bàn giao"). Không phải ảnh nhị phân — là bản
+// sao dữ liệu KSĐ/GPB + checklist tại lúc chốt, để không bị đổi ngược khi dữ
+// liệu EMR/checklist gốc thay đổi sau này.
+function normalizeHandoverSnapshot(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  return {
+    ksd_status: cleanText(raw.ksd_status, 30),
+    gpb_status: cleanText(raw.gpb_status, 30),
+    paper_status_label: cleanText(raw.paper_status_label, 200),
+    note: cleanText(raw.note, 1000),
+    captured_at: raw.captured_at || nowIso(),
+  };
+}
+
 function normalizeItem(item = {}) {
   const recordId = cleanText(item.record_id || item.case_key || item.id, 500);
   return {
@@ -98,6 +136,9 @@ function normalizeItem(item = {}) {
     previous_attempt_id: cleanText(item.previous_attempt_id, 200),
     previous_submission_date: normalizeDate(item.previous_submission_date),
     snapshot: normalizeSnapshot(item.snapshot || item),
+    // Hồ sơ cũ chưa có 2 trường dưới đây -> mặc định rỗng, không suy đoán.
+    handover_snapshot: normalizeHandoverSnapshot(item.handover_snapshot),
+    discrepancies: Array.isArray(item.discrepancies) ? item.discrepancies.map(normalizeDiscrepancy) : [],
   };
 }
 
@@ -129,6 +170,10 @@ function normalizeBatch(batch = {}, fallbackDate = '') {
     submitted_at: batch.submitted_at || batch.finalized_at || (status === 'submitted' ? batch.exported_at || null : null),
     submitted_count: Number(batch.submitted_count || batch.finalized_count || (status === 'submitted' ? visibleCount : 0)) || 0,
     submitted_note: cleanText(batch.submitted_note || batch.finalized_note, 1000),
+    // Người giao / người nhận tại KHTH — spec mục 10. Đợt cũ chưa có thì để rỗng,
+    // không suy đoán ngược từ dữ liệu khác.
+    delivered_by: cleanText(batch.delivered_by, 200),
+    received_by: cleanText(batch.received_by, 200),
     exported_at: batch.exported_at || null,
     export_count: Number(batch.export_count || 0) || 0,
     items,
@@ -300,7 +345,7 @@ function addRecords(recordsDir, submissionDateInput, records, checkedAliases = [
       continue;
     }
     if (!aliases.some(alias => checkedSet.has(alias))) {
-      skipped.push({ record_id: recordId, reason: 'not_checked' });
+      skipped.push({ record_id: recordId, reason: 'not_ready' });
       continue;
     }
     const active = activeAttemptFor(store, aliases);
@@ -338,7 +383,7 @@ function addRecords(recordsDir, submissionDateInput, records, checkedAliases = [
   return { dashboard: buildDashboard(recordsDir), added, skipped };
 }
 
-function submitBatch(recordsDir, batchIdInput, note = '') {
+function submitBatch(recordsDir, batchIdInput, note = '', deliveredBy = '', receivedBy = '') {
   const batchId = normalizeDate(batchIdInput);
   if (!batchId) throw new Error('Ngày nộp hồ sơ không hợp lệ.');
   const store = readStore(recordsDir);
@@ -361,6 +406,8 @@ function submitBatch(recordsDir, batchIdInput, note = '') {
   batch.submitted_at = nowIso();
   batch.submitted_count = activeItems.length;
   batch.submitted_note = cleanText(note, 1000);
+  batch.delivered_by = cleanText(deliveredBy, 200);
+  batch.received_by = cleanText(receivedBy, 200);
   batch.updated_at = batch.submitted_at;
   appendEvent(store, {
     type: 'submitted',
@@ -368,6 +415,8 @@ function submitBatch(recordsDir, batchIdInput, note = '') {
     submission_date: batchId,
     count: activeItems.length,
     note: batch.submitted_note,
+    delivered_by: batch.delivered_by,
+    received_by: batch.received_by,
   });
   writeStore(recordsDir, store);
   const saved = readStore(recordsDir);
@@ -377,6 +426,61 @@ function submitBatch(recordsDir, batchIdInput, note = '') {
     count: activeItems.length,
     already_submitted: false,
   };
+}
+
+// Lưu "ảnh chụp" trạng thái KSĐ/GPB + hồ sơ giấy tại đúng thời điểm bàn giao,
+// cho từng hồ sơ active trong đợt vừa chốt (spec mục 10). Gọi ngay sau
+// submitBatch(); tách riêng vì store này không tự biết dữ liệu KSĐ/GPB/checklist
+// (thuộc server/routes/hchanh.js + paper_record_status.js).
+function captureHandoverSnapshots(recordsDir, batchIdInput, snapshotsByAlias = {}) {
+  const batchId = normalizeDate(batchIdInput);
+  if (!batchId) throw new Error('Ngày nộp hồ sơ không hợp lệ.');
+  const store = readStore(recordsDir);
+  const batch = store.batches[batchId];
+  if (!batch) throw new Error('Không tìm thấy ngày nộp hồ sơ.');
+  for (const item of batch.items || []) {
+    if (item.status !== 'active') continue;
+    const snapshotKeys = [item.record_id, ...(item.aliases || [])];
+    const snap = snapshotKeys.map(key => snapshotsByAlias[key]).find(Boolean);
+    if (snap) item.handover_snapshot = normalizeHandoverSnapshot(snap);
+  }
+  batch.updated_at = nowIso();
+  writeStore(recordsDir, store);
+  return buildDashboard(recordsDir);
+}
+
+// "Sai sót phát hiện sau bàn giao" (spec mục 10) — chỉ ghi nhận cho hồ sơ đã ở
+// trạng thái đã nộp thật sự (batch đã chốt + item còn active, tức chưa bị trả về/bỏ).
+function addDiscrepancy(recordsDir, batchIdInput, itemId, discrepancyInput = {}) {
+  const batchId = normalizeDate(batchIdInput);
+  if (!batchId) throw new Error('Ngày nộp hồ sơ không hợp lệ.');
+  const safeItemId = cleanText(itemId, 200);
+  if (!safeItemId) throw new Error('Thiếu hồ sơ cần ghi nhận sai sót.');
+  const store = readStore(recordsDir);
+  const batch = store.batches[batchId];
+  if (!batch) throw new Error('Không tìm thấy ngày nộp hồ sơ.');
+  const item = (batch.items || []).find(i => i.id === safeItemId);
+  if (!item) throw new Error('Không tìm thấy hồ sơ trong đợt nộp này.');
+  if (batch.status !== 'submitted' || item.status !== 'active') {
+    throw new Error('Chỉ ghi nhận "Sai sót sau bàn giao" cho hồ sơ đã thực sự bàn giao (đợt đã chốt nộp).');
+  }
+  if (!cleanText(discrepancyInput?.content)) throw new Error('Thiếu nội dung sai sót.');
+
+  const discrepancy = normalizeDiscrepancy(discrepancyInput);
+  item.discrepancies = [...(item.discrepancies || []), discrepancy];
+  batch.updated_at = nowIso();
+  appendEvent(store, {
+    type: 'discrepancy_reported',
+    batch_id: batchId,
+    submission_date: batchId,
+    item_id: item.id,
+    record_id: item.record_id,
+    snapshot: item.snapshot,
+    content: discrepancy.content,
+    reported_by: discrepancy.reported_by,
+  });
+  writeStore(recordsDir, store);
+  return { dashboard: buildDashboard(recordsDir), discrepancy };
 }
 
 function markReturned(recordsDir, batchIdInput, itemIds, note = '') {
@@ -502,6 +606,8 @@ module.exports = {
   buildDashboard,
   addRecords,
   submitBatch,
+  captureHandoverSnapshots,
+  addDiscrepancy,
   markReturned,
   removeItems,
   updateBatchForExport,

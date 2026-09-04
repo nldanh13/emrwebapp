@@ -8,6 +8,7 @@ import {
   markRecordsCheckSubmissionReturned,
   removeRecordsCheckSubmissionItems,
   exportRecordsCheckSubmissionPdf,
+  addRecordsCheckSubmissionDiscrepancy,
 } from '../../api.js';
 
 function txt(value, fallback = '—') {
@@ -77,6 +78,7 @@ function eventLabel(event) {
     returned: 'Hồ sơ bị trả về',
     removed: 'Bỏ khỏi đợt đang chuẩn bị',
     exported: 'Xuất danh sách PDF',
+    discrepancy_reported: 'Sai sót sau bàn giao',
   };
   return map[event?.type] || txt(event?.type, 'Cập nhật');
 }
@@ -94,7 +96,22 @@ function snapshotFromRecord(record) {
     xq: Number(row.xq ?? record?.xq ?? 0),
     ct: Number(row.ct ?? record?.ct ?? 0),
     mri: Number(row.mri ?? record?.mri ?? 0),
+    ksd_status: row.ksd_status || record?.ksd?.status || '',
+    gpb_status: row.gpb_status || record?.gpb?.status || '',
+    handover_deadline: row.handover_deadline || record?.handover?.handover_deadline || '',
+    cover_note: row.cover_note || '',
   };
+}
+
+const KSD_GPB_LABELS = {
+  NOT_ORDERED: 'Không có chỉ định',
+  PENDING: 'Đã chỉ định, chưa có kết quả',
+  COMPLETED: 'Đã có kết quả',
+  UNKNOWN: 'Chưa xác định',
+};
+
+function ksdGpbLabel(status) {
+  return KSD_GPB_LABELS[status] || 'Chưa xác định';
 }
 
 export default function RecordsSubmissionTab({ records = [], toast, onClearChecked }) {
@@ -107,6 +124,11 @@ export default function RecordsSubmissionTab({ records = [], toast, onClearCheck
   const [selectedItemIds, setSelectedItemIds] = useState(() => new Set());
   const [candidateSearch, setCandidateSearch] = useState('');
   const [batchSearch, setBatchSearch] = useState('');
+  const [deliveredBy, setDeliveredBy] = useState('');
+  const [receivedBy, setReceivedBy] = useState('');
+  const [discrepancyItem, setDiscrepancyItem] = useState(null);
+  const [discrepancyContent, setDiscrepancyContent] = useState('');
+  const [discrepancyRelated, setDiscrepancyRelated] = useState('');
 
   function applyDashboard(data) {
     const next = data?.dashboard || data;
@@ -139,7 +161,7 @@ export default function RecordsSubmissionTab({ records = [], toast, onClearCheck
   const eligibleRecords = useMemo(() => {
     const q = norm(candidateSearch);
     return (records || [])
-      .filter(record => record?.checked)
+      .filter(record => record?.submission_ready)
       .filter(record => !(record?.aliases || []).some(alias => activeAliases.has(alias)))
       .filter(record => {
         if (!q) return true;
@@ -284,7 +306,7 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
       setSelectedBatchId(selectedDate);
       setSelectedRecordIds(new Set());
       const skipped = Array.isArray(out?.skipped) ? out.skipped.length : 0;
-      toast?.(`${out?.message || 'Đã xếp ngày nộp hồ sơ.'}${skipped ? ` Có ${skipped} hồ sơ không thêm được vì đã nằm trong đợt nộp khác hoặc chưa còn dấu đã kiểm.` : ''}`, skipped ? 'warn' : 'ok');
+      toast?.(`${out?.message || 'Đã xếp ngày nộp hồ sơ.'}${skipped ? ` Có ${skipped} hồ sơ không thêm được vì đã nằm trong đợt nộp khác hoặc chưa đủ điều kiện Sẵn sàng nộp.` : ''}`, skipped ? 'warn' : 'ok');
     } catch (err) {
       toast?.(`Không xếp được ngày nộp: ${String(err.message || err)}`, 'error');
     } finally {
@@ -299,18 +321,48 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
       toast?.('Ngày nộp này chưa có hồ sơ để chốt.', 'warn');
       return;
     }
+    if (!deliveredBy.trim()) {
+      toast?.('Hãy nhập người giao hồ sơ trước khi chốt.', 'warn');
+      return;
+    }
     const confirmed = window.confirm(
-      `Xác nhận đã nộp ${count} hồ sơ ngày ${formatDate(selectedBatch.submission_date)}?\n\nSau khi chốt, không thể thêm hoặc bỏ hồ sơ khỏi đợt này. Hồ sơ bị trả về vẫn có thể đánh dấu để nộp lại vào ngày khác.`
+      `Xác nhận KHTH đã nhận ${count} hồ sơ ngày ${formatDate(selectedBatch.submission_date)}?\n\nNgười giao: ${deliveredBy}\nNgười nhận KHTH: ${receivedBy || '(chưa ghi)'}\n\nSau khi chốt, không thể thêm hoặc bỏ hồ sơ khỏi đợt này. Hồ sơ bị trả về vẫn có thể đánh dấu để nộp lại vào ngày khác.`
     );
     if (!confirmed) return;
     setBusy(true);
     try {
-      const out = await submitRecordsCheckSubmission({ batch_id: selectedBatch.id });
+      const out = await submitRecordsCheckSubmission({ batch_id: selectedBatch.id, delivered_by: deliveredBy.trim(), received_by: receivedBy.trim() });
       applyDashboard(out);
       setSelectedItemIds(new Set());
       toast?.(out?.message || 'Đã chốt đợt hồ sơ là đã nộp.', 'ok');
     } catch (err) {
       toast?.(`Không chốt được đợt nộp: ${String(err.message || err)}`, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitDiscrepancy() {
+    if (!selectedBatch || !discrepancyItem) return;
+    if (!discrepancyContent.trim()) {
+      toast?.('Hãy nhập nội dung sai sót.', 'warn');
+      return;
+    }
+    setBusy(true);
+    try {
+      const out = await addRecordsCheckSubmissionDiscrepancy({
+        batch_id: selectedBatch.id,
+        item_id: discrepancyItem.id,
+        content: discrepancyContent.trim(),
+        related_people: discrepancyRelated.trim(),
+      });
+      applyDashboard(out);
+      setDiscrepancyItem(null);
+      setDiscrepancyContent('');
+      setDiscrepancyRelated('');
+      toast?.(out?.message || 'Đã ghi nhận sai sót sau bàn giao.', 'ok');
+    } catch (err) {
+      toast?.(`Không ghi nhận được sai sót: ${String(err.message || err)}`, 'error');
     } finally {
       setBusy(false);
     }
@@ -377,13 +429,13 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
     }
     setBusy(true);
     try {
-      const out = await exportRecordsCheckSubmissionPdf({ batch_id: selectedBatch.id, rows });
+      const out = await exportRecordsCheckSubmissionPdf({ batch_id: selectedBatch.id, rows, delivered_by: deliveredBy.trim() });
       applyDashboard(out);
       const url = out?.url || '';
       if (!url) throw new Error('Backend chưa trả về đường dẫn PDF.');
       window.open(url, '_blank', 'noopener,noreferrer');
       if (!selectedBatch.locked) {
-        toast?.('Đã xuất danh sách. Đợt vẫn đang chuẩn bị; hãy bấm “Chốt đã nộp ngày này” sau khi nộp thực tế.', 'ok');
+        toast?.('Đã xuất danh sách. Đợt vẫn đang chuẩn bị; hãy xác nhận KHTH đã nhận để chốt sau khi nộp thực tế.', 'ok');
       }
     } catch (err) {
       toast?.(`Không xuất được file theo ngày nộp: ${String(err.message || err)}`, 'error');
@@ -410,7 +462,7 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ minWidth: 190 }}>
             <div style={{ color: C.text, fontSize: 13, fontWeight: 850 }}>Xếp ngày nộp hồ sơ</div>
-            <div style={{ color: C.text3, fontSize: 10, marginTop: 2 }}>Chỉ hiển thị hồ sơ đã kiểm và chưa chốt nộp.</div>
+            <div style={{ color: C.text3, fontSize: 10, marginTop: 2 }}>Chỉ hiển thị hồ sơ đã "Sẵn sàng nộp" (đủ checklist hồ sơ giấy) và chưa chốt nộp.</div>
           </div>
           <input type="date" value={selectedDate} onChange={event => setSelectedDate(event.target.value)} style={inputStyle} />
           <Btn variant="primary" disabled={busy || !selectedRecordIds.size || selectedDateLocked} onClick={addSelected} style={{ fontSize: 11, padding: '5px 12px' }}>
@@ -436,7 +488,7 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
         ) : null}
         <div style={{ marginTop: 8, maxHeight: 190, overflow: 'auto', border: `1px solid ${C.border}`, borderRadius: 6 }}>
           {eligibleRecords.length === 0 ? (
-            <div style={{ padding: 14, color: C.text2, fontSize: 12 }}>Không có hồ sơ đã kiểm đang chờ xếp ngày nộp.</div>
+            <div style={{ padding: 14, color: C.text2, fontSize: 12 }}>Không có hồ sơ đã "Sẵn sàng nộp" đang chờ xếp ngày nộp.</div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead style={{ position: 'sticky', top: 0, background: C.surface2, zIndex: 2 }}>
@@ -508,7 +560,7 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
                   <div style={{ color: C.text3, fontSize: 10, marginTop: 3 }}>
                     {selectedBatch.locked
                       ? (selectedBatch.submitted_at
-                        ? `Đã chốt lúc ${formatDateTime(selectedBatch.submitted_at)}. Không thể thêm hoặc bỏ hồ sơ; chọn hồ sơ để đánh dấu bị trả về.`
+                        ? `Đã chốt lúc ${formatDateTime(selectedBatch.submitted_at)}${selectedBatch.delivered_by ? ` · Người giao: ${selectedBatch.delivered_by}` : ''}${selectedBatch.received_by ? ` · Người nhận KHTH: ${selectedBatch.received_by}` : ''}. Không thể thêm hoặc bỏ hồ sơ; chọn hồ sơ để đánh dấu bị trả về.`
                         : 'Đợt đã nộp theo dữ liệu lịch sử. Không thể thêm hoặc bỏ hồ sơ; chọn hồ sơ để đánh dấu bị trả về.')
                       : 'Đang chuẩn bị: có thể thêm, bỏ và xuất danh sách. Xuất PDF không tự đánh dấu đã nộp.'}
                   </div>
@@ -516,15 +568,28 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
                 <Btn variant="secondary" disabled={busy || !selectedBatch.can_mark_returned || !selectedItemIds.size} onClick={markReturned} style={{ fontSize: 11, padding: '5px 11px' }}>Đánh dấu bị trả về</Btn>
                 <Btn variant="default" disabled={busy || !selectedBatch.can_remove || !selectedItemIds.size} onClick={removeSelected} style={{ fontSize: 11, padding: '5px 11px' }}>Bỏ khỏi đợt</Btn>
                 <Btn variant="secondary" disabled={busy || !displayedBatchItems.length} onClick={exportBatch} style={{ fontSize: 11, padding: '5px 11px' }}>Xuất danh sách PDF</Btn>
-                <Btn variant="primary" disabled={busy || !selectedBatch.can_submit} onClick={submitBatch} style={{ fontSize: 11, padding: '5px 11px' }}>
-                  {selectedBatch.locked ? 'Đã chốt nộp' : 'Chốt đã nộp ngày này'}
-                </Btn>
                 <input value={batchSearch} onChange={event => setBatchSearch(event.target.value)} placeholder="Tìm tên trong ngày nộp..." style={{ ...inputStyle, minWidth: 210 }} />
               </div>
 
               {!selectedBatch.locked ? (
+                <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 9, background: C.surface2, border: `1px solid ${C.border}`, display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={sheetEditorLabelStyle}>Người giao *</div>
+                    <input value={deliveredBy} onChange={event => setDeliveredBy(event.target.value)} placeholder="Họ tên người giao hồ sơ" style={{ ...inputStyle, minWidth: 180 }} />
+                  </div>
+                  <div>
+                    <div style={sheetEditorLabelStyle}>Người nhận tại KHTH</div>
+                    <input value={receivedBy} onChange={event => setReceivedBy(event.target.value)} placeholder="Họ tên người nhận (nếu có)" style={{ ...inputStyle, minWidth: 180 }} />
+                  </div>
+                  <Btn variant="primary" disabled={busy || !selectedBatch.can_submit} onClick={submitBatch} style={{ fontSize: 11, padding: '7px 14px' }}>
+                    Xác nhận KHTH đã nhận — Chốt đã nộp ngày này
+                  </Btn>
+                </div>
+              ) : null}
+
+              {!selectedBatch.locked ? (
                 <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 9, color: C.amber, background: C.amberBg, border: `1px solid ${C.amberBorder}`, fontSize: 11 }}>
-                  Chỉ bấm <b>Chốt đã nộp ngày này</b> sau khi hồ sơ đã được nộp thực tế. Khi chốt, đợt sẽ được khóa và các hồ sơ này không xuất hiện trong danh sách chờ của ngày sau.
+                  Chỉ chốt sau khi hồ sơ đã được nộp thực tế và KHTH đã nhận. Khi chốt, đợt sẽ được khóa, lưu lại trạng thái KSĐ/GPB tại thời điểm bàn giao, và các hồ sơ này không xuất hiện trong danh sách chờ của ngày sau.
                 </div>
               ) : null}
 
@@ -533,11 +598,11 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
                   <thead style={{ background: C.surface2 }}>
                     <tr>
                       <th style={headStyle}><input type="checkbox" checked={allItemsSelected} onChange={event => toggleAllItems(event.target.checked)} disabled={!selectableBatchItems.length} title="Chọn tất cả hồ sơ đang hiển thị" /></th>
-                      {['Trạng thái', 'Số lưu trữ', 'Họ và tên', 'Mã BN', 'XQ', 'CT', 'MRI', 'Lần nộp'].map(label => <th key={label} style={headStyle}>{label}</th>)}
+                      {['Trạng thái', 'Số lưu trữ', 'Họ và tên', 'Mã BN', 'XQ', 'CT', 'MRI', 'KSĐ', 'GPB', 'Lần nộp', 'Sai sót'].map(label => <th key={label} style={headStyle}>{label}</th>)}
                     </tr>
                   </thead>
                   <tbody>
-                    {displayedBatchItems.length === 0 ? <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', color: C.text2 }}>Không có hồ sơ phù hợp.</td></tr> : displayedBatchItems.map(item => (
+                    {displayedBatchItems.length === 0 ? <tr><td colSpan={12} style={{ padding: 20, textAlign: 'center', color: C.text2 }}>Không có hồ sơ phù hợp.</td></tr> : displayedBatchItems.map(item => (
                       <tr key={item.id} style={{ background: item.effective_status === 'returned' ? C.redBg : C.surface }}>
                         <td style={centerCell}><input type="checkbox" disabled={item.status !== 'active'} checked={selectedItemIds.has(item.id)} onChange={event => toggleItem(item.id, event.target.checked)} /></td>
                         <td style={normalCell}><StatusChip status={item.effective_status} /></td>
@@ -550,9 +615,20 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
                         <td style={centerCell}>{Number(item.snapshot.xq || 0)}</td>
                         <td style={centerCell}>{Number(item.snapshot.ct || 0)}</td>
                         <td style={centerCell}>{Number(item.snapshot.mri || 0)}</td>
+                        <td style={normalCell}>{ksdGpbLabel(item.handover_snapshot?.ksd_status || item.snapshot.ksd_status)}</td>
+                        <td style={normalCell}>{ksdGpbLabel(item.handover_snapshot?.gpb_status || item.snapshot.gpb_status)}</td>
                         <td style={normalCell}>
                           <div>{formatDateTime(item.added_at)}</div>
                           {item.previous_submission_date ? <div style={{ color: C.amber, fontSize: 10, marginTop: 2 }}>Nộp lại từ {formatDate(item.previous_submission_date)}</div> : null}
+                        </td>
+                        <td style={normalCell}>
+                          {item.effective_status === 'submitted' ? (
+                            <>
+                              <Btn variant="default" onClick={() => { setDiscrepancyItem(item); setDiscrepancyContent(''); setDiscrepancyRelated(''); }} style={{ fontSize: 10, padding: '4px 8px' }}>
+                                {item.discrepancies?.length ? `Xem/thêm (${item.discrepancies.length})` : 'Ghi nhận sai sót'}
+                              </Btn>
+                            </>
+                          ) : <span style={{ color: C.text3 }}>—</span>}
                         </td>
                       </tr>
                     ))}
@@ -574,11 +650,53 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
           )}
         </main>
       </div>
+
+      {discrepancyItem ? (
+        <div role="dialog" aria-modal="true" onMouseDown={event => { if (event.target === event.currentTarget && !busy) setDiscrepancyItem(null); }} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15, 23, 42, .46)', display: 'grid', placeItems: 'center', padding: 18 }}>
+          <div style={{ width: 'min(560px, 96vw)', maxHeight: '90vh', overflow: 'auto', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, boxShadow: '0 20px 60px rgba(15,23,42,.28)' }}>
+            <div style={{ padding: '11px 14px', borderBottom: `1px solid ${C.border2}`, display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 850, color: C.text }}>Sai sót sau bàn giao</div>
+                <div style={{ fontSize: 10, color: C.text3, marginTop: 2 }}>{txt(discrepancyItem.snapshot?.ho_ten)} · {txt(discrepancyItem.snapshot?.so_luu_tru)}</div>
+              </div>
+              <button type="button" disabled={busy} onClick={() => setDiscrepancyItem(null)} style={{ border: 0, background: 'transparent', color: C.text2, fontSize: 20, cursor: 'pointer' }}>×</button>
+            </div>
+            <div style={{ padding: 14, display: 'grid', gap: 10 }}>
+              {discrepancyItem.discrepancies?.length ? (
+                <div>
+                  <div style={sheetEditorLabelStyle}>Đã ghi nhận trước đó</div>
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    {discrepancyItem.discrepancies.map(d => (
+                      <div key={d.id} style={{ padding: '7px 9px', borderRadius: 6, border: `1px solid ${C.border2}`, fontSize: 11 }}>
+                        <div style={{ color: C.text }}>{d.content}</div>
+                        <div style={{ color: C.text3, fontSize: 10, marginTop: 3 }}>Phát hiện bởi {d.reported_by || 'không rõ'} · {formatDateTime(d.reported_at)}{d.related_people ? ` · Liên quan: ${d.related_people}` : ''}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              <div>
+                <div style={sheetEditorLabelStyle}>Nội dung sai sót *</div>
+                <textarea value={discrepancyContent} onChange={event => setDiscrepancyContent(event.target.value)} rows={3} style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit' }} />
+              </div>
+              <div>
+                <div style={sheetEditorLabelStyle}>Người liên quan (tùy chọn)</div>
+                <input value={discrepancyRelated} onChange={event => setDiscrepancyRelated(event.target.value)} style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <Btn variant="default" disabled={busy} onClick={() => setDiscrepancyItem(null)}>Đóng</Btn>
+                <Btn variant="primary" disabled={busy || !discrepancyContent.trim()} onClick={submitDiscrepancy}>Ghi nhận</Btn>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
 const inputStyle = { padding: '6px 9px', borderRadius: 8, background: C.surface2, border: `1px solid ${C.border}`, color: C.text, fontSize: 12 };
+const sheetEditorLabelStyle = { fontSize: 10, color: C.text3, fontWeight: 850, textTransform: 'uppercase', letterSpacing: .5, marginBottom: 3 };
 const headStyle = { padding: '7px 8px', borderBottom: `1px solid ${C.border}`, color: C.text2, fontSize: 10, fontWeight: 850, textTransform: 'uppercase', letterSpacing: .5, textAlign: 'left', whiteSpace: 'nowrap' };
 const normalCell = { padding: '7px 8px', borderBottom: `1px solid ${C.border2}`, color: C.text, fontSize: 11, whiteSpace: 'nowrap' };
 const centerCell = { ...normalCell, textAlign: 'center' };

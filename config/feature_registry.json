@@ -866,6 +866,12 @@
           "path": "/hchanh/records-check/google-sheet/sync",
           "action": "execute",
           "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/hchanh/records-check/paper-checklist",
+          "action": "execute",
+          "gate": true
         }
       ]
     },
@@ -919,6 +925,12 @@
         {
           "method": "POST",
           "path": "/hchanh/records-check/submissions/remove",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/hchanh/records-check/submissions/discrepancy",
           "action": "execute",
           "gate": true
         }

@@ -127,12 +127,14 @@ function apiActionLabel(method, url) {
     'POST /api/hchanh/records-check/scan-completed': 'quét danh sách hoàn tất kiểm hồ sơ',
     'POST /api/hchanh/records-check/export-pdf': 'xuất PDF kiểm hồ sơ đã kiểm',
     'POST /api/hchanh/records-check/google-sheet/update-row': 'sửa dòng Google Sheet kiểm hồ sơ',
+    'POST /api/hchanh/records-check/paper-checklist': 'cập nhật checklist hồ sơ giấy',
     'GET /api/hchanh/records-check/submissions': 'tải lịch sử nộp hồ sơ',
     'POST /api/hchanh/records-check/submissions/add': 'xếp hồ sơ vào ngày nộp',
     'POST /api/hchanh/records-check/submissions/submit': 'chốt đợt hồ sơ đã nộp',
     'POST /api/hchanh/records-check/submissions/returned': 'đánh dấu hồ sơ bị trả về',
     'POST /api/hchanh/records-check/submissions/remove': 'bỏ hồ sơ khỏi đợt nộp chưa khóa',
     'POST /api/hchanh/records-check/submissions/export-pdf': 'xuất PDF theo ngày nộp hồ sơ',
+    'POST /api/hchanh/records-check/submissions/discrepancy': 'ghi nhận sai sót sau bàn giao',
     'POST /api/hchanh/print-billing': 'in/lưu bảng kê hành chánh',
     'POST /api/hchanh/print-discharge-bundle': 'tổng hợp file in ra viện bệnh phòng',
     'GET /api/hchanh/print-ward-list': 'in danh sách xếp phòng',
@@ -721,12 +723,17 @@ export const setRecordsCheckChecked = (caseKeyOrKeys, checked) => {
 export const startRecordsCheckFetchBatch = (payload = {}) => post('/api/hchanh/records-check/fetch-batch', payload);
 export const stopRecordsCheckFetchBatch = () => post('/api/hchanh/records-check/stop', {});
 export const exportRecordsCheckPdf = (payload = {}) => post('/api/hchanh/records-check/export-pdf', payload);
+export const setRecordsCheckPaperChecklist = (caseKeyOrKeys, patch, actor = '') => {
+  const caseKeys = Array.isArray(caseKeyOrKeys) ? caseKeyOrKeys.filter(Boolean) : [caseKeyOrKeys].filter(Boolean);
+  return post('/api/hchanh/records-check/paper-checklist', { case_keys: caseKeys, patch: patch || {}, actor });
+};
 export const getRecordsCheckSubmissions = () => get('/api/hchanh/records-check/submissions');
 export const addRecordsCheckSubmission = (payload = {}) => post('/api/hchanh/records-check/submissions/add', payload);
 export const submitRecordsCheckSubmission = (payload = {}) => post('/api/hchanh/records-check/submissions/submit', payload);
 export const markRecordsCheckSubmissionReturned = (payload = {}) => post('/api/hchanh/records-check/submissions/returned', payload);
 export const removeRecordsCheckSubmissionItems = (payload = {}) => post('/api/hchanh/records-check/submissions/remove', payload);
 export const exportRecordsCheckSubmissionPdf = (payload = {}) => post('/api/hchanh/records-check/submissions/export-pdf', payload);
+export const addRecordsCheckSubmissionDiscrepancy = (payload = {}) => post('/api/hchanh/records-check/submissions/discrepancy', payload);
 export const scanRecordsCheckCompleted = (options = {}) => {
   const hasHeadless = Object.prototype.hasOwnProperty.call(options || {}, 'headless')
     || Object.prototype.hasOwnProperty.call(options || {}, 'hidden')

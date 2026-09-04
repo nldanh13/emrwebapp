@@ -26,6 +26,7 @@ export const C = {
   amber:    '#b96705', amberBg: '#fff8eb', amberBorder: '#f4d7a5',
   red:      '#c93232', redBg:   '#fff1f1', redBorder:   '#f3c1c1',
   blue:     '#2463d4', blueBg:  '#eef4ff', blueBorder:  '#c5d6f8',
+  orange:   '#c2410c', orangeBg:'#fff2ea', orangeBorder:'#f6c9a8',
   purple:   '#7157b7', purpleBg:'#f4f1fb', purpleBorder:'#d9cff0',
   cyan:     '#147f91', cyanBg:  '#eef9fb', cyanBorder:  '#bde2e8',
 
