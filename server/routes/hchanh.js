@@ -1070,10 +1070,27 @@ function recordsRecoveryStorageKey(value) {
   return String(Number(candidate));
 }
 
+// buildRecordsCheckDashboard gọi hàm này ở mỗi lần build (mỗi lần load/mutate
+// tab Kiểm hồ sơ). Thư mục print/ chỉ tăng dần theo số lần xuất PDF, nên quét
+// readdir + stat từng file mỗi lần build là chi phí không cần thiết khi chưa
+// có file mới. mtime của chính thư mục print/ đổi mỗi khi có file được
+// thêm/xóa (hành vi POSIX chuẩn) nên dùng nó làm khóa cache: 1 stat rẻ để biết
+// có cần quét lại hay không, thay vì luôn readdir + stat toàn bộ.
+const _latestPrintedPdfCache = new Map();
+
 function latestRecordsCheckPrintedPdf(ctx) {
   const printDir = path.join(records_check_persistent_dir(ctx), 'print');
+  let dirStat;
   try {
-    return fs.readdirSync(printDir, { withFileTypes: true })
+    dirStat = fs.statSync(printDir);
+  } catch (_) {
+    _latestPrintedPdfCache.delete(printDir);
+    return null;
+  }
+  const cached = _latestPrintedPdfCache.get(printDir);
+  if (cached && cached.dirMtimeMs === dirStat.mtimeMs) return cached.result;
+  try {
+    const result = fs.readdirSync(printDir, { withFileTypes: true })
       .filter(entry => entry.isFile() && /^kiem_ho_so_.*\.pdf$/i.test(entry.name))
       .map(entry => {
         const filePath = path.join(printDir, entry.name);
@@ -1083,6 +1100,8 @@ function latestRecordsCheckPrintedPdf(ctx) {
       })
       // Tên file chứa đúng thời điểm xuất. mtime có thể bị thay đổi khi copy/giải nén.
       .sort((a, b) => b.stamp.localeCompare(a.stamp) || b.mtimeMs - a.mtimeMs || b.name.localeCompare(a.name))[0] || null;
+    _latestPrintedPdfCache.set(printDir, { dirMtimeMs: dirStat.mtimeMs, result });
+    return result;
   } catch (_) {
     return null;
   }
@@ -2161,17 +2180,33 @@ async function fetch_records_check_case(ctx, records_meta, options = {}) {
   return { ma_bn, case_key: storage_key, saved, file_failures };
 }
 
-function recordsSubmittedAtForAliases(submissionDashboard, aliases) {
-  const safeAliases = recordsCheckedAliasesForState(aliases);
-  if (!safeAliases.length) return null;
+// item.record_id/item.aliases trong kho nộp hồ sơ là case_key THÔ (không có
+// tiền tố "key::" như alias dùng để lưu dấu "Đã kiểm"). Trước đây hàm này lọc
+// qua recordsCheckedAliasesForState (chỉ giữ alias có tiền tố "key::") nên
+// itemAliases luôn rỗng và không bao giờ khớp — sửa lại so khớp trực tiếp trên
+// case_key thô, đồng thời dựng map 1 lần cho cả dashboard thay vì quét lại
+// toàn bộ batch/item cho từng hồ sơ (tránh O(số hồ sơ × số hồ sơ đã nộp)).
+function buildRecordsSubmittedAtIndex(submissionDashboard) {
+  const map = new Map();
   for (const batch of Array.isArray(submissionDashboard?.batches) ? submissionDashboard.batches : []) {
+    if (!batch?.submitted_at) continue;
     for (const item of Array.isArray(batch?.items) ? batch.items : []) {
       const effectiveStatus = String(item?.effective_status || item?.status || '').trim().toLowerCase();
       if (effectiveStatus !== 'submitted') continue;
-      const itemAliases = recordsCheckedAliasesForState([item?.record_id, ...(Array.isArray(item?.aliases) ? item.aliases : [])]);
-      if (!aliasesIntersect(safeAliases, itemAliases)) continue;
-      if (batch?.submitted_at) return batch.submitted_at;
+      const keys = [item?.record_id, ...(Array.isArray(item?.aliases) ? item.aliases : [])]
+        .map(records_storage_key).filter(Boolean);
+      for (const key of keys) {
+        if (!map.has(key)) map.set(key, batch.submitted_at);
+      }
     }
+  }
+  return map;
+}
+
+function recordsSubmittedAtForKeys(submittedAtIndex, rawKeys) {
+  for (const key of (Array.isArray(rawKeys) ? rawKeys : []).map(records_storage_key).filter(Boolean)) {
+    const hit = submittedAtIndex.get(key);
+    if (hit) return hit;
   }
   return null;
 }
@@ -2179,11 +2214,11 @@ function recordsSubmittedAtForAliases(submissionDashboard, aliases) {
 // Gắn thêm 3 nhóm trạng thái độc lập cho 1 hồ sơ (spec mục 6): KSĐ/GPB, hạn
 // bàn giao 48 giờ + trạng thái nộp, và trạng thái hồ sơ giấy — không gộp chung
 // vào 1 trạng thái duy nhất, và không suy đoán KSĐ/GPB khi adapter chưa có nguồn.
-function enrichRecordsCheckCard(card, submissionDashboardForLookup) {
+function enrichRecordsCheckCard(card, submittedAtIndex) {
   const ksdGpb = getKsdGpbStatus({ discharge: card.discharge, cls: card.cls });
   const dischargeInfo = recordsDischargeDateTimeInfo(card.discharge_time);
-  const aliases = recordsIdentityAliases(card, card.case_key || card.merged_key || card.storage_key || '');
-  const handedOverAt = recordsSubmittedAtForAliases(submissionDashboardForLookup, aliases);
+  const rawKeys = [card.case_key, card.merged_key, card.storage_key, ...(Array.isArray(card.source_case_keys) ? card.source_case_keys : [])];
+  const handedOverAt = recordsSubmittedAtForKeys(submittedAtIndex, rawKeys);
   const handover = computeHandover({
     dischargedAtIso: dischargeInfo.iso,
     dischargeHasTime: dischargeInfo.hasTime,
@@ -2271,7 +2306,8 @@ function buildRecordsCheckDashboard(ctx) {
     .filter(Boolean);
 
   const submissionDashboardForLookup = buildRecordsSubmissionDashboard(records_check_persistent_dir(ctx));
-  const patients = mergeRecordsCheckCardsByStorage(rawPatients).map(card => enrichRecordsCheckCard(card, submissionDashboardForLookup));
+  const submittedAtIndex = buildRecordsSubmittedAtIndex(submissionDashboardForLookup);
+  const patients = mergeRecordsCheckCardsByStorage(rawPatients).map(card => enrichRecordsCheckCard(card, submittedAtIndex));
 
   if (recoveredChecked || reconciledLegacy || recoveredFromPdf) write_records_check_index(ctx, index);
   const visibleCheckedMap = visibleRecordsCheckedMap(index, metas);
@@ -3223,7 +3259,15 @@ router.get('/hchanh/dashboard', handleRoute((_req, res, ctx) => {
 // Hồ sơ đã chốt nộp là dữ liệu lịch sử đã khóa. Dùng chung cho dấu "Đã kiểm" và
 // checklist hồ sơ giấy (bác sĩ/điều dưỡng/trưởng khoa ký, note bìa): không ai
 // được sửa âm thầm sau khi KHTH đã nhận, kể cả qua request trực tiếp hay UI cũ.
-function findRecordsSubmissionLockMatches(ctx, safeTargetAliases) {
+// rawCaseKeys: case_key THÔ (không tiền tố), khớp trực tiếp với item.record_id/
+// item.aliases trong kho nộp hồ sơ (cũng lưu case_key thô). Trước đây hàm này
+// nhận vào alias đã lọc qua recordsCheckedAliasesForState (chỉ giữ dạng
+// "key::..." dùng riêng cho việc lưu dấu "Đã kiểm"), nên không bao giờ khớp
+// được với case_key thô của kho nộp hồ sơ — khóa "hồ sơ đã nộp" vì vậy chưa
+// từng có tác dụng ở phía backend (chỉ có cảnh báo phía giao diện).
+function findRecordsSubmissionLockMatches(ctx, rawCaseKeys) {
+  const targetKeys = new Set((Array.isArray(rawCaseKeys) ? rawCaseKeys : []).map(records_storage_key).filter(Boolean));
+  if (!targetKeys.size) return [];
   const submissionDashboard = buildRecordsSubmissionDashboard(records_check_persistent_dir(ctx));
   const submittedMatches = [];
   for (const batch of Array.isArray(submissionDashboard?.batches) ? submissionDashboard.batches : []) {
@@ -3234,11 +3278,9 @@ function findRecordsSubmissionLockMatches(ctx, safeTargetAliases) {
       const itemStatus = String(item?.status || '').trim().toLowerCase();
       if (effectiveStatus && effectiveStatus !== 'submitted') continue;
       if (!effectiveStatus && itemStatus !== 'active' && itemStatus !== 'submitted') continue;
-      const itemAliases = recordsCheckedAliasesForState([
-        item?.record_id,
-        ...(Array.isArray(item?.aliases) ? item.aliases : []),
-      ]);
-      if (!aliasesIntersect(safeTargetAliases, itemAliases)) continue;
+      const itemKeys = [item?.record_id, ...(Array.isArray(item?.aliases) ? item.aliases : [])]
+        .map(records_storage_key).filter(Boolean);
+      if (!itemKeys.some(key => targetKeys.has(key))) continue;
       submittedMatches.push({
         submission_date: String(batch?.submission_date || batch?.id || '').trim(),
         record_id: String(item?.record_id || '').trim(),
@@ -3267,7 +3309,7 @@ router.post('/hchanh/records-check/checked', handleRoute((req, res, ctx) => {
   }
   const safeTargetAliases = recordsCheckedAliasesForState([...targetAliases]);
 
-  const submittedMatches = findRecordsSubmissionLockMatches(ctx, safeTargetAliases);
+  const submittedMatches = findRecordsSubmissionLockMatches(ctx, caseKeys);
   if (submittedMatches.length) {
     const submissionDate = submittedMatches[0].submission_date;
     return res.status(423).json({
@@ -3360,7 +3402,7 @@ router.post('/hchanh/records-check/paper-checklist', handleRoute((req, res, ctx)
   }
   const safeTargetAliases = recordsCheckedAliasesForState([...targetAliases]);
 
-  const submittedMatches = findRecordsSubmissionLockMatches(ctx, safeTargetAliases);
+  const submittedMatches = findRecordsSubmissionLockMatches(ctx, caseKeys);
   if (submittedMatches.length) {
     const submissionDate = submittedMatches[0].submission_date;
     return res.status(423).json({
