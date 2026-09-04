@@ -23,6 +23,9 @@ const { databaseInfo, syncResearchDatabase, queryResearchDatabase } = require('.
 const {
   read_index: readHchanhIndex,
   read_patient_all: readHchanhPatientAll,
+  read_patient_file: readHchanhPatientFile,
+  write_patient_file: writeHchanhPatientFile,
+  HCHANH_FILE_KEYS,
 } = require('../hchanh_data_contract');
 
 const SCRIPT_PATH = path.join(ROOT_DIR, 'research', 'nghien_cuu_1', 'lay_lich_su_xn_cdha.py');
@@ -4225,6 +4228,16 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
 
     const output = readJsonSafe(outPath, {}) || {};
     const workerTrace = Array.isArray(output?._case_trace) ? output._case_trace : [];
+    // Nghiên cứu vừa quét EMR qua cùng worker hchanh_fetch.py mà Hành chánh dùng.
+    // Nếu Hành chánh CHƯA có dữ liệu loại này cho đúng mã BN, lưu luôn vào kho
+    // dùng chung để lần Hành chánh/Kiểm hồ sơ sau không phải quét lại — chỉ điền
+    // vào chỗ trống, không ghi đè dữ liệu Hành chánh đang có (vì kho đó chỉ giữ
+    // 1 bản mới nhất theo mã BN, không phân biệt theo đợt nằm viện như ở đây).
+    for (const fileKey of HCHANH_FILE_KEYS) {
+      if (output[fileKey] === undefined || output[fileKey] === null) continue;
+      if (readHchanhPatientFile(ctx, meta.ma_bn, fileKey)) continue;
+      try { writeHchanhPatientFile(ctx, meta.ma_bn, fileKey, output[fileKey]); } catch (_) {}
+    }
     if (!saveRaw) {
       try { fs.rmSync(inputPath, { force: true }); } catch (_) {}
       try { fs.rmSync(outPath, { force: true }); } catch (_) {}
