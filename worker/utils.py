@@ -64,6 +64,11 @@ def _apply_secret_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
         "password": ("EMR_PASSWORD", "EMR_PASSWORD_FILE"),
         "hchanh_username": ("EMR_HCHANH_USERNAME", "EMR_HCHANH_USERNAME_FILE"),
         "hchanh_password": ("EMR_HCHANH_PASSWORD", "EMR_HCHANH_PASSWORD_FILE"),
+        # Tài khoản riêng cho dịch truyền — cho phép chạy song song với chăm sóc
+        # (xem docs/PARALLEL_CARE_INFUSION.md). Không đặt thì input_infusions.py
+        # tự dùng lại tài khoản chính, hành vi giữ nguyên như trước.
+        "infusion_username": ("EMR_INFUSION_USERNAME", "EMR_INFUSION_USERNAME_FILE"),
+        "infusion_password": ("EMR_INFUSION_PASSWORD", "EMR_INFUSION_PASSWORD_FILE"),
     }
     for key, (env_name, file_env) in mapping.items():
         value = _read_secret_env(env_name, file_env)

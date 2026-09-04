@@ -68,6 +68,9 @@
   "hchanh_username": "",
   "hchanh_password": "",
   "_hchanh_login_comment": "",
+  "infusion_username": "",
+  "infusion_password": "",
+  "_infusion_login_comment": "Tùy chọn — tài khoản EMR riêng cho dịch truyền để chạy song song với chăm sóc. Xem docs/PARALLEL_CARE_INFUSION.md. Để trống thì dịch truyền dùng chung tài khoản chính như trước.",
   "_billing_comment": "",
   "_note": "Copy file này thành config/config.json rồi điền thông tin thật. Không commit/chia sẻ config/config.json."
 }
