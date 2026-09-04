@@ -3,11 +3,12 @@ import { C } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import RecordsSubmissionTab from './RecordsSubmissionTab.jsx';
 import { PAPER_ISSUE_STATES, applyGoogleSheetValidation, buildGoogleSheetIndex, buildUnlinkedSheetIssues, paperFilterMatches } from './googleSheetValidation.mjs';
-import { exportRecordsCheckPdf, getRecordsCheckDashboard, getRecordsCheckGoogleSheet, getRecordsCheckSubmissions, scanRecordsCheckCompleted, setRecordsCheckChecked, startRecordsCheckFetchBatch, stopRecordsCheckFetchBatch, syncRecordsCheckGoogleSheet, updateRecordsCheckGoogleSheetRow } from '../../api.js';
+import { exportRecordsCheckPdf, getRecordsCheckDashboard, getRecordsCheckGoogleSheet, getRecordsCheckSubmissions, scanRecordsCheckCompleted, setRecordsCheckChecked, setRecordsCheckPaperChecklist, startRecordsCheckFetchBatch, stopRecordsCheckFetchBatch, syncRecordsCheckGoogleSheet, updateRecordsCheckGoogleSheetRow } from '../../api.js';
 
 const CHECK_FILES = ['discharge', 'cls'];
 const COMPLETED_STATUS = 'Hoàn tất';
 const CHECKED_STORAGE_KEY = 'emr.recordsCheck.checked.v1';
+const ACTOR_STORAGE_KEY = 'emr.recordsCheck.actorName.v1';
 const HEADLESS_STORAGE_KEY = 'emr.recordsCheck.headless.v1';
 const BATCH_LIMIT_STORAGE_KEY = 'emr.recordsCheck.batchLimit.v1';
 const DISCHARGE_MONTH_STORAGE_KEY = 'emr.recordsCheck.dischargeMonth.v1';
@@ -190,6 +191,7 @@ function isSuccessfulFilePayload(card, fileKey) {
 function chipStyle(tone) {
   if (tone === 'green') return { color: C.green, background: C.greenBg, borderColor: C.greenBorder };
   if (tone === 'red') return { color: C.red, background: C.redBg, borderColor: C.redBorder };
+  if (tone === 'orange') return { color: C.orange, background: C.orangeBg, borderColor: C.orangeBorder };
   if (tone === 'amber') return { color: C.amber, background: C.amberBg, borderColor: C.amberBorder };
   if (tone === 'blue') return { color: C.blue, background: C.blueBg, borderColor: C.blueBorder };
   return { color: C.text2, background: C.surface2, borderColor: C.border };
@@ -496,6 +498,43 @@ function statusFilterValue(label) {
   return `status::${String(label || '')}`;
 }
 
+// Khu vực "Cần xử lý hôm nay" (spec mục 9) — bộ lọc riêng, độc lập với bộ lọc
+// trạng thái dữ liệu EMR đã có, ưu tiên hồ sơ quá hạn/gần hết hạn.
+function taskFilterMatches(row, taskFilter) {
+  const value = String(taskFilter || 'none');
+  if (value === 'none') return true;
+  if (value === 'overdue_48h') return row.handover?.state === 'overdue';
+  if (value === 'due_12h') return row.handover?.state === 'due_12h';
+  if (value === 'due_24h') return row.handover?.state === 'due_24h';
+  if (value === 'missing_doctor_sign') return row.paperStatus?.code === 'MISSING_DOCTOR_SIGN';
+  if (value === 'missing_nurse_sign') return row.paperStatus?.code === 'MISSING_NURSE_SIGN';
+  if (value === 'waiting_head_sign') return row.paperStatus?.code === 'WAITING_HEAD_SIGN';
+  if (value === 'missing_cover_note') return row.paperStatus?.code === 'MISSING_COVER_NOTE';
+  if (value === 'ready_to_submit') return row.submissionReady;
+  return true;
+}
+
+
+function ksdGpbFallback() {
+  return { status: 'UNKNOWN', label: 'Chưa xác định' };
+}
+
+function paperStatusFallback(checked) {
+  return checked ? { code: 'CHECKING', label: 'Đang kiểm', tone: 'blue' } : { code: 'NOT_CHECKED', label: 'Chưa kiểm', tone: 'gray' };
+}
+
+function submissionStateFallback(row) {
+  if (row.submissionReady) return { code: 'ready', label: 'Sẵn sàng nộp', tone: 'blue' };
+  return { code: 'not_ready', label: 'Chưa sẵn sàng', tone: 'gray' };
+}
+
+const SUBMISSION_STATE_LABELS = {
+  not_ready: { label: 'Chưa sẵn sàng', tone: 'gray' },
+  ready: { label: 'Sẵn sàng nộp', tone: 'blue' },
+  submitted_on_time: { label: 'Đã nộp đúng hạn', tone: 'green' },
+  submitted_late: { label: 'Đã nộp trễ hạn', tone: 'red' },
+  overdue: { label: 'Quá hạn 48 giờ', tone: 'red' },
+};
 
 function buildRows(cards) {
   return cards.map(card => {
@@ -505,7 +544,22 @@ function buildRows(cards) {
     const dischargeDate = dischargeDateOf(card);
     const status = orderStatusLabel(card, storage, dischargeDate);
     const completed = isCompletedCase(card);
-    return { card, stats, storage, status, ma_bn: getMaBn(card), admissionDate, dischargeDate, completed, displayName: displayNameOf(card), department: departmentOf(card) };
+    const checklist = card?.paper_checklist || {};
+    const handover = card?.handover || null;
+    const submissionState = SUBMISSION_STATE_LABELS[card?.submission_state] || submissionStateFallback({ submissionReady: card?.submission_ready });
+    return {
+      card, stats, storage, status, ma_bn: getMaBn(card), admissionDate, dischargeDate, completed,
+      displayName: displayNameOf(card), department: departmentOf(card),
+      ksd: card?.ksd_gpb?.ksd || ksdGpbFallback(),
+      gpb: card?.ksd_gpb?.gpb || ksdGpbFallback(),
+      handover,
+      paperChecklist: checklist,
+      paperStatus: card?.paper_status || paperStatusFallback(checklist.checked),
+      submissionReady: Boolean(card?.submission_ready),
+      submissionMissing: Array.isArray(card?.submission_missing) ? card.submission_missing : [],
+      submissionStateInfo: submissionState,
+      coverNoteSuggestion: card?.cover_note_suggestion || '',
+    };
   });
 }
 
@@ -612,6 +666,14 @@ function readCheckedMap() {
 
 function writeCheckedMap(next) {
   try { localStorage.setItem(CHECKED_STORAGE_KEY, JSON.stringify(next || {})); } catch (_) {}
+}
+
+function readActorName() {
+  try { return String(localStorage.getItem(ACTOR_STORAGE_KEY) || '').trim(); } catch { return ''; }
+}
+
+function writeActorName(next) {
+  try { localStorage.setItem(ACTOR_STORAGE_KEY, String(next || '').trim()); } catch (_) {}
 }
 
 function readHeadlessPref() {
@@ -737,6 +799,10 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
   const [lastRefreshAt, setLastRefreshAt] = useState('');
   const [viewMode, setViewMode] = useState('check');
   const [submittedLockMap, setSubmittedLockMap] = useState({});
+  const [taskFilter, setTaskFilter] = useState('none');
+  const [checklistDrawerKey, setChecklistDrawerKey] = useState('');
+  const [checklistSaving, setChecklistSaving] = useState(false);
+  const [actorName, setActorName] = useState(() => readActorName());
 
   async function setChecked(row, checked) {
     const key = getRowKey(row);
@@ -766,6 +832,24 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
         next.delete(key);
         return next;
       });
+    }
+  }
+
+  async function updatePaperChecklist(row, patch) {
+    const submissionLock = submittedLockForRow(row, submittedLockMap);
+    if (submissionLock) {
+      const dateLabel = formatSubmissionDate(submissionLock.submission_date);
+      toast?.(`Hồ sơ đã nộp${dateLabel ? ` ngày ${dateLabel}` : ''}; checklist hồ sơ giấy đã được khóa. Ghi nhận ở mục "Sai sót sau bàn giao" nếu cần.`, 'warn');
+      return;
+    }
+    setChecklistSaving(true);
+    try {
+      await setRecordsCheckPaperChecklist(rowCheckedKeys(row), patch, actorName);
+      await refreshDashboard({ silent: true });
+    } catch (err) {
+      toast?.(`Không lưu được checklist hồ sơ giấy: ${String(err.message || err)}`, 'error');
+    } finally {
+      setChecklistSaving(false);
     }
   }
 
@@ -1118,11 +1202,12 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
 
   const filteredRows = useMemo(() => {
     const q = norm(search);
-    return displayRows
+    const rows = displayRows
       .filter(row => !showOnlyCompleted || row.completed)
       .filter(row => !showOnlyStorage || row.storage)
       .filter(row => dataFilterMatches(row, dataFilter))
       .filter(row => paperFilterMatches(row, paperFilter))
+      .filter(row => taskFilterMatches(row, taskFilter))
       .filter(row => !dischargeMonth || dischargeMonthKey(row.dischargeDate) === dischargeMonth)
       .filter(row => {
         if (!q) return true;
@@ -1130,9 +1215,14 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
           row.displayName, row.ma_bn, row.department, row.storage, row.admissionDate, row.dischargeDate,
           row.paperRecord?.record?.patient_name, row.paperRecord?.record?.storage_raw, row.paperRecord?.record?.timestamp, row.paperRecord?.issue_detail,
         ].join(' ')).includes(q);
-      })
-      .sort(compareRowsByAdmissionNewest);
-  }, [displayRows, search, showOnlyCompleted, showOnlyStorage, dataFilter, paperFilter, dischargeMonth]);
+      });
+    // "Cần xử lý hôm nay": ưu tiên hồ sơ quá hạn/gần hết hạn lên đầu (spec mục 9).
+    if (taskFilter !== 'none') {
+      const urgencyRank = state => (state === 'overdue' ? 0 : state === 'due_12h' ? 1 : state === 'due_24h' ? 2 : 3);
+      return rows.sort((a, b) => urgencyRank(a.handover?.state) - urgencyRank(b.handover?.state) || compareRowsByAdmissionNewest(a, b));
+    }
+    return rows.sort(compareRowsByAdmissionNewest);
+  }, [displayRows, search, showOnlyCompleted, showOnlyStorage, dataFilter, paperFilter, taskFilter, dischargeMonth]);
 
   function toggleUpdateSelect(row, nextValue = null) {
     const key = getRowKey(row);
@@ -1213,6 +1303,14 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
       missingData: displayRows.filter(r => !isRowDataComplete(r)).length,
       completeData: displayRows.filter(r => isRowDataComplete(r)).length,
       shownMissing: filteredRows.filter(r => !isRowDataComplete(r)).length,
+      overdue48h: displayRows.filter(r => r.handover?.state === 'overdue').length,
+      due12h: displayRows.filter(r => r.handover?.state === 'due_12h').length,
+      due24h: displayRows.filter(r => r.handover?.state === 'due_24h').length,
+      missingDoctorSign: displayRows.filter(r => r.paperStatus?.code === 'MISSING_DOCTOR_SIGN').length,
+      missingNurseSign: displayRows.filter(r => r.paperStatus?.code === 'MISSING_NURSE_SIGN').length,
+      waitingHeadSign: displayRows.filter(r => r.paperStatus?.code === 'WAITING_HEAD_SIGN').length,
+      missingCoverNote: displayRows.filter(r => r.paperStatus?.code === 'MISSING_COVER_NOTE').length,
+      readyToSubmit: displayRows.filter(r => r.submissionReady).length,
     };
   }, [displayRows, filteredRows, checkedMap, updateSelectedKeys, unlinkedSheetIssues]);
 
@@ -1228,6 +1326,12 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
     source_case_keys: rowSourceCaseKeys(row),
     checked: isRowChecked(row, checkedMap),
     data_complete: isRowDataComplete(row),
+    submission_ready: row.submissionReady,
+    submission_missing: row.submissionMissing,
+    handover: row.handover,
+    ksd: row.ksd,
+    gpb: row.gpb,
+    paper_status: row.paperStatus,
     snapshot: {
       ho_ten: row.displayName || '',
       ma_bn: row.ma_bn || '',
@@ -1239,6 +1343,10 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
       xq: Number(row.stats?.xq || 0),
       ct: Number(row.stats?.ct || 0),
       mri: Number(row.stats?.mri || 0),
+      ksd_status: row.ksd?.status || '',
+      gpb_status: row.gpb?.status || '',
+      handover_deadline: row.handover?.handover_deadline || '',
+      cover_note: row.paperChecklist?.note || '',
     },
   })), [displayRows, checkedMap]);
 
@@ -1268,6 +1376,11 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
         xq: Number(row.stats?.xq || 0),
         ct: Number(row.stats?.ct || 0),
         mri: Number(row.stats?.mri || 0),
+        discharge_date: row.dischargeDate || '',
+        handover_deadline: row.handover?.handover_deadline || '',
+        ksd_status: row.ksd?.status || '',
+        gpb_status: row.gpb?.status || '',
+        cover_note: row.paperChecklist?.note || '',
       }));
     if (!rowsForPdf.length) {
       toast?.('Chưa có hồ sơ được đánh dấu “Đã kiểm” để xuất PDF.', 'warn');
@@ -1310,6 +1423,8 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
       </div>
     );
   }
+
+  const checklistDrawerRow = checklistDrawerKey ? displayRows.find(r => getRowKey(r) === checklistDrawerKey) : null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -1399,6 +1514,42 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
         </div>
       </div>
 
+      <div style={{ padding: '8px 16px 0', background: C.surface }}>
+        <div style={{ fontSize: 10, color: C.text3, fontWeight: 850, textTransform: 'uppercase', letterSpacing: .5, marginBottom: 5 }}>Cần xử lý hôm nay</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {[
+            ['none', 'Tất cả', counts.total, 'gray'],
+            ['overdue_48h', 'Quá hạn 48 giờ', counts.overdue48h, 'red'],
+            ['due_12h', 'Còn dưới 12 giờ', counts.due12h, 'orange'],
+            ['due_24h', 'Còn dưới 24 giờ', counts.due24h, 'amber'],
+            ['missing_doctor_sign', 'Thiếu chữ ký bác sĩ', counts.missingDoctorSign, 'amber'],
+            ['missing_nurse_sign', 'Thiếu chữ ký điều dưỡng', counts.missingNurseSign, 'amber'],
+            ['waiting_head_sign', 'Chờ Trưởng khoa ký', counts.waitingHeadSign, 'amber'],
+            ['missing_cover_note', 'Nợ KSĐ/GPB chưa ghi note', counts.missingCoverNote, 'amber'],
+            ['ready_to_submit', 'Đã hoàn thiện, sẵn sàng nộp', counts.readyToSubmit, 'green'],
+          ].map(([value, label, count, tone]) => {
+            const active = taskFilter === value;
+            const s = chipStyle(tone);
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setTaskFilter(prev => prev === value ? 'none' : value)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8, cursor: 'pointer',
+                  border: `1px solid ${active ? s.color : s.borderColor}`, background: active ? s.color : s.background, color: active ? '#fff' : s.color,
+                  fontSize: 11, fontWeight: 800,
+                }}
+                title={`Lọc theo: ${label}`}
+              >
+                <span>{label}</span>
+                <span style={{ padding: '1px 6px', borderRadius: 999, background: active ? 'rgba(255,255,255,.25)' : 'rgba(0,0,0,.06)' }}>{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '8px 16px', background: C.surface, borderBottom: `1px solid ${C.border2}` }}>
         <StatBox label="Tổng hồ sơ" value={counts.total} tone="blue" />
         {counts.mergedSourceRows ? <StatBox label="Dòng trùng đã gộp" value={counts.mergedSourceRows} tone="blue" /> : null}
@@ -1455,9 +1606,10 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                 <tr style={{ background: C.surface2 }}>
                   {[
                     ['Chọn', 'center'], ['Đã kiểm', 'center'], ['Số lưu trữ EMR', 'left'], ['Đối chiếu Sheet', 'left'], ['Họ và tên EMR', 'left'],
-                    ['Ngày vào viện', 'left'], ['Ngày ra viện', 'left'],
+                    ['Ngày vào viện', 'left'], ['Ngày ra viện', 'left'], ['Hạn 48h', 'left'],
                     ['Số XQ', 'center'], ['Số CT', 'center'], ['Số MRI', 'center'],
-                    ['Dữ liệu', 'left'],
+                    ['KSĐ', 'left'], ['GPB', 'left'],
+                    ['Dữ liệu', 'left'], ['Hồ sơ giấy', 'left'], ['Trạng thái nộp', 'left'], ['Thao tác', 'center'],
                   ].map(([label, align]) => (
                     <th key={label} style={{ padding: '8px 9px', borderBottom: `1px solid ${C.border}`, color: C.text2, fontSize: 10, textAlign: align, textTransform: 'uppercase', letterSpacing: .6, whiteSpace: 'nowrap' }}>{label}</th>
                   ))}
@@ -1465,7 +1617,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
               </thead>
               <tbody>
                 {filteredRows.length === 0 ? (
-                  <tr><td colSpan={11} style={{ padding: 24, textAlign: 'center', color: C.text2, fontSize: 13 }}>Chưa có ca phù hợp. Bấm “Quét danh sách” để tạo danh sách kiểm hồ sơ riêng.</td></tr>
+                  <tr><td colSpan={17} style={{ padding: 24, textAlign: 'center', color: C.text2, fontSize: 13 }}>Chưa có ca phù hợp. Bấm “Quét danh sách” để tạo danh sách kiểm hồ sơ riêng.</td></tr>
                 ) : filteredRows.map(row => {
                   const rowKey = getRowKey(row);
                   const checked = isRowChecked(row, checkedMap);
@@ -1529,10 +1681,30 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                       </td>
                       <td style={dateCellStyle}>{row.admissionDate || '—'}</td>
                       <td style={dateCellStyle}>{row.dischargeDate || '—'}</td>
+                      <td style={{ padding: '8px 8px', borderBottom: `1px solid ${C.border2}`, minWidth: 140 }}>
+                        {row.handover ? (
+                          <Chip tone={row.handover.tone} title={row.handover.source_note || row.handover.label}>{row.handover.label}</Chip>
+                        ) : <Chip tone="gray">—</Chip>}
+                      </td>
                       <td style={countCellStyle}>{row.stats.xq}</td>
                       <td style={countCellStyle}>{row.stats.ct}</td>
                       <td style={countCellStyle}>{row.stats.mri}</td>
+                      <td style={{ padding: '8px 8px', borderBottom: `1px solid ${C.border2}`, minWidth: 100 }}>
+                        <Chip tone={row.ksd.status === 'COMPLETED' ? 'green' : row.ksd.status === 'PENDING' ? 'amber' : row.ksd.status === 'NOT_ORDERED' ? 'gray' : 'blue'} title={row.ksd.reason || ''}>{row.ksd.label}</Chip>
+                      </td>
+                      <td style={{ padding: '8px 8px', borderBottom: `1px solid ${C.border2}`, minWidth: 100 }}>
+                        <Chip tone={row.gpb.status === 'COMPLETED' ? 'green' : row.gpb.status === 'PENDING' ? 'amber' : row.gpb.status === 'NOT_ORDERED' ? 'gray' : 'blue'} title={row.gpb.reason || ''}>{row.gpb.label}</Chip>
+                      </td>
                       <td style={{ padding: '8px 8px', borderBottom: `1px solid ${C.border2}`, minWidth: 118 }}><Chip tone={row.status.tone} title={dataTitle}>{row.status.label}</Chip></td>
+                      <td style={{ padding: '8px 8px', borderBottom: `1px solid ${C.border2}`, minWidth: 150 }}>
+                        <Chip tone={row.paperStatus.tone} title={row.submissionMissing.join('; ')}>{row.paperStatus.label}</Chip>
+                      </td>
+                      <td style={{ padding: '8px 8px', borderBottom: `1px solid ${C.border2}`, minWidth: 140 }}>
+                        <Chip tone={row.submissionStateInfo.tone} title={row.submissionMissing.length ? `Còn thiếu: ${row.submissionMissing.join('; ')}` : 'Đủ điều kiện đưa vào đợt nộp.'}>{row.submissionStateInfo.label}</Chip>
+                      </td>
+                      <td onClick={e => e.stopPropagation()} style={countCellStyle}>
+                        <Btn variant="secondary" onClick={() => setChecklistDrawerKey(rowKey)} style={{ fontSize: 10, padding: '4px 9px' }}>Chi tiết</Btn>
+                      </td>
                     </tr>
                   );
                 })}
@@ -1622,6 +1794,134 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                   </Btn>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {checklistDrawerRow ? (
+        <div role="dialog" aria-modal="true" onMouseDown={event => { if (event.target === event.currentTarget) setChecklistDrawerKey(''); }} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15, 23, 42, .46)', display: 'grid', placeItems: 'center', padding: 18 }}>
+          <div style={{ width: 'min(620px, 96vw)', maxHeight: '90vh', overflow: 'auto', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, boxShadow: '0 20px 60px rgba(15,23,42,.28)' }}>
+            <div style={{ padding: '11px 14px', borderBottom: `1px solid ${C.border2}`, display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 850, color: C.text }}>{checklistDrawerRow.displayName}</div>
+                <div style={{ fontSize: 10, color: C.text3, marginTop: 2 }}>{checklistDrawerRow.storage || 'Chưa có số lưu trữ'} · {checklistDrawerRow.ma_bn}</div>
+              </div>
+              <button type="button" onClick={() => setChecklistDrawerKey('')} style={{ border: 0, background: 'transparent', color: C.text2, fontSize: 20, cursor: 'pointer' }}>×</button>
+            </div>
+            <div style={{ padding: 14, display: 'grid', gap: 12 }}>
+              {(() => {
+                const row = checklistDrawerRow;
+                const cl = row.paperChecklist || {};
+                const locked = Boolean(submittedLockForRow(row, submittedLockMap));
+                const needsNote = row.ksd.status === 'PENDING' || row.gpb.status === 'PENDING';
+                const ksdGpbUnknown = row.ksd.status === 'UNKNOWN' || row.gpb.status === 'UNKNOWN';
+                const patch = field => checked => updatePaperChecklist(row, { [field]: checked });
+                const checklistItems = [
+                  { field: null, label: 'Đã kiểm hồ sơ giấy', checked: Boolean(cl.checked), onChange: v => setChecked(row, v) },
+                  { field: 'doctor_signed', label: 'Bác sĩ điều trị đã ký đầy đủ', checked: Boolean(cl.doctor_signed) },
+                  { field: 'nurse_signed', label: 'Điều dưỡng bệnh phòng đã ký đầy đủ', checked: Boolean(cl.nurse_signed) },
+                  { field: 'head_signed', label: 'Trưởng khoa đã ký kết thúc điều trị', checked: Boolean(cl.head_signed) },
+                ];
+                return (
+                  <>
+                    <div style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${chipStyle(row.paperStatus.tone).borderColor}`, background: chipStyle(row.paperStatus.tone).background }}>
+                      <div style={{ fontWeight: 850, color: chipStyle(row.paperStatus.tone).color }}>{row.paperStatus.label}</div>
+                      {row.submissionMissing.length ? (
+                        <div style={{ marginTop: 5, fontSize: 11, color: C.text2 }}>
+                          Còn thiếu để "Sẵn sàng nộp":
+                          <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                            {row.submissionMissing.map(m => <li key={m}>{m}</li>)}
+                          </ul>
+                        </div>
+                      ) : <div style={{ marginTop: 4, fontSize: 11, color: C.green }}>Đủ điều kiện đưa vào đợt nộp.</div>}
+                    </div>
+
+                    {locked ? (
+                      <div style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${C.amberBorder}`, background: C.amberBg, color: C.amber, fontSize: 11 }}>
+                        Hồ sơ đã nộp — checklist đã khóa để tránh sửa âm thầm. Nếu phát hiện sai sót, ghi nhận ở tab "Nộp hồ sơ theo ngày" → "Sai sót sau bàn giao".
+                      </div>
+                    ) : null}
+
+                    <div>
+                      <div style={sheetEditorLabelStyle}>Người thực hiện kiểm tra (ghi kèm khi tích các mục dưới đây)</div>
+                      <input
+                        value={actorName}
+                        disabled={locked}
+                        onChange={e => { setActorName(e.target.value); writeActorName(e.target.value); }}
+                        placeholder="Họ tên điều dưỡng/người kiểm..."
+                        style={sheetEditorInputStyle}
+                      />
+                    </div>
+
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {checklistItems.map(item => (
+                        <label key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: C.text, opacity: locked || checklistSaving ? .6 : 1 }}>
+                          <input
+                            type="checkbox"
+                            checked={item.checked}
+                            disabled={locked || checklistSaving}
+                            onChange={e => (item.onChange ? item.onChange(e.target.checked) : patch(item.field)(e.target.checked))}
+                          />
+                          {item.label}
+                        </label>
+                      ))}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: needsNote ? C.text : C.text3, opacity: locked || checklistSaving ? .6 : 1 }}>
+                        <input
+                          type="checkbox"
+                          checked={needsNote ? Boolean(cl.cover_note_done) : true}
+                          disabled={locked || checklistSaving || !needsNote}
+                          onChange={e => patch('cover_note_done')(e.target.checked)}
+                        />
+                        Đã ghi note ngoài bìa nếu nợ KSĐ/GPB{!needsNote ? (ksdGpbUnknown ? ' — Chưa xác định KSĐ/GPB, tự kiểm tra thủ công' : ' — Không áp dụng') : ''}
+                      </label>
+                      {!needsNote && ksdGpbUnknown ? (
+                        <div style={{ fontSize: 10, color: C.text3, marginLeft: 22 }}>
+                          Hệ thống chưa đọc được trạng thái KSĐ/GPB thật từ EMR nên không thể tự xác nhận là "Không áp dụng". Hãy tự kiểm tra trên EMR nếu hồ sơ có nợ kết quả.
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {needsNote ? (
+                      <div style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${C.amberBorder}`, background: C.amberBg }}>
+                        <div style={{ fontSize: 10, color: C.amber, fontWeight: 850, marginBottom: 4 }}>Gợi ý nội dung ghi lên bìa hồ sơ</div>
+                        <div style={{ fontSize: 12, color: C.text, whiteSpace: 'pre-wrap' }}>{row.coverNoteSuggestion || `Hồ sơ còn nợ kết quả ${[row.ksd.status === 'PENDING' ? 'KSĐ' : '', row.gpb.status === 'PENDING' ? 'GPB' : ''].filter(Boolean).join('/')}.`}</div>
+                        <div style={{ marginTop: 6, display: 'flex', gap: 8 }}>
+                          <Btn variant="secondary" onClick={() => { navigator.clipboard?.writeText(row.coverNoteSuggestion || ''); toast?.('Đã sao chép nội dung note.', 'ok'); }} style={{ fontSize: 10, padding: '4px 9px' }}>Sao chép</Btn>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div>
+                      <div style={sheetEditorLabelStyle}>Ghi chú khác</div>
+                      <textarea
+                        defaultValue={cl.note || ''}
+                        disabled={locked}
+                        onBlur={e => { if (e.target.value !== (cl.note || '')) updatePaperChecklist(row, { note: e.target.value }); }}
+                        rows={3}
+                        style={{ ...sheetEditorInputStyle, resize: 'vertical', fontFamily: 'inherit' }}
+                      />
+                    </div>
+
+                    <div style={{ fontSize: 10, color: C.text3 }}>
+                      Người kiểm tra: <b>{cl.checked_by || '—'}</b> · Ngày giờ kiểm: <b>{cl.checked_at ? new Date(cl.checked_at).toLocaleString('vi-VN') : '—'}</b>
+                    </div>
+
+                    {Array.isArray(cl.history) && cl.history.length ? (
+                      <div>
+                        <div style={sheetEditorLabelStyle}>Lịch sử thay đổi checklist</div>
+                        <div style={{ maxHeight: 160, overflow: 'auto', border: `1px solid ${C.border2}`, borderRadius: 6 }}>
+                          {[...cl.history].reverse().slice(0, 50).map((h, i) => (
+                            <div key={i} style={{ padding: '5px 8px', borderTop: i ? `1px solid ${C.border2}` : 'none', fontSize: 10, color: C.text2 }}>
+                              <b>{h.field}</b>: {String(h.from)} → {String(h.to)} · {h.by || 'không rõ người'} · {h.at ? new Date(h.at).toLocaleString('vi-VN') : ''}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>

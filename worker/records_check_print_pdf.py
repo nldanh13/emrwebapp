@@ -1,12 +1,21 @@
 # -*- coding: utf-8 -*-
-"""Tạo PDF bảng kiểm hồ sơ đã kiểm.
+"""Tạo PDF bảng kiểm hồ sơ đã kiểm / danh sách bàn giao hồ sơ giấy cho KHTH.
 
 Input JSON:
 {
+  "delivered_by": "Nguyễn Văn A",       # tùy chọn — người giao, in lặp mỗi dòng
   "rows": [
-    {"ho_ten": "...", "so_luu_tru_in": "9370", "xq": 1, "mri": 0, "ct": 0, "storage_kind": "BT"}
+    {
+      "ho_ten": "...", "so_luu_tru_in": "9370", "xq": 1, "mri": 0, "ct": 0, "storage_kind": "BT",
+      "discharge_date": "21/05/2026", "handover_deadline": "2026-05-23T13:00:00+07:00",
+      "ksd_status": "PENDING", "gpb_status": "NOT_ORDERED", "cover_note": "..."
+    }
   ]
 }
+
+Các trường discharge_date/handover_deadline/ksd_status/gpb_status/cover_note là
+tùy chọn — hồ sơ cũ hoặc PDF nội bộ "đã kiểm" không có vẫn in được, chỉ để
+trống ô tương ứng, không suy đoán giá trị.
 """
 
 from __future__ import annotations
@@ -97,6 +106,34 @@ def storage_kind(row: Dict[str, Any]) -> str:
     return "KHAC"
 
 
+KSD_GPB_LABELS = {
+    "NOT_ORDERED": "Không chỉ định",
+    "PENDING": "Chưa có KQ",
+    "COMPLETED": "Đã có KQ",
+    "UNKNOWN": "Chưa rõ",
+}
+
+
+def ksd_gpb_label(value: Any) -> str:
+    return KSD_GPB_LABELS.get(clean_text(value).upper(), "—")
+
+
+def format_deadline(value: Any) -> str:
+    """Định dạng hạn 48h (ISO có múi giờ) sang dd/mm/yyyy HH:MM. Không tự bịa
+    giờ nếu input rỗng/không parse được — trả về rỗng để cột hiển thị trống."""
+    raw = clean_text(value)
+    if not raw:
+        return ""
+    try:
+        from datetime import datetime
+        # Chấp nhận "...+07:00" hoặc "...Z"
+        text = raw.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(text)
+        return dt.strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        return raw
+
+
 def sort_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     rank = {"BT": 0, "TN": 1, "KHAC": 2}
 
@@ -118,6 +155,7 @@ def make_pdf(input_path: str, out_path: str) -> None:
     rows = payload.get("rows") if isinstance(payload, dict) else payload
     title = clean_text(payload.get("title")) if isinstance(payload, dict) else ""
     subtitle = clean_text(payload.get("subtitle")) if isinstance(payload, dict) else ""
+    delivered_by = clean_text(payload.get("delivered_by")) if isinstance(payload, dict) else ""
     if not isinstance(rows, list):
         rows = []
     rows = [r for r in rows if isinstance(r, dict)]
@@ -137,8 +175,8 @@ def make_pdf(input_path: str, out_path: str) -> None:
         "CellVN",
         parent=styles["BodyText"],
         fontName=normal_font,
-        fontSize=10,
-        leading=12,
+        fontSize=8,
+        leading=10,
         alignment=TA_LEFT,
     )
     center_style = ParagraphStyle(
@@ -172,37 +210,45 @@ def make_pdf(input_path: str, out_path: str) -> None:
         )
         story.append(Paragraph(subtitle, subtitle_style))
     story.append(Spacer(1, 2 * mm))
-    data = [[
-        Paragraph("Họ và tên", center_style),
-        Paragraph("Số lưu trữ", center_style),
-        Paragraph("XQ", center_style),
-        Paragraph("MRI", center_style),
-        Paragraph("CT", center_style),
-    ]]
+    headers = [
+        "STT", "Họ và tên", "Số lưu trữ", "Ngày ra viện", "Hạn 48h",
+        "XQ", "CT", "MRI", "KSĐ", "GPB", "Ghi chú nợ kết quả",
+        "Người giao", "Người nhận ký xác nhận",
+    ]
+    data = [[Paragraph(h, center_style if h not in ("Họ và tên", "Ghi chú nợ kết quả") else cell_style) for h in headers]]
 
-    for row in rows:
+    for idx, row in enumerate(rows, start=1):
         data.append([
+            Paragraph(str(idx), center_style),
             Paragraph(clean_text(row.get("ho_ten") or row.get("name")), cell_style),
             Paragraph(storage_print(row), center_style),
+            Paragraph(clean_text(row.get("discharge_date") or row.get("ngay_ra_vien")), center_style),
+            Paragraph(format_deadline(row.get("handover_deadline")), center_style),
             Paragraph(str(as_int(row.get("xq") or row.get("so_xq"))), center_style),
-            Paragraph(str(as_int(row.get("mri") or row.get("so_mri"))), center_style),
             Paragraph(str(as_int(row.get("ct") or row.get("so_ct"))), center_style),
+            Paragraph(str(as_int(row.get("mri") or row.get("so_mri"))), center_style),
+            Paragraph(ksd_gpb_label(row.get("ksd_status")), center_style),
+            Paragraph(ksd_gpb_label(row.get("gpb_status")), center_style),
+            Paragraph(clean_text(row.get("cover_note")), cell_style),
+            Paragraph(clean_text(row.get("delivered_by")) or delivered_by, center_style),
+            Paragraph("", center_style),
         ])
 
-    table = Table(data, colWidths=[122 * mm, 45 * mm, 25 * mm, 25 * mm, 25 * mm], repeatRows=1)
+    col_widths = [8*mm, 42*mm, 18*mm, 20*mm, 26*mm, 9*mm, 9*mm, 9*mm, 18*mm, 18*mm, 32*mm, 18*mm, 22*mm]
+    table = Table(data, colWidths=col_widths, repeatRows=1)
     table.setStyle(TableStyle([
         ("FONTNAME", (0, 0), (-1, 0), bold_font),
         ("FONTNAME", (0, 1), (-1, -1), normal_font),
-        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F3F4F6")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#111827")),
-        ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+        ("ALIGN", (2, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#111827")),
-        ("LEFTPADDING", (0, 0), (-1, -1), 5),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
     ]))
     story.append(table)
     doc.build(story)

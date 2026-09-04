@@ -73,8 +73,20 @@ const {
   removeItems: removeRecordsSubmissionItems,
   updateBatchForExport: updateRecordsSubmissionBatchForExport,
   markBatchExported: markRecordsSubmissionBatchExported,
+  captureHandoverSnapshots: captureRecordsSubmissionHandoverSnapshots,
+  addDiscrepancy: addRecordsSubmissionDiscrepancy,
   normalizeDate: normalizeRecordsSubmissionDate,
 } = require('../services/hchanh/records_submission_store');
+const {
+  KSD_GPB_STATUS,
+  normalizeChecklist: normalizePaperChecklist,
+  applyChecklistPatch: applyPaperChecklistPatch,
+  paperRecordStatus,
+  computeHandover,
+  submissionReadiness,
+  coverNoteSuggestion,
+} = require('../services/hchanh/paper_record_status');
+const { getKsdGpbStatus } = require('../services/hchanh/lab_result_adapter');
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -347,24 +359,35 @@ function mergeRecordsCheckedEventMap(target, source) {
   return changed;
 }
 
+function asPlainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
 function mergeRecordsCheckedBackupIntoIndex(ctx, index) {
   const backup = readJsonSafe(records_check_checked_backup_path(ctx), null);
   if (!backup || typeof backup !== 'object') return false;
-  index.checked = index.checked && typeof index.checked === 'object' && !Array.isArray(index.checked) ? index.checked : {};
-  index.checked_aliases = index.checked_aliases && typeof index.checked_aliases === 'object' && !Array.isArray(index.checked_aliases)
-    ? index.checked_aliases : {};
+  index.checked = asPlainObject(index.checked);
+  index.checked_aliases = asPlainObject(index.checked_aliases);
+  index.checklist = asPlainObject(index.checklist);
+  index.checklist_aliases = asPlainObject(index.checklist_aliases);
   const changedKeys = mergeRecordsCheckedEventMap(index.checked, backup.checked || {});
   const changedAliases = mergeRecordsCheckedEventMap(index.checked_aliases, backup.checked_aliases || {});
-  return changedKeys || changedAliases;
+  // Checklist hồ sơ giấy (bác sĩ/điều dưỡng/trưởng khoa ký, note bìa) dùng lại
+  // đúng cơ chế backup + merge theo thời gian đã chạy ổn định cho dấu "Đã kiểm",
+  // để không mất dữ liệu khi index.json bị ghi lại hoặc case_key đổi sau quét lại.
+  const changedChecklistKeys = mergeRecordsCheckedEventMap(index.checklist, backup.checklist || {});
+  const changedChecklistAliases = mergeRecordsCheckedEventMap(index.checklist_aliases, backup.checklist_aliases || {});
+  return changedKeys || changedAliases || changedChecklistKeys || changedChecklistAliases;
 }
 
 function persistRecordsCheckedBackup(ctx, index) {
   const payload = {
-    version: 1,
+    version: 2,
     updatedAt: new Date().toISOString(),
-    checked: index?.checked && typeof index.checked === 'object' && !Array.isArray(index.checked) ? index.checked : {},
-    checked_aliases: index?.checked_aliases && typeof index.checked_aliases === 'object' && !Array.isArray(index.checked_aliases)
-      ? index.checked_aliases : {},
+    checked: asPlainObject(index?.checked),
+    checked_aliases: asPlainObject(index?.checked_aliases),
+    checklist: asPlainObject(index?.checklist),
+    checklist_aliases: asPlainObject(index?.checklist_aliases),
   };
   writeJsonAtomic(records_check_checked_backup_path(ctx), payload);
   return payload;
@@ -423,7 +446,7 @@ function read_records_check_index(ctx) {
     persistRecordsCheckedBackup(ctx, migrated);
     return migrated;
   }
-  const empty = { version: HCHANH_DATA_VERSION, updatedAt: null, lastScan: null, patients: {}, checked: {}, checked_aliases: {} };
+  const empty = { version: HCHANH_DATA_VERSION, updatedAt: null, lastScan: null, patients: {}, checked: {}, checked_aliases: {}, checklist: {}, checklist_aliases: {} };
   mergeRecordsCheckedBackupIntoIndex(ctx, empty);
   return empty;
 }
@@ -895,6 +918,55 @@ function resolveRecordsCheckedState(index, aliases = [], candidateKeys = []) {
     checked_at: latest.checked_at || null,
     changed_at: latest.changed_at || latest.checked_at || latest.unchecked_at || null,
   };
+}
+
+// ── Checklist hồ sơ giấy (bác sĩ/điều dưỡng/trưởng khoa ký, note bìa) ───────
+// Dùng lại nguyên xi cơ chế key + alias + backup đã chạy ổn định cho dấu "Đã
+// kiểm" ở trên, chỉ đổi map lưu (index.checklist / index.checklist_aliases) và
+// không có khái niệm tombstone "bỏ chọn" vì mỗi trường chỉ là true/false hiện tại,
+// không phải sự kiện có thể bị thu hồi như "Đã kiểm".
+
+function setRecordsChecklistAliasState(index, aliases, checklistEvent, changedAt) {
+  index.checklist_aliases = asPlainObject(index.checklist_aliases);
+  for (const alias of recordsCheckedAliasesForState(aliases)) {
+    if (!alias) continue;
+    index.checklist_aliases[alias] = { ...checklistEvent, changed_at: changedAt };
+  }
+}
+
+function ensureRecordsChecklistAliases(index) {
+  index.checklist = asPlainObject(index.checklist);
+  index.checklist_aliases = asPlainObject(index.checklist_aliases);
+  for (const [key, value] of Object.entries(index.checklist)) {
+    if (!value || typeof value !== 'object') continue;
+    const meta = index.patients?.[key];
+    const changedAt = value.updated_at || value.changed_at || new Date(0).toISOString();
+    for (const alias of recordsCheckedAliasesForState(recordsIdentityAliases(meta || {}, key))) {
+      const old = index.checklist_aliases[alias];
+      if (!old || recordsCheckedEventTime(old) <= recordsCheckedEventTime(value)) {
+        index.checklist_aliases[alias] = { ...value, changed_at: changedAt };
+      }
+    }
+  }
+  return index.checklist_aliases;
+}
+
+function resolveRecordsChecklistState(index, aliases = [], candidateKeys = []) {
+  const events = [];
+  for (const key of candidateKeys || []) {
+    const entry = index.checklist?.[key];
+    if (entry && typeof entry === 'object') events.push({ ...entry, _priority: 2 });
+    const keyAlias = index.checklist_aliases?.[`key::${String(key || '').trim()}`];
+    if (keyAlias && typeof keyAlias === 'object') events.push({ ...keyAlias, _priority: 3 });
+  }
+  for (const alias of recordsCheckedAliasesForState(aliases)) {
+    if (String(alias || '').startsWith('key::')) continue;
+    const entry = index.checklist_aliases?.[alias];
+    if (entry && typeof entry === 'object') events.push({ ...entry, _priority: 1 });
+  }
+  if (!events.length) return normalizePaperChecklist(null);
+  events.sort((a, b) => recordsCheckedEventTime(b) - recordsCheckedEventTime(a) || Number(b._priority || 0) - Number(a._priority || 0));
+  return normalizePaperChecklist(events[0]);
 }
 
 function aliasesIntersect(a, b) {
@@ -1686,6 +1758,13 @@ function normalizeRecordsPdfRows(inputRows) {
       xq: Number(row.xq || row.so_xq || 0),
       mri: Number(row.mri || row.so_mri || 0),
       ct: Number(row.ct || row.so_ct || 0),
+      // Hồ sơ cũ/PDF nội bộ không có các trường dưới đây -> in ô trống, không suy đoán.
+      discharge_date: String(row.discharge_date || row.ngay_ra_vien || '').trim(),
+      handover_deadline: String(row.handover_deadline || '').trim(),
+      ksd_status: String(row.ksd_status || '').trim(),
+      gpb_status: String(row.gpb_status || '').trim(),
+      cover_note: String(row.cover_note || '').replace(/\s+/g, ' ').trim(),
+      delivered_by: String(row.delivered_by || '').trim(),
     }))
     .filter(row => row.ho_ten || row.ma_bn || row.so_luu_tru);
 
@@ -1731,6 +1810,7 @@ async function createRecordsCheckPdf(ctx, inputRows, options = {}) {
     generated_at: new Date().toISOString(),
     title: String(options.title || 'DANH SÁCH KIỂM HỒ SƠ ĐÃ KIỂM').trim(),
     subtitle: String(options.subtitle || '').trim(),
+    delivered_by: String(options.delivered_by || '').trim(),
     rows,
   });
 
@@ -1748,6 +1828,38 @@ function recordsFirstDateText(...values) {
     if (text) return text;
   }
   return '';
+}
+
+// Chuyển text ngày/giờ ra viện (nhiều định dạng EMR khác nhau) sang ISO có múi
+// giờ Việt Nam (+07:00, không có DST) để tính hạn 48 giờ. hasTime=false nghĩa
+// là nguồn chỉ có NGÀY, không có giờ thật — bắt buộc phải biết rõ điều này để
+// không tự bịa giờ giả cho hạn bàn giao.
+function recordsDischargeDateTimeInfo(text) {
+  const raw = String(text ?? '').trim();
+  if (!raw) return { iso: null, hasTime: false };
+  const pad2 = v => String(v).padStart(2, '0');
+
+  const withTime = raw.match(/(\d{1,2})[:h](\d{2})\s+(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
+  if (withTime) {
+    const [, hh, mm, dd, mo, yy] = withTime;
+    return { iso: `${yy}-${pad2(mo)}-${pad2(dd)}T${pad2(hh)}:${mm}:00+07:00`, hasTime: true };
+  }
+  const isoWithTime = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})[T ](\d{1,2}):(\d{2})/);
+  if (isoWithTime) {
+    const [, yy, mo, dd, hh, mm] = isoWithTime;
+    return { iso: `${yy}-${pad2(mo)}-${pad2(dd)}T${pad2(hh)}:${mm}:00+07:00`, hasTime: true };
+  }
+  const dateOnly = raw.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
+  if (dateOnly) {
+    const [, dd, mo, yy] = dateOnly;
+    return { iso: `${yy}-${pad2(mo)}-${pad2(dd)}T00:00:00+07:00`, hasTime: false };
+  }
+  const isoDateOnly = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (isoDateOnly) {
+    const [, yy, mo, dd] = isoDateOnly;
+    return { iso: `${yy}-${pad2(mo)}-${pad2(dd)}T00:00:00+07:00`, hasTime: false };
+  }
+  return { iso: null, hasTime: false };
 }
 
 function recordsHasBadDischargeDate(cardOrMeta) {
@@ -2049,6 +2161,59 @@ async function fetch_records_check_case(ctx, records_meta, options = {}) {
   return { ma_bn, case_key: storage_key, saved, file_failures };
 }
 
+function recordsSubmittedAtForAliases(submissionDashboard, aliases) {
+  const safeAliases = recordsCheckedAliasesForState(aliases);
+  if (!safeAliases.length) return null;
+  for (const batch of Array.isArray(submissionDashboard?.batches) ? submissionDashboard.batches : []) {
+    for (const item of Array.isArray(batch?.items) ? batch.items : []) {
+      const effectiveStatus = String(item?.effective_status || item?.status || '').trim().toLowerCase();
+      if (effectiveStatus !== 'submitted') continue;
+      const itemAliases = recordsCheckedAliasesForState([item?.record_id, ...(Array.isArray(item?.aliases) ? item.aliases : [])]);
+      if (!aliasesIntersect(safeAliases, itemAliases)) continue;
+      if (batch?.submitted_at) return batch.submitted_at;
+    }
+  }
+  return null;
+}
+
+// Gắn thêm 3 nhóm trạng thái độc lập cho 1 hồ sơ (spec mục 6): KSĐ/GPB, hạn
+// bàn giao 48 giờ + trạng thái nộp, và trạng thái hồ sơ giấy — không gộp chung
+// vào 1 trạng thái duy nhất, và không suy đoán KSĐ/GPB khi adapter chưa có nguồn.
+function enrichRecordsCheckCard(card, submissionDashboardForLookup) {
+  const ksdGpb = getKsdGpbStatus({ discharge: card.discharge, cls: card.cls });
+  const dischargeInfo = recordsDischargeDateTimeInfo(card.discharge_time);
+  const aliases = recordsIdentityAliases(card, card.case_key || card.merged_key || card.storage_key || '');
+  const handedOverAt = recordsSubmittedAtForAliases(submissionDashboardForLookup, aliases);
+  const handover = computeHandover({
+    dischargedAtIso: dischargeInfo.iso,
+    dischargeHasTime: dischargeInfo.hasTime,
+    handedOverAt,
+  });
+  const checklist = card.paper_checklist || normalizePaperChecklist(null);
+  const paperStatus = paperRecordStatus(checklist, ksdGpb);
+  const readiness = submissionReadiness({
+    hasDischargeDate: Boolean(card.discharge_time),
+    hasStorage: Boolean(card.so_luu_tru || card.storage_no),
+    checklist,
+    ksdGpb,
+  });
+
+  let submissionState = 'not_ready';
+  if (handedOverAt) submissionState = handover.state === 'submitted_late' ? 'submitted_late' : 'submitted_on_time';
+  else if (handover.state === 'overdue') submissionState = 'overdue';
+  else if (readiness.ready) submissionState = 'ready';
+
+  card.ksd_gpb = ksdGpb;
+  card.handover = handover;
+  card.paper_status = paperStatus;
+  card.paper_checklist = checklist;
+  card.submission_ready = readiness.ready;
+  card.submission_missing = readiness.missing;
+  card.submission_state = submissionState;
+  card.cover_note_suggestion = coverNoteSuggestion(ksdGpb);
+  return card;
+}
+
 function buildRecordsCheckDashboard(ctx) {
   const index = read_records_check_index(ctx);
   ensureRecordsCheckedAliases(index);
@@ -2087,6 +2252,15 @@ function buildRecordsCheckDashboard(ctx) {
             recoveredChecked = true;
           }
         }
+        // "Đã kiểm hồ sơ giấy" (mục 1/7 của checklist) dùng map index.checked/
+        // checked_aliases riêng (đã xử lý ở trên, có khóa/tombstone khi hồ sơ đã
+        // nộp); 6 mục còn lại dùng map index.checklist/checklist_aliases. Gộp lại
+        // thành một object checklist đầy đủ cho frontend.
+        card.paper_checklist = {
+          ...resolveRecordsChecklistState(index, aliases, [key]),
+          checked: Boolean(card.checked),
+          checked_at: card.checked_at || null,
+        };
         return card;
       }
       catch (err) {
@@ -2096,7 +2270,8 @@ function buildRecordsCheckDashboard(ctx) {
     })
     .filter(Boolean);
 
-  const patients = mergeRecordsCheckCardsByStorage(rawPatients);
+  const submissionDashboardForLookup = buildRecordsSubmissionDashboard(records_check_persistent_dir(ctx));
+  const patients = mergeRecordsCheckCardsByStorage(rawPatients).map(card => enrichRecordsCheckCard(card, submissionDashboardForLookup));
 
   if (recoveredChecked || reconciledLegacy || recoveredFromPdf) write_records_check_index(ctx, index);
   const visibleCheckedMap = visibleRecordsCheckedMap(index, metas);
@@ -3045,27 +3220,10 @@ router.get('/hchanh/dashboard', handleRoute((_req, res, ctx) => {
 
 // ── Kiểm hồ sơ: quét danh sách Hoàn tất độc lập ─────────────────────────────
 
-router.post('/hchanh/records-check/checked', handleRoute((req, res, ctx) => {
-  const requested = Array.isArray(req.body?.case_keys || req.body?.caseKeys)
-    ? (req.body.case_keys || req.body.caseKeys)
-    : [req.body?.case_key || req.body?.caseKey || req.body?.encounter_key || req.body?.encounterKey];
-  const caseKeys = [...new Set(requested.map(records_storage_key).filter(Boolean))];
-  if (!caseKeys.length) return res.status(400).json({ status: 'error', message: 'Thiếu case_key.' });
-
-  const checked = boolFromBody(req.body?.checked, false);
-  const index = read_records_check_index(ctx);
-  ensureRecordsCheckedAliases(index);
-  const changedAt = new Date().toISOString();
-  const targetAliases = new Set();
-
-  for (const caseKey of caseKeys) {
-    const meta = index.patients?.[caseKey];
-    for (const alias of recordsIdentityAliases(meta || {}, caseKey)) targetAliases.add(alias);
-  }
-  const safeTargetAliases = recordsCheckedAliasesForState([...targetAliases]);
-
-  // Hồ sơ đã chốt nộp là dữ liệu lịch sử đã khóa. Không cho đổi dấu “Đã kiểm”
-  // bằng UI cũ, request trực tiếp hoặc localStorage stale; hồ sơ bị trả về không bị khóa.
+// Hồ sơ đã chốt nộp là dữ liệu lịch sử đã khóa. Dùng chung cho dấu "Đã kiểm" và
+// checklist hồ sơ giấy (bác sĩ/điều dưỡng/trưởng khoa ký, note bìa): không ai
+// được sửa âm thầm sau khi KHTH đã nhận, kể cả qua request trực tiếp hay UI cũ.
+function findRecordsSubmissionLockMatches(ctx, safeTargetAliases) {
   const submissionDashboard = buildRecordsSubmissionDashboard(records_check_persistent_dir(ctx));
   const submittedMatches = [];
   for (const batch of Array.isArray(submissionDashboard?.batches) ? submissionDashboard.batches : []) {
@@ -3087,6 +3245,29 @@ router.post('/hchanh/records-check/checked', handleRoute((req, res, ctx) => {
       });
     }
   }
+  return submittedMatches;
+}
+
+router.post('/hchanh/records-check/checked', handleRoute((req, res, ctx) => {
+  const requested = Array.isArray(req.body?.case_keys || req.body?.caseKeys)
+    ? (req.body.case_keys || req.body.caseKeys)
+    : [req.body?.case_key || req.body?.caseKey || req.body?.encounter_key || req.body?.encounterKey];
+  const caseKeys = [...new Set(requested.map(records_storage_key).filter(Boolean))];
+  if (!caseKeys.length) return res.status(400).json({ status: 'error', message: 'Thiếu case_key.' });
+
+  const checked = boolFromBody(req.body?.checked, false);
+  const index = read_records_check_index(ctx);
+  ensureRecordsCheckedAliases(index);
+  const changedAt = new Date().toISOString();
+  const targetAliases = new Set();
+
+  for (const caseKey of caseKeys) {
+    const meta = index.patients?.[caseKey];
+    for (const alias of recordsIdentityAliases(meta || {}, caseKey)) targetAliases.add(alias);
+  }
+  const safeTargetAliases = recordsCheckedAliasesForState([...targetAliases]);
+
+  const submittedMatches = findRecordsSubmissionLockMatches(ctx, safeTargetAliases);
   if (submittedMatches.length) {
     const submissionDate = submittedMatches[0].submission_date;
     return res.status(423).json({
@@ -3148,6 +3329,63 @@ router.post('/hchanh/records-check/checked', handleRoute((req, res, ctx) => {
     checked,
     checked_at: checkedAt,
     storage: records_check_index_path(ctx),
+  });
+}));
+
+const PAPER_CHECKLIST_PATCH_FIELDS = ['doctor_signed', 'nurse_signed', 'head_signed', 'cover_note_done', 'note'];
+
+router.post('/hchanh/records-check/paper-checklist', handleRoute((req, res, ctx) => {
+  const requested = Array.isArray(req.body?.case_keys || req.body?.caseKeys)
+    ? (req.body.case_keys || req.body.caseKeys)
+    : [req.body?.case_key || req.body?.caseKey || req.body?.encounter_key || req.body?.encounterKey];
+  const caseKeys = [...new Set(requested.map(records_storage_key).filter(Boolean))];
+  if (!caseKeys.length) return res.status(400).json({ status: 'error', message: 'Thiếu case_key.' });
+
+  const rawPatch = req.body?.patch && typeof req.body.patch === 'object' ? req.body.patch : {};
+  const patch = {};
+  for (const field of PAPER_CHECKLIST_PATCH_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(rawPatch, field)) patch[field] = rawPatch[field];
+  }
+  if (!Object.keys(patch).length) return res.status(400).json({ status: 'error', message: 'Không có mục checklist nào để cập nhật.' });
+
+  const actor = String(req.body?.actor || req.body?.by || '').trim().slice(0, 200);
+  const index = read_records_check_index(ctx);
+  ensureRecordsCheckedAliases(index);
+  ensureRecordsChecklistAliases(index);
+  const changedAt = new Date().toISOString();
+  const targetAliases = new Set();
+  for (const caseKey of caseKeys) {
+    const meta = index.patients?.[caseKey];
+    for (const alias of recordsIdentityAliases(meta || {}, caseKey)) targetAliases.add(alias);
+  }
+  const safeTargetAliases = recordsCheckedAliasesForState([...targetAliases]);
+
+  const submittedMatches = findRecordsSubmissionLockMatches(ctx, safeTargetAliases);
+  if (submittedMatches.length) {
+    const submissionDate = submittedMatches[0].submission_date;
+    return res.status(423).json({
+      status: 'locked',
+      message: `Hồ sơ đã nộp${submissionDate ? ` ngày ${recordsSubmissionDateLabel(submissionDate)}` : ''}; checklist hồ sơ giấy đã được khóa để tránh thao tác nhầm. Nếu phát hiện sai sót, ghi nhận ở mục "Sai sót sau bàn giao".`,
+      submission_date: submissionDate,
+      locked_records: submittedMatches,
+    });
+  }
+
+  index.checklist = asPlainObject(index.checklist);
+  let latestChecklist = null;
+  for (const caseKey of caseKeys) {
+    const current = resolveRecordsChecklistState(index, recordsIdentityAliases(index.patients?.[caseKey] || {}, caseKey), [caseKey]);
+    const next = applyPaperChecklistPatch(current, patch, actor, changedAt);
+    index.checklist[caseKey] = next;
+    setRecordsChecklistAliasState(index, recordsIdentityAliases(index.patients?.[caseKey] || {}, caseKey), next, changedAt);
+    latestChecklist = next;
+  }
+
+  write_records_check_index(ctx, index);
+  return res.json({
+    status: 'ok',
+    case_keys: caseKeys,
+    checklist: latestChecklist,
   });
 }));
 
@@ -3322,15 +3560,32 @@ router.get('/hchanh/records-check/submissions', handleRoute((_req, res, ctx) => 
   return res.json(buildRecordsSubmissionDashboard(records_check_persistent_dir(ctx)));
 }));
 
+// Điều kiện "Sẵn sàng nộp" (spec mục 8) không chỉ là dấu "Đã kiểm" — còn cần đủ
+// ngày ra viện, số lưu trữ, chữ ký bác sĩ/điều dưỡng/trưởng khoa, và note bìa
+// nếu đang nợ KSĐ/GPB. Trả về đúng dạng khóa thô (không prefix) để khớp
+// record.aliases/source_case_keys mà frontend đã gửi lên.
+function recordsSubmissionReadyAliases(ctx) {
+  const dashboard = buildRecordsCheckDashboard(ctx);
+  const out = new Set();
+  for (const card of dashboard.patients || []) {
+    if (!card?.submission_ready) continue;
+    const keys = [card.case_key, card.merged_key, card.storage_key, ...(Array.isArray(card.source_case_keys) ? card.source_case_keys : [])];
+    for (const key of keys) {
+      const safe = records_storage_key(key);
+      if (safe) out.add(safe);
+    }
+  }
+  return [...out];
+}
+
 router.post('/hchanh/records-check/submissions/add', handleRoute((req, res, ctx) => {
   const submissionDate = req.body?.submission_date || req.body?.submissionDate || req.body?.date;
   const records = Array.isArray(req.body?.records) ? req.body.records : [];
-  const index = read_records_check_index(ctx);
   const result = addRecordsSubmission(
     records_check_persistent_dir(ctx),
     submissionDate,
     records,
-    recordsCheckedAliases(index)
+    recordsSubmissionReadyAliases(ctx)
   );
   appendActivity(ctx, {
     kind: 'records_check.submission.add',
@@ -3349,16 +3604,44 @@ router.post('/hchanh/records-check/submissions/add', handleRoute((req, res, ctx)
 
 router.post('/hchanh/records-check/submissions/submit', handleRoute((req, res, ctx) => {
   const batchId = req.body?.batch_id || req.body?.batchId || req.body?.submission_date || req.body?.date;
-  const result = submitRecordsSubmissionBatch(
+  const deliveredBy = String(req.body?.delivered_by || req.body?.deliveredBy || '').trim();
+  const receivedBy = String(req.body?.received_by || req.body?.receivedBy || '').trim();
+  let result = submitRecordsSubmissionBatch(
     records_check_persistent_dir(ctx),
     batchId,
-    req.body?.note || req.body?.submission_note || ''
+    req.body?.note || req.body?.submission_note || '',
+    deliveredBy,
+    receivedBy
   );
+
+  // Chụp lại trạng thái KSĐ/GPB + hồ sơ giấy tại đúng thời điểm bàn giao, cho
+  // từng hồ sơ vừa chốt — không đổi ngược khi dữ liệu gốc thay đổi về sau.
+  if (!result.already_submitted) {
+    const dashboardNow = buildRecordsCheckDashboard(ctx);
+    const snapshotsByAlias = {};
+    for (const card of dashboardNow.patients || []) {
+      const snap = {
+        ksd_status: card.ksd_gpb?.ksd?.status || '',
+        gpb_status: card.ksd_gpb?.gpb?.status || '',
+        paper_status_label: card.paper_status?.label || '',
+        note: card.paper_checklist?.note || '',
+      };
+      const keys = [card.case_key, card.merged_key, card.storage_key, ...(Array.isArray(card.source_case_keys) ? card.source_case_keys : [])];
+      for (const key of keys) {
+        const safe = records_storage_key(key);
+        if (safe) snapshotsByAlias[safe] = snap;
+      }
+    }
+    result = { ...result, dashboard: captureRecordsSubmissionHandoverSnapshots(records_check_persistent_dir(ctx), batchId, snapshotsByAlias) };
+  }
+
   appendActivity(ctx, {
     kind: 'records_check.submission.submit',
     submission_date: normalizeRecordsSubmissionDate(batchId),
     count: result.count,
     already_submitted: Boolean(result.already_submitted),
+    delivered_by: deliveredBy,
+    received_by: receivedBy,
   });
   return res.json({
     status: 'ok',
@@ -3367,6 +3650,28 @@ router.post('/hchanh/records-check/submissions/submit', handleRoute((req, res, c
       : `Đã chốt ${result.count} hồ sơ là đã nộp ngày ${recordsSubmissionDateLabel(batchId)}.`,
     count: result.count,
     already_submitted: Boolean(result.already_submitted),
+    dashboard: result.dashboard,
+  });
+}));
+
+router.post('/hchanh/records-check/submissions/discrepancy', handleRoute((req, res, ctx) => {
+  const batchId = req.body?.batch_id || req.body?.batchId || req.body?.submission_date || req.body?.date;
+  const itemId = String(req.body?.item_id || req.body?.itemId || '').trim();
+  const result = addRecordsSubmissionDiscrepancy(records_check_persistent_dir(ctx), batchId, itemId, {
+    content: req.body?.content,
+    reported_by: req.body?.reported_by || req.body?.reportedBy,
+    related_people: req.body?.related_people || req.body?.relatedPeople,
+    resolution: req.body?.resolution,
+  });
+  appendActivity(ctx, {
+    kind: 'records_check.submission.discrepancy',
+    submission_date: normalizeRecordsSubmissionDate(batchId),
+    item_id: itemId,
+  });
+  return res.json({
+    status: 'ok',
+    message: 'Đã ghi nhận sai sót sau bàn giao.',
+    discrepancy: result.discrepancy,
     dashboard: result.dashboard,
   });
 }));
@@ -3434,10 +3739,12 @@ router.post('/hchanh/records-check/submissions/export-pdf', async (req, res) => 
 
     const dateLabel = recordsSubmissionDateLabel(batchId);
     const prefix = `nop_ho_so_${batchId.replace(/-/g, '')}`;
+    const deliveredBy = String(req.body?.delivered_by || req.body?.deliveredBy || batch?.delivered_by || '').trim();
     const pdf = await createRecordsCheckPdf(ctx, rows, {
       prefix,
       title: `DANH SÁCH NỘP HỒ SƠ NGÀY ${dateLabel}`,
       subtitle: `Tổng số: ${rows.length} hồ sơ`,
+      delivered_by: deliveredBy,
     });
     const dashboard = markRecordsSubmissionBatchExported(records_check_persistent_dir(ctx), batchId, pdf.outName);
     appendActivity(ctx, { kind: 'records_check.submission.export_pdf', submission_date: batchId, count: rows.length, file_name: pdf.outName });
