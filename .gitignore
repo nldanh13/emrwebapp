@@ -1,0 +1,73 @@
+# Dependencies
+node_modules/
+.venv/
+*.egg-info/
+
+# Build output
+dist/
+release/
+coverage/
+debug_bundle/
+
+# Runtime data / EMR patient data — KHÔNG commit / KHÔNG đóng gói
+.runtime/
+research_store/
+care_baseline_store/
+logs/
+reports/
+*.log
+*.pdf
+research/**/*.csv
+data_raw.json
+data_sorted.json
+KetQua_YLenh.json
+DuLieu_PhanLoai.json
+data_phan_loai_chuan_*.json
+_tmp_in_*.json
+_tmp_out_*.json
+input_targets_*.json
+input_targets_care_*.json
+
+# Real config / credentials
+config/config.json
+config/care_baseline.json
+.env
+
+# Python cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Backup/temp
+*.bak
+*.py.bak
+*.js.bak
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+# Cleanup script
+.cleanup_backup/
+cleanup_report*.json
+
+# PDF in ra viện / bảng kê chứa dữ liệu bệnh án
+in/
+
+# User/token config and local imports
+config/users.json
+config/hchanh/imports/*.csv
+!config/hchanh/imports/README.md
+*.secret
+secrets/
+
+data_shape_bundle/
+
+data/
+debug/

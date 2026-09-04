@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "description": "Luật tạo giờ thực hiện khi y lệnh thuốc thiếu dòng giờ dùng.",
+  "rules": {
+    "order_time_first_then_remaining_routine": {
+      "routine_times": ["08:00", "16:00", "23:00"],
+      "first_dose": "gio_y_lenh",
+      "skip_routine_not_after_order_time": true,
+      "skip_first_routine_when_order_before_first": true,
+      "max_count": 6
+    },
+    "routine_8_16_23": {
+      "routine_times": ["08:00", "16:00", "23:00"],
+      "first_dose": "routine",
+      "max_count": 6
+    }
+  }
+}

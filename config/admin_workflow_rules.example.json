@@ -1,0 +1,124 @@
+{
+  "supplyDictionary": [
+    {
+      "id": "infusion_basic",
+      "match": ["truyen dich", "truyền dịch", "natri clorid", "ringer", "glucose", "mannitol", "vancomycin"],
+      "supplies": [
+        { "label": "Dây truyền dịch", "qty": 1, "category": "required", "source": "dictionary:infusion" },
+        { "label": "Kim luồn/kim truyền", "qty": 1, "category": "required", "source": "dictionary:infusion" }
+      ]
+    },
+    {
+      "id": "iv_push_basic",
+      "match": ["tmc", "tiêm mạch chậm", "tiem mach cham", "tiêm tĩnh mạch", "tiem tinh mach", "iv"],
+      "supplies": [
+        { "label": "Bơm tiêm 20ml", "qty": 1, "category": "required", "source": "dictionary:iv_push" },
+        { "label": "Kim pha/kim tiêm", "qty": 1, "category": "required", "source": "dictionary:iv_push" }
+      ]
+    },
+    {
+      "id": "im_basic",
+      "match": ["tiêm bắp", "tiem bap", " tb "],
+      "supplies": [
+        { "label": "Bơm tiêm 5ml", "qty": 1, "category": "required", "source": "dictionary:im" },
+        { "label": "Kim tiêm bắp", "qty": 1, "category": "required", "source": "dictionary:im" }
+      ]
+    },
+    {
+      "id": "wound_care_basic",
+      "match": ["thay băng", "thay bang", "cắt chỉ", "cat chi", "rửa vết thương", "rua vet thuong", "chăm sóc vết mổ"],
+      "supplies": [
+        { "label": "Gạc vô khuẩn", "qty": 1, "category": "required", "source": "dictionary:wound" },
+        { "label": "Dung dịch sát khuẩn", "qty": 1, "category": "required", "source": "dictionary:wound" },
+        { "label": "Băng cuộn/băng dính y tế", "qty": 1, "category": "required", "source": "dictionary:wound" }
+      ]
+    },
+    {
+      "id": "urinary_catheter",
+      "match": ["đặt sonde tiểu", "dat sonde tieu", "thông tiểu", "thong tieu"],
+      "supplies": [
+        { "label": "Sonde tiểu", "qty": 1, "category": "required", "source": "dictionary:urinary_catheter" },
+        { "label": "Túi nước tiểu", "qty": 1, "category": "required", "source": "dictionary:urinary_catheter" }
+      ]
+    }
+  ],
+  "routineSupplies": [
+    { "label": "Găng tay khám", "qty": 4, "category": "routine", "routine": true, "alert": false, "source": "routine:inpatient_day" }
+  ],
+  "surgeryPackages": [
+    {
+      "id": "pttt_ket_hop_xuong",
+      "name": "Kết hợp xương / nẹp vít",
+      "match": ["ket hop xuong", "kết hợp xương", "nep vit", "nẹp vít", "dinh noi tuy", "đinh nội tuỷ", "bat vit", "bắt vít"],
+      "severity": "error",
+      "required": [
+        { "label": "Bộ dụng cụ kết hợp xương", "match": ["bo dung cu ket hop xuong", "bộ dụng cụ kết hợp xương", "ket hop xuong"] },
+        { "label": "Vít/nẹp theo mã PTTT", "match": ["vit", "vít", "nep", "nẹp", "plate", "screw"] },
+        { "label": "Bơm rửa/sát khuẩn vùng mổ", "match": ["bom rua", "bơm rửa", "sat khuan", "sát khuẩn", "povidone", "betadine"] }
+      ]
+    },
+    {
+      "id": "pttt_noi_soi",
+      "name": "Phẫu thuật nội soi",
+      "match": ["noi soi", "nội soi", "trocar", "cat tui mat noi soi", "cắt túi mật nội soi", "cat ruot thua noi soi"],
+      "severity": "error",
+      "required": [
+        { "label": "Trocar/cổng nội soi theo mã PTTT", "match": ["trocar", "cong noi soi", "cổng nội soi"] },
+        { "label": "Bag extraction/túi lấy bệnh phẩm nếu có chỉ định", "match": ["bag", "tui lay benh pham", "túi lấy bệnh phẩm", "extraction"] },
+        { "label": "Clip/dao đốt hoặc dụng cụ cầm máu theo ca", "match": ["clip", "dao dot", "dao đốt", "harmonic", "ligasure", "cam mau", "cầm máu"] }
+      ]
+    },
+    {
+      "id": "pttt_cot_song",
+      "name": "Cột sống / giải ép / cố định",
+      "match": ["cot song", "cột sống", "giai ep", "giải ép", "co dinh cot song", "cố định cột sống", "thoat vi dia dem", "thoát vị đĩa đệm"],
+      "severity": "error",
+      "required": [
+        { "label": "Bộ dụng cụ cột sống", "match": ["bo dung cu cot song", "bộ dụng cụ cột sống", "cot song", "cột sống"] },
+        { "label": "Vít/nẹp/rod theo mã PTTT nếu có cố định", "match": ["vit", "vít", "nep", "nẹp", "rod", "screw"] },
+        { "label": "Vật tư dẫn lưu/khâu vết mổ", "match": ["dan luu", "dẫn lưu", "chi khau", "chỉ khâu", "khau vet mo", "khâu vết mổ"] }
+      ]
+    }
+  ],
+  "medicationRules": [
+    {
+      "id": "injectable_schedule",
+      "title": "Thuốc tiêm/truyền phải có giờ dùng rõ",
+      "match": ["tmc", "tiêm", "tiem", "truyền", "truyen", "iv"],
+      "requireSchedule": true,
+      "severity": "warn"
+    },
+    {
+      "id": "cefazolin_postop_clean",
+      "title": "Cefazolin sau mổ sạch vượt quy tắc khoa",
+      "match": ["cefazolin"],
+      "contextTags": ["POST_OP"],
+      "maxTimesPerDay": 1,
+      "requiresStopPlan": true,
+      "severity": "error",
+      "action": "Xác nhận lại phác đồ sau mổ sạch; nếu tiếp tục dùng phải có chỉ định/hồ sơ rõ."
+    }
+  ],
+  "duplicateIngredientGroups": [
+    { "id": "duplicate_nsaid", "group": "NSAID", "match": ["diclofenac", "ketorolac", "meloxicam", "celecoxib", "etoricoxib", "ibuprofen"], "maxActive": 1, "severity": "warn" },
+    { "id": "duplicate_paracetamol", "group": "Paracetamol", "match": ["paracetamol", "acetaminophen", "efferalgan", "hapacol", "perfalgan"], "maxActive": 1, "severity": "warn" }
+  ],
+  "billingKeywords": {
+    "bhyt": ["bhyt", "bảo hiểm", "bao hiem", "80%", "95%", "100%", "đồng chi trả", "dong chi tra"],
+    "selfPay": ["tt0", "tự túc", "tu tuc", "tự trả", "tu tra", "ngoài bhyt", "ngoai bhyt", "dịch vụ", "dich vu"]
+  },
+  "dischargeDocumentRules": {
+    "requireExitDatetime": true,
+    "requireDiagnosis": true,
+    "typoPairs": [
+      { "bad": "chuan doan", "good": "chẩn đoán" },
+      { "bad": "phau thuat", "good": "phẫu thuật" },
+      { "bad": "gay xuong", "good": "gãy xương" },
+      { "bad": "tai kham", "good": "tái khám" }
+    ]
+  },
+  "sickLeaveRules": { "maxExtraDaysAfterExit": 30, "requireDateRange": true },
+  "followUpRules": { "requireForEmergencyAdmission": true, "requireForReferral": true },
+  "printDocuments": ["BANG_KE_CHI_PHI", "PHIEU_CONG_KHAI"],
+  "spellingWatchWords": ["chẩn đoán", "chuẩn đoán", "gãy", "gay", "phẫu thuật", "phẩu thuật", "chuyển viện", "chuyển khoa"]
+}

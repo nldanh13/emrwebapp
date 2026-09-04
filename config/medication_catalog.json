@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "description": "Bộ nhớ thuốc dùng để suy luận khi EMR chỉ ghi tên thuốc hoặc thiếu dòng đường dùng.",
+  "medications": [
+    {
+      "canonical": "THERMODOL",
+      "aliases": [
+        "THERMODOL",
+        "PARACETAMOL 1G",
+        "THERMODON",
+        "THERMO DON",
+        "THERMODOL 1G",
+        "PARACETAMON 1G",
+        "PARAXETAMOL 1G",
+        "PARA XETAMON 1G",
+        "PA RA XÊ TA MÔN 1G",
+        "PA RA XE TA MON 1G",
+        "PA RA CETAMOL 1G",
+        "EFFERALGAN 1G",
+        "HAPACOL 1G",
+        "PHARBACOL 1G",
+        "KORIC 1G"
+      ],
+      "category": "dich_truyen",
+      "default_route": "TTM",
+      "default_route_text": "TTM 100 giọt/phút (suy luận từ medication_catalog)",
+      "default_volume_ml": 100,
+      "default_rate": "100",
+      "default_rate_text": "100 giọt/phút",
+      "schedule_rule": "order_time_first_then_remaining_routine",
+      "semantic_aliases": [
+        "THERMODON",
+        "THERMO DON",
+        "PA RA XÊ TA MÔN 1G",
+        "PA RA XE TA MON 1G",
+        "PARA XETAMON 1G",
+        "PARACETAMON 1G"
+      ]
+    }
+  ]
+}

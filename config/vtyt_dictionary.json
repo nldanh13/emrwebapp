@@ -1,0 +1,275 @@
+{
+  "version": 2,
+  "description": "Dictionary VTYT khoa Ngoại Chấn Thương Chỉnh Hình và Thần Kinh. Mã VTYT lấy từ EMR thực tế.",
+  "_updated": "2026-05-31",
+  "quantityConfig": {
+    "glovesPerPatientPerDayMin": 4,
+    "glovesPerPatientPerDayMax": 5,
+    "infusionContinuityGapMinutes": 180,
+    "ivCatheterLookbackDays": 4,
+    "ivCatheterMinDaysBetween": 3,
+    "ivCatheterDefaultQuantity": 1,
+    "ivCatheterAge55PlusQuantity": 2,
+    "ivCatheterPlugPerDay": 1,
+    "antibioticTmcSyringe20mlPerDose": 1,
+    "otherTmcSyringe10mlPerDose": 1,
+    "imSyringe5mlPerDose": 1,
+    "naclMixSyringe10mlPerDose": 1,
+    "mixingNeedlePerDose": 1
+  },
+  "catalog": {
+    "_comment": "Mã VTYT lấy từ trang 'Nhập thuốc VTYT' của EMR thực tế",
+    "GANG_TAY_KHAM": {
+      "code": "VTYT.000004174",
+      "name": "Găng tay khám Latex có bột hiệu I-Med",
+      "searchKeyword": "Găng tay khám",
+      "aliases": [
+        "găng tay khám",
+        "gang tay kham",
+        "latex",
+        "gang tay"
+      ]
+    },
+    "DAY_TRUYEN_DICH": {
+      "code": "VTYT.000004114",
+      "name": "Dây truyền dịch UVERDA/ UVD-3 (UVD-31031000)",
+      "searchKeyword": "Dây truyền dịch",
+      "aliases": [
+        "dây truyền dịch",
+        "day truyen dich",
+        "dây truyền",
+        "uverda",
+        "uvd"
+      ]
+    },
+    "KIM_LUON_TM": {
+      "code": "VTYT.000004258",
+      "name": "Kim luồn tĩnh mạch an toàn kín INTROCAN SAFETY",
+      "searchKeyword": "Kim luồn tĩnh mạch",
+      "aliases": [
+        "kim luồn",
+        "kim luon",
+        "introcan",
+        "medcath",
+        "kim luồn tĩnh mạch"
+      ]
+    },
+    "NUT_SAFETOUCH": {
+      "code": "VTYT.000004522",
+      "name": "SafeTouch Plug IV Connector",
+      "searchKeyword": "SafeTouch Plug",
+      "aliases": [
+        "safetouch",
+        "plug iv",
+        "nút kim luồn",
+        "nut kim luon",
+        "iv connector"
+      ]
+    },
+    "BANG_DINH_VO_TRUNG_WEMSO": {
+      "code": "VTYT.000003881",
+      "name": "Băng dính vô trùng WEMSO",
+      "searchKeyword": "Băng dính vô trùng WEMSO",
+      "aliases": [
+        "băng dính vô trùng wemso",
+        "wemso",
+        "bang dinh vo trung"
+      ]
+    },
+    "BANG_DINH_DECOMED": {
+      "code": "VTYT.000003860",
+      "name": "Băng dính vô trùng vải không dệt, có gạc DECOMED (size 250x90 mm)",
+      "searchKeyword": "Băng dính DECOMED",
+      "aliases": [
+        "decomed",
+        "băng dính decomed",
+        "bang dinh decomed",
+        "băng gạc decomed"
+      ]
+    },
+    "BOM_TIEM_20ML": {
+      "code": "VTYT.000004017",
+      "name": "Bơm tiêm vô trùng sử dụng một lần 20ml/cc, kim các cỡ, VIKIMCO",
+      "searchKeyword": "Bơm tiêm 20ml",
+      "aliases": [
+        "bơm tiêm 20ml",
+        "bom tiem 20ml",
+        "syringe 20ml",
+        "vikimco 20ml"
+      ]
+    },
+    "KIM_TIEM_TANAPHAR": {
+      "code": "VTYT.000004280",
+      "name": "Kim tiêm Tanaphar",
+      "searchKeyword": "Kim tiêm Tanaphar",
+      "aliases": [
+        "kim tiêm tanaphar",
+        "kim tiem tanaphar",
+        "tanaphar",
+        "kim pha thuốc",
+        "kim tiem pha"
+      ]
+    }
+  },
+  "dailySupplies": [
+    {
+      "id": "daily_gloves",
+      "key": "GANG_TAY_KHAM",
+      "qty": 5,
+      "reason": "Găng tay khám — nhập mỗi ngày cho BN còn điều trị",
+      "enabled": true
+    }
+  ],
+  "customRules": [
+    {
+      "id": "truyen_dich_day_truyen",
+      "enabled": false,
+      "category": "medication",
+      "match": [
+        "tiêm truyền",
+        "tĩnh mạch",
+        "truyen dich",
+        "chai",
+        "túi",
+        "truyền"
+      ],
+      "perDose": false,
+      "reason": "Mỗi phiên truyền dịch cần 1 dây truyền (trừ khi cách nhau < 180 phút)",
+      "supplies": [
+        {
+          "key": "DAY_TRUYEN_DICH",
+          "qty": 1
+        }
+      ],
+      "disabledReason": "Đã có rule lõi xử lý; tắt để không cộng trùng vật tư."
+    },
+    {
+      "id": "tiem_bap_tiem_duoi_da_bom_tiem",
+      "enabled": false,
+      "category": "medication",
+      "match": [
+        "tiêm bắp",
+        "tiêm dưới da",
+        "TB",
+        "TDD",
+        "bắp"
+      ],
+      "perDose": true,
+      "reason": "Mỗi cử tiêm bắp/dưới da cần 1 bơm tiêm 20ml + 1 kim tiêm",
+      "supplies": [
+        {
+          "key": "BOM_TIEM_20ML",
+          "qty": 1
+        },
+        {
+          "key": "KIM_TIEM_TANAPHAR",
+          "qty": 1
+        }
+      ],
+      "disabledReason": "Đã có rule lõi xử lý; tắt để không cộng trùng vật tư."
+    },
+    {
+      "id": "tmc_antibiotic_bom_tiem_kim",
+      "enabled": false,
+      "category": "medication",
+      "match": [
+        "tiêm tĩnh mạch chậm",
+        "tmc",
+        "tiêm mạch",
+        "bolus"
+      ],
+      "perDose": true,
+      "reason": "Mỗi cử TMC kháng sinh cần 1 bơm tiêm 20ml + 1 kim tiêm pha",
+      "supplies": [
+        {
+          "key": "BOM_TIEM_20ML",
+          "qty": 1
+        },
+        {
+          "key": "KIM_TIEM_TANAPHAR",
+          "qty": 1
+        }
+      ],
+      "disabledReason": "Đã có rule lõi xử lý; tắt để không cộng trùng vật tư."
+    },
+    {
+      "id": "thay_bang_vet_mo",
+      "enabled": true,
+      "category": "dvkt",
+      "match": [
+        "thay băng",
+        "thay bang",
+        "cắt chỉ",
+        "cat chi",
+        "rửa vết thương",
+        "rua vet thuong"
+      ],
+      "reason": "Thay băng vết mổ cần băng dính DECOMED",
+      "supplies": [
+        {
+          "key": "BANG_DINH_DECOMED",
+          "qty": 1
+        },
+        {
+          "key": "GANG_TAY_KHAM",
+          "qty": 1
+        }
+      ]
+    },
+    {
+      "id": "dat_kim_luon",
+      "enabled": true,
+      "category": "interval",
+      "match": [
+        "đặt kim luồn",
+        "dat kim luon",
+        "thay kim luồn",
+        "thay kim luon",
+        "kim luồn mới"
+      ],
+      "lookbackDays": 4,
+      "reason": "Kim luồn thay mỗi 3-4 ngày — cần kim luồn + nút SafeTouch + băng dính WEMSO",
+      "supplies": [
+        {
+          "key": "KIM_LUON_TM",
+          "qty": 1
+        },
+        {
+          "key": "NUT_SAFETOUCH",
+          "qty": 1
+        },
+        {
+          "key": "BANG_DINH_VO_TRUNG_WEMSO",
+          "qty": 1
+        }
+      ]
+    },
+    {
+      "id": "thay_bang_kim_luon_hang_ngay",
+      "enabled": true,
+      "category": "daily",
+      "condition": "has_iv_catheter",
+      "reason": "BN có kim luồn → mỗi ngày cần 1 nút SafeTouch + 1 băng WEMSO thay",
+      "supplies": [
+        {
+          "key": "NUT_SAFETOUCH",
+          "qty": 1
+        },
+        {
+          "key": "BANG_DINH_VO_TRUNG_WEMSO",
+          "qty": 1
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "Các rule truyền dịch/TMC/tiêm bắp trùng rule lõi đang tắt để tránh cộng trùng bơm tiêm, kim tiêm và dây truyền.",
+    "Mã VTYT lấy từ trang 'Nhập thuốc VTYT' EMR thực tế của bệnh viện.",
+    "category=daily: VTYT cần nhập mỗi ngày nếu điều kiện khớp.",
+    "category=medication: VTYT sinh theo thuốc/y lệnh thuốc; perDose=true thì nhân theo số cử.",
+    "category=dvkt: VTYT sinh theo DVKT/thủ thuật/chăm sóc.",
+    "category=interval: VTYT cách khoảng — worker nhìn lại lịch sử trước khi cho nhập.",
+    "infusionContinuityGapMinutes: nếu 2 phiên truyền cách nhau < giá trị này → không thêm dây truyền mới.",
+    "Để thêm VTYT mới: bổ sung vào catalog rồi thêm rule vào customRules."
+  ]
+}

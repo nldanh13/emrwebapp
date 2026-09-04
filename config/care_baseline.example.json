@@ -1,0 +1,73 @@
+{
+  "enabled": false,
+  "default": {
+    "headless": true,
+    "status": "Đang thực hiện",
+    "patient_limit_per_account": 5,
+    "admission_from": "",
+    "admission_to": "",
+    "care_from": "",
+    "care_to": "",
+    "url_login": "http://emr.internal.example/login.aspx",
+    "url_inpatient_list": "http://emr.internal.example/home.aspx?scope=sys&lang=vi&wpid=danhsachdieutrinoitrudraw&role=323"
+  },
+  "accounts": [
+    {
+      "id": "account_internal_medicine",
+      "username": "",
+      "password": "",
+      "department_hint": "Nội Tổng hợp",
+      "enabled": false
+    },
+    {
+      "id": "account_orthopedics",
+      "username": "",
+      "password": "",
+      "department_hint": "Ngoại Chấn thương chỉnh hình",
+      "enabled": false
+    },
+    {
+      "id": "account_general_surgery",
+      "username": "",
+      "password": "",
+      "department_hint": "Ngoại tổng hợp",
+      "enabled": false
+    },
+    {
+      "id": "account_cardiology",
+      "username": "",
+      "password": "",
+      "department_hint": "Tim mạch can thiệp",
+      "enabled": false
+    },
+    {
+      "id": "account_oncology",
+      "username": "",
+      "password": "",
+      "department_hint": "Ung bướu",
+      "enabled": false
+    },
+    {
+      "id": "account_obstetrics",
+      "username": "",
+      "password": "",
+      "department_hint": "Phụ sản",
+      "enabled": false
+    },
+    {
+      "id": "account_ent",
+      "username": "",
+      "password": "",
+      "department_hint": "Mắt - Tai mũi họng",
+      "enabled": false
+    },
+    {
+      "id": "account_urology",
+      "username": "",
+      "password": "",
+      "department_hint": "Trung tâm tiết niệu",
+      "enabled": false
+    }
+  ],
+  "_note": "Copy file này thành config/care_baseline.json rồi điền password thật. Không commit/chia sẻ config/care_baseline.json. department_hint chỉ là nhãn gợi ý; khi chạy, worker sẽ lấy tên khoa thật từ span.text-muted.text-xs.block sau đăng nhập và ghi vào cột Khoa."
+}

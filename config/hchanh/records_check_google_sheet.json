@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "source_file": "",
+  "spreadsheet_url": "https://docs.google.com/spreadsheets/d/1zuCaGUoneLchSfnvhSp1muxH-Xv7PXm7tBp5K2bnQsQ/edit?gid=351128250#gid=351128250",
+  "sheet_gid": "351128250",
+  "auto_sync_on_open": true,
+  "timeout_ms": 20000,
+  "write_web_app_url": "",
+  "write_timeout_ms": 20000,
+  "_note": "Điền URL Web app Google Apps Script vào write_web_app_url và đặt EMR_GOOGLE_SHEET_WRITE_TOKEN trong .env để bật sửa trực tiếp."
+}

@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "description": "File mẫu cho dictionary VTYT. Khi dùng thật, copy thành config/vtyt_dictionary.json rồi sửa theo mã/tên vật tư của khoa.",
+  "quantityConfig": {
+    "glovesPerPatientPerDayMin": 4,
+    "glovesPerPatientPerDayMax": 5,
+    "infusionContinuityGapMinutes": 180,
+    "ivCatheterLookbackDays": 4,
+    "ivCatheterMinDaysBetween": 3,
+    "ivCatheterDefaultQuantity": 1,
+    "ivCatheterAge55PlusQuantity": 2,
+    "ivCatheterPlugPerDay": 1,
+    "antibioticTmcSyringe20mlPerDose": 1,
+    "otherTmcSyringe10mlPerDose": 1,
+    "imSyringe5mlPerDose": 1,
+    "naclMixSyringe10mlPerDose": 1,
+    "mixingNeedlePerDose": 1
+  },
+  "catalog": {
+    "GANG_TAY_KHAM": {
+      "code": "VTYT.000004174",
+      "name": "Găng tay khám Latex có bột hiệu I-Med",
+      "searchKeyword": "Găng tay khám",
+      "aliases": ["găng tay khám", "gang tay kham", "latex"]
+    },
+    "DAY_TRUYEN_DICH": {
+      "code": "VTYT.000004109",
+      "name": "Dây truyền dịch",
+      "searchKeyword": "Dây truyền dịch",
+      "aliases": ["dây truyền dịch", "day truyen dich", "dây truyền"]
+    },
+    "KIM_LUON_TM": {
+      "code": "VTYT.000004259",
+      "name": "Kim luồn tĩnh mạch an toàn MEDCATH",
+      "searchKeyword": "Kim luồn tĩnh mạch",
+      "aliases": ["kim luồn", "kim luon", "medcath"]
+    },
+    "BANG_DINH_KIM_LUON": {
+      "code": "VTYT.000003906",
+      "name": "Băng phim trong vô trùng không thấm nước 3M Tegaderm I.V 6,5cm x 7cm",
+      "searchKeyword": "Tegaderm I.V",
+      "aliases": ["tegaderm i.v", "băng dính kim luồn", "bang dinh kim luon"]
+    },
+    "NUT_KIM_LUON_OR_KHOA_3_NGA": {
+      "code": "VTYT.000004306",
+      "name": "Khóa 3 ngã có dây 25 cm",
+      "searchKeyword": "Khóa 3 ngã",
+      "aliases": ["khóa 3 ngã", "khoa 3 nga", "nút kim luồn", "nut kim luon"]
+    },
+    "BOM_TIEM_20ML": {
+      "code": "VTYT.000004017",
+      "name": "Bơm tiêm vô trùng sử dụng một lần 20ml/cc, kim các cỡ, VIKIMCO",
+      "searchKeyword": "Bơm tiêm 20ml",
+      "aliases": ["bơm tiêm 20ml", "bom tiem 20ml"]
+    },
+    "BOM_TIEM_10ML": {
+      "code": "VTYT.000004009",
+      "name": "Bơm tiêm vô trùng sử dụng một lần 10ml/cc, kim các cỡ, VIKIMCO",
+      "searchKeyword": "Bơm tiêm 10ml",
+      "aliases": ["bơm tiêm 10ml", "bom tiem 10ml"]
+    },
+    "BOM_TIEM_5ML": {
+      "code": "VTYT.000004033",
+      "name": "Bơm tiêm vô trùng sử dụng một lần 5ml/cc, kim các cỡ, VIKIMCO",
+      "searchKeyword": "Bơm tiêm 5ml",
+      "aliases": ["bơm tiêm 5ml", "bom tiem 5ml"]
+    },
+    "KIM_TIEM_PHA": {
+      "code": "VTYT.000004280",
+      "name": "Kim tiêm Tanaphar",
+      "searchKeyword": "Kim tiêm",
+      "aliases": ["kim tiêm", "kim tiem", "kim pha"]
+    }
+  },
+  "dailySupplies": [
+    {
+      "id": "daily_gloves",
+      "key": "GANG_TAY_KHAM",
+      "qty": 5,
+      "reason": "VTYT nhập mỗi ngày cho người bệnh còn điều trị",
+      "enabled": true
+    }
+  ],
+  "customRules": [
+    {
+      "id": "example_medication_rule_disabled",
+      "enabled": false,
+      "category": "medication",
+      "match": ["tên thuốc hoặc đường dùng cần bắt"],
+      "perDose": true,
+      "reason": "Ví dụ: mỗi cử thuốc này cần thêm vật tư tương ứng",
+      "supplies": [
+        { "key": "BOM_TIEM_10ML", "qty": 1 }
+      ]
+    },
+    {
+      "id": "example_dvkt_rule_disabled",
+      "enabled": false,
+      "category": "dvkt",
+      "match": ["tên DVKT hoặc y lệnh chăm sóc"],
+      "reason": "Ví dụ: DVKT này cần bộ vật tư riêng",
+      "supplies": [
+        { "key": "KIM_TIEM_PHA", "qty": 1 }
+      ]
+    },
+    {
+      "id": "example_interval_rule_disabled",
+      "enabled": false,
+      "category": "interval",
+      "match": ["đặt kim luồn", "thay kim luồn"],
+      "lookbackDays": 4,
+      "reason": "Ví dụ vật tư cách khoảng, phải nhìn lại vài ngày trước",
+      "supplies": [
+        { "key": "KIM_LUON_TM", "qty": 1 },
+        { "key": "BANG_DINH_KIM_LUON", "qty": 1 }
+      ]
+    }
+  ],
+  "notes": [
+    "category=daily: VTYT cần nhập mỗi ngày nếu điều kiện khớp.",
+    "category=medication: VTYT sinh theo thuốc/y lệnh thuốc; perDose=true thì nhân theo số cử/giờ dùng.",
+    "category=dvkt: VTYT sinh theo DVKT/thủ thuật/chăm sóc.",
+    "category=interval: VTYT cách khoảng, ví dụ kim luồng 3-4 ngày; worker sẽ nhìn lại lịch sử trước khi cho nhập.",
+    "infusionContinuityGapMinutes quyết định dịch truyền mới có dùng lại dây cũ hay phải thêm dây mới. Nếu khoảng cách giữa hai phiên truyền nhỏ hơn hoặc bằng giá trị này, hệ thống không cộng thêm dây truyền."
+  ]
+}

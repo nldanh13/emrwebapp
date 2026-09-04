@@ -1,0 +1,232 @@
+{
+  "medication_skip_rules": [
+    {
+      "id": "post_op_or_intra_op_already_done",
+      "enabled": true,
+      "categories": [
+        "dich_truyen",
+        "thuoc_tiem",
+        "thuoc_uong",
+        "khac"
+      ],
+      "reason": "Thuốc ghi trong mổ/sau mổ/SM được xem là đã thực hiện ở phòng mổ/hậu phẫu, không nhập lại tại khoa.",
+      "patterns": [
+        "\\btrong\\s+mo\\b",
+        "\\bsau\\s+mo\\b",
+        "\\bhau\\s+phau\\b",
+        "(?<![a-z0-9])sm\\s*[-:]?\\s*\\d{1,2}\\s*h?\\b"
+      ]
+    }
+  ],
+  "postop_receive_rules": {
+    "enabled": true,
+    "dept_receive_text": "Khoa Ngoại Chấn Thương Chỉnh Hình và Thần Kinh nhận bệnh",
+    "dien_bien_template": "Khoa Ngoại Chấn Thương Chỉnh Hình và Thần Kinh nhận bệnh\nNgười bệnh tỉnh\nTiếp xúc tốt\nDa niêm hồng\nMạch rõ, chi ấm\nĐau vết mổ\nVết mổ chưa ghi nhận dịch thấm băng",
+    "care_template": "Nhận hồ sơ + Lấy dấu hiệu sinh tồn + Trình Bác sĩ trực + Hướng dẫn ăn uống nghỉ ngơi sau mổ",
+    "receive_patterns": [
+      "\\bngoai\\s+ctch\\s+nhan\\b",
+      "\\bctch\\s+nhan\\b",
+      "\\bctch\\s*(?:-|\\s)*tk\\s+nhan\\b",
+      "\\bkhoa\\s+ngoai\\s+chan\\s+thuong\\s+chinh\\s+hinh\\s+va\\s+than\\s+kinh\\s+nhan\\s+benh\\b"
+    ],
+    "context_patterns": [
+      "\\bchuyen\\s+mo\\b",
+      "\\bphau\\s+thuat\\b",
+      "\\bsau\\s+mo\\b",
+      "\\bhau\\s+phau\\b",
+      "\\bkinh\\s+chuyen\\s+khoa\\s+ngoai\\s+ctch\\b",
+      "\\bhp\\s+nhan\\s+benh\\b",
+      "\\bkinh\\s+chuyen\\s+khoa\\s+ctch\\b",
+      "\\bctch\\s*(?:-|\\s)*tk\\b",
+      "\\bpt\\s*0?1\\b",
+      "\\bvet\\s+mo\\b",
+      "\\bbang\\s+kin\\b"
+    ]
+  },
+  "discharge_rules": {
+    "enabled": true,
+    "dien_bien_template": "Người bệnh xuất viện",
+    "care_template": "Hoàn tất hồ sơ ra viện + Cấp giấy ra viện + Cấp thuốc theo toa + Hướng dẫn tái khám",
+    "disposition_patterns": [
+      "\\bra\\s+vien\\b",
+      "\\bxuat\\s+vien\\b"
+    ],
+    "timeline_patterns": [
+      "\\bra\\s+vien\\b",
+      "\\bxuat\\s+vien\\b"
+    ],
+    "timeline_confirmation_patterns": [
+      "\\bbenh\\s+(?:tam\\s+)?on\\b",
+      "\\btam\\s+on\\b",
+      "\\bthuoc\\s+theo\\s+toa\\b",
+      "\\btai\\s+kham\\b",
+      "\\bcap\\s+(?:giay\\s+)?ra\\s+vien\\b",
+      "\\bhuong\\s+dan\\s+.*tai\\s+kham\\b"
+    ],
+    "timeline_exclude_patterns": [
+      "\\bdu\\s+kien\\s+(?:ra|xuat)\\s+vien\\b",
+      "\\bdu\\s+tinh\\s+(?:ra|xuat)\\s+vien\\b",
+      "\\bngay\\s+mai\\s+(?:ra|xuat)\\s+vien\\b",
+      "\\bhen\\s+(?:ra|xuat)\\s+vien\\b"
+    ]
+  },
+  "admission_transfer_rules": {
+    "enabled": true,
+    "clinic_source_patterns": [
+      "\\bkhoa\\s+kham\\s+benh\\b",
+      "\\bphong\\s+kham\\b"
+    ],
+    "postop_source_patterns": [
+      "\\bkhoa\\s+gay\\s+me\\s+hoi\\s+suc\\b",
+      "\\bhau\\s+phau\\b",
+      "\\bphong\\s+phau\\s+thuat\\b"
+    ],
+    "ward_receive_patterns": [
+      "\\bctch\\s+nhan\\b",
+      "\\bngoai\\s+ctch\\s+nhan\\b",
+      "\\bkhoa\\s+ngoai\\s+chan\\s+thuong\\s+chinh\\s+hinh\\s+va\\s+than\\s+kinh\\s+nhan\\s+benh\\b"
+    ],
+    "clinic_admission_care_template": "Hoàn tất hồ sơ nhập viện + Kính chuyển Khoa Ngoại Chấn Thương Chỉnh Hình và Thần Kinh + Hồ sơ",
+    "ward_receive_care_template": "Nhận hồ sơ + Lấy dấu hiệu sinh tồn + Trình Bác sĩ trực + Hướng dẫn nội quy khoa phòng + Thực hiện cận lâm sàng",
+    "interdepartment_receive_care_template": "Nhận hồ sơ + Lấy dấu hiệu sinh tồn + Trình Bác sĩ trực + Hướng dẫn nội quy khoa phòng"
+  },
+  "pain_location_map": [
+    {
+      "keywords": [
+        "cột sống",
+        "thoát vị đĩa đệm",
+        "thoai hoa cot song"
+      ],
+      "label": "cột sống"
+    },
+    {
+      "keywords": [
+        "gối",
+        "khớp gối"
+      ],
+      "label": "gối"
+    },
+    {
+      "keywords": [
+        "vai",
+        "khớp vai"
+      ],
+      "label": "vai"
+    },
+    {
+      "keywords": [
+        "háng",
+        "khớp háng"
+      ],
+      "label": "háng"
+    },
+    {
+      "keywords": [
+        "cẳng chân",
+        "xương chày",
+        "xương mác"
+      ],
+      "label": "cẳng chân"
+    },
+    {
+      "keywords": [
+        "đùi",
+        "xương đùi"
+      ],
+      "label": "đùi"
+    },
+    {
+      "keywords": [
+        "cánh tay",
+        "xương cánh tay"
+      ],
+      "label": "cánh tay"
+    },
+    {
+      "keywords": [
+        "cẳng tay",
+        "xương quay",
+        "xương trụ"
+      ],
+      "label": "cẳng tay"
+    },
+    {
+      "keywords": [
+        "ngón chân",
+        "ngón I chân",
+        "ngón tay",
+        "ngón I tay"
+      ],
+      "label": "ngón"
+    },
+    {
+      "keywords": [
+        "bàn chân",
+        "bàn tay"
+      ],
+      "label": "bàn chân"
+    },
+    {
+      "keywords": [
+        "cổ tay",
+        "ống cổ tay",
+        "hội chứng ống cổ tay"
+      ],
+      "label": "cổ tay"
+    },
+    {
+      "keywords": [
+        "mông"
+      ],
+      "label": "mông"
+    },
+    {
+      "keywords": [
+        "chi",
+        "áp xe chi",
+        "viêm mô bào chi"
+      ],
+      "label": "chi"
+    }
+  ],
+  "htn_keywords": [
+    "amlodipine",
+    "losartan",
+    "valsartan",
+    "telmisartan",
+    "irbesartan",
+    "candesartan",
+    "olmesartan",
+    "perindopril",
+    "enalapril",
+    "captopril",
+    "lisinopril",
+    "ramipril",
+    "metoprolol",
+    "bisoprolol",
+    "carvedilol",
+    "atenolol",
+    "propranolol",
+    "nifedipine",
+    "diltiazem",
+    "verapamil",
+    "hydralazine",
+    "clonidine",
+    "methyldopa",
+    "hydrochlorothiazide",
+    "indapamide"
+  ],
+  "care_dien_bien_rules": {
+    "enabled": true,
+    "base_lines": [
+      "Người bệnh tỉnh",
+      "Tiếp xúc tốt",
+      "Da niêm hồng",
+      "Mạch rõ, chi ấm",
+      "__PAIN_LINE__",
+      "Vận động hạn chế",
+      "Ăn được, ngủ được"
+    ],
+    "plain_shift_dien_bien": "Người bệnh tỉnh"
+  }
+}

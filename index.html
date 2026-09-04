@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EMR Data Hub</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { height: 100%; }
+    body {
+      font-family: Inter, Roboto, 'Segoe UI', Arial, system-ui, sans-serif;
+      background: #f6f8fb;
+      color: #111827;
+      font-size: 13px;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: geometricPrecision;
+    }
+    button, input, select, textarea { font: inherit; }
+    ::selection { background: #bfdbfe; color: #0f172a; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; background-clip: content-box; }
+    .emr-bootstrap-loading, .emr-bootstrap-error { min-height: 100%; display: grid; place-items: center; padding: 24px; }
+    .emr-bootstrap-loading { color: #64748b; font-weight: 700; }
+    .emr-bootstrap-error { background: #0d1117; color: #e6edf3; }
+    .emr-bootstrap-error section { width: min(760px, 100%); border: 1px solid #30363d; border-radius: 14px; background: #161b22; padding: 22px; box-shadow: 0 18px 48px rgba(0,0,0,.32); }
+    .emr-bootstrap-error__eyebrow { color: #ff7b72; font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
+    .emr-bootstrap-error h1 { margin: 8px 0 10px; font-size: 22px; }
+    .emr-bootstrap-error p { color: #c9d1d9; line-height: 1.6; }
+    .emr-bootstrap-error__actions { display: flex; gap: 10px; margin: 18px 0; flex-wrap: wrap; }
+    .emr-bootstrap-error button { border: 1px solid #30363d; border-radius: 8px; background: #21262d; color: #e6edf3; padding: 8px 12px; cursor: pointer; font-weight: 700; }
+    .emr-bootstrap-error pre { white-space: pre-wrap; max-height: 260px; overflow: auto; background: #0d1117; color: #ffa198; border: 1px solid #30363d; border-radius: 10px; padding: 12px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div id="root"><div class="emr-bootstrap-loading">Đang tải giao diện EMR…</div></div>
+  <script type="module" src="/src/bootstrapGuard.js"></script>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+</html>

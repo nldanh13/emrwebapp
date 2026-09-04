@@ -1,0 +1,1733 @@
+{
+  "version": 2,
+  "navigation": [
+    {
+      "id": "functions",
+      "label": "Bộ chức năng",
+      "icon": "⌘",
+      "group": "Tổng quan",
+      "hint": "Chọn chức năng hoặc quy trình ghép",
+      "order": 10,
+      "compact": false,
+      "usesDateRange": false
+    },
+    {
+      "id": "acquire",
+      "label": "Lấy dữ liệu",
+      "icon": "↓",
+      "group": "Dữ liệu",
+      "hint": "Quét bệnh nhân, lấy y lệnh, phân loại",
+      "order": 20,
+      "compact": false,
+      "usesDateRange": true
+    },
+    {
+      "id": "bed",
+      "label": "Xếp phòng",
+      "icon": "⇅",
+      "group": "Dữ liệu",
+      "hint": "Xếp bệnh nhân theo phòng",
+      "order": 30,
+      "compact": true,
+      "usesDateRange": true
+    },
+    {
+      "id": "ward",
+      "label": "Nhập bệnh phòng",
+      "icon": "↗",
+      "group": "Điều dưỡng",
+      "hint": "Chăm sóc, dịch truyền, thủ thuật",
+      "order": 40,
+      "compact": true,
+      "usesDateRange": true
+    },
+    {
+      "id": "duty",
+      "label": "Nhập trực",
+      "icon": "◐",
+      "group": "Điều dưỡng",
+      "hint": "Người bệnh mới hoặc chuyển khoa",
+      "order": 50,
+      "compact": true,
+      "usesDateRange": true
+    },
+    {
+      "id": "nurse",
+      "label": "Lịch điều dưỡng",
+      "icon": "☷",
+      "group": "Điều dưỡng",
+      "hint": "Nhân sự và lịch làm việc",
+      "order": 60,
+      "compact": true,
+      "usesDateRange": false
+    },
+    {
+      "id": "report",
+      "label": "Báo cáo ca trực",
+      "icon": "▤",
+      "group": "Điều dưỡng",
+      "hint": "Bàn giao, thuốc và tiêm truyền",
+      "order": 70,
+      "compact": true,
+      "usesDateRange": true
+    },
+    {
+      "id": "hchanh",
+      "label": "Hành chánh",
+      "icon": "▣",
+      "group": "Hành chánh",
+      "hint": "Bảng kê, ngày giường, ra viện",
+      "order": 80,
+      "compact": true,
+      "usesDateRange": true
+    },
+    {
+      "id": "records-check",
+      "label": "Kiểm hồ sơ",
+      "icon": "☑",
+      "group": "Hành chánh",
+      "hint": "Kiểm, đối chiếu và nộp hồ sơ",
+      "order": 90,
+      "compact": true,
+      "usesDateRange": true
+    },
+    {
+      "id": "clinic",
+      "label": "Phòng khám",
+      "icon": "⌁",
+      "group": "Hành chánh",
+      "hint": "Chăm sóc và thủ thuật ngoại trú",
+      "order": 100,
+      "compact": true,
+      "usesDateRange": false
+    },
+    {
+      "id": "research",
+      "label": "Kho nghiên cứu",
+      "icon": "◌",
+      "group": "Nghiên cứu",
+      "hint": "Cohort, biến và dataset",
+      "order": 110,
+      "compact": true,
+      "usesDateRange": false
+    },
+    {
+      "id": "vtyt-catalog",
+      "label": "Danh mục VTYT",
+      "icon": "▧",
+      "group": "Cài đặt",
+      "hint": "Từ điển và mã thay thế vật tư",
+      "order": 130,
+      "compact": true,
+      "usesDateRange": false
+    }
+  ],
+  "functions": [
+    {
+      "id": "patient.fetch-list",
+      "label": "Lấy danh sách bệnh nhân",
+      "icon": "↓",
+      "group": "Thu thập & chuẩn hóa",
+      "description": "Quét danh sách bệnh nhân theo phiên, ngày và khoa.",
+      "entryTab": "acquire",
+      "requires": [
+        "session.current",
+        "emr.connection"
+      ],
+      "provides": [
+        "patients.raw"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "retry": {
+        "maxAttempts": 2,
+        "delayMs": 1200,
+        "retryStatuses": [
+          429,
+          502,
+          503,
+          504
+        ]
+      },
+      "executor": {
+        "type": "http",
+        "method": "GET",
+        "path": "/run-scan",
+        "queryKey": "scan",
+        "safeAutoRun": false
+      },
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/run-scan",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "patient.fetch-detail",
+      "label": "Lấy chi tiết bệnh nhân",
+      "icon": "◫",
+      "group": "Thu thập & chuẩn hóa",
+      "description": "Lấy thông tin hành chánh, khoa phòng, chẩn đoán và đợt điều trị.",
+      "entryTab": "acquire",
+      "requires": [
+        "patients.raw"
+      ],
+      "provides": [
+        "patients.detail"
+      ],
+      "actions": [
+        "execute",
+        "retry",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "executor": {
+        "type": "virtual"
+      },
+      "routes": []
+    },
+    {
+      "id": "orders.fetch",
+      "label": "Lấy y lệnh",
+      "icon": "⇣",
+      "group": "Thu thập & chuẩn hóa",
+      "description": "Lấy thuốc, dịch truyền, thủ thuật, xét nghiệm và diễn biến.",
+      "entryTab": "acquire",
+      "requires": [
+        "patients.raw",
+        "date.range"
+      ],
+      "provides": [
+        "patients.detail",
+        "orders.raw"
+      ],
+      "actions": [
+        "execute",
+        "retry",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "retry": {
+        "maxAttempts": 2,
+        "delayMs": 1200,
+        "retryStatuses": [
+          429,
+          502,
+          503,
+          504
+        ]
+      },
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/run-details",
+        "inputKey": "patients",
+        "queryKey": "dateRange",
+        "payloadRequired": true,
+        "safeAutoRun": false
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/run-details",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/run-details-one",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "orders.classify",
+      "label": "Phân loại y lệnh",
+      "icon": "◇",
+      "group": "Thu thập & chuẩn hóa",
+      "description": "Chuẩn hóa y lệnh thành chăm sóc, dịch, thủ thuật, thuốc và vật tư.",
+      "entryTab": "acquire",
+      "requires": [
+        "orders.raw"
+      ],
+      "provides": [
+        "orders.classified"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "executor": {
+        "type": "http",
+        "method": "GET",
+        "path": "/run-postprocess",
+        "safeAutoRun": true
+      },
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/run-postprocess",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "bed.assign",
+      "label": "Xếp phòng",
+      "icon": "⇅",
+      "group": "Thu thập & chuẩn hóa",
+      "description": "Gán bệnh nhân vào phòng và duy trì phạm vi nhập theo phòng.",
+      "entryTab": "bed",
+      "requires": [
+        "patients.raw"
+      ],
+      "provides": [
+        "patients.room-scope"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/save",
+        "inputKey": "board",
+        "payloadRequired": true
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/save",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "input.prepare",
+      "label": "Tạo dữ liệu dự kiến nhập",
+      "icon": "≡",
+      "group": "Kiểm tra & xác minh",
+      "description": "Tạo payload theo bệnh nhân, đợt điều trị và ngày trước khi ghi EMR.",
+      "entryTab": "ward",
+      "requires": [
+        "orders.classified",
+        "patients.room-scope"
+      ],
+      "provides": [
+        "input.plan"
+      ],
+      "actions": [
+        "preview",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "executor": {
+        "type": "virtual"
+      },
+      "routes": []
+    },
+    {
+      "id": "input.precheck",
+      "label": "Kiểm tra trước khi nhập",
+      "icon": "✓",
+      "group": "Kiểm tra & xác minh",
+      "description": "Lấy lại dữ liệu mới, phát hiện thay đổi và khóa phạm vi nhập.",
+      "entryTab": "ward",
+      "requires": [
+        "input.plan",
+        "orders.classified"
+      ],
+      "provides": [
+        "input.precheck-token"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": true,
+      "failurePolicy": "continue",
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/check-input-changes",
+        "inputKey": "inputTargets",
+        "payloadRequired": true
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/check-input-changes",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "care.input",
+      "label": "Nhập chăm sóc",
+      "icon": "✚",
+      "group": "Nhập EMR",
+      "description": "Tạo, giữ, sửa hoặc thu hồi phiếu chăm sóc theo BN/ngày.",
+      "entryTab": "ward",
+      "requires": [
+        "care.precheck-token",
+        "nurse.schedule"
+      ],
+      "provides": [
+        "care.result"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "verify",
+        "repair",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "failurePolicy": "continue",
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/run-input-care",
+        "inputKey": "careTargets",
+        "payloadRequired": true
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/run-input-care",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "infusion.input",
+      "label": "Nhập dịch truyền",
+      "icon": "◒",
+      "group": "Nhập EMR",
+      "description": "Đối chiếu và nhập các dòng dịch truyền còn thiếu hoặc sai.",
+      "entryTab": "ward",
+      "requires": [
+        "infusion.precheck-token",
+        "orders.classified"
+      ],
+      "provides": [
+        "infusion.result"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "verify",
+        "repair",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "failurePolicy": "continue",
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/run-input-infusions",
+        "inputKey": "infusionTargets",
+        "payloadRequired": true
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/run-input-infusions",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "procedure.input",
+      "label": "Nhập thủ thuật",
+      "icon": "⌁",
+      "group": "Nhập EMR",
+      "description": "Nhập và hoàn tất thủ thuật theo chỉ định và người thực hiện.",
+      "entryTab": "ward",
+      "requires": [
+        "procedure.precheck-token",
+        "orders.classified"
+      ],
+      "provides": [
+        "procedure.result"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "verify",
+        "repair",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "failurePolicy": "continue",
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/run-input-procedures",
+        "inputKey": "procedureTargets",
+        "payloadRequired": true
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/run-input-procedures",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "material.input",
+      "label": "Nhập vật tư y tế",
+      "icon": "▧",
+      "group": "Nhập EMR",
+      "description": "Áp quy tắc VTYT, đối chiếu mã và nhập vật tư theo y lệnh.",
+      "entryTab": "hchanh",
+      "requires": [
+        "material.precheck-token",
+        "orders.classified",
+        "material.catalog"
+      ],
+      "provides": [
+        "material.result"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "verify",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "failurePolicy": "continue",
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/run-input-vtyt",
+        "inputKey": "materialTargets",
+        "payloadRequired": true
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/preview-input-vtyt",
+          "action": "preview",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/run-input-vtyt",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "input.verify",
+      "label": "Xác minh sau nhập",
+      "icon": "◎",
+      "group": "Kiểm tra & xác minh",
+      "description": "Đọc lại người lập, thời gian, nội dung và trạng thái sau khi lưu.",
+      "entryTab": "ward",
+      "requires": [
+        "care.result|infusion.result|procedure.result|material.result"
+      ],
+      "provides": [
+        "input.verified"
+      ],
+      "actions": [
+        "verify",
+        "repair",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": true,
+      "executor": {
+        "type": "virtual"
+      },
+      "routes": []
+    },
+    {
+      "id": "billing.fetch",
+      "label": "Lấy bảng kê",
+      "icon": "▤",
+      "group": "Hành chánh & hồ sơ",
+      "description": "Lấy tổng tiền, BHYT, tự trả, dịch vụ giường, thuốc và vật tư.",
+      "entryTab": "hchanh",
+      "requires": [
+        "patients.detail"
+      ],
+      "provides": [
+        "billing.data"
+      ],
+      "actions": [
+        "execute",
+        "retry",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "retry": {
+        "maxAttempts": 2,
+        "delayMs": 1200,
+        "retryStatuses": [
+          429,
+          502,
+          503,
+          504
+        ]
+      },
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/hchanh/fetch",
+        "inputKey": "hchanhFetch",
+        "payloadRequired": true
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/hchanh/fetch",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "billing.audit",
+      "label": "Kiểm tra bảng kê",
+      "icon": "☑",
+      "group": "Hành chánh & hồ sơ",
+      "description": "Phát hiện khoản bất thường, thiếu/dư dịch vụ và chi phí cao.",
+      "entryTab": "hchanh",
+      "requires": [
+        "billing.data"
+      ],
+      "provides": [
+        "billing.audit-result"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "executor": {
+        "type": "http",
+        "method": "GET",
+        "path": "/admin-workflow/billing-audit",
+        "queryKey": "billingAudit"
+      },
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/admin-workflow/billing-audit",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "billing.print",
+      "label": "In bảng kê",
+      "icon": "▣",
+      "group": "In & xuất",
+      "description": "Tạo, tải và in PDF bảng kê cho một hoặc nhiều bệnh nhân.",
+      "entryTab": "hchanh",
+      "requires": [
+        "billing.data",
+        "billing.audit-result"
+      ],
+      "provides": [
+        "billing.pdf"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "failurePolicy": "continue",
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/hchanh/print-billing",
+        "inputKey": "billingPrint",
+        "payloadRequired": true
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/hchanh/print-billing",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "discharge.audit",
+      "label": "Kiểm tra hồ sơ ra viện",
+      "icon": "□",
+      "group": "Hành chánh & hồ sơ",
+      "description": "Kiểm chẩn đoán, xử trí, hẹn tái khám, ngày giường và hồ sơ thiếu.",
+      "entryTab": "hchanh",
+      "requires": [
+        "records.data",
+        "billing.data"
+      ],
+      "provides": [
+        "discharge.audit-result"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "failurePolicy": "continue",
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/admin-workflow/discharge-qa",
+        "inputKey": "dischargeAudit",
+        "payloadRequired": true
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/admin-workflow/discharge-qa",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "discharge-package.print",
+      "label": "In bộ hồ sơ ra viện",
+      "icon": "▥",
+      "group": "In & xuất",
+      "description": "Ghép chăm sóc, dịch truyền, chức năng sống và tài liệu ra viện.",
+      "entryTab": "ward",
+      "requires": [
+        "input.verified",
+        "discharge.audit-result"
+      ],
+      "provides": [
+        "discharge.bundle-pdf"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "failurePolicy": "continue",
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/hchanh/print-discharge-bundle",
+        "inputKey": "dischargePrint",
+        "payloadRequired": true
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/hchanh/print-discharge-bundle",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/hchanh/print-discharge-bundle-batch",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "records.scan",
+      "label": "Quét hồ sơ",
+      "icon": "⌕",
+      "group": "Hành chánh & hồ sơ",
+      "description": "Lấy số lưu trữ, X-quang, CT, MRI và kết quả chỉ định.",
+      "entryTab": "records-check",
+      "requires": [
+        "patients.detail"
+      ],
+      "provides": [
+        "records.data"
+      ],
+      "actions": [
+        "execute",
+        "retry",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "retry": {
+        "maxAttempts": 2,
+        "delayMs": 1200,
+        "retryStatuses": [
+          429,
+          502,
+          503,
+          504
+        ]
+      },
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/hchanh/records-check/scan-completed",
+        "inputKey": "recordsScan",
+        "payloadRequired": false,
+        "defaultBody": {}
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/hchanh/records-check/scan-completed",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/hchanh/records-check/fetch-batch",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "records.match",
+      "label": "Đối chiếu hồ sơ",
+      "icon": "≍",
+      "group": "Hành chánh & hồ sơ",
+      "description": "Đối chiếu số lưu trữ, tên và phát hiện trùng hoặc sai lệch.",
+      "entryTab": "records-check",
+      "requires": [
+        "records.data",
+        "records.reference"
+      ],
+      "provides": [
+        "records.match-result"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "failurePolicy": "continue",
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/hchanh/records-check/google-sheet/sync",
+        "inputKey": "recordsMatch",
+        "payloadRequired": false,
+        "defaultBody": {}
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/hchanh/records-check/google-sheet/sync",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "records.submit",
+      "label": "Nộp hồ sơ",
+      "icon": "⇧",
+      "group": "Hành chánh & hồ sơ",
+      "description": "Tạo đợt nộp, xử lý hồ sơ trả về và in danh sách nộp.",
+      "entryTab": "records-check",
+      "requires": [
+        "records.match-result"
+      ],
+      "provides": [
+        "records.submission"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "failurePolicy": "continue",
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/hchanh/records-check/submissions/submit",
+        "inputKey": "recordsSubmit",
+        "payloadRequired": true
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/hchanh/records-check/submissions/add",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/hchanh/records-check/submissions/submit",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/hchanh/records-check/submissions/returned",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/hchanh/records-check/submissions/remove",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "nurse.schedule",
+      "label": "Lập lịch điều dưỡng",
+      "icon": "☷",
+      "group": "Điều phối",
+      "description": "Quản lý nhân sự, ca trực và người lập phiếu theo ngày.",
+      "entryTab": "nurse",
+      "requires": [
+        "date.range"
+      ],
+      "provides": [
+        "nurse.schedule"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/nurse-settings",
+        "inputKey": "nurseSettings",
+        "payloadRequired": true
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/nurse-settings",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "clinic-care.input",
+      "label": "Nhập chăm sóc phòng khám",
+      "icon": "＋",
+      "group": "Phòng khám & nghiên cứu",
+      "description": "Nhập chăm sóc ngoại trú theo thời gian vào và lịch nhân sự.",
+      "entryTab": "clinic",
+      "requires": [
+        "clinic.patients",
+        "nurse.schedule"
+      ],
+      "provides": [
+        "clinic-care.result"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "verify",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "failurePolicy": "continue",
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/clinic/input-care",
+        "inputKey": "clinicCareTargets",
+        "payloadRequired": true
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/clinic/care-preview",
+          "action": "preview",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/clinic/input-care",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "clinic-procedure.input",
+      "label": "Nhập thủ thuật phòng khám",
+      "icon": "⌁",
+      "group": "Phòng khám & nghiên cứu",
+      "description": "Rà ca chưa hoàn tất và nhập thủ thuật theo bác sĩ/điều dưỡng.",
+      "entryTab": "clinic",
+      "requires": [
+        "clinic.patients",
+        "clinic.schedule"
+      ],
+      "provides": [
+        "clinic-procedure.result"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "verify",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "failurePolicy": "continue",
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/clinic/input-procedures",
+        "inputKey": "clinicProcedureTargets",
+        "payloadRequired": true
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/clinic/preview",
+          "action": "preview",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/clinic/input-procedures",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "duty-report.print",
+      "label": "In báo cáo ca trực",
+      "icon": "▤",
+      "group": "In & xuất",
+      "description": "Tạo phiếu bàn giao, bảng thuốc và danh sách tiêm truyền.",
+      "entryTab": "report",
+      "requires": [
+        "orders.classified",
+        "nurse.schedule"
+      ],
+      "provides": [
+        "duty.report-pdf"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "failurePolicy": "continue",
+      "executor": {
+        "type": "http",
+        "method": "GET",
+        "path": "/run-report-infusion",
+        "queryKey": "report"
+      },
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/run-report-infusion",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "research.archive",
+      "label": "Xây kho nghiên cứu",
+      "icon": "◌",
+      "group": "Phòng khám & nghiên cứu",
+      "description": "Thu thập sâu, chuẩn hóa và lưu trữ dữ liệu nghiên cứu.",
+      "entryTab": "research",
+      "requires": [
+        "patients.detail",
+        "orders.raw"
+      ],
+      "provides": [
+        "research.archive"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "retry",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "retry": {
+        "maxAttempts": 2,
+        "delayMs": 1200,
+        "retryStatuses": [
+          429,
+          502,
+          503,
+          504
+        ]
+      },
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/research/archive/run",
+        "inputKey": "researchArchive",
+        "payloadRequired": false,
+        "defaultBody": {}
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/research/archive/run",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/research/archive/patient-info",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/research/archive/fetch-hchanh",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/research/archive/fetch-order-history",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/research/refetch-missing",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/research/studies/:studyId/run",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/research/studies/:studyId/patient-info",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/research/studies/:studyId/fetch-hchanh",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/research/studies/:studyId/fetch-order-history",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "research.dataset",
+      "label": "Tạo dataset nghiên cứu",
+      "icon": "▦",
+      "group": "Phòng khám & nghiên cứu",
+      "description": "Tạo cohort, chọn biến, chuẩn hóa, ẩn danh và xuất dataset.",
+      "entryTab": "research",
+      "requires": [
+        "research.archive"
+      ],
+      "provides": [
+        "research.dataset"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "export",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "failurePolicy": "continue",
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/research/archive/finalize-dataset",
+        "inputKey": "researchDataset",
+        "payloadRequired": false,
+        "defaultBody": {}
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/research/archive/normalize",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/research/archive/finalize-dataset",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/research/archive/build-encoded-dataset",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/research/archive/clean-generated",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/research/studies/:studyId/normalize",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/research/studies/:studyId/finalize-dataset",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/research/studies/:studyId/build-encoded-dataset",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/research/studies/:studyId/clean-generated",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "material.catalog",
+      "label": "Quản lý danh mục VTYT",
+      "icon": "▧",
+      "group": "Điều phối",
+      "description": "Bật/tắt, thay mã và quản lý vật tư được phép nhập.",
+      "entryTab": "vtyt-catalog",
+      "requires": [],
+      "provides": [
+        "material.catalog"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "failurePolicy": "continue",
+      "executor": {
+        "type": "manual"
+      },
+      "routes": [
+        {
+          "method": "PATCH",
+          "path": "/vtyt-catalog/:key",
+          "action": "execute",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/vtyt-catalog/reset/:key",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    }
+  ],
+  "workflows": [
+    {
+      "id": "ward-input",
+      "label": "Quy trình nhập bệnh phòng",
+      "icon": "↗",
+      "description": "Các nhánh chăm sóc, dịch truyền và thủ thuật chạy độc lập; lỗi hoặc tắt một nhánh không dừng nhánh khác.",
+      "entryTab": "ward",
+      "enabled": true,
+      "continueOnFailure": true,
+      "steps": [
+        {
+          "id": "orders.fetch",
+          "feature": "orders.fetch",
+          "inputKey": "patients",
+          "onFailure": "stop-dependents"
+        },
+        {
+          "id": "orders.classify",
+          "feature": "orders.classify",
+          "onFailure": "stop-dependents"
+        },
+        {
+          "id": "input.prepare",
+          "feature": "input.prepare",
+          "onFailure": "stop-dependents"
+        },
+        {
+          "id": "care.precheck",
+          "feature": "input.precheck",
+          "label": "Kiểm tra trước khi nhập care",
+          "inputKey": "careTargets",
+          "requires": [
+            "input.plan",
+            "orders.classified"
+          ],
+          "provides": [
+            "care.precheck-token"
+          ],
+          "inject": {
+            "taskName": "input_care"
+          },
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "care.input",
+          "feature": "care.input",
+          "inputKey": "careTargets",
+          "requires": [
+            "care.precheck-token",
+            "nurse.schedule"
+          ],
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "infusion.precheck",
+          "feature": "input.precheck",
+          "label": "Kiểm tra trước khi nhập infusion",
+          "inputKey": "infusionTargets",
+          "requires": [
+            "input.plan",
+            "orders.classified"
+          ],
+          "provides": [
+            "infusion.precheck-token"
+          ],
+          "inject": {
+            "taskName": "input_infusions"
+          },
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "infusion.input",
+          "feature": "infusion.input",
+          "inputKey": "infusionTargets",
+          "requires": [
+            "infusion.precheck-token",
+            "orders.classified"
+          ],
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "procedure.precheck",
+          "feature": "input.precheck",
+          "label": "Kiểm tra trước khi nhập procedure",
+          "inputKey": "procedureTargets",
+          "requires": [
+            "input.plan",
+            "orders.classified"
+          ],
+          "provides": [
+            "procedure.precheck-token"
+          ],
+          "inject": {
+            "taskName": "input_procedures"
+          },
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "procedure.input",
+          "feature": "procedure.input",
+          "inputKey": "procedureTargets",
+          "requires": [
+            "procedure.precheck-token",
+            "orders.classified"
+          ],
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "input.verify",
+          "feature": "input.verify",
+          "requires": [
+            "care.result|infusion.result|procedure.result"
+          ],
+          "onFailure": "continue",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "duty-input",
+      "label": "Quy trình nhập trực",
+      "icon": "◐",
+      "description": "Quét, lấy y lệnh và xử lý từng nhánh nhập trực độc lập, sau đó tạo báo cáo nếu đủ dữ liệu.",
+      "entryTab": "duty",
+      "enabled": true,
+      "continueOnFailure": true,
+      "steps": [
+        {
+          "id": "patient.fetch-list",
+          "feature": "patient.fetch-list",
+          "queryKey": "scan",
+          "onFailure": "stop-dependents"
+        },
+        {
+          "id": "orders.fetch",
+          "feature": "orders.fetch",
+          "inputKey": "patients",
+          "onFailure": "stop-dependents"
+        },
+        {
+          "id": "orders.classify",
+          "feature": "orders.classify"
+        },
+        {
+          "id": "input.prepare",
+          "feature": "input.prepare"
+        },
+        {
+          "id": "care.precheck",
+          "feature": "input.precheck",
+          "label": "Kiểm tra trước khi nhập care",
+          "inputKey": "careTargets",
+          "requires": [
+            "input.plan",
+            "orders.classified"
+          ],
+          "provides": [
+            "care.precheck-token"
+          ],
+          "inject": {
+            "taskName": "input_care"
+          },
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "care.input",
+          "feature": "care.input",
+          "inputKey": "careTargets",
+          "requires": [
+            "care.precheck-token",
+            "nurse.schedule"
+          ],
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "infusion.precheck",
+          "feature": "input.precheck",
+          "label": "Kiểm tra trước khi nhập infusion",
+          "inputKey": "infusionTargets",
+          "requires": [
+            "input.plan",
+            "orders.classified"
+          ],
+          "provides": [
+            "infusion.precheck-token"
+          ],
+          "inject": {
+            "taskName": "input_infusions"
+          },
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "infusion.input",
+          "feature": "infusion.input",
+          "inputKey": "infusionTargets",
+          "requires": [
+            "infusion.precheck-token",
+            "orders.classified"
+          ],
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "procedure.precheck",
+          "feature": "input.precheck",
+          "label": "Kiểm tra trước khi nhập procedure",
+          "inputKey": "procedureTargets",
+          "requires": [
+            "input.plan",
+            "orders.classified"
+          ],
+          "provides": [
+            "procedure.precheck-token"
+          ],
+          "inject": {
+            "taskName": "input_procedures"
+          },
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "procedure.input",
+          "feature": "procedure.input",
+          "inputKey": "procedureTargets",
+          "requires": [
+            "procedure.precheck-token",
+            "orders.classified"
+          ],
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "duty-report.print",
+          "feature": "duty-report.print",
+          "queryKey": "report",
+          "onFailure": "continue",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "discharge",
+      "label": "Quy trình ra viện",
+      "icon": "▥",
+      "description": "Các nhánh bảng kê, kiểm hồ sơ và in ra viện độc lập theo artifact; lỗi in không làm mất kết quả kiểm tra.",
+      "entryTab": "hchanh",
+      "enabled": true,
+      "continueOnFailure": true,
+      "steps": [
+        {
+          "id": "orders.fetch",
+          "feature": "orders.fetch",
+          "inputKey": "patients",
+          "onFailure": "stop-dependents"
+        },
+        {
+          "id": "billing.fetch",
+          "feature": "billing.fetch",
+          "inputKey": "hchanhFetch",
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "records.scan",
+          "feature": "records.scan",
+          "inputKey": "recordsScan",
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "billing.audit",
+          "feature": "billing.audit",
+          "queryKey": "billingAudit",
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "discharge.audit",
+          "feature": "discharge.audit",
+          "inputKey": "dischargeAudit",
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "billing.print",
+          "feature": "billing.print",
+          "inputKey": "billingPrint",
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "discharge-package.print",
+          "feature": "discharge-package.print",
+          "inputKey": "dischargePrint",
+          "onFailure": "continue",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "records-lifecycle",
+      "label": "Quy trình kiểm và nộp hồ sơ",
+      "icon": "☑",
+      "description": "Quét, đối chiếu và nộp hồ sơ là ba module riêng; có thể tắt đối chiếu hoặc nộp mà vẫn giữ dữ liệu quét.",
+      "entryTab": "records-check",
+      "enabled": true,
+      "continueOnFailure": true,
+      "steps": [
+        {
+          "id": "records.scan",
+          "feature": "records.scan",
+          "inputKey": "recordsScan",
+          "onFailure": "continue"
+        },
+        {
+          "id": "records.match",
+          "feature": "records.match",
+          "inputKey": "recordsMatch",
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "records.submit",
+          "feature": "records.submit",
+          "inputKey": "recordsSubmit",
+          "onFailure": "continue",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "clinic",
+      "label": "Quy trình phòng khám",
+      "icon": "⌁",
+      "description": "Lịch điều dưỡng, chăm sóc và thủ thuật ngoại trú được điều phối như các nhánh độc lập.",
+      "entryTab": "clinic",
+      "enabled": true,
+      "continueOnFailure": true,
+      "steps": [
+        {
+          "id": "nurse.schedule",
+          "feature": "nurse.schedule",
+          "inputKey": "nurseSettings",
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "clinic-care.input",
+          "feature": "clinic-care.input",
+          "inputKey": "clinicCareTargets",
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "clinic-procedure.input",
+          "feature": "clinic-procedure.input",
+          "inputKey": "clinicProcedureTargets",
+          "onFailure": "continue",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "research",
+      "label": "Quy trình nghiên cứu",
+      "icon": "◌",
+      "description": "Thu thập kho và tạo dataset tách riêng; lỗi chuẩn hóa không làm mất dữ liệu nguồn đã lấy.",
+      "entryTab": "research",
+      "enabled": true,
+      "continueOnFailure": true,
+      "steps": [
+        {
+          "id": "orders.fetch",
+          "feature": "orders.fetch",
+          "inputKey": "patients",
+          "onFailure": "continue",
+          "optional": true
+        },
+        {
+          "id": "research.archive",
+          "feature": "research.archive",
+          "inputKey": "researchArchive",
+          "onFailure": "continue"
+        },
+        {
+          "id": "research.dataset",
+          "feature": "research.dataset",
+          "inputKey": "researchDataset",
+          "onFailure": "continue",
+          "optional": true
+        }
+      ]
+    }
+  ],
+  "defaults": {
+    "feature": {
+      "failurePolicy": "stop-dependents",
+      "disabledPolicy": "skip",
+      "timeoutMs": 1800000,
+      "retry": {
+        "maxAttempts": 1,
+        "delayMs": 1000,
+        "retryStatuses": [
+          429,
+          502,
+          503,
+          504
+        ]
+      }
+    },
+    "workflow": {
+      "continueOnFailure": true
+    },
+    "workflowStep": {
+      "onFailure": "stop-dependents",
+      "onDisabled": "skip"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "id": "operator01",
+    "name": "Điều dưỡng vận hành 01",
+    "role": "operator",
+    "token": "replace-with-a-random-token-at-least-16-characters",
+    "sessions": ["default"],
+    "enabled": true
+  },
+  {
+    "id": "supervisor01",
+    "name": "Điều dưỡng trưởng",
+    "role": "supervisor",
+    "token": "replace-with-a-different-random-token-at-least-16-characters",
+    "sessions": "*",
+    "enabled": true
+  }
+]

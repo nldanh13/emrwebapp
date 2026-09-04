@@ -1,0 +1,192 @@
+{
+  "version": 1,
+  "description": "Luật nhận dạng y lệnh thuốc/dịch truyền. Sửa file này khi bệnh viện có thêm cách ghi đường dùng mới, hạn chế sửa trực tiếp worker/xu_ly.py.",
+  "drug_routes": {
+    "oral": [
+      "uống",
+      "uong",
+      "(u)",
+      "ngậm",
+      "dưới lưỡi"
+    ],
+    "infusion": [
+      "truyền",
+      "truyen",
+      "ttm",
+      "bơm tiêm điện",
+      "bom tiem dien",
+      "pha truyền",
+      "pha truyen",
+      "ml/h",
+      "ml/giờ",
+      "ml/gio",
+      "giọt/phút",
+      "giot/phut",
+      "g/p",
+      "tiêm truyền",
+      "tiem truyen",
+      "truyền tm",
+      "truyen tm",
+      "truyền tĩnh mạch",
+      "truyen tinh mach",
+      "tt mach",
+      "tt mạch"
+    ],
+    "slow_iv_injection": [
+      "tĩnh mạch chậm",
+      "tinh mach cham",
+      "tm chậm",
+      "tm cham",
+      "tmc",
+      "tiêm chậm",
+      "tiem cham",
+      "tiêm mạch chậm",
+      "tiem mach cham",
+      "chích mạch chậm",
+      "chich mach cham"
+    ],
+    "injection": [
+      "tiêm",
+      "tiem",
+      "bắp",
+      "bap",
+      "dưới da",
+      "duoi da",
+      "tĩnh mạch",
+      "tinh mach",
+      "chích",
+      "chich",
+      "chích bắp",
+      "chich bap",
+      "tdd",
+      "(tdd)",
+      "tiêm dưới da",
+      "tiem duoi da"
+    ],
+    "injection_only": [
+      "tiêm bắp",
+      "tiem bap",
+      "bắp",
+      "bap",
+      "dưới da",
+      "duoi da",
+      " im ",
+      "(im)",
+      " sc ",
+      "(sc)",
+      "tdd",
+      "(tdd)",
+      "tiêm dưới da",
+      "tiem duoi da"
+    ],
+    "inhaled": [
+      "hít",
+      "hit",
+      "xịt",
+      "xit",
+      "khí dung",
+      "khi dung",
+      "aerosol",
+      "phun mù",
+      "phun mu",
+      "định liều",
+      "dinh lieu"
+    ],
+    "topical": [
+      "bôi",
+      "boi",
+      "thoa",
+      "miếng dán",
+      "mieng dan",
+      "dán qua da",
+      "dan qua da"
+    ],
+    "eye_nose_ear_drop": [
+      "nhỏ mắt",
+      "nho mat",
+      "nhỏ mũi",
+      "nho mui",
+      "nhỏ tai",
+      "nho tai",
+      "nhỏ",
+      "nho"
+    ],
+    "suppository": [
+      "đặt",
+      "dat",
+      "hậu môn",
+      "hau mon",
+      "trực tràng",
+      "truc trang",
+      "âm đạo",
+      "am dao"
+    ]
+  },
+  "solvents": {
+    "nacl_keywords": [
+      "natri clorid",
+      "natri chlorid",
+      "natri chloride",
+      "sodium clorid",
+      "sodium chlorid",
+      "sodium chloride",
+      "nacl",
+      "nước muối",
+      "nuoc muoi",
+      "nước muối sinh lý",
+      "nuoc muoi sinh ly",
+      "natri 0.9",
+      "natri 0,9"
+    ],
+    "mix_keywords": [
+      "pha với",
+      "pha voi",
+      "pha",
+      "lấy",
+      "lay",
+      "pha đủ",
+      "pha du"
+    ],
+    "water_keywords": [
+      "nước cất",
+      "nuoc cat",
+      "nước cất pha tiêm",
+      "nuoc cat pha tiem",
+      "water for injection",
+      "aqua"
+    ]
+  },
+  "name_keywords": {
+    "true_infusions": [
+      "PARACETAMOL",
+      "THERMODOL",
+      "NATRI CLORID",
+      "SODIUM CHLORIDE",
+      "NACL",
+      "GLUCOSE",
+      "RINGER",
+      "CIPRO",
+      "LEVO",
+      "METRO",
+      "AMINOLEBAN"
+    ],
+    "infusion_products": [
+      "AMINOPLASMAL",
+      "NEPHROSTERIL",
+      "ALBUNORM",
+      "ALBUMIN",
+      "INTRALIPID",
+      "SMOF",
+      "KABIVEN",
+      "OLICLINOMEL",
+      "NUTRIFLEX",
+      "AMINOLEBAN"
+    ],
+    "always_infusion_drugs": [
+      "NEFOPAM"
+    ]
+  },
+  "fallback": {
+    "large_volume_min_ml": 50
+  }
+}

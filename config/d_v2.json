@@ -1,0 +1,338 @@
+{
+  "__meta__": {
+    "mo_ta": "Cấu hình thuốc Bệnh viện - Phiên bản Fix Lỗi Type Safe | v2: bo sung luat an toan cho MEROVIA/COLISTIMED/PIPERACILLIN-TAZO/VANCOMYCIN, goi y dung moi NaCl | merged: added 6_TEN_HIEN_THI_CHUAN from cau_hinh_thuoc.json",
+    "version": "5.0_v2"
+  },
+  "1_TU_DIEN_DONG_NGHIA": {
+    "NATRI_CLORID_100": [
+      "NATRI CLORID",
+      "NATRI",
+      "NACL",
+      "0,9%",
+      "0.9%"
+    ],
+    "SODIUM_CHLORIDE_500": [
+      "SODIUM CHLORIDE",
+      "SODIUM"
+    ],
+    "NEFOPAM": [
+      "NEFOPAM",
+      "NEFO",
+      "ACUPAN"
+    ],
+    "TRAMADOL": [
+      "TRAMADOL",
+      "TRAMA"
+    ],
+    "PARACETAMOL": [
+      "PARACETAMOL",
+      "PHARBACOL",
+      "THERMODOL",
+      "EFFERALGAN",
+      "HAPACOL",
+      "KORIC"
+    ],
+    "PARACETAMOL_TRAMADOL": [
+      "DEGEVIC",
+      "ULTRACET"
+    ],
+    "METHYLPREDNISOLON": [
+      "METHYLPREDNISOLON",
+      "METHYLPREDNISOLONE",
+      "SOLU",
+      "MEDROL",
+      "MENISON"
+    ],
+    "KHANG_SINH_TIEM": [
+      "PIPERACILLIN",
+      "TAZOBACTAM",
+      "CEFOXITIN",
+      "CEFUROXIME",
+      "TV-ZIDIM",
+      "VANCOMYCIN",
+      "MEROVIA",
+      "MEROPENEM",
+      "GENTAMICIN",
+      "AMA-POWER",
+      "CEFTRIAXON"
+    ],
+    "KHANG_SINH_TRUYEN": [
+      "CIPROBID",
+      "LINEZOLID",
+      "LEVOFLOXACIN",
+      "CIPROFLOXACIN"
+    ],
+    "DICH_TRUYEN_NEN": [
+      "GLUCOSE",
+      "RINGER",
+      "AMINOPLASMAL",
+      "NEPHROSTERIL",
+      "ALBUNORM",
+      "DEXTROSE"
+    ],
+    "THUOC_HUYET_AP_TIM_MACH": [
+      "KAVASDIN",
+      "NIFEDIPIN",
+      "COVERSYL",
+      "COVERAM",
+      "BISOPROLOL",
+      "CAPTOPRIL",
+      "LOSARTAN",
+      "SAVI LOSARTAN",
+      "IMIDU",
+      "VASTAREL",
+      "METHYLDOPA",
+      "PRADAXA"
+    ],
+    "THUOC_TIEU_DUONG": [
+      "JARDIANCE",
+      "FORXIGA"
+    ],
+    "THUOC_GIAM_DAU_KHAC": [
+      "MELOXICAM",
+      "CELECOXIB",
+      "VOLTAREN",
+      "GABAPENTIN"
+    ],
+    "THUOC_TIEU_HOA": [
+      "ESOMEPRAZOL",
+      "SOLEZOL",
+      "ELTHON",
+      "MAGNESI-B6"
+    ],
+    "LOI_TIEU": [
+      "VINZIX",
+      "VEROSPIRON",
+      "FUROSEMID"
+    ]
+  },
+  "2_NHAN_DIEN_DUONG_DUNG": {
+    "UONG": [
+      "VIÊN",
+      "TABLET",
+      "TAB",
+      "CAP",
+      "GÓI",
+      "UỐNG",
+      "RETARD",
+      "NÉN",
+      "SỦI"
+    ],
+    "TIEM": [
+      "ỐNG",
+      "LỌ",
+      "VIAL",
+      "AMPOULE",
+      "TIÊM",
+      "BOLUS",
+      "TMC",
+      "TB",
+      "TDD",
+      "/2ML",
+      "/5ML",
+      "BẮP"
+    ],
+    "TRUYEN": [
+      "CHAI",
+      "TÚI",
+      "BAG",
+      "BOTTLE",
+      "TRUYỀN",
+      "TTM",
+      "INFUSION",
+      "/100ML",
+      "/200ML",
+      "/500ML",
+      "GIỌT",
+      "G/P",
+      "ML/H"
+    ]
+  },
+  "3_LUAT_AN_TOAN_DAC_BIET": {
+    "NEFOPAM_AN_TOAN": {
+      "hoat_chat": "NEFOPAM",
+      "the_tich_goc_cua_thuoc": 2,
+      "yeu_cau_pha_che": {
+        "loai": "DICH_TRUYEN",
+        "dung_moi_bat_buoc": "Natri Clorid 0.9%",
+        "tong_the_tich_sau_pha": 100
+      }
+    },
+    "TRAMADOL_AN_TOAN": {
+      "hoat_chat": "TRAMADOL",
+      "the_tich_goc_cua_thuoc": 2,
+      "yeu_cau_pha_che": {
+        "loai": "DICH_TRUYEN",
+        "dung_moi_bat_buoc": "Natri Clorid 0.9%",
+        "tong_the_tich_sau_pha": 100
+      }
+    },
+    "VANCOMYCIN_AN_TOAN": {
+      "hoat_chat": "VANCOMYCIN",
+      "yeu_cau_pha_che": {
+        "loai": "DICH_TRUYEN",
+        "ghi_chu": "Vancomycin thường pha tiêm truyền; ưu tiên thể tích ghi trong y lệnh/dòng NaCl, mặc định 100ml nếu thiếu.",
+        "dung_moi_bat_buoc": "Natri Clorid 0.9%",
+        "tong_the_tich_sau_pha": 100
+      }
+    },
+    "MEROVIA_AN_TOAN": {
+      "hoat_chat": "MEROVIA",
+      "yeu_cau_pha_che": {
+        "dung_moi_bat_buoc": "Natri Clorid 0.9%",
+        "loai": "DICH_TRUYEN",
+        "tong_the_tich_sau_pha": 100
+      }
+    },
+    "PIPER_TAZO_AN_TOAN": {
+      "hoat_chat": "PIPERACILLIN",
+      "yeu_cau_pha_che": {
+        "dung_moi_bat_buoc": "Natri Clorid 0.9%",
+        "loai": "DICH_TRUYEN",
+        "tong_the_tich_sau_pha": 100
+      }
+    },
+    "COLISTIMED_AN_TOAN": {
+      "hoat_chat": "COLISTIMED",
+      "yeu_cau_pha_che": {
+        "dung_moi_bat_buoc": "Natri Clorid 0.9%",
+        "loai": "DICH_TRUYEN",
+        "tong_the_tich_sau_pha": 50
+      }
+    }
+  },
+  "4_LOGIC_PHAN_LOAI_DA_HINH_THAI": {
+    "PARACETAMOL": {
+      "mac_dinh": "THUOC_UONG",
+      "logic": [
+        {
+          "neu_co": [
+            "CHAI",
+            "TÚI",
+            "1G",
+            "10MG/ML"
+          ],
+          "thi_la": "DICH_TRUYEN"
+        },
+        {
+          "neu_co": [
+            "VIÊN",
+            "PHARBACOL",
+            "HAPACOL",
+            "650MG",
+            "SỦI"
+          ],
+          "thi_la": "THUOC_UONG"
+        }
+      ]
+    },
+    "METHYLPREDNISOLON": {
+      "mac_dinh": "THUOC_TIEM",
+      "logic": [
+        {
+          "neu_co": [
+            "VIÊN",
+            "16MG",
+            "4MG",
+            "MENISON",
+            "MEDROL"
+          ],
+          "thi_la": "THUOC_UONG"
+        },
+        {
+          "neu_co": [
+            "40MG",
+            "SOLU",
+            "TIÊM",
+            "LỌ"
+          ],
+          "thi_la": "THUOC_TIEM"
+        },
+        {
+          "neu_co": [
+            "TRUYỀN",
+            "PHA"
+          ],
+          "thi_la": "DICH_TRUYEN"
+        }
+      ]
+    },
+    "KHANG_SINH_TIEM": {
+      "mac_dinh": "THUOC_TIEM",
+      "logic": [
+        {
+          "neu_co": [
+            "TRUYỀN",
+            "BƠM TIÊM ĐIỆN",
+            "BTĐ",
+            "ML/H"
+          ],
+          "thi_la": "DICH_TRUYEN"
+        }
+      ]
+    }
+  },
+  "5_TU_DIEN_THE_TICH_AO": {
+    "NATRI_CLORID_100": 100,
+    "SODIUM_CHLORIDE_500": 500,
+    "THERMODOL": 100,
+    "CIPROBID": 200,
+    "LINEZOLID": 300,
+    "AMINOPLASMAL": 500,
+    "NEPHROSTERIL": 250,
+    "ALBUNORM": 50,
+    "SODIUM CHLORIDE INJECTION": 500,
+    "NATRI CLORID 0,9%": 100
+  },
+  "gio_mac_dinh": {
+    "sáng": "8 giờ",
+    "trưa": "12 giờ",
+    "chiều": "16 giờ",
+    "tối": "20 giờ",
+    "đêm": "0 giờ"
+  },
+  "tu_khoa_rac": [
+    "Dự trù thuốc",
+    "Đã xem hồ sơ",
+    "CTCH xem lại bệnh",
+    "Chăm sóc cấp",
+    "Mời hội chẩn",
+    "Ký tên",
+    "Thực hiện y lệnh",
+    "Bác sĩ điều trị",
+    "Điều dưỡng chăm sóc",
+    "Chuyển khoa",
+    "Dấu hiệu sinh tồn"
+  ],
+  "6_TEN_HIEN_THI_CHUAN": {
+    "__mo_ta": "ten: tên hiển thị chuẩn. ham_luong_mac_dinh: dùng khi tên thuốc không chứa hàm lượng (vd: tên thương mại thuần).",
+    "NATRI_CLORID_100": {
+      "ten": "Natri clorid 0,9%",
+      "ham_luong_mac_dinh": "100ml"
+    },
+    "SODIUM_CHLORIDE_500": {
+      "ten": "Natri clorid 0,9%",
+      "ham_luong_mac_dinh": "500ml"
+    },
+    "NEFOPAM": {
+      "ten": "Nefopam",
+      "ham_luong_mac_dinh": ""
+    },
+    "TRAMADOL": {
+      "ten": "Tramadol",
+      "ham_luong_mac_dinh": ""
+    },
+    "PARACETAMOL": {
+      "ten": "Paracetamol",
+      "ham_luong_mac_dinh": "10mg/ml"
+    },
+    "PARACETAMOL_TRAMADOL": {
+      "ten": "Paracetamol + Tramadol",
+      "ham_luong_mac_dinh": ""
+    },
+    "METHYLPREDNISOLON": {
+      "ten": "Methylprednisolon",
+      "ham_luong_mac_dinh": ""
+    }
+  }
+}

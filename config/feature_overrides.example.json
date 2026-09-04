@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "features": {
+    "care.input": {
+      "enabled": false,
+      "notes": "Tạm tắt nhập chăm sóc; dịch truyền và thủ thuật vẫn chạy."
+    },
+    "infusion.input": {
+      "enabled": true,
+      "failurePolicy": "continue"
+    }
+  },
+  "workflows": {
+    "ward-input": {
+      "enabled": true,
+      "continueOnFailure": true,
+      "steps": {
+        "procedure.input": {
+          "enabled": false,
+          "onDisabled": "skip"
+        }
+      }
+    }
+  }
+}

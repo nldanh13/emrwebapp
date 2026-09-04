@@ -1,0 +1,73 @@
+{
+  "url_login": "http://emr.internal.example/login.aspx",
+  "username": "",
+  "password": "",
+  "nam_lam_viec": "",
+  "ten_dieu_duong": {
+    "Monday": {
+      "work": [
+        ""
+      ],
+      "oncall": [
+        ""
+      ]
+    },
+    "Tuesday": {
+      "work": [],
+      "oncall": []
+    },
+    "Wednesday": {
+      "work": [],
+      "oncall": []
+    },
+    "Thursday": {
+      "work": [
+        ""
+      ],
+      "oncall": [
+        ""
+      ]
+    },
+    "Friday": {
+      "work": [],
+      "oncall": []
+    },
+    "Saturday": {
+      "work": [],
+      "oncall": []
+    },
+    "Sunday": {
+      "work": [],
+      "oncall": []
+    },
+    "Default": {
+      "work": [],
+      "oncall": []
+    }
+  },
+  "http_read_enabled": false,
+  "url_inpatient_list": "http://emr.internal.example/home.aspx?scope=sys&lang=vi&wpid=danhsachdieutrinoitrudraw&role=323",
+  "login_user_field": "",
+  "login_pass_field": "",
+  "login_button_field": "",
+  "login_button_value": "",
+  "ds_dieu_duong": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "headless": false,
+  "_hchanh_wpid_comment": "",
+  "billing_wpid": "",
+  "discharge_wpid": "",
+  "bed_days_wpid": "",
+  "cls_wpid": "",
+  "hchanh_username": "",
+  "hchanh_password": "",
+  "_hchanh_login_comment": "",
+  "_billing_comment": "",
+  "_note": "Copy file này thành config/config.json rồi điền thông tin thật. Không commit/chia sẻ config/config.json."
+}

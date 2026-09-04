@@ -1,0 +1,21 @@
+# Python dependencies cho web_app_emr
+# Cài đặt: pip install -r requirements.txt
+#
+# Lưu ý Selenium: cần cài thêm ChromeDriver khớp với phiên bản Chrome trên máy.
+# Xem: https://chromedriver.chromium.org/downloads
+# Hoặc dùng selenium-manager (tự động từ Selenium 4.6+)
+
+# Web scraping / automation
+selenium>=4.6.0
+beautifulsoup4>=4.12.0
+requests>=2.31.0
+
+# PDF report
+reportlab>=4.0.0
+pypdf>=4.0.0
+
+# (stdlib, không cần cài): json, os, re, sys, time, datetime, argparse,
+#   glob, copy, unicodedata, functools, typing, urllib, tempfile, logging
+# Optional: bật AI embedding semantic search nếu máy có đủ dung lượng/thời gian cài đặt
+# Cài riêng khi cần: pip install sentence-transformers
+# Sau đó đặt: EMR_SEMANTIC_BACKEND=sentence_transformers

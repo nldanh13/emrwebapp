@@ -1,0 +1,195 @@
+{
+  "_comment": "Quy tắc QA hồ sơ ra viện. Sửa file này để thêm/tắt rule, không cần sửa code.",
+  "_version": "1.0.0",
+
+  "cls_diagnosis_rules": [
+    {
+      "code": "CLS_ECHO_NO_CARDIAC_DX",
+      "enabled": true,
+      "cls_keywords": ["siêu âm tim", "sieu am tim", "echo tim", "echocardiography", "sa tim"],
+      "dx_keywords": ["tim mach", "thieu mau cuc bo", "suy tim", "roi loan nhip", "nmct",
+                      "vach ngan", "van tim", "tang huyet ap", "benh co tim", "dong mach vanh"],
+      "title": "Có siêu âm tim nhưng chưa thấy chẩn đoán bệnh tim mạch",
+      "detail": "Siêu âm tim thường chỉ định khi có bệnh lý tim mạch.",
+      "action": "Bác sĩ bổ sung chẩn đoán tim mạch phù hợp (suy tim, TMCB, rối loạn nhịp...).",
+      "owner": "Bác sĩ điều trị",
+      "severity": "warn"
+    },
+    {
+      "code": "CLS_CT_BRAIN_NO_NEURO_DX",
+      "enabled": true,
+      "cls_keywords": ["ct sọ", "ct so", "ct não", "ct nao", "mri não", "mri nao",
+                       "ct scan nao", "ct scan so", "chup ct nao"],
+      "dx_keywords": ["dot quy", "nhan mau nao", "xuat huyet nao", "u nao",
+                      "chan thuong so nao", "than kinh", "chan thuong so", "benh ly nao"],
+      "title": "Có CT/MRI não nhưng chưa thấy chẩn đoán thần kinh não",
+      "detail": "CT/MRI não thường chỉ định khi có bệnh lý thần kinh não.",
+      "action": "Bác sĩ bổ sung chẩn đoán thần kinh phù hợp.",
+      "owner": "Bác sĩ điều trị",
+      "severity": "warn"
+    },
+    {
+      "code": "CLS_TROPONIN_NO_CARDIAC_DX",
+      "enabled": true,
+      "cls_keywords": ["troponin", "ck-mb", "ck mb", "bnp", "nt-probnp"],
+      "dx_keywords": ["nhoi mau co tim", "nmct", "thieu mau cuc bo", "hc vanh cap",
+                      "hoi chung vanh cap", "suy tim", "benh co tim"],
+      "title": "Có Troponin/CK-MB nhưng chưa thấy chẩn đoán thiếu máu cục bộ",
+      "detail": "Troponin/CK-MB là marker tim mạch đặc hiệu.",
+      "action": "Bác sĩ bổ sung chẩn đoán NMCT / HCVC / suy tim nếu phù hợp.",
+      "owner": "Bác sĩ điều trị",
+      "severity": "warn"
+    },
+    {
+      "code": "CLS_BLOOD_CULTURE_NO_SEPSIS_DX",
+      "enabled": true,
+      "cls_keywords": ["cay mau", "blood culture", "cấy máu", "hemoculture"],
+      "dx_keywords": ["nhiem khuan huyet", "nhiem trung huyet", "sepsis",
+                      "nhiem trung nang", "nhiem khuan"],
+      "title": "Có cấy máu nhưng chưa thấy chẩn đoán nhiễm khuẩn huyết",
+      "detail": "Cấy máu thường chỉ định khi nghi nhiễm khuẩn huyết.",
+      "action": "Bác sĩ bổ sung chẩn đoán nhiễm khuẩn huyết / nhiễm trùng nặng nếu phù hợp.",
+      "owner": "Bác sĩ điều trị",
+      "severity": "warn"
+    },
+    {
+      "code": "CLS_XRAY_BONE_NO_FRACTURE_DX",
+      "enabled": true,
+      "cls_keywords": ["x-quang xuong", "x quang xuong", "xray xuong", "chup x-quang",
+                       "x-quang chi", "x-quang cot song", "phim xuong"],
+      "dx_keywords": ["gay xuong", "vo xuong", "chan thuong", "gay", "gãy", "vỡ xương",
+                      "thoat vi dia dem", "thoai hoa", "viem khop"],
+      "title": "Có X-quang xương nhưng chưa thấy chẩn đoán bệnh lý xương khớp",
+      "detail": "X-quang xương thường chỉ định khi nghi gãy xương hoặc bệnh lý xương khớp.",
+      "action": "Bác sĩ bổ sung chẩn đoán gãy xương / bệnh lý xương khớp phù hợp.",
+      "owner": "Bác sĩ điều trị",
+      "severity": "warn"
+    },
+    {
+      "code": "CLS_CT_SPINE_NO_SPINE_DX",
+      "enabled": true,
+      "cls_keywords": ["ct cot song", "mri cot song", "ct lung", "mri lung",
+                       "ct that lung", "mri that lung", "ct co"],
+      "dx_keywords": ["thoat vi dia dem", "thoai hoa cot song", "chan thuong cot song",
+                      "gay cot song", "hep ong song", "truot dot song"],
+      "title": "Có CT/MRI cột sống nhưng chưa thấy chẩn đoán bệnh lý cột sống",
+      "action": "Bác sĩ bổ sung chẩn đoán bệnh lý cột sống phù hợp.",
+      "owner": "Bác sĩ điều trị",
+      "severity": "warn"
+    },
+    {
+      "code": "CLS_ANTIBIOTIC_NO_INFECTION_DX",
+      "enabled": true,
+      "cls_keywords": ["ceftriaxone", "cefazolin", "cefuroxime", "vancomycin",
+                       "meropenem", "imipenem", "ciprofloxacin", "metronidazole",
+                       "clindamycin", "ampicillin", "amoxicillin"],
+      "dx_keywords": ["nhiem trung", "nhiem khuan", "ap xe", "viem", "nhiem", "sepsis",
+                      "viem phe quan", "viem phoi", "viem xuong tuy"],
+      "title": "Có kháng sinh nhưng chưa thấy chẩn đoán nhiễm khuẩn",
+      "detail": "Kháng sinh phổ rộng thường chỉ định khi có nhiễm khuẩn.",
+      "action": "Bác sĩ bổ sung chẩn đoán nhiễm khuẩn / nhiễm trùng phù hợp.",
+      "owner": "Bác sĩ điều trị",
+      "severity": "info"
+    }
+  ],
+
+  "bed_days_rules": {
+    "enabled": true,
+    "warn_over_threshold": 1,
+    "error_under_threshold": 1,
+    "max_reasonable_days": 60
+  },
+
+  "billing_rules": {
+    "enabled": true,
+    "require_billing_table": true,
+    "warn_unknown_payment_count": 3
+  },
+
+  "discharge_paper_rules": {
+    "enabled": true,
+    "require_xu_tri": true,
+    "require_ngay_gio_ra": true,
+    "require_chan_doan_ra": true,
+    "require_loi_dan": true,
+    "require_ket_qua": false,
+    "require_tai_kham_if_emergency": true,
+    "max_sick_leave_extra_days": 30
+  },
+
+  "sick_leave_rules": {
+    "enabled": true,
+    "warn_if_less_than_inpatient": true,
+    "warn_if_over_max": true
+  },
+
+  "specialty_rules": {
+    "_comment": "Rule đặc thù theo chuyên khoa. dept_keywords dùng để nhận diện chuyên khoa từ tên khoa.",
+
+    "ctch": {
+      "enabled": true,
+      "dept_keywords": ["chan thuong chinh hinh", "ctch", "ngoai chan thuong", "chinh hinh"],
+      "rules": [
+        {
+          "code": "CTCH_FRACTURE_NO_XRAY",
+          "enabled": true,
+          "dx_keywords": ["gay xuong", "gãy xương", "vo xuong", "vỡ xương", "chan thuong xuong"],
+          "required_cls_keywords": ["x-quang", "xray", "chup phim", "ct xuong"],
+          "title": "Chẩn đoán gãy xương nhưng không thấy X-quang/CT",
+          "detail": "Gãy xương cần có hình ảnh học để xác nhận.",
+          "action": "Kiểm tra X-quang/CT đã được chỉ định và có kết quả chưa.",
+          "owner": "Bác sĩ điều trị",
+          "severity": "warn"
+        },
+        {
+          "code": "CTCH_SURGERY_NO_OP_NOTE",
+          "enabled": true,
+          "dx_keywords": ["phau thuat", "phẫu thuật", "ket hop xuong", "dat neo vis",
+                          "thay khop", "noi xuong", "pttt"],
+          "required_cls_keywords": ["bien ban phau thuat", "bbpt", "phieu phau thuat"],
+          "title": "Có chỉ định PTTT nhưng chưa thấy biên bản phẫu thuật",
+          "action": "Kiểm tra biên bản phẫu thuật đã hoàn chỉnh chưa.",
+          "owner": "Bác sĩ điều trị",
+          "severity": "warn"
+        },
+        {
+          "code": "CTCH_IMPLANT_NO_SUPPLY",
+          "enabled": true,
+          "dx_keywords": ["dat neo vis", "ket hop xuong", "thay khop", "nep vis", "dinh noi tuy"],
+          "required_supply_keywords": ["neo vis", "nep", "dinh", "vis", "khop nhan tao", "implant"],
+          "title": "Chỉ định nội cố định/khớp nhân tạo nhưng chưa thấy vật tư tương ứng",
+          "action": "Kiểm tra VTYT cấy ghép đã được kê và nhập chưa.",
+          "owner": "Điều dưỡng phụ trách VTYT",
+          "severity": "error"
+        },
+        {
+          "code": "CTCH_CAST_NO_WOUND_CARE",
+          "enabled": true,
+          "dx_keywords": ["bo bot", "bó bột", "bep bot", "nep bot", "bang bot"],
+          "required_supply_keywords": ["bang", "bong", "gac", "bột bó"],
+          "title": "Chỉ định bó bột nhưng không thấy vật tư băng bột",
+          "action": "Kiểm tra vật tư bó bột đã được kê đủ chưa.",
+          "owner": "Điều dưỡng phụ trách VTYT",
+          "severity": "warn"
+        }
+      ]
+    },
+
+    "general_surgery": {
+      "enabled": true,
+      "dept_keywords": ["ngoai tong quat", "ngoai khoa", "ngoai tieu hoa", "ngoai gan mat"],
+      "rules": [
+        {
+          "code": "GS_SURGERY_NO_OP_NOTE",
+          "enabled": true,
+          "dx_keywords": ["phau thuat", "mo", "cat ruot thua", "cat tui mat", "thao tui mat"],
+          "required_cls_keywords": ["bien ban phau thuat", "bbpt"],
+          "title": "Có PTTT nhưng chưa thấy biên bản phẫu thuật",
+          "action": "Kiểm tra biên bản phẫu thuật.",
+          "owner": "Bác sĩ điều trị",
+          "severity": "warn"
+        }
+      ]
+    }
+  }
+}

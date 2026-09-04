@@ -1,0 +1,51 @@
+/* EMR Data Hub — shared product UI layer. */
+:root {
+  font-family: "Aptos", "Segoe UI Variable", "Segoe UI", sans-serif;
+  color: #172033;
+  background: #f4f7fb;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --emr-focus: #2463d4;
+  --emr-border: #d7e0ec;
+  --emr-border-soft: #e7ecf3;
+  --emr-text-muted: #8b99b0;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { width: 100%; min-width: 0; min-height: 100%; margin: 0; }
+body { overflow: hidden; background: #f4f7fb; }
+button, input, select, textarea { font: inherit; letter-spacing: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+input, select, textarea { min-width: 0; }
+input::placeholder, textarea::placeholder { color: #9aa7ba; opacity: 1; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--emr-focus) 45%, transparent);
+  outline-offset: 1px;
+}
+button:disabled, input:disabled, select:disabled, textarea:disabled { cursor: not-allowed; }
+table { font-variant-numeric: tabular-nums; }
+th { font-weight: 700; }
+::selection { background: #dbe8ff; color: #172033; }
+
+/* Shared controls */
+.emr-btn { min-height: 30px; }
+.emr-btn:not(:disabled):hover { filter: brightness(0.985); }
+.emr-btn:not(:disabled):active { transform: translateY(1px); }
+.emr-badge { vertical-align: middle; }
+
+/* Thin, quiet scrollbars for data-heavy surfaces. */
+* { scrollbar-width: thin; scrollbar-color: #c6d0de transparent; }
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: #c6d0de; border: 2px solid transparent; background-clip: padding-box; border-radius: 999px; }
+*::-webkit-scrollbar-thumb:hover { background: #aebccc; border: 2px solid transparent; background-clip: padding-box; }
+
+@media (max-width: 900px) {
+  body { overflow: auto; }
+  .emr-desktop-only { display: none !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+}
