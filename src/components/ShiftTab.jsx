@@ -558,7 +558,8 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
 
   // Tab nền không được trình duyệt vẽ lại UI, nên chỉ đổi state là chưa đủ để
   // người dùng biết cần quay lại xác nhận. Nháy tiêu đề tab (luôn thấy được kể
-  // cả khi tab không active) và bắn thông báo desktop nếu đã có quyền.
+  // cả khi tab không active) và bắn thông báo desktop nếu đã có quyền — bấm
+  // thẳng vào thông báo là xác nhận luôn, không cần mở lại đúng tab.
   useEffect(() => {
     if (typeof document === 'undefined' || !inputConfirmRequest) return undefined;
     const originalTitle = document.title;
@@ -567,20 +568,27 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
       flashOn = !flashOn;
       document.title = flashOn ? '🔔 Cần xác nhận nhập EMR' : originalTitle;
     }, 1000);
+    let notif = null;
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
       try {
-        const n = new Notification('Cần xác nhận nhập EMR', {
-          body: `Đã kiểm tra xong, cần xác nhận trước khi nhập ${inputConfirmRequest.label || ''}.`,
+        notif = new Notification('Cần xác nhận nhập EMR', {
+          body: `Đã kiểm tra xong. Bấm vào thông báo này để XÁC NHẬN nhập ${inputConfirmRequest.label || ''} ngay — không cần mở lại tab.`,
           tag: 'emr-input-confirm',
+          requireInteraction: true,
         });
-        n.onclick = () => { window.focus(); n.close(); };
+        notif.onclick = () => {
+          window.focus();
+          notif.close();
+          resolveInputConfirm(true);
+        };
       } catch (_) { /* một số trình duyệt/máy chặn Notification, bỏ qua */ }
     }
     return () => {
       clearInterval(timer);
       document.title = originalTitle;
+      if (notif) notif.close();
     };
-  }, [inputConfirmRequest]);
+  }, [inputConfirmRequest, resolveInputConfirm]);
 
   const ensureInputConfirmNotifyPermission = useCallback(() => {
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
