@@ -218,30 +218,31 @@ function buildInputConfirmMessage(targets, label, precheck = null) {
 // Hộp thoại xác nhận vẽ trực tiếp trong trang (thay cho window.confirm), vì
 // trình duyệt chặn/ẩn window.confirm khi tab không ở foreground — khiến luồng
 // nhập EMR trông như bị treo dù server đã trả token xong.
+// Neo ở đáy màn hình thay vì phủ tối toàn trang: luôn nằm ngay bên dưới khu
+// vực nút nhập (Hành động hàng loạt / thanh nút của bệnh nhân đang xem), dễ
+// thấy và bấm ngay mà không che mất phần còn lại của trang.
 function InputConfirmModal({ message, onConfirm, onCancel }) {
   return (
-    <div
-      onClick={e => { if (e.target === e.currentTarget) onCancel(); }}
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)',
-        zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 16,
-      }}
-    >
+    <div style={{
+      position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 300,
+      display: 'flex', justifyContent: 'center', padding: '0 12px 12px',
+      pointerEvents: 'none',
+    }}>
       <div style={{
-        background: C.surface, borderRadius: 10, border: `1px solid ${C.border}`,
-        width: '100%', maxWidth: 560, maxHeight: '85vh', display: 'flex', flexDirection: 'column',
+        pointerEvents: 'auto',
+        background: C.surface, borderRadius: 10, border: `1px solid ${C.blueBorder}`,
+        width: '100%', maxWidth: 720, maxHeight: '48vh', display: 'flex', flexDirection: 'column',
         boxShadow: C.shadow2,
       }}>
-        <div style={{ padding: '16px 20px', overflowY: 'auto' }}>
+        <div style={{ padding: '12px 16px 8px', overflowY: 'auto' }}>
           <pre style={{
-            margin: 0, fontFamily: 'inherit', fontSize: 13, color: C.text,
+            margin: 0, fontFamily: 'inherit', fontSize: 12.5, color: C.text,
             whiteSpace: 'pre-wrap', wordBreak: 'break-word',
           }}>{message}</pre>
         </div>
         <div style={{
           display: 'flex', gap: 8, justifyContent: 'flex-end',
-          padding: '12px 20px', borderTop: `1px solid ${C.border2}`,
+          padding: '10px 16px', borderTop: `1px solid ${C.border2}`, flexShrink: 0,
         }}>
           <Btn variant="default" onClick={onCancel}>Hủy</Btn>
           <Btn variant="solidPrimary" onClick={onConfirm}>Xác nhận</Btn>
