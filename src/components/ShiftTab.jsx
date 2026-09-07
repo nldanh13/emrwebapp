@@ -167,8 +167,7 @@ function waitForUiPaint(ms = 80) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function confirmInputAction(targets, label, precheck = null) {
-  if (typeof window === 'undefined') return true;
+function buildInputConfirmMessage(targets, label, precheck = null) {
   const ids = Array.isArray(targets.patientIds) ? targets.patientIds : [];
   const patientCount = ids.length;
   const dayCount = countTargetDays(targets);
@@ -201,7 +200,7 @@ function confirmInputAction(targets, label, precheck = null) {
   const mutationLine = normalizedLabel.includes('chăm sóc')
     ? 'Mỗi BN/ngày đều được mở kiểm tra trực tiếp trên HIS: chưa có → tạo mới; đã đúng → giữ nguyên; đã có nhưng sai → thu hồi và cập nhật; chỉ bỏ qua khi phiếu không có mã sửa hoặc EMR không cho phép can thiệp.'
     : '';
-  return window.confirm(
+  return (
     `XÁC NHẬN NHẬP EMR\n\n` +
     `Loại nhập: ${label}\n` +
     `Số bệnh nhân: ${patientCount}\n` +
@@ -212,7 +211,43 @@ function confirmInputAction(targets, label, precheck = null) {
     `${excludedLines.length ? `\nĐÃ LOẠI KHỎI PHẠM VI:\n${excludedLines.join('\n')}\n` : ''}` +
     `${checkLine}\n` +
     `${mutationLine ? `${mutationLine}\n` : ''}` +
-    `\nChỉ bấm OK khi đã xem lại danh sách/cảnh báo và đang ở đúng phiên EMR.`
+    `\nChỉ bấm Xác nhận khi đã xem lại danh sách/cảnh báo và đang ở đúng phiên EMR.`
+  );
+}
+
+// Hộp thoại xác nhận vẽ trực tiếp trong trang (thay cho window.confirm), vì
+// trình duyệt chặn/ẩn window.confirm khi tab không ở foreground — khiến luồng
+// nhập EMR trông như bị treo dù server đã trả token xong.
+function InputConfirmModal({ message, onConfirm, onCancel }) {
+  return (
+    <div
+      onClick={e => { if (e.target === e.currentTarget) onCancel(); }}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)',
+        zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div style={{
+        background: C.surface, borderRadius: 10, border: `1px solid ${C.border}`,
+        width: '100%', maxWidth: 560, maxHeight: '85vh', display: 'flex', flexDirection: 'column',
+        boxShadow: C.shadow2,
+      }}>
+        <div style={{ padding: '16px 20px', overflowY: 'auto' }}>
+          <pre style={{
+            margin: 0, fontFamily: 'inherit', fontSize: 13, color: C.text,
+            whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+          }}>{message}</pre>
+        </div>
+        <div style={{
+          display: 'flex', gap: 8, justifyContent: 'flex-end',
+          padding: '12px 20px', borderTop: `1px solid ${C.border2}`,
+        }}>
+          <Btn variant="default" onClick={onCancel}>Hủy</Btn>
+          <Btn variant="solidPrimary" onClick={onConfirm}>Xác nhận</Btn>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -246,6 +281,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
   const [manualInputPatientIds, setManualInputPatientIds] = useState(() => new Set());
   const [excludedInputPatientIds, setExcludedInputPatientIds] = useState(() => new Set());
   const [precheckReport, setPrecheckReport] = useState(null);
+  const [inputConfirmRequest, setInputConfirmRequest] = useState(null);
   const inputRoomsInitializedRef = useRef(false);
   const previousInputRoomsRef = useRef([]);
   const { states: inputFeatureStates } = useFeatureStates(['care.input', 'infusion.input', 'procedure.input']);
@@ -506,6 +542,20 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     return inputTargetDates.length ? inputTargetDates : null;
   }, [inputTargetDatesKey]);
 
+  const askInputConfirm = useCallback((targets, label, precheck) => {
+    const message = buildInputConfirmMessage(targets, label, precheck);
+    return new Promise(resolve => {
+      setInputConfirmRequest({ message, resolve });
+    });
+  }, []);
+
+  const resolveInputConfirm = useCallback((ok) => {
+    setInputConfirmRequest(prev => {
+      prev?.resolve(ok);
+      return null;
+    });
+  }, []);
+
   const handleInputCare = useCallback(async (items, selectedDate = null, options = {}) => {
     if (!careInputEnabled) { toast?.('Module nhập chăm sóc đang tắt; các module khác vẫn dùng được.', 'error'); return; }
     if (running) { toast?.('Đang có tác vụ chạy, vui lòng chờ.', 'error'); return; }
@@ -540,7 +590,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     if (!precheck?.precheck_token) return;
     targets.precheck_token = precheck.precheck_token;
 
-    const okToRun = confirmInputAction(targets, 'chăm sóc — kiểm tra / nhập / sửa', precheck);
+    const okToRun = await askInputConfirm(targets, 'chăm sóc — kiểm tra / nhập / sửa', precheck);
     if (!okToRun) {
       toast?.('Đã hủy kiểm tra/đồng bộ chăm sóc.', 'error');
       return;
@@ -594,7 +644,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     } finally {
       setRunning(null);
     }
-  }, [running, toast, loadPatients, resolveInputDates, careInputEnabled, ensureInputDataFresh]);
+  }, [running, toast, loadPatients, resolveInputDates, careInputEnabled, ensureInputDataFresh, askInputConfirm]);
 
   const handleInputInfusion = useCallback(async (items, selectedDate = null, options = {}) => {
     if (!infusionInputEnabled) { toast?.('Module nhập dịch truyền đang tắt; các module khác vẫn dùng được.', 'error'); return; }
@@ -622,7 +672,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     const precheck = await ensureInputDataFresh(targets, 'dịch truyền', 'infus');
     if (!precheck?.precheck_token) return;
     targets.precheck_token = precheck.precheck_token;
-    const okToRun = confirmInputAction(targets, 'dịch truyền — kiểm tra / nhập / sửa', precheck);
+    const okToRun = await askInputConfirm(targets, 'dịch truyền — kiểm tra / nhập / sửa', precheck);
     if (!okToRun) {
       toast?.('Đã hủy kiểm tra/đồng bộ dịch truyền.', 'error');
       return;
@@ -641,7 +691,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     } finally {
       setRunning(null);
     }
-  }, [running, toast, loadPatients, resolveInputDates, infusionInputEnabled, ensureInputDataFresh]);
+  }, [running, toast, loadPatients, resolveInputDates, infusionInputEnabled, ensureInputDataFresh, askInputConfirm]);
 
   const handleInputProcedure = useCallback(async (items, selectedDate = null, options = {}) => {
     if (!procedureInputEnabled) { toast?.('Module nhập thủ thuật đang tắt; các module khác vẫn dùng được.', 'error'); return; }
@@ -668,7 +718,8 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     const precheck = await ensureInputDataFresh(targets, 'thủ thuật', 'procedure');
     if (!precheck?.precheck_token) return;
     targets.precheck_token = precheck.precheck_token;
-    if (!confirmInputAction(targets, 'thủ thuật — kiểm tra / nhập / sửa', precheck)) {
+    const okToRunProcedure = await askInputConfirm(targets, 'thủ thuật — kiểm tra / nhập / sửa', precheck);
+    if (!okToRunProcedure) {
       toast?.('Đã hủy kiểm tra/đồng bộ thủ thuật.', 'error');
       return;
     }
@@ -689,7 +740,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     } finally {
       setRunning(null);
     }
-  }, [running, toast, loadPatients, resolveInputDates, procedureInputEnabled, ensureInputDataFresh]);
+  }, [running, toast, loadPatients, resolveInputDates, procedureInputEnabled, ensureInputDataFresh, askInputConfirm]);
 
 
   const handleRefreshDetailsOne = useCallback(async (patient, selectedDate = null) => {
@@ -863,6 +914,16 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     );
   }
 
-  if (isMobile) return <ShiftMobileView {...sharedViewProps} />;
-  return <ShiftDesktopView {...sharedViewProps} />;
+  return (
+    <>
+      {isMobile ? <ShiftMobileView {...sharedViewProps} /> : <ShiftDesktopView {...sharedViewProps} />}
+      {inputConfirmRequest && (
+        <InputConfirmModal
+          message={inputConfirmRequest.message}
+          onConfirm={() => resolveInputConfirm(true)}
+          onCancel={() => resolveInputConfirm(false)}
+        />
+      )}
+    </>
+  );
 }
