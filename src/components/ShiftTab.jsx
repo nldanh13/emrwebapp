@@ -545,7 +545,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
   const askInputConfirm = useCallback((targets, label, precheck) => {
     const message = buildInputConfirmMessage(targets, label, precheck);
     return new Promise(resolve => {
-      setInputConfirmRequest({ message, resolve });
+      setInputConfirmRequest({ label, message, resolve });
     });
   }, []);
 
@@ -556,9 +556,42 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     });
   }, []);
 
+  // Tab nền không được trình duyệt vẽ lại UI, nên chỉ đổi state là chưa đủ để
+  // người dùng biết cần quay lại xác nhận. Nháy tiêu đề tab (luôn thấy được kể
+  // cả khi tab không active) và bắn thông báo desktop nếu đã có quyền.
+  useEffect(() => {
+    if (typeof document === 'undefined' || !inputConfirmRequest) return undefined;
+    const originalTitle = document.title;
+    let flashOn = false;
+    const timer = setInterval(() => {
+      flashOn = !flashOn;
+      document.title = flashOn ? '🔔 Cần xác nhận nhập EMR' : originalTitle;
+    }, 1000);
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        const n = new Notification('Cần xác nhận nhập EMR', {
+          body: `Đã kiểm tra xong, cần xác nhận trước khi nhập ${inputConfirmRequest.label || ''}.`,
+          tag: 'emr-input-confirm',
+        });
+        n.onclick = () => { window.focus(); n.close(); };
+      } catch (_) { /* một số trình duyệt/máy chặn Notification, bỏ qua */ }
+    }
+    return () => {
+      clearInterval(timer);
+      document.title = originalTitle;
+    };
+  }, [inputConfirmRequest]);
+
+  const ensureInputConfirmNotifyPermission = useCallback(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
   const handleInputCare = useCallback(async (items, selectedDate = null, options = {}) => {
     if (!careInputEnabled) { toast?.('Module nhập chăm sóc đang tắt; các module khác vẫn dùng được.', 'error'); return; }
     if (running) { toast?.('Đang có tác vụ chạy, vui lòng chờ.', 'error'); return; }
+    ensureInputConfirmNotifyPermission();
 
     // Luồng chăm sóc hợp nhất: luôn đưa cả ngày đã đánh dấu done vào danh sách.
     // Worker sẽ kiểm tra trực tiếp trên EMR rồi quyết định PERFECT / UPDATE / MISSING.
@@ -644,11 +677,12 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     } finally {
       setRunning(null);
     }
-  }, [running, toast, loadPatients, resolveInputDates, careInputEnabled, ensureInputDataFresh, askInputConfirm]);
+  }, [running, toast, loadPatients, resolveInputDates, careInputEnabled, ensureInputDataFresh, askInputConfirm, ensureInputConfirmNotifyPermission]);
 
   const handleInputInfusion = useCallback(async (items, selectedDate = null, options = {}) => {
     if (!infusionInputEnabled) { toast?.('Module nhập dịch truyền đang tắt; các module khác vẫn dùng được.', 'error'); return; }
     if (running) { toast?.('Đang có tác vụ chạy, vui lòng chờ.', 'error'); return; }
+    ensureInputConfirmNotifyPermission();
 
     // Luồng dịch truyền hợp nhất: luôn kiểm tra trực tiếp trên EMR, kể cả ngày đã done.
     // Worker tự quyết định: đúng -> bỏ qua; thiếu -> nhập; sai/thừa -> xóa dòng sai và nhập lại.
@@ -691,11 +725,12 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     } finally {
       setRunning(null);
     }
-  }, [running, toast, loadPatients, resolveInputDates, infusionInputEnabled, ensureInputDataFresh, askInputConfirm]);
+  }, [running, toast, loadPatients, resolveInputDates, infusionInputEnabled, ensureInputDataFresh, askInputConfirm, ensureInputConfirmNotifyPermission]);
 
   const handleInputProcedure = useCallback(async (items, selectedDate = null, options = {}) => {
     if (!procedureInputEnabled) { toast?.('Module nhập thủ thuật đang tắt; các module khác vẫn dùng được.', 'error'); return; }
     if (running) { toast?.('Đang có tác vụ chạy, vui lòng chờ.', 'error'); return; }
+    ensureInputConfirmNotifyPermission();
 
     // Luồng thủ thuật hợp nhất: ngày đã done vẫn được mở kiểm tra trên EMR.
     const targets = buildInputTargets(items, resolveInputDates(selectedDate), 'procedure', {
@@ -740,7 +775,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     } finally {
       setRunning(null);
     }
-  }, [running, toast, loadPatients, resolveInputDates, procedureInputEnabled, ensureInputDataFresh, askInputConfirm]);
+  }, [running, toast, loadPatients, resolveInputDates, procedureInputEnabled, ensureInputDataFresh, askInputConfirm, ensureInputConfirmNotifyPermission]);
 
 
   const handleRefreshDetailsOne = useCallback(async (patient, selectedDate = null) => {
