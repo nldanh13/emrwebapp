@@ -108,12 +108,25 @@ async function main() {
   delete noMetaData._meta.fetched_at;
   fs.writeFileSync(noMetaPath, JSON.stringify(noMetaData, null, 2));
 
+  // Ca 5: profile đóng dấu ĐÚNG admission_time của đợt (qua tham số mới của
+  // write_patient_file) nhưng fetched_at lại SỚM HƠN admission_time (chênh
+  // lệch múi giờ/độ trễ giữa các mốc ghi nhận) -> heuristic cũ (fetchedAt >=
+  // admissionAt) sẽ loại nhầm dữ liệu ĐÚNG đợt này. So khớp trực tiếp theo
+  // admission_time đã đóng dấu phải nhận dữ liệu này thay vì loại oan.
+  const MA_BN_STAMPED = 'FLATSTAMPED01';
+  const STAMPED_ADMISSION = '2026-09-01T00:00:00.000Z';
+  write_patient_file(ctxLike, MA_BN_STAMPED, 'profile', { chan_doan_vao: 'CHAN DOAN DUNG DOT', ho_ten: 'Nguyen Van Stamped' }, STAMPED_ADMISSION);
+  backdateFetchedAt(MA_BN_STAMPED, 'thong_tin_nen', '2026-08-31T23:00:00.000Z'); // trước admission_time
+
   let index = read_index(ctxLike);
   index.patients[MA_BN_FRESH] = { ma_bn: MA_BN_FRESH, ho_ten: 'Nguyen Van Fresh', admission_time: '2026-09-01T00:00:00.000Z', active: true };
   index.patients[MA_BN_STALE] = { ma_bn: MA_BN_STALE, ho_ten: 'Nguyen Van Stale', admission_time: '2026-09-01T00:00:00.000Z', active: true };
   index.patients[MA_BN_STALE_PROFILE] = { ma_bn: MA_BN_STALE_PROFILE, ho_ten: 'Nguyen Van StaleProfile', admission_time: '2026-09-01T00:00:00.000Z', active: true };
   index.patients[MA_BN_FRESH_PROFILE] = { ma_bn: MA_BN_FRESH_PROFILE, ho_ten: 'Nguyen Van FreshProfile', admission_time: '2026-09-01T00:00:00.000Z', active: true };
   index.patients[MA_BN_NO_META] = { ma_bn: MA_BN_NO_META, ho_ten: 'Nguyen Van NoMeta', admission_time: '2026-09-01T00:00:00.000Z', active: true };
+  // Cùng đợt (admission_time hiện tại của Hành chánh khớp đúng mốc đã đóng dấu
+  // lúc fetch) — chỉ khác là fetched_at kỹ thuật sớm hơn admission_time.
+  index.patients[MA_BN_STAMPED] = { ma_bn: MA_BN_STAMPED, ho_ten: 'Nguyen Van Stamped', admission_time: STAMPED_ADMISSION, active: true };
   write_index(ctxLike, index);
 
   const server = await startApp();
@@ -140,6 +153,12 @@ async function main() {
     assert.ok(rows.length > 0, 'hchanh_profile.csv phải có ít nhất dòng FRESH, không được rỗng/không tồn tại');
     assert.ok(rows.some(r => r['Mã BN'] === MA_BN_FRESH_PROFILE), 'phải giữ lại profile đúng đợt (FRESH)');
     assert.ok(!rows.some(r => r['Mã BN'] === MA_BN_STALE_PROFILE), 'profile đợt cũ (FLATSTALEPF01) không được lọt vào kho nghiên cứu');
+  });
+
+  await test('So khớp theo admission_time đã đóng dấu nhận đúng dữ liệu dù fetched_at kỹ thuật sớm hơn admission_time', async () => {
+    const csvPath = path.join(RUNTIME_ROOT, 'research', 'research_store', 'du_lieu_goc', 'runs', runId, 'hchanh_profile.csv');
+    const rows = readCsvRows(csvPath);
+    assert.ok(rows.some(r => r['Mã BN'] === MA_BN_STAMPED), 'phải nhận dữ liệu đóng dấu đúng admission_time dù fetched_at < admission_time (heuristic cũ sẽ loại oan ca này)');
   });
 
   server.close();

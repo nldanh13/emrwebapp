@@ -161,6 +161,35 @@ async function main() {
     assert.notStrictEqual(persisted?.so_luu_tru, '55555', 'không được đông cứng nhầm dữ liệu của đợt tái nhập viện mới hơn vào đợt cũ đang kiểm');
   });
 
+  await test('Bản dùng chung đóng dấu ĐÚNG đợt vẫn dùng được dù Hành chánh sau đó đã chuyển sang đợt mới hơn', async () => {
+    const MA_BN = 'RESTAMP01';
+    const ctxLike = { dir: RUNTIME_ROOT, sid: 'default' };
+    const ADMISSION_A = '2026-09-01T00:00:00.000Z';
+    const ADMISSION_B = '2026-09-10T00:00:00.000Z'; // đợt tái nhập viện sau đó
+
+    // Hành chánh ghi dữ liệu trong lúc đợt A đang active -> đóng dấu đúng admission_time.
+    write_patient_file(ctxLike, MA_BN, 'discharge', { so_luu_tru: '77777', raw_time: '02/09/2026 07:30' }, ADMISSION_A);
+
+    // Sau đó Hành chánh chuyển sang coi đợt B là hiện tại cho cùng mã BN (chưa
+    // ai ghi đè lại file discharge, nó vẫn là dữ liệu hợp lệ của đợt A).
+    const index = read_index(ctxLike);
+    index.patients[MA_BN] = { ma_bn: MA_BN, admission_time: ADMISSION_B, active: true };
+    write_index(ctxLike, index);
+
+    // Kiểm hồ sơ đang xem đúng đợt A.
+    const CASE_KEY = `${MA_BN}::admission-a`;
+    seedRecordsCheckIndex(CASE_KEY, {
+      ma_bn: MA_BN, case_key: CASE_KEY, ho_ten: 'Nguyen Van Restamp', active: true,
+      admission_time: ADMISSION_A,
+      discharge_time: '2026-09-03T00:00:00.000Z',
+      fetched: {}, checked: false,
+    });
+
+    const dash = await getJson(base, '/hchanh/records-check/dashboard');
+    const card = (dash.json.patients || []).find(p => p.case_key === CASE_KEY || p.storage_key === CASE_KEY);
+    assert.strictEqual(card?.discharge?.so_luu_tru, '77777', 'phải dùng lại được dữ liệu đóng dấu đúng đợt A dù Hành chánh đã chuyển sang đợt B');
+  });
+
   server.close();
   fs.rmSync(RUNTIME_ROOT, { recursive: true, force: true });
 

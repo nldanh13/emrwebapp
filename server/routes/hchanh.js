@@ -416,10 +416,18 @@ function records_check_patient_file(ctx, case_key, fileKey) {
 // mỗi nơi tự viết một bản kiểm tra riêng chỉ có chiều (1) — sửa một chỗ dễ quên
 // chỗ còn lại, nên gộp về đây dùng chung.
 function sharedHchanhDataMatchesEncounter(ctx, shared, ma_bn, dischargeTimeHint, admissionTimeHint) {
+  const ownAdmissionAtMs = Date.parse(admissionTimeHint || '') || 0;
+  const stampedAdmissionAtMs = Date.parse(shared?._meta?.admission_time || '') || 0;
+  // Từ khi write_patient_file() đóng dấu đúng đợt Hành chánh đang active LÚC
+  // GHI vào _meta.admission_time, so khớp trực tiếp — chính xác hơn hẳn suy
+  // đoán qua so sánh thời gian fetch. Chỉ rơi về heuristic cũ khi bản dùng
+  // chung là dữ liệu cũ (ghi trước khi có trường này) hoặc thiếu mốc so sánh.
+  if (ownAdmissionAtMs && stampedAdmissionAtMs) {
+    return stampedAdmissionAtMs === ownAdmissionAtMs;
+  }
   const dischargeAtMs = Date.parse(dischargeTimeHint || '') || 0;
   const fetchedAtMs = Date.parse(shared?._meta?.fetched_at || '') || 0;
   if (dischargeAtMs && fetchedAtMs && fetchedAtMs < dischargeAtMs) return false;
-  const ownAdmissionAtMs = Date.parse(admissionTimeHint || '') || 0;
   if (ownAdmissionAtMs) {
     const hchanhIndex = read_index(ctx);
     const hchanhAdmissionAtMs = Date.parse(hchanhIndex?.patients?.[ma_bn]?.admission_time || '') || 0;
@@ -665,10 +673,22 @@ function stableHashText(value) {
   return crypto.createHash('sha1').update(String(value || ''), 'utf8').digest('hex').slice(0, 12);
 }
 
+// Các trường thay đổi thường xuyên trong quá trình xử lý hành chính SAU khi ra
+// viện (đổi phòng/giường khi dọn hồ sơ, cập nhật xử trí, lịch sử chuyển khoa
+// được ghi thêm...) dù vẫn cùng một đợt điều trị. records_case_key() đã ghép
+// ma_bn + admission_time + discharge_time + department vào "base" — đủ để
+// định danh đúng đợt; hash dưới đây chỉ để phân biệt thêm các đợt trùng mốc
+// thời gian hiếm gặp, nên phải loại các trường vận hành hay đổi này, nếu
+// không case_key đổi liên tục dù không phải đợt mới, làm mất "Đã kiểm"/
+// checklist đã lưu cho case đó (không có bí-danh yếu nào bù lại việc này —
+// recordsCheckedAliasesForState() cố ý chỉ khôi phục theo đúng key, tránh lan
+// nhầm trạng thái "Đã kiểm" sang dòng nguồn khác).
+const ROW_STABLE_TEXT_VOLATILE_KEY_RE = /url|href|link|usid|session|token|record_link_error|vi_tri|phong|giuong|room\b|bed\b|trang_?thai|trạng\s*thái|xu_?tri|xử\s*trí|lich_?su|lịch\s*sử|ghi_?chu|ghi\s*chú|\bnote\b/i;
+
 function rowStableText(row) {
   if (!row || typeof row !== 'object') return '';
   return Object.keys(row).sort()
-    .filter(key => !/url|href|link|usid|session|token|record_link_error/i.test(key))
+    .filter(key => !ROW_STABLE_TEXT_VOLATILE_KEY_RE.test(key))
     .map(key => `${key}=${String(row[key] ?? '').replace(/\s+/g, ' ').trim()}`)
     .join('|');
 }
@@ -2719,7 +2739,7 @@ router.post('/hchanh/fetch', async (req, res) => {
           mark_records_file_fetched(ctx, storage_key, file_key);
           if (file_key === 'discharge') update_records_storage_from_discharge(ctx, storage_key, payload);
         } else {
-          write_patient_file(ctx, storage_key, file_key, payload);
+          write_patient_file(ctx, storage_key, file_key, payload, patient_meta?.admission_time || '');
         }
         saved.push(file_key);
 
@@ -4243,7 +4263,7 @@ router.post('/hchanh/rescan', async (req, res) => {
         for (const fk of files_to_refetch) {
           if (output[fk] !== undefined) {
             const payload = output[fk];
-            write_patient_file(ctx, ma_bn, fk, payload);
+            write_patient_file(ctx, ma_bn, fk, payload, meta?.admission_time || '');
             const info = normalizeFetchOutputInfo(fk, payload);
             if (TECHNICAL_FETCH_STATUSES.has(info.status)) file_failures.push(info);
             else if (ATTENTION_FETCH_STATUSES.has(info.status)) file_attention.push(info);

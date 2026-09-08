@@ -3473,8 +3473,17 @@ function jsonShort(value, max = 3000) {
 // nghiên cứu (khác với Hành chánh, dữ liệu nghiên cứu phải đúng, không thể tự
 // quét bù lại như module khác nên bắt buộc phải lọc ở đây).
 function hchanhSharedDataMatchesEncounter(payload, meta) {
-  const fetchedAt = parseAnyDate(payload?._meta?.fetched_at);
   const admissionAt = parseAnyDate(meta?.admission_time);
+  // Từ khi write_patient_file() (server/hchanh_data_contract.js) đóng dấu đúng
+  // đợt Hành chánh đang active LÚC GHI vào _meta.admission_time, so khớp trực
+  // tiếp mốc này với đợt đang xét — chính xác hơn hẳn suy đoán qua so sánh
+  // fetched_at với admission_time. Chỉ rơi về heuristic cũ khi bản dùng chung
+  // là dữ liệu cũ (ghi trước khi có trường này).
+  const stampedAdmissionAt = parseAnyDate(payload?._meta?.admission_time);
+  if (admissionAt && stampedAdmissionAt) {
+    return stampedAdmissionAt.getTime() === admissionAt.getTime();
+  }
+  const fetchedAt = parseAnyDate(payload?._meta?.fetched_at);
   // Thiếu mốc để so sánh nghĩa là không thể xác nhận dữ liệu thuộc đúng đợt
   // hiện tại. Loại thay vì mặc định coi là khớp — đúng nguyên tắc "dữ liệu
   // nghiên cứu phải đúng, không tự quét bù lại được" đã nêu ở trên; dữ liệu
