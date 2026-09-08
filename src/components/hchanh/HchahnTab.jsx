@@ -652,7 +652,7 @@ function PatientCard({ card, selected, onSelect, onFetch, onFetchDischargeFull, 
 
 // ── Detail panel ──────────────────────────────────────────────────────────────
 
-function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onFetchFile, onPreviewVTYT, onProcessVTYT, onInputVTYT, onOpenBedEdit, onPrintBilling, onCreateTicket, onRescan, fetchingKey, fetchingFile, previewVtytKey, inputVtytKey, bedEditKey, printBillingKey, vtytPreview }) {
+function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onFetchFile, onPreviewVTYT, onProcessVTYT, onInputVTYT, onOpenBedEdit, onPrintBilling, onCreateTicket, onRescan, fetchingKey, fetchingFile, previewVtytKey, inputVtytKey, bedEditKey, printBillingKey, ticketKey, vtytPreview }) {
   const [tab, setTab] = useState('fetch');
   const [tabTouched, setTabTouched] = useState(false);
   const [showMoreActions, setShowMoreActions] = useState(false);
@@ -665,9 +665,10 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onFetchFile
   const isInputVtyt = inputVtytKey === ma_bn;
   const isBedEdit = bedEditKey === ma_bn;
   const isPrintBilling = printBillingKey === ma_bn;
+  const isCreatingTicket = ticketKey === ma_bn;
   const hasVtytPreview = Boolean(vtytPreview?.plan?.length);
   const vtytProcessed = Boolean(vtytPreview?.processed);
-  const busyAny   = isFetching || isBedEdit || isPrintBilling || Boolean(inputVtytKey) || Boolean(previewVtytKey) || Boolean(fetchingFile) || Boolean(bedEditKey) || Boolean(printBillingKey);
+  const busyAny   = isFetching || isBedEdit || isPrintBilling || isCreatingTicket || Boolean(inputVtytKey) || Boolean(previewVtytKey) || Boolean(fetchingFile) || Boolean(bedEditKey) || Boolean(printBillingKey) || Boolean(ticketKey);
   const fetched    = card?.fetched || {};
   const issues     = safeArr(card?.issues).filter(i => i.severity !== 'info');
   const scopeFiles = SCOPE_FILES.discharge || ['profile'];
@@ -763,8 +764,8 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onFetchFile
               <Btn variant="secondary" disabled={busyAny} onClick={() => onPrintBilling?.(card)} style={{ fontSize:11, padding:'6px 9px' }}>
                 {isPrintBilling ? <><Spinner size={10} /> Đang lưu...</> : 'In bảng kê'}
               </Btn>
-              <Btn variant={issues.length > 0 ? 'danger' : 'secondary'} disabled={busyAny && issues.length === 0} onClick={() => onCreateTicket(card)} style={{ fontSize:11, padding:'6px 9px' }}>
-                Phiếu sửa
+              <Btn variant={issues.length > 0 ? 'danger' : 'secondary'} disabled={busyAny} onClick={() => onCreateTicket(card)} style={{ fontSize:11, padding:'6px 9px' }}>
+                {isCreatingTicket ? <><Spinner size={10} /> Đang gửi...</> : 'Phiếu sửa'}
               </Btn>
               <Btn variant="secondary" disabled={busyAny} onClick={() => onOpenBedEdit?.(card)} style={{ fontSize:11, padding:'6px 9px' }}>
                 {isBedEdit ? <><Spinner size={10} /> Mở...</> : 'Sửa giường'}
@@ -1470,7 +1471,7 @@ function CountBar({ counts, dashboard }) {
 export default function HchahnTab({ toast, workDateRange }) {
   const hc = useHchanh({ toast, workDateRange });
   const {
-    loading, syncing, fetchingKey, fetchingFile, previewVtytKey, inputVtytKey, bedEditKey, printBillingKey,
+    loading, syncing, fetchingKey, fetchingFile, previewVtytKey, inputVtytKey, bedEditKey, printBillingKey, ticketKey,
     selectedCard, setSelectedCard,
     search, setSearch,
     filterScope, setFilterScope,
@@ -1727,6 +1728,7 @@ export default function HchahnTab({ toast, workDateRange }) {
               inputVtytKey={inputVtytKey}
               bedEditKey={bedEditKey}
               printBillingKey={printBillingKey}
+              ticketKey={ticketKey}
               vtytPreview={vtytPreviewByPatient[getMaBn(selectedCard)]}
             />
           )}

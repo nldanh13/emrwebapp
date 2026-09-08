@@ -657,6 +657,10 @@ export default function ClinicTab({ toast }) {
       toast?.('Còn dòng chưa đọc được Tên chỉ định TT từ popup. Hãy đọc lại danh sách hoặc kiểm tra EMR.', 'error');
       return;
     }
+    if (!result?.precheck_token) {
+      toast?.('Kết quả đọc phòng khám đã hết hiệu lực. Hãy đọc lại danh sách trước khi nhập TT.', 'error');
+      return;
+    }
     const ok = window.confirm(`Sẽ nhập thủ thuật cho ${actionRows.length} chỉ định TT chưa hoàn tất. Tiếp tục?`);
     if (!ok) return;
     setInputLoading(true);
@@ -664,8 +668,10 @@ export default function ClinicTab({ toast }) {
       const data = await api.runClinicInputProcedures({
         username: username.trim(), password, loginUrl: loginUrl.trim(), listUrl: listUrl.trim(),
         headless, clinicSchedule, rows: actionRows,
+        precheck_token: result.precheck_token,
       });
       toast?.(data.message || 'Đã chạy nhập thủ thuật phòng khám.', data.status === 'ok' ? 'ok' : 'info');
+      if (data.status === 'ok') setResult(null);
     } catch (e) {
       toast?.(String(e.message || e), 'error');
     } finally {
@@ -785,7 +791,7 @@ export default function ClinicTab({ toast }) {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <Btn variant="primary" disabled={loading || inputLoading || !canRun} onClick={() => run('today')}>Đọc ca trong ngày</Btn>
               <Btn variant="solidWarn" disabled={loading || inputLoading || !canRun} onClick={() => run('missed')}>Tìm ca bỏ lỡ · 3 tháng</Btn>
-              <Btn variant="solidSuccess" disabled={loading || inputLoading || !actionRows.length} onClick={inputProcedures}>Nhập TT chưa hoàn tất ({actionRows.length})</Btn>
+              <Btn variant="solidSuccess" disabled={loading || inputLoading || !actionRows.length || !result?.precheck_token} onClick={inputProcedures}>Nhập TT chưa hoàn tất ({actionRows.length})</Btn>
             </div>
             <div style={{ color: C.text3, fontSize: 11, lineHeight: 1.45 }}>
               Nút nhập TT chỉ lấy dòng chưa có trạng thái Hoàn tất/Đã tất toán/Treo, có TT chưa đủ, và đã đọc được Tên chỉ định từ popup TT.

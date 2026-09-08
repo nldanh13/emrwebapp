@@ -177,6 +177,7 @@ export function useHchanh({ toast, workDateRange } = {}) {
   const [previewVtytKey, setPreviewVtytKey] = useState(''); // ma_bn đang quét thuốc/VTYT
   const [bedEditKey, setBedEditKey]     = useState('');   // ma_bn đang mở popup sửa giường
   const [printBillingKey, setPrintBillingKey] = useState(''); // ma_bn đang in/lưu bảng kê
+  const [ticketKey, setTicketKey]       = useState('');   // ma_bn đang tạo/cập nhật phiếu sửa
   const [vtytPreviewByPatient, setVtytPreviewByPatient] = useState({});
   const [vtytBatchDraft, setVtytBatchDraft] = useState(null);
   const [vtytBatchLoading, setVtytBatchLoading] = useState(false);
@@ -696,6 +697,8 @@ export function useHchanh({ toast, workDateRange } = {}) {
   const createTicket = useCallback(async (card, payload = {}) => {
     const ma_bn = getMaBn(card);
     if (!ma_bn) return;
+    if (ticketKey) return; // Bấm trùng khi phiếu trước còn đang gửi -> bỏ qua, tránh 2 request chồng lên nhau.
+    setTicketKey(ma_bn);
     try {
       const result = await api.createHchanh_Ticket(ma_bn, {
         issues: card?.issues || [],
@@ -705,8 +708,10 @@ export function useHchanh({ toast, workDateRange } = {}) {
       await load();
     } catch (e) {
       toast?.(String(e.message || e), 'error');
+    } finally {
+      setTicketKey('');
     }
-  }, [load, toast]);
+  }, [load, toast, ticketKey]);
 
   const updateTicket = useCallback(async (ticketId, patch) => {
     try {
@@ -863,6 +868,7 @@ export function useHchanh({ toast, workDateRange } = {}) {
     previewVtytKey,
     bedEditKey,
     printBillingKey,
+    ticketKey,
     vtytPreviewByPatient,
     vtytBatchDraft, setVtytBatchDraft, vtytBatchLoading, vtytBatchInputting,
     selectedCard,

@@ -201,6 +201,28 @@ function readRowsForHchanhSync(ctx, bodyPatients = null) {
 }
 
 
+// ── File PDF tổng hợp in ra viện ─────────────────────────────────────────────
+// Trước đây ghi thẳng vào <ROOT_DIR>/in — nằm ngoài .runtime/, không được tính
+// vào bất kỳ công cụ kiểm kê/dọn dẹp/backup nào của kho dữ liệu runtime. Từ giờ
+// ghi vào trong .runtime/ như mọi dữ liệu khác để "gom về 1 chỗ". Vẫn tìm ở
+// đường dẫn cũ khi đọc, để không mất quyền tải các file đã tạo trước khi đổi.
+
+const LEGACY_DISCHARGE_PRINT_DIR = path.join(ROOT_DIR, 'in');
+
+function discharge_print_bundle_dir() {
+  const dir = path.join(RUNTIME_ROOT, 'print_bundles');
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+  return dir;
+}
+
+function resolve_discharge_print_bundle_path(fileName) {
+  const currentPath = path.join(discharge_print_bundle_dir(), fileName);
+  if (fs.existsSync(currentPath)) return currentPath;
+  const legacyPath = path.join(LEGACY_DISCHARGE_PRINT_DIR, fileName);
+  if (fs.existsSync(legacyPath)) return legacyPath;
+  return currentPath;
+}
+
 // ── Records-check index riêng ────────────────────────────────────────────────
 // Tab Kiểm hồ sơ cần quét lại danh sách Hoàn tất độc lập, không lấy lại danh sách
 // đang nằm khoa/sorted từ các tab trực hoặc hành chánh. Index này chỉ lưu danh sách
@@ -404,7 +426,39 @@ function records_check_patient_file(ctx, case_key, fileKey) {
   return path.join(records_check_patient_dir(ctx, case_key), `${hchanh_file_stem(fileKey)}.json`);
 }
 
-function read_records_patient_file(ctx, case_key, fileKey, dischargeTimeHint) {
+// Kho Hành chánh chỉ giữ 1 bản mới nhất theo mã BN, không phân biệt theo đợt
+// nằm viện. Dùng chung được coi là AN TOÀN cho một đợt Kiểm hồ sơ cụ thể chỉ
+// khi cả hai chiều đều khớp:
+//   1. Bản dùng chung được lấy TỪ lúc ra viện của đúng đợt đang xem trở đi
+//      (không phải dữ liệu của một đợt nhập viện CŨ hơn).
+//   2. Đợt Hành chánh đang coi là hiện tại cho đúng mã BN này (nếu biết)
+//      không MỚI hơn đợt đang xem — nếu mới hơn, bản dùng chung gần như chắc
+//      chắn đã được ghi đè bởi lần TÁI NHẬP VIỆN sau đó, không phải đợt này.
+// Trước đây hai nơi gọi hàm này (đọc lẻ và reuseSharedHchanhDataForRecordsCheck)
+// mỗi nơi tự viết một bản kiểm tra riêng chỉ có chiều (1) — sửa một chỗ dễ quên
+// chỗ còn lại, nên gộp về đây dùng chung.
+function sharedHchanhDataMatchesEncounter(ctx, shared, ma_bn, dischargeTimeHint, admissionTimeHint) {
+  const ownAdmissionAtMs = Date.parse(admissionTimeHint || '') || 0;
+  const stampedAdmissionAtMs = Date.parse(shared?._meta?.admission_time || '') || 0;
+  // Từ khi write_patient_file() đóng dấu đúng đợt Hành chánh đang active LÚC
+  // GHI vào _meta.admission_time, so khớp trực tiếp — chính xác hơn hẳn suy
+  // đoán qua so sánh thời gian fetch. Chỉ rơi về heuristic cũ khi bản dùng
+  // chung là dữ liệu cũ (ghi trước khi có trường này) hoặc thiếu mốc so sánh.
+  if (ownAdmissionAtMs && stampedAdmissionAtMs) {
+    return stampedAdmissionAtMs === ownAdmissionAtMs;
+  }
+  const dischargeAtMs = Date.parse(dischargeTimeHint || '') || 0;
+  const fetchedAtMs = Date.parse(shared?._meta?.fetched_at || '') || 0;
+  if (dischargeAtMs && fetchedAtMs && fetchedAtMs < dischargeAtMs) return false;
+  if (ownAdmissionAtMs) {
+    const hchanhIndex = read_index(ctx);
+    const hchanhAdmissionAtMs = Date.parse(hchanhIndex?.patients?.[ma_bn]?.admission_time || '') || 0;
+    if (hchanhAdmissionAtMs && hchanhAdmissionAtMs > ownAdmissionAtMs) return false;
+  }
+  return true;
+}
+
+function read_records_patient_file(ctx, case_key, fileKey, dischargeTimeHint, admissionTimeHint) {
   const filePath = records_check_patient_file(ctx, case_key, fileKey);
   const data = readJsonSafe(filePath, null);
   if (data !== null && data !== undefined) return data;
@@ -417,13 +471,7 @@ function read_records_patient_file(ctx, case_key, fileKey, dischargeTimeHint) {
   if (!ma_bn) return null;
   const shared = read_patient_file(ctx, ma_bn, fileKey);
   if (!shared) return null;
-  // Kho Hành chánh chỉ giữ 1 bản mới nhất theo mã BN, không phân biệt theo đợt
-  // nằm viện. Nếu bản đó được lấy TRƯỚC thời điểm ra viện của đúng đợt đang xem
-  // (khi biết), khả năng cao thuộc một đợt nhập viện khác — không dùng, để
-  // Kiểm hồ sơ tự lấy đúng đợt của mình thay vì hiển thị nhầm.
-  const dischargeAtMs = Date.parse(dischargeTimeHint || '') || 0;
-  const fetchedAtMs = Date.parse(shared?._meta?.fetched_at || '') || 0;
-  if (dischargeAtMs && fetchedAtMs && fetchedAtMs < dischargeAtMs) return null;
+  if (!sharedHchanhDataMatchesEncounter(ctx, shared, ma_bn, dischargeTimeHint, admissionTimeHint)) return null;
   return shared;
 }
 
@@ -435,10 +483,10 @@ function write_records_patient_file(ctx, case_key, fileKey, payload) {
   return data;
 }
 
-function read_records_patient_all(ctx, case_key, dischargeTimeHint) {
+function read_records_patient_all(ctx, case_key, dischargeTimeHint, admissionTimeHint) {
   const out = {};
   for (const fileKey of RECORDS_CHECK_FILES) {
-    const data = read_records_patient_file(ctx, case_key, fileKey, dischargeTimeHint);
+    const data = read_records_patient_file(ctx, case_key, fileKey, dischargeTimeHint, admissionTimeHint);
     if (data !== null && data !== undefined) out[fileKey] = data;
   }
   return out;
@@ -453,12 +501,17 @@ function read_records_check_index(ctx) {
   }
 
   // Tự migrate nhẹ dữ liệu cũ từ session hiện tại sang kho cố định.
-  const legacy = readJsonSafe(records_check_legacy_session_index_path(ctx), null);
+  const legacyPath = records_check_legacy_session_index_path(ctx);
+  const legacy = readJsonSafe(legacyPath, null);
   if (legacy && typeof legacy === 'object' && legacy.patients && typeof legacy.patients === 'object') {
     const migrated = { ...legacy, migratedFromSession: ctx.sid || 'default', migratedAt: new Date().toISOString() };
     mergeRecordsCheckedBackupIntoIndex(ctx, migrated);
     writeJsonAtomic(persistentPath, migrated);
     persistRecordsCheckedBackup(ctx, migrated);
+    // Đã migrate xong sang kho cố định (đọc lại từ persistentPath ở lần sau,
+    // không bao giờ quay lại đọc file legacy nữa) -> xoá để tránh tồn đọng
+    // file cũ không đồng bộ, chỉ tốn dung lượng.
+    try { fs.rmSync(legacyPath, { force: true }); } catch (_) {}
     return migrated;
   }
   const empty = { version: HCHANH_DATA_VERSION, updatedAt: null, lastScan: null, patients: {}, checked: {}, checked_aliases: {}, checklist: {}, checklist_aliases: {} };
@@ -493,12 +546,20 @@ function records_ma_bn_from_case_key(metaOrKey) {
   return idx >= 0 ? raw.slice(0, idx) : raw;
 }
 
+// Ghi lại khi một thao tác cập nhật trạng thái fetch bị bỏ qua vì key không
+// (còn) tồn tại trong index — trước đây các hàm dưới đây âm thầm trả về index
+// không đổi, khiến kết quả fetch/lỗi bị rơi mất không dấu vết và ca có thể
+// kẹt ở trạng thái "đang chờ" vô thời hạn mà không ai biết vì sao.
+function warn_records_meta_missing(fnName, case_key) {
+  console.warn(`[RECORDS_CHECK] ${fnName}: bỏ qua, không tìm thấy meta cho case_key="${String(case_key || '').slice(0, 200)}" trong records_check_index.`);
+}
+
 function mark_records_fetch_error(ctx, case_key, error_msg) {
   const key = records_storage_key(case_key);
   if (!key) return read_records_check_index(ctx);
   const index = read_records_check_index(ctx);
   const meta = index.patients?.[key];
-  if (!meta) return index;
+  if (!meta) { warn_records_meta_missing('mark_records_fetch_error', key); return index; }
   const now = new Date();
   const failures = Math.max(0, Number(meta.fetch_failure_count || 0)) + 1;
   const retryMinutes = Math.min(30, failures <= 1 ? 1 : (failures <= 2 ? 5 : (failures <= 3 ? 15 : 30)));
@@ -514,7 +575,7 @@ function clear_records_fetch_error(ctx, case_key) {
   if (!key) return read_records_check_index(ctx);
   const index = read_records_check_index(ctx);
   const meta = index.patients?.[key];
-  if (!meta) return index;
+  if (!meta) { warn_records_meta_missing('clear_records_fetch_error', key); return index; }
   meta.fetch_error = null;
   meta.fetch_error_at = null;
   meta.fetch_failure_count = 0;
@@ -528,7 +589,7 @@ function mark_records_fetch_attempt(ctx, case_key) {
   if (!key) return read_records_check_index(ctx);
   const index = read_records_check_index(ctx);
   const meta = index.patients?.[key];
-  if (!meta) return index;
+  if (!meta) { warn_records_meta_missing('mark_records_fetch_attempt', key); return index; }
   meta.fetch_attempt_count = Math.max(0, Number(meta.fetch_attempt_count || 0)) + 1;
   meta.last_fetch_attempt_at = new Date().toISOString();
   return write_records_check_index(ctx, index);
@@ -539,7 +600,7 @@ function mark_records_file_fetched(ctx, case_key, file_key) {
   if (!key) return read_records_check_index(ctx);
   const index = read_records_check_index(ctx);
   const meta = index.patients?.[key];
-  if (!meta) return index;
+  if (!meta) { warn_records_meta_missing('mark_records_file_fetched', key); return index; }
   meta.fetched = { ...(meta.fetched || {}), [file_key]: new Date().toISOString() };
   return write_records_check_index(ctx, index);
 }
@@ -556,7 +617,7 @@ function update_records_storage_from_discharge(ctx, case_key, dischargePayload) 
   if (!key) return read_records_check_index(ctx);
   const index = read_records_check_index(ctx);
   const meta = index.patients?.[key];
-  if (!meta) return index;
+  if (!meta) { warn_records_meta_missing('update_records_storage_from_discharge', key); return index; }
   if (storage) {
     meta.so_luu_tru = storage;
     meta.storage_no = storage;
@@ -639,10 +700,22 @@ function stableHashText(value) {
   return crypto.createHash('sha1').update(String(value || ''), 'utf8').digest('hex').slice(0, 12);
 }
 
+// Các trường thay đổi thường xuyên trong quá trình xử lý hành chính SAU khi ra
+// viện (đổi phòng/giường khi dọn hồ sơ, cập nhật xử trí, lịch sử chuyển khoa
+// được ghi thêm...) dù vẫn cùng một đợt điều trị. records_case_key() đã ghép
+// ma_bn + admission_time + discharge_time + department vào "base" — đủ để
+// định danh đúng đợt; hash dưới đây chỉ để phân biệt thêm các đợt trùng mốc
+// thời gian hiếm gặp, nên phải loại các trường vận hành hay đổi này, nếu
+// không case_key đổi liên tục dù không phải đợt mới, làm mất "Đã kiểm"/
+// checklist đã lưu cho case đó (không có bí-danh yếu nào bù lại việc này —
+// recordsCheckedAliasesForState() cố ý chỉ khôi phục theo đúng key, tránh lan
+// nhầm trạng thái "Đã kiểm" sang dòng nguồn khác).
+const ROW_STABLE_TEXT_VOLATILE_KEY_RE = /url|href|link|usid|session|token|record_link_error|vi_tri|phong|giuong|room\b|bed\b|trang_?thai|trạng\s*thái|xu_?tri|xử\s*trí|lich_?su|lịch\s*sử|ghi_?chu|ghi\s*chú|\bnote\b/i;
+
 function rowStableText(row) {
   if (!row || typeof row !== 'object') return '';
   return Object.keys(row).sort()
-    .filter(key => !/url|href|link|usid|session|token|record_link_error/i.test(key))
+    .filter(key => !ROW_STABLE_TEXT_VOLATILE_KEY_RE.test(key))
     .map(key => `${key}=${String(row[key] ?? '').replace(/\s+/g, ' ').trim()}`)
     .join('|');
 }
@@ -1167,7 +1240,7 @@ function recoverRecordsCheckedFromLatestPdf(ctx, index) {
   const byIdentity = new Map();
   for (const [key, meta] of Object.entries(index.patients || {})) {
     if (!meta || typeof meta !== 'object') continue;
-    const discharge = read_records_patient_file(ctx, key, 'discharge', meta?.discharge_time);
+    const discharge = read_records_patient_file(ctx, key, 'discharge', meta?.discharge_time, meta?.admission_time);
     const storageKey = recordsRecoveryStorageKey(firstStorageText(discharge || {}, meta, meta.source_row || {}));
     const nameKey = recordsRecoveryNameKey(meta.ho_ten || meta.source_row?.ho_ten || meta.source_row?.['Họ tên'] || '');
     if (!storageKey || !nameKey) continue;
@@ -1382,7 +1455,7 @@ function buildRecordsCheckCard(ctx, meta) {
     meta?.source_row?.['Thời gian ra viện'],
     meta?.source_row?.['Ngày ra viện']
   );
-  const data = read_records_patient_all(ctx, storageKey, metaDischargeTime);
+  const data = read_records_patient_all(ctx, storageKey, metaDischargeTime, meta?.admission_time);
   const fetched = meta.fetched || {};
   const metaStorage = firstStorageText(meta, meta?.source_row || {});
   const discharge = data.discharge && typeof data.discharge === 'object'
@@ -2062,17 +2135,16 @@ function reuseSharedHchanhDataForRecordsCheck(ctx, meta) {
   const case_key = records_storage_key(meta);
   const ma_bn = records_ma_bn_from_case_key(meta);
   if (!case_key || !ma_bn) return;
-  const dischargeAtMs = Date.parse(recordsFirstDateText(
+  const dischargeTimeHint = recordsFirstDateText(
     meta?.discharge_time,
     records_discharge_time_from_row(meta?.source_row || {}, '')
-  ) || '') || 0;
+  );
   for (const fileKey of RECORDS_CHECK_FILES) {
     const ownFilePath = records_check_patient_file(ctx, case_key, fileKey);
     if (readJsonSafe(ownFilePath, null)) continue; // đã có bản riêng, không cần chép lại
     const shared = read_patient_file(ctx, ma_bn, fileKey);
     if (!shared || !recordsCheckPayloadUsable(fileKey, shared)) continue;
-    const fetchedAtMs = Date.parse(shared?._meta?.fetched_at || '') || 0;
-    if (dischargeAtMs && fetchedAtMs && fetchedAtMs < dischargeAtMs) continue; // có thể thuộc đợt trước, không dùng
+    if (!sharedHchanhDataMatchesEncounter(ctx, shared, ma_bn, dischargeTimeHint, meta?.admission_time)) continue;
     write_records_patient_file(ctx, case_key, fileKey, shared);
     mark_records_file_fetched(ctx, case_key, fileKey);
     if (fileKey === 'discharge') update_records_storage_from_discharge(ctx, case_key, shared);
@@ -2562,8 +2634,22 @@ router.post('/hchanh/fetch', async (req, res) => {
   let storage_key = ma_bn;
   if (records_check) {
     const rcIndex = read_records_check_index(ctx);
-    records_meta = (requested_case_key && rcIndex.patients?.[requested_case_key]) ||
-      Object.values(rcIndex.patients || {}).find(meta => meta && meta.active !== false && meta.ma_bn === ma_bn) || null;
+    if (requested_case_key) {
+      records_meta = rcIndex.patients?.[requested_case_key] || null;
+    } else {
+      // Không có case_key: chỉ tự chọn khi mã BN chỉ có đúng 1 dòng kiểm hồ sơ
+      // đang hoạt động. Nhiều dòng (tái nhập viện) mà tự chọn đại một dòng sẽ
+      // lấy nhầm dữ liệu của đợt khác — bắt buộc caller chỉ định rõ case_key.
+      const active_matches = Object.values(rcIndex.patients || {})
+        .filter(meta => meta && meta.active !== false && meta.ma_bn === ma_bn);
+      if (active_matches.length > 1) {
+        return res.status(400).json({
+          status: 'error',
+          message: `Mã BN ${ma_bn} có ${active_matches.length} dòng kiểm hồ sơ đang hoạt động (nhiều lần nhập viện). Cần chỉ định case_key cụ thể, không thể tự chọn để tránh lấy nhầm đợt.`,
+        });
+      }
+      records_meta = active_matches[0] || null;
+    }
     if (!records_meta) {
       return res.status(404).json({ status: 'error', message: 'Không tìm thấy dòng kiểm hồ sơ tương ứng. Hãy quét lại danh sách Hoàn tất.' });
     }
@@ -2680,7 +2766,7 @@ router.post('/hchanh/fetch', async (req, res) => {
           mark_records_file_fetched(ctx, storage_key, file_key);
           if (file_key === 'discharge') update_records_storage_from_discharge(ctx, storage_key, payload);
         } else {
-          write_patient_file(ctx, storage_key, file_key, payload);
+          write_patient_file(ctx, storage_key, file_key, payload, patient_meta?.admission_time || '');
         }
         saved.push(file_key);
 
@@ -2706,8 +2792,8 @@ router.post('/hchanh/fetch', async (req, res) => {
       // nếu chỉ là empty/partial thì không xem là lỗi Python, để dashboard hiển thị “Cần xử lý”.
       const check_after = records_check
         ? {
-            missing: RECORDS_CHECK_FILES.filter(f => !read_records_patient_file(ctx, storage_key, f, patient_meta?.discharge_time)),
-            present: RECORDS_CHECK_FILES.filter(f => Boolean(read_records_patient_file(ctx, storage_key, f, patient_meta?.discharge_time))),
+            missing: RECORDS_CHECK_FILES.filter(f => !read_records_patient_file(ctx, storage_key, f, patient_meta?.discharge_time, patient_meta?.admission_time)),
+            present: RECORDS_CHECK_FILES.filter(f => Boolean(read_records_patient_file(ctx, storage_key, f, patient_meta?.discharge_time, patient_meta?.admission_time))),
             scope,
             files_required: RECORDS_CHECK_FILES,
           }
@@ -2748,11 +2834,24 @@ router.post('/hchanh/fetch', async (req, res) => {
 // Mở Chrome để sửa buồng/giường thủ công trong EMR.
 // Luồng: con mắt điều dưỡng → Chăm sóc → Buồng giường → Sửa thông tin.
 // Chạy detached để API trả về ngay, Chrome vẫn mở cho người dùng sửa trực tiếp.
+//
+// Route này KHÔNG dùng enqueueHeavy như các route Selenium khác: nó cố ý
+// không chờ tiến trình kết thúc (có thể mở tới 1 giờ để người dùng sửa tay),
+// nên nếu đưa vào enqueueHeavy sẽ giữ luôn account lane cả giờ, chặn hết các
+// tác vụ nặng khác (chăm sóc/dịch truyền/hành chánh) dùng chung tài khoản
+// EMR đó. Thay vào đó chỉ chặn mở TRÙNG cửa sổ cho CÙNG một mã BN khi cửa sổ
+// trước vẫn còn tiến trình (double-click, 2 tab) — dọn theo đúng lúc tiến
+// trình Chrome thật sự thoát (child.on('exit')), không đoán bằng timeout.
+
+const openBedEditInFlight = new Set(); // ma_bn đang có cửa sổ sửa giường mở
 
 router.post('/hchanh/open-bed-edit', handleRoute((req, res, ctx) => {
   const ma_bn = normId(req.body?.ma_bn || req.body?.patientId);
   const date_to = String(req.body?.date_to || req.body?.dateTo || '').trim();
   if (!ma_bn) return res.status(400).json({ status: 'error', message: 'Thiếu mã bệnh nhân (ma_bn).' });
+  if (openBedEditInFlight.has(ma_bn)) {
+    return res.status(409).json({ status: 'error', message: `Đã có cửa sổ sửa giường đang mở cho BN ${ma_bn}. Đóng cửa sổ đó trước khi mở lại.` });
+  }
 
   const scriptPath = path.join(WORKER_DIR, 'hchanh_open_bed_edit.py');
   if (!fs.existsSync(scriptPath)) {
@@ -2792,6 +2891,9 @@ router.post('/hchanh/open-bed-edit', handleRoute((req, res, ctx) => {
       WORKER_RUNTIME_DIR: ctx.dir,
     },
   });
+  openBedEditInFlight.add(ma_bn);
+  child.on('exit', () => { openBedEditInFlight.delete(ma_bn); });
+  child.on('error', () => { openBedEditInFlight.delete(ma_bn); });
   child.unref();
   try { fs.closeSync(outFd); } catch (_) {}
 
@@ -2939,8 +3041,7 @@ router.post('/hchanh/print-discharge-bundle', async (req, res) => {
 
   try {
     await enqueueHeavy(ctx.sid, async () => {
-      const printDir = path.join(ROOT_DIR, 'in');
-      fs.mkdirSync(printDir, { recursive: true });
+      const printDir = discharge_print_bundle_dir();
       const out_path = path.join(hchanh_dir(ctx), `print_discharge_bundle_${safeFilePart(ma_bn)}_${Date.now()}.json`);
 
       const index = read_index(ctx);
@@ -3079,8 +3180,7 @@ router.post('/hchanh/print-discharge-bundle-batch', async (req, res) => {
 
   try {
     await enqueueHeavy(ctx.sid, async () => {
-      const printDir = path.join(ROOT_DIR, 'in');
-      fs.mkdirSync(printDir, { recursive: true });
+      const printDir = discharge_print_bundle_dir();
       const index = read_index(ctx);
       const patientResults = [];
       const patientFailures = [];
@@ -3207,6 +3307,16 @@ router.post('/hchanh/print-discharge-bundle-batch', async (req, res) => {
         return res.status(500).json({ status: 'error', message: 'Worker ghép PDF chưa trả về file tổng hợp hợp lệ.' });
       }
 
+      // Chỉ giữ bản tổng hợp gần nhất — mỗi lần bấm "In chung" trước đây tạo
+      // thêm 1 file mới theo timestamp, không ai xoá bản cũ nên tồn đọng dần.
+      try {
+        for (const name of fs.readdirSync(printDir)) {
+          if (name !== mergeOutput.file_name && /^IN_RA_VIEN_TAT_CA_.*\.pdf$/i.test(name)) {
+            fs.rmSync(path.join(printDir, name), { force: true });
+          }
+        }
+      } catch (_) {}
+
       const status = (patientFailures.length || mergeOutput.status === 'partial') ? 'partial' : 'ok';
       appendActivity(ctx, { kind: 'ward.print_discharge_bundle_batch.success', file_name: mergeOutput.file_name, status, patient_count: patients.length, requested_count: requestedIds.size, excluded_wrong_date_count: excludedWrongDate.length, selected_dates, success_count: patientResults.length });
       return res.json({
@@ -3241,16 +3351,17 @@ router.post('/hchanh/print-discharge-bundle-batch', async (req, res) => {
 
 
 // ── GET /api/hchanh/discharge-bundle/:fileName ──────────────────────────────
-// Tải file PDF tổng hợp đã lưu trong thư mục /in cùng cấp chương trình.
+// Tải file PDF tổng hợp đã lưu trong .runtime/print_bundles (hoặc thư mục /in
+// cũ, cho các file đã tạo trước khi dọn về .runtime/ — xem discharge_print_bundle_dir()).
 
 router.get('/hchanh/discharge-bundle/:fileName', handleRoute((req, res, _ctx) => {
   const fileName = path.basename(String(req.params.fileName || '').trim());
   if (!fileName || !fileName.toLowerCase().endsWith('.pdf') || fileName.includes('..')) {
     return res.status(400).json({ status: 'error', message: 'Tên file tổng hợp không hợp lệ.' });
   }
-  const printDir = path.join(ROOT_DIR, 'in');
-  const filePath = path.join(printDir, fileName);
-  if (!filePath.startsWith(printDir) || !fs.existsSync(filePath)) {
+  const filePath = resolve_discharge_print_bundle_path(fileName);
+  const allowedRoots = [discharge_print_bundle_dir(), LEGACY_DISCHARGE_PRINT_DIR];
+  if (!allowedRoots.some(root => filePath.startsWith(root + path.sep)) || !fs.existsSync(filePath)) {
     return res.status(404).json({ status: 'error', message: 'Không tìm thấy file tổng hợp trong thư mục in.' });
   }
   res.setHeader('Content-Type', 'application/pdf');
@@ -4103,14 +4214,16 @@ router.get('/hchanh/snapshot', handleRoute((_req, res, ctx) => {
 router.post('/hchanh/clear-patient', handleRoute((req, res, ctx) => {
   const ma_bn = normId(req.body?.ma_bn || req.body?.patientId);
   if (!ma_bn) return res.status(400).json({ status: 'error', message: 'Thiếu mã bệnh nhân.' });
-  return res.json({ status: 'ok', ...clear_patient_data(ctx, ma_bn) });
+  const result = clear_patient_data(ctx, ma_bn);
+  appendActivity(ctx, { kind: 'hchanh.clear_patient', removed: result.removed });
+  return res.json({ status: 'ok', ...result });
 }));
 
 router.post('/hchanh/clear', handleRoute((_req, res, ctx) => {
-  return res.json(clear_all_hchanh_data(ctx));
+  const result = clear_all_hchanh_data(ctx);
+  appendActivity(ctx, { kind: 'hchanh.clear_all' });
+  return res.json(result);
 }));
-
-module.exports = router;
 
 // ── E: In/export phiếu sửa cho BS ────────────────────────────────────────────
 // GET /api/hchanh/ticket/:ticketId/print  → trả về HTML in được
@@ -4202,7 +4315,7 @@ router.post('/hchanh/rescan', async (req, res) => {
         for (const fk of files_to_refetch) {
           if (output[fk] !== undefined) {
             const payload = output[fk];
-            write_patient_file(ctx, ma_bn, fk, payload);
+            write_patient_file(ctx, ma_bn, fk, payload, meta?.admission_time || '');
             const info = normalizeFetchOutputInfo(fk, payload);
             if (TECHNICAL_FETCH_STATUSES.has(info.status)) file_failures.push(info);
             else if (ATTENTION_FETCH_STATUSES.has(info.status)) file_attention.push(info);
@@ -4400,3 +4513,5 @@ function buildWardListPrintHtml(patients) {
 <div class="cols">${sections || '<div style="color:#888">Không có bệnh nhân nào.</div>'}</div>
 </body></html>`;
 }
+
+module.exports = router;

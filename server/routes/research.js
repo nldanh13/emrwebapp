@@ -12,13 +12,14 @@ const { ensureDir, writeFileAtomic, writeJsonAtomic, readJsonSafe, nowFileStamp,
 const { csvEscape, rowsToCsv } = require('../utils/csv');
 const { runPython, runScript, fmtPyError } = require('../services/python_runner');
 const { getRuntimePaths } = require('../services/session');
+const { appendActivity } = require('../services/activity_logger');
 const { hasRole } = require('../services/authz');
 const { enqueueHeavy, registerCancel, unregisterCancel, isCancelRequested } = require('../services/task_queue');
 const variableSelection = require('../research/variable_selection');
 const { sanitizeCustomFields, evaluateCustomFields } = require('../research/analysis_config');
 const { firstSurgeryByEncounter, surgeryForMedicationContext } = require('../research/encounter_linkage');
 const { strictLocalDate } = require('../research/date_utils');
-const { DEFAULT_SENSITIVE_COLUMNS, redactCsvTable } = require('../research/export_utils');
+const { DEFAULT_SENSITIVE_COLUMNS, redactCsvTable, isSensitiveColumn } = require('../research/export_utils');
 const { databaseInfo, syncResearchDatabase, queryResearchDatabase } = require('../research/sqlite_store');
 const {
   read_index: readHchanhIndex,
@@ -1103,7 +1104,7 @@ function buildVirtualVariablesForTable(def, rows) {
   return variables;
 }
 
-function buildVariableCatalog(runDir) {
+function buildVariableCatalog(runDir, { redact = true } = {}) {
   if (!runDir || !fs.existsSync(runDir)) {
     const err = new Error('Chưa có kho dữ liệu để lập danh mục biến.');
     err.status = 400;
@@ -1123,7 +1124,8 @@ function buildVariableCatalog(runDir) {
   for (const def of defs) {
     const table = readCsvTable(path.join(runDir, def.file), Number.MAX_SAFE_INTEGER);
     const rows = table.rows || [];
-    const variables = (table.columns || []).map(col => {
+    const visibleColumns = (table.columns || []).filter(col => !redact || !isSensitiveColumn(col));
+    const variables = visibleColumns.map(col => {
       let nonempty = 0;
       const values = new Map();
       for (const row of rows) {
@@ -3471,9 +3473,23 @@ function jsonShort(value, max = 3000) {
 // nghiên cứu (khác với Hành chánh, dữ liệu nghiên cứu phải đúng, không thể tự
 // quét bù lại như module khác nên bắt buộc phải lọc ở đây).
 function hchanhSharedDataMatchesEncounter(payload, meta) {
-  const fetchedAt = parseAnyDate(payload?._meta?.fetched_at);
   const admissionAt = parseAnyDate(meta?.admission_time);
-  if (!fetchedAt || !admissionAt) return true; // thiếu mốc để so sánh, giữ hành vi cũ
+  // Từ khi write_patient_file() (server/hchanh_data_contract.js) đóng dấu đúng
+  // đợt Hành chánh đang active LÚC GHI vào _meta.admission_time, so khớp trực
+  // tiếp mốc này với đợt đang xét — chính xác hơn hẳn suy đoán qua so sánh
+  // fetched_at với admission_time. Chỉ rơi về heuristic cũ khi bản dùng chung
+  // là dữ liệu cũ (ghi trước khi có trường này).
+  const stampedAdmissionAt = parseAnyDate(payload?._meta?.admission_time);
+  if (admissionAt && stampedAdmissionAt) {
+    return stampedAdmissionAt.getTime() === admissionAt.getTime();
+  }
+  const fetchedAt = parseAnyDate(payload?._meta?.fetched_at);
+  // Thiếu mốc để so sánh nghĩa là không thể xác nhận dữ liệu thuộc đúng đợt
+  // hiện tại. Loại thay vì mặc định coi là khớp — đúng nguyên tắc "dữ liệu
+  // nghiên cứu phải đúng, không tự quét bù lại được" đã nêu ở trên; dữ liệu
+  // legacy/thiếu mốc thời gian dễ là dữ liệu cũ nhất, nên càng không nên
+  // mặc định tin tưởng.
+  if (!fetchedAt || !admissionAt) return false;
   return fetchedAt.getTime() >= admissionAt.getTime();
 }
 
@@ -3488,7 +3504,7 @@ function flattenHchanhIntoResearchRun(ctx, runDir) {
     const maBn = String(meta?.ma_bn || '').trim();
     if (!maBn) continue;
     const all = readHchanhPatientAll(ctx, maBn) || {};
-    if (all.profile) profileRows.push(hchanhProfileRow(all.profile, meta));
+    if (all.profile && hchanhSharedDataMatchesEncounter(all.profile, meta)) profileRows.push(hchanhProfileRow(all.profile, meta));
     if (all.discharge && hchanhSharedDataMatchesEncounter(all.discharge, meta)) dischargeRows.push(hchanhDischargeRow(all.discharge, meta));
     const surgeries = (all.surgery && hchanhSharedDataMatchesEncounter(all.surgery, meta) && Array.isArray(all.surgery?.surgeries)) ? all.surgery.surgeries : [];
     for (const item of surgeries) {
@@ -4124,6 +4140,13 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
 
   const stats = { total: selectedRows.length, processed: 0, skipped: 0, ok: 0, attention: 0, error: 0, cancelled: false };
   appendResearchRunLog(runPath, `[${new Date().toLocaleString('vi-VN')}] Bắt đầu lấy ${runLabel}: ${selectedRows.length} ca | files=${wantedFiles.join(',')}`);
+  appendActivity(ctx, {
+    kind: 'workflow.research.fetch_hchanh.start',
+    mode: normalizedMode,
+    run_dir: path.basename(runPath),
+    total: selectedRows.length,
+    files: wantedFiles,
+  });
 
   for (let idx = 0; idx < selectedRows.length; idx += 1) {
     // Job hành chánh spawn một Python worker cho từng ca. Cờ huỷ phải được kiểm tra
@@ -4252,10 +4275,15 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
       try { fs.rmSync(outPath, { force: true }); } catch (_) {}
     }
     const flat = hchanhFetchOutputToRows(output, row, sourceRunId);
-    profileRows = dedupeRowsByStableKey(removeResearchSourceKey(profileRows, key).concat(flat.profileRows), ['Research key', 'Mã BN', 'Ngày vào viện', 'Ngày ra viện']);
-    dischargeRows = dedupeRowsByStableKey(removeResearchSourceKey(dischargeRows, key).concat(flat.dischargeRows), ['Research key', 'Mã BN', 'Ngày vào viện', 'Ngày ra viện', 'Chẩn đoán ra viện']);
-    surgeryRows = dedupeRowsByStableKey(removeResearchSourceKey(surgeryRows, key).concat(flat.surgeryRows), ['Research key', 'Mã BN', 'Ngày phẫu thuật', 'Tên phẫu thuật', 'Phương pháp phẫu thuật']);
-    orderRows = dedupeRowsByStableKey(removeResearchSourceKey(orderRows, key).concat(flat.orderRows), ['Research key', 'Mã BN', 'TG y lệnh', 'Tên y lệnh', 'Y lệnh khác']);
+    // Chỉ thay dữ liệu cũ của case này khi lần fetch này THỰC SỰ có dòng mới
+    // cho đúng bảng đó. Một lần scrape lỗi/rỗng (worker vẫn thoát code 0 nhưng
+    // _fetch_status = empty/no_session/timeout) không được phép xóa mất dữ
+    // liệu tốt đã lấy được ở lần trước — status của case vẫn có thể đọc là
+    // partial/done trong khi dữ liệu thật đã bị thay bằng rỗng nếu không giữ.
+    if (flat.profileRows.length) profileRows = dedupeRowsByStableKey(removeResearchSourceKey(profileRows, key).concat(flat.profileRows), ['Research key', 'Mã BN', 'Ngày vào viện', 'Ngày ra viện']);
+    if (flat.dischargeRows.length) dischargeRows = dedupeRowsByStableKey(removeResearchSourceKey(dischargeRows, key).concat(flat.dischargeRows), ['Research key', 'Mã BN', 'Ngày vào viện', 'Ngày ra viện', 'Chẩn đoán ra viện']);
+    if (flat.surgeryRows.length) surgeryRows = dedupeRowsByStableKey(removeResearchSourceKey(surgeryRows, key).concat(flat.surgeryRows), ['Research key', 'Mã BN', 'Ngày phẫu thuật', 'Tên phẫu thuật', 'Phương pháp phẫu thuật']);
+    if (flat.orderRows.length) orderRows = dedupeRowsByStableKey(removeResearchSourceKey(orderRows, key).concat(flat.orderRows), ['Research key', 'Mã BN', 'TG y lệnh', 'Tên y lệnh', 'Y lệnh khác']);
 
     writeCsvUnion(path.join(runPath, 'hchanh_profile.csv'), profileRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Giới', 'Ngày sinh', 'Tuổi', 'Địa chỉ', 'Điện thoại', 'Số CMND', 'Đối tượng', 'Số thẻ', 'Ngày vào viện', 'Ngày ra viện', 'Chẩn đoán', 'Research key']);
     writeCsvUnion(path.join(runPath, 'hchanh_discharge.csv'), dischargeRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Ngày vào viện', 'Ngày ra viện', 'Thời gian điều trị', 'Chẩn đoán', 'Chẩn đoán ra viện', 'Bệnh kèm', 'Biến chứng', 'Tai biến', 'Tình trạng ra', 'Research key']);
@@ -4322,6 +4350,16 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
   }
 
   appendResearchRunLog(runPath, `[${new Date().toLocaleString('vi-VN')}] ${stats.cancelled ? 'Đã dừng' : 'Kết thúc'} lấy ${runLabel}: ok=${stats.ok}, partial=${stats.attention}, error=${stats.error}, skipped=${stats.skipped}`);
+  appendActivity(ctx, {
+    kind: 'workflow.research.fetch_hchanh.finish',
+    mode: normalizedMode,
+    run_dir: path.basename(runPath),
+    ok: stats.ok,
+    partial: stats.attention,
+    error: stats.error,
+    skipped: stats.skipped,
+    cancelled: stats.cancelled,
+  });
   const manifestPath = path.join(runPath, 'manifest.json');
   const manifest = readJsonSafe(manifestPath, {}) || {};
   writeJsonAtomic(manifestPath, {
@@ -4641,6 +4679,15 @@ function normalizeRunOutputs(runDir, { sourceRunId = '', force = false } = {}) {
   function extraForContext(code, ctx) {
     return mergeRowsPreferFilled(demographicByPatient.get(code) || {}, extraByEncounter.get(ctx?.encounter_id) || {});
   }
+  // Chỉ dữ liệu đúng đợt (encounter_id khớp) — không merge thêm bucket theo
+  // mã BN, vì các trường dùng ở đây (chẩn đoán vào/ra viện, ngày vào/ra,
+  // phòng/giường...) là dữ liệu riêng từng đợt điều trị. demographicByPatient
+  // gộp thông tin từ MỌI đợt của cùng mã BN — dùng nó ở đây sẽ khiến chẩn
+  // đoán/ngày tháng của một đợt cũ bị gán nhầm cho đợt đang build khi đợt này
+  // thiếu dữ liệu riêng.
+  function extraForEncounterOnly(ctx) {
+    return extraByEncounter.get(ctx?.encounter_id) || {};
+  }
 
   const encounterRows = patientsRaw.filter(row => patientCode(row));
   const encounterById = new Map();
@@ -4648,7 +4695,7 @@ function normalizeRunOutputs(runDir, { sourceRunId = '', force = false } = {}) {
   for (const row of encounterRows) {
     const code = patientCode(row);
     const ctx = contextForRow(ctxMap, row, code);
-    const extra = extraForContext(code, ctx);
+    const extra = extraForEncounterOnly(ctx);
     const admissionDiagnosis = ctx.admission_diagnosis || firstNonEmpty(extra, ['Chẩn đoán vào viện', 'Chan doan vao vien']) || ctx.diagnosis_raw || firstNonEmpty(row, ['Chẩn đoán', 'Chan doan']);
     const dischargeDiagnosis = firstNonEmpty(row, ['Chẩn đoán ra viện', 'Chan doan ra vien']) || firstNonEmpty(extra, ['Chẩn đoán ra viện', 'Chan doan ra vien']) || '';
     const out = {
@@ -5491,6 +5538,11 @@ router.post('/research/archive/source', (req, res) => {
 router.get('/research/archive/patient-history', (req, res) => {
   const startedAt = Date.now();
   try {
+    if (researchResponseShouldRedact(req)) {
+      const err = new Error('Tra cứu người bệnh trả dữ liệu có định danh (họ tên, lịch sử điều trị). Cần thêm identified=1, vai trò supervisor/admin, và bật EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT=1.');
+      err.status = 403;
+      throw err;
+    }
     const runId = resolveArchiveRunId(String(req.query.runId || 'latest'));
     const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
     const data = buildPatientHistory(runDir, String(req.query.q || ''));
@@ -5524,10 +5576,11 @@ router.get('/research/archive/patient-history', (req, res) => {
 
 router.get('/research/archive/variable-catalog', (req, res) => {
   try {
+    const redact = researchResponseShouldRedact(req);
     const runId = resolveArchiveRunId(String(req.query.runId || 'latest'));
     const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
-    const catalog = buildVariableCatalog(runDir);
-    return res.json({ status: 'ok', run_id: runId || '', catalog });
+    const catalog = buildVariableCatalog(runDir, { redact });
+    return res.json({ status: 'ok', run_id: runId || '', redacted: redact, catalog });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }
@@ -6072,11 +6125,17 @@ router.post('/research/refetch-missing', async (req, res) => {
       : [];
     const missingXnCdha = [...new Set(missingXnCdhaRows.map(r => String(r.patient_code || r['Mã BN'] || '').trim()).filter(Boolean))];
 
-    // BN cần lấy lại hành chánh: bất kỳ file nào trong hchanhFiles chưa done
+    // BN cần lấy lại hành chánh: bất kỳ file nào trong hchanhFiles chưa done.
+    // Khớp thêm Mã NC khi có để tránh đọc nhầm trạng thái của một đợt nhập
+    // viện khác cùng mã BN (một mã BN có thể có nhiều dòng extract_status
+    // ứng với nhiều lần nhập viện).
     const missingHchanhRows = hchanhFiles.length
       ? sourceRowsForHchanh.filter(row => {
           const code = patientCode(row);
-          const st = statusTable.rows.find(r => r.patient_code === code);
+          const rc = rowResearchCode(row);
+          const st = rc
+            ? statusTable.rows.find(r => r.patient_code === code && rowResearchCode(r) === rc)
+            : statusTable.rows.find(r => r.patient_code === code);
           if (!st) return true; // chưa có trong extract_status → chưa lấy
           return hchanhFiles.some(f => {
             const col = `${f}_status`;

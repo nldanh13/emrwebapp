@@ -506,7 +506,7 @@ function read_patient_file(ctx, ma_bn, file_key) {
   return null;
 }
 
-function write_patient_file(ctx, ma_bn, file_key, data) {
+function write_patient_file(ctx, ma_bn, file_key, data, admissionTimeHint = '') {
   const canonicalPath = hchanh_patient_file(ctx, ma_bn, file_key);
   const out = {
     ...data,
@@ -517,6 +517,12 @@ function write_patient_file(ctx, ma_bn, file_key, data) {
       file_name: path.basename(canonicalPath),
       version: HCHANH_DATA_VERSION,
       fetched_at: new Date().toISOString(),
+      // Đợt nhập viện Hành chánh coi là đang active cho mã BN này TẠI THỜI ĐIỂM
+      // ghi — cho phép nơi đọc so khớp CHÍNH XÁC đúng đợt thay vì chỉ đoán qua
+      // so sánh fetched_at với discharge_time (dễ sai khi tái nhập viện nhanh).
+      // Rỗng với dữ liệu cũ ghi trước khi có trường này — nơi đọc tự có phương
+      // án dự phòng bằng heuristic cũ.
+      admission_time: String(admissionTimeHint || '').trim(),
     },
   };
   writeJsonAtomic(canonicalPath, out);

@@ -166,9 +166,12 @@ def lay_danh_sach_tat_ca_ten(config_names):
 
 
 def _debug_page(driver, label="debug"):
+    # HTML/screenshot lưu ở đây chứa nguyên trang EMR (có dữ liệu bệnh nhân),
+    # nên phải nằm trong runtime dir của đúng session (WORKER_RUNTIME_DIR do
+    # Node truyền qua env khi spawn), không phải cwd của tiến trình.
     log_dir = None
     try:
-        log_dir = os.path.join(RUNTIME_DIR if "RUNTIME_DIR" in globals() else os.getcwd(), "logs")
+        log_dir = os.path.join(os.environ.get("WORKER_RUNTIME_DIR") or os.getcwd(), "logs")
     except Exception:
         log_dir = None
     return _debug_page_base(driver, label, log_dir=log_dir, log_func=print)
