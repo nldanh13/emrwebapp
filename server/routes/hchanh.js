@@ -2562,8 +2562,22 @@ router.post('/hchanh/fetch', async (req, res) => {
   let storage_key = ma_bn;
   if (records_check) {
     const rcIndex = read_records_check_index(ctx);
-    records_meta = (requested_case_key && rcIndex.patients?.[requested_case_key]) ||
-      Object.values(rcIndex.patients || {}).find(meta => meta && meta.active !== false && meta.ma_bn === ma_bn) || null;
+    if (requested_case_key) {
+      records_meta = rcIndex.patients?.[requested_case_key] || null;
+    } else {
+      // Không có case_key: chỉ tự chọn khi mã BN chỉ có đúng 1 dòng kiểm hồ sơ
+      // đang hoạt động. Nhiều dòng (tái nhập viện) mà tự chọn đại một dòng sẽ
+      // lấy nhầm dữ liệu của đợt khác — bắt buộc caller chỉ định rõ case_key.
+      const active_matches = Object.values(rcIndex.patients || {})
+        .filter(meta => meta && meta.active !== false && meta.ma_bn === ma_bn);
+      if (active_matches.length > 1) {
+        return res.status(400).json({
+          status: 'error',
+          message: `Mã BN ${ma_bn} có ${active_matches.length} dòng kiểm hồ sơ đang hoạt động (nhiều lần nhập viện). Cần chỉ định case_key cụ thể, không thể tự chọn để tránh lấy nhầm đợt.`,
+        });
+      }
+      records_meta = active_matches[0] || null;
+    }
     if (!records_meta) {
       return res.status(404).json({ status: 'error', message: 'Không tìm thấy dòng kiểm hồ sơ tương ứng. Hãy quét lại danh sách Hoàn tất.' });
     }
