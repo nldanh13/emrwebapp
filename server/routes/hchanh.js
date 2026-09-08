@@ -511,12 +511,20 @@ function records_ma_bn_from_case_key(metaOrKey) {
   return idx >= 0 ? raw.slice(0, idx) : raw;
 }
 
+// Ghi lại khi một thao tác cập nhật trạng thái fetch bị bỏ qua vì key không
+// (còn) tồn tại trong index — trước đây các hàm dưới đây âm thầm trả về index
+// không đổi, khiến kết quả fetch/lỗi bị rơi mất không dấu vết và ca có thể
+// kẹt ở trạng thái "đang chờ" vô thời hạn mà không ai biết vì sao.
+function warn_records_meta_missing(fnName, case_key) {
+  console.warn(`[RECORDS_CHECK] ${fnName}: bỏ qua, không tìm thấy meta cho case_key="${String(case_key || '').slice(0, 200)}" trong records_check_index.`);
+}
+
 function mark_records_fetch_error(ctx, case_key, error_msg) {
   const key = records_storage_key(case_key);
   if (!key) return read_records_check_index(ctx);
   const index = read_records_check_index(ctx);
   const meta = index.patients?.[key];
-  if (!meta) return index;
+  if (!meta) { warn_records_meta_missing('mark_records_fetch_error', key); return index; }
   const now = new Date();
   const failures = Math.max(0, Number(meta.fetch_failure_count || 0)) + 1;
   const retryMinutes = Math.min(30, failures <= 1 ? 1 : (failures <= 2 ? 5 : (failures <= 3 ? 15 : 30)));
@@ -532,7 +540,7 @@ function clear_records_fetch_error(ctx, case_key) {
   if (!key) return read_records_check_index(ctx);
   const index = read_records_check_index(ctx);
   const meta = index.patients?.[key];
-  if (!meta) return index;
+  if (!meta) { warn_records_meta_missing('clear_records_fetch_error', key); return index; }
   meta.fetch_error = null;
   meta.fetch_error_at = null;
   meta.fetch_failure_count = 0;
@@ -546,7 +554,7 @@ function mark_records_fetch_attempt(ctx, case_key) {
   if (!key) return read_records_check_index(ctx);
   const index = read_records_check_index(ctx);
   const meta = index.patients?.[key];
-  if (!meta) return index;
+  if (!meta) { warn_records_meta_missing('mark_records_fetch_attempt', key); return index; }
   meta.fetch_attempt_count = Math.max(0, Number(meta.fetch_attempt_count || 0)) + 1;
   meta.last_fetch_attempt_at = new Date().toISOString();
   return write_records_check_index(ctx, index);
@@ -557,7 +565,7 @@ function mark_records_file_fetched(ctx, case_key, file_key) {
   if (!key) return read_records_check_index(ctx);
   const index = read_records_check_index(ctx);
   const meta = index.patients?.[key];
-  if (!meta) return index;
+  if (!meta) { warn_records_meta_missing('mark_records_file_fetched', key); return index; }
   meta.fetched = { ...(meta.fetched || {}), [file_key]: new Date().toISOString() };
   return write_records_check_index(ctx, index);
 }
@@ -574,7 +582,7 @@ function update_records_storage_from_discharge(ctx, case_key, dischargePayload) 
   if (!key) return read_records_check_index(ctx);
   const index = read_records_check_index(ctx);
   const meta = index.patients?.[key];
-  if (!meta) return index;
+  if (!meta) { warn_records_meta_missing('update_records_storage_from_discharge', key); return index; }
   if (storage) {
     meta.so_luu_tru = storage;
     meta.storage_no = storage;
