@@ -96,6 +96,24 @@ function redactForAudit(payload = {}) {
 }
 
 
+function clinicProcedureRowSignature(row = {}) {
+  const code = String(row.ma_bn || '').replace(/\D+/g, '').trim();
+  const time = String(row.procedure_order_time || row.service_time || row.thoi_gian || '').trim();
+  const service = String(row.service_name || row.procedure_service_name || '').trim().toLowerCase();
+  const status = String(row.procedure_order_status || '').trim().toLowerCase();
+  const role = String(row.procedure_performer_role || '').trim().toLowerCase();
+  const staff = String(row.procedure_performer_name || '').trim().toLowerCase();
+  return `${code}|${time}|${service}|${status}|${role}|${staff}`;
+}
+
+function clinicProcedurePrecheckTargets(rows = []) {
+  const signatures = (Array.isArray(rows) ? rows : [])
+    .filter(r => r && typeof r === 'object' && String(r.ma_bn || '').replace(/\D+/g, '').trim())
+    .map(clinicProcedureRowSignature)
+    .sort();
+  return { patientIds: signatures, selectedDates: [] };
+}
+
 function sanitizeClinicProcedureInput(body = {}) {
   const username = String(body.username || '').trim();
   const password = String(body.password || '');
@@ -103,6 +121,7 @@ function sanitizeClinicProcedureInput(body = {}) {
   const listUrl = String(body.listUrl || '').trim();
   const headless = body.headless !== false;
   const clinicSchedule = sanitizeClinicSchedule(body.clinicSchedule || body.clinic_schedule || {});
+  const precheckToken = String(body.precheck_token || body.precheckToken || '').trim();
   const rows = Array.isArray(body.rows) ? body.rows : [];
   const procedureRows = rows
     .filter(r => r && typeof r === 'object' && r.needs_procedure)
@@ -133,7 +152,7 @@ function sanitizeClinicProcedureInput(body = {}) {
   if (!listUrl) throw new Error('Thiếu URL Danh sách Khám bệnh.');
   if (!procedureRows.length) throw new Error('Không có dòng TT chưa hoàn tất để nhập thủ thuật.');
 
-  return { username, password, loginUrl, listUrl, headless, clinicSchedule, rows: procedureRows };
+  return { username, password, loginUrl, listUrl, headless, clinicSchedule, rows: procedureRows, precheckToken };
 }
 
 function dmyFromClinicTime(value = '') {
@@ -223,14 +242,25 @@ router.post('/clinic/preview', async (req, res) => {
     safeUnlink(outPath);
     if (!data) return res.status(500).json({ status: 'error', message: 'Không đọc được kết quả Phòng khám.' });
 
+    const actionRows = (Array.isArray(data.rows) ? data.rows : []).filter(r => r && r.needs_procedure);
+    const precheck = actionRows.length
+      ? issueInputPrecheckToken(
+          ctx,
+          'clinic_input_procedures',
+          clinicProcedurePrecheckTargets(actionRows),
+          { checked_count: actionRows.length },
+        )
+      : {};
+
     appendActivity(ctx, {
       kind: 'workflow.clinic.preview.success',
       mode: data.mode,
       rows: Array.isArray(data.rows) ? data.rows.length : 0,
       target_count: data.target_count || 0,
       summary: data.summary || {},
+      actionable_rows: actionRows.length,
     });
-    return res.json(data);
+    return res.json({ ...data, ...precheck });
   } catch (err) {
     safeUnlink(reqPath);
     safeUnlink(outPath);
@@ -248,6 +278,20 @@ router.post('/clinic/input-procedures', async (req, res) => {
   const resultPath = path.join(ctx.dir, resultFileName);
   try {
     const payload = sanitizeClinicProcedureInput(req.body || {});
+    const tokenCheck = validateAndConsumeInputPrecheckToken(
+      ctx,
+      'clinic_input_procedures',
+      { ...clinicProcedurePrecheckTargets(payload.rows), precheck_token: payload.precheckToken },
+    );
+    if (!tokenCheck.ok) {
+      appendActivity(ctx, {
+        kind: 'workflow.clinic.input_procedures.needs_precheck',
+        rows: payload.rows.length,
+        message: tokenCheck.message,
+      });
+      return res.status(tokenCheck.status || 428).json({ status: 'needs_precheck', message: tokenCheck.message });
+    }
+
     const stamp = `${Date.now()}_clinic_procedures`;
     processedPath = path.join(ctx.dir, `clinic_procedures_processed_${stamp}.json`);
     targetsPath = path.join(ctx.dir, `clinic_procedures_targets_${stamp}.json`);

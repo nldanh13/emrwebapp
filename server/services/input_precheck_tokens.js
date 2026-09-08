@@ -19,6 +19,7 @@ function normalizeTaskName(taskName = '') {
   if (['input_procedures', 'procedures', 'procedure', 'tt', 'thu_thuat'].includes(t)) return 'input_procedures';
   if (['input_vtyt', 'vtyt', 'supplies', 'supply'].includes(t)) return 'input_vtyt';
   if (['clinic_input_care', 'clinic-care', 'clinic_care', 'cliniccare'].includes(t)) return 'clinic_input_care';
+  if (['clinic_input_procedures', 'clinic-procedures', 'clinic_procedures', 'clinicprocedures'].includes(t)) return 'clinic_input_procedures';
   return 'input_care';
 }
 
