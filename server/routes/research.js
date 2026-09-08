@@ -19,7 +19,7 @@ const variableSelection = require('../research/variable_selection');
 const { sanitizeCustomFields, evaluateCustomFields } = require('../research/analysis_config');
 const { firstSurgeryByEncounter, surgeryForMedicationContext } = require('../research/encounter_linkage');
 const { strictLocalDate } = require('../research/date_utils');
-const { DEFAULT_SENSITIVE_COLUMNS, redactCsvTable } = require('../research/export_utils');
+const { DEFAULT_SENSITIVE_COLUMNS, redactCsvTable, isSensitiveColumn } = require('../research/export_utils');
 const { databaseInfo, syncResearchDatabase, queryResearchDatabase } = require('../research/sqlite_store');
 const {
   read_index: readHchanhIndex,
@@ -1104,7 +1104,7 @@ function buildVirtualVariablesForTable(def, rows) {
   return variables;
 }
 
-function buildVariableCatalog(runDir) {
+function buildVariableCatalog(runDir, { redact = true } = {}) {
   if (!runDir || !fs.existsSync(runDir)) {
     const err = new Error('Chưa có kho dữ liệu để lập danh mục biến.');
     err.status = 400;
@@ -1124,7 +1124,8 @@ function buildVariableCatalog(runDir) {
   for (const def of defs) {
     const table = readCsvTable(path.join(runDir, def.file), Number.MAX_SAFE_INTEGER);
     const rows = table.rows || [];
-    const variables = (table.columns || []).map(col => {
+    const visibleColumns = (table.columns || []).filter(col => !redact || !isSensitiveColumn(col));
+    const variables = visibleColumns.map(col => {
       let nonempty = 0;
       const values = new Map();
       for (const row of rows) {
@@ -5509,6 +5510,11 @@ router.post('/research/archive/source', (req, res) => {
 router.get('/research/archive/patient-history', (req, res) => {
   const startedAt = Date.now();
   try {
+    if (researchResponseShouldRedact(req)) {
+      const err = new Error('Tra cứu người bệnh trả dữ liệu có định danh (họ tên, lịch sử điều trị). Cần thêm identified=1, vai trò supervisor/admin, và bật EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT=1.');
+      err.status = 403;
+      throw err;
+    }
     const runId = resolveArchiveRunId(String(req.query.runId || 'latest'));
     const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
     const data = buildPatientHistory(runDir, String(req.query.q || ''));
@@ -5542,10 +5548,11 @@ router.get('/research/archive/patient-history', (req, res) => {
 
 router.get('/research/archive/variable-catalog', (req, res) => {
   try {
+    const redact = researchResponseShouldRedact(req);
     const runId = resolveArchiveRunId(String(req.query.runId || 'latest'));
     const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
-    const catalog = buildVariableCatalog(runDir);
-    return res.json({ status: 'ok', run_id: runId || '', catalog });
+    const catalog = buildVariableCatalog(runDir, { redact });
+    return res.json({ status: 'ok', run_id: runId || '', redacted: redact, catalog });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }
