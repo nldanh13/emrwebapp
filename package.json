@@ -12,6 +12,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "python -m pytest tests/ -v -s --tb=short",
+    "test:ui": "vitest run",
+    "test:ui:watch": "vitest",
     "test:syntax": "python -m compileall worker",
     "package:clean": "node scripts/prepare_release.js",
     "check": "node scripts/health_check.js",
@@ -32,7 +34,7 @@
     "clean:unused:private": "node scripts/clean_unused.js --private-data --apply",
     "clean:unused:code": "node scripts/clean_unused.js --unused-code",
     "db:migrate": "node scripts/db_migrate.js",
-    "test:ci": "python -m pytest tests/ -q && python -m compileall -q worker && node scripts/check.mjs && node scripts/workflow_smoke_test.js && node scripts/records_check_paper_status_test.js && node scripts/task_queue_account_lane_test.js && node scripts/records_check_shared_data_reuse_test.js && node scripts/research_hchanh_flatten_encounter_guard_test.js"
+    "test:ci": "python -m pytest tests/ -q && python -m compileall -q worker && node scripts/check.mjs && npm run test:ui && node scripts/workflow_smoke_test.js && node scripts/records_check_paper_status_test.js && node scripts/task_queue_account_lane_test.js && node scripts/records_check_shared_data_reuse_test.js && node scripts/research_hchanh_flatten_encounter_guard_test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
@@ -43,7 +45,9 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^6.0.2",
     "concurrently": "^9.1.0",
-    "vite": "^8.0.13"
+    "jsdom": "^30.0.1",
+    "vite": "^8.0.13",
+    "vitest": "^5.0.0"
   },
   "engines": {
     "node": ">=20.19.0"
