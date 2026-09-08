@@ -3291,6 +3291,16 @@ router.post('/hchanh/print-discharge-bundle-batch', async (req, res) => {
         return res.status(500).json({ status: 'error', message: 'Worker ghép PDF chưa trả về file tổng hợp hợp lệ.' });
       }
 
+      // Chỉ giữ bản tổng hợp gần nhất — mỗi lần bấm "In chung" trước đây tạo
+      // thêm 1 file mới theo timestamp, không ai xoá bản cũ nên tồn đọng dần.
+      try {
+        for (const name of fs.readdirSync(printDir)) {
+          if (name !== mergeOutput.file_name && /^IN_RA_VIEN_TAT_CA_.*\.pdf$/i.test(name)) {
+            fs.rmSync(path.join(printDir, name), { force: true });
+          }
+        }
+      } catch (_) {}
+
       const status = (patientFailures.length || mergeOutput.status === 'partial') ? 'partial' : 'ok';
       appendActivity(ctx, { kind: 'ward.print_discharge_bundle_batch.success', file_name: mergeOutput.file_name, status, patient_count: patients.length, requested_count: requestedIds.size, excluded_wrong_date_count: excludedWrongDate.length, selected_dates, success_count: patientResults.length });
       return res.json({
