@@ -14,7 +14,7 @@ const fs      = require('fs');
 const { PORT, HOST, DIST_DIR, PUBLIC_DIR, CONFIG_PATH, SESSION_RETENTION_MODE } = require('./server/constants');
 const middleware                      = require('./server/middleware');
 const routes                          = require('./server/routes');
-const { cleanOldSessions }            = require('./server/services/session');
+const { cleanOldSessions, cleanOrphanFetchTempFiles } = require('./server/services/session');
 const { authStatus }                   = require('./server/services/authz');
 const { patientNameResponseMiddleware } = require('./server/utils/person_name');
 
@@ -123,6 +123,12 @@ cleanOldSessions();
 if (SESSION_RETENTION_MODE !== 'disabled') {
   const timer = setInterval(cleanOldSessions, 6 * 60 * 60 * 1000);
   timer.unref?.();
+}
+
+cleanOrphanFetchTempFiles();
+{
+  const orphanTempTimer = setInterval(cleanOrphanFetchTempFiles, 6 * 60 * 60 * 1000);
+  orphanTempTimer.unref?.();
 }
 
 app.listen(PORT, HOST, () => {

@@ -479,12 +479,17 @@ function read_records_check_index(ctx) {
   }
 
   // Tự migrate nhẹ dữ liệu cũ từ session hiện tại sang kho cố định.
-  const legacy = readJsonSafe(records_check_legacy_session_index_path(ctx), null);
+  const legacyPath = records_check_legacy_session_index_path(ctx);
+  const legacy = readJsonSafe(legacyPath, null);
   if (legacy && typeof legacy === 'object' && legacy.patients && typeof legacy.patients === 'object') {
     const migrated = { ...legacy, migratedFromSession: ctx.sid || 'default', migratedAt: new Date().toISOString() };
     mergeRecordsCheckedBackupIntoIndex(ctx, migrated);
     writeJsonAtomic(persistentPath, migrated);
     persistRecordsCheckedBackup(ctx, migrated);
+    // Đã migrate xong sang kho cố định (đọc lại từ persistentPath ở lần sau,
+    // không bao giờ quay lại đọc file legacy nữa) -> xoá để tránh tồn đọng
+    // file cũ không đồng bộ, chỉ tốn dung lượng.
+    try { fs.rmSync(legacyPath, { force: true }); } catch (_) {}
     return migrated;
   }
   const empty = { version: HCHANH_DATA_VERSION, updatedAt: null, lastScan: null, patients: {}, checked: {}, checked_aliases: {}, checklist: {}, checklist_aliases: {} };

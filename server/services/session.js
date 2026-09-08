@@ -187,6 +187,54 @@ function cleanOldSessions() {
   return result;
 }
 
+const ORPHAN_FETCH_TEMP_FILE_RE = /^fetch_(input|output)_.+\.json$/;
+const ORPHAN_FETCH_TEMP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+// Dọn file tạm fetch_input_... và fetch_output_... (input/output cho worker
+// Python khi gọi hchanh_fetch) còn sót lại trong hchanh/ của mỗi session.
+// Các hàm gọi worker đã tự xoá 2 file này khi xử lý xong bình thường; file
+// còn sót chỉ xảy ra khi tiến trình bị dừng giữa chừng (crash, restart
+// server) — quét dọn ở đây chỉ xoá file đã đủ cũ (mặc định >24h) để không
+// đụng vào file của một lượt fetch đang chạy dở.
+function cleanOrphanFetchTempFiles() {
+  const result = { scanned: 0, removed: 0, errors: [] };
+  const now = Date.now();
+  const hchanhDirs = [path.join(RUNTIME_ROOT, 'hchanh')];
+  try {
+    if (fs.existsSync(SESSIONS_DIR)) {
+      for (const e of fs.readdirSync(SESSIONS_DIR, { withFileTypes: true })) {
+        if (e.isDirectory()) hchanhDirs.push(path.join(SESSIONS_DIR, e.name, 'hchanh'));
+      }
+    }
+  } catch (err) {
+    result.errors.push({ dir: SESSIONS_DIR, message: String(err.message || err) });
+  }
+
+  for (const dir of hchanhDirs) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (_) {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isFile() || !ORPHAN_FETCH_TEMP_FILE_RE.test(entry.name)) continue;
+      result.scanned += 1;
+      const file = path.join(dir, entry.name);
+      try {
+        const stat = fs.statSync(file);
+        if (now - stat.mtimeMs <= ORPHAN_FETCH_TEMP_MAX_AGE_MS) continue;
+        fs.rmSync(file, { force: true });
+        result.removed += 1;
+      } catch (err) {
+        result.errors.push({ file, message: String(err.message || err) });
+      }
+    }
+  }
+  if (result.removed) console.log(`[CLEANUP] Đã dọn ${result.removed} file fetch_input/output mồ côi.`);
+  return result;
+}
+
 function buildRuntimePathsForSid(sid) {
   const cleanSid = sanitizeSessionId(sid || 'default');
   const dir = cleanSid === 'default' ? RUNTIME_ROOT : path.join(SESSIONS_DIR, cleanSid);
@@ -281,4 +329,5 @@ module.exports = {
   ensureSessionAssets,
   clearSessionDerivedState,
   cleanOldSessions,
+  cleanOrphanFetchTempFiles,
 };

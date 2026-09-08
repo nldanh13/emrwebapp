@@ -18,6 +18,8 @@
     "package:clean": "node scripts/prepare_release.js",
     "check": "node scripts/health_check.js",
     "inspect:data": "node scripts/inspect_runtime_data.js",
+    "archive:audit": "node scripts/archive_security_audit.js",
+    "archive:audit:apply": "node scripts/archive_security_audit.js --apply",
     "debug:bundle": "node scripts/create_debug_bundle.js",
     "clean:project": "node scripts/clean_project.js",
     "check:syntax": "node scripts/check.mjs",
@@ -35,7 +37,7 @@
     "clean:unused:private": "node scripts/clean_unused.js --private-data --apply",
     "clean:unused:code": "node scripts/clean_unused.js --unused-code",
     "db:migrate": "node scripts/db_migrate.js",
-    "test:ci": "python -m pytest tests/ -q && python -m compileall -q worker && node scripts/check.mjs && npm run test:ui && node scripts/workflow_smoke_test.js && node scripts/records_check_paper_status_test.js && node scripts/task_queue_account_lane_test.js && node scripts/records_check_shared_data_reuse_test.js && node scripts/research_hchanh_flatten_encounter_guard_test.js && node scripts/hchanh_fetch_case_key_ambiguity_test.js"
+    "test:ci": "python -m pytest tests/ -q && python -m compileall -q worker && node scripts/check.mjs && npm run test:ui && node scripts/workflow_smoke_test.js && node scripts/records_check_paper_status_test.js && node scripts/task_queue_account_lane_test.js && node scripts/records_check_shared_data_reuse_test.js && node scripts/research_hchanh_flatten_encounter_guard_test.js && node scripts/hchanh_fetch_case_key_ambiguity_test.js && node scripts/records_check_legacy_migration_test.js && node scripts/orphan_fetch_temp_cleanup_test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
