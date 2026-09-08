@@ -201,6 +201,28 @@ function readRowsForHchanhSync(ctx, bodyPatients = null) {
 }
 
 
+// ── File PDF tổng hợp in ra viện ─────────────────────────────────────────────
+// Trước đây ghi thẳng vào <ROOT_DIR>/in — nằm ngoài .runtime/, không được tính
+// vào bất kỳ công cụ kiểm kê/dọn dẹp/backup nào của kho dữ liệu runtime. Từ giờ
+// ghi vào trong .runtime/ như mọi dữ liệu khác để "gom về 1 chỗ". Vẫn tìm ở
+// đường dẫn cũ khi đọc, để không mất quyền tải các file đã tạo trước khi đổi.
+
+const LEGACY_DISCHARGE_PRINT_DIR = path.join(ROOT_DIR, 'in');
+
+function discharge_print_bundle_dir() {
+  const dir = path.join(RUNTIME_ROOT, 'print_bundles');
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+  return dir;
+}
+
+function resolve_discharge_print_bundle_path(fileName) {
+  const currentPath = path.join(discharge_print_bundle_dir(), fileName);
+  if (fs.existsSync(currentPath)) return currentPath;
+  const legacyPath = path.join(LEGACY_DISCHARGE_PRINT_DIR, fileName);
+  if (fs.existsSync(legacyPath)) return legacyPath;
+  return currentPath;
+}
+
 // ── Records-check index riêng ────────────────────────────────────────────────
 // Tab Kiểm hồ sơ cần quét lại danh sách Hoàn tất độc lập, không lấy lại danh sách
 // đang nằm khoa/sorted từ các tab trực hoặc hành chánh. Index này chỉ lưu danh sách
@@ -3003,8 +3025,7 @@ router.post('/hchanh/print-discharge-bundle', async (req, res) => {
 
   try {
     await enqueueHeavy(ctx.sid, async () => {
-      const printDir = path.join(ROOT_DIR, 'in');
-      fs.mkdirSync(printDir, { recursive: true });
+      const printDir = discharge_print_bundle_dir();
       const out_path = path.join(hchanh_dir(ctx), `print_discharge_bundle_${safeFilePart(ma_bn)}_${Date.now()}.json`);
 
       const index = read_index(ctx);
@@ -3143,8 +3164,7 @@ router.post('/hchanh/print-discharge-bundle-batch', async (req, res) => {
 
   try {
     await enqueueHeavy(ctx.sid, async () => {
-      const printDir = path.join(ROOT_DIR, 'in');
-      fs.mkdirSync(printDir, { recursive: true });
+      const printDir = discharge_print_bundle_dir();
       const index = read_index(ctx);
       const patientResults = [];
       const patientFailures = [];
@@ -3305,16 +3325,17 @@ router.post('/hchanh/print-discharge-bundle-batch', async (req, res) => {
 
 
 // ── GET /api/hchanh/discharge-bundle/:fileName ──────────────────────────────
-// Tải file PDF tổng hợp đã lưu trong thư mục /in cùng cấp chương trình.
+// Tải file PDF tổng hợp đã lưu trong .runtime/print_bundles (hoặc thư mục /in
+// cũ, cho các file đã tạo trước khi dọn về .runtime/ — xem discharge_print_bundle_dir()).
 
 router.get('/hchanh/discharge-bundle/:fileName', handleRoute((req, res, _ctx) => {
   const fileName = path.basename(String(req.params.fileName || '').trim());
   if (!fileName || !fileName.toLowerCase().endsWith('.pdf') || fileName.includes('..')) {
     return res.status(400).json({ status: 'error', message: 'Tên file tổng hợp không hợp lệ.' });
   }
-  const printDir = path.join(ROOT_DIR, 'in');
-  const filePath = path.join(printDir, fileName);
-  if (!filePath.startsWith(printDir) || !fs.existsSync(filePath)) {
+  const filePath = resolve_discharge_print_bundle_path(fileName);
+  const allowedRoots = [discharge_print_bundle_dir(), LEGACY_DISCHARGE_PRINT_DIR];
+  if (!allowedRoots.some(root => filePath.startsWith(root + path.sep)) || !fs.existsSync(filePath)) {
     return res.status(404).json({ status: 'error', message: 'Không tìm thấy file tổng hợp trong thư mục in.' });
   }
   res.setHeader('Content-Type', 'application/pdf');

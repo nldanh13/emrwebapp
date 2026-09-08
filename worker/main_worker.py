@@ -66,7 +66,11 @@ def _debug_page(driver: Any, label: str) -> None:
     try:
         safe = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(label or "debug"))[:80]
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_dir = os.path.join(os.getcwd(), "logs")
+        # HTML/screenshot lưu ở đây chứa nguyên trang EMR (có dữ liệu bệnh nhân),
+        # nên phải nằm trong runtime dir của đúng session (WORKER_RUNTIME_DIR do
+        # Node truyền qua env khi spawn), không phải cwd của tiến trình — nếu
+        # không sẽ tạo ra kho dữ liệu nhạy cảm nằm ngoài .runtime/, không ai quản lý.
+        log_dir = os.path.join(os.environ.get("WORKER_RUNTIME_DIR") or os.getcwd(), "logs")
         os.makedirs(log_dir, exist_ok=True)
         html_path = os.path.join(log_dir, f"{safe}_{ts}.html")
         png_path = os.path.join(log_dir, f"{safe}_{ts}.png")
