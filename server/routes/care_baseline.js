@@ -10,6 +10,7 @@ const { ROOT_DIR, CARE_STORE_DIR } = require('../constants');
 const { getRuntimePaths } = require('../services/session');
 const { enqueueHeavy, registerCancel, unregisterCancel } = require('../services/task_queue');
 const { runPython, fmtPyError } = require('../services/python_runner');
+const { readJsonSafe } = require('../utils/file');
 
 const SCRIPT_PATH = path.join(ROOT_DIR, 'worker', 'care_baseline_fetch.py');
 const CARE_CONFIG_PATH = path.join(ROOT_DIR, 'config', 'care_baseline.json');
@@ -25,15 +26,6 @@ function nowRunId() {
 
 function safeFilePart(value, fallback = 'run') {
   return String(value || fallback).replace(/[^a-zA-Z0-9_.-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || fallback;
-}
-
-function readJsonSafe(file, fallback = null) {
-  try {
-    if (!fs.existsSync(file)) return fallback;
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch (_) {
-    return fallback;
-  }
 }
 
 function configStatus() {

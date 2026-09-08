@@ -7,18 +7,23 @@
 'use strict';
 
 const router = require('express').Router();
-const fs     = require('fs');
 const path   = require('path');
+
+const { readJsonSafe, writeJsonAtomic } = require('../utils/file');
+const { getRuntimePaths } = require('../services/session');
+const { appendActivity } = require('../services/activity_logger');
 
 const DICT_PATH = path.join(__dirname, '..', '..', 'config', 'vtyt_dictionary.json');
 
 function loadDict() {
-  return JSON.parse(fs.readFileSync(DICT_PATH, 'utf-8'));
+  const dict = readJsonSafe(DICT_PATH, null);
+  if (!dict) throw new Error(`Không đọc được ${DICT_PATH}`);
+  return dict;
 }
 
 function saveDict(dict) {
   dict._updated = new Date().toISOString().slice(0, 10);
-  fs.writeFileSync(DICT_PATH, JSON.stringify(dict, null, 2), 'utf-8');
+  writeJsonAtomic(DICT_PATH, dict);
 }
 
 // GET /api/vtyt-catalog
@@ -49,6 +54,7 @@ router.get('/vtyt-catalog', (req, res) => {
 // Body: { disabled?: bool, override_code?: string, override_name?: string }
 router.patch('/vtyt-catalog/:key', (req, res) => {
   try {
+    const ctx = getRuntimePaths(req);
     const { key }  = req.params;
     const dict     = loadDict();
     const item     = dict.catalog[key];
@@ -70,6 +76,7 @@ router.patch('/vtyt-catalog/:key', (req, res) => {
     }
 
     saveDict(dict);
+    appendActivity(ctx, { kind: 'vtyt_catalog.update', key, disabled: item.disabled === true, overridden: Boolean(item.override_code) });
     return res.json({
       status: 'ok',
       key,
@@ -90,6 +97,7 @@ router.patch('/vtyt-catalog/:key', (req, res) => {
 // POST /api/vtyt-catalog/reset/:key → xóa override, bật lại
 router.post('/vtyt-catalog/reset/:key', (req, res) => {
   try {
+    const ctx = getRuntimePaths(req);
     const { key } = req.params;
     const dict    = loadDict();
     const item    = dict.catalog[key];
@@ -99,6 +107,7 @@ router.post('/vtyt-catalog/reset/:key', (req, res) => {
     delete item.override_code;
     delete item.override_name;
     saveDict(dict);
+    appendActivity(ctx, { kind: 'vtyt_catalog.reset', key });
     return res.json({ status: 'ok', key, message: 'Đã reset về mặc định.' });
   } catch (e) {
     return res.status(500).json({ status: 'error', message: String(e.message) });

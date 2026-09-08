@@ -4103,14 +4103,16 @@ router.get('/hchanh/snapshot', handleRoute((_req, res, ctx) => {
 router.post('/hchanh/clear-patient', handleRoute((req, res, ctx) => {
   const ma_bn = normId(req.body?.ma_bn || req.body?.patientId);
   if (!ma_bn) return res.status(400).json({ status: 'error', message: 'Thiếu mã bệnh nhân.' });
-  return res.json({ status: 'ok', ...clear_patient_data(ctx, ma_bn) });
+  const result = clear_patient_data(ctx, ma_bn);
+  appendActivity(ctx, { kind: 'hchanh.clear_patient', removed: result.removed });
+  return res.json({ status: 'ok', ...result });
 }));
 
 router.post('/hchanh/clear', handleRoute((_req, res, ctx) => {
-  return res.json(clear_all_hchanh_data(ctx));
+  const result = clear_all_hchanh_data(ctx);
+  appendActivity(ctx, { kind: 'hchanh.clear_all' });
+  return res.json(result);
 }));
-
-module.exports = router;
 
 // ── E: In/export phiếu sửa cho BS ────────────────────────────────────────────
 // GET /api/hchanh/ticket/:ticketId/print  → trả về HTML in được
@@ -4400,3 +4402,5 @@ function buildWardListPrintHtml(patients) {
 <div class="cols">${sections || '<div style="color:#888">Không có bệnh nhân nào.</div>'}</div>
 </body></html>`;
 }
+
+module.exports = router;

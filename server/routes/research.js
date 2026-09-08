@@ -12,6 +12,7 @@ const { ensureDir, writeFileAtomic, writeJsonAtomic, readJsonSafe, nowFileStamp,
 const { csvEscape, rowsToCsv } = require('../utils/csv');
 const { runPython, runScript, fmtPyError } = require('../services/python_runner');
 const { getRuntimePaths } = require('../services/session');
+const { appendActivity } = require('../services/activity_logger');
 const { hasRole } = require('../services/authz');
 const { enqueueHeavy, registerCancel, unregisterCancel, isCancelRequested } = require('../services/task_queue');
 const variableSelection = require('../research/variable_selection');
@@ -4124,6 +4125,13 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
 
   const stats = { total: selectedRows.length, processed: 0, skipped: 0, ok: 0, attention: 0, error: 0, cancelled: false };
   appendResearchRunLog(runPath, `[${new Date().toLocaleString('vi-VN')}] Bắt đầu lấy ${runLabel}: ${selectedRows.length} ca | files=${wantedFiles.join(',')}`);
+  appendActivity(ctx, {
+    kind: 'workflow.research.fetch_hchanh.start',
+    mode: normalizedMode,
+    run_dir: path.basename(runPath),
+    total: selectedRows.length,
+    files: wantedFiles,
+  });
 
   for (let idx = 0; idx < selectedRows.length; idx += 1) {
     // Job hành chánh spawn một Python worker cho từng ca. Cờ huỷ phải được kiểm tra
@@ -4322,6 +4330,16 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
   }
 
   appendResearchRunLog(runPath, `[${new Date().toLocaleString('vi-VN')}] ${stats.cancelled ? 'Đã dừng' : 'Kết thúc'} lấy ${runLabel}: ok=${stats.ok}, partial=${stats.attention}, error=${stats.error}, skipped=${stats.skipped}`);
+  appendActivity(ctx, {
+    kind: 'workflow.research.fetch_hchanh.finish',
+    mode: normalizedMode,
+    run_dir: path.basename(runPath),
+    ok: stats.ok,
+    partial: stats.attention,
+    error: stats.error,
+    skipped: stats.skipped,
+    cancelled: stats.cancelled,
+  });
   const manifestPath = path.join(runPath, 'manifest.json');
   const manifest = readJsonSafe(manifestPath, {}) || {};
   writeJsonAtomic(manifestPath, {
