@@ -17,6 +17,7 @@
     "test:syntax": "python -m compileall worker",
     "package:clean": "node scripts/prepare_release.js",
     "check": "node scripts/health_check.js",
+    "inspect:data": "node scripts/inspect_runtime_data.js",
     "debug:bundle": "node scripts/create_debug_bundle.js",
     "clean:project": "node scripts/clean_project.js",
     "check:syntax": "node scripts/check.mjs",
