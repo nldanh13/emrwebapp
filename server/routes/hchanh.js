@@ -2834,11 +2834,24 @@ router.post('/hchanh/fetch', async (req, res) => {
 // Mở Chrome để sửa buồng/giường thủ công trong EMR.
 // Luồng: con mắt điều dưỡng → Chăm sóc → Buồng giường → Sửa thông tin.
 // Chạy detached để API trả về ngay, Chrome vẫn mở cho người dùng sửa trực tiếp.
+//
+// Route này KHÔNG dùng enqueueHeavy như các route Selenium khác: nó cố ý
+// không chờ tiến trình kết thúc (có thể mở tới 1 giờ để người dùng sửa tay),
+// nên nếu đưa vào enqueueHeavy sẽ giữ luôn account lane cả giờ, chặn hết các
+// tác vụ nặng khác (chăm sóc/dịch truyền/hành chánh) dùng chung tài khoản
+// EMR đó. Thay vào đó chỉ chặn mở TRÙNG cửa sổ cho CÙNG một mã BN khi cửa sổ
+// trước vẫn còn tiến trình (double-click, 2 tab) — dọn theo đúng lúc tiến
+// trình Chrome thật sự thoát (child.on('exit')), không đoán bằng timeout.
+
+const openBedEditInFlight = new Set(); // ma_bn đang có cửa sổ sửa giường mở
 
 router.post('/hchanh/open-bed-edit', handleRoute((req, res, ctx) => {
   const ma_bn = normId(req.body?.ma_bn || req.body?.patientId);
   const date_to = String(req.body?.date_to || req.body?.dateTo || '').trim();
   if (!ma_bn) return res.status(400).json({ status: 'error', message: 'Thiếu mã bệnh nhân (ma_bn).' });
+  if (openBedEditInFlight.has(ma_bn)) {
+    return res.status(409).json({ status: 'error', message: `Đã có cửa sổ sửa giường đang mở cho BN ${ma_bn}. Đóng cửa sổ đó trước khi mở lại.` });
+  }
 
   const scriptPath = path.join(WORKER_DIR, 'hchanh_open_bed_edit.py');
   if (!fs.existsSync(scriptPath)) {
@@ -2878,6 +2891,9 @@ router.post('/hchanh/open-bed-edit', handleRoute((req, res, ctx) => {
       WORKER_RUNTIME_DIR: ctx.dir,
     },
   });
+  openBedEditInFlight.add(ma_bn);
+  child.on('exit', () => { openBedEditInFlight.delete(ma_bn); });
+  child.on('error', () => { openBedEditInFlight.delete(ma_bn); });
   child.unref();
   try { fs.closeSync(outFd); } catch (_) {}
 
