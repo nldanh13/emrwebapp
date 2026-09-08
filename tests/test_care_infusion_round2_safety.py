@@ -45,12 +45,12 @@ def test_frontend_precheck_changed_waits_for_final_confirmation_only():
     end = source.index("const resolveInputDates", start)
     block = source[start:end]
 
-    # Nhánh changed chỉ refresh dữ liệu + trả token. confirmInputAction ở handler
+    # Nhánh changed chỉ refresh dữ liệu + trả token. askInputConfirm ở handler
     # chăm sóc/dịch truyền là điểm xác nhận duy nhất trước khi ghi EMR.
     assert "window.confirm(" not in block
     assert "return r;" in block
-    assert "confirmInputAction(targets, 'chăm sóc" in source
-    assert "confirmInputAction(targets, 'dịch truyền" in source
+    assert "askInputConfirm(targets, 'chăm sóc" in source
+    assert "askInputConfirm(targets, 'dịch truyền" in source
 
 
 def test_blood_receive_time_is_strict_and_normalized(tmp_path):
