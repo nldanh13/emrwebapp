@@ -84,9 +84,36 @@ async function main() {
   write_patient_file(ctxLike, MA_BN_STALE, 'discharge', { chan_doan_ra: 'DU LIEU DOT CU', so_luu_tru: '999' });
   backdateFetchedAt(MA_BN_STALE, 'ra_vien', '2026-01-01T07:00:00.000Z');
 
+  // Ca 3: profile (thông tin nền) CŨ HƠN đợt hiện tại -> cũng phải bị loại,
+  // không chỉ discharge/surgery/order_history (lỗ hổng đã sửa: trước đây
+  // profile được gộp vô điều kiện, không qua hchanhSharedDataMatchesEncounter).
+  const MA_BN_STALE_PROFILE = 'FLATSTALEPF01';
+  write_patient_file(ctxLike, MA_BN_STALE_PROFILE, 'profile', { chan_doan_vao: 'CHAN DOAN DOT CU', ho_ten: 'Nguyen Van StaleProfile' });
+  backdateFetchedAt(MA_BN_STALE_PROFILE, 'thong_tin_nen', '2026-01-01T07:00:00.000Z');
+
+  // Một profile FRESH để hchanh_profile.csv thực sự được ghi ra (nếu không có
+  // dòng nào hợp lệ thì file không tồn tại, khiến bài test ở dưới luôn pass
+  // giả vì đọc file không tồn tại trả về mảng rỗng).
+  const MA_BN_FRESH_PROFILE = 'FLATFRESHPF01';
+  write_patient_file(ctxLike, MA_BN_FRESH_PROFILE, 'profile', { chan_doan_vao: 'CHAN DOAN DOT MOI', ho_ten: 'Nguyen Van FreshProfile' });
+  backdateFetchedAt(MA_BN_FRESH_PROFILE, 'thong_tin_nen', '2026-09-05T08:00:00.000Z');
+
+  // Ca 4: dữ liệu thiếu _meta.fetched_at (không có mốc để so sánh) -> phải bị
+  // loại thay vì mặc định coi là khớp (lỗ hổng đã sửa: hàm cũ fail-open, trả
+  // "khớp" khi thiếu mốc — chính là loại dữ liệu legacy dễ bị cũ nhất).
+  const MA_BN_NO_META = 'FLATNOMETA01';
+  write_patient_file(ctxLike, MA_BN_NO_META, 'discharge', { chan_doan_ra: 'THIEU MOC THOI GIAN', so_luu_tru: '777' });
+  const noMetaPath = path.join(RUNTIME_ROOT, 'hchanh', 'patients', MA_BN_NO_META, 'ra_vien.json');
+  const noMetaData = JSON.parse(fs.readFileSync(noMetaPath, 'utf8'));
+  delete noMetaData._meta.fetched_at;
+  fs.writeFileSync(noMetaPath, JSON.stringify(noMetaData, null, 2));
+
   let index = read_index(ctxLike);
   index.patients[MA_BN_FRESH] = { ma_bn: MA_BN_FRESH, ho_ten: 'Nguyen Van Fresh', admission_time: '2026-09-01T00:00:00.000Z', active: true };
   index.patients[MA_BN_STALE] = { ma_bn: MA_BN_STALE, ho_ten: 'Nguyen Van Stale', admission_time: '2026-09-01T00:00:00.000Z', active: true };
+  index.patients[MA_BN_STALE_PROFILE] = { ma_bn: MA_BN_STALE_PROFILE, ho_ten: 'Nguyen Van StaleProfile', admission_time: '2026-09-01T00:00:00.000Z', active: true };
+  index.patients[MA_BN_FRESH_PROFILE] = { ma_bn: MA_BN_FRESH_PROFILE, ho_ten: 'Nguyen Van FreshProfile', admission_time: '2026-09-01T00:00:00.000Z', active: true };
+  index.patients[MA_BN_NO_META] = { ma_bn: MA_BN_NO_META, ho_ten: 'Nguyen Van NoMeta', admission_time: '2026-09-01T00:00:00.000Z', active: true };
   write_index(ctxLike, index);
 
   const server = await startApp();
@@ -97,13 +124,22 @@ async function main() {
   await test('Gộp Hành chánh vào Nghiên cứu: chỉ nhận dữ liệu đúng đợt, loại dữ liệu đợt cũ', async () => {
     const res = await postJson(base, '/research/archive/import-hchanh', { runId });
     assert.strictEqual(res.status, 200, JSON.stringify(res.json));
-    assert.strictEqual(res.json.imported.discharge, 1, 'chỉ 1/2 ca (FRESH) được gộp vào hchanh_discharge.csv');
+    assert.strictEqual(res.json.imported.discharge, 1, 'chỉ 1/2 ca discharge (FRESH) được gộp, STALE và NO_META bị loại');
 
     const csvPath = path.join(RUNTIME_ROOT, 'research', 'research_store', 'du_lieu_goc', 'runs', runId, 'hchanh_discharge.csv');
     const rows = readCsvRows(csvPath);
     assert.strictEqual(rows.length, 1, 'CSV chỉ có đúng 1 dòng discharge');
     assert.strictEqual(rows[0]['Mã BN'], MA_BN_FRESH, 'dòng còn lại phải là ca FRESH');
     assert.ok(!rows.some(r => r['Mã BN'] === MA_BN_STALE), 'không được có dữ liệu đợt cũ của ca STALE trong kho nghiên cứu');
+    assert.ok(!rows.some(r => r['Mã BN'] === MA_BN_NO_META), 'thiếu _meta.fetched_at phải bị loại, không được mặc định coi là khớp đợt');
+  });
+
+  await test('Profile (thông tin nền) đợt cũ cũng bị loại như discharge/surgery/order_history', async () => {
+    const csvPath = path.join(RUNTIME_ROOT, 'research', 'research_store', 'du_lieu_goc', 'runs', runId, 'hchanh_profile.csv');
+    const rows = readCsvRows(csvPath);
+    assert.ok(rows.length > 0, 'hchanh_profile.csv phải có ít nhất dòng FRESH, không được rỗng/không tồn tại');
+    assert.ok(rows.some(r => r['Mã BN'] === MA_BN_FRESH_PROFILE), 'phải giữ lại profile đúng đợt (FRESH)');
+    assert.ok(!rows.some(r => r['Mã BN'] === MA_BN_STALE_PROFILE), 'profile đợt cũ (FLATSTALEPF01) không được lọt vào kho nghiên cứu');
   });
 
   server.close();
