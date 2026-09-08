@@ -286,8 +286,14 @@ Màn hình **Nhập bệnh phòng** đọc trạng thái runtime của từng mo
 4. Chọn `failurePolicy` phù hợp.
 5. Thêm feature vào workflow bằng step có `id` duy nhất.
 6. Gắn trạng thái module vào màn hình tương ứng.
-7. Thêm test cho bật/tắt, dependency, lỗi từng phần và quyền quản trị.
-8. Chạy:
+7. **Nếu route mới ghi/sửa dữ liệu vào EMR thật** (không chỉ đọc/preview): route xác nhận
+   phải phát `issueInputPrecheckToken(...)` sau khi quét/preview xong, và route ghi phải gọi
+   `validateAndConsumeInputPrecheckToken(...)` (từ `server/services/input_precheck_tokens.js`)
+   **trước khi** enqueue worker Selenium — không được chỉ dựa vào xác nhận phía client
+   (`window.confirm`). Xem `server/routes/clinic.js` (`/clinic/preview` + `/clinic/input-procedures`)
+   làm mẫu.
+8. Thêm test cho bật/tắt, dependency, lỗi từng phần và quyền quản trị.
+9. Chạy:
 
 ```bash
 npm run test:ci
