@@ -4,8 +4,28 @@
 
 'use strict';
 
-const fs   = require('fs');
-const path = require('path');
+const { loadQaRules, extractClsFromBilling } = require('./qa_shared');
+const {
+  parseVNDateTime,
+  dateOnlyUTC,
+  addDaysUTC,
+  diffDaysUTC,
+  dateKeyUTC,
+  fmtDateUTC,
+  fmtDateTimeUTC,
+  addMinutesUTC,
+  addExactDaysUTC,
+  minDateUTC,
+  maxDateUTC,
+  positiveInterval,
+  intervalOverlapMs,
+  intervalIncludesInstant,
+  fmtIntervalUTC,
+  isBeforeDate,
+  dateFromSurgeryRow,
+  firstParsedDateTime,
+} = require('./vn_datetime');
+const { runBhytPreAudit } = require('./bhyt_pre_audit');
 
 function safeArray(v)   { return Array.isArray(v) ? v : []; }
 function text(v, fb='') { return String(v ?? '').replace(/\s+/g, ' ').trim() || fb; }
@@ -22,37 +42,6 @@ function makeIssue({ group, severity, code, title, detail='', action='Kiểm tra
     title: text(title), detail: text(detail),
     action: text(action), owner: text(owner), evidence: text(evidence),
   };
-}
-
-// ── Load config ───────────────────────────────────────────────────────────────
-
-let _cache = null, _cacheTime = 0;
-function loadQaRules() {
-  const now = Date.now();
-  if (_cache && now - _cacheTime < 30000) return _cache;
-  try {
-    const p = path.join(__dirname, '..', '..', '..', 'config', 'hchanh', 'qa_rules.json');
-    if (fs.existsSync(p)) { _cache = JSON.parse(fs.readFileSync(p, 'utf-8')); _cacheTime = now; return _cache; }
-  } catch (e) { console.warn('[QA] Không đọc qa_rules.json:', e.message); }
-  return {};
-}
-
-// ── Trích xuất CLS từ billing ─────────────────────────────────────────────────
-// Từ billing.rows: lọc nhóm CDHA, XN, Thăm dò chức năng — chỉ xét dòng BHYT.
-
-function extractClsFromBilling(billing) {
-  const CLS_LOAI = ['chẩn đoán hình ảnh', 'xét nghiệm', 'thăm dò chức năng',
-                    'giải phẫu bệnh', 'vi sinh', 'tinh dịch đồ', 'cận lâm sàng'];
-  const rows = safeArray(billing?.rows);
-  return rows.filter(r => {
-    const loai = normText(r.loai_yc || '');
-    return CLS_LOAI.some(k => loai.includes(normText(k)));
-  }).map(r => ({
-    name:    text(r.name),
-    loai_yc: text(r.loai_yc),
-    pg:      r.payment_group || 'unknown',
-    don_gia: Number(r.don_gia || 0),
-  }));
 }
 
 // ── Kiểm profile ─────────────────────────────────────────────────────────────
@@ -131,131 +120,6 @@ function checkDischarge(discharge, profile, rules = {}) {
 
 // ── Kiểm ngày giường ─────────────────────────────────────────────────────────
 
-function parseVNDateTime(value) {
-  const raw = text(value);
-  if (!raw) return null;
-
-  // ISO nội bộ: 2026-05-21T10:54:00 hoặc 2026-05-21 10:54
-  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
-  if (iso) {
-    const yy = Number(iso[1]);
-    const mo = Number(iso[2]);
-    const dd = Number(iso[3]);
-    const hh = Number(iso[4] || 0);
-    const mm = Number(iso[5] || 0);
-    const ss = Number(iso[6] || 0);
-    if (yy && mo && dd) return new Date(Date.UTC(yy, mo - 1, dd, hh, mm, ss, 0));
-  }
-
-  // Nhận: "00:42 16-05-2026", "13:00 01/06/2026", "21/05/2026", "... (Thứ 2)"
-  const m = raw.match(/(?:(\d{1,2}):(\d{2})\s*)?(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-  if (!m) return null;
-  const hh = Number(m[1] || 0);
-  const mm = Number(m[2] || 0);
-  const dd = Number(m[3]);
-  const mo = Number(m[4]);
-  const yy = Number(m[5]);
-  if (!dd || !mo || !yy) return null;
-  return new Date(Date.UTC(yy, mo - 1, dd, hh, mm, 0, 0));
-}
-
-function firstParsedDateTime(values) {
-  for (const v of safeArray(values)) {
-    const d = parseVNDateTime(v);
-    if (d) return d;
-  }
-  return null;
-}
-
-function dateOnlyUTC(d) {
-  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return null;
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-}
-
-function addDaysUTC(d, days) {
-  const x = dateOnlyUTC(d);
-  if (!x) return null;
-  x.setUTCDate(x.getUTCDate() + Number(days || 0));
-  return x;
-}
-
-function diffDaysUTC(a, b) {
-  const da = dateOnlyUTC(a), db = dateOnlyUTC(b);
-  if (!da || !db) return 0;
-  return Math.round((db.getTime() - da.getTime()) / 86400000);
-}
-
-function dateKeyUTC(d) {
-  const x = dateOnlyUTC(d);
-  if (!x) return '';
-  const y = x.getUTCFullYear();
-  const m = String(x.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(x.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-function fmtDateUTC(d) {
-  const x = dateOnlyUTC(d);
-  if (!x) return '';
-  return `${String(x.getUTCDate()).padStart(2, '0')}/${String(x.getUTCMonth() + 1).padStart(2, '0')}/${x.getUTCFullYear()}`;
-}
-
-function fmtDateTimeUTC(d) {
-  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '';
-  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')} ${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`;
-}
-
-function addMinutesUTC(d, minutes) {
-  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return null;
-  return new Date(d.getTime() + Number(minutes || 0) * 60000);
-}
-
-function addExactDaysUTC(d, days) {
-  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return null;
-  return new Date(d.getTime() + Number(days || 0) * 86400000);
-}
-
-function minDateUTC(...items) {
-  const vals = items.filter(d => d instanceof Date && !Number.isNaN(d.getTime()));
-  if (!vals.length) return null;
-  return vals.reduce((a, b) => a.getTime() <= b.getTime() ? a : b);
-}
-
-function maxDateUTC(...items) {
-  const vals = items.filter(d => d instanceof Date && !Number.isNaN(d.getTime()));
-  if (!vals.length) return null;
-  return vals.reduce((a, b) => a.getTime() >= b.getTime() ? a : b);
-}
-
-function positiveInterval(start, end) {
-  return start instanceof Date && end instanceof Date && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end.getTime() > start.getTime();
-}
-
-function intervalOverlapMs(aStart, aEnd, bStart, bEnd) {
-  const st = Math.max(aStart?.getTime?.() ?? NaN, bStart?.getTime?.() ?? NaN);
-  const en = Math.min(aEnd?.getTime?.() ?? NaN, bEnd?.getTime?.() ?? NaN);
-  return Number.isFinite(st) && Number.isFinite(en) ? Math.max(0, en - st) : 0;
-}
-
-function intervalIncludesInstant(itv, instant) {
-  return itv?.start instanceof Date && itv?.end instanceof Date && instant instanceof Date &&
-    itv.start.getTime() <= instant.getTime() && instant.getTime() < itv.end.getTime();
-}
-
-function fmtIntervalUTC(start, endExclusive) {
-  if (!positiveInterval(start, endExclusive)) return '';
-  const displayEnd = addMinutesUTC(endExclusive, -1) || endExclusive;
-  return `${fmtDateTimeUTC(start)} → ${fmtDateTimeUTC(displayEnd)}`;
-}
-
-function fmtDateKey(key) {
-  const m = String(key || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return m ? `${m[3]}/${m[2]}/${m[1]}` : text(key);
-}
-
-function isSameOrAfterDate(a, b) { return dateOnlyUTC(a)?.getTime() >= dateOnlyUTC(b)?.getTime(); }
-function isBeforeDate(a, b) { return dateOnlyUTC(a)?.getTime() < dateOnlyUTC(b)?.getTime(); }
-
 function shouldCountDischargeDay(discharge = {}) {
   const blob = normText([
     discharge.xu_tri,
@@ -311,16 +175,6 @@ function surgeryClassToBedClass(className) {
   if (s.includes('loai 3') || s.includes('loai iii')) return BED_CLASS.ngoai3;
   if (s.includes('loai 4') || s.includes('loai iv')) return BED_CLASS.ngoai4;
   return null;
-}
-
-function dateFromSurgeryRow(row) {
-  // Ưu tiên ngày trong danh sách PT. Một số màn hình chi tiết có thể giữ thời gian popup/field khác gây lệch.
-  return parseVNDateTime(row?.thoi_gian)
-      || parseVNDateTime(row?.ngay)
-      || parseVNDateTime(row?.tg_ylenh)
-      || parseVNDateTime(row?.detail?.ngay)
-      || parseVNDateTime(row?.detail?.bat_dau)
-      || parseVNDateTime(row?.bat_dau);
 }
 
 function findPostopWardDate(surgery, surgeryDate, admissionDate, dischargeEndExclusive) {
@@ -1053,6 +907,10 @@ function runDischargeQA_Hchanh({ ma_bn, meta, data }) {
   const warnings = deduped.filter(i => i.severity === 'warn').length;
   const status   = errors ? 'error' : warnings ? 'warn' : 'ok';
 
+  // Tiền giám định BHYT — lớp riêng, không thay thế QA hành chánh ở trên.
+  // Không kết luận "xuất toán": chỉ trả nguy cơ + lý do + khoản tiền có nguy cơ + việc cần kiểm.
+  const bhyt = runBhytPreAudit({ meta, data, bedDaysReview });
+
   return {
     issues: deduped,
     qa: {
@@ -1061,6 +919,7 @@ function runDischargeQA_Hchanh({ ma_bn, meta, data }) {
       summary: status === 'ok' ? 'Đủ điều kiện in/chốt hồ sơ.'
         : `Còn ${errors} lỗi và ${warnings} cảnh báo cần xử lý.`,
       bed_days_review: bedDaysReview,
+      bhyt,
     },
   };
 }

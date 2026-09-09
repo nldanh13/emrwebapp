@@ -1,0 +1,166 @@
+# Tiền giám định BHYT trước khi nộp hồ sơ
+
+## Mục tiêu
+
+Không để hệ thống tự kết luận "xuất toán". Với mỗi hồ sơ ra viện, hệ thống trả về:
+
+- **Đánh giá BHYT**: An toàn / Cần kiểm tra / Nguy cơ cao / Không nên nộp / Không đủ dữ liệu để đánh giá.
+- **Giá trị dịch vụ liên quan cảnh báo** ("số tiền có nguy cơ") — không phải số tiền chắc chắn bị từ chối thanh toán.
+- **Danh sách việc cần kiểm** kèm hành động đề xuất và nguồn pháp lý (khi có).
+
+Module này **gộp chung vào tab Hành chánh hiện có** (không phải tab/route riêng): kết quả nằm trong `qa.bhyt` của cùng API `/api/hchanh/dashboard` và `/api/hchanh/patient/:ma_bn` mà QA hành chánh (`discharge_qa.js`) đang trả về, chỉ áp dụng cho `scope = discharge`.
+
+## Vị trí trong code
+
+| Thành phần | File |
+| --- | --- |
+| Rule engine + Tầng 1, 2, 3, 4, 5, 6, 7 | `server/services/hchanh/bhyt_pre_audit.js` |
+| Rule kháng sinh cần chẩn đoán hỗ trợ (Tầng 6) | `config/hchanh/bhyt_drug_rules.json` |
+| Tiện ích ngày/giờ dùng chung | `server/services/hchanh/vn_datetime.js` (tách ra từ `discharge_qa.js` để tránh phụ thuộc vòng) |
+| `loadQaRules`/`extractClsFromBilling` dùng chung | `server/services/hchanh/qa_shared.js` (tách ra từ `discharge_qa.js`, cùng lý do) |
+| Metadata rule (nguồn pháp lý, hành động) | `config/hchanh/bhyt_pre_audit_rules.json` |
+| Bảng đối chiếu Chẩn đoán ↔ PT/TT (Tầng 3) | `config/hchanh/bhyt_dx_procedure_map.json` |
+| Rule chuyên khoa dùng lại cho Tầng 4 | `config/hchanh/qa_rules.json` → `specialty_rules` (đã có sẵn cho QA hành chánh) |
+| Nơi gọi vào | `server/services/hchanh/discharge_qa.js` → `runDischargeQA_Hchanh()` gắn kết quả vào `qa.bhyt` |
+| Hiển thị | `src/components/hchanh/HchahnTab.jsx` → `BhytAssessmentBox` (trong `DetailPanel`, ngay dưới khối QA hành chánh) |
+| Test | `scripts/bhyt_pre_audit_test.js` (chạy trong `npm run test:ci`) |
+
+## Nguyên tắc thiết kế
+
+- **Rule pháp lý (`BHYT_RULE`) và checklist chuyên môn nội bộ là hai lớp khác nhau.** Tầng 1 hiện tại chỉ chứa rule pháp lý (tính toàn vẹn dữ liệu bắt buộc để nộp hồ sơ hợp lệ). Checklist chứng minh chỉ định (XQ, biên bản PT...) thuộc một lớp khác, chưa cài trong bản này — xem mục "Việc chưa làm" bên dưới.
+- **Không suy đoán khi thiếu dữ liệu ổn định.** Ví dụ: nếu EMR không đọc được `bhyt_tu_ngay`/`bhyt_den_ngay`, hệ thống không tự đỏ — chỉ bỏ qua rule liên quan đến hạn thẻ.
+- **Rule cấu hình qua JSON, không hard-code trong code.** `config/hchanh/bhyt_pre_audit_rules.json` giữ `legal_source`, `legal_clause`, `action` cho từng `rule_id`. Cập nhật văn bản pháp luật chỉ cần sửa file này.
+- **Không cộng điểm.** Trạng thái tổng = mức độ nặng nhất trong các finding (rule severity + override), theo đúng logic đề xuất gốc (mục 15 trong đề xuất thiết kế).
+- **"Số tiền có nguy cơ" lấy giá trị lớn nhất trong các finding, không cộng dồn** — tránh tính trùng khi nhiều finding cùng quy về một khoản BHYT của đợt điều trị.
+
+## Thang mức độ (`BHYT_SEVERITY`)
+
+```text
+INFO < WARNING < REVIEW < HIGH_RISK < BLOCK
+```
+
+Ánh xạ sang đánh giá tổng (`ASSESSMENT`):
+
+```text
+BLOCK ở bất kỳ finding nào      → "Không nên nộp"   (đỏ)
+HIGH_RISK là mức nặng nhất      → "Nguy cơ cao"      (cam)
+REVIEW/WARNING là mức nặng nhất → "Cần kiểm tra"     (vàng)
+Không có finding nào            → "An toàn"          (xanh)
+Thiếu profile/discharge         → "Không đủ dữ liệu để đánh giá" (xám)
+```
+
+## Tầng 1 — Tính toàn vẹn dữ liệu (đã cài đặt)
+
+Chỉ dùng các trường đã xác nhận có thật trong dữ liệu hành chánh hiện tại (không suy đoán trường chưa tồn tại):
+
+| Rule ID | Điều kiện | Mức độ |
+| --- | --- | --- |
+| `BHYT_T1_DISCHARGE_BEFORE_ADMISSION` | Ngày ra viện < ngày vào viện | BLOCK |
+| `BHYT_T1_BHYT_CODE_MISSING` | Không tự túc nhưng chưa có `bhyt_code` | REVIEW |
+| `BHYT_T1_CARD_EXPIRED_BEFORE_DISCHARGE` | `bhyt_den_ngay` < ngày ra viện | BLOCK |
+| `BHYT_T1_CARD_NOT_YET_VALID_AT_ADMISSION` | `bhyt_tu_ngay` > ngày vào viện | BLOCK |
+| `BHYT_T1_SERVICE_DATE_BEFORE_ADMISSION` | Có dòng bảng kê (`tg_ylenh`) trước ngày vào viện | BLOCK |
+| `BHYT_T1_SERVICE_DATE_AFTER_DISCHARGE` | Có dòng bảng kê sau ngày ra viện | BLOCK |
+| `BHYT_T1_PRIMARY_DIAGNOSIS_MISSING` | Không có chẩn đoán chính ra viện | BLOCK |
+| `BHYT_T1_SURGERY_DATE_MISSING` | Có PT/TT nhưng không xác định được ngày thực hiện | BLOCK |
+| `BHYT_T1_BENEFIT_LEVEL_INCONSISTENT` | Nhiều `muc_huong` khác nhau giữa các dòng BHYT cùng đợt | REVIEW |
+
+Rule "mức hưởng bảng kê khác quyền lợi thẻ" trong đề xuất gốc **chưa cài đặt** vì dữ liệu hiện có chỉ đọc được `muc_huong` áp dụng trên từng dòng bảng kê, không có trường quyền lợi thẻ (mức hưởng khai báo) tách biệt để đối chiếu — tránh suy đoán khi chưa có nguồn dữ liệu ổn định.
+
+## Tầng 2 — Ngày giường (đã cài đặt)
+
+**Không tính lại ngày giường từ đầu.** Tầng này nhận `bedDaysReview` — kết quả `buildBedDaysReview()` mà `discharge_qa.js` đã tính sẵn (dùng chung cho cả QA hành chánh và BHYT) — qua tham số, để tránh hai nơi tính ra hai con số khác nhau cho cùng một hồ sơ. `runDischargeQA_Hchanh()` truyền `bedDaysReview` này vào `runBhytPreAudit()`.
+
+| Rule ID | Điều kiện | Mức độ |
+| --- | --- | --- |
+| `BHYT_T2_SHORT_STAY_BED_CHARGED` | Thời gian nằm viện thực (giờ) ≤ 4 giờ nhưng `bed_days.so_ngay_tinh` > 0 | HIGH_RISK |
+| `BHYT_T2_BED_DAYS_OVER_EXPECTED` | `bedDaysReview.status === 'mismatch'` và `actual_total > expected_total` (tính THỪA so với thời gian điều trị) | HIGH_RISK |
+
+Hai điểm cố ý loại trừ để tránh báo sai:
+
+- **Chỉ báo hướng tính THỪA**, không báo hướng tính THIẾU (`actual_total < expected_total`) — thiếu ngày là vấn đề hoàn thiện hồ sơ/doanh thu bệnh viện, không phải nguy cơ bị BHYT từ chối thanh toán; hướng này đã có `BED_DAYS_NEEDS_ADJUSTMENT`/`BED_DAYS_SHORT` riêng trong QA hành chánh.
+- **Bỏ qua trường hợp 4–24 giờ** khi `expected_total === 0 && actual_total === 1`: một số hướng dẫn cho phép tính 1 ngày giường cho ca vào/ra trong cùng ngày nằm trên 4 giờ, dù công thức ngày lịch chung (ra − vào) ra 0 — nếu không loại trừ sẽ báo nhầm nguy cơ cho đúng trường hợp được phép.
+
+`amount_at_risk` của `BHYT_T2_BED_DAYS_OVER_EXPECTED` lấy từ `bedDaysReview.amount.diff` đã tính sẵn (chỉ khi dương); nếu chưa tính được giá tiền, finding vẫn xuất hiện với `amount_at_risk = 0` — không suy đoán giá.
+
+## Tầng 3 — Chẩn đoán ↔ PT/TT (đã cài đặt)
+
+Dùng 3 mức COMPATIBLE / REVIEW / INCOMPATIBLE thay vì quy định cứng "chẩn đoán X chỉ được PT Y", đúng nguyên tắc mục 6 của đề xuất gốc. Bảng đối chiếu PT/TT ↔ mã ICD nằm trong **`config/hchanh/bhyt_dx_procedure_map.json`** — sửa/thêm PT/TT ở đây, không sửa code.
+
+**Chỉ khai báo PT/TT đã có mã ICD cụ thể trong đề xuất thiết kế gốc** (thay khớp háng, tháo phương tiện kết hợp xương) — không tự suy đoán mã ICD cho PT/TT khác khi chưa có nguồn xác nhận chuyên môn. PT/TT chưa có trong bảng đối chiếu thì Tầng 3 bỏ qua, không đánh giá.
+
+| Rule ID | Điều kiện | Mức độ |
+| --- | --- | --- |
+| `BHYT_T3_DX_PROCEDURE_INCOMPATIBLE` | PT khớp `match_keywords` của một mục trong `procedures[]`, và mã ICD chẩn đoán chính (`discharge.chan_doan_chinh_icd`) khớp `incompatible_icd_prefixes` | HIGH_RISK |
+| `BHYT_T3_DX_PROCEDURE_NEEDS_REVIEW` | PT khớp một mục, ICD không khớp cả `compatible_icd_prefixes` lẫn `incompatible_icd_prefixes` (chưa rõ nhóm) | REVIEW |
+| `BHYT_T3_IMPLANT_REMOVAL_NEEDS_EVIDENCE` | PT khớp `implant_removal.match_keywords` (tháo PTKHX/rút đinh/nẹp vít...) và **không** có chẩn đoán Z47.0 lẫn dòng bảng kê chứa từ khóa X-quang | HIGH_RISK |
+
+Nếu `discharge.chan_doan_chinh_icd` rỗng (chưa tách được mã ICD từ chẩn đoán chính — trường này do worker tự regex ra, không phải lúc nào cũng có), Tầng 3 **bỏ qua hoàn toàn**, không suy đoán ICD từ text tự do.
+
+Ví dụ khớp đúng đề xuất gốc (mục 5–6, ca "Danh Tân"): chỉ định tháo PTKHX với chẩn đoán "gãy xương" chung chung, chưa có XQ liền xương trong dữ liệu → `BHYT_T3_IMPLANT_REMOVAL_NEEDS_EVIDENCE` (🟠 Nguy cơ cao) thay vì tự động đỏ.
+
+Lưu ý: các PT/TT nêu trong đề xuất gốc chỉ là **ví dụ minh họa**, không giới hạn phạm vi Tầng 3. `bhyt_dx_procedure_map.json` nhận thêm bao nhiêu PT/TT cũng được — điều kiện duy nhất là có nguồn ICD/chuyên môn xác nhận đủ tin cậy để không suy đoán sai.
+
+## Tầng 4 — CLS chứng minh chỉ định (đã cài đặt)
+
+**Tái dùng `specialty_rules` đã có trong `config/hchanh/qa_rules.json`** (cấu hình QA hành chánh có sẵn, không phải bảng mới) — không định nghĩa lại danh mục CLS kỳ vọng theo từng PT/TT để tránh hai nơi lệch nhau khi ai đó sửa `qa_rules.json`. `specialty_rules` vốn đã tổng quát theo chuyên khoa (khớp qua `dept_keywords`), không giới hạn ở vài PT/TT cụ thể.
+
+Cơ chế lọc: mỗi rule chuyên khoa trong `qa_rules.json` có `required_cls_keywords` (bằng chứng CLS/biên bản — thuộc Tầng 4) hoặc `required_supply_keywords` (bằng chứng vật tư — để dành cho Tầng 5/VTYT, **không lấy ở Tầng 4**). `server/services/hchanh/qa_shared.js` (`loadQaRules`, `extractClsFromBilling`) được tách dùng chung với `discharge_qa.js` để tránh phụ thuộc vòng, giống cách làm với `vn_datetime.js`.
+
+`rule_id` sinh động theo `BHYT_T4_<code>` từ chính `rule.code` trong `qa_rules.json` (ví dụ `BHYT_T4_CTCH_FRACTURE_NO_XRAY`, `BHYT_T4_GS_SURGERY_NO_OP_NOTE`) — nên rule chuyên khoa mới thêm vào `qa_rules.json` (miễn có `required_cls_keywords`) tự động được Tầng 4 nhận, không cần sửa code hay `bhyt_pre_audit_rules.json`. Mức độ: `severity: "error"` trong `qa_rules.json` → HIGH_RISK, còn lại → REVIEW. `legal_source` của các finding này ghi rõ là **checklist chuyên môn nội bộ**, không phải rule pháp lý bắt buộc.
+
+## Tầng 5 — VTYT: placeholder trung thực, không phải 7 cửa kiểm đầy đủ
+
+Đề xuất gốc yêu cầu 7 cửa kiểm cho VTYT (mã hợp lệ, trong danh mục BHXH, hiệu lực, phạm vi BHYT, trần thanh toán, số lượng khớp biên bản PT, không trùng giá DVKT). **Hệ thống hiện không có dữ liệu để làm 6/7 cửa đó**:
+
+- Không có danh mục VTYT do BHXH duyệt kèm hạn hiệu lực.
+- Không có bảng trần thanh toán/tỷ lệ theo từng mã VTYT.
+- `surgery` (dữ liệu PT/TT đã fetch) chỉ lưu ngày và phân loại PT, **không lưu vật tư tiêu hao thực tế** — không có gì để đối chiếu số lượng bảng kê ↔ biên bản PT.
+- `config/vtyt_dictionary.json` chỉ là danh mục nội bộ nhỏ (8 mã, khoa CTCH/Thần kinh) dùng để tự động nhập VTYT, không phải danh mục BHXH đầy đủ — dùng nó để phán "hợp lệ/không hợp lệ" sẽ báo sai hàng loạt.
+
+Vì vậy Tầng 5 **không tự đoán đúng/sai**, đúng nguyên tắc xuyên suốt của cả hệ thống (giống `lab_result_adapter.js` trả `UNKNOWN` thay vì suy đoán). Nó chỉ làm một việc: rà bảng kê, tìm dòng nào là VTYT thanh toán BHYT (khớp tên/alias với `vtyt_dictionary.json` — cùng danh mục input engine đang dùng) và phát một finding **mức INFO** duy nhất liệt kê các dòng đó kèm tổng giá trị, nói rõ "chưa đối chiếu được, cần kiểm tra thủ công".
+
+| Rule ID | Điều kiện | Mức độ |
+| --- | --- | --- |
+| `BHYT_T5_VTYT_UNVERIFIABLE` | Có ≥1 dòng bảng kê `payment_group === 'bhyt'` khớp tên/alias trong `vtyt_dictionary.json` | INFO |
+
+INFO là mức thấp nhất trong thang `BHYT_SEVERITY` nên **không** kéo đánh giá tổng xuống "Cần kiểm tra" nếu không có finding nào khác nặng hơn — nhưng `amount_at_risk` của nó vẫn được tính vào "giá trị dịch vụ liên quan cảnh báo" hiển thị trên UI, vì đây đúng là giá trị cần con người xem lại, chỉ là chưa đủ căn cứ để xếp mức nguy cơ cao/thấp.
+
+**Điều kiện để nâng Tầng 5 lên 7 cửa kiểm thật**: cần ít nhất một trong — (a) file/API danh mục VTYT BHXH kèm hạn hiệu lực và trần thanh toán, hoặc (b) worker fetch thêm dữ liệu vật tư tiêu hao thực tế từ biên bản PT trên EMR. Khi có, thêm rule mới vào `runBhytTier5()` mà không cần đổi khung.
+
+## Tầng 6 — Thuốc: chỉ phần cảnh báo lâm sàng (đã cài đặt)
+
+Đề xuất gốc: kiểm cấu trúc trước (danh mục thuốc BHYT, đường dùng, thời gian, số lượng) rồi mới đến cảnh báo lâm sàng (`diagnosis_support`). Hệ thống hiện **không có** danh mục thuốc BHYT/đường dùng/định mức số lượng để làm phần cấu trúc — cùng khoảng trống dữ liệu như Tầng 5 (`config/medication_catalog.json` chỉ có 1 dòng mẫu, không phải danh mục thật). Hai mục khác trong phần cấu trúc **không lặp lại** vì đã có nơi khác lo:
+
+- "Không dùng thuốc sau ra viện" → đã có `BHYT_T1_SERVICE_DATE_AFTER_DISCHARGE` (Tầng 1, áp dụng mọi dòng bảng kê) và `ORDER_AFTER_DISCHARGE` (QA hành chánh).
+- "Không trùng đơn bất thường" → đã có `BHYT_T7_DUPLICATE_SERVICE_SAME_DAY` (Tầng 7, áp dụng mọi dịch vụ, không riêng thuốc).
+
+Vì vậy Tầng 6 hiện chỉ làm phần **cảnh báo lâm sàng**: dùng lại chính danh mục kháng sinh đã có trong `config/hchanh/qa_rules.json` (`cls_diagnosis_rules` → `CLS_ANTIBIOTIC_NO_INFECTION_DX`, đã được đội ngũ xác nhận trước đó) — sao chép sang **`config/hchanh/bhyt_drug_rules.json`** để quét trực tiếp trên mọi dòng bảng kê BHYT (rule gốc chỉ quét dòng thuộc nhóm CLS/xét nghiệm nên gần như không khớp dòng thuốc thật trong dữ liệu billing).
+
+| Rule ID | Điều kiện | Mức độ |
+| --- | --- | --- |
+| `BHYT_T6_ANTIBIOTIC_NO_INFECTION_DX` | Có dòng bảng kê BHYT tên khớp một kháng sinh phổ rộng trong `bhyt_drug_rules.json`, và chẩn đoán không chứa từ khóa nhiễm khuẩn tương ứng | REVIEW |
+
+Đây là `CLINICAL_JUSTIFICATION_REQUIRED` theo đúng đề xuất gốc — REVIEW (🟡), không tự đỏ. Danh mục kháng sinh trong `bhyt_drug_rules.json` chỉ là ví dụ nhóm phổ biến, không phải danh mục thuốc BHYT đầy đủ — thêm thuốc/nhóm khác vào `drug_diagnosis_rules` khi có nguồn xác nhận (không tự suy đoán thêm thuốc mới).
+
+## Tầng 7 — Trùng dịch vụ (đã cài đặt, phạm vi thu hẹp theo yêu cầu)
+
+**Phạm vi hiện tại chỉ gồm "trùng dịch vụ cùng ngày"** — người thực hiện/phạm vi hành nghề trong đề xuất gốc **cố ý chưa làm** (không phải do thiếu dữ liệu, mà theo yêu cầu thu hẹp phạm vi, sẽ bổ sung sau khi có yêu cầu cụ thể). Rule "trong gói" (mục 13 đề xuất gốc, thường được xếp vào Tầng 8) cũng **cố ý bỏ qua** theo cùng yêu cầu.
+
+Dữ liệu billing không có mã số chỉ định (số phiếu y lệnh) riêng cho từng dòng — chỉ có `tg_ylenh` (thời gian y lệnh). Vì vậy "hai chỉ định khác nhau" được **suy ra** từ việc có ≥2 dòng bảng kê riêng biệt cho cùng một dịch vụ (khớp `ma_dv`, hoặc tên đã chuẩn hóa nếu thiếu `ma_dv`) trong cùng một ngày — một chỉ định số lượng lớn hơn 1 thường gộp vào một dòng có `sl` > 1, ít khi tách dòng. Đây là suy luận có giới hạn, luôn nêu rõ trong `detail` của finding để người kiểm không hiểu nhầm là đã xác nhận chắc chắn.
+
+| Rule ID | Điều kiện | Mức độ |
+| --- | --- | --- |
+| `BHYT_T7_DUPLICATE_SERVICE_SAME_DAY` | Cùng dịch vụ, `payment_group === 'bhyt'`, xuất hiện ≥2 dòng bảng kê riêng biệt trong cùng một ngày | REVIEW |
+
+Loại trừ dòng ngày giường (nhận diện qua `loai_yc`/tên chứa "ngày giường") — nhiều dòng ngày giường trong cùng ngày là bình thường và đã có Tầng 2 xử lý riêng, không phải trùng dịch vụ. `amount_at_risk` chỉ tính các dòng "thêm" sau dòng đầu tiên theo thời gian (coi dòng đầu là hợp lệ, các dòng sau là phần cần xác minh), không cộng toàn bộ để tránh phóng đại.
+
+## Việc chưa làm (phần còn lại của Tầng 6–8)
+
+Khung (`makeFinding`, `BHYT_SEVERITY`, `ASSESSMENT`, rule config JSON) đã sẵn sàng để mở rộng thêm mà không đổi cấu trúc:
+
+- Tầng 6 (phần còn lại) — Cấu trúc thuốc: danh mục thuốc BHYT, đúng đường dùng, đúng số lượng (cần danh mục thuốc BHYT/đường dùng/định mức, hiện chưa có).
+- Tầng 7 (phần còn lại) — Người thực hiện / phạm vi hành nghề của DVKT/PT.
+- Tầng 8 — Tính tiền BHYT theo mức hưởng + rule "trong gói".
+
+Thêm tầng mới: viết hàm `checkXxx()` thuần trong `bhyt_pre_audit.js` (hoặc file riêng nếu tầng phức tạp), gọi trong `runBhytTier{N}()`, khai báo metadata rule trong `bhyt_pre_audit_rules.json`, rồi gộp vào `runBhytPreAudit()`. Không cần đổi UI hay điểm gọi trong `discharge_qa.js`.

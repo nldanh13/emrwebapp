@@ -1,0 +1,103 @@
+{
+  "_comment": "Metadata rule tiền giám định BHYT (nguồn pháp lý, hành động đề xuất). Sửa file này để cập nhật khi văn bản thay đổi hoặc bổ sung tầng mới — không cần sửa code. Logic điều kiện (khi nào phát sinh finding) nằm trong server/services/hchanh/bhyt_pre_audit.js.",
+  "_version": "1.0.0",
+
+  "rules": {
+    "BHYT_T1_DISCHARGE_BEFORE_ADMISSION": {
+      "tier": 1,
+      "action": "Kiểm tra lại ngày giờ vào/ra viện trên EMR trước khi nộp hồ sơ.",
+      "legal_source": "Thông tư 12/2026/TT-BTC",
+      "legal_clause": "Quy định giám định tự động đối chiếu tính hợp lệ của dữ liệu đề nghị thanh toán."
+    },
+    "BHYT_T1_BHYT_CODE_MISSING": {
+      "tier": 1,
+      "action": "Kiểm tra thẻ BHYT trên EMR hoặc xác nhận người bệnh tự túc viện phí.",
+      "legal_source": "Luật Bảo hiểm y tế số 25/2008/QH12 (sửa đổi, bổ sung)",
+      "legal_clause": "Điều kiện hưởng BHYT gắn với thẻ BHYT còn hiệu lực tại thời điểm khám chữa bệnh."
+    },
+    "BHYT_T1_CARD_EXPIRED_BEFORE_DISCHARGE": {
+      "tier": 1,
+      "action": "Xác minh lại hạn thẻ trên cổng BHXH/VNeID trước khi nộp hồ sơ.",
+      "legal_source": "Luật Bảo hiểm y tế số 25/2008/QH12 (sửa đổi, bổ sung)",
+      "legal_clause": "Chỉ thanh toán BHYT khi thẻ còn giá trị sử dụng tại thời điểm sử dụng dịch vụ."
+    },
+    "BHYT_T1_CARD_NOT_YET_VALID_AT_ADMISSION": {
+      "tier": 1,
+      "action": "Xác minh lại hiệu lực thẻ trên cổng BHXH/VNeID trước khi nộp hồ sơ.",
+      "legal_source": "Luật Bảo hiểm y tế số 25/2008/QH12 (sửa đổi, bổ sung)",
+      "legal_clause": "Chỉ thanh toán BHYT khi thẻ còn giá trị sử dụng tại thời điểm sử dụng dịch vụ."
+    },
+    "BHYT_T1_SERVICE_DATE_BEFORE_ADMISSION": {
+      "tier": 1,
+      "action": "Kiểm tra lại ngày thực hiện dịch vụ hoặc ngày vào viện trên EMR.",
+      "legal_source": "Thông tư 12/2026/TT-BTC",
+      "legal_clause": "Bảng kê và dữ liệu đề nghị thanh toán phải khớp với hồ sơ bệnh án và thời gian điều trị thực tế."
+    },
+    "BHYT_T1_SERVICE_DATE_AFTER_DISCHARGE": {
+      "tier": 1,
+      "action": "Kiểm tra lại ngày thực hiện dịch vụ hoặc ngày ra viện trên EMR.",
+      "legal_source": "Thông tư 12/2026/TT-BTC",
+      "legal_clause": "Bảng kê và dữ liệu đề nghị thanh toán phải khớp với hồ sơ bệnh án và thời gian điều trị thực tế."
+    },
+    "BHYT_T1_PRIMARY_DIAGNOSIS_MISSING": {
+      "tier": 1,
+      "action": "Bác sĩ bổ sung chẩn đoán chính ICD-10 trước khi nộp hồ sơ.",
+      "legal_source": "Thông tư 12/2026/TT-BTC",
+      "legal_clause": "Hồ sơ đề nghị thanh toán phải có chẩn đoán làm căn cứ chỉ định và thanh toán dịch vụ."
+    },
+    "BHYT_T1_SURGERY_DATE_MISSING": {
+      "tier": 1,
+      "action": "Bác sĩ bổ sung ngày giờ thực hiện phẫu thuật/thủ thuật trên EMR.",
+      "legal_source": "Thông tư 12/2026/TT-BTC",
+      "legal_clause": "Dữ liệu phẫu thuật/thủ thuật đề nghị thanh toán phải xác định được thời điểm thực hiện."
+    },
+    "BHYT_T1_BENEFIT_LEVEL_INCONSISTENT": {
+      "tier": 1,
+      "action": "Kiểm tra lại mức hưởng áp dụng cho từng dòng — có thể do đổi thẻ/đối tượng giữa đợt.",
+      "legal_source": "Luật Bảo hiểm y tế số 25/2008/QH12 (sửa đổi, bổ sung)",
+      "legal_clause": "Mức hưởng BHYT áp dụng thống nhất theo quyền lợi của thẻ trong một đợt điều trị."
+    },
+    "BHYT_T2_SHORT_STAY_BED_CHARGED": {
+      "tier": 2,
+      "action": "Kiểm tra điều kiện tính ngày giường cho trường hợp nằm dưới 4 giờ theo hướng dẫn giá dịch vụ ngày giường bệnh hiện hành, trừ khi thuộc diện tử vong/chuyển viện cấp cứu.",
+      "legal_source": "Hướng dẫn xác định giá dịch vụ ngày giường bệnh (Bộ Y tế)",
+      "legal_clause": "Người bệnh nằm điều trị nội trú từ trên 4 giờ mới được tính ngày giường, trừ các trường hợp đặc biệt (tử vong, chuyển viện cấp cứu...)."
+    },
+    "BHYT_T2_BED_DAYS_OVER_EXPECTED": {
+      "tier": 2,
+      "action": "Mở Buồng giường → Sửa thông tin, tách/đổi loại giường theo gợi ý từng khoảng ngày trước khi nộp hồ sơ.",
+      "legal_source": "Hướng dẫn xác định giá dịch vụ ngày giường bệnh (Bộ Y tế)",
+      "legal_clause": "Số ngày giường thanh toán tính theo thời gian điều trị thực tế (ngày ra viện trừ ngày vào viện, có ngoại lệ với các mốc chuyển khoa/hậu phẫu)."
+    },
+    "BHYT_T3_DX_PROCEDURE_INCOMPATIBLE": {
+      "tier": 3,
+      "action": "Bác sĩ kiểm tra lại chẩn đoán chính hoặc chỉ định phẫu thuật/thủ thuật có đúng người bệnh, đúng đợt không.",
+      "legal_source": "Checklist chuyên môn nội bộ (config/hchanh/bhyt_dx_procedure_map.json)",
+      "legal_clause": "Không phải rule pháp lý bắt buộc — đây là đối chiếu chẩn đoán ↔ chỉ định theo kinh nghiệm chuyên khoa, cần bác sĩ xác nhận trước khi kết luận."
+    },
+    "BHYT_T3_DX_PROCEDURE_NEEDS_REVIEW": {
+      "tier": 3,
+      "action": "Kiểm tra lại chẩn đoán chính có mô tả đúng lý do chỉ định phẫu thuật/thủ thuật không.",
+      "legal_source": "Checklist chuyên môn nội bộ (config/hchanh/bhyt_dx_procedure_map.json)",
+      "legal_clause": "Không phải rule pháp lý bắt buộc — chẩn đoán chưa rơi vào nhóm phù hợp lẫn không liên quan đã biết, cần người kiểm xác nhận thủ công."
+    },
+    "BHYT_T3_IMPLANT_REMOVAL_NEEDS_EVIDENCE": {
+      "tier": 3,
+      "action": "Kiểm tra XQ liền xương gần nhất và chẩn đoán tình trạng liền xương trước khi nộp hồ sơ.",
+      "legal_source": "Checklist chuyên môn nội bộ (config/hchanh/bhyt_dx_procedure_map.json)",
+      "legal_clause": "Không phải rule pháp lý bắt buộc — khuyến nghị chuyên môn: tháo phương tiện kết hợp xương cần bằng chứng liền xương rõ ràng."
+    },
+    "BHYT_T5_VTYT_UNVERIFIABLE": {
+      "tier": 5,
+      "action": "Đối chiếu thủ công: mã VTYT còn hiệu lực, đúng danh mục BV đã đăng ký với BHXH, số lượng khớp biên bản PT, và không trùng với vật tư đã tính trong giá DVKT.",
+      "legal_source": "Chưa có nguồn dữ liệu để đối chiếu — không phải kết luận đúng/sai",
+      "legal_clause": "Hệ thống hiện chưa có danh mục VTYT do BHXH duyệt kèm hạn hiệu lực/trần thanh toán, cũng chưa có số liệu vật tư sử dụng thực tế trong biên bản PT. Tầng 5 chỉ khoanh vùng các dòng VTYT thanh toán BHYT cần người kiểm tra thủ công, không tự động kết luận hợp lệ hay không hợp lệ."
+    },
+    "BHYT_T7_DUPLICATE_SERVICE_SAME_DAY": {
+      "tier": 7,
+      "action": "Kiểm tra lại có đúng 2 chỉ định độc lập (ví dụ trước và sau can thiệp) hay bị nhập trùng/tách dòng nhầm.",
+      "legal_source": "Thông tư 12/2026/TT-BTC",
+      "legal_clause": "Giám định BHYT kiểm tra tính thống nhất của bảng kê, bao gồm việc phát sinh trùng lặp dịch vụ trong cùng một đợt điều trị."
+    }
+  }
+}

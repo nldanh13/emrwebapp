@@ -68,11 +68,12 @@ function findBedServiceRef(textValue) {
 
 
 const TONE = {
-  red:   { fg: C.red,   bg: C.redBg,   border: C.redBorder   },
-  amber: { fg: C.amber, bg: C.amberBg, border: C.amberBorder  },
-  green: { fg: C.green, bg: C.greenBg, border: C.greenBorder  },
-  blue:  { fg: C.blue,  bg: C.blueBg,  border: C.blueBorder   },
-  gray:  { fg: C.text2, bg: C.surface2, border: C.border      },
+  red:    { fg: C.red,    bg: C.redBg,    border: C.redBorder    },
+  amber:  { fg: C.amber,  bg: C.amberBg,  border: C.amberBorder  },
+  orange: { fg: C.orange, bg: C.orangeBg, border: C.orangeBorder },
+  green:  { fg: C.green,  bg: C.greenBg,  border: C.greenBorder  },
+  blue:   { fg: C.blue,   bg: C.blueBg,   border: C.blueBorder   },
+  gray:   { fg: C.text2,  bg: C.surface2, border: C.border       },
 };
 const tS = t => TONE[t] || TONE.gray;
 
@@ -487,6 +488,50 @@ function IssueSummaryBox({ issues }) {
 }
 
 
+// ── Tiền giám định BHYT ───────────────────────────────────────────────────────
+// Không kết luận "xuất toán" — chỉ hiện nguy cơ từ chối thanh toán + lý do +
+// khoản tiền có nguy cơ + việc cần kiểm. Xem server/services/hchanh/bhyt_pre_audit.js.
+
+function BhytAssessmentBox({ bhyt }) {
+  if (!bhyt?.applicable) return null;
+  const a = bhyt.assessment;
+  if (!a) return null;
+  const s = tS(a.tone);
+  const findings = safeArr(a.findings);
+
+  return (
+    <div style={{ margin:'8px 16px 0', padding:'10px 12px', borderRadius:8,
+      background:s.bg, border:`1px solid ${s.border}` }}>
+      <div style={{ display:'flex', alignItems:'baseline', gap:8, flexWrap:'wrap' }}>
+        <span style={{ fontSize:12, fontWeight:800, color:s.fg }}>Đánh giá BHYT (tiền giám định): {a.label}</span>
+        {a.amount_at_risk > 0 && (
+          <span style={{ fontSize:11, color:s.fg }}>
+            · Giá trị dịch vụ liên quan cảnh báo: {a.amount_at_risk.toLocaleString('vi-VN')} đ
+          </span>
+        )}
+      </div>
+      {a.code === 'do_not_submit' || a.code === 'high_risk' || a.code === 'needs_review' ? (
+        <div style={{ fontSize:10, color:C.text3, marginTop:2 }}>
+          Đây là nguy cơ cần kiểm trước khi nộp, không phải kết luận xuất toán.
+        </div>
+      ) : null}
+      {findings.length > 0 && (
+        <div style={{ display:'grid', gap:4, marginTop:6 }}>
+          {findings.slice(0, 5).map((f, idx) => (
+            <div key={f.rule_id || idx} style={{ fontSize:11, color:C.text, lineHeight:1.35 }}>
+              <b>{txt(f.group)}</b>: {txt(f.title)}
+              {f.action ? <span style={{ color:C.blue }}> → {txt(f.action)}</span> : null}
+              {f.legal_source ? <span style={{ color:C.text3 }}> ({txt(f.legal_source)})</span> : null}
+            </div>
+          ))}
+          {findings.length > 5 && <div style={{ fontSize:11, color:C.text2 }}>+{findings.length - 5} điểm cần kiểm khác.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 // ── Danh mục tham khảo VTYT / giường ─────────────────────────────────────────
 
 function normalizeForSearch(v) {
@@ -803,6 +848,7 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onFetchFile
           {card.qa.canPrint ? '✓ Đủ điều kiện in/chốt hồ sơ' : card.qa.summary}
         </div>
       )}
+      <BhytAssessmentBox bhyt={card?.qa?.bhyt} />
       <IssueSummaryBox issues={issues} />
 
       {/* Section selector */}

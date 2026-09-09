@@ -1,0 +1,23 @@
+{
+  "_comment": "Bảng đối chiếu Chẩn đoán ↔ PT/TT cho Tầng 3 tiền giám định BHYT (server/services/hchanh/bhyt_pre_audit.js). Chỉ khai báo PT/TT đã có mã ICD cụ thể trong đề xuất thiết kế gốc — không tự thêm PT/TT khác khi chưa có nguồn ICD xác nhận, tránh suy đoán sai chuyên môn. match_keywords/dx_keywords so khớp dạng không dấu, không phân biệt hoa thường (xem normText trong bhyt_pre_audit.js).",
+  "_version": "1.0.0",
+
+  "procedures": [
+    {
+      "id": "hip_replacement",
+      "label": "Thay toàn bộ khớp háng",
+      "match_keywords": ["thay khop hang", "thay toan bo khop hang", "thay khop hang toan phan"],
+      "compatible_icd_prefixes": ["S72.0", "M16", "M87"],
+      "incompatible_icd_prefixes": ["S42", "S83"],
+      "review_message": "Chẩn đoán chính chưa khớp rõ với chỉ định thay khớp háng thường gặp (S72.0x gãy cổ xương đùi, M16.x thoái hóa khớp háng, M87.x hoại tử vô mạch chỏm xương đùi).",
+      "incompatible_message": "Mã ICD bắt đầu bằng S42 (chấn thương vai/cánh tay) hoặc S83 (chấn thương khớp gối/cẳng chân) không thuộc nhóm liên quan đến khớp háng."
+    }
+  ],
+
+  "implant_removal": {
+    "match_keywords": ["thao ptkhx", "thao phuong tien ket hop xuong", "rut dinh noi tuy", "rut nep vis", "rut vis", "thao dinh", "thao nep vis"],
+    "diagnosis_downgrade_icd_prefixes": ["Z47.0"],
+    "downgrade_cls_keywords": ["x-quang", "x quang", "xray", "chup x-quang"],
+    "review_message": "Theo đề xuất thiết kế: chỉ định tháo phương tiện kết hợp xương cần có bằng chứng liền xương (chẩn đoán Z47.0 hoặc X-quang kiểm tra gần nhất) mới đủ căn cứ, tránh chỉ dựa vào chẩn đoán \"gãy xương\" chung chung."
+  }
+}
