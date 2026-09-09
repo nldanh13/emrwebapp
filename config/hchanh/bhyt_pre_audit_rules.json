@@ -1,0 +1,61 @@
+{
+  "_comment": "Metadata rule tiền giám định BHYT (nguồn pháp lý, hành động đề xuất). Sửa file này để cập nhật khi văn bản thay đổi hoặc bổ sung tầng mới — không cần sửa code. Logic điều kiện (khi nào phát sinh finding) nằm trong server/services/hchanh/bhyt_pre_audit.js.",
+  "_version": "1.0.0",
+
+  "rules": {
+    "BHYT_T1_DISCHARGE_BEFORE_ADMISSION": {
+      "tier": 1,
+      "action": "Kiểm tra lại ngày giờ vào/ra viện trên EMR trước khi nộp hồ sơ.",
+      "legal_source": "Thông tư 12/2026/TT-BTC",
+      "legal_clause": "Quy định giám định tự động đối chiếu tính hợp lệ của dữ liệu đề nghị thanh toán."
+    },
+    "BHYT_T1_BHYT_CODE_MISSING": {
+      "tier": 1,
+      "action": "Kiểm tra thẻ BHYT trên EMR hoặc xác nhận người bệnh tự túc viện phí.",
+      "legal_source": "Luật Bảo hiểm y tế số 25/2008/QH12 (sửa đổi, bổ sung)",
+      "legal_clause": "Điều kiện hưởng BHYT gắn với thẻ BHYT còn hiệu lực tại thời điểm khám chữa bệnh."
+    },
+    "BHYT_T1_CARD_EXPIRED_BEFORE_DISCHARGE": {
+      "tier": 1,
+      "action": "Xác minh lại hạn thẻ trên cổng BHXH/VNeID trước khi nộp hồ sơ.",
+      "legal_source": "Luật Bảo hiểm y tế số 25/2008/QH12 (sửa đổi, bổ sung)",
+      "legal_clause": "Chỉ thanh toán BHYT khi thẻ còn giá trị sử dụng tại thời điểm sử dụng dịch vụ."
+    },
+    "BHYT_T1_CARD_NOT_YET_VALID_AT_ADMISSION": {
+      "tier": 1,
+      "action": "Xác minh lại hiệu lực thẻ trên cổng BHXH/VNeID trước khi nộp hồ sơ.",
+      "legal_source": "Luật Bảo hiểm y tế số 25/2008/QH12 (sửa đổi, bổ sung)",
+      "legal_clause": "Chỉ thanh toán BHYT khi thẻ còn giá trị sử dụng tại thời điểm sử dụng dịch vụ."
+    },
+    "BHYT_T1_SERVICE_DATE_BEFORE_ADMISSION": {
+      "tier": 1,
+      "action": "Kiểm tra lại ngày thực hiện dịch vụ hoặc ngày vào viện trên EMR.",
+      "legal_source": "Thông tư 12/2026/TT-BTC",
+      "legal_clause": "Bảng kê và dữ liệu đề nghị thanh toán phải khớp với hồ sơ bệnh án và thời gian điều trị thực tế."
+    },
+    "BHYT_T1_SERVICE_DATE_AFTER_DISCHARGE": {
+      "tier": 1,
+      "action": "Kiểm tra lại ngày thực hiện dịch vụ hoặc ngày ra viện trên EMR.",
+      "legal_source": "Thông tư 12/2026/TT-BTC",
+      "legal_clause": "Bảng kê và dữ liệu đề nghị thanh toán phải khớp với hồ sơ bệnh án và thời gian điều trị thực tế."
+    },
+    "BHYT_T1_PRIMARY_DIAGNOSIS_MISSING": {
+      "tier": 1,
+      "action": "Bác sĩ bổ sung chẩn đoán chính ICD-10 trước khi nộp hồ sơ.",
+      "legal_source": "Thông tư 12/2026/TT-BTC",
+      "legal_clause": "Hồ sơ đề nghị thanh toán phải có chẩn đoán làm căn cứ chỉ định và thanh toán dịch vụ."
+    },
+    "BHYT_T1_SURGERY_DATE_MISSING": {
+      "tier": 1,
+      "action": "Bác sĩ bổ sung ngày giờ thực hiện phẫu thuật/thủ thuật trên EMR.",
+      "legal_source": "Thông tư 12/2026/TT-BTC",
+      "legal_clause": "Dữ liệu phẫu thuật/thủ thuật đề nghị thanh toán phải xác định được thời điểm thực hiện."
+    },
+    "BHYT_T1_BENEFIT_LEVEL_INCONSISTENT": {
+      "tier": 1,
+      "action": "Kiểm tra lại mức hưởng áp dụng cho từng dòng — có thể do đổi thẻ/đối tượng giữa đợt.",
+      "legal_source": "Luật Bảo hiểm y tế số 25/2008/QH12 (sửa đổi, bổ sung)",
+      "legal_clause": "Mức hưởng BHYT áp dụng thống nhất theo quyền lợi của thẻ trong một đợt điều trị."
+    }
+  }
+}
