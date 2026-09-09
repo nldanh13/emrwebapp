@@ -738,7 +738,6 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
   // Mục tiêu là người dùng thấy ngay cần sửa gì, thay vì bảng trái hiện ✓ rồi phải tự dò trong Ra viện.
   useEffect(() => {
     setShowMoreActions(false);
-    setShowPartialFetch(false);
     setBillingView('overview');
     setTabTouched(false);
     const nextTab = issues.length ? 'issues' : ((card?.scope === 'discharge' && hasDischargeData) ? 'discharge' : 'fetch');
