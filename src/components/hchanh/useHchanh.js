@@ -171,6 +171,7 @@ export function useHchanh({ toast, workDateRange } = {}) {
   const [dashboard, setDashboard]         = useState(null);
   const [loading, setLoading]             = useState(false);
   const [fetchingKey, setFetchingKey]     = useState('');   // ma_bn đang fetch
+  const fetchingFile = '';                                  // giữ để tương thích các điều kiện "đang bận" khác; không còn nơi set giá trị
   const [inputVtytKey, setInputVtytKey]   = useState('');   // ma_bn đang nhập VTYT
   const [previewVtytKey, setPreviewVtytKey] = useState(''); // ma_bn đang quét thuốc/VTYT
   const [bedEditKey, setBedEditKey]     = useState('');   // ma_bn đang mở popup sửa giường
