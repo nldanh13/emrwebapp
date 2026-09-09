@@ -3,8 +3,9 @@
 // Trả về: nguy cơ từ chối thanh toán + lý do + khoản tiền có nguy cơ + thứ cần kiểm tra.
 //
 // Đã cài Tầng 1 (tính toàn vẹn dữ liệu), Tầng 2 (ngày giường), Tầng 3 (chẩn
-// đoán ↔ PT/TT) và Tầng 4 (CLS chứng minh chỉ định). Các tầng còn lại (thuốc/
-// VTYT, giá + quyền lợi BHYT, hồ sơ chứng minh...) sẽ thêm dần bằng cách bổ
+// đoán ↔ PT/TT), Tầng 4 (CLS chứng minh chỉ định) và Tầng 5 (VTYT — hiện là
+// placeholder trung thực, xem ghi chú tại runBhytTier5). Các tầng còn lại
+// (thuốc, giá + quyền lợi BHYT, hồ sơ chứng minh...) sẽ thêm dần bằng cách bổ
 // sung hàm check + rule mới, không đổi khung này.
 //
 // Nguyên tắc (theo đề xuất thiết kế):
@@ -513,6 +514,72 @@ function runBhytTier4({ profile, discharge, billing }) {
   return checkClsExpectedEvidence({ profile, discharge, billing });
 }
 
+// ── Tầng 5: VTYT — placeholder trung thực ───────────────────────────────────
+// Đề xuất gốc yêu cầu 7 cửa kiểm cho VTYT (mã hợp lệ, trong danh mục BHXH,
+// hiệu lực, phạm vi BHYT, trần thanh toán, số lượng khớp biên bản PT, không
+// trùng giá DVKT). Hệ thống HIỆN KHÔNG có: danh mục VTYT do BHXH duyệt kèm hạn
+// hiệu lực, bảng trần thanh toán theo mã VTYT, hay số liệu vật tư sử dụng thực
+// tế trong biên bản PT (dữ liệu `surgery` chỉ lưu ngày/phân loại PT, không lưu
+// vật tư tiêu hao). `config/vtyt_dictionary.json` chỉ là danh mục nội bộ nhỏ
+// (8 mã, khoa CTCH/TK) dùng để TỰ ĐỘNG NHẬP VTYT, không phải danh mục BHXH đầy
+// đủ — không đủ căn cứ để kết luận "hợp lệ/không hợp lệ".
+//
+// Vì vậy Tầng 5 KHÔNG tự đoán đúng/sai (giống lab_result_adapter.js trả
+// UNKNOWN thay vì suy đoán). Chỉ khoanh vùng: có dòng VTYT thanh toán BHYT
+// trong bảng kê nhưng CHƯA có nguồn đối chiếu — cần người kiểm tra thủ công.
+
+let _vtytCatalogNamesCache = null, _vtytCatalogNamesCacheTime = 0;
+function loadVtytCatalogNames() {
+  const now = Date.now();
+  if (_vtytCatalogNamesCache && now - _vtytCatalogNamesCacheTime < 30000) return _vtytCatalogNamesCache;
+  try {
+    const p = path.join(__dirname, '..', '..', '..', 'config', 'vtyt_dictionary.json');
+    if (fs.existsSync(p)) {
+      const dict = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      const names = [];
+      for (const [key, item] of Object.entries(dict.catalog || {})) {
+        if (key === '_comment' || !item) continue;
+        for (const k of [item.searchKeyword, item.name, ...safeArray(item.aliases)]) {
+          const n = normText(k);
+          if (n) names.push(n);
+        }
+      }
+      _vtytCatalogNamesCache = names;
+      _vtytCatalogNamesCacheTime = now;
+      return _vtytCatalogNamesCache;
+    }
+  } catch (e) { console.warn('[BHYT_PRE_AUDIT] Không đọc vtyt_dictionary.json:', e.message); }
+  return [];
+}
+
+function isKnownVtytLine(rowName) {
+  const n = normText(rowName);
+  if (!n) return false;
+  return loadVtytCatalogNames().some(k => k && n.includes(k));
+}
+
+function checkVtytUnverifiable({ billing }) {
+  const rows = safeArray(billing?.rows).filter(r => r?.payment_group === 'bhyt' && isKnownVtytLine(r?.name));
+  if (!rows.length) return null;
+
+  const totalAmount = rows.reduce((s, r) => s + moneyNum(r.thanh_tien), 0);
+  return makeFinding({
+    rule_id: 'BHYT_T5_VTYT_UNVERIFIABLE',
+    severity: BHYT_SEVERITY.INFO,
+    group: 'VTYT',
+    title: `${rows.length} dòng VTYT thanh toán BHYT chưa đối chiếu được`,
+    detail: `Danh sách: ${rows.slice(0, 5).map(r => text(r.name)).join('; ')}${rows.length > 5 ? `; +${rows.length - 5} dòng khác` : ''}.`,
+    action: 'Đối chiếu thủ công: mã VTYT còn hiệu lực, đúng danh mục BV đã đăng ký với BHXH, số lượng khớp biên bản PT, và không trùng với vật tư đã tính trong giá DVKT.',
+    amount_at_risk: totalAmount,
+    evidence: `count=${rows.length}`,
+  });
+}
+
+function runBhytTier5({ billing }) {
+  const f = checkVtytUnverifiable({ billing });
+  return f ? [f] : [];
+}
+
 // ── Tổng hợp đánh giá ────────────────────────────────────────────────────────
 // Dùng rule severity + override (không cộng điểm): mức nặng nhất quyết định trạng thái.
 // "Số tiền có nguy cơ" lấy giá trị lớn nhất trong các finding, không cộng dồn — tránh
@@ -560,17 +627,21 @@ function runBhytPreAudit({ meta, data, bedDaysReview }) {
   const tier4_findings = hasEnoughData
     ? runBhytTier4({ profile, discharge, billing })
     : [];
+  const tier5_findings = hasEnoughData
+    ? runBhytTier5({ billing })
+    : [];
 
-  const allFindings = [...tier1_findings, ...tier2_findings, ...tier3_findings, ...tier4_findings];
+  const allFindings = [...tier1_findings, ...tier2_findings, ...tier3_findings, ...tier4_findings, ...tier5_findings];
   const assessment = computeAssessment({ hasEnoughData, findings: allFindings });
 
   return {
     applicable: true,
-    tiers_completed: [1, 2, 3, 4],
+    tiers_completed: [1, 2, 3, 4, 5],
     tier1_findings,
     tier2_findings,
     tier3_findings,
     tier4_findings,
+    tier5_findings,
     assessment,
   };
 }
@@ -584,6 +655,7 @@ module.exports = {
   runBhytTier2,
   runBhytTier3,
   runBhytTier4,
+  runBhytTier5,
   loadRuleMeta,
   loadDxProcedureMap,
 };

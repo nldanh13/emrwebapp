@@ -87,6 +87,6 @@ npm run build
 - [`docs/PARALLEL_CARE_INFUSION.md`](docs/PARALLEL_CARE_INFUSION.md) — chạy song song hai tài khoản EMR (chăm sóc + dịch truyền).
 - [`docs/SECURITY_AND_OPERATIONS.md`](docs/SECURITY_AND_OPERATIONS.md) — bảo mật, secret, retention, backup, khôi phục sự cố.
 - [`docs/CHANGELOG_2.3.0.md`](docs/CHANGELOG_2.3.0.md) — thay đổi phiên bản gần nhất.
-- [`docs/BHYT_PRE_AUDIT.md`](docs/BHYT_PRE_AUDIT.md) — tiền giám định BHYT trước khi nộp hồ sơ (rule engine, thang mức độ, Tầng 1–4 đã cài đặt).
+- [`docs/BHYT_PRE_AUDIT.md`](docs/BHYT_PRE_AUDIT.md) — tiền giám định BHYT trước khi nộp hồ sơ (rule engine, thang mức độ, Tầng 1–5 đã cài đặt; Tầng 5/VTYT hiện là placeholder trung thực do thiếu dữ liệu tham chiếu).
 - [`database/README.md`](database/README.md) — schema PostgreSQL đích (tùy chọn).
 - [`research/README_SQLITE.md`](research/README_SQLITE.md) — công cụ nghiên cứu dữ liệu.

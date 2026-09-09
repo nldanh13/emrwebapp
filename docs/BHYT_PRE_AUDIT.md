@@ -14,7 +14,7 @@ Module này **gộp chung vào tab Hành chánh hiện có** (không phải tab/
 
 | Thành phần | File |
 | --- | --- |
-| Rule engine + Tầng 1, 2, 3, 4 | `server/services/hchanh/bhyt_pre_audit.js` |
+| Rule engine + Tầng 1, 2, 3, 4, 5 | `server/services/hchanh/bhyt_pre_audit.js` |
 | Tiện ích ngày/giờ dùng chung | `server/services/hchanh/vn_datetime.js` (tách ra từ `discharge_qa.js` để tránh phụ thuộc vòng) |
 | `loadQaRules`/`extractClsFromBilling` dùng chung | `server/services/hchanh/qa_shared.js` (tách ra từ `discharge_qa.js`, cùng lý do) |
 | Metadata rule (nguồn pháp lý, hành động) | `config/hchanh/bhyt_pre_audit_rules.json` |
@@ -108,11 +108,29 @@ Cơ chế lọc: mỗi rule chuyên khoa trong `qa_rules.json` có `required_cls
 
 `rule_id` sinh động theo `BHYT_T4_<code>` từ chính `rule.code` trong `qa_rules.json` (ví dụ `BHYT_T4_CTCH_FRACTURE_NO_XRAY`, `BHYT_T4_GS_SURGERY_NO_OP_NOTE`) — nên rule chuyên khoa mới thêm vào `qa_rules.json` (miễn có `required_cls_keywords`) tự động được Tầng 4 nhận, không cần sửa code hay `bhyt_pre_audit_rules.json`. Mức độ: `severity: "error"` trong `qa_rules.json` → HIGH_RISK, còn lại → REVIEW. `legal_source` của các finding này ghi rõ là **checklist chuyên môn nội bộ**, không phải rule pháp lý bắt buộc.
 
-## Việc chưa làm (Tầng 5–8, theo đề xuất thiết kế gốc)
+## Tầng 5 — VTYT: placeholder trung thực, không phải 7 cửa kiểm đầy đủ
+
+Đề xuất gốc yêu cầu 7 cửa kiểm cho VTYT (mã hợp lệ, trong danh mục BHXH, hiệu lực, phạm vi BHYT, trần thanh toán, số lượng khớp biên bản PT, không trùng giá DVKT). **Hệ thống hiện không có dữ liệu để làm 6/7 cửa đó**:
+
+- Không có danh mục VTYT do BHXH duyệt kèm hạn hiệu lực.
+- Không có bảng trần thanh toán/tỷ lệ theo từng mã VTYT.
+- `surgery` (dữ liệu PT/TT đã fetch) chỉ lưu ngày và phân loại PT, **không lưu vật tư tiêu hao thực tế** — không có gì để đối chiếu số lượng bảng kê ↔ biên bản PT.
+- `config/vtyt_dictionary.json` chỉ là danh mục nội bộ nhỏ (8 mã, khoa CTCH/Thần kinh) dùng để tự động nhập VTYT, không phải danh mục BHXH đầy đủ — dùng nó để phán "hợp lệ/không hợp lệ" sẽ báo sai hàng loạt.
+
+Vì vậy Tầng 5 **không tự đoán đúng/sai**, đúng nguyên tắc xuyên suốt của cả hệ thống (giống `lab_result_adapter.js` trả `UNKNOWN` thay vì suy đoán). Nó chỉ làm một việc: rà bảng kê, tìm dòng nào là VTYT thanh toán BHYT (khớp tên/alias với `vtyt_dictionary.json` — cùng danh mục input engine đang dùng) và phát một finding **mức INFO** duy nhất liệt kê các dòng đó kèm tổng giá trị, nói rõ "chưa đối chiếu được, cần kiểm tra thủ công".
+
+| Rule ID | Điều kiện | Mức độ |
+| --- | --- | --- |
+| `BHYT_T5_VTYT_UNVERIFIABLE` | Có ≥1 dòng bảng kê `payment_group === 'bhyt'` khớp tên/alias trong `vtyt_dictionary.json` | INFO |
+
+INFO là mức thấp nhất trong thang `BHYT_SEVERITY` nên **không** kéo đánh giá tổng xuống "Cần kiểm tra" nếu không có finding nào khác nặng hơn — nhưng `amount_at_risk` của nó vẫn được tính vào "giá trị dịch vụ liên quan cảnh báo" hiển thị trên UI, vì đây đúng là giá trị cần con người xem lại, chỉ là chưa đủ căn cứ để xếp mức nguy cơ cao/thấp.
+
+**Điều kiện để nâng Tầng 5 lên 7 cửa kiểm thật**: cần ít nhất một trong — (a) file/API danh mục VTYT BHXH kèm hạn hiệu lực và trần thanh toán, hoặc (b) worker fetch thêm dữ liệu vật tư tiêu hao thực tế từ biên bản PT trên EMR. Khi có, thêm rule mới vào `runBhytTier5()` mà không cần đổi khung.
+
+## Việc chưa làm (Tầng 6–8, theo đề xuất thiết kế gốc)
 
 Khung (`makeFinding`, `BHYT_SEVERITY`, `ASSESSMENT`, rule config JSON) đã sẵn sàng để mở rộng thêm mà không đổi cấu trúc:
 
-- Tầng 5 — VTYT (7 cửa kiểm theo đề xuất: mã hợp lệ, trong danh mục, hiệu lực, phạm vi BHYT, trần thanh toán, số lượng khớp biên bản PT, tránh trùng giá DVKT). Có thể tái dùng tiếp phần `required_supply_keywords` của `specialty_rules` mà Tầng 4 đã cố tình bỏ qua.
 - Tầng 6 — Thuốc.
 - Tầng 7 — Trùng dịch vụ / người thực hiện / phạm vi hành nghề.
 - Tầng 8 — Tính tiền BHYT theo mức hưởng + rule "trong gói".

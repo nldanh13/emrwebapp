@@ -86,6 +86,12 @@
       "action": "Kiểm tra XQ liền xương gần nhất và chẩn đoán tình trạng liền xương trước khi nộp hồ sơ.",
       "legal_source": "Checklist chuyên môn nội bộ (config/hchanh/bhyt_dx_procedure_map.json)",
       "legal_clause": "Không phải rule pháp lý bắt buộc — khuyến nghị chuyên môn: tháo phương tiện kết hợp xương cần bằng chứng liền xương rõ ràng."
+    },
+    "BHYT_T5_VTYT_UNVERIFIABLE": {
+      "tier": 5,
+      "action": "Đối chiếu thủ công: mã VTYT còn hiệu lực, đúng danh mục BV đã đăng ký với BHXH, số lượng khớp biên bản PT, và không trùng với vật tư đã tính trong giá DVKT.",
+      "legal_source": "Chưa có nguồn dữ liệu để đối chiếu — không phải kết luận đúng/sai",
+      "legal_clause": "Hệ thống hiện chưa có danh mục VTYT do BHXH duyệt kèm hạn hiệu lực/trần thanh toán, cũng chưa có số liệu vật tư sử dụng thực tế trong biên bản PT. Tầng 5 chỉ khoanh vùng các dòng VTYT thanh toán BHYT cần người kiểm tra thủ công, không tự động kết luận hợp lệ hay không hợp lệ."
     }
   }
 }

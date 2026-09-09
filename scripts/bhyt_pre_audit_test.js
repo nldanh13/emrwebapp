@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 'use strict';
 
-// Kiểm thử logic thuần cho tiền giám định BHYT (Tầng 1: tính toàn vẹn dữ liệu;
-// Tầng 2: ngày giường). Không cần server/session. Chạy:
-// node scripts/bhyt_pre_audit_test.js
+// Kiểm thử logic thuần cho tiền giám định BHYT (Tầng 1-5). Không cần
+// server/session. Chạy: node scripts/bhyt_pre_audit_test.js
 
 const assert = require('assert');
-const { runBhytPreAudit, ASSESSMENT } = require('../server/services/hchanh/bhyt_pre_audit');
+const { runBhytPreAudit, ASSESSMENT, BHYT_SEVERITY } = require('../server/services/hchanh/bhyt_pre_audit');
 
 let passed = 0;
 function test(name, fn) {
@@ -308,6 +307,46 @@ test('27. CTCH đặt nẹp vít: thiếu biên bản PT (Tầng 4) nhưng KHÔN
   const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
   assert.ok(result.tier4_findings.some(f => f.rule_id === 'BHYT_T4_CTCH_SURGERY_NO_OP_NOTE'));
   assert.ok(!result.tier4_findings.some(f => f.rule_id === 'BHYT_T4_CTCH_IMPLANT_NO_SUPPLY'));
+});
+
+// ── Tầng 5: VTYT (placeholder trung thực) ────────────────────────────────────
+
+test('28. Có dòng VTYT thanh toán BHYT khớp danh mục nội bộ -> khoanh vùng cần kiểm, không tự đúng/sai', () => {
+  const data = baseData({
+    surgery: null,
+    billing: { rows: [
+      { name: 'Găng tay khám Latex có bột hiệu I-Med', tg_ylenh: '04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 40000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  const f = result.tier5_findings.find(x => x.rule_id === 'BHYT_T5_VTYT_UNVERIFIABLE');
+  assert.ok(f);
+  assert.strictEqual(f.severity, BHYT_SEVERITY.INFO);
+  assert.strictEqual(f.amount_at_risk, 40000);
+  // INFO không kéo trạng thái tổng xuống mức cảnh báo khi không có finding nặng hơn.
+  assert.strictEqual(result.assessment.code, ASSESSMENT.SAFE.code);
+});
+
+test('29. Không có dòng VTYT nào trong bảng kê -> Tầng 5 im lặng', () => {
+  const data = baseData({
+    surgery: null,
+    billing: { rows: [
+      { name: 'Khám nội khoa', tg_ylenh: '04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 50000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.tier5_findings.length, 0);
+});
+
+test('30. VTYT nhưng người bệnh tự trả (không phải BHYT) -> không thuộc phạm vi Tầng 5', () => {
+  const data = baseData({
+    surgery: null,
+    billing: { rows: [
+      { name: 'Găng tay khám Latex có bột hiệu I-Med', tg_ylenh: '04/09/2026', payment_group: 'self_pay', muc_huong: '', thanh_tien: 40000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.tier5_findings.length, 0);
 });
 
 console.log(`\n${passed} test(s) passed.`);
