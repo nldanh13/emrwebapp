@@ -194,9 +194,8 @@ function LongField({ label, value, tone }) {
 
 // ── Fetch status badge ────────────────────────────────────────────────────────
 
-function FetchBadge({ fileKey, fetched, onFetch, busy, showAction = true }) {
+function FetchBadge({ fileKey, fetched }) {
   const at      = fetched?.[fileKey];
-  const tone    = at ? 'green' : 'gray';
   const timeStr = at ? new Date(at).toLocaleTimeString('vi-VN', { hour:'2-digit', minute:'2-digit' }) : null;
   return (
     <div style={{ display:'flex', alignItems:'center', gap:6, padding:'4px 0' }}>
@@ -204,12 +203,6 @@ function FetchBadge({ fileKey, fetched, onFetch, busy, showAction = true }) {
         background: at ? C.green : C.text3 }} />
       <span style={{ fontSize:12, color:C.text, flex:1 }}>{FILE_LABELS[fileKey] || fileKey}</span>
       {timeStr && <span style={{ fontSize:10, color:C.text2 }}>{timeStr}</span>}
-      {showAction && (
-        <Btn variant="default" disabled={busy} onClick={() => onFetch(fileKey)}
-             style={{ padding:'1px 8px', fontSize:10, minWidth:0 }}>
-          {busy ? <Spinner size={10} /> : at ? 'Lấy lại' : 'Lấy'}
-        </Btn>
-      )}
     </div>
   );
 }
@@ -624,7 +617,7 @@ function ResourceListPanel({ type = 'vtyt', onClose }) {
 
 // ── Patient card (worklist) ───────────────────────────────────────────────────
 
-function PatientCard({ card, selected, onSelect, onFetch, onFetchDischargeFull, onFetchFile, onPreviewVTYT, onProcessVTYT, onInputVTYT, onOpenBedEdit, onPrintBilling, onCreateTicket, onRescan, onClear, fetchingKey, fetchingFile, previewVtytKey, inputVtytKey, bedEditKey, printBillingKey, vtytPreview }) {
+function PatientCard({ card, selected, onSelect, onFetch, onFetchDischargeFull, onPreviewVTYT, onProcessVTYT, onInputVTYT, onOpenBedEdit, onPrintBilling, onCreateTicket, onRescan, onClear, fetchingKey, previewVtytKey, inputVtytKey, bedEditKey, printBillingKey, vtytPreview }) {
   const ma_bn     = getMaBn(card);
   const scope     = card?.scope || 'daily';
   const errors    = card?.issueCounts?.errors   || 0;
@@ -697,11 +690,10 @@ function PatientCard({ card, selected, onSelect, onFetch, onFetchDischargeFull, 
 
 // ── Detail panel ──────────────────────────────────────────────────────────────
 
-function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onFetchFile, onPreviewVTYT, onProcessVTYT, onInputVTYT, onOpenBedEdit, onPrintBilling, onCreateTicket, onRescan, fetchingKey, fetchingFile, previewVtytKey, inputVtytKey, bedEditKey, printBillingKey, ticketKey, vtytPreview }) {
+function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVTYT, onProcessVTYT, onInputVTYT, onOpenBedEdit, onPrintBilling, onCreateTicket, onRescan, fetchingKey, previewVtytKey, inputVtytKey, bedEditKey, printBillingKey, ticketKey, vtytPreview }) {
   const [tab, setTab] = useState('fetch');
   const [tabTouched, setTabTouched] = useState(false);
   const [showMoreActions, setShowMoreActions] = useState(false);
-  const [showPartialFetch, setShowPartialFetch] = useState(false);
   const [billingView, setBillingView] = useState('overview');
   const ma_bn      = getMaBn(card);
   const scope      = card?.scope || 'daily';
@@ -713,7 +705,7 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onFetchFile
   const isCreatingTicket = ticketKey === ma_bn;
   const hasVtytPreview = Boolean(vtytPreview?.plan?.length);
   const vtytProcessed = Boolean(vtytPreview?.processed);
-  const busyAny   = isFetching || isBedEdit || isPrintBilling || isCreatingTicket || Boolean(inputVtytKey) || Boolean(previewVtytKey) || Boolean(fetchingFile) || Boolean(bedEditKey) || Boolean(printBillingKey) || Boolean(ticketKey);
+  const busyAny   = isFetching || isBedEdit || isPrintBilling || isCreatingTicket || Boolean(inputVtytKey) || Boolean(previewVtytKey) || Boolean(bedEditKey) || Boolean(printBillingKey) || Boolean(ticketKey);
   const fetched    = card?.fetched || {};
   const issues     = safeArr(card?.issues).filter(i => i.severity !== 'info');
   const scopeFiles = SCOPE_FILES.discharge || ['profile'];
@@ -867,15 +859,9 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onFetchFile
 
         {tab === 'fetch' && (
           <div>
-            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-              <div style={{ fontSize:11, fontWeight:700, color:C.text2, textTransform:'uppercase', letterSpacing:1, flex:1 }}>Trạng thái dữ liệu</div>
-              <Btn variant="default" onClick={() => setShowPartialFetch(v => !v)} style={{ fontSize:10, padding:'2px 8px' }}>
-                {showPartialFetch ? 'Ẩn lấy từng phần' : 'Lấy từng phần'}
-              </Btn>
-            </div>
+            <div style={{ fontSize:11, fontWeight:700, color:C.text2, textTransform:'uppercase', letterSpacing:1, marginBottom:8 }}>Trạng thái dữ liệu</div>
             {scopeFiles.map(fk => (
-              <FetchBadge key={fk} fileKey={fk} fetched={fetched}
-                onFetch={fk => onFetchFile(card, fk)} busy={fetchingFile === fk} showAction={showPartialFetch} />
+              <FetchBadge key={fk} fileKey={fk} fetched={fetched} />
             ))}
             <div style={{ marginTop:16, fontSize:11, fontWeight:700, color:C.text2, textTransform:'uppercase', letterSpacing:1, marginBottom:8 }}>Thông tin nền</div>
             <FieldRow label="Họ tên"       value={formatPersonName(profile.ho_ten || card?.ho_ten)} />
@@ -1517,14 +1503,14 @@ function CountBar({ counts, dashboard }) {
 export default function HchahnTab({ toast, workDateRange }) {
   const hc = useHchanh({ toast, workDateRange });
   const {
-    loading, syncing, fetchingKey, fetchingFile, previewVtytKey, inputVtytKey, bedEditKey, printBillingKey, ticketKey,
+    loading, fetchingKey, previewVtytKey, inputVtytKey, bedEditKey, printBillingKey, ticketKey,
     selectedCard, setSelectedCard,
     search, setSearch,
     filterScope, setFilterScope,
     filterStatus, setFilterStatus,
     counts, filteredCards, dashboard,
-    sync, fetchPatient, fetchDischargeFull, fetchOneFile, previewVTYT, processVTYTPreview, inputVTYT, openBedEdit, printBilling,
-    createTicket, rescanPatient, exportIssues, batchFetch, batchProgress,
+    fetchPatient, fetchDischargeFull, previewVTYT, processVTYTPreview, inputVTYT, openBedEdit, printBilling,
+    createTicket, rescanPatient, exportIssues, batchFetchMissing, batchProgress,
     clearPatient,
     vtytPreviewByPatient,
     vtytBatchDraft, setVtytBatchDraft, vtytBatchLoading, vtytBatchInputting,
@@ -1593,9 +1579,6 @@ export default function HchahnTab({ toast, workDateRange }) {
           </div>
 
           <div style={{ marginLeft:'auto', display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-            <Btn variant="primary" disabled={syncing} onClick={sync} style={{ fontSize:11, padding:'6px 11px' }}>
-              {syncing ? <><Spinner size={10} /> Đồng bộ...</> : 'Đồng bộ BN'}
-            </Btn>
             <input type="text" placeholder="Tìm tên, mã BN, phòng..."
               value={search} onChange={e => setSearch(e.target.value)}
               style={{ width:250, maxWidth:'32vw', padding:'6px 9px', borderRadius:5,
@@ -1605,15 +1588,11 @@ export default function HchahnTab({ toast, workDateRange }) {
 
         {workspace === 'discharge' ? (
           <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', marginTop:10, paddingTop:9, borderTop:`1px solid ${C.border2}` }}>
-            <Btn variant="danger" disabled={batchProgress.running} onClick={() => batchFetch('discharge')}
+            <Btn variant="primary" disabled={batchProgress.running} onClick={batchFetchMissing}
                  style={{ fontSize:11, padding:'5px 12px' }}>
               {batchProgress.running
                 ? `Đang lấy ${batchProgress.done}/${batchProgress.total}...`
-                : 'Lấy / cập nhật hồ sơ'}
-            </Btn>
-            <Btn variant="secondary" disabled={batchProgress.running} onClick={() => batchFetch('missing')}
-                 style={{ fontSize:11, padding:'5px 12px' }}>
-              Lấy tất cả còn thiếu
+                : 'Lấy dữ liệu còn thiếu'}
             </Btn>
 
             <div style={{ position:'relative' }}>
@@ -1706,7 +1685,7 @@ export default function HchahnTab({ toast, workDateRange }) {
             {filteredCards.length === 0 ? (
               <div style={{ color:C.text2, fontSize:13, padding:24, textAlign:'center' }}>
                 {!dashboard?.total
-                  ? 'Chưa có người bệnh. Bấm "Đồng bộ BN" để lấy danh sách từ dữ liệu đã quét.'
+                  ? 'Chưa có người bệnh. Danh sách được đồng bộ tự động từ dữ liệu đã quét mỗi khi mở tab này.'
                   : 'Không có người bệnh phù hợp bộ lọc.'}
               </div>
             ) : (
@@ -1760,7 +1739,6 @@ export default function HchahnTab({ toast, workDateRange }) {
               onClose={() => setSelectedCard(null)}
               onFetch={fetchPatient}
               onFetchDischargeFull={fetchDischargeFull}
-              onFetchFile={fetchOneFile}
               onPreviewVTYT={previewVTYT}
               onProcessVTYT={processVTYTPreview}
               onInputVTYT={inputVTYT}
@@ -1769,7 +1747,6 @@ export default function HchahnTab({ toast, workDateRange }) {
               onCreateTicket={createTicket}
               onRescan={rescanPatient}
               fetchingKey={fetchingKey}
-              fetchingFile={fetchingFile}
               previewVtytKey={previewVtytKey}
               inputVtytKey={inputVtytKey}
               bedEditKey={bedEditKey}

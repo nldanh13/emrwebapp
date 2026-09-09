@@ -170,9 +170,7 @@ export { SCOPE_LABEL, SCOPE_FILES, DISCHARGE_FULL_FILES, getMaBn };
 export function useHchanh({ toast, workDateRange } = {}) {
   const [dashboard, setDashboard]         = useState(null);
   const [loading, setLoading]             = useState(false);
-  const [syncing, setSyncing]             = useState(false);
   const [fetchingKey, setFetchingKey]     = useState('');   // ma_bn đang fetch
-  const [fetchingFile, setFetchingFile]   = useState('');   // file lẻ đang fetch
   const [inputVtytKey, setInputVtytKey]   = useState('');   // ma_bn đang nhập VTYT
   const [previewVtytKey, setPreviewVtytKey] = useState(''); // ma_bn đang quét thuốc/VTYT
   const [bedEditKey, setBedEditKey]     = useState('');   // ma_bn đang mở popup sửa giường
@@ -209,22 +207,6 @@ export function useHchanh({ toast, workDateRange } = {}) {
       setLoading(false);
     }
   }, [selectedCard, toast]);
-
-  // ── Sync danh sách BN từ scan ──────────────────────────────────────────────
-  // Gọi tự động khi mount và sau khi scan xong
-
-  const sync = useCallback(async () => {
-    setSyncing(true);
-    try {
-      const result = await api.syncHchanh();
-      toast?.(`Đã đồng bộ ${result.total ?? '?'} người bệnh vào hành chánh.`, 'ok');
-      await load();
-    } catch (e) {
-      toast?.(String(e.message || e), 'error');
-    } finally {
-      setSyncing(false);
-    }
-  }, [load, toast]);
 
   // Load dashboard + sync khi mount.
   // Hành chánh có kho dữ liệu riêng, nên mỗi lần mở tab phải đồng bộ lại index
@@ -308,7 +290,6 @@ export function useHchanh({ toast, workDateRange } = {}) {
       toast?.(`Không lấy được dữ liệu: ${String(e.message || e)}`, 'error');
     } finally {
       setFetchingKey('');
-      setFetchingFile('');
     }
   }, [load, toast, workDateRange]);
 
@@ -320,13 +301,6 @@ export function useHchanh({ toast, workDateRange } = {}) {
       scope: 'discharge',
       files: DISCHARGE_FULL_FILES,
     });
-  }, [fetchPatient]);
-
-  // Fetch 1 file lẻ (VD: chỉ lấy lại billing)
-  const fetchOneFile = useCallback(async (card, fileKey) => {
-    setFetchingFile(fileKey);
-    const scope = DISCHARGE_FULL_FILES.includes(fileKey) ? 'discharge' : (card?.scope || card?.scope_default || 'daily');
-    await fetchPatient({ ...card, scope, scope_default: scope }, { files: [fileKey], scope });
   }, [fetchPatient]);
 
   function buildHchanhVtytTargets(card, previewJobs = null) {
@@ -807,19 +781,17 @@ export function useHchanh({ toast, workDateRange } = {}) {
 
   const [batchProgress, setBatchProgress] = useState({ running: false, done: 0, total: 0, errors: 0 });
 
-  const batchFetch = useCallback(async (scope_filter = 'discharge') => {
-    const targets = patients.filter(p => {
-      const scope = p.scope || p.scope_default || 'daily';
-      if (scope_filter === 'all') return true;
-      if (scope_filter === 'missing') return !p.data_complete || Boolean(p.fetch_error_active);
-      return scope === scope_filter;
-    });
+  // Lấy dữ liệu cho mọi người bệnh còn thiếu/lỗi trong một lượt — dùng khi mở
+  // tab lần đầu trong ngày. Cần cập nhật lại riêng một người bệnh (VD: vừa sửa
+  // trên EMR) thì dùng nút "Cập nhật"/"Lấy lại" trên từng dòng thay vì bấm lại
+  // nút này (nút này bỏ qua người bệnh đã đủ dữ liệu).
+  const batchFetchMissing = useCallback(async () => {
+    const targets = patients.filter(p => !p.data_complete || Boolean(p.fetch_error_active));
     if (!targets.length) {
-      toast?.('Không có người bệnh phù hợp để batch fetch.', 'error');
+      toast?.('Không có người bệnh nào còn thiếu dữ liệu.', 'error');
       return;
     }
-    const scopeLabel = scope_filter === 'missing' ? 'còn thiếu/lỗi' : scope_filter === 'all' ? 'tất cả' : `scope "${scope_filter}"`;
-    if (!window.confirm(`Lấy dữ liệu cho ${targets.length} người bệnh ${scopeLabel}?\nQuá trình này có thể mất vài phút.`)) return;
+    if (!window.confirm(`Lấy dữ liệu cho ${targets.length} người bệnh còn thiếu/lỗi?\nQuá trình này có thể mất vài phút.`)) return;
 
     setBatchProgress({ running: true, done: 0, total: targets.length, errors: 0 });
     let done = 0, errors = 0;
@@ -861,9 +833,7 @@ export function useHchanh({ toast, workDateRange } = {}) {
   return {
     // State
     loading,
-    syncing,
     fetchingKey,
-    fetchingFile,
     inputVtytKey,
     previewVtytKey,
     bedEditKey,
@@ -887,10 +857,8 @@ export function useHchanh({ toast, workDateRange } = {}) {
     counts,
     // Actions
     load,
-    sync,
     fetchPatient,
     fetchDischargeFull,
-    fetchOneFile,
     previewBatchVTYT, inputBatchVTYT, clearBatchVTYTDraft,
     previewVTYT,
     processVTYTPreview,
@@ -901,7 +869,7 @@ export function useHchanh({ toast, workDateRange } = {}) {
     updateTicket,
     rescanPatient,
     exportIssues,
-    batchFetch,
+    batchFetchMissing,
     batchProgress,
     createSnapshot,
     clearPatient,
