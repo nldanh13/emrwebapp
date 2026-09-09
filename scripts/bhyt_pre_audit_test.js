@@ -349,5 +349,70 @@ test('30. VTYT nhưng người bệnh tự trả (không phải BHYT) -> không 
   assert.strictEqual(result.tier5_findings.length, 0);
 });
 
+// ── Tầng 7: Trùng dịch vụ (phạm vi thu hẹp: chỉ cùng ngày, 2 chỉ định) ────────
+
+test('31. Cùng dịch vụ BHYT xuất hiện 2 lần cùng ngày (mã khác dòng) -> cần kiểm tra', () => {
+  const data = baseData({
+    surgery: null,
+    billing: { rows: [
+      { name: 'X-quang khung chậu', ma_dv: 'XQ001', loai_yc: 'Chẩn đoán hình ảnh', tg_ylenh: '08:00 04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 150000 },
+      { name: 'X-quang khung chậu', ma_dv: 'XQ001', loai_yc: 'Chẩn đoán hình ảnh', tg_ylenh: '14:00 04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 150000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.assessment.code, ASSESSMENT.NEEDS_REVIEW.code);
+  const f = result.tier7_findings.find(x => x.rule_id === 'BHYT_T7_DUPLICATE_SERVICE_SAME_DAY');
+  assert.ok(f);
+  assert.strictEqual(f.amount_at_risk, 150000); // chỉ tính dòng "thêm", không cộng cả 2
+});
+
+test('32. Cùng dịch vụ nhưng KHÁC ngày -> không cảnh báo', () => {
+  const data = baseData({
+    surgery: null,
+    billing: { rows: [
+      { name: 'X-quang khung chậu', ma_dv: 'XQ001', tg_ylenh: '08:00 04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 150000 },
+      { name: 'X-quang khung chậu', ma_dv: 'XQ001', tg_ylenh: '08:00 06/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 150000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.tier7_findings.length, 0);
+});
+
+test('33. Cùng dịch vụ, cùng ngày, nhưng 1 BHYT 1 tự trả -> không đủ 2 dòng BHYT để cảnh báo', () => {
+  const data = baseData({
+    surgery: null,
+    billing: { rows: [
+      { name: 'X-quang khung chậu', ma_dv: 'XQ001', tg_ylenh: '08:00 04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 150000 },
+      { name: 'X-quang khung chậu', ma_dv: 'XQ001', tg_ylenh: '14:00 04/09/2026', payment_group: 'self_pay', thanh_tien: 150000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.tier7_findings.length, 0);
+});
+
+test('34. Nhiều dòng ngày giường cùng ngày -> không tính là trùng dịch vụ (đã có Tầng 2 lo)', () => {
+  const data = baseData({
+    surgery: null,
+    billing: { rows: [
+      { name: 'Ngày giường ngoại 1', loai_yc: 'Ngày giường', tg_ylenh: '08:00 04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 200000 },
+      { name: 'Ngày giường ngoại 1', loai_yc: 'Ngày giường', tg_ylenh: '08:00 04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 200000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.tier7_findings.length, 0);
+});
+
+test('35. Hai dịch vụ khác nhau cùng ngày -> không cảnh báo', () => {
+  const data = baseData({
+    surgery: null,
+    billing: { rows: [
+      { name: 'X-quang khung chậu', ma_dv: 'XQ001', tg_ylenh: '08:00 04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 150000 },
+      { name: 'Siêu âm bụng tổng quát', ma_dv: 'SA002', tg_ylenh: '09:00 04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 100000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.tier7_findings.length, 0);
+});
+
 console.log(`\n${passed} test(s) passed.`);
 if (process.exitCode) console.error('\nCó test thất bại.');

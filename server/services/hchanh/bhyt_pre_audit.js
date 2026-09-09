@@ -3,10 +3,11 @@
 // Trả về: nguy cơ từ chối thanh toán + lý do + khoản tiền có nguy cơ + thứ cần kiểm tra.
 //
 // Đã cài Tầng 1 (tính toàn vẹn dữ liệu), Tầng 2 (ngày giường), Tầng 3 (chẩn
-// đoán ↔ PT/TT), Tầng 4 (CLS chứng minh chỉ định) và Tầng 5 (VTYT — hiện là
-// placeholder trung thực, xem ghi chú tại runBhytTier5). Các tầng còn lại
-// (thuốc, giá + quyền lợi BHYT, hồ sơ chứng minh...) sẽ thêm dần bằng cách bổ
-// sung hàm check + rule mới, không đổi khung này.
+// đoán ↔ PT/TT), Tầng 4 (CLS chứng minh chỉ định), Tầng 5 (VTYT — hiện là
+// placeholder trung thực, xem ghi chú tại runBhytTier5) và Tầng 7 (trùng dịch
+// vụ cùng ngày — phạm vi thu hẹp theo yêu cầu, chưa gồm người thực hiện/phạm
+// vi hành nghề). Tầng 6 (thuốc) và phần "trong gói" của Tầng 8 chưa làm; sẽ
+// thêm dần bằng cách bổ sung hàm check + rule mới, không đổi khung này.
 //
 // Nguyên tắc (theo đề xuất thiết kế):
 //   - Rule pháp lý (BHYT_RULE) và checklist chuyên môn nội bộ là hai lớp khác nhau.
@@ -580,6 +581,67 @@ function runBhytTier5({ billing }) {
   return f ? [f] : [];
 }
 
+// ── Tầng 7: Trùng dịch vụ ────────────────────────────────────────────────────
+// Phạm vi HIỆN TẠI (theo yêu cầu): chỉ kiểm trùng dịch vụ cùng ngày. Người thực
+// hiện/phạm vi hành nghề và rule "trong gói" CHƯA làm — bổ sung sau khi có yêu
+// cầu cụ thể, không phải do thiếu dữ liệu.
+//
+// Dữ liệu billing không có mã số chỉ định (số phiếu y lệnh) riêng cho từng
+// dòng — chỉ có `tg_ylenh` (thời gian y lệnh). "Hai chỉ định khác nhau" được
+// suy ra từ việc có ≥2 DÒNG BẢNG KÊ riêng biệt cho cùng một dịch vụ trong cùng
+// một ngày (một chỉ định số lượng >1 thường gộp vào một dòng có `sl` > 1, ít
+// khi tách dòng) — đây là suy luận có giới hạn, luôn nêu rõ trong finding.
+// Loại trừ dòng ngày giường (đã có Tầng 2 xử lý riêng, lặp nhiều dòng/ngày là
+// bình thường với tiền giường, không phải trùng dịch vụ).
+
+function isBedDayRow(row) {
+  const blob = normText([row?.loai_yc, row?.name].filter(Boolean).join(' '));
+  return blob.includes('ngay giuong');
+}
+
+function serviceKey(row) {
+  const ma = text(row?.ma_dv);
+  if (ma) return `code:${ma}`;
+  return `name:${normText(row?.name)}`;
+}
+
+function checkDuplicateServiceSameDay({ billing }) {
+  const rows = safeArray(billing?.rows).filter(r => r?.payment_group === 'bhyt' && !isBedDayRow(r));
+  const groups = new Map();
+  for (const row of rows) {
+    const at = parseVNDateTime(row?.tg_ylenh);
+    const dateOnly = dateOnlyUTC(at);
+    if (!dateOnly) continue; // không xác định được ngày thực hiện thì không suy đoán trùng
+    const key = `${serviceKey(row)}|${dateOnly.getTime()}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ row, at });
+  }
+
+  const findings = [];
+  for (const entries of groups.values()) {
+    if (entries.length < 2) continue;
+    entries.sort((a, b) => a.at.getTime() - b.at.getTime());
+    const [first, ...rest] = entries;
+    const amount = rest.reduce((s, e) => s + moneyNum(e.row.thanh_tien), 0);
+    const name = text(first.row.name, 'Dịch vụ');
+    findings.push(makeFinding({
+      rule_id: 'BHYT_T7_DUPLICATE_SERVICE_SAME_DAY',
+      severity: BHYT_SEVERITY.REVIEW,
+      group: 'Trùng dịch vụ',
+      title: `"${name}" xuất hiện ${entries.length} lần trong bảng kê BHYT cùng ngày ${fmtDateUTC(first.at)}`,
+      detail: `Các lần: ${entries.map(e => fmtDateTimeUTC(e.at)).join('; ')}. Suy ra từ việc có nhiều dòng bảng kê riêng biệt cho cùng dịch vụ trong ngày — chưa xác nhận có đúng từ 2 chỉ định độc lập hay không.`,
+      action: 'Kiểm tra lại có đúng 2 chỉ định độc lập (ví dụ trước và sau can thiệp) hay bị nhập trùng/tách dòng nhầm.',
+      amount_at_risk: amount,
+      evidence: `service=${name}, count=${entries.length}, date=${fmtDateUTC(first.at)}`,
+    }));
+  }
+  return findings;
+}
+
+function runBhytTier7({ billing }) {
+  return checkDuplicateServiceSameDay({ billing });
+}
+
 // ── Tổng hợp đánh giá ────────────────────────────────────────────────────────
 // Dùng rule severity + override (không cộng điểm): mức nặng nhất quyết định trạng thái.
 // "Số tiền có nguy cơ" lấy giá trị lớn nhất trong các finding, không cộng dồn — tránh
@@ -630,18 +692,22 @@ function runBhytPreAudit({ meta, data, bedDaysReview }) {
   const tier5_findings = hasEnoughData
     ? runBhytTier5({ billing })
     : [];
+  const tier7_findings = hasEnoughData
+    ? runBhytTier7({ billing })
+    : [];
 
-  const allFindings = [...tier1_findings, ...tier2_findings, ...tier3_findings, ...tier4_findings, ...tier5_findings];
+  const allFindings = [...tier1_findings, ...tier2_findings, ...tier3_findings, ...tier4_findings, ...tier5_findings, ...tier7_findings];
   const assessment = computeAssessment({ hasEnoughData, findings: allFindings });
 
   return {
     applicable: true,
-    tiers_completed: [1, 2, 3, 4, 5],
+    tiers_completed: [1, 2, 3, 4, 5, 7],
     tier1_findings,
     tier2_findings,
     tier3_findings,
     tier4_findings,
     tier5_findings,
+    tier7_findings,
     assessment,
   };
 }
@@ -656,6 +722,7 @@ module.exports = {
   runBhytTier3,
   runBhytTier4,
   runBhytTier5,
+  runBhytTier7,
   loadRuleMeta,
   loadDxProcedureMap,
 };

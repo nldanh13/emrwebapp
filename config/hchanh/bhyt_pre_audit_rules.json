@@ -92,6 +92,12 @@
       "action": "Đối chiếu thủ công: mã VTYT còn hiệu lực, đúng danh mục BV đã đăng ký với BHXH, số lượng khớp biên bản PT, và không trùng với vật tư đã tính trong giá DVKT.",
       "legal_source": "Chưa có nguồn dữ liệu để đối chiếu — không phải kết luận đúng/sai",
       "legal_clause": "Hệ thống hiện chưa có danh mục VTYT do BHXH duyệt kèm hạn hiệu lực/trần thanh toán, cũng chưa có số liệu vật tư sử dụng thực tế trong biên bản PT. Tầng 5 chỉ khoanh vùng các dòng VTYT thanh toán BHYT cần người kiểm tra thủ công, không tự động kết luận hợp lệ hay không hợp lệ."
+    },
+    "BHYT_T7_DUPLICATE_SERVICE_SAME_DAY": {
+      "tier": 7,
+      "action": "Kiểm tra lại có đúng 2 chỉ định độc lập (ví dụ trước và sau can thiệp) hay bị nhập trùng/tách dòng nhầm.",
+      "legal_source": "Thông tư 12/2026/TT-BTC",
+      "legal_clause": "Giám định BHYT kiểm tra tính thống nhất của bảng kê, bao gồm việc phát sinh trùng lặp dịch vụ trong cùng một đợt điều trị."
     }
   }
 }

@@ -14,7 +14,7 @@ Module này **gộp chung vào tab Hành chánh hiện có** (không phải tab/
 
 | Thành phần | File |
 | --- | --- |
-| Rule engine + Tầng 1, 2, 3, 4, 5 | `server/services/hchanh/bhyt_pre_audit.js` |
+| Rule engine + Tầng 1, 2, 3, 4, 5, 7 | `server/services/hchanh/bhyt_pre_audit.js` |
 | Tiện ích ngày/giờ dùng chung | `server/services/hchanh/vn_datetime.js` (tách ra từ `discharge_qa.js` để tránh phụ thuộc vòng) |
 | `loadQaRules`/`extractClsFromBilling` dùng chung | `server/services/hchanh/qa_shared.js` (tách ra từ `discharge_qa.js`, cùng lý do) |
 | Metadata rule (nguồn pháp lý, hành động) | `config/hchanh/bhyt_pre_audit_rules.json` |
@@ -127,12 +127,24 @@ INFO là mức thấp nhất trong thang `BHYT_SEVERITY` nên **không** kéo đ
 
 **Điều kiện để nâng Tầng 5 lên 7 cửa kiểm thật**: cần ít nhất một trong — (a) file/API danh mục VTYT BHXH kèm hạn hiệu lực và trần thanh toán, hoặc (b) worker fetch thêm dữ liệu vật tư tiêu hao thực tế từ biên bản PT trên EMR. Khi có, thêm rule mới vào `runBhytTier5()` mà không cần đổi khung.
 
-## Việc chưa làm (Tầng 6–8, theo đề xuất thiết kế gốc)
+## Tầng 7 — Trùng dịch vụ (đã cài đặt, phạm vi thu hẹp theo yêu cầu)
+
+**Phạm vi hiện tại chỉ gồm "trùng dịch vụ cùng ngày"** — người thực hiện/phạm vi hành nghề trong đề xuất gốc **cố ý chưa làm** (không phải do thiếu dữ liệu, mà theo yêu cầu thu hẹp phạm vi, sẽ bổ sung sau khi có yêu cầu cụ thể). Rule "trong gói" (mục 13 đề xuất gốc, thường được xếp vào Tầng 8) cũng **cố ý bỏ qua** theo cùng yêu cầu.
+
+Dữ liệu billing không có mã số chỉ định (số phiếu y lệnh) riêng cho từng dòng — chỉ có `tg_ylenh` (thời gian y lệnh). Vì vậy "hai chỉ định khác nhau" được **suy ra** từ việc có ≥2 dòng bảng kê riêng biệt cho cùng một dịch vụ (khớp `ma_dv`, hoặc tên đã chuẩn hóa nếu thiếu `ma_dv`) trong cùng một ngày — một chỉ định số lượng lớn hơn 1 thường gộp vào một dòng có `sl` > 1, ít khi tách dòng. Đây là suy luận có giới hạn, luôn nêu rõ trong `detail` của finding để người kiểm không hiểu nhầm là đã xác nhận chắc chắn.
+
+| Rule ID | Điều kiện | Mức độ |
+| --- | --- | --- |
+| `BHYT_T7_DUPLICATE_SERVICE_SAME_DAY` | Cùng dịch vụ, `payment_group === 'bhyt'`, xuất hiện ≥2 dòng bảng kê riêng biệt trong cùng một ngày | REVIEW |
+
+Loại trừ dòng ngày giường (nhận diện qua `loai_yc`/tên chứa "ngày giường") — nhiều dòng ngày giường trong cùng ngày là bình thường và đã có Tầng 2 xử lý riêng, không phải trùng dịch vụ. `amount_at_risk` chỉ tính các dòng "thêm" sau dòng đầu tiên theo thời gian (coi dòng đầu là hợp lệ, các dòng sau là phần cần xác minh), không cộng toàn bộ để tránh phóng đại.
+
+## Việc chưa làm (Tầng 6, và phần còn lại của Tầng 7–8)
 
 Khung (`makeFinding`, `BHYT_SEVERITY`, `ASSESSMENT`, rule config JSON) đã sẵn sàng để mở rộng thêm mà không đổi cấu trúc:
 
 - Tầng 6 — Thuốc.
-- Tầng 7 — Trùng dịch vụ / người thực hiện / phạm vi hành nghề.
+- Tầng 7 (phần còn lại) — Người thực hiện / phạm vi hành nghề của DVKT/PT.
 - Tầng 8 — Tính tiền BHYT theo mức hưởng + rule "trong gói".
 
 Thêm tầng mới: viết hàm `checkXxx()` thuần trong `bhyt_pre_audit.js` (hoặc file riêng nếu tầng phức tạp), gọi trong `runBhytTier{N}()`, khai báo metadata rule trong `bhyt_pre_audit_rules.json`, rồi gộp vào `runBhytPreAudit()`. Không cần đổi UI hay điểm gọi trong `discharge_qa.js`.
