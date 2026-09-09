@@ -1,0 +1,16 @@
+{
+  "_comment": "Rule 'thuốc cần chẩn đoán hỗ trợ' (diagnosis_support) cho Tầng 6 tiền giám định BHYT. Nội dung sao chép có kiểm soát từ config/hchanh/qa_rules.json (cls_diagnosis_rules → CLS_ANTIBIOTIC_NO_INFECTION_DX) để dùng lại đúng danh mục đã được đội ngũ xác nhận trước đó, không tự phát sinh danh mục thuốc mới. Đây chỉ là ví dụ nhóm kháng sinh phổ rộng phổ biến, KHÔNG phải danh mục thuốc BHYT đầy đủ — sửa/thêm rule ở đây, không sửa code.",
+  "_version": "1.0.0",
+
+  "drug_diagnosis_rules": [
+    {
+      "code": "ANTIBIOTIC_NO_INFECTION_DX",
+      "enabled": true,
+      "drug_keywords": ["ceftriaxone", "cefazolin", "cefuroxime", "vancomycin", "meropenem", "imipenem", "ciprofloxacin", "metronidazole", "clindamycin", "ampicillin", "amoxicillin"],
+      "dx_keywords": ["nhiem trung", "nhiem khuan", "ap xe", "viem", "nhiem", "sepsis", "viem phe quan", "viem phoi", "viem xuong tuy"],
+      "title": "Có kháng sinh nhưng chưa thấy chẩn đoán nhiễm khuẩn phù hợp",
+      "detail": "Kháng sinh phổ rộng thường chỉ định khi có nhiễm khuẩn.",
+      "action": "Bác sĩ bổ sung chẩn đoán nhiễm khuẩn / nhiễm trùng phù hợp trước khi nộp hồ sơ."
+    }
+  ]
+}

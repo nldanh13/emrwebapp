@@ -14,7 +14,8 @@ Module này **gộp chung vào tab Hành chánh hiện có** (không phải tab/
 
 | Thành phần | File |
 | --- | --- |
-| Rule engine + Tầng 1, 2, 3, 4, 5, 7 | `server/services/hchanh/bhyt_pre_audit.js` |
+| Rule engine + Tầng 1, 2, 3, 4, 5, 6, 7 | `server/services/hchanh/bhyt_pre_audit.js` |
+| Rule kháng sinh cần chẩn đoán hỗ trợ (Tầng 6) | `config/hchanh/bhyt_drug_rules.json` |
 | Tiện ích ngày/giờ dùng chung | `server/services/hchanh/vn_datetime.js` (tách ra từ `discharge_qa.js` để tránh phụ thuộc vòng) |
 | `loadQaRules`/`extractClsFromBilling` dùng chung | `server/services/hchanh/qa_shared.js` (tách ra từ `discharge_qa.js`, cùng lý do) |
 | Metadata rule (nguồn pháp lý, hành động) | `config/hchanh/bhyt_pre_audit_rules.json` |
@@ -127,6 +128,21 @@ INFO là mức thấp nhất trong thang `BHYT_SEVERITY` nên **không** kéo đ
 
 **Điều kiện để nâng Tầng 5 lên 7 cửa kiểm thật**: cần ít nhất một trong — (a) file/API danh mục VTYT BHXH kèm hạn hiệu lực và trần thanh toán, hoặc (b) worker fetch thêm dữ liệu vật tư tiêu hao thực tế từ biên bản PT trên EMR. Khi có, thêm rule mới vào `runBhytTier5()` mà không cần đổi khung.
 
+## Tầng 6 — Thuốc: chỉ phần cảnh báo lâm sàng (đã cài đặt)
+
+Đề xuất gốc: kiểm cấu trúc trước (danh mục thuốc BHYT, đường dùng, thời gian, số lượng) rồi mới đến cảnh báo lâm sàng (`diagnosis_support`). Hệ thống hiện **không có** danh mục thuốc BHYT/đường dùng/định mức số lượng để làm phần cấu trúc — cùng khoảng trống dữ liệu như Tầng 5 (`config/medication_catalog.json` chỉ có 1 dòng mẫu, không phải danh mục thật). Hai mục khác trong phần cấu trúc **không lặp lại** vì đã có nơi khác lo:
+
+- "Không dùng thuốc sau ra viện" → đã có `BHYT_T1_SERVICE_DATE_AFTER_DISCHARGE` (Tầng 1, áp dụng mọi dòng bảng kê) và `ORDER_AFTER_DISCHARGE` (QA hành chánh).
+- "Không trùng đơn bất thường" → đã có `BHYT_T7_DUPLICATE_SERVICE_SAME_DAY` (Tầng 7, áp dụng mọi dịch vụ, không riêng thuốc).
+
+Vì vậy Tầng 6 hiện chỉ làm phần **cảnh báo lâm sàng**: dùng lại chính danh mục kháng sinh đã có trong `config/hchanh/qa_rules.json` (`cls_diagnosis_rules` → `CLS_ANTIBIOTIC_NO_INFECTION_DX`, đã được đội ngũ xác nhận trước đó) — sao chép sang **`config/hchanh/bhyt_drug_rules.json`** để quét trực tiếp trên mọi dòng bảng kê BHYT (rule gốc chỉ quét dòng thuộc nhóm CLS/xét nghiệm nên gần như không khớp dòng thuốc thật trong dữ liệu billing).
+
+| Rule ID | Điều kiện | Mức độ |
+| --- | --- | --- |
+| `BHYT_T6_ANTIBIOTIC_NO_INFECTION_DX` | Có dòng bảng kê BHYT tên khớp một kháng sinh phổ rộng trong `bhyt_drug_rules.json`, và chẩn đoán không chứa từ khóa nhiễm khuẩn tương ứng | REVIEW |
+
+Đây là `CLINICAL_JUSTIFICATION_REQUIRED` theo đúng đề xuất gốc — REVIEW (🟡), không tự đỏ. Danh mục kháng sinh trong `bhyt_drug_rules.json` chỉ là ví dụ nhóm phổ biến, không phải danh mục thuốc BHYT đầy đủ — thêm thuốc/nhóm khác vào `drug_diagnosis_rules` khi có nguồn xác nhận (không tự suy đoán thêm thuốc mới).
+
 ## Tầng 7 — Trùng dịch vụ (đã cài đặt, phạm vi thu hẹp theo yêu cầu)
 
 **Phạm vi hiện tại chỉ gồm "trùng dịch vụ cùng ngày"** — người thực hiện/phạm vi hành nghề trong đề xuất gốc **cố ý chưa làm** (không phải do thiếu dữ liệu, mà theo yêu cầu thu hẹp phạm vi, sẽ bổ sung sau khi có yêu cầu cụ thể). Rule "trong gói" (mục 13 đề xuất gốc, thường được xếp vào Tầng 8) cũng **cố ý bỏ qua** theo cùng yêu cầu.
@@ -139,11 +155,11 @@ Dữ liệu billing không có mã số chỉ định (số phiếu y lệnh) ri
 
 Loại trừ dòng ngày giường (nhận diện qua `loai_yc`/tên chứa "ngày giường") — nhiều dòng ngày giường trong cùng ngày là bình thường và đã có Tầng 2 xử lý riêng, không phải trùng dịch vụ. `amount_at_risk` chỉ tính các dòng "thêm" sau dòng đầu tiên theo thời gian (coi dòng đầu là hợp lệ, các dòng sau là phần cần xác minh), không cộng toàn bộ để tránh phóng đại.
 
-## Việc chưa làm (Tầng 6, và phần còn lại của Tầng 7–8)
+## Việc chưa làm (phần còn lại của Tầng 6–8)
 
 Khung (`makeFinding`, `BHYT_SEVERITY`, `ASSESSMENT`, rule config JSON) đã sẵn sàng để mở rộng thêm mà không đổi cấu trúc:
 
-- Tầng 6 — Thuốc.
+- Tầng 6 (phần còn lại) — Cấu trúc thuốc: danh mục thuốc BHYT, đúng đường dùng, đúng số lượng (cần danh mục thuốc BHYT/đường dùng/định mức, hiện chưa có).
 - Tầng 7 (phần còn lại) — Người thực hiện / phạm vi hành nghề của DVKT/PT.
 - Tầng 8 — Tính tiền BHYT theo mức hưởng + rule "trong gói".
 

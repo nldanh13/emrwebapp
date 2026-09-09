@@ -414,5 +414,52 @@ test('35. Hai dịch vụ khác nhau cùng ngày -> không cảnh báo', () => {
   assert.strictEqual(result.tier7_findings.length, 0);
 });
 
+// ── Tầng 6: Thuốc (chỉ phần cảnh báo lâm sàng) ────────────────────────────────
+
+test('36. Kháng sinh BHYT nhưng chưa có chẩn đoán nhiễm khuẩn -> cần kiểm tra', () => {
+  const data = baseData({
+    discharge: { chan_doan_chinh: 'S72.0 Gãy cổ xương đùi' },
+    surgery: null,
+    billing: { rows: [
+      { name: 'Ceftriaxone 1g', tg_ylenh: '04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 60000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.assessment.code, ASSESSMENT.NEEDS_REVIEW.code);
+  const f = result.tier6_findings.find(x => x.rule_id === 'BHYT_T6_ANTIBIOTIC_NO_INFECTION_DX');
+  assert.ok(f);
+  assert.strictEqual(f.amount_at_risk, 60000);
+});
+
+test('37. Kháng sinh BHYT có chẩn đoán nhiễm khuẩn phù hợp -> không cảnh báo', () => {
+  const data = baseData({
+    discharge: { chan_doan_chinh: 'Viêm phổi cộng đồng' },
+    surgery: null,
+    billing: { rows: [
+      { name: 'Ceftriaxone 1g', tg_ylenh: '04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 60000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(!result.tier6_findings.some(f => f.rule_id === 'BHYT_T6_ANTIBIOTIC_NO_INFECTION_DX'));
+});
+
+test('38. Kháng sinh nhưng người bệnh tự trả (không phải BHYT) -> ngoài phạm vi Tầng 6', () => {
+  const data = baseData({
+    discharge: { chan_doan_chinh: 'S72.0 Gãy cổ xương đùi' },
+    surgery: null,
+    billing: { rows: [
+      { name: 'Ceftriaxone 1g', tg_ylenh: '04/09/2026', payment_group: 'self_pay', thanh_tien: 60000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.tier6_findings.length, 0);
+});
+
+test('39. Không có bảng kê -> Tầng 6 im lặng, không lỗi', () => {
+  const data = baseData({ surgery: null, billing: null });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.tier6_findings.length, 0);
+});
+
 console.log(`\n${passed} test(s) passed.`);
 if (process.exitCode) console.error('\nCó test thất bại.');

@@ -4,10 +4,11 @@
 //
 // Đã cài Tầng 1 (tính toàn vẹn dữ liệu), Tầng 2 (ngày giường), Tầng 3 (chẩn
 // đoán ↔ PT/TT), Tầng 4 (CLS chứng minh chỉ định), Tầng 5 (VTYT — hiện là
-// placeholder trung thực, xem ghi chú tại runBhytTier5) và Tầng 7 (trùng dịch
+// placeholder trung thực, xem ghi chú tại runBhytTier5), Tầng 6 (thuốc — chỉ
+// phần cảnh báo lâm sàng, xem ghi chú tại runBhytTier6) và Tầng 7 (trùng dịch
 // vụ cùng ngày — phạm vi thu hẹp theo yêu cầu, chưa gồm người thực hiện/phạm
-// vi hành nghề). Tầng 6 (thuốc) và phần "trong gói" của Tầng 8 chưa làm; sẽ
-// thêm dần bằng cách bổ sung hàm check + rule mới, không đổi khung này.
+// vi hành nghề). Phần "trong gói" của Tầng 8 chưa làm; sẽ thêm dần bằng cách
+// bổ sung hàm check + rule mới, không đổi khung này.
 //
 // Nguyên tắc (theo đề xuất thiết kế):
 //   - Rule pháp lý (BHYT_RULE) và checklist chuyên môn nội bộ là hai lớp khác nhau.
@@ -581,6 +582,82 @@ function runBhytTier5({ billing }) {
   return f ? [f] : [];
 }
 
+// ── Tầng 6: Thuốc — cảnh báo lâm sàng (diagnosis_support) ───────────────────
+// Đề xuất gốc: không tự quyết định thuốc hợp/không hợp; kiểm cấu trúc trước
+// (danh mục, đường dùng, thời gian, số lượng...) rồi mới đến cảnh báo lâm sàng.
+// Hệ thống hiện KHÔNG có danh mục thuốc BHYT/đường dùng/định mức số lượng để
+// làm phần cấu trúc đó (cùng khoảng trống dữ liệu như Tầng 5). "Không dùng
+// thuốc sau ra viện" đã được Tầng 1 (BHYT_T1_SERVICE_DATE_AFTER_DISCHARGE, áp
+// dụng cho mọi dòng bảng kê) và QA hành chánh (ORDER_AFTER_DISCHARGE) bao phủ
+// chung, không lặp lại ở đây. "Trùng đơn bất thường" đã được Tầng 7 bao phủ
+// chung cho mọi dịch vụ (không riêng thuốc).
+//
+// Phần duy nhất Tầng 6 làm: cảnh báo lâm sàng — kháng sinh phổ rộng thanh toán
+// BHYT nhưng chưa thấy chẩn đoán nhiễm khuẩn phù hợp. Dùng lại chính danh mục
+// kháng sinh đã có trong config/hchanh/qa_rules.json (cls_diagnosis_rules →
+// CLS_ANTIBIOTIC_NO_INFECTION_DX, đã được đội ngũ xác nhận trước đó) — sao
+// chép sang config/hchanh/bhyt_drug_rules.json để quét trực tiếp trên MỌI dòng
+// bảng kê BHYT (rule gốc chỉ quét dòng CLS/xét nghiệm nên gần như không khớp
+// dòng thuốc thật). Mức độ REVIEW, không tự đỏ — đúng CLINICAL_JUSTIFICATION_
+// REQUIRED trong đề xuất gốc.
+
+let _drugRulesCache = null, _drugRulesCacheTime = 0;
+function loadDrugRules() {
+  const now = Date.now();
+  if (_drugRulesCache && now - _drugRulesCacheTime < 30000) return _drugRulesCache;
+  try {
+    const p = path.join(__dirname, '..', '..', '..', 'config', 'hchanh', 'bhyt_drug_rules.json');
+    if (fs.existsSync(p)) {
+      _drugRulesCache = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      _drugRulesCacheTime = now;
+      return _drugRulesCache;
+    }
+  } catch (e) { console.warn('[BHYT_PRE_AUDIT] Không đọc bhyt_drug_rules.json:', e.message); }
+  return { drug_diagnosis_rules: [] };
+}
+
+function checkDrugDiagnosisSupport({ discharge, billing }) {
+  if (!billing || !discharge) return [];
+  const rules = safeArray(loadDrugRules().drug_diagnosis_rules).filter(r => r?.enabled !== false);
+  if (!rules.length) return [];
+
+  const bhytRows = safeArray(billing.rows).filter(r => r?.payment_group === 'bhyt');
+  const dxText = normText([
+    discharge.chan_doan_chinh,
+    discharge.chan_doan_ra,
+    ...safeArray(discharge.benh_kem),
+    ...safeArray(discharge.chan_doan_vao_list).map(c => c?.ten || ''),
+  ].join(' '));
+
+  const findings = [];
+  for (const rule of rules) {
+    const matchedRows = bhytRows.filter(r => safeArray(rule.drug_keywords).some(k => normText(r.name).includes(normText(k))));
+    if (!matchedRows.length) continue;
+    const hasDx = safeArray(rule.dx_keywords).some(k => dxText.includes(normText(k)));
+    if (hasDx) continue;
+
+    const amount = matchedRows.reduce((s, r) => s + moneyNum(r.thanh_tien), 0);
+    findings.push(makeFinding({
+      rule_id: `BHYT_T6_${rule.code}`,
+      tier: 6,
+      severity: BHYT_SEVERITY.REVIEW,
+      group: 'Thuốc',
+      title: text(rule.title),
+      detail: `${text(rule.detail)} Thuốc trong bảng kê: ${matchedRows.slice(0, 3).map(r => text(r.name)).join('; ')}${matchedRows.length > 3 ? `; +${matchedRows.length - 3} dòng khác` : ''}.`,
+      action: text(rule.action || 'Bác sĩ bổ sung chẩn đoán phù hợp trước khi nộp hồ sơ.'),
+      legal_source: 'Checklist chuyên môn nội bộ (config/hchanh/bhyt_drug_rules.json)',
+      legal_clause: 'Không phải rule pháp lý bắt buộc — cảnh báo cần giải trình lâm sàng (clinical justification), không tự kết luận sai.',
+      amount_at_risk: amount,
+      evidence: `drug_rule=${rule.code}, count=${matchedRows.length}`,
+    }));
+  }
+  return findings;
+}
+
+function runBhytTier6({ discharge, billing }) {
+  return checkDrugDiagnosisSupport({ discharge, billing });
+}
+
 // ── Tầng 7: Trùng dịch vụ ────────────────────────────────────────────────────
 // Phạm vi HIỆN TẠI (theo yêu cầu): chỉ kiểm trùng dịch vụ cùng ngày. Người thực
 // hiện/phạm vi hành nghề và rule "trong gói" CHƯA làm — bổ sung sau khi có yêu
@@ -692,21 +769,25 @@ function runBhytPreAudit({ meta, data, bedDaysReview }) {
   const tier5_findings = hasEnoughData
     ? runBhytTier5({ billing })
     : [];
+  const tier6_findings = hasEnoughData
+    ? runBhytTier6({ discharge, billing })
+    : [];
   const tier7_findings = hasEnoughData
     ? runBhytTier7({ billing })
     : [];
 
-  const allFindings = [...tier1_findings, ...tier2_findings, ...tier3_findings, ...tier4_findings, ...tier5_findings, ...tier7_findings];
+  const allFindings = [...tier1_findings, ...tier2_findings, ...tier3_findings, ...tier4_findings, ...tier5_findings, ...tier6_findings, ...tier7_findings];
   const assessment = computeAssessment({ hasEnoughData, findings: allFindings });
 
   return {
     applicable: true,
-    tiers_completed: [1, 2, 3, 4, 5, 7],
+    tiers_completed: [1, 2, 3, 4, 5, 6, 7],
     tier1_findings,
     tier2_findings,
     tier3_findings,
     tier4_findings,
     tier5_findings,
+    tier6_findings,
     tier7_findings,
     assessment,
   };
@@ -722,7 +803,9 @@ module.exports = {
   runBhytTier3,
   runBhytTier4,
   runBhytTier5,
+  runBhytTier6,
   runBhytTier7,
   loadRuleMeta,
   loadDxProcedureMap,
+  loadDrugRules,
 };
