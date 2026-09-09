@@ -14,12 +14,12 @@ Module này **gộp chung vào tab Hành chánh hiện có** (không phải tab/
 
 | Thành phần | File |
 | --- | --- |
-| Rule engine + Tầng 1 | `server/services/hchanh/bhyt_pre_audit.js` |
+| Rule engine + Tầng 1, 2 | `server/services/hchanh/bhyt_pre_audit.js` |
 | Tiện ích ngày/giờ dùng chung | `server/services/hchanh/vn_datetime.js` (tách ra từ `discharge_qa.js` để tránh phụ thuộc vòng) |
 | Metadata rule (nguồn pháp lý, hành động) | `config/hchanh/bhyt_pre_audit_rules.json` |
 | Nơi gọi vào | `server/services/hchanh/discharge_qa.js` → `runDischargeQA_Hchanh()` gắn kết quả vào `qa.bhyt` |
 | Hiển thị | `src/components/hchanh/HchahnTab.jsx` → `BhytAssessmentBox` (trong `DetailPanel`, ngay dưới khối QA hành chánh) |
-| Test | `scripts/bhyt_pre_audit_tier1_test.js` (chạy trong `npm run test:ci`) |
+| Test | `scripts/bhyt_pre_audit_test.js` (chạy trong `npm run test:ci`) |
 
 ## Nguyên tắc thiết kế
 
@@ -63,11 +63,26 @@ Chỉ dùng các trường đã xác nhận có thật trong dữ liệu hành c
 
 Rule "mức hưởng bảng kê khác quyền lợi thẻ" trong đề xuất gốc **chưa cài đặt** vì dữ liệu hiện có chỉ đọc được `muc_huong` áp dụng trên từng dòng bảng kê, không có trường quyền lợi thẻ (mức hưởng khai báo) tách biệt để đối chiếu — tránh suy đoán khi chưa có nguồn dữ liệu ổn định.
 
-## Việc chưa làm (Tầng 2–8, theo đề xuất thiết kế gốc)
+## Tầng 2 — Ngày giường (đã cài đặt)
+
+**Không tính lại ngày giường từ đầu.** Tầng này nhận `bedDaysReview` — kết quả `buildBedDaysReview()` mà `discharge_qa.js` đã tính sẵn (dùng chung cho cả QA hành chánh và BHYT) — qua tham số, để tránh hai nơi tính ra hai con số khác nhau cho cùng một hồ sơ. `runDischargeQA_Hchanh()` truyền `bedDaysReview` này vào `runBhytPreAudit()`.
+
+| Rule ID | Điều kiện | Mức độ |
+| --- | --- | --- |
+| `BHYT_T2_SHORT_STAY_BED_CHARGED` | Thời gian nằm viện thực (giờ) ≤ 4 giờ nhưng `bed_days.so_ngay_tinh` > 0 | HIGH_RISK |
+| `BHYT_T2_BED_DAYS_OVER_EXPECTED` | `bedDaysReview.status === 'mismatch'` và `actual_total > expected_total` (tính THỪA so với thời gian điều trị) | HIGH_RISK |
+
+Hai điểm cố ý loại trừ để tránh báo sai:
+
+- **Chỉ báo hướng tính THỪA**, không báo hướng tính THIẾU (`actual_total < expected_total`) — thiếu ngày là vấn đề hoàn thiện hồ sơ/doanh thu bệnh viện, không phải nguy cơ bị BHYT từ chối thanh toán; hướng này đã có `BED_DAYS_NEEDS_ADJUSTMENT`/`BED_DAYS_SHORT` riêng trong QA hành chánh.
+- **Bỏ qua trường hợp 4–24 giờ** khi `expected_total === 0 && actual_total === 1`: một số hướng dẫn cho phép tính 1 ngày giường cho ca vào/ra trong cùng ngày nằm trên 4 giờ, dù công thức ngày lịch chung (ra − vào) ra 0 — nếu không loại trừ sẽ báo nhầm nguy cơ cho đúng trường hợp được phép.
+
+`amount_at_risk` của `BHYT_T2_BED_DAYS_OVER_EXPECTED` lấy từ `bedDaysReview.amount.diff` đã tính sẵn (chỉ khi dương); nếu chưa tính được giá tiền, finding vẫn xuất hiện với `amount_at_risk = 0` — không suy đoán giá.
+
+## Việc chưa làm (Tầng 3–8, theo đề xuất thiết kế gốc)
 
 Khung (`makeFinding`, `BHYT_SEVERITY`, `ASSESSMENT`, rule config JSON) đã sẵn sàng để mở rộng thêm mà không đổi cấu trúc:
 
-- Tầng 2 — Ngày giường (đã có logic tương tự trong `checkBedDays`/`buildBedDaysReview` của `discharge_qa.js`; cần đánh giá có tái dùng hay tách riêng cho BHYT).
 - Tầng 3 — Chẩn đoán ↔ PT/TT (3 mức COMPATIBLE/REVIEW/INCOMPATIBLE).
 - Tầng 4 — CLS chứng minh chỉ định (`PROCEDURE_EXPECTED_EVIDENCE`).
 - Tầng 5 — VTYT (7 cửa kiểm theo đề xuất: mã hợp lệ, trong danh mục, hiệu lực, phạm vi BHYT, trần thanh toán, số lượng khớp biên bản PT, tránh trùng giá DVKT).

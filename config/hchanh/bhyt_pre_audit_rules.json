@@ -56,6 +56,18 @@
       "action": "Kiểm tra lại mức hưởng áp dụng cho từng dòng — có thể do đổi thẻ/đối tượng giữa đợt.",
       "legal_source": "Luật Bảo hiểm y tế số 25/2008/QH12 (sửa đổi, bổ sung)",
       "legal_clause": "Mức hưởng BHYT áp dụng thống nhất theo quyền lợi của thẻ trong một đợt điều trị."
+    },
+    "BHYT_T2_SHORT_STAY_BED_CHARGED": {
+      "tier": 2,
+      "action": "Kiểm tra điều kiện tính ngày giường cho trường hợp nằm dưới 4 giờ theo hướng dẫn giá dịch vụ ngày giường bệnh hiện hành, trừ khi thuộc diện tử vong/chuyển viện cấp cứu.",
+      "legal_source": "Hướng dẫn xác định giá dịch vụ ngày giường bệnh (Bộ Y tế)",
+      "legal_clause": "Người bệnh nằm điều trị nội trú từ trên 4 giờ mới được tính ngày giường, trừ các trường hợp đặc biệt (tử vong, chuyển viện cấp cứu...)."
+    },
+    "BHYT_T2_BED_DAYS_OVER_EXPECTED": {
+      "tier": 2,
+      "action": "Mở Buồng giường → Sửa thông tin, tách/đổi loại giường theo gợi ý từng khoảng ngày trước khi nộp hồ sơ.",
+      "legal_source": "Hướng dẫn xác định giá dịch vụ ngày giường bệnh (Bộ Y tế)",
+      "legal_clause": "Số ngày giường thanh toán tính theo thời gian điều trị thực tế (ngày ra viện trừ ngày vào viện, có ngoại lệ với các mốc chuyển khoa/hậu phẫu)."
     }
   }
 }

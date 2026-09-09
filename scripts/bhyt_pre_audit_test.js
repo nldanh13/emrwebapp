@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
-// Kiểm thử logic thuần cho Tầng 1 tiền giám định BHYT (tính toàn vẹn dữ liệu).
-// Không cần server/session. Chạy: node scripts/bhyt_pre_audit_tier1_test.js
+// Kiểm thử logic thuần cho tiền giám định BHYT (Tầng 1: tính toàn vẹn dữ liệu;
+// Tầng 2: ngày giường). Không cần server/session. Chạy:
+// node scripts/bhyt_pre_audit_test.js
 
 const assert = require('assert');
 const { runBhytPreAudit, ASSESSMENT } = require('../server/services/hchanh/bhyt_pre_audit');
@@ -47,7 +48,7 @@ function baseData(overrides = {}) {
   };
 }
 
-console.log('bhyt_pre_audit_tier1_test');
+console.log('bhyt_pre_audit_test');
 
 test('1. Scope khác discharge -> không áp dụng', () => {
   const result = runBhytPreAudit({ meta: { scope_default: 'daily' }, data: baseData() });
@@ -131,6 +132,64 @@ test('11. Tự túc viện phí -> không kiểm thẻ BHYT', () => {
   const data = baseData({ profile: { bhyt_code: '', tu_tuc: true } });
   const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
   assert.strictEqual(result.assessment.code, ASSESSMENT.SAFE.code);
+});
+
+// ── Tầng 2: ngày giường ──────────────────────────────────────────────────────
+
+test('12. Nằm dưới 4 giờ nhưng vẫn tính ngày giường -> nguy cơ cao', () => {
+  const data = baseData({
+    profile: { ngay_vao_vien: '08:00 09/09/2026', ngay_ra_vien: '10:30 09/09/2026' },
+    discharge: { chan_doan_chinh: 'S72.0 Gãy cổ xương đùi', xu_tri: 'Xuất viện' },
+    billing: null,
+    surgery: null,
+  });
+  const result = runBhytPreAudit({
+    meta: { scope_default: 'discharge' },
+    data: { ...data, bed_days: { so_ngay_tinh: 1 } },
+  });
+  assert.strictEqual(result.assessment.code, ASSESSMENT.HIGH_RISK.code);
+  assert.ok(result.tier2_findings.some(f => f.rule_id === 'BHYT_T2_SHORT_STAY_BED_CHARGED'));
+});
+
+test('13. Nằm dưới 4 giờ nhưng KHÔNG tính ngày giường -> không cảnh báo', () => {
+  const data = baseData({
+    profile: { ngay_vao_vien: '08:00 09/09/2026', ngay_ra_vien: '10:30 09/09/2026' },
+    billing: null,
+    surgery: null,
+  });
+  const result = runBhytPreAudit({
+    meta: { scope_default: 'discharge' },
+    data: { ...data, bed_days: { so_ngay_tinh: 0 } },
+  });
+  assert.ok(!result.tier2_findings.some(f => f.rule_id === 'BHYT_T2_SHORT_STAY_BED_CHARGED'));
+});
+
+test('14. Ngày giường tính thừa so với thời gian điều trị (bedDaysReview mismatch) -> nguy cơ cao', () => {
+  const data = baseData();
+  const bedDaysReview = { status: 'mismatch', expected_total: 6, actual_total: 7, amount: { diff: 350000 }, suggestions: ['Tổng ngày giường dự kiến 6, hiện đang tính 7.'] };
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data, bedDaysReview });
+  assert.strictEqual(result.assessment.code, ASSESSMENT.HIGH_RISK.code);
+  const f = result.tier2_findings.find(x => x.rule_id === 'BHYT_T2_BED_DAYS_OVER_EXPECTED');
+  assert.ok(f);
+  assert.strictEqual(f.amount_at_risk, 350000);
+});
+
+test('15. Ngày giường tính THIẾU so với dự kiến -> không phải nguy cơ BHYT, bỏ qua', () => {
+  const data = baseData();
+  const bedDaysReview = { status: 'mismatch', expected_total: 7, actual_total: 6, amount: { diff: -350000 }, suggestions: [] };
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data, bedDaysReview });
+  assert.ok(!result.tier2_findings.some(f => f.rule_id === 'BHYT_T2_BED_DAYS_OVER_EXPECTED'));
+  assert.strictEqual(result.assessment.code, ASSESSMENT.SAFE.code);
+});
+
+test('16. Ngoại lệ 4-24 giờ (kỳ vọng 0 ngày, tính 1 ngày) -> không báo tính thừa', () => {
+  const data = baseData({
+    profile: { ngay_vao_vien: '20:00 09/09/2026', ngay_ra_vien: '08:00 10/09/2026' },
+    surgery: null,
+  });
+  const bedDaysReview = { status: 'mismatch', expected_total: 0, actual_total: 1, amount: { diff: 500000 }, suggestions: [] };
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data, bedDaysReview });
+  assert.ok(!result.tier2_findings.some(f => f.rule_id === 'BHYT_T2_BED_DAYS_OVER_EXPECTED'));
 });
 
 console.log(`\n${passed} test(s) passed.`);

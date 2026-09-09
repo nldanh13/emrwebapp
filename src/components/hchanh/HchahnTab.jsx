@@ -497,7 +497,7 @@ function BhytAssessmentBox({ bhyt }) {
   const a = bhyt.assessment;
   if (!a) return null;
   const s = tS(a.tone);
-  const findings = safeArr(bhyt.tier1_findings);
+  const findings = safeArr(a.findings);
 
   return (
     <div style={{ margin:'8px 16px 0', padding:'10px 12px', borderRadius:8,

@@ -942,7 +942,7 @@ function runDischargeQA_Hchanh({ ma_bn, meta, data }) {
 
   // Tiền giám định BHYT — lớp riêng, không thay thế QA hành chánh ở trên.
   // Không kết luận "xuất toán": chỉ trả nguy cơ + lý do + khoản tiền có nguy cơ + việc cần kiểm.
-  const bhyt = runBhytPreAudit({ meta, data });
+  const bhyt = runBhytPreAudit({ meta, data, bedDaysReview });
 
   return {
     issues: deduped,

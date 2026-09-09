@@ -2,9 +2,9 @@
 // Tiền giám định BHYT trước khi nộp hồ sơ — KHÔNG kết luận "xuất toán".
 // Trả về: nguy cơ từ chối thanh toán + lý do + khoản tiền có nguy cơ + thứ cần kiểm tra.
 //
-// Chỉ Tầng 1 (tính toàn vẹn dữ liệu) được cài đặt ở phiên bản này. Các tầng còn lại
-// (ngày giường, chẩn đoán ↔ PT/TT, CLS, thuốc/VTYT, giá + quyền lợi BHYT, hồ sơ chứng
-// minh...) sẽ thêm dần bằng cách bổ sung hàm check + rule mới, không đổi khung này.
+// Đã cài Tầng 1 (tính toàn vẹn dữ liệu) và Tầng 2 (ngày giường). Các tầng còn lại
+// (chẩn đoán ↔ PT/TT, CLS, thuốc/VTYT, giá + quyền lợi BHYT, hồ sơ chứng minh...)
+// sẽ thêm dần bằng cách bổ sung hàm check + rule mới, không đổi khung này.
 //
 // Nguyên tắc (theo đề xuất thiết kế):
 //   - Rule pháp lý (BHYT_RULE) và checklist chuyên môn nội bộ là hai lớp khác nhau.
@@ -23,6 +23,7 @@ const {
   parseVNDateTime,
   dateOnlyUTC,
   fmtDateUTC,
+  fmtDateTimeUTC,
   isBeforeDate,
   dateFromSurgeryRow,
 } = require('./vn_datetime');
@@ -260,9 +261,8 @@ function checkBenefitLevelConsistency(billing) {
   });
 }
 
-function runBhytTier1({ profile, discharge, billing, surgery }) {
+function runBhytTier1({ profile, discharge, billing, surgery, admitAt, dischargeAt, admissionDate, dischargeDate }) {
   const findings = [];
-  const { admitAt, dischargeAt, admissionDate, dischargeDate } = admissionAndDischargeDates(profile, discharge);
 
   const f1 = checkDischargeBeforeAdmission({ admitAt, dischargeAt });
   if (f1) findings.push(f1);
@@ -278,6 +278,72 @@ function runBhytTier1({ profile, discharge, billing, surgery }) {
 
   const f4 = checkBenefitLevelConsistency(billing);
   if (f4) findings.push(f4);
+
+  return findings;
+}
+
+// ── Tầng 2: ngày giường ──────────────────────────────────────────────────────
+// Không tính lại ngày giường từ đầu — dùng lại kết quả buildBedDaysReview() đã
+// tính trong discharge_qa.js (truyền vào qua tham số bedDaysReview) để tránh hai
+// nơi tính ra hai con số khác nhau. Tầng này chỉ diễn giải kết quả đó dưới góc độ
+// nguy cơ BHYT, và bổ sung rule chưa có (nằm ≤4 giờ).
+
+function hoursBetween(a, b) {
+  if (!(a instanceof Date) || !(b instanceof Date)) return null;
+  return (b.getTime() - a.getTime()) / 3600000;
+}
+
+function checkShortStayBedCharged({ admitAt, dischargeAt, bed_days }) {
+  const hours = hoursBetween(admitAt, dischargeAt);
+  if (hours === null || hours > 4) return null;
+  const billedDays = Number(bed_days?.so_ngay_tinh || 0);
+  if (billedDays <= 0) return null;
+  return makeFinding({
+    rule_id: 'BHYT_T2_SHORT_STAY_BED_CHARGED',
+    severity: BHYT_SEVERITY.HIGH_RISK,
+    group: 'Ngày giường',
+    title: `Người bệnh nằm ${hours.toFixed(1)} giờ (≤4 giờ) nhưng vẫn tính ${billedDays} ngày giường`,
+    detail: `Vào viện ${fmtDateTimeUTC(admitAt)}; ra viện ${fmtDateTimeUTC(dischargeAt)}.`,
+    action: 'Kiểm tra điều kiện tính ngày giường cho trường hợp nằm dưới 4 giờ theo hướng dẫn giá dịch vụ ngày giường bệnh hiện hành, trừ khi thuộc diện tử vong/chuyển viện cấp cứu.',
+    evidence: `duration_hours=${hours.toFixed(2)}, billed_days=${billedDays}`,
+  });
+}
+
+function checkBedDaysOverExpected({ admitAt, dischargeAt, bedDaysReview }) {
+  if (!bedDaysReview || bedDaysReview.status !== 'mismatch') return null;
+  const expected = Number(bedDaysReview.expected_total || 0);
+  const actual   = Number(bedDaysReview.actual_total || 0);
+  // Chỉ quan tâm hướng TÍNH THỪA (nguy cơ BHYT phải trả nhiều hơn). Tính thiếu là
+  // vấn đề hoàn thiện hồ sơ/doanh thu của bệnh viện, đã được QA hành chánh báo riêng.
+  if (actual <= expected) return null;
+
+  // Ngoại lệ 4–24 giờ: một số hướng dẫn cho phép tính 1 ngày giường dù công thức
+  // theo ngày lịch (ra - vào) ra 0 ngày cho trường hợp vào/ra cùng ngày. Không báo
+  // nguy cơ cho đúng trường hợp này để tránh cảnh báo sai.
+  const hours = hoursBetween(admitAt, dischargeAt);
+  if (expected === 0 && actual === 1 && hours !== null && hours > 4 && hours < 24) return null;
+
+  const diffAmount = Number(bedDaysReview.amount?.diff);
+  return makeFinding({
+    rule_id: 'BHYT_T2_BED_DAYS_OVER_EXPECTED',
+    severity: BHYT_SEVERITY.HIGH_RISK,
+    group: 'Ngày giường',
+    title: `Số ngày giường tính (${actual}) nhiều hơn số ngày dự kiến theo thời gian điều trị (${expected})`,
+    detail: safeArray(bedDaysReview.suggestions).slice(0, 3).join(' '),
+    action: 'Mở Buồng giường → Sửa thông tin, tách/đổi loại giường theo gợi ý từng khoảng ngày trước khi nộp hồ sơ.',
+    amount_at_risk: Number.isFinite(diffAmount) && diffAmount > 0 ? diffAmount : 0,
+    evidence: `expected=${expected}, actual=${actual}`,
+  });
+}
+
+function runBhytTier2({ admitAt, dischargeAt, bed_days, bedDaysReview }) {
+  const findings = [];
+
+  const f1 = checkShortStayBedCharged({ admitAt, dischargeAt, bed_days });
+  if (f1) findings.push(f1);
+
+  const f2 = checkBedDaysOverExpected({ admitAt, dischargeAt, bedDaysReview });
+  if (f2) findings.push(f2);
 
   return findings;
 }
@@ -307,21 +373,31 @@ function computeAssessment({ hasEnoughData, findings }) {
 // Chỉ áp dụng cho scope 'discharge' — các scope khác (nhập khoa/PTTT/hằng ngày)
 // chưa có đủ dữ liệu ra viện/bảng kê để tiền giám định.
 
-function runBhytPreAudit({ meta, data }) {
+function runBhytPreAudit({ meta, data, bedDaysReview }) {
   const scope = meta?.scope_default || 'daily';
   if (scope !== 'discharge') {
     return { applicable: false, tiers_completed: [], assessment: null };
   }
 
-  const { profile, discharge, billing, surgery } = data || {};
+  const { profile, discharge, billing, surgery, bed_days } = data || {};
   const hasEnoughData = Boolean(profile && discharge);
-  const tier1_findings = hasEnoughData ? runBhytTier1({ profile, discharge, billing, surgery }) : [];
-  const assessment = computeAssessment({ hasEnoughData, findings: tier1_findings });
+  const { admitAt, dischargeAt, admissionDate, dischargeDate } = admissionAndDischargeDates(profile, discharge);
+
+  const tier1_findings = hasEnoughData
+    ? runBhytTier1({ profile, discharge, billing, surgery, admitAt, dischargeAt, admissionDate, dischargeDate })
+    : [];
+  const tier2_findings = hasEnoughData
+    ? runBhytTier2({ admitAt, dischargeAt, bed_days, bedDaysReview })
+    : [];
+
+  const allFindings = [...tier1_findings, ...tier2_findings];
+  const assessment = computeAssessment({ hasEnoughData, findings: allFindings });
 
   return {
     applicable: true,
-    tiers_completed: [1],
+    tiers_completed: [1, 2],
     tier1_findings,
+    tier2_findings,
     assessment,
   };
 }
@@ -332,5 +408,6 @@ module.exports = {
   ASSESSMENT,
   runBhytPreAudit,
   runBhytTier1,
+  runBhytTier2,
   loadRuleMeta,
 };
