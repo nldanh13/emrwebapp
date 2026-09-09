@@ -239,15 +239,19 @@ function fileStatusFor({ fileKey, data, meta, check, dataState, fetchErrorActive
   return { state:'ok', tone:'green', symbol:'✓', label:'Đạt', title:'Đã có dữ liệu và chưa phát hiện vấn đề QA', required, present, fetchedAt, issueErrors, issueWarnings, issues: [] };
 }
 
-function computeWorkflowStatus({ fetchErrorActive, issueCounts, dataState, dataComplete, fileAttentionCount }) {
+// bhytBlocking = đã đủ dữ liệu để chạy tiền giám định BHYT nhưng chưa ở mức "An toàn"
+// (Cần kiểm tra/Nguy cơ cao/Không nên nộp/Không đủ dữ liệu). Một hồ sơ chỉ "Đủ hoàn tất"
+// khi CẢ QA hành chánh lẫn BHYT đều sạch — một cổng đạt/không đạt duy nhất, không phải
+// hai mức độ tách rời để người kiểm tự đối chiếu.
+function computeWorkflowStatus({ fetchErrorActive, issueCounts, dataState, dataComplete, fileAttentionCount, bhytBlocking }) {
   if (fetchErrorActive) return 'red';              // lỗi kỹ thuật/Python/Selenium
   if (dataState === 'not_started') return 'gray';  // mới đồng bộ từ phiên quét, chưa lấy hành chánh
-  if (issueCounts.errors || issueCounts.warnings || fileAttentionCount > 0) return 'amber'; // có dữ liệu nhưng cần xử lý nội dung
+  if (issueCounts.errors || issueCounts.warnings || fileAttentionCount > 0 || bhytBlocking) return 'amber'; // có dữ liệu nhưng cần xử lý nội dung
   if (dataComplete || dataState === 'complete') return 'green';
   return 'amber';                                  // đã lấy một phần nhưng còn thiếu file
 }
 
-function statusLabelFor({ workflowStatus, issueCounts, dataState, missingCount, fileAttentionCount }) {
+function statusLabelFor({ workflowStatus, issueCounts, dataState, missingCount, fileAttentionCount, bhytBlocking }) {
   if (workflowStatus === 'red') return 'Lỗi máy';
   if (workflowStatus === 'green') return 'Đủ dữ liệu';
   if (workflowStatus === 'gray') return 'Chưa lấy';
@@ -256,6 +260,7 @@ function statusLabelFor({ workflowStatus, issueCounts, dataState, missingCount, 
     return `Cần xử lý ${total}`;
   }
   if (fileAttentionCount > 0) return `Cần xử lý ${fileAttentionCount}`;
+  if (bhytBlocking) return 'Cần kiểm BHYT';
   if (missingCount > 0) return `Thiếu ${missingCount}`;
   if (dataState === 'partial') return 'Thiếu nội dung';
   return 'Cần xem';
@@ -459,8 +464,9 @@ function buildPatientCard(ctx, meta, ticket) {
   );
   const fileAttentionCount = countFileAttention(file_statuses);
   const hasFileFetchError = Object.values(file_statuses || {}).some(s => s?.state === 'fetch_error');
-  const status = computeWorkflowStatus({ fetchErrorActive: fetch_error_active || hasFileFetchError, issueCounts: ic, dataState: state, dataComplete: complete, fileAttentionCount });
-  const status_label = statusLabelFor({ workflowStatus: status, issueCounts: ic, dataState: state, missingCount: check.missing.length, fileAttentionCount });
+  const bhytBlocking = Boolean(qa?.bhyt?.applicable) && qa?.bhyt?.assessment?.code !== 'safe';
+  const status = computeWorkflowStatus({ fetchErrorActive: fetch_error_active || hasFileFetchError, issueCounts: ic, dataState: state, dataComplete: complete, fileAttentionCount, bhytBlocking });
+  const status_label = statusLabelFor({ workflowStatus: status, issueCounts: ic, dataState: state, missingCount: check.missing.length, fileAttentionCount, bhytBlocking });
   const score  = priorityScore(issues, scope, ticket) + ((fetch_error_active || hasFileFetchError) ? 120 : 0);
   const billing_overview = buildBillingOverview(data.billing, issues);
   const billing_with_overview = data.billing && typeof data.billing === 'object'
@@ -593,4 +599,4 @@ function buildHchanh_Dashboard(ctx) {
   };
 }
 
-module.exports = { buildHchanh_Dashboard, buildPatientCard };
+module.exports = { buildHchanh_Dashboard, buildPatientCard, computeWorkflowStatus, statusLabelFor };

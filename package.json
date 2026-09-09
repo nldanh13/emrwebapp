@@ -37,7 +37,7 @@
     "clean:unused:private": "node scripts/clean_unused.js --private-data --apply",
     "clean:unused:code": "node scripts/clean_unused.js --unused-code",
     "db:migrate": "node scripts/db_migrate.js",
-    "test:ci": "python -m pytest tests/ -q && python -m compileall -q worker && node scripts/check.mjs && npm run test:ui && node scripts/workflow_smoke_test.js && node scripts/records_check_paper_status_test.js && node scripts/task_queue_account_lane_test.js && node scripts/records_check_shared_data_reuse_test.js && node scripts/research_hchanh_flatten_encounter_guard_test.js && node scripts/hchanh_fetch_case_key_ambiguity_test.js && node scripts/records_check_legacy_migration_test.js && node scripts/orphan_fetch_temp_cleanup_test.js && node scripts/discharge_print_bundle_location_test.js && node scripts/hchanh_open_bed_edit_dedup_test.js && node scripts/bhyt_pre_audit_test.js"
+    "test:ci": "python -m pytest tests/ -q && python -m compileall -q worker && node scripts/check.mjs && npm run test:ui && node scripts/workflow_smoke_test.js && node scripts/records_check_paper_status_test.js && node scripts/task_queue_account_lane_test.js && node scripts/records_check_shared_data_reuse_test.js && node scripts/research_hchanh_flatten_encounter_guard_test.js && node scripts/hchanh_fetch_case_key_ambiguity_test.js && node scripts/records_check_legacy_migration_test.js && node scripts/orphan_fetch_temp_cleanup_test.js && node scripts/discharge_print_bundle_location_test.js && node scripts/hchanh_open_bed_edit_dedup_test.js && node scripts/bhyt_pre_audit_test.js && node scripts/hchanh_bhyt_gate_test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

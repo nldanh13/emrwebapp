@@ -10,6 +10,12 @@ Không để hệ thống tự kết luận "xuất toán". Với mỗi hồ sơ
 
 Module này **gộp chung vào tab Hành chánh hiện có** (không phải tab/route riêng): kết quả nằm trong `qa.bhyt` của cùng API `/api/hchanh/dashboard` và `/api/hchanh/patient/:ma_bn` mà QA hành chánh (`discharge_qa.js`) đang trả về, chỉ áp dụng cho `scope = discharge`.
 
+**Không phải thang màu rủi ro để người kiểm tự đối chiếu — là một cổng đạt/không đạt duy nhất.** Người dùng xác nhận: mỗi ngày phải kiểm rất nhiều hồ sơ, và mục tiêu là 100% hồ sơ đạt chuẩn, không phải "biết hồ sơ nào rủi ro cao hơn". Vì vậy `qa.canPrint` ("Đủ hoàn tất") và `workflowStatus` (chấm màu tổng trong danh sách) **gộp cả BHYT vào chung điều kiện đạt** — không thêm cột/màu riêng cho BHYT:
+
+- `canPrint = (QA hành chánh không có lỗi/cảnh báo) VÀ (BHYT không áp dụng, hoặc ở mức An toàn)`. BHYT "Không đủ dữ liệu" cũng chặn — chưa xác minh được thì chưa tính là đạt.
+- Cùng điều kiện đó áp vào `workflowStatus` (`server/services/hchanh/dashboard.js` → `computeWorkflowStatus`): hồ sơ chỉ hiện chấm xanh "Đủ hoàn tất" khi cả hai lớp đều sạch; ngược lại hiện amber kèm nhãn `Cần kiểm BHYT` (khi hành chánh sạch nhưng BHYT chưa an toàn) hoặc `Cần xử lý N` (khi có lỗi hành chánh, giữ đúng hành vi cũ).
+- Logic gộp nằm trong hàm thuần `buildQaGate()` (`discharge_qa.js`) để test độc lập không cần dựng dữ liệu bệnh nhân đầy đủ — xem `scripts/hchanh_bhyt_gate_test.js`.
+
 ## Vị trí trong code
 
 | Thành phần | File |
@@ -23,7 +29,8 @@ Module này **gộp chung vào tab Hành chánh hiện có** (không phải tab/
 | Rule chuyên khoa dùng lại cho Tầng 4 | `config/hchanh/qa_rules.json` → `specialty_rules` (đã có sẵn cho QA hành chánh) |
 | Nơi gọi vào | `server/services/hchanh/discharge_qa.js` → `runDischargeQA_Hchanh()` gắn kết quả vào `qa.bhyt` |
 | Hiển thị | `src/components/hchanh/HchahnTab.jsx` → `BhytAssessmentBox` (trong `DetailPanel`, ngay dưới khối QA hành chánh) |
-| Test | `scripts/bhyt_pre_audit_test.js` (chạy trong `npm run test:ci`) |
+| Test Tầng 1-7 | `scripts/bhyt_pre_audit_test.js` (chạy trong `npm run test:ci`) |
+| Test cổng đạt/không đạt gộp | `scripts/hchanh_bhyt_gate_test.js` (chạy trong `npm run test:ci`) |
 
 ## Nguyên tắc thiết kế
 

@@ -875,6 +875,24 @@ function checkOrderHistory(order_history) {
   return issues;
 }
 
+// ── Cổng đạt/không đạt (QA hành chánh + BHYT) ───────────────────────────────────
+// Hồ sơ chỉ được coi là "Đủ hoàn tất" khi CẢ QA hành chánh lẫn BHYT đều sạch —
+// một cổng đạt/không đạt duy nhất, không phải hai mức độ tách rời cho người kiểm
+// phải tự đối chiếu. BHYT "không đủ dữ liệu" cũng chặn — chưa xác minh được thì
+// chưa tính là đạt.
+
+function buildQaGate({ status, errors, warnings, bhyt }) {
+  const bhytOk = !bhyt?.applicable || bhyt?.assessment?.code === 'safe';
+  const canPrint = status === 'ok' && bhytOk;
+
+  let summary;
+  if (canPrint) summary = 'Đủ điều kiện in/chốt hồ sơ.';
+  else if (status !== 'ok') summary = `Còn ${errors} lỗi và ${warnings} cảnh báo cần xử lý.`;
+  else summary = `Đánh giá BHYT: ${bhyt.assessment.label} — cần xử lý trước khi chốt hồ sơ.`;
+
+  return { canPrint, summary };
+}
+
 // ── Main runner ───────────────────────────────────────────────────────────────
 
 function runDischargeQA_Hchanh({ ma_bn, meta, data }) {
@@ -910,18 +928,18 @@ function runDischargeQA_Hchanh({ ma_bn, meta, data }) {
   // Tiền giám định BHYT — lớp riêng, không thay thế QA hành chánh ở trên.
   // Không kết luận "xuất toán": chỉ trả nguy cơ + lý do + khoản tiền có nguy cơ + việc cần kiểm.
   const bhyt = runBhytPreAudit({ meta, data, bedDaysReview });
+  const { canPrint, summary } = buildQaGate({ status, errors, warnings, bhyt });
 
   return {
     issues: deduped,
     qa: {
-      required: true, status, canPrint: status === 'ok',
+      required: true, status, canPrint,
       errorCount: errors, warnCount: warnings,
-      summary: status === 'ok' ? 'Đủ điều kiện in/chốt hồ sơ.'
-        : `Còn ${errors} lỗi và ${warnings} cảnh báo cần xử lý.`,
+      summary,
       bed_days_review: bedDaysReview,
       bhyt,
     },
   };
 }
 
-module.exports = { runDischargeQA_Hchanh, loadQaRules, extractClsFromBilling };
+module.exports = { runDischargeQA_Hchanh, loadQaRules, extractClsFromBilling, buildQaGate };
