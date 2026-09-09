@@ -14,9 +14,10 @@ Module này **gộp chung vào tab Hành chánh hiện có** (không phải tab/
 
 | Thành phần | File |
 | --- | --- |
-| Rule engine + Tầng 1, 2 | `server/services/hchanh/bhyt_pre_audit.js` |
+| Rule engine + Tầng 1, 2, 3 | `server/services/hchanh/bhyt_pre_audit.js` |
 | Tiện ích ngày/giờ dùng chung | `server/services/hchanh/vn_datetime.js` (tách ra từ `discharge_qa.js` để tránh phụ thuộc vòng) |
 | Metadata rule (nguồn pháp lý, hành động) | `config/hchanh/bhyt_pre_audit_rules.json` |
+| Bảng đối chiếu Chẩn đoán ↔ PT/TT (Tầng 3) | `config/hchanh/bhyt_dx_procedure_map.json` |
 | Nơi gọi vào | `server/services/hchanh/discharge_qa.js` → `runDischargeQA_Hchanh()` gắn kết quả vào `qa.bhyt` |
 | Hiển thị | `src/components/hchanh/HchahnTab.jsx` → `BhytAssessmentBox` (trong `DetailPanel`, ngay dưới khối QA hành chánh) |
 | Test | `scripts/bhyt_pre_audit_test.js` (chạy trong `npm run test:ci`) |
@@ -79,11 +80,26 @@ Hai điểm cố ý loại trừ để tránh báo sai:
 
 `amount_at_risk` của `BHYT_T2_BED_DAYS_OVER_EXPECTED` lấy từ `bedDaysReview.amount.diff` đã tính sẵn (chỉ khi dương); nếu chưa tính được giá tiền, finding vẫn xuất hiện với `amount_at_risk = 0` — không suy đoán giá.
 
-## Việc chưa làm (Tầng 3–8, theo đề xuất thiết kế gốc)
+## Tầng 3 — Chẩn đoán ↔ PT/TT (đã cài đặt)
+
+Dùng 3 mức COMPATIBLE / REVIEW / INCOMPATIBLE thay vì quy định cứng "chẩn đoán X chỉ được PT Y", đúng nguyên tắc mục 6 của đề xuất gốc. Bảng đối chiếu PT/TT ↔ mã ICD nằm trong **`config/hchanh/bhyt_dx_procedure_map.json`** — sửa/thêm PT/TT ở đây, không sửa code.
+
+**Chỉ khai báo PT/TT đã có mã ICD cụ thể trong đề xuất thiết kế gốc** (thay khớp háng, tháo phương tiện kết hợp xương) — không tự suy đoán mã ICD cho PT/TT khác khi chưa có nguồn xác nhận chuyên môn. PT/TT chưa có trong bảng đối chiếu thì Tầng 3 bỏ qua, không đánh giá.
+
+| Rule ID | Điều kiện | Mức độ |
+| --- | --- | --- |
+| `BHYT_T3_DX_PROCEDURE_INCOMPATIBLE` | PT khớp `match_keywords` của một mục trong `procedures[]`, và mã ICD chẩn đoán chính (`discharge.chan_doan_chinh_icd`) khớp `incompatible_icd_prefixes` | HIGH_RISK |
+| `BHYT_T3_DX_PROCEDURE_NEEDS_REVIEW` | PT khớp một mục, ICD không khớp cả `compatible_icd_prefixes` lẫn `incompatible_icd_prefixes` (chưa rõ nhóm) | REVIEW |
+| `BHYT_T3_IMPLANT_REMOVAL_NEEDS_EVIDENCE` | PT khớp `implant_removal.match_keywords` (tháo PTKHX/rút đinh/nẹp vít...) và **không** có chẩn đoán Z47.0 lẫn dòng bảng kê chứa từ khóa X-quang | HIGH_RISK |
+
+Nếu `discharge.chan_doan_chinh_icd` rỗng (chưa tách được mã ICD từ chẩn đoán chính — trường này do worker tự regex ra, không phải lúc nào cũng có), Tầng 3 **bỏ qua hoàn toàn**, không suy đoán ICD từ text tự do.
+
+Ví dụ khớp đúng đề xuất gốc (mục 5–6, ca "Danh Tân"): chỉ định tháo PTKHX với chẩn đoán "gãy xương" chung chung, chưa có XQ liền xương trong dữ liệu → `BHYT_T3_IMPLANT_REMOVAL_NEEDS_EVIDENCE` (🟠 Nguy cơ cao) thay vì tự động đỏ.
+
+## Việc chưa làm (Tầng 4–8, theo đề xuất thiết kế gốc)
 
 Khung (`makeFinding`, `BHYT_SEVERITY`, `ASSESSMENT`, rule config JSON) đã sẵn sàng để mở rộng thêm mà không đổi cấu trúc:
 
-- Tầng 3 — Chẩn đoán ↔ PT/TT (3 mức COMPATIBLE/REVIEW/INCOMPATIBLE).
 - Tầng 4 — CLS chứng minh chỉ định (`PROCEDURE_EXPECTED_EVIDENCE`).
 - Tầng 5 — VTYT (7 cửa kiểm theo đề xuất: mã hợp lệ, trong danh mục, hiệu lực, phạm vi BHYT, trần thanh toán, số lượng khớp biên bản PT, tránh trùng giá DVKT).
 - Tầng 6 — Thuốc.

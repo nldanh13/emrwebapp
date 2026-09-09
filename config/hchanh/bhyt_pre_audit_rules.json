@@ -68,6 +68,24 @@
       "action": "Mở Buồng giường → Sửa thông tin, tách/đổi loại giường theo gợi ý từng khoảng ngày trước khi nộp hồ sơ.",
       "legal_source": "Hướng dẫn xác định giá dịch vụ ngày giường bệnh (Bộ Y tế)",
       "legal_clause": "Số ngày giường thanh toán tính theo thời gian điều trị thực tế (ngày ra viện trừ ngày vào viện, có ngoại lệ với các mốc chuyển khoa/hậu phẫu)."
+    },
+    "BHYT_T3_DX_PROCEDURE_INCOMPATIBLE": {
+      "tier": 3,
+      "action": "Bác sĩ kiểm tra lại chẩn đoán chính hoặc chỉ định phẫu thuật/thủ thuật có đúng người bệnh, đúng đợt không.",
+      "legal_source": "Checklist chuyên môn nội bộ (config/hchanh/bhyt_dx_procedure_map.json)",
+      "legal_clause": "Không phải rule pháp lý bắt buộc — đây là đối chiếu chẩn đoán ↔ chỉ định theo kinh nghiệm chuyên khoa, cần bác sĩ xác nhận trước khi kết luận."
+    },
+    "BHYT_T3_DX_PROCEDURE_NEEDS_REVIEW": {
+      "tier": 3,
+      "action": "Kiểm tra lại chẩn đoán chính có mô tả đúng lý do chỉ định phẫu thuật/thủ thuật không.",
+      "legal_source": "Checklist chuyên môn nội bộ (config/hchanh/bhyt_dx_procedure_map.json)",
+      "legal_clause": "Không phải rule pháp lý bắt buộc — chẩn đoán chưa rơi vào nhóm phù hợp lẫn không liên quan đã biết, cần người kiểm xác nhận thủ công."
+    },
+    "BHYT_T3_IMPLANT_REMOVAL_NEEDS_EVIDENCE": {
+      "tier": 3,
+      "action": "Kiểm tra XQ liền xương gần nhất và chẩn đoán tình trạng liền xương trước khi nộp hồ sơ.",
+      "legal_source": "Checklist chuyên môn nội bộ (config/hchanh/bhyt_dx_procedure_map.json)",
+      "legal_clause": "Không phải rule pháp lý bắt buộc — khuyến nghị chuyên môn: tháo phương tiện kết hợp xương cần bằng chứng liền xương rõ ràng."
     }
   }
 }

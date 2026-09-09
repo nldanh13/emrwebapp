@@ -33,6 +33,7 @@ function baseData(overrides = {}) {
     },
     discharge: {
       chan_doan_chinh: 'S72.0 Gãy cổ xương đùi',
+      chan_doan_chinh_icd: 'S72.0',
       xu_tri: 'Xuất viện',
       ...overrides.discharge,
     },
@@ -190,6 +191,72 @@ test('16. Ngoại lệ 4-24 giờ (kỳ vọng 0 ngày, tính 1 ngày) -> không
   const bedDaysReview = { status: 'mismatch', expected_total: 0, actual_total: 1, amount: { diff: 500000 }, suggestions: [] };
   const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data, bedDaysReview });
   assert.ok(!result.tier2_findings.some(f => f.rule_id === 'BHYT_T2_BED_DAYS_OVER_EXPECTED'));
+});
+
+// ── Tầng 3: chẩn đoán ↔ PT/TT ────────────────────────────────────────────────
+
+test('17. Thay khớp háng + ICD phù hợp (S72.0) -> không cảnh báo, an toàn', () => {
+  const data = baseData(); // mặc định: chan_doan_chinh_icd=S72.0, PT="Thay khớp háng"
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.assessment.code, ASSESSMENT.SAFE.code);
+  assert.strictEqual(result.tier3_findings.length, 0);
+});
+
+test('18. Thay khớp háng + ICD không liên quan (S42) -> nguy cơ cao', () => {
+  const data = baseData({ discharge: { chan_doan_chinh_icd: 'S42.1' } });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.assessment.code, ASSESSMENT.HIGH_RISK.code);
+  assert.ok(result.tier3_findings.some(f => f.rule_id === 'BHYT_T3_DX_PROCEDURE_INCOMPATIBLE'));
+});
+
+test('19. Thay khớp háng + ICD chưa rõ nhóm -> cần kiểm tra (REVIEW)', () => {
+  const data = baseData({ discharge: { chan_doan_chinh_icd: 'S00.1' } });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.assessment.code, ASSESSMENT.NEEDS_REVIEW.code);
+  assert.ok(result.tier3_findings.some(f => f.rule_id === 'BHYT_T3_DX_PROCEDURE_NEEDS_REVIEW'));
+});
+
+test('20. Chưa tách được ICD chẩn đoán chính -> không đánh giá Tầng 3 (không suy đoán)', () => {
+  const data = baseData({ discharge: { chan_doan_chinh_icd: '' } });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.tier3_findings.length, 0);
+});
+
+test('21. Tháo PTKHX, chẩn đoán "gãy xương" chung chung, không có XQ trong bảng kê -> nguy cơ cao', () => {
+  const data = baseData({
+    discharge: { chan_doan_chinh_icd: 'S82.3', chan_doan_chinh: 'Gãy xương chày' },
+    surgery: { surgeries: [{ ten: 'Tháo PTKHX xương chày', thoi_gian: '05/09/2026 08:00' }] },
+    billing: { rows: [
+      { name: 'Ngày giường ngoại 1', tg_ylenh: '04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 500000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.assessment.code, ASSESSMENT.HIGH_RISK.code);
+  assert.ok(result.tier3_findings.some(f => f.rule_id === 'BHYT_T3_IMPLANT_REMOVAL_NEEDS_EVIDENCE'));
+});
+
+test('22. Tháo PTKHX + chẩn đoán Z47.0 (liền xương) -> không cảnh báo', () => {
+  const data = baseData({
+    discharge: { chan_doan_chinh_icd: 'Z47.0', chan_doan_chinh: 'Theo dõi sau PT kết hợp xương' },
+    surgery: { surgeries: [{ ten: 'Tháo PTKHX xương chày', thoi_gian: '05/09/2026 08:00' }] },
+    billing: { rows: [
+      { name: 'Ngày giường ngoại 1', tg_ylenh: '04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 500000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(!result.tier3_findings.some(f => f.rule_id === 'BHYT_T3_IMPLANT_REMOVAL_NEEDS_EVIDENCE'));
+});
+
+test('23. Tháo PTKHX + có X-quang trong bảng kê -> không cảnh báo (đủ bằng chứng)', () => {
+  const data = baseData({
+    discharge: { chan_doan_chinh_icd: 'S82.3', chan_doan_chinh: 'Gãy xương chày' },
+    surgery: { surgeries: [{ ten: 'Tháo PTKHX xương chày', thoi_gian: '05/09/2026 08:00' }] },
+    billing: { rows: [
+      { name: 'X-quang xương chày kiểm tra liền xương', tg_ylenh: '04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 150000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(!result.tier3_findings.some(f => f.rule_id === 'BHYT_T3_IMPLANT_REMOVAL_NEEDS_EVIDENCE'));
 });
 
 console.log(`\n${passed} test(s) passed.`);

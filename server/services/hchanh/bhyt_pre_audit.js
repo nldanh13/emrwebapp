@@ -2,9 +2,10 @@
 // Tiền giám định BHYT trước khi nộp hồ sơ — KHÔNG kết luận "xuất toán".
 // Trả về: nguy cơ từ chối thanh toán + lý do + khoản tiền có nguy cơ + thứ cần kiểm tra.
 //
-// Đã cài Tầng 1 (tính toàn vẹn dữ liệu) và Tầng 2 (ngày giường). Các tầng còn lại
-// (chẩn đoán ↔ PT/TT, CLS, thuốc/VTYT, giá + quyền lợi BHYT, hồ sơ chứng minh...)
-// sẽ thêm dần bằng cách bổ sung hàm check + rule mới, không đổi khung này.
+// Đã cài Tầng 1 (tính toàn vẹn dữ liệu), Tầng 2 (ngày giường) và Tầng 3 (chẩn
+// đoán ↔ PT/TT). Các tầng còn lại (CLS, thuốc/VTYT, giá + quyền lợi BHYT, hồ sơ
+// chứng minh...) sẽ thêm dần bằng cách bổ sung hàm check + rule mới, không đổi
+// khung này.
 //
 // Nguyên tắc (theo đề xuất thiết kế):
 //   - Rule pháp lý (BHYT_RULE) và checklist chuyên môn nội bộ là hai lớp khác nhau.
@@ -30,6 +31,10 @@ const {
 
 function safeArray(v)   { return Array.isArray(v) ? v : []; }
 function text(v, fb='') { return String(v ?? '').replace(/\s+/g, ' ').trim() || fb; }
+function normText(v) {
+  return String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().replace(/\s+/g, ' ').trim();
+}
 function moneyNum(v) {
   if (typeof v === 'number' && Number.isFinite(v)) return v;
   const n = Number(String(v ?? '').replace(/[^0-9.-]/g, ''));
@@ -348,6 +353,112 @@ function runBhytTier2({ admitAt, dischargeAt, bed_days, bedDaysReview }) {
   return findings;
 }
 
+// ── Tầng 3: chẩn đoán ↔ PT/TT ────────────────────────────────────────────────
+// 3 mức COMPATIBLE / REVIEW / INCOMPATIBLE thay vì quy định cứng "chẩn đoán X chỉ
+// được PT Y". Chỉ khai báo cho các PT/TT mà đề xuất thiết kế đã nêu ICD cụ thể —
+// không suy đoán mã ICD cho các PT/TT khác khi chưa có nguồn xác nhận.
+
+let _dxProcCache = null, _dxProcCacheTime = 0;
+function loadDxProcedureMap() {
+  const now = Date.now();
+  if (_dxProcCache && now - _dxProcCacheTime < 30000) return _dxProcCache;
+  try {
+    const p = path.join(__dirname, '..', '..', '..', 'config', 'hchanh', 'bhyt_dx_procedure_map.json');
+    if (fs.existsSync(p)) {
+      _dxProcCache = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      _dxProcCacheTime = now;
+      return _dxProcCache;
+    }
+  } catch (e) { console.warn('[BHYT_PRE_AUDIT] Không đọc bhyt_dx_procedure_map.json:', e.message); }
+  return { procedures: [], implant_removal: null };
+}
+
+function surgeryRowText(row) {
+  return text(row?.ten || row?.name || row?.ten_pt || row?.dich_vu_phau_thuat || row?.phuong_phap_pt);
+}
+
+function icdMatchesAnyPrefix(icd, prefixes) {
+  const norm = String(icd || '').toUpperCase().replace(/\s+/g, '');
+  if (!norm) return false;
+  return safeArray(prefixes).some(p => norm.startsWith(String(p).toUpperCase()));
+}
+
+function checkDiagnosisProcedureCompatibility({ discharge, surgery }) {
+  const rows = safeArray(surgery?.surgeries);
+  if (!rows.length) return [];
+  const icd = text(discharge?.chan_doan_chinh_icd);
+  if (!icd) return []; // chưa tách được mã ICD từ chẩn đoán chính -> không suy đoán
+
+  const map = loadDxProcedureMap();
+  const findings = [];
+  for (const row of rows) {
+    const rowText = normText(surgeryRowText(row));
+    if (!rowText) continue;
+    const proc = safeArray(map.procedures).find(p => safeArray(p.match_keywords).some(k => rowText.includes(normText(k))));
+    if (!proc) continue; // PT/TT chưa có trong bảng đối chiếu -> không đánh giá, tránh suy đoán
+
+    if (icdMatchesAnyPrefix(icd, proc.compatible_icd_prefixes)) continue; // COMPATIBLE
+
+    if (icdMatchesAnyPrefix(icd, proc.incompatible_icd_prefixes)) {
+      findings.push(makeFinding({
+        rule_id: 'BHYT_T3_DX_PROCEDURE_INCOMPATIBLE',
+        severity: BHYT_SEVERITY.HIGH_RISK,
+        group: 'Chẩn đoán ↔ PT/TT',
+        title: `Chẩn đoán chính (${icd}) không thuộc nhóm liên quan tới "${text(proc.label, surgeryRowText(row))}"`,
+        detail: text(proc.incompatible_message),
+        action: 'Bác sĩ kiểm tra lại chẩn đoán chính hoặc chỉ định phẫu thuật/thủ thuật có đúng người bệnh, đúng đợt không.',
+        evidence: `icd=${icd}, procedure=${surgeryRowText(row)}`,
+      }));
+      continue;
+    }
+
+    // Không rơi vào nhóm phù hợp lẫn không liên quan -> cần kiểm thêm, không tự đỏ.
+    findings.push(makeFinding({
+      rule_id: 'BHYT_T3_DX_PROCEDURE_NEEDS_REVIEW',
+      severity: BHYT_SEVERITY.REVIEW,
+      group: 'Chẩn đoán ↔ PT/TT',
+      title: `Chẩn đoán chính (${icd}) chưa khớp rõ với chỉ định "${text(proc.label, surgeryRowText(row))}"`,
+      detail: text(proc.review_message),
+      action: 'Kiểm tra lại chẩn đoán chính có mô tả đúng lý do chỉ định phẫu thuật/thủ thuật không.',
+      evidence: `icd=${icd}, procedure=${surgeryRowText(row)}`,
+    }));
+  }
+  return findings;
+}
+
+function checkImplantRemovalEvidence({ discharge, surgery, billing }) {
+  const cfg = loadDxProcedureMap().implant_removal;
+  if (!cfg) return null;
+  const rows = safeArray(surgery?.surgeries);
+  const matched = rows.some(row => safeArray(cfg.match_keywords).some(k => normText(surgeryRowText(row)).includes(normText(k))));
+  if (!matched) return null;
+
+  const icd = text(discharge?.chan_doan_chinh_icd);
+  if (icdMatchesAnyPrefix(icd, cfg.diagnosis_downgrade_icd_prefixes)) return null; // đã có chẩn đoán xác nhận liền xương
+
+  const clsText = normText(safeArray(billing?.rows).map(r => r?.name || '').join(' '));
+  const hasClsEvidence = safeArray(cfg.downgrade_cls_keywords).some(k => clsText.includes(normText(k)));
+  if (hasClsEvidence) return null; // có X-quang kiểm tra trong bảng kê
+
+  return makeFinding({
+    rule_id: 'BHYT_T3_IMPLANT_REMOVAL_NEEDS_EVIDENCE',
+    severity: BHYT_SEVERITY.HIGH_RISK,
+    group: 'Chẩn đoán ↔ PT/TT',
+    title: 'Có chỉ định tháo phương tiện kết hợp xương nhưng chưa thấy bằng chứng liền xương',
+    detail: text(cfg.review_message),
+    action: 'Kiểm tra XQ liền xương gần nhất và chẩn đoán tình trạng liền xương trước khi nộp hồ sơ.',
+    evidence: `icd=${icd || 'khong_ro'}`,
+  });
+}
+
+function runBhytTier3({ discharge, surgery, billing }) {
+  const findings = [];
+  findings.push(...checkDiagnosisProcedureCompatibility({ discharge, surgery }));
+  const f = checkImplantRemovalEvidence({ discharge, surgery, billing });
+  if (f) findings.push(f);
+  return findings;
+}
+
 // ── Tổng hợp đánh giá ────────────────────────────────────────────────────────
 // Dùng rule severity + override (không cộng điểm): mức nặng nhất quyết định trạng thái.
 // "Số tiền có nguy cơ" lấy giá trị lớn nhất trong các finding, không cộng dồn — tránh
@@ -389,15 +500,19 @@ function runBhytPreAudit({ meta, data, bedDaysReview }) {
   const tier2_findings = hasEnoughData
     ? runBhytTier2({ admitAt, dischargeAt, bed_days, bedDaysReview })
     : [];
+  const tier3_findings = hasEnoughData
+    ? runBhytTier3({ discharge, surgery, billing })
+    : [];
 
-  const allFindings = [...tier1_findings, ...tier2_findings];
+  const allFindings = [...tier1_findings, ...tier2_findings, ...tier3_findings];
   const assessment = computeAssessment({ hasEnoughData, findings: allFindings });
 
   return {
     applicable: true,
-    tiers_completed: [1, 2],
+    tiers_completed: [1, 2, 3],
     tier1_findings,
     tier2_findings,
+    tier3_findings,
     assessment,
   };
 }
@@ -409,5 +524,7 @@ module.exports = {
   runBhytPreAudit,
   runBhytTier1,
   runBhytTier2,
+  runBhytTier3,
   loadRuleMeta,
+  loadDxProcedureMap,
 };
