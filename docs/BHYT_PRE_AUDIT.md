@@ -14,10 +14,12 @@ Module này **gộp chung vào tab Hành chánh hiện có** (không phải tab/
 
 | Thành phần | File |
 | --- | --- |
-| Rule engine + Tầng 1, 2, 3 | `server/services/hchanh/bhyt_pre_audit.js` |
+| Rule engine + Tầng 1, 2, 3, 4 | `server/services/hchanh/bhyt_pre_audit.js` |
 | Tiện ích ngày/giờ dùng chung | `server/services/hchanh/vn_datetime.js` (tách ra từ `discharge_qa.js` để tránh phụ thuộc vòng) |
+| `loadQaRules`/`extractClsFromBilling` dùng chung | `server/services/hchanh/qa_shared.js` (tách ra từ `discharge_qa.js`, cùng lý do) |
 | Metadata rule (nguồn pháp lý, hành động) | `config/hchanh/bhyt_pre_audit_rules.json` |
 | Bảng đối chiếu Chẩn đoán ↔ PT/TT (Tầng 3) | `config/hchanh/bhyt_dx_procedure_map.json` |
+| Rule chuyên khoa dùng lại cho Tầng 4 | `config/hchanh/qa_rules.json` → `specialty_rules` (đã có sẵn cho QA hành chánh) |
 | Nơi gọi vào | `server/services/hchanh/discharge_qa.js` → `runDischargeQA_Hchanh()` gắn kết quả vào `qa.bhyt` |
 | Hiển thị | `src/components/hchanh/HchahnTab.jsx` → `BhytAssessmentBox` (trong `DetailPanel`, ngay dưới khối QA hành chánh) |
 | Test | `scripts/bhyt_pre_audit_test.js` (chạy trong `npm run test:ci`) |
@@ -96,12 +98,21 @@ Nếu `discharge.chan_doan_chinh_icd` rỗng (chưa tách được mã ICD từ 
 
 Ví dụ khớp đúng đề xuất gốc (mục 5–6, ca "Danh Tân"): chỉ định tháo PTKHX với chẩn đoán "gãy xương" chung chung, chưa có XQ liền xương trong dữ liệu → `BHYT_T3_IMPLANT_REMOVAL_NEEDS_EVIDENCE` (🟠 Nguy cơ cao) thay vì tự động đỏ.
 
-## Việc chưa làm (Tầng 4–8, theo đề xuất thiết kế gốc)
+Lưu ý: các PT/TT nêu trong đề xuất gốc chỉ là **ví dụ minh họa**, không giới hạn phạm vi Tầng 3. `bhyt_dx_procedure_map.json` nhận thêm bao nhiêu PT/TT cũng được — điều kiện duy nhất là có nguồn ICD/chuyên môn xác nhận đủ tin cậy để không suy đoán sai.
+
+## Tầng 4 — CLS chứng minh chỉ định (đã cài đặt)
+
+**Tái dùng `specialty_rules` đã có trong `config/hchanh/qa_rules.json`** (cấu hình QA hành chánh có sẵn, không phải bảng mới) — không định nghĩa lại danh mục CLS kỳ vọng theo từng PT/TT để tránh hai nơi lệch nhau khi ai đó sửa `qa_rules.json`. `specialty_rules` vốn đã tổng quát theo chuyên khoa (khớp qua `dept_keywords`), không giới hạn ở vài PT/TT cụ thể.
+
+Cơ chế lọc: mỗi rule chuyên khoa trong `qa_rules.json` có `required_cls_keywords` (bằng chứng CLS/biên bản — thuộc Tầng 4) hoặc `required_supply_keywords` (bằng chứng vật tư — để dành cho Tầng 5/VTYT, **không lấy ở Tầng 4**). `server/services/hchanh/qa_shared.js` (`loadQaRules`, `extractClsFromBilling`) được tách dùng chung với `discharge_qa.js` để tránh phụ thuộc vòng, giống cách làm với `vn_datetime.js`.
+
+`rule_id` sinh động theo `BHYT_T4_<code>` từ chính `rule.code` trong `qa_rules.json` (ví dụ `BHYT_T4_CTCH_FRACTURE_NO_XRAY`, `BHYT_T4_GS_SURGERY_NO_OP_NOTE`) — nên rule chuyên khoa mới thêm vào `qa_rules.json` (miễn có `required_cls_keywords`) tự động được Tầng 4 nhận, không cần sửa code hay `bhyt_pre_audit_rules.json`. Mức độ: `severity: "error"` trong `qa_rules.json` → HIGH_RISK, còn lại → REVIEW. `legal_source` của các finding này ghi rõ là **checklist chuyên môn nội bộ**, không phải rule pháp lý bắt buộc.
+
+## Việc chưa làm (Tầng 5–8, theo đề xuất thiết kế gốc)
 
 Khung (`makeFinding`, `BHYT_SEVERITY`, `ASSESSMENT`, rule config JSON) đã sẵn sàng để mở rộng thêm mà không đổi cấu trúc:
 
-- Tầng 4 — CLS chứng minh chỉ định (`PROCEDURE_EXPECTED_EVIDENCE`).
-- Tầng 5 — VTYT (7 cửa kiểm theo đề xuất: mã hợp lệ, trong danh mục, hiệu lực, phạm vi BHYT, trần thanh toán, số lượng khớp biên bản PT, tránh trùng giá DVKT).
+- Tầng 5 — VTYT (7 cửa kiểm theo đề xuất: mã hợp lệ, trong danh mục, hiệu lực, phạm vi BHYT, trần thanh toán, số lượng khớp biên bản PT, tránh trùng giá DVKT). Có thể tái dùng tiếp phần `required_supply_keywords` của `specialty_rules` mà Tầng 4 đã cố tình bỏ qua.
 - Tầng 6 — Thuốc.
 - Tầng 7 — Trùng dịch vụ / người thực hiện / phạm vi hành nghề.
 - Tầng 8 — Tính tiền BHYT theo mức hưởng + rule "trong gói".

@@ -4,9 +4,7 @@
 
 'use strict';
 
-const fs   = require('fs');
-const path = require('path');
-
+const { loadQaRules, extractClsFromBilling } = require('./qa_shared');
 const {
   parseVNDateTime,
   dateOnlyUTC,
@@ -44,37 +42,6 @@ function makeIssue({ group, severity, code, title, detail='', action='Kiểm tra
     title: text(title), detail: text(detail),
     action: text(action), owner: text(owner), evidence: text(evidence),
   };
-}
-
-// ── Load config ───────────────────────────────────────────────────────────────
-
-let _cache = null, _cacheTime = 0;
-function loadQaRules() {
-  const now = Date.now();
-  if (_cache && now - _cacheTime < 30000) return _cache;
-  try {
-    const p = path.join(__dirname, '..', '..', '..', 'config', 'hchanh', 'qa_rules.json');
-    if (fs.existsSync(p)) { _cache = JSON.parse(fs.readFileSync(p, 'utf-8')); _cacheTime = now; return _cache; }
-  } catch (e) { console.warn('[QA] Không đọc qa_rules.json:', e.message); }
-  return {};
-}
-
-// ── Trích xuất CLS từ billing ─────────────────────────────────────────────────
-// Từ billing.rows: lọc nhóm CDHA, XN, Thăm dò chức năng — chỉ xét dòng BHYT.
-
-function extractClsFromBilling(billing) {
-  const CLS_LOAI = ['chẩn đoán hình ảnh', 'xét nghiệm', 'thăm dò chức năng',
-                    'giải phẫu bệnh', 'vi sinh', 'tinh dịch đồ', 'cận lâm sàng'];
-  const rows = safeArray(billing?.rows);
-  return rows.filter(r => {
-    const loai = normText(r.loai_yc || '');
-    return CLS_LOAI.some(k => loai.includes(normText(k)));
-  }).map(r => ({
-    name:    text(r.name),
-    loai_yc: text(r.loai_yc),
-    pg:      r.payment_group || 'unknown',
-    don_gia: Number(r.don_gia || 0),
-  }));
 }
 
 // ── Kiểm profile ─────────────────────────────────────────────────────────────

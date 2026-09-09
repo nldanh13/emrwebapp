@@ -259,5 +259,56 @@ test('23. Tháo PTKHX + có X-quang trong bảng kê -> không cảnh báo (đ�
   assert.ok(!result.tier3_findings.some(f => f.rule_id === 'BHYT_T3_IMPLANT_REMOVAL_NEEDS_EVIDENCE'));
 });
 
+// ── Tầng 4: CLS chứng minh chỉ định ──────────────────────────────────────────
+// Tái dùng specialty_rules đã cấu hình sẵn trong config/hchanh/qa_rules.json.
+
+test('24. CTCH, gãy xương, không có X-quang trong bảng kê -> cần kiểm tra', () => {
+  const data = baseData({
+    profile: { khoa: 'Khoa Chấn thương chỉnh hình' },
+    discharge: { chan_doan_chinh: 'Gãy xương chày' },
+    surgery: null,
+    billing: null,
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.assessment.code, ASSESSMENT.NEEDS_REVIEW.code);
+  assert.ok(result.tier4_findings.some(f => f.rule_id === 'BHYT_T4_CTCH_FRACTURE_NO_XRAY'));
+});
+
+test('25. CTCH, gãy xương, CÓ X-quang trong bảng kê -> không cảnh báo', () => {
+  const data = baseData({
+    profile: { khoa: 'Khoa Chấn thương chỉnh hình' },
+    discharge: { chan_doan_chinh: 'Gãy xương chày' },
+    surgery: null,
+    billing: { rows: [
+      { name: 'X-quang xương chày', loai_yc: 'Chẩn đoán hình ảnh', tg_ylenh: '04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 150000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(!result.tier4_findings.some(f => f.rule_id === 'BHYT_T4_CTCH_FRACTURE_NO_XRAY'));
+});
+
+test('26. Ngoại tổng quát, phẫu thuật, không có biên bản PT trong bảng kê -> cần kiểm tra', () => {
+  const data = baseData({
+    profile: { khoa: 'Khoa Ngoại tổng quát' },
+    discharge: { chan_doan_chinh: 'Phẫu thuật cắt ruột thừa viêm' },
+    surgery: null,
+    billing: null,
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(result.tier4_findings.some(f => f.rule_id === 'BHYT_T4_GS_SURGERY_NO_OP_NOTE'));
+});
+
+test('27. CTCH đặt nẹp vít: thiếu biên bản PT (Tầng 4) nhưng KHÔNG lẫn rule VTYT (Tầng 5)', () => {
+  const data = baseData({
+    profile: { khoa: 'Khoa Chấn thương chỉnh hình' },
+    discharge: { chan_doan_chinh: 'Đặt nẹp vít kết hợp xương cẳng chân' },
+    surgery: null,
+    billing: null,
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(result.tier4_findings.some(f => f.rule_id === 'BHYT_T4_CTCH_SURGERY_NO_OP_NOTE'));
+  assert.ok(!result.tier4_findings.some(f => f.rule_id === 'BHYT_T4_CTCH_IMPLANT_NO_SUPPLY'));
+});
+
 console.log(`\n${passed} test(s) passed.`);
 if (process.exitCode) console.error('\nCó test thất bại.');

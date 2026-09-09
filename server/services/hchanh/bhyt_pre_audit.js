@@ -2,10 +2,10 @@
 // Tiền giám định BHYT trước khi nộp hồ sơ — KHÔNG kết luận "xuất toán".
 // Trả về: nguy cơ từ chối thanh toán + lý do + khoản tiền có nguy cơ + thứ cần kiểm tra.
 //
-// Đã cài Tầng 1 (tính toàn vẹn dữ liệu), Tầng 2 (ngày giường) và Tầng 3 (chẩn
-// đoán ↔ PT/TT). Các tầng còn lại (CLS, thuốc/VTYT, giá + quyền lợi BHYT, hồ sơ
-// chứng minh...) sẽ thêm dần bằng cách bổ sung hàm check + rule mới, không đổi
-// khung này.
+// Đã cài Tầng 1 (tính toàn vẹn dữ liệu), Tầng 2 (ngày giường), Tầng 3 (chẩn
+// đoán ↔ PT/TT) và Tầng 4 (CLS chứng minh chỉ định). Các tầng còn lại (thuốc/
+// VTYT, giá + quyền lợi BHYT, hồ sơ chứng minh...) sẽ thêm dần bằng cách bổ
+// sung hàm check + rule mới, không đổi khung này.
 //
 // Nguyên tắc (theo đề xuất thiết kế):
 //   - Rule pháp lý (BHYT_RULE) và checklist chuyên môn nội bộ là hai lớp khác nhau.
@@ -28,6 +28,7 @@ const {
   isBeforeDate,
   dateFromSurgeryRow,
 } = require('./vn_datetime');
+const { loadQaRules, extractClsFromBilling } = require('./qa_shared');
 
 function safeArray(v)   { return Array.isArray(v) ? v : []; }
 function text(v, fb='') { return String(v ?? '').replace(/\s+/g, ' ').trim() || fb; }
@@ -83,18 +84,18 @@ function loadRuleMeta() {
   return { rules: {} };
 }
 
-function makeFinding({ rule_id, severity, group, title, detail = '', action = '', amount_at_risk = 0, evidence = '' }) {
+function makeFinding({ rule_id, severity, group, title, detail = '', action = '', amount_at_risk = 0, evidence = '', tier, legal_source, legal_clause }) {
   const meta = loadRuleMeta().rules?.[rule_id] || {};
   return {
     rule_id,
-    tier: Number(meta.tier || 1),
+    tier: Number(tier ?? meta.tier ?? 1),
     severity: Object.values(BHYT_SEVERITY).includes(severity) ? severity : BHYT_SEVERITY.REVIEW,
     group: text(group, 'Tiền giám định BHYT'),
     title: text(title),
     detail: text(detail),
     action: text(action || meta.action || 'Kiểm tra lại trên EMR trước khi nộp hồ sơ.'),
-    legal_source: text(meta.legal_source || ''),
-    legal_clause: text(meta.legal_clause || ''),
+    legal_source: text(legal_source ?? meta.legal_source ?? ''),
+    legal_clause: text(legal_clause ?? meta.legal_clause ?? ''),
     amount_at_risk: Math.max(0, Math.round(moneyNum(amount_at_risk))),
     evidence: text(evidence),
   };
@@ -459,6 +460,59 @@ function runBhytTier3({ discharge, surgery, billing }) {
   return findings;
 }
 
+// ── Tầng 4: CLS chứng minh chỉ định ──────────────────────────────────────────
+// Tái dùng cấu hình `specialty_rules` đã có trong config/hchanh/qa_rules.json
+// (QA hành chánh) — không định nghĩa lại danh mục CLS kỳ vọng ở đây để tránh
+// hai nơi lệch nhau khi có người sửa qa_rules.json. Chỉ lấy các rule chuyên
+// khoa có `required_cls_keywords` (bằng chứng CLS/biên bản cho một chỉ định);
+// rule có `required_supply_keywords` (VTYT) để dành cho Tầng 5.
+
+function checkClsExpectedEvidence({ profile, discharge, billing }) {
+  const rules = loadQaRules();
+  const specialty_cfg = rules.specialty_rules || {};
+  const dept_text = normText([profile?.khoa, discharge?.chan_doan_chinh].join(' '));
+  const dx_text = normText([
+    discharge?.chan_doan_chinh,
+    ...safeArray(discharge?.benh_kem),
+    ...safeArray(discharge?.chan_doan_vao_list).map(c => c?.ten || ''),
+  ].join(' '));
+  const cls_rows = extractClsFromBilling(billing);
+  const cls_bhyt_text = cls_rows.filter(r => r.pg === 'bhyt').map(r => normText(r.name)).join(' ');
+
+  const findings = [];
+  for (const [, spec] of Object.entries(specialty_cfg)) {
+    if (!spec.enabled) continue;
+    const dept_match = safeArray(spec.dept_keywords).some(k => dept_text.includes(normText(k)));
+    if (!dept_match) continue;
+
+    for (const rule of safeArray(spec.rules)) {
+      if (!rule.enabled || !rule.required_cls_keywords) continue; // chỉ CLS, VTYT thuộc Tầng 5
+      const has_dx = safeArray(rule.dx_keywords).some(k => dx_text.includes(normText(k)));
+      if (!has_dx) continue;
+      const has_cls = safeArray(rule.required_cls_keywords).some(k => cls_bhyt_text.includes(normText(k)));
+      if (has_cls) continue;
+
+      findings.push(makeFinding({
+        rule_id: `BHYT_T4_${rule.code}`,
+        tier: 4,
+        severity: rule.severity === 'error' ? BHYT_SEVERITY.HIGH_RISK : BHYT_SEVERITY.REVIEW,
+        group: 'CLS chứng minh chỉ định',
+        title: text(rule.title),
+        detail: text(rule.detail),
+        action: text(rule.action || 'Kiểm tra lại CLS/biên bản chứng minh chỉ định trước khi nộp hồ sơ.'),
+        legal_source: 'Checklist chuyên môn nội bộ (config/hchanh/qa_rules.json → specialty_rules)',
+        legal_clause: 'Không phải rule pháp lý bắt buộc — đối chiếu CLS/biên bản với chỉ định theo cấu hình chuyên khoa nội bộ, cần người kiểm xác nhận.',
+        evidence: `dept_rule=${rule.code}`,
+      }));
+    }
+  }
+  return findings;
+}
+
+function runBhytTier4({ profile, discharge, billing }) {
+  return checkClsExpectedEvidence({ profile, discharge, billing });
+}
+
 // ── Tổng hợp đánh giá ────────────────────────────────────────────────────────
 // Dùng rule severity + override (không cộng điểm): mức nặng nhất quyết định trạng thái.
 // "Số tiền có nguy cơ" lấy giá trị lớn nhất trong các finding, không cộng dồn — tránh
@@ -503,16 +557,20 @@ function runBhytPreAudit({ meta, data, bedDaysReview }) {
   const tier3_findings = hasEnoughData
     ? runBhytTier3({ discharge, surgery, billing })
     : [];
+  const tier4_findings = hasEnoughData
+    ? runBhytTier4({ profile, discharge, billing })
+    : [];
 
-  const allFindings = [...tier1_findings, ...tier2_findings, ...tier3_findings];
+  const allFindings = [...tier1_findings, ...tier2_findings, ...tier3_findings, ...tier4_findings];
   const assessment = computeAssessment({ hasEnoughData, findings: allFindings });
 
   return {
     applicable: true,
-    tiers_completed: [1, 2, 3],
+    tiers_completed: [1, 2, 3, 4],
     tier1_findings,
     tier2_findings,
     tier3_findings,
+    tier4_findings,
     assessment,
   };
 }
@@ -525,6 +583,7 @@ module.exports = {
   runBhytTier1,
   runBhytTier2,
   runBhytTier3,
+  runBhytTier4,
   loadRuleMeta,
   loadDxProcedureMap,
 };
