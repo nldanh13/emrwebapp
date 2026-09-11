@@ -2136,7 +2136,7 @@ function buildResearchProgressSnapshot(runDir, scopeMeta = {}, { isArchive = tru
       started_at: activeTask.started_at || '',
       heartbeat_at: activeTask.heartbeat_at || '',
     } : null,
-    current_case: readCurrentCaseTrace(runDir),
+    current_case: readCurrentCaseTrace(runDir) || readCurrentHchanhCase(runDir),
     stopped,
     generated_at: nowIso(),
   };
@@ -4005,6 +4005,40 @@ function readCurrentCaseTrace(runDir) {
       takes: clipTraceText(last.takes || '', 300),
     } : null,
   };
+}
+
+const HCHANH_CURRENT_CASE_SOURCES = [
+  ['hchanh_auto_progress.json', 'Hồ sơ nền/Ra viện/Phẫu thuật'],
+  ['order_history_auto_progress.json', 'Y lệnh'],
+];
+
+// fetchHchanhForResearchRun() (bên dưới) đã tự ghi progress[key].status =
+// 'running' vào hchanh_auto_progress.json / order_history_auto_progress.json
+// NGAY TRƯỚC khi spawn worker cho từng ca, và cập nhật lại done/partial/error
+// sau khi xong — nên "ca đang chạy" đã có sẵn trên đĩa, không cần thêm cơ chế
+// mới như research_case_trace_current.json (vốn chỉ dành cho script Python
+// tự lặp qua nhiều ca trong 1 tiến trình như lay_lich_su_xn_cdha.py).
+function readCurrentHchanhCase(runDir) {
+  if (!runDir) return null;
+  for (const [file, moduleLabel] of HCHANH_CURRENT_CASE_SOURCES) {
+    const progress = readJsonSafe(path.join(runDir, file), {}) || {};
+    for (const item of Object.values(progress)) {
+      if (!item || typeof item !== 'object' || item.status !== 'running') continue;
+      const files = Array.isArray(item.files) ? item.files.join(', ') : '';
+      return {
+        case_id: clipTraceText(item.encounter_id || item.ma_bn || '', 220),
+        ma_bn: clipTraceText(item.ma_bn || '', 80),
+        ho_ten: clipTraceText(item.ho_ten || '', 160),
+        research_code: clipTraceText(item.research_code || '', 120),
+        index: 0,
+        total: 0,
+        started_at: clipTraceText(item.started_at || '', 40),
+        events_count: 0,
+        last_step: { tag: 'RUNNING', step: `Đang lấy ${moduleLabel}`, takes: files },
+      };
+    }
+  }
+  return null;
 }
 
 function readResearchCaseTrace(runDir, limit = CASE_TRACE_RECENT_LIMIT) {
