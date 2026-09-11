@@ -6,6 +6,7 @@ import RoomChips from './RoomChips.jsx';
 import SessionPicker from './SessionPicker.jsx';
 import ShiftToolbar from './ShiftToolbar.jsx';
 import InputRoomSelector from './InputRoomSelector.jsx';
+import MissingRangeWarning from './MissingRangeWarning.jsx';
 
 export default function ShiftMobileView({
   patients, filtered, rooms, selRoom, selPx, setSelRoom, setSelPx,
@@ -20,6 +21,7 @@ export default function ShiftMobileView({
   handleUseSession, handleFetchNew, toast,
   workflowTitle, workflowHint, scopeInfo,
   featureAvailability = {}, disabledFeatureLabels = [],
+  missingRangeDates = [], missingRangeDatesLabel = '', requestedDayCount = 0,
 }) {
   const bulkInputDisabled = selectedInputPatients.length === 0;
   const inputDisabled = !!running || bulkInputDisabled;
@@ -66,6 +68,15 @@ export default function ShiftMobileView({
           {scopeInfo ? <div style={{ color: C.blue, fontSize: 11, marginTop: 3 }}>{scopeInfo}</div> : null}
         </div>
       )}
+
+      <MissingRangeWarning
+        missingRangeDates={missingRangeDates}
+        missingRangeDatesLabel={missingRangeDatesLabel}
+        patients={selectedInputPatients}
+        requestedDayCount={requestedDayCount}
+        isPatientInInputScope={isPatientInInputScope}
+        toggleInputPatient={toggleInputPatient}
+      />
 
       {disabledFeatureLabels.length ? <div style={{ padding: '6px 12px', borderBottom: `1px solid ${C.amberBorder}`, background: C.amberBg, color: C.amber, fontSize: 11 }}>Đang tắt: {disabledFeatureLabels.join(', ')}. Các module khác vẫn tiếp tục.</div> : null}
 

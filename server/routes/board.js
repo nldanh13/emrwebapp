@@ -18,6 +18,7 @@ const { parseDmy, sanitizeSessionId } = require('../utils/validation');
 const { appendActivity } = require('../services/activity_logger');
 const { refreshRuntimeV2 } = require('../services/runtime_v2');
 const { canAccessSession } = require('../services/authz');
+const { postprocessOrders } = require('../services/order_pipeline');
 
 const DANGEROUS_ROW_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 
@@ -69,6 +70,142 @@ router.post('/save', async (req, res) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ status: 'error', message: 'Không ghi được file xếp phòng.' });
+  }
+});
+
+function rowPatientIdForRoom(row) {
+  return String(
+    row?.ma_bn || row?.['Mã BN'] || row?.['Mã YT'] || row?.ma_yt || row?.MaBN || row?.Ma_BN || row?.mabn || row?.id || ''
+  ).trim();
+}
+
+function roomFromRowForFix(row) {
+  return String(
+    row?.so_phong || row?.room || row?.Vi_Tri || row?.phong_giuong ||
+    row?.['Phòng'] || row?.['Vị trí'] || row?.vi_tri || ''
+  ).trim();
+}
+
+// Phòng "đúng" hiện tại = phòng đã xếp gần nhất trên board (SORTED_PATH).
+// Dữ liệu y lệnh (FINAL_PATH) lưu phòng tại thời điểm "Lấy chi tiết" — nếu
+// lúc đó xếp nhầm phòng, sửa lại trên board sau đó không tự động lan sang
+// các dòng y lệnh đã lấy trước đó (để giữ đúng lịch sử khi BN chuyển phòng
+// thật). Hai endpoint dưới đây cho cách sửa tay khi biết chắc là gõ nhầm.
+function buildCurrentRoomIndexForFix(ctx) {
+  const out = new Map();
+  const sortedRows = readJsonSafe(ctx.SORTED_PATH, []);
+  for (const row of (Array.isArray(sortedRows) ? sortedRows : [])) {
+    const id = rowPatientIdForRoom(row);
+    const room = roomFromRowForFix(row);
+    if (id && room) out.set(id, room);
+  }
+  return out;
+}
+
+function findRoomMismatches(ctx) {
+  const roomById = buildCurrentRoomIndexForFix(ctx);
+  if (!roomById.size) return [];
+  const finalRows = readJsonSafe(ctx.FINAL_PATH, []);
+  const byPatient = new Map();
+  for (const row of (Array.isArray(finalRows) ? finalRows : [])) {
+    const id = rowPatientIdForRoom(row);
+    const correctRoom = id ? roomById.get(id) : '';
+    if (!id || !correctRoom) continue;
+    const dataRoom = roomFromRowForFix(row);
+    if (!dataRoom || dataRoom === correctRoom) continue;
+    if (!byPatient.has(id)) {
+      byPatient.set(id, {
+        ma_bn: id,
+        ho_ten: String(row?.ho_ten || row?.['Họ tên'] || '').trim(),
+        current_room: correctRoom,
+        data_rooms: new Set(),
+        affected_days: 0,
+      });
+    }
+    const entry = byPatient.get(id);
+    entry.data_rooms.add(dataRoom);
+    entry.affected_days += 1;
+  }
+  return [...byPatient.values()].map(entry => ({
+    ma_bn: entry.ma_bn,
+    ho_ten: entry.ho_ten,
+    current_room: entry.current_room,
+    data_rooms: [...entry.data_rooms],
+    affected_days: entry.affected_days,
+  }));
+}
+
+// GET /api/room-mismatches — Phát hiện BN đang có dữ liệu y lệnh lưu phòng
+// khác với phòng hiện tại trên board (thường do lỡ xếp nhầm phòng rồi sửa lại).
+router.get('/room-mismatches', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  try {
+    return res.json({ mismatches: findRoomMismatches(ctx) });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ status: 'error', message: 'Không kiểm tra được phòng lệch: ' + err.message });
+  }
+});
+
+// POST /api/fix-rooms — Ghi đè phòng trong dữ liệu y lệnh đã lấy (FINAL_PATH)
+// theo đúng phòng hiện tại trên board, cho các mã BN chỉ định (hoặc tất cả
+// BN đang lệch nếu không truyền patientIds). Sau đó chạy lại phân loại để
+// đồng bộ xuống dữ liệu đã xử lý — không cần lấy lại y lệnh từ EMR.
+router.post('/fix-rooms', async (req, res) => {
+  const ctx = getRuntimePaths(req);
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const requestedIds = Array.isArray(body.patientIds)
+    ? new Set(body.patientIds.map(x => String(x || '').trim()).filter(Boolean))
+    : null;
+
+  try {
+    const roomById = buildCurrentRoomIndexForFix(ctx);
+    if (!roomById.size) {
+      return res.json({ status: 'ok', fixed_count: 0, fixed_patient_ids: [], message: 'Chưa có phòng nào trên board để đối chiếu.' });
+    }
+
+    const finalRows = readJsonSafe(ctx.FINAL_PATH, []);
+    let fixedCount = 0;
+    const fixedIds = new Set();
+    const nextRows = (Array.isArray(finalRows) ? finalRows : []).map(row => {
+      const id = rowPatientIdForRoom(row);
+      if (!id) return row;
+      if (requestedIds && !requestedIds.has(id)) return row;
+      const correctRoom = roomById.get(id);
+      if (!correctRoom) return row;
+      const dataRoom = roomFromRowForFix(row);
+      if (!dataRoom || dataRoom === correctRoom) return row;
+      fixedCount += 1;
+      fixedIds.add(id);
+      return {
+        ...row,
+        so_phong: correctRoom,
+        room: correctRoom,
+        Vi_Tri: correctRoom,
+        vi_tri: correctRoom,
+        phong_giuong: correctRoom,
+        'Phòng': correctRoom,
+        'Vị trí': correctRoom,
+      };
+    });
+
+    if (!fixedCount) {
+      return res.json({ status: 'ok', fixed_count: 0, fixed_patient_ids: [], message: 'Không có dòng nào lệch phòng để sửa.' });
+    }
+
+    writeJsonAtomic(ctx.FINAL_PATH, nextRows);
+    await postprocessOrders(ctx, { reason: 'room_fix' });
+    appendActivity(ctx, { kind: 'workflow.board.fix_rooms', fixed_count: fixedCount, patient_ids: [...fixedIds] });
+
+    return res.json({
+      status: 'ok',
+      fixed_count: fixedCount,
+      fixed_patient_ids: [...fixedIds],
+      message: `Đã đồng bộ lại phòng cho ${fixedIds.size} bệnh nhân (${fixedCount} dòng y lệnh).`,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ status: 'error', message: 'Không sửa được phòng: ' + err.message });
   }
 });
 

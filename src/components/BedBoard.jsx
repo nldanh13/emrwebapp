@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import * as api from '../api.js';
 import BedBoardDesktop from './bedboard/BedBoardDesktop.jsx';
 import BedBoardMobile from './bedboard/BedBoardMobile.jsx';
+import RoomMismatchWarning from './bedboard/RoomMismatchWarning.jsx';
 import {
   useWindowWidth,
   loadRoomConfig,
@@ -69,6 +70,8 @@ export default function BedBoard({ toast }) {
   const [saving, setSaving] = useState(false);
   const [newRoom, setNewRoom] = useState('');
   const [search, setSearch] = useState('');
+  const [roomMismatches, setRoomMismatches] = useState([]);
+  const [fixingRooms, setFixingRooms] = useState(false);
 
   const selCount = selectedPxSet.size;
 
@@ -92,7 +95,26 @@ export default function BedBoard({ toast }) {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  const loadRoomMismatches = useCallback(() => {
+    api.getRoomMismatches()
+      .then(r => setRoomMismatches(Array.isArray(r?.mismatches) ? r.mismatches : []))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => { loadData(); loadRoomMismatches(); }, [loadData, loadRoomMismatches]);
+
+  const handleFixRooms = useCallback(async (patientIds) => {
+    setFixingRooms(true);
+    try {
+      const r = await api.fixRooms(patientIds);
+      toast?.(r.message || `Đã đồng bộ phòng cho ${r.fixed_patient_ids?.length || 0} BN.`, r.status === 'ok' ? 'ok' : 'error');
+      loadRoomMismatches();
+    } catch (e) {
+      toast?.(String(e.message || e), 'error');
+    } finally {
+      setFixingRooms(false);
+    }
+  }, [toast, loadRoomMismatches]);
 
   const handleScan = useCallback(async () => {
     setLoading(true);
@@ -105,6 +127,7 @@ export default function BedBoard({ toast }) {
           : '';
         toast?.(`Quét xong: ${r.count} BN${extra}`, 'ok');
         loadData();
+        loadRoomMismatches();
       } else {
         toast?.(r.message, 'error');
         setLoading(false);
@@ -186,12 +209,13 @@ export default function BedBoard({ toast }) {
     try {
       await api.saveBoardData(sanitizePatientsForSave(patients));
       toast?.('Đã lưu xếp phòng!', 'ok');
+      loadRoomMismatches();
     } catch (e) {
       toast?.(String(e.message), 'error');
     } finally {
       setSaving(false);
     }
-  }, [patients, toast]);
+  }, [patients, toast, loadRoomMismatches]);
 
   const commonProps = {
     roomConfig,
@@ -219,24 +243,30 @@ export default function BedBoard({ toast }) {
 
   if (isMobile) {
     return (
-      <BedBoardMobile
-        {...commonProps}
-        rooms={rooms}
-        inspectRoom={inspectRoom}
-        setInspectRoom={setInspectRoom}
-      />
+      <>
+        <RoomMismatchWarning mismatches={roomMismatches} fixing={fixingRooms} onFix={handleFixRooms} />
+        <BedBoardMobile
+          {...commonProps}
+          rooms={rooms}
+          inspectRoom={inspectRoom}
+          setInspectRoom={setInspectRoom}
+        />
+      </>
     );
   }
 
   return (
-    <BedBoardDesktop
-      {...commonProps}
-      clearRoom={clearRoom}
-      deleteRoom={deleteRoom}
-      newRoom={newRoom}
-      setNewRoom={setNewRoom}
-      addRoom={addRoom}
-      handleSaveOnly={handleSaveOnly}
-    />
+    <>
+      <RoomMismatchWarning mismatches={roomMismatches} fixing={fixingRooms} onFix={handleFixRooms} />
+      <BedBoardDesktop
+        {...commonProps}
+        clearRoom={clearRoom}
+        deleteRoom={deleteRoom}
+        newRoom={newRoom}
+        setNewRoom={setNewRoom}
+        addRoom={addRoom}
+        handleSaveOnly={handleSaveOnly}
+      />
+    </>
   );
 }
