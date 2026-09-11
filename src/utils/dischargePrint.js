@@ -108,8 +108,13 @@ function dmyStampLocal(value) {
 
 function hasOrderContentOnDay(day) {
   if (!day || typeof day !== 'object') return false;
-  const yLenh = String(day?.nhap_cham_soc?.y_lenh || '').trim();
-  const dienBien = String(day?.nhap_cham_soc?.dien_bien || '').trim();
+  // care_required/has_infusion/has_procedure là cờ đã tính sẵn ở server
+  // (buildPatientDayBundle) để biết ngày đó có việc lâm sàng thật hay không —
+  // ưu tiên dùng vì đáng tin hơn text thô. ncs.y_lenh/dien_bien (đổi tên từ
+  // nhap_cham_soc khi build day_map) là lưới an toàn cho các ca lẻ khác.
+  if (day.care_required || day.has_infusion || day.has_procedure) return true;
+  const yLenh = String(day?.ncs?.y_lenh || '').trim();
+  const dienBien = String(day?.ncs?.dien_bien || '').trim();
   return Boolean(yLenh || dienBien);
 }
 
