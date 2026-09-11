@@ -962,8 +962,13 @@ function EncounterHistoryCard({ enc, index }) {
 function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onRefresh }) {
   const [filter, setFilter] = useState('need');
   const [query, setQuery] = useState('');
-  const [showRows, setShowRows] = useState(false);
+  const [manualShowRows, setManualShowRows] = useState(false);
   const snap = snapshot || summarizeStatusRows([]);
+  // Đang có tác vụ chạy thì tự mở bảng chi tiết + khối "Mới cập nhật" — không
+  // cần bấm "Xem ca thiếu/lỗi" mới thấy từng ca vừa quét xong. Hết tác vụ thì
+  // quay lại đúng lựa chọn tay của người dùng.
+  const isTaskActive = Boolean(snap.active_task);
+  const showRows = manualShowRows || isTaskActive;
   const rows = Array.isArray(snap.rows) ? snap.rows : [];
   const counts = snap.counts || {
     running: rows.filter(r => r.state === 'running').length,
@@ -999,7 +1004,12 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
             <StatBadge label="lỗi" value={counts.error || 0} tone={counts.error ? 'danger' : 'neutral'} />
           </div>
           <div style={{ display: 'flex', gap: 5 }}>
-            <Btn onClick={() => setShowRows(v => !v)} style={{ height: 26, padding: '0 9px', fontSize: 10 }}>
+            <Btn
+              onClick={() => setManualShowRows(v => !v)}
+              disabled={isTaskActive}
+              title={isTaskActive ? 'Đang tự động hiện trong lúc chạy tác vụ' : undefined}
+              style={{ height: 26, padding: '0 9px', fontSize: 10 }}
+            >
               {showRows ? 'Ẩn danh sách' : `Xem ca thiếu/lỗi (${compactNumber(need)})`}
             </Btn>
             {onRefresh && (
@@ -1054,9 +1064,12 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
       <ResearchMonitorTable rows={rows} max={90} filter={filter} query={query} />
 
       {updateBlock?.rows?.length ? (
-        <details style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, padding: '8px 10px' }}>
-          <summary style={{ cursor: 'pointer', color: C.text2, fontSize: 10.5, fontWeight: 750 }}>
-            {updateBlock.title} · {compactNumber(updateBlock.totalChanged)} mẫu
+        <details open={isTaskActive} style={{
+          border: `1px solid ${isTaskActive ? C.blueBorder : C.border2}`, borderRadius: 8,
+          background: isTaskActive ? C.blueBg : C.surface, padding: '8px 10px',
+        }}>
+          <summary style={{ cursor: 'pointer', color: isTaskActive ? C.blue : C.text2, fontSize: 10.5, fontWeight: 750 }}>
+            {isTaskActive && <Spinner size={8} />} {updateBlock.title} · {compactNumber(updateBlock.totalChanged)} mẫu
           </summary>
           <div style={{ marginTop: 8 }}>
             <SmallRowsTable max={8} rows={updateBlock.rows} columns={[
