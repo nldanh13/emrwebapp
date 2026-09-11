@@ -54,6 +54,7 @@ export default function DataProcessingTab({ toast, workDateRange }) {
   const [showPicker, setShowPicker] = useState(false);
   const [detailsScope, setDetailsScope] = useState('all');
   const [selectedRooms, setSelectedRooms] = useState([]);
+  const [removeRooms, setRemoveRooms] = useState([]);
   const recoveryAttemptedRef = useRef(false);
 
   const rangeLabel = workDateRangeLabel(workDateRange);
@@ -132,6 +133,10 @@ export default function DataProcessingTab({ toast, workDateRange }) {
   const selectAllRooms = useCallback(() => setSelectedRooms(availableRooms), [availableRooms]);
   const clearRooms = useCallback(() => setSelectedRooms([]), []);
 
+  const toggleRemoveRoom = useCallback((room) => {
+    setRemoveRooms(prev => prev.includes(room) ? prev.filter(x => x !== room) : [...prev, room].sort());
+  }, []);
+
   const runScan = useCallback(async () => {
     setRunning('scan');
     try {
@@ -174,6 +179,31 @@ export default function DataProcessingTab({ toast, workDateRange }) {
       setRunning('');
     }
   }, [rowsForDetails, targetRowsForDetails, detailsScope, selectedRooms, dmyRange, rangeLabel, toast, load]);
+
+  const handleRemoveRooms = useCallback(async () => {
+    if (!removeRooms.length) {
+      toast?.('Chưa chọn phòng cần xoá dữ liệu.', 'error');
+      return;
+    }
+    const ok = typeof window === 'undefined' ? true : window.confirm(
+      `XOÁ DỮ LIỆU Y LỆNH ĐÃ LẤY NHẦM\n\n` +
+      `Phòng: ${removeRooms.join(', ')}\n\n` +
+      `Sẽ xoá toàn bộ dữ liệu y lệnh đã lấy cho (các) phòng này rồi xử lý & phân loại lại. Không ảnh hưởng phòng khác. Muốn lấy lại phải chạy "② Lấy chi tiết" cho phòng đó.\n\n` +
+      `Tiếp tục?`
+    );
+    if (!ok) return;
+    setRunning('remove-rooms');
+    try {
+      const r = await api.removeDetailsRooms(removeRooms);
+      toast?.(r.message || (r.removed_count ? `Đã xoá ${r.removed_count} dòng.` : 'Không có dữ liệu nào để xoá.'), r.status === 'ok' ? 'ok' : 'error');
+      setRemoveRooms([]);
+      await load();
+    } catch (e) {
+      toast?.(String(e.message || e), 'error');
+    } finally {
+      setRunning('');
+    }
+  }, [removeRooms, toast, load]);
 
   const runPostprocess = useCallback(async () => {
     setRunning('process');
@@ -269,6 +299,33 @@ export default function DataProcessingTab({ toast, workDateRange }) {
 
           <div style={{ color: C.text3, fontSize: 11, lineHeight: 1.5 }}>
             Ưu tiên danh sách đã xếp phòng; nếu chưa có sẽ dùng danh sách vừa quét.
+          </div>
+        </div>
+
+        <div style={{ background: C.surface, borderTop: `1px solid ${C.border2}`, padding: '10px 0 0', display: 'grid', gap: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.amber }}>Xoá dữ liệu lấy nhầm phòng</div>
+          <div style={{ fontSize: 11, color: C.text3, lineHeight: 1.5 }}>
+            "② Lấy chi tiết" chỉ cộng thêm/cập nhật theo phạm vi đang chọn — bỏ chọn phòng ở lần chạy sau không tự xoá dữ liệu phòng đó. Nếu lỡ tick nhầm phòng, chọn phòng bên dưới rồi xoá hẳn dữ liệu đã lấy cho phòng đó.
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {availableRooms.length === 0 && <span style={{ fontSize: 11, color: C.text3 }}>Chưa có phòng đã xếp để chọn.</span>}
+            {availableRooms.map(room => {
+              const active = removeRooms.includes(room);
+              return (
+                <button type="button" key={room} onClick={() => toggleRemoveRoom(room)} style={{
+                  padding: '5px 9px', borderRadius: 4, cursor: 'pointer', fontSize: 11, fontFamily: 'inherit',
+                  border: `1px solid ${active ? C.amberBorder : C.border}`,
+                  background: active ? C.amberBg : C.surface2,
+                  color: active ? C.amber : C.text2,
+                  fontWeight: active ? 850 : 600,
+                }}>{active ? '✓ ' : ''}{room}</button>
+              );
+            })}
+          </div>
+          <div>
+            <Btn variant="danger" onClick={handleRemoveRooms} disabled={!!running || !removeRooms.length} style={{ padding: '7px 11px', fontSize: 12 }}>
+              {running === 'remove-rooms' ? <><Spinner size={12} /> Đang xoá...</> : `🗑 Xoá dữ liệu đã chọn (${removeRooms.length})`}
+            </Btn>
           </div>
         </div>
       </div>

@@ -289,6 +289,60 @@ router.post('/run-details', async (req, res) => {
   }
 });
 
+function roomFromRowForRemoval(row) {
+  return String(
+    row?.so_phong || row?.room || row?.Vi_Tri || row?.phong_giuong ||
+    row?.['Phòng'] || row?.['Vị trí'] || row?.vi_tri || ''
+  ).trim();
+}
+
+// POST /api/remove-details-rooms — Xoá dữ liệu y lệnh đã lấy nhầm cho các
+// phòng chỉ định (vd: lỡ tick chọn thêm phòng lúc "② Lấy chi tiết"). "Lấy
+// chi tiết" chỉ CỘNG THÊM/CẬP NHẬT theo phạm vi đang chọn, không tự xoá dữ
+// liệu của phòng đã bị bỏ chọn ở lần chạy sau — nên cần endpoint riêng để
+// dọn hẳn dữ liệu phòng nhập nhầm, thay vì phải xoá toàn bộ session rồi lấy lại.
+router.post('/remove-details-rooms', async (req, res) => {
+  const ctx = getRuntimePaths(req);
+  const rooms = Array.isArray(req.body?.rooms)
+    ? [...new Set(req.body.rooms.map(r => String(r || '').trim()).filter(Boolean))]
+    : [];
+  if (!rooms.length) {
+    return res.status(400).json({ status: 'error', message: 'Chưa chọn phòng cần xoá dữ liệu.' });
+  }
+
+  try {
+    const roomSet = new Set(rooms);
+    const finalRows = readJsonSafe(ctx.FINAL_PATH, []);
+    const list = Array.isArray(finalRows) ? finalRows : [];
+    const removedRows = list.filter(row => roomSet.has(roomFromRowForRemoval(row)));
+    if (!removedRows.length) {
+      return res.json({ status: 'ok', removed_count: 0, removed_patient_ids: [], message: `Không có dữ liệu nào thuộc phòng ${rooms.join(', ')}.` });
+    }
+
+    const keptRows = list.filter(row => !roomSet.has(roomFromRowForRemoval(row)));
+    const removedPatientIds = [...new Set(removedRows.map(getRowPatientId).filter(Boolean))];
+
+    writeJsonAtomic(ctx.FINAL_PATH, keptRows);
+    await postprocessOrders(ctx, { reason: 'remove_rooms' });
+    appendActivity(ctx, {
+      kind: 'workflow.details.remove_rooms',
+      rooms,
+      removed_count: removedRows.length,
+      patient_ids: removedPatientIds,
+    });
+
+    return res.json({
+      status: 'ok',
+      removed_count: removedRows.length,
+      removed_patient_ids: removedPatientIds,
+      message: `Đã xoá ${removedRows.length} dòng dữ liệu (${removedPatientIds.length} BN) thuộc phòng ${rooms.join(', ')}.`,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ status: 'error', message: 'Không xoá được dữ liệu phòng: ' + err.message });
+  }
+});
+
 // POST /api/run-details-one — Chỉ lấy lại y lệnh cho 1 người bệnh, rồi merge vào dữ liệu hiện có
 router.post('/run-details-one', async (req, res) => {
   const ctx = getRuntimePaths(req);
