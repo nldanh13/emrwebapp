@@ -4218,10 +4218,10 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
   let surgeryRows = readCsvTable(path.join(runPath, 'hchanh_surgery.csv'), Number.MAX_SAFE_INTEGER).rows;
   let orderRows = readCsvTable(path.join(runPath, 'hchanh_order_history.csv'), Number.MAX_SAFE_INTEGER).rows;
 
-  // hchanh_fetch.py spawn 1 tiến trình Chrome/đăng nhập MỚI cho từng ca (khác
-  // với script XN&CĐHA — dùng lại 1 Chrome cho cả lô). Đo lại tổng số lần
-  // mở Chrome + thời gian mỗi lần, ghi vào action_log.txt để có số liệu cụ
-  // thể đánh giá tải lên server EMR, thay vì chỉ ước lượng cảm tính.
+  // hchanh_fetch.py gộp nhiều BN vào 1 phiên Chrome/đăng nhập theo lô (xem
+  // HCHANH_BATCH_SIZE bên dưới), giống cách script XN&CĐHA dùng lại 1 Chrome
+  // cho cả lô. Đo lại tổng số lô + thời gian mỗi lô, ghi vào action_log.txt để
+  // có số liệu cụ thể đánh giá tải lên server EMR, thay vì chỉ ước lượng cảm tính.
   const stats = { total: selectedRows.length, processed: 0, skipped: 0, ok: 0, attention: 0, error: 0, cancelled: false, chromeCycles: 0, chromeCycleMs: 0 };
   appendResearchRunLog(runPath, `[${new Date().toLocaleString('vi-VN')}] Bắt đầu lấy ${runLabel}: ${selectedRows.length} ca | files=${wantedFiles.join(',')}`);
   appendActivity(ctx, {
@@ -4232,54 +4232,71 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
     files: wantedFiles,
   });
 
-  for (let idx = 0; idx < selectedRows.length; idx += 1) {
-    // Job hành chánh spawn một Python worker cho từng ca. Cờ huỷ phải được kiểm tra
-    // ở cấp vòng lặp, nếu không kill ca hiện tại xong sẽ lập tức spawn ca kế tiếp.
+  // hchanh_fetch.py hỗ trợ gộp nhiều BN vào 1 phiên Chrome/đăng nhập khi --input là
+  // JSON array (xem run_hchanh_fetch_batch). Thay vì spawn 1 tiến trình/ca (mỗi ca
+  // 1 Chrome + 1 lần đăng nhập EMR), gộp tối đa HCHANH_BATCH_SIZE ca liên tiếp vào
+  // 1 tiến trình worker — Chrome chỉ đóng+mở lại (đăng nhập lại) sau mỗi lô, giảm
+  // hẳn số lần mở/tắt Chrome và đăng nhập dồn dập lên server EMR.
+  const HCHANH_BATCH_SIZE = 10;
+
+  for (let chunkStart = 0; chunkStart < selectedRows.length; chunkStart += HCHANH_BATCH_SIZE) {
     if (isCancelRequested(ctx.sid)) {
       stats.cancelled = true;
-      appendResearchRunLog(runPath, `[${logPrefix}] ĐÃ DỪNG theo yêu cầu trước ca ${idx + 1}/${selectedRows.length}; không spawn worker mới.`);
+      appendResearchRunLog(runPath, `[${logPrefix}] ĐÃ DỪNG theo yêu cầu trước lô ${Math.floor(chunkStart / HCHANH_BATCH_SIZE) + 1}; không spawn worker mới.`);
       break;
     }
 
-    const row = selectedRows[idx];
-    const meta = researchHchanhMeta(row, sourceRunId);
-    const key = meta.source_key;
-    const display = `${idx + 1}/${selectedRows.length} ${meta.ma_bn} - ${meta.ho_ten || ''}`.trim();
-    if (!force && progress[key]?.status === 'done') {
-      stats.skipped += 1;
-      continue;
+    const chunkRows = selectedRows.slice(chunkStart, chunkStart + HCHANH_BATCH_SIZE);
+    // Trong lô, vẫn lọc bỏ các ca đã done/fail gần đây giống hệt logic cũ (từng ca),
+    // chỉ những ca THỰC SỰ cần fetch mới được đưa vào batchItems để gộp 1 Chrome.
+    const batchItems = [];
+    for (let offset = 0; offset < chunkRows.length; offset += 1) {
+      const idx = chunkStart + offset;
+      const row = chunkRows[offset];
+      const meta = researchHchanhMeta(row, sourceRunId);
+      const key = meta.source_key;
+      const display = `${idx + 1}/${selectedRows.length} ${meta.ma_bn} - ${meta.ho_ten || ''}`.trim();
+      if (!force && progress[key]?.status === 'done') {
+        stats.skipped += 1;
+        continue;
+      }
+
+      const failKey = hchanhFailureCacheKey(meta, wantedFiles, 'Hoàn tất');
+      const previousFailure = failureCache[failKey];
+      if (!force && hchanhFailureCacheIsFresh(previousFailure) && ['no_patient_link', 'no_url'].includes(String(previousFailure.reason || ''))) {
+        stats.skipped += 1;
+        progress[key] = {
+          ...(progress[key] || {}),
+          ma_bn: meta.ma_bn, ho_ten: meta.ho_ten, research_code: meta.research_code,
+          encounter_id: key, admission_date: meta.admission_raw || '', discharge_date: meta.discharge_raw || '',
+          status: 'skipped_recent_failure',
+          skipped_at: nowIso(),
+          skipped_reason: previousFailure.reason,
+          previous_failure_at: previousFailure.ts,
+          files: wantedFiles,
+        };
+        writeJsonAtomic(progressPath, progress);
+        appendResearchRunLog(runPath, `[${logPrefix}] BỎ QUA ${display}: đã fail gần đây cùng lý do (${previousFailure.reason}) lúc ${previousFailure.ts}`);
+        appendResearchCaseTrace(runPath, {
+          case_id: key, source_key: key, index: idx + 1, total: selectedRows.length, ma_bn: meta.ma_bn, ho_ten: meta.ho_ten, research_code: meta.research_code, date_from: meta.date_from || fallbackDateFrom || '', date_to: meta.date_to || fallbackDateTo || '', files: wantedFiles, mode: normalizedMode,
+        }, [
+          { ts: nowIso(), tag: 'CASE.START', step: 'Bắt đầu case nhưng phát hiện lỗi lặp gần đây', screen: 'server/routes/research.js', sees: display, takes: wantedFiles.join(','), writes: 'skip case', target: progressPath },
+          { ts: nowIso(), tag: 'WARN', step: 'Bỏ qua do BN đã fail gần đây cùng lý do', screen: 'failure_cache', sees: `reason=${previousFailure.reason}; previous=${previousFailure.ts}`, takes: 'failure cache', writes: 'progress.status=skipped_recent_failure', target: failureCachePath },
+        ], { mode: normalizedMode, status: 'skipped_recent_failure', files: wantedFiles, counts: {} });
+        continue;
+      }
+
+      const dateFrom = meta.date_from || fallbackDateFrom || '';
+      const dateTo = meta.date_to || fallbackDateTo || dateFrom || '';
+      batchItems.push({ idx, row, meta, key, display, dateFrom, dateTo });
     }
 
-    const failKey = hchanhFailureCacheKey(meta, wantedFiles, 'Hoàn tất');
-    const previousFailure = failureCache[failKey];
-    if (!force && hchanhFailureCacheIsFresh(previousFailure) && ['no_patient_link', 'no_url'].includes(String(previousFailure.reason || ''))) {
-      stats.skipped += 1;
-      progress[key] = {
-        ...(progress[key] || {}),
-        ma_bn: meta.ma_bn, ho_ten: meta.ho_ten, research_code: meta.research_code,
-        encounter_id: key, admission_date: meta.admission_raw || '', discharge_date: meta.discharge_raw || '',
-        status: 'skipped_recent_failure',
-        skipped_at: nowIso(),
-        skipped_reason: previousFailure.reason,
-        previous_failure_at: previousFailure.ts,
-        files: wantedFiles,
-      };
-      writeJsonAtomic(progressPath, progress);
-      appendResearchRunLog(runPath, `[${logPrefix}] BỎ QUA ${display}: đã fail gần đây cùng lý do (${previousFailure.reason}) lúc ${previousFailure.ts}`);
-      appendResearchCaseTrace(runPath, {
-        case_id: key, source_key: key, index: idx + 1, total: selectedRows.length, ma_bn: meta.ma_bn, ho_ten: meta.ho_ten, research_code: meta.research_code, date_from: meta.date_from || fallbackDateFrom || '', date_to: meta.date_to || fallbackDateTo || '', files: wantedFiles, mode: normalizedMode,
-      }, [
-        { ts: nowIso(), tag: 'CASE.START', step: 'Bắt đầu case nhưng phát hiện lỗi lặp gần đây', screen: 'server/routes/research.js', sees: display, takes: wantedFiles.join(','), writes: 'skip case', target: progressPath },
-        { ts: nowIso(), tag: 'WARN', step: 'Bỏ qua do BN đã fail gần đây cùng lý do', screen: 'failure_cache', sees: `reason=${previousFailure.reason}; previous=${previousFailure.ts}`, takes: 'failure cache', writes: 'progress.status=skipped_recent_failure', target: failureCachePath },
-      ], { mode: normalizedMode, status: 'skipped_recent_failure', files: wantedFiles, counts: {} });
-      continue;
-    }
+    if (!batchItems.length) continue;
 
-    const inputPath = path.join(rawDir, `input_${String(idx + 1).padStart(4, '0')}_${safeFilePart(meta.ma_bn)}_${key}.json`);
-    const outPath = path.join(rawDir, `output_${String(idx + 1).padStart(4, '0')}_${safeFilePart(meta.ma_bn)}_${key}.json`);
-    const dateFrom = meta.date_from || fallbackDateFrom || '';
-    const dateTo = meta.date_to || fallbackDateTo || dateFrom || '';
-    const inputPayload = {
+    const batchNo = Math.floor(chunkStart / HCHANH_BATCH_SIZE) + 1;
+    const batchInputPath = path.join(rawDir, `batch_input_${String(batchNo).padStart(4, '0')}.json`);
+    const batchOutputPath = path.join(rawDir, `batch_output_${String(batchNo).padStart(4, '0')}.json`);
+    const batchPayload = batchItems.map(({ row, meta, key, dateFrom, dateTo }) => ({
       ...row,
       ma_bn: meta.ma_bn,
       ho_ten: meta.ho_ten,
@@ -4288,17 +4305,24 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
       date_to: dateTo,
       inpatient_status: 'Hoàn tất',
       research_mode: true,
-    };
-    writeJsonAtomic(inputPath, inputPayload);
-    appendResearchRunLog(runPath, `[${logPrefix}] [${display}] ${dateFrom || '—'} → ${dateTo || '—'} | ${wantedFiles.join(',')}`);
+      _progress_key: key,
+    }));
+    writeJsonAtomic(batchInputPath, batchPayload);
+    appendResearchRunLog(runPath, `[${logPrefix}] Lô ${batchNo}: ${batchItems.length} ca (${batchItems[0].display} … ${batchItems[batchItems.length - 1].display}) | ${wantedFiles.join(',')} | 1 Chrome dùng chung cho cả lô`);
 
-    progress[key] = { ...(progress[key] || {}), ma_bn: meta.ma_bn, ho_ten: meta.ho_ten, research_code: meta.research_code, encounter_id: key, admission_date: meta.admission_raw || '', discharge_date: meta.discharge_raw || '', status: 'running', started_at: nowIso(), files: wantedFiles };
+    for (const item of batchItems) {
+      progress[item.key] = { ...(progress[item.key] || {}), ma_bn: item.meta.ma_bn, ho_ten: item.meta.ho_ten, research_code: item.meta.research_code, encounter_id: item.key, admission_date: item.meta.admission_raw || '', discharge_date: item.meta.discharge_raw || '', status: 'queued', files: wantedFiles };
+    }
     writeJsonAtomic(progressPath, progress);
 
-    const args = ['--input', inputPath, '--out', outPath, '--scope', 'discharge', '--files', wantedFiles.join(',')];
-    if (dateFrom) args.push('--from', dateFrom);
-    if (dateTo) args.push('--to', dateTo);
-    args.push('--status', 'Hoàn tất');
+    // Không truyền --from/--to chung cho cả lô: mỗi ca trong batchPayload đã có
+    // date_from/date_to riêng, worker Python dùng giá trị của từng dòng khi field
+    // top-level rỗng (xem _run_hchanh_fetch_core).
+    const args = [
+      '--input', batchInputPath, '--out', batchOutputPath, '--scope', 'discharge',
+      '--files', wantedFiles.join(','), '--status', 'Hoàn tất',
+      '--batch-size', String(HCHANH_BATCH_SIZE), '--progress-file', progressPath,
+    ];
     if (headless) args.push('--headless');
 
     let result;
@@ -4311,127 +4335,121 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
     } finally {
       unregisterCancel(ctx.sid);
     }
+    // Không biết chính xác Chrome đã mở lại mấy lần trong lô (chỉ worker Python biết
+    // khi nào phải soft-switch thất bại và mở lại) — coi tối thiểu 1 Chrome/lô để có
+    // con số tham khảo trong log, số thật có thể cao hơn nếu EMR lỗi giữa lô.
     stats.chromeCycles += 1;
     stats.chromeCycleMs += Date.now() - chromeCycleStartedAt;
 
     const cancelRequested = isCancelRequested(ctx.sid);
-    stats.processed += 1;
+    const batchOutput = readJsonSafe(batchOutputPath, {}) || {};
+    if (!saveRaw) {
+      try { fs.rmSync(batchInputPath, { force: true }); } catch (_) {}
+      try { fs.rmSync(batchOutputPath, { force: true }); } catch (_) {}
+    }
 
-    // Nếu worker bị kill vì người dùng bấm Dừng, đây không phải lỗi dữ liệu của BN.
-    // Đưa ca đang dở về pending_refetch để lần sau chạy lại, rồi thoát hẳn vòng lặp.
-    if (cancelRequested && (result.spawnError || result.killedByTimeout || result.code !== 0)) {
-      stats.cancelled = true;
+    for (const item of batchItems) {
+      const { idx, row, meta, key, display, dateFrom, dateTo } = item;
+      stats.processed += 1;
+      const output = batchOutput[key];
+
+      // Nếu worker bị kill vì người dùng bấm Dừng và ca này chưa kịp có kết quả
+      // trong batchOutput, đây không phải lỗi dữ liệu của BN — đưa về pending_refetch.
+      if (cancelRequested && !output) {
+        stats.cancelled = true;
+        progress[key] = { ...progress[key], status: 'pending_refetch', cancelled_at: nowIso(), error: '' };
+        continue;
+      }
+
+      if (!output) {
+        stats.error += 1;
+        const message = result.spawnError || (result.killedByTimeout ? 'timeout' : (result.code !== 0 ? fmtPyError('hchanh_fetch.py lỗi', result) : 'không có kết quả trong output lô (worker có thể đã dừng giữa chừng)'));
+        progress[key] = { ...progress[key], status: 'error', finished_at: nowIso(), error: message };
+        appendResearchRunLog(runPath, `[${logPrefix}] LỖI ${display}: ${String(message).split('\n')[0]}`);
+        appendResearchCaseTrace(runPath, {
+          case_id: key, source_key: key, index: idx + 1, total: selectedRows.length, ma_bn: meta.ma_bn, ho_ten: meta.ho_ten, research_code: meta.research_code, date_from: dateFrom, date_to: dateTo, files: wantedFiles, mode: normalizedMode,
+        }, [
+          { ts: nowIso(), tag: 'CASE.START', step: 'Bắt đầu xử lý case nhưng worker lỗi', screen: 'server/routes/research.js', sees: display, takes: wantedFiles.join(','), writes: 'progress error', target: progressPath },
+          { ts: nowIso(), tag: 'ERROR', step: 'hchanh_fetch.py (lô) trả lỗi', screen: 'worker/hchanh_fetch.py', sees: String(message).split('\n')[0], takes: 'stderr/stdout', writes: 'progress.status=error', target: progressPath },
+        ], { mode: normalizedMode, status: 'error', files: wantedFiles, counts: {} });
+        writeJsonAtomic(progressPath, progress);
+        continue;
+      }
+
+      const workerTrace = Array.isArray(output?._case_trace) ? output._case_trace : [];
+      const flat = hchanhFetchOutputToRows(output, row, sourceRunId);
+      // Chỉ thay dữ liệu cũ của case này khi lần fetch này THỰC SỰ có dòng mới
+      // cho đúng bảng đó. Một lần scrape lỗi/rỗng (worker vẫn thoát code 0 nhưng
+      // _fetch_status = empty/no_session/timeout) không được phép xóa mất dữ
+      // liệu tốt đã lấy được ở lần trước — status của case vẫn có thể đọc là
+      // partial/done trong khi dữ liệu thật đã bị thay bằng rỗng nếu không giữ.
+      if (flat.profileRows.length) profileRows = dedupeRowsByStableKey(removeResearchSourceKey(profileRows, key).concat(flat.profileRows), ['Research key', 'Mã BN', 'Ngày vào viện', 'Ngày ra viện']);
+      if (flat.dischargeRows.length) dischargeRows = dedupeRowsByStableKey(removeResearchSourceKey(dischargeRows, key).concat(flat.dischargeRows), ['Research key', 'Mã BN', 'Ngày vào viện', 'Ngày ra viện', 'Chẩn đoán ra viện']);
+      if (flat.surgeryRows.length) surgeryRows = dedupeRowsByStableKey(removeResearchSourceKey(surgeryRows, key).concat(flat.surgeryRows), ['Research key', 'Mã BN', 'Ngày phẫu thuật', 'Tên phẫu thuật', 'Phương pháp phẫu thuật']);
+      if (flat.orderRows.length) orderRows = dedupeRowsByStableKey(removeResearchSourceKey(orderRows, key).concat(flat.orderRows), ['Research key', 'Mã BN', 'TG y lệnh', 'Tên y lệnh', 'Y lệnh khác']);
+
+      const sc = statusCountsFromHchanhOutput(output);
+      const csvTraceEvents = [
+        { ts: nowIso(), tag: 'OUTPUT.WRITE_CSV', step: 'Backend ghi bảng hchanh_profile.csv', screen: 'server/routes/research.js', sees: `profileRows=${flat.profileRows.length}; total=${profileRows.length}`, takes: 'output.profile', writes: 'hchanh_profile.csv', target: path.join(runPath, 'hchanh_profile.csv') },
+        { ts: nowIso(), tag: 'OUTPUT.WRITE_CSV', step: 'Backend ghi bảng hchanh_discharge.csv', screen: 'server/routes/research.js', sees: `dischargeRows=${flat.dischargeRows.length}; total=${dischargeRows.length}`, takes: 'output.discharge', writes: 'hchanh_discharge.csv', target: path.join(runPath, 'hchanh_discharge.csv') },
+        { ts: nowIso(), tag: 'OUTPUT.WRITE_CSV', step: 'Backend ghi bảng hchanh_surgery.csv', screen: 'server/routes/research.js', sees: `surgeryRows=${flat.surgeryRows.length}; total=${surgeryRows.length}`, takes: 'output.surgery.surgeries', writes: 'hchanh_surgery.csv', target: path.join(runPath, 'hchanh_surgery.csv') },
+        { ts: nowIso(), tag: 'OUTPUT.WRITE_CSV', step: 'Backend ghi bảng hchanh_order_history.csv', screen: 'server/routes/research.js', sees: `orderRows=${flat.orderRows.length}; total=${orderRows.length}`, takes: 'output.order_history.rows', writes: 'hchanh_order_history.csv', target: path.join(runPath, 'hchanh_order_history.csv') },
+      ];
+      const failureSignature = hchanhFailureSignatureFromTrace(workerTrace, output);
+      if (sc.error && failureSignature) {
+        failureCache[failKey] = {
+          ts: nowIso(), reason: failureSignature, ma_bn: meta.ma_bn, ho_ten: meta.ho_ten, files: wantedFiles, source_key: key,
+          rows: { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length },
+        };
+        writeJsonAtomic(failureCachePath, failureCache);
+      } else if (!sc.error && failureCache[failKey]) {
+        delete failureCache[failKey];
+        writeJsonAtomic(failureCachePath, failureCache);
+      }
+      if (sc.error) stats.error += 1;
+      else if (sc.attention) stats.attention += 1;
+      else stats.ok += 1;
       progress[key] = {
-        ...progress[key],
-        status: 'pending_refetch',
-        cancelled_at: nowIso(),
-        error: '',
+        ...progress[key], status: sc.error ? 'error' : (sc.attention ? 'partial' : 'done'),
+        finished_at: nowIso(), output: path.basename(batchOutputPath), counts: sc,
+        rows: { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length },
       };
       writeJsonAtomic(progressPath, progress);
-      appendResearchRunLog(runPath, `[${logPrefix}] ĐÃ DỪNG ${display}: ca đang dở sẽ được lấy lại ở lần Cập nhật sau.`);
-      break;
+      const savedTrace = appendResearchCaseTrace(runPath, {
+        case_id: key,
+        source_key: key,
+        index: idx + 1,
+        total: selectedRows.length,
+        ma_bn: meta.ma_bn,
+        ho_ten: meta.ho_ten,
+        research_code: meta.research_code,
+        date_from: dateFrom,
+        date_to: dateTo,
+        files: wantedFiles,
+        mode: normalizedMode,
+      }, workerTrace.concat(csvTraceEvents), {
+        mode: normalizedMode,
+        status: progress[key].status,
+        files: wantedFiles,
+        counts: { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length },
+        output: saveRaw ? batchOutputPath : path.basename(batchOutputPath),
+      });
+      appendResearchRunLog(runPath, `[TRACE][CASE.END] ${display}: ghi case trace ${savedTrace?.events?.length || 0} bước vào ${CASE_TRACE_RECENT_JSON}`);
+      appendResearchRunLog(runPath, `[${logPrefix}] Xong ${display}: status=${progress[key].status} | profile=${flat.profileRows.length}, discharge=${flat.dischargeRows.length}, surgery=${flat.surgeryRows.length}, order=${flat.orderRows.length}`);
     }
 
-    if (result.spawnError || result.killedByTimeout || result.code !== 0) {
-      stats.error += 1;
-      const message = result.spawnError || (result.killedByTimeout ? 'timeout' : fmtPyError('hchanh_fetch.py lỗi', result));
-      progress[key] = { ...progress[key], status: 'error', finished_at: nowIso(), error: message };
-      appendResearchRunLog(runPath, `[${logPrefix}] LỖI ${display}: ${String(message).split('\n')[0]}`);
-      appendResearchCaseTrace(runPath, {
-        case_id: key, source_key: key, index: idx + 1, total: selectedRows.length, ma_bn: meta.ma_bn, ho_ten: meta.ho_ten, research_code: meta.research_code, date_from: dateFrom, date_to: dateTo, files: wantedFiles, mode: normalizedMode,
-      }, [
-        { ts: nowIso(), tag: 'CASE.START', step: 'Bắt đầu xử lý case nhưng worker lỗi', screen: 'server/routes/research.js', sees: display, takes: wantedFiles.join(','), writes: 'progress error', target: progressPath },
-        { ts: nowIso(), tag: 'ERROR', step: 'hchanh_fetch.py trả lỗi', screen: 'worker/hchanh_fetch.py', sees: String(message).split('\n')[0], takes: 'stderr/stdout', writes: 'progress.status=error', target: progressPath },
-      ], { mode: normalizedMode, status: 'error', files: wantedFiles, counts: {} });
-      writeJsonAtomic(progressPath, progress);
-      continue;
-    }
-
-    const output = readJsonSafe(outPath, {}) || {};
-    const workerTrace = Array.isArray(output?._case_trace) ? output._case_trace : [];
-    // Không ghi lại dữ liệu Nghiên cứu vừa quét vào kho dùng chung của Hành
-    // chánh: kho đó đóng dấu "fetched_at" bằng thời điểm ghi (bây giờ), trong
-    // khi Nghiên cứu có thể đang xử lý một đợt nằm viện CŨ (không theo thứ tự
-    // thời gian thực). Nếu ghi vào đây, Kiểm hồ sơ (đọc lại kho này và chỉ tin
-    // dữ liệu có fetched_at mới hơn thời điểm ra viện của ca đang kiểm) có thể
-    // bị đánh lừa nhận nhầm dữ liệu đợt cũ là dữ liệu đợt hiện tại — dữ liệu
-    // Kiểm hồ sơ/Nghiên cứu phải luôn đúng nên không đánh đổi lấy việc tránh
-    // quét lại ở đây.
-    if (!saveRaw) {
-      try { fs.rmSync(inputPath, { force: true }); } catch (_) {}
-      try { fs.rmSync(outPath, { force: true }); } catch (_) {}
-    }
-    const flat = hchanhFetchOutputToRows(output, row, sourceRunId);
-    // Chỉ thay dữ liệu cũ của case này khi lần fetch này THỰC SỰ có dòng mới
-    // cho đúng bảng đó. Một lần scrape lỗi/rỗng (worker vẫn thoát code 0 nhưng
-    // _fetch_status = empty/no_session/timeout) không được phép xóa mất dữ
-    // liệu tốt đã lấy được ở lần trước — status của case vẫn có thể đọc là
-    // partial/done trong khi dữ liệu thật đã bị thay bằng rỗng nếu không giữ.
-    if (flat.profileRows.length) profileRows = dedupeRowsByStableKey(removeResearchSourceKey(profileRows, key).concat(flat.profileRows), ['Research key', 'Mã BN', 'Ngày vào viện', 'Ngày ra viện']);
-    if (flat.dischargeRows.length) dischargeRows = dedupeRowsByStableKey(removeResearchSourceKey(dischargeRows, key).concat(flat.dischargeRows), ['Research key', 'Mã BN', 'Ngày vào viện', 'Ngày ra viện', 'Chẩn đoán ra viện']);
-    if (flat.surgeryRows.length) surgeryRows = dedupeRowsByStableKey(removeResearchSourceKey(surgeryRows, key).concat(flat.surgeryRows), ['Research key', 'Mã BN', 'Ngày phẫu thuật', 'Tên phẫu thuật', 'Phương pháp phẫu thuật']);
-    if (flat.orderRows.length) orderRows = dedupeRowsByStableKey(removeResearchSourceKey(orderRows, key).concat(flat.orderRows), ['Research key', 'Mã BN', 'TG y lệnh', 'Tên y lệnh', 'Y lệnh khác']);
-
+    // CSV union được ghi 1 lần sau khi xử lý xong cả lô (đủ, vì mỗi ca trong lô đã
+    // gộp dòng của nó vào profileRows/dischargeRows/surgeryRows/orderRows ở trên).
     writeCsvUnion(path.join(runPath, 'hchanh_profile.csv'), profileRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Giới', 'Ngày sinh', 'Tuổi', 'Địa chỉ', 'Điện thoại', 'Số CMND', 'Đối tượng', 'Số thẻ', 'Ngày vào viện', 'Ngày ra viện', 'Chẩn đoán', 'Research key']);
     writeCsvUnion(path.join(runPath, 'hchanh_discharge.csv'), dischargeRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Ngày vào viện', 'Ngày ra viện', 'Thời gian điều trị', 'Chẩn đoán', 'Chẩn đoán ra viện', 'Bệnh kèm', 'Biến chứng', 'Tai biến', 'Tình trạng ra', 'Research key']);
     writeCsvUnion(path.join(runPath, 'hchanh_surgery.csv'), surgeryRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Ngày vào viện', 'Ngày ra viện', 'Ngày phẫu thuật', 'Tên phẫu thuật', 'Phương pháp phẫu thuật', 'PPVC', 'Phân loại PT', 'Trạng thái', 'Chẩn đoán trước mổ', 'Chẩn đoán sau mổ', 'Research key']);
     writeCsvUnion(path.join(runPath, 'hchanh_order_history.csv'), orderRows, ['Mã NC', 'Mã BN', 'Họ tên', 'TG y lệnh', 'Ngày', 'Bác sĩ', 'Diễn biến', 'Tên y lệnh', 'Y lệnh khác', 'KQ', 'Trạng thái', 'Research key']);
 
-    const csvTraceEvents = [
-      { ts: nowIso(), tag: 'OUTPUT.WRITE_CSV', step: 'Backend ghi bảng hchanh_profile.csv', screen: 'server/routes/research.js', sees: `profileRows=${flat.profileRows.length}; total=${profileRows.length}`, takes: 'output.profile', writes: 'hchanh_profile.csv', target: path.join(runPath, 'hchanh_profile.csv') },
-      { ts: nowIso(), tag: 'OUTPUT.WRITE_CSV', step: 'Backend ghi bảng hchanh_discharge.csv', screen: 'server/routes/research.js', sees: `dischargeRows=${flat.dischargeRows.length}; total=${dischargeRows.length}`, takes: 'output.discharge', writes: 'hchanh_discharge.csv', target: path.join(runPath, 'hchanh_discharge.csv') },
-      { ts: nowIso(), tag: 'OUTPUT.WRITE_CSV', step: 'Backend ghi bảng hchanh_surgery.csv', screen: 'server/routes/research.js', sees: `surgeryRows=${flat.surgeryRows.length}; total=${surgeryRows.length}`, takes: 'output.surgery.surgeries', writes: 'hchanh_surgery.csv', target: path.join(runPath, 'hchanh_surgery.csv') },
-      { ts: nowIso(), tag: 'OUTPUT.WRITE_CSV', step: 'Backend ghi bảng hchanh_order_history.csv', screen: 'server/routes/research.js', sees: `orderRows=${flat.orderRows.length}; total=${orderRows.length}`, takes: 'output.order_history.rows', writes: 'hchanh_order_history.csv', target: path.join(runPath, 'hchanh_order_history.csv') },
-    ];
-
-    const sc = statusCountsFromHchanhOutput(output);
-    const failureSignature = hchanhFailureSignatureFromTrace(workerTrace, output);
-    if (sc.error && failureSignature) {
-      failureCache[failKey] = {
-        ts: nowIso(), reason: failureSignature, ma_bn: meta.ma_bn, ho_ten: meta.ho_ten, files: wantedFiles, source_key: key,
-        rows: { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length },
-      };
-      writeJsonAtomic(failureCachePath, failureCache);
-    } else if (!sc.error && failureCache[failKey]) {
-      delete failureCache[failKey];
-      writeJsonAtomic(failureCachePath, failureCache);
-    }
-    if (sc.error) stats.error += 1;
-    else if (sc.attention) stats.attention += 1;
-    else stats.ok += 1;
-    progress[key] = {
-      ...progress[key], status: sc.error ? 'error' : (sc.attention ? 'partial' : 'done'),
-      finished_at: nowIso(), output: path.basename(outPath), counts: sc,
-      rows: { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length },
-    };
-    writeJsonAtomic(progressPath, progress);
-    const savedTrace = appendResearchCaseTrace(runPath, {
-      case_id: key,
-      source_key: key,
-      index: idx + 1,
-      total: selectedRows.length,
-      ma_bn: meta.ma_bn,
-      ho_ten: meta.ho_ten,
-      research_code: meta.research_code,
-      date_from: dateFrom,
-      date_to: dateTo,
-      files: wantedFiles,
-      mode: normalizedMode,
-    }, workerTrace.concat(csvTraceEvents), {
-      mode: normalizedMode,
-      status: progress[key].status,
-      files: wantedFiles,
-      counts: { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length },
-      output: saveRaw ? outPath : path.basename(outPath),
-    });
-    appendResearchRunLog(runPath, `[TRACE][CASE.END] ${display}: ghi case trace ${savedTrace?.events?.length || 0} bước vào ${CASE_TRACE_RECENT_JSON}`);
-    appendResearchRunLog(runPath, `[${logPrefix}] Xong ${display}: status=${progress[key].status} | profile=${flat.profileRows.length}, discharge=${flat.dischargeRows.length}, surgery=${flat.surgeryRows.length}, order=${flat.orderRows.length}`);
-
-    // Trường hợp người dùng bấm Dừng đúng lúc worker vừa hoàn tất: giữ kết quả ca vừa xong
-    // nhưng tuyệt đối không chuyển sang ca tiếp theo.
+    // Trường hợp người dùng bấm Dừng đúng lúc lô vừa hoàn tất: giữ kết quả các ca đã
+    // xong trong lô nhưng tuyệt đối không chuyển sang lô tiếp theo.
     if (cancelRequested) {
       stats.cancelled = true;
-      appendResearchRunLog(runPath, `[${logPrefix}] ĐÃ DỪNG sau ${display}; kết quả ca vừa hoàn tất đã được giữ.`);
+      appendResearchRunLog(runPath, `[${logPrefix}] ĐÃ DỪNG sau lô ${batchNo}; kết quả các ca đã hoàn tất trong lô đã được giữ.`);
       break;
     }
   }
@@ -4440,7 +4458,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
   if (stats.chromeCycles) {
     const avgSec = (stats.chromeCycleMs / stats.chromeCycles / 1000).toFixed(1);
     const totalMin = (stats.chromeCycleMs / 60000).toFixed(1);
-    appendResearchRunLog(runPath, `[${logPrefix}] 🔐 Đã mở Chrome + đăng nhập EMR ${stats.chromeCycles} lần (1 lần/ca, mỗi tiến trình worker mở Chrome riêng) trong ${totalMin} phút — trung bình ${avgSec} giây/ca.`);
+    appendResearchRunLog(runPath, `[${logPrefix}] 🔐 Đã chạy ${stats.chromeCycles} lô (gộp tối đa ${HCHANH_BATCH_SIZE} ca/Chrome/lô, chỉ đăng nhập lại EMR khi sang lô mới) trong ${totalMin} phút — trung bình ${avgSec} giây/lô.`);
   }
   appendActivity(ctx, {
     kind: 'workflow.research.fetch_hchanh.finish',
