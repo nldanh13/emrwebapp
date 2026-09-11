@@ -4020,25 +4020,41 @@ const HCHANH_CURRENT_CASE_SOURCES = [
 // tự lặp qua nhiều ca trong 1 tiến trình như lay_lich_su_xn_cdha.py).
 function readCurrentHchanhCase(runDir) {
   if (!runDir) return null;
+  // Nếu 1 lần chạy trước bị crash/kill đúng lúc đang xử lý 1 ca, entry đó
+  // giữ nguyên status='running' vĩnh viễn trên đĩa (không ai ghi đè nữa nếu
+  // ca đó không sớm được thử lại). Nếu chỉ lấy entry 'running' ĐẦU TIÊN gặp
+  // trong object, mấy entry treo kiểu này sẽ che mất ca đang chạy THẬT — vì
+  // vậy phải so started_at, chọn đúng entry 'running' MỚI NHẤT (worker luôn
+  // set lại started_at=now mỗi lần đánh dấu 1 ca là running, kể cả lần thử
+  // lại), để tự động bỏ qua các entry treo cũ.
+  let best = null;
+  let bestModuleLabel = '';
+  let bestTs = -Infinity;
   for (const [file, moduleLabel] of HCHANH_CURRENT_CASE_SOURCES) {
     const progress = readJsonSafe(path.join(runDir, file), {}) || {};
     for (const item of Object.values(progress)) {
       if (!item || typeof item !== 'object' || item.status !== 'running') continue;
-      const files = Array.isArray(item.files) ? item.files.join(', ') : '';
-      return {
-        case_id: clipTraceText(item.encounter_id || item.ma_bn || '', 220),
-        ma_bn: clipTraceText(item.ma_bn || '', 80),
-        ho_ten: clipTraceText(item.ho_ten || '', 160),
-        research_code: clipTraceText(item.research_code || '', 120),
-        index: 0,
-        total: 0,
-        started_at: clipTraceText(item.started_at || '', 40),
-        events_count: 0,
-        last_step: { tag: 'RUNNING', step: `Đang lấy ${moduleLabel}`, takes: files },
-      };
+      const ts = Date.parse(item.started_at || '') || 0;
+      if (ts >= bestTs) {
+        bestTs = ts;
+        best = item;
+        bestModuleLabel = moduleLabel;
+      }
     }
   }
-  return null;
+  if (!best) return null;
+  const files = Array.isArray(best.files) ? best.files.join(', ') : '';
+  return {
+    case_id: clipTraceText(best.encounter_id || best.ma_bn || '', 220),
+    ma_bn: clipTraceText(best.ma_bn || '', 80),
+    ho_ten: clipTraceText(best.ho_ten || '', 160),
+    research_code: clipTraceText(best.research_code || '', 120),
+    index: 0,
+    total: 0,
+    started_at: clipTraceText(best.started_at || '', 40),
+    events_count: 0,
+    last_step: { tag: 'RUNNING', step: `Đang lấy ${bestModuleLabel}`, takes: files },
+  };
 }
 
 function readResearchCaseTrace(runDir, limit = CASE_TRACE_RECENT_LIMIT) {
