@@ -1,4 +1,5 @@
 import { C } from '../tokens.js';
+import { isDischargeContradictedByLaterCare } from '../utils/dischargePrint.js';
 
 function normalizeText(value) {
   return String(value || '')
@@ -148,6 +149,8 @@ export function getPatientNotices(patient = {}, activeDay = null) {
   const notices = [];
   const isHospitalTransfer = /\b(chuyen vien|chuyen tuyen|chuyen benh vien)\b/.test(statusText);
   const staleDischarge = isStaleDischargeForCurrentVisit(source, events);
+  const dischargeDateRaw = extractDmy(source.ngay_ra_vien_date || source.ngay_ra_vien || dischargeTime(source, events));
+  const dischargeContradicted = Boolean(dischargeDateRaw) && isDischargeContradictedByLaterCare(source, dischargeDateRaw);
 
   if (isHospitalTransfer && !staleDischarge) {
     addNotice(notices, 'hospital_transfer', 'Chuyển viện', dischargeTime(source, events), C.purple + '22', C.purple);
@@ -156,7 +159,14 @@ export function getPatientNotices(patient = {}, activeDay = null) {
     eventTypes.has('discharge') || mode === 'discharge_day' ||
     /\b(ra vien|xuat vien|cho ve|tu vong)\b/.test(statusText)
   )) {
-    addNotice(notices, 'discharge', 'Xuất viện', dischargeTime(source, events), C.amberBg, C.amber);
+    if (dischargeContradicted) {
+      // Còn y lệnh/diễn biến thật vào ngày sau ngày ra viện: lệnh ra viện
+      // này khả năng đã bị huỷ hoặc ghi nhầm ngày — cảnh báo thay vì báo
+      // "Xuất viện" như đã hoàn tất, để tránh in nhầm hồ sơ ra viện.
+      addNotice(notices, 'discharge_contradicted', '⚠ Ra viện? còn y lệnh sau', dischargeTime(source, events), C.redBg, C.red);
+    } else {
+      addNotice(notices, 'discharge', 'Xuất viện', dischargeTime(source, events), C.amberBg, C.amber);
+    }
   }
 
   if (mode === 'postop_receive_day' || eventTypes.has('postop_receive') || hasPostopText(source)) {
