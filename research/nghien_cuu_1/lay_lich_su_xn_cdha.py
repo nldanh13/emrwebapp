@@ -592,6 +592,32 @@ def _write_current_case_snapshot():
     except Exception:
         pass
 
+def case_trace_mark_attempt(run_dir, ma_bn, ho_ten="", index=0, total=0, note=""):
+    """Đánh dấu "đang thử BN này" TRƯỚC KHI biết có mở được popup hay không.
+
+    case_trace_start() chỉ chạy sau khi popup mở thành công — các ca lỗi
+    "Không mở được popup" (fail ngay ở bước tìm/mở popup) không bao giờ tới
+    được đó, nên UI sẽ không thấy gì trong lúc worker đang kẹt ở nhóm ca lỗi
+    này. Hàm nhẹ này ghi marker ngay khi bắt đầu xử lý 1 BN, và
+    case_trace_event() vẫn dùng được bình thường trên marker này (vd để ghi
+    lý do lỗi) — không đụng tới case_trace_finish()/lịch sử case đã xong.
+    """
+    global _CASE_TRACE_CURRENT, _CASE_TRACE_RUN_DIR
+    _CASE_TRACE_RUN_DIR = run_dir
+    _CASE_TRACE_CURRENT = {
+        "case_id": _trace_clip(ma_bn, 220),
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "mode": "xn_cdha",
+        "status": "attempting",
+        "index": index,
+        "total": total,
+        "ma_bn": _trace_clip(ma_bn, 80),
+        "ho_ten": _trace_clip(ho_ten, 160),
+        "research_code": "",
+        "events": [_trace_event_dict("ATTEMPT", note or "Đang tìm người bệnh trên danh sách Hoàn tất", "D/s Điều trị nội trú")],
+    }
+    _write_current_case_snapshot()
+
 def case_trace_start(run_dir, ctx, index=0, total=0, mode="xn_cdha"):
     global _CASE_TRACE_CURRENT, _CASE_TRACE_RUN_DIR
     _CASE_TRACE_RUN_DIR = run_dir
@@ -5316,6 +5342,7 @@ def main():
                 continue
 
             print(f"[{i + 1}/{len(contexts)}] {ma_bn} - {base_ctx.get('Họ tên','')}", flush=True)
+            case_trace_mark_attempt(run_dir, ma_bn, base_ctx.get("Họ tên", ""), index=i + 1, total=len(contexts))
             if (i + 1) == 1 or (i + 1) % 10 == 0:
                 write_resource_snapshot(run_dir, reason=f"patient_{i + 1}")
             touch_watchdog(f"Tìm BN {ma_bn} ({i + 1}/{len(contexts)})")
@@ -5374,6 +5401,8 @@ def main():
                         mark_progress(progress, progress_key, "popup", "error", "Không mở được popup")
                         log_error(w_err, f_err, ctx, "Popup", "mở popup", "Không mở được popup Xem KQ/Lịch sử chung")
                         save_progress(run_dir, progress)
+                        case_trace_event("ERROR", "Không mở được popup Xem KQ/Lịch sử chung", "D/s Điều trị nội trú",
+                                         f"lượt {visit_index + 1}/{visit_count}", "—", "progress.status=error", "progress.json")
                         # Rất quan trọng: khi mở popup thất bại, EMR thường còn ở trang
                         # chi tiết/để lại modal-backdrop. Dọn và phục hồi danh sách ngay
                         # để BN kế tiếp không gặp element not interactable ở txtTimKiem.
