@@ -22,6 +22,7 @@ export default function ShiftDesktopView({
   workflowTitle, workflowHint, scopeInfo,
   precheckReport, onClearPrecheckReport,
   featureAvailability = {}, disabledFeatureLabels = [],
+  missingRangeDates = [], missingRangeDatesLabel = '',
 }) {
   const bulkInputDisabled = selectedInputPatients.length === 0;
 
@@ -34,6 +35,11 @@ export default function ShiftDesktopView({
           {scopeInfo ? <div style={{ color: C.blue, fontSize: 11, marginTop: 3 }}>{scopeInfo}</div> : null}
         </div>
       )}
+      {missingRangeDates.length > 0 ? (
+        <div style={{ padding: '6px 12px', borderBottom: `1px solid ${C.amberBorder}`, background: C.amberBg, color: C.amber, fontSize: 11 }}>
+          ⚠ Chưa có dữ liệu y lệnh cho {missingRangeDates.length} ngày trong khoảng đang chọn ({missingRangeDatesLabel}). Sang tab "Thu thập dữ liệu" → chỉnh khoảng ngày → bấm "② Lấy chi tiết" rồi "③ Xử lý & phân loại" để lấy đủ dữ liệu trước khi nhập.
+        </div>
+      ) : null}
       {disabledFeatureLabels.length ? <div style={{ padding: '6px 12px', borderBottom: `1px solid ${C.amberBorder}`, background: C.amberBg, color: C.amber, fontSize: 11 }}>Đang tắt: {disabledFeatureLabels.join(', ')}. Các module khác vẫn tiếp tục.</div> : null}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <div style={{ width: 'clamp(112px, 7vw, 142px)', borderRight: `1px solid ${C.border}`, overflow: 'auto', flexShrink: 0, background: C.surface }}>

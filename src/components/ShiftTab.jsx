@@ -9,6 +9,7 @@ import ShiftDesktopView from './shift/ShiftDesktopView.jsx';
 import ShiftToolbar from './shift/ShiftToolbar.jsx';
 import {
   buildInputTargets,
+  datesOfPatient,
   filterPatientsByRoom,
   getRooms,
   patientRoom,
@@ -167,6 +168,13 @@ function waitForUiPaint(ms = 80) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function formatMissingDatesLabel(dates, maxItems = 6) {
+  if (!dates.length) return '';
+  const shown = dates.slice(0, maxItems).join(', ');
+  const extra = dates.length > maxItems ? ` và ${dates.length - maxItems} ngày khác` : '';
+  return `${shown}${extra}`;
+}
+
 function buildInputConfirmMessage(targets, label, precheck = null) {
   const ids = Array.isArray(targets.patientIds) ? targets.patientIds : [];
   const patientCount = ids.length;
@@ -298,6 +306,23 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
 
   const inputTargetDates = useMemo(() => workDateRangeDatesDmy(workDateRange), [workDateRange?.from, workDateRange?.to]);
   const inputTargetDatesKey = inputTargetDates.join('\u0001');
+  // Thanh KHOẢNG NGÀY chỉ lọc dữ liệu y lệnh đã lấy sẵn (từ tab Thu thập dữ
+  // liệu), không tự gọi EMR lấy thêm. Nếu người dùng mở rộng khoảng ngày ra
+  // những ngày chưa từng "Lấy chi tiết", danh sách sẽ tự nhiên chỉ còn 1 ngày
+  // mà không có cảnh báo gì — cảnh báo ở đây để không gây hiểu lầm là lỗi.
+  const knownDataDates = useMemo(() => {
+    const set = new Set();
+    for (const p of allPatients) {
+      for (const d of datesOfPatient(p)) set.add(d);
+    }
+    return set;
+  }, [allPatients]);
+  const missingRangeDates = useMemo(() => {
+    if (!allPatients.length) return [];
+    return inputTargetDates.filter(d => !knownDataDates.has(d));
+  }, [inputTargetDates, knownDataDates, allPatients.length]);
+  const missingRangeDatesLabel = useMemo(() => formatMissingDatesLabel(missingRangeDates), [missingRangeDates]);
+
   const dateScopedPatients = useMemo(() => {
     if (!inputTargetDates.length) return allPatients;
     return allPatients.map(p => scopePatientToDates(p, inputTargetDates)).filter(Boolean);
@@ -920,6 +945,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     handleUseSession, handleFetchNew, toast, workflowTitle, workflowHint, workDateRange,
     precheckReport, onClearPrecheckReport: () => setPrecheckReport(null),
     featureAvailability, disabledFeatureLabels,
+    missingRangeDates, missingRangeDatesLabel,
     scopeInfo: mode === 'duty'
       ? `Hiển thị ${patients.length} người bệnh có ngày thuộc người trực trong khoảng đã chọn${unknownScopeCount ? `; ${unknownScopeCount} người bệnh có ngày cần xem phân luồng.` : '.'}`
       : mode === 'ward'
