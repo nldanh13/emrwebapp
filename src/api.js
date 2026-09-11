@@ -66,6 +66,8 @@ function apiActionLabel(method, url) {
     'GET /api/get-raw': 'tải dữ liệu thô',
     'GET /api/data': 'tải danh sách xếp phòng',
     'POST /api/save': 'lưu xếp phòng',
+    'GET /api/room-mismatches': 'kiểm tra phòng lệch giữa board và dữ liệu y lệnh',
+    'POST /api/fix-rooms': 'đồng bộ lại phòng cho dữ liệu y lệnh đã lấy',
     'POST /api/run-details': 'lấy y lệnh/dữ liệu chi tiết',
     'POST /api/run-details-one': 'cập nhật y lệnh một người bệnh',
     'GET /api/run-postprocess': 'xử lý và phân loại dữ liệu',
@@ -370,6 +372,8 @@ export const getRaw = () => get('/api/get-raw');
 // ── Board (room assignment) ───────────────────────────────────────────────────
 export const getBoardData = () => get('/api/data');
 export const saveBoardData = (rows) => post('/api/save', rows);
+export const getRoomMismatches = () => get('/api/room-mismatches');
+export const fixRooms = (patientIds = []) => post('/api/fix-rooms', { patientIds });
 
 // ── Details (fetch Y lệnh per patient) ───────────────────────────────────────
 export function runDetails(sortedRows, { dateFrom, dateTo, rooms, partial = false, scope = '' } = {}) {
