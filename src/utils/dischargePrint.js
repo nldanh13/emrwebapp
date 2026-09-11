@@ -99,6 +99,36 @@ function hasDischargeMarker(source) {
   return events.some(isDischargeEvent);
 }
 
+function dmyStampLocal(value) {
+  const m = String(value || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return 0;
+  const dt = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  return Number.isNaN(dt.getTime()) ? 0 : dt.getTime();
+}
+
+function hasOrderContentOnDay(day) {
+  if (!day || typeof day !== 'object') return false;
+  const yLenh = String(day?.nhap_cham_soc?.y_lenh || '').trim();
+  const dienBien = String(day?.nhap_cham_soc?.dien_bien || '').trim();
+  return Boolean(yLenh || dienBien);
+}
+
+// BN không thể thật sự ra viện vào dischargeDate nếu vẫn còn y lệnh/diễn biến
+// ở ngày SAU đó trong cùng dữ liệu đã lấy — dấu hiệu lệnh ra viện bị huỷ/ghi
+// nhầm hoặc BN ở lại điều trị tiếp. Chỉ so trong phạm vi ngày đã tải (day_map
+// hiện có trên patient); ngày ngoài phạm vi KHOẢNG NGÀY đang chọn không thấy được.
+export function isDischargeContradictedByLaterCare(patient, dischargeDateDmy) {
+  const dischargeStamp = dmyStampLocal(dischargeDateDmy);
+  if (!dischargeStamp) return false;
+  const dayMap = patient?.day_map && typeof patient.day_map === 'object' ? patient.day_map : {};
+  for (const [dayKey, day] of Object.entries(dayMap)) {
+    const stamp = dmyStampLocal(dayKey);
+    if (!stamp || stamp <= dischargeStamp) continue;
+    if (hasOrderContentOnDay(day)) return true;
+  }
+  return false;
+}
+
 export function getPatientDischargeDates(patient) {
   if (!patient || typeof patient !== 'object') return [];
   const dates = new Set();
@@ -138,7 +168,9 @@ export function getPatientDischargeDates(patient) {
   // cờ ra_vien_hom_nay từ bản ghi gốc và bị đưa vào danh sách in nhầm.
   if (!topExplicit && activeDate && hasDischargeMarker(patient)) dates.add(activeDate);
 
-  return [...dates];
+  // Bỏ các ngày ra viện bị chính dữ liệu sau đó phủ nhận: còn y lệnh/diễn biến
+  // thật vào ngày sau ngày ra viện nghĩa là BN chưa thật sự ra viện lúc đó.
+  return [...dates].filter(date => !isDischargeContradictedByLaterCare(patient, date));
 }
 
 export function getMatchingDischargeDate(patient, targetDates = []) {
