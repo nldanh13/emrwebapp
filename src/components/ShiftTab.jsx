@@ -945,7 +945,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     handleUseSession, handleFetchNew, toast, workflowTitle, workflowHint, workDateRange,
     precheckReport, onClearPrecheckReport: () => setPrecheckReport(null),
     featureAvailability, disabledFeatureLabels,
-    missingRangeDates, missingRangeDatesLabel,
+    missingRangeDates, missingRangeDatesLabel, requestedDayCount: inputTargetDates.length,
     scopeInfo: mode === 'duty'
       ? `Hiển thị ${patients.length} người bệnh có ngày thuộc người trực trong khoảng đã chọn${unknownScopeCount ? `; ${unknownScopeCount} người bệnh có ngày cần xem phân luồng.` : '.'}`
       : mode === 'ward'
