@@ -4218,7 +4218,11 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
   let surgeryRows = readCsvTable(path.join(runPath, 'hchanh_surgery.csv'), Number.MAX_SAFE_INTEGER).rows;
   let orderRows = readCsvTable(path.join(runPath, 'hchanh_order_history.csv'), Number.MAX_SAFE_INTEGER).rows;
 
-  const stats = { total: selectedRows.length, processed: 0, skipped: 0, ok: 0, attention: 0, error: 0, cancelled: false };
+  // hchanh_fetch.py spawn 1 tiến trình Chrome/đăng nhập MỚI cho từng ca (khác
+  // với script XN&CĐHA — dùng lại 1 Chrome cho cả lô). Đo lại tổng số lần
+  // mở Chrome + thời gian mỗi lần, ghi vào action_log.txt để có số liệu cụ
+  // thể đánh giá tải lên server EMR, thay vì chỉ ước lượng cảm tính.
+  const stats = { total: selectedRows.length, processed: 0, skipped: 0, ok: 0, attention: 0, error: 0, cancelled: false, chromeCycles: 0, chromeCycleMs: 0 };
   appendResearchRunLog(runPath, `[${new Date().toLocaleString('vi-VN')}] Bắt đầu lấy ${runLabel}: ${selectedRows.length} ca | files=${wantedFiles.join(',')}`);
   appendActivity(ctx, {
     kind: 'workflow.research.fetch_hchanh.start',
@@ -4298,6 +4302,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
     if (headless) args.push('--headless');
 
     let result;
+    const chromeCycleStartedAt = Date.now();
     try {
       result = await runScript('hchanh_fetch.py', args, {
         onSpawn: killFn => registerCancel(ctx.sid, killFn),
@@ -4306,6 +4311,8 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
     } finally {
       unregisterCancel(ctx.sid);
     }
+    stats.chromeCycles += 1;
+    stats.chromeCycleMs += Date.now() - chromeCycleStartedAt;
 
     const cancelRequested = isCancelRequested(ctx.sid);
     stats.processed += 1;
@@ -4430,6 +4437,11 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
   }
 
   appendResearchRunLog(runPath, `[${new Date().toLocaleString('vi-VN')}] ${stats.cancelled ? 'Đã dừng' : 'Kết thúc'} lấy ${runLabel}: ok=${stats.ok}, partial=${stats.attention}, error=${stats.error}, skipped=${stats.skipped}`);
+  if (stats.chromeCycles) {
+    const avgSec = (stats.chromeCycleMs / stats.chromeCycles / 1000).toFixed(1);
+    const totalMin = (stats.chromeCycleMs / 60000).toFixed(1);
+    appendResearchRunLog(runPath, `[${logPrefix}] 🔐 Đã mở Chrome + đăng nhập EMR ${stats.chromeCycles} lần (1 lần/ca, mỗi tiến trình worker mở Chrome riêng) trong ${totalMin} phút — trung bình ${avgSec} giây/ca.`);
+  }
   appendActivity(ctx, {
     kind: 'workflow.research.fetch_hchanh.finish',
     mode: normalizedMode,
@@ -4439,6 +4451,8 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
     error: stats.error,
     skipped: stats.skipped,
     cancelled: stats.cancelled,
+    chrome_cycles: stats.chromeCycles,
+    chrome_cycle_ms_total: stats.chromeCycleMs,
   });
   const manifestPath = path.join(runPath, 'manifest.json');
   const manifest = readJsonSafe(manifestPath, {}) || {};
