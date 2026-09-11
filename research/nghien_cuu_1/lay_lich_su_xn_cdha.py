@@ -553,6 +553,10 @@ class ActionLogger:
 # ── Research case trace: 10 ca gần nhất ──────────────────────────────────────
 _CASE_TRACE_FILE = "research_case_trace.jsonl"
 _CASE_TRACE_RECENT_FILE = "research_case_trace_recent.json"
+# Ca đang xử lý dở (chưa commit) — ghi ngay khi bắt đầu và sau mỗi bước, để
+# UI biết "đang quét ca nào, đã lấy được gì" thay vì chỉ thấy ca đã xong.
+_CASE_TRACE_CURRENT_FILE = "research_case_trace_current.json"
+_CASE_TRACE_RUN_DIR = None
 _CASE_TRACE_RECENT_LIMIT = 10
 _CASE_TRACE_CURRENT = None
 # Mặc định KHÔNG in [TRACE] ra console để log dễ đọc — vẫn lưu đủ vào
@@ -575,8 +579,22 @@ def _trace_event_dict(tag, step, screen="", sees="", takes="", writes="", target
         "target": _trace_clip(target, 420),
     }
 
+def _write_current_case_snapshot():
+    """Ghi ngay _CASE_TRACE_CURRENT (hoặc null khi không có ca nào) vào
+    research_case_trace_current.json — để UI đọc được "đang quét ca nào, đã
+    lấy được gì" trong lúc ca còn đang chạy, không phải đợi commit xong."""
+    if not _CASE_TRACE_RUN_DIR:
+        return
+    try:
+        path = Path(_CASE_TRACE_RUN_DIR) / _CASE_TRACE_CURRENT_FILE
+        mkdirp(path.parent)
+        _write_json_atomic(path, _CASE_TRACE_CURRENT)
+    except Exception:
+        pass
+
 def case_trace_start(run_dir, ctx, index=0, total=0, mode="xn_cdha"):
-    global _CASE_TRACE_CURRENT
+    global _CASE_TRACE_CURRENT, _CASE_TRACE_RUN_DIR
+    _CASE_TRACE_RUN_DIR = run_dir
     case_id = _trace_clip(ctx.get("Research key") or ctx.get("Mã NC") or f"{ctx.get('Mã BN','')}|{ctx.get('Ngày vào viện','')}", 220)
     _CASE_TRACE_CURRENT = {
         "case_id": case_id,
@@ -602,6 +620,7 @@ def case_trace_event(tag, step, screen="", sees="", takes="", writes="", target=
         return
     ev = _trace_event_dict(tag, step, screen, sees, takes, writes, target)
     _CASE_TRACE_CURRENT.setdefault("events", []).append(ev)
+    _write_current_case_snapshot()
     if not _TRACE_TO_CONSOLE:
         return
     try:
@@ -610,7 +629,7 @@ def case_trace_event(tag, step, screen="", sees="", takes="", writes="", target=
         pass
 
 def case_trace_finish(run_dir, status="done", counts=None, error=""):
-    global _CASE_TRACE_CURRENT
+    global _CASE_TRACE_CURRENT, _CASE_TRACE_RUN_DIR
     if not _CASE_TRACE_CURRENT:
         return
     case = dict(_CASE_TRACE_CURRENT)
@@ -645,6 +664,8 @@ def case_trace_finish(run_dir, status="done", counts=None, error=""):
         except Exception:
             pass
     _CASE_TRACE_CURRENT = None
+    _write_current_case_snapshot()
+    _CASE_TRACE_RUN_DIR = None
 
 
 # Global logger — được khởi tạo lại trong main() sau khi có run_dir

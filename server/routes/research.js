@@ -1947,6 +1947,7 @@ function buildResearchProgressSnapshot(runDir, scopeMeta = {}, { isArchive = tru
       counts: { running: 0, error: 0, missing: total, waiting: total, done: 0 },
       recentUpdates: [],
       active_task: null,
+      current_case: null,
       generated_at: nowIso(),
     };
   }
@@ -2135,6 +2136,7 @@ function buildResearchProgressSnapshot(runDir, scopeMeta = {}, { isArchive = tru
       started_at: activeTask.started_at || '',
       heartbeat_at: activeTask.heartbeat_at || '',
     } : null,
+    current_case: readCurrentCaseTrace(runDir),
     stopped,
     generated_at: nowIso(),
   };
@@ -3975,6 +3977,34 @@ function appendResearchCaseTrace(runDir, meta = {}, events = [], options = {}) {
   recent.push(payload);
   writeCaseTraceRecent(runDir, recent);
   return payload;
+}
+
+const CASE_TRACE_CURRENT_JSON = 'research_case_trace_current.json';
+
+// Ca đang xử lý dở (chưa commit) — worker ghi ngay khi bắt đầu 1 ca và sau
+// mỗi bước, xoá (ghi null) khi ca kết thúc. Cho UI biết "đang quét ca nào,
+// đã lấy được gì" thay vì chỉ thấy ca đã xong (khác với readCaseTraceRecent).
+function readCurrentCaseTrace(runDir) {
+  if (!runDir) return null;
+  const data = readJsonSafe(path.join(runDir, CASE_TRACE_CURRENT_JSON), null);
+  if (!data || typeof data !== 'object') return null;
+  const events = Array.isArray(data.events) ? data.events : [];
+  const last = events[events.length - 1] || null;
+  return {
+    case_id: clipTraceText(data.case_id || '', 220),
+    ma_bn: clipTraceText(data.ma_bn || '', 80),
+    ho_ten: clipTraceText(data.ho_ten || '', 160),
+    research_code: clipTraceText(data.research_code || '', 120),
+    index: Number(data.index || 0) || 0,
+    total: Number(data.total || 0) || 0,
+    started_at: clipTraceText(data.ts || '', 40),
+    events_count: events.length,
+    last_step: last ? {
+      tag: clipTraceText(last.tag || '', 80),
+      step: clipTraceText(last.step || '', 260),
+      takes: clipTraceText(last.takes || '', 300),
+    } : null,
+  };
 }
 
 function readResearchCaseTrace(runDir, limit = CASE_TRACE_RECENT_LIMIT) {
