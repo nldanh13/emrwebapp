@@ -2205,7 +2205,10 @@ function recordsFetchRangeForMeta(meta = {}, fallbackFrom = '', fallbackTo = '')
   return { date_from, date_to: date_to || date_from };
 }
 
-async function fetch_records_check_case(ctx, records_meta, options = {}) {
+// Chuẩn bị 1 ca kiểm hồ sơ (tính ngày, file cần lấy, payload input) mà KHÔNG mở Chrome.
+// Tách riêng khỏi fetch_records_check_case để có thể gộp nhiều ca vào 1 lần spawn
+// hchanh_fetch.py (xem fetch_records_check_cases_batched) thay vì mỗi ca 1 Chrome/đăng nhập.
+function build_records_check_fetch_item(ctx, records_meta, options = {}) {
   const storage_key = records_storage_key(records_meta);
   const ma_bn = normId(records_meta?.ma_bn);
   if (!storage_key || !ma_bn) throw new Error('Thiếu mã BN hoặc case_key kiểm hồ sơ.');
@@ -2227,17 +2230,11 @@ async function fetch_records_check_case(ctx, records_meta, options = {}) {
     ? requestedFiles
     : recordsCheckMissingFilesForMeta(ctx, records_meta);
   if (!files_to_fetch.length) {
-    clear_records_fetch_error(ctx, storage_key);
-    appendActivity(ctx, { kind: 'records_check.fetch_background.skip_complete', ma_bn, case_key: storage_key });
-    return { ma_bn, case_key: storage_key, saved: [], skipped: true, file_failures: [] };
+    return { storage_key, ma_bn, skipped: true };
   }
-  mark_records_fetch_attempt(ctx, storage_key);
-  const storage_safe = safeFilePart(storage_key);
-  const input_path = path.join(hchanh_dir(ctx), `fetch_input_${storage_safe}.json`);
-  const out_path = path.join(hchanh_dir(ctx), `fetch_output_${storage_safe}.json`);
-  const patient_row = { ...(records_meta?.source_row || {}) };
 
-  writeJsonAtomic(input_path, {
+  const patient_row = { ...(records_meta?.source_row || {}) };
+  const payload = {
     ...(patient_row || {}),
     ma_bn,
     ho_ten: records_meta.ho_ten || patient_row?.['Họ tên'] || patient_row?.ho_ten || '',
@@ -2254,13 +2251,59 @@ async function fetch_records_check_case(ctx, records_meta, options = {}) {
     noitruid: records_meta.noitruid || patient_row?.noitruid || '',
     record_doctor_url: records_meta.record_doctor_url || patient_row?.record_doctor_url || patient_row?.doctor_url || '',
     record_nursing_url: records_meta.record_nursing_url || patient_row?.record_nursing_url || patient_row?.nursing_url || '',
-  });
+  };
 
-  const args = ['--input', input_path, '--out', out_path, '--scope', scope, '--files', files_to_fetch.join(',')];
-  if (date_from) args.push('--from', date_from);
-  if (date_to) args.push('--to', date_to);
-  args.push('--status', inpatient_status);
-  if (headless) args.push('--headless');
+  return { storage_key, ma_bn, date_from, date_to, scope, headless, inpatient_status, files_to_fetch, payload };
+}
+
+// Ghi kết quả 1 ca (output JSON từ hchanh_fetch.py) vào kho Kiểm hồ sơ. Dùng chung cho
+// cả đường lấy đơn ca (fetch_records_check_case) và đường lấy theo lô.
+function apply_records_check_fetch_output(ctx, item, output) {
+  const { storage_key, ma_bn, files_to_fetch } = item;
+  const saved = [];
+  const file_failures = [];
+  for (const file_key of files_to_fetch) {
+    if (!output || output[file_key] === undefined) {
+      file_failures.push(missingFetchOutputInfo(file_key));
+      continue;
+    }
+    const payload = output[file_key];
+    write_records_patient_file(ctx, storage_key, file_key, payload);
+    mark_records_file_fetched(ctx, storage_key, file_key);
+    if (file_key === 'discharge') update_records_storage_from_discharge(ctx, storage_key, payload);
+    saved.push(file_key);
+    const info = normalizeFetchOutputInfo(file_key, payload);
+    if (TECHNICAL_FETCH_STATUSES.has(info.status)) file_failures.push(info);
+  }
+
+  if (file_failures.length) {
+    const msg = file_failures.map(x => `${x.label}: ${x.status_label}${x.error ? ` (${x.error})` : ''}`).join('; ');
+    mark_records_fetch_error(ctx, storage_key, msg);
+  } else {
+    clear_records_fetch_error(ctx, storage_key);
+  }
+  appendActivity(ctx, { kind: 'records_check.fetch_background.success', ma_bn, case_key: storage_key, saved, file_failures });
+  return { ma_bn, case_key: storage_key, saved, file_failures };
+}
+
+async function fetch_records_check_case(ctx, records_meta, options = {}) {
+  const item = build_records_check_fetch_item(ctx, records_meta, options);
+  if (item.skipped) {
+    clear_records_fetch_error(ctx, item.storage_key);
+    appendActivity(ctx, { kind: 'records_check.fetch_background.skip_complete', ma_bn: item.ma_bn, case_key: item.storage_key });
+    return { ma_bn: item.ma_bn, case_key: item.storage_key, saved: [], skipped: true, file_failures: [] };
+  }
+  mark_records_fetch_attempt(ctx, item.storage_key);
+  const storage_safe = safeFilePart(item.storage_key);
+  const input_path = path.join(hchanh_dir(ctx), `fetch_input_${storage_safe}.json`);
+  const out_path = path.join(hchanh_dir(ctx), `fetch_output_${storage_safe}.json`);
+  writeJsonAtomic(input_path, item.payload);
+
+  const args = ['--input', input_path, '--out', out_path, '--scope', item.scope, '--files', item.files_to_fetch.join(',')];
+  if (item.date_from) args.push('--from', item.date_from);
+  if (item.date_to) args.push('--to', item.date_to);
+  args.push('--status', item.inpatient_status);
+  if (item.headless) args.push('--headless');
 
   let result;
   try {
@@ -2279,33 +2322,12 @@ async function fetch_records_check_case(ctx, records_meta, options = {}) {
   const output = readJsonSafe(out_path, null);
   if (!output || typeof output !== 'object') throw new Error('Worker không trả về dữ liệu.');
 
-  const saved = [];
-  const file_failures = [];
-  for (const file_key of files_to_fetch) {
-    if (output[file_key] === undefined) {
-      file_failures.push(missingFetchOutputInfo(file_key));
-      continue;
-    }
-    const payload = output[file_key];
-    write_records_patient_file(ctx, storage_key, file_key, payload);
-    mark_records_file_fetched(ctx, storage_key, file_key);
-    if (file_key === 'discharge') update_records_storage_from_discharge(ctx, storage_key, payload);
-    saved.push(file_key);
-    const info = normalizeFetchOutputInfo(file_key, payload);
-    if (TECHNICAL_FETCH_STATUSES.has(info.status)) file_failures.push(info);
-  }
+  const fetchResult = apply_records_check_fetch_output(ctx, item, output);
 
   try { if (fs.existsSync(input_path)) fs.rmSync(input_path, { force: true }); } catch (_) {}
   try { if (fs.existsSync(out_path)) fs.rmSync(out_path, { force: true }); } catch (_) {}
 
-  if (file_failures.length) {
-    const msg = file_failures.map(x => `${x.label}: ${x.status_label}${x.error ? ` (${x.error})` : ''}`).join('; ');
-    mark_records_fetch_error(ctx, storage_key, msg);
-  } else {
-    clear_records_fetch_error(ctx, storage_key);
-  }
-  appendActivity(ctx, { kind: 'records_check.fetch_background.success', ma_bn, case_key: storage_key, saved, file_failures });
-  return { ma_bn, case_key: storage_key, saved, file_failures };
+  return fetchResult;
 }
 
 // item.record_id/item.aliases trong kho nộp hồ sơ là case_key THÔ (không có
@@ -4049,8 +4071,89 @@ router.post('/hchanh/records-check/fetch-batch', async (req, res) => {
 
     setImmediate(() => {
       enqueueHeavy(ctx.sid, async () => {
+        // hchanh_fetch.py hỗ trợ gộp nhiều ca vào 1 phiên Chrome/đăng nhập khi --input là
+        // JSON array (xem run_hchanh_fetch_batch, worker/hchanh_fetch.py). Trước đây mỗi
+        // ca kiểm hồ sơ spawn 1 tiến trình riêng → 1 Chrome + 1 lần đăng nhập/ca, mở/tắt
+        // Chrome liên tục khi kiểm nhiều ca ra viện cùng lúc. Gộp tối đa
+        // RECORDS_CHECK_BATCH_SIZE ca liên tiếp vào 1 lần spawn để giảm hẳn số lần đó.
+        const RECORDS_CHECK_BATCH_SIZE = 10;
         let done = 0;
         let failed = 0;
+        let pending = []; // { metaIndex, meta, caseKey, item }
+
+        const flushPending = async () => {
+          if (!pending.length) return;
+          const stamp = Date.now();
+          const batchInputPath = path.join(hchanh_dir(ctx), `fetch_batch_input_${stamp}.json`);
+          const batchOutputPath = path.join(hchanh_dir(ctx), `fetch_batch_output_${stamp}.json`);
+          const batchPayload = pending.map(p => ({
+            ...p.item.payload,
+            _progress_key: p.caseKey,
+            _files_override: p.item.files_to_fetch,
+          }));
+          writeJsonAtomic(batchInputPath, batchPayload);
+
+          const args = [
+            '--input', batchInputPath, '--out', batchOutputPath,
+            '--scope', 'discharge', '--files', RECORDS_CHECK_FILES.join(','),
+            '--status', 'Hoàn tất', '--batch-size', String(RECORDS_CHECK_BATCH_SIZE),
+          ];
+          if (headless) args.push('--headless');
+
+          let result;
+          try {
+            result = await runScript('hchanh_fetch.py', args, {
+              onSpawn: killFn => registerCancel(ctx.sid, killFn),
+              runtimeDir: ctx.dir,
+            });
+          } finally {
+            unregisterCancel(ctx.sid);
+          }
+
+          const batchOutput = readJsonSafe(batchOutputPath, {}) || {};
+          try { if (fs.existsSync(batchInputPath)) fs.rmSync(batchInputPath, { force: true }); } catch (_) {}
+          try { if (fs.existsSync(batchOutputPath)) fs.rmSync(batchOutputPath, { force: true }); } catch (_) {}
+
+          for (const p of pending) {
+            if (records_check_stop_requested(ctx)) break;
+            const output = batchOutput[p.caseKey];
+            try {
+              if (!output) {
+                const reason = result.spawnError
+                  ? ('Không khởi động được Python: ' + result.spawnError)
+                  : result.killedByTimeout
+                    ? 'Timeout khi lấy dữ liệu kiểm hồ sơ.'
+                    : result.code !== 0
+                      ? fmtPyError('Python lỗi khi lấy dữ liệu kiểm hồ sơ.', result)
+                      : 'Không có kết quả cho ca này trong lô (worker có thể đã dừng giữa chừng).';
+                throw new Error(reason);
+              }
+              const fetchResult = apply_records_check_fetch_output(ctx, p.item, output);
+              if (Array.isArray(fetchResult?.file_failures) && fetchResult.file_failures.length) failed += 1;
+            } catch (err) {
+              failed += 1;
+              mark_records_fetch_error(ctx, p.caseKey, String(err.message || err));
+              appendActivity(ctx, { kind: 'records_check.fetch_background.error', ma_bn: p.meta.ma_bn || '', case_key: p.caseKey, message: String(err.message || err) });
+            } finally {
+              done += 1;
+              if (!records_check_stop_requested(ctx)) {
+                const nextMeta = metas[p.metaIndex + 1] || null;
+                update_records_check_job(ctx, {
+                  done,
+                  total: metas.length,
+                  current_key: '',
+                  current_ma_bn: '',
+                  current_name: '',
+                  resume_key: nextMeta ? records_storage_key(nextMeta) : '',
+                  failed,
+                  message: `Đã lấy ${done}/${metas.length}${failed ? ` · lỗi ${failed}` : ''}`,
+                });
+              }
+            }
+          }
+          pending = [];
+        };
+
         for (let metaIndex = 0; metaIndex < metas.length; metaIndex += 1) {
           const meta = metas[metaIndex];
           if (records_check_stop_requested(ctx)) break;
@@ -4063,39 +4166,36 @@ router.post('/hchanh/records-check/fetch-batch', async (req, res) => {
             current_ma_bn: meta.ma_bn || '',
             current_name: meta.ho_ten || '',
             resume_key: caseKey,
-            message: `Đang lấy ${done + 1}/${metas.length}: ${meta.ho_ten || meta.ma_bn || caseKey}`,
+            message: `Đang chuẩn bị ${done + pending.length + 1}/${metas.length}: ${meta.ho_ten || meta.ma_bn || caseKey}`,
           });
           try {
             const missingFiles = recordsCheckMissingFilesForMeta(ctx, meta);
             const filesToFetch = forceRefresh ? [...RECORDS_CHECK_FILES] : missingFiles;
             if (!filesToFetch.length) {
               appendActivity(ctx, { kind: 'records_check.fetch_background.skip_complete', ma_bn: meta.ma_bn || '', case_key: caseKey });
-            } else {
-              const fetchResult = await fetch_records_check_case(ctx, meta, { date_from, date_to, headless, files_to_fetch: filesToFetch });
-              if (Array.isArray(fetchResult?.file_failures) && fetchResult.file_failures.length) failed += 1;
+              done += 1;
+              continue;
             }
+            const item = build_records_check_fetch_item(ctx, meta, { date_from, date_to, headless, files_to_fetch: filesToFetch });
+            if (item.skipped) {
+              clear_records_fetch_error(ctx, item.storage_key);
+              appendActivity(ctx, { kind: 'records_check.fetch_background.skip_complete', ma_bn: item.ma_bn, case_key: item.storage_key });
+              done += 1;
+              continue;
+            }
+            mark_records_fetch_attempt(ctx, item.storage_key);
+            pending.push({ metaIndex, meta, caseKey, item });
+            if (pending.length >= RECORDS_CHECK_BATCH_SIZE) await flushPending();
           } catch (err) {
             if (records_check_stop_requested(ctx)) break;
             failed += 1;
+            done += 1;
             mark_records_fetch_error(ctx, caseKey, String(err.message || err));
             appendActivity(ctx, { kind: 'records_check.fetch_background.error', ma_bn: meta.ma_bn || '', case_key: caseKey, message: String(err.message || err) });
-          } finally {
-            done += 1;
-            if (!records_check_stop_requested(ctx)) {
-              const nextMeta = metas[metaIndex + 1] || null;
-              update_records_check_job(ctx, {
-                done,
-                total: metas.length,
-                current_key: '',
-                current_ma_bn: '',
-                current_name: '',
-                resume_key: nextMeta ? records_storage_key(nextMeta) : '',
-                failed,
-                message: `Đã lấy ${done}/${metas.length}${failed ? ` · lỗi ${failed}` : ''}`,
-              });
-            }
           }
         }
+        await flushPending();
+
         if (records_check_stop_requested(ctx)) {
           finish_records_check_job(ctx, { done, total: metas.length, failed, stopped: true, stop_requested: false, message: `Đã dừng lấy dữ liệu kiểm hồ sơ tại ${done}/${metas.length}${failed ? ` · lỗi ${failed}` : ''}` });
         } else {
