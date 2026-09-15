@@ -461,5 +461,142 @@ test('39. Không có bảng kê -> Tầng 6 im lặng, không lỗi', () => {
   assert.strictEqual(result.tier6_findings.length, 0);
 });
 
+// ── Tầng 6 (mở rộng): thuốc chống chỉ định + DVKT cần chẩn đoán hỗ trợ ──────
+
+test('40. Diclofenac + bệnh tim thiếu máu cục bộ (I25) -> nguy cơ cao (contraindication)', () => {
+  const data = baseData({
+    discharge: { chan_doan_chinh: 'S72.0 Gãy cổ xương đùi', benh_kem: ['Bệnh tim thiếu máu cục bộ - (I25.9)'] },
+    surgery: null,
+    billing: { rows: [
+      { name: 'Diclofenac 75mg', tg_ylenh: '04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 30000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.assessment.code, ASSESSMENT.HIGH_RISK.code);
+  const f = result.tier6_findings.find(x => x.rule_id === 'BHYT_T6_DICLOFENAC_CARDIOVASCULAR_CONTRAINDICATION');
+  assert.ok(f);
+  assert.strictEqual(f.severity, BHYT_SEVERITY.HIGH_RISK);
+  assert.strictEqual(f.amount_at_risk, 30000);
+});
+
+test('41. Diclofenac không kèm bệnh tim mạch/mạch máu não -> không cảnh báo chống chỉ định', () => {
+  const data = baseData({
+    discharge: { chan_doan_chinh: 'S72.0 Gãy cổ xương đùi' },
+    surgery: null,
+    billing: { rows: [
+      { name: 'Diclofenac 75mg', tg_ylenh: '04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 30000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(!result.tier6_findings.some(f => f.rule_id === 'BHYT_T6_DICLOFENAC_CARDIOVASCULAR_CONTRAINDICATION'));
+});
+
+test('42. Levofloxacin + động kinh (G40) -> nguy cơ cao', () => {
+  const data = baseData({
+    discharge: { chan_doan_chinh: 'Viêm phổi cộng đồng', benh_kem: ['Động kinh - (G40.9)'] },
+    surgery: null,
+    billing: { rows: [
+      { name: 'Levofloxacin 500mg', tg_ylenh: '04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 45000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(result.tier6_findings.some(f => f.rule_id === 'BHYT_T6_LEVOFLOXACIN_SEIZURE_CONTRAINDICATION'));
+});
+
+test('43. KT47 (vận động trị liệu hô hấp) không có chẩn đoán bệnh phổi mạn -> cần kiểm tra', () => {
+  const data = baseData({
+    discharge: { chan_doan_chinh: 'Viêm phổi cấp' },
+    surgery: null,
+    billing: { rows: [
+      { name: 'Vận động trị liệu hô hấp', tg_ylenh: '04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 80000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(result.tier6_findings.some(f => f.rule_id === 'BHYT_T6_KT47_RESPIRATORY_THERAPY_NO_COPD_DX'));
+});
+
+test('44. KT47 với chẩn đoán COPD (J44) -> không cảnh báo', () => {
+  const data = baseData({
+    discharge: { chan_doan_chinh: 'Đợt cấp COPD - (J44.1)' },
+    surgery: null,
+    billing: { rows: [
+      { name: 'Vận động trị liệu hô hấp', tg_ylenh: '04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 80000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(!result.tier6_findings.some(f => f.rule_id === 'BHYT_T6_KT47_RESPIRATORY_THERAPY_NO_COPD_DX'));
+});
+
+// ── Tầng 8: Dịch vụ kỹ thuật — trùng/cấu phần & bằng chứng liên kết ─────────
+
+test('45. Mở sào bào-thượng nhĩ + tạo hình tai giữa cùng ngày -> cần kiểm tra (bundled)', () => {
+  const data = baseData({
+    surgery: null,
+    billing: { rows: [
+      { name: 'Phẫu thuật tạo hình tai giữa', tg_ylenh: '08:00 04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 5000000 },
+      { name: 'Mở sào bào, thượng nhĩ', tg_ylenh: '08:30 04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 1200000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  const f = result.tier8_findings.find(x => x.rule_id === 'BHYT_T8_KT01_1_OPEN_MASTOID_VS_TYMPANOPLASTY');
+  assert.ok(f);
+  assert.strictEqual(f.severity, BHYT_SEVERITY.REVIEW);
+  assert.strictEqual(f.amount_at_risk, 5000000);
+});
+
+test('46. Chỉ có phẫu thuật tạo hình tai giữa, không có mở sào bào -> không cảnh báo', () => {
+  const data = baseData({
+    surgery: null,
+    billing: { rows: [
+      { name: 'Phẫu thuật tạo hình tai giữa', tg_ylenh: '08:00 04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 5000000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(!result.tier8_findings.some(f => f.rule_id === 'BHYT_T8_KT01_1_OPEN_MASTOID_VS_TYMPANOPLASTY'));
+});
+
+test('47. Nuôi cấy + nhuộm soi khác ngày -> không cảnh báo (chỉ xét cùng ngày)', () => {
+  const data = baseData({
+    surgery: null,
+    billing: { rows: [
+      { name: 'Nuôi cấy - định danh vi khuẩn', tg_ylenh: '04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 150000 },
+      { name: 'Nhuộm soi', tg_ylenh: '06/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 30000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(!result.tier8_findings.some(f => f.rule_id === 'BHYT_T8_KT01_04_GRAM_STAIN_VS_CULTURE'));
+});
+
+test('48. CT có cản quang nhưng không có thuốc cản quang cùng ngày -> cần kiểm tra (missing_support)', () => {
+  const data = baseData({
+    surgery: null,
+    billing: { rows: [
+      { name: 'Chụp CT sọ não có tiêm thuốc cản quang', tg_ylenh: '04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 1500000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  const f = result.tier8_findings.find(x => x.rule_id === 'BHYT_T8_KT183_CT_CONTRAST_NO_DRUG_EVIDENCE');
+  assert.ok(f);
+  assert.strictEqual(f.amount_at_risk, 1500000);
+});
+
+test('49. CT có cản quang KÈM thuốc cản quang cùng ngày -> không cảnh báo', () => {
+  const data = baseData({
+    surgery: null,
+    billing: { rows: [
+      { name: 'Chụp CT sọ não có tiêm thuốc cản quang', tg_ylenh: '04/09/2026', payment_group: 'bhyt', muc_huong: '80%', thanh_tien: 1500000 },
+      { name: 'Thuốc cản quang Xenetix 300', tg_ylenh: '04/09/2026', payment_group: 'self_pay', thanh_tien: 400000 },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(!result.tier8_findings.some(f => f.rule_id === 'BHYT_T8_KT183_CT_CONTRAST_NO_DRUG_EVIDENCE'));
+});
+
+test('50. Không có bảng kê -> Tầng 8 im lặng, không lỗi', () => {
+  const data = baseData({ surgery: null, billing: null });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.tier8_findings.length, 0);
+});
+
 console.log(`\n${passed} test(s) passed.`);
 if (process.exitCode) console.error('\nCó test thất bại.');

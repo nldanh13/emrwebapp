@@ -1,6 +1,6 @@
 {
-  "_comment": "Rule 'thuốc cần chẩn đoán hỗ trợ' (diagnosis_support) cho Tầng 6 tiền giám định BHYT. Nội dung sao chép có kiểm soát từ config/hchanh/qa_rules.json (cls_diagnosis_rules → CLS_ANTIBIOTIC_NO_INFECTION_DX) để dùng lại đúng danh mục đã được đội ngũ xác nhận trước đó, không tự phát sinh danh mục thuốc mới. Đây chỉ là ví dụ nhóm kháng sinh phổ rộng phổ biến, KHÔNG phải danh mục thuốc BHYT đầy đủ — sửa/thêm rule ở đây, không sửa code.",
-  "_version": "1.0.0",
+  "_comment": "Rule thuốc cho Tầng 6 tiền giám định BHYT. 'drug_diagnosis_rules' (NEEDS_JUSTIFICATION — mức REVIEW) phát hiện thuốc/DVKT có mặt nhưng CHƯA thấy chẩn đoán hỗ trợ phù hợp; 'drug_contraindication_rules' (CONTRAINDICATED — mức HIGH_RISK) phát hiện thuốc có mặt nhưng CÓ chẩn đoán/bệnh nền thuộc nhóm chống chỉ định. Cả hai chỉ CẢNH BÁO để người kiểm tự xác nhận, không tự động khóa/chặn gửi hồ sơ. Nội dung sao chép có kiểm soát từ báo cáo cảnh báo BHYT nội bộ (bao gồm cả case dùng cho DVKT như KT47, không chỉ thuốc) — không phải danh mục thuốc/DVKT BHYT đầy đủ — sửa/thêm rule ở đây, không sửa code.",
+  "_version": "1.1.0",
 
   "drug_diagnosis_rules": [
     {
@@ -11,6 +11,81 @@
       "title": "Có kháng sinh nhưng chưa thấy chẩn đoán nhiễm khuẩn phù hợp",
       "detail": "Kháng sinh phổ rộng thường chỉ định khi có nhiễm khuẩn.",
       "action": "Bác sĩ bổ sung chẩn đoán nhiễm khuẩn / nhiễm trùng phù hợp trước khi nộp hồ sơ."
+    },
+    {
+      "code": "MG_AL_SIMETHICON_NO_GI_DX",
+      "enabled": true,
+      "drug_keywords": ["magnesi hydroxyd", "nhom hydroxyd", "simethicon", "phosphalugel", "gastropulgite", "maalox", "mylanta"],
+      "dx_keywords": ["trao nguoc da day", "viem da day", "viem ta trang", "kho tieu", "o nong", "day hoi", "chuong bung", "dau vung bung tren", "dau thuong vi"],
+      "title": "Có thuốc kháng acid/simethicon nhưng chưa thấy chẩn đoán/triệu chứng tiêu hóa phù hợp",
+      "detail": "Nhóm Mg/Al hydroxyd + simethicon dùng cho trào ngược, viêm dạ dày-tá tràng, khó tiêu, ợ nóng, đầy hơi, đau thượng vị (K21/K29/K30/R12/R14/R10.1).",
+      "action": "Bác sĩ bổ sung chẩn đoán/triệu chứng tiêu hóa phù hợp trong ngày kê thuốc trước khi nộp hồ sơ."
+    },
+    {
+      "code": "ALFUZOSIN_NO_BPH_DX",
+      "enabled": true,
+      "drug_keywords": ["alfuzosin", "xatral"],
+      "dx_keywords": ["tang san lanh tinh tuyen tien liet", "phi dai tuyen tien liet", "bph", "bi tieu", "tieu kho", "roi loan tieu tien duoi"],
+      "title": "Có alfuzosin nhưng chưa thấy chẩn đoán tăng sản lành tính tuyến tiền liệt (BPH) hoặc triệu chứng đường tiểu dưới",
+      "detail": "Alfuzosin chủ yếu được phê duyệt cho triệu chứng đường tiểu dưới do BPH (N40/N40.1). Chỉ có R33 (bí tiểu)/R39.1 (tiểu khó) đơn thuần chưa chắc đủ căn cứ.",
+      "action": "Bác sĩ xác nhận nguyên nhân triệu chứng đường tiểu (BPH) trước khi nộp hồ sơ. Lưu ý: quy tắc này chưa kiểm tra giới tính người bệnh — cần người kiểm tự đối chiếu thêm nếu là bệnh nhân nữ."
+    },
+    {
+      "code": "KT47_RESPIRATORY_THERAPY_NO_COPD_DX",
+      "enabled": true,
+      "drug_keywords": ["van dong tri lieu ho hap", "vat ly tri lieu ho hap", "phuc hoi chuc nang ho hap"],
+      "dx_keywords": ["copd", "benh phoi tac nghen man tinh", "gian phe quan", "j44", "j47", "benh phoi ke", "j84"],
+      "title": "Có chỉ định vận động trị liệu hô hấp (KT47) nhưng chưa thấy chẩn đoán bệnh phổi mạn phù hợp",
+      "detail": "KT47 điển hình áp dụng cho COPD/bệnh phổi mạn ổn định (J44/J47/J84.x). Viêm phổi cấp, suy hô hấp cấp, hậu phẫu, đột quỵ nằm lâu... có thể cần can thiệp hô hấp về lâm sàng nhưng không tự động đủ điều kiện thanh toán KT47.",
+      "action": "Xác nhận người bệnh có bệnh phổi mạn thực sự (không chỉ nguy cơ do nằm lâu) trước khi nộp hồ sơ. Không bổ sung J44/J47 nếu người bệnh không thật sự mắc bệnh."
+    },
+    {
+      "code": "PERIOLIMEL_NO_NUTRITION_DX",
+      "enabled": true,
+      "drug_keywords": ["periolimel", "dinh duong tinh mach", "tui 3 ngan", "tui ba ngan"],
+      "dx_keywords": ["tac ruot", "liet ruot", "thung ruot", "viem phuc mac", "bien chung tieu hoa sau phau thuat", "suy dinh duong", "suy mon"],
+      "title": "Có dinh dưỡng tĩnh mạch (Periolimel) nhưng chưa thấy chẩn đoán biện minh không dùng được đường tiêu hóa",
+      "detail": "Dinh dưỡng tĩnh mạch cần chứng minh không thể/không đủ nuôi ăn đường tiêu hóa (tắc/liệt ruột K56.x, thủng ruột K63.1, viêm phúc mạc K65.x, biến chứng tiêu hóa sau PT K91.x, suy dinh dưỡng E43/E44, suy mòn R64). Đau bụng (R10.4) đơn thuần chưa đủ. LƯU Ý: quy tắc này chỉ kiểm mã ICD hỗ trợ — KHÔNG kiểm được phiếu đánh giá dinh dưỡng/NRS-2002 vì dữ liệu đó chưa được hệ thống fetch.",
+      "action": "Hoàn thành đánh giá dinh dưỡng và ghi rõ lý do không thể/không đủ nuôi ăn đường tiêu hóa trước khi nộp hồ sơ."
+    }
+  ],
+
+  "drug_contraindication_rules": [
+    {
+      "code": "DICLOFENAC_CARDIOVASCULAR_CONTRAINDICATION",
+      "enabled": true,
+      "drug_keywords": ["diclofenac", "voltaren", "cataflam"],
+      "contraindication_dx_keywords": ["i20", "i25", "i50", "i63", "i69", "i73", "i74"],
+      "title": "Diclofenac toàn thân ở người bệnh có bệnh tim mạch/mạch máu não thuộc nhóm chống chỉ định",
+      "detail": "Diclofenac đường toàn thân (uống/tiêm/đặt trực tràng) chống chỉ định ở người bệnh suy tim NYHA II-IV, bệnh tim thiếu máu cục bộ, bệnh động mạch ngoại vi, bệnh mạch máu não (I20/I25/I50/I63/I69/I73/I74) theo Công văn 5749/QLD-ĐK. LƯU Ý: quy tắc này chưa phân biệt được đường dùng — dạng bôi ngoài da (gel/kem) không thuộc phạm vi chống chỉ định này, cần người kiểm tự loại trừ nếu đúng là dạng dùng ngoài da.",
+      "action": "Không duyệt diclofenac toàn thân cho tới khi bác sĩ xác nhận và cân nhắc thuốc giảm đau thay thế."
+    },
+    {
+      "code": "LEVOFLOXACIN_SEIZURE_CONTRAINDICATION",
+      "enabled": true,
+      "drug_keywords": ["levofloxacin", "levogolds"],
+      "contraindication_dx_keywords": ["g40"],
+      "title": "Levofloxacin ở người bệnh có mã động kinh (G40)",
+      "detail": "Levofloxacin có thể làm giảm ngưỡng co giật, nhiều HDSD chống chỉ định ở người có tiền sử động kinh. Lưu ý: G40 có thể bị ghi nhầm cho người chỉ dùng thuốc chống động kinh dự phòng sau đột quỵ (I69.3) chứ chưa từng có cơn co giật thật — cần bác sĩ xác nhận đúng tình trạng trước khi kết luận.",
+      "action": "Bác sĩ xác nhận người bệnh có thực sự từng co giật hay chỉ dùng thuốc dự phòng; nếu đúng có động kinh, cân nhắc kháng sinh khác."
+    },
+    {
+      "code": "CALDIHASAN_RENAL_STONE_CONTRAINDICATION",
+      "enabled": true,
+      "drug_keywords": ["caldihasan"],
+      "contraindication_dx_keywords": ["n20", "n21", "n18"],
+      "title": "Caldihasan (calci) ở người bệnh có sỏi thận/tiết niệu hoặc bệnh thận mạn",
+      "detail": "HDSD Caldihasan chống chỉ định trong sỏi thận, sỏi niệu, tăng calci niệu/máu và suy thận nặng (N20/N21/N18.x).",
+      "action": "Kiểm tra lại tiền sử sỏi tiết niệu và chức năng thận trước khi kê; cân nhắc phương án bổ sung calci khác nếu có chống chỉ định."
+    },
+    {
+      "code": "IVABRADINE_UNSTABLE_ANGINA_CONTRAINDICATION",
+      "enabled": true,
+      "drug_keywords": ["ivabradine", "procoralan"],
+      "contraindication_dx_keywords": ["i20.0"],
+      "title": "Procoralan/Ivabradine ở người bệnh đau thắt ngực KHÔNG ổn định (I20.0)",
+      "detail": "I20.0 (đau thắt ngực không ổn định) không phải chỉ định của ivabradine — thuốc cần đau thắt ngực mạn ỔN ĐỊNH hoặc suy tim mạn ổn định kèm nhịp xoang/tần số tim/EF/NYHA phù hợp. LƯU Ý: quy tắc này chỉ kiểm được I20.0; các điều kiện khác (nhịp xoang, tần số tim, EF, NYHA) chưa có dữ liệu structured để tự động kiểm.",
+      "action": "Bác sĩ xác nhận tình trạng đau thắt ngực đã ổn định (không phải cấp/không ổn định) và đủ điều kiện lâm sàng khác trước khi dùng."
     }
   ]
 }
