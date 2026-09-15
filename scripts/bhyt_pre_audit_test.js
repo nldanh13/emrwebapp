@@ -629,6 +629,55 @@ test('50. Không có bảng kê -> Tầng 8 im lặng, không lỗi', () => {
   assert.strictEqual(result.tier8_findings.length, 0);
 });
 
+// ── Tầng 8: nhiều lần PT/TT -> nêu ekip/phương pháp (thông tin, không tự tính tiền) ─
+
+test('50a. 2 lần PT cùng ekip -> finding INFO nêu "cùng ekip"', () => {
+  const data = baseData({
+    billing: null,
+    surgery: { surgeries: [
+      { ten: 'Kết hợp xương đùi', thoi_gian: '05/09/2026 08:00', phuong_phap_pt: 'KHX nẹp vít', bs_mo_chinh: 'BS Nguyễn Văn A', gay_me_chinh: 'BS Trần Thị B', ptv_phu_1: 'BS Lê C', ptv_phu_2: '', dd_dung_cu: 'ĐD D', ktv_phu_me: 'KTV E' },
+      { ten: 'Kết hợp xương chày', thoi_gian: '05/09/2026 10:00', phuong_phap_pt: 'KHX đinh nội tủy', bs_mo_chinh: 'BS Nguyễn Văn A', gay_me_chinh: 'BS Trần Thị B', ptv_phu_1: 'BS Lê C', ptv_phu_2: '', dd_dung_cu: 'ĐD D', ktv_phu_me: 'KTV E' },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  const f = result.tier8_findings.find(x => x.rule_id === 'BHYT_T8_MULTI_SURGERY_EKIP_COMPOSITION');
+  assert.ok(f);
+  assert.strictEqual(f.severity, BHYT_SEVERITY.INFO);
+  assert.ok(f.title.includes('cùng ekip'));
+});
+
+test('50b. 2 lần PT khác ekip -> finding INFO nêu "N ekip khác nhau"', () => {
+  const data = baseData({
+    billing: null,
+    surgery: { surgeries: [
+      { ten: 'Kết hợp xương đùi', thoi_gian: '05/09/2026 08:00', phuong_phap_pt: 'KHX nẹp vít', bs_mo_chinh: 'BS Nguyễn Văn A', gay_me_chinh: 'BS Trần Thị B' },
+      { ten: 'Kết hợp xương chày', thoi_gian: '06/09/2026 08:00', phuong_phap_pt: 'KHX đinh nội tủy', bs_mo_chinh: 'BS Phạm Văn X', gay_me_chinh: 'BS Hoàng Thị Y' },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  const f = result.tier8_findings.find(x => x.rule_id === 'BHYT_T8_MULTI_SURGERY_EKIP_COMPOSITION');
+  assert.ok(f);
+  assert.ok(f.title.includes('2 ekip khác nhau'));
+});
+
+test('50c. Chỉ 1 lần PT -> không cảnh báo (cần >=2 lần mới so sánh)', () => {
+  const data = baseData({ billing: null });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(!result.tier8_findings.some(f => f.rule_id === 'BHYT_T8_MULTI_SURGERY_EKIP_COMPOSITION'));
+});
+
+test('50d. 2 lần PT nhưng không có trường ekip nào -> không suy đoán, không cảnh báo', () => {
+  const data = baseData({
+    billing: null,
+    surgery: { surgeries: [
+      { ten: 'Kết hợp xương đùi', thoi_gian: '05/09/2026 08:00' },
+      { ten: 'Kết hợp xương chày', thoi_gian: '06/09/2026 08:00' },
+    ] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(!result.tier8_findings.some(f => f.rule_id === 'BHYT_T8_MULTI_SURGERY_EKIP_COMPOSITION'));
+});
+
 // ── Bước 4: chỉ số "tỷ lệ đạt" theo Tầng ─────────────────────────────────────
 
 test('51. Hồ sơ sạch -> readiness 8/8 tầng không có cảnh báo', () => {

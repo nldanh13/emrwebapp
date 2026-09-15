@@ -4278,8 +4278,14 @@ def fetch_surgery(sess: Optional["EmrHttpSession"], ma_bn: str,
                 except Exception as e:
                     detail = {"_error": str(e)}
             merged = {**row, "detail": detail}
-            # Đưa vài trường quan trọng lên top-level để UI đọc nhanh.
-            for k in ["phan_loai_pt", "bat_dau", "ket_thuc", "dich_vu_phau_thuat", "phuong_phap_pt", "pp_vo_cam", "icd9", "bs_mo_chinh"]:
+            # Đưa vài trường quan trọng lên top-level để UI đọc nhanh — gồm cả ekip PT
+            # (gay_me_chinh/ptv_phu_1/ptv_phu_2/dd_dung_cu/ktv_phu_me) để BHYT pre-audit
+            # đối chiếu cùng/khác ekip khi có nhiều lần PT/TT trong cùng đợt điều trị.
+            for k in [
+                "phan_loai_pt", "bat_dau", "ket_thuc", "dich_vu_phau_thuat", "phuong_phap_pt",
+                "pp_vo_cam", "icd9", "bs_mo_chinh", "gay_me_chinh", "ptv_phu_1", "ptv_phu_2",
+                "dd_dung_cu", "ktv_phu_me",
+            ]:
                 if detail.get(k):
                     merged[k] = detail.get(k)
             out_rows.append(merged)

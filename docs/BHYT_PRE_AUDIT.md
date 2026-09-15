@@ -203,6 +203,12 @@ Từ khóa so khớp (`primary_keywords`/`companion_keywords`) là mảng các *
 
 Mức REVIEW cho cả 4 rule — chỉ cảnh báo để người kiểm tự xác nhận (2 chỉ định độc lập, 2 mẫu bệnh phẩm riêng, có phiếu tiêm thuốc cản quang...), không tự động kết luận trùng/thiếu và không tự chặn gửi hồ sơ. Đây là **pilot theo đúng 4 ví dụ cụ thể** trong báo cáo cảnh báo BHYT nội bộ — chưa phải danh mục "trong gói" đầy đủ toàn viện; thêm cặp dịch vụ khác vào `bhyt_dvkt_cross_check_rules.json` khi có nguồn xác nhận.
 
+### Nhiều lần PT/TT trong đợt điều trị — ekip/phương pháp (`BHYT_T8_MULTI_SURGERY_EKIP_COMPOSITION`)
+
+Trả lời một phần câu hỏi gốc "một cuộc phẫu thuật thì mấy chỗ, mấy phương pháp, mấy ekip, cùng hay khác ekip". Khi hồ sơ có ≥ 2 dòng `surgery.surgeries`, `checkMultiSurgeryEkipComposition()` so sánh ekip (`bs_mo_chinh`, `gay_me_chinh`, `ptv_phu_1`, `ptv_phu_2`, `dd_dung_cu`, `ktv_phu_me` — các trường đã xác nhận thật từ `worker/hchanh_fetch.py` → `_parse_surgery_detail_html()`, lifted lên top-level dòng PT) và phương pháp (`phuong_phap_pt`) giữa các lần, nêu ra **mức INFO**: cùng ekip hay khác ekip, mấy phương pháp khác nhau.
+
+**Cố ý KHÔNG tự tính số tiền điều chỉnh** — chưa có văn bản căn cứ cụ thể cho công thức tính tiền công phẫu thuật/gây mê khi cùng/khác ekip trong cùng đợt điều trị (đúng nguyên tắc "không suy đoán"); `action` chỉ nhắc người kiểm tự đối chiếu quy chế bệnh viện/BHYT hiện hành. Nếu record cũ/thiếu hết các trường ekip (dữ liệu fetch trước khi có bản vá lift-field) thì bỏ qua, không cảnh báo.
+
 ## Chỉ số "tỷ lệ đạt" theo Tầng (`readiness`, đã cài đặt)
 
 Phục vụ quy trình vận hành: lấy dữ liệu → so logic → xem tỷ lệ đạt → quyết định ra viện. `runBhytPreAudit()` trả thêm field `readiness` (song song với `assessment`):

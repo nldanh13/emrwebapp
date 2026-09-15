@@ -897,8 +897,43 @@ function checkDvktCrossChecks({ billing }) {
   return findings;
 }
 
-function runBhytTier8({ billing }) {
-  return checkDvktCrossChecks({ billing });
+// Nhiều lần PT/TT trong cùng đợt điều trị: nêu ra mấy chỗ/phương pháp/ekip, cùng
+// hay khác ekip — CHỈ để người kiểm tự đối chiếu quy định tính tiền, KHÔNG tự tính
+// số tiền điều chỉnh vì chưa có văn bản căn cứ cụ thể cho công thức này (không suy
+// đoán). Ekip lấy từ các trường đã xác nhận thật trên EMR (worker/hchanh_fetch.py
+// _parse_surgery_detail_html) — nếu record cũ chưa có các trường này thì bỏ qua,
+// không suy đoán bằng dữ liệu thiếu.
+function checkMultiSurgeryEkipComposition({ surgery }) {
+  const rows = safeArray(surgery?.surgeries);
+  if (rows.length < 2) return [];
+
+  const ekipFields = ['bs_mo_chinh', 'gay_me_chinh', 'ptv_phu_1', 'ptv_phu_2', 'dd_dung_cu', 'ktv_phu_me'];
+  const ekipKey = (r) => ekipFields.map(k => normText(text(r?.[k]))).join('|');
+  const hasAnyEkipData = rows.some(r => ekipFields.some(k => text(r?.[k])));
+  if (!hasAnyEkipData) return [];
+
+  const distinctEkip = new Set(rows.map(ekipKey));
+  const distinctMethods = new Set(rows.map(r => normText(text(r?.phuong_phap_pt || r?.dich_vu_phau_thuat))).filter(Boolean));
+  const sameEkip = distinctEkip.size <= 1;
+
+  return [makeFinding({
+    rule_id: 'BHYT_T8_MULTI_SURGERY_EKIP_COMPOSITION',
+    tier: 8,
+    severity: BHYT_SEVERITY.INFO,
+    group: 'Dịch vụ kỹ thuật',
+    title: `${rows.length} lần phẫu thuật/thủ thuật trong đợt điều trị — ${sameEkip ? 'cùng ekip' : `${distinctEkip.size} ekip khác nhau`}, ${distinctMethods.size || rows.length} phương pháp`,
+    detail: rows.map((r, i) => `PT ${i + 1}: ${text(r?.phuong_phap_pt || r?.dich_vu_phau_thuat, 'chưa rõ phương pháp')} — PTV chính: ${text(r?.bs_mo_chinh, 'chưa rõ')}`).join('; '),
+    action: sameEkip
+      ? 'Nhiều lần PT/TT cùng ekip trong đợt điều trị — kiểm tra lại quy định tính tiền công phẫu thuật/gây mê cho từng lần theo quy chế bệnh viện/BHYT hiện hành.'
+      : 'Nhiều lần PT/TT khác ekip trong đợt điều trị — kiểm tra lại quy định tính tiền công phẫu thuật/gây mê áp dụng cho từng ekip theo quy chế bệnh viện/BHYT hiện hành.',
+    legal_source: 'Chưa có văn bản căn cứ cụ thể cho công thức tính tiền cùng/khác ekip trong hệ thống — chỉ nêu sự kiện để người kiểm tự đối chiếu, không tự tính số tiền điều chỉnh.',
+    legal_clause: '',
+    evidence: `count=${rows.length}, distinct_ekip=${distinctEkip.size}, distinct_methods=${distinctMethods.size}`,
+  })];
+}
+
+function runBhytTier8({ billing, surgery }) {
+  return [...checkDvktCrossChecks({ billing }), ...checkMultiSurgeryEkipComposition({ surgery })];
 }
 
 // ── Tổng hợp đánh giá ────────────────────────────────────────────────────────
@@ -993,7 +1028,7 @@ function runBhytPreAudit({ meta, data, bedDaysReview }) {
     ? runBhytTier7({ billing })
     : [];
   const tier8_findings = hasEnoughData
-    ? runBhytTier8({ billing })
+    ? runBhytTier8({ billing, surgery })
     : [];
 
   const allFindings = [...tier1_findings, ...tier2_findings, ...tier3_findings, ...tier4_findings, ...tier5_findings, ...tier6_findings, ...tier7_findings, ...tier8_findings];

@@ -176,6 +176,12 @@
       "action": "Kiểm tra phiếu tiêm/xuất thuốc cản quang đúng người bệnh, đúng ngày trước khi giữ mã CT có cản quang.",
       "legal_source": "Checklist chuyên môn nội bộ (config/hchanh/bhyt_dvkt_cross_check_rules.json)",
       "legal_clause": "Không phải rule pháp lý bắt buộc — cần bằng chứng liên kết dịch vụ ↔ thuốc, cần người kiểm xác nhận."
+    },
+    "BHYT_T8_MULTI_SURGERY_EKIP_COMPOSITION": {
+      "tier": 8,
+      "action": "Nhiều lần PT/TT trong đợt điều trị — kiểm tra lại quy định tính tiền công phẫu thuật/gây mê cho từng lần/ekip theo quy chế bệnh viện/BHYT hiện hành.",
+      "legal_source": "Chưa có văn bản căn cứ cụ thể cho công thức tính tiền cùng/khác ekip trong hệ thống — chỉ nêu sự kiện để người kiểm tự đối chiếu, không tự tính số tiền điều chỉnh.",
+      "legal_clause": ""
     }
   }
 }
