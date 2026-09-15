@@ -51,6 +51,12 @@
       "legal_source": "Thông tư 12/2026/TT-BTC",
       "legal_clause": "Dữ liệu phẫu thuật/thủ thuật đề nghị thanh toán phải xác định được thời điểm thực hiện."
     },
+    "BHYT_T1_SURGERY_TIME_SEQUENCE_INVALID": {
+      "tier": 1,
+      "action": "Kiểm tra lại giờ bắt đầu/kết thúc trên biên bản phẫu thuật trên EMR trước khi nộp hồ sơ.",
+      "legal_source": "Thông tư 12/2026/TT-BTC",
+      "legal_clause": "Giám định tự động đối chiếu tính hợp lý của trình tự thời gian trong dữ liệu đề nghị thanh toán — giờ kết thúc phải sau giờ bắt đầu."
+    },
     "BHYT_T1_BENEFIT_LEVEL_INCONSISTENT": {
       "tier": 1,
       "action": "Kiểm tra lại mức hưởng áp dụng cho từng dòng — có thể do đổi thẻ/đối tượng giữa đợt.",

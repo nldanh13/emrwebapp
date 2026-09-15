@@ -245,6 +245,34 @@ function checkPrimaryDiagnosis(discharge) {
   });
 }
 
+// Xung đột trình tự thời gian (mục 3 trong báo cáo cảnh báo BHYT nội bộ): một chi
+// phí đúng chuyên môn vẫn có thể bị loại nếu trình tự thời gian không hợp lý — ở đây
+// chỉ làm phần có dữ liệu sẵn (giờ bắt đầu/kết thúc phẫu thuật đã fetch được từ form
+// chi tiết PT, xem worker/hchanh_fetch.py txtBatDauPT/txtKetThucPT). Các mốc khác
+// trong báo cáo (thuốc trước y lệnh, kết quả XN trước khi lấy mẫu...) cần 2 mốc thời
+// gian riêng biệt của cùng 1 sự việc mà dữ liệu hiện tại chưa có — không suy đoán.
+function checkSurgeryTimeSequence(surgery) {
+  const rows = safeArray(surgery?.surgeries);
+  if (!rows.length) return null;
+  const invalid = [];
+  for (const row of rows) {
+    const start = parseVNDateTime(row?.bat_dau || row?.detail?.bat_dau);
+    const end = parseVNDateTime(row?.ket_thuc || row?.detail?.ket_thuc);
+    if (!start || !end) continue; // thiếu 1 trong 2 mốc thì không suy đoán
+    if (end.getTime() < start.getTime()) invalid.push({ row, start, end });
+  }
+  if (!invalid.length) return null;
+  return makeFinding({
+    rule_id: 'BHYT_T1_SURGERY_TIME_SEQUENCE_INVALID',
+    severity: BHYT_SEVERITY.BLOCK,
+    group: 'Trình tự thời gian',
+    title: `${invalid.length} phẫu thuật/thủ thuật có giờ kết thúc trước giờ bắt đầu`,
+    detail: invalid.slice(0, 5).map(x => `${text(surgeryRowText(x.row), 'PT/TT')}: bắt đầu ${fmtDateTimeUTC(x.start)}, kết thúc ${fmtDateTimeUTC(x.end)}`).join('; '),
+    action: 'Kiểm tra lại giờ bắt đầu/kết thúc trên biên bản phẫu thuật trên EMR trước khi nộp hồ sơ.',
+    evidence: `count=${invalid.length}`,
+  });
+}
+
 function checkSurgeryDates(surgery) {
   const rows = safeArray(surgery?.surgeries);
   if (!rows.length) return null;
@@ -296,6 +324,9 @@ function runBhytTier1({ profile, discharge, billing, surgery, admitAt, discharge
 
   const f3 = checkSurgeryDates(surgery);
   if (f3) findings.push(f3);
+
+  const f3b = checkSurgeryTimeSequence(surgery);
+  if (f3b) findings.push(f3b);
 
   const f4 = checkBenefitLevelConsistency(billing);
   if (f4) findings.push(f4);

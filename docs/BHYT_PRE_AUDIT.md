@@ -70,9 +70,12 @@ Chỉ dùng các trường đã xác nhận có thật trong dữ liệu hành c
 | `BHYT_T1_SERVICE_DATE_AFTER_DISCHARGE` | Có dòng bảng kê sau ngày ra viện | BLOCK |
 | `BHYT_T1_PRIMARY_DIAGNOSIS_MISSING` | Không có chẩn đoán chính ra viện | BLOCK |
 | `BHYT_T1_SURGERY_DATE_MISSING` | Có PT/TT nhưng không xác định được ngày thực hiện | BLOCK |
+| `BHYT_T1_SURGERY_TIME_SEQUENCE_INVALID` | Giờ kết thúc PT/TT trước giờ bắt đầu (`ket_thuc` < `bat_dau`) | BLOCK |
 | `BHYT_T1_BENEFIT_LEVEL_INCONSISTENT` | Nhiều `muc_huong` khác nhau giữa các dòng BHYT cùng đợt | REVIEW |
 
 Rule "mức hưởng bảng kê khác quyền lợi thẻ" trong đề xuất gốc **chưa cài đặt** vì dữ liệu hiện có chỉ đọc được `muc_huong` áp dụng trên từng dòng bảng kê, không có trường quyền lợi thẻ (mức hưởng khai báo) tách biệt để đối chiếu — tránh suy đoán khi chưa có nguồn dữ liệu ổn định.
+
+`BHYT_T1_SURGERY_TIME_SEQUENCE_INVALID` là phần khả thi của "xung đột trình tự thời gian" (báo cáo cảnh báo BHYT nội bộ, mục 3 — Thông tư 12/2026/TT-BTC quy định giám định tự động đối chiếu tính hợp lệ dữ liệu). Chỉ so 2 mốc `bat_dau`/`ket_thuc` đã có sẵn từ form chi tiết PT (`worker/hchanh_fetch.py` → `txtBatDauPT`/`txtKetThucPT`); thiếu 1 trong 2 mốc thì không suy đoán. Các xung đột thời gian khác trong báo cáo gốc (thuốc trước y lệnh, kết quả xét nghiệm trước khi lấy mẫu, vật tư xuất sau khi ra viện...) cần 2 mốc thời gian riêng biệt của cùng 1 sự việc mà dữ liệu hiện tại chưa có — chưa làm được, không suy đoán.
 
 ## Tầng 2 — Ngày giường (đã cài đặt)
 

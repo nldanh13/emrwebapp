@@ -109,6 +109,37 @@ test('8. Phẫu thuật không rõ ngày -> không nên nộp', () => {
   assert.ok(result.tier1_findings.some(f => f.rule_id === 'BHYT_T1_SURGERY_DATE_MISSING'));
 });
 
+test('8b. Phẫu thuật có giờ kết thúc trước giờ bắt đầu -> không nên nộp (xung đột thời gian)', () => {
+  const data = baseData({
+    surgery: { surgeries: [{
+      ten: 'Thay khớp háng', thoi_gian: '05/09/2026 08:00',
+      bat_dau: '10:00 05/09/2026', ket_thuc: '08:30 05/09/2026',
+    }] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.assessment.code, ASSESSMENT.DO_NOT_SUBMIT.code);
+  assert.ok(result.tier1_findings.some(f => f.rule_id === 'BHYT_T1_SURGERY_TIME_SEQUENCE_INVALID'));
+});
+
+test('8c. Phẫu thuật có giờ bắt đầu/kết thúc hợp lệ -> không cảnh báo', () => {
+  const data = baseData({
+    surgery: { surgeries: [{
+      ten: 'Thay khớp háng', thoi_gian: '05/09/2026 08:00',
+      bat_dau: '08:00 05/09/2026', ket_thuc: '10:30 05/09/2026',
+    }] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(!result.tier1_findings.some(f => f.rule_id === 'BHYT_T1_SURGERY_TIME_SEQUENCE_INVALID'));
+});
+
+test('8d. Phẫu thuật thiếu giờ bắt đầu hoặc kết thúc -> không suy đoán, không cảnh báo', () => {
+  const data = baseData({
+    surgery: { surgeries: [{ ten: 'Thay khớp háng', thoi_gian: '05/09/2026 08:00', bat_dau: '08:00 05/09/2026' }] },
+  });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(!result.tier1_findings.some(f => f.rule_id === 'BHYT_T1_SURGERY_TIME_SEQUENCE_INVALID'));
+});
+
 test('9. Mức hưởng BHYT không đồng nhất -> cần kiểm tra (REVIEW), không BLOCK', () => {
   const data = baseData({
     billing: { rows: [
