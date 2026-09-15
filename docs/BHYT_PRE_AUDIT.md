@@ -203,6 +203,28 @@ Từ khóa so khớp (`primary_keywords`/`companion_keywords`) là mảng các *
 
 Mức REVIEW cho cả 4 rule — chỉ cảnh báo để người kiểm tự xác nhận (2 chỉ định độc lập, 2 mẫu bệnh phẩm riêng, có phiếu tiêm thuốc cản quang...), không tự động kết luận trùng/thiếu và không tự chặn gửi hồ sơ. Đây là **pilot theo đúng 4 ví dụ cụ thể** trong báo cáo cảnh báo BHYT nội bộ — chưa phải danh mục "trong gói" đầy đủ toàn viện; thêm cặp dịch vụ khác vào `bhyt_dvkt_cross_check_rules.json` khi có nguồn xác nhận.
 
+## Chỉ số "tỷ lệ đạt" theo Tầng (`readiness`, đã cài đặt)
+
+Phục vụ quy trình vận hành: lấy dữ liệu → so logic → xem tỷ lệ đạt → quyết định ra viện. `runBhytPreAudit()` trả thêm field `readiness` (song song với `assessment`):
+
+```js
+readiness: {
+  clean_count: 6,     // số Tầng không phát sinh finding nào
+  total_count: 8,
+  items: [
+    { tier: 1, label: 'Toàn vẹn dữ liệu', count: 0, clean: true },
+    { tier: 6, label: 'Thuốc/DVKT',       count: 2, clean: false },
+    // ...
+  ],
+}
+```
+
+**KHÔNG phải điểm số cộng dồn** — đúng nguyên tắc "không cộng điểm" xuyên suốt tài liệu này, `computeTierReadiness()` chỉ đếm bao nhiêu Tầng có/không có finding, không gán trọng số hay cộng severity. `readiness = null` khi `hasEnoughData = false` (chưa đủ profile/discharge để chạy tiền giám định) — không suy đoán tỷ lệ khi chưa có gì để đánh giá.
+
+**Lưu ý quan trọng khi diễn giải**: "0 finding" ở một Tầng không đồng nghĩa "đã xác minh sạch tuyệt đối" — nhiều Tầng (5, 6, 8...) chỉ phát hiện được khi có dữ liệu khớp từ khóa liên quan (vd Tầng 6 chỉ kiểm được nếu có dòng thuốc khớp danh mục `bhyt_drug_rules.json`); không khớp gì có thể là "không có gì để kiểm" chứ không hẳn "đã kiểm và không có vấn đề". Vì vậy `readiness` là **chỉ số tham khảo hiển thị bên cạnh `assessment`** (vẫn là tín hiệu chính, dùng cho `canPrint`/`workflowStatus`), không tạo thêm gate mới và không tự động khóa quyết định ra viện — người kiểm luôn tự xem các finding cụ thể trước khi quyết định.
+
+Hiển thị: `BhytAssessmentBox` (`src/components/hchanh/HchahnTab.jsx`) render dòng "`X/Y nhóm kiểm không có cảnh báo`" kèm chip tên các Tầng còn vấn đề, ngay dưới nhãn đánh giá tổng.
+
 ## Việc chưa làm (phần còn lại của Tầng 5–8)
 
 Khung (`makeFinding`, `BHYT_SEVERITY`, `ASSESSMENT`, rule config JSON) đã sẵn sàng để mở rộng thêm mà không đổi cấu trúc:

@@ -629,5 +629,31 @@ test('50. Không có bảng kê -> Tầng 8 im lặng, không lỗi', () => {
   assert.strictEqual(result.tier8_findings.length, 0);
 });
 
+// ── Bước 4: chỉ số "tỷ lệ đạt" theo Tầng ─────────────────────────────────────
+
+test('51. Hồ sơ sạch -> readiness 8/8 tầng không có cảnh báo', () => {
+  const data = baseData();
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(result.readiness);
+  assert.strictEqual(result.readiness.total_count, 8);
+  assert.strictEqual(result.readiness.clean_count, 8);
+  assert.ok(result.readiness.items.every(i => i.clean));
+});
+
+test('52. Hồ sơ có 1 finding ở Tầng 1 -> readiness giảm đúng 1 tầng, các tầng khác không đổi', () => {
+  const data = baseData({ profile: { ngay_vao_vien: '09/09/2026', ngay_ra_vien: '03/09/2026' } });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.strictEqual(result.readiness.clean_count, 7);
+  const tier1Item = result.readiness.items.find(i => i.tier === 1);
+  assert.strictEqual(tier1Item.clean, false);
+  assert.ok(tier1Item.count >= 1);
+  assert.strictEqual(tier1Item.label, 'Toàn vẹn dữ liệu');
+});
+
+test('53. Chưa đủ dữ liệu -> readiness = null, không suy đoán tỷ lệ đạt', () => {
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data: {} });
+  assert.strictEqual(result.readiness, null);
+});
+
 console.log(`\n${passed} test(s) passed.`);
 if (process.exitCode) console.error('\nCó test thất bại.');

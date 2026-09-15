@@ -491,6 +491,7 @@ function BhytAssessmentBox({ bhyt }) {
   if (!a) return null;
   const s = tS(a.tone);
   const findings = safeArr(a.findings);
+  const readiness = bhyt.readiness;
 
   return (
     <div style={{ margin:'8px 16px 0', padding:'10px 12px', borderRadius:8,
@@ -508,6 +509,26 @@ function BhytAssessmentBox({ bhyt }) {
           Đây là nguy cơ cần kiểm trước khi nộp, không phải kết luận xuất toán.
         </div>
       ) : null}
+      {readiness && (
+        <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', marginTop:6 }}>
+          <span style={{ fontSize:11, fontWeight:700, color: readiness.clean_count === readiness.total_count ? C.green : C.text2 }}>
+            {readiness.clean_count}/{readiness.total_count} nhóm kiểm không có cảnh báo
+          </span>
+          {readiness.items.filter(i => !i.clean).map(i => (
+            <span key={i.tier} title={`${i.count} điểm cần kiểm`} style={{
+              fontSize:10, padding:'1px 6px', borderRadius:10,
+              background:C.amberBg, border:`1px solid ${C.amberBorder}`, color:C.amber,
+            }}>
+              T{i.tier} {i.label}
+            </span>
+          ))}
+        </div>
+      )}
+      {readiness && readiness.clean_count < readiness.total_count && (
+        <div style={{ fontSize:10, color:C.text3, marginTop:2 }}>
+          Chỉ số tham khảo theo nhóm — không tự khóa ra viện, người kiểm tự quyết định dựa trên các điểm cần kiểm bên dưới.
+        </div>
+      )}
       {findings.length > 0 && (
         <div style={{ display:'grid', gap:4, marginTop:6 }}>
           {findings.slice(0, 5).map((f, idx) => (

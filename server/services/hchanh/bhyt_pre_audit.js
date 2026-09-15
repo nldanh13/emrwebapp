@@ -922,6 +922,41 @@ function computeAssessment({ hasEnoughData, findings }) {
   return { ...assessment, amount_at_risk, findings };
 }
 
+// ── Chỉ số "tỷ lệ đạt" theo Tầng ─────────────────────────────────────────────
+// KHÔNG phải điểm số cộng dồn (đúng nguyên tắc "không cộng điểm" ở trên) — chỉ đếm
+// bao nhiêu trong số các Tầng ĐÃ CHẠY không phát sinh finding nào, để người kiểm có
+// cái nhìn nhanh theo nhóm thay vì phải đọc hết danh sách finding gộp. "Không có
+// finding" không đồng nghĩa "đã xác minh sạch tuyệt đối" — nhiều Tầng (5, 6, 8...)
+// chỉ phát hiện được khi có dữ liệu khớp từ khóa liên quan; không khớp gì không phải
+// lúc nào cũng nghĩa là "đã kiểm và không có vấn đề", có thể là "không có gì để kiểm".
+// Vì vậy đây là chỉ số THAM KHẢO hiển thị bên cạnh `assessment` (vẫn là tín hiệu
+// chính), không dùng để tự động khóa nút ra viện — người kiểm luôn tự quyết định.
+
+const TIER_LABELS = Object.freeze({
+  1: 'Toàn vẹn dữ liệu',
+  2: 'Ngày giường',
+  3: 'Chẩn đoán ↔ PT/TT',
+  4: 'CLS chứng minh chỉ định',
+  5: 'VTYT',
+  6: 'Thuốc/DVKT',
+  7: 'Trùng dịch vụ',
+  8: 'DVKT trùng/cấu phần',
+});
+
+function computeTierReadiness(tierEntries) {
+  const items = tierEntries.map(({ tier, findings }) => ({
+    tier,
+    label: TIER_LABELS[tier] || `Tầng ${tier}`,
+    count: findings.length,
+    clean: findings.length === 0,
+  }));
+  return {
+    clean_count: items.filter(i => i.clean).length,
+    total_count: items.length,
+    items,
+  };
+}
+
 // ── Điểm vào ─────────────────────────────────────────────────────────────────
 // Chỉ áp dụng cho scope 'discharge' — các scope khác (nhập khoa/PTTT/hằng ngày)
 // chưa có đủ dữ liệu ra viện/bảng kê để tiền giám định.
@@ -963,6 +998,18 @@ function runBhytPreAudit({ meta, data, bedDaysReview }) {
 
   const allFindings = [...tier1_findings, ...tier2_findings, ...tier3_findings, ...tier4_findings, ...tier5_findings, ...tier6_findings, ...tier7_findings, ...tier8_findings];
   const assessment = computeAssessment({ hasEnoughData, findings: allFindings });
+  const readiness = hasEnoughData
+    ? computeTierReadiness([
+        { tier: 1, findings: tier1_findings },
+        { tier: 2, findings: tier2_findings },
+        { tier: 3, findings: tier3_findings },
+        { tier: 4, findings: tier4_findings },
+        { tier: 5, findings: tier5_findings },
+        { tier: 6, findings: tier6_findings },
+        { tier: 7, findings: tier7_findings },
+        { tier: 8, findings: tier8_findings },
+      ])
+    : null;
 
   return {
     applicable: true,
@@ -976,6 +1023,7 @@ function runBhytPreAudit({ meta, data, bedDaysReview }) {
     tier7_findings,
     tier8_findings,
     assessment,
+    readiness,
   };
 }
 
@@ -983,7 +1031,9 @@ module.exports = {
   BHYT_SEVERITY,
   SEVERITY_RANK,
   ASSESSMENT,
+  TIER_LABELS,
   runBhytPreAudit,
+  computeTierReadiness,
   runBhytTier1,
   runBhytTier2,
   runBhytTier3,
