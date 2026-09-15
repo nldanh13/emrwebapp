@@ -5899,19 +5899,28 @@ def run_hchanh_fetch_batch(input_path: str, out_path: str, scope: str, files: Li
         ho_ten = _t(patient_row.get("ho_ten") or patient_row.get("Họ tên"))
         research_code = _t(patient_row.get("research_code") or patient_row.get("Mã NC"))
         key = _t(patient_row.get("_progress_key")) or ma_bn or f"row_{idx}"
-        print(f"LOG: ── Ca {idx + 1}/{total} trong lô: BN={ma_bn or '?'} | {ho_ten or ''}")
+        # Cho phép mỗi ca yêu cầu bộ file khác nhau trong cùng lô (vd Kiểm hồ sơ chỉ lấy
+        # đúng phần còn thiếu của từng ca) — nếu dòng có _files_override thì dùng thay vì
+        # bộ files chung của cả lô.
+        override_files = patient_row.get("_files_override")
+        item_files = (
+            [str(f).strip() for f in override_files if str(f).strip()]
+            if isinstance(override_files, list) and override_files
+            else files
+        )
+        print(f"LOG: ── Ca {idx + 1}/{total} trong lô: BN={ma_bn or '?'} | {ho_ten or ''} | files={item_files}")
 
         _trace_reset()
         _hchanh_batch_progress_mark_running(
             progress_path, key, ma_bn, ho_ten, research_code,
             _t(patient_row.get("admission_date") or patient_row.get("date_from")),
             _t(patient_row.get("discharge_date") or patient_row.get("date_to")),
-            files,
+            item_files,
         )
 
         try:
             item_output = _run_hchanh_fetch_core(
-                patient_row, scope, files, date_from, date_to, inpatient_status, headless,
+                patient_row, scope, item_files, date_from, date_to, inpatient_status, headless,
                 batch_size=batch_size, input_basename=os.path.basename(input_path), out_path=out_path,
             )
         except Exception as e:
@@ -5927,9 +5936,9 @@ def run_hchanh_fetch_batch(input_path: str, out_path: str, scope: str, files: Li
             json.dump(combined, f, ensure_ascii=False, indent=2)
         os.replace(tmp_out, out_path)
 
-        ok_c, att_c, err_c, suffix = _summarize_hchanh_output(item_output, files)
+        ok_c, att_c, err_c, suffix = _summarize_hchanh_output(item_output, item_files)
         ok_total += ok_c; attention_total += att_c; error_total += err_c
-        print(f"LOG:   Xong ca {idx + 1}/{total}: {ok_c}/{len(files)} files OK{suffix}")
+        print(f"LOG:   Xong ca {idx + 1}/{total}: {ok_c}/{len(item_files)} files OK{suffix}")
 
     served = int(_HCHANH_CLICK_CACHE.get("patients_served") or 0)
     print(f"LOG: Xong lô. {total} ca | ok_files={ok_total}, cần_xử_lý={attention_total}, lỗi={error_total} → {out_path}")
