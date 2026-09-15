@@ -70,9 +70,12 @@ Chỉ dùng các trường đã xác nhận có thật trong dữ liệu hành c
 | `BHYT_T1_SERVICE_DATE_AFTER_DISCHARGE` | Có dòng bảng kê sau ngày ra viện | BLOCK |
 | `BHYT_T1_PRIMARY_DIAGNOSIS_MISSING` | Không có chẩn đoán chính ra viện | BLOCK |
 | `BHYT_T1_SURGERY_DATE_MISSING` | Có PT/TT nhưng không xác định được ngày thực hiện | BLOCK |
+| `BHYT_T1_SURGERY_TIME_SEQUENCE_INVALID` | Giờ kết thúc PT/TT trước giờ bắt đầu (`ket_thuc` < `bat_dau`) | BLOCK |
 | `BHYT_T1_BENEFIT_LEVEL_INCONSISTENT` | Nhiều `muc_huong` khác nhau giữa các dòng BHYT cùng đợt | REVIEW |
 
 Rule "mức hưởng bảng kê khác quyền lợi thẻ" trong đề xuất gốc **chưa cài đặt** vì dữ liệu hiện có chỉ đọc được `muc_huong` áp dụng trên từng dòng bảng kê, không có trường quyền lợi thẻ (mức hưởng khai báo) tách biệt để đối chiếu — tránh suy đoán khi chưa có nguồn dữ liệu ổn định.
+
+`BHYT_T1_SURGERY_TIME_SEQUENCE_INVALID` là phần khả thi của "xung đột trình tự thời gian" (báo cáo cảnh báo BHYT nội bộ, mục 3 — Thông tư 12/2026/TT-BTC quy định giám định tự động đối chiếu tính hợp lệ dữ liệu). Chỉ so 2 mốc `bat_dau`/`ket_thuc` đã có sẵn từ form chi tiết PT (`worker/hchanh_fetch.py` → `txtBatDauPT`/`txtKetThucPT`); thiếu 1 trong 2 mốc thì không suy đoán. Các xung đột thời gian khác trong báo cáo gốc (thuốc trước y lệnh, kết quả xét nghiệm trước khi lấy mẫu, vật tư xuất sau khi ra viện...) cần 2 mốc thời gian riêng biệt của cùng 1 sự việc mà dữ liệu hiện tại chưa có — chưa làm được, không suy đoán.
 
 ## Tầng 2 — Ngày giường (đã cài đặt)
 
@@ -135,20 +138,40 @@ INFO là mức thấp nhất trong thang `BHYT_SEVERITY` nên **không** kéo đ
 
 **Điều kiện để nâng Tầng 5 lên 7 cửa kiểm thật**: cần ít nhất một trong — (a) file/API danh mục VTYT BHXH kèm hạn hiệu lực và trần thanh toán, hoặc (b) worker fetch thêm dữ liệu vật tư tiêu hao thực tế từ biên bản PT trên EMR. Khi có, thêm rule mới vào `runBhytTier5()` mà không cần đổi khung.
 
-## Tầng 6 — Thuốc: chỉ phần cảnh báo lâm sàng (đã cài đặt)
+## Tầng 6 — Thuốc/DVKT: cảnh báo lâm sàng (đã cài đặt, gồm 2 hướng)
 
-Đề xuất gốc: kiểm cấu trúc trước (danh mục thuốc BHYT, đường dùng, thời gian, số lượng) rồi mới đến cảnh báo lâm sàng (`diagnosis_support`). Hệ thống hiện **không có** danh mục thuốc BHYT/đường dùng/định mức số lượng để làm phần cấu trúc — cùng khoảng trống dữ liệu như Tầng 5 (`config/medication_catalog.json` chỉ có 1 dòng mẫu, không phải danh mục thật). Hai mục khác trong phần cấu trúc **không lặp lại** vì đã có nơi khác lo:
+Đề xuất gốc: kiểm cấu trúc trước (danh mục thuốc BHYT, đường dùng, thời gian, số lượng) rồi mới đến cảnh báo lâm sàng (`diagnosis_support`). Hệ thống hiện **không có** danh mục thuốc BHYT/đường dùng/định mức số lượng để làm phần cấu trúc — cùng khoảng trống dữ liệu như Tầng 5 (`config/medication_catalog.json` chỉ có 1 dòng mẫu, không phải danh mục thật). Ba mục khác trong phần cấu trúc **không lặp lại** vì đã có nơi khác lo:
 
 - "Không dùng thuốc sau ra viện" → đã có `BHYT_T1_SERVICE_DATE_AFTER_DISCHARGE` (Tầng 1, áp dụng mọi dòng bảng kê) và `ORDER_AFTER_DISCHARGE` (QA hành chánh).
 - "Không trùng đơn bất thường" → đã có `BHYT_T7_DUPLICATE_SERVICE_SAME_DAY` (Tầng 7, áp dụng mọi dịch vụ, không riêng thuốc).
+- "Trùng/cấu phần dịch vụ kỹ thuật (KT01.1, KT01_04, KT95)" và "thuốc/dịch vụ không khớp bằng chứng (KT183)" → chuyển sang Tầng 8 (dịch vụ kỹ thuật), không lặp ở đây.
 
-Vì vậy Tầng 6 hiện chỉ làm phần **cảnh báo lâm sàng**: dùng lại chính danh mục kháng sinh đã có trong `config/hchanh/qa_rules.json` (`cls_diagnosis_rules` → `CLS_ANTIBIOTIC_NO_INFECTION_DX`, đã được đội ngũ xác nhận trước đó) — sao chép sang **`config/hchanh/bhyt_drug_rules.json`** để quét trực tiếp trên mọi dòng bảng kê BHYT (rule gốc chỉ quét dòng thuộc nhóm CLS/xét nghiệm nên gần như không khớp dòng thuốc thật trong dữ liệu billing).
+Tầng 6 làm 2 hướng cảnh báo lâm sàng, cả hai đọc rule từ `config/hchanh/bhyt_drug_rules.json`, mức REVIEW hoặc HIGH_RISK (không tự BLOCK):
 
-| Rule ID | Điều kiện | Mức độ |
+### 6a. `drug_diagnosis_rules` — NEEDS_JUSTIFICATION (thiếu chẩn đoán hỗ trợ, REVIEW)
+
+Có thuốc/DVKT nhưng CHƯA thấy chẩn đoán/triệu chứng hỗ trợ phù hợp trong text chẩn đoán (chính + ra viện + bệnh kèm + chẩn đoán vào).
+
+| Rule ID | Điều kiện | Nguồn |
 | --- | --- | --- |
-| `BHYT_T6_ANTIBIOTIC_NO_INFECTION_DX` | Có dòng bảng kê BHYT tên khớp một kháng sinh phổ rộng trong `bhyt_drug_rules.json`, và chẩn đoán không chứa từ khóa nhiễm khuẩn tương ứng | REVIEW |
+| `BHYT_T6_ANTIBIOTIC_NO_INFECTION_DX` | Kháng sinh phổ rộng, không có chẩn đoán nhiễm khuẩn | Sao chép từ `qa_rules.json` (`CLS_ANTIBIOTIC_NO_INFECTION_DX`), đã đội ngũ xác nhận |
+| `BHYT_T6_MG_AL_SIMETHICON_NO_GI_DX` | Mg/Al hydroxyd + simethicon, không có K21/K29/K30/R12/R14/R10.1 | Báo cáo cảnh báo BHYT nội bộ (TH60) |
+| `BHYT_T6_ALFUZOSIN_NO_BPH_DX` | Alfuzosin, không có N40/N40.1/triệu chứng đường tiểu dưới | Báo cáo cảnh báo BHYT nội bộ (TH04) — **chưa kiểm giới tính**, xem ghi chú dưới |
+| `BHYT_T6_KT47_RESPIRATORY_THERAPY_NO_COPD_DX` | Vận động trị liệu hô hấp (KT47), không có COPD/bệnh phổi mạn (J44/J47/J84.x) | Báo cáo cảnh báo BHYT nội bộ |
+| `BHYT_T6_PERIOLIMEL_NO_NUTRITION_DX` | Dinh dưỡng tĩnh mạch (Periolimel), không có ICD biện minh không dùng được đường tiêu hóa | Báo cáo cảnh báo BHYT nội bộ (KT63) — **chỉ kiểm ICD, không kiểm phiếu đánh giá dinh dưỡng** (chưa có dữ liệu) |
 
-Đây là `CLINICAL_JUSTIFICATION_REQUIRED` theo đúng đề xuất gốc — REVIEW (🟡), không tự đỏ. Danh mục kháng sinh trong `bhyt_drug_rules.json` chỉ là ví dụ nhóm phổ biến, không phải danh mục thuốc BHYT đầy đủ — thêm thuốc/nhóm khác vào `drug_diagnosis_rules` khi có nguồn xác nhận (không tự suy đoán thêm thuốc mới).
+### 6b. `drug_contraindication_rules` — CONTRAINDICATED (có chống chỉ định, HIGH_RISK)
+
+Ngược hướng 6a: có thuốc VÀ CÓ chẩn đoán/bệnh nền thuộc nhóm chống chỉ định của chính thuốc đó.
+
+| Rule ID | Điều kiện | Nguồn pháp lý |
+| --- | --- | --- |
+| `BHYT_T6_DICLOFENAC_CARDIOVASCULAR_CONTRAINDICATION` | Diclofenac toàn thân + I20/I25/I50/I63/I69/I73/I74 | Công văn 5749/QLD-ĐK; cảnh báo Trung tâm DI & ADR Quốc gia |
+| `BHYT_T6_LEVOFLOXACIN_SEIZURE_CONTRAINDICATION` | Levofloxacin + G40 (động kinh) | HDSD levofloxacin |
+| `BHYT_T6_CALDIHASAN_RENAL_STONE_CONTRAINDICATION` | Caldihasan + N20/N21/N18 | Thông tin sản phẩm Caldihasan (nhà sản xuất) |
+| `BHYT_T6_IVABRADINE_UNSTABLE_ANGINA_CONTRAINDICATION` | Ivabradine/Procoralan + I20.0 (đau thắt ngực không ổn định) | SmPC Procoralan (EMA) — chỉ kiểm được I20.0, chưa kiểm nhịp xoang/tần số tim/EF/NYHA vì thiếu dữ liệu |
+
+Danh mục thuốc trong cả 2 nhóm chỉ là ví dụ theo báo cáo cảnh báo BHYT nội bộ, không phải danh mục đầy đủ — thêm thuốc/rule khác khi có nguồn xác nhận (không tự suy đoán thêm thuốc mới). Cách so khớp: substring không dấu trên text chẩn đoán gộp (không tách ICD có cấu trúc) — vì dữ liệu chẩn đoán EMR thực tế đã nhúng sẵn mã ICD dạng `"(I74.3)"` trong text tự do, nên so khớp chuỗi con vẫn bắt được phần lớn trường hợp thật.
 
 ## Tầng 7 — Trùng dịch vụ (đã cài đặt, phạm vi thu hẹp theo yêu cầu)
 
@@ -162,12 +185,68 @@ Dữ liệu billing không có mã số chỉ định (số phiếu y lệnh) ri
 
 Loại trừ dòng ngày giường (nhận diện qua `loai_yc`/tên chứa "ngày giường") — nhiều dòng ngày giường trong cùng ngày là bình thường và đã có Tầng 2 xử lý riêng, không phải trùng dịch vụ. `amount_at_risk` chỉ tính các dòng "thêm" sau dòng đầu tiên theo thời gian (coi dòng đầu là hợp lệ, các dòng sau là phần cần xác minh), không cộng toàn bộ để tránh phóng đại.
 
-## Việc chưa làm (phần còn lại của Tầng 6–8)
+## Tầng 8 — Dịch vụ kỹ thuật: trùng/cấu phần & bằng chứng liên kết (đã cài đặt, pilot)
+
+Rule "trong gói" (mục 13 đề xuất gốc) trước đây **cố ý bỏ qua** vì chưa có căn cứ pháp lý — nay Thông tư 39/2024/TT-BYT (phân biệt chi phí đã/chưa tính trong giá dịch vụ) là căn cứ đủ để làm. Rule đọc từ **`config/hchanh/bhyt_dvkt_cross_check_rules.json`**, gồm 2 loại (`type`):
+
+- **`bundled`** — dịch vụ chính + dịch vụ có thể là công đoạn của nó cùng xuất hiện trong bảng kê cùng ngày → nguy cơ trùng/cấu phần giá.
+- **`missing_support`** — dịch vụ chính xuất hiện nhưng KHÔNG thấy thuốc/vật tư bắt buộc đi kèm ở một dòng bảng kê KHÁC cùng ngày (không tính chính dòng dịch vụ, kể cả khi tên dịch vụ có nhắc tới từ khóa đó) → nguy cơ thiếu bằng chứng liên kết.
+
+Từ khóa so khớp (`primary_keywords`/`companion_keywords`) là mảng các **nhóm** — mỗi nhóm phải khớp đủ mọi từ khóa trong nhóm (AND), các nhóm nối OR (`matchesKeywordGroups`). Gộp dòng bảng kê theo ngày thực hiện (`tg_ylenh`) — bỏ dòng không xác định được ngày, không suy đoán trùng/thiếu khi thiếu mốc thời gian.
+
+| Rule ID | Loại | Điều kiện | Nguồn |
+| --- | --- | --- | --- |
+| `BHYT_T8_KT01_1_OPEN_MASTOID_VS_TYMPANOPLASTY` | bundled | "Phẫu thuật tạo hình tai giữa" + "Mở sào bào-thượng nhĩ" cùng ngày | TT 39/2024 + báo cáo cảnh báo BHYT nội bộ |
+| `BHYT_T8_KT01_04_GRAM_STAIN_VS_CULTURE` | bundled | "Nuôi cấy-định danh" + "Nhuộm soi" cùng ngày | TT 39/2024 + báo cáo cảnh báo BHYT nội bộ |
+| `BHYT_T8_KT95_THYROID_US_VS_FNA` | bundled | "Chọc hút/FNA" + "Siêu âm tuyến giáp" cùng ngày | TT 39/2024 + báo cáo cảnh báo BHYT nội bộ |
+| `BHYT_T8_KT183_CT_CONTRAST_NO_DRUG_EVIDENCE` | missing_support | "CT có cản quang" nhưng KHÔNG có dòng thuốc cản quang (theo danh mục ví dụ) cùng ngày | Checklist chuyên môn nội bộ |
+
+Mức REVIEW cho cả 4 rule — chỉ cảnh báo để người kiểm tự xác nhận (2 chỉ định độc lập, 2 mẫu bệnh phẩm riêng, có phiếu tiêm thuốc cản quang...), không tự động kết luận trùng/thiếu và không tự chặn gửi hồ sơ. Đây là **pilot theo đúng 4 ví dụ cụ thể** trong báo cáo cảnh báo BHYT nội bộ — chưa phải danh mục "trong gói" đầy đủ toàn viện; thêm cặp dịch vụ khác vào `bhyt_dvkt_cross_check_rules.json` khi có nguồn xác nhận.
+
+### Nhiều lần PT/TT trong đợt điều trị — ekip/phương pháp + tỷ lệ thanh toán (`BHYT_T8_MULTI_SURGERY_EKIP_COMPOSITION`)
+
+Trả lời câu hỏi gốc "một cuộc phẫu thuật thì mấy chỗ, mấy phương pháp, mấy ekip, cùng hay khác ekip thì tính tiền sao". Khi hồ sơ có ≥ 2 dòng `surgery.surgeries`, `checkMultiSurgeryEkipComposition()` so sánh ekip (`bs_mo_chinh`, `gay_me_chinh`, `ptv_phu_1`, `ptv_phu_2`, `dd_dung_cu`, `ktv_phu_me` — các trường đã xác nhận thật từ `worker/hchanh_fetch.py` → `_parse_surgery_detail_html()`, lifted lên top-level dòng PT) và phương pháp (`phuong_phap_pt`) giữa các lần, nêu ra **mức REVIEW**: cùng ekip hay khác ekip, mấy phương pháp khác nhau, kèm đúng tỷ lệ thanh toán áp dụng.
+
+**Căn cứ pháp lý** (do người dùng xác nhận qua ảnh chụp văn bản gốc — không phải suy đoán): Điều 7 Khoản 3, **Thông tư 22/2023/TT-BYT** (Bộ Y tế, 17/11/2023):
+
+> Trường hợp thực hiện nhiều can thiệp trong cùng một lần phẫu thuật: thanh toán theo giá của phẫu thuật phức tạp nhất, có mức giá cao nhất, các dịch vụ kỹ thuật khác phát sinh ngoài quy trình kỹ thuật của phẫu thuật nêu trên được thanh toán như sau:
+> a) Bằng 50% giá của các phẫu thuật phát sinh nếu kỹ thuật đó vẫn do một kíp phẫu thuật thực hiện;
+> b) Bằng 80% giá của các phẫu thuật phát sinh nếu kỹ thuật đó phải thay kíp phẫu thuật khác để thực hiện;
+> c) Trường hợp thực hiện dịch vụ phát sinh là các thủ thuật thì thanh toán 80% giá dịch vụ kỹ thuật phát sinh.
+
+`action` nêu đúng tỷ lệ áp dụng (50% nếu cùng ekip, 80% nếu khác ekip) để người kiểm đối chiếu bảng kê.
+
+**Cố ý KHÔNG tự tính số tiền điều chỉnh cụ thể** — dù đã có căn cứ pháp lý cho công thức, hệ thống chưa có (1) giá dịch vụ gắn với từng dòng PT (`surgery.surgeries` không có trường giá; giá chỉ có ở bảng kê `billing`, khớp theo tên dịch vụ sẽ không đủ tin cậy) và (2) cách phân biệt chắc chắn "phẫu thuật" vs "thủ thuật" cho dịch vụ phát sinh (trường `phan_loai_pt` là phân loại độ phức tạp theo Thông tư 50/2014/TT-BYT — Đặc biệt/Loại 1/2/3 — không phải phân biệt PT/TT). Đúng nguyên tắc "không suy đoán": chỉ nêu tỷ lệ đúng theo luật, không tự khớp/tính số tiền khi chưa có cách khớp dữ liệu chắc chắn. Nếu record cũ/thiếu hết các trường ekip (dữ liệu fetch trước khi có bản vá lift-field) thì bỏ qua, không cảnh báo.
+
+## Chỉ số "tỷ lệ đạt" theo Tầng (`readiness`, đã cài đặt)
+
+Phục vụ quy trình vận hành: lấy dữ liệu → so logic → xem tỷ lệ đạt → quyết định ra viện. `runBhytPreAudit()` trả thêm field `readiness` (song song với `assessment`):
+
+```js
+readiness: {
+  clean_count: 6,     // số Tầng không phát sinh finding nào
+  total_count: 8,
+  items: [
+    { tier: 1, label: 'Toàn vẹn dữ liệu', count: 0, clean: true },
+    { tier: 6, label: 'Thuốc/DVKT',       count: 2, clean: false },
+    // ...
+  ],
+}
+```
+
+**KHÔNG phải điểm số cộng dồn** — đúng nguyên tắc "không cộng điểm" xuyên suốt tài liệu này, `computeTierReadiness()` chỉ đếm bao nhiêu Tầng có/không có finding, không gán trọng số hay cộng severity. `readiness = null` khi `hasEnoughData = false` (chưa đủ profile/discharge để chạy tiền giám định) — không suy đoán tỷ lệ khi chưa có gì để đánh giá.
+
+**Lưu ý quan trọng khi diễn giải**: "0 finding" ở một Tầng không đồng nghĩa "đã xác minh sạch tuyệt đối" — nhiều Tầng (5, 6, 8...) chỉ phát hiện được khi có dữ liệu khớp từ khóa liên quan (vd Tầng 6 chỉ kiểm được nếu có dòng thuốc khớp danh mục `bhyt_drug_rules.json`); không khớp gì có thể là "không có gì để kiểm" chứ không hẳn "đã kiểm và không có vấn đề". Vì vậy `readiness` là **chỉ số tham khảo hiển thị bên cạnh `assessment`** (vẫn là tín hiệu chính, dùng cho `canPrint`/`workflowStatus`), không tạo thêm gate mới và không tự động khóa quyết định ra viện — người kiểm luôn tự xem các finding cụ thể trước khi quyết định.
+
+Hiển thị: `BhytAssessmentBox` (`src/components/hchanh/HchahnTab.jsx`) render dòng "`X/Y nhóm kiểm không có cảnh báo`" kèm chip tên các Tầng còn vấn đề, ngay dưới nhãn đánh giá tổng.
+
+## Việc chưa làm (phần còn lại của Tầng 5–8)
 
 Khung (`makeFinding`, `BHYT_SEVERITY`, `ASSESSMENT`, rule config JSON) đã sẵn sàng để mở rộng thêm mà không đổi cấu trúc:
 
-- Tầng 6 (phần còn lại) — Cấu trúc thuốc: danh mục thuốc BHYT, đúng đường dùng, đúng số lượng (cần danh mục thuốc BHYT/đường dùng/định mức, hiện chưa có).
+- Tầng 5 — 7 cửa kiểm VTYT đầy đủ (cần danh mục VTYT BHXH kèm hạn hiệu lực/trần thanh toán, hoặc dữ liệu vật tư tiêu hao thực tế trong biên bản PT — hiện chưa có).
+- Tầng 6 (phần còn lại) — Cấu trúc thuốc: danh mục thuốc BHYT, đúng đường dùng, đúng số lượng (cần danh mục thuốc BHYT/đường dùng/định mức, hiện chưa có); rule Alfuzosin chưa kiểm giới tính người bệnh.
 - Tầng 7 (phần còn lại) — Người thực hiện / phạm vi hành nghề của DVKT/PT.
-- Tầng 8 — Tính tiền BHYT theo mức hưởng + rule "trong gói".
+- Tầng 8 (phần còn lại) — Tính tiền BHYT theo mức hưởng; các mục 2.1-2.5 trong báo cáo cảnh báo BHYT nội bộ (dịch vụ lặp lại thiếu mục tiêu mới, sai vị trí/bên/số lượng, vật tư không khớp biên bản mổ, điều kiện người thực hiện/cơ sở, chỉ định sau thời điểm thực hiện) — cần thêm dữ liệu EMR chưa fetch (vật tư tiêu hao thực tế trong biên bản PT, kết quả CLS chi tiết) trước khi làm được chính xác.
 
 Thêm tầng mới: viết hàm `checkXxx()` thuần trong `bhyt_pre_audit.js` (hoặc file riêng nếu tầng phức tạp), gọi trong `runBhytTier{N}()`, khai báo metadata rule trong `bhyt_pre_audit_rules.json`, rồi gộp vào `runBhytPreAudit()`. Không cần đổi UI hay điểm gọi trong `discharge_qa.js`.

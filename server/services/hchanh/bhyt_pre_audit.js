@@ -4,11 +4,16 @@
 //
 // Đã cài Tầng 1 (tính toàn vẹn dữ liệu), Tầng 2 (ngày giường), Tầng 3 (chẩn
 // đoán ↔ PT/TT), Tầng 4 (CLS chứng minh chỉ định), Tầng 5 (VTYT — hiện là
-// placeholder trung thực, xem ghi chú tại runBhytTier5), Tầng 6 (thuốc — chỉ
-// phần cảnh báo lâm sàng, xem ghi chú tại runBhytTier6) và Tầng 7 (trùng dịch
-// vụ cùng ngày — phạm vi thu hẹp theo yêu cầu, chưa gồm người thực hiện/phạm
-// vi hành nghề). Phần "trong gói" của Tầng 8 chưa làm; sẽ thêm dần bằng cách
-// bổ sung hàm check + rule mới, không đổi khung này.
+// placeholder trung thực, xem ghi chú tại runBhytTier5), Tầng 6 (thuốc — cảnh
+// báo lâm sàng NEEDS_JUSTIFICATION + CONTRAINDICATED, xem ghi chú tại
+// runBhytTier6), Tầng 7 (trùng dịch vụ cùng ngày — phạm vi thu hẹp theo yêu
+// cầu, chưa gồm người thực hiện/phạm vi hành nghề) và Tầng 8 (dịch vụ kỹ thuật
+// — trùng/cấu phần "trong gói" + bằng chứng liên kết thuốc/vật tư, pilot theo
+// ví dụ cụ thể, xem ghi chú tại runBhytTier8). Còn lại: Tầng 5 đủ 7 cửa kiểm
+// VTYT thật, Tầng 6 phần cấu trúc thuốc (danh mục/đường dùng/định mức), Tầng 7
+// người thực hiện/phạm vi hành nghề, Tầng 8 phần còn lại (2.1-2.5 trong báo
+// cáo cảnh báo BHYT nội bộ) — sẽ thêm dần bằng cách bổ sung hàm check + rule
+// mới, không đổi khung này.
 //
 // Nguyên tắc (theo đề xuất thiết kế):
 //   - Rule pháp lý (BHYT_RULE) và checklist chuyên môn nội bộ là hai lớp khác nhau.
@@ -43,6 +48,13 @@ function moneyNum(v) {
   if (typeof v === 'number' && Number.isFinite(v)) return v;
   const n = Number(String(v ?? '').replace(/[^0-9.-]/g, ''));
   return Number.isFinite(n) ? n : 0;
+}
+
+// groups: mảng các NHÓM từ khóa — mỗi nhóm phải khớp ĐỦ mọi từ khóa trong nhóm (AND),
+// các nhóm nối với nhau bằng OR. Dùng cho rule cần khớp nhiều từ khóa cùng lúc trong
+// tên dịch vụ (vd "ct" + "can quang") mà không thể diễn tả bằng 1 danh sách OR đơn giản.
+function matchesKeywordGroups(normalizedText, groups) {
+  return safeArray(groups).some(group => safeArray(group).every(k => normalizedText.includes(normText(k))));
 }
 
 // ── Thang mức độ (khác severity error/warn/info của QA hành chánh) ─────────────
@@ -233,6 +245,34 @@ function checkPrimaryDiagnosis(discharge) {
   });
 }
 
+// Xung đột trình tự thời gian (mục 3 trong báo cáo cảnh báo BHYT nội bộ): một chi
+// phí đúng chuyên môn vẫn có thể bị loại nếu trình tự thời gian không hợp lý — ở đây
+// chỉ làm phần có dữ liệu sẵn (giờ bắt đầu/kết thúc phẫu thuật đã fetch được từ form
+// chi tiết PT, xem worker/hchanh_fetch.py txtBatDauPT/txtKetThucPT). Các mốc khác
+// trong báo cáo (thuốc trước y lệnh, kết quả XN trước khi lấy mẫu...) cần 2 mốc thời
+// gian riêng biệt của cùng 1 sự việc mà dữ liệu hiện tại chưa có — không suy đoán.
+function checkSurgeryTimeSequence(surgery) {
+  const rows = safeArray(surgery?.surgeries);
+  if (!rows.length) return null;
+  const invalid = [];
+  for (const row of rows) {
+    const start = parseVNDateTime(row?.bat_dau || row?.detail?.bat_dau);
+    const end = parseVNDateTime(row?.ket_thuc || row?.detail?.ket_thuc);
+    if (!start || !end) continue; // thiếu 1 trong 2 mốc thì không suy đoán
+    if (end.getTime() < start.getTime()) invalid.push({ row, start, end });
+  }
+  if (!invalid.length) return null;
+  return makeFinding({
+    rule_id: 'BHYT_T1_SURGERY_TIME_SEQUENCE_INVALID',
+    severity: BHYT_SEVERITY.BLOCK,
+    group: 'Trình tự thời gian',
+    title: `${invalid.length} phẫu thuật/thủ thuật có giờ kết thúc trước giờ bắt đầu`,
+    detail: invalid.slice(0, 5).map(x => `${text(surgeryRowText(x.row), 'PT/TT')}: bắt đầu ${fmtDateTimeUTC(x.start)}, kết thúc ${fmtDateTimeUTC(x.end)}`).join('; '),
+    action: 'Kiểm tra lại giờ bắt đầu/kết thúc trên biên bản phẫu thuật trên EMR trước khi nộp hồ sơ.',
+    evidence: `count=${invalid.length}`,
+  });
+}
+
 function checkSurgeryDates(surgery) {
   const rows = safeArray(surgery?.surgeries);
   if (!rows.length) return null;
@@ -284,6 +324,9 @@ function runBhytTier1({ profile, discharge, billing, surgery, admitAt, discharge
 
   const f3 = checkSurgeryDates(surgery);
   if (f3) findings.push(f3);
+
+  const f3b = checkSurgeryTimeSequence(surgery);
+  if (f3b) findings.push(f3b);
 
   const f4 = checkBenefitLevelConsistency(billing);
   if (f4) findings.push(f4);
@@ -616,18 +659,26 @@ function loadDrugRules() {
   return { drug_diagnosis_rules: [] };
 }
 
+// Dùng chung cho cả rule "cần chẩn đoán hỗ trợ" và rule "chống chỉ định" — cùng một
+// nguồn text chẩn đoán (chính + ra viện + bệnh kèm + chẩn đoán vào), vì cả hai đều
+// chỉ so khớp từ khóa/mã ICD dạng chuỗi con trên text tự do (đã có mã ICD nhúng sẵn
+// dạng "(I74.3)" trong chẩn đoán EMR thực tế), không tách ICD có cấu trúc.
+function buildDischargeDxText(discharge) {
+  return normText([
+    discharge?.chan_doan_chinh,
+    discharge?.chan_doan_ra,
+    ...safeArray(discharge?.benh_kem),
+    ...safeArray(discharge?.chan_doan_vao_list).map(c => c?.ten || ''),
+  ].join(' '));
+}
+
 function checkDrugDiagnosisSupport({ discharge, billing }) {
   if (!billing || !discharge) return [];
   const rules = safeArray(loadDrugRules().drug_diagnosis_rules).filter(r => r?.enabled !== false);
   if (!rules.length) return [];
 
   const bhytRows = safeArray(billing.rows).filter(r => r?.payment_group === 'bhyt');
-  const dxText = normText([
-    discharge.chan_doan_chinh,
-    discharge.chan_doan_ra,
-    ...safeArray(discharge.benh_kem),
-    ...safeArray(discharge.chan_doan_vao_list).map(c => c?.ten || ''),
-  ].join(' '));
+  const dxText = buildDischargeDxText(discharge);
 
   const findings = [];
   for (const rule of rules) {
@@ -654,8 +705,48 @@ function checkDrugDiagnosisSupport({ discharge, billing }) {
   return findings;
 }
 
+// Ngược hướng với checkDrugDiagnosisSupport: không phải "thiếu chẩn đoán hỗ trợ" mà
+// là "CÓ chẩn đoán/bệnh nền thuộc nhóm chống chỉ định" (vd diclofenac + bệnh tim thiếu
+// máu cục bộ). Mức HIGH_RISK (không BLOCK) — chỉ cảnh báo để bác sĩ tự xác nhận,
+// không tự động khóa đơn thuốc.
+function checkDrugContraindication({ discharge, billing }) {
+  if (!billing || !discharge) return [];
+  const rules = safeArray(loadDrugRules().drug_contraindication_rules).filter(r => r?.enabled !== false);
+  if (!rules.length) return [];
+
+  const bhytRows = safeArray(billing.rows).filter(r => r?.payment_group === 'bhyt');
+  const dxText = buildDischargeDxText(discharge);
+
+  const findings = [];
+  for (const rule of rules) {
+    const matchedRows = bhytRows.filter(r => safeArray(rule.drug_keywords).some(k => normText(r.name).includes(normText(k))));
+    if (!matchedRows.length) continue;
+    const hasContraindication = safeArray(rule.contraindication_dx_keywords).some(k => dxText.includes(normText(k)));
+    if (!hasContraindication) continue;
+
+    const amount = matchedRows.reduce((s, r) => s + moneyNum(r.thanh_tien), 0);
+    findings.push(makeFinding({
+      rule_id: `BHYT_T6_${rule.code}`,
+      tier: 6,
+      severity: BHYT_SEVERITY.HIGH_RISK,
+      group: 'Thuốc',
+      title: text(rule.title),
+      detail: `${text(rule.detail)} Thuốc trong bảng kê: ${matchedRows.slice(0, 3).map(r => text(r.name)).join('; ')}${matchedRows.length > 3 ? `; +${matchedRows.length - 3} dòng khác` : ''}.`,
+      action: text(rule.action || 'Bác sĩ xác nhận lại chỉ định/chống chỉ định trước khi nộp hồ sơ.'),
+      legal_source: 'Checklist chuyên môn nội bộ (config/hchanh/bhyt_drug_rules.json → drug_contraindication_rules)',
+      legal_clause: 'Không phải rule pháp lý bắt buộc — cảnh báo chống chỉ định cần bác sĩ xác nhận, không tự kết luận sai.',
+      amount_at_risk: amount,
+      evidence: `drug_rule=${rule.code}, count=${matchedRows.length}`,
+    }));
+  }
+  return findings;
+}
+
 function runBhytTier6({ discharge, billing }) {
-  return checkDrugDiagnosisSupport({ discharge, billing });
+  return [
+    ...checkDrugDiagnosisSupport({ discharge, billing }),
+    ...checkDrugContraindication({ discharge, billing }),
+  ];
 }
 
 // ── Tầng 7: Trùng dịch vụ ────────────────────────────────────────────────────
@@ -719,6 +810,144 @@ function runBhytTier7({ billing }) {
   return checkDuplicateServiceSameDay({ billing });
 }
 
+// ── Tầng 8: Dịch vụ kỹ thuật — trùng/cấu phần & bằng chứng liên kết ─────────────
+// Trước đây cố ý CHƯA làm (xem README lịch sử) vì thiếu căn cứ pháp lý cho rule
+// "trong gói". Thông tư 39/2024/TT-BYT (phân biệt chi phí đã/chưa tính trong giá
+// dịch vụ) là căn cứ cho phần "bundled". Rule đọc từ config/hchanh/
+// bhyt_dvkt_cross_check_rules.json — 2 loại:
+//   - 'bundled': dịch vụ chính + dịch vụ có thể là công đoạn của nó cùng xuất hiện
+//     trong bảng kê cùng ngày -> nguy cơ trùng/cấu phần giá.
+//   - 'missing_support': dịch vụ chính xuất hiện nhưng KHÔNG thấy thuốc/vật tư bắt
+//     buộc đi kèm cùng ngày (vd CT có cản quang nhưng không có thuốc cản quang).
+// Chỉ cảnh báo REVIEW để người kiểm tự xác nhận (2 chỉ định độc lập, 2 mẫu bệnh
+// phẩm riêng...), không tự động kết luận trùng/thiếu và không tự chặn gửi hồ sơ.
+
+let _dvktCrossCheckCache = null, _dvktCrossCheckCacheTime = 0;
+function loadDvktCrossCheckRules() {
+  const now = Date.now();
+  if (_dvktCrossCheckCache && now - _dvktCrossCheckCacheTime < 30000) return _dvktCrossCheckCache;
+  try {
+    const p = path.join(__dirname, '..', '..', '..', 'config', 'hchanh', 'bhyt_dvkt_cross_check_rules.json');
+    if (fs.existsSync(p)) {
+      _dvktCrossCheckCache = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      _dvktCrossCheckCacheTime = now;
+      return _dvktCrossCheckCache;
+    }
+  } catch (e) { console.warn('[BHYT_PRE_AUDIT] Không đọc bhyt_dvkt_cross_check_rules.json:', e.message); }
+  return { rules: [] };
+}
+
+// Gộp dòng bảng kê theo ngày thực hiện (bỏ dòng không xác định được ngày — không suy
+// đoán trùng/thiếu khi thiếu mốc thời gian). Không lọc theo payment_group: bằng chứng
+// đi kèm (vd thuốc cản quang) có thể tự túc dù dịch vụ chính là BHYT.
+function groupBillingRowsByDay(billing) {
+  const groups = new Map();
+  for (const row of safeArray(billing?.rows)) {
+    const at = parseVNDateTime(row?.tg_ylenh);
+    const dateOnly = dateOnlyUTC(at);
+    if (!dateOnly) continue;
+    const key = dateOnly.getTime();
+    if (!groups.has(key)) groups.set(key, { date: dateOnly, rows: [] });
+    groups.get(key).rows.push(row);
+  }
+  return [...groups.values()];
+}
+
+function checkDvktCrossChecks({ billing }) {
+  const rules = safeArray(loadDvktCrossCheckRules().rules).filter(r => r?.enabled !== false);
+  if (!rules.length || !billing) return [];
+  const dayGroups = groupBillingRowsByDay(billing);
+  if (!dayGroups.length) return [];
+
+  const findings = [];
+  for (const rule of rules) {
+    for (const { date, rows } of dayGroups) {
+      const primaryRows = rows.filter(r => matchesKeywordGroups(normText(r?.name), rule.primary_keywords));
+      if (!primaryRows.length) continue;
+      // Bằng chứng đi kèm (hoặc dịch vụ cấu phần) phải đến từ MỘT DÒNG BẢNG KÊ KHÁC —
+      // không tính chính dòng dịch vụ chính, vì tên dịch vụ (vd "CT ... có tiêm thuốc
+      // cản quang") có thể tự chứa luôn từ khóa companion mà không có dòng thuốc/vật
+      // tư riêng nào thật sự được thanh toán.
+      const hasCompanion = rows.some(r => !primaryRows.includes(r) && matchesKeywordGroups(normText(r?.name), rule.companion_keywords));
+
+      const isBundledHit = rule.type === 'bundled' && hasCompanion;
+      const isMissingSupportHit = rule.type === 'missing_support' && !hasCompanion;
+      if (!isBundledHit && !isMissingSupportHit) continue;
+
+      const bhytAmount = primaryRows.reduce((s, r) => s + (r.payment_group === 'bhyt' ? moneyNum(r.thanh_tien) : 0), 0);
+      findings.push(makeFinding({
+        rule_id: `BHYT_T8_${rule.code}`,
+        tier: 8,
+        severity: BHYT_SEVERITY.REVIEW,
+        group: 'Dịch vụ kỹ thuật',
+        title: text(rule.title),
+        detail: `${text(rule.detail)} Ngày ${fmtDateUTC(date)}: ${primaryRows.slice(0, 3).map(r => text(r.name)).join('; ')}${primaryRows.length > 3 ? `; +${primaryRows.length - 3} dòng khác` : ''}.`,
+        action: text(rule.action || 'Kiểm tra lại trên EMR trước khi nộp hồ sơ.'),
+        legal_source: rule.type === 'bundled'
+          ? 'Thông tư 39/2024/TT-BYT + checklist chuyên môn nội bộ (config/hchanh/bhyt_dvkt_cross_check_rules.json)'
+          : 'Checklist chuyên môn nội bộ (config/hchanh/bhyt_dvkt_cross_check_rules.json)',
+        legal_clause: rule.type === 'bundled'
+          ? 'Phân biệt chi phí đã và chưa được kết cấu trong giá dịch vụ kỹ thuật — không thanh toán trùng công đoạn đã nằm trong giá dịch vụ chính.'
+          : 'Không phải rule pháp lý bắt buộc — cảnh báo cần bằng chứng liên kết dịch vụ ↔ thuốc/vật tư, cần người kiểm xác nhận.',
+        amount_at_risk: bhytAmount,
+        evidence: `dvkt_rule=${rule.code}, date=${fmtDateUTC(date)}, type=${rule.type}`,
+      }));
+    }
+  }
+  return findings;
+}
+
+// Nhiều lần PT/TT trong cùng đợt điều trị: nêu ra mấy chỗ/phương pháp/ekip, cùng hay
+// khác ekip — để người kiểm đối chiếu bảng kê với Điều 7 Khoản 3, Thông tư
+// 22/2023/TT-BYT (17/11/2023): "Trường hợp thực hiện nhiều can thiệp trong cùng một
+// lần phẫu thuật: thanh toán theo giá của phẫu thuật phức tạp nhất, có mức giá cao
+// nhất, các dịch vụ kỹ thuật khác phát sinh ngoài quy trình kỹ thuật của phẫu thuật
+// nêu trên được thanh toán như sau: a) Bằng 50% giá của các phẫu thuật phát sinh nếu
+// kỹ thuật đó vẫn do một kíp phẫu thuật thực hiện; b) Bằng 80% giá của các phẫu thuật
+// phát sinh nếu kỹ thuật đó phải thay kíp phẫu thuật khác để thực hiện; c) Trường hợp
+// thực hiện dịch vụ phát sinh là các thủ thuật thì thanh toán 80% giá dịch vụ kỹ
+// thuật phát sinh." (căn cứ pháp lý do người dùng xác nhận qua ảnh chụp văn bản gốc).
+//
+// CHỈ nêu tỷ lệ áp dụng (100%/50%/80%) để người kiểm tự đối chiếu bảng kê — KHÔNG tự
+// tính số tiền điều chỉnh, vì hệ thống chưa có: (1) giá dịch vụ gắn với từng dòng PT
+// (surgery.surgeries không có trường giá, giá chỉ có ở bảng kê `billing`), và (2)
+// cách phân biệt tin cậy "phẫu thuật" vs "thủ thuật" cho dịch vụ phát sinh (trường
+// `phan_loai_pt` là phân loại độ phức tạp PT theo TT 50/2014, không phải PT/TT).
+// Khớp tên dịch vụ PT với dòng bảng kê để suy ra giá + loại PT/TT sẽ là suy đoán
+// không đủ tin cậy — không làm khi chưa có cách khớp chắc chắn.
+function checkMultiSurgeryEkipComposition({ surgery }) {
+  const rows = safeArray(surgery?.surgeries);
+  if (rows.length < 2) return [];
+
+  const ekipFields = ['bs_mo_chinh', 'gay_me_chinh', 'ptv_phu_1', 'ptv_phu_2', 'dd_dung_cu', 'ktv_phu_me'];
+  const ekipKey = (r) => ekipFields.map(k => normText(text(r?.[k]))).join('|');
+  const hasAnyEkipData = rows.some(r => ekipFields.some(k => text(r?.[k])));
+  if (!hasAnyEkipData) return [];
+
+  const distinctEkip = new Set(rows.map(ekipKey));
+  const distinctMethods = new Set(rows.map(r => normText(text(r?.phuong_phap_pt || r?.dich_vu_phau_thuat))).filter(Boolean));
+  const sameEkip = distinctEkip.size <= 1;
+
+  return [makeFinding({
+    rule_id: 'BHYT_T8_MULTI_SURGERY_EKIP_COMPOSITION',
+    tier: 8,
+    severity: BHYT_SEVERITY.REVIEW,
+    group: 'Dịch vụ kỹ thuật',
+    title: `${rows.length} lần phẫu thuật/thủ thuật trong đợt điều trị — ${sameEkip ? 'cùng ekip' : `${distinctEkip.size} ekip khác nhau`}, ${distinctMethods.size || rows.length} phương pháp`,
+    detail: rows.map((r, i) => `PT ${i + 1}: ${text(r?.phuong_phap_pt || r?.dich_vu_phau_thuat, 'chưa rõ phương pháp')} — PTV chính: ${text(r?.bs_mo_chinh, 'chưa rõ')}`).join('; '),
+    action: sameEkip
+      ? 'Cùng 1 kíp thực hiện nhiều PT/TT trong 1 lần: dịch vụ giá cao nhất thanh toán 100%, các dịch vụ phát sinh thêm CHỈ thanh toán 50% giá (80% nếu dịch vụ phát sinh là thủ thuật, không phải phẫu thuật) — Điều 7 Khoản 3.a Thông tư 22/2023/TT-BYT. Kiểm tra lại bảng kê có đang tính đúng tỷ lệ này cho từng dòng, tránh tính 100% cho tất cả.'
+      : 'Phải thay kíp khác để thực hiện thêm PT/TT trong cùng 1 lần: dịch vụ giá cao nhất thanh toán 100%, các dịch vụ phát sinh thêm thanh toán 80% giá — Điều 7 Khoản 3.b Thông tư 22/2023/TT-BYT. Kiểm tra lại bảng kê có đang tính đúng tỷ lệ 80% cho dòng phát sinh, không phải 100%.',
+    legal_source: 'Thông tư 22/2023/TT-BYT (Bộ Y tế, ngày 17/11/2023), Điều 7 Khoản 3',
+    legal_clause: 'Nhiều can thiệp trong cùng 1 lần phẫu thuật: dịch vụ giá cao nhất thanh toán 100%; dịch vụ phát sinh thêm thanh toán 50% nếu cùng kíp phẫu thuật, 80% nếu phải thay kíp khác hoặc dịch vụ phát sinh là thủ thuật.',
+    evidence: `count=${rows.length}, distinct_ekip=${distinctEkip.size}, distinct_methods=${distinctMethods.size}`,
+  })];
+}
+
+function runBhytTier8({ billing, surgery }) {
+  return [...checkDvktCrossChecks({ billing }), ...checkMultiSurgeryEkipComposition({ surgery })];
+}
+
 // ── Tổng hợp đánh giá ────────────────────────────────────────────────────────
 // Dùng rule severity + override (không cộng điểm): mức nặng nhất quyết định trạng thái.
 // "Số tiền có nguy cơ" lấy giá trị lớn nhất trong các finding, không cộng dồn — tránh
@@ -738,6 +967,41 @@ function computeAssessment({ hasEnoughData, findings }) {
 
   const amount_at_risk = findings.reduce((max, f) => Math.max(max, f.amount_at_risk || 0), 0);
   return { ...assessment, amount_at_risk, findings };
+}
+
+// ── Chỉ số "tỷ lệ đạt" theo Tầng ─────────────────────────────────────────────
+// KHÔNG phải điểm số cộng dồn (đúng nguyên tắc "không cộng điểm" ở trên) — chỉ đếm
+// bao nhiêu trong số các Tầng ĐÃ CHẠY không phát sinh finding nào, để người kiểm có
+// cái nhìn nhanh theo nhóm thay vì phải đọc hết danh sách finding gộp. "Không có
+// finding" không đồng nghĩa "đã xác minh sạch tuyệt đối" — nhiều Tầng (5, 6, 8...)
+// chỉ phát hiện được khi có dữ liệu khớp từ khóa liên quan; không khớp gì không phải
+// lúc nào cũng nghĩa là "đã kiểm và không có vấn đề", có thể là "không có gì để kiểm".
+// Vì vậy đây là chỉ số THAM KHẢO hiển thị bên cạnh `assessment` (vẫn là tín hiệu
+// chính), không dùng để tự động khóa nút ra viện — người kiểm luôn tự quyết định.
+
+const TIER_LABELS = Object.freeze({
+  1: 'Toàn vẹn dữ liệu',
+  2: 'Ngày giường',
+  3: 'Chẩn đoán ↔ PT/TT',
+  4: 'CLS chứng minh chỉ định',
+  5: 'VTYT',
+  6: 'Thuốc/DVKT',
+  7: 'Trùng dịch vụ',
+  8: 'DVKT trùng/cấu phần',
+});
+
+function computeTierReadiness(tierEntries) {
+  const items = tierEntries.map(({ tier, findings }) => ({
+    tier,
+    label: TIER_LABELS[tier] || `Tầng ${tier}`,
+    count: findings.length,
+    clean: findings.length === 0,
+  }));
+  return {
+    clean_count: items.filter(i => i.clean).length,
+    total_count: items.length,
+    items,
+  };
 }
 
 // ── Điểm vào ─────────────────────────────────────────────────────────────────
@@ -775,13 +1039,28 @@ function runBhytPreAudit({ meta, data, bedDaysReview }) {
   const tier7_findings = hasEnoughData
     ? runBhytTier7({ billing })
     : [];
+  const tier8_findings = hasEnoughData
+    ? runBhytTier8({ billing, surgery })
+    : [];
 
-  const allFindings = [...tier1_findings, ...tier2_findings, ...tier3_findings, ...tier4_findings, ...tier5_findings, ...tier6_findings, ...tier7_findings];
+  const allFindings = [...tier1_findings, ...tier2_findings, ...tier3_findings, ...tier4_findings, ...tier5_findings, ...tier6_findings, ...tier7_findings, ...tier8_findings];
   const assessment = computeAssessment({ hasEnoughData, findings: allFindings });
+  const readiness = hasEnoughData
+    ? computeTierReadiness([
+        { tier: 1, findings: tier1_findings },
+        { tier: 2, findings: tier2_findings },
+        { tier: 3, findings: tier3_findings },
+        { tier: 4, findings: tier4_findings },
+        { tier: 5, findings: tier5_findings },
+        { tier: 6, findings: tier6_findings },
+        { tier: 7, findings: tier7_findings },
+        { tier: 8, findings: tier8_findings },
+      ])
+    : null;
 
   return {
     applicable: true,
-    tiers_completed: [1, 2, 3, 4, 5, 6, 7],
+    tiers_completed: [1, 2, 3, 4, 5, 6, 7, 8],
     tier1_findings,
     tier2_findings,
     tier3_findings,
@@ -789,7 +1068,9 @@ function runBhytPreAudit({ meta, data, bedDaysReview }) {
     tier5_findings,
     tier6_findings,
     tier7_findings,
+    tier8_findings,
     assessment,
+    readiness,
   };
 }
 
@@ -797,7 +1078,9 @@ module.exports = {
   BHYT_SEVERITY,
   SEVERITY_RANK,
   ASSESSMENT,
+  TIER_LABELS,
   runBhytPreAudit,
+  computeTierReadiness,
   runBhytTier1,
   runBhytTier2,
   runBhytTier3,
@@ -805,7 +1088,9 @@ module.exports = {
   runBhytTier5,
   runBhytTier6,
   runBhytTier7,
+  runBhytTier8,
   loadRuleMeta,
   loadDxProcedureMap,
   loadDrugRules,
+  loadDvktCrossCheckRules,
 };

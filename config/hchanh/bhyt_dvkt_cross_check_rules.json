@@ -1,0 +1,47 @@
+{
+  "_comment": "Rule đối chiếu dịch vụ kỹ thuật trong cùng ngày cho Tầng 8 tiền giám định BHYT (server/services/hchanh/bhyt_pre_audit.js → runBhytTier8). Hai loại: 'bundled' phát hiện nguy cơ thanh toán trùng/cấu phần đã nằm trong giá dịch vụ chính (Thông tư 39/2024/TT-BYT — phân biệt chi phí đã/chưa tính trong giá dịch vụ); 'missing_support' phát hiện dịch vụ thiếu bằng chứng thuốc/vật tư bắt buộc đi kèm cùng ngày. primary_keywords/companion_keywords là mảng các NHÓM từ khóa — mỗi nhóm phải khớp ĐỦ mọi từ khóa trong nhóm (AND), các nhóm nối với nhau bằng OR. So khớp không dấu, không phân biệt hoa thường (xem normText/matchesKeywordGroups trong bhyt_pre_audit.js). Đây là ví dụ minh họa theo báo cáo cảnh báo BHYT nội bộ, KHÔNG phải quy định cứng — chỉ cảnh báo REVIEW để người kiểm tự xác nhận, không tự chặn gửi hồ sơ.",
+  "_version": "1.0.0",
+
+  "rules": [
+    {
+      "code": "KT01_1_OPEN_MASTOID_VS_TYMPANOPLASTY",
+      "enabled": true,
+      "type": "bundled",
+      "primary_keywords": [["tao hinh tai giua"]],
+      "companion_keywords": [["mo sao bao"]],
+      "title": "\"Mở sào bào-thượng nhĩ\" và \"Phẫu thuật tạo hình tai giữa\" cùng ngày — nguy cơ trùng cấu phần giá",
+      "detail": "Mở sào bào-thượng nhĩ có thể là một công đoạn đã nằm trong giá phẫu thuật tạo hình tai giữa của cùng cuộc mổ.",
+      "action": "Kiểm tra cấu phần giá dịch vụ chính trước khi gửi BHYT: nếu không chứng minh được đây là 2 lần thực hiện độc lập (2 chỉ định, 2 thời điểm, 2 kết quả riêng), chỉ thanh toán dịch vụ chính."
+    },
+    {
+      "code": "KT01_04_GRAM_STAIN_VS_CULTURE",
+      "enabled": true,
+      "type": "bundled",
+      "primary_keywords": [["nuoi cay"]],
+      "companion_keywords": [["nhuom soi"]],
+      "title": "\"Nhuộm soi\" và \"Nuôi cấy-định danh\" cùng ngày — nguy cơ trùng công đoạn",
+      "detail": "Nhuộm soi có thể là công đoạn xử lý của quy trình nuôi cấy-định danh nếu dùng chung mẫu bệnh phẩm, cùng thời điểm chỉ định.",
+      "action": "Kiểm tra có đúng 2 mẫu bệnh phẩm khác nhau (mã mẫu riêng) và có báo cáo nhuộm soi độc lập hay không trước khi thanh toán cả hai."
+    },
+    {
+      "code": "KT95_THYROID_US_VS_FNA",
+      "enabled": true,
+      "type": "bundled",
+      "primary_keywords": [["choc hut"], ["fna"]],
+      "companion_keywords": [["sieu am tuyen giap"]],
+      "title": "\"Siêu âm tuyến giáp\" và \"Chọc hút dưới hướng dẫn siêu âm\" cùng ngày — nguy cơ trùng cấu phần giá",
+      "detail": "Siêu âm dùng để xác định đường đi kim có thể là một phần của dịch vụ chọc hút dưới hướng dẫn siêu âm, không phải siêu âm chẩn đoán độc lập.",
+      "action": "Chỉ thanh toán riêng cả hai nếu có chỉ định riêng, thời điểm riêng, và báo cáo siêu âm chẩn đoán độc lập (mô tả nhân giáp/TIRADS) khác với biên bản chọc hút."
+    },
+    {
+      "code": "KT183_CT_CONTRAST_NO_DRUG_EVIDENCE",
+      "enabled": true,
+      "type": "missing_support",
+      "primary_keywords": [["ct", "can quang"]],
+      "companion_keywords": [["thuoc can quang"], ["xenetix"], ["ultravist"], ["omnipaque"], ["visipaque"], ["iopamiro"], ["iohexol"], ["iopromide"], ["iomeron"]],
+      "title": "\"CT có cản quang\" nhưng chưa thấy thuốc cản quang tương ứng trong bảng kê cùng ngày",
+      "detail": "Nếu không tìm thấy thuốc cản quang (tên biệt dược/hoạt chất) liên kết đúng ngày, có thể thực tế chỉ chụp CT không cản quang. Danh mục thuốc cản quang trong quy tắc này chỉ là ví dụ phổ biến, cần bổ sung nếu viện dùng biệt dược khác.",
+      "action": "Kiểm tra phiếu tiêm/xuất thuốc cản quang đúng người bệnh, đúng ngày trước khi giữ mã CT có cản quang; nếu không có, cân nhắc đổi về mã CT không cản quang."
+    }
+  ]
+}
