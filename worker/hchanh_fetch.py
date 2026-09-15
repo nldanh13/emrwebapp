@@ -2786,103 +2786,113 @@ def fetch_billing(sess: Optional["EmrHttpSession"], ma_bn: str,
             html, _ = sess.get_html(billing_url)
             soup = _soup(html)
 
-        # Bảng trong div#dsDichVu
-        table = soup.select_one("div#dsDichVu table")
-        if table is None:
-            # Fallback: bảng lớn nhất
-            tables = soup.find_all("table")
-            table = max(tables, key=lambda t: len(t.find_all("tr"))) if tables else None
+        # Bảng kê thực tế tách thành 3 khối riêng biệt (xác nhận từ HTML thực tế của
+        # EMR): Dịch vụ kỹ thuật (div#dsDichVu), Thuốc (div#dsThuoc), Vật tư/VTYT
+        # (div#dsVatTu) — mỗi div bọc 1 table riêng, không lồng chung. Trước đây chỉ
+        # đọc div#dsDichVu nên bỏ sót toàn bộ dòng thuốc/VTYT của bảng kê, khiến
+        # tong_cong/tong_bhyt thiếu và Tầng 5/6 BHYT pre-audit không có gì để soi.
+        _BILLING_TABLE_CONTAINERS = ("dsDichVu", "dsThuoc", "dsVatTu")
 
-        if table is None:
+        def _collect_billing_tables(page_soup: Any) -> List[Any]:
+            found = [t for cid in _BILLING_TABLE_CONTAINERS
+                     for t in [page_soup.select_one(f"div#{cid} table")] if t is not None]
+            if found:
+                return found
+            # Layout cũ/khác không có 3 div trên: fallback bảng lớn nhất như trước.
+            tables = page_soup.find_all("table")
+            return [max(tables, key=lambda t: len(t.find_all("tr")))] if tables else []
+
+        billing_tables = _collect_billing_tables(soup)
+
+        if not billing_tables:
             clicked = _fetch_hchanh_html_by_click(sess, ma_bn, config, "doctor", "billing")
             if clicked and clicked.get("html"):
                 soup = _soup(clicked["html"])
-                table = soup.select_one("div#dsDichVu table")
-                if table is None:
-                    tables = soup.find_all("table")
-                    table = max(tables, key=lambda t: len(t.find_all("tr"))) if tables else None
+                billing_tables = _collect_billing_tables(soup)
 
-        if table is None:
+        if not billing_tables:
             base["_fetch_status"] = "no_table"
             return base
 
         rows_out = []
         tong_bhyt = tong_tt = tong_mien = tong_cong = 0.0
-        current_loai_yc = ""
-        current_khoa    = ""
 
-        for tr in table.find_all("tr"):
-            tds = tr.find_all("td")
-            if not tds:
-                continue
+        for table in billing_tables:
+            current_loai_yc = ""
+            current_khoa    = ""
 
-            # Dòng nhóm / dòng khoa: chỉ có 1 td với colspan
-            if len(tds) == 1 and tds[0].get("colspan"):
-                txt   = tds[0].get_text(strip=True)
-                style = tds[0].get("style", "")
-                if "ff9150" in style or "background" in style:
-                    # Dòng nhóm loại yêu cầu (nền cam)
-                    current_loai_yc = txt
-                    current_khoa    = ""
+            for tr in table.find_all("tr"):
+                tds = tr.find_all("td")
+                if not tds:
+                    continue
+
+                # Dòng nhóm / dòng khoa: chỉ có 1 td với colspan
+                if len(tds) == 1 and tds[0].get("colspan"):
+                    txt   = tds[0].get_text(strip=True)
+                    style = tds[0].get("style", "")
+                    if "ff9150" in style or "background" in style:
+                        # Dòng nhóm loại yêu cầu (nền cam)
+                        current_loai_yc = txt
+                        current_khoa    = ""
+                    else:
+                        # Dòng khoa phòng
+                        current_khoa = txt
+                    continue
+
+                # Dòng dữ liệu: cần đủ 15 cột
+                # [0]chk [1]stt [2]tg_ylenh [3]tg_th [4]ma_dv [5]ten_dv [6]chi_tiet
+                # [7]doi_tuong [8]so_the [9]sl [10]don_gia [11]chenh_lech [12]ty_le [13]muc_huong [14]tvụ
+                if len(tds) < 14:
+                    continue
+
+                ten_dv    = tds[5].get_text(strip=True)
+                if not ten_dv:
+                    continue
+
+                tg_ylenh  = tds[2].get_text(strip=True)
+                ma_dv     = tds[4].get_text(strip=True)
+                chi_tiet  = tds[6].get_text(strip=True)
+                doi_tuong = tds[7].get_text(strip=True)
+                so_the    = tds[8].get_text(strip=True)
+                sl        = _money(tds[9].get_text(strip=True)) or 1.0
+                don_gia   = _money(tds[10].get_text(strip=True))
+                chenh_lech = _money(tds[11].get_text(strip=True)) if len(tds) > 11 else 0
+                ty_le_tt  = tds[12].get_text(strip=True) if len(tds) > 12 else ""
+                muc_huong = tds[13].get_text(strip=True) if len(tds) > 13 else ""
+                thanh_tien = sl * don_gia
+
+                # Phân nhóm đối tượng thanh toán
+                dt_norm = _norm(doi_tuong)
+                if any(k in dt_norm for k in ("bao hiem", "bhyt")):
+                    pg = "bhyt"
+                    tong_bhyt += thanh_tien
+                elif any(k in dt_norm for k in ("vien phi", "tu tuc", "dich vu", "ngoai bhyt", "tt0")):
+                    pg = "self_pay"
+                    tong_tt += thanh_tien
+                elif any(k in dt_norm for k in ("trong goi", "mien", "khong thu")) or don_gia == 0:
+                    pg = "zero"
+                    tong_mien += thanh_tien
                 else:
-                    # Dòng khoa phòng
-                    current_khoa = txt
-                continue
+                    pg = "unknown"
+                tong_cong += thanh_tien
 
-            # Dòng dữ liệu: cần đủ 15 cột
-            # [0]chk [1]stt [2]tg_ylenh [3]tg_th [4]ma_dv [5]ten_dv [6]chi_tiet
-            # [7]doi_tuong [8]so_the [9]sl [10]don_gia [11]chenh_lech [12]ty_le [13]muc_huong [14]tvụ
-            if len(tds) < 14:
-                continue
-
-            ten_dv    = tds[5].get_text(strip=True)
-            if not ten_dv:
-                continue
-
-            tg_ylenh  = tds[2].get_text(strip=True)
-            ma_dv     = tds[4].get_text(strip=True)
-            chi_tiet  = tds[6].get_text(strip=True)
-            doi_tuong = tds[7].get_text(strip=True)
-            so_the    = tds[8].get_text(strip=True)
-            sl        = _money(tds[9].get_text(strip=True)) or 1.0
-            don_gia   = _money(tds[10].get_text(strip=True))
-            chenh_lech = _money(tds[11].get_text(strip=True)) if len(tds) > 11 else 0
-            ty_le_tt  = tds[12].get_text(strip=True) if len(tds) > 12 else ""
-            muc_huong = tds[13].get_text(strip=True) if len(tds) > 13 else ""
-            thanh_tien = sl * don_gia
-
-            # Phân nhóm đối tượng thanh toán
-            dt_norm = _norm(doi_tuong)
-            if any(k in dt_norm for k in ("bao hiem", "bhyt")):
-                pg = "bhyt"
-                tong_bhyt += thanh_tien
-            elif any(k in dt_norm for k in ("vien phi", "tu tuc", "dich vu", "ngoai bhyt", "tt0")):
-                pg = "self_pay"
-                tong_tt += thanh_tien
-            elif any(k in dt_norm for k in ("trong goi", "mien", "khong thu")) or don_gia == 0:
-                pg = "zero"
-                tong_mien += thanh_tien
-            else:
-                pg = "unknown"
-            tong_cong += thanh_tien
-
-            rows_out.append({
-                "loai_yc":       current_loai_yc,
-                "khoa":          current_khoa,
-                "tg_ylenh":      tg_ylenh,
-                "ma_dv":         ma_dv,
-                "name":          ten_dv,
-                "chi_tiet":      chi_tiet,
-                "doi_tuong":     doi_tuong,
-                "so_the_bh":     so_the,
-                "sl":            sl,
-                "don_gia":       don_gia,
-                "chenh_lech":    chenh_lech,
-                "ty_le_tt":      ty_le_tt,
-                "muc_huong":     muc_huong,
-                "thanh_tien":    thanh_tien,
-                "payment_group": pg,
-            })
+                rows_out.append({
+                    "loai_yc":       current_loai_yc,
+                    "khoa":          current_khoa,
+                    "tg_ylenh":      tg_ylenh,
+                    "ma_dv":         ma_dv,
+                    "name":          ten_dv,
+                    "chi_tiet":      chi_tiet,
+                    "doi_tuong":     doi_tuong,
+                    "so_the_bh":     so_the,
+                    "sl":            sl,
+                    "don_gia":       don_gia,
+                    "chenh_lech":    chenh_lech,
+                    "ty_le_tt":      ty_le_tt,
+                    "muc_huong":     muc_huong,
+                    "thanh_tien":    thanh_tien,
+                    "payment_group": pg,
+                })
 
         base["rows"]        = rows_out
         base["tong_bhyt"]   = round(tong_bhyt,   0)
@@ -2892,136 +2902,6 @@ def fetch_billing(sess: Optional["EmrHttpSession"], ma_bn: str,
         base["_fetch_status"] = "ok"
         print(f"LOG [billing] {ma_bn}: {len(rows_out)} dòng | "
               f"BHYT={tong_bhyt:,.0f} | ViênPhí={tong_tt:,.0f} | Miễn={tong_mien:,.0f} | Tổng={tong_cong:,.0f}")
-
-    except Exception as e:
-        print(f"ERROR [billing] {ma_bn}: {e}", file=sys.stderr)
-        base["_fetch_status"] = "error"
-        base["_error"] = str(e)
-
-    return base
-
-
-    base: Dict[str, Any] = {
-        "ma_bn":       ma_bn,
-        "rows":        [],
-        "tong_bhyt":   0,
-        "tong_tu_tuc": 0,
-        "tong_mien":   0,
-        "tong_cong":   0,
-        "_source":     "emr_billing_page",
-        "_fetch_status": "pending",
-    }
-
-    if sess is None:
-        base["_fetch_status"] = "no_session"
-        return base
-
-    try:
-        base_origin = sess.base_origin
-        billing_wpid = config.get("billing_wpid") or config.get("url_billing_wpid") or ""
-        view_url = _patient_page_url(link_map, ma_bn, config, base_origin)
-
-        if not view_url:
-            print(f"WARN [billing] Không tìm thấy URL BN {ma_bn}", file=sys.stderr)
-            base["_fetch_status"] = "no_url"
-            return base
-
-        # Thử tìm link bảng kê trong trang BN trước
-        target_url: Optional[str] = None
-        if billing_wpid:
-            target_url = _upsert_query(view_url, wpid=billing_wpid)
-        else:
-            # Tự tìm link bảng kê / chi phí trong trang BN
-            html0, _ = sess.get_html(view_url)
-            soup0 = _soup(html0)
-            for a in soup0.find_all("a", href=True):
-                txt = _norm(a.get_text())
-                href = a["href"]
-                if any(kw in txt for kw in ("bang ke", "chi phi", "vien phi", "thanh toan")) \
-                   or any(kw in href.lower() for kw in ("bangke", "chiphi", "vienph", "billing")):
-                    target_url = urljoin(view_url, href)
-                    print(f"LOG [billing] Tìm thấy link bảng kê: {target_url}")
-                    break
-
-        if not target_url:
-            print(f"WARN [billing] Không tìm thấy trang bảng kê cho BN {ma_bn}. "
-                  f"Thêm 'billing_wpid' vào config.json để chỉ định.", file=sys.stderr)
-            base["_fetch_status"] = "no_billing_page"
-            return base
-
-        html, _ = sess.get_html(target_url)
-        soup = _soup(html)
-
-        # Tìm bảng chi phí — thường có id chứa "bangke", "chiphi", "gridview"
-        table = None
-        for t in soup.find_all("table"):
-            tid = (t.get("id") or "").lower()
-            tcls = " ".join(t.get("class") or []).lower()
-            if any(kw in tid or kw in tcls
-                   for kw in ("bangke", "chiphi", "gridview", "billing", "vienph")):
-                table = t
-                break
-        if table is None:
-            # Lấy bảng lớn nhất làm fallback
-            all_tables = soup.find_all("table")
-            if all_tables:
-                table = max(all_tables, key=lambda t: len(t.find_all("tr")))
-
-        rows_raw = _table_to_rows(table)
-        rows_out = []
-        tong_bhyt = tong_tt = tong_mien = tong_cong = 0.0
-
-        for r in rows_raw:
-            # Chuẩn hóa tên cột (tên cột EMR hay thay đổi)
-            name = _t(r.get("Tên dịch vụ") or r.get("Tên thuốc") or r.get("Nội dung")
-                      or r.get("Tên") or r.get("Dịch vụ") or r.get("Tên DVKT"))
-            if not name:
-                continue
-            qty_raw  = _t(r.get("Số lượng") or r.get("SL") or r.get("Sl") or "1")
-            price_raw = _t(r.get("Đơn giá") or r.get("Giá") or "0")
-            total_raw = _t(r.get("Thành tiền") or r.get("Tổng") or r.get("Tổng tiền") or "0")
-            payment   = _t(r.get("Đối tượng") or r.get("Nhóm TT") or r.get("Loại") or r.get("BHYT") or "")
-            date_val  = _t(r.get("Ngày") or r.get("Ngày TH") or r.get("Ngày y lệnh") or "")
-
-            def _money(s: str) -> float:
-                return float(re.sub(r"[^\d.]", "", s) or "0")
-
-            qty   = float(re.sub(r"[^\d.]", "", qty_raw) or "1") or 1.0
-            price = _money(price_raw)
-            total = _money(total_raw) or price * qty
-
-            # Phân nhóm thanh toán
-            pnorm = _norm(payment)
-            if any(k in pnorm for k in ("tu tuc", "tt0", "khong bhyt", "dich vu", "ngoai bhyt")):
-                pg = "self_pay"
-                tong_tt += total
-            elif any(k in pnorm for k in ("bhyt", "bao hiem", "muc huong", "80%", "95%", "100%")):
-                pg = "bhyt"
-                tong_bhyt += total
-            elif any(k in pnorm for k in ("mien", "khong thu", "0 d")):
-                pg = "zero"
-                tong_mien += total
-            else:
-                pg = "unknown"
-            tong_cong += total
-
-            rows_out.append({
-                "name":          name,
-                "qty":           qty,
-                "don_gia":       price,
-                "thanh_tien":    total,
-                "payment_group": pg,
-                "payment_raw":   payment,
-                "date":          date_val,
-            })
-
-        base["rows"]        = rows_out
-        base["tong_bhyt"]   = round(tong_bhyt, 0)
-        base["tong_tu_tuc"] = round(tong_tt, 0)
-        base["tong_mien"]   = round(tong_mien, 0)
-        base["tong_cong"]   = round(tong_cong, 0)
-        base["_fetch_status"] = "ok"
-        print(f"LOG [billing] {ma_bn}: {len(rows_out)} dòng | BHYT={tong_bhyt:,.0f} | TT={tong_tt:,.0f}")
 
     except Exception as e:
         print(f"ERROR [billing] {ma_bn}: {e}", file=sys.stderr)
