@@ -207,7 +207,7 @@ Mức REVIEW cho cả 4 rule — chỉ cảnh báo để người kiểm tự x�
 
 Trả lời câu hỏi gốc "một cuộc phẫu thuật thì mấy chỗ, mấy phương pháp, mấy ekip, cùng hay khác ekip thì tính tiền sao". Khi hồ sơ có ≥ 2 dòng `surgery.surgeries`, `checkMultiSurgeryEkipComposition()` so sánh ekip (`bs_mo_chinh`, `gay_me_chinh`, `ptv_phu_1`, `ptv_phu_2`, `dd_dung_cu`, `ktv_phu_me` — các trường đã xác nhận thật từ `worker/hchanh_fetch.py` → `_parse_surgery_detail_html()`, lifted lên top-level dòng PT) và phương pháp (`phuong_phap_pt`) giữa các lần, nêu ra **mức REVIEW**: cùng ekip hay khác ekip, mấy phương pháp khác nhau, kèm đúng tỷ lệ thanh toán áp dụng.
 
-**Căn cứ pháp lý** (do người dùng xác nhận qua ảnh chụp văn bản gốc — không phải suy đoán): Điều 7 Khoản 3, **Thông tư 22/2023/TT-BYT** (Bộ Y tế, 17/11/2023):
+**Căn cứ pháp lý** (do người dùng cung cấp trực tiếp bản PDF gốc — không phải suy đoán): **Điều 4đ Khoản 2, Thông tư 35/2016/TT-BYT** — được **bổ sung** bởi khoản 4 Điều 1 **Thông tư 39/2024/TT-BYT**, có hiệu lực thi hành từ **01/01/2025** (hợp nhất tại Văn bản hợp nhất 17/VBHN-BYT ngày 31/12/2024):
 
 > Trường hợp thực hiện nhiều can thiệp trong cùng một lần phẫu thuật: thanh toán theo giá của phẫu thuật phức tạp nhất, có mức giá cao nhất, các dịch vụ kỹ thuật khác phát sinh ngoài quy trình kỹ thuật của phẫu thuật nêu trên được thanh toán như sau:
 > a) Bằng 50% giá của các phẫu thuật phát sinh nếu kỹ thuật đó vẫn do một kíp phẫu thuật thực hiện;
@@ -215,6 +215,10 @@ Trả lời câu hỏi gốc "một cuộc phẫu thuật thì mấy chỗ, mấ
 > c) Trường hợp thực hiện dịch vụ phát sinh là các thủ thuật thì thanh toán 80% giá dịch vụ kỹ thuật phát sinh.
 
 `action` nêu đúng tỷ lệ áp dụng (50% nếu cùng ekip, 80% nếu khác ekip) để người kiểm đối chiếu bảng kê.
+
+**Lưu ý lịch sử trích dẫn** (không giấu, để tránh tái diễn): bản đầu tiên của check này trích Điều 7 Khoản 3, Thông tư 22/2023/TT-BYT (17/11/2023) — do người dùng chụp ảnh từ 1 bản in không rõ trang bìa. Khi được yêu cầu tìm hiểu thêm văn bản pháp luật khác, xác minh được Thông tư 22/2023/TT-BYT **đã hết hiệu lực toàn bộ từ 01/01/2025** (Điều 11 Khoản 2.c, Thông tư 21/2024/TT-BYT — văn bản thay thế chỉ quy định phương pháp định giá, không có quy tắc này). Thông tư 39/2024/TT-BYT (cùng nguồn với rule "trong gói" Tầng 8 khác) đã chuyển nguyên văn quy tắc a/b/c sang Thông tư 35/2016/TT-BYT đúng thời điểm TT22/2023 hết hiệu lực — nội dung không đổi, chỉ cập nhật lại nguồn trích dẫn cho đúng luật hiện hành.
+
+**Định nghĩa "cùng ekip" / "khác ekip"** (quy ước nghiệp vụ do người dùng xác nhận, không phải trích luật): "cùng ekip" là một tập thể nhân sự thống nhất, quen thuộc, đồng hành xuyên suốt từ đầu đến cuối ca mổ (hoặc cùng một nhóm phối hợp cố định); "khác ekip" là có thay đổi nhân sự giữa chừng (đổi ca trực/giao ca) hoặc là các nhóm hoàn toàn độc lập nhau. Cài đặt: so khớp **chính xác cả 6 vai trò** (`bs_mo_chinh`, `gay_me_chinh`, `ptv_phu_1`, `ptv_phu_2`, `dd_dung_cu`, `ktv_phu_me`) giữa các lần PT — chỉ cần 1 vai trò khác nhau là coi "khác ekip" (đúng tinh thần "đồng hành xuyên suốt toàn bộ ê-kíp", không riêng PTV chính).
 
 **Cố ý KHÔNG tự tính số tiền điều chỉnh cụ thể** — dù đã có căn cứ pháp lý cho công thức, hệ thống chưa có (1) giá dịch vụ gắn với từng dòng PT (`surgery.surgeries` không có trường giá; giá chỉ có ở bảng kê `billing`, khớp theo tên dịch vụ sẽ không đủ tin cậy) và (2) cách phân biệt chắc chắn "phẫu thuật" vs "thủ thuật" cho dịch vụ phát sinh (trường `phan_loai_pt` là phân loại độ phức tạp theo Thông tư 50/2014/TT-BYT — Đặc biệt/Loại 1/2/3 — không phải phân biệt PT/TT). Đúng nguyên tắc "không suy đoán": chỉ nêu tỷ lệ đúng theo luật, không tự khớp/tính số tiền khi chưa có cách khớp dữ liệu chắc chắn. Nếu record cũ/thiếu hết các trường ekip (dữ liệu fetch trước khi có bản vá lift-field) thì bỏ qua, không cảnh báo.
 
