@@ -629,9 +629,10 @@ test('50. Không có bảng kê -> Tầng 8 im lặng, không lỗi', () => {
   assert.strictEqual(result.tier8_findings.length, 0);
 });
 
-// ── Tầng 8: nhiều lần PT/TT -> nêu ekip/phương pháp (thông tin, không tự tính tiền) ─
+// ── Tầng 8: nhiều lần PT/TT -> nêu ekip/phương pháp + tỷ lệ 100%/50%/80% theo ─────
+// Điều 7 Khoản 3, Thông tư 22/2023/TT-BYT (không tự tính số tiền cụ thể) ──────────
 
-test('50a. 2 lần PT cùng ekip -> finding INFO nêu "cùng ekip"', () => {
+test('50a. 2 lần PT cùng ekip -> finding REVIEW nêu "cùng ekip" + tỷ lệ 50%', () => {
   const data = baseData({
     billing: null,
     surgery: { surgeries: [
@@ -642,11 +643,13 @@ test('50a. 2 lần PT cùng ekip -> finding INFO nêu "cùng ekip"', () => {
   const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
   const f = result.tier8_findings.find(x => x.rule_id === 'BHYT_T8_MULTI_SURGERY_EKIP_COMPOSITION');
   assert.ok(f);
-  assert.strictEqual(f.severity, BHYT_SEVERITY.INFO);
+  assert.strictEqual(f.severity, BHYT_SEVERITY.REVIEW);
   assert.ok(f.title.includes('cùng ekip'));
+  assert.ok(f.action.includes('50%'));
+  assert.ok(f.legal_source.includes('22/2023/TT-BYT'));
 });
 
-test('50b. 2 lần PT khác ekip -> finding INFO nêu "N ekip khác nhau"', () => {
+test('50b. 2 lần PT khác ekip -> finding REVIEW nêu "N ekip khác nhau" + tỷ lệ 80%', () => {
   const data = baseData({
     billing: null,
     surgery: { surgeries: [
@@ -658,6 +661,7 @@ test('50b. 2 lần PT khác ekip -> finding INFO nêu "N ekip khác nhau"', () =
   const f = result.tier8_findings.find(x => x.rule_id === 'BHYT_T8_MULTI_SURGERY_EKIP_COMPOSITION');
   assert.ok(f);
   assert.ok(f.title.includes('2 ekip khác nhau'));
+  assert.ok(f.action.includes('80%'));
 });
 
 test('50c. Chỉ 1 lần PT -> không cảnh báo (cần >=2 lần mới so sánh)', () => {

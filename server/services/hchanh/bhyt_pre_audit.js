@@ -897,12 +897,24 @@ function checkDvktCrossChecks({ billing }) {
   return findings;
 }
 
-// Nhiều lần PT/TT trong cùng đợt điều trị: nêu ra mấy chỗ/phương pháp/ekip, cùng
-// hay khác ekip — CHỈ để người kiểm tự đối chiếu quy định tính tiền, KHÔNG tự tính
-// số tiền điều chỉnh vì chưa có văn bản căn cứ cụ thể cho công thức này (không suy
-// đoán). Ekip lấy từ các trường đã xác nhận thật trên EMR (worker/hchanh_fetch.py
-// _parse_surgery_detail_html) — nếu record cũ chưa có các trường này thì bỏ qua,
-// không suy đoán bằng dữ liệu thiếu.
+// Nhiều lần PT/TT trong cùng đợt điều trị: nêu ra mấy chỗ/phương pháp/ekip, cùng hay
+// khác ekip — để người kiểm đối chiếu bảng kê với Điều 7 Khoản 3, Thông tư
+// 22/2023/TT-BYT (17/11/2023): "Trường hợp thực hiện nhiều can thiệp trong cùng một
+// lần phẫu thuật: thanh toán theo giá của phẫu thuật phức tạp nhất, có mức giá cao
+// nhất, các dịch vụ kỹ thuật khác phát sinh ngoài quy trình kỹ thuật của phẫu thuật
+// nêu trên được thanh toán như sau: a) Bằng 50% giá của các phẫu thuật phát sinh nếu
+// kỹ thuật đó vẫn do một kíp phẫu thuật thực hiện; b) Bằng 80% giá của các phẫu thuật
+// phát sinh nếu kỹ thuật đó phải thay kíp phẫu thuật khác để thực hiện; c) Trường hợp
+// thực hiện dịch vụ phát sinh là các thủ thuật thì thanh toán 80% giá dịch vụ kỹ
+// thuật phát sinh." (căn cứ pháp lý do người dùng xác nhận qua ảnh chụp văn bản gốc).
+//
+// CHỈ nêu tỷ lệ áp dụng (100%/50%/80%) để người kiểm tự đối chiếu bảng kê — KHÔNG tự
+// tính số tiền điều chỉnh, vì hệ thống chưa có: (1) giá dịch vụ gắn với từng dòng PT
+// (surgery.surgeries không có trường giá, giá chỉ có ở bảng kê `billing`), và (2)
+// cách phân biệt tin cậy "phẫu thuật" vs "thủ thuật" cho dịch vụ phát sinh (trường
+// `phan_loai_pt` là phân loại độ phức tạp PT theo TT 50/2014, không phải PT/TT).
+// Khớp tên dịch vụ PT với dòng bảng kê để suy ra giá + loại PT/TT sẽ là suy đoán
+// không đủ tin cậy — không làm khi chưa có cách khớp chắc chắn.
 function checkMultiSurgeryEkipComposition({ surgery }) {
   const rows = safeArray(surgery?.surgeries);
   if (rows.length < 2) return [];
@@ -919,15 +931,15 @@ function checkMultiSurgeryEkipComposition({ surgery }) {
   return [makeFinding({
     rule_id: 'BHYT_T8_MULTI_SURGERY_EKIP_COMPOSITION',
     tier: 8,
-    severity: BHYT_SEVERITY.INFO,
+    severity: BHYT_SEVERITY.REVIEW,
     group: 'Dịch vụ kỹ thuật',
     title: `${rows.length} lần phẫu thuật/thủ thuật trong đợt điều trị — ${sameEkip ? 'cùng ekip' : `${distinctEkip.size} ekip khác nhau`}, ${distinctMethods.size || rows.length} phương pháp`,
     detail: rows.map((r, i) => `PT ${i + 1}: ${text(r?.phuong_phap_pt || r?.dich_vu_phau_thuat, 'chưa rõ phương pháp')} — PTV chính: ${text(r?.bs_mo_chinh, 'chưa rõ')}`).join('; '),
     action: sameEkip
-      ? 'Nhiều lần PT/TT cùng ekip trong đợt điều trị — kiểm tra lại quy định tính tiền công phẫu thuật/gây mê cho từng lần theo quy chế bệnh viện/BHYT hiện hành.'
-      : 'Nhiều lần PT/TT khác ekip trong đợt điều trị — kiểm tra lại quy định tính tiền công phẫu thuật/gây mê áp dụng cho từng ekip theo quy chế bệnh viện/BHYT hiện hành.',
-    legal_source: 'Chưa có văn bản căn cứ cụ thể cho công thức tính tiền cùng/khác ekip trong hệ thống — chỉ nêu sự kiện để người kiểm tự đối chiếu, không tự tính số tiền điều chỉnh.',
-    legal_clause: '',
+      ? 'Cùng 1 kíp thực hiện nhiều PT/TT trong 1 lần: dịch vụ giá cao nhất thanh toán 100%, các dịch vụ phát sinh thêm CHỈ thanh toán 50% giá (80% nếu dịch vụ phát sinh là thủ thuật, không phải phẫu thuật) — Điều 7 Khoản 3.a Thông tư 22/2023/TT-BYT. Kiểm tra lại bảng kê có đang tính đúng tỷ lệ này cho từng dòng, tránh tính 100% cho tất cả.'
+      : 'Phải thay kíp khác để thực hiện thêm PT/TT trong cùng 1 lần: dịch vụ giá cao nhất thanh toán 100%, các dịch vụ phát sinh thêm thanh toán 80% giá — Điều 7 Khoản 3.b Thông tư 22/2023/TT-BYT. Kiểm tra lại bảng kê có đang tính đúng tỷ lệ 80% cho dòng phát sinh, không phải 100%.',
+    legal_source: 'Thông tư 22/2023/TT-BYT (Bộ Y tế, ngày 17/11/2023), Điều 7 Khoản 3',
+    legal_clause: 'Nhiều can thiệp trong cùng 1 lần phẫu thuật: dịch vụ giá cao nhất thanh toán 100%; dịch vụ phát sinh thêm thanh toán 50% nếu cùng kíp phẫu thuật, 80% nếu phải thay kíp khác hoặc dịch vụ phát sinh là thủ thuật.',
     evidence: `count=${rows.length}, distinct_ekip=${distinctEkip.size}, distinct_methods=${distinctMethods.size}`,
   })];
 }

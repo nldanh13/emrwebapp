@@ -203,11 +203,20 @@ Từ khóa so khớp (`primary_keywords`/`companion_keywords`) là mảng các *
 
 Mức REVIEW cho cả 4 rule — chỉ cảnh báo để người kiểm tự xác nhận (2 chỉ định độc lập, 2 mẫu bệnh phẩm riêng, có phiếu tiêm thuốc cản quang...), không tự động kết luận trùng/thiếu và không tự chặn gửi hồ sơ. Đây là **pilot theo đúng 4 ví dụ cụ thể** trong báo cáo cảnh báo BHYT nội bộ — chưa phải danh mục "trong gói" đầy đủ toàn viện; thêm cặp dịch vụ khác vào `bhyt_dvkt_cross_check_rules.json` khi có nguồn xác nhận.
 
-### Nhiều lần PT/TT trong đợt điều trị — ekip/phương pháp (`BHYT_T8_MULTI_SURGERY_EKIP_COMPOSITION`)
+### Nhiều lần PT/TT trong đợt điều trị — ekip/phương pháp + tỷ lệ thanh toán (`BHYT_T8_MULTI_SURGERY_EKIP_COMPOSITION`)
 
-Trả lời một phần câu hỏi gốc "một cuộc phẫu thuật thì mấy chỗ, mấy phương pháp, mấy ekip, cùng hay khác ekip". Khi hồ sơ có ≥ 2 dòng `surgery.surgeries`, `checkMultiSurgeryEkipComposition()` so sánh ekip (`bs_mo_chinh`, `gay_me_chinh`, `ptv_phu_1`, `ptv_phu_2`, `dd_dung_cu`, `ktv_phu_me` — các trường đã xác nhận thật từ `worker/hchanh_fetch.py` → `_parse_surgery_detail_html()`, lifted lên top-level dòng PT) và phương pháp (`phuong_phap_pt`) giữa các lần, nêu ra **mức INFO**: cùng ekip hay khác ekip, mấy phương pháp khác nhau.
+Trả lời câu hỏi gốc "một cuộc phẫu thuật thì mấy chỗ, mấy phương pháp, mấy ekip, cùng hay khác ekip thì tính tiền sao". Khi hồ sơ có ≥ 2 dòng `surgery.surgeries`, `checkMultiSurgeryEkipComposition()` so sánh ekip (`bs_mo_chinh`, `gay_me_chinh`, `ptv_phu_1`, `ptv_phu_2`, `dd_dung_cu`, `ktv_phu_me` — các trường đã xác nhận thật từ `worker/hchanh_fetch.py` → `_parse_surgery_detail_html()`, lifted lên top-level dòng PT) và phương pháp (`phuong_phap_pt`) giữa các lần, nêu ra **mức REVIEW**: cùng ekip hay khác ekip, mấy phương pháp khác nhau, kèm đúng tỷ lệ thanh toán áp dụng.
 
-**Cố ý KHÔNG tự tính số tiền điều chỉnh** — chưa có văn bản căn cứ cụ thể cho công thức tính tiền công phẫu thuật/gây mê khi cùng/khác ekip trong cùng đợt điều trị (đúng nguyên tắc "không suy đoán"); `action` chỉ nhắc người kiểm tự đối chiếu quy chế bệnh viện/BHYT hiện hành. Nếu record cũ/thiếu hết các trường ekip (dữ liệu fetch trước khi có bản vá lift-field) thì bỏ qua, không cảnh báo.
+**Căn cứ pháp lý** (do người dùng xác nhận qua ảnh chụp văn bản gốc — không phải suy đoán): Điều 7 Khoản 3, **Thông tư 22/2023/TT-BYT** (Bộ Y tế, 17/11/2023):
+
+> Trường hợp thực hiện nhiều can thiệp trong cùng một lần phẫu thuật: thanh toán theo giá của phẫu thuật phức tạp nhất, có mức giá cao nhất, các dịch vụ kỹ thuật khác phát sinh ngoài quy trình kỹ thuật của phẫu thuật nêu trên được thanh toán như sau:
+> a) Bằng 50% giá của các phẫu thuật phát sinh nếu kỹ thuật đó vẫn do một kíp phẫu thuật thực hiện;
+> b) Bằng 80% giá của các phẫu thuật phát sinh nếu kỹ thuật đó phải thay kíp phẫu thuật khác để thực hiện;
+> c) Trường hợp thực hiện dịch vụ phát sinh là các thủ thuật thì thanh toán 80% giá dịch vụ kỹ thuật phát sinh.
+
+`action` nêu đúng tỷ lệ áp dụng (50% nếu cùng ekip, 80% nếu khác ekip) để người kiểm đối chiếu bảng kê.
+
+**Cố ý KHÔNG tự tính số tiền điều chỉnh cụ thể** — dù đã có căn cứ pháp lý cho công thức, hệ thống chưa có (1) giá dịch vụ gắn với từng dòng PT (`surgery.surgeries` không có trường giá; giá chỉ có ở bảng kê `billing`, khớp theo tên dịch vụ sẽ không đủ tin cậy) và (2) cách phân biệt chắc chắn "phẫu thuật" vs "thủ thuật" cho dịch vụ phát sinh (trường `phan_loai_pt` là phân loại độ phức tạp theo Thông tư 50/2014/TT-BYT — Đặc biệt/Loại 1/2/3 — không phải phân biệt PT/TT). Đúng nguyên tắc "không suy đoán": chỉ nêu tỷ lệ đúng theo luật, không tự khớp/tính số tiền khi chưa có cách khớp dữ liệu chắc chắn. Nếu record cũ/thiếu hết các trường ekip (dữ liệu fetch trước khi có bản vá lift-field) thì bỏ qua, không cảnh báo.
 
 ## Chỉ số "tỷ lệ đạt" theo Tầng (`readiness`, đã cài đặt)
 
