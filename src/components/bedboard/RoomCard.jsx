@@ -1,7 +1,8 @@
 import { C } from '../../tokens.js';
-import { getPatientId, getPatientName, getWardMetaLine } from './bedBoardUtils.js';
+import { getPatientId, getPatientName, getWardMetaLine, roomPriceTier, formatVND } from './bedBoardUtils.js';
+import PatientRoomNotes from './PatientRoomNotes.jsx';
 
-export default function RoomCard({ room, capacity, patients, selectedCount, onAssign, onRemove, onClear, onDelete, isDefault }) {
+export default function RoomCard({ room, capacity, patients, selectedCount, onAssign, onRemove, onClear, onDelete, onUpdateNote, isDefault }) {
   const isFull = patients.length >= capacity;
   return (
     <div style={{
@@ -14,7 +15,12 @@ export default function RoomCard({ room, capacity, patients, selectedCount, onAs
         alignItems: 'center', borderBottom: `1px solid ${C.border2}`,
         background: C.surface2,
       }}>
-        <span style={{ fontWeight: 600, fontSize: 12, color: C.text }}>{room}</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <span style={{ fontWeight: 600, fontSize: 12, color: C.text }}>{room}</span>
+          <span style={{ fontSize: 9, color: C.text3, fontVariantNumeric: 'tabular-nums' }}>
+            {formatVND(roomPriceTier(room))}/giường
+          </span>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{
             fontSize: 10, fontVariantNumeric: 'tabular-nums',
@@ -48,23 +54,27 @@ export default function RoomCard({ room, capacity, patients, selectedCount, onAs
           const id = getPatientId(p);
           return (
             <div key={id} style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '2px 0', borderBottom: `1px solid ${C.border2}`,
+              padding: '3px 0', borderBottom: `1px solid ${C.border2}`,
             }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 11, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {getPatientName(p)}
-                </div>
-                {getWardMetaLine(p) && (
-                  <div style={{ fontSize: 9, color: C.text3, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {getWardMetaLine(p)}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {getPatientName(p)}
                   </div>
-                )}
+                  {getWardMetaLine(p) && (
+                    <div style={{ fontSize: 9, color: C.text3, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {getWardMetaLine(p)}
+                    </div>
+                  )}
+                </div>
+                <button type="button" onClick={() => onRemove(id)} style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: C.text3, fontSize: 10, padding: '0 2px', flexShrink: 0,
+                }}>✕</button>
               </div>
-              <button type="button" onClick={() => onRemove(id)} style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                color: C.text3, fontSize: 10, padding: '0 2px', flexShrink: 0,
-              }}>✕</button>
+              {onUpdateNote && (
+                <PatientRoomNotes patient={p} onChange={(field, value) => onUpdateNote(id, field, value)} compact />
+              )}
             </div>
           );
         })}
