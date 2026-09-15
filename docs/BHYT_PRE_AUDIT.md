@@ -216,6 +216,8 @@ Trả lời câu hỏi gốc "một cuộc phẫu thuật thì mấy chỗ, mấ
 
 `action` nêu đúng tỷ lệ áp dụng (50% nếu cùng ekip, 80% nếu khác ekip) để người kiểm đối chiếu bảng kê.
 
+**Định nghĩa "cùng ekip" / "khác ekip"** (quy ước nghiệp vụ do người dùng xác nhận, không phải trích luật): "cùng ekip" là một tập thể nhân sự thống nhất, quen thuộc, đồng hành xuyên suốt từ đầu đến cuối ca mổ (hoặc cùng một nhóm phối hợp cố định); "khác ekip" là có thay đổi nhân sự giữa chừng (đổi ca trực/giao ca) hoặc là các nhóm hoàn toàn độc lập nhau. Cài đặt: so khớp **chính xác cả 6 vai trò** (`bs_mo_chinh`, `gay_me_chinh`, `ptv_phu_1`, `ptv_phu_2`, `dd_dung_cu`, `ktv_phu_me`) giữa các lần PT — chỉ cần 1 vai trò khác nhau là coi "khác ekip" (đúng tinh thần "đồng hành xuyên suốt toàn bộ ê-kíp", không riêng PTV chính).
+
 **Cố ý KHÔNG tự tính số tiền điều chỉnh cụ thể** — dù đã có căn cứ pháp lý cho công thức, hệ thống chưa có (1) giá dịch vụ gắn với từng dòng PT (`surgery.surgeries` không có trường giá; giá chỉ có ở bảng kê `billing`, khớp theo tên dịch vụ sẽ không đủ tin cậy) và (2) cách phân biệt chắc chắn "phẫu thuật" vs "thủ thuật" cho dịch vụ phát sinh (trường `phan_loai_pt` là phân loại độ phức tạp theo Thông tư 50/2014/TT-BYT — Đặc biệt/Loại 1/2/3 — không phải phân biệt PT/TT). Đúng nguyên tắc "không suy đoán": chỉ nêu tỷ lệ đúng theo luật, không tự khớp/tính số tiền khi chưa có cách khớp dữ liệu chắc chắn. Nếu record cũ/thiếu hết các trường ekip (dữ liệu fetch trước khi có bản vá lift-field) thì bỏ qua, không cảnh báo.
 
 ## Chỉ số "tỷ lệ đạt" theo Tầng (`readiness`, đã cài đặt)

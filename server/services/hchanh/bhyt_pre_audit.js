@@ -915,6 +915,14 @@ function checkDvktCrossChecks({ billing }) {
 // `phan_loai_pt` là phân loại độ phức tạp PT theo TT 50/2014, không phải PT/TT).
 // Khớp tên dịch vụ PT với dòng bảng kê để suy ra giá + loại PT/TT sẽ là suy đoán
 // không đủ tin cậy — không làm khi chưa có cách khớp chắc chắn.
+//
+// Định nghĩa "cùng ekip" / "khác ekip" (quy ước nghiệp vụ do người dùng xác nhận,
+// không phải trích luật): "cùng ekip" = một tập thể nhân sự thống nhất, đồng hành
+// xuyên suốt từ đầu đến cuối; "khác ekip" = có thay đổi nhân sự giữa chừng (đổi ca
+// trực/giao ca) hoặc là 2 nhóm hoàn toàn độc lập. Cài đặt: so khớp CHÍNH XÁC cả 6
+// vai trò (bs_mo_chinh, gay_me_chinh, ptv_phu_1, ptv_phu_2, dd_dung_cu, ktv_phu_me)
+// giữa các lần PT — chỉ cần 1 vai trò khác là coi "khác ekip" (đúng tinh thần "đồng
+// hành xuyên suốt toàn bộ ê-kíp", không riêng PTV chính).
 function checkMultiSurgeryEkipComposition({ surgery }) {
   const rows = safeArray(surgery?.surgeries);
   if (rows.length < 2) return [];
