@@ -4635,6 +4635,124 @@ def _parse_cdha_results_from_driver(driver: Any, date_from: str = "", date_to: s
     return results
 
 
+# ── Chi tiết kết quả CĐHA (kết luận/mô tả từng phim) — BEST-EFFORT, CHƯA XÁC NHẬN ──
+# _parse_cdha_results_from_driver() ở trên chỉ đọc BẢNG DANH SÁCH (tên, ngày, nhóm,
+# trạng thái) — không có nội dung kết luận/mô tả để biết "kết quả có bất thường
+# không". Mỗi dòng list đã có sẵn onclick của link "Xem" (cột cuối), nhưng cấu trúc
+# DOM của popup/trang chi tiết mở ra sau khi bấm CHƯA được xác nhận bằng HTML EMR
+# thật (khác với phần list ở trên, đã có comment "HTML EMR thực tế" xác nhận rõ).
+# Vì vậy toàn bộ khối dưới đây:
+#   - Mặc định TẮT (config "hchanh_cls_detail_fetch" phải bật rõ ràng) để không ảnh
+#     hưởng các luồng đang chạy ổn định (records-check, research) khi chưa kiểm chứng.
+#   - Dò nội dung theo NHÃN PHỔ BIẾN (Kết luận/Mô tả/Chẩn đoán/Nhận định) thay vì 1
+#     selector cứng — nếu không khớp nhãn nào vẫn giữ lại toàn bộ text thô kèm cờ
+#     "_detail_unverified": True để nơi dùng dữ liệu (Tầng 4/6 BHYT) biết đây là dữ
+#     liệu chưa được xác nhận chắc chắn, không tự tin dùng để tự động kết luận.
+# Khi có HTML thật của trang chi tiết (gửi qua để đối chiếu, giống cách đã làm với
+# trang "Chi tiết chi phí"), sẽ thay dò-theo-nhãn bằng selector chính xác.
+
+_CDHA_DETAIL_LABELS: Dict[str, List[str]] = {
+    "ket_luan": ["kết luận", "ket luan"],
+    "mo_ta": ["mô tả", "mo ta", "mô tả kỹ thuật"],
+    "chan_doan": ["chẩn đoán", "chan doan"],
+    "nhan_dinh": ["nhận định", "nhan dinh", "nhận xét"],
+}
+
+
+def _open_cdha_result_detail_by_onclick(driver: Any, onclick: str) -> bool:
+    """Mở chi tiết 1 kết quả CĐHA bằng cách bấm ĐÚNG link 'Xem' đã bắt onclick lúc
+    đọc danh sách — định vị lại phần tử LIVE qua chính chuỗi onclick (không đoán
+    tên hàm JS), rồi bấm y như người dùng bấm."""
+    try:
+        from selenium.webdriver.common.by import By  # type: ignore
+    except Exception:
+        return False
+    if not onclick:
+        return False
+    try:
+        els = driver.find_elements(By.XPATH, f"//table[@id='tbDichVu']//a[@onclick={_xpath_literal(onclick)}]")
+        if not els:
+            return False
+        _selenium_click_js(driver, els[0])
+        return True
+    except Exception as e:
+        print(f"WARN [cls-detail] Không bấm được link chi tiết: {type(e).__name__}: {e}", file=sys.stderr)
+        return False
+
+
+def _parse_cdha_detail_html(html: str) -> Dict[str, Any]:
+    """Phần thuần parse HTML (tách khỏi _read_cdha_result_detail_text để unit test
+    được bằng HTML mẫu, không cần Selenium) — xem tests/test_cdha_detail_parse.py."""
+    soup = _soup(html or "")
+    full_text = _get_text(soup)
+    out: Dict[str, Any] = {"_raw_text": _trace_clip(full_text, 4000), "_detail_unverified": True}
+    for key, labels in _CDHA_DETAIL_LABELS.items():
+        label_norms = {_norm(l) for l in labels}
+        for el in soup.find_all(["label", "td", "span", "b", "strong", "th", "div"]):
+            own_text = _norm(el.get_text(strip=True)).rstrip(":").strip()
+            if own_text not in label_norms:
+                continue
+            sib = el.find_next(["td", "span", "div", "p"])
+            val = _get_text(sib) if sib else ""
+            if val:
+                out[key] = val
+                break
+    return out
+
+
+def _read_cdha_result_detail_text(driver: Any) -> Dict[str, Any]:
+    """Đọc nội dung chi tiết vừa mở (best-effort, xem ghi chú CHƯA XÁC NHẬN ở đầu khối)."""
+    try:
+        html = getattr(driver, "page_source", "") or ""
+    except Exception:
+        html = ""
+    return _parse_cdha_detail_html(html)
+
+
+def _enrich_cdha_results_with_detail(driver: Any, results: List[Dict[str, Any]], config: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Mở từng kết quả CĐHA để lấy kết luận/mô tả — CHỈ chạy khi config bật rõ ràng
+    "hchanh_cls_detail_fetch" (mặc định tắt, xem ghi chú đầu khối). Giới hạn số
+    lượng mở để tránh 1 ca có quá nhiều phim làm tiến trình chạy quá lâu."""
+    if not _cfg_bool(config.get("hchanh_cls_detail_fetch"), False):
+        return results
+    max_items = int(config.get("hchanh_cls_detail_fetch_max") or 20)
+    list_handle = ""
+    try:
+        list_handle = driver.current_window_handle
+    except Exception:
+        pass
+
+    for idx, r in enumerate(results):
+        if idx >= max_items:
+            r["detail"] = {"_skipped_reason": f"vượt giới hạn {max_items} kết quả/ca"}
+            continue
+        onclick = _t(r.get("onclick"))
+        if not onclick:
+            continue
+        before_handles = list(getattr(driver, "window_handles", []) or [])
+        opened = _open_cdha_result_detail_by_onclick(driver, onclick)
+        if not opened:
+            continue
+        try:
+            _switch_to_new_tab_if_any(driver, before_handles, timeout=3.0)
+        except Exception:
+            pass
+        try:
+            _selenium_wait_after_action(driver, 1.0, ready_timeout=10)  # type: ignore[misc]
+        except Exception:
+            time.sleep(1.0)
+        try:
+            r["detail"] = _read_cdha_result_detail_text(driver)
+        except Exception as e:
+            r["detail"] = {"_error": str(e)}
+        # Đóng tab phụ (nếu mở) và quay lại tab danh sách trước khi xử lý dòng tiếp theo.
+        try:
+            _close_extra_tabs(driver, keep_handle=list_handle)
+        except Exception:
+            pass
+    return results
+
+
 def fetch_cls(sess: Optional[EmrHttpSession], ma_bn: str,
               date_from: str, date_to: str,
               link_map: Dict[str, str], config: Dict[str, Any]) -> Dict[str, Any]:
@@ -4690,6 +4808,7 @@ def fetch_cls(sess: Optional[EmrHttpSession], ma_bn: str,
             return base
 
         results = _parse_cdha_results_from_driver(driver, date_from, date_to)
+        results = _enrich_cdha_results_with_detail(driver, results, config)
         base["results"] = results
         base["counts"] = {
             "xq": sum(1 for r in results if r.get("nhom_dich_vu") == "XQ"),
