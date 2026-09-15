@@ -179,8 +179,8 @@
     },
     "BHYT_T8_MULTI_SURGERY_EKIP_COMPOSITION": {
       "tier": 8,
-      "action": "Nhiều lần PT/TT trong đợt điều trị — kiểm tra lại bảng kê có đang áp đúng tỷ lệ thanh toán 100%/50%/80% theo cùng/khác kíp phẫu thuật (Điều 7 Khoản 3, Thông tư 22/2023/TT-BYT).",
-      "legal_source": "Thông tư 22/2023/TT-BYT (Bộ Y tế, ngày 17/11/2023), Điều 7 Khoản 3",
+      "action": "Nhiều lần PT/TT trong đợt điều trị — kiểm tra lại bảng kê có đang áp đúng tỷ lệ thanh toán 100%/50%/80% theo cùng/khác kíp phẫu thuật (Điều 4đ Khoản 2, Thông tư 35/2016/TT-BYT, bổ sung bởi TT 39/2024/TT-BYT).",
+      "legal_source": "Thông tư 35/2016/TT-BYT, Điều 4đ Khoản 2 (bổ sung bởi Khoản 4 Điều 1 Thông tư 39/2024/TT-BYT, Bộ Y tế, hiệu lực từ 01/01/2025 — hợp nhất tại Văn bản hợp nhất 17/VBHN-BYT ngày 31/12/2024)",
       "legal_clause": "Nhiều can thiệp trong cùng 1 lần phẫu thuật: dịch vụ giá cao nhất thanh toán 100%; dịch vụ phát sinh thêm thanh toán 50% nếu cùng kíp phẫu thuật, 80% nếu phải thay kíp khác hoặc dịch vụ phát sinh là thủ thuật."
     }
   }

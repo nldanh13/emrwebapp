@@ -630,7 +630,7 @@ test('50. Không có bảng kê -> Tầng 8 im lặng, không lỗi', () => {
 });
 
 // ── Tầng 8: nhiều lần PT/TT -> nêu ekip/phương pháp + tỷ lệ 100%/50%/80% theo ─────
-// Điều 7 Khoản 3, Thông tư 22/2023/TT-BYT (không tự tính số tiền cụ thể) ──────────
+// Điều 4đ Khoản 2, Thông tư 35/2016/TT-BYT (bổ sung bởi TT 39/2024/TT-BYT, không tự tính số tiền cụ thể) ──
 
 test('50a. 2 lần PT cùng ekip -> finding REVIEW nêu "cùng ekip" + tỷ lệ 50%', () => {
   const data = baseData({
@@ -646,7 +646,7 @@ test('50a. 2 lần PT cùng ekip -> finding REVIEW nêu "cùng ekip" + tỷ lệ
   assert.strictEqual(f.severity, BHYT_SEVERITY.REVIEW);
   assert.ok(f.title.includes('cùng ekip'));
   assert.ok(f.action.includes('50%'));
-  assert.ok(f.legal_source.includes('22/2023/TT-BYT'));
+  assert.ok(f.legal_source.includes('35/2016/TT-BYT'));
 });
 
 test('50b. 2 lần PT khác ekip -> finding REVIEW nêu "N ekip khác nhau" + tỷ lệ 80%', () => {

@@ -898,15 +898,24 @@ function checkDvktCrossChecks({ billing }) {
 }
 
 // Nhiều lần PT/TT trong cùng đợt điều trị: nêu ra mấy chỗ/phương pháp/ekip, cùng hay
-// khác ekip — để người kiểm đối chiếu bảng kê với Điều 7 Khoản 3, Thông tư
-// 22/2023/TT-BYT (17/11/2023): "Trường hợp thực hiện nhiều can thiệp trong cùng một
-// lần phẫu thuật: thanh toán theo giá của phẫu thuật phức tạp nhất, có mức giá cao
-// nhất, các dịch vụ kỹ thuật khác phát sinh ngoài quy trình kỹ thuật của phẫu thuật
-// nêu trên được thanh toán như sau: a) Bằng 50% giá của các phẫu thuật phát sinh nếu
-// kỹ thuật đó vẫn do một kíp phẫu thuật thực hiện; b) Bằng 80% giá của các phẫu thuật
-// phát sinh nếu kỹ thuật đó phải thay kíp phẫu thuật khác để thực hiện; c) Trường hợp
-// thực hiện dịch vụ phát sinh là các thủ thuật thì thanh toán 80% giá dịch vụ kỹ
-// thuật phát sinh." (căn cứ pháp lý do người dùng xác nhận qua ảnh chụp văn bản gốc).
+// khác ekip — để người kiểm đối chiếu bảng kê với Điều 4đ Khoản 2, Thông tư
+// 35/2016/TT-BYT (được BỔ SUNG bởi khoản 4 Điều 1 Thông tư 39/2024/TT-BYT, có hiệu
+// lực thi hành từ 01/01/2025 — văn bản hợp nhất tại 17/VBHN-BYT ngày 31/12/2024,
+// người dùng cung cấp trực tiếp bản PDF): "Trường hợp thực hiện nhiều can thiệp trong
+// cùng một lần phẫu thuật: thanh toán theo giá của phẫu thuật phức tạp nhất, có mức
+// giá cao nhất, các dịch vụ kỹ thuật khác phát sinh ngoài quy trình kỹ thuật của phẫu
+// thuật nêu trên được thanh toán như sau: a) Bằng 50% giá của các phẫu thuật phát sinh
+// nếu kỹ thuật đó vẫn do một kíp phẫu thuật thực hiện; b) Bằng 80% giá của các phẫu
+// thuật phát sinh nếu kỹ thuật đó phải thay kíp phẫu thuật khác để thực hiện; c)
+// Trường hợp thực hiện dịch vụ phát sinh là các thủ thuật thì thanh toán 80% giá dịch
+// vụ kỹ thuật phát sinh."
+// LƯU Ý LỊCH SỬ: bản đầu tiên của check này trích dẫn nhầm Điều 7 Khoản 3, Thông tư
+// 22/2023/TT-BYT (17/11/2023) — về sau xác minh Thông tư này đã HẾT HIỆU LỰC toàn bộ
+// từ 01/01/2025 theo Điều 11 Khoản 2.c Thông tư 21/2024/TT-BYT (chỉ quy định phương
+// pháp định giá, không có quy tắc này). Thông tư 39/2024/TT-BYT (cùng nguồn với rule
+// "trong gói" Tầng 8 khác trong file này) đã chuyển nguyên văn quy tắc này sang Thông
+// tư 35/2016/TT-BYT đúng ngày TT22/2023 hết hiệu lực — nội dung a/b/c không đổi, chỉ
+// đổi nguồn trích dẫn cho đúng luật hiện hành.
 //
 // CHỈ nêu tỷ lệ áp dụng (100%/50%/80%) để người kiểm tự đối chiếu bảng kê — KHÔNG tự
 // tính số tiền điều chỉnh, vì hệ thống chưa có: (1) giá dịch vụ gắn với từng dòng PT
@@ -944,9 +953,9 @@ function checkMultiSurgeryEkipComposition({ surgery }) {
     title: `${rows.length} lần phẫu thuật/thủ thuật trong đợt điều trị — ${sameEkip ? 'cùng ekip' : `${distinctEkip.size} ekip khác nhau`}, ${distinctMethods.size || rows.length} phương pháp`,
     detail: rows.map((r, i) => `PT ${i + 1}: ${text(r?.phuong_phap_pt || r?.dich_vu_phau_thuat, 'chưa rõ phương pháp')} — PTV chính: ${text(r?.bs_mo_chinh, 'chưa rõ')}`).join('; '),
     action: sameEkip
-      ? 'Cùng 1 kíp thực hiện nhiều PT/TT trong 1 lần: dịch vụ giá cao nhất thanh toán 100%, các dịch vụ phát sinh thêm CHỈ thanh toán 50% giá (80% nếu dịch vụ phát sinh là thủ thuật, không phải phẫu thuật) — Điều 7 Khoản 3.a Thông tư 22/2023/TT-BYT. Kiểm tra lại bảng kê có đang tính đúng tỷ lệ này cho từng dòng, tránh tính 100% cho tất cả.'
-      : 'Phải thay kíp khác để thực hiện thêm PT/TT trong cùng 1 lần: dịch vụ giá cao nhất thanh toán 100%, các dịch vụ phát sinh thêm thanh toán 80% giá — Điều 7 Khoản 3.b Thông tư 22/2023/TT-BYT. Kiểm tra lại bảng kê có đang tính đúng tỷ lệ 80% cho dòng phát sinh, không phải 100%.',
-    legal_source: 'Thông tư 22/2023/TT-BYT (Bộ Y tế, ngày 17/11/2023), Điều 7 Khoản 3',
+      ? 'Cùng 1 kíp thực hiện nhiều PT/TT trong 1 lần: dịch vụ giá cao nhất thanh toán 100%, các dịch vụ phát sinh thêm CHỈ thanh toán 50% giá (80% nếu dịch vụ phát sinh là thủ thuật, không phải phẫu thuật) — Điều 4đ Khoản 2.a Thông tư 35/2016/TT-BYT (bổ sung bởi TT 39/2024/TT-BYT). Kiểm tra lại bảng kê có đang tính đúng tỷ lệ này cho từng dòng, tránh tính 100% cho tất cả.'
+      : 'Phải thay kíp khác để thực hiện thêm PT/TT trong cùng 1 lần: dịch vụ giá cao nhất thanh toán 100%, các dịch vụ phát sinh thêm thanh toán 80% giá — Điều 4đ Khoản 2.b Thông tư 35/2016/TT-BYT (bổ sung bởi TT 39/2024/TT-BYT). Kiểm tra lại bảng kê có đang tính đúng tỷ lệ 80% cho dòng phát sinh, không phải 100%.',
+    legal_source: 'Thông tư 35/2016/TT-BYT, Điều 4đ Khoản 2 (bổ sung bởi Khoản 4 Điều 1 Thông tư 39/2024/TT-BYT, Bộ Y tế, hiệu lực từ 01/01/2025 — hợp nhất tại Văn bản hợp nhất 17/VBHN-BYT ngày 31/12/2024)',
     legal_clause: 'Nhiều can thiệp trong cùng 1 lần phẫu thuật: dịch vụ giá cao nhất thanh toán 100%; dịch vụ phát sinh thêm thanh toán 50% nếu cùng kíp phẫu thuật, 80% nếu phải thay kíp khác hoặc dịch vụ phát sinh là thủ thuật.',
     evidence: `count=${rows.length}, distinct_ekip=${distinctEkip.size}, distinct_methods=${distinctMethods.size}`,
   })];
