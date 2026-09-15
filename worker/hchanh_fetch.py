@@ -336,6 +336,10 @@ def trace_event(tag: str, step: str, screen: str = "", sees: str = "", takes: st
 def trace_events() -> List[Dict[str, Any]]:
     return list(_TRACE_EVENTS)[-200:]
 
+def _trace_reset() -> None:
+    """Xóa trace của ca trước khi bắt đầu ca mới trong cùng 1 tiến trình (chế độ lô)."""
+    _TRACE_EVENTS.clear()
+
 def _trace_no_url_tag(file_key: str) -> str:
     key = str(file_key or "").strip().lower()
     if key == "profile":
@@ -1421,12 +1425,103 @@ def _switch_to_new_tab_if_any(driver: Any, before_handles: List[str], timeout: f
     return False
 
 
+def _switch_hchanh_click_context_on_open_driver(
+    driver: Any, wait: Any, code: str, hchanh_config: Dict[str, Any],
+    date_to: str, date_from: str, wanted_status: str,
+    wanted_from: str, wanted_to: str,
+    direct_links_cfg: Dict[str, Any], direct_noitruid: str, direct_case_key: str,
+) -> Optional[Dict[str, Any]]:
+    """Chuyển Chrome ĐANG MỞ (đã đăng nhập) sang BN kế tiếp trong cùng lô — không mở
+    lại Chrome, không đăng nhập lại. Dùng khi gộp nhiều BN vào 1 phiên Chrome."""
+    denngay = _date_to_dmy(date_to)
+    try:
+        nav_url = getattr(driver, "current_url", "") or _HCHANH_CLICK_CACHE.get("nav_url") or ""
+    except Exception:
+        nav_url = _HCHANH_CLICK_CACHE.get("nav_url") or ""
+    served = int(_HCHANH_CLICK_CACHE.get("patients_served") or 0) + 1
+
+    if direct_links_cfg:
+        links = {
+            k: _rebase_emr_patient_url(_t(v), nav_url)
+            for k, v in dict(direct_links_cfg).items()
+            if k in {"doctor", "nursing"} and _t(v)
+        }
+        if links.get("doctor") and not links.get("nursing"):
+            links["nursing"] = _as_nursing_url(links["doctor"])
+        if links.get("nursing") and not links.get("doctor"):
+            links["doctor"] = _as_doctor_url(links["nursing"])
+        if links:
+            if denngay:
+                links = {k: _upsert_query(v, denngay=denngay) for k, v in links.items() if v}
+            main_handle = ""
+            try:
+                main_handle = driver.current_window_handle
+            except Exception:
+                pass
+            _HCHANH_CLICK_CACHE.clear()
+            _HCHANH_CLICK_CACHE.update({
+                "driver": driver, "wait": wait, "config": hchanh_config, "ma_bn": code,
+                "links": links, "nav_url": nav_url, "main_handle": main_handle,
+                "inpatient_status": wanted_status, "date_from": wanted_from, "date_to": wanted_to,
+                "direct_noitruid": direct_noitruid, "direct_case_key": direct_case_key,
+                "patients_served": served,
+            })
+            print(f"LOG [hchanh-click] (lô, giữ Chrome) Dùng link trực tiếp cho BN {code} — ca thứ {served} trong lô.")
+            return _HCHANH_CLICK_CACHE
+
+    try:
+        _selenium_set_status_filter(driver, wait, wanted_status, log_func=print)  # type: ignore[misc]
+        if (date_from or date_to) and _selenium_set_time_range_filter is not None:
+            _selenium_set_time_range_filter(driver, wait, date_from or date_to, date_to or date_from, log_func=print)  # type: ignore[misc]
+        _selenium_search_patient(  # type: ignore[misc]
+            driver, wait, hchanh_config, code,
+            login_func=login_emr,
+            log_func=print,
+            after_enter_seconds=1.5,
+        )
+        try:
+            _selenium_wait_after_action(driver, 0.5, ready_timeout=8)  # type: ignore[misc]
+        except Exception:
+            pass
+        if not bool(_selenium_patient_row_exists(driver, code)):  # type: ignore[misc]
+            print(f"WARN [hchanh-click] (lô) Không thấy BN {code} ở trạng thái {wanted_status} trên Chrome đang mở.", file=sys.stderr)
+            return None
+        links = _extract_patient_links_from_selenium_page(driver, code)
+        if denngay:
+            links = {k: _upsert_query(v, denngay=denngay) for k, v in links.items() if v}
+        if not links:
+            print(f"WARN [hchanh-click] (lô) Thấy BN {code} nhưng không lấy được link tên BN/con mắt điều dưỡng.", file=sys.stderr)
+            return None
+        main_handle = ""
+        try:
+            main_handle = driver.current_window_handle
+        except Exception:
+            pass
+        _HCHANH_CLICK_CACHE.clear()
+        _HCHANH_CLICK_CACHE.update({
+            "driver": driver, "wait": wait, "config": hchanh_config, "ma_bn": code,
+            "links": links, "nav_url": nav_url, "main_handle": main_handle,
+            "inpatient_status": wanted_status, "date_from": wanted_from, "date_to": wanted_to,
+            "patients_served": served,
+        })
+        print(f"LOG [hchanh-click] (lô, giữ Chrome) Sẵn sàng thao tác BN {code} — ca thứ {served} trong lô.")
+        return _HCHANH_CLICK_CACHE
+    except Exception as e:
+        print(f"WARN [hchanh-click] (lô) Lỗi khi chuyển sang BN {code} trên Chrome đang mở: {type(e).__name__}: {e}", file=sys.stderr)
+        return None
+
+
 def _ensure_hchanh_click_context(sess: Optional["EmrHttpSession"], ma_bn: str,
                                  config: Dict[str, Any], date_to: str = "",
                                  reason: str = "click",
                                  inpatient_status: str = "Đang thực hiện",
                                  date_from: str = "") -> Optional[Dict[str, Any]]:
-    """Mở hoặc dùng lại Chrome, đăng nhập và tìm đúng BN theo trạng thái nội trú."""
+    """Mở hoặc dùng lại Chrome, đăng nhập và tìm đúng BN theo trạng thái nội trú.
+
+    Khi chạy theo lô (config["hchanh_batch_size"] > 1), Chrome/đăng nhập được giữ
+    nguyên và dùng lại cho TỐI ĐA batch_size BN liên tiếp (khác BN vẫn không cần mở
+    lại Chrome) — chỉ đóng+mở lại hẳn khi hết quota lô hoặc Chrome đã chết.
+    """
     if not (_HAS_SELENIUM_LOGIN and _HAS_SELENIUM_SEARCH):
         print("WARN [hchanh-click] Không đủ Selenium helper để thao tác trên EMR.", file=sys.stderr)
         return None
@@ -1451,6 +1546,23 @@ def _ensure_hchanh_click_context(sess: Optional["EmrHttpSession"], ma_bn: str,
             and _is_driver_alive(existing)):
         print(f"LOG [hchanh-click] Dùng lại Chrome đang mở cho BN {code} | trạng thái={wanted_status}.")
         return _HCHANH_CLICK_CACHE
+
+    hchanh_config_for_switch = _build_hchanh_config(config)
+    batch_size = max(1, int(config.get("hchanh_batch_size") or 1))
+    served_so_far = int(_HCHANH_CLICK_CACHE.get("patients_served") or 0)
+    if (existing is not None and _HCHANH_CLICK_CACHE.get("ma_bn") != code
+            and served_so_far < batch_size and _is_driver_alive(existing)):
+        switched = _switch_hchanh_click_context_on_open_driver(
+            existing, _HCHANH_CLICK_CACHE.get("wait"), code, hchanh_config_for_switch,
+            date_to, date_from, wanted_status, wanted_from, wanted_to,
+            direct_links_cfg, direct_noitruid, direct_case_key,
+        )
+        if switched is not None:
+            return switched
+        # BN không tìm thấy trên Chrome đang mở: đóng hẳn rồi mở mới thử lại 1 lần,
+        # một số lỗi UI EMR chỉ hết khi load lại trang từ đầu.
+        print(f"LOG [hchanh-click] (lô) Chuyển sang BN {code} trên Chrome đang mở thất bại, mở Chrome mới.")
+        _shutdown_hchanh_click_driver()
 
     # Nếu đang giữ Chrome của BN khác/lượt khác hoặc Chrome đã chết thì đóng sạch trước.
     if existing is not None:
@@ -1529,6 +1641,7 @@ def _ensure_hchanh_click_context(sess: Optional["EmrHttpSession"], ma_bn: str,
                     "date_to": wanted_to,
                     "direct_noitruid": direct_noitruid,
                     "direct_case_key": direct_case_key,
+                    "patients_served": 1,
                 })
                 print(
                     f"LOG [hchanh-click] Dùng link trực tiếp từ dòng scan Hoàn tất cho BN {code}: "
@@ -1588,6 +1701,7 @@ def _ensure_hchanh_click_context(sess: Optional["EmrHttpSession"], ma_bn: str,
             "inpatient_status": wanted_status,
             "date_from": wanted_from,
             "date_to": wanted_to,
+            "patients_served": 1,
         })
         print(
             f"LOG [hchanh-click] Sẵn sàng thao tác BN {code}: "
@@ -5337,26 +5451,27 @@ def fetch_documents(sess: Optional["EmrHttpSession"], ma_bn: str,
     return base
 
 
-def run_hchanh_fetch(input_path: str, out_path: str, scope: str,
-                     files: List[str], date_from: str, date_to: str,
-                     inpatient_status: str = "", headless: bool = False) -> int:
-    if not os.path.exists(input_path):
-        print(f"ERROR: Không tìm thấy file input {input_path}", file=sys.stderr)
-        return 1
+def _run_hchanh_fetch_core(patient_row: Dict[str, Any], scope: str, files: List[str],
+                           date_from: str, date_to: str, inpatient_status: str,
+                           headless: bool, batch_size: int = 1,
+                           input_basename: str = "", out_path: str = "") -> Optional[Dict[str, Any]]:
+    """Lấy dữ liệu hành chánh/y lệnh cho 1 BN, trả về output dict (đã có _case_trace).
 
-    with open(input_path, "r", encoding="utf-8") as f:
-        patient_row = json.load(f)
-
+    Dùng chung cho chế độ đơn ca (run_hchanh_fetch, batch_size=1 → luôn mở Chrome
+    mới cho mỗi lần gọi khác BN) và chế độ theo lô (run_hchanh_fetch_batch,
+    batch_size>1 → cho phép giữ nguyên Chrome/đăng nhập cho nhiều BN liên tiếp,
+    xem _ensure_hchanh_click_context).
+    """
     ma_bn = _t(patient_row.get("ma_bn") or patient_row.get("Mã BN") or patient_row.get("Mã YT"))
     if not ma_bn:
         print("ERROR: Input thiếu ma_bn", file=sys.stderr)
-        return 1
+        return None
 
     trace_event(
         "CASE.START",
         "Bắt đầu xử lý một ca nghiên cứu hành chánh/y lệnh",
         screen="worker/hchanh_fetch.py",
-        sees=f"input={os.path.basename(input_path)}; files={','.join(files)}",
+        sees=f"input={input_basename}; files={','.join(files)}",
         takes=f"Mã BN={ma_bn}; Mã NC={_t(patient_row.get('research_code') or patient_row.get('Mã NC'))}; Họ tên={_t(patient_row.get('ho_ten') or patient_row.get('Họ tên'))}",
         writes="khởi tạo trace cho case",
         target="research_case_trace_recent.json",
@@ -5397,6 +5512,7 @@ def run_hchanh_fetch(input_path: str, out_path: str, scope: str,
         config["hchanh_click_headless"] = True
         config["hchanh_link_headless"] = True
         config["hchanh_auth_headless"] = True
+    config["hchanh_batch_size"] = max(1, int(batch_size or 1))
     requested_inpatient_status = _t(inpatient_status or patient_row.get("inpatient_status") or patient_row.get("research_inpatient_status") or config.get("hchanh_inpatient_status"), "Đang thực hiện")
     research_mode = bool(patient_row.get("research_mode") or patient_row.get("is_research") or patient_row.get("Research key"))
     if research_mode:
@@ -5668,11 +5784,10 @@ def run_hchanh_fetch(input_path: str, out_path: str, scope: str,
         target=out_path,
     )
     output["_case_trace"] = trace_events()
+    return output
 
-    os.makedirs(os.path.dirname(out_path) if os.path.dirname(out_path) else ".", exist_ok=True)
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(output, f, ensure_ascii=False, indent=2)
 
+def _summarize_hchanh_output(output: Dict[str, Any], files: List[str]) -> Tuple[int, int, int, str]:
     ok_count = sum(1 for k, v in output.items() if not str(k).startswith("_") and isinstance(v, dict) and v.get("_fetch_status") == "ok")
     attention_count = sum(1 for k, v in output.items() if not str(k).startswith("_") and isinstance(v, dict) and v.get("_fetch_status") in {"empty", "partial"})
     error_count = sum(1 for k, v in output.items() if not str(k).startswith("_") and isinstance(v, dict) and v.get("_fetch_status") in {"error", "no_url", "no_session", "timeout"})
@@ -5682,7 +5797,145 @@ def run_hchanh_fetch(input_path: str, out_path: str, scope: str,
     if error_count:
         suffix_parts.append(f"{error_count} lỗi kỹ thuật")
     suffix = ("; " + "; ".join(suffix_parts)) if suffix_parts else ""
+    return ok_count, attention_count, error_count, suffix
+
+
+def run_hchanh_fetch(input_path: str, out_path: str, scope: str,
+                     files: List[str], date_from: str, date_to: str,
+                     inpatient_status: str = "", headless: bool = False) -> int:
+    if not os.path.exists(input_path):
+        print(f"ERROR: Không tìm thấy file input {input_path}", file=sys.stderr)
+        return 1
+
+    with open(input_path, "r", encoding="utf-8") as f:
+        patient_row = json.load(f)
+
+    output = _run_hchanh_fetch_core(
+        patient_row, scope, files, date_from, date_to, inpatient_status, headless,
+        batch_size=1, input_basename=os.path.basename(input_path), out_path=out_path,
+    )
+    if output is None:
+        return 1
+
+    os.makedirs(os.path.dirname(out_path) if os.path.dirname(out_path) else ".", exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(output, f, ensure_ascii=False, indent=2)
+
+    ok_count, attention_count, error_count, suffix = _summarize_hchanh_output(output, files)
     print(f"LOG: Xong. {ok_count}/{len(files)} files OK{suffix} → {out_path}")
+    return 0
+
+
+def _hchanh_batch_progress_mark_running(progress_path: str, key: str, ma_bn: str, ho_ten: str,
+                                        research_code: str, admission_date: str,
+                                        discharge_date: str, files: List[str]) -> None:
+    """Ghi progress[key].status='running' NGAY khi bắt đầu 1 ca trong lô, cùng định dạng
+    với server/routes/research.js, để giao diện 'Đang quét' thấy tiến độ theo từng ca dù
+    cả lô chỉ là 1 tiến trình worker."""
+    if not progress_path or not key:
+        return
+    try:
+        from datetime import datetime as _dt
+        existing: Dict[str, Any] = {}
+        if os.path.exists(progress_path):
+            try:
+                with open(progress_path, "r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    existing = loaded
+            except Exception:
+                existing = {}
+        prev = existing.get(key) if isinstance(existing.get(key), dict) else {}
+        existing[key] = {
+            **prev,
+            "ma_bn": ma_bn, "ho_ten": ho_ten, "research_code": research_code,
+            "encounter_id": key, "admission_date": admission_date, "discharge_date": discharge_date,
+            "status": "running", "started_at": _dt.now().isoformat(timespec="seconds"),
+            "files": files,
+        }
+        tmp_path = f"{progress_path}.tmp{os.getpid()}"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(existing, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, progress_path)
+    except Exception as e:
+        print(f"WARN [hchanh-batch] Không ghi được progress running cho {key}: {e}", file=sys.stderr)
+
+
+def run_hchanh_fetch_batch(input_path: str, out_path: str, scope: str, files: List[str],
+                           date_from: str, date_to: str, inpatient_status: str = "",
+                           headless: bool = False, batch_size: int = 10,
+                           progress_path: str = "") -> int:
+    """Lấy dữ liệu hành chánh/y lệnh cho NHIỀU BN trong 1 tiến trình, gộp tối đa
+    `batch_size` BN liên tiếp vào 1 phiên Chrome/đăng nhập (xem
+    _ensure_hchanh_click_context) thay vì mở Chrome + đăng nhập lại cho từng BN.
+
+    --input phải là JSON array các dòng BN (mỗi dòng giống input đơn ca, có thêm
+    `_progress_key` để ghi đúng key vào progress file). Kết quả gộp được ghi ra
+    --out dạng {key: output_của_ca_đó}, cập nhật SAU MỖI CA để không mất dữ liệu
+    nếu lô bị dừng/crash giữa chừng.
+    """
+    if not os.path.exists(input_path):
+        print(f"ERROR: Không tìm thấy file input lô {input_path}", file=sys.stderr)
+        return 1
+
+    with open(input_path, "r", encoding="utf-8") as f:
+        patient_rows = json.load(f)
+    if not isinstance(patient_rows, list):
+        print("ERROR: Input lô phải là JSON array các BN", file=sys.stderr)
+        return 1
+
+    batch_size = max(1, int(batch_size or 10))
+    total = len(patient_rows)
+    print(f"LOG: hchanh_fetch (lô) | {total} ca | gộp tối đa {batch_size} ca/Chrome rồi reset | scope={scope} | files={files}")
+
+    combined: Dict[str, Any] = {}
+    os.makedirs(os.path.dirname(out_path) if os.path.dirname(out_path) else ".", exist_ok=True)
+    ok_total = attention_total = error_total = 0
+
+    for idx, patient_row in enumerate(patient_rows):
+        if not isinstance(patient_row, dict):
+            continue
+        ma_bn = _t(patient_row.get("ma_bn") or patient_row.get("Mã BN") or patient_row.get("Mã YT"))
+        ho_ten = _t(patient_row.get("ho_ten") or patient_row.get("Họ tên"))
+        research_code = _t(patient_row.get("research_code") or patient_row.get("Mã NC"))
+        key = _t(patient_row.get("_progress_key")) or ma_bn or f"row_{idx}"
+        print(f"LOG: ── Ca {idx + 1}/{total} trong lô: BN={ma_bn or '?'} | {ho_ten or ''}")
+
+        _trace_reset()
+        _hchanh_batch_progress_mark_running(
+            progress_path, key, ma_bn, ho_ten, research_code,
+            _t(patient_row.get("admission_date") or patient_row.get("date_from")),
+            _t(patient_row.get("discharge_date") or patient_row.get("date_to")),
+            files,
+        )
+
+        try:
+            item_output = _run_hchanh_fetch_core(
+                patient_row, scope, files, date_from, date_to, inpatient_status, headless,
+                batch_size=batch_size, input_basename=os.path.basename(input_path), out_path=out_path,
+            )
+        except Exception as e:
+            print(f"ERROR: Ca {idx + 1} ({ma_bn or '?'}) trong lô lỗi không bắt được: {type(e).__name__}: {e}", file=sys.stderr)
+            item_output = None
+
+        if item_output is None:
+            item_output = {"_fetch_status": "error", "_error": "missing ma_bn hoặc lỗi worker", "ma_bn": ma_bn}
+        combined[key] = item_output
+
+        tmp_out = f"{out_path}.tmp{os.getpid()}"
+        with open(tmp_out, "w", encoding="utf-8") as f:
+            json.dump(combined, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_out, out_path)
+
+        ok_c, att_c, err_c, suffix = _summarize_hchanh_output(item_output, files)
+        ok_total += ok_c; attention_total += att_c; error_total += err_c
+        print(f"LOG:   Xong ca {idx + 1}/{total}: {ok_c}/{len(files)} files OK{suffix}")
+
+    served = int(_HCHANH_CLICK_CACHE.get("patients_served") or 0)
+    print(f"LOG: Xong lô. {total} ca | ok_files={ok_total}, cần_xử_lý={attention_total}, lỗi={error_total} → {out_path}")
+    if served:
+        print(f"LOG: Chrome cuối của lô đã phục vụ {served} ca trước khi tiến trình kết thúc.")
+    _shutdown_hchanh_click_driver()
     return 0
 
 
@@ -5699,19 +5952,47 @@ def build_arg_parser():
     p.add_argument("--to",     dest="date_to",   default="")
     p.add_argument("--status", dest="inpatient_status", default="", help="Trạng thái nội trú khi tìm BN: Đang thực hiện hoặc Hoàn tất")
     p.add_argument("--headless", action="store_true", help="Ép Chrome helper chạy headless nếu fetcher phải fallback Selenium")
+    p.add_argument("--batch-size", dest="batch_size", type=int, default=10,
+                   help="Số BN tối đa gộp vào 1 phiên Chrome/đăng nhập khi --input là JSON array (mặc định 10)")
+    p.add_argument("--progress-file", dest="progress_path", default="",
+                   help="Đường dẫn progress JSON (hchanh_auto_progress.json/order_history_auto_progress.json) để ghi trạng thái 'running' theo từng ca trong lô")
     return p
+
+
+def _input_is_batch(input_path: str) -> bool:
+    """--input là JSON array (lô nhiều BN) hay JSON object (1 BN, tương thích ngược)."""
+    try:
+        with open(input_path, "r", encoding="utf-8") as f:
+            first = f.read(2048).lstrip()
+        return first.startswith("[")
+    except Exception:
+        return False
 
 
 if __name__ == "__main__":
     args = build_arg_parser().parse_args()
     files = [f.strip() for f in (args.files or "").split(",") if f.strip()]
-    sys.exit(run_hchanh_fetch(
-        input_path=args.input,
-        out_path=args.out,
-        scope=args.scope,
-        files=files,
-        date_from=args.date_from,
-        date_to=args.date_to,
-        inpatient_status=args.inpatient_status,
-        headless=args.headless,
-    ))
+    if _input_is_batch(args.input):
+        sys.exit(run_hchanh_fetch_batch(
+            input_path=args.input,
+            out_path=args.out,
+            scope=args.scope,
+            files=files,
+            date_from=args.date_from,
+            date_to=args.date_to,
+            inpatient_status=args.inpatient_status,
+            headless=args.headless,
+            batch_size=args.batch_size,
+            progress_path=args.progress_path,
+        ))
+    else:
+        sys.exit(run_hchanh_fetch(
+            input_path=args.input,
+            out_path=args.out,
+            scope=args.scope,
+            files=files,
+            date_from=args.date_from,
+            date_to=args.date_to,
+            inpatient_status=args.inpatient_status,
+            headless=args.headless,
+        ))
