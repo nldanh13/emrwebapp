@@ -2,16 +2,6 @@
   "version": 2,
   "navigation": [
     {
-      "id": "functions",
-      "label": "Bộ chức năng",
-      "icon": "⌘",
-      "group": "Tổng quan",
-      "hint": "Chọn chức năng hoặc quy trình ghép",
-      "order": 10,
-      "compact": false,
-      "usesDateRange": false
-    },
-    {
       "id": "acquire",
       "label": "Lấy dữ liệu",
       "icon": "↓",

@@ -125,17 +125,23 @@ function ActivityNotifications({ items }) {
 const TABS = NAV_ENTRIES;
 const ACTIVE_TAB_KEY = 'emr_active_tab_v2';
 const VALID_TAB_IDS = new Set(TABS.map(t => t.id));
-const LEGACY_TAB_MAP = { data: 'acquire', process: 'acquire', overview: 'functions', connection: 'acquire', collected: 'acquire', quality: 'acquire', jobs: 'functions', logs: 'functions' };
+const DEFAULT_TAB_ID = TABS[0]?.id || 'acquire';
+// 'functions' (Bộ chức năng) was removed from the sidebar nav but the tab still exists,
+// reachable via TopBar's "Tìm chức năng" button and the feature-context banner's back button.
+const LEGACY_TAB_MAP = { data: 'acquire', process: 'acquire', overview: DEFAULT_TAB_ID, connection: 'acquire', collected: 'acquire', quality: 'acquire', jobs: DEFAULT_TAB_ID, logs: DEFAULT_TAB_ID };
 
 function loadActiveTab() {
   try {
     const saved = localStorage.getItem(ACTIVE_TAB_KEY) || localStorage.getItem('emr_active_tab_v1');
     const normalized = LEGACY_TAB_MAP[saved] || saved;
-    return VALID_TAB_IDS.has(normalized) ? normalized : 'functions';
-  } catch { return 'functions'; }
+    return (VALID_TAB_IDS.has(normalized) || normalized === 'functions') ? normalized : DEFAULT_TAB_ID;
+  } catch { return DEFAULT_TAB_ID; }
 }
 function saveActiveTab(tab) { try { localStorage.setItem(ACTIVE_TAB_KEY, tab); } catch {} }
-function currentTab(id) { return getNavigationEntry(id); }
+// Not in NAV_ENTRIES (sidebar) anymore, but still reachable via TopBar's "Tìm chức năng"
+// button and the feature-context banner's back button — keep the header accurate for it.
+const FUNCTION_HUB_TAB_META = { id: 'functions', label: 'Bộ chức năng', hint: 'Chọn chức năng hoặc quy trình ghép' };
+function currentTab(id) { return id === 'functions' ? FUNCTION_HUB_TAB_META : getNavigationEntry(id); }
 
 function Sidebar({ active, onChange }) {
   const groups = [];
