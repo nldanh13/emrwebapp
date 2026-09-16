@@ -45,11 +45,12 @@ def test_build_inpatient_ajaxpro_payload_them_department_khi_da_cau_hinh():
 
 def test_fetch_inpatient_list_via_ajaxpro_khong_cau_hinh_endpoint_tra_rong():
     sess = _make_session()  # ajaxpro_inpatient_endpoint mặc định rỗng
-    rows, link_map = sess.fetch_inpatient_list_via_ajaxpro(
+    rows, link_map, error = sess.fetch_inpatient_list_via_ajaxpro(
         "http://emr.example/home.aspx?usid=1.2.3.4_xyz"
     )
     assert rows == []
     assert link_map == {}
+    assert "ajaxpro_inpatient_endpoint" in error
 
 
 def test_fetch_inpatient_list_via_ajaxpro_parse_retobject_thanh_link_map(monkeypatch):
@@ -76,7 +77,7 @@ def test_fetch_inpatient_list_via_ajaxpro_parse_retobject_thanh_link_map(monkeyp
     monkeypatch.setattr(sess, "_request_html", fake_request_html)
 
     list_url = "http://emr.example/home.aspx?wpid=danhsachdieutrinoitrudraw&usid=1.2.3.4_xyz"
-    rows, link_map = sess.fetch_inpatient_list_via_ajaxpro(list_url)
+    rows, link_map, error = sess.fetch_inpatient_list_via_ajaxpro(list_url)
 
     assert captured["method"] == "POST"
     assert captured["url"].endswith("/ajaxpro/Some.WebPart.ashx")
@@ -84,9 +85,10 @@ def test_fetch_inpatient_list_via_ajaxpro_parse_retobject_thanh_link_map(monkeyp
     assert len(rows) == 3
     assert set(link_map.keys()) == {"26091567", "26092226"}
     assert "tiepnhanid=enc-1" in link_map["26091567"]
+    assert error is None
 
 
-def test_fetch_inpatient_list_via_ajaxpro_loi_tra_rong_khong_raise(monkeypatch):
+def test_fetch_inpatient_list_via_ajaxpro_loi_http_khong_raise_va_bao_ro_ly_do(monkeypatch):
     sess = _make_session(ajaxpro_inpatient_endpoint="Some.WebPart.ashx")
 
     def fake_request_html(method, url, **kwargs):
@@ -94,8 +96,24 @@ def test_fetch_inpatient_list_via_ajaxpro_loi_tra_rong_khong_raise(monkeypatch):
 
     monkeypatch.setattr(sess, "_request_html", fake_request_html)
 
-    rows, link_map = sess.fetch_inpatient_list_via_ajaxpro(
+    rows, link_map, error = sess.fetch_inpatient_list_via_ajaxpro(
         "http://emr.example/home.aspx?usid=1.2.3.4_xyz"
     )
     assert rows == []
     assert link_map == {}
+    assert "boom" in error
+
+
+def test_fetch_inpatient_list_via_ajaxpro_server_bao_loi_duoc_bao_ro(monkeypatch):
+    sess = _make_session(ajaxpro_inpatient_endpoint="Some.WebPart.ashx")
+    fake_response = json.dumps({
+        "value": {"Error": True, "InfoMessage": "Không có quyền truy cập"},
+    })
+    monkeypatch.setattr(sess, "_request_html", lambda method, url, **kw: (fake_response, url))
+
+    rows, link_map, error = sess.fetch_inpatient_list_via_ajaxpro(
+        "http://emr.example/home.aspx?usid=1.2.3.4_xyz"
+    )
+    assert rows == []
+    assert link_map == {}
+    assert "Không có quyền truy cập" in error

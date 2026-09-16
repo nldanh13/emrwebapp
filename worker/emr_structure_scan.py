@@ -200,11 +200,12 @@ def run_scan(max_discovered: int = 15) -> Dict[str, Any]:
     # thường không bao giờ thấy bảng dù đăng nhập đúng. Chỉ thử khi đường HTML thường
     # không thấy gì, và chỉ hoạt động nếu đã cấu hình ajaxpro_inpatient_endpoint (xem
     # docs/EMR_STRUCTURE_SCAN.md) — không tự bật ngầm.
+    ajaxpro_error: Optional[str] = None
     if not link_map and hasattr(sess, "fetch_inpatient_list_via_ajaxpro"):
         try:
-            ajax_rows, ajax_link_map = sess.fetch_inpatient_list_via_ajaxpro(sess._effective_inpatient_url())
-        except Exception:
-            ajax_rows, ajax_link_map = [], {}
+            ajax_rows, ajax_link_map, ajaxpro_error = sess.fetch_inpatient_list_via_ajaxpro(sess._effective_inpatient_url())
+        except Exception as exc:
+            ajax_rows, ajax_link_map, ajaxpro_error = [], {}, f"{type(exc).__name__}: {exc}"
         if ajax_link_map:
             all_rows, link_map = ajax_rows, ajax_link_map
             inpatient_list_source = "ajaxpro_fallback"
@@ -230,6 +231,7 @@ def run_scan(max_discovered: int = 15) -> Dict[str, Any]:
             "rows_parsed_count": len(all_rows),
             "link_map_count": len(link_map),
             "sample_row_headers": sorted(set(all_rows[0].keys())) if all_rows else [],
+            "ajaxpro_error": ajaxpro_error,
         }
 
     known_results: List[Dict[str, Any]] = []

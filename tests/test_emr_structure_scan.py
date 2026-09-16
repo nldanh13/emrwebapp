@@ -110,6 +110,7 @@ def test_run_scan_khong_co_benh_nhan_mau_van_bao_cao_thay_vi_bo_cuoc(monkeypatch
         'rows_parsed_count': 0,
         'link_map_count': 0,
         'sample_row_headers': [],
+        'ajaxpro_error': None,
     }
     assert report['inpatient_list_source'] == 'html_table'
 
@@ -126,6 +127,7 @@ class _FakeSessionAjaxproFallback(_FakeSessionNoPatients):
         return (
             [{'ID': 'enc-1', 'MaBN': '26091567', 'TenBN': 'x'}],
             {'26091567': 'https://emr.example.com/home.aspx?wpid=bacsidraw&tiepnhanid=enc-1'},
+            None,
         )
 
 
@@ -152,3 +154,31 @@ def test_run_scan_dung_duoc_ajaxpro_khi_html_khong_thay_bang(monkeypatch):
     by_key = {p['page_key']: p for p in report['known_pages']}
     # có bệnh nhân mẫu (qua AjaxPro) nên trang cần patient không còn bị skip nữa
     assert by_key['bac_si']['status'] != 'skipped_no_sample_patient'
+
+
+class _FakeSessionAjaxproFails(_FakeSessionNoPatients):
+    """HTML rỗng, và đường dự phòng AjaxPro cũng thất bại — phải báo rõ lý do,
+    không chỉ im lặng rỗng như trước."""
+
+    def fetch_inpatient_list_via_ajaxpro(self, list_url):
+        return [], {}, "Server báo lỗi: True — Không có quyền truy cập"
+
+
+class _FakeEmrHttpSessionAjaxproFails:
+    @staticmethod
+    def from_config_dict(config):
+        return _FakeSessionAjaxproFails()
+
+
+def test_run_scan_bao_ro_ly_do_khi_ajaxpro_cung_that_bai(monkeypatch):
+    """Regression đúng tình huống người dùng gặp: đã cấu hình AjaxPro nhưng vẫn không ra
+    dữ liệu — report phải cho biết lý do cụ thể (ajaxpro_error), không chỉ nói chung
+    chung 'không lấy được'."""
+    monkeypatch.setattr(emr_structure_scan, 'EmrHttpSession', _FakeEmrHttpSessionAjaxproFails)
+    monkeypatch.setattr(emr_structure_scan, 'load_config', lambda: {})
+
+    report = run_scan(max_discovered=5)
+
+    assert report['sample_ma_bn'] is None
+    assert report['inpatient_list_source'] == 'none'
+    assert 'Không có quyền truy cập' in report['inpatient_scan_diag']['ajaxpro_error']
