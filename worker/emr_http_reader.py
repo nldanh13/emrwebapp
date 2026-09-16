@@ -750,6 +750,11 @@ class EmrHttpSession:
 
         if not isinstance(data, dict):
             return [], {}, f"Phản hồi AjaxPro không phải object JSON như dự kiến (kiểu thấy được: {type(data).__name__})."
+        if data.get("error"):
+            # Dạng lỗi chuẩn của AjaxPro khi bản thân lệnh gọi bị từ chối phía server
+            # (sai tham số/kiểu dữ liệu, hoặc method ném exception) — khác với lỗi
+            # nghiệp vụ value.Error bên dưới (khi method chạy được nhưng trả lỗi).
+            return [], {}, f"AjaxPro từ chối lệnh gọi (method/param có thể sai): {data.get('error')}"
         value = data.get("value")
         if not isinstance(value, dict):
             return [], {}, (

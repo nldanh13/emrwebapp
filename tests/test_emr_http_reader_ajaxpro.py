@@ -121,9 +121,24 @@ def test_fetch_inpatient_list_via_ajaxpro_thieu_retobject_bao_ro_cac_khoa_thay_d
     assert "SomeOtherField" in error
 
 
+def test_fetch_inpatient_list_via_ajaxpro_ajaxpro_tu_choi_lenh_goi_bao_ro_noi_dung(monkeypatch):
+    """Đúng dạng lỗi chuẩn của AjaxPro khi method/param bị server từ chối trước khi
+    chạy (khác value.Error — ở đây không có 'value' luôn, chỉ có 'error')."""
+    sess = _make_session(ajaxpro_inpatient_endpoint="Some.WebPart.ashx")
+    fake_response = json.dumps({"error": "Object reference not set to an instance of an object."})
+    monkeypatch.setattr(sess, "_request_html", lambda method, url, **kw: (fake_response, url))
+
+    rows, link_map, error = sess.fetch_inpatient_list_via_ajaxpro(
+        "http://emr.example/home.aspx?usid=1.2.3.4_xyz"
+    )
+    assert rows == []
+    assert link_map == {}
+    assert "Object reference not set" in error
+
+
 def test_fetch_inpatient_list_via_ajaxpro_thieu_value_bao_ro_cac_khoa_ngoai_cung(monkeypatch):
     sess = _make_session(ajaxpro_inpatient_endpoint="Some.WebPart.ashx")
-    fake_response = json.dumps({"error": "boom", "otherKey": True})
+    fake_response = json.dumps({"otherKey": True})
     monkeypatch.setattr(sess, "_request_html", lambda method, url, **kw: (fake_response, url))
 
     rows, link_map, error = sess.fetch_inpatient_list_via_ajaxpro(
