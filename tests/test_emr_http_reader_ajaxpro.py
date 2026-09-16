@@ -53,6 +53,42 @@ def test_fetch_inpatient_list_via_ajaxpro_khong_cau_hinh_endpoint_tra_rong():
     assert "ajaxpro_inpatient_endpoint" in error
 
 
+def test_fetch_inpatient_list_via_ajaxpro_get_lai_truoc_khi_post_lay_usid_moi(monkeypatch):
+    """Regression: EMR dường như cần phiên đã thật sự 'vào' đúng trang (state phía
+    server, tham số 'st'/'usid' đổi mỗi lần tải) trước khi chấp nhận lệnh gọi AjaxPro —
+    dùng URL cũ đã lưu (vd từ npm run auth:http) khiến server báo
+    System.MissingMethodException dù tên method đúng. Phải GET lại đúng trang ngay
+    trước khi POST và dùng URL mới cho payload/Referer/link kết quả."""
+    sess = _make_session(ajaxpro_inpatient_endpoint="Some.WebPart.ashx")
+    stale_url = "http://emr.example/home.aspx?wpid=danhsachdieutrinoitrudraw&usid=1.2.3.4_stale&st=1"
+    fresh_url = "http://emr.example/home.aspx?wpid=danhsachdieutrinoitrudraw&usid=1.2.3.4_fresh&st=2"
+    fake_response = json.dumps({
+        "value": {"Error": False, "RetObject": [{"ID": "enc-1", "MaBN": "26091567", "TenBN": "x"}]},
+    })
+
+    calls = []
+    posted_body = {}
+
+    def fake_request_html(method, url, **kwargs):
+        calls.append(method)
+        if method == "GET":
+            return "<html></html>", fresh_url
+        posted_body["data"] = json.loads(kwargs["data"])
+        posted_body["referer"] = kwargs["headers"]["Referer"]
+        return fake_response, url
+
+    monkeypatch.setattr(sess, "_request_html", fake_request_html)
+
+    rows, link_map, error = sess.fetch_inpatient_list_via_ajaxpro(stale_url)
+
+    assert calls == ["GET", "POST"]
+    assert error is None
+    assert posted_body["data"]["ORenderInfo"]["UserSessionId"] == "1.2.3.4_fresh"
+    assert posted_body["referer"] == fresh_url
+    assert "usid=1.2.3.4_fresh" in link_map["26091567"]
+    assert "usid=1.2.3.4_stale" not in link_map["26091567"]
+
+
 def test_fetch_inpatient_list_via_ajaxpro_parse_retobject_thanh_link_map(monkeypatch):
     sess = _make_session(ajaxpro_inpatient_endpoint="Some.WebPart.ashx")
     fake_response = json.dumps({
