@@ -89,8 +89,12 @@ def test_frontend_registry_initializes_before_react_render(tmp_path):
         f"const registry = {json.dumps(registry, ensure_ascii=False)};",
         1,
     )
+    expected_first_id = min(registry["navigation"], key=lambda item: item.get("order", 0))["id"]
     source += "\nif (!Object.isFrozen(NAV_ENTRIES)) throw new Error('NAV_ENTRIES must be frozen');"
-    source += "\nif (NAV_ENTRIES[0]?.id !== 'functions') throw new Error('navigation order is invalid');\n"
+    source += (
+        f"\nif (NAV_ENTRIES[0]?.id !== {json.dumps(expected_first_id)}) "
+        "throw new Error('navigation order is invalid');\n"
+    )
 
     module_path = tmp_path / "registry-runtime.mjs"
     module_path.write_text(source, encoding="utf-8")
