@@ -195,10 +195,23 @@ def run_scan(max_discovered: int = 15) -> Dict[str, Any]:
 
     all_rows, link_map = sess.scan_all_inpatients()
     sample_ma_bn = next(iter(link_map), None)
+
+    # Không có bệnh nhân mẫu thì vẫn tiếp tục: các trang không cần patient (vd chính
+    # danh sách nội trú) vẫn kiểm được, và đó chính là chỗ hay hé lộ lý do (bảng
+    # tblNoiTru đổi cấu trúc, đổi tên cột Mã BN, hay danh sách trống thật). Chỉ các
+    # trang cần patient mới bị đánh dấu "skipped_no_sample_patient".
+    warning: Optional[str] = None
+    inpatient_scan_diag: Optional[Dict[str, Any]] = None
     if not sample_ma_bn:
-        return {
-            "status": "error",
-            "message": "Không tìm được bệnh nhân mẫu nào trong danh sách nội trú để dò các trang cần patient — kiểm tra lại có bệnh nhân nội trú không.",
+        warning = (
+            "Không tìm được bệnh nhân mẫu nào trong danh sách nội trú (link_map rỗng) — "
+            "các trang cần patient bị bỏ qua. Xem mục 'known_pages' của trang danh sách "
+            "nội trú và inpatient_scan_diag bên dưới để biết bảng/cột có đổi không."
+        )
+        inpatient_scan_diag = {
+            "rows_parsed_count": len(all_rows),
+            "link_map_count": len(link_map),
+            "sample_row_headers": sorted(set(all_rows[0].keys())) if all_rows else [],
         }
 
     known_results: List[Dict[str, Any]] = []
@@ -217,6 +230,13 @@ def run_scan(max_discovered: int = 15) -> Dict[str, Any]:
             })
             continue
         known_wpids.add(wpid)
+
+        if needs_patient and not sample_ma_bn:
+            known_results.append({
+                "page_key": page_key, "label": page_cfg.get("label", page_key),
+                "status": "skipped_no_sample_patient", "wpid": wpid,
+            })
+            continue
 
         if needs_patient:
             base_url = _patient_page_url(link_map, sample_ma_bn, config, sess.base_origin, kind=page_cfg.get("kind", "doctor"))
@@ -293,6 +313,8 @@ def run_scan(max_discovered: int = 15) -> Dict[str, Any]:
         "known_pages": known_results,
         "discovered_pages": discovered_results,
         "known_gaps": manifest.get("known_gaps", []),
+        "warning": warning,
+        "inpatient_scan_diag": inpatient_scan_diag,
     }
 
 

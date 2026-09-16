@@ -55,6 +55,16 @@ Lệnh này mở Chrome thật để đăng nhập rồi lưu cookie vào
 `.runtime/auth/emr_http_cookies.json`. Sau đó bấm "Dò cấu trúc EMR ngay"
 lại — lần quét sẽ dùng cookie đã lưu, không cần mở Chrome nữa.
 
+## Nếu báo "Không tìm được bệnh nhân mẫu"
+
+Các trang cần patient (bác sĩ, điều dưỡng, bảng kê chi phí, ...) cần lấy mẫu 1 mã BN từ
+danh sách nội trú (`tblNoiTru`). Nếu danh sách đó trống hoặc đổi cấu trúc (đổi tên cột
+"Mã BN"), báo cáo vẫn chạy tiếp thay vì bỏ cuộc: các trang cần patient bị đánh dấu
+`skipped_no_sample_patient`, còn trang "Danh sách bệnh nhân nội trú" (không cần patient)
+vẫn được kiểm thật sự — xem trạng thái của nó trong "CÁC TRANG ĐÃ BIẾT" và số liệu
+`inpatient_scan_diag` (số dòng đọc được, số dòng dò được link, tên cột tìm thấy) để biết
+là danh sách trống thật hay bảng đã đổi cấu trúc.
+
 ## Giới hạn đã biết
 
 - `loadformdongdraw` (form đóng hồ sơ) chưa đưa vào manifest — cần `noitruid`/`hosoid`
