@@ -498,11 +498,62 @@ function checkImplantRemovalEvidence({ discharge, surgery, billing }) {
   });
 }
 
+// Lỗi giám định mới trên Cổng giám định BHYT: đối tượng thông tuyến 1.16 (bệnh
+// thuộc PLII Thông tư 01/2025/TT-BYT) bắt buộc mã bệnh CHÍNH phải là mã ICD-10 cụ
+// thể 4-5 ký tự (có dấu chấm) — KHÔNG được lấy mã nhóm 3 ký tự chung chung (vd C22,
+// M47). Hệ thống hiện CHƯA có trường dữ liệu xác định đối tượng thông tuyến 1.16
+// trên EMR — theo lựa chọn người dùng (không suy đoán đối tượng khi thiếu dữ liệu),
+// cảnh báo REVIEW cho MỌI trường hợp mã bệnh chính trùng đúng 1 mã nhóm PLII 3 ký
+// tự, người kiểm tự xác nhận đối tượng KCB trước khi coi là lỗi thật.
+let _icdPl2Cache = null, _icdPl2CacheTime = 0;
+function loadIcdPl2Rules() {
+  const now = Date.now();
+  if (_icdPl2Cache && now - _icdPl2CacheTime < 30000) return _icdPl2Cache;
+  try {
+    const p = path.join(__dirname, '..', '..', '..', 'config', 'hchanh', 'bhyt_icd_pl2_tt01_2025.json');
+    if (fs.existsSync(p)) {
+      _icdPl2Cache = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      _icdPl2CacheTime = now;
+      return _icdPl2Cache;
+    }
+  } catch (e) { console.warn('[BHYT_PRE_AUDIT] Không đọc bhyt_icd_pl2_tt01_2025.json:', e.message); }
+  return { invalid_group_codes: {} };
+}
+
+function checkIcdPl2GroupCodeTooGeneric({ discharge }) {
+  const icd = text(discharge?.chan_doan_chinh_icd).toUpperCase();
+  if (!icd) return null; // chưa tách được mã ICD -> không suy đoán
+
+  const rules = loadIcdPl2Rules();
+  const group = rules.invalid_group_codes?.[icd];
+  if (!group) return null; // không phải mã nhóm PLII 3 ký tự -> ngoài phạm vi rule này
+
+  const subcodes = safeArray(group.valid_subcodes);
+  const suggestion = subcodes.length
+    ? `Mã cụ thể có thể dùng: ${subcodes.slice(0, 8).join(', ')}${subcodes.length > 8 ? '...' : ''}.`
+    : 'Danh mục PLII chưa liệt kê mã cụ thể (4-5 ký tự) nào cho nhóm này — cần xác nhận lại chẩn đoán.';
+
+  return makeFinding({
+    rule_id: 'BHYT_T3_ICD_PL2_GROUP_CODE_TOO_GENERIC',
+    tier: 3,
+    severity: BHYT_SEVERITY.REVIEW,
+    group: 'Chẩn đoán',
+    title: `Mã bệnh chính "${icd}" (${text(group.name)}) là mã nhóm 3 ký tự — không đủ cụ thể theo PLII TT 01/2025/TT-BYT`,
+    detail: `Chỉ bắt buộc với đối tượng thông tuyến 1.16 (chưa xác định được đối tượng này trên EMR nên cảnh báo cho mọi trường hợp dùng mã "${icd}" làm chẩn đoán chính — người kiểm tự xác nhận đối tượng KCB trước khi coi là lỗi thật). ${suggestion}`,
+    action: 'Nếu người bệnh thuộc đối tượng thông tuyến 1.16: đổi mã bệnh chính sang mã ICD 4-5 ký tự cụ thể trong PLII trước khi nộp hồ sơ, tránh bị Cổng giám định BHYT từ chối.',
+    legal_source: 'Phụ lục II, Thông tư 01/2025/TT-BYT (Bộ Y tế) — danh mục do người dùng cung cấp, cập nhật 15/09/2026 theo Cổng giám định BHYT',
+    legal_clause: 'Đối tượng thông tuyến 1.16 (bệnh thuộc PLII): mã bệnh chính phải là mã ICD-10 cụ thể (4-5 ký tự), không được dùng mã nhóm 3 ký tự.',
+    evidence: `icd=${icd}, group_name=${text(group.name)}`,
+  });
+}
+
 function runBhytTier3({ discharge, surgery, billing }) {
   const findings = [];
   findings.push(...checkDiagnosisProcedureCompatibility({ discharge, surgery }));
   const f = checkImplantRemovalEvidence({ discharge, surgery, billing });
   if (f) findings.push(f);
+  const f2 = checkIcdPl2GroupCodeTooGeneric({ discharge });
+  if (f2) findings.push(f2);
   return findings;
 }
 
@@ -1110,4 +1161,5 @@ module.exports = {
   loadDxProcedureMap,
   loadDrugRules,
   loadDvktCrossCheckRules,
+  loadIcdPl2Rules,
 };

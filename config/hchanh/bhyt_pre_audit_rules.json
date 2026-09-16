@@ -93,6 +93,12 @@
       "legal_source": "Checklist chuyên môn nội bộ (config/hchanh/bhyt_dx_procedure_map.json)",
       "legal_clause": "Không phải rule pháp lý bắt buộc — khuyến nghị chuyên môn: tháo phương tiện kết hợp xương cần bằng chứng liền xương rõ ràng."
     },
+    "BHYT_T3_ICD_PL2_GROUP_CODE_TOO_GENERIC": {
+      "tier": 3,
+      "action": "Nếu người bệnh thuộc đối tượng thông tuyến 1.16: đổi mã bệnh chính sang mã ICD 4-5 ký tự cụ thể trong PLII trước khi nộp hồ sơ, tránh bị Cổng giám định BHYT từ chối.",
+      "legal_source": "Phụ lục II, Thông tư 01/2025/TT-BYT (Bộ Y tế) — danh mục do người dùng cung cấp, cập nhật 15/09/2026 theo Cổng giám định BHYT",
+      "legal_clause": "Đối tượng thông tuyến 1.16 (bệnh thuộc PLII): mã bệnh chính phải là mã ICD-10 cụ thể (4-5 ký tự), không được dùng mã nhóm 3 ký tự."
+    },
     "BHYT_T5_VTYT_UNVERIFIABLE": {
       "tier": 5,
       "action": "Đối chiếu thủ công: mã VTYT còn hiệu lực, đúng danh mục BV đã đăng ký với BHXH, số lượng khớp biên bản PT, và không trùng với vật tư đã tính trong giá DVKT.",

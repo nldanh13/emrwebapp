@@ -289,6 +289,33 @@ test('23. Tháo PTKHX + có X-quang trong bảng kê -> không cảnh báo (đ�
   assert.ok(!result.tier3_findings.some(f => f.rule_id === 'BHYT_T3_IMPLANT_REMOVAL_NEEDS_EVIDENCE'));
 });
 
+test('23b. Mã bệnh chính là mã nhóm PLII 3 ký tự (A15) -> cần kiểm tra (thông tuyến 1.16)', () => {
+  const data = baseData({ discharge: { chan_doan_chinh_icd: 'A15' } });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  const f = result.tier3_findings.find(x => x.rule_id === 'BHYT_T3_ICD_PL2_GROUP_CODE_TOO_GENERIC');
+  assert.ok(f);
+  assert.strictEqual(f.severity, BHYT_SEVERITY.REVIEW);
+  assert.ok(f.title.includes('A15'));
+});
+
+test('23c. Mã bệnh chính là mã cụ thể 4 ký tự thuộc PLII (A15.0) -> không cảnh báo', () => {
+  const data = baseData({ discharge: { chan_doan_chinh_icd: 'A15.0' } });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(!result.tier3_findings.some(f => f.rule_id === 'BHYT_T3_ICD_PL2_GROUP_CODE_TOO_GENERIC'));
+});
+
+test('23d. Mã bệnh chính 3 ký tự nhưng KHÔNG thuộc PLII (M47) -> ngoài phạm vi, không cảnh báo', () => {
+  const data = baseData({ discharge: { chan_doan_chinh_icd: 'M47' } });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(!result.tier3_findings.some(f => f.rule_id === 'BHYT_T3_ICD_PL2_GROUP_CODE_TOO_GENERIC'));
+});
+
+test('23e. Chưa tách được mã ICD chẩn đoán chính -> không suy đoán, không cảnh báo', () => {
+  const data = baseData({ discharge: { chan_doan_chinh_icd: '' } });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(!result.tier3_findings.some(f => f.rule_id === 'BHYT_T3_ICD_PL2_GROUP_CODE_TOO_GENERIC'));
+});
+
 // ── Tầng 4: CLS chứng minh chỉ định ──────────────────────────────────────────
 // Tái dùng specialty_rules đã cấu hình sẵn trong config/hchanh/qa_rules.json.
 
