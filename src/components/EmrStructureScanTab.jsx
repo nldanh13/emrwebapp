@@ -81,6 +81,90 @@ function DiscoveredPageRow({ page }) {
   );
 }
 
+function InspectPageSection() {
+  const [url, setUrl] = useState('');
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+
+  const inspect = useCallback(async () => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    setRunning(true);
+    setError('');
+    setResult(null);
+    try {
+      const r = await api.inspectEmrPage(trimmed);
+      if (r.status === 'ok') {
+        setResult(r.report);
+      } else {
+        setError(r.message || 'Dò trang thất bại.');
+      }
+    } catch (e) {
+      setError(String(e.message || e));
+    } finally {
+      setRunning(false);
+    }
+  }, [url]);
+
+  return (
+    <div style={{ marginBottom: 20, padding: 12, background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 6 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>Dò 1 trang cụ thể</div>
+      <div style={{ fontSize: 11, color: C.text3, marginBottom: 8 }}>
+        Dán nguyên URL của trang đang xem (copy từ thanh địa chỉ trình duyệt khi đang mở
+        đúng trang trên EMR) — không cần đợi quét toàn bộ danh mục.
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          type="text"
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !running) inspect(); }}
+          placeholder="http://.../home.aspx?scope=sys&wpid=...&..."
+          style={{
+            flex: 1, height: 32, borderRadius: 5, border: `1px solid ${C.border}`,
+            background: C.bg, color: C.text, padding: '0 9px', fontSize: 12,
+            fontFamily: 'inherit', outline: 'none', minWidth: 0,
+          }}
+        />
+        <Btn variant="primary" onClick={inspect} disabled={running || !url.trim()}>
+          {running ? <><Spinner size={11} /> Đang dò...</> : 'Dò trang này'}
+        </Btn>
+      </div>
+
+      {error && (
+        <div style={{ marginTop: 10, padding: '8px 12px', background: C.redBg, border: `1px solid ${C.redBorder}`, borderRadius: 6, color: C.red, fontSize: 12 }}>
+          {error}
+        </div>
+      )}
+
+      {result && (
+        <div style={{ marginTop: 10, fontSize: 12 }}>
+          <div style={{ color: C.text3, marginBottom: 6 }}>
+            wpid={result.wpid || '—'} · {result.field_ids?.length || 0} field · {result.tables?.length || 0} bảng có id · {result.dropdowns?.length || 0} dropdown
+          </div>
+          {result.field_ids?.length > 0 && (
+            <div style={{ marginBottom: 6 }}><b>Field:</b> {result.field_ids.join(', ')}</div>
+          )}
+          {result.tables?.length > 0 && (
+            <div style={{ marginBottom: 6 }}>
+              <b>Bảng:</b>
+              {result.tables.map(t => (
+                <div key={t.id} style={{ marginLeft: 10 }}>{t.id}: {t.headers?.join(', ') || '(không có header)'}</div>
+              ))}
+            </div>
+          )}
+          {result.dropdowns?.length > 0 && (
+            <div>
+              <b>Dropdown:</b> {result.dropdowns.map(d => `${d.id} (${d.option_count})`).join(', ')}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function EmrStructureScanTab() {
   const [running, setRunning] = useState(false);
   const [report, setReport] = useState(null);
@@ -119,6 +203,8 @@ export default function EmrStructureScanTab() {
       <Btn variant="primary" onClick={runScan} disabled={running} style={{ marginBottom: 16 }}>
         {running ? <><Spinner size={11} /> Đang dò cấu trúc EMR...</> : '🔍 Dò cấu trúc EMR ngay'}
       </Btn>
+
+      <InspectPageSection />
 
       {error && (
         <div style={{ marginBottom: 16, padding: '8px 12px', background: C.redBg, border: `1px solid ${C.redBorder}`, borderRadius: 6, color: C.red, fontSize: 13 }}>

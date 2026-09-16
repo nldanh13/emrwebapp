@@ -20,8 +20,21 @@ chỉ báo cáo cho người dùng/người phát triển biết chỗ nào cầ
 | --- | --- |
 | `config/hchanh/emr_structure_manifest.json` | Danh mục trang/selector code đang dùng — **sửa tay** khi thêm/đổi selector thật trong `hchanh_fetch.py`, không tự sinh. |
 | `worker/emr_structure_scan.py` | Đăng nhập (`EmrHttpSession`, tái dùng session HTTP chỉ đọc có sẵn), kiểm từng trang trong manifest, dò trang mới qua `<a href>` chứa `wpid=`. |
-| `server/routes/emr_structure_scan.js` | `GET /api/run-emr-structure-scan` — spawn worker qua `runScript`, cùng cơ chế hàng đợi/giới hạn (`enqueueHeavy`, `HEAVY_TASK_ROUTES`) như nút "Quét BN". |
-| `src/components/EmrStructureScanTab.jsx` | Giao diện bấm nút + xem báo cáo. |
+| `server/routes/emr_structure_scan.js` | `GET /api/run-emr-structure-scan` (quét toàn bộ danh mục) và `GET /api/inspect-emr-page?url=...` (dò 1 trang cụ thể) — spawn worker qua `runScript`, cùng cơ chế hàng đợi/giới hạn (`enqueueHeavy`, `HEAVY_TASK_ROUTES`) như nút "Quét BN". |
+| `src/components/EmrStructureScanTab.jsx` | Giao diện bấm nút quét toàn bộ + ô "Dò 1 trang cụ thể" (dán URL) + xem báo cáo. |
+
+## Dò 1 trang cụ thể (không cần đợi quét toàn bộ)
+
+Ô "Dò 1 trang cụ thể" trên giao diện: dán nguyên URL của trang đang xem trên EMR (copy
+từ thanh địa chỉ trình duyệt) → bấm "Dò trang này" → xem field id, tên bảng + header cột,
+dropdown + số lựa chọn của đúng trang đó. Dùng khi muốn xem nhanh 1 trang (kể cả trang
+chưa có trong manifest) thay vì đợi quét toàn bộ danh mục + dò trang mới.
+
+Chạy CLI trực tiếp: `python worker/emr_structure_scan.py --out ket_qua.json --url "<URL>"`.
+
+An toàn: chỉ chấp nhận URL **cùng gốc (origin)** với EMR đang cấu hình trong
+`config.json` — từ chối URL trỏ tới máy chủ khác để tránh gọi ra ngoài (SSRF). URL dán
+vào (có thể chứa mã phiên `usid`/`st`) không được ghi vào log hoạt động của app.
 
 ## Cách kiểm tra 1 trang đã biết
 

@@ -49,7 +49,9 @@ function headers(extra = {}) {
 function cleanApiPath(url) {
   try {
     const u = new URL(String(url), window.location.origin);
-    for (const key of ['token', 'ott']) {
+    // 'url' che vì /api/inspect-emr-page nhận nguyên URL EMR (kèm mã phiên usid/st) —
+    // không nên lưu nguyên văn vào log hoạt động.
+    for (const key of ['token', 'ott', 'url']) {
       if (u.searchParams.has(key)) u.searchParams.set(key, '[hidden]');
     }
     const qs = u.searchParams.toString();
@@ -64,6 +66,7 @@ function apiActionLabel(method, url) {
   const map = {
     'GET /api/run-scan': 'quét danh sách bệnh nhân',
     'GET /api/run-emr-structure-scan': 'dò cấu trúc EMR',
+    'GET /api/inspect-emr-page': 'dò cấu trúc 1 trang EMR',
     'GET /api/get-raw': 'tải dữ liệu thô',
     'GET /api/data': 'tải danh sách xếp phòng',
     'POST /api/save': 'lưu xếp phòng',
@@ -370,6 +373,7 @@ async function patch(url, body) {
 // ── Scan ──────────────────────────────────────────────────────────────────────
 export const runScan = () => get('/api/run-scan');
 export const runEmrStructureScan = () => get('/api/run-emr-structure-scan');
+export const inspectEmrPage = (url) => get(`/api/inspect-emr-page?url=${encodeURIComponent(url)}`);
 export const getRaw = () => get('/api/get-raw');
 
 // ── Board (room assignment) ───────────────────────────────────────────────────
