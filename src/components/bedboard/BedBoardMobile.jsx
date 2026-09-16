@@ -1,6 +1,7 @@
 import { C } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
-import { getPatientId, getPatientName, getWardMetaLine } from './bedBoardUtils.js';
+import { getPatientId, getPatientName, getWardMetaLine, roomPriceTier, formatVND } from './bedBoardUtils.js';
+import PatientRoomNotes from './PatientRoomNotes.jsx';
 
 export default function BedBoardMobile({
   rooms,
@@ -12,6 +13,7 @@ export default function BedBoardMobile({
   assignToRoom,
   clearSelection,
   removeFromRoom,
+  updatePatientNote,
   selectedPxSet,
   toggleSelectPx,
   loading,
@@ -86,7 +88,7 @@ export default function BedBoardMobile({
                 display: 'flex', alignItems: 'center', gap: 4,
               }}>
                 {room}
-                <span style={{ fontSize: 10, opacity: 0.8 }}>{pts.length}/{cap}</span>
+                <span style={{ fontSize: 10, opacity: 0.8 }}>{pts.length}/{cap} · {formatVND(roomPriceTier(room))}</span>
               </button>
             );
           })}
@@ -120,23 +122,27 @@ export default function BedBoardMobile({
                 const id = getPatientId(p);
                 return (
                   <div key={id} style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
                     padding: '7px 0', borderBottom: `1px solid ${C.border2}`,
                   }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, color: C.text }}>{getPatientName(p)}</div>
-                      <div style={{ fontSize: 11, color: C.text3, fontVariantNumeric: 'tabular-nums' }}>{id}</div>
-                      {getWardMetaLine(p) && (
-                        <div style={{ fontSize: 11, color: C.text3, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {getWardMetaLine(p)}
-                        </div>
-                      )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, color: C.text }}>{getPatientName(p)}</div>
+                        <div style={{ fontSize: 11, color: C.text3, fontVariantNumeric: 'tabular-nums' }}>{id}</div>
+                        {getWardMetaLine(p) && (
+                          <div style={{ fontSize: 11, color: C.text3, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {getWardMetaLine(p)}
+                          </div>
+                        )}
+                      </div>
+                      <button type="button" onClick={() => removeFromRoom(id)} style={{
+                        background: C.redBg, border: `1px solid ${C.redBorder}`,
+                        color: C.red, borderRadius: 6, padding: '5px 10px',
+                        cursor: 'pointer', fontSize: 12, fontFamily: 'inherit',
+                      }}>Xóa khỏi phòng</button>
                     </div>
-                    <button type="button" onClick={() => removeFromRoom(id)} style={{
-                      background: C.redBg, border: `1px solid ${C.redBorder}`,
-                      color: C.red, borderRadius: 6, padding: '5px 10px',
-                      cursor: 'pointer', fontSize: 12, fontFamily: 'inherit',
-                    }}>Xóa khỏi phòng</button>
+                    {updatePatientNote && (
+                      <PatientRoomNotes patient={p} onChange={(field, value) => updatePatientNote(id, field, value)} />
+                    )}
                   </div>
                 );
               })}

@@ -1,4 +1,4 @@
-import { getPatientId, getPatientName, normalizeRoom } from './bedBoardUtils.js';
+import { getPatientId, getPatientName, canonicalRoomKey, roomPriceTier, formatVND } from './bedBoardUtils.js';
 
 const COLUMNS_PER_PAGE = 3;
 const COLUMN_CAPACITY_UNITS = 30;
@@ -27,20 +27,22 @@ function compareRooms(a, b) {
 }
 
 function displayRoom(room) {
-  const normalized = normalizeRoom(room) || String(room || '').trim();
-  const match = normalized.match(/^P0*(\d+)$/i);
-  return match ? `P${Number.parseInt(match[1], 10)}` : normalized;
+  const match = String(room || '').match(/^P0*(\d+)$/i);
+  return match ? `P${Number.parseInt(match[1], 10)}` : String(room || '').trim();
 }
 
 export function buildPrintableRoomGroups(patients = []) {
   const groups = new Map();
   for (const patient of Array.isArray(patients) ? patients : []) {
-    const room = normalizeRoom(patient?.Vi_Tri || patient?.vi_tri || '');
+    const room = canonicalRoomKey(patient?.Vi_Tri || patient?.vi_tri || '');
     if (!room) continue;
     if (!groups.has(room)) groups.set(room, []);
     groups.get(room).push({
       id: getPatientId(patient),
       name: getPatientName(patient),
+      transferDate: String(patient?.NgayChuyenPhong || '').trim(),
+      priceNote: String(patient?.GhiChuGiaPhong || '').trim(),
+      occupancy: String(patient?.DangKyPhong || '').trim(),
     });
   }
 
@@ -49,6 +51,7 @@ export function buildPrintableRoomGroups(patients = []) {
     .map(([room, roomPatients]) => ({
       room,
       displayRoom: displayRoom(room),
+      price: roomPriceTier(room),
       patients: roomPatients,
     }));
 }
@@ -88,6 +91,7 @@ export function paginateRoomGroups(groups = [], options = {}) {
       current.blocks.push({
         room: group.room,
         displayRoom: group.displayRoom,
+        price: group.price,
         continuation,
         totalPatients: group.patients.length,
         startNumber: consumed + 1,
@@ -112,16 +116,28 @@ export function paginateRoomGroups(groups = [], options = {}) {
   return pages;
 }
 
+function patientNoteLine(patient) {
+  const parts = [];
+  if (patient.priceNote) parts.push(escapeHtml(patient.priceNote));
+  else if (patient.transferDate) parts.push(`Chuyển phòng ${escapeHtml(patient.transferDate)}`);
+  if (patient.occupancy) parts.push(`Đăng ký ${escapeHtml(patient.occupancy)} người`);
+  return parts.join(' · ');
+}
+
 function renderBlock(block) {
   const title = `${escapeHtml(block.displayRoom)}${block.continuation ? ' (tiếp)' : ''}`;
-  const rows = block.patients.map((patient) => `
+  const rows = block.patients.map((patient) => {
+    const note = patientNoteLine(patient);
+    return `
     <div class="patient-row">
       <span class="patient-name">${escapeHtml(patient.name || patient.id || 'Chưa có tên')}</span>
+      ${note ? `<span class="patient-note">${note}</span>` : ''}
     </div>
-  `).join('');
+  `;
+  }).join('');
   return `
     <section class="room-block">
-      <div class="room-title">${title}</div>
+      <div class="room-title">${title}<span class="room-price">${formatVND(block.price)}/giường</span></div>
       <div class="patient-list">${rows}</div>
     </section>
   `;
@@ -158,10 +174,12 @@ function renderPrintHtml(groups, pages) {
     .room-columns { min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8mm; align-items: start; }
     .room-column { min-width: 0; }
     .room-block { margin: 0 0 5mm; break-inside: avoid; page-break-inside: avoid; }
-    .room-title { margin: 0 0 1.5mm; font-size: 14pt; font-weight: 700; }
+    .room-title { margin: 0 0 1.5mm; font-size: 14pt; font-weight: 700; display: flex; align-items: baseline; gap: 2mm; }
+    .room-price { font-size: 9pt; font-weight: 400; color: #555; }
     .patient-list { display: grid; gap: 1.2mm; }
     .patient-row { font-size: 12pt; line-height: 1.25; }
     .patient-name { display: block; }
+    .patient-note { display: block; font-size: 8.5pt; color: #555; line-height: 1.2; }
     @media screen {
       body { background: #e5e7eb; padding: 12px; }
       .print-page { width: 277mm; min-height: 190mm; margin: 0 auto 12px; padding: 10mm; background: #fff; box-shadow: 0 4px 20px rgba(0,0,0,.12); }

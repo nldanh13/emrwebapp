@@ -39,6 +39,37 @@ export function normalizeRoom(s) {
   return n > 0 ? `P${String(n).padStart(2,'0')}` : '';
 }
 
+// Khóa phòng dùng để so khớp/hiển thị: ưu tiên dạng chuẩn "P##" (qua normalizeRoom),
+// nếu không nhận ra được (phòng đặt tên tự do, vd "Phòng VIP A") thì dùng nguyên văn
+// đã cắt khoảng trắng — để phòng tự do vẫn xếp/in/lọc được như phòng "P##".
+export function canonicalRoomKey(s) {
+  return normalizeRoom(s) || String(s ?? '').trim();
+}
+
+export function matchesRoom(viTri, room) {
+  const raw = String(viTri ?? '').trim();
+  if (!raw || !room) return false;
+  return canonicalRoomKey(raw) === room;
+}
+
+// Giá phòng theo cấu hình: P1 = 500k, P2-P7 = 600k, mọi phòng còn lại (kể cả phòng
+// đặt tên tự do và các P## khác) = 250k. Không lưu trong roomConfig vì đây là quy
+// tắc cố định theo mã phòng, không phải giá trị người dùng tự nhập từng phòng.
+export function roomPriceTier(room) {
+  const m = /^P0*(\d{1,3})$/.exec(String(room ?? '').trim());
+  if (m) {
+    const n = parseInt(m[1], 10);
+    if (n === 1) return 500000;
+    if (n >= 2 && n <= 7) return 600000;
+  }
+  return 250000;
+}
+
+export function formatVND(n) {
+  const v = Number(n);
+  return `${(Number.isFinite(v) ? v : 0).toLocaleString('vi-VN')}đ`;
+}
+
 export function getPatientId(p) {
   return String(p['Mã BN'] ?? p['ma_bn'] ?? p['Mã YT'] ?? p['ma_yt'] ?? '').trim();
 }
@@ -103,7 +134,7 @@ export function sanitizePatientsForSave(patients) {
 
 export function filterUnassignedPatients(patients, search) {
   const q = String(search || '').trim().toLowerCase();
-  const unassigned = (patients || []).filter(p => !normalizeRoom(p.Vi_Tri || ''));
+  const unassigned = (patients || []).filter(p => !canonicalRoomKey(p.Vi_Tri || ''));
   if (!q) return unassigned;
   return unassigned.filter(p => (
     getPatientName(p).toLowerCase().includes(q) ||

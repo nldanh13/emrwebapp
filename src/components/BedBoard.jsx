@@ -7,7 +7,8 @@ import {
   useWindowWidth,
   loadRoomConfig,
   saveRoomConfig,
-  normalizeRoom,
+  canonicalRoomKey,
+  matchesRoom,
   getPatientId,
   sortedRoomEntries,
   sanitizePatientsForSave,
@@ -139,11 +140,11 @@ export default function BedBoard({ toast }) {
   }, [toast, loadData]);
 
   const roomPatients = useCallback((room) => (
-    patients.filter(p => normalizeRoom(p.Vi_Tri || '') === room)
+    patients.filter(p => matchesRoom(p.Vi_Tri, room))
   ), [patients]);
 
-  const unassigned = patients.filter(p => !normalizeRoom(p.Vi_Tri || ''));
-  const assigned = patients.filter(p => normalizeRoom(p.Vi_Tri || ''));
+  const unassigned = patients.filter(p => !canonicalRoomKey(p.Vi_Tri || ''));
+  const assigned = patients.filter(p => canonicalRoomKey(p.Vi_Tri || ''));
   const filtered = filterUnassignedPatients(patients, search);
   const rooms = sortedRoomEntries(roomConfig);
 
@@ -177,19 +178,27 @@ export default function BedBoard({ toast }) {
 
   const clearRoom = useCallback((room) => {
     setPatients(prev => prev.map(p =>
-      normalizeRoom(p.Vi_Tri || '') === room ? { ...p, Vi_Tri: '' } : p
+      matchesRoom(p.Vi_Tri, room) ? { ...p, Vi_Tri: '' } : p
     ));
   }, []);
 
   const addRoom = useCallback(() => {
-    const code = normalizeRoom(newRoom);
-    if (!code) { toast?.('Mã phòng không hợp lệ (ví dụ: P12)', 'error'); return; }
+    // Phòng dạng "P12" được chuẩn hoá như trước; phòng đặt tên tự do (không khớp
+    // mẫu P + số) vẫn được thêm nguyên văn — theo yêu cầu cho ghi tự do tên phòng.
+    const code = canonicalRoomKey(newRoom);
+    if (!code) { toast?.('Tên phòng không hợp lệ', 'error'); return; }
     if (roomConfig[code]) { toast?.(`${code} đã tồn tại`, 'error'); return; }
     const next = { ...roomConfig, [code]: 6 };
     setRoomConfig(next);
     saveRoomConfig(next);
     setNewRoom('');
   }, [newRoom, roomConfig, toast]);
+
+  const updatePatientNote = useCallback((id, field, value) => {
+    setPatients(prev => prev.map(p =>
+      getPatientId(p) === id ? { ...p, [field]: value } : p
+    ));
+  }, []);
 
   const deleteRoom = useCallback((room) => {
     clearRoom(room);
@@ -227,6 +236,7 @@ export default function BedBoard({ toast }) {
     selCount,
     assignToRoom,
     removeFromRoom,
+    updatePatientNote,
     loading,
     handleScan,
     loadData,

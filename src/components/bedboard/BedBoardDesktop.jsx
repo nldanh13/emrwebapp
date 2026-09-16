@@ -13,6 +13,7 @@ export default function BedBoardDesktop({
   selCount,
   assignToRoom,
   removeFromRoom,
+  updatePatientNote,
   clearRoom,
   deleteRoom,
   loading,
@@ -161,6 +162,7 @@ export default function BedBoardDesktop({
                 selectedCount={selCount}
                 onAssign={assignToRoom}
                 onRemove={removeFromRoom}
+                onUpdateNote={updatePatientNote}
                 onClear={clearRoom}
                 onDelete={deleteRoom}
                 isDefault={isDefault}
@@ -175,7 +177,7 @@ export default function BedBoardDesktop({
             value={newRoom}
             onChange={e => setNewRoom(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && addRoom()}
-            placeholder="Thêm phòng (P12...)"
+            placeholder="Thêm phòng (P12 hoặc tên tự do...)"
             style={{
               background: C.surface, border: `1px solid ${C.border}`,
               borderRadius: 4, padding: '4px 8px', color: C.text,

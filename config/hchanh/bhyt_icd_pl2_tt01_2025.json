@@ -1,0 +1,3533 @@
+{
+  "source": "Phụ lục II, Thông tư 01/2025/TT-BYT — danh mục ICD do người dùng cung cấp (cập nhật 15/09/2026 theo Cổng giám định BHYT)",
+  "note": "invalid_group_codes: mã bệnh 3 ký tự (mã nhóm chung) thuộc PLII KHÔNG được dùng làm mã bệnh chính cho đối tượng thông tuyến 1.16 — phải dùng mã 4-5 ký tự cụ thể trong valid_subcodes. Áp dụng cảnh báo cho MỌI trường hợp (chưa lọc được theo đối tượng 1.16 trên EMR), người kiểm tự xác nhận đối tượng trước khi coi là lỗi thật.",
+  "invalid_group_codes": {
+    "A15": {
+      "name": "Lao hô hấp, có xác nhận về vi khuẩn học và mô học",
+      "valid_subcodes": [
+        "A15.0",
+        "A15.1",
+        "A15.2",
+        "A15.3",
+        "A15.4",
+        "A15.5",
+        "A15.6",
+        "A15.7",
+        "A15.8",
+        "A15.9"
+      ]
+    },
+    "A16": {
+      "name": "Lao đường hô hấp, không xác nhận về vi khuẩn học hoặc mô học",
+      "valid_subcodes": [
+        "A16.0",
+        "A16.1",
+        "A16.2",
+        "A16.3",
+        "A16.4",
+        "A16.5",
+        "A16.7",
+        "A16.8",
+        "A16.9"
+      ]
+    },
+    "A17": {
+      "name": "Lao hệ thần kinh",
+      "valid_subcodes": [
+        "A17.0",
+        "A17.1",
+        "A17.8",
+        "A17.9"
+      ]
+    },
+    "A18": {
+      "name": "Lao các cơ quan khác",
+      "valid_subcodes": [
+        "A18.0",
+        "A18.1",
+        "A18.2",
+        "A18.3",
+        "A18.4",
+        "A18.5",
+        "A18.6",
+        "A18.7",
+        "A18.8"
+      ]
+    },
+    "A19": {
+      "name": "Lao kê",
+      "valid_subcodes": [
+        "A19.0",
+        "A19.1",
+        "A19.2",
+        "A19.8",
+        "A19.9"
+      ]
+    },
+    "A30": {
+      "name": "Bệnh phong (bệnh Hansen)",
+      "valid_subcodes": [
+        "A30.0",
+        "A30.1",
+        "A30.2",
+        "A30.3",
+        "A30.4",
+        "A30.5",
+        "A30.8",
+        "A30.9"
+      ]
+    },
+    "B20": {
+      "name": "Bệnh HIV dẫn đến bệnh nhiễm trùng và ký sinh trùng",
+      "valid_subcodes": [
+        "B20.0",
+        "B20.1",
+        "B20.2",
+        "B20.3",
+        "B20.4",
+        "B20.5",
+        "B20.6",
+        "B20.7",
+        "B20.8",
+        "B20.9"
+      ]
+    },
+    "B21": {
+      "name": "Bệnh HIV gây u ác tính",
+      "valid_subcodes": [
+        "B21.0",
+        "B21.1",
+        "B21.2",
+        "B21.3",
+        "B21.7",
+        "B21.8",
+        "B21.9"
+      ]
+    },
+    "B22": {
+      "name": "Bệnh HIV dẫn đến các bệnh xác định khác",
+      "valid_subcodes": [
+        "B22.0",
+        "B22.1",
+        "B22.2",
+        "B22.7"
+      ]
+    },
+    "B23": {
+      "name": "Bệnh HIV dẫn đến bệnh lý khác",
+      "valid_subcodes": [
+        "B23.0",
+        "B23.1",
+        "B23.2",
+        "B23.8"
+      ]
+    },
+    "B24": {
+      "name": "Bệnh do HIV không xác định",
+      "valid_subcodes": []
+    },
+    "B46": {
+      "name": "Nhiễm zygomycota",
+      "valid_subcodes": [
+        "B46.0",
+        "B46.1",
+        "B46.2",
+        "B46.3",
+        "B46.4",
+        "B46.5",
+        "B46.8",
+        "B46.9"
+      ]
+    },
+    "C00": {
+      "name": "U ác của môi",
+      "valid_subcodes": [
+        "C00.0",
+        "C00.1",
+        "C00.2",
+        "C00.3",
+        "C00.4",
+        "C00.5",
+        "C00.6",
+        "C00.8",
+        "C00.9"
+      ]
+    },
+    "C01": {
+      "name": "U ác của đáy lưỡi",
+      "valid_subcodes": []
+    },
+    "C02": {
+      "name": "U ác của phần khác và không xác định của lưỡi",
+      "valid_subcodes": [
+        "C02.0",
+        "C02.1",
+        "C02.2",
+        "C02.3",
+        "C02.4",
+        "C02.8",
+        "C02.9"
+      ]
+    },
+    "C03": {
+      "name": "U ác của lợi (nướu) răng",
+      "valid_subcodes": [
+        "C03.0",
+        "C03.1",
+        "C03.9"
+      ]
+    },
+    "C04": {
+      "name": "U ác của sàn miệng",
+      "valid_subcodes": [
+        "C04.0",
+        "C04.1",
+        "C04.8",
+        "C04.9"
+      ]
+    },
+    "C05": {
+      "name": "U ác của khẩu cái",
+      "valid_subcodes": [
+        "C05.0",
+        "C05.1",
+        "C05.2",
+        "C05.8",
+        "C05.9"
+      ]
+    },
+    "C06": {
+      "name": "U ác của phần khác và không xác định của miệng",
+      "valid_subcodes": [
+        "C06.0",
+        "C06.1",
+        "C06.2",
+        "C06.8",
+        "C06.9"
+      ]
+    },
+    "C07": {
+      "name": "U ác tuyến mang tai",
+      "valid_subcodes": []
+    },
+    "C08": {
+      "name": "U ác của các tuyến nước bọt chính khác và không xác định",
+      "valid_subcodes": [
+        "C08.0",
+        "C08.1",
+        "C08.8",
+        "C08.9"
+      ]
+    },
+    "C09": {
+      "name": "U ác của amiđan",
+      "valid_subcodes": [
+        "C09.0",
+        "C09.1",
+        "C09.8",
+        "C09.9"
+      ]
+    },
+    "C10": {
+      "name": "U ác của hầu miệng",
+      "valid_subcodes": [
+        "C10.0",
+        "C10.1",
+        "C10.2",
+        "C10.3",
+        "C10.4",
+        "C10.8",
+        "C10.9"
+      ]
+    },
+    "C11": {
+      "name": "U ác của hầu-mũi",
+      "valid_subcodes": [
+        "C11.0",
+        "C11.1",
+        "C11.2",
+        "C11.3",
+        "C11.8",
+        "C11.9"
+      ]
+    },
+    "C12": {
+      "name": "U ác của xoang lê",
+      "valid_subcodes": []
+    },
+    "C13": {
+      "name": "U ác của hạ hầu",
+      "valid_subcodes": [
+        "C13.0",
+        "C13.1",
+        "C13.2",
+        "C13.8",
+        "C13.9"
+      ]
+    },
+    "C14": {
+      "name": "U ác vị trí khác và không rõ ràng của môi, khoang miệng và hầu",
+      "valid_subcodes": [
+        "C14.0",
+        "C14.2",
+        "C14.8"
+      ]
+    },
+    "C15": {
+      "name": "U ác thực quản",
+      "valid_subcodes": [
+        "C15.0",
+        "C15.1",
+        "C15.2",
+        "C15.3",
+        "C15.4",
+        "C15.5",
+        "C15.8",
+        "C15.9"
+      ]
+    },
+    "C16": {
+      "name": "U ác của dạ dày",
+      "valid_subcodes": [
+        "C16.0",
+        "C16.1",
+        "C16.2",
+        "C16.3",
+        "C16.4",
+        "C16.5",
+        "C16.6",
+        "C16.8",
+        "C16.9"
+      ]
+    },
+    "C17": {
+      "name": "U ác ruột non",
+      "valid_subcodes": [
+        "C17.0",
+        "C17.1",
+        "C17.2",
+        "C17.3",
+        "C17.8",
+        "C17.9"
+      ]
+    },
+    "C18": {
+      "name": "U ác đại tràng",
+      "valid_subcodes": [
+        "C18.0",
+        "C18.1",
+        "C18.2",
+        "C18.3",
+        "C18.4",
+        "C18.5",
+        "C18.6",
+        "C18.7",
+        "C18.8",
+        "C18.9"
+      ]
+    },
+    "C19": {
+      "name": "U ác của nơi nối trực tràng-xích ma",
+      "valid_subcodes": []
+    },
+    "C20": {
+      "name": "U ác trực tràng",
+      "valid_subcodes": []
+    },
+    "C21": {
+      "name": "U ác của hậu môn và ống hậu môn",
+      "valid_subcodes": [
+        "C21.0",
+        "C21.1",
+        "C21.2",
+        "C21.8"
+      ]
+    },
+    "C22": {
+      "name": "U ác của gan và đường mật trong gan",
+      "valid_subcodes": [
+        "C22.0",
+        "C22.1",
+        "C22.2",
+        "C22.3",
+        "C22.4",
+        "C22.7",
+        "C22.9"
+      ]
+    },
+    "C23": {
+      "name": "U ác túi mật",
+      "valid_subcodes": []
+    },
+    "C24": {
+      "name": "U ác của phần khác và không xác định của đường mật",
+      "valid_subcodes": [
+        "C24.0",
+        "C24.1",
+        "C24.8",
+        "C24.9"
+      ]
+    },
+    "C25": {
+      "name": "U ác tụy",
+      "valid_subcodes": [
+        "C25.0",
+        "C25.1",
+        "C25.2",
+        "C25.3",
+        "C25.4",
+        "C25.7",
+        "C25.8",
+        "C25.9"
+      ]
+    },
+    "C26": {
+      "name": "U ác của cơ quan tiêu hóa khác và không rõ ràng",
+      "valid_subcodes": [
+        "C26.0",
+        "C26.1",
+        "C26.8",
+        "C26.9"
+      ]
+    },
+    "C30": {
+      "name": "U ác của hốc mũi và tai giữa",
+      "valid_subcodes": [
+        "C30.0",
+        "C30.1"
+      ]
+    },
+    "C31": {
+      "name": "U ác của các xoang phụ",
+      "valid_subcodes": [
+        "C31.0",
+        "C31.1",
+        "C31.2",
+        "C31.3",
+        "C31.8",
+        "C31.9"
+      ]
+    },
+    "C32": {
+      "name": "U ác thanh quản",
+      "valid_subcodes": [
+        "C32.0",
+        "C32.1",
+        "C32.2",
+        "C32.3",
+        "C32.8",
+        "C32.9"
+      ]
+    },
+    "C33": {
+      "name": "U ác khí quản",
+      "valid_subcodes": []
+    },
+    "C34": {
+      "name": "U ác của phế quản và phổi",
+      "valid_subcodes": [
+        "C34.0",
+        "C34.1",
+        "C34.2",
+        "C34.3",
+        "C34.8",
+        "C34.9"
+      ]
+    },
+    "C37": {
+      "name": "U ác tuyến ức",
+      "valid_subcodes": []
+    },
+    "C38": {
+      "name": "U ác của tim, trung thất và màng phổi",
+      "valid_subcodes": [
+        "C38.0",
+        "C38.1",
+        "C38.2",
+        "C38.3",
+        "C38.4",
+        "C38.8"
+      ]
+    },
+    "C39": {
+      "name": "U ác ở những vị trí khác và không rõ ràng của hệ hô hấp và cơ quan trong lồng ngực",
+      "valid_subcodes": [
+        "C39.0",
+        "C39.8",
+        "C39.9"
+      ]
+    },
+    "C40": {
+      "name": "U ác của xương và sụn khớp của các chi",
+      "valid_subcodes": [
+        "C40.0",
+        "C40.1",
+        "C40.2",
+        "C40.3",
+        "C40.8",
+        "C40.9"
+      ]
+    },
+    "C41": {
+      "name": "U ác của xương và sụn khớp ở vị trí khác và không xác định",
+      "valid_subcodes": [
+        "C41.0",
+        "C41.1",
+        "C41.2",
+        "C41.3",
+        "C41.4",
+        "C41.8",
+        "C41.9"
+      ]
+    },
+    "C43": {
+      "name": "U hắc tố ác của da",
+      "valid_subcodes": [
+        "C43.0",
+        "C43.1",
+        "C43.2",
+        "C43.3",
+        "C43.4",
+        "C43.5",
+        "C43.6",
+        "C43.7",
+        "C43.8",
+        "C43.9"
+      ]
+    },
+    "C44": {
+      "name": "U ác khác của da",
+      "valid_subcodes": [
+        "C44.0",
+        "C44.1",
+        "C44.2",
+        "C44.3",
+        "C44.4",
+        "C44.5",
+        "C44.6",
+        "C44.7",
+        "C44.8",
+        "C44.9"
+      ]
+    },
+    "C45": {
+      "name": "U trung biểu mô",
+      "valid_subcodes": [
+        "C45.0",
+        "C45.1",
+        "C45.2",
+        "C45.7",
+        "C45.9"
+      ]
+    },
+    "C46": {
+      "name": "Ung thư mô liên kết Kaposi",
+      "valid_subcodes": [
+        "C46.0",
+        "C46.1",
+        "C46.2",
+        "C46.3",
+        "C46.7",
+        "C46.8",
+        "C46.9"
+      ]
+    },
+    "C47": {
+      "name": "U ác của dây thần kinh ngoại biên và của hệ thần kinh tự động",
+      "valid_subcodes": [
+        "C47.0",
+        "C47.1",
+        "C47.2",
+        "C47.3",
+        "C47.4",
+        "C47.5",
+        "C47.6",
+        "C47.8",
+        "C47.9"
+      ]
+    },
+    "C48": {
+      "name": "U ác của vùng sau phúc mạc và phúc mạc",
+      "valid_subcodes": [
+        "C48.0",
+        "C48.1",
+        "C48.2",
+        "C48.8"
+      ]
+    },
+    "C49": {
+      "name": "U ác của mô liên kết và mô mềm khác",
+      "valid_subcodes": [
+        "C49.0",
+        "C49.1",
+        "C49.2",
+        "C49.3",
+        "C49.4",
+        "C49.5",
+        "C49.6",
+        "C49.8",
+        "C49.9"
+      ]
+    },
+    "C50": {
+      "name": "U ác của vú",
+      "valid_subcodes": [
+        "C50.0",
+        "C50.1",
+        "C50.2",
+        "C50.3",
+        "C50.4",
+        "C50.5",
+        "C50.6",
+        "C50.8",
+        "C50.9"
+      ]
+    },
+    "C51": {
+      "name": "U ác âm hộ",
+      "valid_subcodes": [
+        "C51.0",
+        "C51.1",
+        "C51.2",
+        "C51.8",
+        "C51.9"
+      ]
+    },
+    "C52": {
+      "name": "U ác của âm đạo",
+      "valid_subcodes": []
+    },
+    "C53": {
+      "name": "U ác của cổ tử cung",
+      "valid_subcodes": [
+        "C53.0",
+        "C53.1",
+        "C53.8",
+        "C53.9"
+      ]
+    },
+    "C54": {
+      "name": "U ác của thân tử cung",
+      "valid_subcodes": [
+        "C54.0",
+        "C54.1",
+        "C54.2",
+        "C54.3",
+        "C54.8",
+        "C54.9"
+      ]
+    },
+    "C55": {
+      "name": "U ác tử cung phần không xác định",
+      "valid_subcodes": []
+    },
+    "C56": {
+      "name": "U ác buồng trứng",
+      "valid_subcodes": []
+    },
+    "C57": {
+      "name": "U ác của cơ quan sinh dục nữ khác và không xác định",
+      "valid_subcodes": [
+        "C57.0",
+        "C57.1",
+        "C57.2",
+        "C57.3",
+        "C57.4",
+        "C57.7",
+        "C57.8",
+        "C57.9"
+      ]
+    },
+    "C58": {
+      "name": "U ác của rau thai (nhau thai)",
+      "valid_subcodes": []
+    },
+    "C60": {
+      "name": "U ác của dương vật",
+      "valid_subcodes": [
+        "C60.0",
+        "C60.1",
+        "C60.2",
+        "C60.8",
+        "C60.9"
+      ]
+    },
+    "C61": {
+      "name": "U ác của tuyến tiền liệt",
+      "valid_subcodes": []
+    },
+    "C62": {
+      "name": "U ác của tinh hoàn",
+      "valid_subcodes": [
+        "C62.0",
+        "C62.1",
+        "C62.9"
+      ]
+    },
+    "C63": {
+      "name": "U ác của cơ quan sinh dục nam khác và không xác định",
+      "valid_subcodes": [
+        "C63.0",
+        "C63.1",
+        "C63.2",
+        "C63.7",
+        "C63.8",
+        "C63.9"
+      ]
+    },
+    "C64": {
+      "name": "U ác của thận ngoại trừ bể thận",
+      "valid_subcodes": []
+    },
+    "C65": {
+      "name": "U ác của bể thận",
+      "valid_subcodes": []
+    },
+    "C66": {
+      "name": "U ác niệu quản",
+      "valid_subcodes": []
+    },
+    "C67": {
+      "name": "U ác của bàng quang",
+      "valid_subcodes": [
+        "C67.0",
+        "C67.1",
+        "C67.2",
+        "C67.3",
+        "C67.4",
+        "C67.5",
+        "C67.6",
+        "C67.7",
+        "C67.8",
+        "C67.9"
+      ]
+    },
+    "C68": {
+      "name": "U ác của cơ quan tiết niệu khác và không xác định",
+      "valid_subcodes": [
+        "C68.0",
+        "C68.1",
+        "C68.8",
+        "C68.9"
+      ]
+    },
+    "C69": {
+      "name": "U ác của mắt và phần phụ",
+      "valid_subcodes": [
+        "C69.0",
+        "C69.1",
+        "C69.2",
+        "C69.3",
+        "C69.4",
+        "C69.5",
+        "C69.6",
+        "C69.8",
+        "C69.9"
+      ]
+    },
+    "C70": {
+      "name": "U ác của màng não",
+      "valid_subcodes": [
+        "C70.0",
+        "C70.1",
+        "C70.9"
+      ]
+    },
+    "C71": {
+      "name": "U ác của não",
+      "valid_subcodes": [
+        "C71.0",
+        "C71.1",
+        "C71.2",
+        "C71.3",
+        "C71.4",
+        "C71.5",
+        "C71.6",
+        "C71.7",
+        "C71.8",
+        "C71.9"
+      ]
+    },
+    "C72": {
+      "name": "U ác của tủy sống, dây thần kinh sọ và các phần khác của hệ thần kinh trung ương",
+      "valid_subcodes": [
+        "C72.0",
+        "C72.1",
+        "C72.2",
+        "C72.3",
+        "C72.4",
+        "C72.5",
+        "C72.8",
+        "C72.9"
+      ]
+    },
+    "C73": {
+      "name": "U ác của tuyến giáp",
+      "valid_subcodes": []
+    },
+    "C74": {
+      "name": "U ác của tuyến thượng thận",
+      "valid_subcodes": [
+        "C74.0",
+        "C74.1",
+        "C74.9"
+      ]
+    },
+    "C75": {
+      "name": "U ác của các tuyến nội tiết khác và các cơ quan liên quan",
+      "valid_subcodes": [
+        "C75.0",
+        "C75.1",
+        "C75.2",
+        "C75.3",
+        "C75.4",
+        "C75.5",
+        "C75.8",
+        "C75.9"
+      ]
+    },
+    "C76": {
+      "name": "U ác có vị trí khác và không rõ ràng",
+      "valid_subcodes": [
+        "C76.0",
+        "C76.1",
+        "C76.2",
+        "C76.3",
+        "C76.4",
+        "C76.5",
+        "C76.7",
+        "C76.8"
+      ]
+    },
+    "C77": {
+      "name": "U ác thứ phát và không xác định của hạch lympho",
+      "valid_subcodes": [
+        "C77.0",
+        "C77.1",
+        "C77.2",
+        "C77.3",
+        "C77.4",
+        "C77.5",
+        "C77.8",
+        "C77.9"
+      ]
+    },
+    "C78": {
+      "name": "U ác thứ phát của cơ quan hô hấp và tiêu ho",
+      "valid_subcodes": [
+        "C78.0",
+        "C78.1",
+        "C78.2",
+        "C78.3",
+        "C78.4",
+        "C78.5",
+        "C78.6",
+        "C78.7",
+        "C78.8"
+      ]
+    },
+    "C79": {
+      "name": "U ác thứ phát có vị trí khác và không xác định",
+      "valid_subcodes": [
+        "C79.0",
+        "C79.1",
+        "C79.2",
+        "C79.3",
+        "C79.4",
+        "C79.5",
+        "C79.6",
+        "C79.7",
+        "C79.8",
+        "C79.9"
+      ]
+    },
+    "C80": {
+      "name": "U ác không xác định vị trí",
+      "valid_subcodes": [
+        "C80.0",
+        "C80.9"
+      ]
+    },
+    "C81": {
+      "name": "U lympho Hodgkin",
+      "valid_subcodes": [
+        "C81.0",
+        "C81.1",
+        "C81.2",
+        "C81.3",
+        "C81.4",
+        "C81.7",
+        "C81.9"
+      ]
+    },
+    "C82": {
+      "name": "U lympho dạng nang",
+      "valid_subcodes": [
+        "C82.0",
+        "C82.1",
+        "C82.2",
+        "C82.3",
+        "C82.4",
+        "C82.5",
+        "C82.6",
+        "C82.7",
+        "C82.9"
+      ]
+    },
+    "C83": {
+      "name": "U Lympho dạng không phải nang",
+      "valid_subcodes": [
+        "C83.0",
+        "C83.1",
+        "C83.2",
+        "C83.3",
+        "C83.4",
+        "C83.5",
+        "C83.6",
+        "C83.7",
+        "C83.8",
+        "C83.9"
+      ]
+    },
+    "C84": {
+      "name": "Các loại U lympho tế bào T/NK trưởng thành",
+      "valid_subcodes": [
+        "C84.0",
+        "C84.1",
+        "C84.2",
+        "C84.3",
+        "C84.4",
+        "C84.5",
+        "C84.6",
+        "C84.7",
+        "C84.8",
+        "C84.9"
+      ]
+    },
+    "C85": {
+      "name": "U lympho không Hodgkin, loại khác và không xác định",
+      "valid_subcodes": [
+        "C85.0",
+        "C85.1",
+        "C85.2",
+        "C85.7",
+        "C85.9"
+      ]
+    },
+    "C86": {
+      "name": "Loại xác định khác của u lympho tế bào T/NK",
+      "valid_subcodes": [
+        "C86.0",
+        "C86.1",
+        "C86.2",
+        "C86.3",
+        "C86.4",
+        "C86.5",
+        "C86.6"
+      ]
+    },
+    "C88": {
+      "name": "Bệnh tăng sinh miễn dịch ác tính",
+      "valid_subcodes": [
+        "C88.0",
+        "C88.1",
+        "C88.2",
+        "C88.3",
+        "C88.4",
+        "C88.7",
+        "C88.9"
+      ]
+    },
+    "C90": {
+      "name": "Đa u tủy và các u tương bào",
+      "valid_subcodes": [
+        "C90.0",
+        "C90.1",
+        "C90.2",
+        "C90.3"
+      ]
+    },
+    "C91": {
+      "name": "Bệnh bạch cầu dạng lympho",
+      "valid_subcodes": [
+        "C91.0",
+        "C91.1",
+        "C91.2",
+        "C91.3",
+        "C91.4",
+        "C91.5",
+        "C91.6",
+        "C91.7",
+        "C91.8",
+        "C91.9"
+      ]
+    },
+    "C92": {
+      "name": "Bệnh bạch cầu tủy",
+      "valid_subcodes": [
+        "C92.0",
+        "C92.1",
+        "C92.2",
+        "C92.3",
+        "C92.4",
+        "C92.5",
+        "C92.6",
+        "C92.7",
+        "C92.8",
+        "C92.9"
+      ]
+    },
+    "C93": {
+      "name": "Bệnh bạch cầu đơn nhân",
+      "valid_subcodes": [
+        "C93.0",
+        "C93.1",
+        "C93.2",
+        "C93.3",
+        "C93.7",
+        "C93.9"
+      ]
+    },
+    "C94": {
+      "name": "Bệnh bạch cầu khác có loại tế bào xác định",
+      "valid_subcodes": [
+        "C94.0",
+        "C94.1",
+        "C94.2",
+        "C94.3",
+        "C94.4",
+        "C94.5",
+        "C94.6",
+        "C94.7"
+      ]
+    },
+    "C95": {
+      "name": "Bệnh bạch cầu có loại tế bào không xác định",
+      "valid_subcodes": [
+        "C95.0",
+        "C95.1",
+        "C95.2",
+        "C95.7",
+        "C95.9"
+      ]
+    },
+    "C96": {
+      "name": "U ác khác và không xác định của hệ lympho, hệ tạo máu và mô liên quan",
+      "valid_subcodes": [
+        "C96.0",
+        "C96.1",
+        "C96.2",
+        "C96.3",
+        "C96.4",
+        "C96.5",
+        "C96.6",
+        "C96.7",
+        "C96.8",
+        "C96.9"
+      ]
+    },
+    "C97": {
+      "name": "U ác có nhiều vị trí độc lập (nguyên phát) nhiều chỗ",
+      "valid_subcodes": []
+    },
+    "D00": {
+      "name": "Ung thư biểu mô tại chỗ của khoang miệng, thực quản và dạ dày",
+      "valid_subcodes": [
+        "D00.0",
+        "D00.1",
+        "D00.2"
+      ]
+    },
+    "D01": {
+      "name": "Ung thư biểu mô tại chỗ của cơ quan tiêu hóa khác và không xác định",
+      "valid_subcodes": [
+        "D01.0",
+        "D01.1",
+        "D01.2",
+        "D01.3",
+        "D01.4",
+        "D01.5",
+        "D01.7",
+        "D01.9"
+      ]
+    },
+    "D02": {
+      "name": "Ung thư biểu mô tại chỗ của tai giữa và hệ hô hấp",
+      "valid_subcodes": [
+        "D02.0",
+        "D02.1",
+        "D02.2",
+        "D02.3",
+        "D02.4"
+      ]
+    },
+    "D03": {
+      "name": "U hắc tố tại chỗ",
+      "valid_subcodes": [
+        "D03.0",
+        "D03.1",
+        "D03.2",
+        "D03.3",
+        "D03.4",
+        "D03.5",
+        "D03.6",
+        "D03.7",
+        "D03.8",
+        "D03.9"
+      ]
+    },
+    "D04": {
+      "name": "Ung thư biểu mô tại chỗ của da",
+      "valid_subcodes": [
+        "D04.0",
+        "D04.1",
+        "D04.2",
+        "D04.3",
+        "D04.4",
+        "D04.5",
+        "D04.6",
+        "D04.7",
+        "D04.8",
+        "D04.9"
+      ]
+    },
+    "D05": {
+      "name": "Ung thư biểu mô tại chỗ của vú",
+      "valid_subcodes": [
+        "D05.0",
+        "D05.1",
+        "D05.7",
+        "D05.9"
+      ]
+    },
+    "D06": {
+      "name": "Ung thư biểu mô tại chỗ của cổ tử cung",
+      "valid_subcodes": [
+        "D06.0",
+        "D06.1",
+        "D06.7",
+        "D06.9"
+      ]
+    },
+    "D07": {
+      "name": "Ung thư biểu mô tại chỗ của cơ quan sinh dục khác và không xác định",
+      "valid_subcodes": [
+        "D07.0",
+        "D07.1",
+        "D07.2",
+        "D07.3",
+        "D07.4",
+        "D07.5",
+        "D07.6"
+      ]
+    },
+    "D09": {
+      "name": "Ung thư biểu mô tại chỗ ở vị trí khác và không xác định",
+      "valid_subcodes": [
+        "D09.0",
+        "D09.1",
+        "D09.2",
+        "D09.3",
+        "D09.7",
+        "D09.9"
+      ]
+    },
+    "D45": {
+      "name": "U tân sinh không chắc chắn hoặc không biết tính chất của tuyến nội tiết",
+      "valid_subcodes": []
+    },
+    "D46": {
+      "name": "Hội chứng loạn sản tủy xương",
+      "valid_subcodes": [
+        "D46.0",
+        "D46.1",
+        "D46.2",
+        "D46.3",
+        "D46.4",
+        "D46.5",
+        "D46.6",
+        "D46.7",
+        "D46.9"
+      ]
+    },
+    "D47": {
+      "name": "U tân sinh khác không chắc chắn hoặc không biết sinh chất của mô ulympho, mô tạo huyết và mô liên quan",
+      "valid_subcodes": [
+        "D47.0",
+        "D47.1",
+        "D47.2",
+        "D47.3",
+        "D47.4",
+        "D47.5",
+        "D47.7",
+        "D47.9"
+      ]
+    },
+    "D56": {
+      "name": "Bệnh Thalassaemia",
+      "valid_subcodes": [
+        "D56.0",
+        "D56.1",
+        "D56.2",
+        "D56.3",
+        "D56.4",
+        "D56.8",
+        "D56.9"
+      ]
+    },
+    "D57": {
+      "name": "Bệnh hồng cầu liềm",
+      "valid_subcodes": [
+        "D57.0",
+        "D57.1",
+        "D57.2",
+        "D57.3",
+        "D57.8"
+      ]
+    },
+    "D59": {
+      "name": "Thiếu máu tan máu mắc phải",
+      "valid_subcodes": [
+        "D59.0",
+        "D59.1",
+        "D59.2",
+        "D59.3",
+        "D59.4",
+        "D59.5",
+        "D59.6",
+        "D59.8",
+        "D59.9"
+      ]
+    },
+    "D60": {
+      "name": "Suy tủy xương một dòng hồng cầu mắc phải (giảm nguyên hồng cầu)",
+      "valid_subcodes": [
+        "D60.0",
+        "D60.1",
+        "D60.8",
+        "D60.9"
+      ]
+    },
+    "D61": {
+      "name": "Các thể suy tủy xương khác",
+      "valid_subcodes": [
+        "D61.0",
+        "D61.1",
+        "D61.2",
+        "D61.3",
+        "D61.8",
+        "D61.9"
+      ]
+    },
+    "D66": {
+      "name": "Thiếu yếu tố VIII di truyền",
+      "valid_subcodes": []
+    },
+    "D67": {
+      "name": "Thiếu yếu tố IX di truyền",
+      "valid_subcodes": []
+    },
+    "D68": {
+      "name": "Các bất thường đông máu khác",
+      "valid_subcodes": [
+        "D68.0",
+        "D68.1",
+        "D68.2",
+        "D68.3",
+        "D68.4",
+        "D68.5",
+        "D68.6",
+        "D68.8",
+        "D68.9"
+      ]
+    },
+    "D76": {
+      "name": "Các bệnh của tổ chức lympho- liên võng và - (tổ chức bào) mô bào- liên võng xác định khác",
+      "valid_subcodes": [
+        "D76.0",
+        "D76.1",
+        "D76.2",
+        "D76.3"
+      ]
+    },
+    "D86": {
+      "name": "Bệnh sarcoid",
+      "valid_subcodes": [
+        "D86.0",
+        "D86.1",
+        "D86.2",
+        "D86.3",
+        "D86.8",
+        "D86.9"
+      ]
+    },
+    "E03": {
+      "name": "Suy giáp khác",
+      "valid_subcodes": [
+        "E03.0",
+        "E03.1",
+        "E03.2",
+        "E03.3",
+        "E03.4",
+        "E03.5",
+        "E03.8",
+        "E03.9"
+      ]
+    },
+    "E04": {
+      "name": "Bướu không độc khác",
+      "valid_subcodes": [
+        "E04.0",
+        "E04.1",
+        "E04.2",
+        "E04.8",
+        "E04.9"
+      ]
+    },
+    "E05": {
+      "name": "Nhiễm độc giáp (cường giáp)",
+      "valid_subcodes": [
+        "E05.0",
+        "E05.1",
+        "E05.2",
+        "E05.3",
+        "E05.4",
+        "E05.5",
+        "E05.8",
+        "E05.9"
+      ]
+    },
+    "E12": {
+      "name": "Bệnh đái tháo đường liên quan đến suy dinh dưỡng",
+      "valid_subcodes": [
+        "E12.0",
+        "E12.1",
+        "E12.2",
+        "E12.3",
+        "E12.4",
+        "E12.5",
+        "E12.6",
+        "E12.7",
+        "E12.8",
+        "E12.9"
+      ]
+    },
+    "E13": {
+      "name": "Bệnh đái tháo đường xác định khác",
+      "valid_subcodes": [
+        "E13.0",
+        "E13.1",
+        "E13.2",
+        "E13.3",
+        "E13.4",
+        "E13.5",
+        "E13.6",
+        "E13.7",
+        "E13.8",
+        "E13.9"
+      ]
+    },
+    "E14": {
+      "name": "Các thể loại đái tháo đường không xác định",
+      "valid_subcodes": [
+        "E14.0",
+        "E14.1",
+        "E14.2",
+        "E14.3",
+        "E14.4",
+        "E14.5",
+        "E14.6",
+        "E14.7",
+        "E14.8",
+        "E14.9"
+      ]
+    },
+    "E21": {
+      "name": "Cường cận giáp và các rối loạn khác của tuyến cận giáp",
+      "valid_subcodes": [
+        "E21.0",
+        "E21.1",
+        "E21.2",
+        "E21.3",
+        "E21.4",
+        "E21.5"
+      ]
+    },
+    "E22": {
+      "name": "Cường tuyến yên",
+      "valid_subcodes": [
+        "E22.0",
+        "E22.1",
+        "E22.2",
+        "E22.8",
+        "E22.9"
+      ]
+    },
+    "E23": {
+      "name": "Suy chức năng và rối loạn khác của tuyến yên",
+      "valid_subcodes": [
+        "E23.0",
+        "E23.1",
+        "E23.2",
+        "E23.3",
+        "E23.6",
+        "E23.7"
+      ]
+    },
+    "E70": {
+      "name": "Rối loạn chuyển hóa acid amin thơm",
+      "valid_subcodes": [
+        "E70.0",
+        "E70.1",
+        "E70.2",
+        "E70.3",
+        "E70.8",
+        "E70.9"
+      ]
+    },
+    "E71": {
+      "name": "Rối loạn chuyển hóa acid amin chuỗi nhánh và rối loạn chuyển hóa acid béo",
+      "valid_subcodes": [
+        "E71.0",
+        "E71.1",
+        "E71.2",
+        "E71.3"
+      ]
+    },
+    "E72": {
+      "name": "Các rối loạn khác của chuyển hóa acid amin",
+      "valid_subcodes": [
+        "E72.0",
+        "E72.1",
+        "E72.2",
+        "E72.3",
+        "E72.4",
+        "E72.5",
+        "E72.8",
+        "E72.9"
+      ]
+    },
+    "E74": {
+      "name": "Rối loạn khác của chuyển hóa carbohydrat",
+      "valid_subcodes": [
+        "E74.0",
+        "E74.1",
+        "E74.2",
+        "E74.3",
+        "E74.4",
+        "E74.8",
+        "E74.9"
+      ]
+    },
+    "E75": {
+      "name": "Rối loạn chuyển hóa sphingolipid và rối loạn tích luỹ lipid",
+      "valid_subcodes": [
+        "E75.0",
+        "E75.1",
+        "E75.2",
+        "E75.3",
+        "E75.4",
+        "E75.5",
+        "E75.6"
+      ]
+    },
+    "E76": {
+      "name": "Rối loạn chuyển hóa glycosaminoglycan",
+      "valid_subcodes": [
+        "E76.0",
+        "E76.1",
+        "E76.2",
+        "E76.3",
+        "E76.8",
+        "E76.9"
+      ]
+    },
+    "E85": {
+      "name": "Thoái hóa dạng bột",
+      "valid_subcodes": [
+        "E85.0",
+        "E85.1",
+        "E85.2",
+        "E85.3",
+        "E85.4",
+        "E85.8",
+        "E85.9"
+      ]
+    },
+    "F00": {
+      "name": "Sa sút trí tuệ trong bệnh Alzheimer (G30.-†)",
+      "valid_subcodes": [
+        "F00.0",
+        "F00.1",
+        "F00.2",
+        "F00.9"
+      ]
+    },
+    "F01": {
+      "name": "Sa sút trí tuệ do nguyên nhân mạch",
+      "valid_subcodes": [
+        "F01.0",
+        "F01.1",
+        "F01.2",
+        "F01.3",
+        "F01.8",
+        "F01.9"
+      ]
+    },
+    "F02": {
+      "name": "Sa sút trí tuệ trong các bệnh khác đã được phân loại ở nơi khác",
+      "valid_subcodes": [
+        "F02.0",
+        "F02.1",
+        "F02.2",
+        "F02.3",
+        "F02.4",
+        "F02.8"
+      ]
+    },
+    "F03": {
+      "name": "Sa sút trí tuệ không biệt định",
+      "valid_subcodes": []
+    },
+    "F04": {
+      "name": "Hội chứng quên thực tổn không do rượu và chất tác động tâm thần khác",
+      "valid_subcodes": []
+    },
+    "F05": {
+      "name": "Sảng không do rượu và chất tác động tâm thần khác",
+      "valid_subcodes": [
+        "F05.0",
+        "F05.1",
+        "F05.8",
+        "F05.9"
+      ]
+    },
+    "F06": {
+      "name": "Rối loạn tâm thần khác do tổn thương và rối loạn chức năng não và do bệnh cơ thể",
+      "valid_subcodes": [
+        "F06.0",
+        "F06.1",
+        "F06.2",
+        "F06.3",
+        "F06.4",
+        "F06.5",
+        "F06.6",
+        "F06.7",
+        "F06.8",
+        "F06.9"
+      ]
+    },
+    "F07": {
+      "name": "Các rối loạn nhân cách và hành vi do bệnh lý não, tổn thương não và rối loạn chức năng não",
+      "valid_subcodes": [
+        "F07.0",
+        "F07.1",
+        "F07.2",
+        "F07.8",
+        "F07.9"
+      ]
+    },
+    "F09": {
+      "name": "Rối loạn tâm thần thực tổn hoặc triệu chứng không biệt định",
+      "valid_subcodes": []
+    },
+    "F10": {
+      "name": "Rối loạn tâm thần và hành vi do sử dụng rượu",
+      "valid_subcodes": [
+        "F10.0",
+        "F10.1",
+        "F10.2",
+        "F10.3",
+        "F10.4",
+        "F10.5",
+        "F10.6",
+        "F10.7",
+        "F10.8",
+        "F10.9"
+      ]
+    },
+    "F11": {
+      "name": "Rối loạn tâm thần và hành vi do sử dụng các dạng thuốc phiện",
+      "valid_subcodes": [
+        "F11.0",
+        "F11.1",
+        "F11.2",
+        "F11.3",
+        "F11.4",
+        "F11.5",
+        "F11.6",
+        "F11.7",
+        "F11.8",
+        "F11.9"
+      ]
+    },
+    "F12": {
+      "name": "Rối loạn tâm thần và hành vi do sử dụng cần sa",
+      "valid_subcodes": [
+        "F12.0",
+        "F12.1",
+        "F12.2",
+        "F12.3",
+        "F12.4",
+        "F12.5",
+        "F12.6",
+        "F12.7",
+        "F12.8",
+        "F12.9"
+      ]
+    },
+    "F13": {
+      "name": "Rối loạn tâm thần và hành vi do sử dụng các chất an dịu hoặc các thuốc ngủ",
+      "valid_subcodes": [
+        "F13.0",
+        "F13.1",
+        "F13.2",
+        "F13.3",
+        "F13.4",
+        "F13.5",
+        "F13.6",
+        "F13.7",
+        "F13.8",
+        "F13.9"
+      ]
+    },
+    "F14": {
+      "name": "Rối loạn tâm thần và hành vi do sử dụng cocain",
+      "valid_subcodes": [
+        "F14.0",
+        "F14.1",
+        "F14.2",
+        "F14.3",
+        "F14.4",
+        "F14.5",
+        "F14.6",
+        "F14.7",
+        "F14.8",
+        "F14.9"
+      ]
+    },
+    "F15": {
+      "name": "Rối loạn tâm thần và hành vi do sử dụng chất kích thích khác, bao gồm cả caffein",
+      "valid_subcodes": [
+        "F15.0",
+        "F15.1",
+        "F15.2",
+        "F15.3",
+        "F15.4",
+        "F15.5",
+        "F15.6",
+        "F15.7",
+        "F15.8",
+        "F15.9"
+      ]
+    },
+    "F17": {
+      "name": "Rối loạn tâm thần và hành vi do sử dụng thuốc lá",
+      "valid_subcodes": [
+        "F17.0",
+        "F17.1",
+        "F17.2",
+        "F17.3",
+        "F17.4",
+        "F17.5",
+        "F17.6",
+        "F17.7",
+        "F17.8",
+        "F17.9"
+      ]
+    },
+    "F18": {
+      "name": "Rối loạn tâm thần và hành vi do sử dụng dung môi dễ bay hơi",
+      "valid_subcodes": [
+        "F18.0",
+        "F18.1",
+        "F18.2",
+        "F18.3",
+        "F18.4",
+        "F18.5",
+        "F18.6",
+        "F18.7",
+        "F18.8",
+        "F18.9"
+      ]
+    },
+    "F19": {
+      "name": "Rối loạn tâm thần và hành vi do sử dụng nhiều loại ma túy và chất tác động tâm thần khác",
+      "valid_subcodes": [
+        "F19.0",
+        "F19.1",
+        "F19.2",
+        "F19.3",
+        "F19.4",
+        "F19.5",
+        "F19.6",
+        "F19.7",
+        "F19.8",
+        "F19.9"
+      ]
+    },
+    "F20": {
+      "name": "Tâm thần phân liệt",
+      "valid_subcodes": [
+        "F20.0",
+        "F20.1",
+        "F20.2",
+        "F20.3",
+        "F20.4",
+        "F20.5",
+        "F20.6",
+        "F20.8",
+        "F20.9"
+      ]
+    },
+    "F21": {
+      "name": "Rối loạn loại phân liệt",
+      "valid_subcodes": []
+    },
+    "F22": {
+      "name": "Rối loạn hoang tưởng dai dẳng",
+      "valid_subcodes": [
+        "F22.0",
+        "F22.8",
+        "F22.9"
+      ]
+    },
+    "F23": {
+      "name": "Rối loạn loạn thần cấp và nhất thời",
+      "valid_subcodes": [
+        "F23.0",
+        "F23.1",
+        "F23.2",
+        "F23.3",
+        "F23.8",
+        "F23.9"
+      ]
+    },
+    "F24": {
+      "name": "Rối loạn hoang tưởng cảm ứng",
+      "valid_subcodes": []
+    },
+    "F25": {
+      "name": "Rối loạn phân liệt cảm xúc",
+      "valid_subcodes": [
+        "F25.0",
+        "F25.1",
+        "F25.2",
+        "F25.8",
+        "F25.9"
+      ]
+    },
+    "F28": {
+      "name": "Rối loạn loạn thần không thực tổn khác",
+      "valid_subcodes": []
+    },
+    "F29": {
+      "name": "Loạn thần không thực tổn không biệt định",
+      "valid_subcodes": []
+    },
+    "F30": {
+      "name": "Giai đoạn hưng cảm",
+      "valid_subcodes": [
+        "F30.0",
+        "F30.1",
+        "F30.2",
+        "F30.8",
+        "F30.9"
+      ]
+    },
+    "F31": {
+      "name": "Rối loạn cảm xúc lưỡng cực",
+      "valid_subcodes": [
+        "F31.0",
+        "F31.1",
+        "F31.2",
+        "F31.3",
+        "F31.4",
+        "F31.5",
+        "F31.6",
+        "F31.7",
+        "F31.8",
+        "F31.9"
+      ]
+    },
+    "F32": {
+      "name": "Giai đoạn trầm cảm",
+      "valid_subcodes": [
+        "F32.0",
+        "F32.1",
+        "F32.2",
+        "F32.3",
+        "F32.8",
+        "F32.9"
+      ]
+    },
+    "F33": {
+      "name": "Rối loạn trầm cảm tái diễn",
+      "valid_subcodes": [
+        "F33.0",
+        "F33.1",
+        "F33.2",
+        "F33.3",
+        "F33.4",
+        "F33.8",
+        "F33.9"
+      ]
+    },
+    "F34": {
+      "name": "Rối loạn khí sắc [cảm xúc] dai dẳng",
+      "valid_subcodes": [
+        "F34.0",
+        "F34.1",
+        "F34.8",
+        "F34.9"
+      ]
+    },
+    "F38": {
+      "name": "Rối loạn khí sắc [cảm xúc] khác",
+      "valid_subcodes": [
+        "F38.0",
+        "F38.1",
+        "F38.8"
+      ]
+    },
+    "F39": {
+      "name": "Rối loạn khí sắc (cảm xúc) biệt định",
+      "valid_subcodes": []
+    },
+    "F40": {
+      "name": "Rối loạn lo âu ám ảnh sợ hãi",
+      "valid_subcodes": [
+        "F40.0",
+        "F40.1",
+        "F40.2",
+        "F40.8",
+        "F40.9"
+      ]
+    },
+    "F41": {
+      "name": "Các rối loạn lo âu khác",
+      "valid_subcodes": [
+        "F41.0",
+        "F41.1",
+        "F41.2",
+        "F41.3",
+        "F41.8",
+        "F41.9"
+      ]
+    },
+    "F42": {
+      "name": "Rối loạn ám ảnh nghi thức",
+      "valid_subcodes": [
+        "F42.0",
+        "F42.1",
+        "F42.2",
+        "F42.8",
+        "F42.9"
+      ]
+    },
+    "F43": {
+      "name": "Phản ứng với stress trầm trọng và rối loạn sự thích ứng",
+      "valid_subcodes": [
+        "F43.0",
+        "F43.1",
+        "F43.2",
+        "F43.8",
+        "F43.9"
+      ]
+    },
+    "F44": {
+      "name": "Các rối loạn phân ly [chuyển di]",
+      "valid_subcodes": [
+        "F44.0",
+        "F44.1",
+        "F44.2",
+        "F44.3",
+        "F44.4",
+        "F44.5",
+        "F44.6",
+        "F44.7",
+        "F44.8",
+        "F44.9"
+      ]
+    },
+    "F45": {
+      "name": "Rối loạn dạng cơ thể",
+      "valid_subcodes": [
+        "F45.0",
+        "F45.1",
+        "F45.2",
+        "F45.3",
+        "F45.4",
+        "F45.8",
+        "F45.9"
+      ]
+    },
+    "F48": {
+      "name": "Các rối loạn tâm căn khác",
+      "valid_subcodes": [
+        "F48.0",
+        "F48.1",
+        "F48.8",
+        "F48.9"
+      ]
+    },
+    "F50": {
+      "name": "Các rối loạn ăn uống",
+      "valid_subcodes": [
+        "F50.0",
+        "F50.1",
+        "F50.2",
+        "F50.3",
+        "F50.4",
+        "F50.5",
+        "F50.8",
+        "F50.9"
+      ]
+    },
+    "F51": {
+      "name": "Rối loạn giấc ngủ không thực tổn",
+      "valid_subcodes": [
+        "F51.0",
+        "F51.1",
+        "F51.2",
+        "F51.3",
+        "F51.4",
+        "F51.5",
+        "F51.8",
+        "F51.9"
+      ]
+    },
+    "F52": {
+      "name": "Loạn chức năng tình dục, không do rối loạn hoặc bệnh thực tổn",
+      "valid_subcodes": [
+        "F52.0",
+        "F52.1",
+        "F52.2",
+        "F52.3",
+        "F52.4",
+        "F52.5",
+        "F52.6",
+        "F52.7",
+        "F52.8",
+        "F52.9"
+      ]
+    },
+    "F53": {
+      "name": "Rối loạn hành vi và tâm thần kết hợp với thời kì sinh đẻ, không phân loại ở nơi khác",
+      "valid_subcodes": [
+        "F53.0",
+        "F53.1",
+        "F53.8",
+        "F53.9"
+      ]
+    },
+    "F54": {
+      "name": "Các nhân tố tâm lý và hành vi kết hợp với rối loạn hoặc các bệnh phân loại ở nơi khác",
+      "valid_subcodes": []
+    },
+    "F55": {
+      "name": "Lạm dụng các chất không gây nghiện",
+      "valid_subcodes": []
+    },
+    "F60": {
+      "name": "Rối loạn nhân cách đặc hiệu",
+      "valid_subcodes": [
+        "F60.0",
+        "F60.1",
+        "F60.2",
+        "F60.3",
+        "F60.4",
+        "F60.5",
+        "F60.6",
+        "F60.7",
+        "F60.8",
+        "F60.9"
+      ]
+    },
+    "F61": {
+      "name": "Rối loạn nhân cách khác và hỗn hợp",
+      "valid_subcodes": []
+    },
+    "F62": {
+      "name": "Biến đổi nhân cách kéo dài, không thể quy cho một tổn thương hay bệnh não",
+      "valid_subcodes": [
+        "F62.0",
+        "F62.1",
+        "F62.8",
+        "F62.9"
+      ]
+    },
+    "F63": {
+      "name": "Rối loạn thói quen và xung động",
+      "valid_subcodes": [
+        "F63.0",
+        "F63.1",
+        "F63.2",
+        "F63.3",
+        "F63.8",
+        "F63.9"
+      ]
+    },
+    "F64": {
+      "name": "Các rối loạn phân định giới tính",
+      "valid_subcodes": [
+        "F64.0",
+        "F64.1",
+        "F64.2",
+        "F64.8",
+        "F64.9"
+      ]
+    },
+    "F65": {
+      "name": "Rối loạn trong ưa chuộng tình dục",
+      "valid_subcodes": [
+        "F65.0",
+        "F65.1",
+        "F65.2",
+        "F65.3",
+        "F65.4",
+        "F65.5",
+        "F65.6",
+        "F65.8",
+        "F65.9"
+      ]
+    },
+    "F66": {
+      "name": "Những rối loạn tâm lý và hành vi kết hợp với sự phát triển và định hướng tình dục",
+      "valid_subcodes": [
+        "F66.0",
+        "F66.1",
+        "F66.2",
+        "F66.8",
+        "F66.9"
+      ]
+    },
+    "F68": {
+      "name": "Rối loạn khác về hành vi và nhân cách ở người trưởng thành",
+      "valid_subcodes": [
+        "F68.0",
+        "F68.1",
+        "F68.8"
+      ]
+    },
+    "F69": {
+      "name": "Rối loạn không biệt định về nhân cách và hành vi ở người trưởng thành",
+      "valid_subcodes": []
+    },
+    "F70": {
+      "name": "Chậm phát triển tâm thần nhẹ",
+      "valid_subcodes": []
+    },
+    "F71": {
+      "name": "Chậm phát triển tâm thần trung bình",
+      "valid_subcodes": []
+    },
+    "F72": {
+      "name": "Chậm phát triển tâm thần nặng",
+      "valid_subcodes": []
+    },
+    "F73": {
+      "name": "Chậm phát triển tâm thần nghiêm trọng",
+      "valid_subcodes": []
+    },
+    "F78": {
+      "name": "Chậm phát triển tâm thần khác",
+      "valid_subcodes": []
+    },
+    "F79": {
+      "name": "Chậm phát triển tâm thần không biệt định",
+      "valid_subcodes": []
+    },
+    "F80": {
+      "name": "Các rối loạn đặc hiệu về phát triển lời nói và ngôn ngữ",
+      "valid_subcodes": [
+        "F80.0",
+        "F80.1",
+        "F80.2",
+        "F80.3",
+        "F80.8",
+        "F80.9"
+      ]
+    },
+    "F81": {
+      "name": "Rối loạn đặc hiệu về phát triển các kỹ năng ở trường",
+      "valid_subcodes": [
+        "F81.0",
+        "F81.1",
+        "F81.2",
+        "F81.3",
+        "F81.8",
+        "F81.9"
+      ]
+    },
+    "F84": {
+      "name": "Rối loạn lan tỏa sự phát triển",
+      "valid_subcodes": [
+        "F84.0",
+        "F84.1",
+        "F84.2",
+        "F84.3",
+        "F84.4",
+        "F84.5",
+        "F84.8",
+        "F84.9"
+      ]
+    },
+    "F88": {
+      "name": "Các rối loạn khác của phát triển tâm lý",
+      "valid_subcodes": []
+    },
+    "F89": {
+      "name": "Rối loạn không biệt định của phát triển tâm lý",
+      "valid_subcodes": []
+    },
+    "F90": {
+      "name": "Các rối loạn tăng động",
+      "valid_subcodes": [
+        "F90.0",
+        "F90.1",
+        "F90.8",
+        "F90.9"
+      ]
+    },
+    "F91": {
+      "name": "Rối loạn hành vi",
+      "valid_subcodes": [
+        "F91.0",
+        "F91.1",
+        "F91.2",
+        "F91.3",
+        "F91.8",
+        "F91.9"
+      ]
+    },
+    "F92": {
+      "name": "Các rối loạn hỗn hợp về hành vi và cảm xúc",
+      "valid_subcodes": [
+        "F92.0",
+        "F92.8",
+        "F92.9"
+      ]
+    },
+    "F93": {
+      "name": "Rối loạn cảm xúc với sự khởi phát đặc biệt ở trẻ em",
+      "valid_subcodes": [
+        "F93.0",
+        "F93.1",
+        "F93.2",
+        "F93.3",
+        "F93.8",
+        "F93.9"
+      ]
+    },
+    "F94": {
+      "name": "Các rối loạn hoạt động xã hội khởi phát đặc biệt ở tuổi trẻ em và thanh thiếu niên",
+      "valid_subcodes": [
+        "F94.0",
+        "F94.1",
+        "F94.2",
+        "F94.8",
+        "F94.9"
+      ]
+    },
+    "F95": {
+      "name": "Các rối loạn Tic",
+      "valid_subcodes": [
+        "F95.0",
+        "F95.1",
+        "F95.2",
+        "F95.8",
+        "F95.9"
+      ]
+    },
+    "F98": {
+      "name": "Các rối loạn tác phong và cảm xúc khác thường khởi phát ở lứa tuổi trẻ em và thanh thiếu niên",
+      "valid_subcodes": [
+        "F98.0",
+        "F98.1",
+        "F98.2",
+        "F98.3",
+        "F98.4",
+        "F98.5",
+        "F98.6",
+        "F98.8",
+        "F98.9"
+      ]
+    },
+    "F99": {
+      "name": "Rối loạn tâm thần không biệt định khác",
+      "valid_subcodes": []
+    },
+    "G04": {
+      "name": "Viêm não, viêm tủy và viêm não-tủy",
+      "valid_subcodes": [
+        "G04.0",
+        "G04.1",
+        "G04.2",
+        "G04.8",
+        "G04.9"
+      ]
+    },
+    "G20": {
+      "name": "Bệnh Parkinson",
+      "valid_subcodes": []
+    },
+    "G21": {
+      "name": "Hội chứng Parkinson thứ phát",
+      "valid_subcodes": [
+        "G21.0",
+        "G21.1",
+        "G21.2",
+        "G21.3",
+        "G21.4",
+        "G21.8",
+        "G21.9"
+      ]
+    },
+    "G35": {
+      "name": "Xơ cứng rải rác",
+      "valid_subcodes": []
+    },
+    "G40": {
+      "name": "Động kinh",
+      "valid_subcodes": [
+        "G40.0",
+        "G40.1",
+        "G40.2",
+        "G40.3",
+        "G40.4",
+        "G40.5",
+        "G40.6",
+        "G40.7",
+        "G40.8",
+        "G40.9"
+      ]
+    },
+    "G82": {
+      "name": "Liệt hai chân và liệt tứ chi",
+      "valid_subcodes": [
+        "G82.0",
+        "G82.1",
+        "G82.2",
+        "G82.3",
+        "G82.4",
+        "G82.5"
+      ]
+    },
+    "H34": {
+      "name": "Tắc mạch võng mạc",
+      "valid_subcodes": [
+        "H34.0",
+        "H34.1",
+        "H34.2",
+        "H34.8",
+        "H34.9"
+      ]
+    },
+    "I00": {
+      "name": "Thấp không có tổn thương tim",
+      "valid_subcodes": []
+    },
+    "I01": {
+      "name": "Thấp ảnh hưởng đến tim",
+      "valid_subcodes": [
+        "I01.0",
+        "I01.1",
+        "I01.2",
+        "I01.8",
+        "I01.9"
+      ]
+    },
+    "I02": {
+      "name": "Múa giật do thấp",
+      "valid_subcodes": [
+        "I02.0",
+        "I02.9"
+      ]
+    },
+    "I05": {
+      "name": "Bệnh lý van hai lá do thấp",
+      "valid_subcodes": [
+        "I05.0",
+        "I05.1",
+        "I05.2",
+        "I05.8",
+        "I05.9"
+      ]
+    },
+    "I06": {
+      "name": "Bệnh van động mạch chủ do thấp",
+      "valid_subcodes": [
+        "I06.0",
+        "I06.1",
+        "I06.2",
+        "I06.8",
+        "I06.9"
+      ]
+    },
+    "I07": {
+      "name": "Bệnh lý van ba lá do thấp",
+      "valid_subcodes": [
+        "I07.0",
+        "I07.1",
+        "I07.2",
+        "I07.8",
+        "I07.9"
+      ]
+    },
+    "I08": {
+      "name": "Bệnh lý của nhiều van tim",
+      "valid_subcodes": [
+        "I08.0",
+        "I08.1",
+        "I08.2",
+        "I08.3",
+        "I08.8",
+        "I08.9"
+      ]
+    },
+    "I09": {
+      "name": "Các bệnh tim khác do thấp",
+      "valid_subcodes": [
+        "I09.0",
+        "I09.1",
+        "I09.2",
+        "I09.8",
+        "I09.9"
+      ]
+    },
+    "I10": {
+      "name": "Bệnh lý tăng huyết áp",
+      "valid_subcodes": []
+    },
+    "I11": {
+      "name": "Bệnh tim do tăng huyết áp",
+      "valid_subcodes": [
+        "I11.0",
+        "I11.9"
+      ]
+    },
+    "I12": {
+      "name": "Bệnh thận do tăng huyết áp",
+      "valid_subcodes": [
+        "I12.0",
+        "I12.9"
+      ]
+    },
+    "I13": {
+      "name": "Bệnh tim và thận do tăng huyết áp",
+      "valid_subcodes": [
+        "I13.0",
+        "I13.1",
+        "I13.2",
+        "I13.9"
+      ]
+    },
+    "I15": {
+      "name": "Tăng huyết áp thứ phát",
+      "valid_subcodes": [
+        "I15.0",
+        "I15.1",
+        "I15.2",
+        "I15.8",
+        "I15.9"
+      ]
+    },
+    "I20": {
+      "name": "Cơn đau thắt ngực",
+      "valid_subcodes": [
+        "I20.0",
+        "I20.1",
+        "I20.8",
+        "I20.9"
+      ]
+    },
+    "I21": {
+      "name": "Nhồi máu cơ tim cấp",
+      "valid_subcodes": [
+        "I21.0",
+        "I21.1",
+        "I21.2",
+        "I21.3",
+        "I21.4",
+        "I21.9"
+      ]
+    },
+    "I22": {
+      "name": "Nhồi máu cơ tim tiến triển",
+      "valid_subcodes": [
+        "I22.0",
+        "I22.1",
+        "I22.8",
+        "I22.9"
+      ]
+    },
+    "I23": {
+      "name": "Một số biến chứng thường gặp sau nhồi máu cơ tim cấp",
+      "valid_subcodes": [
+        "I23.0",
+        "I23.1",
+        "I23.2",
+        "I23.3",
+        "I23.4",
+        "I23.5",
+        "I23.6",
+        "I23.8"
+      ]
+    },
+    "I24": {
+      "name": "Bệnh tim do thiếu máu cục bộ cấp khác",
+      "valid_subcodes": [
+        "I24.0",
+        "I24.1",
+        "I24.8",
+        "I24.9"
+      ]
+    },
+    "I25": {
+      "name": "Bệnh tim thiếu máu cục bộ mạn",
+      "valid_subcodes": [
+        "I25.0",
+        "I25.1",
+        "I25.2",
+        "I25.3",
+        "I25.4",
+        "I25.5",
+        "I25.6",
+        "I25.8",
+        "I25.9"
+      ]
+    },
+    "I26": {
+      "name": "Tắc mạch phổi",
+      "valid_subcodes": [
+        "I26.0",
+        "I26.9"
+      ]
+    },
+    "I27": {
+      "name": "Các bệnh tim do phổi khác",
+      "valid_subcodes": [
+        "I27.0",
+        "I27.1",
+        "I27.2",
+        "I27.8",
+        "I27.9"
+      ]
+    },
+    "I28": {
+      "name": "Bệnh mạch máu phổi khác",
+      "valid_subcodes": [
+        "I28.0",
+        "I28.1",
+        "I28.8",
+        "I28.9"
+      ]
+    },
+    "I30": {
+      "name": "Viêm màng ngoài tim cấp",
+      "valid_subcodes": [
+        "I30.0",
+        "I30.1",
+        "I30.8",
+        "I30.9"
+      ]
+    },
+    "I31": {
+      "name": "Các bệnh màng ngoài tim khác",
+      "valid_subcodes": [
+        "I31.0",
+        "I31.1",
+        "I31.2",
+        "I31.3",
+        "I31.8",
+        "I31.9"
+      ]
+    },
+    "I32": {
+      "name": "Viêm màng ngoài tim trong bệnh phân loại nơi khác",
+      "valid_subcodes": [
+        "I32.0",
+        "I32.1",
+        "I32.8"
+      ]
+    },
+    "I33": {
+      "name": "Viêm nội tâm mạc cấp và bán cấp",
+      "valid_subcodes": [
+        "I33.0",
+        "I33.9"
+      ]
+    },
+    "I34": {
+      "name": "Bệnh van hai lá không do thấp",
+      "valid_subcodes": [
+        "I34.0",
+        "I34.1",
+        "I34.2",
+        "I34.8",
+        "I34.9"
+      ]
+    },
+    "I35": {
+      "name": "Bệnh van động mạch chủ không do thấp",
+      "valid_subcodes": [
+        "I35.0",
+        "I35.1",
+        "I35.2",
+        "I35.8",
+        "I35.9"
+      ]
+    },
+    "I36": {
+      "name": "Bệnh van ba lá không do thấp",
+      "valid_subcodes": [
+        "I36.0",
+        "I36.1",
+        "I36.2",
+        "I36.8",
+        "I36.9"
+      ]
+    },
+    "I37": {
+      "name": "Bệnh van động mạch phổi",
+      "valid_subcodes": [
+        "I37.0",
+        "I37.1",
+        "I37.2",
+        "I37.8",
+        "I37.9"
+      ]
+    },
+    "I38": {
+      "name": "Viêm nội tâm mạc, không xác định",
+      "valid_subcodes": []
+    },
+    "I39": {
+      "name": "Viêm nội tâm mạc và bệnh van tim trong bệnh phân loại nơi khác",
+      "valid_subcodes": [
+        "I39.0",
+        "I39.1",
+        "I39.2",
+        "I39.3",
+        "I39.4",
+        "I39.8"
+      ]
+    },
+    "I40": {
+      "name": "Viêm cơ tim cấp",
+      "valid_subcodes": [
+        "I40.0",
+        "I40.1",
+        "I40.8",
+        "I40.9"
+      ]
+    },
+    "I41": {
+      "name": "Viêm cơ tim trong bệnh phân loại nơi khác",
+      "valid_subcodes": [
+        "I41.0",
+        "I41.1",
+        "I41.2",
+        "I41.8"
+      ]
+    },
+    "I42": {
+      "name": "Bệnh cơ tim",
+      "valid_subcodes": [
+        "I42.0",
+        "I42.1",
+        "I42.2",
+        "I42.3",
+        "I42.4",
+        "I42.5",
+        "I42.6",
+        "I42.7",
+        "I42.8",
+        "I42.9"
+      ]
+    },
+    "I43": {
+      "name": "Bệnh cơ tim trong bệnh phân loại nơi khác",
+      "valid_subcodes": [
+        "I43.0",
+        "I43.1",
+        "I43.2",
+        "I43.8"
+      ]
+    },
+    "I44": {
+      "name": "Blốc nhĩ thất và nhánh trái",
+      "valid_subcodes": [
+        "I44.0",
+        "I44.1",
+        "I44.2",
+        "I44.3",
+        "I44.4",
+        "I44.5",
+        "I44.6",
+        "I44.7"
+      ]
+    },
+    "I45": {
+      "name": "Rối loạn dẫn truyền khác",
+      "valid_subcodes": [
+        "I45.0",
+        "I45.1",
+        "I45.2",
+        "I45.3",
+        "I45.4",
+        "I45.5",
+        "I45.6",
+        "I45.8",
+        "I45.9"
+      ]
+    },
+    "I46": {
+      "name": "Ngưng tim",
+      "valid_subcodes": [
+        "I46.0",
+        "I46.1",
+        "I46.9"
+      ]
+    },
+    "I47": {
+      "name": "Nhịp nhanh kịch phát",
+      "valid_subcodes": [
+        "I47.0",
+        "I47.1",
+        "I47.2",
+        "I47.9"
+      ]
+    },
+    "I48": {
+      "name": "Rung nhĩ và cuồng nhĩ",
+      "valid_subcodes": [
+        "I48.0",
+        "I48.1",
+        "I48.2",
+        "I48.3",
+        "I48.4",
+        "I48.9"
+      ]
+    },
+    "I49": {
+      "name": "Loạn nhịp tim khác",
+      "valid_subcodes": [
+        "I49.0",
+        "I49.1",
+        "I49.2",
+        "I49.3",
+        "I49.4",
+        "I49.5",
+        "I49.8",
+        "I49.9"
+      ]
+    },
+    "I50": {
+      "name": "Suy tim",
+      "valid_subcodes": [
+        "I50.0",
+        "I50.1",
+        "I50.9"
+      ]
+    },
+    "I51": {
+      "name": "Biến chứng và bệnh lý được xác định là do bệnh tim mạch",
+      "valid_subcodes": [
+        "I51.0",
+        "I51.1",
+        "I51.2",
+        "I51.3",
+        "I51.4",
+        "I51.5",
+        "I51.6",
+        "I51.7",
+        "I51.8",
+        "I51.9"
+      ]
+    },
+    "I52": {
+      "name": "Các bệnh lý khác trong các bệnh đã phân loại nơi khác",
+      "valid_subcodes": [
+        "I52.0",
+        "I52.1",
+        "I52.8"
+      ]
+    },
+    "I60": {
+      "name": "Xuất huyết dưới màng nhện",
+      "valid_subcodes": [
+        "I60.0",
+        "I60.1",
+        "I60.2",
+        "I60.3",
+        "I60.4",
+        "I60.5",
+        "I60.6",
+        "I60.7",
+        "I60.8",
+        "I60.9"
+      ]
+    },
+    "I61": {
+      "name": "Xuất huyết nội sọ",
+      "valid_subcodes": [
+        "I61.0",
+        "I61.1",
+        "I61.2",
+        "I61.3",
+        "I61.4",
+        "I61.5",
+        "I61.6",
+        "I61.8",
+        "I61.9"
+      ]
+    },
+    "I62": {
+      "name": "Xuất huyết nội sọ không do chấn thương khác",
+      "valid_subcodes": [
+        "I62.0",
+        "I62.1",
+        "I62.9"
+      ]
+    },
+    "I63": {
+      "name": "Nhồi máu não",
+      "valid_subcodes": [
+        "I63.0",
+        "I63.1",
+        "I63.2",
+        "I63.3",
+        "I63.4",
+        "I63.5",
+        "I63.6",
+        "I63.8",
+        "I63.9"
+      ]
+    },
+    "I64": {
+      "name": "Đột quị, không xác định do xuất huyết hay nhồi máu (Tai biến mạch máu não)",
+      "valid_subcodes": []
+    },
+    "I65": {
+      "name": "Nghẽn tắc và hẹp động mạch trước não, không dẫn đến nhồi máu não",
+      "valid_subcodes": [
+        "I65.0",
+        "I65.1",
+        "I65.2",
+        "I65.3",
+        "I65.8",
+        "I65.9"
+      ]
+    },
+    "I66": {
+      "name": "Nghẽn tắc và hẹp động mạch não, không dẫn đến nhồi máu não",
+      "valid_subcodes": [
+        "I66.0",
+        "I66.1",
+        "I66.2",
+        "I66.3",
+        "I66.4",
+        "I66.8",
+        "I66.9"
+      ]
+    },
+    "I67": {
+      "name": "Bệnh mạch máu não khác",
+      "valid_subcodes": [
+        "I67.0",
+        "I67.1",
+        "I67.2",
+        "I67.3",
+        "I67.4",
+        "I67.5",
+        "I67.6",
+        "I67.7",
+        "I67.8",
+        "I67.9"
+      ]
+    },
+    "I68": {
+      "name": "Bệnh mạch máu não trong bệnh phân loại nơi khác",
+      "valid_subcodes": [
+        "I68.0",
+        "I68.1",
+        "I68.2",
+        "I68.8"
+      ]
+    },
+    "I69": {
+      "name": "Di chứng bệnh mạch máu não",
+      "valid_subcodes": [
+        "I69.0",
+        "I69.1",
+        "I69.2",
+        "I69.3",
+        "I69.4",
+        "I69.8"
+      ]
+    },
+    "I70": {
+      "name": "Xơ vữa động mạch",
+      "valid_subcodes": [
+        "I70.0",
+        "I70.1",
+        "I70.2",
+        "I70.8",
+        "I70.9"
+      ]
+    },
+    "I71": {
+      "name": "Phình và tách thành động mạch chủ",
+      "valid_subcodes": [
+        "I71.0",
+        "I71.1",
+        "I71.2",
+        "I71.3",
+        "I71.4",
+        "I71.5",
+        "I71.6",
+        "I71.8",
+        "I71.9"
+      ]
+    },
+    "I72": {
+      "name": "Phình và tách động mạch khác",
+      "valid_subcodes": [
+        "I72.0",
+        "I72.1",
+        "I72.2",
+        "I72.3",
+        "I72.4",
+        "I72.5",
+        "I72.6",
+        "I72.8",
+        "I72.9"
+      ]
+    },
+    "I73": {
+      "name": "Bệnh mạch máu ngoại biên",
+      "valid_subcodes": [
+        "I73.0",
+        "I73.1",
+        "I73.8",
+        "I73.9"
+      ]
+    },
+    "I74": {
+      "name": "Thuyên tắc và huyết khối động mạch",
+      "valid_subcodes": [
+        "I74.0",
+        "I74.1",
+        "I74.2",
+        "I74.3",
+        "I74.4",
+        "I74.5",
+        "I74.8",
+        "I74.9"
+      ]
+    },
+    "I77": {
+      "name": "Các bệnh khác của hệ động mạch và tiểu động mạch",
+      "valid_subcodes": [
+        "I77.0",
+        "I77.1",
+        "I77.2",
+        "I77.3",
+        "I77.4",
+        "I77.5",
+        "I77.6",
+        "I77.8",
+        "I77.9"
+      ]
+    },
+    "I78": {
+      "name": "Bệnh của mao mạch",
+      "valid_subcodes": [
+        "I78.0",
+        "I78.1",
+        "I78.8",
+        "I78.9"
+      ]
+    },
+    "I79": {
+      "name": "Bệnh động mạch, tiểu động mạch và mao mạch trong bệnh phân loại nơi khác",
+      "valid_subcodes": [
+        "I79.0",
+        "I79.1",
+        "I79.2",
+        "I79.8"
+      ]
+    },
+    "I80": {
+      "name": "Viêm tĩnh mạch và tắc tĩnh mạch",
+      "valid_subcodes": [
+        "I80.0",
+        "I80.1",
+        "I80.2",
+        "I80.3",
+        "I80.8",
+        "I80.9"
+      ]
+    },
+    "I81": {
+      "name": "Huyết khối tĩnh mạch cửa",
+      "valid_subcodes": []
+    },
+    "I82": {
+      "name": "Các thuyên tắc và huyết khối tĩnh mạch khác",
+      "valid_subcodes": [
+        "I82.0",
+        "I82.1",
+        "I82.2",
+        "I82.3",
+        "I82.8",
+        "I82.9"
+      ]
+    },
+    "I83": {
+      "name": "Dãn tĩnh mạch chi dưới",
+      "valid_subcodes": [
+        "I83.0",
+        "I83.1",
+        "I83.2",
+        "I83.9"
+      ]
+    },
+    "I85": {
+      "name": "Dãn tĩnh mạch thực quản",
+      "valid_subcodes": [
+        "I85.0",
+        "I85.9"
+      ]
+    },
+    "I86": {
+      "name": "Dãn tĩnh mạch vị trí khác",
+      "valid_subcodes": [
+        "I86.0",
+        "I86.1",
+        "I86.2",
+        "I86.3",
+        "I86.4",
+        "I86.8"
+      ]
+    },
+    "I87": {
+      "name": "Rối loạn khác của tĩnh mạch",
+      "valid_subcodes": [
+        "I87.0",
+        "I87.1",
+        "I87.2",
+        "I87.8",
+        "I87.9"
+      ]
+    },
+    "I88": {
+      "name": "Viêm hạch bạch huyết không đặc hiệu",
+      "valid_subcodes": [
+        "I88.0",
+        "I88.1",
+        "I88.8",
+        "I88.9"
+      ]
+    },
+    "I89": {
+      "name": "Rối loạn mạch bạch huyết và hạch bạch huyết không nhiễm trùng khác",
+      "valid_subcodes": [
+        "I89.0",
+        "I89.1",
+        "I89.8",
+        "I89.9"
+      ]
+    },
+    "I95": {
+      "name": "Huyết áp thấp (hạ huyết áp)",
+      "valid_subcodes": [
+        "I95.0",
+        "I95.1",
+        "I95.2",
+        "I95.8",
+        "I95.9"
+      ]
+    },
+    "I97": {
+      "name": "Rối loạn hệ tuần hoàn sau phẫu thuật, chưa phân loại nơi khác",
+      "valid_subcodes": [
+        "I97.0",
+        "I97.1",
+        "I97.2",
+        "I97.8",
+        "I97.9"
+      ]
+    },
+    "I98": {
+      "name": "Rối loạn khác của hệ tuần hoàn trong bệnh phân loại nơi khác",
+      "valid_subcodes": [
+        "I98.0",
+        "I98.1",
+        "I98.2",
+        "I98.3",
+        "I98.8"
+      ]
+    },
+    "I99": {
+      "name": "Rối loạn hệ tuần hoàn khác và không xác định của hệ tuần hoàn",
+      "valid_subcodes": []
+    },
+    "J44": {
+      "name": "Các bệnh phổi tắc nghẽn mãn tính khác",
+      "valid_subcodes": [
+        "J44.0",
+        "J44.1",
+        "J44.8",
+        "J44.9"
+      ]
+    },
+    "J82": {
+      "name": "Tăng bạch cầu ái toan ở phổi, chưa được phân loại ở nơi khác",
+      "valid_subcodes": []
+    },
+    "J84": {
+      "name": "Bệnh phổi mô kẽ khác",
+      "valid_subcodes": [
+        "J84.0",
+        "J84.1",
+        "J84.8",
+        "J84.9"
+      ]
+    },
+    "J85": {
+      "name": "Áp xe phổi và trung thất",
+      "valid_subcodes": [
+        "J85.0",
+        "J85.1",
+        "J85.2",
+        "J85.3"
+      ]
+    },
+    "J86": {
+      "name": "Mủ lồng ngực",
+      "valid_subcodes": [
+        "J86.0",
+        "J86.9"
+      ]
+    },
+    "K50": {
+      "name": "Bệnh Crohn (viêm ruột từng vùng)",
+      "valid_subcodes": [
+        "K50.0",
+        "K50.1",
+        "K50.8",
+        "K50.9"
+      ]
+    },
+    "L03": {
+      "name": "Viêm mô bào",
+      "valid_subcodes": [
+        "L03.0",
+        "L03.1",
+        "L03.2",
+        "L03.3",
+        "L03.8",
+        "L03.9"
+      ]
+    },
+    "L10": {
+      "name": "Pemphigus",
+      "valid_subcodes": [
+        "L10.0",
+        "L10.1",
+        "L10.2",
+        "L10.3",
+        "L10.4",
+        "L10.5",
+        "L10.8",
+        "L10.9"
+      ]
+    },
+    "L12": {
+      "name": "Pemphigus",
+      "valid_subcodes": [
+        "L12.0",
+        "L12.1",
+        "L12.2",
+        "L12.3",
+        "L12.8",
+        "L12.9"
+      ]
+    },
+    "M08": {
+      "name": "Viêm khớp trẻ em",
+      "valid_subcodes": [
+        "M08.0",
+        "M08.1",
+        "M08.2",
+        "M08.3",
+        "M08.4",
+        "M08.8",
+        "M08.9"
+      ]
+    },
+    "M10": {
+      "name": "Gút (thống phong)",
+      "valid_subcodes": [
+        "M10.0",
+        "M10.1",
+        "M10.2",
+        "M10.3",
+        "M10.4",
+        "M10.9"
+      ]
+    },
+    "M34": {
+      "name": "Xơ cứng toàn thể",
+      "valid_subcodes": [
+        "M34.0",
+        "M34.1",
+        "M34.2",
+        "M34.8",
+        "M34.9"
+      ]
+    },
+    "M35": {
+      "name": "Các tổn thương hệ thống khác của mô liên kết",
+      "valid_subcodes": [
+        "M35.0",
+        "M35.1",
+        "M35.2",
+        "M35.3",
+        "M35.4",
+        "M35.5",
+        "M35.6",
+        "M35.7",
+        "M35.8",
+        "M35.9"
+      ]
+    },
+    "M40": {
+      "name": "Gù và ưỡn cột sống",
+      "valid_subcodes": [
+        "M40.0",
+        "M40.1",
+        "M40.2",
+        "M40.3",
+        "M40.4",
+        "M40.5"
+      ]
+    },
+    "M41": {
+      "name": "Vẹo cột sống",
+      "valid_subcodes": [
+        "M41.0",
+        "M41.1",
+        "M41.2",
+        "M41.3",
+        "M41.4",
+        "M41.5",
+        "M41.8",
+        "M41.9"
+      ]
+    },
+    "M45": {
+      "name": "Bệnh viêm cột sống dính khớp",
+      "valid_subcodes": []
+    },
+    "M86": {
+      "name": "viêm xương tủy",
+      "valid_subcodes": [
+        "M86.0",
+        "M86.1",
+        "M86.2",
+        "M86.3",
+        "M86.4",
+        "M86.5",
+        "M86.6",
+        "M86.8",
+        "M86.9"
+      ]
+    },
+    "O01": {
+      "name": "Chửa trứng",
+      "valid_subcodes": [
+        "O01.0",
+        "O01.1",
+        "O01.9"
+      ]
+    },
+    "O08": {
+      "name": "Biến chứng sau sẩy thai, chửa ngoài tử cung và chửa trứng",
+      "valid_subcodes": [
+        "O08.0",
+        "O08.1",
+        "O08.2",
+        "O08.3",
+        "O08.4",
+        "O08.5",
+        "O08.6",
+        "O08.7",
+        "O08.8",
+        "O08.9"
+      ]
+    },
+    "O14": {
+      "name": "Tiền sản giật",
+      "valid_subcodes": [
+        "O14.0",
+        "O14.1",
+        "O14.2",
+        "O14.9"
+      ]
+    },
+    "O24": {
+      "name": "Đái tháo đường trong khi có thai",
+      "valid_subcodes": [
+        "O24.0",
+        "O24.1",
+        "O24.2",
+        "O24.3",
+        "O24.4",
+        "O24.9"
+      ]
+    },
+    "O44": {
+      "name": "Rau tiền đạo",
+      "valid_subcodes": [
+        "O44.0",
+        "O44.1"
+      ]
+    },
+    "Q03": {
+      "name": "Não úng thủy bẩm sinh",
+      "valid_subcodes": [
+        "Q03.0",
+        "Q03.1",
+        "Q03.8",
+        "Q03.9"
+      ]
+    },
+    "Q04": {
+      "name": "Dị tật bẩm sinh khác của não",
+      "valid_subcodes": [
+        "Q04.0",
+        "Q04.1",
+        "Q04.2",
+        "Q04.3",
+        "Q04.4",
+        "Q04.5",
+        "Q04.6",
+        "Q04.8",
+        "Q04.9"
+      ]
+    },
+    "Q06": {
+      "name": "Các dị tật bẩm sinh khác của tủy sống",
+      "valid_subcodes": [
+        "Q06.0",
+        "Q06.1",
+        "Q06.2",
+        "Q06.3",
+        "Q06.4",
+        "Q06.8",
+        "Q06.9"
+      ]
+    },
+    "Q20": {
+      "name": "Các dị tật bẩm sinh của các buồng tim và bộ phận nối",
+      "valid_subcodes": [
+        "Q20.0",
+        "Q20.1",
+        "Q20.2",
+        "Q20.3",
+        "Q20.4",
+        "Q20.5",
+        "Q20.6",
+        "Q20.8",
+        "Q20.9"
+      ]
+    },
+    "Q21": {
+      "name": "Các dị tật bẩm sinh của vách tim",
+      "valid_subcodes": [
+        "Q21.0",
+        "Q21.1",
+        "Q21.2",
+        "Q21.3",
+        "Q21.4",
+        "Q21.8",
+        "Q21.9"
+      ]
+    },
+    "Q22": {
+      "name": "Các dị tật bẩm sinh của van ba lá và động mạch phổi",
+      "valid_subcodes": [
+        "Q22.0",
+        "Q22.1",
+        "Q22.2",
+        "Q22.3",
+        "Q22.4",
+        "Q22.5",
+        "Q22.6",
+        "Q22.8",
+        "Q22.9"
+      ]
+    },
+    "Q23": {
+      "name": "Các dị tật bẩm sinh của van hai lá và động mạch chủ",
+      "valid_subcodes": [
+        "Q23.0",
+        "Q23.1",
+        "Q23.2",
+        "Q23.3",
+        "Q23.4",
+        "Q23.8",
+        "Q23.9"
+      ]
+    },
+    "Q24": {
+      "name": "Các dị tật bẩm sinh khác của tim",
+      "valid_subcodes": [
+        "Q24.0",
+        "Q24.1",
+        "Q24.2",
+        "Q24.3",
+        "Q24.4",
+        "Q24.5",
+        "Q24.6",
+        "Q24.8",
+        "Q24.9"
+      ]
+    },
+    "Q25": {
+      "name": "Các dị tật bẩm sinh của các động mạch lớn",
+      "valid_subcodes": [
+        "Q25.0",
+        "Q25.1",
+        "Q25.2",
+        "Q25.3",
+        "Q25.4",
+        "Q25.5",
+        "Q25.6",
+        "Q25.7",
+        "Q25.8",
+        "Q25.9"
+      ]
+    },
+    "Q26": {
+      "name": "Các dị tật bẩm sinh của các tĩnh mạch lớn",
+      "valid_subcodes": [
+        "Q26.0",
+        "Q26.1",
+        "Q26.2",
+        "Q26.3",
+        "Q26.4",
+        "Q26.5",
+        "Q26.6",
+        "Q26.8",
+        "Q26.9"
+      ]
+    },
+    "Q27": {
+      "name": "Các dị tật bẩm sinh khác của hệ thống mạch máu ngoại biên",
+      "valid_subcodes": [
+        "Q27.0",
+        "Q27.1",
+        "Q27.2",
+        "Q27.3",
+        "Q27.4",
+        "Q27.8",
+        "Q27.9"
+      ]
+    },
+    "Q28": {
+      "name": "Các dị tật bẩm sinh khác của hệ thống tuần hoàn",
+      "valid_subcodes": [
+        "Q28.0",
+        "Q28.1",
+        "Q28.2",
+        "Q28.3",
+        "Q28.8",
+        "Q28.9"
+      ]
+    },
+    "Q60": {
+      "name": "Không có thận và các Khuyết tật khác của thận",
+      "valid_subcodes": [
+        "Q60.0",
+        "Q60.1",
+        "Q60.2",
+        "Q60.3",
+        "Q60.4",
+        "Q60.5",
+        "Q60.6"
+      ]
+    },
+    "Q65": {
+      "name": "Biến dạng bẩm sinh của khớp háng",
+      "valid_subcodes": [
+        "Q65.0",
+        "Q65.1",
+        "Q65.2",
+        "Q65.3",
+        "Q65.4",
+        "Q65.5",
+        "Q65.6",
+        "Q65.8",
+        "Q65.9"
+      ]
+    },
+    "Q66": {
+      "name": "Các biến dạng bẩm sinh của bàn chân",
+      "valid_subcodes": [
+        "Q66.0",
+        "Q66.1",
+        "Q66.2",
+        "Q66.3",
+        "Q66.4",
+        "Q66.5",
+        "Q66.6",
+        "Q66.7",
+        "Q66.8",
+        "Q66.9"
+      ]
+    },
+    "Q68": {
+      "name": "Các biến dạng cơ xương bẩm sinh khác",
+      "valid_subcodes": [
+        "Q68.0",
+        "Q68.1",
+        "Q68.2",
+        "Q68.3",
+        "Q68.4",
+        "Q68.5",
+        "Q68.8"
+      ]
+    },
+    "Q69": {
+      "name": "Tật đa ngón",
+      "valid_subcodes": [
+        "Q69.0",
+        "Q69.1",
+        "Q69.2",
+        "Q69.9"
+      ]
+    },
+    "Q70": {
+      "name": "Tật dính ngón",
+      "valid_subcodes": [
+        "Q70.0",
+        "Q70.1",
+        "Q70.2",
+        "Q70.3",
+        "Q70.4",
+        "Q70.9"
+      ]
+    },
+    "Q71": {
+      "name": "Các Khuyết tật thiếu hụt của chi trên",
+      "valid_subcodes": [
+        "Q71.0",
+        "Q71.1",
+        "Q71.2",
+        "Q71.3",
+        "Q71.4",
+        "Q71.5",
+        "Q71.6",
+        "Q71.8",
+        "Q71.9"
+      ]
+    },
+    "Q72": {
+      "name": "Các Khuyết tật thiếu hụt của chi dưới",
+      "valid_subcodes": [
+        "Q72.0",
+        "Q72.1",
+        "Q72.2",
+        "Q72.3",
+        "Q72.4",
+        "Q72.5",
+        "Q72.6",
+        "Q72.7",
+        "Q72.8",
+        "Q72.9"
+      ]
+    },
+    "Q80": {
+      "name": "Bệnh vảy cá bẩm sinh",
+      "valid_subcodes": [
+        "Q80.0",
+        "Q80.1",
+        "Q80.2",
+        "Q80.3",
+        "Q80.4",
+        "Q80.8",
+        "Q80.9"
+      ]
+    },
+    "Q81": {
+      "name": "Bong biểu bì bọng nước",
+      "valid_subcodes": [
+        "Q81.0",
+        "Q81.1",
+        "Q81.2",
+        "Q81.8",
+        "Q81.9"
+      ]
+    },
+    "Q96": {
+      "name": "Hội chứng Turner",
+      "valid_subcodes": [
+        "Q96.0",
+        "Q96.1",
+        "Q96.2",
+        "Q96.3",
+        "Q96.4",
+        "Q96.8",
+        "Q96.9"
+      ]
+    },
+    "R82": {
+      "name": "Các phát hiện bất thường khác về nước tiểu",
+      "valid_subcodes": [
+        "R82.0",
+        "R82.1",
+        "R82.2",
+        "R82.3",
+        "R82.4",
+        "R82.5",
+        "R82.6",
+        "R82.7",
+        "R82.8",
+        "R82.9"
+      ]
+    },
+    "Z94": {
+      "name": "Tình trạng của mảnh ghép cơ quan và tổ chức",
+      "valid_subcodes": [
+        "Z94.0",
+        "Z94.1",
+        "Z94.2",
+        "Z94.3",
+        "Z94.4",
+        "Z94.5",
+        "Z94.6",
+        "Z94.7",
+        "Z94.8",
+        "Z94.9"
+      ]
+    },
+    "Z95": {
+      "name": "Sự có mặt của các thiết bị cấy ghép tim và mạch máu",
+      "valid_subcodes": [
+        "Z95.0",
+        "Z95.1",
+        "Z95.2",
+        "Z95.3",
+        "Z95.4",
+        "Z95.5",
+        "Z95.8",
+        "Z95.9"
+      ]
+    }
+  }
+}

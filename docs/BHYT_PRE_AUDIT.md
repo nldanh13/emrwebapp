@@ -111,6 +111,14 @@ Ví dụ khớp đúng đề xuất gốc (mục 5–6, ca "Danh Tân"): chỉ �
 
 Lưu ý: các PT/TT nêu trong đề xuất gốc chỉ là **ví dụ minh họa**, không giới hạn phạm vi Tầng 3. `bhyt_dx_procedure_map.json` nhận thêm bao nhiêu PT/TT cũng được — điều kiện duy nhất là có nguồn ICD/chuyên môn xác nhận đủ tin cậy để không suy đoán sai.
 
+### Mã bệnh chính đủ cụ thể theo PLII, Thông tư 01/2025/TT-BYT (`BHYT_T3_ICD_PL2_GROUP_CODE_TOO_GENERIC`)
+
+Lỗi giám định mới trên Cổng giám định BHYT (theo người dùng phản ánh): đối tượng thông tuyến **1.16** (bệnh thuộc Phụ lục II, Thông tư 01/2025/TT-BYT) bắt buộc **mã bệnh chính** phải là mã ICD-10 cụ thể 4-5 ký tự (có dấu chấm) — **không được** dùng mã nhóm 3 ký tự chung chung (vd `C22`, `M47`).
+
+Danh mục PLII do người dùng cung cấp trực tiếp (file Excel gốc từ Cổng giám định BHYT, cập nhật 15/09/2026), nạp thành **`config/hchanh/bhyt_icd_pl2_tt01_2025.json`** — `invalid_group_codes` là map mã nhóm 3 ký tự → `{ name, valid_subcodes }` (chỉ chứa các mã đã tách sẵn có dấu chấm; nhiều nhóm không có mã con nào trong danh mục, `valid_subcodes` khi đó rỗng — không suy đoán mã thay thế). File Excel nguồn tự đánh dấu cột "Hiệu lực": mọi mã 3 ký tự đều "Không", mọi mã có dấu chấm đều "Có" — khớp đúng 2 điều kiện của lỗi giám định này.
+
+**Giới hạn phạm vi đã biết**: hệ thống **chưa capture được đối tượng thông tuyến (mã như 1.16)** ở đâu trên EMR — `profile.doi_tuong` chỉ là nhãn dạng "Bảo hiểm đúng tuyến"/"Tự túc", không có mã đối tượng cụ thể. Theo lựa chọn của người dùng (không có cách lọc chắc chắn theo đối tượng, "không suy đoán"), rule này **cảnh báo REVIEW cho mọi trường hợp** mã bệnh chính trùng đúng 1 mã nhóm PLII 3 ký tự, bất kể đối tượng KCB thật của người bệnh là gì — `detail` nêu rõ giới hạn này, người kiểm tự xác nhận đối tượng 1.16 trước khi coi là lỗi thật. Nếu sau này EMR lộ ra trường mã đối tượng KCB cụ thể, có thể thu hẹp lại điều kiện kích hoạt.
+
 ## Tầng 4 — CLS chứng minh chỉ định (đã cài đặt)
 
 **Tái dùng `specialty_rules` đã có trong `config/hchanh/qa_rules.json`** (cấu hình QA hành chánh có sẵn, không phải bảng mới) — không định nghĩa lại danh mục CLS kỳ vọng theo từng PT/TT để tránh hai nơi lệch nhau khi ai đó sửa `qa_rules.json`. `specialty_rules` vốn đã tổng quát theo chuyên khoa (khớp qua `dept_keywords`), không giới hạn ở vài PT/TT cụ thể.
