@@ -15,10 +15,15 @@ export function normalizeText(value) {
 
 export function normalizeRoomCode(value) {
   const raw = String(value || '').trim();
-  const m = raw.match(/p\s*0*(\d{1,3})/i);
-  if (!m) return '';
-  const n = Number(m[1]);
-  return n > 0 ? `P${String(n).padStart(2, '0')}` : '';
+  // Neo cả 2 đầu: chỉ chuẩn hoá khi TOÀN BỘ chuỗi là "P" + số — không khớp một phần,
+  // để tên phòng tự do đặt trong Xếp phòng (vd "P2 Sản") không bị gộp nhầm vào "P02"
+  // khi lấy danh sách phòng để chọn dữ liệu cần lấy.
+  const m = raw.match(/^p\s*0*(\d{1,3})$/i);
+  if (m) {
+    const n = Number(m[1]);
+    return n > 0 ? `P${String(n).padStart(2, '0')}` : '';
+  }
+  return raw;
 }
 
 export function patientRoom(patient) {
