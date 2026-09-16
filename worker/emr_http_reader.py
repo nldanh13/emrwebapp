@@ -748,12 +748,22 @@ class EmrHttpSession:
         except Exception:
             return [], {}, f"Phản hồi AjaxPro không phải JSON hợp lệ (đầu phản hồi: {text[:200]!r})."
 
-        value = (data or {}).get("value") or {}
+        if not isinstance(data, dict):
+            return [], {}, f"Phản hồi AjaxPro không phải object JSON như dự kiến (kiểu thấy được: {type(data).__name__})."
+        value = data.get("value")
+        if not isinstance(value, dict):
+            return [], {}, (
+                "Phản hồi AjaxPro thiếu object 'value' như dự kiến (có thể method/param sai). "
+                f"Khoá ở cấp ngoài cùng thấy được: {sorted(data.keys())}."
+            )
         if value.get("Error"):
             return [], {}, f"Server báo lỗi: {value.get('Error')} — {value.get('InfoMessage') or ''}".strip(" —")
         rows = value.get("RetObject")
         if not isinstance(rows, list):
-            return [], {}, "Phản hồi AjaxPro không có RetObject dạng danh sách như dự kiến (có thể method/param sai)."
+            return [], {}, (
+                "Phản hồi AjaxPro không có RetObject dạng danh sách như dự kiến (có thể method/param sai). "
+                f"Khoá trong 'value' thấy được: {sorted(value.keys())}."
+            )
 
         all_rows: List[Dict] = []
         link_map: Dict[str, str] = {}
