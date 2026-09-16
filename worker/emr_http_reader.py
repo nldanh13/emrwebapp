@@ -730,12 +730,23 @@ class EmrHttpSession:
         endpoint = self.cfg.ajaxpro_inpatient_endpoint
         if not endpoint:
             return [], {}, "Chưa cấu hình ajaxpro_inpatient_endpoint trong config.json."
+
+        # EMR dường như cần phiên đã thật sự "vào" đúng trang (state phía server, có thể
+        # gắn với tham số 'st' đổi mỗi lần tải trang) trước khi chấp nhận lệnh gọi AjaxPro
+        # — giống hệt việc bấm F5 trên trình duyệt trước khi bảng tải. list_url truyền vào
+        # có thể là URL cũ đã lưu (vd từ npm run auth:http), nên GET lại ngay trước khi
+        # POST để lấy URL/tham số phiên mới nhất, thay vì dùng URL cũ có thể đã hết hạn.
+        try:
+            _html, fresh_list_url = self.get_html(list_url)
+        except Exception:
+            fresh_list_url = list_url
+
         url = f"{self.base_origin}/ajaxpro/{endpoint}"
-        payload = self._build_inpatient_ajaxpro_payload(list_url)
+        payload = self._build_inpatient_ajaxpro_payload(fresh_list_url)
         headers = {
             "Content-Type": "text/plain; charset=UTF-8",
             "X-AjaxPro-Method": self.cfg.ajaxpro_inpatient_method,
-            "Referer": list_url,
+            "Referer": fresh_list_url,
             "Origin": self.base_origin,
         }
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -779,7 +790,7 @@ class EmrHttpSession:
             ma_bn = str(r.get("MaBN") or "").strip()
             tid = str(r.get("ID") or "").strip()
             if ma_bn and tid:
-                link_map[ma_bn] = _upsert_query(list_url, tiepnhanid=tid)
+                link_map[ma_bn] = _upsert_query(fresh_list_url, tiepnhanid=tid)
         if not link_map:
             return all_rows, link_map, "RetObject rỗng hoặc thiếu MaBN/ID — danh sách nội trú có thể thật sự trống."
         return all_rows, link_map, None
