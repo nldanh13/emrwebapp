@@ -63,6 +63,7 @@ function apiActionLabel(method, url) {
   const path = cleanApiPath(url).split('?')[0];
   const map = {
     'GET /api/run-scan': 'quét danh sách bệnh nhân',
+    'GET /api/run-emr-structure-scan': 'dò cấu trúc EMR',
     'GET /api/get-raw': 'tải dữ liệu thô',
     'GET /api/data': 'tải danh sách xếp phòng',
     'POST /api/save': 'lưu xếp phòng',
@@ -368,6 +369,7 @@ async function patch(url, body) {
 
 // ── Scan ──────────────────────────────────────────────────────────────────────
 export const runScan = () => get('/api/run-scan');
+export const runEmrStructureScan = () => get('/api/run-emr-structure-scan');
 export const getRaw = () => get('/api/get-raw');
 
 // ── Board (room assignment) ───────────────────────────────────────────────────

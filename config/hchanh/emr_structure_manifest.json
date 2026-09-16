@@ -1,0 +1,89 @@
+{
+  "_comment": "Danh mục các trang/selector EMR (ONEMES HIS) mà worker/hchanh_fetch.py đang dựa vào để lấy dữ liệu — dùng làm baseline cho worker/emr_structure_scan.py so sánh mỗi khi nghi ngờ EMR đổi cấu trúc. File này KHÔNG tự sinh — chỉnh tay khi thêm/sửa trang code thật sự dùng, khớp với selector trong worker/hchanh_fetch.py. wpid_literal = giá trị wpid cố định trong code; wpid_config_key = tên khóa trong config.json (giá trị thật tùy bệnh viện, bỏ qua nếu chưa cấu hình).",
+  "_version": "1.0.0",
+
+  "pages": {
+    "danhsach_noi_tru": {
+      "label": "Danh sách bệnh nhân nội trú",
+      "wpid_config_key": "inpatient_wpid",
+      "wpid_default": "danhsachdieutrinoitrudraw",
+      "needs_patient": false,
+      "fields": [],
+      "tables": ["tblNoiTru"]
+    },
+    "bac_si": {
+      "label": "Trang bác sĩ (y lệnh, tên BN — mặc định khi bấm tên người bệnh)",
+      "wpid_literal": "bacsidraw",
+      "needs_patient": true,
+      "kind": "doctor",
+      "fields": [],
+      "tables": []
+    },
+    "dieu_duong": {
+      "label": "Trang điều dưỡng (hồ sơ, buồng giường, VTYT — con mắt điều dưỡng)",
+      "wpid_literal": "dieuduongdraw",
+      "needs_patient": true,
+      "kind": "nursing",
+      "fields": ["lblDoiTuong"],
+      "tables": []
+    },
+    "bang_ke_chi_phi": {
+      "label": "Bảng kê chi phí (Dịch vụ/Thuốc/Vật tư)",
+      "wpid_literal": "chiphichitietdraw",
+      "needs_patient": true,
+      "kind": "doctor",
+      "fields": [],
+      "tables": ["div#dsDichVu table", "div#dsThuoc table", "div#dsVatTu table"]
+    },
+    "danh_sach_phau_thuat": {
+      "label": "Danh sách phẫu thuật của người bệnh",
+      "wpid_literal": "danhsachphauthuatdraw",
+      "needs_patient": true,
+      "kind": "doctor",
+      "fields": [],
+      "tables": []
+    },
+    "chi_tiet_phau_thuat": {
+      "label": "Chi tiết 1 lần phẫu thuật",
+      "wpid_literal": "phauthuatdraw",
+      "needs_patient": true,
+      "kind": "doctor",
+      "fields": [
+        "txtBatDauPT", "txtKetThucPT", "cbbChiDinhMoPT", "cbbDoiTuongPT",
+        "txtPhanLoaiPTTT", "cbbPPGayMePT", "cbbPhuongPhapPT", "cbbICD9",
+        "txtChuanDoanTruocMoPT", "cbbIcdChanDoanTruocPT", "cbbChuanDoanSauPT",
+        "txtMoTaPPPT", "cbbBacSiPT", "cbbBacSiGayMeChinh", "cbbBacSiPhuMo1",
+        "cbbBacSiPhuMo2", "cbbDieuDuongDungCu", "cbbKtvPhuMe"
+      ],
+      "tables": []
+    },
+    "ra_vien": {
+      "label": "Giấy ra viện / hồ sơ ra khoa",
+      "wpid_config_key": "discharge_wpid",
+      "needs_patient": true,
+      "kind": "doctor",
+      "fields": ["cboChanDoan", "txtChanDoanPhanBiet", "cboBenhKemTheo"],
+      "tables": ["tblChanDoan"]
+    },
+    "ngay_giuong": {
+      "label": "Bảng ngày giường",
+      "wpid_config_key": "bed_days_wpid",
+      "needs_patient": true,
+      "kind": "doctor",
+      "fields": [],
+      "tables": []
+    },
+    "giay_to_kem_theo": {
+      "label": "Giấy tờ/tài liệu kèm theo",
+      "wpid_config_key": "documents_wpid",
+      "needs_patient": true,
+      "kind": "doctor",
+      "fields": [],
+      "tables": []
+    }
+  },
+
+  "known_gaps": [
+    "loadformdongdraw (form đóng hồ sơ) chưa đưa vào manifest — cần noitruid/hosoid riêng, chưa có cách lấy chung để tự dựng URL kiểm tra mà không suy đoán."
+  ]
+}
