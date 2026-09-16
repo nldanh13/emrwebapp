@@ -60,7 +60,11 @@ function safeValueForKey(key, value) {
 
 function sanitizeQuery(query = {}) {
   const out = {};
-  for (const [key, value] of Object.entries(query || {})) out[key] = safeValueForKey(key, value);
+  for (const [key, value] of Object.entries(query || {})) {
+    // 'url' che riêng vì /api/inspect-emr-page nhận nguyên URL EMR (kèm mã phiên
+    // usid/st) — các từ khoá bí mật chung (SECRET_KEY_RE) không nhận diện được.
+    out[key] = key === 'url' ? '[hidden]' : safeValueForKey(key, value);
+  }
   return out;
 }
 

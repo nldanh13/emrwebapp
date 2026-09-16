@@ -19,6 +19,7 @@ nhật/...) khi dò trang mới, để tránh vô tình click vào một action 
 không dồn dập lên hệ thống EMR thật.
 
 CLI: python worker/emr_structure_scan.py --out <path.json> [--max-discovered 15]
+     python worker/emr_structure_scan.py --out <path.json> --url "<URL trang cụ thể>"
 """
 
 from __future__ import annotations
@@ -361,14 +362,60 @@ def run_scan(max_discovered: int = 15) -> Dict[str, Any]:
     }
 
 
+def inspect_page_url(url: str) -> Dict[str, Any]:
+    """Dò cấu trúc 1 trang cụ thể theo URL người dùng dán vào (copy từ thanh địa chỉ
+    trình duyệt khi đang xem đúng trang cần kiểm tra) — không giới hạn theo manifest,
+    dùng khi muốn xem nhanh cấu trúc 1 trang bất kỳ thay vì quét toàn bộ danh mục.
+    Chỉ đọc (GET), không bấm/gửi form nào — giống hệt các lần quét khác."""
+    if EmrHttpSession is None:
+        return {"status": "error", "message": f"Không import được EmrHttpSession: {_IMPORT_ERROR}"}
+    url = (url or "").strip()
+    if not url:
+        return {"status": "error", "message": "Thiếu URL trang cần dò."}
+
+    config = load_config()
+    sess = EmrHttpSession.from_config_dict(config)
+
+    parsed = urlparse(url)
+    url_origin = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
+    if url_origin and url_origin != sess.base_origin:
+        return {
+            "status": "error",
+            "message": f"URL không thuộc EMR đang cấu hình ({sess.base_origin}) — từ chối để tránh gọi ra ngoài.",
+        }
+
+    sess.login()
+
+    wpid = dict(parse_qsl(parsed.query)).get("wpid", "")
+    try:
+        html, final_url = sess.get_html(url)
+    except Exception as exc:
+        return {"status": "error", "message": f"Không tải được trang: {type(exc).__name__}: {exc}"}
+
+    structure = _extract_page_structure(html)
+    return {
+        "status": "ok",
+        "scanned_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "wpid": wpid,
+        "url": final_url,
+        "field_ids": structure["field_ids"],
+        "tables": structure["tables"],
+        "dropdowns": structure["dropdowns"],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Dò cấu trúc EMR, so với danh mục đã biết")
     parser.add_argument("--out", required=True, help="Đường dẫn file JSON kết quả")
     parser.add_argument("--max-discovered", type=int, default=15)
+    parser.add_argument("--url", default="", help="Dò 1 trang cụ thể theo URL (bỏ qua quét toàn bộ danh mục)")
     args = parser.parse_args()
 
     try:
-        report = run_scan(max_discovered=args.max_discovered)
+        if args.url:
+            report = inspect_page_url(args.url)
+        else:
+            report = run_scan(max_discovered=args.max_discovered)
     except Exception as exc:
         report = {"status": "error", "message": f"Lỗi khi dò cấu trúc EMR: {exc}"}
 

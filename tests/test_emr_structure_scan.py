@@ -10,6 +10,7 @@ from emr_structure_scan import (
     _extract_wpid_links,
     _load_manifest,
     run_scan,
+    inspect_page_url,
 )
 
 
@@ -199,3 +200,58 @@ def test_run_scan_bao_ro_ly_do_khi_ajaxpro_cung_that_bai(monkeypatch):
     assert report['sample_ma_bn'] is None
     assert report['inpatient_list_source'] == 'none'
     assert 'Không có quyền truy cập' in report['inpatient_scan_diag']['ajaxpro_error']
+
+
+class _FakeSessionInspect:
+    base_origin = 'https://emr.example.com'
+
+    def login(self):
+        pass
+
+    def get_html(self, url):
+        html = '''
+        <html><body>
+          <input id="txtHoTen" />
+          <select id="cbbKhoa"><option>A</option></select>
+          <table id="dsBenhNhan"><tr><th>Mã BN</th><th>Họ tên</th></tr></table>
+        </body></html>
+        '''
+        return html, url
+
+
+class _FakeEmrHttpSessionInspect:
+    @staticmethod
+    def from_config_dict(config):
+        return _FakeSessionInspect()
+
+
+def test_inspect_page_url_thieu_url_bao_loi(monkeypatch):
+    monkeypatch.setattr(emr_structure_scan, 'EmrHttpSession', _FakeEmrHttpSessionInspect)
+    monkeypatch.setattr(emr_structure_scan, 'load_config', lambda: {})
+
+    report = inspect_page_url('')
+    assert report['status'] == 'error'
+    assert 'URL' in report['message']
+
+
+def test_inspect_page_url_tu_choi_url_khac_goc_emr(monkeypatch):
+    """Chặn SSRF: URL người dùng dán vào phải cùng gốc (origin) với EMR đang cấu hình,
+    không cho gọi ra máy chủ khác."""
+    monkeypatch.setattr(emr_structure_scan, 'EmrHttpSession', _FakeEmrHttpSessionInspect)
+    monkeypatch.setattr(emr_structure_scan, 'load_config', lambda: {})
+
+    report = inspect_page_url('https://kha-nghi-ngo.evil.example/home.aspx?wpid=x')
+    assert report['status'] == 'error'
+    assert 'từ chối' in report['message']
+
+
+def test_inspect_page_url_dung_goc_thi_doc_dung_cau_truc(monkeypatch):
+    monkeypatch.setattr(emr_structure_scan, 'EmrHttpSession', _FakeEmrHttpSessionInspect)
+    monkeypatch.setattr(emr_structure_scan, 'load_config', lambda: {})
+
+    report = inspect_page_url('https://emr.example.com/home.aspx?wpid=bacsidraw&tiepnhanid=xyz')
+    assert report['status'] == 'ok'
+    assert report['wpid'] == 'bacsidraw'
+    assert 'txtHoTen' in report['field_ids']
+    assert any(t['id'] == 'dsBenhNhan' for t in report['tables'])
+    assert any(d['id'] == 'cbbKhoa' for d in report['dropdowns'])
