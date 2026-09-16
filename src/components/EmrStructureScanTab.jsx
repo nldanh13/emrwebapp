@@ -16,6 +16,7 @@ function StatusDot({ status }) {
     fetch_error:          { color: C.red,    label: '✕ Lỗi tải trang' },
     no_url:               { color: C.amber,  label: '! Không dựng được URL' },
     skipped_not_configured: { color: C.text3, label: '— Chưa cấu hình' },
+    skipped_no_sample_patient: { color: C.amber, label: '! Không có BN mẫu' },
   };
   const info = map[status] || { color: C.text3, label: status || '—' };
   return <span style={{ color: info.color, fontWeight: 700, fontSize: 12 }}>{info.label}</span>;
@@ -134,6 +135,20 @@ export default function EmrStructureScanTab() {
               </div>
             ))}
           </div>
+
+          {report.warning && (
+            <div style={{ marginBottom: 16, padding: '8px 12px', background: C.amberBg, border: `1px solid ${C.amberBorder}`, borderRadius: 6, color: C.amber, fontSize: 12 }}>
+              {report.warning}
+              {report.inpatient_scan_diag && (
+                <div style={{ marginTop: 4, color: C.text2 }}>
+                  Số dòng đọc được: {report.inpatient_scan_diag.rows_parsed_count} · Số dòng dò được link BN: {report.inpatient_scan_diag.link_map_count}
+                  {report.inpatient_scan_diag.sample_row_headers?.length > 0 && (
+                    <> · Cột tìm thấy: {report.inpatient_scan_diag.sample_row_headers.join(', ')}</>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {report.known_gaps?.length > 0 && (
             <div style={{ marginBottom: 16, fontSize: 12, color: C.text3 }}>

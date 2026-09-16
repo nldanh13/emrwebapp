@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 """Test thuần cho các hàm phân tích cấu trúc trong emr_structure_scan.py — không cần
-EMR thật (không login/network). Phần login/scan_all_inpatients/get_html không test ở
-đây vì cần EmrHttpSession thật."""
+EMR thật (không login/network). Phần login/scan_all_inpatients/get_html dùng
+EmrHttpSession giả (monkeypatch) để test run_scan() khi không có bệnh nhân mẫu."""
 
+import emr_structure_scan
 from emr_structure_scan import (
     _looks_like_write_action,
     _extract_page_structure,
     _extract_wpid_links,
     _load_manifest,
+    run_scan,
 )
 
 
@@ -67,3 +69,51 @@ def test_load_manifest_co_du_cac_trang_da_biet():
     assert 'bang_ke_chi_phi' in pages
     assert 'chi_tiet_phau_thuat' in pages
     assert pages['bac_si'].get('wpid_literal') == 'bacsidraw'
+
+
+class _FakeSessionNoPatients:
+    base_origin = 'https://emr.example.com'
+
+    def login(self):
+        pass
+
+    def scan_all_inpatients(self):
+        return [], {}
+
+    def _effective_inpatient_url(self):
+        return 'https://emr.example.com/home.aspx?wpid=danhsachdieutrinoitrudraw'
+
+    def get_html(self, url):
+        return '<html><body>Danh sách trống, không có bảng tblNoiTru</body></html>', url
+
+
+class _FakeEmrHttpSessionNoPatients:
+    @staticmethod
+    def from_config_dict(config):
+        return _FakeSessionNoPatients()
+
+
+def test_run_scan_khong_co_benh_nhan_mau_van_bao_cao_thay_vi_bo_cuoc(monkeypatch):
+    """Regression: trước đây link_map rỗng làm run_scan() bỏ cuộc ngay, không báo được
+    lý do (vd bảng tblNoiTru đổi cấu trúc). Giờ vẫn kiểm trang không cần patient
+    (danh sách nội trú) và trả cảnh báo + chẩn đoán, chỉ skip các trang cần patient."""
+    monkeypatch.setattr(emr_structure_scan, 'EmrHttpSession', _FakeEmrHttpSessionNoPatients)
+    monkeypatch.setattr(emr_structure_scan, 'load_config', lambda: {})
+
+    report = run_scan(max_discovered=5)
+
+    assert report['status'] == 'ok'
+    assert report['sample_ma_bn'] is None
+    assert report['warning']
+    assert report['inpatient_scan_diag'] == {
+        'rows_parsed_count': 0,
+        'link_map_count': 0,
+        'sample_row_headers': [],
+    }
+
+    by_key = {p['page_key']: p for p in report['known_pages']}
+    # trang cần patient (vd bác sĩ) bị skip rõ ràng, không lỗi mập mờ
+    assert by_key['bac_si']['status'] == 'skipped_no_sample_patient'
+    # trang không cần patient (danh sách nội trú) vẫn được kiểm thật sự
+    assert by_key['danhsach_noi_tru']['status'] == 'changed'
+    assert 'tblNoiTru' in by_key['danhsach_noi_tru']['missing_tables']
