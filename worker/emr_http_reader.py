@@ -85,6 +85,15 @@ def _cfg_bool_value(value: object, default: bool = False) -> bool:
         return default
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on", "co", "có"}
 
+
+# Trình duyệt thật gọi 3 lệnh AjaxPro này (cùng WebPart danh sách nội trú) trước lệnh
+# lấy bảng chính — xác nhận qua DevTools, thứ tự đúng như trình duyệt gọi.
+_AJAXPRO_INPATIENT_INIT_METHODS = (
+    "ServerSideCheckQuickConfigToday",
+    "ServerSideGetQuickConfig",
+    "ServerSideCheckAdmin",
+)
+
 # -------------------------
 # Config / Session
 # -------------------------
@@ -668,31 +677,8 @@ class EmrHttpSession:
         thật bắt được qua DevTools (xem docs/EMR_STRUCTURE_SCAN.md). UserSessionId/Ip lấy
         từ tham số usid trên chính URL danh sách (đã có sau đăng nhập) — không suy đoán.
         DepartmentId/OwnerUserId gắn với tài khoản/khoa cụ thể, chỉ thêm khi đã cấu hình."""
-        usid = dict(parse_qsl(urlparse(list_url).query)).get("usid", "")
-        ip = usid.split("_", 1)[0] if "_" in usid else ""
+        render_info = self._build_ajaxpro_render_info(list_url)
         now = datetime.now()
-
-        render_info: Dict[str, Any] = {
-            "SiteId": self.cfg.ajaxpro_site_id,
-            "SiteLanguage": "vi",
-            "AssetLevelCode": self.cfg.ajaxpro_site_id,
-            "SiteAssetLevelId": self.cfg.ajaxpro_site_id,
-            "CurrencyDecimalDigits": 2,
-            "CurrencyDecimalSeparator": ".",
-            "CurrencyGroupSeparator": ",",
-            "Ip": ip,
-            "Machine": ip,
-            "LoginName": self.cfg.username,
-            "OwnerCode": self.cfg.ajaxpro_owner_code,
-            "OwnerId": self.cfg.ajaxpro_owner_code,
-            "UserSessionId": usid,
-            "WebPage": None,
-            "WebPartId": "Dashboard 02",
-        }
-        if self.cfg.ajaxpro_department_id:
-            render_info["DepartmentId"] = self.cfg.ajaxpro_department_id
-        if self.cfg.ajaxpro_owner_user_id:
-            render_info["OwnerUserId"] = self.cfg.ajaxpro_owner_user_id
 
         payload: Dict[str, Any] = {
             "BacSiNhanBenh": "",
@@ -716,6 +702,36 @@ class EmrHttpSession:
         if self.cfg.ajaxpro_department_id:
             payload["KhoaPhongId"] = self.cfg.ajaxpro_department_id
         return payload
+
+    def _build_ajaxpro_render_info(self, list_url: str) -> Dict[str, Any]:
+        """Khối ORenderInfo dùng chung cho mọi lệnh gọi AjaxPro trên WebPart danh sách
+        nội trú — kể cả các lệnh "khởi tạo" (ServerSideCheckAdmin, ServerSideGetQuickConfig,
+        ServerSideCheckQuickConfigToday) chỉ gửi mỗi khối này, không kèm bộ lọc tìm kiếm."""
+        usid = dict(parse_qsl(urlparse(list_url).query)).get("usid", "")
+        ip = usid.split("_", 1)[0] if "_" in usid else ""
+
+        render_info: Dict[str, Any] = {
+            "SiteId": self.cfg.ajaxpro_site_id,
+            "SiteLanguage": "vi",
+            "AssetLevelCode": self.cfg.ajaxpro_site_id,
+            "SiteAssetLevelId": self.cfg.ajaxpro_site_id,
+            "CurrencyDecimalDigits": 2,
+            "CurrencyDecimalSeparator": ".",
+            "CurrencyGroupSeparator": ",",
+            "Ip": ip,
+            "Machine": ip,
+            "LoginName": self.cfg.username,
+            "OwnerCode": self.cfg.ajaxpro_owner_code,
+            "OwnerId": self.cfg.ajaxpro_owner_code,
+            "UserSessionId": usid,
+            "WebPage": None,
+            "WebPartId": "Dashboard 02",
+        }
+        if self.cfg.ajaxpro_department_id:
+            render_info["DepartmentId"] = self.cfg.ajaxpro_department_id
+        if self.cfg.ajaxpro_owner_user_id:
+            render_info["OwnerUserId"] = self.cfg.ajaxpro_owner_user_id
+        return render_info
 
     def fetch_inpatient_list_via_ajaxpro(self, list_url: str) -> Tuple[List[Dict], Dict[str, str], Optional[str]]:
         """Dự phòng cho bản HIS vẽ bảng tblNoiTru bằng AjaxPro/JS (GET HTML thường không
@@ -742,6 +758,24 @@ class EmrHttpSession:
             fresh_list_url = list_url
 
         url = f"{self.base_origin}/ajaxpro/{endpoint}"
+
+        # Trang thật gọi 3 lệnh "khởi tạo" trên cùng WebPart (chỉ gửi ORenderInfo, không
+        # kèm bộ lọc tìm kiếm) trước khi gọi lệnh lấy bảng — xác nhận qua DevTools. Bắt
+        # chước lại tuần tự này trước khi gọi lệnh chính, phòng trường hợp server cần các
+        # lệnh này thiết lập trạng thái phía server trước (best-effort, lỗi ở đây không
+        # chặn việc thử lệnh chính — lỗi thật sự vẫn hiện rõ ở bước POST chính bên dưới).
+        init_body = json.dumps({"ORenderInfo": self._build_ajaxpro_render_info(fresh_list_url)}, ensure_ascii=False).encode("utf-8")
+        for init_method in _AJAXPRO_INPATIENT_INIT_METHODS:
+            try:
+                self._request_html("POST", url, data=init_body, headers={
+                    "Content-Type": "text/plain; charset=UTF-8",
+                    "X-AjaxPro-Method": init_method,
+                    "Referer": fresh_list_url,
+                    "Origin": self.base_origin,
+                })
+            except Exception:
+                pass
+
         payload = self._build_inpatient_ajaxpro_payload(fresh_list_url)
         headers = {
             "Content-Type": "text/plain; charset=UTF-8",
