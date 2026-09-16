@@ -120,6 +120,23 @@ def test_run_scan_khong_co_benh_nhan_mau_van_bao_cao_thay_vi_bo_cuoc(monkeypatch
     assert 'tblNoiTru' in by_key['danhsach_noi_tru']['missing_tables']
 
 
+def test_run_scan_ha_cap_canh_bao_khi_da_xac_nhan_gioi_han_ajax(monkeypatch):
+    """Người dùng đã tự xác nhận (qua DevTools) rằng bảng tblNoiTru được JS vẽ ra, không
+    phải EMR đổi cấu trúc — việc điền ajaxpro_inpatient_endpoint là bằng chứng đó, nên
+    báo cáo phải hạ cấp cảnh báo đỏ 'Đổi cấu trúc' thành thông tin trung tính, không tiếp
+    tục báo sai vô thời hạn."""
+    monkeypatch.setattr(emr_structure_scan, 'EmrHttpSession', _FakeEmrHttpSessionNoPatients)
+    monkeypatch.setattr(emr_structure_scan, 'load_config', lambda: {'ajaxpro_inpatient_endpoint': 'Some.WebPart.ashx'})
+
+    report = run_scan(max_discovered=5)
+
+    by_key = {p['page_key']: p for p in report['known_pages']}
+    assert by_key['danhsach_noi_tru']['status'] == 'known_ajax_limitation'
+    assert 'JavaScript' in by_key['danhsach_noi_tru']['note']
+    # các trang khác không liên quan không bị ảnh hưởng
+    assert by_key['bac_si']['status'] == 'skipped_no_sample_patient'
+
+
 class _FakeSessionAjaxproFallback(_FakeSessionNoPatients):
     """Bảng HTML rỗng, nhưng đường dự phòng AjaxPro có dữ liệu thật."""
 

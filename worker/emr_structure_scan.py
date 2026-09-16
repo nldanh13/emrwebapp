@@ -282,6 +282,28 @@ def run_scan(max_discovered: int = 15) -> Dict[str, Any]:
         for link in r.pop("_html_links", []):
             if link["wpid"] not in known_wpids:
                 discovered_links.append(link)
+
+        # Trang danh sách nội trú: bảng tblNoiTru được vẽ bằng JavaScript/AjaxPro sau khi
+        # trang tải xong — đã xác nhận qua DevTools trên EMR thật (không phải do EMR đổi
+        # cấu trúc). HTTP-only/no-Chrome không chạy JS nên sẽ LUÔN báo thiếu bảng ở trang
+        # này. Chỉ hạ cấp cảnh báo khi đã cấu hình ajaxpro_inpatient_endpoint (bằng chứng
+        # người dùng đã tự xác nhận giới hạn này trên EMR của họ) — không tự suy đoán cho
+        # các bản cài đặt khác chưa xác nhận.
+        if (
+            page_key == "danhsach_noi_tru"
+            and r.get("status") == "changed"
+            and not r.get("missing_fields")
+            and r.get("missing_tables") == ["tblNoiTru"]
+            and config.get("ajaxpro_inpatient_endpoint")
+        ):
+            r["status"] = "known_ajax_limitation"
+            r["note"] = (
+                "Bảng tblNoiTru được vẽ bằng JavaScript/AjaxPro sau khi trang tải xong — "
+                "đã xác nhận qua DevTools, không phải EMR đổi cấu trúc. HTTP-only/no-Chrome "
+                "không chạy JS nên sẽ luôn báo thiếu bảng ở trang này. Xem "
+                "docs/EMR_STRUCTURE_SCAN.md."
+            )
+
         known_results.append(r)
 
     # Dò trang mới (rộng): từ link tìm được ở các trang đã biết, GET thêm tối đa
