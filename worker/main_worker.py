@@ -405,6 +405,29 @@ def normalize_room_code(s: Any) -> str:
     return f"P{k:02d}"
 
 
+def canonical_room_key(s: Any) -> str:
+    """Khoá phòng dùng để so khớp bộ lọc "rooms" khi lấy dữ liệu — khác
+    normalize_room_code() (vốn cố ý lỏng, chấp nhận '02'/'2' để gõ tắt trên CLI, và
+    cũng dùng cho bed_current_check.py đọc chuỗi giường/phòng thô của EMR). Ở đây chỉ
+    chuẩn hoá về 'P##' khi TOÀN BỘ chuỗi (đã strip) là 'P' + số — không suy đoán/gộp
+    một phần, để tên phòng tự do đặt trong Xếp phòng (vd 'P2 Sản') không bị normalize_
+    room_code() gộp nhầm vào 'P02' khi lọc theo phòng.
+    """
+    if s is None:
+        return ""
+    t = str(s).strip()
+    if not t:
+        return ""
+    m = re.match(r"^p\s*0*(\d{1,3})$", t, re.IGNORECASE)
+    if not m:
+        return t
+    try:
+        k = int(m.group(1))
+    except Exception:
+        return t
+    return f"P{k:02d}" if k > 0 else t
+
+
 def _iter_dates_inclusive(d_from: str, d_to: str) -> List[str]:
     start = datetime.strptime(d_from, "%d/%m/%Y").date()
     end = datetime.strptime(d_to, "%d/%m/%Y").date()
@@ -1623,18 +1646,19 @@ class AutoWorker:
         for row in data:
             _normalize_admin_fields(row, overwrite=False)
 
-        # Rooms filter
+        # Rooms filter — dùng canonical_room_key (không phải normalize_room_code) để
+        # phòng tự do đặt trong Xếp phòng (vd "P2 Sản") không bị gộp nhầm vào "P02".
         room_set: Optional[set] = None
         if rooms:
             room_set = set()
             for r in rooms:
-                nr = normalize_room_code(r)
+                nr = canonical_room_key(r)
                 if nr:
                     room_set.add(nr)
             if room_set:
                 data = [
                     bn for bn in data
-                    if normalize_room_code(bn.get("Vi_Tri") or bn.get("phong_giuong") or "") in room_set
+                    if canonical_room_key(bn.get("Vi_Tri") or bn.get("phong_giuong") or "") in room_set
                 ]
 
         # Date range:

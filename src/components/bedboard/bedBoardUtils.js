@@ -33,7 +33,10 @@ export function saveRoomConfig(cfg) {
 
 export function normalizeRoom(s) {
   if (!s) return '';
-  const m = String(s).trim().match(/p\s*0*(\d{1,3})/i);
+  // Neo cả 2 đầu: chỉ chuẩn hoá khi TOÀN BỘ chuỗi là "P" + số (vd "P2", "P 09") — không
+  // khớp một phần, để tên phòng tự do bắt đầu bằng "P<số>..." (vd "P2 Sản") không bị
+  // nhận nhầm thành "P02" và báo trùng phòng khi thêm mới.
+  const m = String(s).trim().match(/^p\s*0*(\d{1,3})$/i);
   if (!m) return '';
   const n = parseInt(m[1], 10);
   return n > 0 ? `P${String(n).padStart(2,'0')}` : '';
