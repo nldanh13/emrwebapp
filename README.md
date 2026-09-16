@@ -88,5 +88,6 @@ npm run build
 - [`docs/SECURITY_AND_OPERATIONS.md`](docs/SECURITY_AND_OPERATIONS.md) — bảo mật, secret, retention, backup, khôi phục sự cố.
 - [`docs/CHANGELOG_2.3.0.md`](docs/CHANGELOG_2.3.0.md) — thay đổi phiên bản gần nhất.
 - [`docs/BHYT_PRE_AUDIT.md`](docs/BHYT_PRE_AUDIT.md) — tiền giám định BHYT trước khi nộp hồ sơ (rule engine, thang mức độ, Tầng 1–8 đã cài đặt một phần; Tầng 5/VTYT là placeholder trung thực do thiếu dữ liệu tham chiếu, Tầng 6/Thuốc-DVKT gồm cảnh báo thiếu chẩn đoán hỗ trợ lẫn chống chỉ định, Tầng 7 chỉ gồm trùng dịch vụ, Tầng 8/DVKT trùng-cấu phần là pilot theo ví dụ cụ thể).
+- [`docs/EMR_STRUCTURE_SCAN.md`](docs/EMR_STRUCTURE_SCAN.md) — nút "Kiểm tra cấu trúc EMR" (mục Cài đặt): dò trang/selector EMR có đổi so với danh mục code đang dùng không, chỉ đọc, không tự sửa code.
 - [`database/README.md`](database/README.md) — schema PostgreSQL đích (tùy chọn).
 - [`research/README_SQLITE.md`](research/README_SQLITE.md) — công cụ nghiên cứu dữ liệu.

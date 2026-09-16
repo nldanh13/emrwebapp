@@ -193,7 +193,7 @@ function requiredRoleForRequest(req) {
 
   // Một số route lịch sử dùng GET nhưng thực chất khởi chạy worker/tạo báo cáo.
   // Phân quyền theo tác động, không chỉ dựa vào HTTP method.
-  if (['/run-scan', '/run-postprocess', '/run-report-infusion'].includes(routePath)) return 'operator';
+  if (['/run-scan', '/run-emr-structure-scan', '/run-postprocess', '/run-report-infusion'].includes(routePath)) return 'operator';
   if (['/export-data', '/care-baseline/export', '/hchanh/export/issues'].includes(routePath)) return 'supervisor';
   if (routePath === '/get-raw') return 'operator';
   if (routePath.startsWith('/features/') && routePath.endsWith('/state')) return 'admin';

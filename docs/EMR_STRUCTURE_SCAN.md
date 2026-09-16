@@ -1,0 +1,53 @@
+# Kiểm tra cấu trúc EMR
+
+## Vấn đề
+
+`worker/hchanh_fetch.py` fetch dữ liệu bằng các selector/field id **cố định**, xác nhận
+qua HTML thật do người dùng gửi trong quá trình phát triển. Nếu nhà cung cấp HIS
+(ONEMES) cập nhật giao diện — đổi id field, đổi cấu trúc bảng, đổi wpid — code hiện tại
+có thể fetch sai/thiếu **mà không báo lỗi rõ ràng** (chỉ trả về rỗng hoặc dữ liệu cũ).
+
+## Giải pháp
+
+Nút **"Kiểm tra cấu trúc EMR"** (mục Cài đặt) đăng nhập EMR **chỉ đọc**, tải lại các
+trang code đang dùng và so với danh mục đã biết, đồng thời dò thêm các trang mới qua
+liên kết tìm thấy trên các trang đó. Không tự sửa code, không bấm/gửi bất kỳ form nào —
+chỉ báo cáo cho người dùng/người phát triển biết chỗ nào cần xem lại.
+
+## Thành phần
+
+| File | Vai trò |
+| --- | --- |
+| `config/hchanh/emr_structure_manifest.json` | Danh mục trang/selector code đang dùng — **sửa tay** khi thêm/đổi selector thật trong `hchanh_fetch.py`, không tự sinh. |
+| `worker/emr_structure_scan.py` | Đăng nhập (`EmrHttpSession`, tái dùng session HTTP chỉ đọc có sẵn), kiểm từng trang trong manifest, dò trang mới qua `<a href>` chứa `wpid=`. |
+| `server/routes/emr_structure_scan.js` | `GET /api/run-emr-structure-scan` — spawn worker qua `runScript`, cùng cơ chế hàng đợi/giới hạn (`enqueueHeavy`, `HEAVY_TASK_ROUTES`) như nút "Quét BN". |
+| `src/components/EmrStructureScanTab.jsx` | Giao diện bấm nút + xem báo cáo. |
+
+## Cách kiểm tra 1 trang đã biết
+
+Với mỗi trang trong manifest: dựng URL (từ `wpid_literal` cố định, hoặc đọc
+`wpid_config_key` trong `config.json` cho các trang có wpid tùy bệnh viện như
+`discharge_wpid`/`bed_days_wpid`/`documents_wpid` — bỏ qua nếu chưa cấu hình), GET trang
+đó, kiểm từng `field id`/`table id` khai báo trong manifest còn tồn tại trong HTML
+không. Trang cần dữ liệu 1 người bệnh cụ thể (`needs_patient: true`) dùng chung 1 bệnh
+nhân mẫu (lấy ngẫu nhiên từ danh sách nội trú khi quét).
+
+## Cách dò trang mới
+
+Từ mỗi trang đã tải, tìm mọi `<a href>` chứa `wpid=` chưa có trong manifest. **Bỏ qua**
+link có chữ thuộc nhóm hành động ghi (xóa/lưu/sửa/cập nhật/xác nhận/duyệt/gửi/...) để
+tránh vô tình chạm vào thao tác ghi. Tải tối đa `--max-discovered` trang mới (mặc định
+15), chỉ 1 tầng (không tiếp tục dò từ trang mới phát hiện), có nghỉ giữa các lần gọi để
+không dồn dập lên EMR thật. Với mỗi trang mới: chỉ tóm tắt cấu trúc (field id, tên bảng
++ header cột, số lựa chọn dropdown) — **không suy đoán ý nghĩa** của trang.
+
+## Giới hạn đã biết
+
+- `loadformdongdraw` (form đóng hồ sơ) chưa đưa vào manifest — cần `noitruid`/`hosoid`
+  riêng cho từng lần, chưa có cách dựng URL chung mà không suy đoán.
+- Chỉ kiểm được các trang truy cập qua HTTP session (không cần JS/click) — trang nào
+  chỉ hiện dữ liệu sau khi bấm nút trên UI thật (vd popup chi tiết CĐHA, xem
+  `hchanh_cls_detail_fetch` trong `bhyt_pre_audit`) không nằm trong phạm vi tool này.
+- Kết quả "còn đúng" (✓ OK) không đồng nghĩa "đã xác minh toàn bộ trang" — chỉ nghĩa là
+  các field/bảng đã khai báo trong manifest vẫn tồn tại; nếu EMR thêm field mới không
+  ảnh hưởng field cũ, tool này sẽ không phát hiện được thay đổi đó.

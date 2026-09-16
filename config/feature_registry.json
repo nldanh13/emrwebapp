@@ -120,6 +120,16 @@
       "order": 130,
       "compact": true,
       "usesDateRange": false
+    },
+    {
+      "id": "emr-structure-scan",
+      "label": "Kiểm tra cấu trúc EMR",
+      "icon": "◈",
+      "group": "Cài đặt",
+      "hint": "Dò cấu trúc EMR có đổi so với lần trước không",
+      "order": 140,
+      "compact": true,
+      "usesDateRange": false
     }
   ],
   "functions": [
@@ -1309,6 +1319,41 @@
         {
           "method": "POST",
           "path": "/vtyt-catalog/reset/:key",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
+      "id": "emr.structure-scan",
+      "label": "Dò cấu trúc EMR",
+      "icon": "◈",
+      "group": "Điều phối",
+      "description": "Đăng nhập EMR (chỉ đọc), so trang/selector đang dùng với danh mục đã biết, dò thêm trang mới qua liên kết — không tự sửa code.",
+      "entryTab": "emr-structure-scan",
+      "requires": [
+        "emr.connection"
+      ],
+      "provides": [
+        "emr.structure_report"
+      ],
+      "actions": [
+        "execute",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "executor": {
+        "type": "http",
+        "method": "GET",
+        "path": "/run-emr-structure-scan",
+        "queryKey": "scan",
+        "safeAutoRun": false
+      },
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/run-emr-structure-scan",
           "action": "execute",
           "gate": true
         }

@@ -15,6 +15,7 @@ const HEAVY_TASK_ROUTES = [
   '/hchanh/print-billing',
   '/hchanh/print-discharge-bundle',
   '/run-scan',
+  '/run-emr-structure-scan',
   '/run-details',
   '/run-details-one',
   '/run-postprocess',
@@ -80,6 +81,7 @@ router.use(require('./features'));
 router.use(require('./workflows'));
 router.use(require('./activity_log'));
 router.use(require('./scan'));
+router.use(require('./emr_structure_scan'));
 router.use(require('./board'));
 router.use(require('./details'));
 router.use(require('./patients'));
