@@ -717,15 +717,19 @@ class EmrHttpSession:
             payload["KhoaPhongId"] = self.cfg.ajaxpro_department_id
         return payload
 
-    def fetch_inpatient_list_via_ajaxpro(self, list_url: str) -> Tuple[List[Dict], Dict[str, str]]:
+    def fetch_inpatient_list_via_ajaxpro(self, list_url: str) -> Tuple[List[Dict], Dict[str, str], Optional[str]]:
         """Dự phòng cho bản HIS vẽ bảng tblNoiTru bằng AjaxPro/JS (GET HTML thường không
         bao giờ thấy bảng dù đăng nhập đúng — xem docs/EMR_STRUCTURE_SCAN.md). CHỈ dùng
         khi scan_all_inpatients() không thấy bảng — không thay thế đường HTML bình thường,
         vì payload/parse ở đây dựa trên 1 lần bắt request thật, chưa xác nhận đúng ở mọi
-        bản cài đặt. Trả về rỗng nếu endpoint chưa cấu hình hoặc lỗi (không raise)."""
+        bản cài đặt.
+
+        Trả về (all_rows, link_map, error) — không raise; error là lý do thất bại (None
+        nếu thành công) để người dùng biết chưa cấu hình, hay đã cấu hình nhưng server
+        vẫn từ chối, thay vì chỉ thấy rỗng mà không rõ vì sao."""
         endpoint = self.cfg.ajaxpro_inpatient_endpoint
         if not endpoint:
-            return [], {}
+            return [], {}, "Chưa cấu hình ajaxpro_inpatient_endpoint trong config.json."
         url = f"{self.base_origin}/ajaxpro/{endpoint}"
         payload = self._build_inpatient_ajaxpro_payload(list_url)
         headers = {
@@ -737,16 +741,19 @@ class EmrHttpSession:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         try:
             text, _final = self._request_html("POST", url, data=body, headers=headers)
+        except Exception as exc:
+            return [], {}, f"Gọi endpoint AjaxPro thất bại: {type(exc).__name__}: {exc}"
+        try:
             data = json.loads(text)
         except Exception:
-            return [], {}
+            return [], {}, f"Phản hồi AjaxPro không phải JSON hợp lệ (đầu phản hồi: {text[:200]!r})."
 
         value = (data or {}).get("value") or {}
         if value.get("Error"):
-            return [], {}
+            return [], {}, f"Server báo lỗi: {value.get('Error')} — {value.get('InfoMessage') or ''}".strip(" —")
         rows = value.get("RetObject")
         if not isinstance(rows, list):
-            return [], {}
+            return [], {}, "Phản hồi AjaxPro không có RetObject dạng danh sách như dự kiến (có thể method/param sai)."
 
         all_rows: List[Dict] = []
         link_map: Dict[str, str] = {}
@@ -758,7 +765,9 @@ class EmrHttpSession:
             tid = str(r.get("ID") or "").strip()
             if ma_bn and tid:
                 link_map[ma_bn] = _upsert_query(list_url, tiepnhanid=tid)
-        return all_rows, link_map
+        if not link_map:
+            return all_rows, link_map, "RetObject rỗng hoặc thiếu MaBN/ID — danh sách nội trú có thể thật sự trống."
+        return all_rows, link_map, None
 
     def fetch_patient_page(self, patient_view_url: str, denngay: str) -> Tuple[str, str]:
         u = _replace_or_add_denngay(_abs(self.base_origin, patient_view_url), denngay)

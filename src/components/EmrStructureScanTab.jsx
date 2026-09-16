@@ -148,6 +148,11 @@ export default function EmrStructureScanTab() {
                   )}
                 </div>
               )}
+              {report.inpatient_scan_diag?.ajaxpro_error && (
+                <div style={{ marginTop: 4, color: C.red }}>
+                  Lỗi AjaxPro: {report.inpatient_scan_diag.ajaxpro_error}
+                </div>
+              )}
             </div>
           )}
 
