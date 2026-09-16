@@ -20,7 +20,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, List, Callable
+from typing import Any, Dict, Optional, Tuple, List, Callable
 from urllib.parse import urlparse, urljoin, parse_qsl, urlencode, urlunparse
 
 try:
@@ -108,6 +108,18 @@ class EmrHttpConfig:
     cookie_file: str = ""
     use_cached_cookies: bool = True
 
+    # Một số bản HIS (ONEMES3) vẽ bảng danh sách nội trú bằng AjaxPro/JS thay vì HTML
+    # tĩnh — GET thường không bao giờ thấy bảng dù đăng nhập đúng. Các trường này chỉ
+    # cần điền khi gặp đúng tình huống đó (xem docs/EMR_STRUCTURE_SCAN.md). Để trống
+    # thì bỏ qua field đó trong request thay vì đoán giá trị (tránh gửi Guid rỗng làm
+    # server lỗi).
+    ajaxpro_inpatient_endpoint: str = ""
+    ajaxpro_inpatient_method: str = "ServerSideDrawSearchResult_VDUH"
+    ajaxpro_site_id: str = "online.onenet"
+    ajaxpro_owner_code: str = "sys"
+    ajaxpro_department_id: str = ""
+    ajaxpro_owner_user_id: str = ""
+
 
 class EmrHttpSession:
     """
@@ -170,6 +182,12 @@ class EmrHttpSession:
             max_retries=max(0, int(config.get("http_read_max_retries") or config.get("http_max_retries") or 2)),
             cookie_file=(config.get("http_cookie_file") or os.environ.get("EMR_HTTP_COOKIE_FILE") or _default_cookie_file()),
             use_cached_cookies=_cfg_bool_value(config.get("http_use_cached_cookies"), True),
+            ajaxpro_inpatient_endpoint=(config.get("ajaxpro_inpatient_endpoint") or "").strip(),
+            ajaxpro_inpatient_method=(config.get("ajaxpro_inpatient_method") or "ServerSideDrawSearchResult_VDUH").strip(),
+            ajaxpro_site_id=(config.get("ajaxpro_site_id") or "online.onenet").strip(),
+            ajaxpro_owner_code=(config.get("ajaxpro_owner_code") or "sys").strip(),
+            ajaxpro_department_id=(config.get("ajaxpro_department_id") or "").strip(),
+            ajaxpro_owner_user_id=(config.get("ajaxpro_owner_user_id") or "").strip(),
         )
         return cls(cfg)
 
@@ -643,6 +661,103 @@ class EmrHttpSession:
             link_map.update(links)
             url = next_url
 
+        return all_rows, link_map
+
+    def _build_inpatient_ajaxpro_payload(self, list_url: str) -> Dict[str, Any]:
+        """Dựng payload cho endpoint AjaxPro vẽ bảng danh sách nội trú, dựa theo yêu cầu
+        thật bắt được qua DevTools (xem docs/EMR_STRUCTURE_SCAN.md). UserSessionId/Ip lấy
+        từ tham số usid trên chính URL danh sách (đã có sau đăng nhập) — không suy đoán.
+        DepartmentId/OwnerUserId gắn với tài khoản/khoa cụ thể, chỉ thêm khi đã cấu hình."""
+        usid = dict(parse_qsl(urlparse(list_url).query)).get("usid", "")
+        ip = usid.split("_", 1)[0] if "_" in usid else ""
+        now = datetime.now()
+
+        render_info: Dict[str, Any] = {
+            "SiteId": self.cfg.ajaxpro_site_id,
+            "SiteLanguage": "vi",
+            "AssetLevelCode": self.cfg.ajaxpro_site_id,
+            "SiteAssetLevelId": self.cfg.ajaxpro_site_id,
+            "CurrencyDecimalDigits": 2,
+            "CurrencyDecimalSeparator": ".",
+            "CurrencyGroupSeparator": ",",
+            "Ip": ip,
+            "Machine": ip,
+            "LoginName": self.cfg.username,
+            "OwnerCode": self.cfg.ajaxpro_owner_code,
+            "OwnerId": self.cfg.ajaxpro_owner_code,
+            "UserSessionId": usid,
+            "WebPage": None,
+            "WebPartId": "Dashboard 02",
+        }
+        if self.cfg.ajaxpro_department_id:
+            render_info["DepartmentId"] = self.cfg.ajaxpro_department_id
+        if self.cfg.ajaxpro_owner_user_id:
+            render_info["OwnerUserId"] = self.cfg.ajaxpro_owner_user_id
+
+        payload: Dict[str, Any] = {
+            "BacSiNhanBenh": "",
+            "Chon": "",
+            "CurrentPageIndex": 0,
+            "DenNgay": now.strftime("23:59 %d/%m/%Y"),
+            "DenNgayYLenh": now.strftime("23:59 %d/%m/%Y"),
+            "Loai": 6,
+            "LoaiNoiTru": "",
+            "LoaiQT": None,
+            "LoaiRaVien": "",
+            "LoaiYLenh": 0,
+            "ORenderInfo": render_info,
+            "QuocTichId": "",
+            "TrangThai": 1,
+            "TuNgay": now.strftime("00:00 %d/%m/%Y"),
+            "TuNgayYLenh": now.strftime("00:00 %d/%m/%Y"),
+            "buong_id": "",
+            "doiTuong_ID": "",
+        }
+        if self.cfg.ajaxpro_department_id:
+            payload["KhoaPhongId"] = self.cfg.ajaxpro_department_id
+        return payload
+
+    def fetch_inpatient_list_via_ajaxpro(self, list_url: str) -> Tuple[List[Dict], Dict[str, str]]:
+        """Dự phòng cho bản HIS vẽ bảng tblNoiTru bằng AjaxPro/JS (GET HTML thường không
+        bao giờ thấy bảng dù đăng nhập đúng — xem docs/EMR_STRUCTURE_SCAN.md). CHỈ dùng
+        khi scan_all_inpatients() không thấy bảng — không thay thế đường HTML bình thường,
+        vì payload/parse ở đây dựa trên 1 lần bắt request thật, chưa xác nhận đúng ở mọi
+        bản cài đặt. Trả về rỗng nếu endpoint chưa cấu hình hoặc lỗi (không raise)."""
+        endpoint = self.cfg.ajaxpro_inpatient_endpoint
+        if not endpoint:
+            return [], {}
+        url = f"{self.base_origin}/ajaxpro/{endpoint}"
+        payload = self._build_inpatient_ajaxpro_payload(list_url)
+        headers = {
+            "Content-Type": "text/plain; charset=UTF-8",
+            "X-AjaxPro-Method": self.cfg.ajaxpro_inpatient_method,
+            "Referer": list_url,
+            "Origin": self.base_origin,
+        }
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        try:
+            text, _final = self._request_html("POST", url, data=body, headers=headers)
+            data = json.loads(text)
+        except Exception:
+            return [], {}
+
+        value = (data or {}).get("value") or {}
+        if value.get("Error"):
+            return [], {}
+        rows = value.get("RetObject")
+        if not isinstance(rows, list):
+            return [], {}
+
+        all_rows: List[Dict] = []
+        link_map: Dict[str, str] = {}
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            all_rows.append(r)
+            ma_bn = str(r.get("MaBN") or "").strip()
+            tid = str(r.get("ID") or "").strip()
+            if ma_bn and tid:
+                link_map[ma_bn] = _upsert_query(list_url, tiepnhanid=tid)
         return all_rows, link_map
 
     def fetch_patient_page(self, patient_view_url: str, denngay: str) -> Tuple[str, str]:
