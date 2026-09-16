@@ -73,20 +73,60 @@ def test_fetch_inpatient_list_via_ajaxpro_get_lai_truoc_khi_post_lay_usid_moi(mo
         calls.append(method)
         if method == "GET":
             return "<html></html>", fresh_url
-        posted_body["data"] = json.loads(kwargs["data"])
-        posted_body["referer"] = kwargs["headers"]["Referer"]
+        # Chỉ ghi lại lệnh chính (lệnh lấy bảng), bỏ qua 3 lệnh khởi tạo chạy trước đó.
+        if kwargs["headers"]["X-AjaxPro-Method"] == sess.cfg.ajaxpro_inpatient_method:
+            posted_body["data"] = json.loads(kwargs["data"])
+            posted_body["referer"] = kwargs["headers"]["Referer"]
         return fake_response, url
 
     monkeypatch.setattr(sess, "_request_html", fake_request_html)
 
     rows, link_map, error = sess.fetch_inpatient_list_via_ajaxpro(stale_url)
 
-    assert calls == ["GET", "POST"]
+    # 1 GET làm mới phiên + 3 lệnh khởi tạo (cùng WebPart) + 1 lệnh chính, đúng thứ tự
+    # trình duyệt thật gọi (xác nhận qua DevTools).
+    assert calls == ["GET", "POST", "POST", "POST", "POST"]
     assert error is None
     assert posted_body["data"]["ORenderInfo"]["UserSessionId"] == "1.2.3.4_fresh"
     assert posted_body["referer"] == fresh_url
     assert "usid=1.2.3.4_fresh" in link_map["26091567"]
     assert "usid=1.2.3.4_stale" not in link_map["26091567"]
+
+
+def test_fetch_inpatient_list_via_ajaxpro_goi_du_3_lenh_khoi_tao_dung_thu_tu_truoc_lenh_chinh(monkeypatch):
+    """Trình duyệt thật gọi 3 lệnh AjaxPro khác (cùng WebPart, chỉ gửi ORenderInfo, không
+    có bộ lọc tìm kiếm) trước khi gọi lệnh lấy bảng — xác nhận qua DevTools. Mô phỏng lại
+    đúng tuần tự này, phòng trường hợp server cần các lệnh đó thiết lập trạng thái trước."""
+    sess = _make_session(ajaxpro_inpatient_endpoint="Some.WebPart.ashx")
+    fake_response = json.dumps({
+        "value": {"Error": False, "RetObject": [{"ID": "enc-1", "MaBN": "26091567", "TenBN": "x"}]},
+    })
+
+    posted_methods = []
+    posted_bodies = []
+
+    def fake_request_html(method, url, **kwargs):
+        if method == "GET":
+            return "<html></html>", "http://emr.example/home.aspx?usid=1.2.3.4_xyz"
+        posted_methods.append(kwargs["headers"]["X-AjaxPro-Method"])
+        posted_bodies.append(json.loads(kwargs["data"]))
+        return fake_response, url
+
+    monkeypatch.setattr(sess, "_request_html", fake_request_html)
+
+    sess.fetch_inpatient_list_via_ajaxpro("http://emr.example/home.aspx?usid=1.2.3.4_xyz")
+
+    assert posted_methods == [
+        "ServerSideCheckQuickConfigToday",
+        "ServerSideGetQuickConfig",
+        "ServerSideCheckAdmin",
+        "ServerSideDrawSearchResult_VDUH",
+    ]
+    # 3 lệnh khởi tạo chỉ gửi mỗi ORenderInfo, không kèm bộ lọc tìm kiếm.
+    for body in posted_bodies[:3]:
+        assert set(body.keys()) == {"ORenderInfo"}
+    # lệnh chính mới có đủ bộ lọc tìm kiếm.
+    assert "CurrentPageIndex" in posted_bodies[3]
 
 
 def test_fetch_inpatient_list_via_ajaxpro_parse_retobject_thanh_link_map(monkeypatch):
