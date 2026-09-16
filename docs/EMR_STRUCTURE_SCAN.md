@@ -41,6 +41,20 @@ tránh vô tình chạm vào thao tác ghi. Tải tối đa `--max-discovered` t
 không dồn dập lên EMR thật. Với mỗi trang mới: chỉ tóm tắt cấu trúc (field id, tên bảng
 + header cột, số lựa chọn dropdown) — **không suy đoán ý nghĩa** của trang.
 
+## Nếu báo "Đăng nhập HTTP thất bại"
+
+Chế độ HTTP-only/no-Chrome không tự mở Chrome để đăng nhập. Nếu POST đăng
+nhập bằng HTTP bị EMR từ chối (thường do trang login có cơ chế
+viewstate/token phức tạp hơn form thường), chạy một lần từ máy có Chrome:
+
+```bash
+npm run auth:http
+```
+
+Lệnh này mở Chrome thật để đăng nhập rồi lưu cookie vào
+`.runtime/auth/emr_http_cookies.json`. Sau đó bấm "Dò cấu trúc EMR ngay"
+lại — lần quét sẽ dùng cookie đã lưu, không cần mở Chrome nữa.
+
 ## Giới hạn đã biết
 
 - `loadformdongdraw` (form đóng hồ sơ) chưa đưa vào manifest — cần `noitruid`/`hosoid`

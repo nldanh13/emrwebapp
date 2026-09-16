@@ -15,6 +15,7 @@
     "test:ui": "vitest run",
     "test:ui:watch": "vitest",
     "test:syntax": "python -m compileall worker",
+    "auth:http": "python worker/main_worker.py auth-http",
     "package:clean": "node scripts/prepare_release.js",
     "check": "node scripts/health_check.js",
     "inspect:data": "node scripts/inspect_runtime_data.js",
