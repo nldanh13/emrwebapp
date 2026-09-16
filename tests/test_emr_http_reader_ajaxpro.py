@@ -104,6 +104,37 @@ def test_fetch_inpatient_list_via_ajaxpro_loi_http_khong_raise_va_bao_ro_ly_do(m
     assert "boom" in error
 
 
+def test_fetch_inpatient_list_via_ajaxpro_thieu_retobject_bao_ro_cac_khoa_thay_duoc(monkeypatch):
+    """Đúng tình huống thực tế gặp phải: JSON hợp lệ, có 'value', nhưng không có
+    RetObject dạng danh sách — báo rõ tên các khoá tìm thấy để chẩn đoán tiếp,
+    không lặp lại y hệt câu chung chung cũ."""
+    sess = _make_session(ajaxpro_inpatient_endpoint="Some.WebPart.ashx")
+    fake_response = json.dumps({"value": {"InfoMessage": "", "SomeOtherField": 1}})
+    monkeypatch.setattr(sess, "_request_html", lambda method, url, **kw: (fake_response, url))
+
+    rows, link_map, error = sess.fetch_inpatient_list_via_ajaxpro(
+        "http://emr.example/home.aspx?usid=1.2.3.4_xyz"
+    )
+    assert rows == []
+    assert link_map == {}
+    assert "RetObject" in error
+    assert "SomeOtherField" in error
+
+
+def test_fetch_inpatient_list_via_ajaxpro_thieu_value_bao_ro_cac_khoa_ngoai_cung(monkeypatch):
+    sess = _make_session(ajaxpro_inpatient_endpoint="Some.WebPart.ashx")
+    fake_response = json.dumps({"error": "boom", "otherKey": True})
+    monkeypatch.setattr(sess, "_request_html", lambda method, url, **kw: (fake_response, url))
+
+    rows, link_map, error = sess.fetch_inpatient_list_via_ajaxpro(
+        "http://emr.example/home.aspx?usid=1.2.3.4_xyz"
+    )
+    assert rows == []
+    assert link_map == {}
+    assert "value" in error
+    assert "otherKey" in error
+
+
 def test_fetch_inpatient_list_via_ajaxpro_server_bao_loi_duoc_bao_ro(monkeypatch):
     sess = _make_session(ajaxpro_inpatient_endpoint="Some.WebPart.ashx")
     fake_response = json.dumps({
