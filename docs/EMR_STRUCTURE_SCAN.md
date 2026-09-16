@@ -70,9 +70,13 @@ là danh sách trống thật hay bảng đã đổi cấu trúc.
 Một số bản HIS (ONEMES3) vẽ bảng này bằng JavaScript sau khi trang tải xong (gọi qua
 một endpoint riêng gọi là AjaxPro), thay vì có sẵn trong HTML — HTTP-only/no-Chrome
 không chạy JS nên sẽ luôn "thiếu bảng" dù đăng nhập đúng và danh sách thật sự không
-trống. Cách kiểm tra: mở Chrome thật, vào đúng màn hình danh sách nội trú, bấm F12 →
-tab Network → bấm F5 → tìm dòng `xhr`/`fetch` lớn nhất trỏ tới `/ajaxpro/....ashx` có
-header `X-AjaxPro-Method`. Nếu thấy vậy, điền vào `config.json`:
+trống. Đây không phải suy đoán — đã xác nhận trực tiếp qua DevTools trên một EMR thật
+(POST `/ajaxpro/....ashx` kèm header `X-AjaxPro-Method`, trả về JSON chứa danh sách
+bệnh nhân do JS tự vẽ ra bảng).
+
+Cách kiểm tra trên EMR của bạn: mở Chrome thật, vào đúng màn hình danh sách nội trú,
+bấm F12 → tab Network → bấm F5 → tìm dòng `xhr`/`fetch` lớn nhất trỏ tới
+`/ajaxpro/....ashx` có header `X-AjaxPro-Method`. Nếu thấy vậy, điền vào `config.json`:
 
 | Key | Lấy từ đâu |
 | --- | --- |
@@ -82,10 +86,20 @@ header `X-AjaxPro-Method`. Nếu thấy vậy, điền vào `config.json`:
 | `ajaxpro_owner_user_id` | Trường `OwnerUserId` trong tab Payload |
 
 Không cần điền mật khẩu hay cookie — phiên đăng nhập vẫn dùng cookie HTTP bình thường.
-Nếu chưa điền `ajaxpro_inpatient_endpoint`, đường dự phòng này tự động bỏ qua (không tự
-suy đoán giá trị). Đây là kết quả reverse-engineer từ 1 lần bắt request thật, **chưa
-chắc đúng ở mọi bản cài đặt khác** — nếu thử vẫn không ra bệnh nhân, báo cáo `warning`/
-`inpatient_scan_diag` vẫn hiển thị bình thường để biết đường dự phòng có chạy không.
+
+**Quan trọng**: ngay cả khi điền đủ 4 giá trị trên đúng từng chữ (kể cả GET lại trang
+để lấy tham số phiên mới nhất trước khi gọi), có thể vẫn gặp lỗi
+`System.MissingMethodException` từ server dù tên method đúng như trình duyệt đang dùng
+— tức là còn thiếu điều kiện phía server mà không xác định được nếu không có tài liệu
+kỹ thuật từ nhà cung cấp ONEMES hoặc IT của bệnh viện. Đây là giới hạn hiện tại, không
+phải bug.
+
+Chỉ cần điền được **`ajaxpro_inpatient_endpoint`** (dù đường gọi AjaxPro có tự chạy
+được hay không), báo cáo sẽ tự hạ cấp cảnh báo "Đổi cấu trúc" của trang này thành
+"ℹ Giới hạn kỹ thuật (đã xác nhận)" — vì việc bạn cấu hình được giá trị này (nghĩa là
+đã tự xác nhận bằng DevTools) đã đủ bằng chứng đây là giới hạn kỹ thuật thật, không
+phải EMR đổi cấu trúc. Chưa điền thì báo cáo vẫn giữ nguyên cảnh báo đỏ như trước, tránh
+tự suy đoán cho các bản cài đặt chưa xác nhận.
 
 ## Giới hạn đã biết
 

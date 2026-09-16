@@ -17,6 +17,7 @@ function StatusDot({ status }) {
     no_url:               { color: C.amber,  label: '! Không dựng được URL' },
     skipped_not_configured: { color: C.text3, label: '— Chưa cấu hình' },
     skipped_no_sample_patient: { color: C.amber, label: '! Không có BN mẫu' },
+    known_ajax_limitation: { color: C.blue, label: 'ℹ Giới hạn kỹ thuật (đã xác nhận)' },
   };
   const info = map[status] || { color: C.text3, label: status || '—' };
   return <span style={{ color: info.color, fontWeight: 700, fontSize: 12 }}>{info.label}</span>;
@@ -24,7 +25,8 @@ function StatusDot({ status }) {
 
 function KnownPageRow({ page }) {
   const [open, setOpen] = useState(false);
-  const hasDetail = (page.missing_fields?.length || 0) + (page.missing_tables?.length || 0) > 0;
+  const isKnownLimitation = page.status === 'known_ajax_limitation';
+  const hasDetail = isKnownLimitation || (page.missing_fields?.length || 0) + (page.missing_tables?.length || 0) > 0;
   return (
     <div style={{ borderBottom: `1px solid ${C.border2}`, padding: '8px 12px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
@@ -44,7 +46,12 @@ function KnownPageRow({ page }) {
           )}
         </div>
       </div>
-      {open && (
+      {open && isKnownLimitation && (
+        <div style={{ marginTop: 6, fontSize: 12, color: C.blue, background: C.blueBg, border: `1px solid ${C.blueBorder}`, borderRadius: 4, padding: '6px 10px' }}>
+          {page.note}
+        </div>
+      )}
+      {open && !isKnownLimitation && (
         <div style={{ marginTop: 6, fontSize: 12, color: C.red, background: C.redBg, border: `1px solid ${C.redBorder}`, borderRadius: 4, padding: '6px 10px' }}>
           {page.missing_fields?.length > 0 && <div>Thiếu field: {page.missing_fields.join(', ')}</div>}
           {page.missing_tables?.length > 0 && <div>Thiếu bảng: {page.missing_tables.join(', ')}</div>}
