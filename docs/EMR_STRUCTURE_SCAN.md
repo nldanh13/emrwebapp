@@ -65,6 +65,28 @@ vẫn được kiểm thật sự — xem trạng thái của nó trong "CÁC TR
 `inpatient_scan_diag` (số dòng đọc được, số dòng dò được link, tên cột tìm thấy) để biết
 là danh sách trống thật hay bảng đã đổi cấu trúc.
 
+## Nếu trang "Danh sách bệnh nhân nội trú" báo "Đổi cấu trúc" (thiếu bảng tblNoiTru)
+
+Một số bản HIS (ONEMES3) vẽ bảng này bằng JavaScript sau khi trang tải xong (gọi qua
+một endpoint riêng gọi là AjaxPro), thay vì có sẵn trong HTML — HTTP-only/no-Chrome
+không chạy JS nên sẽ luôn "thiếu bảng" dù đăng nhập đúng và danh sách thật sự không
+trống. Cách kiểm tra: mở Chrome thật, vào đúng màn hình danh sách nội trú, bấm F12 →
+tab Network → bấm F5 → tìm dòng `xhr`/`fetch` lớn nhất trỏ tới `/ajaxpro/....ashx` có
+header `X-AjaxPro-Method`. Nếu thấy vậy, điền vào `config.json`:
+
+| Key | Lấy từ đâu |
+| --- | --- |
+| `ajaxpro_inpatient_endpoint` | Phần sau `/ajaxpro/` trong Request URL (vd `ONEMES3.DT.BVDK.WebParts.DanhSachDieuTriNoiTruDraw,....ashx`) |
+| `ajaxpro_inpatient_method` | Header `X-AjaxPro-Method` (để trống thì dùng mặc định `ServerSideDrawSearchResult_VDUH`) |
+| `ajaxpro_department_id` | Trường `DepartmentId` (hoặc `KhoaPhongId`) trong tab Payload |
+| `ajaxpro_owner_user_id` | Trường `OwnerUserId` trong tab Payload |
+
+Không cần điền mật khẩu hay cookie — phiên đăng nhập vẫn dùng cookie HTTP bình thường.
+Nếu chưa điền `ajaxpro_inpatient_endpoint`, đường dự phòng này tự động bỏ qua (không tự
+suy đoán giá trị). Đây là kết quả reverse-engineer từ 1 lần bắt request thật, **chưa
+chắc đúng ở mọi bản cài đặt khác** — nếu thử vẫn không ra bệnh nhân, báo cáo `warning`/
+`inpatient_scan_diag` vẫn hiển thị bình thường để biết đường dự phòng có chạy không.
+
 ## Giới hạn đã biết
 
 - `loadformdongdraw` (form đóng hồ sơ) chưa đưa vào manifest — cần `noitruid`/`hosoid`

@@ -194,6 +194,23 @@ def run_scan(max_discovered: int = 15) -> Dict[str, Any]:
     sess.login()
 
     all_rows, link_map = sess.scan_all_inpatients()
+    inpatient_list_source = "html_table"
+
+    # Một số bản HIS vẽ bảng nội trú bằng AjaxPro/JS, không có sẵn trong HTML tĩnh — GET
+    # thường không bao giờ thấy bảng dù đăng nhập đúng. Chỉ thử khi đường HTML thường
+    # không thấy gì, và chỉ hoạt động nếu đã cấu hình ajaxpro_inpatient_endpoint (xem
+    # docs/EMR_STRUCTURE_SCAN.md) — không tự bật ngầm.
+    if not link_map and hasattr(sess, "fetch_inpatient_list_via_ajaxpro"):
+        try:
+            ajax_rows, ajax_link_map = sess.fetch_inpatient_list_via_ajaxpro(sess._effective_inpatient_url())
+        except Exception:
+            ajax_rows, ajax_link_map = [], {}
+        if ajax_link_map:
+            all_rows, link_map = ajax_rows, ajax_link_map
+            inpatient_list_source = "ajaxpro_fallback"
+        else:
+            inpatient_list_source = "none"
+
     sample_ma_bn = next(iter(link_map), None)
 
     # Không có bệnh nhân mẫu thì vẫn tiếp tục: các trang không cần patient (vd chính
@@ -209,6 +226,7 @@ def run_scan(max_discovered: int = 15) -> Dict[str, Any]:
             "nội trú và inpatient_scan_diag bên dưới để biết bảng/cột có đổi không."
         )
         inpatient_scan_diag = {
+            "source": inpatient_list_source,
             "rows_parsed_count": len(all_rows),
             "link_map_count": len(link_map),
             "sample_row_headers": sorted(set(all_rows[0].keys())) if all_rows else [],
@@ -315,6 +333,7 @@ def run_scan(max_discovered: int = 15) -> Dict[str, Any]:
         "known_gaps": manifest.get("known_gaps", []),
         "warning": warning,
         "inpatient_scan_diag": inpatient_scan_diag,
+        "inpatient_list_source": inpatient_list_source,
     }
 
 

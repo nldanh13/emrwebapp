@@ -106,14 +106,49 @@ def test_run_scan_khong_co_benh_nhan_mau_van_bao_cao_thay_vi_bo_cuoc(monkeypatch
     assert report['sample_ma_bn'] is None
     assert report['warning']
     assert report['inpatient_scan_diag'] == {
+        'source': 'html_table',
         'rows_parsed_count': 0,
         'link_map_count': 0,
         'sample_row_headers': [],
     }
+    assert report['inpatient_list_source'] == 'html_table'
 
     by_key = {p['page_key']: p for p in report['known_pages']}
-    # trang cần patient (vd bác sĩ) bị skip rõ ràng, không lỗi mập mờ
     assert by_key['bac_si']['status'] == 'skipped_no_sample_patient'
-    # trang không cần patient (danh sách nội trú) vẫn được kiểm thật sự
     assert by_key['danhsach_noi_tru']['status'] == 'changed'
     assert 'tblNoiTru' in by_key['danhsach_noi_tru']['missing_tables']
+
+
+class _FakeSessionAjaxproFallback(_FakeSessionNoPatients):
+    """Bảng HTML rỗng, nhưng đường dự phòng AjaxPro có dữ liệu thật."""
+
+    def fetch_inpatient_list_via_ajaxpro(self, list_url):
+        return (
+            [{'ID': 'enc-1', 'MaBN': '26091567', 'TenBN': 'x'}],
+            {'26091567': 'https://emr.example.com/home.aspx?wpid=bacsidraw&tiepnhanid=enc-1'},
+        )
+
+
+class _FakeEmrHttpSessionAjaxproFallback:
+    @staticmethod
+    def from_config_dict(config):
+        return _FakeSessionAjaxproFallback()
+
+
+def test_run_scan_dung_duoc_ajaxpro_khi_html_khong_thay_bang(monkeypatch):
+    """Một số bản HIS vẽ bảng nội trú bằng AjaxPro/JS — khi HTML thường không thấy
+    link_map, run_scan() thử đường dự phòng AjaxPro; nếu có dữ liệu thì dùng luôn,
+    không còn báo 'không có bệnh nhân mẫu' nữa."""
+    monkeypatch.setattr(emr_structure_scan, 'EmrHttpSession', _FakeEmrHttpSessionAjaxproFallback)
+    monkeypatch.setattr(emr_structure_scan, 'load_config', lambda: {})
+
+    report = run_scan(max_discovered=5)
+
+    assert report['status'] == 'ok'
+    assert report['sample_ma_bn'] == '26091567'
+    assert report['warning'] is None
+    assert report['inpatient_list_source'] == 'ajaxpro_fallback'
+
+    by_key = {p['page_key']: p for p in report['known_pages']}
+    # có bệnh nhân mẫu (qua AjaxPro) nên trang cần patient không còn bị skip nữa
+    assert by_key['bac_si']['status'] != 'skipped_no_sample_patient'

@@ -141,12 +141,19 @@ export default function EmrStructureScanTab() {
               {report.warning}
               {report.inpatient_scan_diag && (
                 <div style={{ marginTop: 4, color: C.text2 }}>
-                  Số dòng đọc được: {report.inpatient_scan_diag.rows_parsed_count} · Số dòng dò được link BN: {report.inpatient_scan_diag.link_map_count}
+                  Nguồn danh sách: {report.inpatient_scan_diag.source === 'ajaxpro_fallback' ? 'AjaxPro (dự phòng)' : report.inpatient_scan_diag.source === 'none' ? 'không lấy được (kể cả AjaxPro)' : 'bảng HTML'}
+                  {' · '}Số dòng đọc được: {report.inpatient_scan_diag.rows_parsed_count} · Số dòng dò được link BN: {report.inpatient_scan_diag.link_map_count}
                   {report.inpatient_scan_diag.sample_row_headers?.length > 0 && (
                     <> · Cột tìm thấy: {report.inpatient_scan_diag.sample_row_headers.join(', ')}</>
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+          {!report.warning && report.inpatient_list_source === 'ajaxpro_fallback' && (
+            <div style={{ marginBottom: 16, fontSize: 11, color: C.text3 }}>
+              Danh sách nội trú lấy qua đường dự phòng AjaxPro (bảng HTML gốc trống/không thấy).
             </div>
           )}
 
