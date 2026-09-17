@@ -20,6 +20,7 @@ export default function ShiftMobileView({
   dischargePrintPatientsCount = 0,
   handleUseSession, handleFetchNew, toast,
   workflowTitle, workflowHint, scopeInfo,
+  onInfusionUpdated,
   featureAvailability = {}, disabledFeatureLabels = [],
   missingRangeDates = [], missingRangeDatesLabel = '', requestedDayCount = 0,
 }) {
@@ -50,6 +51,7 @@ export default function ShiftMobileView({
           onInputCare={handleInputCare} onInputInfusion={handleInputInfusion}
           onInputProcedure={handleInputProcedure}
               onRefreshDetails={handleRefreshDetailsOne} onPrintDischargeBundle={handlePrintDischargeBundle} running={running}
+              onInfusionUpdated={onInfusionUpdated} toast={toast}
         />
         {showPicker && (
           <SessionPicker onUseSession={handleUseSession} onFetchNew={handleFetchNew}

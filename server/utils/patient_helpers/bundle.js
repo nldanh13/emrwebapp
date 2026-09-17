@@ -56,6 +56,27 @@ function warningCount(records) {
   return collectRecordList(records, 'processing_warnings').length + collectRecordList(records, 'unparsed_orders').length;
 }
 
+// Dịch truyền lấy từ EMR đôi khi thiếu thể tích (chỉ đọc được tên/giờ, không
+// đọc được số ml). Nhập thẳng vào EMR với thể tích rỗng sẽ bị worker coi là
+// 0ml — nguy hiểm cho người bệnh — nên phải cảnh báo và chặn nhập cho tới khi
+// điều dưỡng bổ sung thủ công ở tab "Sửa dịch truyền".
+function hasValidVolume(item) {
+  const raw = String(item?.the_tich ?? '').trim().replace(',', '.');
+  if (!raw) return false;
+  const num = Number(raw);
+  return Number.isFinite(num) && num > 0;
+}
+
+function buildInfusionVolumeWarnings(dichTruyen = []) {
+  return (Array.isArray(dichTruyen) ? dichTruyen : [])
+    .filter(item => !hasValidVolume(item))
+    .map(item => ({
+      code: 'infusion_missing_volume',
+      gio_y_lenh: item?.tg_bat_dau || item?.gio_dung || '',
+      message: `Thiếu thể tích (ml) của "${item?.ten_hien_thi || item?.ten_thuoc || 'dịch truyền'}" — vào tab "Sửa dịch truyền" để nhập trước khi nhập dịch truyền.`,
+    }));
+}
+
 function collectVtytPlan(records) {
   const itemsByKey = new Map();
   const warnings = [];
@@ -137,10 +158,12 @@ function buildPatientDayBundle(records, patientId, date, nurseSchedule, doneStat
     ...d,
     dieu_duong: getNurseByShift(d.tg_bat_dau || d.gio_dung || '', nurseSchedule),
   }));
+  const infusionVolumeWarnings = buildInfusionVolumeWarnings(dtWithNurse);
+  const infusIncomplete = infusionVolumeWarnings.length > 0;
 
   const preview = buildPreview(r, dtWithNurse, nurseSchedule);
   const careRequired = Array.isArray(preview.care) && preview.care.length > 0;
-  const warnCount = warningCount(rows);
+  const warnCount = warningCount(rows) + infusionVolumeWarnings.length;
   const vtytPlan = collectVtytPlan(rows);
 
   const doneEnough = (!careRequired || care_done) && (!hasInfusion || infus_done) && (!hasProcedure || proc_done);
@@ -183,6 +206,8 @@ function buildPatientDayBundle(records, patientId, date, nurseSchedule, doneStat
     care_stale,
     infus_done,
     infus_stale,
+    infus_incomplete: infusIncomplete,
+    infus_incomplete_count: infusionVolumeWarnings.length,
     procedure_done:   proc_done,
     procedure_stale:  proc_stale,
     vtyt_done:        vtytInfo.done,
@@ -195,7 +220,7 @@ function buildPatientDayBundle(records, patientId, date, nurseSchedule, doneStat
     preview,
     raw_order_events: rawOrderEvents,
     unparsed_orders: unparsedOrders,
-    processing_warnings: processingWarnings,
+    processing_warnings: [...processingWarnings, ...infusionVolumeWarnings],
     vtyt: vtytPlan,
     // Giữ toàn bộ nhóm thuốc để tab Báo cáo không bị mất TMC/TB/TDD/Khác.
     thuoc:    {
@@ -211,4 +236,4 @@ function buildPatientDayBundle(records, patientId, date, nurseSchedule, doneStat
   };
 }
 
-module.exports = { collectMedicationCategory, collectExtraMedicationCategories, collectRecordList, hasTargetProcedure, buildPatientDayBundle };
+module.exports = { collectMedicationCategory, collectExtraMedicationCategories, collectRecordList, hasTargetProcedure, hasValidVolume, buildInfusionVolumeWarnings, buildPatientDayBundle };

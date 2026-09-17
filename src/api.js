@@ -78,6 +78,7 @@ function apiActionLabel(method, url) {
     'GET /api/run-postprocess': 'xử lý và phân loại dữ liệu',
     'GET /api/has-processed': 'kiểm tra dữ liệu đã xử lý',
     'GET /api/get-patients': 'tải danh sách người bệnh đã xử lý',
+    'POST /api/update-infusion-item': 'sửa thể tích/tốc độ dịch truyền',
     'POST /api/check-input-changes': 'kiểm tra y lệnh mới trước khi nhập',
     'POST /api/run-input-care': 'nhập chăm sóc',
     'POST /api/run-input-infusions': 'nhập dịch truyền',
@@ -414,6 +415,8 @@ export const hasProcessed = () => get('/api/has-processed');
 
 // ── Patients (processed) ─────────────────────────────────────────────────────
 export const getPatients = () => get('/api/get-patients');
+export const updateInfusionItem = (ma_bn, ngay_lam, match, updates) =>
+  post('/api/update-infusion-item', { ma_bn, ngay_lam, match, updates });
 
 // ── Research ────────────────────────────────────────────────────────────────
 export const getResearchArchive = () => get('/api/research/archive');

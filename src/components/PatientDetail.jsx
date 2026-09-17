@@ -4,6 +4,7 @@ import { Badge, Mono, Btn, Dot, Spinner } from './shared.jsx';
 import * as api from '../api.js';
 import PatientTimeline from './patient/PatientTimeline.jsx';
 import PatientPreview from './patient/PatientPreview.jsx';
+import InfusionEditPanel from './patient/InfusionEditPanel.jsx';
 import PatientLogModal from './patient/PatientLogModal.jsx';
 import { getPatientNotices, PatientNoticePills } from './patientStatusNotice.jsx';
 import { isDischargePrintPatientOnDates } from '../utils/dischargePrint.js';
@@ -104,7 +105,12 @@ function PatientHeader({ patient, activeDay, status, subTab, setSubTab, availabl
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 9, flexWrap: 'wrap' }}>
-        {[{ id: 'timeline', label: 'Timeline YL' }, { id: 'preview', label: 'Xem trước nhập' }, { id: 'raw', label: 'Y lệnh gốc' }].map(t => (
+        {[
+          { id: 'timeline', label: 'Timeline YL' },
+          { id: 'preview', label: 'Xem trước nhập' },
+          ...(hasInfusionAny ? [{ id: 'meds', label: 'Sửa dịch truyền' }] : []),
+          { id: 'raw', label: 'Y lệnh gốc' },
+        ].map(t => (
           <button type="button" key={t.id} onClick={() => setSubTab(t.id)} style={{
             padding: '3px 10px', borderRadius: 4, border: '1px solid',
             fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
@@ -116,7 +122,7 @@ function PatientHeader({ patient, activeDay, status, subTab, setSubTab, availabl
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
           <Badge text={careBadge} bg={p.care_stale_count > 0 ? C.amberBg : (p.care_done ? C.greenBg : C.surface2)} color={p.care_stale_count > 0 ? C.amber : (p.care_done ? C.green : C.text2)} />
           {hasInfusionAny && (
-            <Badge text={infusionBadge} bg={p.infus_stale_count > 0 ? C.amberBg : (p.infus_done ? C.greenBg : C.surface2)} color={p.infus_stale_count > 0 ? C.amber : (p.infus_done ? C.green : C.text2)} />
+            <Badge text={infusionBadge} bg={p.has_infusion_incomplete ? C.redBg : (p.infus_stale_count > 0 ? C.amberBg : (p.infus_done ? C.greenBg : C.surface2))} color={p.has_infusion_incomplete ? C.red : (p.infus_stale_count > 0 ? C.amber : (p.infus_done ? C.green : C.text2))} />
           )}
           {hasProcedureAny && (
             <Badge text={procedureBadge} bg={p.procedure_stale_count > 0 ? C.amberBg : (p.procedure_done ? C.greenBg : C.surface2)} color={p.procedure_stale_count > 0 ? C.amber : (p.procedure_done ? C.green : C.text2)} />
@@ -223,7 +229,7 @@ function ActionCluster({ label, children, tone = 'default' }) {
   );
 }
 
-function PatientActions({ patient, activeDate, availableDates, activeHasInfusion, activeHasProcedure, hasInfusionAny, hasProcedureAny, infusionTotal, procedureTotal, onInputCare, onInputInfusion, onInputProcedure, onRefreshDetails, onPrintDischargeBundle, onViewLog, running }) {
+function PatientActions({ patient, activeDate, availableDates, activeHasInfusion, activeHasProcedure, activeInfusionIncomplete, hasInfusionAny, hasProcedureAny, infusionTotal, procedureTotal, onInputCare, onInputInfusion, onInputProcedure, onRefreshDetails, onPrintDischargeBundle, onGotoMeds, onViewLog, running }) {
   const hasManyDays = availableDates.length > 1;
   const smallBtn = { padding: '5px 9px', fontSize: 11, whiteSpace: 'nowrap', minHeight: 28 };
   const busy = !!running;
@@ -283,14 +289,20 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
         </ActionCluster>
 
         {(activeHasInfusion || (hasInfusionAny && hasManyDays)) && (
-          <ActionCluster label="DT" tone="primary">
+          <ActionCluster label="DT" tone={activeInfusionIncomplete ? 'warn' : 'primary'}>
             {activeHasInfusion && (
-              <Btn variant="primary" disabled={busy || !activeDate} style={smallBtn} title={`Kiểm tra, nhập thiếu và sửa sai dịch truyền ngày ${dayText}`} onClick={() => onInputInfusion?.([patient], activeDate)}>
-                {running === 'check-infus' ? <><Spinner size={10} /> Kiểm tra YL</> : (running === 'infus' ? <><Spinner size={10} /> Đang đồng bộ</> : 'Kiểm tra / Nhập / Sửa')}
-              </Btn>
+              activeInfusionIncomplete ? (
+                <Btn variant="solidWarn" style={smallBtn} title="Còn dịch truyền thiếu thể tích — bấm để vào tab Sửa dịch truyền nhập trước" onClick={() => onGotoMeds?.()}>
+                  ⚠ Thiếu thể tích — Sửa ngay
+                </Btn>
+              ) : (
+                <Btn variant="primary" disabled={busy || !activeDate} style={smallBtn} title={`Kiểm tra, nhập thiếu và sửa sai dịch truyền ngày ${dayText}`} onClick={() => onInputInfusion?.([patient], activeDate)}>
+                  {running === 'check-infus' ? <><Spinner size={10} /> Kiểm tra YL</> : (running === 'infus' ? <><Spinner size={10} /> Đang đồng bộ</> : 'Kiểm tra / Nhập / Sửa')}
+                </Btn>
+              )
             )}
             {hasInfusionAny && hasManyDays && (
-              <Btn variant="default" disabled={busy} style={smallBtn} title="Kiểm tra, nhập thiếu và sửa sai dịch truyền cho tất cả ngày của bệnh nhân đang chọn" onClick={() => onInputInfusion?.([patient], null)}>
+              <Btn variant="default" disabled={busy} style={smallBtn} title="Kiểm tra, nhập thiếu và sửa sai dịch truyền cho tất cả ngày của bệnh nhân đang chọn (ngày nào còn thiếu thể tích sẽ bị bỏ qua)" onClick={() => onInputInfusion?.([patient], null)}>
                 DT tất cả ({infusionTotal || availableDates.length})
               </Btn>
             )}
@@ -351,7 +363,7 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
   );
 }
 
-export default function PatientDetail({ patient, onClose, onInputCare, onInputInfusion, onInputProcedure, onRefreshDetails, onPrintDischargeBundle, running }) {
+export default function PatientDetail({ patient, onClose, onInputCare, onInputInfusion, onInputProcedure, onRefreshDetails, onPrintDischargeBundle, onInfusionUpdated, running, toast }) {
   const [subTab, setSubTab] = useState('timeline');
   const p = patient;
   const st = STATUS[p.status] || STATUS.gray;
@@ -383,15 +395,17 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
   const activeHasProcedure = Boolean(activeDay?.has_procedure || activeDay?.procedure_done);
   const hasInfusionAny = Boolean(p.has_infusion_any || p.has_inf || p.has_infusion || p.infus_done);
   const hasProcedureAny = Boolean(p.has_procedure || p.procedure_done);
+  const activeInfusionIncomplete = Boolean(activeDay?.infus_incomplete);
 
   const careTotal = Number.isFinite(p.care_total_dates) ? p.care_total_dates : (p.total_dates || 1);
   const careBadge = p.care_stale_count > 0 ? `CS: YL mới ${p.care_stale_count}` : (careTotal > 1
     ? `CS: ${p.care_done_count || 0}/${careTotal}`
     : `CS: ${p.care_done ? '✓' : '—'}`);
   const infusionTotal = Number.isFinite(p.infusion_total_dates) ? p.infusion_total_dates : (activeHasInfusion ? 1 : 0);
-  const infusionBadge = p.infus_stale_count > 0 ? `DT: YL mới ${p.infus_stale_count}` : (infusionTotal > 1
-    ? `DT: ${p.infus_done_count || 0}/${infusionTotal || 0}`
-    : `DT: ${p.infus_done ? '✓' : '—'}`);
+  const infusionBadge = p.has_infusion_incomplete ? `DT: thiếu TT ⚠ (${p.infus_incomplete_count || 0})`
+    : (p.infus_stale_count > 0 ? `DT: YL mới ${p.infus_stale_count}` : (infusionTotal > 1
+      ? `DT: ${p.infus_done_count || 0}/${infusionTotal || 0}`
+      : `DT: ${p.infus_done ? '✓' : '—'}`));
   const procedureTotal = Number.isFinite(p.procedure_total_dates) ? p.procedure_total_dates : (activeHasProcedure ? 1 : 0);
   const procedureBadge = p.procedure_stale_count > 0 ? `TT: YL mới ${p.procedure_stale_count}` : (procedureTotal > 1
     ? `TT: ${p.procedure_done_count || 0}/${procedureTotal || 0}`
@@ -427,7 +441,17 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
               </>
             : subTab === 'raw'
               ? <RawOrdersPanel patientDay={activeDay} />
-              : <PatientPreview patientDay={activeDay} />
+              : subTab === 'meds'
+                ? (
+                  <InfusionEditPanel
+                    patientDay={activeDay}
+                    patientId={p.ma_bn || p.id}
+                    ngayLam={activeDate}
+                    toast={toast}
+                    onSaved={onInfusionUpdated}
+                  />
+                )
+                : <PatientPreview patientDay={activeDay} />
           }
         </div>
       </div>
@@ -438,6 +462,7 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
         availableDates={availableDates}
         activeHasInfusion={activeHasInfusion}
         activeHasProcedure={activeHasProcedure}
+        activeInfusionIncomplete={activeInfusionIncomplete}
         hasInfusionAny={hasInfusionAny}
         hasProcedureAny={hasProcedureAny}
         infusionTotal={infusionTotal}
@@ -447,6 +472,7 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
         onInputProcedure={onInputProcedure}
         onRefreshDetails={onRefreshDetails}
         onPrintDischargeBundle={onPrintDischargeBundle}
+        onGotoMeds={() => setSubTab('meds')}
         onViewLog={handleViewLog}
         running={running}
       />

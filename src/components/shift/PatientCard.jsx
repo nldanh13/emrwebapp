@@ -86,7 +86,9 @@ export default function PatientCard({ p, selected, onClick, showInputToggle = fa
           )}
           <Badge text={st.label} bg={st.bg} color={st.text} />
           {(() => { const c = taskColor(p.care_done, p.care_stale_count > 0); return <Badge text={taskBadge('CS', p.care_done, p.care_stale_count > 0, p.care_total_dates || p.total_dates, p.care_done_count)} bg={c.bg} color={c.color} />; })()}
-          {(p.has_inf || p.has_infusion) && (() => { const c = taskColor(p.infus_done, p.infus_stale_count > 0); return <Badge text={taskBadge('DT', p.infus_done, p.infus_stale_count > 0, p.infusion_total_dates, p.infus_done_count)} bg={c.bg} color={c.color} />; })()}
+          {(p.has_inf || p.has_infusion) && (p.has_infusion_incomplete
+            ? <Badge text="DT: thiếu TT ⚠" bg={C.redBg} color={C.red} />
+            : (() => { const c = taskColor(p.infus_done, p.infus_stale_count > 0); return <Badge text={taskBadge('DT', p.infus_done, p.infus_stale_count > 0, p.infusion_total_dates, p.infus_done_count)} bg={c.bg} color={c.color} />; })())}
           {p.has_procedure && (() => { const c = taskColor(p.procedure_done, p.procedure_stale_count > 0); return <Badge text={taskBadge('TT', p.procedure_done, p.procedure_stale_count > 0, p.procedure_total_dates, p.procedure_done_count)} bg={c.bg} color={c.color} />; })()}
           {p.workflow_scope === 'unknown' && <Badge text="Phân luồng ?" bg={C.amberBg} color={C.amber} />}
           {p.warning_count > 0 && <Badge text={`⚠ ${p.warning_count}`} bg={C.amberBg} color={C.amber} />}
