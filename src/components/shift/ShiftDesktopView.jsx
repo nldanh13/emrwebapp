@@ -21,6 +21,7 @@ export default function ShiftDesktopView({
   dischargePrintPatientsCount = 0,
   handleUseSession, handleFetchNew, toast,
   workflowTitle, workflowHint, scopeInfo,
+  onInfusionUpdated,
   precheckReport, onClearPrecheckReport,
   featureAvailability = {}, disabledFeatureLabels = [],
   missingRangeDates = [], missingRangeDatesLabel = '', requestedDayCount = 0,
@@ -105,6 +106,7 @@ export default function ShiftDesktopView({
               onInputCare={handleInputCare} onInputInfusion={handleInputInfusion}
               onInputProcedure={handleInputProcedure}
               onRefreshDetails={handleRefreshDetailsOne} onPrintDischargeBundle={handlePrintDischargeBundle} running={running}
+              onInfusionUpdated={onInfusionUpdated} toast={toast}
             />
           ) : (
             <EmptyDetail stats={stats} running={running} title={workflowTitle}

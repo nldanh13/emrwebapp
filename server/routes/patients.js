@@ -384,6 +384,83 @@ function rowWorkDate(row) {
   return String(row?.ngay_lam || row?.ngay_y_lenh || row?.ngay || row?.date || '').trim();
 }
 
+// ── POST /api/update-infusion-item ───────────────────────────────────────────
+// Sửa thể tích/tốc độ MỘT dòng dịch truyền đã thu thập, chỉ trên dữ liệu cục bộ
+// (PROCESSED_PATH). Không gọi worker, không ghi ngược EMR.
+
+function infusionItemKey(item = {}) {
+  return [
+    String(item.ten_thuoc || '').trim().toLowerCase(),
+    String(item.bac_si || '').trim().toLowerCase(),
+    String(item.tg_bat_dau || item.gio_dung || '').trim(),
+    String(item.tg_ket_thuc || '').trim(),
+    String(item.the_tich ?? '').trim(),
+    String(item.toc_do ?? '').trim(),
+  ].join('|');
+}
+
+function coerceInfusionNumber(value) {
+  const text = String(value).trim().replace(',', '.');
+  const num = Number(text);
+  return text !== '' && Number.isFinite(num) ? num : text;
+}
+
+router.post('/update-infusion-item', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  const { ma_bn, ngay_lam, match, updates } = req.body || {};
+  const patientId = String(ma_bn || '').trim();
+  const workDate = String(ngay_lam || '').trim();
+  if (!patientId || !workDate) {
+    return res.status(400).json({ status: 'error', message: 'Thiếu mã bệnh nhân hoặc ngày làm việc.' });
+  }
+  if (!match || typeof match !== 'object') {
+    return res.status(400).json({ status: 'error', message: 'Thiếu thông tin dòng dịch truyền cần sửa.' });
+  }
+  if (!fs.existsSync(ctx.PROCESSED_PATH)) {
+    return res.status(400).json({ status: 'error', message: "Chưa có dữ liệu đã xử lý để sửa." });
+  }
+
+  const hasTheTich = updates?.the_tich !== undefined && String(updates.the_tich).trim() !== '';
+  const hasTocDo = updates?.toc_do !== undefined && String(updates.toc_do).trim() !== '';
+  if (!hasTheTich && !hasTocDo) {
+    return res.status(400).json({ status: 'error', message: 'Không có giá trị mới để lưu.' });
+  }
+
+  const targetKey = infusionItemKey(match);
+  const rows = readJsonSafe(ctx.PROCESSED_PATH, []);
+  let updatedCount = 0;
+
+  for (const row of (Array.isArray(rows) ? rows : [])) {
+    if (rowPatientId(row) !== patientId || rowWorkDate(row) !== workDate) continue;
+    const list = Array.isArray(row?.thuoc?.dich_truyen) ? row.thuoc.dich_truyen : [];
+    for (const item of list) {
+      if (infusionItemKey(item) !== targetKey) continue;
+      if (hasTheTich) item.the_tich = coerceInfusionNumber(updates.the_tich);
+      if (hasTocDo) item.toc_do = coerceInfusionNumber(updates.toc_do);
+      updatedCount += 1;
+    }
+  }
+
+  if (!updatedCount) {
+    return res.status(409).json({
+      status: 'error',
+      message: 'Không tìm thấy dòng dịch truyền này trong dữ liệu hiện tại (có thể vừa được cập nhật). Vui lòng tải lại danh sách rồi thử lại.',
+    });
+  }
+
+  writeJsonAtomic(ctx.PROCESSED_PATH, rows);
+  appendActivity(ctx, {
+    kind: 'patient.infusion_item.updated',
+    ma_bn: patientId,
+    ngay_lam: workDate,
+    updated_count: updatedCount,
+    the_tich: hasTheTich ? updates.the_tich : undefined,
+    toc_do: hasTocDo ? updates.toc_do : undefined,
+  });
+
+  return res.json({ status: 'ok', updated_count: updatedCount });
+});
+
 function dmyStamp(s) {
   return parseDmy(String(s || '').trim());
 }

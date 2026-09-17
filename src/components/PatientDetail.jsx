@@ -4,6 +4,7 @@ import { Badge, Mono, Btn, Dot, Spinner } from './shared.jsx';
 import * as api from '../api.js';
 import PatientTimeline from './patient/PatientTimeline.jsx';
 import PatientPreview from './patient/PatientPreview.jsx';
+import InfusionEditPanel from './patient/InfusionEditPanel.jsx';
 import PatientLogModal from './patient/PatientLogModal.jsx';
 import { getPatientNotices, PatientNoticePills } from './patientStatusNotice.jsx';
 import { isDischargePrintPatientOnDates } from '../utils/dischargePrint.js';
@@ -104,7 +105,12 @@ function PatientHeader({ patient, activeDay, status, subTab, setSubTab, availabl
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 9, flexWrap: 'wrap' }}>
-        {[{ id: 'timeline', label: 'Timeline YL' }, { id: 'preview', label: 'Xem trước nhập' }, { id: 'raw', label: 'Y lệnh gốc' }].map(t => (
+        {[
+          { id: 'timeline', label: 'Timeline YL' },
+          { id: 'preview', label: 'Xem trước nhập' },
+          ...(hasInfusionAny ? [{ id: 'meds', label: 'Sửa dịch truyền' }] : []),
+          { id: 'raw', label: 'Y lệnh gốc' },
+        ].map(t => (
           <button type="button" key={t.id} onClick={() => setSubTab(t.id)} style={{
             padding: '3px 10px', borderRadius: 4, border: '1px solid',
             fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
@@ -351,7 +357,7 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
   );
 }
 
-export default function PatientDetail({ patient, onClose, onInputCare, onInputInfusion, onInputProcedure, onRefreshDetails, onPrintDischargeBundle, running }) {
+export default function PatientDetail({ patient, onClose, onInputCare, onInputInfusion, onInputProcedure, onRefreshDetails, onPrintDischargeBundle, onInfusionUpdated, running, toast }) {
   const [subTab, setSubTab] = useState('timeline');
   const p = patient;
   const st = STATUS[p.status] || STATUS.gray;
@@ -427,7 +433,17 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
               </>
             : subTab === 'raw'
               ? <RawOrdersPanel patientDay={activeDay} />
-              : <PatientPreview patientDay={activeDay} />
+              : subTab === 'meds'
+                ? (
+                  <InfusionEditPanel
+                    patientDay={activeDay}
+                    patientId={p.ma_bn || p.id}
+                    ngayLam={activeDate}
+                    toast={toast}
+                    onSaved={onInfusionUpdated}
+                  />
+                )
+                : <PatientPreview patientDay={activeDay} />
           }
         </div>
       </div>

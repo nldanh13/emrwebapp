@@ -943,6 +943,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     handlePostprocess, handleInputCare, handleInputInfusion, handleInputProcedure, handleRefreshDetailsOne, handlePrintDischargeBundle, handlePrintDischargeBundleAll,
     dischargePrintPatientsCount,
     handleUseSession, handleFetchNew, toast, workflowTitle, workflowHint, workDateRange,
+    onInfusionUpdated: loadPatients,
     precheckReport, onClearPrecheckReport: () => setPrecheckReport(null),
     featureAvailability, disabledFeatureLabels,
     missingRangeDates, missingRangeDatesLabel, requestedDayCount: inputTargetDates.length,
