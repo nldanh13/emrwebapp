@@ -112,6 +112,16 @@
       "usesDateRange": false
     },
     {
+      "id": "medication-catalog",
+      "label": "Danh mục thuốc",
+      "icon": "⚕",
+      "group": "Cài đặt",
+      "hint": "Tên chuẩn, alias và thể tích/hàm lượng mặc định",
+      "order": 135,
+      "compact": true,
+      "usesDateRange": false
+    },
+    {
       "id": "emr-structure-scan",
       "label": "Kiểm tra cấu trúc EMR",
       "icon": "◈",

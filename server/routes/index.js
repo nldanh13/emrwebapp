@@ -92,6 +92,7 @@ router.use(require('./admin_workflow'));
 router.use(require('./clinic'));
 router.use(require('./hchanh'));
 router.use(require('./vtyt_catalog'));
+router.use(require('./medication_catalog'));
 router.use(require('./research'));
 router.use(require('./report'));
 router.use(require('./care_baseline'));

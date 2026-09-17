@@ -6,6 +6,7 @@ import NurseTab  from './components/NurseTab.jsx';
 import HchahnTab from './components/hchanh/HchahnTab.jsx';
 import RecordsCheckTab from './components/records/RecordsCheckTab.jsx';
 import VtytCatalogManager from './components/VtytCatalogManager.jsx';
+import MedicationCatalogManager from './components/MedicationCatalogManager.jsx';
 import EmrStructureScanTab from './components/EmrStructureScanTab.jsx';
 import ClinicTab from './components/ClinicTab.jsx';
 import ResearchTab from './components/ResearchTab.jsx';
@@ -341,6 +342,7 @@ export default function App() {
             {tab === 'hchanh'       && <HchahnTab toast={toast} workDateRange={workDateRange} />}
             {tab === 'records-check' && <RecordsCheckTab toast={toast} workDateRange={workDateRange} />}
             {tab === 'vtyt-catalog' && <VtytCatalogManager />}
+            {tab === 'medication-catalog' && <MedicationCatalogManager />}
             {tab === 'emr-structure-scan' && <EmrStructureScanTab />}
             {tab === 'clinic'       && <ClinicTab toast={toast} />}
             {tab === 'nurse'        && <NurseTab toast={toast} />}
