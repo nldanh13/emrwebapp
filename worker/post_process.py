@@ -103,6 +103,21 @@ def main():
     except Exception as e:
         print(f"[WARN] Không sinh được data v2: {e}")
 
+    # 3. Tự học danh mục thuốc: thể tích/tốc độ dịch truyền vừa quét được từ
+    # EMR được ghi lại vào config/medication_catalog.json (ghi đè bằng giá trị
+    # mới nhất) để lần quét sau có sẵn mặc định khi EMR chỉ ghi tên thuốc.
+    if os.path.exists(OUT_PATH):
+        try:
+            with open(OUT_PATH, "r", encoding="utf-8") as f:
+                processed_records = json.load(f)
+            if isinstance(processed_records, list):
+                from processing.medication_catalog import sync_catalog_from_processed_records
+                added, updated = sync_catalog_from_processed_records(processed_records)
+                if added or updated:
+                    print(f"[MEDICATION_CATALOG] Đã tự học {added} thuốc mới, cập nhật {updated} thuốc từ dữ liệu vừa quét.")
+        except Exception as e:
+            print(f"[WARN] Không đồng bộ được danh mục thuốc: {e}")
+
     return 0
 
 if __name__ == "__main__":
