@@ -79,6 +79,8 @@ function apiActionLabel(method, url) {
     'GET /api/has-processed': 'kiểm tra dữ liệu đã xử lý',
     'GET /api/get-patients': 'tải danh sách người bệnh đã xử lý',
     'POST /api/update-infusion-item': 'sửa thể tích/tốc độ dịch truyền',
+    'GET /api/medication-catalog': 'tải danh mục thuốc',
+    'POST /api/medication-catalog': 'thêm thuốc vào danh mục',
     'POST /api/check-input-changes': 'kiểm tra y lệnh mới trước khi nhập',
     'POST /api/run-input-care': 'nhập chăm sóc',
     'POST /api/run-input-infusions': 'nhập dịch truyền',
@@ -827,3 +829,9 @@ export async function exportHchanh_Issues(format = 'csv', owner = '') {
 export const getVtytCatalog      = ()              => get('/api/vtyt-catalog');
 export const updateVtytCatalog   = (key, body)    => patch(`/api/vtyt-catalog/${encodeURIComponent(key)}`, body);
 export const resetVtytCatalog    = (key)           => post(`/api/vtyt-catalog/reset/${encodeURIComponent(key)}`, {});
+
+// ── Danh mục thuốc ────────────────────────────────────────────────────────────
+export const getMedicationCatalog    = ()           => get('/api/medication-catalog');
+export const createMedicationCatalog = (body)        => post('/api/medication-catalog', body);
+export const updateMedicationCatalog = (key, body)  => patch(`/api/medication-catalog/${encodeURIComponent(key)}`, body);
+export const deleteMedicationCatalog = (key)         => del(`/api/medication-catalog/${encodeURIComponent(key)}`);
