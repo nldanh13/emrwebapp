@@ -358,3 +358,110 @@ def complete_medication_from_catalog(drug, *, only_if_missing_usage=True):
     out['inferred_usage_reason'] = 'medication_catalog_semantic' if (match_meta or {}).get('match_type') == 'semantic' else 'medication_catalog'
     out['inference_confidence'] = 'high' if (match_meta or {}).get('match_type') == 'exact' else 'medium'
     return out, med
+
+
+# ── Tự học danh mục từ dữ liệu vừa quét ──────────────────────────────────────
+# Ghi chú an toàn: complete_medication_from_catalog() ở trên CHỈ điền
+# the_tich/toc_do khi record đang trống ("không ghi đè thông tin EMR đã đọc
+# được"), và khi điền thì luôn copy y nguyên giá trị catalog hiện tại. Vì vậy
+# giá trị the_tich do fallback bơm vào không bao giờ khác giá trị catalog đang
+# có — chỉ có giá trị đọc thật từ EMR mới có thể khác. Nhờ vậy vòng lặp thu
+# thập bên dưới có thể an toàn "ghi đè bằng giá trị mới nhất" mà không sợ tự
+# học ngược lại chính giá trị nó vừa bơm ra.
+
+def _valid_volume(value):
+    try:
+        num = float(str(value).strip().replace(',', '.'))
+    except (TypeError, ValueError):
+        return None
+    return num if num > 0 else None
+
+
+def _extract_display_name(item):
+    # Chỉ dùng tên thuốc đã parse, không dùng hoạt chất — cùng lý do với
+    # _drug_search_text(): thuốc phối hợp (VD DEGEVIC = Paracetamol +
+    # Tramadol) sẽ bị đặt nhầm tên canonical theo hoạt chất đơn lẻ.
+    for key in ('ten_hien_thi', 'ten_thuoc'):
+        value = str((item or {}).get(key) or '').strip()
+        if value:
+            return value
+    return ''
+
+
+def sync_catalog_from_processed_records(records):
+    """Tự thêm/cập nhật danh mục thuốc từ thể tích/tốc độ dịch truyền vừa quét
+    được từ EMR (ghi đè bằng giá trị mới nhất tìm thấy trong `records`).
+
+    Trả về (số thuốc mới thêm, số thuốc được cập nhật).
+    """
+    catalog_data = _load_json(MEDICATION_CATALOG_FILE, None)
+    if not isinstance(catalog_data, dict):
+        return 0, 0
+    medications = catalog_data.get('medications')
+    if not isinstance(medications, list):
+        medications = []
+        catalog_data['medications'] = medications
+
+    alias_index = {}
+    for med in medications:
+        if not isinstance(med, dict):
+            continue
+        names = [med.get('canonical')] + list(med.get('aliases') or []) + list(med.get('semantic_aliases') or [])
+        for name in names:
+            key = normalize_key(name)
+            if key and key not in alias_index:
+                alias_index[key] = med
+
+    latest_by_key = {}
+    for rec in (records or []):
+        thuoc = (rec or {}).get('thuoc') if isinstance(rec, dict) else None
+        if not isinstance(thuoc, dict):
+            continue
+        for item in (thuoc.get('dich_truyen') or []):
+            if not isinstance(item, dict):
+                continue
+            name = _extract_display_name(item)
+            volume = _valid_volume(item.get('the_tich'))
+            if not name or volume is None:
+                continue
+            key = normalize_key(name)
+            if not key:
+                continue
+            rate = str(item.get('toc_do') or '').strip()
+            latest_by_key[key] = (name, volume, rate)
+
+    added = 0
+    updated = 0
+    for key, (name, volume, rate) in latest_by_key.items():
+        existing = alias_index.get(key)
+        if existing is None:
+            med = {'canonical': name, 'category': 'dich_truyen', 'default_volume_ml': volume}
+            if rate:
+                med['default_rate'] = rate
+            medications.append(med)
+            alias_index[key] = med
+            added += 1
+            continue
+        changed = False
+        if existing.get('default_volume_ml') != volume:
+            existing['default_volume_ml'] = volume
+            changed = True
+        if rate and existing.get('default_rate') != rate:
+            existing['default_rate'] = rate
+            changed = True
+        if changed:
+            updated += 1
+
+    if added or updated:
+        from datetime import date
+        try:
+            from runtime_data_v2 import write_json_pretty
+        except Exception:  # pragma: no cover
+            def write_json_pretty(path, value):
+                with open(path, 'w', encoding='utf-8') as f:
+                    json.dump(value, f, ensure_ascii=False, indent=2)
+        catalog_data['_updated'] = date.today().isoformat()
+        write_json_pretty(MEDICATION_CATALOG_FILE, catalog_data)
+        load_medication_catalog.cache_clear()
+
+    return added, updated
