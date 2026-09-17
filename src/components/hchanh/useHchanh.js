@@ -786,7 +786,7 @@ export function useHchanh({ toast, workDateRange } = {}) {
   // tab lần đầu trong ngày. Cần cập nhật lại riêng một người bệnh (VD: vừa sửa
   // trên EMR) thì dùng nút "Cập nhật"/"Lấy lại" trên từng dòng thay vì bấm lại
   // nút này (nút này bỏ qua người bệnh đã đủ dữ liệu).
-  const batchFetchMissing = useCallback(async () => {
+  const batchFetchMissing = useCallback(async (headless = false) => {
     const targets = patients.filter(p => !p.data_complete || Boolean(p.fetch_error_active));
     if (!targets.length) {
       toast?.('Không có người bệnh nào còn thiếu dữ liệu.', 'error');
@@ -802,7 +802,7 @@ export function useHchanh({ toast, workDateRange } = {}) {
       try {
         setFetchingKey(ma_bn);
         await api.fetchHchanh(ma_bn, scope, null,
-          workDateRange?.from || '', workDateRange?.to || '');
+          workDateRange?.from || '', workDateRange?.to || '', { headless });
         done++;
       } catch (_) {
         errors++;
@@ -810,10 +810,13 @@ export function useHchanh({ toast, workDateRange } = {}) {
         setFetchingKey('');
       }
       setBatchProgress({ running: true, done, total: targets.length, errors });
+      // Cập nhật bảng ngay sau mỗi người bệnh — không đợi hết cả lượt mới thấy
+      // dòng vừa quét đổi trạng thái. dashboard.js chỉ đọc snapshot đã lưu
+      // (không gọi lại EMR) nên gọi lại mỗi vòng lặp không tốn kém.
+      await load();
     }
     setBatchProgress({ running: false, done, total: targets.length, errors });
     toast?.(`Batch fetch xong: ${done}/${targets.length} OK, ${errors} lỗi.`, errors ? 'error' : 'ok');
-    await load();
   }, [patients, load, toast, workDateRange]);
 
 

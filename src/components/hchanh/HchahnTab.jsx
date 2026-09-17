@@ -1538,6 +1538,13 @@ export default function HchahnTab({ toast, workDateRange }) {
   } = hc;
   const [resourceList, setResourceList] = useState('');
   const [showTools, setShowTools] = useState(false);
+  const [runHeadless, setRunHeadless] = useState(() => {
+    try { return localStorage.getItem('emr_hchanh_headless_v1') === '1'; }
+    catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('emr_hchanh_headless_v1', runHeadless ? '1' : '0'); } catch {}
+  }, [runHeadless]);
   const [workspace, setWorkspace] = useState(() => {
     try { return localStorage.getItem('emr_hchanh_workspace_v1') === 'vtyt' ? 'vtyt' : 'discharge'; }
     catch { return 'discharge'; }
@@ -1608,12 +1615,19 @@ export default function HchahnTab({ toast, workDateRange }) {
 
         {workspace === 'discharge' ? (
           <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', marginTop:10, paddingTop:9, borderTop:`1px solid ${C.border2}` }}>
-            <Btn variant="primary" disabled={batchProgress.running} onClick={batchFetchMissing}
+            <Btn variant="primary" disabled={batchProgress.running} onClick={() => batchFetchMissing(runHeadless)}
                  style={{ fontSize:11, padding:'5px 12px' }}>
               {batchProgress.running
                 ? `Đang lấy ${batchProgress.done}/${batchProgress.total}...`
                 : 'Lấy dữ liệu còn thiếu'}
             </Btn>
+
+            <label title="Chạy Chrome ẩn (không hiện cửa sổ trình duyệt) khi quét hàng loạt"
+              style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:C.text2, cursor: batchProgress.running ? 'not-allowed' : 'pointer' }}>
+              <input type="checkbox" checked={runHeadless} disabled={batchProgress.running}
+                onChange={e => setRunHeadless(e.target.checked)} />
+              Chạy ẩn (headless)
+            </label>
 
             <div style={{ position:'relative' }}>
               <Btn variant="secondary" onClick={() => setShowTools(v => !v)} style={{ fontSize:11, padding:'5px 10px' }}>
