@@ -552,6 +552,9 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
         toast?.(r.message || `Không kiểm tra được thay đổi trước khi nhập ${label}.`, 'error');
         return null;
       }
+      if (Array.isArray(r.skipped_incomplete) && r.skipped_incomplete.length) {
+        toast?.(r.message || `Đã bỏ qua ${r.skipped_incomplete.length} dòng dịch truyền thiếu thể tích.`, 'info');
+      }
       return r;
     } catch (e) {
       const message = `Không kiểm tra được y lệnh mới trước khi nhập ${label}. Chưa nhập để tránh sai: ${String(e.message || e)}`;
@@ -749,9 +752,12 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     try {
       const r = await api.runInputInfusions(targets);
       const ok = r.status === 'ok' || r.status === 'partial' || r.status === 'skipped';
-      const message = r.status === 'ok'
+      const skippedNote = Array.isArray(r.skipped_incomplete) && r.skipped_incomplete.length
+        ? ` Đã bỏ qua ${r.skipped_incomplete.length} dòng dịch truyền thiếu thể tích — vào tab "Sửa dịch truyền" để nhập trước.`
+        : '';
+      const message = (r.status === 'ok'
         ? 'Đã kiểm tra và đồng bộ dịch truyền: dòng đúng được giữ nguyên, dòng thiếu đã được nhập, dòng sai/thừa đã được sửa.'
-        : (r.message || 'Đã hoàn tất kiểm tra/đồng bộ dịch truyền.');
+        : (r.message || 'Đã hoàn tất kiểm tra/đồng bộ dịch truyền.')) + skippedNote;
       toast?.(message, r.status === 'skipped' ? 'info' : (ok ? 'ok' : 'error'));
       if (ok) await loadPatients();
     } catch (e) {

@@ -19,6 +19,7 @@ const {
   buildPatientDayBundle,
   normalizeInputTargets,
   patientIdOfTarget,
+  hasValidVolume,
 } = require('../utils/patient_helpers');
 const { appendActivity }                                   = require('../services/activity_logger');
 const { postprocessOrders }                                 = require('../services/order_pipeline');
@@ -270,6 +271,7 @@ router.get('/get-patients', (req, res) => {
     const infusionDates  = dates.filter(d => dayMap[d]?.has_infusion);
     const infusDoneCount = infusionDates.filter(d => dayMap[d]?.infus_done).length;
     const infusStaleCount= infusionDates.filter(d => dayMap[d]?.infus_stale).length;
+    const infusIncompleteDates = infusionDates.filter(d => dayMap[d]?.infus_incomplete);
     const procedureDates = dates.filter(d => dayMap[d]?.has_procedure);
     const procedureDoneCount = procedureDates.filter(d => dayMap[d]?.procedure_done).length;
     const procedureStaleCount= procedureDates.filter(d => dayMap[d]?.procedure_stale).length;
@@ -344,6 +346,8 @@ router.get('/get-patients', (req, res) => {
       infusion_total_dates: infusionDates.length,
       infus_done_count:    infusDoneCount,
       infus_stale_count:   infusStaleCount,
+      infus_incomplete_count: infusIncompleteDates.length,
+      has_infusion_incomplete: infusIncompleteDates.length > 0,
       procedure_total_dates: procedureDates.length,
       procedure_done_count: procedureDoneCount,
       procedure_stale_count: procedureStaleCount,
@@ -382,6 +386,72 @@ function rowPatientId(row) {
 
 function rowWorkDate(row) {
   return String(row?.ngay_lam || row?.ngay_y_lenh || row?.ngay || row?.date || '').trim();
+}
+
+// Không cho nhập dịch truyền khi còn dòng thiếu thể tích trong phạm vi đang
+// nhập — nếu không worker sẽ mặc định 0ml khi ghi vào EMR (xem input_infusions.py).
+function findIncompleteInfusionEntries(processedRows, targets) {
+  const patientDates = targets?.patientDates && typeof targets.patientDates === 'object' ? targets.patientDates : {};
+  const entries = [];
+  for (const patientId of (Array.isArray(targets?.patientIds) ? targets.patientIds : [])) {
+    const dates = Array.isArray(patientDates[patientId]) ? patientDates[patientId] : [];
+    for (const date of dates) {
+      const rowsForDay = processedRows.filter(r => rowPatientId(r) === patientId && rowWorkDate(r) === date);
+      if (!rowsForDay.length) continue;
+      const ten = rowsForDay[0]?.ho_ten || rowsForDay[0]?.['Họ tên'] || patientId;
+      for (const row of rowsForDay) {
+        const list = Array.isArray(row?.thuoc?.dich_truyen) ? row.thuoc.dich_truyen : [];
+        for (const item of list) {
+          if (hasValidVolume(item)) continue;
+          entries.push({
+            ma_bn: patientId,
+            ho_ten: ten,
+            ngay_lam: date,
+            ten_thuoc: item?.ten_hien_thi || item?.ten_thuoc || 'Dịch truyền',
+            tg_bat_dau: item?.tg_bat_dau || item?.gio_dung || '',
+          });
+        }
+      }
+    }
+  }
+  return entries;
+}
+
+// Chỉ loại (bệnh nhân, ngày) đang thiếu thể tích ra khỏi phạm vi nhập — không
+// chặn luôn cả các BN/ngày khác trong cùng đợt vì lý do không liên quan đến họ.
+function validateInfusionTargetsComplete(processedRows, targets) {
+  const missing = findIncompleteInfusionEntries(processedRows, targets);
+  if (!missing.length) return { ok: true, targets, skipped: [] };
+
+  const blockedKeys = new Set(missing.map(m => `${m.ma_bn}::${m.ngay_lam}`));
+  const patientDates = targets?.patientDates && typeof targets.patientDates === 'object' ? targets.patientDates : {};
+  const filteredPatientIds = [];
+  const filteredPatientDates = {};
+  for (const patientId of (Array.isArray(targets?.patientIds) ? targets.patientIds : [])) {
+    const dates = (Array.isArray(patientDates[patientId]) ? patientDates[patientId] : [])
+      .filter(date => !blockedKeys.has(`${patientId}::${date}`));
+    if (dates.length) {
+      filteredPatientIds.push(patientId);
+      filteredPatientDates[patientId] = dates;
+    }
+  }
+
+  const preview = missing.slice(0, 8)
+    .map(m => `${m.ho_ten} (${m.ma_bn}) ${m.ngay_lam} — ${m.ten_thuoc}${m.tg_bat_dau ? ` lúc ${m.tg_bat_dau}` : ''}`)
+    .join('; ');
+  const skipMessage = `Đã bỏ qua ${missing.length} dòng dịch truyền thiếu thể tích (CHƯA nhập): ${preview}${missing.length > 8 ? '…' : ''}. `
+    + 'Vào tab "Sửa dịch truyền" để nhập thể tích trước.';
+
+  if (!filteredPatientIds.length) {
+    return { ok: false, details: missing, message: `Tất cả dịch truyền trong phạm vi đã chọn đều thiếu thể tích nên CHƯA cho phép nhập. ${skipMessage}` };
+  }
+
+  return {
+    ok: true,
+    targets: { ...targets, patientIds: filteredPatientIds, patientDates: filteredPatientDates },
+    skipped: missing,
+    message: skipMessage,
+  };
 }
 
 // ── POST /api/update-infusion-item ───────────────────────────────────────────
@@ -1034,7 +1104,7 @@ function updateInputScopeAudit(auditPath, patch = {}) {
   }
 }
 
-async function runInputTask(req, res, ctx, { scriptName, taskName, targetsFilePrefix, doneStatePath, resultFileName, emptyPatientMsg }) {
+async function runInputTask(req, res, ctx, { scriptName, taskName, targetsFilePrefix, doneStatePath, resultFileName, emptyPatientMsg, validateTargets }) {
   ensureDir(ctx.dir);
 
   const rawBody = req.body || {};
@@ -1059,11 +1129,38 @@ async function runInputTask(req, res, ctx, { scriptName, taskName, targetsFilePr
     return res.status(400).json({ status: 'error', message: "Chưa có file phân loại. Hãy chạy 'Xử Lý' trước." });
   }
 
-  const targets       = normalizeInputTargets(rawBody, processedRows);
+  let targets       = normalizeInputTargets(rawBody, processedRows);
   const auditPath = createInputScopeAudit(ctx, rawBody, targets, taskName || scriptName);
   if (!targets.patientIds.length) {
     updateInputScopeAudit(auditPath, { status: 'rejected', error: emptyPatientMsg });
     return res.status(400).json({ status: 'error', message: emptyPatientMsg });
+  }
+
+  let skippedTargetsInfo = null;
+  if (typeof validateTargets === 'function') {
+    const validation = validateTargets(processedRows, targets);
+    if (validation && validation.ok === false) {
+      updateInputScopeAudit(auditPath, { status: 'rejected', error: validation.message });
+      return res.status(409).json({ status: 'error', message: validation.message, details: validation.details || [] });
+    }
+    if (validation?.targets) targets = validation.targets;
+    if (validation?.skipped?.length) {
+      skippedTargetsInfo = { skipped: validation.skipped, message: validation.message };
+      appendActivity(ctx, {
+        kind: 'workflow.input.skipped_incomplete',
+        task: taskName || scriptName,
+        skipped_count: validation.skipped.length,
+      });
+      // Bọc res.json() để mọi phản hồi sau đó (dù thành công/thất bại/partial)
+      // đều kèm danh sách BN/ngày đã bị loại vì thiếu dữ liệu, không cần sửa
+      // từng điểm return bên dưới.
+      const originalJson = res.json.bind(res);
+      res.json = (body) => originalJson({
+        ...body,
+        skipped_incomplete: skippedTargetsInfo.skipped,
+        message: [body?.message, skippedTargetsInfo.message].filter(Boolean).join(' '),
+      });
+    }
   }
 
   const directEmrSync = isUnifiedDirectEmrSync(targets, taskName || scriptName);
@@ -1313,9 +1410,29 @@ router.post('/check-input-changes', async (req, res) => {
     return res.status(400).json({ status: 'error', message: "Chưa có file phân loại. Hãy chạy 'Xử Lý' trước." });
   }
   const processedRows = sanitizeStaleDischargeRows(enrichRowsWithCurrentRooms(readJsonSafe(ctx.PROCESSED_PATH, []), ctx));
-  const targets = normalizeInputTargets(rawBody, processedRows);
+  let targets = normalizeInputTargets(rawBody, processedRows);
   if (!targets.patientIds.length) {
     return res.status(400).json({ status: 'error', message: 'Không có BN/ngày cần kiểm tra.' });
+  }
+
+  let skippedIncompleteInfo = null;
+  if (taskNameFromTargets(targets) === 'input_infusions') {
+    // Lọc trước khi cấp token: /run-input-infusions sẽ áp cùng bộ lọc này nên
+    // targets (đã lọc) ở token và ở lúc chạy phải khớp nhau.
+    const validation = validateInfusionTargetsComplete(processedRows, targets);
+    if (!validation.ok) {
+      return res.status(409).json({ status: 'error', message: validation.message, details: validation.details });
+    }
+    if (validation.targets) targets = validation.targets;
+    if (validation.skipped?.length) {
+      skippedIncompleteInfo = { skipped: validation.skipped, message: validation.message };
+      const originalJson = res.json.bind(res);
+      res.json = (body) => originalJson({
+        ...body,
+        skipped_incomplete: skippedIncompleteInfo.skipped,
+        message: [body?.message, skippedIncompleteInfo.message].filter(Boolean).join(' '),
+      });
+    }
   }
 
   // QUAN TRỌNG:
@@ -1413,6 +1530,7 @@ router.post('/run-input-infusions', async (req, res) => {
     doneStatePath:    ctx.INFUSIONS_DONE_PATH,
     resultFileName:   'input_infusions_result.json',
     emptyPatientMsg:  'Không xác định được mã bệnh nhân để nhập dịch truyền.',
+    validateTargets:  validateInfusionTargetsComplete,
   });
 });
 
