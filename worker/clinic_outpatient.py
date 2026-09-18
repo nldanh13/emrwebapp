@@ -24,6 +24,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from utils import load_config, login_emr
 from shared.worker_session import WorkerSession, open_session
 from shared.text_utils import strip_accents, norm_vi as norm
+from selenium_emr_helpers import set_time_range_filter
 
 try:
     from bs4 import BeautifulSoup
@@ -856,6 +857,37 @@ def run_preview(req_path: str, out_path: str) -> None:
                 "summary": summarize_rows(rows),
                 "procedure_summary": summarize_procedure_rows(rows),
                 "message": f"Đã đọc {len(rows)} dòng phòng khám chấn thương trong danh sách hiện tại.",
+            }
+        elif mode == "date_range":
+            # "Tìm mù" theo khoảng ngày cho ngoại trú — dùng lại đúng cơ chế
+            # bộ lọc "Khoảng" (#cbbLoai/#dtTuNgay/#dtDenNgay) đã tự động hoá
+            # cho nội trú, vì trang Danh sách Khám bệnh dùng chung control này.
+            date_from = compact(req.get("dateFrom") or req.get("date_from"))
+            date_to = compact(req.get("dateTo") or req.get("date_to")) or date_from
+            if not date_from:
+                raise RuntimeError("Chưa có khoảng ngày để tìm (dateFrom/dateTo).")
+            filter_set = set_time_range_filter(ws.driver, date_from=date_from, date_to=date_to)
+            if not filter_set:
+                print("[CLINIC] [WARN] Không đặt được bộ lọc Khoảng ngày trên Danh sách Khám bệnh — có thể trang này dùng id khác trang nội trú, cần kiểm tra lại thủ công.")
+            click_search(ws.driver)
+            rows = read_current_clinic_list(ws.driver, schedule=clinic_schedule)
+            rows = resolve_tt_details_for_rows(ws.driver, rows, schedule=clinic_schedule)
+            result = {
+                "status": "ok" if filter_set else "partial",
+                "mode": mode,
+                "started_at": started,
+                "finished_at": datetime.now().isoformat(timespec="seconds"),
+                "clinic_url": clinic_url,
+                "date_from": date_from,
+                "date_to": date_to,
+                "filter_applied": filter_set,
+                "targets": [],
+                "rows": rows,
+                "summary": summarize_rows(rows),
+                "procedure_summary": summarize_procedure_rows(rows),
+                "message": (f"Đã đọc {len(rows)} dòng phòng khám chấn thương từ {date_from} đến {date_to}."
+                            if filter_set else
+                            f"Không đặt được bộ lọc khoảng ngày — kết quả bên dưới ({len(rows)} dòng) có thể vẫn là danh sách mặc định, không thuộc {date_from} → {date_to}."),
             }
         else:
             if not targets:
