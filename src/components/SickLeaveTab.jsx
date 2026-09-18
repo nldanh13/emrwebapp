@@ -3,7 +3,10 @@ import { C } from '../tokens.js';
 import { Badge, Btn, Spinner } from './shared.jsx';
 import * as api from '../api.js';
 import { getPatientDischargeDates } from '../utils/dischargePrint.js';
-import { sanitizeWorkDateRange, dmyToInputDate, workDateRangeLabel } from '../utils/workDateRange.js';
+import { sanitizeWorkDateRange, dmyToInputDate, workDateRangeToDmy, workDateRangeLabel } from '../utils/workDateRange.js';
+
+const DEFAULT_CLINIC_LOGIN_URL = import.meta.env.VITE_EMR_LOGIN_URL || '';
+const DEFAULT_CLINIC_LIST_URL = import.meta.env.VITE_EMR_CLINIC_LIST_URL || '';
 
 // Từ khoá nhận diện "chỉ định nghỉ" trong y lệnh/diễn biến ngoại trú (đã bỏ dấu).
 // Không có cờ có sẵn cho ngoại trú như has_infusion/has_procedure bên nội trú,
@@ -142,6 +145,35 @@ function buildOutpatientCandidates(draft, range) {
   });
   return out.sort((a, b) => a.ho_ten.localeCompare(b.ho_ten, 'vi') || a.key.localeCompare(b.key));
 }
+
+// Dòng quét trực tiếp từ EMR (mode date_range) có tên cột động, tự dò theo
+// tiêu đề bảng thật trên trang — không biết trước field nào sẽ có "ngay_lam"
+// hay "tg_vao" như carePreview.rows đã chuẩn hoá sẵn. Vì vậy quét từ khoá
+// nghỉ ốm trên TOÀN BỘ giá trị chuỗi của dòng, thay vì chỉ vài field cố định.
+function buildScannedOutpatientCandidates(rows) {
+  return (rows || [])
+    .filter(row => row && String(row.ma_bn || '').trim())
+    .map((row, idx) => {
+      const text = Object.values(row).filter(v => typeof v === 'string').join(' · ');
+      return { row, idx, text };
+    })
+    .filter(({ text }) => SICK_LEAVE_KEYWORD_RE.test(normalizeText(text)))
+    .map(({ row, idx }) => ({
+      key: `scan-ngt::${row.ma_bn}::${row.ngay_lam || row.tg_vao || row.access_id || idx}`,
+      ma_bn: row.ma_bn,
+      ho_ten: row.ho_ten || '',
+      trang_thai: row.trang_thai || '',
+      chan_doan: row.chan_doan_hover || row.chan_doan || '',
+      raw: row,
+    }))
+    .sort((a, b) => a.ho_ten.localeCompare(b.ho_ten, 'vi') || a.key.localeCompare(b.key));
+}
+
+const SCANNED_OUTPATIENT_FIELDS = [
+  { label: 'Mã BN', value: it => it.ma_bn },
+  { label: 'Trạng thái', value: it => it.trang_thai },
+  { label: 'Chẩn đoán', value: it => it.chan_doan },
+];
 
 const INPATIENT_FIELDS = [
   { label: 'Mã BN', value: it => it.ma_bn },
@@ -328,6 +360,17 @@ export default function SickLeaveTab({ toast, workDateRange }) {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
 
+  // Quét trực tiếp EMR (ngoại trú) theo khoảng ngày — không dùng chung ô tài
+  // khoản với tab Phòng khám để tránh phụ thuộc trạng thái tab khác; chỉ lưu
+  // trong phiên làm việc này, không lưu mật khẩu vào server/localStorage.
+  const [clinicUsername, setClinicUsername] = useState('');
+  const [clinicPassword, setClinicPassword] = useState('');
+  const [clinicLoginUrl, setClinicLoginUrl] = useState(DEFAULT_CLINIC_LOGIN_URL);
+  const [clinicListUrl, setClinicListUrl] = useState(DEFAULT_CLINIC_LIST_URL);
+  const [scanning, setScanning] = useState(false);
+  const [scannedOutpatientRows, setScannedOutpatientRows] = useState([]);
+  const [scanMessage, setScanMessage] = useState('');
+
   const load = useCallback(() => {
     setLoading(true);
     Promise.all([
@@ -368,7 +411,34 @@ export default function SickLeaveTab({ toast, workDateRange }) {
     }
   }, [toast]);
 
+  const handleScanOutpatient = useCallback(async () => {
+    if (!clinicUsername.trim() || !clinicPassword || !clinicLoginUrl.trim() || !clinicListUrl.trim()) {
+      toast?.('Thiếu tài khoản, mật khẩu hoặc URL phòng khám để quét EMR.', 'error');
+      return;
+    }
+    const { dateFrom, dateTo } = workDateRangeToDmy(workDateRange);
+    setScanning(true);
+    setScanMessage('');
+    try {
+      const result = await api.runClinicPreview({
+        mode: 'date_range', dateFrom, dateTo,
+        username: clinicUsername.trim(), password: clinicPassword,
+        loginUrl: clinicLoginUrl.trim(), listUrl: clinicListUrl.trim(),
+        headless: true, clinicSchedule: {},
+      });
+      if (result?.status !== 'ok' && result?.status !== 'partial') throw new Error(result?.message || 'Không quét được EMR.');
+      setScannedOutpatientRows(Array.isArray(result.rows) ? result.rows : []);
+      setScanMessage(result.message || '');
+      toast?.(result.message || `Đã quét ${result.rows?.length || 0} dòng.`, result.status === 'ok' ? 'ok' : 'info');
+    } catch (e) {
+      toast?.(String(e?.message || 'Không quét được EMR ngoại trú.'), 'error');
+    } finally {
+      setScanning(false);
+    }
+  }, [toast, workDateRange, clinicUsername, clinicPassword, clinicLoginUrl, clinicListUrl]);
+
   const range = useMemo(() => sanitizeWorkDateRange(workDateRange), [workDateRange?.from, workDateRange?.to]);
+  const scannedOutpatientList = useMemo(() => buildScannedOutpatientCandidates(scannedOutpatientRows), [scannedOutpatientRows]);
   const inpatientList = useMemo(() => buildInpatientCandidates(patients, range), [patients, range.from, range.to]);
   const outpatientList = useMemo(() => buildOutpatientCandidates(clinicDraft, range), [clinicDraft, range.from, range.to]);
 
@@ -493,6 +563,47 @@ export default function SickLeaveTab({ toast, workDateRange }) {
           : (clinicDraft
             ? 'Có bản xem trước Phòng khám nhưng chưa thấy ca nào có từ khoá liên quan nghỉ ốm trong y lệnh/diễn biến đã lấy hoặc đã gõ.'
             : 'Chưa có bản xem trước ở tab Phòng khám. Vào tab Phòng khám, dán/tải danh sách rồi quay lại đây.')}
+      />
+
+      <div style={{
+        border: `1px solid ${C.blueBorder || C.border}`, background: C.blueBg || C.surface2,
+        borderRadius: 8, padding: 12, marginBottom: 12,
+      }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: C.text, marginBottom: 4 }}>Quét trực tiếp EMR — Ngoại trú theo khoảng ngày</div>
+        <div style={{ fontSize: 11, color: C.text3, marginBottom: 8, lineHeight: 1.5 }}>
+          Tìm mù trên "Danh sách Khám bệnh" trong khoảng ngày đang chọn ở trên ({workDateRangeLabel(workDateRange)}),
+          rồi lọc từ khoá liên quan nghỉ ốm trên toàn bộ dữ liệu từng dòng đọc được. Chưa test với EMR thật — nếu bộ lọc
+          khoảng ngày không áp dụng đúng, kết quả sẽ ghi rõ "partial" và cần kiểm tra lại thủ công.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginBottom: 8 }}>
+          <input placeholder="Tài khoản phòng khám" value={clinicUsername} onChange={e => setClinicUsername(e.target.value)}
+            style={{ padding: '6px 8px', fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
+          <input placeholder="Mật khẩu" type="password" value={clinicPassword} onChange={e => setClinicPassword(e.target.value)}
+            style={{ padding: '6px 8px', fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
+          <input placeholder="URL đăng nhập" value={clinicLoginUrl} onChange={e => setClinicLoginUrl(e.target.value)}
+            style={{ padding: '6px 8px', fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
+          <input placeholder="URL Danh sách Khám bệnh" value={clinicListUrl} onChange={e => setClinicListUrl(e.target.value)}
+            style={{ padding: '6px 8px', fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
+        </div>
+        <Btn variant="primary" onClick={handleScanOutpatient} disabled={scanning} style={{ padding: '6px 12px', fontSize: 12 }}>
+          {scanning ? <><Spinner size={11} /> Đang quét...</> : '⟳ Quét EMR theo khoảng ngày'}
+        </Btn>
+        {scanMessage && <div style={{ fontSize: 10.5, color: C.text3, marginTop: 6 }}>{scanMessage}</div>}
+      </div>
+
+      <Section
+        title="Ngoại trú — quét trực tiếp từ EMR"
+        hint="Chỉ trong phiên làm việc này (bấm Quét lại nếu tải lại trang). Lọc từ khoá liên quan nghỉ ốm trên toàn bộ dữ liệu từng dòng đọc được từ EMR."
+        list={scannedOutpatientList}
+        fields={SCANNED_OUTPATIENT_FIELDS}
+        stateEntries={stateEntries}
+        onToggle={toggle}
+        onNoteChange={setNote}
+        emptyMessage={scanning
+          ? 'Đang quét...'
+          : (scannedOutpatientRows.length
+            ? 'Đã quét nhưng chưa thấy dòng nào có từ khoá liên quan nghỉ ốm.'
+            : 'Chưa quét — bấm "Quét EMR theo khoảng ngày" ở trên.')}
       />
     </div>
   );
