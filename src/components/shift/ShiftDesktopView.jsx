@@ -18,7 +18,7 @@ export default function ShiftDesktopView({
   setInputMode, clearPatientInputScope, toggleInputPatient, isPatientInInputScope,
   bulkTargetOptions,
   stats, loading, running, showPicker, setShowPicker, toolbarProps,
-  handlePostprocess, handleInputCare, handleInputInfusion, handleInputProcedure, handleRefreshDetailsOne, handlePrintDischargeBundle, handlePrintDischargeBundleAll,
+  handlePostprocess, handleInputCare, handleInputInfusion, handleInputProcedure, handleInputVtyt, handleRefreshDetailsOne, handlePrintDischargeBundle, handlePrintDischargeBundleAll,
   dischargePrintPatientsCount = 0,
   handleUseSession, handleFetchNew, toast,
   workflowTitle, workflowHint, scopeInfo,
@@ -107,7 +107,7 @@ export default function ShiftDesktopView({
           {selPx ? (
             <PatientDetail patient={selPx} onClose={() => setSelPx(null)}
               onInputCare={handleInputCare} onInputInfusion={handleInputInfusion}
-              onInputProcedure={handleInputProcedure}
+              onInputProcedure={handleInputProcedure} onInputVtyt={handleInputVtyt}
               onRefreshDetails={handleRefreshDetailsOne} onPrintDischargeBundle={handlePrintDischargeBundle} running={running}
               onInfusionUpdated={onInfusionUpdated} toast={toast}
             />
@@ -117,6 +117,7 @@ export default function ShiftDesktopView({
               onInputCareAll={() => handleInputCare(selectedInputPatients, null, bulkTargetOptions)}
               onInputInfAll={() => handleInputInfusion(selectedInputPatients.filter(p => p.has_infusion || p.has_inf || p.infus_done), null, bulkTargetOptions)}
               onInputProcedureAll={() => handleInputProcedure(selectedInputPatients, null, bulkTargetOptions)}
+              onInputVtytAll={() => handleInputVtyt(selectedInputPatients, null, bulkTargetOptions)}
               onPrintDischargeBundleAll={handlePrintDischargeBundleAll}
               dischargePrintCount={dischargePrintPatientsCount}
               bulkInputDisabled={bulkInputDisabled}

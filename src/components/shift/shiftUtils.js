@@ -89,6 +89,15 @@ function shouldInputDate(item, date, taskType = '', options = {}) {
     if (includeDone) return true;
     return !(day.procedure_done && !day.procedure_stale);
   }
+  if (task === 'vtyt' || task === 'material' || task === 'supplies') {
+    // Quy tắc VTYT (phẫu thuật -> băng thun/băng dính theo vị trí, thay kim luồn ->
+    // combo kim luồn...) đã tính sẵn ở day.vtyt.items khi "Xử lý & phân loại". Chỉ
+    // đưa vào phạm vi nhập những BN/ngày thật sự có VTYT cần nhập theo quy tắc đó.
+    const hasExpectedVtyt = Boolean(day.vtyt?.items?.length);
+    if (!hasExpectedVtyt && !(includeDone && day.vtyt_done)) return false;
+    if (includeDone) return true;
+    return !(day.vtyt_done && !day.vtyt_stale);
+  }
   return true;
 }
 

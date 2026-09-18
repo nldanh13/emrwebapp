@@ -281,12 +281,20 @@ export function scopePatientToDates(patient, targetDates = []) {
   const procedureDates = dates.filter(d => dayMap[d]?.has_procedure);
   const procedureDoneCount = procedureDates.filter(d => dayMap[d]?.procedure_done).length;
   const procedureStaleCount = procedureDates.filter(d => dayMap[d]?.procedure_stale).length;
+  // VTYT (phẫu thuật/kim luồn theo quy tắc) chỉ dùng để hiện/lọc nút "Nhập VTYT" —
+  // không đưa vào staleAny/status chung để không đổi ý nghĩa "chưa xử lý/cần xem/đã ổn"
+  // vốn chỉ phản ánh chăm sóc/dịch truyền/thủ thuật.
+  const vtytDates = dates.filter(d => (dayMap[d]?.vtyt?.items?.length || 0) > 0);
+  const vtytDoneCount = vtytDates.filter(d => dayMap[d]?.vtyt_done).length;
+  const vtytStaleCount = vtytDates.filter(d => dayMap[d]?.vtyt_stale).length;
   const warningCount = countWarnings(dayMap, dates);
   const careDone = careDates.length === 0 || careDoneCount === careDates.length;
   const hasInfusion = infusionDates.length > 0;
   const infusDone = hasInfusion && infusDoneCount === infusionDates.length;
   const hasProcedure = procedureDates.length > 0;
   const procedureDone = hasProcedure && procedureDoneCount === procedureDates.length;
+  const hasVtyt = vtytDates.length > 0;
+  const vtytDone = hasVtyt && vtytDoneCount === vtytDates.length;
   const staleAny = careStaleCount || infusStaleCount || procedureStaleCount;
 
   return {
@@ -303,12 +311,17 @@ export function scopePatientToDates(patient, targetDates = []) {
     procedure_total_dates: procedureDates.length,
     procedure_done_count: procedureDoneCount,
     procedure_stale_count: procedureStaleCount,
+    vtyt_total_dates: vtytDates.length,
+    vtyt_done_count: vtytDoneCount,
+    vtyt_stale_count: vtytStaleCount,
     care_done: careDone,
     infus_done: infusDone,
     procedure_done: procedureDone,
+    vtyt_done: vtytDone,
     has_infusion: hasInfusion,
     has_infusion_any: hasInfusion,
     has_procedure: hasProcedure,
+    has_vtyt: hasVtyt,
     warning_count: warningCount,
     status: scopedStatus({ careDoneCount, infusDoneCount, procedureDoneCount, careDone, hasInfusion, infusDone, hasProcedure, procedureDone, staleAny, warningCount }),
     day_map: dayMap,

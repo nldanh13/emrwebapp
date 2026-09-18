@@ -123,6 +123,7 @@ export default function EmptyDetail({
   onInputCareAll,
   onInputInfAll,
   onInputProcedureAll,
+  onInputVtytAll,
   onPrintDischargeBundleAll,
   dischargePrintCount = 0,
   running,
@@ -138,6 +139,7 @@ export default function EmptyDetail({
   const careDisabled = inputDisabled || featureAvailability.care === false;
   const infusionDisabled = inputDisabled || featureAvailability.infusion === false;
   const procedureDisabled = inputDisabled || featureAvailability.procedure === false;
+  const vtytDisabled = inputDisabled || featureAvailability.material === false;
 
   return (
     <div style={{ padding: 12, overflow: 'auto', height: '100%' }}>
@@ -167,6 +169,9 @@ export default function EmptyDetail({
         </Btn>
         <Btn variant="default" onClick={onInputProcedureAll} disabled={procedureDisabled} style={{ justifyContent: 'flex-start', width: '100%' }}>
           {running === 'check-procedure' ? <><Spinner size={10} /> Đang kiểm tra YL...</> : (running === 'procedure' ? <><Spinner size={10} /> Đang kiểm tra/nhập/sửa...</> : 'Thủ thuật — kiểm tra / nhập / sửa')}
+        </Btn>
+        <Btn variant="default" onClick={onInputVtytAll} disabled={vtytDisabled} style={{ justifyContent: 'flex-start', width: '100%' }} title="Chỉ nhập khi có phẫu thuật (băng thun/băng dính theo vị trí) hoặc thay kim luồn (combo kim luồn), theo quy tắc VTYT đã cấu hình.">
+          {running === 'check-vtyt' ? <><Spinner size={10} /> Đang kiểm tra YL...</> : (running === 'vtyt' ? <><Spinner size={10} /> Đang kiểm tra/nhập...</> : 'VTYT — kiểm tra / nhập theo quy tắc')}
         </Btn>
         <Btn variant="primary" onClick={onPrintDischargeBundleAll} disabled={!!running || !dischargePrintCount} style={{ justifyContent: 'flex-start', width: '100%' }}>
           {running === 'print-discharge-bundle-all' ? <><Spinner size={10} /> Đang tổng hợp in...</> : `In BN ra viện (${dischargePrintCount || 0})`}

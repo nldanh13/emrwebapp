@@ -43,6 +43,9 @@ function getActiveDay(patient, activeDate, availableDates) {
       has_procedure: patient.has_procedure || false,
       procedure_done: patient.procedure_done || false,
       procedure_stale: patient.procedure_stale || false,
+      vtyt: patient.vtyt || { items: [] },
+      vtyt_done: patient.vtyt_done || false,
+      vtyt_stale: patient.vtyt_stale || false,
       raw_order_events: patient.raw_order_events || [],
       unparsed_orders: patient.unparsed_orders || [],
       processing_warnings: patient.processing_warnings || [],
@@ -229,7 +232,7 @@ function ActionCluster({ label, children, tone = 'default' }) {
   );
 }
 
-function PatientActions({ patient, activeDate, availableDates, activeHasInfusion, activeHasProcedure, activeInfusionIncomplete, hasInfusionAny, hasProcedureAny, infusionTotal, procedureTotal, onInputCare, onInputInfusion, onInputProcedure, onRefreshDetails, onPrintDischargeBundle, onGotoMeds, onViewLog, running }) {
+function PatientActions({ patient, activeDate, availableDates, activeHasInfusion, activeHasProcedure, activeHasVtyt, activeInfusionIncomplete, hasInfusionAny, hasProcedureAny, hasVtytAny, infusionTotal, procedureTotal, vtytTotal, onInputCare, onInputInfusion, onInputProcedure, onInputVtyt, onRefreshDetails, onPrintDischargeBundle, onGotoMeds, onViewLog, running }) {
   const hasManyDays = availableDates.length > 1;
   const smallBtn = { padding: '5px 9px', fontSize: 11, whiteSpace: 'nowrap', minHeight: 28 };
   const busy = !!running;
@@ -324,6 +327,21 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
           </ActionCluster>
         )}
 
+        {(activeHasVtyt || (hasVtytAny && hasManyDays)) && (
+          <ActionCluster label="VTYT">
+            {activeHasVtyt && (
+              <Btn variant="default" disabled={busy || !activeDate} style={smallBtn} title={`Chỉ nhập khi có phẫu thuật (băng thun/băng dính theo vị trí) hoặc thay kim luồn (combo kim luồn) ngày ${dayText}`} onClick={() => onInputVtyt?.([patient], activeDate)}>
+                {running === 'check-vtyt' ? <><Spinner size={10} /> Kiểm tra YL</> : (running === 'vtyt' ? <><Spinner size={10} /> Đang nhập</> : 'Kiểm tra / Nhập')}
+              </Btn>
+            )}
+            {hasVtytAny && hasManyDays && (
+              <Btn variant="default" disabled={busy} style={smallBtn} title="Kiểm tra/nhập VTYT theo quy tắc cho tất cả ngày của bệnh nhân đang chọn" onClick={() => onInputVtyt?.([patient], null)}>
+                VTYT tất cả ({vtytTotal || availableDates.length})
+              </Btn>
+            )}
+          </ActionCluster>
+        )}
+
         <ActionCluster label="Y LỆNH" tone="warn">
           {hasManyDays ? (
             <>
@@ -363,7 +381,7 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
   );
 }
 
-export default function PatientDetail({ patient, onClose, onInputCare, onInputInfusion, onInputProcedure, onRefreshDetails, onPrintDischargeBundle, onInfusionUpdated, running, toast }) {
+export default function PatientDetail({ patient, onClose, onInputCare, onInputInfusion, onInputProcedure, onInputVtyt, onRefreshDetails, onPrintDischargeBundle, onInfusionUpdated, running, toast }) {
   const [subTab, setSubTab] = useState('timeline');
   const p = patient;
   const st = STATUS[p.status] || STATUS.gray;
@@ -393,8 +411,10 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
   const activeDay = getActiveDay(p, activeDate, availableDates);
   const activeHasInfusion = Boolean(activeDay?.has_infusion || activeDay?.has_inf || activeDay?.infus_done);
   const activeHasProcedure = Boolean(activeDay?.has_procedure || activeDay?.procedure_done);
+  const activeHasVtyt = Boolean(activeDay?.vtyt?.items?.length);
   const hasInfusionAny = Boolean(p.has_infusion_any || p.has_inf || p.has_infusion || p.infus_done);
   const hasProcedureAny = Boolean(p.has_procedure || p.procedure_done);
+  const hasVtytAny = Boolean(p.has_vtyt || p.vtyt_done);
   const activeInfusionIncomplete = Boolean(activeDay?.infus_incomplete);
 
   const careTotal = Number.isFinite(p.care_total_dates) ? p.care_total_dates : (p.total_dates || 1);
@@ -410,6 +430,7 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
   const procedureBadge = p.procedure_stale_count > 0 ? `TT: YL mới ${p.procedure_stale_count}` : (procedureTotal > 1
     ? `TT: ${p.procedure_done_count || 0}/${procedureTotal || 0}`
     : `TT: ${p.procedure_done ? '✓' : '—'}`);
+  const vtytTotal = Number.isFinite(p.vtyt_total_dates) ? p.vtyt_total_dates : (activeHasVtyt ? 1 : 0);
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'fadeIn 0.15s ease' }}>
@@ -462,14 +483,18 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
         availableDates={availableDates}
         activeHasInfusion={activeHasInfusion}
         activeHasProcedure={activeHasProcedure}
+        activeHasVtyt={activeHasVtyt}
         activeInfusionIncomplete={activeInfusionIncomplete}
         hasInfusionAny={hasInfusionAny}
         hasProcedureAny={hasProcedureAny}
+        hasVtytAny={hasVtytAny}
         infusionTotal={infusionTotal}
         procedureTotal={procedureTotal}
+        vtytTotal={vtytTotal}
         onInputCare={onInputCare}
         onInputInfusion={onInputInfusion}
         onInputProcedure={onInputProcedure}
+        onInputVtyt={onInputVtyt}
         onRefreshDetails={onRefreshDetails}
         onPrintDischargeBundle={onPrintDischargeBundle}
         onGotoMeds={() => setSubTab('meds')}

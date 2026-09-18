@@ -310,15 +310,17 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
   const [nurseSchedule, setNurseSchedule] = useState(null);
   const inputRoomsInitializedRef = useRef(false);
   const previousInputRoomsRef = useRef([]);
-  const { states: inputFeatureStates } = useFeatureStates(['care.input', 'infusion.input', 'procedure.input']);
+  const { states: inputFeatureStates } = useFeatureStates(['care.input', 'infusion.input', 'procedure.input', 'material.input']);
   const careInputEnabled = inputFeatureStates['care.input']?.enabled !== false;
   const infusionInputEnabled = inputFeatureStates['infusion.input']?.enabled !== false;
   const procedureInputEnabled = inputFeatureStates['procedure.input']?.enabled !== false;
-  const featureAvailability = { care: careInputEnabled, infusion: infusionInputEnabled, procedure: procedureInputEnabled };
+  const vtytInputEnabled = inputFeatureStates['material.input']?.enabled !== false;
+  const featureAvailability = { care: careInputEnabled, infusion: infusionInputEnabled, procedure: procedureInputEnabled, material: vtytInputEnabled };
   const disabledFeatureLabels = [
     !careInputEnabled ? 'Nhập chăm sóc' : '',
     !infusionInputEnabled ? 'Nhập dịch truyền' : '',
     !procedureInputEnabled ? 'Nhập thủ thuật' : '',
+    !vtytInputEnabled ? 'Nhập VTYT' : '',
   ].filter(Boolean);
 
   const inputTargetDates = useMemo(() => workDateRangeDatesDmy(workDateRange), [workDateRange?.from, workDateRange?.to]);
@@ -847,6 +849,54 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     }
   }, [running, toast, loadPatients, resolveInputDates, procedureInputEnabled, ensureInputDataFresh, askInputConfirm, ensureInputConfirmNotifyPermission, nurseDutyLines]);
 
+  const handleInputVtyt = useCallback(async (items, selectedDate = null, options = {}) => {
+    if (!vtytInputEnabled) { toast?.('Module nhập VTYT đang tắt; các module khác vẫn dùng được.', 'error'); return; }
+    if (running) { toast?.('Đang có tác vụ chạy, vui lòng chờ.', 'error'); return; }
+    ensureInputConfirmNotifyPermission();
+
+    // Chỉ đưa vào phạm vi những BN/ngày có VTYT theo quy tắc đã tính sẵn (phẫu
+    // thuật -> băng thun/băng dính theo vị trí; thay kim luồn -> combo kim luồn...) —
+    // xem shouldInputDate('vtyt', ...) trong shiftUtils.js. BN/ngày không có gì
+    // theo quy tắc sẽ tự động bị loại khỏi targets, không cần chọn tay.
+    const targets = buildInputTargets(items, resolveInputDates(selectedDate), 'vtyt', {
+      includeDone: true,
+      repairExisting: true,
+      onlyDone: false,
+    });
+    if (Array.isArray(options.targetRooms)) targets.targetRooms = options.targetRooms;
+    targets.recheckExisting = true;
+    targets.repairExisting = true;
+    targets.includeDone = true;
+    targets.onlyDone = false;
+    if (!targets.patientIds.length) {
+      toast?.('Không có BN/ngày cần VTYT (phẫu thuật/thay kim luồn) trong phạm vi đang chọn.', 'error');
+      return;
+    }
+    const precheck = await ensureInputDataFresh(targets, 'VTYT', 'vtyt');
+    if (!precheck?.precheck_token) return;
+    targets.precheck_token = precheck.precheck_token;
+    targets.nurseDutyLines = nurseDutyLines;
+    const okToRunVtyt = await askInputConfirm(targets, 'VTYT — kiểm tra / nhập theo quy tắc (PT: băng thun/băng dính theo vị trí; thay kim luồn: combo kim luồn)', precheck);
+    if (!okToRunVtyt) {
+      toast?.('Đã hủy kiểm tra/nhập VTYT.', 'error');
+      return;
+    }
+    setRunning('vtyt');
+    try {
+      const r = await api.runInputVTYT(targets);
+      const ok = r.status === 'ok' || r.status === 'partial' || r.status === 'skipped';
+      const message = r.status === 'ok'
+        ? 'Đã kiểm tra và nhập VTYT theo quy tắc: chỉ những ca có phẫu thuật (băng thun/băng dính theo vị trí) hoặc thay kim luồn mới được nhập.'
+        : (r.message || 'Đã hoàn tất kiểm tra/nhập VTYT.');
+      toast?.(message, r.status === 'skipped' ? 'info' : (ok ? 'ok' : 'error'));
+      if (ok) await loadPatients();
+    } catch (e) {
+      toast?.(String(e.message), 'error');
+    } finally {
+      setRunning(null);
+    }
+  }, [running, toast, loadPatients, resolveInputDates, vtytInputEnabled, ensureInputDataFresh, askInputConfirm, ensureInputConfirmNotifyPermission, nurseDutyLines]);
+
 
   const handleRefreshDetailsOne = useCallback(async (patient, selectedDate = null) => {
     if (running) { toast?.('Đang có tác vụ chạy, vui lòng chờ.', 'error'); return; }
@@ -976,7 +1026,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     setInputMode: setInputModeSafe, clearPatientInputScope, toggleInputPatient, isPatientInInputScope,
     bulkTargetOptions,
     stats, loading, running, showPicker, setShowPicker, toolbarProps,
-    handlePostprocess, handleInputCare, handleInputInfusion, handleInputProcedure, handleRefreshDetailsOne, handlePrintDischargeBundle, handlePrintDischargeBundleAll,
+    handlePostprocess, handleInputCare, handleInputInfusion, handleInputProcedure, handleInputVtyt, handleRefreshDetailsOne, handlePrintDischargeBundle, handlePrintDischargeBundleAll,
     dischargePrintPatientsCount,
     handleUseSession, handleFetchNew, toast, workflowTitle, workflowHint, workDateRange,
     onInfusionUpdated: loadPatients,

@@ -17,7 +17,7 @@ export default function ShiftMobileView({
   setInputMode, clearPatientInputScope, toggleInputPatient, isPatientInInputScope,
   bulkTargetOptions,
   stats, loading, running, showPicker, setShowPicker, toolbarProps,
-  handlePostprocess, handleInputCare, handleInputInfusion, handleInputProcedure, handleRefreshDetailsOne, handlePrintDischargeBundle, handlePrintDischargeBundleAll,
+  handlePostprocess, handleInputCare, handleInputInfusion, handleInputProcedure, handleInputVtyt, handleRefreshDetailsOne, handlePrintDischargeBundle, handlePrintDischargeBundleAll,
   dischargePrintPatientsCount = 0,
   handleUseSession, handleFetchNew, toast,
   workflowTitle, workflowHint, scopeInfo,
@@ -31,6 +31,7 @@ export default function ShiftMobileView({
   const careDisabled = inputDisabled || featureAvailability.care === false;
   const infusionDisabled = inputDisabled || featureAvailability.infusion === false;
   const procedureDisabled = inputDisabled || featureAvailability.procedure === false;
+  const vtytDisabled = inputDisabled || featureAvailability.material === false;
 
   if (selPx) {
     return (
@@ -51,7 +52,7 @@ export default function ShiftMobileView({
         </div>
         <PatientDetail patient={selPx} onClose={() => setSelPx(null)}
           onInputCare={handleInputCare} onInputInfusion={handleInputInfusion}
-          onInputProcedure={handleInputProcedure}
+          onInputProcedure={handleInputProcedure} onInputVtyt={handleInputVtyt}
               onRefreshDetails={handleRefreshDetailsOne} onPrintDischargeBundle={handlePrintDischargeBundle} running={running}
               onInfusionUpdated={onInfusionUpdated} toast={toast}
         />
@@ -133,6 +134,10 @@ export default function ShiftMobileView({
           <Btn variant="default" onClick={() => handleInputProcedure(selectedInputPatients, null, bulkTargetOptions)} disabled={procedureDisabled}
             style={{ padding: '4px 9px', fontSize: 11 }} title="Kiểm tra, nhập thiếu và sửa sai thủ thuật">
             {running === 'procedure' ? <Spinner size={10} /> : '⚕ TT ✓/+ /↻'}
+          </Btn>
+          <Btn variant="default" onClick={() => handleInputVtyt(selectedInputPatients, null, bulkTargetOptions)} disabled={vtytDisabled}
+            style={{ padding: '4px 9px', fontSize: 11 }} title="Chỉ nhập khi có phẫu thuật (băng thun/băng dính theo vị trí) hoặc thay kim luồn (combo kim luồn)">
+            {running === 'vtyt' ? <Spinner size={10} /> : '▧ VTYT ✓/+'}
           </Btn>
           <Btn variant="primary" onClick={handlePrintDischargeBundleAll} disabled={!!running || !dischargePrintPatientsCount}
             style={{ padding: '4px 9px', fontSize: 11 }} title={`Tổng hợp in ${dischargePrintPatientsCount || 0} BN xuất viện`}>
