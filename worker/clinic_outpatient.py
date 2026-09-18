@@ -20,7 +20,6 @@ import zipfile
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
-from xml.etree import ElementTree as ET
 
 from utils import load_config, login_emr
 from shared.worker_session import WorkerSession, open_session
@@ -66,63 +65,9 @@ def patient_code(value: Any) -> str:
 
 
 # ── XLSX parser không cần thư viện ngoài ─────────────────────────────────────
+# (logic đọc XML thô nằm chung ở xlsx_utils.py để script khác dùng lại được)
 
-def _xlsx_col_index(cell_ref: str) -> int:
-    m = re.match(r"([A-Z]+)", cell_ref.upper())
-    if not m:
-        return 0
-    n = 0
-    for ch in m.group(1):
-        n = n * 26 + (ord(ch) - ord("A") + 1)
-    return n - 1
-
-
-def _read_shared_strings(zf: zipfile.ZipFile) -> List[str]:
-    try:
-        raw = zf.read("xl/sharedStrings.xml")
-    except KeyError:
-        return []
-    root = ET.fromstring(raw)
-    ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
-    out: List[str] = []
-    for si in root.findall(f"{ns}si"):
-        parts = []
-        for t in si.iter(f"{ns}t"):
-            parts.append(t.text or "")
-        out.append("".join(parts))
-    return out
-
-
-def _cell_value(cell: ET.Element, shared: List[str]) -> str:
-    ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
-    cell_type = cell.attrib.get("t", "")
-    if cell_type == "inlineStr":
-        parts = [t.text or "" for t in cell.iter(f"{ns}t")]
-        return "".join(parts)
-    v = cell.find(f"{ns}v")
-    raw = v.text if v is not None else ""
-    if cell_type == "s":
-        try:
-            return shared[int(raw)]
-        except Exception:
-            return ""
-    return raw or ""
-
-
-def _read_sheet_matrix(zf: zipfile.ZipFile, sheet_path: str, shared: List[str]) -> List[List[str]]:
-    ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
-    root = ET.fromstring(zf.read(sheet_path))
-    rows: List[List[str]] = []
-    for row in root.iter(f"{ns}row"):
-        values: Dict[int, str] = {}
-        max_col = -1
-        for c in row.findall(f"{ns}c"):
-            idx = _xlsx_col_index(c.attrib.get("r", ""))
-            max_col = max(max_col, idx)
-            values[idx] = compact(_cell_value(c, shared))
-        if max_col >= 0:
-            rows.append([values.get(i, "") for i in range(max_col + 1)])
-    return rows
+from xlsx_utils import read_shared_strings as _read_shared_strings, read_sheet_matrix as _read_sheet_matrix
 
 
 def parse_xlsx_patient_rows(xlsx_path: str) -> List[Dict[str, str]]:

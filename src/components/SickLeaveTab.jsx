@@ -17,6 +17,47 @@ function normalizeText(value) {
     .toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+function asBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Không đọc được file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+// EMR chỉ tìm được bệnh nhân theo tên + ngày sinh (không có mã tra cứu chung
+// giữa danh sách BHXH và HIS) — nên chỉ khớp theo tên đã chuẩn hoá làm gợi ý,
+// không tự nhận là đúng; luôn để người dùng đối chiếu tuổi/ngày sinh trước khi tin.
+function ageFromDob(dobDmy) {
+  const m = String(dobDmy || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  return new Date().getFullYear() - Number(m[3]);
+}
+
+function matchInpatientCandidates(row, patients) {
+  const name = normalizeText(row.ho_ten);
+  if (!name) return [];
+  return (patients || [])
+    .filter(p => normalizeText(p.ho_ten || p.name) === name)
+    .map(p => ({
+      ma_bn: patientIdOf(p),
+      so_phong: p.so_phong || p.room || '',
+      tuoi: p.tuoi || p.age || '',
+      ngay_vao: p.thoi_gian_vao_khoa || p.tg_vao || '',
+      chan_doan: p.chan_doan || '',
+    }));
+}
+
+function matchOutpatientCandidates(row, draft) {
+  const rows = Array.isArray(draft?.carePreview?.rows) ? draft.carePreview.rows : [];
+  const name = normalizeText(row.ho_ten);
+  if (!name) return [];
+  return rows
+    .filter(r => normalizeText(r?.ho_ten) === name)
+    .map(r => ({ ma_bn: r.ma_bn, ngay_lam: r.ngay_lam, khoa: r.khoa_chuyen_den }));
+}
+
 // Giống hệt careRowKey() trong ClinicTab.jsx — phải khớp key để tra đúng
 // careEdits[...] (y lệnh/diễn biến đã lưu) ứng với từng dòng preview.
 function careRowKey(row = {}, index = 0) {
@@ -101,6 +142,107 @@ const OUTPATIENT_FIELDS = [
   { label: 'Lý do/y lệnh', value: it => it.ly_do },
 ];
 
+const BHXH_OUTPATIENT_FIELDS = [
+  { label: 'Họ tên', value: it => it.ho_ten },
+  { label: 'Ngày sinh', value: it => it.ngay_sinh },
+  { label: 'Giới tính', value: it => it.gioi_tinh },
+  { label: 'Chẩn đoán', value: it => it.chan_doan },
+  { label: 'Đơn vị', value: it => it.don_vi },
+  { label: 'Điều trị từ', value: it => it.dieu_tri_tu_ngay },
+  { label: 'Điều trị đến', value: it => it.dieu_tri_den_ngay },
+  { label: 'Người hành nghề', value: it => it.nguoi_hanh_nghe },
+  { label: 'Thủ trưởng', value: it => it.thu_truong },
+  { label: 'Trạng thái BHXH', value: it => it.trang_thai },
+];
+
+const BHXH_INPATIENT_FIELDS = [
+  { label: 'Họ tên', value: it => it.ho_ten },
+  { label: 'Ngày sinh', value: it => it.ngay_sinh },
+  { label: 'Giới tính', value: it => it.gioi_tinh },
+  { label: 'Khoa', value: it => it.khoa },
+  { label: 'Chẩn đoán', value: it => it.chan_doan },
+  { label: 'Ngày vào viện', value: it => it.ngay_vao_vien },
+  { label: 'Ngày ra viện', value: it => it.ngay_ra_vien },
+  { label: 'Trưởng khoa', value: it => it.truong_khoa },
+  { label: 'Thủ trưởng đơn vị', value: it => it.thu_truong_don_vi },
+  { label: 'Trạng thái BHXH', value: it => it.trang_thai },
+];
+
+function MatchHint({ row, candidates }) {
+  const dobAge = ageFromDob(row.ngay_sinh);
+  if (!candidates.length) {
+    return (
+      <div style={{ fontSize: 10.5, color: C.amber, lineHeight: 1.5 }}>
+        ⚠ Chưa thấy trong dữ liệu đã tải trong app — tìm trên EMR theo tên + ngày sinh:
+        {' '}<b>{row.ho_ten || '—'}</b>{row.ngay_sinh ? `, sinh ${row.ngay_sinh}` : ''}.
+      </div>
+    );
+  }
+  return (
+    <div style={{ fontSize: 10.5, color: C.text2, lineHeight: 1.6 }}>
+      <span style={{ color: C.green, fontWeight: 700 }}>✓ {candidates.length} gợi ý trùng tên trong dữ liệu đã tải</span> — đối chiếu tuổi/ngày sinh trước khi dùng:
+      {candidates.map((c, idx) => (
+        <div key={idx} style={{ marginLeft: 10 }}>
+          • Mã BN <b>{c.ma_bn || '—'}</b>
+          {c.so_phong ? ` · Phòng ${c.so_phong}` : ''}
+          {c.tuoi ? ` · Tuổi ghi nhận ${c.tuoi}` : ''}
+          {dobAge ? ` (BHXH ~${dobAge} tuổi)` : ''}
+          {c.ngay_lam ? ` · Ngày khám ${c.ngay_lam}` : ''}
+          {c.khoa ? ` · ${c.khoa}` : ''}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BhxhCandidateRow({ item, fields, candidates, entry, onToggle, onNoteChange }) {
+  const submitted = Boolean(entry?.submitted);
+  return (
+    <div style={{
+      padding: '9px 10px', borderBottom: `1px solid ${C.border2}`, background: submitted ? C.greenBg : C.surface,
+    }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', paddingTop: 2 }} title="Đã nộp">
+          <input type="checkbox" checked={submitted} onChange={() => onToggle(item.key)} style={{ width: 16, height: 16 }} />
+        </label>
+        <div style={{ flex: '2 1 480px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6, minWidth: 0 }}>
+          {fields.map(f => <Field key={f.label} label={f.label} value={f.value(item)} />)}
+        </div>
+        <input
+          placeholder="Ghi chú (đã cập nhật cổng BHXH...)"
+          defaultValue={entry?.note || ''}
+          onBlur={e => onNoteChange(item.key, e.target.value)}
+          style={{ flex: '1 1 180px', minWidth: 140, padding: '5px 7px', fontSize: 11, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }}
+        />
+      </div>
+      <div style={{ marginTop: 6, paddingLeft: 26 }}>
+        <MatchHint row={item} candidates={candidates} />
+      </div>
+    </div>
+  );
+}
+
+function BhxhSection({ title, list, fields, matchFn, matchSource, stateEntries, onToggle, onNoteChange, emptyMessage }) {
+  const submittedCount = list.filter(it => stateEntries[it.key]?.submitted).length;
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{title}</div>
+        <Badge text={`${list.length} ca`} bg={C.surface2} color={C.text2} size={10} />
+        {list.length > 0 && <Badge text={`Đã nộp ${submittedCount}/${list.length}`} bg={submittedCount === list.length ? C.greenBg : C.amberBg} color={submittedCount === list.length ? C.green : C.amber} size={10} />}
+      </div>
+      <div style={{ border: `1px solid ${C.border2}`, borderRadius: 8, overflow: 'hidden' }}>
+        {list.length === 0 ? (
+          <div style={{ padding: 16, fontSize: 12, color: C.text3, textAlign: 'center' }}>{emptyMessage}</div>
+        ) : list.map(item => (
+          <BhxhCandidateRow key={item.key} item={item} fields={fields} candidates={matchFn(item, matchSource)}
+            entry={stateEntries[item.key]} onToggle={onToggle} onNoteChange={onNoteChange} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Field({ label, value }) {
   return (
     <div style={{ minWidth: 0 }}>
@@ -159,7 +301,9 @@ export default function SickLeaveTab({ toast, workDateRange }) {
   const [patients, setPatients] = useState([]);
   const [clinicDraft, setClinicDraft] = useState(null);
   const [stateEntries, setStateEntries] = useState({});
+  const [bhxhImport, setBhxhImport] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -167,19 +311,52 @@ export default function SickLeaveTab({ toast, workDateRange }) {
       api.getPatients().catch(() => []),
       api.getClinicCareDraft().catch(() => ({ draft: null })),
       api.getSickLeaveState().catch(() => ({ entries: {} })),
-    ]).then(([patientsRes, draftRes, stateRes]) => {
+      api.getSickLeaveImport().catch(() => ({ import: null })),
+    ]).then(([patientsRes, draftRes, stateRes, importRes]) => {
       setPatients(Array.isArray(patientsRes) ? patientsRes : []);
       setClinicDraft(draftRes?.draft || null);
       setStateEntries(stateRes?.entries || {});
+      setBhxhImport(importRes?.import || null);
     }).catch(e => toast?.(String(e?.message || 'Không tải được dữ liệu nghỉ ốm'), 'error'))
       .finally(() => setLoading(false));
   }, [toast]);
 
   useEffect(() => { load(); }, [load]);
 
+  const handleImportFile = useCallback(async (file) => {
+    if (!file) return;
+    setImporting(true);
+    try {
+      const base64 = await asBase64(file);
+      const result = await api.importSickLeaveList({ excel: { filename: file.name, base64 } });
+      if (result?.status !== 'ok') throw new Error(result?.message || 'Không nhập được danh sách BHXH.');
+      setBhxhImport({
+        version: result.version,
+        imported_at: result.imported_at,
+        filename: result.filename,
+        outpatient: result.outpatient,
+        inpatient: result.inpatient,
+      });
+      toast?.(result.message || `Đã nhập ${result.outpatient?.length || 0} ca ngoại trú, ${result.inpatient?.length || 0} ca nội trú.`, 'ok');
+    } catch (e) {
+      toast?.(String(e?.message || 'Không nhập được danh sách BHXH.'), 'error');
+    } finally {
+      setImporting(false);
+    }
+  }, [toast]);
+
   const range = useMemo(() => sanitizeWorkDateRange(workDateRange), [workDateRange?.from, workDateRange?.to]);
   const inpatientList = useMemo(() => buildInpatientCandidates(patients, range), [patients, range.from, range.to]);
   const outpatientList = useMemo(() => buildOutpatientCandidates(clinicDraft, range), [clinicDraft, range.from, range.to]);
+
+  const bhxhOutpatientList = useMemo(() => {
+    const rows = Array.isArray(bhxhImport?.outpatient) ? bhxhImport.outpatient : [];
+    return rows.map(r => ({ ...r, key: `bhxh-ngt::${r.dong_nguon || r.ma_so_bh || r.ho_ten}` }));
+  }, [bhxhImport]);
+  const bhxhInpatientList = useMemo(() => {
+    const rows = Array.isArray(bhxhImport?.inpatient) ? bhxhImport.inpatient : [];
+    return rows.map(r => ({ ...r, key: `bhxh-nt::${r.dong_nguon || r.ma_y_te || r.ho_ten}` }));
+  }, [bhxhImport]);
 
   const persist = useCallback((nextEntries) => {
     api.saveSickLeaveState({ entries: nextEntries })
@@ -216,6 +393,57 @@ export default function SickLeaveTab({ toast, workDateRange }) {
         Danh sách người bệnh cần chuẩn bị Giấy chứng nhận nghỉ việc hưởng BHXH, lọc từ dữ liệu đã có trong app
         cho khoảng ngày <b style={{ color: C.text2 }}>{workDateRangeLabel(workDateRange)}</b>. Chưa tự động nộp lên
         Cổng Dịch vụ công BHXH (khác hệ thống/tài khoản đăng nhập) — tick "Đã nộp" sau khi làm thủ công.
+      </div>
+
+      <div style={{
+        border: `1px solid ${C.blueBorder || C.border}`, background: C.blueBg || C.surface2,
+        borderRadius: 8, padding: 12, marginBottom: 18,
+      }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: C.text, marginBottom: 4 }}>Nhập danh sách BHXH gửi rà soát (.xlsx)</div>
+        <div style={{ fontSize: 11, color: C.text3, marginBottom: 8, lineHeight: 1.5 }}>
+          File phải có 2 sheet "Ngoại trú" và "Nội trú" (đúng định dạng BHXH gửi). EMR chỉ tra được theo
+          tên + ngày sinh, nên mỗi dòng sẽ kèm gợi ý khớp tên trong dữ liệu đã tải ở app — luôn đối chiếu
+          tuổi/ngày sinh trước khi tin.
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <input type="file" accept=".xlsx" disabled={importing}
+            onChange={e => { const f = e.target.files?.[0]; handleImportFile(f); e.target.value = ''; }}
+            style={{ fontSize: 11 }} />
+          {importing && <Spinner size={12} />}
+          {bhxhImport?.filename && (
+            <span style={{ fontSize: 10.5, color: C.text3 }}>
+              Đã nhập: {bhxhImport.filename} lúc {bhxhImport.imported_at ? new Date(bhxhImport.imported_at).toLocaleString('vi-VN') : '—'}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <BhxhSection
+        title="BHXH — Nội trú (Giấy ra viện)"
+        list={bhxhInpatientList}
+        fields={BHXH_INPATIENT_FIELDS}
+        matchFn={matchInpatientCandidates}
+        matchSource={patients}
+        stateEntries={stateEntries}
+        onToggle={toggle}
+        onNoteChange={setNote}
+        emptyMessage={loading ? 'Đang tải...' : 'Chưa nhập danh sách BHXH (Nội trú), hoặc file chưa có dòng nào.'}
+      />
+
+      <BhxhSection
+        title="BHXH — Ngoại trú (Giấy nghỉ hưởng BHXH)"
+        list={bhxhOutpatientList}
+        fields={BHXH_OUTPATIENT_FIELDS}
+        matchFn={matchOutpatientCandidates}
+        matchSource={clinicDraft}
+        stateEntries={stateEntries}
+        onToggle={toggle}
+        onNoteChange={setNote}
+        emptyMessage={loading ? 'Đang tải...' : 'Chưa nhập danh sách BHXH (Ngoại trú), hoặc file chưa có dòng nào.'}
+      />
+
+      <div style={{ fontSize: 11, fontWeight: 800, color: C.text3, letterSpacing: '0.03em', margin: '22px 0 10px', paddingTop: 14, borderTop: `1px dashed ${C.border2}` }}>
+        TỰ PHÁT HIỆN THÊM TRONG APP (ngoài danh sách BHXH ở trên)
       </div>
 
       <Section
