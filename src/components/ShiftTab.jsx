@@ -189,11 +189,15 @@ function buildInputConfirmMessage(targets, label, precheck = null) {
   }
   const selectedDates = Array.isArray(targets.selectedDates) ? targets.selectedDates.filter(Boolean) : [];
   const summaries = Array.isArray(targets.patientSummaries) ? targets.patientSummaries : [];
+  const patientDatesById = targets.patientDates && typeof targets.patientDates === 'object' ? targets.patientDates : {};
   const patientLines = summaries.slice(0, 12).map((item, idx) => {
     const id = String(item?.id || ids[idx] || '').trim();
     const name = String(item?.name || '').trim();
     const room = String(item?.room || '').trim();
-    return `- ${id}${name && name !== id ? ` — ${name}` : ''}${room ? ` (${room})` : ''}`;
+    const dates = Array.isArray(patientDatesById[id])
+      ? [...patientDatesById[id]].filter(Boolean).sort((a, b) => dmyStamp(a) - dmyStamp(b))
+      : [];
+    return `- ${id}${name && name !== id ? ` — ${name}` : ''}${room ? ` (${room})` : ''}${dates.length ? ` — ngày: ${dates.join(', ')}` : ''}`;
   });
   if (summaries.length > 12) patientLines.push(`- ... còn ${summaries.length - 12} bệnh nhân khác`);
   const excluded = Array.isArray(targets.excludedPatients) ? targets.excludedPatients : [];
