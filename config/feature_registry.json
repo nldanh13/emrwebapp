@@ -82,6 +82,16 @@
       "usesDateRange": true
     },
     {
+      "id": "sick-leave",
+      "label": "Nghỉ ốm",
+      "icon": "▥",
+      "group": "Hành chánh",
+      "hint": "Chuẩn bị hồ sơ nghỉ ốm nội trú/ngoại trú",
+      "order": 95,
+      "compact": true,
+      "usesDateRange": true
+    },
+    {
       "id": "clinic",
       "label": "Phòng khám",
       "icon": "⌁",

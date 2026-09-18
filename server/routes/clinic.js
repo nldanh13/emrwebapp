@@ -52,13 +52,20 @@ function staffNameForClinicRole(schedule = {}, role = 'nurse', timeText = '') {
   return (isAfternoon ? (afternoon || morning) : (morning || afternoon));
 }
 
+const CLINIC_PREVIEW_MODES = new Set(['today', 'missed', 'date_range']);
+
 function sanitizeClinicRequest(body = {}) {
-  const mode = String(body.mode || 'missed').trim() === 'today' ? 'today' : 'missed';
+  const rawMode = String(body.mode || 'missed').trim();
+  const mode = CLINIC_PREVIEW_MODES.has(rawMode) ? rawMode : 'missed';
   const username = String(body.username || '').trim();
   const password = String(body.password || '');
   const loginUrl = String(body.loginUrl || '').trim();
   const listUrl = String(body.listUrl || '').trim();
   const manualCodes = String(body.manualCodes || '').trim();
+  // "date_range" = tìm mù ngoại trú theo khoảng ngày (giống cơ chế đã có cho nội trú);
+  // để Python tự phân tích định dạng ngày (iso hoặc dd/mm/yyyy), ở đây chỉ chặn chuỗi rác.
+  const dateFrom = String(body.dateFrom || '').trim().slice(0, 20);
+  const dateTo = String(body.dateTo || '').trim().slice(0, 20);
   const headless = body.headless !== false;
   const clinicSchedule = sanitizeClinicSchedule(body.clinicSchedule || body.clinic_schedule || {});
   const excel = body.excel && typeof body.excel === 'object' ? {
@@ -71,8 +78,9 @@ function sanitizeClinicRequest(body = {}) {
   if (!loginUrl) throw new Error('Thiếu URL đăng nhập phòng khám.');
   if (!listUrl) throw new Error('Thiếu URL Danh sách Khám bệnh.');
   if (excel?.base64 && excel.base64.length > 8 * 1024 * 1024) throw new Error('File Excel quá lớn.');
+  if (mode === 'date_range' && !dateFrom) throw new Error('Thiếu khoảng ngày để tìm (dateFrom).');
 
-  return { mode, username, password, loginUrl, listUrl, manualCodes, headless, excel, clinicSchedule };
+  return { mode, username, password, loginUrl, listUrl, manualCodes, dateFrom, dateTo, headless, excel, clinicSchedule };
 }
 
 function redactForAudit(payload = {}) {
@@ -83,6 +91,8 @@ function redactForAudit(payload = {}) {
     loginUrl: payload.loginUrl ? '[set]' : '',
     listUrl: payload.listUrl ? '[set]' : '',
     manualCodeCount: String(payload.manualCodes || '').split(/[\s,;]+/).filter(Boolean).length,
+    dateFrom: payload.dateFrom || '',
+    dateTo: payload.dateTo || '',
     excel: payload.excel?.filename || '',
     hasExcel: Boolean(payload.excel?.base64),
     headless: payload.headless,

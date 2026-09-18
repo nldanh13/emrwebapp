@@ -5,6 +5,7 @@ import ShiftTab  from './components/ShiftTab.jsx';
 import NurseTab  from './components/NurseTab.jsx';
 import HchahnTab from './components/hchanh/HchahnTab.jsx';
 import RecordsCheckTab from './components/records/RecordsCheckTab.jsx';
+import SickLeaveTab from './components/SickLeaveTab.jsx';
 import VtytCatalogManager from './components/VtytCatalogManager.jsx';
 import MedicationCatalogManager from './components/MedicationCatalogManager.jsx';
 import EmrStructureScanTab from './components/EmrStructureScanTab.jsx';
@@ -341,6 +342,7 @@ export default function App() {
             {tab === 'duty'         && <ShiftTab toast={toast} mode="duty" workflowTitle="Điều dưỡng trực" workflowHint="Chỉ hiện người bệnh lần đầu vào khoa/chuyển khoa trong ngày trực theo quy tắc GMHS và giờ hành chánh." {...sharedDateProps} />}
             {tab === 'hchanh'       && <HchahnTab toast={toast} workDateRange={workDateRange} />}
             {tab === 'records-check' && <RecordsCheckTab toast={toast} workDateRange={workDateRange} />}
+            {tab === 'sick-leave'    && <SickLeaveTab toast={toast} workDateRange={workDateRange} />}
             {tab === 'vtyt-catalog' && <VtytCatalogManager />}
             {tab === 'medication-catalog' && <MedicationCatalogManager />}
             {tab === 'emr-structure-scan' && <EmrStructureScanTab />}

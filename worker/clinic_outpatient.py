@@ -20,11 +20,11 @@ import zipfile
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
-from xml.etree import ElementTree as ET
 
 from utils import load_config, login_emr
 from shared.worker_session import WorkerSession, open_session
 from shared.text_utils import strip_accents, norm_vi as norm
+from selenium_emr_helpers import set_time_range_filter
 
 try:
     from bs4 import BeautifulSoup
@@ -66,63 +66,9 @@ def patient_code(value: Any) -> str:
 
 
 # ── XLSX parser không cần thư viện ngoài ─────────────────────────────────────
+# (logic đọc XML thô nằm chung ở xlsx_utils.py để script khác dùng lại được)
 
-def _xlsx_col_index(cell_ref: str) -> int:
-    m = re.match(r"([A-Z]+)", cell_ref.upper())
-    if not m:
-        return 0
-    n = 0
-    for ch in m.group(1):
-        n = n * 26 + (ord(ch) - ord("A") + 1)
-    return n - 1
-
-
-def _read_shared_strings(zf: zipfile.ZipFile) -> List[str]:
-    try:
-        raw = zf.read("xl/sharedStrings.xml")
-    except KeyError:
-        return []
-    root = ET.fromstring(raw)
-    ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
-    out: List[str] = []
-    for si in root.findall(f"{ns}si"):
-        parts = []
-        for t in si.iter(f"{ns}t"):
-            parts.append(t.text or "")
-        out.append("".join(parts))
-    return out
-
-
-def _cell_value(cell: ET.Element, shared: List[str]) -> str:
-    ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
-    cell_type = cell.attrib.get("t", "")
-    if cell_type == "inlineStr":
-        parts = [t.text or "" for t in cell.iter(f"{ns}t")]
-        return "".join(parts)
-    v = cell.find(f"{ns}v")
-    raw = v.text if v is not None else ""
-    if cell_type == "s":
-        try:
-            return shared[int(raw)]
-        except Exception:
-            return ""
-    return raw or ""
-
-
-def _read_sheet_matrix(zf: zipfile.ZipFile, sheet_path: str, shared: List[str]) -> List[List[str]]:
-    ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
-    root = ET.fromstring(zf.read(sheet_path))
-    rows: List[List[str]] = []
-    for row in root.iter(f"{ns}row"):
-        values: Dict[int, str] = {}
-        max_col = -1
-        for c in row.findall(f"{ns}c"):
-            idx = _xlsx_col_index(c.attrib.get("r", ""))
-            max_col = max(max_col, idx)
-            values[idx] = compact(_cell_value(c, shared))
-        if max_col >= 0:
-            rows.append([values.get(i, "") for i in range(max_col + 1)])
-    return rows
+from xlsx_utils import read_shared_strings as _read_shared_strings, read_sheet_matrix as _read_sheet_matrix
 
 
 def parse_xlsx_patient_rows(xlsx_path: str) -> List[Dict[str, str]]:
@@ -911,6 +857,37 @@ def run_preview(req_path: str, out_path: str) -> None:
                 "summary": summarize_rows(rows),
                 "procedure_summary": summarize_procedure_rows(rows),
                 "message": f"Đã đọc {len(rows)} dòng phòng khám chấn thương trong danh sách hiện tại.",
+            }
+        elif mode == "date_range":
+            # "Tìm mù" theo khoảng ngày cho ngoại trú — dùng lại đúng cơ chế
+            # bộ lọc "Khoảng" (#cbbLoai/#dtTuNgay/#dtDenNgay) đã tự động hoá
+            # cho nội trú, vì trang Danh sách Khám bệnh dùng chung control này.
+            date_from = compact(req.get("dateFrom") or req.get("date_from"))
+            date_to = compact(req.get("dateTo") or req.get("date_to")) or date_from
+            if not date_from:
+                raise RuntimeError("Chưa có khoảng ngày để tìm (dateFrom/dateTo).")
+            filter_set = set_time_range_filter(ws.driver, date_from=date_from, date_to=date_to)
+            if not filter_set:
+                print("[CLINIC] [WARN] Không đặt được bộ lọc Khoảng ngày trên Danh sách Khám bệnh — có thể trang này dùng id khác trang nội trú, cần kiểm tra lại thủ công.")
+            click_search(ws.driver)
+            rows = read_current_clinic_list(ws.driver, schedule=clinic_schedule)
+            rows = resolve_tt_details_for_rows(ws.driver, rows, schedule=clinic_schedule)
+            result = {
+                "status": "ok" if filter_set else "partial",
+                "mode": mode,
+                "started_at": started,
+                "finished_at": datetime.now().isoformat(timespec="seconds"),
+                "clinic_url": clinic_url,
+                "date_from": date_from,
+                "date_to": date_to,
+                "filter_applied": filter_set,
+                "targets": [],
+                "rows": rows,
+                "summary": summarize_rows(rows),
+                "procedure_summary": summarize_procedure_rows(rows),
+                "message": (f"Đã đọc {len(rows)} dòng phòng khám chấn thương từ {date_from} đến {date_to}."
+                            if filter_set else
+                            f"Không đặt được bộ lọc khoảng ngày — kết quả bên dưới ({len(rows)} dòng) có thể vẫn là danh sách mặc định, không thuộc {date_from} → {date_to}."),
             }
         else:
             if not targets:

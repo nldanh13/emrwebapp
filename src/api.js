@@ -110,6 +110,10 @@ function apiActionLabel(method, url) {
     'POST /api/nurse-settings': 'lưu lịch điều dưỡng',
     'GET /api/admin-nurse-state': 'tải trạng thái kiểm hành chánh',
     'POST /api/admin-nurse-state': 'lưu trạng thái kiểm hành chánh',
+    'GET /api/sick-leave-state': 'tải trạng thái đã nộp nghỉ ốm',
+    'POST /api/sick-leave-state': 'lưu trạng thái đã nộp nghỉ ốm',
+    'GET /api/sick-leave-import': 'tải danh sách BHXH đã nhập gần nhất',
+    'POST /api/sick-leave-import': 'nhập danh sách BHXH (.xlsx) để rà soát nghỉ ốm/ra viện',
     'POST /api/check-current-bed': 'kiểm buồng giường hiện tại',
 
     'GET /api/admin-workflow/dashboard': 'tải workflow hành chánh',
@@ -687,6 +691,11 @@ export const runClinicPreview = (payload) => post('/api/clinic/preview', payload
 export const runClinicCarePreview = (payload) => post('/api/clinic/care-preview', payload);
 export const runClinicInputCare = (payload) => post('/api/clinic/input-care', payload);
 export const runClinicCareOrderSeeds = (payload) => post('/api/clinic/care-order-seeds', payload);
+export const getSickLeaveState = () => get('/api/sick-leave-state');
+export const saveSickLeaveState = (payload) => post('/api/sick-leave-state', payload);
+export const getSickLeaveImport = () => get('/api/sick-leave-import');
+export const importSickLeaveList = (payload) => post('/api/sick-leave-import', payload);
+
 export const getClinicCareDraft = () => get('/api/clinic/care-draft');
 export const saveClinicCareDraft = (payload) => post('/api/clinic/care-draft', payload);
 export const clearClinicCareDraft = () => del('/api/clinic/care-draft');
