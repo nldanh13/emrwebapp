@@ -1,0 +1,248 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { C } from '../tokens.js';
+import { Badge, Btn, Spinner } from './shared.jsx';
+import * as api from '../api.js';
+import { getPatientDischargeDates } from '../utils/dischargePrint.js';
+import { sanitizeWorkDateRange, dmyToInputDate, workDateRangeLabel } from '../utils/workDateRange.js';
+
+// Từ khoá nhận diện "chỉ định nghỉ" trong y lệnh/diễn biến ngoại trú (đã bỏ dấu).
+// Không có cờ có sẵn cho ngoại trú như has_infusion/has_procedure bên nội trú,
+// nên phải quét chữ — xem thêm ghi chú ở buildOutpatientCandidates().
+const SICK_LEAVE_KEYWORD_RE = /nghi\s*(om|duong|ngoi|viec)|giay\s*nghi|cho\s*nghi/;
+
+function normalizeText(value) {
+  return String(value || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+    .toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+// Giống hệt careRowKey() trong ClinicTab.jsx — phải khớp key để tra đúng
+// careEdits[...] (y lệnh/diễn biến đã lưu) ứng với từng dòng preview.
+function careRowKey(row = {}, index = 0) {
+  const stayId = String(row.noitruid || '').trim();
+  if (stayId) return `stay:${stayId}`;
+  const patientTime = `${String(row.ma_bn || '').trim()}::${String(row.care_time_str || row.tg_vao || '').trim()}`;
+  return patientTime !== '::' ? `patient:${patientTime}` : `row:${index}`;
+}
+
+function patientIdOf(p) {
+  return String(p?.ma_bn || p?.id || '').trim();
+}
+
+function buildInpatientCandidates(patients, range) {
+  const out = [];
+  for (const p of (patients || [])) {
+    const id = patientIdOf(p);
+    if (!id) continue;
+    for (const dmy of getPatientDischargeDates(p)) {
+      const iso = dmyToInputDate(dmy);
+      if (!iso || iso < range.from || iso > range.to) continue;
+      out.push({
+        key: `${id}::${dmy}`,
+        ma_bn: id,
+        ho_ten: p.ho_ten || p.name || '',
+        so_phong: p.so_phong || p.room || '',
+        ngay_vao: p.thoi_gian_vao_khoa || p.tg_vao || '',
+        ngay_ra: dmy,
+        chan_doan: p.chan_doan || '',
+        bac_si: p.bac_si || '',
+        so_the_bhyt: p.so_the_bhyt || p.bhyt || '',
+      });
+    }
+  }
+  return out.sort((a, b) => a.ho_ten.localeCompare(b.ho_ten, 'vi') || a.key.localeCompare(b.key));
+}
+
+function buildOutpatientCandidates(draft, range) {
+  const rows = Array.isArray(draft?.carePreview?.rows) ? draft.carePreview.rows : [];
+  const edits = draft?.careEdits && typeof draft.careEdits === 'object' ? draft.careEdits : {};
+  const out = [];
+  rows.forEach((row, idx) => {
+    const id = String(row?.ma_bn || '').trim();
+    if (!id) return;
+    const edit = edits[careRowKey(row, idx)] || {};
+    // Ngoại trú chưa có cờ "có chỉ định nghỉ" tính sẵn như has_infusion/has_procedure
+    // bên nội trú — chỉ quét được chữ đã lấy/lưu ở tab Phòng khám (y lệnh, diễn biến).
+    // Ca chưa "Lấy vị trí đau từ y lệnh" hoặc chưa gõ diễn biến sẽ không có gì để quét.
+    const reasonText = [edit?.orderInfo?.ten_y_lenh, edit?.orderInfo?.suggested_dien_bien, edit?.draft, edit?.savedValue]
+      .filter(Boolean).join(' · ');
+    if (!SICK_LEAVE_KEYWORD_RE.test(normalizeText(reasonText))) return;
+    const iso = dmyToInputDate(row.ngay_lam);
+    if (iso && (iso < range.from || iso > range.to)) return;
+    out.push({
+      key: `${id}::${row.ngay_lam || row.tg_vao || idx}`,
+      ma_bn: id,
+      ho_ten: row.ho_ten || '',
+      ngay_lam: row.ngay_lam || '',
+      tg_vao: row.tg_vao || row.thoi_gian_vao_khoa || '',
+      khoa_chuyen_den: row.khoa_chuyen_den || '',
+      ly_do: reasonText,
+    });
+  });
+  return out.sort((a, b) => a.ho_ten.localeCompare(b.ho_ten, 'vi') || a.key.localeCompare(b.key));
+}
+
+const INPATIENT_FIELDS = [
+  { label: 'Mã BN', value: it => it.ma_bn },
+  { label: 'Phòng', value: it => it.so_phong },
+  { label: 'Ngày vào', value: it => it.ngay_vao },
+  { label: 'Ngày ra', value: it => it.ngay_ra },
+  { label: 'Chẩn đoán', value: it => it.chan_doan },
+  { label: 'Bác sĩ', value: it => it.bac_si },
+  { label: 'BHYT', value: it => it.so_the_bhyt },
+];
+
+const OUTPATIENT_FIELDS = [
+  { label: 'Mã BN', value: it => it.ma_bn },
+  { label: 'Ngày khám', value: it => it.ngay_lam },
+  { label: 'Giờ vào', value: it => it.tg_vao },
+  { label: 'Khoa', value: it => it.khoa_chuyen_den },
+  { label: 'Lý do/y lệnh', value: it => it.ly_do },
+];
+
+function Field({ label, value }) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 9.5, color: C.text3, fontWeight: 700, letterSpacing: '0.03em' }}>{label}</div>
+      <div style={{ fontSize: 11.5, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={value || ''}>{value || '—'}</div>
+    </div>
+  );
+}
+
+function CandidateRow({ item, fields, entry, onToggle, onNoteChange }) {
+  const submitted = Boolean(entry?.submitted);
+  return (
+    <div style={{
+      display: 'flex', gap: 10, alignItems: 'flex-start', padding: '9px 10px',
+      borderBottom: `1px solid ${C.border2}`, background: submitted ? C.greenBg : C.surface,
+    }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', paddingTop: 2 }} title="Đã nộp">
+        <input type="checkbox" checked={submitted} onChange={() => onToggle(item.key)} style={{ width: 16, height: 16 }} />
+      </label>
+      <div style={{ flex: '2 1 420px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 6, minWidth: 0 }}>
+        {fields.map(f => <Field key={f.label} label={f.label} value={f.value(item)} />)}
+      </div>
+      <input
+        placeholder="Ghi chú (số ngày nghỉ, người nộp...)"
+        defaultValue={entry?.note || ''}
+        onBlur={e => onNoteChange(item.key, e.target.value)}
+        style={{ flex: '1 1 180px', minWidth: 140, padding: '5px 7px', fontSize: 11, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }}
+      />
+    </div>
+  );
+}
+
+function Section({ title, hint, list, fields, stateEntries, onToggle, onNoteChange, emptyMessage }) {
+  const submittedCount = list.filter(it => stateEntries[it.key]?.submitted).length;
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{title}</div>
+        <Badge text={`${list.length} ca`} bg={C.surface2} color={C.text2} size={10} />
+        {list.length > 0 && <Badge text={`Đã nộp ${submittedCount}/${list.length}`} bg={submittedCount === list.length ? C.greenBg : C.amberBg} color={submittedCount === list.length ? C.green : C.amber} size={10} />}
+      </div>
+      {hint && <div style={{ fontSize: 11, color: C.text3, marginBottom: 8 }}>{hint}</div>}
+      <div style={{ border: `1px solid ${C.border2}`, borderRadius: 8, overflow: 'hidden' }}>
+        {list.length === 0 ? (
+          <div style={{ padding: 16, fontSize: 12, color: C.text3, textAlign: 'center' }}>{emptyMessage}</div>
+        ) : list.map(item => (
+          <CandidateRow key={item.key} item={item} fields={fields} entry={stateEntries[item.key]}
+            onToggle={onToggle} onNoteChange={onNoteChange} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function SickLeaveTab({ toast, workDateRange }) {
+  const [patients, setPatients] = useState([]);
+  const [clinicDraft, setClinicDraft] = useState(null);
+  const [stateEntries, setStateEntries] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    Promise.all([
+      api.getPatients().catch(() => []),
+      api.getClinicCareDraft().catch(() => ({ draft: null })),
+      api.getSickLeaveState().catch(() => ({ entries: {} })),
+    ]).then(([patientsRes, draftRes, stateRes]) => {
+      setPatients(Array.isArray(patientsRes) ? patientsRes : []);
+      setClinicDraft(draftRes?.draft || null);
+      setStateEntries(stateRes?.entries || {});
+    }).catch(e => toast?.(String(e?.message || 'Không tải được dữ liệu nghỉ ốm'), 'error'))
+      .finally(() => setLoading(false));
+  }, [toast]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const range = useMemo(() => sanitizeWorkDateRange(workDateRange), [workDateRange?.from, workDateRange?.to]);
+  const inpatientList = useMemo(() => buildInpatientCandidates(patients, range), [patients, range.from, range.to]);
+  const outpatientList = useMemo(() => buildOutpatientCandidates(clinicDraft, range), [clinicDraft, range.from, range.to]);
+
+  const persist = useCallback((nextEntries) => {
+    api.saveSickLeaveState({ entries: nextEntries })
+      .catch(e => toast?.(String(e?.message || 'Không lưu được trạng thái nghỉ ốm'), 'error'));
+  }, [toast]);
+
+  const toggle = useCallback((key) => {
+    setStateEntries(prev => {
+      const current = prev[key] || { submitted: false, note: '' };
+      const next = { ...prev, [key]: { ...current, submitted: !current.submitted, updated_at: new Date().toISOString() } };
+      persist(next);
+      return next;
+    });
+  }, [persist]);
+
+  const setNote = useCallback((key, note) => {
+    setStateEntries(prev => {
+      const current = prev[key] || { submitted: false, note: '' };
+      if ((current.note || '') === note) return prev;
+      const next = { ...prev, [key]: { ...current, note, updated_at: new Date().toISOString() } };
+      persist(next);
+      return next;
+    });
+  }, [persist]);
+
+  return (
+    <div style={{ padding: 14, overflow: 'auto', height: '100%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+        <div style={{ fontSize: 14, fontWeight: 850, color: C.text }}>Nghỉ ốm</div>
+        {loading && <Spinner size={12} />}
+        <Btn variant="default" onClick={load} disabled={loading} style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: 11 }}>⟳ Làm mới</Btn>
+      </div>
+      <div style={{ fontSize: 11, color: C.text3, marginBottom: 14, lineHeight: 1.5 }}>
+        Danh sách người bệnh cần chuẩn bị Giấy chứng nhận nghỉ việc hưởng BHXH, lọc từ dữ liệu đã có trong app
+        cho khoảng ngày <b style={{ color: C.text2 }}>{workDateRangeLabel(workDateRange)}</b>. Chưa tự động nộp lên
+        Cổng Dịch vụ công BHXH (khác hệ thống/tài khoản đăng nhập) — tick "Đã nộp" sau khi làm thủ công.
+      </div>
+
+      <Section
+        title="Nội trú xuất viện"
+        hint="Mọi người bệnh có ngày ra viện trong khoảng ngày đã chọn."
+        list={inpatientList}
+        fields={INPATIENT_FIELDS}
+        stateEntries={stateEntries}
+        onToggle={toggle}
+        onNoteChange={setNote}
+        emptyMessage={loading ? 'Đang tải...' : 'Không có người bệnh ra viện trong khoảng ngày đã chọn.'}
+      />
+
+      <Section
+        title="Ngoại trú"
+        hint='Quét từ bản xem trước ở tab "Phòng khám" (y lệnh/diễn biến đã lấy hoặc đã gõ), lọc ca có từ khoá liên quan nghỉ ốm.'
+        list={outpatientList}
+        fields={OUTPATIENT_FIELDS}
+        stateEntries={stateEntries}
+        onToggle={toggle}
+        onNoteChange={setNote}
+        emptyMessage={loading
+          ? 'Đang tải...'
+          : (clinicDraft
+            ? 'Có bản xem trước Phòng khám nhưng chưa thấy ca nào có từ khoá liên quan nghỉ ốm trong y lệnh/diễn biến đã lấy hoặc đã gõ.'
+            : 'Chưa có bản xem trước ở tab Phòng khám. Vào tab Phòng khám, dán/tải danh sách rồi quay lại đây.')}
+      />
+    </div>
+  );
+}
