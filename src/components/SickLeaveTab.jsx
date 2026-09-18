@@ -26,13 +26,32 @@ function asBase64(file) {
   });
 }
 
-// EMR chỉ tìm được bệnh nhân theo tên + ngày sinh (không có mã tra cứu chung
-// giữa danh sách BHXH và HIS) — nên chỉ khớp theo tên đã chuẩn hoá làm gợi ý,
-// không tự nhận là đúng; luôn để người dùng đối chiếu tuổi/ngày sinh trước khi tin.
+// Ô tìm trên EMR chỉ nhận họ tên đầy đủ + khoảng thời gian, không có ô ngày sinh
+// (và không có mã tra cứu chung giữa danh sách BHXH và HIS) — nên chỉ khớp theo
+// tên đã chuẩn hoá làm gợi ý, không tự nhận là đúng; luôn để người dùng tự đối
+// chiếu ngày sinh trong file BHXH với từng kết quả EMR trả về trước khi tin.
 function ageFromDob(dobDmy) {
   const m = String(dobDmy || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (!m) return null;
   return new Date().getFullYear() - Number(m[3]);
+}
+
+function dateOnly(value) {
+  const m = String(value || '').match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
+  return m ? m[1] : '';
+}
+
+// Ô tìm bệnh nhân trên EMR chỉ nhận họ tên đầy đủ + khoảng thời gian (không có ô
+// ngày sinh) — dùng đúng khoảng ngày đã có sẵn trong dòng BHXH làm gợi ý tìm, để
+// khỏi phải tự bịa khoảng ngày khi hướng dẫn người dùng tìm lại trên EMR.
+function searchWindowFor(row) {
+  if (row.ngay_vao_vien || row.ngay_ra_vien) {
+    return { from: dateOnly(row.ngay_vao_vien), to: dateOnly(row.ngay_ra_vien) };
+  }
+  if (row.dieu_tri_tu_ngay || row.dieu_tri_den_ngay) {
+    return { from: dateOnly(row.dieu_tri_tu_ngay), to: dateOnly(row.dieu_tri_den_ngay) };
+  }
+  return { from: '', to: '' };
 }
 
 function matchInpatientCandidates(row, patients) {
@@ -171,10 +190,14 @@ const BHXH_INPATIENT_FIELDS = [
 function MatchHint({ row, candidates }) {
   const dobAge = ageFromDob(row.ngay_sinh);
   if (!candidates.length) {
+    const searchWindow = searchWindowFor(row);
     return (
       <div style={{ fontSize: 10.5, color: C.amber, lineHeight: 1.5 }}>
-        ⚠ Chưa thấy trong dữ liệu đã tải trong app — tìm trên EMR theo tên + ngày sinh:
-        {' '}<b>{row.ho_ten || '—'}</b>{row.ngay_sinh ? `, sinh ${row.ngay_sinh}` : ''}.
+        ⚠ Chưa thấy trong dữ liệu đã tải trong app — dò trên EMR: nhập đầy đủ họ tên{' '}
+        <b>{row.ho_ten || '—'}</b>
+        {(searchWindow.from || searchWindow.to) && <> trong khoảng <b>{searchWindow.from || '?'} → {searchWindow.to || '?'}</b></>},
+        EMR sẽ hiện danh sách (không lọc theo ngày sinh) — chọn đúng người bằng cách đối chiếu
+        ngày sinh <b>{row.ngay_sinh || '—'}</b> trong file này với từng kết quả trả về.
       </div>
     );
   }
@@ -401,9 +424,9 @@ export default function SickLeaveTab({ toast, workDateRange }) {
       }}>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: C.text, marginBottom: 4 }}>Nhập danh sách BHXH gửi rà soát (.xlsx)</div>
         <div style={{ fontSize: 11, color: C.text3, marginBottom: 8, lineHeight: 1.5 }}>
-          File phải có 2 sheet "Ngoại trú" và "Nội trú" (đúng định dạng BHXH gửi). EMR chỉ tra được theo
-          tên + ngày sinh, nên mỗi dòng sẽ kèm gợi ý khớp tên trong dữ liệu đã tải ở app — luôn đối chiếu
-          tuổi/ngày sinh trước khi tin.
+          File phải có 2 sheet "Ngoại trú" và "Nội trú" (đúng định dạng BHXH gửi). Ô tìm trên EMR chỉ nhận
+          họ tên đầy đủ + khoảng thời gian (không lọc được theo ngày sinh), nên mỗi dòng sẽ kèm gợi ý khớp
+          tên trong dữ liệu đã tải ở app hoặc khoảng ngày để tự tìm lại — luôn đối chiếu ngày sinh trước khi tin.
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <input type="file" accept=".xlsx" disabled={importing}
