@@ -175,10 +175,11 @@ def test_precheck_tokens_are_task_scoped_and_one_time(tmp_path):
 def test_shift_ui_never_requests_client_side_precheck_bypass():
     source = (ROOT / "src" / "components" / "ShiftTab.jsx").read_text(encoding="utf-8")
     assert "targets.skipPrecheck = true" not in source
-    assert source.count("targets.precheck_token = precheck.precheck_token") == 3
+    assert source.count("targets.precheck_token = precheck.precheck_token") == 4
     assert "ensureInputDataFresh(targets, 'chăm sóc'" in source
     assert "ensureInputDataFresh(targets, 'dịch truyền'" in source
     assert "ensureInputDataFresh(targets, 'thủ thuật'" in source
+    assert "ensureInputDataFresh(targets, 'VTYT'" in source
 
 
 def test_precheck_does_not_issue_token_when_classification_cannot_finish():
