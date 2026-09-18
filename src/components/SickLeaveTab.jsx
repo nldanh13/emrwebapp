@@ -330,10 +330,10 @@ function CandidateRow({ item, fields, entry, onToggle, onNoteChange }) {
   );
 }
 
-function Section({ title, hint, list, fields, stateEntries, onToggle, onNoteChange, emptyMessage }) {
+function Section({ title, hint, list, fields, stateEntries, onToggle, onNoteChange, emptyMessage, compact }) {
   const submittedCount = list.filter(it => stateEntries[it.key]?.submitted).length;
   return (
-    <div style={{ marginBottom: 20 }}>
+    <div style={{ marginBottom: compact ? 0 : 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{title}</div>
         <Badge text={`${list.length} ca`} bg={C.surface2} color={C.text2} size={10} />
@@ -348,6 +348,37 @@ function Section({ title, hint, list, fields, stateEntries, onToggle, onNoteChan
             onToggle={onToggle} onNoteChange={onNoteChange} />
         ))}
       </div>
+    </div>
+  );
+}
+
+// Khối gấp lại được — dùng cho phần "Quét trực tiếp EMR" (cần nhập tài khoản/URL,
+// không phải ai cũng dùng mỗi lần mở tab) để không chiếm chỗ ngang với các danh
+// sách BHXH cần xử lý ngay.
+function Collapsible({ title, subtitle, badge, open, onToggle }) {
+  return (
+    <button type="button" onClick={onToggle} style={{
+      width: '100%', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
+      padding: '10px 12px', border: `1px solid ${C.blueBorder || C.border}`,
+      background: C.blueBg || C.surface2, cursor: 'pointer', fontFamily: 'inherit',
+      borderRadius: open ? '8px 8px 0 0' : 8,
+    }}>
+      <span style={{ fontSize: 10, color: C.text3, transition: 'transform 0.12s ease', transform: open ? 'rotate(90deg)' : 'none', flexShrink: 0 }}>▶</span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: C.text }}>{title}</span>
+        {subtitle && <span style={{ display: 'block', fontSize: 10.5, color: C.text3, marginTop: 1 }}>{subtitle}</span>}
+      </span>
+      {badge}
+    </button>
+  );
+}
+
+// Nhãn nhỏ phân tách "danh sách BHXH gửi" (checklist chính) khỏi phần app tự dò
+// thêm — hai nguồn dữ liệu khác hẳn nhau về độ tin cậy, không nên trộn lẫn trực quan.
+function AutoDetectLabel({ children }) {
+  return (
+    <div style={{ fontSize: 10.5, fontWeight: 800, color: C.text3, letterSpacing: '0.03em', margin: '18px 0 10px', paddingTop: 12, borderTop: `1px dashed ${C.border2}` }}>
+      {children}
     </div>
   );
 }
@@ -370,6 +401,12 @@ export default function SickLeaveTab({ toast, workDateRange }) {
   const [scanning, setScanning] = useState(false);
   const [scannedOutpatientRows, setScannedOutpatientRows] = useState([]);
   const [scanMessage, setScanMessage] = useState('');
+
+  // Tab Nội trú/Ngoại trú tách riêng để không phải cuộn qua dữ liệu không liên
+  // quan; khối "Quét trực tiếp EMR" gấp lại mặc định vì cần nhập tài khoản/URL,
+  // không phải bước ai cũng cần mỗi lần mở tab.
+  const [recordType, setRecordType] = useState('noitru');
+  const [scanPanelOpen, setScanPanelOpen] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -475,6 +512,13 @@ export default function SickLeaveTab({ toast, workDateRange }) {
     });
   }, [persist]);
 
+  const noitruPending = bhxhInpatientList.filter(it => !stateEntries[it.key]?.submitted).length;
+  const ngoaitruPending = bhxhOutpatientList.filter(it => !stateEntries[it.key]?.submitted).length;
+  const tabs = [
+    { id: 'noitru', label: 'Nội trú', total: bhxhInpatientList.length, pending: noitruPending },
+    { id: 'ngoaitru', label: 'Ngoại trú', total: bhxhOutpatientList.length, pending: ngoaitruPending },
+  ];
+
   return (
     <div style={{ padding: 14, overflow: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
@@ -511,100 +555,134 @@ export default function SickLeaveTab({ toast, workDateRange }) {
         </div>
       </div>
 
-      <BhxhSection
-        title="BHXH — Nội trú (Giấy ra viện)"
-        list={bhxhInpatientList}
-        fields={BHXH_INPATIENT_FIELDS}
-        matchFn={matchInpatientCandidates}
-        matchSource={patients}
-        stateEntries={stateEntries}
-        onToggle={toggle}
-        onNoteChange={setNote}
-        emptyMessage={loading ? 'Đang tải...' : 'Chưa nhập danh sách BHXH (Nội trú), hoặc file chưa có dòng nào.'}
-      />
-
-      <BhxhSection
-        title="BHXH — Ngoại trú (Giấy nghỉ hưởng BHXH)"
-        list={bhxhOutpatientList}
-        fields={BHXH_OUTPATIENT_FIELDS}
-        matchFn={matchOutpatientCandidates}
-        matchSource={clinicDraft}
-        stateEntries={stateEntries}
-        onToggle={toggle}
-        onNoteChange={setNote}
-        emptyMessage={loading ? 'Đang tải...' : 'Chưa nhập danh sách BHXH (Ngoại trú), hoặc file chưa có dòng nào.'}
-      />
-
-      <div style={{ fontSize: 11, fontWeight: 800, color: C.text3, letterSpacing: '0.03em', margin: '22px 0 10px', paddingTop: 14, borderTop: `1px dashed ${C.border2}` }}>
-        TỰ PHÁT HIỆN THÊM TRONG APP (ngoài danh sách BHXH ở trên)
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16, borderBottom: `1px solid ${C.border2}` }}>
+        {tabs.map(t => (
+          <button type="button" key={t.id} onClick={() => setRecordType(t.id)} style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '7px 4px', marginBottom: -1,
+            border: 'none', borderBottom: '2px solid', cursor: 'pointer', fontFamily: 'inherit',
+            background: 'transparent',
+            borderColor: recordType === t.id ? C.blue : 'transparent',
+            color: recordType === t.id ? C.blue : C.text2,
+          }}>
+            <span style={{ fontSize: 13, fontWeight: 800 }}>{t.label}</span>
+            <Badge text={`${t.total} ca`} bg={recordType === t.id ? C.blueBg : C.surface2} color={recordType === t.id ? C.blue : C.text3} size={10} />
+            {t.pending > 0 && <Badge text={`${t.pending} chưa nộp`} bg={C.amberBg} color={C.amber} size={10} />}
+          </button>
+        ))}
       </div>
 
-      <Section
-        title="Nội trú xuất viện"
-        hint="Mọi người bệnh có ngày ra viện trong khoảng ngày đã chọn."
-        list={inpatientList}
-        fields={INPATIENT_FIELDS}
-        stateEntries={stateEntries}
-        onToggle={toggle}
-        onNoteChange={setNote}
-        emptyMessage={loading ? 'Đang tải...' : 'Không có người bệnh ra viện trong khoảng ngày đã chọn.'}
-      />
+      {recordType === 'noitru' && (
+        <>
+          <BhxhSection
+            title="BHXH — Nội trú (Giấy ra viện)"
+            list={bhxhInpatientList}
+            fields={BHXH_INPATIENT_FIELDS}
+            matchFn={matchInpatientCandidates}
+            matchSource={patients}
+            stateEntries={stateEntries}
+            onToggle={toggle}
+            onNoteChange={setNote}
+            emptyMessage={loading ? 'Đang tải...' : 'Chưa nhập danh sách BHXH (Nội trú), hoặc file chưa có dòng nào.'}
+          />
 
-      <Section
-        title="Ngoại trú"
-        hint='Quét từ bản xem trước ở tab "Phòng khám" (y lệnh/diễn biến đã lấy hoặc đã gõ), lọc ca có từ khoá liên quan nghỉ ốm.'
-        list={outpatientList}
-        fields={OUTPATIENT_FIELDS}
-        stateEntries={stateEntries}
-        onToggle={toggle}
-        onNoteChange={setNote}
-        emptyMessage={loading
-          ? 'Đang tải...'
-          : (clinicDraft
-            ? 'Có bản xem trước Phòng khám nhưng chưa thấy ca nào có từ khoá liên quan nghỉ ốm trong y lệnh/diễn biến đã lấy hoặc đã gõ.'
-            : 'Chưa có bản xem trước ở tab Phòng khám. Vào tab Phòng khám, dán/tải danh sách rồi quay lại đây.')}
-      />
+          <AutoDetectLabel>Tự phát hiện thêm trong app (ngoài danh sách BHXH ở trên)</AutoDetectLabel>
 
-      <div style={{
-        border: `1px solid ${C.blueBorder || C.border}`, background: C.blueBg || C.surface2,
-        borderRadius: 8, padding: 12, marginBottom: 12,
-      }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: C.text, marginBottom: 4 }}>Quét trực tiếp EMR — Ngoại trú theo khoảng ngày</div>
-        <div style={{ fontSize: 11, color: C.text3, marginBottom: 8, lineHeight: 1.5 }}>
-          Tìm mù trên "Danh sách Khám bệnh" trong khoảng ngày đang chọn ở trên ({workDateRangeLabel(workDateRange)}),
-          rồi lọc từ khoá liên quan nghỉ ốm trên toàn bộ dữ liệu từng dòng đọc được. Chưa test với EMR thật — nếu bộ lọc
-          khoảng ngày không áp dụng đúng, kết quả sẽ ghi rõ "partial" và cần kiểm tra lại thủ công.
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginBottom: 8 }}>
-          <input placeholder="Tài khoản phòng khám" value={clinicUsername} onChange={e => setClinicUsername(e.target.value)}
-            style={{ padding: '6px 8px', fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
-          <input placeholder="Mật khẩu" type="password" value={clinicPassword} onChange={e => setClinicPassword(e.target.value)}
-            style={{ padding: '6px 8px', fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
-          <input placeholder="URL đăng nhập" value={clinicLoginUrl} onChange={e => setClinicLoginUrl(e.target.value)}
-            style={{ padding: '6px 8px', fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
-          <input placeholder="URL Danh sách Khám bệnh" value={clinicListUrl} onChange={e => setClinicListUrl(e.target.value)}
-            style={{ padding: '6px 8px', fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
-        </div>
-        <Btn variant="primary" onClick={handleScanOutpatient} disabled={scanning} style={{ padding: '6px 12px', fontSize: 12 }}>
-          {scanning ? <><Spinner size={11} /> Đang quét...</> : '⟳ Quét EMR theo khoảng ngày'}
-        </Btn>
-        {scanMessage && <div style={{ fontSize: 10.5, color: C.text3, marginTop: 6 }}>{scanMessage}</div>}
-      </div>
+          <Section
+            title="Nội trú xuất viện"
+            hint="Mọi người bệnh có ngày ra viện trong khoảng ngày đã chọn."
+            list={inpatientList}
+            fields={INPATIENT_FIELDS}
+            stateEntries={stateEntries}
+            onToggle={toggle}
+            onNoteChange={setNote}
+            emptyMessage={loading ? 'Đang tải...' : 'Không có người bệnh ra viện trong khoảng ngày đã chọn.'}
+          />
+        </>
+      )}
 
-      <Section
-        title="Ngoại trú — quét trực tiếp từ EMR"
-        hint="Chỉ trong phiên làm việc này (bấm Quét lại nếu tải lại trang). Lọc từ khoá liên quan nghỉ ốm trên toàn bộ dữ liệu từng dòng đọc được từ EMR."
-        list={scannedOutpatientList}
-        fields={SCANNED_OUTPATIENT_FIELDS}
-        stateEntries={stateEntries}
-        onToggle={toggle}
-        onNoteChange={setNote}
-        emptyMessage={scanning
-          ? 'Đang quét...'
-          : (scannedOutpatientRows.length
-            ? 'Đã quét nhưng chưa thấy dòng nào có từ khoá liên quan nghỉ ốm.'
-            : 'Chưa quét — bấm "Quét EMR theo khoảng ngày" ở trên.')}
-      />
+      {recordType === 'ngoaitru' && (
+        <>
+          <BhxhSection
+            title="BHXH — Ngoại trú (Giấy nghỉ hưởng BHXH)"
+            list={bhxhOutpatientList}
+            fields={BHXH_OUTPATIENT_FIELDS}
+            matchFn={matchOutpatientCandidates}
+            matchSource={clinicDraft}
+            stateEntries={stateEntries}
+            onToggle={toggle}
+            onNoteChange={setNote}
+            emptyMessage={loading ? 'Đang tải...' : 'Chưa nhập danh sách BHXH (Ngoại trú), hoặc file chưa có dòng nào.'}
+          />
+
+          <AutoDetectLabel>Tự phát hiện thêm trong app (ngoài danh sách BHXH ở trên)</AutoDetectLabel>
+
+          <Section
+            title="Ngoại trú (từ tab Phòng khám)"
+            hint='Quét từ bản xem trước ở tab "Phòng khám" (y lệnh/diễn biến đã lấy hoặc đã gõ), lọc ca có từ khoá liên quan nghỉ ốm.'
+            list={outpatientList}
+            fields={OUTPATIENT_FIELDS}
+            stateEntries={stateEntries}
+            onToggle={toggle}
+            onNoteChange={setNote}
+            emptyMessage={loading
+              ? 'Đang tải...'
+              : (clinicDraft
+                ? 'Có bản xem trước Phòng khám nhưng chưa thấy ca nào có từ khoá liên quan nghỉ ốm trong y lệnh/diễn biến đã lấy hoặc đã gõ.'
+                : 'Chưa có bản xem trước ở tab Phòng khám. Vào tab Phòng khám, dán/tải danh sách rồi quay lại đây.')}
+          />
+
+          <div style={{ marginTop: 20 }}>
+            <Collapsible
+              title="Quét trực tiếp EMR theo khoảng ngày"
+              subtitle={scannedOutpatientRows.length ? `Đã quét ${scannedOutpatientRows.length} dòng · ${scannedOutpatientList.length} ca liên quan nghỉ ốm` : 'Cần tài khoản/URL phòng khám — chưa quét'}
+              open={scanPanelOpen}
+              onToggle={() => setScanPanelOpen(o => !o)}
+              badge={scanning ? <Spinner size={12} /> : null}
+            />
+            {scanPanelOpen && (
+              <div style={{ border: `1px solid ${C.blueBorder || C.border}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: 12 }}>
+                <div style={{ fontSize: 11, color: C.text3, marginBottom: 8, lineHeight: 1.5 }}>
+                  Tìm mù trên "Danh sách Khám bệnh" trong khoảng ngày đang chọn ở trên ({workDateRangeLabel(workDateRange)}),
+                  rồi lọc từ khoá liên quan nghỉ ốm trên toàn bộ dữ liệu từng dòng đọc được. Chưa test với EMR thật — nếu bộ lọc
+                  khoảng ngày không áp dụng đúng, kết quả sẽ ghi rõ "partial" và cần kiểm tra lại thủ công.
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginBottom: 8 }}>
+                  <input placeholder="Tài khoản phòng khám" value={clinicUsername} onChange={e => setClinicUsername(e.target.value)}
+                    style={{ padding: '6px 8px', fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
+                  <input placeholder="Mật khẩu" type="password" value={clinicPassword} onChange={e => setClinicPassword(e.target.value)}
+                    style={{ padding: '6px 8px', fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
+                  <input placeholder="URL đăng nhập" value={clinicLoginUrl} onChange={e => setClinicLoginUrl(e.target.value)}
+                    style={{ padding: '6px 8px', fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
+                  <input placeholder="URL Danh sách Khám bệnh" value={clinicListUrl} onChange={e => setClinicListUrl(e.target.value)}
+                    style={{ padding: '6px 8px', fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
+                </div>
+                <Btn variant="primary" onClick={handleScanOutpatient} disabled={scanning} style={{ padding: '6px 12px', fontSize: 12 }}>
+                  {scanning ? <><Spinner size={11} /> Đang quét...</> : '⟳ Quét EMR theo khoảng ngày'}
+                </Btn>
+                {scanMessage && <div style={{ fontSize: 10.5, color: C.text3, marginTop: 6 }}>{scanMessage}</div>}
+
+                <div style={{ marginTop: 14 }}>
+                  <Section
+                    compact
+                    title="Kết quả quét"
+                    hint="Chỉ trong phiên làm việc này (bấm Quét lại nếu tải lại trang). Lọc từ khoá liên quan nghỉ ốm trên toàn bộ dữ liệu từng dòng đọc được từ EMR."
+                    list={scannedOutpatientList}
+                    fields={SCANNED_OUTPATIENT_FIELDS}
+                    stateEntries={stateEntries}
+                    onToggle={toggle}
+                    onNoteChange={setNote}
+                    emptyMessage={scanning
+                      ? 'Đang quét...'
+                      : (scannedOutpatientRows.length
+                        ? 'Đã quét nhưng chưa thấy dòng nào có từ khoá liên quan nghỉ ốm.'
+                        : 'Chưa quét — bấm "Quét EMR theo khoảng ngày" ở trên.')}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
