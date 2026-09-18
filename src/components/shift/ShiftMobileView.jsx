@@ -7,6 +7,7 @@ import SessionPicker from './SessionPicker.jsx';
 import ShiftToolbar from './ShiftToolbar.jsx';
 import InputRoomSelector from './InputRoomSelector.jsx';
 import MissingRangeWarning from './MissingRangeWarning.jsx';
+import NurseDutyInfo from './NurseDutyInfo.jsx';
 
 export default function ShiftMobileView({
   patients, filtered, rooms, selRoom, selPx, setSelRoom, setSelPx,
@@ -23,6 +24,7 @@ export default function ShiftMobileView({
   onInfusionUpdated,
   featureAvailability = {}, disabledFeatureLabels = [],
   missingRangeDates = [], missingRangeDatesLabel = '', requestedDayCount = 0,
+  nurseDutyLines = [],
 }) {
   const bulkInputDisabled = selectedInputPatients.length === 0;
   const inputDisabled = !!running || bulkInputDisabled;
@@ -70,6 +72,8 @@ export default function ShiftMobileView({
           {scopeInfo ? <div style={{ color: C.blue, fontSize: 11, marginTop: 3 }}>{scopeInfo}</div> : null}
         </div>
       )}
+
+      <NurseDutyInfo lines={nurseDutyLines} />
 
       <MissingRangeWarning
         missingRangeDates={missingRangeDates}

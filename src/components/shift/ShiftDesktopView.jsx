@@ -7,6 +7,7 @@ import SessionPicker from './SessionPicker.jsx';
 import ShiftToolbar from './ShiftToolbar.jsx';
 import InputRoomSelector from './InputRoomSelector.jsx';
 import MissingRangeWarning from './MissingRangeWarning.jsx';
+import NurseDutyInfo from './NurseDutyInfo.jsx';
 import { patientsInRoom } from './shiftUtils.js';
 
 export default function ShiftDesktopView({
@@ -25,6 +26,7 @@ export default function ShiftDesktopView({
   precheckReport, onClearPrecheckReport,
   featureAvailability = {}, disabledFeatureLabels = [],
   missingRangeDates = [], missingRangeDatesLabel = '', requestedDayCount = 0,
+  nurseDutyLines = [],
 }) {
   const bulkInputDisabled = selectedInputPatients.length === 0;
 
@@ -37,6 +39,7 @@ export default function ShiftDesktopView({
           {scopeInfo ? <div style={{ color: C.blue, fontSize: 11, marginTop: 3 }}>{scopeInfo}</div> : null}
         </div>
       )}
+      <NurseDutyInfo lines={nurseDutyLines} />
       <MissingRangeWarning
         missingRangeDates={missingRangeDates}
         missingRangeDatesLabel={missingRangeDatesLabel}

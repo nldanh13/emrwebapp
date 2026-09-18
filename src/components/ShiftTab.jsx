@@ -23,6 +23,7 @@ import { inputDateToDmy, sanitizeWorkDateRange, workDateRangeToDmy, workDateRang
 import { getPatientWorkflowDates, scopePatientToDates, withPatientWorkflowScope } from '../utils/patientScope.js';
 import { getMatchingDischargeDate, isDischargePrintPatientOnDates } from '../utils/dischargePrint.js';
 import { useFeatureStates } from '../features/runtime.js';
+import { getDaySchedule, toIsoDate, weekdayLabelFromIso } from './nurse/nurseScheduleUtils.js';
 
 function LoadingState() {
   return (
@@ -175,6 +176,15 @@ function formatMissingDatesLabel(dates, maxItems = 6) {
   return `${shown}${extra}`;
 }
 
+function formatNurseDutyLine(date, daySchedule) {
+  const iso = toIsoDate(date);
+  const weekday = iso ? weekdayLabelFromIso(iso) : '';
+  const admin = daySchedule?.admin?.length ? daySchedule.admin.join(', ') : '—';
+  const work = daySchedule?.work?.length ? daySchedule.work.join(', ') : '—';
+  const oncall = daySchedule?.oncall?.length ? daySchedule.oncall.join(', ') : '—';
+  return `${date}${weekday ? ` (${weekday})` : ''} — Hành chánh: ${admin} · Ca làm: ${work} · Ca trực: ${oncall}`;
+}
+
 function buildInputConfirmMessage(targets, label, precheck = null) {
   const ids = Array.isArray(targets.patientIds) ? targets.patientIds : [];
   const patientCount = ids.length;
@@ -208,6 +218,7 @@ function buildInputConfirmMessage(targets, label, precheck = null) {
     return `- ${id}${name && name !== id ? ` — ${name}` : ''}${room ? ` (${room})` : ''}`;
   });
   if (excluded.length > 8) excludedLines.push(`- ... còn ${excluded.length - 8} bệnh nhân bị loại`);
+  const nurseDutyLines = Array.isArray(targets.nurseDutyLines) ? targets.nurseDutyLines.filter(Boolean) : [];
   const normalizedLabel = String(label || '').toLowerCase();
   const mutationLine = normalizedLabel.includes('chăm sóc')
     ? 'Mỗi BN/ngày đều được mở kiểm tra trực tiếp trên HIS: chưa có → tạo mới; đã đúng → giữ nguyên; đã có nhưng sai → thu hồi và cập nhật; chỉ bỏ qua khi phiếu không có mã sửa hoặc EMR không cho phép can thiệp.'
@@ -219,6 +230,7 @@ function buildInputConfirmMessage(targets, label, precheck = null) {
     `Số BN/ngày: ${dayCount}\n` +
     `${selectedDates.length ? `Ngày nhập: ${selectedDates.join(', ')}\n` : ''}` +
     `${Array.isArray(targets.targetRooms) && targets.targetRooms.length ? `Phòng nhập: ${targets.targetRooms.join(', ')}\n` : ''}` +
+    `${nurseDutyLines.length ? `\nĐIỀU DƯỠNG THEO NGÀY:\n${nurseDutyLines.join('\n')}\n` : ''}` +
     `${patientLines.length ? `\nDANH SÁCH SẼ NHẬP:\n${patientLines.join('\n')}\n` : ''}` +
     `${excludedLines.length ? `\nĐÃ LOẠI KHỎI PHẠM VI:\n${excludedLines.join('\n')}\n` : ''}` +
     `${checkLine}\n` +
@@ -295,6 +307,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
   const [excludedInputPatientIds, setExcludedInputPatientIds] = useState(() => new Set());
   const [precheckReport, setPrecheckReport] = useState(null);
   const [inputConfirmRequest, setInputConfirmRequest] = useState(null);
+  const [nurseSchedule, setNurseSchedule] = useState(null);
   const inputRoomsInitializedRef = useRef(false);
   const previousInputRoomsRef = useRef([]);
   const { states: inputFeatureStates } = useFeatureStates(['care.input', 'infusion.input', 'procedure.input']);
@@ -310,6 +323,16 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
 
   const inputTargetDates = useMemo(() => workDateRangeDatesDmy(workDateRange), [workDateRange?.from, workDateRange?.to]);
   const inputTargetDatesKey = inputTargetDates.join('\u0001');
+  useEffect(() => {
+    api.getNurseSettings()
+      .then(d => setNurseSchedule(d?.schedule || null))
+      .catch(() => setNurseSchedule(null));
+  }, []);
+  const nurseDutyLines = useMemo(() => {
+    if (!nurseSchedule || !inputTargetDates.length) return [];
+    return inputTargetDates.map(date => formatNurseDutyLine(date, getDaySchedule(nurseSchedule, date)));
+  }, [nurseSchedule, inputTargetDatesKey]);
+
   // Thanh KHOẢNG NGÀY chỉ lọc dữ liệu y lệnh đã lấy sẵn (từ tab Thu thập dữ
   // liệu), không tự gọi EMR lấy thêm. Nếu người dùng mở rộng khoảng ngày ra
   // những ngày chưa từng "Lấy chi tiết", danh sách sẽ tự nhiên chỉ còn 1 ngày
@@ -663,6 +686,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     const precheck = await ensureInputDataFresh(targets, 'chăm sóc', 'care');
     if (!precheck?.precheck_token) return;
     targets.precheck_token = precheck.precheck_token;
+    targets.nurseDutyLines = nurseDutyLines;
 
     const okToRun = await askInputConfirm(targets, 'chăm sóc — kiểm tra / nhập / sửa', precheck);
     if (!okToRun) {
@@ -718,7 +742,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     } finally {
       setRunning(null);
     }
-  }, [running, toast, loadPatients, resolveInputDates, careInputEnabled, ensureInputDataFresh, askInputConfirm, ensureInputConfirmNotifyPermission]);
+  }, [running, toast, loadPatients, resolveInputDates, careInputEnabled, ensureInputDataFresh, askInputConfirm, ensureInputConfirmNotifyPermission, nurseDutyLines]);
 
   const handleInputInfusion = useCallback(async (items, selectedDate = null, options = {}) => {
     if (!infusionInputEnabled) { toast?.('Module nhập dịch truyền đang tắt; các module khác vẫn dùng được.', 'error'); return; }
@@ -747,6 +771,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     const precheck = await ensureInputDataFresh(targets, 'dịch truyền', 'infus');
     if (!precheck?.precheck_token) return;
     targets.precheck_token = precheck.precheck_token;
+    targets.nurseDutyLines = nurseDutyLines;
     const okToRun = await askInputConfirm(targets, 'dịch truyền — kiểm tra / nhập / sửa', precheck);
     if (!okToRun) {
       toast?.('Đã hủy kiểm tra/đồng bộ dịch truyền.', 'error');
@@ -769,7 +794,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     } finally {
       setRunning(null);
     }
-  }, [running, toast, loadPatients, resolveInputDates, infusionInputEnabled, ensureInputDataFresh, askInputConfirm, ensureInputConfirmNotifyPermission]);
+  }, [running, toast, loadPatients, resolveInputDates, infusionInputEnabled, ensureInputDataFresh, askInputConfirm, ensureInputConfirmNotifyPermission, nurseDutyLines]);
 
   const handleInputProcedure = useCallback(async (items, selectedDate = null, options = {}) => {
     if (!procedureInputEnabled) { toast?.('Module nhập thủ thuật đang tắt; các module khác vẫn dùng được.', 'error'); return; }
@@ -797,6 +822,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     const precheck = await ensureInputDataFresh(targets, 'thủ thuật', 'procedure');
     if (!precheck?.precheck_token) return;
     targets.precheck_token = precheck.precheck_token;
+    targets.nurseDutyLines = nurseDutyLines;
     const okToRunProcedure = await askInputConfirm(targets, 'thủ thuật — kiểm tra / nhập / sửa', precheck);
     if (!okToRunProcedure) {
       toast?.('Đã hủy kiểm tra/đồng bộ thủ thuật.', 'error');
@@ -819,7 +845,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     } finally {
       setRunning(null);
     }
-  }, [running, toast, loadPatients, resolveInputDates, procedureInputEnabled, ensureInputDataFresh, askInputConfirm, ensureInputConfirmNotifyPermission]);
+  }, [running, toast, loadPatients, resolveInputDates, procedureInputEnabled, ensureInputDataFresh, askInputConfirm, ensureInputConfirmNotifyPermission, nurseDutyLines]);
 
 
   const handleRefreshDetailsOne = useCallback(async (patient, selectedDate = null) => {
@@ -957,6 +983,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     precheckReport, onClearPrecheckReport: () => setPrecheckReport(null),
     featureAvailability, disabledFeatureLabels,
     missingRangeDates, missingRangeDatesLabel, requestedDayCount: inputTargetDates.length,
+    nurseDutyLines,
     scopeInfo: mode === 'duty'
       ? `Hiển thị ${patients.length} người bệnh có ngày thuộc người trực trong khoảng đã chọn${unknownScopeCount ? `; ${unknownScopeCount} người bệnh có ngày cần xem phân luồng.` : '.'}`
       : mode === 'ward'
