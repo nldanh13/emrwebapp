@@ -8,14 +8,6 @@ import { sanitizeWorkDateRange, dmyToInputDate, workDateRangeToDmy, workDateRang
 const DEFAULT_CLINIC_LOGIN_URL = import.meta.env.VITE_EMR_LOGIN_URL || '';
 const DEFAULT_CLINIC_LIST_URL = import.meta.env.VITE_EMR_CLINIC_LIST_URL || '';
 
-// Từ khoá nhận diện "nghỉ ốm" trong y lệnh/diễn biến ngoại trú (đã bỏ dấu).
-// Chỉ khớp đúng "nghỉ ốm" — KHÔNG khớp "nghỉ dưỡng"/"nghỉ ngơi"/"nghỉ việc"/"cho
-// nghỉ" chung chung, vì các cụm đó không đồng nghĩa với nghỉ ốm hưởng BHXH và
-// từng gây dương tính giả (vd "xin nghỉ việc" bị nhận nhầm là ca nghỉ ốm).
-// Không có cờ có sẵn cho ngoại trú như has_infusion/has_procedure bên nội trú,
-// nên phải quét chữ — xem thêm ghi chú ở buildOutpatientCandidates().
-const SICK_LEAVE_KEYWORD_RE = /nghi\s*om/;
-
 function normalizeText(value) {
   return String(value || '')
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -165,13 +157,13 @@ function buildOutpatientCandidates(draft, range) {
     // Còn tuổi lao động là điều kiện cần (loại trẻ em/người đã nghỉ hưu) — bảng
     // tblNoiTru của tab Phòng khám đã có sẵn cột "Tuổi"/"GT", không cần lấy thêm.
     if (!isLikelyWorkingAgeByAge(row.tuoi, row.gioi_tinh, refYear)) return;
+    // "Giấy chứng nhận nghỉ việc hưởng BHXH" là 1 form/popup riêng trên EMR (mở qua
+    // "Thông tin Khác"), KHÔNG phải chữ trong y lệnh/diễn biến — nên không có từ khoá
+    // nào để quét ra (đã xác nhận thực tế không tìm thấy). Vì vậy không lọc theo chữ
+    // nữa, chỉ còn lọc tuổi; người dùng tự rà soát trong danh sách còn lại.
     const edit = edits[careRowKey(row, idx)] || {};
-    // Ngoại trú chưa có cờ "có chỉ định nghỉ" tính sẵn như has_infusion/has_procedure
-    // bên nội trú — chỉ quét được chữ đã lấy/lưu ở tab Phòng khám (y lệnh, diễn biến).
-    // Ca chưa "Lấy vị trí đau từ y lệnh" hoặc chưa gõ diễn biến sẽ không có gì để quét.
     const reasonText = [edit?.orderInfo?.ten_y_lenh, edit?.orderInfo?.suggested_dien_bien, edit?.draft, edit?.savedValue]
       .filter(Boolean).join(' · ');
-    if (!SICK_LEAVE_KEYWORD_RE.test(normalizeText(reasonText))) return;
     const iso = dmyToInputDate(row.ngay_lam);
     if (iso && (iso < range.from || iso > range.to)) return;
     out.push({
@@ -192,19 +184,16 @@ function buildOutpatientCandidates(draft, range) {
 // Dòng quét trực tiếp từ EMR (mode date_range) có tên cột động, tự dò theo
 // tiêu đề bảng thật trên trang — không biết trước field nào sẽ có "ngay_lam"
 // hay "tg_vao" như carePreview.rows đã chuẩn hoá sẵn. Vì vậy quét từ khoá
-// nghỉ ốm trên TOÀN BỘ giá trị chuỗi của dòng, thay vì chỉ vài field cố định.
-// Đồng thời lọc bớt theo "còn tuổi lao động" (cột "Năm sinh" đã có sẵn trong dữ
-// liệu quét, không cần lấy thêm) — bớt dương tính giả khi >100 lượt khám/ngày,
-// nhưng vẫn giữ quét từ khoá vì tuổi lao động chỉ là điều kiện cần, không đủ.
+// nghỉ ốm trên TOÀN BỘ giá trị chuỗi của dòng — nhưng "Giấy chứng nhận nghỉ việc
+// hưởng BHXH" là 1 form/popup riêng trên EMR, KHÔNG phải chữ trong y lệnh/diễn
+// biến/danh sách khám bệnh, nên quét từ khoá không tìm ra gì (đã xác nhận thực
+// tế). Chỉ còn lọc "còn tuổi lao động" (cột "Năm sinh" đã có sẵn trong dữ liệu
+// quét) để bớt trẻ em/người đã nghỉ hưu; phần còn lại người dùng tự rà soát.
 function buildScannedOutpatientCandidates(rows) {
   const refYear = new Date().getFullYear();
   return (rows || [])
     .filter(row => row && String(row.ma_bn || '').trim())
-    .map((row, idx) => {
-      const text = Object.values(row).filter(v => typeof v === 'string').join(' · ');
-      return { row, idx, text };
-    })
-    .filter(({ text }) => SICK_LEAVE_KEYWORD_RE.test(normalizeText(text)))
+    .map((row, idx) => ({ row, idx }))
     .filter(({ row }) => isLikelyWorkingAge(row.nam_sinh, row.gioi_tinh, refYear))
     .map(({ row, idx }) => ({
       key: `scan-ngt::${row.ma_bn}::${row.ngay_lam || row.tg_vao || row.access_id || idx}`,
@@ -736,7 +725,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
 
           <Section
             title="Ngoại trú (từ tab Phòng khám)"
-            hint='Quét từ bản xem trước ở tab "Phòng khám" (y lệnh/diễn biến đã lấy hoặc đã gõ), lọc ca có từ khoá liên quan nghỉ ốm.'
+            hint='Danh sách khám ngày đã chọn ở tab "Phòng khám", đã lọc bớt người ngoài tuổi lao động (trẻ em/đã nghỉ hưu). "Giấy chứng nhận nghỉ việc hưởng BHXH" là form riêng trên EMR, không có trong y lệnh/diễn biến, nên KHÔNG tự biết ai đã có giấy — cần tự rà soát danh sách dưới đây.'
             list={outpatientList}
             fields={OUTPATIENT_FIELDS}
             stateEntries={stateEntries}
@@ -745,14 +734,14 @@ export default function SickLeaveTab({ toast, workDateRange }) {
             emptyMessage={loading
               ? 'Đang tải...'
               : (clinicDraft
-                ? 'Có bản xem trước Phòng khám nhưng chưa thấy ca nào có từ khoá liên quan nghỉ ốm trong y lệnh/diễn biến đã lấy hoặc đã gõ.'
+                ? 'Có bản xem trước Phòng khám nhưng không có ca nào còn tuổi lao động trong khoảng ngày đã chọn.'
                 : 'Chưa có bản xem trước ở tab Phòng khám. Vào tab Phòng khám, dán/tải danh sách rồi quay lại đây.')}
           />
 
           <div style={{ marginTop: 20 }}>
             <Collapsible
               title="Quét trực tiếp EMR theo khoảng ngày"
-              subtitle={scannedOutpatientRows.length ? `Đã quét ${scannedOutpatientRows.length} dòng · ${scannedOutpatientList.length} ca liên quan nghỉ ốm` : 'Cần tài khoản/URL phòng khám — chưa quét'}
+              subtitle={scannedOutpatientRows.length ? `Đã quét ${scannedOutpatientRows.length} dòng · ${scannedOutpatientList.length} ca còn tuổi lao động` : 'Cần tài khoản/URL phòng khám — chưa quét'}
               open={scanPanelOpen}
               onToggle={() => setScanPanelOpen(o => !o)}
               badge={scanning ? <Spinner size={12} /> : null}
@@ -761,8 +750,9 @@ export default function SickLeaveTab({ toast, workDateRange }) {
               <div style={{ border: `1px solid ${C.blueBorder || C.border}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: 12 }}>
                 <div style={{ fontSize: 11, color: C.text3, marginBottom: 8, lineHeight: 1.5 }}>
                   Tìm mù trên "Danh sách Khám bệnh" trong khoảng ngày đang chọn ở trên ({workDateRangeLabel(workDateRange)}),
-                  rồi lọc từ khoá liên quan nghỉ ốm trên toàn bộ dữ liệu từng dòng đọc được. Chưa test với EMR thật — nếu bộ lọc
-                  khoảng ngày không áp dụng đúng, kết quả sẽ ghi rõ "partial" và cần kiểm tra lại thủ công.
+                  rồi lọc bớt người ngoài tuổi lao động (trẻ em/đã nghỉ hưu). "Giấy chứng nhận nghỉ việc hưởng BHXH" là form
+                  riêng trên EMR nên không quét được ai đã có giấy — cần tự rà soát trong danh sách còn lại. Chưa test với
+                  EMR thật — nếu bộ lọc khoảng ngày không áp dụng đúng, kết quả sẽ ghi rõ "partial" và cần kiểm tra lại thủ công.
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginBottom: 8 }}>
                   <input placeholder="Tài khoản phòng khám" value={clinicUsername} onChange={e => setClinicUsername(e.target.value)}
@@ -783,7 +773,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
                   <Section
                     compact
                     title="Kết quả quét"
-                    hint="Chỉ trong phiên làm việc này (bấm Quét lại nếu tải lại trang). Lọc từ khoá liên quan nghỉ ốm trên toàn bộ dữ liệu từng dòng đọc được từ EMR."
+                    hint="Chỉ trong phiên làm việc này (bấm Quét lại nếu tải lại trang). Đã lọc bớt người ngoài tuổi lao động; phần còn lại cần tự rà soát ai đã có Giấy chứng nhận."
                     list={scannedOutpatientList}
                     fields={SCANNED_OUTPATIENT_FIELDS}
                     stateEntries={stateEntries}
@@ -792,7 +782,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
                     emptyMessage={scanning
                       ? 'Đang quét...'
                       : (scannedOutpatientRows.length
-                        ? 'Đã quét nhưng chưa thấy dòng nào có từ khoá liên quan nghỉ ốm.'
+                        ? 'Đã quét nhưng không có ca nào còn tuổi lao động.'
                         : 'Chưa quét — bấm "Quét EMR theo khoảng ngày" ở trên.')}
                   />
                 </div>
