@@ -129,4 +129,32 @@ router.post('/sick-leave-import', heavyTaskLimiter, async (req, res) => {
   }
 });
 
+// POST /api/sick-leave-import/delete-row — xoá 1 dòng khỏi danh sách BHXH đã
+// nhập (nhập nhầm file, dòng lỗi...). Xoá theo index trong mảng đã lưu, vì
+// dữ liệu BHXH không có cột nào đảm bảo là khoá duy nhất ổn định để tra theo.
+router.post('/sick-leave-import/delete-row', (req, res) => {
+  const body = req.body || {};
+  const type = body.type === 'inpatient' || body.type === 'outpatient' ? body.type : null;
+  const index = Number.isInteger(body.index) ? body.index : -1;
+  if (!type || index < 0) {
+    return res.status(400).json({ status: 'error', message: 'Thiếu type ("outpatient"/"inpatient") hoặc index hợp lệ.' });
+  }
+
+  const saved = readJsonSafe(getImportPath(req), null);
+  if (!saved || !Array.isArray(saved[type])) {
+    return res.status(404).json({ status: 'error', message: 'Chưa có danh sách BHXH đã nhập.' });
+  }
+  if (index >= saved[type].length) {
+    return res.status(400).json({ status: 'error', message: 'Index không hợp lệ (danh sách đã đổi, hãy tải lại trang).' });
+  }
+
+  const next = { ...saved, [type]: saved[type].filter((_, i) => i !== index), updated_at: new Date().toISOString() };
+  try {
+    writeJsonAtomic(getImportPath(req), next);
+    return res.json({ status: 'ok', ...next });
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: `Không ghi được sick_leave_import.json: ${err.message || err}` });
+  }
+});
+
 module.exports = router;
