@@ -20,10 +20,46 @@ import json
 import re
 import sys
 import unicodedata
+from datetime import date, timedelta
 
 from xlsx_utils import read_xlsx_sheets_by_name
 
 HEADER_ANCHOR = "dong nguon"
+
+# Các cột ngày tháng: nếu Excel lưu ô này dưới dạng số (định dạng ngày hiển thị,
+# không phải text), giá trị đọc thô sẽ là serial number kiểu "45178" thay vì
+# "dd/mm/yyyy" — cần convert lại để khớp regex ngày mà phần UI (SickLeaveTab.jsx)
+# đang dùng để tính khoảng ngày tìm kiếm trên EMR.
+DATE_KEYS = {
+    "ngay_sinh",
+    "dieu_tri_tu_ngay",
+    "dieu_tri_den_ngay",
+    "ngay_chung_tu",
+    "ngay_vao_vien",
+    "ngay_ra_vien",
+    "dieu_tri_ngoai_tru_tu_ngay",
+    "dieu_tri_ngoai_tru_den_ngay",
+}
+
+_EXCEL_EPOCH = date(1899, 12, 30)  # base chuẩn cho serial date Excel (đã bù lỗi leap-year 1900)
+_SERIAL_RE = re.compile(r"^\d{1,6}(\.\d+)?$")
+
+
+def excel_serial_to_dmy(value: str) -> str:
+    """Convert serial date Excel (nếu đúng dạng số hợp lệ) sang dd/mm/yyyy.
+    Giá trị không phải số thuần (đã là text dd/mm/yyyy sẵn) được giữ nguyên."""
+    if not _SERIAL_RE.match(value):
+        return value
+    try:
+        serial = float(value)
+    except ValueError:
+        return value
+    if serial <= 0 or serial > 80000:  # ngoài khoảng năm ~1900-2119, chắc không phải ngày
+        return value
+    try:
+        return (_EXCEL_EPOCH + timedelta(days=int(serial))).strftime("%d/%m/%Y")
+    except OverflowError:
+        return value
 
 # Tên cột tiếng Việt (đã chuẩn hoá: bỏ dấu, thường, gộp khoảng trắng) -> key ascii ổn định.
 COLUMN_KEY_MAP = {
@@ -126,6 +162,8 @@ def parse_matrix(matrix):
             value = row[c] if c < len(row) else ""
             value = str(value or "").strip()
             if value:
+                if key in DATE_KEYS:
+                    value = excel_serial_to_dmy(value)
                 row_obj[key] = value
         if row_obj:
             rows.append(row_obj)

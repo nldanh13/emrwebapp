@@ -441,6 +441,11 @@ export default function SickLeaveTab({ toast, workDateRange }) {
         inpatient: result.inpatient,
       });
       toast?.(result.message || `Đã nhập ${result.outpatient?.length || 0} ca ngoại trú, ${result.inpatient?.length || 0} ca nội trú.`, 'ok');
+      // Sheet không khớp tên "Ngoại trú"/"Nội trú" bị bỏ qua âm thầm ở worker —
+      // cảnh báo ngay để người dùng biết sao dữ liệu có thể thiếu/rỗng.
+      if (Array.isArray(result.unknown_sheets) && result.unknown_sheets.length > 0) {
+        toast?.(`Không nhận diện được sheet: ${result.unknown_sheets.join(', ')} — kiểm tra lại tên sheet trong file (phải đúng "Ngoại trú"/"Nội trú").`, 'error');
+      }
     } catch (e) {
       toast?.(String(e?.message || 'Không nhập được danh sách BHXH.'), 'error');
     } finally {
@@ -481,11 +486,20 @@ export default function SickLeaveTab({ toast, workDateRange }) {
 
   const bhxhOutpatientList = useMemo(() => {
     const rows = Array.isArray(bhxhImport?.outpatient) ? bhxhImport.outpatient : [];
-    return rows.map(r => ({ ...r, key: `bhxh-ngt::${r.dong_nguon || r.ma_so_bh || r.ho_ten}` }));
+    // Key theo nội dung (tên + ngày sinh + khoảng điều trị), không dùng "dong_nguon"
+    // (số thứ tự dòng trong file BHXH) — số này có thể đổi giữa các lần BHXH gửi lại
+    // file (chèn/xoá dòng), làm mất trạng thái "đã nộp" đã đánh dấu cho cùng một ca.
+    return rows.map(r => {
+      const identity = normalizeText(r.ho_ten) || r.dong_nguon || r.ma_so_bh || 'unknown';
+      return { ...r, key: `bhxh-ngt::${identity}::${r.ngay_sinh || ''}::${r.dieu_tri_tu_ngay || ''}::${r.dieu_tri_den_ngay || ''}` };
+    });
   }, [bhxhImport]);
   const bhxhInpatientList = useMemo(() => {
     const rows = Array.isArray(bhxhImport?.inpatient) ? bhxhImport.inpatient : [];
-    return rows.map(r => ({ ...r, key: `bhxh-nt::${r.dong_nguon || r.ma_y_te || r.ho_ten}` }));
+    return rows.map(r => {
+      const identity = normalizeText(r.ho_ten) || r.dong_nguon || r.ma_y_te || 'unknown';
+      return { ...r, key: `bhxh-nt::${identity}::${r.ngay_sinh || ''}::${r.ngay_vao_vien || ''}::${r.ngay_ra_vien || ''}` };
+    });
   }, [bhxhImport]);
 
   const persist = useCallback((nextEntries) => {
