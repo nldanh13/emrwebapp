@@ -196,6 +196,20 @@ const OUTPATIENT_FIELDS = [
   { label: 'Lý do/y lệnh', value: it => it.ly_do },
 ];
 
+// BHXH trả về 2 tên cột khác nhau cho "ghi chú rà soát" tuỳ sheet (ngoại trú:
+// "Ghi chú bổ sung", nội trú: cột tự sinh key vì tên không có trong bảng ánh xạ cố định)
+// — gộp lại 1 chỗ đọc để không phải sửa 2 nơi nếu BHXH đổi tên cột.
+function reviewNoteOf(item) {
+  return String(item?.ra_soat_ghi_chu_bo_sung || item?.ghi_chu_bo_sung || '').trim();
+}
+
+// Cờ "cần sửa": BHXH báo lỗi qua so_loi_ra_soat > 0 hoặc chữ "Thiếu/thiếu" trong
+// ghi chú rà soát (mẫu thực tế: "Thiếu GHI CHÚ" vs "Đầy đủ thông tin bắt buộc...").
+function reviewHasIssue(item) {
+  if (Number(item?.so_loi_ra_soat || 0) > 0) return true;
+  return /thieu/.test(normalizeText(reviewNoteOf(item)));
+}
+
 const BHXH_OUTPATIENT_FIELDS = [
   { label: 'Họ tên', value: it => it.ho_ten },
   { label: 'Ngày sinh', value: it => it.ngay_sinh },
@@ -207,6 +221,7 @@ const BHXH_OUTPATIENT_FIELDS = [
   { label: 'Người hành nghề', value: it => it.nguoi_hanh_nghe },
   { label: 'Thủ trưởng', value: it => it.thu_truong },
   { label: 'Trạng thái BHXH', value: it => it.trang_thai },
+  { label: 'Rà soát BHXH', value: it => reviewNoteOf(it) || '—' },
 ];
 
 const BHXH_INPATIENT_FIELDS = [
@@ -220,6 +235,7 @@ const BHXH_INPATIENT_FIELDS = [
   { label: 'Trưởng khoa', value: it => it.truong_khoa },
   { label: 'Thủ trưởng đơn vị', value: it => it.thu_truong_don_vi },
   { label: 'Trạng thái BHXH', value: it => it.trang_thai },
+  { label: 'Rà soát BHXH', value: it => reviewNoteOf(it) || '—' },
 ];
 
 function MatchHint({ row, candidates }) {
@@ -255,10 +271,18 @@ function MatchHint({ row, candidates }) {
 
 function BhxhCandidateRow({ item, fields, candidates, entry, onToggle, onNoteChange, onDelete }) {
   const submitted = Boolean(entry?.submitted);
+  const hasIssue = reviewHasIssue(item);
   return (
     <div style={{
-      padding: '9px 10px', borderBottom: `1px solid ${C.border2}`, background: submitted ? C.greenBg : C.surface,
+      padding: '9px 10px', borderBottom: `1px solid ${C.border2}`,
+      background: submitted ? C.greenBg : (hasIssue ? C.redBg : C.surface),
+      borderLeft: hasIssue ? `3px solid ${C.red}` : '3px solid transparent',
     }}>
+      {hasIssue && (
+        <div style={{ marginBottom: 6, fontSize: 10.5, fontWeight: 800, color: C.red }}>
+          ⚠ BHXH báo cần sửa: {reviewNoteOf(item) || `${item.so_loi_ra_soat || ''} lỗi rà soát`}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', paddingTop: 2 }} title="Đã nộp">
           <input type="checkbox" checked={submitted} onChange={() => onToggle(item.key)} style={{ width: 16, height: 16 }} />
@@ -291,12 +315,14 @@ function BhxhCandidateRow({ item, fields, candidates, entry, onToggle, onNoteCha
 
 function BhxhSection({ title, list, fields, matchFn, matchSource, stateEntries, onToggle, onNoteChange, onDelete, emptyMessage }) {
   const submittedCount = list.filter(it => stateEntries[it.key]?.submitted).length;
+  const issueCount = list.filter(reviewHasIssue).length;
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{title}</div>
         <Badge text={`${list.length} ca`} bg={C.surface2} color={C.text2} size={10} />
         {list.length > 0 && <Badge text={`Đã nộp ${submittedCount}/${list.length}`} bg={submittedCount === list.length ? C.greenBg : C.amberBg} color={submittedCount === list.length ? C.green : C.amber} size={10} />}
+        {issueCount > 0 && <Badge text={`⚠ ${issueCount} cần sửa`} bg={C.redBg} color={C.red} size={10} />}
       </div>
       <div style={{ border: `1px solid ${C.border2}`, borderRadius: 8, overflow: 'hidden' }}>
         {list.length === 0 ? (
