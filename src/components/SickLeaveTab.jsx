@@ -42,6 +42,29 @@ function ageFromDob(dobDmy) {
   return new Date().getFullYear() - Number(m[3]);
 }
 
+// Tuổi nghỉ hưu theo Bộ luật Lao động 2019 (Nghị định 135/2020/NĐ-CP): tăng dần
+// mỗi năm cho đến khi đạt mốc cuối — Nam 60y3m (2021) +3 tháng/năm → 62 (từ 2028);
+// Nữ 55y4m (2021) +4 tháng/năm → 60 (từ 2035). Dùng làm ngưỡng lọc "còn tuổi lao
+// động" khi quét EMR (chỉ có năm sinh, không có ngày/tháng) — không phải căn cứ
+// pháp lý chính xác tuyệt đối, chỉ để loại bớt người rõ ràng ngoài tuổi lao động.
+function laborRetirementAgeYears(year, isFemale) {
+  const y = Math.max(2021, Math.min(Number(year) || 2021, isFemale ? 2035 : 2028));
+  const months = isFemale ? (55 * 12 + 4 + (y - 2021) * 4) : (60 * 12 + 3 + (y - 2021) * 3);
+  return months / 12;
+}
+
+// Chỉ có năm sinh trên danh sách quét EMR (không có ngày/tháng sinh) nên tuổi tính
+// được có thể lệch tới 1 năm — nới biên 1 tuổi hai đầu để tránh loại nhầm ca sát
+// ngưỡng. Thiếu năm sinh/giới tính thì không loại (để người dùng tự xem, tránh bỏ sót).
+function isLikelyWorkingAge(namSinh, gioiTinh, refYear) {
+  const birthYear = Number(String(namSinh || '').trim());
+  if (!birthYear || birthYear < 1900 || birthYear > refYear) return true;
+  const age = refYear - birthYear;
+  const isFemale = /^n[uữ]/.test(normalizeText(gioiTinh || ''));
+  const retireAge = laborRetirementAgeYears(refYear, isFemale);
+  return age >= 14 && age <= retireAge + 1;
+}
+
 function dateOnly(value) {
   const m = String(value || '').match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
   return m ? m[1] : '';
@@ -153,7 +176,11 @@ function buildOutpatientCandidates(draft, range) {
 // tiêu đề bảng thật trên trang — không biết trước field nào sẽ có "ngay_lam"
 // hay "tg_vao" như carePreview.rows đã chuẩn hoá sẵn. Vì vậy quét từ khoá
 // nghỉ ốm trên TOÀN BỘ giá trị chuỗi của dòng, thay vì chỉ vài field cố định.
+// Đồng thời lọc bớt theo "còn tuổi lao động" (cột "Năm sinh" đã có sẵn trong dữ
+// liệu quét, không cần lấy thêm) — bớt dương tính giả khi >100 lượt khám/ngày,
+// nhưng vẫn giữ quét từ khoá vì tuổi lao động chỉ là điều kiện cần, không đủ.
 function buildScannedOutpatientCandidates(rows) {
+  const refYear = new Date().getFullYear();
   return (rows || [])
     .filter(row => row && String(row.ma_bn || '').trim())
     .map((row, idx) => {
@@ -161,10 +188,12 @@ function buildScannedOutpatientCandidates(rows) {
       return { row, idx, text };
     })
     .filter(({ text }) => SICK_LEAVE_KEYWORD_RE.test(normalizeText(text)))
+    .filter(({ row }) => isLikelyWorkingAge(row.nam_sinh, row.gioi_tinh, refYear))
     .map(({ row, idx }) => ({
       key: `scan-ngt::${row.ma_bn}::${row.ngay_lam || row.tg_vao || row.access_id || idx}`,
       ma_bn: row.ma_bn,
       ho_ten: row.ho_ten || '',
+      nam_sinh: row.nam_sinh || '',
       trang_thai: row.trang_thai || '',
       chan_doan: row.chan_doan_hover || row.chan_doan || '',
       raw: row,
@@ -174,6 +203,8 @@ function buildScannedOutpatientCandidates(rows) {
 
 const SCANNED_OUTPATIENT_FIELDS = [
   { label: 'Mã BN', value: it => it.ma_bn },
+  { label: 'Họ tên', value: it => it.ho_ten },
+  { label: 'Năm sinh', value: it => it.nam_sinh },
   { label: 'Trạng thái', value: it => it.trang_thai },
   { label: 'Chẩn đoán', value: it => it.chan_doan },
 ];
