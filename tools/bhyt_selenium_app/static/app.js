@@ -39,10 +39,14 @@ async function loadLogs(){try{const d=await api('/api/logs');$('#logs').innerHTM
 $('#importBtn').onclick=importFiles;$('#importFromWebappBtn').onclick=importFromWebapp;$('#webappForm').onsubmit=e=>{e.preventDefault();importFromWebapp()};$('#fillLoginBtn').onclick=fillPortalLogin;$('#portalLoginForm').onsubmit=e=>{e.preventDefault();fillPortalLogin()};$('#checkBrowserBtn').onclick=checkBrowser;$('#refreshBtn').onclick=loadAll;$('#logsBtn').onclick=loadLogs;$('#dryRunBtn').onclick=()=>run(true);$('#realRunBtn').onclick=()=>{if(!selectedIds().length)return toast('Hãy chọn hồ sơ cần nhập',true);$('#confirmation').value='';$('#confirmDialog').showModal()};$('#stopBtn').onclick=async()=>{try{toast((await api('/api/stop',{method:'POST'})).message)}catch(e){toast(e.message,true)}};$('#resetBtn').onclick=resetSelected;
 $('#recordsBody').onclick=e=>{const btn=e.target.closest('.edit-btn');if(btn)openEdit(Number(btn.dataset.id))};$('#recordsBody').onchange=e=>{if(e.target.matches('.row-check')){const id=Number(e.target.dataset.id);e.target.checked?state.selected.add(id):state.selected.delete(id);updateSelected()}};$('#selectAll').onchange=e=>{state.records.forEach(r=>e.target.checked?state.selected.add(r.id):state.selected.delete(r.id));renderRecords()};
 $('#typeFilter').onchange=loadAll;$('#statusFilter').onchange=loadAll;let searchTimer;$('#search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(loadAll,300)};$('#editForm').onsubmit=saveEdit;$('#closeEdit').onclick=$('#cancelEdit').onclick=()=>$('#editDialog').close();$('#cancelConfirm').onclick=()=>$('#confirmDialog').close();$('#confirmForm').onsubmit=e=>{e.preventDefault();const value=$('#confirmation').value;$('#confirmDialog').close();run(false,value)};
-function prefillFromQuery(){
+async function prefillFromQuery(){
   // Web app (tab Nghỉ ốm) mở trang này kèm ?base_url=...&session_id=... để khỏi
-  // phải copy/paste tay — chỉ điền sẵn form, KHÔNG tự bấm "Lấy dữ liệu" thay
+  // phải copy/paste tay — chỉ điền sẵn form "Lấy dữ liệu", KHÔNG tự bấm thay
   // người dùng (giữ nguyên nguyên tắc luôn cần xác nhận thủ công của tool này).
+  // Riêng việc mở Chrome tới trang chủ cổng BHYT thì tự làm luôn (bớt 1 cú
+  // bấm) — vì đó chỉ là mở trang, không phải hành động nghiệp vụ (nhập/lưu).
+  // Mã cơ sở KCB/tài khoản/mật khẩu cổng BHYT vẫn phải tự gõ ở bước 1: web app
+  // không biết và không nên biết thông tin đăng nhập của hệ thống khác.
   const params=new URLSearchParams(window.location.search);
   const baseUrl=params.get('base_url');
   const sessionId=params.get('session_id');
@@ -50,7 +54,10 @@ function prefillFromQuery(){
   if(sessionId)$('#webappSessionId').value=sessionId;
   if(baseUrl||sessionId){
     window.history.replaceState({},'',window.location.pathname);
-    if(sessionId)toast('Đã điền sẵn URL/Mã phiên từ web app — kiểm tra rồi bấm "Lấy dữ liệu".');
+    if(sessionId){
+      toast('Đã điền sẵn URL/Mã phiên — đang mở Chrome tới cổng BHYT, kiểm tra rồi bấm "Lấy dữ liệu".');
+      await browserAction('/api/browser/start');
+    }
   }
 }
 loadAll();checkBrowser();prefillFromQuery();setInterval(async()=>{if(state.workerRunning){await loadAll();await loadLogs()}},2000);
