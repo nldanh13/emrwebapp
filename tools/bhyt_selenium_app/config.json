@@ -1,0 +1,23 @@
+{
+  "timeout_seconds": 40,
+  "delay_seconds": 1.5,
+  "allowed_doctors": [
+    "Nguyễn Lê Hoan",
+    "Nguyễn Chí Nguyện",
+    "Phạm Việt Tân",
+    "Phan Văn Tuấn",
+    "Trần Quốc Toản",
+    "Phạm Việt Triều",
+    "Hoàng Minh Tú",
+    "Trần Quang Sơn",
+    "Bùi Công Minh",
+    "Hồ Điền",
+    "Vũ Tấn Thọ",
+    "Đặng Phước Giàu",
+    "Nguyễn Lâm Minh Tân",
+    "Trần Nguyễn Anh Duy",
+    "Nguyễn Tư Thái Bảo",
+    "Nguyễn Giang Tử"
+  ]
+}
+

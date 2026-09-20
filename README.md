@@ -30,6 +30,7 @@ server.js (Express)
 | `docs/` | Tài liệu kiến trúc, bảo mật & vận hành, changelog |
 | `research/` | Công cụ hỗ trợ nghiên cứu/khai thác dữ liệu (SQLite store, xem `research/README_SQLITE.md`) |
 | `tests/` | Test Python (pytest) |
+| `tools/` | Công cụ độc lập chạy trên máy vận hành (không thuộc server chính), xem [`tools/bhyt_selenium_app/README.md`](tools/bhyt_selenium_app/README.md) |
 
 ## Chạy dự án
 

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Nhập chứng từ BHYT bằng Selenium</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Nhập chứng từ BHYT</h1>
+      <p>Giấy nghỉ hưởng BHXH (07) & Giấy ra viện (03)</p>
+    </div>
+    <div id="browserBadge" class="badge neutral">Chrome: chưa kiểm tra</div>
+  </header>
+
+  <main>
+    <section class="notice">
+      <strong>Luồng an toàn:</strong> đăng nhập cổng BHYT → nhập Excel → bổ sung dữ liệu thiếu → điền thử 1 hồ sơ → kiểm tra → nhập thật.
+      Ứng dụng không tự vượt CAPTCHA và không lưu mật khẩu.
+    </section>
+
+    <section class="card workflow">
+      <div class="step">
+        <span class="step-no">1</span>
+        <div class="grow">
+          <h2>Đăng nhập cổng BHYT</h2>
+          <p>Selenium điền tài khoản vào Chrome; CAPTCHA và OTP thực hiện trực tiếp trên Chrome.</p>
+          <form id="portalLoginForm" class="login-grid" autocomplete="off">
+            <label>Mã cơ sở KCB<input id="facilityCode" autocomplete="off" required></label>
+            <label>Tên đăng nhập<input id="portalUsername" autocomplete="off" required></label>
+            <label>Mật khẩu<input id="portalPassword" type="password" autocomplete="new-password" required></label>
+          </form>
+        </div>
+        <button id="fillLoginBtn" class="primary">Mở Chrome & điền đăng nhập</button>
+        <button id="checkBrowserBtn" class="secondary">Kiểm tra đăng nhập</button>
+      </div>
+      <div class="step">
+        <span class="step-no">2</span>
+        <div class="grow">
+          <h2>Nhập dữ liệu</h2>
+          <p>Chọn một hoặc cả hai file Excel nguồn.</p>
+          <input id="files" type="file" multiple accept=".xlsx,.xlsm">
+        </div>
+        <button id="importBtn">Đọc Excel</button>
+      </div>
+      <div class="step">
+        <span class="step-no">3</span>
+        <div class="grow">
+          <h2>Kiểm tra và chạy Selenium</h2>
+          <p>Luôn dùng “Điền thử” trước. Chế độ này không bấm Lưu.</p>
+        </div>
+        <button id="dryRunBtn">Điền thử 1 hồ sơ</button>
+        <button id="realRunBtn" class="danger">Nhập thật hồ sơ đã chọn</button>
+        <button id="stopBtn" class="secondary">Dừng</button>
+      </div>
+    </section>
+
+    <section id="stats" class="stats"></section>
+
+    <section class="card records-card">
+      <div class="toolbar">
+        <div>
+          <h2>Danh sách hồ sơ</h2>
+          <p id="recordCount">0 hồ sơ</p>
+        </div>
+        <input id="search" type="search" placeholder="Tìm bệnh nhân, bác sĩ…">
+        <select id="typeFilter">
+          <option value="">Tất cả loại</option>
+          <option value="BHXH07">Giấy nghỉ BHXH 07</option>
+          <option value="GRV03">Giấy ra viện 03</option>
+        </select>
+        <select id="statusFilter">
+          <option value="">Tất cả trạng thái</option>
+          <option value="pending">Chờ xử lý</option>
+          <option value="previewed">Đã điền thử</option>
+          <option value="running">Đang chạy</option>
+          <option value="success">Thành công</option>
+          <option value="error">Lỗi</option>
+        </select>
+        <button id="refreshBtn" class="secondary">Làm mới</button>
+        <a class="button secondary" href="/export/status.csv">Xuất trạng thái</a>
+      </div>
+      <div class="selection-bar">
+        <label><input id="selectAll" type="checkbox"> Chọn tất cả đang hiển thị</label>
+        <span id="selectedCount">Đã chọn 0</span>
+        <button id="resetBtn" class="link-button">Đặt lại trạng thái đã chọn</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th></th><th>Loại</th><th>Bệnh nhân</th><th>Bác sĩ</th><th>Dữ liệu chính</th>
+            <th>Nguồn</th><th>Sẵn sàng</th><th>Trạng thái</th><th></th>
+          </tr></thead>
+          <tbody id="recordsBody"></tbody>
+        </table>
+      </div>
+      <div id="emptyState" class="empty">Chưa có dữ liệu. Hãy nhập file Excel ở bước 1.</div>
+    </section>
+
+    <section class="card logs-card">
+      <div class="toolbar"><div><h2>Nhật ký gần đây</h2><p>Đối chiếu lỗi và kết quả nhập.</p></div><button id="logsBtn" class="secondary">Tải nhật ký</button></div>
+      <div id="logs" class="logs"><span class="muted">Chưa tải nhật ký.</span></div>
+    </section>
+  </main>
+
+  <dialog id="editDialog">
+    <form id="editForm" method="dialog">
+      <div class="modal-head"><div><h2 id="editTitle">Bổ sung hồ sơ</h2><p id="editSubtitle"></p></div><button type="button" id="closeEdit" class="icon">×</button></div>
+      <div id="issueBox" class="issue-box"></div>
+      <div id="fieldGrid" class="field-grid"></div>
+      <div class="modal-actions"><button type="button" id="cancelEdit" class="secondary">Hủy</button><button type="submit" class="primary">Lưu thay đổi</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="confirmDialog">
+    <form id="confirmForm" method="dialog">
+      <h2>Xác nhận nhập thật</h2>
+      <p>Selenium sẽ bấm <strong>Lưu</strong> trên cổng BHYT cho các hồ sơ đã chọn. Gõ chính xác <code>NHẬP THẬT</code> để tiếp tục.</p>
+      <input id="confirmation" autocomplete="off" placeholder="NHẬP THẬT">
+      <div class="modal-actions"><button type="button" id="cancelConfirm" class="secondary">Hủy</button><button type="submit" class="danger">Bắt đầu nhập thật</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast" role="status"></div>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
