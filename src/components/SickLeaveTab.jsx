@@ -65,6 +65,17 @@ function isLikelyWorkingAge(namSinh, gioiTinh, refYear) {
   return age >= 14 && age <= retireAge + 1;
 }
 
+// Giống isLikelyWorkingAge() nhưng dùng tuổi trực tiếp (cột "Tuổi" trong bảng
+// tblNoiTru của tab Phòng khám) thay vì ước tính từ năm sinh — chính xác hơn nên
+// không cần nới biên như bản kia.
+function isLikelyWorkingAgeByAge(tuoi, gioiTinh, refYear) {
+  const age = Number(String(tuoi || '').trim());
+  if (!Number.isFinite(age) || age <= 0) return true;
+  const isFemale = /^n[uữ]/.test(normalizeText(gioiTinh || ''));
+  const retireAge = laborRetirementAgeYears(refYear, isFemale);
+  return age >= 14 && age <= retireAge;
+}
+
 function dateOnly(value) {
   const m = String(value || '').match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
   return m ? m[1] : '';
@@ -146,10 +157,14 @@ function buildInpatientCandidates(patients, range) {
 function buildOutpatientCandidates(draft, range) {
   const rows = Array.isArray(draft?.carePreview?.rows) ? draft.carePreview.rows : [];
   const edits = draft?.careEdits && typeof draft.careEdits === 'object' ? draft.careEdits : {};
+  const refYear = new Date().getFullYear();
   const out = [];
   rows.forEach((row, idx) => {
     const id = String(row?.ma_bn || '').trim();
     if (!id) return;
+    // Còn tuổi lao động là điều kiện cần (loại trẻ em/người đã nghỉ hưu) — bảng
+    // tblNoiTru của tab Phòng khám đã có sẵn cột "Tuổi"/"GT", không cần lấy thêm.
+    if (!isLikelyWorkingAgeByAge(row.tuoi, row.gioi_tinh, refYear)) return;
     const edit = edits[careRowKey(row, idx)] || {};
     // Ngoại trú chưa có cờ "có chỉ định nghỉ" tính sẵn như has_infusion/has_procedure
     // bên nội trú — chỉ quét được chữ đã lấy/lưu ở tab Phòng khám (y lệnh, diễn biến).
@@ -163,6 +178,8 @@ function buildOutpatientCandidates(draft, range) {
       key: `${id}::${row.ngay_lam || row.tg_vao || idx}`,
       ma_bn: id,
       ho_ten: row.ho_ten || '',
+      tuoi: row.tuoi || '',
+      gioi_tinh: row.gioi_tinh || '',
       ngay_lam: row.ngay_lam || '',
       tg_vao: row.tg_vao || row.thoi_gian_vao_khoa || '',
       khoa_chuyen_den: row.khoa_chuyen_den || '',
@@ -221,6 +238,9 @@ const INPATIENT_FIELDS = [
 
 const OUTPATIENT_FIELDS = [
   { label: 'Mã BN', value: it => it.ma_bn },
+  { label: 'Họ tên', value: it => it.ho_ten },
+  { label: 'Tuổi', value: it => it.tuoi },
+  { label: 'Giới tính', value: it => it.gioi_tinh },
   { label: 'Ngày khám', value: it => it.ngay_lam },
   { label: 'Giờ vào', value: it => it.tg_vao },
   { label: 'Khoa', value: it => it.khoa_chuyen_den },

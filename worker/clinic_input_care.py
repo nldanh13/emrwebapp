@@ -189,6 +189,9 @@ def _header_key(value: Any) -> str:
         "ten khoa dieu tri": "khoa_chuyen_den",
         "trang thai": "trang_thai",
         "tinh trang": "trang_thai",
+        "tuoi": "tuoi",
+        "gt": "gioi_tinh",
+        "gioi tinh": "gioi_tinh",
     }
     return aliases.get(n, re.sub(r"[^a-z0-9]+", "_", n).strip("_"))
 
@@ -356,6 +359,8 @@ def parse_inpatient_care_rows(
         out.append({
             "ma_bn": code,
             "ho_ten": ho_ten,
+            "tuoi": mapped.get("tuoi") or "",
+            "gioi_tinh": mapped.get("gioi_tinh") or "",
             "tg_vao": tg_raw,
             "thoi_gian_vao_khoa": tg_raw,
             "care_time_str": care_time_str,
