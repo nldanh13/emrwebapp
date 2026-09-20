@@ -8,10 +8,13 @@ import { sanitizeWorkDateRange, dmyToInputDate, workDateRangeToDmy, workDateRang
 const DEFAULT_CLINIC_LOGIN_URL = import.meta.env.VITE_EMR_LOGIN_URL || '';
 const DEFAULT_CLINIC_LIST_URL = import.meta.env.VITE_EMR_CLINIC_LIST_URL || '';
 
-// Từ khoá nhận diện "chỉ định nghỉ" trong y lệnh/diễn biến ngoại trú (đã bỏ dấu).
+// Từ khoá nhận diện "nghỉ ốm" trong y lệnh/diễn biến ngoại trú (đã bỏ dấu).
+// Chỉ khớp đúng "nghỉ ốm" — KHÔNG khớp "nghỉ dưỡng"/"nghỉ ngơi"/"nghỉ việc"/"cho
+// nghỉ" chung chung, vì các cụm đó không đồng nghĩa với nghỉ ốm hưởng BHXH và
+// từng gây dương tính giả (vd "xin nghỉ việc" bị nhận nhầm là ca nghỉ ốm).
 // Không có cờ có sẵn cho ngoại trú như has_infusion/has_procedure bên nội trú,
 // nên phải quét chữ — xem thêm ghi chú ở buildOutpatientCandidates().
-const SICK_LEAVE_KEYWORD_RE = /nghi\s*(om|duong|ngoi|viec)|giay\s*nghi|cho\s*nghi/;
+const SICK_LEAVE_KEYWORD_RE = /nghi\s*om/;
 
 function normalizeText(value) {
   return String(value || '')
@@ -250,7 +253,7 @@ function MatchHint({ row, candidates }) {
   );
 }
 
-function BhxhCandidateRow({ item, fields, candidates, entry, onToggle, onNoteChange }) {
+function BhxhCandidateRow({ item, fields, candidates, entry, onToggle, onNoteChange, onDelete }) {
   const submitted = Boolean(entry?.submitted);
   return (
     <div style={{
@@ -269,6 +272,15 @@ function BhxhCandidateRow({ item, fields, candidates, entry, onToggle, onNoteCha
           onBlur={e => onNoteChange(item.key, e.target.value)}
           style={{ flex: '1 1 180px', minWidth: 140, padding: '5px 7px', fontSize: 11, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }}
         />
+        {onDelete && (
+          <button type="button" onClick={() => onDelete(item)} title="Xoá dòng này khỏi danh sách đã nhập (vd nhập nhầm)"
+            style={{
+              flexShrink: 0, padding: '5px 9px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+              border: `1px solid ${C.redBorder || C.border}`, background: C.redBg || C.surface, color: C.red || '#c0392b', borderRadius: 5,
+            }}>
+            ✕ Xoá
+          </button>
+        )}
       </div>
       <div style={{ marginTop: 6, paddingLeft: 26 }}>
         <MatchHint row={item} candidates={candidates} />
@@ -277,7 +289,7 @@ function BhxhCandidateRow({ item, fields, candidates, entry, onToggle, onNoteCha
   );
 }
 
-function BhxhSection({ title, list, fields, matchFn, matchSource, stateEntries, onToggle, onNoteChange, emptyMessage }) {
+function BhxhSection({ title, list, fields, matchFn, matchSource, stateEntries, onToggle, onNoteChange, onDelete, emptyMessage }) {
   const submittedCount = list.filter(it => stateEntries[it.key]?.submitted).length;
   return (
     <div style={{ marginBottom: 20 }}>
@@ -291,7 +303,7 @@ function BhxhSection({ title, list, fields, matchFn, matchSource, stateEntries, 
           <div style={{ padding: 16, fontSize: 12, color: C.text3, textAlign: 'center' }}>{emptyMessage}</div>
         ) : list.map(item => (
           <BhxhCandidateRow key={item.key} item={item} fields={fields} candidates={matchFn(item, matchSource)}
-            entry={stateEntries[item.key]} onToggle={onToggle} onNoteChange={onNoteChange} />
+            entry={stateEntries[item.key]} onToggle={onToggle} onNoteChange={onNoteChange} onDelete={onDelete} />
         ))}
       </div>
     </div>
@@ -441,6 +453,11 @@ export default function SickLeaveTab({ toast, workDateRange }) {
         inpatient: result.inpatient,
       });
       toast?.(result.message || `Đã nhập ${result.outpatient?.length || 0} ca ngoại trú, ${result.inpatient?.length || 0} ca nội trú.`, 'ok');
+      // Sheet không khớp tên "Ngoại trú"/"Nội trú" bị bỏ qua âm thầm ở worker —
+      // cảnh báo ngay để người dùng biết sao dữ liệu có thể thiếu/rỗng.
+      if (Array.isArray(result.unknown_sheets) && result.unknown_sheets.length > 0) {
+        toast?.(`Không nhận diện được sheet: ${result.unknown_sheets.join(', ')} — kiểm tra lại tên sheet trong file (phải đúng "Ngoại trú"/"Nội trú").`, 'error');
+      }
     } catch (e) {
       toast?.(String(e?.message || 'Không nhập được danh sách BHXH.'), 'error');
     } finally {
@@ -481,16 +498,38 @@ export default function SickLeaveTab({ toast, workDateRange }) {
 
   const bhxhOutpatientList = useMemo(() => {
     const rows = Array.isArray(bhxhImport?.outpatient) ? bhxhImport.outpatient : [];
-    return rows.map(r => ({ ...r, key: `bhxh-ngt::${r.dong_nguon || r.ma_so_bh || r.ho_ten}` }));
+    // Key theo nội dung (tên + ngày sinh + khoảng điều trị), không dùng "dong_nguon"
+    // (số thứ tự dòng trong file BHXH) — số này có thể đổi giữa các lần BHXH gửi lại
+    // file (chèn/xoá dòng), làm mất trạng thái "đã nộp" đã đánh dấu cho cùng một ca.
+    // _index = vị trí trong mảng đã lưu ở server, dùng để gọi API xoá đúng dòng.
+    return rows.map((r, i) => {
+      const identity = normalizeText(r.ho_ten) || r.dong_nguon || r.ma_so_bh || 'unknown';
+      return { ...r, _index: i, key: `bhxh-ngt::${identity}::${r.ngay_sinh || ''}::${r.dieu_tri_tu_ngay || ''}::${r.dieu_tri_den_ngay || ''}` };
+    });
   }, [bhxhImport]);
   const bhxhInpatientList = useMemo(() => {
     const rows = Array.isArray(bhxhImport?.inpatient) ? bhxhImport.inpatient : [];
-    return rows.map(r => ({ ...r, key: `bhxh-nt::${r.dong_nguon || r.ma_y_te || r.ho_ten}` }));
+    return rows.map((r, i) => {
+      const identity = normalizeText(r.ho_ten) || r.dong_nguon || r.ma_y_te || 'unknown';
+      return { ...r, _index: i, key: `bhxh-nt::${identity}::${r.ngay_sinh || ''}::${r.ngay_vao_vien || ''}::${r.ngay_ra_vien || ''}` };
+    });
   }, [bhxhImport]);
 
   const persist = useCallback((nextEntries) => {
     api.saveSickLeaveState({ entries: nextEntries })
       .catch(e => toast?.(String(e?.message || 'Không lưu được trạng thái nghỉ ốm'), 'error'));
+  }, [toast]);
+
+  const handleDeleteBhxhRow = useCallback(async (type, item) => {
+    if (typeof window !== 'undefined' && !window.confirm(`Xoá dòng "${item.ho_ten || '—'}" khỏi danh sách đã nhập? Không thể hoàn tác.`)) return;
+    try {
+      const result = await api.deleteSickLeaveImportRow({ type, index: item._index });
+      if (result?.status !== 'ok') throw new Error(result?.message || 'Không xoá được dòng.');
+      setBhxhImport(prev => ({ ...(prev || {}), outpatient: result.outpatient, inpatient: result.inpatient }));
+      toast?.('Đã xoá dòng khỏi danh sách.', 'ok');
+    } catch (e) {
+      toast?.(String(e?.message || 'Không xoá được dòng.'), 'error');
+    }
   }, [toast]);
 
   const toggle = useCallback((key) => {
@@ -582,6 +621,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
             stateEntries={stateEntries}
             onToggle={toggle}
             onNoteChange={setNote}
+            onDelete={item => handleDeleteBhxhRow('inpatient', item)}
             emptyMessage={loading ? 'Đang tải...' : 'Chưa nhập danh sách BHXH (Nội trú), hoặc file chưa có dòng nào.'}
           />
 
@@ -611,6 +651,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
             stateEntries={stateEntries}
             onToggle={toggle}
             onNoteChange={setNote}
+            onDelete={item => handleDeleteBhxhRow('outpatient', item)}
             emptyMessage={loading ? 'Đang tải...' : 'Chưa nhập danh sách BHXH (Ngoại trú), hoặc file chưa có dòng nào.'}
           />
 

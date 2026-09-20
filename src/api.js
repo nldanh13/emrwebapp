@@ -695,6 +695,7 @@ export const getSickLeaveState = () => get('/api/sick-leave-state');
 export const saveSickLeaveState = (payload) => post('/api/sick-leave-state', payload);
 export const getSickLeaveImport = () => get('/api/sick-leave-import');
 export const importSickLeaveList = (payload) => post('/api/sick-leave-import', payload);
+export const deleteSickLeaveImportRow = (payload) => post('/api/sick-leave-import/delete-row', payload);
 
 export const getClinicCareDraft = () => get('/api/clinic/care-draft');
 export const saveClinicCareDraft = (payload) => post('/api/clinic/care-draft', payload);
