@@ -57,6 +57,10 @@ npm start
 # → http://localhost:3001
 ```
 
+Trên Windows, nếu muốn bật cùng lúc cả server chính và công cụ nhập cổng BHXH
+(`tools/bhyt_selenium_app`, xem mục Nghỉ ốm bên dưới), nhấp đúp `start-all.bat`
+ở gốc repo — chỉ dùng khi cả 2 chạy chung 1 máy.
+
 ## Script hữu ích
 
 | Lệnh | Mục đích |
