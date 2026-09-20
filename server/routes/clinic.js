@@ -388,6 +388,8 @@ function sanitizeClinicCareDraftRow(row = {}) {
   return {
     ma_bn: String(obj.ma_bn || '').replace(/\D+/g, '').trim().slice(0, 12),
     ho_ten: draftText(obj.ho_ten, 160),
+    tuoi: draftText(obj.tuoi, 10),
+    gioi_tinh: draftText(obj.gioi_tinh, 20),
     tg_vao: draftText(obj.tg_vao || obj.thoi_gian_vao_khoa, 60),
     thoi_gian_vao_khoa: draftText(obj.thoi_gian_vao_khoa || obj.tg_vao, 60),
     care_time_str: draftText(obj.care_time_str, 40),

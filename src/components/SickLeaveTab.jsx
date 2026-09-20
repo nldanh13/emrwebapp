@@ -8,14 +8,6 @@ import { sanitizeWorkDateRange, dmyToInputDate, workDateRangeToDmy, workDateRang
 const DEFAULT_CLINIC_LOGIN_URL = import.meta.env.VITE_EMR_LOGIN_URL || '';
 const DEFAULT_CLINIC_LIST_URL = import.meta.env.VITE_EMR_CLINIC_LIST_URL || '';
 
-// Từ khoá nhận diện "nghỉ ốm" trong y lệnh/diễn biến ngoại trú (đã bỏ dấu).
-// Chỉ khớp đúng "nghỉ ốm" — KHÔNG khớp "nghỉ dưỡng"/"nghỉ ngơi"/"nghỉ việc"/"cho
-// nghỉ" chung chung, vì các cụm đó không đồng nghĩa với nghỉ ốm hưởng BHXH và
-// từng gây dương tính giả (vd "xin nghỉ việc" bị nhận nhầm là ca nghỉ ốm).
-// Không có cờ có sẵn cho ngoại trú như has_infusion/has_procedure bên nội trú,
-// nên phải quét chữ — xem thêm ghi chú ở buildOutpatientCandidates().
-const SICK_LEAVE_KEYWORD_RE = /nghi\s*om/;
-
 function normalizeText(value) {
   return String(value || '')
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -40,6 +32,40 @@ function ageFromDob(dobDmy) {
   const m = String(dobDmy || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (!m) return null;
   return new Date().getFullYear() - Number(m[3]);
+}
+
+// Tuổi nghỉ hưu theo Bộ luật Lao động 2019 (Nghị định 135/2020/NĐ-CP): tăng dần
+// mỗi năm cho đến khi đạt mốc cuối — Nam 60y3m (2021) +3 tháng/năm → 62 (từ 2028);
+// Nữ 55y4m (2021) +4 tháng/năm → 60 (từ 2035). Dùng làm ngưỡng lọc "còn tuổi lao
+// động" khi quét EMR (chỉ có năm sinh, không có ngày/tháng) — không phải căn cứ
+// pháp lý chính xác tuyệt đối, chỉ để loại bớt người rõ ràng ngoài tuổi lao động.
+function laborRetirementAgeYears(year, isFemale) {
+  const y = Math.max(2021, Math.min(Number(year) || 2021, isFemale ? 2035 : 2028));
+  const months = isFemale ? (55 * 12 + 4 + (y - 2021) * 4) : (60 * 12 + 3 + (y - 2021) * 3);
+  return months / 12;
+}
+
+// Chỉ có năm sinh trên danh sách quét EMR (không có ngày/tháng sinh) nên tuổi tính
+// được có thể lệch tới 1 năm — nới biên 1 tuổi hai đầu để tránh loại nhầm ca sát
+// ngưỡng. Thiếu năm sinh/giới tính thì không loại (để người dùng tự xem, tránh bỏ sót).
+function isLikelyWorkingAge(namSinh, gioiTinh, refYear) {
+  const birthYear = Number(String(namSinh || '').trim());
+  if (!birthYear || birthYear < 1900 || birthYear > refYear) return true;
+  const age = refYear - birthYear;
+  const isFemale = /^n[uữ]/.test(normalizeText(gioiTinh || ''));
+  const retireAge = laborRetirementAgeYears(refYear, isFemale);
+  return age >= 14 && age <= retireAge + 1;
+}
+
+// Giống isLikelyWorkingAge() nhưng dùng tuổi trực tiếp (cột "Tuổi" trong bảng
+// tblNoiTru của tab Phòng khám) thay vì ước tính từ năm sinh — chính xác hơn nên
+// không cần nới biên như bản kia.
+function isLikelyWorkingAgeByAge(tuoi, gioiTinh, refYear) {
+  const age = Number(String(tuoi || '').trim());
+  if (!Number.isFinite(age) || age <= 0) return true;
+  const isFemale = /^n[uữ]/.test(normalizeText(gioiTinh || ''));
+  const retireAge = laborRetirementAgeYears(refYear, isFemale);
+  return age >= 14 && age <= retireAge;
 }
 
 function dateOnly(value) {
@@ -123,23 +149,29 @@ function buildInpatientCandidates(patients, range) {
 function buildOutpatientCandidates(draft, range) {
   const rows = Array.isArray(draft?.carePreview?.rows) ? draft.carePreview.rows : [];
   const edits = draft?.careEdits && typeof draft.careEdits === 'object' ? draft.careEdits : {};
+  const refYear = new Date().getFullYear();
   const out = [];
   rows.forEach((row, idx) => {
     const id = String(row?.ma_bn || '').trim();
     if (!id) return;
+    // Còn tuổi lao động là điều kiện cần (loại trẻ em/người đã nghỉ hưu) — bảng
+    // tblNoiTru của tab Phòng khám đã có sẵn cột "Tuổi"/"GT", không cần lấy thêm.
+    if (!isLikelyWorkingAgeByAge(row.tuoi, row.gioi_tinh, refYear)) return;
+    // "Giấy chứng nhận nghỉ việc hưởng BHXH" là 1 form/popup riêng trên EMR (mở qua
+    // "Thông tin Khác"), KHÔNG phải chữ trong y lệnh/diễn biến — nên không có từ khoá
+    // nào để quét ra (đã xác nhận thực tế không tìm thấy). Vì vậy không lọc theo chữ
+    // nữa, chỉ còn lọc tuổi; người dùng tự rà soát trong danh sách còn lại.
     const edit = edits[careRowKey(row, idx)] || {};
-    // Ngoại trú chưa có cờ "có chỉ định nghỉ" tính sẵn như has_infusion/has_procedure
-    // bên nội trú — chỉ quét được chữ đã lấy/lưu ở tab Phòng khám (y lệnh, diễn biến).
-    // Ca chưa "Lấy vị trí đau từ y lệnh" hoặc chưa gõ diễn biến sẽ không có gì để quét.
     const reasonText = [edit?.orderInfo?.ten_y_lenh, edit?.orderInfo?.suggested_dien_bien, edit?.draft, edit?.savedValue]
       .filter(Boolean).join(' · ');
-    if (!SICK_LEAVE_KEYWORD_RE.test(normalizeText(reasonText))) return;
     const iso = dmyToInputDate(row.ngay_lam);
     if (iso && (iso < range.from || iso > range.to)) return;
     out.push({
       key: `${id}::${row.ngay_lam || row.tg_vao || idx}`,
       ma_bn: id,
       ho_ten: row.ho_ten || '',
+      tuoi: row.tuoi || '',
+      gioi_tinh: row.gioi_tinh || '',
       ngay_lam: row.ngay_lam || '',
       tg_vao: row.tg_vao || row.thoi_gian_vao_khoa || '',
       khoa_chuyen_den: row.khoa_chuyen_den || '',
@@ -152,19 +184,22 @@ function buildOutpatientCandidates(draft, range) {
 // Dòng quét trực tiếp từ EMR (mode date_range) có tên cột động, tự dò theo
 // tiêu đề bảng thật trên trang — không biết trước field nào sẽ có "ngay_lam"
 // hay "tg_vao" như carePreview.rows đã chuẩn hoá sẵn. Vì vậy quét từ khoá
-// nghỉ ốm trên TOÀN BỘ giá trị chuỗi của dòng, thay vì chỉ vài field cố định.
+// nghỉ ốm trên TOÀN BỘ giá trị chuỗi của dòng — nhưng "Giấy chứng nhận nghỉ việc
+// hưởng BHXH" là 1 form/popup riêng trên EMR, KHÔNG phải chữ trong y lệnh/diễn
+// biến/danh sách khám bệnh, nên quét từ khoá không tìm ra gì (đã xác nhận thực
+// tế). Chỉ còn lọc "còn tuổi lao động" (cột "Năm sinh" đã có sẵn trong dữ liệu
+// quét) để bớt trẻ em/người đã nghỉ hưu; phần còn lại người dùng tự rà soát.
 function buildScannedOutpatientCandidates(rows) {
+  const refYear = new Date().getFullYear();
   return (rows || [])
     .filter(row => row && String(row.ma_bn || '').trim())
-    .map((row, idx) => {
-      const text = Object.values(row).filter(v => typeof v === 'string').join(' · ');
-      return { row, idx, text };
-    })
-    .filter(({ text }) => SICK_LEAVE_KEYWORD_RE.test(normalizeText(text)))
+    .map((row, idx) => ({ row, idx }))
+    .filter(({ row }) => isLikelyWorkingAge(row.nam_sinh, row.gioi_tinh, refYear))
     .map(({ row, idx }) => ({
       key: `scan-ngt::${row.ma_bn}::${row.ngay_lam || row.tg_vao || row.access_id || idx}`,
       ma_bn: row.ma_bn,
       ho_ten: row.ho_ten || '',
+      nam_sinh: row.nam_sinh || '',
       trang_thai: row.trang_thai || '',
       chan_doan: row.chan_doan_hover || row.chan_doan || '',
       raw: row,
@@ -174,6 +209,8 @@ function buildScannedOutpatientCandidates(rows) {
 
 const SCANNED_OUTPATIENT_FIELDS = [
   { label: 'Mã BN', value: it => it.ma_bn },
+  { label: 'Họ tên', value: it => it.ho_ten },
+  { label: 'Năm sinh', value: it => it.nam_sinh },
   { label: 'Trạng thái', value: it => it.trang_thai },
   { label: 'Chẩn đoán', value: it => it.chan_doan },
 ];
@@ -190,11 +227,28 @@ const INPATIENT_FIELDS = [
 
 const OUTPATIENT_FIELDS = [
   { label: 'Mã BN', value: it => it.ma_bn },
+  { label: 'Họ tên', value: it => it.ho_ten },
+  { label: 'Tuổi', value: it => it.tuoi },
+  { label: 'Giới tính', value: it => it.gioi_tinh },
   { label: 'Ngày khám', value: it => it.ngay_lam },
   { label: 'Giờ vào', value: it => it.tg_vao },
   { label: 'Khoa', value: it => it.khoa_chuyen_den },
   { label: 'Lý do/y lệnh', value: it => it.ly_do },
 ];
+
+// BHXH trả về 2 tên cột khác nhau cho "ghi chú rà soát" tuỳ sheet (ngoại trú:
+// "Ghi chú bổ sung", nội trú: cột tự sinh key vì tên không có trong bảng ánh xạ cố định)
+// — gộp lại 1 chỗ đọc để không phải sửa 2 nơi nếu BHXH đổi tên cột.
+function reviewNoteOf(item) {
+  return String(item?.ra_soat_ghi_chu_bo_sung || item?.ghi_chu_bo_sung || '').trim();
+}
+
+// Cờ "cần sửa": BHXH báo lỗi qua so_loi_ra_soat > 0 hoặc chữ "Thiếu/thiếu" trong
+// ghi chú rà soát (mẫu thực tế: "Thiếu GHI CHÚ" vs "Đầy đủ thông tin bắt buộc...").
+function reviewHasIssue(item) {
+  if (Number(item?.so_loi_ra_soat || 0) > 0) return true;
+  return /thieu/.test(normalizeText(reviewNoteOf(item)));
+}
 
 const BHXH_OUTPATIENT_FIELDS = [
   { label: 'Họ tên', value: it => it.ho_ten },
@@ -207,6 +261,7 @@ const BHXH_OUTPATIENT_FIELDS = [
   { label: 'Người hành nghề', value: it => it.nguoi_hanh_nghe },
   { label: 'Thủ trưởng', value: it => it.thu_truong },
   { label: 'Trạng thái BHXH', value: it => it.trang_thai },
+  { label: 'Rà soát BHXH', value: it => reviewNoteOf(it) || '—' },
 ];
 
 const BHXH_INPATIENT_FIELDS = [
@@ -220,6 +275,7 @@ const BHXH_INPATIENT_FIELDS = [
   { label: 'Trưởng khoa', value: it => it.truong_khoa },
   { label: 'Thủ trưởng đơn vị', value: it => it.thu_truong_don_vi },
   { label: 'Trạng thái BHXH', value: it => it.trang_thai },
+  { label: 'Rà soát BHXH', value: it => reviewNoteOf(it) || '—' },
 ];
 
 function MatchHint({ row, candidates }) {
@@ -255,10 +311,18 @@ function MatchHint({ row, candidates }) {
 
 function BhxhCandidateRow({ item, fields, candidates, entry, onToggle, onNoteChange, onDelete }) {
   const submitted = Boolean(entry?.submitted);
+  const hasIssue = reviewHasIssue(item);
   return (
     <div style={{
-      padding: '9px 10px', borderBottom: `1px solid ${C.border2}`, background: submitted ? C.greenBg : C.surface,
+      padding: '9px 10px', borderBottom: `1px solid ${C.border2}`,
+      background: submitted ? C.greenBg : (hasIssue ? C.redBg : C.surface),
+      borderLeft: hasIssue ? `3px solid ${C.red}` : '3px solid transparent',
     }}>
+      {hasIssue && (
+        <div style={{ marginBottom: 6, fontSize: 10.5, fontWeight: 800, color: C.red }}>
+          ⚠ BHXH báo cần sửa: {reviewNoteOf(item) || `${item.so_loi_ra_soat || ''} lỗi rà soát`}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', paddingTop: 2 }} title="Đã nộp">
           <input type="checkbox" checked={submitted} onChange={() => onToggle(item.key)} style={{ width: 16, height: 16 }} />
@@ -291,12 +355,14 @@ function BhxhCandidateRow({ item, fields, candidates, entry, onToggle, onNoteCha
 
 function BhxhSection({ title, list, fields, matchFn, matchSource, stateEntries, onToggle, onNoteChange, onDelete, emptyMessage }) {
   const submittedCount = list.filter(it => stateEntries[it.key]?.submitted).length;
+  const issueCount = list.filter(reviewHasIssue).length;
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{title}</div>
         <Badge text={`${list.length} ca`} bg={C.surface2} color={C.text2} size={10} />
         {list.length > 0 && <Badge text={`Đã nộp ${submittedCount}/${list.length}`} bg={submittedCount === list.length ? C.greenBg : C.amberBg} color={submittedCount === list.length ? C.green : C.amber} size={10} />}
+        {issueCount > 0 && <Badge text={`⚠ ${issueCount} cần sửa`} bg={C.redBg} color={C.red} size={10} />}
       </div>
       <div style={{ border: `1px solid ${C.border2}`, borderRadius: 8, overflow: 'hidden' }}>
         {list.length === 0 ? (
@@ -659,7 +725,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
 
           <Section
             title="Ngoại trú (từ tab Phòng khám)"
-            hint='Quét từ bản xem trước ở tab "Phòng khám" (y lệnh/diễn biến đã lấy hoặc đã gõ), lọc ca có từ khoá liên quan nghỉ ốm.'
+            hint='Danh sách khám ngày đã chọn ở tab "Phòng khám", đã lọc bớt người ngoài tuổi lao động (trẻ em/đã nghỉ hưu). "Giấy chứng nhận nghỉ việc hưởng BHXH" là form riêng trên EMR, không có trong y lệnh/diễn biến, nên KHÔNG tự biết ai đã có giấy — cần tự rà soát danh sách dưới đây.'
             list={outpatientList}
             fields={OUTPATIENT_FIELDS}
             stateEntries={stateEntries}
@@ -668,14 +734,14 @@ export default function SickLeaveTab({ toast, workDateRange }) {
             emptyMessage={loading
               ? 'Đang tải...'
               : (clinicDraft
-                ? 'Có bản xem trước Phòng khám nhưng chưa thấy ca nào có từ khoá liên quan nghỉ ốm trong y lệnh/diễn biến đã lấy hoặc đã gõ.'
+                ? 'Có bản xem trước Phòng khám nhưng không có ca nào còn tuổi lao động trong khoảng ngày đã chọn.'
                 : 'Chưa có bản xem trước ở tab Phòng khám. Vào tab Phòng khám, dán/tải danh sách rồi quay lại đây.')}
           />
 
           <div style={{ marginTop: 20 }}>
             <Collapsible
               title="Quét trực tiếp EMR theo khoảng ngày"
-              subtitle={scannedOutpatientRows.length ? `Đã quét ${scannedOutpatientRows.length} dòng · ${scannedOutpatientList.length} ca liên quan nghỉ ốm` : 'Cần tài khoản/URL phòng khám — chưa quét'}
+              subtitle={scannedOutpatientRows.length ? `Đã quét ${scannedOutpatientRows.length} dòng · ${scannedOutpatientList.length} ca còn tuổi lao động` : 'Cần tài khoản/URL phòng khám — chưa quét'}
               open={scanPanelOpen}
               onToggle={() => setScanPanelOpen(o => !o)}
               badge={scanning ? <Spinner size={12} /> : null}
@@ -684,8 +750,9 @@ export default function SickLeaveTab({ toast, workDateRange }) {
               <div style={{ border: `1px solid ${C.blueBorder || C.border}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: 12 }}>
                 <div style={{ fontSize: 11, color: C.text3, marginBottom: 8, lineHeight: 1.5 }}>
                   Tìm mù trên "Danh sách Khám bệnh" trong khoảng ngày đang chọn ở trên ({workDateRangeLabel(workDateRange)}),
-                  rồi lọc từ khoá liên quan nghỉ ốm trên toàn bộ dữ liệu từng dòng đọc được. Chưa test với EMR thật — nếu bộ lọc
-                  khoảng ngày không áp dụng đúng, kết quả sẽ ghi rõ "partial" và cần kiểm tra lại thủ công.
+                  rồi lọc bớt người ngoài tuổi lao động (trẻ em/đã nghỉ hưu). "Giấy chứng nhận nghỉ việc hưởng BHXH" là form
+                  riêng trên EMR nên không quét được ai đã có giấy — cần tự rà soát trong danh sách còn lại. Chưa test với
+                  EMR thật — nếu bộ lọc khoảng ngày không áp dụng đúng, kết quả sẽ ghi rõ "partial" và cần kiểm tra lại thủ công.
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginBottom: 8 }}>
                   <input placeholder="Tài khoản phòng khám" value={clinicUsername} onChange={e => setClinicUsername(e.target.value)}
@@ -706,7 +773,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
                   <Section
                     compact
                     title="Kết quả quét"
-                    hint="Chỉ trong phiên làm việc này (bấm Quét lại nếu tải lại trang). Lọc từ khoá liên quan nghỉ ốm trên toàn bộ dữ liệu từng dòng đọc được từ EMR."
+                    hint="Chỉ trong phiên làm việc này (bấm Quét lại nếu tải lại trang). Đã lọc bớt người ngoài tuổi lao động; phần còn lại cần tự rà soát ai đã có Giấy chứng nhận."
                     list={scannedOutpatientList}
                     fields={SCANNED_OUTPATIENT_FIELDS}
                     stateEntries={stateEntries}
@@ -715,7 +782,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
                     emptyMessage={scanning
                       ? 'Đang quét...'
                       : (scannedOutpatientRows.length
-                        ? 'Đã quét nhưng chưa thấy dòng nào có từ khoá liên quan nghỉ ốm.'
+                        ? 'Đã quét nhưng không có ca nào còn tuổi lao động.'
                         : 'Chưa quét — bấm "Quét EMR theo khoảng ngày" ở trên.')}
                   />
                 </div>
