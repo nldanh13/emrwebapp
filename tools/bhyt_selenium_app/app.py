@@ -9,6 +9,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
+from bhyt.emrwebapp_client import WebAppError, fetch_records_from_webapp
 from bhyt.mapping import DEFAULT_DOCTORS, load_records
 from bhyt.portal import BhytPortal, PortalError, Worker
 from bhyt.store import Store
@@ -24,8 +25,10 @@ UPLOADS.mkdir(exist_ok=True)
 def load_config():
     path = ROOT / "config.json"
     if not path.exists():
-        return {"allowed_doctors": DEFAULT_DOCTORS, "delay_seconds": 1.0}
-    return json.loads(path.read_text(encoding="utf-8"))
+        return {"allowed_doctors": DEFAULT_DOCTORS, "delay_seconds": 1.0, "webapp_base_url": ""}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data.setdefault("webapp_base_url", "")
+    return data
 
 
 config = load_config()
@@ -40,7 +43,11 @@ app.secret_key = "local-bhyt-selenium"
 
 @app.get("/")
 def index():
-    return render_template("index.html", doctors=config.get("allowed_doctors", DEFAULT_DOCTORS))
+    return render_template(
+        "index.html",
+        doctors=config.get("allowed_doctors", DEFAULT_DOCTORS),
+        webapp_base_url=config.get("webapp_base_url", ""),
+    )
 
 
 @app.get("/api/summary")
@@ -78,6 +85,43 @@ def api_import():
         return jsonify({**result, "recognized": len(records), "summary": store.summary()})
     except Exception as exc:
         return jsonify({"error": f"Không đọc được dữ liệu: {exc}"}), 400
+
+
+@app.post("/api/import-from-webapp")
+def api_import_from_webapp():
+    """Lấy hồ sơ trực tiếp từ tab "Nghỉ ốm" của web app (bảng đã rà soát) thay
+    vì đọc lại file Excel — xem bhyt/FIELD_MAP.md để biết cách ánh xạ field."""
+    payload = request.get_json(force=True) or {}
+    base_url = str(payload.get("base_url", "")).strip()
+    session_id = str(payload.get("session_id", "")).strip()
+    app_token = str(payload.get("app_token", "")).strip()
+    if not base_url or not session_id:
+        return jsonify({"error": "Cần nhập URL server và Mã phiên (session ID)"}), 400
+
+    # Chỉ lưu URL server để lần sau khỏi gõ lại — session ID/token không lưu ra đĩa
+    # (giống nguyên tắc không lưu mật khẩu cổng BHYT của công cụ này).
+    config["webapp_base_url"] = base_url
+    try:
+        (ROOT / "config.json").write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+    try:
+        records, stats = fetch_records_from_webapp(
+            base_url, session_id, app_token,
+            allowed_doctors=config.get("allowed_doctors", DEFAULT_DOCTORS),
+        )
+        result = store.import_records(records)
+        return jsonify({
+            **result,
+            **stats,
+            "recognized": len(records),
+            "summary": store.summary(),
+        })
+    except WebAppError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Không lấy được dữ liệu từ web app: {exc}"}), 500
 
 
 @app.post("/api/records/<int:record_id>/fields")

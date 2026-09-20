@@ -4,6 +4,7 @@ import { Badge, Btn, Spinner } from './shared.jsx';
 import * as api from '../api.js';
 import { getPatientDischargeDates } from '../utils/dischargePrint.js';
 import { sanitizeWorkDateRange, dmyToInputDate, workDateRangeToDmy, workDateRangeLabel } from '../utils/workDateRange.js';
+import { getSessionId } from '../hooks/useSession.js';
 
 const DEFAULT_CLINIC_LOGIN_URL = import.meta.env.VITE_EMR_LOGIN_URL || '';
 const DEFAULT_CLINIC_LIST_URL = import.meta.env.VITE_EMR_CLINIC_LIST_URL || '';
@@ -469,6 +470,18 @@ export default function SickLeaveTab({ toast, workDateRange }) {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
 
+  // Mã phiên để dán sang tools/bhyt_selenium_app (công cụ nhập lên cổng BHYT)
+  // khi lấy dữ liệu trực tiếp qua API thay vì đọc lại file Excel.
+  const sessionId = useMemo(() => getSessionId(), []);
+  const copySessionId = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      toast?.('Đã sao chép mã phiên.', 'ok');
+    } catch {
+      toast?.(`Mã phiên: ${sessionId}`, 'info');
+    }
+  }, [sessionId, toast]);
+
   // Quét trực tiếp EMR (ngoại trú) theo khoảng ngày — không dùng chung ô tài
   // khoản với tab Phòng khám để tránh phụ thuộc trạng thái tab khác; chỉ lưu
   // trong phiên làm việc này, không lưu mật khẩu vào server/localStorage.
@@ -631,10 +644,23 @@ export default function SickLeaveTab({ toast, workDateRange }) {
         {loading && <Spinner size={12} />}
         <Btn variant="default" onClick={load} disabled={loading} style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: 11 }}>⟳ Làm mới</Btn>
       </div>
-      <div style={{ fontSize: 11, color: C.text3, marginBottom: 14, lineHeight: 1.5 }}>
+      <div style={{ fontSize: 11, color: C.text3, marginBottom: 10, lineHeight: 1.5 }}>
         Danh sách người bệnh cần chuẩn bị Giấy chứng nhận nghỉ việc hưởng BHXH, lọc từ dữ liệu đã có trong app
         cho khoảng ngày <b style={{ color: C.text2 }}>{workDateRangeLabel(workDateRange)}</b>. Chưa tự động nộp lên
         Cổng Dịch vụ công BHXH (khác hệ thống/tài khoản đăng nhập) — tick "Đã nộp" sau khi làm thủ công.
+      </div>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14,
+        padding: '6px 10px', border: `1px dashed ${C.border2}`, borderRadius: 6, fontSize: 10.5, color: C.text3,
+      }}>
+        <span>Mã phiên (dán vào công cụ <code>tools/bhyt_selenium_app</code> để lấy dữ liệu trực tiếp, không cần Excel):</span>
+        <code style={{ background: C.surface2, padding: '2px 6px', borderRadius: 4, color: C.text2 }}>{sessionId}</code>
+        <button type="button" onClick={copySessionId} style={{
+          padding: '2px 8px', fontSize: 10.5, cursor: 'pointer', fontFamily: 'inherit',
+          border: `1px solid ${C.border}`, background: C.surface, color: C.text2, borderRadius: 4,
+        }}>
+          Sao chép
+        </button>
       </div>
 
       <div style={{

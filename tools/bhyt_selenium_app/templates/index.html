@@ -46,6 +46,19 @@
         <button id="importBtn">Đọc Excel</button>
       </div>
       <div class="step">
+        <span class="step-no">2b</span>
+        <div class="grow">
+          <h2>Hoặc lấy từ web app (tab "Nghỉ ốm")</h2>
+          <p>Lấy đúng bảng đã rà soát trên web app — tự bỏ qua ca đang báo "cần sửa" và ca đã tick "Đã nộp". Lấy Mã phiên ở web app: mở tab Nghỉ ốm, nút "Sao chép mã phiên".</p>
+          <form id="webappForm" class="login-grid" autocomplete="off">
+            <label>URL server web app<input id="webappBaseUrl" placeholder="http://192.168.x.x:3001" value="{{ webapp_base_url }}" required></label>
+            <label>Mã phiên (session ID)<input id="webappSessionId" autocomplete="off" required></label>
+            <label>Token (nếu server có bật EMR_APP_TOKEN)<input id="webappToken" autocomplete="off"></label>
+          </form>
+        </div>
+        <button id="importFromWebappBtn">Lấy dữ liệu</button>
+      </div>
+      <div class="step">
         <span class="step-no">3</span>
         <div class="grow">
           <h2>Kiểm tra và chạy Selenium</h2>
