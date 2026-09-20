@@ -4,15 +4,15 @@
 
 ## Liên hệ với tab "Nghỉ ốm" trong app chính
 
-Đây là công cụ **độc lập**, không chạy chung process với server Express của `emrwebapp` — vì cổng BHYT cần người dùng tự nhập CAPTCHA/OTP trên Chrome thật, không thể chạy headless trên server.
+Đây là công cụ **độc lập** (Python/Flask riêng, không chạy chung process với server Express của `emrwebapp`) — vì cổng BHYT cần người dùng tự nhập CAPTCHA/OTP trên Chrome thật, không thể chạy headless trên server.
 
-Cùng đọc **1 file Excel BHXH gửi rà soát** (2 sheet Ngoại trú/Nội trú) với tab **"Nghỉ ốm"** của app chính (`src/components/SickLeaveTab.jsx`):
+**Cách dùng khuyến nghị — 1 nút từ app chính:** ở tab "Nghỉ ốm" (`src/components/SickLeaveTab.jsx`), sau khi đã import file BHXH và rà soát xong (cột "Rà soát BHXH" hết báo thiếu), bấm nút **"↗ Mở công cụ nhập cổng BHXH"** — tự mở trang này kèm sẵn URL server + Mã phiên (không cần copy/paste tay) và tự mở Chrome tới trang chủ cổng BHYT. Bấm **"Lấy dữ liệu"** ở bước 2b để lấy thẳng bảng đã rà soát qua API (`bhyt/emrwebapp_client.py`), tự bỏ qua ca đang "cần sửa" và ca đã tick "Đã nộp" — không cần đọc lại Excel.
 
-1. Tải file .xlsx BHXH gửi vào tab "Nghỉ ốm" trên app chính để **rà soát**: đối chiếu với dữ liệu đã có trong app, xem cột "Rà soát BHXH" báo thiếu gì (vd "Thiếu GHI CHÚ") để sửa trên EMR trước.
-2. Dùng **đúng file .xlsx đó** (hoặc bản đã bổ sung/sửa) đưa vào công cụ này để **nhập/sửa thật lên cổng BHYT**.
-3. Sau khi nhập xong, xuất `trang_thai_nhap_bhyt.csv` (nút xuất CSV trạng thái) và tự tick "Đã nộp" cho các ca `success` ở tab "Nghỉ ốm".
+Cách cũ (đọc trực tiếp file .xlsx BHXH gửi, bước 2) vẫn dùng được song song, cho trường hợp không có sẵn `emrwebapp` đang chạy hoặc muốn nhập file đã chỉnh tay riêng.
 
-Không có API nào nối 2 phần này — chỉ dùng chung định dạng file đầu vào.
+Sau khi nhập xong, xuất `trang_thai_nhap_bhyt.csv` (nút xuất CSV trạng thái) và tự tick "Đã nộp" cho các ca `success` ở tab "Nghỉ ốm" trên app chính.
+
+**Bật cùng lúc cả 2 trên 1 máy Windows:** nhấp đúp `start-all.bat` ở gốc repo (`emrwebapp/`) — mở song song `npm start` (cổng 3001) và `start.bat` của tool này (cổng 5005) trong 2 cửa sổ console riêng.
 
 ## Chức năng
 
