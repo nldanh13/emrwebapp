@@ -114,6 +114,8 @@ function apiActionLabel(method, url) {
     'POST /api/sick-leave-state': 'lưu trạng thái đã nộp nghỉ ốm',
     'GET /api/sick-leave-import': 'tải danh sách BHXH đã nhập gần nhất',
     'POST /api/sick-leave-import': 'nhập danh sách BHXH (.xlsx) để rà soát nghỉ ốm/ra viện',
+    'POST /api/sick-leave-import/delete-row': 'xoá dòng đã nhập trong danh sách BHXH',
+    'POST /api/sick-leave-launch-bhyt-tool': 'tự khởi động công cụ nhập cổng BHXH',
     'POST /api/check-current-bed': 'kiểm buồng giường hiện tại',
 
     'GET /api/admin-workflow/dashboard': 'tải workflow hành chánh',
@@ -696,6 +698,7 @@ export const saveSickLeaveState = (payload) => post('/api/sick-leave-state', pay
 export const getSickLeaveImport = () => get('/api/sick-leave-import');
 export const importSickLeaveList = (payload) => post('/api/sick-leave-import', payload);
 export const deleteSickLeaveImportRow = (payload) => post('/api/sick-leave-import/delete-row', payload);
+export const launchBhytTool = () => post('/api/sick-leave-launch-bhyt-tool', {});
 
 export const getClinicCareDraft = () => get('/api/clinic/care-draft');
 export const saveClinicCareDraft = (payload) => post('/api/clinic/care-draft', payload);

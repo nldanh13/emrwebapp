@@ -482,15 +482,37 @@ export default function SickLeaveTab({ toast, workDateRange }) {
     }
   }, [sessionId, toast]);
 
-  // Mở tools/bhyt_selenium_app (đã chạy sẵn trên máy này — cổng BHYT bắt CAPTCHA/
-  // OTP nên bắt buộc phải có Chrome hiển thị, server không tự nộp ngầm được) kèm
-  // sẵn URL server + mã phiên qua query param, để khỏi phải copy/paste tay.
-  const openBhytTool = useCallback(() => {
+  const [launchingBhyt, setLaunchingBhyt] = useState(false);
+
+  // Mở tools/bhyt_selenium_app kèm sẵn URL server + mã phiên qua query param
+  // (khỏi copy/paste tay). Server tự spawn tiến trình Python nền giùm nếu cổng
+  // 5005 chưa chạy (chỉ khi venv của tool đó đã cài sẵn — lần đầu vẫn cần tự
+  // chạy start.bat 1 lần). Cổng BHYT bắt CAPTCHA/OTP nên vẫn bắt buộc có Chrome
+  // hiển thị, server không thể tự nộp ngầm được.
+  const openBhytTool = useCallback(async () => {
     const url = new URL('http://127.0.0.1:5005/');
     url.searchParams.set('base_url', window.location.origin);
     url.searchParams.set('session_id', sessionId);
-    window.open(url.toString(), '_blank', 'noopener');
-  }, [sessionId]);
+
+    // Mở cửa sổ trống ngay trong lúc bấm để giữ "user gesture" (tránh bị chặn
+    // popup vì phải chờ API xong mới biết chắc công cụ đã sẵn sàng), điều
+    // hướng sang URL thật sau. Đích luôn là công cụ nội bộ (127.0.0.1) do
+    // chính app này quản lý, không phải URL người dùng nhập, nên giữ handle
+    // để điều hướng (không dùng noopener) không phát sinh rủi ro gì thêm.
+    const win = window.open('about:blank', '_blank');
+    setLaunchingBhyt(true);
+    try {
+      const result = await api.launchBhytTool();
+      if (result?.status !== 'ok') throw new Error(result?.message || 'Không khởi động được công cụ.');
+      if (!result.already_running) toast?.('Đã tự khởi động công cụ nhập cổng BHXH.', 'ok');
+    } catch (e) {
+      toast?.(String(e?.message || 'Không khởi động được công cụ — mở tay bằng start.bat trong tools/bhyt_selenium_app rồi bấm lại.'), 'error');
+    } finally {
+      setLaunchingBhyt(false);
+    }
+    if (win && !win.closed) win.location.href = url.toString();
+    else window.open(url.toString(), '_blank');
+  }, [sessionId, toast]);
 
   // Quét trực tiếp EMR (ngoại trú) theo khoảng ngày — không dùng chung ô tài
   // khoản với tab Phòng khám để tránh phụ thuộc trạng thái tab khác; chỉ lưu
@@ -671,13 +693,15 @@ export default function SickLeaveTab({ toast, workDateRange }) {
         }}>
           Sao chép
         </button>
-        <button type="button" onClick={openBhytTool} title="Mở tools/bhyt_selenium_app (cần đã chạy sẵn trên máy này) kèm sẵn URL server + mã phiên" style={{
-          padding: '2px 10px', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-          border: `1px solid ${C.blueBorder || C.border}`, background: C.blueBg || C.surface2, color: C.blue || C.text2, borderRadius: 4,
-        }}>
-          ↗ Mở công cụ nhập cổng BHXH
+        <button type="button" onClick={openBhytTool} disabled={launchingBhyt}
+          title="Tự khởi động (nếu cần) và mở tools/bhyt_selenium_app kèm sẵn URL server + mã phiên" style={{
+            padding: '2px 10px', fontSize: 10.5, fontWeight: 700, cursor: launchingBhyt ? 'default' : 'pointer', fontFamily: 'inherit',
+            border: `1px solid ${C.blueBorder || C.border}`, background: C.blueBg || C.surface2, color: C.blue || C.text2, borderRadius: 4,
+            opacity: launchingBhyt ? 0.7 : 1,
+          }}>
+          {launchingBhyt ? <><Spinner size={10} /> Đang mở...</> : '↗ Mở công cụ nhập cổng BHXH'}
         </button>
-        <span>(công cụ Selenium chạy trên máy này, tự điền URL/mã phiên + tự mở Chrome tới cổng BHYT — vẫn cần tự gõ Mã cơ sở/tài khoản/mật khẩu cổng BHYT. Chưa chạy tool thì bấm <code>start.bat</code> trong <code>tools/bhyt_selenium_app</code> trước)</span>
+        <span>(tự khởi động công cụ nếu chưa chạy, tự điền URL/mã phiên + tự mở Chrome tới cổng BHYT — vẫn cần tự gõ Mã cơ sở/tài khoản/mật khẩu cổng BHYT. Lần đầu trên máy này cần tự chạy <code>start.bat</code> trong <code>tools/bhyt_selenium_app</code> 1 lần để cài thư viện)</span>
       </div>
 
       <div style={{

@@ -9,11 +9,13 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 const router = require('express').Router();
 
 const { getRuntimePaths } = require('../services/session');
 const { runScript, fmtPyError } = require('../services/python_runner');
 const { readJsonSafe, writeJsonAtomic, safeUnlink } = require('../utils/file');
+const { ROOT_DIR } = require('../constants');
 // GET/POST /sick-leave-import dùng chung 1 path — áp riêng heavyTaskLimiter (spawn Python)
 // chỉ cho POST ở đây, thay vì đăng ký cả path vào HEAVY_TASK_ROUTES trong index.js
 // (sẽ giới hạn nhầm cả GET đọc lại, vốn chỉ đọc file JSON đã lưu).
@@ -155,6 +157,74 @@ router.post('/sick-leave-import/delete-row', (req, res) => {
   } catch (err) {
     return res.status(500).json({ status: 'error', message: `Không ghi được sick_leave_import.json: ${err.message || err}` });
   }
+});
+
+// ── POST /api/sick-leave-launch-bhyt-tool ───────────────────────────────────
+// Tự khởi động tools/bhyt_selenium_app (Flask/Selenium, cổng 5005) giùm người
+// dùng khi bấm nút "Mở công cụ nhập cổng BHXH" — khỏi phải tự tay chạy
+// start.bat mỗi lần. Chỉ spawn khi venv của tool đó đã có sẵn (lần đầu vẫn
+// cần tự chạy start.bat 1 lần để cài thư viện — không tự ý cài hộ ở đây vì
+// có thể mất nhiều phút và cần mạng, không phù hợp gọi trong 1 request).
+// Chạy trên cùng máy với browser của người dùng — vì cổng BHYT bắt CAPTCHA/
+// OTP, tool đó bắt buộc mở Chrome hiển thị ngay trên máy đang thao tác.
+const BHYT_TOOL_DIR = path.join(ROOT_DIR, 'tools', 'bhyt_selenium_app');
+const BHYT_TOOL_URL = 'http://127.0.0.1:5005';
+
+function bhytToolPythonBin() {
+  const candidates = process.platform === 'win32'
+    ? [path.join(BHYT_TOOL_DIR, '.venv', 'Scripts', 'python.exe')]
+    : [path.join(BHYT_TOOL_DIR, '.venv', 'bin', 'python')];
+  return candidates.find(p => fs.existsSync(p)) || '';
+}
+
+async function isBhytToolRunning() {
+  try {
+    const res = await fetch(`${BHYT_TOOL_URL}/api/summary`, { signal: AbortSignal.timeout(1500) });
+    return res.ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+router.post('/sick-leave-launch-bhyt-tool', async (req, res) => {
+  if (await isBhytToolRunning()) {
+    return res.json({ status: 'ok', already_running: true });
+  }
+
+  const pythonBin = bhytToolPythonBin();
+  if (!pythonBin) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'tools/bhyt_selenium_app chưa được cài lần đầu trên máy này — mở thư mục đó, nhấp đúp start.bat 1 lần để cài thư viện, rồi thử lại.',
+    });
+  }
+
+  try {
+    const logPath = path.join(BHYT_TOOL_DIR, 'runtime');
+    fs.mkdirSync(logPath, { recursive: true });
+    const logFd = fs.openSync(path.join(logPath, 'launch.log'), 'a');
+    const child = spawn(pythonBin, ['app.py'], {
+      cwd: BHYT_TOOL_DIR,
+      detached: true,
+      stdio: ['ignore', logFd, logFd],
+      windowsHide: true,
+    });
+    child.unref();
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: `Không khởi động được: ${err.message || err}` });
+  }
+
+  // Chờ tối đa ~3s để tool kịp lắng nghe trước khi trả về, để tab mở ngay
+  // sau đó (window.open ở frontend) không rơi vào "connection refused".
+  for (let i = 0; i < 6; i += 1) {
+    await sleep(500);
+    if (await isBhytToolRunning()) break;
+  }
+  return res.json({ status: 'ok', already_running: false });
 });
 
 module.exports = router;
