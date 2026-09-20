@@ -677,7 +677,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
         }}>
           ↗ Mở công cụ nhập cổng BHXH
         </button>
-        <span>(công cụ Selenium chạy trên máy này, tự điền URL/mã phiên — chưa chạy thì bấm <code>start.bat</code> trong <code>tools/bhyt_selenium_app</code> trước)</span>
+        <span>(công cụ Selenium chạy trên máy này, tự điền URL/mã phiên + tự mở Chrome tới cổng BHYT — vẫn cần tự gõ Mã cơ sở/tài khoản/mật khẩu cổng BHYT. Chưa chạy tool thì bấm <code>start.bat</code> trong <code>tools/bhyt_selenium_app</code> trước)</span>
       </div>
 
       <div style={{
