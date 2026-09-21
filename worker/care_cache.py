@@ -140,6 +140,16 @@ def scan_cham_soc_cache(driver, ngay_lam_viec, hours_needed=None):
     oldest_scanned_dt = None
     found_keys = set()
 
+    # Bảng TT chăm sóc liệt kê từ khoa điều trị HIỆN TẠI (mới nhất) xuống các
+    # khoa điều trị TRƯỚC ĐÓ (nếu BN từng chuyển khoa), phân cách bằng dòng
+    # tiêu đề "Khoa điều trị thứ N : ..." (colspan). Dòng tiêu đề ĐẦU TIÊN gặp
+    # là khoa hiện tại — vẫn quét bình thường. Từ dòng tiêu đề THỨ HAI trở đi
+    # là ranh giới chuyển khoa: các phiếu bên dưới thuộc khoa cũ, tool không
+    # sửa/xóa được nữa (BN đã rời khoa đó) nên dừng quét luôn, không lật thêm
+    # trang cho phần dữ liệu vô dụng này.
+    department_header_seen = False
+    stop_at_department_change = False
+
     for p in range(total):
         if p > 0:
             # Chỉ lật trang khi cần: chưa đủ key cần tìm và còn khả năng nằm ở trang sau
@@ -162,6 +172,18 @@ def scan_cham_soc_cache(driver, ngay_lam_viec, hours_needed=None):
             try:
                 cols = r.find_elements(By.TAG_NAME, "td")
                 if len(cols) < 11:
+                    # Dòng tiêu đề khoa điều trị (colspan=10) cũng rơi vào đây.
+                    row_text = ""
+                    try:
+                        row_text = (r.text or "").strip()
+                    except Exception as _e:  # was: bare except
+                        LOG.debug(f"[except] {_e}")
+                    if "Khoa điều trị" in row_text:
+                        if department_header_seen:
+                            LOG.debug(_ctx_prefix() + f"[scan_cache] stop: department_change_detected text={row_text[:100]!r}")
+                            stop_at_department_change = True
+                            break
+                        department_header_seen = True
                     continue
 
                 time_full_raw = cols[2].text.strip()
@@ -244,6 +266,9 @@ def scan_cham_soc_cache(driver, ngay_lam_viec, hours_needed=None):
             except Exception as _e:  # was: bare except
                 LOG.debug(f"[except] {_e}")
                 continue
+
+        if stop_at_department_change:
+            break
 
     return cache, entries
 
