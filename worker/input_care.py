@@ -835,8 +835,21 @@ def main():
         # sang tài khoản kế tiếp — đúng luồng "ca làm hết mọi BN → đổi tài khoản
         # → ca trực hết mọi BN".
         patient_plans = []
-        account_order = []
+        # Ép cứng thứ tự lượt xử lý: mọi tài khoản của ca LÀM luôn chạy trước
+        # mọi tài khoản của ca TRỰC, bất kể dữ liệu/BN nào xuất hiện trước.
+        work_account_order = []
+        oncall_account_order = []
+        other_account_order = []
         account_passwords = {}
+
+        def _shift_kind_for_hour(h):
+            """'work' (07-10h, 13-16h) hoặc 'oncall' (còn lại) — khớp đúng quy
+            tắc ca trong get_nurse_by_shift() ở worker/utils.py."""
+            try:
+                h = int(h)
+            except Exception:
+                return "work"
+            return "work" if (7 <= h <= 10 or 13 <= h <= 16) else "oncall"
 
         for patient_key, info in patient_data.items():
             ma_bn = info.get("ma_bn") or patient_key[0]
@@ -1138,8 +1151,10 @@ def main():
                 password_g = account_g["password"] if account_g else default_emr_password
                 jobs_by_account.setdefault(username_g, []).append(job)
                 account_passwords.setdefault(username_g, password_g)
-                if username_g not in account_order:
-                    account_order.append(username_g)
+                shift_kind_g = _shift_kind_for_hour(h_g)
+                target_order_g = work_account_order if shift_kind_g == "work" else oncall_account_order
+                if username_g not in target_order_g:
+                    target_order_g.append(username_g)
 
             if not jobs_by_account:
                 # Không có job cụ thể nào (vd: toàn bộ giờ bị lọc do đang đi mổ) nhưng
@@ -1147,8 +1162,10 @@ def main():
                 # tạm tài khoản mặc định, không có job để nhập.
                 jobs_by_account[default_emr_username] = []
                 account_passwords.setdefault(default_emr_username, default_emr_password)
-                if default_emr_username not in account_order:
-                    account_order.append(default_emr_username)
+                if (default_emr_username not in work_account_order
+                        and default_emr_username not in oncall_account_order
+                        and default_emr_username not in other_account_order):
+                    other_account_order.append(default_emr_username)
 
             patient_plans.append({
                 "result_key": result_key,
@@ -1172,10 +1189,21 @@ def main():
                 "job_skip_reasons": [],
             })
 
-        print(f"\n>>> Đã tính kế hoạch cho {len(patient_plans)} BN/ngày cần nhập, "
-              f"dùng {len(account_order)} tài khoản EMR: {account_order}")
+        # Ghép thứ tự cuối cùng: mọi tài khoản ca LÀM trước, rồi mọi tài khoản
+        # ca TRỰC, rồi các tài khoản khác (nếu có) — không phụ thuộc BN nào
+        # được xử lý trước trong dữ liệu.
+        account_order = list(work_account_order)
+        for _u in oncall_account_order:
+            if _u not in account_order:
+                account_order.append(_u)
+        for _u in other_account_order:
+            if _u not in account_order:
+                account_order.append(_u)
 
-        # ── PHASE 2: với TỪNG tài khoản EMR (theo thứ tự xuất hiện lần đầu ở Phase 1),
+        print(f"\n>>> Đã tính kế hoạch cho {len(patient_plans)} BN/ngày cần nhập, "
+              f"dùng {len(account_order)} tài khoản EMR (ca làm trước, ca trực sau): {account_order}")
+
+        # ── PHASE 2: với TỪNG tài khoản EMR (ca làm trước, ca trực sau — xem Phase 1),
         # xử lý lần lượt các BN có job thuộc tài khoản đó — hết BN cuối cùng của tài
         # khoản này mới đổi sang tài khoản kế tiếp (đăng nhập lại).
         for username in account_order:
