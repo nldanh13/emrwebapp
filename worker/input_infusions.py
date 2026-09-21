@@ -38,13 +38,14 @@ from input_infusions_utils import (
 from infusion_cleanup import (
     _compare_med_vs_web,
     _date_key_from_time_str,
-    _delete_record_by_id,
+    _delete_info_with_creator_switch,
     _get_total_pages_in_modal,
     _goto_page_in_modal,
     _info_matches_expected_med,
     _int_from_text,
     _norm_med_key,
     _norm_time_str,
+    _restore_original_account,
     lay_danh_sach_chi_tiet_all_pages,
     tim_dich_truyen_legacy_parser_cu,
     xoa_dich_truyen_bi_rule_loai,
@@ -83,13 +84,28 @@ def _read_target_options(targets_path):
         raise RuntimeError(f'Targets dịch truyền không hợp lệ: {exc}') from exc
 
 
+def reopen_fn(ws, ma_bn):
+    """Tìm lại BN rồi mở hồ sơ + modal 'Phiếu truyền dịch' (icon mắt > btnPTD).
+
+    Dùng để mở lại đúng modal sau khi phải đổi tài khoản EMR để sửa/xóa
+    phiếu do người khác tạo (EMR hiện chỉ cho đúng tài khoản người tạo tự
+    sửa/xóa phiếu của họ — xem infusion_cleanup._delete_info_with_creator_switch).
+    """
+    ws.search_patient(ma_bn)
+    ws.wait.until(EC.element_to_be_clickable((By.XPATH, "//i[contains(@class, 'fa-eye')]"))).click()
+    btn_ptd = ws.wait.until(EC.element_to_be_clickable((By.ID, "btnPTD")))
+    ws.driver.execute_script("arguments[0].click();", btn_ptd)
+    _wait_after_action(ws.driver, 0.8, ready_timeout=10)
+
+
 # ==============================================================================
 # XỬ LÝ NGHIỆP VỤ 1 BỆNH NHÂN
 # ==============================================================================
 
 def xu_ly_bn(
-    driver,
-    wait,
+    ws,
+    ma_bn,
+    reopen_fn,
     med_list,
     config_names,
     force_reinput=False,
@@ -101,6 +117,22 @@ def xu_ly_bn(
       Nếu sai -> xóa bản ghi sai và nhập lại.
     - Sau khi nhập xong: kiểm tra lần cuối, đúng hết mới qua BN tiếp theo (có cơ chế retry 1 lần).
     """
+    driver, wait = ws.driver, ws.wait
+
+    def _delete_infos_batch(infos):
+        """Xóa 1 nhóm bản ghi dịch truyền, tự đổi tài khoản EMR theo người tạo
+        (trường 'y_ta') của từng bản khi cần — EMR hiện chỉ cho đúng tài khoản
+        người tạo tự xóa phiếu của họ — rồi khôi phục lại tài khoản gốc 1 lần
+        sau khi xóa xong cả nhóm."""
+        nonlocal driver, wait
+        original_username = str(ws.config.get("username") or "").strip()
+        original_password = str(ws.config.get("password") or "")
+        for info in infos:
+            if info.get("id"):
+                _delete_info_with_creator_switch(ws, ma_bn, reopen_fn, info)
+        _restore_original_account(ws, ma_bn, reopen_fn, original_username, original_password)
+        driver, wait = ws.driver, ws.wait
+
     # Tách 2 loại:
     # - danh_sach_hop_le: dịch truyền hiện tại cần nhập/đối chiếu
     # - cleanup_tasks: dịch truyền cũ đã bị rule loại, phải xóa nếu còn trên EMR
@@ -146,25 +178,28 @@ def xu_ly_bn(
         expected_keys.add((_norm_med_key(_m.get('Full_Name', '')), _norm_time_str(_s)))
 
     # --- 1a) Xóa các bản dịch truyền cũ đã bị rule loại khỏi dữ liệu chuẩn ---
-    cleanup_cnt = xoa_dich_truyen_bi_rule_loai(driver, wait, danh_sach_web, cleanup_tasks, danh_sach_hop_le)
+    cleanup_cnt = xoa_dich_truyen_bi_rule_loai(ws, ma_bn, reopen_fn, danh_sach_web, cleanup_tasks, danh_sach_hop_le)
     if cleanup_cnt:
         _log(f"      [i] Đã xóa {cleanup_cnt} bản dịch truyền cũ bị rule loại. Quét lại để cập nhật...")
         time.sleep(0.8)
+        driver, wait = ws.driver, ws.wait
         danh_sach_web, total_pages = lay_danh_sach_chi_tiet_all_pages(driver, wait)
 
     # --- 1a.1) Dọn có mục tiêu artifact parser cũ nếu bản đúng đã có trên EMR ---
     legacy_cnt = xoa_dich_truyen_legacy_parser_cu(
-        driver, wait, danh_sach_web, danh_sach_hop_le
+        ws, ma_bn, reopen_fn, danh_sach_web, danh_sach_hop_le
     )
     if legacy_cnt:
         _log(f"      [i] Đã xóa {legacy_cnt} dòng legacy do parser cũ. Quét lại để cập nhật...")
         time.sleep(0.8)
+        driver, wait = ws.driver, ws.wait
         danh_sach_web, total_pages = lay_danh_sach_chi_tiet_all_pages(driver, wait)
 
     # --- 1a.2) Xóa các dòng thừa trong ngày đang quản lý nhưng không còn trong JSON chuẩn ---
     orphan_cnt = xoa_dich_truyen_thua_ngoai_du_lieu(
-        driver,
-        wait,
+        ws,
+        ma_bn,
+        reopen_fn,
         danh_sach_web,
         managed_dates,
         danh_sach_hop_le,
@@ -173,6 +208,7 @@ def xu_ly_bn(
     if orphan_cnt:
         _log(f"      [i] Đã xóa {orphan_cnt} dòng dịch truyền thừa không còn trong dữ liệu chuẩn. Quét lại để cập nhật...")
         time.sleep(0.8)
+        driver, wait = ws.driver, ws.wait
         danh_sach_web, total_pages = lay_danh_sach_chi_tiet_all_pages(driver, wait)
 
     if not danh_sach_hop_le:
@@ -180,10 +216,11 @@ def xu_ly_bn(
         return True
 
     # --- 1b) Xóa bản trùng lặp 100% ---
-    del_cnt = xoa_trung_lap_100(driver, wait, danh_sach_web, keys_filter=expected_keys)
+    del_cnt = xoa_trung_lap_100(ws, ma_bn, reopen_fn, danh_sach_web, keys_filter=expected_keys)
     if del_cnt:
         _log(f"      [i] Đã xóa {del_cnt} bản trùng lặp (trùng 100%). Quét lại để cập nhật...")
         time.sleep(0.6)
+        driver, wait = ws.driver, ws.wait
         danh_sach_web, total_pages = lay_danh_sach_chi_tiet_all_pages(driver, wait)
 
     # --- 2) Đối chiếu từng dịch truyền trong data ---
@@ -196,9 +233,7 @@ def xu_ly_bn(
 
         if force_reinput and candidates:
             _log(f"      [↻] KIỂM TRA/SỬA LẠI: xóa bản hiện có để nhập lại đúng dữ liệu và số lô: {med.get('Full_Name')} ({str_start})")
-            for info in candidates:
-                if info.get("id"):
-                    _delete_record_by_id(driver, wait, info["id"])
+            _delete_infos_batch(candidates)
             time.sleep(0.5)
             danh_sach_web, total_pages = lay_danh_sach_chi_tiet_all_pages(driver, wait)
             candidates = danh_sach_web.get(key, []) or []
@@ -220,9 +255,7 @@ def xu_ly_bn(
         if ok_infos:
             if bad_infos:
                 _log(f"      [i] Đã có bản đúng nhưng còn {len(bad_infos)} bản sai cùng thuốc/giờ -> xóa bản sai còn sót.")
-                for info, errs in bad_infos:
-                    if info.get("id"):
-                        _delete_record_by_id(driver, wait, info["id"])
+                _delete_infos_batch([info for info, _errs in bad_infos])
                 time.sleep(0.5)
                 danh_sach_web, total_pages = lay_danh_sach_chi_tiet_all_pages(driver, wait)
             _log(f"      [v] BỎ QUA: {med.get('Full_Name')} ({str_start}) đã đúng. [BS: {med.get('Bac_Si','?')} | DD: {ten_y_ta_chuan or '?'}]")
@@ -233,9 +266,7 @@ def xu_ly_bn(
                 _log(f"      [!] PHÁT HIỆN SAI: {med.get('Full_Name')} ({str_start}) -> xóa và nhập lại | Lỗi: {', '.join(best_errs)} [BS: {med.get('Bac_Si','?')} | DD: {ten_y_ta_chuan or '?'}]")
             else:
                 _log(f"      [!] PHÁT HIỆN SAI: {med.get('Full_Name')} ({str_start}) -> xóa và nhập lại [BS: {med.get('Bac_Si','?')} | DD: {ten_y_ta_chuan or '?'}]")
-            for info in candidates:
-                if info.get("id"):
-                    _delete_record_by_id(driver, wait, info["id"])
+            _delete_infos_batch(candidates)
             time.sleep(0.5)
 
         _log(f"      [+] NHẬP: {med.get('Full_Name')} ({str_start}) [BS: {med.get('Bac_Si','?')} | DD: {ten_y_ta_chuan or '?'}]")
@@ -247,16 +278,18 @@ def xu_ly_bn(
     try:
         web_after_insert, _ = lay_danh_sach_chi_tiet_all_pages(driver, wait)
         legacy_cnt2 = xoa_dich_truyen_legacy_parser_cu(
-            driver, wait, web_after_insert, danh_sach_hop_le
+            ws, ma_bn, reopen_fn, web_after_insert, danh_sach_hop_le
         )
         if legacy_cnt2:
             _log(f"   [i] Đã xóa {legacy_cnt2} dòng legacy do parser cũ sau khi nhập bản đúng.")
             time.sleep(0.6)
+            driver, wait = ws.driver, ws.wait
     except Exception as exc:
         _log(f"   [CLEANUP_LEGACY][!] Không hoàn tất được lượt dọn legacy sau nhập: {exc}")
 
     # --- 3) Kiểm tra lần cuối ---
     def _final_check_and_fix_once():
+        nonlocal driver, wait
         web_now, _pages = lay_danh_sach_chi_tiet_all_pages(driver, wait)
 
         # Legacy parser artifact còn sót cũng là lỗi cuối. Thử dọn đúng 1 lần;
@@ -268,9 +301,10 @@ def xu_ly_bn(
                 "-> dọn có mục tiêu 1 lần..."
             )
             xoa_dich_truyen_legacy_parser_cu(
-                driver, wait, web_now, danh_sach_hop_le
+                ws, ma_bn, reopen_fn, web_now, danh_sach_hop_le
             )
             time.sleep(0.8)
+            driver, wait = ws.driver, ws.wait
             web_now, _pages = lay_danh_sach_chi_tiet_all_pages(driver, wait)
             legacy_left = tim_dich_truyen_legacy_parser_cu(web_now, danh_sach_hop_le)
             if legacy_left:
@@ -319,9 +353,7 @@ def xu_ly_bn(
             key = (_norm_med_key(med.get('Full_Name', '')), _norm_time_str(str_start))
             try:
                 web_now, _ = lay_danh_sach_chi_tiet_all_pages(driver, wait)
-                for info in (web_now.get(key, []) or []):
-                    if info.get("id"):
-                        _delete_record_by_id(driver, wait, info["id"])
+                _delete_infos_batch(web_now.get(key, []) or [])
             except Exception:
                 pass
             _nhap_moi_1_dich_truyen(driver, wait, med, config_names)
@@ -359,10 +391,11 @@ def xu_ly_bn(
     # Xóa trùng lặp 100% thêm lần nữa trước kiểm tra cuối
     try:
         web_tmp, _ = lay_danh_sach_chi_tiet_all_pages(driver, wait)
-        del_cnt2 = xoa_trung_lap_100(driver, wait, web_tmp, keys_filter=expected_keys)
+        del_cnt2 = xoa_trung_lap_100(ws, ma_bn, reopen_fn, web_tmp, keys_filter=expected_keys)
         if del_cnt2:
             _log(f"   [i] Đã xóa {del_cnt2} bản trùng lặp (trùng 100%) trước kiểm tra cuối.")
             time.sleep(0.6)
+            driver, wait = ws.driver, ws.wait
     except Exception:
         pass
 
@@ -461,8 +494,9 @@ def main():
                 _wait_after_action(ws.driver, 0.8, ready_timeout=10)
 
                 verified_ok = xu_ly_bn(
-                    ws.driver,
-                    ws.wait,
+                    ws,
+                    ma_bn,
+                    reopen_fn,
                     list_thuoc,
                     ws.config.get('ten_dieu_duong') or {},
                     force_reinput=force_reinput_infusions,

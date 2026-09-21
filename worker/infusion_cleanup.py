@@ -12,6 +12,7 @@ except ModuleNotFoundError:  # Cho phép test các helper chuẩn hóa/so khớp
 from utils import strip_accents
 from input_infusions_utils import _log, _norm_text
 from infusion_select2 import _norm_staff_key
+from nurse_emr_accounts import get_emr_account_for_nurse
 
 def _norm_med_key(s: str) -> str:
     """Chuẩn hoá tên dịch truyền để so khớp (giảm lỗi do khoảng trắng, dấu câu, dấu tiếng Việt)."""
@@ -374,7 +375,7 @@ def _record_signature(info: dict):
         info.get("y_ta_key") or _norm_staff_key(info.get("y_ta", "")),
     )
 
-def xoa_trung_lap_100(driver, wait, records: dict, keys_filter=None) -> int:
+def xoa_trung_lap_100(ws, ma_bn, reopen_fn, records: dict, keys_filter=None) -> int:
     """Xóa bản trùng lặp nếu trùng 100% tất cả trường.
 
     Trùng 100% = trùng chữ ký:
@@ -382,7 +383,13 @@ def xoa_trung_lap_100(driver, wait, records: dict, keys_filter=None) -> int:
 
     Giữ lại 1 bản, xóa các bản còn lại (chỉ khi có id).
     keys_filter: set các key (ten, tg_bat_dau) để áp dụng; None = áp dụng toàn bộ.
+
+    EMR hiện chỉ cho đúng tài khoản người tạo phiếu tự xóa phiếu của họ —
+    nhận `ws`/`ma_bn`/`reopen_fn` để tự đổi tài khoản trước mỗi lần xóa (xem
+    `_delete_info_with_creator_switch`), rồi khôi phục lại tài khoản gốc.
     """
+    original_username = str(ws.config.get("username") or "").strip()
+    original_password = str(ws.config.get("password") or "")
     deleted = 0
     for key, lst in list(records.items()):
         if keys_filter is not None and key not in keys_filter:
@@ -400,11 +407,11 @@ def xoa_trung_lap_100(driver, wait, records: dict, keys_filter=None) -> int:
                 continue
             # giữ 1 bản, xóa phần còn lại
             for dup in infos[1:]:
-                rec_id = (dup.get("id") or "").strip()
-                if rec_id:
-                    if _delete_record_by_id(driver, wait, rec_id):
+                if dup.get("id"):
+                    if _delete_info_with_creator_switch(ws, ma_bn, reopen_fn, dup):
                         deleted += 1
                         time.sleep(0.2)
+    _restore_original_account(ws, ma_bn, reopen_fn, original_username, original_password)
     return deleted
 
 def _delete_record_by_id(driver, wait, rec_id: str) -> bool:
@@ -418,6 +425,51 @@ def _delete_record_by_id(driver, wait, rec_id: str) -> bool:
         return True
     except Exception:
         return False
+
+def _delete_info_with_creator_switch(ws, ma_bn, reopen_fn, info: dict) -> bool:
+    """Xóa 1 bản ghi dịch truyền, tự đổi sang tài khoản EMR của người tạo
+    (trường 'y_ta') trước khi xóa nếu cần — EMR hiện chỉ cho đúng tài khoản
+    người tạo tự xóa phiếu của họ. Nếu không tra được tài khoản hoặc đổi
+    tài khoản thất bại thì bỏ qua (không xóa), in cảnh báo.
+
+    KHÔNG tự khôi phục lại tài khoản sau khi xóa — gọi
+    ``_restore_original_account(...)`` một lần sau khi xóa xong cả nhóm để
+    tránh đổi tài khoản qua lại nhiều lần không cần thiết.
+    """
+    rec_id = (info.get("id") or "").strip()
+    if not rec_id:
+        return False
+    creator = (info.get("y_ta") or "").strip()
+    if creator:
+        account = get_emr_account_for_nurse(creator)
+        if not account:
+            _log(f"      [WARN] Chưa cấu hình tài khoản EMR cho '{creator}' — bỏ qua xóa dịch truyền.")
+            return False
+        current_username = str(ws.config.get("username") or "").strip()
+        if account["username"] != current_username:
+            if not ws.switch_account(account["username"], account["password"]):
+                _log(f"      [WARN] Không đổi được tài khoản EMR của '{creator}'.")
+                return False
+            try:
+                reopen_fn(ws, ma_bn)
+            except Exception as exc:
+                _log(f"      [WARN] Không mở lại được modal dịch truyền sau khi đổi tài khoản: {exc}")
+                return False
+    return _delete_record_by_id(ws.driver, ws.wait, rec_id)
+
+def _restore_original_account(ws, ma_bn, reopen_fn, original_username: str, original_password: str) -> None:
+    """Khôi phục lại đúng tài khoản EMR ban đầu (nếu đã phải đổi để xóa phiếu
+    của người khác) và mở lại đúng modal dịch truyền của BN `ma_bn`."""
+    current_username = str(ws.config.get("username") or "").strip()
+    if not original_username or current_username == original_username:
+        return
+    if ws.switch_account(original_username, original_password):
+        try:
+            reopen_fn(ws, ma_bn)
+        except Exception as exc:
+            _log(f"      [WARN] Không mở lại được modal dịch truyền sau khi khôi phục tài khoản gốc: {exc}")
+    else:
+        _log(f"      [WARN] Không khôi phục được tài khoản EMR gốc {original_username}.")
 
 def _info_matches_expected_med(info: dict, expected_meds: list) -> bool:
     """Tránh xóa nhầm bản ghi đang là dịch truyền hợp lệ hiện tại."""
@@ -467,15 +519,20 @@ def _info_matches_cleanup_task(info: dict, cleanup: dict) -> bool:
 
     return False
 
-def xoa_dich_truyen_bi_rule_loai(driver, wait, records: dict, cleanup_tasks: list, expected_meds: list) -> int:
+def xoa_dich_truyen_bi_rule_loai(ws, ma_bn, reopen_fn, records: dict, cleanup_tasks: list, expected_meds: list) -> int:
     """Xóa các dịch truyền cũ đã bị rule loại khỏi dữ liệu chuẩn.
 
     Đây là phần còn thiếu trước đây: khi rule mới loại một dịch truyền khỏi JSON,
     script không còn thấy thuốc đó trong danh_sach_hop_le nên cũng không xóa bản cũ trên EMR.
+
+    EMR hiện chỉ cho đúng tài khoản người tạo phiếu tự xóa phiếu của họ —
+    xem `_delete_info_with_creator_switch`.
     """
     if not cleanup_tasks:
         return 0
 
+    original_username = str(ws.config.get("username") or "").strip()
+    original_password = str(ws.config.get("password") or "")
     deleted = 0
     seen_ids = set()
 
@@ -504,13 +561,14 @@ def xoa_dich_truyen_bi_rule_loai(driver, wait, records: dict, cleanup_tasks: lis
                     continue
                 if rec_id:
                     _log(f"      [CLEANUP] Xóa dịch truyền cũ đã bị loại: {info.get('ten') or name} ({info.get('tg_bat_dau') or t}) | {reason}")
-                    if _delete_record_by_id(driver, wait, rec_id):
+                    if _delete_info_with_creator_switch(ws, ma_bn, reopen_fn, info):
                         deleted += 1
                         seen_ids.add(rec_id)
                         time.sleep(0.25)
                 else:
                     _log(f"      [CLEANUP][!] Thấy bản cần xóa nhưng không lấy được ID: {info.get('ten') or name} ({info.get('tg_bat_dau') or t})")
 
+    _restore_original_account(ws, ma_bn, reopen_fn, original_username, original_password)
     return deleted
 
 def _date_key_from_time_str(raw: str) -> str:
@@ -703,7 +761,7 @@ def _has_correct_replacement_on_web(legacy_info: dict, med: dict, all_infos: lis
     return False
 
 
-def xoa_dich_truyen_legacy_parser_cu(driver, wait, records: dict, expected_meds: list) -> int:
+def xoa_dich_truyen_legacy_parser_cu(ws, ma_bn, reopen_fn, records: dict, expected_meds: list) -> int:
     """Xóa có mục tiêu các dòng sai do parser cũ tạo từ câu ``Pha NaCl...``.
 
     Các artifact được hỗ trợ có mục tiêu:
@@ -721,6 +779,8 @@ def xoa_dich_truyen_legacy_parser_cu(driver, wait, records: dict, expected_meds:
     if not records or not expected_meds:
         return 0
 
+    original_username = str(ws.config.get("username") or "").strip()
+    original_password = str(ws.config.get("password") or "")
     all_infos = [info for lst in (records or {}).values() for info in (lst or [])]
     deleted = 0
     seen_ids = set()
@@ -746,16 +806,18 @@ def xoa_dich_truyen_legacy_parser_cu(driver, wait, records: dict, expected_meds:
             f"      [CLEANUP_LEGACY] Xóa dòng sai do parser cũ: {name} ({t}) "
             f"-> đã có {med.get('Full_Name') or med.get('Search_Name') or ''} thay thế."
         )
-        if _delete_record_by_id(driver, wait, rec_id):
+        if _delete_info_with_creator_switch(ws, ma_bn, reopen_fn, info):
             deleted += 1
             seen_ids.add(rec_id)
             time.sleep(0.25)
 
+    _restore_original_account(ws, ma_bn, reopen_fn, original_username, original_password)
     return deleted
 
 def xoa_dich_truyen_thua_ngoai_du_lieu(
-    driver,
-    wait,
+    ws,
+    ma_bn,
+    reopen_fn,
     records: dict,
     managed_dates: set,
     expected_meds: list,
@@ -799,6 +861,8 @@ def xoa_dich_truyen_thua_ngoai_du_lieu(
         f"{', '.join(sorted(managed_dates))}; giữ lại {len(expected_keys)} key hợp lệ."
     )
 
+    original_username = str(ws.config.get("username") or "").strip()
+    original_password = str(ws.config.get("password") or "")
     deleted = 0
     seen_ids = set()
     all_infos = [info for lst in (records or {}).values() for info in (lst or [])]
@@ -830,13 +894,14 @@ def xoa_dich_truyen_thua_ngoai_du_lieu(
                 seen_ids.add(rec_id)
                 continue
             _log(f"      [CLEANUP_ORPHAN] Xóa dòng thừa ngoài dữ liệu chuẩn: {name} ({t})")
-            if _delete_record_by_id(driver, wait, rec_id):
+            if _delete_info_with_creator_switch(ws, ma_bn, reopen_fn, info):
                 deleted += 1
                 seen_ids.add(rec_id)
                 time.sleep(0.25)
         else:
             _log(f"      [CLEANUP_ORPHAN][!] Thấy dòng thừa nhưng không lấy được ID: {name} ({t})")
 
+    _restore_original_account(ws, ma_bn, reopen_fn, original_username, original_password)
     return deleted
 
 def _compare_med_vs_web(med, web_info, ten_y_ta_chuan):
