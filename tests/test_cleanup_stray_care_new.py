@@ -12,15 +12,35 @@ from selenium.webdriver.common.by import By
 
 
 def test_lay_danh_sach_ten_flattens_work_and_oncall_across_days():
-    config_names = {
-        "Monday": {"work": ["Lê Ngọc Diệu"], "oncall": ["Lê Thị Tuyết Đoan"]},
-        "Default": {"work": ["Lê Ngọc Diệu"], "oncall": ["Võ Phương Duy"]},
-        "days": {
-            "2026-09-20": {"work": ["Nguyễn Ngọc Xuyến"], "oncall": []},
+    config = {
+        "ds_dieu_duong": ["Lê Ngọc Diệu"],
+        "ten_dieu_duong": {
+            "Monday": {"work": ["Lê Ngọc Diệu"], "oncall": ["Lê Thị Tuyết Đoan"]},
+            "Default": {"work": ["Lê Ngọc Diệu"], "oncall": ["Võ Phương Duy"]},
+            "days": {
+                "2026-09-20": {"work": ["Nguyễn Ngọc Xuyến"], "oncall": []},
+            },
         },
     }
-    names = _lay_danh_sach_ten(config_names)
+    names = _lay_danh_sach_ten(config)
     assert set(names) == {"Lê Ngọc Diệu", "Lê Thị Tuyết Đoan", "Võ Phương Duy", "Nguyễn Ngọc Xuyến"}
+
+
+def test_lay_danh_sach_ten_includes_roster_names_not_in_current_schedule():
+    """Điều dưỡng đã nghỉ/đổi ca có thể còn trong roster nhưng không còn ở lịch
+    trực hiện tại — vẫn phải nhận diện được để không bỏ sót phiếu tồn đọng cũ."""
+    config = {
+        "ds_dieu_duong": ["Lê Ngọc Diệu", "Người Đã Nghỉ"],
+        "ten_dieu_duong": {"Default": {"work": ["Lê Ngọc Diệu"], "oncall": []}},
+    }
+    names = _lay_danh_sach_ten(config)
+    assert "Người Đã Nghỉ" in names
+
+
+def test_lay_danh_sach_ten_merges_extra_names():
+    config = {"ds_dieu_duong": ["Lê Ngọc Diệu"], "ten_dieu_duong": {}}
+    names = _lay_danh_sach_ten(config, extra_names=["Nguyễn Văn Cũ"])
+    assert set(names) == {"Lê Ngọc Diệu", "Nguyễn Văn Cũ"}
 
 
 def test_load_patients_accepts_plain_strings_and_objects(tmp_path):
@@ -48,6 +68,33 @@ def test_find_stray_new_entries_only_matches_tool_created_new_status():
     stray = _find_stray_new_entries(all_entries, list_nurse)
     assert len(stray) == 1
     assert stray[0]["creator"] == "Lê Ngọc Diệu"
+
+
+def test_find_stray_new_entries_skips_records_too_recent_by_default():
+    """Tránh xóa nhầm phiếu đang được thao tác dở — bỏ qua phiếu quá gần hiện tại."""
+    from datetime import datetime
+
+    now = datetime(2026, 9, 21, 15, 0)
+    list_nurse = ["Lê Ngọc Diệu"]
+    all_entries = [
+        {  # Mới nhập 1 giờ trước -> quá gần, không tính là tồn đọng.
+            "status": "Mới", "creator": "Lê Ngọc Diệu",
+            "cham_soc": "Thực hiện chỉ định thuốc", "dien_bien": "",
+            "time_full": "14:00 21/09/2026",
+        },
+        {  # Từ 2 ngày trước -> đủ cũ, tính là tồn đọng.
+            "status": "Mới", "creator": "Lê Ngọc Diệu",
+            "cham_soc": "Thực hiện chỉ định thuốc", "dien_bien": "",
+            "time_full": "08:00 19/09/2026",
+        },
+    ]
+    stray = _find_stray_new_entries(all_entries, list_nurse, min_age_hours=6, now=now)
+    assert len(stray) == 1
+    assert stray[0]["time_full"] == "08:00 19/09/2026"
+
+    # min_age_hours=0 tắt bộ lọc, giữ cả 2.
+    stray_no_filter = _find_stray_new_entries(all_entries, list_nurse, min_age_hours=0, now=now)
+    assert len(stray_no_filter) == 2
 
 
 class _FakeCell:
