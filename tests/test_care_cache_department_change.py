@@ -62,11 +62,14 @@ def _department_header_row(text):
 
 
 def _data_row(time_full, cham_soc, dien_bien="Người bệnh tỉnh", creator="Điều Dưỡng Test"):
-    cells = [_FakeCell("") for _ in range(11)]
-    cells[2] = _FakeCell(time_full)
-    cells[3] = _FakeCell(creator)
-    cells[9] = _FakeCell(dien_bien)
-    cells[10] = _FakeCell(cham_soc)
+    # Cấu trúc cột thật trên EMR: [0]checkbox [1]Tác vụ [2]TT [3]Thời gian
+    # [4]Người lập [5]N.T [6]T. [7]M [8]H.A [9]C.N [10]Diễn biến [11]Chăm sóc.
+    cells = [_FakeCell("") for _ in range(12)]
+    cells[2] = _FakeCell("Hoàn tất")
+    cells[3] = _FakeCell(time_full)
+    cells[4] = _FakeCell(creator)
+    cells[10] = _FakeCell(dien_bien)
+    cells[11] = _FakeCell(cham_soc)
     return _FakeRow(cells)
 
 
