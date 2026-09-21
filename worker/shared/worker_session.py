@@ -107,6 +107,68 @@ class WorkerSession:
             raise
         return self
 
+    def switch_account(self, username: str, password: str) -> bool:
+        """Đóng phiên đăng nhập hiện tại và đăng nhập lại bằng tài khoản khác.
+
+        Dùng khi cần đổi tài khoản EMR giữa chừng (ví dụ: nhập chăm sóc ca làm
+        bằng tài khoản điều dưỡng A, xong đổi sang tài khoản điều dưỡng B cho
+        ca trực) mà không muốn thoát hẳn tiến trình worker. Trả về True nếu
+        đăng nhập lại thành công. Nếu đăng nhập bằng tài khoản mới thất bại,
+        tự động thử khôi phục lại bằng tài khoản cũ để phiên làm việc còn
+        dùng tiếp được (trả về False) — chỉ khi CẢ khôi phục cũng thất bại
+        mới raise, vì lúc đó driver coi như đã hỏng hẳn.
+        """
+        username = str(username or "").strip()
+        password = str(password or "")
+        if not username or not password:
+            return False
+
+        old_config = self.config
+        current_username = str(old_config.get("username") or "").strip()
+        if username == current_username:
+            return True
+
+        _print(f">>> Đổi tài khoản EMR: {current_username or '(mặc định)'} -> {username}")
+        _safe_quit(self.driver)
+        self.driver = None
+        self.wait = None
+
+        new_config = dict(old_config)
+        new_config["username"] = username
+        new_config["password"] = password
+
+        headless = bool(new_config.get("headless", False))
+        try:
+            self.driver, self.wait = init_driver(headless=headless)
+            login_emr(self.driver, self.wait, new_config)
+            self.config = new_config
+            if self._post_login:
+                self._post_login(self)
+            return True
+        except Exception as e:
+            _print(f"[WARN] Đổi tài khoản EMR thất bại ({username}): {e}")
+            _safe_quit(self.driver)
+            self.driver = None
+            self.wait = None
+
+        # Đăng nhập tài khoản mới thất bại: thử khôi phục lại tài khoản cũ
+        # để worker còn tiếp tục xử lý được các BN/giờ khác thay vì hỏng cả phiên.
+        try:
+            self.driver, self.wait = init_driver(headless=headless)
+            login_emr(self.driver, self.wait, old_config)
+            self.config = old_config
+            if self._post_login:
+                self._post_login(self)
+            _print("[INFO] Đã khôi phục tài khoản EMR trước đó sau khi đổi tài khoản thất bại.")
+        except Exception as e2:
+            _safe_quit(self.driver)
+            self.driver = None
+            self.wait = None
+            raise RuntimeError(
+                f"Đổi tài khoản EMR thất bại và không khôi phục lại được phiên cũ: {e2}"
+            ) from e2
+        return False
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
         # 1) Đóng trình duyệt
         _safe_quit(self.driver)
