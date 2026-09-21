@@ -71,6 +71,31 @@ def test_regular_medication_day_still_keeps_baseline_5_8_16():
     assert hours == {5, 8, 16, 20, 23}
 
 
+class _FakeWS:
+    """WorkerSession giả cho test: mọi lần đổi tài khoản người tạo đều thành công."""
+
+    def __init__(self, username='acct.hientai'):
+        self.config = {'username': username, 'password': 'pw'}
+        self.driver = object()
+        self.switch_calls = []
+        self.open_care_form_calls = []
+
+    def switch_to_creator_account(self, creator, ma_bn, allow_completed=False):
+        self.switch_calls.append(('creator', creator, ma_bn, allow_completed))
+        self.config = dict(self.config, username=f'acct.{creator}')
+        self.driver = object()
+        return True
+
+    def switch_account(self, username, password):
+        self.switch_calls.append(('account', username, password))
+        self.config = dict(self.config, username=username, password=password)
+        self.driver = object()
+        return True
+
+    def open_care_form(self, ma_bn, allow_completed=False):
+        self.open_care_form_calls.append((ma_bn, allow_completed))
+
+
 def test_surgery_cleanup_removes_only_tool_rows_at_or_after_cutoff(monkeypatch):
     import care_cache
 
@@ -121,8 +146,10 @@ def test_surgery_cleanup_removes_only_tool_rows_at_or_after_cutoff(monkeypatch):
         manual['time_full']: [manual],
     }
 
+    ws = _FakeWS()
     care_cache.cleanup_cham_soc_cache(
-        object(),
+        ws,
+        'BN_TEST',
         cache,
         [],
         ['Lê Ngọc Diệu'],
@@ -164,3 +191,77 @@ def test_final_verify_detects_tool_rows_still_left_after_surgery_cutoff():
     }
     leftovers = tool_rows_at_or_after(cache, '07:00 15/08/2026', ['Lê Ngọc Diệu'])
     assert {x['time_full'] for x in leftovers} == {'08:00 15/08/2026', '05:00 16/08/2026'}
+
+
+def test_cleanup_switches_to_creator_account_before_deleting_and_restores_after(monkeypatch):
+    """EMR hiện chỉ cho đúng tài khoản người tạo phiếu tự sửa/xóa phiếu của họ.
+    cleanup_cham_soc_cache phải đổi sang tài khoản người tạo của TỪNG phiếu
+    trước khi xóa, rồi khôi phục lại đúng tài khoản ban đầu sau khi dọn xong."""
+    import care_cache
+
+    deleted = []
+    monkeypatch.setattr(care_cache, 'delete_cham_soc_new_by_id', lambda driver, care_id: deleted.append(care_id))
+
+    def row(time_full, care_id, creator):
+        return {
+            'time_full': time_full,
+            'hhmm': time_full.split()[0],
+            'status': 'Mới',
+            'creator': creator,
+            'dien_bien': 'Người bệnh tỉnh',
+            'cham_soc': 'Thực hiện chỉ định thuốc',
+            'id_edit': care_id,
+            'id_delete': care_id,
+        }
+
+    cache = {
+        '08:00 15/08/2026': [row('08:00 15/08/2026', 'A1', 'Lê Ngọc Diệu')],
+        '09:00 15/08/2026': [row('09:00 15/08/2026', 'B1', 'Nguyễn Văn Bình')],
+    }
+
+    ws = _FakeWS(username='acct.goc')
+    care_cache.cleanup_cham_soc_cache(
+        ws, 'BN_TEST', cache, [], ['Lê Ngọc Diệu', 'Nguyễn Văn Bình'], phase='TEST',
+    )
+
+    assert set(deleted) == {'A1', 'B1'}
+    creator_switches = [c[1] for c in ws.switch_calls if c[0] == 'creator']
+    assert creator_switches == ['Lê Ngọc Diệu', 'Nguyễn Văn Bình']
+    # Khôi phục lại đúng tài khoản gốc sau khi dọn xong.
+    account_switches = [c for c in ws.switch_calls if c[0] == 'account']
+    assert account_switches[-1] == ('account', 'acct.goc', 'pw')
+    assert ws.open_care_form_calls[-1] == ('BN_TEST', False)
+
+
+def test_cleanup_skips_delete_but_still_clears_cache_when_no_account_for_creator(monkeypatch):
+    """Không tra được tài khoản EMR cho người tạo -> không xóa được trên EMR
+    (bỏ qua, in cảnh báo) nhưng vẫn dọn khỏi cache nội bộ (giữ hành vi cũ)."""
+    import care_cache
+
+    deleted = []
+    monkeypatch.setattr(care_cache, 'delete_cham_soc_new_by_id', lambda driver, care_id: deleted.append(care_id))
+
+    row = {
+        'time_full': '08:00 15/08/2026',
+        'hhmm': '08:00',
+        'status': 'Mới',
+        'creator': 'Người Không Có Tài Khoản',
+        'dien_bien': 'Người bệnh tỉnh',
+        'cham_soc': 'Thực hiện chỉ định thuốc',
+        'id_edit': 'X1',
+        'id_delete': 'X1',
+    }
+    cache = {'08:00 15/08/2026': [row]}
+
+    class _NoAccountWS(_FakeWS):
+        def switch_to_creator_account(self, creator, ma_bn, allow_completed=False):
+            self.switch_calls.append(('creator', creator, ma_bn, allow_completed))
+            return False
+
+    ws = _NoAccountWS()
+    care_cache.cleanup_cham_soc_cache(
+        ws, 'BN_TEST', cache, [], ['Người Không Có Tài Khoản'], phase='TEST',
+    )
+
+    assert deleted == []
+    assert '08:00 15/08/2026' not in cache

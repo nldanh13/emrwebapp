@@ -1052,7 +1052,10 @@ def _input_one(
     # Luồng này chỉ bổ sung phiếu tại đúng T/G vào. Không chạy dọn cache vì có thể
     # xóa nhầm phiếu chăm sóc khác do điều dưỡng đang lập cho cùng người bệnh.
     expected_creator = nurses[0]
-    status, care_id = kiem_tra_bang_cached(
+    # TODO: luồng này (nhập BN mới bên phòng khám) chưa đổi tài khoản EMR theo
+    # người lập phiếu cũ khi sửa/xóa (giống input_care.py) — tạm thời bỏ qua
+    # người lập hiện có, chỉ tránh vỡ khi kiem_tra_bang_cached trả thêm giá trị.
+    status, care_id, _existing_creator = kiem_tra_bang_cached(
         cs_cache,
         time_str,
         hour,

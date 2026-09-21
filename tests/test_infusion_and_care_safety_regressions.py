@@ -22,7 +22,7 @@ def test_care_creator_only_mismatch_updates():
         'cham_soc': 'Thực hiện chỉ định thuốc',
         'id_edit': 'CARE_1',
     }
-    status, care_id = kiem_tra_bang_cached(
+    status, care_id, existing_creator = kiem_tra_bang_cached(
         {time_key: [row]},
         time_key,
         20,
@@ -31,7 +31,7 @@ def test_care_creator_only_mismatch_updates():
         'Người bệnh tỉnh',
         expected_creator='Điều Dưỡng Hiện Tại',
     )
-    assert (status, care_id) == ('UPDATE', 'CARE_1')
+    assert (status, care_id, existing_creator) == ('UPDATE', 'CARE_1', 'Điều Dưỡng Ca Trước')
 
 
 def test_care_content_mismatch_still_updates_even_when_creator_differs():
@@ -49,7 +49,7 @@ def test_care_content_mismatch_still_updates_even_when_creator_differs():
         'cham_soc': 'Nội dung cũ',
         'id_edit': 'CARE_2',
     }
-    status, care_id = kiem_tra_bang_cached(
+    status, care_id, existing_creator = kiem_tra_bang_cached(
         {time_key: [row]},
         time_key,
         20,
@@ -58,7 +58,7 @@ def test_care_content_mismatch_still_updates_even_when_creator_differs():
         'Người bệnh tỉnh',
         expected_creator='Điều Dưỡng Hiện Tại',
     )
-    assert (status, care_id) == ('UPDATE', 'CARE_2')
+    assert (status, care_id, existing_creator) == ('UPDATE', 'CARE_2', 'Điều Dưỡng Ca Trước')
 
 
 def test_norm_med_key_equates_trasolu_nacl_spellings():

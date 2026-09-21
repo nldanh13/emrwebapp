@@ -45,7 +45,14 @@ from selenium_emr_helpers import (
     ensure_inpatient_list    as _ensure_inpatient_list_base,
     search_patient_on_ward_or_raise as _search_patient_on_ward_or_raise_base,
     debug_page               as _debug_page_base,
+    wait_after_action        as _wait_after_action_base,
 )
+from nurse_emr_accounts import get_emr_account_for_nurse
+try:
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+except ModuleNotFoundError:  # Cho phép import module này khi chưa cài Selenium (test thuần).
+    By = EC = None  # type: ignore
 
 
 # ── Types ─────────────────────────────────────────────────────────────────────
@@ -243,6 +250,44 @@ class WorkerSession:
             debug_func=lambda d, lbl: _debug_page_base(d, lbl, log_func=_print),
             allow_completed=allow_completed,
         )
+
+    def open_care_form(self, ma_bn: str, *, allow_completed: bool = False) -> None:
+        """Tìm BN rồi mở hồ sơ + tab "TT chăm sóc" (icon mắt > TT chăm sóc).
+
+        Gộp lại trình tự đang lặp ở nhiều nơi (input_care.py, các script dọn
+        dẹp) — tìm BN xong luôn cần bấm đúng 2 bước này mới vào được bảng
+        phiếu chăm sóc. Raise nếu không tìm/mở được.
+        """
+        self.search_patient(ma_bn, allow_completed=allow_completed)
+        driver, wait = self.driver, self.wait
+        wait.until(EC.element_to_be_clickable((By.XPATH, "//i[contains(@class, 'fa-eye')]"))).click()
+        wait.until(EC.element_to_be_clickable((By.ID, "btnTTCS"))).click()
+        _wait_after_action_base(driver, 0.8, ready_timeout=10)
+
+    def switch_to_creator_account(self, creator: str, ma_bn: str, *, allow_completed: bool = False) -> bool:
+        """Đảm bảo đang đăng nhập đúng tài khoản EMR của `creator` và đang mở
+        hồ sơ BN `ma_bn` — dùng trước khi sửa/xóa một phiếu do người đó tạo,
+        vì EMR hiện chỉ cho đúng tài khoản người tạo tự sửa/xóa phiếu của
+        mình (xem worker/nurse_emr_accounts.py).
+
+        Trả về False nếu không tra được tài khoản EMR cho `creator`, hoặc đổi
+        tài khoản/mở lại hồ sơ thất bại — khi đó KHÔNG được thao tác sửa/xóa
+        phiếu này, vì tài khoản đang đăng nhập không phải người tạo.
+        """
+        account = get_emr_account_for_nurse(creator)
+        if not account:
+            return False
+
+        current_username = str(self.config.get("username") or "").strip()
+        if account["username"] != current_username:
+            if not self.switch_account(account["username"], account["password"]):
+                return False
+            try:
+                self.open_care_form(ma_bn, allow_completed=allow_completed)
+            except Exception as e:
+                _print(f"[WARN] Đổi tài khoản EMR xong nhưng không mở lại được hồ sơ BN {ma_bn}: {e}")
+                return False
+        return True
 
     # ── Class-level helper: ghi result rỗng và thoát sớm ─────────────────────
 
