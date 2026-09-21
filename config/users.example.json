@@ -5,7 +5,9 @@
     "role": "operator",
     "token": "replace-with-a-random-token-at-least-16-characters",
     "sessions": ["default"],
-    "enabled": true
+    "enabled": true,
+    "emr_username": "",
+    "emr_password": ""
   },
   {
     "id": "supervisor01",
@@ -13,6 +15,8 @@
     "role": "supervisor",
     "token": "replace-with-a-different-random-token-at-least-16-characters",
     "sessions": "*",
-    "enabled": true
+    "enabled": true,
+    "emr_username": "",
+    "emr_password": ""
   }
 ]

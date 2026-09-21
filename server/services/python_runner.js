@@ -173,6 +173,7 @@ function runWorker(cmd, args, opts = {}) {
     timeoutMs: PY_TIMEOUT_MS,
     onSpawn:   opts.onSpawn,
     runtimeDir: opts.runtimeDir,
+    extraEnv:  opts.extraEnv,
   });
 }
 
@@ -186,6 +187,7 @@ function runScript(scriptName, args = [], opts = {}) {
     cwd:       opts.cwd,
     onSpawn:   opts.onSpawn,
     runtimeDir: opts.runtimeDir,
+    extraEnv:  opts.extraEnv,
   });
 }
 

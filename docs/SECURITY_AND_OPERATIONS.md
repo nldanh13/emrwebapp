@@ -19,6 +19,8 @@ Bật `EMR_REQUIRE_SECRET_ENV=1` để từ chối mật khẩu rõ trong cấu 
 
 Mỗi tài khoản có một vai trò và có thể giới hạn danh sách session. Không chia sẻ token. Khi nhân sự thay đổi, thu hồi token ngay và kiểm tra audit.
 
+Mỗi tài khoản trong `EMR_USERS_FILE` có thể khai thêm `emr_username`/`emr_password` — tài khoản EMR THẬT riêng của người đó. Các thao tác GHI vào EMR (nhập chăm sóc, dịch truyền, thủ thuật, VTYT — `/api/run-input-*`) sẽ tự dùng tài khoản riêng này để thao tác hiện đúng tên người làm trên EMR của bệnh viện, thay vì tài khoản chung. Nếu một tài khoản chưa khai `emr_username`/`emr_password`, các thao tác đó tự rơi về tài khoản chung trong `config/config.json` như trước — không ai bị chặn dùng app vì thiếu tài khoản riêng. Lấy dữ liệu (quét, lấy chi tiết) luôn dùng tài khoản chung, không cần tài khoản riêng.
+
 ## 4. Export nghiên cứu
 
 Dữ liệu luôn được ẩn danh mặc định. Muốn export có định danh cần đồng thời:

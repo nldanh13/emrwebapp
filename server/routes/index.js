@@ -98,5 +98,6 @@ router.use(require('./research'));
 router.use(require('./report'));
 router.use(require('./care_baseline'));
 router.use(require('./data_transfer'));
+router.use(require('./admin_users'));
 
 module.exports = router;

@@ -41,13 +41,28 @@ function normalizeSessions(value) {
   return [...new Set(arr.map(sanitizeSessionId).filter(Boolean))];
 }
 
-function loadUsersPayload() {
+const DEFAULT_USERS_FILE = path.join(ROOT_DIR, 'config', 'users.json');
+
+// Nơi thật sự đọc/ghi danh sách tài khoản. Ưu tiên EMR_USERS_JSON (inline, chỉ
+// đọc — không có file để ghi) > EMR_USERS_FILE (đường dẫn tuỳ chỉnh) >
+// config/users.json (mặc định, giống config.json/medication_catalog.json —
+// không cần khai biến môi trường mới dùng được).
+function resolveUsersFileInfo() {
   const inline = String(process.env.EMR_USERS_JSON || '').trim();
+  if (inline) return { mode: 'inline', path: null, writable: false };
   const configuredFile = String(process.env.EMR_USERS_FILE || '').trim();
-  if (inline) return JSON.parse(inline);
-  if (!configuredFile) return [];
-  const file = path.isAbsolute(configuredFile) ? configuredFile : path.join(ROOT_DIR, configuredFile);
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (configuredFile) {
+    const file = path.isAbsolute(configuredFile) ? configuredFile : path.join(ROOT_DIR, configuredFile);
+    return { mode: 'file', path: file, writable: true };
+  }
+  return { mode: 'default', path: DEFAULT_USERS_FILE, writable: true };
+}
+
+function loadUsersPayload() {
+  const info = resolveUsersFileInfo();
+  if (info.mode === 'inline') return JSON.parse(process.env.EMR_USERS_JSON);
+  if (!fs.existsSync(info.path)) return [];
+  return JSON.parse(fs.readFileSync(info.path, 'utf8'));
 }
 
 function normalizeUser(raw, index) {
@@ -67,13 +82,21 @@ function normalizeUser(raw, index) {
     token,
     sessions: normalizeSessions(raw.sessions ?? raw.session_ids ?? null),
     enabled: raw.enabled !== false,
+    // Tài khoản EMR THẬT riêng của người này — chỉ dùng khi ghi/nhập dữ liệu
+    // (chăm sóc, dịch truyền, thủ thuật, VTYT) để thao tác hiện đúng tên người
+    // làm trên EMR của bệnh viện. Không đưa vào publicPrincipal() — không bao
+    // giờ gửi xuống trình duyệt.
+    emrUsername: String(raw.emr_username || '').trim(),
+    emrPassword: String(raw.emr_password || ''),
   });
 }
 
-function loadUsers() {
-  const payload = loadUsersPayload();
+// Chuẩn hoá + kiểm tra toàn bộ danh sách (kể cả tài khoản enabled:false) — dùng
+// chung cho việc load lúc khởi động VÀ để admin UI kiểm tra trước khi ghi file
+// (không bao giờ để ghi ra file users.json không hợp lệ).
+function normalizeUsersList(payload) {
   const rows = Array.isArray(payload) ? payload : Object.entries(payload || {}).map(([id, value]) => ({ id, ...(value || {}) }));
-  const users = rows.map(normalizeUser).filter(user => user.enabled);
+  const users = rows.map(normalizeUser);
   const seenIds = new Set();
   const seenTokenHashes = new Set();
   for (const user of users) {
@@ -83,17 +106,26 @@ function loadUsers() {
     if (seenTokenHashes.has(hash)) throw new Error('Hai EMR user không được dùng chung token.');
     seenTokenHashes.add(hash);
   }
-  return Object.freeze(users);
+  return users;
+}
+
+function loadUsers() {
+  return Object.freeze(normalizeUsersList(loadUsersPayload()).filter(user => user.enabled));
 }
 
 let USERS;
 let USERS_ERROR = null;
-try {
-  USERS = loadUsers();
-} catch (err) {
-  USERS = Object.freeze([]);
-  USERS_ERROR = err;
+function reloadUsers() {
+  try {
+    USERS = loadUsers();
+    USERS_ERROR = null;
+  } catch (err) {
+    USERS = Object.freeze([]);
+    USERS_ERROR = err;
+  }
+  return USERS_ERROR;
 }
+reloadUsers();
 
 function assertAuthConfiguration() {
   if (USERS_ERROR) throw USERS_ERROR;
@@ -130,6 +162,109 @@ function resolvePrincipal(token) {
     return { id: 'legacy_admin', name: 'Legacy administrator', role: 'admin', sessions: null, auth_type: 'legacy_app_token' };
   }
   return null;
+}
+
+// ── Quản lý tài khoản (dùng bởi /api/admin/users) ───────────────────────────
+
+function getUsersFileInfo() {
+  return resolveUsersFileInfo();
+}
+
+// Đọc thẳng từ file trên đĩa (không dùng USERS cache đang lọc enabled:true)
+// để trang "Thiết lập tài khoản" thấy đúng nội dung file hiện tại, kể cả tài
+// khoản đang tắt. Không throw khi file lỗi — trả kèm error để UI hiển thị.
+function listAllUsersRaw() {
+  try {
+    const users = normalizeUsersList(loadUsersPayload());
+    return { users, error: null };
+  } catch (err) {
+    return { users: [], error: String(err.message || err) };
+  }
+}
+
+function generateToken() {
+  return crypto.randomBytes(24).toString('base64url');
+}
+
+function writeUsersFile(users) {
+  const info = resolveUsersFileInfo();
+  if (info.mode === 'inline') {
+    throw new Error('Danh sách tài khoản đang được cấu hình qua biến môi trường EMR_USERS_JSON — không thể sửa từ giao diện. Hãy sửa biến môi trường đó rồi khởi động lại server.');
+  }
+  // Validate toàn bộ danh sách trước khi ghi — không bao giờ để file trên đĩa
+  // rơi vào trạng thái không hợp lệ (trùng id/token, token quá ngắn...).
+  const payload = users.map(u => ({
+    id: u.id,
+    name: u.name,
+    role: u.role,
+    token: u.token,
+    sessions: u.sessions == null ? '*' : u.sessions,
+    enabled: u.enabled !== false,
+    ...(u.emrUsername || u.emrPassword ? { emr_username: u.emrUsername || '', emr_password: u.emrPassword || '' } : {}),
+  }));
+  normalizeUsersList(payload);
+  fs.mkdirSync(path.dirname(info.path), { recursive: true });
+  fs.writeFileSync(info.path, JSON.stringify(payload, null, 2), { encoding: 'utf8', mode: 0o600 });
+  reloadUsers();
+}
+
+function createUser({ name, role, sessions, enabled, emrUsername, emrPassword }) {
+  const { users } = listAllUsersRaw();
+  const baseId = String(name || 'nhan_vien')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'nhan_vien';
+  let id = baseId;
+  let n = 1;
+  while (users.some(u => u.id === id)) { n += 1; id = `${baseId}_${n}`; }
+  const created = {
+    id, name: String(name || id).trim() || id, role: role || 'operator', token: generateToken(),
+    sessions: sessions ?? '*', enabled: enabled !== false,
+    emrUsername: String(emrUsername || '').trim(), emrPassword: String(emrPassword || ''),
+  };
+  writeUsersFile([...users, created]);
+  return created;
+}
+
+function updateUser(id, patch = {}) {
+  const { users } = listAllUsersRaw();
+  const idx = users.findIndex(u => u.id === id);
+  if (idx === -1) throw new Error(`Không tìm thấy tài khoản: ${id}`);
+  const current = users[idx];
+  const next = {
+    ...current,
+    name: patch.name !== undefined ? String(patch.name || '').trim() || current.name : current.name,
+    role: patch.role !== undefined ? patch.role : current.role,
+    sessions: patch.sessions !== undefined ? patch.sessions : current.sessions,
+    enabled: patch.enabled !== undefined ? Boolean(patch.enabled) : current.enabled,
+    emrUsername: patch.emrUsername !== undefined ? String(patch.emrUsername || '').trim() : current.emrUsername,
+    emrPassword: patch.emrPassword !== undefined ? String(patch.emrPassword || '') : current.emrPassword,
+    token: patch.regenerateToken ? generateToken() : current.token,
+  };
+  const updated = [...users];
+  updated[idx] = next;
+  writeUsersFile(updated);
+  return next;
+}
+
+function deleteUser(id) {
+  const { users } = listAllUsersRaw();
+  if (!users.some(u => u.id === id)) throw new Error(`Không tìm thấy tài khoản: ${id}`);
+  writeUsersFile(users.filter(u => u.id !== id));
+}
+
+// Tài khoản EMR thật riêng của người đang đăng nhập Data Hub — dùng cho các
+// thao tác GHI vào EMR (nhập chăm sóc/dịch truyền/thủ thuật/VTYT) để hiện
+// đúng tên người làm trên EMR của bệnh viện. Trả về null nếu người này chưa
+// được cấp tài khoản riêng — nơi gọi tự rơi về tài khoản chung trong config.json.
+function getEmrCredentials(userId) {
+  const id = String(userId || '').trim();
+  if (!id) return null;
+  const user = USERS.find(u => u.id === id);
+  if (!user || !user.emrUsername || !user.emrPassword) return null;
+  return { username: user.emrUsername, password: user.emrPassword };
 }
 
 function localPrincipal() {
@@ -188,6 +323,8 @@ function requiredRoleForRequest(req) {
   const routePath = String(req.path || '');
   if (method === 'OPTIONS') return 'viewer';
   if (routePath === '/auth/me' || routePath === '/health') return 'viewer';
+  // Quản lý tài khoản (token, tài khoản EMR riêng) — chỉ admin, mọi method.
+  if (routePath.startsWith('/admin/users')) return 'admin';
   if (routePath.startsWith('/audit') || routePath.startsWith('/tasks') || routePath === '/diagnostics' || routePath === '/session-logs') return 'supervisor';
   if (routePath.startsWith('/research')) return ['GET', 'HEAD'].includes(method) ? 'researcher' : 'supervisor';
 
@@ -259,6 +396,12 @@ module.exports = {
   canAccessSession,
   sessionFromRequest,
   authStatus,
+  getEmrCredentials,
   isTruthy,
   requiredRoleForRequest,
+  getUsersFileInfo,
+  listAllUsersRaw,
+  createUser,
+  updateUser,
+  deleteUser,
 };

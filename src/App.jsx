@@ -10,6 +10,7 @@ import RecordsCheckTab from './components/records/RecordsCheckTab.jsx';
 import SickLeaveTab from './components/SickLeaveTab.jsx';
 import VtytCatalogManager from './components/VtytCatalogManager.jsx';
 import MedicationCatalogManager from './components/MedicationCatalogManager.jsx';
+import AccountSettingsTab from './components/AccountSettingsTab.jsx';
 import EmrStructureScanTab from './components/EmrStructureScanTab.jsx';
 import ClinicTab from './components/ClinicTab.jsx';
 import ResearchTab from './components/ResearchTab.jsx';
@@ -401,6 +402,7 @@ export default function App() {
             {tab === 'sick-leave'    && <SickLeaveTab toast={toast} workDateRange={workDateRange} />}
             {tab === 'vtyt-catalog' && <VtytCatalogManager />}
             {tab === 'medication-catalog' && <MedicationCatalogManager />}
+            {tab === 'account-settings' && <AccountSettingsTab />}
             {tab === 'emr-structure-scan' && <EmrStructureScanTab />}
             {tab === 'clinic'       && <ClinicTab toast={toast} />}
             {tab === 'nurse'        && <NurseTab toast={toast} />}
