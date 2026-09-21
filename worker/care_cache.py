@@ -88,22 +88,28 @@ def _cs_goto_page(driver, page_idx0):
     _cs_wait_processing_done(driver)
 
 
-def scan_cham_soc_cache(driver, ngay_lam_viec, hours_needed=None):
+def scan_cham_soc_cache(driver, ngay_lam_viec, hours_needed=None, *, all_dates=False):
     """Quét TT chăm sóc và tạo cache theo time_str.
 
     Nếu truyền hours_needed (list[int]): chỉ duyệt tới khi đã "phủ" được khoảng thời gian cần nhập.
     Nếu không truyền: quét hết các trang như cũ.
+    all_dates=True: bỏ giới hạn ngày (mặc định chỉ giữ ngay_lam_viec + hôm sau) — dùng
+    khi cần quét dọn toàn bộ lịch sử phiếu của 1 BN (vd tìm phiếu "Mới" tồn đọng nhiều
+    ngày), không phải quét cho đúng 1 ngày làm việc cụ thể.
     """
     cache = {}
     entries = []
 
-    # Chỉ quan tâm ngày làm việc và ngày +1 (0h, 5h, 6h có thể rơi vào ngày hôm sau)
-    try:
-        dt = datetime.strptime(ngay_lam_viec, "%d/%m/%Y")
-        valid_dates = {dt.strftime("%d/%m/%Y"), (dt + timedelta(days=1)).strftime("%d/%m/%Y")}
-    except Exception as _e:  # was: bare except
-        LOG.debug(f"[except] {_e}")
+    if all_dates:
         valid_dates = set()
+    else:
+        # Chỉ quan tâm ngày làm việc và ngày +1 (0h, 5h, 6h có thể rơi vào ngày hôm sau)
+        try:
+            dt = datetime.strptime(ngay_lam_viec, "%d/%m/%Y")
+            valid_dates = {dt.strftime("%d/%m/%Y"), (dt + timedelta(days=1)).strftime("%d/%m/%Y")}
+        except Exception as _e:  # was: bare except
+            LOG.debug(f"[except] {_e}")
+            valid_dates = set()
 
     # chuẩn bị tập key cần tìm (nếu có)
     required_keys = set()
