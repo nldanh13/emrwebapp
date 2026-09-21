@@ -824,6 +824,33 @@ def main():
         driver, wait = ws.driver, ws.wait
 
         count = 0
+        default_emr_username = str(CONFIG.get("username") or "").strip()
+        default_emr_password = str(CONFIG.get("password") or "")
+
+        # ── PHASE 1: tính toán (KHÔNG mở trình duyệt) danh sách care_jobs của
+        # từng bệnh nhân, rồi nhóm theo tài khoản EMR cần đăng nhập (điều dưỡng
+        # phụ trách giờ đó — xem worker/nurse_emr_accounts.py). Tách phase này để
+        # cả đợt chạy chỉ cần đăng nhập lần lượt theo TỪNG tài khoản EMR (không
+        # phải từng bệnh nhân): xử lý hết mọi BN thuộc 1 tài khoản rồi mới đổi
+        # sang tài khoản kế tiếp — đúng luồng "ca làm hết mọi BN → đổi tài khoản
+        # → ca trực hết mọi BN".
+        patient_plans = []
+        # Ép cứng thứ tự lượt xử lý: mọi tài khoản của ca LÀM luôn chạy trước
+        # mọi tài khoản của ca TRỰC, bất kể dữ liệu/BN nào xuất hiện trước.
+        work_account_order = []
+        oncall_account_order = []
+        other_account_order = []
+        account_passwords = {}
+
+        def _shift_kind_for_hour(h):
+            """'work' (07-10h, 13-16h) hoặc 'oncall' (còn lại) — khớp đúng quy
+            tắc ca trong get_nurse_by_shift() ở worker/utils.py."""
+            try:
+                h = int(h)
+            except Exception:
+                return "work"
+            return "work" if (7 <= h <= 10 or 13 <= h <= 16) else "oncall"
+
         for patient_key, info in patient_data.items():
             ma_bn = info.get("ma_bn") or patient_key[0]
             count += 1
@@ -1060,47 +1087,6 @@ def main():
                 ws.results[result_key] = {"success": True, "error": None, "skipped": True, "reason": reason}
                 mark_task_status(progress_path, "input_care", result_key, "skipped", reason)
                 continue
-
-            try:
-                ws.search_patient(ma_bn, allow_completed=is_discharge_day)
-            except Exception as _e:
-                err_text = str(_e)
-                if surgery_active or ("Đi mổ" in err_text) or ("Gây mê hồi sức" in err_text) or ("không còn ở khoa" in err_text.lower()):
-                    reason = (surgery_reason or "Người bệnh không còn ở trạng thái Đang thực hiện") + f"; {_e}"
-                    print(f"   [SKIP] {reason}")
-                    ws.results[result_key] = {"success": True, "error": None, "skipped": True, "reason": reason}
-                    mark_task_status(progress_path, "input_care", result_key, "skipped", reason)
-                    continue
-                raise
-            mark_task_status(progress_path, "input_care", result_key, "running")
-
-            try:
-                wait.until(EC.element_to_be_clickable((By.XPATH, "//i[contains(@class, 'fa-eye')]"))).click()
-                wait.until(EC.element_to_be_clickable((By.ID, "btnTTCS"))).click()
-                _wait_after_action(driver, 0.8, ready_timeout=10)
-            except Exception as _e:  # was: bare except
-                LOG.debug(f"[except] {_e}")
-                print("   [!] Không vào được hồ sơ.")
-                ws.results[result_key] = {"success": False, "error": f"Không vào được hồ sơ: {_e}"}
-                mark_task_status(progress_path, "input_care", result_key, "failed", f"Không vào được hồ sơ: {_e}")
-                ws.goto_inpatient_list(); continue
-
-            # Quét 1 lần đầu/BN để tạo cache (không quét lại mỗi giờ) + dọn phiếu 'Mới' (dư) / sai giờ (do tool)
-            cs_cache, _entries0 = scan_cham_soc_cache(driver, ngay_lam_viec, hours_needed=scan_targets)
-            LOG.info(_ctx_prefix() + f"[cache] scanned_rows={len(_entries0)} keys={len(cs_cache)}")
-            cleanup_cham_soc_cache(
-                driver,
-                cs_cache,
-                sorted_hours,
-                LIST_NURSE,
-                phase="ĐẦU",
-                extra_valid_time_keys=special_time_keys,
-                protect_before_time_key=receive_time_key if is_postop_receive_day else None,
-                remove_tool_rows_at_or_after_time_key=surgery_cutoff_text if surgery_active else None,
-            )
-
-            entry_obj = info.get("entry") or {}
-
             care_jobs = []
             for ev in special_events:
                 if not isinstance(ev, dict):
@@ -1151,198 +1137,8 @@ def main():
                 care_jobs = _kept_jobs
 
             care_jobs = sorted(care_jobs, key=_care_job_sort_key)
-            job_failures = []
 
-            def _process_job(job):
-                h = int(job.get("hour") or 0)
-                time_str = job.get("time_str") or tao_thoi_gian_lap(h, ngay_lam_viec)
-                actions_set = set(job.get("actions_set") or set())
-                needs_vitals = bool(job.get("needs_vitals", False))
-
-                if job.get("kind") == "special":
-                    final_care_content = str(job.get("care") or "").strip()
-                    dien_bien_text = str(job.get("dien_bien") or "").strip() or "Người bệnh tỉnh"
-                else:
-                    # Chăm sóc: xử lý toàn bộ giờ có trong dữ liệu/tập giờ tính toán
-                    care_parts = []
-
-                    # Bổ sung chăm sóc mặc định:
-                    # - giờ có thuốc: 'Thực hiện chỉ định thuốc'
-                    # - không thêm 'Dự trù thuốc' vào chăm sóc
-                    # - mặc định ở 5h/16h: 'Lấy dấu hiệu sinh tồn'
-                    # - ngày nhận bệnh sau mổ/chuyển khoa vẫn giữ cữ 16h và 5h ngày mai để lấy dấu hiệu sinh tồn.
-                    care_parts = them_cham_soc_mac_dinh(
-                        care_parts,
-                        h,
-                        med_hours,
-                        add_default_vitals=True,
-                    )
-
-                    # Bổ sung chăm sóc theo action. Nếu có tên chỉ định gốc thì
-                    # dùng nguyên tên đó để khớp giao diện (không rút gọn thành
-                    # "Thay băng"). Action không có nhãn gốc mới dùng mẫu mặc định.
-                    action_care_labels = job.get("action_care_labels") or {}
-                    covered_actions = set()
-                    existing_norm = {chuan_hoa_unicode(x) for x in care_parts}
-                    for action_id in sorted(actions_set):
-                        labels = action_care_labels.get(action_id) or []
-                        if not labels:
-                            continue
-                        covered_actions.add(action_id)
-                        for label in labels:
-                            label_text = str(label or "").strip()
-                            label_norm = chuan_hoa_unicode(label_text)
-                            if label_text and label_norm not in existing_norm:
-                                care_parts.append(label_text)
-                                existing_norm.add(label_norm)
-
-                    care_parts = extend_care_parts(care_parts, actions_set - covered_actions)
-
-                    # Diễn biến:
-                    # - Chỉ cữ 8h dùng nhận định chi tiết ở ngày thường
-                    # - Ngày nhận bệnh sau mổ/chuyển khoa: diễn biến chi tiết nằm ở phiếu đặc biệt, giờ khác chỉ ghi 'Người bệnh tỉnh'
-                    if (not is_postop_receive_day) and (not is_admission_transfer_day) and h == 8:
-                        ctx = build_placeholder_context(entry_obj)
-                        dien_bien_text = build_dien_bien(DIEN_BIEN_BASE_LINES, actions_set, ctx) or "Người bệnh tỉnh"
-                    else:
-                        dien_bien_text = "Người bệnh tỉnh"
-
-                    final_care_content = " + ".join(care_parts)
-                    final_care_content = final_care_content[0].upper() + final_care_content[1:] if final_care_content else ""
-
-                    # Chặn nội dung 'sau mổ/vết mổ' khi dữ liệu không có ngữ cảnh phẫu thuật/vết thương
-                    if final_care_content and (("vết mổ" in final_care_content.lower()) or ("sau mổ" in final_care_content.lower())):
-                        has_ctx = _has_surgical_context(entry_obj, actions_set)
-                        LOG.info(_ctx_prefix() + f"[postop_guard] detected_postop_text=True has_surgical_context={has_ctx}")
-                        if not has_ctx:
-                            before = final_care_content
-                            final_care_content = _sanitize_postop_text(final_care_content)
-                            LOG.warning(_ctx_prefix() + f"[sanitize_postop] removed_postop_parts. before='{before[:120]}' after='{final_care_content[:120]}'")
-
-                LOG.debug(_ctx_prefix() + f"[expected] h={h} time='{time_str}' kind={job.get('kind')} actions={sorted(list(actions_set))} care='{(final_care_content or '')[:200]}' dien_bien='{(dien_bien_text or '')[:160]}'")
-                print(f"   + Giờ {time_str}:", end=" ")
-
-                expected_creator = ""
-                try:
-                    expected_creator = get_nurse_by_shift(time_str, CONFIG_TEN_GOC or {})
-                except Exception as _e:
-                    LOG.debug(f"[except] {_e}")
-
-                stt, care_id = kiem_tra_bang_cached(
-                    cs_cache,
-                    time_str,
-                    h,
-                    final_care_content,
-                    LIST_NURSE,
-                    dien_bien_text,
-                    needs_vitals=needs_vitals,
-                    expected_creator=expected_creator,
-                )
-
-                if stt == "PERFECT":
-                    print("-> [RESULT] OK (đã đúng, không cần sửa).")
-                    return
-                elif stt == "SKIP":
-                    msg_skip = f"{time_str}: đã có phiếu nhưng EMR không trả mã sửa/xóa; không tạo trùng"
-                    print("-> [RESULT] KHÔNG SỬA ĐƯỢC (không tạo trùng).")
-                    job_failures.append(msg_skip)
-                    LOG.warning(_ctx_prefix() + f"[job_uneditable] {msg_skip}")
-                    return
-                elif stt == "UPDATE":
-                    print("-> [ACTION] SỬA PHIẾU CŨ: Sửa → Thu hồi → cập nhật → Hoàn tất.", end=" ")
-                    try:
-                        if care_id:
-                            open_cham_soc_by_id(driver, care_id)
-                        else:
-                            raise RuntimeError("Không lấy được id phiếu")
-                        wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
-                        click_thu_hoi_cham_soc(driver)
-                    except Exception as _e:
-                        print(f"[WARN] Không mở/thu hồi được phiếu cũ: {_e}", end=" ")
-                elif stt == "EDIT":
-                    print("-> [ACTION] THU HỒI/XÓA PHIẾU CŨ.", end=" ")
-                    try:
-                        if care_id:
-                            open_cham_soc_by_id(driver, care_id)
-                        else:
-                            raise RuntimeError("Không lấy được id phiếu")
-                        wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
-                        click_thu_hoi_va_xoa(driver)
-                    except Exception as _e:
-                        print(f"[WARN] Không thu hồi/xóa được: {_e}")
-                        # vẫn tiếp tục tạo lại phiếu mới
-                    print("-> TẠO LẠI.", end=" ")
-                    _safe_js_click(driver, wait.until(EC.element_to_be_clickable((By.ID, "btnThemCS"))))
-                else:
-                    print("-> TẠO MỚI.", end=" ")
-                    _safe_js_click(driver, wait.until(EC.element_to_be_clickable((By.ID, "btnThemCS"))))
-
-                wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
-
-                success = False
-                for attempt in range(1, 4):
-                    # 1) Set giờ trước (đợi ổn định), tránh việc điền các trường rồi bị reset do đổi giờ
-                    ok_time = set_thoi_gian_lap(driver, time_str, max_retry=2)
-                    if not ok_time:
-                        print(f"[Sai giờ] -> Retry.", end=" ")
-                        time.sleep(0.5)
-                        continue
-
-                    # 2) Điền các trường khác
-                    LOG.debug(_ctx_prefix() + f"[fill] hour={h} time='{time_str}' attempt={attempt} care_len={len(final_care_content or '')} db_len={len(dien_bien_text or '')} needs_vitals={needs_vitals}")
-                    form_ok = dien_thong_tin(
-                        driver, h, time_str, final_care_content, LIST_NURSE, dien_bien_text,
-                        needs_vitals=needs_vitals, config_ten_goc=CONFIG_TEN_GOC,
-                    )
-                    if not form_ok:
-                        print("[Sai Người lập] -> Retry.", end=" ")
-                        LOG.warning(_ctx_prefix() + f"[fill_failed] time='{time_str}' reason=invalid_creator attempt={attempt}")
-                        time.sleep(0.5)
-                        continue
-                    btn_luu = driver.find_element(By.ID, "btnSaveChamSocPopupDraw")
-                    driver.execute_script("arguments[0].click();", btn_luu)
-                    time.sleep(1.5); handle_popups(driver)
-
-                    try:
-                        btn_hoan_tat = driver.find_element(By.ID, "btnPopupHOANTAT")
-                        driver.execute_script("arguments[0].click();", btn_hoan_tat)
-                    except Exception as _e:  # was: bare except
-                        LOG.debug(f"[except] {_e}")
-                        pass
-
-                    time.sleep(2); handle_popups(driver)
-                    stt_badge = check_trang_thai_badge(driver)
-                    if "Hoàn tất" in stt_badge:
-                        print("-> [RESULT] XONG.")
-                        success = True
-                        break
-                    elif "Mới" in stt_badge:
-                        print(".", end=" ")
-                    else:
-                        if "Hoàn tất" in stt_badge:
-                            success = True
-                            break
-
-                if not success:
-                    msg_fail = f"{time_str}: không lưu/hoàn tất được phiếu chăm sóc"
-                    job_failures.append(msg_fail)
-                    print(" -> FAIL.")
-                    LOG.warning(_ctx_prefix() + f"[job_failed] {msg_fail}")
-                try:
-                    back_btn = driver.find_element(By.XPATH, "//a[contains(@onclick, 'fnbackFormChamSoc')]")
-                    driver.execute_script("arguments[0].click();", back_btn)
-                    time.sleep(1)
-                except Exception as _e:  # was: bare except
-                    LOG.debug(f"[except] {_e}")
-                    pass
-
-            # Nhóm các job liền kề theo tài khoản EMR cần đăng nhập (điều dưỡng phụ
-            # trách giờ đó — xem worker/nurse_emr_accounts.py). Giờ không xác định
-            # được ca, hoặc điều dưỡng phụ trách chưa cấu hình tài khoản riêng, dùng
-            # lại tài khoản EMR mặc định (tài khoản đăng nhập gốc trong config.json).
-            default_emr_username = str(CONFIG.get("username") or "").strip()
-            default_emr_password = str(CONFIG.get("password") or "")
-            job_groups = []
+            jobs_by_account = {}
             for job in care_jobs:
                 h_g = int(job.get("hour") or 0)
                 time_str_g = job.get("time_str") or tao_thoi_gian_lap(h_g, ngay_lam_viec)
@@ -1353,85 +1149,391 @@ def main():
                 account_g = get_emr_account_for_nurse(nurse_name_g) if nurse_name_g else None
                 username_g = account_g["username"] if account_g else default_emr_username
                 password_g = account_g["password"] if account_g else default_emr_password
-                if job_groups and job_groups[-1]["username"] == username_g:
-                    job_groups[-1]["jobs"].append(job)
-                else:
-                    job_groups.append({"username": username_g, "password": password_g, "jobs": [job]})
+                jobs_by_account.setdefault(username_g, []).append(job)
+                account_passwords.setdefault(username_g, password_g)
+                shift_kind_g = _shift_kind_for_hour(h_g)
+                target_order_g = work_account_order if shift_kind_g == "work" else oncall_account_order
+                if username_g not in target_order_g:
+                    target_order_g.append(username_g)
 
-            for group in job_groups:
-                prev_emr_username = str(ws.config.get("username") or "").strip()
-                target_emr_username = group["username"]
-                if target_emr_username and target_emr_username != prev_emr_username:
-                    switched_ok = ws.switch_account(target_emr_username, group["password"])
-                    if not switched_ok:
-                        msg_sw = f"Không đổi được tài khoản EMR ({target_emr_username}); dùng tài khoản hiện tại."
-                        print(f"   [WARN] {msg_sw}")
-                        LOG.warning(_ctx_prefix() + f"[switch_account_failed] {msg_sw}")
-                    else:
-                        driver, wait = ws.driver, ws.wait
-                        try:
-                            ws.search_patient(ma_bn, allow_completed=is_discharge_day)
-                            wait.until(EC.element_to_be_clickable((By.XPATH, "//i[contains(@class, 'fa-eye')]"))).click()
-                            wait.until(EC.element_to_be_clickable((By.ID, "btnTTCS"))).click()
-                            _wait_after_action(driver, 0.8, ready_timeout=10)
-                        except Exception as _e:
-                            msg_reopen = f"Không mở lại được hồ sơ BN sau khi đổi tài khoản EMR: {_e}"
-                            print(f"   [!] {msg_reopen}")
-                            job_failures.append(msg_reopen)
-                            LOG.warning(_ctx_prefix() + f"[reopen_after_switch_failed] {msg_reopen}")
-                            continue
-                for job in group["jobs"]:
-                    _process_job(job)
+            if not jobs_by_account:
+                # Không có job cụ thể nào (vd: toàn bộ giờ bị lọc do đang đi mổ) nhưng
+                # vẫn cần 1 lượt mở hồ sơ để dọn phiếu dư/kiểm tra trạng thái — dùng
+                # tạm tài khoản mặc định, không có job để nhập.
+                jobs_by_account[default_emr_username] = []
+                account_passwords.setdefault(default_emr_username, default_emr_password)
+                if (default_emr_username not in work_account_order
+                        and default_emr_username not in oncall_account_order
+                        and default_emr_username not in other_account_order):
+                    other_account_order.append(default_emr_username)
 
-            # Quét lại 1 lần cuối/BN để dọn phiếu 'Mới' (dư) sau khi nhập xong toàn bộ khung giờ
-            try:
-                cs_cache_end, _entries1 = scan_cham_soc_cache(driver, ngay_lam_viec, hours_needed=scan_targets)
+            patient_plans.append({
+                "result_key": result_key,
+                "ma_bn": ma_bn,
+                "ho_ten": info.get("ho_ten", ""),
+                "ngay_lam_viec": ngay_lam_viec,
+                "is_discharge_day": is_discharge_day,
+                "is_postop_receive_day": is_postop_receive_day,
+                "is_admission_transfer_day": is_admission_transfer_day,
+                "entry_obj": entry_obj,
+                "med_hours": med_hours,
+                "sorted_hours": sorted_hours,
+                "special_time_keys": special_time_keys,
+                "scan_targets": scan_targets,
+                "surgery_active": surgery_active,
+                "surgery_reason": surgery_reason,
+                "surgery_cutoff_text": surgery_cutoff_text,
+                "receive_time_key": receive_time_key,
+                "jobs_by_account": jobs_by_account,
+                "job_failures": [],
+                "job_skip_reasons": [],
+            })
+
+        # Ghép thứ tự cuối cùng: mọi tài khoản ca LÀM trước, rồi mọi tài khoản
+        # ca TRỰC, rồi các tài khoản khác (nếu có) — không phụ thuộc BN nào
+        # được xử lý trước trong dữ liệu.
+        account_order = list(work_account_order)
+        for _u in oncall_account_order:
+            if _u not in account_order:
+                account_order.append(_u)
+        for _u in other_account_order:
+            if _u not in account_order:
+                account_order.append(_u)
+
+        print(f"\n>>> Đã tính kế hoạch cho {len(patient_plans)} BN/ngày cần nhập, "
+              f"dùng {len(account_order)} tài khoản EMR (ca làm trước, ca trực sau): {account_order}")
+
+        # ── PHASE 2: với TỪNG tài khoản EMR (ca làm trước, ca trực sau — xem Phase 1),
+        # xử lý lần lượt các BN có job thuộc tài khoản đó — hết BN cuối cùng của tài
+        # khoản này mới đổi sang tài khoản kế tiếp (đăng nhập lại).
+        for username in account_order:
+            password = account_passwords.get(username) or ""
+            prev_emr_username = str(ws.config.get("username") or "").strip()
+            if username and username != prev_emr_username:
+                switched_ok = ws.switch_account(username, password)
+                if not switched_ok:
+                    msg_sw = f"Không đổi được tài khoản EMR ({username}); bỏ qua lượt của tài khoản này."
+                    print(f"   [WARN] {msg_sw}")
+                    LOG.warning(f"[switch_account_failed] {msg_sw}")
+                    for plan in patient_plans:
+                        if username in plan["jobs_by_account"]:
+                            plan["job_skip_reasons"].append(msg_sw)
+                    continue
+            driver, wait = ws.driver, ws.wait
+
+            for plan in patient_plans:
+                jobs = plan["jobs_by_account"].get(username)
+                if jobs is None:
+                    continue
+
+                ma_bn = plan["ma_bn"]
+                ngay_lam_viec = plan["ngay_lam_viec"]
+                result_key = plan["result_key"]
+                is_discharge_day = plan["is_discharge_day"]
+                is_postop_receive_day = plan["is_postop_receive_day"]
+                is_admission_transfer_day = plan["is_admission_transfer_day"]
+                entry_obj = plan["entry_obj"]
+                med_hours = plan["med_hours"]
+                sorted_hours = plan["sorted_hours"]
+                special_time_keys = plan["special_time_keys"]
+                scan_targets = plan["scan_targets"]
+                surgery_active = plan["surgery_active"]
+                surgery_reason = plan["surgery_reason"]
+                surgery_cutoff_text = plan["surgery_cutoff_text"]
+                receive_time_key = plan["receive_time_key"]
+                job_failures = plan["job_failures"]
+
+                LOG_CTX.update({'bn': ma_bn, 'name': plan.get('ho_ten', ''), 'date': ngay_lam_viec})
+                set_care_form_log_context(ma_bn, plan.get('ho_ten', ''), ngay_lam_viec)
+                print(f"\n[TÀI KHOẢN {username or '(mặc định)'}] BN {ma_bn} | Ngày: {ngay_lam_viec} | {len(jobs)} job")
+
+                mark_task_status(progress_path, "input_care", result_key, "running")
+
+                try:
+                    ws.search_patient(ma_bn, allow_completed=is_discharge_day)
+                except Exception as _e:
+                    err_text = str(_e)
+                    if surgery_active or ("Đi mổ" in err_text) or ("Gây mê hồi sức" in err_text) or ("không còn ở khoa" in err_text.lower()):
+                        reason = (surgery_reason or "Người bệnh không còn ở trạng thái Đang thực hiện") + f"; {_e}"
+                        print(f"   [SKIP] {reason}")
+                        plan["job_skip_reasons"].append(reason)
+                        continue
+                    raise
+
+                try:
+                    wait.until(EC.element_to_be_clickable((By.XPATH, "//i[contains(@class, 'fa-eye')]"))).click()
+                    wait.until(EC.element_to_be_clickable((By.ID, "btnTTCS"))).click()
+                    _wait_after_action(driver, 0.8, ready_timeout=10)
+                except Exception as _e:  # was: bare except
+                    LOG.debug(f"[except] {_e}")
+                    print("   [!] Không vào được hồ sơ.")
+                    job_failures.append(f"Không vào được hồ sơ: {_e}")
+                    ws.goto_inpatient_list()
+                    continue
+
+                # Quét 1 lần đầu/lượt để tạo cache (không quét lại mỗi giờ) + dọn phiếu 'Mới' (dư) / sai giờ (do tool)
+                cs_cache, _entries0 = scan_cham_soc_cache(driver, ngay_lam_viec, hours_needed=scan_targets)
+                LOG.info(_ctx_prefix() + f"[cache] scanned_rows={len(_entries0)} keys={len(cs_cache)}")
                 cleanup_cham_soc_cache(
                     driver,
-                    cs_cache_end,
+                    cs_cache,
                     sorted_hours,
                     LIST_NURSE,
-                    phase="CUỐI",
+                    phase="ĐẦU",
                     extra_valid_time_keys=special_time_keys,
                     protect_before_time_key=receive_time_key if is_postop_receive_day else None,
                     remove_tool_rows_at_or_after_time_key=surgery_cutoff_text if surgery_active else None,
                 )
 
-                # Ngày chuyển/đi mổ cần verify thật trên EMR sau cleanup. Nếu còn
-                # phiếu do tool tạo sau cutoff thì không được báo OK giả.
-                if surgery_active and surgery_cutoff_text:
-                    cs_cache_verify, _entries_verify = scan_cham_soc_cache(
-                        driver, ngay_lam_viec, hours_needed=None
-                    )
-                    _leftovers = tool_rows_at_or_after(
-                        cs_cache_verify, surgery_cutoff_text, LIST_NURSE
-                    )
-                    if _leftovers:
-                        _leftover_times = sorted({str(x.get("time_full") or "") for x in _leftovers if x.get("time_full")})
-                        _msg = (
-                            f"Còn phiếu chăm sóc do tool tạo sau mốc đi mổ {surgery_cutoff_text}: "
-                            + ", ".join(_leftover_times[:8])
-                        )
-                        if len(_leftover_times) > 8:
-                            _msg += f" ... (+{len(_leftover_times) - 8})"
-                        LOG.warning(_ctx_prefix() + f"[surgery_guard][FINAL_VERIFY_FAIL] {_msg}")
-                        print(f"   [FAIL][SURGERY_VERIFY] {_msg}")
-                        job_failures.append(_msg)
-                    else:
-                        LOG.info(_ctx_prefix() + f"[surgery_guard][FINAL_VERIFY_OK] Không còn phiếu tool sau cutoff={surgery_cutoff_text}")
-            except Exception as _e:
-                print(f"   [WARN] Final check lỗi: {_e}")
+                def _process_job(job):
+                    h = int(job.get("hour") or 0)
+                    time_str = job.get("time_str") or tao_thoi_gian_lap(h, ngay_lam_viec)
+                    actions_set = set(job.get("actions_set") or set())
+                    needs_vitals = bool(job.get("needs_vitals", False))
 
-            # Quay về danh sách bằng URL/session hiện tại thay vì driver.back() để tránh lệch history stack.
-            ws.goto_inpatient_list()
-            # Nếu có bất kỳ giờ nào nhập thất bại → không mark done cả ngày.
+                    if job.get("kind") == "special":
+                        final_care_content = str(job.get("care") or "").strip()
+                        dien_bien_text = str(job.get("dien_bien") or "").strip() or "Người bệnh tỉnh"
+                    else:
+                        # Chăm sóc: xử lý toàn bộ giờ có trong dữ liệu/tập giờ tính toán
+                        care_parts = []
+
+                        # Bổ sung chăm sóc mặc định:
+                        # - giờ có thuốc: 'Thực hiện chỉ định thuốc'
+                        # - không thêm 'Dự trù thuốc' vào chăm sóc
+                        # - mặc định ở 5h/16h: 'Lấy dấu hiệu sinh tồn'
+                        # - ngày nhận bệnh sau mổ/chuyển khoa vẫn giữ cữ 16h và 5h ngày mai để lấy dấu hiệu sinh tồn.
+                        care_parts = them_cham_soc_mac_dinh(
+                            care_parts,
+                            h,
+                            med_hours,
+                            add_default_vitals=True,
+                        )
+
+                        # Bổ sung chăm sóc theo action. Nếu có tên chỉ định gốc thì
+                        # dùng nguyên tên đó để khớp giao diện (không rút gọn thành
+                        # "Thay băng"). Action không có nhãn gốc mới dùng mẫu mặc định.
+                        action_care_labels = job.get("action_care_labels") or {}
+                        covered_actions = set()
+                        existing_norm = {chuan_hoa_unicode(x) for x in care_parts}
+                        for action_id in sorted(actions_set):
+                            labels = action_care_labels.get(action_id) or []
+                            if not labels:
+                                continue
+                            covered_actions.add(action_id)
+                            for label in labels:
+                                label_text = str(label or "").strip()
+                                label_norm = chuan_hoa_unicode(label_text)
+                                if label_text and label_norm not in existing_norm:
+                                    care_parts.append(label_text)
+                                    existing_norm.add(label_norm)
+
+                        care_parts = extend_care_parts(care_parts, actions_set - covered_actions)
+
+                        # Diễn biến:
+                        # - Chỉ cữ 8h dùng nhận định chi tiết ở ngày thường
+                        # - Ngày nhận bệnh sau mổ/chuyển khoa: diễn biến chi tiết nằm ở phiếu đặc biệt, giờ khác chỉ ghi 'Người bệnh tỉnh'
+                        if (not is_postop_receive_day) and (not is_admission_transfer_day) and h == 8:
+                            ctx = build_placeholder_context(entry_obj)
+                            dien_bien_text = build_dien_bien(DIEN_BIEN_BASE_LINES, actions_set, ctx) or "Người bệnh tỉnh"
+                        else:
+                            dien_bien_text = "Người bệnh tỉnh"
+
+                        final_care_content = " + ".join(care_parts)
+                        final_care_content = final_care_content[0].upper() + final_care_content[1:] if final_care_content else ""
+
+                        # Chặn nội dung 'sau mổ/vết mổ' khi dữ liệu không có ngữ cảnh phẫu thuật/vết thương
+                        if final_care_content and (("vết mổ" in final_care_content.lower()) or ("sau mổ" in final_care_content.lower())):
+                            has_ctx = _has_surgical_context(entry_obj, actions_set)
+                            LOG.info(_ctx_prefix() + f"[postop_guard] detected_postop_text=True has_surgical_context={has_ctx}")
+                            if not has_ctx:
+                                before = final_care_content
+                                final_care_content = _sanitize_postop_text(final_care_content)
+                                LOG.warning(_ctx_prefix() + f"[sanitize_postop] removed_postop_parts. before='{before[:120]}' after='{final_care_content[:120]}'")
+
+                    LOG.debug(_ctx_prefix() + f"[expected] h={h} time='{time_str}' kind={job.get('kind')} actions={sorted(list(actions_set))} care='{(final_care_content or '')[:200]}' dien_bien='{(dien_bien_text or '')[:160]}'")
+                    print(f"   + Giờ {time_str}:", end=" ")
+
+                    expected_creator = ""
+                    try:
+                        expected_creator = get_nurse_by_shift(time_str, CONFIG_TEN_GOC or {})
+                    except Exception as _e:
+                        LOG.debug(f"[except] {_e}")
+
+                    stt, care_id = kiem_tra_bang_cached(
+                        cs_cache,
+                        time_str,
+                        h,
+                        final_care_content,
+                        LIST_NURSE,
+                        dien_bien_text,
+                        needs_vitals=needs_vitals,
+                        expected_creator=expected_creator,
+                    )
+
+                    if stt == "PERFECT":
+                        print("-> [RESULT] OK (đã đúng, không cần sửa).")
+                        return
+                    elif stt == "SKIP":
+                        msg_skip = f"{time_str}: đã có phiếu nhưng EMR không trả mã sửa/xóa; không tạo trùng"
+                        print("-> [RESULT] KHÔNG SỬA ĐƯỢC (không tạo trùng).")
+                        job_failures.append(msg_skip)
+                        LOG.warning(_ctx_prefix() + f"[job_uneditable] {msg_skip}")
+                        return
+                    elif stt == "UPDATE":
+                        print("-> [ACTION] SỬA PHIẾU CŨ: Sửa → Thu hồi → cập nhật → Hoàn tất.", end=" ")
+                        try:
+                            if care_id:
+                                open_cham_soc_by_id(driver, care_id)
+                            else:
+                                raise RuntimeError("Không lấy được id phiếu")
+                            wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
+                            click_thu_hoi_cham_soc(driver)
+                        except Exception as _e:
+                            print(f"[WARN] Không mở/thu hồi được phiếu cũ: {_e}", end=" ")
+                    elif stt == "EDIT":
+                        print("-> [ACTION] THU HỒI/XÓA PHIẾU CŨ.", end=" ")
+                        try:
+                            if care_id:
+                                open_cham_soc_by_id(driver, care_id)
+                            else:
+                                raise RuntimeError("Không lấy được id phiếu")
+                            wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
+                            click_thu_hoi_va_xoa(driver)
+                        except Exception as _e:
+                            print(f"[WARN] Không thu hồi/xóa được: {_e}")
+                            # vẫn tiếp tục tạo lại phiếu mới
+                        print("-> TẠO LẠI.", end=" ")
+                        _safe_js_click(driver, wait.until(EC.element_to_be_clickable((By.ID, "btnThemCS"))))
+                    else:
+                        print("-> TẠO MỚI.", end=" ")
+                        _safe_js_click(driver, wait.until(EC.element_to_be_clickable((By.ID, "btnThemCS"))))
+
+                    wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
+
+                    success = False
+                    for attempt in range(1, 4):
+                        # 1) Set giờ trước (đợi ổn định), tránh việc điền các trường rồi bị reset do đổi giờ
+                        ok_time = set_thoi_gian_lap(driver, time_str, max_retry=2)
+                        if not ok_time:
+                            print(f"[Sai giờ] -> Retry.", end=" ")
+                            time.sleep(0.5)
+                            continue
+
+                        # 2) Điền các trường khác
+                        LOG.debug(_ctx_prefix() + f"[fill] hour={h} time='{time_str}' attempt={attempt} care_len={len(final_care_content or '')} db_len={len(dien_bien_text or '')} needs_vitals={needs_vitals}")
+                        form_ok = dien_thong_tin(
+                            driver, h, time_str, final_care_content, LIST_NURSE, dien_bien_text,
+                            needs_vitals=needs_vitals, config_ten_goc=CONFIG_TEN_GOC,
+                        )
+                        if not form_ok:
+                            print("[Sai Người lập] -> Retry.", end=" ")
+                            LOG.warning(_ctx_prefix() + f"[fill_failed] time='{time_str}' reason=invalid_creator attempt={attempt}")
+                            time.sleep(0.5)
+                            continue
+                        btn_luu = driver.find_element(By.ID, "btnSaveChamSocPopupDraw")
+                        driver.execute_script("arguments[0].click();", btn_luu)
+                        time.sleep(1.5); handle_popups(driver)
+
+                        try:
+                            btn_hoan_tat = driver.find_element(By.ID, "btnPopupHOANTAT")
+                            driver.execute_script("arguments[0].click();", btn_hoan_tat)
+                        except Exception as _e:  # was: bare except
+                            LOG.debug(f"[except] {_e}")
+                            pass
+
+                        time.sleep(2); handle_popups(driver)
+                        stt_badge = check_trang_thai_badge(driver)
+                        if "Hoàn tất" in stt_badge:
+                            print("-> [RESULT] XONG.")
+                            success = True
+                            break
+                        elif "Mới" in stt_badge:
+                            print(".", end=" ")
+                        else:
+                            if "Hoàn tất" in stt_badge:
+                                success = True
+                                break
+
+                    if not success:
+                        msg_fail = f"{time_str}: không lưu/hoàn tất được phiếu chăm sóc"
+                        job_failures.append(msg_fail)
+                        print(" -> FAIL.")
+                        LOG.warning(_ctx_prefix() + f"[job_failed] {msg_fail}")
+                    try:
+                        back_btn = driver.find_element(By.XPATH, "//a[contains(@onclick, 'fnbackFormChamSoc')]")
+                        driver.execute_script("arguments[0].click();", back_btn)
+                        time.sleep(1)
+                    except Exception as _e:  # was: bare except
+                        LOG.debug(f"[except] {_e}")
+                        pass
+
+                for job in jobs:
+                    _process_job(job)
+
+                # Quét lại 1 lần cuối/lượt để dọn phiếu 'Mới' (dư) sau khi nhập xong nhóm giờ này
+                try:
+                    cs_cache_end, _entries1 = scan_cham_soc_cache(driver, ngay_lam_viec, hours_needed=scan_targets)
+                    cleanup_cham_soc_cache(
+                        driver,
+                        cs_cache_end,
+                        sorted_hours,
+                        LIST_NURSE,
+                        phase="CUỐI",
+                        extra_valid_time_keys=special_time_keys,
+                        protect_before_time_key=receive_time_key if is_postop_receive_day else None,
+                        remove_tool_rows_at_or_after_time_key=surgery_cutoff_text if surgery_active else None,
+                    )
+
+                    # Ngày chuyển/đi mổ cần verify thật trên EMR sau cleanup. Nếu còn
+                    # phiếu do tool tạo sau cutoff thì không được báo OK giả.
+                    if surgery_active and surgery_cutoff_text:
+                        cs_cache_verify, _entries_verify = scan_cham_soc_cache(
+                            driver, ngay_lam_viec, hours_needed=None
+                        )
+                        _leftovers = tool_rows_at_or_after(
+                            cs_cache_verify, surgery_cutoff_text, LIST_NURSE
+                        )
+                        if _leftovers:
+                            _leftover_times = sorted({str(x.get("time_full") or "") for x in _leftovers if x.get("time_full")})
+                            _msg = (
+                                f"Còn phiếu chăm sóc do tool tạo sau mốc đi mổ {surgery_cutoff_text}: "
+                                + ", ".join(_leftover_times[:8])
+                            )
+                            if len(_leftover_times) > 8:
+                                _msg += f" ... (+{len(_leftover_times) - 8})"
+                            LOG.warning(_ctx_prefix() + f"[surgery_guard][FINAL_VERIFY_FAIL] {_msg}")
+                            print(f"   [FAIL][SURGERY_VERIFY] {_msg}")
+                            job_failures.append(_msg)
+                        else:
+                            LOG.info(_ctx_prefix() + f"[surgery_guard][FINAL_VERIFY_OK] Không còn phiếu tool sau cutoff={surgery_cutoff_text}")
+                except Exception as _e:
+                    print(f"   [WARN] Final check lỗi: {_e}")
+
+                # Quay về danh sách bằng URL/session hiện tại thay vì driver.back() để tránh lệch history stack.
+                ws.goto_inpatient_list()
+
+        # ── PHASE 3: tổng hợp kết quả cuối cùng cho từng BN sau khi đã chạy hết mọi
+        # tài khoản EMR cần dùng.
+        for plan in patient_plans:
+            result_key = plan["result_key"]
+            if result_key in ws.results:
+                continue
+            job_failures = plan["job_failures"]
+            job_skip_reasons = plan["job_skip_reasons"]
             if job_failures:
                 err_text = "; ".join(job_failures[:8])
+                if job_skip_reasons:
+                    err_text += "; " + "; ".join(f"[SKIP] {s}" for s in job_skip_reasons[:4])
                 if len(job_failures) > 8:
                     err_text += f"; ... (+{len(job_failures) - 8} lỗi)"
                 ws.results[result_key] = {"success": False, "error": err_text, "failed_jobs": job_failures}
                 mark_task_status(progress_path, "input_care", result_key, "failed", err_text)
-            elif result_key not in ws.results:
+            elif job_skip_reasons and len(job_skip_reasons) >= len(plan["jobs_by_account"]):
+                reason = "; ".join(job_skip_reasons[:4])
+                ws.results[result_key] = {"success": True, "error": None, "skipped": True, "reason": reason}
+                mark_task_status(progress_path, "input_care", result_key, "skipped", reason)
+            else:
                 ws.results[result_key] = {"success": True, "error": None}
                 mark_task_status(progress_path, "input_care", result_key, "done")
 
