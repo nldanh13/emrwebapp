@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { C } from '../tokens.js';
 import { Spinner } from './shared.jsx';
 import * as api from '../api.js';
+import { useAuth } from '../hooks/useAuth.jsx';
 import {
   DAY_KEYS,
   addDaysIso,
@@ -22,10 +23,15 @@ import NurseMobileView from './nurse/NurseMobileView.jsx';
 
 export default function NurseTab({ toast }) {
   const isMobile = useIsMobile();
+  const { user } = useAuth();
+  // Không đăng nhập (chế độ local_only) vẫn cho sửa như trước; chỉ chặn khi
+  // có đăng nhập mà vai trò không phải admin — tài khoản EMR chứa mật khẩu thật.
+  const canEditEmrAccounts = !user || user.role === 'admin';
   const [showNursePanel, setShowNursePanel] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const [roster, setRoster] = useState([]);
+  const [emrAccounts, setEmrAccounts] = useState({});
   const [schedule, setSchedule] = useState(() => normalizeScheduleShape({}));
   const [clinicSchedule, setClinicSchedule] = useState(() => normalizeScheduleShape({}));
   const [loading, setLoading] = useState(true);
@@ -56,7 +62,40 @@ export default function NurseTab({ toast }) {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (!canEditEmrAccounts) return;
+    api.getNurseEmrAccounts()
+      .then(d => {
+        const byName = {};
+        for (const row of d.accounts || []) byName[row.name] = row;
+        setEmrAccounts(byName);
+      })
+      .catch(() => {});
+  }, [canEditEmrAccounts]);
+
   const saveTimer = useRef(null);
+  const saveEmrAccountsTimer = useRef(null);
+
+  const saveEmrAccounts = useCallback((nextByName) => {
+    if (saveEmrAccountsTimer.current) clearTimeout(saveEmrAccountsTimer.current);
+    saveEmrAccountsTimer.current = setTimeout(async () => {
+      try {
+        const accounts = Object.values(nextByName);
+        const r = await api.saveNurseEmrAccounts({ accounts });
+        if (r.status !== 'ok') toast?.(r.message, 'error');
+      } catch (e) {
+        toast?.(String(e.message), 'error');
+      }
+    }, 500);
+  }, [toast]);
+
+  const changeEmrAccount = useCallback((name, field, value) => {
+    setEmrAccounts(prev => {
+      const next = { ...prev, [name]: { ...(prev[name] || { name }), name, [field]: value } };
+      saveEmrAccounts(next);
+      return next;
+    });
+  }, [saveEmrAccounts]);
 
   const save = useCallback((nextRoster, nextSchedule, nextClinicSchedule) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -104,7 +143,16 @@ export default function NurseTab({ toast }) {
     setRoster(next);
     setSchedule(nextSched);
     save(next, nextSched, clinicSchedule);
-  }, [roster, schedule, clinicSchedule, save]);
+
+    if (Object.prototype.hasOwnProperty.call(emrAccounts, name)) {
+      setEmrAccounts(prev => {
+        const nextAccounts = { ...prev };
+        delete nextAccounts[name];
+        saveEmrAccounts(nextAccounts);
+        return nextAccounts;
+      });
+    }
+  }, [roster, schedule, clinicSchedule, save, emrAccounts, saveEmrAccounts]);
 
   const updateScheduleForKey = useCallback((key, value) => {
     let nextSched;
@@ -240,6 +288,9 @@ export default function NurseTab({ toast }) {
           setNewName={setNewName}
           onAddNurse={addNurse}
           onRemoveNurse={removeNurse}
+          emrAccounts={emrAccounts}
+          onChangeEmrAccount={changeEmrAccount}
+          canEditEmrAccounts={canEditEmrAccounts}
         />
       </div>
     </div>
