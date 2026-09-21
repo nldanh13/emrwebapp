@@ -4,6 +4,7 @@ from datetime import datetime
 import csv
 import io
 import json
+import re
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_file
@@ -39,6 +40,26 @@ worker = Worker(portal, store)
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
 app.secret_key = "local-bhyt-selenium"
+
+# ── CORS có kiểm soát ─────────────────────────────────────────────────────────
+# Cho phép trang "Nghỉ ốm" của web app chính (React, chạy trên origin khác —
+# vd http://localhost:3001) gọi thẳng API này để nhúng UI ngay trong tab đó,
+# thay vì mở tab riêng. Vì Flask này chỉ bind 127.0.0.1 (không lộ ra mạng), chỉ
+# trang nào chạy TRÊN CHÍNH MÁY NÀY mới gọi được — nhưng vẫn giới hạn origin
+# được phép đọc phản hồi (chỉ localhost/127.0.0.1) để trang lạ mở trong tab
+# khác trên cùng máy không dò/đọc được dữ liệu qua CORS.
+_ALLOWED_ORIGIN_RE = re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$")
+
+
+@app.after_request
+def _apply_cors(response):
+    origin = request.headers.get("Origin", "")
+    if _ALLOWED_ORIGIN_RE.match(origin):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Vary"] = "Origin"
+    return response
 
 
 @app.get("/")
