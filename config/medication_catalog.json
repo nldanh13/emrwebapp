@@ -36,38 +36,6 @@
         "PARA XETAMON 1G",
         "PARACETAMON 1G"
       ]
-    },
-    {
-      "canonical": "VANCOMYCIN",
-      "aliases": [
-        "VANCOMYCIN"
-      ],
-      "category": "dich_truyen",
-      "default_route": "TTM",
-      "default_route_text": "TTM pha NaCl 0,9% 100ml",
-      "default_volume_ml": 100
-    },
-    {
-      "canonical": "CIPAZY",
-      "aliases": [
-        "CIPAZY"
-      ],
-      "category": "dich_truyen",
-      "default_route": "TTM",
-      "default_route_text": "TTM (chai pha sẵn)",
-      "default_volume_ml": 100
-    },
-    {
-      "canonical": "BIRONEM 500",
-      "aliases": [
-        "BIRONEM 500",
-        "BIRONEM"
-      ],
-      "category": "dich_truyen",
-      "default_route": "TTM",
-      "default_route_text": "TTM pha NaCl 0,9% đủ 100ml",
-      "default_volume_ml": 100
     }
-  ],
-  "_updated": "2026-09-21"
+  ]
 }
