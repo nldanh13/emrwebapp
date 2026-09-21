@@ -365,6 +365,17 @@ def search_patient_on_ward_or_raise(
     if not code:
         raise RuntimeError("Thiếu mã bệnh nhân")
 
+    # Phải vào danh sách nội trú TRƯỚC khi chọn bộ lọc trạng thái — dropdown
+    # #drpSelectTrangThai chỉ tồn tại trên trang này. Nếu vừa đăng nhập xong
+    # (còn ở home.aspx chung) mà gọi set_inpatient_status_filter() ngay thì
+    # dropdown chưa render, chọn trạng thái sẽ luôn lỗi/timeout.
+    ensure_inpatient_list(
+        driver, wait, config,
+        login_func=login_func,
+        log_func=log,
+        debug_func=debug_func,
+    )
+
     statuses = ["Đang thực hiện"]
     if allow_completed:
         statuses.append("Hoàn tất")
