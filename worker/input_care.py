@@ -1382,16 +1382,8 @@ def main():
                         # phiếu, đổi lại đúng tài khoản của nhóm job này (đang xử lý
                         # theo `username`) để các job/lượt dọn kế tiếp không bị lệch.
                         nonlocal driver, wait
-                        cur = str(ws.config.get("username") or "").strip()
-                        if username and username != cur:
-                            if ws.switch_account(username, password):
-                                try:
-                                    ws.open_care_form(ma_bn, allow_completed=is_discharge_day)
-                                except Exception as _e:
-                                    print(f"[WARN] Không mở lại hồ sơ sau khi đổi về tài khoản {username}: {_e}", end=" ")
-                            else:
-                                print(f"[WARN] Không đổi lại được tài khoản EMR {username}.", end=" ")
-                            driver, wait = ws.driver, ws.wait
+                        ws.restore_account(username, password, ma_bn, allow_completed=is_discharge_day)
+                        driver, wait = ws.driver, ws.wait
 
                     if stt == "PERFECT":
                         print("-> [RESULT] OK (đã đúng, không cần sửa).")

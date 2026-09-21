@@ -34,7 +34,6 @@ except Exception:
 
 from utils import load_config, login_emr, handle_popups, get_nurse_by_shift
 from shared.worker_session import open_session
-from nurse_emr_accounts import get_emr_account_for_nurse
 from selenium_emr_helpers import (
     goto_inpatient_list,
     set_time_range_filter,
@@ -1068,7 +1067,9 @@ def _input_one(
     if status == "SKIP":
         return {"success": True, "skipped": True, "reason": "Phiếu đã có", "error": None, "time_str": time_str}
 
-    # EMR hiện chỉ cho đúng tài khoản người tạo phiếu tự sửa/xóa phiếu của họ.
+    # EMR hiện chỉ cho đúng tài khoản người tạo phiếu tự sửa/xóa phiếu của họ
+    # (worker/shared/worker_session.py là nơi tập trung xử lý đổi/khôi phục
+    # tài khoản — xem WorkerSession.switch_to_creator_account/restore_account).
     # Nếu phiếu cũ (đang sửa/xóa) do người khác lập, phải đổi sang đúng tài
     # khoản của người đó rồi mới thao tác, và đổi lại đúng tài khoản gốc của
     # lượt nhập này (dùng để tạo phiếu mới) trước khi thoát hàm.
@@ -1076,44 +1077,26 @@ def _input_one(
     original_password = str(ws.config.get("password") or "")
     switched_away = False
 
+    def _reopen(w, _ma_bn):
+        _open_care_page(w.driver, w.wait, row)
+
     def _restore_original_account():
         nonlocal driver, wait
-        cur = str(ws.config.get("username") or "").strip()
-        if not original_username or cur == original_username:
-            return
-        if ws.switch_account(original_username, original_password):
-            try:
-                _open_care_page(ws.driver, ws.wait, row)
-            except Exception as exc:
-                print(f"[WARN] Không mở lại hồ sơ sau khi đổi về tài khoản {original_username}: {exc}")
-        else:
-            print(f"[WARN] Không đổi lại được tài khoản EMR gốc {original_username}.")
+        ws.restore_account(original_username, original_password, row.get("ma_bn"), reopen=_reopen)
         driver, wait = ws.driver, ws.wait
 
     if status in ("UPDATE", "EDIT") and existing_creator:
-        account = get_emr_account_for_nurse(existing_creator)
-        if not account:
+        if not ws.switch_to_creator_account(existing_creator, row.get("ma_bn"), reopen=_reopen):
             return {
                 "success": False,
                 "error": (
-                    f"{time_str}: chưa cấu hình tài khoản EMR cho người lập phiếu cũ "
-                    f"'{existing_creator}' — không tự sửa/xóa được (EMR chỉ cho đúng "
-                    "tài khoản người tạo)."
+                    f"{time_str}: không đổi được tài khoản EMR của người lập phiếu cũ "
+                    f"'{existing_creator}' — không tự sửa/xóa được (chưa cấu hình tài "
+                    "khoản hoặc đổi/mở lại hồ sơ thất bại)."
                 ),
             }
-        if account["username"] != original_username:
-            if not ws.switch_account(account["username"], account["password"]):
-                return {
-                    "success": False,
-                    "error": f"{time_str}: không đổi được tài khoản EMR của người lập '{existing_creator}'.",
-                }
-            try:
-                _open_care_page(ws.driver, ws.wait, row)
-            except Exception as exc:
-                _restore_original_account()
-                return {"success": False, "error": f"{time_str}: không mở lại được hồ sơ sau khi đổi tài khoản: {exc}"}
-            driver, wait = ws.driver, ws.wait
-            switched_away = True
+        driver, wait = ws.driver, ws.wait
+        switched_away = True
 
     try:
         if status == "UPDATE":
