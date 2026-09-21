@@ -105,6 +105,17 @@ def _find_stray_new_entries(all_entries, list_nurse):
     return stray
 
 
+def _write_report(path, report):
+    """Ghi báo cáo ra đĩa — gọi lại sau MỖI BN, không chỉ lúc kết thúc, để lỡ
+    script bị ngắt giữa chừng (mất mạng, Chrome crash...) vẫn còn kết quả các
+    BN đã xử lý xong, không mất trắng."""
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"   [WARN] Không ghi được báo cáo tạm: {e}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--patients", required=True, help="File JSON danh sách BN cần quét")
@@ -137,6 +148,7 @@ def main():
             except Exception as e:
                 entry["error"] = f"Không tìm/vào được BN: {e}"
                 print(f"   [SKIP] {entry['error']}")
+                _write_report(args.out, report)
                 continue
 
             driver, wait = ws.driver, ws.wait
@@ -146,6 +158,7 @@ def main():
             except Exception as e:
                 entry["error"] = f"Không vào được hồ sơ: {e}"
                 print(f"   [SKIP] {entry['error']}")
+                _write_report(args.out, report)
                 continue
 
             _cache, all_entries = scan_cham_soc_cache(driver, "", all_dates=True)
@@ -171,6 +184,8 @@ def main():
                         print("        -> đã gửi lệnh xóa (chạy lại ở chế độ báo cáo để xác nhận đã mất chưa)")
                     else:
                         print("        -> [WARN] Không có id để xóa, bỏ qua")
+
+            _write_report(args.out, report)
 
             try:
                 ws.goto_inpatient_list()
