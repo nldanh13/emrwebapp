@@ -32,6 +32,7 @@ router.get('/admin/users', (req, res) => {
     users: users.map(publicUser),
     file: authz.getUsersFileInfo(),
     parse_error: error,
+    local_only_bypassed_users_count: authz.authStatus().local_only_bypassed_users_count,
   });
 });
 

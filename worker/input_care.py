@@ -33,6 +33,7 @@ from utils import (
 from shared.worker_session import WorkerSession, open_session
 from shared.json_io import read_json_critical
 from shared.logging_utils import make_worker_logger
+from nurse_emr_accounts import get_emr_account_for_nurse
 
 from selenium_emr_helpers import (
     build_inpatient_url as _build_inpatient_url,
@@ -1152,7 +1153,7 @@ def main():
             care_jobs = sorted(care_jobs, key=_care_job_sort_key)
             job_failures = []
 
-            for job in care_jobs:
+            def _process_job(job):
                 h = int(job.get("hour") or 0)
                 time_str = job.get("time_str") or tao_thoi_gian_lap(h, ngay_lam_viec)
                 actions_set = set(job.get("actions_set") or set())
@@ -1240,13 +1241,13 @@ def main():
 
                 if stt == "PERFECT":
                     print("-> [RESULT] OK (đã đúng, không cần sửa).")
-                    continue
+                    return
                 elif stt == "SKIP":
                     msg_skip = f"{time_str}: đã có phiếu nhưng EMR không trả mã sửa/xóa; không tạo trùng"
                     print("-> [RESULT] KHÔNG SỬA ĐƯỢC (không tạo trùng).")
                     job_failures.append(msg_skip)
                     LOG.warning(_ctx_prefix() + f"[job_uneditable] {msg_skip}")
-                    continue
+                    return
                 elif stt == "UPDATE":
                     print("-> [ACTION] SỬA PHIẾU CŨ: Sửa → Thu hồi → cập nhật → Hoàn tất.", end=" ")
                     try:
@@ -1334,6 +1335,53 @@ def main():
                 except Exception as _e:  # was: bare except
                     LOG.debug(f"[except] {_e}")
                     pass
+
+            # Nhóm các job liền kề theo tài khoản EMR cần đăng nhập (điều dưỡng phụ
+            # trách giờ đó — xem worker/nurse_emr_accounts.py). Giờ không xác định
+            # được ca, hoặc điều dưỡng phụ trách chưa cấu hình tài khoản riêng, dùng
+            # lại tài khoản EMR mặc định (tài khoản đăng nhập gốc trong config.json).
+            default_emr_username = str(CONFIG.get("username") or "").strip()
+            default_emr_password = str(CONFIG.get("password") or "")
+            job_groups = []
+            for job in care_jobs:
+                h_g = int(job.get("hour") or 0)
+                time_str_g = job.get("time_str") or tao_thoi_gian_lap(h_g, ngay_lam_viec)
+                try:
+                    nurse_name_g = get_nurse_by_shift(time_str_g, CONFIG_TEN_GOC or {})
+                except Exception:
+                    nurse_name_g = ""
+                account_g = get_emr_account_for_nurse(nurse_name_g) if nurse_name_g else None
+                username_g = account_g["username"] if account_g else default_emr_username
+                password_g = account_g["password"] if account_g else default_emr_password
+                if job_groups and job_groups[-1]["username"] == username_g:
+                    job_groups[-1]["jobs"].append(job)
+                else:
+                    job_groups.append({"username": username_g, "password": password_g, "jobs": [job]})
+
+            for group in job_groups:
+                prev_emr_username = str(ws.config.get("username") or "").strip()
+                target_emr_username = group["username"]
+                if target_emr_username and target_emr_username != prev_emr_username:
+                    switched_ok = ws.switch_account(target_emr_username, group["password"])
+                    if not switched_ok:
+                        msg_sw = f"Không đổi được tài khoản EMR ({target_emr_username}); dùng tài khoản hiện tại."
+                        print(f"   [WARN] {msg_sw}")
+                        LOG.warning(_ctx_prefix() + f"[switch_account_failed] {msg_sw}")
+                    else:
+                        driver, wait = ws.driver, ws.wait
+                        try:
+                            ws.search_patient(ma_bn, allow_completed=is_discharge_day)
+                            wait.until(EC.element_to_be_clickable((By.XPATH, "//i[contains(@class, 'fa-eye')]"))).click()
+                            wait.until(EC.element_to_be_clickable((By.ID, "btnTTCS"))).click()
+                            _wait_after_action(driver, 0.8, ready_timeout=10)
+                        except Exception as _e:
+                            msg_reopen = f"Không mở lại được hồ sơ BN sau khi đổi tài khoản EMR: {_e}"
+                            print(f"   [!] {msg_reopen}")
+                            job_failures.append(msg_reopen)
+                            LOG.warning(_ctx_prefix() + f"[reopen_after_switch_failed] {msg_reopen}")
+                            continue
+                for job in group["jobs"]:
+                    _process_job(job)
 
             # Quét lại 1 lần cuối/BN để dọn phiếu 'Mới' (dư) sau khi nhập xong toàn bộ khung giờ
             try:

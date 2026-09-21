@@ -43,6 +43,10 @@ function normalizeSessions(value) {
 
 const DEFAULT_USERS_FILE = path.join(ROOT_DIR, 'config', 'users.json');
 
+function isLocalHostBinding() {
+  return HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1';
+}
+
 // Nơi thật sự đọc/ghi danh sách tài khoản. Ưu tiên EMR_USERS_JSON (inline, chỉ
 // đọc — không có file để ghi) > EMR_USERS_FILE (đường dẫn tuỳ chỉnh) >
 // config/users.json (mặc định, giống config.json/medication_catalog.json —
@@ -110,6 +114,16 @@ function normalizeUsersList(payload) {
 }
 
 function loadUsers() {
+  const info = resolveUsersFileInfo();
+  const isExplicit = info.mode === 'inline' || info.mode === 'file';
+  // config/users.json tự nhận (không khai EMR_USERS_JSON/EMR_USERS_FILE) chỉ
+  // thật sự bắt đăng nhập khi server mở ra ngoài máy này (HOST=0.0.0.0/IP —
+  // máy dùng chung nhiều người). Khi HOST vẫn là localhost mặc định (chỉ máy
+  // này dùng), bỏ qua để giữ trải nghiệm không cần đăng nhập như cũ — file
+  // vẫn xem/sửa được bình thường qua tab "Thiết lập tài khoản"
+  // (listAllUsersRaw() đọc thẳng loadUsersPayload(), không qua bước này).
+  // Khai rõ EMR_USERS_JSON/EMR_USERS_FILE thì luôn bắt đăng nhập, bất kể HOST.
+  if (!isExplicit && isLocalHostBinding()) return Object.freeze([]);
   return Object.freeze(normalizeUsersList(loadUsersPayload()).filter(user => user.enabled));
 }
 
@@ -129,8 +143,7 @@ reloadUsers();
 
 function assertAuthConfiguration() {
   if (USERS_ERROR) throw USERS_ERROR;
-  const localOnly = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1';
-  if (!localOnly && !APP_TOKEN && USERS.length === 0) {
+  if (!isLocalHostBinding() && !APP_TOKEN && USERS.length === 0) {
     throw new Error('HOST mở ra ngoài localhost nhưng chưa có EMR_APP_TOKEN hoặc EMR_USERS_JSON/EMR_USERS_FILE.');
   }
 }
@@ -379,10 +392,18 @@ function requireRole(minimumRole) {
 }
 
 function authStatus() {
+  const info = resolveUsersFileInfo();
+  const isExplicit = info.mode === 'inline' || info.mode === 'file';
+  const { users: fileUsers } = listAllUsersRaw();
+  const bypassedLocalOnly = !isExplicit && isLocalHostBinding() && fileUsers.length > 0;
   return {
     mode: USERS.length ? 'multi_user_tokens' : (APP_TOKEN ? 'legacy_app_token' : 'local_only'),
     configured_users: USERS.map(user => ({ id: user.id, name: user.name, role: user.role, restricted_sessions: user.sessions })),
     identified_research_export_enabled: isTruthy(process.env.EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT),
+    // true khi config/users.json (tự nhận) đã có tài khoản nhưng server chỉ
+    // mở nội bộ (HOST=127.0.0.1) nên đang bỏ qua đăng nhập — dùng để tab
+    // "Thiết lập tài khoản" giải thích đúng lý do, tránh gây hiểu nhầm là lỗi.
+    local_only_bypassed_users_count: bypassedLocalOnly ? fileUsers.length : 0,
   };
 }
 

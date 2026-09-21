@@ -234,10 +234,59 @@ function InfusionPreviewSection({ infusionItems = [] }) {
   );
 }
 
+function VtytPreviewSection({ vtytItems = [], vtytWarnings = [] }) {
+  return (
+    <div>
+      {vtytWarnings.length > 0 && (
+        <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {vtytWarnings.map((w, i) => (
+            <div key={i} style={{
+              fontSize: 11, color: C.amber, background: C.amberBg,
+              border: `1px solid ${C.amberBorder}`, borderRadius: 4,
+              padding: '4px 8px',
+            }}>⚠ {w}</div>
+          ))}
+        </div>
+      )}
+      {!vtytItems.length ? (
+        <div style={{ fontSize: 12, color: C.text3 }}>Không có dữ liệu xem trước cho nhập VTYT</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {vtytItems.map((item, i) => (
+            <div key={item.key || item.code || i} style={{
+              background: C.surface,
+              border: `1px solid ${item.needs_review ? C.amberBorder : (C.purpleBorder || C.border)}`,
+              borderLeft: `3px solid ${item.needs_review ? C.amber : (C.purple || C.text3)}`,
+              borderRadius: 5,
+              padding: '9px 10px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: C.text }}>
+                  {item.name || item.searchKeyword || item.key || '—'}
+                </span>
+                <Badge text={`× ${item.required_quantity ?? '—'}`} bg={C.surface2} color={C.text2} />
+                {item.needs_review && <Badge text="Cần kiểm lại" bg={C.amberBg} color={C.amber} />}
+                {item.input_allowed === false && <Badge text="Không tự nhập" bg={C.redBg} color={C.red} />}
+              </div>
+              {Array.isArray(item.reasons) && item.reasons.length > 0 && (
+                <div style={{ marginTop: 6, fontSize: 11, color: C.text3, lineHeight: 1.6 }}>
+                  {item.reasons.join('; ')}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PatientPreview({ patientDay }) {
   const preview = patientDay?.preview || {};
   const careItems = preview.care || [];
   const infusionItems = preview.infusions || [];
+  const vtytItems = patientDay?.vtyt?.items || [];
+  const vtytWarnings = patientDay?.vtyt?.warnings || [];
 
   return (
     <div>
@@ -246,6 +295,9 @@ export default function PatientPreview({ patientDay }) {
 
       <SectionHead>Nhập dịch truyền ({infusionItems.length})</SectionHead>
       <InfusionPreviewSection infusionItems={infusionItems} />
+
+      <SectionHead>Nhập VTYT ({vtytItems.length})</SectionHead>
+      <VtytPreviewSection vtytItems={vtytItems} vtytWarnings={vtytWarnings} />
     </div>
   );
 }
