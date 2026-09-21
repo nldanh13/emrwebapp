@@ -12,7 +12,6 @@ except ModuleNotFoundError:  # Cho phép test các helper chuẩn hóa/so khớp
 from utils import strip_accents
 from input_infusions_utils import _log, _norm_text
 from infusion_select2 import _norm_staff_key
-from nurse_emr_accounts import get_emr_account_for_nurse
 
 def _norm_med_key(s: str) -> str:
     """Chuẩn hoá tên dịch truyền để so khớp (giảm lỗi do khoảng trắng, dấu câu, dấu tiếng Việt)."""
@@ -411,7 +410,7 @@ def xoa_trung_lap_100(ws, ma_bn, reopen_fn, records: dict, keys_filter=None) -> 
                     if _delete_info_with_creator_switch(ws, ma_bn, reopen_fn, dup):
                         deleted += 1
                         time.sleep(0.2)
-    _restore_original_account(ws, ma_bn, reopen_fn, original_username, original_password)
+    ws.restore_account(original_username, original_password, ma_bn, reopen=reopen_fn)
     return deleted
 
 def _delete_record_by_id(driver, wait, rec_id: str) -> bool:
@@ -429,47 +428,23 @@ def _delete_record_by_id(driver, wait, rec_id: str) -> bool:
 def _delete_info_with_creator_switch(ws, ma_bn, reopen_fn, info: dict) -> bool:
     """Xóa 1 bản ghi dịch truyền, tự đổi sang tài khoản EMR của người tạo
     (trường 'y_ta') trước khi xóa nếu cần — EMR hiện chỉ cho đúng tài khoản
-    người tạo tự xóa phiếu của họ. Nếu không tra được tài khoản hoặc đổi
-    tài khoản thất bại thì bỏ qua (không xóa), in cảnh báo.
+    người tạo tự xóa phiếu của họ (đổi/khôi phục tài khoản tập trung ở
+    WorkerSession.switch_to_creator_account, xem worker/shared/worker_session.py).
+    Nếu không tra được tài khoản hoặc đổi tài khoản thất bại thì bỏ qua
+    (không xóa), in cảnh báo.
 
     KHÔNG tự khôi phục lại tài khoản sau khi xóa — gọi
-    ``_restore_original_account(...)`` một lần sau khi xóa xong cả nhóm để
-    tránh đổi tài khoản qua lại nhiều lần không cần thiết.
+    ``ws.restore_account(...)`` một lần sau khi xóa xong cả nhóm để tránh
+    đổi tài khoản qua lại nhiều lần không cần thiết.
     """
     rec_id = (info.get("id") or "").strip()
     if not rec_id:
         return False
     creator = (info.get("y_ta") or "").strip()
-    if creator:
-        account = get_emr_account_for_nurse(creator)
-        if not account:
-            _log(f"      [WARN] Chưa cấu hình tài khoản EMR cho '{creator}' — bỏ qua xóa dịch truyền.")
-            return False
-        current_username = str(ws.config.get("username") or "").strip()
-        if account["username"] != current_username:
-            if not ws.switch_account(account["username"], account["password"]):
-                _log(f"      [WARN] Không đổi được tài khoản EMR của '{creator}'.")
-                return False
-            try:
-                reopen_fn(ws, ma_bn)
-            except Exception as exc:
-                _log(f"      [WARN] Không mở lại được modal dịch truyền sau khi đổi tài khoản: {exc}")
-                return False
+    if creator and not ws.switch_to_creator_account(creator, ma_bn, reopen=reopen_fn):
+        _log(f"      [WARN] Không đổi được tài khoản EMR của '{creator}' — bỏ qua xóa dịch truyền.")
+        return False
     return _delete_record_by_id(ws.driver, ws.wait, rec_id)
-
-def _restore_original_account(ws, ma_bn, reopen_fn, original_username: str, original_password: str) -> None:
-    """Khôi phục lại đúng tài khoản EMR ban đầu (nếu đã phải đổi để xóa phiếu
-    của người khác) và mở lại đúng modal dịch truyền của BN `ma_bn`."""
-    current_username = str(ws.config.get("username") or "").strip()
-    if not original_username or current_username == original_username:
-        return
-    if ws.switch_account(original_username, original_password):
-        try:
-            reopen_fn(ws, ma_bn)
-        except Exception as exc:
-            _log(f"      [WARN] Không mở lại được modal dịch truyền sau khi khôi phục tài khoản gốc: {exc}")
-    else:
-        _log(f"      [WARN] Không khôi phục được tài khoản EMR gốc {original_username}.")
 
 def _info_matches_expected_med(info: dict, expected_meds: list) -> bool:
     """Tránh xóa nhầm bản ghi đang là dịch truyền hợp lệ hiện tại."""
@@ -568,7 +543,7 @@ def xoa_dich_truyen_bi_rule_loai(ws, ma_bn, reopen_fn, records: dict, cleanup_ta
                 else:
                     _log(f"      [CLEANUP][!] Thấy bản cần xóa nhưng không lấy được ID: {info.get('ten') or name} ({info.get('tg_bat_dau') or t})")
 
-    _restore_original_account(ws, ma_bn, reopen_fn, original_username, original_password)
+    ws.restore_account(original_username, original_password, ma_bn, reopen=reopen_fn)
     return deleted
 
 def _date_key_from_time_str(raw: str) -> str:
@@ -811,7 +786,7 @@ def xoa_dich_truyen_legacy_parser_cu(ws, ma_bn, reopen_fn, records: dict, expect
             seen_ids.add(rec_id)
             time.sleep(0.25)
 
-    _restore_original_account(ws, ma_bn, reopen_fn, original_username, original_password)
+    ws.restore_account(original_username, original_password, ma_bn, reopen=reopen_fn)
     return deleted
 
 def xoa_dich_truyen_thua_ngoai_du_lieu(
@@ -901,7 +876,7 @@ def xoa_dich_truyen_thua_ngoai_du_lieu(
         else:
             _log(f"      [CLEANUP_ORPHAN][!] Thấy dòng thừa nhưng không lấy được ID: {name} ({t})")
 
-    _restore_original_account(ws, ma_bn, reopen_fn, original_username, original_password)
+    ws.restore_account(original_username, original_password, ma_bn, reopen=reopen_fn)
     return deleted
 
 def _compare_med_vs_web(med, web_info, ten_y_ta_chuan):

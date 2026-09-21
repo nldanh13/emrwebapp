@@ -45,7 +45,6 @@ from infusion_cleanup import (
     _int_from_text,
     _norm_med_key,
     _norm_time_str,
-    _restore_original_account,
     lay_danh_sach_chi_tiet_all_pages,
     tim_dich_truyen_legacy_parser_cu,
     xoa_dich_truyen_bi_rule_loai,
@@ -130,7 +129,7 @@ def xu_ly_bn(
         for info in infos:
             if info.get("id"):
                 _delete_info_with_creator_switch(ws, ma_bn, reopen_fn, info)
-        _restore_original_account(ws, ma_bn, reopen_fn, original_username, original_password)
+        ws.restore_account(original_username, original_password, ma_bn, reopen=reopen_fn)
         driver, wait = ws.driver, ws.wait
 
     # Tách 2 loại:

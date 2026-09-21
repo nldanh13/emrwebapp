@@ -95,6 +95,12 @@ class _FakeWS:
     def open_care_form(self, ma_bn, allow_completed=False):
         self.open_care_form_calls.append((ma_bn, allow_completed))
 
+    def restore_account(self, original_username, original_password, ma_bn, allow_completed=False):
+        if not original_username or self.config.get('username') == original_username:
+            return
+        if self.switch_account(original_username, original_password):
+            self.open_care_form(ma_bn, allow_completed=allow_completed)
+
 
 def test_surgery_cleanup_removes_only_tool_rows_at_or_after_cutoff(monkeypatch):
     import care_cache

@@ -264,30 +264,88 @@ class WorkerSession:
         wait.until(EC.element_to_be_clickable((By.ID, "btnTTCS"))).click()
         _wait_after_action_base(driver, 0.8, ready_timeout=10)
 
-    def switch_to_creator_account(self, creator: str, ma_bn: str, *, allow_completed: bool = False) -> bool:
+    def switch_account_to(
+        self,
+        username: str,
+        password: str,
+        ma_bn: str,
+        *,
+        allow_completed: bool = False,
+        reopen: Optional[Callable[["WorkerSession", str], None]] = None,
+    ) -> bool:
+        """Đổi sang đúng tài khoản EMR chỉ định (no-op nếu đã đúng tài khoản),
+        rồi mở lại đúng trang đang thao tác cho BN `ma_bn`.
+
+        Đây là ĐIỂM DUY NHẤT xử lý "đổi tài khoản + mở lại trang" — mọi luồng
+        cần đổi tài khoản EMR (chăm sóc, phòng khám, dịch truyền, công cụ dọn
+        phiếu...) đều gọi qua đây (trực tiếp hoặc qua `switch_to_creator_account`
+        / `restore_account`) để sau này EMR đổi logic chỉ cần sửa 1 chỗ.
+
+        `reopen(ws, ma_bn)` quyết định cách mở lại trang sau khi đổi tài
+        khoản — mỗi luồng có một cách mở khác nhau (tab TT chăm sóc, modal
+        dịch truyền, hồ sơ theo URL riêng...); mặc định dùng `open_care_form`
+        (mở tab TT chăm sóc) nếu không truyền `reopen` riêng.
+
+        Trả về False nếu đổi tài khoản hoặc mở lại trang thất bại.
+        """
+        current_username = str(self.config.get("username") or "").strip()
+        if username == current_username:
+            return True
+        if not self.switch_account(username, password):
+            return False
+        reopen_fn = reopen or (lambda ws, mb: ws.open_care_form(mb, allow_completed=allow_completed))
+        try:
+            reopen_fn(self, ma_bn)
+        except Exception as e:
+            _print(f"[WARN] Đổi tài khoản EMR xong nhưng không mở lại được hồ sơ BN {ma_bn}: {e}")
+            return False
+        return True
+
+    def switch_to_creator_account(
+        self,
+        creator: str,
+        ma_bn: str,
+        *,
+        allow_completed: bool = False,
+        reopen: Optional[Callable[["WorkerSession", str], None]] = None,
+    ) -> bool:
         """Đảm bảo đang đăng nhập đúng tài khoản EMR của `creator` và đang mở
-        hồ sơ BN `ma_bn` — dùng trước khi sửa/xóa một phiếu do người đó tạo,
-        vì EMR hiện chỉ cho đúng tài khoản người tạo tự sửa/xóa phiếu của
-        mình (xem worker/nurse_emr_accounts.py).
+        đúng trang cho BN `ma_bn` — dùng trước khi sửa/xóa một phiếu do người
+        đó tạo, vì EMR hiện chỉ cho đúng tài khoản người tạo tự sửa/xóa phiếu
+        của mình (xem worker/nurse_emr_accounts.py).
 
         Trả về False nếu không tra được tài khoản EMR cho `creator`, hoặc đổi
-        tài khoản/mở lại hồ sơ thất bại — khi đó KHÔNG được thao tác sửa/xóa
+        tài khoản/mở lại trang thất bại — khi đó KHÔNG được thao tác sửa/xóa
         phiếu này, vì tài khoản đang đăng nhập không phải người tạo.
         """
         account = get_emr_account_for_nurse(creator)
         if not account:
             return False
+        return self.switch_account_to(
+            account["username"], account["password"], ma_bn,
+            allow_completed=allow_completed, reopen=reopen,
+        )
 
-        current_username = str(self.config.get("username") or "").strip()
-        if account["username"] != current_username:
-            if not self.switch_account(account["username"], account["password"]):
-                return False
-            try:
-                self.open_care_form(ma_bn, allow_completed=allow_completed)
-            except Exception as e:
-                _print(f"[WARN] Đổi tài khoản EMR xong nhưng không mở lại được hồ sơ BN {ma_bn}: {e}")
-                return False
-        return True
+    def restore_account(
+        self,
+        original_username: str,
+        original_password: str,
+        ma_bn: str,
+        *,
+        allow_completed: bool = False,
+        reopen: Optional[Callable[["WorkerSession", str], None]] = None,
+    ) -> None:
+        """Khôi phục lại đúng tài khoản EMR ban đầu (nếu đã phải đổi sang tài
+        khoản người khác để sửa/xóa phiếu của họ) và mở lại đúng trang. Gọi
+        sau khi xong việc sửa/xóa để các bước tiếp theo không bị lệch tài
+        khoản. Không làm gì nếu `original_username` rỗng hoặc đã đúng."""
+        if not original_username:
+            return
+        if not self.switch_account_to(
+            original_username, original_password, ma_bn,
+            allow_completed=allow_completed, reopen=reopen,
+        ):
+            _print(f"[WARN] Không khôi phục được tài khoản EMR gốc {original_username}.")
 
     # ── Class-level helper: ghi result rỗng và thoát sớm ─────────────────────
 

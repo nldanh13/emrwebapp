@@ -11,13 +11,19 @@ class _FakeWS:
     """WorkerSession giả cho test: không có 'y_ta' trên record -> không đổi
     tài khoản, các hàm xoa_* thao tác thẳng trên driver/wait giả như trước.
     switch_account vẫn hoạt động thật (đổi config + driver mới) và ghi lại
-    lịch sử đổi tài khoản cho các test kiểm tra đổi-tài-khoản-theo-người-tạo."""
+    lịch sử đổi tài khoản cho các test kiểm tra đổi-tài-khoản-theo-người-tạo.
 
-    def __init__(self, username="acct.test"):
+    switch_to_creator_account/restore_account mô phỏng đúng hành vi tập
+    trung ở WorkerSession thật (worker/shared/worker_session.py) — tra tài
+    khoản qua `accounts` (thay cho nurse_emr_accounts.get_emr_account_for_nurse
+    thật) rồi gọi switch_account + reopen."""
+
+    def __init__(self, username="acct.test", accounts=None):
         self.config = {"username": username, "password": "pw"}
         self.driver = object()
         self.wait = object()
         self.switch_calls = []
+        self.accounts = accounts or {}
 
     def switch_account(self, username, password):
         self.switch_calls.append((username, password))
@@ -25,6 +31,28 @@ class _FakeWS:
         self.driver = object()
         self.wait = object()
         return True
+
+    def _switch_account_to(self, username, password, ma_bn, reopen):
+        if username == self.config.get("username"):
+            return True
+        if not self.switch_account(username, password):
+            return False
+        try:
+            (reopen or (lambda w, mb: None))(self, ma_bn)
+        except Exception:
+            return False
+        return True
+
+    def switch_to_creator_account(self, creator, ma_bn, reopen=None):
+        account = self.accounts.get((creator or "").strip().lower())
+        if not account:
+            return False
+        return self._switch_account_to(account["username"], account["password"], ma_bn, reopen)
+
+    def restore_account(self, original_username, original_password, ma_bn, reopen=None):
+        if not original_username or self.config.get("username") == original_username:
+            return
+        self._switch_account_to(original_username, original_password, ma_bn, reopen)
 
 
 def _noop_reopen(ws, ma_bn):
@@ -530,11 +558,6 @@ def test_infusion_cleanup_switches_to_creator_account_before_deleting_and_restor
     )
 
     accounts = {"lê ngọc diệu": {"username": "acct.dieu", "password": "pw_dieu"}}
-    monkeypatch.setattr(
-        infusion_cleanup,
-        'get_emr_account_for_nurse',
-        lambda name: accounts.get((name or '').strip().lower()),
-    )
 
     legacy = {
         'id': 'OLD_PHA_NACL',
@@ -565,7 +588,7 @@ def test_infusion_cleanup_switches_to_creator_account_before_deleting_and_restor
         (correct['ten_key'], correct['tg_bat_dau']): [correct],
     }
 
-    ws = _FakeWS(username="acct.goc")
+    ws = _FakeWS(username="acct.goc", accounts=accounts)
     reopen_calls = []
     count = infusion_cleanup.xoa_dich_truyen_legacy_parser_cu(
         ws, 'BN_TEST', lambda w, ma_bn: reopen_calls.append((w is ws, ma_bn)), records, expected,
@@ -589,8 +612,6 @@ def test_infusion_cleanup_skips_delete_when_no_account_for_creator(monkeypatch):
         '_delete_record_by_id',
         lambda driver, wait, rec_id: deleted_ids.append(rec_id) or True,
     )
-    monkeypatch.setattr(infusion_cleanup, 'get_emr_account_for_nurse', lambda name: None)
-
     legacy = {
         'id': 'OLD_PHA_NACL',
         'ten': 'Pha natriclorid 0.9% 100ml',

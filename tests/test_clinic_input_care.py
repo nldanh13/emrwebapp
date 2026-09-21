@@ -95,13 +95,19 @@ class _FakeDriver:
 
 
 class _FakeWS:
-    """WorkerSession giả: switch_account luôn thành công và đổi driver/wait mới."""
+    """WorkerSession giả: switch_account luôn thành công và đổi driver/wait mới.
 
-    def __init__(self, username="acct.goc"):
+    switch_to_creator_account/restore_account mô phỏng đúng hành vi tập
+    trung ở WorkerSession thật (worker/shared/worker_session.py) — tra tài
+    khoản qua `accounts` (thay cho nurse_emr_accounts.get_emr_account_for_nurse
+    thật) rồi gọi switch_account + reopen."""
+
+    def __init__(self, username="acct.goc", accounts=None):
         self.config = {"username": username, "password": "pw_goc"}
         self.driver = _FakeDriver()
         self.wait = _FakeWait()
         self.switch_calls = []
+        self.accounts = accounts or {}
 
     def switch_account(self, username, password):
         self.switch_calls.append((username, password))
@@ -109,6 +115,28 @@ class _FakeWS:
         self.driver = _FakeDriver()
         self.wait = _FakeWait()
         return True
+
+    def _switch_account_to(self, username, password, ma_bn, reopen):
+        if username == self.config.get("username"):
+            return True
+        if not self.switch_account(username, password):
+            return False
+        try:
+            (reopen or (lambda w, mb: None))(self, ma_bn)
+        except Exception:
+            return False
+        return True
+
+    def switch_to_creator_account(self, creator, ma_bn, reopen=None):
+        account = self.accounts.get((creator or "").strip().lower())
+        if not account:
+            return False
+        return self._switch_account_to(account["username"], account["password"], ma_bn, reopen)
+
+    def restore_account(self, original_username, original_password, ma_bn, reopen=None):
+        if not original_username or self.config.get("username") == original_username:
+            return
+        self._switch_account_to(original_username, original_password, ma_bn, reopen)
 
 
 def test_input_one_switches_to_old_creator_account_to_delete_then_restores(monkeypatch):
@@ -133,9 +161,7 @@ def test_input_one_switches_to_old_creator_account_to_delete_then_restores(monke
     monkeypatch.setattr(cic, "handle_popups", lambda driver: None)
 
     accounts = {"nguoi lap cu": {"username": "acct.cu", "password": "pw_cu"}}
-    monkeypatch.setattr(cic, "get_emr_account_for_nurse", lambda name: accounts.get((name or "").strip().lower()))
-
-    ws = _FakeWS(username="acct.goc")
+    ws = _FakeWS(username="acct.goc", accounts=accounts)
     row = {"ma_bn": "BN001", "ho_ten": "Nguyễn Văn A", "care_time_str": "10:30 15/09/2026", "khoa_chuyen_den": "Khoa Khám Bệnh"}
 
     result = cic._input_one(ws, row, ["Điều Dưỡng Hiện Tại"], "Nội dung chăm sóc", "Người bệnh tỉnh", False)
@@ -156,7 +182,6 @@ def test_input_one_blocks_edit_when_old_creator_has_no_emr_account(monkeypatch):
     monkeypatch.setattr(cic, "scan_cham_soc_cache", lambda driver, ngay, hours_needed=None: ({}, []))
     monkeypatch.setattr(cic, "kiem_tra_bang_cached", lambda *a, **k: ("EDIT", "CARE_1", "Nguoi Khong Co Tai Khoan"))
     monkeypatch.setattr(cic, "_open_care_page", lambda driver, wait, row: None)
-    monkeypatch.setattr(cic, "get_emr_account_for_nurse", lambda name: None)
 
     deleted = []
     monkeypatch.setattr(cic, "click_thu_hoi_va_xoa", lambda driver: deleted.append(True))

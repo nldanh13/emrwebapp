@@ -546,15 +546,7 @@ def cleanup_cham_soc_cache(
     # Khôi phục lại đúng tài khoản EMR đang dùng trước khi dọn (nếu đã phải
     # đổi tài khoản để xóa/sửa phiếu của người khác) để các bước sau đó
     # (nhập phiếu mới, dọn lần kế tiếp...) không bị lệch tài khoản.
-    _current_username = str(ws.config.get("username") or "").strip()
-    if _original_username and _current_username != _original_username:
-        if ws.switch_account(_original_username, _original_password):
-            try:
-                ws.open_care_form(ma_bn, allow_completed=allow_completed)
-            except Exception as _e:
-                print(f"   [WARN][DỌN {phase}] Không mở lại hồ sơ sau khi khôi phục tài khoản gốc {_original_username}: {_e}")
-        else:
-            print(f"   [WARN][DỌN {phase}] Không khôi phục được tài khoản EMR gốc {_original_username} sau khi dọn phiếu.")
+    ws.restore_account(_original_username, _original_password, ma_bn, allow_completed=allow_completed)
 
 def _creator_matches_expected(creator, expected_creator):
     """So khớp người lập hiện có với người lập cần có theo lịch điều dưỡng hiện tại."""
