@@ -338,6 +338,8 @@ function requiredRoleForRequest(req) {
   if (routePath === '/auth/me' || routePath === '/health') return 'viewer';
   // Quản lý tài khoản (token, tài khoản EMR riêng) — chỉ admin, mọi method.
   if (routePath.startsWith('/admin/users')) return 'admin';
+  // Tài khoản EMR theo điều dưỡng (ca làm/ca trực) — chứa mật khẩu thật, chỉ admin.
+  if (routePath.startsWith('/nurse-emr-accounts')) return 'admin';
   if (routePath.startsWith('/audit') || routePath.startsWith('/tasks') || routePath === '/diagnostics' || routePath === '/session-logs') return 'supervisor';
   if (routePath.startsWith('/research')) return ['GET', 'HEAD'].includes(method) ? 'researcher' : 'supervisor';
 

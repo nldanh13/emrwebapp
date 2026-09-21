@@ -87,6 +87,7 @@ router.use(require('./board'));
 router.use(require('./details'));
 router.use(require('./patients'));
 router.use(require('./nurse'));
+router.use(require('./nurse_emr_accounts'));
 router.use(require('./admin_nurse'));
 router.use(require('./sick_leave'));
 router.use(require('./admin_workflow'));
