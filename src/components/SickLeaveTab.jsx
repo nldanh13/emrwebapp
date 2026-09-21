@@ -5,6 +5,7 @@ import * as api from '../api.js';
 import { getPatientDischargeDates } from '../utils/dischargePrint.js';
 import { sanitizeWorkDateRange, dmyToInputDate, workDateRangeToDmy, workDateRangeLabel } from '../utils/workDateRange.js';
 import { getSessionId } from '../hooks/useSession.js';
+import BhytPortalPanel from './BhytPortalPanel.jsx';
 
 const DEFAULT_CLINIC_LOGIN_URL = import.meta.env.VITE_EMR_LOGIN_URL || '';
 const DEFAULT_CLINIC_LIST_URL = import.meta.env.VITE_EMR_CLINIC_LIST_URL || '';
@@ -470,49 +471,10 @@ export default function SickLeaveTab({ toast, workDateRange }) {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
 
-  // Mã phiên để dán sang tools/bhyt_selenium_app (công cụ nhập lên cổng BHYT)
-  // khi lấy dữ liệu trực tiếp qua API thay vì đọc lại file Excel.
+  // Mã phiên để BhytPortalPanel gọi API "lấy từ web app" đúng dữ liệu
+  // của phiên làm việc hiện tại.
   const sessionId = useMemo(() => getSessionId(), []);
-  const copySessionId = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(sessionId);
-      toast?.('Đã sao chép mã phiên.', 'ok');
-    } catch {
-      toast?.(`Mã phiên: ${sessionId}`, 'info');
-    }
-  }, [sessionId, toast]);
-
-  const [launchingBhyt, setLaunchingBhyt] = useState(false);
-
-  // Mở tools/bhyt_selenium_app kèm sẵn URL server + mã phiên qua query param
-  // (khỏi copy/paste tay). Server tự spawn tiến trình Python nền giùm nếu cổng
-  // 5005 chưa chạy (chỉ khi venv của tool đó đã cài sẵn — lần đầu vẫn cần tự
-  // chạy start.bat 1 lần). Cổng BHYT bắt CAPTCHA/OTP nên vẫn bắt buộc có Chrome
-  // hiển thị, server không thể tự nộp ngầm được.
-  const openBhytTool = useCallback(async () => {
-    const url = new URL('http://127.0.0.1:5005/');
-    url.searchParams.set('base_url', window.location.origin);
-    url.searchParams.set('session_id', sessionId);
-
-    // Mở cửa sổ trống ngay trong lúc bấm để giữ "user gesture" (tránh bị chặn
-    // popup vì phải chờ API xong mới biết chắc công cụ đã sẵn sàng), điều
-    // hướng sang URL thật sau. Đích luôn là công cụ nội bộ (127.0.0.1) do
-    // chính app này quản lý, không phải URL người dùng nhập, nên giữ handle
-    // để điều hướng (không dùng noopener) không phát sinh rủi ro gì thêm.
-    const win = window.open('about:blank', '_blank');
-    setLaunchingBhyt(true);
-    try {
-      const result = await api.launchBhytTool();
-      if (result?.status !== 'ok') throw new Error(result?.message || 'Không khởi động được công cụ.');
-      if (!result.already_running) toast?.('Đã tự khởi động công cụ nhập cổng BHXH.', 'ok');
-    } catch (e) {
-      toast?.(String(e?.message || 'Không khởi động được công cụ — mở tay bằng start.bat trong tools/bhyt_selenium_app rồi bấm lại.'), 'error');
-    } finally {
-      setLaunchingBhyt(false);
-    }
-    if (win && !win.closed) win.location.href = url.toString();
-    else window.open(url.toString(), '_blank');
-  }, [sessionId, toast]);
+  const [bhytPanelOpen, setBhytPanelOpen] = useState(false);
 
   // Quét trực tiếp EMR (ngoại trú) theo khoảng ngày — không dùng chung ô tài
   // khoản với tab Phòng khám để tránh phụ thuộc trạng thái tab khác; chỉ lưu
@@ -681,27 +643,26 @@ export default function SickLeaveTab({ toast, workDateRange }) {
         cho khoảng ngày <b style={{ color: C.text2 }}>{workDateRangeLabel(workDateRange)}</b>. Chưa tự động nộp lên
         Cổng Dịch vụ công BHXH (khác hệ thống/tài khoản đăng nhập) — tick "Đã nộp" sau khi làm thủ công.
       </div>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14,
-        padding: '6px 10px', border: `1px dashed ${C.border2}`, borderRadius: 6, fontSize: 10.5, color: C.text3,
-      }}>
-        <span>Mã phiên: </span>
-        <code style={{ background: C.surface2, padding: '2px 6px', borderRadius: 4, color: C.text2 }}>{sessionId}</code>
-        <button type="button" onClick={copySessionId} style={{
-          padding: '2px 8px', fontSize: 10.5, cursor: 'pointer', fontFamily: 'inherit',
-          border: `1px solid ${C.border}`, background: C.surface, color: C.text2, borderRadius: 4,
+      <div style={{ marginBottom: 14 }}>
+        <button type="button" onClick={() => setBhytPanelOpen(o => !o)} style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
+          padding: '10px 12px', border: `1px solid ${C.blueBorder || C.border}`,
+          background: C.blueBg || C.surface2, cursor: 'pointer', fontFamily: 'inherit',
+          borderRadius: bhytPanelOpen ? '8px 8px 0 0' : 8,
         }}>
-          Sao chép
+          <span style={{ fontSize: 10, color: C.text3, transition: 'transform 0.12s ease', transform: bhytPanelOpen ? 'rotate(90deg)' : 'none', flexShrink: 0 }}>▶</span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 12.5, fontWeight: 800, color: C.text }}>Nhập/sửa lên Cổng BHXH</span>
+            <span style={{ display: 'block', fontSize: 10.5, color: C.text3, marginTop: 1 }}>
+              Đăng nhập, lấy dữ liệu đã rà soát, điền thử rồi nhập thật — ngay tại đây, không cần mở tab riêng.
+            </span>
+          </span>
         </button>
-        <button type="button" onClick={openBhytTool} disabled={launchingBhyt}
-          title="Tự khởi động (nếu cần) và mở tools/bhyt_selenium_app kèm sẵn URL server + mã phiên" style={{
-            padding: '2px 10px', fontSize: 10.5, fontWeight: 700, cursor: launchingBhyt ? 'default' : 'pointer', fontFamily: 'inherit',
-            border: `1px solid ${C.blueBorder || C.border}`, background: C.blueBg || C.surface2, color: C.blue || C.text2, borderRadius: 4,
-            opacity: launchingBhyt ? 0.7 : 1,
-          }}>
-          {launchingBhyt ? <><Spinner size={10} /> Đang mở...</> : '↗ Mở công cụ nhập cổng BHXH'}
-        </button>
-        <span>(tự khởi động công cụ nếu chưa chạy, tự điền URL/mã phiên + tự mở Chrome tới cổng BHYT — vẫn cần tự gõ Mã cơ sở/tài khoản/mật khẩu cổng BHYT. Lần đầu trên máy này cần tự chạy <code>start.bat</code> trong <code>tools/bhyt_selenium_app</code> 1 lần để cài thư viện)</span>
+        {bhytPanelOpen && (
+          <div style={{ border: `1px solid ${C.blueBorder || C.border}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: 12 }}>
+            <BhytPortalPanel toast={toast} sessionId={sessionId} />
+          </div>
+        )}
       </div>
 
       <div style={{
