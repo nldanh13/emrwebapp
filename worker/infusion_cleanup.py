@@ -275,10 +275,15 @@ def lay_danh_sach_chi_tiet_all_pages(driver, wait):
         for row in rows:
             try:
                 tds = row.find_elements(By.TAG_NAME, "td")
-                if len(tds) < 11:
+                if len(tds) < 12:
                     continue
 
-                ten_raw = (tds[1].text or "")
+                # Cấu trúc cột hiện tại của bảng "Phiếu theo dõi truyền dịch"
+                # (EMR đã thêm cột "Ngày tháng" ở đầu, đẩy các cột sau lùi 1):
+                # [0]checkbox [1]Ngày tháng [2]Tên dịch truyền [3]Thể tích
+                # [4]Lô/Số sản xuất [5]Tốc độ [6]Bắt đầu [7]Kết thúc
+                # [8]Bác sĩ chỉ định [9]Y tá thực hiện [10]Y lệnh [11]Thao tác
+                ten_raw = (tds[2].text or "")
 
                 ten_web = _norm_text(ten_raw)
                 ten_key = _norm_med_key(ten_raw)
@@ -286,24 +291,23 @@ def lay_danh_sach_chi_tiet_all_pages(driver, wait):
                 # thời gian: ưu tiên span (đang hiển thị), fallback theo cột
                 tg_bat_dau = _norm_time_str(_read_row_value_by_span_prefix(row, "spTgBatDauTD"))
                 if not tg_bat_dau:
-                    tg_bat_dau = _norm_time_str(tds[5].text if len(tds) > 5 else "")
+                    tg_bat_dau = _norm_time_str(tds[6].text if len(tds) > 6 else "")
                 if not tg_bat_dau:
                     continue
 
                 tg_ket_thuc = _norm_time_str(_read_row_value_by_span_prefix(row, "spTgKetThucTD"))
                 if not tg_ket_thuc:
-                    tg_ket_thuc = _norm_time_str(tds[6].text if len(tds) > 6 else "")
+                    tg_ket_thuc = _norm_time_str(tds[7].text if len(tds) > 7 else "")
 
-                # thể tích & tốc độ theo cấu trúc bảng bạn gửi:
-                # [2]=Thể tích, [4]=Tốc độ
-                the_tich = _int_from_text(tds[2].text if len(tds) > 2 else "", 0)
-                toc_do = _int_from_text(tds[4].text if len(tds) > 4 else "", 0)
+                # thể tích & tốc độ theo cấu trúc cột ở trên: [3]=Thể tích, [5]=Tốc độ
+                the_tich = _int_from_text(tds[3].text if len(tds) > 3 else "", 0)
+                toc_do = _int_from_text(tds[5].text if len(tds) > 5 else "", 0)
 
                 # bác sĩ & y tá theo cột
-                bac_si_raw = (tds[7].text if len(tds) > 7 else "")
+                bac_si_raw = (tds[8].text if len(tds) > 8 else "")
                 bac_si = _norm_text(bac_si_raw)
                 bac_si_key = _norm_staff_key(bac_si_raw)
-                y_ta_raw = (tds[8].text if len(tds) > 8 else "")
+                y_ta_raw = (tds[9].text if len(tds) > 9 else "")
                 y_ta = _norm_text(y_ta_raw)
                 y_ta_key = _norm_staff_key(y_ta_raw)
 
@@ -315,7 +319,7 @@ def lay_danh_sach_chi_tiet_all_pages(driver, wait):
                     rec_id = ""
                 if not rec_id:
                     try:
-                        btn_xoa = tds[10].find_element(By.XPATH, ".//a[contains(text(), 'Xóa')]")
+                        btn_xoa = tds[11].find_element(By.XPATH, ".//a[contains(text(), 'Xóa')]")
                         onclick_attr = btn_xoa.get_attribute("onclick") or ""
                         match = re.search(r"Xoa\(\"(.+?)\"\)", onclick_attr)
                         rec_id = match.group(1) if match else ""
