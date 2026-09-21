@@ -67,6 +67,12 @@ function normalizeUser(raw, index) {
     token,
     sessions: normalizeSessions(raw.sessions ?? raw.session_ids ?? null),
     enabled: raw.enabled !== false,
+    // Tài khoản EMR THẬT riêng của người này — chỉ dùng khi ghi/nhập dữ liệu
+    // (chăm sóc, dịch truyền, thủ thuật, VTYT) để thao tác hiện đúng tên người
+    // làm trên EMR của bệnh viện. Không đưa vào publicPrincipal() — không bao
+    // giờ gửi xuống trình duyệt.
+    emrUsername: String(raw.emr_username || '').trim(),
+    emrPassword: String(raw.emr_password || ''),
   });
 }
 
@@ -130,6 +136,18 @@ function resolvePrincipal(token) {
     return { id: 'legacy_admin', name: 'Legacy administrator', role: 'admin', sessions: null, auth_type: 'legacy_app_token' };
   }
   return null;
+}
+
+// Tài khoản EMR thật riêng của người đang đăng nhập Data Hub — dùng cho các
+// thao tác GHI vào EMR (nhập chăm sóc/dịch truyền/thủ thuật/VTYT) để hiện
+// đúng tên người làm trên EMR của bệnh viện. Trả về null nếu người này chưa
+// được cấp tài khoản riêng — nơi gọi tự rơi về tài khoản chung trong config.json.
+function getEmrCredentials(userId) {
+  const id = String(userId || '').trim();
+  if (!id) return null;
+  const user = USERS.find(u => u.id === id);
+  if (!user || !user.emrUsername || !user.emrPassword) return null;
+  return { username: user.emrUsername, password: user.emrPassword };
 }
 
 function localPrincipal() {
@@ -259,6 +277,7 @@ module.exports = {
   canAccessSession,
   sessionFromRequest,
   authStatus,
+  getEmrCredentials,
   isTruthy,
   requiredRoleForRequest,
 };
