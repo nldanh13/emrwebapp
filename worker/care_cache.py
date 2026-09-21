@@ -171,7 +171,7 @@ def scan_cham_soc_cache(driver, ngay_lam_viec, hours_needed=None):
         for r in rows:
             try:
                 cols = r.find_elements(By.TAG_NAME, "td")
-                if len(cols) < 11:
+                if len(cols) < 12:
                     # Dòng tiêu đề khoa điều trị (colspan=10) cũng rơi vào đây.
                     row_text = ""
                     try:
@@ -186,7 +186,7 @@ def scan_cham_soc_cache(driver, ngay_lam_viec, hours_needed=None):
                         department_header_seen = True
                     continue
 
-                time_full_raw = cols[2].text.strip()
+                time_full_raw = cols[3].text.strip()
                 time_full = _canon_time_key(time_full_raw)
                 if not time_full or ":" not in time_full:
                     continue
@@ -200,34 +200,36 @@ def scan_cham_soc_cache(driver, ngay_lam_viec, hours_needed=None):
                 if valid_dates and ddmmyy not in valid_dates:
                     continue
 
-                status = cols[1].text.strip()
-                creator = cols[3].text.strip()
+                status = cols[2].text.strip()
+                creator = cols[4].text.strip()
 
-                nt = cols[4].text.strip()
-                temp = cols[5].text.strip()
-                mach = cols[6].text.strip()
-                ha = cols[7].text.strip()
-                cn = cols[8].text.strip()
+                nt = cols[5].text.strip()
+                temp = cols[6].text.strip()
+                mach = cols[7].text.strip()
+                ha = cols[8].text.strip()
+                cn = cols[9].text.strip()
 
-                dien_bien = cols[9].text.strip()
-                cham_soc = cols[10].text.strip()
+                dien_bien = cols[10].text.strip()
+                cham_soc = cols[11].text.strip()
 
                 dt_key = _dt_from_time_key(time_full)
                 if dt_key:
                     oldest_scanned_dt = dt_key if (oldest_scanned_dt is None or dt_key < oldest_scanned_dt) else oldest_scanned_dt
 
-                # id sửa / id xoá
+                # id sửa / id xoá — cột [1] "Tác vụ" chứa link Sao/Sửa/Xóa; cột [3]
+                # "Thời gian" cũng có onDrawWebpartChamSoc gắn trên chính chữ giờ
+                # (dùng làm nguồn chính vì luôn hiện, không phụ thuộc CSS ẩn/hiện).
                 id_edit = None
                 id_delete = None
                 try:
-                    a_time = cols[2].find_element(By.TAG_NAME, "a")
+                    a_time = cols[3].find_element(By.TAG_NAME, "a")
                     id_edit = _extract_id_from_onclick(a_time.get_attribute("onclick"), "onDrawWebpartChamSoc")
                 except Exception as _e:  # was: bare except
                     LOG.debug(f"[except] {_e}")
                     pass
                 if not id_edit:
                     try:
-                        a_sua = cols[0].find_elements(By.TAG_NAME, "a")
+                        a_sua = cols[1].find_elements(By.TAG_NAME, "a")
                         for a in a_sua:
                             if a.text.strip().lower() == "sửa":
                                 id_edit = _extract_id_from_onclick(a.get_attribute("onclick"), "onDrawWebpartChamSoc")
@@ -236,7 +238,7 @@ def scan_cham_soc_cache(driver, ngay_lam_viec, hours_needed=None):
                         LOG.debug(f"[except] {_e}")
                         pass
                 try:
-                    a_xoa = cols[0].find_elements(By.TAG_NAME, "a")
+                    a_xoa = cols[1].find_elements(By.TAG_NAME, "a")
                     for a in a_xoa:
                         if a.text.strip().lower() == "xóa":
                             id_delete = _extract_id_from_onclick(a.get_attribute("onclick"), "fnSideDeleteChamSoc")
@@ -675,28 +677,28 @@ def don_dep_phieu_sai(driver, danh_sach_gio_can_co, list_ten_dieu_duong, ngay_la
             for row in rows:
                 try:
                     cols = row.find_elements(By.TAG_NAME, "td")
-                    if len(cols) < 11: continue
-                    
-                    txt_time_full = cols[2].text.strip()
+                    if len(cols) < 12: continue
+
+                    txt_time_full = cols[3].text.strip()
                     parts = txt_time_full.split(" ")
                     if len(parts) < 2: continue
-                    
+
                     short_time = parts[0]; date_part = parts[1]
                     # Chỉ xử lý các phiếu nằm trong phạm vi ngày đang làm việc
-                    if date_part != current_date_str and date_part != tomorrow_date_str: continue 
+                    if date_part != current_date_str and date_part != tomorrow_date_str: continue
 
                     is_wrong_time = short_time not in valid_times
                     is_new_status = "Mới" in row.text
-                    
+
                     if is_wrong_time or is_new_status:
-                        txt_content = cols[10].text.strip()
-                        txt_creator = cols[3].text.strip()
+                        txt_content = cols[11].text.strip()
+                        txt_creator = cols[4].text.strip()
                         is_my_ticket = kiem_tra_ten_trung_khop(txt_creator, list_ten_dieu_duong)
                         is_tool_content = "dấu hiệu sinh tồn" in txt_content or "chỉ định thuốc" in txt_content
-                        
+
                         if is_my_ticket and is_tool_content:
                             print(f"\n     [!] Xóa phiếu lỗi {txt_time_full} ({txt_creator})...", end=" ")
-                            link = cols[2].find_element(By.TAG_NAME, "a")
+                            link = cols[3].find_element(By.TAG_NAME, "a")
                             driver.execute_script("arguments[0].click();", link)
                             time.sleep(1.5); click_thu_hoi_va_xoa(driver)
                             time.sleep(1.5); found_err = True; break
@@ -715,31 +717,31 @@ def kiem_tra_bang(driver, time_str, gio_target, noi_dung, list_ten_dieu_duong, d
         for row in rows:
             try:
                 cols = row.find_elements(By.TAG_NAME, "td")
-                if len(cols) < 11: continue
-                
-                txt_time = cols[2].text.strip()
-                if time_str not in txt_time: continue 
-                
-                link = cols[2].find_element(By.TAG_NAME, "a")
-                txt_creator = cols[3].text.strip()
-                
+                if len(cols) < 12: continue
+
+                txt_time = cols[3].text.strip()
+                if time_str not in txt_time: continue
+
+                link = cols[3].find_element(By.TAG_NAME, "a")
+                txt_creator = cols[4].text.strip()
+
                 # Kiểm tra người lập nếu là ngoài giờ
                 if (gio_target >= 17 or gio_target < 8):
                     if not kiem_tra_ten_trung_khop(txt_creator, list_ten_dieu_duong): return "EDIT", link
-                
+
                 # Kiểm tra có DHST ở các giờ 5, 16
                 if gio_target in [5, 16]:
-                    if not all([cols[i].text.strip() for i in range(4, 8)]): return "EDIT", link
-                
+                    if not all([cols[i].text.strip() for i in range(5, 9)]): return "EDIT", link
+
                 # Kiểm tra nội dung chăm sóc
                 keywords_cs = [k.strip() for k in noi_dung.split("+") if k.strip()]
-                txt_current_cs = chuan_hoa_unicode(cols[10].text.strip())
+                txt_current_cs = chuan_hoa_unicode(cols[11].text.strip())
                 for kw in keywords_cs:
                     if chuan_hoa_unicode(kw) not in txt_current_cs: return "EDIT", link
 
                 # Kiểm tra diễn biến mong muốn (so theo từng dòng để ổn định và dễ mở rộng)
                 if dien_bien_mong_muon:
-                    txt_current_db = chuan_hoa_unicode(cols[9].text.strip())
+                    txt_current_db = chuan_hoa_unicode(cols[10].text.strip())
                     for line in str(dien_bien_mong_muon).splitlines():
                         line_norm = chuan_hoa_unicode(line)
                         if line_norm and line_norm not in txt_current_db:
