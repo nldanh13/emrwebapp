@@ -34,6 +34,7 @@ except Exception:
 
 from utils import load_config, login_emr, handle_popups, get_nurse_by_shift
 from shared.worker_session import open_session
+from nurse_emr_accounts import get_emr_account_for_nurse
 from selenium_emr_helpers import (
     goto_inpatient_list,
     set_time_range_filter,
@@ -1023,8 +1024,7 @@ def _row_dien_bien(row: Dict[str, Any], fallback: str = DEFAULT_DIEN_BIEN) -> st
 
 
 def _input_one(
-    driver: Any,
-    wait: Any,
+    ws: Any,
     row: Dict[str, Any],
     nurses: List[str],
     care_content: str,
@@ -1044,6 +1044,7 @@ def _input_one(
     if not nurses:
         return {"success": False, "error": "Không xác định được điều dưỡng để lập phiếu chăm sóc."}
 
+    driver, wait = ws.driver, ws.wait
     print(f"[CLINIC_CARE] {row.get('ma_bn')} | {time_str} | {row.get('khoa_chuyen_den')} | ĐD={nurses}")
     _open_care_page(driver, wait, row)
 
@@ -1052,10 +1053,7 @@ def _input_one(
     # Luồng này chỉ bổ sung phiếu tại đúng T/G vào. Không chạy dọn cache vì có thể
     # xóa nhầm phiếu chăm sóc khác do điều dưỡng đang lập cho cùng người bệnh.
     expected_creator = nurses[0]
-    # TODO: luồng này (nhập BN mới bên phòng khám) chưa đổi tài khoản EMR theo
-    # người lập phiếu cũ khi sửa/xóa (giống input_care.py) — tạm thời bỏ qua
-    # người lập hiện có, chỉ tránh vỡ khi kiem_tra_bang_cached trả thêm giá trị.
-    status, care_id, _existing_creator = kiem_tra_bang_cached(
+    status, care_id, existing_creator = kiem_tra_bang_cached(
         cs_cache,
         time_str,
         hour,
@@ -1070,61 +1068,119 @@ def _input_one(
     if status == "SKIP":
         return {"success": True, "skipped": True, "reason": "Phiếu đã có", "error": None, "time_str": time_str}
 
-    if status == "UPDATE":
-        if care_id:
-            open_cham_soc_by_id(driver, care_id)
-        wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
-        click_thu_hoi_cham_soc(driver)
-    elif status == "EDIT":
-        if care_id:
-            open_cham_soc_by_id(driver, care_id)
-        wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
-        click_thu_hoi_va_xoa(driver)
+    # EMR hiện chỉ cho đúng tài khoản người tạo phiếu tự sửa/xóa phiếu của họ.
+    # Nếu phiếu cũ (đang sửa/xóa) do người khác lập, phải đổi sang đúng tài
+    # khoản của người đó rồi mới thao tác, và đổi lại đúng tài khoản gốc của
+    # lượt nhập này (dùng để tạo phiếu mới) trước khi thoát hàm.
+    original_username = str(ws.config.get("username") or "").strip()
+    original_password = str(ws.config.get("password") or "")
+    switched_away = False
+
+    def _restore_original_account():
+        nonlocal driver, wait
+        cur = str(ws.config.get("username") or "").strip()
+        if not original_username or cur == original_username:
+            return
+        if ws.switch_account(original_username, original_password):
+            try:
+                _open_care_page(ws.driver, ws.wait, row)
+            except Exception as exc:
+                print(f"[WARN] Không mở lại hồ sơ sau khi đổi về tài khoản {original_username}: {exc}")
+        else:
+            print(f"[WARN] Không đổi lại được tài khoản EMR gốc {original_username}.")
+        driver, wait = ws.driver, ws.wait
+
+    if status in ("UPDATE", "EDIT") and existing_creator:
+        account = get_emr_account_for_nurse(existing_creator)
+        if not account:
+            return {
+                "success": False,
+                "error": (
+                    f"{time_str}: chưa cấu hình tài khoản EMR cho người lập phiếu cũ "
+                    f"'{existing_creator}' — không tự sửa/xóa được (EMR chỉ cho đúng "
+                    "tài khoản người tạo)."
+                ),
+            }
+        if account["username"] != original_username:
+            if not ws.switch_account(account["username"], account["password"]):
+                return {
+                    "success": False,
+                    "error": f"{time_str}: không đổi được tài khoản EMR của người lập '{existing_creator}'.",
+                }
+            try:
+                _open_care_page(ws.driver, ws.wait, row)
+            except Exception as exc:
+                _restore_original_account()
+                return {"success": False, "error": f"{time_str}: không mở lại được hồ sơ sau khi đổi tài khoản: {exc}"}
+            driver, wait = ws.driver, ws.wait
+            switched_away = True
 
     try:
-        wait.until(EC.element_to_be_clickable((By.ID, "btnThemCS"))).click()
-        wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
-    except Exception as exc:
-        return {"success": False, "error": f"Không mở được form phiếu chăm sóc: {exc}"}
+        if status == "UPDATE":
+            if care_id:
+                open_cham_soc_by_id(driver, care_id)
+            wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
+            click_thu_hoi_cham_soc(driver)
+        elif status == "EDIT":
+            if care_id:
+                open_cham_soc_by_id(driver, care_id)
+            wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
+            click_thu_hoi_va_xoa(driver)
+            if switched_away:
+                # Phiếu mới phải được tạo dưới đúng tài khoản gốc của lượt nhập
+                # này, không phải tài khoản người tạo phiếu cũ vừa xóa.
+                _restore_original_account()
+                switched_away = False
 
-    config_name = {"Default": {"work": nurses, "oncall": [], "admin": []}}
-    for attempt in range(1, 4):
-        if not set_thoi_gian_lap(driver, time_str, max_retry=2):
-            print(f"[WARN] Không đặt đúng T/G vào ở lần {attempt}")
-            time.sleep(0.5)
-            continue
-        form_ok = dien_thong_tin(
-            driver,
-            hour,
-            time_str,
-            care_content,
-            nurses,
-            dien_bien,
-            needs_vitals=needs_vitals,
-            config_ten_goc=config_name,
-        )
-        if not form_ok:
-            print(f"[WARN] Không chọn/verify được Người lập ở lần {attempt}")
-            time.sleep(0.5)
-            continue
         try:
-            save = driver.find_element(By.ID, "btnSaveChamSocPopupDraw")
-            driver.execute_script("arguments[0].click();", save)
+            wait.until(EC.element_to_be_clickable((By.ID, "btnThemCS"))).click()
+            wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
         except Exception as exc:
-            return {"success": False, "error": f"Không nhấn được Lưu: {exc}"}
-        time.sleep(1.5)
-        handle_popups(driver)
-        try:
-            complete = driver.find_element(By.ID, "btnPopupHOANTAT")
-            driver.execute_script("arguments[0].click();", complete)
-        except Exception:
-            pass
-        time.sleep(2.0)
-        handle_popups(driver)
-        if "Hoàn tất" in check_trang_thai_badge(driver):
-            return {"success": True, "error": None, "time_str": time_str, "nurse": nurses}
+            return {"success": False, "error": f"Không mở được form phiếu chăm sóc: {exc}"}
 
-    return {"success": False, "error": f"{time_str}: Không lưu/hoàn tất được phiếu chăm sóc."}
+        config_name = {"Default": {"work": nurses, "oncall": [], "admin": []}}
+        for attempt in range(1, 4):
+            if not set_thoi_gian_lap(driver, time_str, max_retry=2):
+                print(f"[WARN] Không đặt đúng T/G vào ở lần {attempt}")
+                time.sleep(0.5)
+                continue
+            form_ok = dien_thong_tin(
+                driver,
+                hour,
+                time_str,
+                care_content,
+                nurses,
+                dien_bien,
+                needs_vitals=needs_vitals,
+                config_ten_goc=config_name,
+            )
+            if not form_ok:
+                print(f"[WARN] Không chọn/verify được Người lập ở lần {attempt}")
+                time.sleep(0.5)
+                continue
+            try:
+                save = driver.find_element(By.ID, "btnSaveChamSocPopupDraw")
+                driver.execute_script("arguments[0].click();", save)
+            except Exception as exc:
+                return {"success": False, "error": f"Không nhấn được Lưu: {exc}"}
+            time.sleep(1.5)
+            handle_popups(driver)
+            try:
+                complete = driver.find_element(By.ID, "btnPopupHOANTAT")
+                driver.execute_script("arguments[0].click();", complete)
+            except Exception:
+                pass
+            time.sleep(2.0)
+            handle_popups(driver)
+            if "Hoàn tất" in check_trang_thai_badge(driver):
+                return {"success": True, "error": None, "time_str": time_str, "nurse": nurses}
+
+        return {"success": False, "error": f"{time_str}: Không lưu/hoàn tất được phiếu chăm sóc."}
+    finally:
+        if switched_away:
+            # UPDATE: toàn bộ sửa+lưu vừa chạy dưới tài khoản người lập cũ (bắt
+            # buộc) — đổi lại đúng tài khoản gốc dù thành công hay lỗi.
+            _restore_original_account()
 
 
 def _input(req: Dict[str, Any], result_path: str) -> int:
@@ -1169,8 +1225,7 @@ def _input(req: Dict[str, Any], result_path: str) -> int:
             patient_dien_bien = _row_dien_bien(requested, dien_bien)
             try:
                 ws.results[result_key] = _input_one(
-                    ws.driver,
-                    ws.wait,
+                    ws,
                     fresh,
                     nurses,
                     care_content,
