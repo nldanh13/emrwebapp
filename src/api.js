@@ -28,12 +28,13 @@ function setStoredAppToken(token) {
   } catch {}
 }
 
-function promptForAppToken() {
-  if (typeof window === 'undefined') return '';
-  const token = window.prompt('Nhập mã truy cập nội bộ EMR_APP_TOKEN:');
-  const cleaned = String(token || '').trim();
-  if (cleaned) setStoredAppToken(cleaned);
-  return cleaned;
+// Khi mã truy cập bị 401 giữa phiên làm việc (vd admin thu hồi token) — xoá token cũ
+// và báo cho AuthGate quay lại màn hình đăng nhập, thay vì window.prompt() thô.
+function reportAuthRequired() {
+  setStoredAppToken('');
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('emr:auth-required'));
+  }
 }
 
 function headers(extra = {}) {
@@ -215,17 +216,7 @@ async function fetchWithAuth(url, options = {}, retryAuth = true, details = null
   const res = await fetch(url, options);
   if (res.status === 401 && retryAuth) {
     if (details) logActivity('api.auth.required', { ...details, status: res.status });
-    const token = promptForAppToken();
-    if (token) {
-      const nextOptions = {
-        ...options,
-        headers: {
-          ...(options.headers || {}),
-          'x-app-token': token,
-        },
-      };
-      return fetchWithAuth(url, nextOptions, false, details);
-    }
+    reportAuthRequired();
   }
   return res;
 }
@@ -278,6 +269,22 @@ async function request(url, options = {}, retryAuth = true) {
   });
   throw new Error(msg);
 }
+
+// ── Đăng nhập ────────────────────────────────────────────────────────────────
+// Không dùng request()/get() vì lỗi 401 ở đây là trạng thái bình thường (chưa
+// đăng nhập), không phải lỗi cần throw/log như các API nghiệp vụ khác.
+export async function getAuthMe() {
+  try {
+    const res = await fetch('/api/auth/me', { headers: headers() });
+    const data = await res.json().catch(() => null);
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    return { ok: false, status: 0, data: null, error: String(err?.message || err) };
+  }
+}
+
+export function setAuthToken(token) { setStoredAppToken(String(token || '').trim()); }
+export function clearAuthToken() { setStoredAppToken(''); }
 
 async function get(url) {
   return request(url, { headers: headers() });
