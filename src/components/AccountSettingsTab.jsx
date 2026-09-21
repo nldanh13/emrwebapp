@@ -209,6 +209,7 @@ export default function AccountSettingsTab() {
   const [deleting, setDeleting] = useState('');
   const [toast, setToast] = useState(null);
   const [newTokenNotice, setNewTokenNotice] = useState(null);
+  const [bypassedCount, setBypassedCount] = useState(0);
 
   const showToast = useCallback((msg, type = 'info') => {
     setToast({ msg, type });
@@ -222,6 +223,7 @@ export default function AccountSettingsTab() {
       const data = await api.getAdminUsers();
       setItems(data.users || []);
       setFileInfo(data.file || null);
+      setBypassedCount(data.local_only_bypassed_users_count || 0);
       if (data.parse_error) setLoadError(`File users.json hiện có lỗi: ${data.parse_error}`);
     } catch (e) {
       setLoadError(String(e.message || e));
@@ -291,6 +293,15 @@ export default function AccountSettingsTab() {
           border: `1px solid ${C.amberBorder}`, fontSize: 12, color: C.amber, lineHeight: 1.5 }}>
           Server đang lấy danh sách tài khoản từ biến môi trường <code>EMR_USERS_JSON</code> — không sửa được từ giao diện
           này. Hãy sửa trực tiếp biến môi trường đó rồi khởi động lại server.
+        </div>
+      )}
+      {bypassedCount > 0 && (
+        <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 7, background: C.blueBg,
+          border: `1px solid ${C.blueBorder}`, fontSize: 12, color: C.text2, lineHeight: 1.5 }}>
+          Đã có {bypassedCount} tài khoản trong danh sách, nhưng server hiện chỉ mở cho máy này (chưa đặt
+          <code> HOST=0.0.0.0</code>) nên <b>đang tạm bỏ qua đăng nhập</b> — ai mở app trên máy này cũng vào thẳng
+          với quyền quản trị. Tài khoản vẫn sửa được bình thường ở đây; đăng nhập sẽ tự bật lại ngay khi bạn mở
+          server ra mạng LAN.
         </div>
       )}
       {loadError && (
