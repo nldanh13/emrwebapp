@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { C, FONT_UI } from './tokens.js';
+import useIsMobile from './hooks/useIsMobile.js';
 import DataProcessingTab from './components/DataProcessingTab.jsx';
 import ShiftTab  from './components/ShiftTab.jsx';
 import NurseTab  from './components/NurseTab.jsx';
@@ -145,71 +146,101 @@ function saveActiveTab(tab) { try { localStorage.setItem(ACTIVE_TAB_KEY, tab); }
 const FUNCTION_HUB_TAB_META = { id: 'functions', label: 'Bộ chức năng', hint: 'Chọn chức năng hoặc quy trình ghép' };
 function currentTab(id) { return id === 'functions' ? FUNCTION_HUB_TAB_META : getNavigationEntry(id); }
 
-function Sidebar({ active, onChange }) {
+function Sidebar({ active, onChange, mobile = false, open = false, onClose }) {
   const groups = [];
   for (const tab of TABS) {
     let group = groups.find(g => g.name === tab.group);
     if (!group) { group = { name: tab.group, tabs: [] }; groups.push(group); }
     group.tabs.push(tab);
   }
+  const handlePick = useCallback((id) => {
+    onChange(id);
+    if (mobile) onClose?.();
+  }, [onChange, mobile, onClose]);
+
+  const asideStyle = mobile
+    ? {
+        position: 'fixed', top: 0, bottom: 0, left: 0, width: 260, maxWidth: '82vw', zIndex: 300,
+        borderRight: `1px solid ${C.border2}`, background: C.surface, display: 'flex', flexDirection: 'column', minHeight: 0,
+        boxShadow: C.shadow2, transform: open ? 'translateX(0)' : 'translateX(-100%)',
+        transition: 'transform 0.18s ease',
+      }
+    : { width: 220, flexShrink: 0, borderRight: `1px solid ${C.border2}`, background: C.surface, display: 'flex', flexDirection: 'column', minHeight: 0 };
+
   return (
-    <aside style={{ width: 220, flexShrink: 0, borderRight: `1px solid ${C.border2}`, background: C.surface, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      <div style={{ padding: '13px 13px 12px', borderBottom: `1px solid ${C.border2}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 7, background: C.blue, display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 750, fontSize: 15.5 }}>E</div>
-          <div>
+    <>
+      {mobile && open && (
+        <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.42)', zIndex: 290 }} />
+      )}
+      <aside style={asideStyle}>
+        <div style={{ padding: '13px 13px 12px', borderBottom: `1px solid ${C.border2}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 7, background: C.blue, display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 750, fontSize: 15.5, flexShrink: 0 }}>E</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ color: C.text, fontSize: 15, fontWeight: 750, letterSpacing: '-0.02em' }}>Data Hub</div>
             <div style={{ color: C.text3, fontSize: 11, marginTop: 2 }}>Khai thác dữ liệu bệnh viện</div>
           </div>
+          {mobile && (
+            <button type="button" onClick={onClose} aria-label="Đóng menu" style={{ width: 28, height: 28, borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text2, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>✕</button>
+          )}
         </div>
-      </div>
-      <nav style={{ padding: '7px 8px 12px', overflow: 'auto', flex: 1 }}>
-        {groups.map(group => (
-          <div key={group.name} style={{ marginBottom: 8 }}>
-            <div style={{ padding: '8px 9px 5px', color: C.text3, fontSize: 9.5, fontWeight: 750, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{group.name}</div>
-            <div style={{ display: 'grid', gap: 2 }}>
-              {group.tabs.map(tab => {
-                const activeTab = active === tab.id;
-                return (
-                  <button key={tab.id} type="button" onClick={() => onChange(tab.id)} title={tab.hint} style={{
-                    position: 'relative', display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 9px', borderRadius: 5,
-                    border: '1px solid transparent', borderLeft: `2px solid ${activeTab ? C.blue : 'transparent'}`, background: activeTab ? C.blueBg : 'transparent', color: activeTab ? C.blue : C.text2,
-                    fontFamily: 'inherit', cursor: 'pointer', fontSize: 11.5, fontWeight: activeTab ? 750 : 550,
-                  }}>
-                    <span style={{ width: 20, height: 20, display: 'grid', placeItems: 'center', color: activeTab ? C.blue : C.text3, flexShrink: 0, fontSize: 13 }}>{tab.icon}</span>
-                    <span style={{ minWidth: 0, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tab.label}</span>
-                  </button>
-                );
-              })}
+        <nav style={{ padding: '7px 8px 12px', overflow: 'auto', flex: 1 }}>
+          {groups.map(group => (
+            <div key={group.name} style={{ marginBottom: 8 }}>
+              <div style={{ padding: '8px 9px 5px', color: C.text3, fontSize: 9.5, fontWeight: 750, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{group.name}</div>
+              <div style={{ display: 'grid', gap: 2 }}>
+                {group.tabs.map(tab => {
+                  const activeTab = active === tab.id;
+                  return (
+                    <button key={tab.id} type="button" onClick={() => handlePick(tab.id)} title={tab.hint} style={{
+                      position: 'relative', display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: mobile ? '10px 9px' : '8px 9px', borderRadius: 5,
+                      border: '1px solid transparent', borderLeft: `2px solid ${activeTab ? C.blue : 'transparent'}`, background: activeTab ? C.blueBg : 'transparent', color: activeTab ? C.blue : C.text2,
+                      fontFamily: 'inherit', cursor: 'pointer', fontSize: mobile ? 13 : 11.5, fontWeight: activeTab ? 750 : 550,
+                    }}>
+                      <span style={{ width: 20, height: 20, display: 'grid', placeItems: 'center', color: activeTab ? C.blue : C.text3, flexShrink: 0, fontSize: 13 }}>{tab.icon}</span>
+                      <span style={{ minWidth: 0, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
-      </nav>
-    </aside>
+          ))}
+        </nav>
+      </aside>
+    </>
   );
 }
 
-function TopBar({ active, now, onCancel, onViewLog, onDiagnostics, onOpenFunctions }) {
+function TopBar({ active, now, onCancel, onViewLog, onDiagnostics, onOpenFunctions, mobile = false, onMenuClick }) {
   const tab = currentTab(active);
   const dateStr = now.toLocaleDateString('vi-VN', { day:'2-digit', month:'2-digit', year:'numeric' });
   const timeStr = now.toLocaleTimeString('vi-VN', { hour:'2-digit', minute:'2-digit' });
   return (
-    <header style={{ height: 54, flexShrink: 0, borderBottom: `1px solid ${C.border2}`, display: 'flex', alignItems: 'center', gap: 10, padding: '0 14px', background: C.surface }}>
-      <div style={{ minWidth: 190, maxWidth: 320 }}>
-        <div style={{ color: C.text, fontWeight: 700, fontSize: 16, letterSpacing: '-0.02em' }}>{tab.label}</div>
-        <div style={{ color: C.text3, fontSize: 11, marginTop: 2 }}>{tab.hint}</div>
+    <header style={{ height: 54, flexShrink: 0, borderBottom: `1px solid ${C.border2}`, display: 'flex', alignItems: 'center', gap: mobile ? 6 : 10, padding: mobile ? '0 8px' : '0 14px', background: C.surface }}>
+      {mobile && (
+        <button type="button" onClick={onMenuClick} aria-label="Mở menu" style={{ ...topIconButtonStyle, flexShrink: 0 }}>☰</button>
+      )}
+      <div style={{ minWidth: 0, maxWidth: mobile ? 'none' : 320, flex: mobile ? 1 : 'none', overflow: 'hidden' }}>
+        <div style={{ color: C.text, fontWeight: 700, fontSize: mobile ? 14 : 16, letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tab.label}</div>
+        {!mobile && <div style={{ color: C.text3, fontSize: 11, marginTop: 2 }}>{tab.hint}</div>}
       </div>
-      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button type="button" onClick={onOpenFunctions} style={{ width: 218, height: 32, borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text3, display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
-          <span>⌕</span><span style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>Tìm chức năng, quy trình...</span>
-        </button>
+      <div style={{ marginLeft: mobile ? 0 : 'auto', display: 'flex', alignItems: 'center', gap: mobile ? 4 : 8, flexShrink: 0 }}>
+        {!mobile && (
+          <button type="button" onClick={onOpenFunctions} style={{ width: 218, height: 32, borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text3, display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+            <span>⌕</span><span style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>Tìm chức năng, quy trình...</span>
+          </button>
+        )}
+        {mobile && (
+          <button type="button" onClick={onOpenFunctions} style={topIconButtonStyle} title="Tìm chức năng">⌕</button>
+        )}
         <button type="button" onClick={onDiagnostics} style={topIconButtonStyle} title="Chẩn đoán">◇</button>
-        <button type="button" onClick={onViewLog} style={topIconButtonStyle} title="Xem log">◎</button>
+        {!mobile && <button type="button" onClick={onViewLog} style={topIconButtonStyle} title="Xem log">◎</button>}
         <button type="button" onClick={onCancel} style={{ ...topIconButtonStyle, color: C.red }} title="Huỷ tác vụ">⊘</button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0 2px 6px', borderRadius: 0, background: 'transparent', border: 'none' }}>
-          <span style={{ width: 27, height: 27, borderRadius: 6, display: 'grid', placeItems: 'center', background: C.blueBg, color: C.blue, fontWeight: 700 }}>DA</span>
-          <span style={{ fontSize: 11, color: C.text2, lineHeight: 1.2 }}><b style={{ color: C.text, fontWeight: 700 }}>Duy Anh</b><br />{dateStr} · {timeStr}</span>
-        </div>
+        {!mobile && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0 2px 6px', borderRadius: 0, background: 'transparent', border: 'none' }}>
+            <span style={{ width: 27, height: 27, borderRadius: 6, display: 'grid', placeItems: 'center', background: C.blueBg, color: C.blue, fontWeight: 700 }}>DA</span>
+            <span style={{ fontSize: 11, color: C.text2, lineHeight: 1.2 }}><b style={{ color: C.text, fontWeight: 700 }}>Duy Anh</b><br />{dateStr} · {timeStr}</span>
+          </div>
+        )}
       </div>
     </header>
   );
@@ -222,12 +253,14 @@ function shouldShowDateBar(tab) {
 }
 
 
-function ContentFrame({ children, compact = false }) {
-  return <main style={{ flex: 1, overflow: 'auto', background: C.bg }}><div style={{ maxWidth: compact ? 'none' : 1480, margin: '0 auto', padding: compact ? 0 : 12 }}>{children}</div></main>;
+function ContentFrame({ children, compact = false, mobile = false }) {
+  return <main style={{ flex: 1, overflow: 'auto', overflowX: 'hidden', background: C.bg }}><div style={{ maxWidth: compact ? 'none' : 1480, margin: '0 auto', padding: compact ? 0 : (mobile ? 8 : 12) }}>{children}</div></main>;
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
+  const isMobile = useIsMobile();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [tab, setTab] = useState(loadActiveTab);
   const [toasts, setToasts] = useState([]);
   const [now, setNow] = useState(new Date());
@@ -328,12 +361,12 @@ export default function App() {
   return (
     <div style={{ fontFamily: FONT_UI, background: C.bg, color: C.text, height: '100vh', fontSize: 13, overflow: 'hidden' }}>
       <div style={{ height: '100%', background: C.app, display: 'flex', overflow: 'hidden' }}>
-        <Sidebar active={tab} onChange={handleTabChange} />
+        <Sidebar active={tab} onChange={handleTabChange} mobile={isMobile} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-          <TopBar active={tab} now={now} onCancel={handleCancel} onViewLog={handleViewLog} onDiagnostics={handleDiagnostics} onOpenFunctions={handleOpenFunctionHub} />
+          <TopBar active={tab} now={now} onCancel={handleCancel} onViewLog={handleViewLog} onDiagnostics={handleDiagnostics} onOpenFunctions={handleOpenFunctionHub} mobile={isMobile} onMenuClick={() => setSidebarOpen(o => !o)} />
           <FeatureContextBanner context={featureContext} definition={selectedContextDefinition} onBack={handleOpenFunctionHub} onClose={() => setFeatureContext(null)} />
           {shouldShowDateBar(tab) && <div style={{ borderBottom: `1px solid ${C.border2}`, background: C.surface }}><WorkDateRangeBar value={workDateRange} onChange={setWorkDateRange} /></div>}
-          <ContentFrame compact={Boolean(currentTab(tab)?.compact)}>
+          <ContentFrame compact={Boolean(currentTab(tab)?.compact)} mobile={isMobile}>
             {tab === 'functions'    && <FunctionHubTab onOpenContext={handleOpenContext} toast={toast} />}
             {tab === 'acquire'      && <DataProcessingTab toast={toast} workDateRange={workDateRange} />}
             {tab === 'research'     && <ResearchTab toast={toast} />}
