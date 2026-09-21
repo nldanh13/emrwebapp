@@ -352,7 +352,8 @@ def delete_cham_soc_new_by_id(driver, care_id):
 
 
 def cleanup_cham_soc_cache(
-    driver,
+    ws,
+    ma_bn,
     cache,
     sorted_hours,
     list_ten_dieu_duong,
@@ -360,6 +361,7 @@ def cleanup_cham_soc_cache(
     extra_valid_time_keys=None,
     protect_before_time_key=None,
     remove_tool_rows_at_or_after_time_key=None,
+    allow_completed=False,
 ):
     """Dọn cache phiếu chăm sóc.
 
@@ -374,7 +376,17 @@ def cleanup_cham_soc_cache(
       kể cả 05:00 ngày hôm sau. Phiếu trước mốc mổ và phiếu không nhận diện là
       do tool tạo vẫn được giữ nguyên.
     Cache sẽ bị mutate để loại bỏ các phiếu đã xoá.
+
+    EMR hiện chỉ cho đúng tài khoản người tạo phiếu tự sửa/xóa phiếu của họ.
+    Vì vậy nhận `ws` (WorkerSession) thay vì `driver` trực tiếp — trước mỗi
+    lần sửa/xóa, tự đổi sang đúng tài khoản EMR của người tạo phiếu đó (xem
+    WorkerSession.switch_to_creator_account) rồi mới thao tác. Nếu không tra
+    được tài khoản EMR cho người tạo, bỏ qua phiếu đó (không xóa được), in
+    cảnh báo để người dùng tự xử lý tay hoặc bổ sung tài khoản.
     """
+    _original_username = str(ws.config.get("username") or "").strip()
+    _original_password = str(ws.config.get("password") or "")
+
     valid_times = {f"{int(h):02d}:00" for h in (sorted_hours or [])}
     for _time_key in (extra_valid_time_keys or []):
         _m = re.search(r"(\d{1,2}:\d{2})", str(_time_key or ""))
@@ -449,22 +461,26 @@ def cleanup_cham_soc_cache(
                 if force_remove_after_surgery and _is_tool_content(e):
                     cid = e.get("id_delete") or e.get("id_edit")
                     if cid:
-                        print(f"   [DỌN {phase}][SURGERY] Thu hồi + xóa phiếu sau mốc đi mổ {time_full} ({creator})")
-                        try:
-                            if "mới" in chuan_hoa_unicode(stt) and e.get("id_delete"):
-                                delete_cham_soc_new_by_id(driver, e.get("id_delete"))
-                            else:
-                                open_cham_soc_by_id(driver, e.get("id_edit") or cid)
-                                WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
-                                click_thu_hoi_va_xoa(driver)
-                        except Exception as _e:
-                            print(f"      [WARN] Không xoá được phiếu sau mổ: {_e}")
-                        try:
-                            back_btn = driver.find_element(By.XPATH, "//a[contains(@onclick, 'fnbackFormChamSoc')]")
-                            driver.execute_script("arguments[0].click();", back_btn)
-                            time.sleep(0.8)
-                        except Exception as _e:
-                            LOG.debug(f"[except] {_e}")
+                        if not ws.switch_to_creator_account(creator, ma_bn, allow_completed=allow_completed):
+                            print(f"      [WARN] Không có tài khoản EMR cho '{creator}' — bỏ qua xóa phiếu sau mổ {time_full}")
+                        else:
+                            driver = ws.driver
+                            print(f"   [DỌN {phase}][SURGERY] Thu hồi + xóa phiếu sau mốc đi mổ {time_full} ({creator})")
+                            try:
+                                if "moi" in chuan_hoa_unicode(stt) and e.get("id_delete"):
+                                    delete_cham_soc_new_by_id(driver, e.get("id_delete"))
+                                else:
+                                    open_cham_soc_by_id(driver, e.get("id_edit") or cid)
+                                    WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
+                                    click_thu_hoi_va_xoa(driver)
+                            except Exception as _e:
+                                print(f"      [WARN] Không xoá được phiếu sau mổ: {_e}")
+                            try:
+                                back_btn = driver.find_element(By.XPATH, "//a[contains(@onclick, 'fnbackFormChamSoc')]")
+                                driver.execute_script("arguments[0].click();", back_btn)
+                                time.sleep(0.8)
+                            except Exception as _e:
+                                LOG.debug(f"[except] {_e}")
                     try:
                         cache.get(time_full, []).remove(e)
                     except Exception as _e:
@@ -472,11 +488,15 @@ def cleanup_cham_soc_cache(
                     continue
 
                 # 1) Xoá phiếu 'Mới' (dư)
-                if "mới" in chuan_hoa_unicode(stt):
+                if "moi" in chuan_hoa_unicode(stt):
                     cid = e.get("id_delete") or e.get("id_edit")
                     if cid:
-                        print(f"   [DỌN {phase}] Xóa phiếu 'Mới' {time_full} ({creator})")
-                        delete_cham_soc_new_by_id(driver, cid)
+                        if not ws.switch_to_creator_account(creator, ma_bn, allow_completed=allow_completed):
+                            print(f"   [WARN][DỌN {phase}] Không có tài khoản EMR cho '{creator}' — bỏ qua xóa phiếu 'Mới' {time_full}")
+                        else:
+                            driver = ws.driver
+                            print(f"   [DỌN {phase}] Xóa phiếu 'Mới' {time_full} ({creator})")
+                            delete_cham_soc_new_by_id(driver, cid)
                     # remove khỏi cache
                     try:
                         cache.get(time_full, []).remove(e)
@@ -489,22 +509,26 @@ def cleanup_cham_soc_cache(
                 if hhmm and valid_times and hhmm not in valid_times and _is_tool_content(e):
                     cid = e.get("id_edit")
                     if cid:
-                        print(f"   [DỌN {phase}] Thu hồi + xóa phiếu sai giờ {time_full} ({creator})")
-                        try:
-                            open_cham_soc_by_id(driver, cid)
-                            # chờ form
-                            WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
-                            click_thu_hoi_va_xoa(driver)
-                        except Exception as _e:
-                            print(f"      [WARN] Không xoá được: {_e}")
-                        # về danh sách nếu cần
-                        try:
-                            back_btn = driver.find_element(By.XPATH, "//a[contains(@onclick, 'fnbackFormChamSoc')]")
-                            driver.execute_script("arguments[0].click();", back_btn)
-                            time.sleep(0.8)
-                        except Exception as _e:  # was: bare except
-                            LOG.debug(f"[except] {_e}")
-                            pass
+                        if not ws.switch_to_creator_account(creator, ma_bn, allow_completed=allow_completed):
+                            print(f"   [WARN][DỌN {phase}] Không có tài khoản EMR cho '{creator}' — bỏ qua thu hồi phiếu sai giờ {time_full}")
+                        else:
+                            driver = ws.driver
+                            print(f"   [DỌN {phase}] Thu hồi + xóa phiếu sai giờ {time_full} ({creator})")
+                            try:
+                                open_cham_soc_by_id(driver, cid)
+                                # chờ form
+                                WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
+                                click_thu_hoi_va_xoa(driver)
+                            except Exception as _e:
+                                print(f"      [WARN] Không xoá được: {_e}")
+                            # về danh sách nếu cần
+                            try:
+                                back_btn = driver.find_element(By.XPATH, "//a[contains(@onclick, 'fnbackFormChamSoc')]")
+                                driver.execute_script("arguments[0].click();", back_btn)
+                                time.sleep(0.8)
+                            except Exception as _e:  # was: bare except
+                                LOG.debug(f"[except] {_e}")
+                                pass
                     try:
                         cache.get(time_full, []).remove(e)
                     except Exception as _e:  # was: bare except
@@ -518,6 +542,19 @@ def cleanup_cham_soc_cache(
     for k in list(cache.keys()):
         if not cache[k]:
             del cache[k]
+
+    # Khôi phục lại đúng tài khoản EMR đang dùng trước khi dọn (nếu đã phải
+    # đổi tài khoản để xóa/sửa phiếu của người khác) để các bước sau đó
+    # (nhập phiếu mới, dọn lần kế tiếp...) không bị lệch tài khoản.
+    _current_username = str(ws.config.get("username") or "").strip()
+    if _original_username and _current_username != _original_username:
+        if ws.switch_account(_original_username, _original_password):
+            try:
+                ws.open_care_form(ma_bn, allow_completed=allow_completed)
+            except Exception as _e:
+                print(f"   [WARN][DỌN {phase}] Không mở lại hồ sơ sau khi khôi phục tài khoản gốc {_original_username}: {_e}")
+        else:
+            print(f"   [WARN][DỌN {phase}] Không khôi phục được tài khoản EMR gốc {_original_username} sau khi dọn phiếu.")
 
 def _creator_matches_expected(creator, expected_creator):
     """So khớp người lập hiện có với người lập cần có theo lịch điều dưỡng hiện tại."""
@@ -539,6 +576,11 @@ def kiem_tra_bang_cached(
 ):
     """Kiểm tra bằng cache (KHÔNG quét lại tất cả trang mỗi giờ).
 
+    Trả về (trạng_thái, id_sửa, người_lập_hiện_có) — người_lập_hiện_có là
+    người đã tạo phiếu đang xét trên EMR (None nếu chưa có phiếu), dùng để
+    đổi đúng tài khoản EMR của người đó trước khi sửa/xóa (EMR hiện chỉ cho
+    đúng tài khoản người tạo tự sửa/xóa phiếu của họ).
+
     Trạng thái trả về:
     - PERFECT: phiếu đã đúng giờ + nội dung + sinh hiệu + đúng người lập theo lịch.
     - UPDATE: có phiếu trùng đúng mốc giờ nhưng sai nội dung/sinh hiệu và có id sửa;
@@ -550,12 +592,12 @@ def kiem_tra_bang_cached(
     lst = (cache or {}).get(time_str, [])
     if not lst:
         LOG.debug(_ctx_prefix() + f"[check_cached] time={time_str} => MISSING (no rows)")
-        return "MISSING", None
+        return "MISSING", None, None
 
     # ưu tiên phiếu 'Hoàn tất' khi chọn candidate (nhưng vẫn phải check tất cả để tìm PERFECT)
     def score(e):
         stt = chuan_hoa_unicode(e.get("status") or "")
-        return 0 if "hoàn tất" in stt else (1 if "mới" in stt else 2)
+        return 0 if "hoan tat" in stt else (1 if "moi" in stt else 2)
 
     lst2 = sorted(lst, key=score)
 
@@ -589,7 +631,7 @@ def kiem_tra_bang_cached(
         creator_ok = _creator_matches_expected(creator, expected_creator)
         if care_ok and db_ok and dhst_ok and creator_ok:
             LOG.info(_ctx_prefix() + f"[check_cached] time={time_str} => PERFECT (status='{e.get('status','')}', creator='{creator}')")
-            return "PERFECT", e.get("id_edit")
+            return "PERFECT", e.get("id_edit"), creator
 
         # Đã có phiếu đúng mốc giờ nhưng sai bất kỳ thành phần nào: ưu tiên cập nhật
         # phiếu của team/tool; nếu không có thì vẫn cập nhật phiếu trùng giờ có id sửa.
@@ -610,7 +652,7 @@ def kiem_tra_bang_cached(
             status_norm = chuan_hoa_unicode(e.get("status") or "")
             priority = (
                 0 if (creator_in_list or is_tool) else 1,
-                0 if "hoàn tất" in status_norm else 1,
+                0 if "hoan tat" in status_norm else 1,
             )
             if best_update_candidate is None or priority < best_update_priority:
                 best_update_candidate = e
@@ -624,7 +666,7 @@ def kiem_tra_bang_cached(
             + f"id={best_update_candidate.get('id_edit')}, status='{best_update_candidate.get('status','')}', "
             + f"creator='{best_update_candidate.get('creator','')}')"
         )
-        return "UPDATE", best_update_candidate.get("id_edit")
+        return "UPDATE", best_update_candidate.get("id_edit"), best_update_candidate.get("creator")
 
     # 2) không có PERFECT/UPDATE: quyết định EDIT hay SKIP
     # chọn 1 candidate tốt nhất để EDIT (ưu tiên 'Mới', rồi tool-content)
@@ -635,7 +677,7 @@ def kiem_tra_bang_cached(
         cham_soc_txt = e.get("cham_soc", "") or ""
         dien_bien_txt = e.get("dien_bien", "") or ""
 
-        is_moi = ("mới" in stt_norm)
+        is_moi = ("moi" in stt_norm)
         is_tool = _is_tool_content(cham_soc_txt) or _is_tool_content(dien_bien_txt)
         creator_in_list = kiem_tra_ten_trung_khop(creator, list_ten_dieu_duong)
 
@@ -657,12 +699,12 @@ def kiem_tra_bang_cached(
 
     if edit_candidate:
         LOG.info(_ctx_prefix() + f"[check_cached] time={time_str} => EDIT (id={edit_candidate.get('id_edit')}, status='{edit_candidate.get('status','')}', creator='{edit_candidate.get('creator','')}')")
-        return "EDIT", edit_candidate.get("id_edit")
+        return "EDIT", edit_candidate.get("id_edit"), edit_candidate.get("creator")
 
     # có phiếu nhưng không PERFECT và không được phép đụng => SKIP
     top = lst2[0]
     LOG.warning(_ctx_prefix() + f"[check_cached] time={time_str} => SKIP (existing row has no editable id; creator='{top.get('creator','')}', status='{top.get('status','')}')")
-    return "SKIP", top.get("id_edit")
+    return "SKIP", top.get("id_edit"), top.get("creator")
 
 
 def don_dep_phieu_sai(driver, danh_sach_gio_can_co, list_ten_dieu_duong, ngay_lam_viec):

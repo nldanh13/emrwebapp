@@ -18,6 +18,15 @@ tay không bị đụng tới.
 định BỎ QUA các phiếu có mốc giờ trong vòng --min-age-hours giờ gần đây
 (mặc định 6h) — chỉ coi là "tồn đọng" khi đã đủ cũ.
 
+EMR hiện chỉ cho SỬA/XÓA phiếu bằng đúng tài khoản của người đã tạo phiếu đó
+(không còn xóa hộ bằng tài khoản khác được nữa). Vì vậy script chạy 2 giai
+đoạn: (1) quét hết mọi BN bằng 1 tài khoản để TÌM phiếu tồn đọng, nhóm theo
+người tạo; (2) nếu --confirm-delete, lần lượt đăng nhập đúng tài khoản EMR
+của từng người tạo (tra theo tên trong config/nurse_emr_accounts.json —
+xem worker/nurse_emr_accounts.py) rồi mới xóa. Phiếu của người CHƯA có tài
+khoản EMR cấu hình trong nurse_emr_accounts.json sẽ được liệt kê trong báo
+cáo nhưng KHÔNG xóa được — cần tự xóa tay hoặc bổ sung tài khoản trước.
+
 MẶC ĐỊNH CHỈ BÁO CÁO, KHÔNG XÓA GÌ — chạy với --confirm-delete để thực sự
 xóa các phiếu đã liệt kê.
 
@@ -44,6 +53,7 @@ from utils import load_config, chuan_hoa_unicode
 from shared.worker_session import open_session
 from care_cache import scan_cham_soc_cache, _is_tool_content, delete_cham_soc_new_by_id
 from input_care_utils import kiem_tra_ten_trung_khop, _dt_from_time_key
+from nurse_emr_accounts import get_emr_account_for_nurse
 
 
 def _lay_danh_sach_ten(config, extra_names=None):
@@ -144,6 +154,45 @@ def _find_stray_new_entries(all_entries, list_nurse, min_age_hours=0, now=None):
     return stray
 
 
+def _build_stray_infos(stray):
+    """Chuyển các bản ghi 'Mới' tồn đọng (dict thô từ scan_cham_soc_cache)
+    thành info để đưa vào báo cáo, đồng thời nhóm theo tài khoản EMR của
+    người tạo (tra qua worker/nurse_emr_accounts.py) — EMR hiện chỉ cho đúng
+    tài khoản người tạo tự sửa/xóa phiếu của mình.
+
+    Trả về (infos, by_username, passwords):
+    - infos: list info theo đúng thứ tự stray, dùng để đưa vào report["found"].
+    - by_username: {username: [info, ...]} — chỉ gồm info đã tra được tài khoản.
+    - passwords: {username: password} — để đăng nhập lại ở Phase 2.
+    """
+    infos = []
+    by_username = {}
+    passwords = {}
+    for e in stray:
+        creator = e.get("creator") or ""
+        account = get_emr_account_for_nurse(creator)
+        username = account["username"] if account else None
+        info = {
+            "time_full": e.get("time_full"),
+            "creator": creator,
+            "cham_soc": (e.get("cham_soc") or "")[:200],
+            "dien_bien": (e.get("dien_bien") or "")[:200],
+            "id_delete": e.get("id_delete") or e.get("id_edit"),
+            "emr_account": username,
+            "delete_attempted": False,
+            "delete_blocked_reason": None if username else (
+                f"Chưa cấu hình tài khoản EMR cho '{creator}' trong "
+                "config/nurse_emr_accounts.json (tab Lịch điều dưỡng) — "
+                "EMR chỉ cho đúng tài khoản người tạo tự xóa."
+            ),
+        }
+        infos.append(info)
+        if username:
+            by_username.setdefault(username, []).append(info)
+            passwords.setdefault(username, account["password"])
+    return infos, by_username, passwords
+
+
 def _write_report(path, report):
     """Ghi báo cáo ra đĩa — gọi lại sau MỖI BN, không chỉ lúc kết thúc, để lỡ
     script bị ngắt giữa chừng (mất mạng, Chrome crash...) vẫn còn kết quả các
@@ -184,8 +233,16 @@ def main():
     print(f">>> Chỉ tính tồn đọng nếu cũ hơn {args.min_age_hours:g}h — {len(list_nurse)} tên điều dưỡng được nhận diện")
 
     report = {"mode": ("delete" if args.confirm_delete else "report_only"), "patients": []}
+    # patient_plans: mỗi phần tử {"ma_bn", "entry", "by_username": {username: [info, ...]}}
+    # username=None nghĩa là không tra được tài khoản EMR riêng cho người tạo phiếu đó.
+    patient_plans = []
+    account_passwords = {}   # username -> password
+    account_order = []       # thứ tự tài khoản lần đầu xuất hiện (không tính None)
 
     with open_session("/dev/null", config=config) as ws:
+        # ── PHASE 1: quét hết mọi BN (dùng 1 tài khoản, chỉ ĐỌC nên không bị
+        # luật "chỉ tài khoản người tạo mới sửa/xóa được" chi phối) để TÌM
+        # phiếu tồn đọng, nhóm theo tài khoản EMR của người tạo.
         for p in patients:
             ma_bn, ho_ten = p["ma_bn"], p["ho_ten"]
             entry = {"ma_bn": ma_bn, "ho_ten": ho_ten, "found": [], "error": None}
@@ -214,26 +271,17 @@ def main():
             stray = _find_stray_new_entries(all_entries, list_nurse, min_age_hours=args.min_age_hours)
             print(f"   Tìm thấy {len(stray)} phiếu 'Mới' do tool tạo còn sót")
 
-            for e in stray:
-                info = {
-                    "time_full": e.get("time_full"),
-                    "creator": e.get("creator"),
-                    "cham_soc": (e.get("cham_soc") or "")[:200],
-                    "dien_bien": (e.get("dien_bien") or "")[:200],
-                    "id_delete": e.get("id_delete") or e.get("id_edit"),
-                    "delete_attempted": False,
-                }
+            infos, by_username, found_passwords = _build_stray_infos(stray)
+            for info in infos:
                 entry["found"].append(info)
-                print(f"      - {info['time_full']} ({info['creator']}): {info['cham_soc'][:60]}")
+                acc_text = info["emr_account"] or "CHƯA CẤU HÌNH"
+                print(f"      - {info['time_full']} ({info['creator']} -> tài khoản: {acc_text}): {info['cham_soc'][:60]}")
+            for username, password in found_passwords.items():
+                account_passwords.setdefault(username, password)
+                if username not in account_order:
+                    account_order.append(username)
 
-                if args.confirm_delete:
-                    if info["id_delete"]:
-                        delete_cham_soc_new_by_id(driver, info["id_delete"])
-                        info["delete_attempted"] = True
-                        print("        -> đã gửi lệnh xóa (chạy lại ở chế độ báo cáo để xác nhận đã mất chưa)")
-                    else:
-                        print("        -> [WARN] Không có id để xóa, bỏ qua")
-
+            patient_plans.append({"ma_bn": ma_bn, "entry": entry, "by_username": by_username})
             _write_report(args.out, report)
 
             try:
@@ -241,12 +289,62 @@ def main():
             except Exception:
                 pass
 
+        # ── PHASE 2: nếu được xác nhận xóa, lần lượt đăng nhập đúng tài khoản
+        # của từng người tạo rồi mới xóa phiếu của người đó — hết mọi BN của
+        # 1 tài khoản mới đổi sang tài khoản kế tiếp (giống input_care.py).
+        if args.confirm_delete:
+            for username in account_order:
+                password = account_passwords[username]
+                prev_username = str(ws.config.get("username") or "").strip()
+                if username != prev_username:
+                    print(f"\n>>> Đổi sang tài khoản EMR: {username}")
+                    if not ws.switch_account(username, password):
+                        print(f"   [WARN] Không đổi được tài khoản EMR ({username}); bỏ qua các phiếu của tài khoản này.")
+                        continue
+
+                for plan in patient_plans:
+                    infos = plan["by_username"].get(username)
+                    if not infos:
+                        continue
+                    ma_bn = plan["ma_bn"]
+                    print(f"\n[BN {ma_bn}] xóa {len(infos)} phiếu của tài khoản {username}")
+                    try:
+                        ws.search_patient(ma_bn, allow_completed=True)
+                        wait = ws.wait
+                        wait.until(EC.element_to_be_clickable((By.XPATH, "//i[contains(@class, 'fa-eye')]"))).click()
+                        wait.until(EC.element_to_be_clickable((By.ID, "btnTTCS"))).click()
+                    except Exception as e:
+                        for info in infos:
+                            info["delete_blocked_reason"] = f"Không mở lại được hồ sơ BN để xóa: {e}"
+                        print(f"   [SKIP] Không mở lại được hồ sơ BN: {e}")
+                        _write_report(args.out, report)
+                        continue
+
+                    driver = ws.driver
+                    for info in infos:
+                        if not info["id_delete"]:
+                            info["delete_blocked_reason"] = "Không có id để xóa"
+                            print(f"      - {info['time_full']}: [WARN] không có id để xóa, bỏ qua")
+                            continue
+                        delete_cham_soc_new_by_id(driver, info["id_delete"])
+                        info["delete_attempted"] = True
+                        print(f"      - {info['time_full']}: đã gửi lệnh xóa")
+
+                    _write_report(args.out, report)
+                    try:
+                        ws.goto_inpatient_list()
+                    except Exception:
+                        pass
+
     total_found = sum(len(p["found"]) for p in report["patients"])
     total_attempted = sum(1 for p in report["patients"] for f in p["found"] if f["delete_attempted"])
-    with open(args.out, "w", encoding="utf-8") as f:
-        json.dump(report, f, ensure_ascii=False, indent=2)
+    total_blocked = sum(1 for p in report["patients"] for f in p["found"] if f["delete_blocked_reason"] and not f["delete_attempted"])
+    _write_report(args.out, report)
 
-    tail = f", đã gửi lệnh xóa {total_attempted}." if args.confirm_delete else ". Chưa xóa gì — thêm --confirm-delete để xóa."
+    if args.confirm_delete:
+        tail = f", đã gửi lệnh xóa {total_attempted}, không xóa được {total_blocked} (xem delete_blocked_reason trong báo cáo)."
+    else:
+        tail = ". Chưa xóa gì — thêm --confirm-delete để xóa."
     print(f"\n>>> XONG. Tổng cộng tìm thấy {total_found} phiếu 'Mới' tồn đọng{tail}")
     print(f">>> Báo cáo chi tiết: {args.out}")
     return 0

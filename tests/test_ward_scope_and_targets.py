@@ -158,7 +158,7 @@ def test_care_cache_unified_decision_missing_perfect_and_wrong_existing():
     expected_care = "Thực hiện chỉ định thuốc"
     expected_db = "Người bệnh tỉnh"
 
-    assert kiem_tra_bang_cached({}, time_key, 8, expected_care, ["Điều Dưỡng A"], expected_db) == ("MISSING", None)
+    assert kiem_tra_bang_cached({}, time_key, 8, expected_care, ["Điều Dưỡng A"], expected_db) == ("MISSING", None, None)
 
     perfect = {
         "status": "Hoàn tất",
@@ -174,7 +174,7 @@ def test_care_cache_unified_decision_missing_perfect_and_wrong_existing():
     assert kiem_tra_bang_cached(
         {time_key: [perfect]}, time_key, 8, expected_care, ["Điều Dưỡng A"], expected_db,
         expected_creator="Điều Dưỡng A",
-    ) == ("PERFECT", "CARE_OK")
+    ) == ("PERFECT", "CARE_OK", "Điều Dưỡng A")
 
     wrong_external = {
         **perfect,
@@ -185,7 +185,7 @@ def test_care_cache_unified_decision_missing_perfect_and_wrong_existing():
     assert kiem_tra_bang_cached(
         {time_key: [wrong_external]}, time_key, 8, expected_care, ["Điều Dưỡng A"], expected_db,
         expected_creator="Điều Dưỡng A",
-    ) == ("UPDATE", "CARE_WRONG")
+    ) == ("UPDATE", "CARE_WRONG", "Người Khác")
 
     no_edit_id = {**wrong_external, "id_edit": None}
     assert kiem_tra_bang_cached(

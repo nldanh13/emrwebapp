@@ -1275,7 +1275,8 @@ def main():
                 cs_cache, _entries0 = scan_cham_soc_cache(driver, ngay_lam_viec, hours_needed=scan_targets)
                 LOG.info(_ctx_prefix() + f"[cache] scanned_rows={len(_entries0)} keys={len(cs_cache)}")
                 cleanup_cham_soc_cache(
-                    driver,
+                    ws,
+                    ma_bn,
                     cs_cache,
                     sorted_hours,
                     LIST_NURSE,
@@ -1283,9 +1284,13 @@ def main():
                     extra_valid_time_keys=special_time_keys,
                     protect_before_time_key=receive_time_key if is_postop_receive_day else None,
                     remove_tool_rows_at_or_after_time_key=surgery_cutoff_text if surgery_active else None,
+                    allow_completed=is_discharge_day,
                 )
+                driver, wait = ws.driver, ws.wait
 
                 def _process_job(job):
+                    nonlocal driver, wait
+                    driver, wait = ws.driver, ws.wait
                     h = int(job.get("hour") or 0)
                     time_str = job.get("time_str") or tao_thoi_gian_lap(h, ngay_lam_viec)
                     actions_set = set(job.get("actions_set") or set())
@@ -1360,7 +1365,7 @@ def main():
                     except Exception as _e:
                         LOG.debug(f"[except] {_e}")
 
-                    stt, care_id = kiem_tra_bang_cached(
+                    stt, care_id, existing_creator = kiem_tra_bang_cached(
                         cs_cache,
                         time_str,
                         h,
@@ -1371,6 +1376,23 @@ def main():
                         expected_creator=expected_creator,
                     )
 
+                    def _restore_group_account():
+                        # EMR chỉ cho đúng tài khoản người tạo phiếu sửa/xóa phiếu của
+                        # họ; sau khi phải đổi sang tài khoản người lập cũ để sửa/xóa
+                        # phiếu, đổi lại đúng tài khoản của nhóm job này (đang xử lý
+                        # theo `username`) để các job/lượt dọn kế tiếp không bị lệch.
+                        nonlocal driver, wait
+                        cur = str(ws.config.get("username") or "").strip()
+                        if username and username != cur:
+                            if ws.switch_account(username, password):
+                                try:
+                                    ws.open_care_form(ma_bn, allow_completed=is_discharge_day)
+                                except Exception as _e:
+                                    print(f"[WARN] Không mở lại hồ sơ sau khi đổi về tài khoản {username}: {_e}", end=" ")
+                            else:
+                                print(f"[WARN] Không đổi lại được tài khoản EMR {username}.", end=" ")
+                            driver, wait = ws.driver, ws.wait
+
                     if stt == "PERFECT":
                         print("-> [RESULT] OK (đã đúng, không cần sửa).")
                         return
@@ -1380,7 +1402,22 @@ def main():
                         job_failures.append(msg_skip)
                         LOG.warning(_ctx_prefix() + f"[job_uneditable] {msg_skip}")
                         return
-                    elif stt == "UPDATE":
+
+                    switched_for_edit = False
+                    if stt in ("UPDATE", "EDIT") and existing_creator:
+                        if not ws.switch_to_creator_account(existing_creator, ma_bn, allow_completed=is_discharge_day):
+                            msg_sw2 = (
+                                f"{time_str}: không đổi được tài khoản EMR của người lập "
+                                f"'{existing_creator}' để sửa/xóa phiếu cũ"
+                            )
+                            print(f"-> [WARN] {msg_sw2}")
+                            job_failures.append(msg_sw2)
+                            LOG.warning(_ctx_prefix() + f"[switch_creator_failed] {msg_sw2}")
+                            return
+                        driver, wait = ws.driver, ws.wait
+                        switched_for_edit = True
+
+                    if stt == "UPDATE":
                         print("-> [ACTION] SỬA PHIẾU CŨ: Sửa → Thu hồi → cập nhật → Hoàn tất.", end=" ")
                         try:
                             if care_id:
@@ -1403,6 +1440,12 @@ def main():
                         except Exception as _e:
                             print(f"[WARN] Không thu hồi/xóa được: {_e}")
                             # vẫn tiếp tục tạo lại phiếu mới
+                        if switched_for_edit:
+                            # Phiếu mới phải được tạo dưới đúng tài khoản của nhóm job
+                            # này (người lập dự kiến), không phải tài khoản người tạo
+                            # phiếu cũ vừa xóa.
+                            _restore_group_account()
+                            switched_for_edit = False
                         print("-> TẠO LẠI.", end=" ")
                         _safe_js_click(driver, wait.until(EC.element_to_be_clickable((By.ID, "btnThemCS"))))
                     else:
@@ -1468,6 +1511,12 @@ def main():
                         LOG.debug(f"[except] {_e}")
                         pass
 
+                    if switched_for_edit:
+                        # UPDATE: toàn bộ sửa+lưu vừa chạy dưới tài khoản người lập cũ
+                        # (bắt buộc, vì EMR chỉ cho đúng người tạo sửa phiếu của họ) —
+                        # đổi lại đúng tài khoản của nhóm job này trước khi xử lý job kế.
+                        _restore_group_account()
+
                 for job in jobs:
                     _process_job(job)
 
@@ -1475,7 +1524,8 @@ def main():
                 try:
                     cs_cache_end, _entries1 = scan_cham_soc_cache(driver, ngay_lam_viec, hours_needed=scan_targets)
                     cleanup_cham_soc_cache(
-                        driver,
+                        ws,
+                        ma_bn,
                         cs_cache_end,
                         sorted_hours,
                         LIST_NURSE,
@@ -1483,7 +1533,9 @@ def main():
                         extra_valid_time_keys=special_time_keys,
                         protect_before_time_key=receive_time_key if is_postop_receive_day else None,
                         remove_tool_rows_at_or_after_time_key=surgery_cutoff_text if surgery_active else None,
+                        allow_completed=is_discharge_day,
                     )
+                    driver, wait = ws.driver, ws.wait
 
                     # Ngày chuyển/đi mổ cần verify thật trên EMR sau cleanup. Nếu còn
                     # phiếu do tool tạo sau cutoff thì không được báo OK giả.

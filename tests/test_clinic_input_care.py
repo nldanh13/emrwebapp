@@ -74,3 +74,99 @@ def test_department_match_is_accent_and_case_insensitive_but_not_other_wards():
     assert not _department_matches("Khoa Ngoại Chấn thương", "Khoa Khám Bệnh")
     assert not _department_matches("Khoa Khám Bệnh - Cơ sở 2", "Khoa Khám Bệnh")
     assert not _department_matches("", "Khoa Khám Bệnh")
+
+
+class _FakeElement:
+    def click(self):
+        pass
+
+
+class _FakeWait:
+    def until(self, _condition):
+        return _FakeElement()
+
+
+class _FakeDriver:
+    def find_element(self, *_a, **_k):
+        return _FakeElement()
+
+    def execute_script(self, *_a, **_k):
+        pass
+
+
+class _FakeWS:
+    """WorkerSession giả: switch_account luôn thành công và đổi driver/wait mới."""
+
+    def __init__(self, username="acct.goc"):
+        self.config = {"username": username, "password": "pw_goc"}
+        self.driver = _FakeDriver()
+        self.wait = _FakeWait()
+        self.switch_calls = []
+
+    def switch_account(self, username, password):
+        self.switch_calls.append((username, password))
+        self.config = {"username": username, "password": password}
+        self.driver = _FakeDriver()
+        self.wait = _FakeWait()
+        return True
+
+
+def test_input_one_switches_to_old_creator_account_to_delete_then_restores(monkeypatch):
+    """EMR hiện chỉ cho đúng tài khoản người tạo phiếu tự sửa/xóa phiếu của họ.
+    Khi cần thu hồi/xóa phiếu cũ (EDIT) do người khác lập, _input_one phải đổi
+    sang đúng tài khoản người đó để xóa, rồi đổi lại tài khoản gốc của lượt
+    nhập này trước khi tạo phiếu mới."""
+    import clinic_input_care as cic
+
+    monkeypatch.setattr(cic, "scan_cham_soc_cache", lambda driver, ngay, hours_needed=None: ({}, []))
+    monkeypatch.setattr(cic, "kiem_tra_bang_cached", lambda *a, **k: ("EDIT", "CARE_1", "Nguoi Lap Cu"))
+
+    open_calls = []
+    monkeypatch.setattr(cic, "open_cham_soc_by_id", lambda driver, cid: open_calls.append(cid))
+    delete_calls = []
+    monkeypatch.setattr(cic, "click_thu_hoi_va_xoa", lambda driver: delete_calls.append(True))
+    monkeypatch.setattr(cic, "click_thu_hoi_cham_soc", lambda driver: None)
+    monkeypatch.setattr(cic, "_open_care_page", lambda driver, wait, row: None)
+    monkeypatch.setattr(cic, "set_thoi_gian_lap", lambda driver, time_str, max_retry=2: True)
+    monkeypatch.setattr(cic, "dien_thong_tin", lambda *a, **k: True)
+    monkeypatch.setattr(cic, "check_trang_thai_badge", lambda driver: "Hoàn tất")
+    monkeypatch.setattr(cic, "handle_popups", lambda driver: None)
+
+    accounts = {"nguoi lap cu": {"username": "acct.cu", "password": "pw_cu"}}
+    monkeypatch.setattr(cic, "get_emr_account_for_nurse", lambda name: accounts.get((name or "").strip().lower()))
+
+    ws = _FakeWS(username="acct.goc")
+    row = {"ma_bn": "BN001", "ho_ten": "Nguyễn Văn A", "care_time_str": "10:30 15/09/2026", "khoa_chuyen_den": "Khoa Khám Bệnh"}
+
+    result = cic._input_one(ws, row, ["Điều Dưỡng Hiện Tại"], "Nội dung chăm sóc", "Người bệnh tỉnh", False)
+
+    assert result["success"] is True
+    assert open_calls == ["CARE_1"]
+    assert delete_calls == [True]
+    # Đổi sang đúng tài khoản người lập cũ để xóa, rồi đổi lại tài khoản gốc.
+    assert ws.switch_calls == [("acct.cu", "pw_cu"), ("acct.goc", "pw_goc")]
+    assert ws.config["username"] == "acct.goc"
+
+
+def test_input_one_blocks_edit_when_old_creator_has_no_emr_account(monkeypatch):
+    """Không tra được tài khoản EMR cho người lập phiếu cũ -> không tự xóa,
+    báo lỗi rõ ràng thay vì thao tác nhầm tài khoản."""
+    import clinic_input_care as cic
+
+    monkeypatch.setattr(cic, "scan_cham_soc_cache", lambda driver, ngay, hours_needed=None: ({}, []))
+    monkeypatch.setattr(cic, "kiem_tra_bang_cached", lambda *a, **k: ("EDIT", "CARE_1", "Nguoi Khong Co Tai Khoan"))
+    monkeypatch.setattr(cic, "_open_care_page", lambda driver, wait, row: None)
+    monkeypatch.setattr(cic, "get_emr_account_for_nurse", lambda name: None)
+
+    deleted = []
+    monkeypatch.setattr(cic, "click_thu_hoi_va_xoa", lambda driver: deleted.append(True))
+
+    ws = _FakeWS(username="acct.goc")
+    row = {"ma_bn": "BN001", "ho_ten": "Nguyễn Văn A", "care_time_str": "10:30 15/09/2026", "khoa_chuyen_den": "Khoa Khám Bệnh"}
+
+    result = cic._input_one(ws, row, ["Điều Dưỡng Hiện Tại"], "Nội dung chăm sóc", "Người bệnh tỉnh", False)
+
+    assert result["success"] is False
+    assert "Nguoi Khong Co Tai Khoan" in result["error"]
+    assert deleted == []
+    assert ws.switch_calls == []

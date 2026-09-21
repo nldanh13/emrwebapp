@@ -7,6 +7,30 @@ if WORKER not in sys.path:
     sys.path.insert(0, WORKER)
 
 
+class _FakeWS:
+    """WorkerSession giả cho test: không có 'y_ta' trên record -> không đổi
+    tài khoản, các hàm xoa_* thao tác thẳng trên driver/wait giả như trước.
+    switch_account vẫn hoạt động thật (đổi config + driver mới) và ghi lại
+    lịch sử đổi tài khoản cho các test kiểm tra đổi-tài-khoản-theo-người-tạo."""
+
+    def __init__(self, username="acct.test"):
+        self.config = {"username": username, "password": "pw"}
+        self.driver = object()
+        self.wait = object()
+        self.switch_calls = []
+
+    def switch_account(self, username, password):
+        self.switch_calls.append((username, password))
+        self.config = {"username": username, "password": password}
+        self.driver = object()
+        self.wait = object()
+        return True
+
+
+def _noop_reopen(ws, ma_bn):
+    pass
+
+
 def test_care_creator_only_mismatch_updates():
     from care_cache import kiem_tra_bang_cached
 
@@ -22,7 +46,7 @@ def test_care_creator_only_mismatch_updates():
         'cham_soc': 'Thực hiện chỉ định thuốc',
         'id_edit': 'CARE_1',
     }
-    status, care_id = kiem_tra_bang_cached(
+    status, care_id, existing_creator = kiem_tra_bang_cached(
         {time_key: [row]},
         time_key,
         20,
@@ -31,7 +55,7 @@ def test_care_creator_only_mismatch_updates():
         'Người bệnh tỉnh',
         expected_creator='Điều Dưỡng Hiện Tại',
     )
-    assert (status, care_id) == ('UPDATE', 'CARE_1')
+    assert (status, care_id, existing_creator) == ('UPDATE', 'CARE_1', 'Điều Dưỡng Ca Trước')
 
 
 def test_care_content_mismatch_still_updates_even_when_creator_differs():
@@ -49,7 +73,7 @@ def test_care_content_mismatch_still_updates_even_when_creator_differs():
         'cham_soc': 'Nội dung cũ',
         'id_edit': 'CARE_2',
     }
-    status, care_id = kiem_tra_bang_cached(
+    status, care_id, existing_creator = kiem_tra_bang_cached(
         {time_key: [row]},
         time_key,
         20,
@@ -58,7 +82,7 @@ def test_care_content_mismatch_still_updates_even_when_creator_differs():
         'Người bệnh tỉnh',
         expected_creator='Điều Dưỡng Hiện Tại',
     )
-    assert (status, care_id) == ('UPDATE', 'CARE_2')
+    assert (status, care_id, existing_creator) == ('UPDATE', 'CARE_2', 'Điều Dưỡng Ca Trước')
 
 
 def test_norm_med_key_equates_trasolu_nacl_spellings():
@@ -104,7 +128,7 @@ def test_orphan_cleanup_is_report_only_by_default(monkeypatch):
     ]
 
     count = infusion_cleanup.xoa_dich_truyen_thua_ngoai_du_lieu(
-        object(), object(), records, {'14/08/2026'}, expected
+        _FakeWS(), 'BN_TEST', _noop_reopen, records, {'14/08/2026'}, expected
     )
     assert count == 0
     assert deleted_ids == []
@@ -226,7 +250,7 @@ def test_legacy_pha_natriclorid_deleted_only_when_correct_vancomycin_exists(monk
     }
 
     count = infusion_cleanup.xoa_dich_truyen_legacy_parser_cu(
-        object(), object(), records, expected
+        _FakeWS(), 'BN_TEST', _noop_reopen, records, expected
     )
     assert count == 1
     assert deleted_ids == ['OLD_PHA_NACL']
@@ -258,7 +282,7 @@ def test_legacy_pha_natriclorid_kept_until_correct_replacement_exists(monkeypatc
     records = {(legacy['ten_key'], legacy['tg_bat_dau']): [legacy]}
 
     count = infusion_cleanup.xoa_dich_truyen_legacy_parser_cu(
-        object(), object(), records, expected
+        _FakeWS(), 'BN_TEST', _noop_reopen, records, expected
     )
     assert count == 0
     assert deleted_ids == []
@@ -310,7 +334,7 @@ def test_legacy_cleanup_does_not_touch_unrelated_or_wrong_shape(monkeypatch):
     }
 
     count = infusion_cleanup.xoa_dich_truyen_legacy_parser_cu(
-        object(), object(), records, expected
+        _FakeWS(), 'BN_TEST', _noop_reopen, records, expected
     )
     assert count == 0
     assert deleted_ids == []
@@ -397,7 +421,7 @@ def test_legacy_cipro_plus_nacl_deleted_only_after_correct_premix_exists(monkeyp
     ]
 
     count = infusion_cleanup.xoa_dich_truyen_legacy_parser_cu(
-        object(), object(), records, expected
+        _FakeWS(), 'BN_TEST', _noop_reopen, records, expected
     )
     assert count == 1
     assert deleted_ids == ['OLD_CIPRO_NACL']
@@ -430,7 +454,7 @@ def test_legacy_cipro_plus_nacl_kept_without_correct_premix_replacement(monkeypa
 
     assert len(infusion_cleanup.tim_dich_truyen_legacy_parser_cu(records, expected)) == 1
     count = infusion_cleanup.xoa_dich_truyen_legacy_parser_cu(
-        object(), object(), records, expected
+        _FakeWS(), 'BN_TEST', _noop_reopen, records, expected
     )
     assert count == 0
     assert deleted_ids == []
@@ -485,7 +509,122 @@ def test_legacy_cipro_cleanup_does_not_touch_real_nacl_or_wrong_shape(monkeypatc
 
     assert infusion_cleanup.tim_dich_truyen_legacy_parser_cu(records, expected) == []
     count = infusion_cleanup.xoa_dich_truyen_legacy_parser_cu(
-        object(), object(), records, expected
+        _FakeWS(), 'BN_TEST', _noop_reopen, records, expected
     )
     assert count == 0
     assert deleted_ids == []
+
+
+def test_infusion_cleanup_switches_to_creator_account_before_deleting_and_restores(monkeypatch):
+    """EMR hiện chỉ cho đúng tài khoản người tạo phiếu tự xóa phiếu của họ.
+    Khi bản dịch truyền cũ (y_ta) do người khác nhập, các hàm xoa_* trong
+    infusion_cleanup phải đổi sang đúng tài khoản người đó trước khi xóa,
+    rồi khôi phục lại tài khoản gốc sau khi dọn xong."""
+    import infusion_cleanup
+
+    deleted_ids = []
+    monkeypatch.setattr(
+        infusion_cleanup,
+        '_delete_record_by_id',
+        lambda driver, wait, rec_id: deleted_ids.append(rec_id) or True,
+    )
+
+    accounts = {"lê ngọc diệu": {"username": "acct.dieu", "password": "pw_dieu"}}
+    monkeypatch.setattr(
+        infusion_cleanup,
+        'get_emr_account_for_nurse',
+        lambda name: accounts.get((name or '').strip().lower()),
+    )
+
+    legacy = {
+        'id': 'OLD_PHA_NACL',
+        'ten': 'Pha natriclorid 0.9% 100ml',
+        'ten_key': infusion_cleanup._norm_med_key('Pha natriclorid 0.9% 100ml'),
+        'tg_bat_dau': '08:00 14/08/2026',
+        'the_tich': 100,
+        'toc_do': 30,
+        'y_ta': 'Lê Ngọc Diệu',
+    }
+    correct = {
+        'id': 'NEW_VANCO',
+        'ten': 'VANCOMYCIN + Natri clorid 0.9%',
+        'ten_key': infusion_cleanup._norm_med_key('VANCOMYCIN + Natri clorid 0.9%'),
+        'tg_bat_dau': '08:00 14/08/2026',
+        'the_tich': 100,
+        'toc_do': 30,
+    }
+    expected = [{
+        'Full_Name': 'VANCOMYCIN + Natri clorid 0.9%',
+        'Search_Name': 'VANCOMYCIN',
+        'Time_Start_Str': '08:00 14/08/2026',
+        'The_Tich': 100,
+        'Toc_Do': '30',
+    }]
+    records = {
+        (legacy['ten_key'], legacy['tg_bat_dau']): [legacy],
+        (correct['ten_key'], correct['tg_bat_dau']): [correct],
+    }
+
+    ws = _FakeWS(username="acct.goc")
+    reopen_calls = []
+    count = infusion_cleanup.xoa_dich_truyen_legacy_parser_cu(
+        ws, 'BN_TEST', lambda w, ma_bn: reopen_calls.append((w is ws, ma_bn)), records, expected,
+    )
+
+    assert count == 1
+    assert deleted_ids == ['OLD_PHA_NACL']
+    assert ws.switch_calls == [("acct.dieu", "pw_dieu"), ("acct.goc", "pw")]
+    assert reopen_calls == [(True, 'BN_TEST'), (True, 'BN_TEST')]
+    assert ws.config["username"] == "acct.goc"
+
+
+def test_infusion_cleanup_skips_delete_when_no_account_for_creator(monkeypatch):
+    """Không tra được tài khoản EMR cho người tạo -> không xóa được trên EMR
+    (bỏ qua, in cảnh báo) thay vì thao tác nhầm tài khoản."""
+    import infusion_cleanup
+
+    deleted_ids = []
+    monkeypatch.setattr(
+        infusion_cleanup,
+        '_delete_record_by_id',
+        lambda driver, wait, rec_id: deleted_ids.append(rec_id) or True,
+    )
+    monkeypatch.setattr(infusion_cleanup, 'get_emr_account_for_nurse', lambda name: None)
+
+    legacy = {
+        'id': 'OLD_PHA_NACL',
+        'ten': 'Pha natriclorid 0.9% 100ml',
+        'ten_key': infusion_cleanup._norm_med_key('Pha natriclorid 0.9% 100ml'),
+        'tg_bat_dau': '08:00 14/08/2026',
+        'the_tich': 100,
+        'toc_do': 30,
+        'y_ta': 'Người Không Có Tài Khoản',
+    }
+    correct = {
+        'id': 'NEW_VANCO',
+        'ten': 'VANCOMYCIN + Natri clorid 0.9%',
+        'ten_key': infusion_cleanup._norm_med_key('VANCOMYCIN + Natri clorid 0.9%'),
+        'tg_bat_dau': '08:00 14/08/2026',
+        'the_tich': 100,
+        'toc_do': 30,
+    }
+    expected = [{
+        'Full_Name': 'VANCOMYCIN + Natri clorid 0.9%',
+        'Search_Name': 'VANCOMYCIN',
+        'Time_Start_Str': '08:00 14/08/2026',
+        'The_Tich': 100,
+        'Toc_Do': '30',
+    }]
+    records = {
+        (legacy['ten_key'], legacy['tg_bat_dau']): [legacy],
+        (correct['ten_key'], correct['tg_bat_dau']): [correct],
+    }
+
+    ws = _FakeWS(username="acct.goc")
+    count = infusion_cleanup.xoa_dich_truyen_legacy_parser_cu(
+        ws, 'BN_TEST', _noop_reopen, records, expected,
+    )
+
+    assert count == 0
+    assert deleted_ids == []
+    assert ws.switch_calls == []

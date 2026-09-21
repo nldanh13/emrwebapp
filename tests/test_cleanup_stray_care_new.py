@@ -6,9 +6,40 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'worker'))
 
-from cleanup_stray_care_new import _find_stray_new_entries, _lay_danh_sach_ten, _load_patients
+from cleanup_stray_care_new import (
+    _find_stray_new_entries, _lay_danh_sach_ten, _load_patients, _build_stray_infos,
+)
+import cleanup_stray_care_new
 from care_cache import scan_cham_soc_cache
 from selenium.webdriver.common.by import By
+
+
+def test_build_stray_infos_groups_by_emr_account_and_flags_unconfigured(monkeypatch):
+    accounts = {
+        "le ngoc dieu": {"username": "dieu.emr", "password": "pass1"},
+    }
+
+    def fake_get_account(name):
+        return accounts.get((name or "").strip().lower())
+
+    monkeypatch.setattr(cleanup_stray_care_new, "get_emr_account_for_nurse", fake_get_account)
+
+    stray = [
+        {"creator": "le ngoc dieu", "time_full": "08:00 19/09/2026", "cham_soc": "a", "dien_bien": "", "id_delete": "id1"},
+        {"creator": "le ngoc dieu", "time_full": "09:00 19/09/2026", "cham_soc": "b", "dien_bien": "", "id_delete": "id2"},
+        {"creator": "nguoi da nghi", "time_full": "10:00 19/09/2026", "cham_soc": "c", "dien_bien": "", "id_delete": "id3"},
+    ]
+
+    infos, by_username, passwords = _build_stray_infos(stray)
+
+    assert len(infos) == 3
+    assert passwords == {"dieu.emr": "pass1"}
+    assert [i["id_delete"] for i in by_username["dieu.emr"]] == ["id1", "id2"]
+
+    unconfigured = next(i for i in infos if i["creator"] == "nguoi da nghi")
+    assert unconfigured["emr_account"] is None
+    assert "nguoi da nghi" in unconfigured["delete_blocked_reason"]
+    assert "nguoi da nghi" not in by_username
 
 
 def test_lay_danh_sach_ten_flattens_work_and_oncall_across_days():
