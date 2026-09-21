@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { C, FONT_UI } from './tokens.js';
 import useIsMobile from './hooks/useIsMobile.js';
+import { useAuth } from './hooks/useAuth.jsx';
 import DataProcessingTab from './components/DataProcessingTab.jsx';
 import ShiftTab  from './components/ShiftTab.jsx';
 import NurseTab  from './components/NurseTab.jsx';
@@ -210,10 +211,13 @@ function Sidebar({ active, onChange, mobile = false, open = false, onClose }) {
   );
 }
 
-function TopBar({ active, now, onCancel, onViewLog, onDiagnostics, onOpenFunctions, mobile = false, onMenuClick }) {
+function TopBar({ active, now, onCancel, onViewLog, onDiagnostics, onOpenFunctions, mobile = false, onMenuClick, user, authMode, onLogout }) {
   const tab = currentTab(active);
   const dateStr = now.toLocaleDateString('vi-VN', { day:'2-digit', month:'2-digit', year:'numeric' });
   const timeStr = now.toLocaleTimeString('vi-VN', { hour:'2-digit', minute:'2-digit' });
+  const isLocalOnly = authMode === 'local_only';
+  const displayName = isLocalOnly ? 'Chưa bật đăng nhập' : (user?.name || '');
+  const roleLabel = ROLE_LABELS[user?.role] || '';
   return (
     <header style={{ height: 54, flexShrink: 0, borderBottom: `1px solid ${C.border2}`, display: 'flex', alignItems: 'center', gap: mobile ? 6 : 10, padding: mobile ? '0 8px' : '0 14px', background: C.surface }}>
       {mobile && (
@@ -235,10 +239,19 @@ function TopBar({ active, now, onCancel, onViewLog, onDiagnostics, onOpenFunctio
         <button type="button" onClick={onDiagnostics} style={topIconButtonStyle} title="Chẩn đoán">◇</button>
         {!mobile && <button type="button" onClick={onViewLog} style={topIconButtonStyle} title="Xem log">◎</button>}
         <button type="button" onClick={onCancel} style={{ ...topIconButtonStyle, color: C.red }} title="Huỷ tác vụ">⊘</button>
+        {mobile && !isLocalOnly && (
+          <button type="button" onClick={onLogout} style={topIconButtonStyle} title="Đăng xuất">⏻</button>
+        )}
         {!mobile && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0 2px 6px', borderRadius: 0, background: 'transparent', border: 'none' }}>
-            <span style={{ width: 27, height: 27, borderRadius: 6, display: 'grid', placeItems: 'center', background: C.blueBg, color: C.blue, fontWeight: 700 }}>DA</span>
-            <span style={{ fontSize: 11, color: C.text2, lineHeight: 1.2 }}><b style={{ color: C.text, fontWeight: 700 }}>Duy Anh</b><br />{dateStr} · {timeStr}</span>
+            <span style={{ width: 27, height: 27, borderRadius: 6, display: 'grid', placeItems: 'center', background: C.blueBg, color: C.blue, fontWeight: 700, fontSize: 11 }}>{userInitials(user?.name)}</span>
+            <span style={{ fontSize: 11, color: C.text2, lineHeight: 1.2 }}>
+              <b style={{ color: C.text, fontWeight: 700 }}>{displayName}</b>{roleLabel ? ` · ${roleLabel}` : ''}
+              <br />{dateStr} · {timeStr}
+            </span>
+            {!isLocalOnly && (
+              <button type="button" onClick={onLogout} title="Đăng xuất" style={{ ...topIconButtonStyle, width: 28, height: 28, marginLeft: 4 }}>⏻</button>
+            )}
           </div>
         )}
       </div>
@@ -247,6 +260,15 @@ function TopBar({ active, now, onCancel, onViewLog, onDiagnostics, onOpenFunctio
 }
 
 const topIconButtonStyle = { width: 32, height: 32, borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text2, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 650 };
+
+const ROLE_LABELS = { viewer: 'Người xem', researcher: 'Nghiên cứu', operator: 'Vận hành', supervisor: 'Giám sát', admin: 'Quản trị' };
+
+function userInitials(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '··';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
 
 function shouldShowDateBar(tab) {
   return Boolean(currentTab(tab)?.usesDateRange);
@@ -259,6 +281,7 @@ function ContentFrame({ children, compact = false, mobile = false }) {
 
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
+  const { user, authMode, logout } = useAuth();
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [tab, setTab] = useState(loadActiveTab);
@@ -363,7 +386,7 @@ export default function App() {
       <div style={{ height: '100%', background: C.app, display: 'flex', overflow: 'hidden' }}>
         <Sidebar active={tab} onChange={handleTabChange} mobile={isMobile} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-          <TopBar active={tab} now={now} onCancel={handleCancel} onViewLog={handleViewLog} onDiagnostics={handleDiagnostics} onOpenFunctions={handleOpenFunctionHub} mobile={isMobile} onMenuClick={() => setSidebarOpen(o => !o)} />
+          <TopBar active={tab} now={now} onCancel={handleCancel} onViewLog={handleViewLog} onDiagnostics={handleDiagnostics} onOpenFunctions={handleOpenFunctionHub} mobile={isMobile} onMenuClick={() => setSidebarOpen(o => !o)} user={user} authMode={authMode} onLogout={logout} />
           <FeatureContextBanner context={featureContext} definition={selectedContextDefinition} onBack={handleOpenFunctionHub} onClose={() => setFeatureContext(null)} />
           {shouldShowDateBar(tab) && <div style={{ borderBottom: `1px solid ${C.border2}`, background: C.surface }}><WorkDateRangeBar value={workDateRange} onChange={setWorkDateRange} /></div>}
           <ContentFrame compact={Boolean(currentTab(tab)?.compact)} mobile={isMobile}>
