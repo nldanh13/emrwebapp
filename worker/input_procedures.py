@@ -980,6 +980,16 @@ def _select_current_text(driver: Any, field_id: str) -> str:
     return " ".join(x for x in parts if x).strip()
 
 
+def _clean_staff_display_name(raw: str) -> str:
+    """Bỏ tiền tố học hàm/chức danh (BS, ĐD, Ths, CKI...) khỏi tên đọc được
+    từ combobox thủ thuật viên, giữ nguyên chữ hoa/dấu để tra đúng tài khoản
+    EMR của người đó (nurse_emr_accounts.get_emr_account_for_nurse tự chuẩn
+    hoá chữ hoa/dấu khi so khớp, không cần chuẩn hoá thêm ở đây)."""
+    s = (raw or "").strip()
+    s = re.sub(r"^(BS|B\.S|ThS|Th\.S|CKI|CKII|CK1|CK2|ĐD|DD|Đ\.D|D\.D)[.\s]+", "", s, flags=re.IGNORECASE)
+    return s.strip()
+
+
 def _text_matches(expected: str, actual: str) -> bool:
     e = _norm(expected)
     a = _norm(actual)
@@ -1233,15 +1243,18 @@ def _fill_one_procedure(driver: Any, wait: Any, config: dict, start_dt: datetime
         raise RuntimeError("Đã điền form nhưng không tìm thấy nút Lưu/Hoàn tất để bấm")
 
 
-def _process_task(driver: Any, wait: Any, config: dict, task: Dict[str, str]) -> str:
+def _navigate_to_task_row(ws: Any, task: Dict[str, str], allow_completed_update: bool):
+    """Vào D/s Thủ thuật, lọc/tìm đúng dòng của task rồi mở form thực hiện
+    (chưa Thu hồi). Tách riêng để dùng lại làm `reopen` sau khi phải đổi
+    tài khoản EMR (xem WorkerSession.switch_to_creator_account/restore_account)."""
+    driver, wait = ws.driver, ws.wait
     ma_bn = task.get("ma_bn") or ""
     ngay = task.get("ngay_lam") or ""
     ho_ten = task.get("ho_ten") or ""
     service_name = task.get("service_name") or ""
-    _goto_procedure_list(driver, wait, config)
-    _apply_procedure_date_range_filter(driver, wait, ngay, config)
+    _goto_procedure_list(driver, wait, ws.config)
+    _apply_procedure_date_range_filter(driver, wait, ngay, ws.config)
     _try_search_on_list(driver, wait, ma_bn, ho_ten)
-    allow_completed_update = bool(config.get("repair_existing"))
     start_dt, is_completed, status_text = _open_procedure_row(
         driver,
         wait,
@@ -1252,33 +1265,70 @@ def _process_task(driver: Any, wait: Any, config: dict, task: Dict[str, str]) ->
         allow_completed_update=allow_completed_update,
         return_meta=True,
     )
-    discharge_dt = _parse_task_discharge_dt(task)
-    expected = _procedure_expected_values(config, start_dt, discharge_dt, service_name, task)
     _enter_execution_form_for_check(driver, wait)
+    return start_dt, is_completed, status_text
 
-    if is_completed:
-        errors = _compare_procedure_form(driver, expected)
-        if not errors:
-            _log(
-                f"[PERFECT] Phiếu thủ thuật đã đúng; giữ nguyên, không Thu hồi: "
-                f"{ma_bn} | {ngay} | {service_name}"
+
+def _process_task(ws: Any, task: Dict[str, str]) -> str:
+    ma_bn = task.get("ma_bn") or ""
+    ngay = task.get("ngay_lam") or ""
+    service_name = task.get("service_name") or ""
+    allow_completed_update = bool(ws.config.get("repair_existing"))
+
+    def _reopen(w: Any, _ma_bn: str) -> None:
+        _navigate_to_task_row(w, task, allow_completed_update)
+
+    start_dt, is_completed, status_text = _navigate_to_task_row(ws, task, allow_completed_update)
+    driver, wait = ws.driver, ws.wait
+    discharge_dt = _parse_task_discharge_dt(task)
+    expected = _procedure_expected_values(ws.config, start_dt, discharge_dt, service_name, task)
+
+    if not is_completed:
+        _log(f"[MISSING] Thủ thuật chưa Hoàn tất; nhập và hoàn tất phiếu: {ma_bn} | {ngay} | {service_name}")
+        _fill_one_procedure(driver, wait, ws.config, start_dt, discharge_dt=discharge_dt, service_name=service_name, task=task)
+        return "created"
+
+    errors = _compare_procedure_form(driver, expected)
+    if not errors:
+        _log(
+            f"[PERFECT] Phiếu thủ thuật đã đúng; giữ nguyên, không Thu hồi: "
+            f"{ma_bn} | {ngay} | {service_name}"
+        )
+        return "perfect"
+
+    _log(f"[UPDATE] Phiếu đã {status_text or 'Hoàn tất'} nhưng sai: {'; '.join(errors)}")
+
+    # EMR hiện chỉ cho đúng tài khoản người tạo phiếu tự Thu hồi/sửa phiếu
+    # của họ. Đọc tên thủ thuật viên đang ghi trên phiếu (người tạo) để đổi
+    # đúng tài khoản EMR của người đó trước khi Thu hồi/sửa — tập trung xử
+    # lý đổi/khôi phục tài khoản ở WorkerSession (worker/shared/worker_session.py).
+    existing_staff_name = _clean_staff_display_name(_select_current_text(driver, "cbbTTChinh"))
+    original_username = str(ws.config.get("username") or "").strip()
+    original_password = str(ws.config.get("password") or "")
+    switched = False
+    if existing_staff_name:
+        if not ws.switch_to_creator_account(existing_staff_name, ma_bn, reopen=_reopen):
+            raise RuntimeError(
+                f"Phiếu thủ thuật do '{existing_staff_name}' lập; không đổi được tài khoản EMR "
+                "của người đó nên không thể Thu hồi/sửa (EMR chỉ cho đúng tài khoản người tạo; "
+                "chưa cấu hình tài khoản EMR cho người này hoặc đổi/mở lại phiếu thất bại)."
             )
-            return "perfect"
+        driver, wait = ws.driver, ws.wait
+        switched = True
 
-        _log(f"[UPDATE] Phiếu đã {status_text or 'Hoàn tất'} nhưng sai: {'; '.join(errors)}")
+    try:
         if not _click_recall_procedure_if_available(driver, wait):
             raise RuntimeError(
                 "Phiếu thủ thuật đã có nhưng sai; EMR không cho Thu hồi nên không sửa và không tạo trùng. "
                 + "; ".join(errors)
             )
         WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.ID, "txtTgBatDau")))
-        action = "updated"
-    else:
-        _log(f"[MISSING] Thủ thuật chưa Hoàn tất; nhập và hoàn tất phiếu: {ma_bn} | {ngay} | {service_name}")
-        action = "created"
+        _fill_one_procedure(driver, wait, ws.config, start_dt, discharge_dt=discharge_dt, service_name=service_name, task=task)
+    finally:
+        if switched:
+            ws.restore_account(original_username, original_password, ma_bn, reopen=_reopen)
 
-    _fill_one_procedure(driver, wait, config, start_dt, discharge_dt=discharge_dt, service_name=service_name, task=task)
-    return action
+    return "updated"
 
 def main() -> int:
     processed_path = sys.argv[1] if len(sys.argv) >= 2 else ""
@@ -1306,7 +1356,7 @@ def main() -> int:
             _log(f"\n[{ma_bn} {task.get('ho_ten') or ''} | {ngay} | {service_name or 'DVKT thay băng/cắt chỉ'}]")
             mark_task_status(progress_path, TASK_NAME, key, "running")
             try:
-                action = _process_task(ws.driver, ws.wait, ws.config, task)
+                action = _process_task(ws, task)
                 ws.mark_success(key, action=action)
                 mark_task_status(progress_path, TASK_NAME, key, "done")
                 if action == "perfect":
