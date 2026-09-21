@@ -140,6 +140,16 @@
       "order": 140,
       "compact": true,
       "usesDateRange": false
+    },
+    {
+      "id": "account-settings",
+      "label": "Thiết lập tài khoản",
+      "icon": "⚙",
+      "group": "Cài đặt",
+      "hint": "Tạo/sửa tài khoản đăng nhập Data Hub và tài khoản EMR riêng",
+      "order": 145,
+      "compact": true,
+      "usesDateRange": false
     }
   ],
   "functions": [

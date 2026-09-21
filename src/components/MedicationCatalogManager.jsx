@@ -194,7 +194,7 @@ export default function MedicationCatalogManager() {
   const [deleting, setDeleting] = useState('');
   const [toast, setToast] = useState('');
 
-  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 6000); };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -212,13 +212,13 @@ export default function MedicationCatalogManager() {
 
   const handleCreate = async (payload) => {
     await api.createMedicationCatalog(payload);
-    showToast('Đã thêm thuốc.');
+    showToast('Đã thêm thuốc. Cần chạy lại "③ Xử lý & phân loại" ở tab Lấy dữ liệu để áp dụng cho dữ liệu đã quét trước đó.');
     await load();
   };
 
   const handleUpdate = async (key, payload) => {
     await api.updateMedicationCatalog(key, payload);
-    showToast('Đã cập nhật.');
+    showToast('Đã cập nhật. Cần chạy lại "③ Xử lý & phân loại" ở tab Lấy dữ liệu để áp dụng cho dữ liệu đã quét trước đó.');
     await load();
   };
 
@@ -253,6 +253,16 @@ export default function MedicationCatalogManager() {
         <Btn variant="primary" onClick={() => setEditing({ mode: 'create', key: '', form: emptyForm() })}>
           + Thêm thuốc
         </Btn>
+      </div>
+
+      <div style={{
+        marginBottom: 14, padding: '9px 12px', borderRadius: 7,
+        background: C.blueBg, border: `1px solid ${C.blueBorder}`,
+        fontSize: 12, color: C.text2, lineHeight: 1.5,
+      }}>
+        Thêm/sửa thuốc ở đây <b>không áp dụng ngược</b> cho dữ liệu đã quét/phân loại trước đó — chỉ có hiệu lực từ lần chạy
+        "③ Xử lý &amp; phân loại" tiếp theo (tab "Lấy dữ liệu"). Đã thêm thuốc mới nhưng phần nhập dịch truyền chưa thấy?
+        Vào tab "Lấy dữ liệu" và chạy lại bước ③.
       </div>
 
       <div style={{ marginBottom: 14 }}>
@@ -318,9 +328,9 @@ export default function MedicationCatalogManager() {
       )}
 
       {toast && (
-        <div style={{ position: 'fixed', bottom: 24, right: 24, padding: '10px 18px',
+        <div style={{ position: 'fixed', bottom: 24, right: 24, maxWidth: 380, padding: '10px 18px',
           borderRadius: 8, background: C.surface, border: `1px solid ${C.border}`,
-          color: C.text, fontSize: 13, boxShadow: C.shadow2, zIndex: 100 }}>
+          color: C.text, fontSize: 13, lineHeight: 1.5, boxShadow: C.shadow2, zIndex: 100 }}>
           {toast}
         </div>
       )}

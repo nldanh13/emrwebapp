@@ -855,3 +855,9 @@ export const getMedicationCatalog    = ()           => get('/api/medication-cata
 export const createMedicationCatalog = (body)        => post('/api/medication-catalog', body);
 export const updateMedicationCatalog = (key, body)  => patch(`/api/medication-catalog/${encodeURIComponent(key)}`, body);
 export const deleteMedicationCatalog = (key)         => del(`/api/medication-catalog/${encodeURIComponent(key)}`);
+
+// ── Thiết lập tài khoản (admin) ─────────────────────────────────────────────
+export const getAdminUsers    = ()           => get('/api/admin/users');
+export const createAdminUser  = (body)        => post('/api/admin/users', body);
+export const updateAdminUser  = (id, body)   => patch(`/api/admin/users/${encodeURIComponent(id)}`, body);
+export const deleteAdminUser  = (id)          => del(`/api/admin/users/${encodeURIComponent(id)}`);
