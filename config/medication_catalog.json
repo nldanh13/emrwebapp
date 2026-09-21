@@ -40,7 +40,8 @@
     {
       "canonical": "VANCOMYCIN",
       "aliases": [
-        "VANCOMYCIN"
+        "VANCOMYCIN",
+        "VANCOMYCIN 1G"
       ],
       "category": "dich_truyen",
       "default_route": "TTM",
