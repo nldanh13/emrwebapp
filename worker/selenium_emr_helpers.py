@@ -478,23 +478,32 @@ def ensure_inpatient_list(
     log_func: Optional[LogFn] = None,
     debug_func: Optional[DebugFn] = None,
 ) -> None:
-    """Đảm bảo đang ở trang danh sách nội trú."""
+    """Đảm bảo đang ở trang danh sách nội trú.
+
+    QUAN TRỌNG: trang chủ hiện ngay sau khi đăng nhập (home.aspx) cũng có sẵn
+    1 ô tìm kiếm cùng id "txtTimKiem" (widget "Danh sách Bệnh nhân hiện diện"
+    ở trang chủ) — nếu chỉ kiểm tra sự TỒN TẠI của #txtTimKiem mà không kiểm
+    tra URL hiện tại có đúng wpid danh sách nội trú hay không, hàm này sẽ lầm
+    tưởng đã ở đúng trang, bỏ qua điều hướng, và các bước tìm kiếm/thao tác
+    tiếp theo sẽ gõ nhầm vào ô tìm kiếm của trang chủ — không tìm ra bệnh
+    nhân cho tới khi người dùng tự bấm vào "Điều trị Nội trú" để tải đúng
+    giao diện. Chỉ tin #txtTimKiem có sẵn khi URL hiện tại đã đúng wpid.
+    """
     if EC is None or By is None or WebDriverWait is None:
         raise RuntimeError("Selenium chưa được cài hoặc không import được")
-    try:
-        driver.find_element(By.ID, "txtTimKiem")
-        return
-    except Exception:
-        pass
 
     cur = (getattr(driver, "current_url", "") or "").lower()
     wpid = (config.get("inpatient_wpid") or "danhsachdieutrinoitrudraw").strip().lower()
     if wpid in cur:
         try:
-            WebDriverWait(driver, 4).until(EC.presence_of_element_located((By.ID, "txtTimKiem")))
+            driver.find_element(By.ID, "txtTimKiem")
             return
         except Exception:
-            pass
+            try:
+                WebDriverWait(driver, 4).until(EC.presence_of_element_located((By.ID, "txtTimKiem")))
+                return
+            except Exception:
+                pass
 
     goto_inpatient_list(
         driver, wait, config,

@@ -54,3 +54,46 @@ class TestSearchPatientOnWardOrder:
                 helpers.search_patient_on_ward_or_raise(
                     driver=object(), wait=object(), config={}, ma_bn="26090048",
                 )
+
+
+class _FakeDriver:
+    """Giả lập driver.current_url + find_element("txtTimKiem") tồn tại NGAY CẢ
+    khi còn ở home.aspx — vì widget "Danh sách Bệnh nhân hiện diện" ở trang chủ
+    dùng chung id #txtTimKiem với ô tìm kiếm thật của trang danh sách nội trú."""
+    def __init__(self, current_url: str):
+        self.current_url = current_url
+
+    def find_element(self, by, value):
+        if value == "txtTimKiem":
+            return object()
+        raise Exception("not found")
+
+
+@skip
+class TestEnsureInpatientListNotFooledByHomeSearchBox:
+    def test_home_page_with_lookalike_search_box_still_navigates(self):
+        """Ngay sau khi đăng nhập, driver còn ở home.aspx — trang này cũng có
+        1 ô #txtTimKiem riêng (widget trang chủ). Nếu ensure_inpatient_list()
+        chỉ kiểm tra sự tồn tại của #txtTimKiem mà không kiểm tra URL đã đúng
+        wpid danh sách nội trú, nó sẽ lầm tưởng đã ở đúng trang và bỏ qua điều
+        hướng — các bước tìm kiếm sau đó sẽ gõ nhầm vào ô của trang chủ."""
+        driver = _FakeDriver("https://emr.example/home.aspx?usid=abc")
+        calls = []
+        with patch.object(helpers, "goto_inpatient_list", side_effect=lambda *a, **k: calls.append("goto")):
+            helpers.ensure_inpatient_list(driver, wait=object(), config={})
+        assert calls == ["goto"], (
+            "Phải điều hướng thật sự vào danh sách nội trú dù #txtTimKiem của "
+            "trang chủ 'giả' tồn tại — không được tin #txtTimKiem khi URL chưa "
+            "đúng wpid danh sách nội trú."
+        )
+
+    def test_already_on_inpatient_list_url_skips_navigation(self):
+        """Khi URL đã đúng wpid danh sách nội trú và #txtTimKiem tồn tại, không
+        cần điều hướng lại (giữ hành vi fast-path cũ cho trường hợp thật)."""
+        driver = _FakeDriver(
+            "https://emr.example/home.aspx?usid=abc&wpid=danhsachdieutrinoitrudraw"
+        )
+        calls = []
+        with patch.object(helpers, "goto_inpatient_list", side_effect=lambda *a, **k: calls.append("goto")):
+            helpers.ensure_inpatient_list(driver, wait=object(), config={})
+        assert calls == []
