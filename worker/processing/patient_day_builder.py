@@ -888,6 +888,20 @@ def build_patient_day_records(data):
                     'hít','hit','xịt','xit','khí dung','khi dung','sáng','sang','tối','toi'
                 ]):
                     return False
+
+                # Dòng LỊCH DÙNG THEO BUỔI của thuốc đang chờ (ví dụ:
+                # "sáng 2 chai; chiều 2 chai; tối 2 chai TTM 30g/ph.") luôn bị các quy tắc
+                # nhận diện thuốc mới bên dưới bắt nhầm, vì đoạn cuối dòng có dạng
+                # "N chai ... TTM" giống hệt một dòng tên-thuốc-kèm-liều thật. Khác các dòng
+                # định lượng ở trên (bắt đầu bằng số), dòng này bắt đầu bằng từ buổi
+                # (sáng/trưa/chiều/tối/đêm) nên không bị chặn bởi kiểm tra '^\d+...' phía trên.
+                if re.match(
+                    r'^\s*(sáng|sang|trưa|trua|chiều|chieu|tối|toi|đêm|dem)\s+'
+                    r'(?:\d+(?:[\.,]\d+)?|\d+\s*/\s*\d+|một|mot|hai|ba|bốn|bon|tư|tu|năm|nam|'
+                    r'sáu|sau|bảy|bay|tám|tam|chín|chin|mười|muoi)\s*(lọ|túi|ống|chai|viên|gói)\b',
+                    low
+                ):
+                    return False
                 if any(t in low for t in ["+ y lệnh", "+ thuốc", "chỉ định dvkt"]):
                     return False
 

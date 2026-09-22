@@ -124,3 +124,23 @@ def test_decimal_and_fraction_oral_dose_are_preserved_per_hour():
     r2 = _run_order("Eperison 50mg x 1 (Viên)\nUống sáng 1/2 viên (8 giờ)")
     d2 = r2["thuoc"]["thuoc_uong"][0]
     assert d2.get("so_luong_moi_gio", {}).get("8") == 0.5
+
+
+def test_session_dose_schedule_line_is_not_mistaken_for_a_new_drug():
+    """Dòng lịch dùng theo buổi kiểu 'sáng N chai; chiều N chai; tối N chai TTM ...'
+    (không có số lượng ở ĐẦU dòng) từng bị _is_drug_line() bắt nhầm thành 1 thuốc mới
+    riêng — vì đoạn cuối dòng có dạng 'N chai ... TTM' giống hệt 1 dòng tên-thuốc-kèm-liều
+    thật. Hệ quả: mất tên thuốc CIPAZY ở dòng lịch dùng, và cụm 'sáng ... chiều ... tối'
+    bị đẩy vào dich_truyen thành 1 bản ghi mồ côi không có tên thuốc thật."""
+    r = _run_order(
+        "(1) CIPAZY (Ciprofloxacin (dưới dạng Ciprofloxacin hydrochloride))  x 6 (Chai)\n"
+        "sáng 2 chai; chiều 2 chai; tối 2 chai TTM 30g/ph."
+    )
+    dt = r["thuoc"].get("dich_truyen", [])
+    assert dt, "CIPAZY phải được nhận diện là dịch truyền"
+    assert all(d.get("ten_thuoc", "").upper() == "CIPAZY" for d in dt), (
+        f"Không được sinh bản ghi mồ côi từ dòng lịch dùng theo buổi: {dt}"
+    )
+    hours = {d.get("gio_dung") for d in dt}
+    assert hours == {"8 giờ", "16 giờ", "20 giờ"}
+    assert all(str(d.get("toc_do")) == "30" for d in dt)
