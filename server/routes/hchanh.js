@@ -3391,6 +3391,113 @@ router.get('/hchanh/discharge-bundle/:fileName', handleRoute((req, res, _ctx) =>
   return res.sendFile(filePath);
 }));
 
+// ── GET /api/hchanh/discharge-bundles ────────────────────────────────────────
+// Liệt kê các bộ phiếu "IN RA VIỆN" đã in sẵn trong .runtime/print_bundles
+// (nút In ở PatientDetail/ShiftTab) để tab Chữ ký chọn thêm chữ ký — không
+// cần tải file lên tay. Không liệt kê file đã ký (hậu tố _DA_KY.pdf).
+
+function _parseDischargeBundleFileName(fileName) {
+  const m = /^IN_RA_VIEN_(.+?)_(.+)\.pdf$/i.exec(fileName);
+  if (!m) return null;
+  return { ma_bn: m[1], ho_ten: m[2].replace(/_/g, ' ') };
+}
+
+router.get('/hchanh/discharge-bundles', handleRoute((_req, res, _ctx) => {
+  const dir = discharge_print_bundle_dir();
+  let entries = [];
+  try { entries = fs.readdirSync(dir); } catch (_) { entries = []; }
+  const fileSet = new Set(entries);
+  const bundles = [];
+  for (const fileName of entries) {
+    if (!/^IN_RA_VIEN_.+\.pdf$/i.test(fileName) || /_DA_KY\.pdf$/i.test(fileName)) continue;
+    const parsed = _parseDischargeBundleFileName(fileName);
+    const signedFileName = fileName.replace(/\.pdf$/i, '_DA_KY.pdf');
+    let stat = null;
+    try { stat = fs.statSync(path.join(dir, fileName)); } catch (_) {}
+    bundles.push({
+      file_name: fileName,
+      ma_bn: parsed?.ma_bn || '',
+      ho_ten: parsed?.ho_ten || '',
+      size_bytes: stat ? stat.size : 0,
+      created_at: stat ? stat.mtime.toISOString() : null,
+      signed: fileSet.has(signedFileName),
+      signed_file_name: fileSet.has(signedFileName) ? signedFileName : null,
+    });
+  }
+  bundles.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  return res.json({ status: 'ok', bundles });
+}));
+
+// ── POST /api/hchanh/sign-discharge-bundle ───────────────────────────────────
+// Chèn ảnh chữ ký (đã cấu hình ở tab Lịch điều dưỡng — xem
+// worker/sign_discharge_bundle.py) vào bộ phiếu "IN RA VIỆN" đã in sẵn, lưu
+// thành file mới "..._DA_KY.pdf" trong cùng thư mục, giữ nguyên file gốc.
+// Body: { file_name }
+
+router.post('/hchanh/sign-discharge-bundle', async (req, res) => {
+  const ctx = getRuntimePaths(req);
+  const fileName = path.basename(String(req.body?.file_name || '').trim());
+  if (!fileName || !/^IN_RA_VIEN_.+\.pdf$/i.test(fileName) || fileName.includes('..') || /_DA_KY\.pdf$/i.test(fileName)) {
+    return res.status(400).json({ status: 'error', message: 'Tên file không hợp lệ.' });
+  }
+  const printDir = discharge_print_bundle_dir();
+  const inPath = path.join(printDir, fileName);
+  if (!fs.existsSync(inPath)) {
+    return res.status(404).json({ status: 'error', message: 'Không tìm thấy file gốc trong thư mục in.' });
+  }
+  const signedFileName = fileName.replace(/\.pdf$/i, '_DA_KY.pdf');
+  const outPath = path.join(printDir, signedFileName);
+  const outJsonPath = path.join(hchanh_dir(ctx), `sign_discharge_bundle_${safeFilePart(fileName)}_${Date.now()}.json`);
+
+  try {
+    await enqueueHeavy(ctx.sid, async () => {
+      let result;
+      try {
+        result = await runScript('sign_discharge_bundle.py', [
+          '--in-pdf', inPath,
+          '--out-pdf', outPath,
+          '--out', outJsonPath,
+        ], {
+          onSpawn: killFn => registerCancel(ctx.sid, killFn),
+          runtimeDir: ctx.dir,
+        });
+      } finally {
+        unregisterCancel(ctx.sid);
+      }
+
+      const output = readJsonSafe(outJsonPath, null);
+      try { if (fs.existsSync(outJsonPath)) fs.rmSync(outJsonPath, { force: true }); } catch (_) {}
+
+      if (result.spawnError) return res.status(500).json({ status: 'error', message: 'Không khởi động được Python: ' + result.spawnError });
+      if (result.killedByTimeout) return res.status(504).json({ status: 'error', message: 'Timeout khi chèn chữ ký.' });
+      if (result.code !== 0 || !output || output.status !== 'ok') {
+        const msg = output?.message || fmtPyError('Python lỗi khi chèn chữ ký.', result);
+        return res.status(500).json({ status: 'error', message: msg });
+      }
+
+      appendActivity(ctx, {
+        kind: 'ward.sign_discharge_bundle.success',
+        file_name: fileName,
+        signed_file_name: signedFileName,
+        stamped_count: output.stamped_count,
+      });
+      return res.json({
+        status: 'ok',
+        message: `Đã chèn ${output.stamped_count} chữ ký.`,
+        file_name: fileName,
+        signed_file_name: signedFileName,
+        stamped_count: output.stamped_count,
+        stamped: output.stamped || [],
+        signed_names: output.signed_names || [],
+        download_url: `/api/hchanh/discharge-bundle/${encodeURIComponent(signedFileName)}`,
+      });
+    });
+  } catch (err) {
+    console.error('[HCHANH/sign-discharge-bundle]', err);
+    if (!res.headersSent) res.status(500).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
 // ── GET /api/hchanh/printed-billing/:fileName ───────────────────────────────
 // Tải lại file PDF bảng kê đã lưu trong session hiện tại.
 

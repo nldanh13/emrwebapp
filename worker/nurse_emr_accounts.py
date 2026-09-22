@@ -10,6 +10,12 @@ chung.
 
 Xem config/nurse_emr_accounts.example.json để biết định dạng; file thật
 config/nurse_emr_accounts.json không commit (chứa mật khẩu thật).
+
+Cùng file JSON này còn giữ trường tùy chọn "signature_file" (tên file ảnh
+chữ ký trong config/signatures/) — dùng khi tự động chèn chữ ký vào bộ
+phiếu "IN RA VIỆN" (xem sign_discharge_bundle.py). Trường này không đòi hỏi
+phải có emr_username/emr_password: một người có thể chỉ cấu hình chữ ký mà
+không cần tài khoản EMR riêng.
 """
 from __future__ import annotations
 
@@ -18,10 +24,11 @@ import os
 import re
 import unicodedata
 from functools import lru_cache
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 NURSE_EMR_ACCOUNTS_FILE = os.path.join(BASE_DIR, 'config', 'nurse_emr_accounts.json')
+NURSE_SIGNATURES_DIR = os.path.join(BASE_DIR, 'config', 'signatures')
 
 
 def normalize_name(value: Any) -> str:
@@ -69,3 +76,40 @@ def get_emr_account_for_nurse(name: Any) -> Optional[Dict[str, str]]:
     if not row:
         return None
     return {'username': row['emr_username'], 'password': row['emr_password']}
+
+
+@lru_cache(maxsize=1)
+def load_nurse_signature_rows() -> List[Dict[str, str]]:
+    """Trả list các dòng đã cấu hình ảnh chữ ký: [{"name", "path"}].
+
+    Khác load_nurse_emr_accounts(): không đòi hỏi có emr_username/emr_password,
+    chỉ cần signature_file trỏ tới 1 file ảnh có thật trong config/signatures/.
+    """
+    raw = _load_json(NURSE_EMR_ACCOUNTS_FILE, [])
+    out: List[Dict[str, str]] = []
+    if not isinstance(raw, list):
+        return out
+    for row in raw:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get('name') or '').strip()
+        sig_file = str(row.get('signature_file') or '').strip()
+        if not name or not sig_file:
+            continue
+        # Chỉ nhận tên file thuần — chặn path traversal (../, đường dẫn tuyệt đối).
+        sig_file = os.path.basename(sig_file)
+        path = os.path.join(NURSE_SIGNATURES_DIR, sig_file)
+        if os.path.isfile(path):
+            out.append({'name': name, 'path': path})
+    return out
+
+
+def get_signature_for_nurse(name: Any) -> Optional[str]:
+    """Trả đường dẫn tuyệt đối ảnh chữ ký đã cấu hình cho `name`, ngược lại None."""
+    key = normalize_name(name)
+    if not key:
+        return None
+    for row in load_nurse_signature_rows():
+        if normalize_name(row['name']) == key:
+            return row['path']
+    return None

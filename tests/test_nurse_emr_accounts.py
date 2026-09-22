@@ -62,3 +62,69 @@ def test_load_nurse_emr_accounts_missing_file_returns_empty(monkeypatch, tmp_pat
     _patch_accounts_path(monkeypatch, tmp_path)  # file không tồn tại
     assert nurse_emr_accounts.load_nurse_emr_accounts() == {}
     assert nurse_emr_accounts.get_emr_account_for_nurse('Bất kỳ') is None
+
+
+def _patch_signatures_dir(monkeypatch, tmp_path):
+    signatures_dir = tmp_path / 'signatures'
+    signatures_dir.mkdir()
+    monkeypatch.setattr(nurse_emr_accounts, 'NURSE_SIGNATURES_DIR', str(signatures_dir))
+    nurse_emr_accounts.load_nurse_signature_rows.cache_clear()
+    return signatures_dir
+
+
+def test_get_signature_for_nurse_matches_configured_name(monkeypatch, tmp_path):
+    path = _patch_accounts_path(monkeypatch, tmp_path)
+    signatures_dir = _patch_signatures_dir(monkeypatch, tmp_path)
+    (signatures_dir / 'dieu.png').write_bytes(b'fake-png-bytes')
+    _write_accounts(path, [
+        {'name': 'Lê Ngọc Diệu', 'emr_username': 'diệu.emr', 'emr_password': 'secret1', 'signature_file': 'dieu.png'},
+    ])
+
+    result = nurse_emr_accounts.get_signature_for_nurse('le ngoc dieu')
+    assert result == str(signatures_dir / 'dieu.png')
+
+
+def test_get_signature_for_nurse_does_not_require_emr_credentials(monkeypatch, tmp_path):
+    """Một người có thể chỉ cấu hình chữ ký, không cần tài khoản EMR riêng —
+    khác load_nurse_emr_accounts() (đòi cả username/password)."""
+    path = _patch_accounts_path(monkeypatch, tmp_path)
+    signatures_dir = _patch_signatures_dir(monkeypatch, tmp_path)
+    (signatures_dir / 'diem.png').write_bytes(b'fake-png-bytes')
+    _write_accounts(path, [
+        {'name': 'Trần Thị Điểm', 'signature_file': 'diem.png'},
+    ])
+
+    assert nurse_emr_accounts.get_emr_account_for_nurse('Trần Thị Điểm') is None
+    assert nurse_emr_accounts.get_signature_for_nurse('Trần Thị Điểm') == str(signatures_dir / 'diem.png')
+
+
+def test_get_signature_for_nurse_returns_none_when_file_missing_on_disk(monkeypatch, tmp_path):
+    path = _patch_accounts_path(monkeypatch, tmp_path)
+    _patch_signatures_dir(monkeypatch, tmp_path)
+    _write_accounts(path, [
+        {'name': 'Lê Ngọc Diệu', 'signature_file': 'khong_ton_tai.png'},
+    ])
+
+    assert nurse_emr_accounts.get_signature_for_nurse('Lê Ngọc Diệu') is None
+
+
+def test_get_signature_for_nurse_ignores_path_traversal_in_signature_file(monkeypatch, tmp_path):
+    path = _patch_accounts_path(monkeypatch, tmp_path)
+    signatures_dir = _patch_signatures_dir(monkeypatch, tmp_path)
+    outside_file = tmp_path / 'secret.png'
+    outside_file.write_bytes(b'outside-file')
+    _write_accounts(path, [
+        {'name': 'Lê Ngọc Diệu', 'signature_file': '../secret.png'},
+    ])
+
+    # basename() bỏ phần thư mục -> chỉ tìm "secret.png" NGAY TRONG thư mục
+    # signatures, không thoát ra ngoài — file ở ngoài không được coi là hợp lệ.
+    assert not (signatures_dir / 'secret.png').exists()
+    assert nurse_emr_accounts.get_signature_for_nurse('Lê Ngọc Diệu') is None
+
+
+def test_load_nurse_signature_rows_missing_accounts_file_returns_empty(monkeypatch, tmp_path):
+    _patch_accounts_path(monkeypatch, tmp_path)  # file không tồn tại
+    _patch_signatures_dir(monkeypatch, tmp_path)
+    assert nurse_emr_accounts.load_nurse_signature_rows() == []
+    assert nurse_emr_accounts.get_signature_for_nurse('Bất kỳ') is None

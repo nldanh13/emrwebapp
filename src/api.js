@@ -865,3 +865,9 @@ export const deleteAdminUser  = (id)          => del(`/api/admin/users/${encodeU
 // ── Tài khoản EMR theo điều dưỡng (ca làm/ca trực — admin) ──────────────────
 export const getNurseEmrAccounts  = ()      => get('/api/nurse-emr-accounts');
 export const saveNurseEmrAccounts = (body)  => post('/api/nurse-emr-accounts', body);
+export const saveNurseSignature   = (name, imageDataUrl) => post('/api/nurse-emr-accounts/signature', { name, imageDataUrl });
+export const removeNurseSignature = (name)   => del(`/api/nurse-emr-accounts/signature/${encodeURIComponent(name)}`);
+
+// ── Chữ ký bộ phiếu "IN RA VIỆN" ─────────────────────────────────────────────
+export const listDischargeBundles = ()             => get('/api/hchanh/discharge-bundles');
+export const signDischargeBundle  = (fileName)     => post('/api/hchanh/sign-discharge-bundle', { file_name: fileName });

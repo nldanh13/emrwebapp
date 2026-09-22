@@ -64,6 +64,8 @@ in/
 # User/token config and local imports
 config/users.json
 config/nurse_emr_accounts.json
+config/signatures/*
+!config/signatures/README.md
 config/hchanh/imports/*.csv
 !config/hchanh/imports/README.md
 *.secret
