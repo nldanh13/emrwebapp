@@ -30,11 +30,16 @@ function normalizeAccountRow(row) {
   if (!row || typeof row !== 'object') return null;
   const name = String(row.name || '').trim();
   if (!name) return null;
-  return {
+  const out = {
     name,
     emr_username: String(row.emr_username || '').trim(),
     emr_password: String(row.emr_password || ''),
   };
+  // Tên file ảnh chữ ký trong config/signatures/ (xem server/utils/nurse_signatures.js) —
+  // tùy chọn, không bắt buộc phải có emr_username/emr_password đi kèm.
+  const signatureFile = String(row.signature_file || '').trim();
+  if (signatureFile) out.signature_file = signatureFile;
+  return out;
 }
 
 function readNurseEmrAccounts() {

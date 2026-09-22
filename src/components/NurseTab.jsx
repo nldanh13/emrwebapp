@@ -97,6 +97,33 @@ export default function NurseTab({ toast }) {
     });
   }, [saveEmrAccounts]);
 
+  const applyAccountsResponse = useCallback((accounts) => {
+    const byName = {};
+    for (const row of accounts || []) byName[row.name] = row;
+    setEmrAccounts(byName);
+  }, []);
+
+  const uploadSignature = useCallback(async (name, imageDataUrl) => {
+    try {
+      const r = await api.saveNurseSignature(name, imageDataUrl);
+      if (r.status !== 'ok') { toast?.(r.message, 'error'); return; }
+      applyAccountsResponse(r.accounts);
+      toast?.('Đã lưu chữ ký', 'ok');
+    } catch (e) {
+      toast?.(String(e.message), 'error');
+    }
+  }, [toast, applyAccountsResponse]);
+
+  const removeSignature = useCallback(async (name) => {
+    try {
+      const r = await api.removeNurseSignature(name);
+      if (r.status !== 'ok') { toast?.(r.message, 'error'); return; }
+      applyAccountsResponse(r.accounts);
+    } catch (e) {
+      toast?.(String(e.message), 'error');
+    }
+  }, [toast, applyAccountsResponse]);
+
   const save = useCallback((nextRoster, nextSchedule, nextClinicSchedule) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
@@ -290,6 +317,8 @@ export default function NurseTab({ toast }) {
           onRemoveNurse={removeNurse}
           emrAccounts={emrAccounts}
           onChangeEmrAccount={changeEmrAccount}
+          onUploadSignature={uploadSignature}
+          onRemoveSignature={removeSignature}
           canEditEmrAccounts={canEditEmrAccounts}
         />
       </div>

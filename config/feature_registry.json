@@ -72,6 +72,16 @@
       "usesDateRange": true
     },
     {
+      "id": "discharge-sign",
+      "label": "Chữ ký ra viện",
+      "icon": "✎",
+      "group": "Hành chánh",
+      "hint": "Chèn chữ ký đã cấu hình vào bộ phiếu đã in",
+      "order": 85,
+      "compact": true,
+      "usesDateRange": false
+    },
+    {
       "id": "records-check",
       "label": "Kiểm hồ sơ",
       "icon": "☑",

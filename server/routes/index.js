@@ -14,6 +14,7 @@ const HEAVY_TASK_ROUTES = [
   '/hchanh/rescan',
   '/hchanh/print-billing',
   '/hchanh/print-discharge-bundle',
+  '/hchanh/sign-discharge-bundle',
   '/run-scan',
   '/run-emr-structure-scan',
   '/inspect-emr-page',

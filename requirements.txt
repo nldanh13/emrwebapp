@@ -14,6 +14,10 @@ requests>=2.31.0
 reportlab>=4.0.0
 pypdf>=4.0.0
 
+# Chèn ảnh chữ ký vào bộ phiếu "IN RA VIỆN" (worker/sign_discharge_bundle.py)
+# — cần search_for() theo tọa độ chữ (kể cả chữ xoay dọc), pypdf không hỗ trợ.
+pymupdf>=1.24.0
+
 # (stdlib, không cần cài): json, os, re, sys, time, datetime, argparse,
 #   glob, copy, unicodedata, functools, typing, urllib, tempfile, logging
 # Optional: bật AI embedding semantic search nếu máy có đủ dung lượng/thời gian cài đặt
