@@ -144,3 +144,24 @@ def test_session_dose_schedule_line_is_not_mistaken_for_a_new_drug():
     hours = {d.get("gio_dung") for d in dt}
     assert hours == {"8 giờ", "16 giờ", "20 giờ"}
     assert all(str(d.get("toc_do")) == "30" for d in dt)
+
+
+def test_vancomycin_without_explicit_time_defaults_to_morning_and_evening():
+    """Y lệnh Vancomycin thường ghi 'xx lọ x 2 (TTM) 30g/p.' — có 'x 2' (2 lần/ngày)
+    nhưng không ghi giờ/buổi cụ thể. Theo quy ước khoa, mặc định sáng 08:00, tối 20:00
+    thay vì để trống giờ truyền (khác các thuốc TTM khác không có quy ước riêng, vẫn
+    để trống và cảnh báo thiếu giờ — xem _fallback_times_from_text)."""
+    r = _run_order(
+        "(1) VANCOMYCIN  x 4 (Lọ)\n"
+        "02 lọ x 2 (TTM) 30g/p.\n"
+        "- NATRI CLORID 0,9% (Natri clorid) 0,9%, 100ml x 4 (Túi)\n"
+        "Pha vancomycin."
+    )
+    dt = r["thuoc"].get("dich_truyen", [])
+    vanco = [d for d in dt if "VANCOMYCIN" in d.get("ten_thuoc", "").upper()]
+    assert vanco, "VANCOMYCIN phải được nhận diện là dịch truyền"
+    assert not any(d.get("missing_infusion_time") for d in vanco)
+    hours = {d.get("gio_dung") for d in vanco}
+    assert hours == {"08:00 mặc định Vancomycin", "20:00 mặc định Vancomycin"}
+    assert all(d.get("tg_bat_dau") for d in vanco)
+    assert all(d.get("tg_ket_thuc") for d in vanco)

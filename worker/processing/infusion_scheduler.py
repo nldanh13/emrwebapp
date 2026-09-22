@@ -215,6 +215,16 @@ def calculate_infusion_times(dich_truyen_list, ngay_mac_dinh=None):
         is_single_levo = "LEVOFLOXACIN" in name_blob and (qty is None or float(qty) <= 1.0)
         if is_single_levo and is_infusion_route:
             add(8, 0, "08:00 mặc định Levofloxacin")
+            return out
+
+        # Quy ước nội bộ đang dùng tại khoa: VANCOMYCIN thường ghi kiểu
+        # "02 lọ x 2 (TTM) 30g/p." — có "x 2" (2 lần/ngày) nhưng không ghi rõ
+        # giờ hay từ khoá buổi. Không lấy giờ ra y lệnh 05:00; mặc định
+        # sáng 08:00, tối 20:00 (2 cữ/ngày) cho VANCOMYCIN truyền TM.
+        is_vancomycin = "VANCOMYCIN" in name_blob
+        if is_vancomycin and is_infusion_route:
+            add(8, 0, "08:00 mặc định Vancomycin")
+            add(20, 0, "20:00 mặc định Vancomycin")
 
         return out
 
