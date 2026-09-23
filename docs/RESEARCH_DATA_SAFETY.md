@@ -63,7 +63,9 @@ thiếu khóa bắt buộc, dòng con trỏ tới đợt không tồn tại, tr�
 hoặc lệch với CSV (so sha256), lần chuẩn hóa trước dừng giữa chừng hoặc lỗi.
 
 **Cảnh báo** (cần xem lại): dòng con chưa ghép được đợt, thiếu ngày vào viện, ngày
-ra trước ngày vào, ngày ở tương lai, nằm viện trên 365 ngày, ca nghi cùng đợt.
+ra trước ngày vào, ngày ở tương lai, nằm viện trên 365 ngày, ca nghi cùng đợt, dòng
+XN/CĐHA thô giống hệt nhau đã bỏ bớt, và cùng BN + cùng thời điểm + cùng chỉ số mà kết
+quả khác nhau (giữ tất cả, không tự chọn).
 Hệ thống không tự sửa giá trị lâm sàng. Các cột suy luận (ví dụ
 `injury_side_suggested`) được liệt kê trong `qa_report.json` → `notes` với trạng
 thái `needs_human_confirmation`.
@@ -120,7 +122,7 @@ Không có migration phá dữ liệu. Các bước:
 
 1. Sao lưu như mục 6.1.
 2. `git pull`, khởi động lại server.
-3. Mở từng kho/nghiên cứu, bấm **Chuẩn hóa**. Schema tăng lên v11 nên lần đầu sẽ
+3. Mở từng kho/nghiên cứu, bấm **Chuẩn hóa**. Schema tăng lên v12 nên lần đầu sẽ
    chuẩn hóa lại đầy đủ và tạo `qa_report.json`, `encounter_review.csv`.
 4. Nếu `research_source.csv` cũ có Mã NC bị trùng (lỗi cũ cấp `NC0001` cho mọi
    dòng), file này được tạo lại với Mã NC duy nhất. Mã được lấy theo thứ tự ưu tiên

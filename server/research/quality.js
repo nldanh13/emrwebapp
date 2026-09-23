@@ -133,6 +133,7 @@ function buildQualityReport({
   runDir = '',
   csvFilesInDatabase = [],
   inferenceFields = [],
+  duplicatesRemoved = {},
   now = new Date(),
 } = {}) {
   const blocking = [];
@@ -180,6 +181,41 @@ function buildQualityReport({
     unmatchedByTable[name] = { ambiguous, missing };
     if (ambiguous) warnings.push({ code: 'child_match_ambiguous', message: `${name}: ${ambiguous} dòng khớp nhiều đợt, chưa gắn vào đợt nào.`, table: name, count: ambiguous });
     if (missing) warnings.push({ code: 'child_match_missing', message: `${name}: ${missing} dòng không khớp đợt nào.`, table: name, count: missing });
+  }
+
+  // Dòng thô giống hệt nhau đã được bỏ bớt (chỉ giữ một) — báo để biết nguồn bị lặp.
+  for (const [table, removed] of Object.entries(duplicatesRemoved || {})) {
+    if (removed > 0) warnings.push({ code: 'duplicate_raw_rows_removed', message: `${table}: bỏ ${removed} dòng thô giống hệt dòng khác (giữ một).`, table, count: removed });
+  }
+
+  // Cùng BN + cùng thời điểm + cùng chỉ số/dịch vụ phải là MỘT kết quả. Nếu các dòng
+  // đó có kết quả khác nhau thì là dữ liệu mâu thuẫn: giữ tất cả, không tự chọn.
+  const conflictSpecs = [
+    ['lab_results', r => r.lab_datetime && [r.patient_code, r.lab_datetime, text(r.test_name_raw).toLowerCase()].join('|'),
+      r => [text(r.result_raw), text(r.unit)].join('|'), r => `Chỉ số "${text(r.test_name_raw)}" lúc ${text(r.lab_datetime)}`],
+    ['imaging_results', r => r.ordered_at && [r.patient_code, r.ordered_at, text(r.service_name_raw).toLowerCase()].join('|'),
+      r => [text(r.result_text), text(r.conclusion_text)].join('|'), r => `Dịch vụ "${text(r.service_name_raw)}" lúc ${text(r.ordered_at)}`],
+  ];
+  for (const [name, keyOf, valueOf, labelOf] of conflictSpecs) {
+    const rows = Array.isArray(tables[name]) ? tables[name] : [];
+    const groups = new Map();
+    for (const row of rows) {
+      const key = keyOf(row);
+      if (!key) continue;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(row);
+    }
+    let conflicts = 0;
+    for (const group of groups.values()) {
+      const values = new Set(group.map(valueOf));
+      if (values.size < 2) continue;
+      conflicts += 1;
+      const first = group[0];
+      addReview({ encounter_id: first.encounter_id, research_code: first.research_code, patient_code: first.patient_code },
+        name === 'lab_results' ? 'conflicting_lab_result' : 'conflicting_imaging_result',
+        `${labelOf(first)} có ${values.size} kết quả khác nhau. Giữ tất cả, cần người kiểm tra.`);
+    }
+    if (conflicts) warnings.push({ code: 'conflicting_results', message: `${name}: ${conflicts} nhóm cùng BN/thời điểm/chỉ số có kết quả khác nhau.`, table: name, count: conflicts });
   }
 
   // Ngày tháng: chỉ báo, không sửa.

@@ -22,7 +22,7 @@
 //   excluded           — mặc định bị che khi xem/xuất (server/research/export_utils.js).
 // Phân loại "use" là đề xuất kỹ thuật; bệnh viện/hội đồng đạo đức phải xác nhận.
 
-const DICTIONARY_VERSION = '2026-09-23.1';
+const DICTIONARY_VERSION = '2026-09-23.2';
 
 const CONVENTIONS = {
   dates: 'Ngày dạng YYYY-MM-DD; thời điểm dạng YYYY-MM-DD HH:mm (giờ địa phương, không có múi giờ). Cột "ngày giờ" có thể chỉ có phần ngày nếu nguồn không có giờ.',
@@ -201,16 +201,21 @@ TABLES.lab_results = {
   primary_key: ['lab_result_id'],
   foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id', when: 'encounter_match_status = matched' }],
   sources: ['lich_su_xn.csv (script XN/CĐHA, popup lịch sử xét nghiệm trên EMR)'],
-  processing: 'Giữ nguyên kết quả gốc; tách dấu so sánh, phần số và phần chữ; tên chỉ số chuẩn hóa theo bảng từ khóa. Không quy đổi đơn vị.',
+  processing: 'Giữ nguyên kết quả gốc; tách dấu so sánh, phần số và phần chữ; tên chỉ số chuẩn hóa theo bảng từ khóa. Không quy đổi đơn vị. Cùng BN + cùng thời điểm + cùng chỉ số là một kết quả (bệnh viện xác nhận): dòng thô giống hệt nhau chỉ giữ một.',
   inferred: false,
   quality: {
     required: ['lab_result_id', 'patient_code', 'test_name_raw'],
     unique: ['lab_result_id'],
     checks: [
-      'Trùng lab_result_id: lỗi chặn. Lưu ý: hai dòng thô giống hệt nhau (cùng thời điểm, chỉ số, kết quả) cho cùng mã.',
+      'Dòng thô giống hệt nhau: giữ một, cảnh báo số dòng đã bỏ (duplicate_raw_rows_removed).',
+      'Trùng lab_result_id sau khi bỏ dòng giống hệt: lỗi chặn.',
       'encounter_match_status = ambiguous/missing: cảnh báo.',
     ],
-    manual_review: ['result_num trống nhưng result_raw có số', 'Đơn vị khác nhau cho cùng test_name_norm trong một nghiên cứu.'],
+    manual_review: [
+      'Cùng BN + cùng thời điểm + cùng chỉ số nhưng kết quả khác nhau (conflicting_lab_result): giữ tất cả, không tự chọn.',
+      'result_num trống nhưng result_raw có số',
+      'Đơn vị khác nhau cho cùng test_name_norm trong một nghiên cứu.',
+    ],
   },
   columns: withCommon(['lab_result_id', 'research_code', 'patient_code', 'encounter_id', 'encounter_match_status', 'lab_datetime', 'lab_date', 'lab_group', 'test_name_raw', 'test_name_norm', 'result_raw', 'result_operator', 'result_num', 'result_text', 'unit', 'ref_range_raw', 'flag_raw', 'flag_norm', 'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter', 'source_run_id', 'row_hash'], {
     lab_result_id: col('string', 'Khóa dòng: lab_<row_hash>.'),
@@ -239,9 +244,9 @@ TABLES.imaging_results = {
   primary_key: ['imaging_id'],
   foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id', when: 'encounter_match_status = matched' }],
   sources: ['lich_su_cdha.csv (script XN/CĐHA)'],
-  processing: 'Loại máy lấy từ Nhóm dịch vụ, nếu trống thì suy từ tên dịch vụ; vùng cơ thể suy từ tên dịch vụ.',
+  processing: 'Loại máy lấy từ Nhóm dịch vụ, nếu trống thì suy từ tên dịch vụ; vùng cơ thể suy từ tên dịch vụ. Dòng thô giống hệt nhau chỉ giữ một.',
   inferred: true,
-  quality: { required: ['imaging_id', 'patient_code'], unique: ['imaging_id'], checks: ['Trùng imaging_id: lỗi chặn.', 'Ghép đợt ambiguous/missing: cảnh báo.'], manual_review: ['modality = Khác', 'body_region trống'] },
+  quality: { required: ['imaging_id', 'patient_code'], unique: ['imaging_id'], checks: ['Dòng thô giống hệt nhau: giữ một, cảnh báo số dòng đã bỏ.', 'Trùng imaging_id: lỗi chặn.', 'Ghép đợt ambiguous/missing: cảnh báo.'], manual_review: ['Cùng BN + cùng thời điểm + cùng dịch vụ nhưng kết quả khác nhau (conflicting_imaging_result).', 'modality = Khác', 'body_region trống'] },
   columns: withCommon(['imaging_id', 'research_code', 'patient_code', 'encounter_id', 'encounter_match_status', 'ordered_at', 'order_date', 'service_name_raw', 'modality', 'body_region', 'result_text', 'conclusion_text', 'status', 'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter', 'source_run_id', 'row_hash'], {
     imaging_id: col('string', 'Khóa dòng: img_<row_hash>.'),
     ordered_at: col('datetime', 'Thời điểm chỉ định.', { identifier: 'quasi', use: 'approval_required' }),
@@ -490,7 +495,6 @@ const RAW_TABLES = {
 };
 
 const KNOWN_ISSUES = [
-  'lab_results/imaging_results không lọc dòng trùng: hai dòng thô giống hệt nhau sinh cùng mã dòng và bị báo lỗi chặn duplicate_row_id.',
   'analysis_ready: khi chọn kết quả XN sớm nhất, dòng thiếu lab_datetime được coi là sớm nhất.',
   'patient_day: nhiều kết quả cùng chỉ số trong một ngày thì lấy kết quả gặp đầu tiên theo thứ tự file, không theo giờ.',
   'clinical_notes.doctor_name (tên nhân viên) chưa bị che tự động khi xuất.',
