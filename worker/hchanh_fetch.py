@@ -2090,9 +2090,10 @@ def fetch_profile(sess: Optional["EmrHttpSession"], ma_bn: str,
         if not base.get("_source") or base.get("_source") == "patient_row":
             base["_source"] = "emr_dieuduong_page"
         base["_fetch_status"] = "ok"
+        # Không in họ tên/số thẻ BHYT: console được lưu lại và hay bị dán ra ngoài.
         print(
-            f"LOG [profile] {ma_bn}: {base['ho_ten']} | "
-            f"BHYT={base['bhyt_code']} | vào={base['ngay_vao_vien']} | "
+            f"LOG [profile] {ma_bn}: ho_ten={'có' if base.get('ho_ten') else 'trống'} | "
+            f"BHYT={'có' if base.get('bhyt_code') else 'trống'} | vào={base['ngay_vao_vien']} | "
             f"source={base.get('_source')}"
         )
 
@@ -2723,7 +2724,7 @@ def fetch_discharge(sess: Optional["EmrHttpSession"], ma_bn: str,
               f"ngay_ra='{base.get('ngay_ra', '')}' | gio_ra='{base.get('gio_ra', '')}' | "
               f"xu_tri='{base['xu_tri']}' | "
               f"tinh_trang='{base['tinh_trang_ra']}' | "
-              f"cd_chinh='{str(base['chan_doan_chinh'])[:40]}' | "
+              f"cd_chinh={'có' if base.get('chan_doan_chinh') else 'trống'} | "
               f"benh_kem={len(base['benh_kem']) if isinstance(base.get('benh_kem'), list) else 0} | "
               f"ket_qua='{base['ket_qua']}' | hen='{base['hen_tai_kham']}' | status={base['_fetch_status']}")
 
@@ -5950,7 +5951,7 @@ def run_hchanh_fetch_batch(input_path: str, out_path: str, scope: str, files: Li
             if isinstance(override_files, list) and override_files
             else files
         )
-        print(f"LOG: ── Ca {idx + 1}/{total} trong lô: BN={ma_bn or '?'} | {ho_ten or ''} | files={item_files}")
+        print(f"LOG: ── Ca {idx + 1}/{total} trong lô: BN={ma_bn or '?'} | files={item_files}")
 
         _trace_reset()
         _hchanh_batch_progress_mark_running(
