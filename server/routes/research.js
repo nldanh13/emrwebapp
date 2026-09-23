@@ -4288,7 +4288,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
 
       const dateFrom = meta.date_from || fallbackDateFrom || '';
       const dateTo = meta.date_to || fallbackDateTo || dateFrom || '';
-      batchItems.push({ idx, row, meta, key, display, dateFrom, dateTo });
+      batchItems.push({ idx, row, meta, key, failKey, display, dateFrom, dateTo });
     }
 
     if (!batchItems.length) continue;
@@ -4349,7 +4349,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
     }
 
     for (const item of batchItems) {
-      const { idx, row, meta, key, display, dateFrom, dateTo } = item;
+      const { idx, row, meta, key, failKey, display, dateFrom, dateTo } = item;
       stats.processed += 1;
       const output = batchOutput[key];
 
