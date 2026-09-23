@@ -1763,8 +1763,11 @@ function progressMonitorRow(row) {
   const partLabels = Object.fromEntries(RESEARCH_PROGRESS_PARTS.map(part => [part.key, researchStatusLabel(partValues[part.key])]));
   const hasRunning = Object.values(partValues).some(researchStatusRunning) || researchStatusRunning(row.overall_status);
   const hasError = Object.values(partValues).some(researchStatusError) || researchStatusError(row.overall_status) || Boolean(String(row.last_error || '').trim());
-  const ready = Boolean(row.ready || researchStatusDone(row.overall_status) || String(row.ready_for_analysis || '') === '1');
   const missing = Array.isArray(row.missing) ? row.missing : missingLabelsForProgressRow(row);
+  // "Đủ dữ liệu" = đủ cả 5 phần. Không dùng overall_status: với dòng lấy từ
+  // progress XN&CĐHA, status=done chỉ nghĩa là XN xong, nên trước đây ô "đủ"
+  // đếm cả ca còn thiếu Hồ sơ nền/Ra viện/PT/Y lệnh.
+  const ready = Boolean(row.ready || String(row.ready_for_analysis || '') === '1' || !missing.length);
   let state = 'waiting';
   let state_label = 'Chưa lấy đủ';
   if (ready) { state = 'done'; state_label = 'Đủ dữ liệu'; }
@@ -2038,7 +2041,7 @@ function buildResearchProgressSnapshot(runDir, scopeMeta = {}, { isArchive = tru
     Number(manifest.normalized_outputs?.initial_list || manifest.normalized_outputs?.patients || 0)
   );
 
-  const ready = rows.filter(r => r.ready || researchStatusDone(r.overall_status) || String(r.ready_for_analysis || '') === '1').length;
+  const ready = rows.filter(r => r.ready || String(r.ready_for_analysis || '') === '1').length;
   let manualReview = 0;
   const analysisReady = readCsvTable(path.join(runDir, 'analysis_ready.csv'), 50000);
   for (const row of analysisReady.rows || []) if (String(row.needs_manual_review || '').trim()) manualReview += 1;
