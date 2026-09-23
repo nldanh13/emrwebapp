@@ -70,6 +70,62 @@ Hệ thống không tự sửa giá trị lâm sàng. Các cột suy luận (ví
 `injury_side_suggested`) được liệt kê trong `qa_report.json` → `notes` với trạng
 thái `needs_human_confirmation`.
 
+## 3b. Thu thập tự động (chỉ lấy phần thiếu/lỗi/đã thay đổi)
+
+Nút **Thu thập tự động** (`POST /api/research/archive/collect-auto`, hoặc
+`/api/research/studies/<id>/collect-auto`) thay cho việc bấm lần lượt từng bước rồi tự
+rà kết quả. Code: `server/research/collection.js` (logic) và phần "Điều phối thu thập
+tự động" trong `server/routes/research.js`.
+
+**Trạng thái riêng từng phần của từng lượt** (XN, CĐHA, Hồ sơ nền, Ra viện, Phẫu
+thuật, Y lệnh) được lưu ở `collection_ledger.json`:
+
+| Trạng thái | Nghĩa | Hệ thống làm gì |
+|---|---|---|
+| `ok` | Đã lấy, EMR có dữ liệu | Bỏ qua nếu lượt không đổi |
+| `empty` | Đã lấy, **EMR xác nhận không có** | Bỏ qua nếu lượt không đổi |
+| `pending` | Chưa lấy / lần trước dừng giữa chừng | Lấy |
+| `failed` | Lỗi kỹ thuật (timeout, mất phiên, tab không tải, chỉ đọc được một phần) | Tự thử lại, tối đa 3 lần (đổi được theo đề cương); hết lượt thì vào danh sách ngoại lệ |
+| `blocked` | Giao diện EMR khác mẫu; không xác định chắc lượt điều trị; EMR nay trống mà lần trước có dữ liệu | **Không** tự thử lại, dữ liệu cũ giữ nguyên, vào danh sách ngoại lệ |
+
+- Script XN/CĐHA trước đây ghi tab "không tải được" thành "xong, 0 dòng", tức là lẫn
+  với "EMR không có". Nay tab không tải được, hay có phiếu Hoàn tất mà không mở được
+  chi tiết, đều được ghi là lỗi. XN và CĐHA được lưu **riêng**: XN lỗi thì CĐHA đã lấy
+  vẫn được giữ, lần sau chỉ lấy lại XN.
+- Không tìm thấy người bệnh trên EMR được ghi rõ theo dòng nguồn và để tìm lại sau cùng.
+  Nếu có mốc thời gian mà không lượt nào trên EMR khớp chắc chắn, ca đó dừng với lý do
+  `encounter_not_identified`; hệ thống **không** tự chọn lượt gần giống nhất. Dòng trên
+  EMR khác Mã nội trú với dòng nguồn không bao giờ được nhận thay.
+- **Phát hiện thay đổi:** mỗi dòng danh sách nội trú có một chữ ký hash (Mã nội trú,
+  trạng thái, xử trí, khoa chuyển đến, ngày ra; riêng họ tên/tuổi/giới). Cột
+  `list_row_signatures` nằm trong `research_source.csv`, chỉ chứa hash. Khi quét lại danh
+  sách, lượt có dòng mới hoặc dòng đổi thông tin được lấy lại cả 6 phần. Nếu chỉ đổi
+  họ tên/tuổi/giới thì chỉ lấy lại hồ sơ nền. Dòng bị gộp khỏi `du_lieu_ban_dau.csv`
+  không bị coi là thay đổi.
+- **Lần chạy đầu sau khi nâng cấp:** các tab XN/CĐHA mà bản cũ ghi "xong, 0 dòng" sẽ
+  được lấy lại **một lần** để xác nhận EMR thật sự không có. Lý do là bản cũ không phân
+  biệt được hai trường hợp này.
+
+**Báo cáo sau mỗi đợt** (`collection_report.json`; lịch sử chỉ gồm số đếm ở
+`collection_history.jsonl`). Báo cáo gồm: số ca đã lấy, số ca bỏ qua vì không đổi, số
+phần đã tự lấy bù, số lỗi Selenium còn tồn, số ca không thể ghép chắc chắn. Chỉ các ca
+ngoại lệ nằm trong `collection_exceptions.csv` (loại, Mã NC, phần, lý do, số lần thử).
+Chi tiết lỗi đã được bỏ URL và các dãy số dài.
+
+**Đủ dùng theo từng nghiên cứu** (`GET /api/research/studies/<id>/readiness` →
+`study_readiness.csv`). Không có nhãn đủ/thiếu chung cho người bệnh. Mỗi đề cương khai
+báo phần bắt buộc và dữ liệu phải có, ví dụ "có CĐHA loại CT", qua
+`POST /api/research/studies/<id>/data-requirements`. Nếu chưa khai báo, hệ thống suy
+ra từ biến đã chọn; nếu cũng chưa chọn biến thì mặc định cần đủ 6 phần. Kết quả từng
+lượt:
+
+- `usable`: đủ dùng;
+- `not_eligible`: đã lấy đủ nhưng EMR không có dữ liệu đề tài yêu cầu, ví dụ không có CT;
+- `incomplete`: phần bắt buộc chưa lấy xong;
+- `needs_review`: có phần bị chặn hoặc lượt không ghép chắc.
+
+Một ca thiếu CT vẫn `usable` cho đề tài không cần CT.
+
 ## 4. Dữ liệu định danh
 
 - Có định danh trực tiếp: `du_lieu_ban_dau.csv`, `research_source.csv`,
