@@ -6,6 +6,10 @@ các cơ chế bảo vệ đã có, và việc cần làm khi vận hành. Đây
 tuân thủ pháp luật: các mục đánh dấu **[Bệnh viện xác nhận]** cần bộ phận pháp
 chế/an toàn thông tin/hội đồng đạo đức quyết định.
 
+Định nghĩa chi tiết từng bảng/cột (mỗi dòng là gì, khóa, kiểu, đơn vị, giá trị cho
+phép, ý nghĩa ô trống, nguồn, quy tắc chất lượng, định danh và phạm vi dùng): xem
+[`DATA_DICTIONARY.md`](DATA_DICTIONARY.md).
+
 ## 1. Luồng dữ liệu
 
 Mỗi kho (kho gốc `du_lieu_goc` hoặc một nghiên cứu riêng) nằm ở
