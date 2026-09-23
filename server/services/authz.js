@@ -341,7 +341,11 @@ function requiredRoleForRequest(req) {
   // Tài khoản EMR theo điều dưỡng (ca làm/ca trực) — chứa mật khẩu thật, chỉ admin.
   if (routePath.startsWith('/nurse-emr-accounts')) return 'admin';
   if (routePath.startsWith('/audit') || routePath.startsWith('/tasks') || routePath === '/diagnostics' || routePath === '/session-logs') return 'supervisor';
-  if (routePath.startsWith('/research')) return ['GET', 'HEAD'].includes(method) ? 'researcher' : 'supervisor';
+  if (routePath.startsWith('/research')) {
+    // Xóa nghiên cứu là thao tác phá hủy dữ liệu: chỉ admin.
+    if (method === 'DELETE') return 'admin';
+    return ['GET', 'HEAD'].includes(method) ? 'researcher' : 'supervisor';
+  }
 
   // Một số route lịch sử dùng GET nhưng thực chất khởi chạy worker/tạo báo cáo.
   // Phân quyền theo tác động, không chỉ dựa vào HTTP method.

@@ -13,6 +13,7 @@ const { csvEscape, rowsToCsv } = require('../utils/csv');
 const { runPython, runScript, fmtPyError } = require('../services/python_runner');
 const { getRuntimePaths } = require('../services/session');
 const { appendActivity } = require('../services/activity_logger');
+const { appendSecurityAudit } = require('../services/security_audit');
 const { hasRole } = require('../services/authz');
 const { enqueueHeavy, registerCancel, unregisterCancel, isCancelRequested } = require('../services/task_queue');
 const variableSelection = require('../research/variable_selection');
@@ -20,6 +21,7 @@ const { sanitizeCustomFields, evaluateCustomFields } = require('../research/anal
 const { firstSurgeryByEncounter, surgeryForMedicationContext } = require('../research/encounter_linkage');
 const { strictLocalDate } = require('../research/date_utils');
 const { DEFAULT_SENSITIVE_COLUMNS, redactCsvTable, isSensitiveColumn } = require('../research/export_utils');
+const quality = require('../research/quality');
 const { databaseInfo, syncResearchDatabase, queryResearchDatabase } = require('../research/sqlite_store');
 const {
   read_index: readHchanhIndex,
@@ -400,7 +402,28 @@ function researchResponseShouldRedact(req) {
     err.status = 403;
     throw err;
   }
+  auditIdentifiedResearchAccess(req);
   return false;
+}
+
+// Mọi request /research đã có dòng audit chung (activity_logger), nhưng lần xem/xuất
+// dữ liệu CÓ ĐỊNH DANH cần một sự kiện riêng dễ lọc: ai, lúc nào, bảng/run/nghiên cứu
+// nào và mục đích (tham số ?purpose=, nếu giao diện gửi). Không ghi từ khóa tra cứu.
+function auditIdentifiedResearchAccess(req) {
+  const q = req.query || {};
+  appendSecurityAudit({
+    kind: 'research.identified_access',
+    actor: { id: String(req.auth?.id || ''), role: String(req.auth?.role || '') },
+    method: String(req.method || ''),
+    path: String(req.path || ''),
+    scope: {
+      study_id: String(req.params?.studyId || ''),
+      table: String(q.table || ''),
+      run_id: String(q.runId || ''),
+      has_query: Boolean(String(q.q || '').trim()),
+    },
+    purpose: String(q.purpose || '').replace(/[\r\n\t]+/g, ' ').trim().slice(0, 200),
+  });
 }
 
 function sendCsvFile(res, filePath, filenameBase, { redact = true } = {}) {
@@ -2154,6 +2177,11 @@ function buildCoverageSummary(runDir) {
   if (!extract.total) blockers.push('Chưa có extract_status.csv.');
   if (extract.total && extract.ready < extract.total) blockers.push(`Còn ${extract.total - extract.ready}/${extract.total} dòng chưa đạt ready_for_analysis.`);
   if (extract.manual_review > 0) blockers.push(`Còn ${extract.manual_review} dòng cần manual review.`);
+  const normalizeState = quality.readNormalizeState(runDir);
+  if (normalizeState?.status === 'running') blockers.push('Lần Chuẩn hóa trước bị dừng giữa chừng, dữ liệu có thể lẫn bảng cũ và mới. Bấm Chuẩn hóa lại.');
+  if (normalizeState?.status === 'failed') blockers.push('Lần Chuẩn hóa gần nhất bị lỗi. Bấm Chuẩn hóa lại sau khi xử lý lỗi.');
+  const qaReport = quality.readQaReport(runDir);
+  for (const item of qaReport?.blocking || []) blockers.push(`Kiểm tra chất lượng: ${item.message}`);
   return {
     exists: true,
     run_id: path.basename(runDir),
@@ -2161,7 +2189,78 @@ function buildCoverageSummary(runDir) {
     extract,
     final_dataset_ready: blockers.length === 0,
     blockers,
+    normalize_state: normalizeState ? { status: normalizeState.status, finished_at: normalizeState.finished_at || '' } : null,
+    qa: qaReport ? {
+      status: qaReport.status, generated_at: qaReport.generated_at,
+      blocking: qaReport.blocking || [], warnings: qaReport.warnings || [], notes: qaReport.notes || [],
+      review_count: qaReport.review_count || 0,
+    } : null,
   };
+}
+
+// Mỗi dataset cuối được lưu thành một phiên bản bất biến trong datasets/<tên>/ kèm
+// dataset_manifest.json ghi cách tạo ra nó (nguồn, chữ ký input đã chuẩn hóa, phiên
+// bản schema/code, cấu hình biến, thông tin đề cương của nghiên cứu, QA). File
+// analysis_final.csv ở gốc run chỉ là bản "hiện hành" và có thể bị Chuẩn hóa gỡ đi.
+function datasetSnapshotsDir(runDir) {
+  return path.join(runDir, 'datasets');
+}
+
+function listDatasetSnapshots(runDir) {
+  const dir = datasetSnapshotsDir(runDir);
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true })
+    .filter(e => e.isDirectory())
+    .map(e => readJsonSafe(path.join(dir, e.name, 'dataset_manifest.json'), null))
+    .filter(Boolean)
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+}
+
+function writeDatasetSnapshot(runDir, { csvPath, kind, extra = {} }) {
+  const sha = quality.fileSha256(csvPath);
+  const existing = listDatasetSnapshots(runDir).find(m => m.sha256 === sha);
+  if (existing) return existing;
+  const manifest = readJsonSafe(path.join(runDir, 'manifest.json'), {}) || {};
+  const studyRoot = path.dirname(path.dirname(runDir));
+  const studyMeta = readJsonSafe(path.join(studyRoot, 'study.json'), null);
+  const name = `${kind}_${nowFileStamp()}_${sha.slice(0, 8)}`;
+  const target = path.join(datasetSnapshotsDir(runDir), name);
+  ensureDir(target);
+  fs.copyFileSync(csvPath, path.join(target, 'analysis_final.csv'));
+  const table = readCsvTable(csvPath, Number.MAX_SAFE_INTEGER);
+  const snapshot = {
+    name,
+    kind,
+    created_at: nowIso(),
+    run_id: path.basename(runDir),
+    file: 'analysis_final.csv',
+    sha256: sha,
+    rows: table.rows.length,
+    columns: table.columns,
+    normalized_input_signature: manifest.normalized_input_signature || '',
+    normalized_schema_version: manifest.normalized_schema_version || '',
+    normalized_at: manifest.normalized_at || '',
+    code_version: quality.codeVersion(ROOT_DIR),
+    analysis_config: loadAnalysisConfig(runDir) || null,
+    study: studyMeta ? { id: studyMeta.id, name: studyMeta.name, governance: studyMeta.governance || null } : null,
+    qa: manifest.normalized_qa || null,
+    ...extra,
+  };
+  writeJsonAtomic(path.join(target, 'dataset_manifest.json'), snapshot);
+  return snapshot;
+}
+
+function snapshotFinalDatasetIfUnsaved(runDir, kind) {
+  const csvPath = path.join(runDir, 'analysis_final.csv');
+  if (!fs.existsSync(csvPath)) return null;
+  try {
+    return writeDatasetSnapshot(runDir, { csvPath, kind });
+  } catch (err) {
+    // Không lưu được bản sao thì không được gỡ file: dừng Chuẩn hóa để giữ dữ liệu.
+    const e = new Error(`Không lưu được bản sao analysis_final.csv trước khi chuẩn hóa lại: ${err.message}`);
+    e.status = 500;
+    throw e;
+  }
 }
 
 function finalizeAnalysisDataset(runDir) {
@@ -2187,11 +2286,22 @@ function finalizeAnalysisDataset(runDir) {
   const manifestPath = path.join(runDir, 'manifest.json');
   const manifest = readJsonSafe(manifestPath, {});
   const outputs = { ...(manifest.outputs || {}), analysis_final: rows.length };
+  const snapshot = writeDatasetSnapshot(runDir, {
+    csvPath: dst,
+    kind: 'final',
+    extra: {
+      source_file: path.basename(src),
+      source_sha256: quality.fileSha256(src),
+      excluded_manual_review_rows: (table.rows || []).length - rows.length,
+      rule: 'Lấy từ analysis_selected.csv (nếu có) hoặc analysis_ready.csv, bỏ các dòng needs_manual_review.',
+    },
+  });
   writeJsonAtomic(manifestPath, {
     ...manifest,
     outputs,
     final_dataset_created_at: nowIso(),
     final_dataset_source: path.basename(src),
+    final_dataset_snapshot: snapshot.name,
   });
   let database = null;
   let database_warning = '';
@@ -2686,7 +2796,9 @@ function copyRowsByPatients(sourceFile, targetFile, patientSet, codeMap) {
 
 // v9: strict date parsing, typed numeric filters/custom fields 1/0, và bỏ
 // patient-level surgery fallback khi chuẩn hóa medication_orders.
-const NORMALIZED_SCHEMA_VERSION = 9;
+// v10: Mã NC duy nhất/ổn định, ghép theo Research key, qa_report.json +
+// encounter_review.csv + normalize_state.json + normalize_history.jsonl.
+const NORMALIZED_SCHEMA_VERSION = 10;
 
 const NORMALIZED_COLUMNS = {
   patients: [
@@ -3314,9 +3426,16 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
   const map = new Map();
 
   function sameStrongIdentity(row, existing, sourceStatus = '') {
+    // Research key là khóa của đúng dòng nguồn mà worker đã lấy: bằng nhau là cùng đợt.
+    // Khi cả hai có Research key mà khác nhau thì KHÔNG dùng Mã NC để ghép, vì Mã NC
+    // từng bị cấp trùng (NC0001 cho mọi dòng) và ghép theo nó gán nhầm dữ liệu giữa
+    // các đợt của cùng người bệnh.
+    const keyA = firstNonEmpty(row, ['Research key', 'research_key']);
+    const keyB = firstNonEmpty(existing, ['Research key', 'research_key']);
+    if (keyA && keyB && keyA === keyB) return true;
     const researchA = rowResearchCode(row);
     const researchB = rowResearchCode(existing);
-    if (researchA && researchB && researchA === researchB) return true;
+    if (!(keyA && keyB) && researchA && researchB && researchA === researchB) return true;
 
     const admissionIdA = normalizedIdentity(rowEmrAdmissionId(row));
     const admissionIdB = normalizedIdentity(rowEmrAdmissionId(existing));
@@ -3372,6 +3491,12 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
       ? mergeRowsPreferFilled(withStatus, existing)
       : mergeRowsPreferFilled(existing, withStatus);
     merged.__source_status = [...new Set([existing.__source_status, sourceStatus].filter(Boolean).join('+').split('+').filter(Boolean))].join('+');
+    // File hchanh_* mang Mã NC của research_source.csv tại lúc lấy dữ liệu, có thể là
+    // mã cũ bị cấp trùng (NC0001): không để mã đó đè lên mã của dòng đã có. Các nguồn
+    // khác (XN/CĐHA) giữ cách gộp cũ để không đổi Mã NC của dữ liệu hiện có.
+    if (String(sourceStatus || '').startsWith('hchanh') && rowResearchCode(existing)) {
+      merged['Mã NC'] = rowResearchCode(existing);
+    }
     merged.__needs_manual_review = [...new Set([existing.__needs_manual_review, withStatus.__needs_manual_review].filter(Boolean).join('; ').split(';').map(x => x.trim()).filter(Boolean))].join('; ');
     map.set(sig, merged);
   }
@@ -3759,16 +3884,46 @@ function rowFetchDateWindow(row, dateCtx = {}) {
   return { from, to, admissionRaw, dischargeRaw };
 }
 
-function normalizeResearchSourceRows(rows, { sourceFile = '', sourceRunId = '', dateCtx = {} } = {}) {
-  const out = [];
+// Mã NC phải DUY NHẤT theo từng dòng nguồn (Research key) và ỔN ĐỊNH qua các lần
+// quét lại. du_lieu_ban_dau.csv không có cột Mã NC, nên mã được cấp ở đây: giữ mã cũ
+// của cùng Research key (previousCodes, đọc từ research_source.csv trước đó), dòng mới
+// nhận số kế tiếp sau mã lớn nhất đã dùng. Trước đây biểu thức `out.length + 1` luôn
+// ra NC0001 (mảng out không bao giờ được thêm phần tử), khiến mọi dòng trùng Mã NC và
+// bước chuẩn hóa ghép nhầm dữ liệu giữa các đợt của cùng người bệnh.
+function normalizeResearchSourceRows(rows, { sourceFile = '', sourceRunId = '', dateCtx = {}, previousCodes = new Map(), reservedCodes = [] } = {}) {
   const seen = new Map();
   const baseName = sourceFile ? path.basename(sourceFile) : '';
+  const used = new Set();
+  let nextNumber = 1;
+  const reserve = (code) => {
+    used.add(code);
+    const m = /^NC(\d+)$/i.exec(String(code || '').trim());
+    if (m) nextNumber = Math.max(nextNumber, Number(m[1]) + 1);
+  };
+  const allocate = () => {
+    let code = '';
+    do { code = `NC${String(nextNumber).padStart(4, '0')}`; nextNumber += 1; } while (used.has(code));
+    used.add(code);
+    return code;
+  };
+  for (const code of previousCodes.values()) reserve(code);
+  for (const code of reservedCodes) reserve(code);
+  for (const row of rows || []) {
+    const explicit = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
+    if (explicit) reserve(explicit);
+  }
+
   for (const row of rows || []) {
     const code = patientCode(row);
     if (!code) continue;
     const win = rowFetchDateWindow(row, dateCtx);
-    const researchCode = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || `NC${String(out.length + 1).padStart(4, '0')}`;
-    const key = researchHchanhSourceKey({ ...row, 'Mã NC': researchCode, fetch_from_date: win.from, fetch_to_date: win.to }, sourceRunId);
+    const explicit = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
+    // Khóa không phụ thuộc Mã NC cấp mới (chỉ dùng Mã NC nếu nguồn đã có sẵn).
+    const key = researchHchanhSourceKey({ ...row, fetch_from_date: win.from, fetch_to_date: win.to }, sourceRunId);
+    const researchCode = explicit
+      || seen.get(key)?.['Mã NC']
+      || previousCodes.get(key)
+      || allocate();
     const normalized = {
       ...row,
       'Mã NC': researchCode,
@@ -3784,9 +3939,39 @@ function normalizeResearchSourceRows(rows, { sourceFile = '', sourceRunId = '', 
       'Research key': key,
     };
     if (!seen.has(key)) seen.set(key, normalized);
-    else seen.set(key, mergeRowsPreferFilled(seen.get(key), normalized));
+    else seen.set(key, { ...mergeRowsPreferFilled(seen.get(key), normalized), 'Mã NC': seen.get(key)['Mã NC'] });
   }
   return Array.from(seen.values());
+}
+
+// Research key -> Mã NC từ research_source.csv cũ, chỉ lấy mã dùng cho đúng MỘT key
+// (mã bị trùng giữa nhiều key là dữ liệu hỏng, không được giữ lại).
+function previousResearchCodes(rows) {
+  const byCode = new Map();
+  for (const row of rows || []) {
+    const key = firstNonEmpty(row, ['Research key']);
+    const code = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
+    if (!key || !code) continue;
+    if (!byCode.has(code)) byCode.set(code, new Set());
+    byCode.get(code).add(key);
+  }
+  const out = new Map();
+  for (const [code, keys] of byCode.entries()) {
+    if (keys.size === 1) out.set([...keys][0], code);
+  }
+  return out;
+}
+
+function researchCodesConflict(rows) {
+  const keyByCode = new Map();
+  for (const row of rows || []) {
+    const key = firstNonEmpty(row, ['Research key']);
+    const code = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
+    if (!key || !code) continue;
+    if (keyByCode.has(code) && keyByCode.get(code) !== key) return true;
+    keyByCode.set(code, key);
+  }
+  return false;
 }
 
 function preferredResearchSourceSeedPath(runDir, fallbackPath = '') {
@@ -3828,9 +4013,14 @@ function ensureResearchSourceRows(runDir, { fallbackPath = '', sourceRunId = '',
   const dateCtx = runDateContext(runPath, dateDefaults);
 
   const sourceStale = !force && researchSourceNeedsRefresh(runPath, sourcePath, fallbackPath);
-  if (!force && !sourceStale && fs.existsSync(sourcePath)) {
-    const existing = readCsvTable(sourcePath, Number.MAX_SAFE_INTEGER);
-    const rows = (existing.rows || []).filter(r => patientCode(r));
+  const existingRows = fs.existsSync(sourcePath)
+    ? (readCsvTable(sourcePath, Number.MAX_SAFE_INTEGER).rows || []).filter(r => patientCode(r))
+    : [];
+  // File cũ có Mã NC trùng giữa các dòng khác nhau (lỗi cấp mã trước đây) phải được
+  // tạo lại; mã hợp lệ của từng Research key vẫn được giữ nguyên.
+  const codesBroken = researchCodesConflict(existingRows);
+  if (!force && !sourceStale && !codesBroken && existingRows.length) {
+    const rows = existingRows;
     if (rows.length) {
       return { rows, file: sourcePath, base_file: firstNonEmpty(rows[0], ['source_file']) || path.basename(sourcePath), candidates: researchSourceCandidatePaths(runPath, fallbackPath), date_context: dateCtx };
     }
@@ -3851,7 +4041,26 @@ function ensureResearchSourceRows(runDir, { fallbackPath = '', sourceRunId = '',
   }
   if (!pickedRows.length) return { rows: [], file: '', base_file: '', candidates, date_context: dateCtx };
 
-  const normalized = normalizeResearchSourceRows(pickedRows, { sourceFile: pickedFile, sourceRunId, dateCtx });
+  // Ưu tiên giữ mã của research_source.csv cũ; sau đó dùng mã mà script XN/CĐHA đã
+  // cấp cho cùng đợt trong du_lieu_goc.csv (cùng Research key qua Mã điều trị/nội trú),
+  // để hai nơi cấp mã không cho cùng một đợt hai Mã NC khác nhau.
+  const previousCodes = previousResearchCodes(existingRows);
+  const reservedCodes = [];
+  const deepPath = path.join(runPath, 'du_lieu_goc.csv');
+  if (fs.existsSync(deepPath)) {
+    const deepRows = (readCsvTable(deepPath, Number.MAX_SAFE_INTEGER).rows || [])
+      .filter(r => patientCode(r))
+      .map(r => ({ ...r, 'Research key': researchHchanhSourceKey(r, sourceRunId) }));
+    const usedCodes = new Set(previousCodes.values());
+    // Mọi mã script XN/CĐHA đã dùng đều được giữ chỗ để không cấp trùng cho đợt khác.
+    for (const r of deepRows) { const c = rowResearchCode(r); if (c) reservedCodes.push(c); }
+    for (const [key, code] of previousResearchCodes(deepRows).entries()) {
+      if (!previousCodes.has(key) && !usedCodes.has(code)) { previousCodes.set(key, code); usedCodes.add(code); }
+    }
+  }
+  const normalized = normalizeResearchSourceRows(pickedRows, {
+    sourceFile: pickedFile, sourceRunId, dateCtx, previousCodes, reservedCodes,
+  });
   writeCsvUnion(sourcePath, normalized, [
     'Mã NC', 'Mã BN', 'Họ tên', 'Ngày vào viện', 'Ngày ra viện',
     'fetch_from_date', 'fetch_to_date', 'source_scan_from_date', 'source_scan_to_date',
@@ -4303,7 +4512,8 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
       for (const { row, idx } of chunkEntries) {
         const meta = researchHchanhMeta(row, sourceRunId);
         const key = meta.source_key;
-        const display = `${idx + 1}/${selectedRows.length} ${meta.ma_bn} - ${meta.ho_ten || ''}`.trim();
+        // Không đưa họ tên vào log/trace (action_log.txt hay bị gửi ra ngoài để xem lỗi).
+        const display = `${idx + 1}/${selectedRows.length} ${meta.ma_bn}${meta.research_code ? ` (${meta.research_code})` : ''}`;
         if (!force && progress[key]?.status === 'done') {
           stats.skipped += 1;
           continue;
@@ -4817,7 +5027,43 @@ function normalizedOutputsAvailable(runDir) {
   });
 }
 
-function normalizeRunOutputs(runDir, { sourceRunId = '', force = false } = {}) {
+// Bọc bước chuẩn hóa bằng normalize_state.json: ghi "running" trước khi ghi bất kỳ
+// bảng nào, "complete"/"failed" khi xong. Các bảng được ghi lần lượt (mỗi file ghi
+// tạm rồi đổi tên), nên nếu tiến trình chết giữa chừng, thư mục có thể lẫn bảng mới
+// và cũ: trạng thái "running" còn sót lại là dấu hiệu để chặn tạo dataset cuối và
+// buộc lần Chuẩn hóa sau chạy lại đầy đủ thay vì dùng cache.
+function normalizeRunOutputs(runDir, options = {}) {
+  const dir = path.resolve(runDir);
+  ensureDir(dir);
+  const previousState = quality.readNormalizeState(dir);
+  const startedAt = nowIso();
+  const statePath = path.join(dir, quality.NORMALIZE_STATE_FILE);
+  writeJsonAtomic(statePath, { status: 'running', started_at: startedAt, schema_version: NORMALIZED_SCHEMA_VERSION });
+  try {
+    const result = normalizeRunOutputsInner(dir, { ...options, previousState });
+    writeJsonAtomic(statePath, {
+      status: 'complete',
+      started_at: startedAt,
+      finished_at: nowIso(),
+      schema_version: NORMALIZED_SCHEMA_VERSION,
+      cached: Boolean(result.cached),
+      qa_status: result.qa?.status || '',
+      database_status: result.database_status || '',
+    });
+    return result;
+  } catch (err) {
+    writeJsonAtomic(statePath, {
+      status: 'failed',
+      started_at: startedAt,
+      finished_at: nowIso(),
+      schema_version: NORMALIZED_SCHEMA_VERSION,
+      error: String(err?.message || err).slice(0, 300),
+    });
+    throw err;
+  }
+}
+
+function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, previousState = null } = {}) {
   const dir = path.resolve(runDir);
   ensureDir(dir);
   const runId = sourceRunId || path.basename(dir);
@@ -4831,7 +5077,8 @@ function normalizeRunOutputs(runDir, { sourceRunId = '', force = false } = {}) {
     && Number(manifestBefore.normalized_schema_version || 0) === NORMALIZED_SCHEMA_VERSION
     && manifestBefore.normalized_input_signature === inputSignature
     && normalizedOutputsAvailable(dir)
-    && manifestBefore.normalized_outputs) {
+    && manifestBefore.normalized_outputs
+    && previousState?.status === 'complete') {
     let database = null;
     try {
       database = syncDatabaseForRun(dir, { runId, inputSignature, force: false });
@@ -4841,6 +5088,8 @@ function normalizeRunOutputs(runDir, { sourceRunId = '', force = false } = {}) {
     return {
       ...manifestBefore.normalized_outputs,
       cached: true,
+      qa: quality.readQaReport(dir) ? { status: quality.readQaReport(dir).status } : null,
+      database_status: manifestBefore.normalized_database_status || '',
       input_signature: inputSignature,
       database: database ? publicDatabaseInfo(database) : publicDatabaseInfo(databaseInfo(datasetDirFromRunDir(dir))),
     };
@@ -5570,6 +5819,9 @@ function normalizeRunOutputs(runDir, { sourceRunId = '', force = false } = {}) {
     try { fs.unlinkSync(path.join(dir, 'analysis_selection_manifest.json')); } catch (_) {}
   }
 
+  // analysis_final.csv của lần trước không còn khớp dữ liệu mới nên bị gỡ, nhưng luôn
+  // được lưu bản sao (nếu chưa có) trong datasets/ để không mất dataset đã chốt.
+  snapshotFinalDatasetIfUnsaved(dir, 'superseded_by_normalize');
   try { fs.unlinkSync(path.join(dir, 'analysis_final.csv')); } catch (_) {}
   writeCsv(path.join(dir, 'extract_status.csv'), NORMALIZED_COLUMNS.extract_status, extractStatus);
 
@@ -5606,14 +5858,60 @@ function normalizeRunOutputs(runDir, { sourceRunId = '', force = false } = {}) {
     extract_status: extractStatus.length,
   };
   let database = null;
+  let databaseError = '';
   try {
     database = syncDatabaseForRun(dir, { runId, inputSignature, force: true });
   } catch (err) {
-    console.warn('[RESEARCH][SQLITE] Không tạo/cập nhật được SQLite:', err.message);
+    databaseError = String(err?.message || err);
+    console.warn('[RESEARCH][SQLITE] Không tạo/cập nhật được SQLite:', databaseError);
   }
   const databasePublic = database
     ? publicDatabaseInfo(database)
     : publicDatabaseInfo(databaseInfo(datasetDirFromRunDir(dir)));
+  const databaseStatus = databaseError ? 'failed' : 'ok';
+
+  const qaReport = quality.buildQualityReport({
+    runId,
+    runDir: dir,
+    tables: {
+      patients, encounters: finalEncounters, diagnoses,
+      lab_results: labResults, imaging_results: imagingResults, surgery_results: surgeryResults,
+      medication_orders: medicationOrders, clinical_notes: clinicalNotes, analysis_ready: analysisReady,
+    },
+    inputCounts: {
+      initial_list: outputs.initial_list, research_source: outputs.research_source,
+      hchanh_profile: outputs.hchanh_profile, hchanh_discharge: outputs.hchanh_discharge,
+      hchanh_surgery: outputs.hchanh_surgery, hchanh_order_history: outputs.hchanh_order_history,
+      lich_su_xn: countCsvRows(path.join(dir, 'lich_su_xn.csv')), lich_su_cdha: countCsvRows(path.join(dir, 'lich_su_cdha.csv')),
+    },
+    databaseManifest: databaseError ? null : databaseInfo(datasetDirFromRunDir(dir)),
+    databaseError,
+    csvFilesInDatabase: ['patients.csv', 'encounters.csv', 'lab_results.csv', 'imaging_results.csv', 'surgery_results.csv', 'medication_orders.csv', 'analysis_ready.csv'],
+    inferenceFields: preset.inference_fields || [],
+  });
+  writeJsonAtomic(path.join(dir, quality.QA_REPORT_FILE), { ...qaReport, review: undefined });
+  writeCsv(path.join(dir, quality.ENCOUNTER_REVIEW_FILE),
+    ['encounter_id', 'research_code', 'patient_code', 'issue', 'detail', 'related_encounter_id', 'source_status'],
+    qaReport.review);
+  const qaSummary = { status: qaReport.status, blocking_count: qaReport.blocking_count, warning_count: qaReport.warning_count, review_count: qaReport.review_count };
+  const version = quality.codeVersion(ROOT_DIR);
+  try {
+    // Nhật ký chỉ ghi nối tiếp: mỗi lần chuẩn hóa một dòng, không ghi đè lần trước.
+    fs.appendFileSync(path.join(dir, quality.NORMALIZE_HISTORY_FILE), `${JSON.stringify({
+      at: nowIso(),
+      run_id: runId,
+      normalized_schema_version: NORMALIZED_SCHEMA_VERSION,
+      input_signature: inputSignature,
+      ...version,
+      analysis_preset: analysisConfig.preset || 'general',
+      variable_selection_hash: stableHash(analysisConfig.variable_selection || null),
+      counts: outputs,
+      database_status: databaseStatus,
+      qa: qaSummary,
+    })}\n`, 'utf-8');
+  } catch (err) {
+    console.warn('[RESEARCH][HISTORY] Không ghi được normalize_history.jsonl:', err.message);
+  }
 
   writeJsonAtomic(manifestPath, {
     ...manifest,
@@ -5622,10 +5920,13 @@ function normalizeRunOutputs(runDir, { sourceRunId = '', force = false } = {}) {
     normalized_input_signature: inputSignature,
     normalized_outputs: outputs,
     normalized_database: databasePublic,
+    normalized_database_status: databaseStatus,
+    normalized_qa: qaSummary,
+    normalized_code_version: version,
     variable_selection_applied: Boolean(selectedAnalysis),
     variable_selection_output: selectedAnalysis ? { rows: selectedAnalysis.rows, columns: selectedAnalysis.columns } : null,
   });
-  return { ...outputs, cached: false, input_signature: inputSignature, database: databasePublic };
+  return { ...outputs, cached: false, input_signature: inputSignature, database: databasePublic, database_status: databaseStatus, qa: qaSummary };
 }
 
 function normalizeArchiveLatest() {
@@ -5759,7 +6060,8 @@ router.get('/research/archive/patient-history', (req, res) => {
     const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
     const data = buildPatientHistory(runDir, String(req.query.q || ''));
     const elapsed = Date.now() - startedAt;
-    if (elapsed > 1200) console.warn(`[RESEARCH][LOOKUP] ${elapsed}ms | q=${String(req.query.q || '').slice(0, 80)} | source=${data.data_source || '?'}`);
+    // Không in từ khóa tra cứu (có thể là họ tên/Mã BN) ra console.
+    if (elapsed > 1200) console.warn(`[RESEARCH][LOOKUP] ${elapsed}ms | q_len=${String(req.query.q || '').length} | source=${data.data_source || '?'}`);
 
     // Không bao giờ trả một response lịch sử quá lớn làm Express/V8 lỗi Invalid string length.
     let eventRows = 0;
@@ -5843,6 +6145,28 @@ router.get('/research/archive/coverage', (req, res) => {
     const runId = resolveArchiveRunId(String(req.query.runId || 'latest'));
     const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
     return res.json({ status: 'ok', coverage: buildCoverageSummary(runDir) });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+router.get('/research/archive/datasets', (req, res) => {
+  try {
+    const runId = resolveArchiveRunId(String(req.query.runId || 'latest'));
+    const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
+    return res.json({ status: 'ok', run_id: runId || '', datasets: runDir ? listDatasetSnapshots(runDir) : [] });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+router.get('/research/studies/:studyId/datasets', (req, res) => {
+  try {
+    const study = readStudy(req.params.studyId);
+    if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
+    const runId = resolveRunId(study.id, String(req.query.runId || 'latest'));
+    const runDir = runId ? path.join(runsDir(study.id), runId) : '';
+    return res.json({ status: 'ok', run_id: runId || '', datasets: runDir ? listDatasetSnapshots(runDir) : [] });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }
@@ -6604,6 +6928,34 @@ function buildSelectedAnalysisForRun(runDir, analysisReadyRows, normalizedRowsBy
   return { rows: selected.rows.length, columns: selected.columns.length, manifest: selected.manifest };
 }
 
+// Thông tin quản trị của một nghiên cứu. Hệ thống CHỈ LƯU và ghi kèm vào
+// dataset_manifest.json của mỗi dataset cuối; việc phê duyệt đề cương, ai được truy
+// cập, trường định danh nào được phép là quyết định của hội đồng đạo đức/bệnh viện.
+const STUDY_APPROVAL_STATUSES = ['draft', 'submitted', 'approved', 'rejected', 'expired', 'unknown'];
+function sanitizeStudyGovernance(input, current = null) {
+  const src = input && typeof input === 'object' ? input : {};
+  const str = (key, max = 300) => String(src[key] ?? current?.[key] ?? '').replace(/[\u0000-\u001f]+/g, ' ').trim().slice(0, max);
+  const status = String(src.approval_status ?? current?.approval_status ?? 'unknown').trim();
+  const list = (key) => {
+    const raw = src[key] ?? current?.[key] ?? [];
+    return (Array.isArray(raw) ? raw : String(raw).split(/[,\n]/)).map(v => String(v).trim()).filter(Boolean).slice(0, 100);
+  };
+  return {
+    protocol_code: str('protocol_code', 80),
+    protocol_version: str('protocol_version', 40),
+    approval_status: STUDY_APPROVAL_STATUSES.includes(status) ? status : 'unknown',
+    approval_ref: str('approval_ref', 120),
+    approval_date: str('approval_date', 20),
+    data_period_from: str('data_period_from', 20),
+    data_period_to: str('data_period_to', 20),
+    inclusion_criteria: str('inclusion_criteria', 2000),
+    exclusion_criteria: str('exclusion_criteria', 2000),
+    approved_identified_fields: list('approved_identified_fields'),
+    authorized_users: list('authorized_users'),
+    updated_at: nowIso(),
+  };
+}
+
 router.post('/research/studies', (req, res) => {
   try {
     const name = String(req.body?.name || '').trim();
@@ -6629,6 +6981,7 @@ router.post('/research/studies', (req, res) => {
       type: 'archive_derived',
       analysis_config,
       variable_selection,
+      governance: sanitizeStudyGovernance(req.body?.governance),
       created_at: nowIso(),
       updated_at: nowIso(),
     };
@@ -6651,6 +7004,25 @@ router.post('/research/studies/:studyId/analysis-config', (req, res) => {
     if (study.analysis_config?.variable_selection) analysis_config.variable_selection = study.analysis_config.variable_selection;
     const updated = updateStudy(study.id, { analysis_config });
     return res.json({ status: 'ok', message: `Đã cập nhật cấu hình phân tích: ${ANALYSIS_PRESETS[presetId].label}.`, study: updated });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+router.post('/research/studies/:studyId/governance', (req, res) => {
+  try {
+    const study = readStudy(req.params.studyId);
+    if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
+    const governance = sanitizeStudyGovernance(req.body || {}, study.governance || null);
+    const updated = updateStudy(study.id, { governance });
+    appendSecurityAudit({
+      kind: 'research.study_governance_updated',
+      actor: { id: String(req.auth?.id || ''), role: String(req.auth?.role || '') },
+      study_id: study.id,
+      approval_status: governance.approval_status,
+      protocol_version: governance.protocol_version,
+    });
+    return res.json({ status: 'ok', study: updated });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }
@@ -6686,9 +7058,20 @@ router.delete('/research/studies/:studyId', (req, res) => {
     const { studyId } = req.params;
     const study = readStudy(studyId);
     if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
-    // Xóa toàn bộ thư mục nghiên cứu (kể cả runs, cohort, study.json)
-    fs.rmSync(studyDir(studyId), { recursive: true, force: true });
-    return res.json({ status: 'ok', message: `Đã xóa nghiên cứu "${study.name}".` });
+    // Không xóa vĩnh viễn: chuyển cả thư mục (runs, cohort, study.json, SQLite) vào
+    // research_store/_deleted/<id>_<thời điểm>/ để còn khôi phục được nếu xóa nhầm.
+    // Dọn hẳn thư mục _deleted là việc của admin theo chính sách lưu trữ của bệnh viện.
+    const trashDir = path.join(RESEARCH_STORE_DIR, '_deleted');
+    ensureDir(trashDir);
+    const target = path.join(trashDir, `${study.id}_${nowFileStamp()}`);
+    fs.renameSync(studyDir(study.id), target);
+    appendSecurityAudit({
+      kind: 'research.study_deleted',
+      actor: { id: String(req.auth?.id || ''), role: String(req.auth?.role || '') },
+      study_id: study.id,
+      moved_to: path.relative(RESEARCH_STORE_DIR, target),
+    });
+    return res.json({ status: 'ok', message: `Đã xóa nghiên cứu "${study.name}" (thư mục được chuyển vào _deleted, admin có thể khôi phục).` });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }
@@ -7167,5 +7550,6 @@ router.post('/research/studies/:studyId/run', async (req, res) => {
 });
 
 module.exports = router;
-// Chỉ dùng cho kiểm thử (scripts/research_hchanh_same_stay_reuse_test.js).
+// Chỉ dùng cho kiểm thử (scripts/research_hchanh_same_stay_reuse_test.js, scripts/research_data_safety_test.js).
 module.exports._fetchHchanhForResearchRun = fetchHchanhForResearchRun;
+module.exports._test = { normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots };

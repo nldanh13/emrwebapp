@@ -1,0 +1,122 @@
+# An toàn dữ liệu Kho nghiên cứu
+
+Tài liệu này mô tả luồng dữ liệu của phần Nghiên cứu **theo code hiện tại**
+(`server/routes/research.js`, `server/research/*`, `research/sqlite_store.py`),
+các cơ chế bảo vệ đã có, và việc cần làm khi vận hành. Đây không phải tuyên bố
+tuân thủ pháp luật: các mục đánh dấu **[Bệnh viện xác nhận]** cần bộ phận pháp
+chế/an toàn thông tin/hội đồng đạo đức quyết định.
+
+## 1. Luồng dữ liệu
+
+Mỗi kho (kho gốc `du_lieu_goc` hoặc một nghiên cứu riêng) nằm ở
+`.runtime/research/research_store/<id>/`, mỗi lần quét là một run
+`runs/<run_id>/`.
+
+1. **Quét danh sách** → `du_lieu_ban_dau.csv` (1 dòng / dòng trên danh sách nội
+   trú EMR; một đợt nằm viện có thể có nhiều dòng do chuyển khoa).
+2. **Nguồn chuẩn** → `research_source.csv`: thêm `Mã NC`, `Research key` và
+   khoảng ngày lấy dữ liệu cho từng dòng.
+3. **Lấy dữ liệu** → `lich_su_xn.csv`, `lich_su_cdha.csv`, `du_lieu_goc.csv`
+   (script XN/CĐHA) và `hchanh_*.csv` (hành chánh).
+4. **Chuẩn hóa** → `patients`, `encounters` và các bảng con, `analysis_ready`,
+   `analysis_selected`, `extract_status`, `research.sqlite3`, cùng các file kiểm
+   soát mới (mục 3).
+5. **Dataset cuối** → `analysis_final.csv` (bỏ dòng `needs_manual_review`) và bản
+   lưu phiên bản trong `datasets/`.
+
+## 2. Nhận diện người bệnh và đợt điều trị
+
+- `patient_code` = Mã BN trên EMR. Không ghép theo họ tên.
+- `encounter_id` ưu tiên khóa EMR: `encounter_id` có sẵn → Mã điều trị/Mã nội trú
+  → Mã vào viện → (Mã BN + thời điểm vào/ra) → Mã NC. Nếu không đủ căn cứ, khóa có
+  tiền tố `enc_unresolved_` và dòng được đánh dấu `needs_manual_review`.
+- Dòng XN/CĐHA/phẫu thuật/y lệnh được gắn vào đợt theo khóa EMR, sau đó theo thời
+  gian. Kết quả ghép ghi ở `encounter_match_status`: `matched`, `ambiguous` (khớp
+  nhiều đợt) hoặc `missing`. Dòng `ambiguous`/`missing` **không** được tự gắn.
+- **Chuyển khoa:** các dòng `initial` chỉ được coi là cùng một đợt khi chung khóa
+  EMR (Mã nội trú/Mã điều trị/Mã vào viện). Nếu EMR cấp mã khác nhau cho từng khoa,
+  chúng thành các đợt riêng. Hệ thống **không tự gộp**: các cặp đợt của cùng BN có
+  khoảng nằm viện chồng lấn hoặc cùng ngày ra viện được liệt kê trong
+  `encounter_review.csv` (`possible_same_stay`). **[Bệnh viện xác nhận]** quy tắc
+  gộp các dòng chuyển khoa trước khi bật gộp tự động.
+
+## 3. Kiểm soát sau mỗi lần Chuẩn hóa
+
+| File | Nội dung |
+|---|---|
+| `normalize_state.json` | `running` trước khi ghi bảng, `complete`/`failed` khi xong. Còn `running` nghĩa là lần trước dừng giữa chừng. |
+| `normalize_history.jsonl` | Mỗi lần chuẩn hóa thêm 1 dòng (không ghi đè): thời điểm, run_id, phiên bản schema, phiên bản code (version + git commit), chữ ký input, số dòng vào/ra, trạng thái SQLite, tóm tắt QA. |
+| `qa_report.json` | Lỗi **chặn** và **cảnh báo**, chỉ chứa mã giả danh và số đếm. |
+| `encounter_review.csv` | Danh sách đợt cần người duyệt kèm lý do. |
+| `datasets/<tên>/` | Bản bất biến của mỗi dataset cuối + `dataset_manifest.json` (nguồn, sha256, chữ ký input, cấu hình biến, thông tin đề cương, QA). |
+
+**Lỗi chặn** (không cho tạo dataset cuối): trùng `encounter_id`/Mã NC/`patient_code`,
+thiếu khóa bắt buộc, dòng con trỏ tới đợt không tồn tại, trùng mã dòng, SQLite lỗi
+hoặc lệch với CSV (so sha256), lần chuẩn hóa trước dừng giữa chừng hoặc lỗi.
+
+**Cảnh báo** (cần xem lại): dòng con chưa ghép được đợt, thiếu ngày vào viện, ngày
+ra trước ngày vào, ngày ở tương lai, nằm viện trên 365 ngày, ca nghi cùng đợt.
+Hệ thống không tự sửa giá trị lâm sàng. Các cột suy luận (ví dụ
+`injury_side_suggested`) được liệt kê trong `qa_report.json` → `notes` với trạng
+thái `needs_human_confirmation`.
+
+## 4. Dữ liệu định danh
+
+- Có định danh trực tiếp: `du_lieu_ban_dau.csv`, `research_source.csv`,
+  `hchanh_*.csv`, `patients.csv`, `analysis_ready.csv` (họ tên), `research.sqlite3`.
+- Xem/xuất mặc định **đã che** theo tên cột (`server/research/export_utils.js`),
+  gồm cả Mã nội trú, số lưu trữ và URL EMR (URL chứa `keyword=<Mã BN>`).
+- Xem/xuất có định danh cần đồng thời: `identified=1`, vai trò supervisor/admin, và
+  `EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT=1`. Mỗi lần được phép ghi sự kiện
+  `research.identified_access` vào `.runtime/audit/security_audit_YYYYMM.jsonl`
+  (chuỗi hash): người dùng, thời điểm, bảng/run/nghiên cứu, mục đích nếu gửi
+  `?purpose=`.
+- Từ khóa tra cứu người bệnh chỉ được lưu dạng băm trong log. Log worker và
+  `action_log.txt` không in họ tên, số thẻ BHYT, chẩn đoán. Mã BN vẫn còn trong log
+  vận hành để xử lý lỗi. **[Bệnh viện xác nhận]** có chấp nhận điều này không.
+- Chưa tách bảng liên kết Mã BN ↔ Mã NC khỏi dữ liệu phân tích: các bảng chuẩn hóa
+  vẫn giữ `patient_code` để ghép. Việc tách là thay đổi cấu trúc lớn, đề xuất làm ở
+  bước sau.
+
+## 5. Nghiên cứu riêng
+
+- Mỗi nghiên cứu có thư mục, cohort, run, SQLite và dataset riêng. Thay đổi một
+  nghiên cứu không ghi vào thư mục nghiên cứu khác.
+- `study.json` → `governance`: mã/phiên bản đề cương, trạng thái phê duyệt, số và
+  ngày phê duyệt, giai đoạn dữ liệu, tiêu chí chọn/loại trừ, trường định danh được
+  duyệt, người được phép truy cập. Cập nhật qua
+  `POST /api/research/studies/:id/governance` (supervisor). Hiện tại **chỉ lưu và
+  ghi vào manifest dataset**, chưa dùng để chặn truy cập. **[Bệnh viện xác nhận]**
+  có bắt buộc `approval_status=approved` trước khi xuất hay không.
+- Xóa nghiên cứu: chỉ admin, thư mục được chuyển vào `research_store/_deleted/`
+  (có audit `research.study_deleted`), không xóa vĩnh viễn.
+
+## 6. Sao lưu và khôi phục
+
+Toàn bộ dữ liệu nằm trong `.runtime/` (kho nghiên cứu, audit). Đề xuất:
+
+1. **Trước khi cập nhật code**: dừng server, sao chép cả thư mục
+   `E:\web app\.runtime\research\research_store\` sang ổ/phân vùng khác, đặt tên
+   theo ngày (ví dụ `research_store_backup_20260923`).
+2. **Định kỳ** (theo chính sách bệnh viện): sao lưu `.runtime\research\` và
+   `.runtime\audit\` lên nơi lưu trữ đã được mã hóa. **[Bệnh viện xác nhận]** nơi
+   lưu, thời hạn giữ, ai được truy cập bản sao lưu.
+3. **Khôi phục**: dừng server, chép thư mục sao lưu về đúng vị trí, khởi động lại,
+   bấm **Chuẩn hóa** để tạo lại bảng và SQLite từ file thô.
+4. Khôi phục nghiên cứu bị xóa nhầm: chuyển
+   `_deleted\<id>_<thời điểm>\` về `research_store\<id>\`.
+
+## 7. Nâng cấp lên phiên bản này
+
+Không có migration phá dữ liệu. Các bước:
+
+1. Sao lưu như mục 6.1.
+2. `git pull`, khởi động lại server.
+3. Mở từng kho/nghiên cứu, bấm **Chuẩn hóa**. Schema tăng lên v10 nên lần đầu sẽ
+   chuẩn hóa lại đầy đủ và tạo `qa_report.json`, `encounter_review.csv`.
+4. Nếu `research_source.csv` cũ có Mã NC bị trùng (lỗi cũ cấp `NC0001` cho mọi
+   dòng), file này được tạo lại với Mã NC duy nhất. Mã được lấy theo thứ tự ưu tiên
+   (1) mã hợp lệ cũ của cùng dòng, (2) mã script XN/CĐHA đã cấp cho cùng đợt trong
+   `du_lieu_goc.csv`, (3) số mới. **Mã NC của một số đợt có thể thay đổi**; các
+   `analysis_final.csv` cũ được lưu bản sao trong `datasets/` trước khi bị gỡ.
+5. Xem `qa_report.json`/khung độ phủ: xử lý lỗi chặn trước khi tạo dataset cuối.
