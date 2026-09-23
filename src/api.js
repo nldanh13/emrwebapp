@@ -457,6 +457,9 @@ export const getResearchArchivePatientHistory = ({ q = '', runId = 'latest' } = 
   const params = new URLSearchParams();
   if (runId) params.set('runId', runId);
   if (q) params.set('q', q);
+  // Tra cứu luôn trả dữ liệu định danh; server vẫn tự chặn nếu chưa bật
+  // EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT hoặc không phải supervisor/admin.
+  params.set('identified', '1');
   return get(`/api/research/archive/patient-history?${params}`);
 };
 export const getResearchArchiveVariableCatalog = ({ runId = 'latest' } = {}) => {
