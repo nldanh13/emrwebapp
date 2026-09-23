@@ -4679,8 +4679,9 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
       if (postponed.length) queue.unshift(...postponed);
 
       if (chunkReused) {
+        // CSV trước, progress sau: progress "done" chỉ được ghi khi dữ liệu đã nằm trong CSV.
+        writeHchanhCsvs();
         writeJsonAtomic(progressPath, progress);
-        if (!batchItems.length) writeHchanhCsvs();
       }
       if (!batchItems.length) continue;
 
@@ -4814,7 +4815,8 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
           rows: { ...(progress[key]?.rows || {}), ...Object.fromEntries(wantedFiles.map(f => [f, rowCounts[f] || 0])) },
           file_status: { ...(progress[key]?.file_status || {}), ...hchanhFileStatusPatch(output, rowCounts, wantedFiles, previousCounts, nowIso()) },
         };
-        writeJsonAtomic(progressPath, progress);
+        // Progress của cả lô được ghi SAU khi CSV đã ghi xong (xem cuối lô). Nếu tiến trình
+        // chết giữa hai bước, progress còn cũ → ca được lấy lại, không có "done" mà thiếu CSV.
         const savedTrace = appendResearchCaseTrace(runPath, {
           case_id: key,
           source_key: key,
@@ -4839,8 +4841,10 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
       }
 
       // CSV union được ghi 1 lần sau khi xử lý xong cả lô (đủ, vì mỗi ca trong lô đã
-      // gộp dòng của nó vào profileRows/dischargeRows/surgeryRows/orderRows ở trên).
+      // gộp dòng của nó vào profileRows/dischargeRows/surgeryRows/orderRows ở trên),
+      // rồi mới ghi progress của cả lô.
       writeHchanhCsvs();
+      writeJsonAtomic(progressPath, progress);
 
       // Trường hợp người dùng bấm Dừng đúng lúc lô vừa hoàn tất: giữ kết quả các ca đã
       // xong trong lô nhưng tuyệt đối không chuyển sang lô tiếp theo.
@@ -7021,7 +7025,7 @@ const STUDY_READINESS_FILE = 'study_readiness.csv';
 // bản trước, ghi cả bản cũ và bản mới của đúng phần đó.
 const COLLECTION_VERSIONS_FILE = 'collection_versions.jsonl';
 const COLLECTION_CHANGES_FILE = 'collection_changes.csv';
-const COLLECTION_CHANGE_COLUMNS = ['changed_at', 'research_code', 'part_label', 'from_version', 'to_version', 'rows_added', 'rows_removed', 'trigger', 'key', 'part'];
+const COLLECTION_CHANGE_COLUMNS = ['changed_at', 'research_code', 'part_label', 'from_version', 'to_version', 'rows_added', 'rows_removed', 'trigger', 'key', 'part', 'change_id', 'txn_id'];
 
 // Dữ liệu thô hiện có của từng phần, để so trước/sau khi lấy lại.
 function readCollectionPartRows(runDir) {
@@ -7056,16 +7060,198 @@ function partRowsMap(index, ledger, targets) {
   return out;
 }
 
+// Id các phiên bản đã có trong lịch sử. Dòng cuối có thể bị cắt dở nếu tiến trình chết
+// đúng lúc ghi: dòng đó không parse được nên bị bỏ qua và sẽ được ghi lại đầy đủ.
+function readCollectionVersionIds(runDir) {
+  const file = path.join(runDir, COLLECTION_VERSIONS_FILE);
+  const ids = new Set();
+  if (!fs.existsSync(file)) return ids;
+  for (const line of fs.readFileSync(file, 'utf-8').split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const v = JSON.parse(line);
+      ids.add(v.version_id || collection.versionId(v));
+    } catch (_) { /* dòng dở dang */ }
+  }
+  return ids;
+}
+
+// Chỉ thêm, không bao giờ ghi đè/xóa; bỏ qua phiên bản đã có (chạy lại không tạo trùng).
 function appendCollectionVersions(runDir, versions) {
-  if (!versions.length) return;
-  fs.appendFileSync(path.join(runDir, COLLECTION_VERSIONS_FILE), versions.map(v => JSON.stringify(v)).join('\n') + '\n', 'utf-8');
+  if (!versions.length) return 0;
+  const file = path.join(runDir, COLLECTION_VERSIONS_FILE);
+  const ids = readCollectionVersionIds(runDir);
+  const fresh = versions.filter(v => !ids.has(v.version_id || collection.versionId(v)));
+  if (!fresh.length) return 0;
+  let prefix = '';
+  try {
+    const st = fs.statSync(file);
+    if (st.size > 0) {
+      const fd = fs.openSync(file, 'r');
+      const buf = Buffer.alloc(1);
+      fs.readSync(fd, buf, 0, 1, st.size - 1);
+      fs.closeSync(fd);
+      if (buf.toString() !== '\n') prefix = '\n'; // tách khỏi dòng dở dang
+    }
+  } catch (_) {}
+  fs.appendFileSync(file, prefix + fresh.map(v => JSON.stringify(v)).join('\n') + '\n', { encoding: 'utf-8', mode: 0o600 });
+  return fresh.length;
 }
 
 function appendCollectionChanges(runDir, changes) {
-  if (!changes.length) return;
+  if (!changes.length) return 0;
   const file = path.join(runDir, COLLECTION_CHANGES_FILE);
   const existing = fs.existsSync(file) ? (readCsvTable(file, Number.MAX_SAFE_INTEGER).rows || []) : [];
-  writeCsv(file, COLLECTION_CHANGE_COLUMNS, existing.concat(changes));
+  const ids = new Set(existing.map(r => r.change_id).filter(Boolean));
+  const fresh = changes.filter(c => !ids.has(c.change_id));
+  if (!fresh.length) return 0;
+  writeCsv(file, COLLECTION_CHANGE_COLUMNS, existing.concat(fresh));
+  return fresh.length;
+}
+
+// ── Giao dịch làm mới có thể khôi phục ───────────────────────────────────────
+// Mỗi lượt giao việc cho worker là một giao dịch trong <run>/.collection_txn/<id>/:
+//   1. prepared  — TRƯỚC khi worker thay dữ liệu: chụp dữ liệu cũ của đúng các phần sẽ
+//                  lấy (before_rows.json) và sổ hiện tại (before_ledger.json), rồi mới ghi
+//                  journal.json (có journal = ảnh chụp đã đủ).
+//   2. fetched   — worker đã chạy xong (CSV/progress có thể đã đổi).
+//   3. finalize  — so sánh, ghi lịch sử phiên bản → lịch sử thay đổi → sổ; mỗi bước đánh
+//                  dấu trong journal, và bản thân mỗi bước đều idempotent (id ổn định).
+//   4. committed — xóa thư mục giao dịch (chứa dữ liệu nhạy cảm), ghi 1 dòng nhật ký
+//                  không định danh vào collection_txn_log.jsonl.
+// Khi tiếp tục thu thập / xem trạng thái, giao dịch dở dang (không thuộc tiến trình đang
+// chạy) được hoàn tất lại từ ảnh chụp: bản cũ không mất, phiên bản không trùng.
+const COLLECTION_TXN_DIR = '.collection_txn';
+const COLLECTION_TXN_LOG_FILE = 'collection_txn_log.jsonl';
+const ACTIVE_COLLECTION_TXNS = new Map(); // txn_id → runDir của tiến trình này
+
+function ensurePrivateDir(dir) {
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  try { fs.chmodSync(dir, 0o700); } catch (_) {}
+}
+
+function writePrivateJson(file, value) {
+  writeJsonAtomic(file, value);
+  try { fs.chmodSync(file, 0o600); } catch (_) {}
+}
+
+function collectionTxnRoot(runDir) {
+  return path.join(runDir, COLLECTION_TXN_DIR);
+}
+
+function runDirHasActiveTxn(runDir) {
+  const target = path.resolve(runDir);
+  for (const dir of ACTIVE_COLLECTION_TXNS.values()) if (dir === target) return true;
+  return false;
+}
+
+function beginCollectionTxn(runDir, { before, targets, reasons, beforeRows }) {
+  const id = `txn_${nowFileStamp()}_${crypto.randomBytes(4).toString('hex')}`;
+  const dir = path.join(collectionTxnRoot(runDir), id);
+  ensurePrivateDir(collectionTxnRoot(runDir));
+  ensurePrivateDir(dir);
+  writePrivateJson(path.join(dir, 'before_rows.json'), Object.fromEntries(beforeRows));
+  writePrivateJson(path.join(dir, 'before_ledger.json'), before);
+  const journal = {
+    txn_id: id, phase: 'prepared', created_at: nowIso(), process_instance_id: RESEARCH_PROCESS_INSTANCE_ID,
+    targets, reasons, dispatched: [], steps: {},
+  };
+  writePrivateJson(path.join(dir, 'journal.json'), journal);
+  ACTIVE_COLLECTION_TXNS.set(id, path.resolve(runDir));
+  return { id, dir, journal };
+}
+
+function updateCollectionTxn(txn, patch) {
+  txn.journal = { ...txn.journal, ...patch, steps: { ...(txn.journal.steps || {}), ...(patch.steps || {}) }, updated_at: nowIso() };
+  writePrivateJson(path.join(txn.dir, 'journal.json'), txn.journal);
+}
+
+function closeCollectionTxn(runDir, txn, { recovered = false, counts = {} } = {}) {
+  updateCollectionTxn(txn, { phase: 'committed', committed_at: nowIso() });
+  try {
+    fs.appendFileSync(path.join(runDir, COLLECTION_TXN_LOG_FILE), `${JSON.stringify({
+      txn_id: txn.id, created_at: txn.journal.created_at, committed_at: txn.journal.committed_at,
+      recovered, targets: (txn.journal.targets || []).length, ...counts,
+    })}\n`, 'utf-8');
+  } catch (_) {}
+  fs.rmSync(txn.dir, { recursive: true, force: true });
+}
+
+// Bản JS của recover_interrupted_patient_commits (script XN/CĐHA): commit CSV dở dang
+// (.commit_*/state.json chưa "committed") thì trả lại bản backup cho các file đã thay.
+function recoverPythonPatientCommits(runDir) {
+  let entries = [];
+  try { entries = fs.readdirSync(runDir, { withFileTypes: true }); } catch (_) { return 0; }
+  let restored = 0;
+  for (const e of entries) {
+    if (!e.isDirectory() || !e.name.startsWith('.commit_')) continue;
+    const staging = path.join(runDir, e.name);
+    const state = readJsonSafe(path.join(staging, 'state.json'), {}) || {};
+    let ok = true;
+    if (String(state.phase || '') !== 'committed') {
+      for (const name of [...(state.replace_targets || [])].reverse()) {
+        const backup = path.join(staging, `${name}.backup`);
+        if (!fs.existsSync(backup)) continue;
+        try { fs.copyFileSync(backup, path.join(runDir, name)); restored += 1; } catch (_) { ok = false; }
+      }
+    }
+    if (ok) fs.rmSync(staging, { recursive: true, force: true });
+  }
+  return restored;
+}
+
+// Hoàn tất một giao dịch: dùng cho cả lần chạy bình thường lẫn khôi phục. Kết quả chỉ phụ
+// thuộc ảnh chụp trong journal + dữ liệu hiện có, nên chạy lại cho đúng cùng phiên bản.
+function finalizeCollectionTxn(runDir, txn, { sourceRows, applyOutcome = false, crash = () => {} } = {}) {
+  recoverPythonPatientCommits(runDir);
+  const j = txn.journal;
+  const before = readJsonSafe(path.join(txn.dir, 'before_ledger.json'), null) || { encounters: {} };
+  const beforeRows = new Map(Object.entries(readJsonSafe(path.join(txn.dir, 'before_rows.json'), {}) || {}));
+  const now = j.fetched_at || j.created_at || nowIso();
+  const after = buildCollectionLedgerForRun(runDir, sourceRows, before);
+  if (applyOutcome) collection.applyDispatchOutcome(before, after, j.dispatched || [], now);
+  const targets = (j.dispatched && j.dispatched.length) ? j.dispatched : (j.targets || []);
+  const afterRows = partRowsMap(readCollectionPartRows(runDir), after, targets);
+  const cv = collection.applyContentVersions({ before, after, targets, beforeRows, afterRows, reasons: j.reasons || {}, now });
+  const versionsWritten = appendCollectionVersions(runDir, cv.versions.map(v => ({ ...v, txn_id: j.txn_id })));
+  crash('after_versions');
+  updateCollectionTxn(txn, { phase: 'finalizing', steps: { versions: true } });
+  const changesWritten = appendCollectionChanges(runDir, cv.changes.map(c => ({ ...c, txn_id: j.txn_id })));
+  updateCollectionTxn(txn, { steps: { changes: true } });
+  crash('before_ledger');
+  writeJsonAtomic(path.join(runDir, COLLECTION_LEDGER_FILE), after);
+  updateCollectionTxn(txn, { steps: { ledger: true } });
+  return { after, cv, versionsWritten, changesWritten };
+}
+
+// Tìm và hoàn tất giao dịch dở dang của run (bỏ qua giao dịch tiến trình này đang chạy).
+function recoverCollectionTransactions(runDir, sourceRows) {
+  const root = collectionTxnRoot(runDir);
+  if (!fs.existsSync(root)) return [];
+  const results = [];
+  for (const id of fs.readdirSync(root).sort()) {
+    if (ACTIVE_COLLECTION_TXNS.has(id)) continue;
+    const dir = path.join(root, id);
+    const journal = readJsonSafe(path.join(dir, 'journal.json'), null);
+    if (!journal) {
+      // Dừng khi đang chụp dữ liệu cũ: worker chưa được giao việc, không có gì để hoàn tất.
+      fs.rmSync(dir, { recursive: true, force: true });
+      results.push({ txn_id: id, action: 'discarded_unprepared' });
+      continue;
+    }
+    const txn = { id, dir, journal };
+    if (journal.phase === 'committed') {
+      fs.rmSync(dir, { recursive: true, force: true });
+      results.push({ txn_id: id, action: 'cleaned' });
+      continue;
+    }
+    const { cv, versionsWritten, changesWritten } = finalizeCollectionTxn(runDir, txn, { sourceRows });
+    closeCollectionTxn(runDir, txn, { recovered: true, counts: { versions: versionsWritten, changes: changesWritten } });
+    appendResearchRunLog(runDir, `[COLLECT] Khôi phục giao dịch dở dang ${id} (từ bước ${journal.phase}): ghi thêm ${versionsWritten} phiên bản, ${changesWritten} thay đổi.`);
+    results.push({ txn_id: id, action: 'recovered', from_phase: journal.phase, changes: cv.changes, versions_written: versionsWritten });
+  }
+  try { if (!fs.readdirSync(root).length) fs.rmdirSync(root); } catch (_) {}
+  return results;
 }
 
 function refreshPolicyFor(isArchive, study) {
@@ -7118,8 +7304,12 @@ function buildCollectionLedgerForRun(runDir, sourceRows, previous) {
 // Dựng lại sổ từ progress hiện tại và ghi ra file. Idempotent: gọi lại với cùng
 // progress/nguồn cho cùng kết quả (không đếm trùng số lần thử).
 function syncCollectionLedger(runDir, sourceRows) {
+  // Hoàn tất giao dịch dở dang TRƯỚC khi đọc progress, nếu không kết quả của worker sẽ bị
+  // hấp thụ vào sổ mà không được lưu phiên bản.
+  recoverCollectionTransactions(runDir, sourceRows);
   const ledger = buildCollectionLedgerForRun(runDir, sourceRows);
-  writeJsonAtomic(path.join(runDir, COLLECTION_LEDGER_FILE), ledger);
+  // Tiến trình này đang có giao dịch trên run: không ghi sổ chen vào, giao dịch sẽ ghi.
+  if (!runDirHasActiveTxn(runDir)) writeJsonAtomic(path.join(runDir, COLLECTION_LEDGER_FILE), ledger);
   return ledger;
 }
 
@@ -7208,9 +7398,19 @@ async function runCollectionOrchestration(ctx, {
   runDir, runId, scope, isArchive = true, sourceRows = [], fromDate = '', toDate = '', headless = true,
   maxAttempts = collection.DEFAULT_MAX_ATTEMPTS, maxPasses = 2, force = false, retryBlocked = false,
   parts = collection.PART_KEYS, limit = 0, refreshPolicy = {}, refreshParts = [], refreshKeys = null, study = null,
-  now = null,
+  now = null, faults = null,
 } = {}, runners = DEFAULT_COLLECTION_RUNNERS) {
   const startedAt = nowIso();
+  // Chỉ dùng trong test: mô phỏng tiến trình chết tại một điểm (ném lỗi, không dọn dẹp gì).
+  const crash = (point) => {
+    if (faults?.crashAt === point) {
+      const err = new Error(`SIMULATED_CRASH:${point}`);
+      err.code = 'SIMULATED_CRASH';
+      throw err;
+    }
+  };
+  // Giao dịch dở dang của lần chạy trước được hoàn tất trước khi dựng sổ (xem syncCollectionLedger).
+  const recoveredTxns = recoverCollectionTransactions(runDir, sourceRows);
   const keys = sourceKeysOf(sourceRows);
   const rowByKey = new Map();
   for (const row of sourceRows) {
@@ -7226,7 +7426,7 @@ async function runCollectionOrchestration(ctx, {
   try { readinessBefore = readinessByStudy({ isArchive, study, runDir, ledger: first, keys }); } catch (err) { console.error('[COLLECT] readiness(before)', err.message); }
   const reasonById = {};
   for (const t of plan.tasks) for (const pk of t.parts) reasonById[`${t.key}|${pk}`] = t.reasons[pk];
-  const content = { changes: [], rechecked: 0, unchanged: 0, first: 0 };
+  const content = { changes: recoveredTxns.flatMap(r => r.changes || []), rechecked: 0, unchanged: 0, first: 0 };
 
   let current = first;
   let cancelled = false;
@@ -7250,62 +7450,70 @@ async function runCollectionOrchestration(ctx, {
     const groups = collection.groupTasksByFetcher(tasks);
     const rowsFor = list => list.map(t => rowByKey.get(t.key)).filter(Boolean);
     const cancelNow = () => { if (isCancelRequested(ctx.sid)) cancelled = true; return cancelled; };
+    // Ghi nhận "chuẩn bị làm mới" + ảnh chụp dữ liệu cũ TRƯỚC khi worker thay dữ liệu.
+    const passReasons = {};
+    for (const t of tasks) for (const pk of t.parts) passReasons[`${t.key}|${pk}`] = reasonById[`${t.key}|${pk}`] || t.reasons[pk];
+    const txn = beginCollectionTxn(runDir, { before, targets, reasons: passReasons, beforeRows });
+    try {
+      crash('before_csv');
 
-    for (const [sig, list] of groups.hchanh.entries()) {
-      if (cancelNow()) break;
-      const files = sig.split(',');
-      try {
-        const r = await runners.hchanh(ctx, {
-          runDir, sourceRows: rowsFor(list), sourceRunId: runId, files, headless,
-          forceKeys: new Set(list.map(t => t.key)), fallbackDateFrom: fromDate, fallbackDateTo: toDate, mode: 'hchanh_auto',
-        });
-        if (r?.cancelled) cancelled = true;
-      } catch (err) {
-        errors.push(`Hành chánh (${files.join(',')}): ${err.message || err}`);
+      for (const [sig, list] of groups.hchanh.entries()) {
+        if (cancelNow()) break;
+        const files = sig.split(',');
+        try {
+          const r = await runners.hchanh(ctx, {
+            runDir, sourceRows: rowsFor(list), sourceRunId: runId, files, headless,
+            forceKeys: new Set(list.map(t => t.key)), fallbackDateFrom: fromDate, fallbackDateTo: toDate, mode: 'hchanh_auto',
+          });
+          if (r?.cancelled) cancelled = true;
+        } catch (err) {
+          errors.push(`Hành chánh (${files.join(',')}): ${err.message || err}`);
+        }
+        for (const t of list) for (const pk of files) dispatched.push({ key: t.key, part: pk });
       }
-      for (const t of list) for (const pk of files) dispatched.push({ key: t.key, part: pk });
-    }
-    if (!cancelNow() && groups.order_history.length) {
-      try {
-        const r = await runners.hchanh(ctx, {
-          runDir, sourceRows: rowsFor(groups.order_history), sourceRunId: runId, files: ['order_history'], headless,
-          forceKeys: new Set(groups.order_history.map(t => t.key)), fallbackDateFrom: fromDate, fallbackDateTo: toDate, mode: 'order_history_auto',
-        });
-        if (r?.cancelled) cancelled = true;
-      } catch (err) {
-        errors.push(`Y lệnh: ${err.message || err}`);
+      if (!cancelNow() && groups.order_history.length) {
+        try {
+          const r = await runners.hchanh(ctx, {
+            runDir, sourceRows: rowsFor(groups.order_history), sourceRunId: runId, files: ['order_history'], headless,
+            forceKeys: new Set(groups.order_history.map(t => t.key)), fallbackDateFrom: fromDate, fallbackDateTo: toDate, mode: 'order_history_auto',
+          });
+          if (r?.cancelled) cancelled = true;
+        } catch (err) {
+          errors.push(`Y lệnh: ${err.message || err}`);
+        }
+        for (const t of groups.order_history) dispatched.push({ key: t.key, part: 'order_history' });
       }
-      for (const t of groups.order_history) dispatched.push({ key: t.key, part: 'order_history' });
-    }
-    if (!cancelNow() && groups.xn_cdha.length) {
-      const rows = groups.xn_cdha
-        .map(t => {
-          const row = rowByKey.get(t.key);
-          return row ? { ...row, refetch_parts: t.parts.join(';') } : null;
-        })
-        .filter(Boolean);
-      const r = await runners.xnCdha(ctx, { runDir, runId, scope, isArchive, rows, fromDate, toDate, headless });
-      if (r?.error) errors.push(`XN/CĐHA: ${String(r.error).split('\n')[0]}`);
-      if (r?.stopped) cancelled = true;
-      for (const t of groups.xn_cdha) for (const pk of t.parts) dispatched.push({ key: t.key, part: pk });
-    }
-    if (isCancelRequested(ctx.sid)) cancelled = true;
+      if (!cancelNow() && groups.xn_cdha.length) {
+        const rows = groups.xn_cdha
+          .map(t => {
+            const row = rowByKey.get(t.key);
+            return row ? { ...row, refetch_parts: t.parts.join(';') } : null;
+          })
+          .filter(Boolean);
+        const r = await runners.xnCdha(ctx, { runDir, runId, scope, isArchive, rows, fromDate, toDate, headless });
+        if (r?.error) errors.push(`XN/CĐHA: ${String(r.error).split('\n')[0]}`);
+        if (r?.stopped) cancelled = true;
+        for (const t of groups.xn_cdha) for (const pk of t.parts) dispatched.push({ key: t.key, part: pk });
+      }
+      if (isCancelRequested(ctx.sid)) cancelled = true;
+      crash('after_csv');
+      updateCollectionTxn(txn, { phase: 'fetched', fetched_at: nowIso(), dispatched, cancelled });
 
-    const after = buildCollectionLedgerForRun(runDir, sourceRows, before);
-    // Dừng giữa chừng: phần chưa tới lượt không bị tính là worker không trả kết quả.
-    if (!cancelled) collection.applyDispatchOutcome(before, after, dispatched);
-    // So dữ liệu mới với bản trước: giống → chỉ ghi "đã kiểm tra"; khác → phiên bản mới,
-    // bản cũ và bản mới đều được lưu vào lịch sử (chỉ thêm).
-    const afterRows = partRowsMap(readCollectionPartRows(runDir), after, dispatched);
-    const cv = collection.applyContentVersions({ before, after, targets: dispatched, beforeRows, afterRows, reasons: reasonById });
-    appendCollectionVersions(runDir, cv.versions);
-    appendCollectionChanges(runDir, cv.changes);
-    content.changes.push(...cv.changes);
-    content.rechecked += cv.rechecked;
-    content.unchanged += cv.unchanged;
-    content.first += cv.first;
-    writeJsonAtomic(path.join(runDir, COLLECTION_LEDGER_FILE), after);
-    current = after;
+      // So dữ liệu mới với bản trước: giống → chỉ ghi "đã kiểm tra"; khác → phiên bản mới,
+      // bản cũ và bản mới đều được lưu vào lịch sử (chỉ thêm). Dừng giữa chừng: phần chưa tới
+      // lượt không bị tính là worker không trả kết quả.
+      const { after, cv } = finalizeCollectionTxn(runDir, txn, { sourceRows, applyOutcome: !cancelled, crash });
+      closeCollectionTxn(runDir, txn, { counts: { versions: cv.versions.length, changes: cv.changes.length } });
+      content.changes.push(...cv.changes);
+      content.rechecked += cv.rechecked;
+      content.unchanged += cv.unchanged;
+      content.first += cv.first;
+      current = after;
+    } finally {
+      // Kết thúc (kể cả khi lỗi/dừng): giao dịch không còn thuộc tiến trình này; nếu chưa
+      // committed thì lần sau sẽ được khôi phục.
+      ACTIVE_COLLECTION_TXNS.delete(txn.id);
+    }
     if (cancelled) break;
   }
 
@@ -7348,6 +7556,7 @@ async function runCollectionOrchestration(ctx, {
   report.max_attempts = maxAttempts;
   report.progress_unattributed = current.unmatched_progress || 0;
   report.refresh_policy = collection.sanitizeRefreshPolicy(refreshPolicy);
+  report.recovered_transactions = recoveredTxns.filter(r => r.action === 'recovered').length;
   report.readiness_by_study = readinessSummary;
   writeCollectionOutputs(runDir, report);
   appendResearchRunLog(runDir, `[COLLECT] ${cancelled ? 'Đã dừng' : 'Xong'}: đã lấy ${report.fetched_encounters} lượt | bỏ qua vì không đổi ${report.skipped_unchanged} | lấy bù ${report.parts_backfilled} phần | kiểm tra lại ${report.parts_rechecked} phần, có thay đổi ${report.parts_changed} | lỗi Selenium còn tồn ${report.selenium_errors_open} phần | không ghép chắc ${report.unmatched_encounters} lượt | đổi mức đủ dùng ${report.readiness_changes.length}`);
@@ -8270,4 +8479,4 @@ module.exports = router;
 module.exports._fetchHchanhForResearchRun = fetchHchanhForResearchRun;
 // Danh sách cột chuẩn hóa, dùng để đối chiếu từ điển dữ liệu (server/research/data_dictionary.js).
 module.exports.NORMALIZED_COLUMNS = NORMALIZED_COLUMNS;
-module.exports._test = { normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, runCollectionOrchestration, readCollectionPartRows, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };
+module.exports._test = { normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };

@@ -501,6 +501,19 @@ function diffRowSets(oldRows, newRows) {
 
 // targets: [{key, part}] đã giao cho worker. beforeRows/afterRows: Map "key|part" → rows
 // (dữ liệu của phần đó ngay trước và sau khi lấy). Sửa trực tiếp các phần trong `after`.
+// Khóa định danh ổn định: cùng lượt + phần + số phiên bản + nội dung → cùng id. Chạy lại
+// (khôi phục sau khi dừng) sinh đúng các id cũ nên có thể bỏ qua dòng đã ghi, không trùng.
+function versionId(v) {
+  return `${v.key}|${v.part}|v${v.version}|${v.content_hash}`;
+}
+
+function changeId(c) {
+  return `${c.key}|${c.part}|v${c.from_version}>v${c.to_version}|${c.to_hash}`;
+}
+
+// targets: [{key, part}] đã giao cho worker. beforeRows/afterRows: Map "key|part" → rows
+// (dữ liệu của phần đó ngay trước và sau khi lấy). Sửa trực tiếp các phần trong `after`.
+// beforeRows là ảnh chụp đĩa lúc chuẩn bị giao dịch nên là "bản trước" đáng tin nhất.
 function applyContentVersions({ before, after, targets = [], beforeRows = new Map(), afterRows = new Map(), reasons = {}, now = nowIso() } = {}) {
   const out = { changes: [], versions: [], rechecked: 0, unchanged: 0, first: 0 };
   const seen = new Set();
@@ -511,23 +524,28 @@ function applyContentVersions({ before, after, targets = [], beforeRows = new Ma
     const enc = after?.encounters?.[key];
     const pa = enc?.parts?.[partKey];
     const pb = before?.encounters?.[key]?.parts?.[partKey];
-    if (!pa || !DONE_STATUSES.has(pa.status)) continue;
-    if ((pa.result_at || '') === (pb?.result_at || '')) continue; // không có kết quả mới
+    if (!pa) continue;
+    const gotNew = (pa.result_at || '') !== (pb?.result_at || '');
+    const checked = gotNew && DONE_STATUSES.has(pa.status);
     const newRows = afterRows.get(id) || [];
     const oldRows = beforeRows.get(id) || [];
-    // Mốc kiểm tra = lúc worker thật sự đọc EMR (result_at), không phải lúc ghi sổ.
-    const checkedAt = pa.result_at || now;
     const newHash = contentHash(newRows);
     const hadPrevious = Boolean(pb?.content_hash) || DONE_STATUSES.has(pb?.status) || oldRows.length > 0;
+    const prevHash = beforeRows.has(id) ? contentHash(oldRows) : (pb?.content_hash || contentHash([]));
+    // Dữ liệu trên đĩa đã đổi dù worker chưa kịp ghi progress (dừng giữa CSV và progress)
+    // vẫn phải được lưu phiên bản, không được âm thầm thay bản cũ.
+    const rowsChanged = hadPrevious && prevHash !== newHash;
+    if (!checked && !rowsChanged) continue;
+    // Mốc kiểm tra = lúc worker thật sự đọc EMR (result_at), không phải lúc ghi sổ.
+    const checkedAt = pa.result_at || now;
     if (!hadPrevious) {
       Object.assign(pa, { content_hash: newHash, content_version: 1, last_check_outcome: 'first', last_check_at: checkedAt });
       out.first += 1;
       continue;
     }
     const baseVersion = Number(pb?.content_version) || 1;
-    const prevHash = pb?.content_hash || contentHash(oldRows);
-    out.rechecked += 1;
-    if (prevHash === newHash) {
+    if (checked) out.rechecked += 1;
+    if (!rowsChanged) {
       Object.assign(pa, { content_hash: newHash, content_version: baseVersion, last_check_outcome: 'unchanged', last_check_at: checkedAt });
       out.unchanged += 1;
       continue;
@@ -535,23 +553,27 @@ function applyContentVersions({ before, after, targets = [], beforeRows = new Ma
     const nextVersion = baseVersion + 1;
     const common = { key, research_code: enc.research_code || '', part: partKey };
     if ((Number(pb?.history_stored_version) || 0) < baseVersion) {
-      out.versions.push({ ...common, version: baseVersion, content_hash: contentHash(oldRows), captured_at: pb?.last_check_at || pb?.result_at || '', role: 'before_change', rows: oldRows });
+      const v = { ...common, version: baseVersion, content_hash: prevHash, captured_at: pb?.last_check_at || pb?.result_at || '', role: 'before_change', rows: oldRows };
+      out.versions.push({ version_id: versionId(v), ...v });
     }
-    out.versions.push({ ...common, version: nextVersion, content_hash: newHash, captured_at: checkedAt, role: 'after_change', rows: newRows });
+    const vNew = { ...common, version: nextVersion, content_hash: newHash, captured_at: checkedAt, role: 'after_change', rows: newRows };
+    out.versions.push({ version_id: versionId(vNew), ...vNew });
     const diff = diffRowSets(oldRows, newRows);
-    out.changes.push({
+    const change = {
       ...common,
       part_label: PARTS.find(x => x.key === partKey)?.label || partKey,
       from_version: baseVersion,
       to_version: nextVersion,
       rows_added: diff.added,
       rows_removed: diff.removed,
-      trigger: reasons[id] || '',
+      trigger: reasons[id] || (checked ? '' : 'detected_on_disk'),
       changed_at: checkedAt,
-    });
+      to_hash: newHash,
+    };
+    out.changes.push({ change_id: changeId(change), ...change });
     Object.assign(pa, {
-      content_hash: newHash, content_version: nextVersion, content_changed_at: checkedAt,
-      last_check_outcome: 'changed', last_check_at: checkedAt, history_stored_version: nextVersion,
+      content_hash: newHash, content_version: nextVersion, content_changed_at: checkedAt, history_stored_version: nextVersion,
+      ...(checked ? { last_check_outcome: 'changed', last_check_at: checkedAt } : { last_check_outcome: 'changed_unconfirmed' }),
     });
   }
   return out;
@@ -977,6 +999,8 @@ module.exports = {
   contentHash,
   diffRowSets,
   applyContentVersions,
+  versionId,
+  changeId,
   planCollection,
   groupTasksByFetcher,
   exceptionRows,
