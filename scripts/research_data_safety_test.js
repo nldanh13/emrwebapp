@@ -4,7 +4,8 @@
 // Kiểm thử an toàn dữ liệu Kho nghiên cứu (chỉ dùng dữ liệu giả lập, không có BN thật):
 //  1. Mã NC duy nhất và ổn định qua các lần quét lại; file cũ bị trùng mã được sửa.
 //  2. Dữ liệu hành chánh gắn đúng đợt khi 1 BN có nhiều đợt (lỗi NC0001 cũ).
-//  3. Dòng chuyển khoa nghi cùng đợt: KHÔNG tự gộp, chỉ đưa vào danh sách duyệt.
+//  3. Dòng chuyển khoa chung Mã nội trú gộp thành 1 đợt với ngày vào sớm nhất; ca nghi
+//     cùng đợt nhưng KHÔNG chung khóa EMR thì chỉ đưa vào danh sách duyệt, không tự gộp.
 //  4. Báo cáo chất lượng: lỗi chặn (trùng khóa, mồ côi khóa ngoại) và cảnh báo.
 //  5. Chuẩn hóa dở dang/lỗi bị phát hiện, chặn tạo dataset cuối, chạy lại không dùng cache.
 //  6. Dataset cuối không bị mất khi Chuẩn hóa lại (được lưu phiên bản).
@@ -136,6 +137,23 @@ test('Chuyển khoa nghi cùng đợt: không tự gộp, có trong encounter_re
   assert.ok(JSON.parse(history[1]).input_signature);
   // Báo cáo QA không chứa họ tên.
   assert.ok(!fs.readFileSync(path.join(runDir, 'qa_report.json'), 'utf-8').includes('GIA LAP'));
+});
+
+test('Dòng chuyển khoa chung Mã nội trú gộp thành 1 đợt, ngày vào = thời điểm vào sớm nhất', () => {
+  const runDir = newRunDir();
+  // Danh sách xếp khoa sau lên trước: không được lấy ngày vào khoa sau làm ngày vào viện.
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), INITIAL_COLS, [
+    { 'T/G vào': '09:00 04/03/2026', 'Mã BN': '111', 'Mã nội trú': 'nt-chung', 'Họ tên': 'BN GIA LAP A' },
+    { 'T/G vào': '08:00 20/02/2026', 'Mã BN': '111', 'Mã nội trú': 'nt-chung', 'Họ tên': 'BN GIA LAP A' },
+    { 'T/G vào': '10:00 01/03/2026', 'Mã BN': '222', 'Mã nội trú': 'nt-khac', 'Họ tên': 'BN GIA LAP B' },
+  ]);
+  const out = R.normalizeRunOutputs(runDir, { sourceRunId: 'r' });
+  assert.strictEqual(out.encounters, 2);
+  const source = readCsv(path.join(runDir, 'research_source.csv')).filter(r => r['Mã BN'] === '111');
+  assert.strictEqual(source.length, 1, 'research_source chỉ còn 1 dòng cho đợt này');
+  assert.strictEqual(source[0].fetch_from_date, '2026-02-20', 'khoảng lấy dữ liệu bắt đầu từ ngày vào viện');
+  const enc = readCsv(path.join(runDir, 'encounters.csv')).find(r => r.patient_code === '111');
+  assert.strictEqual(enc.admission_date, '2026-02-20 08:00');
 });
 
 test('Báo cáo chất lượng: trùng khóa và mồ côi khóa ngoại là lỗi chặn; ghép mơ hồ là cảnh báo', () => {

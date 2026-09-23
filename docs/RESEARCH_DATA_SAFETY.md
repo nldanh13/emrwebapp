@@ -33,12 +33,16 @@ Mỗi kho (kho gốc `du_lieu_goc` hoặc một nghiên cứu riêng) nằm ở
 - Dòng XN/CĐHA/phẫu thuật/y lệnh được gắn vào đợt theo khóa EMR, sau đó theo thời
   gian. Kết quả ghép ghi ở `encounter_match_status`: `matched`, `ambiguous` (khớp
   nhiều đợt) hoặc `missing`. Dòng `ambiguous`/`missing` **không** được tự gắn.
-- **Chuyển khoa:** các dòng `initial` chỉ được coi là cùng một đợt khi chung khóa
-  EMR (Mã nội trú/Mã điều trị/Mã vào viện). Nếu EMR cấp mã khác nhau cho từng khoa,
-  chúng thành các đợt riêng. Hệ thống **không tự gộp**: các cặp đợt của cùng BN có
-  khoảng nằm viện chồng lấn hoặc cùng ngày ra viện được liệt kê trong
-  `encounter_review.csv` (`possible_same_stay`). **[Bệnh viện xác nhận]** quy tắc
-  gộp các dòng chuyển khoa trước khi bật gộp tự động.
+- **Chuyển khoa:** trên danh sách nội trú EMR, các dòng chuyển khoa của cùng một đợt
+  nằm viện **dùng chung Mã nội trú** (đã được xác nhận ngày 23/09/2026). Các dòng chung
+  Mã nội trú (hoặc Mã điều trị/Mã vào viện) được gộp thành **một đợt, một Mã NC**. Ngày
+  vào của đợt là thời điểm vào **sớm nhất** trong các dòng, khoảng lấy dữ liệu là khoảng
+  rộng nhất, không phụ thuộc thứ tự dòng trong file.
+- Dòng **không có** Mã nội trú (ví dụ danh sách quét bằng bản cũ) không gộp được theo
+  quy tắc trên. Hệ thống **không tự gộp** các dòng này; cặp đợt của cùng BN có khoảng
+  nằm viện chồng lấn hoặc cùng ngày ra viện được liệt kê trong `encounter_review.csv`
+  (`possible_same_stay`) để người duyệt. Quét lại danh sách bằng bản hiện tại để có
+  Mã nội trú.
 
 ## 3. Kiểm soát sau mỗi lần Chuẩn hóa
 
@@ -112,7 +116,7 @@ Không có migration phá dữ liệu. Các bước:
 
 1. Sao lưu như mục 6.1.
 2. `git pull`, khởi động lại server.
-3. Mở từng kho/nghiên cứu, bấm **Chuẩn hóa**. Schema tăng lên v10 nên lần đầu sẽ
+3. Mở từng kho/nghiên cứu, bấm **Chuẩn hóa**. Schema tăng lên v11 nên lần đầu sẽ
    chuẩn hóa lại đầy đủ và tạo `qa_report.json`, `encounter_review.csv`.
 4. Nếu `research_source.csv` cũ có Mã NC bị trùng (lỗi cũ cấp `NC0001` cho mọi
    dòng), file này được tạo lại với Mã NC duy nhất. Mã được lấy theo thứ tự ưu tiên

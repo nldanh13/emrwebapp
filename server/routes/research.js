@@ -2798,7 +2798,8 @@ function copyRowsByPatients(sourceFile, targetFile, patientSet, codeMap) {
 // patient-level surgery fallback khi chuẩn hóa medication_orders.
 // v10: Mã NC duy nhất/ổn định, ghép theo Research key, qa_report.json +
 // encounter_review.csv + normalize_state.json + normalize_history.jsonl.
-const NORMALIZED_SCHEMA_VERSION = 10;
+// v11: gộp dòng chuyển khoa chung Mã nội trú lấy ngày vào sớm nhất.
+const NORMALIZED_SCHEMA_VERSION = 11;
 
 const NORMALIZED_COLUMNS = {
   patients: [
@@ -3374,6 +3375,35 @@ function mergeRowsPreferFilled(base, patch) {
 }
 
 
+// Các dòng chuyển khoa của CÙNG một đợt nằm viện dùng chung Mã nội trú (đã được bệnh
+// viện xác nhận) nên được gộp thành một đợt. Mỗi dòng mang thời điểm vào KHOA của nó;
+// khi gộp phải lấy thời điểm vào SỚM NHẤT (vào viện) và khoảng lấy dữ liệu RỘNG NHẤT,
+// không phụ thuộc dòng nào đứng trước trong file.
+const EARLIEST_TIME_FIELDS = ['T/G vào', 'TG vao', 'Ngày vào viện', 'Ngay vao vien', 'admission_date', 'fetch_from_date'];
+const LATEST_TIME_FIELDS = ['fetch_to_date'];
+function pickTimeValue(a, b, preferEarlier) {
+  const ta = parseAnyDate(a);
+  const tb = parseAnyDate(b);
+  if (!ta) return b;
+  if (!tb) return a;
+  const aWins = preferEarlier ? ta.getTime() <= tb.getTime() : ta.getTime() >= tb.getTime();
+  return aWins ? a : b;
+}
+function mergeSameStayRows(base, patch) {
+  const out = mergeRowsPreferFilled(base, patch);
+  for (const field of EARLIEST_TIME_FIELDS) {
+    const a = String(base?.[field] ?? '').trim();
+    const b = String(patch?.[field] ?? '').trim();
+    if (a && b) out[field] = pickTimeValue(a, b, true);
+  }
+  for (const field of LATEST_TIME_FIELDS) {
+    const a = String(base?.[field] ?? '').trim();
+    const b = String(patch?.[field] ?? '').trim();
+    if (a && b) out[field] = pickTimeValue(a, b, false);
+  }
+  return out;
+}
+
 function rowAdmissionTime(row) {
   return isoDateTime(firstNonEmpty(row, ['T/G vào', 'TG vao', 'Thời gian vào', 'Thoi gian vao', 'Ngày vào viện', 'Ngay vao vien', 'ngay_vao_vien', 'ngay_vao', 'admission_date']))
     || isoDate(firstNonEmpty(row, ['T/G vào', 'TG vao', 'Ngày vào viện', 'Ngay vao vien', 'ngay_vao_vien', 'ngay_vao', 'admission_date']));
@@ -3488,8 +3518,8 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
     const existing = map.get(sig);
     if (!existing) { map.set(sig, withStatus); return; }
     const merged = rowCompletenessScore(withStatus) >= rowCompletenessScore(existing)
-      ? mergeRowsPreferFilled(withStatus, existing)
-      : mergeRowsPreferFilled(existing, withStatus);
+      ? mergeSameStayRows(withStatus, existing)
+      : mergeSameStayRows(existing, withStatus);
     merged.__source_status = [...new Set([existing.__source_status, sourceStatus].filter(Boolean).join('+').split('+').filter(Boolean))].join('+');
     // File hchanh_* mang Mã NC của research_source.csv tại lúc lấy dữ liệu, có thể là
     // mã cũ bị cấp trùng (NC0001): không để mã đó đè lên mã của dòng đã có. Các nguồn
@@ -3939,7 +3969,7 @@ function normalizeResearchSourceRows(rows, { sourceFile = '', sourceRunId = '', 
       'Research key': key,
     };
     if (!seen.has(key)) seen.set(key, normalized);
-    else seen.set(key, { ...mergeRowsPreferFilled(seen.get(key), normalized), 'Mã NC': seen.get(key)['Mã NC'] });
+    else seen.set(key, { ...mergeSameStayRows(seen.get(key), normalized), 'Mã NC': seen.get(key)['Mã NC'] });
   }
   return Array.from(seen.values());
 }
