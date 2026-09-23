@@ -282,4 +282,80 @@ test('Yêu cầu dữ liệu suy ra từ biến đã chọn của đề cương'
   assert.deepStrictEqual(c.requirementsFromStudy({}).parts, c.PART_KEYS);
 });
 
+test('Chính sách làm mới riêng từng phần: chỉ phần quá hạn; phần không đặt hạn thì không tự kiểm tra lại', () => {
+  const sources = [src('enc_a', 'NC0001', 'BN_A')];
+  const { xn, hc, oh } = fullyCollected(sources); // mốc kiểm tra 2026-01-10
+  const ledger = c.buildLedger({ sourceRows: sources, xnProgress: xn, hchanhProgress: hc, orderProgress: oh });
+  const now = '2026-01-25T00:00:00Z';
+  assert.strictEqual(c.planCollection(ledger, { now }).tasks.length, 0, 'không có chính sách → không tự kiểm tra lại');
+  const plan = c.planCollection(ledger, { now, refreshPolicy: { xn: 14, cdha: 30, surgery: 0, bogus: 3 } });
+  assert.deepStrictEqual(plan.tasks[0].parts, ['xn'], 'XN quá 14 ngày; CĐHA chưa quá 30 ngày; 0 = không đặt');
+  assert.strictEqual(plan.tasks[0].reasons.xn, 'refresh_due');
+  assert.strictEqual(plan.tasks[0].refresh_only, true);
+  assert.strictEqual(plan.summary.unchanged, 0);
+  assert.deepStrictEqual(c.sanitizeRefreshPolicy({ xn: 14, cdha: '30', surgery: 0, bogus: 3 }), { xn: 14, cdha: 30 });
+  const manual = c.planCollection(ledger, { now, refreshParts: ['cdha'], refreshKeys: ['enc_a'] });
+  assert.deepStrictEqual([manual.tasks[0].parts, manual.tasks[0].reasons.cdha], [['cdha'], 'manual_refresh']);
+  assert.strictEqual(c.planCollection(ledger, { now, refreshParts: ['cdha'], refreshKeys: ['enc_khac'] }).tasks.length, 0);
+});
+
+test('Lấy lại: không đổi thì giữ nguyên phiên bản; đổi thì lưu bản cũ + bản mới, ghi phần nào đổi', () => {
+  const sources = [src('enc_a', 'NC0001', 'BN_A')];
+  const { xn, hc, oh } = fullyCollected(sources);
+  const v0 = c.buildLedger({ sourceRows: sources, xnProgress: xn, hchanhProgress: hc, orderProgress: oh });
+  const target = [{ key: 'enc_a', part: 'xn' }];
+  const rowsV1 = [{ 'Mã NC': 'NC0001', 'Chỉ số': 'Hb', 'Kết quả': '120', source_run_id: 'r1' }, { 'Mã NC': 'NC0001', 'Chỉ số': 'CRP', 'Kết quả': '5' }];
+  const recheck = at => {
+    const xn2 = { ...xn, 'BN_A|treatment:xenc_a': xnEntry('enc_a', 'NC0001', 'BN_A', XN_OK, at) };
+    return c.buildLedger({ sourceRows: sources, xnProgress: xn2, hchanhProgress: hc, orderProgress: oh, previous: v0 });
+  };
+  // 1) Lấy lại, nội dung giống (chỉ khác cột kỹ thuật source_run_id) → không đổi.
+  const same = recheck('2026-02-01T00:00:00Z');
+  const r1 = c.applyContentVersions({
+    before: v0, after: same, targets: target,
+    beforeRows: new Map([['enc_a|xn', rowsV1]]),
+    afterRows: new Map([['enc_a|xn', rowsV1.map(r => ({ ...r, source_run_id: 'r2' }))]]),
+    now: '2026-02-01T00:00:00Z',
+  });
+  assert.deepStrictEqual([r1.rechecked, r1.unchanged, r1.changes.length, r1.versions.length], [1, 1, 0, 0]);
+  assert.strictEqual(same.encounters.enc_a.parts.xn.last_check_outcome, 'unchanged');
+  assert.strictEqual(same.encounters.enc_a.parts.xn.content_version, 1);
+  // 2) Kết quả CRP được sửa trên EMR (danh sách không đổi) → phiên bản 2.
+  const edited = [rowsV1[0], { ...rowsV1[1], 'Kết quả': '50' }];
+  const changed = c.buildLedger({ sourceRows: sources, xnProgress: { ...xn, 'BN_A|treatment:xenc_a': xnEntry('enc_a', 'NC0001', 'BN_A', XN_OK, '2026-03-01T00:00:00Z') }, hchanhProgress: hc, orderProgress: oh, previous: same });
+  const r2 = c.applyContentVersions({
+    before: same, after: changed, targets: target,
+    beforeRows: new Map([['enc_a|xn', rowsV1]]), afterRows: new Map([['enc_a|xn', edited]]),
+    reasons: { 'enc_a|xn': 'refresh_due' }, now: '2026-03-01T00:00:00Z',
+  });
+  assert.strictEqual(r2.changes.length, 1);
+  assert.deepStrictEqual([r2.changes[0].from_version, r2.changes[0].to_version, r2.changes[0].rows_added, r2.changes[0].rows_removed, r2.changes[0].trigger], [1, 2, 1, 1, 'refresh_due']);
+  assert.deepStrictEqual(r2.versions.map(v => [v.version, v.role, v.rows.length]), [[1, 'before_change', 2], [2, 'after_change', 2]]);
+  const pxn = changed.encounters.enc_a.parts.xn;
+  assert.deepStrictEqual([pxn.content_version, pxn.last_check_outcome, pxn.content_changed_at], [2, 'changed', '2026-03-01T00:00:00Z']);
+  // 3) Dựng lại sổ không làm mất thông tin phiên bản.
+  const rebuilt = c.buildLedger({ sourceRows: sources, xnProgress: { ...xn, 'BN_A|treatment:xenc_a': xnEntry('enc_a', 'NC0001', 'BN_A', XN_OK, '2026-03-01T00:00:00Z') }, hchanhProgress: hc, orderProgress: oh, previous: changed });
+  assert.strictEqual(rebuilt.encounters.enc_a.parts.xn.content_version, 2);
+  // 4) Đổi lần nữa: bản 2 đã lưu → chỉ ghi thêm bản 3.
+  const later = c.buildLedger({ sourceRows: sources, xnProgress: { ...xn, 'BN_A|treatment:xenc_a': xnEntry('enc_a', 'NC0001', 'BN_A', XN_OK, '2026-04-01T00:00:00Z') }, hchanhProgress: hc, orderProgress: oh, previous: rebuilt });
+  const r3 = c.applyContentVersions({
+    before: rebuilt, after: later, targets: target,
+    beforeRows: new Map([['enc_a|xn', edited]]), afterRows: new Map([['enc_a|xn', [...edited, { 'Chỉ số': 'PLT', 'Kết quả': '200' }]]]),
+  });
+  assert.deepStrictEqual(r3.versions.map(v => [v.version, v.role]), [[3, 'after_change']]);
+});
+
+test('Báo cáo: phần kiểm tra lại không tính là lấy bù; đếm số phần có thay đổi', () => {
+  const sources = [src('enc_a', 'NC0001', 'BN_A')];
+  const { xn, hc, oh } = fullyCollected(sources);
+  const before = c.buildLedger({ sourceRows: sources, xnProgress: xn, hchanhProgress: hc, orderProgress: oh });
+  const plan = c.planCollection(before, { now: '2026-03-01T00:00:00Z', refreshPolicy: { xn: 7 } });
+  const after = c.buildLedger({ sourceRows: sources, xnProgress: { ...xn, 'BN_A|treatment:xenc_a': xnEntry('enc_a', 'NC0001', 'BN_A', XN_OK, '2026-03-01T00:00:00Z') }, hchanhProgress: hc, orderProgress: oh, previous: before });
+  const report = c.buildRunReport({ before, after, plan, content: { rechecked: 1, unchanged: 0, changes: [{ key: 'enc_a', part: 'xn' }] } });
+  assert.strictEqual(report.parts_backfilled, 0);
+  assert.strictEqual(report.parts_rechecked, 1);
+  assert.strictEqual(report.parts_changed, 1);
+  assert.strictEqual(report.fetched_encounters, 1);
+});
+
 console.log(`\n${passed} kịch bản pass.`);

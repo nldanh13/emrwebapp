@@ -559,6 +559,9 @@ export const getResearchCollectionStatus = (studyId) => get(`${researchScopePath
 export const downloadResearchCollectionExceptions = (studyId) =>
   downloadBlob(`${researchScopePath(studyId)}/collection-exceptions`, `${studyId || 'du_lieu_goc'}_ngoai_le_thu_thap.csv`);
 export const getResearchStudyReadiness = (studyId) => get(`/api/research/studies/${encodeURIComponent(studyId)}/readiness`);
+export const updateResearchRefreshPolicy = (studyId, refreshPolicy) =>
+  post(`${researchScopePath(studyId)}/refresh-policy`, { refresh_policy: refreshPolicy });
+export const getResearchCollectionChanges = (studyId) => get(`${researchScopePath(studyId)}/collection-changes`);
 export const updateResearchStudyDataRequirements = (studyId, dataRequirements) =>
   post(`/api/research/studies/${encodeURIComponent(studyId)}/data-requirements`, { data_requirements: dataRequirements });
 // Analysis config

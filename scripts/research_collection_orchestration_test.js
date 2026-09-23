@@ -231,5 +231,124 @@ const opts = rows => ({ runDir, runId: 'collect_run', scope: 'du_lieu_goc', isAr
     assert.strictEqual(R.hchanhEntryFileStatus({ file_status: { surgery: { fetch_status: 'ok', rows: 0 } } }, 'surgery'), 'empty');
   });
 
+  // ── Làm mới theo chính sách, so sánh phiên bản, đánh giá lại đủ dùng ──────────
+  const run2 = path.join(RUNTIME_ROOT, 'fixture', 'refresh_run');
+  fs.mkdirSync(run2, { recursive: true });
+  writeCsv(path.join(run2, 'du_lieu_ban_dau.csv'), INITIAL_COLS, initialRows());
+  const rows2 = () => R.ensureResearchSourceRows(run2, { sourceRunId: 'refresh_run', dateDefaults: { from_date: '2026-03-01', to_date: '2026-03-31' } }).rows;
+  // Nội dung do "EMR" giả trả về, đổi được giữa các lần.
+  const emr = { BNA: { xn: '120', discharge: 'Đỡ' }, BNB: { xn: '110', discharge: 'Đỡ' }, BNC: { xn: '5', discharge: null } };
+  const calls2 = [];
+  const csvRunners = {
+    hchanh: async (_ctx, opts) => {
+      const file = opts.mode === 'order_history_auto' ? 'order_history_auto_progress.json' : 'hchanh_auto_progress.json';
+      const progress = readJson(path.join(run2, file));
+      for (const row of opts.sourceRows) {
+        const key = row['Research key'];
+        const code = row['Mã BN'];
+        calls2.push(`${code}:${opts.files.join(',')}`);
+        const at = tick();
+        const fileStatus = {};
+        for (const f of opts.files) {
+          const csv = path.join(run2, `hchanh_${f}.csv`);
+          const existing = fs.existsSync(csv) ? require('../server/routes/research')._test.readCollectionPartRows(run2)[f] : new Map();
+          const others = [];
+          for (const [k, rs] of existing.entries()) if (k !== key) others.push(...rs);
+          const value = f === 'discharge' ? emr[code].discharge : 'x';
+          if (value === null) { fileStatus[f] = { fetch_status: 'timeout', rows: 0, at }; continue; }
+          writeCsv(csv, ['Research key', 'Mã BN', 'Giá trị'], [...others, { 'Research key': key, 'Mã BN': code, 'Giá trị': value }]);
+          fileStatus[f] = { fetch_status: 'ok', rows: 1, at };
+        }
+        progress[key] = { ...(progress[key] || {}), status: 'done', files: [...new Set([...(progress[key]?.files || []), ...opts.files])], finished_at: at, file_status: { ...(progress[key]?.file_status || {}), ...fileStatus } };
+      }
+      fs.writeFileSync(path.join(run2, file), JSON.stringify(progress), 'utf-8');
+      return {};
+    },
+    xnCdha: async (_ctx, opts) => {
+      const progress = readJson(path.join(run2, 'progress.json'));
+      const csv = path.join(run2, 'lich_su_xn.csv');
+      let xnRows = fs.existsSync(csv) ? [...R.readCollectionPartRows(run2).xn.values()].flat() : [];
+      for (const row of opts.rows) {
+        const code = row['Mã BN'];
+        calls2.push(`${code}:${row.refetch_parts}`);
+        const key = `${code}|treatment:${String(row['Mã nội trú']).toLowerCase()}`;
+        const item = progress[key] || { tab_saved: {}, counts: {}, tab_at: {} };
+        Object.assign(item, { 'Research key': row['Research key'], 'Mã BN': code, 'Mã NC': row['Mã NC'], popup: 'done' });
+        for (const tab of String(row.refetch_parts).split(';')) {
+          item.tab_at[tab] = tick();
+          if (tab === 'xn') {
+            xnRows = xnRows.filter(r => r['Mã NC'] !== row['Mã NC']).concat([{ 'Mã NC': row['Mã NC'], 'Mã BN': code, 'Chỉ số': 'Hb', 'Kết quả': emr[code].xn }]);
+            item.xn = 'done'; item.counts.xn = 1;
+          } else {
+            item.cdha = 'empty'; item.counts.cdha = 0;
+          }
+          item.tab_saved[tab] = true;
+        }
+        item.committed = Boolean(item.tab_saved.xn && item.tab_saved.cdha);
+        item.status = item.committed ? 'done' : 'incomplete';
+        item.updated_at = tick();
+        progress[key] = item;
+      }
+      writeCsv(csv, ['Mã NC', 'Mã BN', 'Chỉ số', 'Kết quả'], xnRows);
+      fs.writeFileSync(path.join(run2, 'progress.json'), JSON.stringify(progress), 'utf-8');
+      return { ok: true };
+    },
+    normalize: () => ({ fake: true }),
+  };
+  const study = { id: 'nc_can_ra_vien', name: 'Đề tài cần Ra viện', data_requirements: { parts: ['discharge'] } };
+  // `now` do test đặt (sau các mốc của đồng hồ giả) để hạn làm mới không phụ thuộc giờ máy.
+  const opts2 = extra => ({ runDir: run2, runId: 'refresh_run', scope: study.id, isArchive: false, sourceRows: rows2(), maxAttempts: 3, maxPasses: 1, study, now: new Date(clock + 60 * 86400000).toISOString(), ...extra });
+  const codeOf = code => rows2().find(r => r['Mã BN'] === code)['Mã NC'];
+
+  await test('Không có chính sách làm mới: lần sau không lấy lại dù EMR đã sửa kết quả', async () => {
+    await R.runCollectionOrchestration(CTX, opts2(), csvRunners);
+    emr.BNC.xn = '50'; // EMR sửa kết quả, dòng danh sách không đổi
+    calls2.length = 0;
+    const { report } = await R.runCollectionOrchestration(CTX, opts2(), csvRunners);
+    assert.ok(!calls2.some(c => c.endsWith(':xn')), 'không đặt hạn cho XN thì không tự kiểm tra lại');
+    assert.strictEqual(report.parts_rechecked, 0);
+  });
+
+  await test('Chính sách XN quá hạn → kiểm tra lại XN; chỉ lượt có kết quả sửa được ghi phiên bản mới', async () => {
+    calls2.length = 0;
+    const { report, ledger } = await R.runCollectionOrchestration(CTX, opts2({ refreshPolicy: { xn: 30 } }), csvRunners);
+    assert.deepStrictEqual(calls2.filter(c => c.endsWith(':xn')).sort(), ['BNA:xn', 'BNB:xn', 'BNC:xn']);
+    assert.ok(!calls2.some(c => c.includes('profile')), 'phần không có chính sách không bị lấy lại');
+    assert.strictEqual(report.parts_rechecked, 3);
+    assert.strictEqual(report.parts_rechecked_unchanged, 2);
+    assert.strictEqual(report.parts_changed, 1);
+    assert.strictEqual(report.changes[0].research_code, codeOf('BNC'));
+    assert.strictEqual(report.changes[0].trigger, 'refresh_due');
+    const encC = Object.values(ledger.encounters).find(e => e.patient_code === 'BNC');
+    assert.deepStrictEqual([encC.parts.xn.content_version, encC.parts.xn.last_check_outcome], [2, 'changed']);
+    const versions = fs.readFileSync(path.join(run2, 'collection_versions.jsonl'), 'utf-8').trim().split('\n').map(l => JSON.parse(l));
+    assert.deepStrictEqual(versions.map(v => [v.part, v.version, v.role, v.rows[0]['Kết quả']]), [['xn', 1, 'before_change', '5'], ['xn', 2, 'after_change', '50']]);
+    const changesCsv = fs.readFileSync(path.join(run2, 'collection_changes.csv'), 'utf-8');
+    assert.ok(changesCsv.includes(codeOf('BNC')) && !changesCsv.includes('BNC'), 'file thay đổi chỉ có Mã NC, không có Mã BN');
+    // Lần kế tiếp (1 ngày sau): vừa kiểm tra xong, chưa quá hạn 30 ngày → không lấy lại.
+    calls2.length = 0;
+    await R.runCollectionOrchestration(CTX, opts2({ refreshPolicy: { xn: 30 }, now: new Date(clock + 86400000).toISOString() }), csvRunners);
+    assert.ok(!calls2.some(c => c.endsWith(':xn')));
+  });
+
+  await test('Làm mới thủ công đúng phần/lượt đã chọn; sau cập nhật đánh giá lại đủ dùng theo đề tài', async () => {
+    const keyC = rows2().find(r => r['Mã BN'] === 'BNC')['Research key'];
+    emr.BNC.discharge = 'Khỏi'; // EMR nay có Ra viện cho C
+    calls2.length = 0;
+    const { report } = await R.runCollectionOrchestration(CTX, opts2({ refreshParts: ['discharge'], refreshKeys: [keyC] }), csvRunners);
+    assert.deepStrictEqual(calls2, ['BNC:discharge'], 'C: Ra viện đang lỗi → thử lại; A/B không chọn làm mới');
+    const change = report.readiness_changes.find(x => x.research_code === codeOf('BNC'));
+    assert.deepStrictEqual([change.study_id, change.before, change.after], ['nc_can_ra_vien', 'incomplete', 'usable']);
+    assert.strictEqual(report.readiness_by_study.nc_can_ra_vien.counts.usable, 3);
+    assert.ok(fs.existsSync(path.join(run2, 'study_readiness.csv')));
+
+    emr.BNA.discharge = 'Chuyển viện';
+    calls2.length = 0;
+    const keyA = rows2().find(r => r['Mã BN'] === 'BNA')['Research key'];
+    const r2 = await R.runCollectionOrchestration(CTX, opts2({ refreshParts: ['discharge'], refreshKeys: [keyA] }), csvRunners);
+    assert.deepStrictEqual(calls2, ['BNA:discharge']);
+    assert.deepStrictEqual([r2.report.parts_changed, r2.report.changes[0].trigger, r2.report.changes[0].part], [1, 'manual_refresh', 'discharge']);
+  });
+
   console.log(`\n${passed} kịch bản pass.`);
 })();

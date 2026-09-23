@@ -54,7 +54,18 @@ const REASON_LABELS = {
   emr_now_empty_previously_had_data: 'EMR nay trống nhưng lần trước có dữ liệu',
   not_completed: 'Hồ sơ chưa ở trạng thái Hoàn tất',
   retry_exhausted: 'Đã thử lại đủ số lần, vẫn lỗi',
+  refresh_due: 'Quá hạn kiểm tra lại theo chính sách làm mới',
+  manual_refresh: 'Người dùng chọn Làm mới',
 };
+
+// Trường nội dung/phiên bản của một phần, giữ qua các lần dựng lại sổ.
+const CONTENT_FIELDS = ['content_hash', 'content_version', 'content_changed_at', 'last_check_outcome', 'last_check_at', 'history_stored_version'];
+
+function pickContentFields(p) {
+  const out = {};
+  for (const f of CONTENT_FIELDS) if (p && p[f] !== undefined) out[f] = p[f];
+  return out;
+}
 
 const TECHNICAL_REASONS = new Set(['timeout', 'session', 'tab_load', 'partial', 'no_content', 'no_result', 'search_error', 'popup_error', 'error', 'unknown']);
 const IDENTITY_REASONS = new Set(['encounter_not_identified']);
@@ -375,6 +386,7 @@ function buildLedger({ sourceRows = [], xnProgress = {}, hchanhProgress = {}, or
         continue;
       }
       parts[key] = {
+        ...pickContentFields(p),
         status: d.status,
         reason: d.reason || '',
         detail: d.detail || '',
@@ -448,14 +460,141 @@ function applyDispatchOutcome(before, after, dispatched = [], now = nowIso()) {
   return after;
 }
 
+// ── So sánh nội dung & phiên bản ─────────────────────────────────────────────
+// Khi lấy lại một phần đã có, so dữ liệu mới với bản trước: giống thì chỉ ghi nhận
+// "đã kiểm tra, không đổi"; khác thì tăng số phiên bản và trả về các dòng lịch sử
+// (bản cũ + bản mới) để ghi vào file chỉ-thêm. Không ghi đè mất dấu bản cũ.
+
+// Cột không phản ánh nội dung lâm sàng/hành chính (mã nội bộ, nguồn, URL phiên...).
+const VOLATILE_COLUMNS = new Set([
+  'source_run_id', 'raw json', 'nguồn input', 'nguồn', 'url bác sĩ', 'url điều dưỡng', 'url',
+  'research key', 'mã nc', 'row_hash',
+]);
+
+function rowFingerprint(row) {
+  const entries = Object.entries(row || {})
+    .filter(([k, v]) => !VOLATILE_COLUMNS.has(String(k).trim().toLowerCase()) && String(v ?? '').trim() !== '')
+    .map(([k, v]) => [String(k).trim(), String(v).replace(/\s+/g, ' ').trim()])
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  return JSON.stringify(entries);
+}
+
+function contentHash(rows) {
+  const prints = (rows || []).map(rowFingerprint).sort();
+  return crypto.createHash('sha1').update(prints.join('\n')).digest('hex').slice(0, 16);
+}
+
+function diffRowSets(oldRows, newRows) {
+  const count = rows => {
+    const m = new Map();
+    for (const r of rows || []) { const f = rowFingerprint(r); m.set(f, (m.get(f) || 0) + 1); }
+    return m;
+  };
+  const a = count(oldRows);
+  const b = count(newRows);
+  let added = 0;
+  let removed = 0;
+  for (const [f, n] of b) added += Math.max(0, n - (a.get(f) || 0));
+  for (const [f, n] of a) removed += Math.max(0, n - (b.get(f) || 0));
+  return { added, removed };
+}
+
+// targets: [{key, part}] đã giao cho worker. beforeRows/afterRows: Map "key|part" → rows
+// (dữ liệu của phần đó ngay trước và sau khi lấy). Sửa trực tiếp các phần trong `after`.
+function applyContentVersions({ before, after, targets = [], beforeRows = new Map(), afterRows = new Map(), reasons = {}, now = nowIso() } = {}) {
+  const out = { changes: [], versions: [], rechecked: 0, unchanged: 0, first: 0 };
+  const seen = new Set();
+  for (const { key, part: partKey } of targets) {
+    const id = `${key}|${partKey}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const enc = after?.encounters?.[key];
+    const pa = enc?.parts?.[partKey];
+    const pb = before?.encounters?.[key]?.parts?.[partKey];
+    if (!pa || !DONE_STATUSES.has(pa.status)) continue;
+    if ((pa.result_at || '') === (pb?.result_at || '')) continue; // không có kết quả mới
+    const newRows = afterRows.get(id) || [];
+    const oldRows = beforeRows.get(id) || [];
+    // Mốc kiểm tra = lúc worker thật sự đọc EMR (result_at), không phải lúc ghi sổ.
+    const checkedAt = pa.result_at || now;
+    const newHash = contentHash(newRows);
+    const hadPrevious = Boolean(pb?.content_hash) || DONE_STATUSES.has(pb?.status) || oldRows.length > 0;
+    if (!hadPrevious) {
+      Object.assign(pa, { content_hash: newHash, content_version: 1, last_check_outcome: 'first', last_check_at: checkedAt });
+      out.first += 1;
+      continue;
+    }
+    const baseVersion = Number(pb?.content_version) || 1;
+    const prevHash = pb?.content_hash || contentHash(oldRows);
+    out.rechecked += 1;
+    if (prevHash === newHash) {
+      Object.assign(pa, { content_hash: newHash, content_version: baseVersion, last_check_outcome: 'unchanged', last_check_at: checkedAt });
+      out.unchanged += 1;
+      continue;
+    }
+    const nextVersion = baseVersion + 1;
+    const common = { key, research_code: enc.research_code || '', part: partKey };
+    if ((Number(pb?.history_stored_version) || 0) < baseVersion) {
+      out.versions.push({ ...common, version: baseVersion, content_hash: contentHash(oldRows), captured_at: pb?.last_check_at || pb?.result_at || '', role: 'before_change', rows: oldRows });
+    }
+    out.versions.push({ ...common, version: nextVersion, content_hash: newHash, captured_at: checkedAt, role: 'after_change', rows: newRows });
+    const diff = diffRowSets(oldRows, newRows);
+    out.changes.push({
+      ...common,
+      part_label: PARTS.find(x => x.key === partKey)?.label || partKey,
+      from_version: baseVersion,
+      to_version: nextVersion,
+      rows_added: diff.added,
+      rows_removed: diff.removed,
+      trigger: reasons[id] || '',
+      changed_at: checkedAt,
+    });
+    Object.assign(pa, {
+      content_hash: newHash, content_version: nextVersion, content_changed_at: checkedAt,
+      last_check_outcome: 'changed', last_check_at: checkedAt, history_stored_version: nextVersion,
+    });
+  }
+  return out;
+}
+
 // ── Kế hoạch lấy bù ──────────────────────────────────────────────────────────
 
-function planCollection(ledger, { keys = null, maxAttempts = DEFAULT_MAX_ATTEMPTS, parts = PART_KEYS, retryBlocked = false, force = false } = {}) {
+// Chính sách làm mới RIÊNG từng phần: số ngày tối đa kể từ lần kiểm tra gần nhất.
+// Phần không có trong chính sách thì không tự kiểm tra lại (chỉ khi danh sách EMR đổi
+// hoặc người dùng chọn Làm mới) — không có một khoảng thời gian chung cho mọi loại.
+function sanitizeRefreshPolicy(input) {
+  const src = input && typeof input === 'object' ? input : {};
+  const out = {};
+  for (const k of PART_KEYS) {
+    const n = Number(src[k]);
+    if (Number.isFinite(n) && n >= 1 && n <= 3650) out[k] = Math.trunc(n);
+  }
+  return out;
+}
+
+function lastCheckedAt(p) {
+  return String(p?.last_check_at || p?.result_at || '');
+}
+
+function refreshDue(p, days, now) {
+  if (!days) return false;
+  const at = Date.parse(lastCheckedAt(p));
+  if (!Number.isFinite(at)) return true; // không rõ lần kiểm tra → coi như quá hạn
+  return (Date.parse(now) - at) >= days * 86400000;
+}
+
+function planCollection(ledger, {
+  keys = null, maxAttempts = DEFAULT_MAX_ATTEMPTS, parts = PART_KEYS, retryBlocked = false, force = false,
+  refreshPolicy = {}, refreshParts = [], refreshKeys = null, now = nowIso(),
+} = {}) {
+  const policy = sanitizeRefreshPolicy(refreshPolicy);
+  const manual = new Set((refreshParts || []).filter(k => PART_KEYS.includes(k)));
+  const manualKeys = refreshKeys ? new Set(refreshKeys) : null;
   const scope = keys ? [...keys] : Object.keys(ledger?.encounters || {}).filter(k => ledger.encounters[k].in_source !== false);
   const tasks = [];
   const summary = {
     encounters: scope.length, unchanged: 0, to_fetch: 0, new_encounters: 0, parts_to_fetch: 0,
-    by_reason: {}, exhausted_parts: 0, blocked_parts: 0, deferred_encounters: 0,
+    by_reason: {}, exhausted_parts: 0, blocked_parts: 0, deferred_encounters: 0, refresh_parts: 0,
   };
   for (const key of scope) {
     const enc = ledger?.encounters?.[key];
@@ -468,7 +607,13 @@ function planCollection(ledger, { keys = null, maxAttempts = DEFAULT_MAX_ATTEMPT
       const p = enc.parts?.[k] || { status: 'pending', reason: 'missing' };
       if (DONE_STATUSES.has(p.status)) {
         if (force) { needs[k] = 'forced'; deferredOnly = false; allCurrent = false; continue; }
-        if (isStale(enc, k)) { needs[k] = 'changed'; deferredOnly = false; allCurrent = false; }
+        if (isStale(enc, k)) { needs[k] = 'changed'; deferredOnly = false; allCurrent = false; continue; }
+        if (manual.has(k) && (!manualKeys || manualKeys.has(key))) {
+          needs[k] = 'manual_refresh'; deferredOnly = false; summary.refresh_parts += 1; continue;
+        }
+        if (refreshDue(p, policy[k], now)) {
+          needs[k] = 'refresh_due'; deferredOnly = false; summary.refresh_parts += 1;
+        }
         continue;
       }
       allCurrent = false;
@@ -476,7 +621,13 @@ function planCollection(ledger, { keys = null, maxAttempts = DEFAULT_MAX_ATTEMPT
         needs[k] = isNew ? 'new' : (p.reason === 'legacy_empty_unverified' || p.reason === 'interrupted' ? p.reason : 'missing');
         deferredOnly = false;
       } else if (p.status === 'failed') {
-        if ((Number(p.attempts) || 0) >= maxAttempts && !force) { summary.exhausted_parts += 1; continue; }
+        const manualHere = manual.has(k) && (!manualKeys || manualKeys.has(key));
+        if ((Number(p.attempts) || 0) >= maxAttempts && !force) {
+          // Hết lượt tự thử lại: chỉ thử tiếp khi người dùng chủ động chọn Làm mới.
+          if (manualHere) { needs[k] = 'manual_refresh'; deferredOnly = false; continue; }
+          summary.exhausted_parts += 1;
+          continue;
+        }
         needs[k] = p.reason === 'not_found' ? 'not_found' : 'retry';
         if (p.reason !== 'not_found') deferredOnly = false;
       } else if (p.status === 'blocked') {
@@ -489,8 +640,11 @@ function planCollection(ledger, { keys = null, maxAttempts = DEFAULT_MAX_ATTEMPT
       if (allCurrent) summary.unchanged += 1;
       continue;
     }
+    // Chỉ kiểm tra lại định kỳ/làm mới (dữ liệu vẫn đủ) thì vẫn tính là lượt không đổi
+    // cho tới khi so sánh thấy khác.
+    const refreshOnly = partList.every(k => needs[k] === 'refresh_due' || needs[k] === 'manual_refresh');
     const deferred = deferredOnly;
-    tasks.push({ key, research_code: enc.research_code, patient_code: enc.patient_code, parts: partList, reasons: needs, deferred, is_new: isNew });
+    tasks.push({ key, research_code: enc.research_code, patient_code: enc.patient_code, parts: partList, reasons: needs, deferred, is_new: isNew, refresh_only: refreshOnly && allCurrent });
     summary.to_fetch += 1;
     if (isNew) summary.new_encounters += 1;
     if (deferred) summary.deferred_encounters += 1;
@@ -574,7 +728,7 @@ function exceptionRows(ledger, { keys = null, maxAttempts = DEFAULT_MAX_ATTEMPTS
   return out;
 }
 
-function buildRunReport({ before, after, plan, keys = null, maxAttempts = DEFAULT_MAX_ATTEMPTS, unmatchedEncounters = [], startedAt = '', finishedAt = nowIso(), cancelled = false, errors = [] } = {}) {
+function buildRunReport({ before, after, plan, keys = null, maxAttempts = DEFAULT_MAX_ATTEMPTS, unmatchedEncounters = [], startedAt = '', finishedAt = nowIso(), cancelled = false, errors = [], content = null, readinessChanges = [] } = {}) {
   const scope = keys ? [...keys] : Object.keys(after?.encounters || {}).filter(k => after.encounters[k].in_source !== false);
   const planned = new Map((plan?.tasks || []).map(t => [t.key, t]));
   let fetchedEncounters = 0;
@@ -590,6 +744,8 @@ function buildRunReport({ before, after, plan, keys = null, maxAttempts = DEFAUL
       const newResult = (pa?.result_at || '') !== (pb?.result_at || '');
       if (newResult && partIsCurrent(encAfter, k)) {
         gotAny = true;
+        const reason = task.reasons?.[k];
+        if (reason === 'refresh_due' || reason === 'manual_refresh') continue; // kiểm tra lại, không phải lấy bù
         if (task.is_new) newParts += 1; else backfilledParts += 1;
       }
     }
@@ -621,6 +777,11 @@ function buildRunReport({ before, after, plan, keys = null, maxAttempts = DEFAUL
     unmatched_encounters: encCount(count('unmatched')),
     needs_review: count('needs_review').length,
     exceptions_total: exceptions.length,
+    parts_rechecked: content?.rechecked || 0,
+    parts_rechecked_unchanged: content?.unchanged || 0,
+    parts_changed: (content?.changes || []).length,
+    changes: (content?.changes || []).slice(0, 500),
+    readiness_changes: (readinessChanges || []).slice(0, 500),
     plan_summary: plan?.summary || null,
     errors: (errors || []).map(e => scrubDetail(String(e).split('\n')[0])),
     exceptions,
@@ -811,6 +972,11 @@ module.exports = {
   applyDispatchOutcome,
   isStale,
   partIsCurrent,
+  sanitizeRefreshPolicy,
+  refreshDue,
+  contentHash,
+  diffRowSets,
+  applyContentVersions,
   planCollection,
   groupTasksByFetcher,
   exceptionRows,

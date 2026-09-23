@@ -1487,6 +1487,7 @@ function readArchive() {
     updated_at: meta.updated_at || '',
     fatal_alert: fatalAlert,
     error_stats: errorStats,
+    refresh_policy: collection.sanitizeRefreshPolicy(meta.refresh_policy || {}),
   };
 }
 
@@ -7016,6 +7017,92 @@ const COLLECTION_EXCEPTION_COLUMNS = [
   'attempts', 'auto_retry', 'updated_at', 'key', 'part', 'reason',
 ];
 const STUDY_READINESS_FILE = 'study_readiness.csv';
+// Lịch sử phiên bản (chỉ thêm, không ghi đè): mỗi khi lấy lại một phần mà nội dung khác
+// bản trước, ghi cả bản cũ và bản mới của đúng phần đó.
+const COLLECTION_VERSIONS_FILE = 'collection_versions.jsonl';
+const COLLECTION_CHANGES_FILE = 'collection_changes.csv';
+const COLLECTION_CHANGE_COLUMNS = ['changed_at', 'research_code', 'part_label', 'from_version', 'to_version', 'rows_added', 'rows_removed', 'trigger', 'key', 'part'];
+
+// Dữ liệu thô hiện có của từng phần, để so trước/sau khi lấy lại.
+function readCollectionPartRows(runDir) {
+  const group = (file, field) => {
+    const m = new Map();
+    for (const r of readCsvTable(path.join(runDir, file), Number.MAX_SAFE_INTEGER).rows || []) {
+      const k = String(r?.[field] || '').trim();
+      if (!k) continue;
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push(r);
+    }
+    return m;
+  };
+  return {
+    xn: group('lich_su_xn.csv', 'Mã NC'),
+    cdha: group('lich_su_cdha.csv', 'Mã NC'),
+    profile: group('hchanh_profile.csv', 'Research key'),
+    discharge: group('hchanh_discharge.csv', 'Research key'),
+    surgery: group('hchanh_surgery.csv', 'Research key'),
+    order_history: group('hchanh_order_history.csv', 'Research key'),
+  };
+}
+
+function partRowsMap(index, ledger, targets) {
+  const out = new Map();
+  for (const { key, part } of targets) {
+    const enc = ledger?.encounters?.[key];
+    // XN/CĐHA được script lưu theo Mã NC của lượt; hành chánh theo Research key.
+    const rows = (part === 'xn' || part === 'cdha') ? (index[part].get(enc?.research_code || '') || []) : (index[part]?.get(key) || []);
+    out.set(`${key}|${part}`, rows);
+  }
+  return out;
+}
+
+function appendCollectionVersions(runDir, versions) {
+  if (!versions.length) return;
+  fs.appendFileSync(path.join(runDir, COLLECTION_VERSIONS_FILE), versions.map(v => JSON.stringify(v)).join('\n') + '\n', 'utf-8');
+}
+
+function appendCollectionChanges(runDir, changes) {
+  if (!changes.length) return;
+  const file = path.join(runDir, COLLECTION_CHANGES_FILE);
+  const existing = fs.existsSync(file) ? (readCsvTable(file, Number.MAX_SAFE_INTEGER).rows || []) : [];
+  writeCsv(file, COLLECTION_CHANGE_COLUMNS, existing.concat(changes));
+}
+
+function refreshPolicyFor(isArchive, study) {
+  const raw = isArchive ? readJsonSafe(archiveMetaPath(), {})?.refresh_policy : study?.refresh_policy;
+  return collection.sanitizeRefreshPolicy(raw || {});
+}
+
+// Đánh giá đủ dùng theo yêu cầu của TỪNG nghiên cứu (kho gốc: mọi nghiên cứu; nghiên
+// cứu riêng: chính nó) trên dữ liệu hiện tại của run.
+function readinessByStudy({ isArchive, study, runDir, ledger, keys }) {
+  const studies = isArchive ? listStudies() : (study ? [study] : []);
+  if (!studies.length) return {};
+  const tables = readinessTablesForRun(runDir);
+  const out = {};
+  for (const st of studies) {
+    const r = collection.evaluateStudyReadiness({
+      ledger, keys, requirements: collection.requirementsFromStudy(st), tables,
+      maxAttempts: Number(st?.data_requirements?.max_attempts) || collection.DEFAULT_MAX_ATTEMPTS,
+    });
+    out[st.id] = { name: st.name || st.id, counts: r.counts, rows: new Map(r.rows.map(x => [x.key, x])), all: r.rows };
+  }
+  return out;
+}
+
+function readinessDiff(beforeMap, afterMap, keysOfInterest) {
+  const changes = [];
+  for (const [studyId, after] of Object.entries(afterMap || {})) {
+    const before = beforeMap?.[studyId];
+    for (const key of keysOfInterest) {
+      const a = after.rows.get(key);
+      const b = before?.rows?.get(key);
+      if (!a || (b && b.readiness === a.readiness)) continue;
+      changes.push({ study_id: studyId, study_name: after.name, key, research_code: a.research_code, before: b?.readiness || '', after: a.readiness, reasons: a.reasons });
+    }
+  }
+  return changes;
+}
 const IN_RUN_RETRY_REASONS = new Set(['retry']);
 
 function buildCollectionLedgerForRun(runDir, sourceRows, previous) {
@@ -7070,7 +7157,7 @@ function collectionStatusSummary(ledger, keys) {
 function writeCollectionOutputs(runDir, report) {
   writeJsonAtomic(path.join(runDir, COLLECTION_REPORT_FILE), report);
   writeCsv(path.join(runDir, COLLECTION_EXCEPTIONS_FILE), COLLECTION_EXCEPTION_COLUMNS, report.exceptions || []);
-  const { exceptions, ...summary } = report;
+  const { exceptions, changes, readiness_changes: readinessChanges, ...summary } = report;
   try {
     fs.appendFileSync(path.join(runDir, COLLECTION_HISTORY_FILE), `${JSON.stringify(summary)}\n`, 'utf-8');
   } catch (_) {}
@@ -7120,7 +7207,8 @@ const DEFAULT_COLLECTION_RUNNERS = {
 async function runCollectionOrchestration(ctx, {
   runDir, runId, scope, isArchive = true, sourceRows = [], fromDate = '', toDate = '', headless = true,
   maxAttempts = collection.DEFAULT_MAX_ATTEMPTS, maxPasses = 2, force = false, retryBlocked = false,
-  parts = collection.PART_KEYS, limit = 0,
+  parts = collection.PART_KEYS, limit = 0, refreshPolicy = {}, refreshParts = [], refreshKeys = null, study = null,
+  now = null,
 } = {}, runners = DEFAULT_COLLECTION_RUNNERS) {
   const startedAt = nowIso();
   const keys = sourceKeysOf(sourceRows);
@@ -7130,9 +7218,15 @@ async function runCollectionOrchestration(ctx, {
     if (key && !rowByKey.has(key)) rowByKey.set(key, row);
   }
   const first = syncCollectionLedger(runDir, sourceRows);
-  const plan = collection.planCollection(first, { keys, maxAttempts, parts, retryBlocked, force });
+  const plan = collection.planCollection(first, { keys, maxAttempts, parts, retryBlocked, force, refreshPolicy, refreshParts, refreshKeys, now: now || nowIso() });
   if (limit > 0) plan.tasks = plan.tasks.slice(0, limit);
-  appendResearchRunLog(runDir, `[COLLECT] Bắt đầu: ${keys.length} lượt | cần lấy ${plan.tasks.length} lượt (${plan.summary.parts_to_fetch} phần) | không đổi ${plan.summary.unchanged} | hết lượt thử ${plan.summary.exhausted_parts} phần | cần người xem ${plan.summary.blocked_parts} phần`);
+  appendResearchRunLog(runDir, `[COLLECT] Bắt đầu: ${keys.length} lượt | cần lấy ${plan.tasks.length} lượt (${plan.summary.parts_to_fetch} phần, trong đó kiểm tra lại ${plan.summary.refresh_parts}) | không đổi ${plan.summary.unchanged} | hết lượt thử ${plan.summary.exhausted_parts} phần | cần người xem ${plan.summary.blocked_parts} phần`);
+
+  let readinessBefore = {};
+  try { readinessBefore = readinessByStudy({ isArchive, study, runDir, ledger: first, keys }); } catch (err) { console.error('[COLLECT] readiness(before)', err.message); }
+  const reasonById = {};
+  for (const t of plan.tasks) for (const pk of t.parts) reasonById[`${t.key}|${pk}`] = t.reasons[pk];
+  const content = { changes: [], rechecked: 0, unchanged: 0, first: 0 };
 
   let current = first;
   let cancelled = false;
@@ -7151,6 +7245,8 @@ async function runCollectionOrchestration(ctx, {
     if (!tasks.length) break;
     const before = current;
     const dispatched = [];
+    const targets = tasks.flatMap(t => t.parts.map(pk => ({ key: t.key, part: pk })));
+    const beforeRows = partRowsMap(readCollectionPartRows(runDir), before, targets);
     const groups = collection.groupTasksByFetcher(tasks);
     const rowsFor = list => list.map(t => rowByKey.get(t.key)).filter(Boolean);
     const cancelNow = () => { if (isCancelRequested(ctx.sid)) cancelled = true; return cancelled; };
@@ -7198,6 +7294,16 @@ async function runCollectionOrchestration(ctx, {
     const after = buildCollectionLedgerForRun(runDir, sourceRows, before);
     // Dừng giữa chừng: phần chưa tới lượt không bị tính là worker không trả kết quả.
     if (!cancelled) collection.applyDispatchOutcome(before, after, dispatched);
+    // So dữ liệu mới với bản trước: giống → chỉ ghi "đã kiểm tra"; khác → phiên bản mới,
+    // bản cũ và bản mới đều được lưu vào lịch sử (chỉ thêm).
+    const afterRows = partRowsMap(readCollectionPartRows(runDir), after, dispatched);
+    const cv = collection.applyContentVersions({ before, after, targets: dispatched, beforeRows, afterRows, reasons: reasonById });
+    appendCollectionVersions(runDir, cv.versions);
+    appendCollectionChanges(runDir, cv.changes);
+    content.changes.push(...cv.changes);
+    content.rechecked += cv.rechecked;
+    content.unchanged += cv.unchanged;
+    content.first += cv.first;
     writeJsonAtomic(path.join(runDir, COLLECTION_LEDGER_FILE), after);
     current = after;
     if (cancelled) break;
@@ -7209,7 +7315,23 @@ async function runCollectionOrchestration(ctx, {
   } catch (err) {
     errors.push(`Chuẩn hóa: ${err.message || err}`);
   }
+  // Sau khi cập nhật: đánh giá lại các lượt vừa lấy theo yêu cầu của từng nghiên cứu.
+  let readinessChanges = [];
+  let readinessSummary = {};
+  try {
+    const readinessAfter = readinessByStudy({ isArchive, study, runDir, ledger: current, keys });
+    const touched = new Set(plan.tasks.map(t => t.key));
+    readinessChanges = readinessDiff(readinessBefore, readinessAfter, touched);
+    readinessSummary = Object.fromEntries(Object.entries(readinessAfter).map(([id, r]) => [id, { name: r.name, counts: r.counts }]));
+    if (!isArchive && study && readinessAfter[study.id]) {
+      writeCsv(path.join(runDir, STUDY_READINESS_FILE), ['research_code', 'encounter_id', 'readiness', 'reasons', 'missing_parts', 'review_parts', 'key'], readinessAfter[study.id].all);
+    }
+  } catch (err) {
+    errors.push(`Đánh giá đủ dùng: ${err.message || err}`);
+  }
   const report = collection.buildRunReport({
+    content,
+    readinessChanges,
     before: first,
     after: current,
     plan,
@@ -7225,8 +7347,10 @@ async function runCollectionOrchestration(ctx, {
   report.scope = scope;
   report.max_attempts = maxAttempts;
   report.progress_unattributed = current.unmatched_progress || 0;
+  report.refresh_policy = collection.sanitizeRefreshPolicy(refreshPolicy);
+  report.readiness_by_study = readinessSummary;
   writeCollectionOutputs(runDir, report);
-  appendResearchRunLog(runDir, `[COLLECT] ${cancelled ? 'Đã dừng' : 'Xong'}: đã lấy ${report.fetched_encounters} lượt | bỏ qua vì không đổi ${report.skipped_unchanged} | lấy bù ${report.parts_backfilled} phần | lỗi Selenium còn tồn ${report.selenium_errors_open} phần | không ghép chắc ${report.unmatched_encounters} lượt`);
+  appendResearchRunLog(runDir, `[COLLECT] ${cancelled ? 'Đã dừng' : 'Xong'}: đã lấy ${report.fetched_encounters} lượt | bỏ qua vì không đổi ${report.skipped_unchanged} | lấy bù ${report.parts_backfilled} phần | kiểm tra lại ${report.parts_rechecked} phần, có thay đổi ${report.parts_changed} | lỗi Selenium còn tồn ${report.selenium_errors_open} phần | không ghép chắc ${report.unmatched_encounters} lượt | đổi mức đủ dùng ${report.readiness_changes.length}`);
   return { report, normalized, ledger: current };
 }
 
@@ -7239,7 +7363,7 @@ function collectionScopeFromRequest(req, studyIdParam = '') {
     const fromDate = String(req.body?.fromDate || archive.scan_from_date || '').trim();
     const toDate = String(req.body?.toDate || archive.scan_to_date || todayDateInput()).trim();
     const src = readResearchHchanhSourceRows(runDir, archiveSourcePath(), { sourceRunId: runId, dateDefaults: { from_date: fromDate, to_date: toDate } });
-    return { isArchive: true, scope: ARCHIVE_ID, runId, runDir, fromDate: src.date_context?.from_date || fromDate, toDate: src.date_context?.to_date || toDate, sourceRows: src.rows || [], study: null };
+    return { isArchive: true, scope: ARCHIVE_ID, runId, runDir, fromDate: src.date_context?.from_date || fromDate, toDate: src.date_context?.to_date || toDate, sourceRows: src.rows || [], study: null, refreshPolicy: refreshPolicyFor(true, null) };
   }
   const study = readStudy(studyIdParam);
   if (!study) return { error: 'Không tìm thấy nghiên cứu.', status: 404 };
@@ -7249,7 +7373,7 @@ function collectionScopeFromRequest(req, studyIdParam = '') {
   const fromDate = String(req.body?.fromDate || '').trim();
   const toDate = String(req.body?.toDate || todayDateInput()).trim();
   const src = readResearchHchanhSourceRows(runDir, cohortPath(study.id), { sourceRunId: runId });
-  return { isArchive: false, scope: study.id, runId, runDir, fromDate: src.date_context?.from_date || fromDate, toDate: src.date_context?.to_date || toDate, sourceRows: src.rows || [], study };
+  return { isArchive: false, scope: study.id, runId, runDir, fromDate: src.date_context?.from_date || fromDate, toDate: src.date_context?.to_date || toDate, sourceRows: src.rows || [], study, refreshPolicy: refreshPolicyFor(false, study) };
 }
 
 function maxAttemptsFrom(req, study) {
@@ -7275,6 +7399,11 @@ async function handleCollectAuto(req, res, studyIdParam = '') {
       retryBlocked: req.body?.retryBlocked === true,
       parts: requestedParts.length ? requestedParts : collection.PART_KEYS,
       limit: Number.isFinite(Number(req.body?.limit)) ? Math.max(0, Math.trunc(Number(req.body.limit))) : 0,
+      // "Làm mới": người dùng chọn kiểm tra lại các phần này (tùy chọn chỉ vài lượt).
+      refreshParts: Array.isArray(req.body?.refreshParts) ? req.body.refreshParts.filter(p => collection.PART_KEYS.includes(p)) : [],
+      refreshKeys: Array.isArray(req.body?.refreshKeys) && req.body.refreshKeys.length ? req.body.refreshKeys.map(String).slice(0, 20000) : null,
+      refreshPolicy: sc.refreshPolicy,
+      study: sc.study,
     };
     const task = beginResearchTask(sc.runDir, {
       type: 'collect_auto', label: 'Thu thập tự động', status: 'queued', scope: sc.scope, run_id: sc.runId,
@@ -7288,7 +7417,7 @@ async function handleCollectAuto(req, res, studyIdParam = '') {
         const metaPatch = { last_run_id: sc.runId, last_run_at: nowIso(), last_normalized_at: nowIso(), last_collect_at: nowIso() };
         if (sc.isArchive) updateArchive({ ...metaPatch, active_run_id: '', active_mode: '' });
         else updateStudy(sc.scope, metaPatch);
-        const message = `${report.cancelled ? 'Đã dừng' : 'Xong'}: lấy ${report.fetched_encounters} lượt, bỏ qua ${report.skipped_unchanged} lượt không đổi, lấy bù ${report.parts_backfilled} phần, lỗi còn tồn ${report.selenium_errors_open} phần, không ghép chắc ${report.unmatched_encounters} lượt.`;
+        const message = `${report.cancelled ? 'Đã dừng' : 'Xong'}: lấy ${report.fetched_encounters} lượt, bỏ qua ${report.skipped_unchanged} lượt không đổi, lấy bù ${report.parts_backfilled} phần, kiểm tra lại ${report.parts_rechecked} phần (${report.parts_changed} phần có thay đổi), lỗi còn tồn ${report.selenium_errors_open} phần, không ghép chắc ${report.unmatched_encounters} lượt.`;
         finishResearchTask(sc.runDir, task.id, report.cancelled ? 'cancelled' : (report.errors.length ? 'error' : 'done'), { message });
         const redact = researchResponseShouldRedact(req);
         return res.json({
@@ -7315,7 +7444,7 @@ function handleCollectionStatus(req, res, studyIdParam = '') {
     const keys = sourceKeysOf(sc.sourceRows);
     const ledger = sc.sourceRows.length ? syncCollectionLedger(sc.runDir, sc.sourceRows) : { encounters: {} };
     const maxAttempts = maxAttemptsFrom(req, sc.study);
-    const plan = collection.planCollection(ledger, { keys, maxAttempts });
+    const plan = collection.planCollection(ledger, { keys, maxAttempts, refreshPolicy: sc.refreshPolicy });
     const exceptions = collection.exceptionRows(ledger, { keys, maxAttempts, unmatchedEncounters: unresolvedEncountersForRun(sc.runDir) });
     const lastReport = readJsonSafe(path.join(sc.runDir, COLLECTION_REPORT_FILE), null);
     const redact = researchResponseShouldRedact(req);
@@ -7323,6 +7452,7 @@ function handleCollectionStatus(req, res, studyIdParam = '') {
       status: 'ok',
       run_id: sc.runId,
       max_attempts: maxAttempts,
+      refresh_policy: sc.refreshPolicy,
       summary: collectionStatusSummary(ledger, keys),
       next_plan: plan.summary,
       last_report: lastReport ? { ...lastReport, exceptions: undefined } : null,
@@ -7409,6 +7539,44 @@ router.get('/research/archive/readiness', (req, res) => {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }
 });
+
+// Chính sách làm mới riêng từng phần (số ngày kể từ lần kiểm tra gần nhất; trống = không
+// tự kiểm tra lại). Kho gốc và mỗi nghiên cứu có chính sách riêng.
+router.post('/research/archive/refresh-policy', (req, res) => {
+  try {
+    const policy = collection.sanitizeRefreshPolicy(req.body?.refresh_policy || req.body || {});
+    updateArchive({ refresh_policy: policy });
+    return res.json({ status: 'ok', refresh_policy: policy });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+router.post('/research/studies/:studyId/refresh-policy', (req, res) => {
+  try {
+    const study = readStudy(req.params.studyId);
+    if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
+    const policy = collection.sanitizeRefreshPolicy(req.body?.refresh_policy || req.body || {});
+    updateStudy(study.id, { refresh_policy: policy });
+    return res.json({ status: 'ok', refresh_policy: policy });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+// Lịch sử thay đổi nội dung (phần nào, phiên bản nào, thêm/bớt bao nhiêu dòng).
+function handleCollectionChanges(req, res, studyIdParam = '') {
+  try {
+    const sc = collectionScopeFromRequest(req, studyIdParam);
+    if (sc.error) return res.status(sc.status || 400).json({ status: 'error', message: sc.error });
+    const rows = readCsvTable(path.join(sc.runDir, COLLECTION_CHANGES_FILE), Number.MAX_SAFE_INTEGER).rows || [];
+    return res.json({ status: 'ok', run_id: sc.runId, total: rows.length, changes: rows.slice(-1000).reverse() });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+}
+router.get('/research/archive/collection-changes', (req, res) => handleCollectionChanges(req, res));
+router.get('/research/studies/:studyId/collection-changes', (req, res) => handleCollectionChanges(req, res, req.params.studyId));
 
 // Yêu cầu dữ liệu của đề cương: phần bắt buộc + dữ liệu phải có (ví dụ CT).
 router.post('/research/studies/:studyId/data-requirements', (req, res) => {
@@ -8102,4 +8270,4 @@ module.exports = router;
 module.exports._fetchHchanhForResearchRun = fetchHchanhForResearchRun;
 // Danh sách cột chuẩn hóa, dùng để đối chiếu từ điển dữ liệu (server/research/data_dictionary.js).
 module.exports.NORMALIZED_COLUMNS = NORMALIZED_COLUMNS;
-module.exports._test = { normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, runCollectionOrchestration, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };
+module.exports._test = { normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, runCollectionOrchestration, readCollectionPartRows, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };

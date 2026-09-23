@@ -106,6 +106,34 @@ thuật, Y lệnh) được lưu ở `collection_ledger.json`:
   được lấy lại **một lần** để xác nhận EMR thật sự không có. Lý do là bản cũ không phân
   biệt được hai trường hợp này.
 
+**Kết quả bị sửa trên EMR mà dòng danh sách không đổi.** Chữ ký danh sách không bắt
+được trường hợp này, nên có thêm:
+
+- **Lần kiểm tra gần nhất** của từng phần, từng lượt: `last_check_at` trong sổ, lấy
+  theo lúc worker thật sự đọc EMR.
+- **Chính sách làm mới riêng từng phần** (`POST .../refresh-policy`, ví dụ
+  `{"xn": 14, "cdha": 30}` ngày). Kho gốc và mỗi nghiên cứu có chính sách riêng. Phần
+  không đặt hạn thì **không** tự kiểm tra lại; không có một khoảng thời gian chung cho mọi
+  loại dữ liệu. Nút **Làm mới** kiểm tra lại ngay các phần người dùng chọn. Làm mới thủ
+  công cũng thử lại phần đã hết lượt tự thử lại.
+- **So sánh khi lấy lại:**
+  - Dữ liệu mới được so với bản trước. Các cột kỹ thuật như run, nguồn, URL phiên không
+    được tính vào so sánh.
+  - Nếu giống, phần đó chỉ được ghi "đã kiểm tra, không đổi"; phiên bản giữ nguyên.
+  - Nếu khác, phiên bản tăng lên và **cả bản cũ lẫn bản mới** được ghi vào
+    `collection_versions.jsonl`. File này chỉ thêm, không ghi đè.
+  - Mỗi thay đổi được ghi một dòng vào `collection_changes.csv`: phần nào, phiên bản
+    nào, thêm/bớt bao nhiêu dòng, do quá hạn hay do bấm Làm mới. File này chỉ có Mã NC,
+    không có Mã BN.
+  - `collection_versions.jsonl` chứa dữ liệu lâm sàng thô như các file CSV trong run, nên
+    có cùng mức nhạy cảm.
+- **Sau khi cập nhật**, hệ thống tự chạy lại chuẩn hóa, rồi đánh giá lại các lượt vừa lấy
+  theo yêu cầu của từng nghiên cứu:
+  - Kho gốc được đánh giá theo mọi nghiên cứu; nghiên cứu riêng thì theo chính nó.
+  - Lượt nào đổi mức đủ dùng được liệt kê trong báo cáo (`readiness_changes`).
+- Chỉ lần lấy qua **Thu thập tự động** mới được so sánh và lưu phiên bản. Các nút chạy
+  từng bước cũ vẫn thay dữ liệu như trước, không lưu bản cũ.
+
 **Báo cáo sau mỗi đợt** (`collection_report.json`; lịch sử chỉ gồm số đếm ở
 `collection_history.jsonl`). Báo cáo gồm: số ca đã lấy, số ca bỏ qua vì không đổi, số
 phần đã tự lấy bù, số lỗi Selenium còn tồn, số ca không thể ghép chắc chắn. Chỉ các ca

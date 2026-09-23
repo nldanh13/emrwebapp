@@ -1162,6 +1162,10 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
   const [readiness, setReadiness] = useState(null);
   const [showReq, setShowReq] = useState(false);
   const [req, setReq] = useState({ parts: [], items: [] });
+  const [showRefresh, setShowRefresh] = useState(false);
+  const [policy, setPolicy] = useState({});
+  const [refreshParts, setRefreshParts] = useState([]);
+  const [changes, setChanges] = useState(null);
   const t = (msg, type) => { if (toast) toast(msg, type); };
 
   const load = useCallback(async () => {
@@ -1169,6 +1173,7 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
     try {
       const r = await api.getResearchCollectionStatus(studyId);
       setStatus(r);
+      setPolicy(r?.refresh_policy || {});
       if (studyId) {
         try { setReadiness(await api.getResearchStudyReadiness(studyId)); } catch (_) { setReadiness(null); }
       }
@@ -1185,13 +1190,14 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
     setReq({ parts: Array.isArray(dr.parts) ? dr.parts : [], items: Array.isArray(dr.items) ? dr.items : [] });
   }, [study?.id, study?.data_requirements]);
 
-  const run = async () => {
+  const run = async (manualParts = []) => {
     setRunning(true);
     try {
       const r = await api.collectResearchAuto(studyId, {
         headless: options.headless !== false,
         fromDate: options.fromDate || '',
         toDate: options.toDate || todayInputDate(),
+        refreshParts: manualParts,
       });
       t(r.message || 'Đã thu thập tự động.', r.cancelled ? 'info' : 'ok');
       await load();
@@ -1200,6 +1206,27 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
       t(String(e.message || e), 'error');
     } finally {
       setRunning(false);
+    }
+  };
+
+  const savePolicy = async () => {
+    try {
+      const clean = Object.fromEntries(Object.entries(policy).filter(([, v]) => Number(v) >= 1));
+      const r = await api.updateResearchRefreshPolicy(studyId, clean);
+      setPolicy(r?.refresh_policy || clean);
+      t('Đã lưu chính sách làm mới.', 'ok');
+      await load();
+    } catch (e) {
+      t(String(e.message || e), 'error');
+    }
+  };
+
+  const loadChanges = async () => {
+    try {
+      const r = await api.getResearchCollectionChanges(studyId);
+      setChanges(Array.isArray(r?.changes) ? r.changes : []);
+    } catch (e) {
+      t(String(e.message || e), 'error');
     }
   };
 
@@ -1231,7 +1258,8 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
           Chỉ lấy ca mới, phần còn thiếu, phần lỗi (tự thử lại tối đa {status?.max_attempts || 3} lần) và ca mà EMR đã thay đổi.
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
-          <Btn variant="primary" onClick={run} disabled={busy} style={{ height: 26, padding: '0 12px', fontSize: 11 }}>
+          <Btn onClick={() => setShowRefresh(v => !v)} style={{ height: 26, padding: '0 9px', fontSize: 10 }}>{showRefresh ? 'Đóng làm mới' : 'Làm mới…'}</Btn>
+          <Btn variant="primary" onClick={() => run([])} disabled={busy} style={{ height: 26, padding: '0 12px', fontSize: 11 }}>
             {running ? <><Spinner size={9} /> Đang thu thập</> : 'Thu thập tự động'}
           </Btn>
           <Btn onClick={load} disabled={loading} style={{ height: 26, padding: '0 9px', fontSize: 10 }}>{loading ? <Spinner size={8} /> : '↻'}</Btn>
@@ -1254,6 +1282,9 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
           <StatBadge label="phần đã tự lấy bù" value={report.parts_backfilled || 0} tone="ok" />
           <StatBadge label="lỗi Selenium còn tồn" value={report.selenium_errors_open || 0} tone={report.selenium_errors_open ? 'danger' : 'neutral'} />
           <StatBadge label="ca không ghép chắc" value={report.unmatched_encounters || 0} tone={report.unmatched_encounters ? 'warn' : 'neutral'} />
+          {!!report.parts_rechecked && <StatBadge label="phần kiểm tra lại" value={report.parts_rechecked} tone="info" />}
+          {!!report.parts_rechecked && <StatBadge label="có thay đổi" value={report.parts_changed || 0} tone={report.parts_changed ? 'warn' : 'neutral'} />}
+          {!!(report.readiness_changes || []).length && <StatBadge label="đổi mức đủ dùng" value={report.readiness_changes.length} tone="info" />}
         </div>
       ) : (
         <div style={{ fontSize: 10.5, color: C.text3 }}>Chưa chạy thu thập tự động lần nào.</div>
@@ -1301,6 +1332,54 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
             <Btn variant="primary" onClick={saveRequirements} style={{ height: 24, padding: '0 10px', fontSize: 10 }}>Lưu</Btn>
             <span style={{ fontSize: 10, color: C.text3 }}>Ca đã lấy đủ nhưng EMR không có dữ liệu bắt buộc (ví dụ không có CT) được ghi "không đạt điều kiện đề tài", không phải "thiếu".</span>
           </div>
+        </div>
+      )}
+
+      {showRefresh && (
+        <div style={{ borderTop: `1px solid ${C.border2}`, paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
+          <div style={{ fontSize: 10.5, color: C.text2 }}>
+            <b>Chính sách làm mới:</b> kiểm tra lại một phần khi lần kiểm tra gần nhất đã quá số ngày đặt cho phần đó.
+            Để trống = không tự kiểm tra lại (chỉ lấy lại khi danh sách EMR đổi hoặc bấm Làm mới).
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            {COLLECTION_PARTS.map(([id, label]) => (
+              <label key={id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: C.text2 }}>
+                {label}
+                <input type="number" min="1" max="3650" value={policy[id] ?? ''} placeholder="—"
+                  onChange={e => setPolicy(p => ({ ...p, [id]: e.target.value === '' ? undefined : Number(e.target.value) }))}
+                  style={{ ...inp, width: 56, fontSize: 11 }} />
+                <span style={{ color: C.text3 }}>ngày</span>
+              </label>
+            ))}
+            <Btn onClick={savePolicy} style={{ height: 24, padding: '0 10px', fontSize: 10 }}>Lưu chính sách</Btn>
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', fontSize: 11, color: C.text2 }}>
+            <b>Làm mới ngay:</b>
+            {COLLECTION_PARTS.map(([id, label]) => (
+              <label key={id} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                <input type="checkbox" checked={refreshParts.includes(id)}
+                  onChange={e => setRefreshParts(p => e.target.checked ? [...p, id] : p.filter(x => x !== id))} />
+                {label}
+              </label>
+            ))}
+            <Btn variant="solidWarn" onClick={() => run(refreshParts)} disabled={busy || !refreshParts.length} style={{ height: 24, padding: '0 10px', fontSize: 10 }}>
+              Làm mới phần đã chọn
+            </Btn>
+            <span style={{ fontSize: 10, color: C.text3 }}>Lấy lại các phần này cho mọi lượt, so với bản trước: không đổi thì giữ nguyên, đổi thì lưu phiên bản mới.</span>
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <Btn onClick={loadChanges} style={{ height: 24, padding: '0 9px', fontSize: 10 }}>Xem lịch sử thay đổi</Btn>
+            {changes && !changes.length && <span style={{ fontSize: 10, color: C.text3 }}>Chưa ghi nhận thay đổi nào.</span>}
+          </div>
+          {!!changes?.length && (
+            <SmallRowsTable max={100} rows={changes.map(c => ({ ...c, at: c.changed_at ? new Date(c.changed_at).toLocaleString('vi-VN') : '', version: `v${c.from_version} → v${c.to_version}`, diff: `+${c.rows_added} / −${c.rows_removed}` }))} columns={[
+              { key: 'at', label: 'Thời điểm' },
+              { key: 'research_code', label: 'Mã NC' },
+              { key: 'part_label', label: 'Phần' },
+              { key: 'version', label: 'Phiên bản' },
+              { key: 'diff', label: 'Dòng thêm/bớt' },
+            ]} />
+          )}
         </div>
       )}
 
