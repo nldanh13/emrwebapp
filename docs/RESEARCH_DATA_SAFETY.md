@@ -134,6 +134,36 @@ thuật, Y lệnh) được lưu ở `collection_ledger.json`:
 - Chỉ lần lấy qua **Thu thập tự động** mới được so sánh và lưu phiên bản. Các nút chạy
   từng bước cũ vẫn thay dữ liệu như trước, không lưu bản cũ.
 
+**Giao dịch làm mới có thể khôi phục.** Mỗi lượt giao việc cho worker là một giao dịch
+trong `<run>/.collection_txn/<id>/`:
+
+1. **Chuẩn bị** (trước khi worker thay dữ liệu): chụp dữ liệu cũ của đúng các phần sẽ lấy
+   (`before_rows.json`) và sổ hiện tại (`before_ledger.json`). Sau đó mới ghi
+   `journal.json`; có journal nghĩa là ảnh chụp đã đủ.
+2. **Đã lấy**: worker chạy xong. CSV và progress có thể đã đổi.
+3. **Hoàn tất**: so sánh, rồi ghi lần lượt lịch sử phiên bản, lịch sử thay đổi, sổ thu
+   thập. Journal ghi lại bước nào đã xong. Mỗi bước tự bỏ qua phần đã ghi vì phiên bản và
+   thay đổi có id ổn định (lượt + phần + số phiên bản + hash nội dung), nên chạy lại không
+   tạo bản trùng.
+4. **Kết thúc**: xóa thư mục giao dịch, ghi một dòng không định danh vào
+   `collection_txn_log.jsonl`.
+
+Khi bấm Thu thập tự động hoặc xem trạng thái, giao dịch dở dang của lần chạy trước (không
+thuộc tiến trình đang chạy) được hoàn tất **trước** khi đọc progress. Bản cũ lấy từ ảnh
+chụp, nên không mất dù CSV đã bị thay.
+
+- Commit dở của script XN/CĐHA (`.commit_*`) được trả lại bản backup trước khi so sánh.
+- Nếu worker đã ghi CSV mà chưa kịp ghi progress, thay đổi vẫn được lưu phiên bản, với kết
+  quả `changed_unconfirmed`.
+- Worker hành chánh nay ghi CSV **trước**, progress **sau**. Trước đây có thể có progress
+  "xong" mà CSV chưa có dữ liệu.
+- Dòng lịch sử bị cắt dở do dừng đột ngột được bỏ qua và ghi lại đầy đủ.
+
+Thư mục `.collection_txn` chứa dữ liệu lâm sàng thô (ảnh chụp bản cũ), nên được tạo với
+quyền 700/600 (chỉ chủ sở hữu, trên Linux/macOS) và bị xóa ngay khi giao dịch kết thúc.
+Trên Windows, quyền thư mục theo quyền của thư mục `.runtime`. Hệ thống không sửa dữ liệu
+trên EMR và không xóa lịch sử phiên bản đã lưu.
+
 **Báo cáo sau mỗi đợt** (`collection_report.json`; lịch sử chỉ gồm số đếm ở
 `collection_history.jsonl`). Báo cáo gồm: số ca đã lấy, số ca bỏ qua vì không đổi, số
 phần đã tự lấy bù, số lỗi Selenium còn tồn, số ca không thể ghép chắc chắn. Chỉ các ca
