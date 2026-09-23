@@ -156,6 +156,23 @@ test('Dòng chuyển khoa chung Mã nội trú gộp thành 1 đợt, ngày vào
   assert.strictEqual(enc.admission_date, '2026-02-20 08:00');
 });
 
+test('XN: dòng giống hệt nhau giữ một (cảnh báo, không chặn); cùng giờ + chỉ số mà khác kết quả thì giữ cả hai và đưa vào duyệt', () => {
+  const runDir = newRunDir();
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), INITIAL_COLS, INITIAL_ROWS);
+  const xnCols = ['Mã BN', 'Mã điều trị', 'TG chỉ định', 'Chỉ số', 'Kết quả', 'Đơn vị'];
+  const hb = { 'Mã BN': '111', 'Mã điều trị': 'nt-a', 'TG chỉ định': '07:30 21/02/2026', 'Chỉ số': 'Hb', 'Kết quả': '125', 'Đơn vị': 'g/L' };
+  const crp = { 'Mã BN': '111', 'Mã điều trị': 'nt-a', 'TG chỉ định': '07:30 21/02/2026', 'Chỉ số': 'CRP', 'Kết quả': '5', 'Đơn vị': 'mg/L' };
+  writeCsv(path.join(runDir, 'lich_su_xn.csv'), xnCols, [hb, { ...hb }, crp, { ...crp, 'Kết quả': '50' }]);
+  const out = R.normalizeRunOutputs(runDir, { sourceRunId: 'r' });
+  assert.strictEqual(out.lab_results, 3, 'Hb trùng giữ 1, CRP mâu thuẫn giữ cả 2');
+  const qa = JSON.parse(fs.readFileSync(path.join(runDir, 'qa_report.json'), 'utf-8'));
+  assert.ok(!qa.blocking.some(b => b.code === 'duplicate_row_id'), JSON.stringify(qa.blocking));
+  assert.ok(qa.warnings.some(w => w.code === 'duplicate_raw_rows_removed' && w.count === 1));
+  assert.ok(qa.warnings.some(w => w.code === 'conflicting_results' && w.table === 'lab_results'));
+  const review = readCsv(path.join(runDir, 'encounter_review.csv')).filter(r => r.issue === 'conflicting_lab_result');
+  assert.strictEqual(review.length, 1);
+});
+
 test('Báo cáo chất lượng: trùng khóa và mồ côi khóa ngoại là lỗi chặn; ghép mơ hồ là cảnh báo', () => {
   const encounters = [
     { encounter_id: 'e1', research_code: 'NC1', patient_code: 'p1', admission_date: '2026-01-01', discharge_date: '2026-01-05' },

@@ -2807,7 +2807,8 @@ function copyRowsByPatients(sourceFile, targetFile, patientSet, codeMap) {
 // v10: Mã NC duy nhất/ổn định, ghép theo Research key, qa_report.json +
 // encounter_review.csv + normalize_state.json + normalize_history.jsonl.
 // v11: gộp dòng chuyển khoa chung Mã nội trú lấy ngày vào sớm nhất.
-const NORMALIZED_SCHEMA_VERSION = 11;
+// v12: bỏ dòng XN/CĐHA thô giống hệt nhau; QA báo kết quả mâu thuẫn.
+const NORMALIZED_SCHEMA_VERSION = 12;
 
 const NORMALIZED_COLUMNS = {
   patients: [
@@ -5281,7 +5282,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   const patients = Array.from(patientByCode.values()).sort((a, b) => String(a.patient_code).localeCompare(String(b.patient_code)));
 
   const labRaw = readCsvTable(path.join(dir, 'lich_su_xn.csv'), Number.MAX_SAFE_INTEGER).rows;
-  const labResults = labRaw.map((row, idx) => {
+  const labResultsAll = labRaw.map((row, idx) => {
     const code = patientCode(row);
     const ctx = contextForRow(ctxMap, row, code);
     const rawTime = firstNonEmpty(row, ['TG xét nghiệm', 'Thời gian xét nghiệm', 'TG chỉ định', 'Thời gian', 'Ngày xét nghiệm', 'Ngày chỉ định']);
@@ -5312,9 +5313,13 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     base.lab_result_id = `lab_${base.row_hash || stableHash([idx, base.patient_code])}`;
     return base;
   });
+  // Cùng BN + cùng thời điểm + cùng chỉ số là CÙNG một kết quả (bệnh viện xác nhận):
+  // dòng thô giống hệt nhau (do lấy lại, ghi nối) chỉ giữ một. Dòng cùng thời điểm/
+  // chỉ số nhưng kết quả khác nhau KHÔNG bị bỏ — QA báo mâu thuẫn để người kiểm tra.
+  const labResults = dedupeRowsByHash(labResultsAll);
 
   const imagingRaw = readCsvTable(path.join(dir, 'lich_su_cdha.csv'), Number.MAX_SAFE_INTEGER).rows;
-  const imagingResults = imagingRaw.map((row, idx) => {
+  const imagingResultsAll = imagingRaw.map((row, idx) => {
     const code = patientCode(row);
     const ctx = contextForRow(ctxMap, row, code);
     const rawTime = firstNonEmpty(row, ['TG chỉ định', 'TG chi dinh', 'Thời gian', 'Ngày chỉ định']);
@@ -5339,6 +5344,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     base.imaging_id = `img_${base.row_hash || stableHash([idx, base.patient_code])}`;
     return base;
   });
+  const imagingResults = dedupeRowsByHash(imagingResultsAll);
 
   const diagnosisRows = [];
   for (const enc of finalEncounters) {
@@ -5911,6 +5917,10 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   const qaReport = quality.buildQualityReport({
     runId,
     runDir: dir,
+    duplicatesRemoved: {
+      lab_results: labResultsAll.length - labResults.length,
+      imaging_results: imagingResultsAll.length - imagingResults.length,
+    },
     tables: {
       patients, encounters: finalEncounters, diagnoses,
       lab_results: labResults, imaging_results: imagingResults, surgery_results: surgeryResults,
