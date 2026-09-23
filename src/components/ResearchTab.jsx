@@ -815,21 +815,35 @@ function ModuleProgressCard({ part }) {
   const waiting = Number(part.waiting || 0);
   const missing = Math.max(0, Number(part.missing || 0) + waiting);
   const pct = total ? Math.max(0, Math.min(100, Math.round(done * 100 / total))) : 0;
-  const fill = error ? C.red : running ? C.blue : missing ? C.amber : C.green;
+  // Thanh chia đoạn theo đúng tỷ lệ: xanh lá = đã lấy, xanh dương = đang lấy,
+  // đỏ = lỗi, phần xám còn lại = chưa lấy. Trước đây cả thanh đổi màu đỏ chỉ vì
+  // có 1 ca lỗi, nên 91% đã lấy trông như hỏng hết.
+  const segments = [
+    [done, C.green, 'đã lấy'],
+    [running, C.blue, 'đang lấy'],
+    [error, C.red, 'lỗi'],
+  ].filter(([n]) => n > 0);
   return (
     <div style={{ background: 'transparent', padding: '6px 2px 7px', minWidth: 145 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
         <div style={{ fontSize: 11, color: C.text, fontWeight: 750 }}>{part.label}</div>
-        <div style={{ fontSize: 10, color: C.text3, fontWeight: 700 }}>{compactNumber(done)}/{compactNumber(total)}</div>
+        <div style={{ fontSize: 10, color: C.text3 }}>
+          <b style={{ color: done === total && total ? C.green : C.text }}>{pct}%</b> · {compactNumber(done)}/{compactNumber(total)}
+        </div>
       </div>
-      <div style={{ height: 4, borderRadius: 2, background: C.surface2, marginTop: 7, overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${pct}%`, background: fill, borderRadius: 2 }} />
+      <div
+        title={`${part.label}: ${compactNumber(done)} đã lấy, ${compactNumber(running)} đang lấy, ${compactNumber(error)} lỗi, ${compactNumber(missing)} chưa lấy / ${compactNumber(total)} ca`}
+        style={{ display: 'flex', height: 6, borderRadius: 3, background: C.surface2, marginTop: 6, overflow: 'hidden' }}
+      >
+        {total > 0 && segments.map(([n, color, label]) => (
+          <div key={label} style={{ width: `${Math.min(100, n * 100 / total)}%`, background: color }} />
+        ))}
       </div>
-      <div style={{ marginTop: 6, minHeight: 15, fontSize: 10, color: C.text3, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <span>{pct}%</span>
-        {!!running && <span style={{ color: C.blue }}>{compactNumber(running)} đang chạy</span>}
-        {!!missing && <span style={{ color: C.amber }}>{compactNumber(missing)} thiếu</span>}
+      <div style={{ marginTop: 5, minHeight: 15, fontSize: 10, color: C.text3, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {!!running && <span style={{ color: C.blue }}>{compactNumber(running)} đang lấy</span>}
+        {!!missing && <span>{compactNumber(missing)} chưa lấy</span>}
         {!!error && <span style={{ color: C.red }}>{compactNumber(error)} lỗi</span>}
+        {!running && !missing && !error && total > 0 && <span style={{ color: C.green }}>Đã lấy đủ</span>}
       </div>
     </div>
   );
@@ -998,10 +1012,10 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>Giám sát dữ liệu</span>
             {loading && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: C.text3, fontSize: 10 }}><Spinner size={8} /> đang cập nhật</span>}
-            <StatBadge label="tổng" value={total || rows.length} tone="neutral" />
-            <StatBadge label="đủ" value={counts.done || snap.ready || 0} tone="ok" />
-            <StatBadge label="thiếu" value={(counts.missing || 0) + (counts.waiting || 0)} tone={(counts.missing || counts.waiting) ? 'warn' : 'neutral'} />
-            <StatBadge label="lỗi" value={counts.error || 0} tone={counts.error ? 'danger' : 'neutral'} />
+            <StatBadge label="tổng ca" value={total || rows.length} tone="neutral" />
+            <StatBadge label="đủ cả 5 phần" value={counts.done || snap.ready || 0} tone="ok" />
+            <StatBadge label="chưa đủ" value={(counts.missing || 0) + (counts.waiting || 0)} tone={(counts.missing || counts.waiting) ? 'warn' : 'neutral'} />
+            <StatBadge label="có lỗi" value={counts.error || 0} tone={counts.error ? 'danger' : 'neutral'} />
           </div>
           <div style={{ display: 'flex', gap: 5 }}>
             <Btn
@@ -1058,6 +1072,15 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', columnGap: 18, rowGap: 2, marginTop: 8 }}>
           {(snap.modules || []).map(part => <ModuleProgressCard key={part.key} part={part} />)}
         </div>
+        {!!(snap.modules || []).length && (
+          <div style={{ marginTop: 2, fontSize: 9.5, color: C.text3, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            {[[C.green, 'Đã lấy'], [C.blue, 'Đang lấy'], [C.red, 'Lỗi'], [C.surface2, 'Chưa lấy']].map(([color, label]) => (
+              <span key={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 10, height: 6, borderRadius: 2, background: color, border: `1px solid ${C.border2}` }} />{label}
+              </span>
+            ))}
+          </div>
+        )}
       </section>
 
       {showRows && (
