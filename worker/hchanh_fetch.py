@@ -1425,6 +1425,27 @@ def _switch_to_new_tab_if_any(driver: Any, before_handles: List[str], timeout: f
     return False
 
 
+_INPATIENT_LIST_SESSION_KEYS = ("scope", "lang", "role", "usid", "st")
+
+
+def _clean_inpatient_list_url(url: str, wpid: str = "danhsachdieutrinoitrudraw") -> str:
+    """URL danh sách nội trú chỉ giữ tham số phiên (scope/lang/role/usid/st).
+
+    Sau khi lấy xong 1 BN, Chrome đang đứng ở trang chi tiết (bacsidraw, D/s phẫu
+    thuật...) có kèm noitruid/keyword/phauthuatid/tungay/denngay của BN trước. Nếu
+    dựng URL danh sách từ đó, EMR mở danh sách với keyword và khoảng ngày cũ (vd
+    05/01 → 07/01 của lần tìm phẫu thuật) nên BN kế tiếp "không tìm thấy".
+    """
+    from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+    p = urlparse(url or "")
+    if "usid=" not in (p.query or "").lower():
+        return ""
+    q = dict(parse_qsl(p.query, keep_blank_values=True))
+    clean = {k: q[k] for k in _INPATIENT_LIST_SESSION_KEYS if k in q}
+    clean["wpid"] = wpid
+    return urlunparse((p.scheme, p.netloc, p.path, "", urlencode(clean), ""))
+
+
 def _switch_hchanh_click_context_on_open_driver(
     driver: Any, wait: Any, code: str, hchanh_config: Dict[str, Any],
     date_to: str, date_from: str, wanted_status: str,
@@ -1470,6 +1491,22 @@ def _switch_hchanh_click_context_on_open_driver(
             return _HCHANH_CLICK_CACHE
 
     try:
+        # Về danh sách nội trú bằng URL sạch TRƯỚC khi chọn trạng thái/khoảng ngày:
+        # Chrome đang ở trang chi tiết của BN trước, nơi không có ô chọn trạng thái,
+        # và search_patient sẽ tải lại trang danh sách làm mất bộ lọc vừa đặt.
+        list_url = _clean_inpatient_list_url(nav_url, _t(hchanh_config.get("inpatient_wpid"), "danhsachdieutrinoitrudraw"))
+        if list_url:
+            print(f"LOG [hchanh-click] (lô) Về danh sách nội trú cho BN {code}: {list_url}")
+            driver.get(list_url)
+            try:
+                _selenium_wait_after_action(driver, 0.3, ready_timeout=20)  # type: ignore[misc]
+            except Exception:
+                pass
+        if not list_url or "login.aspx" in (getattr(driver, "current_url", "") or "").lower():
+            list_url = _selenium_goto_inpatient_list(  # type: ignore[misc]
+                driver, wait, hchanh_config, login_func=login_emr, log_func=print,
+            )
+        nav_url = list_url or nav_url
         _selenium_set_status_filter(driver, wait, wanted_status, log_func=print)  # type: ignore[misc]
         if (date_from or date_to) and _selenium_set_time_range_filter is not None:
             _selenium_set_time_range_filter(driver, wait, date_from or date_to, date_to or date_from, log_func=print)  # type: ignore[misc]
