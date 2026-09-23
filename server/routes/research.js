@@ -22,6 +22,7 @@ const { firstSurgeryByEncounter, surgeryForMedicationContext } = require('../res
 const { strictLocalDate } = require('../research/date_utils');
 const { DEFAULT_SENSITIVE_COLUMNS, redactCsvTable, isSensitiveColumn } = require('../research/export_utils');
 const quality = require('../research/quality');
+const dataDictionary = require('../research/data_dictionary');
 const { databaseInfo, syncResearchDatabase, queryResearchDatabase } = require('../research/sqlite_store');
 const {
   read_index: readHchanhIndex,
@@ -2244,8 +2245,15 @@ function writeDatasetSnapshot(runDir, { csvPath, kind, extra = {} }) {
     analysis_config: loadAnalysisConfig(runDir) || null,
     study: studyMeta ? { id: studyMeta.id, name: studyMeta.name, governance: studyMeta.governance || null } : null,
     qa: manifest.normalized_qa || null,
+    data_dictionary_version: dataDictionary.DICTIONARY_VERSION,
     ...extra,
   };
+  // Mỗi dataset đi kèm đúng phiên bản từ điển dữ liệu đã dùng để tạo ra nó.
+  writeJsonAtomic(path.join(target, 'data_dictionary.json'), {
+    version: dataDictionary.DICTIONARY_VERSION,
+    conventions: dataDictionary.CONVENTIONS,
+    tables: { analysis_ready: dataDictionary.TABLES.analysis_ready },
+  });
   writeJsonAtomic(path.join(target, 'dataset_manifest.json'), snapshot);
   return snapshot;
 }
@@ -6180,6 +6188,17 @@ router.get('/research/archive/coverage', (req, res) => {
   }
 });
 
+router.get('/research/data-dictionary', (_req, res) => {
+  return res.json({
+    status: 'ok',
+    version: dataDictionary.DICTIONARY_VERSION,
+    conventions: dataDictionary.CONVENTIONS,
+    tables: dataDictionary.TABLES,
+    raw_tables: dataDictionary.RAW_TABLES,
+    known_issues: dataDictionary.KNOWN_ISSUES,
+  });
+});
+
 router.get('/research/archive/datasets', (req, res) => {
   try {
     const runId = resolveArchiveRunId(String(req.query.runId || 'latest'));
@@ -7582,4 +7601,6 @@ router.post('/research/studies/:studyId/run', async (req, res) => {
 module.exports = router;
 // Chỉ dùng cho kiểm thử (scripts/research_hchanh_same_stay_reuse_test.js, scripts/research_data_safety_test.js).
 module.exports._fetchHchanhForResearchRun = fetchHchanhForResearchRun;
+// Danh sách cột chuẩn hóa, dùng để đối chiếu từ điển dữ liệu (server/research/data_dictionary.js).
+module.exports.NORMALIZED_COLUMNS = NORMALIZED_COLUMNS;
 module.exports._test = { normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots };
