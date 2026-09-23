@@ -1,6 +1,6 @@
 # Từ điển dữ liệu Kho nghiên cứu
 
-> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-09-23.2`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
+> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-09-23.3`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
 >
 > Mô tả được viết từ code chuẩn hóa hiện tại. Cột "Dùng" là đề xuất kỹ thuật; phạm vi dùng thực tế phải theo đề cương được hội đồng đạo đức/bệnh viện phê duyệt.
 
@@ -526,16 +526,18 @@
 
 **Nguồn:** progress.json (XN/CĐHA); hchanh_auto_progress.json; order_history_auto_progress.json
 
-**Cách xử lý:** Chọn bản ghi tiến độ khớp nhất với đợt (khóa đợt → Mã NC → Mã BN + ngày vào/ra; chỉ dùng Mã BN khi BN có đúng 1 đợt).
+**Cách xử lý:** Chọn bản ghi tiến độ khớp nhất với đợt (khóa đợt → Mã NC → Mã BN + ngày vào/ra; chỉ dùng Mã BN khi BN có đúng 1 đợt). Hành chánh dùng trạng thái riêng từng file khi có. Trạng thái chi tiết hơn (lý do lỗi, số lần thử, đã đổi trên EMR) nằm ở collection_ledger.json / collection_exceptions.csv.
 
 **Quy tắc chất lượng**
 
 - Bắt buộc: `encounter_id`
 - Duy nhất: `encounter_id`
+- "empty" = đã lấy xong, EMR xác nhận không có; không phải lỗi
 
 **Cần người kiểm tra khi:**
 
 - overall_status = error
+- một phần = blocked (cần người xem)
 - missing_required chứa encounter_match
 
 | Cột | Kiểu | Ý nghĩa | Giá trị / đơn vị | Ô trống nghĩa là | Định danh | Dùng |
@@ -544,13 +546,13 @@
 | `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra → Mã NC. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
 | `patient_code` | chuỗi | Mã BN trên EMR. Nguồn: Cột Mã BN của danh sách nội trú / file thô. |  | Không được trống (bắt buộc). | Trực tiếp | Loại (bị che khi xuất) |
 | `patient_name` | chuỗi | Họ tên (để hiển thị tiến độ). |  |  | Trực tiếp | Loại (bị che khi xuất) |
-| `popup_status` | chuỗi | Đã mở được hồ sơ XN/CĐHA. | `done`, `error`, `(khác/trống = chưa làm)` |  | — | Được dùng |
-| `xn_status` | chuỗi | Trạng thái lấy XN. | `done`, `error`, `(khác/trống = chưa làm)` |  | — | Được dùng |
-| `cdha_status` | chuỗi | Trạng thái lấy CĐHA. | `done`, `error`, `(khác/trống = chưa làm)` |  | — | Được dùng |
-| `profile_status` | chuỗi | Trạng thái lấy hồ sơ nền. | `done`, `partial`, `error`, `skipped_recent_failure`, `(trống = chưa làm)` |  | — | Được dùng |
-| `discharge_status` | chuỗi | Trạng thái lấy ra viện. | `done`, `partial`, `error`, `skipped_recent_failure`, `(trống)` |  | — | Được dùng |
-| `surgery_status` | chuỗi | Trạng thái lấy phẫu thuật. | `done`, `partial`, `error`, `skipped_recent_failure`, `(trống)` |  | — | Được dùng |
-| `order_history_status` | chuỗi | Trạng thái lấy lịch sử y lệnh. | `done`, `partial`, `error`, `skipped_recent_failure`, `(trống)` |  | — | Được dùng |
+| `popup_status` | chuỗi | Đã mở được hồ sơ XN/CĐHA. | `done`, `error`, `blocked`, `(khác/trống = chưa làm)` |  | — | Được dùng |
+| `xn_status` | chuỗi | Trạng thái lấy XN. | `done = có dữ liệu`, `empty = EMR không có`, `error = lỗi kỹ thuật`, `blocked = cần người xem`, `(khác/trống = chưa làm)` |  | — | Được dùng |
+| `cdha_status` | chuỗi | Trạng thái lấy CĐHA. | `done = có dữ liệu`, `empty = EMR không có`, `error = lỗi kỹ thuật`, `blocked = cần người xem`, `(khác/trống = chưa làm)` |  | — | Được dùng |
+| `profile_status` | chuỗi | Trạng thái lấy hồ sơ nền. | `done`, `empty`, `partial`, `error`, `blocked`, `skipped_recent_failure`, `(trống = chưa làm)` |  | — | Được dùng |
+| `discharge_status` | chuỗi | Trạng thái lấy ra viện. | `done`, `empty`, `partial`, `error`, `blocked`, `skipped_recent_failure`, `(trống)` |  | — | Được dùng |
+| `surgery_status` | chuỗi | Trạng thái lấy phẫu thuật. | `done`, `empty`, `partial`, `error`, `blocked`, `skipped_recent_failure`, `(trống)` |  | — | Được dùng |
+| `order_history_status` | chuỗi | Trạng thái lấy lịch sử y lệnh. | `done`, `empty`, `partial`, `error`, `blocked`, `skipped_recent_failure`, `(trống)` |  | — | Được dùng |
 | `overall_status` | danh mục | Trạng thái chung. | `done`, `error`, `pending` |  | — | Được dùng |
 | `completion_level` | danh mục | Mức đầy đủ. Cách tính: full_required: đủ mọi phần bắt buộc; clinical_admin: đủ XN/CĐHA + hồ sơ nền + ra viện; xn_cdha: chỉ đủ XN/CĐHA; partial: còn lại. | `full_required`, `clinical_admin`, `xn_cdha`, `partial` |  | — | Được dùng |
 | `ready_for_analysis` | cờ 1/0 | Đủ điều kiện đưa vào dataset cuối. Cách tính: Không lỗi VÀ đủ XN/CĐHA, hồ sơ nền, ra viện; phẫu thuật chỉ bắt buộc khi đợt có mổ; y lệnh bắt buộc khi có mổ hoặc có thuốc; đợt phải ghép chắc chắn. | `1`, `0` |  | — | Được dùng |

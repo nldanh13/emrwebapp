@@ -22,7 +22,7 @@
 //   excluded           — mặc định bị che khi xem/xuất (server/research/export_utils.js).
 // Phân loại "use" là đề xuất kỹ thuật; bệnh viện/hội đồng đạo đức phải xác nhận.
 
-const DICTIONARY_VERSION = '2026-09-23.2';
+const DICTIONARY_VERSION = '2026-09-23.3';
 
 const CONVENTIONS = {
   dates: 'Ngày dạng YYYY-MM-DD; thời điểm dạng YYYY-MM-DD HH:mm (giờ địa phương, không có múi giờ). Cột "ngày giờ" có thể chỉ có phần ngày nếu nguồn không có giờ.',
@@ -407,18 +407,18 @@ TABLES.extract_status = {
   primary_key: ['encounter_id'],
   foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id' }],
   sources: ['progress.json (XN/CĐHA)', 'hchanh_auto_progress.json', 'order_history_auto_progress.json'],
-  processing: 'Chọn bản ghi tiến độ khớp nhất với đợt (khóa đợt → Mã NC → Mã BN + ngày vào/ra; chỉ dùng Mã BN khi BN có đúng 1 đợt).',
+  processing: 'Chọn bản ghi tiến độ khớp nhất với đợt (khóa đợt → Mã NC → Mã BN + ngày vào/ra; chỉ dùng Mã BN khi BN có đúng 1 đợt). Hành chánh dùng trạng thái riêng từng file khi có. Trạng thái chi tiết hơn (lý do lỗi, số lần thử, đã đổi trên EMR) nằm ở collection_ledger.json / collection_exceptions.csv.',
   inferred: false,
-  quality: { required: ['encounter_id'], unique: ['encounter_id'], checks: [], manual_review: ['overall_status = error', 'missing_required chứa encounter_match'] },
+  quality: { required: ['encounter_id'], unique: ['encounter_id'], checks: ['"empty" = đã lấy xong, EMR xác nhận không có; không phải lỗi'], manual_review: ['overall_status = error', 'một phần = blocked (cần người xem)', 'missing_required chứa encounter_match'] },
   columns: withCommon(['research_code', 'encounter_id', 'patient_code', 'patient_name', 'popup_status', 'xn_status', 'cdha_status', 'profile_status', 'discharge_status', 'surgery_status', 'order_history_status', 'overall_status', 'completion_level', 'ready_for_analysis', 'missing_required', 'lab_count', 'imaging_count', 'surgery_count', 'medication_count', 'last_error', 'source_run_id'], {
     patient_name: col('string', 'Họ tên (để hiển thị tiến độ).', { identifier: 'direct', use: 'excluded' }),
-    popup_status: col('string', 'Đã mở được hồ sơ XN/CĐHA.', { allowed: ['done', 'error', '(khác/trống = chưa làm)'] }),
-    xn_status: col('string', 'Trạng thái lấy XN.', { allowed: ['done', 'error', '(khác/trống = chưa làm)'] }),
-    cdha_status: col('string', 'Trạng thái lấy CĐHA.', { allowed: ['done', 'error', '(khác/trống = chưa làm)'] }),
-    profile_status: col('string', 'Trạng thái lấy hồ sơ nền.', { allowed: ['done', 'partial', 'error', 'skipped_recent_failure', '(trống = chưa làm)'] }),
-    discharge_status: col('string', 'Trạng thái lấy ra viện.', { allowed: ['done', 'partial', 'error', 'skipped_recent_failure', '(trống)'] }),
-    surgery_status: col('string', 'Trạng thái lấy phẫu thuật.', { allowed: ['done', 'partial', 'error', 'skipped_recent_failure', '(trống)'] }),
-    order_history_status: col('string', 'Trạng thái lấy lịch sử y lệnh.', { allowed: ['done', 'partial', 'error', 'skipped_recent_failure', '(trống)'] }),
+    popup_status: col('string', 'Đã mở được hồ sơ XN/CĐHA.', { allowed: ['done', 'error', 'blocked', '(khác/trống = chưa làm)'] }),
+    xn_status: col('string', 'Trạng thái lấy XN.', { allowed: ['done = có dữ liệu', 'empty = EMR không có', 'error = lỗi kỹ thuật', 'blocked = cần người xem', '(khác/trống = chưa làm)'] }),
+    cdha_status: col('string', 'Trạng thái lấy CĐHA.', { allowed: ['done = có dữ liệu', 'empty = EMR không có', 'error = lỗi kỹ thuật', 'blocked = cần người xem', '(khác/trống = chưa làm)'] }),
+    profile_status: col('string', 'Trạng thái lấy hồ sơ nền.', { allowed: ['done', 'empty', 'partial', 'error', 'blocked', 'skipped_recent_failure', '(trống = chưa làm)'] }),
+    discharge_status: col('string', 'Trạng thái lấy ra viện.', { allowed: ['done', 'empty', 'partial', 'error', 'blocked', 'skipped_recent_failure', '(trống)'] }),
+    surgery_status: col('string', 'Trạng thái lấy phẫu thuật.', { allowed: ['done', 'empty', 'partial', 'error', 'blocked', 'skipped_recent_failure', '(trống)'] }),
+    order_history_status: col('string', 'Trạng thái lấy lịch sử y lệnh.', { allowed: ['done', 'empty', 'partial', 'error', 'blocked', 'skipped_recent_failure', '(trống)'] }),
     overall_status: col('enum', 'Trạng thái chung.', { allowed: ['done', 'error', 'pending'] }),
     completion_level: col('enum', 'Mức đầy đủ.', {
       allowed: ['full_required', 'clinical_admin', 'xn_cdha', 'partial'],

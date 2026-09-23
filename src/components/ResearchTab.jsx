@@ -1132,6 +1132,209 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
   );
 }
 
+const COLLECTION_PARTS = [
+  ['xn', 'Xét nghiệm'], ['cdha', 'CĐHA'], ['profile', 'Hồ sơ nền'],
+  ['discharge', 'Ra viện'], ['surgery', 'Phẫu thuật'], ['order_history', 'Y lệnh'],
+];
+const COLLECTION_CATEGORY_LABEL = {
+  unmatched: 'Không ghép chắc lượt',
+  needs_review: 'Cần người xem',
+  retry_exhausted: 'Hết lượt tự thử lại',
+  selenium_error: 'Lỗi, sẽ tự thử lại',
+};
+const REQUIREMENT_ITEM_KINDS = [
+  ['imaging_modality', 'Có CĐHA loại'], ['lab_item', 'Có xét nghiệm'],
+  ['procedure_item', 'Có phẫu thuật'], ['drug_item', 'Có thuốc'],
+];
+const READINESS_LABEL = {
+  usable: ['Đủ dùng', 'ok'],
+  not_eligible: ['Không đạt điều kiện đề tài', 'neutral'],
+  incomplete: ['Chưa lấy xong', 'warn'],
+  needs_review: ['Cần người xem', 'danger'],
+};
+
+// Thu thập tự động: một nút chạy, một báo cáo ngắn, danh sách ngoại lệ chỉ mở khi cần.
+function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onDone, toast, study = null }) {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [showExceptions, setShowExceptions] = useState(false);
+  const [readiness, setReadiness] = useState(null);
+  const [showReq, setShowReq] = useState(false);
+  const [req, setReq] = useState({ parts: [], items: [] });
+  const t = (msg, type) => { if (toast) toast(msg, type); };
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await api.getResearchCollectionStatus(studyId);
+      setStatus(r);
+      if (studyId) {
+        try { setReadiness(await api.getResearchStudyReadiness(studyId)); } catch (_) { setReadiness(null); }
+      }
+    } catch (_) {
+      setStatus(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [studyId]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const dr = study?.data_requirements || {};
+    setReq({ parts: Array.isArray(dr.parts) ? dr.parts : [], items: Array.isArray(dr.items) ? dr.items : [] });
+  }, [study?.id, study?.data_requirements]);
+
+  const run = async () => {
+    setRunning(true);
+    try {
+      const r = await api.collectResearchAuto(studyId, {
+        headless: options.headless !== false,
+        fromDate: options.fromDate || '',
+        toDate: options.toDate || todayInputDate(),
+      });
+      t(r.message || 'Đã thu thập tự động.', r.cancelled ? 'info' : 'ok');
+      await load();
+      if (onDone) await onDone(r);
+    } catch (e) {
+      t(String(e.message || e), 'error');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const saveRequirements = async () => {
+    try {
+      await api.updateResearchStudyDataRequirements(studyId, {
+        parts: req.parts,
+        items: req.items.filter(it => it.kind && String(it.value || '').trim()),
+      });
+      t('Đã lưu yêu cầu dữ liệu của đề cương.', 'ok');
+      setShowReq(false);
+      await load();
+    } catch (e) {
+      t(String(e.message || e), 'error');
+    }
+  };
+
+  const report = status?.last_report || null;
+  const plan = status?.next_plan || null;
+  const exceptions = Array.isArray(status?.exceptions) ? status.exceptions : [];
+  const busy = disabled || running;
+  const reportAt = report?.finished_at ? new Date(report.finished_at).toLocaleString('vi-VN') : '';
+
+  return (
+    <section style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, padding: '9px 11px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: C.text }}>Thu thập tự động</span>
+        <span style={{ fontSize: 10.5, color: C.text3 }}>
+          Chỉ lấy ca mới, phần còn thiếu, phần lỗi (tự thử lại tối đa {status?.max_attempts || 3} lần) và ca mà EMR đã thay đổi.
+        </span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+          <Btn variant="primary" onClick={run} disabled={busy} style={{ height: 26, padding: '0 12px', fontSize: 11 }}>
+            {running ? <><Spinner size={9} /> Đang thu thập</> : 'Thu thập tự động'}
+          </Btn>
+          <Btn onClick={load} disabled={loading} style={{ height: 26, padding: '0 9px', fontSize: 10 }}>{loading ? <Spinner size={8} /> : '↻'}</Btn>
+        </div>
+      </div>
+
+      {plan && (
+        <div style={{ fontSize: 10.5, color: C.text2 }}>
+          Lần chạy tới: lấy <b>{compactNumber(plan.to_fetch || 0)}</b> lượt ({compactNumber(plan.parts_to_fetch || 0)} phần), bỏ qua <b>{compactNumber(plan.unchanged || 0)}</b> lượt đã đủ và không đổi
+          {plan.exhausted_parts ? <>, <b>{compactNumber(plan.exhausted_parts)}</b> phần đã hết lượt thử</> : null}
+          {plan.blocked_parts ? <>, <b>{compactNumber(plan.blocked_parts)}</b> phần cần người xem</> : null}.
+        </div>
+      )}
+
+      {report ? (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 10, color: C.text3 }}>Lần gần nhất{reportAt ? ` (${reportAt})` : ''}{report.cancelled ? ' — đã dừng giữa chừng' : ''}:</span>
+          <StatBadge label="ca đã lấy" value={report.fetched_encounters || 0} tone="ok" />
+          <StatBadge label="bỏ qua vì không đổi" value={report.skipped_unchanged || 0} tone="neutral" />
+          <StatBadge label="phần đã tự lấy bù" value={report.parts_backfilled || 0} tone="ok" />
+          <StatBadge label="lỗi Selenium còn tồn" value={report.selenium_errors_open || 0} tone={report.selenium_errors_open ? 'danger' : 'neutral'} />
+          <StatBadge label="ca không ghép chắc" value={report.unmatched_encounters || 0} tone={report.unmatched_encounters ? 'warn' : 'neutral'} />
+        </div>
+      ) : (
+        <div style={{ fontSize: 10.5, color: C.text3 }}>Chưa chạy thu thập tự động lần nào.</div>
+      )}
+
+      {readiness && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 10, color: C.text3 }}>
+            Đủ dùng cho đề cương này ({readiness.requirements?.source === 'explicit' ? 'theo yêu cầu đã khai báo' : readiness.requirements?.source === 'variables' ? 'suy ra từ biến đã chọn' : 'mặc định: cần đủ 6 phần'}):
+          </span>
+          {Object.entries(READINESS_LABEL).map(([k, [label, tone]]) => (
+            <StatBadge key={k} label={label} value={readiness.counts?.[k] || 0} tone={readiness.counts?.[k] ? tone : 'neutral'} />
+          ))}
+          <Btn onClick={() => setShowReq(v => !v)} style={{ height: 24, padding: '0 8px', fontSize: 10 }}>{showReq ? 'Đóng' : 'Yêu cầu dữ liệu'}</Btn>
+        </div>
+      )}
+
+      {showReq && studyId && (
+        <div style={{ borderTop: `1px solid ${C.border2}`, paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', fontSize: 11, color: C.text2 }}>
+            <span style={{ fontWeight: 700 }}>Phần bắt buộc:</span>
+            {COLLECTION_PARTS.map(([id, label]) => (
+              <label key={id} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                <input type="checkbox" checked={req.parts.includes(id)}
+                  onChange={e => setReq(p => ({ ...p, parts: e.target.checked ? [...p.parts, id] : p.parts.filter(x => x !== id) }))} />
+                {label}
+              </label>
+            ))}
+          </div>
+          {req.items.map((it, i) => (
+            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <select value={it.kind} onChange={e => setReq(p => { const items = [...p.items]; items[i] = { ...items[i], kind: e.target.value }; return { ...p, items }; })}
+                style={{ fontSize: 11, padding: '3px 6px', borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text }}>
+                {REQUIREMENT_ITEM_KINDS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+              </select>
+              <input value={it.value || ''} placeholder="VD: CT, MRI, Hb, CRP"
+                onChange={e => setReq(p => { const items = [...p.items]; items[i] = { ...items[i], value: e.target.value, label: e.target.value }; return { ...p, items }; })}
+                style={{ ...inp, width: 180, fontSize: 11 }} />
+              <button type="button" onClick={() => setReq(p => ({ ...p, items: p.items.filter((_, j) => j !== i) }))}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.text3, fontSize: 14 }}>✕</button>
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Btn onClick={() => setReq(p => ({ ...p, items: [...p.items, { kind: 'imaging_modality', value: '' }] }))} style={{ height: 24, padding: '0 8px', fontSize: 10 }}>+ Dữ liệu phải có</Btn>
+            <Btn variant="primary" onClick={saveRequirements} style={{ height: 24, padding: '0 10px', fontSize: 10 }}>Lưu</Btn>
+            <span style={{ fontSize: 10, color: C.text3 }}>Ca đã lấy đủ nhưng EMR không có dữ liệu bắt buộc (ví dụ không có CT) được ghi "không đạt điều kiện đề tài", không phải "thiếu".</span>
+          </div>
+        </div>
+      )}
+
+      {status && (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <Btn onClick={() => setShowExceptions(v => !v)} disabled={!exceptions.length} style={{ height: 24, padding: '0 9px', fontSize: 10 }}>
+            {showExceptions ? 'Ẩn ngoại lệ' : `Danh sách ngoại lệ (${compactNumber(status.exceptions_total || 0)})`}
+          </Btn>
+          {!!exceptions.length && (
+            <Btn onClick={() => api.downloadResearchCollectionExceptions(studyId).catch(e => t(String(e.message || e), 'error'))} style={{ height: 24, padding: '0 9px', fontSize: 10 }}>Tải CSV</Btn>
+          )}
+          {!exceptions.length && <span style={{ fontSize: 10, color: C.text3 }}>Không có ngoại lệ — không cần rà từng ca.</span>}
+        </div>
+      )}
+
+      {showExceptions && !!exceptions.length && (
+        <SmallRowsTable max={200} rows={exceptions.map(e => ({
+          ...e,
+          category_label: COLLECTION_CATEGORY_LABEL[e.category] || e.category,
+          attempts_label: e.status === 'failed' ? `${e.attempts}/${status.max_attempts || 3}` : '—',
+        }))} columns={[
+          { key: 'category_label', label: 'Loại' },
+          { key: 'research_code', label: 'Mã NC' },
+          { key: 'patient_code', label: 'Mã BN' },
+          { key: 'part_label', label: 'Phần' },
+          { key: 'reason_label', label: 'Lý do' },
+          { key: 'detail', label: 'Chi tiết' },
+          { key: 'attempts_label', label: 'Lần thử' },
+        ]} />
+      )}
+    </section>
+  );
+}
+
 function todayInputDate() {
   const d = new Date();
   const yyyy = d.getFullYear();
@@ -2524,6 +2727,12 @@ export default function ResearchTab({ toast }) {
 
   const renderArchiveHome = () => (
     <div style={{ padding: '8px 12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <CollectionAutoPanel
+        options={archiveOptions}
+        disabled={uiBusy}
+        toast={toast}
+        onDone={async () => { await loadSummary(); await loadProgressSnapshot(selectedId, { silent: true }); }}
+      />
       <ResearchOperationDashboard
         snapshot={operationSnapshot}
         lastUpdate={lastUpdateSummary}
@@ -3765,7 +3974,15 @@ export default function ResearchTab({ toast }) {
           )}
 
           {!isArchive && (
-            <div style={{ padding: 10, borderBottom: `1px solid ${C.border}`, background: C.bg, flexShrink: 0 }}>
+            <div style={{ padding: 10, borderBottom: `1px solid ${C.border}`, background: C.bg, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <CollectionAutoPanel
+                studyId={selectedId}
+                study={activeStudy}
+                options={{ ...studyOptions, fromDate: studyOptions.fromDate || archiveOptions.fromDate, toDate: studyOptions.toDate || archiveOptions.toDate }}
+                disabled={uiBusy}
+                toast={toast}
+                onDone={async () => { await loadSummary(); await loadProgressSnapshot(selectedId, { silent: true }); }}
+              />
               <ResearchOperationDashboard
                 snapshot={operationSnapshot}
                 lastUpdate={lastUpdateSummary}

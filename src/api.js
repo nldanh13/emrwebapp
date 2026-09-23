@@ -551,6 +551,16 @@ export const fetchHchanhAllForResearchArchive = (options = {}) => post('/api/res
 export const fetchHchanhAllForResearchStudy = (studyId, options = {}) => post(`/api/research/studies/${encodeURIComponent(studyId)}/fetch-hchanh`, { ...options, files: ['profile', 'discharge', 'surgery', 'order_history'] });
 // Lấy lại chỗ thiếu
 export const refetchMissingResearch = (options = {}) => post('/api/research/refetch-missing', options);
+
+// Thu thập tự động: chỉ lấy phần thiếu/lỗi/đã thay đổi; báo cáo vận hành + danh sách ngoại lệ.
+const researchScopePath = (studyId) => (studyId ? `/api/research/studies/${encodeURIComponent(studyId)}` : '/api/research/archive');
+export const collectResearchAuto = (studyId, options = {}) => post(`${researchScopePath(studyId)}/collect-auto`, options);
+export const getResearchCollectionStatus = (studyId) => get(`${researchScopePath(studyId)}/collection-status`);
+export const downloadResearchCollectionExceptions = (studyId) =>
+  downloadBlob(`${researchScopePath(studyId)}/collection-exceptions`, `${studyId || 'du_lieu_goc'}_ngoai_le_thu_thap.csv`);
+export const getResearchStudyReadiness = (studyId) => get(`/api/research/studies/${encodeURIComponent(studyId)}/readiness`);
+export const updateResearchStudyDataRequirements = (studyId, dataRequirements) =>
+  post(`/api/research/studies/${encodeURIComponent(studyId)}/data-requirements`, { data_requirements: dataRequirements });
 // Analysis config
 export const getAnalysisPresets = () => get('/api/research/analysis-presets');
 export const updateStudyAnalysisConfig = (studyId, config) => post(`/api/research/studies/${encodeURIComponent(studyId)}/analysis-config`, config);

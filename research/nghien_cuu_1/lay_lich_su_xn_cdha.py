@@ -1747,6 +1747,9 @@ def patient_context(row, index):
         "Ngày ra viện": first_value(row, ["Ngày ra viện", "Ngay ra vien", "Ngày xuất viện", "Ngay xuat vien"]),
         "Thời gian điều trị": first_value(row, ["Thời gian điều trị", "Thoi gian dieu tri", "duration"]),
         "Chẩn đoán vào viện": chan_doan,
+        # Khóa lượt của backend và danh sách tab cần lấy lại (điều phối tự động).
+        "Research key": first_value(row, ["Research key", "research_key"]),
+        "refetch_parts": first_value(row, ["refetch_parts"]),
     }
 
 
@@ -2178,10 +2181,18 @@ def commit_patient_outputs(run_dir, rows_by_table, ctx=None):
     giữa hai lần replace.
     """
     run_dir = Path(run_dir)
+    # Chỉ thay bảng của tab có trong rows_by_table: tab lỗi kỹ thuật không được đưa
+    # vào đây, nên dữ liệu cũ của tab đó giữ nguyên.
     tables = [
-        ("lich_su_xn.csv",   COL_XN,   rows_by_table.get("xn") or []),
-        ("lich_su_cdha.csv", COL_CDHA, rows_by_table.get("cdha") or []),
+        (filename, cols, rows_by_table.get(tab) or [])
+        for tab, filename, cols in (
+            ("xn", "lich_su_xn.csv", COL_XN),
+            ("cdha", "lich_su_cdha.csv", COL_CDHA),
+        )
+        if tab in rows_by_table
     ]
+    if not tables:
+        return
 
     # Tạo thư mục staging tạm với tên dựa trên timestamp để không đụng nhau
     # nếu có nhiều tiến trình chạy song song (hiếm nhưng an toàn hơn).
@@ -3086,27 +3097,158 @@ def mark_progress(progress, ma_bn, tab, status, error=""):
         item["last_error"] = error[:1000]
 
 
-def mark_patient_committed(progress, ma_bn, counts=None):
-    item = ensure_patient_progress(progress, ma_bn)
-    item.update({
-        "popup": "done",
-        "xn": "done",
-        "cdha": "done",
-        "committed": True,
-        "status": "done",
-        "updated_at": now_iso(),
-        "last_error": "",
-    })
-    if counts:
-        item["counts"] = counts
-
-
 def is_patient_done(progress, ma_bn):
     item = progress.get(ma_bn) or {}
     if item.get("committed") is True or item.get("status") == "done":
         return True
-    # Tương thích progress cũ: nếu tất cả tab đã done thì xem là đã hoàn tất.
-    return item.get("popup") == "done" and all(item.get(k) == "done" for k in ["xn", "cdha"])
+    # Tab chỉ tính là xong khi dữ liệu của tab đã thực sự commit vào CSV.
+    return all(tab_is_final(item, k) for k in ["xn", "cdha"])
+
+
+def tab_is_final(item, tab):
+    """Tab đã lấy xong VÀ đã ghi vào CSV. Progress cũ ghi xn=done trước khi commit
+    chung cả 2 tab, nên chỉ tin "done" khi cả lượt đã committed."""
+    item = item or {}
+    if item.get(tab) not in TAB_FINAL_STATUSES:
+        return False
+    return item.get("committed") is True or bool((item.get("tab_saved") or {}).get(tab))
+
+
+FATAL_SESSION_TOKENS = (
+    "invalid session id", "no such session", "session deleted",
+    "webdriverexception", "chrome not reachable",
+    "unable to connect", "connection refused",
+)
+
+
+def is_fatal_session_error(err):
+    msg = str(err or "").lower()
+    return any(tok in msg for tok in FATAL_SESSION_TOKENS)
+
+
+def parse_refetch_parts(ctx):
+    """Tab backend yêu cầu lấy lại (cột refetch_parts, ví dụ "xn;cdha"). None = không yêu cầu."""
+    raw = normalize_text((ctx or {}).get("refetch_parts", ""))
+    if not raw:
+        return None
+    parts = {p.strip().lower() for p in re.split(r"[;,\s]+", raw) if p.strip()}
+    return {p for p in parts if p in ("xn", "cdha")}
+
+
+def visit_needs_fetch(item, requested):
+    """Lượt còn tab nào cần lấy không (tab chưa xong hoặc được yêu cầu lấy lại)."""
+    item = item or {}
+    for tab in ("xn", "cdha"):
+        if requested and tab in requested:
+            return True
+        if not tab_is_final(item, tab):
+            return True
+    return False
+
+
+def count_rows_of_visit(path, ctx):
+    path = Path(path)
+    if not path.exists():
+        return 0
+    rows = read_csv_rows(path)
+    return len(rows) - len(filter_rows_by_identity(rows, ctx))
+
+
+def collect_visit_tabs(run_dir, ctx, item, fetchers, requested=None):
+    """Lấy từng tab của một lượt, ghi trạng thái RIÊNG từng tab và commit tab lấy được.
+
+    fetchers: {"xn": callable() -> rows, "cdha": callable() -> rows}.
+    Trạng thái tab: done (có dữ liệu) | empty (EMR xác nhận không có) |
+    error (lỗi kỹ thuật, lần sau thử lại) | blocked (giao diện khác mẫu hoặc EMR
+    nay rỗng trong khi trước đó có dữ liệu → cần người xem, không tự thử lại).
+    Tab đã done/empty và không được yêu cầu lấy lại thì bỏ qua.
+    Lỗi mất phiên trình duyệt được ném lại để vòng ngoài dừng cả lần chạy.
+    """
+    files = {"xn": "lich_su_xn.csv", "cdha": "lich_su_cdha.csv"}
+    reasons = item.setdefault("tab_reason", {})
+    counts = item.setdefault("counts", {})
+    to_commit = {}
+    outcome = {}
+    saved = item.setdefault("tab_saved", {})
+    tab_at = item.setdefault("tab_at", {})
+    for tab in ("xn", "cdha"):
+        if tab_is_final(item, tab) and not (requested and tab in requested):
+            outcome[tab] = item.get(tab)
+            saved[tab] = True
+            continue
+        tab_at[tab] = now_iso()
+        try:
+            rows = list(fetchers[tab]() or [])
+        except TabStructureError as e:
+            item[tab] = "blocked"
+            reasons[tab] = f"emr_ui_changed: {str(e)[:300]}"
+            outcome[tab] = "blocked"
+            continue
+        except Exception as e:
+            if is_fatal_session_error(e):
+                item[tab] = "error"
+                reasons[tab] = f"session: {str(e)[:300]}"
+                raise
+            kind = "partial" if isinstance(e, TabPartialError) else ("tab_load" if isinstance(e, TabLoadError) else "error")
+            item[tab] = "error"
+            reasons[tab] = f"{kind}: {str(e)[:300]}"
+            outcome[tab] = "error"
+            continue
+        if not rows and count_rows_of_visit(Path(run_dir) / files[tab], ctx) > 0:
+            # EMR nay trả rỗng nhưng lần trước đã có kết quả: không xóa dữ liệu cũ,
+            # không tự kết luận là "không có" → để người xem.
+            item[tab] = "blocked"
+            reasons[tab] = "emr_now_empty_previously_had_data"
+            outcome[tab] = "blocked"
+            continue
+        to_commit[tab] = rows
+        outcome[tab] = "done" if rows else "empty"
+
+    if to_commit:
+        commit_patient_outputs(run_dir, to_commit, ctx)
+        for tab, rows in to_commit.items():
+            item[tab] = "done" if rows else "empty"
+            counts[tab] = len(rows)
+            saved[tab] = True
+            reasons.pop(tab, None)
+    for tab in ("xn", "cdha"):
+        if item.get(tab) not in TAB_FINAL_STATUSES:
+            saved.pop(tab, None)
+
+    all_final = all(tab_is_final(item, tab) for tab in ("xn", "cdha"))
+    item["popup"] = "done"
+    item["committed"] = all_final
+    item["status"] = "done" if all_final else "incomplete"
+    item["updated_at"] = now_iso()
+    item["last_error"] = "; ".join(f"{t}: {r}" for t, r in reasons.items())[:1000]
+    return outcome
+
+
+def mark_source_outcome(progress, base_ctx, status, reason):
+    """Ghi kết quả cho CẢ dòng nguồn khi không tới được lượt nào (không tìm thấy BN,
+    không xác định chắc lượt điều trị). Khóa theo Research key để backend ghép đúng."""
+    research_key = normalize_text((base_ctx or {}).get("Research key", ""))
+    if not research_key:
+        return None
+    key = f"source:{research_key}"
+    item = progress.setdefault(key, {})
+    item.update({
+        "Research key": research_key,
+        "Mã NC": (base_ctx or {}).get("Mã NC", ""),
+        "Mã BN": (base_ctx or {}).get("Mã BN", ""),
+        "Mã nội trú": (base_ctx or {}).get("Mã nội trú", ""),
+        "source_level": True,
+        "popup": status,
+        "xn": status,
+        "cdha": status,
+        "tab_reason": {"xn": reason, "cdha": reason},
+        "tab_at": {"xn": now_iso(), "cdha": now_iso()},
+        "committed": False,
+        "status": status,
+        "updated_at": now_iso(),
+        "last_error": reason,
+    })
+    return key
 
 
 def log_error(w_err, fh_err, ctx, tab, step, error, severity=None):
@@ -4473,6 +4615,14 @@ def tim_bn_va_mo_popup(driver, wait, ma_bn, row_index=0, from_dt=None, to_dt=Non
 
     # Nếu dòng này không khớp T/G vào của input, bỏ qua ngay, không mở Điều dưỡng
     # hoặc popup lịch sử. Đây là điểm tăng tốc lớn khi một Mã BN có nhiều lượt.
+    # Khác Mã nội trú = khác đợt nằm viện (các dòng chuyển khoa dùng chung mã):
+    # không bao giờ nhận dòng này thay cho lượt đang cần, dù thời gian có vẻ khớp.
+    base_noitru = normalize_text((base_ctx or {}).get("Mã nội trú", ""))
+    row_noitru = normalize_text(info.get("Mã nội trú", ""))
+    if base_noitru and row_noitru and base_noitru != row_noitru:
+        info["__skip_visit"] = "1"
+        return info
+
     if base_ctx and has_visit_filter(base_ctx):
         probe = dict(base_ctx)
         merge_non_empty(probe, info)
@@ -4879,57 +5029,148 @@ def parse_chi_tiet_xn(driver, ctx, item):
     return rows
 
 
-def xu_ly_tab_xn(driver, ctx, w_xn=None, fh_xn=None, from_dt=None, to_dt=None):
-    click_tab(driver, "litabLichSuXN")
-    if not wait_content(driver, "divLichSuXNContent"):
-        print("      XN: không load được")
-        return []
+# ── Kết quả một tab: phân biệt rõ 3 trường hợp ───────────────────────────────
+# - Trả về list (có thể rỗng): EMR đã hiển thị tab và xác nhận số phiếu Hoàn tất.
+#   list rỗng = EMR KHÔNG CÓ kết quả Hoàn tất cho lượt này.
+# - TabLoadError / TabPartialError: lỗi kỹ thuật (tab không tải, mở chi tiết lỗi) →
+#   không được ghi là "không có dữ liệu", lần sau thử lại (có giới hạn).
+# - TabStructureError: giao diện EMR khác mẫu đang biết → dừng đúng tab của ca này,
+#   ghi lý do, không tự thử lại.
+class TabLoadError(RuntimeError):
+    pass
 
-    div = driver.find_element(By.ID, "divLichSuXNContent")
-    soup = BeautifulSoup(div.get_attribute("innerHTML"), "html.parser")
-    table = soup.find("table")
+
+class TabPartialError(RuntimeError):
+    pass
+
+
+class TabStructureError(RuntimeError):
+    pass
+
+
+TAB_FINAL_STATUSES = {"done", "empty"}
+_TAB_EMPTY_MESSAGE_TOKENS = ("khong co", "khong tim thay", "chua co", "no data", "empty")
+
+
+def looks_like_empty_message(text):
+    norm = normalize_for_match(text or "")
+    return bool(norm) and any(tok in norm for tok in _TAB_EMPTY_MESSAGE_TOKENS)
+
+
+def parse_history_listing(html, label, min_cells, status_col, build_item):
+    """Đọc bảng danh sách phiếu trong tab lịch sử (XN hoặc CĐHA), không dùng Selenium.
+
+    Trả về danh sách phiếu Hoàn tất. Ném TabStructureError khi có nội dung nhưng
+    không đọc được theo mẫu (EMR đổi giao diện), để không ghi nhầm là "không có".
+    """
+    soup = BeautifulSoup(html or "", "html.parser")
+    table = soup.find("table", id="tbDichVu") or soup.find("table")
     if not table:
-        return []
+        text = soup.get_text(" ", strip=True)
+        if not text or looks_like_empty_message(text):
+            return []
+        raise TabStructureError(f"Tab {label} có nội dung nhưng không có bảng danh sách như mẫu")
 
     phong = ""
+    data_rows = 0
+    parsed_rows = 0
     items = []
     for tr in table.find_all("tr"):
         tds = tr.find_all("td")
+        if not tds:
+            continue
         if len(tds) == 1 and tds[0].get("colspan"):
             phong = normalize_text(tds[0].get_text(strip=True))
             continue
-        if len(tds) < 5:
+        if len(tds) < min_cells:
+            if looks_like_empty_message(tr.get_text(" ", strip=True)):
+                continue
+            data_rows += 1
             continue
-        trang_thai = normalize_text(tds[5].get_text(strip=True)) if len(tds) > 5 else ""
+        data_rows += 1
+        parsed_rows += 1
+        trang_thai = normalize_text(tds[status_col].get_text(strip=True)) if len(tds) > status_col else ""
         if "Hoàn tất" not in trang_thai:
             continue
-        tg = normalize_text(tds[2].get_text(strip=True))
-        # Không loại theo ngày vào/ra khoa. Popup lịch sử được mở từ đúng lượt
-        # điều trị; giữ toàn bộ sự kiện để tầng chuẩn hóa tính days_from_* và
-        # is_within_encounter thay vì làm mất dữ liệu ngay lúc thu thập.
-        items.append({
-            "tr_id": tr.get("id", ""),
-            "tg_chi_dinh": tg,
-            "nguoi_chi_dinh": normalize_text(tds[3].get_text(strip=True)),
-            "loai_xn": normalize_text(tds[4].get_text(strip=True)),
-            "trang_thai": trang_thai,
-            "phong": phong,
-            "ma_phieu": tr.get("id", ""),
-        })
+        item = build_item(tr, tds, trang_thai, phong)
+        if item:
+            items.append(item)
+    if data_rows and not parsed_rows:
+        raise TabStructureError(f"Tab {label}: {data_rows} dòng nhưng không dòng nào đúng số cột mẫu")
+    return items
+
+
+def _xn_item_from_row(tr, tds, trang_thai, phong):
+    # Không loại theo ngày vào/ra khoa. Popup lịch sử được mở từ đúng lượt
+    # điều trị; giữ toàn bộ sự kiện để tầng chuẩn hóa tính days_from_* và
+    # is_within_encounter thay vì làm mất dữ liệu ngay lúc thu thập.
+    return {
+        "tr_id": tr.get("id", ""),
+        "tg_chi_dinh": normalize_text(tds[2].get_text(strip=True)),
+        "nguoi_chi_dinh": normalize_text(tds[3].get_text(strip=True)),
+        "loai_xn": normalize_text(tds[4].get_text(strip=True)),
+        "trang_thai": trang_thai,
+        "phong": phong,
+        "ma_phieu": tr.get("id", ""),
+    }
+
+
+def _cdha_item_from_row(tr, tds, trang_thai, phong):
+    # CĐHA có thể được thực hiện trước khi chuyển vào khoa hiện tại. Giữ toàn
+    # bộ lịch sử của popup đúng lượt, không lọc bằng cửa sổ ngày của cohort.
+    a_xem = tds[6].find("a") if len(tds) > 6 else None
+    if not a_xem:
+        # Phiếu Hoàn tất mà không có nút Xem: không đọc được kết quả → coi là lỗi đọc.
+        return {"_missing_view_link": True, "ten_dv": normalize_text(tds[2].get_text(strip=True))}
+    tg = normalize_text(tds[1].get_text(strip=True))
+    ngay, gio = split_vn_datetime(tg)
+    return {
+        "onclick": a_xem.get("onclick", ""),
+        "tg_chi_dinh": tg,
+        "ngay_chi_dinh": ngay,
+        "gio_chi_dinh": gio,
+        "ten_dv": normalize_text(tds[2].get_text(strip=True)),
+        "nguoi_chi_dinh": normalize_text(tds[4].get_text(strip=True)),
+        "trang_thai": trang_thai,
+        "phong": phong,
+    }
+
+
+def ensure_tab_complete(label, items, failed, total_rows):
+    """Chỉ chấp nhận kết quả tab khi mọi phiếu Hoàn tất đều đọc được chi tiết."""
+    if failed:
+        raise TabPartialError(f"Tab {label}: {failed}/{len(items)} phiếu Hoàn tất không đọc được chi tiết")
+    if items and not total_rows:
+        raise TabPartialError(f"Tab {label}: có {len(items)} phiếu Hoàn tất nhưng không đọc được kết quả nào")
+
+
+def xu_ly_tab_xn(driver, ctx, w_xn=None, fh_xn=None, from_dt=None, to_dt=None):
+    if not click_tab(driver, "litabLichSuXN"):
+        raise TabLoadError("Không bấm được tab XN")
+    if not wait_content(driver, "divLichSuXNContent"):
+        raise TabLoadError("Tab XN không tải xong nội dung")
+
+    div = driver.find_element(By.ID, "divLichSuXNContent")
+    items = parse_history_listing(div.get_attribute("innerHTML"), "XN", 5, 5, _xn_item_from_row)
 
     total_rows = []
+    failed = 0
     for item in items:
         tr_id = item.get("tr_id", "")
         try:
             if not tr_id:
-                continue
+                raise TabStructureError("Phiếu XN Hoàn tất không có mã dòng để mở chi tiết")
             span = driver.find_element(By.XPATH, f"//tr[@id='{tr_id}']//span[contains(@class,'ylenh-a')]")
             driver.execute_script("arguments[0].click();", span)
             WebDriverWait(driver, 8).until(lambda d: d.find_element(By.ID, "divLSCT").text.strip() != "")
             time.sleep(0.4)
             total_rows.extend(parse_chi_tiet_xn(driver, ctx, item))
+        except TabStructureError:
+            raise
         except Exception as e:
-            print(f"      [XN] Lỗi click {tr_id}: {e}")
+            failed += 1
+            print(f"      [XN] Lỗi mở chi tiết {tr_id}: {e}")
+    ensure_tab_complete("XN", items, failed, total_rows)
     if w_xn:
         w_xn.writerows(total_rows)
         if fh_xn:
@@ -4998,53 +5239,21 @@ def parse_chi_tiet_cdha(driver, ctx, item):
 
 
 def xu_ly_tab_cdha(driver, ctx, w_cdha=None, fh_cd=None, from_dt=None, to_dt=None):
-    click_tab(driver, "litabLichSuCDHA")
+    if not click_tab(driver, "litabLichSuCDHA"):
+        raise TabLoadError("Không bấm được tab CĐHA")
     if not wait_content(driver, "divLichSuCDHAContent"):
-        print("      CĐHA: không load được")
-        return []
+        raise TabLoadError("Tab CĐHA không tải xong nội dung")
 
     div = driver.find_element(By.ID, "divLichSuCDHAContent")
-    soup = BeautifulSoup(div.get_attribute("innerHTML"), "html.parser")
-    table = soup.find("table", id="tbDichVu") or soup.find("table")
-    if not table:
-        return []
-
-    phong = ""
-    items = []
-    for tr in table.find_all("tr"):
-        tds = tr.find_all("td")
-        if len(tds) == 1 and tds[0].get("colspan"):
-            phong = normalize_text(tds[0].get_text(strip=True))
-            continue
-        if len(tds) < 6:
-            continue
-        trang_thai = normalize_text(tds[5].get_text(strip=True))
-        if "Hoàn tất" not in trang_thai:
-            continue
-        tg = normalize_text(tds[1].get_text(strip=True))
-        # CĐHA có thể được thực hiện trước khi chuyển vào khoa hiện tại. Giữ toàn
-        # bộ lịch sử của popup đúng lượt, không lọc bằng cửa sổ ngày của cohort.
-        a_xem = tds[6].find("a") if len(tds) > 6 else None
-        if not a_xem:
-            continue
-        ngay, gio = split_vn_datetime(tg)
-        items.append({
-            "onclick": a_xem.get("onclick", ""),
-            "tg_chi_dinh": tg,
-            "ngay_chi_dinh": ngay,
-            "gio_chi_dinh": gio,
-            "ten_dv": normalize_text(tds[2].get_text(strip=True)),
-            "nguoi_chi_dinh": normalize_text(tds[4].get_text(strip=True)),
-            "trang_thai": trang_thai,
-            "phong": phong,
-        })
+    items = parse_history_listing(div.get_attribute("innerHTML"), "CĐHA", 6, 5, _cdha_item_from_row)
 
     total_rows = []
+    failed = 0
     for item in items:
         try:
             onclick = item.get("onclick", "")
             if not onclick:
-                continue
+                raise RuntimeError("phiếu Hoàn tất không có nút Xem kết quả")
             driver.execute_script(onclick.replace("return false;", "").strip())
             WebDriverWait(driver, 8).until(
                 lambda d: d.find_element(By.ID, "divLichSuCDHAContent").find_elements(
@@ -5063,7 +5272,9 @@ def xu_ly_tab_cdha(driver, ctx, w_cdha=None, fh_cd=None, from_dt=None, to_dt=Non
             except Exception:
                 pass
         except Exception as e:
-            print(f"      [CĐHA] Lỗi {item.get('ten_dv','')}: {e}")
+            failed += 1
+            print(f"      [CĐHA] Lỗi đọc chi tiết {item.get('ten_dv','')}: {e}")
+    ensure_tab_complete("CĐHA", items, failed, total_rows)
     if w_cdha:
         w_cdha.writerows(total_rows)
         if fh_cd:
@@ -5362,9 +5573,11 @@ def main():
                 # Tìm BN một lần rồi dùng lại các dòng lượt điều trị trong cùng mã BN.
                 # Đây là tối ưu tốc độ quan trọng cho deep scan: trước đây dem_luot_benh_nhan()
                 # tìm 1 lần, sau đó mỗi visit lại tìm thêm 1 lần nữa.
+                search_error = ""
                 rows_for_bn = tim_kiem_benh_nhan(driver, wait, ma_bn, from_dt, to_dt)
             except Exception as e:
                 rows_for_bn = []
+                search_error = str(e)
                 log_warn(f"Tìm BN {ma_bn} lỗi: {e}")
                 try:
                     dong_popup(driver)
@@ -5383,9 +5596,18 @@ def main():
                 else:
                     log_error(w_err, f_err, base_ctx, "BN", "tìm kiếm",
                               "Không tìm thấy người bệnh trên danh sách Hoàn tất")
+                # Ghi rõ cho backend: lỗi tìm kiếm (kỹ thuật) khác với EMR không có BN.
+                if search_error:
+                    mark_source_outcome(progress, base_ctx, "error", f"search_error: {search_error[:300]}")
+                else:
+                    mark_source_outcome(progress, base_ctx, "error", "not_found: không thấy BN trên danh sách Hoàn tất")
+                save_progress(run_dir, progress)
                 skip += 1
                 continue
 
+            requested_parts = parse_refetch_parts(base_ctx)
+            matched_visits = 0
+            unknown_visits = 0
             consecutive_popup_failures = 0
             for visit_index in range(visit_count):
                 ctx = dict(base_ctx)
@@ -5397,6 +5619,7 @@ def main():
                         preloaded_rows=rows_for_bn,
                     )
                     if info is None:
+                        unknown_visits += 1
                         consecutive_popup_failures += 1
                         mark_progress(progress, progress_key, "popup", "error", "Không mở được popup")
                         log_error(w_err, f_err, ctx, "Popup", "mở popup", "Không mở được popup Xem KQ/Lịch sử chung")
@@ -5443,7 +5666,8 @@ def main():
                     )
                     upsert_patient_master(run_dir, ctx)
 
-                    if is_patient_done(progress, progress_key):
+                    matched_visits += 1
+                    if is_patient_done(progress, progress_key) and not visit_needs_fetch(progress.get(progress_key), requested_parts):
                         removed_count, removed_keys = prune_redundant_initial_sources(run_dir, ctx, prune_source_paths)
                         covered_initial_keys.update(removed_keys)
                         if removed_count:
@@ -5491,12 +5715,11 @@ def main():
                         target="lich_su_xn.csv, lich_su_cdha.csv",
                     )
                     prepare_patient_commit(run_dir, ctx)
-                    rows_by_table = {"xn": [], "cdha": []}
-
+                    item["Research key"] = base_ctx.get("Research key", "")
                     mark_progress(progress, progress_key, "popup", "done")
                     save_progress(run_dir, progress)
 
-                    try:
+                    def _fetch_xn():
                         touch_watchdog(f"Tab XN {ctx.get('Mã NC','')} | {ctx.get('Mã BN','')}")
                         log_step(f"  → Tab XN: {ctx.get('Mã NC','')} | {ctx.get('Mã BN','')}")
                         case_trace_event(
@@ -5508,19 +5731,11 @@ def main():
                             writes="rows_by_table.xn",
                             target="lich_su_xn.csv",
                         )
-                        rows_by_table["xn"] = xu_ly_tab_xn(driver, ctx, None, None, from_dt, to_dt)
-                        mark_progress(progress, progress_key, "xn", "done")
-                        case_trace_event("XN.PARSE_ROWS", "Parse xong tab XN", "Tab XN", f"{len(rows_by_table['xn'])} dòng", "tên xét nghiệm, thời gian, kết quả, đơn vị, khoảng tham chiếu", "rows_by_table.xn", "lich_su_xn.csv")
-                        log_ok(f"  Tab XN xong: {len(rows_by_table['xn'])} dòng")
-                    except Exception as e:
-                        mark_progress(progress, progress_key, "xn", "error", str(e))
-                        log_error(w_err, f_err, ctx, "XN", "xử lý tab", e)
-                        log_error_raw(f"  Tab XN lỗi: {e}")
-                        save_progress(run_dir, progress)
-                        raise
-                    save_progress(run_dir, progress)
+                        rows = xu_ly_tab_xn(driver, ctx, None, None, from_dt, to_dt)
+                        case_trace_event("XN.PARSE_ROWS", "Parse xong tab XN", "Tab XN", f"{len(rows)} dòng", "tên xét nghiệm, thời gian, kết quả, đơn vị, khoảng tham chiếu", "rows_by_table.xn", "lich_su_xn.csv")
+                        return rows
 
-                    try:
+                    def _fetch_cdha():
                         touch_watchdog(f"Tab CĐHA {ctx.get('Mã NC','')} | {ctx.get('Mã BN','')}")
                         log_step(f"  → Tab CĐHA: {ctx.get('Mã NC','')} | {ctx.get('Mã BN','')}")
                         case_trace_event(
@@ -5532,63 +5747,63 @@ def main():
                             writes="rows_by_table.cdha",
                             target="lich_su_cdha.csv",
                         )
-                        rows_by_table["cdha"] = xu_ly_tab_cdha(driver, ctx, None, None, from_dt, to_dt)
-                        mark_progress(progress, progress_key, "cdha", "done")
-                        case_trace_event("CDHA.PARSE_ROWS", "Parse xong tab CĐHA", "Tab CĐHA", f"{len(rows_by_table['cdha'])} dòng", "tên dịch vụ, thời gian, kết quả/mô tả", "rows_by_table.cdha", "lich_su_cdha.csv")
-                        log_ok(f"  Tab CĐHA xong: {len(rows_by_table['cdha'])} dòng")
-                    except Exception as e:
-                        mark_progress(progress, progress_key, "cdha", "error", str(e))
-                        log_error(w_err, f_err, ctx, "CĐHA", "xử lý tab", e)
-                        log_error_raw(f"  Tab CĐHA lỗi: {e}")
+                        rows = xu_ly_tab_cdha(driver, ctx, None, None, from_dt, to_dt)
+                        case_trace_event("CDHA.PARSE_ROWS", "Parse xong tab CĐHA", "Tab CĐHA", f"{len(rows)} dòng", "tên dịch vụ, thời gian, kết quả/mô tả", "rows_by_table.cdha", "lich_su_cdha.csv")
+                        return rows
+
+                    # Mỗi tab lấy và commit riêng: XN lỗi không làm mất CĐHA đã lấy được,
+                    # lần sau chỉ lấy lại đúng tab còn thiếu.
+                    try:
+                        outcome = collect_visit_tabs(
+                            run_dir, ctx, item,
+                            {"xn": _fetch_xn, "cdha": _fetch_cdha},
+                            requested=requested_parts,
+                        )
+                    finally:
                         save_progress(run_dir, progress)
-                        raise
-                    save_progress(run_dir, progress)
-
-                    # Commit lượt điều trị vào CSV chính sau khi đã đủ dữ liệu.
-                    log_step(f"  → Commit ca {ctx.get('Mã NC','')} | {ctx.get('Mã BN','')} vào CSV")
-                    case_trace_event(
-                        "OUTPUT.WRITE_CSV",
-                        "Commit dữ liệu XN/CĐHA của case vào CSV",
-                        screen="run dir",
-                        sees=f"XN={len(rows_by_table['xn'])}; CĐHA={len(rows_by_table['cdha'])}",
-                        takes="rows_by_table",
-                        writes="lich_su_xn.csv + lich_su_cdha.csv",
-                        target=str(run_dir),
+                    for tab, label in (("xn", "XN"), ("cdha", "CĐHA")):
+                        st = outcome.get(tab)
+                        if st == "done":
+                            log_ok(f"  Tab {label}: {item.get('counts', {}).get(tab, 0)} dòng")
+                        elif st == "empty":
+                            log_ok(f"  Tab {label}: EMR không có kết quả Hoàn tất")
+                        elif st in ("error", "blocked"):
+                            reason = (item.get("tab_reason") or {}).get(tab, "")
+                            log_error(w_err, f_err, ctx, label, "xử lý tab" if st == "error" else "cần người xem", reason)
+                            log_error_raw(f"  Tab {label} {'lỗi' if st == 'error' else 'dừng, cần người xem'}: {reason}")
+                    counts = item.get("counts") or {}
+                    case_trace_finish(
+                        run_dir,
+                        status="done" if item.get("status") == "done" else "incomplete",
+                        counts={"xn": counts.get("xn", 0), "cdha": counts.get("cdha", 0)},
+                        error=item.get("last_error", ""),
                     )
-                    commit_patient_outputs(run_dir, rows_by_table, ctx)
-                    log_ok(f"  Commit xong: XN={len(rows_by_table['xn'])}, CĐHA={len(rows_by_table['cdha'])}")
-                    case_trace_finish(run_dir, status="done", counts={"xn": len(rows_by_table["xn"]), "cdha": len(rows_by_table["cdha"])})
-                    mark_patient_committed(progress, progress_key, {
-                        "xn": len(rows_by_table["xn"]),
-                        "cdha": len(rows_by_table["cdha"]),
-                    })
-                    save_progress(run_dir, progress)
 
-                    removed_count, removed_keys = prune_redundant_initial_sources(run_dir, ctx, prune_source_paths)
-                    covered_initial_keys.update(removed_keys)
-                    if removed_count:
-                        print(f"      ↪ Đã gộp/xóa {removed_count} dòng ban đầu có T/G vào nằm trong {ctx.get('Ngày vào viện','')} → {ctx.get('Ngày ra viện','')}")
+                    if item.get("status") == "done":
+                        removed_count, removed_keys = prune_redundant_initial_sources(run_dir, ctx, prune_source_paths)
+                        covered_initial_keys.update(removed_keys)
+                        if removed_count:
+                            print(f"      ↪ Đã gộp/xóa {removed_count} dòng ban đầu có T/G vào nằm trong {ctx.get('Ngày vào viện','')} → {ctx.get('Ngày ra viện','')}")
+                        ok += 1
+                    else:
+                        skip += 1
 
                     dong_popup(driver)
                     time.sleep(0.3)
                     ensure_noi_tru_list(driver, wait, from_dt, to_dt)
-                    ok += 1
 
                 except KeyboardInterrupt:
                     print("\n⏹ Dừng thủ công. Ca hiện tại chưa commit đủ sẽ được lấy lại ở lần sau.")
                     save_progress(run_dir, progress)
                     raise
                 except Exception as e:
+                    unknown_visits += 1
                     item = ensure_patient_progress(progress, progress_key)
                     item["status"] = "incomplete"
                     item["committed"] = False
                     err_msg = str(e)
                     # Phân loại: FATAL nếu là lỗi session/driver (cần dừng và cảnh báo ngay)
-                    is_fatal = any(kw in err_msg.lower() for kw in [
-                        "invalid session id", "no such session", "session deleted",
-                        "webdriverexception", "chrome not reachable",
-                        "unable to connect", "connection refused",
-                    ])
+                    is_fatal = is_fatal_session_error(err_msg)
                     if is_fatal:
                         log_fatal(w_err, f_err, ctx, "BN", "vòng xử lý", e)
                         case_trace_finish(run_dir, status="fatal", counts={}, error=str(e))
@@ -5620,6 +5835,19 @@ def main():
                         except Exception:
                             pass
                         skip += 1
+
+            # Có mốc thời gian để đối chiếu mà không lượt nào khớp chắc chắn: KHÔNG
+            # tự chọn lượt gần giống nhất. Ghi lý do cho đúng dòng nguồn này.
+            if has_visit_filter(base_ctx) and matched_visits == 0:
+                if unknown_visits:
+                    mark_source_outcome(progress, base_ctx, "error",
+                                        "popup_error: không mở được lượt nào để đối chiếu")
+                else:
+                    mark_source_outcome(progress, base_ctx, "blocked",
+                                        "encounter_not_identified: không lượt nào trên EMR khớp chắc chắn với dòng nguồn")
+                    log_error(w_err, f_err, base_ctx, "BN", "ghép lượt",
+                              "Không xác định chắc lượt điều trị — dừng ca này, cần người xem")
+                save_progress(run_dir, progress)
 
         print(f"\n✅ Xong! Xử lý XN + CĐHA: {ok} | Bỏ qua/lỗi/chưa đủ: {skip}")
         print(f"   Output: {run_dir}")
