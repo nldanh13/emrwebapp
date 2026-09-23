@@ -4218,7 +4218,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
   // HCHANH_BATCH_SIZE bên dưới), giống cách script XN&CĐHA dùng lại 1 Chrome
   // cho cả lô. Đo lại tổng số lô + thời gian mỗi lô, ghi vào action_log.txt để
   // có số liệu cụ thể đánh giá tải lên server EMR, thay vì chỉ ước lượng cảm tính.
-  const stats = { total: selectedRows.length, processed: 0, skipped: 0, ok: 0, attention: 0, error: 0, cancelled: false, chromeCycles: 0, chromeCycleMs: 0 };
+  const stats = { total: selectedRows.length, processed: 0, skipped: 0, reused: 0, ok: 0, attention: 0, error: 0, cancelled: false, chromeCycles: 0, chromeCycleMs: 0 };
   appendResearchRunLog(runPath, `[${new Date().toLocaleString('vi-VN')}] Bắt đầu lấy ${runLabel}: ${selectedRows.length} ca | files=${wantedFiles.join(',')}`);
   appendActivity(ctx, {
     kind: 'workflow.research.fetch_hchanh.start',
@@ -4254,21 +4254,52 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
     appendResearchRunLog(runPath, `[${logPrefix}] ${deferredEntries.length} ca trong danh sách chờ tìm lại (từng không tìm thấy BN trên HIS) — dời xuống cuối, chỉ tìm lại khi các ca khác đã lấy đủ.`);
   }
 
+  // Nguồn thường có nhiều dòng cho CÙNG một đợt nằm viện (mỗi khoa/lần chuyển khoa
+  // một dòng, ngày vào lệch vài ngày). Worker tìm theo mã BN nên các dòng này đều mở
+  // ra đúng một hồ sơ EMR và cho kết quả y hệt. Nhớ các đợt đã lấy trong lần chạy
+  // này (ngày vào/ra THẬT do EMR trả về) để dòng sau cùng đợt dùng lại kết quả thay
+  // vì mở Chrome lấy lại. BN có đợt nằm viện khác (ngày vào ngoài khoảng) vẫn lấy riêng.
+  const fetchedStays = new Map();
+  const rememberFetchedStay = (meta, key, output) => {
+    const from = isoDate(output?.profile?.ngay_vao_vien || output?.profile?.ngay_vao || '');
+    const to = isoDate(output?.discharge?.ngay_ra || '');
+    if (!meta.ma_bn || !from || !to || from > to) return;
+    const list = fetchedStays.get(meta.ma_bn) || [];
+    list.push({ from, to, output, sourceKey: key });
+    fetchedStays.set(meta.ma_bn, list);
+  };
+  const findFetchedStay = (meta) => {
+    const admission = isoDate(meta.admission_raw || '');
+    if (!admission) return null;
+    return (fetchedStays.get(meta.ma_bn) || []).find(st => st.from <= admission && admission <= st.to) || null;
+  };
+  const writeHchanhCsvs = () => {
+    writeCsvUnion(path.join(runPath, 'hchanh_profile.csv'), profileRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Giới', 'Ngày sinh', 'Tuổi', 'Địa chỉ', 'Điện thoại', 'Số CMND', 'Đối tượng', 'Số thẻ', 'Ngày vào viện', 'Ngày ra viện', 'Chẩn đoán', 'Research key']);
+    writeCsvUnion(path.join(runPath, 'hchanh_discharge.csv'), dischargeRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Ngày vào viện', 'Ngày ra viện', 'Thời gian điều trị', 'Chẩn đoán', 'Chẩn đoán ra viện', 'Bệnh kèm', 'Biến chứng', 'Tai biến', 'Tình trạng ra', 'Research key']);
+    writeCsvUnion(path.join(runPath, 'hchanh_surgery.csv'), surgeryRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Ngày vào viện', 'Ngày ra viện', 'Ngày phẫu thuật', 'Tên phẫu thuật', 'Phương pháp phẫu thuật', 'PPVC', 'Phân loại PT', 'Trạng thái', 'Chẩn đoán trước mổ', 'Chẩn đoán sau mổ', 'Research key']);
+    writeCsvUnion(path.join(runPath, 'hchanh_order_history.csv'), orderRows, ['Mã NC', 'Mã BN', 'Họ tên', 'TG y lệnh', 'Ngày', 'Bác sĩ', 'Diễn biến', 'Tên y lệnh', 'Y lệnh khác', 'KQ', 'Trạng thái', 'Research key']);
+  };
+
   let batchNo = 0;
   let passEntries = mainEntries;
   let retryingDeferred = false;
   for (let pass = 0; pass < 2; pass += 1) {
-    for (let chunkStart = 0; chunkStart < passEntries.length; chunkStart += HCHANH_BATCH_SIZE) {
+    const queue = passEntries.slice();
+    while (queue.length) {
       if (isCancelRequested(ctx.sid)) {
         stats.cancelled = true;
         appendResearchRunLog(runPath, `[${logPrefix}] ĐÃ DỪNG theo yêu cầu trước lô ${batchNo + 1}; không spawn worker mới.`);
         break;
       }
 
-      const chunkEntries = passEntries.slice(chunkStart, chunkStart + HCHANH_BATCH_SIZE);
+      const chunkEntries = queue.splice(0, HCHANH_BATCH_SIZE);
+      // Dòng cùng mã BN với 1 ca đã có trong lô này được dời sang lô sau: khi đó
+      // ca trước đã lấy xong và dòng này có thể dùng lại kết quả (xem findFetchedStay).
+      const postponed = [];
       // Trong lô, vẫn lọc bỏ các ca đã done giống hệt logic cũ (từng ca), chỉ những
       // ca THỰC SỰ cần fetch mới được đưa vào batchItems để gộp 1 Chrome.
       const batchItems = [];
+      let chunkReused = 0;
       for (const { row, idx } of chunkEntries) {
         const meta = researchHchanhMeta(row, sourceRunId);
         const key = meta.source_key;
@@ -4306,11 +4337,46 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
           continue;
         }
 
+        const reuse = force ? null : findFetchedStay(meta);
+        if (reuse) {
+          const flat = hchanhFetchOutputToRows(reuse.output, row, sourceRunId);
+          if (flat.profileRows.length) profileRows = dedupeRowsByStableKey(removeResearchSourceKey(profileRows, key).concat(flat.profileRows), ['Research key', 'Mã BN', 'Ngày vào viện', 'Ngày ra viện']);
+          if (flat.dischargeRows.length) dischargeRows = dedupeRowsByStableKey(removeResearchSourceKey(dischargeRows, key).concat(flat.dischargeRows), ['Research key', 'Mã BN', 'Ngày vào viện', 'Ngày ra viện', 'Chẩn đoán ra viện']);
+          if (flat.surgeryRows.length) surgeryRows = dedupeRowsByStableKey(removeResearchSourceKey(surgeryRows, key).concat(flat.surgeryRows), ['Research key', 'Mã BN', 'Ngày phẫu thuật', 'Tên phẫu thuật', 'Phương pháp phẫu thuật']);
+          if (flat.orderRows.length) orderRows = dedupeRowsByStableKey(removeResearchSourceKey(orderRows, key).concat(flat.orderRows), ['Research key', 'Mã BN', 'TG y lệnh', 'Tên y lệnh', 'Y lệnh khác']);
+          const sc = statusCountsFromHchanhOutput(reuse.output);
+          stats.processed += 1;
+          stats.reused += 1;
+          if (sc.attention) stats.attention += 1;
+          else stats.ok += 1;
+          progress[key] = {
+            ...(progress[key] || {}),
+            ma_bn: meta.ma_bn, ho_ten: meta.ho_ten, research_code: meta.research_code,
+            encounter_id: key, admission_date: meta.admission_raw || '', discharge_date: meta.discharge_raw || '',
+            status: sc.attention ? 'partial' : 'done', finished_at: nowIso(), files: wantedFiles, counts: sc,
+            reused_from: reuse.sourceKey,
+            rows: { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length },
+          };
+          chunkReused += 1;
+          appendResearchRunLog(runPath, `[${logPrefix}] DÙNG LẠI ${display}: cùng đợt nằm viện ${reuse.from} → ${reuse.to} đã lấy ở ${reuse.sourceKey}, không mở EMR lại.`);
+          continue;
+        }
+
+        if (!force && batchItems.some(it => it.meta.ma_bn === meta.ma_bn)) {
+          postponed.push({ row, idx });
+          continue;
+        }
+
         const dateFrom = meta.date_from || fallbackDateFrom || '';
         const dateTo = meta.date_to || fallbackDateTo || dateFrom || '';
         batchItems.push({ idx, row, meta, key, failKey, display, dateFrom, dateTo });
       }
+      if (postponed.length) queue.unshift(...postponed);
 
+      if (chunkReused) {
+        writeJsonAtomic(progressPath, progress);
+        if (!batchItems.length) writeHchanhCsvs();
+      }
       if (!batchItems.length) continue;
 
       batchNo += 1;
@@ -4429,6 +4495,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
         if (sc.error) stats.error += 1;
         else if (sc.attention) stats.attention += 1;
         else stats.ok += 1;
+        if (!sc.error) rememberFetchedStay(meta, key, output);
         progress[key] = {
           ...progress[key], status: sc.error ? 'error' : (sc.attention ? 'partial' : 'done'),
           finished_at: nowIso(), output: path.basename(batchOutputPath), counts: sc,
@@ -4460,10 +4527,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
 
       // CSV union được ghi 1 lần sau khi xử lý xong cả lô (đủ, vì mỗi ca trong lô đã
       // gộp dòng của nó vào profileRows/dischargeRows/surgeryRows/orderRows ở trên).
-      writeCsvUnion(path.join(runPath, 'hchanh_profile.csv'), profileRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Giới', 'Ngày sinh', 'Tuổi', 'Địa chỉ', 'Điện thoại', 'Số CMND', 'Đối tượng', 'Số thẻ', 'Ngày vào viện', 'Ngày ra viện', 'Chẩn đoán', 'Research key']);
-      writeCsvUnion(path.join(runPath, 'hchanh_discharge.csv'), dischargeRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Ngày vào viện', 'Ngày ra viện', 'Thời gian điều trị', 'Chẩn đoán', 'Chẩn đoán ra viện', 'Bệnh kèm', 'Biến chứng', 'Tai biến', 'Tình trạng ra', 'Research key']);
-      writeCsvUnion(path.join(runPath, 'hchanh_surgery.csv'), surgeryRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Ngày vào viện', 'Ngày ra viện', 'Ngày phẫu thuật', 'Tên phẫu thuật', 'Phương pháp phẫu thuật', 'PPVC', 'Phân loại PT', 'Trạng thái', 'Chẩn đoán trước mổ', 'Chẩn đoán sau mổ', 'Research key']);
-      writeCsvUnion(path.join(runPath, 'hchanh_order_history.csv'), orderRows, ['Mã NC', 'Mã BN', 'Họ tên', 'TG y lệnh', 'Ngày', 'Bác sĩ', 'Diễn biến', 'Tên y lệnh', 'Y lệnh khác', 'KQ', 'Trạng thái', 'Research key']);
+      writeHchanhCsvs();
 
       // Trường hợp người dùng bấm Dừng đúng lúc lô vừa hoàn tất: giữ kết quả các ca đã
       // xong trong lô nhưng tuyệt đối không chuyển sang lô tiếp theo.
@@ -4490,7 +4554,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
     passEntries = deferredEntries;
   }
 
-  appendResearchRunLog(runPath, `[${new Date().toLocaleString('vi-VN')}] ${stats.cancelled ? 'Đã dừng' : 'Kết thúc'} lấy ${runLabel}: ok=${stats.ok}, partial=${stats.attention}, error=${stats.error}, skipped=${stats.skipped}`);
+  appendResearchRunLog(runPath, `[${new Date().toLocaleString('vi-VN')}] ${stats.cancelled ? 'Đã dừng' : 'Kết thúc'} lấy ${runLabel}: ok=${stats.ok}, partial=${stats.attention}, error=${stats.error}, skipped=${stats.skipped}, dùng lại=${stats.reused}`);
   if (stats.chromeCycles) {
     const avgSec = (stats.chromeCycleMs / stats.chromeCycles / 1000).toFixed(1);
     const totalMin = (stats.chromeCycleMs / 60000).toFixed(1);
@@ -7103,3 +7167,5 @@ router.post('/research/studies/:studyId/run', async (req, res) => {
 });
 
 module.exports = router;
+// Chỉ dùng cho kiểm thử (scripts/research_hchanh_same_stay_reuse_test.js).
+module.exports._fetchHchanhForResearchRun = fetchHchanhForResearchRun;
