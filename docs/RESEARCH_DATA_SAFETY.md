@@ -56,7 +56,7 @@ Mỗi kho (kho gốc `du_lieu_goc` hoặc một nghiên cứu riêng) nằm ở
 | `normalize_history.jsonl` | Mỗi lần chuẩn hóa thêm 1 dòng (không ghi đè): thời điểm, run_id, phiên bản schema, phiên bản code (version + git commit), chữ ký input, số dòng vào/ra, trạng thái SQLite, tóm tắt QA. |
 | `qa_report.json` | Lỗi **chặn** và **cảnh báo**, chỉ chứa mã giả danh và số đếm. |
 | `encounter_review.csv` | Danh sách đợt cần người duyệt kèm lý do. |
-| `datasets/<tên>/` | Bản bất biến của mỗi dataset cuối + `dataset_manifest.json` (nguồn, sha256, chữ ký input, cấu hình biến, thông tin đề cương, QA). |
+| `datasets/<tên>/` | Bản bất biến của mỗi dataset cuối: `analysis_final.csv`, `data_dictionary.json`, `dataset_manifest.json` (run, chữ ký dữ liệu chuẩn hóa, phiên bản schema/code/từ điển, cấu hình biến, đề cương + tiêu chí + yêu cầu dữ liệu của nghiên cứu, QA, checksum từng file) và `SHA256SUMS` (gồm cả checksum của manifest). Xem mục 3c. |
 
 **Lỗi chặn** (không cho tạo dataset cuối): trùng `encounter_id`/Mã NC/`patient_code`,
 thiếu khóa bắt buộc, dòng con trỏ tới đợt không tồn tại, trùng mã dòng, SQLite lỗi
@@ -69,6 +69,33 @@ quả khác nhau (giữ tất cả, không tự chọn).
 Hệ thống không tự sửa giá trị lâm sàng. Các cột suy luận (ví dụ
 `injury_side_suggested`) được liệt kê trong `qa_report.json` → `notes` với trạng
 thái `needs_human_confirmation`.
+
+## 3c. Snapshot dataset cuối
+
+- **Ghi an toàn:** snapshot được ghi vào `datasets/.tmp_<tên>_<ngẫu nhiên>/`. Thứ tự: CSV,
+  từ điển, manifest (có checksum từng file), `SHA256SUMS`. Sau đó mọi file được kiểm lại
+  SHA-256; chỉ khi khớp mới đổi tên (nguyên tử) thành `datasets/<tên>/`. Thư mục chính
+  thức vì vậy luôn là snapshot đã hoàn tất. Thư mục `.tmp_*` không bao giờ được coi là
+  snapshot.
+- **Kiểm tra** (`GET /api/research/archive/datasets/verify`,
+  `GET /api/research/studies/<id>/datasets/verify`): mỗi snapshot được báo một trong ba
+  trạng thái:
+  - `valid`: đủ file, đúng checksum;
+  - `missing`: thiếu file hoặc thiếu cả snapshot;
+  - `modified`: sai checksum, gồm cả trường hợp manifest bị sửa.
+
+  Việc kiểm tra chỉ đọc; snapshot sai checksum được giữ nguyên để điều tra, không tự sửa
+  hay ghi đè. Snapshot tạo trước bản này (chưa có `SHA256SUMS`) chỉ kiểm được CSV theo
+  sha256 trong manifest, và được đánh dấu `legacy`.
+- **Tạo lại cùng nội dung:** nếu có snapshot cùng sha256 và kiểm tra `valid` thì dùng lại
+  snapshot đó, như trước đây. Nếu snapshot đó bị sửa hoặc thiếu file thì tạo snapshot mới
+  bên cạnh; bản hỏng vẫn giữ nguyên.
+- **Dọn sau sự cố:** mỗi lần tạo snapshot, thư mục `.tmp_*` bị bỏ lại được dọn. Thư mục tạm
+  của chính tiến trình đang chạy thì dọn ngay (ghi snapshot là đồng bộ, nên nếu còn tức là
+  đã hỏng). Thư mục tạm của tiến trình khác chỉ dọn khi đã cũ hơn 10 phút. Snapshot đã hoàn
+  tất không bao giờ bị dọn.
+- Log và kết quả kiểm tra chỉ có tên snapshot, tên file và checksum, không có dữ liệu
+  người bệnh.
 
 ## 3b. Thu thập tự động (chỉ lấy phần thiếu/lỗi/đã thay đổi)
 
