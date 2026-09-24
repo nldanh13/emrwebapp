@@ -105,7 +105,22 @@ rà kết quả. Code: `server/research/collection.js` (logic) và phần "Đi�
 tự động" trong `server/routes/research.js`.
 
 **Trạng thái riêng từng phần của từng lượt** (XN, CĐHA, Hồ sơ nền, Ra viện, Phẫu
-thuật, Y lệnh) được lưu ở `collection_ledger.json`:
+thuật, Y lệnh) được lưu ở `collection_ledger.json`.
+
+**Đơn vị theo dõi là lượt điều trị, không phải dòng danh sách.** Các dòng chuyển khoa của
+cùng một lượt được gom về lượt đã chuẩn hóa (`encounters.csv`), theo thứ tự ưu tiên:
+
+1. Mã nội trú;
+2. Mã điều trị;
+3. T/G vào nằm trong khoảng vào–ra của lượt.
+
+Dòng chỉ được gom khi khớp **đúng một** lượt; khớp nhiều lượt, hoặc khác Mã nội trú, thì
+đứng riêng. Tiến độ nằm ở bất kỳ dòng nào của lượt đều được tính cho lượt. Tiến độ hành
+chánh ghi theo khóa dòng cũ được ghép theo Mã BN + ngày vào, nếu khớp đúng một lượt. Khi
+cần lấy lại, worker nhận dòng vào sớm nhất của lượt, với khoảng lấy dữ liệu phủ cả lượt.
+Khi chưa chuẩn hóa (chưa có `encounters.csv`), mỗi dòng là một đơn vị.
+
+Các trạng thái:
 
 | Trạng thái | Nghĩa | Hệ thống làm gì |
 |---|---|---|

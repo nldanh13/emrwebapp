@@ -358,4 +358,62 @@ test('Báo cáo: phần kiểm tra lại không tính là lấy bù; đếm số
   assert.strictEqual(report.fetched_encounters, 1);
 });
 
+test('Kho cũ: các dòng chuyển khoa (không Mã nội trú) gom về 1 lượt; tiến độ nằm rải ở các dòng vẫn được nhận', () => {
+  // Một lượt 02/03 → 10/03 có 3 dòng danh sách (3 khoa); một lượt khác 20/04 → 25/04.
+  const row = (key, tg, extra = {}) => src(key, '', 'BN_X', { 'Mã nội trú': '', 'T/G vào': tg, 'Ngày vào viện': '', ...extra });
+  const rows = [
+    row('k1', '02/03/2026 08:00'), row('k2', '05/03/2026 09:00', { 'Khoa chuyển đến': 'Hồi sức' }), row('k3', '08/03/2026 10:00'),
+    row('k4', '20/04/2026 07:00'),
+  ];
+  const encounterRows = [
+    { encounter_id: 'enc_stay1', research_code: 'NC0100', patient_code: 'BN_X', admission_date: '2026-03-02 08:00', discharge_date: '2026-03-10 09:00' },
+    { encounter_id: 'enc_stay2', research_code: 'NC0101', patient_code: 'BN_X', admission_date: '2026-04-20 07:00', discharge_date: '2026-04-25 09:00' },
+  ];
+  const units = c.buildCollectionUnits({ sourceRows: rows, encounterRows });
+  const byKey = Object.fromEntries(units.map(u => [u.key, u]));
+  assert.deepStrictEqual(Object.keys(byKey).sort(), ['enc_stay1', 'enc_stay2']);
+  assert.deepStrictEqual(byKey.enc_stay1.members.sort(), ['k1', 'k2', 'k3']);
+  assert.strictEqual(byKey.enc_stay1.row['Research key'], 'k1', 'dòng giao cho worker là dòng vào sớm nhất');
+  assert.strictEqual(byKey.enc_stay1.signatures.split(' ').length, 3);
+
+  // XN (bản cũ, không Research key) ghi ngày vào của lượt; hành chánh nằm ở dòng k2 (dòng giữa).
+  const xn = { 'BN_X|treatment:abc': { 'Mã BN': 'BN_X', 'Mã NC': 'NC0007', 'Ngày vào viện': '02/03/2026 08:00', xn: 'done', cdha: 'done', committed: true, counts: { xn: 12, cdha: 2 }, updated_at: 't1' } };
+  const hc = { k2: hcEntry(OK_HC) };
+  const oh = { k3: hcEntry(OK_OH) };
+  const ledger = c.buildLedger({ units, xnProgress: xn, hchanhProgress: hc, orderProgress: oh });
+  const stay1 = ledger.encounters.enc_stay1;
+  assert.ok(c.PART_KEYS.every(k => c.partIsCurrent(stay1, k)), 'lượt đủ 6 phần dù tiến độ nằm ở các dòng khác nhau');
+  assert.ok(stay1.data_codes.includes('NC0007'), 'nhớ Mã NC script XN đã dùng để so dữ liệu thô');
+  const plan = c.planCollection(ledger);
+  assert.strictEqual(plan.summary.encounters, 2);
+  assert.strictEqual(plan.summary.unchanged, 1);
+  assert.deepStrictEqual(plan.tasks.map(t => [t.key, t.parts.length]), [['enc_stay2', 6]]);
+});
+
+test('Dòng không ghép chắc về đúng 1 lượt (2 lượt chồng ngày, hoặc khác Mã nội trú) thì đứng riêng', () => {
+  const rows = [
+    src('k1', '', 'BN_Y', { 'Mã nội trú': '', 'T/G vào': '05/03/2026 09:00' }),
+    src('k2', '', 'BN_Y', { 'Mã nội trú': 'NT_KHAC', 'T/G vào': '15/04/2026 09:00' }),
+  ];
+  const encounterRows = [
+    { encounter_id: 'e1', patient_code: 'BN_Y', admission_date: '2026-03-01', discharge_date: '2026-03-10' },
+    { encounter_id: 'e2', patient_code: 'BN_Y', admission_date: '2026-03-04', discharge_date: '2026-03-06' },
+    { encounter_id: 'e3', patient_code: 'BN_Y', admission_date: '2026-04-10', discharge_date: '2026-04-20', emr_noitru_id: 'nt_goc' },
+  ];
+  const units = c.buildCollectionUnits({ sourceRows: rows, encounterRows });
+  assert.deepStrictEqual(units.map(u => u.key).sort(), ['k1', 'k2']);
+});
+
+test('Progress hành chánh theo khóa dòng cũ (không còn trong nguồn) vẫn ghép được vào lượt theo Mã BN + ngày vào', () => {
+  const rows = [src('k_moi', '', 'BN_Z', { 'Mã nội trú': '', 'T/G vào': '02/03/2026 08:00' })];
+  const encounterRows = [{ encounter_id: 'e_z', patient_code: 'BN_Z', admission_date: '2026-03-02', discharge_date: '2026-03-09' }];
+  const units = c.buildCollectionUnits({ sourceRows: rows, encounterRows });
+  const hc = { k_cu: { ...hcEntry(OK_HC), ma_bn: 'BN_Z', admission_date: '04/03/2026' } };
+  const hcKhac = { k_khac: { ...hcEntry(OK_HC), ma_bn: 'BN_Z', admission_date: '20/05/2026' } };
+  const ok = c.buildLedger({ units, hchanhProgress: hc });
+  assert.strictEqual(ok.encounters.e_z.parts.discharge.status, 'ok');
+  const none = c.buildLedger({ units, hchanhProgress: hcKhac });
+  assert.strictEqual(none.encounters.e_z.parts.discharge.status, 'pending', 'ngày ngoài lượt → không ghép');
+});
+
 console.log(`\n${passed} kịch bản pass.`);

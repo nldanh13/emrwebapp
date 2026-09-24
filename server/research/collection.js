@@ -244,8 +244,123 @@ function sourceIdentity(row) {
   };
 }
 
+// Đơn vị theo dõi = một LƯỢT điều trị. Danh sách nội trú có nhiều dòng cho cùng một lượt
+// (mỗi lần chuyển khoa một dòng); các dòng đó được gom về lượt đã chuẩn hóa
+// (encounters.csv) để tiến độ không bị chia nhỏ theo dòng. Dòng chưa ghép chắc về đúng
+// một lượt thì đứng riêng (không đoán).
+function sourceUnitFromRow(row) {
+  const id = sourceIdentity(row);
+  return {
+    ...id,
+    members: [id.key],
+    stay_from: id.admission_date,
+    stay_to: '',
+    signatures: cell(row, ['list_row_signatures']),
+    row,
+  };
+}
+
+function rowAdmissionSortKey(row) {
+  const raw = cell(row, ['T/G vào', 'Ngày vào viện', 'admission_date']);
+  const d = isoDateOnly(raw);
+  const t = (String(raw).match(/(\d{1,2}):(\d{2})/) || []).slice(1).map(x => x.padStart(2, '0')).join(':');
+  return `${d} ${t}`;
+}
+
+function buildCollectionUnits({ sourceRows = [], encounterRows = [] } = {}) {
+  const encs = (encounterRows || []).map(r => ({
+    id: cell(r, ['encounter_id']),
+    research_code: cell(r, ['research_code']),
+    patient_code: cell(r, ['patient_code']),
+    noitru: clean(cell(r, ['emr_noitru_id'])),
+    treatment: clean(cell(r, ['emr_treatment_id'])),
+    from: isoDateOnly(cell(r, ['admission_date'])),
+    to: isoDateOnly(cell(r, ['discharge_date'])),
+  })).filter(e => e.id && e.patient_code && !e.id.startsWith('enc_unresolved_'));
+  const byCode = new Map();
+  for (const e of encs) {
+    if (!byCode.has(e.patient_code)) byCode.set(e.patient_code, []);
+    byCode.get(e.patient_code).push(e);
+  }
+  const units = new Map();
+  const seen = new Set();
+  for (const row of sourceRows || []) {
+    const id = sourceIdentity(row);
+    if (!id.key || seen.has(id.key)) continue;
+    seen.add(id.key);
+    const rowDate = isoDateOnly(cell(row, ['T/G vào', 'Ngày vào viện', 'admission_date']));
+    const cands = byCode.get(id.patient_code) || [];
+    const noConflict = e => !(id.noitru && e.noitru && e.noitru !== id.noitru);
+    const levels = [
+      () => (id.noitru ? cands.filter(e => e.noitru === id.noitru || e.treatment === id.noitru) : []),
+      () => (id.treatment ? cands.filter(e => e.treatment === id.treatment || e.noitru === id.treatment) : []),
+      () => (rowDate ? cands.filter(e => noConflict(e) && e.from && rowDate >= e.from && rowDate <= (e.to || e.from)) : []),
+    ];
+    let match = null;
+    for (const level of levels) {
+      const found = level();
+      if (found.length === 1) { match = found[0]; break; }
+      if (found.length > 1) break; // nhiều lượt khớp → không đoán, đứng riêng
+    }
+    const key = match ? match.id : id.key;
+    if (!units.has(key)) {
+      units.set(key, {
+        key,
+        encounter_id: match?.id || '',
+        research_code: match?.research_code || id.research_code,
+        patient_code: id.patient_code,
+        noitru: match?.noitru || id.noitru,
+        treatment: match?.treatment || id.treatment,
+        admission_date: match?.from || id.admission_date,
+        stay_from: match?.from || id.admission_date,
+        stay_to: match?.to || '',
+        members: [],
+        rows: [],
+      });
+    }
+    const u = units.get(key);
+    u.members.push(id.key);
+    u.rows.push(row);
+  }
+  const out = [];
+  for (const u of units.values()) {
+    const rows = [...u.rows].sort((a, b) => rowAdmissionSortKey(a).localeCompare(rowAdmissionSortKey(b)));
+    const first = rows[0];
+    const froms = rows.map(r => cell(r, ['fetch_from_date'])).filter(Boolean).sort();
+    const tos = rows.map(r => cell(r, ['fetch_to_date'])).filter(Boolean).sort();
+    // Dòng giao cho worker: dòng vào sớm nhất của lượt, khoảng lấy dữ liệu phủ cả lượt.
+    const row = {
+      ...first,
+      ...(froms.length ? { fetch_from_date: froms[0] } : {}),
+      ...(tos.length ? { fetch_to_date: tos[tos.length - 1] } : {}),
+    };
+    out.push({
+      key: u.key,
+      encounter_id: u.encounter_id,
+      research_code: u.research_code,
+      patient_code: u.patient_code,
+      noitru: u.noitru,
+      treatment: u.treatment,
+      admission_date: u.admission_date,
+      stay_from: u.stay_from,
+      stay_to: u.stay_to,
+      members: u.members,
+      member_codes: [...new Set(rows.map(r => cell(r, ['Mã NC', 'research_code'])).filter(Boolean))],
+      signatures: mergeSignatures(...rows.map(r => cell(r, ['list_row_signatures']))),
+      row,
+    });
+  }
+  return out;
+}
+
 function matchXnEntriesToSources(progress, sources) {
-  const byKey = new Map(sources.map(s => [s.key, s]));
+  const byKey = new Map();
+  for (const s of sources) for (const m of (s.members || [s.key])) byKey.set(m, s);
+  const inStay = (s, date) => {
+    const from = s.stay_from || s.admission_date;
+    if (!from || !date) return false;
+    return s.stay_to ? (date >= from && date <= s.stay_to) : date === from;
+  };
   const matches = new Map();
   const unmatched = [];
   for (const [rawKey, entry] of Object.entries(progress || {})) {
@@ -262,7 +377,7 @@ function matchXnEntriesToSources(progress, sources) {
       () => (noitru ? sources.filter(s => s.patient_code === code && (s.noitru === noitru || s.treatment === noitru)) : []),
       () => (treatment ? sources.filter(s => s.patient_code === code && (s.treatment === treatment || s.noitru === treatment)) : []),
       () => (rc && code ? sources.filter(s => s.research_code === rc && s.patient_code === code) : []),
-      () => (code && admission ? sources.filter(s => s.patient_code === code && s.admission_date === admission) : []),
+      () => (code && admission ? sources.filter(s => s.patient_code === code && inStay(s, admission)) : []),
     ];
     let picked = null;
     let ambiguous = false;
@@ -301,31 +416,66 @@ function latestResult(results) {
 
 // ── Dựng sổ thu thập ─────────────────────────────────────────────────────────
 
-function derivePartResults(source, xnMatches, hchanhProgress, orderProgress) {
+// Nhiều dòng (thành viên) của cùng một lượt: nếu có dòng đã lấy xong thì dùng kết quả xong
+// mới nhất (dữ liệu của lượt đã có); nếu không thì dùng kết quả mới nhất.
+function latestPreferDone(results) {
+  const list = (results || []).filter(Boolean);
+  const done = list.filter(r => DONE_STATUSES.has(r.status));
+  return latestResult(done.length ? done : list);
+}
+
+// Progress hành chánh ghi theo khóa dòng. Khóa không còn thuộc lượt nào (nguồn được tạo lại
+// với khóa khác) thì ghép theo Mã BN + ngày vào nằm trong lượt — chỉ khi khớp đúng 1 lượt.
+function matchOrphanHchanhEntries(progress, sources) {
+  const memberOf = new Set();
+  for (const s of sources) for (const m of (s.members || [s.key])) memberOf.add(m);
+  const out = new Map();
+  for (const [key, entry] of Object.entries(progress || {})) {
+    if (memberOf.has(key) || String(key).startsWith('__') || !entry || typeof entry !== 'object') continue;
+    const code = String(entry.ma_bn || entry['Mã BN'] || '').trim();
+    const date = isoDateOnly(entry.admission_date || entry['Ngày vào viện'] || '');
+    if (!code || !date) continue;
+    const found = sources.filter(s => {
+      const from = s.stay_from || s.admission_date;
+      if (s.patient_code !== code || !from) return false;
+      return s.stay_to ? (date >= from && date <= s.stay_to) : date === from;
+    });
+    if (found.length !== 1) continue;
+    if (!out.has(found[0].key)) out.set(found[0].key, []);
+    out.get(found[0].key).push(entry);
+  }
+  return out;
+}
+
+function derivePartResults(source, xnMatches, hchanhProgress, orderProgress, orphanHc = new Map(), orphanOh = new Map()) {
   const xnEntries = xnMatches.get(source.key) || [];
-  const hc = hchanhProgress?.[source.key];
-  const oh = orderProgress?.[source.key];
+  const members = source.members || [source.key];
+  const hcs = members.map(m => hchanhProgress?.[m]).filter(Boolean).concat(orphanHc.get(source.key) || []);
+  const ohs = members.map(m => orderProgress?.[m]).filter(Boolean).concat(orphanOh.get(source.key) || []);
+  const hcFile = file => latestPreferDone(hcs.map(e => classifyHchanhFile(e, file)));
   return {
-    xn: latestTabResult(xnEntries, 'xn'),
-    cdha: latestTabResult(xnEntries, 'cdha'),
-    profile: classifyHchanhFile(hc, 'profile'),
-    discharge: classifyHchanhFile(hc, 'discharge'),
-    surgery: classifyHchanhFile(hc, 'surgery'),
-    order_history: latestResult([classifyHchanhFile(oh, 'order_history'), classifyHchanhFile(hc, 'order_history')]),
+    xn: latestPreferDone(xnEntries.map(e => classifyXnTab(e, 'xn'))),
+    cdha: latestPreferDone(xnEntries.map(e => classifyXnTab(e, 'cdha'))),
+    profile: hcFile('profile'),
+    discharge: hcFile('discharge'),
+    surgery: hcFile('surgery'),
+    order_history: latestPreferDone([...ohs, ...hcs].map(e => classifyHchanhFile(e, 'order_history'))),
   };
 }
 
-function buildLedger({ sourceRows = [], xnProgress = {}, hchanhProgress = {}, orderProgress = {}, previous = null, now = nowIso() } = {}) {
+function buildLedger({ sourceRows = [], units = null, xnProgress = {}, hchanhProgress = {}, orderProgress = {}, previous = null, now = nowIso() } = {}) {
   const prevEncounters = previous?.encounters || {};
   const sources = [];
   const seen = new Set();
-  for (const row of sourceRows) {
-    const id = sourceIdentity(row);
-    if (!id.key || seen.has(id.key)) continue;
-    seen.add(id.key);
-    sources.push({ ...id, signatures: cell(row, ['list_row_signatures']) });
+  // Không truyền units (không có encounters.csv): mỗi dòng nguồn là một đơn vị như trước.
+  for (const u of units || sourceRows.map(sourceUnitFromRow)) {
+    if (!u.key || seen.has(u.key)) continue;
+    seen.add(u.key);
+    sources.push(u);
   }
   const { matches: xnMatches, unmatched } = matchXnEntriesToSources(xnProgress, sources);
+  const orphanHc = matchOrphanHchanhEntries(hchanhProgress, sources);
+  const orphanOh = matchOrphanHchanhEntries(orderProgress, sources);
   const encounters = {};
 
   // Giữ lại lượt đã rời khỏi nguồn (không xóa lịch sử), đánh dấu ngoài phạm vi.
@@ -362,7 +512,7 @@ function buildLedger({ sourceRows = [], xnProgress = {}, hchanhProgress = {}, or
       listRows = rows;
     }
 
-    const derived = derivePartResults(src, xnMatches, hchanhProgress, orderProgress);
+    const derived = derivePartResults(src, xnMatches, hchanhProgress, orderProgress, orphanHc, orphanOh);
     const parts = {};
     for (const key of PART_KEYS) {
       const d = derived[key];
@@ -400,6 +550,14 @@ function buildLedger({ sourceRows = [], xnProgress = {}, hchanhProgress = {}, or
 
     encounters[src.key] = {
       key: src.key,
+      encounter_id: src.encounter_id || '',
+      members: src.members || [src.key],
+      // Mã NC mà dữ liệu thô XN/CĐHA của lượt có thể mang (mã lượt, mã các dòng, mã script đã cấp).
+      data_codes: [...new Set([
+        src.research_code,
+        ...(src.member_codes || []),
+        ...(xnMatches.get(src.key) || []).map(e => String(e['Mã NC'] || '').trim()),
+      ].filter(Boolean))],
       research_code: src.research_code,
       patient_code: src.patient_code,
       admission_date: src.admission_date,
@@ -985,6 +1143,7 @@ module.exports = {
   scrubDetail,
   listRowSignature,
   mergeSignatures,
+  buildCollectionUnits,
   parseSignatures,
   classifyFetchStatus,
   classifyXnTab,
