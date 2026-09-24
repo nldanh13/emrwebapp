@@ -46,7 +46,8 @@
       "category": "dich_truyen",
       "default_route": "TTM",
       "default_route_text": "TTM pha NaCl 0,9% 100ml",
-      "default_volume_ml": 100
+      "default_volume_ml": 100,
+      "default_rate": "30"
     },
     {
       "canonical": "CIPAZY",
@@ -56,7 +57,8 @@
       "category": "dich_truyen",
       "default_route": "TTM",
       "default_route_text": "TTM (chai pha sẵn)",
-      "default_volume_ml": 100
+      "default_volume_ml": 100,
+      "default_rate": "30"
     },
     {
       "canonical": "BIRONEM 500",
@@ -67,8 +69,39 @@
       "category": "dich_truyen",
       "default_route": "TTM",
       "default_route_text": "TTM pha NaCl 0,9% đủ 100ml",
-      "default_volume_ml": 100
+      "default_volume_ml": 100,
+      "default_rate": "30"
+    },
+    {
+      "canonical": "BIRONEM 500 + Natri clorid 0.9%",
+      "category": "dich_truyen",
+      "default_volume_ml": 100,
+      "default_rate": "20"
+    },
+    {
+      "canonical": "VANCOMYCIN + Natri clorid 0.9%",
+      "category": "dich_truyen",
+      "default_volume_ml": 100,
+      "default_rate": "30"
+    },
+    {
+      "canonical": "PARACETAMOL 10MG/ML",
+      "category": "dich_truyen",
+      "default_volume_ml": 100,
+      "default_rate": "100"
+    },
+    {
+      "canonical": "BACQURE 500MG + Natri clorid 0.9%",
+      "category": "dich_truyen",
+      "default_volume_ml": 100,
+      "default_rate": "20"
+    },
+    {
+      "canonical": "NEFOPAM MEDISOL 20MG/2ML + Natri clorid 0.9%",
+      "category": "dich_truyen",
+      "default_volume_ml": 100,
+      "default_rate": "30"
     }
   ],
-  "_updated": "2026-09-21"
+  "_updated": "2026-09-22"
 }
