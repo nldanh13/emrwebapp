@@ -3361,7 +3361,9 @@ def _open_surgery_list_page(driver: Any, fallback_url: str) -> str:
                     print("LOG [surgery] Đã mở D/s Phẫu thuật từ side-menu.")
                     return cur or sidebar_url
         except Exception as e:
-            print(f"WARN [surgery] Không bấm được D/s Phẫu thuật trong side-menu: {e}", file=sys.stderr)
+            # Chỉ in dòng đầu của lỗi: stacktrace chromedriver không giúp chẩn đoán.
+            first = (str(e).strip().splitlines() or [type(e).__name__])[0]
+            print(f"WARN [surgery] Không bấm được D/s Phẫu thuật trong side-menu ({first}) → mở bằng URL.", file=sys.stderr)
 
     driver.get(target)
     try:
@@ -5831,9 +5833,14 @@ def _run_hchanh_fetch_core(patient_row: Dict[str, Any], scope: str, files: List[
 
 
 def _summarize_hchanh_output(output: Dict[str, Any], files: List[str]) -> Tuple[int, int, int, str]:
-    ok_count = sum(1 for k, v in output.items() if not str(k).startswith("_") and isinstance(v, dict) and v.get("_fetch_status") == "ok")
-    attention_count = sum(1 for k, v in output.items() if not str(k).startswith("_") and isinstance(v, dict) and v.get("_fetch_status") in {"empty", "partial"})
-    error_count = sum(1 for k, v in output.items() if not str(k).startswith("_") and isinstance(v, dict) and v.get("_fetch_status") in {"error", "no_url", "no_session", "timeout"})
+    # Chỉ đếm các file được yêu cầu: Y lệnh có thể được lấy thêm để dò mốc PT, trước đây
+    # làm dòng tổng kết ra "4/3 files OK".
+    wanted = set(files or [])
+    parts = [v for k, v in output.items()
+             if not str(k).startswith("_") and isinstance(v, dict) and (not wanted or k in wanted)]
+    ok_count = sum(1 for v in parts if v.get("_fetch_status") == "ok")
+    attention_count = sum(1 for v in parts if v.get("_fetch_status") in {"empty", "partial"})
+    error_count = sum(1 for v in parts if v.get("_fetch_status") in {"error", "no_url", "no_session", "timeout"})
     suffix_parts = []
     if attention_count:
         suffix_parts.append(f"{attention_count} cần xử lý nội dung")

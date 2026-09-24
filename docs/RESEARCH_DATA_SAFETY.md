@@ -238,8 +238,16 @@ Một ca thiếu CT vẫn `usable` cho đề tài không cần CT.
   (chuỗi hash): người dùng, thời điểm, bảng/run/nghiên cứu, mục đích nếu gửi
   `?purpose=`.
 - Từ khóa tra cứu người bệnh chỉ được lưu dạng băm trong log. Log worker và
-  `action_log.txt` không in họ tên, số thẻ BHYT, chẩn đoán. Mã BN vẫn còn trong log
-  vận hành để xử lý lỗi. **[Bệnh viện xác nhận]** có chấp nhận điều này không.
+  `action_log.txt` không in họ tên, số thẻ BHYT, chẩn đoán.
+- Log console của worker, stderr trả về giao diện và `action_log.txt` đi qua bộ che
+  `server/utils/log_redact.js` / `worker/log_redact.py`: URL EMR chỉ giữ tham số mô tả
+  màn hình (`wpid`, `wpre`, `nextlink`…), bỏ giá trị mã phiên `usid`, `noitruid`,
+  `keyword`, `kp`…; dãy 7–10 chữ số đứng riêng (Mã BN) thành nhãn `BN#xxxxxx` — băm có
+  muối ngẫu nhiên theo mỗi lần khởi động server, nên lần theo được một ca trong log
+  nhưng không tra ngược ra Mã BN. Log cũ ghi trước thay đổi này không được sửa lại.
+  Stacktrace chromedriver bị lược khỏi log.
+- Tab "Tra cứu người bệnh" hỏi `GET /research/identified-access` trước; khi đang khóa
+  thì hiện điều kiện cần bật thay vì gọi API rồi báo lỗi.
 - Chưa tách bảng liên kết Mã BN ↔ Mã NC khỏi dữ liệu phân tích: các bảng chuẩn hóa
   vẫn giữ `patient_code` để ghép. Việc tách là thay đổi cấu trúc lớn, đề xuất làm ở
   bước sau.
