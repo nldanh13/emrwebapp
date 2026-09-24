@@ -1713,6 +1713,9 @@ export default function ResearchTab({ toast }) {
   const [patientQuery, setPatientQuery]     = useState('');
   const [patientHistory, setPatientHistory] = useState(null);
   const [patientHistoryLoading, setPatientHistoryLoading] = useState(false);
+  // Quyền xem dữ liệu có định danh (null = chưa biết). Khi đang khóa, tab Tra cứu người
+  // bệnh hiện hướng dẫn thay vì gọi API rồi báo lỗi đỏ.
+  const [identifiedAccess, setIdentifiedAccess] = useState(null);
   const [variableCatalog, setVariableCatalog] = useState(null);
   const [variableCatalogLoading, setVariableCatalogLoading] = useState(false);
   const [variableCatalogError, setVariableCatalogError] = useState('');
@@ -1909,10 +1912,27 @@ export default function ResearchTab({ toast }) {
     await Promise.all([loadTable(selectedId, table), loadCoverage(selectedId)]);
   }, [loadSummary, loadTable, loadCoverage, loadGeneralOverview, loadProgressSnapshot, selectedId, table, archiveMode]);
 
+  const ensureIdentifiedAccess = useCallback(async () => {
+    try {
+      const r = await api.getResearchIdentifiedAccess();
+      const next = { allowed: Boolean(r?.allowed), env_enabled: Boolean(r?.env_enabled), role_ok: Boolean(r?.role_ok) };
+      setIdentifiedAccess(next);
+      return next;
+    } catch (_) {
+      return null; // không biết thì để server tự quyết như trước
+    }
+  }, []);
+
   const loadPatientHistory = useCallback(async (queryOverride = '') => {
     const q = typeof queryOverride === 'string' && text(queryOverride) ? text(queryOverride) : text(patientQuery);
     if (!q) { showErrorOnce('Nhập tên, mã BN, mã NC hoặc chẩn đoán để tra cứu.'); return; }
     if (q.length < 2) { showErrorOnce('Từ khóa tra cứu quá ngắn. Nhập ít nhất 2 ký tự.'); return; }
+    const access = identifiedAccess || await ensureIdentifiedAccess();
+    if (access && !access.allowed) {
+      setPatientHistory(null);
+      setPatientHistoryError('');
+      return;
+    }
     setPatientHistoryLoading(true);
     setPatientHistoryError('');
     setResearchError('');
@@ -1936,10 +1956,17 @@ export default function ResearchTab({ toast }) {
       }
     } catch (e) {
       const msg = String(e?.message || e || 'Tra cứu thất bại.');
+      // Quyền bị đổi giữa chừng (server khởi động lại không bật khóa): hiện trạng thái khóa.
+      const latest = await ensureIdentifiedAccess();
+      if (latest && !latest.allowed) { setPatientHistoryError(''); return; }
       setPatientHistoryError(msg);
       showErrorOnce(msg);
     } finally { setPatientHistoryLoading(false); }
-  }, [patientQuery, showErrorOnce]);
+  }, [patientQuery, showErrorOnce, identifiedAccess, ensureIdentifiedAccess]);
+
+  useEffect(() => {
+    if (archiveMode === 'patient') ensureIdentifiedAccess();
+  }, [archiveMode, ensureIdentifiedAccess]);
 
   const loadVariableCatalog = useCallback(async (options = {}) => {
     const silentError = Boolean(options?.silentError);
@@ -3010,13 +3037,30 @@ export default function ResearchTab({ toast }) {
   };
 
 
+  const identifiedLocked = Boolean(identifiedAccess && !identifiedAccess.allowed);
+  const renderIdentifiedLock = () => (
+    <div style={{ border: `1px solid ${C.amberBorder}`, background: C.amberBg, color: C.text, borderRadius: 7, padding: '10px 12px', fontSize: 11, lineHeight: 1.55 }}>
+      <div style={{ fontWeight: 850, color: C.amber, marginBottom: 4 }}>Chức năng đang khóa</div>
+      <div>Tra cứu người bệnh hiện họ tên, Mã BN và toàn bộ lịch sử điều trị, nên chỉ mở khi đủ điều kiện:</div>
+      <ul style={{ margin: '4px 0 4px 18px', padding: 0 }}>
+        <li style={{ color: identifiedAccess?.env_enabled ? C.green : C.text }}>
+          {identifiedAccess?.env_enabled ? '✓ ' : ''}Server được khởi động với <code style={{ fontFamily: FONT_MONO }}>EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT=1</code> (sau khi có phê duyệt và kiểm soát truy cập).
+        </li>
+        <li style={{ color: identifiedAccess?.role_ok ? C.green : C.text }}>
+          {identifiedAccess?.role_ok ? '✓ ' : ''}Tài khoản có vai trò supervisor hoặc admin.
+        </li>
+      </ul>
+      <div style={{ color: C.text3 }}>Các chức năng khác của Kho nghiên cứu vẫn dùng bình thường. Mỗi lần tra cứu có định danh đều được ghi nhật ký bảo mật.</div>
+    </div>
+  );
+
   const renderPatientLookup = () => (
     <div style={{ padding: '10px 12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ background: C.surface, padding: '2px 0 10px', borderBottom: `1px solid ${C.border2}` }}>
         <div style={{ fontSize: 14, fontWeight: 850, color: C.text }}>Tra cứu người bệnh</div>
         <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-          <input value={patientQuery} onChange={e => setPatientQuery(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') loadPatientHistory(); }} placeholder="Mã BN, họ tên, mã NC hoặc chẩn đoán" style={{ ...inp, flex: '1 1 320px' }} />
-          <Btn variant="primary" onClick={() => loadPatientHistory()} disabled={patientHistoryLoading || !text(patientQuery)} style={{ height: 28 }}>
+          <input value={patientQuery} disabled={identifiedLocked} onChange={e => setPatientQuery(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') loadPatientHistory(); }} placeholder="Mã BN, họ tên, mã NC hoặc chẩn đoán" style={{ ...inp, flex: '1 1 320px' }} />
+          <Btn variant="primary" onClick={() => loadPatientHistory()} disabled={identifiedLocked || patientHistoryLoading || !text(patientQuery)} style={{ height: 28 }}>
             {patientHistoryLoading ? <><Spinner size={9} /> Đang tìm</> : 'Tìm'}
           </Btn>
         </div>
@@ -3029,7 +3073,8 @@ export default function ResearchTab({ toast }) {
         )}
       </div>
 
-      {patientHistoryError && (
+      {identifiedLocked && renderIdentifiedLock()}
+      {!identifiedLocked && patientHistoryError && (
         <div style={{ border: `1px solid ${C.redBorder}`, background: C.redBg, color: C.red, borderRadius: 7, padding: '8px 10px', fontSize: 10.5 }}>
           <b>Không tra cứu được:</b> {patientHistoryError}
         </div>

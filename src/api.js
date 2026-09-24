@@ -453,6 +453,7 @@ export const getResearchArchiveProgress = ({ runId = 'latest' } = {}) => {
   if (runId) params.set('runId', runId);
   return get(`/api/research/archive/progress?${params}`);
 };
+export const getResearchIdentifiedAccess = () => get('/api/research/identified-access');
 export const getResearchArchivePatientHistory = ({ q = '', runId = 'latest' } = {}) => {
   const params = new URLSearchParams();
   if (runId) params.set('runId', runId);

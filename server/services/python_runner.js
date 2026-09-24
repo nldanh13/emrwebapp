@@ -7,6 +7,7 @@ const path       = require('path');
 const fs         = require('fs');
 
 const { PY_TIMEOUT_MS, ROOT_DIR, WORKER_DIR } = require('../constants');
+const { redactLogLine, isDriverStackNoise, LOG_REDACT_SALT } = require('../utils/log_redact');
 
 // ── Tìm Python binary ─────────────────────────────────────────────────────────
 
@@ -59,6 +60,7 @@ function runPython(args, { cwd, timeoutMs, onSpawn, extraEnv = {}, runtimeDir } 
         APP_CONFIG_PATH:    appConfigPath,
         D_V2_CONFIG_PATH:   dV2ConfigPath,
         WORKER_RUNTIME_DIR: runtimeDir || '',
+        LOG_REDACT_SALT,
         ...extraEnv,
       },
     });
@@ -80,8 +82,10 @@ function runPython(args, { cwd, timeoutMs, onSpawn, extraEnv = {}, runtimeDir } 
              low.includes('set-cookie');
     }
 
+    // Ngoài ra che mã phiên/Mã BN/URL EMR (utils/log_redact.js) để log console và stderr
+    // trả về giao diện không mang thông tin định danh.
     function redactSensitiveLine(line, label = 'log') {
-      return isSensitiveLine(line) ? `[redacted sensitive ${label} line]` : line;
+      return isSensitiveLine(line) ? `[redacted sensitive ${label} line]` : redactLogLine(line);
     }
 
     const safeResolve = (val) => { if (!resolved) { resolved = true; resolve(val); } };
@@ -103,7 +107,7 @@ function runPython(args, { cwd, timeoutMs, onSpawn, extraEnv = {}, runtimeDir } 
       const safeLines = [];
       for (const line of d.toString().split('\n')) {
         const l = line.trimEnd();
-        if (!l) continue;
+        if (!l || isDriverStackNoise(l)) continue;
         safeLines.push(redactSensitiveLine(l, 'stdout'));
       }
       if (safeLines.length) console.log(safeLines.map(l => `[PY] ${l}`).join('\n'));
@@ -114,7 +118,7 @@ function runPython(args, { cwd, timeoutMs, onSpawn, extraEnv = {}, runtimeDir } 
       // Gom stderr vào buffer, lọc dòng nhạy cảm trước khi log và trả về UI.
       for (const line of text.split('\n')) {
         const l = line.trimEnd();
-        if (!l) continue;
+        if (!l || isDriverStackNoise(l)) continue;
         const safe = redactSensitiveLine(l, 'stderr');
         safeLines.push(safe);
         stderrLines.push(safe);

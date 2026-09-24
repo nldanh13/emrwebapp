@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const { ROOT_DIR, RESEARCH_STORE_DIR, ALLOW_IDENTIFIED_RESEARCH_EXPORT } = require('../constants');
 const { ensureDir, writeFileAtomic, writeJsonAtomic, readJsonSafe, nowFileStamp, safeFilePart } = require('../utils/file');
 const { csvEscape, rowsToCsv } = require('../utils/csv');
+const { redactLogLine } = require('../utils/log_redact');
 const { runPython, runScript, fmtPyError } = require('../services/python_runner');
 const { getRuntimePaths } = require('../services/session');
 const { appendActivity } = require('../services/activity_logger');
@@ -397,11 +398,13 @@ function researchResponseShouldRedact(req) {
   if (!ALLOW_IDENTIFIED_RESEARCH_EXPORT) {
     const err = new Error('Xuất dữ liệu nghiên cứu có định danh đang bị khóa. Chỉ bật EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT sau khi có phê duyệt và kiểm soát truy cập.');
     err.status = 403;
+    err.code = 'IDENTIFIED_ACCESS_LOCKED';
     throw err;
   }
   if (!hasRole(req.auth, 'supervisor')) {
     const err = new Error('Chỉ supervisor/admin được xuất dữ liệu nghiên cứu có định danh.');
     err.status = 403;
+    err.code = 'IDENTIFIED_ACCESS_ROLE';
     throw err;
   }
   auditIdentifiedResearchAccess(req);
@@ -4347,7 +4350,7 @@ function removeResearchSourceKey(rows, sourceKey) {
 
 function appendResearchRunLog(runDir, line) {
   try {
-    fs.appendFileSync(path.join(runDir, 'action_log.txt'), `${line}\n`, 'utf-8');
+    fs.appendFileSync(path.join(runDir, 'action_log.txt'), `${redactLogLine(line)}\n`, 'utf-8');
   } catch (_) {}
 }
 
@@ -6336,6 +6339,18 @@ router.post('/research/archive/source', (req, res) => {
 });
 
 
+// Trạng thái quyền xem dữ liệu có định danh, để giao diện hiện "đang khóa" thay vì gọi
+// API rồi báo lỗi. Không trả dữ liệu nào; server vẫn tự chặn ở từng API như cũ.
+function identifiedAccessStatus(req) {
+  const envEnabled = Boolean(ALLOW_IDENTIFIED_RESEARCH_EXPORT);
+  const roleOk = hasRole(req.auth, 'supervisor');
+  return { allowed: envEnabled && roleOk, env_enabled: envEnabled, role_ok: roleOk };
+}
+
+router.get('/research/identified-access', (req, res) => {
+  res.json({ status: 'ok', ...identifiedAccessStatus(req) });
+});
+
 router.get('/research/archive/patient-history', (req, res) => {
   const startedAt = Date.now();
   try {
@@ -6371,8 +6386,9 @@ router.get('/research/archive/patient-history', (req, res) => {
     }
     return res.json({ status: 'ok', run_id: runId || '', ...data, request_ms: elapsed });
   } catch (err) {
-    console.error('[RESEARCH][LOOKUP][ERROR]', err);
-    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+    // Khóa định danh là trạng thái cấu hình, không phải lỗi: không in stack ra console.
+    if (!String(err.code || '').startsWith('IDENTIFIED_ACCESS_')) console.error('[RESEARCH][LOOKUP][ERROR]', err);
+    return res.status(err.status || 400).json({ status: 'error', code: err.code || '', message: String(err.message || err) });
   }
 });
 
@@ -8681,4 +8697,4 @@ module.exports = router;
 module.exports._fetchHchanhForResearchRun = fetchHchanhForResearchRun;
 // Danh sách cột chuẩn hóa, dùng để đối chiếu từ điển dữ liệu (server/research/data_dictionary.js).
 module.exports.NORMALIZED_COLUMNS = NORMALIZED_COLUMNS;
-module.exports._test = { readCsvTable, normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, writeDatasetSnapshot, verifyDatasetSnapshot, verifyAllDatasetSnapshots, cleanupStaleDatasetStaging, finalizeAnalysisDataset, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };
+module.exports._test = { readCsvTable, identifiedAccessStatus, normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, writeDatasetSnapshot, verifyDatasetSnapshot, verifyAllDatasetSnapshots, cleanupStaleDatasetStaging, finalizeAnalysisDataset, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };
