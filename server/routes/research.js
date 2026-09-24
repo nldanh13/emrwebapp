@@ -7246,8 +7246,11 @@ function partRowsMap(index, ledger, targets) {
   const out = new Map();
   for (const { key, part } of targets) {
     const enc = ledger?.encounters?.[key];
-    // XN/CĐHA được script lưu theo Mã NC của lượt; hành chánh theo Research key.
-    const rows = (part === 'xn' || part === 'cdha') ? (index[part].get(enc?.research_code || '') || []) : (index[part]?.get(key) || []);
+    // XN/CĐHA được script lưu theo Mã NC; hành chánh theo Research key của từng dòng thuộc lượt.
+    const ids = (part === 'xn' || part === 'cdha')
+      ? (enc?.data_codes?.length ? enc.data_codes : [enc?.research_code || ''])
+      : (enc?.members?.length ? enc.members : [key]);
+    const rows = [...new Set(ids)].flatMap(id => index[part]?.get(id) || []);
     out.set(`${key}|${part}`, rows);
   }
   return out;
@@ -7484,9 +7487,20 @@ function readinessDiff(beforeMap, afterMap, keysOfInterest) {
 }
 const IN_RUN_RETRY_REASONS = new Set(['retry']);
 
+// Đơn vị theo dõi = lượt điều trị: gom các dòng danh sách (chuyển khoa) về lượt đã chuẩn
+// hóa trong encounters.csv. Chưa chuẩn hóa thì mỗi dòng là một đơn vị.
+function collectionUnitsForRun(runDir, sourceRows) {
+  const encounterRows = readCsvTable(path.join(runDir, 'encounters.csv'), Number.MAX_SAFE_INTEGER).rows || [];
+  return collection.buildCollectionUnits({ sourceRows, encounterRows });
+}
+
+function unitKeysForRun(runDir, sourceRows) {
+  return collectionUnitsForRun(runDir, sourceRows).map(u => u.key);
+}
+
 function buildCollectionLedgerForRun(runDir, sourceRows, previous) {
   return collection.buildLedger({
-    sourceRows,
+    units: collectionUnitsForRun(runDir, sourceRows),
     xnProgress: readProgressMapSafe(path.join(runDir, 'progress.json')),
     hchanhProgress: readProgressMapSafe(path.join(runDir, 'hchanh_auto_progress.json')),
     orderProgress: readProgressMapSafe(path.join(runDir, 'order_history_auto_progress.json')),
@@ -7506,9 +7520,6 @@ function syncCollectionLedger(runDir, sourceRows) {
   return ledger;
 }
 
-function sourceKeysOf(sourceRows) {
-  return [...new Set((sourceRows || []).map(r => firstNonEmpty(r, ['Research key'])).filter(Boolean))];
-}
 
 // Lượt không ghép chắc chắn sau chuẩn hóa (không đủ khóa EMR để xác định đợt).
 function unresolvedEncountersForRun(runDir) {
@@ -7604,12 +7615,10 @@ async function runCollectionOrchestration(ctx, {
   };
   // Giao dịch dở dang của lần chạy trước được hoàn tất trước khi dựng sổ (xem syncCollectionLedger).
   const recoveredTxns = recoverCollectionTransactions(runDir, sourceRows);
-  const keys = sourceKeysOf(sourceRows);
-  const rowByKey = new Map();
-  for (const row of sourceRows) {
-    const key = firstNonEmpty(row, ['Research key']);
-    if (key && !rowByKey.has(key)) rowByKey.set(key, row);
-  }
+  const units = collectionUnitsForRun(runDir, sourceRows);
+  const keys = units.map(u => u.key);
+  // Mỗi lượt giao cho worker một dòng đại diện (dòng vào sớm nhất, khoảng lấy phủ cả lượt).
+  const rowByKey = new Map(units.map(u => [u.key, u.row]));
   const first = syncCollectionLedger(runDir, sourceRows);
   const plan = collection.planCollection(first, { keys, maxAttempts, parts, retryBlocked, force, refreshPolicy, refreshParts, refreshKeys, now: now || nowIso() });
   if (limit > 0) plan.tasks = plan.tasks.slice(0, limit);
@@ -7843,7 +7852,7 @@ function handleCollectionStatus(req, res, studyIdParam = '') {
   try {
     const sc = collectionScopeFromRequest(req, studyIdParam);
     if (sc.error) return res.status(sc.status || 400).json({ status: 'error', message: sc.error });
-    const keys = sourceKeysOf(sc.sourceRows);
+    const keys = unitKeysForRun(sc.runDir, sc.sourceRows);
     const ledger = sc.sourceRows.length ? syncCollectionLedger(sc.runDir, sc.sourceRows) : { encounters: {} };
     const maxAttempts = maxAttemptsFrom(req, sc.study);
     const plan = collection.planCollection(ledger, { keys, maxAttempts, refreshPolicy: sc.refreshPolicy });
@@ -7870,7 +7879,7 @@ function handleCollectionExceptionsExport(req, res, studyIdParam = '') {
   try {
     const sc = collectionScopeFromRequest(req, studyIdParam);
     if (sc.error) return res.status(sc.status || 400).json({ status: 'error', message: sc.error });
-    const keys = sourceKeysOf(sc.sourceRows);
+    const keys = unitKeysForRun(sc.runDir, sc.sourceRows);
     const ledger = sc.sourceRows.length ? syncCollectionLedger(sc.runDir, sc.sourceRows) : { encounters: {} };
     const rows = collection.exceptionRows(ledger, { keys, maxAttempts: maxAttemptsFrom(req, sc.study), unmatchedEncounters: unresolvedEncountersForRun(sc.runDir) });
     writeCsv(path.join(sc.runDir, COLLECTION_EXCEPTIONS_FILE), COLLECTION_EXCEPTION_COLUMNS, rows);
@@ -7896,7 +7905,7 @@ function readinessTablesForRun(runDir) {
 // Đủ dùng cho nghiên cứu `study`, đánh giá trên run `runDir` (run của chính nghiên cứu,
 // hoặc kho gốc để biết ca nào trong kho đạt điều kiện đề tài).
 function studyReadinessForRun(study, runDir, sourceRows, { write = false, maxAttempts } = {}) {
-  const keys = sourceKeysOf(sourceRows);
+  const keys = unitKeysForRun(runDir, sourceRows);
   const ledger = syncCollectionLedger(runDir, sourceRows);
   const requirements = collection.requirementsFromStudy(study);
   const result = collection.evaluateStudyReadiness({
