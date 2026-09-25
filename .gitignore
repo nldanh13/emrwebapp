@@ -77,3 +77,5 @@ data/
 debug/
 
 document/
+
+config/nurse_emr_accounts.json/

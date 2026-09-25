@@ -1,13 +1,23 @@
 [
   {
     "name": "Lê Ngọc Diệu",
-    "emr_username": "",
-    "emr_password": "",
+    "emr_username": "lndieu",
+    "emr_password": "123",
     "signature_file": ""
   },
   {
     "name": "Lê Thị Tuyết Đoan",
-    "emr_username": "",
-    "emr_password": ""
+    "emr_username": "lttdoan",
+    "emr_password": "7998"
+  },
+   {
+    "name": "Trần Quỳnh Minh Thư",
+    "emr_username": "tqmthu",
+    "emr_password": "123"
+  },
+   {
+    "name": "Thạch Thị Thúy Đa",
+    "emr_username": "tttda",
+    "emr_password": "123"
   }
 ]
