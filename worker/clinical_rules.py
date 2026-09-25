@@ -679,6 +679,124 @@ def extract_admission_transfer_events(source_record: Dict[str, Any], raw_dien_bi
         deduped.append(ev)
     return sorted(deduped, key=lambda x: int(x.get("time_minutes") or 0))
 
+# ── Nhận bệnh theo lịch sử khoa điều trị ("Khoa điều trị thứ N" trong Lịch sử y lệnh) ──
+# Quy tắc khoa (chắc chắn hơn đoán theo chữ trong diễn biến):
+# - Trước lần vào Khoa Ngoại CTCH-TK là Khoa Gây Mê Hồi Sức → nhận hậu phẫu (mẫu sau mổ).
+# - Lần đầu vào Khoa Ngoại CTCH-TK (từ phòng khám/cấp cứu) → nhận bệnh bình thường.
+# - Trước đó là khoa khác → nhận người bệnh chuyển khoa.
+_CTCH_DEPT_RE = r"chan\s+thuong\s+chinh\s+hinh"
+_GMHS_DEPT_RE = r"gay\s+me\s+hoi\s+suc"
+_RECEIVE_EVENT_TYPES = {"postop_receive", "interdepartment_receive", "ward_receive", "clinic_admission"}
+_KIND_TO_EVENT = {"postop": "postop_receive", "interdept": "interdepartment_receive", "first": "ward_receive"}
+
+
+def _ward_history(patient: Dict[str, Any]) -> List[Dict[str, Any]]:
+    for key in ("lich_su_khoa_dieu_tri", "khoa_dieu_tri_history", "ward_admissions"):
+        rows = patient.get(key) if isinstance(patient, dict) else None
+        if isinstance(rows, list) and rows:
+            rows = [r for r in rows if isinstance(r, dict)]
+
+            def _k(r):
+                n = r.get("thu_tu")
+                return (int(n) if isinstance(n, int) or str(n or "").isdigit() else 9999)
+            return sorted(rows, key=_k)
+    return []
+
+
+def ward_history_receive_entries(patient: Dict[str, Any], ngay_lam: str) -> List[Dict[str, Any]]:
+    """Các lần vào Khoa Ngoại CTCH-TK đúng ngày ``ngay_lam`` kèm loại nhận bệnh."""
+    record_date = _normalize_dmy_date(ngay_lam)
+    history = _ward_history(patient)
+    out: List[Dict[str, Any]] = []
+    for i, entry in enumerate(history):
+        khoa = str(entry.get("ten_khoa_dieu_tri") or entry.get("khoa_dieu_tri") or "")
+        if not re.search(_CTCH_DEPT_RE, _norm(khoa)):
+            continue
+        vao = str(entry.get("thoi_gian_vao_khoa") or "")
+        hhmm = _extract_hhmm(vao)
+        if not hhmm or _normalize_dmy_date(vao) != record_date:
+            continue
+        prev = history[i - 1] if i > 0 else None
+        prev_khoa = str((prev or {}).get("ten_khoa_dieu_tri") or (prev or {}).get("khoa_dieu_tri") or "")
+        earlier_ctch = any(re.search(_CTCH_DEPT_RE, _norm(str(h.get("ten_khoa_dieu_tri") or h.get("khoa_dieu_tri") or ""))) for h in history[:i])
+        if prev and re.search(_GMHS_DEPT_RE, _norm(prev_khoa)):
+            kind = "postop"
+        elif not earlier_ctch:
+            kind = "first"
+        else:
+            kind = "interdept"
+        out.append({"kind": kind, "hhmm": hhmm, "time_minutes": _hhmm_to_minutes(hhmm), "prev_khoa": prev_khoa, "entry": entry})
+    return out
+
+
+def _history_receive_event(kind: str, hhmm: str, record_date: str, patient: Dict[str, Any], raw_dien_bien: Any, prev_khoa: str) -> Dict[str, Any]:
+    rules = load_clinical_rules()
+    adm = rules.get("admission_transfer_rules") or {}
+    postop = rules.get("postop_receive_rules") or {}
+    pain_line = _event_pain_line(patient, raw_dien_bien)
+    base = {
+        "source_date": record_date,
+        "time_full": f"{hhmm} {record_date}",
+        "time_label": hhmm,
+        "time_minutes": _hhmm_to_minutes(hhmm),
+        "needs_vitals": True,
+        "recognition": {"source": "ward_history", "prev_khoa": prev_khoa, "kind": kind},
+    }
+    if kind == "postop":
+        return {**base, "type": "postop_receive", "title": "Nhận bệnh sau mổ (từ Khoa Gây Mê Hồi Sức)",
+                "dien_bien": _norm_multiline(postop.get("dien_bien_template") or POSTOP_RECEIVE_DEFAULT_DIEN_BIEN),
+                "cham_soc": _norm_multiline(postop.get("care_template") or POSTOP_RECEIVE_DEFAULT_CARE)}
+    if kind == "interdept":
+        return {**base, "type": "interdepartment_receive", "title": "Nhận người bệnh chuyển khoa",
+                "dien_bien": _ward_receive_dien_bien(pain_line, include_allergy=False, include_belly=True),
+                "cham_soc": _norm_multiline(adm.get("interdepartment_receive_care_template") or INTERDEPT_RECEIVE_DEFAULT_CARE)}
+    return {**base, "type": "ward_receive", "title": "Khoa Ngoại CTCH-TK nhận người bệnh",
+            "dien_bien": _ward_receive_dien_bien(pain_line, include_allergy=True, include_belly=False),
+            "cham_soc": _norm_multiline(adm.get("ward_receive_care_template") or WARD_RECEIVE_DEFAULT_CARE)}
+
+
+def reconcile_receive_events_with_ward_history(events: List[Dict[str, Any]], patient: Dict[str, Any], raw_dien_bien: Any = "", ngay_lam: str = "") -> List[Dict[str, Any]]:
+    """Chốt loại nhận bệnh theo lịch sử khoa điều trị nếu có.
+
+    Không có lịch sử khoa / không có lần vào CTCH-TK trong ngày → giữ nguyên
+    kết quả đoán theo diễn biến + cột T/G vào như trước.
+    Có → bỏ các phiếu nhận bệnh sai loại; với mỗi lần vào khoa giữ phiếu cùng
+    loại đã nhận diện từ diễn biến (giờ bác sĩ ghi, lệch ≤ 3 giờ) hoặc tạo mới
+    theo giờ vào khoa. Phiếu phòng khám (clinic_admission) chỉ giữ ở lần vào đầu.
+    """
+    entries = ward_history_receive_entries(patient if isinstance(patient, dict) else {}, ngay_lam)
+    if not entries:
+        return events
+    record_date = _normalize_dmy_date(ngay_lam)
+    others = [e for e in (events or []) if not (isinstance(e, dict) and e.get("type") in _RECEIVE_EVENT_TYPES)]
+    receive = [e for e in (events or []) if isinstance(e, dict) and e.get("type") in _RECEIVE_EVENT_TYPES]
+    kept: List[Dict[str, Any]] = []
+    used = set()
+    for ent in entries:
+        want = _KIND_TO_EVENT[ent["kind"]]
+        best, best_gap = None, None
+        for idx, ev in enumerate(receive):
+            if idx in used or ev.get("type") != want:
+                continue
+            try:
+                gap = abs(int(ev.get("time_minutes")) - int(ent["time_minutes"]))
+            except Exception:
+                continue
+            if gap <= 180 and (best_gap is None or gap < best_gap):
+                best, best_gap = idx, gap
+        if best is not None:
+            used.add(best)
+            kept.append(receive[best])
+        else:
+            kept.append(_history_receive_event(ent["kind"], ent["hhmm"], record_date, patient, raw_dien_bien, ent["prev_khoa"]))
+        if ent["kind"] == "first":
+            for idx, ev in enumerate(receive):
+                if idx not in used and ev.get("type") == "clinic_admission":
+                    used.add(idx)
+                    kept.append(ev)
+    return sorted(others + kept, key=lambda x: int(x.get("time_minutes") or 0))
+
+
 def _get_receive_event(record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     for ev in record.get("care_special_events") or []:
         if isinstance(ev, dict) and ev.get("type") == "postop_receive":
