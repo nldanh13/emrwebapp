@@ -33,7 +33,7 @@ from utils import (
 from shared.worker_session import WorkerSession, open_session
 from shared.json_io import read_json_critical
 from shared.logging_utils import make_worker_logger
-from nurse_emr_accounts import get_emr_account_for_nurse
+from nurse_emr_accounts import get_nurse_name_for_username
 
 from selenium_emr_helpers import (
     build_inpatient_url as _build_inpatient_url,
@@ -79,6 +79,7 @@ from care_cache import (
 )
 from care_form_actions import (
     set_thoi_gian_lap, dien_thong_tin, set_log_context as set_care_form_log_context,
+    doi_nguoi_lap_sau_hoan_tat,
 )
 
 # ==============================================================================
@@ -826,6 +827,9 @@ def main():
         count = 0
         default_emr_username = str(CONFIG.get("username") or "").strip()
         default_emr_password = str(CONFIG.get("password") or "")
+        # Tên chủ tài khoản EMR đang dùng (tra từ config/nurse_emr_accounts.json).
+        # Rỗng thì từng job lấy tên người ca làm của ngày đó.
+        logged_in_nurse_name = get_nurse_name_for_username(default_emr_username)
 
         # ── PHASE 1: tính toán (KHÔNG mở trình duyệt) danh sách care_jobs của
         # từng bệnh nhân, rồi nhóm theo tài khoản EMR cần đăng nhập (điều dưỡng
@@ -1138,6 +1142,11 @@ def main():
 
             care_jobs = sorted(care_jobs, key=_care_job_sort_key)
 
+            # Mọi phiếu (ca làm lẫn ca trực) đều nhập bằng tài khoản EMR đang dùng,
+            # KHÔNG đăng nhập lại bằng tài khoản người trực. Phiếu của người khác
+            # (vd ca trực) được tạo + Hoàn tất dưới tên chủ tài khoản trước, rồi
+            # mới Thu hồi đổi Người lập sang người trực — EMR báo lỗi nếu đổi tên
+            # ngay lúc tạo phiếu.
             jobs_by_account = {}
             for job in care_jobs:
                 h_g = int(job.get("hour") or 0)
@@ -1146,11 +1155,19 @@ def main():
                     nurse_name_g = get_nurse_by_shift(time_str_g, CONFIG_TEN_GOC or {})
                 except Exception:
                     nurse_name_g = ""
-                account_g = get_emr_account_for_nurse(nurse_name_g) if nurse_name_g else None
-                username_g = account_g["username"] if account_g else default_emr_username
-                password_g = account_g["password"] if account_g else default_emr_password
+                owner_name_g = logged_in_nurse_name
+                if not owner_name_g:
+                    try:
+                        owner_name_g = get_nurse_by_shift(time_str_g, CONFIG_TEN_GOC or {}, force_shift="work")
+                    except Exception:
+                        owner_name_g = ""
+                if (nurse_name_g and owner_name_g
+                        and chuan_hoa_unicode(nurse_name_g) != chuan_hoa_unicode(owner_name_g)):
+                    job["nguoi_lap_tam"] = owner_name_g
+                    job["nguoi_lap_cuoi"] = nurse_name_g
+                username_g = default_emr_username
                 jobs_by_account.setdefault(username_g, []).append(job)
-                account_passwords.setdefault(username_g, password_g)
+                account_passwords.setdefault(username_g, default_emr_password)
                 shift_kind_g = _shift_kind_for_hour(h_g)
                 target_order_g = work_account_order if shift_kind_g == "work" else oncall_account_order
                 if username_g not in target_order_g:
@@ -1446,6 +1463,12 @@ def main():
 
                     wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
 
+                    # Khi đang đứng ở tài khoản người lập cũ (sửa phiếu của họ) thì
+                    # điền thẳng tên theo lịch như trước; còn lại phiếu của người
+                    # khác được tạo dưới tên chủ tài khoản, Hoàn tất xong mới đổi tên.
+                    nguoi_lap_tam = None if switched_for_edit else job.get("nguoi_lap_tam")
+                    nguoi_lap_cuoi = job.get("nguoi_lap_cuoi") if nguoi_lap_tam else None
+
                     success = False
                     for attempt in range(1, 4):
                         # 1) Set giờ trước (đợi ổn định), tránh việc điền các trường rồi bị reset do đổi giờ
@@ -1460,6 +1483,7 @@ def main():
                         form_ok = dien_thong_tin(
                             driver, h, time_str, final_care_content, LIST_NURSE, dien_bien_text,
                             needs_vitals=needs_vitals, config_ten_goc=CONFIG_TEN_GOC,
+                            nguoi_lap=nguoi_lap_tam,
                         )
                         if not form_ok:
                             print("[Sai Người lập] -> Retry.", end=" ")
@@ -1489,6 +1513,19 @@ def main():
                             if "Hoàn tất" in stt_badge:
                                 success = True
                                 break
+
+                    if success and nguoi_lap_cuoi:
+                        print(f"   -> Thu hồi, đổi Người lập sang {nguoi_lap_cuoi}.", end=" ")
+                        if doi_nguoi_lap_sau_hoan_tat(driver, nguoi_lap_cuoi):
+                            print("-> [RESULT] XONG.")
+                        else:
+                            msg_rename = (
+                                f"{time_str}: đã Hoàn tất dưới tên {nguoi_lap_tam} nhưng không "
+                                f"Thu hồi/đổi được Người lập sang {nguoi_lap_cuoi}"
+                            )
+                            print(" -> FAIL đổi tên.")
+                            job_failures.append(msg_rename)
+                            LOG.warning(_ctx_prefix() + f"[rename_failed] {msg_rename}")
 
                     if not success:
                         msg_fail = f"{time_str}: không lưu/hoàn tất được phiếu chăm sóc"

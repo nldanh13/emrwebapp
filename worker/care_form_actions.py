@@ -174,20 +174,26 @@ def _chon_nguoi_lap_select2(driver, target_text: str, timeout: int = 12) -> bool
     LOG.warning(_ctx_prefix() + f"[NguoiLap] Không chọn/verify được '{target_text}' sau 3 lần")
     return False
 
-def dien_thong_tin(driver, gio, time_str, content, list_ten_dieu_duong, dien_bien_text="", needs_vitals=False, config_ten_goc=None):
+def dien_thong_tin(driver, gio, time_str, content, list_ten_dieu_duong, dien_bien_text="", needs_vitals=False, config_ten_goc=None, nguoi_lap=None):
     """Điền form chăm sóc; trả False nếu trường bắt buộc Người lập không hợp lệ.
 
     ``txtThoiGianLap`` đã được ``set_thoi_gian_lap`` xử lý và verify ngay trước
     hàm này. Không set/change lần hai vì HIS có thể refresh modal và làm stale
     các Select2 vừa sau đó.
+
+    ``nguoi_lap``: nếu truyền, điền đúng tên này thay vì tên theo lịch ca —
+    dùng khi phiếu ca trực phải được tạo + Hoàn tất dưới tên chủ tài khoản
+    đang đăng nhập trước, rồi mới Thu hồi đổi sang người trực (xem
+    ``doi_nguoi_lap_sau_hoan_tat``).
     """
-    # Luôn chọn người lập theo lịch đã cấu hình:
+    # Mặc định chọn người lập theo lịch đã cấu hình:
     # - giờ hành chính -> ca làm
     # - 11h-13h và 17h-07h -> ca trực
     # - 00h-06h59 tính theo lịch trực của ngày trước đó
-    name_to_fill = ""
+    name_to_fill = str(nguoi_lap or "").strip()
     try:
-        name_to_fill = get_nurse_by_shift(time_str, config_ten_goc or {})
+        if not name_to_fill:
+            name_to_fill = get_nurse_by_shift(time_str, config_ten_goc or {})
     except Exception as e:
         # fallback an toàn nếu utils trả list thiếu phần tử
         try:
@@ -246,3 +252,47 @@ def dien_thong_tin(driver, gio, time_str, content, list_ten_dieu_duong, dien_bie
         LOG.debug(f"[except] {_e}")  # was: except: pass
 
     return True
+
+
+def luu_va_hoan_tat(driver, attempts=3):
+    """Bấm Lưu rồi Hoàn tất trên popup phiếu chăm sóc đang mở; trả True nếu
+    badge trạng thái chuyển sang 'Hoàn tất'."""
+    from care_web_actions import check_trang_thai_badge
+    from utils import handle_popups
+
+    for _ in range(max(1, attempts)):
+        try:
+            btn_luu = driver.find_element(By.ID, "btnSaveChamSocPopupDraw")
+            driver.execute_script("arguments[0].click();", btn_luu)
+        except Exception as _e:
+            LOG.debug(f"[except] {_e}")
+        time.sleep(1.5); handle_popups(driver)
+        try:
+            btn_hoan_tat = driver.find_element(By.ID, "btnPopupHOANTAT")
+            driver.execute_script("arguments[0].click();", btn_hoan_tat)
+        except Exception as _e:
+            LOG.debug(f"[except] {_e}")
+        time.sleep(2); handle_popups(driver)
+        if "Hoàn tất" in check_trang_thai_badge(driver):
+            return True
+    return False
+
+
+def doi_nguoi_lap_sau_hoan_tat(driver, ten_nguoi_lap):
+    """Phiếu đang mở đã Hoàn tất dưới tên chủ tài khoản đang đăng nhập:
+    Thu hồi → đổi Người lập sang ``ten_nguoi_lap`` → Lưu → Hoàn tất.
+
+    EMR báo lỗi nếu đổi Người lập sang người khác ngay lúc tạo phiếu (trước khi
+    Hoàn tất lần đầu), nên việc đổi tên luôn làm SAU khi phiếu đã Hoàn tất.
+    """
+    from care_web_actions import click_thu_hoi_cham_soc
+
+    if not click_thu_hoi_cham_soc(driver):
+        LOG.warning(_ctx_prefix() + f"[NguoiLap] Không bấm được Thu hồi để đổi sang '{ten_nguoi_lap}'")
+        return False
+    if not _chon_nguoi_lap_select2(driver, ten_nguoi_lap):
+        LOG.warning(_ctx_prefix() + f"[NguoiLap] Thu hồi xong nhưng không chọn được '{ten_nguoi_lap}'")
+        # Không bỏ phiếu ở trạng thái Mới: Hoàn tất lại với tên cũ.
+        luu_va_hoan_tat(driver)
+        return False
+    return luu_va_hoan_tat(driver)
