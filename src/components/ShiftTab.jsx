@@ -366,13 +366,21 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
       const dayRange = singleDateRangeFromDmy(activeDate) || workDateRange;
       return withPatientWorkflowScope(scoped, dayRange);
     }).filter(Boolean);
+    // Nhập bệnh phòng đã gộp tab Nhập trực: hiện mọi ngày, không tách theo luồng.
+    const allDays = allPatients.map(patient => {
+      const dates = getPatientWorkflowDates(patient, inputTargetDates, 'all');
+      if (!dates.length) return null;
+      return scopePatientToDates(patient, dates);
+    }).filter(Boolean);
     return {
-      ward: buildBucket('ward'),
+      all: allDays,
       duty: buildBucket('duty'),
       unknown: buildBucket('unknown'),
     };
   }, [allPatients, inputTargetDatesKey, workDateRange?.from, workDateRange?.to]);
-  const scopedPatients = mode === 'ward' || mode === 'duty' || mode === 'unknown'
+  const scopedPatients = mode === 'ward'
+    ? workflowBuckets.all
+    : mode === 'duty' || mode === 'unknown'
     ? workflowBuckets[mode]
     : dateScopedPatients.map(p => withPatientWorkflowScope(p, workDateRange));
   const dutyCount = workflowBuckets.duty.length;
@@ -1048,7 +1056,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     scopeInfo: mode === 'duty'
       ? `Hiển thị ${patients.length} người bệnh có ngày thuộc người trực trong khoảng đã chọn${unknownScopeCount ? `; ${unknownScopeCount} người bệnh có ngày cần xem phân luồng.` : '.'}`
       : mode === 'ward'
-        ? `Chỉ giữ các ngày thuộc bệnh phòng; đã tách ngày trực của ${dutyCount} người bệnh${unknownScopeCount ? ` và ngày chưa đủ dữ liệu của ${unknownScopeCount} người bệnh` : ''}. Hiện ${patients.length} người bệnh.`
+        ? `Hiện ${patients.length} người bệnh, gồm cả ngày trực${dutyCount ? ` (${dutyCount} người bệnh có ngày mới vào/chuyển khoa/về từ GMHS ngoài giờ)` : ''}.`
         : (unknownScopeCount ? `Có ${unknownScopeCount} ca cần xem phân luồng trước khi nhập hàng loạt.` : ''),
   };
 

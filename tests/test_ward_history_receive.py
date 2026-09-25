@@ -66,3 +66,41 @@ def test_no_history_keeps_old_behavior():
 def test_days_without_ctch_entry_unchanged():
     hist = _h((CTCH, "15:09 18/09/2026"))
     assert _events({"lich_su_khoa_dieu_tri": hist}, "19/09/2026") == []
+
+
+def _rec_with_meds(items, receive="17:07"):
+    from clinical_rules import _hhmm_to_minutes
+    return {
+        "ngay_lam": "25/09/2026",
+        "care_special_events": [{"type": "postop_receive", "source_date": "25/09/2026",
+                                 "time_full": f"{receive} 25/09/2026", "time_label": receive,
+                                 "time_minutes": _hhmm_to_minutes(receive)}],
+        "thuoc": {"dich_truyen": items},
+    }
+
+
+def _di(name, hh, tg=None):
+    return {"ten_thuoc": name, "gio_dung": f"{hh} giờ", "tg_bat_dau": tg or f"{hh}:00 25/09/2026",
+            "duong_dung_goc": "TTM SM - 16h - 22h.", "gio_y_lenh": "13:20"}
+
+
+def test_sm_order_keeps_doses_after_postop_receive():
+    from clinical_rules import apply_clinical_rules_to_record
+    r = apply_clinical_rules_to_record(_rec_with_meds([_di("PARACETAMOL", 16), _di("PARACETAMOL", 22)]))
+    assert [x["tg_bat_dau"] for x in r["thuoc"]["dich_truyen"]] == ["22:00 25/09/2026"]
+    assert [x["rule_id"] for x in r["rule_log"]["skipped_medications"]] == ["skip_medication_before_postop_receive"]
+
+
+def test_sm_duplicate_dose_same_hour_is_dropped():
+    from clinical_rules import apply_clinical_rules_to_record
+    items = [_di("NEFOPAM", 20), _di("NEFOPAM", 20, "20:50 25/09/2026")]
+    r = apply_clinical_rules_to_record(_rec_with_meds(items))
+    assert [x["tg_bat_dau"] for x in r["thuoc"]["dich_truyen"]] == ["20:00 25/09/2026"]
+    assert r["rule_log"]["skipped_medications"][0]["rule_id"] == "postop_sm_dose_duplicate"
+
+
+def test_sm_order_without_postop_receive_still_skipped():
+    from clinical_rules import apply_clinical_rules_to_record
+    rec = {"ngay_lam": "25/09/2026", "thuoc": {"dich_truyen": [_di("PARACETAMOL", 22)]}}
+    r = apply_clinical_rules_to_record(rec)
+    assert r["thuoc"]["dich_truyen"] == []

@@ -106,7 +106,7 @@ export default function DischargeSignTab({ toast }) {
         </div>
       ) : !bundles.length ? (
         <div style={{ color: C.text3, padding: 20, textAlign: 'center' }}>
-          Chưa có bộ phiếu "IN RA VIỆN" nào được in. Vào tab Xếp phòng/Nhập trực/Nhập bệnh phòng, mở hồ sơ người bệnh
+          Chưa có bộ phiếu "IN RA VIỆN" nào được in. Vào tab Xếp phòng/Nhập bệnh phòng, mở hồ sơ người bệnh
           đã ra viện và bấm "In ra viện" trước.
         </div>
       ) : (

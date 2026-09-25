@@ -26,18 +26,8 @@
       "label": "Nhập bệnh phòng",
       "icon": "↗",
       "group": "Điều dưỡng",
-      "hint": "Chăm sóc, dịch truyền, thủ thuật",
+      "hint": "Chăm sóc, dịch truyền, thủ thuật — gồm cả ca trực",
       "order": 40,
-      "compact": true,
-      "usesDateRange": true
-    },
-    {
-      "id": "duty",
-      "label": "Nhập trực",
-      "icon": "◐",
-      "group": "Điều dưỡng",
-      "hint": "Người bệnh mới hoặc chuyển khoa",
-      "order": 50,
       "compact": true,
       "usesDateRange": true
     },
@@ -1525,7 +1515,7 @@
       "label": "Quy trình nhập trực",
       "icon": "◐",
       "description": "Quét, lấy y lệnh và xử lý từng nhánh nhập trực độc lập, sau đó tạo báo cáo nếu đủ dữ liệu.",
-      "entryTab": "duty",
+      "entryTab": "ward",
       "enabled": true,
       "continueOnFailure": true,
       "steps": [
