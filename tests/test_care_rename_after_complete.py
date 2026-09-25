@@ -53,3 +53,43 @@ def test_input_care_no_longer_logs_in_per_shift_nurse():
     source = (WORKER / "input_care.py").read_text(encoding="utf-8")
     assert "get_emr_account_for_nurse" not in source
     assert "doi_nguoi_lap_sau_hoan_tat(driver, nguoi_lap_cuoi)" in source
+
+
+def test_form_selects_creator_after_other_fields(monkeypatch):
+    order = []
+
+    class Field:
+        def __init__(self, name):
+            self.name = name
+
+        def clear(self):
+            pass
+
+        def send_keys(self, *_a):
+            order.append(self.name)
+
+        def click(self):
+            order.append(self.name)
+
+        def is_displayed(self):
+            return True
+
+    class DummyDriver:
+        class switch_to:
+            active_element = Field("select2-cbbXuTri-container")
+
+        def find_element(self, _by, name):
+            return Field(name)
+
+        def execute_script(self, *_a, **_k):
+            return None
+
+    monkeypatch.setattr(actions.time, "sleep", lambda *_a: None)
+    monkeypatch.setattr(actions, "_chon_nguoi_lap_select2", lambda d, name: order.append("NguoiLap") or True)
+
+    assert actions.dien_thong_tin(
+        DummyDriver(), 8, "08:00 03/08/2026", "Thực hiện chỉ định thuốc",
+        ["Điều Dưỡng A"], "Người bệnh tỉnh", config_ten_goc={}, nguoi_lap="Điều Dưỡng A",
+    ) is True
+    assert order[-1] == "NguoiLap"
+    assert "txtChamSoc" in order and "txtDienBien" in order

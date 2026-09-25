@@ -208,11 +208,6 @@ def dien_thong_tin(driver, gio, time_str, content, list_ten_dieu_duong, dien_bie
         LOG.error(_ctx_prefix() + "[NguoiLap] Không xác định được người lập theo lịch")
         return False
 
-    _nurse_filled = _chon_nguoi_lap_select2(driver, name_to_fill)
-    if not _nurse_filled:
-        LOG.error(_ctx_prefix() + f"[NguoiLap] FAILED to set '{name_to_fill}'")
-        return False
-
     if needs_vitals or gio in [5, 16]:
         try:
             nhip_tho = "20"; nhiet_do = "37"; mach = str(random.randint(75, 85))
@@ -250,6 +245,12 @@ def dien_thong_tin(driver, gio, time_str, content, list_ten_dieu_duong, dien_bie
         driver.switch_to.active_element.send_keys(Keys.ENTER); time.sleep(1)
     except Exception as _e:
         LOG.debug(f"[except] {_e}")  # was: except: pass
+
+    # Chọn Người lập SAU CÙNG, khi các ô khác đã điền xong, ngay trước khi Lưu.
+    _nurse_filled = _chon_nguoi_lap_select2(driver, name_to_fill)
+    if not _nurse_filled:
+        LOG.error(_ctx_prefix() + f"[NguoiLap] FAILED to set '{name_to_fill}'")
+        return False
 
     return True
 
