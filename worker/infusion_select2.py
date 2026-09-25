@@ -262,7 +262,8 @@ def chon_select2_bac_si_y_ta(driver, field_id: str, target_text: str, timeout: i
         WebDriverWait(driver, 6).until(lambda d: _confirm_selected())
         selected_el = driver.find_element(By.ID, container_id)
         selected_text = ((selected_el.text or '') + ' ' + (selected_el.get_attribute('title') or '')).strip()
-        _log(f"      [+] Đã chọn {field_id}: {selected_text.strip() or target_text}")
+        selected_text = re.sub(r"\s+", " ", selected_text.replace("×", " ")).strip()
+        _log(f"      [+] Đã chọn {field_id}: {selected_text or target_text}")
         return True
 
     except Exception as e:

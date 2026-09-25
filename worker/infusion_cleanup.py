@@ -2,7 +2,7 @@
 """Scanning and cleanup helpers for infusion records in EMR modal."""
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 try:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support import expected_conditions as EC
@@ -244,6 +244,48 @@ def _goto_page_in_modal(driver, wait, page_num: int):
 
     return True
 
+def _full_time_from_row(hhmm: str, day_month: str, y_lenh: str = "", end_after: str = "") -> str:
+    """Bảng mới chỉ ghi giờ "HH:MM" ở cột Bắt đầu/Kết thúc, ngày "dd/mm" ở cột
+    Ngày tháng (không có năm). Ghép lại thành "HH:MM dd/mm/YYYY" để so với dữ liệu.
+
+    Năm lấy theo cột Y lệnh ("HH:MM dd/mm/YYYY"); nếu ngày truyền lại sớm hơn y lệnh
+    quá 1 ngày thì là sang năm mới. Không có y lệnh → năm hiện tại (lùi 1 năm nếu
+    ngày đó nằm quá xa trong tương lai). ``end_after``: giờ bắt đầu đã ghép —
+    giờ kết thúc nhỏ hơn giờ bắt đầu thì là sang ngày hôm sau.
+    """
+    hhmm = (hhmm or "").strip()
+    m_t = re.match(r"^(\d{1,2}):(\d{2})$", hhmm)
+    m_d = re.search(r"(\d{1,2})/(\d{1,2})", day_month or "")
+    if not m_t or not m_d:
+        return _norm_time_str(hhmm)
+    h, mi = int(m_t.group(1)), int(m_t.group(2))
+    d, mo = int(m_d.group(1)), int(m_d.group(2))
+    yl = _norm_time_str(y_lenh or "")
+    try:
+        if re.match(r"^\d{2}:\d{2} \d{2}/\d{2}/\d{4}$", yl):
+            yl_dt = datetime.strptime(yl, "%H:%M %d/%m/%Y")
+            year = yl_dt.year
+            if datetime(year, mo, d) < yl_dt.replace(hour=0, minute=0) - timedelta(days=1):
+                year += 1
+        else:
+            now = datetime.now()
+            year = now.year
+            if datetime(year, mo, d) > now + timedelta(days=180):
+                year -= 1
+        dt = datetime(year, mo, d, h, mi)
+    except ValueError:
+        return _norm_time_str(hhmm)
+    if end_after:
+        try:
+            start_dt = datetime.strptime(end_after, "%H:%M %d/%m/%Y")
+            dt = dt.replace(year=start_dt.year, month=start_dt.month, day=start_dt.day)
+            if dt < start_dt:
+                dt += timedelta(days=1)
+        except ValueError:
+            pass
+    return dt.strftime("%H:%M %d/%m/%Y")
+
+
 def lay_danh_sach_chi_tiet_all_pages(driver, wait):
     """Quét bảng dịch truyền tất cả trang để đối chiếu.
     Return:
@@ -301,15 +343,17 @@ def lay_danh_sach_chi_tiet_all_pages(driver, wait):
                 ten_key = _norm_med_key(ten_raw)
 
                 # thời gian: ưu tiên span (đang hiển thị), fallback theo cột
+                ngay_cell = (tds[1].text or "").strip()
+                y_lenh_cell = (tds[10].text or "").strip() if len(tds) > 10 else ""
                 tg_bat_dau = _norm_time_str(_read_row_value_by_span_prefix(row, "spTgBatDauTD"))
                 if not tg_bat_dau:
-                    tg_bat_dau = _norm_time_str(tds[6].text if len(tds) > 6 else "")
+                    tg_bat_dau = _full_time_from_row(tds[6].text if len(tds) > 6 else "", ngay_cell, y_lenh_cell)
                 if not tg_bat_dau:
                     continue
 
                 tg_ket_thuc = _norm_time_str(_read_row_value_by_span_prefix(row, "spTgKetThucTD"))
                 if not tg_ket_thuc:
-                    tg_ket_thuc = _norm_time_str(tds[7].text if len(tds) > 7 else "")
+                    tg_ket_thuc = _full_time_from_row(tds[7].text if len(tds) > 7 else "", ngay_cell, y_lenh_cell, end_after=tg_bat_dau)
 
                 # thể tích & tốc độ theo cấu trúc cột ở trên: [3]=Thể tích, [5]=Tốc độ
                 the_tich = _int_from_text(tds[3].text if len(tds) > 3 else "", 0)
@@ -353,7 +397,7 @@ def lay_danh_sach_chi_tiet_all_pages(driver, wait):
 
                     "y_ta": y_ta,
                     "y_ta_key": y_ta_key,
-                    "y_lenh": (tds[10].text or "").strip() if len(tds) > 10 else "",
+                    "y_lenh": y_lenh_cell,
                 }
                 records.setdefault(key, []).append(info)
             except Exception:
@@ -891,6 +935,33 @@ def xoa_dich_truyen_thua_ngoai_du_lieu(
     ws.restore_account(original_username, original_password, ma_bn, reopen=reopen_fn)
     return deleted
 
+_DILUENT_PART_RE = re.compile(r"^(nacl|nuoc cat|glucose|dextrose)\b")
+
+
+def _core_parts(name_key: str) -> set:
+    """Các thành phần tên (đã chuẩn hoá) trừ dung dịch pha."""
+    parts = [_norm_med_base(p) for p in (name_key or "").split("+")]
+    return {p for p in parts if p and not _DILUENT_PART_RE.match(p)}
+
+
+def same_time_diluent_variants(records: dict, med: dict) -> list:
+    """Bản ghi cùng giờ, cùng thuốc chính nhưng khác phần dung dịch pha (vd web
+    "Paracetamol + Natri clorid" trong khi cần "Paracetamol") — coi là bản sai
+    cùng thuốc/giờ để xóa và nhập lại, thay vì để sót dòng ghép nhầm."""
+    exp_key = _norm_med_key(med.get("Full_Name", ""))
+    exp_start = _norm_time_str(med.get("Time_Start_Str", ""))
+    exp_core = _core_parts(exp_key)
+    if not exp_core:
+        return []
+    out = []
+    for (name_key, start), infos in (records or {}).items():
+        if start != exp_start or name_key == exp_key:
+            continue
+        if _core_parts(name_key) == exp_core:
+            out.extend(infos or [])
+    return out
+
+
 def _compare_med_vs_web(med, web_info, ten_y_ta_chuan):
     """So sánh dữ liệu JSON (med) với bản ghi web; trả về list lỗi (rỗng nếu khớp).
 
@@ -918,7 +989,10 @@ def _compare_med_vs_web(med, web_info, ten_y_ta_chuan):
     if web_name_key != exp_name_key:
         exp_base = _norm_med_base(med.get("Full_Name", ""))
         web_base = _norm_med_base(web_info.get("ten", ""))
-        if not (exp_base and web_base and (exp_base == web_base or exp_base in web_base or web_base in exp_base)):
+        # Khác số thành phần (vd web "Paracetamol + Natri clorid" nhưng cần
+        # "Paracetamol") là sai tên, dù tên này chứa tên kia.
+        same_parts = exp_name_key.count("+") == web_name_key.count("+")
+        if not (same_parts and exp_base and web_base and (exp_base == web_base or exp_base in web_base or web_base in exp_base)):
             errs.append("sai tên dịch truyền")
     if web_start != exp_start:
         errs.append("sai giờ bắt đầu")
