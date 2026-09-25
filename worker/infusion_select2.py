@@ -326,10 +326,6 @@ def _find_drug_select2_field_id(driver):
         pass
     return None
 
-def _select2_has_value(driver, field_id: str) -> bool:
-    """Backward-compatible check: native Select2 value thật, không nhận tag giả."""
-    state = _selected_drug_state(driver, field_id)
-    return bool(state.get('ok')) if state else False
 
 
 def _clean_lot_value(value):
@@ -799,12 +795,6 @@ def nhap_thuoc_select2(driver, ten_thuoc):
             pass
         return False
 
-def _select2_selected_text(driver, container_id):
-    try:
-        txt = driver.find_element(By.ID, f"select2-{container_id}-container").text or ""
-        return txt.strip()
-    except Exception:
-        return ""
 
 
 # ── Y lệnh (cbbYLenh) ─────────────────────────────────────────────────────────

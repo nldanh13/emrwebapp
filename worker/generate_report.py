@@ -64,11 +64,6 @@ def _hour_from_tg(tg):
 
 # norm → shared.text_utils.norm_space
 
-def ellipsize(text, max_chars):
-    t = norm(text)
-    if len(t) <= max_chars:
-        return t
-    return t[:max(1, max_chars - 1)].rstrip() + "…"
 
 
 # ─── Font ────────────────────────────────────────────────────────────────────

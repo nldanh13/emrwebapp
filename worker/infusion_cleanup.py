@@ -697,11 +697,6 @@ def _expected_is_legacy_replacement(med: dict, kind: str) -> bool:
     return False
 
 
-def _expected_is_legacy_saline_replacement(med: dict) -> bool:
-    # Tương thích helper/test cũ.
-    return _expected_is_legacy_replacement(med, 'pha_saline')
-
-
 def _info_matches_expected_shape(info: dict, med: dict) -> bool:
     """So thể tích/tốc độ khi expected có giá trị để tăng độ an toàn cleanup."""
     exp_volume = int(med.get('The_Tich', 0) or 0)

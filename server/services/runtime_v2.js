@@ -33,17 +33,6 @@ async function migrateRuntimeKeys(ctx) {
   return result;
 }
 
-async function checkRuntimeHealth(ctx) {
-  const result = await runScript('runtime_maint.py', ['health', '--runtime-dir', ctx.dir, '--json'], {
-    cwd: ctx.dir,
-    runtimeDir: ctx.dir,
-  });
-  // runtime_maint prints JSON to stdout, but python_runner only logs stdout.
-  // API reads the health directly from files by spawning is not necessary here,
-  // so caller should prefer a separate JSON helper if full payload is needed.
-  return result;
-}
-
 function v2FileStatus(ctx) {
   const files = {
     patients: ctx.PATIENTS_PATH,
@@ -64,4 +53,4 @@ function v2FileStatus(ctx) {
   return out;
 }
 
-module.exports = { refreshRuntimeV2, migrateRuntimeKeys, checkRuntimeHealth, v2FileStatus };
+module.exports = { refreshRuntimeV2, migrateRuntimeKeys, v2FileStatus };

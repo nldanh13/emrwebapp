@@ -63,10 +63,6 @@ function normalizeStorageIdentity(value) {
   return { raw, number, kind, year, full_key: fullKey, legacy_key: number };
 }
 
-function normalizeStorageKey(value) {
-  return normalizeStorageIdentity(value).legacy_key;
-}
-
 function parseCsv(csvText) {
   const input = String(csvText ?? '').replace(/^\uFEFF/, '');
   const rows = [];
@@ -446,7 +442,6 @@ module.exports = {
   normalizeHeader,
   normalizeName,
   normalizeStorageIdentity,
-  normalizeStorageKey,
   parseCsv,
   parseGoogleSheetRecords,
   extractSpreadsheetInfo,

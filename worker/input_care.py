@@ -686,38 +686,6 @@ def main():
             return False
         return m.group(3) == work_date and (hh * 60 + mi) < int(start_hour) * 60
 
-    def _parse_any_discharge_dt(entry_obj, work_date=''):
-        """Lấy mốc ra viện trực tiếp từ record, kể cả khi không có special_event ngày hiện tại."""
-        if not isinstance(entry_obj, dict):
-            return None
-        candidates = []
-        date_part = str(entry_obj.get('ngay_ra_vien_date') or work_date or entry_obj.get('ngay_lam') or '').strip()
-        time_part = str(entry_obj.get('gio_ra_vien') or '').strip()
-        if time_part and date_part:
-            candidates.append(f"{time_part} {date_part}")
-        candidates.extend([
-            str(entry_obj.get('ngay_ra_vien') or '').strip(),
-            str(entry_obj.get('Ngày ra viện') or '').strip(),
-        ])
-        for raw in candidates:
-            if not raw:
-                continue
-            dt = _dt_from_time_key(raw)
-            if dt is not None:
-                return dt
-            m = re.search(r'(\d{1,2}):(\d{2}).*?(\d{1,2})[/-](\d{1,2})[/-](\d{4})', raw)
-            if m:
-                try:
-                    hh, mi, dd, mm, yy = map(int, m.groups())
-                    return datetime(yy, mm, dd, hh, mi)
-                except Exception:
-                    pass
-            if time_part and date_part and re.search(r'\d{1,2}[/-]\d{1,2}[/-]\d{4}', raw):
-                try:
-                    return datetime.strptime(f"{time_part} {date_part}", "%H:%M %d/%m/%Y")
-                except Exception:
-                    pass
-        return None
 
     def _drop_actions_before_work_start_same_date(chi_dinh_khac, work_date):
         if not isinstance(chi_dinh_khac, dict):

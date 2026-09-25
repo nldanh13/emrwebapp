@@ -582,12 +582,6 @@ def _extract_patient_links_from_selenium_page(driver: Any, ma_bn: str) -> Dict[s
     return links
 
 
-def _extract_patient_href_from_selenium_page(driver: Any, ma_bn: str) -> str:
-    """Tương thích code cũ: trả link bấm tên người bệnh trước."""
-    links = _extract_patient_links_from_selenium_page(driver, ma_bn)
-    return links.get("doctor") or links.get("nursing") or ""
-
-
 def _find_patient_links_via_selenium(sess: "EmrHttpSession", ma_bn: str,
                                      config: Dict[str, Any], date_to: str,
                                      inpatient_status: str = "Đang thực hiện",
@@ -632,72 +626,6 @@ def _selenium_click_js(driver: Any, element: Any) -> None:
         element.click()
     except Exception:
         driver.execute_script("arguments[0].click();", element)
-
-
-def _find_patient_row_for_click(driver: Any, ma_bn: str) -> Any:
-    try:
-        from selenium.webdriver.common.by import By  # type: ignore
-    except Exception as e:
-        raise RuntimeError(f"Selenium không khả dụng: {e}")
-
-    code_lit = _xpath_literal(str(ma_bn or "").strip())
-    row_xpaths = [
-        f"//table[@id='tblNoiTru']//tbody//tr[.//*[contains(normalize-space(), {code_lit})]]",
-        f"//table[contains(@id,'NoiTru')]//tr[.//*[contains(normalize-space(), {code_lit})]]",
-        f"//tr[.//*[contains(normalize-space(), {code_lit})]]",
-    ]
-    for xp in row_xpaths:
-        rows = driver.find_elements(By.XPATH, xp)
-        if rows:
-            return rows[0]
-    raise RuntimeError(f"Không tìm thấy dòng BN {ma_bn} để bấm mở hồ sơ.")
-
-
-def _click_patient_entry_from_row(driver: Any, row: Any, kind: str) -> str:
-    """Bấm đúng cổng vào hồ sơ từ dòng danh sách.
-
-    kind='nursing' → bấm con mắt điều dưỡng (wpid=dieuduongdraw).
-    kind='doctor'  → bấm tên người bệnh (id btna..., wpid=bacsidraw).
-    """
-    try:
-        from selenium.webdriver.common.by import By  # type: ignore
-    except Exception as e:
-        raise RuntimeError(f"Selenium không khả dụng: {e}")
-
-    wanted = "nursing" if kind == "nursing" else "doctor"
-    anchors = row.find_elements(By.XPATH, ".//a[@href]")
-
-    # 1) Con mắt điều dưỡng.
-    if wanted == "nursing":
-        for a in anchors:
-            href = (a.get_attribute("href") or "").strip()
-            html = (a.get_attribute("innerHTML") or "").lower()
-            if "wpid=dieuduongdraw" in href.lower() or "fa-eye" in html:
-                _selenium_click_js(driver, a)
-                _selenium_wait_after_action(driver, 1.0, ready_timeout=12)  # type: ignore[misc]
-                return getattr(driver, "current_url", "") or href
-        raise RuntimeError("Không tìm thấy con mắt điều dưỡng trong dòng BN.")
-
-    # 2) Tên người bệnh.
-    for a in anchors:
-        href = (a.get_attribute("href") or "").strip()
-        text = (a.text or "").strip()
-        aid = (a.get_attribute("id") or "").lower()
-        href_l = href.lower()
-        text_norm = _norm(text)
-        looks_name = (
-            aid.startswith("btna")
-            or ("wpid=bacsidraw" in href_l and "nextlink=lichsuylenh" in href_l and bool(text_norm)
-                and not re.fullmatch(r"[\d: /-]+", text_norm)
-                and text_norm not in {"nam", "nu", "nữ", "bao hiem", "bao hiem dung tuyen", "dang thuc hien"})
-        )
-        if looks_name:
-            _selenium_click_js(driver, a)
-            _selenium_wait_after_action(driver, 1.0, ready_timeout=12)  # type: ignore[misc]
-            return getattr(driver, "current_url", "") or href
-
-    raise RuntimeError("Không tìm thấy link tên người bệnh trong dòng BN.")
-
 
 
 def _hchanh_action_markers(action: str) -> List[str]:
@@ -4399,19 +4327,6 @@ def _parse_any_dmy_date(value: Any):
         return None
 
 
-def _in_dmy_range(value: Any, date_from: str = "", date_to: str = "") -> bool:
-    d = _parse_any_dmy_date(value)
-    if d is None:
-        return True
-    d_f = _parse_any_dmy_date(date_from)
-    d_t = _parse_any_dmy_date(date_to or date_from)
-    if d_f and d < d_f:
-        return False
-    if d_t and d > d_t:
-        return False
-    return True
-
-
 def _guess_cdha_group(name: Any) -> str:
     hay = _norm(name)
     if re.search(r"(^|[^a-z0-9])(mri|cong huong tu)([^a-z0-9]|$)", hay):
@@ -4887,15 +4802,6 @@ def fetch_cls(sess: Optional[EmrHttpSession], ma_bn: str,
         base["_error"] = str(e)
         return base
 
-def _parse_dmy_str(s: str):
-    m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", _t(s))
-    if m:
-        from datetime import date
-        try:
-            return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
-        except ValueError:
-            return None
-    return None
 
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────

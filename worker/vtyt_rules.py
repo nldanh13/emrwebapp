@@ -288,10 +288,6 @@ def is_antibiotic(text: Any, dictionary: Optional[Mapping[str, Any]] = None) -> 
     return includes_any(text, kws or ANTIBIOTIC_KEYWORDS)
 
 
-def is_infusion_item(item: Mapping[str, Any]) -> bool:
-    return includes_any(item_text(item), ["truyền", "tiêm truyền", "tiem truyen", "dịch truyền", "dich truyen", "natri clorid", "ringer", "glucose"])
-
-
 def is_tmc_item(item: Mapping[str, Any]) -> bool:
     return includes_any(item_text(item), ["tmc", "tĩnh mạch chậm", "tinh mach cham", "tiêm tĩnh mạch", "tiem tinh mach"])
 

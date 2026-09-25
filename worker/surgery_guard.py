@@ -293,26 +293,8 @@ def _has_surgery_text(record: Dict[str, Any]) -> bool:
     return _matches_any(blob, SURGERY_OUT_PATTERNS)
 
 
-def _has_surgery_plan_text(record: Dict[str, Any]) -> bool:
-    care = record.get("nhap_cham_soc") or {}
-    blob = "\n".join([
-        str(care.get("dien_bien") or "") if isinstance(care, dict) else "",
-        str(care.get("y_lenh") or "") if isinstance(care, dict) else "",
-    ])
-    return _matches_any(blob, SURGERY_PLAN_PATTERNS)
-
-
 def _status_blob(record: Dict[str, Any]) -> str:
     return " ".join(str(record.get(k) or "") for k in STATUS_ONLY_KEYS)
-
-
-def _status_says_ward_active(record: Dict[str, Any]) -> bool:
-    return _matches_any(_status_blob(record), WARD_ACTIVE_PATTERNS)
-
-
-def _status_says_surgery(record: Dict[str, Any]) -> bool:
-    # Chỉ dùng trường trạng thái thật của danh sách nội trú; không dùng Xử trí để tránh suy luận nhầm.
-    return _matches_any(_status_blob(record), SURGERY_OUT_PATTERNS)
 
 
 def _explicit_surgery_dt(record: Dict[str, Any]) -> Optional[datetime]:
@@ -509,25 +491,6 @@ def detect_surgery_out(record: Dict[str, Any]) -> Tuple[bool, Optional[datetime]
     return False, None, ""
 
 
-def annotate_record(record: Dict[str, Any]) -> Dict[str, Any]:
-    """Attach surgery-out metadata used by preview and input workers."""
-    if not isinstance(record, dict):
-        return record
-    is_out, cutoff, reason = detect_surgery_out(record)
-    if not is_out:
-        if str(record.get("care_mode") or "") == "surgery_out_day":
-            record["care_mode"] = "normal"
-        record.pop("surgery_out", None)
-        return record
-    record["surgery_out"] = True
-    if cutoff:
-        record["surgery_out_time"] = fmt_datetime(cutoff)
-    record["surgery_out_reason"] = reason
-    if not record.get("care_mode") or str(record.get("care_mode")) == "normal":
-        record["care_mode"] = "surgery_out_day"
-    return record
-
-
 def surgery_cutoff(record: Dict[str, Any]) -> Tuple[bool, Optional[datetime], str]:
     return detect_surgery_out(record)
 
@@ -547,14 +510,3 @@ def should_skip_ward_input_at(record: Dict[str, Any], start_time: Any, end_time:
         return True, f"{reason}; bỏ qua vì thời gian kết thúc {fmt_datetime(end_dt)} vượt mốc đi mổ {cutoff_text}.", cutoff_text
     return False, "", cutoff_text
 
-
-def should_skip_ward_inputs(record: Dict[str, Any]) -> Tuple[bool, str, str]:
-    """Legacy compatibility: no longer skips the whole patient.
-
-    A patient may still have valid 08:00 care before going to surgery later.
-    Use should_skip_ward_input_at() for each specific time.
-    """
-    is_out, cutoff, reason = detect_surgery_out(record)
-    if not is_out:
-        return False, "", ""
-    return False, reason, fmt_datetime(cutoff)
