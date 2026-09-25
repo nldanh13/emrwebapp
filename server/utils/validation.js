@@ -78,21 +78,6 @@ function doneKey(id, ngay_lam) {
   return cleanDate ? `${cleanId}::${cleanDate}` : cleanId;
 }
 
-/** Các key tương thích khi đọc dữ liệu cũ: ISO là chính, DMY là alias. */
-function doneKeyAliases(id, ngay_lam) {
-  const cleanId = String(id || '').trim();
-  const raw = String(ngay_lam || '').trim();
-  if (!cleanId) return [];
-  const dmy = normalizeDmy(raw);
-  const iso = dmyToIso(raw);
-  const out = [];
-  if (iso) out.push(`${cleanId}::${iso}`);
-  if (dmy) out.push(`${cleanId}::${dmy}`);
-  if (raw && !out.includes(`${cleanId}::${raw}`)) out.push(`${cleanId}::${raw}`);
-  if (!out.length) out.push(cleanId);
-  return [...new Set(out)];
-}
-
 /** Chuẩn hoá session id để chặn path traversal và ký tự ngoài whitelist. */
 function sanitizeSessionId(input) {
   const raw = String(input || '').trim();
@@ -111,6 +96,5 @@ module.exports = {
   dmyToIso,
   isoToDmy,
   doneKey,
-  doneKeyAliases,
   sanitizeSessionId,
 };

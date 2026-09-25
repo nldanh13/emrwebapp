@@ -13,7 +13,6 @@ import argparse
 import json
 import os
 import re
-import shutil
 import sys
 import time
 from datetime import datetime
@@ -154,11 +153,6 @@ def _visible_pdf_srcs(driver: Any) -> List[str]:
     except Exception:
         pass
     return []
-
-
-def _visible_pdf_src(driver: Any) -> str:
-    srcs = _visible_pdf_srcs(driver)
-    return srcs[0] if srcs else ""
 
 
 def _collect_pdf_urls(driver: Any) -> List[str]:
@@ -1101,25 +1095,6 @@ def _download_pdf_with_driver_cookies(driver: Any, pdf_url: str, out_file: Path)
     tmp.replace(out_file)
 
 
-def _merge_pdfs(files: List[Path], out_file: Path) -> None:
-    files = [Path(f) for f in files if Path(f).exists() and Path(f).stat().st_size > 0]
-    if not files:
-        raise RuntimeError("Không có PDF nào để ghép.")
-    out_file.parent.mkdir(parents=True, exist_ok=True)
-    if len(files) == 1:
-        shutil.copyfile(files[0], out_file)
-        return
-    if PdfWriter is None:
-        raise RuntimeError("Thiếu thư viện pypdf để ghép PDF. Cài: pip install pypdf")
-    writer = PdfWriter()
-    for f in files:
-        writer.append(str(f))
-    tmp = out_file.with_suffix(out_file.suffix + f".tmp-{os.getpid()}")
-    with tmp.open("wb") as fh:
-        writer.write(fh)
-    tmp.replace(out_file)
-
-
 def _same_text_vi(a: Any, b: Any) -> bool:
     try:
         from shared.text_utils import norm_vi as _norm_vi  # type: ignore
@@ -1129,18 +1104,6 @@ def _same_text_vi(a: Any, b: Any) -> bool:
         aa = re.sub(r"\s+", " ", str(a or "").strip().lower())
         bb = re.sub(r"\s+", " ", str(b or "").strip().lower())
     return bool(aa and bb and (aa == bb or aa in bb or bb in aa))
-
-
-def _unique_statuses(values: List[Any]) -> List[str]:
-    out: List[str] = []
-    for value in values:
-        text = str(value or "").strip()
-        if not text:
-            continue
-        if not any(_same_text_vi(text, old) for old in out):
-            out.append(text)
-    return out
-
 
 
 def _status_file_key(status: str) -> str:

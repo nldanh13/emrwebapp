@@ -217,16 +217,6 @@ def patient_row_exists(driver: Any, ma_bn: Any) -> bool:
 
 
 
-def _norm_for_match(raw: Any) -> str:
-    """Chuẩn hóa tiếng Việt để so khớp label select2."""
-    import unicodedata
-    text = str(raw or "").strip().lower()
-    text = unicodedata.normalize("NFD", text)
-    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
-    text = text.replace("đ", "d")
-    return re.sub(r"\s+", " ", text)
-
-
 def _date_to_dmy_for_filter(value: Any) -> str:
     """Nhận yyyy-mm-dd / dd/mm/yyyy / chuỗi có giờ → trả dd/mm/yyyy."""
     raw = str(value or "").strip()

@@ -124,12 +124,6 @@ function fmtIntervalUTC(start, endExclusive) {
   return `${fmtDateTimeUTC(start)} → ${fmtDateTimeUTC(displayEnd)}`;
 }
 
-function fmtDateKey(key) {
-  const m = String(key || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return m ? `${m[3]}/${m[2]}/${m[1]}` : text(key);
-}
-
-function isSameOrAfterDate(a, b) { return dateOnlyUTC(a)?.getTime() >= dateOnlyUTC(b)?.getTime(); }
 function isBeforeDate(a, b) { return dateOnlyUTC(a)?.getTime() < dateOnlyUTC(b)?.getTime(); }
 
 function dateFromSurgeryRow(row) {
@@ -159,8 +153,6 @@ module.exports = {
   intervalOverlapMs,
   intervalIncludesInstant,
   fmtIntervalUTC,
-  fmtDateKey,
-  isSameOrAfterDate,
   isBeforeDate,
   dateFromSurgeryRow,
 };

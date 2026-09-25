@@ -108,25 +108,6 @@ def parse_care_cutoff_datetime(raw, fallback=None):
     return parsed if parsed is not None else fallback
 
 
-def is_care_time_due(time_key, cutoff_dt) -> bool:
-    """True khi mốc chăm sóc không nằm sau cutoff.
-
-    Nếu không parse được thời gian thì giữ lại để tránh bỏ sót dữ liệu hợp lệ.
-    """
-    if cutoff_dt is None:
-        return True
-    dt_obj = _dt_from_time_key(time_key)
-    if dt_obj is None:
-        return True
-    return dt_obj <= cutoff_dt
-
-
-def min_care_cutoff(*values):
-    """Lấy mốc sớm nhất trong các cutoff hợp lệ."""
-    parsed = [parse_care_cutoff_datetime(v) for v in values]
-    parsed = [x for x in parsed if x is not None]
-    return min(parsed) if parsed else None
-
 def _time_field_matches(val_time: str, target_time_str: str) -> bool:
     """So sánh giờ field txtThoiGianLap với time_str (không bị lệch '8:00' vs '08:00')."""
     v = _canon_hhmm(val_time)

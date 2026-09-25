@@ -249,13 +249,6 @@ def _date_only_dmy(value: Any, fallback: str = "") -> str:
     return fallback
 
 
-def _next_dmy(date: str) -> str:
-    dt = _parse_dmy(date)
-    if not dt:
-        return ""
-    return (dt + timedelta(days=1)).strftime("%d/%m/%Y")
-
-
 def _same_dmy(a: Any, b: Any) -> bool:
     da = _parse_dmy(a)
     db = _parse_dmy(b)
@@ -849,17 +842,6 @@ def _split_range_preview(job: Mapping[str, Any], preview: Mapping[str, Any]) -> 
         })
         out.append(daily)
     return out
-
-
-def _parse_selected_vtyt_supplies_from_popup(driver: Any, job: Mapping[str, Any]) -> List[Dict[str, Any]]:
-    """Lấy danh sách VTYT trực tiếp từ bảng y lệnh trong popup EMR."""
-    preview = _build_popup_preview(driver, job)
-    supplies = list(preview.get('supplies') or [])
-    if supplies:
-        _log(f"   [VTYT] Tự lập kế hoạch từ popup: {len(supplies)} vật tư y tế.")
-        for item in supplies[:12]:
-            _log(f"      - {item.get('code') or ''} {item.get('name')}: {item.get('required_quantity')} {item.get('unit') or ''}".rstrip())
-    return supplies
 
 
 def _direct_jobs_from_targets(targets: Mapping[str, Any], processed: List[Mapping[str, Any]]) -> List[Dict[str, Any]]:

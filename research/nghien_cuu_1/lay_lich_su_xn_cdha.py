@@ -861,21 +861,6 @@ def parse_date_arg(text):
     raise ValueError(f"Ngày không hợp lệ: {text}. Dùng dd/mm/yyyy hoặc yyyy-mm-dd")
 
 
-def in_date_range(text, from_dt=None, to_dt=None):
-    if not from_dt and not to_dt:
-        return True
-    dt = parse_vn_datetime(text)
-    if not dt:
-        return True  # Không parse được thì vẫn giữ lại, tránh mất dữ liệu âm thầm.
-    day = datetime(dt.year, dt.month, dt.day)
-    if from_dt and day < datetime(from_dt.year, from_dt.month, from_dt.day):
-        return False
-    if to_dt and day > datetime(to_dt.year, to_dt.month, to_dt.day):
-        return False
-    return True
-
-
-
 def day_start(dt):
     if not dt:
         return None
@@ -926,13 +911,6 @@ def should_rescan_day(day, to_dt, recent_days=7):
         return False
     end = day_start(to_dt or datetime.now())
     return day_start(day) >= end - timedelta(days=recent_days - 1)
-
-
-def format_emr_date(dt):
-    """Định dạng ngày thường dd/mm/yyyy."""
-    if not dt:
-        return ""
-    return dt.strftime("%d/%m/%Y")
 
 
 def format_emr_datetime(dt, end_of_day=False):
@@ -1043,48 +1021,6 @@ def dismiss_sweet_alert(driver, timeout=3):
             return False
         time.sleep(0.10)
 
-def set_select_by_text_or_value(driver, selectors, text_tokens=None, values=None):
-    text_tokens = [normalize_for_match(x) for x in (text_tokens or [])]
-    values = {str(x) for x in (values or [])}
-    js = r"""
-        var selectors = arguments[0] || [];
-        var textTokens = arguments[1] || [];
-        var values = arguments[2] || [];
-        function norm(s){
-          try { return (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
-          catch(e){ return (s || '').toLowerCase(); }
-        }
-        var changed = [];
-        for (var si=0; si<selectors.length; si++){
-          var els = Array.prototype.slice.call(document.querySelectorAll(selectors[si]));
-          for (var ei=0; ei<els.length; ei++){
-            var el = els[ei];
-            if (!el || el.tagName !== 'SELECT') continue;
-            var opts = Array.prototype.slice.call(el.options || []);
-            var picked = null;
-            for (var oi=0; oi<opts.length; oi++){
-              var opt = opts[oi];
-              var ov = String(opt.value || '');
-              var ot = norm(opt.textContent || opt.innerText || '');
-              if (values.indexOf(ov) >= 0 || textTokens.some(function(t){ return ot.indexOf(t) >= 0; })){
-                picked = opt;
-                break;
-              }
-            }
-            if (picked){
-              el.value = picked.value;
-              el.dispatchEvent(new Event('change', {bubbles:true}));
-              try { if (window.jQuery) window.jQuery(el).trigger('change'); } catch(e) {}
-              changed.push(el.id || el.name || selectors[si]);
-            }
-          }
-        }
-        return changed;
-    """
-    try:
-        return driver.execute_script(js, selectors, text_tokens, list(values)) or []
-    except Exception:
-        return []
 
 
 def select2_select_by_text(driver, select_id, text_tokens=None, fallback_values=None):
@@ -1951,24 +1887,6 @@ def merge_non_empty(target, source):
     return target
 
 
-def remove_rows_by_identity(path, cols, ctx):
-    path = Path(path)
-    if not path.exists():
-        ensure_csv(path, cols)
-        return 0
-    research_code = normalize_text(ctx.get("Mã NC", ""))
-    ma_bn = normalize_text(ctx.get("Mã BN", ""))
-    rows = read_csv_rows(path)
-    if research_code:
-        kept = [r for r in rows if normalize_text(r.get("Mã NC", "")) != research_code]
-    else:
-        kept = [r for r in rows if normalize_text(r.get("Mã BN", "")) != ma_bn]
-    removed = len(rows) - len(kept)
-    if removed:
-        write_csv_rows(path, cols, kept)
-    return removed
-
-
 def filter_rows_by_identity(rows, ctx):
     """Trả về các dòng không thuộc lượt điều trị `ctx`, không ghi file.
 
@@ -2110,19 +2028,6 @@ def assign_research_code_for_visit(ctx, base_ctx, allocator, encounter_code_map,
     encounter_code_map[key] = code
     assigned_codes.add(code)
     return key, code, False
-
-
-def remove_patient_rows(path, cols, ma_bn):
-    path = Path(path)
-    if not path.exists():
-        ensure_csv(path, cols)
-        return 0
-    rows = read_csv_rows(path)
-    kept = [r for r in rows if normalize_text(r.get("Mã BN", "")) != normalize_text(ma_bn)]
-    removed = len(rows) - len(kept)
-    if removed:
-        write_csv_rows(path, cols, kept)
-    return removed
 
 
 def prepare_patient_commit(run_dir, ctx):
@@ -4357,11 +4262,6 @@ def scan_patient_master_days(driver, wait, run_dir, progress, w_err, fh_err, fro
     return total
 
 
-# Tên cũ giữ lại để tránh đứt các chỗ gọi cũ.
-def scan_patient_master_pages(driver, wait, run_dir, progress, w_err, fh_err, from_dt=None, to_dt=None, max_pages=10000):
-    return scan_patient_master_days(driver, wait, run_dir, progress, w_err, fh_err, from_dt, to_dt)
-
-
 def label_text(driver, element_id):
     try:
         return normalize_text(driver.execute_script("""
@@ -5186,14 +5086,6 @@ def xu_ly_tab_xn(driver, ctx, w_xn=None, fh_xn=None, from_dt=None, to_dt=None):
     print(f"      XN: {len(total_rows)} chỉ số từ {len(items)} phiếu Hoàn tất")
     return total_rows
 
-# ── Parse CĐHA ───────────────────────────────────────────────────────────────
-def _html_to_text(html_str):
-    if not html_str:
-        return ""
-    soup = BeautifulSoup(html_str, "html.parser")
-    for br in soup.find_all("br"):
-        br.replace_with("\n")
-    return soup.get_text(separator="\n").strip()
 
 
 def _get_textarea_value(driver, soup, css_selector, textarea_id):
@@ -5375,17 +5267,6 @@ def prepare_run(args, script_dir, patients_count):
         _copy2_with_retry(input_path, input_dir / input_path.name)
     write_manifest(run_dir, args, patients_count)
     return run_dir
-
-
-def write_patient_master(run_dir, contexts):
-    # File mô tả mẫu chỉ phụ thuộc input. Khi chạy tiếp cùng run_id, ghi đè file này
-    # để không nhân đôi bệnh nhân; các file kết quả chi tiết vẫn append theo progress.
-    path = Path(run_dir) / "mau_nghien_cuu.csv"
-    mkdirp(path.parent)
-    with open(path, "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=COL_PATIENTS, extrasaction="ignore")
-        w.writeheader()
-        w.writerows(contexts)
 
 
 def main():

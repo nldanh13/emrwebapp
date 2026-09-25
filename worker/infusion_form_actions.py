@@ -16,7 +16,6 @@ from infusion_select2 import (
     nhap_thuoc_select2_va_lay_lo,
     xoa_sach_o_chon_thuoc,
     _drug_selection_committed,
-    _clean_lot_value,
 )
 
 def _dismiss_any_alert_or_popup(driver, wait=None, timeout=1.2):
@@ -128,57 +127,6 @@ def _lot_search_candidates(med):
             split_primary.append(head)
     return _unique_nonempty(split_primary + primary), _diluent_lot_candidates(med)
 
-
-def _resolve_and_fill_so_lo(driver, med, selected_info=None):
-    """Lấy số lô từ Select2 và điền #txtSoLo nếu form có ô này.
-
-    - Dịch truyền/thuốc không pha: dùng số lô của chính dòng đã chọn.
-    - Thuốc pha với dung môi: nếu thuốc chính không có số lô, thử dò số lô dung môi.
-    - Nếu không có số lô ở cả hai phía: để trống.
-    """
-    so_lo = ''
-    opt = {}
-    if isinstance(selected_info, dict):
-        so_lo = _clean_lot_value(selected_info.get('so_lo'))
-        opt = selected_info.get('option') or {}
-
-    primary, diluents = _lot_search_candidates(med)
-    main_query = (med.get('Search_Name') or (primary[0] if primary else '') or '').strip()
-
-    # Nếu lần chọn thuốc đầu chưa đọc được số lô, chỉ ĐỌC lại option thuốc chính.
-    # Không click/chọn lại để tránh làm thay đổi thuốc đang giữ trên form.
-    if not so_lo and main_query:
-        info = nhap_thuoc_select2_va_lay_lo(driver, main_query, extra_targets=primary, click_choice=False)
-        if info.get('ok'):
-            so_lo = _clean_lot_value(info.get('so_lo'))
-            opt = info.get('option') or opt
-
-    # Nếu có pha dung môi và thuốc chính không có số lô, dò thêm dung môi.
-    # Chỉ đọc option dung môi, KHÔNG click dung môi vào cbbThuoc.
-    if not so_lo and diluents:
-        for q in diluents:
-            info = nhap_thuoc_select2_va_lay_lo(driver, q, extra_targets=[q], click_choice=False)
-            if info.get('ok') and _clean_lot_value(info.get('so_lo')):
-                so_lo = _clean_lot_value(info.get('so_lo'))
-                opt = info.get('option') or opt
-                break
-    try:
-        driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
-    except Exception:
-        pass
-
-    try:
-        _set_input_value(driver, 'txtSoLo', so_lo)
-        if so_lo:
-            ten = (opt.get('ten') or main_query or med.get('Full_Name') or '').strip()
-            _log(f"      [+] Điền số lô dịch truyền: {so_lo} ({ten})")
-        else:
-            _log("      [i] Dịch truyền không có số lô trên Select2, để trống ô Số lô.")
-    except Exception:
-        # Một số form cũ có thể chưa có txtSoLo; không chặn luồng nhập.
-        pass
-    med['So_Lo'] = so_lo
-    return so_lo
 
 def _force_drug_required_fields(driver, full_name: str, search_name: str = ""):
     """Đồng bộ txtThuoc và xác nhận Select2 đã commit lựa chọn thật.

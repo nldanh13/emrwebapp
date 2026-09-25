@@ -427,7 +427,6 @@ function addPotentialUnusedCode() {
     path.join(ROOT, 'server.js'),
     path.join(ROOT, 'vite.config.js'),
     path.join(ROOT, 'src/main.jsx'),
-    path.join(ROOT, 'src/index.js'),
     path.join(ROOT, 'src/App.jsx'),
     ...packageScriptFileNames(),
   ].map(p => path.resolve(p)));

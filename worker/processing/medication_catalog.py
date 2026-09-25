@@ -236,8 +236,6 @@ def _expand_catalog_schedule_if_needed(out, med):
         out['inferred_schedule_expanded'] = True
     return out
 
-def _has_usage(drug):
-    return bool(str((drug or {}).get('duong_dung_goc') or '').strip() or str((drug or {}).get('gio_dung') or '').strip())
 
 
 def _has_oral_marker(text):

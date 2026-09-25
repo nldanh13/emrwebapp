@@ -128,13 +128,6 @@ def normalize_vi(text: str) -> str:
     return s
 
 
-def _strip_outer_quotes(s: str) -> str:
-    s = (s or "").strip()
-    if len(s) >= 2 and ((s[0] == s[-1] == '"') or (s[0] == s[-1] == "'")):
-        return s[1:-1].strip()
-    return s
-
-
 _PLACEHOLDER_RE = re.compile(r"\{([^{}]+)\}")
 
 

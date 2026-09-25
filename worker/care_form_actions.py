@@ -3,7 +3,6 @@
 
 import logging
 import random
-import re
 import time
 import unicodedata
 
@@ -121,17 +120,6 @@ def set_thoi_gian_lap(driver, time_str, max_retry=2):
         final_val = ''
     LOG.warning(_ctx_prefix() + f"[set_thoi_gian_lap] failed target='{time_str}' final='{final_val}'")
     return False
-
-
-def _chuan_hoa_ten(s: str) -> str:
-    """Chuẩn hóa tên để so sánh: bỏ dấu, lower, strip khoảng trắng thừa."""
-    import unicodedata
-    s = str(s or "").strip().lower()
-    s = re.sub(r"\s+", " ", s)
-    # Bỏ dấu tiếng Việt
-    s = unicodedata.normalize("NFD", s)
-    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
-    return s
 
 
 def _chon_nguoi_lap_select2(driver, target_text: str, timeout: int = 12) -> bool:

@@ -206,10 +206,6 @@ function writeScopedTicketStore(ctx, sourceScope, scopedStore) {
   return writeUnifiedTicketStore(ctx, { tickets: mergeTickets(kept, incoming) });
 }
 
-function openTicketStatuses() {
-  return CLOSED_STATUSES;
-}
-
 module.exports = {
   UNIFIED_TICKET_VERSION,
   SOURCE_HCHANH,
@@ -222,5 +218,4 @@ module.exports = {
   writeUnifiedTicketStore,
   readScopedTicketStore,
   writeScopedTicketStore,
-  openTicketStatuses,
 };
