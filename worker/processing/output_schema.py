@@ -34,6 +34,7 @@ def make_patient_day_record(
     clean_text_for_entry,
     extract_care_special_events=None,
     extract_admission_transfer_events=None,
+    reconcile_receive_events=None,
 ):
     """Tạo record chuẩn trước khi parser thuốc/chỉ định đổ dữ liệu vào.
 
@@ -50,6 +51,9 @@ def make_patient_day_record(
         care_events.extend(extract_care_special_events(raw_dien_bien, raw_y_lenh, ngay_lam) or [])
     if extract_admission_transfer_events:
         care_events.extend(extract_admission_transfer_events(patient, raw_dien_bien, raw_y_lenh, ngay_lam) or [])
+    if reconcile_receive_events:
+        # Lịch sử khoa điều trị (GMHS → CTCH = hậu phẫu...) chốt loại nhận bệnh.
+        care_events = reconcile_receive_events(care_events, patient, raw_dien_bien, ngay_lam) or care_events
 
     admission_time = (
         patient.get('thoi_gian_vao_khoa')
