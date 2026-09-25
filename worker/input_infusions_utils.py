@@ -467,6 +467,9 @@ def chuan_bi_du_lieu_json(json_path, patient_ids=None, date_from=None, date_to=N
                     "The_Tich": _the_tich,
                     "Toc_Do": _toc_do_raw,
                     "Bac_Si": (str(item.get("bac_si") or bac_si_time or entry.get("bac_si") or "").strip()),
+                    # Giờ/ngày y lệnh lúc lấy dữ liệu — form mới phải chọn đúng Y lệnh trước.
+                    "Gio_Y_Lenh": (item.get('gio_y_lenh') or '').strip(),
+                    "Ngay_Y_Lenh": entry_date_key,
                     "Time_Start_Str": (item.get('tg_bat_dau') or '').strip(),
                     "Time_End_Str": (item.get('tg_ket_thuc') or '').strip()
                 })
