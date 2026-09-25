@@ -39,10 +39,24 @@ def test_same_creator_ignores_accents_and_titles():
     assert not actions.cung_nguoi_lap("", "Thạch Thị Thúy Đa")
 
 
-def test_input_care_no_longer_logs_in_per_shift_nurse():
+def test_rename_for_other_account_only_saves(monkeypatch):
+    """Đổi sang người có tài khoản khác: chỉ Lưu, để người đó đăng nhập Hoàn tất."""
+    calls = []
+    monkeypatch.setattr(care_web_actions, "click_thu_hoi_cham_soc", lambda d: calls.append("thu_hoi") or True)
+    monkeypatch.setattr(actions, "_chon_nguoi_lap_select2", lambda d, name: calls.append(("chon", name)) or True)
+    monkeypatch.setattr(actions, "luu_va_hoan_tat", lambda d: calls.append("hoan_tat") or True)
+    monkeypatch.setattr(actions, "chi_luu", lambda d: calls.append("luu") or True)
+
+    assert actions.doi_nguoi_lap_sau_hoan_tat(object(), "Điều Dưỡng B", hoan_tat=False) is True
+    assert calls == ["thu_hoi", ("chon", "Điều Dưỡng B"), "luu"]
+
+
+def test_input_care_queues_hoan_tat_for_owner_account():
     source = (WORKER / "input_care.py").read_text(encoding="utf-8")
-    assert "get_emr_account_for_nurse" not in source
-    assert "doi_nguoi_lap_sau_hoan_tat(driver, nguoi_lap_cuoi)" in source
+    assert "doi_nguoi_lap_sau_hoan_tat(driver, nguoi_lap_cuoi, hoan_tat=False)" in source
+    assert "keep_moi_time_keys=keep_moi_time_keys" in source
+    phase2b = source.index("PHASE 2b")
+    assert source.index("ws.switch_account(username_ht", phase2b) < source.index("hoan_tat_phieu_cho_duyet(ws, it)", phase2b)
 
 
 def test_input_care_renames_only_after_hoan_tat():

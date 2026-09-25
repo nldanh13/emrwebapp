@@ -267,12 +267,30 @@ def luu_va_hoan_tat(driver, attempts=3):
     return False
 
 
-def doi_nguoi_lap_sau_hoan_tat(driver, ten_nguoi_lap):
+def chi_luu(driver):
+    """Bấm Lưu (không Hoàn tất) trên popup phiếu chăm sóc đang mở."""
+    from utils import handle_popups
+
+    try:
+        btn_luu = driver.find_element(By.ID, "btnSaveChamSocPopupDraw")
+        driver.execute_script("arguments[0].click();", btn_luu)
+    except Exception as _e:
+        LOG.debug(f"[except] {_e}")
+        return False
+    time.sleep(1.5); handle_popups(driver)
+    return True
+
+
+def doi_nguoi_lap_sau_hoan_tat(driver, ten_nguoi_lap, hoan_tat=True):
     """Phiếu đang mở đã Hoàn tất dưới tên chủ tài khoản đang đăng nhập:
-    Thu hồi → đổi Người lập sang ``ten_nguoi_lap`` → Lưu → Hoàn tất.
+    Thu hồi → đổi Người lập sang ``ten_nguoi_lap`` → Lưu (→ Hoàn tất).
 
     EMR báo lỗi nếu đổi Người lập sang người khác ngay lúc tạo phiếu (trước khi
     Hoàn tất lần đầu), nên việc đổi tên luôn làm SAU khi phiếu đã Hoàn tất.
+
+    ``hoan_tat=False``: chỉ Lưu, để phiếu ở trạng thái Mới — EMR chỉ cho chính
+    tài khoản của ``ten_nguoi_lap`` bấm Hoàn tất, nên bước đó làm ở lượt đăng
+    nhập tài khoản người đó (``hoan_tat_phieu_cho_duyet`` trong input_care).
     """
     from care_web_actions import click_thu_hoi_cham_soc
 
@@ -284,4 +302,6 @@ def doi_nguoi_lap_sau_hoan_tat(driver, ten_nguoi_lap):
         # Không bỏ phiếu ở trạng thái Mới: Hoàn tất lại với tên cũ.
         luu_va_hoan_tat(driver)
         return False
+    if not hoan_tat:
+        return chi_luu(driver)
     return luu_va_hoan_tat(driver)
