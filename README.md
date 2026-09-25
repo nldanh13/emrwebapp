@@ -21,7 +21,7 @@ server.js (Express)
 
 | Thư mục | Nội dung |
 | --- | --- |
-| `src/` | Giao diện React (components theo màn hình: bedboard, nurse, patient, records, report, shift, hchanh, adminWorkflow...) |
+| `src/` | Giao diện React (components theo màn hình: bedboard, nurse, patient, records, report, shift, hchanh...) |
 | `server/` | API Express: routes, middleware, services (task queue, workflow, audit, session) |
 | `worker/` | Script Python chạy Selenium/HTTP để đọc/ghi EMR thật và sinh báo cáo |
 | `config/` | Cấu hình runtime: đăng nhập EMR, feature registry, quy tắc nghiệp vụ, danh mục VTYT |

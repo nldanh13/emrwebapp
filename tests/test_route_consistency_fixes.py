@@ -44,12 +44,6 @@ def test_vtyt_catalog_uses_atomic_json_helpers_and_logs_mutations():
     assert "appendActivity(ctx, { kind: 'vtyt_catalog.reset'" in source
 
 
-def test_care_baseline_reuses_shared_read_json_safe():
-    source = (ROOT / "server/routes/care_baseline.js").read_text(encoding="utf-8")
-    assert "function readJsonSafe(" not in source, "Không nên định nghĩa lại readJsonSafe cục bộ."
-    assert "require('../utils/file')" in source
-
-
 def test_research_fetch_hchanh_run_is_audited():
     source = (ROOT / "server/routes/research.js").read_text(encoding="utf-8")
     start = source.index("async function fetchHchanhForResearchRun")

@@ -42,11 +42,10 @@ def test_unified_ticket_store_migrates_legacy_admin_and_keeps_scoped_views(tmp_p
     const ctx = {{ dir: {json.dumps(str(runtime))}, sid: 'pytest' }};
     const unified = require('./server/services/unified_ticket_store');
     const hchanh = require('./server/services/hchanh/ticket_store');
-    const admin = require('./server/services/adminWorkflow/repair_ticket');
     hchanh.upsertTicket(ctx, 'BN002', {{ ho_ten: 'Tran Thi B', phong: 'P2', scope_default: 'discharge' }}, {{}}, {{ issues: [{{ title: 'Sai ngày giường', severity: 'warn' }}] }});
     const all = unified.readUnifiedTicketStore(ctx);
     const hc = hchanh.readTicketStore(ctx);
-    const aw = admin.readTicketStore(ctx);
+    const aw = unified.readScopedTicketStore(ctx, unified.SOURCE_ADMIN_WORKFLOW);
     const canonicalExists = fs.existsSync(unified.canonicalTicketPath(ctx));
     console.log(JSON.stringify({{
       all: all.tickets.map(t => [t.ticketId, t.source_scope, t.patientId, t.ma_bn]).sort(),

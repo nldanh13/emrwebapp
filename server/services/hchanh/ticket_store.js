@@ -1,7 +1,7 @@
 // server/services/hchanh/ticket_store.js
 // Adapter phiếu sửa hồ sơ cho module Hành chánh.
-// Dữ liệu được lưu chung trong hchanh/tickets/ticket_store.json cùng adminWorkflow,
-// nhưng API cũ vẫn chỉ đọc/ghi các ticket source_scope='hchanh'.
+// Dữ liệu được lưu chung trong hchanh/tickets/ticket_store.json (kèm ticket của
+// module adminWorkflow cũ đã bỏ, nếu còn), nhưng chỉ đọc/ghi ticket source_scope='hchanh'.
 
 'use strict';
 

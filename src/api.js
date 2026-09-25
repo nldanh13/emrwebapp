@@ -95,8 +95,6 @@ function apiActionLabel(method, url) {
     'GET /api/session-logs': 'tải log session',
     'GET /api/health': 'kiểm tra nhanh hệ thống',
     'GET /api/diagnostics': 'chẩn đoán hệ thống',
-    'GET /api/runtime-health': 'kiểm tra trùng/lệch dữ liệu runtime',
-    'POST /api/runtime-migrate': 'chuẩn hóa runtime và ticket store',
     'POST /api/clinic/preview': 'đọc danh sách phòng khám',
     'POST /api/clinic/care-preview': 'tìm người bệnh phòng khám cần nhập chăm sóc',
     'POST /api/clinic/care-order-seeds': 'lấy vị trí đau từ y lệnh đầu tiên cho danh sách',
@@ -120,21 +118,6 @@ function apiActionLabel(method, url) {
     'POST /api/sick-leave-launch-bhyt-tool': 'tự khởi động công cụ nhập cổng BHXH',
     'POST /api/check-current-bed': 'kiểm buồng giường hiện tại',
 
-    'GET /api/admin-workflow/dashboard': 'tải workflow hành chánh',
-    'GET /api/admin-workflow/snapshot': 'tải snapshot hành chánh',
-    'POST /api/admin-workflow/snapshot/morning': 'chốt snapshot sáng',
-    'POST /api/admin-workflow/snapshot/afternoon': 'quét snapshot chiều',
-    'POST /api/admin-workflow/diff': 'so chênh lệch hành chánh',
-    'POST /api/admin-workflow/discharge-qa': 'QA hồ sơ xuất/chuyển',
-    'GET /api/admin-workflow/forecast': 'tải dự trù thuốc/VTYT hành chánh',
-    'GET /api/admin-workflow/billing-audit': 'rà bảng kê BHYT/tự túc',
-    'GET /api/admin-workflow/surgery-package': 'rà gói dụng cụ phẫu thuật',
-    'POST /api/admin-workflow/ticket': 'tạo phiếu sửa lỗi hành chánh',
-    'PATCH /api/admin-workflow/ticket': 'cập nhật phiếu sửa lỗi hành chánh',
-    'GET /api/admin-workflow/tickets': 'tải phiếu sửa lỗi hành chánh',
-    'POST /api/admin-workflow/rescan': 'nghiệm thu lại lỗi hành chánh',
-    'GET /api/admin-workflow/print-ready': 'kiểm điều kiện in hành chánh',
-    'POST /api/admin-workflow/print-pack': 'tạo lệnh in nhanh hành chánh',
     'POST /api/hchanh/sync': 'đồng bộ danh sách kiểm hồ sơ',
     'GET /api/hchanh/dashboard': 'tải bảng hành chánh/kiểm hồ sơ',
     'POST /api/hchanh/fetch': 'lấy dữ liệu hành chánh/kiểm hồ sơ',
@@ -156,12 +139,10 @@ function apiActionLabel(method, url) {
     'POST /api/hchanh/print-billing': 'in/lưu bảng kê hành chánh',
     'POST /api/hchanh/print-discharge-bundle': 'tổng hợp file in ra viện bệnh phòng',
     'GET /api/hchanh/print-ward-list': 'in danh sách xếp phòng',
-    'POST /api/admin-workflow/clear': 'dọn dữ liệu hành chánh',
     'GET /api/export-data': 'xuất dữ liệu phiên',
     'POST /api/import-data': 'nhập dữ liệu phiên',
     'GET /api/research/studies': 'tải danh sách nghiên cứu',
     'POST /api/research/studies': 'tạo nghiên cứu mới',
-    'POST /api/care-baseline/run': 'lấy lường cơ bản',
   };
   const exact = map[`${method} ${path}`];
   if (exact) return exact;
@@ -481,10 +462,6 @@ export const buildResearchArchiveEncodedDataset = () => post('/api/research/arch
 export const runResearchArchive = (options = {}) => post('/api/research/archive/run', options);
 export const runResearchArchivePatientInfo = (options = {}) => post('/api/research/archive/patient-info', options);
 
-export const getCareBaselineStatus = () => get('/api/care-baseline/status');
-export const getCareBaselineLatest = () => get('/api/care-baseline/latest');
-export const runCareBaseline = (options = {}) => post('/api/care-baseline/run', options);
-export const exportCareBaseline = (runId = '') => downloadBlob(`/api/care-baseline/export${runId ? `?runId=${encodeURIComponent(runId)}` : ''}`, `care_baseline${runId ? `_${runId}` : ''}.csv`);
 export const getResearchArchiveLog = ({ runId = 'latest', lines = 500 } = {}) => {
   const params = new URLSearchParams({ runId, lines });
   return get(`/api/research/archive/log?${params}`);
@@ -569,10 +546,7 @@ export const updateResearchStudyDataRequirements = (studyId, dataRequirements) =
 // Analysis config
 export const getAnalysisPresets = () => get('/api/research/analysis-presets');
 export const updateStudyAnalysisConfig = (studyId, config) => post(`/api/research/studies/${encodeURIComponent(studyId)}/analysis-config`, config);
-export const getHealth = () => get('/api/health');
 export const getDiagnostics = () => get('/api/diagnostics');
-export const getRuntimeHealth = () => get('/api/runtime-health');
-export const runRuntimeMigrate = () => post('/api/runtime-migrate', {});
 
 export async function checkInputChanges(targets) {
   const url = '/api/check-input-changes';
@@ -694,24 +668,6 @@ export const saveNurseSettings = (payload) => post('/api/nurse-settings', payloa
 export const getAdminNurseState = () => get('/api/admin-nurse-state');
 export const saveAdminNurseState = (payload) => post('/api/admin-nurse-state', payload);
 export const checkCurrentBed = (patient) => post('/api/check-current-bed', { patient });
-
-export const getAdminWorkflowDashboard = () => get('/api/admin-workflow/dashboard');
-export const getAdminWorkflowPatient = (patientId) => get(`/api/admin-workflow/patient/${encodeURIComponent(patientId)}`);
-export const getAdminWorkflowSnapshot = () => get('/api/admin-workflow/snapshot');
-export const createAdminWorkflowMorningSnapshot = () => post('/api/admin-workflow/snapshot/morning', {});
-export const createAdminWorkflowAfternoonSnapshot = () => post('/api/admin-workflow/snapshot/afternoon', {});
-export const diffAdminWorkflowSnapshots = () => post('/api/admin-workflow/diff', {});
-export const runAdminWorkflowDischargeQA = (patientId = '') => post('/api/admin-workflow/discharge-qa', patientId ? { patientId } : {});
-export const getAdminWorkflowForecast = (days = 3) => get(`/api/admin-workflow/forecast?days=${encodeURIComponent(days)}`);
-export const getAdminWorkflowBillingAudit = (patientId = '') => get(`/api/admin-workflow/billing-audit${patientId ? `?patientId=${encodeURIComponent(patientId)}` : ''}`);
-export const getAdminWorkflowSurgeryPackage = (patientId = '') => get(`/api/admin-workflow/surgery-package${patientId ? `?patientId=${encodeURIComponent(patientId)}` : ''}`);
-export const createAdminWorkflowTicket = (patientId, payload = {}) => post('/api/admin-workflow/ticket', { patientId, ...payload });
-export const updateAdminWorkflowTicket = (ticketId, payload = {}) => patch(`/api/admin-workflow/ticket/${encodeURIComponent(ticketId)}`, payload);
-export const getAdminWorkflowTickets = () => get('/api/admin-workflow/tickets');
-export const rescanAdminWorkflow = (patientId = '') => post('/api/admin-workflow/rescan', patientId ? { patientId } : {});
-export const getAdminWorkflowPrintReady = () => get('/api/admin-workflow/print-ready');
-export const createAdminWorkflowPrintPack = () => post('/api/admin-workflow/print-pack', {});
-export const clearAdminWorkflow = () => post('/api/admin-workflow/clear', {});
 
 // ── Phòng khám ───────────────────────────────────────────────────────────────
 export const runClinicPreview = (payload) => post('/api/clinic/preview', payload);

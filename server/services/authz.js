@@ -349,7 +349,7 @@ function requiredRoleForRequest(req) {
   // Một số route lịch sử dùng GET nhưng thực chất khởi chạy worker/tạo báo cáo.
   // Phân quyền theo tác động, không chỉ dựa vào HTTP method.
   if (['/run-scan', '/run-emr-structure-scan', '/inspect-emr-page', '/run-postprocess', '/run-report-infusion'].includes(routePath)) return 'operator';
-  if (['/export-data', '/care-baseline/export', '/hchanh/export/issues'].includes(routePath)) return 'supervisor';
+  if (['/export-data', '/hchanh/export/issues'].includes(routePath)) return 'supervisor';
   if (routePath === '/get-raw') return 'operator';
   if (routePath.startsWith('/features/') && routePath.endsWith('/state')) return 'admin';
   if (routePath.startsWith('/workflows/') && routePath.endsWith('/state')) return 'admin';
@@ -357,7 +357,7 @@ function requiredRoleForRequest(req) {
 
   if (method === 'DELETE') return 'admin';
   if (['POST', 'PUT', 'PATCH'].includes(method)) {
-    if (/^\/(?:import-data|runtime-migrate|nurse-settings|admin-workflow\/clear|hchanh\/clear)/.test(routePath)) return 'supervisor';
+    if (/^\/(?:import-data|runtime-migrate|nurse-settings|hchanh\/clear)/.test(routePath)) return 'supervisor';
     return 'operator';
   }
   return 'viewer';
