@@ -166,6 +166,109 @@ function EditModal({ item, onClose, onSave }) {
   );
 }
 
+// ── Dò danh mục VTYT trên EMR (chỉ đọc) ───────────────────────────────────────
+
+function normText(v) {
+  return String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase();
+}
+
+function EmrScanPanel({ items, onUseForKey, showToast }) {
+  const [maBn, setMaBn]       = useState('');
+  const [scanning, setScanning] = useState(false);
+  const [report, setReport]   = useState(null);
+  const [filter, setFilter]   = useState('');
+  const [assignKey, setAssignKey] = useState('');
+
+  useEffect(() => {
+    api.getVtytCatalogEmrScan().then(r => setReport(r.report || null)).catch(() => {});
+  }, []);
+
+  const handleScan = async () => {
+    if (!maBn.trim()) { showToast('Nhập mã 1 người bệnh đang nằm khoa để mở popup VTYT.'); return; }
+    setScanning(true);
+    try {
+      const r = await api.scanVtytCatalogEmr(maBn.trim());
+      setReport(r.report || null);
+      showToast(`Đã dò ${r.report?.count || 0} loại VTYT trên EMR.`);
+    } catch (e) {
+      showToast('Lỗi dò VTYT: ' + String(e.message || e));
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const f = normText(filter.trim());
+  const rows = (report?.items || []).filter(r => !f || normText(`${r.code} ${r.name}`).includes(f));
+  const knownCodes = new Set(items.map(i => String(i.code || '').toUpperCase()).filter(Boolean));
+
+  return (
+    <div style={{ marginBottom: 20, padding: 12, border: `1px solid ${C.border}`, borderRadius: 6, background: C.surface }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Dò danh mục VTYT trên EMR</div>
+      <div style={{ fontSize: 12, color: C.text2, margin: '4px 0 10px' }}>
+        Chỉ đọc: mở popup VTYT của 1 người bệnh, gõ các từ khóa vào ô chọn vật tư và ghi lại mọi loại EMR đang có.
+        Trước khi nhập VTYT, tool đối chiếu mã với danh sách này; vật tư không thấy trên EMR sẽ không nhập.
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input value={maBn} onChange={e => setMaBn(e.target.value)} placeholder="Mã người bệnh đang nằm khoa"
+          style={{ padding: '5px 8px', fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 4, minWidth: 220 }} />
+        <Btn variant="primary" disabled={scanning} onClick={handleScan}>
+          {scanning ? <><Spinner size={12} /> Đang dò...</> : 'Dò danh mục VTYT'}
+        </Btn>
+        {report && (
+          <span style={{ fontSize: 12, color: C.text2 }}>
+            Lần dò gần nhất: {report.scanned_at || '—'} · {report.count || 0} loại
+          </span>
+        )}
+      </div>
+      {report && (
+        <>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '10px 0 6px' }}>
+            <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Lọc theo tên/mã (vd: urgo, thun)"
+              style={{ padding: '5px 8px', fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 4, minWidth: 220 }} />
+            <select value={assignKey} onChange={e => setAssignKey(e.target.value)}
+              style={{ padding: '5px 8px', fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 4 }}>
+              <option value="">— Gán mã cho vật tư trong danh mục —</option>
+              {items.map(i => <option key={i.key} value={i.key}>{i.name} ({i.key})</option>)}
+            </select>
+          </div>
+          <div style={{ maxHeight: 320, overflow: 'auto', borderTop: `1px solid ${C.border2}` }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: C.surface2 }}>
+                  {['Mã', 'Tên trên EMR', 'Trong danh mục', ''].map(h => (
+                    <th key={h} style={{ padding: '6px 8px', textAlign: 'left', color: C.text2 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={r.code || r.raw} style={{ borderBottom: `1px solid ${C.border2}` }}>
+                    <td style={{ padding: '6px 8px' }}><code>{r.code || '—'}</code></td>
+                    <td style={{ padding: '6px 8px', color: C.text }}>{r.name}</td>
+                    <td style={{ padding: '6px 8px', color: knownCodes.has(String(r.code).toUpperCase()) ? C.green : C.text3 }}>
+                      {knownCodes.has(String(r.code).toUpperCase()) ? 'Có' : '—'}
+                    </td>
+                    <td style={{ padding: '6px 8px' }}>
+                      <Btn variant="default" disabled={!assignKey || !r.code} style={{ fontSize: 11, padding: '2px 8px' }}
+                        title={assignKey ? `Dùng mã này cho ${assignKey}` : 'Chọn vật tư trong danh mục ở ô bên trên trước'}
+                        onClick={() => onUseForKey(assignKey, r)}>
+                        Dùng mã này
+                      </Btn>
+                    </td>
+                  </tr>
+                ))}
+                {!rows.length && (
+                  <tr><td colSpan={4} style={{ padding: 8, color: C.text3 }}>Không có dòng nào khớp.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function VtytCatalogManager() {
@@ -228,6 +331,19 @@ export default function VtytCatalogManager() {
           Điều chỉnh khi hết hàng hoặc cần thay thế mã vật tư.
         </div>
       </div>
+
+      <EmrScanPanel
+        items={items}
+        showToast={showToast}
+        onUseForKey={async (key, row) => {
+          if (!window.confirm(`Dùng mã ${row.code} — ${row.name} cho ${key}?`)) return;
+          try {
+            await handleSave(key, { disabled: false, override_code: row.code, override_name: row.name });
+          } catch (e) {
+            showToast('Lỗi: ' + String(e.message || e));
+          }
+        }}
+      />
 
       {/* Summary */}
       <div style={{ display:'flex', gap:10, marginBottom:20, flexWrap:'wrap' }}>

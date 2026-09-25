@@ -109,6 +109,26 @@
         "kim pha thuốc",
         "kim tiem pha"
       ]
+    },
+    "BANG_THUN_3_MOC": {
+      "code": "VTYT.000003914",
+      "name": "Băng thun 3 móc",
+      "searchKeyword": "Băng thun 3 móc",
+      "aliases": [
+        "băng thun",
+        "bang thun",
+        "3 móc"
+      ]
+    },
+    "URGOTILE": {
+      "code": "",
+      "name": "Urgotile (băng dán vết mổ)",
+      "searchKeyword": "Urgotile",
+      "aliases": [
+        "urgotile",
+        "urgo"
+      ],
+      "_note": "Chưa có mã: dò danh mục VTYT trên EMR rồi điền mã ở màn hình Danh mục VTYT."
     }
   },
   "dailySupplies": [
@@ -194,7 +214,7 @@
     },
     {
       "id": "thay_bang_vet_mo",
-      "enabled": true,
+      "enabled": false,
       "category": "dvkt",
       "match": [
         "thay băng",
@@ -214,7 +234,8 @@
           "key": "GANG_TAY_KHAM",
           "qty": 1
         }
-      ]
+      ],
+      "disabledReason": "Thay bằng quy tắc thay băng theo vị trí (khớp háng/xương đòn/cột sống thắt lưng → Urgotile, còn lại → băng thun)."
     },
     {
       "id": "dat_kim_luon",
@@ -270,6 +291,8 @@
     "category=dvkt: VTYT sinh theo DVKT/thủ thuật/chăm sóc.",
     "category=interval: VTYT cách khoảng — worker nhìn lại lịch sử trước khi cho nhập.",
     "infusionContinuityGapMinutes: nếu 2 phiên truyền cách nhau < giá trị này → không thêm dây truyền mới.",
-    "Để thêm VTYT mới: bổ sung vào catalog rồi thêm rule vào customRules."
+    "Để thêm VTYT mới: bổ sung vào catalog rồi thêm rule vào customRules.",
+    "Thay băng: mổ khớp háng/xương đòn/cột sống thắt lưng → URGOTILE; vị trí khác → BANG_THUN_3_MOC (worker/vtyt_rules.py _add_thay_bang_supplies). Đổi từ khóa vị trí bằng \"urgotileSiteKeywords\".",
+    "Bệnh phòng chỉ nhập VTYT category dvkt/interval/manual; VTYT daily/medication để Hành chánh nhập."
   ]
 }

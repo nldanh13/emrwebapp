@@ -284,7 +284,7 @@ export function scopePatientToDates(patient, targetDates = []) {
   // VTYT (phẫu thuật/kim luồn theo quy tắc) chỉ dùng để hiện/lọc nút "Nhập VTYT" —
   // không đưa vào staleAny/status chung để không đổi ý nghĩa "chưa xử lý/cần xem/đã ổn"
   // vốn chỉ phản ánh chăm sóc/dịch truyền/thủ thuật.
-  const vtytDates = dates.filter(d => (dayMap[d]?.vtyt?.items?.length || 0) > 0);
+  const vtytDates = dates.filter(d => wardVtytItems(dayMap[d]).length > 0);
   const vtytDoneCount = vtytDates.filter(d => dayMap[d]?.vtyt_done).length;
   const vtytStaleCount = vtytDates.filter(d => dayMap[d]?.vtyt_stale).length;
   const warningCount = countWarnings(dayMap, dates);
@@ -413,4 +413,20 @@ export function countDutyPatients(patients = [], workDateRange) {
 
 export function countUnknownWorkflowPatients(patients = [], workDateRange) {
   return (Array.isArray(patients) ? patients : []).filter(p => getPatientWorkflowScope(p, workDateRange) === 'unknown').length;
+}
+
+// Bệnh phòng chỉ nhập VTYT phát sinh theo thủ thuật/chăm sóc (thay băng, kim
+// luồn, sonde, oxy...) và VTYT lẻ chọn tay. VTYT hằng ngày/theo thuốc (găng tay,
+// bơm tiêm, kim pha, dây truyền) để Hành chánh nhập.
+// Phải khớp WARD_PROCEDURE_CATEGORIES trong worker/vtyt_rules.py (và bản sao trong shift/shiftUtils.js).
+export const WARD_VTYT_CATEGORIES = ['dvkt', 'interval', 'manual'];
+
+export function wardVtytItems(day) {
+  const items = Array.isArray(day?.vtyt?.items) ? day.vtyt.items : [];
+  return items.filter(item => WARD_VTYT_CATEGORIES.includes(String(item?.category || '')));
+}
+
+// "<ma_bn>::<dd/mm/yyyy>" -> [{key, qty}]
+export function manualVtytKey(patientId, date) {
+  return `${String(patientId || '').trim()}::${String(date || '').trim()}`;
 }
