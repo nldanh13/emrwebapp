@@ -1408,6 +1408,19 @@ async function runInputTask(req, res, ctx, { scriptName, taskName, targetsFilePr
 }
 
 
+// Chuẩn hóa lại targets theo file phân loại hiện tại (áp cùng bộ lọc với
+// /run-input-*), dùng khi tiền kiểm vừa cập nhật dữ liệu.
+function targetsFromCurrentProcessed(ctx, rawBody) {
+  const rows = sanitizeStaleDischargeRows(enrichRowsWithCurrentRooms(readJsonSafe(ctx.PROCESSED_PATH, []), ctx));
+  let next = normalizeInputTargets(rawBody, rows);
+  if (taskNameFromTargets(next) === 'input_infusions') {
+    const validation = validateInfusionTargetsComplete(rows, next);
+    if (!validation.ok) return null;
+    if (validation.targets) next = validation.targets;
+  }
+  return next;
+}
+
 // ── POST /api/check-input-changes ────────────────────────────────────────────
 // Kiểm tra thủ công trước khi nhập. Endpoint này chỉ đọc/đối chiếu và cấp token;
 // tuyệt đối không chạy worker ghi EMR.
@@ -1484,12 +1497,26 @@ router.post('/check-input-changes', async (req, res) => {
     if (result.status === 'changed') {
       const resolvedTask = taskNameFromTargets(targets);
       const cannotContinue = result.allow_input === false;
-    const canContinue = !cannotContinue;
+      let canContinue = !cannotContinue;
+      // Tiền kiểm vừa ghi lại file phân loại (phòng/ngày của BN có thể đổi). Lúc
+      // bấm nhập, /run-input-* chuẩn hóa lại targets từ file MỚI này, nên token
+      // phải cấp theo targets chuẩn hóa lại từ file mới — nếu dùng targets cũ
+      // (tính trước khi cập nhật) thì hash lệch và báo "không khớp danh sách
+      // BN/ngày" dù người dùng không đổi gì.
+      let issueTargets = targets;
+      if (canContinue) {
+        issueTargets = targetsFromCurrentProcessed(ctx, rawBody) || targets;
+        if (!issueTargets.patientIds.length) {
+          canContinue = false;
+          result.allow_input = false;
+          result.message = `${result.message || ''} Sau khi cập nhật, không còn BN/ngày nào thuộc phạm vi đã chọn. Hãy xem lại danh sách.`.trim();
+        }
+      }
       const precheck = canContinue
         ? issueInputPrecheckToken(
             ctx,
             resolvedTask,
-            targets,
+            issueTargets,
             { checked_count: result.checked_count || 0 },
           )
         : {};
