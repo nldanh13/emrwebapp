@@ -868,15 +868,26 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     targets.repairExisting = true;
     targets.includeDone = true;
     targets.onlyDone = false;
+    // VTYT lẻ chọn tay: đưa cả BN/ngày đó vào phạm vi dù quy tắc không sinh VTYT.
+    const manualVtyt = options.manualVtyt && typeof options.manualVtyt === 'object' ? options.manualVtyt : null;
+    if (manualVtyt) {
+      targets.manualVtyt = manualVtyt;
+      for (const k of Object.keys(manualVtyt)) {
+        const [id, date] = k.split('::');
+        if (!id || !date || !(manualVtyt[k] || []).length) continue;
+        if (!targets.patientIds.includes(id)) targets.patientIds.push(id);
+        targets.patientDates[id] = [...new Set([...(targets.patientDates[id] || []), date])];
+      }
+    }
     if (!targets.patientIds.length) {
-      toast?.('Không có BN/ngày cần VTYT (phẫu thuật/thay kim luồn) trong phạm vi đang chọn.', 'error');
+      toast?.('Không có BN/ngày cần VTYT theo thủ thuật (thay băng/kim luồn...) trong phạm vi đang chọn. Có thể chọn thêm VTYT lẻ.', 'error');
       return;
     }
     const precheck = await ensureInputDataFresh(targets, 'VTYT', 'vtyt');
     if (!precheck?.precheck_token) return;
     targets.precheck_token = precheck.precheck_token;
     targets.nurseDutyLines = nurseDutyLines;
-    const okToRunVtyt = await askInputConfirm(targets, 'VTYT — kiểm tra / nhập theo quy tắc (PT: băng thun/băng dính theo vị trí; thay kim luồn: combo kim luồn)', precheck);
+    const okToRunVtyt = await askInputConfirm(targets, 'VTYT — chỉ VTYT theo thủ thuật (thay băng: Urgotile/băng thun theo vị trí; kim luồn...) + VTYT lẻ đã chọn', precheck);
     if (!okToRunVtyt) {
       toast?.('Đã hủy kiểm tra/nhập VTYT.', 'error');
       return;
@@ -886,7 +897,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
       const r = await api.runInputVTYT(targets);
       const ok = r.status === 'ok' || r.status === 'partial' || r.status === 'skipped';
       const message = r.status === 'ok'
-        ? 'Đã kiểm tra và nhập VTYT theo quy tắc: chỉ những ca có phẫu thuật (băng thun/băng dính theo vị trí) hoặc thay kim luồn mới được nhập.'
+        ? 'Đã kiểm tra và nhập VTYT theo thủ thuật (thay băng, kim luồn...) và VTYT lẻ đã chọn; vật tư không có trên EMR được bỏ qua.'
         : (r.message || 'Đã hoàn tất kiểm tra/nhập VTYT.');
       toast?.(message, r.status === 'skipped' ? 'info' : (ok ? 'ok' : 'error'));
       if (ok) await loadPatients();

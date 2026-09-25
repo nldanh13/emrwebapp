@@ -70,6 +70,13 @@ CATALOG: Dict[str, Dict[str, Any]] = {
         "code": "VTYT.000003914", "name": "Băng thun 3 móc",
         "searchKeyword": "Băng thun 3 móc", "aliases": ["băng thun", "bang thun", "3 móc"],
     },
+    "URGOTILE": {
+        # Chưa có mã EMR xác nhận: dùng nút "Dò danh mục VTYT trên EMR" để tìm
+        # đúng dòng rồi điền mã ở Danh mục VTYT. Khi chưa có mã, worker không
+        # nhập mù vật tư này (cần kiểm tra).
+        "code": "", "name": "Urgotile (băng dán vết mổ)",
+        "searchKeyword": "Urgotile", "aliases": ["urgotile", "urgo"],
+    },
     "BANG_DINH_250X90": {
         "code": "VTYT.000003860", "name": "Băng dính vô trùng vải không dệt, có gạc DECOMED (size 250x90 mm)",
         "searchKeyword": "Băng dính 250x90", "aliases": ["250x90", "băng dính 250", "decomed 250"],
@@ -210,7 +217,10 @@ def load_vtyt_dictionary(config: Optional[Mapping[str, Any]] = None) -> Dict[str
 def _catalog_payload(key: str, dictionary: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     catalog = (dictionary or {}).get("catalog") if isinstance(dictionary, Mapping) else None
     c = (catalog or CATALOG).get(key) or CATALOG.get(key) or {"code": "", "name": key, "searchKeyword": key}
-    return {"key": key, "code": c.get("code", ""), "name": c.get("name", key), "searchKeyword": c.get("searchKeyword") or c.get("name") or key}
+    # Mã/tên sửa ở màn hình Danh mục VTYT (override_*) được ưu tiên.
+    code = str(c.get("override_code") or c.get("code") or "").strip()
+    name = str(c.get("override_name") or c.get("name") or key)
+    return {"key": key, "code": code, "name": name, "searchKeyword": c.get("searchKeyword") or name or key}
 
 
 def add_req(
@@ -230,8 +240,16 @@ def add_req(
     catalog = (dictionary or {}).get("catalog") if isinstance(dictionary, Mapping) else None
     if not key or key not in (catalog or CATALOG) or qty <= 0:
         return
+    if ((catalog or CATALOG).get(key) or {}).get("disabled") is True:
+        return  # đã tắt ở màn hình Danh mục VTYT
+    payload = _catalog_payload(key, dictionary)
+    if not payload.get("code"):
+        # Chưa có mã VTYT xác nhận trên EMR → không nhập mù, để người dùng kiểm tra.
+        input_allowed = False
+        needs_review = True
+        reason = f"{reason} (chưa có mã VTYT trên EMR — dò danh mục VTYT rồi điền mã)"
     row = acc.get(key) or {
-        **_catalog_payload(key, dictionary),
+        **payload,
         "required_quantity": 0,
         "reasons": [],
         "sources": [],
@@ -512,16 +530,54 @@ def _add_keyword_supplies(acc: Dict[str, Dict[str, Any]], records: Sequence[Mapp
         add_req(acc, "ONG_THONG_DA_DAY", 1, "DVKT sonde dạ dày: ống thông dạ dày", category="dvkt", rule_id="dvkt_gastric_tube", dictionary=dictionary)
 
 
+THAY_BANG_KEYWORDS = ["thay băng", "thay bang"]
+# Vị trí mổ dùng Urgotile khi thay băng; các vị trí khác dùng băng thun.
+URGOTILE_SITE_KEYWORDS = [
+    "khớp háng", "khop hang", "thay khớp háng", "xương đòn", "xuong don",
+    "cột sống thắt lưng", "cot song that lung", "thắt lưng", "that lung", "cstl",
+]
+
+
+def _has_thay_bang(records: Sequence[Mapping[str, Any]]) -> bool:
+    return includes_any(_record_blob(records), THAY_BANG_KEYWORDS)
+
+
+def _add_thay_bang_supplies(acc: Dict[str, Dict[str, Any]], records: Sequence[Mapping[str, Any]], dictionary: Mapping[str, Any]) -> None:
+    """Thay băng: mổ khớp háng / xương đòn / cột sống thắt lưng → Urgotile;
+    vị trí khác → băng thun. Thay hẳn quy tắc cũ (DECOMED/găng tay/băng dính)."""
+    if not _has_thay_bang(records):
+        return
+    sites = dictionary.get("urgotileSiteKeywords") if isinstance(dictionary.get("urgotileSiteKeywords"), list) else URGOTILE_SITE_KEYWORDS
+    if includes_any(_record_blob(records), sites):
+        add_req(acc, "URGOTILE", 1, "Thay băng vết mổ khớp háng/xương đòn/cột sống thắt lưng: Urgotile", category="dvkt", rule_id="dvkt_thay_bang_urgotile", dictionary=dictionary)
+    else:
+        add_req(acc, "BANG_THUN_3_MOC", 1, "Thay băng vị trí khác: băng thun", category="dvkt", rule_id="dvkt_thay_bang_bang_thun", dictionary=dictionary)
+
+
 def _add_surgery_supplies(acc: Dict[str, Dict[str, Any]], records: Sequence[Mapping[str, Any]], dictionary: Mapping[str, Any]) -> None:
     text = _record_blob(records)
     if not _has_surgery_text(records):
         return
+    if _has_thay_bang(records):
+        return  # ngày có thay băng: chỉ dùng quy tắc thay băng mới
     if includes_any(text, ["tay", "cẳng tay", "cánh tay", "bàn tay", "chân", "cẳng chân", "đùi", "bàn chân"]) and not includes_any(text, ["gãy xương đòn", "thay khớp háng"]):
         add_req(acc, "BANG_THUN_3_MOC", 1, "DVKT/phẫu thuật tay/chân: băng thun 3–4 ngày đầu", category="dvkt", rule_id="dvkt_postop_limb", dictionary=dictionary)
     if includes_any(text, ["lưng", "cột sống", "khớp háng", "háng", "thay băng", "vết mổ"]):
         add_req(acc, "BANG_DINH_250X90", 1, "DVKT/phẫu thuật vết mổ: băng dính 250x90", category="dvkt", rule_id="dvkt_wound_dressing", dictionary=dictionary)
     if includes_any(text, ["nội soi", "noi soi", "nội soi khớp", "arthroscopy"]):
         add_req(acc, "BANG_DINH_60X70", 2, "DVKT mổ nội soi: băng dính 6x7", category="dvkt", rule_id="dvkt_laparoscopy", dictionary=dictionary)
+
+
+# Rule cũ đã được thay bằng quy tắc trong code (xem _add_thay_bang_supplies).
+REPLACED_CUSTOM_RULE_IDS = {"thay_bang_vet_mo"}
+
+# Bệnh phòng chỉ nhập VTYT phát sinh theo thủ thuật/chăm sóc; VTYT hằng ngày
+# và theo thuốc (găng tay, bơm tiêm, kim pha, dây truyền...) để Hành chánh nhập.
+WARD_PROCEDURE_CATEGORIES = {"dvkt", "interval", "manual"}
+
+
+def procedure_supplies_only(supplies: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+    return [dict(x) for x in supplies if isinstance(x, Mapping) and str(x.get("category") or "") in WARD_PROCEDURE_CATEGORIES]
 
 
 def _add_custom_rule_supplies(acc: Dict[str, Dict[str, Any]], records: Sequence[Mapping[str, Any]], all_records: Sequence[Mapping[str, Any]], target_date: Optional[datetime], dictionary: Mapping[str, Any]) -> None:
@@ -534,6 +590,8 @@ def _add_custom_rule_supplies(acc: Dict[str, Dict[str, Any]], records: Sequence[
         category = str(rule.get("category") or "medication").strip().lower()
         matchers = rule.get("match") or rule.get("keywords") or []
         rule_id = str(rule.get("id") or "custom")
+        if rule_id in REPLACED_CUSTOM_RULE_IDS:
+            continue
         supplies = [x for x in (rule.get("supplies") or []) if isinstance(x, Mapping)]
         if not supplies:
             continue
@@ -630,6 +688,7 @@ def build_required_supplies(
             add_req(acc, "BANG_DINH_KIM_LUON", iv_qty, "Băng dính kim luồn đi kèm lần đặt/thay kim luồn", category="interval", rule_id="interval_iv_catheter", dictionary=dictionary, input_allowed=input_allowed, needs_review=needs_review)
 
     _add_keyword_supplies(acc, records, dictionary)
+    _add_thay_bang_supplies(acc, records, dictionary)
     _add_surgery_supplies(acc, records, dictionary)
     _add_custom_rule_supplies(acc, records, history_records, target_dt, dictionary)
 
@@ -754,7 +813,39 @@ def _patient_history(processed_rows: Sequence[Mapping[str, Any]], pid: str, date
     return rows
 
 
-def build_vtyt_jobs(processed_rows: Sequence[Mapping[str, Any]], targets: Mapping[str, Any]) -> List[Dict[str, Any]]:
+def manual_supplies_for(targets: Mapping[str, Any], pid: str, date: str, dictionary: Optional[Mapping[str, Any]] = None) -> List[Dict[str, Any]]:
+    """VTYT lẻ người dùng chọn tay (từ danh mục) cho BN/ngày:
+    targets["manualVtyt"] = {"<ma_bn>::<dd/mm/yyyy>": [{"key": ..., "qty": ...}]}."""
+    manual = targets.get("manualVtyt") if isinstance(targets, Mapping) else None
+    rows = (manual or {}).get(f"{pid}::{date}") if isinstance(manual, Mapping) else None
+    if not isinstance(rows, list):
+        return []
+    dictionary = dictionary or load_vtyt_dictionary()
+    acc: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        add_req(acc, str(row.get("key") or "").strip(), to_number(row.get("qty"), 0), "VTYT lẻ chọn tay",
+                category="manual", rule_id="manual_pick", dictionary=dictionary)
+    return list(acc.values())
+
+
+def _merge_supplies(base: List[Dict[str, Any]], extra: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    by_key = {str(x.get("key")): dict(x) for x in base}
+    for item in extra:
+        k = str(item.get("key"))
+        if k in by_key:
+            cur = by_key[k]
+            cur["required_quantity"] = to_number(cur.get("required_quantity"), 0) + to_number(item.get("required_quantity"), 0)
+            cur["reasons"] = list(cur.get("reasons") or []) + [r for r in (item.get("reasons") or []) if r not in (cur.get("reasons") or [])]
+        else:
+            by_key[k] = dict(item)
+    return list(by_key.values())
+
+
+def build_vtyt_jobs(processed_rows: Sequence[Mapping[str, Any]], targets: Mapping[str, Any], *, procedure_only: bool = False) -> List[Dict[str, Any]]:
+    """``procedure_only=True`` (bệnh phòng): chỉ giữ VTYT phát sinh theo thủ
+    thuật/chăm sóc + VTYT lẻ chọn tay; bỏ VTYT hằng ngày/theo thuốc."""
     jobs = []
     grouped = group_records_for_targets(processed_rows, targets)
     for (pid, date), records in sorted(grouped.items(), key=lambda x: (x[0][1], x[0][0])):
@@ -762,6 +853,9 @@ def build_vtyt_jobs(processed_rows: Sequence[Mapping[str, Any]], targets: Mappin
             continue
         history = _patient_history(processed_rows, pid, date)
         supplies = build_required_supplies(records, all_records=history, target_date=date)
+        if procedure_only:
+            supplies = procedure_supplies_only(supplies)
+        supplies = _merge_supplies(supplies, manual_supplies_for(targets, pid, date))
         if not supplies:
             continue
         first = records[0]
@@ -791,4 +885,5 @@ def build_vtyt_jobs(processed_rows: Sequence[Mapping[str, Any]], targets: Mappin
 __all__ = [
     "CATALOG", "DEFAULT_QUANTITY_CONFIG", "norm", "includes_any", "get_dose_count",
     "load_vtyt_dictionary", "build_required_supplies", "build_vtyt_jobs", "group_records_for_targets",
+    "procedure_supplies_only", "WARD_PROCEDURE_CATEGORIES", "manual_supplies_for",
 ]

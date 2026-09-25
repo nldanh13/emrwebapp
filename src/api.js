@@ -88,6 +88,7 @@ function apiActionLabel(method, url) {
     'POST /api/run-input-procedures': 'nhập thủ thuật',
     'POST /api/run-input-vtyt': 'nhập/kiểm VTYT',
     'POST /api/preview-input-vtyt': 'quét xem trước VTYT',
+    'POST /api/vtyt-catalog/scan-emr': 'dò danh mục VTYT trên EMR',
     'POST /api/report-token': 'lấy quyền mở phiếu in',
     'GET /api/run-report-infusion': 'mở phiếu PDF',
     'GET /api/data-info': 'kiểm tra trạng thái dữ liệu',
@@ -866,6 +867,8 @@ export async function exportHchanh_Issues(format = 'csv', owner = '') {
 export const getVtytCatalog      = ()              => get('/api/vtyt-catalog');
 export const updateVtytCatalog   = (key, body)    => patch(`/api/vtyt-catalog/${encodeURIComponent(key)}`, body);
 export const resetVtytCatalog    = (key)           => post(`/api/vtyt-catalog/reset/${encodeURIComponent(key)}`, {});
+export const scanVtytCatalogEmr  = (maBn, queries) => post('/api/vtyt-catalog/scan-emr', { ma_bn: maBn, queries });
+export const getVtytCatalogEmrScan = ()            => get('/api/vtyt-catalog/emr-scan');
 
 // ── Danh mục thuốc ────────────────────────────────────────────────────────────
 export const getMedicationCatalog    = ()           => get('/api/medication-catalog');
