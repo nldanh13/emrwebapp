@@ -862,7 +862,7 @@ def main():
         count = 0
         default_emr_username = str(CONFIG.get("username") or "").strip()
         default_emr_password = str(CONFIG.get("password") or "")
-        # Tên chủ tài khoản EMR đang dùng (tra từ config/nurse_emr_accounts.json).
+        # Tên chủ tài khoản EMR đang dùng (tra từ secrets/nurse_emr_accounts.json).
         # Rỗng thì từng job lấy tên người ca làm của ngày đó.
         logged_in_nurse_name = get_nurse_name_for_username(default_emr_username)
         # Phiếu đã đổi Người lập sang người khác (vd ca trực) và để ở trạng thái

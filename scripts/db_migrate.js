@@ -4,13 +4,14 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { getSecret } = require('../server/services/secret_store');
 
 const root = path.resolve(__dirname, '..');
 const migrationsDir = path.join(root, 'database', 'migrations');
-const databaseUrl = String(process.env.DATABASE_URL || '').trim();
+const databaseUrl = getSecret('database_url');
 
 if (!databaseUrl) {
-  console.error('[db:migrate] Thiếu DATABASE_URL. Không có thay đổi nào được thực hiện.');
+  console.error('[db:migrate] Thiếu DATABASE_URL (biến môi trường hoặc database.url trong secrets/secrets.json). Không có thay đổi nào được thực hiện.');
   process.exit(2);
 }
 

@@ -1,7 +1,7 @@
 // server/routes/admin_users.js — /api/admin/users
 // Quản lý tài khoản đăng nhập Data Hub (token) và tài khoản EMR thật riêng
 // (emr_username/emr_password dùng khi ghi/nhập dữ liệu). Chỉ role admin —
-// xem authz.requiredRoleForRequest(). Ghi trực tiếp vào config/users.json
+// xem authz.requiredRoleForRequest(). Ghi trực tiếp vào secrets/users.json
 // (hoặc EMR_USERS_FILE nếu có cấu hình) và nạp lại ngay, không cần khởi động
 // lại server.
 

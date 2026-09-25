@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """worker/nurse_emr_accounts.py — Tài khoản EMR thật riêng theo TÊN điều dưỡng.
 
-Khác với config/users.json (tài khoản đăng nhập Data Hub, gắn theo người vận
+Khác với secrets/users.json (tài khoản đăng nhập Data Hub, gắn theo người vận
 hành app): file này chỉ ánh xạ TÊN điều dưỡng trong lịch trực (config.json ->
 ten_dieu_duong) sang tài khoản EMR của chính người đó — không cần người đó
 từng đăng nhập Data Hub. Dùng khi nhập chăm sóc để mỗi ca (làm/trực) được ghi
@@ -9,7 +9,7 @@ nhận đúng tài khoản EMR của điều dưỡng phụ trách ca đó, khô
 chung.
 
 Xem config/nurse_emr_accounts.example.json để biết định dạng; file thật
-config/nurse_emr_accounts.json không commit (chứa mật khẩu thật).
+secrets/nurse_emr_accounts.json không commit (chứa mật khẩu thật) — xem docs/SECRETS.md.
 
 Cùng file JSON này còn giữ trường tùy chọn "signature_file" (tên file ảnh
 chữ ký trong config/signatures/) — dùng khi tự động chèn chữ ký vào bộ
@@ -27,7 +27,13 @@ from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-NURSE_EMR_ACCOUNTS_FILE = os.path.join(BASE_DIR, 'config', 'nurse_emr_accounts.json')
+try:
+    from shared.secret_store import resolve_secret_file
+    # secrets/nurse_emr_accounts.json (máy chưa chuyển thì vẫn là config/ cũ),
+    # EMR_NURSE_ACCOUNTS_FILE ghi đè được — cùng quy tắc với server.
+    NURSE_EMR_ACCOUNTS_FILE = resolve_secret_file('nurse_emr_accounts.json')[0]
+except ImportError:  # chạy tay ngoài thư mục worker/
+    NURSE_EMR_ACCOUNTS_FILE = os.path.join(BASE_DIR, 'config', 'nurse_emr_accounts.json')
 NURSE_SIGNATURES_DIR = os.path.join(BASE_DIR, 'config', 'signatures')
 
 

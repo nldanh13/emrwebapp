@@ -28,7 +28,7 @@ function warnMissingRuntimeConfig() {
   console.warn('   CẢNH BÁO CẤU HÌNH');
   console.warn('   Chưa có config/config.json.');
   console.warn('   Hãy copy config/config.example.json thành config/config.json');
-  console.warn('   rồi điền tài khoản/thông tin EMR trước khi quét hoặc nhập dữ liệu.');
+  console.warn('   rồi điền thông tin EMR; mật khẩu điền trong secrets/secrets.json (docs/SECRETS.md).');
   console.warn('=============================================');
   console.warn('');
 }

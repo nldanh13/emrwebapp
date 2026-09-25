@@ -4,6 +4,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { getSecret } = require('./services/secret_store');
 
 const ROOT_DIR   = path.resolve(__dirname, '..');
 const DIST_DIR   = path.join(ROOT_DIR, 'dist');
@@ -62,7 +63,8 @@ const PORT           = intEnv('PORT', 3001, { min: 1, max: 65535 });
 const HOST           = String(process.env.HOST || process.env.BIND_HOST || '127.0.0.1').trim();
 const PY_TIMEOUT_MS  = intEnv('PY_TIMEOUT_MS', 1800000, { min: 5000, max: 6 * 60 * 60 * 1000 });
 const IS_DEV         = process.env.NODE_ENV !== 'production';
-const APP_TOKEN      = String(process.env.EMR_APP_TOKEN || '').trim();
+// Token chung: EMR_APP_TOKEN (env) hoặc app.token trong secrets/secrets.json.
+const APP_TOKEN      = getSecret('app_token');
 const APP_TOKEN_MIN_LENGTH = intEnv('EMR_APP_TOKEN_MIN_LENGTH', 16, { min: 8, max: 128 });
 const ALLOW_INPUT_WITHOUT_PRECHECK = ['1', 'true', 'yes'].includes(String(process.env.EMR_ALLOW_INPUT_WITHOUT_PRECHECK || '').toLowerCase());
 

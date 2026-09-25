@@ -2,8 +2,8 @@
 
 Ứng dụng có thể mở hai Chrome độc lập:
 
-- Chăm sóc dùng `EMR_USERNAME` / `EMR_PASSWORD` (hoặc tài khoản chính trong `config/config.json`).
-- Dịch truyền ưu tiên `EMR_INFUSION_USERNAME` / `EMR_INFUSION_PASSWORD`.
+- Chăm sóc dùng tài khoản chính (`emr.*` trong `secrets/secrets.json`, hoặc `EMR_USERNAME` / `EMR_PASSWORD`).
+- Dịch truyền dùng `infusion.*` trong `secrets/secrets.json` (hoặc `EMR_INFUSION_USERNAME` / `EMR_INFUSION_PASSWORD`).
 
 Thiết lập trên Windows PowerShell trước khi chạy:
 
@@ -13,9 +13,9 @@ $env:EMR_INFUSION_PASSWORD="mat_khau_dich_truyen"
 npm start
 ```
 
-Hoặc đặt hai khóa `infusion_username`, `infusion_password` trong
-`config/config.json`. File thật này đã nằm trong `.gitignore`; không đưa mật
-khẩu vào `config.example.json`, mã nguồn, log hoặc ZIP chia sẻ.
+Cách khuyến nghị: điền `infusion.username`, `infusion.password` trong
+`secrets/secrets.json` (xem `SECRETS.md`). Thư mục này đã nằm trong `.gitignore`;
+không đưa mật khẩu vào file mẫu, mã nguồn, log hoặc ZIP chia sẻ.
 
 `MAX_HEAVY_JOBS` mặc định là `2`. Có thể đặt lại thành `1` để quay về chế độ
 tuần tự.

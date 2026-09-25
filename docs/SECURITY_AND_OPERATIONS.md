@@ -6,20 +6,19 @@ Bản hiện tại phù hợp cho mạng nội bộ có kiểm soát. Không cô
 
 ## 2. Secret
 
-Ưu tiên file secret có quyền đọc giới hạn hoặc secret store của hệ điều hành:
+Mọi mật khẩu/token nằm ở một thư mục duy nhất `secrets/` (đã `.gitignore`, bị loại khỏi release) — xem chi tiết ở [`SECRETS.md`](SECRETS.md). Biến môi trường và `<TÊN_BIẾN>_FILE` (ví dụ `EMR_PASSWORD_FILE`) vẫn ghi đè được khi cần dùng secret store của hệ điều hành.
 
-- `EMR_PASSWORD_FILE`
-- `EMR_HCHANH_PASSWORD_FILE`
-- `EMR_INFUSION_PASSWORD_FILE` (tùy chọn, tài khoản dịch truyền song song — xem `PARALLEL_CARE_INFUSION.md`)
-- `EMR_USERS_FILE`
+- `npm run secrets:check` — xem bí mật nào đã cấu hình, lấy từ đâu, cảnh báo mật khẩu yếu/quyền file.
+- `npm run secrets:migrate:apply` — gom mật khẩu còn trong `config/config.json`, `.env`, `config/users.json`, `config/nurse_emr_accounts.json` về `secrets/`.
+- Bật `EMR_REQUIRE_SECRET_ENV=1` để từ chối mật khẩu rõ còn sót trong `config/config.json`.
 
-Bật `EMR_REQUIRE_SECRET_ENV=1` để từ chối mật khẩu rõ trong cấu hình. Không lưu cookie, mật khẩu hoặc token vào database nghiệp vụ.
+Không lưu cookie, mật khẩu hoặc token vào database nghiệp vụ.
 
 ## 3. Quyền và session
 
 Mỗi tài khoản có một vai trò và có thể giới hạn danh sách session. Không chia sẻ token. Khi nhân sự thay đổi, thu hồi token ngay và kiểm tra audit.
 
-Mỗi tài khoản trong `EMR_USERS_FILE` có thể khai thêm `emr_username`/`emr_password` — tài khoản EMR THẬT riêng của người đó. Các thao tác GHI vào EMR (nhập chăm sóc, dịch truyền, thủ thuật, VTYT — `/api/run-input-*`) sẽ tự dùng tài khoản riêng này để thao tác hiện đúng tên người làm trên EMR của bệnh viện, thay vì tài khoản chung. Nếu một tài khoản chưa khai `emr_username`/`emr_password`, các thao tác đó tự rơi về tài khoản chung trong `config/config.json` như trước — không ai bị chặn dùng app vì thiếu tài khoản riêng. Lấy dữ liệu (quét, lấy chi tiết) luôn dùng tài khoản chung, không cần tài khoản riêng.
+Mỗi tài khoản trong `secrets/users.json` (hoặc `EMR_USERS_FILE`) có thể khai thêm `emr_username`/`emr_password` — tài khoản EMR THẬT riêng của người đó. Các thao tác GHI vào EMR (nhập chăm sóc, dịch truyền, thủ thuật, VTYT — `/api/run-input-*`) sẽ tự dùng tài khoản riêng này để thao tác hiện đúng tên người làm trên EMR của bệnh viện, thay vì tài khoản chung. Nếu một tài khoản chưa khai `emr_username`/`emr_password`, các thao tác đó tự rơi về tài khoản chung (`emr.*` trong `secrets/secrets.json`) như trước — không ai bị chặn dùng app vì thiếu tài khoản riêng. Lấy dữ liệu (quét, lấy chi tiết) luôn dùng tài khoản chung, không cần tài khoản riêng.
 
 ## 4. Export nghiên cứu
 
@@ -61,5 +60,6 @@ Tối thiểu backup:
 - PostgreSQL khi được bật
 - kho attachment/PDF cần lưu
 - cấu hình rule không chứa secret
+- thư mục `secrets/` — backup riêng, mã hóa
 
 Thực hiện thử phục hồi định kỳ; backup chưa từng restore không được xem là đáng tin cậy.

@@ -354,11 +354,10 @@ def _trace_no_url_tag(file_key: str) -> str:
 
 
 # ── Session init ──────────────────────────────────────────────────────────────
-# Hành chánh dùng tài khoản riêng: lndieu / 123
-# Tách biệt hoàn toàn với session của main_worker (tài khoản bác sĩ/điều dưỡng lâm sàng)
-
-HCHANH_USERNAME = "lndieu"
-HCHANH_PASSWORD = "123"
+# Hành chánh dùng tài khoản EMR riêng (hchanh.username / hchanh.password trong
+# secrets/secrets.json, hoặc EMR_HCHANH_USERNAME / EMR_HCHANH_PASSWORD) — tách biệt
+# hoàn toàn với session của main_worker (tài khoản bác sĩ/điều dưỡng lâm sàng).
+# load_config() đã điền sẵn 2 khóa này qua shared/secret_store.py.
 
 def _cfg_bool(value: Any, default: bool = False) -> bool:
     if isinstance(value, bool):
@@ -370,8 +369,15 @@ def _cfg_bool(value: Any, default: bool = False) -> bool:
 def _build_hchanh_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """Config riêng cho module hành chánh, không làm thay đổi config gốc."""
     hchanh_config = dict(config or {})
-    hchanh_config["username"] = config.get("hchanh_username") or HCHANH_USERNAME
-    hchanh_config["password"] = config.get("hchanh_password") or HCHANH_PASSWORD
+    username = _t(config.get("hchanh_username"))
+    password = str(config.get("hchanh_password") or "")
+    if not username or not password:
+        raise RuntimeError(
+            "Chưa cấu hình tài khoản EMR hành chánh. Điền hchanh.username / hchanh.password "
+            "trong secrets/secrets.json (xem docs/SECRETS.md) rồi chạy lại."
+        )
+    hchanh_config["username"] = username
+    hchanh_config["password"] = password
     return hchanh_config
 
 def _build_inpatient_url_after_login(current_url: str, config: Dict[str, Any]) -> str:
@@ -460,7 +466,11 @@ def _init_session(config: Dict[str, Any]) -> Optional["EmrHttpSession"]:
         print("WARN [hchanh-session] emr_http_reader không khả dụng.")
         return None
 
-    hchanh_config = _build_hchanh_config(config)
+    try:
+        hchanh_config = _build_hchanh_config(config)
+    except RuntimeError as e:
+        print(f"ERROR [hchanh-session] {e}")
+        return None
     try:
         sess = EmrHttpSession.from_config_dict(hchanh_config)
     except Exception as e:

@@ -24,7 +24,7 @@ Từ thấp đến cao — vai trò cao hơn có toàn bộ quyền của vai tr
 | `supervisor` | Giám sát | Thêm quyền xuất dữ liệu, xoá dữ liệu |
 | `admin` | Quản trị | Toàn quyền, kể cả **Thiết lập tài khoản** (tạo/sửa tài khoản Data Hub và tài khoản EMR — vì có chứa mật khẩu thật) |
 
-Nếu server chưa bật đăng nhập (`local_only`, chưa cấu hình `config/users.json`) thì không cần vai trò gì — ai mở app cũng có toàn quyền, giống admin.
+Nếu server chưa bật đăng nhập (`local_only`, chưa cấu hình `secrets/users.json`) thì không cần vai trò gì — ai mở app cũng có toàn quyền, giống admin.
 
 ## 3. Các tab chính (thanh điều hướng bên trái)
 

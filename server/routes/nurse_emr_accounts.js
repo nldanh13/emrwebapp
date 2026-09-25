@@ -1,7 +1,7 @@
 // server/routes/nurse_emr_accounts.js — /api/nurse-emr-accounts (GET, POST)
 //
 // Tài khoản EMR thật riêng theo TÊN điều dưỡng trong lịch trực (khác với
-// config/users.json — tài khoản đăng nhập Data Hub). Dùng khi nhập chăm sóc
+// secrets/users.json — tài khoản đăng nhập Data Hub). Dùng khi nhập chăm sóc
 // để mỗi ca (làm/trực) được ghi nhận đúng tài khoản EMR của người phụ trách
 // ca đó — xem worker/nurse_emr_accounts.py. Chỉ role admin vì chứa mật khẩu
 // thật (xem authz.requiredRoleForRequest()).

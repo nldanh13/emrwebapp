@@ -1232,7 +1232,7 @@ async function runInputTask(req, res, ctx, { scriptName, taskName, targetsFilePr
     // (chăm sóc, thủ thuật...) đang dùng tài khoản chính. Xem docs/PARALLEL_CARE_INFUSION.md.
     const accountKey = (taskName || scriptName) === 'input_infusions' ? 'infusion' : 'default';
     // Nhập/ghi vào EMR cần hiện đúng tên người thao tác hôm đó: nếu người đang
-    // đăng nhập Data Hub có tài khoản EMR riêng (config/users.json), dùng tài
+    // đăng nhập Data Hub có tài khoản EMR riêng (secrets/users.json), dùng tài
     // khoản đó thay vì tài khoản chung; nếu chưa được cấp thì tự rơi về tài
     // khoản chung trong config.json như cũ (worker/utils.py đã xử lý fallback).
     const personalEmrCreds = getEmrCredentials(req.auth?.id);

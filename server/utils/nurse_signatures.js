@@ -3,7 +3,7 @@
 // Dùng để tự động chèn chữ ký vào bộ phiếu "IN RA VIỆN" (xem
 // worker/sign_discharge_bundle.py) — người chưa cấu hình ảnh chữ ký thì giữ
 // nguyên, không đụng tới. File ảnh lưu ở config/signatures/, con trỏ
-// "signature_file" lưu chung trong config/nurse_emr_accounts.json (cùng
+// "signature_file" lưu chung trong secrets/nurse_emr_accounts.json (cùng
 // file với tài khoản EMR theo điều dưỡng — xem nurse_emr_accounts.js) để
 // không phải quản lý 2 nơi.
 

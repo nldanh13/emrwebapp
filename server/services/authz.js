@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { APP_TOKEN, APP_TOKEN_MIN_LENGTH, HOST, ROOT_DIR } = require('../constants');
 const { sanitizeSessionId } = require('../utils/validation');
+const { resolveSecretFile } = require('./secret_store');
 
 const ROLE_LEVEL = Object.freeze({
   viewer: 10,
@@ -41,16 +42,14 @@ function normalizeSessions(value) {
   return [...new Set(arr.map(sanitizeSessionId).filter(Boolean))];
 }
 
-const DEFAULT_USERS_FILE = path.join(ROOT_DIR, 'config', 'users.json');
-
 function isLocalHostBinding() {
   return HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1';
 }
 
 // Nơi thật sự đọc/ghi danh sách tài khoản. Ưu tiên EMR_USERS_JSON (inline, chỉ
 // đọc — không có file để ghi) > EMR_USERS_FILE (đường dẫn tuỳ chỉnh) >
-// config/users.json (mặc định, giống config.json/medication_catalog.json —
-// không cần khai biến môi trường mới dùng được).
+// secrets/users.json (mặc định; máy chưa chuyển thì vẫn đọc config/users.json cũ
+// — xem secret_store.resolveSecretFile), không cần khai biến môi trường mới dùng được.
 function resolveUsersFileInfo() {
   const inline = String(process.env.EMR_USERS_JSON || '').trim();
   if (inline) return { mode: 'inline', path: null, writable: false };
@@ -59,7 +58,7 @@ function resolveUsersFileInfo() {
     const file = path.isAbsolute(configuredFile) ? configuredFile : path.join(ROOT_DIR, configuredFile);
     return { mode: 'file', path: file, writable: true };
   }
-  return { mode: 'default', path: DEFAULT_USERS_FILE, writable: true };
+  return { mode: 'default', path: resolveSecretFile('users.json').path, writable: true };
 }
 
 function loadUsersPayload() {
@@ -116,7 +115,7 @@ function normalizeUsersList(payload) {
 function loadUsers() {
   const info = resolveUsersFileInfo();
   const isExplicit = info.mode === 'inline' || info.mode === 'file';
-  // config/users.json tự nhận (không khai EMR_USERS_JSON/EMR_USERS_FILE) chỉ
+  // secrets/users.json tự nhận (không khai EMR_USERS_JSON/EMR_USERS_FILE) chỉ
   // thật sự bắt đăng nhập khi server mở ra ngoài máy này (HOST=0.0.0.0/IP —
   // máy dùng chung nhiều người). Khi HOST vẫn là localhost mặc định (chỉ máy
   // này dùng), bỏ qua để giữ trải nghiệm không cần đăng nhập như cũ — file
@@ -406,7 +405,7 @@ function authStatus() {
     mode: USERS.length ? 'multi_user_tokens' : (APP_TOKEN ? 'legacy_app_token' : 'local_only'),
     configured_users: USERS.map(user => ({ id: user.id, name: user.name, role: user.role, restricted_sessions: user.sessions })),
     identified_research_export_enabled: isTruthy(process.env.EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT),
-    // true khi config/users.json (tự nhận) đã có tài khoản nhưng server chỉ
+    // true khi secrets/users.json (tự nhận) đã có tài khoản nhưng server chỉ
     // mở nội bộ (HOST=127.0.0.1) nên đang bỏ qua đăng nhập — dùng để tab
     // "Thiết lập tài khoản" giải thích đúng lý do, tránh gây hiểu nhầm là lỗi.
     local_only_bypassed_users_count: bypassedLocalOnly ? fileUsers.length : 0,

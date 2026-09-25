@@ -44,9 +44,13 @@ MAX_TOKENS        = 256
 API_TIMEOUT_S     = 12   # timeout mỗi call
 CACHE_MAX_SIZE    = 512  # số entry cache trong memory
 
-# Đọc API key từ biến môi trường (đặt trong .env hoặc env hệ thống)
+# API key: ANTHROPIC_API_KEY hoặc anthropic.api_key trong secrets/secrets.json
 def _get_api_key() -> str:
-    return os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    try:
+        from shared.secret_store import get_secret
+    except ImportError:  # chạy tay ngoài thư mục worker/
+        return os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    return get_secret("anthropic_api_key")
 
 # ─── Kiểm tra khi nào cần gọi LLM ───────────────────────────────────────────
 _CRITICAL_FIELDS = {

@@ -27,6 +27,7 @@ const EXCLUDE_FILES = new Set([
   'config/config.json',    // chứa URL/username/password EMR — không được đưa vào bản release
   'config/care_baseline.json', // chứa nhiều tài khoản lấy lường cơ bản — không được đưa vào bản release
   'config/users.json',     // chứa tài khoản người dùng thật và hash/mật khẩu cấu hình
+  'config/nurse_emr_accounts.json', // tài khoản EMR thật theo điều dưỡng (vị trí cũ, nay ở secrets/)
   '.env',                  // chứa EMR_APP_TOKEN và cấu hình môi trường thật
   'package-lock.json.bak',
   'package.modular.bak.json',

@@ -22,7 +22,7 @@ EMR hiện chỉ cho SỬA/XÓA phiếu bằng đúng tài khoản của ngườ
 (không còn xóa hộ bằng tài khoản khác được nữa). Vì vậy script chạy 2 giai
 đoạn: (1) quét hết mọi BN bằng 1 tài khoản để TÌM phiếu tồn đọng, nhóm theo
 người tạo; (2) nếu --confirm-delete, lần lượt đăng nhập đúng tài khoản EMR
-của từng người tạo (tra theo tên trong config/nurse_emr_accounts.json —
+của từng người tạo (tra theo tên trong secrets/nurse_emr_accounts.json —
 xem worker/nurse_emr_accounts.py) rồi mới xóa. Phiếu của người CHƯA có tài
 khoản EMR cấu hình trong nurse_emr_accounts.json sẽ được liệt kê trong báo
 cáo nhưng KHÔNG xóa được — cần tự xóa tay hoặc bổ sung tài khoản trước.
@@ -182,7 +182,7 @@ def _build_stray_infos(stray):
             "delete_attempted": False,
             "delete_blocked_reason": None if username else (
                 f"Chưa cấu hình tài khoản EMR cho '{creator}' trong "
-                "config/nurse_emr_accounts.json (tab Lịch điều dưỡng) — "
+                "secrets/nurse_emr_accounts.json (tab Lịch điều dưỡng) — "
                 "EMR chỉ cho đúng tài khoản người tạo tự xóa."
             ),
         }
