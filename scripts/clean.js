@@ -2,24 +2,26 @@
 'use strict';
 
 /**
- * Quet toan bo project de tim file/thu muc khong can thiet va don dep an toan.
+ * Script dọn dẹp DUY NHẤT của project (thay cho clean_project.js,
+ * clean_unused.js, clean_hchanh_unused.js cũ).
  *
- * Mac dinh chi DRY-RUN: khong xoa gi, chi tao cleanup_report.preview.json.
- * Khi --apply: chuyen file vao .cleanup_backup/<timestamp>/ de co the khoi phuc.
- * Chi xoa vinh vien khi them --permanent.
+ * Mặc định chỉ XEM TRƯỚC: không xóa gì, chỉ tạo cleanup_report.preview.json.
+ * Khi --apply: chuyển file vào .cleanup_backup/<thời điểm>/ để còn khôi phục.
+ * Chỉ xóa vĩnh viễn khi thêm --permanent.
  *
- * Lenh hay dung:
- *   node scripts/clean_unused.js
- *   node scripts/clean_unused.js --apply
- *   node scripts/clean_unused.js --private-data --apply
- *   node scripts/clean_unused.js --unused-code
- *   node scripts/clean_unused.js --unused-code --confirm-unused-code --apply
+ * Mặc định chỉ đụng tới cache/log/file tạm. Dữ liệu thật (.runtime, secrets,
+ * config thật...) chỉ bị đụng tới khi thêm --private-data.
+ *
+ *   npm run clean                         xem trước
+ *   npm run clean:apply                   dọn cache/log/file tạm
+ *   node scripts/clean.js --help          xem mọi tùy chọn
  */
 
 const fs = require('fs');
 const path = require('path');
 
-const ROOT = path.resolve(__dirname, '..');
+// EMR_CLEAN_ROOT chỉ dùng cho test (dọn thử trên thư mục tạm).
+const ROOT = path.resolve(process.env.EMR_CLEAN_ROOT || path.join(__dirname, '..'));
 const argv = process.argv.slice(2);
 const args = new Set(argv);
 
@@ -34,9 +36,13 @@ const INCLUDE_RELEASE_ARCHIVES = args.has('--release-archives') || args.has('--r
 const INCLUDE_UNUSED_CODE = args.has('--unused-code');
 const CONFIRM_UNUSED_CODE = args.has('--confirm-unused-code');
 const INCLUDE_EMPTY_DIRS = !args.has('--no-empty-dirs');
+const INCLUDE_HCHANH_DATA = args.has('--hchanh-data');
+const INCLUDE_RUNTIME_LOGS = args.has('--runtime-logs');
 
 const SKIP_DIRS = new Set(['.git', 'node_modules', '.venv', '.cleanup_backup']);
-const TEXT_EXTS = new Set(['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.json', '.py', '.css', '.html', '.md']);
+// Dữ liệu thật: chỉ các nhóm được bật rõ bằng cờ (--private-data, --runtime-logs,
+// --hchanh-data) mới được đụng tới; quét mặc định bỏ qua hẳn.
+const PROTECTED_RE = /^(\.runtime|secrets)(\/|$)/;
 const JS_EXTS = ['.js', '.jsx', '.mjs', '.cjs', '.json'];
 const PY_EXTS = ['.py'];
 
@@ -44,17 +50,20 @@ const candidates = new Map();
 
 function usage() {
   console.log(`Dọn file không cần thiết cho EMR Dashboard\n\n` +
-`Mặc định là dry-run, chỉ xem trước.\n\n` +
+`Mặc định chỉ xem trước. --apply chuyển vào .cleanup_backup (khôi phục được).\n\n` +
 `Lệnh thường dùng:\n` +
-`  npm run clean:unused\n` +
-`  npm run clean:unused:apply\n` +
-`  node scripts/clean_unused.js --private-data --apply\n` +
-`  node scripts/clean_unused.js --unused-code\n` +
-`  node scripts/clean_unused.js --unused-code --confirm-unused-code --apply\n\n` +
+`  npm run clean                                   xem trước\n` +
+`  npm run clean:apply                             dọn cache/log/file tạm\n` +
+`  node scripts/clean.js --runtime-logs --apply     thêm log/debug của các phiên cũ\n` +
+`  node scripts/clean.js --hchanh-data --apply      thêm dữ liệu Hành chánh cũ bị trùng\n` +
+`  node scripts/clean.js --unused-code              báo cáo code có vẻ không dùng\n\n` +
 `Tùy chọn:\n` +
 `  --apply                 Thực hiện dọn. Không có flag này thì chỉ xem trước.\n` +
 `  --permanent             Xóa vĩnh viễn thay vì chuyển vào .cleanup_backup.\n` +
-`  --private-data          Dọn runtime/data thật: .runtime, data, research_store, care_baseline_store, reports.\n` +
+`  --private-data          Dọn cả dữ liệu thật: .runtime, secrets, data, reports, .env, config/config.json...\n` +
+`                          CHỈ dùng khi đã sao lưu, hoặc khi làm sạch source để chia sẻ.\n` +
+`  --runtime-logs          Dọn log/ảnh debug của các phiên cũ trong .runtime (không đụng dữ liệu).\n` +
+`  --hchanh-data           Dọn file Hành chánh cũ: cls/documents.json, file tạm, file legacy đã có bản chuẩn.\n` +
 `  --dist                  Xóa toàn bộ dist; mặc định chỉ dọn asset build cũ không còn được dùng.\n` +
 `  --release-archives      Dọn file zip/thư mục release cũ.\n` +
 `  --unused-code           Quét code có khả năng không còn được import. Chỉ báo cáo nếu chưa có --confirm-unused-code.\n` +
@@ -124,6 +133,7 @@ function addCandidate(absPath, group, reason, options = {}) {
   if (!relative || relative === '.') return;
   if (relative.startsWith('.cleanup_backup/')) return;
   if (relative === 'cleanup_report.preview.json' || relative === 'cleanup_report.json') return;
+  if (PROTECTED_RE.test(relative) && !options.allowProtected) return;
 
   const current = candidates.get(relative);
   const item = {
@@ -200,10 +210,10 @@ function addStaticGenerated() {
 function addPrivateRuntimeData() {
   if (!INCLUDE_PRIVATE_DATA) return;
   const privateDirs = [
-    '.runtime', 'data', 'reports', 'research_store', 'care_baseline_store',
+    '.runtime', 'secrets', 'data', 'reports', 'research_store', 'care_baseline_store',
   ];
   for (const dirname of privateDirs) {
-    addCandidate(path.join(ROOT, dirname), 'private-runtime-data', 'Dữ liệu runtime/dữ liệu bệnh nhân hoặc kết quả chạy thật; chỉ dọn khi đã sao lưu hoặc muốn đóng gói sạch.', { safe: false });
+    addCandidate(path.join(ROOT, dirname), 'private-runtime-data', 'Dữ liệu runtime/dữ liệu bệnh nhân hoặc kết quả chạy thật; chỉ dọn khi đã sao lưu hoặc muốn đóng gói sạch.', { safe: false, allowProtected: true });
   }
 
   const privateFiles = [
@@ -212,19 +222,65 @@ function addPrivateRuntimeData() {
     'clinic_targets.xlsx', 'task_progress.json', 'care_done.json', 'infusions_done.json',
   ];
   for (const filename of privateFiles) {
-    addCandidate(path.join(ROOT, filename), 'private-runtime-data', 'File cấu hình/dữ liệu thật không nên giữ khi chia sẻ project.', { safe: false });
+    addCandidate(path.join(ROOT, filename), 'private-runtime-data', 'File cấu hình/dữ liệu thật không nên giữ khi chia sẻ project.', { safe: false, allowProtected: true });
   }
 
   walk(ROOT, (full, entry) => {
     if (!entry.isFile()) return;
     const name = entry.name;
     const relative = rel(full);
-    if (/^research\/.*\.csv$/i.test(relative)) addCandidate(full, 'private-runtime-data', 'CSV nghiên cứu có thể chứa dữ liệu thật.', { safe: false });
-    if (/^data_phan_loai_chuan_.*\.json$/i.test(name)) addCandidate(full, 'private-runtime-data', 'Dữ liệu phân loại runtime.', { safe: false });
-    if (/^_tmp_(?:in|out)_.*\.json$/i.test(name)) addCandidate(full, 'private-runtime-data', 'File input/output tạm runtime.', { safe: false });
-    if (/^input_targets(?:_care)?_.*\.json$/i.test(name)) addCandidate(full, 'private-runtime-data', 'Target nhập liệu runtime.', { safe: false });
-    if (/^clinic_(?:request|preview|procedures)_.*\.json$/i.test(name)) addCandidate(full, 'private-runtime-data', 'File clinic runtime.', { safe: false });
-    if (/^(?:input_care|input_infusions)_result\.json$/i.test(name)) addCandidate(full, 'private-runtime-data', 'Kết quả nhập liệu runtime.', { safe: false });
+    if (/^research\/.*\.csv$/i.test(relative)) addCandidate(full, 'private-runtime-data', 'CSV nghiên cứu có thể chứa dữ liệu thật.', { safe: false, allowProtected: true });
+    if (/^data_phan_loai_chuan_.*\.json$/i.test(name)) addCandidate(full, 'private-runtime-data', 'Dữ liệu phân loại runtime.', { safe: false, allowProtected: true });
+    if (/^_tmp_(?:in|out)_.*\.json$/i.test(name)) addCandidate(full, 'private-runtime-data', 'File input/output tạm runtime.', { safe: false, allowProtected: true });
+    if (/^input_targets(?:_care)?_.*\.json$/i.test(name)) addCandidate(full, 'private-runtime-data', 'Target nhập liệu runtime.', { safe: false, allowProtected: true });
+    if (/^clinic_(?:request|preview|procedures)_.*\.json$/i.test(name)) addCandidate(full, 'private-runtime-data', 'File clinic runtime.', { safe: false, allowProtected: true });
+    if (/^(?:input_care|input_infusions)_result\.json$/i.test(name)) addCandidate(full, 'private-runtime-data', 'Kết quả nhập liệu runtime.', { safe: false, allowProtected: true });
+  });
+}
+
+function addRuntimeLogs() {
+  if (!INCLUDE_RUNTIME_LOGS) return;
+  walk(path.join(ROOT, '.runtime'), (full, entry) => {
+    const relative = rel(full);
+    if (entry.isDirectory()) {
+      if (/^\.runtime\/sessions\/[^/]+\/data\/logs$/.test(relative)) addCandidate(full, 'runtime-log', 'Log của phiên chạy cũ.', { allowProtected: true });
+      if (/^\.runtime\/sessions\/[^/]+\/debug$/.test(relative)) addCandidate(full, 'runtime-debug', 'HTML/ảnh debug của phiên chạy cũ.', { allowProtected: true });
+      return;
+    }
+    if (/^\.runtime\/logs\/activity_\d+\.(log|jsonl)$/i.test(relative)) addCandidate(full, 'runtime-log', 'Activity log cũ.', { allowProtected: true });
+  });
+}
+
+// File Hành chánh cũ: luồng ra viện đã bỏ CLS/documents, file tạm của worker, và
+// file tên tiếng Anh cũ khi đã có bản tên chuẩn tương ứng.
+const HCHANH_LEGACY_NAMES = [
+  ['profile.json', 'thong_tin_nen.json'],
+  ['discharge.json', 'ra_vien.json'],
+  ['billing.json', 'bang_ke.json'],
+  ['bed_days.json', 'ngay_giuong.json'],
+  ['surgery.json', 'phau_thuat.json'],
+  ['order_history.json', 'lich_su_y_lenh.json'],
+];
+
+function addHchanhLegacyData() {
+  if (!INCLUDE_HCHANH_DATA) return;
+  walk(path.join(ROOT, '.runtime'), (full, entry) => {
+    if (!entry.isFile()) return;
+    const relative = rel(full);
+    if (/\/hchanh\/patients\/[^/]+\/(cls|documents)\.json$/i.test(relative)) {
+      addCandidate(full, 'hchanh-obsolete-data', 'Hành chánh đã bỏ CLS/documents khỏi luồng ra viện.', { allowProtected: true });
+      return;
+    }
+    if (/\/hchanh\/(fetch_input|fetch_output)_[^/]+\.json$/i.test(relative)) {
+      addCandidate(full, 'hchanh-temp', 'File input/output tạm của worker Hành chánh.', { allowProtected: true });
+      return;
+    }
+    if (!/\/hchanh\/patients\/[^/]+\/[^/]+\.json$/i.test(relative)) return;
+    for (const [oldName, newName] of HCHANH_LEGACY_NAMES) {
+      if (entry.name === oldName && exists(path.join(path.dirname(full), newName))) {
+        addCandidate(full, 'hchanh-legacy-duplicate', `File cũ ${oldName} đã có bản chuẩn ${newName}.`, { allowProtected: true });
+      }
+    }
   });
 }
 
@@ -535,6 +591,8 @@ function writeReport(items, skippedUnsafe) {
       privateData: INCLUDE_PRIVATE_DATA,
       dist: INCLUDE_DIST_ALL,
       releaseArchives: INCLUDE_RELEASE_ARCHIVES,
+      runtimeLogs: INCLUDE_RUNTIME_LOGS,
+      hchanhData: INCLUDE_HCHANH_DATA,
       unusedCode: INCLUDE_UNUSED_CODE,
       confirmUnusedCode: CONFIRM_UNUSED_CODE,
       emptyDirs: INCLUDE_EMPTY_DIRS,
@@ -577,17 +635,17 @@ function printSummary(items, skippedUnsafe, reportPath) {
     return;
   }
 
-  console.log(`[clean-unused] Root: ${ROOT}`);
-  console.log(`[clean-unused] Mode: ${APPLY ? (PERMANENT ? 'XÓA VĨNH VIỄN' : 'CHUYỂN VÀO BACKUP') : 'DRY-RUN / CHỈ XEM TRƯỚC'}`);
-  if (APPLY && !PERMANENT) console.log(`[clean-unused] Backup: ${rel(backupRoot)}`);
-  console.log(`[clean-unused] Tìm thấy ${items.length} mục có thể dọn.`);
+  console.log(`[clean] Root: ${ROOT}`);
+  console.log(`[clean] Mode: ${APPLY ? (PERMANENT ? 'XÓA VĨNH VIỄN' : 'CHUYỂN VÀO BACKUP') : 'DRY-RUN / CHỈ XEM TRƯỚC'}`);
+  if (APPLY && !PERMANENT) console.log(`[clean] Backup: ${rel(backupRoot)}`);
+  console.log(`[clean] Tìm thấy ${items.length} mục có thể dọn.`);
 
   for (const [group, count] of Array.from(groupCount.entries()).sort()) {
     console.log(`  - ${group}: ${count} (${formatBytes(groupSize.get(group) || 0)})`);
   }
 
   if (skippedUnsafe.length) {
-    console.log(`[clean-unused] Bỏ qua ${skippedUnsafe.length} mục chưa được xác nhận để dọn khi --apply.`);
+    console.log(`[clean] Bỏ qua ${skippedUnsafe.length} mục chưa được xác nhận để dọn khi --apply.`);
   }
 
   const limit = VERBOSE ? items.length : Math.min(items.length, 160);
@@ -597,7 +655,7 @@ function printSummary(items, skippedUnsafe, reportPath) {
   }
   if (items.length > limit) console.log(`... còn ${items.length - limit} mục khác. Dùng --verbose để xem hết.`);
 
-  console.log(`[clean-unused] Report: ${rel(reportPath)}`);
+  console.log(`[clean] Report: ${rel(reportPath)}`);
   if (!APPLY) {
     console.log('\nChưa xóa gì. Nếu danh sách đúng, chạy lại với --apply.');
   } else if (!PERMANENT) {
@@ -613,6 +671,8 @@ function printSummary(items, skippedUnsafe, reportPath) {
 
 addStaticGenerated();
 addPrivateRuntimeData();
+addRuntimeLogs();
+addHchanhLegacyData();
 addReleaseArchives();
 addDistCleanup();
 addPotentialUnusedCode();

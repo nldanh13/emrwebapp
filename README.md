@@ -72,6 +72,7 @@ Trên Windows, nếu muốn bật cùng lúc cả server chính và công cụ n
 | `npm run check` | Health check runtime |
 | `npm run db:migrate` | Chạy migration PostgreSQL (tùy chọn, xem `database/README.md`) |
 | `npm run archive:audit` | Kiểm tra bảo mật kho archive session |
+| `npm run clean` | Xem trước cache/log/file tạm có thể dọn; `npm run clean:apply` để dọn (chuyển vào `.cleanup_backup`, không đụng `.runtime`/`secrets`) |
 | `npm run secrets:check` | Kiểm tra mật khẩu/token: đã cấu hình chưa, lấy từ đâu, có yếu/lộ không |
 
 Chạy đầy đủ trước khi mở PR:
