@@ -125,3 +125,37 @@ def test_scan_reads_correct_columns_from_current_emr_table():
     assert natri["the_tich"] == 100
     assert natri["toc_do"] == 30
     assert "vo thi yen nhi" in natri["y_ta_key"]
+
+
+class _FakeSubRow(_FakeRow):
+    def __init__(self, cells):
+        super().__init__(cells, "")
+
+
+def test_scan_merges_two_row_record_of_drug_and_diluent():
+    """Form mới: thuốc pha chiếm 2 dòng (rowspan) — dòng 2 chỉ có [Tên, Số lô]
+    của dung dịch pha. Phải gộp thành 1 bản ghi "Trasolu + Natri clorid 0,9%"."""
+    main = _row(
+        "dca0513b-488a-4f11-9719-b4d000c86385",
+        "25/09", "Trasolu", "100", "020326", "30",
+        "12:02", "13:09", "TS. BS Trần Nguyễn Anh Duy", "Võ Thị Yến Nhi", "07:00 23/09/2026",
+    )
+    main._cells.append(_FakeCell(""))  # 12 Thao tác (cột 11 giờ là Ghi chú)
+    sub = _FakeSubRow([_FakeCell("Natri clorid 0,9%"), _FakeCell("SA1210826")])
+    records, _ = lay_danh_sach_chi_tiet_all_pages(_FakeDriver([main, sub]), wait=None)
+
+    infos = [i for v in records.values() for i in v]
+    assert len(infos) == 1
+    info = infos[0]
+    assert info["id"] == "dca0513b-488a-4f11-9719-b4d000c86385"
+    assert info["the_tich"] == 100 and info["toc_do"] == 30
+    assert info["y_lenh"] == "07:00 23/09/2026"
+
+    from infusion_cleanup import _compare_med_vs_web
+    med = {
+        "Full_Name": "TRASOLU + Natri clorid 0.9%", "Time_Start_Str": "12:02",
+        "The_Tich": 100, "Toc_Do": "30", "Bac_Si": "Trần Nguyễn Anh Duy",
+    }
+    assert _compare_med_vs_web(med, info, "Võ Thị Yến Nhi") == []
+    med_rev = dict(med, Full_Name="Natri clorid 0,9% + Trasolu")
+    assert _compare_med_vs_web(med_rev, info, "Võ Thị Yến Nhi") == []
