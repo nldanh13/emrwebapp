@@ -673,19 +673,9 @@
       "enabled": true,
       "protected": false,
       "executor": {
-        "type": "http",
-        "method": "GET",
-        "path": "/admin-workflow/billing-audit",
-        "queryKey": "billingAudit"
+        "type": "manual"
       },
-      "routes": [
-        {
-          "method": "GET",
-          "path": "/admin-workflow/billing-audit",
-          "action": "execute",
-          "gate": true
-        }
-      ]
+      "routes": []
     },
     {
       "id": "billing.print",
@@ -748,20 +738,9 @@
       "protected": false,
       "failurePolicy": "continue",
       "executor": {
-        "type": "http",
-        "method": "POST",
-        "path": "/admin-workflow/discharge-qa",
-        "inputKey": "dischargeAudit",
-        "payloadRequired": true
+        "type": "manual"
       },
-      "routes": [
-        {
-          "method": "POST",
-          "path": "/admin-workflow/discharge-qa",
-          "action": "execute",
-          "gate": true
-        }
-      ]
+      "routes": []
     },
     {
       "id": "discharge-package.print",

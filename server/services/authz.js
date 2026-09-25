@@ -357,7 +357,7 @@ function requiredRoleForRequest(req) {
 
   if (method === 'DELETE') return 'admin';
   if (['POST', 'PUT', 'PATCH'].includes(method)) {
-    if (/^\/(?:import-data|runtime-migrate|nurse-settings|admin-workflow\/clear|hchanh\/clear)/.test(routePath)) return 'supervisor';
+    if (/^\/(?:import-data|runtime-migrate|nurse-settings|hchanh\/clear)/.test(routePath)) return 'supervisor';
     return 'operator';
   }
   return 'viewer';
