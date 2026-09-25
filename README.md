@@ -39,7 +39,8 @@ Yêu cầu Node.js ≥ 20.19, Python 3 (cho worker), Chrome + ChromeDriver (Sele
 ```bash
 npm install
 pip install -r requirements.txt
-cp config/config.example.json config/config.json   # điền tài khoản/thông tin EMR thật, không commit file này
+cp config/config.example.json config/config.json   # URL/lịch điều dưỡng — không chứa mật khẩu
+npm run secrets:migrate:apply                       # tạo secrets/secrets.json rồi điền tài khoản EMR vào đó (xem docs/SECRETS.md)
 ```
 
 Chạy dev (UI + API riêng, có hot reload):
@@ -71,6 +72,7 @@ Trên Windows, nếu muốn bật cùng lúc cả server chính và công cụ n
 | `npm run check` | Health check runtime |
 | `npm run db:migrate` | Chạy migration PostgreSQL (tùy chọn, xem `database/README.md`) |
 | `npm run archive:audit` | Kiểm tra bảo mật kho archive session |
+| `npm run secrets:check` | Kiểm tra mật khẩu/token: đã cấu hình chưa, lấy từ đâu, có yếu/lộ không |
 
 Chạy đầy đủ trước khi mở PR:
 
@@ -81,7 +83,7 @@ npm run build
 
 ## Cấu hình & bảo mật
 
-- Không commit `config/config.json`, mật khẩu hay token — dùng biến môi trường/file secret (`EMR_PASSWORD_FILE`, `EMR_USERS_FILE`, ...).
+- Mọi mật khẩu/token nằm ở một chỗ: thư mục `secrets/` (không commit) — xem [`docs/SECRETS.md`](docs/SECRETS.md). `npm run secrets:check` để kiểm tra, `npm run secrets:migrate:apply` để gom mật khẩu cũ về đó.
 - Hệ thống thiết kế cho mạng nội bộ có kiểm soát, không public trực tiếp ra Internet.
 - Export dữ liệu nghiên cứu mặc định ẩn danh; export có định danh yêu cầu vai trò `supervisor`/`admin` và cờ môi trường riêng.
 - Chi tiết đầy đủ: [`docs/SECURITY_AND_OPERATIONS.md`](docs/SECURITY_AND_OPERATIONS.md).
@@ -91,6 +93,7 @@ npm run build
 - [`docs/FEATURE_MODULE_ARCHITECTURE.md`](docs/FEATURE_MODULE_ARCHITECTURE.md) — module hóa, feature gate, workflow planner/runner, cách thêm module mới.
 - [`docs/PARALLEL_CARE_INFUSION.md`](docs/PARALLEL_CARE_INFUSION.md) — chạy song song hai tài khoản EMR (chăm sóc + dịch truyền).
 - [`docs/SECURITY_AND_OPERATIONS.md`](docs/SECURITY_AND_OPERATIONS.md) — bảo mật, secret, retention, backup, khôi phục sự cố.
+- [`docs/SECRETS.md`](docs/SECRETS.md) — nơi lưu và cách quản lý mật khẩu/token.
 - [`docs/CHANGELOG_2.3.0.md`](docs/CHANGELOG_2.3.0.md) — thay đổi phiên bản gần nhất.
 - [`docs/BHYT_PRE_AUDIT.md`](docs/BHYT_PRE_AUDIT.md) — tiền giám định BHYT trước khi nộp hồ sơ (rule engine, thang mức độ, Tầng 1–8 đã cài đặt một phần; Tầng 5/VTYT là placeholder trung thực do thiếu dữ liệu tham chiếu, Tầng 6/Thuốc-DVKT gồm cảnh báo thiếu chẩn đoán hỗ trợ lẫn chống chỉ định, Tầng 7 chỉ gồm trùng dịch vụ, Tầng 8/DVKT trùng-cấu phần là pilot theo ví dụ cụ thể).
 - [`docs/EMR_STRUCTURE_SCAN.md`](docs/EMR_STRUCTURE_SCAN.md) — nút "Kiểm tra cấu trúc EMR" (mục Cài đặt): dò trang/selector EMR có đổi so với danh mục code đang dùng không, chỉ đọc, không tự sửa code.

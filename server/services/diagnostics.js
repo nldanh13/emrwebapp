@@ -11,6 +11,7 @@ const { CONFIG_PATH, RUNTIME_ROOT, APP_TOKEN, HOST, PY_TIMEOUT_MS } = require('.
 const { getRuntimePaths } = require('./session');
 const { getQueueStatus } = require('./task_queue');
 const { writeFileAtomic, safeUnlink, readJsonSafe } = require('../utils/file');
+const { describeSecrets, SOURCE } = require('./secret_store');
 
 function commandExists(command) {
   const checker = process.platform === 'win32' ? 'where' : 'command';
@@ -76,6 +77,28 @@ function configStatus() {
   return { ok: true, exists: true, has_credential_keys: hasCredentialKey };
 }
 
+// Chỉ báo bí mật nào đã cấu hình và lấy từ đâu — không bao giờ trả về giá trị.
+// Không đưa vào `required`: thiếu bí mật tùy chọn không làm server "degraded".
+function secretsStatus() {
+  try {
+    const info = describeSecrets();
+    const legacy = [
+      ...info.secrets.filter(s => s.source === SOURCE.LEGACY_CONFIG).map(s => s.key),
+      ...info.files.filter(f => f.mode === 'legacy').map(f => f.name),
+    ];
+    return {
+      ok: legacy.length === 0,
+      secrets_file_exists: info.secrets_file_exists,
+      secrets: info.secrets,
+      files: info.files,
+      legacy_locations: legacy,
+      message: legacy.length ? 'Còn bí mật ở vị trí cũ — chạy `npm run secrets:migrate` để gom về secrets/.' : undefined,
+    };
+  } catch (err) {
+    return { ok: false, message: `Không đọc được danh mục bí mật: ${err.message}` };
+  }
+}
+
 function runtimeDataStatus(ctx) {
   const files = {
     raw: ctx.RAW_PATH,
@@ -131,6 +154,7 @@ function buildDiagnostics(req, { detailed = false } = {}) {
       app_token_enabled: Boolean(APP_TOKEN),
     },
     config: cfg,
+    secrets: detailed ? secretsStatus() : undefined,
     runtime_writable: runtimeWritable,
     session_writable: sessionWritable,
     python,

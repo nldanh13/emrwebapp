@@ -1,29 +1,25 @@
 // server/utils/nurse_emr_accounts.js — Tài khoản EMR thật riêng theo TÊN điều dưỡng.
 //
-// Khác với config/users.json (tài khoản đăng nhập Data Hub, gắn theo người vận
+// Khác với secrets/users.json (tài khoản đăng nhập Data Hub, gắn theo người vận
 // hành app): file này chỉ ánh xạ TÊN điều dưỡng trong lịch trực (config.json ->
 // ten_dieu_duong/ds_dieu_duong) sang tài khoản EMR của chính người đó — dùng
 // khi nhập chăm sóc để mỗi ca (làm/trực) được ghi nhận đúng tài khoản EMR của
 // điều dưỡng phụ trách ca đó, không phải tài khoản chung.
 //
-// worker/nurse_emr_accounts.py đọc CÙNG file này — path và định dạng
+// worker/nurse_emr_accounts.py đọc CÙNG file này (qua secret_store) — path và định dạng
 // ([{name, emr_username, emr_password}]) phải khớp giữa 2 bên.
 
 'use strict';
 
-const path = require('path');
-const { ROOT_DIR } = require('../constants');
+const { resolveSecretFile } = require('../services/secret_store');
 const { readJsonSafe, writeJsonAtomic } = require('./file');
 
-const DEFAULT_NURSE_EMR_ACCOUNTS_FILE = path.join(ROOT_DIR, 'config', 'nurse_emr_accounts.json');
-
-// Cho phép override đường dẫn khi test (giống EMR_USERS_FILE ở authz.js) —
-// đọc lại mỗi lần gọi thay vì cache ở module scope để test đổi env giữa các
-// lần gọi vẫn có tác dụng.
+// Mặc định secrets/nurse_emr_accounts.json (máy chưa chuyển thì vẫn đọc
+// config/nurse_emr_accounts.json cũ); EMR_NURSE_ACCOUNTS_FILE ghi đè được (test
+// dùng). Đọc lại mỗi lần gọi thay vì cache ở module scope để test đổi env giữa
+// các lần gọi vẫn có tác dụng.
 function nurseEmrAccountsFilePath() {
-  const configured = String(process.env.EMR_NURSE_ACCOUNTS_FILE || '').trim();
-  if (!configured) return DEFAULT_NURSE_EMR_ACCOUNTS_FILE;
-  return path.isAbsolute(configured) ? configured : path.join(ROOT_DIR, configured);
+  return resolveSecretFile('nurse_emr_accounts.json').path;
 }
 
 function normalizeAccountRow(row) {
@@ -61,7 +57,6 @@ function writeNurseEmrAccounts(list) {
 }
 
 module.exports = {
-  NURSE_EMR_ACCOUNTS_FILE: DEFAULT_NURSE_EMR_ACCOUNTS_FILE,
   nurseEmrAccountsFilePath,
   normalizeAccountRow,
   readNurseEmrAccounts,

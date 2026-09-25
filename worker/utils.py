@@ -17,6 +17,8 @@ import subprocess
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
+from shared.secret_store import apply_secrets_to_config
+
 
 def _env_int(name: str, default: int, *, min_value: int = 1, max_value: int = 300) -> int:
     """Đọc biến môi trường dạng số nguyên, có chặn biên để tránh timeout vô hạn."""
@@ -42,48 +44,10 @@ except ModuleNotFoundError:
 
 
 
-def _read_secret_env(value_name: str, file_name: str = "") -> str:
-    value = str(os.environ.get(value_name, "") or "").strip()
-    if value:
-        return value
-    if file_name:
-        secret_path = str(os.environ.get(file_name, "") or "").strip()
-        if secret_path:
-            try:
-                with open(secret_path, "r", encoding="utf-8") as handle:
-                    return handle.read().strip()
-            except Exception as exc:
-                print(f"[utils] Không đọc được secret file {file_name}: {exc}", file=sys.stderr)
-    return ""
-
-
 def _apply_secret_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
-    out = dict(config or {})
-    mapping = {
-        "username": ("EMR_USERNAME", "EMR_USERNAME_FILE"),
-        "password": ("EMR_PASSWORD", "EMR_PASSWORD_FILE"),
-        "hchanh_username": ("EMR_HCHANH_USERNAME", "EMR_HCHANH_USERNAME_FILE"),
-        "hchanh_password": ("EMR_HCHANH_PASSWORD", "EMR_HCHANH_PASSWORD_FILE"),
-        # Tài khoản riêng cho dịch truyền — cho phép chạy song song với chăm sóc
-        # (xem docs/PARALLEL_CARE_INFUSION.md). Không đặt thì input_infusions.py
-        # tự dùng lại tài khoản chính, hành vi giữ nguyên như trước.
-        "infusion_username": ("EMR_INFUSION_USERNAME", "EMR_INFUSION_USERNAME_FILE"),
-        "infusion_password": ("EMR_INFUSION_PASSWORD", "EMR_INFUSION_PASSWORD_FILE"),
-    }
-    for key, (env_name, file_env) in mapping.items():
-        value = _read_secret_env(env_name, file_env)
-        if value:
-            out[key] = value
-
-    require_env = str(os.environ.get("EMR_REQUIRE_SECRET_ENV", "") or "").strip().lower() in {"1", "true", "yes", "on"}
-    if require_env:
-        missing = [key for key, (env_name, file_env) in mapping.items() if out.get(key) and not (_read_secret_env(env_name, file_env))]
-        if missing:
-            raise RuntimeError(
-                "Credential dạng rõ trong config đã bị chặn bởi EMR_REQUIRE_SECRET_ENV. "
-                f"Hãy chuyển các khóa sau sang biến môi trường/secret file: {', '.join(missing)}"
-            )
-    return out
+    """Điền tài khoản EMR (chính / hành chánh / dịch truyền) từ nơi quản lý bí
+    mật chung — xem shared/secret_store.py và docs/SECRETS.md."""
+    return apply_secrets_to_config(config)
 
 # ── load_config ───────────────────────────────────────────────────────────────
 

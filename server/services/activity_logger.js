@@ -7,6 +7,7 @@ const fs   = require('fs');
 const path = require('path');
 
 const { APP_TOKEN } = require('../constants');
+const { getSecret } = require('./secret_store');
 const { ensureDir } = require('../utils/file');
 const { getRuntimePaths } = require('./session');
 const { appendSecurityAudit } = require('./security_audit');
@@ -15,7 +16,7 @@ const MAX_STRING_LEN = 180;
 const MAX_KEYS       = 30;
 const MAX_SAMPLE     = 3;
 const VERBOSE_CLIENT_AUDIT = ['1', 'true', 'yes', 'on'].includes(String(process.env.EMR_VERBOSE_CLIENT_AUDIT || '').toLowerCase());
-const LOG_SALT = String(process.env.EMR_LOG_HASH_SALT || APP_TOKEN || crypto.randomBytes(32).toString('hex'));
+const LOG_SALT = String(getSecret('log_hash_salt') || APP_TOKEN || crypto.randomBytes(32).toString('hex'));
 
 const SECRET_KEY_RE = /password|passwd|pass|token|ott|secret|cookie|authorization|credential|api[_-]?key|mat_khau|mật khẩu/i;
 const PATIENT_ID_KEY_RE = /^(?:id|ma_bn|mabn|ma_yt|patient_?id|medical_?code|so_benh_an|so_vao_vien|storage_(?:key|number|full_key)|case_key)$/i;

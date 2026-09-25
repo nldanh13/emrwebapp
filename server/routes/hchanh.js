@@ -30,6 +30,7 @@ const { runScript, runWorker, fmtPyError, PYTHON_BIN }   = require('../services/
 const { enqueueHeavy, registerCancel, unregisterCancel, cancelSession } = require('../services/task_queue');
 const { readJsonSafe, writeJsonAtomic, safeFilePart } = require('../utils/file');
 const { appendActivity }                          = require('../services/activity_logger');
+const { getSecret }                               = require('../services/secret_store');
 const { escapeHtml }                              = require('../utils/html');
 const { rowsToCsv }                               = require('../utils/csv');
 const { fetchGoogleSheetRecords, extractSpreadsheetInfo, postJsonToGoogleAppsScript, validateGoogleAppsScriptWebAppUrl } = require('../utils/google_sheet_records');
@@ -39,7 +40,7 @@ const {
   dischargeDateMatchesSelection,
 } = require('../utils/discharge_print');
 const { WORKER_DIR, ROOT_DIR, RUNTIME_ROOT, ALLOW_PUBLIC_GOOGLE_SHEET } = require('../constants');
-const GOOGLE_SHEET_WRITE_TOKEN = String(process.env.EMR_GOOGLE_SHEET_WRITE_TOKEN || '').trim();
+const GOOGLE_SHEET_WRITE_TOKEN = getSecret('google_sheet_write_token');
 
 const {
   FETCH_SCOPES,

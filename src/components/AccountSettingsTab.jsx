@@ -1,5 +1,5 @@
 // src/components/AccountSettingsTab.jsx
-// Giao diện quản lý tài khoản đăng nhập Data Hub (config/users.json):
+// Giao diện quản lý tài khoản đăng nhập Data Hub (secrets/users.json):
 //   - Xem danh sách tài khoản, vai trò, mã truy cập, tài khoản EMR riêng
 //   - Thêm / sửa / tắt-bật / tạo mã mới / xoá tài khoản
 // Chỉ role admin dùng được — server (server/routes/admin_users.js) đã chặn,
