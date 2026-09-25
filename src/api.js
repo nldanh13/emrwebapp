@@ -161,7 +161,6 @@ function apiActionLabel(method, url) {
     'POST /api/import-data': 'nhập dữ liệu phiên',
     'GET /api/research/studies': 'tải danh sách nghiên cứu',
     'POST /api/research/studies': 'tạo nghiên cứu mới',
-    'POST /api/care-baseline/run': 'lấy lường cơ bản',
   };
   const exact = map[`${method} ${path}`];
   if (exact) return exact;
@@ -481,10 +480,6 @@ export const buildResearchArchiveEncodedDataset = () => post('/api/research/arch
 export const runResearchArchive = (options = {}) => post('/api/research/archive/run', options);
 export const runResearchArchivePatientInfo = (options = {}) => post('/api/research/archive/patient-info', options);
 
-export const getCareBaselineStatus = () => get('/api/care-baseline/status');
-export const getCareBaselineLatest = () => get('/api/care-baseline/latest');
-export const runCareBaseline = (options = {}) => post('/api/care-baseline/run', options);
-export const exportCareBaseline = (runId = '') => downloadBlob(`/api/care-baseline/export${runId ? `?runId=${encodeURIComponent(runId)}` : ''}`, `care_baseline${runId ? `_${runId}` : ''}.csv`);
 export const getResearchArchiveLog = ({ runId = 'latest', lines = 500 } = {}) => {
   const params = new URLSearchParams({ runId, lines });
   return get(`/api/research/archive/log?${params}`);

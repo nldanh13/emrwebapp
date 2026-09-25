@@ -45,8 +45,7 @@ else:
 from hchanh_fetch import _soup, _patient_page_url, _upsert_query  # type: ignore
 
 # Từ khóa (đã bỏ dấu, thường gặp trên EMR tiếng Việt) coi là hành động GHI — bỏ qua khi
-# dò link trang mới, không GET tới những trang này. Tham khảo cùng vốn từ với
-# care_baseline_fetch.py::_looks_like_patient_name (chữ hành động, không phải nội dung).
+# dò link trang mới, không GET tới những trang này (chữ hành động, không phải nội dung).
 _WRITE_ACTION_WORDS = (
     "xoa", "xóa", "luu", "lưu", "sua", "sửa", "cap nhat", "cập nhật",
     "ghi nhan", "ghi nhận", "xac nhan", "xác nhận", "duyet", "duyệt",

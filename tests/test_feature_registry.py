@@ -75,7 +75,6 @@ def test_frontend_and_backend_mount_shared_feature_registry():
     assert "require('./workflows')" in route_index
     assert "featureGate" in route_index
     assert "require('./report')" in route_index
-    assert "require('./care_baseline')" in route_index
 
 
 def test_frontend_registry_initializes_before_react_render(tmp_path):
