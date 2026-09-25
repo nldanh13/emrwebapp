@@ -100,7 +100,7 @@
       "canonical": "NEFOPAM MEDISOL 20MG/2ML + Natri clorid 0.9%",
       "category": "dich_truyen",
       "default_volume_ml": 100,
-      "default_rate": "40"
+      "default_rate": "30"
     },
     {
       "canonical": "LACTATED RINGER'S",
