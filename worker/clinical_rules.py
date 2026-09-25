@@ -1116,10 +1116,39 @@ def apply_clinical_rules_to_record(record: Dict[str, Any]) -> Dict[str, Any]:
     thuoc = record.setdefault("thuoc", {})
     skipped: List[Dict[str, Any]] = []
 
+    receive_ev = _get_receive_event(record)
+    try:
+        receive_mins = int(receive_ev.get("time_minutes")) if receive_ev else None
+    except Exception:
+        receive_mins = None
+
     for cat in ("dich_truyen", "thuoc_tiem", "thuoc_uong", "khac"):
         kept = []
+        # Cử của y lệnh "SM - …" đã giữ theo (thuốc, giờ): y lệnh "x2, SM - 20h" bị
+        # tách thành 2 cử cùng 20h — một cử là cử SM (đã làm ở hậu phẫu).
+        sm_kept_slots = set()
         for item in thuoc.get(cat, []) or []:
             should_skip, meta = medication_skip_decision(item, cat)
+
+            # Ngày nhận hậu phẫu: y lệnh ghi SM/sau mổ vẫn có cử SAU giờ khoa nhận
+            # (vd "SM - 16h - 22h" nhận lúc 17:07 → cử 22h). Các cử đó do khoa
+            # thực hiện (điều dưỡng theo ca của giờ đó), không bỏ; cử trước giờ
+            # nhận để rule _skip_before_receive_decision bên dưới loại.
+            if should_skip and meta.get("rule_id") == "post_op_or_intra_op_already_done" and receive_mins is not None:
+                exec_mins = _extract_item_minutes(item, record.get("ngay_lam") or "")
+                if exec_mins is not None:
+                    slot = (_norm(item.get("ten_thuoc") or item.get("ten_hien_thi") or ""),
+                            _extract_hhmm(item.get("gio_dung")) or str(item.get("gio_dung") or "").strip())
+                    if exec_mins < receive_mins:
+                        should_skip, meta = _skip_before_receive_decision(item, record)
+                    elif slot in sm_kept_slots:
+                        should_skip, meta = True, {
+                            "rule_id": "postop_sm_dose_duplicate",
+                            "reason": "Cử SM của y lệnh sau mổ (đã thực hiện ở hậu phẫu), trùng giờ với cử khoa thực hiện.",
+                        }
+                    else:
+                        sm_kept_slots.add(slot)
+                        should_skip, meta = False, {}
 
             if not should_skip:
                 should_skip, meta = _skip_before_receive_decision(item, record)
