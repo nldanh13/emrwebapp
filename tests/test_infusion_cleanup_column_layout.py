@@ -88,6 +88,12 @@ def _row(rec_id, ngay, ten, the_tich, lo_sx, toc_do, bat_dau, ket_thuc, bac_si, 
     return _FakeRow(cells, rec_id)
 
 
+def _expected_year(month, day):
+    from datetime import datetime, timedelta
+    now = datetime.now()
+    return now.year if datetime(now.year, month, day) <= now + timedelta(days=180) else now.year - 1
+
+
 def test_scan_reads_correct_columns_from_current_emr_table():
     rows = [
         _row(
@@ -113,8 +119,10 @@ def test_scan_reads_correct_columns_from_current_emr_table():
     assert paracetamol["ten"].lower() == "paracetamol 10mg/ml"
     assert paracetamol["the_tich"] == 100
     assert paracetamol["toc_do"] == 100
-    assert paracetamol["tg_bat_dau"] == "17:00"
-    assert paracetamol["tg_ket_thuc"] == "17:20"
+    # Bảng chỉ ghi "17:00" + cột ngày "12/09" → ghép thành giờ đầy đủ (năm hiện tại).
+    year = _expected_year(9, 12)
+    assert paracetamol["tg_bat_dau"] == f"17:00 12/09/{year}"
+    assert paracetamol["tg_ket_thuc"] == f"17:20 12/09/{year}"
     assert "tuan" in paracetamol["bac_si"].lower()
     assert "nhi" in paracetamol["y_ta"].lower()
     assert "phan van tuan" in paracetamol["bac_si_key"]
@@ -150,12 +158,48 @@ def test_scan_merges_two_row_record_of_drug_and_diluent():
     assert info["id"] == "dca0513b-488a-4f11-9719-b4d000c86385"
     assert info["the_tich"] == 100 and info["toc_do"] == 30
     assert info["y_lenh"] == "07:00 23/09/2026"
+    # Giờ bắt đầu/kết thúc phải có ngày để khớp với dữ liệu — nếu không, tool tưởng
+    # thiếu bản ghi và nhập trùng.
+    assert info["tg_bat_dau"] == "12:02 25/09/2026"
+    assert info["tg_ket_thuc"] == "13:09 25/09/2026"
+    assert list(records) == [("nacl 0.9%+trasolu", "12:02 25/09/2026")]
 
     from infusion_cleanup import _compare_med_vs_web
     med = {
-        "Full_Name": "TRASOLU + Natri clorid 0.9%", "Time_Start_Str": "12:02",
+        "Full_Name": "TRASOLU + Natri clorid 0.9%", "Time_Start_Str": "12:02 25/09/2026",
         "The_Tich": 100, "Toc_Do": "30", "Bac_Si": "Trần Nguyễn Anh Duy",
     }
     assert _compare_med_vs_web(med, info, "Võ Thị Yến Nhi") == []
     med_rev = dict(med, Full_Name="Natri clorid 0,9% + Trasolu")
     assert _compare_med_vs_web(med_rev, info, "Võ Thị Yến Nhi") == []
+
+
+def test_full_time_year_rollover_and_end_after_midnight():
+    from infusion_cleanup import _full_time_from_row
+    assert _full_time_from_row("22:00", "26/09", "07:00 26/09/2026") == "22:00 26/09/2026"
+    assert _full_time_from_row("08:00", "02/01", "05:00 31/12/2026") == "08:00 02/01/2027"
+    start = _full_time_from_row("23:30", "26/09", "07:00 26/09/2026")
+    assert _full_time_from_row("00:40", "26/09", "07:00 26/09/2026", end_after=start) == "00:40 27/09/2026"
+    assert _full_time_from_row("17:00 12/09/2026", "12/09") == "17:00 12/09/2026"
+
+
+def test_extra_diluent_on_web_is_wrong_name():
+    from infusion_cleanup import _compare_med_vs_web, _norm_med_key
+    web = {"ten": "paracetamol 10mg/ml + natri clorid 0,9%", "ten_key": _norm_med_key("Paracetamol 10mg/ml + Natri clorid 0,9%"),
+           "tg_bat_dau": "16:00 25/09/2026", "the_tich": 100, "toc_do": 100}
+    med = {"Full_Name": "PARACETAMOL 10MG/ML", "Time_Start_Str": "16:00 25/09/2026", "The_Tich": 100, "Toc_Do": "100"}
+    assert "sai tên dịch truyền" in _compare_med_vs_web(med, web, "")
+
+
+def test_same_time_wrong_diluent_variant_is_found():
+    from infusion_cleanup import same_time_diluent_variants, _norm_med_key
+    t = "16:00 25/09/2026"
+    records = {
+        (_norm_med_key("Paracetamol 10mg/ml + Natri clorid 0,9%"), t): [{"id": "wrong"}],
+        (_norm_med_key("Paracetamol 10mg/ml"), "08:00 25/09/2026"): [{"id": "other-time"}],
+        (_norm_med_key("Trasolu + Natri clorid 0,9%"), t): [{"id": "other-drug"}],
+    }
+    med = {"Full_Name": "PARACETAMOL 10MG/ML", "Time_Start_Str": t}
+    assert [x["id"] for x in same_time_diluent_variants(records, med)] == ["wrong"]
+    med_mix = {"Full_Name": "TRASOLU + Natri clorid 0.9%", "Time_Start_Str": t}
+    assert same_time_diluent_variants(records, med_mix) == []

@@ -55,3 +55,38 @@ def test_diluent_only_added_for_mixed_drugs():
     assert _la_thuoc_pha({"Full_Name": "TRASOLU + Natri clorid 0.9%", "Search_Name": "TRASOLU", "Dung_Moi": "NACL_0.9"})
     assert not _la_thuoc_pha({"Full_Name": "NATRI CLORID 0,9%", "Search_Name": "NATRI CLORID 0,9%"})
     assert not _la_thuoc_pha({"Full_Name": "LACTATED RINGER'S", "Search_Name": "LACTATED RINGER'S"})
+
+
+class _DrugDriver:
+    """Giả lập ô Chọn thuốc: lựa chọn còn sót không xóa được bằng jQuery."""
+    def __init__(self, stuck):
+        self.stuck = list(stuck)
+
+    def execute_script(self, script, *args):
+        if "select2('data')" in script:
+            return list(self.stuck)
+        return None
+
+
+def test_leftover_drug_choice_blocks_input(monkeypatch):
+    import infusion_form_actions as fa
+    monkeypatch.setattr(fa.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(fa, "xoa_sach_o_chon_thuoc", lambda d: None)
+    import pytest
+    with pytest.raises(RuntimeError, match="Natri clorid"):
+        fa._clear_drug_choices(_DrugDriver(["Natri clorid 0,9%"]))
+    fa._clear_drug_choices(_DrugDriver([]))
+
+
+def test_extra_drug_selected_is_rejected(monkeypatch):
+    import infusion_form_actions as fa
+    monkeypatch.setattr(fa, "_clear_drug_choices", lambda d: None)
+    monkeypatch.setattr(fa, "nhap_thuoc_select2_va_lay_lo", lambda *a, **k: {"ok": True})
+    monkeypatch.setattr(fa, "_selected_drug_names", lambda d, field_id='cbbThuoc': ["Paracetamol 10mg/ml", "Natri clorid 0,9%"])
+
+    class D:
+        def find_element(self, *a):
+            raise RuntimeError("no body")
+    import pytest
+    with pytest.raises(RuntimeError, match="cần 1"):
+        fa._chon_thuoc_va_dung_moi(D(), {"Full_Name": "PARACETAMOL 10MG/ML", "Search_Name": "PARACETAMOL"})

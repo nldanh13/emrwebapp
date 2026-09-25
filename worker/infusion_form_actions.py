@@ -236,11 +236,59 @@ def _la_thuoc_pha(med):
     return not any(k in main for k in ('natri clorid', 'sodium chloride', 'nacl', 'nuoc cat'))
 
 
+def _selected_drug_names(driver, field_id='cbbThuoc'):
+    """Tên các thuốc đang được chọn trong ô "Chọn thuốc" (chọn nhiều)."""
+    try:
+        return driver.execute_script(
+            """
+            var el = document.getElementById(arguments[0]);
+            if (!el) return [];
+            var out = [];
+            try {
+                if (window.jQuery && $(el).data('select2')) {
+                    ($(el).select2('data') || []).forEach(function(x){
+                        var t = (x && (x.text || x.ten || x.name) || '').trim();
+                        if (t) out.push(t);
+                    });
+                }
+            } catch (e) {}
+            if (!out.length) {
+                Array.from(el.options || []).forEach(function(o){ if (o.selected && (o.text || '').trim()) out.push(o.text.trim()); });
+            }
+            return out;
+            """,
+            field_id,
+        ) or []
+    except Exception:
+        return []
+
+
+def _clear_drug_choices(driver, field_id='cbbThuoc'):
+    """Xóa sạch ô "Chọn thuốc" (kể cả lựa chọn còn sót từ lần nhập trước) và
+    xác nhận đã rỗng. Sót lại thì thuốc sau bị ghép nhầm (vd Paracetamol +
+    Natri clorid của dòng Trasolu trước đó)."""
+    try:
+        driver.execute_script(
+            "var el=document.getElementById(arguments[0]);"
+            "if(el && window.jQuery){ $(el).val(null).trigger('change'); }",
+            field_id,
+        )
+        time.sleep(0.3)
+    except Exception:
+        pass
+    if _selected_drug_names(driver, field_id):
+        xoa_sach_o_chon_thuoc(driver)
+        time.sleep(0.3)
+    left = _selected_drug_names(driver, field_id)
+    if left:
+        raise RuntimeError(f"Không xóa được thuốc còn sót trong ô Chọn thuốc: {', '.join(left)}")
+
+
 def _chon_thuoc_va_dung_moi(driver, med):
     """Ô "Chọn thuốc" (chọn nhiều): chọn thuốc chính, rồi thêm dung dịch pha
     (vd Natri clorid 0,9%) nếu là thuốc pha truyền. Số lô EMR tự hiện theo
     từng thuốc đã chọn — không đụng tới."""
-    xoa_sach_o_chon_thuoc(driver)
+    _clear_drug_choices(driver)
     primary_targets, diluent_targets = _lot_search_candidates(med)
     info = nhap_thuoc_select2_va_lay_lo(
         driver, med.get('Search_Name', ''), extra_targets=primary_targets, click_choice=True,
@@ -251,9 +299,11 @@ def _chon_thuoc_va_dung_moi(driver, med):
             f"Không có lựa chọn thuốc thật trên Select2 cho: "
             f"{med.get('Search_Name') or med.get('Full_Name') or '?'}"
         )
+    want = 1
     if diluent_targets and _la_thuoc_pha(med):
         for q in diluent_targets:
             if nhap_thuoc_select2_va_lay_lo(driver, q, extra_targets=[q], click_choice=True).get('ok'):
+                want = 2
                 break
         else:
             _log(f"      [!] Y lệnh không có dung dịch pha để chọn ({', '.join(diluent_targets[:2])}); chỉ chọn thuốc chính.")
@@ -261,6 +311,9 @@ def _chon_thuoc_va_dung_moi(driver, med):
         driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
     except Exception:
         pass
+    chosen = _selected_drug_names(driver)
+    if chosen and len(chosen) != want:
+        raise RuntimeError(f"Ô Chọn thuốc có {len(chosen)} thuốc ({', '.join(chosen)}), cần {want}")
 
 
 def _fill_form_dich_truyen_once(driver, med):
