@@ -1,4 +1,6 @@
-import { C } from '../tokens.js';
+import { IconArrowLeft, IconChevronRight, IconLayoutGrid, IconRoute, IconX } from '@tabler/icons-react';
+import { C, FS } from '../tokens.js';
+import { Btn } from './shared.jsx';
 import { getFeatureDefinition } from '../features/registry.js';
 
 function StepList({ steps = [] }) {
@@ -11,8 +13,8 @@ function StepList({ steps = [] }) {
         const step = getFeatureDefinition(stepId);
         return (
           <span key={stepInstanceId} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-            {index > 0 && <span style={{ color: C.text3 }}>→</span>}
-            <span style={{ border: `1px solid ${C.border}`, background: C.surface, borderRadius: 4, padding: '3px 6px', color: C.text2, fontSize: 10 }}>
+            {index > 0 && <IconChevronRight size={14} stroke={1.75} color={C.text3} aria-hidden="true" />}
+            <span style={{ border: `1px solid ${C.border}`, background: C.surface, borderRadius: 4, padding: '3px 7px', color: C.text2, fontSize: FS.xs }}>
               {rawStep?.label || step?.label || stepInstanceId}
             </span>
           </span>
@@ -25,23 +27,26 @@ function StepList({ steps = [] }) {
 export default function FeatureContextBanner({ context, definition, onBack, onClose }) {
   if (!context || !definition) return null;
   const isWorkflow = context.kind === 'workflow';
+  const Icon = isWorkflow ? IconRoute : IconLayoutGrid;
   return (
-    <div style={{ padding: '7px 12px', borderBottom: `1px solid ${C.border2}`, background: C.surface, flexShrink: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-        <div style={{ width: 26, height: 26, borderRadius: 6, display: 'grid', placeItems: 'center', background: C.surface, border: `1px solid ${C.blueBorder}`, color: C.blue, fontWeight: 800 }}>
-          {definition.icon || (isWorkflow ? '◇' : '•')}
-        </div>
+    <div style={{ padding: '10px 16px', borderBottom: `1px solid ${C.border2}`, background: C.surface, flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <span style={{ width: 30, height: 30, borderRadius: 7, display: 'grid', placeItems: 'center', background: C.blueBg, color: C.blue, flexShrink: 0 }} aria-hidden="true">
+          <Icon size={17} stroke={1.75} />
+        </span>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ color: C.text3, fontSize: 10, fontWeight: 750 }}>
-            {isWorkflow ? 'Quy trình đang mở' : 'Chức năng đang mở'}
+          <div style={{ color: C.text, fontSize: FS.md, fontWeight: 700 }}>
+            {definition.label}
+            <span style={{ color: C.text3, fontWeight: 500, fontSize: FS.xs, marginLeft: 8 }}>{isWorkflow ? 'Quy trình đang mở' : 'Chức năng đang mở'}</span>
           </div>
-          <div style={{ color: C.text, fontSize: 13, fontWeight: 800, marginTop: 2 }}>{definition.label}</div>
-          <div style={{ color: C.text2, fontSize: 11, marginTop: 2 }}>{definition.description}</div>
+          {definition.description && <div style={{ color: C.text2, fontSize: FS.sm, marginTop: 2 }}>{definition.description}</div>}
           {isWorkflow && <StepList steps={definition.steps} />}
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button type="button" onClick={onBack} style={{ border: `1px solid ${C.blueBorder}`, background: C.surface, color: C.blue, borderRadius: 5, padding: '5px 8px', fontSize: 11, cursor: 'pointer' }}>Bộ chức năng</button>
-          <button type="button" onClick={onClose} title="Đóng chỉ dẫn" style={{ width: 30, height: 30, border: `1px solid ${C.border}`, background: C.surface, color: C.text2, borderRadius: 5, cursor: 'pointer' }}>×</button>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          <Btn icon={IconArrowLeft} onClick={onBack}>Bộ chức năng</Btn>
+          <button type="button" className="emr-icon-btn" onClick={onClose} aria-label="Đóng chỉ dẫn" title="Đóng chỉ dẫn">
+            <IconX size={17} stroke={1.75} />
+          </button>
         </div>
       </div>
     </div>

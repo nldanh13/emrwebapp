@@ -38,6 +38,7 @@
     "test:ci": "node scripts/secrets_tool.js scan-repo && python -m pytest tests/ -q && python -m compileall -q worker && node scripts/check.mjs && npm run test:ui && node scripts/workflow_smoke_test.js && node scripts/records_check_paper_status_test.js && node scripts/task_queue_account_lane_test.js && node scripts/records_check_shared_data_reuse_test.js && node scripts/research_hchanh_flatten_encounter_guard_test.js && node scripts/research_hchanh_same_stay_reuse_test.js && node scripts/research_data_safety_test.js && node scripts/research_dataset_snapshot_test.js && node scripts/research_data_dictionary_test.js && node scripts/research_collection_test.js && node scripts/research_collection_orchestration_test.js && node scripts/research_collection_crash_recovery_test.js && node scripts/log_redact_test.js && node scripts/secret_store_test.js && node scripts/clean_test.js && node scripts/hchanh_fetch_case_key_ambiguity_test.js && node scripts/records_check_legacy_migration_test.js && node scripts/orphan_fetch_temp_cleanup_test.js && node scripts/discharge_print_bundle_location_test.js && node scripts/discharge_sign_bundle_test.js && node scripts/hchanh_open_bed_edit_dedup_test.js && node scripts/bhyt_pre_audit_test.js && node scripts/hchanh_bhyt_gate_test.js && node scripts/input_precheck_token_refresh_test.js"
   },
   "dependencies": {
+    "@tabler/icons-react": "^3.48.0",
     "dotenv": "^16.4.5",
     "express": "^5.2.1",
     "react": "^19.2.8",
