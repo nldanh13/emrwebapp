@@ -1,4 +1,4 @@
-import { C, FONT_UI, mono } from '../tokens.js';
+import { C, FONT_UI, R, mono } from '../tokens.js';
 
 export function Badge({ text, bg, color, size = 11 }) {
   return (
@@ -49,10 +49,13 @@ export function Spinner({ size = 14 }) {
   );
 }
 
-export function Btn({ children, variant = 'default', onClick, disabled, style = {}, type = 'button', title }) {
+// Nút dùng chung. `loading` hiện vòng quay, khoá nút và báo aria-busy; `icon` nhận một component
+// icon Tabler (vd. IconRefresh) và tự đặt cỡ theo chữ.
+export function Btn({ children, variant = 'default', onClick, disabled, style = {}, type = 'button', title, loading = false, icon: Icon = null, 'aria-label': ariaLabel }) {
+  disabled = disabled || loading;
   const base = {
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-    padding: '6px 10px', minHeight: 30, borderRadius: 5, border: '1px solid',
+    padding: '6px 10px', minHeight: 30, borderRadius: R.sm, border: '1px solid',
     cursor: disabled ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 600,
     fontFamily: FONT_UI,
     opacity: disabled ? 0.55 : 1,
@@ -77,12 +80,15 @@ export function Btn({ children, variant = 'default', onClick, disabled, style = 
       type={type || 'button'}
       disabled={disabled}
       title={title}
+      aria-label={ariaLabel}
+      aria-busy={loading || undefined}
       onClick={disabled ? undefined : onClick}
       style={{ ...base, ...(variants[variant] || variants.default), ...style }}
       onMouseDown={e => { if (!disabled) e.currentTarget.style.transform = 'translateY(1px)'; }}
       onMouseUp={e => { e.currentTarget.style.transform = 'none'; }}
       onMouseLeave={e => { e.currentTarget.style.transform = 'none'; }}
     >
+      {loading ? <Spinner size={13} /> : (Icon ? <Icon size={15} stroke={1.75} aria-hidden="true" /> : null)}
       {children}
     </button>
   );

@@ -7,22 +7,17 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body, #root { height: 100%; }
+    /* Chỉ cho màn hình tải ban đầu; giao diện chính lấy từ src/styles/app.css (khớp DESIGN.md). */
     body {
-      font-family: Inter, Roboto, 'Segoe UI', Arial, system-ui, sans-serif;
-      background: #f6f8fb;
-      color: #111827;
+      font-family: "Aptos", "Segoe UI Variable", "Segoe UI", sans-serif;
+      background: #f4f7fb;
+      color: #172033;
       font-size: 13px;
       -webkit-font-smoothing: antialiased;
-      text-rendering: geometricPrecision;
     }
     button, input, select, textarea { font: inherit; }
-    ::selection { background: #bfdbfe; color: #0f172a; }
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
-    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; background-clip: content-box; }
     .emr-bootstrap-loading, .emr-bootstrap-error { min-height: 100%; display: grid; place-items: center; padding: 24px; }
-    .emr-bootstrap-loading { color: #64748b; font-weight: 700; }
+    .emr-bootstrap-loading { color: #5f6d86; font-weight: 600; }
     .emr-bootstrap-error { background: #0d1117; color: #e6edf3; }
     .emr-bootstrap-error section { width: min(760px, 100%); border: 1px solid #30363d; border-radius: 14px; background: #161b22; padding: 22px; box-shadow: 0 18px 48px rgba(0,0,0,.32); }
     .emr-bootstrap-error__eyebrow { color: #ff7b72; font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
