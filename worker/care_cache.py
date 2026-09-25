@@ -362,8 +362,12 @@ def cleanup_cham_soc_cache(
     protect_before_time_key=None,
     remove_tool_rows_at_or_after_time_key=None,
     allow_completed=False,
+    keep_moi_time_keys=None,
 ):
     """Dọn cache phiếu chăm sóc.
+
+    ``keep_moi_time_keys``: các mốc giờ có phiếu 'Mới' cố ý để chờ đúng người
+    lập đăng nhập bấm Hoàn tất (vd ca trực) — không được xóa như phiếu dư.
 
     Quy tắc an toàn:
     - Phiếu trạng thái 'Mới' do tool tạo dư: xoá trong vùng thời gian tool được phép can thiệp.
@@ -488,6 +492,9 @@ def cleanup_cham_soc_cache(
                     continue
 
                 # 1) Xoá phiếu 'Mới' (dư)
+                if "moi" in chuan_hoa_unicode(stt) and time_full in (keep_moi_time_keys or ()):
+                    LOG.info(f"[DỌN {phase}] Giữ phiếu 'Mới' {time_full} ({creator}) chờ người lập Hoàn tất")
+                    continue
                 if "moi" in chuan_hoa_unicode(stt):
                     cid = e.get("id_delete") or e.get("id_edit")
                     if cid:
