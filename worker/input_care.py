@@ -79,7 +79,7 @@ from care_cache import (
 )
 from care_form_actions import (
     set_thoi_gian_lap, dien_thong_tin, set_log_context as set_care_form_log_context,
-    doi_nguoi_lap_sau_hoan_tat,
+    doi_nguoi_lap_sau_hoan_tat, doc_nguoi_lap_hien_tai, cung_nguoi_lap,
 )
 
 # ==============================================================================
@@ -1463,12 +1463,6 @@ def main():
 
                     wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
 
-                    # Khi đang đứng ở tài khoản người lập cũ (sửa phiếu của họ) thì
-                    # điền thẳng tên theo lịch như trước; còn lại phiếu của người
-                    # khác được tạo dưới tên chủ tài khoản, Hoàn tất xong mới đổi tên.
-                    nguoi_lap_tam = None if switched_for_edit else job.get("nguoi_lap_tam")
-                    nguoi_lap_cuoi = job.get("nguoi_lap_cuoi") if nguoi_lap_tam else None
-
                     success = False
                     for attempt in range(1, 4):
                         # 1) Set giờ trước (đợi ổn định), tránh việc điền các trường rồi bị reset do đổi giờ
@@ -1483,7 +1477,6 @@ def main():
                         form_ok = dien_thong_tin(
                             driver, h, time_str, final_care_content, LIST_NURSE, dien_bien_text,
                             needs_vitals=needs_vitals, config_ten_goc=CONFIG_TEN_GOC,
-                            nguoi_lap=nguoi_lap_tam,
                         )
                         if not form_ok:
                             print("[Sai Người lập] -> Retry.", end=" ")
@@ -1514,6 +1507,19 @@ def main():
                                 success = True
                                 break
 
+                    # Tool không chọn ô Người lập lúc tạo phiếu (EMR tự điền theo tài
+                    # khoản đang đăng nhập). Phiếu đã Hoàn tất mà tên chưa phải người
+                    # phụ trách giờ đó (vd ca trực) thì Thu hồi → đổi tên → Hoàn tất.
+                    nguoi_lap_cuoi = None
+                    nguoi_lap_tam = ""
+                    if success and expected_creator:
+                        nguoi_lap_tam = doc_nguoi_lap_hien_tai(driver)
+                        if nguoi_lap_tam:
+                            if not cung_nguoi_lap(nguoi_lap_tam, expected_creator):
+                                nguoi_lap_cuoi = expected_creator
+                        elif job.get("nguoi_lap_cuoi"):
+                            nguoi_lap_tam = job.get("nguoi_lap_tam") or "chủ tài khoản"
+                            nguoi_lap_cuoi = job.get("nguoi_lap_cuoi")
                     if success and nguoi_lap_cuoi:
                         print(f"   -> Thu hồi, đổi Người lập sang {nguoi_lap_cuoi}.", end=" ")
                         if doi_nguoi_lap_sau_hoan_tat(driver, nguoi_lap_cuoi):

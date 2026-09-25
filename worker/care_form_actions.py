@@ -174,45 +174,17 @@ def _chon_nguoi_lap_select2(driver, target_text: str, timeout: int = 12) -> bool
     LOG.warning(_ctx_prefix() + f"[NguoiLap] Không chọn/verify được '{target_text}' sau 3 lần")
     return False
 
-def dien_thong_tin(driver, gio, time_str, content, list_ten_dieu_duong, dien_bien_text="", needs_vitals=False, config_ten_goc=None, nguoi_lap=None):
-    """Điền form chăm sóc; trả False nếu trường bắt buộc Người lập không hợp lệ.
+def dien_thong_tin(driver, gio, time_str, content, list_ten_dieu_duong, dien_bien_text="", needs_vitals=False, config_ten_goc=None):
+    """Điền form chăm sóc (sinh hiệu, diễn biến, chăm sóc, xử trí).
+
+    KHÔNG chọn ô Người lập: EMR tự điền theo tài khoản đang đăng nhập, đổi tên
+    ngay lúc tạo phiếu làm EMR báo lỗi. Nếu cần người khác (vd ca trực), đổi
+    SAU khi phiếu đã Hoàn tất — xem ``doi_nguoi_lap_sau_hoan_tat``.
 
     ``txtThoiGianLap`` đã được ``set_thoi_gian_lap`` xử lý và verify ngay trước
     hàm này. Không set/change lần hai vì HIS có thể refresh modal và làm stale
     các Select2 vừa sau đó.
-
-    ``nguoi_lap``: nếu truyền, điền đúng tên này thay vì tên theo lịch ca —
-    dùng khi phiếu ca trực phải được tạo + Hoàn tất dưới tên chủ tài khoản
-    đang đăng nhập trước, rồi mới Thu hồi đổi sang người trực (xem
-    ``doi_nguoi_lap_sau_hoan_tat``).
     """
-    # Mặc định chọn người lập theo lịch đã cấu hình:
-    # - giờ hành chính -> ca làm
-    # - 11h-13h và 17h-07h -> ca trực
-    # - 00h-06h59 tính theo lịch trực của ngày trước đó
-    name_to_fill = str(nguoi_lap or "").strip()
-    try:
-        if not name_to_fill:
-            name_to_fill = get_nurse_by_shift(time_str, config_ten_goc or {})
-    except Exception as e:
-        # fallback an toàn nếu utils trả list thiếu phần tử
-        try:
-            name_to_fill = (list_ten_dieu_duong or ["Lê Ngọc Diệu"])[0]
-        except Exception:
-            name_to_fill = "Lê Ngọc Diệu"
-        print(f" [WARN get_nurse_by_shift: {e} -> fallback {name_to_fill}]", end="")
-
-    # Người lập là trường bắt buộc. Không được tiếp tục lưu nếu không xác định
-    # hoặc không chọn/verify được đúng điều dưỡng theo lịch.
-    if not name_to_fill:
-        LOG.error(_ctx_prefix() + "[NguoiLap] Không xác định được người lập theo lịch")
-        return False
-
-    _nurse_filled = _chon_nguoi_lap_select2(driver, name_to_fill)
-    if not _nurse_filled:
-        LOG.error(_ctx_prefix() + f"[NguoiLap] FAILED to set '{name_to_fill}'")
-        return False
-
     if needs_vitals or gio in [5, 16]:
         try:
             nhip_tho = "20"; nhiet_do = "37"; mach = str(random.randint(75, 85))
@@ -252,6 +224,23 @@ def dien_thong_tin(driver, gio, time_str, content, list_ten_dieu_duong, dien_bie
         LOG.debug(f"[except] {_e}")  # was: except: pass
 
     return True
+
+
+def doc_nguoi_lap_hien_tai(driver):
+    """Tên đang hiện ở ô Người lập của popup phiếu chăm sóc ('' nếu không đọc được)."""
+    try:
+        el = driver.find_element(By.ID, "select2-cbbNguoiLap-container")
+        return ((el.get_attribute("title") or "") or (el.text or "")).strip()
+    except Exception as _e:
+        LOG.debug(f"[except] {_e}")
+        return ""
+
+
+def cung_nguoi_lap(a, b):
+    """So tên điều dưỡng, bỏ dấu/chức danh (ĐD., CN...)."""
+    from infusion_select2 import _norm_staff_key
+    ka, kb = _norm_staff_key(a), _norm_staff_key(b)
+    return bool(ka and kb and (ka == kb or ka in kb or kb in ka))
 
 
 def luu_va_hoan_tat(driver, attempts=3):

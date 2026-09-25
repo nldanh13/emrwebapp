@@ -33,23 +33,22 @@ def test_rename_stops_when_thu_hoi_fails(monkeypatch):
     assert calls == []
 
 
-def test_form_fills_explicit_creator_instead_of_shift_nurse(monkeypatch):
-    class DummyDriver:
-        def find_element(self, *args, **kwargs):
-            raise RuntimeError("field unavailable in unit test")
-
-    chosen = []
-    monkeypatch.setattr(actions, "get_nurse_by_shift", lambda *_a, **_k: "Điều Dưỡng B")
-    monkeypatch.setattr(actions, "_chon_nguoi_lap_select2", lambda d, name: chosen.append(name) or True)
-
-    assert actions.dien_thong_tin(
-        DummyDriver(), 20, "20:00 03/08/2026", "Thực hiện chỉ định thuốc",
-        ["Điều Dưỡng A"], "Người bệnh tỉnh", config_ten_goc={}, nguoi_lap="Điều Dưỡng A",
-    ) is True
-    assert chosen == ["Điều Dưỡng A"]
+def test_same_creator_ignores_accents_and_titles():
+    assert actions.cung_nguoi_lap("ĐD. Lê Ngọc Diệu", "le ngoc dieu")
+    assert not actions.cung_nguoi_lap("Lê Ngọc Diệu", "Thạch Thị Thúy Đa")
+    assert not actions.cung_nguoi_lap("", "Thạch Thị Thúy Đa")
 
 
 def test_input_care_no_longer_logs_in_per_shift_nurse():
     source = (WORKER / "input_care.py").read_text(encoding="utf-8")
     assert "get_emr_account_for_nurse" not in source
     assert "doi_nguoi_lap_sau_hoan_tat(driver, nguoi_lap_cuoi)" in source
+
+
+def test_input_care_renames_only_after_hoan_tat():
+    source = (WORKER / "input_care.py").read_text(encoding="utf-8")
+    fill = source.index("form_ok = dien_thong_tin(")
+    hoan_tat = source.index('By.ID, "btnPopupHOANTAT"', fill)
+    rename = source.index("doi_nguoi_lap_sau_hoan_tat(driver, nguoi_lap_cuoi)")
+    assert fill < hoan_tat < rename
+    assert "nguoi_lap=" not in source[fill:hoan_tat]
