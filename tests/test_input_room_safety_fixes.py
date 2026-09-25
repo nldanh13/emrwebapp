@@ -11,7 +11,9 @@ if str(WORKER) not in sys.path:
     sys.path.insert(0, str(WORKER))
 
 
-def test_care_form_rejects_invalid_creator(monkeypatch):
+def test_care_form_does_not_touch_creator_field(monkeypatch):
+    """Tạo phiếu KHÔNG chọn Người lập (EMR tự điền theo tài khoản); đổi tên
+    chỉ làm sau khi phiếu đã Hoàn tất."""
     import care_form_actions as actions
 
     class DummyDriver:
@@ -21,8 +23,9 @@ def test_care_form_rejects_invalid_creator(monkeypatch):
         def execute_script(self, *args, **kwargs):
             return None
 
-    monkeypatch.setattr(actions, "get_nurse_by_shift", lambda *_args, **_kwargs: "Điều Dưỡng A")
-    monkeypatch.setattr(actions, "_chon_nguoi_lap_select2", lambda *_args, **_kwargs: False)
+    chosen = []
+    monkeypatch.setattr(actions.time, "sleep", lambda *_a: None)
+    monkeypatch.setattr(actions, "_chon_nguoi_lap_select2", lambda *_a, **_k: chosen.append(_a) or True)
 
     assert actions.dien_thong_tin(
         DummyDriver(),
@@ -32,7 +35,8 @@ def test_care_form_rejects_invalid_creator(monkeypatch):
         ["Điều Dưỡng A"],
         "Người bệnh tỉnh",
         config_ten_goc={"Default": {}},
-    ) is False
+    ) is True
+    assert chosen == []
 
 
 def test_care_form_log_context_contains_patient_date():
