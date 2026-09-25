@@ -1,5 +1,7 @@
-import { C } from '../../tokens.js';
-import { Btn, Spinner } from '../shared.jsx';
+import { IconChevronRight, IconHandClick } from '@tabler/icons-react';
+import { C, FS } from '../../tokens.js';
+import { Spinner } from '../shared.jsx';
+import { WARD_BULK_ACTIONS, WARD_PRINT_ACTION, actionPhase, phaseLabel } from './wardActions.js';
 
 function formatDateTime(value) {
   if (!value) return '';
@@ -36,7 +38,7 @@ function PrecheckChangePanel({ report, onClear }) {
       color: C.text,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: style.color, flex: 1 }}>
+        <div style={{ fontSize: FS.md, fontWeight: 700, color: style.color, flex: 1 }}>
           {report.status === 'running' ? <><Spinner size={10} /> </> : null}{style.title}
         </div>
         {onClear && (
@@ -45,8 +47,8 @@ function PrecheckChangePanel({ report, onClear }) {
             background: 'rgba(255,255,255,0.55)',
             color: C.text2,
             borderRadius: 5,
-            padding: '2px 6px',
-            fontSize: 10,
+            padding: '3px 8px',
+            fontSize: FS.xs,
             cursor: 'pointer',
             fontFamily: 'inherit',
           }}>Ẩn</button>
@@ -54,22 +56,22 @@ function PrecheckChangePanel({ report, onClear }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 8 }}>
-        <div style={{ fontSize: 11, color: C.text2 }}>
+        <div style={{ fontSize: FS.xs, color: C.text2 }}>
           <b style={{ color: C.text }}>Loại:</b> {report.label || 'nhập EMR'}
         </div>
-        <div style={{ fontSize: 11, color: C.text2 }}>
+        <div style={{ fontSize: FS.xs, color: C.text2 }}>
           <b style={{ color: C.text }}>Kiểm tra lúc:</b> {formatDateTime(report.checkedAt) || '—'}
         </div>
-        <div style={{ fontSize: 11, color: C.text2 }}>
+        <div style={{ fontSize: FS.xs, color: C.text2 }}>
           <b style={{ color: C.text }}>BN/ngày:</b> {Number(report.changedCount || 0)}/{Number(report.checkedCount || 0)} thay đổi
         </div>
-        <div style={{ fontSize: 11, color: C.text2 }}>
+        <div style={{ fontSize: FS.xs, color: C.text2 }}>
           <b style={{ color: C.text }}>Cập nhật dữ liệu:</b> {formatDateTime(report.updatedAt) || (report.status === 'changed' ? formatDateTime(report.checkedAt) : '—')}
         </div>
       </div>
 
       {(dates.length || rooms.length) ? (
-        <div style={{ fontSize: 11, color: C.text2, marginBottom: 8 }}>
+        <div style={{ fontSize: FS.xs, color: C.text2, marginBottom: 8 }}>
           {dates.length ? <span><b style={{ color: C.text }}>Ngày:</b> {dates.join(', ')}</span> : null}
           {dates.length && rooms.length ? <span> · </span> : null}
           {rooms.length ? <span><b style={{ color: C.text }}>Phòng:</b> {rooms.join(', ')}</span> : null}
@@ -77,7 +79,7 @@ function PrecheckChangePanel({ report, onClear }) {
       ) : null}
 
       {report.message ? (
-        <div style={{ fontSize: 11, color: C.text2, lineHeight: 1.45, marginBottom: rows.length ? 8 : 0 }}>
+        <div style={{ fontSize: FS.xs, color: C.text2, lineHeight: 1.45, marginBottom: rows.length ? 8 : 0 }}>
           {report.message}
         </div>
       ) : null}
@@ -94,23 +96,23 @@ function PrecheckChangePanel({ report, onClear }) {
                 padding: '6px 7px',
               }}>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{item.ho_ten || item.ma_bn || item.key}</span>
-                  <span style={{ fontSize: 10, color: C.text3 }}>{item.ma_bn && item.ho_ten ? item.ma_bn : ''}</span>
-                  {item.ngay_lam ? <span style={{ fontSize: 10, color: C.text2 }}>Ngày {item.ngay_lam}</span> : null}
+                  <span style={{ fontSize: FS.sm, fontWeight: 700, color: C.text }}>{item.ho_ten || item.ma_bn || item.key}</span>
+                  <span style={{ fontSize: FS.xs, color: C.text3 }}>{item.ma_bn && item.ho_ten ? item.ma_bn : ''}</span>
+                  {item.ngay_lam ? <span style={{ fontSize: FS.xs, color: C.text2 }}>Ngày {item.ngay_lam}</span> : null}
                   {(item.changed_at || item.last_order_time) ? (
-                    <span style={{ fontSize: 10, color: style.color, fontWeight: 700 }}>
+                    <span style={{ fontSize: FS.xs, color: style.color, fontWeight: 700 }}>
                       Mốc mới nhất {item.changed_at || item.last_order_time}
                     </span>
                   ) : null}
                 </div>
-                <div style={{ fontSize: 10.5, color: C.text2, marginTop: 3, lineHeight: 1.35 }}>
+                <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 3, lineHeight: 1.35 }}>
                   {changes.filter(Boolean).join(' · ')}
                 </div>
               </div>
             );
           })}
           {rows.length > 12 ? (
-            <div style={{ fontSize: 10, color: C.text3 }}>Còn {rows.length - 12} BN/ngày khác không hiển thị.</div>
+            <div style={{ fontSize: FS.xs, color: C.text3 }}>Còn {rows.length - 12} BN/ngày khác không hiển thị.</div>
           ) : null}
         </div>
       ) : null}
@@ -118,8 +120,28 @@ function PrecheckChangePanel({ report, onClear }) {
   );
 }
 
+function ActionRow({ icon: Icon, label, detail, hint, phase, disabled, onClick }) {
+  const busy = Boolean(phase);
+  return (
+    <button
+      type="button"
+      className="emr-action-row"
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      aria-busy={busy || undefined}
+      title={hint}
+    >
+      <span className="emr-action-row__icon" aria-hidden="true">{busy ? <Spinner size={14} /> : <Icon size={18} stroke={1.75} />}</span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span className="emr-action-row__label">{label}</span>
+        <span className="emr-action-row__detail">{busy ? phaseLabel(phase) : detail}</span>
+      </span>
+      <IconChevronRight size={16} stroke={1.75} aria-hidden="true" className="emr-action-row__chevron" />
+    </button>
+  );
+}
+
 export default function EmptyDetail({
-  stats,
   onInputCareAll,
   onInputInfAll,
   onInputProcedureAll,
@@ -127,7 +149,6 @@ export default function EmptyDetail({
   onPrintDischargeBundleAll,
   dischargePrintCount = 0,
   running,
-  title = 'Tổng quan nhập liệu',
   inputRoomSelector = null,
   bulkInputDisabled = false,
   precheckReport = null,
@@ -136,54 +157,40 @@ export default function EmptyDetail({
   disabledFeatureLabels = [],
 }) {
   const inputDisabled = !!running || !!bulkInputDisabled;
-  const careDisabled = inputDisabled || featureAvailability.care === false;
-  const infusionDisabled = inputDisabled || featureAvailability.infusion === false;
-  const procedureDisabled = inputDisabled || featureAvailability.procedure === false;
-  const vtytDisabled = inputDisabled || featureAvailability.material === false;
+  const handlers = { care: onInputCareAll, infusion: onInputInfAll, procedure: onInputProcedureAll, vtyt: onInputVtytAll };
 
   return (
-    <div style={{ padding: 12, overflow: 'auto', height: '100%' }}>
-      {disabledFeatureLabels.length ? <div style={{ marginBottom: 10, padding: '7px 9px', borderRadius: 7, border: `1px solid ${C.amberBorder}`, background: C.amberBg, color: C.amber, fontSize: 11 }}>Đang tắt: {disabledFeatureLabels.join(', ')}. Các nút còn lại vẫn hoạt động.</div> : null}
-      <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 8 }}>{String(title || 'Tổng quan nhập liệu')}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', columnGap: 12, marginBottom: 14 }}>
-        {[
-          { label: 'Tổng BN', val: stats.total, color: C.text },
-          { label: 'Chưa xử lý', val: stats.gray, color: C.text2 },
-          { label: 'Cần xem', val: stats.amber, color: C.amber },
-          { label: 'Đã ổn', val: stats.green, color: C.green },
-        ].map(s => (
-          <div key={s.label} style={{ borderRight: `1px solid ${C.border2}`, padding: '4px 12px 5px 0' }}>
-            <div style={{ fontSize: 10, color: C.text3, marginBottom: 2 }}>{s.label}</div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: s.color, fontVariantNumeric: 'tabular-nums' }}>{s.val}</div>
-          </div>
-        ))}
-      </div>
+    <div style={{ padding: 16, overflow: 'auto', height: '100%' }}>
+      {disabledFeatureLabels.length ? <div style={{ marginBottom: 12, padding: '8px 10px', borderRadius: 7, border: `1px solid ${C.amberBorder}`, background: C.amberBg, color: C.amber, fontSize: FS.sm }}>Đang tắt: {disabledFeatureLabels.join(', ')}. Các thao tác còn lại vẫn dùng được.</div> : null}
       {inputRoomSelector}
-      <div style={{ fontSize: 10, fontWeight: 750, letterSpacing: '0.04em', color: C.text3, marginBottom: 6 }}>Hành động hàng loạt</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <Btn variant="success" onClick={onInputCareAll} disabled={careDisabled} style={{ justifyContent: 'flex-start', width: '100%' }}>
-          {running === 'check-care' ? <><Spinner size={10} /> Đang kiểm tra YL...</> : (running === 'care' ? <><Spinner size={10} /> Đang kiểm tra/nhập/sửa...</> : 'Chăm sóc — kiểm tra / nhập / sửa')}
-        </Btn>
-        <Btn variant="primary" onClick={onInputInfAll} disabled={infusionDisabled} style={{ justifyContent: 'flex-start', width: '100%' }}>
-          {running === 'check-infus' ? <><Spinner size={10} /> Đang kiểm tra YL...</> : (running === 'infus' ? <><Spinner size={10} /> Đang kiểm tra/nhập/sửa...</> : 'Dịch truyền — kiểm tra / nhập / sửa')}
-        </Btn>
-        <Btn variant="default" onClick={onInputProcedureAll} disabled={procedureDisabled} style={{ justifyContent: 'flex-start', width: '100%' }}>
-          {running === 'check-procedure' ? <><Spinner size={10} /> Đang kiểm tra YL...</> : (running === 'procedure' ? <><Spinner size={10} /> Đang kiểm tra/nhập/sửa...</> : 'Thủ thuật — kiểm tra / nhập / sửa')}
-        </Btn>
-        <Btn variant="default" onClick={onInputVtytAll} disabled={vtytDisabled} style={{ justifyContent: 'flex-start', width: '100%' }} title="Chỉ nhập khi có phẫu thuật (băng thun/băng dính theo vị trí) hoặc thay kim luồn (combo kim luồn), theo quy tắc VTYT đã cấu hình.">
-          {running === 'check-vtyt' ? <><Spinner size={10} /> Đang kiểm tra YL...</> : (running === 'vtyt' ? <><Spinner size={10} /> Đang kiểm tra/nhập...</> : 'VTYT — kiểm tra / nhập theo quy tắc')}
-        </Btn>
-        <Btn variant="primary" onClick={onPrintDischargeBundleAll} disabled={!!running || !dischargePrintCount} style={{ justifyContent: 'flex-start', width: '100%' }}>
-          {running === 'print-discharge-bundle-all' ? <><Spinner size={10} /> Đang tổng hợp in...</> : `In BN ra viện (${dischargePrintCount || 0})`}
-        </Btn>
+      <h2 style={{ margin: '0 0 8px', fontSize: FS.lg, fontWeight: 700, color: C.text }}>Nhập hàng loạt</h2>
+      <div style={{ display: 'grid', gap: 6 }}>
+        {WARD_BULK_ACTIONS.map(action => (
+          <ActionRow
+            key={action.id}
+            icon={action.icon}
+            label={action.label}
+            detail={action.detail}
+            hint={action.hint}
+            phase={actionPhase(action, running)}
+            disabled={inputDisabled || featureAvailability[action.feature] === false}
+            onClick={handlers[action.id]}
+          />
+        ))}
+        <ActionRow
+          icon={WARD_PRINT_ACTION.icon}
+          label={`${WARD_PRINT_ACTION.label} (${dischargePrintCount || 0})`}
+          detail={dischargePrintCount ? 'Tổng hợp bộ phiếu của người bệnh ra viện' : 'Không có người bệnh ra viện trong ngày đã chọn'}
+          phase={actionPhase(WARD_PRINT_ACTION, running)}
+          disabled={!!running || !dischargePrintCount}
+          onClick={onPrintDischargeBundleAll}
+        />
       </div>
-      {bulkInputDisabled && (
-        <div style={{ marginTop: 8, fontSize: 11, color: C.red }}>
-          Chọn ít nhất một phòng hoặc người bệnh trước khi nhập hàng loạt.
-        </div>
-      )}
       <PrecheckChangePanel report={precheckReport} onClear={onClearPrecheckReport} />
-      <div style={{ marginTop: 12, fontSize: 11, color: C.text3 }}>Chọn BN để nhập từng ca riêng</div>
+      <p style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '14px 0 0', fontSize: FS.sm, color: C.text3 }}>
+        <IconHandClick size={16} stroke={1.75} aria-hidden="true" />
+        Chọn một người bệnh trong danh sách để xem y lệnh và nhập riêng.
+      </p>
     </div>
   );
 }

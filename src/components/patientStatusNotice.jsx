@@ -163,7 +163,7 @@ export function getPatientNotices(patient = {}, activeDay = null) {
       // Còn y lệnh/diễn biến thật vào ngày sau ngày ra viện: lệnh ra viện
       // này khả năng đã bị huỷ hoặc ghi nhầm ngày — cảnh báo thay vì báo
       // "Xuất viện" như đã hoàn tất, để tránh in nhầm hồ sơ ra viện.
-      addNotice(notices, 'discharge_contradicted', '⚠ Ra viện? còn y lệnh sau', dischargeTime(source, events), C.redBg, C.red);
+      addNotice(notices, 'discharge_contradicted', 'Ra viện? còn y lệnh sau', dischargeTime(source, events), C.redBg, C.red);
     } else {
       addNotice(notices, 'discharge', 'Xuất viện', dischargeTime(source, events), C.amberBg, C.amber);
     }

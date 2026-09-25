@@ -6,7 +6,7 @@ export default function PatientLogModal({ open, onClose, loading, data }) {
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+      position: 'fixed', inset: 0, background: 'var(--emr-scrim)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       zIndex: 2000,
     }} onClick={onClose}>

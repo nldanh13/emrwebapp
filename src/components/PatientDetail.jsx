@@ -1,3 +1,4 @@
+import { IconAlertTriangle, IconRefresh, IconX } from '@tabler/icons-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { C, STATUS } from '../tokens.js';
 import { Badge, Mono, Btn, Dot, Spinner } from './shared.jsx';
@@ -105,7 +106,7 @@ function PatientHeader({ patient, activeDay, status, subTab, setSubTab, availabl
             </details>
           )}
         </div>
-        <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.text2, fontSize: 16, padding: '0 4px' }}>✕</button>
+        <button type="button" className="emr-icon-btn" onClick={onClose} aria-label="Đóng chi tiết người bệnh" title="Đóng"><IconX size={17} stroke={1.75} /></button>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 9, flexWrap: 'wrap' }}>
@@ -355,7 +356,7 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
             {activeHasInfusion && (
               activeInfusionIncomplete ? (
                 <Btn variant="solidWarn" style={smallBtn} title="Còn dịch truyền thiếu thể tích — bấm để vào tab Sửa dịch truyền nhập trước" onClick={() => onGotoMeds?.()}>
-                  ⚠ Thiếu thể tích — Sửa ngay
+                  <IconAlertTriangle size={14} stroke={2} aria-hidden="true" /> Thiếu thể tích — Sửa ngay
                 </Btn>
               ) : (
                 <Btn variant="primary" disabled={busy || !activeDate} style={smallBtn} title={`Kiểm tra, nhập thiếu và sửa sai dịch truyền ngày ${dayText}`} onClick={() => onInputInfusion?.([patient], activeDate)}>
@@ -411,7 +412,7 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
           {hasManyDays ? (
             <>
               <Btn variant="solidWarn" disabled={busy} style={smallBtn} title="Cập nhật y lệnh cho toàn bộ các ngày đang có của bệnh nhân này" onClick={() => onRefreshDetails?.(patient, availableDates)}>
-                {running === 'details-one' ? <><Spinner size={10} /> Đang cập nhật</> : `↻ Cập nhật YL tất cả (${availableDates.length} ngày)`}
+                {running === 'details-one' ? <><Spinner size={10} /> Đang cập nhật</> : <><IconRefresh size={14} stroke={2} aria-hidden="true" /> Cập nhật YL tất cả ({availableDates.length} ngày)</>}
               </Btn>
               <Btn variant="default" disabled={busy || !activeDate} style={smallBtn} title={`Chỉ cập nhật y lệnh ngày ${dayText}`} onClick={() => onRefreshDetails?.(patient, activeDate)}>
                 {running === 'details-one' ? <><Spinner size={10} /> Đang cập nhật</> : `YL ngày ${dayText}`}
@@ -419,7 +420,7 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
             </>
           ) : (
             <Btn variant="default" disabled={busy || !activeDate} style={smallBtn} onClick={() => onRefreshDetails?.(patient, activeDate)}>
-              {running === 'details-one' ? <><Spinner size={10} /> Đang cập nhật</> : '↻ Cập nhật YL BN'}
+              {running === 'details-one' ? <><Spinner size={10} /> Đang cập nhật</> : <><IconRefresh size={14} stroke={2} aria-hidden="true" /> Cập nhật YL người bệnh</>}
             </Btn>
           )}
         </ActionCluster>
@@ -485,16 +486,16 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
   const careTotal = Number.isFinite(p.care_total_dates) ? p.care_total_dates : (p.total_dates || 1);
   const careBadge = p.care_stale_count > 0 ? `CS: YL mới ${p.care_stale_count}` : (careTotal > 1
     ? `CS: ${p.care_done_count || 0}/${careTotal}`
-    : `CS: ${p.care_done ? '✓' : '—'}`);
+    : `CS: ${p.care_done ? 'xong' : 'chưa'}`);
   const infusionTotal = Number.isFinite(p.infusion_total_dates) ? p.infusion_total_dates : (activeHasInfusion ? 1 : 0);
-  const infusionBadge = p.has_infusion_incomplete ? `DT: thiếu TT ⚠ (${p.infus_incomplete_count || 0})`
+  const infusionBadge = p.has_infusion_incomplete ? `DT: thiếu thông tin (${p.infus_incomplete_count || 0})`
     : (p.infus_stale_count > 0 ? `DT: YL mới ${p.infus_stale_count}` : (infusionTotal > 1
       ? `DT: ${p.infus_done_count || 0}/${infusionTotal || 0}`
-      : `DT: ${p.infus_done ? '✓' : '—'}`));
+      : `DT: ${p.infus_done ? 'xong' : 'chưa'}`));
   const procedureTotal = Number.isFinite(p.procedure_total_dates) ? p.procedure_total_dates : (activeHasProcedure ? 1 : 0);
   const procedureBadge = p.procedure_stale_count > 0 ? `TT: YL mới ${p.procedure_stale_count}` : (procedureTotal > 1
     ? `TT: ${p.procedure_done_count || 0}/${procedureTotal || 0}`
-    : `TT: ${p.procedure_done ? '✓' : '—'}`);
+    : `TT: ${p.procedure_done ? 'xong' : 'chưa'}`);
   const vtytTotal = Number.isFinite(p.vtyt_total_dates) ? p.vtyt_total_dates : (activeHasVtyt ? 1 : 0);
 
   return (
@@ -520,7 +521,7 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
         <div style={{ maxWidth: 1220, width: '100%', margin: '0 auto 0 0' }}>
           {subTab === 'timeline'
             ? <>
-                <div style={{ margin: '0 0 8px', padding: '6px 8px', borderLeft: `2px solid ${C.blue}`, color: C.text3, fontSize: 10.5, lineHeight: 1.4 }}>
+                <div style={{ margin: '0 0 8px', padding: '7px 10px', borderRadius: 6, background: C.surface2, color: C.text2, fontSize: 11.5, lineHeight: 1.45 }}>
                   Timeline dự kiến; khi nhập hệ thống tự đối chiếu HIS và chỉ sửa khi đủ điều kiện an toàn.
                 </div>
                 <PatientTimeline items={activeDay.timeline || []} thuoc={activeDay.thuoc} />
