@@ -7,10 +7,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 from utils import get_nurse_by_shift
-from input_infusions_utils import LOG, _log
+from input_infusions_utils import LOG, _log, _norm_text
 from infusion_cleanup import _int_from_text
 from infusion_select2 import (
     chon_select2_bac_si_y_ta,
+    chon_y_lenh,
     nhap_thuoc_select2,
     nhap_thuoc_select2_va_lay_lo,
     xoa_sach_o_chon_thuoc,
@@ -225,45 +226,62 @@ def _prepare_med_form_values(med):
         'time_end': (med.get('Time_End_Str') or '').strip(),
     }
 
-def _fill_form_dich_truyen_once(driver, med):
-    vals = _prepare_med_form_values(med)
+def _la_thuoc_pha(med):
+    """Thuốc pha với dung dịch (vd "TRASOLU + Natri clorid 0.9%"), không phải
+    bản thân chai dịch truyền (vd "NATRI CLORID 0,9%" 500 ml)."""
+    full_name = str(med.get('Full_Name') or '')
+    if '+' not in full_name and not str(med.get('Dung_Moi') or '').strip():
+        return False
+    main = _norm_text(str(med.get('Search_Name') or full_name.split('+')[0]))
+    return not any(k in main for k in ('natri clorid', 'sodium chloride', 'nacl', 'nuoc cat'))
 
-    # Modal thực tế có cả #cbbThuoc và #txtThuoc. Nếu chỉ điền txtThuoc,
-    # HIS có thể báo "Chưa chọn thuốc", nên luôn ép cả hai trường.
+
+def _chon_thuoc_va_dung_moi(driver, med):
+    """Ô "Chọn thuốc" (chọn nhiều): chọn thuốc chính, rồi thêm dung dịch pha
+    (vd Natri clorid 0,9%) nếu là thuốc pha truyền. Số lô EMR tự hiện theo
+    từng thuốc đã chọn — không đụng tới."""
     xoa_sach_o_chon_thuoc(driver)
-    primary_targets, _diluent_targets = _lot_search_candidates(med)
-    _drug_info = nhap_thuoc_select2_va_lay_lo(
-        driver,
-        med.get('Search_Name', ''),
-        extra_targets=primary_targets,
-        click_choice=True,
+    primary_targets, diluent_targets = _lot_search_candidates(med)
+    info = nhap_thuoc_select2_va_lay_lo(
+        driver, med.get('Search_Name', ''), extra_targets=primary_targets, click_choice=True,
     )
-    _drug_ok = bool(_drug_info.get('ok'))
-    if not _drug_ok:
-        # Fallback giữ hành vi cũ nếu helper đọc số lô không chọn được.
-        _drug_ok = nhap_thuoc_select2(driver, med.get('Search_Name', ''))
-    if not _drug_ok:
-        LOG.info(f"      [!] Không chọn được thuốc/dịch truyền qua Select2: {med.get('Search_Name', '')}")
+    ok = bool(info.get('ok')) or nhap_thuoc_select2(driver, med.get('Search_Name', ''))
+    if not ok:
         raise RuntimeError(
             f"Không có lựa chọn thuốc thật trên Select2 cho: "
             f"{med.get('Search_Name') or med.get('Full_Name') or '?'}"
         )
-
-    _resolve_and_fill_so_lo(driver, med, selected_info=_drug_info if isinstance(_drug_info, dict) else None)
-    if not _force_drug_required_fields(driver, vals['full_name'], med.get('Search_Name', '')):
-        raise RuntimeError("cbbThuoc mất value thật sau khi chọn thuốc")
-    _set_input_value(driver, 'txtThuoc', vals['full_name'])
+    if diluent_targets and _la_thuoc_pha(med):
+        for q in diluent_targets:
+            if nhap_thuoc_select2_va_lay_lo(driver, q, extra_targets=[q], click_choice=True).get('ok'):
+                break
+        else:
+            _log(f"      [!] Y lệnh không có dung dịch pha để chọn ({', '.join(diluent_targets[:2])}); chỉ chọn thuốc chính.")
     try:
-        _set_input_value(driver, 'txtSoLo', med.get('So_Lo', ''))
+        driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
     except Exception:
         pass
+
+
+def _fill_form_dich_truyen_once(driver, med):
+    vals = _prepare_med_form_values(med)
+
+    _chon_thuoc_va_dung_moi(driver, med)
+    # Tên thuốc/dịch truyền: thuốc + dung dịch pha như hiện tại (Full_Name).
+    if not _force_drug_required_fields(driver, vals['full_name'], med.get('Search_Name', '')):
+        raise RuntimeError("cbbThuoc mất value thật sau khi chọn thuốc")
+    _set_values_after_drug(driver, vals)
+    return vals
+
+
+def _set_values_after_drug(driver, vals):
+    _set_input_value(driver, 'txtThuoc', vals['full_name'])
     _set_input_value(driver, 'txtTheTich', vals['the_tich'] if vals['the_tich'] > 0 else '')
     _set_input_value(driver, 'txtTocDo', vals['toc_do'])
     if vals['time_start']:
         _set_input_value(driver, 'txtThoiGian', vals['time_start'])
     if vals['time_end']:
         _set_input_value(driver, 'txtThoiGianKetThucTD', vals['time_end'])
-
     try:
         driver.execute_script("if (typeof onblurNhapText === 'function') onblurNhapText();")
     except Exception:
@@ -273,33 +291,28 @@ def _fill_form_dich_truyen_once(driver, med):
     except Exception:
         pass
 
-    return vals
 
 def _nhap_moi_1_dich_truyen(driver, wait, med, config_names):
+    """Thứ tự form dịch truyền mới của EMR:
+    1) Y lệnh (đúng giờ/ngày y lệnh lúc lấy dữ liệu) → EMR tự điền Bác sĩ.
+    2) Y tá (Đd) theo lịch ca.
+    3) Chọn thuốc: thuốc + dung dịch pha (nếu pha truyền).
+    4) Tên thuốc/dịch truyền, thể tích, tốc độ, thời gian → Thêm.
+    """
     str_start = (med.get('Time_Start_Str') or '').strip()
     ten_y_ta_chuan = get_nurse_by_shift(str_start, config_names)
 
     for attempt in range(1, 3):
         try:
-            # Điền thuốc/dịch truyền trước để kích hoạt form.
-            vals = _fill_form_dich_truyen_once(driver, med)
-            time.sleep(0.3)
+            yl_ok, yl_desc = chon_y_lenh(
+                driver, med.get('Gio_Y_Lenh', ''), med.get('Ngay_Y_Lenh', ''),
+                med.get('Bac_Si', ''), str_start,
+            )
+            if not yl_ok:
+                _log(f"      [!] BỎ QUA: '{med.get('Full_Name','')}' — {yl_desc}")
+                return False
+            _log(f"      [i] Chọn y lệnh: {yl_desc}")
 
-            # Chờ Select2 cbbBacSi sẵn sàng
-            try:
-                WebDriverWait(driver, 8).until(
-                    EC.presence_of_element_located((By.ID, "select2-cbbBacSi-container"))
-                )
-                time.sleep(0.3)  # chờ Select2 init xong hoàn toàn
-            except Exception:
-                pass
-
-            if med.get('Bac_Si'):
-                bs_ok = chon_select2_bac_si_y_ta(driver, "cbbBacSi", med['Bac_Si'])
-                if not bs_ok:
-                    raise Exception(f"Không chọn được bác sĩ đúng tên: {med.get('Bac_Si')}")
-
-            # Chờ cbbYTa sẵn sàng
             try:
                 WebDriverWait(driver, 8).until(
                     EC.presence_of_element_located((By.ID, "select2-cbbYTa-container"))
@@ -307,25 +320,12 @@ def _nhap_moi_1_dich_truyen(driver, wait, med, config_names):
                 time.sleep(0.2)
             except Exception:
                 pass
-
             yta_ok = chon_select2_bac_si_y_ta(driver, "cbbYTa", ten_y_ta_chuan)
             if not yta_ok:
                 raise Exception(f"Không chọn được điều dưỡng đúng tên: {ten_y_ta_chuan}")
 
-            # Sau khi chọn nhân sự, ép lại thuốc + các ô bắt buộc phòng trường hợp UI tự refresh.
-            if not _force_drug_required_fields(driver, vals['full_name'], med.get('Search_Name', '')):
-                raise Exception("cbbThuoc không còn value thật trước khi lưu")
-            _set_input_value(driver, 'txtThuoc', vals['full_name'])
-            try:
-                _set_input_value(driver, 'txtSoLo', med.get('So_Lo', ''))
-            except Exception:
-                pass
-            _set_input_value(driver, 'txtTheTich', vals['the_tich'] if vals['the_tich'] > 0 else '')
-            _set_input_value(driver, 'txtTocDo', vals['toc_do'])
-            if vals['time_start']:
-                _set_input_value(driver, 'txtThoiGian', vals['time_start'])
-            if vals['time_end']:
-                _set_input_value(driver, 'txtThoiGianKetThucTD', vals['time_end'])
+            vals = _fill_form_dich_truyen_once(driver, med)
+            time.sleep(0.3)
 
             btn_them = wait.until(EC.presence_of_element_located((By.ID, 'btnThem')))
             try:
@@ -338,10 +338,10 @@ def _nhap_moi_1_dich_truyen(driver, wait, med, config_names):
             if had_popup:
                 msg_l = (popup_msg or '').lower()
                 if attempt == 1 and any(k in msg_l for k in ['chưa nhập', 'cảnh báo', 'thể tích', 'tốc độ', 'thời gian', 'tên dịch']):
-                    vals = _fill_form_dich_truyen_once(driver, med)
                     if not vals.get('the_tich'):
                         _log(f"      [!] BỎ QUA: '{med.get('Full_Name','')}' thiếu thể tích/dữ liệu bắt buộc (popup: {popup_msg or 'Cảnh báo'}). [BS: {med.get('Bac_Si','?')} | DD: {ten_y_ta_chuan or '?'}]")
                         return False
+                    _set_values_after_drug(driver, vals)
                     try:
                         btn_them = driver.find_element(By.ID, 'btnThem')
                         try:

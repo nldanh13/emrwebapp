@@ -29,9 +29,10 @@ def _norm_med_key(s: str) -> str:
     # giữ lại chữ/số và một số ký tự thường gặp trong tên thuốc
     s = re.sub(r"[^0-9a-zA-Z+/% .-]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
-    # chuẩn hoá dấu +
-    s = re.sub(r"\s*\+\s*", "+", s)
-    return s
+    # chuẩn hoá dấu + và không phụ thuộc thứ tự thuốc/dịch pha: bảng EMR mới
+    # liệt kê theo thứ tự chọn (thuốc trước, dịch pha sau), bản cũ có thể ngược lại.
+    parts = [x.strip() for x in s.split("+") if x.strip()]
+    return "+".join(sorted(parts))
 
 def _norm_med_base(s: str) -> str:
     """Lay loi ten thuoc de so khop mem khi EMR doi ham luong."""
@@ -272,18 +273,29 @@ def lay_danh_sach_chi_tiet_all_pages(driver, wait):
         except Exception:
             rows = []
 
+        # Form mới: 1 lượt truyền thuốc pha chiếm nhiều dòng — dòng chính (đủ cột,
+        # rowspan) chứa thuốc đầu tiên; mỗi dòng phụ ngay sau chỉ có [Tên, Số lô]
+        # của dung dịch pha. Gộp tên lại thành "Thuốc + Dịch pha" để so khớp.
+        groups = []
         for row in rows:
             try:
                 tds = row.find_elements(By.TAG_NAME, "td")
-                if len(tds) < 12:
-                    continue
+            except Exception:
+                continue
+            if len(tds) >= 12:
+                groups.append((row, tds, []))
+            elif groups and 1 <= len(tds) <= 3:
+                extra = (tds[0].text or "").strip()
+                if extra:
+                    groups[-1][2].append(extra)
 
-                # Cấu trúc cột hiện tại của bảng "Phiếu theo dõi truyền dịch"
-                # (EMR đã thêm cột "Ngày tháng" ở đầu, đẩy các cột sau lùi 1):
+        for row, tds, extra_names in groups:
+            try:
+                # Cấu trúc cột hiện tại của bảng "Phiếu theo dõi truyền dịch":
                 # [0]checkbox [1]Ngày tháng [2]Tên dịch truyền [3]Thể tích
                 # [4]Lô/Số sản xuất [5]Tốc độ [6]Bắt đầu [7]Kết thúc
-                # [8]Bác sĩ chỉ định [9]Y tá thực hiện [10]Y lệnh [11]Thao tác
-                ten_raw = (tds[2].text or "")
+                # [8]Bác sĩ chỉ định [9]Y tá thực hiện [10]Y lệnh [11]Ghi chú [12]Thao tác
+                ten_raw = " + ".join([x for x in [(tds[2].text or "").strip()] + extra_names if x])
 
                 ten_web = _norm_text(ten_raw)
                 ten_key = _norm_med_key(ten_raw)
@@ -319,7 +331,7 @@ def lay_danh_sach_chi_tiet_all_pages(driver, wait):
                     rec_id = ""
                 if not rec_id:
                     try:
-                        btn_xoa = tds[11].find_element(By.XPATH, ".//a[contains(text(), 'Xóa')]")
+                        btn_xoa = row.find_element(By.XPATH, ".//a[contains(text(), 'Xóa')]")
                         onclick_attr = btn_xoa.get_attribute("onclick") or ""
                         match = re.search(r"Xoa\(\"(.+?)\"\)", onclick_attr)
                         rec_id = match.group(1) if match else ""
@@ -341,7 +353,7 @@ def lay_danh_sach_chi_tiet_all_pages(driver, wait):
 
                     "y_ta": y_ta,
                     "y_ta_key": y_ta_key,
-
+                    "y_lenh": (tds[10].text or "").strip() if len(tds) > 10 else "",
                 }
                 records.setdefault(key, []).append(info)
             except Exception:

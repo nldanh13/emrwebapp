@@ -804,3 +804,115 @@ def _select2_selected_text(driver, container_id):
         return txt.strip()
     except Exception:
         return ""
+
+
+# ── Y lệnh (cbbYLenh) ─────────────────────────────────────────────────────────
+# Form dịch truyền mới bắt chọn Y lệnh TRƯỚC: chọn đúng y lệnh thì EMR tự điền
+# Bác sĩ và chỉ còn các thuốc của y lệnh đó trong ô "Chọn thuốc".
+
+def _parse_y_lenh_dt(text):
+    from datetime import datetime as _dt
+    m = re.search(r'(\d{1,2}):(\d{2})\s+(\d{1,2})/(\d{1,2})/(\d{4})', str(text or ''))
+    if not m:
+        return None
+    try:
+        return _dt(int(m.group(5)), int(m.group(4)), int(m.group(3)), int(m.group(1)), int(m.group(2)))
+    except ValueError:
+        return None
+
+
+def chon_y_lenh_phu_hop(rows, gio_y_lenh, ngay_y_lenh, bac_si='', time_start=''):
+    """Chọn index dòng y lệnh khớp nhất; None nếu không có dòng nào đủ tin cậy.
+
+    ``rows``: list (``"HH:MM dd/mm/yyyy"``, tên bác sĩ) đọc từ dropdown.
+    Ưu tiên: đúng giờ + đúng ngày y lệnh lúc lấy dữ liệu → đúng giờ, lệch
+    ≤ 1 ngày → (không có giờ y lệnh) y lệnh gần nhất trước giờ truyền cùng ngày.
+    Khi nhiều dòng cùng hạng, dòng đúng bác sĩ được ưu tiên.
+    """
+    parsed = [(i, _parse_y_lenh_dt(t), str(doc or '')) for i, (t, doc) in enumerate(rows or [])]
+    parsed = [(i, dt, doc) for i, dt, doc in parsed if dt is not None]
+    bs_key = _norm_staff_key(bac_si)
+
+    def _doc_ok(doc):
+        k = _norm_staff_key(doc)
+        return bool(bs_key and k and (k == bs_key or bs_key in k or k in bs_key))
+
+    def _best(cands):
+        if not cands:
+            return None
+        cands.sort(key=lambda c: (not _doc_ok(c[2]), c[3]))
+        return cands[0][0]
+
+    m = re.search(r'(\d{1,2}):(\d{2})', str(gio_y_lenh or ''))
+    want_hm = (int(m.group(1)), int(m.group(2))) if m else None
+    ngay_dt = _parse_y_lenh_dt(f"00:00 {ngay_y_lenh}") if ngay_y_lenh else None
+
+    if want_hm:
+        same_time = [(i, dt, doc) for i, dt, doc in parsed if (dt.hour, dt.minute) == want_hm]
+        if ngay_dt is not None:
+            exact = [(i, dt, doc, 0) for i, dt, doc in same_time if dt.date() == ngay_dt.date()]
+            got = _best(exact)
+            if got is not None:
+                return got
+            near = [(i, dt, doc, abs((dt.date() - ngay_dt.date()).days)) for i, dt, doc in same_time]
+            got = _best([c for c in near if c[3] <= 1])
+            if got is not None:
+                return got
+        else:
+            got = _best([(i, dt, doc, 0) for i, dt, doc in same_time])
+            if got is not None:
+                return got
+        return None
+
+    start_dt = _parse_y_lenh_dt(time_start)
+    if start_dt is None:
+        return None
+    before = [
+        (i, dt, doc, (start_dt - dt).total_seconds())
+        for i, dt, doc in parsed
+        if dt <= start_dt and (ngay_dt is None or dt.date() == ngay_dt.date())
+    ]
+    return _best(before)
+
+
+def _read_y_lenh_rows(driver):
+    """Mở dropdown cbbYLenh, trả list (li, "HH:MM dd/mm/yyyy", bác sĩ)."""
+    driver.execute_script(
+        "var el=document.getElementById('cbbYLenh'); if(el && window.jQuery){ $(el).select2('open'); }"
+    )
+    WebDriverWait(driver, 8).until(
+        EC.visibility_of_element_located((By.ID, "select2-cbbYLenh-results"))
+    )
+    time.sleep(0.4)
+    out = []
+    for li in driver.find_elements(By.CSS_SELECTOR, "#select2-cbbYLenh-results li.select2-results__option"):
+        tds = li.find_elements(By.TAG_NAME, "td")
+        if len(tds) < 2:
+            continue  # dòng tiêu đề (th)
+        out.append((li, (tds[0].text or '').strip(), (tds[1].text or '').strip()))
+    return out
+
+
+def chon_y_lenh(driver, gio_y_lenh, ngay_y_lenh, bac_si='', time_start=''):
+    """Chọn đúng y lệnh trong cbbYLenh. Trả (ok, mô tả dòng đã chọn/lý do)."""
+    try:
+        rows = _read_y_lenh_rows(driver)
+    except Exception as e:
+        return False, f"không mở được ô Y lệnh: {e}"
+    idx = chon_y_lenh_phu_hop([(t, d) for _li, t, d in rows], gio_y_lenh, ngay_y_lenh, bac_si, time_start)
+    if idx is None:
+        seen = '; '.join(f"{t} {d}" for _li, t, d in rows[:6])
+        try:
+            driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+        except Exception:
+            pass
+        want = f"{gio_y_lenh or '?'} {ngay_y_lenh or ''}".strip()
+        return False, f"không thấy y lệnh {want} ({bac_si or 'BS ?'}); danh sách: {seen}"
+    li, t, d = rows[idx]
+    try:
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", li)
+        ActionChains(driver).move_to_element(li).pause(0.05).click(li).perform()
+    except Exception:
+        _safe_js_click(driver, li)
+    time.sleep(0.8)
+    return True, f"{t} {d}"
