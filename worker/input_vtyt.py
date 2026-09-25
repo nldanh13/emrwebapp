@@ -45,6 +45,38 @@ from result_schema import build_worker_result, write_worker_result
 from vtyt_rules import build_vtyt_jobs
 
 TASK_NAME = "input_vtyt"
+
+# Danh mục VTYT dò trên EMR gần nhất (vtyt_emr_catalog.json cạnh file dữ liệu,
+# do nút "Dò danh mục VTYT trên EMR" tạo). None = chưa dò → không chặn.
+_EMR_CATALOG_CODES: Optional[set] = None
+
+
+def load_emr_catalog_codes(path: str) -> Optional[set]:
+    data = _read_json(path, None)
+    if not isinstance(data, Mapping) or data.get("status") != "ok":
+        return None
+    codes = {str(c or "").strip().upper() for c in (data.get("codes") or []) if str(c or "").strip()}
+    return codes or None
+
+
+def check_supplies_against_emr(supplies: List[Mapping[str, Any]], emr_codes: Optional[set]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Trước khi nhập: tách vật tư có trong danh mục EMR (lần dò gần nhất) và
+    vật tư không thấy (không nhập mù). Chưa dò danh mục → giữ nguyên."""
+    if not emr_codes:
+        return [dict(x) for x in supplies], []
+    ok, missing = [], []
+    for item in supplies:
+        code = str(item.get("code") or "").strip().upper()
+        if code and code in emr_codes:
+            ok.append(dict(item))
+        else:
+            missing.append(dict(item))
+    return ok, missing
+
+
+def summarize_supplies(supplies: List[Mapping[str, Any]]) -> str:
+    parts = [f"{x.get('name') or x.get('key')} x{_format_qty(x.get('required_quantity') or 0)}" for x in supplies]
+    return f"{len(parts)} loại: " + "; ".join(parts) if parts else "0 loại"
 DEFAULT_WPID = "danhsachdieutrinoitrudraw"
 
 
@@ -162,6 +194,7 @@ def _filter_incremental_jobs(jobs: List[Dict[str, Any]], previous_result: Mappin
         old_qty = prev_plan.get(key) or {}
         new_supplies = []
         unchanged = []
+        supplies = job.get("supplies") or []
         for item in supplies:
             if not isinstance(item, Mapping):
                 continue
@@ -1143,6 +1176,18 @@ def _input_one_job(driver: Any, wait: Any, config: Mapping[str, Any], job: Mappi
     added = []
     skipped_review = []
     already_enough = []
+    # Kiểm tra trước khi nhập: có bao nhiêu loại VTYT, loại nào không có trên EMR.
+    _log(f"   [VTYT][KIỂM TRA] Sẽ nhập {summarize_supplies(supplies)}")
+    supplies, not_on_emr = check_supplies_against_emr(supplies, _EMR_CATALOG_CODES)
+    for item in not_on_emr:
+        _log(f"   [VTYT][KIỂM TRA] Bỏ qua '{item.get('name') or item.get('key')}': không có trong danh mục VTYT dò trên EMR.")
+        skipped_review.append({
+            "key": item.get("key"),
+            "code": item.get("code"),
+            "name": item.get("name"),
+            "quantity": item.get("required_quantity"),
+            "reasons": ["Không có trong danh mục VTYT dò trên EMR gần nhất; kiểm tra mã ở Danh mục VTYT."],
+        })
     current_supply_map = _current_supply_quantity_map(preview)
     allow_review_items = os.getenv("VTYT_ALLOW_REVIEW_ITEMS", "").strip().lower() in ("1", "true", "yes", "y")
     for item in supplies:
@@ -1255,7 +1300,14 @@ def main(argv: List[str]) -> int:
         else:
             full_jobs = build_vtyt_jobs(processed, targets if isinstance(targets, Mapping) else {})
     else:
-        full_jobs = build_vtyt_jobs(processed, targets if isinstance(targets, Mapping) else {})
+        # Bệnh phòng: chỉ VTYT phát sinh theo thủ thuật/chăm sóc + VTYT lẻ chọn tay.
+        full_jobs = build_vtyt_jobs(processed, targets if isinstance(targets, Mapping) else {}, procedure_only=True)
+    global _EMR_CATALOG_CODES
+    _EMR_CATALOG_CODES = load_emr_catalog_codes(os.path.join(os.path.dirname(os.path.abspath(processed_path)), "vtyt_emr_catalog.json"))
+    if _EMR_CATALOG_CODES:
+        _log(f"[VTYT] Đối chiếu với danh mục dò trên EMR: {len(_EMR_CATALOG_CODES)} mã.")
+    else:
+        _log("[VTYT][CẢNH BÁO] Chưa dò danh mục VTYT trên EMR — không đối chiếu được mã trước khi nhập.")
     plan_cache_path = os.path.join(os.path.dirname(os.path.abspath(processed_path)), "vtyt_input_plan_cache.json")
     previous_result = _read_json(plan_cache_path, {})
     force_full = bool(isinstance(targets, Mapping) and targets.get("forceFullVtyt")) or os.getenv("VTYT_FORCE_FULL_REINPUT", "").strip().lower() in ("1", "true", "yes", "y")

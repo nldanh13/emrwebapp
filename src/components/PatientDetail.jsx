@@ -8,6 +8,7 @@ import InfusionEditPanel from './patient/InfusionEditPanel.jsx';
 import PatientLogModal from './patient/PatientLogModal.jsx';
 import { getPatientNotices, PatientNoticePills } from './patientStatusNotice.jsx';
 import { isDischargePrintPatientOnDates } from '../utils/dischargePrint.js';
+import { wardVtytItems, manualVtytKey } from '../utils/patientScope.js';
 
 
 function getWardAdmissionTime(patient, activeDay = {}) {
@@ -232,11 +233,69 @@ function ActionCluster({ label, children, tone = 'default' }) {
   );
 }
 
+// Ô chọn VTYT lẻ (từ danh mục VTYT) cho ngày đang xem; nhập cùng lượt VTYT.
+function VtytLePicker({ busy, onPicksChange }) {
+  const [catalog, setCatalog] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [key, setKey] = useState('');
+  const [qty, setQty] = useState('1');
+  const [picks, setPicks] = useState([]);
+
+  useEffect(() => { onPicksChange?.(picks); }, [picks, onPicksChange]);
+  useEffect(() => {
+    if (!open || catalog.length) return;
+    api.getVtytCatalog()
+      .then(r => setCatalog((r.items || []).filter(i => !i.disabled)))
+      .catch(() => setCatalog([]));
+  }, [open, catalog.length]);
+
+  const nameOf = k => catalog.find(i => i.key === k)?.name || k;
+  const add = () => {
+    const n = Number(String(qty).replace(',', '.'));
+    if (!key || !(n > 0)) return;
+    setPicks(prev => {
+      const rest = prev.filter(p => p.key !== key);
+      const cur = prev.find(p => p.key === key);
+      return [...rest, { key, qty: (cur?.qty || 0) + n }];
+    });
+    setKey(''); setQty('1');
+  };
+
+  if (!open) {
+    return (
+      <Btn variant="default" disabled={busy} style={{ padding: '5px 9px', fontSize: 11, minHeight: 28 }}
+        title="Chọn thêm VTYT lẻ từ danh mục VTYT để nhập cùng lượt" onClick={() => setOpen(true)}>
+        + VTYT lẻ{picks.length ? ` (${picks.length})` : ''}
+      </Btn>
+    );
+  }
+  return (
+    <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+      <select value={key} onChange={e => setKey(e.target.value)} disabled={busy}
+        style={{ fontSize: 11, padding: '4px 6px', maxWidth: 220 }}>
+        <option value="">— Chọn VTYT —</option>
+        {catalog.map(i => <option key={i.key} value={i.key}>{i.name}{i.code ? '' : ' (chưa có mã)'}</option>)}
+      </select>
+      <input value={qty} onChange={e => setQty(e.target.value)} disabled={busy} inputMode="decimal"
+        style={{ width: 44, fontSize: 11, padding: '4px 6px' }} aria-label="Số lượng" />
+      <Btn variant="default" disabled={busy || !key} style={{ padding: '4px 8px', fontSize: 11 }} onClick={add}>Thêm</Btn>
+      {picks.map(p => (
+        <span key={p.key} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: C.surface2, border: `1px solid ${C.border2}` }}>
+          {nameOf(p.key)} ×{p.qty}{' '}
+          <a href="#" onClick={e => { e.preventDefault(); setPicks(prev => prev.filter(x => x.key !== p.key)); }} aria-label="Bỏ">×</a>
+        </span>
+      ))}
+      <a href="#" style={{ fontSize: 11 }} onClick={e => { e.preventDefault(); setOpen(false); }}>Đóng</a>
+    </span>
+  );
+}
+
 function PatientActions({ patient, activeDate, availableDates, activeHasInfusion, activeHasProcedure, activeHasVtyt, activeInfusionIncomplete, hasInfusionAny, hasProcedureAny, hasVtytAny, infusionTotal, procedureTotal, vtytTotal, onInputCare, onInputInfusion, onInputProcedure, onInputVtyt, onRefreshDetails, onPrintDischargeBundle, onGotoMeds, onViewLog, running }) {
   const hasManyDays = availableDates.length > 1;
   const smallBtn = { padding: '5px 9px', fontSize: 11, whiteSpace: 'nowrap', minHeight: 28 };
   const busy = !!running;
   const dayText = activeDate || '—';
+  const [vtytPicks, setVtytPicks] = useState([]);
   const careDay = patient?.day_map?.[activeDate]
     || (String(patient?.ngay_lam || '').trim() === String(activeDate || '').trim() ? patient : {});
   const canPrintDischarge = Boolean(activeDate && isDischargePrintPatientOnDates(patient, [activeDate]));
@@ -327,15 +386,21 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
           </ActionCluster>
         )}
 
-        {(activeHasVtyt || (hasVtytAny && hasManyDays)) && (
+        {activeDate && (
           <ActionCluster label="VTYT">
-            {activeHasVtyt && (
-              <Btn variant="default" disabled={busy || !activeDate} style={smallBtn} title={`Chỉ nhập khi có phẫu thuật (băng thun/băng dính theo vị trí) hoặc thay kim luồn (combo kim luồn) ngày ${dayText}`} onClick={() => onInputVtyt?.([patient], activeDate)}>
-                {running === 'check-vtyt' ? <><Spinner size={10} /> Kiểm tra YL</> : (running === 'vtyt' ? <><Spinner size={10} /> Đang nhập</> : 'Kiểm tra / Nhập')}
+            <VtytLePicker
+              key={`${patient?.ma_bn || patient?.id}-${activeDate}`}
+              busy={busy}
+              onPicksChange={setVtytPicks}
+            />
+            {(activeHasVtyt || vtytPicks.length > 0) && (
+              <Btn variant="default" disabled={busy || !activeDate} style={smallBtn} title={`Nhập VTYT theo thủ thuật (thay băng: Urgotile/băng thun theo vị trí; kim luồn...)${vtytPicks.length ? ' + VTYT lẻ đã chọn' : ''} ngày ${dayText}`}
+                onClick={() => onInputVtyt?.([patient], activeDate, vtytPicks.length ? { manualVtyt: { [manualVtytKey(patient?.ma_bn || patient?.id, activeDate)]: vtytPicks } } : {})}>
+                {running === 'check-vtyt' ? <><Spinner size={10} /> Kiểm tra YL</> : (running === 'vtyt' ? <><Spinner size={10} /> Đang nhập</> : (vtytPicks.length ? `Kiểm tra / Nhập (+${vtytPicks.length} lẻ)` : 'Kiểm tra / Nhập'))}
               </Btn>
             )}
             {hasVtytAny && hasManyDays && (
-              <Btn variant="default" disabled={busy} style={smallBtn} title="Kiểm tra/nhập VTYT theo quy tắc cho tất cả ngày của bệnh nhân đang chọn" onClick={() => onInputVtyt?.([patient], null)}>
+              <Btn variant="default" disabled={busy} style={smallBtn} title="Kiểm tra/nhập VTYT theo thủ thuật cho tất cả ngày của bệnh nhân đang chọn" onClick={() => onInputVtyt?.([patient], null)}>
                 VTYT tất cả ({vtytTotal || availableDates.length})
               </Btn>
             )}
@@ -411,7 +476,7 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
   const activeDay = getActiveDay(p, activeDate, availableDates);
   const activeHasInfusion = Boolean(activeDay?.has_infusion || activeDay?.has_inf || activeDay?.infus_done);
   const activeHasProcedure = Boolean(activeDay?.has_procedure || activeDay?.procedure_done);
-  const activeHasVtyt = Boolean(activeDay?.vtyt?.items?.length);
+  const activeHasVtyt = wardVtytItems(activeDay).length > 0;
   const hasInfusionAny = Boolean(p.has_infusion_any || p.has_inf || p.has_infusion || p.infus_done);
   const hasProcedureAny = Boolean(p.has_procedure || p.procedure_done);
   const hasVtytAny = Boolean(p.has_vtyt || p.vtyt_done);

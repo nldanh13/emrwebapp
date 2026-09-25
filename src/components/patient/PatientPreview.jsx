@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { C, FONT_MONO } from '../../tokens.js';
 import { Badge } from '../shared.jsx';
 import { normalizeGio, parseCheDoAn } from './patientDetailUtils.js';
+import { wardVtytItems } from '../../utils/patientScope.js';
 
 function SectionHead({ children }) {
   return (
@@ -285,7 +286,8 @@ export default function PatientPreview({ patientDay }) {
   const preview = patientDay?.preview || {};
   const careItems = preview.care || [];
   const infusionItems = preview.infusions || [];
-  const vtytItems = patientDay?.vtyt?.items || [];
+  // Bệnh phòng chỉ nhập VTYT theo thủ thuật (xem wardVtytItems, utils/patientScope.js).
+  const vtytItems = wardVtytItems(patientDay);
   const vtytWarnings = patientDay?.vtyt?.warnings || [];
 
   return (

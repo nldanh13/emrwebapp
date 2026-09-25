@@ -93,7 +93,7 @@ function shouldInputDate(item, date, taskType = '', options = {}) {
     // Quy tắc VTYT (phẫu thuật -> băng thun/băng dính theo vị trí, thay kim luồn ->
     // combo kim luồn...) đã tính sẵn ở day.vtyt.items khi "Xử lý & phân loại". Chỉ
     // đưa vào phạm vi nhập những BN/ngày thật sự có VTYT cần nhập theo quy tắc đó.
-    const hasExpectedVtyt = Boolean(day.vtyt?.items?.length);
+    const hasExpectedVtyt = wardVtytItems(day).length > 0;
     if (!hasExpectedVtyt && !(includeDone && day.vtyt_done)) return false;
     if (includeDone) return true;
     return !(day.vtyt_done && !day.vtyt_stale);
@@ -102,6 +102,13 @@ function shouldInputDate(item, date, taskType = '', options = {}) {
 }
 
 
+
+// Bản sao nhỏ của wardVtytItems (utils/patientScope.js): file này được nạp
+// độc lập trong test nên không import chéo.
+function wardVtytItems(day) {
+  const items = Array.isArray(day?.vtyt?.items) ? day.vtyt.items : [];
+  return items.filter(item => ['dvkt', 'interval', 'manual'].includes(String(item?.category || '')));
+}
 
 export function buildInputTargets(items = [], selectedDate = null, taskType = '', options = {}) {
   const arr = Array.isArray(items) ? items : [items];
