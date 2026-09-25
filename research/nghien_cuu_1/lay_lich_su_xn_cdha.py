@@ -63,6 +63,14 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup
+
+try:
+    # worker/ nằm trong PYTHONPATH khi server chạy script (server/services/python_runner.js).
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "worker"))
+    from log_redact import redact_log_line as _redact_log_line
+except Exception:  # pragma: no cover - thiếu module thì vẫn chạy, chỉ không che log
+    def _redact_log_line(msg):
+        return "" if msg is None else str(msg)
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -520,9 +528,9 @@ class ActionLogger:
             print(f"[LOG] Không mở được action_log.txt: {e}")
 
     def _write(self, level, msg):
-        touch_watchdog(f"{level.strip()} {str(msg)[:220]}")
+        touch_watchdog(f"{level.strip()} {_redact_log_line(str(msg)[:220])}")
         ts = datetime.now().strftime("%H:%M:%S")
-        line = f"[{ts}] {level:5s} {msg}"
+        line = f"[{ts}] {level:5s} {_redact_log_line(msg)}"
         print(line)
         if self._fh:
             try:

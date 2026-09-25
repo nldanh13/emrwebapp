@@ -128,3 +128,14 @@ def test_load_nurse_signature_rows_missing_accounts_file_returns_empty(monkeypat
     _patch_signatures_dir(monkeypatch, tmp_path)
     assert nurse_emr_accounts.load_nurse_signature_rows() == []
     assert nurse_emr_accounts.get_signature_for_nurse('Bất kỳ') is None
+
+
+def test_get_nurse_name_for_username_reverse_lookup(monkeypatch, tmp_path):
+    path = _patch_accounts_path(monkeypatch, tmp_path)
+    _write_accounts(path, [
+        {'name': 'Lê Ngọc Diệu', 'emr_username': 'dieu.emr', 'emr_password': 'secret1'},
+    ])
+
+    assert nurse_emr_accounts.get_nurse_name_for_username(' DIEU.emr ') == 'Lê Ngọc Diệu'
+    assert nurse_emr_accounts.get_nurse_name_for_username('khac.emr') == ''
+    assert nurse_emr_accounts.get_nurse_name_for_username('') == ''

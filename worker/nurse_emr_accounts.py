@@ -78,6 +78,17 @@ def get_emr_account_for_nurse(name: Any) -> Optional[Dict[str, str]]:
     return {'username': row['emr_username'], 'password': row['emr_password']}
 
 
+def get_nurse_name_for_username(username: Any) -> str:
+    """Tra ngược: tên điều dưỡng sở hữu tài khoản EMR `username` ('' nếu không có)."""
+    wanted = str(username or '').strip().lower()
+    if not wanted:
+        return ''
+    for row in load_nurse_emr_accounts().values():
+        if row['emr_username'].strip().lower() == wanted:
+            return row['name']
+    return ''
+
+
 @lru_cache(maxsize=1)
 def load_nurse_signature_rows() -> List[Dict[str, str]]:
     """Trả list các dòng đã cấu hình ảnh chữ ký: [{"name", "path"}].
