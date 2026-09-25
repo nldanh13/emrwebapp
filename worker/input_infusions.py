@@ -36,6 +36,7 @@ from input_infusions_utils import (
     _looks_like_tramadol_im,
 )
 from infusion_cleanup import (
+    same_time_diluent_variants,
     _compare_med_vs_web,
     _date_key_from_time_str,
     _delete_info_with_creator_switch,
@@ -229,6 +230,9 @@ def xu_ly_bn(
         ten_y_ta_chuan = get_nurse_by_shift(str_start, config_names)
 
         candidates = danh_sach_web.get(key, []) or []
+        # Cùng giờ, cùng thuốc nhưng bị ghép nhầm/thiếu dung dịch pha → bản sai.
+        _seen_ids = {c.get('id') for c in candidates}
+        candidates = candidates + [v for v in same_time_diluent_variants(danh_sach_web, med) if v.get('id') not in _seen_ids]
 
         if force_reinput and candidates:
             _log(f"      [↻] KIỂM TRA/SỬA LẠI: xóa bản hiện có để nhập lại đúng dữ liệu và số lô: {med.get('Full_Name')} ({str_start})")
