@@ -45,10 +45,12 @@ from xu_ly_merge import (
 
 try:
     from clinical_rules import apply_clinical_rules_to_record, extract_care_special_events, extract_admission_transfer_events
+    from clinical_rules import reconcile_receive_events_with_ward_history
 except Exception:
     apply_clinical_rules_to_record = None
     extract_care_special_events = None
     extract_admission_transfer_events = None
+    reconcile_receive_events_with_ward_history = None
 
 # ── Parser/processor đã tách module ─────────────────────────────────────────────
 from processing.diluent_resolver import infer_and_reclassify_diluents
@@ -829,6 +831,7 @@ def build_patient_day_records(data):
                 clean_text_for_entry=clean_text_for_entry,
                 extract_care_special_events=extract_care_special_events,
                 extract_admission_transfer_events=extract_admission_transfer_events,
+                reconcile_receive_events=reconcile_receive_events_with_ward_history,
             )
             new_p["raw_order_events"] = build_raw_order_events(
                 doc_content,
