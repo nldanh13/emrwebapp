@@ -134,7 +134,8 @@ const VALID_TAB_IDS = new Set(TABS.map(t => t.id));
 const DEFAULT_TAB_ID = TABS[0]?.id || 'acquire';
 // 'functions' (Bộ chức năng) was removed from the sidebar nav but the tab still exists,
 // reachable via TopBar's "Tìm chức năng" button and the feature-context banner's back button.
-const LEGACY_TAB_MAP = { data: 'acquire', process: 'acquire', overview: DEFAULT_TAB_ID, connection: 'acquire', collected: 'acquire', quality: 'acquire', jobs: DEFAULT_TAB_ID, logs: DEFAULT_TAB_ID };
+// 'duty' (Nhập trực) đã gộp vào 'ward' (Nhập bệnh phòng).
+const LEGACY_TAB_MAP = { duty: 'ward', data: 'acquire', process: 'acquire', overview: DEFAULT_TAB_ID, connection: 'acquire', collected: 'acquire', quality: 'acquire', jobs: DEFAULT_TAB_ID, logs: DEFAULT_TAB_ID };
 
 function loadActiveTab() {
   try {
@@ -396,8 +397,7 @@ export default function App() {
             {tab === 'acquire'      && <DataProcessingTab toast={toast} workDateRange={workDateRange} />}
             {tab === 'research'     && <ResearchTab toast={toast} />}
             {tab === 'bed'          && <ShiftTab toast={toast} mode="bed" {...sharedDateProps} />}
-            {tab === 'ward'         && <ShiftTab toast={toast} mode="ward" workflowTitle="Điều dưỡng bệnh phòng" workflowHint="Nhập chăm sóc, dịch truyền và thủ thuật cho các ca không thuộc diện người trực trong ngày đã chọn." {...sharedDateProps} />}
-            {tab === 'duty'         && <ShiftTab toast={toast} mode="duty" workflowTitle="Điều dưỡng trực" workflowHint="Chỉ hiện người bệnh lần đầu vào khoa/chuyển khoa trong ngày trực theo quy tắc GMHS và giờ hành chánh." {...sharedDateProps} />}
+            {tab === 'ward'         && <ShiftTab toast={toast} mode="ward" workflowTitle="Điều dưỡng bệnh phòng" workflowHint="Nhập chăm sóc, dịch truyền và thủ thuật cho mọi người bệnh trong ngày đã chọn, gồm cả ca trực (mới vào khoa, chuyển khoa, về từ GMHS)." {...sharedDateProps} />}
             {tab === 'hchanh'       && <HchahnTab toast={toast} workDateRange={workDateRange} />}
             {tab === 'discharge-sign' && <DischargeSignTab toast={toast} />}
             {tab === 'records-check' && <RecordsCheckTab toast={toast} workDateRange={workDateRange} />}

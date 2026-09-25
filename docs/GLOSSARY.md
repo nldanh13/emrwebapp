@@ -37,8 +37,7 @@ Nhóm **Dữ liệu**
 Nhóm **Điều dưỡng**
 | Tab | Việc chính |
 | --- | --- |
-| **Nhập bệnh phòng** | Nhập **chăm sóc, dịch truyền, thủ thuật** cho bệnh nhân nội trú thường ngày — tab nhập chính, worker `input_care.py`/`input_infusions.py` chạy từ đây |
-| **Nhập trực** | Nhập cho **người bệnh mới nhận** hoặc **chuyển khoa** trong ca trực (khác luồng với Nhập bệnh phòng vì có mốc "nhận khoa" riêng) |
+| **Nhập bệnh phòng** | Nhập **chăm sóc, dịch truyền, thủ thuật** cho mọi người bệnh nội trú, gồm cả ca trực (mới nhận, chuyển khoa, về từ GMHS) — tab nhập chính, worker `input_care.py`/`input_infusions.py` chạy từ đây. Tab "Nhập trực" cũ đã gộp vào đây. |
 | **Lịch điều dưỡng** | Quản lý danh sách điều dưỡng (roster), xếp lịch **ca làm/ca trực** theo ngày, và (mới thêm) thiết lập **tài khoản EMR riêng** cho từng điều dưỡng |
 | **Báo cáo ca trực** | In phiếu bàn giao ca, bảng thuốc, danh sách tiêm truyền |
 
