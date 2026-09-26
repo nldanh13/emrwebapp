@@ -26,6 +26,7 @@ import argparse
 import json
 import os
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -48,26 +49,118 @@ def _json_out(path: str, payload: Dict[str, Any]) -> None:
     tmp.replace(p)
 
 
-def _image_aspect_ratio(img_path: str) -> float:
-    """Tỉ lệ rộng/cao của ảnh chữ ký gốc, dùng để giữ đúng tỉ lệ khi chèn."""
+def _prepared_signature_png(img_path: str) -> Tuple[bytes, float]:
+    """Ảnh chữ ký đã chuẩn hoá (PNG nền trong suốt, nét đậm/dày) và tỉ lệ rộng/cao."""
+    pix = fitz.Pixmap(img_path)
+    if pix.colorspace is None or pix.colorspace.n != 3:
+        pix = fitz.Pixmap(fitz.csRGB, pix)
+    while pix.width > _SIG_MAX_WIDTH_PX:
+        pix.shrink(1)
+    w, h, n = pix.width, pix.height, pix.n
+    src = pix.samples
+    has_alpha = n == 4
+
+    dark = bytearray(w * h)
+    sum_r = sum_g = sum_b = cnt = 0
+    for i in range(w * h):
+        o = i * n
+        r, g, b = src[o], src[o + 1], src[o + 2]
+        a = src[o + 3] if has_alpha else 255
+        lum = (r * 299 + g * 587 + b * 114) // 1000
+        d = ((255 - lum) * a) // 255  # độ tối sau khi đặt lên nền trắng
+        dark[i] = d
+        if d > 100:
+            sum_r += r; sum_g += g; sum_b += b; cnt += 1
+    if cnt:
+        ink = (int(sum_r / cnt * _INK_DARKEN), int(sum_g / cnt * _INK_DARKEN), int(sum_b / cnt * _INK_DARKEN))
+    else:
+        ink = (0, 0, 0)
+
+    # Làm dày nét (ảnh sẽ bị thu rất nhỏ trên phiếu): lấy độ tối lớn nhất trong
+    # cửa sổ bán kính r quanh mỗi điểm, lọc theo hàng rồi theo cột cho nhanh.
+    r = max(1, h // _STROKE_RATIO)
+    rows = bytearray(w * h)
+    for y in range(h):
+        base = y * w
+        for x in range(w):
+            rows[base + x] = max(dark[base + max(0, x - r):base + min(w, x + r + 1)])
+    thick = bytearray(w * h)
+    for x in range(w):
+        col = rows[x::w]
+        for y in range(h):
+            thick[y * w + x] = max(col[max(0, y - r):min(h, y + r + 1)])
+
+    # Độ đặc tính theo nét tối nhất của chính ảnh: chữ ký viết mực nhạt cũng thành nét đặc.
+    peak = max(thick) if thick else 0
+    span = max(peak - _BG_CUTOFF, 1)
+    out = bytearray(w * h * 4)
+    for i, d in enumerate(thick):
+        o = i * 4
+        out[o], out[o + 1], out[o + 2] = ink
+        out[o + 3] = 0 if d < _BG_CUTOFF else min(255, int((d - _BG_CUTOFF) * 255 * _ALPHA_GAIN / span))
+    prepared = fitz.Pixmap(fitz.csRGB, w, h, bytes(out), 1)
+    return prepared.tobytes("png"), (w / h if h else 2.2)
+
+
+def _match_groups(page: "fitz.Page", name: str) -> List[List["fitz.Rect"]]:
+    """Các lần xuất hiện của `name` trên trang, mỗi lần là danh sách vùng chữ.
+    Tên bị xuống dòng ("Trần Quỳnh Minh" / "Thư") được search_for() trả thành
+    nhiều vùng liên tiếp — gộp lại thành 1 lần xuất hiện để chỉ ký 1 lần."""
     try:
-        with fitz.open(img_path) as img_doc:
-            page = img_doc[0]
-            w, h = page.rect.width, page.rect.height
-            if w and h:
-                return w / h
+        quads = page.search_for(name, quads=True)
     except Exception:
-        pass
-    return 2.2  # fallback hợp lý cho chữ ký dạng nét ngang
+        return []
+    target = _norm_text(name)
+    groups: List[List["fitz.Rect"]] = []
+    buf: List["fitz.Rect"] = []
+    buf_text = ""
+    for q in quads:
+        rect = q.rect
+        part = _core_text(page, rect)
+        if not buf and target in part:
+            groups.append([rect])
+            continue
+        buf.append(rect)
+        buf_text = f"{buf_text} {part}".strip()
+        if target in _norm_text(buf_text) or len(buf) >= 4:
+            groups.append(buf)
+            buf, buf_text = [], ""
+    if buf:
+        groups.append(buf)
+    return groups
+
+
+def _core_text(page: "fitz.Page", rect: "fitz.Rect") -> str:
+    """Chữ nằm trong dải giữa của vùng — vùng tìm được thường chạm sát dòng
+    trên/dưới, đọc cả vùng sẽ dính chữ của dòng bên cạnh."""
+    if _is_vertical_quad(rect):
+        pad = rect.width * 0.3
+        core = fitz.Rect(rect.x0 + pad, rect.y0, rect.x1 - pad, rect.y1)
+    else:
+        pad = rect.height * 0.3
+        core = fitz.Rect(rect.x0, rect.y0 + pad, rect.x1, rect.y1 - pad)
+    return _norm_text(page.get_textbox(core))
+
+
+def _norm_text(value: str) -> str:
+    return " ".join(unicodedata.normalize("NFC", str(value or "")).split())
 
 
 # Khoảng cách (pt) giữa mép trên của chữ và mép dưới của ảnh chữ ký.
 _STAMP_GAP = 2.0
 # Hệ số phóng bề dày chữ ký so với bề dày dòng chữ, và biên trên/dưới (pt).
-_HORIZ_THICKNESS_FACTOR = 1.2
-_HORIZ_THICKNESS_MIN, _HORIZ_THICKNESS_MAX = 8.0, 26.0
-_VERT_THICKNESS_FACTOR = 1.35
-_VERT_THICKNESS_MIN, _VERT_THICKNESS_MAX = 8.0, 20.0
+_HORIZ_THICKNESS_FACTOR = 1.55
+_HORIZ_THICKNESS_MIN, _HORIZ_THICKNESS_MAX = 10.0, 32.0
+_VERT_THICKNESS_FACTOR = 1.75
+_VERT_THICKNESS_MIN, _VERT_THICKNESS_MAX = 10.0, 26.0
+
+# Ảnh chữ ký được chuẩn hoá trước khi chèn: thu nhỏ (ảnh chụp điện thoại rất
+# lớn làm PDF nặng), bỏ nền trắng, làm nét đậm và dày hơn.
+_SIG_MAX_WIDTH_PX = 480
+_INK_DARKEN = 0.3        # màu mực = màu trung bình của nét × hệ số này (gần đen hơn)
+_STROKE_RATIO = 45       # nét được làm dày thêm ~chiều cao ảnh / hệ số này mỗi bên
+_BG_CUTOFF = 30          # độ tối dưới mức này coi là nền giấy → trong suốt
+_ALPHA_GAIN = 1.8        # nét đạt ~55% độ tối đậm nhất của ảnh là đã đặc hoàn toàn
 
 
 def _is_vertical_quad(rect: "fitz.Rect") -> bool:
@@ -120,7 +213,12 @@ def sign_bundle(in_pdf: str, out_pdf: str) -> Dict[str, Any]:
     # Tên dài xử lý trước để không bị tên ngắn hơn "ăn theo" cùng vị trí
     # (trường hợp tên A là chuỗi con của tên B).
     sig_rows = sorted(sig_rows, key=lambda r: -len(r["name"]))
-    aspects = {row["name"]: _image_aspect_ratio(row["path"]) for row in sig_rows}
+    prepared: Dict[str, Tuple[bytes, float]] = {}
+    for row in sig_rows:
+        try:
+            prepared[row["name"]] = _prepared_signature_png(row["path"])
+        except Exception as e:
+            print(f"WARN [sign-discharge] Không xử lý được ảnh chữ ký của {row['name']}: {e}", file=sys.stderr)
 
     doc = fitz.open(in_pdf)
     stamped: List[Dict[str, Any]] = []
@@ -128,37 +226,41 @@ def sign_bundle(in_pdf: str, out_pdf: str) -> Dict[str, Any]:
     # chuỗi con của 1 tên khác đã cấu hình (xử lý tên dài trước nên vùng của
     # tên dài đã "chiếm chỗ" trước khi tên ngắn hơn được xét tới).
     claimed_rects: Dict[int, List["fitz.Rect"]] = {}
+    # Mỗi ảnh chữ ký chỉ nhúng 1 lần vào PDF; các chỗ ký sau dùng lại (xref).
+    image_xrefs: Dict[str, int] = {}
 
     for page in doc:
         page_claims = claimed_rects.setdefault(page.number, [])
         for row in sig_rows:
             name = row["name"]
-            img_path = row["path"]
-            try:
-                quads = page.search_for(name, quads=True)
-            except Exception:
+            if name not in prepared:
                 continue
-            for q in quads:
-                rect = q.rect
-                if any(_rects_overlap(rect, c) for c in page_claims):
+            png, aspect = prepared[name]
+            for group in _match_groups(page, name):
+                if any(_rects_overlap(r, c) for r in group for c in page_claims):
                     continue
-                page_claims.append(rect)
-                stamp_rect, rotated = _stamp_rect_for(rect, aspects[name])
+                page_claims.extend(group)
+                anchor = fitz.Rect(group[0])
+                for r in group[1:]:
+                    anchor |= r
+                if len(group) > 1 and not _is_vertical_quad(group[0]):
+                    # Tên xuống dòng: ký phía trên dòng đầu, căn giữa theo cả khối tên.
+                    anchor = fitz.Rect(anchor.x0, group[0].y0, anchor.x1, group[0].y1)
+                stamp_rect, rotated = _stamp_rect_for(anchor, aspect)
                 try:
-                    page.insert_image(
-                        stamp_rect,
-                        filename=img_path,
-                        rotate=90 if rotated else 0,
-                        keep_proportion=False,
-                        overlay=True,
-                    )
+                    if name in image_xrefs:
+                        page.insert_image(stamp_rect, xref=image_xrefs[name], rotate=90 if rotated else 0,
+                                          keep_proportion=False, overlay=True)
+                    else:
+                        image_xrefs[name] = page.insert_image(stamp_rect, stream=png, rotate=90 if rotated else 0,
+                                                              keep_proportion=False, overlay=True)
                 except Exception as e:
                     stamped.append({"page": page.number + 1, "name": name, "error": str(e)})
                     continue
                 stamped.append({"page": page.number + 1, "name": name})
 
     Path(out_pdf).parent.mkdir(parents=True, exist_ok=True)
-    doc.save(out_pdf)
+    doc.save(out_pdf, garbage=3, deflate=True)
     doc.close()
 
     ok_stamps = [s for s in stamped if not s.get("error")]

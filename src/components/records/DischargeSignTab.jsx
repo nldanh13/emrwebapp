@@ -5,7 +5,7 @@
 // Luôn tạo file mới (hậu tố _DA_KY.pdf), không đụng file gốc.
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { IconCheck, IconRefresh, IconUpload } from '@tabler/icons-react';
+import { IconCheck, IconRefresh, IconTrash, IconUpload } from '@tabler/icons-react';
 import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import * as api from '../../api.js';
@@ -54,6 +54,10 @@ export default function DischargeSignTab({ toast }) {
   const [signing, setSigning] = useState('');
   const [downloading, setDownloading] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [deleting, setDeleting] = useState('');
+  const [totalBytes, setTotalBytes] = useState(0);
+  const [cleanupDays, setCleanupDays] = useState(30);
+  const [cleaning, setCleaning] = useState(false);
   const uploadInputRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -61,6 +65,7 @@ export default function DischargeSignTab({ toast }) {
     try {
       const r = await api.listDischargeBundles();
       setBundles(Array.isArray(r.bundles) ? r.bundles : []);
+      setTotalBytes(Number(r.total_bytes) || 0);
     } catch (e) {
       toast?.(String(e.message || e), 'error');
     } finally {
@@ -104,6 +109,39 @@ export default function DischargeSignTab({ toast }) {
     }
   };
 
+  const handleDelete = async (b) => {
+    const label = b.ho_ten || b.file_name;
+    if (!window.confirm(`Xoá "${label}"${b.signed ? ' và bản đã ký' : ''}? Không khôi phục được.`)) return;
+    setDeleting(b.file_name);
+    try {
+      const r = await api.deleteDischargeBundle(b.file_name);
+      if (r.status !== 'ok') { toast?.(r.message || 'Không xoá được file.', 'error'); return; }
+      toast?.(`Đã xoá, giải phóng ${fmtBytes(r.freed_bytes)}.`, 'ok');
+      await load();
+    } catch (e) {
+      toast?.(String(e.message || e), 'error');
+    } finally {
+      setDeleting('');
+    }
+  };
+
+  const handleCleanup = async () => {
+    if (!window.confirm(`Xoá mọi bộ phiếu (kèm bản đã ký) cũ hơn ${cleanupDays} ngày? Không khôi phục được.`)) return;
+    setCleaning(true);
+    try {
+      const r = await api.cleanupDischargeBundles(cleanupDays);
+      if (r.status !== 'ok') { toast?.(r.message || 'Không dọn được file.', 'error'); return; }
+      toast?.(r.bundles
+        ? `Đã xoá ${r.bundles} bộ phiếu, giải phóng ${fmtBytes(r.freed_bytes)}.`
+        : `Không có bộ phiếu nào cũ hơn ${cleanupDays} ngày.`, r.bundles ? 'ok' : 'info');
+      await load();
+    } catch (e) {
+      toast?.(String(e.message || e), 'error');
+    } finally {
+      setCleaning(false);
+    }
+  };
+
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -140,6 +178,22 @@ export default function DischargeSignTab({ toast }) {
         </div>
         <input ref={uploadInputRef} type="file" accept="application/pdf,.pdf" onChange={handleUpload} hidden />
       </div>
+
+      {bundles.length > 0 && (
+        <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: FS.sm, color: C.text2 }}>
+          <span>{bundles.length} bộ phiếu, tổng {fmtBytes(totalBytes)}.</span>
+          <span style={{ marginLeft: 'auto' }}>Dọn file cũ hơn</span>
+          <select
+            value={cleanupDays}
+            onChange={e => setCleanupDays(Number(e.target.value))}
+            aria-label="Số ngày giữ file"
+            style={{ height: 30, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit', fontSize: FS.sm, padding: '0 6px' }}
+          >
+            {[7, 14, 30, 60, 90].map(d => <option key={d} value={d}>{d} ngày</option>)}
+          </select>
+          <Btn variant="danger" icon={IconTrash} loading={cleaning} disabled={cleaning} onClick={handleCleanup}>Dọn</Btn>
+        </div>
+      )}
 
       {loading ? (
         <div style={{ color: C.text2, display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -203,6 +257,16 @@ export default function DischargeSignTab({ toast }) {
                           {downloading === b.signed_file_name ? <Spinner size={10} /> : 'Tải bản đã ký'}
                         </Btn>
                       )}
+                      <Btn
+                        variant="danger"
+                        disabled={deleting === b.file_name}
+                        onClick={() => handleDelete(b)}
+                        aria-label={`Xoá ${b.ho_ten || b.file_name}`}
+                        title="Xoá file gốc và bản đã ký"
+                        style={{ fontSize: FS.xs, padding: '2px 8px' }}
+                      >
+                        {deleting === b.file_name ? <Spinner size={10} /> : <IconTrash size={14} stroke={1.9} aria-hidden="true" />}
+                      </Btn>
                     </div>
                   </td>
                 </tr>
