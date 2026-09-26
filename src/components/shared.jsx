@@ -26,9 +26,8 @@ export function Mono({ children, style = {} }) {
 export function SectionLabel({ children }) {
   return (
     <div style={{
-      fontSize: 10, fontWeight: 600, letterSpacing: '0.08em',
-      color: C.text3, padding: '8px 12px 4px',
-      textTransform: 'uppercase',
+      fontSize: FS.sm, fontWeight: 650,
+      color: C.text2, padding: '10px 12px 4px',
     }}>{children}</div>
   );
 }

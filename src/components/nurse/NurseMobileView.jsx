@@ -1,74 +1,52 @@
-import { C } from '../../tokens.js';
-import { Btn } from '../shared.jsx';
+import { IconCalendar, IconChevronDown, IconChevronUp, IconCopy, IconPlus, IconTemplate, IconTrash, IconUsers } from '@tabler/icons-react';
+import { C, FS } from '../../tokens.js';
+import { Btn, Spinner } from '../shared.jsx';
+import DateField from '../DateField.jsx';
 import {
   addDaysIso,
   formatDmy,
   getDaySchedule,
   weekdayLabelFromIso,
 } from './nurseScheduleUtils.js';
+import { SHIFT_META, ShiftBucket } from './ShiftToggle.jsx';
 
 function MobileNursePanel({ roster, newName, setNewName, onAddNurse, onRemoveNurse }) {
+  const remove = name => {
+    if (window.confirm(`Xoá ${name} khỏi danh sách? Tên cũng bị gỡ khỏi mọi ca đã phân công.`)) onRemoveNurse(name);
+  };
   return (
-    <div style={{ borderBottom: `1px solid ${C.border}`, flexShrink: 0, background: C.surface }}>
-      <div style={{ padding: '10px 12px', display: 'flex', gap: 6 }}>
+    <div style={{ borderBottom: `1px solid ${C.border}`, background: C.surface }}>
+      <form onSubmit={e => { e.preventDefault(); onAddNurse(); }} style={{ padding: '10px 12px', display: 'flex', gap: 6 }}>
         <input value={newName} onChange={e => setNewName(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && onAddNurse()}
-          placeholder="Tên điều dưỡng..."
-          style={{ flex: 1, background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 4, padding: '7px 10px', color: C.text, fontSize: 13, fontFamily: 'inherit', outline: 'none' }}
+          placeholder="Tên điều dưỡng" aria-label="Tên điều dưỡng mới"
+          style={{ flex: 1, minWidth: 0, height: 40, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: '0 10px', color: C.text, fontSize: FS.lg, fontFamily: 'inherit' }}
         />
-        <Btn variant="primary" onClick={onAddNurse} style={{ padding: '6px 14px', fontSize: 15 }}>+</Btn>
-      </div>
-      {roster.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '4px 12px 12px' }}>
+        <Btn type="submit" variant="primary" icon={IconPlus} disabled={!newName.trim()} style={{ minHeight: 40 }}>Thêm</Btn>
+      </form>
+      {roster.length > 0 ? (
+        <ul style={{ margin: 0, padding: '0 12px 8px', listStyle: 'none' }}>
           {roster.map(name => (
-            <div key={name} style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 10px',
-            }}>
-              <span style={{ fontSize: 13, color: C.text }}>{name}</span>
-              <button type="button" onClick={() => onRemoveNurse(name)} style={{ background: 'none', border: 'none', color: C.text3, cursor: 'pointer', fontSize: 14, padding: '0 2px' }}>✕</button>
-            </div>
+            <li key={name} style={{ display: 'flex', alignItems: 'center', gap: 6, borderTop: `1px solid ${C.border2}`, minHeight: 44 }}>
+              <span style={{ flex: 1, fontSize: FS.lg, color: C.text }}>{name}</span>
+              <button type="button" className="emr-icon-btn emr-icon-btn--danger" onClick={() => remove(name)} aria-label={`Xoá ${name}`}>
+                <IconTrash size={17} stroke={1.75} />
+              </button>
+            </li>
           ))}
-        </div>
-      )}
-      {roster.length === 0 && <div style={{ padding: '4px 12px 12px', fontSize: 12, color: C.text3 }}>Chưa có điều dưỡng</div>}
+        </ul>
+      ) : <div style={{ padding: '0 12px 12px', fontSize: FS.sm, color: C.text2 }}>Chưa có điều dưỡng.</div>}
+      <div style={{ padding: '0 12px 12px', fontSize: FS.xs, color: C.text2 }}>Tài khoản EMR và chữ ký chỉnh trên máy tính.</div>
     </div>
   );
 }
 
 function MobileDatePicker({ dateRange, setDateRange, onApplyRange }) {
   return (
-    <div style={{ padding: '10px 12px', borderBottom: `1px solid ${C.border2}`, display: 'grid', gap: 6, flexShrink: 0, background: C.surface }}>
-      <input type="date" value={dateRange.from}
-        onChange={e => setDateRange(v => ({ ...v, from: e.target.value }))}
-        style={{ background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 4, padding: '6px 8px', color: C.text, fontSize: 13, fontFamily: 'inherit', outline: 'none' }}
-      />
-      <input type="date" value={dateRange.to}
-        onChange={e => setDateRange(v => ({ ...v, to: e.target.value }))}
-        style={{ background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 4, padding: '6px 8px', color: C.text, fontSize: 13, fontFamily: 'inherit', outline: 'none' }}
-      />
-      <Btn variant="default" onClick={onApplyRange} style={{ justifyContent: 'center', fontSize: 13 }}>Hiển thị</Btn>
+    <div style={{ padding: '10px 12px', borderBottom: `1px solid ${C.border}`, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, background: C.surface }}>
+      <DateField label="Từ ngày" value={dateRange.from} onChange={iso => setDateRange(v => ({ ...v, from: iso }))} />
+      <DateField label="Đến ngày" value={dateRange.to} onChange={iso => setDateRange(v => ({ ...v, to: iso }))} />
+      <Btn variant="primary" onClick={onApplyRange} style={{ gridColumn: '1 / -1', justifyContent: 'center', minHeight: 40 }}>Hiển thị</Btn>
     </div>
-  );
-}
-
-function shiftTone(shift) {
-  if (shift === 'admin') return { bg: C.amberBg || C.surface2, border: C.amberBorder || C.border, color: C.amber || C.text };
-  if (shift === 'work') return { bg: C.greenBg, border: C.greenBorder, color: C.green };
-  return { bg: C.blueBg, border: C.blueBorder, color: C.blue };
-}
-
-function MobileShiftButton({ name, active, shift, onClick }) {
-  const tone = shiftTone(shift);
-  return (
-    <button type="button" onClick={onClick} style={{
-      padding: '8px 14px', borderRadius: 6, border: '1px solid', cursor: 'pointer',
-      fontSize: 14, fontFamily: 'inherit', minHeight: 40,
-      background: active ? tone.bg : C.surface,
-      borderColor: active ? tone.border : C.border,
-      color: active ? tone.color : C.text2,
-      fontWeight: active ? 600 : 400,
-    }}>{name}</button>
   );
 }
 
@@ -76,61 +54,45 @@ function MobileShiftToggles({ entryKey, roster, schedule, onToggleShiftForKey, o
   const ds = getDaySchedule(schedule, entryKey);
   const prevD = entryKey !== 'Default' ? addDaysIso(entryKey, -1) : '';
   const prevW = entryKey !== 'Default' ? addDaysIso(entryKey, -7) : '';
+  const emptyText = 'Chưa có điều dưỡng. Bấm "Điều dưỡng" ở trên để thêm.';
 
   return (
-    <div style={{ padding: '12px 14px 16px', background: C.surface2, borderTop: `1px solid ${C.border2}` }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-        {entryKey !== 'Default' && (
-          <>
-            <Btn variant="default" onClick={() => onCopyFromToKey(entryKey, prevD)} style={{ fontSize: 11, padding: '4px 10px' }}>← Ngày trước</Btn>
-            <Btn variant="default" onClick={() => onCopyFromToKey(entryKey, prevW)} style={{ fontSize: 11, padding: '4px 10px' }}>← Tuần trước</Btn>
-            <Btn variant="default" onClick={() => onCopyFromToKey(entryKey, 'Default')} style={{ fontSize: 11, padding: '4px 10px' }}>Mặc định</Btn>
-          </>
-        )}
-      </div>
-
-      {[
-        ['admin', 'ĐD HÀNH CHÁNH', C.amber || C.text],
-        ['work', 'CA LÀM', C.green],
-        ['oncall', 'CA TRỰC', C.blue],
-      ].map(([shift, label, labelColor]) => (
-        <div key={shift} style={{ marginBottom: shift === 'oncall' ? 0 : 14 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: labelColor, letterSpacing: '0.07em', marginBottom: 8 }}>{label}</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {roster.length === 0 && <div style={{ fontSize: 12, color: C.text3 }}>Thêm điều dưỡng ở trên</div>}
-            {roster.map(name => {
-              const active = (ds[shift] || []).includes(name);
-              return (
-                <MobileShiftButton
-                  key={name}
-                  name={name}
-                  active={active}
-                  shift={shift}
-                  onClick={() => onToggleShiftForKey(entryKey, shift, name)}
-                />
-              );
-            })}
-          </div>
+    <div style={{ padding: '12px 14px 4px', background: C.surface2, borderTop: `1px solid ${C.border2}` }}>
+      {entryKey !== 'Default' && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+          <Btn icon={IconCopy} onClick={() => onCopyFromToKey(entryKey, prevD)} style={{ minHeight: 36 }}>Chép ngày trước</Btn>
+          <Btn icon={IconCopy} onClick={() => onCopyFromToKey(entryKey, prevW)} style={{ minHeight: 36 }}>Chép tuần trước</Btn>
+          <Btn icon={IconTemplate} onClick={() => onCopyFromToKey(entryKey, 'Default')} style={{ minHeight: 36 }}>Mẫu mặc định</Btn>
         </div>
+      )}
+      {['admin', 'work', 'oncall'].map(shift => (
+        <ShiftBucket
+          key={shift}
+          shift={shift}
+          roster={roster}
+          selected={ds[shift] || []}
+          onToggle={(sh, name) => onToggleShiftForKey(entryKey, sh, name)}
+          emptyText={emptyText}
+          large
+        />
       ))}
     </div>
   );
 }
 
-function MobileScheduleEntry({ entryKey, title, subtitle, hasAny, isOpen, onToggleOpen, children }) {
+function MobileScheduleEntry({ title, subtitle, isOpen, onToggleOpen, children }) {
   return (
-    <div style={{ borderBottom: `1px solid ${C.border2}` }}>
-      <div onClick={onToggleOpen} style={{
-        padding: '13px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10,
-        background: isOpen ? C.surface2 : 'transparent', userSelect: 'none',
+    <div style={{ borderBottom: `1px solid ${C.border2}`, background: C.surface }}>
+      <button type="button" onClick={onToggleOpen} aria-expanded={isOpen} style={{
+        width: '100%', padding: '12px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+        border: 0, fontFamily: 'inherit', background: isOpen ? C.blueBg : 'transparent', color: C.text,
       }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: isOpen ? 600 : 400, color: C.text }}>{title}</div>
-          <div style={{ fontSize: 12, color: C.text2, marginTop: 3 }}>{subtitle}</div>
-        </div>
-        {hasAny && <span style={{ color: C.green, fontSize: 16 }}>✓</span>}
-        <span style={{ color: C.text3, fontSize: 14 }}>{isOpen ? '▲' : '▼'}</span>
-      </div>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'block', fontSize: FS.lg, fontWeight: 650, color: isOpen ? C.blue : C.text }}>{title}</span>
+          <span style={{ display: 'block', fontSize: FS.sm, color: C.text2, marginTop: 3 }}>{subtitle}</span>
+        </span>
+        {isOpen ? <IconChevronUp size={18} stroke={1.75} color={C.text2} aria-hidden="true" /> : <IconChevronDown size={18} stroke={1.75} color={C.text2} aria-hidden="true" />}
+      </button>
       {isOpen && children}
     </div>
   );
@@ -138,13 +100,15 @@ function MobileScheduleEntry({ entryKey, title, subtitle, hasAny, isOpen, onTogg
 
 function ScheduleSummary({ admin = [], work = [], oncall = [] }) {
   const hasAny = admin.length + work.length + oncall.length > 0;
-  if (!hasAny) return <span style={{ color: C.text3 }}>Chưa phân công</span>;
+  if (!hasAny) return <span style={{ color: C.amber }}>Chưa phân công</span>;
   return (
-    <>
-      <span style={{ color: C.amber || C.text }}>HC: </span>{admin.join(', ') || '–'}{'  '}
-      <span style={{ color: C.green }}>Làm: </span>{work.join(', ') || '–'}{'  '}
-      <span style={{ color: C.blue }}>Trực: </span>{oncall.join(', ') || '–'}
-    </>
+    <span style={{ display: 'grid', gap: 1 }}>
+      {[['admin', admin], ['work', work], ['oncall', oncall]].map(([shift, names]) => (
+        <span key={shift}>
+          <b style={{ color: SHIFT_META[shift].fg, fontWeight: 650 }}>{SHIFT_META[shift].short}:</b> {names.join(', ') || '—'}
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -170,25 +134,21 @@ export default function NurseMobileView({
   onCopyFromToKey,
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
       <div style={{
-        display: 'flex', gap: 8, padding: '8px 12px', flexShrink: 0,
+        display: 'flex', gap: 8, padding: '8px 12px',
         borderBottom: `1px solid ${C.border}`, flexWrap: 'wrap', alignItems: 'center',
         background: C.surface,
       }}>
-        <button type="button" onClick={() => { setShowNursePanel(v => !v); setShowDatePicker(false); }} style={{
-          padding: '6px 12px', borderRadius: 6, border: `1px solid ${showNursePanel ? C.blueBorder : C.border}`,
-          background: showNursePanel ? C.blueBg : 'transparent', color: showNursePanel ? C.blue : C.text2,
-          cursor: 'pointer', fontSize: 13, fontFamily: 'inherit',
-        }}>👥 Điều dưỡng ({roster.length})</button>
-
-        <button type="button" onClick={() => { setShowDatePicker(v => !v); setShowNursePanel(false); }} style={{
-          padding: '6px 12px', borderRadius: 6, border: `1px solid ${showDatePicker ? C.blueBorder : C.border}`,
-          background: showDatePicker ? C.blueBg : 'transparent', color: showDatePicker ? C.blue : C.text2,
-          cursor: 'pointer', fontSize: 13, fontFamily: 'inherit',
-        }}>📅 {formatDmy(dateRange.from)} – {formatDmy(dateRange.to)}</button>
-
-        {saving && <span style={{ fontSize: 11, color: C.text2 }}>Đang lưu...</span>}
+        <Btn icon={IconUsers} variant={showNursePanel ? 'primary' : 'default'} aria-expanded={showNursePanel}
+          onClick={() => { setShowNursePanel(v => !v); setShowDatePicker(false); }} style={{ minHeight: 38 }}>
+          Điều dưỡng ({roster.length})
+        </Btn>
+        <Btn icon={IconCalendar} variant={showDatePicker ? 'primary' : 'default'} aria-expanded={showDatePicker}
+          onClick={() => { setShowDatePicker(v => !v); setShowNursePanel(false); }} style={{ minHeight: 38 }}>
+          {formatDmy(dateRange.from)} – {formatDmy(dateRange.to)}
+        </Btn>
+        {saving && <span role="status" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: FS.xs, color: C.text2 }}><Spinner size={12} /> Đang lưu…</span>}
       </div>
 
       {showNursePanel && (
@@ -209,18 +169,16 @@ export default function NurseMobileView({
         />
       )}
 
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <div>
         {visibleDates.map(iso => {
           const ds = getDaySchedule(schedule, iso);
           const isOpen = selectedKey === iso;
-          const hasAny = (ds.admin.length + ds.work.length + ds.oncall.length) > 0;
           return (
             <MobileScheduleEntry
               key={iso}
               entryKey={iso}
-              title={<>{weekdayLabelFromIso(iso)} &nbsp;·&nbsp; {formatDmy(iso)}</>}
+              title={`${weekdayLabelFromIso(iso)}, ${formatDmy(iso)}`}
               subtitle={<ScheduleSummary admin={ds.admin} work={ds.work} oncall={ds.oncall} />}
-              hasAny={hasAny}
               isOpen={isOpen}
               onToggleOpen={() => setSelectedKey(isOpen ? null : iso)}
             >
@@ -241,13 +199,11 @@ export default function NurseMobileView({
           const admin = def.admin || [];
           const work = def.work || [];
           const oncall = def.oncall || [];
-          const hasAny = admin.length + work.length + oncall.length > 0;
           return (
             <MobileScheduleEntry
               entryKey="Default"
-              title="Mặc định"
+              title="Mẫu mặc định"
               subtitle={<ScheduleSummary admin={admin} work={work} oncall={oncall} />}
-              hasAny={hasAny}
               isOpen={isOpen}
               onToggleOpen={() => setSelectedKey(isOpen ? null : 'Default')}
             >

@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { C, FONT_MONO } from '../../tokens.js';
+import { IconClock, IconSun, IconMoon } from '@tabler/icons-react';
+import { C, FS } from '../../tokens.js';
 import {
   addDaysDmy, getDaySchedule, dayTypeOf, firstName,
   normalizeTime, timeToMinutes, isMorningRow, isAfterWorkOrEarlyNext,
   isOddHour, todayDmy, parseDmy, rowMinutes,
 } from './reportUtils.js';
-import { EmptyFilter, RouteBadge, TimeBadge, formatQty } from './ReportShared.jsx';
+import { Chip, EmptyFilter, MedRow, PatientMedGroup, SelectBox, TimeBadge, formatQty } from './ReportShared.jsx';
 import { RouteFilterStrip } from './RouteFilters.jsx';
-import { compareDutyRows } from './DutyDrugTable.jsx';
 
 const MORNING_DISPENSE_END = 13 * 60;
 const NON_ORAL_ROUTES = new Set(['TMC', 'TTM', 'TB', 'TDD', 'Khác']);
@@ -23,6 +23,20 @@ const DUTY_SLOT_TABS = [...MAIN_DUTY_SLOTS, UNKNOWN_DUTY_SLOT];
 const FOUR_DOSE_SLOTS = [0, 6 * 60, 12 * 60, 18 * 60];
 const FOUR_DOSE_TOLERANCE = 20;
 const CONTINUOUS_SEQUENCE_GAP = 150;
+
+function compareDutyRows(selectedDate) {
+  return (a, b) => {
+    const da = a.date === selectedDate ? 0 : 1;
+    const db = b.date === selectedDate ? 0 : 1;
+    if (da !== db) return da - db;
+    const ta = rowMinutes(a);
+    const tb = rowMinutes(b);
+    if (ta !== tb) return ta - tb;
+    return String(a.room || '').localeCompare(String(b.room || ''), 'vi', { numeric: true })
+      || String(a.patientName || '').localeCompare(String(b.patientName || ''), 'vi')
+      || String(a.drugName || '').localeCompare(String(b.drugName || ''), 'vi');
+  };
+}
 
 function currentClock() {
   const now = new Date();
@@ -214,58 +228,61 @@ function SmartHeader({ date, nextDate, todaySched, nextSched, scenario, clock })
     ...(nextSched?.oncall?.length ? [`Trực: ${nextSched.oncall.join(', ')}`] : []),
   ].join(' · ');
 
+  const DayIcon = todayFlag.isDuty ? IconMoon : IconSun;
   return (
-    <div style={{ border: `1px solid ${style.border}`, background: style.bg, borderRadius: 6, padding: 12 }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, color: C.text, fontSize: 13, lineHeight: 1.55 }}>
-        <b>Ca trực hiện tại:</b>
-        <span>{clock.text} - {weekdayLabel(date)}, {date}</span>
-        <span style={{ color: style.color, fontWeight: 800 }}>({todayFlag.label})</span>
-        <span style={{ color: C.text3 }}>•</span>
-        <b>Trạng thái ca ngày mai:</b>
-        <span>{weekdayLabel(nextDate)}</span>
-        <span style={{ color: tomorrowFlag.isDuty ? C.amber : C.green, fontWeight: 800 }}>({tomorrowFlag.label})</span>
+    <section aria-label="Kịch bản bàn giao" style={{ border: `1px solid ${style.border}`, background: style.bg, borderRadius: 7, padding: '12px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '2px 10px' }}>
+        <h2 style={{ margin: 0, fontSize: FS.xl, fontWeight: 700, color: style.color }}>{scenario.title}</h2>
+        <span style={{ fontSize: FS.md, color: C.text }}>{scenario.short}</span>
       </div>
-      <div style={{ marginTop: 7, color: C.text, fontSize: 13, lineHeight: 1.55 }}>
-        👉 <b>Áp dụng: Kịch bản &quot;{scenario.title}&quot;</b> <span style={{ color: C.text2 }}>{scenario.short}</span>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', marginTop: 8, fontSize: FS.sm, color: C.text2 }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <IconClock size={15} stroke={1.75} aria-hidden="true" /> Bây giờ {clock.text}
+        </span>
+        <span>
+          <DayIcon size={15} stroke={1.75} aria-hidden="true" style={{ verticalAlign: '-3px', marginRight: 5 }} />
+          Hôm nay {weekdayLabel(date)} {date}: <b style={{ color: C.text, fontWeight: 650 }}>{todayFlag.label.toLowerCase()}</b>
+        </span>
+        <span>
+          Ngày mai {weekdayLabel(nextDate)}: <b style={{ color: tomorrowFlag.isDuty ? C.amber : C.text, fontWeight: 650 }}>{tomorrowFlag.label.toLowerCase()}</b>
+        </span>
       </div>
-      {(todayNames || tomorrowNames) && (
-        <div style={{ marginTop: 7, display: 'flex', gap: 8, flexWrap: 'wrap', color: C.text3, fontSize: 11 }}>
-          {todayNames && <span>Hôm nay: {todayNames}</span>}
-          {tomorrowNames ? <span>Ngày mai: {tomorrowNames}</span> : <span>Ngày mai: chưa phân công — xem là ngày làm việc bình thường</span>}
-        </div>
-      )}
-    </div>
+      <div style={{ display: 'grid', gap: 2, marginTop: 6, fontSize: FS.xs, color: C.text2 }}>
+        <span>Hôm nay: {todayNames || 'chưa phân công'}</span>
+        <span>Ngày mai: {tomorrowNames || 'chưa phân công, xem là ngày làm việc bình thường'}</span>
+      </div>
+    </section>
   );
 }
 
 function QuickFilters({ rooms, roomFilter, setRoomFilter }) {
   return (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}>
-      <select
-        value={roomFilter}
-        onChange={e => setRoomFilter(e.target.value)}
-        style={{ background: C.surface2, border: `1px solid ${C.border}`, color: C.text, borderRadius: 7, padding: '6px 9px', fontSize: 12, outline: 'none' }}
-      >
-        <option value="all">Tất cả phòng/giường</option>
-        {rooms.map(room => <option key={room} value={room}>Phòng/Giường {room}</option>)}
-      </select>
+      <SelectBox label="Lọc theo phòng" value={roomFilter} onChange={setRoomFilter}>
+        <option value="all">Tất cả phòng</option>
+        {rooms.map(room => <option key={room} value={room}>Phòng {room}</option>)}
+      </SelectBox>
     </div>
   );
 }
 
 function Panel({ title, subtitle, children, right }) {
   return (
-    <div style={{ border: `1px solid ${C.border}`, background: C.surface, borderRadius: 6, overflow: 'hidden', minWidth: 0 }}>
-      <div style={{ padding: '10px 12px', borderBottom: `1px solid ${C.border}`, display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-        <div>
-          <div style={{ color: C.text, fontWeight: 800 }}>{title}</div>
-          {subtitle && <div style={{ color: C.text3, fontSize: 11, marginTop: 3, lineHeight: 1.4 }}>{subtitle}</div>}
+    <section style={{ border: `1px solid ${C.border}`, background: C.surface, borderRadius: 7, overflow: 'hidden', minWidth: 0 }}>
+      <header style={{ padding: '10px 12px', borderBottom: `1px solid ${C.border2}`, display: 'flex', gap: 8, alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+          <h3 style={{ margin: 0, color: C.text, fontWeight: 700, fontSize: FS.lg }}>{title}</h3>
+          {subtitle && <div style={{ color: C.text2, fontSize: FS.xs, marginTop: 3, lineHeight: 1.45 }}>{subtitle}</div>}
         </div>
         {right}
-      </div>
+      </header>
       {children}
-    </div>
+    </section>
   );
+}
+
+function CountNote({ children }) {
+  return <span style={{ color: C.text2, fontSize: FS.sm, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{children}</span>;
 }
 
 function OralDispenseGroup({ oralGroups }) {
@@ -277,24 +294,19 @@ function OralDispenseGroup({ oralGroups }) {
     >
       <div style={{ display: 'grid', gap: 8, padding: 10 }}>
         {oralGroups.map(group => (
-          <div key={group.key} style={{ border: `1px solid ${C.border2}`, background: C.bg, borderRadius: 8, overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderBottom: `1px solid ${C.border2}`, flexWrap: 'wrap' }}>
-              <span style={{ color: C.text3, fontSize: 11 }}>P.</span>
-              <b style={{ color: C.text }}>{group.room}</b>
-              <b style={{ color: C.text, flex: 1 }}>{group.patientName}</b>
-              <span style={{ color: C.text3, fontSize: 11 }}>{group.drugs.length} thuốc uống</span>
-            </div>
-            <div style={{ display: 'grid' }}>
-              {group.drugs.map((drug, idx) => (
-                <div key={`${group.key}-${idx}`} style={{ display: 'grid', gridTemplateColumns: 'minmax(180px,1.3fr) 90px 70px minmax(110px,1fr)', gap: 8, padding: '7px 10px', borderTop: idx ? `1px solid ${C.border2}` : 'none' }}>
-                  <span style={{ color: C.text, fontWeight: 700 }}>{drug.drugName}{drug.tuTuc && <span style={{ marginLeft: 6, color: C.amber, fontSize: 10 }}>(TT)</span>}</span>
-                  <span style={{ color: C.text, textAlign: 'right', fontFamily: FONT_MONO }}>{formatQty(drug.quantity)} {drug.unit}</span>
-                  <RouteBadge route="Uống" />
-                  <span style={{ color: C.text3, fontSize: 11 }}>{drug.times.length ? drug.times.join(' · ') : 'Cả ngày'}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <PatientMedGroup key={group.key} room={group.room} patientName={group.patientName} meta={`${group.drugs.length} thuốc uống`}>
+            {group.drugs.map((drug, idx) => (
+              <MedRow
+                key={`${group.key}-${idx}`}
+                name={drug.drugName}
+                tuTuc={drug.tuTuc}
+                quantity={formatQty(drug.quantity)}
+                unit={drug.unit}
+                route="Uống"
+                note={drug.times.length ? `Giờ uống: ${drug.times.join(' · ')}` : 'Uống cả ngày'}
+              />
+            ))}
+          </PatientMedGroup>
         ))}
       </div>
     </Panel>
@@ -409,7 +421,7 @@ function FourDosePanel({ rows }) {
     <Panel
       title="Thuốc 4 cữ riêng"
       subtitle="Các thuốc dạng 4 cữ/ngày, thường 00:00 - 06:00 - 12:00 - 18:00, được để riêng để tránh nhầm với 4 cữ gom chính."
-      right={<span style={{ color: C.text3, fontSize: 11 }}>{rows.length} dòng</span>}
+      right={<CountNote>{rows.length} dòng</CountNote>}
     >
       <MedicationRowsTable groups={groupByPatient(rows)} />
     </Panel>
@@ -439,30 +451,21 @@ function TimelineMedicationPanel({ rows, activeTime, setActiveTime }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <Panel
-        title="Nhóm 2: Lịch Tiêm / Truyền"
+        title="Nhóm 2: Lịch tiêm/truyền"
         subtitle="Bốn cữ chính: 08:00, 16:00, 20:00, 22:00. Các giờ lẻ được gộp vào cữ gần nhất; y lệnh chưa xác định giờ nằm ở nhóm riêng."
-        right={<span style={{ color: C.text3, fontSize: 11 }}>{assignedRows.length} dòng thuốc</span>}
+        right={<CountNote>{assignedRows.length} dòng thuốc</CountNote>}
       >
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: 10, borderBottom: `1px solid ${C.border2}` }}>
+        <div role="group" aria-label="Chọn cữ" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: 10, borderBottom: `1px solid ${C.border2}` }}>
           {DUTY_SLOT_TABS.map(slot => (
-            <button
-              key={slot.id}
-              type="button"
-              onClick={() => setActiveTime(slot.id)}
-              style={{
-                border: `1px solid ${selectedTime === slot.id ? C.blueBorder : C.border}`,
-                background: selectedTime === slot.id ? C.blueBg : 'transparent', color: selectedTime === slot.id ? C.blue : C.text2,
-                borderRadius: 4, padding: '6px 10px', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
-              }}
-            >
-              {slot.label} ({slotCounts.get(slot.id) || 0})
-            </button>
+            <Chip key={slot.id} active={selectedTime === slot.id} onClick={() => setActiveTime(slot.id)}>
+              {slot.label} <span style={{ color: selectedTime === slot.id ? C.blue : C.text2, fontVariantNumeric: 'tabular-nums' }}>{slotCounts.get(slot.id) || 0}</span>
+            </Chip>
           ))}
         </div>
         {patientGroups.length ? (
           <MedicationRowsTable groups={patientGroups} />
         ) : (
-          <div style={{ color: C.text3, padding: 12, fontSize: 12 }}>Không có thuốc trong cữ này.</div>
+          <div style={{ color: C.text2, padding: 12, fontSize: FS.sm }}>Không có thuốc trong cữ này.</div>
         )}
       </Panel>
       <FourDosePanel rows={fourDoseRows} />
@@ -471,33 +474,28 @@ function TimelineMedicationPanel({ rows, activeTime, setActiveTime }) {
 }
 
 function MedicationRowsTable({ groups }) {
-  if (!groups.length) return <div style={{ color: C.text3, padding: 12, fontSize: 12 }}>Không có thuốc trong nhóm này.</div>;
+  if (!groups.length) return <div style={{ color: C.text2, padding: 12, fontSize: FS.sm }}>Không có thuốc trong nhóm này.</div>;
   return (
     <div style={{ display: 'grid', gap: 8, padding: 10 }}>
       {groups.map(group => (
-        <div key={group.key} style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.bg, overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderBottom: `1px solid ${C.border2}`, flexWrap: 'wrap' }}>
-            <span style={{ color: C.text3, fontSize: 11 }}>P.</span>
-            <b style={{ color: C.text }}>{group.room}</b>
-            <b style={{ color: C.text, flex: 1 }}>{group.patientName}</b>
-            <span style={{ color: C.text3, fontSize: 11 }}>{group.rows.length} dòng</span>
-          </div>
-          <div style={{ display: 'grid' }}>
-            {group.rows.map(row => {
-              const key = rowKey(row);
-              const slotNote = row._dutySlotNote || (row._dutySlot && row.time !== row._dutySlot ? `Gộp vào cữ ${row._dutySlot}` : '');
-              return (
-                <div key={key} style={{ display: 'grid', gridTemplateColumns: '76px minmax(160px,1.4fr) 86px 68px minmax(150px,1fr)', gap: 8, alignItems: 'center', padding: '7px 10px', borderTop: `1px solid ${C.border2}`, background: isOddHour(row) ? 'rgba(210,153,34,0.06)' : 'transparent' }}>
-                  <TimeBadge row={row} />
-                  <span style={{ color: C.text, fontWeight: 700 }}>{row.drugName}{row.tuTuc && <span style={{ marginLeft: 6, color: C.amber, fontSize: 10 }}>(TT)</span>}</span>
-                  <span style={{ color: C.text, fontFamily: FONT_MONO, textAlign: 'right' }}>{formatQty(row.quantity)} {row.unit}</span>
-                  <RouteBadge route={row.route} />
-                  <span style={{ color: C.text2, fontSize: 11 }}>{slotNote || (row.mixWith ? `Pha với: ${row.mixWith}` : row.note)}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <PatientMedGroup key={group.key} room={group.room} patientName={group.patientName} meta={`${group.rows.length} dòng`}>
+          {group.rows.map(row => {
+            const slotNote = row._dutySlotNote || (row._dutySlot && row.time !== row._dutySlot ? `Gộp vào cữ ${row._dutySlot}` : '');
+            return (
+              <MedRow
+                key={rowKey(row)}
+                time={<TimeBadge row={row} />}
+                name={row.drugName}
+                tuTuc={row.tuTuc}
+                quantity={formatQty(row.quantity)}
+                unit={row.unit}
+                route={row.route}
+                note={slotNote || (row.mixWith ? `Pha với: ${row.mixWith}` : row.note)}
+                odd={isOddHour(row)}
+              />
+            );
+          })}
+        </PatientMedGroup>
       ))}
     </div>
   );
@@ -507,10 +505,10 @@ function PrepPanel({ scenario, prepRows, nextDate }) {
   if (scenario.id === 'duty_to_work') {
     return (
       <Panel
-        title="SOẠN THUỐC & BÀN GIAO"
+        title="Soạn thuốc và bàn giao"
         subtitle="Khu vực tự động đổi nội dung theo kịch bản bàn giao."
       >
-        <div style={{ margin: 10, border: `1px solid ${C.greenBorder}`, background: C.greenBg, color: C.green, borderRadius: 8, padding: 14, fontWeight: 800 }}>
+        <div style={{ margin: 10, border: `1px solid ${C.greenBorder}`, background: C.greenBg, color: C.green, borderRadius: 7, padding: 14, fontWeight: 650, fontSize: FS.md }}>
           Bạn là ca trực cuối. Không cần soạn thuốc cữ sáng ngày mai.
         </div>
       </Panel>
@@ -525,7 +523,7 @@ function PrepPanel({ scenario, prepRows, nextDate }) {
     : 'Tự động lấy cữ sáng ngày mai, gồm cả thuốc uống và thuốc tiêm/truyền.';
 
   return (
-    <Panel title={title} subtitle={subtitle} right={<span style={{ color: C.text3, fontSize: 11 }}>{prepRows.length} dòng</span>}>
+    <Panel title={title} subtitle={subtitle} right={<CountNote>{prepRows.length} dòng</CountNote>}>
       <MedicationRowsTable groups={groupByPatient(prepRows)} />
     </Panel>
   );
@@ -596,11 +594,11 @@ function DutyReport({ date, rows, nextMorningRows, nurseState, routeOptions, sel
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <SmartHeader date={date} nextDate={nextDate} todaySched={todaySched} nextSched={nextSched} scenario={scenario} clock={clock} />
 
-      <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, background: C.surface, padding: 12 }}>
+      <div style={{ border: `1px solid ${C.border}`, borderRadius: 7, background: C.surface, padding: 12 }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-          <div>
-            <div style={{ color: C.text, fontWeight: 800 }}>Bộ lọc nhanh khi đi buồng</div>
-            <div style={{ color: C.text3, fontSize: 11, marginTop: 3 }}>
+          <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+            <h3 style={{ margin: 0, color: C.text, fontWeight: 700, fontSize: FS.lg }}>Lọc nhanh khi đi buồng</h3>
+            <div style={{ color: C.text2, fontSize: FS.xs, marginTop: 3, lineHeight: 1.45 }}>
               {todayType === 'admin' && <>Ngày có người làm và người trực: <b style={{ color: C.text }}>{workNurse}</b> làm/hành chánh trong giờ hành chính; <b style={{ color: C.text }}>{oncallNurse}</b> nhận phần bàn giao.</>}
               {todayType === 'oncall_only' && <>Ngày chỉ có người trực: hệ thống chỉ giữ các cữ còn lại trong ca và tự quyết định có soạn sáng mai hay không.</>}
               {todayType !== 'admin' && todayType !== 'oncall_only' && <>Lịch chưa đủ người làm/người trực; hệ thống vẫn áp dụng quy tắc mặc định theo danh sách hiện có.</>}
@@ -612,15 +610,15 @@ function DutyReport({ date, rows, nextMorningRows, nurseState, routeOptions, sel
         <RouteFilterStrip options={routeOptions || []} selectedRoutes={selectedRoutes || []} onToggle={onToggleRoute} onClear={onClearRoutes} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 12, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(360px, 100%), 1fr))', gap: 12, alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
           <Panel
-            title="VIỆC CẦN THỰC HIỆN"
+            title="Việc cần thực hiện"
             subtitle="Nhiệm vụ trong ca của mình: phát thuốc uống buổi sáng và thực hiện các cữ tiêm/truyền còn lại."
-            right={<span style={{ color: C.text3, fontSize: 11 }}>{actionRows.length} dòng tiêm/truyền</span>}
+            right={<CountNote>{actionRows.length} dòng tiêm/truyền</CountNote>}
           >
             {!oralVisibleNow && oralRows.length > 0 && (
-              <div style={{ margin: 10, border: `1px solid ${C.border2}`, background: C.bg, color: C.text3, borderRadius: 8, padding: 10, fontSize: 12 }}>
+              <div style={{ margin: 10, border: `1px solid ${C.border2}`, background: C.surface2, color: C.text2, borderRadius: 7, padding: 10, fontSize: FS.sm }}>
                 Nhóm phát thuốc uống chỉ hiển thị vào buổi sáng. Các cữ uống chiều/tối được ẩn để không làm rối màn hình.
               </div>
             )}
@@ -637,51 +635,4 @@ function DutyReport({ date, rows, nextMorningRows, nurseState, routeOptions, sel
   );
 }
 
-function OddHourPanel({ rows, date }) {
-  const oddRows = [...(rows || [])].filter(isOddHour).sort(compareDutyRows(date));
-  if (!oddRows.length) return null;
-  const groups = new Map();
-  for (const row of oddRows) {
-    const key = `${row.date || date}|${row.time}`;
-    if (!groups.has(key)) groups.set(key, { timeText: row.timeText, reason: row.separatedHourReason || '', rows: [] });
-    groups.get(key).rows.push(row);
-  }
-  const items = [...groups.values()].sort((a, b) => (timeToMinutes(normalizeTime(a.timeText)) ?? 9999) - (timeToMinutes(normalizeTime(b.timeText)) ?? 9999));
-  return (
-    <div style={{ marginTop: 10, border: `1px solid ${C.amberBorder}`, background: C.amberBg, borderRadius: 8, overflow: 'hidden' }}>
-      <div style={{ padding: '8px 10px', color: C.amber, fontWeight: 700, fontSize: 12 }}>
-        Giờ riêng cần chú ý
-      </div>
-      <div style={{ display: 'grid', gap: 8, padding: '0 10px 10px' }}>
-        {items.map(group => (
-          <div key={`odd-group-${group.timeText}`} style={{ border: `1px solid ${C.amberBorder}`, borderRadius: 7, background: 'rgba(0,0,0,0.10)', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', borderBottom: `1px solid ${C.amberBorder}` }}>
-              <span style={{ color: C.amber, fontFamily: FONT_MONO, fontWeight: 800 }}>{group.timeText}</span>
-              {group.reason && <span style={{ color: C.text2, fontSize: 11 }}>{group.reason}</span>}
-            </div>
-            <div style={{ display: 'grid' }}>
-              {group.rows.map(row => (
-                <div key={`odd-${row.id}`} style={{ display: 'grid', gridTemplateColumns: '70px minmax(150px, 1.2fr) minmax(180px, 1.4fr) 86px minmax(140px, 1fr)', gap: 8, alignItems: 'center', padding: '6px 9px', borderTop: `1px solid ${C.border2}`, color: C.text, fontSize: 12 }}>
-                  <span style={{ color: C.text2 }}>P.{row.room}</span>
-                  <span>{row.patientName}</span>
-                  <span style={{ fontWeight: 700 }}>{row.drugName}</span>
-                  <span style={{ color: C.text, fontFamily: FONT_MONO, textAlign: 'right' }}>{formatQty(row.quantity)} {row.unit}</span>
-                  <RouteBadge route={row.route} />
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function DutyNextMorningSection({ rows, date, nextDate, shouldPrepare, nextType, nurse }) {
-  const scenario = shouldPrepare
-    ? { id: 'duty_to_duty', title: 'Người trực bàn giao cho Người trực', tone: 'amber' }
-    : { id: 'duty_to_work', title: 'Người trực bàn giao cho Người làm', tone: 'green' };
-  return <PrepPanel scenario={scenario} prepRows={shouldPrepare ? rows : []} nextDate={nextDate} />;
-}
-
-export { DutyReport, OddHourPanel, DutyNextMorningSection, scheduleFlags, scenarioOf };
+export { DutyReport, scheduleFlags, scenarioOf };

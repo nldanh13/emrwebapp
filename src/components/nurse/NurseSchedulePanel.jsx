@@ -1,43 +1,12 @@
-import { C } from '../../tokens.js';
-import { Btn } from '../shared.jsx';
+import { IconCalendarRepeat, IconCloudCheck, IconCopy, IconTemplate } from '@tabler/icons-react';
+import { C, FS } from '../../tokens.js';
+import { Btn, Spinner } from '../shared.jsx';
 import { formatDmy, weekdayLabelFromIso } from './nurseScheduleUtils.js';
+import { ShiftBucket } from './ShiftToggle.jsx';
 
-function shiftTone(shift) {
-  if (shift === 'admin') return { bg: C.amberBg || C.surface2, border: C.amberBorder || C.border, color: C.amber || C.text };
-  if (shift === 'work') return { bg: C.greenBg, border: C.greenBorder, color: C.green };
-  return { bg: C.blueBg, border: C.blueBorder, color: C.blue };
-}
-
-function ShiftBucket({ label, shift, roster, daySchedule, onToggleShift, emptyText, hint }) {
-  const tone = shiftTone(shift);
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: C.text3, letterSpacing: '0.02em', marginBottom: 5 }}>
-        {label}
-      </div>
-      {hint && <div style={{ fontSize: 11, color: C.text3, marginBottom: 8 }}>{hint}</div>}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-        {roster.map(name => {
-          const active = (daySchedule[shift] || []).includes(name);
-          return (
-            <button type="button" key={name} onClick={() => onToggleShift(shift, name)} style={{
-              padding: '6px 12px', borderRadius: 4, border: '1px solid',
-              cursor: 'pointer', fontSize: 13, fontFamily: 'inherit',
-              background: active ? tone.bg : 'transparent',
-              borderColor: active ? tone.border : C.border,
-              color: active ? tone.color : C.text2,
-              minHeight: 36,
-            }}>{name}</button>
-          );
-        })}
-        {roster.length === 0 && <div style={{ fontSize: 12, color: C.text3 }}>{emptyText}</div>}
-      </div>
-    </div>
-  );
-}
+const EMPTY_TEXT = 'Chưa có điều dưỡng. Thêm tên ở cột bên phải.';
 
 export default function NurseSchedulePanel({
-  isMobile = false,
   selectedKey,
   selectedIsDate,
   saving = false,
@@ -54,69 +23,59 @@ export default function NurseSchedulePanel({
   onToggleClinicShift,
 }) {
   return (
-    <div style={{ flex: 1, overflow: 'auto', padding: isMobile ? '10px 10px 20px' : 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        <div style={{ fontSize: 15, fontWeight: 600, color: C.text }}>
-          {selectedIsDate ? `${formatDmy(selectedKey)} · ${weekdayLabelFromIso(selectedKey)}` : 'Mẫu mặc định'}
-        </div>
-        {saving && <span style={{ fontSize: 11, color: C.text2 }}>Đang lưu...</span>}
+    <div style={{ padding: 16, maxWidth: 920 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+        <h2 style={{ margin: 0, fontSize: FS.xl, fontWeight: 700, color: C.text }}>
+          {selectedIsDate ? `${weekdayLabelFromIso(selectedKey)}, ${formatDmy(selectedKey)}` : 'Mẫu mặc định'}
+        </h2>
+        <span role="status" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: FS.xs, color: C.text2 }}>
+          {saving
+            ? <><Spinner size={12} /> Đang lưu…</>
+            : <><IconCloudCheck size={15} stroke={1.75} color={C.green} aria-hidden="true" /> Tự lưu khi thay đổi</>}
+        </span>
       </div>
+      {!selectedIsDate && (
+        <p style={{ margin: '0 0 14px', fontSize: FS.sm, color: C.text2 }}>
+          Dùng cho những ngày chưa phân công riêng.
+        </p>
+      )}
       {selectedIsDate && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-          <Btn variant="default" onClick={() => onCopyFrom(prevDate)}>Copy từ ngày trước</Btn>
-          <Btn variant="default" onClick={() => onCopyFrom(prevWeekDate)}>Copy từ tuần trước</Btn>
-          <Btn variant="default" onClick={() => onCopyFrom('Default')}>Áp dụng mẫu mặc định</Btn>
-          <Btn variant="default" onClick={onApplyDefaultToEmptyVisibleDays}>Áp dụng mặc định cho ngày trống</Btn>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 18 }}>
+          <Btn icon={IconCopy} onClick={() => onCopyFrom(prevDate)}>Chép từ ngày trước</Btn>
+          <Btn icon={IconCopy} onClick={() => onCopyFrom(prevWeekDate)}>Chép từ tuần trước</Btn>
+          <Btn icon={IconTemplate} onClick={() => onCopyFrom('Default')}>Dùng mẫu mặc định</Btn>
+          <Btn icon={IconCalendarRepeat} onClick={onApplyDefaultToEmptyVisibleDays} title="Áp mẫu mặc định cho mọi ngày đang hiện mà chưa phân công">
+            Điền mẫu cho các ngày trống
+          </Btn>
         </div>
       )}
 
       <ShiftBucket
-        label="Điều dưỡng hành chánh"
         shift="admin"
         roster={roster}
-        daySchedule={daySchedule}
-        onToggleShift={onToggleShift}
-        emptyText={isMobile ? 'Thêm điều dưỡng ở tab "Danh sách"' : 'Thêm điều dưỡng ở cột bên phải'}
+        selected={daySchedule.admin || []}
+        onToggle={onToggleShift}
+        emptyText={EMPTY_TEXT}
         hint="Vị trí hành chánh bệnh phòng trong giờ hành chính."
       />
-      <ShiftBucket
-        label="Ca làm"
-        shift="work"
-        roster={roster}
-        daySchedule={daySchedule}
-        onToggleShift={onToggleShift}
-        emptyText={isMobile ? 'Thêm điều dưỡng ở tab "Danh sách"' : 'Thêm điều dưỡng ở cột bên phải'}
-      />
-      <ShiftBucket
-        label="Ca trực"
-        shift="oncall"
-        roster={roster}
-        daySchedule={daySchedule}
-        onToggleShift={onToggleShift}
-        emptyText={isMobile ? 'Thêm điều dưỡng ở tab "Danh sách"' : 'Thêm điều dưỡng ở cột bên phải'}
-      />
+      <ShiftBucket shift="work" roster={roster} selected={daySchedule.work || []} onToggle={onToggleShift} emptyText={EMPTY_TEXT} />
+      <ShiftBucket shift="oncall" roster={roster} selected={daySchedule.oncall || []} onToggle={onToggleShift} emptyText={EMPTY_TEXT} />
 
-      {/* ── Lịch điều dưỡng phòng khám ── */}
-      <div style={{ margin: '18px 0 10px', borderTop: `1px dashed ${C.border}`, paddingTop: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: C.text2, marginBottom: 6, letterSpacing: '0.04em' }}>
-          Phòng khám
-        </div>
-        <div style={{ fontSize: 11, color: C.text3, marginBottom: 10, lineHeight: 1.5 }}>
-          Điều dưỡng phụ trách phòng khám trong ngày.
-        </div>
+      {/* Lịch điều dưỡng phòng khám */}
+      <div style={{ marginTop: 8, paddingTop: 16, borderTop: `1px solid ${C.border2}` }}>
         <ShiftBucket
-          label="ĐIỀU DƯỠNG Phòng khám"
+          label="Phòng khám"
           shift="work"
           roster={clinicRoster.length ? clinicRoster : roster}
-          daySchedule={clinicDaySchedule || { admin: [], work: [], oncall: [] }}
-          onToggleShift={onToggleClinicShift}
-          emptyText={isMobile ? 'Thêm điều dưỡng ở tab "Danh sách"' : 'Thêm điều dưỡng ở cột bên phải'}
-          hint="Ai trực phòng khám hôm nay sẽ được điền vào phiếu chăm sóc."
+          selected={(clinicDaySchedule || {}).work || []}
+          onToggle={onToggleClinicShift}
+          emptyText={EMPTY_TEXT}
+          hint="Điều dưỡng phụ trách phòng khám trong ngày; tên được điền vào phiếu chăm sóc."
         />
       </div>
 
-      <div style={{ marginTop: 14, paddingTop: 8, borderTop: `1px solid ${C.border2}`, color: C.text3, fontSize: 10.5, lineHeight: 1.45 }}>
-        Ưu tiên lịch đúng ngày; nếu trống mới dùng mẫu mặc định.
+      <div style={{ marginTop: 4, color: C.text2, fontSize: FS.xs }}>
+        Ưu tiên lịch đúng ngày; ngày nào trống mới dùng mẫu mặc định.
       </div>
     </div>
   );
