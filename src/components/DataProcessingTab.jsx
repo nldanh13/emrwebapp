@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { C } from '../tokens.js';
-import { Badge, Btn, Spinner } from './shared.jsx';
+import { IconChevronRight, IconDatabaseImport, IconFileAnalytics, IconFolderOpen, IconListSearch, IconRefresh, IconTrash } from '@tabler/icons-react';
+import { C, FS } from '../tokens.js';
+import { Btn, Segmented } from './shared.jsx';
 import SessionPicker from './shift/SessionPicker.jsx';
 import * as api from '../api.js';
 import { workDateRangeLabel, workDateRangeToDmy } from '../utils/workDateRange.js';
@@ -17,31 +18,42 @@ function uniquePatientCount(rows) {
   return ids.size || rows.length;
 }
 
-function MiniStat({ title, value, tone = 'neutral' }) {
-  const colors = {
-    neutral: [C.surface2, C.text2, C.border],
-    info: [C.blueBg, C.blue, C.blueBorder],
-    ok: [C.greenBg, C.green, C.greenBorder],
-    warn: [C.amberBg, C.amber, C.amberBorder],
-  }[tone] || [C.surface2, C.text2, C.border];
+// Một bước trong quy trình lấy dữ liệu. Thứ tự 1 → 2 → 3 là thông tin thật (phải chạy lần lượt),
+// nên đánh số; trạng thái bước lấy từ số liệu đã có, không đoán.
+function Step({ index, icon: Icon, title, status, statusTone = 'neutral', children, action }) {
+  const toneColor = { ok: C.green, warn: C.amber, info: C.blue, neutral: C.text2 }[statusTone] || C.text2;
   return (
-    <div style={{ borderRight: `1px solid ${C.border2}`, padding: '4px 16px 5px 0', minWidth: 135 }}>
-      <div style={{ fontSize: 9.5, color: C.text3, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</div>
-      <div style={{ marginTop: 2, fontSize: 20, fontWeight: 850, color: colors[1], fontVariantNumeric: 'tabular-nums' }}>{value}</div>
-    </div>
+    <li style={{ display: 'grid', gridTemplateColumns: '32px minmax(0, 1fr)', gap: 12, padding: '14px 16px', borderTop: index > 1 ? `1px solid ${C.border2}` : 'none', listStyle: 'none' }}>
+      <span aria-hidden="true" style={{ width: 32, height: 32, borderRadius: 999, display: 'grid', placeItems: 'center', background: C.blueBg, color: C.blue, fontWeight: 700, fontSize: FS.md }}>{index}</span>
+      <div style={{ minWidth: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+            <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 7, fontSize: FS.lg, fontWeight: 700, color: C.text }}>
+              <Icon size={18} stroke={1.75} color={C.text2} aria-hidden="true" />{title}
+            </h3>
+            <div style={{ marginTop: 3, fontSize: FS.sm, color: toneColor, fontWeight: statusTone === 'neutral' ? 500 : 600 }}>{status}</div>
+          </div>
+          {action}
+        </div>
+        {children}
+      </div>
+    </li>
   );
 }
 
-function ScopeButton({ active, onClick, children }) {
+function RoomToggle({ room, active, onToggle, tone = 'accent' }) {
+  const on = tone === 'danger'
+    ? { border: C.redBorder, bg: C.redBg, color: C.red, accent: C.red }
+    : { border: C.blueBorder, bg: C.blueBg, color: C.blue, accent: C.blue };
   return (
-    <button type="button" onClick={onClick} style={{
-      padding: '6px 9px', borderRadius: 5, cursor: 'pointer', fontSize: 12, fontFamily: 'inherit',
-      border: `1px solid ${active ? C.blueBorder : C.border}`,
-      background: active ? C.blueBg : C.surface2,
-      color: active ? C.blue : C.text2,
-      fontWeight: active ? 850 : 650,
-      whiteSpace: 'nowrap',
-    }}>{children}</button>
+    <label style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 10px', borderRadius: 5, cursor: 'pointer',
+      border: `1px solid ${active ? on.border : C.border}`, background: active ? on.bg : C.surface,
+      color: active ? on.color : C.text, fontSize: FS.sm, fontWeight: 600,
+    }}>
+      <input type="checkbox" checked={active} onChange={() => onToggle(room)} style={{ margin: 0, accentColor: on.accent }} />
+      {room}
+    </label>
   );
 }
 
@@ -188,7 +200,7 @@ export default function DataProcessingTab({ toast, workDateRange }) {
     const ok = typeof window === 'undefined' ? true : window.confirm(
       `XOÁ DỮ LIỆU Y LỆNH ĐÃ LẤY NHẦM\n\n` +
       `Phòng: ${removeRooms.join(', ')}\n\n` +
-      `Sẽ xoá toàn bộ dữ liệu y lệnh đã lấy cho (các) phòng này rồi xử lý & phân loại lại. Không ảnh hưởng phòng khác. Muốn lấy lại phải chạy "② Lấy chi tiết" cho phòng đó.\n\n` +
+      `Sẽ xoá toàn bộ dữ liệu y lệnh đã lấy cho (các) phòng này rồi xử lý & phân loại lại. Không ảnh hưởng phòng khác. Muốn lấy lại phải chạy bước 2 "Lấy chi tiết" cho phòng đó.\n\n` +
       `Tiếp tục?`
     );
     if (!ok) return;
@@ -228,106 +240,90 @@ export default function DataProcessingTab({ toast, workDateRange }) {
   const boardCount = uniquePatientCount(boardRows);
   const processedCount = info?.processed?.count || 0;
   const canFetchDetails = rowsForDetails.length > 0 && targetRowsForDetails.length > 0;
-  const activeScopeLabel = detailsScope === 'rooms' ? `${selectedRooms.length || 0} phòng` : detailsScope === 'dutyNew' ? 'BN mới của trực' : 'Tất cả phòng';
+
+  const scopeHint = detailsScope === 'rooms'
+    ? (selectedRooms.length ? `${selectedRooms.length} phòng đã chọn` : 'Chưa chọn phòng nào')
+    : detailsScope === 'dutyNew' ? 'Người bệnh mới vào/chuyển khoa trong ca trực' : 'Mọi phòng đã xếp';
 
   return (
-    <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
-      <div style={{ maxWidth: 1320, margin: '0 auto', display: 'grid', gap: 12 }}>
-        <div style={{ background: C.surface, borderBottom: `1px solid ${C.border2}`, padding: '4px 0 10px' }}>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 260 }}>
-              <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>Thu thập dữ liệu</div>
-              <div style={{ fontSize: 11, color: C.text2, marginTop: 3 }}>Quét danh sách → lấy chi tiết → phân loại.</div>
+    <div style={{ flex: 1, overflow: 'auto', padding: '4px 0 16px' }}>
+      <div style={{ maxWidth: 1080, margin: '0 auto', display: 'grid', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <p style={{ margin: 0, flex: '1 1 240px', fontSize: FS.sm, color: C.text2 }}>
+            Chạy lần lượt 3 bước cho khoảng ngày <b style={{ color: C.text }}>{rangeLabel}</b>. Danh sách đã xếp phòng được ưu tiên; nếu chưa xếp sẽ dùng danh sách vừa quét.
+          </p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Btn icon={IconRefresh} onClick={load} loading={loading} disabled={!!running}>Tải lại</Btn>
+            <Btn icon={IconFolderOpen} onClick={() => setShowPicker(true)} disabled={!!running}>Đổi dữ liệu</Btn>
+          </div>
+        </div>
+
+        <ol style={{ margin: 0, padding: 0, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7 }}>
+          <Step
+            index={1}
+            icon={IconListSearch}
+            title="Quét danh sách người bệnh"
+            status={rawCount ? `Đã có ${rawCount} người bệnh · ${boardCount} đã xếp phòng` : 'Chưa quét'}
+            statusTone={rawCount ? 'ok' : 'neutral'}
+            action={<Btn variant="solidPrimary" loading={running === 'scan'} disabled={!!running} onClick={runScan}>{running === 'scan' ? 'Đang quét…' : 'Quét danh sách'}</Btn>}
+          />
+          <Step
+            index={2}
+            icon={IconDatabaseImport}
+            title="Lấy chi tiết y lệnh"
+            status={rowsForDetails.length ? `Sẽ lấy ${targetRowsForDetails.length}/${rowsForDetails.length} người bệnh · ${scopeHint}` : 'Cần quét danh sách trước'}
+            statusTone={!rowsForDetails.length ? 'neutral' : (targetRowsForDetails.length ? 'info' : 'warn')}
+            action={<Btn variant="solidPrimary" loading={running === 'details'} disabled={!!running || !canFetchDetails} onClick={runDetails}>{running === 'details' ? 'Đang lấy…' : 'Lấy chi tiết'}</Btn>}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: FS.sm, color: C.text2 }}>Phạm vi</span>
+              <Segmented
+                label="Phạm vi lấy chi tiết"
+                value={detailsScope}
+                onChange={setDetailsScope}
+                options={[{ value: 'all', label: 'Tất cả phòng' }, { value: 'rooms', label: 'Chọn phòng' }, { value: 'dutyNew', label: 'Mới trong ca' }]}
+              />
             </div>
-            <Badge text={rangeLabel} bg={C.blueBg} color={C.blue} />
-            <Btn onClick={load} disabled={loading || !!running}>{loading ? <><Spinner size={10} /> Đang tải...</> : '↻ Làm mới'}</Btn>
-            <Btn onClick={() => setShowPicker(true)} disabled={!!running}>Đổi dữ liệu</Btn>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'stretch', gap: 16, flexWrap: 'wrap', padding: '2px 0 6px' }}>
-          <MiniStat title="Danh sách quét" value={rawCount} tone={rawCount ? 'info' : 'neutral'} />
-          <MiniStat title="Đã xếp phòng" value={boardCount} tone={boardCount ? 'ok' : 'neutral'} />
-          <MiniStat title="Đã phân loại" value={processedCount} tone={processedCount ? 'ok' : 'warn'} />
-          <MiniStat title="BN sẽ lấy" value={`${targetRowsForDetails.length}/${rowsForDetails.length}`} tone={targetRowsForDetails.length ? 'info' : 'warn'} />
-        </div>
-
-        <div style={{ background: C.surface, borderTop: `1px solid ${C.border2}`, padding: '10px 0 0', display: 'grid', gap: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginRight: 4 }}>Phạm vi lấy dữ liệu</div>
-            <ScopeButton active={detailsScope === 'all'} onClick={() => setDetailsScope('all')}>Tất cả phòng</ScopeButton>
-            <ScopeButton active={detailsScope === 'rooms'} onClick={() => setDetailsScope('rooms')}>Chọn phòng</ScopeButton>
-            <ScopeButton active={detailsScope === 'dutyNew'} onClick={() => setDetailsScope('dutyNew')}>BN mới người trực</ScopeButton>
-            <Badge text={activeScopeLabel} bg={targetRowsForDetails.length ? C.blueBg : C.amberBg} color={targetRowsForDetails.length ? C.blue : C.amber} />
-          </div>
-
-          {detailsScope === 'rooms' && (
-            <div style={{ display: 'grid', gap: 8, paddingTop: 2 }}>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <Btn onClick={selectAllRooms} disabled={!availableRooms.length}>Chọn tất cả phòng</Btn>
-                <Btn onClick={clearRooms} disabled={!selectedRooms.length}>Bỏ chọn</Btn>
+            {detailsScope === 'rooms' && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                {availableRooms.length === 0 && <span style={{ fontSize: FS.sm, color: C.text2 }}>Chưa có phòng đã xếp để chọn.</span>}
+                {availableRooms.map(room => <RoomToggle key={room} room={room} active={selectedRooms.includes(room)} onToggle={toggleRoom} />)}
+                {availableRooms.length > 0 && <Btn onClick={selectAllRooms} style={{ height: 32 }}>Chọn hết</Btn>}
+                {selectedRooms.length > 0 && <Btn onClick={clearRooms} style={{ height: 32 }}>Bỏ hết</Btn>}
               </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {availableRooms.length === 0 && <span style={{ fontSize: 11, color: C.text3 }}>Chưa có phòng đã xếp để chọn.</span>}
-                {availableRooms.map(room => {
-                  const active = selectedRooms.includes(room);
-                  return (
-                    <button type="button" key={room} onClick={() => toggleRoom(room)} style={{
-                      padding: '5px 9px', borderRadius: 4, cursor: 'pointer', fontSize: 11, fontFamily: 'inherit',
-                      border: `1px solid ${active ? C.blueBorder : C.border}`,
-                      background: active ? C.blueBg : C.surface2,
-                      color: active ? C.blue : C.text2,
-                      fontWeight: active ? 850 : 600,
-                    }}>{active ? '✓ ' : ''}{room}</button>
-                  );
-                })}
-              </div>
+            )}
+          </Step>
+          <Step
+            index={3}
+            icon={IconFileAnalytics}
+            title="Xử lý và phân loại"
+            status={processedCount ? `Đã phân loại ${processedCount} người bệnh` : 'Chưa phân loại'}
+            statusTone={processedCount ? 'ok' : 'warn'}
+            action={<Btn variant="solidPrimary" loading={running === 'process'} disabled={!!running} onClick={runPostprocess}>{running === 'process' ? 'Đang xử lý…' : 'Xử lý & phân loại'}</Btn>}
+          />
+        </ol>
+
+        <details className="emr-danger-zone">
+          <summary>
+            <IconChevronRight size={16} stroke={1.9} className="emr-danger-zone__chevron" aria-hidden="true" />
+            Xoá dữ liệu y lệnh đã lấy nhầm phòng
+          </summary>
+          <div style={{ display: 'grid', gap: 10, padding: '0 16px 14px' }}>
+            <p style={{ margin: 0, fontSize: FS.sm, color: C.text2, lineHeight: 1.5 }}>
+              Bước 2 chỉ cộng thêm hoặc cập nhật theo phạm vi đang chọn; bỏ chọn phòng ở lần sau không tự xoá dữ liệu của phòng đó.
+              Nếu lỡ lấy nhầm phòng, chọn phòng dưới đây rồi xoá hẳn dữ liệu đã lấy cho phòng đó.
+            </p>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {availableRooms.length === 0 && <span style={{ fontSize: FS.sm, color: C.text2 }}>Chưa có phòng đã xếp để chọn.</span>}
+              {availableRooms.map(room => <RoomToggle key={room} room={room} active={removeRooms.includes(room)} onToggle={toggleRemoveRoom} tone="danger" />)}
             </div>
-          )}
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8 }}>
-            <Btn variant="primary" onClick={runScan} disabled={!!running} style={{ justifyContent: 'flex-start', padding: '9px 11px' }}>
-              {running === 'scan' ? <><Spinner size={12} /> Đang quét...</> : '① Quét danh sách BN'}
-            </Btn>
-            <Btn variant="primary" onClick={runDetails} disabled={!!running || !canFetchDetails} style={{ justifyContent: 'flex-start', padding: '9px 11px' }}>
-              {running === 'details' ? <><Spinner size={12} /> Đang lấy chi tiết...</> : '② Lấy chi tiết'}
-            </Btn>
-            <Btn variant="success" onClick={runPostprocess} disabled={!!running} style={{ justifyContent: 'flex-start', padding: '9px 11px' }}>
-              {running === 'process' ? <><Spinner size={12} /> Đang xử lý...</> : '③ Xử lý & phân loại'}
-            </Btn>
+            <div>
+              <Btn variant="danger" icon={IconTrash} loading={running === 'remove-rooms'} disabled={!!running || !removeRooms.length} onClick={handleRemoveRooms}>
+                {running === 'remove-rooms' ? 'Đang xoá…' : `Xoá dữ liệu ${removeRooms.length} phòng`}
+              </Btn>
+            </div>
           </div>
-
-          <div style={{ color: C.text3, fontSize: 11, lineHeight: 1.5 }}>
-            Ưu tiên danh sách đã xếp phòng; nếu chưa có sẽ dùng danh sách vừa quét.
-          </div>
-        </div>
-
-        <div style={{ background: C.surface, borderTop: `1px solid ${C.border2}`, padding: '10px 0 0', display: 'grid', gap: 8 }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: C.amber }}>Xoá dữ liệu lấy nhầm phòng</div>
-          <div style={{ fontSize: 11, color: C.text3, lineHeight: 1.5 }}>
-            "② Lấy chi tiết" chỉ cộng thêm/cập nhật theo phạm vi đang chọn — bỏ chọn phòng ở lần chạy sau không tự xoá dữ liệu phòng đó. Nếu lỡ tick nhầm phòng, chọn phòng bên dưới rồi xoá hẳn dữ liệu đã lấy cho phòng đó.
-          </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {availableRooms.length === 0 && <span style={{ fontSize: 11, color: C.text3 }}>Chưa có phòng đã xếp để chọn.</span>}
-            {availableRooms.map(room => {
-              const active = removeRooms.includes(room);
-              return (
-                <button type="button" key={room} onClick={() => toggleRemoveRoom(room)} style={{
-                  padding: '5px 9px', borderRadius: 4, cursor: 'pointer', fontSize: 11, fontFamily: 'inherit',
-                  border: `1px solid ${active ? C.amberBorder : C.border}`,
-                  background: active ? C.amberBg : C.surface2,
-                  color: active ? C.amber : C.text2,
-                  fontWeight: active ? 850 : 600,
-                }}>{active ? '✓ ' : ''}{room}</button>
-              );
-            })}
-          </div>
-          <div>
-            <Btn variant="danger" onClick={handleRemoveRooms} disabled={!!running || !removeRooms.length} style={{ padding: '7px 11px', fontSize: 12 }}>
-              {running === 'remove-rooms' ? <><Spinner size={12} /> Đang xoá...</> : `🗑 Xoá dữ liệu đã chọn (${removeRooms.length})`}
-            </Btn>
-          </div>
-        </div>
+        </details>
       </div>
 
       {showPicker && (

@@ -1,30 +1,13 @@
 import { useState } from 'react';
 import { IconAlertTriangle, IconChevronDown, IconChevronUp, IconUsers } from '@tabler/icons-react';
 import { C, FS } from '../../tokens.js';
-import { Btn } from '../shared.jsx';
+import { Btn, Segmented } from '../shared.jsx';
 
 function roomSummary(selectedRooms, rooms) {
   if (!selectedRooms?.length) return 'chưa chọn phòng nào';
   if (selectedRooms.length === rooms.length) return `tất cả ${rooms.length} phòng`;
   if (selectedRooms.length <= 4) return `phòng ${selectedRooms.join(', ')}`;
   return `phòng ${selectedRooms.slice(0, 4).join(', ')} +${selectedRooms.length - 4}`;
-}
-
-function Segmented({ value, options, onChange }) {
-  return (
-    <div role="radiogroup" aria-label="Cách chọn phạm vi" style={{ display: 'inline-flex', padding: 2, borderRadius: 6, background: C.muted, gap: 2 }}>
-      {options.map(o => {
-        const active = value === o.value;
-        return (
-          <button key={o.value} type="button" role="radio" aria-checked={active} onClick={() => onChange?.(o.value)} style={{
-            height: 28, padding: '0 10px', border: 0, borderRadius: 5, cursor: 'pointer',
-            background: active ? C.surface : 'transparent', color: active ? C.text : C.text2,
-            boxShadow: active ? '0 1px 2px rgba(25,45,75,0.10)' : 'none', fontSize: FS.sm, fontWeight: active ? 650 : 550,
-          }}>{o.label}</button>
-        );
-      })}
-    </div>
-  );
 }
 
 export default function InputRoomSelector({
@@ -83,6 +66,7 @@ export default function InputRoomSelector({
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${empty ? C.redBorder : C.border2}`, display: 'grid', gap: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <Segmented
+              label="Cách chọn phạm vi"
               value={isManual ? 'manual' : 'rooms'}
               onChange={onSetInputMode}
               options={[{ value: 'rooms', label: 'Theo phòng' }, { value: 'manual', label: 'Chọn từng người bệnh' }]}

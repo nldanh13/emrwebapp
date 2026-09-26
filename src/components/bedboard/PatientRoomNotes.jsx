@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { C } from '../../tokens.js';
+import { IconChevronDown, IconChevronRight } from '@tabler/icons-react';
+import { C, FS } from '../../tokens.js';
 import { toInputDate, fromInputDate } from './bedBoardUtils.js';
+import DateField from '../DateField.jsx';
 
 const inputStyle = {
   width: '100%', background: C.surface, border: `1px solid ${C.border}`,
-  borderRadius: 4, padding: '3px 6px', color: C.text,
-  fontSize: 10, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box',
+  borderRadius: 5, padding: '5px 8px', color: C.text, minHeight: 30,
+  fontSize: FS.sm, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box',
 };
 
 function ddmmyyyyToInputDate(v) {
@@ -31,16 +33,19 @@ export default function PatientRoomNotes({ patient, onChange, compact = false })
         type="button"
         onClick={() => setOpen(v => !v)}
         style={{
+          display: 'inline-flex', alignItems: 'center', gap: 3, minHeight: 24,
           background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-          fontSize: 9, color: hasNote ? C.amber : C.text3, fontFamily: 'inherit',
+          fontSize: FS.xs, fontWeight: hasNote ? 600 : 500, color: hasNote ? C.amber : C.text2, fontFamily: 'inherit',
         }}
+        aria-expanded={open}
         title="Ghi chú ngày chuyển phòng / giá ngoại lệ / đăng ký phòng"
       >
-        {open ? '▾' : '▸'} {hasNote ? 'Ghi chú ✓' : 'Ghi chú'}
+        {open ? <IconChevronDown size={13} stroke={2} aria-hidden="true" /> : <IconChevronRight size={13} stroke={2} aria-hidden="true" />}
+        {hasNote ? 'Có ghi chú' : 'Ghi chú'}
       </button>
 
       {!open && hasNote && (
-        <div style={{ fontSize: 9, color: C.text3, marginTop: 2, lineHeight: 1.4 }}>
+        <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 2, lineHeight: 1.45 }}>
           {transferDate && <div>Chuyển phòng: {transferDate}</div>}
           {priceNote && <div>{priceNote}</div>}
           {occupancy && <div>Đăng ký phòng {occupancy} người</div>}
@@ -49,16 +54,13 @@ export default function PatientRoomNotes({ patient, onChange, compact = false })
 
       {open && (
         <div style={{ display: 'grid', gap: 4, marginTop: 3, padding: compact ? 0 : '4px 0 2px' }}>
-          <label style={{ fontSize: 9, color: C.text3 }}>
+          <label style={{ fontSize: FS.xs, color: C.text2, display: 'grid' }}>
             Ngày chuyển phòng
-            <input
-              type="date"
-              value={ddmmyyyyToInputDate(transferDate)}
-              onChange={e => onChange('NgayChuyenPhong', fromInputDate(e.target.value))}
-              style={{ ...inputStyle, marginTop: 2 }}
-            />
+            <span style={{ marginTop: 2 }}>
+              <DateField label="Ngày chuyển phòng" value={ddmmyyyyToInputDate(transferDate)} onChange={iso => onChange('NgayChuyenPhong', fromInputDate(iso))} />
+            </span>
           </label>
-          <label style={{ fontSize: 9, color: C.text3 }}>
+          <label style={{ fontSize: FS.xs, color: C.text2, display: 'grid' }}>
             Ghi chú giá (vd: nằm P3 nhưng tính giá 250k)
             <input
               type="text"
@@ -68,7 +70,7 @@ export default function PatientRoomNotes({ patient, onChange, compact = false })
               style={{ ...inputStyle, marginTop: 2 }}
             />
           </label>
-          <label style={{ fontSize: 9, color: C.text3 }}>
+          <label style={{ fontSize: FS.xs, color: C.text2, display: 'grid' }}>
             Đăng ký phòng
             <select
               value={occupancy}

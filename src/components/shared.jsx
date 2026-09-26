@@ -1,4 +1,4 @@
-import { C, FONT_UI, R, mono } from '../tokens.js';
+import { C, FONT_UI, FS, R, mono } from '../tokens.js';
 
 export function Badge({ text, bg, color, size = 11 }) {
   return (
@@ -92,6 +92,24 @@ export function Btn({ children, variant = 'default', onClick, disabled, style = 
       {loading ? <Spinner size={13} /> : (Icon ? <Icon size={15} stroke={1.75} aria-hidden="true" /> : null)}
       {children}
     </button>
+  );
+}
+
+// Nút chọn một trong vài lựa chọn (radiogroup). options: [{ value, label }].
+export function Segmented({ value, options, onChange, label = 'Lựa chọn' }) {
+  return (
+    <div role="radiogroup" aria-label={label} className="emr-hscroll" style={{ display: 'inline-flex', maxWidth: '100%', overflowX: 'auto', padding: 2, borderRadius: 6, background: C.muted, gap: 2 }}>
+      {options.map(o => {
+        const active = value === o.value;
+        return (
+          <button key={o.value} type="button" role="radio" aria-checked={active} onClick={() => onChange?.(o.value)} style={{
+            height: 28, padding: '0 10px', border: 0, borderRadius: 5, cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap',
+            background: active ? C.surface : 'transparent', color: active ? C.text : C.text2,
+            boxShadow: active ? '0 1px 2px rgba(25,45,75,0.10)' : 'none', fontSize: FS.sm, fontWeight: active ? 650 : 550,
+          }}>{o.label}</button>
+        );
+      })}
+    </div>
   );
 }
 
