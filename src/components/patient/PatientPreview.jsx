@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { IconAlertTriangle, IconChevronDown, IconChevronRight, IconChevronUp } from '@tabler/icons-react';
 import { C, FONT_MONO } from '../../tokens.js';
 import { Badge } from '../shared.jsx';
 import { normalizeGio, parseCheDoAn } from './patientDetailUtils.js';
@@ -31,10 +32,10 @@ function ExpandableText({ text, maxLines = 6 }) {
       {hasMore && (
         <button type="button" onClick={() => setExpanded(!expanded)} style={{
           marginTop: 5, background: 'none', border: 'none',
-          color: C.blue, fontSize: 11, cursor: 'pointer', padding: 0,
-          fontFamily: 'inherit',
+          color: C.blue, fontSize: 12, cursor: 'pointer', padding: 0,
+          fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4,
         }}>
-          {expanded ? '▲ Thu gọn' : `▼ Xem thêm (${lines.length - maxLines} dòng nữa)`}
+          {expanded ? <><IconChevronUp size={14} stroke={2} aria-hidden="true" /> Thu gọn</> : <><IconChevronDown size={14} stroke={2} aria-hidden="true" /> Xem thêm ({lines.length - maxLines} dòng nữa)</>}
         </button>
       )}
     </div>
@@ -60,8 +61,7 @@ export function CareSection({ ncs = {}, cs_extra = {} }) {
 
   return (
     <div style={{
-      background: C.surface, border: `1px solid ${C.greenBorder}`,
-      borderLeft: `3px solid ${C.green}`, borderRadius: 6, padding: '12px 14px',
+      background: C.surface, border: `1px solid ${C.greenBorder}`, borderRadius: 6, padding: '12px 14px',
     }}>
       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: dieuDuong ? 8 : 10 }}>
         {cap       && <Badge text={cap}       bg={C.greenBg}  color={C.green}  />}
@@ -70,7 +70,7 @@ export function CareSection({ ncs = {}, cs_extra = {} }) {
         {vatLy     && <Badge text="VLTL"      bg={C.blueBg}   color={C.blue}   />}
         {duongMau.length > 0 && <Badge text={`ĐMMM ×${duongMau.length}`} bg={C.amberBg} color={C.amber} />}
         {thayBang.length > 0 && <Badge text={`Thay băng ×${thayBang.length}`} bg={C.amberBg} color={C.amber} />}
-        {truyenMau.co_truyen_mau && <Badge text="🩸 Truyền máu" bg="#3d1a1a" color="#f87171" />}
+        {truyenMau.co_truyen_mau && <Badge text="Truyền máu" bg={C.redBg} color={C.red} />}
       </div>
 
       {dieuDuong && (
@@ -89,7 +89,7 @@ export function CareSection({ ncs = {}, cs_extra = {} }) {
           fontSize: 11, color: C.red, background: C.redBg,
           border: `1px solid ${C.redBorder}`, borderRadius: 4,
           padding: '4px 8px', marginBottom: 6,
-        }}>⚠ {w}</div>
+        }}><IconAlertTriangle size={14} stroke={2} style={{ verticalAlign: '-2px', marginRight: 4 }} aria-hidden="true" />{w}</div>
       ))}
 
       {dienBien && (
@@ -108,7 +108,7 @@ export function CareSection({ ncs = {}, cs_extra = {} }) {
             fontSize: 11, cursor: 'pointer', padding: 0, fontFamily: 'inherit',
             display: 'flex', alignItems: 'center', gap: 5,
           }}>
-            <span>{showYLenh ? '▲' : '▶'}</span>
+            {showYLenh ? <IconChevronDown size={14} stroke={2} aria-hidden="true" /> : <IconChevronRight size={14} stroke={2} aria-hidden="true" />}
             <span>Y lệnh đầy đủ (raw)</span>
           </button>
           {showYLenh && (
@@ -168,7 +168,6 @@ function CarePreviewSection({ careItems = [] }) {
         <div key={`${item.time_full || item.time_label || 'care'}-${i}`} style={{
           background: C.surface,
           border: `1px solid ${C.greenBorder}`,
-          borderLeft: `3px solid ${C.green}`,
           borderRadius: 5,
           padding: '9px 10px',
         }}>
@@ -209,7 +208,6 @@ function InfusionPreviewSection({ infusionItems = [] }) {
         <div key={`${item.tg_bat_dau || item.ten_hien_thi || 'dt'}-${i}`} style={{
           background: C.surface,
           border: `1px solid ${C.blueBorder || C.border}`,
-          borderLeft: `3px solid ${C.blue}`,
           borderRadius: 5,
           padding: '9px 10px',
         }}>
@@ -245,7 +243,7 @@ function VtytPreviewSection({ vtytItems = [], vtytWarnings = [] }) {
               fontSize: 11, color: C.amber, background: C.amberBg,
               border: `1px solid ${C.amberBorder}`, borderRadius: 4,
               padding: '4px 8px',
-            }}>⚠ {w}</div>
+            }}><IconAlertTriangle size={14} stroke={2} style={{ verticalAlign: '-2px', marginRight: 4 }} aria-hidden="true" />{w}</div>
           ))}
         </div>
       )}
@@ -257,7 +255,6 @@ function VtytPreviewSection({ vtytItems = [], vtytWarnings = [] }) {
             <div key={item.key || item.code || i} style={{
               background: C.surface,
               border: `1px solid ${item.needs_review ? C.amberBorder : (C.purpleBorder || C.border)}`,
-              borderLeft: `3px solid ${item.needs_review ? C.amber : (C.purple || C.text3)}`,
               borderRadius: 5,
               padding: '9px 10px',
             }}>

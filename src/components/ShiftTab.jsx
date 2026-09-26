@@ -1,3 +1,4 @@
+import { IconDatabaseImport, IconFolderOpen, IconRefresh } from '@tabler/icons-react';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { C } from '../tokens.js';
 import { Btn, Spinner } from './shared.jsx';
@@ -41,18 +42,18 @@ function StartupState({ showPicker, setShowPicker, handleUseSession, handleFetch
         background: C.surface, border: `1px solid ${C.border}`,
         borderRadius: 6, padding: 28, width: '100%', maxWidth: 400, textAlign: 'center',
       }}>
-        <div style={{ fontSize: 28, marginBottom: 12 }}>🏥</div>
+        <div style={{ display: 'grid', placeItems: 'center', width: 44, height: 44, margin: '0 auto 12px', borderRadius: 10, background: C.blueBg, color: C.blue }}><IconDatabaseImport size={24} stroke={1.75} aria-hidden="true" /></div>
         <div style={{ fontSize: 15, fontWeight: 600, color: C.text, marginBottom: 6 }}>Chưa có dữ liệu ca trực</div>
-        <div style={{ fontSize: 12, color: C.text3, marginBottom: 24, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 12.5, color: C.text2, marginBottom: 24, lineHeight: 1.6 }}>
           Kết nối EMR để quét danh sách bệnh nhân và lấy y lệnh.
         </div>
         <Btn variant="primary" onClick={() => setSubTab('board')}
           style={{ width: '100%', justifyContent: 'center', padding: '10px', fontSize: 14, marginBottom: 10 }}>
-          ⟳ Quét dữ liệu từ EMR
+          <IconRefresh size={16} stroke={2} aria-hidden="true" /> Quét dữ liệu từ EMR
         </Btn>
         <Btn variant="default" onClick={() => setShowPicker(true)}
           style={{ width: '100%', justifyContent: 'center', padding: '8px', fontSize: 12 }}>
-          📂 Chọn dữ liệu đã lưu
+          <IconFolderOpen size={16} stroke={1.75} aria-hidden="true" /> Chọn dữ liệu đã lưu
         </Btn>
       </div>
       {showPicker && (

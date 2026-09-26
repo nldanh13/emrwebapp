@@ -148,6 +148,29 @@ a { color: var(--emr-accent); text-underline-offset: 2px; }
 .emr-datefield__button:hover { border-color: var(--emr-accent-line); }
 .emr-datefield__native { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; }
 
+/* Hàng thao tác (vd. nhập hàng loạt ở Nhập bệnh phòng): cùng một kiểu cho mọi thao tác ngang cấp. */
+.emr-action-row {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 8px 12px 8px 10px;
+  border: 1px solid var(--emr-border); border-radius: var(--emr-radius-md); background: var(--emr-surface);
+  color: var(--emr-ink); text-align: left; cursor: pointer;
+  transition: border-color 150ms var(--emr-ease), background-color 150ms var(--emr-ease);
+}
+.emr-action-row:hover:not(:disabled) { border-color: var(--emr-accent-line); background: var(--emr-accent-soft); }
+.emr-action-row:active:not(:disabled) { transform: translateY(1px); }
+.emr-action-row:disabled { cursor: not-allowed; background: var(--emr-surface-subtle); color: var(--emr-ink-3); }
+.emr-action-row[aria-busy="true"] { border-color: var(--emr-accent-line); background: var(--emr-accent-soft); cursor: progress; }
+.emr-action-row__icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: var(--emr-radius-sm); background: var(--emr-surface-muted); color: var(--emr-ink-2); flex-shrink: 0; }
+.emr-action-row:not(:disabled) .emr-action-row__icon { background: var(--emr-accent-soft); color: var(--emr-accent); }
+.emr-action-row__label { display: block; font-size: 13.5px; font-weight: 650; }
+.emr-action-row__detail { display: block; font-size: 12px; color: var(--emr-ink-2); margin-top: 1px; }
+.emr-action-row:disabled .emr-action-row__detail { color: var(--emr-ink-3); }
+.emr-action-row__chevron { color: var(--emr-ink-3); flex-shrink: 0; }
+.emr-action-row:disabled .emr-action-row__chevron { opacity: 0; }
+
+/* Dải cuộn ngang (chip phòng, nút trên điện thoại): ẩn thanh cuộn. */
+.emr-hscroll { scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.emr-hscroll::-webkit-scrollbar { display: none; }
+
 /* Thông báo */
 .emr-notices { position: fixed; right: 16px; bottom: 16px; z-index: 1000; width: 380px; max-width: calc(100vw - 32px); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
 .emr-notice {

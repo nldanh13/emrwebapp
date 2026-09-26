@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { IconCheck, IconPlayerPlay, IconTrash, IconX } from '@tabler/icons-react';
 import { C } from '../../tokens.js';
 import { Badge, Btn, SectionLabel, Spinner } from '../shared.jsx';
 import * as api from '../../api.js';
@@ -39,21 +40,18 @@ export default function SessionPicker({ onUseSession, onFetchNew, onClose, toast
     <div
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)',
+        position: 'fixed', inset: 0, background: 'var(--emr-scrim)',
         zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
       }}
     >
       <div style={{
-        background: C.surface, borderRadius: '12px 12px 0 0',
+        background: C.surface, borderRadius: '10px 10px 0 0',
         border: `1px solid ${C.border}`, width: '100%', maxWidth: 540,
         padding: '20px 20px 36px', maxHeight: '80vh', overflowY: 'auto',
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>Chọn dữ liệu</span>
-          <button type="button" onClick={onClose} style={{
-            background: 'none', border: 'none', color: C.text2,
-            fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: '0 4px',
-          }}>✕</button>
+          <button type="button" className="emr-icon-btn" onClick={onClose} aria-label="Đóng" title="Đóng"><IconX size={18} stroke={1.75} /></button>
         </div>
 
         <Btn variant="primary" onClick={onFetchNew}
@@ -92,16 +90,15 @@ export default function SessionPicker({ onUseSession, onFetchNew, onClose, toast
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <Btn
+                      icon={item.primary === 'processed' ? IconCheck : IconPlayerPlay}
                       variant={item.primary === 'processed' ? 'success' : 'default'}
                       onClick={() => { setSessionId(item.sid); onUseSession(item); }}
                       style={{ flex: 1, justifyContent: 'center' }}
                     >
-                      {item.primary === 'processed' ? '✓ Dùng dữ liệu này' : '↺ Tiếp tục'}
+                      {item.primary === 'processed' ? 'Dùng dữ liệu này' : 'Tiếp tục'}
                     </Btn>
-                    <Btn variant="default" onClick={() => handleDelete(item)}
-                      disabled={deleting === item.sid} style={{ color: C.red }}>
-                      {deleting === item.sid ? <Spinner size={10} /> : '🗑'}
-                    </Btn>
+                    <Btn variant="default" icon={IconTrash} loading={deleting === item.sid} onClick={() => handleDelete(item)}
+                      aria-label="Xoá dữ liệu này" title="Xoá dữ liệu này" style={{ color: C.red }} />
                   </div>
                 </div>
               );

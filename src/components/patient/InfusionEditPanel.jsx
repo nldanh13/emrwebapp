@@ -47,7 +47,7 @@ function InfusionEditRow({ item, patientId, ngayLam, toast, onSaved }) {
   return (
     <div style={{
       background: C.surface, border: `1px solid ${C.blueBorder || C.border}`,
-      borderLeft: `3px solid ${C.blue}`, borderRadius: 5, padding: '9px 10px',
+      borderRadius: 7, padding: '9px 10px',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
         <span style={{ fontFamily: FONT_MONO, fontSize: 13, fontWeight: 700, color: C.blue }}>
@@ -105,7 +105,7 @@ export default function InfusionEditPanel({ patientDay, patientId, ngayLam, toas
 
   return (
     <div>
-      <div style={{ margin: '0 0 10px', padding: '6px 8px', borderLeft: `2px solid ${C.blue}`, color: C.text3, fontSize: 10.5, lineHeight: 1.4 }}>
+      <div style={{ margin: '0 0 10px', padding: '7px 10px', borderRadius: 6, background: C.surface2, color: C.text2, fontSize: 11.5, lineHeight: 1.45 }}>
         Sửa dữ liệu dịch truyền đã thu thập (không ghi ngược EMR). Bấm "Kiểm tra / Nhập / Sửa" ở khu DT bên dưới nếu muốn đưa giá trị đã sửa vào EMR.
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

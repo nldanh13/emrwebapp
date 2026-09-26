@@ -1,12 +1,30 @@
 import { useState } from 'react';
-import { C } from '../../tokens.js';
+import { IconAlertTriangle, IconChevronDown, IconChevronUp, IconUsers } from '@tabler/icons-react';
+import { C, FS } from '../../tokens.js';
 import { Btn } from '../shared.jsx';
 
 function roomSummary(selectedRooms, rooms) {
-  if (!selectedRooms?.length) return 'Chưa chọn phòng';
-  if (selectedRooms.length === rooms.length) return `Tất cả ${rooms.length} phòng`;
-  if (selectedRooms.length <= 4) return selectedRooms.join(', ');
-  return `${selectedRooms.slice(0, 4).join(', ')} +${selectedRooms.length - 4} phòng`;
+  if (!selectedRooms?.length) return 'chưa chọn phòng nào';
+  if (selectedRooms.length === rooms.length) return `tất cả ${rooms.length} phòng`;
+  if (selectedRooms.length <= 4) return `phòng ${selectedRooms.join(', ')}`;
+  return `phòng ${selectedRooms.slice(0, 4).join(', ')} +${selectedRooms.length - 4}`;
+}
+
+function Segmented({ value, options, onChange }) {
+  return (
+    <div role="radiogroup" aria-label="Cách chọn phạm vi" style={{ display: 'inline-flex', padding: 2, borderRadius: 6, background: C.muted, gap: 2 }}>
+      {options.map(o => {
+        const active = value === o.value;
+        return (
+          <button key={o.value} type="button" role="radio" aria-checked={active} onClick={() => onChange?.(o.value)} style={{
+            height: 28, padding: '0 10px', border: 0, borderRadius: 5, cursor: 'pointer',
+            background: active ? C.surface : 'transparent', color: active ? C.text : C.text2,
+            boxShadow: active ? '0 1px 2px rgba(25,45,75,0.10)' : 'none', fontSize: FS.sm, fontWeight: active ? 650 : 550,
+          }}>{o.label}</button>
+        );
+      })}
+    </div>
+  );
 }
 
 export default function InputRoomSelector({
@@ -33,105 +51,75 @@ export default function InputRoomSelector({
 
   const isManual = inputMode === 'manual';
   const currentRoomSelected = currentRoom && selectedSet.has(currentRoom);
-  const summary = isManual ? `${manualPatientCount} BN chọn tay` : roomSummary(selectedRooms, rooms);
-  const summaryColor = selectedPatientCount ? C.green : C.red;
+  const empty = !selectedPatientCount;
+  const scopeText = isManual
+    ? `${manualPatientCount} người bệnh chọn tay`
+    : `${roomSummary(selectedRooms, rooms)}${excludedPatientCount ? `, loại ${excludedPatientCount} người bệnh` : ''}`;
 
   return (
-    <div style={{
-      background: selectedPatientCount ? C.greenBg : C.redBg,
-      border: `1px solid ${selectedPatientCount ? C.greenBorder : C.redBorder}`,
-      borderRadius: 8,
-      padding: compact ? 8 : 10,
-      marginBottom: compact ? 0 : 12,
+    <section aria-label="Phạm vi nhập hàng loạt" style={{
+      border: `1px solid ${empty ? C.redBorder : C.border}`, background: empty ? C.redBg : C.surface,
+      borderRadius: 7, padding: compact ? '8px 10px' : '10px 12px', marginBottom: compact ? 0 : 14,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <Btn
-          variant={open ? 'success' : 'solidSuccess'}
-          onClick={() => setOpen(v => !v)}
-          style={{ padding: compact ? '5px 9px' : '6px 11px', fontSize: compact ? 11 : 12 }}
-        >
-          ☑ Phạm vi nhập
-        </Btn>
-        <div style={{ flex: '1 1 150px', minWidth: 120 }}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: C.text }}>
-            Sẽ nhập: <span style={{ color: summaryColor }}>{summary}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        {empty
+          ? <IconAlertTriangle size={18} stroke={1.9} color={C.red} aria-hidden="true" />
+          : <IconUsers size={18} stroke={1.75} color={C.text2} aria-hidden="true" />}
+        <div style={{ flex: '1 1 180px', minWidth: 0 }}>
+          <div style={{ fontSize: FS.md, fontWeight: 650, color: empty ? C.red : C.text }}>
+            {empty ? 'Chưa có người bệnh nào để nhập hàng loạt' : `Sẽ nhập ${selectedPatientCount} người bệnh`}
           </div>
-          <div style={{ fontSize: 11, color: C.text2, marginTop: 2 }}>
-            {isManual
-              ? `${selectedPatientCount} BN được đưa vào nút “nhập tất cả”`
-              : `${selectedRooms.length}/${rooms.length} phòng · ${selectedPatientCount} BN · loại trừ ${excludedPatientCount}`}
-          </div>
+          <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 1 }}>{scopeText}</div>
         </div>
-        {currentRoom && !isManual && (
-          <Btn
-            variant={currentRoomSelected && selectedRooms.length === 1 ? 'success' : 'default'}
-            onClick={() => onSelectOnlyCurrent?.(currentRoom)}
-            style={{ padding: '4px 8px', fontSize: 10 }}
-          >
-            Chỉ phòng {currentRoom}
-          </Btn>
+        {currentRoom && !isManual && !(currentRoomSelected && selectedRooms.length === 1) && (
+          <Btn onClick={() => onSelectOnlyCurrent?.(currentRoom)}>Chỉ phòng {currentRoom}</Btn>
         )}
+        <Btn icon={open ? IconChevronUp : IconChevronDown} onClick={() => setOpen(v => !v)} aria-expanded={open}>
+          Đổi phạm vi
+        </Btn>
       </div>
 
       {open && (
-        <>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 9 }}>
-            <Btn variant={isManual ? 'default' : 'success'} onClick={() => onSetInputMode?.('rooms')} style={{ padding: '3px 8px', fontSize: 10 }}>Theo phòng</Btn>
-            <Btn variant={isManual ? 'success' : 'default'} onClick={() => onSetInputMode?.('manual')} style={{ padding: '3px 8px', fontSize: 10 }}>Chọn từng BN</Btn>
-            <Btn variant="default" onClick={onClearPatientScope} style={{ padding: '3px 8px', fontSize: 10 }}>Xoá chọn/loại trừ BN</Btn>
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${empty ? C.redBorder : C.border2}`, display: 'grid', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <Segmented
+              value={isManual ? 'manual' : 'rooms'}
+              onChange={onSetInputMode}
+              options={[{ value: 'rooms', label: 'Theo phòng' }, { value: 'manual', label: 'Chọn từng người bệnh' }]}
+            />
+            {(manualPatientCount > 0 || excludedPatientCount > 0) && (
+              <Btn onClick={onClearPatientScope}>Xoá đánh dấu người bệnh</Btn>
+            )}
+          </div>
+          <div style={{ fontSize: FS.xs, color: C.text2, lineHeight: 1.45 }}>
+            {isManual
+              ? 'Chỉ những người bệnh được tích ô trong danh sách mới được nhập.'
+              : 'Nhập mọi người bệnh trong các phòng đã chọn; bỏ tích ô trên thẻ để loại riêng từng người.'}
           </div>
 
           {!isManual && (
-            <>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, marginBottom: 8 }}>
-                <Btn variant="default" onClick={onSelectAll} style={{ padding: '3px 8px', fontSize: 10 }}>Chọn hết phòng</Btn>
-                <Btn variant="default" onClick={onClear} style={{ padding: '3px 8px', fontSize: 10 }}>Bỏ hết phòng</Btn>
-              </div>
-
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {rooms.map(room => {
-                  const active = selectedSet.has(room);
-                  const count = patientCounts?.[room] || 0;
-                  return (
-                    <button
-                      type="button"
-                      key={room}
-                      onClick={() => onToggleRoom?.(room)}
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 5,
-                        padding: '5px 9px', borderRadius: 4, border: '1px solid',
-                        borderColor: active ? C.greenBorder : C.border,
-                        background: active ? C.greenBg : C.surface,
-                        color: active ? C.green : C.text2,
-                        cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', fontWeight: 700,
-                      }}
-                      title={active ? `Sẽ nhập các ca phòng ${room}` : `Không nhập hàng loạt phòng ${room}`}
-                    >
-                      <span style={{
-                        width: 12, height: 12, borderRadius: 3, border: '1px solid',
-                        borderColor: active ? C.green : C.border,
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: 9, lineHeight: '12px', color: active ? C.green : C.text3,
-                      }}>{active ? '✓' : ''}</span>
-                      <span>{room}</span>
-                      <span style={{ color: active ? C.green : C.text3 }}>({count})</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              {rooms.map(room => {
+                const active = selectedSet.has(room);
+                const count = patientCounts?.[room] || 0;
+                return (
+                  <label key={room} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 10px', borderRadius: 5, cursor: 'pointer',
+                    border: `1px solid ${active ? C.blueBorder : C.border}`, background: active ? C.blueBg : C.surface,
+                    color: active ? C.blue : C.text2, fontSize: FS.sm, fontWeight: 600,
+                  }}>
+                    <input type="checkbox" checked={active} onChange={() => onToggleRoom?.(room)} style={{ margin: 0, accentColor: C.blue }} />
+                    {room}
+                    <span style={{ color: active ? C.blue : C.text3, fontWeight: 500 }}>{count}</span>
+                  </label>
+                );
+              })}
+              <Btn variant="default" onClick={onSelectAll} style={{ height: 30 }}>Chọn hết</Btn>
+              <Btn variant="default" onClick={onClear} style={{ height: 30 }}>Bỏ hết</Btn>
+            </div>
           )}
-        </>
-      )}
-
-      {!selectedPatientCount && (
-        <div style={{ marginTop: 8, fontSize: 11, color: C.red }}>
-          Chưa có BN nào trong phạm vi nhập nên các nút “nhập tất cả” sẽ bị khóa.
         </div>
       )}
-      <div style={{ marginTop: 8, fontSize: 11, color: C.text2 }}>
-        Theo phòng: chọn phòng rồi bấm nút trên từng BN để loại trừ ca không nhập. Chọn từng BN: chỉ các BN đã đánh dấu mới được nhập.
-      </div>
-    </div>
+    </section>
   );
 }

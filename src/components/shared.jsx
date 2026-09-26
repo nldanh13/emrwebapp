@@ -51,7 +51,7 @@ export function Spinner({ size = 14 }) {
 
 // Nút dùng chung. `loading` hiện vòng quay, khoá nút và báo aria-busy; `icon` nhận một component
 // icon Tabler (vd. IconRefresh) và tự đặt cỡ theo chữ.
-export function Btn({ children, variant = 'default', onClick, disabled, style = {}, type = 'button', title, loading = false, icon: Icon = null, 'aria-label': ariaLabel }) {
+export function Btn({ children, variant = 'default', onClick, disabled, style = {}, type = 'button', title, loading = false, icon: Icon = null, 'aria-label': ariaLabel, ...rest }) {
   disabled = disabled || loading;
   const base = {
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5,
@@ -80,6 +80,7 @@ export function Btn({ children, variant = 'default', onClick, disabled, style = 
       type={type || 'button'}
       disabled={disabled}
       title={title}
+      {...rest}
       aria-label={ariaLabel}
       aria-busy={loading || undefined}
       onClick={disabled ? undefined : onClick}

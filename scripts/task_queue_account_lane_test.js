@@ -51,14 +51,16 @@ async function main() {
 
   await test('Hai tác vụ accountKey khác nhau chạy song song thật sự', async () => {
     const log = [];
-    const start = Date.now();
     const p1 = enqueueHeavy('sid-diff-A', job('K1', 70, log), { accountKey: 'infusion' });
     const p2 = enqueueHeavy('sid-diff-B', job('K2', 70, log), { accountKey: 'main' });
     await Promise.all([p1, p2]);
-    const elapsed = Date.now() - start;
-    // Nếu chạy tuần tự sẽ mất ~140ms; chạy song song chỉ ~70ms. Cho biên độ rộng để tránh CI flaky.
-    assert.ok(elapsed < 130, `Kỳ vọng chạy song song (<130ms), thực tế ${elapsed}ms`);
-    assert.ok(log.includes('K1:start') && log.includes('K2:start'));
+    // Kiểm tra chồng lấn theo thứ tự sự kiện thay vì đo thời gian (máy CI chậm làm số ms dao động):
+    // chạy song song thì cả hai đã bắt đầu trước khi bất kỳ tác vụ nào kết thúc; chạy tuần tự
+    // thì K2:start luôn nằm sau K1:end.
+    const firstEnd = Math.min(log.indexOf('K1:end'), log.indexOf('K2:end'));
+    assert.ok(log.indexOf('K1:start') !== -1 && log.indexOf('K2:start') !== -1, `Thiếu sự kiện bắt đầu: ${log.join(', ')}`);
+    assert.ok(log.indexOf('K1:start') < firstEnd && log.indexOf('K2:start') < firstEnd,
+      `Kỳ vọng hai tác vụ chạy chồng lên nhau, thực tế: ${log.join(', ')}`);
   });
 
   await test('Không truyền accountKey -> mặc định dùng chung lane "default", vẫn tuần tự với nhau', async () => {
