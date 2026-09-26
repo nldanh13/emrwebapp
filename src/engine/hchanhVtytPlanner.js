@@ -1,4 +1,5 @@
 import { HCHANH_VTYT_ITEMS } from '../config/hchanhLists.js';
+import { detectRouteCode, mentionedRoutes, routeCategory, routeReportMode } from '../config/routes.js';
 
 const SUPPLY_KEYS = Object.freeze({
   PILL_BOX: { code: 'VTYT.000004231', name: 'Hộp phân liều thuốc', searchKeyword: 'Hộp phân liều thuốc' },
@@ -22,9 +23,8 @@ const ANALGESIC_WORDS = [
   'tramadol', 'morphin', 'fentanyl', 'pethidin', 'nefopam', 'giảm đau', 'giam dau',
 ];
 const DILUENT_WORDS = ['nacl', 'natri clorid', 'sodium chloride', 'nước cất', 'nuoc cat', 'glucose 5%', 'ringer'];
-const ORAL_WORDS = ['uống', 'uong', 'po', 'viên', 'vien', 'gói', 'goi', 'ống uống', 'ong uong'];
-const TMC_WORDS = ['tmc', 'tĩnh mạch chậm', 'tinh mach cham', 'tiêm tĩnh mạch', 'tiem tinh mach'];
-const INFUSION_WORDS = ['truyền', 'truyen', 'tiêm truyền', 'tiem truyen', 'truyền tĩnh mạch', 'truyen tinh mach'];
+// Dạng bào chế uống (không phải đường dùng); đường dùng lấy từ model config/routes.json.
+const ORAL_FORM_WORDS = ['viên', 'vien', 'gói', 'goi', 'ống uống', 'ong uong'];
 const DRESSING_WORDS = ['thay băng', 'thay bang', 'chăm sóc vết mổ', 'cham soc vet mo'];
 const INFECTION_WORDS = ['nhiễm trùng', 'nhiem trung', 'áp xe', 'ap xe', 'viêm mủ', 'viem mu', 'mủ', 'mu '];
 const LIMB_WORDS = ['tay', 'cánh tay', 'canh tay', 'cẳng tay', 'cang tay', 'bàn tay', 'ban tay', 'chân', 'chan', 'đùi', 'dui', 'cẳng chân', 'cang chan', 'bàn chân', 'ban chan', 'gối', 'goi', 'cổ chân', 'co chan', 'cổ tay', 'co tay'];
@@ -171,9 +171,10 @@ function applyMedicationRules(job, requirementMap) {
     for (const drug of drugs) {
       const text = `${drug.name || ''} ${drug.content || ''} ${drug.route || ''} ${drug.order_text || ''}`;
       const dose = doseCount(drug);
-      const oral = includesAny(text, ORAL_WORDS) && !includesAny(text, TMC_WORDS) && !includesAny(text, INFUSION_WORDS);
-      const tmc = includesAny(text, TMC_WORDS);
-      const infusion = includesAny(text, INFUSION_WORDS);
+      const routes = mentionedRoutes(text);
+      const tmc = detectRouteCode(text) === 'TMC';
+      const infusion = routes.some(code => routeCategory(code) === 'dich_truyen');
+      const oral = (routes.some(code => routeReportMode(code) === 'daily') || includesAny(text, ORAL_FORM_WORDS)) && !tmc && !infusion;
       if (oral) hasOral = true;
 
       if (tmc) {

@@ -1,5 +1,7 @@
 'use strict';
 
+const routeModel = require('../utils/routeModel');
+
 // Từ điển dữ liệu Kho nghiên cứu — nguồn DUY NHẤT mô tả từng bảng/cột.
 //
 // Mô tả được viết từ code chuẩn hóa hiện tại (server/routes/research.js,
@@ -310,7 +312,8 @@ TABLES.medication_orders = {
     active_ingredient: col('string', 'Hoạt chất (nếu nguồn có).'),
     route_raw: col('string', 'Đường dùng gốc (nếu không có cột riêng thì là cả dòng y lệnh).'),
     route_norm: col('string', 'Đường dùng chuẩn hóa.', {
-      allowed: ['truyền_tĩnh_mạch', 'tiêm_tĩnh_mạch', 'tiêm_bắp', 'tiêm_dưới_da', 'uống', 'bôi', 'khí_dung', '(token văn bản gốc nếu không khớp)'], inferred: true,
+      // Danh sách token lấy từ model đường dùng duy nhất (config/routes.json).
+      allowed: [...routeModel.ROUTES.map(r => r.research_value), '(token văn bản gốc nếu không khớp)'], inferred: true,
     }),
     dose_raw: col('string', 'Liều (nếu không có cột riêng thì là cả dòng y lệnh).'),
     times_per_day: col('string', 'Số lần/ngày (nếu nguồn có).'),

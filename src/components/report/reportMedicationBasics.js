@@ -1,4 +1,4 @@
-import { routeReportMode } from '../../config/routes.js';
+import { CATEGORIES, categoryLabel as modelCategoryLabel, detectRouteCode, routeCategory, routeReportMode, routeShort } from '../../config/routes.js';
 function displayDrugName(item) {
   // Lấy rộng hơn để không mất các dòng thuốc có cấu trúc lạ từ dữ liệu cũ.
   const candidates = [
@@ -47,25 +47,24 @@ function quantityOf(item, category, hour) {
 function unitOf(item, category, route = '') {
   const u = String(item?.dang || item?.don_vi || item?.unit || '').trim();
   if (u) return u.toLowerCase();
-  if (route === 'TTM' || category === 'dich_truyen') return 'chai';
+  const routeCat = routeCategory(route);
+  if (routeCat === 'dich_truyen' || category === 'dich_truyen') return 'chai';
   if (routeReportMode(route) === 'daily' || category === 'thuoc_uong') return 'viên';
-  if (route === 'TMC' || route === 'TB' || route === 'TDD') return 'ống';
+  if (routeCat === 'thuoc_tiem') return 'ống';
   return '';
 }
 
 function categoryLabel(category) {
   const key = String(category || '').trim();
-  const labels = {
-    dich_truyen: 'Dịch truyền',
-    thuoc_tiem: 'Thuốc tiêm',
-    thuoc_uong: 'Thuốc uống',
-    khac: 'Khác',
-    thuoc_tra: 'Ngưng/Trả',
-    thuoc_tmc: 'TMC',
-    thuoc_tb: 'TB',
-    thuoc_tdd: 'TDD',
-  };
-  return labels[key] || key || 'Không rõ nhóm';
+  if (!key) return 'Không rõ nhóm';
+  if (key === 'thuoc_tra') return 'Ngưng/Trả';
+  // Nhóm con của worker (thuoc_tmc, tiem_bap…) → nhãn đường dùng; còn lại theo config/routes.json.
+  const known = CATEGORIES.some(c => c.code === key);
+  if (!known) {
+    const code = detectRouteCode(key.replace(/_/g, ' '));
+    if (code) return routeShort(code);
+  }
+  return modelCategoryLabel(key);
 }
 
 export {

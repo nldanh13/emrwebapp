@@ -85,43 +85,14 @@ DEFAULT_NACL_VOLUME_BY_KEYWORD = {
 # Bảng chuẩn nằm ở config/routes.json (dùng chung với giao diện), xem
 # processing/route_table.py. Không khai báo danh sách từ khoá riêng ở đây nữa.
 try:
-    from processing.route_table import detect_route_code
+    from processing.route_table import detect_drug_route
 except ImportError:  # chạy từ thư mục khác
-    from worker.processing.route_table import detect_route_code
+    from worker.processing.route_table import detect_drug_route
 
 
 def get_route_label(duong_dung_goc: str, ten_thuoc: str = "") -> str:
-    """Trả về mã đường dùng chuẩn (config/routes.json) từ chuỗi duong_dung_goc.
-
-    Nhận thêm ten_thuoc để phát hiện lỗi nhập liệu EMR:
-      "Tiêm (tự túc)" + tên chứa "uống" → "UONG"
-    """
-    u      = (duong_dung_goc or "").lower()
-    name_l = (ten_thuoc      or "").lower()
-
-    # Phát hiện đường uống, kể cả ký hiệu ngắn "u" của thuốc tự túc.
-    if re.search(r"\(\s*u\s*\)|\buống\b|\buong\b|(?<![0-9a-zA-ZÀ-ỹ])u(?![0-9a-zA-ZÀ-ỹ])", u, flags=re.IGNORECASE):
-        return "UONG"
-
-    # Phát hiện "Tiêm (tự túc)" nhưng tên thuốc chứa "uống" → thực ra là uống
-    if u.strip() in ("tiêm (tự túc)", "tiêm(tự túc)") and "uống" in name_l:
-        return "UONG"
-
-    # TRAMADOL: nếu EMR chỉ ghi chung chung "Tiêm" thì ưu tiên hiểu là tiêm bắp.
-    # Chỉ để dạng truyền khi y lệnh ghi rõ TTM/truyền/pha NaCl, hoặc được rule dung môi rời xử lý sau.
-    name_u_local = _norm_upper(name_l)
-    if "TRAMADOL" in name_u_local:
-        has_infusion_hint = any(k in u for k in [
-            "ttm", "truyền", "truyen", "tiêm truyền", "tiem truyen",
-            "natri clorid", "natri chlorid", "natri chloride",
-            "sodium clorid", "sodium chlorid", "sodium chloride",
-            "nacl", "nước muối", "nuoc muoi", "giọt/phút", "giot/phut", "g/p", "ml/h"
-        ])
-        has_generic_injection = "tiêm" in u or "tiem" in u
-        if has_generic_injection and not has_infusion_hint:
-            return "TB"
-
-    return detect_route_code(duong_dung_goc)
+    """Mã đường dùng chuẩn — lấy từ model duy nhất processing/route_table.py."""
+    return detect_drug_route(duong_dung_goc, ten_thuoc)
 
 # Những thuốc có dung môi đi kèm (không gắn nhãn '+ Pha nước cất')
 NO_WATER_TAG_KEYWORDS = [

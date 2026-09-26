@@ -85,7 +85,7 @@ def test_shared_scope_patient_to_dates_matches_ward_logic(tmp_path):
 def test_report_base_strict_date_empty_override_and_time_parser(tmp_path):
     src = (ROOT / "src/components/report/reportBaseUtils.js").read_text(encoding="utf-8")
     mod = tmp_path / "reportBaseUtils.mjs"
-    mod.write_text(src, encoding="utf-8")
+    mod.write_text(_fix_routes_import(src), encoding="utf-8")
     script = textwrap.dedent(f"""
         import {{ parseDmy, getDaySchedule, extractTimes }} from {json.dumps(mod.as_uri())};
         const schedule = {{
@@ -111,7 +111,7 @@ def test_route_counts_returns_ui_array(tmp_path):
     route_src = (ROOT / "src/components/report/reportRouteUtils.js").read_text(encoding="utf-8")
     base = tmp_path / "reportBaseUtils.mjs"
     route = tmp_path / "reportRouteUtils.mjs"
-    base.write_text(base_src, encoding="utf-8")
+    base.write_text(_fix_routes_import(base_src), encoding="utf-8")
     route.write_text(_fix_routes_import(route_src.replace("'./reportBaseUtils.js'", "'./reportBaseUtils.mjs'")), encoding="utf-8")
     script = textwrap.dedent(f"""
         import {{ routeCounts }} from {json.dumps(route.as_uri())};

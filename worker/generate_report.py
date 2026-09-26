@@ -28,6 +28,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
+from processing.route_table import detect_route_code, normalize_route_code, route_short
 
 # ─── Regex trích giờ ─────────────────────────────────────────────────────────
 _RE_GIO_WORD  = re.compile(r"(?<!\d)(\d{1,2})\s*(?:gi(?:ờ|o)|h)\b", re.IGNORECASE)
@@ -258,14 +259,11 @@ def is_continuous(item):
     return has_tg and not hours
 
 def route_abbr(dd):
+    """Nhãn ngắn đường dùng cho phiếu in — theo model duy nhất config/routes.json."""
     s = (dd or "").lower()
     if "khi cần" in s or "khi can" in s:   return "KCN"
-    if "uống"   in s or "uong"   in s:     return "U"
-    if "tiêm bắp" in s or "tiem bap" in s: return "TB"
-    if "tiêm dưới da" in s:                return "TDD"
-    if "tiêm" in s and "mạch" in s:        return "TMC"
-    if "truyền" in s or "ttm" in s:        return "TTM"
-    return ""
+    code = normalize_route_code(dd) or detect_route_code(dd)
+    return route_short(code) if code else ""
 
 def _fmt_vol(ml):
     try:

@@ -2,9 +2,9 @@
 """Rule engine nhận dạng nhóm thuốc/y lệnh.
 
 Mục tiêu: chuyển phần if/else dài trong xu_ly.py sang cấu hình JSON.
-Khi bệnh viện có thêm cách ghi đường dùng mới, ưu tiên sửa:
-    config/order_rules.json
-thay vì sửa trực tiếp logic phân loại.
+Cách ghi đường dùng (uống, truyền, tiêm, khí dung…) lấy từ model duy nhất
+config/routes.json qua processing/route_table.py. File config/order_rules.json
+chỉ còn luật theo tên thuốc, dung môi và ngưỡng thể tích.
 """
 from __future__ import annotations
 
@@ -13,6 +13,14 @@ import os
 import re
 from functools import lru_cache
 from typing import Any, Callable
+
+from processing.route_table import (
+    INFUSION_ROUTES,
+    SITE_INJECTION_ROUTES,
+    fuzzy_route_code,
+    has_oral_marker as _route_has_oral_marker,
+    mentioned_routes,
+)
 
 try:
     from processing.semantic_search import semantic_contains
@@ -27,17 +35,6 @@ _DEFAULT_RULES_PATH = os.path.join(_PROJECT_DIR, "config", "order_rules.json")
 
 def _default_rules() -> dict[str, Any]:
     return {
-        "drug_routes": {
-            "oral": ["uống", "uong", "(u)", "ngậm", "dưới lưỡi"],
-            "infusion": ["truyền", "truyen", "ttm", "bơm tiêm điện", "pha truyền", "ml/h", "giọt/phút", "g/p", "tiêm truyền"],
-            "slow_iv_injection": ["tĩnh mạch chậm", "tm chậm", "tmc", "tiêm chậm"],
-            "injection": ["tiêm", "bắp", "dưới da", "tdd", "(tdd)", "tĩnh mạch"],
-            "injection_only": ["tiêm bắp", "bắp", "dưới da", "tdd", "(tdd)", " im ", "(im)", " sc ", "(sc)"],
-            "inhaled": ["hít", "xịt", "khí dung", "aerosol", "phun mù", "định liều"],
-            "topical": ["bôi", "thoa", "miếng dán", "dán qua da"],
-            "eye_nose_ear_drop": ["nhỏ mắt", "nhỏ mũi", "nhỏ tai", "nhỏ"],
-            "suppository": ["đặt", "hậu môn", "trực tràng", "âm đạo"],
-        },
         "solvents": {
             "nacl_keywords": [
                 "natri clorid", "natri chlorid", "natri chloride",
@@ -97,11 +94,6 @@ def _upper(value: Any) -> str:
     return _text(value).upper()
 
 
-def _keywords(rules: dict[str, Any], group: str) -> list[str]:
-    vals = ((rules.get("drug_routes") or {}).get(group) or [])
-    return [str(v).lower() for v in vals if str(v).strip()]
-
-
 def _solvent_keywords(rules: dict[str, Any], group: str) -> list[str]:
     vals = ((rules.get("solvents") or {}).get(group) or [])
     return [str(v).lower() for v in vals if str(v).strip()]
@@ -129,15 +121,12 @@ def name_contains_any(text: str, keywords: list[str]) -> bool:
 
 
 def has_oral_marker(route_text: str) -> bool:
-    """Nhận diện đường uống, kể cả ký hiệu ngắn (u)."""
-    u = _lower(route_text)
-    return bool(
-        re.search(
-            r"\(\s*u\s*\)|\buống\b|\buong\b|(?<![0-9a-zA-ZÀ-ỹ])u(?![0-9a-zA-ZÀ-ỹ])",
-            u,
-            flags=re.IGNORECASE,
-        )
-    )
+    """Nhận diện đường uống, kể cả ký hiệu ngắn (u) — theo config/routes.json."""
+    return _route_has_oral_marker(route_text)
+
+
+def _semantic_matcher(threshold: float):
+    return lambda text, keywords: semantic_contains_any(text, keywords, threshold=threshold)
 
 
 def _as_float(value: Any) -> float:
@@ -175,17 +164,25 @@ def detect_drug_category(
     def done(category: str, reason: str):
         return (category, reason) if with_reason else category
 
-    if has_oral_marker(route_l) or contains_any(route_l, _keywords(rules, "oral")) or semantic_contains_any(route_l, _keywords(rules, "oral"), threshold=0.92):
+    # Đường dùng theo model duy nhất (config/routes.json). Thứ tự ưu tiên giữ như cũ:
+    # uống → truyền → tiêm mạch chậm ghi rõ → (luật tên thuốc/dung môi) → tiêm → đường khác.
+    mentioned = set(mentioned_routes(route_l))
+    strong = set(mentioned_routes(route_l, strong_only=True))
+
+    def _fuzzy(code: str, threshold: float) -> bool:
+        return fuzzy_route_code(route_l, _semantic_matcher(threshold)) == code
+
+    if mentioned & {"UONG", "NDL", "NGAM"} or _fuzzy("UONG", 0.92):
         return done("thuoc_uong", "route:oral_marker")
 
     if route_l.strip() in ("tiêm (tự túc)", "tiêm(tự túc)") and "uống" in display_name_l:
         return done("thuoc_uong", "emr_self_paid_injection_but_name_contains_oral")
 
     # TTM/truyền ưu tiên trước tiêm, vì nhiều y lệnh ghi "tiêm truyền".
-    if contains_any(route_l, _keywords(rules, "infusion")) or semantic_contains_any(route_l, _keywords(rules, "infusion"), threshold=0.88):
+    if mentioned & INFUSION_ROUTES or _fuzzy("TTM", 0.88):
         return done("dich_truyen", "route:infusion_keyword")
 
-    if contains_any(route_l, _keywords(rules, "slow_iv_injection")) or semantic_contains_any(route_l, _keywords(rules, "slow_iv_injection"), threshold=0.88):
+    if "TMC" in strong or _fuzzy("TMC", 0.88):
         return done("thuoc_tiem", "route:slow_iv_injection")
 
     true_infusions = set(_name_keywords(rules, "true_infusions"))
@@ -201,7 +198,7 @@ def detect_drug_category(
     if has_nacl and (has_mix_words or bool(rate)):
         return done("dich_truyen", "solvent:nacl_or_mix_or_rate")
 
-    is_injection_only = contains_any(route_l, _keywords(rules, "injection_only"))
+    is_injection_only = bool(mentioned & SITE_INJECTION_ROUTES)
     always_infusion = set(_name_keywords(rules, "always_infusion_drugs"))
     always_infusion.update(_upper(x) for x in (extra_always_infusion_drugs or []) if str(x).strip())
     if (not is_injection_only) and name_contains_any(name_u, list(always_infusion)):
@@ -209,20 +206,20 @@ def detect_drug_category(
         if safety_vol is not None:
             return done("dich_truyen", "safety:always_infusion_with_nacl_volume")
 
-    if contains_any(route_l, _keywords(rules, "injection")) or semantic_contains_any(route_l, _keywords(rules, "injection"), threshold=0.90):
+    if mentioned & {"TMC", "TB", "TDD", "TTD"}:
         # Nếu chỉ ghi "tĩnh mạch" mà không có truyền thì vẫn là nhóm tiêm.
         return done("thuoc_tiem", "route:injection_keyword")
 
-    if contains_any(route_l, _keywords(rules, "inhaled")):
+    if mentioned & {"KHI_DUNG", "HIT_XIT"}:
         return done("thuoc_hit_xit", "route:inhaled")
 
-    if contains_any(route_l, _keywords(rules, "topical")):
+    if mentioned & {"BOI", "DAN"}:
         return done("thuoc_boi", "route:topical")
 
-    if contains_any(route_l, _keywords(rules, "eye_nose_ear_drop")):
+    if mentioned & {"NHO_MAT", "NHO_MUI", "NHO_TAI"}:
         return done("thuoc_nho", "route:drop")
 
-    if contains_any(route_l, _keywords(rules, "suppository")):
+    if mentioned & {"DAT_HM", "DAT_AD"}:
         return done("thuoc_dat", "route:suppository")
 
     try:

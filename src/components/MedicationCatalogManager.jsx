@@ -8,21 +8,12 @@ import { IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import { C, FS } from '../tokens.js';
 import { Btn, Spinner } from './shared.jsx';
 import * as api from '../api.js';
-import { ROUTES, normalizeRouteCode, routeCategory } from '../config/routes.js';
+import { CATEGORIES, ROUTES, normalizeRouteCode, routeCategory } from '../config/routes.js';
 
-// Chuyên mục thuốc (khớp config/routes.json và bộ phân loại của worker).
-const CATEGORIES = [
-  ['dich_truyen', 'Dịch truyền'],
-  ['thuoc_tiem', 'Thuốc tiêm'],
-  ['thuoc_uong', 'Thuốc uống'],
-  ['thuoc_hit_xit', 'Hô hấp (khí dung, hít, xịt)'],
-  ['thuoc_nho', 'Thuốc nhỏ'],
-  ['thuoc_boi', 'Dùng ngoài (bôi, dán)'],
-  ['thuoc_dat', 'Thuốc đặt'],
-  ['khac', 'Khác'],
-];
-const CATEGORY_LABEL = Object.fromEntries(CATEGORIES);
-const INFUSION_ROUTES = new Set(['TTM', 'SE']);
+// Chuyên mục và đường dùng lấy từ model duy nhất config/routes.json.
+const CATEGORY_OPTIONS = CATEGORIES.map(c => [c.code, c.label]);
+const CATEGORY_LABEL = Object.fromEntries(CATEGORY_OPTIONS);
+const INFUSION_ROUTES = new Set(ROUTES.filter(r => r.category === 'dich_truyen').map(r => r.code));
 
 function txt(v, fb = '—') { return String(v ?? '').trim() || fb; }
 
@@ -157,7 +148,7 @@ function EditModal({ mode, initial, onClose, onSave }) {
             <Field label="Chuyên mục">
               <select value={form.category} onChange={set('category')} style={INPUT_STYLE}>
                 <option value="">Chưa chọn</option>
-                {CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                {CATEGORY_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 {form.category && !CATEGORY_LABEL[form.category] && <option value={form.category}>{form.category} (chưa chuẩn)</option>}
               </select>
             </Field>

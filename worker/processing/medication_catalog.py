@@ -16,7 +16,7 @@ try:
 except Exception:  # pragma: no cover
     semantic_best_match = None
 
-from processing.route_table import normalize_route_code
+from processing.route_table import INFUSION_ROUTES, has_oral_marker, mentioned_routes, normalize_route_code
 from processing.schedule_engine import build_gio_dung_from_rule, build_schedule_labels, extract_total_quantity
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -240,27 +240,23 @@ def _expand_catalog_schedule_if_needed(out, med):
 
 
 def _has_oral_marker(text):
-    return bool(re.search(
-        r"\(\s*u\s*\)|\buống\b|\buong\b|(?<![0-9a-zA-ZÀ-ỹ])u(?![0-9a-zA-ZÀ-ỹ])",
-        str(text or '').lower(),
-        flags=re.IGNORECASE,
-    ))
+    # Model đường dùng duy nhất: processing/route_table.py (config/routes.json).
+    return has_oral_marker(text)
+
+
+_NACL_SOLVENT_RE = re.compile(
+    r"nacl|natri\s+(?:clorid|chlorid|chloride)|sodium\s+(?:clorid|chlorid|chloride)|sodium\s*0[\.,]9",
+    re.IGNORECASE,
+)
 
 
 def _has_explicit_non_infusion_route(text):
-    t = str(text or '').lower()
-    if _has_oral_marker(t):
+    """Ghi rõ là tiêm (TMC/TB/TDD/TTD) hoặc uống, không có dấu hiệu truyền/pha NaCl."""
+    routes = set(mentioned_routes(text))
+    if 'UONG' in routes:
         return True
-    has_infusion_hint = bool(re.search(
-        r"\bttm\b|truyền|truyen|tiêm\s*truyền|tiem\s*truyen|giọt/phút|giot/phut|g/p|ml/h|ml/giờ|nacl|natri\s+(?:clorid|chlorid|chloride)|sodium\s+(?:clorid|chlorid|chloride)|sodium\s*0[\.,]9",
-        t,
-        flags=re.IGNORECASE,
-    ))
-    has_injection_hint = bool(re.search(
-        r"tiêm|tiem|tĩnh\s*mạch\s*chậm|tinh\s*mach\s*cham|tmc|bắp|bap|dưới\s*da|duoi\s*da",
-        t,
-        flags=re.IGNORECASE,
-    ))
+    has_infusion_hint = bool(routes & INFUSION_ROUTES) or bool(_NACL_SOLVENT_RE.search(str(text or '')))
+    has_injection_hint = bool(routes & {'TMC', 'TB', 'TDD', 'TTD'})
     return has_injection_hint and not has_infusion_hint
 
 

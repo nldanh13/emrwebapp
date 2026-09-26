@@ -26,6 +26,7 @@ except Exception:
 LOG = get_worker_logger('xu_ly')
 
 # ── Import từ module con ──────────────────────────────────────────────────────
+from processing.route_table import INFUSION_ROUTES, mentioned_routes, normalize_route_code
 from xu_ly_config import (
     BASE_DIR, CONFIG_FILE, OUTPUT_FILE, DEFAULT_INPUT_FILE,
     DEFAULT_VOLUMES, TRUE_INFUSIONS, ALWAYS_INFUSION_DRUGS,
@@ -476,9 +477,9 @@ def _normalize_final_infusion_operational_volumes(record: dict) -> dict:
                 "SODIUM CHLORIDE", "NUOC MUOI", "NƯỚC MUỐI",
             ))
         )
-        has_infusion = any(k in route_blob for k in (
-            "TTM", "TTTM", "TRUYEN", "TRUYỀN", "GIOT/PHUT", "GIỌT/PHÚT",
-        )) or str(med.get("duong_dung") or "").upper().strip() == "TTM"
+        # Dấu hiệu truyền theo model đường dùng duy nhất (config/routes.json).
+        has_infusion = bool(set(mentioned_routes(route_blob)) & INFUSION_ROUTES) \
+            or normalize_route_code(med.get("duong_dung")) in INFUSION_ROUTES
 
         if not (has_nacl and has_infusion):
             continue

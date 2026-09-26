@@ -4,6 +4,7 @@ import re
 
 from drug_normalizer import DRUG_NORMALIZER
 from runtime_logging import get_worker_logger
+from processing.route_table import has_oral_marker as _route_has_oral_marker, mentioned_routes as _route_mentioned
 from xu_ly_config import (
     ALWAYS_INFUSION_DRUGS,
     DEFAULT_VOLUMES,
@@ -247,8 +248,8 @@ def parse_dose_per_hour(usage_text: str) -> dict:
 
 
 def _has_oral_marker(text: str) -> bool:
-    t = str(text or "").lower()
-    return bool(re.search(r"\(\s*u\s*\)|\buống\b|\buong\b|(?<![0-9a-zA-ZÀ-ỹ])u(?![0-9a-zA-ZÀ-ỹ])", t, flags=re.IGNORECASE))
+    # Model đường dùng duy nhất: processing/route_table.py (config/routes.json).
+    return _route_has_oral_marker(text)
 
 
 def _is_flush_only_usage(text: str) -> bool:
@@ -669,11 +670,12 @@ def categorize_drug(drug_info):
     except Exception:
         vol = 0.0
 
-    if _has_oral_marker(route_l):
+    mentioned = set(_route_mentioned(route_l))
+    if mentioned & {"UONG", "NDL", "NGAM"}:
         return "thuoc_uong"
-    if any(k in route_l for k in ["truyền", "ttm", "giọt/phút", "g/p", "ml/h", "tiêm truyền"]):
+    if mentioned & {"TTM", "SE"}:
         return "dich_truyen"
-    if any(k in route_l for k in ["tĩnh mạch chậm", "tmc", "tiêm chậm", "tiêm", "bắp", "dưới da"]):
+    if mentioned & {"TMC", "TB", "TDD", "TTD"}:
         return "thuoc_tiem"
     if any(k in name_u for k in TRUE_INFUSIONS) or any(k in name_u for k in INFUSION_NAME_KEYWORDS) or vol >= 50:
         return "dich_truyen"

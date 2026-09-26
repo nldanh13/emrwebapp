@@ -3,6 +3,7 @@
 'use strict';
 
 const router = require('express').Router();
+const routeModel = require('../utils/routeModel');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -3490,17 +3491,13 @@ function normalizeDrugName(value) {
   return normalizeToken(String(value || '').replace(/\([^)]*\)/g, ''));
 }
 
+// Đường dùng chuẩn cho dữ liệu nghiên cứu: nhận diện bằng model duy nhất
+// (config/routes.json), xuất giá trị nghiên cứu ("research_value") của mã tìm được.
 function normalizeRoute(value) {
+  const code = routeModel.detectRouteCode(value);
+  if (code) return routeModel.routeInfo(code).research_value;
   const s = normalizeSimple(value);
-  if (!s) return '';
-  if (/truyen.*tinh mach|ttm|tinh mach.*truyen/.test(s)) return 'truyền_tĩnh_mạch';
-  if (/tiem.*tinh mach|tinh mach|tm\b|iv\b/.test(s)) return 'tiêm_tĩnh_mạch';
-  if (/tiem bap|bap|im\b/.test(s)) return 'tiêm_bắp';
-  if (/duoi da|tiem da|sc\b/.test(s)) return 'tiêm_dưới_da';
-  if (/uong|duong uong|po\b/.test(s)) return 'uống';
-  if (/boi|ngoai da/.test(s)) return 'bôi';
-  if (/khi dung|hit|phun khi dung/.test(s)) return 'khí_dung';
-  return normalizeToken(value);
+  return s ? normalizeToken(value) : '';
 }
 
 function classifyDrugGroup(value) {

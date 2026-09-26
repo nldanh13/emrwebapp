@@ -14,6 +14,7 @@ import unicodedata
 from urllib.parse import urlparse, urlencode, parse_qsl, urlunparse
 from datetime import datetime, timedelta
 from shared.json_io import read_json_critical
+from processing.route_table import INFUSION_ROUTES, mentioned_routes, normalize_route_code
 try:
     from selenium import webdriver
     from selenium.webdriver.common.by import By
@@ -419,9 +420,9 @@ def chuan_bi_du_lieu_json(json_path, patient_ids=None, date_from=None, date_to=N
                         or 'sodium chloride' in _route_blob
                     )
                     and (
-                        str(item.get('duong_dung') or '').upper().strip() == 'TTM'
-                        or 'ttm' in _route_blob
-                        or 'truyen' in _route_blob
+                        # Dấu hiệu truyền theo model đường dùng duy nhất (config/routes.json).
+                        normalize_route_code(item.get('duong_dung')) in INFUSION_ROUTES
+                        or bool(set(mentioned_routes(_route_blob)) & INFUSION_ROUTES)
                     )
                 )
                 if _is_tramadol_nacl and _the_tich < 50:
@@ -453,7 +454,7 @@ def chuan_bi_du_lieu_json(json_path, patient_ids=None, date_from=None, date_to=N
                 # Tốc độ truyền: chỉ đặt mặc định 30 giọt/phút khi là TTM.
                 # TMC (tiêm mạch chậm) không có tốc độ giọt/phút — để trống tránh nhập sai.
                 _toc_do_raw = str(item.get('toc_do') or '').strip()
-                _duong_dung = str(item.get('duong_dung') or '').strip().upper()
+                _duong_dung = normalize_route_code(item.get('duong_dung'))
                 if not _toc_do_raw and _duong_dung == 'TTM':
                     _toc_do_raw = '30'
 

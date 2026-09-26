@@ -1,5 +1,6 @@
 import { C, FS } from '../../tokens.js';
 import { isOddHour } from './reportUtils.js';
+import { routeInfo } from '../../config/routes.js';
 
 // Nút lọc bật/tắt (đường dùng, cữ thuốc…).
 function Chip({ active, children, onClick, title }) {
@@ -72,20 +73,17 @@ function TimeBadge({ row }) {
   );
 }
 
-const ROUTE_TONE = {
-  TTM: [C.green, C.greenBg, C.greenBorder],
-  SE: [C.green, C.greenBg, C.greenBorder],
-  TTD: [C.amber, C.amberBg, C.amberBorder],
-  NDL: [C.purple, C.purpleBg, C.purpleBorder],
-  'Khí dung': [C.blue, C.blueBg, C.blueBorder],
-  TMC: [C.blue, C.blueBg, C.blueBorder],
-  TB: [C.amber, C.amberBg, C.amberBorder],
-  TDD: [C.amber, C.amberBg, C.amberBorder],
-  'Uống': [C.purple, C.purpleBg, C.purpleBorder],
+// Màu nhãn đường dùng lấy từ config/routes.json (trường "tone").
+const TONES = {
+  green: [C.green, C.greenBg, C.greenBorder],
+  blue: [C.blue, C.blueBg, C.blueBorder],
+  amber: [C.amber, C.amberBg, C.amberBorder],
+  purple: [C.purple, C.purpleBg, C.purpleBorder],
+  gray: [C.text2, C.surface2, C.border2],
 };
 
 function RouteBadge({ route }) {
-  const [fg, bg, border] = ROUTE_TONE[route] || [C.text2, C.surface2, C.border2];
+  const [fg, bg, border] = TONES[routeInfo(route).tone] || TONES.gray;
   return <span style={{ display: 'inline-block', color: fg, background: bg, border: `1px solid ${border}`, borderRadius: 4, padding: '0 6px', lineHeight: 1.6, fontSize: FS.xs, fontWeight: 650, whiteSpace: 'nowrap' }}>{route || 'Khác'}</span>;
 }
 

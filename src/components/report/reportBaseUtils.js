@@ -1,10 +1,4 @@
-const ROUTE_FILTERS = [
-  { id: 'TMC',  label: 'TMC' },
-  { id: 'TTM',  label: 'TTM' },
-  { id: 'TB',   label: 'TB' },
-  { id: 'TDD',  label: 'TDD' },
-  { id: 'Khác', label: 'Khác' },
-];
+import { ROUTES } from '../../config/routes.js';
 
 const TIME_GROUPS = [
   { id: 'all', label: 'Tất cả mốc' },
@@ -46,7 +40,11 @@ const CONTINUOUS_INFUSION_GAP_MINUTES = 150;
 
 // Ưu tiên hiển thị trong phiếu: dịch truyền để gần nhau, sau đó tới thuốc đúng giờ khác.
 // Thuốc uống được loại khỏi báo cáo ca trực vì có thể phát/soạn riêng theo cữ.
-const ROUTE_PRIORITY = { TTM: 1, TMC: 2, TB: 3, TDD: 4, Khác: 5, 'Ngưng/Trả': 6 };
+// Thứ tự sắp xếp theo thứ tự đường dùng trong config/routes.json; Ngưng/Trả cuối cùng.
+const ROUTE_PRIORITY = Object.fromEntries([
+  ...ROUTES.map((r, i) => [r.short, i + 1]),
+  ['Ngưng/Trả', ROUTES.length + 1],
+]);
 
 function stripVN(value) {
   return String(value || '')
@@ -232,7 +230,7 @@ function extractTimes(item, recordDate) {
 }
 
 export {
-  ROUTE_FILTERS, TIME_GROUPS, GROUP_ORDER, WEEKDAY_KEYS, EMPTY_SHIFT, DUTY_WINDOW,
+  TIME_GROUPS, GROUP_ORDER, WEEKDAY_KEYS, EMPTY_SHIFT, DUTY_WINDOW,
   SEPARATED_HOUR_GAP_MINUTES, COMMON_SLOT_MIN_PATIENTS, Q6_SCHEDULE_MINUTES, Q6_TOLERANCE_MINUTES,
   Q6_MIN_MATCHES, EARLY_ISOLATED_END_MINUTES, CONTINUOUS_INFUSION_GAP_MINUTES, ROUTE_PRIORITY,
   stripVN, todayDmy, parseDmy, addDaysDmy, toIsoDate, weekdayKeyFromIso,

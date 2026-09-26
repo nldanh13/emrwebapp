@@ -364,7 +364,7 @@
 | `drug_group_guess` | chuỗi | Nhóm thuốc suy theo tên (có thể nhiều nhóm, nối "; "). **Suy luận tự động.** | `giảm_đau`, `kháng_sinh`, `kháng_kết_tập_tiểu_cầu`, `kháng_đông`, `dạ_dày`, `đái_tháo_đường` | Không thuộc danh sách hoạt chất đã biết (không có nghĩa là không phải thuốc). | — | Được dùng |
 | `active_ingredient` | chuỗi | Hoạt chất (nếu nguồn có). |  |  | — | Được dùng |
 | `route_raw` | chuỗi | Đường dùng gốc (nếu không có cột riêng thì là cả dòng y lệnh). |  |  | — | Được dùng |
-| `route_norm` | chuỗi | Đường dùng chuẩn hóa. **Suy luận tự động.** | `truyền_tĩnh_mạch`, `tiêm_tĩnh_mạch`, `tiêm_bắp`, `tiêm_dưới_da`, `uống`, `bôi`, `khí_dung`, `(token văn bản gốc nếu không khớp)` |  | — | Được dùng |
+| `route_norm` | chuỗi | Đường dùng chuẩn hóa. **Suy luận tự động.** | `truyền_tĩnh_mạch`, `truyền_bơm_tiêm_điện`, `tiêm_tĩnh_mạch`, `tiêm_bắp`, `tiêm_dưới_da`, `tiêm_trong_da`, `uống`, `ngậm_dưới_lưỡi`, `khí_dung`, `hít_xịt`, `ngậm`, `nhỏ_mắt`, `nhỏ_mũi`, `nhỏ_tai`, `bôi`, `dán`, `đặt_hậu_môn`, `đặt_âm_đạo`, `khác`, `(token văn bản gốc nếu không khớp)` |  | — | Được dùng |
 | `dose_raw` | chuỗi | Liều (nếu không có cột riêng thì là cả dòng y lệnh). |  |  | — | Được dùng |
 | `times_per_day` | chuỗi | Số lần/ngày (nếu nguồn có). |  |  | — | Được dùng |
 | `raw_line` | văn bản | Dòng y lệnh gốc. |  |  | Văn bản tự do | Cần đề cương duyệt |

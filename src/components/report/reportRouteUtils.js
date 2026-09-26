@@ -1,5 +1,5 @@
 import { stripVN } from './reportBaseUtils.js';
-import { detectRouteCode, normalizeRouteCode, routeShort } from '../../config/routes.js';
+import { categoryDefaultRoute, detectRouteCode, normalizeRouteCode, routeShort } from '../../config/routes.js';
 
 // Nhãn ngắn dùng trong báo cáo (TTM, TMC, Uống, Khí dung…) theo bảng chuẩn config/routes.json.
 function routeFromText(text) {
@@ -7,20 +7,12 @@ function routeFromText(text) {
   return code ? routeShort(code) : '';
 }
 
+// Suy đường dùng từ tên chuyên mục của worker (dich_truyen, thuoc_tmc, tiem_bap…).
 function routeFromCategory(category) {
   const cat = stripVN(category).toLowerCase().replace(/[_\-.]+/g, ' ');
   if (/thuoc\s*tra|ngung|dung\s*thuoc|stop/.test(cat)) return 'Ngưng/Trả';
-  if (/thuoc\s*uong|uong|oral|po/.test(cat)) return routeShort('UONG');
-  if (/tdd|duoi\s*da|subcut|sc/.test(cat)) return routeShort('TDD');
-  if (/tb|tiem\s*bap|bap|im/.test(cat)) return routeShort('TB');
-  if (/tmc|tiem\s*cham|tinh\s*mach\s*cham/.test(cat)) return routeShort('TMC');
-  if (/dich\s*truyen|ttm|tiem\s*truyen|truyen/.test(cat)) return routeShort('TTM');
-  if (/thuoc\s*tiem|tiem/.test(cat)) return routeShort('TMC');
-  if (/hit\s*xit/.test(cat)) return routeShort('HIT_XIT');
-  if (/thuoc\s*nho/.test(cat)) return routeShort('NHO_MAT');
-  if (/thuoc\s*boi/.test(cat)) return routeShort('BOI');
-  if (/thuoc\s*dat/.test(cat)) return routeShort('DAT_HM');
-  return '';
+  const code = detectRouteCode(cat) || categoryDefaultRoute(String(category || '').trim());
+  return code ? routeShort(code) : '';
 }
 
 function routeOf(item, category) {

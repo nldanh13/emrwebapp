@@ -1,54 +1,434 @@
 {
-  "version": 1,
-  "description": "Bảng chuẩn đường dùng thuốc dùng chung cho toàn hệ thống (worker Python + giao diện). Sửa ở đây rồi chạy test: src/config/routes.js phải khớp file này.",
+  "version": 2,
+  "description": "MỘT NGUỒN DUY NHẤT cho đường dùng thuốc: worker (processing/route_table.py) và giao diện (src/config/routes.js) đều đọc file này. Muốn thêm/sửa đường dùng, từ khoá nhận diện hay chuyên mục: chỉ sửa ở đây.",
   "routes": [
-    { "code": "TTM", "short": "TTM", "label": "Truyền tĩnh mạch", "category": "dich_truyen", "report": "dose" },
-    { "code": "SE", "short": "SE", "label": "Truyền qua bơm tiêm điện", "category": "dich_truyen", "report": "dose" },
-    { "code": "TMC", "short": "TMC", "label": "Tiêm tĩnh mạch chậm", "category": "thuoc_tiem", "report": "dose" },
-    { "code": "TB", "short": "TB", "label": "Tiêm bắp", "category": "thuoc_tiem", "report": "dose" },
-    { "code": "TDD", "short": "TDD", "label": "Tiêm dưới da", "category": "thuoc_tiem", "report": "dose" },
-    { "code": "TTD", "short": "TTD", "label": "Tiêm trong da", "category": "thuoc_tiem", "report": "dose" },
-    { "code": "UONG", "short": "Uống", "label": "Uống", "category": "thuoc_uong", "report": "daily" },
-    { "code": "NDL", "short": "NDL", "label": "Ngậm dưới lưỡi", "category": "thuoc_uong", "report": "daily" },
-    { "code": "KHI_DUNG", "short": "Khí dung", "label": "Khí dung", "category": "thuoc_hit_xit", "report": "dose" },
-    { "code": "HIT_XIT", "short": "Hít/Xịt", "label": "Hít / Xịt", "category": "thuoc_hit_xit", "report": "hide" },
-    { "code": "NGAM", "short": "Ngậm", "label": "Ngậm / Súc miệng", "category": "thuoc_uong", "report": "hide" },
-    { "code": "NHO_MAT", "short": "Nhỏ mắt", "label": "Nhỏ mắt", "category": "thuoc_nho", "report": "hide" },
-    { "code": "NHO_MUI", "short": "Nhỏ mũi", "label": "Nhỏ mũi", "category": "thuoc_nho", "report": "hide" },
-    { "code": "NHO_TAI", "short": "Nhỏ tai", "label": "Nhỏ tai", "category": "thuoc_nho", "report": "hide" },
-    { "code": "BOI", "short": "Bôi", "label": "Bôi ngoài da", "category": "thuoc_boi", "report": "hide" },
-    { "code": "DAN", "short": "Dán", "label": "Dán qua da", "category": "thuoc_boi", "report": "hide" },
-    { "code": "DAT_HM", "short": "Đặt HM", "label": "Đặt hậu môn", "category": "thuoc_dat", "report": "hide" },
-    { "code": "DAT_AD", "short": "Đặt AĐ", "label": "Đặt âm đạo", "category": "thuoc_dat", "report": "hide" },
-    { "code": "KHAC", "short": "Khác", "label": "Khác", "category": "khac", "report": "dose" }
+    {
+      "code": "TTM",
+      "short": "TTM",
+      "label": "Truyền tĩnh mạch",
+      "category": "dich_truyen",
+      "report": "dose",
+      "tone": "green",
+      "research_value": "truyền_tĩnh_mạch"
+    },
+    {
+      "code": "SE",
+      "short": "SE",
+      "label": "Truyền qua bơm tiêm điện",
+      "category": "dich_truyen",
+      "report": "dose",
+      "tone": "green",
+      "research_value": "truyền_bơm_tiêm_điện"
+    },
+    {
+      "code": "TMC",
+      "short": "TMC",
+      "label": "Tiêm tĩnh mạch chậm",
+      "category": "thuoc_tiem",
+      "report": "dose",
+      "tone": "blue",
+      "research_value": "tiêm_tĩnh_mạch"
+    },
+    {
+      "code": "TB",
+      "short": "TB",
+      "label": "Tiêm bắp",
+      "category": "thuoc_tiem",
+      "report": "dose",
+      "tone": "amber",
+      "research_value": "tiêm_bắp"
+    },
+    {
+      "code": "TDD",
+      "short": "TDD",
+      "label": "Tiêm dưới da",
+      "category": "thuoc_tiem",
+      "report": "dose",
+      "tone": "amber",
+      "research_value": "tiêm_dưới_da"
+    },
+    {
+      "code": "TTD",
+      "short": "TTD",
+      "label": "Tiêm trong da",
+      "category": "thuoc_tiem",
+      "report": "dose",
+      "tone": "amber",
+      "research_value": "tiêm_trong_da"
+    },
+    {
+      "code": "UONG",
+      "short": "Uống",
+      "label": "Uống",
+      "category": "thuoc_uong",
+      "report": "daily",
+      "tone": "purple",
+      "research_value": "uống"
+    },
+    {
+      "code": "NDL",
+      "short": "NDL",
+      "label": "Ngậm dưới lưỡi",
+      "category": "thuoc_uong",
+      "report": "daily",
+      "tone": "purple",
+      "research_value": "ngậm_dưới_lưỡi"
+    },
+    {
+      "code": "KHI_DUNG",
+      "short": "Khí dung",
+      "label": "Khí dung",
+      "category": "thuoc_hit_xit",
+      "report": "dose",
+      "tone": "blue",
+      "research_value": "khí_dung"
+    },
+    {
+      "code": "HIT_XIT",
+      "short": "Hít/Xịt",
+      "label": "Hít / Xịt",
+      "category": "thuoc_hit_xit",
+      "report": "hide",
+      "tone": "gray",
+      "research_value": "hít_xịt"
+    },
+    {
+      "code": "NGAM",
+      "short": "Ngậm",
+      "label": "Ngậm / Súc miệng",
+      "category": "thuoc_uong",
+      "report": "hide",
+      "tone": "gray",
+      "research_value": "ngậm"
+    },
+    {
+      "code": "NHO_MAT",
+      "short": "Nhỏ mắt",
+      "label": "Nhỏ mắt",
+      "category": "thuoc_nho",
+      "report": "hide",
+      "tone": "gray",
+      "research_value": "nhỏ_mắt"
+    },
+    {
+      "code": "NHO_MUI",
+      "short": "Nhỏ mũi",
+      "label": "Nhỏ mũi",
+      "category": "thuoc_nho",
+      "report": "hide",
+      "tone": "gray",
+      "research_value": "nhỏ_mũi"
+    },
+    {
+      "code": "NHO_TAI",
+      "short": "Nhỏ tai",
+      "label": "Nhỏ tai",
+      "category": "thuoc_nho",
+      "report": "hide",
+      "tone": "gray",
+      "research_value": "nhỏ_tai"
+    },
+    {
+      "code": "BOI",
+      "short": "Bôi",
+      "label": "Bôi ngoài da",
+      "category": "thuoc_boi",
+      "report": "hide",
+      "tone": "gray",
+      "research_value": "bôi"
+    },
+    {
+      "code": "DAN",
+      "short": "Dán",
+      "label": "Dán qua da",
+      "category": "thuoc_boi",
+      "report": "hide",
+      "tone": "gray",
+      "research_value": "dán"
+    },
+    {
+      "code": "DAT_HM",
+      "short": "Đặt HM",
+      "label": "Đặt hậu môn",
+      "category": "thuoc_dat",
+      "report": "hide",
+      "tone": "gray",
+      "research_value": "đặt_hậu_môn"
+    },
+    {
+      "code": "DAT_AD",
+      "short": "Đặt AĐ",
+      "label": "Đặt âm đạo",
+      "category": "thuoc_dat",
+      "report": "hide",
+      "tone": "gray",
+      "research_value": "đặt_âm_đạo"
+    },
+    {
+      "code": "KHAC",
+      "short": "Khác",
+      "label": "Khác",
+      "category": "khac",
+      "report": "dose",
+      "tone": "gray",
+      "research_value": "khác"
+    }
+  ],
+  "categories": [
+    {
+      "code": "dich_truyen",
+      "label": "Dịch truyền",
+      "default_route": "TTM"
+    },
+    {
+      "code": "thuoc_tiem",
+      "label": "Thuốc tiêm",
+      "default_route": "TMC"
+    },
+    {
+      "code": "thuoc_uong",
+      "label": "Thuốc uống",
+      "default_route": "UONG"
+    },
+    {
+      "code": "thuoc_hit_xit",
+      "label": "Hô hấp (khí dung, hít, xịt)",
+      "default_route": "HIT_XIT"
+    },
+    {
+      "code": "thuoc_nho",
+      "label": "Thuốc nhỏ",
+      "default_route": "NHO_MAT"
+    },
+    {
+      "code": "thuoc_boi",
+      "label": "Dùng ngoài (bôi, dán)",
+      "default_route": "BOI"
+    },
+    {
+      "code": "thuoc_dat",
+      "label": "Thuốc đặt",
+      "default_route": "DAT_HM"
+    },
+    {
+      "code": "khac",
+      "label": "Khác",
+      "default_route": ""
+    }
   ],
   "legacy_aliases": {
-    "U": "UONG", "PO": "UONG", "UONG": "UONG", "UỐNG": "UONG",
-    "IV": "TMC", "TM": "TMC", "IM": "TB", "SC": "TDD",
-    "HÍT/XỊT": "HIT_XIT", "HIT/XIT": "HIT_XIT", "BÔI": "BOI", "DÁN": "DAN",
-    "NHỎ MẮT": "NHO_MAT", "NHỎ MŨI": "NHO_MUI", "NHỎ TAI": "NHO_TAI", "NHỎ": "NHO_MAT",
-    "TRỰC TRÀNG": "DAT_HM", "ÂM ĐẠO": "DAT_AD", "ĐẶT": "DAT_HM", "NGẬM": "NGAM", "KHÁC": "KHAC"
+    "U": "UONG",
+    "PO": "UONG",
+    "UONG": "UONG",
+    "UỐNG": "UONG",
+    "IV": "TMC",
+    "TM": "TMC",
+    "IM": "TB",
+    "SC": "TDD",
+    "HÍT/XỊT": "HIT_XIT",
+    "HIT/XIT": "HIT_XIT",
+    "BÔI": "BOI",
+    "DÁN": "DAN",
+    "NHỎ MẮT": "NHO_MAT",
+    "NHỎ MŨI": "NHO_MUI",
+    "NHỎ TAI": "NHO_TAI",
+    "NHỎ": "NHO_MAT",
+    "TRỰC TRÀNG": "DAT_HM",
+    "ÂM ĐẠO": "DAT_AD",
+    "ĐẶT": "DAT_HM",
+    "NGẬM": "NGAM",
+    "KHÁC": "KHAC"
   },
-  "rules_note": "Xét lần lượt từ trên xuống, dừng ở luật đầu tiên khớp. 'patterns' so với chữ đã bỏ dấu, viết thường, có khoảng trắng hai đầu. 'raw_patterns' so với chữ đã bỏ dấu nhưng giữ hoa/thường (dùng cho mã ngắn dễ trùng như SE).",
+  "rules_note": "Xét lần lượt từ trên xuống, dừng ở luật đầu tiên khớp. 'patterns' so với chữ đã bỏ dấu, viết thường, có khoảng trắng hai đầu. 'raw_patterns' so với chữ đã bỏ dấu nhưng giữ hoa/thường (mã ngắn dễ trùng như SE). 'weak': true = ghi chung chung (TM, IV, tiêm…), bộ phân loại chuyên mục xét tên thuốc/dung môi trước khi tin vào luật này.",
   "rules": [
-    { "route": "UONG", "patterns": ["\\buong\\b", "\\bpo\\b", "\\boral\\b"] },
-    { "route": "NDL", "patterns": ["duoi\\s*luoi"] },
-    { "route": "TDD", "patterns": ["\\btdd\\b", "\\bsc\\b", "\\bsubcut", "duoi\\s*da"] },
-    { "route": "TTD", "patterns": ["trong\\s*da", "\\bttd\\b"] },
-    { "route": "TB", "patterns": ["\\btb\\b", "\\bim\\b", "intramuscular", "tiem\\s*bap", "\\bbap\\b"] },
-    { "route": "SE", "patterns": ["bom\\s*tiem\\s*dien", "syringe\\s*pump"], "raw_patterns": ["\\bSE\\b"] },
-    { "route": "TMC", "patterns": ["\\btmc\\b", "tinh\\s*mach\\s*cham", "tiem\\s*mach\\s*cham", "tiem\\s*tm\\s*cham", "tiem\\s*cham"] },
-    { "route": "TTM", "patterns": ["\\bttm\\b", "\\btttm\\b", "truyen\\s*tinh\\s*mach", "tiem\\s*truyen", "truyen", "giot\\s*/?\\s*phut", "\\bml\\s*/?\\s*h\\b"] },
-    { "route": "TMC", "patterns": ["\\btm\\b", "\\biv\\b", "tiem\\s*mach", "tinh\\s*mach", "\\btiem\\b"] },
-    { "route": "KHI_DUNG", "patterns": ["khi\\s*dung", "phun\\s*mu", "nebuli"] },
-    { "route": "HIT_XIT", "patterns": ["\\bhit\\b", "\\bxit\\b", "dinh\\s*lieu", "aerosol"] },
-    { "route": "NHO_MAT", "patterns": ["nho\\s*mat"] },
-    { "route": "NHO_MUI", "patterns": ["nho\\s*mui"] },
-    { "route": "NHO_TAI", "patterns": ["nho\\s*tai"] },
-    { "route": "BOI", "patterns": ["\\bboi\\b", "\\bthoa\\b"] },
-    { "route": "DAN", "patterns": ["dan\\s*qua\\s*da", "mieng\\s*dan", "\\bpatch\\b"] },
-    { "route": "DAT_HM", "patterns": ["hau\\s*mon", "truc\\s*trang"] },
-    { "route": "DAT_AD", "patterns": ["am\\s*dao"] },
-    { "route": "NGAM", "patterns": ["\\bngam\\b", "suc\\s*mieng"] }
-  ]
+    {
+      "route": "UONG",
+      "patterns": [
+        "\\buong\\b",
+        "\\bpo\\b",
+        "\\boral\\b",
+        "\\(\\s*u\\s*\\)",
+        "(?<![a-z0-9])u(?![a-z0-9])"
+      ]
+    },
+    {
+      "route": "NDL",
+      "patterns": [
+        "duoi\\s*luoi"
+      ]
+    },
+    {
+      "route": "TDD",
+      "patterns": [
+        "\\btdd\\b",
+        "\\bsc\\b",
+        "\\bsubcut",
+        "duoi\\s*da"
+      ]
+    },
+    {
+      "route": "TTD",
+      "patterns": [
+        "trong\\s*da",
+        "\\bttd\\b"
+      ]
+    },
+    {
+      "route": "TB",
+      "patterns": [
+        "\\btb\\b",
+        "\\bim\\b",
+        "intramuscular",
+        "tiem\\s*bap",
+        "chich\\s*bap",
+        "\\bbap\\b"
+      ]
+    },
+    {
+      "route": "SE",
+      "patterns": [
+        "bom\\s*tiem\\s*dien",
+        "syringe\\s*pump"
+      ],
+      "raw_patterns": [
+        "\\bSE\\b"
+      ]
+    },
+    {
+      "route": "TMC",
+      "patterns": [
+        "\\btmc\\b",
+        "tinh\\s*mach\\s*cham",
+        "tiem\\s*mach\\s*cham",
+        "\\btm\\s*cham",
+        "tiem\\s*cham",
+        "chich\\s*mach\\s*cham"
+      ]
+    },
+    {
+      "route": "TTM",
+      "patterns": [
+        "\\bttm\\b",
+        "\\btttm\\b",
+        "truyen\\s*tinh\\s*mach",
+        "tiem\\s*truyen",
+        "truyen",
+        "giot\\s*/?\\s*phut",
+        "\\bg\\s*/\\s*p\\b",
+        "\\bml\\s*/?\\s*(h|gio)\\b",
+        "tt\\s*mach"
+      ]
+    },
+    {
+      "route": "TMC",
+      "patterns": [
+        "\\btm\\b",
+        "\\biv\\b",
+        "tiem\\s*mach",
+        "tinh\\s*mach",
+        "\\btiem\\b",
+        "\\bchich\\b"
+      ],
+      "weak": true
+    },
+    {
+      "route": "KHI_DUNG",
+      "patterns": [
+        "khi\\s*dung",
+        "phun\\s*mu",
+        "nebuli"
+      ]
+    },
+    {
+      "route": "HIT_XIT",
+      "patterns": [
+        "\\bhit\\b",
+        "\\bxit\\b",
+        "dinh\\s*lieu",
+        "aerosol"
+      ]
+    },
+    {
+      "route": "NHO_MAT",
+      "patterns": [
+        "nho\\s*mat"
+      ]
+    },
+    {
+      "route": "NHO_MUI",
+      "patterns": [
+        "nho\\s*mui"
+      ]
+    },
+    {
+      "route": "NHO_TAI",
+      "patterns": [
+        "nho\\s*tai"
+      ]
+    },
+    {
+      "route": "BOI",
+      "patterns": [
+        "\\bboi\\b",
+        "\\bthoa\\b"
+      ]
+    },
+    {
+      "route": "DAN",
+      "patterns": [
+        "dan\\s*qua\\s*da",
+        "mieng\\s*dan",
+        "\\bpatch\\b"
+      ]
+    },
+    {
+      "route": "DAT_HM",
+      "patterns": [
+        "hau\\s*mon",
+        "truc\\s*trang"
+      ]
+    },
+    {
+      "route": "DAT_AD",
+      "patterns": [
+        "am\\s*dao"
+      ]
+    },
+    {
+      "route": "NGAM",
+      "patterns": [
+        "\\bngam\\b",
+        "suc\\s*mieng"
+      ]
+    },
+    {
+      "route": "DAT_HM",
+      "weak": true,
+      "patterns": [
+        "\\bdat\\b"
+      ]
+    },
+    {
+      "route": "NHO_MAT",
+      "weak": true,
+      "patterns": [
+        "\\bnho\\b"
+      ]
+    }
+  ],
+  "fuzzy_note": "Từ khoá có dấu dùng cho so khớp gần đúng (lỗi chính tả) khi không luật nào khớp.",
+  "fuzzy": {
+    "UONG": [
+      "uống"
+    ],
+    "TTM": [
+      "truyền",
+      "tiêm truyền",
+      "truyền tĩnh mạch"
+    ],
+    "TMC": [
+      "tĩnh mạch chậm",
+      "tiêm mạch chậm"
+    ]
+  }
 }

@@ -17,6 +17,11 @@ import re
 import unicodedata
 from typing import Dict, Iterable, List, Mapping, MutableMapping, Optional, Set
 
+try:
+    from processing.route_table import detect_route_code, normalize_route_code
+except ImportError:  # chạy từ thư mục khác
+    from worker.processing.route_table import detect_route_code, normalize_route_code
+
 
 # ==============================================================================
 # 1) TEMPLATE DIỄN BIẾN CƠ BẢN (dùng cho 8h hoặc khi có action)
@@ -283,8 +288,11 @@ def has_vip_score(entry: Mapping) -> bool:
         return True
 
     for item in (thuoc.get("thuoc_tiem") or []):
-        route = normalize_vi(str((item or {}).get("duong_dung") or (item or {}).get("duong_dung_goc") or ""))
-        if any(k in route for k in ["tmc", "tm cham", "tinh mach cham", "tiem cham", "tinh mach"]):
+        item = item or {}
+        # Tiêm tĩnh mạch (TMC) theo model đường dùng duy nhất (config/routes.json).
+        code = normalize_route_code(item.get("duong_dung")) or detect_route_code(
+            f"{item.get('duong_dung') or ''} {item.get('duong_dung_goc') or ''}")
+        if code == "TMC":
             return True
     return False
 

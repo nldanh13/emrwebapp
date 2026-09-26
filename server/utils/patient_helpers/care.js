@@ -3,6 +3,7 @@
 const path = require('path');
 const { readJsonSafe } = require('../file');
 const { dedupeStrings } = require('./common');
+const routeModel = require('../routeModel');
 
 const _RULES_PATH = path.resolve(__dirname, '../../../config/clinical_rules.json');
 
@@ -92,13 +93,8 @@ function buildPainLine(record = {}) {
 function hasVipScore(record = {}) {
   const thuoc = record.thuoc || {};
   if ((thuoc.dich_truyen || []).length > 0) return true;
-  return (thuoc.thuoc_tiem || []).some(item => {
-    const routeRaw  = String(item.duong_dung || item.duong_dung_goc || '').toLowerCase();
-    const routeNorm = normalizeVi(routeRaw);
-    // Khớp cả có dấu lẫn không dấu — đồng bộ với has_vip_score() trong care_templates.py
-    return /tmc|tm chậm|tĩnh mạch chậm|tiêm chậm|tĩnh mạch/.test(routeRaw)
-        || /tmc|tm cham|tinh mach cham|tiem cham|tinh mach/.test(routeNorm);
-  });
+  // Tiêm tĩnh mạch (TMC) theo model đường dùng duy nhất — đồng bộ has_vip_score() trong care_templates.py.
+  return (thuoc.thuoc_tiem || []).some(item => routeModel.routeCodeOfItem(item) === 'TMC');
 }
 
 function buildCareDienBien(record = {}, actions = []) {
