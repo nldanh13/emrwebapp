@@ -3389,7 +3389,7 @@ router.get('/hchanh/discharge-bundle/:fileName', handleRoute((req, res, _ctx) =>
   }
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
-  return res.sendFile(filePath);
+  return res.sendFile(filePath, { dotfiles: 'allow' });
 }));
 
 // ── GET /api/hchanh/discharge-bundles ────────────────────────────────────────
@@ -3397,10 +3397,28 @@ router.get('/hchanh/discharge-bundle/:fileName', handleRoute((req, res, _ctx) =>
 // (nút In ở PatientDetail/ShiftTab) để tab Chữ ký chọn thêm chữ ký — không
 // cần tải file lên tay. Không liệt kê file đã ký (hậu tố _DA_KY.pdf).
 
+// File người dùng tự tải lên (không phải in từ EMR) mang tiền tố riêng để
+// không bị hiểu nhầm phần sau "IN_RA_VIEN_" là mã BN.
+const UPLOADED_DISCHARGE_PREFIX = 'IN_RA_VIEN_TAILEN_';
+const MAX_UPLOADED_DISCHARGE_PDF_BYTES = 30 * 1024 * 1024;
+
 function _parseDischargeBundleFileName(fileName) {
+  if (fileName.toUpperCase().startsWith(UPLOADED_DISCHARGE_PREFIX)) {
+    return { uploaded: true, ma_bn: '', ho_ten: fileName.slice(UPLOADED_DISCHARGE_PREFIX.length).replace(/\.pdf$/i, '').replace(/_/g, ' ') };
+  }
   const m = /^IN_RA_VIEN_(.+?)_(.+)\.pdf$/i.exec(fileName);
   if (!m) return null;
-  return { ma_bn: m[1], ho_ten: m[2].replace(/_/g, ' ') };
+  return { uploaded: false, ma_bn: m[1], ho_ten: m[2].replace(/_/g, ' ') };
+}
+
+function _uploadedDischargeFileName(originalName) {
+  const stem = path.basename(String(originalName || '')).normalize('NFC')
+    .replace(/\.pdf$/i, '')
+    .replace(/_DA_KY$/i, '')
+    .replace(/[^\p{L}\p{N}._-]+/gu, '_')
+    .replace(/^[._]+|[._]+$/g, '')
+    .slice(0, 80);
+  return `${UPLOADED_DISCHARGE_PREFIX}${stem || 'file'}.pdf`;
 }
 
 router.get('/hchanh/discharge-bundles', handleRoute((_req, res, _ctx) => {
@@ -3419,6 +3437,7 @@ router.get('/hchanh/discharge-bundles', handleRoute((_req, res, _ctx) => {
       file_name: fileName,
       ma_bn: parsed?.ma_bn || '',
       ho_ten: parsed?.ho_ten || '',
+      uploaded: Boolean(parsed?.uploaded),
       size_bytes: stat ? stat.size : 0,
       created_at: stat ? stat.mtime.toISOString() : null,
       signed: fileSet.has(signedFileName),
@@ -3427,6 +3446,35 @@ router.get('/hchanh/discharge-bundles', handleRoute((_req, res, _ctx) => {
   }
   bundles.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
   return res.json({ status: 'ok', bundles });
+}));
+
+// ── POST /api/hchanh/upload-discharge-pdf ────────────────────────────────────
+// Nhận 1 file PDF người dùng tự tải lên (phiếu đã tải sẵn từ EMR/máy khác) và
+// lưu vào cùng thư mục in để ký như bộ phiếu in từ app. Tải lại cùng tên thì
+// ghi đè và bỏ bản đã ký cũ. Body: { file_name, pdf_data_url } (data URL base64).
+
+router.post('/hchanh/upload-discharge-pdf', handleRoute((req, res, ctx) => {
+  const originalName = String(req.body?.file_name || '').trim();
+  const match = /^data:[^;,]*;base64,(.+)$/s.exec(String(req.body?.pdf_data_url || ''));
+  if (!originalName || !/\.pdf$/i.test(originalName)) {
+    return res.status(400).json({ status: 'error', message: 'Chỉ nhận file PDF (.pdf).' });
+  }
+  if (!match) return res.status(400).json({ status: 'error', message: 'Thiếu nội dung file PDF.' });
+  const buffer = Buffer.from(match[1], 'base64');
+  if (!buffer.length || buffer.subarray(0, 5).toString('latin1') !== '%PDF-') {
+    return res.status(400).json({ status: 'error', message: 'File không phải PDF hợp lệ.' });
+  }
+  if (buffer.length > MAX_UPLOADED_DISCHARGE_PDF_BYTES) {
+    return res.status(400).json({ status: 'error', message: 'File PDF quá lớn (tối đa 30MB).' });
+  }
+
+  const printDir = discharge_print_bundle_dir();
+  const fileName = _uploadedDischargeFileName(originalName);
+  fs.writeFileSync(path.join(printDir, fileName), buffer);
+  try { fs.rmSync(path.join(printDir, fileName.replace(/\.pdf$/i, '_DA_KY.pdf')), { force: true }); } catch (_) {}
+
+  appendActivity(ctx, { kind: 'ward.upload_discharge_pdf', file_name: fileName, size_bytes: buffer.length });
+  return res.json({ status: 'ok', file_name: fileName, size_bytes: buffer.length });
 }));
 
 // ── POST /api/hchanh/sign-discharge-bundle ───────────────────────────────────
@@ -3514,7 +3562,7 @@ router.get('/hchanh/printed-billing/:fileName', handleRoute((req, res, ctx) => {
   }
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
-  return res.sendFile(filePath);
+  return res.sendFile(filePath, { dotfiles: 'allow' });
 }));
 
 // ── GET /api/hchanh/patient/:ma_bn ───────────────────────────────────────────
@@ -4124,7 +4172,7 @@ router.get('/hchanh/records-check/print-pdf/:fileName', handleRoute((req, res, c
   }
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`);
-  return res.sendFile(filePath);
+  return res.sendFile(filePath, { dotfiles: 'allow' });
 }));
 
 router.post('/hchanh/records-check/stop', handleRoute((_req, res, ctx) => {

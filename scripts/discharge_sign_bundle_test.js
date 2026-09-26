@@ -12,7 +12,9 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const RUNTIME_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'discharge_sign_bundle_test_'));
+const TEST_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'discharge_sign_bundle_test_'));
+// Như bản cài thật (.runtime/): thư mục chấm không được làm hỏng việc tải file.
+const RUNTIME_ROOT = path.join(TEST_ROOT, '.runtime');
 process.env.EMR_RUNTIME_ROOT = RUNTIME_ROOT;
 
 const express = require('express');
@@ -107,8 +109,57 @@ async function main() {
     assert.strictEqual(res.status, 404);
   });
 
+  const upload = (body) => fetch(`${base}/hchanh/upload-discharge-pdf`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  const pdfDataUrl = (text) => `data:application/pdf;base64,${Buffer.from(text).toString('base64')}`;
+
+  await test('upload: không phải .pdf -> 400', async () => {
+    const res = await upload({ file_name: 'phieu.docx', pdf_data_url: pdfDataUrl('%PDF-1.4 x') });
+    assert.strictEqual(res.status, 400);
+  });
+
+  await test('upload: nội dung không phải PDF (thiếu %PDF-) -> 400', async () => {
+    const res = await upload({ file_name: 'phieu.pdf', pdf_data_url: pdfDataUrl('hello') });
+    assert.strictEqual(res.status, 400);
+  });
+
+  await test('upload: lưu vào thư mục in với tiền tố TAILEN, giữ dấu tiếng Việt, liệt kê là file tải lên', async () => {
+    const res = await upload({ file_name: 'Phiếu ra viện (Trần Thị B).pdf', pdf_data_url: pdfDataUrl('%PDF-1.4 uploaded') });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.file_name, 'IN_RA_VIEN_TAILEN_Phiếu_ra_viện_Trần_Thị_B.pdf');
+    assert.strictEqual(fs.readFileSync(path.join(printDir, body.file_name), 'utf8'), '%PDF-1.4 uploaded');
+
+    const list = await (await fetch(`${base}/hchanh/discharge-bundles`)).json();
+    const item = list.bundles.find(b => b.file_name === body.file_name);
+    assert.ok(item);
+    assert.strictEqual(item.uploaded, true);
+    assert.strictEqual(item.ma_bn, '');
+    assert.strictEqual(item.ho_ten, 'Phiếu ra viện Trần Thị B');
+    assert.strictEqual(list.bundles.find(b => b.ma_bn === '26089161').uploaded, false);
+  });
+
+  await test('upload: tải lại cùng tên -> ghi đè và bỏ bản đã ký cũ; tên file có đường dẫn bị cắt', async () => {
+    const signedOld = path.join(printDir, 'IN_RA_VIEN_TAILEN_mau_DA_KY.pdf');
+    fs.writeFileSync(path.join(printDir, 'IN_RA_VIEN_TAILEN_mau.pdf'), '%PDF-1.4 old');
+    fs.writeFileSync(signedOld, '%PDF-1.4 old-signed');
+    const res = await upload({ file_name: '../../x/mau_DA_KY.pdf', pdf_data_url: pdfDataUrl('%PDF-1.4 new') });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.file_name, 'IN_RA_VIEN_TAILEN_mau.pdf');
+    assert.strictEqual(fs.readFileSync(path.join(printDir, body.file_name), 'utf8'), '%PDF-1.4 new');
+    assert.strictEqual(fs.existsSync(signedOld), false);
+  });
+
+  await test('download: tải được file trong thư mục in dù nằm dưới .runtime/', async () => {
+    const res = await fetch(`${base}/hchanh/discharge-bundle/${encodeURIComponent('IN_RA_VIEN_TAILEN_mau.pdf')}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(await res.text(), '%PDF-1.4 new');
+  });
+
   server.close();
-  fs.rmSync(RUNTIME_ROOT, { recursive: true, force: true });
+  fs.rmSync(TEST_ROOT, { recursive: true, force: true });
 
   console.log(`\n${passed} kịch bản pass.`);
   if (process.exitCode) {

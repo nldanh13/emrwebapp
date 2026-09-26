@@ -138,7 +138,7 @@ router.get('/run-report-infusion', requireOttOrAppToken, async (req, res) => {
         });
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename="${outName}"`);
-        return res.sendFile(outPath);
+        return res.sendFile(outPath, { dotfiles: 'allow' });
       }
       return res.status(500).send(fmtPyError('Không tạo được file báo cáo.', result));
     });

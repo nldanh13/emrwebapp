@@ -45,6 +45,7 @@ middleware.applySecurityHeaders(app);
 app.use('/api', middleware.requireAppToken);
 // Chỉ các endpoint upload thực sự cần payload lớn. Các API khác bị giới hạn.
 app.use('/api/research/archive/source', express.json({ limit: process.env.EMR_RESEARCH_UPLOAD_LIMIT || '50mb' }));
+app.use('/api/hchanh/upload-discharge-pdf', express.json({ limit: process.env.EMR_DISCHARGE_PDF_UPLOAD_LIMIT || '45mb' }));
 app.use('/api/clinic/preview', express.json({ limit: process.env.EMR_CLINIC_UPLOAD_LIMIT || '12mb' }));
 app.use('/api', express.json({ limit: process.env.EMR_JSON_BODY_LIMIT || '10mb' }));
 // Chuẩn hóa tên người bệnh ở một điểm chung trước khi mọi API trả JSON.
