@@ -721,7 +721,7 @@ export default function ClinicTab({ toast }) {
           Kham va thu thuat
         </SubTabButton>
         <SubTabButton active={activeSection === 'care'} onClick={() => setActiveSection('care')}>
-          Nhap cham soc{careRows.length ? ` (${careRows.length})` : ''}
+          Nhập chăm sóc{careRows.length ? ` (${careRows.length})` : ''}
         </SubTabButton>
       </div>
 
