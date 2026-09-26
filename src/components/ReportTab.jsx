@@ -1,25 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { C } from '../tokens.js';
-import { Btn, Spinner } from './shared.jsx';
+import { IconPrinter, IconRefresh } from '@tabler/icons-react';
+import { C, FS } from '../tokens.js';
+import { Btn, Segmented, Spinner } from './shared.jsx';
 import * as api from '../api.js';
 import { inputDateToDmy } from '../utils/workDateRange.js';
 import { getPatientWorkflowDates, scopePatientToDates } from '../utils/patientScope.js';
 import {
-  ROUTE_FILTERS, TIME_GROUPS, GROUP_ORDER,
-  todayDmy, parseDmy, addDaysDmy,
-  getDaySchedule, dayTypeOf, collectDrugRows, collectOralDispenseData,
-  routeCounts, summarize, isMorningRow, isOddHour,
+  GROUP_ORDER, todayDmy, parseDmy, addDaysDmy,
+  collectDrugRows, routeCounts, summarize, isMorningRow, isOddHour,
 } from './report/reportUtils.js';
-import {
-  Chip,
-  SelectBox,
-  StatCard,
-  SummaryTable,
-  DutyReport,
-  DetailByGroup,
-  DrugTable,
-  EmptyFilter,
-} from './report/ReportSections.jsx';
+import { SelectBox, SummaryTable, DutyReport } from './report/ReportSections.jsx';
 
 export default function ReportTab({ toast, workDateRange }) {
   const [patients, setPatients] = useState([]);
@@ -149,50 +139,41 @@ export default function ReportTab({ toast, workDateRange }) {
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-      <div style={{ padding: '10px 12px 8px', borderBottom: `1px solid ${C.border}`, background: C.surface }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <div>
-            <div style={{ fontWeight: 700, color: C.text }}>Bảng thuốc ca trực</div>
-            <div style={{ color: C.text3, fontSize: 11 }}>Dữ liệu lấy trực tiếp từ phạm vi Nhập bệnh phòng; báo cáo chỉ lọc, nhóm và in.</div>
-          </div>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <Btn variant="primary" onClick={handlePrintReport} disabled={loading || printing || !allRows.length}>
-              {printing ? 'Đang tạo phiếu...' : '🖨 In phiếu'}
-            </Btn>
-            <Btn onClick={load} disabled={loading}>{loading ? 'Đang tải...' : '↻ Tải lại'}</Btn>
-          </div>
+      <div style={{ padding: '10px 12px', borderBottom: `1px solid ${C.border2}`, background: C.surface, display: 'grid', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: FS.sm, color: C.text2 }}>
+            Ngày
+            <SelectBox label="Ngày báo cáo" value={date} onChange={setDate}>
+              {availableDates.length ? availableDates.map(d => <option key={d} value={d}>{d}</option>) : <option value={date}>{date}</option>}
+            </SelectBox>
+          </label>
+          <Segmented
+            label="Kiểu xem"
+            value={view}
+            onChange={setView}
+            options={[{ value: 'duty', label: 'Phiếu bàn giao ca' }, { value: 'summary', label: 'Thống kê số lượng' }]}
+          />
+          <span style={{ flex: '1 1 0' }} />
+          <Btn icon={IconRefresh} loading={loading} onClick={load} disabled={loading}>Tải lại</Btn>
+          <Btn variant="solidPrimary" icon={IconPrinter} loading={printing} onClick={handlePrintReport} disabled={loading || printing || !allRows.length}>
+            {printing ? 'Đang tạo phiếu…' : 'In phiếu'}
+          </Btn>
         </div>
-
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 8, color: C.text2, fontSize: 12 }}>
-          <span>Ngày đang xem: <b style={{ color: C.text }}>{date}</b></span>
-          <span style={{ color: C.text3 }}>•</span>
-          <span><b style={{ color: C.text }}>{uniquePatients}</b> người bệnh</span>
-          <span style={{ color: C.text3 }}>•</span>
-          <span><b style={{ color: C.text }}>{filteredRows.length}</b> dòng thuốc</span>
-          <span style={{ color: C.text3 }}>•</span>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '2px 14px', color: C.text2, fontSize: FS.sm }}>
+          <span><b style={{ color: C.text, fontVariantNumeric: 'tabular-nums' }}>{uniquePatients}</b> người bệnh</span>
+          <span><b style={{ color: C.text, fontVariantNumeric: 'tabular-nums' }}>{filteredRows.length}</b> dòng thuốc</span>
           <span>{routeSummary}</span>
-          {oddRowsCount > 0 && <span style={{ color: C.amber, border: `1px solid ${C.amberBorder}`, background: C.amberBg, borderRadius: 4, padding: '2px 6px' }}>Giờ riêng: {oddRowsCount}</span>}
-        </div>
-
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-          <div style={{ color: C.text3, fontSize: 11 }}>Ngày</div>
-          <SelectBox value={date} onChange={setDate}>
-            {availableDates.length ? availableDates.map(d => <option key={d} value={d}>{d}</option>) : <option value={date}>{date}</option>}
-          </SelectBox>
-
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-            <Chip active={view === 'duty'} onClick={() => setView('duty')}>Phiếu bàn giao ca</Chip>
-            <Chip active={view === 'summary'} onClick={() => setView('summary')}>Thống kê số lượng</Chip>
-          </div>
+          {oddRowsCount > 0 && <span style={{ color: C.amber, fontWeight: 600 }}>{oddRowsCount} dòng giờ riêng</span>}
+          <span style={{ color: C.text2, fontSize: FS.xs }}>Dữ liệu từ Nhập bệnh phòng; màn này chỉ lọc, nhóm và in.</span>
         </div>
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
         {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.text2 }}><Spinner /> Đang tải dữ liệu...</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.text2 }}><Spinner /> Đang tải dữ liệu…</div>
         ) : !allRows.length ? (
-          <div style={{ color: C.text2, padding: 20, border: `1px dashed ${C.border}`, borderRadius: 8 }}>
-            Chưa có thuốc trong ngày đã chọn. Hãy lấy dữ liệu / post-process trước.
+          <div style={{ color: C.text2, fontSize: FS.md, padding: 20, background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 7 }}>
+            Chưa có thuốc trong ngày đã chọn. Vào <b>Lấy dữ liệu</b> để quét, lấy chi tiết và xử lý trước.
           </div>
         ) : view === 'summary' ? (
           <SummaryTable rows={total} />

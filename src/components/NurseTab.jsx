@@ -15,7 +15,7 @@ import {
   toIsoDate,
   todayIso,
 } from './nurse/nurseScheduleUtils.js';
-import useIsMobile from './nurse/useIsMobile.js';
+import useIsMobile from '../hooks/useIsMobile.js';
 import NurseDatePanel from './nurse/NurseDatePanel.jsx';
 import NurseSchedulePanel from './nurse/NurseSchedulePanel.jsx';
 import NurseRosterPanel from './nurse/NurseRosterPanel.jsx';
@@ -250,7 +250,7 @@ export default function NurseTab({ toast }) {
   const prevDate = selectedIsDate ? addDaysIso(selKey, -1) : '';
   const prevWeekDate = selectedIsDate ? addDaysIso(selKey, -7) : '';
 
-  if (loading) return <div style={{ padding: 24, color: C.text2 }}><Spinner /> Đang tải...</div>;
+  if (loading) return <div style={{ padding: 24, color: C.text2, display: 'flex', alignItems: 'center', gap: 8 }}><Spinner /> Đang tải lịch điều dưỡng…</div>;
 
 
   if (isMobile) {
@@ -281,7 +281,7 @@ export default function NurseTab({ toast }) {
 
   return (
     <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-      <div style={{ width: 178, borderRight: `1px solid ${C.border}`, overflow: 'auto', flexShrink: 0 }}>
+      <div style={{ width: 210, borderRight: `1px solid ${C.border}`, overflow: 'auto', flexShrink: 0, background: C.surface }}>
         <NurseDatePanel
           dateRange={dateRange}
           setDateRange={setDateRange}
@@ -292,7 +292,7 @@ export default function NurseTab({ toast }) {
           setSelectedKey={setSelKey}
         />
       </div>
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <div style={{ flex: 1, overflow: 'auto', background: C.surface }}>
         <NurseSchedulePanel
           selectedKey={selKey}
           selectedIsDate={selectedIsDate}
@@ -308,7 +308,7 @@ export default function NurseTab({ toast }) {
           onToggleClinicShift={toggleClinicShift}
         />
       </div>
-      <div style={{ width: 220, borderLeft: `1px solid ${C.border}`, overflow: 'auto', flexShrink: 0 }}>
+      <div style={{ width: 280, borderLeft: `1px solid ${C.border}`, overflow: 'auto', flexShrink: 0, background: C.surface }}>
         <NurseRosterPanel
           roster={roster}
           newName={newName}
