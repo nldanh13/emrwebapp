@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { IconEye, IconEyeOff, IconPlus, IconTrash, IconUpload, IconX } from '@tabler/icons-react';
 import { C, FS } from '../../tokens.js';
 import { Btn, SectionLabel } from '../shared.jsx';
@@ -31,7 +31,7 @@ function readFileAsDataUrl(file) {
 function NurseSignatureField({ name, account, onUploadSignature, onRemoveSignature }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const inputId = `sig-upload-${name}`;
+  const inputRef = useRef(null);
   const dataUrl = account?.signature_data_url || '';
 
   const handleFile = async (e) => {
@@ -69,23 +69,26 @@ function NurseSignatureField({ name, account, onUploadSignature, onRemoveSignatu
           ? <img src={dataUrl} alt={`Chữ ký ${name}`} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
           : <span style={{ fontSize: FS.xs, color: C.text2 }}>Chưa có</span>}
       </div>
-      <label
-        htmlFor={inputId}
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={busy}
         style={{
-          display: 'inline-flex', alignItems: 'center', gap: 4,
-          fontSize: FS.sm, fontWeight: 600, color: C.blue, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1,
+          display: 'inline-flex', alignItems: 'center', gap: 4, padding: 0, border: 'none', background: 'none',
+          fontFamily: 'inherit', fontSize: FS.sm, fontWeight: 600, color: C.blue, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1,
         }}
       >
         <IconUpload size={14} stroke={1.9} aria-hidden="true" />
         {busy ? 'Đang tải…' : (dataUrl ? 'Đổi chữ ký' : 'Tải chữ ký')}
-      </label>
+      </button>
+      {/* Ẩn hẳn (display:none): input ẩn kiểu sr-only nhận focus làm trình duyệt cuộn cả khung app lệch lên. */}
       <input
-        id={inputId}
+        ref={inputRef}
         type="file"
         accept="image/png,image/jpeg"
         onChange={handleFile}
         disabled={busy}
-        className="emr-sr-only"
+        hidden
       />
       {dataUrl && (
         <button
