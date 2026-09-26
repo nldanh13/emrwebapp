@@ -4,8 +4,8 @@
 // file lên tay. Chỉ chèn cho người đã có ảnh chữ ký; người khác giữ nguyên.
 // Luôn tạo file mới (hậu tố _DA_KY.pdf), không đụng file gốc.
 
-import { useState, useEffect, useCallback } from 'react';
-import { IconCheck, IconRefresh } from '@tabler/icons-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { IconCheck, IconRefresh, IconUpload } from '@tabler/icons-react';
 import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import * as api from '../../api.js';
@@ -26,6 +26,17 @@ function fmtDate(iso) {
   }
 }
 
+const MAX_UPLOAD_BYTES = 30 * 1024 * 1024;
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Không đọc được file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
 function triggerBlobDownload(blob, fileName) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -42,6 +53,8 @@ export default function DischargeSignTab({ toast }) {
   const [loading, setLoading] = useState(true);
   const [signing, setSigning] = useState('');
   const [downloading, setDownloading] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const uploadInputRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -57,15 +70,20 @@ export default function DischargeSignTab({ toast }) {
 
   useEffect(() => { load(); }, [load]);
 
+  const signFile = async (fileName) => {
+    const r = await api.signDischargeBundle(fileName);
+    if (r.status !== 'ok') {
+      toast?.(r.message || 'Không chèn được chữ ký.', 'error');
+      return null;
+    }
+    toast?.(r.message || `Đã chèn ${r.stamped_count} chữ ký.`, r.stamped_count > 0 ? 'ok' : 'warn');
+    return r;
+  };
+
   const handleSign = async (fileName) => {
     setSigning(fileName);
     try {
-      const r = await api.signDischargeBundle(fileName);
-      if (r.status !== 'ok') {
-        toast?.(r.message || 'Không chèn được chữ ký.', 'error');
-        return;
-      }
-      toast?.(r.message || `Đã chèn ${r.stamped_count} chữ ký.`, r.stamped_count > 0 ? 'ok' : 'warn');
+      await signFile(fileName);
       await load();
     } catch (e) {
       toast?.(String(e.message || e), 'error');
@@ -86,14 +104,41 @@ export default function DischargeSignTab({ toast }) {
     }
   };
 
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!/\.pdf$/i.test(file.name)) { toast?.('Chỉ nhận file PDF (.pdf).', 'error'); return; }
+    if (file.size > MAX_UPLOAD_BYTES) { toast?.('File PDF quá lớn (tối đa 30MB).', 'error'); return; }
+    setUploading(true);
+    try {
+      const up = await api.uploadDischargePdf(file.name, await readFileAsDataUrl(file));
+      if (up.status !== 'ok') { toast?.(up.message || 'Không tải được file lên.', 'error'); return; }
+      const signed = await signFile(up.file_name);
+      await load();
+      if (signed?.stamped_count > 0) await handleDownload(signed.signed_file_name);
+    } catch (err) {
+      toast?.(String(err.message || err), 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div style={{ padding: 12, maxWidth: 1080, margin: '0 auto' }}>
       <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
         <p style={{ margin: 0, flex: '1 1 320px', fontSize: FS.sm, color: C.text2, lineHeight: 1.5 }}>
-          Chèn ảnh chữ ký đã cấu hình (ở Lịch điều dưỡng) vào bộ phiếu "In ra viện" đã in sẵn. Chỉ chèn cho người
-          đã có ảnh chữ ký, người khác giữ nguyên. Luôn tạo file mới, không đụng file gốc chưa ký.
+          Chèn ảnh chữ ký đã cấu hình (ở Lịch điều dưỡng) vào bộ phiếu "In ra viện" đã in sẵn, hoặc vào file PDF
+          anh/chị tự tải lên. Chỉ chèn cho người đã có ảnh chữ ký, người khác giữ nguyên. Luôn tạo file mới, không
+          đụng file gốc chưa ký.
         </p>
-        <Btn icon={IconRefresh} loading={loading} onClick={load} disabled={loading}>Làm mới</Btn>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <Btn variant="primary" icon={IconUpload} loading={uploading} disabled={uploading} onClick={() => uploadInputRef.current?.click()}>
+            {uploading ? 'Đang tải lên và ký…' : 'Tải PDF lên để ký'}
+          </Btn>
+          <Btn icon={IconRefresh} loading={loading} onClick={load} disabled={loading}>Làm mới</Btn>
+        </div>
+        <input ref={uploadInputRef} type="file" accept="application/pdf,.pdf" onChange={handleUpload} hidden />
       </div>
 
       {loading ? (
@@ -102,15 +147,15 @@ export default function DischargeSignTab({ toast }) {
         </div>
       ) : !bundles.length ? (
         <div style={{ color: C.text2, fontSize: FS.md, padding: 24, textAlign: 'center', background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 7 }}>
-          Chưa có bộ phiếu "In ra viện" nào được in. Vào tab Xếp phòng/Nhập bệnh phòng, mở hồ sơ người bệnh
-          đã ra viện và bấm "In ra viện" trước.
+          Chưa có bộ phiếu "In ra viện" nào. Bấm "Tải PDF lên để ký" để ký file có sẵn, hoặc vào tab Xếp
+          phòng/Nhập bệnh phòng, mở hồ sơ người bệnh đã ra viện và bấm "In ra viện" trước.
         </div>
       ) : (
         <div style={{ background: C.surface, borderTop: `1px solid ${C.border2}`, overflow: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: C.surface2 }}>
-                {['Mã BN', 'Họ tên', 'Kích thước', 'Đã in lúc', 'Trạng thái', 'Tác vụ'].map(h => (
+                {['Mã BN', 'Họ tên / tên file', 'Kích thước', 'Thời gian', 'Trạng thái', 'Tác vụ'].map(h => (
                   <th key={h} style={{
                     padding: '8px 12px', textAlign: 'left', fontSize: FS.xs,
                     fontWeight: 700, color: C.text2, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap',
@@ -121,7 +166,7 @@ export default function DischargeSignTab({ toast }) {
             <tbody>
               {bundles.map((b, i) => (
                 <tr key={b.file_name} style={{ borderBottom: i < bundles.length - 1 ? `1px solid ${C.border2}` : 'none' }}>
-                  <td style={{ padding: '10px 12px', fontSize: FS.md, color: C.text, fontWeight: 500 }}>{b.ma_bn || '—'}</td>
+                  <td style={{ padding: '10px 12px', fontSize: FS.md, color: C.text, fontWeight: 500 }}>{b.uploaded ? <span style={{ fontSize: FS.xs, color: C.text2, fontWeight: 600 }}>Tải lên</span> : (b.ma_bn || '—')}</td>
                   <td style={{ padding: '10px 12px', fontSize: FS.md, color: C.text }}>{b.ho_ten || '—'}</td>
                   <td style={{ padding: '10px 12px', fontSize: FS.sm, color: C.text2 }}>{fmtBytes(b.size_bytes)}</td>
                   <td style={{ padding: '10px 12px', fontSize: FS.sm, color: C.text2 }}>{fmtDate(b.created_at)}</td>
