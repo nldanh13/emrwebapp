@@ -74,6 +74,10 @@ function TimeBadge({ row }) {
 
 const ROUTE_TONE = {
   TTM: [C.green, C.greenBg, C.greenBorder],
+  SE: [C.green, C.greenBg, C.greenBorder],
+  TTD: [C.amber, C.amberBg, C.amberBorder],
+  NDL: [C.purple, C.purpleBg, C.purpleBorder],
+  'Khí dung': [C.blue, C.blueBg, C.blueBorder],
   TMC: [C.blue, C.blueBg, C.blueBorder],
   TB: [C.amber, C.amberBg, C.amberBorder],
   TDD: [C.amber, C.amberBg, C.amberBorder],

@@ -16,6 +16,7 @@ try:
 except Exception:  # pragma: no cover
     semantic_best_match = None
 
+from processing.route_table import normalize_route_code
 from processing.schedule_engine import build_gio_dung_from_rule, build_schedule_labels, extract_total_quantity
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -316,7 +317,8 @@ def complete_medication_from_catalog(drug, *, only_if_missing_usage=True):
         return drug, None
 
     out = dict(drug)
-    route = str(med.get('default_route') or '').strip()
+    raw_route = str(med.get('default_route') or '').strip()
+    route = normalize_route_code(raw_route) or raw_route
     if route:
         out['duong_dung'] = out.get('duong_dung') or route
         out['duong_dung_goc'] = out.get('duong_dung_goc') or str(med.get('default_route_text') or route)

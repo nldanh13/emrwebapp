@@ -4,9 +4,25 @@
 //   - Thêm / sửa / xoá thuốc trong danh mục
 
 import { useState, useEffect, useCallback } from 'react';
-import { C } from '../tokens.js';
+import { IconChevronDown, IconChevronUp } from '@tabler/icons-react';
+import { C, FS } from '../tokens.js';
 import { Btn, Spinner } from './shared.jsx';
 import * as api from '../api.js';
+import { ROUTES, normalizeRouteCode, routeCategory } from '../config/routes.js';
+
+// Chuyên mục thuốc (khớp config/routes.json và bộ phân loại của worker).
+const CATEGORIES = [
+  ['dich_truyen', 'Dịch truyền'],
+  ['thuoc_tiem', 'Thuốc tiêm'],
+  ['thuoc_uong', 'Thuốc uống'],
+  ['thuoc_hit_xit', 'Hô hấp (khí dung, hít, xịt)'],
+  ['thuoc_nho', 'Thuốc nhỏ'],
+  ['thuoc_boi', 'Dùng ngoài (bôi, dán)'],
+  ['thuoc_dat', 'Thuốc đặt'],
+  ['khac', 'Khác'],
+];
+const CATEGORY_LABEL = Object.fromEntries(CATEGORIES);
+const INFUSION_ROUTES = new Set(['TTM', 'SE']);
 
 function txt(v, fb = '—') { return String(v ?? '').trim() || fb; }
 
@@ -39,10 +55,11 @@ function formFromMedication(med) {
     canonical: med.canonical || '',
     aliases: joinList(med.aliases),
     semantic_aliases: joinList(med.semantic_aliases),
-    category: med.category || '',
+    category: med.category || (med.default_route ? routeCategory(med.default_route) : ''),
     default_volume_ml: med.default_volume_ml ?? '',
     default_rate: med.default_rate ?? '',
-    default_route: med.default_route || '',
+    // Nhãn cũ (U, IV, IM…) được đổi sang mã chuẩn khi mở để sửa.
+    default_route: normalizeRouteCode(med.default_route) || med.default_route || '',
     default_route_text: med.default_route_text || '',
     default_rate_text: med.default_rate_text || '',
     schedule_rule: med.schedule_rule || '',
@@ -118,50 +135,66 @@ function EditModal({ mode, initial, onClose, onSave }) {
         </div>
 
         <div style={{ display: 'grid', gap: 10 }}>
-          <Field label="Tên chuẩn (canonical) *">
+          <Field label="Tên chuẩn *">
             <input value={form.canonical} onChange={set('canonical')} placeholder="VD: THERMODOL" style={INPUT_STYLE} />
           </Field>
-          <Field label="Alias (tên khác, cách nhau bằng dấu phẩy hoặc xuống dòng)">
+          <Field label="Tên khác (cách nhau bằng dấu phẩy hoặc xuống dòng)">
             <textarea value={form.aliases} onChange={set('aliases')} rows={3}
               placeholder="THERMODON, PARACETAMOL 1G, EFFERALGAN 1G..." style={{ ...INPUT_STYLE, resize: 'vertical' }} />
           </Field>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <Field label="Chuyên mục (category)">
-              <input value={form.category} onChange={set('category')} placeholder="VD: dich_truyen" style={INPUT_STYLE} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+            <Field label="Đường dùng mặc định">
+              <select value={form.default_route} onChange={e => {
+                const route = e.target.value;
+                // Chọn đường dùng thì tự điền chuyên mục tương ứng (vẫn đổi tay được).
+                setForm(prev => ({ ...prev, default_route: route, category: route ? routeCategory(route) : prev.category }));
+              }} style={INPUT_STYLE}>
+                <option value="">Không đặt (lấy theo y lệnh)</option>
+                {ROUTES.map(r => <option key={r.code} value={r.code}>{r.short === r.label ? r.label : `${r.short} · ${r.label}`}</option>)}
+                {form.default_route && !ROUTES.some(r => r.code === form.default_route) && <option value={form.default_route}>{form.default_route} (chưa chuẩn)</option>}
+              </select>
             </Field>
-            <Field label="Thể tích mặc định (ml)">
-              <input value={form.default_volume_ml} onChange={set('default_volume_ml')} inputMode="decimal" placeholder="VD: 100" style={INPUT_STYLE} />
+            <Field label="Chuyên mục">
+              <select value={form.category} onChange={set('category')} style={INPUT_STYLE}>
+                <option value="">Chưa chọn</option>
+                {CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                {form.category && !CATEGORY_LABEL[form.category] && <option value={form.category}>{form.category} (chưa chuẩn)</option>}
+              </select>
             </Field>
           </div>
-          <Field label="Tốc độ mặc định (gt/p)">
-            <input value={form.default_rate} onChange={set('default_rate')} placeholder="VD: 100" style={INPUT_STYLE} />
-          </Field>
+          {(INFUSION_ROUTES.has(form.default_route) || form.category === 'dich_truyen') && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+              <Field label="Thể tích mặc định (ml)">
+                <input value={form.default_volume_ml} onChange={set('default_volume_ml')} inputMode="decimal" placeholder="VD: 100" style={INPUT_STYLE} />
+              </Field>
+              <Field label={form.default_route === 'SE' ? 'Tốc độ mặc định (ml/giờ)' : 'Tốc độ mặc định (giọt/phút)'}>
+                <input value={form.default_rate} onChange={set('default_rate')} inputMode="decimal" placeholder="VD: 100" style={INPUT_STYLE} />
+              </Field>
+            </div>
+          )}
 
-          <button type="button" onClick={() => setShowAdvanced(v => !v)} style={{
-            background: 'none', border: 'none', color: C.blue, fontSize: 11.5, cursor: 'pointer',
+          <button type="button" onClick={() => setShowAdvanced(v => !v)} aria-expanded={showAdvanced} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            background: 'none', border: 'none', color: C.blue, fontSize: FS.sm, cursor: 'pointer',
             padding: 0, textAlign: 'left', fontFamily: 'inherit',
           }}>
-            {showAdvanced ? '▲ Ẩn tuỳ chọn nâng cao' : '▼ Tuỳ chọn nâng cao (đường dùng, quy tắc giờ dùng, alias suy luận)'}
+            {showAdvanced ? <IconChevronUp size={15} stroke={1.9} aria-hidden="true" /> : <IconChevronDown size={15} stroke={1.9} aria-hidden="true" />}
+            Tuỳ chọn nâng cao (tên suy luận, quy tắc giờ dùng, chữ hiển thị)
           </button>
 
           {showAdvanced && (
-            <div style={{ display: 'grid', gap: 10, paddingTop: 2, borderTop: `1px solid ${C.border2}` }}>
-              <Field label="Alias suy luận ngữ nghĩa (semantic_aliases)">
+            <div style={{ display: 'grid', gap: 10, paddingTop: 10, borderTop: `1px solid ${C.border2}` }}>
+              <Field label="Tên suy luận (khi gõ tắt, lệch dấu)">
                 <textarea value={form.semantic_aliases} onChange={set('semantic_aliases')} rows={2}
-                  placeholder="Dùng khi tên gõ tắt/lệch dấu — cách nhau bằng dấu phẩy hoặc xuống dòng" style={{ ...INPUT_STYLE, resize: 'vertical' }} />
+                  placeholder="Cách nhau bằng dấu phẩy hoặc xuống dòng" style={{ ...INPUT_STYLE, resize: 'vertical' }} />
               </Field>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label="Đường dùng mặc định (default_route)">
-                  <input value={form.default_route} onChange={set('default_route')} placeholder="VD: TTM" style={INPUT_STYLE} />
-                </Field>
-                <Field label="Quy tắc giờ dùng (schedule_rule)">
-                  <input value={form.schedule_rule} onChange={set('schedule_rule')} placeholder="VD: order_time_first_then_remaining_routine" style={INPUT_STYLE} />
-                </Field>
-              </div>
-              <Field label="Mô tả đường dùng hiển thị (default_route_text)">
+              <Field label="Quy tắc giờ dùng">
+                <input value={form.schedule_rule} onChange={set('schedule_rule')} placeholder="VD: order_time_first_then_remaining_routine" style={INPUT_STYLE} />
+              </Field>
+              <Field label="Chữ hiển thị đường dùng">
                 <input value={form.default_route_text} onChange={set('default_route_text')} placeholder="VD: TTM 100 giọt/phút" style={INPUT_STYLE} />
               </Field>
-              <Field label="Mô tả tốc độ hiển thị (default_rate_text)">
+              <Field label="Chữ hiển thị tốc độ">
                 <input value={form.default_rate_text} onChange={set('default_rate_text')} placeholder="VD: 100 giọt/phút" style={INPUT_STYLE} />
               </Field>
             </div>
@@ -287,7 +320,7 @@ export default function MedicationCatalogManager() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: C.surface2 }}>
-                {['Tên chuẩn', 'Alias', 'Chuyên mục', 'Thể tích (ml)', 'Tốc độ', 'Tác vụ'].map(h => (
+                {['Tên chuẩn', 'Tên khác', 'Đường dùng', 'Chuyên mục', 'Thể tích (ml)', 'Tốc độ', 'Tác vụ'].map(h => (
                   <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11,
                     fontWeight: 700, color: C.text2, borderBottom: `1px solid ${C.border}`,
                     letterSpacing: 0.15, whiteSpace: 'nowrap' }}>{h}</th>
@@ -301,7 +334,8 @@ export default function MedicationCatalogManager() {
                   <td style={{ padding: '10px 12px', fontSize: 11.5, color: C.text2, maxWidth: 320 }}>
                     {item.aliases?.length ? joinList(item.aliases) : <span style={{ color: C.text3 }}>—</span>}
                   </td>
-                  <td style={{ padding: '10px 12px', fontSize: 12, color: C.text2 }}>{txt(item.category)}</td>
+                  <td style={{ padding: '10px 12px', fontSize: 12, color: C.text2 }}>{txt(normalizeRouteCode(item.default_route) || item.default_route)}</td>
+                  <td style={{ padding: '10px 12px', fontSize: 12, color: C.text2 }}>{txt(CATEGORY_LABEL[item.category] || item.category)}</td>
                   <td style={{ padding: '10px 12px', fontSize: 12 }}>
                     <code style={{ color: C.blue }}>{txt(item.default_volume_ml)}</code>
                   </td>
