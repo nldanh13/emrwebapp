@@ -220,11 +220,11 @@ def test_discharge_time_cuts_evening_and_next_day_medication_rows(tmp_path):
 
 
 def test_discharge_day_unknown_time_not_sent_to_night_prep():
-    source = (ROOT / "src/components/report/DutyReport.jsx").read_text(encoding="utf-8")
+    source = (ROOT / "src/components/report/dutyPlan.js").read_text(encoding="utf-8")
     assert "row?.noTime && row?.dischargeCutoffMinutes != null" in source
 
 
 def test_discharge_cutoff_hides_unknown_current_task_after_patient_left():
-    source = (ROOT / "src/components/report/DutyReport.jsx").read_text(encoding="utf-8")
+    source = (ROOT / "src/components/report/dutyPlan.js").read_text(encoding="utf-8")
     assert "currentMinutes > cutoff" in source
     assert "row?.dischargeCutoffMinutes" in source

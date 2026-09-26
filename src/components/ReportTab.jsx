@@ -7,7 +7,7 @@ import { inputDateToDmy } from '../utils/workDateRange.js';
 import { getPatientWorkflowDates, scopePatientToDates } from '../utils/patientScope.js';
 import {
   GROUP_ORDER, todayDmy, parseDmy, addDaysDmy,
-  collectDrugRows, routeCounts, summarize, isMorningRow, isOddHour,
+  collectDrugRows, routeCounts, summarize, isOddHour,
 } from './report/reportUtils.js';
 import { SelectBox, SummaryTable, DutyReport } from './report/ReportSections.jsx';
 
@@ -67,12 +67,24 @@ export default function ReportTab({ toast, workDateRange }) {
       return dates.length ? scopePatientToDates(patient, dates) : null;
     }).filter(Boolean);
   }, [patients, nextDate]);
-  const rawNextMorningRows = useMemo(() => {
+  // Toàn bộ thuốc theo y lệnh ngày mai: người trực cần cữ sáng mai và thuốc uống ngày mai khi mai là ngày nghỉ.
+  const rawNextDayRows = useMemo(() => {
     if (!nextDate) return [];
-    return collectDrugRows(nextWardPatients, nextDate).filter(row => isMorningRow(row, nextDate));
+    return collectDrugRows(nextWardPatients, nextDate);
   }, [nextWardPatients, nextDate]);
 
-  const routeOptions = useMemo(() => routeCounts([...allRows, ...rawNextMorningRows]), [allRows, rawNextMorningRows]);
+  // Giờ vào khoa của từng người bệnh, để biết ai mới vào trong tua trực.
+  const admissions = useMemo(() => {
+    const out = {};
+    for (const patient of wardPatients) {
+      const key = String(patient?.ma_bn || '').trim();
+      const value = patient?.day_map?.[date]?.thoi_gian_vao_khoa || patient?.thoi_gian_vao_khoa || patient?.tg_vao || patient?.admission_time;
+      if (key && value) out[key] = String(value);
+    }
+    return out;
+  }, [wardPatients, date]);
+
+  const routeOptions = useMemo(() => routeCounts([...allRows, ...rawNextDayRows]), [allRows, rawNextDayRows]);
 
   useEffect(() => {
     if (!selectedRoutes.length) return;
@@ -88,10 +100,10 @@ export default function ReportTab({ toast, workDateRange }) {
     return allRows.filter(row => selectedRoutes.includes(row.route));
   }, [allRows, selectedRoutes]);
 
-  const nextMorningRows = useMemo(() => {
-    if (!selectedRoutes.length) return rawNextMorningRows;
-    return rawNextMorningRows.filter(row => selectedRoutes.includes(row.route));
-  }, [rawNextMorningRows, selectedRoutes]);
+  const nextDayRows = useMemo(() => {
+    if (!selectedRoutes.length) return rawNextDayRows;
+    return rawNextDayRows.filter(row => selectedRoutes.includes(row.route));
+  }, [rawNextDayRows, selectedRoutes]);
 
   const routeFilteredRows = filteredRows;
 
@@ -181,7 +193,8 @@ export default function ReportTab({ toast, workDateRange }) {
           <DutyReport
             date={date}
             rows={routeFilteredRows}
-            nextMorningRows={nextMorningRows}
+            nextDayRows={nextDayRows}
+            admissions={admissions}
             nurseState={nurseState}
             routeOptions={routeOptions}
             selectedRoutes={selectedRoutes}

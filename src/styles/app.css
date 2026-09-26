@@ -168,6 +168,21 @@ a { color: var(--emr-accent); text-underline-offset: 2px; }
 .emr-action-row:disabled .emr-action-row__chevron { opacity: 0; }
 
 /* Dải cuộn ngang (chip phòng, nút trên điện thoại): ẩn thanh cuộn. */
+/* Báo cáo ca trực: lưới 2 cột và dòng thuốc (Phòng · Người bệnh · Thuốc · Đường dùng). */
+.emr-duty-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 12px; align-items: start; }
+.emr-med-line, .emr-oral-line { display: grid; grid-template-columns: 48px minmax(110px, 0.9fr) minmax(0, 1.8fr) auto; gap: 4px 10px; align-items: baseline; padding: 7px 12px; border-top: 1px solid var(--emr-border-soft); font-size: 13px; color: var(--emr-ink); }
+.emr-oral-line { grid-template-columns: 48px minmax(110px, 0.9fr) minmax(0, 2.4fr); }
+.emr-med-line__room { color: var(--emr-ink-2); font-weight: 650; font-variant-numeric: tabular-nums; }
+.emr-med-line__name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.emr-med-line__drug, .emr-oral-line__drugs { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 639px) {
+  .emr-med-line { grid-template-columns: 40px minmax(0, 1fr) auto; }
+  .emr-med-line__route { grid-column: 3; grid-row: 1; }
+  .emr-med-line__drug { grid-column: 2 / 4; grid-row: 2; }
+  .emr-oral-line { grid-template-columns: 40px minmax(0, 1fr); }
+  .emr-oral-line__drugs { grid-column: 2 / 3; }
+}
+
 /* Mục trong menu thả xuống (vd. Công cụ ở Hành chánh). */
 .emr-menu-item { display: block; width: 100%; min-height: 34px; padding: 0 10px; text-align: left; border: 0; border-radius: var(--emr-radius-sm); background: transparent; color: var(--emr-ink); font: inherit; font-size: 12px; cursor: pointer; }
 .emr-menu-item:hover, .emr-menu-item:focus-visible { background: var(--emr-surface-muted); }
