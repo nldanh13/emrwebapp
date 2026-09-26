@@ -1,7 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { C } from '../../tokens.js';
+import { C, FS } from '../../tokens.js';
+import {
+  IconChevronDown, IconCloudDownload, IconDownload, IconExternalLink, IconListSearch, IconPlayerStop,
+  IconRefresh, IconSearch, IconSettings, IconX,
+} from '@tabler/icons-react';
 import { Btn, Spinner } from '../shared.jsx';
 import RecordsSubmissionTab from './RecordsSubmissionTab.jsx';
+import useIsMobile from '../../hooks/useIsMobile.js';
 import { PAPER_ISSUE_STATES, applyGoogleSheetValidation, buildGoogleSheetIndex, buildUnlinkedSheetIssues, paperFilterMatches } from './googleSheetValidation.mjs';
 import { exportRecordsCheckPdf, getRecordsCheckDashboard, getRecordsCheckGoogleSheet, getRecordsCheckSubmissions, scanRecordsCheckCompleted, setRecordsCheckChecked, setRecordsCheckPaperChecklist, startRecordsCheckFetchBatch, stopRecordsCheckFetchBatch, syncRecordsCheckGoogleSheet, updateRecordsCheckGoogleSheetRow } from '../../api.js';
 
@@ -200,18 +205,34 @@ function chipStyle(tone) {
 function Chip({ tone = 'gray', children, title }) {
   const s = chipStyle(tone);
   return (
-    <span title={title} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 7px', borderRadius: 999, fontSize: 10, fontWeight: 700, color: s.color, background: s.background, border: `1px solid ${s.borderColor}`, whiteSpace: 'nowrap' }}>
+    <span title={title} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 7px', borderRadius: 4, lineHeight: 1.5, fontSize: FS.xs, fontWeight: 600, color: s.color, background: s.background, border: `1px solid ${s.borderColor}`, whiteSpace: 'nowrap' }}>
       {children}
     </span>
   );
 }
 
 function StatBox({ label, value, tone = 'gray' }) {
-  const s = chipStyle(tone);
+  const color = tone === 'gray' || tone === 'blue' ? C.text : chipStyle(tone).color;
   return (
-    <div style={{ minWidth: 92, padding: '9px 11px', borderRadius: 6, background: s.background, border: `1px solid ${s.borderColor}` }}>
-      <div style={{ fontSize: 21, lineHeight: 1, fontWeight: 850, color: s.color }}>{value}</div>
-      <div style={{ fontSize: 10, color: C.text2, marginTop: 4 }}>{label}</div>
+    <span style={{ fontSize: FS.sm, whiteSpace: 'nowrap' }}>
+      <b style={{ fontSize: FS.lg, color, fontVariantNumeric: 'tabular-nums' }}>{value ?? 0}</b> <span style={{ color: C.text2 }}>{label}</span>
+    </span>
+  );
+}
+
+const FIELD_STYLE = { height: 32, padding: '0 8px', borderRadius: 5, background: C.surface, border: `1px solid ${C.border}`, color: C.text, fontSize: FS.sm, fontFamily: 'inherit' };
+
+function MenuButton({ icon, label, open, setOpen, children, align = 'left' }) {
+  return (
+    <div style={{ position: 'relative' }}>
+      <Btn icon={icon} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu">
+        {label} <IconChevronDown size={14} stroke={2} aria-hidden="true" />
+      </Btn>
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', [align]: 0, zIndex: 30, minWidth: 230, padding: 4, borderRadius: 7, background: C.surface, border: `1px solid ${C.border}`, boxShadow: C.shadow2, display: 'grid', gap: 2 }}>
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -803,6 +824,8 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
   const [checklistDrawerKey, setChecklistDrawerKey] = useState('');
   const [checklistSaving, setChecklistSaving] = useState(false);
   const [actorName, setActorName] = useState(() => readActorName());
+  const [openMenu, setOpenMenu] = useState('');
+  const isMobile = useIsMobile();
 
   async function setChecked(row, checked) {
     const key = getRowKey(row);
@@ -1397,17 +1420,19 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
   }
 
   const modeTabs = (
-    <div style={{ display: 'flex', gap: 0, alignItems: 'center', padding: '0 12px', background: C.surface, borderBottom: `1px solid ${C.border2}` }}>
-      <button type="button" onClick={() => setViewMode('check')} style={{ ...modeTabStyle, color: viewMode === 'check' ? C.text : C.text3, background: 'transparent', borderColor: 'transparent', borderBottom: `2px solid ${viewMode === 'check' ? C.blue : 'transparent'}` }}>
-        Danh sách kiểm hồ sơ
-      </button>
-      <button type="button" onClick={() => setViewMode('submission')} style={{ ...modeTabStyle, color: viewMode === 'submission' ? C.text : C.text3, background: 'transparent', borderColor: 'transparent', borderBottom: `2px solid ${viewMode === 'submission' ? C.blue : 'transparent'}` }}>
-        Nộp hồ sơ theo ngày
-      </button>
-      <span style={{ marginLeft: 10, color: C.text3, fontSize: 9.5 }}>Dấu đã kiểm được lưu cố định.</span>
+    <div role="tablist" aria-label="Chế độ kiểm hồ sơ" className="emr-hscroll" style={{ display: 'flex', gap: 2, alignItems: 'center', padding: '0 12px', background: C.surface, borderBottom: `1px solid ${C.border2}`, overflowX: 'auto' }}>
+      {[['check', 'Danh sách kiểm hồ sơ'], ['submission', 'Nộp hồ sơ theo ngày']].map(([mode, label]) => {
+        const active = viewMode === mode;
+        return (
+          <button key={mode} type="button" role="tab" aria-selected={active} onClick={() => setViewMode(mode)} style={{
+            flexShrink: 0, height: 40, padding: '0 10px', border: 0, borderBottom: `2px solid ${active ? C.blue : 'transparent'}`, marginBottom: -1,
+            background: 'transparent', color: active ? C.blue : C.text2, fontSize: FS.sm, fontWeight: active ? 650 : 550, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+          }}>{label}</button>
+        );
+      })}
+      {!isMobile && <span style={{ marginLeft: 'auto', paddingLeft: 12, color: C.text3, fontSize: FS.xs, whiteSpace: 'nowrap' }}>Dấu đã kiểm được lưu cố định.</span>}
     </div>
   );
-
 
   if (loading && !dashboard) {
     return <div style={{ padding: 32, color: C.text2, display: 'flex', alignItems: 'center', gap: 10 }}><Spinner /> Đang tải dữ liệu kiểm hồ sơ...</div>;
@@ -1429,60 +1454,72 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {modeTabs}
-      <div style={{ padding: '9px 12px', borderBottom: `1px solid ${C.border2}`, background: C.surface }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ minWidth: 160, marginRight: 2 }}>
-            <div style={{ fontSize: 14, fontWeight: 850, color: C.text }}>Kiểm hồ sơ</div>
-            <div style={{ fontSize: 10, color: C.text3, marginTop: 1 }}>Ca hoàn tất và CĐHA</div>
-          </div>
-          <Btn variant="primary" disabled={loading || effectiveRunning} onClick={() => load({ doScan: true })} style={{ fontSize: 11, padding: '5px 12px' }}>
-            {loading ? <><Spinner size={10} /> Đang quét...</> : 'Quét danh sách'}
+      <div style={{ padding: '10px 12px', borderBottom: `1px solid ${C.border2}`, background: C.surface, display: 'grid', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <Btn variant="solidPrimary" icon={IconListSearch} loading={loading} disabled={loading || effectiveRunning} onClick={() => load({ doScan: true })}>
+            {loading ? 'Đang quét…' : 'Quét danh sách'}
           </Btn>
-          <Btn variant="secondary" disabled={googleSheet.loading} onClick={() => syncGoogleSheet()} style={{ fontSize: 11, padding: '5px 12px' }}>
-            {googleSheet.loading ? <><Spinner size={10} /> Đang đồng bộ Sheet...</> : 'Đồng bộ Sheet'}
+          {effectiveRunning ? (
+            <Btn variant="danger" icon={IconPlayerStop} onClick={stopFetchJob}>
+              Dừng lấy ({activeDone}/{activeTotal || '?'})
+            </Btn>
+          ) : (
+            <Btn variant="primary" icon={IconCloudDownload} onClick={fetchAllMissing}>
+              {`Lấy ca thiếu${batchLimit > 0 ? ` (${batchLimit})` : ''}`}
+            </Btn>
+          )}
+          {!isMobile && <span aria-hidden="true" style={{ width: 1, height: 24, background: C.border2 }} />}
+          <Btn icon={IconRefresh} loading={googleSheet.loading} disabled={googleSheet.loading} onClick={() => syncGoogleSheet()}>
+            {googleSheet.loading ? 'Đang đồng bộ…' : 'Đồng bộ Sheet'}
           </Btn>
-          {googleSheet.spreadsheet_url ? <a href={googleSheet.spreadsheet_url} target="_blank" rel="noreferrer" style={{ fontSize: 11, fontWeight: 800, color: C.blue, textDecoration: 'none' }}>Mở Google Sheet</a> : null}
-          <Chip tone={googleSheet.write_enabled ? 'green' : 'amber'} title={googleSheet.write_config_error || (googleSheet.write_missing_token ? 'Thiếu EMR_GOOGLE_SHEET_WRITE_TOKEN' : 'Chưa cấu hình Google Apps Script Web app')}>{googleSheet.write_enabled ? 'Sheet: sửa được' : 'Sheet: chỉ đọc'}</Chip>
-          <Btn variant="danger" disabled={effectiveRunning} onClick={fetchAllMissing} style={{ fontSize: 11, padding: '5px 12px' }}>
-            {effectiveRunning ? `Đang lấy ${activeDone}/${activeTotal || '?'}` : `Lấy ca thiếu${batchLimit > 0 ? ` (${batchLimit})` : ''}`}
-          </Btn>
-          <Btn variant="danger" disabled={!effectiveRunning} onClick={stopFetchJob} style={{ fontSize: 11, padding: '5px 12px' }}>
-            Dừng lấy
-          </Btn>
-          <Btn variant="secondary" disabled={!updateSelectedKeys.size || effectiveRunning} onClick={fetchSelectedRows} style={{ fontSize: 11, padding: '5px 12px' }}>
-            {updateSelectedKeys.size ? `Cập nhật đã chọn (${updateSelectedKeys.size})` : 'Cập nhật đã chọn'}
-          </Btn>
-          <Btn variant="secondary" disabled={!filteredRows.length} onClick={selectVisibleRows} style={{ fontSize: 11, padding: '5px 12px' }}>Chọn dòng hiển thị</Btn>
-          <Btn variant="secondary" disabled={!filteredRows.some(isRowFetchableMissing)} onClick={selectMissingRows} style={{ fontSize: 11, padding: '5px 12px' }}>Chọn ca thiếu</Btn>
-          <Btn variant="default" disabled={!updateSelectedKeys.size} onClick={clearUpdateSelection} style={{ fontSize: 11, padding: '5px 12px' }}>Bỏ chọn</Btn>
-          <Btn variant="secondary" disabled={!filteredRows.length} onClick={() => exportCsv(filteredRows, checkedMap)} style={{ fontSize: 11, padding: '5px 12px' }}>Xuất CSV</Btn>
-          <Btn variant="secondary" disabled={!counts.checked} onClick={exportCheckedPdf} style={{ fontSize: 11, padding: '5px 12px' }}>{counts.checked ? `Xuất PDF đã kiểm (${counts.checked})` : 'Xuất PDF đã kiểm'}</Btn>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.text2, userSelect: 'none' }} title="Giới hạn số ca chạy trong một lượt. Khi lấy ca thiếu, hệ thống ưu tiên ca chưa từng lấy rồi mới thử lại các ca lỗi cũ để tránh kẹt ở nhóm đầu.">
-            Mỗi lượt
-            <select value={batchLimit} onChange={e => setBatchLimitPref(Number(e.target.value || 0))} disabled={effectiveRunning}
-              style={{ padding: '4px 8px', borderRadius: 8, background: C.surface2, border: `1px solid ${C.border}`, color: C.text, fontSize: 11 }}>
-              <option value={25}>25 ca</option>
-              <option value={50}>50 ca</option>
-              <option value={100}>100 ca</option>
-              <option value={200}>200 ca</option>
-              <option value={0}>Tất cả</option>
-            </select>
+          {googleSheet.spreadsheet_url ? (
+            <a href={googleSheet.spreadsheet_url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: FS.sm, fontWeight: 600, color: C.blue, textDecoration: 'none' }}>
+              Mở Google Sheet <IconExternalLink size={14} stroke={1.9} aria-hidden="true" />
+            </a>
+          ) : null}
+          <Chip tone={googleSheet.write_enabled ? 'green' : 'gray'} title={googleSheet.write_config_error || (googleSheet.write_missing_token ? 'Thiếu EMR_GOOGLE_SHEET_WRITE_TOKEN' : 'Chưa cấu hình Google Apps Script Web app')}>{googleSheet.write_enabled ? 'Sheet: sửa được' : 'Sheet: chỉ đọc'}</Chip>
+          <span style={{ flex: '1 1 0' }} />
+          <MenuButton icon={IconDownload} label="Xuất" open={openMenu === 'export'} setOpen={v => setOpenMenu(v ? 'export' : '')} align="right">
+            <button type="button" role="menuitem" className="emr-menu-item" disabled={!filteredRows.length} onClick={() => { exportCsv(filteredRows, checkedMap); setOpenMenu(''); }}>Xuất CSV các dòng đang hiện</button>
+            <button type="button" role="menuitem" className="emr-menu-item" disabled={!counts.checked} onClick={() => { exportCheckedPdf(); setOpenMenu(''); }}>{counts.checked ? `Xuất PDF đã kiểm (${counts.checked})` : 'Xuất PDF đã kiểm'}</button>
+          </MenuButton>
+          <MenuButton icon={IconSettings} label="Tùy chọn" open={openMenu === 'options'} setOpen={v => setOpenMenu(v ? 'options' : '')} align="right">
+            <label className="emr-menu-item" style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }} title="Giới hạn số ca chạy trong một lượt. Khi lấy ca thiếu, hệ thống ưu tiên ca chưa từng lấy rồi mới thử lại các ca lỗi cũ để tránh kẹt ở nhóm đầu.">
+              Mỗi lượt lấy
+              <select value={batchLimit} onChange={e => setBatchLimitPref(Number(e.target.value || 0))} disabled={effectiveRunning} style={{ ...FIELD_STYLE, height: 28 }}>
+                <option value={25}>25 ca</option>
+                <option value={50}>50 ca</option>
+                <option value={100}>100 ca</option>
+                <option value={200}>200 ca</option>
+                <option value={0}>Tất cả</option>
+              </select>
+            </label>
+            <label className="emr-menu-item" style={{ display: 'flex', alignItems: 'center', gap: 8 }} title={headless ? 'Khi lấy chi tiết sẽ không mở cửa sổ Chrome.' : 'Dùng khi cần nhìn Chrome thao tác để kiểm lỗi.'}>
+              <input type="checkbox" checked={headless} onChange={e => setHeadlessPref(e.target.checked)} style={{ accentColor: C.blue }} />
+              Chạy ẩn (không hiện Chrome)
+            </label>
+          </MenuButton>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <label style={{ position: 'relative', flex: '1 1 240px', maxWidth: 360 }}>
+            <IconSearch size={16} stroke={1.75} color={C.text3} aria-hidden="true" style={{ position: 'absolute', left: 9, top: 8 }} />
+            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Tìm tên, mã người bệnh, khoa, số lưu trữ" aria-label="Tìm hồ sơ" style={{ ...FIELD_STYLE, width: '100%', padding: '0 9px 0 32px' }} />
           </label>
-          <label title={headless ? 'Bật chạy ẩn: khi lấy chi tiết sẽ không mở cửa sổ Chrome.' : 'Tắt chạy ẩn: dùng khi cần nhìn Chrome thao tác để kiểm lỗi.'}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 800, color: headless ? C.green : C.amber, border: `1px solid ${headless ? C.greenBorder : C.amberBorder}`, background: headless ? C.greenBg : C.amberBg, borderRadius: 999, padding: '4px 9px', userSelect: 'none' }}>
-            <input type="checkbox" checked={headless} onChange={e => setHeadlessPref(e.target.checked)} />
-            {headless ? 'Chạy ẩn: Bật' : 'Chạy ẩn: Tắt (sẽ hiện Chrome)'}
-          </label>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.text2, userSelect: 'none' }}>
-            <input type="checkbox" checked={showOnlyCompleted} onChange={e => setShowOnlyCompleted(e.target.checked)} />
-            Chỉ ca hoàn tất
-          </label>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.text2, userSelect: 'none' }}>
-            <input type="checkbox" checked={showOnlyStorage} onChange={e => setShowOnlyStorage(e.target.checked)} />
-            Chỉ có số lưu trữ
-          </label>
-          <select value={paperFilter} onChange={e => setPaperFilter(e.target.value)} title="Lọc theo kết quả đối chiếu EMR với Google Sheet" style={{ padding: '6px 10px', borderRadius: 8, background: C.surface2, border: `1px solid ${C.border}`, color: C.text, fontSize: 12, minWidth: 205 }}>
-            <option value="all">Đối chiếu Sheet: Tất cả</option>
+          <select
+            aria-label="Tháng ra viện"
+            value={dischargeMonth}
+            onChange={e => setDischargeMonthPref(e.target.value)}
+            title="Chỉ hiển thị hồ sơ có ngày ra viện thuộc tháng đã chọn"
+            style={{ ...FIELD_STYLE, borderColor: dischargeMonth ? C.blueBorder : C.border, color: dischargeMonth ? C.blue : C.text, fontWeight: dischargeMonth ? 650 : 400 }}
+          >
+            <option value="">Ra viện: tất cả tháng</option>
+            {dischargeMonthOptions.map(month => (
+              <option key={month} value={month}>Ra viện {dischargeMonthLabel(month)}</option>
+            ))}
+          </select>
+          <select aria-label="Đối chiếu Google Sheet" value={paperFilter} onChange={e => setPaperFilter(e.target.value)} title="Lọc theo kết quả đối chiếu EMR với Google Sheet" style={FIELD_STYLE}>
+            <option value="all">Đối chiếu Sheet: tất cả</option>
             <option value="available">Đã khớp tên và Số LT</option>
             <option value="issues">Có thể sai / cần kiểm</option>
             <option value="missing">Chưa có trên Sheet</option>
@@ -1494,81 +1531,91 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
             <option value="missing_name">Sheet thiếu tên</option>
             <option value="ambiguous_storage">Trùng Số LT, chưa xác định</option>
           </select>
-          <select value={dataFilter} onChange={e => setDataFilter(e.target.value)} title="Lọc theo trạng thái đang hiển thị trong bảng" style={{ padding: '6px 10px', borderRadius: 8, background: C.surface2, border: `1px solid ${C.border}`, color: C.text, fontSize: 12, minWidth: 165 }}>
+          <select aria-label="Trạng thái dữ liệu" value={dataFilter} onChange={e => setDataFilter(e.target.value)} title="Lọc theo trạng thái đang hiển thị trong bảng" style={FIELD_STYLE}>
             <option value="all">Tất cả trạng thái</option>
             {statusOptions.map(label => <option key={label} value={statusFilterValue(label)}>{label}</option>)}
           </select>
-          <select
-            value={dischargeMonth}
-            onChange={e => setDischargeMonthPref(e.target.value)}
-            title="Chỉ hiển thị hồ sơ có ngày ra viện thuộc tháng đã chọn"
-            style={{ padding: '6px 10px', borderRadius: 8, background: C.surface2, border: `1px solid ${dischargeMonth ? C.blueBorder : C.border}`, color: dischargeMonth ? C.blue : C.text, fontSize: 12, minWidth: 170, fontWeight: dischargeMonth ? 800 : 400 }}
-          >
-            <option value="">Ra viện: Tất cả tháng</option>
-            {dischargeMonthOptions.map(month => (
-              <option key={month} value={month}>Ra viện {dischargeMonthLabel(month)}</option>
-            ))}
-          </select>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Tìm tên, mã BN, khoa, số lưu trữ..." style={{ flex: 1, minWidth: 210, maxWidth: 380, padding: '6px 10px', borderRadius: 8, background: C.surface2, border: `1px solid ${C.border}`, color: C.text, fontSize: 12 }} />
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: FS.sm, color: C.text2, userSelect: 'none' }}>
+            <input type="checkbox" checked={showOnlyCompleted} onChange={e => setShowOnlyCompleted(e.target.checked)} style={{ accentColor: C.blue }} />
+            Chỉ ca hoàn tất
+          </label>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: FS.sm, color: C.text2, userSelect: 'none' }}>
+            <input type="checkbox" checked={showOnlyStorage} onChange={e => setShowOnlyStorage(e.target.checked)} style={{ accentColor: C.blue }} />
+            Chỉ có số lưu trữ
+          </label>
           {loading && <Spinner size={14} />}
         </div>
       </div>
 
-      <div style={{ padding: '8px 16px 0', background: C.surface }}>
-        <div style={{ fontSize: 10, color: C.text3, fontWeight: 850, textTransform: 'uppercase', letterSpacing: .5, marginBottom: 5 }}>Cần xử lý hôm nay</div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {[
-            ['none', 'Tất cả', counts.total, 'gray'],
-            ['overdue_48h', 'Quá hạn 48 giờ', counts.overdue48h, 'red'],
-            ['due_12h', 'Còn dưới 12 giờ', counts.due12h, 'orange'],
-            ['due_24h', 'Còn dưới 24 giờ', counts.due24h, 'amber'],
-            ['missing_doctor_sign', 'Thiếu chữ ký bác sĩ', counts.missingDoctorSign, 'amber'],
-            ['missing_nurse_sign', 'Thiếu chữ ký điều dưỡng', counts.missingNurseSign, 'amber'],
-            ['waiting_head_sign', 'Chờ Trưởng khoa ký', counts.waitingHeadSign, 'amber'],
-            ['missing_cover_note', 'Nợ KSĐ/GPB chưa ghi note', counts.missingCoverNote, 'amber'],
-            ['ready_to_submit', 'Đã hoàn thiện, sẵn sàng nộp', counts.readyToSubmit, 'green'],
-          ].map(([value, label, count, tone]) => {
-            const active = taskFilter === value;
-            const s = chipStyle(tone);
-            return (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setTaskFilter(prev => prev === value ? 'none' : value)}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8, cursor: 'pointer',
-                  border: `1px solid ${active ? s.color : s.borderColor}`, background: active ? s.color : s.background, color: active ? '#fff' : s.color,
-                  fontSize: 11, fontWeight: 800,
-                }}
-                title={`Lọc theo: ${label}`}
-              >
-                <span>{label}</span>
-                <span style={{ padding: '1px 6px', borderRadius: 999, background: active ? 'rgba(255,255,255,.25)' : 'rgba(0,0,0,.06)' }}>{count}</span>
-              </button>
-            );
-          })}
-        </div>
+      <div className={isMobile ? 'emr-hscroll' : undefined} style={{ padding: '8px 12px', background: C.surface, display: 'flex', alignItems: 'center', gap: 6, flexWrap: isMobile ? 'nowrap' : 'wrap', overflowX: isMobile ? 'auto' : 'visible', borderBottom: `1px solid ${C.border2}` }}>
+        <span style={{ fontSize: FS.sm, fontWeight: 650, color: C.text, marginRight: 4, whiteSpace: 'nowrap' }}>Cần xử lý hôm nay</span>
+        {[
+          ['none', 'Tất cả', counts.total, 'gray'],
+          ['overdue_48h', 'Quá hạn 48 giờ', counts.overdue48h, 'red'],
+          ['due_12h', 'Còn dưới 12 giờ', counts.due12h, 'orange'],
+          ['due_24h', 'Còn dưới 24 giờ', counts.due24h, 'amber'],
+          ['missing_doctor_sign', 'Thiếu chữ ký bác sĩ', counts.missingDoctorSign, 'amber'],
+          ['missing_nurse_sign', 'Thiếu chữ ký điều dưỡng', counts.missingNurseSign, 'amber'],
+          ['waiting_head_sign', 'Chờ Trưởng khoa ký', counts.waitingHeadSign, 'amber'],
+          ['missing_cover_note', 'Nợ KSĐ/GPB chưa ghi note', counts.missingCoverNote, 'amber'],
+          ['ready_to_submit', 'Sẵn sàng nộp', counts.readyToSubmit, 'green'],
+        ].map(([value, label, count, tone]) => {
+          const active = taskFilter === value || (value === 'none' && taskFilter === 'none');
+          const empty = !count && value !== 'none';
+          const countColor = empty ? C.text3 : (tone === 'gray' ? C.text : chipStyle(tone).color);
+          return (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={active}
+              disabled={empty && !active}
+              onClick={() => setTaskFilter(prev => prev === value ? 'none' : value)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 10px', borderRadius: 5, flexShrink: 0, whiteSpace: 'nowrap',
+                cursor: empty && !active ? 'default' : 'pointer', fontFamily: 'inherit',
+                border: `1px solid ${active ? C.blueBorder : C.border2}`, background: active ? C.blueBg : C.surface,
+                color: active ? C.blue : (empty ? C.text3 : C.text), fontSize: FS.sm, fontWeight: active ? 650 : 500,
+              }}
+              title={`Lọc theo: ${label}`}
+            >
+              {label}
+              <b style={{ color: active ? C.blue : countColor, fontVariantNumeric: 'tabular-nums' }}>{count ?? 0}</b>
+            </button>
+          );
+        })}
       </div>
 
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '8px 16px', background: C.surface, borderBottom: `1px solid ${C.border2}` }}>
-        <StatBox label="Tổng hồ sơ" value={counts.total} tone="blue" />
-        {counts.mergedSourceRows ? <StatBox label="Dòng trùng đã gộp" value={counts.mergedSourceRows} tone="blue" /> : null}
-        <StatBox label="Đã khớp Sheet" value={counts.withPaperRecord} tone="green" />
-        <StatBox label="Đã kiểm" value={counts.checked} tone="green" />
-        <StatBox label="Chưa đủ dữ liệu" value={counts.missingData} tone={counts.missingData ? 'amber' : 'green'} />
+      <div style={{ display: 'flex', gap: '6px 18px', alignItems: 'center', flexWrap: 'wrap', padding: '8px 12px', background: C.surface, borderBottom: `1px solid ${C.border2}` }}>
+        <StatBox label="hồ sơ" value={counts.total} />
+        {counts.mergedSourceRows ? <StatBox label="dòng trùng đã gộp" value={counts.mergedSourceRows} /> : null}
+        <StatBox label="khớp Sheet" value={counts.withPaperRecord} tone={counts.withPaperRecord ? 'green' : 'gray'} />
+        <StatBox label="đã kiểm" value={counts.checked} tone={counts.checked ? 'green' : 'gray'} />
+        <StatBox label="chưa đủ dữ liệu" value={counts.missingData} tone={counts.missingData ? 'amber' : 'gray'} />
         {counts.sheetNeedsReview ? <StatBox label="Sheet cần kiểm" value={counts.sheetNeedsReview} tone="red" /> : null}
-        {counts.paperStorageNameConflict ? <StatBox label="Một Số LT nhiều tên" value={counts.paperStorageNameConflict} tone="red" /> : null}
-        {counts.paperNameMismatch ? <StatBox label="Có thể sai tên" value={counts.paperNameMismatch} tone="amber" /> : null}
-        {counts.paperDoubleTypo ? <StatBox label="Tên/Số LT gần giống" value={counts.paperDoubleTypo} tone="amber" /> : null}
+        {counts.paperStorageNameConflict ? <StatBox label="Số LT nhiều tên" value={counts.paperStorageNameConflict} tone="red" /> : null}
+        {counts.paperNameMismatch ? <StatBox label="có thể sai tên" value={counts.paperNameMismatch} tone="amber" /> : null}
+        {counts.paperDoubleTypo ? <StatBox label="tên/Số LT gần giống" value={counts.paperDoubleTypo} tone="amber" /> : null}
         {counts.paperMissingName ? <StatBox label="Sheet thiếu tên" value={counts.paperMissingName} tone="amber" /> : null}
-        {counts.paperAmbiguous ? <StatBox label="Trùng Số LT chưa rõ" value={counts.paperAmbiguous} tone="amber" /> : null}
-        {counts.unlinkedSheet ? <StatBox label="Dòng Sheet chưa ghép" value={counts.unlinkedSheet} tone={counts.unlinkedSheetSuspicious ? 'amber' : 'blue'} /> : null}
-        <div style={{ color: C.text2, fontSize: 11 }}>Hiển thị <b style={{ color: C.text }}>{counts.shown}</b> dòng{dischargeMonth ? <span> · Ra viện <b style={{ color: C.blue }}>{dischargeMonthLabel(dischargeMonth)}</b></span> : null} · Đã chọn <b style={{ color: C.text }}>{counts.selected}</b>{effectiveRunning ? <span> · <b style={{ color: C.red }}>Đang lấy {activeDone}/{activeTotal || '?'}</b>{activeJob?.current_name ? <span> · {activeJob.current_name}</span> : null}</span> : (activeJob?.message ? <span> · {activeJob.stale ? <b style={{ color: C.amber }}>Tác vụ cũ đã dừng</b> : activeJob.stopped ? <b style={{ color: C.amber }}>Đã dừng</b> : <span>{activeJob.message}</span>}</span> : null)}{lastRefreshAt ? <span> · Cập nhật {lastRefreshAt}</span> : null}<span> · Google Sheet <b style={{ color: googleSheet.stale ? C.amber : C.green }}>{Number(googleSheet.count || 0)} hồ sơ</b>{googleSheet.fetched_at ? ` · ${new Date(googleSheet.fetched_at).toLocaleString('vi-VN')}` : ''}</span>{googleSheet.warning ? <span title={googleSheet.warning} style={{ color: C.amber }}> · Sheet đang dùng dữ liệu đã lưu</span> : null}</div>
+        {counts.paperAmbiguous ? <StatBox label="trùng Số LT chưa rõ" value={counts.paperAmbiguous} tone="amber" /> : null}
+        {counts.unlinkedSheet ? <StatBox label="dòng Sheet chưa ghép" value={counts.unlinkedSheet} tone={counts.unlinkedSheetSuspicious ? 'amber' : 'gray'} /> : null}
+        <div style={{ color: C.text2, fontSize: FS.xs, flex: '1 1 320px', textAlign: isMobile ? 'left' : 'right' }}>Hiển thị <b style={{ color: C.text }}>{counts.shown}</b> dòng{dischargeMonth ? <span> · Ra viện <b style={{ color: C.blue }}>{dischargeMonthLabel(dischargeMonth)}</b></span> : null} · Đã chọn <b style={{ color: C.text }}>{counts.selected}</b>{effectiveRunning ? <span> · <b style={{ color: C.red }}>Đang lấy {activeDone}/{activeTotal || '?'}</b>{activeJob?.current_name ? <span> · {activeJob.current_name}</span> : null}</span> : (activeJob?.message ? <span> · {activeJob.stale ? <b style={{ color: C.amber }}>Tác vụ cũ đã dừng</b> : activeJob.stopped ? <b style={{ color: C.amber }}>Đã dừng</b> : <span>{activeJob.message}</span>}</span> : null)}{lastRefreshAt ? <span> · Cập nhật {lastRefreshAt}</span> : null}<span> · Google Sheet <b style={{ color: googleSheet.stale ? C.amber : C.green }}>{Number(googleSheet.count || 0)} hồ sơ</b>{googleSheet.fetched_at ? ` · ${new Date(googleSheet.fetched_at).toLocaleString('vi-VN')}` : ''}</span>{googleSheet.warning ? <span title={googleSheet.warning} style={{ color: C.amber }}> · Sheet đang dùng dữ liệu đã lưu</span> : null}</div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '8px 12px', background: updateSelectedKeys.size ? C.blueBg : C.surface, borderBottom: `1px solid ${C.border2}` }}>
+        <span style={{ fontSize: FS.sm, color: updateSelectedKeys.size ? C.blue : C.text2, fontWeight: updateSelectedKeys.size ? 650 : 400 }}>
+          {updateSelectedKeys.size ? `Đã chọn ${updateSelectedKeys.size} ca để cập nhật` : 'Chọn ca ở cột đầu để cập nhật lại dữ liệu EMR'}
+        </span>
+        <Btn variant={updateSelectedKeys.size ? 'solidPrimary' : 'default'} icon={IconCloudDownload} disabled={!updateSelectedKeys.size || effectiveRunning} onClick={fetchSelectedRows}>
+          Cập nhật đã chọn
+        </Btn>
+        <Btn disabled={!filteredRows.length} onClick={selectVisibleRows}>Chọn dòng đang hiện</Btn>
+        <Btn disabled={!filteredRows.some(isRowFetchableMissing)} onClick={selectMissingRows}>Chọn ca thiếu</Btn>
+        {updateSelectedKeys.size ? <Btn onClick={clearUpdateSelection}>Bỏ chọn</Btn> : null}
       </div>
 
       {unlinkedSheetIssues.length ? (
         <details style={{ margin: '8px 16px 0', border: `1px solid ${C.amberBorder}`, borderRadius: 6, background: C.amberBg, overflow: 'hidden', flexShrink: 0 }}>
-          <summary style={{ cursor: 'pointer', padding: '9px 12px', color: C.amber, fontSize: 11, fontWeight: 850 }}>
+          <summary style={{ cursor: 'pointer', padding: '9px 12px', color: C.amber, fontSize: FS.xs, fontWeight: 700 }}>
             Google Sheet có {unlinkedSheetIssues.length} dòng chưa ghép được với danh sách EMR hiện tại{counts.unlinkedSheetSuspicious ? ` · ${counts.unlinkedSheetSuspicious} dòng có dấu hiệu sai` : ''} — bấm để kiểm tra
           </summary>
           <div style={{ maxHeight: 220, overflow: 'auto', background: C.surface }}>
@@ -1576,7 +1623,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
               <thead style={{ position: 'sticky', top: 0, background: C.surface2, zIndex: 1 }}>
                 <tr>
                   {['Dòng Sheet', 'Thời gian', 'Số lưu trữ Sheet', 'Tên trên Sheet', 'Nhận định', 'Sửa'].map(label => (
-                    <th key={label} style={{ padding: '7px 9px', borderBottom: `1px solid ${C.border}`, textAlign: 'left', color: C.text2, fontSize: 9, textTransform: 'uppercase', letterSpacing: .5 }}>{label}</th>
+                    <th key={label} style={{ padding: '7px 9px', borderBottom: `1px solid ${C.border}`, textAlign: 'left', color: C.text2, fontSize: FS.xs }}>{label}</th>
                   ))}
                 </tr>
               </thead>
@@ -1585,15 +1632,15 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                   <tr key={`${issue.record?.row_number || ''}::${issue.record?.storage_raw || ''}::${issue.record?.patient_name || ''}`}>
                     <td style={sheetIssueCellStyle}>{issue.record?.row_number || '—'}</td>
                     <td style={sheetIssueCellStyle}>{issue.record?.timestamp || '—'}</td>
-                    <td style={{ ...sheetIssueCellStyle, fontWeight: 800, color: C.text }}>{issue.record?.storage_raw || '—'}</td>
-                    <td style={{ ...sheetIssueCellStyle, fontWeight: 800, color: C.text }}>{issue.record?.patient_name || '—'}</td>
-                    <td style={{ ...sheetIssueCellStyle, minWidth: 260 }}><Chip tone={issue.tone}>{issue.label}</Chip><div style={{ marginTop: 3, color: C.text2, fontSize: 10 }}>{issue.detail}</div></td>
-                    <td style={sheetIssueCellStyle}><Btn variant="secondary" onClick={() => openSheetEditor({ records: [issue.record], note: issue.detail })} style={{ fontSize: 10, padding: '4px 8px' }}>Sửa dòng</Btn></td>
+                    <td style={{ ...sheetIssueCellStyle, fontWeight: 700, color: C.text }}>{issue.record?.storage_raw || '—'}</td>
+                    <td style={{ ...sheetIssueCellStyle, fontWeight: 700, color: C.text }}>{issue.record?.patient_name || '—'}</td>
+                    <td style={{ ...sheetIssueCellStyle, minWidth: 260 }}><Chip tone={issue.tone}>{issue.label}</Chip><div style={{ marginTop: 3, color: C.text2, fontSize: FS.xs }}>{issue.detail}</div></td>
+                    <td style={sheetIssueCellStyle}><Btn variant="secondary" onClick={() => openSheetEditor({ records: [issue.record], note: issue.detail })}>Sửa dòng</Btn></td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {unlinkedSheetIssues.length > 100 ? <div style={{ padding: 8, color: C.text2, fontSize: 10 }}>Chỉ hiển thị 100/{unlinkedSheetIssues.length} dòng đầu.</div> : null}
+            {unlinkedSheetIssues.length > 100 ? <div style={{ padding: 8, color: C.text2, fontSize: FS.xs }}>Chỉ hiển thị 100/{unlinkedSheetIssues.length} dòng đầu.</div> : null}
           </div>
         </details>
       ) : null}
@@ -1611,13 +1658,13 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                     ['KSĐ', 'left'], ['GPB', 'left'],
                     ['Dữ liệu', 'left'], ['Hồ sơ giấy', 'left'], ['Trạng thái nộp', 'left'], ['Thao tác', 'center'],
                   ].map(([label, align]) => (
-                    <th key={label} style={{ padding: '8px 9px', borderBottom: `1px solid ${C.border}`, color: C.text2, fontSize: 10, textAlign: align, textTransform: 'uppercase', letterSpacing: .6, whiteSpace: 'nowrap' }}>{label}</th>
+                    <th key={label} style={{ padding: '8px 9px', borderBottom: `1px solid ${C.border}`, color: C.text2, fontSize: FS.xs, textAlign: align, whiteSpace: 'nowrap' }}>{label}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {filteredRows.length === 0 ? (
-                  <tr><td colSpan={17} style={{ padding: 24, textAlign: 'center', color: C.text2, fontSize: 13 }}>Chưa có ca phù hợp. Bấm “Quét danh sách” để tạo danh sách kiểm hồ sơ riêng.</td></tr>
+                  <tr><td colSpan={17} style={{ padding: 24, textAlign: 'center', color: C.text2, fontSize: FS.md }}>Chưa có ca phù hợp. Bấm “Quét danh sách” để tạo danh sách kiểm hồ sơ riêng.</td></tr>
                 ) : filteredRows.map(row => {
                   const rowKey = getRowKey(row);
                   const checked = isRowChecked(row, checkedMap);
@@ -1636,9 +1683,9 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                     ? `${row.card.fetch_error}${retryText ? ` · Tự ưu tiên thử lại sau ${retryText}` : ''}`
                     : (row.status.label === 'Đủ dữ liệu' ? 'Đã lấy đủ thông tin ra viện và CĐHA.' : 'Cần lấy thêm dữ liệu ra viện hoặc CĐHA.');
                   return (
-                    <tr key={rowKey || `${row.ma_bn}-${row.storage || row.admissionDate || ''}`} style={{ background: selectedForUpdate ? C.surface2 : C.surface }}>
+                    <tr key={rowKey || `${row.ma_bn}-${row.storage || row.admissionDate || ''}`} style={{ background: selectedForUpdate ? C.blueBg : C.surface }}>
                       <td onClick={e => e.stopPropagation()} style={countCellStyle}>
-                        <input type="checkbox" checked={selectedForUpdate} onChange={e => toggleUpdateSelect(row, e.target.checked)} title="Chọn ca này để cập nhật dữ liệu" />
+                        <input type="checkbox" checked={selectedForUpdate} onChange={e => toggleUpdateSelect(row, e.target.checked)} title="Chọn ca này để cập nhật dữ liệu" aria-label={`Chọn ${row.displayName} để cập nhật`} style={{ accentColor: C.blue }} />
                       </td>
                       <td onClick={e => e.stopPropagation()} style={countCellStyle}>
                         <div style={{ display: 'grid', justifyItems: 'center', gap: 3 }}>
@@ -1653,30 +1700,30 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                                 ? `Hồ sơ đã nộp${submissionLock?.submission_date ? ` ngày ${formatSubmissionDate(submissionLock.submission_date)}` : ''}; không thể thay đổi dấu đã kiểm.`
                                 : 'Đánh dấu đã kiểm hồ sơ'}
                           />
-                          {checkedLocked ? <span style={{ color: C.green, fontSize: 8, fontWeight: 850, whiteSpace: 'nowrap' }}>ĐÃ NỘP</span> : null}
+                          {checkedLocked ? <span style={{ color: C.green, fontSize: FS.xs, fontWeight: 650, whiteSpace: 'nowrap' }}>Đã nộp</span> : null}
                         </div>
                       </td>
-                      <td title={row.storage || ''} style={{ padding: '8px 8px', borderBottom: `1px solid ${C.border2}`, color: row.storage ? C.text : C.text3, fontSize: 12, fontWeight: row.storage ? 800 : 500, whiteSpace: 'nowrap', minWidth: 145 }}>{row.storage || '—'}</td>
+                      <td title={row.storage || ''} style={{ padding: '8px 8px', borderBottom: `1px solid ${C.border2}`, color: row.storage ? C.text : C.text3, fontSize: FS.sm, fontWeight: row.storage ? 650 : 500, whiteSpace: 'nowrap', minWidth: 145 }}>{row.storage || '—'}</td>
                       <td style={{ padding: '8px 8px', borderBottom: `1px solid ${C.border2}`, minWidth: 235, maxWidth: 310 }}>
                         <Chip tone={row.paperRecord?.tone || 'gray'} title={paperTitle}>{row.paperRecord?.label || 'Chưa có hồ sơ'}</Chip>
                         {row.paperRecord?.record ? (
-                          <div style={{ marginTop: 4, color: C.text2, fontSize: 9, lineHeight: 1.35, overflowWrap: 'anywhere' }}>
+                          <div style={{ marginTop: 4, color: C.text2, fontSize: FS.xs, lineHeight: 1.35, overflowWrap: 'anywhere' }}>
                             <div><b>Sheet:</b> {row.paperRecord.record.patient_name || 'Không ghi tên'} · {row.paperRecord.record.storage_raw || 'Không ghi Số LT'}</div>
                             {row.paperRecord.record.timestamp ? <div style={{ color: C.text3 }}>{row.paperRecord.record.timestamp}</div> : null}
                           </div>
                         ) : null}
-                        {row.paperRecord?.issue_detail ? <div style={{ marginTop: 4, color: row.paperRecord.tone === 'red' ? C.red : (row.paperRecord.tone === 'amber' ? C.amber : C.text2), fontSize: 9, lineHeight: 1.35, fontWeight: row.paperRecord.is_issue ? 700 : 500, whiteSpace: 'normal' }}>{row.paperRecord.issue_detail}</div> : null}
+                        {row.paperRecord?.issue_detail ? <div style={{ marginTop: 4, color: row.paperRecord.tone === 'red' ? C.red : (row.paperRecord.tone === 'amber' ? C.amber : C.text2), fontSize: FS.xs, lineHeight: 1.35, fontWeight: row.paperRecord.is_issue ? 700 : 500, whiteSpace: 'normal' }}>{row.paperRecord.issue_detail}</div> : null}
                         {editableSheetRecords.length ? (
                           <div style={{ marginTop: 5 }}>
-                            <Btn variant="secondary" onClick={() => openSheetEditor({ records: editableSheetRecords, emrRow: row, note: row.paperRecord?.issue_detail || '' })} style={{ fontSize: 9, padding: '3px 8px' }}>
+                            <Btn variant="secondary" onClick={() => openSheetEditor({ records: editableSheetRecords, emrRow: row, note: row.paperRecord?.issue_detail || '' })}>
                               {editableSheetRecords.length > 1 ? `Xem / sửa ${editableSheetRecords.length} dòng Sheet` : 'Sửa dòng Sheet'}
                             </Btn>
                           </div>
                         ) : null}
                       </td>
                       <td style={{ padding: '8px 10px', borderBottom: `1px solid ${C.border2}`, minWidth: 220 }}>
-                        <div style={{ fontSize: 12, fontWeight: 800, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.displayName}</div>
-                        <div style={{ fontSize: 10, color: C.text2, marginTop: 1 }}>{row.ma_bn}{row.department ? ` · ${row.department}` : ''}</div>
+                        <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.displayName}</div>
+                        <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 1 }}>{row.ma_bn}{row.department ? ` · ${row.department}` : ''}</div>
                         {Number(row?.card?.duplicate_storage_count || 0) > 1 ? <div style={{ marginTop: 3 }}><Chip tone="blue">Đã gộp {Number(row.card.duplicate_storage_count)} dòng EMR</Chip></div> : null}
                       </td>
                       <td style={dateCellStyle}>{row.admissionDate || '—'}</td>
@@ -1684,7 +1731,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                       <td style={{ padding: '8px 8px', borderBottom: `1px solid ${C.border2}`, minWidth: 140 }}>
                         {row.handover ? (
                           <Chip tone={row.handover.tone} title={row.handover.source_note || row.handover.label}>{row.handover.label}</Chip>
-                        ) : <Chip tone="gray">—</Chip>}
+                        ) : <span style={{ color: C.text3 }}>—</span>}
                       </td>
                       <td style={countCellStyle}>{row.stats.xq}</td>
                       <td style={countCellStyle}>{row.stats.ct}</td>
@@ -1703,7 +1750,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                         <Chip tone={row.submissionStateInfo.tone} title={row.submissionMissing.length ? `Còn thiếu: ${row.submissionMissing.join('; ')}` : 'Đủ điều kiện đưa vào đợt nộp.'}>{row.submissionStateInfo.label}</Chip>
                       </td>
                       <td onClick={e => e.stopPropagation()} style={countCellStyle}>
-                        <Btn variant="secondary" onClick={() => setChecklistDrawerKey(rowKey)} style={{ fontSize: 10, padding: '4px 9px' }}>Chi tiết</Btn>
+                        <Btn variant="secondary" onClick={() => setChecklistDrawerKey(rowKey)}>Chi tiết</Btn>
                       </td>
                     </tr>
                   );
@@ -1719,10 +1766,10 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
           <div style={{ width: 'min(680px, 96vw)', maxHeight: '90vh', overflow: 'auto', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, boxShadow: '0 20px 60px rgba(15,23,42,.28)' }}>
             <div style={{ padding: '11px 14px', borderBottom: `1px solid ${C.border2}`, display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 850, color: C.text }}>Sửa dữ liệu Google Sheet</div>
-                <div style={{ fontSize: 10, color: C.text3, marginTop: 2 }}>Chỉ cập nhật cột Số lưu trữ và Họ và tên của đúng dòng được chọn.</div>
+                <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Sửa dữ liệu Google Sheet</div>
+                <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 2 }}>Chỉ cập nhật cột Số lưu trữ và Họ và tên của đúng dòng được chọn.</div>
               </div>
-              <button type="button" disabled={sheetEditorSaving} onClick={() => setSheetEditor(null)} style={{ border: 0, background: 'transparent', color: C.text2, fontSize: 20, cursor: 'pointer' }}>×</button>
+              <button type="button" className="emr-icon-btn" disabled={sheetEditorSaving} onClick={() => setSheetEditor(null)} aria-label="Đóng"><IconX size={18} stroke={1.75} /></button>
             </div>
             <div style={{ padding: 14, display: 'grid', gap: 12 }}>
               {sheetEditor.records?.length > 1 ? (
@@ -1738,12 +1785,12 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                 </div>
               ) : null}
 
-              {sheetEditor.note ? <div style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${C.amberBorder}`, background: C.amberBg, color: C.amber, fontSize: 11, lineHeight: 1.45 }}>{sheetEditor.note}</div> : null}
+              {sheetEditor.note ? <div style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${C.amberBorder}`, background: C.amberBg, color: C.amber, fontSize: FS.xs, lineHeight: 1.45 }}>{sheetEditor.note}</div> : null}
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div style={{ padding: 10, borderRadius: 8, background: C.surface2, border: `1px solid ${C.border2}` }}>
                   <div style={sheetEditorLabelStyle}>Dòng hiện tại trên Sheet</div>
-                  <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+                  <div style={{ fontSize: FS.sm, color: C.text, lineHeight: 1.6 }}>
                     <div><b>Dòng:</b> {sheetEditor.record?.row_number || '—'}</div>
                     <div><b>Thời gian:</b> {sheetEditor.record?.timestamp || '—'}</div>
                     <div><b>Số LT:</b> {sheetEditor.record?.storage_raw || '—'}</div>
@@ -1753,12 +1800,12 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                 <div style={{ padding: 10, borderRadius: 8, background: C.blueBg, border: `1px solid ${C.blueBorder}` }}>
                   <div style={sheetEditorLabelStyle}>Dữ liệu EMR đang đối chiếu</div>
                   {sheetEditor.emrRow ? (
-                    <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+                    <div style={{ fontSize: FS.sm, color: C.text, lineHeight: 1.6 }}>
                       <div><b>Số LT:</b> {sheetEditor.emrRow.storage || '—'}</div>
                       <div><b>Họ tên:</b> {sheetEditor.emrRow.displayName || '—'}</div>
                       <div><b>Mã BN:</b> {sheetEditor.emrRow.ma_bn || '—'}</div>
                     </div>
-                  ) : <div style={{ fontSize: 11, color: C.text2 }}>Dòng Sheet này chưa ghép chắc chắn với hồ sơ EMR. Hãy tự xác minh trước khi sửa.</div>}
+                  ) : <div style={{ fontSize: FS.xs, color: C.text2 }}>Dòng Sheet này chưa ghép chắc chắn với hồ sơ EMR. Hãy tự xác minh trước khi sửa.</div>}
                 </div>
               </div>
 
@@ -1778,14 +1825,14 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
               </div>
 
               {!googleSheet.write_enabled ? (
-                <div style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${C.redBorder}`, background: C.redBg, color: C.red, fontSize: 11, lineHeight: 1.45 }}>
+                <div style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${C.redBorder}`, background: C.redBg, color: C.red, fontSize: FS.xs, lineHeight: 1.45 }}>
                   Chức năng ghi trực tiếp chưa được cấu hình. {googleSheet.write_config_error || (googleSheet.write_missing_token ? 'Server đang thiếu EMR_GOOGLE_SHEET_WRITE_TOKEN.' : 'Cần khai báo write_web_app_url của Google Apps Script.')}
                 </div>
               ) : null}
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 {googleSheetRowUrl(googleSheet.spreadsheet_url, googleSheet.sheet_gid, sheetEditor.record?.row_number) ? (
-                  <a href={googleSheetRowUrl(googleSheet.spreadsheet_url, googleSheet.sheet_gid, sheetEditor.record?.row_number)} target="_blank" rel="noreferrer" style={{ fontSize: 11, fontWeight: 800, color: C.blue, textDecoration: 'none' }}>Mở đúng dòng trên Google Sheet</a>
+                  <a href={googleSheetRowUrl(googleSheet.spreadsheet_url, googleSheet.sheet_gid, sheetEditor.record?.row_number)} target="_blank" rel="noreferrer" style={{ fontSize: FS.xs, fontWeight: 700, color: C.blue, textDecoration: 'none' }}>Mở đúng dòng trên Google Sheet</a>
                 ) : <span />}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <Btn variant="default" disabled={sheetEditorSaving} onClick={() => setSheetEditor(null)}>Hủy</Btn>
@@ -1804,10 +1851,10 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
           <div style={{ width: 'min(620px, 96vw)', maxHeight: '90vh', overflow: 'auto', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, boxShadow: '0 20px 60px rgba(15,23,42,.28)' }}>
             <div style={{ padding: '11px 14px', borderBottom: `1px solid ${C.border2}`, display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 850, color: C.text }}>{checklistDrawerRow.displayName}</div>
-                <div style={{ fontSize: 10, color: C.text3, marginTop: 2 }}>{checklistDrawerRow.storage || 'Chưa có số lưu trữ'} · {checklistDrawerRow.ma_bn}</div>
+                <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>{checklistDrawerRow.displayName}</div>
+                <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 2 }}>{checklistDrawerRow.storage || 'Chưa có số lưu trữ'} · {checklistDrawerRow.ma_bn}</div>
               </div>
-              <button type="button" onClick={() => setChecklistDrawerKey('')} style={{ border: 0, background: 'transparent', color: C.text2, fontSize: 20, cursor: 'pointer' }}>×</button>
+              <button type="button" className="emr-icon-btn" onClick={() => setChecklistDrawerKey('')} aria-label="Đóng"><IconX size={18} stroke={1.75} /></button>
             </div>
             <div style={{ padding: 14, display: 'grid', gap: 12 }}>
               {(() => {
@@ -1826,19 +1873,19 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                 return (
                   <>
                     <div style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${chipStyle(row.paperStatus.tone).borderColor}`, background: chipStyle(row.paperStatus.tone).background }}>
-                      <div style={{ fontWeight: 850, color: chipStyle(row.paperStatus.tone).color }}>{row.paperStatus.label}</div>
+                      <div style={{ fontWeight: 700, color: chipStyle(row.paperStatus.tone).color }}>{row.paperStatus.label}</div>
                       {row.submissionMissing.length ? (
-                        <div style={{ marginTop: 5, fontSize: 11, color: C.text2 }}>
+                        <div style={{ marginTop: 5, fontSize: FS.xs, color: C.text2 }}>
                           Còn thiếu để "Sẵn sàng nộp":
                           <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
                             {row.submissionMissing.map(m => <li key={m}>{m}</li>)}
                           </ul>
                         </div>
-                      ) : <div style={{ marginTop: 4, fontSize: 11, color: C.green }}>Đủ điều kiện đưa vào đợt nộp.</div>}
+                      ) : <div style={{ marginTop: 4, fontSize: FS.xs, color: C.green }}>Đủ điều kiện đưa vào đợt nộp.</div>}
                     </div>
 
                     {locked ? (
-                      <div style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${C.amberBorder}`, background: C.amberBg, color: C.amber, fontSize: 11 }}>
+                      <div style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${C.amberBorder}`, background: C.amberBg, color: C.amber, fontSize: FS.xs }}>
                         Hồ sơ đã nộp — checklist đã khóa để tránh sửa âm thầm. Nếu phát hiện sai sót, ghi nhận ở tab "Nộp hồ sơ theo ngày" → "Sai sót sau bàn giao".
                       </div>
                     ) : null}
@@ -1856,7 +1903,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
 
                     <div style={{ display: 'grid', gap: 8 }}>
                       {checklistItems.map(item => (
-                        <label key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: C.text, opacity: locked || checklistSaving ? .6 : 1 }}>
+                        <label key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: FS.sm, color: C.text, opacity: locked || checklistSaving ? .6 : 1 }}>
                           <input
                             type="checkbox"
                             checked={item.checked}
@@ -1866,7 +1913,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                           {item.label}
                         </label>
                       ))}
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: needsNote ? C.text : C.text3, opacity: locked || checklistSaving ? .6 : 1 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: FS.sm, color: needsNote ? C.text : C.text3, opacity: locked || checklistSaving ? .6 : 1 }}>
                         <input
                           type="checkbox"
                           checked={needsNote ? Boolean(cl.cover_note_done) : true}
@@ -1876,7 +1923,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                         Đã ghi note ngoài bìa nếu nợ KSĐ/GPB{!needsNote ? (ksdGpbUnknown ? ' — Chưa xác định KSĐ/GPB, tự kiểm tra thủ công' : ' — Không áp dụng') : ''}
                       </label>
                       {!needsNote && ksdGpbUnknown ? (
-                        <div style={{ fontSize: 10, color: C.text3, marginLeft: 22 }}>
+                        <div style={{ fontSize: FS.xs, color: C.text3, marginLeft: 22 }}>
                           Hệ thống chưa đọc được trạng thái KSĐ/GPB thật từ EMR nên không thể tự xác nhận là "Không áp dụng". Hãy tự kiểm tra trên EMR nếu hồ sơ có nợ kết quả.
                         </div>
                       ) : null}
@@ -1884,10 +1931,10 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
 
                     {needsNote ? (
                       <div style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${C.amberBorder}`, background: C.amberBg }}>
-                        <div style={{ fontSize: 10, color: C.amber, fontWeight: 850, marginBottom: 4 }}>Gợi ý nội dung ghi lên bìa hồ sơ</div>
-                        <div style={{ fontSize: 12, color: C.text, whiteSpace: 'pre-wrap' }}>{row.coverNoteSuggestion || `Hồ sơ còn nợ kết quả ${[row.ksd.status === 'PENDING' ? 'KSĐ' : '', row.gpb.status === 'PENDING' ? 'GPB' : ''].filter(Boolean).join('/')}.`}</div>
+                        <div style={{ fontSize: FS.xs, color: C.amber, fontWeight: 700, marginBottom: 4 }}>Gợi ý nội dung ghi lên bìa hồ sơ</div>
+                        <div style={{ fontSize: FS.sm, color: C.text, whiteSpace: 'pre-wrap' }}>{row.coverNoteSuggestion || `Hồ sơ còn nợ kết quả ${[row.ksd.status === 'PENDING' ? 'KSĐ' : '', row.gpb.status === 'PENDING' ? 'GPB' : ''].filter(Boolean).join('/')}.`}</div>
                         <div style={{ marginTop: 6, display: 'flex', gap: 8 }}>
-                          <Btn variant="secondary" onClick={() => { navigator.clipboard?.writeText(row.coverNoteSuggestion || ''); toast?.('Đã sao chép nội dung note.', 'ok'); }} style={{ fontSize: 10, padding: '4px 9px' }}>Sao chép</Btn>
+                          <Btn variant="secondary" onClick={() => { navigator.clipboard?.writeText(row.coverNoteSuggestion || ''); toast?.('Đã sao chép nội dung note.', 'ok'); }}>Sao chép</Btn>
                         </div>
                       </div>
                     ) : null}
@@ -1903,7 +1950,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                       />
                     </div>
 
-                    <div style={{ fontSize: 10, color: C.text3 }}>
+                    <div style={{ fontSize: FS.xs, color: C.text3 }}>
                       Người kiểm tra: <b>{cl.checked_by || '—'}</b> · Ngày giờ kiểm: <b>{cl.checked_at ? new Date(cl.checked_at).toLocaleString('vi-VN') : '—'}</b>
                     </div>
 
@@ -1912,7 +1959,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                         <div style={sheetEditorLabelStyle}>Lịch sử thay đổi checklist</div>
                         <div style={{ maxHeight: 160, overflow: 'auto', border: `1px solid ${C.border2}`, borderRadius: 6 }}>
                           {[...cl.history].reverse().slice(0, 50).map((h, i) => (
-                            <div key={i} style={{ padding: '5px 8px', borderTop: i ? `1px solid ${C.border2}` : 'none', fontSize: 10, color: C.text2 }}>
+                            <div key={i} style={{ padding: '5px 8px', borderTop: i ? `1px solid ${C.border2}` : 'none', fontSize: FS.xs, color: C.text2 }}>
                               <b>{h.field}</b>: {String(h.from)} → {String(h.to)} · {h.by || 'không rõ người'} · {h.at ? new Date(h.at).toLocaleString('vi-VN') : ''}
                             </div>
                           ))}
@@ -1930,9 +1977,9 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
   );
 }
 
-const sheetEditorLabelStyle = { fontSize: 10, color: C.text3, fontWeight: 850, textTransform: 'uppercase', letterSpacing: .5, marginBottom: 5 };
-const sheetEditorInputStyle = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, background: C.surface2, border: `1px solid ${C.border}`, color: C.text, fontSize: 12 };
-const modeTabStyle = { border: '1px solid', borderRadius: 8, padding: '6px 11px', fontSize: 11, fontWeight: 850, cursor: 'pointer' };
-const countCellStyle = { padding: '8px 8px', borderBottom: `1px solid ${C.border2}`, textAlign: 'center', color: C.text, fontSize: 12, fontWeight: 800 };
-const dateCellStyle = { padding: '8px 8px', borderBottom: `1px solid ${C.border2}`, color: C.text2, fontSize: 11, whiteSpace: 'nowrap' };
-const sheetIssueCellStyle = { padding: '7px 9px', borderBottom: `1px solid ${C.border2}`, color: C.text2, fontSize: 10, verticalAlign: 'top' };
+const sheetEditorLabelStyle = { fontSize: FS.xs, color: C.text3, fontWeight: 700, marginBottom: 5 };
+const sheetEditorInputStyle = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, background: C.surface2, border: `1px solid ${C.border}`, color: C.text, fontSize: FS.sm };
+const modeTabStyle = { border: '1px solid', borderRadius: 8, padding: '6px 11px', fontSize: FS.xs, fontWeight: 700, cursor: 'pointer' };
+const countCellStyle = { padding: '8px 8px', borderBottom: `1px solid ${C.border2}`, textAlign: 'center', color: C.text, fontSize: FS.sm, fontWeight: 700 };
+const dateCellStyle = { padding: '8px 8px', borderBottom: `1px solid ${C.border2}`, color: C.text2, fontSize: FS.xs, whiteSpace: 'nowrap' };
+const sheetIssueCellStyle = { padding: '7px 9px', borderBottom: `1px solid ${C.border2}`, color: C.text2, fontSize: FS.xs, verticalAlign: 'top' };

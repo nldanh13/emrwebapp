@@ -2,8 +2,13 @@
 // Tab Hành chánh — dùng Btn và Spinner từ shared.jsx
 
 import React, { useEffect, useState } from 'react';
-import { C } from '../../tokens.js';
-import { Btn, Spinner } from '../shared.jsx';
+import { C, FS } from '../../tokens.js';
+import {
+  IconAlertTriangle, IconCheck, IconChevronDown, IconCircleDashed, IconCloudDownload, IconMinus,
+  IconRefresh, IconSearch, IconTool, IconX,
+} from '@tabler/icons-react';
+import { Btn, Segmented, Spinner } from '../shared.jsx';
+import useIsMobile from '../../hooks/useIsMobile.js';
 import { useHchanh, SCOPE_LABEL, SCOPE_FILES, getMaBn } from './useHchanh.js';
 import { HCHANH_VTYT_ITEMS, HCHANH_BED_SERVICE_ITEMS } from '../../config/hchanhLists.js';
 import { printHchanh_Ticket, printHchanh_WardList } from '../../api.js';
@@ -158,8 +163,8 @@ function buildClientBillingOverview(billing, issues = []) {
 function Chip({ tone = 'gray', children, style }) {
   const s = tS(tone);
   return (
-    <span style={{ display:'inline-block', padding:'1px 6px', borderRadius:4,
-      fontSize:10, fontWeight:600, color:s.fg, background:s.bg,
+    <span style={{ display:'inline-block', padding:'1px 7px', borderRadius:4, lineHeight:1.5, whiteSpace:'nowrap',
+      fontSize:FS.xs, fontWeight:600, color:s.fg, background:s.bg,
       border:`1px solid ${s.border}`, ...style }}>
       {children}
     </span>
@@ -171,7 +176,7 @@ function Chip({ tone = 'gray', children, style }) {
 function FieldRow({ label, value, tone }) {
   const s = tone ? tS(tone) : null;
   return (
-    <div style={{ display:'flex', gap:6, fontSize:12, padding:'3px 0', borderBottom:`1px solid ${C.border2}` }}>
+    <div style={{ display:'flex', gap:6, fontSize:FS.sm, padding:'3px 0', borderBottom:`1px solid ${C.border2}` }}>
       <span style={{ color:C.text2, minWidth:140, flexShrink:0 }}>{label}</span>
       <span style={{ color: s ? s.fg : C.text, fontWeight: s ? 600 : 400 }}>{txt(value)}</span>
     </div>
@@ -179,13 +184,13 @@ function FieldRow({ label, value, tone }) {
 }
 
 function SectionTitle({ children }) {
-  return <div style={{ marginTop:12, marginBottom:5, fontSize:11, fontWeight:700, color:C.text2, letterSpacing:0.2 }}>{children}</div>;
+  return <div style={{ marginTop:12, marginBottom:5, fontSize:FS.xs, fontWeight:700, color:C.text2 }}>{children}</div>;
 }
 
 function LongField({ label, value, tone }) {
   const s = tone ? tS(tone) : null;
   return (
-    <div style={{ fontSize:12, padding:'5px 0', borderBottom:`1px solid ${C.border2}` }}>
+    <div style={{ fontSize:FS.sm, padding:'5px 0', borderBottom:`1px solid ${C.border2}` }}>
       <div style={{ color:C.text2, marginBottom:2 }}>{label}</div>
       <div style={{ color: s ? s.fg : C.text, fontWeight: s ? 600 : 400, whiteSpace:'pre-wrap', lineHeight:1.35 }}>{txt(value)}</div>
     </div>
@@ -201,8 +206,8 @@ function FetchBadge({ fileKey, fetched }) {
     <div style={{ display:'flex', alignItems:'center', gap:6, padding:'4px 0' }}>
       <span style={{ width:8, height:8, borderRadius:4, flexShrink:0,
         background: at ? C.green : C.text3 }} />
-      <span style={{ fontSize:12, color:C.text, flex:1 }}>{FILE_LABELS[fileKey] || fileKey}</span>
-      {timeStr && <span style={{ fontSize:10, color:C.text2 }}>{timeStr}</span>}
+      <span style={{ fontSize:FS.sm, color:C.text, flex:1 }}>{FILE_LABELS[fileKey] || fileKey}</span>
+      {timeStr && <span style={{ fontSize:FS.xs, color:C.text2 }}>{timeStr}</span>}
     </div>
   );
 }
@@ -240,16 +245,27 @@ function fileStatusInfo(card, fileKey) {
   return { tone:'gray', symbol:'·', label:'Chưa lấy', title:'Chưa lấy dữ liệu', state:'not_started' };
 }
 
+const FILE_STATE_ICON = { ok: IconCheck, missing: IconMinus, fetch_error: IconX, not_started: IconCircleDashed };
+const SYMBOL_ICON = { '✓': IconCheck, '—': IconMinus, '×': IconX };
+
+function FileStatusIcon({ info, size = 14 }) {
+  const Icon = FILE_STATE_ICON[info.state] || SYMBOL_ICON[info.symbol] || IconCircleDashed;
+  const s = tS(info.tone);
+  return (
+    <span style={{ display:'inline-grid', placeItems:'center', width:22, height:22, borderRadius:999,
+      background: info.tone === 'gray' ? 'transparent' : s.bg, color: info.tone === 'gray' ? C.text3 : s.fg }}>
+      <Icon size={size} stroke={2.2} aria-hidden="true" />
+    </span>
+  );
+}
+
 function FileStatusCell({ card, fileKey, label }) {
   const info = fileStatusInfo(card, fileKey);
-  const s = tS(info.tone);
   const title = `${label}: ${info.title || info.label}`;
   return (
-    <td title={title} style={{ padding:'7px 8px', textAlign:'center', borderBottom:`1px solid ${C.border2}` }}>
-      <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', minWidth:22, height:22,
-        borderRadius:999, background:s.bg, border:`1px solid ${s.border}`, color:s.fg, fontSize:11, fontWeight:800 }}>
-        {info.symbol}
-      </span>
+    <td title={title} style={{ padding:'7px 6px', textAlign:'center', borderBottom:`1px solid ${C.border2}` }}>
+      <FileStatusIcon info={info} />
+      <span className="emr-sr-only">{title}</span>
     </td>
   );
 }
@@ -284,48 +300,92 @@ function formatDateTime(value) {
   catch (_) { return txt(value); }
 }
 
+const FILE_COLUMNS = [
+  ['discharge', 'Ra viện'],
+  ['billing', 'Bảng kê'],
+  ['bed_days', 'Giường'],
+  ['surgery', 'PT/TT'],
+  ['order_history', 'Y lệnh'],
+];
+
+function rowIssueText(card) {
+  const firstIssue = safeArr(card?.issues).find(i => i?.severity !== 'info');
+  return (card?.fetch_error_active ? card?.fetch_error : '') || firstIssue?.title || '';
+}
+
+function RowFetchButton({ card, fetchingKey, onFetchDischargeFull }) {
+  const isFetching = fetchingKey === getMaBn(card);
+  return (
+    <Btn icon={IconRefresh} loading={isFetching} disabled={isFetching} onClick={() => onFetchDischargeFull?.(card)} style={{ minWidth:88 }}>
+      {isFetching ? 'Đang lấy' : card?.data_complete ? 'Lấy lại' : 'Cập nhật'}
+    </Btn>
+  );
+}
+
 function PatientTableRow({ card, selected, onSelect, onFetchDischargeFull, fetchingKey }) {
   const ma_bn = getMaBn(card);
   const scope = card?.scope || 'daily';
-  const isFetching = fetchingKey === ma_bn;
   const st = patientStatus(card);
-  const firstIssue = safeArr(card?.issues).find(i => i?.severity !== 'info');
-  const issueText = (card?.fetch_error_active ? card?.fetch_error : '') || firstIssue?.title || '';
-  const rowTone = tS(st.tone);
+  const issueText = rowIssueText(card);
+  const cell = { padding:'8px 8px', borderBottom:`1px solid ${C.border2}` };
   return (
-    <tr onClick={() => onSelect(card)} style={{ cursor:'pointer', background:selected ? C.blueBg : C.surface }}>
-      <td style={{ padding:'8px 10px', borderBottom:`1px solid ${C.border2}`, borderLeft:`3px solid ${selected ? C.blue : rowTone.fg}`, minWidth:230 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:7, minWidth:0 }}>
-          <div style={{ minWidth:0, flex:1 }}>
-            <div style={{ fontSize:12, fontWeight:800, color:C.text, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
-              {formatPersonName(card?.ho_ten, 'Không rõ tên')}
-            </div>
-            <div style={{ fontSize:10, color:C.text2, marginTop:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
-              {txt(ma_bn)}{card?.department ? ` · ${txt(card.department)}` : ''}
-            </div>
-          </div>
-          {selected && <Chip tone="blue" style={{ fontSize:9 }}>Đang xem</Chip>}
+    <tr onClick={() => onSelect(card)} aria-selected={selected} style={{ cursor:'pointer', background:selected ? C.blueBg : C.surface }}>
+      <td style={{ ...cell, padding:'8px 12px', minWidth:220 }}>
+        <div style={{ fontSize:FS.md, fontWeight:650, color:selected ? C.blue : C.text, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+          {formatPersonName(card?.ho_ten, 'Không rõ tên')}
+        </div>
+        <div style={{ fontSize:FS.xs, color:C.text2, marginTop:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', fontVariantNumeric:'tabular-nums' }}>
+          {txt(ma_bn)}{card?.department ? ` · ${txt(card.department)}` : ''}
         </div>
       </td>
-      <td style={{ padding:'8px 8px', borderBottom:`1px solid ${C.border2}`, color:C.text2, fontSize:11, whiteSpace:'nowrap' }}>{txt(card?.phong)}</td>
-      <td style={{ padding:'8px 8px', borderBottom:`1px solid ${C.border2}`, textAlign:'center' }}>
-        <Chip tone={SCOPE_TONE[scope] || 'gray'} style={{ fontSize:9 }}>{scope.toUpperCase()}</Chip>
+      <td style={{ ...cell, color:C.text2, fontSize:FS.sm, whiteSpace:'nowrap' }}>{txt(card?.phong)}</td>
+      <td style={{ ...cell }}>
+        <Chip tone={SCOPE_TONE[scope] || 'gray'}>{scopeFilterLabel(scope)}</Chip>
       </td>
-      <FileStatusCell card={card} fileKey="discharge" label="Ra viện" />
-      <FileStatusCell card={card} fileKey="billing" label="Bảng kê" />
-      <FileStatusCell card={card} fileKey="bed_days" label="Ngày giường" />
-      <FileStatusCell card={card} fileKey="surgery" label="PT/TT" />
-      <FileStatusCell card={card} fileKey="order_history" label="Y lệnh" />
-      <td style={{ padding:'8px 8px', borderBottom:`1px solid ${C.border2}`, minWidth:140 }}>
-        <Chip tone={st.tone} style={{ fontSize:9 }}>{st.label}</Chip>
-        {issueText && <div title={issueText} style={{ marginTop:3, color:st.tone === 'red' ? C.red : C.amber, fontSize:10, maxWidth:190, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{issueText}</div>}
+      {FILE_COLUMNS.map(([key, label]) => <FileStatusCell key={key} card={card} fileKey={key} label={label} />)}
+      <td style={{ ...cell, minWidth:160 }}>
+        <Chip tone={st.tone}>{st.label}</Chip>
+        {issueText && <div title={issueText} style={{ marginTop:3, color:st.tone === 'red' ? C.red : C.amber, fontSize:FS.xs, maxWidth:220, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{issueText}</div>}
       </td>
-      <td onClick={e => e.stopPropagation()} style={{ padding:'7px 10px', borderBottom:`1px solid ${C.border2}`, textAlign:'right', whiteSpace:'nowrap' }}>
-        <Btn variant="primary" disabled={isFetching} onClick={() => onFetchDischargeFull?.(card)} style={{ fontSize:10, padding:'4px 8px', minWidth:74 }}>
-          {isFetching ? <><Spinner size={10} /> Lấy...</> : card?.data_complete ? 'Lấy lại' : 'Cập nhật'}
-        </Btn>
+      <td onClick={e => e.stopPropagation()} style={{ ...cell, padding:'6px 12px 6px 8px', textAlign:'right', whiteSpace:'nowrap' }}>
+        <RowFetchButton card={card} fetchingKey={fetchingKey} onFetchDischargeFull={onFetchDischargeFull} />
       </td>
     </tr>
+  );
+}
+
+function PatientListItem({ card, selected, onSelect }) {
+  const scope = card?.scope || 'daily';
+  const st = patientStatus(card);
+  const issueText = rowIssueText(card);
+  return (
+    <li style={{ listStyle:'none', borderBottom:`1px solid ${C.border2}` }}>
+      <button type="button" onClick={() => onSelect(card)} aria-current={selected ? 'true' : undefined} style={{
+        display:'grid', gap:6, width:'100%', padding:'12px 14px', textAlign:'left', border:0, cursor:'pointer',
+        background:selected ? C.blueBg : C.surface, fontFamily:'inherit', color:C.text,
+      }}>
+        <span style={{ display:'flex', alignItems:'baseline', gap:8 }}>
+          <b style={{ flex:1, minWidth:0, fontSize:14, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{formatPersonName(card?.ho_ten, 'Không rõ tên')}</b>
+          <span style={{ fontSize:FS.sm, color:C.text2 }}>{txt(card?.phong)}</span>
+        </span>
+        <span style={{ display:'flex', flexWrap:'wrap', alignItems:'center', gap:6 }}>
+          <span style={{ fontSize:FS.xs, color:C.text2, fontVariantNumeric:'tabular-nums' }}>{txt(getMaBn(card))}</span>
+          <Chip tone={SCOPE_TONE[scope] || 'gray'}>{scopeFilterLabel(scope)}</Chip>
+          <Chip tone={st.tone}>{st.label}</Chip>
+        </span>
+        <span style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+          {FILE_COLUMNS.map(([key, label]) => {
+            const info = fileStatusInfo(card, key);
+            return (
+              <span key={key} title={`${label}: ${info.title || info.label}`} style={{ display:'inline-flex', alignItems:'center', gap:2, fontSize:FS.xs, color:C.text2 }}>
+                <FileStatusIcon info={info} size={13} />{label}
+              </span>
+            );
+          })}
+        </span>
+        {issueText && <span style={{ fontSize:FS.xs, color:st.tone === 'red' ? C.red : C.amber }}>{issueText}</span>}
+      </button>
+    </li>
   );
 }
 
@@ -341,24 +401,24 @@ function VTYTPreviewPanel({ preview, onPreview, onProcess, onInput, canRun = tru
   return (
     <div>
       <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
-        <Btn variant="secondary" disabled={!canRun || previewing || inputting} onClick={onPreview} style={{ fontSize:11, padding:'4px 8px' }}>
+        <Btn variant="secondary" disabled={!canRun || previewing || inputting} onClick={onPreview}>
           {previewing ? <><Spinner size={10} /> Đang quét...</> : 'Quét y lệnh mai'}
         </Btn>
-        <Btn variant="secondary" disabled={!canRun || previewing || inputting || !preview || processed} onClick={onProcess} style={{ fontSize:11, padding:'4px 8px' }}>
+        <Btn variant="secondary" disabled={!canRun || previewing || inputting || !preview || processed} onClick={onProcess}>
           {processed ? 'Đã xử lý' : 'Xử lý VTYT'}
         </Btn>
-        <Btn variant="primary" disabled={!canRun || previewing || inputting || !processed} onClick={onInput} style={{ fontSize:11, padding:'4px 8px' }}>
+        <Btn variant="primary" disabled={!canRun || previewing || inputting || !processed} onClick={onInput}>
           {inputting ? <><Spinner size={10} /> Đang nhập...</> : 'Nhập VTYT'}
         </Btn>
       </div>
 
       {!preview ? (
-        <div style={{ padding:10, borderRadius:6, background:C.surface2, border:`1px solid ${C.border}`, color:C.text2, fontSize:12, lineHeight:1.45 }}>
+        <div style={{ padding:10, borderRadius:6, background:C.surface2, border:`1px solid ${C.border}`, color:C.text2, fontSize:FS.sm, lineHeight:1.45 }}>
           Chưa có dữ liệu y lệnh ngày mai. Bấm <b>Quét y lệnh mai</b> để mở EMR và lấy danh sách thuốc/y lệnh riêng cho tab Hành chánh.
         </div>
       ) : (
         <>
-          <div style={{ fontSize:11, color:C.text2, marginBottom:8 }}>
+          <div style={{ fontSize:FS.xs, color:C.text2, marginBottom:8 }}>
             Ngày quét: {safeArr(preview.dates).join(', ') || txt(jobs.map(j => j.ngay_lam))} · Quét lúc: {preview.createdAt ? new Date(preview.createdAt).toLocaleString('vi-VN') : '—'}{processed && preview.processedAt ? ` · Xử lý lúc: ${new Date(preview.processedAt).toLocaleString('vi-VN')}` : ''}
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:6, marginBottom:10 }}>
@@ -369,7 +429,7 @@ function VTYTPreviewPanel({ preview, onPreview, onProcess, onInput, canRun = tru
             ].map(([label, value, tone]) => {
               const st = tS(tone);
               return <div key={label} style={{ padding:'6px 8px', borderRadius:6, background:st.bg, border:`1px solid ${st.border}` }}>
-                <div style={{ fontSize:10, color:C.text2 }}>{label}</div>
+                <div style={{ fontSize:FS.xs, color:C.text2 }}>{label}</div>
                 <div style={{ fontSize:18, fontWeight:700, color:st.fg }}>{value}</div>
               </div>;
             })}
@@ -379,7 +439,7 @@ function VTYTPreviewPanel({ preview, onPreview, onProcess, onInput, canRun = tru
             <>
               <SectionTitle>Cần kiểm tra pha/truyền</SectionTitle>
               {allWarnings.map((w, i) => (
-                <div key={i} style={{ padding:'6px 8px', borderRadius:6, background:C.amberBg, border:`1px solid ${C.amberBorder}`, color:C.amber, fontSize:11, marginBottom:5 }}>
+                <div key={i} style={{ padding:'6px 8px', borderRadius:6, background:C.amberBg, border:`1px solid ${C.amberBorder}`, color:C.amber, fontSize:FS.xs, marginBottom:5 }}>
                   {w.text}
                 </div>
               ))}
@@ -387,12 +447,12 @@ function VTYTPreviewPanel({ preview, onPreview, onProcess, onInput, canRun = tru
           )}
 
           <SectionTitle>Thuốc/y lệnh đã quét</SectionTitle>
-          {allDrugs.length === 0 ? <div style={{ color:C.text2, fontSize:12 }}>Chưa thấy thuốc trong y lệnh đã chọn.</div> : (
+          {allDrugs.length === 0 ? <div style={{ color:C.text2, fontSize:FS.sm }}>Chưa thấy thuốc trong y lệnh đã chọn.</div> : (
             <div style={{ maxHeight:220, overflow:'auto' }}>
               {allDrugs.map((d, i) => (
-                <div key={i} style={{ padding:'5px 0', borderBottom:`1px solid ${C.border2}`, fontSize:11 }}>
+                <div key={i} style={{ padding:'5px 0', borderBottom:`1px solid ${C.border2}`, fontSize:FS.xs }}>
                   <div style={{ display:'flex', gap:5, alignItems:'baseline', flexWrap:'wrap' }}>
-                    <Chip tone="blue" style={{ fontSize:9 }}>{txt(d.order_time || d.input_time || d.ngay_lam)}</Chip>
+                    <Chip tone="blue" style={{ fontSize:FS.xs }}>{txt(d.order_time || d.input_time || d.ngay_lam)}</Chip>
                     <span style={{ color:C.text, fontWeight:600 }}>{txt(d.name)}</span>
                   </div>
                   <div style={{ color:C.text2, marginTop:2 }}>
@@ -405,10 +465,10 @@ function VTYTPreviewPanel({ preview, onPreview, onProcess, onInput, canRun = tru
 
           <SectionTitle>Vật tư sẽ nhập</SectionTitle>
           {!processed ? (
-            <div style={{ padding:8, borderRadius:6, background:C.surface2, border:`1px solid ${C.border}`, color:C.text2, fontSize:12, lineHeight:1.45 }}>
+            <div style={{ padding:8, borderRadius:6, background:C.surface2, border:`1px solid ${C.border}`, color:C.text2, fontSize:FS.sm, lineHeight:1.45 }}>
               Đã có thuốc/y lệnh. Bấm <b>Xử lý VTYT</b> để gom vật tư, kiểm Natri/Nước cất pha truyền và mở bảng vật tư cho bạn kiểm trước khi nhập.
             </div>
-          ) : allSupplies.length === 0 ? <div style={{ color:C.amber, fontSize:12 }}>Chưa có vật tư y tế để nhập.</div> : (
+          ) : allSupplies.length === 0 ? <div style={{ color:C.amber, fontSize:FS.sm }}>Chưa có vật tư y tế để nhập.</div> : (
             <div style={{ maxHeight:260, overflow:'auto' }}>
               {allSupplies.map((v, i) => {
                 const ref = findVtytRef(v);
@@ -416,11 +476,11 @@ function VTYTPreviewPanel({ preview, onPreview, onProcess, onInput, canRun = tru
                 const stock = Number(ref?.stock ?? NaN);
                 const stockTone = ref ? (Number.isFinite(stock) && qty > stock ? 'red' : 'green') : 'amber';
                 return (
-                  <div key={i} style={{ padding:'6px 0', borderBottom:`1px solid ${C.border2}`, fontSize:11 }}>
+                  <div key={i} style={{ padding:'6px 0', borderBottom:`1px solid ${C.border2}`, fontSize:FS.xs }}>
                     <div style={{ display:'flex', gap:5, alignItems:'baseline', flexWrap:'wrap' }}>
-                      <Chip tone="green" style={{ fontSize:9 }}>SL {txt(v.required_quantity ?? v.quantity)}</Chip>
-                      {ref?.code && <Chip tone="blue" style={{ fontSize:9 }}>{ref.code}</Chip>}
-                      {processed && <Chip tone={stockTone} style={{ fontSize:9 }}>{ref ? `Tồn ${Number(ref.stock || 0).toLocaleString('vi-VN')}` : 'Chưa khớp DS vật tư'}</Chip>}
+                      <Chip tone="green" style={{ fontSize:FS.xs }}>SL {txt(v.required_quantity ?? v.quantity)}</Chip>
+                      {ref?.code && <Chip tone="blue" style={{ fontSize:FS.xs }}>{ref.code}</Chip>}
+                      {processed && <Chip tone={stockTone} style={{ fontSize:FS.xs }}>{ref ? `Tồn ${Number(ref.stock || 0).toLocaleString('vi-VN')}` : 'Chưa khớp DS vật tư'}</Chip>}
                       <span style={{ color:C.text, fontWeight:700 }}>{txt(v.name)}</span>
                     </div>
                     <div style={{ color:C.text2, marginTop:2 }}>
@@ -446,12 +506,12 @@ function IssueRow({ issue }) {
     <div style={{ padding:'6px 10px', borderRadius:6, marginBottom:4,
       background:s.bg, border:`1px solid ${s.border}` }}>
       <div style={{ display:'flex', gap:6, alignItems:'baseline', marginBottom:2 }}>
-        <Chip tone={tone}>{issue.group}</Chip>
-        <span style={{ fontSize:12, fontWeight:600, color:s.fg }}>{txt(issue.title)}</span>
+        {issue.group && <Chip tone={tone}>{issue.group}</Chip>}
+        <span style={{ fontSize:FS.sm, fontWeight:600, color:s.fg }}>{txt(issue.title)}</span>
       </div>
-      {issue.detail && <div style={{ fontSize:11, color:C.text2 }}>{issue.detail}</div>}
-      {issue.action && <div style={{ fontSize:11, color:C.blue, marginTop:2 }}>→ {issue.action}</div>}
-      {issue.owner  && <div style={{ fontSize:10, color:C.text3, marginTop:1 }}>Phụ trách: {issue.owner}</div>}
+      {issue.detail && <div style={{ fontSize:FS.xs, color:C.text2 }}>{issue.detail}</div>}
+      {issue.action && <div style={{ fontSize:FS.xs, color:C.blue, marginTop:2 }}>Cách xử lý: {issue.action}</div>}
+      {issue.owner  && <div style={{ fontSize:FS.xs, color:C.text3, marginTop:1 }}>Phụ trách: {issue.owner}</div>}
     </div>
   );
 }
@@ -465,16 +525,17 @@ function IssueSummaryBox({ issues }) {
   return (
     <div style={{ margin:'8px 16px 0', padding:'10px 12px', borderRadius:8,
       background:C.amberBg, border:`1px solid ${C.amberBorder}` }}>
-      <div style={{ fontSize:12, fontWeight:800, color:C.amber, marginBottom:6 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:FS.sm, fontWeight:700, color:C.amber, marginBottom:6 }}>
+        <IconAlertTriangle size={16} stroke={1.9} aria-hidden="true" />
         Cần xử lý: {errors} lỗi nội dung{warnings ? ` · ${warnings} cảnh báo` : ''}
       </div>
       <div style={{ display:'grid', gap:4 }}>
         {list.slice(0, 4).map((issue, idx) => (
-          <div key={issue.code || idx} style={{ fontSize:11, color:C.text, lineHeight:1.35 }}>
-            <b>{txt(issue.group)}</b>: {txt(issue.title)}{issue.action ? ` — ${txt(issue.action)}` : ''}
+          <div key={issue.code || idx} style={{ fontSize:FS.xs, color:C.text, lineHeight:1.35 }}>
+            {issue.group ? <><b>{txt(issue.group)}</b>: </> : null}{txt(issue.title)}{issue.action ? ` — ${txt(issue.action)}` : ''}
           </div>
         ))}
-        {list.length > 4 && <div style={{ fontSize:11, color:C.text2 }}>+{list.length - 4} vấn đề khác trong mục “Vấn đề”.</div>}
+        {list.length > 4 && <div style={{ fontSize:FS.xs, color:C.text2 }}>+{list.length - 4} vấn đề khác trong mục “Vấn đề”.</div>}
       </div>
     </div>
   );
@@ -497,26 +558,26 @@ function BhytAssessmentBox({ bhyt }) {
     <div style={{ margin:'8px 16px 0', padding:'10px 12px', borderRadius:8,
       background:s.bg, border:`1px solid ${s.border}` }}>
       <div style={{ display:'flex', alignItems:'baseline', gap:8, flexWrap:'wrap' }}>
-        <span style={{ fontSize:12, fontWeight:800, color:s.fg }}>Đánh giá BHYT (tiền giám định): {a.label}</span>
+        <span style={{ fontSize:FS.sm, fontWeight:700, color:s.fg }}>Đánh giá BHYT (tiền giám định): {a.label}</span>
         {a.amount_at_risk > 0 && (
-          <span style={{ fontSize:11, color:s.fg }}>
+          <span style={{ fontSize:FS.xs, color:s.fg }}>
             · Giá trị dịch vụ liên quan cảnh báo: {a.amount_at_risk.toLocaleString('vi-VN')} đ
           </span>
         )}
       </div>
       {a.code === 'do_not_submit' || a.code === 'high_risk' || a.code === 'needs_review' ? (
-        <div style={{ fontSize:10, color:C.text3, marginTop:2 }}>
+        <div style={{ fontSize:FS.xs, color:C.text3, marginTop:2 }}>
           Đây là nguy cơ cần kiểm trước khi nộp, không phải kết luận xuất toán.
         </div>
       ) : null}
       {readiness && (
         <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', marginTop:6 }}>
-          <span style={{ fontSize:11, fontWeight:700, color: readiness.clean_count === readiness.total_count ? C.green : C.text2 }}>
+          <span style={{ fontSize:FS.xs, fontWeight:700, color: readiness.clean_count === readiness.total_count ? C.green : C.text2 }}>
             {readiness.clean_count}/{readiness.total_count} nhóm kiểm không có cảnh báo
           </span>
           {readiness.items.filter(i => !i.clean).map(i => (
             <span key={i.tier} title={`${i.count} điểm cần kiểm`} style={{
-              fontSize:10, padding:'1px 6px', borderRadius:10,
+              fontSize:FS.xs, padding:'1px 6px', borderRadius:10,
               background:C.amberBg, border:`1px solid ${C.amberBorder}`, color:C.amber,
             }}>
               T{i.tier} {i.label}
@@ -525,20 +586,20 @@ function BhytAssessmentBox({ bhyt }) {
         </div>
       )}
       {readiness && readiness.clean_count < readiness.total_count && (
-        <div style={{ fontSize:10, color:C.text3, marginTop:2 }}>
+        <div style={{ fontSize:FS.xs, color:C.text3, marginTop:2 }}>
           Chỉ số tham khảo theo nhóm — không tự khóa ra viện, người kiểm tự quyết định dựa trên các điểm cần kiểm bên dưới.
         </div>
       )}
       {findings.length > 0 && (
         <div style={{ display:'grid', gap:4, marginTop:6 }}>
           {findings.slice(0, 5).map((f, idx) => (
-            <div key={f.rule_id || idx} style={{ fontSize:11, color:C.text, lineHeight:1.35 }}>
+            <div key={f.rule_id || idx} style={{ fontSize:FS.xs, color:C.text, lineHeight:1.35 }}>
               <b>{txt(f.group)}</b>: {txt(f.title)}
-              {f.action ? <span style={{ color:C.blue }}> → {txt(f.action)}</span> : null}
+              {f.action ? <span style={{ color:C.blue }}> — {txt(f.action)}</span> : null}
               {f.legal_source ? <span style={{ color:C.text3 }}> ({txt(f.legal_source)})</span> : null}
             </div>
           ))}
-          {findings.length > 5 && <div style={{ fontSize:11, color:C.text2 }}>+{findings.length - 5} điểm cần kiểm khác.</div>}
+          {findings.length > 5 && <div style={{ fontSize:FS.xs, color:C.text2 }}>+{findings.length - 5} điểm cần kiểm khác.</div>}
         </div>
       )}
     </div>
@@ -579,12 +640,12 @@ function ResourceListPanel({ type = 'vtyt', onClose }) {
       <div style={{ padding:'12px 16px', borderBottom:`1px solid ${C.border}`,
         display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10 }}>
         <div>
-          <div style={{ fontSize:14, fontWeight:700, color:C.text }}>{title}</div>
-          <div style={{ fontSize:11, color:C.text2, marginTop:2 }}>
+          <div style={{ fontSize:FS.lg, fontWeight:700, color:C.text }}>{title}</div>
+          <div style={{ fontSize:FS.xs, color:C.text2, marginTop:2 }}>
             {rows.length}/{sourceRows.length} dòng · lấy từ danh mục select2 EMR
           </div>
         </div>
-        <Btn variant="default" onClick={onClose} style={{ padding:'3px 10px', fontSize:11 }}>Đóng</Btn>
+        <Btn variant="default" onClick={onClose}>Đóng</Btn>
       </div>
 
       <div style={{ padding:'10px 16px', borderBottom:`1px solid ${C.border}` }}>
@@ -594,7 +655,7 @@ function ResourceListPanel({ type = 'vtyt', onClose }) {
           onChange={e => setQuery(e.target.value)}
           placeholder={isBed ? 'Tìm mã G..., Nội/Ngoại, loại giường, giá...' : 'Tìm mã VTYT..., tên vật tư, quy cách...'}
           style={{ width:'100%', padding:'7px 10px', borderRadius:6, background:C.surface2,
-            border:`1px solid ${C.border}`, color:C.text, fontSize:12 }}
+            border:`1px solid ${C.border}`, color:C.text, fontSize:FS.sm }}
         />
         <div style={{ marginTop:7, display:'flex', gap:6, flexWrap:'wrap' }}>
           <Chip tone="blue">{sourceRows.length} dòng</Chip>
@@ -605,13 +666,13 @@ function ResourceListPanel({ type = 'vtyt', onClose }) {
 
       <div style={{ flex:1, overflow:'auto', padding:'10px 16px' }}>
         {rows.length === 0 ? (
-          <div style={{ color:C.text2, fontSize:12, padding:20, textAlign:'center' }}>Không có dòng phù hợp.</div>
+          <div style={{ color:C.text2, fontSize:FS.sm, padding:20, textAlign:'center' }}>Không có dòng phù hợp.</div>
         ) : isBed ? rows.map(item => (
-          <div key={item.code} style={{ padding:'8px 0', borderBottom:`1px solid ${C.border2}`, fontSize:12 }}>
+          <div key={item.code} style={{ padding:'8px 0', borderBottom:`1px solid ${C.border2}`, fontSize:FS.sm }}>
             <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
-              <Chip tone="blue" style={{ fontSize:9 }}>{item.code}</Chip>
+              <Chip tone="blue" style={{ fontSize:FS.xs }}>{item.code}</Chip>
               <span style={{ color:C.text, fontWeight:700, flex:1 }}>{txt(item.name)}</span>
-              <Btn variant="default" onClick={() => copyCode(item.code)} style={{ fontSize:10, padding:'1px 7px' }}>Copy mã</Btn>
+              <Btn variant="default" onClick={() => copyCode(item.code)}>Copy mã</Btn>
             </div>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:6, marginTop:6, color:C.text2 }}>
               <span>Giá DV: <b style={{ color:C.text }}>{txt(item.gia_dv)}</b></span>
@@ -621,12 +682,12 @@ function ResourceListPanel({ type = 'vtyt', onClose }) {
             </div>
           </div>
         )) : rows.map(item => (
-          <div key={item.code} style={{ padding:'8px 0', borderBottom:`1px solid ${C.border2}`, fontSize:12 }}>
+          <div key={item.code} style={{ padding:'8px 0', borderBottom:`1px solid ${C.border2}`, fontSize:FS.sm }}>
             <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
-              <Chip tone="blue" style={{ fontSize:9 }}>{item.code}</Chip>
+              <Chip tone="blue" style={{ fontSize:FS.xs }}>{item.code}</Chip>
               <span style={{ color:C.text, fontWeight:700, flex:1 }}>{txt(item.name)}</span>
-              <Chip tone={Number(item.stock || 0) > 0 ? 'green' : 'red'} style={{ fontSize:9 }}>Tồn {Number(item.stock || 0).toLocaleString('vi-VN')}</Chip>
-              <Btn variant="default" onClick={() => copyCode(item.code)} style={{ fontSize:10, padding:'1px 7px' }}>Copy mã</Btn>
+              <Chip tone={Number(item.stock || 0) > 0 ? 'green' : 'red'} style={{ fontSize:FS.xs }}>Tồn {Number(item.stock || 0).toLocaleString('vi-VN')}</Chip>
+              <Btn variant="default" onClick={() => copyCode(item.code)}>Copy mã</Btn>
             </div>
             {item.note && <div style={{ color:C.text2, marginTop:4 }}>{txt(item.note)}</div>}
           </div>
@@ -636,82 +697,9 @@ function ResourceListPanel({ type = 'vtyt', onClose }) {
   );
 }
 
-// ── Patient card (worklist) ───────────────────────────────────────────────────
-
-function PatientCard({ card, selected, onSelect, onFetch, onFetchDischargeFull, onPreviewVTYT, onProcessVTYT, onInputVTYT, onOpenBedEdit, onPrintBilling, onCreateTicket, onRescan, onClear, fetchingKey, previewVtytKey, inputVtytKey, bedEditKey, printBillingKey, vtytPreview }) {
-  const ma_bn     = getMaBn(card);
-  const scope     = card?.scope || 'daily';
-  const errors    = card?.issueCounts?.errors   || 0;
-  const warnings  = card?.issueCounts?.warnings || 0;
-  const isFetching = fetchingKey === ma_bn;
-  const isPreviewVtyt = previewVtytKey === ma_bn;
-  const isInputVtyt = inputVtytKey === ma_bn;
-  const isBedEdit = bedEditKey === ma_bn;
-  const isPrintBilling = printBillingKey === ma_bn;
-  const missing   = safeArr(card?.missing_files);
-  const issues    = safeArr(card?.issues).filter(i => i.severity !== 'info');
-  const stop      = e => e.stopPropagation();
-  const severity  = errors > 0 ? 'red' : warnings > 0 ? 'amber' : card?.data_complete ? 'green' : missing.length ? 'amber' : SCOPE_TONE[scope] || 'gray';
-  const sevStyle  = tS(severity);
-  const issueTitle = issues[0]?.title || card?.fetch_error || '';
-
-  return (
-    <article onClick={() => onSelect(card)} style={{
-      padding:'14px 16px', borderRadius: 7, marginBottom:12, cursor:'pointer',
-      background: selected ? C.surface2 : (errors ? 'rgba(248,81,73,0.08)' : warnings ? 'rgba(210,153,34,0.07)' : C.surface),
-      border:`1px solid ${selected ? C.blue : sevStyle.border}`,
-      borderLeft:`4px solid ${sevStyle.fg}`,
-      boxShadow: selected ? '0 0 0 1px rgba(88,166,255,0.16)' : 'none',
-    }}>
-      <div style={{ display:'grid', gridTemplateColumns:'minmax(0, 1fr) auto', gap:10, alignItems:'start' }}>
-        <div style={{ minWidth:0 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:7, minWidth:0 }}>
-            <div style={{ fontSize:15, fontWeight:800, color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-              {formatPersonName(card?.ho_ten, 'Không rõ tên')}
-            </div>
-            {selected && <Chip tone="blue" style={{ fontSize:9 }}>Đang xem</Chip>}
-          </div>
-          <div style={{ fontSize:11, color:C.text2, marginTop:2 }}>
-            {txt(ma_bn)} · Phòng {txt(card?.phong)}
-          </div>
-        </div>
-        <div style={{ display:'flex', gap:4, flexShrink:0, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:230 }}>
-          <Chip tone={SCOPE_TONE[scope] || 'gray'} style={{ fontSize:9 }}>{scope.toUpperCase()}</Chip>
-          {errors   > 0 && <Chip tone="red" style={{ fontSize:9 }}>{errors} lỗi</Chip>}
-          {warnings > 0 && <Chip tone="amber" style={{ fontSize:9 }}>{warnings} cảnh báo</Chip>}
-          {card?.data_complete && !errors && !warnings && <Chip tone="green" style={{ fontSize:9 }}>Đủ dữ liệu</Chip>}
-          {!card?.data_complete && missing.length > 0 && <Chip tone="gray" style={{ fontSize:9 }}>{missing.length} thiếu</Chip>}
-        </div>
-      </div>
-
-      {issueTitle && (
-        <div style={{
-          marginTop:9, padding:'7px 10px', borderRadius:8, fontSize:12,
-          color: errors ? C.red : C.amber,
-          background: errors ? C.redBg : C.amberBg,
-          border:`1px solid ${errors ? C.redBorder : C.amberBorder}`,
-          lineHeight:1.35,
-        }}>
-          {String(issueTitle).slice(0, 130)}{issues.length > 1 ? ` (+${issues.length - 1})` : ''}
-        </div>
-      )}
-
-      <div style={{ display:'grid', gridTemplateColumns:'minmax(160px, 1fr) auto', gap:10, alignItems:'center', marginTop:12 }}>
-        <Btn variant="primary" disabled={isFetching} onClick={e => { stop(e); onFetchDischargeFull?.(card); }}
-             style={{ fontSize:12, padding:'7px 12px', minHeight:34, fontWeight:800 }}>
-          {isFetching ? <><Spinner size={10} /> Đang lấy...</> : 'Lấy / cập nhật hồ sơ'}
-        </Btn>
-        <div style={{ fontSize:11, color:C.text2, textAlign:'right', lineHeight:1.35, minWidth:100 }}>
-          Bấm vào thẻ<br />để xem chi tiết
-        </div>
-      </div>
-    </article>
-  );
-}
-
 // ── Detail panel ──────────────────────────────────────────────────────────────
 
-function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVTYT, onProcessVTYT, onInputVTYT, onOpenBedEdit, onPrintBilling, onCreateTicket, onRescan, fetchingKey, previewVtytKey, inputVtytKey, bedEditKey, printBillingKey, ticketKey, vtytPreview }) {
+function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischargeFull, onPreviewVTYT, onProcessVTYT, onInputVTYT, onOpenBedEdit, onPrintBilling, onCreateTicket, onRescan, fetchingKey, previewVtytKey, inputVtytKey, bedEditKey, printBillingKey, ticketKey, vtytPreview }) {
   const [tab, setTab] = useState('fetch');
   const [tabTouched, setTabTouched] = useState(false);
   const [showMoreActions, setShowMoreActions] = useState(false);
@@ -784,67 +772,71 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
   ].filter(t => !t.hide);
 
   return (
-    <aside style={{ width:'clamp(580px, 46vw, 760px)', minWidth:540, flexShrink:0, background:C.surface, borderLeft:`1px solid ${C.border}`,
-      display:'flex', flexDirection:'column', overflow:'hidden' }}>
+    <aside aria-label={`Chi tiết ${formatPersonName(card?.ho_ten)}`} style={{
+      ...(isMobile
+        ? { position:'fixed', inset:0, zIndex:80, width:'100%' }
+        : { width:'clamp(560px, 44vw, 760px)', flexShrink:0, borderLeft:`1px solid ${C.border}` }),
+      background:C.surface, display:'flex', flexDirection:'column', overflow: isMobile ? 'auto' : 'hidden' }}>
 
       {/* Head */}
-      <div style={{ padding:'12px 16px', borderBottom:`1px solid ${C.border}`,
+      <div style={{ padding:'10px 8px 10px 16px', borderBottom:`1px solid ${C.border2}`,
         display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, background:C.surface }}>
-        <div>
-          <div style={{ fontSize:14, fontWeight:700, color:C.text }}>{formatPersonName(card?.ho_ten)}</div>
-          <div style={{ fontSize:11, color:C.text2, marginTop:2 }}>
-            {txt(ma_bn)} · Phòng {txt(card?.phong)} · <Chip tone={SCOPE_TONE[scope]||'gray'} style={{fontSize:9}}>{scope.toUpperCase()}</Chip>
+        <div style={{ minWidth:0 }}>
+          <h2 style={{ margin:0, fontSize:FS.xl, fontWeight:700, color:C.text }}>{formatPersonName(card?.ho_ten)}</h2>
+          <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:6, fontSize:FS.sm, color:C.text2, marginTop:3 }}>
+            <span style={{ fontVariantNumeric:'tabular-nums' }}>{txt(ma_bn)}</span>
+            <span>· Phòng {txt(card?.phong)}</span>
+            <Chip tone={SCOPE_TONE[scope]||'gray'}>{scopeFilterLabel(scope)}</Chip>
           </div>
         </div>
-        <Btn variant="default" onClick={onClose} style={{ padding:'3px 10px', fontSize:11 }}>Đóng</Btn>
+        <button type="button" className="emr-icon-btn" onClick={onClose} aria-label="Đóng chi tiết"><IconX size={18} stroke={1.75} /></button>
       </div>
 
       {/* Actions */}
-      <div style={{ padding:'12px 16px', borderBottom:`1px solid ${C.border}` }}>
-        <div style={{ display:'grid', gridTemplateColumns:'minmax(220px, 1fr) auto', gap:8, alignItems:'stretch' }}>
-          <Btn variant="primary" disabled={isFetching} onClick={() => onFetchDischargeFull?.(card)}
-               style={{ fontSize:13, padding:'9px 12px', minHeight:40, fontWeight:800 }}>
-            {isFetching ? <><Spinner size={10} /> Đang lấy...</> : 'Lấy / cập nhật hồ sơ'}
+      <div style={{ padding:'12px 16px', borderBottom:`1px solid ${C.border2}` }}>
+        <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+          <Btn variant="solidPrimary" icon={IconRefresh} loading={isFetching} disabled={isFetching} onClick={() => onFetchDischargeFull?.(card)}
+               style={{ minHeight:36, flex: isMobile ? '1 1 auto' : '0 0 auto' }}>
+            {isFetching ? 'Đang lấy…' : 'Lấy / cập nhật hồ sơ'}
           </Btn>
-          <Btn variant="secondary" onClick={() => setShowMoreActions(v => !v)}
-               style={{ fontSize:12, padding:'9px 12px', minHeight:40, minWidth:116 }}>
-            {showMoreActions ? 'Ẩn tác vụ' : 'Tác vụ khác'}
+          <Btn icon={IconChevronDown} onClick={() => setShowMoreActions(v => !v)} aria-expanded={showMoreActions} style={{ minHeight:36 }}>
+            Tác vụ khác
           </Btn>
         </div>
-        <div style={{ marginTop:7, fontSize:11, color:C.text2, lineHeight:1.35 }}>
-          Nút chính cập nhật toàn bộ hồ sơ hành chánh. Các thao tác phụ được ẩn để tránh bấm nhầm.
+        <div style={{ marginTop:6, fontSize:FS.xs, color:C.text2 }}>
+          Cập nhật toàn bộ hồ sơ hành chánh. Thao tác phụ (in bảng kê, phiếu sửa, sửa giường, VTYT) nằm trong Tác vụ khác.
         </div>
 
         {showMoreActions && (
           <div style={{ marginTop:10, padding:'10px', borderRadius: 6, border:`1px solid ${C.border2}`, background:C.surface2 }}>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(118px, 1fr))', gap:7 }}>
-              <Btn variant="secondary" disabled={busyAny} onClick={() => onPrintBilling?.(card)} style={{ fontSize:11, padding:'6px 9px' }}>
+              <Btn variant="secondary" disabled={busyAny} onClick={() => onPrintBilling?.(card)}>
                 {isPrintBilling ? <><Spinner size={10} /> Đang lưu...</> : 'In bảng kê'}
               </Btn>
-              <Btn variant={issues.length > 0 ? 'danger' : 'secondary'} disabled={busyAny} onClick={() => onCreateTicket(card)} style={{ fontSize:11, padding:'6px 9px' }}>
+              <Btn variant={issues.length > 0 ? 'danger' : 'secondary'} disabled={busyAny} onClick={() => onCreateTicket(card)}>
                 {isCreatingTicket ? <><Spinner size={10} /> Đang gửi...</> : 'Phiếu sửa'}
               </Btn>
-              <Btn variant="secondary" disabled={busyAny} onClick={() => onOpenBedEdit?.(card)} style={{ fontSize:11, padding:'6px 9px' }}>
+              <Btn variant="secondary" disabled={busyAny} onClick={() => onOpenBedEdit?.(card)}>
                 {isBedEdit ? <><Spinner size={10} /> Mở...</> : 'Sửa giường'}
               </Btn>
-              <Btn variant="secondary" disabled={busyAny} onClick={() => onPreviewVTYT?.(card)} style={{ fontSize:11, padding:'6px 9px' }}>
+              <Btn variant="secondary" disabled={busyAny} onClick={() => onPreviewVTYT?.(card)}>
                 {isPreviewVtyt ? <><Spinner size={10} /> Quét...</> : 'Quét YL mai'}
               </Btn>
               {hasVtytPreview && (
-                <Btn variant="secondary" disabled={busyAny || vtytProcessed} onClick={() => onProcessVTYT?.(card)} style={{ fontSize:11, padding:'6px 9px' }}>
+                <Btn variant="secondary" disabled={busyAny || vtytProcessed} onClick={() => onProcessVTYT?.(card)}>
                   {vtytProcessed ? 'Đã xử lý VTYT' : 'Xử lý VTYT'}
                 </Btn>
               )}
               {vtytProcessed && (
-                <Btn variant="secondary" disabled={busyAny} onClick={() => onInputVTYT?.(card)} style={{ fontSize:11, padding:'6px 9px' }}>
+                <Btn variant="secondary" disabled={busyAny} onClick={() => onInputVTYT?.(card)}>
                   {isInputVtyt ? <><Spinner size={10} /> Nhập...</> : 'Nhập VTYT'}
                 </Btn>
               )}
               {hasTicket && (
-                <Btn variant="secondary" disabled={isFetching} onClick={() => onRescan(card)} style={{ fontSize:11, padding:'6px 9px' }}>Nghiệm thu</Btn>
+                <Btn variant="secondary" disabled={isFetching} onClick={() => onRescan(card)}>Nghiệm thu</Btn>
               )}
               {card?.ticket?.ticketId && (
-                <Btn variant="default" onClick={() => printHchanh_Ticket(card.ticket.ticketId).catch(err => alert(err.message || err))} style={{ fontSize:11, padding:'6px 9px' }}>In phiếu</Btn>
+                <Btn variant="default" onClick={() => printHchanh_Ticket(card.ticket.ticketId).catch(err => alert(err.message || err))}>In phiếu</Btn>
               )}
             </div>
           </div>
@@ -856,34 +848,37 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
         <div style={{ margin:'8px 16px 0', padding:'8px 12px', borderRadius:6,
           background: card.qa.canPrint ? C.greenBg : C.amberBg,
           border:`1px solid ${card.qa.canPrint ? C.greenBorder : C.amberBorder}`,
-          fontSize:12, color: card.qa.canPrint ? C.green : C.amber }}>
-          {card.qa.canPrint ? '✓ Đủ điều kiện in/chốt hồ sơ' : card.qa.summary}
+          fontSize:FS.sm, color: card.qa.canPrint ? C.green : C.amber }}>
+          {card.qa.canPrint ? <span style={{ display:'inline-flex', alignItems:'center', gap:6 }}><IconCheck size={15} stroke={2.2} aria-hidden="true" />Đủ điều kiện in/chốt hồ sơ</span> : card.qa.summary}
         </div>
       )}
       <BhytAssessmentBox bhyt={card?.qa?.bhyt} />
       <IssueSummaryBox issues={issues} />
 
-      {/* Section selector */}
-      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 16px', borderBottom:`1px solid ${C.border}`, marginTop:8, flexShrink:0 }}>
-        <span style={{ fontSize:10, color:C.text2, textTransform:'uppercase', letterSpacing:.8, fontWeight:700 }}>Mục xem</span>
-        <select value={tab} onChange={e => { setTabTouched(true); setTab(e.target.value); }}
-                style={{ flex:1, minWidth:0, padding:'6px 9px', borderRadius:8, background:C.surface2,
-                  border:`1px solid ${C.border}`, color:C.text, fontSize:12, fontWeight:700 }}>
-          {TABS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
-        </select>
+      {/* Mục xem */}
+      <div role="tablist" aria-label="Mục xem" className="emr-hscroll" style={{ display:'flex', gap:2, padding:'0 12px', borderBottom:`1px solid ${C.border}`, marginTop:8, flexShrink:0, overflowX:'auto' }}>
+        {TABS.map(t => {
+          const active = tab === t.id;
+          return (
+            <button key={t.id} type="button" role="tab" aria-selected={active} onClick={() => { setTabTouched(true); setTab(t.id); }} style={{
+              flexShrink:0, height:38, padding:'0 10px', border:0, borderBottom:`2px solid ${active ? C.blue : 'transparent'}`, marginBottom:-1,
+              background:'transparent', color: active ? C.blue : C.text2, fontSize:FS.sm, fontWeight: active ? 650 : 550, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap',
+            }}>{t.label}</button>
+          );
+        })}
       </div>
 
       {/* Tab body */}
-      <div style={{ flex:1, overflow:'auto', padding:'14px 18px' }}>
+      <div style={{ flex: isMobile ? 'none' : 1, overflow: isMobile ? 'visible' : 'auto', padding:'14px 16px' }}>
 
 
         {tab === 'fetch' && (
           <div>
-            <div style={{ fontSize:11, fontWeight:700, color:C.text2, textTransform:'uppercase', letterSpacing:1, marginBottom:8 }}>Trạng thái dữ liệu</div>
+            <div style={{ fontSize:FS.xs, fontWeight:700, color:C.text2, marginBottom:8 }}>Trạng thái dữ liệu</div>
             {scopeFiles.map(fk => (
               <FetchBadge key={fk} fileKey={fk} fetched={fetched} />
             ))}
-            <div style={{ marginTop:16, fontSize:11, fontWeight:700, color:C.text2, textTransform:'uppercase', letterSpacing:1, marginBottom:8 }}>Thông tin nền</div>
+            <div style={{ marginTop:16, fontSize:FS.xs, fontWeight:700, color:C.text2, marginBottom:8 }}>Thông tin nền</div>
             <FieldRow label="Họ tên"       value={formatPersonName(profile.ho_ten || card?.ho_ten)} />
             <FieldRow label="Ngày sinh"    value={profile.ngay_sinh} />
             <FieldRow label="Tuổi"         value={profile.tuoi} />
@@ -904,9 +899,9 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
 
         {tab === 'issues' && (
           <div>
-            <div style={{ fontSize:11, fontWeight:700, color:C.text2, textTransform:'uppercase', letterSpacing:1, marginBottom:8 }}>Danh sách vấn đề</div>
+            <div style={{ fontSize:FS.xs, fontWeight:700, color:C.text2, marginBottom:8 }}>Danh sách vấn đề</div>
             {issues.length === 0
-              ? <div style={{ color:C.text2, fontSize:12 }}>Không có vấn đề nào.</div>
+              ? <div style={{ color:C.text2, fontSize:FS.sm }}>Không có vấn đề nào.</div>
               : issues.map((i, idx) => <IssueRow key={i.code||idx} issue={i} />)
             }
           </div>
@@ -914,9 +909,9 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
 
         {tab === 'discharge' && (
           <div>
-            <div style={{ fontSize:11, fontWeight:700, color:C.text2, textTransform:'uppercase', letterSpacing:1, marginBottom:8 }}>Ra viện</div>
+            <div style={{ fontSize:FS.xs, fontWeight:700, color:C.text2, marginBottom:8 }}>Ra viện</div>
             {!hasDischargeData
-              ? <div style={{ color:C.amber, fontSize:12 }}>Chưa lấy dữ liệu ra viện.</div>
+              ? <div style={{ color:C.amber, fontSize:FS.sm }}>Chưa lấy dữ liệu ra viện.</div>
               : <>
                   <SectionTitle>Xử trí ra khoa</SectionTitle>
                   <FieldRow label="Xử trí" value={disch.xu_tri} tone={disch.xu_tri ? 'green' : 'red'} />
@@ -988,11 +983,11 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
         {tab === 'billing' && (
           <div>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:8 }}>
-              <div style={{ fontSize:11, fontWeight:700, color:C.text2, textTransform:'uppercase', letterSpacing:1 }}>Bảng kê thanh toán</div>
+              <div style={{ fontSize:FS.xs, fontWeight:700, color:C.text2 }}>Bảng kê thanh toán</div>
               {hasBillingData && <Chip tone="gray">{safeArr(billing.rows).length} dòng</Chip>}
             </div>
             {!hasBillingData
-              ? <div style={{ color:C.amber, fontSize:12 }}>Chưa lấy bảng kê.</div>
+              ? <div style={{ color:C.amber, fontSize:FS.sm }}>Chưa lấy bảng kê.</div>
               : <>
                   {(() => {
                     const overview = billingOverview || buildClientBillingOverview(billing, issues) || {};
@@ -1021,9 +1016,9 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
                             const s = tS(card.tone);
                             return (
                               <div key={card.label} style={{ padding:'9px 11px', borderRadius: 6, background:s.bg, border:`1px solid ${s.border}` }}>
-                                <div style={{ fontSize:10, color:C.text2, marginBottom:2 }}>{card.label}</div>
-                                <div style={{ fontSize:18, fontWeight: 850, color:s.fg, lineHeight:1.15 }}>{card.display || moneyText(card.value)}</div>
-                                <div style={{ fontSize:10, color:C.text2, marginTop:3 }}>{card.note}</div>
+                                <div style={{ fontSize:FS.xs, color:C.text2, marginBottom:2 }}>{card.label}</div>
+                                <div style={{ fontSize:18, fontWeight: 700, color:s.fg, lineHeight:1.15 }}>{card.display || moneyText(card.value)}</div>
+                                <div style={{ fontSize:FS.xs, color:C.text2, marginTop:3 }}>{card.note}</div>
                               </div>
                             );
                           })}
@@ -1033,7 +1028,7 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
                           {viewTabs.map(([id, label]) => (
                             <button key={id} type="button" onClick={() => setBillingView(id)}
                               style={{ border:`1px solid ${billingView === id ? C.blueBorder : C.border}`, background:billingView === id ? C.blueBg : C.surface2,
-                                color:billingView === id ? C.blue : C.text2, borderRadius:999, padding:'4px 9px', fontSize:11, fontWeight:700, cursor:'pointer' }}>
+                                color:billingView === id ? C.blue : C.text2, borderRadius:999, padding:'4px 9px', fontSize:FS.xs, fontWeight:700, cursor:'pointer' }}>
                               {label}
                             </button>
                           ))}
@@ -1046,11 +1041,11 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
                               {safeArr(overview.sources).map(src => (
                                 <div key={src.key} style={{ padding:'8px 10px', borderRadius:8, border:`1px solid ${C.border2}`, background:C.surface2 }}>
                                   <div style={{ display:'flex', justifyContent:'space-between', gap:6, alignItems:'center' }}>
-                                    <b style={{ fontSize:12, color:C.text }}>{src.label}</b>
+                                    <b style={{ fontSize:FS.sm, color:C.text }}>{src.label}</b>
                                     <Chip tone={src.key === 'insurance' ? 'green' : src.key === 'self_pay' ? 'amber' : src.key === 'package' ? 'blue' : 'gray'}>{src.lines} dòng</Chip>
                                   </div>
-                                  <div style={{ marginTop:5, fontSize:16, fontWeight: 850, color:C.text }}>{moneyText(src.total)}</div>
-                                  <div style={{ marginTop:3, fontSize:10, color:C.text2 }}>
+                                  <div style={{ marginTop:5, fontSize:FS.xl, fontWeight: 700, color:C.text }}>{moneyText(src.total)}</div>
+                                  <div style={{ marginTop:3, fontSize:FS.xs, color:C.text2 }}>
                                     BHYT {moneyText(src.bhyt)} · NB trả {moneyText(src.patient || src.self_pay)}{src.package ? ` · Trong gói ${moneyText(src.package)}` : ''}
                                   </div>
                                 </div>
@@ -1059,14 +1054,14 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
 
                             <SectionTitle>Khoản người bệnh trả cao nhất</SectionTitle>
                             {safeArr(overview.top_patient_pay).length === 0
-                              ? <div style={{ color:C.text2, fontSize:12 }}>Không có khoản tự trả lớn trong dữ liệu hiện tại.</div>
+                              ? <div style={{ color:C.text2, fontSize:FS.sm }}>Không có khoản tự trả lớn trong dữ liệu hiện tại.</div>
                               : safeArr(overview.top_patient_pay).slice(0,5).map((row, i) => (
-                                <div key={`${row.name}-${i}`} style={{ display:'grid', gridTemplateColumns:'1fr auto', gap:8, alignItems:'center', padding:'6px 0', borderBottom:`1px solid ${C.border2}`, fontSize:12 }}>
+                                <div key={`${row.name}-${i}`} style={{ display:'grid', gridTemplateColumns:'1fr auto', gap:8, alignItems:'center', padding:'6px 0', borderBottom:`1px solid ${C.border2}`, fontSize:FS.sm }}>
                                   <div style={{ minWidth:0 }}>
                                     <div style={{ color:C.text, fontWeight:700, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{row.name}</div>
-                                    <div style={{ color:C.text2, fontSize:10 }}>{row.group} · {row.source}</div>
+                                    <div style={{ color:C.text2, fontSize:FS.xs }}>{row.group} · {row.source}</div>
                                   </div>
-                                  <div style={{ color:C.amber, fontWeight: 850 }}>{moneyText(row.patient)}</div>
+                                  <div style={{ color:C.amber, fontWeight: 700 }}>{moneyText(row.patient)}</div>
                                 </div>
                               ))}
                           </div>
@@ -1076,12 +1071,12 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
                           <div>
                             <SectionTitle>Theo nguồn chi trả</SectionTitle>
                             <div style={{ overflow:'auto', border:`1px solid ${C.border2}`, borderRadius:8 }}>
-                              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
+                              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:FS.xs }}>
                                 <thead><tr style={{ background:C.surface2 }}>{['Nguồn','Số dòng','Tổng','BHYT','Người bệnh','Trong gói'].map(h => <th key={h} style={{ textAlign:h==='Nguồn'?'left':'right', padding:'6px 8px', borderBottom:`1px solid ${C.border}` }}>{h}</th>)}</tr></thead>
                                 <tbody>{safeArr(overview.sources).map(src => <tr key={src.key}>
                                   <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, fontWeight:700 }}>{src.label}</td>
                                   <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, textAlign:'right' }}>{src.lines}</td>
-                                  <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, textAlign:'right', fontWeight:800 }}>{moneyText(src.total)}</td>
+                                  <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, textAlign:'right', fontWeight:700 }}>{moneyText(src.total)}</td>
                                   <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, textAlign:'right', color:C.green }}>{moneyText(src.bhyt)}</td>
                                   <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, textAlign:'right', color:C.amber }}>{moneyText(src.patient || src.self_pay)}</td>
                                   <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, textAlign:'right', color:C.blue }}>{moneyText(src.package)}</td>
@@ -1095,7 +1090,7 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
                           <div>
                             <SectionTitle>Theo nhóm chi phí</SectionTitle>
                             <div style={{ maxHeight:330, overflow:'auto', border:`1px solid ${C.border2}`, borderRadius:8 }}>
-                              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
+                              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:FS.xs }}>
                                 <thead style={{ position:'sticky', top:0 }}><tr style={{ background:C.surface2 }}>{['Nhóm','Tỷ trọng','Dòng','Tổng','BHYT','NB trả'].map(h => <th key={h} style={{ textAlign:h==='Nhóm'?'left':'right', padding:'6px 8px', borderBottom:`1px solid ${C.border}` }}>{h}</th>)}</tr></thead>
                                 <tbody>{safeArr(overview.groups).map(g => {
                                   const pct = totalPay ? Math.min(100, Math.round((money(g.total) / totalPay) * 100)) : 0;
@@ -1106,11 +1101,11 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
                                         <div style={{ width:48, height:5, borderRadius:999, background:C.surface2, border:`1px solid ${C.border2}`, overflow:'hidden' }}>
                                           <div style={{ width:`${pct}%`, height:'100%', background:C.blue }} />
                                         </div>
-                                        <span style={{ color:C.text2, fontSize:10, minWidth:30 }}>{pct}%</span>
+                                        <span style={{ color:C.text2, fontSize:FS.xs, minWidth:30 }}>{pct}%</span>
                                       </div>
                                     </td>
                                     <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, textAlign:'right' }}>{g.lines}</td>
-                                    <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, textAlign:'right', fontWeight:800 }}>{moneyText(g.total)}</td>
+                                    <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, textAlign:'right', fontWeight:700 }}>{moneyText(g.total)}</td>
                                     <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, textAlign:'right', color:C.green }}>{moneyText(g.bhyt)}</td>
                                     <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, textAlign:'right', color:C.amber }}>{moneyText(g.patient || g.self_pay)}</td>
                                   </tr>;
@@ -1124,15 +1119,15 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
                           <div>
                             <SectionTitle>Cần kiểm tra trước khi cho đi đóng tiền</SectionTitle>
                             {safeArr(overview.attention).length === 0
-                              ? <div style={{ padding:'10px 12px', borderRadius:8, background:C.greenBg, border:`1px solid ${C.greenBorder}`, color:C.green, fontSize:12 }}>Chưa phát hiện vấn đề liên quan bảng kê.</div>
+                              ? <div style={{ padding:'10px 12px', borderRadius:8, background:C.greenBg, border:`1px solid ${C.greenBorder}`, color:C.green, fontSize:FS.sm }}>Chưa phát hiện vấn đề liên quan bảng kê.</div>
                               : safeArr(overview.attention).map((a, i) => (
                                 <div key={i} style={{ padding:'8px 10px', borderRadius:8, background:a.severity === 'error' ? C.redBg : C.amberBg, border:`1px solid ${a.severity === 'error' ? C.redBorder : C.amberBorder}`, marginBottom:7 }}>
                                   <div style={{ display:'flex', gap:7, alignItems:'center', flexWrap:'wrap' }}>
                                     <Chip tone={a.severity === 'error' ? 'red' : 'amber'}>{a.severity === 'error' ? 'Lỗi' : 'Cảnh báo'}</Chip>
-                                    <b style={{ fontSize:12, color:a.severity === 'error' ? C.red : C.amber }}>{a.title}</b>
+                                    <b style={{ fontSize:FS.sm, color:a.severity === 'error' ? C.red : C.amber }}>{a.title}</b>
                                   </div>
-                                  {a.detail && <div style={{ fontSize:11, color:C.text, marginTop:4, lineHeight:1.4 }}>{a.detail}</div>}
-                                  {a.owner && <div style={{ fontSize:10, color:C.text2, marginTop:3 }}>Phụ trách: {a.owner}</div>}
+                                  {a.detail && <div style={{ fontSize:FS.xs, color:C.text, marginTop:4, lineHeight:1.4 }}>{a.detail}</div>}
+                                  {a.owner && <div style={{ fontSize:FS.xs, color:C.text2, marginTop:3 }}>Phụ trách: {a.owner}</div>}
                                 </div>
                               ))}
                           </div>
@@ -1142,18 +1137,18 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
                           <div>
                             <SectionTitle>Chi tiết bảng kê</SectionTitle>
                             <div style={{ maxHeight:340, overflow:'auto', border:`1px solid ${C.border2}`, borderRadius:8 }}>
-                              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
+                              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:FS.xs }}>
                                 <thead style={{ position:'sticky', top:0 }}><tr style={{ background:C.surface2 }}>
                                   {['Khoản mục','Nhóm','Nguồn','SL','Thành tiền'].map(h => <th key={h} style={{ textAlign:h==='Khoản mục'?'left':'right', padding:'6px 8px', borderBottom:`1px solid ${C.border}` }}>{h}</th>)}
                                 </tr></thead>
                                 <tbody>{safeArr(billing.rows).map((row, i) => {
                                   const t = row.payment_group === 'bhyt' ? 'green' : row.payment_group === 'self_pay' ? 'amber' : sourceKey(row.doi_tuong) === 'package' ? 'blue' : 'gray';
                                   return <tr key={i}>
-                                    <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, minWidth:220 }}><div style={{ color:C.text, fontWeight:600 }}>{txt(row.name)}</div><div style={{ color:C.text2, fontSize:10 }}>{txt(row.khoa,'')}</div></td>
+                                    <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, minWidth:220 }}><div style={{ color:C.text, fontWeight:600 }}>{txt(row.name)}</div><div style={{ color:C.text2, fontSize:FS.xs }}>{txt(row.khoa,'')}</div></td>
                                     <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, textAlign:'right', color:C.text2 }}>{cleanBillingGroup(row.loai_yc)}</td>
-                                    <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, textAlign:'right' }}><Chip tone={t} style={{ fontSize:9 }}>{txt(row.doi_tuong || row.payment_group)}</Chip></td>
+                                    <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, textAlign:'right' }}><Chip tone={t} style={{ fontSize:FS.xs }}>{txt(row.doi_tuong || row.payment_group)}</Chip></td>
                                     <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, textAlign:'right', color:C.text2 }}>{row.sl ?? ''}</td>
-                                    <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, textAlign:'right', fontWeight:800 }}>{moneyText(row.thanh_tien)}</td>
+                                    <td style={{ padding:'6px 8px', borderBottom:`1px solid ${C.border2}`, textAlign:'right', fontWeight:700 }}>{moneyText(row.thanh_tien)}</td>
                                   </tr>;
                                 })}</tbody>
                               </table>
@@ -1170,9 +1165,9 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
 
         {tab === 'bed_days' && (
           <div>
-            <div style={{ fontSize:11, fontWeight:700, color:C.text2, textTransform:'uppercase', letterSpacing:1, marginBottom:8 }}>Thống kê tất cả lượt kê giường</div>
+            <div style={{ fontSize:FS.xs, fontWeight:700, color:C.text2, marginBottom:8 }}>Thống kê tất cả lượt kê giường</div>
             {!hasBedDaysData
-              ? <div style={{ color:C.amber, fontSize:12 }}>Chưa lấy dữ liệu ngày giường.</div>
+              ? <div style={{ color:C.amber, fontSize:FS.sm }}>Chưa lấy dữ liệu ngày giường.</div>
               : <>
                   <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8, marginBottom:12 }}>
                     {[
@@ -1183,9 +1178,9 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
                       const s = tS(tone);
                       return (
                         <div key={label} style={{ padding:'8px 10px', borderRadius:6, background:s.bg, border:`1px solid ${s.border}` }}>
-                          <div style={{ fontSize:10, color:C.text2 }}>{label}</div>
+                          <div style={{ fontSize:FS.xs, color:C.text2 }}>{label}</div>
                           <div style={{ fontSize:20, fontWeight:700, color:s.fg }}>{value ?? 0}</div>
-                          <div style={{ fontSize:10, color:C.text2 }}>{unit}</div>
+                          <div style={{ fontSize:FS.xs, color:C.text2 }}>{unit}</div>
                         </div>
                       );
                     })}
@@ -1201,9 +1196,9 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
                       return (
                         <div key={label} style={{ padding:'8px 12px', borderRadius:6, background:s.bg,
                           border:`1px solid ${bad ? C.redBorder : s.border}` }}>
-                          <div style={{ fontSize:10, color:C.text2 }}>{label}</div>
+                          <div style={{ fontSize:FS.xs, color:C.text2 }}>{label}</div>
                           <div style={{ fontSize:22, fontWeight:700, color:s.fg }}>{value ?? '?'}</div>
-                          <div style={{ fontSize:10, color:C.text2 }}>ngày</div>
+                          <div style={{ fontSize:FS.xs, color:C.text2 }}>ngày</div>
                         </div>
                       );
                     })}
@@ -1215,23 +1210,23 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
                       border:`1px solid ${bedReview.status === 'ok' ? C.greenBorder : C.redBorder}` }}>
                       <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap', marginBottom:6 }}>
                         <Chip tone={bedReview.status === 'ok' ? 'green' : 'red'}>{bedReview.status === 'ok' ? 'Đúng quy tắc' : 'Cần chỉnh ngày giường'}</Chip>
-                        <span style={{ fontSize:12, fontWeight:700, color:bedReview.status === 'ok' ? C.green : C.red }}>
+                        <span style={{ fontSize:FS.sm, fontWeight:700, color:bedReview.status === 'ok' ? C.green : C.red }}>
                           Dự kiến {bedReview.expected_total ?? '?'} ngày · Hiện {bedReview.actual_total ?? '?'} ngày
                         </span>
                       </div>
                       {bedReview.surgery && (
-                        <div style={{ fontSize:11, color:C.text2, marginBottom:6 }}>
+                        <div style={{ fontSize:FS.xs, color:C.text2, marginBottom:6 }}>
                           PT {txt(bedReview.surgery.class_name)} · mốc hậu phẫu {txt(bedReview.surgery.postop_start_datetime || bedReview.surgery.postop_start)} · hết 10 ngày {txt(bedReview.surgery.postop_end_datetime)} · giường sau PT: {txt(bedReview.surgery.surgical_bed)}
                         </div>
                       )}
                       {safeArr(bedReview.exact_intervals).length > 0 && (
                         <div style={{ marginTop:8 }}>
-                          <div style={{ fontSize:10, fontWeight:800, color:C.text2, textTransform:'uppercase', letterSpacing:.7, marginBottom:5 }}>
+                          <div style={{ fontSize:FS.xs, fontWeight:700, color:C.text2, marginBottom:5 }}>
                             Mốc chuẩn theo giờ phút
                           </div>
                           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:6 }}>
                             {safeArr(bedReview.exact_intervals).map((p, i) => (
-                              <div key={`exact-${i}`} style={{ padding:'6px 8px', borderRadius:6, background:C.surface, border:`1px solid ${C.border2}`, fontSize:11 }}>
+                              <div key={`exact-${i}`} style={{ padding:'6px 8px', borderRadius:6, background:C.surface, border:`1px solid ${C.border2}`, fontSize:FS.xs }}>
                                 <div style={{ fontWeight:700, color:C.text }}>{txt(p.label)}</div>
                                 <div style={{ color:C.text2 }}>{txt(p.range_datetime)}</div>
                                 {p.reason && <div style={{ color:C.text2, marginTop:2 }}>{txt(p.reason)}</div>}
@@ -1242,27 +1237,27 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
                       )}
                       {safeArr(bedReview.mismatch_intervals).length > 0 && (
                         <div style={{ marginTop:8, padding:'8px 10px', borderRadius:7, background:C.redBg, border:`1px solid ${C.redBorder}` }}>
-                          <div style={{ fontSize:10, fontWeight:800, color:C.red, textTransform:'uppercase', letterSpacing:.7, marginBottom:5 }}>
+                          <div style={{ fontSize:FS.xs, fontWeight:700, color:C.red, marginBottom:5 }}>
                             Khoảng giờ đang lệch
                           </div>
                           {safeArr(bedReview.mismatch_intervals).slice(0, 6).map((m, i) => (
-                            <div key={`mismatch-${i}`} style={{ fontSize:11, color:C.text, lineHeight:1.4, padding:'2px 0' }}>
+                            <div key={`mismatch-${i}`} style={{ fontSize:FS.xs, color:C.text, lineHeight:1.4, padding:'2px 0' }}>
                               <b>{txt(m.range_datetime)}</b>: đang {txt(m.actual)} → nên {txt(m.expected)}
                             </div>
                           ))}
                           {safeArr(bedReview.mismatch_intervals).length > 6 && (
-                            <div style={{ fontSize:11, color:C.text2, marginTop:3 }}>+{safeArr(bedReview.mismatch_intervals).length - 6} khoảng khác</div>
+                            <div style={{ fontSize:FS.xs, color:C.text2, marginTop:3 }}>+{safeArr(bedReview.mismatch_intervals).length - 6} khoảng khác</div>
                           )}
                         </div>
                       )}
                       {safeArr(bedReview.periods).length > 0 && (
                         <div style={{ marginTop:8 }}>
-                          <div style={{ fontSize:10, fontWeight:800, color:C.text2, textTransform:'uppercase', letterSpacing:.7, marginBottom:5 }}>
+                          <div style={{ fontSize:FS.xs, fontWeight:700, color:C.text2, marginBottom:5 }}>
                             Gợi ý tính tiền theo ngày
                           </div>
                           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(190px, 1fr))', gap:6 }}>
                             {safeArr(bedReview.periods).map((p, i) => (
-                              <div key={i} style={{ padding:'6px 8px', borderRadius:6, background:C.surface, border:`1px solid ${C.border2}`, fontSize:11 }}>
+                              <div key={i} style={{ padding:'6px 8px', borderRadius:6, background:C.surface, border:`1px solid ${C.border2}`, fontSize:FS.xs }}>
                                 <div style={{ fontWeight:700, color:C.text }}>{txt(p.label)}</div>
                                 <div style={{ color:C.text2 }}>{txt(p.range)} · {p.days} ngày</div>
                                 {p.range_datetime && <div style={{ color:C.text2, marginTop:2 }}>Mốc: {txt(p.range_datetime)}</div>}
@@ -1272,7 +1267,7 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
                         </div>
                       )}
                       {safeArr(bedReview.suggestions).length > 0 && (
-                        <div style={{ marginTop:7, fontSize:11, color:C.text, lineHeight:1.4 }}>
+                        <div style={{ marginTop:7, fontSize:FS.xs, color:C.text, lineHeight:1.4 }}>
                           {safeArr(bedReview.suggestions).map((x, i) => <div key={i}>• {x}</div>)}
                         </div>
                       )}
@@ -1281,20 +1276,20 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
 
                   {bedWarnings.map((w, i) => (
                     <div key={i} style={{ padding:'6px 10px', borderRadius:6, background:C.redBg,
-                      border:`1px solid ${C.redBorder}`, fontSize:12, color:C.red, marginBottom:6 }}>⚠ {w}</div>
+                      border:`1px solid ${C.redBorder}`, fontSize:FS.sm, color:C.red, marginBottom:6 }}>⚠ {w}</div>
                   ))}
 
                   <SectionTitle>Tổng hợp theo từng giường</SectionTitle>
                   {safeArr(bed.bed_summary).length === 0
-                    ? <div style={{ color:C.text2, fontSize:12 }}>Không có dòng giường hợp lệ.</div>
+                    ? <div style={{ color:C.text2, fontSize:FS.sm }}>Không có dòng giường hợp lệ.</div>
                     : safeArr(bed.bed_summary).map((g, i) => {
                         const ref = findBedServiceRef([g.dich_vu_giuong, g.mo_ta, g.ten_giuong].filter(Boolean).join(' '));
                         return (
-                          <div key={`${g.ten_giuong || 'giuong'}-${i}`} style={{ padding:'7px 0', borderBottom:`1px solid ${C.border2}`, fontSize:12 }}>
+                          <div key={`${g.ten_giuong || 'giuong'}-${i}`} style={{ padding:'7px 0', borderBottom:`1px solid ${C.border2}`, fontSize:FS.sm }}>
                             <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
-                              <Chip tone="blue" style={{ fontSize:9 }}>{g.so_ngay || 0} ngày</Chip>
-                              <Chip tone="gray" style={{ fontSize:9 }}>{g.so_dot || 0} lượt</Chip>
-                              {ref?.code && <Chip tone="green" style={{ fontSize:9 }}>{ref.code}</Chip>}
+                              <Chip tone="blue" style={{ fontSize:FS.xs }}>{g.so_ngay || 0} ngày</Chip>
+                              <Chip tone="gray" style={{ fontSize:FS.xs }}>{g.so_dot || 0} lượt</Chip>
+                              {ref?.code && <Chip tone="green" style={{ fontSize:FS.xs }}>{ref.code}</Chip>}
                               <span style={{ color:C.text, fontWeight:700 }}>{txt(g.ten_giuong)}</span>
                             </div>
                             {nonEmpty(g.phong) && <div style={{ color:C.text2, marginTop:2 }}>{txt(g.phong)}</div>}
@@ -1310,17 +1305,17 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
 
                   <SectionTitle>Chi tiết từng lượt kê</SectionTitle>
                   {safeArr(bed.rows).length === 0
-                    ? <div style={{ color:C.text2, fontSize:12 }}>Không có chi tiết lượt kê giường.</div>
+                    ? <div style={{ color:C.text2, fontSize:FS.sm }}>Không có chi tiết lượt kê giường.</div>
                     : safeArr(bed.rows).map((r, i) => {
                         const isCancel = String(r.trang_thai || '').toLowerCase().includes('hủy') || String(r.trang_thai || '').toLowerCase().includes('huy');
                         const isActive = String(r.trang_thai || '').toLowerCase().includes('đang') || String(r.trang_thai || '').toLowerCase().includes('dang');
                         const ref = findBedServiceRef([r.dich_vu_giuong, r.mo_ta, r.ten_giuong, r.giuong].filter(Boolean).join(' '));
                         return (
-                          <div key={i} style={{ padding:'7px 0', borderBottom:`1px solid ${C.border2}`, fontSize:12 }}>
+                          <div key={i} style={{ padding:'7px 0', borderBottom:`1px solid ${C.border2}`, fontSize:FS.sm }}>
                             <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
-                              <Chip tone={isCancel ? 'red' : isActive ? 'green' : 'gray'} style={{ fontSize:9 }}>{txt(r.trang_thai)}</Chip>
-                              <Chip tone="blue" style={{ fontSize:9 }}>{r.so_ngay || 0} ngày</Chip>
-                              {ref?.code && <Chip tone="green" style={{ fontSize:9 }}>{ref.code}</Chip>}
+                              <Chip tone={isCancel ? 'red' : isActive ? 'green' : 'gray'} style={{ fontSize:FS.xs }}>{txt(r.trang_thai)}</Chip>
+                              <Chip tone="blue" style={{ fontSize:FS.xs }}>{r.so_ngay || 0} ngày</Chip>
+                              {ref?.code && <Chip tone="green" style={{ fontSize:FS.xs }}>{ref.code}</Chip>}
                               <span style={{ color:C.text, fontWeight:700 }}>{txt(r.ten_giuong || r.giuong || r.ten_giuong_raw)}</span>
                             </div>
                             {nonEmpty(r.phong) && <div style={{ color:C.text2, marginTop:2 }}>{txt(r.phong)}</div>}
@@ -1345,21 +1340,21 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
 
         {tab === 'surgery' && (
           <div>
-            <div style={{ fontSize:11, fontWeight:700, color:C.text2, textTransform:'uppercase', letterSpacing:1, marginBottom:8 }}>
+            <div style={{ fontSize:FS.xs, fontWeight:700, color:C.text2, marginBottom:8 }}>
               Phân loại phẫu thuật ({safeArr(surgery.surgeries).length})
             </div>
             {!hasSurgeryData
-              ? <div style={{ color:C.amber, fontSize:12 }}>Chưa lấy dữ liệu phẫu thuật. Bấm “Lấy” ở dòng Phân loại phẫu thuật hoặc cập nhật lại dữ liệu.</div>
+              ? <div style={{ color:C.amber, fontSize:FS.sm }}>Chưa lấy dữ liệu phẫu thuật. Bấm “Lấy” ở dòng Phân loại phẫu thuật hoặc cập nhật lại dữ liệu.</div>
               : safeArr(surgery.surgeries).length === 0
-                ? <div style={{ color:C.text2, fontSize:12 }}>Không thấy phẫu thuật trong khoảng thời gian đã chọn.</div>
+                ? <div style={{ color:C.text2, fontSize:FS.sm }}>Không thấy phẫu thuật trong khoảng thời gian đã chọn.</div>
                 : safeArr(surgery.surgeries).map((pt, i) => {
                     const d = pt.detail || {};
                     return (
-                      <div key={pt.phauthuatid || i} style={{ padding:'8px 0', borderBottom:`1px solid ${C.border2}`, fontSize:12 }}>
+                      <div key={pt.phauthuatid || i} style={{ padding:'8px 0', borderBottom:`1px solid ${C.border2}`, fontSize:FS.sm }}>
                         <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap', marginBottom:4 }}>
-                          {pt.phan_loai_pt && <Chip tone="amber" style={{ fontSize:9 }}>{txt(pt.phan_loai_pt)}</Chip>}
-                          {pt.trang_thai && <Chip tone={String(pt.trang_thai).toLowerCase().includes('hoàn') ? 'green' : 'gray'} style={{ fontSize:9 }}>{txt(pt.trang_thai)}</Chip>}
-                          {pt.tinh_trang && <Chip tone="blue" style={{ fontSize:9 }}>{txt(pt.tinh_trang)}</Chip>}
+                          {pt.phan_loai_pt && <Chip tone="amber" style={{ fontSize:FS.xs }}>{txt(pt.phan_loai_pt)}</Chip>}
+                          {pt.trang_thai && <Chip tone={String(pt.trang_thai).toLowerCase().includes('hoàn') ? 'green' : 'gray'} style={{ fontSize:FS.xs }}>{txt(pt.trang_thai)}</Chip>}
+                          {pt.tinh_trang && <Chip tone="blue" style={{ fontSize:FS.xs }}>{txt(pt.tinh_trang)}</Chip>}
                           <span style={{ color:C.text, fontWeight:700 }}>{txt(pt.noi_dung_phau_thuat || d.dich_vu_phau_thuat)}</span>
                         </div>
                         <FieldRow label="Thời gian danh sách" value={pt.thoi_gian} />
@@ -1386,13 +1381,13 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
             }
             {safeArr(surgery.ward_admissions).length > 0 && (
               <div style={{ marginTop:10, paddingTop:8, borderTop:`1px dashed ${C.border2}` }}>
-                <div style={{ fontSize:10, fontWeight:700, color:C.text2, textTransform:'uppercase', letterSpacing:.8, marginBottom:6 }}>
+                <div style={{ fontSize:FS.xs, fontWeight:700, color:C.text2, marginBottom:6 }}>
                   Mốc vào khoa từ lịch sử y lệnh
                 </div>
                 {safeArr(surgery.ward_admissions).map((w, i) => (
-                  <div key={w.noitruid || i} style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center', fontSize:11, color:C.text2, padding:'2px 0' }}>
-                    {w.thu_tu && <Chip tone="gray" style={{ fontSize:9 }}>Khoa {w.thu_tu}</Chip>}
-                    {w.ngay_vao && <Chip tone="blue" style={{ fontSize:9 }}>{txt(w.ngay_vao)}</Chip>}
+                  <div key={w.noitruid || i} style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center', fontSize:FS.xs, color:C.text2, padding:'2px 0' }}>
+                    {w.thu_tu && <Chip tone="gray" style={{ fontSize:FS.xs }}>Khoa {w.thu_tu}</Chip>}
+                    {w.ngay_vao && <Chip tone="blue" style={{ fontSize:FS.xs }}>{txt(w.ngay_vao)}</Chip>}
                     <span>{txt(w.ten_khoa)}</span>
                     {w.trang_thai && <span>· {txt(w.trang_thai)}</span>}
                   </div>
@@ -1405,9 +1400,9 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
 
         {tab === 'order_history' && (
           <div>
-            <div style={{ fontSize:11, fontWeight:700, color:C.text2, textTransform:'uppercase', letterSpacing:1, marginBottom:8 }}>Lịch sử y lệnh</div>
+            <div style={{ fontSize:FS.xs, fontWeight:700, color:C.text2, marginBottom:8 }}>Lịch sử y lệnh</div>
             {!hasOrderHistoryData
-              ? <div style={{ color:C.amber, fontSize:12 }}>Chưa lấy lịch sử y lệnh.</div>
+              ? <div style={{ color:C.amber, fontSize:FS.sm }}>Chưa lấy lịch sử y lệnh.</div>
               : <>
                   <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:6, marginBottom:12 }}>
                     {[
@@ -1418,7 +1413,7 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
                     ].map(([label, value, tone]) => {
                       const st = tS(tone);
                       return <div key={label} style={{ padding:'6px 8px', borderRadius:6, background:st.bg, border:`1px solid ${st.border}` }}>
-                        <div style={{ fontSize:10, color:C.text2 }}>{label}</div>
+                        <div style={{ fontSize:FS.xs, color:C.text2 }}>{label}</div>
                         <div style={{ fontSize:18, fontWeight:700, color:st.fg }}>{value ?? 0}</div>
                       </div>;
                     })}
@@ -1427,10 +1422,10 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
                     <>
                       <SectionTitle>Y lệnh chưa hoàn tất</SectionTitle>
                       {safeArr(orderHistory.incomplete_rows).map((r, i) => (
-                        <div key={i} style={{ padding:'7px 0', borderBottom:`1px solid ${C.border2}`, fontSize:12 }}>
+                        <div key={i} style={{ padding:'7px 0', borderBottom:`1px solid ${C.border2}`, fontSize:FS.sm }}>
                           <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
-                            <Chip tone={r.after_discharge ? 'red' : 'amber'} style={{ fontSize:9 }}>{txt(r.tg_ylenh || r.ngay)}</Chip>
-                            <Chip tone="gray" style={{ fontSize:9 }}>Phiếu {txt(r.so_phieu)}</Chip>
+                            <Chip tone={r.after_discharge ? 'red' : 'amber'} style={{ fontSize:FS.xs }}>{txt(r.tg_ylenh || r.ngay)}</Chip>
+                            <Chip tone="gray" style={{ fontSize:FS.xs }}>Phiếu {txt(r.so_phieu)}</Chip>
                             <span style={{ color:C.text, fontWeight:700 }}>{txt(r.ten_y_lenh || r.dien_bien)}</span>
                           </div>
                           <div style={{ color:C.red, marginTop:3, fontWeight:600 }}>
@@ -1448,9 +1443,9 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
                   )}
                   <SectionTitle>Chi tiết gần nhất</SectionTitle>
                   {safeArr(orderHistory.rows).slice(0, 30).map((r, i) => (
-                    <div key={i} style={{ padding:'5px 0', borderBottom:`1px solid ${C.border2}`, fontSize:11 }}>
+                    <div key={i} style={{ padding:'5px 0', borderBottom:`1px solid ${C.border2}`, fontSize:FS.xs }}>
                       <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
-                        <Chip tone={r.status === 'completed' ? 'green' : r.status === 'incomplete' ? 'red' : 'gray'} style={{ fontSize:9 }}>{txt(r.tg_ylenh)}</Chip>
+                        <Chip tone={r.status === 'completed' ? 'green' : r.status === 'incomplete' ? 'red' : 'gray'} style={{ fontSize:FS.xs }}>{txt(r.tg_ylenh)}</Chip>
                         <span style={{ color:C.text, fontWeight:600 }}>{txt(r.ten_y_lenh || r.dien_bien || r.kq_text)}</span>
                       </div>
                       <div style={{ color:C.text2, marginTop:2 }}>Phiếu {txt(r.so_phieu)} · {txt(r.bac_si)} · {txt(r.incomplete_detail || r.kq_text)}</div>
@@ -1481,39 +1476,54 @@ function DetailPanel({ card, onClose, onFetch, onFetchDischargeFull, onPreviewVT
 
 // ── Count bar ─────────────────────────────────────────────────────────────────
 
-function CountBar({ counts, dashboard }) {
+function CountBar({ counts, dashboard, filterStatus, setFilterStatus }) {
   const ready = Number(counts.quality_ready ?? counts.data_complete ?? 0);
   const needReview = Number(counts.needs_review ?? 0);
   const notStarted = Number(counts.not_started ?? counts.data_not_started ?? 0);
   const machineError = Number(counts.machine_error ?? counts.fetch_error ?? 0);
   const fetchedCount = Math.max(0, Number(counts.total || 0) - Number(notStarted || 0));
+  // Bấm vào số để lọc nhanh theo trạng thái tương ứng.
   const items = [
-    { label:'Tổng BN',       value:counts.total,      tone:'gray'  },
-    { label:'Đã lấy hồ sơ',  value:fetchedCount,      tone:fetchedCount ? 'blue' : 'gray' },
-    { label:'Chưa lấy',      value:notStarted,        tone:notStarted ? 'gray' : 'green' },
-    { label:'Cần xử lý',     value:needReview,        tone:needReview ? 'amber' : 'green' },
-    { label:'Lỗi máy',       value:machineError,      tone:machineError ? 'red' : 'gray' },
-    { label:'Đủ hoàn tất',   value:ready,             tone:'green' },
+    { label:'người bệnh', value:counts.total ?? 0, tone:'gray', filter:'all' },
+    { label:'đã lấy hồ sơ', value:fetchedCount, tone:'gray' },
+    { label:'chưa lấy', value:notStarted, tone:'gray', filter:'gray' },
+    { label:'cần xử lý', value:needReview, tone:needReview ? 'amber' : 'gray', filter:'amber' },
+    { label:'lỗi máy', value:machineError, tone:machineError ? 'red' : 'gray', filter:'red' },
+    { label:'đủ, hoàn tất', value:ready, tone:ready ? 'green' : 'gray', filter:'green' },
   ];
   const syncInfo = dashboard?.syncInfo || dashboard?.lastSync || {};
   const syncAt = syncInfo.at || dashboard?.generatedAt;
   return (
-    <div style={{ display:'flex', gap:10, padding:'9px 16px', alignItems:'center', flexWrap:'wrap', borderBottom:`1px solid ${C.border}`, background:C.bg }}>
-      {items.map(({ label, value, tone }) => {
-        const s = tS(tone);
-        return (
-          <div key={label} style={{ padding:'5px 10px', borderRadius:9, minWidth:74, textAlign:'center',
-            background:s.bg, border:`1px solid ${s.border}` }}>
-            <div style={{ fontSize:18, fontWeight:800, color:s.fg, lineHeight:1.1 }}>{value ?? 0}</div>
-            <div style={{ fontSize:9, color:C.text2, marginTop:1 }}>{label}</div>
-          </div>
-        );
+    <div style={{ display:'flex', gap:'6px 4px', padding:'8px 12px', alignItems:'center', flexWrap:'wrap', borderBottom:`1px solid ${C.border2}`, background:C.surface }}>
+      {items.map(({ label, value, tone, filter }) => {
+        const fg = tone === 'gray' ? C.text : tS(tone).fg;
+        const active = filter && filter !== 'all' && filterStatus === filter;
+        const content = (<><b style={{ fontSize:FS.lg, color:fg, fontVariantNumeric:'tabular-nums' }}>{value ?? 0}</b> <span style={{ color:C.text2 }}>{label}</span></>);
+        return filter ? (
+          <button key={label} type="button" aria-pressed={active} onClick={() => setFilterStatus(active ? 'all' : filter)} style={{
+            height:30, padding:'0 10px', borderRadius:5, cursor:'pointer', fontFamily:'inherit', fontSize:FS.sm,
+            border:`1px solid ${active ? C.blueBorder : 'transparent'}`, background:active ? C.blueBg : 'transparent',
+          }}>{content}</button>
+        ) : <span key={label} style={{ padding:'0 10px', fontSize:FS.sm }}>{content}</span>;
       })}
-      <div style={{ marginLeft:'auto', color:C.text2, fontSize:11, lineHeight:1.45, minWidth:260, textAlign:'right' }}>
-        Nguồn: phiên quét {syncInfo.active_count ?? counts.total ?? 0} BN
-        <br />Đồng bộ: {formatDateTime(syncAt)}
-      </div>
+      <span style={{ marginLeft:'auto', color:C.text3, fontSize:FS.xs, padding:'0 4px' }}>
+        Phiên quét {syncInfo.active_count ?? counts.total ?? 0} người bệnh · đồng bộ {formatDateTime(syncAt)}
+      </span>
     </div>
+  );
+}
+
+const SELECT_STYLE = { height:32, padding:'0 8px', borderRadius:5, background:C.surface, border:`1px solid ${C.border}`, color:C.text, fontSize:FS.sm, fontFamily:'inherit' };
+
+function ScopeSelect({ value, onChange }) {
+  return (
+    <select aria-label="Nhóm người bệnh" value={value} onChange={e => onChange(e.target.value)} style={SELECT_STYLE}>
+      <option value="all">Tất cả nhóm</option>
+      <option value="discharge">Ra viện</option>
+      <option value="surgery">PTTT</option>
+      <option value="admission">Nhập mới</option>
+      <option value="daily">Tiếp tục ĐT</option>
+    </select>
   );
 }
 
@@ -1522,6 +1532,7 @@ function CountBar({ counts, dashboard }) {
 
 export default function HchahnTab({ toast, workDateRange }) {
   const hc = useHchanh({ toast, workDateRange });
+  const isMobile = useIsMobile();
   const {
     loading, fetchingKey, previewVtytKey, inputVtytKey, bedEditKey, printBillingKey, ticketKey,
     selectedCard, setSelectedCard,
@@ -1564,137 +1575,96 @@ export default function HchahnTab({ toast, workDateRange }) {
     );
   }
 
-  const workspaceButton = (key, title, subtitle) => {
-    const active = workspace === key;
-    return (
-      <button
-        type="button"
-        onClick={() => setWorkspace(key)}
-        style={{
-          minWidth: 170,
-          padding: '7px 10px',
-          textAlign: 'left',
-          borderRadius: 6,
-          cursor: 'pointer',
-          fontFamily: 'inherit',
-          border: `1px solid ${active ? C.blueBorder : C.border2}`,
-          borderBottom: `2px solid ${active ? C.blue : 'transparent'}`,
-          background: active ? C.blueBg : C.surface,
-          color: active ? C.blue : C.text,
-        }}
-      >
-        <div style={{ fontSize: 12, fontWeight: 850 }}>{title}</div>
-        <div style={{ marginTop: 2, fontSize: 9, color: active ? C.blue : C.text3 }}>{subtitle}</div>
-      </button>
-    );
-  };
+  const vtytCount = vtytBatchDraft?.patients?.length || 0;
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', overflow:'hidden', background:C.bg }}>
 
-      {/* Header + khu làm việc */}
-      <div style={{ padding:'8px 12px', borderBottom:`1px solid ${C.border2}`, background:C.surface }}>
-        <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
-          <div style={{ minWidth:150, marginRight:2 }}>
-            <div style={{ fontSize:14, fontWeight: 850, color:C.text }}>Hành chánh</div>
-            <div style={{ fontSize:10, color:C.text3, marginTop:1 }}>Ra viện và vật tư</div>
-          </div>
-
-          <div role="tablist" aria-label="Khu làm việc hành chánh" style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-            {workspaceButton('discharge', 'Kiểm ra viện', 'Hồ sơ · chi phí · ngày giường · y lệnh')}
-            {workspaceButton('vtyt', `Nhập VTYT${vtytBatchDraft?.patients?.length ? ` (${vtytBatchDraft.patients.length})` : ''}`, 'Quét toàn đợt · sửa kế hoạch · nhập hàng loạt')}
-          </div>
-
-          <div style={{ marginLeft:'auto', display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-            <input type="text" placeholder="Tìm tên, mã BN, phòng..."
+      {/* Khu làm việc + tìm kiếm */}
+      <div style={{ padding:'10px 12px', borderBottom:`1px solid ${C.border2}`, background:C.surface, display:'grid', gap:10 }}>
+        <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
+          <Segmented
+            label="Khu làm việc hành chánh"
+            value={workspace}
+            onChange={setWorkspace}
+            options={[
+              { value:'discharge', label:'Kiểm ra viện' },
+              { value:'vtyt', label:`Nhập VTYT${vtytCount ? ` (${vtytCount})` : ''}` },
+            ]}
+          />
+          <span style={{ fontSize:FS.xs, color:C.text2, flex:'1 1 200px' }}>
+            {workspace === 'discharge' ? 'Hồ sơ, chi phí, ngày giường và y lệnh của người bệnh.' : 'Quét toàn đợt, sửa kế hoạch rồi nhập vật tư hàng loạt.'}
+          </span>
+          <label style={{ position:'relative', flex: isMobile ? '1 1 100%' : '0 1 280px' }}>
+            <IconSearch size={16} stroke={1.75} color={C.text3} aria-hidden="true" style={{ position:'absolute', left:9, top:8 }} />
+            <input type="search" placeholder="Tìm tên, mã người bệnh, phòng" aria-label="Tìm người bệnh"
               value={search} onChange={e => setSearch(e.target.value)}
-              style={{ width:250, maxWidth:'32vw', padding:'6px 9px', borderRadius:5,
-                background:C.surface, border:`1px solid ${C.border}`, color:C.text, fontSize:11.5 }} />
-          </div>
+              style={{ width:'100%', height:32, padding:'0 9px 0 32px', borderRadius:5,
+                background:C.surface, border:`1px solid ${C.border}`, color:C.text, fontSize:FS.sm, fontFamily:'inherit' }} />
+          </label>
         </div>
 
         {workspace === 'discharge' ? (
-          <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', marginTop:10, paddingTop:9, borderTop:`1px solid ${C.border2}` }}>
-            <Btn variant="primary" disabled={batchProgress.running} onClick={() => batchFetchMissing(runHeadless)}
-                 style={{ fontSize:11, padding:'5px 12px' }}>
+          <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+            <Btn variant="solidPrimary" icon={IconCloudDownload} loading={batchProgress.running} disabled={batchProgress.running} onClick={() => batchFetchMissing(runHeadless)}>
               {batchProgress.running
-                ? `Đang lấy ${batchProgress.done}/${batchProgress.total}...`
+                ? `Đang lấy ${batchProgress.done}/${batchProgress.total}`
                 : 'Lấy dữ liệu còn thiếu'}
             </Btn>
 
-            <label title="Chạy Chrome ẩn (không hiện cửa sổ trình duyệt) khi quét hàng loạt"
-              style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:C.text2, cursor: batchProgress.running ? 'not-allowed' : 'pointer' }}>
-              <input type="checkbox" checked={runHeadless} disabled={batchProgress.running}
+            <label title="Chạy Chrome ẩn (không hiện cửa sổ trình duyệt) khi lấy hàng loạt"
+              style={{ display:'flex', alignItems:'center', gap:6, fontSize:FS.sm, color:C.text2, cursor: batchProgress.running ? 'not-allowed' : 'pointer' }}>
+              <input type="checkbox" checked={runHeadless} disabled={batchProgress.running} style={{ accentColor:C.blue }}
                 onChange={e => setRunHeadless(e.target.checked)} />
-              Chạy ẩn (headless)
+              Chạy ẩn
             </label>
 
             <div style={{ position:'relative' }}>
-              <Btn variant="secondary" onClick={() => setShowTools(v => !v)} style={{ fontSize:11, padding:'5px 10px' }}>
-                Công cụ
+              <Btn icon={IconTool} onClick={() => setShowTools(v => !v)} aria-expanded={showTools} aria-haspopup="menu">
+                Công cụ <IconChevronDown size={14} stroke={2} aria-hidden="true" />
               </Btn>
               {showTools && (
-                <div style={{ position:'absolute', top:'calc(100% + 6px)', left:0, zIndex:30, minWidth:190,
-                  padding:8, borderRadius: 6, background:C.surface2, border:`1px solid ${C.border}`, boxShadow:C.shadow2 }}>
-                  <Btn variant="secondary" onClick={() => { exportIssues('csv'); setShowTools(false); }} style={{ width:'100%', justifyContent:'flex-start', fontSize:11, padding:'6px 8px', marginBottom:6 }}>
-                    Xuất danh sách lỗi CSV
-                  </Btn>
-                  <Btn variant="secondary" onClick={() => { printHchanh_WardList().catch(err => alert(err.message || err)); setShowTools(false); }} style={{ width:'100%', justifyContent:'flex-start', fontSize:11, padding:'6px 8px', marginBottom:6 }}>
-                    In danh sách xếp phòng
-                  </Btn>
-                  <Btn variant="secondary" onClick={() => { setResourceList('vtyt'); setShowTools(false); }} style={{ width:'100%', justifyContent:'flex-start', fontSize:11, padding:'6px 8px', marginBottom:6 }}>
-                    Danh mục vật tư
-                  </Btn>
-                  <Btn variant="secondary" onClick={() => { setResourceList('bed'); setShowTools(false); }} style={{ width:'100%', justifyContent:'flex-start', fontSize:11, padding:'6px 8px' }}>
-                    Danh mục giường
-                  </Btn>
+                <div role="menu" style={{ position:'absolute', top:'calc(100% + 4px)', left:0, zIndex:30, minWidth:220,
+                  padding:4, borderRadius:7, background:C.surface, border:`1px solid ${C.border}`, boxShadow:C.shadow2, display:'grid' }}>
+                  {[
+                    ['Xuất danh sách lỗi (CSV)', () => exportIssues('csv')],
+                    ['In danh sách xếp phòng', () => printHchanh_WardList().catch(err => alert(err.message || err))],
+                    ['Danh mục vật tư', () => setResourceList('vtyt')],
+                    ['Danh mục giường', () => setResourceList('bed')],
+                  ].map(([label, run]) => (
+                    <button key={label} type="button" role="menuitem" className="emr-menu-item" onClick={() => { run(); setShowTools(false); }}>{label}</button>
+                  ))}
                 </div>
               )}
             </div>
 
-            <div style={{ width:1, height:24, background:C.border, margin:'0 2px' }} />
-            <select value={filterScope} onChange={e => setFilterScope(e.target.value)}
-                    style={{ padding:'5px 8px', borderRadius:7, background:C.surface2,
-                      border:`1px solid ${C.border}`, color:C.text, fontSize:12 }}>
-              <option value="all">Tất cả nhóm</option>
-              <option value="discharge">Ra viện</option>
-              <option value="surgery">PTTT</option>
-              <option value="admission">Nhập mới</option>
-              <option value="daily">Tiếp tục ĐT</option>
-            </select>
-            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-                    style={{ padding:'5px 8px', borderRadius:7, background:C.surface2,
-                      border:`1px solid ${C.border}`, color:C.text, fontSize:12 }}>
+            <span style={{ flex:'1 1 0', minWidth:0 }} />
+            <ScopeSelect value={filterScope} onChange={setFilterScope} />
+            <select aria-label="Trạng thái" value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={SELECT_STYLE}>
               <option value="all">Mọi trạng thái</option>
               <option value="red">Lỗi máy</option>
               <option value="amber">Cần xử lý</option>
               <option value="green">Đủ dữ liệu</option>
               <option value="gray">Chưa lấy</option>
             </select>
-            <span style={{ marginLeft:'auto', fontSize:11, color:C.text2 }}>
-              Hiển thị <b style={{ color:C.text }}>{filteredCards.length}</b>/<b style={{ color:C.text }}>{dashboard?.total || 0}</b> BN
-            </span>
+            {!isMobile && (
+              <span style={{ fontSize:FS.sm, color:C.text2, fontVariantNumeric:'tabular-nums' }} title="Đang hiện / tổng số người bệnh">
+                <b style={{ color:C.text }}>{filteredCards.length}</b>/{dashboard?.total || 0}
+              </span>
+            )}
           </div>
         ) : (
-          <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', marginTop:10, paddingTop:9, borderTop:`1px solid ${C.border2}`, fontSize:11 }}>
-            <span style={{ color:C.text2 }}>Danh sách dùng bộ lọc hiện tại:</span>
+          <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', fontSize:FS.sm }}>
+            <span style={{ color:C.text2 }}>Dùng danh sách theo bộ lọc:</span>
             <Chip tone="blue">{filteredCards.length} người bệnh</Chip>
-            <select value={filterScope} onChange={e => setFilterScope(e.target.value)}
-                    style={{ padding:'5px 8px', borderRadius:7, background:C.surface2,
-                      border:`1px solid ${C.border}`, color:C.text, fontSize:12 }}>
-              <option value="all">Tất cả nhóm</option>
-              <option value="discharge">Ra viện</option>
-              <option value="surgery">PTTT</option>
-              <option value="admission">Nhập mới</option>
-              <option value="daily">Tiếp tục ĐT</option>
-            </select>
-            <span style={{ color:C.text3 }}>Kế hoạch được tự động lưu; tải lại trang không mất phần đã chỉnh.</span>
+            <ScopeSelect value={filterScope} onChange={setFilterScope} />
+            <span style={{ color:C.text2, fontSize:FS.xs }}>Kế hoạch tự lưu; tải lại trang không mất phần đã chỉnh.</span>
             {loading && <Spinner size={14} />}
           </div>
         )}
       </div>
 
-      {workspace === 'discharge' && <CountBar counts={counts} dashboard={dashboard} />}
+      {workspace === 'discharge' && <CountBar counts={counts} dashboard={dashboard} filterStatus={filterStatus} setFilterStatus={setFilterStatus} />}
 
       {/* Nội dung theo quy trình */}
       {workspace === 'vtyt' ? (
@@ -1715,33 +1685,40 @@ export default function HchahnTab({ toast, workDateRange }) {
         <div style={{ flex:1, display:'flex', overflow:'hidden', minWidth:0 }}>
 
           {/* Danh sách kiểm ra viện */}
-          <div style={{ flex:1, minWidth:0, overflow:'auto', padding:'12px 14px' }}>
+          <div style={{ flex:1, minWidth:0, overflow:'auto', padding: isMobile ? 0 : 12 }}>
             {filteredCards.length === 0 ? (
-              <div style={{ color:C.text2, fontSize:13, padding:24, textAlign:'center' }}>
+              <div style={{ color:C.text2, fontSize:FS.md, padding:24, textAlign:'center' }}>
                 {!dashboard?.total
-                  ? 'Chưa có người bệnh. Danh sách được đồng bộ tự động từ dữ liệu đã quét mỗi khi mở tab này.'
+                  ? 'Chưa có người bệnh. Danh sách tự đồng bộ từ dữ liệu đã quét mỗi khi mở màn hình này.'
                   : 'Không có người bệnh phù hợp bộ lọc.'}
               </div>
+            ) : isMobile ? (
+              <ul style={{ margin:0, padding:0, background:C.surface }}>
+                {filteredCards.map(card => (
+                  <PatientListItem
+                    key={getMaBn(card) || card.key}
+                    card={card}
+                    selected={getMaBn(selectedCard) === getMaBn(card)}
+                    onSelect={card => { setResourceList(''); setSelectedCard(card); }}
+                  />
+                ))}
+              </ul>
             ) : (
-              <div style={{ border:`1px solid ${C.border}`, borderRadius: 7, overflow:'hidden', background:C.surface, boxShadow:C.shadow }}>
+              <div style={{ border:`1px solid ${C.border}`, borderRadius:7, overflow:'hidden', background:C.surface }}>
                 <table style={{ width:'100%', borderCollapse:'separate', borderSpacing:0, tableLayout:'auto' }}>
                   <thead style={{ position:'sticky', top:0, zIndex:5 }}>
                     <tr style={{ background:C.surface2 }}>
                       {[
-                        ['Người bệnh', 'left', 230],
-                        ['P', 'left', 46],
-                        ['Nhóm', 'center', 74],
-                        ['RV', 'center', 44],
-                        ['BK', 'center', 44],
-                        ['Giường', 'center', 52],
-                        ['PT', 'center', 44],
-                        ['YL', 'center', 44],
-                        ['Vấn đề', 'left', 160],
-                        ['Thao tác', 'right', 88],
-                      ].map(([label, align, minWidth]) => (
-                        <th key={label} style={{ padding:'8px 8px', borderBottom:`1px solid ${C.border}`, color:C.text2, fontSize:10,
-                          textAlign:align, textTransform:'uppercase', letterSpacing:0.6, whiteSpace:'nowrap', minWidth }}>
-                          {label}
+                        ['Người bệnh', 'left', 220],
+                        ['Phòng', 'left', 50],
+                        ['Nhóm', 'left', 80],
+                        ...FILE_COLUMNS.map(([, label]) => [label, 'center', 52]),
+                        ['Tình trạng', 'left', 160],
+                        ['', 'right', 100],
+                      ].map(([label, align, minWidth], i) => (
+                        <th key={label || `c${i}`} scope="col" style={{ padding: i === 0 ? '8px 12px' : '8px 8px', borderBottom:`1px solid ${C.border}`, color:C.text2, fontSize:FS.xs, fontWeight:650,
+                          textAlign:align, whiteSpace:'nowrap', minWidth }}>
+                          {label || <span className="emr-sr-only">Thao tác</span>}
                         </th>
                       ))}
                     </tr>
@@ -1769,6 +1746,7 @@ export default function HchahnTab({ toast, workDateRange }) {
 
           {!resourceList && selectedCard && (
             <DetailPanel
+              isMobile={isMobile}
               card={selectedCard}
               onClose={() => setSelectedCard(null)}
               onFetch={fetchPatient}

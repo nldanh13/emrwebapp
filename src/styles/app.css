@@ -168,6 +168,14 @@ a { color: var(--emr-accent); text-underline-offset: 2px; }
 .emr-action-row:disabled .emr-action-row__chevron { opacity: 0; }
 
 /* Dải cuộn ngang (chip phòng, nút trên điện thoại): ẩn thanh cuộn. */
+/* Mục trong menu thả xuống (vd. Công cụ ở Hành chánh). */
+.emr-menu-item { display: block; width: 100%; min-height: 34px; padding: 0 10px; text-align: left; border: 0; border-radius: var(--emr-radius-sm); background: transparent; color: var(--emr-ink); font: inherit; font-size: 12px; cursor: pointer; }
+.emr-menu-item:hover, .emr-menu-item:focus-visible { background: var(--emr-surface-muted); }
+.emr-menu-item:disabled { color: var(--emr-ink-3); opacity: .6; cursor: not-allowed; background: transparent; }
+
+/* Chữ chỉ dành cho trình đọc màn hình. */
+.emr-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
 /* Xếp phòng: máy tính cuộn trong từng cột; điện thoại cuộn cả trang để nút Lưu dính đáy được. */
 .emr-board-view { overflow: hidden; }
 @media (max-width: 639px) { .emr-board-view { overflow: visible; } }
