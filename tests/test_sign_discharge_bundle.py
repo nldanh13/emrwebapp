@@ -185,3 +185,78 @@ def test_sign_bundle_stamps_separately_when_names_do_not_overlap(tmp_path, _patc
     assert result['status'] == 'ok'
     assert result['stamped_count'] == 2
     assert {s['name'] for s in result['stamped']} == {'Nguyen Van A', 'Tran Thi B'}
+
+
+def test_sign_bundle_wrapped_name_is_signed_once(tmp_path, _patch_nurse_accounts_paths):
+    sig_path = tmp_path / 'signatures' / 'sig.png'
+    _make_signature_png(sig_path)
+    _write_accounts(_patch_nurse_accounts_paths['accounts_path'], [
+        {'name': 'Tran Quynh Minh Thu', 'signature_file': 'sig.png'},
+    ])
+    in_pdf = tmp_path / 'in.pdf'
+    doc = fitz.open()
+    page = doc.new_page(width=300, height=300)
+    # Ô hẹp: tên bị xuống dòng "Tran Quynh Minh" / "Thu" như cột ký tên trên phiếu.
+    # Các ô sát nhau: vùng tìm được của dòng đầu chạm cả dòng "Thu" bên dưới.
+    for top in (60, 100, 140):
+        page.insert_textbox(fitz.Rect(40, top, 130, top + 40), 'Tran Quynh Minh Thu', fontsize=13, lineheight=0.9)
+    doc.save(str(in_pdf))
+    doc.close()
+    assert len(fitz.open(str(in_pdf))[0].search_for('Tran Quynh Minh Thu')) == 6
+
+    out_pdf = tmp_path / 'out.pdf'
+    result = sdb.sign_bundle(str(in_pdf), str(out_pdf))
+
+    assert result['stamped_count'] == 3
+    page = fitz.open(str(out_pdf))[0]
+    images = page.get_image_info()
+    assert len(images) == 3
+    # Ký phía trên dòng đầu của mỗi tên, không đè lên chữ.
+    first_lines = [r for r in page.search_for('Tran Quynh Minh') if r.width > 40]
+    for info in images:
+        img = fitz.Rect(info['bbox'])
+        assert any(img.y1 <= t.y0 + 0.5 and t.y0 - img.y1 < 5 for t in first_lines), img
+
+
+def test_sign_bundle_embeds_each_signature_image_once(tmp_path, _patch_nurse_accounts_paths):
+    sig_path = tmp_path / 'signatures' / 'sig.png'
+    _make_signature_png(sig_path, w=1200, h=500)
+    _write_accounts(_patch_nurse_accounts_paths['accounts_path'], [
+        {'name': 'Nguyen Van Test', 'signature_file': 'sig.png'},
+    ])
+    in_pdf = tmp_path / 'in.pdf'
+    doc = fitz.open()
+    for _ in range(3):
+        page = doc.new_page(width=400, height=400)
+        for i in range(6):
+            page.insert_text((40, 60 + i * 50), 'Nguyen Van Test', fontsize=10)
+    doc.save(str(in_pdf))
+    doc.close()
+
+    out_pdf = tmp_path / 'out.pdf'
+    result = sdb.sign_bundle(str(in_pdf), str(out_pdf))
+
+    assert result['stamped_count'] == 18
+    out = fitz.open(str(out_pdf))
+    xrefs = {img[0] for page in out for img in page.get_images(full=True)}
+    assert len(xrefs) == 1
+    assert out_pdf.stat().st_size < 60_000
+
+
+def test_prepared_signature_is_transparent_dark_and_small(tmp_path):
+    src = tmp_path / 'light.png'
+    doc = fitz.open()
+    page = doc.new_page(width=1600, height=600)
+    page.draw_line((20, 500), (1580, 100), color=(0.6, 0.6, 0.85), width=6)
+    page.get_pixmap().save(str(src))
+
+    png, aspect = sdb._prepared_signature_png(str(src))
+    pix = fitz.Pixmap(png)
+    assert pix.alpha and pix.width <= sdb._SIG_MAX_WIDTH_PX
+    assert abs(aspect - 1600 / 600) < 0.1
+    s, n = pix.samples, pix.n
+    opaque = [i for i in range(0, len(s), n) if s[i + 3] > 200]
+    assert opaque, 'nét chữ ký phải còn lại sau khi xử lý'
+    # Nền trắng thành trong suốt; nét nhạt (xám xanh ~0.6) được làm tối hơn hẳn.
+    assert s[3] == 0
+    assert max(s[i] for i in opaque) < 0.6 * 255 * 0.6

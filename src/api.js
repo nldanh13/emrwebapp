@@ -859,4 +859,6 @@ export const removeNurseSignature = (name)   => del(`/api/nurse-emr-accounts/sig
 // ── Chữ ký bộ phiếu "IN RA VIỆN" ─────────────────────────────────────────────
 export const listDischargeBundles = ()             => get('/api/hchanh/discharge-bundles');
 export const signDischargeBundle  = (fileName)     => post('/api/hchanh/sign-discharge-bundle', { file_name: fileName });
+export const deleteDischargeBundle = (fileName)    => del(`/api/hchanh/discharge-bundle/${encodeURIComponent(fileName)}`);
+export const cleanupDischargeBundles = (olderThanDays) => post('/api/hchanh/discharge-bundles/cleanup', { older_than_days: olderThanDays });
 export const uploadDischargePdf   = (fileName, pdfDataUrl) => post('/api/hchanh/upload-discharge-pdf', { file_name: fileName, pdf_data_url: pdfDataUrl });

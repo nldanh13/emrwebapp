@@ -158,6 +158,55 @@ async function main() {
     assert.strictEqual(await res.text(), '%PDF-1.4 new');
   });
 
+  await test('list: trả tổng dung lượng thư mục in (kể cả bản đã ký)', async () => {
+    const body = await (await fetch(`${base}/hchanh/discharge-bundles`)).json();
+    const expected = fs.readdirSync(printDir).filter(n => /^IN_RA_VIEN_.+\.pdf$/i.test(n))
+      .reduce((sum, n) => sum + fs.statSync(path.join(printDir, n)).size, 0);
+    assert.strictEqual(body.total_bytes, expected);
+  });
+
+  await test('delete: xoá file gốc kèm bản đã ký; tên _DA_KY hoặc sai dạng -> 400; không có -> 404', async () => {
+    const del = name => fetch(`${base}/hchanh/discharge-bundle/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    assert.strictEqual((await del('IN_RA_VIEN_99000001_Nguyễn_Văn_A_DA_KY.pdf')).status, 400);
+    assert.strictEqual((await del('khac.pdf')).status, 400);
+    assert.strictEqual((await del('IN_RA_VIEN_00000000_Khong_Co.pdf')).status, 404);
+    const res = await del('IN_RA_VIEN_99000001_Nguyễn_Văn_A.pdf');
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.removed, 2);
+    assert.ok(body.freed_bytes > 0);
+    assert.ok(!fs.existsSync(path.join(printDir, 'IN_RA_VIEN_99000001_Nguyễn_Văn_A.pdf')));
+    assert.ok(!fs.existsSync(path.join(printDir, 'IN_RA_VIEN_99000001_Nguyễn_Văn_A_DA_KY.pdf')));
+  });
+
+  await test('cleanup: chỉ xoá bộ phiếu cũ hơn N ngày (kèm bản đã ký), giữ file mới và file lạ', async () => {
+    const old = new Date(Date.now() - 40 * 24 * 3600 * 1000);
+    for (const n of ['IN_RA_VIEN_1_Cu.pdf', 'IN_RA_VIEN_1_Cu_DA_KY.pdf', 'ghi_chu.pdf']) {
+      fs.writeFileSync(path.join(printDir, n), '%PDF-1.4 old');
+      fs.utimesSync(path.join(printDir, n), old, old);
+    }
+    const post = body => fetch(`${base}/hchanh/discharge-bundles/cleanup`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    assert.strictEqual((await post({ older_than_days: 0 })).status, 400);
+    const res = await post({ older_than_days: 30 });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.bundles, 1);
+    assert.strictEqual(body.removed, 2);
+    assert.ok(!fs.existsSync(path.join(printDir, 'IN_RA_VIEN_1_Cu.pdf')));
+    assert.ok(!fs.existsSync(path.join(printDir, 'IN_RA_VIEN_1_Cu_DA_KY.pdf')));
+    assert.ok(fs.existsSync(path.join(printDir, 'ghi_chu.pdf')));
+    assert.ok(fs.existsSync(path.join(printDir, 'IN_RA_VIEN_26089161_Lê_Quân_Em.pdf')));
+  });
+
+  await test('authz: xoá/dọn bộ phiếu cần quyền giám sát', async () => {
+    const { requiredRoleForRequest } = require('../server/services/authz');
+    assert.strictEqual(requiredRoleForRequest({ method: 'DELETE', path: '/hchanh/discharge-bundle/IN_RA_VIEN_1_A.pdf' }), 'supervisor');
+    assert.strictEqual(requiredRoleForRequest({ method: 'POST', path: '/hchanh/discharge-bundles/cleanup' }), 'supervisor');
+    assert.strictEqual(requiredRoleForRequest({ method: 'GET', path: '/hchanh/discharge-bundle/IN_RA_VIEN_1_A.pdf' }), 'viewer');
+  });
+
   server.close();
   fs.rmSync(TEST_ROOT, { recursive: true, force: true });
 

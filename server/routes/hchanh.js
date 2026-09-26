@@ -3427,7 +3427,11 @@ router.get('/hchanh/discharge-bundles', handleRoute((_req, res, _ctx) => {
   try { entries = fs.readdirSync(dir); } catch (_) { entries = []; }
   const fileSet = new Set(entries);
   const bundles = [];
+  let totalBytes = 0;
   for (const fileName of entries) {
+    if (/^IN_RA_VIEN_.+\.pdf$/i.test(fileName)) {
+      try { totalBytes += fs.statSync(path.join(dir, fileName)).size; } catch (_) {}
+    }
     if (!/^IN_RA_VIEN_.+\.pdf$/i.test(fileName) || /_DA_KY\.pdf$/i.test(fileName)) continue;
     const parsed = _parseDischargeBundleFileName(fileName);
     const signedFileName = fileName.replace(/\.pdf$/i, '_DA_KY.pdf');
@@ -3445,7 +3449,7 @@ router.get('/hchanh/discharge-bundles', handleRoute((_req, res, _ctx) => {
     });
   }
   bundles.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
-  return res.json({ status: 'ok', bundles });
+  return res.json({ status: 'ok', bundles, total_bytes: totalBytes });
 }));
 
 // ── POST /api/hchanh/upload-discharge-pdf ────────────────────────────────────
@@ -3475,6 +3479,65 @@ router.post('/hchanh/upload-discharge-pdf', handleRoute((req, res, ctx) => {
 
   appendActivity(ctx, { kind: 'ward.upload_discharge_pdf', file_name: fileName, size_bytes: buffer.length });
   return res.json({ status: 'ok', file_name: fileName, size_bytes: buffer.length });
+}));
+
+// ── Dọn thư mục in bộ phiếu ra viện ─────────────────────────────────────────
+// Xoá 1 bộ phiếu (kèm bản đã ký), hoặc mọi bộ phiếu cũ hơn N ngày.
+
+const DISCHARGE_BUNDLE_NAME_RE = /^IN_RA_VIEN_.+\.pdf$/i;
+
+function _removeDischargeBundle(printDir, fileName) {
+  let freed = 0;
+  let removed = 0;
+  for (const name of [fileName, fileName.replace(/\.pdf$/i, '_DA_KY.pdf')]) {
+    const filePath = path.join(printDir, name);
+    try {
+      freed += fs.statSync(filePath).size;
+      fs.rmSync(filePath, { force: true });
+      removed += 1;
+    } catch (_) {}
+  }
+  return { removed, freed };
+}
+
+router.delete('/hchanh/discharge-bundle/:fileName', handleRoute((req, res, ctx) => {
+  const fileName = path.basename(String(req.params.fileName || '').trim());
+  if (!DISCHARGE_BUNDLE_NAME_RE.test(fileName) || /_DA_KY\.pdf$/i.test(fileName)) {
+    return res.status(400).json({ status: 'error', message: 'Tên file không hợp lệ.' });
+  }
+  const printDir = discharge_print_bundle_dir();
+  if (!fs.existsSync(path.join(printDir, fileName))) {
+    return res.status(404).json({ status: 'error', message: 'Không tìm thấy file trong thư mục in.' });
+  }
+  const { removed, freed } = _removeDischargeBundle(printDir, fileName);
+  appendActivity(ctx, { kind: 'ward.delete_discharge_bundle', file_name: fileName, removed, freed_bytes: freed });
+  return res.json({ status: 'ok', removed, freed_bytes: freed });
+}));
+
+router.post('/hchanh/discharge-bundles/cleanup', handleRoute((req, res, ctx) => {
+  const days = Number(req.body?.older_than_days);
+  if (!Number.isFinite(days) || days < 1) {
+    return res.status(400).json({ status: 'error', message: 'Số ngày phải từ 1 trở lên.' });
+  }
+  const printDir = discharge_print_bundle_dir();
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  let entries = [];
+  try { entries = fs.readdirSync(printDir); } catch (_) {}
+  let bundles = 0;
+  let removed = 0;
+  let freed = 0;
+  for (const fileName of entries) {
+    if (!DISCHARGE_BUNDLE_NAME_RE.test(fileName) || /_DA_KY\.pdf$/i.test(fileName)) continue;
+    let mtime = 0;
+    try { mtime = fs.statSync(path.join(printDir, fileName)).mtimeMs; } catch (_) { continue; }
+    if (mtime >= cutoff) continue;
+    const r = _removeDischargeBundle(printDir, fileName);
+    bundles += 1;
+    removed += r.removed;
+    freed += r.freed;
+  }
+  appendActivity(ctx, { kind: 'ward.cleanup_discharge_bundles', older_than_days: days, bundles, removed, freed_bytes: freed });
+  return res.json({ status: 'ok', bundles, removed, freed_bytes: freed });
 }));
 
 // ── POST /api/hchanh/sign-discharge-bundle ───────────────────────────────────

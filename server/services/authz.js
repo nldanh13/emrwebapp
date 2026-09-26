@@ -355,6 +355,9 @@ function requiredRoleForRequest(req) {
   if (routePath.startsWith('/workflows/') && routePath.endsWith('/state')) return 'admin';
   if (routePath.startsWith('/workflows') || routePath === '/artifacts') return ['GET', 'HEAD'].includes(method) ? 'viewer' : 'operator';
 
+  // Xoá bộ phiếu ra viện đã in/đã ký (dọn thư mục in) — xoá dữ liệu: giám sát.
+  if (method === 'DELETE' && routePath.startsWith('/hchanh/discharge-bundle/')) return 'supervisor';
+  if (method === 'POST' && routePath === '/hchanh/discharge-bundles/cleanup') return 'supervisor';
   if (method === 'DELETE') return 'admin';
   if (['POST', 'PUT', 'PATCH'].includes(method)) {
     if (/^\/(?:import-data|runtime-migrate|nurse-settings|hchanh\/clear)/.test(routePath)) return 'supervisor';
