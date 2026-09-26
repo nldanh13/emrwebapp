@@ -118,7 +118,11 @@ export function buildDutyPlan({ date, rows = [], nextDayRows = [], role, todayRe
   const notPast = row => !isToday || (absMinutes(row, date) ?? 0) >= nowMinutes;
 
   const myWindows = role === 'work' ? WORK_WINDOWS : (todayRest ? DUTY_WINDOWS_RESTDAY : DUTY_WINDOWS_WORKDAY);
-  const inMyShift = actions.filter(row => inWindows(absMinutes(row, date), myWindows));
+  // Trực ngày nghỉ: thuốc sáng của người bệnh cũ đã làm từ hôm trước, nhưng người bệnh
+  // mới vào trong tua trực thì chưa ai làm → người trực làm cả cữ 07:00–10:59 của họ.
+  const newPatientMorning = row => role === 'duty' && todayRest && newPatientKeys.has(patientKeyOf(row))
+    && inWindows(absMinutes(row, date), [[SHIFT.dayStart, SHIFT.morningEnd]]);
+  const inMyShift = actions.filter(row => inWindows(absMinutes(row, date), myWindows) || newPatientMorning(row));
   const mine = sortByTime(inMyShift.filter(notPast), date);
   const past = sortByTime(inMyShift.filter(row => !notPast(row)), date);
   const noTime = actions.filter(row => row.noTime && row.date === date && !isUnknownTimeOnDischargeDay(row));

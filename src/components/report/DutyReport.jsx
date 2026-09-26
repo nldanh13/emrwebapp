@@ -243,7 +243,7 @@ function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState,
           {role === 'work'
             ? 'Ca làm 07:00–11:00 và 13:00–17:00. Cữ 11:00–13:00 và từ 17:00 bàn giao cho người trực.'
             : todayRest
-              ? 'Trực ngày nghỉ: thuốc sáng (07:00–10:59) và thuốc uống người bệnh cũ đã làm từ hôm trước.'
+              ? 'Trực ngày nghỉ: thuốc sáng (07:00–10:59) và thuốc uống của người bệnh cũ đã làm từ hôm trước; người bệnh mới vào thì vẫn hiện đủ.'
               : 'Trực ngày làm: 11:00–13:00 và từ 17:00 đến 07:00 sáng mai.'}
         </div>
         <RouteFilterStrip options={routeOptions || []} selectedRoutes={selectedRoutes || []} onToggle={onToggleRoute} onClear={onClearRoutes} />
@@ -272,7 +272,7 @@ function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState,
       ) : (
         <div className="emr-duty-grid">
           <div style={{ display: 'grid', gap: 12, alignContent: 'start', minWidth: 0 }}>
-            <Section title="Cữ trong ca trực" hint={`${todayRest ? 'Từ 11:00' : 'Trực trưa 11:00–13:00 và từ 17:00'} đến 23:59${fromNow}.`} count={`${plan.mine.length} thuốc`}>
+            <Section title="Cữ trong ca trực" hint={`${todayRest ? 'Từ 11:00 (người bệnh mới vào: từ 07:00)' : 'Trực trưa 11:00–13:00 và từ 17:00'} đến 23:59${fromNow}.`} count={`${plan.mine.length} thuốc`}>
               <TimeList rows={plan.mine} date={date} empty="Không còn cữ nào trong ca trực hôm nay." />
               <PastToggle rows={plan.past} date={date} />
             </Section>

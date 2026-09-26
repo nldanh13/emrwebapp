@@ -75,6 +75,12 @@ describe('Người trực ngày làm (T6)', () => {
 });
 
 describe('Người trực ngày nghỉ (T7)', () => {
+  test('người bệnh mới vào trong tua trực: vẫn hiện cữ sáng 07–11 của họ', () => {
+    const plan = buildDutyPlan({ ...base, role: 'duty', todayRest: true, tomorrowRest: false, newPatientKeys: new Set(['BN9']),
+      rows: [...rows, row('08:00', 'TMC', { pid: 'BN9', drug: 'moi' })] });
+    expect(plan.mine.map(r => r.drugName)).toContain('moi');
+    expect(names(plan.mine).filter(n => n.startsWith('08:00'))).toEqual(['08:00 TMC']);
+  });
   test('bỏ thuốc sáng 07–11 (đã làm hôm trước), còn lại như bệnh phòng', () => {
     const plan = buildDutyPlan({ ...base, role: 'duty', todayRest: true, tomorrowRest: false });
     expect(names(plan.mine)).toEqual(['12:00 TB', '14:00 TMC', '17:00 TTM', '20:00 TMC']);
