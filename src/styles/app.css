@@ -176,6 +176,13 @@ a { color: var(--emr-accent); text-underline-offset: 2px; }
 /* Chữ chỉ dành cho trình đọc màn hình. */
 .emr-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
+/* Màn nhiều cột (Nhập bệnh phòng) trên máy tính: khung vừa khít vùng nội dung để
+   từng cột tự cuộn và thanh thao tác của chi tiết người bệnh luôn thấy được. */
+@media (min-width: 640px) {
+  .emr-content__inner:has(> .emr-fill) { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; }
+  .emr-fill { min-height: 0; }
+}
+
 /* Xếp phòng: máy tính cuộn trong từng cột; điện thoại cuộn cả trang để nút Lưu dính đáy được. */
 .emr-board-view { overflow: hidden; }
 @media (max-width: 639px) { .emr-board-view { overflow: visible; } }

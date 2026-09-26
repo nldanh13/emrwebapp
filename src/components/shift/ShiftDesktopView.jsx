@@ -73,7 +73,7 @@ export default function ShiftDesktopView({
   const bulkInputDisabled = selectedInputPatients.length === 0;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+    <div className="emr-fill" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
       {toolbarProps ? <ShiftToolbar {...toolbarProps} /> : null}
       <NurseDutyInfo lines={nurseDutyLines} scopeInfo={scopeInfo} hint={workflowHint} />
       <MissingRangeWarning

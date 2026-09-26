@@ -1,4 +1,4 @@
-import { C, TL_TYPE, FONT_MONO } from '../../tokens.js';
+import { C, TL_TYPE, FONT_MONO, FS } from '../../tokens.js';
 import { Badge } from '../shared.jsx';
 import { buildTimelineFromThuoc } from './patientDetailUtils.js';
 
@@ -14,8 +14,8 @@ export default function PatientTimeline({ items = [], thuoc = null }) {
 
   if (!raw.length) {
     return (
-      <div style={{ fontSize: 12, color: C.text3, padding: '16px 0' }}>
-        Chưa có dữ liệu — bệnh nhân chưa có y lệnh hoặc chưa xử lý
+      <div style={{ fontSize: FS.sm, color: C.text3, padding: '16px 0' }}>
+        Chưa có dữ liệu: người bệnh chưa có y lệnh hoặc chưa được xử lý.
       </div>
     );
   }
@@ -51,11 +51,11 @@ export default function PatientTimeline({ items = [], thuoc = null }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <span style={{
                   fontFamily: FONT_MONO,
-                  fontSize: 12, fontWeight: 700,
+                  fontSize: FS.sm, fontWeight: 700,
                   color: timeKey === '—' ? C.text3 : C.blue,
                 }}>{timeKey}</span>
                 <div style={{ flex: 1, height: 1, background: C.border2 }} />
-                <span style={{ fontSize: 10, color: C.text3 }}>{group.length} mục</span>
+                <span style={{ fontSize: FS.xs, color: C.text3 }}>{group.length} mục</span>
               </div>
 
               <div style={{ borderLeft: `1.5px solid ${C.border2}`, marginLeft: 4, paddingLeft: 14 }}>
@@ -81,19 +81,19 @@ export default function PatientTimeline({ items = [], thuoc = null }) {
                       }} />
 
                       <div style={{
-                        width: 24, height: 24, borderRadius: 4, flexShrink: 0,
+                        minWidth: 28, height: 24, padding: '0 3px', borderRadius: 4, flexShrink: 0,
                         background: C.surface2,
-                        border: `1px solid ${tt.color}55`,
+                        border: `1px solid ${C.border}`,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: 9, fontWeight: 700, color: tt.color,
+                        fontSize: FS.xs, fontWeight: 700, color: tt.color,
                       }}>{tt.label}</div>
 
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 12, color: C.text }}>{displayLabel}</span>
+                          <span style={{ fontSize: FS.md, color: C.text }}>{displayLabel}</span>
                           {item.detail?.duong_dung && (
                             <span style={{
-                              fontSize: 9, fontWeight: 600, padding: '1px 5px',
+                              fontSize: FS.xs, fontWeight: 600, padding: '1px 5px',
                               borderRadius: 3, background: C.surface,
                               border: `1px solid ${C.border}`,
                               color: C.text3,
@@ -107,12 +107,12 @@ export default function PatientTimeline({ items = [], thuoc = null }) {
                           )}
                         </div>
                         {parts.length > 0 && (
-                          <div style={{ fontSize: 10, color: C.text3, marginTop: 2 }}>
+                          <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 2 }}>
                             {parts.join(' · ')}
                           </div>
                         )}
                         {item.detail?.message && (
-                          <div style={{ fontSize: 10, color: C.amber, marginTop: 3 }}>
+                          <div style={{ fontSize: FS.xs, color: C.amber, marginTop: 3 }}>
                             {item.detail.message}
                           </div>
                         )}
@@ -120,7 +120,7 @@ export default function PatientTimeline({ items = [], thuoc = null }) {
                           <pre style={{
                             margin: '6px 0 0', padding: '7px 8px',
                             maxHeight: 160, overflow: 'auto', whiteSpace: 'pre-wrap',
-                            fontSize: 10, lineHeight: 1.45, color: C.text2,
+                            fontSize: FS.xs, lineHeight: 1.45, color: C.text2,
                             background: C.surface, border: `1px solid ${C.border}`,
                             borderRadius: 6,
                           }}>
