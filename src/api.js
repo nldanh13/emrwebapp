@@ -96,13 +96,7 @@ function apiActionLabel(method, url) {
     'GET /api/health': 'kiểm tra nhanh hệ thống',
     'GET /api/diagnostics': 'chẩn đoán hệ thống',
     'POST /api/clinic/preview': 'đọc danh sách phòng khám',
-    'POST /api/clinic/care-preview': 'tìm người bệnh phòng khám cần nhập chăm sóc',
-    'POST /api/clinic/care-order-seeds': 'lấy vị trí đau từ y lệnh đầu tiên cho danh sách',
     'GET /api/clinic/care-draft': 'tải bản nháp chăm sóc phòng khám',
-    'POST /api/clinic/care-draft': 'lưu bản nháp chăm sóc phòng khám',
-    'DELETE /api/clinic/care-draft': 'xoá bản nháp chăm sóc phòng khám',
-    'POST /api/clinic/input-procedures': 'nhập thủ thuật phòng khám',
-    'POST /api/clinic/input-care': 'nhập chăm sóc phòng khám',
     'GET /api/data-sessions': 'tải danh sách phiên dữ liệu',
     'DELETE /api/data-sessions': 'xoá phiên dữ liệu',
     'POST /api/cancel': 'huỷ tác vụ đang chạy',
@@ -679,9 +673,6 @@ export const checkCurrentBed = (patient) => post('/api/check-current-bed', { pat
 
 // ── Phòng khám ───────────────────────────────────────────────────────────────
 export const runClinicPreview = (payload) => post('/api/clinic/preview', payload);
-export const runClinicCarePreview = (payload) => post('/api/clinic/care-preview', payload);
-export const runClinicInputCare = (payload) => post('/api/clinic/input-care', payload);
-export const runClinicCareOrderSeeds = (payload) => post('/api/clinic/care-order-seeds', payload);
 export const getSickLeaveState = () => get('/api/sick-leave-state');
 export const saveSickLeaveState = (payload) => post('/api/sick-leave-state', payload);
 export const getSickLeaveImport = () => get('/api/sick-leave-import');
@@ -690,9 +681,6 @@ export const deleteSickLeaveImportRow = (payload) => post('/api/sick-leave-impor
 export const launchBhytTool = () => post('/api/sick-leave-launch-bhyt-tool', {});
 
 export const getClinicCareDraft = () => get('/api/clinic/care-draft');
-export const saveClinicCareDraft = (payload) => post('/api/clinic/care-draft', payload);
-export const clearClinicCareDraft = () => del('/api/clinic/care-draft');
-export const runClinicInputProcedures = (payload) => post('/api/clinic/input-procedures', payload);
 
 // ── Export / Import session data ──────────────────────────────────────────────
 

@@ -290,8 +290,8 @@ Màn hình **Nhập bệnh phòng** đọc trạng thái runtime của từng mo
    phải phát `issueInputPrecheckToken(...)` sau khi quét/preview xong, và route ghi phải gọi
    `validateAndConsumeInputPrecheckToken(...)` (từ `server/services/input_precheck_tokens.js`)
    **trước khi** enqueue worker Selenium — không được chỉ dựa vào xác nhận phía client
-   (`window.confirm`). Xem `server/routes/clinic.js` (`/clinic/preview` + `/clinic/input-procedures`)
-   làm mẫu.
+   (`window.confirm`). Xem `server/routes/patients.js` (`/check-input-changes` phát token, các route
+   `/run-input-*` kiểm token) làm mẫu.
 8. Thêm test cho bật/tắt, dependency, lỗi từng phần và quyền quản trị.
 9. Chạy:
 

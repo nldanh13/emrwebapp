@@ -96,7 +96,7 @@
       "label": "Phòng khám",
       "icon": "⌁",
       "group": "Hành chánh",
-      "hint": "Chăm sóc và thủ thuật ngoại trú",
+      "hint": "Đang làm lại",
       "order": 100,
       "compact": true,
       "usesDateRange": false
@@ -982,96 +982,6 @@
       ]
     },
     {
-      "id": "clinic-care.input",
-      "label": "Nhập chăm sóc phòng khám",
-      "icon": "＋",
-      "group": "Phòng khám & nghiên cứu",
-      "description": "Nhập chăm sóc ngoại trú theo thời gian vào và lịch nhân sự.",
-      "entryTab": "clinic",
-      "requires": [
-        "clinic.patients",
-        "nurse.schedule"
-      ],
-      "provides": [
-        "clinic-care.result"
-      ],
-      "actions": [
-        "preview",
-        "execute",
-        "verify",
-        "audit"
-      ],
-      "enabled": true,
-      "protected": false,
-      "failurePolicy": "continue",
-      "executor": {
-        "type": "http",
-        "method": "POST",
-        "path": "/clinic/input-care",
-        "inputKey": "clinicCareTargets",
-        "payloadRequired": true
-      },
-      "routes": [
-        {
-          "method": "POST",
-          "path": "/clinic/care-preview",
-          "action": "preview",
-          "gate": true
-        },
-        {
-          "method": "POST",
-          "path": "/clinic/input-care",
-          "action": "execute",
-          "gate": true
-        }
-      ]
-    },
-    {
-      "id": "clinic-procedure.input",
-      "label": "Nhập thủ thuật phòng khám",
-      "icon": "⌁",
-      "group": "Phòng khám & nghiên cứu",
-      "description": "Rà ca chưa hoàn tất và nhập thủ thuật theo bác sĩ/điều dưỡng.",
-      "entryTab": "clinic",
-      "requires": [
-        "clinic.patients",
-        "clinic.schedule"
-      ],
-      "provides": [
-        "clinic-procedure.result"
-      ],
-      "actions": [
-        "preview",
-        "execute",
-        "verify",
-        "audit"
-      ],
-      "enabled": true,
-      "protected": false,
-      "failurePolicy": "continue",
-      "executor": {
-        "type": "http",
-        "method": "POST",
-        "path": "/clinic/input-procedures",
-        "inputKey": "clinicProcedureTargets",
-        "payloadRequired": true
-      },
-      "routes": [
-        {
-          "method": "POST",
-          "path": "/clinic/preview",
-          "action": "preview",
-          "gate": true
-        },
-        {
-          "method": "POST",
-          "path": "/clinic/input-procedures",
-          "action": "execute",
-          "gate": true
-        }
-      ]
-    },
-    {
       "id": "duty-report.print",
       "label": "In báo cáo ca trực",
       "icon": "▤",
@@ -1699,38 +1609,6 @@
           "id": "records.submit",
           "feature": "records.submit",
           "inputKey": "recordsSubmit",
-          "onFailure": "continue",
-          "optional": true
-        }
-      ]
-    },
-    {
-      "id": "clinic",
-      "label": "Quy trình phòng khám",
-      "icon": "⌁",
-      "description": "Lịch điều dưỡng, chăm sóc và thủ thuật ngoại trú được điều phối như các nhánh độc lập.",
-      "entryTab": "clinic",
-      "enabled": true,
-      "continueOnFailure": true,
-      "steps": [
-        {
-          "id": "nurse.schedule",
-          "feature": "nurse.schedule",
-          "inputKey": "nurseSettings",
-          "onFailure": "continue",
-          "optional": true
-        },
-        {
-          "id": "clinic-care.input",
-          "feature": "clinic-care.input",
-          "inputKey": "clinicCareTargets",
-          "onFailure": "continue",
-          "optional": true
-        },
-        {
-          "id": "clinic-procedure.input",
-          "feature": "clinic-procedure.input",
-          "inputKey": "clinicProcedureTargets",
           "onFailure": "continue",
           "optional": true
         }
