@@ -279,7 +279,7 @@ function InputConfirmModal({ message, onConfirm, onCancel }) {
 
 function BoardView({ toolbarProps, toast, showPicker, setShowPicker, handleUseSession, handleFetchNew, handleBoardDone, workDateRange, setWorkDateRange }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+    <div className="emr-board-view" style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
       {toolbarProps && <ShiftToolbar {...toolbarProps} />}
       <BedBoard toast={toast} onDone={handleBoardDone} workDateRange={workDateRange} setWorkDateRange={setWorkDateRange} />
       {showPicker && (

@@ -168,8 +168,19 @@ a { color: var(--emr-accent); text-underline-offset: 2px; }
 .emr-action-row:disabled .emr-action-row__chevron { opacity: 0; }
 
 /* Dải cuộn ngang (chip phòng, nút trên điện thoại): ẩn thanh cuộn. */
+/* Xếp phòng: máy tính cuộn trong từng cột; điện thoại cuộn cả trang để nút Lưu dính đáy được. */
+.emr-board-view { overflow: hidden; }
+@media (max-width: 639px) { .emr-board-view { overflow: visible; } }
+
 .emr-hscroll { scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .emr-hscroll::-webkit-scrollbar { display: none; }
+
+/* Khu thao tác nguy hiểm, mặc định thu gọn (vd. xoá dữ liệu lấy nhầm ở Lấy dữ liệu). */
+.emr-danger-zone { background: var(--emr-surface); border: 1px solid var(--emr-border); border-radius: var(--emr-radius-md); }
+.emr-danger-zone > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; cursor: pointer; list-style: none; font-size: 13px; font-weight: 650; color: var(--emr-danger); }
+.emr-danger-zone > summary::-webkit-details-marker { display: none; }
+.emr-danger-zone__chevron { transition: transform 150ms var(--emr-ease); }
+.emr-danger-zone[open] .emr-danger-zone__chevron { transform: rotate(90deg); }
 
 /* Thông báo */
 .emr-notices { position: fixed; right: 16px; bottom: 16px; z-index: 1000; width: 380px; max-width: calc(100vw - 32px); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
