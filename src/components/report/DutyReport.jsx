@@ -1,638 +1,312 @@
 import { useEffect, useMemo, useState } from 'react';
-import { IconClock, IconSun, IconMoon } from '@tabler/icons-react';
+import { IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import { C, FS } from '../../tokens.js';
-import {
-  addDaysDmy, getDaySchedule, dayTypeOf, firstName,
-  normalizeTime, timeToMinutes, isMorningRow, isAfterWorkOrEarlyNext,
-  isOddHour, todayDmy, parseDmy, rowMinutes,
-} from './reportUtils.js';
-import { Chip, EmptyFilter, MedRow, PatientMedGroup, SelectBox, TimeBadge, formatQty } from './ReportShared.jsx';
+import { Segmented } from '../shared.jsx';
+import { addDaysDmy, getDaySchedule, parseDmy, todayDmy } from './reportUtils.js';
+import { EmptyFilter, RouteBadge, SelectBox, TuTucMark, formatQty } from './ReportShared.jsx';
 import { RouteFilterStrip } from './RouteFilters.jsx';
+import { absMinutes, buildDutyPlan, isAdmittedDuringDuty, isWeekend } from './dutyPlan.js';
 
-const MORNING_DISPENSE_END = 13 * 60;
-const NON_ORAL_ROUTES = new Set(['TMC', 'TTM', 'TB', 'TDD', 'Khác']);
-const WEEKDAY_VI = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
-const MAIN_DUTY_SLOTS = [
-  { id: '08:00', label: 'Cữ 08:00', minutes: 8 * 60 },
-  { id: '16:00', label: 'Cữ 16:00', minutes: 16 * 60 },
-  { id: '20:00', label: 'Cữ 20:00', minutes: 20 * 60 },
-  { id: '22:00', label: 'Cữ 22:00', minutes: 22 * 60 },
-];
-const UNKNOWN_DUTY_SLOT = { id: 'unknown', label: 'Chưa rõ giờ', minutes: null };
-const DUTY_SLOT_TABS = [...MAIN_DUTY_SLOTS, UNKNOWN_DUTY_SLOT];
-const FOUR_DOSE_SLOTS = [0, 6 * 60, 12 * 60, 18 * 60];
-const FOUR_DOSE_TOLERANCE = 20;
-const CONTINUOUS_SEQUENCE_GAP = 150;
+const WEEKDAY_VI = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+const REST_STORAGE_KEY = 'emr_report_rest_days_v1';
+const ROLE_STORAGE_KEY = 'emr_report_role_v1';
 
-function compareDutyRows(selectedDate) {
-  return (a, b) => {
-    const da = a.date === selectedDate ? 0 : 1;
-    const db = b.date === selectedDate ? 0 : 1;
-    if (da !== db) return da - db;
-    const ta = rowMinutes(a);
-    const tb = rowMinutes(b);
-    if (ta !== tb) return ta - tb;
-    return String(a.room || '').localeCompare(String(b.room || ''), 'vi', { numeric: true })
-      || String(a.patientName || '').localeCompare(String(b.patientName || ''), 'vi')
-      || String(a.drugName || '').localeCompare(String(b.drugName || ''), 'vi');
-  };
-}
-
-function currentClock() {
-  const now = new Date();
-  const minutes = now.getHours() * 60 + now.getMinutes();
-  return {
-    minutes,
-    text: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
-  };
+function nowMinutes() {
+  const d = new Date();
+  return d.getHours() * 60 + d.getMinutes();
 }
 
 function weekdayLabel(dmy) {
   const d = parseDmy(dmy);
-  if (!d) return '';
-  return WEEKDAY_VI[d.getDay()] || '';
+  return d ? WEEKDAY_VI[d.getDay()] : '';
 }
 
+function shortDate(dmy) {
+  return String(dmy || '').slice(0, 5);
+}
+
+// Ngày chỉ có người trực trong Lịch điều dưỡng = ngày nghỉ.
 function scheduleFlags(dayCfg) {
-  const adminCount = Array.isArray(dayCfg?.admin) ? dayCfg.admin.filter(Boolean).length : 0;
-  const workCount = Array.isArray(dayCfg?.work) ? dayCfg.work.filter(Boolean).length : 0;
-  const oncallCount = Array.isArray(dayCfg?.oncall) ? dayCfg.oncall.filter(Boolean).length : 0;
-  const daytimeCount = adminCount + workCount;
-  const isDuty = !daytimeCount && oncallCount > 0;
-  const hasBoth = daytimeCount > 0 && oncallCount > 0;
-  const isEmpty = !daytimeCount && !oncallCount;
-
-  return {
-    isDuty,
-    hasBoth,
-    isEmpty,
-    isWorkDay: !isDuty,
-    label: isDuty ? 'Ngày trực' : 'Ngày làm việc bình thường',
-  };
+  const count = key => (Array.isArray(dayCfg?.[key]) ? dayCfg[key].filter(Boolean).length : 0);
+  const daytime = count('admin') + count('work');
+  const oncall = count('oncall');
+  return { isDuty: !daytime && oncall > 0, isEmpty: !daytime && !oncall };
 }
 
-function scenarioOf(todayFlag, tomorrowFlag) {
-  if (!todayFlag.isDuty) {
-    return {
-      id: 'work_to_duty',
-      title: 'Người làm bàn giao cho Người trực',
-      short: 'Soạn thuốc sau giờ hành chính cho ca trực.',
-      tone: 'blue',
-    };
-  }
-  if (tomorrowFlag.isDuty) {
-    return {
-      id: 'duty_to_duty',
-      title: 'Người trực bàn giao cho Người trực',
-      short: 'Chuẩn bị thuốc cữ sáng ngày mai.',
-      tone: 'amber',
-    };
-  }
-  return {
-    id: 'duty_to_work',
-    title: 'Người trực bàn giao cho Người làm',
-    short: 'Chỉ thực hiện cữ còn lại, không soạn thuốc sáng mai.',
-    tone: 'green',
-  };
+function readJson(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key) || '') ?? fallback; } catch { return fallback; }
 }
-
-function toneStyle(tone) {
-  if (tone === 'green') return { color: C.green, bg: C.greenBg, border: C.greenBorder };
-  if (tone === 'amber') return { color: C.amber, bg: C.amberBg, border: C.amberBorder };
-  return { color: C.blue, bg: C.blueBg, border: C.blueBorder };
-}
-
-function rowKey(row) {
-  return String(row?.id || `${row?.date}|${row?.time}|${row?.patientId}|${row?.drugName}|${row?.route}`);
-}
-
-function patientKey(row) {
-  return String(row?.patientId || row?.patientName || '').trim();
+function writeJson(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* bỏ qua khi trình duyệt chặn */ }
 }
 
 function roomOf(row) {
   return String(row?.room || '—').trim() || '—';
 }
 
-function isNonOralAction(row) {
-  return row?.route !== 'Uống' && row?.route !== 'Ngưng/Trả' && NON_ORAL_ROUTES.has(row?.route || 'Khác');
-}
+// ── Hiển thị ────────────────────────────────────────────────────────────────
 
-function isFutureOrCurrentRow(row, selectedDate, currentMinutes) {
-  const cutoff = Number(row?.dischargeCutoffMinutes);
-  const isToday = selectedDate === todayDmy();
-  if (Number.isFinite(cutoff) && row?.date === selectedDate && isToday && currentMinutes > cutoff) return false;
-
-  const m = rowMinutes(row);
-  if (!Number.isFinite(m) || m >= 9999) return row?.date === selectedDate;
-
-  if (row?.date === selectedDate) {
-    if (selectedDate !== todayDmy()) return true;
-    return m >= currentMinutes;
-  }
-
-  // Các cữ 00:00–06:59 của y lệnh ngày đang xem được extractTimes gắn sang
-  // ngày kế tiếp. Chúng vẫn thuộc phần ca đêm cần thực hiện và không được rơi mất.
-  const nextDate = addDaysDmy(selectedDate, 1);
-  return row?.date === nextDate && m < 7 * 60;
-}
-
-function sortByRoomPatient(rows, selectedDate) {
-  return [...(rows || [])].sort(compareDutyRows(selectedDate));
-}
-
-function buildRooms(rows) {
-  return [...new Set((rows || []).map(roomOf).filter(Boolean))]
-    .sort((a, b) => String(a).localeCompare(String(b), 'vi', { numeric: true }));
-}
-
-function groupByPatient(rows) {
-  const map = new Map();
-  for (const row of rows || []) {
-    const key = `${roomOf(row)}|${patientKey(row) || row.patientName}`;
-    if (!map.has(key)) {
-      map.set(key, {
-        key,
-        room: roomOf(row),
-        patientName: row.patientName || '—',
-        patientId: row.patientId || '',
-        rows: [],
-      });
-    }
-    map.get(key).rows.push(row);
-  }
-  return [...map.values()].map(g => ({ ...g, rows: sortByRoomPatient(g.rows, '') }))
-    .sort((a, b) => String(a.room).localeCompare(String(b.room), 'vi', { numeric: true })
-      || String(a.patientName).localeCompare(String(b.patientName), 'vi'));
-}
-
-function groupOralByPatient(rows) {
-  const patients = new Map();
-  for (const row of rows || []) {
-    const pKey = `${roomOf(row)}|${patientKey(row) || row.patientName}`;
-    if (!patients.has(pKey)) {
-      patients.set(pKey, {
-        key: pKey,
-        doneKey: `oral|${row.date}|${patientKey(row) || row.patientName}`,
-        room: roomOf(row),
-        patientName: row.patientName || '—',
-        patientId: row.patientId || '',
-        drugs: new Map(),
-      });
-    }
-    const patient = patients.get(pKey);
-    const dKey = `${String(row.drugName || '').toLowerCase()}|${row.unit || ''}|${row.tuTuc ? 'tt' : ''}`;
-    if (!patient.drugs.has(dKey)) {
-      patient.drugs.set(dKey, {
-        drugName: row.drugName,
-        unit: row.unit,
-        quantity: 0,
-        times: new Set(),
-        tuTuc: row.tuTuc,
-        note: row.note || '',
-      });
-    }
-    const drug = patient.drugs.get(dKey);
-    drug.quantity += Number(row.quantity || 0);
-    if (row.time && row.time !== '—') drug.times.add(row.time);
-  }
-
-  return [...patients.values()].map(p => ({
-    ...p,
-    drugs: [...p.drugs.values()].map(d => ({ ...d, times: [...d.times].sort() }))
-      .sort((a, b) => String(a.drugName).localeCompare(String(b.drugName), 'vi')),
-  })).sort((a, b) => String(a.room).localeCompare(String(b.room), 'vi', { numeric: true })
-    || String(a.patientName).localeCompare(String(b.patientName), 'vi'));
-}
-
-function applyFilters(rows, { roomFilter }) {
-  return (rows || []).filter(row => roomFilter === 'all' || roomOf(row) === roomFilter);
-}
-
-function applyPatientFilters(groups, { roomFilter }) {
-  return (groups || []).filter(group => roomFilter === 'all' || group.room === roomFilter);
-}
-
-function SmartHeader({ date, nextDate, todaySched, nextSched, scenario, clock }) {
-  const todayFlag = scheduleFlags(todaySched);
-  const tomorrowFlag = scheduleFlags(nextSched);
-  const style = toneStyle(scenario.tone);
-  const todayNames = [
-    ...(todaySched?.admin?.length ? [`HC: ${todaySched.admin.join(', ')}`] : []),
-    ...(todaySched?.work?.length ? [`Làm: ${todaySched.work.join(', ')}`] : []),
-    ...(todaySched?.oncall?.length ? [`Trực: ${todaySched.oncall.join(', ')}`] : []),
-  ].join(' · ');
-  const tomorrowNames = [
-    ...(nextSched?.admin?.length ? [`HC: ${nextSched.admin.join(', ')}`] : []),
-    ...(nextSched?.work?.length ? [`Làm: ${nextSched.work.join(', ')}`] : []),
-    ...(nextSched?.oncall?.length ? [`Trực: ${nextSched.oncall.join(', ')}`] : []),
-  ].join(' · ');
-
-  const DayIcon = todayFlag.isDuty ? IconMoon : IconSun;
+function Section({ title, hint, count, children, tone }) {
   return (
-    <section aria-label="Kịch bản bàn giao" style={{ border: `1px solid ${style.border}`, background: style.bg, borderRadius: 7, padding: '12px 14px' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '2px 10px' }}>
-        <h2 style={{ margin: 0, fontSize: FS.xl, fontWeight: 700, color: style.color }}>{scenario.title}</h2>
-        <span style={{ fontSize: FS.md, color: C.text }}>{scenario.short}</span>
-      </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', marginTop: 8, fontSize: FS.sm, color: C.text2 }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-          <IconClock size={15} stroke={1.75} aria-hidden="true" /> Bây giờ {clock.text}
-        </span>
-        <span>
-          <DayIcon size={15} stroke={1.75} aria-hidden="true" style={{ verticalAlign: '-3px', marginRight: 5 }} />
-          Hôm nay {weekdayLabel(date)} {date}: <b style={{ color: C.text, fontWeight: 650 }}>{todayFlag.label.toLowerCase()}</b>
-        </span>
-        <span>
-          Ngày mai {weekdayLabel(nextDate)}: <b style={{ color: tomorrowFlag.isDuty ? C.amber : C.text, fontWeight: 650 }}>{tomorrowFlag.label.toLowerCase()}</b>
-        </span>
-      </div>
-      <div style={{ display: 'grid', gap: 2, marginTop: 6, fontSize: FS.xs, color: C.text2 }}>
-        <span>Hôm nay: {todayNames || 'chưa phân công'}</span>
-        <span>Ngày mai: {tomorrowNames || 'chưa phân công, xem là ngày làm việc bình thường'}</span>
-      </div>
-    </section>
-  );
-}
-
-function QuickFilters({ rooms, roomFilter, setRoomFilter }) {
-  return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}>
-      <SelectBox label="Lọc theo phòng" value={roomFilter} onChange={setRoomFilter}>
-        <option value="all">Tất cả phòng</option>
-        {rooms.map(room => <option key={room} value={room}>Phòng {room}</option>)}
-      </SelectBox>
-    </div>
-  );
-}
-
-function Panel({ title, subtitle, children, right }) {
-  return (
-    <section style={{ border: `1px solid ${C.border}`, background: C.surface, borderRadius: 7, overflow: 'hidden', minWidth: 0 }}>
-      <header style={{ padding: '10px 12px', borderBottom: `1px solid ${C.border2}`, display: 'flex', gap: 8, alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
-          <h3 style={{ margin: 0, color: C.text, fontWeight: 700, fontSize: FS.lg }}>{title}</h3>
-          {subtitle && <div style={{ color: C.text2, fontSize: FS.xs, marginTop: 3, lineHeight: 1.45 }}>{subtitle}</div>}
+    <section style={{ border: `1px solid ${tone === 'amber' ? C.amberBorder : C.border}`, background: C.surface, borderRadius: 7, overflow: 'hidden', minWidth: 0 }}>
+      <header style={{ padding: '10px 12px', borderBottom: `1px solid ${C.border2}`, background: tone === 'amber' ? C.amberBg : C.surface }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+          <h3 style={{ margin: 0, fontSize: FS.lg, fontWeight: 700, color: tone === 'amber' ? C.amber : C.text }}>{title}</h3>
+          {count != null && <span style={{ fontSize: FS.sm, color: C.text2, fontVariantNumeric: 'tabular-nums' }}>{count}</span>}
         </div>
-        {right}
+        {hint && <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 2 }}>{hint}</div>}
       </header>
       {children}
     </section>
   );
 }
 
-function CountNote({ children }) {
-  return <span style={{ color: C.text2, fontSize: FS.sm, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{children}</span>;
+function Empty({ children }) {
+  return <div style={{ padding: '10px 12px', fontSize: FS.sm, color: C.text2 }}>{children}</div>;
 }
 
-function OralDispenseGroup({ oralGroups }) {
-  if (!oralGroups.length) return null;
+// Một dòng: Phòng · Người bệnh · Thuốc × SL · Đường dùng.
+function MedLine({ row }) {
   return (
-    <Panel
-      title="Nhóm 1: Phát thuốc uống"
-      subtitle="Thuốc uống chỉ gom thành một danh sách phát trong ngày, không tách thành nhiều cữ chiều/tối."
-    >
-      <div style={{ display: 'grid', gap: 8, padding: 10 }}>
-        {oralGroups.map(group => (
-          <PatientMedGroup key={group.key} room={group.room} patientName={group.patientName} meta={`${group.drugs.length} thuốc uống`}>
-            {group.drugs.map((drug, idx) => (
-              <MedRow
-                key={`${group.key}-${idx}`}
-                name={drug.drugName}
-                tuTuc={drug.tuTuc}
-                quantity={formatQty(drug.quantity)}
-                unit={drug.unit}
-                route="Uống"
-                note={drug.times.length ? `Giờ uống: ${drug.times.join(' · ')}` : 'Uống cả ngày'}
-              />
-            ))}
-          </PatientMedGroup>
-        ))}
-      </div>
-    </Panel>
-  );
-}
-
-function distanceOnClock(a, b) {
-  const diff = Math.abs(Number(a) - Number(b));
-  return Math.min(diff, 24 * 60 - diff);
-}
-
-function nearestDutySlotId(row) {
-  const minutes = rowMinutes(row);
-  if (!Number.isFinite(minutes) || minutes >= 9999) return UNKNOWN_DUTY_SLOT.id;
-  let best = MAIN_DUTY_SLOTS[0];
-  let bestDistance = Infinity;
-  for (const slot of MAIN_DUTY_SLOTS) {
-    const distance = distanceOnClock(minutes, slot.minutes);
-    if (distance < bestDistance || (distance === bestDistance && slot.minutes > best.minutes)) {
-      best = slot;
-      bestDistance = distance;
-    }
-  }
-  return best.id;
-}
-
-function isNearFourDoseSlot(minutes) {
-  return FOUR_DOSE_SLOTS.some(target => distanceOnClock(minutes, target) <= FOUR_DOSE_TOLERANCE);
-}
-
-function fourDoseKey(row) {
-  return [
-    patientKey(row) || row.patientName || '',
-    String(row.drugName || '').toLowerCase(),
-    row.route || '',
-    row.unit || '',
-    row.category || '',
-  ].join('|');
-}
-
-function splitFourDoseRows(rows) {
-  const byDrug = new Map();
-  for (const row of rows || []) {
-    const minutes = rowMinutes(row);
-    if (!Number.isFinite(minutes) || minutes >= 9999) continue;
-    const key = fourDoseKey(row);
-    if (!byDrug.has(key)) byDrug.set(key, []);
-    byDrug.get(key).push(row);
-  }
-
-  const fourDoseIds = new Set();
-  for (const groupRows of byDrug.values()) {
-    const matched = FOUR_DOSE_SLOTS.filter(slot =>
-      groupRows.some(row => distanceOnClock(rowMinutes(row), slot) <= FOUR_DOSE_TOLERANCE)
-    );
-    if (matched.length < 3) continue;
-    for (const row of groupRows) {
-      if (isNearFourDoseSlot(rowMinutes(row))) fourDoseIds.add(rowKey(row));
-    }
-  }
-
-  return {
-    regularRows: (rows || []).filter(row => !fourDoseIds.has(rowKey(row))),
-    fourDoseRows: (rows || []).filter(row => fourDoseIds.has(rowKey(row))),
-  };
-}
-
-function isContinuousCandidate(row) {
-  return row?.route === 'TTM' || row?.category === 'dich_truyen';
-}
-
-function assignRowsToDutySlots(rows) {
-  const assigned = (rows || []).map(row => ({
-    ...row,
-    _dutySlot: nearestDutySlotId(row),
-    _dutySlotNote: '',
-  }));
-
-  const byPatientDate = new Map();
-  for (const row of assigned) {
-    if (!isContinuousCandidate(row)) continue;
-    const key = `${patientKey(row) || row.patientName}|${row.date || ''}`;
-    if (!byPatientDate.has(key)) byPatientDate.set(key, []);
-    byPatientDate.get(key).push(row);
-  }
-
-  for (const patientRows of byPatientDate.values()) {
-    const sorted = patientRows
-      .filter(row => Number.isFinite(rowMinutes(row)) && rowMinutes(row) < 9999)
-      .sort((a, b) => rowMinutes(a) - rowMinutes(b));
-    let sequenceSlot = '';
-    let previousMinutes = null;
-    for (const row of sorted) {
-      const minutes = rowMinutes(row);
-      if (previousMinutes == null || Math.abs(minutes - previousMinutes) > CONTINUOUS_SEQUENCE_GAP) {
-        sequenceSlot = nearestDutySlotId(row);
-      } else if (sequenceSlot) {
-        const oldSlot = row._dutySlot;
-        row._dutySlot = sequenceSlot;
-        if (oldSlot !== sequenceSlot) row._dutySlotNote = `Thuốc truyền nối tiếp, gộp theo cữ bắt đầu ${sequenceSlot}`;
-      }
-      previousMinutes = minutes;
-    }
-  }
-
-  return assigned;
-}
-
-function FourDosePanel({ rows }) {
-  if (!rows.length) return null;
-  return (
-    <Panel
-      title="Thuốc 4 cữ riêng"
-      subtitle="Các thuốc dạng 4 cữ/ngày, thường 00:00 - 06:00 - 12:00 - 18:00, được để riêng để tránh nhầm với 4 cữ gom chính."
-      right={<CountNote>{rows.length} dòng</CountNote>}
-    >
-      <MedicationRowsTable groups={groupByPatient(rows)} />
-    </Panel>
-  );
-}
-
-function TimelineMedicationPanel({ rows, activeTime, setActiveTime }) {
-  const { regularRows, fourDoseRows } = useMemo(() => splitFourDoseRows(rows), [rows]);
-  const assignedRows = useMemo(() => assignRowsToDutySlots(regularRows), [regularRows]);
-  const slotCounts = useMemo(() => {
-    const counts = new Map(DUTY_SLOT_TABS.map(slot => [slot.id, 0]));
-    for (const row of assignedRows) counts.set(row._dutySlot, (counts.get(row._dutySlot) || 0) + 1);
-    return counts;
-  }, [assignedRows]);
-
-  useEffect(() => {
-    if (!DUTY_SLOT_TABS.some(slot => slot.id === activeTime)) {
-      const firstWithRows = DUTY_SLOT_TABS.find(slot => (slotCounts.get(slot.id) || 0) > 0);
-      setActiveTime(firstWithRows?.id || DUTY_SLOT_TABS[0].id);
-    }
-  }, [activeTime, setActiveTime, slotCounts]);
-
-  const selectedTime = DUTY_SLOT_TABS.some(slot => slot.id === activeTime) ? activeTime : DUTY_SLOT_TABS[0].id;
-  const selectedRows = assignedRows.filter(row => row._dutySlot === selectedTime);
-  const patientGroups = groupByPatient(selectedRows);
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <Panel
-        title="Nhóm 2: Lịch tiêm/truyền"
-        subtitle="Bốn cữ chính: 08:00, 16:00, 20:00, 22:00. Các giờ lẻ được gộp vào cữ gần nhất; y lệnh chưa xác định giờ nằm ở nhóm riêng."
-        right={<CountNote>{assignedRows.length} dòng thuốc</CountNote>}
-      >
-        <div role="group" aria-label="Chọn cữ" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: 10, borderBottom: `1px solid ${C.border2}` }}>
-          {DUTY_SLOT_TABS.map(slot => (
-            <Chip key={slot.id} active={selectedTime === slot.id} onClick={() => setActiveTime(slot.id)}>
-              {slot.label} <span style={{ color: selectedTime === slot.id ? C.blue : C.text2, fontVariantNumeric: 'tabular-nums' }}>{slotCounts.get(slot.id) || 0}</span>
-            </Chip>
-          ))}
-        </div>
-        {patientGroups.length ? (
-          <MedicationRowsTable groups={patientGroups} />
-        ) : (
-          <div style={{ color: C.text2, padding: 12, fontSize: FS.sm }}>Không có thuốc trong cữ này.</div>
-        )}
-      </Panel>
-      <FourDosePanel rows={fourDoseRows} />
+    <div className="emr-med-line">
+      <span className="emr-med-line__room">{roomOf(row)}</span>
+      <span className="emr-med-line__name">{row.patientName}</span>
+      <span className="emr-med-line__drug">
+        <b style={{ fontWeight: 650 }}>{row.drugName}</b>{row.tuTuc && <TuTucMark />}
+        <span style={{ color: C.text2, fontVariantNumeric: 'tabular-nums' }}> × {formatQty(row.quantity)} {row.unit}</span>
+        {row.mixWith && <span style={{ color: C.text2 }}> · pha {row.mixWith}</span>}
+      </span>
+      <span className="emr-med-line__route"><RouteBadge route={row.route} /></span>
     </div>
   );
 }
 
-function MedicationRowsTable({ groups }) {
-  if (!groups.length) return <div style={{ color: C.text2, padding: 12, fontSize: FS.sm }}>Không có thuốc trong nhóm này.</div>;
+// Gom theo giờ dùng: "08:00", "02:00 · 27/09"…
+function TimeList({ rows, date, empty }) {
+  const groups = useMemo(() => {
+    const map = new Map();
+    for (const row of rows) {
+      const key = row.noTime ? 'Chưa rõ giờ' : `${row.time}${row.date !== date ? ` · ${shortDate(row.date)}` : ''}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(row);
+    }
+    return [...map.entries()];
+  }, [rows, date]);
+  if (!rows.length) return <Empty>{empty}</Empty>;
   return (
-    <div style={{ display: 'grid', gap: 8, padding: 10 }}>
-      {groups.map(group => (
-        <PatientMedGroup key={group.key} room={group.room} patientName={group.patientName} meta={`${group.rows.length} dòng`}>
-          {group.rows.map(row => {
-            const slotNote = row._dutySlotNote || (row._dutySlot && row.time !== row._dutySlot ? `Gộp vào cữ ${row._dutySlot}` : '');
-            return (
-              <MedRow
-                key={rowKey(row)}
-                time={<TimeBadge row={row} />}
-                name={row.drugName}
-                tuTuc={row.tuTuc}
-                quantity={formatQty(row.quantity)}
-                unit={row.unit}
-                route={row.route}
-                note={slotNote || (row.mixWith ? `Pha với: ${row.mixWith}` : row.note)}
-                odd={isOddHour(row)}
-              />
-            );
-          })}
-        </PatientMedGroup>
+    <div>
+      {groups.map(([label, list]) => (
+        <div key={label}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '6px 12px', background: C.surface2, borderTop: `1px solid ${C.border2}` }}>
+            <b style={{ fontSize: FS.md, color: C.text, fontVariantNumeric: 'tabular-nums' }}>{label}</b>
+            <span style={{ fontSize: FS.xs, color: C.text2 }}>{list.length} thuốc</span>
+          </div>
+          {list.map(row => <MedLine key={row.id} row={row} />)}
+        </div>
       ))}
     </div>
   );
 }
 
-function PrepPanel({ scenario, prepRows, nextDate }) {
-  if (scenario.id === 'duty_to_work') {
-    return (
-      <Panel
-        title="Soạn thuốc và bàn giao"
-        subtitle="Khu vực tự động đổi nội dung theo kịch bản bàn giao."
-      >
-        <div style={{ margin: 10, border: `1px solid ${C.greenBorder}`, background: C.greenBg, color: C.green, borderRadius: 7, padding: 14, fontWeight: 650, fontSize: FS.md }}>
-          Bạn là ca trực cuối. Không cần soạn thuốc cữ sáng ngày mai.
-        </div>
-      </Panel>
-    );
-  }
-
-  const title = scenario.id === 'work_to_duty'
-    ? 'Danh sách thuốc Tiêm/Truyền cần soạn cho ca trực đêm'
-    : `Danh sách thuốc cữ sáng mai (${nextDate}) cần chuẩn bị`;
-  const subtitle = scenario.id === 'work_to_duty'
-    ? 'Tự động lọc TMC, TTM, TB, TDD, dịch truyền/thuốc khác sau giờ hành chính; không đưa thuốc uống vào danh sách soạn trực đêm.'
-    : 'Tự động lấy cữ sáng ngày mai, gồm cả thuốc uống và thuốc tiêm/truyền.';
-
-  return (
-    <Panel title={title} subtitle={subtitle} right={<CountNote>{prepRows.length} dòng</CountNote>}>
-      <MedicationRowsTable groups={groupByPatient(prepRows)} />
-    </Panel>
-  );
-}
-
-function DutyReport({ date, rows, nextMorningRows, nurseState, routeOptions, selectedRoutes, onToggleRoute, onClearRoutes }) {
-  const [roomFilter, setRoomFilter] = useState('all');
-  const [activeTime, setActiveTime] = useState('');
-
-  const schedule = nurseState?.schedule || {};
-  const todaySched = getDaySchedule(schedule, date);
-  const nextDate = addDaysDmy(date, 1);
-  const nextSched = getDaySchedule(schedule, nextDate);
-  const todayFlag = scheduleFlags(todaySched);
-  const tomorrowFlag = scheduleFlags(nextSched);
-  const scenario = scenarioOf(todayFlag, tomorrowFlag);
-  const [clock, setClock] = useState(() => currentClock());
-
-  useEffect(() => {
-    const tick = () => setClock(currentClock());
-    tick();
-    const timer = window.setInterval(tick, 30 * 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const oralVisibleNow = date === todayDmy() && clock.minutes < MORNING_DISPENSE_END;
-
-  const oralRows = useMemo(() => (rows || []).filter(row => row.route === 'Uống' && row.date === date), [rows, date]);
-  const oralGroupsRaw = useMemo(() => groupOralByPatient(oralRows), [oralRows]);
-
-  const actionRowsRaw = useMemo(() => (rows || [])
-    .filter(row => isNonOralAction(row))
-    .filter(row => isFutureOrCurrentRow(row, date, clock.minutes)), [rows, date, clock.minutes]);
-
-  const prepRowsRaw = useMemo(() => {
-    if (scenario.id === 'work_to_duty') {
-      return (rows || [])
-        .filter(row => isNonOralAction(row))
-        // Nếu BN ra viện trong ngày và y lệnh không có giờ, không được tự đưa
-        // y lệnh đó vào danh sách SOẠN CA ĐÊM vì không chứng minh được là sau giờ HC.
-        .filter(row => !(row?.noTime && row?.dischargeCutoffMinutes != null))
-        .filter(row => isAfterWorkOrEarlyNext(row, date));
+// Thuốc uống: mỗi người bệnh một dòng, gom mọi giờ uống trong ngày.
+function OralList({ rows, empty }) {
+  const patients = useMemo(() => {
+    const map = new Map();
+    for (const row of rows) {
+      const pKey = `${roomOf(row)}|${row.patientId || row.patientName}`;
+      if (!map.has(pKey)) map.set(pKey, { key: pKey, room: roomOf(row), name: row.patientName, drugs: new Map() });
+      const drugs = map.get(pKey).drugs;
+      const dKey = `${String(row.drugName).toLowerCase()}|${row.unit}|${row.tuTuc ? 'tt' : ''}`;
+      if (!drugs.has(dKey)) drugs.set(dKey, { name: row.drugName, unit: row.unit, tuTuc: row.tuTuc, qty: 0, times: new Set() });
+      const drug = drugs.get(dKey);
+      drug.qty += Number(row.quantity || 0);
+      if (!row.noTime && row.time) drug.times.add(row.time);
     }
-    if (scenario.id === 'duty_to_duty') {
-      return nextMorningRows || [];
-    }
-    return [];
-  }, [rows, nextMorningRows, scenario.id, date]);
-
-  const rooms = useMemo(() => buildRooms([...rows, ...(nextMorningRows || [])]), [rows, nextMorningRows]);
-
-  useEffect(() => {
-    if (roomFilter !== 'all' && !rooms.includes(roomFilter)) setRoomFilter('all');
-  }, [rooms, roomFilter]);
-
-  const oralGroups = oralVisibleNow ? applyPatientFilters(oralGroupsRaw, { roomFilter }) : [];
-  const actionRows = applyFilters(actionRowsRaw, { roomFilter });
-  const prepRows = applyFilters(prepRowsRaw, { roomFilter });
-
-  const todayType = dayTypeOf(todaySched);
-  const nextType = dayTypeOf(nextSched);
-  const workNurse = firstName(todaySched.work) || firstName(todaySched.admin) || 'Người làm';
-  const oncallNurse = firstName(todaySched.oncall) || 'Người trực';
-
-  if (!rows.length && !nextMorningRows?.length) return <EmptyFilter />;
-
+    return [...map.values()].sort((a, b) => a.room.localeCompare(b.room, 'vi', { numeric: true }) || String(a.name).localeCompare(String(b.name), 'vi'));
+  }, [rows]);
+  if (!patients.length) return <Empty>{empty}</Empty>;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <SmartHeader date={date} nextDate={nextDate} todaySched={todaySched} nextSched={nextSched} scenario={scenario} clock={clock} />
-
-      <div style={{ border: `1px solid ${C.border}`, borderRadius: 7, background: C.surface, padding: 12 }}>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 260px', minWidth: 0 }}>
-            <h3 style={{ margin: 0, color: C.text, fontWeight: 700, fontSize: FS.lg }}>Lọc nhanh khi đi buồng</h3>
-            <div style={{ color: C.text2, fontSize: FS.xs, marginTop: 3, lineHeight: 1.45 }}>
-              {todayType === 'admin' && <>Ngày có người làm và người trực: <b style={{ color: C.text }}>{workNurse}</b> làm/hành chánh trong giờ hành chính; <b style={{ color: C.text }}>{oncallNurse}</b> nhận phần bàn giao.</>}
-              {todayType === 'oncall_only' && <>Ngày chỉ có người trực: hệ thống chỉ giữ các cữ còn lại trong ca và tự quyết định có soạn sáng mai hay không.</>}
-              {todayType !== 'admin' && todayType !== 'oncall_only' && <>Lịch chưa đủ người làm/người trực; hệ thống vẫn áp dụng quy tắc mặc định theo danh sách hiện có.</>}
-              {nextType === 'empty' && <> Ngày mai không phân công ai nên được xem là ngày làm việc bình thường.</>}
-            </div>
-          </div>
-          <QuickFilters rooms={rooms} roomFilter={roomFilter} setRoomFilter={setRoomFilter} />
+    <div>
+      {patients.map(p => (
+        <div key={p.key} className="emr-oral-line">
+          <span className="emr-med-line__room">{p.room}</span>
+          <span className="emr-med-line__name">{p.name}</span>
+          <span className="emr-oral-line__drugs">
+            {[...p.drugs.values()].map((d, i) => (
+              <span key={i} style={{ display: 'inline-block', marginRight: 12 }}>
+                <b style={{ fontWeight: 650 }}>{d.name}</b>{d.tuTuc && <TuTucMark />}
+                <span style={{ color: C.text2, fontVariantNumeric: 'tabular-nums' }}> × {formatQty(d.qty)} {d.unit}{d.times.size ? ` (${[...d.times].sort().join(', ')})` : ''}</span>
+              </span>
+            ))}
+          </span>
         </div>
-        <RouteFilterStrip options={routeOptions || []} selectedRoutes={selectedRoutes || []} onToggle={onToggleRoute} onClear={onClearRoutes} />
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(360px, 100%), 1fr))', gap: 12, alignItems: 'start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
-          <Panel
-            title="Việc cần thực hiện"
-            subtitle="Nhiệm vụ trong ca của mình: phát thuốc uống buổi sáng và thực hiện các cữ tiêm/truyền còn lại."
-            right={<CountNote>{actionRows.length} dòng tiêm/truyền</CountNote>}
-          >
-            {!oralVisibleNow && oralRows.length > 0 && (
-              <div style={{ margin: 10, border: `1px solid ${C.border2}`, background: C.surface2, color: C.text2, borderRadius: 7, padding: 10, fontSize: FS.sm }}>
-                Nhóm phát thuốc uống chỉ hiển thị vào buổi sáng. Các cữ uống chiều/tối được ẩn để không làm rối màn hình.
-              </div>
-            )}
-          </Panel>
-          <OralDispenseGroup oralGroups={oralGroups} />
-          <TimelineMedicationPanel rows={actionRows} activeTime={activeTime} setActiveTime={setActiveTime} />
-        </div>
-
-        <div style={{ minWidth: 0 }}>
-          <PrepPanel scenario={scenario} prepRows={prepRows} nextDate={nextDate} />
-        </div>
-      </div>
+      ))}
     </div>
   );
 }
 
-export { DutyReport, scheduleFlags, scenarioOf };
+function PastToggle({ rows, date }) {
+  const [open, setOpen] = useState(false);
+  if (!rows.length) return null;
+  return (
+    <div style={{ borderTop: `1px solid ${C.border2}` }}>
+      <button type="button" onClick={() => setOpen(v => !v)} aria-expanded={open} style={{
+        display: 'flex', alignItems: 'center', gap: 6, width: '100%', minHeight: 36, padding: '0 12px',
+        border: 0, background: 'transparent', color: C.text2, fontSize: FS.sm, cursor: 'pointer', fontFamily: 'inherit',
+      }}>
+        {open ? <IconChevronUp size={15} stroke={1.9} aria-hidden="true" /> : <IconChevronDown size={15} stroke={1.9} aria-hidden="true" />}
+        Đã qua giờ: {rows.length} thuốc
+      </button>
+      {open && <TimeList rows={rows} date={date} />}
+    </div>
+  );
+}
+
+// ── Màn chính ───────────────────────────────────────────────────────────────
+
+function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState, routeOptions, selectedRoutes, onToggleRoute, onClearRoutes }) {
+  const schedule = nurseState?.schedule || {};
+  const nextDate = addDaysDmy(date, 1);
+  const isToday = date === todayDmy();
+  const [now, setNow] = useState(nowMinutes);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(nowMinutes()), 30 * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // Ngày nghỉ: tự đoán theo T7/CN hoặc Lịch điều dưỡng chỉ có người trực; người dùng sửa được, nhớ theo ngày.
+  const [restOverrides, setRestOverrides] = useState(() => readJson(REST_STORAGE_KEY, {}));
+  const autoRest = dmy => isWeekend(dmy) || scheduleFlags(getDaySchedule(schedule, dmy)).isDuty;
+  const isRest = dmy => (typeof restOverrides[dmy] === 'boolean' ? restOverrides[dmy] : autoRest(dmy));
+  const setRest = (dmy, value) => setRestOverrides(prev => {
+    const next = { ...prev, [dmy]: value };
+    writeJson(REST_STORAGE_KEY, next);
+    return next;
+  });
+  const todayRest = isRest(date);
+  const tomorrowRest = isRest(nextDate);
+
+  const [role, setRoleState] = useState(() => {
+    const saved = readJson(ROLE_STORAGE_KEY, '');
+    if (saved === 'work' || saved === 'duty') return saved;
+    const m = nowMinutes();
+    return m >= 7 * 60 && m < 17 * 60 ? 'work' : 'duty';
+  });
+  const setRole = value => { setRoleState(value); writeJson(ROLE_STORAGE_KEY, value); };
+
+  const [roomFilter, setRoomFilter] = useState('all');
+  const rooms = useMemo(() => [...new Set([...rows, ...nextDayRows].map(roomOf))]
+    .sort((a, b) => a.localeCompare(b, 'vi', { numeric: true })), [rows, nextDayRows]);
+  useEffect(() => {
+    if (roomFilter !== 'all' && !rooms.includes(roomFilter)) setRoomFilter('all');
+  }, [rooms, roomFilter]);
+  const byRoom = list => (roomFilter === 'all' ? list : list.filter(row => roomOf(row) === roomFilter));
+
+  const newPatientKeys = useMemo(() => new Set(Object.entries(admissions)
+    .filter(([, value]) => isAdmittedDuringDuty(value, date, todayRest))
+    .map(([key]) => key)), [admissions, date, todayRest]);
+
+  const plan = useMemo(() => buildDutyPlan({
+    date, rows: byRoom(rows), nextDayRows: byRoom(nextDayRows), role, todayRest, tomorrowRest,
+    nowMinutes: now, isToday, newPatientKeys,
+  }), [date, rows, nextDayRows, role, todayRest, tomorrowRest, now, isToday, newPatientKeys, roomFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!rows.length && !nextDayRows.length) return <EmptyFilter />;
+
+  const fromNow = isToday ? ' từ giờ hiện tại' : '';
+  const checkbox = (label, checked, onChange) => (
+    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: FS.sm, color: C.text, cursor: 'pointer' }}>
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} style={{ width: 16, height: 16, accentColor: C.blue }} />
+      {label}
+    </label>
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ border: `1px solid ${C.border}`, borderRadius: 7, background: C.surface, padding: 12, display: 'grid', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px 16px', flexWrap: 'wrap' }}>
+          <Segmented
+            label="Vai trò"
+            value={role}
+            onChange={setRole}
+            options={[{ value: 'work', label: 'Người làm bệnh phòng' }, { value: 'duty', label: 'Người trực' }]}
+          />
+          {role === 'duty' && checkbox(`Hôm nay (${weekdayLabel(date)}) là ngày nghỉ`, todayRest, v => setRest(date, v))}
+          {role === 'duty' && checkbox(`Ngày mai (${weekdayLabel(nextDate)} ${shortDate(nextDate)}) là ngày nghỉ`, tomorrowRest, v => setRest(nextDate, v))}
+          <span style={{ flex: '1 1 0' }} />
+          <SelectBox label="Lọc theo phòng" value={roomFilter} onChange={setRoomFilter}>
+            <option value="all">Tất cả phòng</option>
+            {rooms.map(room => <option key={room} value={room}>Phòng {room}</option>)}
+          </SelectBox>
+        </div>
+        <div style={{ fontSize: FS.xs, color: C.text2 }}>
+          {role === 'work'
+            ? 'Ca làm 07:00–11:00 và 13:00–17:00. Cữ 11:00–13:00 và từ 17:00 bàn giao cho người trực.'
+            : todayRest
+              ? 'Trực ngày nghỉ: thuốc sáng (07:00–10:59) và thuốc uống người bệnh cũ đã làm từ hôm trước.'
+              : 'Trực ngày làm: 11:00–13:00 và từ 17:00 đến 07:00 sáng mai.'}
+        </div>
+        <RouteFilterStrip options={routeOptions || []} selectedRoutes={selectedRoutes || []} onToggle={onToggleRoute} onClear={onClearRoutes} />
+      </div>
+
+      {role === 'work' ? (
+        <div className="emr-duty-grid">
+          <div style={{ display: 'grid', gap: 12, alignContent: 'start', minWidth: 0 }}>
+            <Section title="Thuốc uống" hint="Phát cho cả ngày." count={`${new Set(plan.oral.map(r => r.patientId || r.patientName)).size} người bệnh`}>
+              <OralList rows={plan.oral} empty="Không có thuốc uống trong ngày." />
+            </Section>
+            <Section title="Cữ trong ca làm" hint={`Tiêm, truyền và đường khác${fromNow}.`} count={`${plan.mine.length} thuốc`}>
+              <TimeList rows={plan.mine} date={date} empty="Không còn cữ nào trong ca làm." />
+              <PastToggle rows={plan.past} date={date} />
+            </Section>
+            {plan.noTime.length > 0 && (
+              <Section title="Chưa rõ giờ" hint="Y lệnh không ghi giờ, cần hỏi lại bác sĩ." count={`${plan.noTime.length} thuốc`} tone="amber">
+                <TimeList rows={plan.noTime} date={date} />
+              </Section>
+            )}
+          </div>
+          <Section title="Bàn giao ca trực" hint="Trực trưa 11:00–13:00 và từ 17:00 đến 07:00 sáng mai." count={`${plan.handover.length} thuốc`}>
+            <TimeList rows={plan.handover} date={date} empty="Không có cữ nào cần bàn giao." />
+          </Section>
+        </div>
+      ) : (
+        <div className="emr-duty-grid">
+          <div style={{ display: 'grid', gap: 12, alignContent: 'start', minWidth: 0 }}>
+            <Section title="Cữ trong ca trực" hint={`${todayRest ? 'Từ 11:00' : 'Trực trưa 11:00–13:00 và từ 17:00'} đến 23:59${fromNow}.`} count={`${plan.mine.length} thuốc`}>
+              <TimeList rows={plan.mine} date={date} empty="Không còn cữ nào trong ca trực hôm nay." />
+              <PastToggle rows={plan.past} date={date} />
+            </Section>
+            <Section title="Trước 7h sáng mai" hint={`Cữ 00:00–06:59 ngày ${shortDate(nextDate)}.`} count={`${plan.earlyTomorrow.length} thuốc`}>
+              <TimeList rows={plan.earlyTomorrow} date={date} empty="Không có cữ nào trước 7h sáng mai." />
+            </Section>
+            <Section title="Thuốc uống người bệnh mới vào" hint="Người bệnh vào khoa trong tua trực, chưa được phát thuốc uống." count={`${new Set(plan.oral.map(r => r.patientId || r.patientName)).size} người bệnh`}>
+              <OralList rows={plan.oral} empty="Không có người bệnh mới vào trong tua trực." />
+            </Section>
+            {plan.noTime.length > 0 && (
+              <Section title="Chưa rõ giờ" hint="Y lệnh không ghi giờ, cần hỏi lại bác sĩ." count={`${plan.noTime.length} thuốc`} tone="amber">
+                <TimeList rows={plan.noTime} date={date} />
+              </Section>
+            )}
+          </div>
+          {tomorrowRest ? (
+            <div style={{ display: 'grid', gap: 12, alignContent: 'start', minWidth: 0 }}>
+              <Section title="Làm thuốc sáng mai" hint={`Ngày mai nghỉ: làm các cữ 07:00–10:59 ngày ${shortDate(nextDate)}.`} count={`${plan.nextMorning.length} thuốc`}>
+                <TimeList rows={plan.nextMorning} date={nextDate} empty="Không có cữ sáng mai." />
+              </Section>
+              <Section title="Thuốc uống ngày mai" hint="Phát trước cho cả ngày mai." count={`${new Set(plan.nextOral.map(r => r.patientId || r.patientName)).size} người bệnh`}>
+                <OralList rows={plan.nextOral} empty="Chưa có y lệnh thuốc uống ngày mai." />
+              </Section>
+            </div>
+          ) : (
+            <Section title="Sáng mai" hint="Ngày mai là ngày làm: người làm bệnh phòng sẽ làm thuốc sáng.">
+              <Empty>Không cần làm thuốc sáng mai. Chỉ cần làm các cữ trước 7h ở mục bên cạnh.</Empty>
+            </Section>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Giữ để hiển thị thứ tự đúng khi cần tính phút tuyệt đối ở nơi khác.
+export { DutyReport, scheduleFlags, absMinutes };
