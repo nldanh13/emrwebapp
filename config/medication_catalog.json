@@ -118,7 +118,10 @@
       "canonical": "NATRI CLORID 0,9%",
       "category": "dich_truyen",
       "default_volume_ml": 500,
-      "default_rate": "30"
+      "default_rate": "30",
+      "aliases": [
+        "SODIUM"
+      ]
     },
     {
       "canonical": "CLASTIZOL",
@@ -127,8 +130,14 @@
       ],
       "category": "dich_truyen",
       "default_volume_ml": 100,
-      "default_rate": "30"
+      "default_rate": "30",
+      "default_route": "TTM"
+    },
+    {
+      "canonical": "GEMAPAXANE",
+      "category": "thuoc_tiem",
+      "default_route": "TDD"
     }
   ],
-  "_updated": "2026-09-25"
+  "_updated": "2026-09-26"
 }
