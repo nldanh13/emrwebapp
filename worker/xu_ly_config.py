@@ -81,79 +81,31 @@ DEFAULT_NACL_VOLUME_BY_KEYWORD = {
     "COLISTIN": 50,
 }
 
-# ── Bản đồ nhãn đường dùng thuốc ─────────────────────────────────────────────
-# Kiểm tra theo thứ tự — dừng lại ở match đầu tiên.
-# Nguồn: Bảng phân loại đường dùng thuốc VN (BYT).
-ROUTE_LABEL_MAP = [
-    # TTM / Dịch truyền — phải kiểm tra TRƯỚC "tiêm" để tránh nhầm
-    (["ttm", "tiêm truyền", "truyền tĩnh mạch", "truyền nhỏ giọt"],  "TTM"),
-    # Tiêm — phân biệt vị trí
-    (["tiêm bắp", "bắp đùi", "bắp tay", " im ", "(im)"],            "TB"),
-    (["dưới da", "duoi da", "tiêm dưới da", "tiem duoi da", "tdd", " sc ", "(sc)", "(tdd)"], "TDD"),
-    (["tĩnh mạch chậm", "tmc", "tm chậm", "tiêm chậm",
-      "tiêm mạch", "tĩnh mạch"],                                      "TMC"),
-    (["tiêm"],                                                         "TMC"),
-    # Đường uống
-    (["uống"],                                                         "U"),
-    (["ngậm dưới lưỡi", "dưới lưỡi"],                                 "NDL"),
-    # Đường hô hấp
-    (["hít", "xịt", "khí dung", "hít/xịt", "phun mù",
-      "định liều", "aerosol"],                                         "Hít/Xịt"),
-    # Ngoài da
-    (["bôi", "thoa"],                                                  "Bôi"),
-    (["dán qua da", "miếng dán", "patch"],                             "Dán"),
-    # Nhỏ giọt
-    (["nhỏ mắt"],                                                      "Nhỏ mắt"),
-    (["nhỏ mũi"],                                                      "Nhỏ mũi"),
-    (["nhỏ tai"],                                                      "Nhỏ tai"),
-    (["nhỏ"],                                                          "Nhỏ"),
-    # Đặt
-    (["đặt hậu môn", "trực tràng"],                                    "Trực tràng"),
-    (["âm đạo"],                                                       "Âm đạo"),
-    (["đặt"],                                                          "Đặt"),
-    # Ngậm chung
-    (["ngậm"],                                                         "Ngậm"),
-]
-
-# Màu badge đường dùng (dùng trong frontend token)
-ROUTE_COLORS = {
-    "TTM":          "green",
-    "TMC":          "amber",
-    "TB":           "amber",
-    "TDD":          "amber",
-    
-    "U":            "purple",
-    "NDL":          "purple",
-    "Hít/Xịt":      "blue",
-    "Bôi":          "gray",
-    "Dán":          "gray",
-    "Nhỏ mắt":      "gray",
-    "Nhỏ mũi":      "gray",
-    "Nhỏ tai":      "gray",
-    "Nhỏ":          "gray",
-    "Trực tràng":   "gray",
-    "Âm đạo":       "gray",
-    "Đặt":          "gray",
-    "Ngậm":         "purple",
-}
+# ── Đường dùng thuốc ─────────────────────────────────────────────────────────
+# Bảng chuẩn nằm ở config/routes.json (dùng chung với giao diện), xem
+# processing/route_table.py. Không khai báo danh sách từ khoá riêng ở đây nữa.
+try:
+    from processing.route_table import detect_route_code
+except ImportError:  # chạy từ thư mục khác
+    from worker.processing.route_table import detect_route_code
 
 
 def get_route_label(duong_dung_goc: str, ten_thuoc: str = "") -> str:
-    """Trả về nhãn ngắn của đường dùng thuốc từ chuỗi duong_dung_goc.
+    """Trả về mã đường dùng chuẩn (config/routes.json) từ chuỗi duong_dung_goc.
 
     Nhận thêm ten_thuoc để phát hiện lỗi nhập liệu EMR:
-      "Tiêm (tự túc)" + tên chứa "uống" → "U"
+      "Tiêm (tự túc)" + tên chứa "uống" → "UONG"
     """
     u      = (duong_dung_goc or "").lower()
     name_l = (ten_thuoc      or "").lower()
 
     # Phát hiện đường uống, kể cả ký hiệu ngắn "u" của thuốc tự túc.
     if re.search(r"\(\s*u\s*\)|\buống\b|\buong\b|(?<![0-9a-zA-ZÀ-ỹ])u(?![0-9a-zA-ZÀ-ỹ])", u, flags=re.IGNORECASE):
-        return "U"
+        return "UONG"
 
     # Phát hiện "Tiêm (tự túc)" nhưng tên thuốc chứa "uống" → thực ra là uống
     if u.strip() in ("tiêm (tự túc)", "tiêm(tự túc)") and "uống" in name_l:
-        return "U"
+        return "UONG"
 
     # TRAMADOL: nếu EMR chỉ ghi chung chung "Tiêm" thì ưu tiên hiểu là tiêm bắp.
     # Chỉ để dạng truyền khi y lệnh ghi rõ TTM/truyền/pha NaCl, hoặc được rule dung môi rời xử lý sau.
@@ -169,10 +121,7 @@ def get_route_label(duong_dung_goc: str, ten_thuoc: str = "") -> str:
         if has_generic_injection and not has_infusion_hint:
             return "TB"
 
-    for keywords, label in ROUTE_LABEL_MAP:
-        if any(k in u for k in keywords):
-            return label
-    return ""
+    return detect_route_code(duong_dung_goc)
 
 # Những thuốc có dung môi đi kèm (không gắn nhãn '+ Pha nước cất')
 NO_WATER_TAG_KEYWORDS = [

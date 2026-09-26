@@ -30,7 +30,7 @@ from xu_ly_config import (
     BASE_DIR, CONFIG_FILE, OUTPUT_FILE, DEFAULT_INPUT_FILE,
     DEFAULT_VOLUMES, TRUE_INFUSIONS, ALWAYS_INFUSION_DRUGS,
     INFUSION_NAME_KEYWORDS, DEFAULT_NACL_VOLUME_BY_KEYWORD,
-    ROUTE_LABEL_MAP, ROUTE_COLORS, NO_WATER_TAG_KEYWORDS,
+    NO_WATER_TAG_KEYWORDS,
     THE_TICH_AO, LUAT_AN_TOAN, CONFIG,
     get_route_label, _norm_upper, _contains_any,
     parse_hours_from_gio_dung, get_safety_nacl_volume,

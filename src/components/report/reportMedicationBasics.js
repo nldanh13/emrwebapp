@@ -1,3 +1,4 @@
+import { routeReportMode } from '../../config/routes.js';
 function displayDrugName(item) {
   // Lấy rộng hơn để không mất các dòng thuốc có cấu trúc lạ từ dữ liệu cũ.
   const candidates = [
@@ -47,7 +48,7 @@ function unitOf(item, category, route = '') {
   const u = String(item?.dang || item?.don_vi || item?.unit || '').trim();
   if (u) return u.toLowerCase();
   if (route === 'TTM' || category === 'dich_truyen') return 'chai';
-  if (route === 'Uống' || category === 'thuoc_uong') return 'viên';
+  if (routeReportMode(route) === 'daily' || category === 'thuoc_uong') return 'viên';
   if (route === 'TMC' || route === 'TB' || route === 'TDD') return 'ống';
   return '';
 }

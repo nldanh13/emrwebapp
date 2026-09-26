@@ -2,6 +2,7 @@ import { GROUP_ORDER, ROUTE_PRIORITY, stripVN, timeToMinutes, extractTimes } fro
 import { routeOf, collectMedicationLists } from './reportRouteUtils.js';
 import { displayDrugName, quantityOf, unitOf, categoryLabel } from './reportMedicationBasics.js';
 import { groupOf, rowMinutes, markSeparatedHours } from './reportMedicationFlags.js';
+import { routeReportMode } from '../../config/routes.js';
 
 
 
@@ -118,7 +119,8 @@ function shouldHideFromDutyReport(item, category, route) {
   // Chỉ ẩn thuốc ngưng/trả — còn thuốc uống giờ hiển thị trong card BN.
   const cat = stripVN(category).toLowerCase();
   if (/thuoc\s*tra|ngung|stop/.test(cat) && route === 'Ngưng/Trả') return false; // giữ lại để hiện
-  return false; // không ẩn gì nữa
+  // Bôi, xịt, nhỏ, dán, đặt, ngậm: không cần trên báo cáo ca trực (config/routes.json report="hide").
+  return route !== 'Ngưng/Trả' && routeReportMode(route) === 'hide';
 }
 
 function collectDrugRows(patients, selectedDate) {
@@ -193,7 +195,7 @@ function collectOralDispenseData(patients, selectedDate) {
     for (const [category, list] of collectMedicationLists(meds)) {
       for (const item of list || []) {
         const route = routeOf(item, category);
-        if (route !== 'Uống') continue;
+        if (routeReportMode(route) !== 'daily') continue;
 
         const pid = String(patient.ma_bn || '').trim();
         if (!patientMap.has(pid)) {

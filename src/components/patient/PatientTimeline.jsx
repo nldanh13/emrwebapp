@@ -1,6 +1,7 @@
 import { C, TL_TYPE, FONT_MONO, FS } from '../../tokens.js';
 import { Badge } from '../shared.jsx';
 import { buildTimelineFromThuoc } from './patientDetailUtils.js';
+import { routeInfo, routeShort } from '../../config/routes.js';
 
 function sanitizeTimelineLabel(label) {
   return String(label || '')
@@ -97,7 +98,7 @@ export default function PatientTimeline({ items = [], thuoc = null }) {
                               borderRadius: 3, background: C.surface,
                               border: `1px solid ${C.border}`,
                               color: C.text3,
-                            }}>{item.detail.duong_dung}</span>
+                            }} title={routeInfo(item.detail.duong_dung).label}>{routeShort(item.detail.duong_dung)}</span>
                           )}
                           {item.flag === 'TT' && (
                             <Badge text="TT" bg={C.amberBg} color={C.amber} size={10} />

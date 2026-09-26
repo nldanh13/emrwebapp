@@ -3,6 +3,7 @@ import {
   Q6_SCHEDULE_MINUTES, Q6_TOLERANCE_MINUTES, Q6_MIN_MATCHES,
   EARLY_ISOLATED_END_MINUTES, CONTINUOUS_INFUSION_GAP_MINUTES, timeToMinutes,
 } from './reportBaseUtils.js';
+import { routeReportMode } from '../../config/routes.js';
 
 function groupOf(row, selectedDate) {
   const minutes = timeToMinutes(row.time);
@@ -17,7 +18,7 @@ function groupOf(row, selectedDate) {
 }
 
 function isOral(row) {
-  return row?.route === 'Uống';
+  return routeReportMode(row?.route) === 'daily';
 }
 
 function rowMinutes(row) {

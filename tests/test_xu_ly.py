@@ -293,7 +293,7 @@ class TestParseTheoBangCanhBao:
         pharbacol = next((d for d in thuoc.get("thuoc_uong", []) if "PHARBACOL" in str(d.get("ten_thuoc", "")).upper()), None)
         assert pharbacol is not None
         assert pharbacol.get("gio_dung") == "8 giờ, 16 giờ, 22 giờ"
-        assert pharbacol.get("duong_dung") == "U"
+        assert pharbacol.get("duong_dung") == "UONG"  # mã chuẩn config/routes.json
 
     def test_pharbacol_vien_thieu_duong_dung_khong_suy_luan_ttm(self):
         result = _run([{

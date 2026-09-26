@@ -11,6 +11,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+ROUTES_URI = (ROOT / "src/config/routes.js").as_uri()
+
+
+def _fix_routes_import(src: str) -> str:
+    """Module báo cáo được chép sang thư mục tạm: trỏ import bảng đường dùng về file gốc."""
+    return src.replace("'../../config/routes.js'", f"'{ROUTES_URI}'")
+
+
 def run_node(script: str) -> dict:
     completed = subprocess.run(
         ["node", "--input-type=module", "-"],
@@ -104,7 +112,7 @@ def test_route_counts_returns_ui_array(tmp_path):
     base = tmp_path / "reportBaseUtils.mjs"
     route = tmp_path / "reportRouteUtils.mjs"
     base.write_text(base_src, encoding="utf-8")
-    route.write_text(route_src.replace("'./reportBaseUtils.js'", "'./reportBaseUtils.mjs'"), encoding="utf-8")
+    route.write_text(_fix_routes_import(route_src.replace("'./reportBaseUtils.js'", "'./reportBaseUtils.mjs'")), encoding="utf-8")
     script = textwrap.dedent(f"""
         import {{ routeCounts }} from {json.dumps(route.as_uri())};
         const result = routeCounts([{{ route: 'TTM' }}, {{ route: 'TMC' }}, {{ route: 'TTM' }}]);
@@ -176,7 +184,7 @@ def test_discharge_time_cuts_evening_and_next_day_medication_rows(tmp_path):
         src = (ROOT / f"src/components/report/{name}.js").read_text(encoding="utf-8")
         for dep in module_names:
             src = src.replace(f"'./{dep}.js'", f"'./{dep}.mjs'")
-        (tmp_path / f"{name}.mjs").write_text(src, encoding="utf-8")
+        (tmp_path / f"{name}.mjs").write_text(_fix_routes_import(src), encoding="utf-8")
 
     collect_uri = (tmp_path / "reportMedicationCollect.mjs").as_uri()
     script = textwrap.dedent(f"""

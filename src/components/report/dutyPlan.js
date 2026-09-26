@@ -11,6 +11,7 @@
 // cữ 00:00–06:59 của đêm được extractTimes gắn sang ngày hôm sau nên cộng 1440.
 
 import { addDaysDmy, parseDmy, rowMinutes } from './reportUtils.js';
+import { routeReportMode } from '../../config/routes.js';
 
 const DAY = 24 * 60;
 export const SHIFT = {
@@ -24,7 +25,6 @@ const WORK_WINDOWS = [[SHIFT.dayStart, SHIFT.morningEnd], [SHIFT.noonEnd, SHIFT.
 const DUTY_WINDOWS_WORKDAY = [[SHIFT.morningEnd, SHIFT.noonEnd], [SHIFT.workEnd, DAY + SHIFT.dayStart]];
 const DUTY_WINDOWS_RESTDAY = [[SHIFT.morningEnd, DAY + SHIFT.dayStart]];
 const EARLY_TOMORROW = [[DAY, DAY + SHIFT.dayStart]];
-const NON_ORAL_ROUTES = new Set(['TMC', 'TTM', 'TB', 'TDD', 'Khác']);
 
 function inWindows(t, windows) {
   return t != null && windows.some(([a, b]) => t >= a && t < b);
@@ -40,12 +40,13 @@ export function absMinutes(row, date) {
 }
 
 export function isOral(row) {
-  return row?.route === 'Uống';
+  return routeReportMode(row?.route) === 'daily';
 }
 
 // Tiêm/truyền/đường khác cần làm theo cữ (không tính thuốc uống, thuốc ngưng/trả).
 export function isNonOralAction(row) {
-  return row?.route !== 'Uống' && row?.route !== 'Ngưng/Trả' && NON_ORAL_ROUTES.has(row?.route || 'Khác');
+  // Làm theo cữ: tiêm, truyền, SE, khí dung, đường chưa rõ (bảng chuẩn config/routes.json).
+  return row?.route !== 'Ngưng/Trả' && routeReportMode(row?.route || 'Khác') === 'dose';
 }
 
 // Người bệnh ra viện trong ngày: sau giờ ra viện không còn cữ nào để làm.

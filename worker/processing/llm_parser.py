@@ -30,6 +30,8 @@ import urllib.error
 from functools import lru_cache
 from typing import Any
 
+from processing.route_table import normalize_route_code
+
 try:
     from runtime_logging import get_worker_logger
     LOG = get_worker_logger("llm_parser")
@@ -235,9 +237,9 @@ def _apply_llm_result(drug: dict, llm_result: dict, missing_fields: list[str]) -
                 pass
 
         elif field == "duong_dung":
-            valid = {"TTM", "TMC", "TB", "TDD", "U", "IV", "IM", "SC", "PO"}
-            s = str(val).upper().strip()
-            if s in valid:
+            # Chuẩn hoá theo config/routes.json (IV→TMC, IM→TB, SC→TDD, U/PO→UONG).
+            s = normalize_route_code(val)
+            if s:
                 if not drug.get("duong_dung"):
                     drug["duong_dung"] = s
                     drug["duong_dung_llm"] = True

@@ -9,7 +9,6 @@ from copy import deepcopy
 from xu_ly_config import (
     get_route_label,
     _norm_upper, _contains_any,
-    ROUTE_LABEL_MAP,
 )
 
 try:
