@@ -14,7 +14,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "worker"))
 
-from processing.route_table import detect_route_code, mentioned_routes, normalize_route_code  # noqa: E402
+import processing.route_table as route_table  # noqa: E402
+from processing.route_table import (  # noqa: E402
+    detect_route_code, keyword_pattern, mentioned_routes, merge_route_table, normalize_route_code,
+)
 
 SAMPLES = [
     ("TTM 40 giọt/phút", "TTM"),
@@ -56,8 +59,73 @@ def _server_eval(expr: str):
 
 def test_ui_and_server_read_the_same_json():
     data = json.loads((ROOT / "config/routes.json").read_text(encoding="utf-8"))
-    assert _js_eval("m.ROUTE_TABLE") == data
-    assert _server_eval("m.ROUTE_TABLE") == data
+    # Giao diện khởi động với bảng chuẩn (phần tự cài nạp sau qua /api/routes).
+    assert _js_eval("m.getRouteTable()") == merge_route_table(data, {"routes": []})
+    assert _js_eval("m.getBaseRouteTable()") == data
+    custom = route_table._read_json(route_table.CUSTOM_ROUTES_FILE, {"routes": []})
+    assert _server_eval("m.ROUTE_TABLE") == merge_route_table(data, custom)
+
+
+CUSTOM_SAMPLE = {
+    "routes": [
+        {"code": "TIEM_KHOP", "label": "Tiêm nội khớp", "short": "Tiêm khớp", "category": "thuoc_tiem",
+         "keywords": ["tiêm khớp", "nội khớp"]},
+        {"code": "TB", "label": "Tiêm bắp sâu", "keywords": ["mông"]},
+        {"code": "KHI_DUNG", "report": "hide"},
+    ]
+}
+
+
+def test_merge_and_keywords_same_in_python_and_js():
+    data = json.loads((ROOT / "config/routes.json").read_text(encoding="utf-8"))
+    core = "const c = require('./src/config/routeModelCore.cjs');"
+    script = (f"{core} const base = require('./config/routes.json');"
+              f"console.log(JSON.stringify([c.mergeRouteTable(base, {json.dumps(CUSTOM_SAMPLE, ensure_ascii=False)}),"
+              f" ['tiêm khớp', 'Nội-khớp', 'a.b (c)', '  '].map(c.keywordPattern)]));")
+    out = subprocess.run(["node", "-e", script], text=True, cwd=ROOT, check=True, capture_output=True)
+    js_table, js_patterns = json.loads(out.stdout.strip())
+    assert js_table == merge_route_table(data, CUSTOM_SAMPLE)
+    assert js_patterns == [keyword_pattern(k) for k in ["tiêm khớp", "Nội-khớp", "a.b (c)", "  "]]
+
+
+def test_custom_routes_apply_to_python_detection(tmp_path, monkeypatch):
+    custom_file = tmp_path / "routes.custom.json"
+    custom_file.write_text(json.dumps(CUSTOM_SAMPLE, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(route_table, "CUSTOM_ROUTES_FILE", str(custom_file))
+    route_table._load_route_table_cached.cache_clear()
+    try:
+        assert detect_route_code("Tiêm khớp gối (P)") == "TIEM_KHOP"
+        assert detect_route_code("tiêm NỘI KHỚP") == "TIEM_KHOP"
+        assert detect_route_code("tiêm mông") == "TB"
+        assert detect_route_code("TTM 40 giọt/phút") == "TTM"
+        assert route_table.route_category("TIEM_KHOP") == "thuoc_tiem"
+        assert route_table.route_short("TIEM_KHOP") == "Tiêm khớp"
+        assert route_table.route_info("TB")["label"] == "Tiêm bắp sâu"
+        assert route_table.route_info("KHI_DUNG")["report"] == "hide"
+        assert normalize_route_code("Tiêm khớp") == "TIEM_KHOP"
+    finally:
+        monkeypatch.undo()
+        route_table._load_route_table_cached.cache_clear()
+    assert detect_route_code("Tiêm khớp gối") == "TMC"
+
+
+def test_server_sanitizes_custom_routes():
+    script = """
+const r = require('./server/routes/route_table.js');
+const out = [];
+out.push(r.sanitizeCustom({ routes: [{ code: 'tiem_khop', label: ' Tiêm  khớp ', keywords: 'tiêm khớp, nội khớp,, ' }] }));
+for (const bad of [
+  { routes: [{ code: '1AB', label: 'x' }] },
+  { routes: [{ code: 'NEW_ONE' }] },
+  { routes: [{ code: 'TB', category: 'khong_co' }] },
+  { routes: [{ code: 'TB' }, { code: 'tb' }] },
+]) { try { r.sanitizeCustom(bad); out.push('ok'); } catch (e) { out.push('error'); } }
+console.log(JSON.stringify(out));
+"""
+    out = subprocess.run(["node", "-e", script], text=True, cwd=ROOT, check=True, capture_output=True)
+    first, *rest = json.loads(out.stdout.strip())
+    assert first == {"version": 1, "routes": [{"code": "TIEM_KHOP", "label": "Tiêm khớp", "keywords": ["tiêm khớp", "nội khớp"]}]}
+    assert rest == ["error"] * 4
 
 
 def test_no_route_copies_left():

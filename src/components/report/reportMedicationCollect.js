@@ -1,4 +1,4 @@
-import { GROUP_ORDER, ROUTE_PRIORITY, stripVN, timeToMinutes, extractTimes } from './reportBaseUtils.js';
+import { GROUP_ORDER, routePriority, stripVN, timeToMinutes, extractTimes } from './reportBaseUtils.js';
 import { routeOf, collectMedicationLists } from './reportRouteUtils.js';
 import { displayDrugName, quantityOf, unitOf, categoryLabel } from './reportMedicationBasics.js';
 import { groupOf, rowMinutes, markSeparatedHours } from './reportMedicationFlags.js';
@@ -270,7 +270,7 @@ function summarize(rows) {
 }
 
 function comparePrepRows(a, b) {
-  const rp = (ROUTE_PRIORITY[a.route] || 99) - (ROUTE_PRIORITY[b.route] || 99);
+  const rp = routePriority(a.route) - routePriority(b.route);
   if (rp) return rp;
   const t = rowMinutes(a) - rowMinutes(b);
   if (t) return t;

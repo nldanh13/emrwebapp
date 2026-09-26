@@ -360,6 +360,14 @@ async function openHtmlBlobInNewTab(url, fallbackTitle = 'emr_print.html') {
   return { blobUrl, size: blob.size };
 }
 
+async function put(url, body) {
+  return request(url, {
+    method: 'PUT',
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+}
+
 async function patch(url, body) {
   return request(url, {
     method: 'PATCH',
@@ -831,6 +839,10 @@ export const getMedicationCatalog    = ()           => get('/api/medication-cata
 export const createMedicationCatalog = (body)        => post('/api/medication-catalog', body);
 export const updateMedicationCatalog = (key, body)  => patch(`/api/medication-catalog/${encodeURIComponent(key)}`, body);
 export const deleteMedicationCatalog = (key)         => del(`/api/medication-catalog/${encodeURIComponent(key)}`);
+
+// ── Đường dùng (model chung + phần tự cài) ───────────────────────────────────
+export const getRouteTable    = ()     => get('/api/routes');
+export const saveCustomRoutes = (body) => put('/api/routes/custom', body);
 
 // ── Thiết lập tài khoản (admin) ─────────────────────────────────────────────
 export const getAdminUsers    = ()           => get('/api/admin/users');

@@ -1,19 +1,29 @@
 // src/components/MedicationCatalogManager.jsx
-// Giao diện quản lý danh mục thuốc (config/medication_catalog.json):
-//   - Xem danh sách thuốc, tên chuẩn, alias, hàm lượng/thể tích mặc định
-//   - Thêm / sửa / xoá thuốc trong danh mục
+// Danh mục thuốc (config/medication_catalog.json) và bảng đường dùng:
+//   - Tab "Thuốc": tên chuẩn, alias, đường dùng mặc định, các đường dùng cho phép
+//     (y lệnh ghi khác → cảnh báo), thể tích/tốc độ mặc định.
+//   - Tab "Đường dùng": tự thiết kế đường dùng (RouteDesigner).
 
 import { useState, useEffect, useCallback } from 'react';
 import { IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import { C, FS } from '../tokens.js';
-import { Btn, Spinner } from './shared.jsx';
+import { Btn, Spinner, Segmented } from './shared.jsx';
 import * as api from '../api.js';
-import { CATEGORIES, ROUTES, normalizeRouteCode, routeCategory } from '../config/routes.js';
+import { normalizeRouteCode, routeCategory, routeShort } from '../config/routes.js';
+import { useRouteTable } from '../hooks/useRouteModel.js';
+import RouteDesigner from './RouteDesigner.jsx';
+import { RouteBadge } from './report/ReportShared.jsx';
 
-// Chuyên mục và đường dùng lấy từ model duy nhất config/routes.json.
-const CATEGORY_OPTIONS = CATEGORIES.map(c => [c.code, c.label]);
-const CATEGORY_LABEL = Object.fromEntries(CATEGORY_OPTIONS);
-const INFUSION_ROUTES = new Set(ROUTES.filter(r => r.category === 'dich_truyen').map(r => r.code));
+// Chuyên mục và đường dùng lấy từ model đường dùng chung (bảng chuẩn + phần tự cài).
+function routeOptions(table) {
+  const categories = table.categories || [];
+  return {
+    routes: table.routes || [],
+    categories,
+    categoryLabel: Object.fromEntries(categories.map(c => [c.code, c.label])),
+    infusion: new Set((table.routes || []).filter(r => r.category === 'dich_truyen').map(r => r.code)),
+  };
+}
 
 function txt(v, fb = '—') { return String(v ?? '').trim() || fb; }
 
@@ -35,6 +45,7 @@ function emptyForm() {
     default_volume_ml: '',
     default_rate: '',
     default_route: '',
+    routes: [],
     default_route_text: '',
     default_rate_text: '',
     schedule_rule: '',
@@ -51,6 +62,7 @@ function formFromMedication(med) {
     default_rate: med.default_rate ?? '',
     // Nhãn cũ (U, IV, IM…) được đổi sang mã chuẩn khi mở để sửa.
     default_route: normalizeRouteCode(med.default_route) || med.default_route || '',
+    routes: (Array.isArray(med.routes) ? med.routes : []).map(r => normalizeRouteCode(r) || r),
     default_route_text: med.default_route_text || '',
     default_rate_text: med.default_rate_text || '',
     schedule_rule: med.schedule_rule || '',
@@ -73,7 +85,29 @@ function Field({ label, children }) {
   );
 }
 
+// Chọn nhiều đường dùng bằng nút bật/tắt.
+function RoutePicker({ routes, value, onChange }) {
+  const selected = new Set(value);
+  const toggle = code => onChange(selected.has(code) ? value.filter(c => c !== code) : [...value, code]);
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      {routes.filter(r => r.code !== 'KHAC').map(r => {
+        const on = selected.has(r.code);
+        return (
+          <button key={r.code} type="button" aria-pressed={on} title={r.label} onClick={() => toggle(r.code)} style={{
+            height: 28, padding: '0 9px', borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit',
+            border: `1px solid ${on ? C.blueBorder : C.border2}`, background: on ? C.blueBg : C.surface,
+            color: on ? C.blue : C.text2, fontSize: FS.sm, fontWeight: on ? 650 : 500,
+          }}>{r.short}</button>
+        );
+      })}
+    </div>
+  );
+}
+
 function EditModal({ mode, initial, onClose, onSave }) {
+  const { routes: ROUTES, categories: CATEGORIES, categoryLabel: CATEGORY_LABEL, infusion: INFUSION_ROUTES } = routeOptions(useRouteTable());
+  const CATEGORY_OPTIONS = CATEGORIES.map(c => [c.code, c.label]);
   const [form, setForm] = useState(initial);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -101,6 +135,9 @@ function EditModal({ mode, initial, onClose, onSave }) {
         default_volume_ml: form.default_volume_ml,
         default_rate: form.default_rate,
         default_route: form.default_route.trim(),
+        // Đường mặc định luôn nằm trong danh sách cho phép (nếu có danh sách).
+        routes: form.routes.length && form.default_route && !form.routes.includes(form.default_route)
+          ? [form.default_route, ...form.routes] : form.routes,
         default_route_text: form.default_route_text.trim(),
         default_rate_text: form.default_rate_text.trim(),
         schedule_rule: form.schedule_rule.trim(),
@@ -153,6 +190,17 @@ function EditModal({ mode, initial, onClose, onSave }) {
               </select>
             </Field>
           </div>
+          <Field label="Đường dùng cho phép (y lệnh ghi đường khác → cảnh báo)">
+            <RoutePicker routes={ROUTES} value={form.routes} onChange={routes => setForm(prev => ({ ...prev, routes }))} />
+            <div style={{ fontSize: 11, color: C.text3, marginTop: 4, lineHeight: 1.45 }}>
+              {form.routes.length
+                ? `Chấp nhận: ${[...new Set([form.default_route, ...form.routes].filter(Boolean))].map(routeShort).join(', ')}.`
+                : form.default_route
+                  ? `Chưa chọn → chỉ chấp nhận đường mặc định ${routeShort(form.default_route)}.`
+                  : 'Chưa chọn và chưa có đường mặc định → không kiểm tra.'}
+              {' '}Cảnh báo hiện ở mục "Cảnh báo cần kiểm tra" trong chi tiết người bệnh sau khi xử lý dữ liệu.
+            </div>
+          </Field>
           {(INFUSION_ROUTES.has(form.default_route) || form.category === 'dich_truyen') && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
               <Field label="Thể tích mặc định (ml)">
@@ -210,7 +258,22 @@ function EditModal({ mode, initial, onClose, onSave }) {
   );
 }
 
+// Đường mặc định (nhãn màu) + các đường khác được phép.
+function RouteCell({ item }) {
+  const def = normalizeRouteCode(item.default_route) || item.default_route || '';
+  const others = (item.routes || []).map(r => normalizeRouteCode(r) || r).filter(r => r && r !== def);
+  if (!def && !others.length) return <span style={{ color: C.text3 }}>—</span>;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+      {def && <RouteBadge route={routeShort(def)} />}
+      {others.length > 0 && <span style={{ fontSize: FS.xs, color: C.text2 }}>+ {others.map(routeShort).join(', ')}</span>}
+    </div>
+  );
+}
+
 export default function MedicationCatalogManager() {
+  const [tab, setTab] = useState('drugs');
+  const { categoryLabel: CATEGORY_LABEL } = routeOptions(useRouteTable());
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -271,9 +334,17 @@ export default function MedicationCatalogManager() {
         <div>
           <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>Danh mục thuốc</div>
           <div style={{ fontSize: 12, color: C.text2, marginTop: 4 }}>
-            Tên chuẩn, alias và hàm lượng/thể tích mặc định — dùng để hệ thống suy luận khi EMR chỉ ghi tên thuốc.
+            {tab === 'drugs'
+              ? 'Tên chuẩn, alias, đường dùng cho phép và thể tích mặc định — dùng để suy luận và cảnh báo khi y lệnh ghi khác.'
+              : 'Tự thiết kế đường dùng: tên, nhãn, chuyên mục, cách hiện trên báo cáo ca trực và từ khoá nhận diện.'}
           </div>
         </div>
+        <Segmented label="Mục danh mục" value={tab} onChange={setTab}
+          options={[{ value: 'drugs', label: 'Thuốc' }, { value: 'routes', label: 'Đường dùng' }]} />
+      </div>
+
+      {tab === 'routes' ? <RouteDesigner onSaved={showToast} /> : <>
+      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
         <Btn variant="primary" onClick={() => setEditing({ mode: 'create', key: '', form: emptyForm() })}>
           + Thêm thuốc
         </Btn>
@@ -325,7 +396,9 @@ export default function MedicationCatalogManager() {
                   <td style={{ padding: '10px 12px', fontSize: 11.5, color: C.text2, maxWidth: 320 }}>
                     {item.aliases?.length ? joinList(item.aliases) : <span style={{ color: C.text3 }}>—</span>}
                   </td>
-                  <td style={{ padding: '10px 12px', fontSize: 12, color: C.text2 }}>{txt(normalizeRouteCode(item.default_route) || item.default_route)}</td>
+                  <td style={{ padding: '10px 12px', fontSize: 12, color: C.text2 }}>
+                    <RouteCell item={item} />
+                  </td>
                   <td style={{ padding: '10px 12px', fontSize: 12, color: C.text2 }}>{txt(CATEGORY_LABEL[item.category] || item.category)}</td>
                   <td style={{ padding: '10px 12px', fontSize: 12 }}>
                     <code style={{ color: C.blue }}>{txt(item.default_volume_ml)}</code>
@@ -351,6 +424,8 @@ export default function MedicationCatalogManager() {
           </table>
         </div>
       )}
+
+      </>}
 
       {toast && (
         <div style={{ position: 'fixed', bottom: 24, right: 24, maxWidth: 380, padding: '10px 18px',

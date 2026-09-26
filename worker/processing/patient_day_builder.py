@@ -73,7 +73,7 @@ from processing.medication_parser import (
 )
 from processing.infusion_scheduler import calculate_infusion_times, clean_and_merge_injections
 from processing.procedure_parser import extract_other_orders, extract_procedures_detailed
-from processing.medication_catalog import complete_medication_from_catalog
+from processing.medication_catalog import complete_medication_from_catalog, route_mismatch_warning
 from processing.order_events import build_raw_order_events
 
 # ── Ngày làm việc mặc định ─────────────────────────────────────────────────────
@@ -1102,6 +1102,13 @@ def build_patient_day_records(data):
                     drug.get("duong_dung_goc", ""),
                     drug.get("ten_thuoc", "") or drug.get("ten_hien_thi", "")
                 )
+                # Y lệnh ghi đường dùng khác đường đã cài trong danh mục thuốc → cảnh báo.
+                _route_warn = route_mismatch_warning(drug, drug["duong_dung"])
+                if _route_warn:
+                    drug["route_mismatch"] = True
+                    _warns = new_p.setdefault("processing_warnings", [])
+                    if not any(w.get("message") == _route_warn["message"] for w in _warns):
+                        _warns.append(_route_warn)
                 if cat == "dich_truyen":
                     raw_dich_truyen.append(drug)
                 elif cat == "thuoc_tiem":

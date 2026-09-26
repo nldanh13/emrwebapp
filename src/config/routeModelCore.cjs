@@ -10,6 +10,50 @@ function stripDiacritics(value) {
   return String(value || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
 }
 
+// Từ khoá người dùng tự thêm ("tiêm khớp") → luật regex so với chữ đã bỏ dấu, viết thường.
+function keywordPattern(keyword) {
+  const folded = stripDiacritics(keyword).toLowerCase().replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!folded) return '';
+  const escaped = folded.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&').replace(/ /g, '\\s*');
+  return `(?<![a-z0-9])${escaped}(?![a-z0-9])`;
+}
+
+const ROUTE_DEFAULTS = { category: 'khac', report: 'dose', tone: 'gray' };
+
+// Gộp bảng chuẩn (config/routes.json) với phần người dùng tự cài (config/routes.custom.json):
+// - sửa tên/nhãn/chuyên mục/cách hiện của đường dùng có sẵn, hoặc thêm đường dùng mới;
+// - từ khoá tự thêm được xét TRƯỚC luật chuẩn (người dùng ghi rõ thì ưu tiên).
+function mergeRouteTable(base, custom) {
+  const routes = base.routes.map(r => ({ ...r, builtin: true }));
+  const userRules = [];
+  for (const item of (custom && Array.isArray(custom.routes) ? custom.routes : [])) {
+    const code = String(item.code || '').trim().toUpperCase();
+    if (!code) continue;
+    const patch = {};
+    for (const key of ['label', 'short', 'category', 'report', 'tone', 'research_value']) {
+      if (item[key] != null && String(item[key]).trim() !== '') patch[key] = String(item[key]).trim();
+    }
+    const idx = routes.findIndex(r => r.code === code);
+    if (idx >= 0) {
+      routes[idx] = { ...routes[idx], ...patch, customized: Object.keys(patch).length > 0 };
+    } else {
+      const label = patch.label || code;
+      routes.splice(Math.max(routes.length - 1, 0), 0, {
+        ...ROUTE_DEFAULTS,
+        short: code,
+        research_value: stripDiacritics(label).toLowerCase().replace(/\s+/g, '_'),
+        ...patch,
+        label,
+        code,
+        builtin: false,
+      });
+    }
+    const patterns = (Array.isArray(item.keywords) ? item.keywords : []).map(keywordPattern).filter(Boolean);
+    if (patterns.length) userRules.push({ route: code, patterns, user: true });
+  }
+  return { ...base, routes, rules: [...userRules, ...base.rules], custom: custom || { routes: [] } };
+}
+
 function createRouteModel(table) {
   const BY_CODE = new Map(table.routes.map(r => [r.code, r]));
   const BY_SHORT = new Map(table.routes.map(r => [String(r.short).toUpperCase(), r]));
@@ -86,4 +130,4 @@ function createRouteModel(table) {
   };
 }
 
-module.exports = { createRouteModel };
+module.exports = { createRouteModel, mergeRouteTable, keywordPattern };

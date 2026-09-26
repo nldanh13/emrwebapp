@@ -1,4 +1,4 @@
-import { ROUTES } from '../../config/routes.js';
+import { getRoutes } from '../../config/routes.js';
 
 const TIME_GROUPS = [
   { id: 'all', label: 'Tất cả mốc' },
@@ -40,11 +40,13 @@ const CONTINUOUS_INFUSION_GAP_MINUTES = 150;
 
 // Ưu tiên hiển thị trong phiếu: dịch truyền để gần nhau, sau đó tới thuốc đúng giờ khác.
 // Thuốc uống được loại khỏi báo cáo ca trực vì có thể phát/soạn riêng theo cữ.
-// Thứ tự sắp xếp theo thứ tự đường dùng trong config/routes.json; Ngưng/Trả cuối cùng.
-const ROUTE_PRIORITY = Object.fromEntries([
-  ...ROUTES.map((r, i) => [r.short, i + 1]),
-  ['Ngưng/Trả', ROUTES.length + 1],
-]);
+// Thứ tự sắp xếp theo thứ tự đường dùng trong model (config/routes.json + phần tự cài);
+// Ngưng/Trả cuối cùng. Tính lúc dùng để nhận cả đường dùng tự thêm.
+function routePriority(route) {
+  if (route === 'Ngưng/Trả') return 999;
+  const idx = getRoutes().findIndex(r => r.short === route || r.code === route);
+  return idx >= 0 ? idx + 1 : 998;
+}
 
 function stripVN(value) {
   return String(value || '')
@@ -232,7 +234,7 @@ function extractTimes(item, recordDate) {
 export {
   TIME_GROUPS, GROUP_ORDER, WEEKDAY_KEYS, EMPTY_SHIFT, DUTY_WINDOW,
   SEPARATED_HOUR_GAP_MINUTES, COMMON_SLOT_MIN_PATIENTS, Q6_SCHEDULE_MINUTES, Q6_TOLERANCE_MINUTES,
-  Q6_MIN_MATCHES, EARLY_ISOLATED_END_MINUTES, CONTINUOUS_INFUSION_GAP_MINUTES, ROUTE_PRIORITY,
+  Q6_MIN_MATCHES, EARLY_ISOLATED_END_MINUTES, CONTINUOUS_INFUSION_GAP_MINUTES, routePriority,
   stripVN, todayDmy, parseDmy, addDaysDmy, toIsoDate, weekdayKeyFromIso,
   cloneShift, normalizeScheduleShape, firstNonEmptyDay, getDaySchedule, dayTypeOf, firstName,
   normalizeDate, normalizeTime, timeToMinutes, extractTimes,

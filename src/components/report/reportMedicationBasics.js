@@ -1,4 +1,4 @@
-import { CATEGORIES, categoryLabel as modelCategoryLabel, detectRouteCode, routeCategory, routeReportMode, routeShort } from '../../config/routes.js';
+import { getCategories, categoryLabel as modelCategoryLabel, detectRouteCode, routeCategory, routeReportMode, routeShort } from '../../config/routes.js';
 function displayDrugName(item) {
   // Lấy rộng hơn để không mất các dòng thuốc có cấu trúc lạ từ dữ liệu cũ.
   const candidates = [
@@ -59,7 +59,7 @@ function categoryLabel(category) {
   if (!key) return 'Không rõ nhóm';
   if (key === 'thuoc_tra') return 'Ngưng/Trả';
   // Nhóm con của worker (thuoc_tmc, tiem_bap…) → nhãn đường dùng; còn lại theo config/routes.json.
-  const known = CATEGORIES.some(c => c.code === key);
+  const known = getCategories().some(c => c.code === key);
   if (!known) {
     const code = detectRouteCode(key.replace(/_/g, ' '));
     if (code) return routeShort(code);

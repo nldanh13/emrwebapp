@@ -85,6 +85,7 @@ router.use(require('./clinic'));
 router.use(require('./hchanh'));
 router.use(require('./vtyt_catalog'));
 router.use(require('./medication_catalog'));
+router.use(require('./route_table'));
 router.use(require('./research'));
 router.use(require('./report'));
 router.use(require('./data_transfer'));

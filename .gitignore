@@ -63,6 +63,7 @@ in/
 
 # User/token config and local imports
 config/users.json
+config/routes.custom.json
 config/nurse_emr_accounts.json
 config/signatures/*
 !config/signatures/README.md

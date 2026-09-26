@@ -14,6 +14,7 @@ const path   = require('path');
 const { readJsonSafe, writeJsonAtomic } = require('../utils/file');
 const { getRuntimePaths } = require('../services/session');
 const { appendActivity } = require('../services/activity_logger');
+const routeModel = require('../utils/routeModel');
 
 const CATALOG_PATH = path.join(__dirname, '..', '..', 'config', 'medication_catalog.json');
 
@@ -37,6 +38,22 @@ function normalizeStringList(value) {
   if (Array.isArray(value)) return value.map(x => String(x || '').trim()).filter(Boolean);
   if (typeof value === 'string') return value.split(',').map(x => x.trim()).filter(Boolean);
   return [];
+}
+
+// Đường dùng cho phép: mã chuẩn theo model đường dùng chung, bỏ trùng, bỏ mã lạ.
+// Y lệnh ghi đường dùng ngoài danh sách này → worker cảnh báo ROUTE_MISMATCH.
+function normalizeRouteList(value) {
+  const out = [];
+  for (const item of normalizeStringList(value)) {
+    const code = routeModel.normalizeRouteCode(item);
+    if (code && !out.includes(code)) out.push(code);
+  }
+  return out;
+}
+
+function normalizeDefaultRoute(value) {
+  const raw = String(value || '').trim();
+  return routeModel.normalizeRouteCode(raw) || raw;
 }
 
 function pruneEmpty(med) {
@@ -77,7 +94,8 @@ router.post('/medication-catalog', (req, res) => {
       aliases: normalizeStringList(body.aliases),
       semantic_aliases: normalizeStringList(body.semantic_aliases),
       category: String(body.category || '').trim(),
-      default_route: String(body.default_route || '').trim(),
+      default_route: normalizeDefaultRoute(body.default_route),
+      routes: normalizeRouteList(body.routes),
       default_route_text: String(body.default_route_text || '').trim(),
       default_volume_ml: (volumeRaw === '' || volumeRaw == null || !Number.isFinite(volumeNum)) ? undefined : volumeNum,
       default_rate: String(body.default_rate ?? '').trim(),
@@ -116,7 +134,8 @@ router.patch('/medication-catalog/:key', (req, res) => {
     if (body.aliases !== undefined) med.aliases = normalizeStringList(body.aliases);
     if (body.semantic_aliases !== undefined) med.semantic_aliases = normalizeStringList(body.semantic_aliases);
     if (body.category !== undefined) med.category = String(body.category || '').trim();
-    if (body.default_route !== undefined) med.default_route = String(body.default_route || '').trim();
+    if (body.default_route !== undefined) med.default_route = normalizeDefaultRoute(body.default_route);
+    if (body.routes !== undefined) med.routes = normalizeRouteList(body.routes);
     if (body.default_route_text !== undefined) med.default_route_text = String(body.default_route_text || '').trim();
     if (body.default_volume_ml !== undefined) {
       if (body.default_volume_ml === '' || body.default_volume_ml === null) {

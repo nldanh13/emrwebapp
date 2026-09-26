@@ -23,6 +23,8 @@ from functools import lru_cache
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 ROUTES_FILE = os.path.join(BASE_DIR, 'config', 'routes.json')
+# Phần người dùng tự cài trên giao diện (tab Đường dùng) — gộp với bảng chuẩn khi đọc.
+CUSTOM_ROUTES_FILE = os.path.join(BASE_DIR, 'config', 'routes.custom.json')
 
 INFUSION_ROUTES = frozenset({'TTM', 'SE'})
 # Tiêm có vị trí rõ ràng (không bao giờ là truyền).
@@ -35,10 +37,74 @@ def _strip_diacritics(value):
     return ''.join(ch for ch in text if unicodedata.category(ch) != 'Mn')
 
 
-@lru_cache(maxsize=1)
+def keyword_pattern(keyword):
+    """Từ khoá tự thêm ("tiêm khớp") → regex so với chữ đã bỏ dấu, viết thường.
+
+    Phải cho cùng kết quả với keywordPattern() trong src/config/routeModelCore.cjs.
+    """
+    folded = re.sub(r'\s+', ' ', re.sub(r'[_\-.]+', ' ', _strip_diacritics(keyword).lower())).strip()
+    if not folded:
+        return ''
+    escaped = re.sub(r'([.*+?^${}()|\[\]\\/])', r'\\\1', folded).replace(' ', '\\s*')
+    return f'(?<![a-z0-9]){escaped}(?![a-z0-9])'
+
+
+_ROUTE_DEFAULTS = {'category': 'khac', 'report': 'dose', 'tone': 'gray'}
+
+
+def merge_route_table(base, custom):
+    """Gộp bảng chuẩn với phần tự cài — cùng quy tắc với mergeRouteTable() phía JS."""
+    routes = [dict(r, builtin=True) for r in base.get('routes', [])]
+    user_rules = []
+    for item in ((custom or {}).get('routes') or []):
+        code = str((item or {}).get('code') or '').strip().upper()
+        if not code:
+            continue
+        patch = {k: str(item[k]).strip() for k in ('label', 'short', 'category', 'report', 'tone', 'research_value')
+                 if item.get(k) is not None and str(item[k]).strip() != ''}
+        idx = next((i for i, r in enumerate(routes) if r['code'] == code), -1)
+        if idx >= 0:
+            routes[idx] = dict(routes[idx], **patch, customized=bool(patch))
+        else:
+            label = patch.get('label') or code
+            new_route = dict(_ROUTE_DEFAULTS, short=code,
+                             research_value=re.sub(r'\s+', '_', _strip_diacritics(label).lower()))
+            new_route.update(patch)
+            new_route.update(label=label, code=code, builtin=False)
+            routes.insert(max(len(routes) - 1, 0), new_route)
+        patterns = [p for p in (keyword_pattern(k) for k in (item.get('keywords') or [])) if p]
+        if patterns:
+            user_rules.append({'route': code, 'patterns': patterns, 'user': True})
+    merged = dict(base)
+    merged.update(routes=routes, rules=user_rules + list(base.get('rules', [])), custom=custom or {'routes': []})
+    return merged
+
+
+def _mtime(path):
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0
+
+
+def _read_json(path, fallback):
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return fallback
+
+
 def load_route_table():
+    """Bảng đã gộp; tự nạp lại khi config/routes.json hoặc routes.custom.json thay đổi."""
+    return _load_route_table_cached(_mtime(ROUTES_FILE), _mtime(CUSTOM_ROUTES_FILE))
+
+
+@lru_cache(maxsize=2)
+def _load_route_table_cached(_base_mtime, _custom_mtime):
     with open(ROUTES_FILE, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+        base = json.load(f)
+    data = merge_route_table(base, _read_json(CUSTOM_ROUTES_FILE, {'routes': []}))
     routes = {r['code']: r for r in data.get('routes', [])}
     by_short = {str(r['short']).upper(): r for r in data.get('routes', [])}
     rules = [

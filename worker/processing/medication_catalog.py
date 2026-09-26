@@ -16,7 +16,7 @@ try:
 except Exception:  # pragma: no cover
     semantic_best_match = None
 
-from processing.route_table import INFUSION_ROUTES, has_oral_marker, mentioned_routes, normalize_route_code
+from processing.route_table import INFUSION_ROUTES, has_oral_marker, mentioned_routes, normalize_route_code, route_short, detect_route, route_category
 from processing.schedule_engine import build_gio_dung_from_rule, build_schedule_labels, extract_total_quantity
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -354,6 +354,52 @@ def complete_medication_from_catalog(drug, *, only_if_missing_usage=True):
     out['inferred_usage_reason'] = 'medication_catalog_semantic' if (match_meta or {}).get('match_type') == 'semantic' else 'medication_catalog'
     out['inference_confidence'] = 'high' if (match_meta or {}).get('match_type') == 'exact' else 'medium'
     return out, med
+
+
+def allowed_routes_of(med):
+    """Các mã đường dùng người dùng cài cho thuốc: danh sách 'routes' + đường mặc định."""
+    codes = []
+    for raw in [(med or {}).get('default_route')] + list((med or {}).get('routes') or []):
+        code = normalize_route_code(raw)
+        if code and code not in codes:
+            codes.append(code)
+    return codes
+
+
+def route_mismatch_warning(drug, route_code):
+    """Cảnh báo khi y lệnh ghi đường dùng khác đường đã cài trong danh mục thuốc.
+
+    Chỉ so với thuốc khớp chính xác tên/alias (không dùng khớp gần đúng để tránh báo nhầm),
+    và chỉ khi y lệnh có ghi đường dùng nhận ra được. Trả về dict cảnh báo hoặc None.
+    """
+    code = normalize_route_code(route_code)
+    if not isinstance(drug, dict) or not code or code == 'KHAC':
+        return None
+    med, meta = lookup_medication_with_meta(drug, allow_semantic=False)
+    if not med or (meta or {}).get('match_type') != 'exact':
+        return None
+    allowed = allowed_routes_of(med)
+    if not allowed or code in allowed:
+        return None
+    # Y lệnh chỉ ghi chung chung ("Tiêm", "TM", "IV"): không coi là ghi khác nếu danh mục
+    # cài một đường cùng nhóm tiêm/truyền (VD Vancomycin cài TTM, y lệnh ghi "Tiêm").
+    _code, weak = detect_route(drug.get('duong_dung_goc') or '')
+    if weak and any(route_category(a) in ('thuoc_tiem', 'dich_truyen') for a in allowed) \
+            and route_category(code) in ('thuoc_tiem', 'dich_truyen'):
+        return None
+    name = drug.get('ten_hien_thi') or drug.get('ten_thuoc') or med.get('canonical') or ''
+    expected = ', '.join(route_short(c) for c in allowed)
+    return {
+        'code': 'ROUTE_MISMATCH',
+        'level': 'warning',
+        'message': f"{name}: y lệnh ghi đường dùng {route_short(code)}, danh mục thuốc cài {expected}",
+        'ten_thuoc': str(name),
+        'catalog': med.get('canonical') or '',
+        'route': code,
+        'expected_routes': allowed,
+        'duong_dung_goc': str(drug.get('duong_dung_goc') or ''),
+        'gio_y_lenh': str(drug.get('gio_y_lenh') or ''),
+    }
 
 
 # ── Tự học danh mục từ dữ liệu vừa quét ──────────────────────────────────────
