@@ -1,20 +1,19 @@
 import { useState } from 'react';
 import { IconAlertTriangle, IconChevronDown, IconChevronRight, IconChevronUp } from '@tabler/icons-react';
-import { C, FONT_MONO } from '../../tokens.js';
+import { C, FONT_MONO, FS } from '../../tokens.js';
 import { Badge } from '../shared.jsx';
 import { normalizeGio, parseCheDoAn } from './patientDetailUtils.js';
 import { wardVtytItems } from '../../utils/patientScope.js';
 
 function SectionHead({ children }) {
   return (
-    <div style={{
-      fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: C.text3,
-      textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 8,
+    <h3 style={{
+      fontSize: FS.lg, fontWeight: 700, color: C.text, display: 'flex', alignItems: 'center', gap: 8,
       margin: '16px 0 8px',
     }}>
       {children}
-      <div style={{ flex: 1, height: 1, background: C.border2 }} />
-    </div>
+      <span aria-hidden="true" style={{ flex: 1, height: 1, background: C.border2 }} />
+    </h3>
   );
 }
 
@@ -26,13 +25,13 @@ function ExpandableText({ text, maxLines = 6 }) {
   const hasMore = lines.length > maxLines;
   return (
     <div>
-      <div style={{ fontSize: 11, color: C.text2, lineHeight: 1.75, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+      <div style={{ fontSize: FS.xs, color: C.text2, lineHeight: 1.75, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
         {shown.join('\n')}
       </div>
       {hasMore && (
         <button type="button" onClick={() => setExpanded(!expanded)} style={{
           marginTop: 5, background: 'none', border: 'none',
-          color: C.blue, fontSize: 12, cursor: 'pointer', padding: 0,
+          color: C.blue, fontSize: FS.sm, cursor: 'pointer', padding: 0,
           fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4,
         }}>
           {expanded ? <><IconChevronUp size={14} stroke={2} aria-hidden="true" /> Thu gọn</> : <><IconChevronDown size={14} stroke={2} aria-hidden="true" /> Xem thêm ({lines.length - maxLines} dòng nữa)</>}
@@ -56,7 +55,7 @@ export function CareSection({ ncs = {}, cs_extra = {} }) {
   const truyenMau  = cs_extra.truyen_mau || {};
 
   if (!cap && !diet_code && !dienBien && !yLenh) {
-    return <div style={{ fontSize: 12, color: C.text3 }}>Không có dữ liệu chăm sóc</div>;
+    return <div style={{ fontSize: FS.sm, color: C.text3 }}>Không có dữ liệu chăm sóc</div>;
   }
 
   return (
@@ -79,14 +78,14 @@ export function CareSection({ ncs = {}, cs_extra = {} }) {
           padding: '5px 8px', borderRadius: 4, marginBottom: 10,
           background: C.surface2, border: `1px solid ${C.border}`,
         }}>
-          <span style={{ fontSize: 10, color: C.text3 }}>Điều dưỡng nhập:</span>
-          <span style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>{dieuDuong}</span>
+          <span style={{ fontSize: FS.xs, color: C.text3 }}>Điều dưỡng nhập:</span>
+          <span style={{ fontSize: FS.sm, color: C.green, fontWeight: 600 }}>{dieuDuong}</span>
         </div>
       )}
 
       {canhBao.map((w, i) => (
         <div key={i} style={{
-          fontSize: 11, color: C.red, background: C.redBg,
+          fontSize: FS.xs, color: C.red, background: C.redBg,
           border: `1px solid ${C.redBorder}`, borderRadius: 4,
           padding: '4px 8px', marginBottom: 6,
         }}><IconAlertTriangle size={14} stroke={2} style={{ verticalAlign: '-2px', marginRight: 4 }} aria-hidden="true" />{w}</div>
@@ -94,8 +93,8 @@ export function CareSection({ ncs = {}, cs_extra = {} }) {
 
       {dienBien && (
         <>
-          <div style={{ fontSize: 10, color: C.text3, fontWeight: 600, letterSpacing: '0.06em', marginBottom: 5 }}>
-            DIỄN BIẾN
+          <div style={{ fontSize: FS.xs, color: C.text3, fontWeight: 600, marginBottom: 5 }}>
+            Diễn biến
           </div>
           <ExpandableText text={dienBien} maxLines={6} />
         </>
@@ -105,7 +104,7 @@ export function CareSection({ ncs = {}, cs_extra = {} }) {
         <div style={{ marginTop: 10, borderTop: `1px solid ${C.border2}`, paddingTop: 8 }}>
           <button type="button" onClick={() => setShowYLenh(!showYLenh)} style={{
             background: 'none', border: 'none', color: C.text3,
-            fontSize: 11, cursor: 'pointer', padding: 0, fontFamily: 'inherit',
+            fontSize: FS.xs, cursor: 'pointer', padding: 0, fontFamily: 'inherit',
             display: 'flex', alignItems: 'center', gap: 5,
           }}>
             {showYLenh ? <IconChevronDown size={14} stroke={2} aria-hidden="true" /> : <IconChevronRight size={14} stroke={2} aria-hidden="true" />}
@@ -113,7 +112,7 @@ export function CareSection({ ncs = {}, cs_extra = {} }) {
           </button>
           {showYLenh && (
             <div style={{
-              marginTop: 7, fontSize: 10, color: C.text3, lineHeight: 1.8,
+              marginTop: 7, fontSize: FS.xs, color: C.text3, lineHeight: 1.8,
               whiteSpace: 'pre-wrap', wordBreak: 'break-word',
               background: C.surface2, borderRadius: 4, padding: '8px 10px',
               maxHeight: 260, overflowY: 'auto',
@@ -127,7 +126,7 @@ export function CareSection({ ncs = {}, cs_extra = {} }) {
 
 function PreviewLabel({ children }) {
   return (
-    <div style={{ fontSize: 10, color: C.text3, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 4 }}>
+    <div style={{ fontSize: FS.xs, color: C.text2, fontWeight: 600, marginBottom: 2 }}>
       {children}
     </div>
   );
@@ -136,7 +135,7 @@ function PreviewLabel({ children }) {
 function PreviewValue({ children, mono = false, accent = null }) {
   return (
     <div style={{
-      fontSize: 12,
+      fontSize: FS.sm,
       color: accent || C.text,
       fontFamily: mono ? FONT_MONO : 'inherit',
       lineHeight: 1.7,
@@ -159,7 +158,7 @@ function PreviewField({ label, value, mono = false, accent = null }) {
 
 function CarePreviewSection({ careItems = [] }) {
   if (!careItems.length) {
-    return <div style={{ fontSize: 12, color: C.text3 }}>Không có dữ liệu xem trước cho nhập chăm sóc</div>;
+    return <div style={{ fontSize: FS.sm, color: C.text3 }}>Không có dữ liệu xem trước cho nhập chăm sóc</div>;
   }
 
   return (
@@ -172,7 +171,7 @@ function CarePreviewSection({ careItems = [] }) {
           padding: '9px 10px',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontFamily: FONT_MONO, fontSize: 13, fontWeight: 700, color: C.green }}>
+            <span style={{ fontFamily: FONT_MONO, fontSize: FS.md, fontWeight: 700, color: C.green }}>
               {item.time_label || normalizeGio(item.time_full) || '—'}
             </span>
             {item.dieu_duong && <Badge text={item.dieu_duong} bg={C.greenBg} color={C.green} />}
@@ -199,7 +198,7 @@ function CarePreviewSection({ careItems = [] }) {
 
 function InfusionPreviewSection({ infusionItems = [] }) {
   if (!infusionItems.length) {
-    return <div style={{ fontSize: 12, color: C.text3 }}>Không có dữ liệu xem trước cho nhập dịch truyền</div>;
+    return <div style={{ fontSize: FS.sm, color: C.text3 }}>Không có dữ liệu xem trước cho nhập dịch truyền</div>;
   }
 
   return (
@@ -212,7 +211,7 @@ function InfusionPreviewSection({ infusionItems = [] }) {
           padding: '9px 10px',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontFamily: FONT_MONO, fontSize: 13, fontWeight: 700, color: C.blue }}>
+            <span style={{ fontFamily: FONT_MONO, fontSize: FS.md, fontWeight: 700, color: C.blue }}>
               {normalizeGio(item.tg_bat_dau) || '—'}
             </span>
           </div>
@@ -240,7 +239,7 @@ function VtytPreviewSection({ vtytItems = [], vtytWarnings = [] }) {
         <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
           {vtytWarnings.map((w, i) => (
             <div key={i} style={{
-              fontSize: 11, color: C.amber, background: C.amberBg,
+              fontSize: FS.xs, color: C.amber, background: C.amberBg,
               border: `1px solid ${C.amberBorder}`, borderRadius: 4,
               padding: '4px 8px',
             }}><IconAlertTriangle size={14} stroke={2} style={{ verticalAlign: '-2px', marginRight: 4 }} aria-hidden="true" />{w}</div>
@@ -248,7 +247,7 @@ function VtytPreviewSection({ vtytItems = [], vtytWarnings = [] }) {
         </div>
       )}
       {!vtytItems.length ? (
-        <div style={{ fontSize: 12, color: C.text3 }}>Không có dữ liệu xem trước cho nhập VTYT</div>
+        <div style={{ fontSize: FS.sm, color: C.text3 }}>Không có dữ liệu xem trước cho nhập VTYT</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {vtytItems.map((item, i) => (
@@ -259,7 +258,7 @@ function VtytPreviewSection({ vtytItems = [], vtytWarnings = [] }) {
               padding: '9px 10px',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: C.text }}>
+                <span style={{ fontSize: FS.sm, fontWeight: 700, color: C.text }}>
                   {item.name || item.searchKeyword || item.key || '—'}
                 </span>
                 <Badge text={`× ${item.required_quantity ?? '—'}`} bg={C.surface2} color={C.text2} />
@@ -267,7 +266,7 @@ function VtytPreviewSection({ vtytItems = [], vtytWarnings = [] }) {
                 {item.input_allowed === false && <Badge text="Không tự nhập" bg={C.redBg} color={C.red} />}
               </div>
               {Array.isArray(item.reasons) && item.reasons.length > 0 && (
-                <div style={{ marginTop: 6, fontSize: 11, color: C.text3, lineHeight: 1.6 }}>
+                <div style={{ marginTop: 6, fontSize: FS.xs, color: C.text3, lineHeight: 1.6 }}>
                   {item.reasons.join('; ')}
                 </div>
               )}

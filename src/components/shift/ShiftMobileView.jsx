@@ -46,10 +46,7 @@ export default function ShiftMobileView({
           padding: '10px 14px', borderBottom: `1px solid ${C.border}`,
           background: C.surface, flexShrink: 0,
         }}>
-          <Btn icon={IconArrowLeft} onClick={() => setSelPx(null)} style={{ minHeight: 40 }}>Danh sách</Btn>
-          <span style={{ fontSize: 14, fontWeight: 650, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {selPx.ho_ten || selPx.name}
-          </span>
+          <Btn icon={IconArrowLeft} onClick={() => setSelPx(null)} style={{ minHeight: 40 }}>Về danh sách</Btn>
         </div>
         <PatientDetail patient={selPx} onClose={() => setSelPx(null)}
           onInputCare={handleInputCare} onInputInfusion={handleInputInfusion}

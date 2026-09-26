@@ -1,7 +1,10 @@
-import { IconAlertTriangle, IconRefresh, IconX } from '@tabler/icons-react';
+import {
+  IconAlertTriangle, IconCheck, IconClockHour4, IconFileText, IconPlus, IconPrinter, IconRefresh, IconX,
+} from '@tabler/icons-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { C, STATUS } from '../tokens.js';
-import { Badge, Mono, Btn, Dot, Spinner } from './shared.jsx';
+import { C, FS, STATUS } from '../tokens.js';
+import { Btn, Dot, Spinner } from './shared.jsx';
+import useIsMobile from '../hooks/useIsMobile.js';
 import * as api from '../api.js';
 import PatientTimeline from './patient/PatientTimeline.jsx';
 import PatientPreview from './patient/PatientPreview.jsx';
@@ -65,100 +68,126 @@ function getActiveDay(patient, activeDate, availableDates) {
     };
 }
 
-function PatientHeader({ patient, activeDay, status, subTab, setSubTab, availableDates, activeDate, setActiveDate, careBadge, infusionBadge, procedureBadge, hasInfusionAny, hasProcedureAny, onClose }) {
+const DETAIL_TABS = [
+  { id: 'timeline', label: 'Timeline y lệnh' },
+  { id: 'preview', label: 'Xem trước khi nhập' },
+  { id: 'meds', label: 'Sửa dịch truyền', needsInfusion: true },
+  { id: 'raw', label: 'Y lệnh gốc' },
+];
+
+// Chip tiến độ: "Chăm sóc: 1/2", "Dịch truyền: YL mới 1"…
+function ProgressChip({ label, tone = 'gray' }) {
+  const tones = {
+    green: [C.green, C.greenBg, C.greenBorder],
+    amber: [C.amber, C.amberBg, C.amberBorder],
+    red: [C.red, C.redBg, C.redBorder],
+    gray: [C.text2, C.surface2, C.border2],
+  };
+  const [fg, bg, border] = tones[tone] || tones.gray;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '0 8px', lineHeight: '22px', borderRadius: 4, fontSize: FS.xs, fontWeight: 600, color: fg, background: bg, border: `1px solid ${border}`, whiteSpace: 'nowrap' }}>
+      {tone === 'green' && <IconCheck size={13} stroke={2.2} aria-hidden="true" />}
+      {tone === 'red' && <IconAlertTriangle size={13} stroke={2} aria-hidden="true" />}
+      {label}
+    </span>
+  );
+}
+
+function PatientHeader({ patient, activeDay, status, subTab, setSubTab, availableDates, activeDate, setActiveDate, progress = [], hasInfusionAny, onClose, showClose = true }) {
   const p = patient;
   const notices = getPatientNotices(p, activeDay);
   const admissionTime = getWardAdmissionTime(p, activeDay);
   const departmentName = getDepartmentName(p, activeDay);
   const wardHistory = getWardHistory(p, activeDay);
+  const room = p.so_phong || p.room;
+  const metaLine = [
+    p.chan_doan || p.dx || p.diagnosis,
+    p.bac_si || p.doc,
+    [p.bed && `Giường ${p.bed}`, room && `Phòng ${room}`].filter(Boolean).join(' / '),
+  ].filter(Boolean).join(' · ');
+  const tabs = DETAIL_TABS.filter(t => !t.needsInfusion || hasInfusionAny);
   return (
-    <div style={{ padding: '11px 14px', borderBottom: `1px solid ${C.border}`, background: C.surface, flexShrink: 0 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <div style={{ padding: '12px 16px 0', borderBottom: `1px solid ${C.border}`, background: C.surface, flexShrink: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
         <div style={{ minWidth: 0 }}>
           <PatientNoticePills notices={notices} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <Dot color={status.border} size={9} />
-            <span style={{ fontWeight: 600, fontSize: 14, color: C.text }}>{p.ho_ten || p.name}</span>
-            <Mono style={{ color: C.text2 }}>{p.ma_bn || p.id}</Mono>
+            <h2 style={{ margin: 0, fontWeight: 700, fontSize: FS.xl, color: C.text }}>{p.ho_ten || p.name}</h2>
+            <span style={{ fontSize: FS.sm, color: C.text2, fontVariantNumeric: 'tabular-nums' }}>{p.ma_bn || p.id}</span>
           </div>
-          <div style={{ fontSize: 12, color: C.text2 }}>
-            {p.chan_doan || p.dx || p.diagnosis}
-            {(p.bac_si || p.doc) && ` · ${p.bac_si || p.doc}`}
-            {p.bed && ` · Giường ${p.bed}`}
-            {(p.so_phong || p.room) && ` / ${p.so_phong || p.room}`}
-          </div>
+          {metaLine && <div style={{ fontSize: FS.md, color: C.text2, marginTop: 3 }}>{metaLine}</div>}
           {(admissionTime || departmentName) && (
-            <div style={{ fontSize: 11, color: C.text3, marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {admissionTime && <span>Vào khoa: <Mono>{admissionTime}</Mono></span>}
-              {departmentName && <span>Khoa điều trị: {departmentName}</span>}
+            <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 3, display: 'flex', gap: '2px 12px', flexWrap: 'wrap' }}>
+              {admissionTime && <span>Vào khoa <span style={{ fontVariantNumeric: 'tabular-nums' }}>{admissionTime}</span></span>}
+              {departmentName && <span>{departmentName}</span>}
             </div>
           )}
           {wardHistory.length > 1 && (
-            <details style={{ marginTop: 5, fontSize: 11, color: C.text3 }}>
-              <summary style={{ cursor: 'pointer' }}>Lịch sử khoa điều trị: {wardHistory.length} mốc</summary>
+            <details style={{ marginTop: 4, fontSize: FS.xs, color: C.text2 }}>
+              <summary style={{ cursor: 'pointer' }}>Lịch sử khoa điều trị ({wardHistory.length} mốc)</summary>
               <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
                 {wardHistory.map((w, idx) => (
                   <div key={`${w.thu_tu || idx}-${w.thoi_gian_vao_khoa || idx}`}>
-                    <Mono>{w.thoi_gian_vao_khoa || '—'}</Mono> · {w.ten_khoa_dieu_tri || w.khoa_dieu_tri || 'Không rõ khoa'}
+                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{w.thoi_gian_vao_khoa || '—'}</span> · {w.ten_khoa_dieu_tri || w.khoa_dieu_tri || 'Không rõ khoa'}
                   </div>
                 ))}
               </div>
             </details>
           )}
         </div>
-        <button type="button" className="emr-icon-btn" onClick={onClose} aria-label="Đóng chi tiết người bệnh" title="Đóng"><IconX size={17} stroke={1.75} /></button>
+        {showClose && <button type="button" className="emr-icon-btn" onClick={onClose} aria-label="Đóng chi tiết người bệnh" title="Đóng"><IconX size={18} stroke={1.75} /></button>}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 9, flexWrap: 'wrap' }}>
-        {[
-          { id: 'timeline', label: 'Timeline YL' },
-          { id: 'preview', label: 'Xem trước nhập' },
-          ...(hasInfusionAny ? [{ id: 'meds', label: 'Sửa dịch truyền' }] : []),
-          { id: 'raw', label: 'Y lệnh gốc' },
-        ].map(t => (
-          <button type="button" key={t.id} onClick={() => setSubTab(t.id)} style={{
-            padding: '3px 10px', borderRadius: 4, border: '1px solid',
-            fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
-            borderColor: subTab === t.id ? C.blue : C.border,
-            background: subTab === t.id ? C.blueBg : 'transparent',
-            color: subTab === t.id ? C.blue : C.text2,
-          }}>{t.label}</button>
-        ))}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
-          <Badge text={careBadge} bg={p.care_stale_count > 0 ? C.amberBg : (p.care_done ? C.greenBg : C.surface2)} color={p.care_stale_count > 0 ? C.amber : (p.care_done ? C.green : C.text2)} />
-          {hasInfusionAny && (
-            <Badge text={infusionBadge} bg={p.has_infusion_incomplete ? C.redBg : (p.infus_stale_count > 0 ? C.amberBg : (p.infus_done ? C.greenBg : C.surface2))} color={p.has_infusion_incomplete ? C.red : (p.infus_stale_count > 0 ? C.amber : (p.infus_done ? C.green : C.text2))} />
+      {(progress.length > 0 || availableDates.length > 0) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+          {availableDates.length > 0 && (
+            <div role="group" aria-label="Ngày y lệnh" style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginRight: 6 }}>
+              {availableDates.map(date => {
+                const dayInfo = p.day_map?.[date] || {};
+                const active = date === activeDate;
+                const stale = dayInfo.care_stale || dayInfo.infus_stale || dayInfo.procedure_stale;
+                const started = dayInfo.care_done || dayInfo.infus_done || dayInfo.procedure_done;
+                const done = started && dayInfo.status === 'green';
+                return (
+                  <button type="button" key={date} aria-pressed={active} onClick={() => setActiveDate(date)} title={stale ? 'Có y lệnh mới sau lần nhập trước' : (done ? 'Đã nhập xong' : (started ? 'Đã nhập một phần' : 'Chưa nhập'))} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4, height: 28, padding: '0 9px', borderRadius: 5, border: '1px solid',
+                    fontSize: FS.sm, cursor: 'pointer', fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums',
+                    borderColor: active ? C.blueBorder : C.border,
+                    background: active ? C.blueBg : C.surface,
+                    color: active ? C.blue : C.text2, fontWeight: active ? 650 : 500,
+                  }}>
+                    {date}
+                    {stale
+                      ? <span style={{ color: C.amber, fontWeight: 600 }}>· YL mới</span>
+                      : done ? <IconCheck size={14} stroke={2.2} color={C.green} aria-hidden="true" />
+                        : started ? <IconClockHour4 size={14} stroke={1.9} color={C.amber} aria-hidden="true" /> : null}
+                  </button>
+                );
+              })}
+            </div>
           )}
-          {hasProcedureAny && (
-            <Badge text={procedureBadge} bg={p.procedure_stale_count > 0 ? C.amberBg : (p.procedure_done ? C.greenBg : C.surface2)} color={p.procedure_stale_count > 0 ? C.amber : (p.procedure_done ? C.green : C.text2)} />
-          )}
-          {p.warning_count > 0 && <Badge text={`Cảnh báo: ${p.warning_count}`} bg={C.amberBg} color={C.amber} />}
-        </div>
-      </div>
-
-      {availableDates.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-          {availableDates.map(date => {
-            const dayInfo = p.day_map?.[date] || {};
-            const active = date === activeDate;
-            return (
-              <button type="button" key={date} onClick={() => setActiveDate(date)} style={{
-                padding: '4px 10px', borderRadius: 4, border: '1px solid',
-                fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
-                borderColor: active ? C.green : C.border,
-                background: active ? C.greenBg : 'transparent',
-                color: active ? C.green : C.text2,
-              }}>
-                {date}
-                {dayInfo.care_stale || dayInfo.infus_stale || dayInfo.procedure_stale ? ' · YL mới' : (dayInfo.care_done || dayInfo.infus_done || dayInfo.procedure_done ? ` · ${dayInfo.status === 'green' ? '✓' : '…'}` : '')}
-              </button>
-            );
-          })}
+          {progress.map(item => <ProgressChip key={item.label} label={item.label} tone={item.tone} />)}
         </div>
       )}
+
+      <div role="tablist" aria-label="Nội dung chi tiết" className="emr-hscroll" style={{ display: 'flex', gap: 2, marginTop: 8, overflowX: 'auto' }}>
+        {tabs.map(t => {
+          const active = subTab === t.id;
+          return (
+            <button type="button" role="tab" aria-selected={active} key={t.id} onClick={() => setSubTab(t.id)} style={{
+              flexShrink: 0, height: 38, padding: '0 10px', border: 0, borderBottom: `2px solid ${active ? C.blue : 'transparent'}`, marginBottom: -1,
+              background: 'transparent', color: active ? C.blue : C.text2, fontSize: FS.sm, fontWeight: active ? 650 : 550,
+              cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+            }}>{t.label}</button>
+          );
+        })}
+      </div>
     </div>
   );
 }
+
+const TIME_CELL = { fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: C.text };
 
 function RawOrdersPanel({ patientDay = {} }) {
   const warnings = Array.isArray(patientDay.processing_warnings) ? patientDay.processing_warnings : [];
@@ -166,69 +195,57 @@ function RawOrdersPanel({ patientDay = {} }) {
   const events = Array.isArray(patientDay.raw_order_events) ? patientDay.raw_order_events : [];
 
   if (!warnings.length && !unparsed.length && !events.length) {
-    return <div style={{ fontSize: 12, color: C.text3 }}>Chưa có y lệnh gốc/cảnh báo để hiển thị.</div>;
+    return <div style={{ fontSize: FS.md, color: C.text2 }}>Chưa có y lệnh gốc hoặc cảnh báo để hiển thị.</div>;
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {warnings.length > 0 && (
-        <div style={{ border: `1px solid ${C.amberBorder}`, background: C.amberBg, borderRadius: 8, padding: 10 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.amber, marginBottom: 6 }}>Cảnh báo cần kiểm tra</div>
+        <section style={{ border: `1px solid ${C.amberBorder}`, background: C.amberBg, borderRadius: 7, padding: '10px 12px' }}>
+          <h3 style={{ margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: 6, fontSize: FS.md, fontWeight: 700, color: C.amber }}>
+            <IconAlertTriangle size={16} stroke={1.9} aria-hidden="true" /> Cảnh báo cần kiểm tra
+          </h3>
           {warnings.map((w, i) => (
-            <div key={`${w.code || 'warn'}-${i}`} style={{ fontSize: 11, color: C.text, marginTop: i ? 5 : 0 }}>
-              <Mono>{w.gio_y_lenh || '—'}</Mono> · {w.message || w.code}
+            <div key={`${w.code || 'warn'}-${i}`} style={{ fontSize: FS.sm, color: C.text, marginTop: i ? 4 : 0 }}>
+              <span style={TIME_CELL}>{w.gio_y_lenh || '—'}</span> · {w.message || w.code}
             </div>
           ))}
-        </div>
+        </section>
       )}
 
       {unparsed.length > 0 && (
-        <div style={{ border: `1px solid ${C.redBorder}`, background: C.redBg, borderRadius: 8, padding: 10 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.red, marginBottom: 6 }}>Y lệnh chưa phân loại</div>
+        <section style={{ border: `1px solid ${C.redBorder}`, background: C.redBg, borderRadius: 7, padding: '10px 12px' }}>
+          <h3 style={{ margin: '0 0 6px', fontSize: FS.md, fontWeight: 700, color: C.red }}>Y lệnh chưa phân loại</h3>
           {unparsed.map((u, i) => (
-            <div key={`${u.ten_thuoc || 'raw'}-${i}`} style={{ fontSize: 11, color: C.text, marginTop: i ? 5 : 0 }}>
-              <Mono>{u.gio_y_lenh || '—'}</Mono> · {u.ten_thuoc || u.raw || 'Không rõ'}
-              {u.reason && <span style={{ color: C.text3 }}> · {u.reason}</span>}
+            <div key={`${u.ten_thuoc || 'raw'}-${i}`} style={{ fontSize: FS.sm, color: C.text, marginTop: i ? 4 : 0 }}>
+              <span style={TIME_CELL}>{u.gio_y_lenh || '—'}</span> · {u.ten_thuoc || u.raw || 'Không rõ'}
+              {u.reason && <span style={{ color: C.text2 }}> · {u.reason}</span>}
             </div>
           ))}
-        </div>
+        </section>
       )}
 
-      <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
-        <div style={{ padding: '7px 9px', background: C.surface2, fontSize: 12, fontWeight: 700, color: C.text }}>Y lệnh gốc</div>
-        <div style={{ padding: 9, display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <section style={{ border: `1px solid ${C.border}`, borderRadius: 7, overflow: 'hidden', background: C.surface }}>
+        <h3 style={{ margin: 0, padding: '8px 12px', background: C.surface2, fontSize: FS.md, fontWeight: 700, color: C.text }}>Y lệnh gốc</h3>
+        <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {events.map((e, i) => (
-            <div key={`${e.line_no || i}-${e.text}`} style={{ fontSize: 11, color: C.text2, display: 'grid', gridTemplateColumns: '54px 92px 1fr', gap: 6 }}>
-              <Mono>{e.gio_y_lenh || '—'}</Mono>
-              <span style={{ color: C.text3 }}>{e.kind || 'raw'}</span>
+            <div key={`${e.line_no || i}-${e.text}`} style={{ fontSize: FS.sm, color: C.text2, display: 'grid', gridTemplateColumns: '48px 72px minmax(0, 1fr)', gap: 8 }}>
+              <span style={TIME_CELL}>{e.gio_y_lenh || '—'}</span>
+              <span>{e.kind || 'raw'}</span>
               <span style={{ color: C.text }}>{e.text}</span>
             </div>
           ))}
         </div>
-      </div>
+      </section>
     </div>
   );
 }
 
-function ActionCluster({ label, children, tone = 'default' }) {
-  const toneMap = {
-    success: { bg: C.greenBg, border: C.greenBorder, text: C.green },
-    primary: { bg: C.blueBg, border: C.blueBorder, text: C.blue },
-    warn: { bg: C.amberBg, border: C.amberBorder, text: C.amber },
-    default: { bg: C.surface2, border: C.border2, text: C.text3 },
-  };
-  const t = toneMap[tone] || toneMap.default;
+// Nhóm thao tác có nhãn: "Chăm sóc", "Dịch truyền"…
+function ActionGroup({ label, children }) {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 5,
-      padding: '4px 5px 4px 7px', borderRadius: 11,
-      background: t.bg, border: `1px solid ${t.border}`,
-      minHeight: 36, flexWrap: 'wrap',
-    }}>
-      <span style={{
-        fontSize: 10, lineHeight: '12px', fontWeight: 850,
-        color: t.text, letterSpacing: '0.04em', whiteSpace: 'nowrap',
-      }}>{label}</span>
+    <div role="group" aria-label={label} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: FS.xs, fontWeight: 650, color: C.text2, whiteSpace: 'nowrap' }}>{label}</span>
       {children}
     </div>
   );
@@ -264,36 +281,38 @@ function VtytLePicker({ busy, onPicksChange }) {
 
   if (!open) {
     return (
-      <Btn variant="default" disabled={busy} style={{ padding: '5px 9px', fontSize: 11, minHeight: 28 }}
+      <Btn icon={IconPlus} disabled={busy}
         title="Chọn thêm VTYT lẻ từ danh mục VTYT để nhập cùng lượt" onClick={() => setOpen(true)}>
-        + VTYT lẻ{picks.length ? ` (${picks.length})` : ''}
+        VTYT lẻ{picks.length ? ` (${picks.length})` : ''}
       </Btn>
     );
   }
+  const field = { height: 30, fontSize: FS.sm, padding: '0 6px', borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontFamily: 'inherit' };
   return (
     <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
-      <select value={key} onChange={e => setKey(e.target.value)} disabled={busy}
-        style={{ fontSize: 11, padding: '4px 6px', maxWidth: 220 }}>
-        <option value="">— Chọn VTYT —</option>
+      <select value={key} onChange={e => setKey(e.target.value)} disabled={busy} aria-label="Chọn VTYT lẻ"
+        style={{ ...field, maxWidth: 220 }}>
+        <option value="">Chọn VTYT…</option>
         {catalog.map(i => <option key={i.key} value={i.key}>{i.name}{i.code ? '' : ' (chưa có mã)'}</option>)}
       </select>
       <input value={qty} onChange={e => setQty(e.target.value)} disabled={busy} inputMode="decimal"
-        style={{ width: 44, fontSize: 11, padding: '4px 6px' }} aria-label="Số lượng" />
-      <Btn variant="default" disabled={busy || !key} style={{ padding: '4px 8px', fontSize: 11 }} onClick={add}>Thêm</Btn>
+        style={{ ...field, width: 48 }} aria-label="Số lượng" />
+      <Btn disabled={busy || !key} onClick={add}>Thêm</Btn>
       {picks.map(p => (
-        <span key={p.key} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: C.surface2, border: `1px solid ${C.border2}` }}>
-          {nameOf(p.key)} ×{p.qty}{' '}
-          <a href="#" onClick={e => { e.preventDefault(); setPicks(prev => prev.filter(x => x.key !== p.key)); }} aria-label="Bỏ">×</a>
+        <span key={p.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: FS.xs, padding: '0 2px 0 7px', borderRadius: 4, background: C.surface2, border: `1px solid ${C.border2}` }}>
+          {nameOf(p.key)} ×{p.qty}
+          <button type="button" className="emr-icon-btn" style={{ width: 24, height: 24 }} aria-label={`Bỏ ${nameOf(p.key)}`}
+            onClick={() => setPicks(prev => prev.filter(x => x.key !== p.key))}><IconX size={13} stroke={1.9} /></button>
         </span>
       ))}
-      <a href="#" style={{ fontSize: 11 }} onClick={e => { e.preventDefault(); setOpen(false); }}>Đóng</a>
+      <Btn onClick={() => setOpen(false)}>Xong</Btn>
     </span>
   );
 }
 
 function PatientActions({ patient, activeDate, availableDates, activeHasInfusion, activeHasProcedure, activeHasVtyt, activeInfusionIncomplete, hasInfusionAny, hasProcedureAny, hasVtytAny, infusionTotal, procedureTotal, vtytTotal, onInputCare, onInputInfusion, onInputProcedure, onInputVtyt, onRefreshDetails, onPrintDischargeBundle, onGotoMeds, onViewLog, running }) {
   const hasManyDays = availableDates.length > 1;
-  const smallBtn = { padding: '5px 9px', fontSize: 11, whiteSpace: 'nowrap', minHeight: 28 };
+  const smallBtn = { whiteSpace: 'nowrap' };
   const busy = !!running;
   const dayText = activeDate || '—';
   const [vtytPicks, setVtytPicks] = useState([]);
@@ -308,27 +327,22 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
 
   return (
     <div style={{
-      padding: '9px 14px', borderTop: `1px solid ${C.border}`,
-      display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap',
-      background: C.surface, boxShadow: '0 -4px 14px rgba(15,23,42,0.03)',
+      padding: '10px 16px', borderTop: `1px solid ${C.border}`,
+      display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap',
+      background: C.surface, flexShrink: 0,
     }}>
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
-        minWidth: 0, flex: '1 1 760px',
+        display: 'flex', alignItems: 'center', gap: '8px 18px', flexWrap: 'wrap',
+        minWidth: 0, flex: '1 1 600px',
       }}>
-        <div style={{
-          display: 'flex', flexDirection: 'column', justifyContent: 'center',
-          minHeight: 36, padding: '3px 9px', borderRadius: 6,
-          border: `1px solid ${C.border2}`, background: C.surface2,
-          minWidth: 118,
-        }}>
-          <span style={{ fontSize: 10, color: C.text3, fontWeight: 800, letterSpacing: '0.03em' }}>ĐANG XEM</span>
-          <span style={{ fontSize: 12, color: C.text, fontWeight: 800 }}>{dayText}{hasManyDays ? ` · ${availableDates.length} ngày` : ''}</span>
+        <div style={{ fontSize: FS.sm, color: C.text2, whiteSpace: 'nowrap' }}>
+          Thao tác cho ngày <b style={{ color: C.text, fontVariantNumeric: 'tabular-nums' }}>{dayText}</b>
+          {hasManyDays ? <span> ({availableDates.length} ngày)</span> : null}
         </div>
 
-        <ActionCluster label="CS" tone="success">
+        <ActionGroup label="Chăm sóc">
           <Btn
-            variant="success"
+            variant="primary"
             disabled={busy || !activeDate || careDay?.care_required === false}
             style={smallBtn}
             title={`Kiểm tra, nhập thiếu và sửa sai chăm sóc ngày ${dayText}`}
@@ -346,13 +360,13 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
               title="Kiểm tra, nhập thiếu và sửa sai chăm sóc cho tất cả ngày của bệnh nhân đang chọn"
               onClick={() => onInputCare?.([patient], null)}
             >
-              {running === 'care' ? <><Spinner size={10} /> Đang đồng bộ</> : `CS tất cả (${careDates.length})`}
+              {running === 'care' ? <><Spinner size={10} /> Đang đồng bộ</> : `Tất cả ngày (${careDates.length})`}
             </Btn>
           )}
-        </ActionCluster>
+        </ActionGroup>
 
         {(activeHasInfusion || (hasInfusionAny && hasManyDays)) && (
-          <ActionCluster label="DT" tone={activeInfusionIncomplete ? 'warn' : 'primary'}>
+          <ActionGroup label="Dịch truyền">
             {activeHasInfusion && (
               activeInfusionIncomplete ? (
                 <Btn variant="solidWarn" style={smallBtn} title="Còn dịch truyền thiếu thể tích — bấm để vào tab Sửa dịch truyền nhập trước" onClick={() => onGotoMeds?.()}>
@@ -366,14 +380,14 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
             )}
             {hasInfusionAny && hasManyDays && (
               <Btn variant="default" disabled={busy} style={smallBtn} title="Kiểm tra, nhập thiếu và sửa sai dịch truyền cho tất cả ngày của bệnh nhân đang chọn (ngày nào còn thiếu thể tích sẽ bị bỏ qua)" onClick={() => onInputInfusion?.([patient], null)}>
-                DT tất cả ({infusionTotal || availableDates.length})
+                Tất cả ngày ({infusionTotal || availableDates.length})
               </Btn>
             )}
-          </ActionCluster>
+          </ActionGroup>
         )}
 
         {(activeHasProcedure || (hasProcedureAny && hasManyDays)) && (
-          <ActionCluster label="TT">
+          <ActionGroup label="Thủ thuật">
             {activeHasProcedure && (
               <Btn variant="default" disabled={busy || !activeDate} style={smallBtn} title={`Kiểm tra, nhập thiếu và sửa sai thủ thuật ngày ${dayText}`} onClick={() => onInputProcedure?.([patient], activeDate)}>
                 {running === 'check-procedure' ? <><Spinner size={10} /> Kiểm tra YL</> : (running === 'procedure' ? <><Spinner size={10} /> Đang đồng bộ</> : 'Kiểm tra / Nhập / Sửa')}
@@ -381,14 +395,14 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
             )}
             {hasProcedureAny && hasManyDays && (
               <Btn variant="default" disabled={busy} style={smallBtn} title="Kiểm tra, nhập thiếu và sửa sai thủ thuật cho tất cả ngày của bệnh nhân đang chọn" onClick={() => onInputProcedure?.([patient], null)}>
-                TT tất cả ({procedureTotal || availableDates.length})
+                Tất cả ngày ({procedureTotal || availableDates.length})
               </Btn>
             )}
-          </ActionCluster>
+          </ActionGroup>
         )}
 
         {activeDate && (
-          <ActionCluster label="VTYT">
+          <ActionGroup label="VTYT">
             <VtytLePicker
               key={`${patient?.ma_bn || patient?.id}-${activeDate}`}
               busy={busy}
@@ -402,16 +416,16 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
             )}
             {hasVtytAny && hasManyDays && (
               <Btn variant="default" disabled={busy} style={smallBtn} title="Kiểm tra/nhập VTYT theo thủ thuật cho tất cả ngày của bệnh nhân đang chọn" onClick={() => onInputVtyt?.([patient], null)}>
-                VTYT tất cả ({vtytTotal || availableDates.length})
+                Tất cả ngày ({vtytTotal || availableDates.length})
               </Btn>
             )}
-          </ActionCluster>
+          </ActionGroup>
         )}
 
-        <ActionCluster label="Y LỆNH" tone="warn">
+        <ActionGroup label="Y lệnh">
           {hasManyDays ? (
             <>
-              <Btn variant="solidWarn" disabled={busy} style={smallBtn} title="Cập nhật y lệnh cho toàn bộ các ngày đang có của bệnh nhân này" onClick={() => onRefreshDetails?.(patient, availableDates)}>
+              <Btn disabled={busy} style={smallBtn} title="Cập nhật y lệnh cho toàn bộ các ngày đang có của bệnh nhân này" onClick={() => onRefreshDetails?.(patient, availableDates)}>
                 {running === 'details-one' ? <><Spinner size={10} /> Đang cập nhật</> : <><IconRefresh size={14} stroke={2} aria-hidden="true" /> Cập nhật YL tất cả ({availableDates.length} ngày)</>}
               </Btn>
               <Btn variant="default" disabled={busy || !activeDate} style={smallBtn} title={`Chỉ cập nhật y lệnh ngày ${dayText}`} onClick={() => onRefreshDetails?.(patient, activeDate)}>
@@ -420,14 +434,14 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
             </>
           ) : (
             <Btn variant="default" disabled={busy || !activeDate} style={smallBtn} onClick={() => onRefreshDetails?.(patient, activeDate)}>
-              {running === 'details-one' ? <><Spinner size={10} /> Đang cập nhật</> : <><IconRefresh size={14} stroke={2} aria-hidden="true" /> Cập nhật YL người bệnh</>}
+              {running === 'details-one' ? <><Spinner size={10} /> Đang cập nhật</> : <><IconRefresh size={14} stroke={2} aria-hidden="true" /> Cập nhật y lệnh</>}
             </Btn>
           )}
-        </ActionCluster>
+        </ActionGroup>
 
-        <ActionCluster label="IN RA VIỆN" tone="primary">
+        <ActionGroup label="In ra viện">
           <Btn
-            variant="primary"
+            icon={IconPrinter}
             disabled={busy || !canPrintDischarge}
             style={smallBtn}
             title={canPrintDischarge
@@ -439,10 +453,10 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
               ? <><Spinner size={10} /> Đang tổng hợp</>
               : (canPrintDischarge ? 'Tổng hợp in' : 'Không RV ngày này')}
           </Btn>
-        </ActionCluster>
+        </ActionGroup>
       </div>
 
-      <Btn variant="default" style={{ ...smallBtn, marginLeft: 'auto' }} onClick={onViewLog}>Xem log</Btn>
+      <Btn icon={IconFileText} style={{ marginLeft: 'auto' }} onClick={onViewLog}>Xem log</Btn>
     </div>
   );
 }
@@ -497,9 +511,46 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
     ? `TT: ${p.procedure_done_count || 0}/${procedureTotal || 0}`
     : `TT: ${p.procedure_done ? 'xong' : 'chưa'}`);
   const vtytTotal = Number.isFinite(p.vtyt_total_dates) ? p.vtyt_total_dates : (activeHasVtyt ? 1 : 0);
+  // Cùng ngưỡng với ShiftTab: dưới 640px dùng giao diện điện thoại.
+  const isMobile = useIsMobile(640);
+
+  // Chip tiến độ ở đầu khung: đổi viết tắt CS/DT/TT sang chữ đầy đủ.
+  const progress = [
+    { label: careBadge.replace(/^CS:/, 'Chăm sóc:'), tone: p.care_stale_count > 0 ? 'amber' : (p.care_done ? 'green' : 'gray') },
+    ...(hasInfusionAny ? [{ label: infusionBadge.replace(/^DT:/, 'Dịch truyền:'), tone: p.has_infusion_incomplete ? 'red' : (p.infus_stale_count > 0 ? 'amber' : (p.infus_done ? 'green' : 'gray')) }] : []),
+    ...(hasProcedureAny ? [{ label: procedureBadge.replace(/^TT:/, 'Thủ thuật:'), tone: p.procedure_stale_count > 0 ? 'amber' : (p.procedure_done ? 'green' : 'gray') }] : []),
+    ...(p.warning_count > 0 ? [{ label: `Cảnh báo: ${p.warning_count}`, tone: 'amber' }] : []),
+  ];
+
+  const actions = (
+    <PatientActions
+      patient={p}
+      activeDate={activeDate}
+      availableDates={availableDates}
+      activeHasInfusion={activeHasInfusion}
+      activeHasProcedure={activeHasProcedure}
+      activeHasVtyt={activeHasVtyt}
+      activeInfusionIncomplete={activeInfusionIncomplete}
+      hasInfusionAny={hasInfusionAny}
+      hasProcedureAny={hasProcedureAny}
+      hasVtytAny={hasVtytAny}
+      infusionTotal={infusionTotal}
+      procedureTotal={procedureTotal}
+      vtytTotal={vtytTotal}
+      onInputCare={onInputCare}
+      onInputInfusion={onInputInfusion}
+      onInputProcedure={onInputProcedure}
+      onInputVtyt={onInputVtyt}
+      onRefreshDetails={onRefreshDetails}
+      onPrintDischargeBundle={onPrintDischargeBundle}
+      onGotoMeds={() => setSubTab('meds')}
+      onViewLog={handleViewLog}
+      running={running}
+    />
+  );
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'fadeIn 0.15s ease' }}>
+    <div style={{ height: isMobile ? 'auto' : '100%', display: 'flex', flexDirection: 'column', overflow: isMobile ? 'visible' : 'hidden', animation: 'fadeIn 0.15s ease' }}>
       <PatientHeader
         patient={p}
         activeDay={activeDay}
@@ -509,21 +560,20 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
         availableDates={availableDates}
         activeDate={activeDate}
         setActiveDate={setActiveDate}
-        careBadge={careBadge}
-        infusionBadge={infusionBadge}
-        procedureBadge={procedureBadge}
+        progress={progress}
         hasInfusionAny={hasInfusionAny}
-        hasProcedureAny={hasProcedureAny}
         onClose={onClose}
+        showClose={!isMobile}
       />
+      {isMobile && actions}
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '10px 12px 14px', background: C.bg }}>
+      <div style={{ flex: isMobile ? 'none' : 1, overflow: isMobile ? 'visible' : 'auto', padding: '12px 16px 16px', background: C.bg }}>
         <div style={{ maxWidth: 1220, width: '100%', margin: '0 auto 0 0' }}>
           {subTab === 'timeline'
             ? <>
-                <div style={{ margin: '0 0 8px', padding: '7px 10px', borderRadius: 6, background: C.surface2, color: C.text2, fontSize: 11.5, lineHeight: 1.45 }}>
-                  Timeline dự kiến; khi nhập hệ thống tự đối chiếu HIS và chỉ sửa khi đủ điều kiện an toàn.
-                </div>
+                <p style={{ margin: '0 0 10px', color: C.text2, fontSize: FS.xs, lineHeight: 1.45 }}>
+                  Timeline dự kiến. Khi nhập, hệ thống tự đối chiếu HIS và chỉ sửa khi đủ điều kiện an toàn.
+                </p>
                 <PatientTimeline items={activeDay.timeline || []} thuoc={activeDay.thuoc} />
               </>
             : subTab === 'raw'
@@ -543,30 +593,7 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
         </div>
       </div>
 
-      <PatientActions
-        patient={p}
-        activeDate={activeDate}
-        availableDates={availableDates}
-        activeHasInfusion={activeHasInfusion}
-        activeHasProcedure={activeHasProcedure}
-        activeHasVtyt={activeHasVtyt}
-        activeInfusionIncomplete={activeInfusionIncomplete}
-        hasInfusionAny={hasInfusionAny}
-        hasProcedureAny={hasProcedureAny}
-        hasVtytAny={hasVtytAny}
-        infusionTotal={infusionTotal}
-        procedureTotal={procedureTotal}
-        vtytTotal={vtytTotal}
-        onInputCare={onInputCare}
-        onInputInfusion={onInputInfusion}
-        onInputProcedure={onInputProcedure}
-        onInputVtyt={onInputVtyt}
-        onRefreshDetails={onRefreshDetails}
-        onPrintDischargeBundle={onPrintDischargeBundle}
-        onGotoMeds={() => setSubTab('meds')}
-        onViewLog={handleViewLog}
-        running={running}
-      />
+      {!isMobile && actions}
 
       <PatientLogModal
         open={showLog}

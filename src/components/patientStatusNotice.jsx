@@ -1,4 +1,4 @@
-import { C } from '../tokens.js';
+import { C, FS } from '../tokens.js';
 import { isDischargeContradictedByLaterCare } from '../utils/dischargePrint.js';
 
 function normalizeText(value) {

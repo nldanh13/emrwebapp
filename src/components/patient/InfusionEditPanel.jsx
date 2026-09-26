@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { C, FONT_MONO } from '../../tokens.js';
+import { C, FONT_MONO, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import * as api from '../../api.js';
 import { normalizeGio } from './patientDetailUtils.js';
@@ -50,17 +50,17 @@ function InfusionEditRow({ item, patientId, ngayLam, toast, onSaved }) {
       borderRadius: 7, padding: '9px 10px',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontFamily: FONT_MONO, fontSize: 13, fontWeight: 700, color: C.blue }}>
+        <span style={{ fontFamily: FONT_MONO, fontSize: FS.md, fontWeight: 700, color: C.blue }}>
           {normalizeGio(item.tg_bat_dau || item.gio_dung) || '—'}
         </span>
-        <span style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>
+        <span style={{ fontSize: FS.sm, color: C.text, fontWeight: 600 }}>
           {item.ten_hien_thi || item.ten_thuoc || '—'}
         </span>
       </div>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          <span style={{ fontSize: 10, color: C.text3, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Thể tích (ml)</span>
+          <span style={{ fontSize: FS.xs, color: C.text3, fontWeight: 600 }}>Thể tích (ml)</span>
           <input
             type="text"
             inputMode="decimal"
@@ -68,13 +68,13 @@ function InfusionEditRow({ item, patientId, ngayLam, toast, onSaved }) {
             onChange={e => setTheTich(e.target.value)}
             style={{
               width: 90, padding: '5px 7px', borderRadius: 4,
-              border: `1px solid ${C.border}`, fontSize: 12, fontFamily: FONT_MONO,
+              border: `1px solid ${C.border}`, fontSize: FS.sm, fontFamily: FONT_MONO,
               color: C.text, background: C.surface,
             }}
           />
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          <span style={{ fontSize: 10, color: C.text3, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Tốc độ (gt/p)</span>
+          <span style={{ fontSize: FS.xs, color: C.text3, fontWeight: 600 }}>Tốc độ (gt/p)</span>
           <input
             type="text"
             inputMode="decimal"
@@ -82,15 +82,15 @@ function InfusionEditRow({ item, patientId, ngayLam, toast, onSaved }) {
             onChange={e => setTocDo(e.target.value)}
             style={{
               width: 90, padding: '5px 7px', borderRadius: 4,
-              border: `1px solid ${C.border}`, fontSize: 12, fontFamily: FONT_MONO,
+              border: `1px solid ${C.border}`, fontSize: FS.sm, fontFamily: FONT_MONO,
               color: C.text, background: C.surface,
             }}
           />
         </label>
-        <Btn variant="primary" disabled={!dirty || saving} onClick={handleSave} style={{ padding: '5px 12px', fontSize: 11 }}>
+        <Btn variant="primary" disabled={!dirty || saving} onClick={handleSave} style={{ padding: '5px 12px', fontSize: FS.xs }}>
           {saving ? <><Spinner size={10} /> Đang lưu</> : 'Lưu'}
         </Btn>
-        {!dirty && <span style={{ fontSize: 11, color: C.text3 }}>Chưa có thay đổi</span>}
+        {!dirty && <span style={{ fontSize: FS.xs, color: C.text3 }}>Chưa có thay đổi</span>}
       </div>
     </div>
   );
@@ -100,12 +100,12 @@ export default function InfusionEditPanel({ patientDay, patientId, ngayLam, toas
   const items = Array.isArray(patientDay?.thuoc?.dich_truyen) ? patientDay.thuoc.dich_truyen : [];
 
   if (!items.length) {
-    return <div style={{ fontSize: 12, color: C.text3 }}>Ngày này không có dịch truyền để sửa.</div>;
+    return <div style={{ fontSize: FS.sm, color: C.text3 }}>Ngày này không có dịch truyền để sửa.</div>;
   }
 
   return (
     <div>
-      <div style={{ margin: '0 0 10px', padding: '7px 10px', borderRadius: 6, background: C.surface2, color: C.text2, fontSize: 11.5, lineHeight: 1.45 }}>
+      <div style={{ margin: '0 0 10px', padding: '7px 10px', borderRadius: 6, background: C.surface2, color: C.text2, fontSize: FS.xs, lineHeight: 1.45 }}>
         Sửa dữ liệu dịch truyền đã thu thập (không ghi ngược EMR). Bấm "Kiểm tra / Nhập / Sửa" ở khu DT bên dưới nếu muốn đưa giá trị đã sửa vào EMR.
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
