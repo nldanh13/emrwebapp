@@ -5,7 +5,8 @@
 // Luôn tạo file mới (hậu tố _DA_KY.pdf), không đụng file gốc.
 
 import { useState, useEffect, useCallback } from 'react';
-import { C } from '../../tokens.js';
+import { IconCheck, IconRefresh } from '@tabler/icons-react';
+import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import * as api from '../../api.js';
 
@@ -87,17 +88,12 @@ export default function DischargeSignTab({ toast }) {
 
   return (
     <div style={{ padding: 12, maxWidth: 1080, margin: '0 auto' }}>
-      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>Chữ ký ra viện</div>
-          <div style={{ fontSize: 12, color: C.text2, marginTop: 4 }}>
-            Chèn ảnh chữ ký đã cấu hình (tab Lịch điều dưỡng) vào bộ phiếu "IN RA VIỆN" đã in sẵn — chỉ chèn cho người
-            đã có ảnh chữ ký, người khác giữ nguyên. Luôn tạo file mới, không đụng file gốc chưa ký.
-          </div>
-        </div>
-        <Btn variant="secondary" onClick={load} disabled={loading}>
-          {loading ? <Spinner size={12} /> : '↻ Làm mới'}
-        </Btn>
+      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+        <p style={{ margin: 0, flex: '1 1 320px', fontSize: FS.sm, color: C.text2, lineHeight: 1.5 }}>
+          Chèn ảnh chữ ký đã cấu hình (ở Lịch điều dưỡng) vào bộ phiếu "In ra viện" đã in sẵn. Chỉ chèn cho người
+          đã có ảnh chữ ký, người khác giữ nguyên. Luôn tạo file mới, không đụng file gốc chưa ký.
+        </p>
+        <Btn icon={IconRefresh} loading={loading} onClick={load} disabled={loading}>Làm mới</Btn>
       </div>
 
       {loading ? (
@@ -105,8 +101,8 @@ export default function DischargeSignTab({ toast }) {
           <Spinner /> Đang tải...
         </div>
       ) : !bundles.length ? (
-        <div style={{ color: C.text3, padding: 20, textAlign: 'center' }}>
-          Chưa có bộ phiếu "IN RA VIỆN" nào được in. Vào tab Xếp phòng/Nhập bệnh phòng, mở hồ sơ người bệnh
+        <div style={{ color: C.text2, fontSize: FS.md, padding: 24, textAlign: 'center', background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 7 }}>
+          Chưa có bộ phiếu "In ra viện" nào được in. Vào tab Xếp phòng/Nhập bệnh phòng, mở hồ sơ người bệnh
           đã ra viện và bấm "In ra viện" trước.
         </div>
       ) : (
@@ -116,9 +112,8 @@ export default function DischargeSignTab({ toast }) {
               <tr style={{ background: C.surface2 }}>
                 {['Mã BN', 'Họ tên', 'Kích thước', 'Đã in lúc', 'Trạng thái', 'Tác vụ'].map(h => (
                   <th key={h} style={{
-                    padding: '8px 12px', textAlign: 'left', fontSize: 11,
-                    fontWeight: 700, color: C.text2, borderBottom: `1px solid ${C.border}`,
-                    letterSpacing: 0.15, whiteSpace: 'nowrap',
+                    padding: '8px 12px', textAlign: 'left', fontSize: FS.xs,
+                    fontWeight: 700, color: C.text2, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap',
                   }}>{h}</th>
                 ))}
               </tr>
@@ -126,13 +121,13 @@ export default function DischargeSignTab({ toast }) {
             <tbody>
               {bundles.map((b, i) => (
                 <tr key={b.file_name} style={{ borderBottom: i < bundles.length - 1 ? `1px solid ${C.border2}` : 'none' }}>
-                  <td style={{ padding: '10px 12px', fontSize: 13, color: C.text, fontWeight: 500 }}>{b.ma_bn || '—'}</td>
-                  <td style={{ padding: '10px 12px', fontSize: 13, color: C.text }}>{b.ho_ten || '—'}</td>
-                  <td style={{ padding: '10px 12px', fontSize: 12, color: C.text2 }}>{fmtBytes(b.size_bytes)}</td>
-                  <td style={{ padding: '10px 12px', fontSize: 12, color: C.text2 }}>{fmtDate(b.created_at)}</td>
-                  <td style={{ padding: '10px 12px', fontSize: 12 }}>
+                  <td style={{ padding: '10px 12px', fontSize: FS.md, color: C.text, fontWeight: 500 }}>{b.ma_bn || '—'}</td>
+                  <td style={{ padding: '10px 12px', fontSize: FS.md, color: C.text }}>{b.ho_ten || '—'}</td>
+                  <td style={{ padding: '10px 12px', fontSize: FS.sm, color: C.text2 }}>{fmtBytes(b.size_bytes)}</td>
+                  <td style={{ padding: '10px 12px', fontSize: FS.sm, color: C.text2 }}>{fmtDate(b.created_at)}</td>
+                  <td style={{ padding: '10px 12px', fontSize: FS.sm }}>
                     {b.signed
-                      ? <span style={{ color: C.green, fontWeight: 600 }}>✓ Đã ký</span>
+                      ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: C.green, fontWeight: 600 }}><IconCheck size={15} stroke={2.2} aria-hidden="true" />Đã ký</span>
                       : <span style={{ color: C.text3 }}>Chưa ký</span>}
                   </td>
                   <td style={{ padding: '10px 12px' }}>
@@ -141,7 +136,7 @@ export default function DischargeSignTab({ toast }) {
                         variant="default"
                         disabled={downloading === b.file_name}
                         onClick={() => handleDownload(b.file_name)}
-                        style={{ fontSize: 11, padding: '2px 10px' }}
+                        style={{ fontSize: FS.xs, padding: '2px 10px' }}
                       >
                         {downloading === b.file_name ? <Spinner size={10} /> : 'Tải file gốc'}
                       </Btn>
@@ -149,7 +144,7 @@ export default function DischargeSignTab({ toast }) {
                         variant="primary"
                         disabled={signing === b.file_name}
                         onClick={() => handleSign(b.file_name)}
-                        style={{ fontSize: 11, padding: '2px 10px' }}
+                        style={{ fontSize: FS.xs, padding: '2px 10px' }}
                       >
                         {signing === b.file_name ? <Spinner size={10} /> : (b.signed ? 'Ký lại' : 'Thêm chữ ký')}
                       </Btn>
@@ -158,7 +153,7 @@ export default function DischargeSignTab({ toast }) {
                           variant="success"
                           disabled={downloading === b.signed_file_name}
                           onClick={() => handleDownload(b.signed_file_name)}
-                          style={{ fontSize: 11, padding: '2px 10px' }}
+                          style={{ fontSize: FS.xs, padding: '2px 10px' }}
                         >
                           {downloading === b.signed_file_name ? <Spinner size={10} /> : 'Tải bản đã ký'}
                         </Btn>

@@ -2,6 +2,7 @@ import { useCallback, useSyncExternalStore } from 'react';
 
 export default function useIsMobile(breakpoint = 768) {
   const subscribe = useCallback((cb) => {
+    if (typeof window.matchMedia !== 'function') return () => {};
     const mql = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
     mql.addEventListener('change', cb);
     return () => mql.removeEventListener('change', cb);

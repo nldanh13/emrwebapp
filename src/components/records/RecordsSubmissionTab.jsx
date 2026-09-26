@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { C } from '../../tokens.js';
+import { IconCalendarPlus, IconRefresh, IconX } from '@tabler/icons-react';
+import DateField from '../DateField.jsx';
+import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import {
   getRecordsCheckSubmissions,
@@ -62,12 +64,12 @@ function batchTone(batch) {
 
 function StatusChip({ status }) {
   const tone = itemTone(status);
-  return <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 7px', borderRadius: 4, color: tone.fg, background: tone.bg, border: `1px solid ${tone.border}`, fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap' }}>{tone.label}</span>;
+  return <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 7px', borderRadius: 4, color: tone.fg, background: tone.bg, border: `1px solid ${tone.border}`, fontSize: FS.xs, fontWeight: 700, whiteSpace: 'nowrap' }}>{tone.label}</span>;
 }
 
 function BatchChip({ batch }) {
   const tone = batchTone(batch);
-  return <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 8px', borderRadius: 4, color: tone.fg, background: tone.bg, border: `1px solid ${tone.border}`, fontSize: 10, fontWeight: 850, whiteSpace: 'nowrap' }}>{tone.label}</span>;
+  return <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 8px', borderRadius: 4, color: tone.fg, background: tone.bg, border: `1px solid ${tone.border}`, fontSize: FS.xs, fontWeight: 700, whiteSpace: 'nowrap' }}>{tone.label}</span>;
 }
 
 function eventLabel(event) {
@@ -461,20 +463,19 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
       <div style={{ padding: '9px 12px', background: C.surface, borderBottom: `1px solid ${C.border2}` }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ minWidth: 190 }}>
-            <div style={{ color: C.text, fontSize: 13, fontWeight: 850 }}>Xếp ngày nộp hồ sơ</div>
-            <div style={{ color: C.text3, fontSize: 10, marginTop: 2 }}>Chỉ hiển thị hồ sơ đã "Sẵn sàng nộp" (đủ checklist hồ sơ giấy) và chưa chốt nộp.</div>
+            <div style={{ color: C.text, fontSize: FS.md, fontWeight: 700 }}>Xếp ngày nộp hồ sơ</div>
+            <div style={{ color: C.text3, fontSize: FS.xs, marginTop: 2 }}>Chỉ hiển thị hồ sơ đã "Sẵn sàng nộp" (đủ checklist hồ sơ giấy) và chưa chốt nộp.</div>
           </div>
-          <input type="date" value={selectedDate} onChange={event => setSelectedDate(event.target.value)} style={inputStyle} />
-          <Btn variant="primary" disabled={busy || !selectedRecordIds.size || selectedDateLocked} onClick={addSelected} style={{ fontSize: 11, padding: '5px 12px' }}>
+          <DateField label="Ngày nộp" value={selectedDate} onChange={setSelectedDate} />
+          <Btn variant="solidPrimary" icon={IconCalendarPlus} disabled={busy || !selectedRecordIds.size || selectedDateLocked} onClick={addSelected}>
             Thêm vào ngày nộp ({selectedRecordIds.size})
           </Btn>
-          <Btn variant="secondary" disabled={busy} onClick={() => refresh()} style={{ fontSize: 11, padding: '5px 12px' }}>Làm mới</Btn>
+          <Btn icon={IconRefresh} disabled={busy} onClick={() => refresh()}>Làm mới</Btn>
           <Btn
-            variant="default"
+            variant="danger"
             disabled={busy || !eligibleRecords.length}
             onClick={clearWaitingChecked}
             title={selectedRecordIds.size ? 'Bỏ dấu đã kiểm của các hồ sơ đang chọn' : 'Không chọn dòng nào: bỏ dấu đã kiểm của toàn bộ hồ sơ đang hiển thị'}
-            style={{ fontSize: 11, padding: '5px 12px', color: C.red, borderColor: C.redBorder, background: C.redBg }}
           >
             {selectedRecordIds.size ? `Làm sạch đã kiểm (${selectedRecordIds.size})` : 'Làm sạch đã kiểm'}
           </Btn>
@@ -482,13 +483,13 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
           {busy && <Spinner size={14} />}
         </div>
         {selectedDateLocked ? (
-          <div style={{ marginTop: 7, padding: '6px 9px', borderRadius: 8, color: C.green, background: C.greenBg, border: `1px solid ${C.greenBorder}`, fontSize: 11, fontWeight: 800 }}>
+          <div style={{ marginTop: 7, padding: '6px 9px', borderRadius: 8, color: C.green, background: C.greenBg, border: `1px solid ${C.greenBorder}`, fontSize: FS.xs, fontWeight: 700 }}>
             Ngày {formatDate(selectedDate)} đã được chốt nộp. Hãy chọn ngày khác để xếp các hồ sơ mới.
           </div>
         ) : null}
         <div style={{ marginTop: 8, maxHeight: 190, overflow: 'auto', border: `1px solid ${C.border}`, borderRadius: 6 }}>
           {eligibleRecords.length === 0 ? (
-            <div style={{ padding: 14, color: C.text2, fontSize: 12 }}>Không có hồ sơ đã "Sẵn sàng nộp" đang chờ xếp ngày nộp.</div>
+            <div style={{ padding: 14, color: C.text2, fontSize: FS.sm }}>Không có hồ sơ đã "Sẵn sàng nộp" đang chờ xếp ngày nộp.</div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead style={{ position: 'sticky', top: 0, background: C.surface2, zIndex: 2 }}>
@@ -509,7 +510,7 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
                       <td style={centerCell}>{snap.xq}</td>
                       <td style={centerCell}>{snap.ct}</td>
                       <td style={centerCell}>{snap.mri}</td>
-                      <td style={normalCell}><span style={{ color: record.data_complete ? C.green : C.amber, fontWeight: 800 }}>{record.data_complete ? 'Đủ dữ liệu' : 'Cần cập nhật'}</span></td>
+                      <td style={normalCell}><span style={{ color: record.data_complete ? C.green : C.amber, fontWeight: 700 }}>{record.data_complete ? 'Đủ dữ liệu' : 'Cần cập nhật'}</span></td>
                     </tr>
                   );
                 })}
@@ -521,21 +522,21 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
         <aside style={{ width: 250, flexShrink: 0, overflow: 'auto', borderRight: `1px solid ${C.border}`, background: C.surface }}>
-          <div style={{ padding: '10px 12px', fontSize: 11, fontWeight: 850, color: C.text2, letterSpacing: .2 }}>Ngày nộp</div>
+          <div style={{ padding: '10px 12px', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Ngày nộp</div>
           {(dashboard?.batches || []).length === 0 ? (
-            <div style={{ padding: 14, color: C.text2, fontSize: 12 }}>Chưa có đợt nộp hồ sơ.</div>
+            <div style={{ padding: 14, color: C.text2, fontSize: FS.sm }}>Chưa có đợt nộp hồ sơ.</div>
           ) : (dashboard.batches || []).map(batch => (
             <button key={batch.id} type="button" onClick={() => { setSelectedBatchId(batch.id); setSelectedItemIds(new Set()); }} style={{ width: '100%', border: 0, borderTop: `1px solid ${C.border2}`, padding: '10px 12px', textAlign: 'left', cursor: 'pointer', background: selectedBatchId === batch.id ? C.surface2 : C.surface, color: C.text }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
-                <b style={{ fontSize: 13 }}>{formatDate(batch.submission_date)}</b>
+                <b style={{ fontSize: FS.md }}>{formatDate(batch.submission_date)}</b>
                 <BatchChip batch={batch} />
               </div>
-              <div style={{ marginTop: 5, display: 'flex', gap: 7, flexWrap: 'wrap', fontSize: 10, color: C.text2 }}>
+              <div style={{ marginTop: 5, display: 'flex', gap: 7, flexWrap: 'wrap', fontSize: FS.xs, color: C.text2 }}>
                 <span>Tổng: {batch.counts?.total || 0} HS</span>
                 {batch.locked ? <span style={{ color: C.green }}>Đã nộp: {batch.counts?.submitted || 0}</span> : <span style={{ color: C.blue }}>Chuẩn bị: {batch.counts?.preparing ?? batch.counts?.scheduled ?? 0}</span>}
                 <span style={{ color: batch.counts?.returned ? C.red : C.text3 }}>Trả về: {batch.counts?.returned || 0}</span>
               </div>
-              <div style={{ marginTop: 4, fontSize: 10, color: batch.locked ? C.green : (batch.exported_at ? C.amber : C.text3) }}>
+              <div style={{ marginTop: 4, fontSize: FS.xs, color: batch.locked ? C.green : (batch.exported_at ? C.amber : C.text3) }}>
                 {batch.locked
                   ? (batch.submitted_at ? `Chốt ${formatDateTime(batch.submitted_at)}` : 'Đã nộp theo dữ liệu cũ')
                   : batch.exported_at
@@ -548,16 +549,16 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
 
         <main style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: 12 }}>
           {!selectedBatch ? (
-            <div style={{ padding: 22, color: C.text2, fontSize: 13 }}>Chọn hoặc tạo một ngày nộp hồ sơ để xem chi tiết.</div>
+            <div style={{ padding: 22, color: C.text2, fontSize: FS.md }}>Chọn hoặc tạo một ngày nộp hồ sơ để xem chi tiết.</div>
           ) : (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
                 <div style={{ marginRight: 'auto', minWidth: 300 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <div style={{ color: C.text, fontSize: 15, fontWeight: 850 }}>Hồ sơ nộp ngày {formatDate(selectedBatch.submission_date)}</div>
+                    <div style={{ color: C.text, fontSize: FS.lg, fontWeight: 700 }}>Hồ sơ nộp ngày {formatDate(selectedBatch.submission_date)}</div>
                     <BatchChip batch={selectedBatch} />
                   </div>
-                  <div style={{ color: C.text3, fontSize: 10, marginTop: 3 }}>
+                  <div style={{ color: C.text3, fontSize: FS.xs, marginTop: 3 }}>
                     {selectedBatch.locked
                       ? (selectedBatch.submitted_at
                         ? `Đã chốt lúc ${formatDateTime(selectedBatch.submitted_at)}${selectedBatch.delivered_by ? ` · Người giao: ${selectedBatch.delivered_by}` : ''}${selectedBatch.received_by ? ` · Người nhận KHTH: ${selectedBatch.received_by}` : ''}. Không thể thêm hoặc bỏ hồ sơ; chọn hồ sơ để đánh dấu bị trả về.`
@@ -565,9 +566,9 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
                       : 'Đang chuẩn bị: có thể thêm, bỏ và xuất danh sách. Xuất PDF không tự đánh dấu đã nộp.'}
                   </div>
                 </div>
-                <Btn variant="secondary" disabled={busy || !selectedBatch.can_mark_returned || !selectedItemIds.size} onClick={markReturned} style={{ fontSize: 11, padding: '5px 11px' }}>Đánh dấu bị trả về</Btn>
-                <Btn variant="default" disabled={busy || !selectedBatch.can_remove || !selectedItemIds.size} onClick={removeSelected} style={{ fontSize: 11, padding: '5px 11px' }}>Bỏ khỏi đợt</Btn>
-                <Btn variant="secondary" disabled={busy || !displayedBatchItems.length} onClick={exportBatch} style={{ fontSize: 11, padding: '5px 11px' }}>Xuất danh sách PDF</Btn>
+                <Btn variant="secondary" disabled={busy || !selectedBatch.can_mark_returned || !selectedItemIds.size} onClick={markReturned}>Đánh dấu bị trả về</Btn>
+                <Btn variant="default" disabled={busy || !selectedBatch.can_remove || !selectedItemIds.size} onClick={removeSelected}>Bỏ khỏi đợt</Btn>
+                <Btn variant="secondary" disabled={busy || !displayedBatchItems.length} onClick={exportBatch}>Xuất danh sách PDF</Btn>
                 <input value={batchSearch} onChange={event => setBatchSearch(event.target.value)} placeholder="Tìm tên trong ngày nộp..." style={{ ...inputStyle, minWidth: 210 }} />
               </div>
 
@@ -581,14 +582,14 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
                     <div style={sheetEditorLabelStyle}>Người nhận tại KHTH</div>
                     <input value={receivedBy} onChange={event => setReceivedBy(event.target.value)} placeholder="Họ tên người nhận (nếu có)" style={{ ...inputStyle, minWidth: 180 }} />
                   </div>
-                  <Btn variant="primary" disabled={busy || !selectedBatch.can_submit} onClick={submitBatch} style={{ fontSize: 11, padding: '7px 14px' }}>
+                  <Btn variant="primary" disabled={busy || !selectedBatch.can_submit} onClick={submitBatch}>
                     Xác nhận KHTH đã nhận — Chốt đã nộp ngày này
                   </Btn>
                 </div>
               ) : null}
 
               {!selectedBatch.locked ? (
-                <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 9, color: C.amber, background: C.amberBg, border: `1px solid ${C.amberBorder}`, fontSize: 11 }}>
+                <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 9, color: C.amber, background: C.amberBg, border: `1px solid ${C.amberBorder}`, fontSize: FS.xs }}>
                   Chỉ chốt sau khi hồ sơ đã được nộp thực tế và KHTH đã nhận. Khi chốt, đợt sẽ được khóa, lưu lại trạng thái KSĐ/GPB tại thời điểm bàn giao, và các hồ sơ này không xuất hiện trong danh sách chờ của ngày sau.
                 </div>
               ) : null}
@@ -608,8 +609,8 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
                         <td style={normalCell}><StatusChip status={item.effective_status} /></td>
                         <td style={normalCell}><b>{txt(item.snapshot.so_luu_tru)}</b></td>
                         <td style={normalCell}>
-                          <div style={{ fontWeight: 800 }}>{txt(item.snapshot.ho_ten)}</div>
-                          {item.return_note ? <div style={{ marginTop: 2, fontSize: 10, color: C.red }}>Lý do trả về: {item.return_note}</div> : null}
+                          <div style={{ fontWeight: 700 }}>{txt(item.snapshot.ho_ten)}</div>
+                          {item.return_note ? <div style={{ marginTop: 2, fontSize: FS.xs, color: C.red }}>Lý do trả về: {item.return_note}</div> : null}
                         </td>
                         <td style={normalCell}>{txt(item.snapshot.ma_bn)}</td>
                         <td style={centerCell}>{Number(item.snapshot.xq || 0)}</td>
@@ -619,12 +620,12 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
                         <td style={normalCell}>{ksdGpbLabel(item.handover_snapshot?.gpb_status || item.snapshot.gpb_status)}</td>
                         <td style={normalCell}>
                           <div>{formatDateTime(item.added_at)}</div>
-                          {item.previous_submission_date ? <div style={{ color: C.amber, fontSize: 10, marginTop: 2 }}>Nộp lại từ {formatDate(item.previous_submission_date)}</div> : null}
+                          {item.previous_submission_date ? <div style={{ color: C.amber, fontSize: FS.xs, marginTop: 2 }}>Nộp lại từ {formatDate(item.previous_submission_date)}</div> : null}
                         </td>
                         <td style={normalCell}>
                           {item.effective_status === 'submitted' ? (
                             <>
-                              <Btn variant="default" onClick={() => { setDiscrepancyItem(item); setDiscrepancyContent(''); setDiscrepancyRelated(''); }} style={{ fontSize: 10, padding: '4px 8px' }}>
+                              <Btn variant="default" onClick={() => { setDiscrepancyItem(item); setDiscrepancyContent(''); setDiscrepancyRelated(''); }}>
                                 {item.discrepancies?.length ? `Xem/thêm (${item.discrepancies.length})` : 'Ghi nhận sai sót'}
                               </Btn>
                             </>
@@ -637,9 +638,9 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
               </div>
 
               <div style={{ marginTop: 12, border: `1px solid ${C.border}`, borderRadius: 6, overflow: 'hidden', background: C.surface }}>
-                <div style={{ padding: '8px 10px', background: C.surface2, color: C.text2, fontSize: 11, fontWeight: 850, textTransform: 'uppercase' }}>Lịch sử thay đổi ngày {formatDate(selectedBatch.submission_date)}</div>
-                {selectedBatchEvents.length === 0 ? <div style={{ padding: 12, color: C.text2, fontSize: 12 }}>Chưa có lịch sử.</div> : selectedBatchEvents.map(event => (
-                  <div key={event.id} style={{ padding: '7px 10px', borderTop: `1px solid ${C.border2}`, display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 11 }}>
+                <div style={{ padding: '8px 10px', background: C.surface2, color: C.text2, fontSize: FS.xs, fontWeight: 700 }}>Lịch sử thay đổi ngày {formatDate(selectedBatch.submission_date)}</div>
+                {selectedBatchEvents.length === 0 ? <div style={{ padding: 12, color: C.text2, fontSize: FS.sm }}>Chưa có lịch sử.</div> : selectedBatchEvents.map(event => (
+                  <div key={event.id} style={{ padding: '7px 10px', borderTop: `1px solid ${C.border2}`, display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: FS.xs }}>
                     <span style={{ color: C.text3, minWidth: 125 }}>{formatDateTime(event.at)}</span>
                     <b style={{ color: event.type === 'returned' ? C.red : (event.type === 'submitted' ? C.green : C.text), minWidth: 180 }}>{eventLabel(event)}</b>
                     <span style={{ color: C.text2 }}>{txt(event?.snapshot?.ho_ten || event?.file_name || (event?.count ? `${event.count} hồ sơ` : ''), '')}</span>
@@ -656,10 +657,10 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
           <div style={{ width: 'min(560px, 96vw)', maxHeight: '90vh', overflow: 'auto', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, boxShadow: '0 20px 60px rgba(15,23,42,.28)' }}>
             <div style={{ padding: '11px 14px', borderBottom: `1px solid ${C.border2}`, display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 850, color: C.text }}>Sai sót sau bàn giao</div>
-                <div style={{ fontSize: 10, color: C.text3, marginTop: 2 }}>{txt(discrepancyItem.snapshot?.ho_ten)} · {txt(discrepancyItem.snapshot?.so_luu_tru)}</div>
+                <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Sai sót sau bàn giao</div>
+                <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 2 }}>{txt(discrepancyItem.snapshot?.ho_ten)} · {txt(discrepancyItem.snapshot?.so_luu_tru)}</div>
               </div>
-              <button type="button" disabled={busy} onClick={() => setDiscrepancyItem(null)} style={{ border: 0, background: 'transparent', color: C.text2, fontSize: 20, cursor: 'pointer' }}>×</button>
+              <button type="button" className="emr-icon-btn" disabled={busy} onClick={() => setDiscrepancyItem(null)} aria-label="Đóng"><IconX size={18} stroke={1.75} /></button>
             </div>
             <div style={{ padding: 14, display: 'grid', gap: 10 }}>
               {discrepancyItem.discrepancies?.length ? (
@@ -667,9 +668,9 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
                   <div style={sheetEditorLabelStyle}>Đã ghi nhận trước đó</div>
                   <div style={{ display: 'grid', gap: 6 }}>
                     {discrepancyItem.discrepancies.map(d => (
-                      <div key={d.id} style={{ padding: '7px 9px', borderRadius: 6, border: `1px solid ${C.border2}`, fontSize: 11 }}>
+                      <div key={d.id} style={{ padding: '7px 9px', borderRadius: 6, border: `1px solid ${C.border2}`, fontSize: FS.xs }}>
                         <div style={{ color: C.text }}>{d.content}</div>
-                        <div style={{ color: C.text3, fontSize: 10, marginTop: 3 }}>Phát hiện bởi {d.reported_by || 'không rõ'} · {formatDateTime(d.reported_at)}{d.related_people ? ` · Liên quan: ${d.related_people}` : ''}</div>
+                        <div style={{ color: C.text3, fontSize: FS.xs, marginTop: 3 }}>Phát hiện bởi {d.reported_by || 'không rõ'} · {formatDateTime(d.reported_at)}{d.related_people ? ` · Liên quan: ${d.related_people}` : ''}</div>
                       </div>
                     ))}
                   </div>
@@ -695,8 +696,8 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
   );
 }
 
-const inputStyle = { padding: '6px 9px', borderRadius: 8, background: C.surface2, border: `1px solid ${C.border}`, color: C.text, fontSize: 12 };
-const sheetEditorLabelStyle = { fontSize: 10, color: C.text3, fontWeight: 850, textTransform: 'uppercase', letterSpacing: .5, marginBottom: 3 };
-const headStyle = { padding: '7px 8px', borderBottom: `1px solid ${C.border}`, color: C.text2, fontSize: 10, fontWeight: 850, textTransform: 'uppercase', letterSpacing: .5, textAlign: 'left', whiteSpace: 'nowrap' };
-const normalCell = { padding: '7px 8px', borderBottom: `1px solid ${C.border2}`, color: C.text, fontSize: 11, whiteSpace: 'nowrap' };
+const inputStyle = { minHeight: 32, padding: '6px 9px', borderRadius: 5, background: C.surface, border: `1px solid ${C.border}`, color: C.text, fontSize: FS.sm, fontFamily: 'inherit' };
+const sheetEditorLabelStyle = { fontSize: FS.xs, color: C.text3, fontWeight: 700, marginBottom: 3 };
+const headStyle = { padding: '7px 8px', borderBottom: `1px solid ${C.border}`, color: C.text2, fontSize: FS.xs, fontWeight: 700, textAlign: 'left', whiteSpace: 'nowrap' };
+const normalCell = { padding: '7px 8px', borderBottom: `1px solid ${C.border2}`, color: C.text, fontSize: FS.xs, whiteSpace: 'nowrap' };
 const centerCell = { ...normalCell, textAlign: 'center' };

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { C } from '../../tokens.js';
+import { IconCloudCheck, IconListSearch, IconPackageImport, IconTrash, IconX } from '@tabler/icons-react';
+import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import { HCHANH_VTYT_ITEMS } from '../../config/hchanhLists.js';
 
@@ -12,7 +13,7 @@ function num(value) { const n = Number(value); return Number.isFinite(n) ? n : 0
 
 const inputStyle = {
   width: '100%', boxSizing: 'border-box', padding: '6px 8px', borderRadius: 7,
-  background: C.surface2, border: `1px solid ${C.border}`, color: C.text, fontSize: 11,
+  background: C.surface2, border: `1px solid ${C.border}`, color: C.text, fontSize: FS.xs,
 };
 
 function updateJob(draft, jobIndex, updater) {
@@ -28,18 +29,18 @@ function SupplyEditor({ item, onChange, onRemove }) {
     <div style={{ display: 'grid', gridTemplateColumns: '28px minmax(220px, 1fr) 72px 72px 90px 34px', gap: 7, alignItems: 'center', padding: '7px 8px', borderBottom: `1px solid ${C.border2}` }}>
       <input type="checkbox" checked={item.selected !== false} onChange={e => onChange({ ...item, selected: e.target.checked })} title="Chọn vật tư này để nhập" />
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 11, fontWeight: 800, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name || item.code}</div>
-        <div style={{ fontSize: 9, color: C.text3 }}>{item.code || 'Vật tư thủ công'}{item.manual ? ' · thêm thủ công' : ''}</div>
-        {safeArray(item.reasons).length > 0 && <div title={safeArray(item.reasons).join('\n')} style={{ fontSize: 9, color: C.text2, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{safeArray(item.reasons).join(' · ')}</div>}
-        {warning && <div style={{ fontSize: 9, color: C.red, marginTop: 2 }}>{warning}</div>}
+        <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name || item.code}</div>
+        <div style={{ fontSize: FS.xs, color: C.text3 }}>{item.code || 'Vật tư thủ công'}{item.manual ? ' · thêm thủ công' : ''}</div>
+        {safeArray(item.reasons).length > 0 && <div title={safeArray(item.reasons).join('\n')} style={{ fontSize: FS.xs, color: C.text2, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{safeArray(item.reasons).join(' · ')}</div>}
+        {warning && <div style={{ fontSize: FS.xs, color: C.red, marginTop: 2 }}>{warning}</div>}
       </div>
-      <div style={{ textAlign: 'center' }}><div style={{ fontSize: 9, color: C.text3 }}>Cần</div><b style={{ fontSize: 11 }}>{num(item.required_quantity)}</b></div>
-      <div style={{ textAlign: 'center' }}><div style={{ fontSize: 9, color: C.text3 }}>Đã có</div><b style={{ fontSize: 11, color: num(item.existing_quantity) > num(item.required_quantity) + 2 ? C.red : C.text }}>{num(item.existing_quantity)}</b></div>
+      <div style={{ textAlign: 'center' }}><div style={{ fontSize: FS.xs, color: C.text3 }}>Cần</div><b style={{ fontSize: FS.xs }}>{num(item.required_quantity)}</b></div>
+      <div style={{ textAlign: 'center' }}><div style={{ fontSize: FS.xs, color: C.text3 }}>Đã có</div><b style={{ fontSize: FS.xs, color: num(item.existing_quantity) > num(item.required_quantity) + 2 ? C.red : C.text }}>{num(item.existing_quantity)}</b></div>
       <div>
-        <div style={{ fontSize: 9, color: C.text3, marginBottom: 2 }}>Sẽ nhập</div>
+        <div style={{ fontSize: FS.xs, color: C.text3, marginBottom: 2 }}>Sẽ nhập</div>
         <input type="number" min="0" step="1" value={item.input_quantity ?? 0} onChange={e => onChange({ ...item, input_quantity: Math.max(0, Number(e.target.value || 0)), selected: Number(e.target.value || 0) > 0 })} style={{ ...inputStyle, padding: '4px 6px', textAlign: 'center' }} />
       </div>
-      <button type="button" onClick={onRemove} title="Xóa vật tư khỏi kế hoạch" style={{ width: 30, height: 28, borderRadius: 6, border: `1px solid ${C.redBorder}`, background: C.redBg, color: C.red, cursor: 'pointer', fontWeight: 850 }}>×</button>
+      <button type="button" className="emr-icon-btn emr-icon-btn--danger" onClick={onRemove} title="Xóa vật tư khỏi kế hoạch" aria-label="Xóa vật tư khỏi kế hoạch" style={{ width: 30, height: 30 }}><IconTrash size={16} stroke={1.75} /></button>
     </div>
   );
 }
@@ -116,10 +117,10 @@ function PatientPlan({ patient, jobs, draft, setDraft }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 11px', background: C.surface2, borderBottom: open ? `1px solid ${C.border}` : 'none' }}>
         <button type="button" onClick={() => setOpen(value => !value)} style={{ border: 0, background: 'transparent', color: C.text2, cursor: 'pointer', width: 20 }}>{open ? '▾' : '▸'}</button>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12, fontWeight: 850 }}>{patient.ho_ten || patient.ma_bn}</div>
-          <div style={{ fontSize: 9, color: C.text3 }}>Mã BN {patient.ma_bn} · Khoảng {episodeRange} · {episodeDates.length} ngày trong đợt · {patientJobs.length} ngày có kế hoạch · {missingCount} dòng sẽ nhập{warningCount ? ` · ${warningCount} cảnh báo` : ''}</div>
+          <div style={{ fontSize: FS.sm, fontWeight: 700 }}>{patient.ho_ten || patient.ma_bn}</div>
+          <div style={{ fontSize: FS.xs, color: C.text3 }}>Mã BN {patient.ma_bn} · Khoảng {episodeRange} · {episodeDates.length} ngày trong đợt · {patientJobs.length} ngày có kế hoạch · {missingCount} dòng sẽ nhập{warningCount ? ` · ${warningCount} cảnh báo` : ''}</div>
         </div>
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: patient.reviewed ? C.green : C.text2, fontWeight: 800 }}>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: FS.xs, color: patient.reviewed ? C.green : C.text2, fontWeight: 700 }}>
           <input type="checkbox" checked={Boolean(patient.reviewed)} onChange={e => setReviewed(e.target.checked)} />
           Đã kiểm kế hoạch
         </label>
@@ -134,20 +135,20 @@ function PatientPlan({ patient, jobs, draft, setDraft }) {
           <datalist id={`vtyt-list-${patient.ma_bn}`}>
             {HCHANH_VTYT_ITEMS.map(item => <option key={item.code} value={`${item.code} · ${item.name}`} />)}
           </datalist>
-          <Btn variant="secondary" onClick={addSupply} disabled={!addText.trim()} style={{ fontSize: 10, padding: '4px 7px' }}>Thêm VTYT</Btn>
+          <Btn variant="secondary" onClick={addSupply} disabled={!addText.trim()}>Thêm VTYT</Btn>
         </div>
 
         {patientJobs.length === 0 && (
-          <div style={{ padding: 10, color: C.text3, fontSize: 10 }}>Chưa có vật tư tự động gợi ý. Có thể chọn một ngày ở trên và thêm vật tư thủ công.</div>
+          <div style={{ padding: 10, color: C.text3, fontSize: FS.xs }}>Chưa có vật tư tự động gợi ý. Có thể chọn một ngày ở trên và thêm vật tư thủ công.</div>
         )}
 
         {patientJobs.map(({ job, index }) => (
           <div key={`${patient.ma_bn}-${job.ngay_lam}`} style={{ borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ padding: '6px 9px', background: C.blueBg, color: C.blue, fontSize: 10, fontWeight: 850 }}>
+            <div style={{ padding: '6px 9px', background: C.blueBg, color: C.blue, fontSize: FS.xs, fontWeight: 700 }}>
               Ngày {job.ngay_lam} · {safeArray(job.drugs).length} thuốc/y lệnh · {safeArray(job.supplies).length} vật tư tổng hợp
             </div>
             {safeArray(job.supplies).length === 0 ? (
-              <div style={{ padding: 9, color: C.text3, fontSize: 10 }}>Không có vật tư dự kiến cho ngày này.</div>
+              <div style={{ padding: 9, color: C.text3, fontSize: FS.xs }}>Không có vật tư dự kiến cho ngày này.</div>
             ) : safeArray(job.supplies).map((item, itemIndex) => (
               <SupplyEditor
                 key={`${item.code || item.name}-${itemIndex}`}
@@ -188,42 +189,37 @@ export default function HchanhVtytBatchPanel({ cards = [], draft, setDraft, onPr
   }
 
   return (
-    <div style={{ width: 'min(1120px, 88vw)', height: '100%', display: 'flex', flexDirection: 'column', background: C.surface, borderLeft: `1px solid ${C.border}`, boxShadow: '-10px 0 28px rgba(0,0,0,.12)' }}>
-      <div style={{ padding: '11px 14px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 850 }}>NHẬP VẬT TƯ Y TẾ HÀNG LOẠT</div>
-          <div style={{ fontSize: 10, color: C.text3, marginTop: 2 }}>Quét hôm qua · hôm nay · ngày mai · tự lưu bản nháp · sửa/xóa/thêm trước khi nhập</div>
-        </div>
-        <span style={{ fontSize: 10, color: C.green }}>● Tự động lưu</span>
-        <button type="button" onClick={onClose} style={{ border: 0, background: 'transparent', color: C.text2, fontSize: 22, cursor: 'pointer' }}>×</button>
-      </div>
-
-      <div style={{ padding: '10px 13px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <Btn variant="primary" disabled={loading || inputting || selectedCards.length === 0} onClick={() => onPreview?.(selectedCards)} style={{ fontSize: 11, padding: '5px 9px' }}>
-          {loading ? <><Spinner size={10} /> Đang quét...</> : `Quét VTYT đã chọn (${selectedCards.length})`}
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, overflow: 'hidden' }}>
+      <div style={{ padding: '10px 12px', borderBottom: `1px solid ${C.border2}`, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <Btn variant="primary" icon={IconListSearch} loading={loading} disabled={loading || inputting || selectedCards.length === 0} onClick={() => onPreview?.(selectedCards)}>
+          {loading ? 'Đang quét…' : `Quét VTYT đã chọn (${selectedCards.length})`}
         </Btn>
-        <Btn variant="solidSuccess" disabled={loading || inputting || !draft || !allReviewed || !draft?.precheck_token || precheckExpired} onClick={onInput} style={{ fontSize: 11, padding: '5px 9px' }}>
-          {inputting ? <><Spinner size={10} /> Đang nhập...</> : 'Nhập hàng loạt'}
+        <Btn variant="solidPrimary" icon={IconPackageImport} loading={inputting} disabled={loading || inputting || !draft || !allReviewed || !draft?.precheck_token || precheckExpired} onClick={onInput}>
+          {inputting ? 'Đang nhập…' : 'Nhập hàng loạt'}
         </Btn>
-        <Btn variant="danger" disabled={loading || inputting || !draft} onClick={onClear} style={{ fontSize: 11, padding: '5px 9px' }}>Xóa bản nháp</Btn>
-        {draft?.precheck_expires_at && <span style={{ fontSize: 10, color: precheckExpired ? C.red : C.text3 }}>{precheckExpired ? 'Quyền nhập đã hết hạn; quét lại để giữ các chỉnh sửa và cấp quyền mới.' : `Quyền nhập một lần hết hạn: ${new Date(draft.precheck_expires_at).toLocaleString('vi-VN')}`}</span>}
+        <Btn variant="danger" icon={IconTrash} disabled={loading || inputting || !draft} onClick={onClear}>Xóa bản nháp</Btn>
+        {draft?.precheck_expires_at && <span style={{ fontSize: FS.xs, color: precheckExpired ? C.red : C.text2 }}>{precheckExpired ? 'Quyền nhập đã hết hạn; quét lại để giữ các chỉnh sửa và cấp quyền mới.' : `Quyền nhập một lần hết hạn: ${new Date(draft.precheck_expires_at).toLocaleString('vi-VN')}`}</span>}
+        <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: FS.xs, color: C.text2 }}>
+          <IconCloudCheck size={15} stroke={1.75} color={C.green} aria-hidden="true" /> Bản nháp tự lưu
+        </span>
+        {onClose && <button type="button" className="emr-icon-btn" onClick={onClose} aria-label="Đóng"><IconX size={18} stroke={1.75} /></button>}
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: 12, display: 'grid', gap: 10, alignContent: 'start' }}>
         {!draft && (
           <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, overflow: 'hidden' }}>
             <div style={{ padding: '8px 10px', background: C.surface2, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input type="checkbox" checked={selectableCards.length > 0 && selectedIds.size === selectableCards.length} onChange={e => toggleAll(e.target.checked)} />
-              <b style={{ fontSize: 11 }}>Chọn người bệnh cần quét</b>
-              <span style={{ marginLeft: 'auto', fontSize: 10, color: C.text3 }}>{selectedIds.size}/{selectableCards.length} người bệnh</span>
+              <input type="checkbox" aria-label="Chọn tất cả" checked={selectableCards.length > 0 && selectedIds.size === selectableCards.length} onChange={e => toggleAll(e.target.checked)} style={{ accentColor: C.blue }} />
+              <b style={{ fontSize: FS.sm }}>Chọn người bệnh cần quét (hôm qua, hôm nay, ngày mai)</b>
+              <span style={{ marginLeft: 'auto', fontSize: FS.xs, color: C.text3 }}>{selectedIds.size}/{selectableCards.length} người bệnh</span>
             </div>
-            <div style={{ maxHeight: 'calc(100vh - 210px)', overflow: 'auto' }}>
+            <div>
               {selectableCards.map(card => {
                 const id = patientId(card);
-                return <label key={id} style={{ display: 'grid', gridTemplateColumns: '28px 1fr 130px', gap: 8, padding: '8px 10px', borderTop: `1px solid ${C.border2}`, alignItems: 'center', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={selectedIds.has(id)} onChange={e => setSelectedIds(previous => { const next = new Set(previous); if (e.target.checked) next.add(id); else next.delete(id); return next; })} />
-                  <div><b style={{ fontSize: 11 }}>{card.ho_ten || id}</b><div style={{ fontSize: 9, color: C.text3 }}>Mã BN {id}</div></div>
-                  <div style={{ fontSize: 9, color: C.text2 }}>{card.admission_time || card?.profile?.ngay_vao_vien || 'Chưa rõ ngày vào'}</div>
+                return <label key={id} style={{ display: 'grid', gridTemplateColumns: '28px minmax(0, 1fr) auto', gap: 8, padding: '8px 12px', borderTop: `1px solid ${C.border2}`, alignItems: 'center', cursor: 'pointer' }}>
+                  <input type="checkbox" style={{ accentColor: C.blue }} checked={selectedIds.has(id)} onChange={e => setSelectedIds(previous => { const next = new Set(previous); if (e.target.checked) next.add(id); else next.delete(id); return next; })} />
+                  <div><b style={{ fontSize: FS.md }}>{card.ho_ten || id}</b><div style={{ fontSize: FS.xs, color: C.text2 }}>Mã {id}</div></div>
+                  <div style={{ fontSize: FS.xs, color: C.text2, textAlign: 'right' }}>{card.admission_time || card?.profile?.ngay_vao_vien || 'Chưa rõ ngày vào'}</div>
                 </label>;
               })}
             </div>
@@ -231,14 +227,14 @@ export default function HchanhVtytBatchPanel({ cards = [], draft, setDraft, onPr
         )}
 
         {draft && <>
-          <div style={{ padding: '8px 10px', borderRadius: 8, background: allReviewed ? C.greenBg : C.amberBg, border: `1px solid ${allReviewed ? C.greenBorder : C.amberBorder}`, fontSize: 10, color: allReviewed ? C.green : C.amber }}>
+          <div style={{ padding: '8px 10px', borderRadius: 8, background: allReviewed ? C.greenBg : C.amberBg, border: `1px solid ${allReviewed ? C.greenBorder : C.amberBorder}`, fontSize: FS.xs, color: allReviewed ? C.green : C.amber }}>
             {allReviewed ? 'Tất cả người bệnh đã được xác nhận kế hoạch; có thể nhập hàng loạt.' : 'Cần kiểm và đánh dấu “Đã kiểm kế hoạch” cho từng người bệnh trước khi nhập.'}
           </div>
           {safeArray(draft.patients).map(patient => (
             <PatientPlan key={patient.ma_bn} patient={patient} jobs={patientJobs.get(String(patient.ma_bn)) || []} draft={draft} setDraft={setDraft} />
           ))}
           {Object.keys(draft.failed || {}).length > 0 && (
-            <div style={{ padding: 10, borderRadius: 8, background: C.redBg, border: `1px solid ${C.redBorder}`, color: C.red, fontSize: 10 }}>
+            <div style={{ padding: 10, borderRadius: 8, background: C.redBg, border: `1px solid ${C.redBorder}`, color: C.red, fontSize: FS.xs }}>
               Có {Object.keys(draft.failed).length} BN/ngày quét lỗi. Cần kiểm tra log hoặc quét lại trước khi nhập.
             </div>
           )}
