@@ -80,7 +80,7 @@ function removeSignatureImage(name) {
   if (existing?.signature_file) unlinkSignatureFile(existing.signature_file);
   const nextRows = rows.map(r => {
     if (r.name !== nameTrim) return r;
-    const { signature_file, ...rest } = r;
+    const { signature_file: _, ...rest } = r;
     return rest;
   });
   return writeNurseEmrAccounts(nextRows);
