@@ -111,8 +111,8 @@ function matchOutpatientCandidates(row, draft) {
     .map(r => ({ ma_bn: r.ma_bn, ngay_lam: r.ngay_lam, khoa: r.khoa_chuyen_den }));
 }
 
-// Giống hệt careRowKey() trong ClinicTab.jsx — phải khớp key để tra đúng
-// careEdits[...] (y lệnh/diễn biến đã lưu) ứng với từng dòng preview.
+// Khớp key careEdits[...] (y lệnh/diễn biến đã lưu) trong bản nháp chăm sóc
+// phòng khám (clinic_care_draft.json) với từng dòng preview.
 function careRowKey(row = {}, index = 0) {
   const stayId = String(row.noitruid || '').trim();
   if (stayId) return `stay:${stayId}`;
