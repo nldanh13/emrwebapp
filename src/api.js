@@ -97,6 +97,10 @@ function apiActionLabel(method, url) {
     'GET /api/diagnostics': 'chẩn đoán hệ thống',
     'POST /api/clinic/preview': 'đọc danh sách phòng khám',
     'GET /api/clinic/care-draft': 'tải bản nháp chăm sóc phòng khám',
+    'POST /api/clinic/monitor/start': 'bắt đầu theo dõi phòng khám',
+    'POST /api/clinic/monitor/stop': 'dừng theo dõi phòng khám',
+    'POST /api/clinic/monitor/refresh': 'làm mới danh sách phòng khám',
+    'GET /api/clinic/monitor/state': 'đọc danh sách phòng khám',
     'GET /api/data-sessions': 'tải danh sách phiên dữ liệu',
     'DELETE /api/data-sessions': 'xoá phiên dữ liệu',
     'POST /api/cancel': 'huỷ tác vụ đang chạy',
@@ -681,6 +685,10 @@ export const deleteSickLeaveImportRow = (payload) => post('/api/sick-leave-impor
 export const launchBhytTool = () => post('/api/sick-leave-launch-bhyt-tool', {});
 
 export const getClinicCareDraft = () => get('/api/clinic/care-draft');
+export const startClinicMonitor = (payload) => post('/api/clinic/monitor/start', payload);
+export const stopClinicMonitor = () => post('/api/clinic/monitor/stop', {});
+export const refreshClinicMonitor = () => post('/api/clinic/monitor/refresh', {});
+export const getClinicMonitorState = () => get('/api/clinic/monitor/state');
 
 // ── Export / Import session data ──────────────────────────────────────────────
 

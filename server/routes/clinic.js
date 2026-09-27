@@ -1,15 +1,18 @@
 // server/routes/clinic.js — phần Phòng khám còn giữ lại (tab Phòng khám đang được làm lại).
 //   POST /api/clinic/preview    đọc danh sách Khám bệnh (worker clinic_outpatient.py) — tab Nghỉ ốm dùng.
 //   GET  /api/clinic/care-draft đọc bản nháp chăm sóc phòng khám cũ — tab Nghỉ ốm lấy danh sách ngoại trú.
+//   /api/clinic/monitor/*       theo dõi Danh sách Khám bệnh liên tục (worker clinic_monitor.py, chỉ đọc).
 
 'use strict';
 
 const router = require('express').Router();
+const fs = require('fs');
 const path = require('path');
 
 const { getRuntimePaths } = require('../services/session');
 const { enqueueHeavy, registerCancel, unregisterCancel } = require('../services/task_queue');
-const { runScript, fmtPyError } = require('../services/python_runner');
+const { runPython, runScript, fmtPyError } = require('../services/python_runner');
+const { WORKER_DIR } = require('../constants');
 const { appendActivity } = require('../services/activity_logger');
 const { writeJsonAtomic, readJsonSafe, safeUnlink, safeFilePart } = require('../utils/file');
 
@@ -150,6 +153,118 @@ router.get('/clinic/care-draft', (req, res) => {
   const ctx = getRuntimePaths(req);
   const draft = readJsonSafe(clinicCareDraftPath(ctx), null);
   return res.json({ status: 'ok', draft: draft && typeof draft === 'object' ? draft : null });
+});
+
+// ── Theo dõi Danh sách Khám bệnh ─────────────────────────────────────────────
+// Một tiến trình Python chạy nền cho mỗi phiên dữ liệu, giữ Chrome đăng nhập sẵn
+// và tự đọc lại danh sách theo chu kỳ. Không đi qua hàng đợi tác vụ nặng vì
+// chạy liên tục hàng giờ; chỉ đọc, không ghi EMR. Mật khẩu chỉ nằm trong file
+// yêu cầu tạm, worker đọc xong xoá ngay.
+
+const MONITOR_MAX_RUNTIME_MS = 14 * 60 * 60 * 1000;
+const monitors = new Map(); // sid -> { running, kill, stopTimer }
+
+function monitorPaths(ctx) {
+  return {
+    state: path.join(ctx.dir, 'clinic_monitor_state.json'),
+    control: path.join(ctx.dir, 'clinic_monitor_control.json'),
+    request: path.join(ctx.dir, `clinic_monitor_request_${Date.now()}.json`),
+  };
+}
+
+function sanitizeMonitorRequest(body = {}) {
+  const username = String(body.username || '').trim().slice(0, 120);
+  const password = String(body.password || '');
+  const loginUrl = String(body.loginUrl || '').trim().slice(0, 500);
+  const listUrl = String(body.listUrl || '').trim().slice(0, 1000);
+  const interval = Number.parseInt(body.intervalMinutes, 10);
+  if (!username) throw new Error('Thiếu tài khoản EMR.');
+  if (!password) throw new Error('Thiếu mật khẩu EMR.');
+  if (!/^https?:\/\//i.test(loginUrl)) throw new Error('URL đăng nhập EMR không hợp lệ.');
+  if (!/^https?:\/\//i.test(listUrl)) throw new Error('URL Danh sách Khám bệnh không hợp lệ.');
+  return {
+    username, password, loginUrl, listUrl,
+    intervalMinutes: Number.isFinite(interval) ? Math.min(Math.max(interval, 1), 60) : 3,
+    headless: body.headless !== false,
+  };
+}
+
+function writeControl(ctx, data) {
+  writeJsonAtomic(monitorPaths(ctx).control, { ...data, at: Date.now() });
+}
+
+function monitorStatePayload(ctx) {
+  const entry = monitors.get(ctx.sid);
+  const state = readJsonSafe(monitorPaths(ctx).state, null);
+  const running = Boolean(entry?.running);
+  const payload = state && typeof state === 'object' ? state : { status: 'idle', rows: [], summary: null };
+  if (!running && ['starting', 'running', 'error'].includes(payload.status)) payload.status = 'stopped';
+  return { ...payload, running, exit_message: entry?.exitMessage || '' };
+}
+
+router.post('/clinic/monitor/start', async (req, res) => {
+  const ctx = getRuntimePaths(req);
+  let payload;
+  try {
+    payload = sanitizeMonitorRequest(req.body || {});
+  } catch (err) {
+    return res.status(400).json({ status: 'error', message: String(err.message || err) });
+  }
+  const existing = monitors.get(ctx.sid);
+  if (existing?.running) {
+    return res.status(409).json({ status: 'error', message: 'Đang theo dõi rồi. Dừng trước khi bắt đầu lại.' });
+  }
+  const paths = monitorPaths(ctx);
+  writeJsonAtomic(paths.request, payload);
+  try { fs.chmodSync(paths.request, 0o600); } catch (_) {}
+  writeJsonAtomic(paths.control, { at: Date.now() });
+  safeUnlink(paths.state);
+
+  const entry = { running: true, kill: null, exitMessage: '' };
+  monitors.set(ctx.sid, entry);
+  appendActivity(ctx, { kind: 'workflow.clinic.monitor.start', interval_minutes: payload.intervalMinutes, headless: payload.headless });
+
+  runPython(['-u', path.join(WORKER_DIR, 'clinic_monitor.py'), 'monitor', paths.request, paths.state, paths.control], {
+    timeoutMs: MONITOR_MAX_RUNTIME_MS,
+    runtimeDir: ctx.dir,
+    onSpawn: (killFn) => { entry.kill = killFn; },
+  }).then((result) => {
+    entry.running = false;
+    if (entry.stopTimer) clearTimeout(entry.stopTimer);
+    safeUnlink(paths.request);
+    if (result.spawnError) entry.exitMessage = `Không khởi động được Python: ${result.spawnError}`;
+    else if (result.killedByTimeout) entry.exitMessage = 'Đã tự dừng sau 14 giờ theo dõi.';
+    else if (result.code !== 0 && !entry.stopRequested) entry.exitMessage = fmtPyError('Theo dõi phòng khám bị dừng do lỗi.', result);
+    appendActivity(ctx, { kind: 'workflow.clinic.monitor.exit', code: result.code, message: entry.exitMessage });
+  });
+
+  return res.json({ status: 'ok', message: 'Đã bắt đầu theo dõi Danh sách Khám bệnh.' });
+});
+
+router.post('/clinic/monitor/stop', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  const entry = monitors.get(ctx.sid);
+  if (!entry?.running) return res.json({ status: 'ok', message: 'Không có theo dõi nào đang chạy.' });
+  entry.stopRequested = true;
+  writeControl(ctx, { stop: true });
+  // Worker đóng Chrome gọn gàng trong vài giây; quá hạn thì buộc dừng.
+  entry.stopTimer = setTimeout(() => { if (entry.running && entry.kill) entry.kill(); }, 20_000);
+  appendActivity(ctx, { kind: 'workflow.clinic.monitor.stop' });
+  return res.json({ status: 'ok', message: 'Đang dừng theo dõi.' });
+});
+
+router.post('/clinic/monitor/refresh', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  if (!monitors.get(ctx.sid)?.running) {
+    return res.status(409).json({ status: 'error', message: 'Chưa bắt đầu theo dõi.' });
+  }
+  writeControl(ctx, { refresh: Date.now() });
+  return res.json({ status: 'ok' });
+});
+
+router.get('/clinic/monitor/state', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  return res.json({ status: 'ok', monitor: monitorStatePayload(ctx) });
 });
 
 module.exports = router;

@@ -96,7 +96,7 @@
       "label": "Phòng khám",
       "icon": "⌁",
       "group": "Hành chánh",
-      "hint": "Đang làm lại",
+      "hint": "Theo dõi danh sách khám bệnh",
       "order": 100,
       "compact": true,
       "usesDateRange": false
