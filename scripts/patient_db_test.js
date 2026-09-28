@@ -155,6 +155,67 @@ async function main() {
     assert.strictEqual(Number(conn().prepare('SELECT COUNT(*) n FROM lan_quet').get().n), before);
   });
 
+  await test('Nối lượt: tái khám đúng hẹn (±3 ngày), trễ hẹn, khám → nhập viện, tái nhập viện trong 30 ngày, quá hẹn', () => {
+    const kham = (kb, time, xuTri, hen, stage = 'xong') => patientDb.recordClinicVisit({
+      khambenhid: kb, ma_bn: 'BN10', ho_ten: 'Phạm Văn Hẹn', thoi_gian: time, trang_thai: 'Hoàn tất', xu_tri: xuTri, stage, case: 'cho_ve', services: [],
+      details: { status: 'ok', stage, cd_chinh: 'M54.5 - Đau thắt lưng', hen_tai_kham: hen },
+    }, { now: '2026-10-30T00:00:00Z' });
+    kham('K1', '08:00 01/08/2026', 'Cho về', '15/08/2026');
+    kham('K2', '08:00 17/08/2026', 'Cho về', '30/08/2026');          // +2 ngày → đúng hẹn
+    kham('K3', '08:00 10/09/2026', 'Nhập viện', '');                  // +11 ngày → trễ hẹn
+    patientDb.recordInpatient('BN10', { profile: { ...profile, ngay_vao_vien: '11/09/2026' },
+      discharge: discharge('Thoát vị', { raw_time: '08:00 15/09/2026', ngay_ra: '15/09/2026', gio_ra: '08:00', tong_so_ngay_dt: '5', tg_hen_kham: '' }) },
+      { from: '2026-09-11', to: '2026-09-15', source: 'kho_nghien_cuu', now: '2026-10-30T00:00:00Z' });
+    patientDb.recordInpatient('BN10', { profile: { ...profile, ngay_vao_vien: '01/10/2026' },
+      discharge: discharge('Thoát vị tái phát', { raw_time: '08:00 03/10/2026', ngay_ra: '03/10/2026', gio_ra: '08:00', tong_so_ngay_dt: '3', tg_hen_kham: '20/10/2026' }) },
+      { from: '2026-10-01', to: '2026-10-03', source: 'kho_nghien_cuu', now: '2026-10-30T00:00:00Z' });
+
+    const links = conn().prepare(`SELECT k.loai, a.khoa_emr ta, b.khoa_emr tb, a.loai la, b.loai lb, k.so_ngay, k.lech_hen
+      FROM lien_ket_luot k JOIN luot a ON a.id = k.luot_truoc JOIN luot b ON b.id = k.luot_sau WHERE k.ma_bn = 'BN10' ORDER BY a.gio_vao, k.id`).all()
+      .map(r => `${r.loai}:${r.ta || r.la}>${r.tb || r.lb}:${r.so_ngay}:${r.lech_hen ?? ''}`);
+    assert.deepStrictEqual(links, [
+      'tai_kham_dung_hen:kb:K1>kb:K2:16:2',
+      'tai_kham_tre_hen:kb:K2>kb:K3:24:11',
+      'kham_nhap_vien:kb:K3>noi_tru:1:',
+      'tai_nhap_vien_30:noi_tru>noi_tru:16:',
+    ]);
+
+    const rep = patientDb.appointmentReport({ tu: '2026-08-01', den: '2026-10-31', homNay: '2026-10-30' });
+    assert.deepStrictEqual(rep.rows.filter(r => r.ma_bn === 'BN10').map(r => `${r.ngay_hen}:${r.trang_thai}`),
+      ['2026-08-15:dung_hen', '2026-08-30:tre_hen', '2026-10-20:qua_hen']);
+    const early = patientDb.appointmentReport({ tu: '2026-10-20', den: '2026-10-20', homNay: '2026-10-22' });
+    assert.strictEqual(early.rows[0].trang_thai, 'chua_den_hen', 'còn trong ±3 ngày → chưa tính quá hẹn');
+    assert.strictEqual(rep.tong_ket.ti_le_dung_hen !== null, true);
+
+    const re = patientDb.readmissionReport({ tu: '2026-09-01', den: '2026-10-31', homNay: '2026-10-30' });
+    const mine = re.rows.filter(r => r.ma_bn === 'BN10');
+    assert.deepStrictEqual(mine.map(r => `${r.gio_ra.slice(0, 10)}:${r.trang_thai}`), ['2026-09-15:tai_nhap_vien', '2026-10-03:chua_du_30_ngay']);
+    assert.strictEqual(mine[0].tai_nhap.so_ngay, 16);
+
+    const j = patientDb.patientJourney('BN10');
+    assert.strictEqual(j.luot[0].trang_thai_hen.trang_thai, 'dung_hen');
+    assert.ok(j.luot[0].lien_ket.length >= 1);
+  });
+
+  await test('Tái khám: cùng ngày có cả lượt khám và đợt nhập viện → lượt khám là lượt tái khám', () => {
+    patientDb.recordClinicVisit({ khambenhid: 'T1', ma_bn: 'BN12', ho_ten: 'X', thoi_gian: '08:00 01/08/2026', stage: 'xong', xu_tri: 'Cho về', services: [],
+      details: { status: 'ok', stage: 'xong', hen_tai_kham: '15/08/2026' } }, { now: '2026-09-01T00:00:00Z' });
+    patientDb.recordInpatient('BN12', { profile: { ...profile, ngay_vao_vien: '15/08/2026' } }, { from: '2026-08-15', source: 'hanh_chanh', now: '2026-09-01T00:00:00Z' });
+    patientDb.recordClinicVisit({ khambenhid: 'T2', ma_bn: 'BN12', ho_ten: 'X', thoi_gian: '09:00 15/08/2026', stage: 'xong', xu_tri: 'Nhập viện', services: [] }, { now: '2026-09-01T00:00:00Z' });
+    const link = conn().prepare(`SELECT b.loai, b.khoa_emr FROM lien_ket_luot k JOIN luot b ON b.id = k.luot_sau
+      WHERE k.ma_bn = 'BN12' AND k.loai = 'tai_kham_dung_hen'`).get();
+    assert.strictEqual(link.khoa_emr, 'kb:T2');
+  });
+
+  await test('Kho tạo từ bản trước (chưa có bảng nối lượt) → mở lại tự tính nối lượt cho mọi người bệnh', () => {
+    conn().prepare("UPDATE meta SET value = '1' WHERE key = 'schema_version'").run();
+    conn().prepare('DELETE FROM lien_ket_luot').run();
+    patientDb.close();
+    const n = Number(conn().prepare("SELECT COUNT(*) n FROM lien_ket_luot WHERE ma_bn = 'BN10'").get().n);
+    assert.strictEqual(n, 4);
+    assert.strictEqual(conn().prepare("SELECT value FROM meta WHERE key = 'schema_version'").get().value, '2');
+  });
+
   await test('Tra cứu: tìm không dấu, hành trình theo thời gian, danh sách lượt theo ngày/loại, API', async () => {
     const found = patientDb.searchPatients('tran thi');
     assert.deepStrictEqual(found.map(r => r.ma_bn), ['BN3']);
@@ -177,7 +238,11 @@ async function main() {
       const r2 = await fetch(`${base}/kho/benh-nhan/KHONGCO`);
       assert.strictEqual(r2.status, 404);
       const r3 = await (await fetch(`${base}/kho/tong-quan`)).json();
-      assert.strictEqual(r3.benh_nhan, 4);
+      assert.strictEqual(r3.benh_nhan, 6);
+      const r5 = await (await fetch(`${base}/kho/tai-kham?tu=2026-08-01&den=2026-08-31&trang_thai=tre_hen`)).json();
+      assert.deepStrictEqual(r5.rows.map(r => r.ngay_hen), ['2026-08-30']);
+      const r6 = await (await fetch(`${base}/kho/tai-nhap-vien?tu=2026-09-01&den=2026-09-30`)).json();
+      assert.ok(r6.rows.some(r => r.trang_thai === 'tai_nhap_vien'));
       const r4 = await (await fetch(`${base}/kho/dong-bo`, { method: 'POST' })).json();
       assert.strictEqual(r4.status, 'ok');
     } finally {

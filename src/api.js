@@ -109,6 +109,8 @@ function apiActionLabel(method, url) {
     'GET /api/kho/benh-nhan': 'đọc hành trình người bệnh',
     'GET /api/kho/luot': 'đọc danh sách lượt khám / nằm viện',
     'POST /api/kho/dong-bo': 'góp dữ liệu đã lấy vào kho người bệnh',
+    'GET /api/kho/tai-kham': 'đọc báo cáo tái khám',
+    'GET /api/kho/tai-nhap-vien': 'đọc báo cáo tái nhập viện',
     'POST /api/clinic/monitor/start': 'bắt đầu theo dõi phòng khám',
     'POST /api/clinic/monitor/stop': 'dừng theo dõi phòng khám',
     'POST /api/clinic/monitor/refresh': 'làm mới danh sách phòng khám',
@@ -696,6 +698,10 @@ export const getPatientJourney = (maBn) => get(`/api/kho/benh-nhan/${encodeURICo
 export const listPatientDbVisits = ({ tu = '', den = '', loai = '', khoa = '', limit = 200, offset = 0 } = {}) =>
   get(`/api/kho/luot?${new URLSearchParams({ tu, den, loai, khoa, limit: String(limit), offset: String(offset) })}`);
 export const syncPatientDb = () => post('/api/kho/dong-bo', {});
+export const getAppointmentReport = ({ tu = '', den = '', trangThai = '' } = {}) =>
+  get(`/api/kho/tai-kham?${new URLSearchParams({ tu, den, trang_thai: trangThai })}`);
+export const getReadmissionReport = ({ tu = '', den = '' } = {}) =>
+  get(`/api/kho/tai-nhap-vien?${new URLSearchParams({ tu, den })}`);
 
 // ── Phòng khám ───────────────────────────────────────────────────────────────
 export const importHchanhStayStore = () => post('/api/hchanh/stay-store/import', {});

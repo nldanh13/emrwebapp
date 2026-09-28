@@ -30,6 +30,34 @@ Một file SQLite gom mọi lượt khám và mọi đợt nằm viện của t�
 | `chan_doan` | 1 chẩn đoán của lượt (`chinh`, `kem`, `vao`, `ra`) |
 | `dich_vu` | 1 dịch vụ: XN / CĐHA (số đã xong / số chỉ định) hoặc chỉ định chụp |
 | `thao_tac` | 1 việc hệ thống đã làm trên EMR (`hoan_tat_kham`, `sbbhc`, `dieu_tri_ngoai_tru`) |
+| `lien_ket_luot` | 1 mối nối giữa 2 lượt của cùng người bệnh (xem mục Tái khám). Tính lại mỗi khi lượt thay đổi, không nhập tay |
+
+## Tái khám và tái nhập viện
+
+Mỗi khi một lượt thay đổi, `rebuildLinks` tính lại các mối nối của người bệnh đó.
+
+| Loại nối | Quy tắc |
+|---|---|
+| `tai_kham_dung_hen` | Lượt có ngày hẹn → lượt sau gần ngày hẹn nhất, lệch không quá ±3 ngày. Nếu cùng ngày có cả lượt khám và đợt nội trú, lấy lượt khám |
+| `tai_kham_tre_hen` | Không có lượt trong ±3 ngày → lượt đầu tiên sau hạn (quá ngày hẹn + 3 ngày) |
+| `tai_nhap_vien_30` | Đợt nội trú đã ra viện → đợt nội trú kế tiếp bắt đầu trong 30 ngày |
+| `kham_nhap_vien` | Lượt khám có xử trí Nhập viện → đợt nội trú bắt đầu trong 2 ngày |
+
+Trạng thái hẹn tính theo ngày hôm nay, không lưu vào kho:
+- `dung_hen` / `tre_hen`: có mối nối tương ứng.
+- `qua_hen`: đã quá ngày hẹn + 3 ngày mà chưa thấy người bệnh quay lại.
+- `chua_den_hen`: chưa tới ngày hẹn, hoặc vẫn còn trong khoảng ±3 ngày.
+
+Cách tính tỉ lệ:
+- **Tỉ lệ đúng hẹn** = đúng hẹn / (đúng hẹn + trễ hẹn + quá hẹn). Không tính các hẹn chưa đến.
+- **Tỉ lệ tái nhập viện** = tái nhập / (tái nhập + không tái nhập). Đợt ra viện chưa đủ 30 ngày mà chưa thấy tái nhập được đếm riêng.
+
+Giới hạn: chỉ tính các lượt có trong kho. Người bệnh quay lại nơi hệ thống không quét sẽ bị tính là quá hẹn hoặc không tái nhập.
+
+Màn hình **Người bệnh & tái khám** (nhóm Nghiên cứu) có 3 phần:
+- tìm người bệnh và xem hành trình;
+- báo cáo tái khám theo ngày hẹn;
+- báo cáo tái nhập viện theo ngày ra viện.
 
 ## Nguồn ghi vào kho
 
@@ -49,6 +77,8 @@ Một file SQLite gom mọi lượt khám và mọi đợt nằm viện của t�
 | `GET /api/kho/tim?q=` | tìm theo mã BN, họ tên (có dấu hoặc không dấu), SĐT, số thẻ BHYT |
 | `GET /api/kho/benh-nhan/:maBn` | hành trình: mọi lượt theo thời gian, kèm chẩn đoán, dịch vụ, thao tác, nguồn dữ liệu |
 | `GET /api/kho/luot?tu=&den=&loai=&khoa=` | danh sách lượt theo ngày, loại, khoa |
+| `GET /api/kho/tai-kham?tu=&den=&trang_thai=` | báo cáo tái khám theo ngày hẹn; `trang_thai`: `dung_hen`, `tre_hen`, `qua_hen`, `chua_den_hen` |
+| `GET /api/kho/tai-nhap-vien?tu=&den=` | báo cáo tái nhập viện trong 30 ngày, theo ngày ra viện |
 | `POST /api/kho/dong-bo` | chép kho đợt nằm viện đã có sang kho người bệnh |
 
 ## Sao lưu
@@ -57,11 +87,5 @@ Kho là một file duy nhất. Khi sao lưu, chép cả `kho.sqlite3`, `kho.sqli
 
 ## Các đợt tiếp theo
 
-- **Đợt 3:** nối lượt (`lien_ket_luot`).
-  - Tái khám đúng hẹn: ±3 ngày so với ngày hẹn.
-  - Trễ hẹn / không tái khám.
-  - Tái nhập viện trong 30 ngày.
-  - Khám → nhập viện.
-  - Kèm màn "Hành trình người bệnh" và báo cáo.
 - **Đợt 4:** các tab đọc dữ liệu từ kho.
 - **Đợt 5:** Kho nghiên cứu chuẩn hoá từ kho chung.
