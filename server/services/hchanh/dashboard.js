@@ -465,7 +465,7 @@ function buildPatientCard(ctx, meta, ticket) {
     issues = normalizeIssuesForDashboard(qa_result.issues);
   }
 
-  const manual_review = manualReviewSummary(meta.manual_review);
+  const manual_review = manualReviewSummary(meta.manual_review, { fetched: meta.fetched });
   if (scope === 'discharge') issues = [...issues, ...manualReviewIssues(meta.manual_review)];
   const ic     = countIssues(issues);
   const complete = check.missing.length === 0;
@@ -484,7 +484,9 @@ function buildPatientCard(ctx, meta, ticket) {
   if (scope === 'discharge' && status === 'green' && !manual_review.passed) status = 'amber';
   let status_label = statusLabelFor({ workflowStatus: status, issueCounts: ic, dataState: state, missingCount: check.missing.length, fileAttentionCount, bhytBlocking });
   if (scope === 'discharge' && complete && !ic.errors && !ic.warnings && !bhytBlocking && !manual_review.complete) {
-    status_label = `Còn kiểm tay ${manual_review.pending_count}`;
+    status_label = manual_review.stale_count
+      ? `Cần kiểm lại ${manual_review.stale_count}`
+      : `Còn kiểm tay ${manual_review.pending_count}`;
   }
   const score  = priorityScore(issues, scope, ticket) + ((fetch_error_active || hasFileFetchError) ? 120 : 0);
   const billing_overview = buildBillingOverview(data.billing, issues);
@@ -502,9 +504,11 @@ function buildPatientCard(ctx, meta, ticket) {
         ? qa.summary
         : manual_review.issue_count
           ? `Còn ${manual_review.issue_count} mục kiểm thủ công cần sửa.`
-          : manual_review.pending_count
-            ? `Máy chưa phát hiện lỗi; còn ${manual_review.pending_count} mục cần kiểm thủ công.`
-            : 'Đã kiểm tự động và thủ công — đủ điều kiện chốt hồ sơ.',
+          : manual_review.stale_count
+            ? `Dữ liệu EMR đã thay đổi; còn ${manual_review.stale_count} mục cần kiểm lại.`
+            : manual_review.pending_count
+              ? `Máy chưa phát hiện lỗi; còn ${manual_review.pending_count} mục cần kiểm thủ công.`
+              : 'Đã kiểm tự động và thủ công — đủ điều kiện chốt hồ sơ.',
     };
   }
 
