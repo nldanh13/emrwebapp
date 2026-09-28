@@ -57,7 +57,8 @@ def test_classify_cases_and_blockers():
     b = rows['b']
     assert b['ho_ten'] == 'NGUOI B' and b['cho_doc_kq'] is True
     assert b['stage'] == 'dang_lam_dv' and b['case'] == 'chua_xu_tri'
-    assert b['blockers'] == ['XN chưa xong (2/5)', 'Chờ đọc kết quả', 'Chưa có xử trí']
+    # Chờ đọc KQ không còn là điều vướng: xử lý bằng cách xem đơn thuốc trên màn khám.
+    assert b['blockers'] == ['XN chưa xong (2/5)', 'Chưa có xử trí']
     assert b['ready'] is False
 
     assert rows['c']['has_tt'] is True and rows['c']['blockers'] == ['TT chưa xong (0/1)']
@@ -138,6 +139,9 @@ def test_run_monitor_writes_state_deletes_request_and_stops(monkeypatch, tmp_pat
         def read(self):
             return cm.rows_from_html(html)
 
+        def on_exam_page(self, row, action):
+            return {'status': 'ready', 'message': 'Sẵn sàng hoàn tất'}
+
     monkeypatch.setattr(cm, 'Monitor', FakeMonitor)
     cm.run_monitor(str(req), str(state), str(control))
 
@@ -147,4 +151,136 @@ def test_run_monitor_writes_state_deletes_request_and_stops(monkeypatch, tmp_pat
     assert data['interval_minutes'] == 5
     assert [r['khambenhid'] for r in data['rows']] == ['a']
     assert data['summary']['ready'] == 1
+    assert data['rows'][0]['eligible'] is True and data['rows'][0]['check']['status'] == 'ready'
+    assert 'href' not in data['rows'][0]
     assert 'password' not in data and data['account'] == 'u'
+
+
+# ── Điều kiện và thao tác hoàn tất khám ──────────────────────────────────────
+from datetime import datetime as DT  # noqa: E402
+
+
+def test_time_rules():
+    start = DT(2026, 9, 28, 8, 0)
+    assert cm.parse_emr_dt('08:05 28/09/2026') == DT(2026, 9, 28, 8, 5)
+    assert cm.fmt_emr_dt(DT(2026, 9, 28, 8, 5)) == '08:05 28/09/2026'
+    # Mốc sớm nhất = Ngày khám + 3 phút, hoặc giờ xong chỉ định + 1 phút nếu muộn hơn.
+    assert cm.earliest_completion(start, None) == DT(2026, 9, 28, 8, 3)
+    assert cm.earliest_completion(start, DT(2026, 9, 28, 8, 1)) == DT(2026, 9, 28, 8, 3)
+    assert cm.earliest_completion(start, DT(2026, 9, 28, 9, 30)) == DT(2026, 9, 28, 9, 31)
+    now = DT(2026, 9, 28, 10, 0)
+    earliest = DT(2026, 9, 28, 9, 31)
+    assert cm.exit_time_is_valid(DT(2026, 9, 28, 9, 45), earliest, now) is True
+    assert cm.exit_time_is_valid(DT(2026, 9, 28, 9, 30), earliest, now) is False   # sớm hơn mốc
+    assert cm.exit_time_is_valid(DT(2026, 9, 28, 10, 5), earliest, now) is False   # ở tương lai
+    assert cm.exit_time_is_valid(None, earliest, now) is False
+    html = '<td>08:10 28/09/2026</td><td>09:30 28/09/2026</td><td>hẹn 07:00 30/09/2026</td>'
+    assert cm.latest_service_time(html, now) == DT(2026, 9, 28, 9, 30)  # bỏ mốc ở tương lai
+
+
+def test_count_prescribed_drugs():
+    html = ('<table id="tblThuoc"><tbody><tr><td>Nhóm</td></tr>'
+            '<tr class="groupthuoc1 collapse in"><td>A</td></tr><tr class="groupthuoc1 collapse in"><td>B</td></tr>'
+            '</tbody></table>')
+    assert cm.count_prescribed_drugs(html) == 2
+    assert cm.count_prescribed_drugs('<table id="tblThuoc"><tbody><tr><td>x</td></tr></tbody></table>') == 0
+
+
+class FakePage:
+    """Màn khám giả: ghi lại mọi thao tác ghi để kiểm tra luồng."""
+
+    def __init__(self, *, enter=False, drugs=1, start='08:00 28/09/2026', weight=0.0, exit_time=None, finish_error=None):
+        self.enter, self.drugs, self.start = enter, drugs, cm.parse_emr_dt(start)
+        self.weight, self.exit_time, self.finish_error = weight, exit_time, finish_error
+        self.writes = []
+
+    def needs_enter(self): return self.enter
+    def drug_count(self): return self.drugs
+    def exam_start(self): return self.start
+    def read_weight(self): return self.weight
+    def read_exit_time(self): return self.exit_time
+    def enter_exam(self): self.writes.append('vao_kham'); self.enter = False
+    def save_weight(self, kg): self.writes.append(('can_nang', kg)); self.weight = kg
+    def save_exit_time(self, v): self.writes.append(('thoi_gian_ra', cm.fmt_emr_dt(v)))
+
+    def finish(self):
+        if self.finish_error:
+            raise cm.ExamStepError(self.finish_error)
+        self.writes.append('hoan_tat')
+        return ['Cập nhập trạng thái thành công!']
+
+
+NOW = DT(2026, 9, 28, 10, 0)
+
+
+def test_check_patient_is_read_only():
+    row = {'cho_doc_kq': True}
+    page = FakePage(enter=True, drugs=0)
+    assert cm.check_patient(page, row, None, NOW)['status'] == 'no_drug'
+    page = FakePage(enter=True, drugs=2, weight=0)
+    assert cm.check_patient(page, row, None, NOW)['status'] == 'need_weight'
+    page = FakePage(start='09:58 28/09/2026', weight=55)
+    res = cm.check_patient(page, {}, None, NOW)
+    assert res['status'] == 'waiting' and '10:01' in res['message']
+    page = FakePage(weight=55)
+    assert cm.check_patient(page, {}, DT(2026, 9, 28, 9, 0), NOW)['status'] == 'ready'
+    assert page.writes == []
+
+
+def test_complete_patient_flow():
+    # Chờ đọc KQ có thuốc: vào khám → nhập cân nặng người dùng nhập → sửa thời gian ra về giờ hiện tại → hoàn tất.
+    page = FakePage(enter=True, drugs=3, weight=0, exit_time=cm.parse_emr_dt('08:01 28/09/2026'))
+    res = cm.complete_patient(page, {'cho_doc_kq': True}, DT(2026, 9, 28, 9, 0), NOW, 52)
+    assert res['result'] == 'done'
+    assert page.writes == ['vao_kham', ('can_nang', 52), ('thoi_gian_ra', '10:00 28/09/2026'), 'hoan_tat']
+
+    # Thời gian ra đã hợp lệ → giữ nguyên, không sửa.
+    page = FakePage(weight=60, exit_time=cm.parse_emr_dt('09:40 28/09/2026'))
+    assert cm.complete_patient(page, {}, DT(2026, 9, 28, 9, 0), NOW, None)['result'] == 'done'
+    assert page.writes == ['hoan_tat']
+
+
+def test_complete_patient_stops_without_real_data():
+    page = FakePage(enter=True, drugs=0)
+    assert cm.complete_patient(page, {'cho_doc_kq': True}, None, NOW, None)['result'] == 'no_drug'
+    assert page.writes == []  # không bấm Vào khám khi chưa có thuốc
+
+    page = FakePage(weight=0)
+    res = cm.complete_patient(page, {}, None, NOW, None)
+    assert res['result'] == 'need_weight' and page.writes == []  # không tự điền cân nặng
+
+    # Chờ đọc KQ có thuốc nhưng thiếu cân nặng: dừng TRƯỚC khi bấm Vào khám.
+    page = FakePage(enter=True, drugs=2, weight=0)
+    assert cm.complete_patient(page, {'cho_doc_kq': True}, None, NOW, None)['result'] == 'need_weight'
+    assert page.writes == []
+
+    page = FakePage(start='09:58 28/09/2026', weight=60)
+    assert cm.complete_patient(page, {}, None, NOW, None)['result'] == 'waiting'
+    assert page.writes == []
+
+
+class DialogDriver:
+    def __init__(self, dialogs):
+        self.info = {'dialogs': dialogs, 'toasts': [], 'xutriError': ''}
+        self.closed = False
+
+    def execute_script(self, script, *args):
+        if script == cm.READ_DIALOGS_JS:
+            return self.info
+        if script == cm.CLOSE_DIALOGS_JS:
+            self.closed = True
+        return None
+
+
+def test_confirm_dialog_is_never_accepted():
+    drv = DialogDriver([{'title': 'Bạn có muốn tiếp tục thực hiện không?', 'text': 'Vượt trần BHYT', 'confirm': True}])
+    page = cm.ExamPage(drv, pause=lambda s: None)
+    try:
+        page.check_dialogs('Hoàn tất khám')
+        raised = ''
+    except cm.ExamStepError as e:
+        raised = str(e)
+    assert drv.closed is True
+    assert 'chưa tự đồng ý' in raised and 'Vượt trần BHYT' in raised
+    # Hộp nút đóng chỉ bấm "cancel" khi có — xem CLOSE_DIALOGS_JS.
+    assert "c.click()" in cm.CLOSE_DIALOGS_JS.split('else')[0]
