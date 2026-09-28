@@ -19,6 +19,10 @@ describe('getHchanhIssueTarget', () => {
     expect(getHchanhIssueTarget({ group, code })?.tab).toBe(expectedTab);
   });
 
+  it('normalizes uppercase Đ before matching', () => {
+    expect(getHchanhIssueTarget({ group:'ĐỐI CHIẾU', title:'CHẨN ĐOÁN RA VIỆN' })?.tab).toBe('discharge');
+  });
+
   it('leaves an unknown group without a misleading destination', () => {
     expect(getHchanhIssueTarget({ group:'Khác', code:'UNKNOWN' })).toBeNull();
   });

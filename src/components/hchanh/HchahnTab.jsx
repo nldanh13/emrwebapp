@@ -989,7 +989,8 @@ function DetailPanel({ isMobile = false, card, navigation, onNavigate, onClose, 
                   </select>
                 </div>
                 {row.stale && <div style={{ marginTop:5, fontSize:FS.xs, color:C.amber }}>Dữ liệu EMR được cập nhật sau lần kiểm trước. Vui lòng đối chiếu lại mục này.</div>}
-                <input type="text" defaultValue={row.note || ''} disabled={isSavingReview}
+                {/* key theo người bệnh: ô ghi chú không kiểm soát, nếu giữ key cũ khi chuyển hồ sơ sẽ hiện (và lưu nhầm) ghi chú của người trước. */}
+                <input key={`${ma_bn}:${row.key}`} type="text" defaultValue={row.note || ''} disabled={isSavingReview}
                   placeholder="Ghi chú nội dung thiếu hoặc cần sửa..."
                   onBlur={e => { if (e.target.value !== (row.note || '')) onSaveManualReview?.(card, { items: { [row.key]: { status:row.status || 'pending', note:e.target.value } } }); }}
                   style={{ width:'100%', marginTop:7, height:32, padding:'0 9px', borderRadius:5, border:`1px solid ${C.border}`, background:C.surface, color:C.text, fontSize:FS.sm, fontFamily:'inherit', boxSizing:'border-box' }} />
