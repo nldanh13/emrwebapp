@@ -259,7 +259,7 @@ export default function RecordsSubmissionTab({ records = [], toast, onClearCheck
     const confirmed = window.confirm(
       `Bỏ dấu “Đã kiểm” của ${scopeText}?
 
-Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. Dữ liệu hồ sơ vẫn được giữ nguyên và có thể tích kiểm lại ở tab Kiểm hồ sơ.`
+Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. Dữ liệu hồ sơ vẫn được giữ nguyên và có thể tích kiểm lại ở tab Trả HSBA.`
     );
     if (!confirmed) return;
     if (typeof onClearChecked !== 'function') {
