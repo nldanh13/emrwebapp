@@ -509,19 +509,31 @@ function VTYTPreviewPanel({ preview, onPreview, onProcess, onInput, canRun = tru
 
 // ── Issue row ─────────────────────────────────────────────────────────────────
 
-function IssueRow({ issue }) {
+function groupIssuesForOverview(issues) {
+  const groups = new Map();
+  for (const issue of safeArr(issues).filter(item => item?.severity !== 'info')) {
+    const label = txt(issue?.group, 'Khác');
+    const current = groups.get(label) || { label, items: [], errors:0, warnings:0 };
+    current.items.push(issue);
+    if (issue?.severity === 'error') current.errors += 1;
+    else current.warnings += 1;
+    groups.set(label, current);
+  }
+  return [...groups.values()].sort((a, b) => (b.errors - a.errors) || (b.items.length - a.items.length) || a.label.localeCompare(b.label, 'vi'));
+}
+
+function IssueRow({ issue, hideGroup = false }) {
   const tone = issue.severity === 'error' ? 'red' : issue.severity === 'warn' ? 'amber' : 'gray';
   const s    = tS(tone);
   return (
     <div style={{ padding:'6px 10px', borderRadius:6, marginBottom:4,
       background:s.bg, border:`1px solid ${s.border}` }}>
       <div style={{ display:'flex', gap:6, alignItems:'baseline', marginBottom:2 }}>
-        {issue.group && <Chip tone={tone}>{issue.group}</Chip>}
+        {!hideGroup && issue.group && <Chip tone={tone}>{issue.group}</Chip>}
         <span style={{ fontSize:FS.sm, fontWeight:600, color:s.fg }}>{txt(issue.title)}</span>
       </div>
       {issue.detail && <div style={{ fontSize:FS.xs, color:C.text2 }}>{issue.detail}</div>}
       {issue.action && <div style={{ fontSize:FS.xs, color:C.blue, marginTop:2 }}>Cách xử lý: {issue.action}</div>}
-      {issue.owner  && <div style={{ fontSize:FS.xs, color:C.text3, marginTop:1 }}>Phụ trách: {issue.owner}</div>}
     </div>
   );
 }
@@ -532,6 +544,7 @@ function IssueSummaryBox({ issues }) {
   if (!list.length) return null;
   const errors = list.filter(i => i?.severity === 'error').length;
   const warnings = list.filter(i => i?.severity === 'warn').length;
+  const groups = groupIssuesForOverview(list);
   return (
     <div style={{ margin:'8px 16px 0', padding:'10px 12px', borderRadius:8,
       background:C.amberBg, border:`1px solid ${C.amberBorder}` }}>
@@ -539,14 +552,12 @@ function IssueSummaryBox({ issues }) {
         <IconAlertTriangle size={16} stroke={1.9} aria-hidden="true" />
         Cần xử lý: {errors} lỗi nội dung{warnings ? ` · ${warnings} cảnh báo` : ''}
       </div>
-      <div style={{ display:'grid', gap:4 }}>
-        {list.slice(0, 4).map((issue, idx) => (
-          <div key={issue.code || idx} style={{ fontSize:FS.xs, color:C.text, lineHeight:1.35 }}>
-            {issue.group ? <><b>{txt(issue.group)}</b>: </> : null}{txt(issue.title)}{issue.action ? ` — ${txt(issue.action)}` : ''}
-          </div>
+      <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
+        {groups.map(group => (
+          <Chip key={group.label} tone={group.errors ? 'red' : 'amber'}>{group.label}: {group.items.length}</Chip>
         ))}
-        {list.length > 4 && <div style={{ fontSize:FS.xs, color:C.text2 }}>+{list.length - 4} vấn đề khác trong mục “Vấn đề”.</div>}
       </div>
+      <div style={{ marginTop:6, fontSize:FS.xs, color:C.text2 }}>Mở mục “Cần sửa” để xem nội dung và cách khắc phục.</div>
     </div>
   );
 }
@@ -750,7 +761,7 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
     `Khác: ${disch.phim_khac ?? 0}`,
   ].join(' · ');
 
-  // Đổi người bệnh: ưu tiên mở mục Vấn đề nếu còn lỗi/cảnh báo.
+  // Đổi người bệnh: ưu tiên mở mục Cần sửa nếu còn lỗi/cảnh báo.
   // Mục tiêu là người dùng thấy ngay cần sửa gì, thay vì bảng trái hiện ✓ rồi phải tự dò trong Ra viện.
   useEffect(() => {
     setShowMoreActions(false);
@@ -764,7 +775,7 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
     setTab(nextTab);
   }, [ma_bn]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sau khi fetch xong: nếu còn vấn đề thì tự mở Vấn đề; chỉ khi không còn vấn đề mới mở Ra viện.
+  // Sau khi fetch xong: nếu còn vấn đề thì tự mở Cần sửa; chỉ khi không còn vấn đề mới mở Ra viện.
   useEffect(() => {
     if (tabTouched) return;
     if (issues.length && tab !== 'issues') setTab('issues');
@@ -775,7 +786,7 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
   const TABS = [
     { id:'checklist', label:`Checklist${card?.manual_review?.pending_count ? ` (${card.manual_review.pending_count})` : ''}`, hide: scope !== 'discharge' },
     { id:'fetch',     label:'Dữ liệu' },
-    { id:'issues',    label:`Vấn đề${issues.length ? ` (${issues.length})` : ''}` },
+    { id:'issues',    label:`Cần sửa${issues.length ? ` (${issues.length})` : ''}` },
     { id:'discharge', label:'Ra viện' },
     { id:'billing',   label:'Bảng kê',      hide: scope !== 'discharge' },
     { id:'bed_days',  label:'Ngày giường',  hide: scope !== 'discharge' },
@@ -937,10 +948,18 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
 
         {tab === 'issues' && (
           <div>
-            <div style={{ fontSize:FS.xs, fontWeight:700, color:C.text2, marginBottom:8 }}>Danh sách vấn đề</div>
+            <div style={{ fontSize:FS.xs, fontWeight:700, color:C.text2, marginBottom:8 }}>TỔNG QUAN CÁC CHỖ CẦN SỬA</div>
             {issues.length === 0
-              ? <div style={{ color:C.text2, fontSize:FS.sm }}>Không có vấn đề nào.</div>
-              : issues.map((i, idx) => <IssueRow key={i.code||idx} issue={i} />)
+              ? <div style={{ color:C.text2, fontSize:FS.sm }}>Không có nội dung cần sửa.</div>
+              : groupIssuesForOverview(issues).map(group => (
+                  <section key={group.label} style={{ marginBottom:14 }}>
+                    <div style={{ display:'flex', gap:6, alignItems:'center', marginBottom:6 }}>
+                      <b style={{ fontSize:FS.sm, color:C.text }}>{group.label}</b>
+                      <Chip tone={group.errors ? 'red' : 'amber'}>{group.items.length}</Chip>
+                    </div>
+                    {group.items.map((issue, idx) => <IssueRow key={issue.code || idx} issue={issue} hideGroup />)}
+                  </section>
+                ))
             }
           </div>
         )}
@@ -1165,7 +1184,6 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
                                     <b style={{ fontSize:FS.sm, color:a.severity === 'error' ? C.red : C.amber }}>{a.title}</b>
                                   </div>
                                   {a.detail && <div style={{ fontSize:FS.xs, color:C.text, marginTop:4, lineHeight:1.4 }}>{a.detail}</div>}
-                                  {a.owner && <div style={{ fontSize:FS.xs, color:C.text2, marginTop:3 }}>Phụ trách: {a.owner}</div>}
                                 </div>
                               ))}
                           </div>
