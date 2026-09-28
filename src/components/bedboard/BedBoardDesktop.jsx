@@ -1,4 +1,4 @@
-import { IconDeviceFloppy, IconHandClick, IconListSearch, IconPlus, IconReload, IconSearch, IconX } from '@tabler/icons-react';
+import { IconDeviceFloppy, IconHandClick, IconListSearch, IconPlus, IconPrinter, IconReload, IconSearch, IconX } from '@tabler/icons-react';
 import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import RoomCard from './RoomCard.jsx';
@@ -36,6 +36,7 @@ export default function BedBoardDesktop({
   addRoom,
   saving,
   handleSaveOnly,
+  handlePrintRooms,
 }) {
   const total = patients.length;
   return (
@@ -120,6 +121,7 @@ export default function BedBoardDesktop({
           <Btn variant="solidPrimary" icon={IconDeviceFloppy} loading={saving} onClick={handleSaveOnly} disabled={saving}>
             {saving ? 'Đang lưu…' : 'Lưu xếp phòng'}
           </Btn>
+          <Btn icon={IconPrinter} onClick={handlePrintRooms}>In danh sách xếp phòng</Btn>
         </div>
 
         <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
