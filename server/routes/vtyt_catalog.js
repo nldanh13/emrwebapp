@@ -40,6 +40,7 @@ function safeCombo(raw = {}, fallbackId = '') {
     name: String(item?.name || '').trim().slice(0, 300),
     quantity: Math.max(1, Math.min(999, Number(item?.quantity || 1) || 1)),
     required: item?.required !== false,
+    every_patient: item?.every_patient === true,
   })).filter(item => item.code && item.name);
   return {
     id,

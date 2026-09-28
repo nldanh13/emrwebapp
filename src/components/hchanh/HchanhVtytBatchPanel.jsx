@@ -9,7 +9,8 @@ import { HCHANH_VTYT_ITEMS } from '../../config/hchanhLists.js';
 import * as api from '../../api.js';
 import {
   VTYT_USAGE_STATUS, allocatedByCode, collectionRows, comboAvailability,
-  eligibleInputJobs, safeQty, stockOf,
+  eligibleInputJobs, everyPatientAvailability, everyPatientRequirements,
+  missingEveryPatientSupplies, safeQty, stockOf,
 } from '../../engine/hchanhVtytWorkspace.js';
 
 const inputStyle = {
@@ -22,6 +23,12 @@ function safeArray(value) { return Array.isArray(value) ? value : []; }
 function patientId(card = {}) { return String(card.ma_bn || card.patient_id || card.id || '').trim(); }
 function nowIso() { return new Date().toISOString(); }
 function supplyKey(item = {}) { return String(item.code || item.key || item.name || '').trim(); }
+function drugQuantityText(drug = {}) {
+  const quantity = drug.quantity ?? drug.so_luong ?? drug.sl ?? drug.total_quantity ?? drug.required_quantity;
+  const unit = String(drug.unit || drug.don_vi || drug.dang || '').trim();
+  if (quantity == null || String(quantity).trim() === '') return 'SL chưa rõ';
+  return `SL ${quantity}${unit ? ` ${unit}` : ''}`;
+}
 function norm(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().replace(/\s+/g, ' ').trim();
 }
@@ -44,7 +51,7 @@ function StatusBadge({ status = 'planned' }) {
 }
 
 function ComboManager({ combos, setCombos, onClose }) {
-  const blank = { name: '', description: '', enabled: true, items: [{ code: '', name: '', quantity: 1, required: true }] };
+  const blank = { name: '', description: '', enabled: true, items: [{ code: '', name: '', quantity: 1, required: true, every_patient: false }] };
   const [form, setForm] = useState(blank);
   const [saving, setSaving] = useState(false);
 
@@ -82,7 +89,7 @@ function ComboManager({ combos, setCombos, onClose }) {
         <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
           {combos.map(combo => <button key={combo.id} type="button" onClick={() => setForm({ ...combo, items: safeArray(combo.items) })} style={{ textAlign: 'left', padding: 9, borderRadius: 7, cursor: 'pointer', border: `1px solid ${form.id === combo.id ? C.blue : C.border}`, background: form.id === combo.id ? C.blueBg : C.surface }}>
             <b style={{ color: C.text, fontSize: FS.sm }}>{combo.name}</b>
-            <div style={{ color: C.text3, fontSize: FS.xs }}>{safeArray(combo.items).length} vật tư</div>
+            <div style={{ color: C.text3, fontSize: FS.xs }}>{safeArray(combo.items).length} vật tư{safeArray(combo.items).some(item => item.every_patient) ? ' · có VTYT mỗi NB' : ''}</div>
           </button>)}
         </div>
       </div>
@@ -90,16 +97,18 @@ function ComboManager({ combos, setCombos, onClose }) {
         <label style={{ fontSize: FS.xs, color: C.text2 }}>Tên combo<input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ví dụ: Thay kim luồn" style={{ ...inputStyle, marginTop: 4 }} /></label>
         <label style={{ display: 'block', fontSize: FS.xs, color: C.text2, marginTop: 10 }}>Mô tả<input value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} style={{ ...inputStyle, marginTop: 4 }} /></label>
         <div style={{ marginTop: 14, fontWeight: 700, fontSize: FS.sm }}>Vật tư trong combo</div>
-        {safeArray(form.items).map((row, index) => <div key={index} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 72px 34px', gap: 7, marginTop: 7 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 72px 94px 34px', gap: 7, marginTop: 7, color: C.text3, fontSize: FS.xs }}><span>Vật tư</span><span style={{ textAlign: 'center' }}>Số lượng</span><span style={{ textAlign: 'center' }}>Mỗi NB</span><span /></div>
+        {safeArray(form.items).map((row, index) => <div key={index} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 72px 94px 34px', gap: 7, marginTop: 7, alignItems: 'center' }}>
           <select value={row.code} onChange={e => { const found = HCHANH_VTYT_ITEMS.find(item => item.code === e.target.value); setItem(index, { code: e.target.value, name: found?.name || '' }); }} style={inputStyle}>
             <option value="">Chọn vật tư…</option>
             {HCHANH_VTYT_ITEMS.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name} · tồn {item.stock ?? '?'}</option>)}
           </select>
           <input type="number" min="1" value={row.quantity || 1} onChange={e => setItem(index, { quantity: Math.max(1, Number(e.target.value || 1)) })} style={inputStyle} aria-label="Số lượng" />
+          <label title="Vật tư này phải có một lần ở từng người bệnh" style={{ display: 'inline-flex', justifyContent: 'center', alignItems: 'center', gap: 5, fontSize: FS.xs, color: row.every_patient ? C.green : C.text2 }}><input type="checkbox" checked={row.every_patient === true} onChange={e => setItem(index, { every_patient: e.target.checked })} />Bắt buộc</label>
           <button type="button" className="emr-icon-btn emr-icon-btn--danger" onClick={() => setForm(current => ({ ...current, items: current.items.filter((_, i) => i !== index) }))}><IconTrash size={16} /></button>
         </div>)}
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <Btn variant="secondary" icon={IconPlus} onClick={() => setForm(current => ({ ...current, items: [...safeArray(current.items), { code: '', name: '', quantity: 1, required: true }] }))}>Thêm dòng</Btn>
+          <Btn variant="secondary" icon={IconPlus} onClick={() => setForm(current => ({ ...current, items: [...safeArray(current.items), { code: '', name: '', quantity: 1, required: true, every_patient: false }] }))}>Thêm dòng</Btn>
           <Btn variant="solidPrimary" loading={saving} disabled={!form.name.trim()} onClick={save}>Lưu combo</Btn>
           {form.id && <Btn variant="danger" icon={IconTrash} onClick={() => remove(form)}>Xóa</Btn>}
         </div>
@@ -133,9 +142,9 @@ function OrdersPanel({ job }) {
     {!job ? <div style={{ padding: 18, color: C.text3, fontSize: FS.xs }}>Chọn người bệnh và ngày để đối chiếu.</div> : <div style={{ padding: 10, display: 'grid', gap: 8 }}>
       {orders.length > 0 ? orders.map((order, index) => <div key={index} style={{ borderBottom: `1px solid ${C.border2}`, paddingBottom: 8 }}>
         <div style={{ color: C.text, fontSize: FS.xs, whiteSpace: 'pre-wrap' }}>{order.text || order.order_text || order.content || 'Y lệnh'}</div>
-        {safeArray(order.drugs).map((drug, i) => <div key={i} style={{ marginTop: 4, color: C.blue, fontSize: FS.xs }}>• {drug.name || drug.content || drug.order_text}</div>)}
+        {safeArray(order.drugs).map((drug, i) => <div key={i} style={{ marginTop: 5, display: 'flex', alignItems: 'start', gap: 7, color: C.blue, fontSize: FS.xs }}><span style={{ flex: 1 }}>• {drug.name || drug.ten_thuoc || drug.content || drug.order_text}</span><b style={{ flexShrink: 0, padding: '2px 6px', borderRadius: 10, background: C.blueBg }}>{drugQuantityText(drug)}</b></div>)}
       </div>) : drugs.map((drug, index) => <div key={index} style={{ borderBottom: `1px solid ${C.border2}`, paddingBottom: 8, fontSize: FS.xs }}>
-        <b>{drug.name || 'Thuốc/y lệnh'}</b><div style={{ color: C.text2 }}>{drug.content || drug.order_text || ''} {drug.route || ''}</div>
+        <div style={{ display: 'flex', gap: 7, alignItems: 'start' }}><b style={{ flex: 1 }}>{drug.name || drug.ten_thuoc || 'Thuốc/y lệnh'}</b><b style={{ color: C.blue, flexShrink: 0 }}>{drugQuantityText(drug)}</b></div><div style={{ color: C.text2 }}>{drug.content || drug.order_text || ''} {drug.route || drug.duong_dung_goc || ''}</div>
       </div>)}
       {!orders.length && !drugs.length && <div style={{ color: C.text3, fontSize: FS.xs }}>Ngày này không có y lệnh thuốc. Bạn vẫn có thể thêm VTYT phát sinh.</div>}
     </div>}
@@ -263,6 +272,8 @@ export default function HchanhVtytBatchPanel({ cards = [], draft, setDraft, onPr
   const stockBlocked = rows.some(row => row.blocked);
   const allReviewed = patients.length > 0 && patients.every(patient => patient.reviewed);
   const precheckExpired = Boolean(draft?.precheck_expires_at && Date.parse(draft.precheck_expires_at) <= Date.now());
+  const commonRequirements = everyPatientRequirements(combos);
+  const commonMissing = missingEveryPatientSupplies(draft, combos);
 
   useEffect(() => { api.getVtytCombos().then(result => setCombos(safeArray(result?.combos))).catch(() => setCombos([])); }, []);
   useEffect(() => { if (draft && !activeId) setActiveId(patients[0]?.ma_bn || ''); }, [draft, activeId, patients]);
@@ -271,14 +282,73 @@ export default function HchanhVtytBatchPanel({ cards = [], draft, setDraft, onPr
   function setReviewed(checked) {
     setDraft(previous => ({ ...previous, patients: safeArray(previous.patients).map(row => String(row.ma_bn) === String(activeId) ? { ...row, reviewed: checked } : row), updated_at: nowIso() }));
   }
+  function applyEveryPatientSupplies() {
+    const availability = everyPatientAvailability(draft, combos);
+    if (!availability.missing.length) {
+      window.alert('Mỗi người bệnh đã có đủ các VTYT bắt buộc.');
+      return;
+    }
+    if (!availability.ok) {
+      const blocked = availability.details.filter(row => row.blocked)
+        .map(row => `${row.name}: cần ${row.needed}, khả dụng ${row.available ?? 'chưa rõ'}`).join('; ');
+      window.alert(`Không thể bổ sung VTYT cho mọi người bệnh: ${blocked}`);
+      return;
+    }
+    const today = new Date();
+    const todayDmy = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+    setDraft(previous => {
+      const missing = missingEveryPatientSupplies(previous, combos);
+      const byPatient = new Map();
+      for (const row of missing) {
+        if (!byPatient.has(row.ma_bn)) byPatient.set(row.ma_bn, []);
+        byPatient.get(row.ma_bn).push(row);
+      }
+      const targetByPatient = new Map();
+      for (const patient of safeArray(previous.patients)) {
+        const indexed = safeArray(previous.jobs).map((job, index) => ({ job, index }))
+          .filter(row => String(row.job.ma_bn) === String(patient.ma_bn));
+        const target = indexed.find(row => row.job.ngay_lam === todayDmy)
+          || indexed.sort((a, b) => String(b.job.ngay_lam || '').localeCompare(String(a.job.ngay_lam || '')))[0];
+        if (target) targetByPatient.set(String(patient.ma_bn), target.index);
+      }
+      return {
+        ...previous,
+        jobs: safeArray(previous.jobs).map((job, index) => {
+          const patientMissing = byPatient.get(String(job.ma_bn));
+          if (!patientMissing || targetByPatient.get(String(job.ma_bn)) !== index) return job;
+          const additions = patientMissing.map(row => ({
+            key: row.code,
+            code: row.code,
+            name: row.name,
+            searchKeyword: row.name,
+            input_quantity: row.missing_quantity,
+            required_quantity: row.missing_quantity,
+            existing_quantity: 0,
+            selected: true,
+            manual: true,
+            usage_status: 'planned',
+            input_status: 'pending',
+            source_type: 'every_patient',
+            combo_id: row.combo_id,
+            combo_name: row.combo_name,
+            reasons: [`VTYT bắt buộc cho mỗi người bệnh · ${row.combo_name}`],
+            warnings: [],
+          }));
+          return { ...job, supplies: [...safeArray(job.supplies), ...additions] };
+        }),
+        patients: safeArray(previous.patients).map(patient => byPatient.has(String(patient.ma_bn)) ? { ...patient, reviewed: false } : patient),
+        updated_at: nowIso(),
+      };
+    });
+  }
   function toggleAll(checked) { setSelectedIds(checked ? new Set(selectableCards.map(patientId)) : new Set()); }
   const selectedCards = selectableCards.filter(card => selectedIds.has(patientId(card)));
 
   return <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
     <div style={{ padding: '9px 11px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
       <Btn variant="primary" icon={draft ? IconRefresh : IconChecklist} loading={loading} disabled={loading || inputting || (!draft && !selectedCards.length)} onClick={() => onPreview?.(draft ? selectableCards.filter(card => safeArray(draft.selected_patient_ids).includes(patientId(card))) : selectedCards)}>{draft ? 'Cập nhật y lệnh & tồn' : `Tạo danh sách (${selectedCards.length})`}</Btn>
-      {draft && <><Btn variant="secondary" icon={IconSettings} onClick={() => setShowCombos(true)}>Combo</Btn><Btn variant="secondary" icon={IconChecklist} onClick={() => setShowCollection(true)}>Danh sách thu thập</Btn></>}
-      <Btn variant="solidPrimary" icon={IconPackageImport} loading={inputting} disabled={!draft || inputting || loading || !allReviewed || precheckExpired || !eligible.length || stockBlocked} onClick={onInput}>Chốt & nhập ({eligible.reduce((sum, job) => sum + job.supplies.length, 0)})</Btn>
+      {draft && <><Btn variant="secondary" icon={IconSettings} onClick={() => setShowCombos(true)}>Combo</Btn>{commonRequirements.length > 0 && <Btn variant="secondary" icon={IconPlus} disabled={!commonMissing.length} onClick={applyEveryPatientSupplies}>VTYT mỗi NB ({commonMissing.length})</Btn>}<Btn variant="secondary" icon={IconChecklist} onClick={() => setShowCollection(true)}>Danh sách thu thập</Btn></>}
+      <Btn variant="solidPrimary" icon={IconPackageImport} loading={inputting} disabled={!draft || inputting || loading || !allReviewed || precheckExpired || !eligible.length || stockBlocked || commonMissing.length > 0} onClick={onInput}>Chốt & nhập ({eligible.reduce((sum, job) => sum + job.supplies.length, 0)})</Btn>
       <Btn variant="danger" icon={IconTrash} disabled={!draft || loading || inputting} onClick={onClear}>Xóa nháp</Btn>
       <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: FS.xs, color: C.text2 }}><IconCloudCheck size={15} color={C.green} /> Tự lưu</span>
       {onClose && <button type="button" className="emr-icon-btn" onClick={onClose}><IconX size={18} /></button>}
@@ -291,7 +361,7 @@ export default function HchanhVtytBatchPanel({ cards = [], draft, setDraft, onPr
       </div>
     </div> : <>
       <div style={{ padding: '7px 11px', fontSize: FS.xs, color: stockBlocked || precheckExpired ? C.red : C.text2, background: stockBlocked || precheckExpired ? C.redBg : C.surface2, borderBottom: `1px solid ${C.border}` }}>
-        {precheckExpired ? 'Phiên kiểm tra đã hết hạn — bấm “Cập nhật y lệnh & tồn” trước khi nhập.' : stockBlocked ? 'Có vật tư hết/không rõ tồn — hệ thống đã khóa nhập hàng loạt.' : 'Tồn hiển thị là số tham chiếu lúc lập danh sách; hãy cập nhật lại trước khi chốt nhập buổi chiều.'}
+        {precheckExpired ? 'Phiên kiểm tra đã hết hạn — bấm “Cập nhật y lệnh & tồn” trước khi nhập.' : stockBlocked ? 'Có vật tư hết/không rõ tồn — hệ thống đã khóa nhập hàng loạt.' : commonMissing.length ? `Còn ${commonMissing.length} lượt VTYT bắt buộc chưa được bổ sung cho người bệnh.` : 'Tồn hiển thị là số tham chiếu lúc lập danh sách; hãy cập nhật lại trước khi chốt nhập buổi chiều.'}
       </div>
       <div style={{ flex: 1, minHeight: 0, padding: 10, display: 'grid', gridTemplateColumns: '260px minmax(310px,.95fr) minmax(380px,1.15fr)', gap: 10, overflow: 'auto' }}>
         <PatientQueue patients={patients} jobs={jobs} activeId={activeId} setActiveId={id => { setActiveId(id); setActiveDate(''); }} />

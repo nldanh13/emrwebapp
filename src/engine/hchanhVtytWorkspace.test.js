@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { allocatedByCode, collectionRows, comboAvailability, eligibleInputJobs } from './hchanhVtytWorkspace.js';
+import {
+  allocatedByCode, collectionRows, comboAvailability, eligibleInputJobs,
+  everyPatientAvailability, missingEveryPatientSupplies,
+} from './hchanhVtytWorkspace.js';
 
 const CODE = 'VTYT.000004258';
 
@@ -39,5 +42,24 @@ describe('hchanh VTYT workspace', () => {
     ] }] });
     expect(rows[0].quantity).toBe(3);
     expect(rows[0].patients).toEqual(['A', 'B']);
+  });
+
+  it('chỉ bổ sung VTYT chung cho người bệnh còn thiếu', () => {
+    const combos = [{ id: 'common', enabled: true, items: [{ code: CODE, name: 'Kim luồn', quantity: 1, every_patient: true }] }];
+    const draft = {
+      patients: [{ ma_bn: '1' }, { ma_bn: '2' }],
+      jobs: [
+        { ma_bn: '1', supplies: [{ code: CODE, input_quantity: 1, usage_status: 'planned' }] },
+        { ma_bn: '2', supplies: [] },
+      ],
+    };
+    expect(missingEveryPatientSupplies(draft, combos).map(row => row.ma_bn)).toEqual(['2']);
+    expect(everyPatientAvailability(draft, combos).ok).toBe(true);
+  });
+
+  it('khóa bổ sung VTYT chung nếu tổng nhu cầu vượt tồn', () => {
+    const combos = [{ enabled: true, items: [{ code: CODE, name: 'Kim luồn', quantity: 1000, every_patient: true }] }];
+    const draft = { patients: [{ ma_bn: '1' }, { ma_bn: '2' }], jobs: [{ ma_bn: '1', supplies: [] }, { ma_bn: '2', supplies: [] }] };
+    expect(everyPatientAvailability(draft, combos).ok).toBe(false);
   });
 });
