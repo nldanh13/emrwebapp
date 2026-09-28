@@ -14,7 +14,6 @@ import {
   sanitizePatientsForSave,
   filterUnassignedPatients,
 } from './bedboard/bedBoardUtils.js';
-import { printRoomAssignment } from './bedboard/bedBoardPrint.js';
 
 
 
@@ -69,6 +68,7 @@ export default function BedBoard({ toast }) {
   const [selectedPxSet, setSelectedPxSet] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [printingRooms, setPrintingRooms] = useState(false);
   const [newRoom, setNewRoom] = useState('');
   const [search, setSearch] = useState('');
   const [roomMismatches, setRoomMismatches] = useState([]);
@@ -208,9 +208,29 @@ export default function BedBoard({ toast }) {
     saveRoomConfig(next);
   }, [roomConfig, clearRoom]);
 
-  const handlePrintRooms = useCallback(() => {
-    const result = printRoomAssignment(patients);
-    toast?.(result.message, result.ok ? 'ok' : 'error');
+  const handlePrintRooms = useCallback(async () => {
+    const assignedRows = patients.filter(patient => canonicalRoomKey(patient?.Vi_Tri || patient?.vi_tri || ''));
+    if (!assignedRows.length) {
+      toast?.('Chưa có người bệnh nào được xếp phòng để tạo PDF.', 'error');
+      return;
+    }
+    setPrintingRooms(true);
+    try {
+      const { blob, filename } = await api.downloadWardListPdf(assignedRows);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      toast?.(`Đã lưu PDF ${assignedRows.length} người bệnh để in.`, 'ok');
+    } catch (error) {
+      toast?.(`Không tạo được PDF: ${String(error?.message || error)}`, 'error');
+    } finally {
+      setPrintingRooms(false);
+    }
   }, [patients, toast]);
 
   const handleSaveOnly = useCallback(async () => {
@@ -249,6 +269,7 @@ export default function BedBoard({ toast }) {
     saving,
     handleSaveOnly,
     handlePrintRooms,
+    printingRooms,
   };
 
   if (isMobile) {
