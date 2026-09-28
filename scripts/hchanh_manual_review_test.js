@@ -30,4 +30,15 @@ assert.strictEqual(summary.passed, false);
 assert.strictEqual(summary.issue_count, 1);
 assert.strictEqual(manualReviewIssues(review)[0].detail, 'Thiếu chữ ký điều dưỡng.');
 
+const refreshed = manualReviewSummary(review, { fetched: { discharge:'2026-09-29T00:02:00.000Z' } });
+assert.strictEqual(refreshed.stale_count, REVIEW_ITEMS.length);
+assert.strictEqual(refreshed.remaining_count, REVIEW_ITEMS.length);
+assert.strictEqual(refreshed.passed, false);
+
+const rechecked = applyManualReviewPatch(review, {
+  items: { signatures: { status:'pass', note:'' } },
+}, '2026-09-29T00:03:00.000Z');
+const afterRecheck = manualReviewSummary(rechecked, { fetched: { discharge:'2026-09-29T00:02:00.000Z' } });
+assert.strictEqual(afterRecheck.rows.find(row => row.key === 'signatures').stale, false);
+
 console.log('hchanh_manual_review_test: ok');
