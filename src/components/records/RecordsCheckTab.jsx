@@ -1865,10 +1865,10 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                 const ksdGpbUnknown = row.ksd.status === 'UNKNOWN' || row.gpb.status === 'UNKNOWN';
                 const patch = field => checked => updatePaperChecklist(row, { [field]: checked });
                 const checklistItems = [
-                  { field: null, label: 'Đã kiểm hồ sơ giấy', checked: Boolean(cl.checked), onChange: v => setChecked(row, v) },
-                  { field: 'doctor_signed', label: 'Bác sĩ điều trị đã ký đầy đủ', checked: Boolean(cl.doctor_signed) },
-                  { field: 'nurse_signed', label: 'Điều dưỡng bệnh phòng đã ký đầy đủ', checked: Boolean(cl.nurse_signed) },
-                  { field: 'head_signed', label: 'Trưởng khoa đã ký kết thúc điều trị', checked: Boolean(cl.head_signed) },
+                  { field: null, label: 'Đã đối chiếu hồ sơ giấy thực tế', checked: Boolean(cl.checked), onChange: v => setChecked(row, v) },
+                  { field: 'doctor_signed', label: 'Hồ sơ giấy đã đủ chữ ký bác sĩ điều trị', checked: Boolean(cl.doctor_signed) },
+                  { field: 'nurse_signed', label: 'Hồ sơ giấy đã đủ chữ ký điều dưỡng bệnh phòng', checked: Boolean(cl.nurse_signed) },
+                  { field: 'head_signed', label: 'Hồ sơ giấy đã có chữ ký kết thúc của Trưởng khoa', checked: Boolean(cl.head_signed) },
                 ];
                 return (
                   <>

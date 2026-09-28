@@ -886,7 +886,8 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
           <div>
             <div style={{ fontSize:FS.xs, fontWeight:700, color:C.text2, marginBottom:5 }}>CHECKLIST KIỂM THỦ CÔNG</div>
             <div style={{ fontSize:FS.sm, color:C.text2, marginBottom:12, lineHeight:1.45 }}>
-              Máy chỉ hỗ trợ dò lỗi. Chỉ khi các mục dưới đây đã được kiểm thì hồ sơ mới được xem là hoàn tất.
+              Kiểm nội dung trên EMR tại đây. Chữ ký trên hồ sơ giấy, số lưu trữ và bàn giao được xác nhận ở tab Trả HSBA.
+              Máy chỉ hỗ trợ dò lỗi; hồ sơ chỉ hoàn tất khi các mục dưới đây đã được đối chiếu.
             </div>
             {safeArr(card?.manual_review?.rows).map(row => (
               <div key={row.key} style={{ padding:'10px 0', borderBottom:`1px solid ${C.border2}` }}>
