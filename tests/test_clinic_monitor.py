@@ -64,7 +64,7 @@ def test_classify_cases_and_blockers():
     assert rows['c']['has_tt'] is True and rows['c']['blockers'] == ['TT chưa xong (0/1)']
     assert rows['c']['next_action'] == 'Hoàn tất thủ thuật rồi hoàn tất khám'
     assert rows['d']['case'] == 'nhap_vien' and rows['d']['next_action'] == 'Nhập chăm sóc'
-    assert rows['e']['case'] == 'chuyen_vien' and rows['e']['next_action'] == 'Nhập BBHC'
+    assert rows['e']['case'] == 'chuyen_vien' and rows['e']['next_action'] == 'Hoàn tất khám, lập SBBHC'
     assert rows['f']['stage'] == 'xong' and rows['f']['ready'] is False and rows['f']['next_action'] == 'Đã xong'
     assert rows['g']['has_bhyt'] is False and rows['g']['doi_tuong'] == 'Viện phí'
     assert rows['g']['stage'] == 'cho_kham' and rows['g']['blockers'] == [] and rows['g']['next_action'] == 'Chờ khám'
@@ -317,6 +317,9 @@ def test_pending_procedure_is_still_eligible_but_other_blockers_are_not():
     assert cm.eligible_for_completion(_tt_row(0, 1)) is True
     assert cm.eligible_for_completion(_tt_row(0, 1, ['XN chưa xong (0/1)'])) is False
     assert cm.eligible_for_completion({**_tt_row(0, 1), 'has_bhyt': False}) is False
+    # Chuyển viện hoàn tất khám như Cho về (rồi bổ sung SBBHC); nhập viện thì không.
+    assert cm.eligible_for_completion({**_tt_row(1, 1), 'case': 'chuyen_vien'}) is True
+    assert cm.eligible_for_completion({**_tt_row(1, 1), 'case': 'nhap_vien'}) is False
 
 
 def test_procedure_window():
@@ -418,3 +421,47 @@ def test_procedure_list_popups_are_closed_without_accepting(monkeypatch):
     assert page.open_pending('99000001', '28/09/2026') == DT(2026, 9, 28, 9, 0)
     assert drv.closed is True               # dùng CLOSE_DIALOGS_JS (bấm Không ở hộp xác nhận)
     assert ip.handle_popups is original     # trả lại như cũ cho các luồng khác
+
+
+# ── TH4: nhận diện ca cần Sổ biên bản hội chẩn ──────────────────────────────
+
+def test_imaging_kinds_and_bbhc_reasons():
+    html = ('<table><tr><td>Chụp CT sọ não không tiêm thuốc cản quang</td><td>09:10 28/09/2026</td></tr>'
+            '<tr><td>Chụp cộng hưởng từ cột sống thắt lưng</td></tr><tr><td>Siêu âm ổ bụng</td></tr>'
+            '<tr><td>Phòng khám CTCH</td></tr></table>')
+    assert cm.imaging_kinds(html) == ['CT', 'MRI']
+    assert cm.imaging_kinds('<td>Chụp X quang cẳng chân (CTCH)</td>') == []
+    assert cm.imaging_kinds('<td>Chụp MRI khớp gối</td><td>Chụp cắt lớp vi tính</td>') == ['MRI', 'CT']
+
+    base = {'has_bhyt': True, 'stage': 'dang_lam_dv', 'case': 'cho_ve'}
+    assert cm.bbhc_reasons(base, ['CT']) == ['Chụp CT']
+    assert cm.bbhc_reasons({**base, 'case': 'chuyen_vien'}, None) == ['Chuyển viện']
+    assert cm.bbhc_reasons({**base, 'case': 'chuyen_vien'}, ['MRI']) == ['Chuyển viện', 'Chụp MRI']
+    assert cm.bbhc_reasons({**base, 'has_bhyt': False}, ['CT']) == []
+    assert cm.bbhc_reasons({**base, 'stage': 'xong'}, ['CT']) == ['Chụp CT']   # đã hoàn tất vẫn cần bổ sung SBBHC
+    assert cm.bbhc_reasons({**base, 'stage': 'cho_kham'}, ['CT']) == []
+
+
+class HistoryMonitor:
+    def __init__(self, html):
+        self.html, self.calls = html, 0
+
+    def imaging(self, row):
+        self.calls += 1
+        return cm.clinic_bbhc.imaging_orders(self.html)
+
+
+def test_scan_imaging_reads_once_per_order_count():
+    row = {'khambenhid': 'k1', 'has_bhyt': True, 'stage': 'dang_lam_dv', 'stt': '1',
+           'services': [{'code': 'CDHA', 'done': 0, 'total': 1}]}
+    mon, cache = HistoryMonitor('<td>Chụp CT cột sống cổ</td>'), {}
+    cm.scan_imaging(mon, [row], cache)
+    cm.scan_imaging(mon, [row], cache)
+    assert mon.calls == 1 and cache['k1']['kinds'] == ['CT']
+    row['services'][0]['total'] = 2  # thêm chỉ định → đọc lại
+    cm.scan_imaging(mon, [row], cache)
+    assert mon.calls == 2
+    no_cdha = {**row, 'khambenhid': 'k2', 'services': [{'code': 'XN', 'done': 1, 'total': 1}]}
+    cm.scan_imaging(mon, [no_cdha], cache)
+    assert mon.calls == 2
+    assert cm.public_rows([{**row, 'href': 'x', 'case': 'cho_ve'}], {}, {}, cache)[0]['bbhc'] == ['Chụp CT']
