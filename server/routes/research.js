@@ -5345,12 +5345,75 @@ const KHO_OVERLAY_PARTS = [
   ['order_history', 'orderRows'],
 ];
 
+// XN / CĐHA: ghi kết quả của lần quét vào Kho người bệnh (dữ liệu gốc), rồi với ca CHƯA có kết quả nào
+// trong lần quét này thì lấy từ kho (vd nghiên cứu khác / kho gốc đã lấy) theo khoảng ngày của ca.
+// Ca đã có kết quả trong lần quét giữ nguyên. CSV thô của lần quét không bị sửa.
+function caseDayRange(meta) {
+  const from = isoDate(meta.date_from || '') || isoDate(meta.admission_raw || '');
+  let to = isoDate(meta.date_to || '') || isoDate(meta.discharge_raw || '');
+  if (from && !to) {
+    try { to = patientDb.findStay(meta.ma_bn, from, [])?.to || ''; } catch (_) { to = ''; }
+  }
+  return from && to && from <= to ? { from, to } : null;
+}
+
+function overlayResultsFromPatientDb(dir, sourceRows, sourceRunId, labRaw, imagingRaw) {
+  const report = { ingested: { xn: 0, cdha: 0 }, filled_cases: { xn: 0, cdha: 0 }, filled_rows: { xn: 0, cdha: 0 } };
+  if (!patientDb.available()) return { labRaw, imagingRaw, report };
+  report.ingested.xn = patientDb.recordResults(labRaw, { kind: 'xn', source: 'kho_nghien_cuu' }).added;
+  report.ingested.cdha = patientDb.recordResults(imagingRaw, { kind: 'cdha', source: 'kho_nghien_cuu' }).added;
+  const out = { xn: labRaw.slice(), cdha: imagingRaw.slice() };
+  const dayOfRow = r => isoDate(firstNonEmpty(r, ['TG chỉ định', 'TG xét nghiệm', 'Ngày chỉ định', 'Ngày xét nghiệm', 'Thời gian']));
+  for (const row of uniqueResearchHchanhRows(sourceRows, sourceRunId)) {
+    const meta = researchHchanhMeta(row, sourceRunId);
+    if (!meta.ma_bn) continue;
+    const range = caseDayRange(meta);
+    if (!range) continue;
+    for (const kind of ['xn', 'cdha']) {
+      const has = out[kind].some(r => patientCode(r) === meta.ma_bn && (() => { const d = dayOfRow(r); return d && d >= range.from && d <= range.to; })());
+      if (has) continue;
+      const fromKho = patientDb.resultRows(meta.ma_bn, range.from, range.to, kind)
+        .map(r => ({ ...r, 'Mã NC': meta.research_code || '' }));
+      if (!fromKho.length) continue;
+      out[kind] = out[kind].concat(fromKho);
+      report.filled_cases[kind] += 1;
+      report.filled_rows[kind] += fromKho.length;
+    }
+  }
+  return { labRaw: out.xn, imagingRaw: out.cdha, report };
+}
+
+/** Góp XN / CĐHA của mọi lần quét đã có (kho gốc + các nghiên cứu) vào Kho người bệnh. */
+function ingestAllResearchResultsToPatientDb() {
+  const stats = { runs: 0, xn: 0, cdha: 0 };
+  if (!patientDb.available() || !fs.existsSync(RESEARCH_STORE_DIR)) return stats;
+  const runDirs = [];
+  for (const store of fs.readdirSync(RESEARCH_STORE_DIR, { withFileTypes: true })) {
+    if (!store.isDirectory()) continue;
+    const runsDir = path.join(RESEARCH_STORE_DIR, store.name, 'runs');
+    if (!fs.existsSync(runsDir)) continue;
+    for (const run of fs.readdirSync(runsDir, { withFileTypes: true })) {
+      if (run.isDirectory()) runDirs.push(path.join(runsDir, run.name));
+    }
+  }
+  for (const dir of runDirs) {
+    const xn = readCsvTable(path.join(dir, 'lich_su_xn.csv'), Number.MAX_SAFE_INTEGER).rows;
+    const cdha = readCsvTable(path.join(dir, 'lich_su_cdha.csv'), Number.MAX_SAFE_INTEGER).rows;
+    if (!xn.length && !cdha.length) continue;
+    stats.runs += 1;
+    stats.xn += patientDb.recordResults(xn, { kind: 'xn', source: 'kho_nghien_cuu' }).added;
+    stats.cdha += patientDb.recordResults(cdha, { kind: 'cdha', source: 'kho_nghien_cuu' }).added;
+  }
+  return stats;
+}
+
 // Câu báo thêm sau khi chuẩn hoá: phần hành chánh lấy từ Kho người bệnh.
 function khoOverlayNote(counts) {
   const k = counts?.kho_nguoi_benh;
-  if (!k || !(k.filled || k.replaced_by_goc || k.provisional)) return '';
+  if (!k || !(k.filled || k.replaced_by_goc || k.provisional || k.xn_cases || k.cdha_cases)) return '';
   const parts = [];
-  if (k.filled) parts.push(`lấy ${k.filled} phần còn thiếu từ kho người bệnh`);
+  if (k.filled) parts.push(`lấy ${k.filled} phần hành chánh còn thiếu từ kho người bệnh`);
+  if (k.xn_cases || k.cdha_cases) parts.push(`lấy XN cho ${k.xn_cases || 0} ca, CĐHA cho ${k.cdha_cases || 0} ca từ kho người bệnh`);
   if (k.replaced_by_goc) parts.push(`thay ${k.replaced_by_goc} phần tạm thời bằng dữ liệu gốc`);
   const tail = k.provisional ? ` Còn ${k.provisional} phần là dữ liệu tạm thời (bấm "Quét lại dữ liệu tạm thời" để chốt).` : '';
   return parts.length ? ` Đã ${parts.join(', ')}.${tail}` : tail;
@@ -5656,7 +5719,23 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   }
   const patients = Array.from(patientByCode.values()).sort((a, b) => String(a.patient_code).localeCompare(String(b.patient_code)));
 
-  const labRaw = readCsvTable(path.join(dir, 'lich_su_xn.csv'), Number.MAX_SAFE_INTEGER).rows;
+  let labRaw = readCsvTable(path.join(dir, 'lich_su_xn.csv'), Number.MAX_SAFE_INTEGER).rows;
+  let imagingRaw = readCsvTable(path.join(dir, 'lich_su_cdha.csv'), Number.MAX_SAFE_INTEGER).rows;
+  try {
+    const results = overlayResultsFromPatientDb(dir, sourceTable.rows.length ? sourceTable.rows : initialTable.rows, runId, labRaw, imagingRaw);
+    labRaw = results.labRaw;
+    imagingRaw = results.imagingRaw;
+    if (khoOverlay) {
+      khoOverlay.results = results.report;
+      writeJsonAtomic(path.join(dir, KHO_OVERLAY_FILE), khoOverlay);
+    }
+    const r = results.report;
+    if (r.filled_cases.xn || r.filled_cases.cdha) {
+      appendResearchRunLog(dir, `[${new Date().toLocaleString('vi-VN')}] Chuẩn hoá: lấy từ kho người bệnh XN cho ${r.filled_cases.xn} ca (${r.filled_rows.xn} dòng), CĐHA cho ${r.filled_cases.cdha} ca (${r.filled_rows.cdha} dòng).`);
+    }
+  } catch (err) {
+    console.warn('[RESEARCH] Không đồng bộ XN/CĐHA với Kho người bệnh:', err.message);
+  }
   const labResultsAll = labRaw.map((row, idx) => {
     const code = patientCode(row);
     const ctx = contextForRow(ctxMap, row, code);
@@ -5693,7 +5772,6 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   // chỉ số nhưng kết quả khác nhau KHÔNG bị bỏ — QA báo mâu thuẫn để người kiểm tra.
   const labResults = dedupeRowsByHash(labResultsAll);
 
-  const imagingRaw = readCsvTable(path.join(dir, 'lich_su_cdha.csv'), Number.MAX_SAFE_INTEGER).rows;
   const imagingResultsAll = imagingRaw.map((row, idx) => {
     const code = patientCode(row);
     const ctx = contextForRow(ctxMap, row, code);
@@ -6285,6 +6363,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       filled: Object.values(khoOverlay.filled).reduce((a, b) => a + b, 0),
       replaced_by_goc: Object.values(khoOverlay.replaced_by_goc).reduce((a, b) => a + b, 0),
       provisional: khoOverlay.provisional.length,
+      xn_cases: khoOverlay.results?.filled_cases?.xn || 0,
+      cdha_cases: khoOverlay.results?.filled_cases?.cdha || 0,
     } : null,
   };
   let database = null;
@@ -8845,4 +8925,5 @@ module.exports = router;
 module.exports._fetchHchanhForResearchRun = fetchHchanhForResearchRun;
 // Danh sách cột chuẩn hóa, dùng để đối chiếu từ điển dữ liệu (server/research/data_dictionary.js).
 module.exports.NORMALIZED_COLUMNS = NORMALIZED_COLUMNS;
-module.exports._test = { readCsvTable, overlayHchanhFromPatientDb, researchHchanhMeta, normalizeInputSignature, identifiedAccessStatus, normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, writeDatasetSnapshot, verifyDatasetSnapshot, verifyAllDatasetSnapshots, cleanupStaleDatasetStaging, finalizeAnalysisDataset, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };
+module.exports.ingestAllResearchResultsToPatientDb = ingestAllResearchResultsToPatientDb;
+module.exports._test = { readCsvTable, overlayHchanhFromPatientDb, overlayResultsFromPatientDb, ingestAllResearchResultsToPatientDb, researchHchanhMeta, normalizeInputSignature, identifiedAccessStatus, normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, writeDatasetSnapshot, verifyDatasetSnapshot, verifyAllDatasetSnapshots, cleanupStaleDatasetStaging, finalizeAnalysisDataset, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };

@@ -3761,7 +3761,14 @@ router.post('/hchanh/stay-store/import', handleRoute((_req, res, ctx) => {
   let patientDbNote = '';
   try {
     const synced = syncStayStoreToPatientDb();
-    patientDbNote = synced.ok ? ` Kho người bệnh: thêm ${synced.new_scans} bản dữ liệu mới.` : ` (${synced.message})`;
+    let resultsNote = '';
+    if (synced.ok) {
+      try {
+        const r = require('./research').ingestAllResearchResultsToPatientDb();
+        if (r.xn || r.cdha) resultsNote = ` XN ${r.xn} dòng, CĐHA ${r.cdha} dòng mới từ Kho nghiên cứu.`;
+      } catch (_) {}
+    }
+    patientDbNote = synced.ok ? ` Kho người bệnh: thêm ${synced.new_scans} bản dữ liệu mới.${resultsNote}` : ` (${synced.message})`;
   } catch (err) {
     patientDbNote = ` (Không ghi được Kho người bệnh: ${err.message})`;
   }
