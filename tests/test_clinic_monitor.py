@@ -195,6 +195,7 @@ class FakePage:
         self.writes = []
 
     def needs_enter(self): return self.enter
+    def missing_required(self): return list(getattr(self, 'missing', []))
     def drug_count(self): return self.drugs
     def exam_start(self): return self.start
     def read_exit_time(self): return self.exit_time
@@ -465,3 +466,12 @@ def test_scan_imaging_reads_once_per_order_count():
     cm.scan_imaging(mon, [no_cdha], cache)
     assert mon.calls == 2
     assert cm.public_rows([{**row, 'href': 'x', 'case': 'cho_ve'}], {}, {}, cache)[0]['bbhc'] == ['Chụp CT']
+
+
+def test_missing_required_fields_stop_before_any_click():
+    page = FakePage(exit_time=cm.parse_emr_dt('09:40 28/09/2026'))
+    page.missing = ['chẩn đoán sơ bộ', 'dấu hiệu LS / triệu chứng']
+    res = cm.check_patient(page, {}, None, NOW)
+    assert res['status'] == 'incomplete' and 'chẩn đoán sơ bộ' in res['message']
+    res = cm.complete_patient(page, {}, None, NOW, None)
+    assert res['result'] == 'incomplete' and page.writes == []

@@ -81,6 +81,7 @@ class FakeBbhc:
         self.writes = page.writes
 
     def exam_info(self): return INFO
+    def imaging_services(self): return None  # trang không có bảng Chỉ định DVKT → dùng popup lịch sử
     def transfer_info(self): return {'type': 'transfer', 'hospital': 'BV X', 'direction': 'Điều trị tiếp', 'time': DT(2026, 9, 28, 10, 0)}
     def existing(self): return list(FakeBbhc.existing_rows)
     def open_attachments(self): self.writes.append('mo_giay_to'); return list(FakeBbhc.existing_rows)
@@ -146,3 +147,15 @@ def test_merge_pdfs(tmp_path):
     out = bb.merge_pdfs(paths, str(tmp_path / 'all.pdf'))
     with fitz.open(out) as merged:
         assert merged.page_count == 2
+
+
+def test_imaging_from_exam_service_table():
+    services = [
+        {'cells': ['1', '(XQ.22) Chụp X-quang cột sống cổ thẳng nghiêng [số hóa 2 phim]', 'PHÒNG CHỤP XQUANG', '1', 'Bảo hiểm', '10:00 28/09/2026', 'Chờ thực hiện', '105,300'], 'done': False},
+        {'cells': ['2', '(CT.12) Chụp CT cột sống thắt lưng không tiêm thuốc cản quang', 'PHÒNG CT', '1', 'Bảo hiểm', '10:05 28/09/2026', 'Hoàn tất', '500,000'], 'done': True},
+        {'cells': ['3', '(MRI.3) Chụp cộng hưởng từ khớp gối', 'PHÒNG MRI', '1', 'Bảo hiểm', '10:07 28/09/2026', 'Chờ thực hiện', '1'], 'done': False},
+    ]
+    assert bb.imaging_from_services(services) == [
+        {'kind': 'CT', 'name': 'Chụp CT cột sống thắt lưng không tiêm thuốc cản quang', 'time': DT(2026, 9, 28, 10, 5)},
+        {'kind': 'MRI', 'name': 'Chụp cộng hưởng từ khớp gối', 'time': DT(2026, 9, 28, 10, 7)},
+    ]

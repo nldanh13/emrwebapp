@@ -89,6 +89,7 @@ const CHECK_VIEW = {
   waiting: { color: C.amber },
   need_weight: { color: C.amber },
   no_drug: { color: C.text2 },
+  incomplete: { color: C.amber },
   done: { text: 'Đã hoàn tất', color: C.green },
   error: { color: C.red },
   session: { color: C.amber },

@@ -380,6 +380,17 @@ JS_VISIBLE = ("var e=document.getElementById(arguments[0]); if(!e) return false;
 JS_VALUE = "var e=document.getElementById(arguments[0]); return e ? e.value : null;"
 JS_SET_VALUE = ("var e=document.getElementById(arguments[0]); e.value=arguments[1];"
                 " e.dispatchEvent(new Event('change', {bubbles:true}));")
+# Các ô EMR bắt buộc trước khi Hoàn tất khám (OnExecutingHOANTAT): chẩn đoán sơ bộ, bệnh chính,
+# xử trí, dấu hiệu LS / triệu chứng. Thiếu thì để bác sĩ nhập, hệ thống không tự điền.
+JS_MISSING_REQUIRED = r"""
+function v(id) { var e = document.getElementById(id); return e ? String(e.value || '').trim() : null; }
+var out = [];
+if (v('txtChanDoanSoBo') === '') out.push('chẩn đoán sơ bộ');
+if (v('cbbCDBChinh') === '') out.push('bệnh chính');
+if (v('cbbXuTri') === '') out.push('xử trí');
+if (v('txtMoTaDauHieuLamSang') === '') out.push('dấu hiệu LS / triệu chứng');
+return out;
+"""
 JS_DRUG_COUNT = "return document.querySelectorAll('#tblThuoc tr[class*=groupthuoc]').length;"
 
 
@@ -431,6 +442,9 @@ class ExamPage:
 
     def needs_enter(self) -> bool:
         return self.visible("btnVAOKHAM")
+
+    def missing_required(self) -> List[str]:
+        return list(self.js(JS_MISSING_REQUIRED) or [])
 
     def drug_count(self) -> int:
         return int(self.js(JS_DRUG_COUNT) or 0)
@@ -502,6 +516,9 @@ def check_patient(page: ExamPage, row: Dict[str, Any], services_done: Optional[d
     """Kiểm tra (chỉ đọc) người bệnh có hoàn tất được lúc này không. Không bấm gì trên EMR."""
     if page.needs_enter() and row.get("cho_doc_kq") and page.drug_count() == 0:
         return {"status": "no_drug", "message": "Chờ đọc KQ, chưa có thuốc — để bác sĩ xử lý"}
+    missing = page.missing_required()
+    if missing:
+        return {"status": "incomplete", "message": f"Bác sĩ chưa nhập: {', '.join(missing)}"}
     earliest = earliest_completion(page.exam_start(), services_done)
     base = {"earliest": earliest.isoformat()}
     if now < earliest:
@@ -523,6 +540,9 @@ def complete_patient(page: ExamPage, row: Dict[str, Any], services_done: Optiona
     must_enter = page.needs_enter()
     if must_enter and row.get("cho_doc_kq") and page.drug_count() == 0:
         return {"result": "no_drug", "message": "Chờ đọc KQ, chưa có thuốc — để bác sĩ xử lý", "steps": steps}
+    missing = page.missing_required()
+    if missing:
+        return {"result": "incomplete", "message": f"Bác sĩ chưa nhập: {', '.join(missing)}", "steps": steps}
     earliest = earliest_completion(page.exam_start(), services_done)
     if now < earliest:
         return {"result": "waiting", "message": f"Chờ tới {earliest:%H:%M} mới hoàn tất được", "steps": steps}
@@ -889,6 +909,10 @@ def prepare_bbhc(page: ExamPage, row: Dict[str, Any], imaging: Dict[str, Any], c
     """Đọc (không ghi) màn khám và soạn nháp SBBHC cho 1 người bệnh."""
     bb = clinic_bbhc.BbhcPage(page)
     info = bb.exam_info()
+    exam_orders = bb.imaging_services()
+    if exam_orders is not None:
+        # Bảng Chỉ định DVKT của màn khám chính xác hơn popup lịch sử (đúng tên, giờ chỉ định).
+        imaging = {"orders": [{**o, "time": fmt_emr_dt(o["time"]) if isinstance(o.get("time"), datetime) else ""} for o in exam_orders]}
     transfer = bb.transfer_info() if row.get("case") == "chuyen_vien" else None
     existing = bb.existing()
     reasons = bbhc_reason_list(row, imaging, transfer)

@@ -73,6 +73,33 @@ def imaging_orders(history_html: str) -> List[Dict[str, Any]]:
     return out
 
 
+# Bảng "Chỉ định DVKT" trên màn khám (#tblDichVu): mỗi dịch vụ là 1 dòng tr.dichvu, xong thì có class hoantat.
+# Cột: STT, Dịch vụ, Nơi thực hiện, SL, Đối tượng, Thời gian, Trạng thái, Thành tiền.
+SERVICES_JS = r"""
+var t = document.getElementById('tblDichVu'); if (!t) return null;
+return [].slice.call(t.querySelectorAll('tr.dichvu')).map(function (tr) {
+  return { cells: [].slice.call(tr.querySelectorAll('td')).map(function (td) { return (td.innerText || '').trim(); }),
+           done: tr.classList.contains('hoantat') };
+});
+"""
+
+
+def imaging_from_services(services: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """Chỉ định chụp CT / MRI đọc từ bảng Chỉ định DVKT của màn khám (tên, giờ chỉ định)."""
+    out: List[Dict[str, Any]] = []
+    for sv in services or []:
+        cells = [compact(c) for c in sv.get("cells") or []]
+        if len(cells) < 2:
+            continue
+        name = compact(re.sub(r"^\([^)]*\)\s*", "", cells[1]))
+        m = IMAGING_RE.search(name)
+        if not m:
+            continue
+        when = next((dt for dt in (_parse_dt(c) for c in cells[2:]) if dt), None)
+        out.append({"kind": _kind(m.group(0)), "name": name, "time": when})
+    return out
+
+
 def imaging_kinds(history_html: str) -> List[str]:
     kinds: List[str] = []
     for order in imaging_orders(history_html):
@@ -278,6 +305,11 @@ class BbhcPage:
 
     def exam_info(self) -> Dict[str, Any]:
         return self.exam.js(EXAM_INFO_JS) or {}
+
+    def imaging_services(self) -> Optional[List[Dict[str, Any]]]:
+        """Chỉ định CT / MRI trên màn khám; None nếu trang không có bảng Chỉ định DVKT."""
+        services = self.exam.js(SERVICES_JS)
+        return None if services is None else imaging_from_services(services)
 
     def transfer_info(self) -> Dict[str, Any]:
         self.exam._open_xutri()
