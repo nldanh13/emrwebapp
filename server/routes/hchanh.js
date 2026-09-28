@@ -69,6 +69,7 @@ const {
 const { buildHchanh_Dashboard, buildPatientCard }        = require('../services/hchanh/dashboard');
 const { upsertTicket, updateTicket, readTicketStore } = require('../services/hchanh/ticket_store');
 const { createSnapshot, readSnapshot }            = require('../services/hchanh/snapshot_store');
+const { applyManualReviewPatch, manualReviewSummary } = require('../services/hchanh/manual_review');
 const {
   buildDashboard: buildRecordsSubmissionDashboard,
   addRecords: addRecordsSubmission,
@@ -3785,6 +3786,26 @@ router.post('/hchanh/stay-store/import', handleRoute((_req, res, ctx) => {
 
 router.get('/hchanh/dashboard', handleRoute((_req, res, ctx) => {
   return res.json(buildHchanh_Dashboard(ctx));
+}));
+
+// Lưu checklist kiểm HSBA thủ công ngay trong metadata của đúng người bệnh.
+// sync_index_from_patients giữ lại toàn bộ metadata cũ nên trạng thái không mất
+// khi tải lại trang hoặc đồng bộ lại danh sách đang nằm khoa.
+router.patch('/hchanh/manual-review/:ma_bn', handleRoute((req, res, ctx) => {
+  const ma_bn = normId(req.params.ma_bn);
+  const index = read_index(ctx);
+  const meta = index.patients?.[ma_bn];
+  if (!meta) return res.status(404).json({ status: 'error', message: 'Người bệnh không có trong danh sách Kiểm HSBA.' });
+
+  const requestedEncounter = normId(req.body?.encounter_key || req.body?.encounterKey);
+  if (requestedEncounter && meta.encounter_key && requestedEncounter !== meta.encounter_key) {
+    return res.status(409).json({ status: 'error', message: 'Lượt điều trị đã thay đổi. Hãy tải lại danh sách trước khi lưu checklist.' });
+  }
+
+  meta.manual_review = applyManualReviewPatch(meta.manual_review, req.body || {});
+  write_index(ctx, index);
+  appendActivity(ctx, { kind: 'hchanh.manual_review.update', ma_bn, encounter_key: meta.encounter_key || '' });
+  return res.json({ status: 'ok', review: manualReviewSummary(meta.manual_review) });
 }));
 
 
