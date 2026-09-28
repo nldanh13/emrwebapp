@@ -87,6 +87,7 @@ const tS = t => TONE[t] || TONE.gray;
 const SCOPE_TONE  = { discharge: 'red', surgery: 'amber', admission: 'blue', daily: 'gray' };
 const FILE_LABELS = { profile:'Thông tin nền', discharge:'Ra viện / ra khoa', billing:'Bảng kê chi phí', bed_days:'Ngày giường', surgery:'Phẫu thuật', order_history:'Lịch sử y lệnh' };
 const MANUAL_REVIEW_STATUS = [
+  ['stale', 'Cần kiểm lại'],
   ['pending', 'Chưa kiểm'],
   ['pass', 'Đạt'],
   ['issue', 'Cần sửa'],
@@ -769,7 +770,7 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
     setTabTouched(false);
     const nextTab = issues.length
       ? 'issues'
-      : (card?.scope === 'discharge' && card?.manual_review?.pending_count
+      : (card?.scope === 'discharge' && card?.manual_review?.remaining_count
         ? 'checklist'
         : ((card?.scope === 'discharge' && hasDischargeData) ? 'discharge' : 'fetch'));
     setTab(nextTab);
@@ -779,12 +780,12 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
   useEffect(() => {
     if (tabTouched) return;
     if (issues.length && tab !== 'issues') setTab('issues');
-    else if (!issues.length && card?.scope === 'discharge' && card?.manual_review?.pending_count && tab !== 'checklist') setTab('checklist');
+    else if (!issues.length && card?.scope === 'discharge' && card?.manual_review?.remaining_count && tab !== 'checklist') setTab('checklist');
     else if (!issues.length && card?.scope === 'discharge' && hasDischargeData && tab === 'fetch') setTab('discharge');
-  }, [card?.scope, card?.manual_review?.pending_count, hasDischargeData, issues.length, tab, tabTouched]);
+  }, [card?.scope, card?.manual_review?.remaining_count, hasDischargeData, issues.length, tab, tabTouched]);
 
   const TABS = [
-    { id:'checklist', label:`Checklist${card?.manual_review?.pending_count ? ` (${card.manual_review.pending_count})` : ''}`, hide: scope !== 'discharge' },
+    { id:'checklist', label:`Checklist${card?.manual_review?.remaining_count ? ` (${card.manual_review.remaining_count})` : ''}`, hide: scope !== 'discharge' },
     { id:'fetch',     label:'Dữ liệu' },
     { id:'issues',    label:`Cần sửa${issues.length ? ` (${issues.length})` : ''}` },
     { id:'discharge', label:'Ra viện' },
@@ -891,13 +892,14 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
               <div key={row.key} style={{ padding:'10px 0', borderBottom:`1px solid ${C.border2}` }}>
                 <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
                   <b style={{ flex:'1 1 240px', fontSize:FS.sm, color:C.text }}>{row.label}</b>
-                  <select value={row.status || 'pending'} disabled={isSavingReview}
+                  <select value={row.stale ? 'stale' : (row.status || 'pending')} disabled={isSavingReview}
                     aria-label={`Kết quả kiểm ${row.label}`}
                     onChange={e => onSaveManualReview?.(card, { items: { [row.key]: { status:e.target.value, note:row.note || '' } } })}
                     style={{ ...SELECT_STYLE, minWidth:130, color:row.status === 'issue' ? C.red : row.status === 'pass' ? C.green : C.text2 }}>
-                    {MANUAL_REVIEW_STATUS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    {MANUAL_REVIEW_STATUS.map(([value, label]) => <option key={value} value={value} disabled={value === 'stale'}>{label}</option>)}
                   </select>
                 </div>
+                {row.stale && <div style={{ marginTop:5, fontSize:FS.xs, color:C.amber }}>Dữ liệu EMR được cập nhật sau lần kiểm trước. Vui lòng đối chiếu lại mục này.</div>}
                 <input type="text" defaultValue={row.note || ''} disabled={isSavingReview}
                   placeholder="Ghi chú nội dung thiếu hoặc cần sửa..."
                   onBlur={e => { if (e.target.value !== (row.note || '')) onSaveManualReview?.(card, { items: { [row.key]: { status:row.status || 'pending', note:e.target.value } } }); }}
