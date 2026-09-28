@@ -64,6 +64,69 @@ export function comboAvailability(combo = {}, draft = {}, multiplier = 1) {
   return { ok: details.length > 0 && details.every(row => !row.blocked), details };
 }
 
+export function everyPatientRequirements(combos = []) {
+  const map = new Map();
+  for (const combo of Array.isArray(combos) ? combos : []) {
+    if (combo?.enabled === false) continue;
+    for (const item of Array.isArray(combo?.items) ? combo.items : []) {
+      if (item?.every_patient !== true) continue;
+      const code = String(item.code || '').trim();
+      if (!code) continue;
+      const current = map.get(code);
+      const quantity = Math.max(1, safeQty(item.quantity || 1));
+      map.set(code, {
+        code,
+        name: item.name || catalogItem(code)?.name || code,
+        quantity: Math.max(quantity, safeQty(current?.quantity)),
+        combo_id: combo.id || '',
+        combo_name: combo.name || 'VTYT chung',
+      });
+    }
+  }
+  return [...map.values()];
+}
+
+export function missingEveryPatientSupplies(draft = {}, combos = []) {
+  const requirements = everyPatientRequirements(combos);
+  const jobs = Array.isArray(draft?.jobs) ? draft.jobs : [];
+  const missing = [];
+  for (const patient of Array.isArray(draft?.patients) ? draft.patients : []) {
+    const patientJobs = jobs.filter(job => String(job.ma_bn || '') === String(patient.ma_bn || ''));
+    for (const requirement of requirements) {
+      const present = patientJobs.reduce((sum, job) => sum + (Array.isArray(job.supplies) ? job.supplies : [])
+        .filter(item => String(item.code || '').trim() === requirement.code && isActiveSupply(item))
+        .reduce((itemSum, item) => itemSum + safeQty(item.input_quantity), 0), 0);
+      const missingQuantity = Math.max(0, requirement.quantity - present);
+      if (missingQuantity > 0) missing.push({
+        ...requirement,
+        ma_bn: String(patient.ma_bn || ''),
+        ho_ten: patient.ho_ten || '',
+        missing_quantity: missingQuantity,
+      });
+    }
+  }
+  return missing;
+}
+
+export function everyPatientAvailability(draft = {}, combos = []) {
+  const allocated = allocatedByCode(draft);
+  const missing = missingEveryPatientSupplies(draft, combos);
+  const neededByCode = new Map();
+  for (const row of missing) neededByCode.set(row.code, (neededByCode.get(row.code) || 0) + row.missing_quantity);
+  const details = [...neededByCode.entries()].map(([code, needed]) => {
+    const stock = stockOf(code);
+    const available = stock == null ? null : Math.max(0, stock - (allocated.get(code) || 0));
+    return {
+      code,
+      name: catalogItem(code)?.name || missing.find(row => row.code === code)?.name || code,
+      needed,
+      available,
+      blocked: stock == null || available < needed,
+    };
+  });
+  return { ok: missing.length > 0 && details.every(row => !row.blocked), missing, details };
+}
+
 export function collectionRows(draft = {}) {
   const map = new Map();
   for (const job of Array.isArray(draft?.jobs) ? draft.jobs : []) {
@@ -104,4 +167,3 @@ export function eligibleInputJobs(draft = {}) {
     )),
   })).filter(job => job.supplies.length > 0);
 }
-
