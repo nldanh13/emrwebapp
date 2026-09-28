@@ -564,6 +564,58 @@ function IssueSummaryBox({ issues }) {
 }
 
 
+function QuickEvidencePanel({ profile, discharge, orderHistory, surgery, billingOverview, bedReview }) {
+  const orders = safeArr(orderHistory?.rows);
+  const incomplete = safeArr(orderHistory?.incomplete_rows);
+  const afterDischarge = safeArr(orderHistory?.after_discharge_rows);
+  const surgeries = safeArr(surgery?.surgeries);
+  const summary = billingOverview?.summary || {};
+  const recentOrders = orders.slice(0, 5);
+  return (
+    <aside style={{ position:'sticky', top:0, padding:'10px 11px', borderRadius:8, border:`1px solid ${C.border}`, background:C.surface2 }}>
+      <div style={{ fontSize:FS.xs, fontWeight:700, color:C.text2, marginBottom:8 }}>ĐỐI CHIẾU NHANH</div>
+
+      <SectionTitle>Y lệnh</SectionTitle>
+      <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:6 }}>
+        <Chip tone="blue">Tổng {orderHistory?.total ?? orders.length}</Chip>
+        <Chip tone={incomplete.length ? 'red' : 'green'}>Chưa hoàn tất {incomplete.length}</Chip>
+        <Chip tone={afterDischarge.length ? 'red' : 'gray'}>Sau ra viện {afterDischarge.length}</Chip>
+      </div>
+      {recentOrders.length === 0
+        ? <div style={{ fontSize:FS.xs, color:C.text3, marginBottom:10 }}>Chưa có dữ liệu y lệnh.</div>
+        : recentOrders.map((row, index) => (
+            <div key={row.so_phieu || index} style={{ padding:'5px 0', borderBottom:`1px solid ${C.border2}`, fontSize:FS.xs }}>
+              <div style={{ color:C.text, fontWeight:650 }}>{txt(row.ten_y_lenh || row.dien_bien || row.kq_text)}</div>
+              <div style={{ color:C.text2 }}>{txt(row.tg_ylenh || row.ngay, '')}{row.so_phieu ? ` · Phiếu ${row.so_phieu}` : ''}</div>
+            </div>
+          ))}
+
+      <SectionTitle>Ra viện</SectionTitle>
+      <FieldRow label="Chẩn đoán" value={discharge?.chan_doan_chinh || discharge?.chan_doan_ra || profile?.chan_doan_ra} />
+      <FieldRow label="Lời dặn" value={discharge?.loi_dan || discharge?.huong_dieu_tri} tone={(discharge?.loi_dan || discharge?.huong_dieu_tri) ? 'green' : 'amber'} />
+      <FieldRow label="Tái khám" value={[discharge?.tg_hen_kham, discharge?.phong_kham].filter(Boolean).join(' · ')} />
+
+      <SectionTitle>Phẫu thuật</SectionTitle>
+      <div style={{ fontSize:FS.xs, color:surgeries.length ? C.text : C.text3, marginBottom:6 }}>
+        {surgeries.length ? `${surgeries.length} lần phẫu thuật/thủ thuật` : 'Không thấy dữ liệu phẫu thuật.'}
+      </div>
+      {surgeries.slice(0, 3).map((row, index) => {
+        const detail = row?.detail || {};
+        return <div key={row.phauthuatid || index} style={{ padding:'5px 0', borderBottom:`1px solid ${C.border2}`, fontSize:FS.xs }}>
+          <div style={{ color:C.text, fontWeight:650 }}>{txt(detail.dich_vu_phau_thuat || row.noi_dung_phau_thuat || row.ten)}</div>
+          <div style={{ color:C.text2 }}>{txt(detail.bat_dau || row.bat_dau || row.thoi_gian, '')} · {txt(detail.phuong_phap_pt || row.phuong_phap_pt, 'Chưa có phương pháp')}</div>
+        </div>;
+      })}
+
+      <SectionTitle>Ngày giường và chi phí</SectionTitle>
+      <FieldRow label="Ngày giường" value={bedReview ? `${bedReview.actual_total ?? '?'} thực tế / ${bedReview.expected_total ?? '?'} dự kiến` : ''} tone={bedReview?.status === 'mismatch' ? 'red' : undefined} />
+      <FieldRow label="Tổng chi phí" value={summary.total != null ? moneyText(summary.total) : ''} />
+      <FieldRow label="Người bệnh trả" value={summary.patient != null ? moneyText(summary.patient) : ''} />
+    </aside>
+  );
+}
+
+
 // ── Tiền giám định BHYT ───────────────────────────────────────────────────────
 // Không kết luận "xuất toán" — chỉ hiện nguy cơ từ chối thanh toán + lý do +
 // khoản tiền có nguy cơ + việc cần kiểm. Xem server/services/hchanh/bhyt_pre_audit.js.
@@ -883,8 +935,9 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
       <div style={{ flex: isMobile ? 'none' : 1, overflow: isMobile ? 'visible' : 'auto', padding:'14px 16px' }}>
 
         {tab === 'checklist' && (
-          <div>
-            <div style={{ fontSize:FS.xs, fontWeight:700, color:C.text2, marginBottom:5 }}>CHECKLIST KIỂM THỦ CÔNG</div>
+          <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : 'minmax(0, 1.1fr) minmax(270px, .9fr)', gap:14, alignItems:'start' }}>
+            <div>
+              <div style={{ fontSize:FS.xs, fontWeight:700, color:C.text2, marginBottom:5 }}>CHECKLIST KIỂM THỦ CÔNG</div>
             <div style={{ fontSize:FS.sm, color:C.text2, marginBottom:12, lineHeight:1.45 }}>
               Kiểm nội dung trên EMR tại đây. Chữ ký trên hồ sơ giấy, số lưu trữ và bàn giao được xác nhận ở tab Trả HSBA.
               Máy chỉ hỗ trợ dò lỗi; hồ sơ chỉ hoàn tất khi các mục dưới đây đã được đối chiếu.
@@ -907,7 +960,16 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
                   style={{ width:'100%', marginTop:7, height:32, padding:'0 9px', borderRadius:5, border:`1px solid ${C.border}`, background:C.surface, color:C.text, fontSize:FS.sm, fontFamily:'inherit', boxSizing:'border-box' }} />
               </div>
             ))}
-            {isSavingReview && <div style={{ marginTop:10, display:'flex', gap:7, alignItems:'center', color:C.text2, fontSize:FS.sm }}><Spinner size={13} /> Đang lưu checklist…</div>}
+              {isSavingReview && <div style={{ marginTop:10, display:'flex', gap:7, alignItems:'center', color:C.text2, fontSize:FS.sm }}><Spinner size={13} /> Đang lưu checklist…</div>}
+            </div>
+            <QuickEvidencePanel
+              profile={profile}
+              discharge={disch}
+              orderHistory={orderHistory}
+              surgery={surgery}
+              billingOverview={billingOverview}
+              bedReview={bedReview}
+            />
           </div>
         )}
 
