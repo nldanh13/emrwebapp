@@ -16,6 +16,7 @@ import { HCHANH_VTYT_ITEMS, HCHANH_BED_SERVICE_ITEMS } from '../../config/hchanh
 import { printHchanh_Ticket } from '../../api.js';
 import HchanhVtytBatchPanel from './HchanhVtytBatchPanel.jsx';
 import { formatPersonName } from '../../utils/personName.js';
+import { getHchanhIssueTarget } from '../../engine/hchanhIssueNavigation.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -523,9 +524,10 @@ function groupIssuesForOverview(issues) {
   return [...groups.values()].sort((a, b) => (b.errors - a.errors) || (b.items.length - a.items.length) || a.label.localeCompare(b.label, 'vi'));
 }
 
-function IssueRow({ issue, hideGroup = false }) {
+function IssueRow({ issue, hideGroup = false, onOpenTarget }) {
   const tone = issue.severity === 'error' ? 'red' : issue.severity === 'warn' ? 'amber' : 'gray';
   const s    = tS(tone);
+  const target = getHchanhIssueTarget(issue);
   return (
     <div style={{ padding:'6px 10px', borderRadius:6, marginBottom:4,
       background:s.bg, border:`1px solid ${s.border}` }}>
@@ -535,6 +537,14 @@ function IssueRow({ issue, hideGroup = false }) {
       </div>
       {issue.detail && <div style={{ fontSize:FS.xs, color:C.text2 }}>{issue.detail}</div>}
       {issue.action && <div style={{ fontSize:FS.xs, color:C.blue, marginTop:2 }}>Cách xử lý: {issue.action}</div>}
+      {target && onOpenTarget && (
+        <button type="button" onClick={() => onOpenTarget(target)}
+          aria-label={`Mở ${target.label} để đối chiếu ${txt(issue.title)}`}
+          style={{ marginTop:6, padding:0, border:0, background:'transparent', color:C.blue,
+            fontSize:FS.xs, fontWeight:700, fontFamily:'inherit', cursor:'pointer' }}>
+          Mở {target.label} để đối chiếu →
+        </button>
+      )}
     </div>
   );
 }
@@ -1022,7 +1032,10 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
                       <b style={{ fontSize:FS.sm, color:C.text }}>{group.label}</b>
                       <Chip tone={group.errors ? 'red' : 'amber'}>{group.items.length}</Chip>
                     </div>
-                    {group.items.map((issue, idx) => <IssueRow key={issue.code || idx} issue={issue} hideGroup />)}
+                    {group.items.map((issue, idx) => (
+                      <IssueRow key={issue.code || idx} issue={issue} hideGroup
+                        onOpenTarget={target => { setTabTouched(true); setTab(target.tab); }} />
+                    ))}
                   </section>
                 ))
             }
