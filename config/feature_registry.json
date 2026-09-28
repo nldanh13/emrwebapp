@@ -62,6 +62,16 @@
       "usesDateRange": true
     },
     {
+      "id": "hchanh-vtyt",
+      "label": "Nhập VTYT",
+      "icon": "▧",
+      "group": "Công việc",
+      "hint": "Quét y lệnh, lập kế hoạch và nhập vật tư y tế",
+      "order": 85,
+      "compact": true,
+      "usesDateRange": true
+    },
+    {
       "id": "discharge-sign",
       "label": "Ký tên ĐD HSBA",
       "icon": "✎",

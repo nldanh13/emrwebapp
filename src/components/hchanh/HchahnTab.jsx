@@ -9,11 +9,11 @@ import {
   IconAlertTriangle, IconCheck, IconChevronDown, IconCircleDashed, IconCloudDownload, IconMinus,
   IconRefresh, IconSearch, IconTool, IconX,
 } from '@tabler/icons-react';
-import { Btn, Segmented, Spinner } from '../shared.jsx';
+import { Btn, Spinner } from '../shared.jsx';
 import useIsMobile from '../../hooks/useIsMobile.js';
 import { useHchanh, SCOPE_LABEL, SCOPE_FILES, getMaBn } from './useHchanh.js';
 import { HCHANH_VTYT_ITEMS, HCHANH_BED_SERVICE_ITEMS } from '../../config/hchanhLists.js';
-import { printHchanh_Ticket, printHchanh_WardList, importHchanhStayStore } from '../../api.js';
+import { printHchanh_Ticket } from '../../api.js';
 import HchanhVtytBatchPanel from './HchanhVtytBatchPanel.jsx';
 import { formatPersonName } from '../../utils/personName.js';
 
@@ -703,7 +703,7 @@ function ResourceListPanel({ type = 'vtyt', onClose }) {
 
 // ── Detail panel ──────────────────────────────────────────────────────────────
 
-function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischargeFull, onPreviewVTYT, onProcessVTYT, onInputVTYT, onOpenBedEdit, onPrintBilling, onCreateTicket, onRescan, fetchingKey, previewVtytKey, inputVtytKey, bedEditKey, printBillingKey, ticketKey, vtytPreview }) {
+function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischargeFull, onOpenBedEdit, onPrintBilling, onCreateTicket, onRescan, fetchingKey, bedEditKey, printBillingKey, ticketKey }) {
   const [tab, setTab] = useState('fetch');
   const [tabTouched, setTabTouched] = useState(false);
   const [showMoreActions, setShowMoreActions] = useState(false);
@@ -711,14 +711,10 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
   const ma_bn      = getMaBn(card);
   const scope      = card?.scope || 'daily';
   const isFetching = fetchingKey === ma_bn;
-  const isPreviewVtyt = previewVtytKey === ma_bn;
-  const isInputVtyt = inputVtytKey === ma_bn;
   const isBedEdit = bedEditKey === ma_bn;
   const isPrintBilling = printBillingKey === ma_bn;
   const isCreatingTicket = ticketKey === ma_bn;
-  const hasVtytPreview = Boolean(vtytPreview?.plan?.length);
-  const vtytProcessed = Boolean(vtytPreview?.processed);
-  const busyAny   = isFetching || isBedEdit || isPrintBilling || isCreatingTicket || Boolean(inputVtytKey) || Boolean(previewVtytKey) || Boolean(bedEditKey) || Boolean(printBillingKey) || Boolean(ticketKey);
+  const busyAny   = isFetching || isBedEdit || isPrintBilling || isCreatingTicket || Boolean(bedEditKey) || Boolean(printBillingKey) || Boolean(ticketKey);
   const fetched    = card?.fetched || {};
   const issues     = safeArr(card?.issues).filter(i => i.severity !== 'info');
   const scopeFiles = SCOPE_FILES.discharge || ['profile'];
@@ -772,7 +768,6 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
     { id:'bed_days',  label:'Ngày giường',  hide: scope !== 'discharge' },
     { id:'surgery',   label:'Phẫu thuật' },
     { id:'order_history', label:'Y lệnh' },
-    { id:'vtyt',      label:'VTYT' },
   ].filter(t => !t.hide);
 
   return (
@@ -808,7 +803,7 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
           </Btn>
         </div>
         <div style={{ marginTop:6, fontSize:FS.xs, color:C.text2 }}>
-          Cập nhật toàn bộ hồ sơ hành chánh. Thao tác phụ (in bảng kê, phiếu sửa, sửa giường, VTYT) nằm trong Tác vụ khác.
+          Cập nhật toàn bộ hồ sơ cần kiểm. In bảng kê, phiếu sửa và sửa ngày giường nằm trong Tác vụ khác.
         </div>
 
         {showMoreActions && (
@@ -823,19 +818,6 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
               <Btn variant="secondary" disabled={busyAny} onClick={() => onOpenBedEdit?.(card)}>
                 {isBedEdit ? <><Spinner size={10} /> Mở...</> : 'Sửa giường'}
               </Btn>
-              <Btn variant="secondary" disabled={busyAny} onClick={() => onPreviewVTYT?.(card)}>
-                {isPreviewVtyt ? <><Spinner size={10} /> Quét...</> : 'Quét YL mai'}
-              </Btn>
-              {hasVtytPreview && (
-                <Btn variant="secondary" disabled={busyAny || vtytProcessed} onClick={() => onProcessVTYT?.(card)}>
-                  {vtytProcessed ? 'Đã xử lý VTYT' : 'Xử lý VTYT'}
-                </Btn>
-              )}
-              {vtytProcessed && (
-                <Btn variant="secondary" disabled={busyAny} onClick={() => onInputVTYT?.(card)}>
-                  {isInputVtyt ? <><Spinner size={10} /> Nhập...</> : 'Nhập VTYT'}
-                </Btn>
-              )}
               {hasTicket && (
                 <Btn variant="secondary" disabled={isFetching} onClick={() => onRescan(card)}>Nghiệm thu</Btn>
               )}
@@ -1476,18 +1458,6 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
         )}
 
 
-        {tab === 'vtyt' && (
-          <VTYTPreviewPanel
-            preview={vtytPreview}
-            onPreview={() => onPreviewVTYT?.(card)}
-            onProcess={() => onProcessVTYT?.(card)}
-            onInput={() => onInputVTYT?.(card)}
-            canRun={!busyAny}
-            previewing={isPreviewVtyt}
-            inputting={isInputVtyt}
-          />
-        )}
-
       </div>
     </aside>
   );
@@ -1549,24 +1519,22 @@ function ScopeSelect({ value, onChange }) {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-export default function HchahnTab({ toast, workDateRange }) {
+export default function HchahnTab({ toast, workDateRange, view = 'check' }) {
   const hc = useHchanh({ toast, workDateRange });
   const isMobile = useIsMobile();
   const {
-    loading, fetchingKey, previewVtytKey, inputVtytKey, bedEditKey, printBillingKey, ticketKey,
+    loading, fetchingKey, bedEditKey, printBillingKey, ticketKey,
     selectedCard, setSelectedCard,
     search, setSearch,
     filterScope, setFilterScope,
     filterStatus, setFilterStatus,
     counts, filteredCards, dashboard,
-    fetchPatient, fetchDischargeFull, previewVTYT, processVTYTPreview, inputVTYT, openBedEdit, printBilling,
+    fetchPatient, fetchDischargeFull, openBedEdit, printBilling,
     createTicket, rescanPatient, exportIssues, batchFetchMissing, batchProgress,
     clearPatient,
-    vtytPreviewByPatient,
     vtytBatchDraft, setVtytBatchDraft, vtytBatchLoading, vtytBatchInputting,
     previewBatchVTYT, inputBatchVTYT, clearBatchVTYTDraft,
   } = hc;
-  const [resourceList, setResourceList] = useState('');
   const [showTools, setShowTools] = useState(false);
   const [runHeadless, setRunHeadless] = useState(() => {
     try { return localStorage.getItem('emr_hchanh_headless_v1') === '1'; }
@@ -1575,16 +1543,7 @@ export default function HchahnTab({ toast, workDateRange }) {
   useEffect(() => {
     try { localStorage.setItem('emr_hchanh_headless_v1', runHeadless ? '1' : '0'); } catch {}
   }, [runHeadless]);
-  const [workspace, setWorkspace] = useState(() => {
-    try { return localStorage.getItem('emr_hchanh_workspace_v1') === 'vtyt' ? 'vtyt' : 'discharge'; }
-    catch { return 'discharge'; }
-  });
-
-  useEffect(() => {
-    try { localStorage.setItem('emr_hchanh_workspace_v1', workspace); } catch {}
-    setShowTools(false);
-    setResourceList('');
-  }, [workspace]);
+  const workspace = view === 'vtyt' ? 'vtyt' : 'discharge';
 
   if (loading && !dashboard) {
     return (
@@ -1602,15 +1561,9 @@ export default function HchahnTab({ toast, workDateRange }) {
       {/* Khu làm việc + tìm kiếm */}
       <div style={{ padding:'10px 12px', borderBottom:`1px solid ${C.border2}`, background:C.surface, display:'grid', gap:10 }}>
         <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
-          <Segmented
-            label="Khu làm việc Kiểm HSBA"
-            value={workspace}
-            onChange={setWorkspace}
-            options={[
-              { value:'discharge', label:'Kiểm ra viện' },
-              { value:'vtyt', label:`Nhập VTYT${vtytCount ? ` (${vtytCount})` : ''}` },
-            ]}
-          />
+          <span style={{ fontSize:FS.md, color:C.text, fontWeight:700 }}>
+            {workspace === 'discharge' ? 'Kiểm hồ sơ ra viện' : `Nhập VTYT${vtytCount ? ` (${vtytCount})` : ''}`}
+          </span>
           <span style={{ fontSize:FS.xs, color:C.text2, flex:'1 1 200px' }}>
             {workspace === 'discharge' ? 'Hồ sơ, chi phí, ngày giường và y lệnh của người bệnh.' : 'Quét toàn đợt, sửa kế hoạch rồi nhập vật tư hàng loạt.'}
           </span>
@@ -1647,13 +1600,6 @@ export default function HchahnTab({ toast, workDateRange }) {
                   padding:4, borderRadius:7, background:C.surface, border:`1px solid ${C.border}`, boxShadow:C.shadow2, display:'grid' }}>
                   {[
                     ['Xuất danh sách lỗi (CSV)', () => exportIssues('csv')],
-                    ['In danh sách xếp phòng', () => printHchanh_WardList().catch(err => alert(err.message || err))],
-                    ['Danh mục vật tư', () => setResourceList('vtyt')],
-                    ['Danh mục giường', () => setResourceList('bed')],
-                    // Dữ liệu lấy mới đã tự góp vào kho; mục này góp một lần phần đã lấy từ trước.
-                    ['Góp dữ liệu đã lấy vào kho nghiên cứu', () => importHchanhStayStore()
-                      .then(r => toast?.(r.message, 'ok'))
-                      .catch(err => toast?.(String(err.message || err), 'error'))],
                   ].map(([label, run]) => (
                     <button key={label} type="button" role="menuitem" className="emr-menu-item" onClick={() => { run(); setShowTools(false); }}>{label}</button>
                   ))}
@@ -1722,7 +1668,7 @@ export default function HchahnTab({ toast, workDateRange }) {
                     key={getMaBn(card) || card.key}
                     card={card}
                     selected={getMaBn(selectedCard) === getMaBn(card)}
-                    onSelect={card => { setResourceList(''); setSelectedCard(card); }}
+                    onSelect={setSelectedCard}
                   />
                 ))}
               </ul>
@@ -1752,7 +1698,7 @@ export default function HchahnTab({ toast, workDateRange }) {
                         key={getMaBn(card) || card.key}
                         card={card}
                         selected={getMaBn(selectedCard) === getMaBn(card)}
-                        onSelect={card => { setResourceList(''); setSelectedCard(card); }}
+                        onSelect={setSelectedCard}
                         onFetchDischargeFull={fetchDischargeFull}
                         fetchingKey={fetchingKey}
                       />
@@ -1763,31 +1709,21 @@ export default function HchahnTab({ toast, workDateRange }) {
             )}
           </div>
 
-          {resourceList && (
-            <ResourceListPanel type={resourceList} onClose={() => setResourceList('')} />
-          )}
-
-          {!resourceList && selectedCard && (
+          {selectedCard && (
             <DetailPanel
               isMobile={isMobile}
               card={selectedCard}
               onClose={() => setSelectedCard(null)}
               onFetch={fetchPatient}
               onFetchDischargeFull={fetchDischargeFull}
-              onPreviewVTYT={previewVTYT}
-              onProcessVTYT={processVTYTPreview}
-              onInputVTYT={inputVTYT}
               onOpenBedEdit={openBedEdit}
               onPrintBilling={printBilling}
               onCreateTicket={createTicket}
               onRescan={rescanPatient}
               fetchingKey={fetchingKey}
-              previewVtytKey={previewVtytKey}
-              inputVtytKey={inputVtytKey}
               bedEditKey={bedEditKey}
               printBillingKey={printBillingKey}
               ticketKey={ticketKey}
-              vtytPreview={vtytPreviewByPatient[getMaBn(selectedCard)]}
             />
           )}
         </div>

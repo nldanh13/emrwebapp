@@ -1,4 +1,4 @@
-import { IconArrowBarToDown, IconDeviceFloppy, IconListSearch, IconReload, IconSearch, IconX } from '@tabler/icons-react';
+import { IconArrowBarToDown, IconDeviceFloppy, IconListSearch, IconPrinter, IconReload, IconSearch, IconX } from '@tabler/icons-react';
 import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import { getPatientId, getPatientName, getWardMetaLine, roomPriceTier, formatVND } from './bedBoardUtils.js';
@@ -27,6 +27,7 @@ export default function BedBoardMobile({
   filtered,
   saving,
   handleSaveOnly,
+  handlePrintRooms,
   selectAllUnassigned,
 }) {
   const inspecting = inspectRoom ? { room: inspectRoom, pts: roomPatients(inspectRoom), cap: roomConfig[inspectRoom] || 0 } : null;
@@ -53,6 +54,7 @@ export default function BedBoardMobile({
             ? <b style={{ color: C.blue }}>Đang chọn {selCount} người bệnh — bấm phòng để xếp</b>
             : <><b style={{ color: C.text }}>{assigned.length}</b> đã xếp · <span style={{ color: unassigned.length ? C.amber : C.text2, fontWeight: unassigned.length ? 600 : 400 }}>{unassigned.length} chưa xếp</span></>}
         </div>
+        <Btn icon={IconPrinter} onClick={handlePrintRooms} style={{ minHeight: 40 }}>In danh sách xếp phòng</Btn>
       </div>
 
       {/* Phòng */}
