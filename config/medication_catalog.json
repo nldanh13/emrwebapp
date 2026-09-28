@@ -137,6 +137,12 @@
       "canonical": "GEMAPAXANE",
       "category": "thuoc_tiem",
       "default_route": "TDD"
+    },
+    {
+      "canonical": "SODIUM CHLORIDE 0,9%",
+      "category": "dich_truyen",
+      "default_volume_ml": 100.0,
+      "default_rate": "30"
     }
   ],
   "_updated": "2026-09-26"
