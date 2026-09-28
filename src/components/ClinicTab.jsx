@@ -1,4 +1,5 @@
-// src/components/ClinicTab.jsx — Phòng khám: theo dõi Danh sách Khám bệnh (đợt 1, chỉ đọc).
+// src/components/ClinicTab.jsx — Phòng khám: theo dõi Danh sách Khám bệnh, hoàn tất khám Cho về
+// và nhập chăm sóc người bệnh nhập viện (ClinicAdmissionCare).
 // Máy chủ chạy nền worker clinic_monitor.py giữ Chrome đăng nhập sẵn, tự đọc lại danh
 // sách theo chu kỳ và tự đăng nhập lại khi EMR hết phiên; màn này chỉ hiển thị trạng thái.
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -6,6 +7,7 @@ import { IconChecks, IconPlayerPlay, IconPlayerStop, IconRefresh } from '@tabler
 import { C, FS } from '../tokens.js';
 import { Btn, Segmented } from './shared.jsx';
 import * as api from '../api.js';
+import ClinicAdmissionCare from './ClinicAdmissionCare.jsx';
 
 const CONFIG_KEY = 'emr_clinic_monitor_cfg_v1';
 const DEFAULT_CONFIG = {
@@ -312,6 +314,8 @@ export default function ClinicTab({ toast }) {
           <span role="status" style={{ fontSize: FS.sm, color: statusTone, flex: '1 1 320px' }}>{statusText}</span>
         </div>
       </section>
+
+      <ClinicAdmissionCare creds={{ ...cfg, password }} toast={toast} />
 
       {monitor?.rows?.length ? (
         <>
