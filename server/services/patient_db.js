@@ -516,22 +516,44 @@ function rebuildLinks(conn, maBn) {
   }
 }
 
-// Gắn kết quả XN / CĐHA vào lượt theo ngày: đợt nội trú chứa ngày đó, không có thì lượt khám cùng ngày.
+// Chuẩn hoá khoá lượt khám nếu dòng kết quả có mang định danh từ EMR.
+// Không đoán định danh nội trú vì khoa_emr hiện chỉ có khoá ổn định cho lượt khám (kb:<khambenhid>).
+function resultVisitHint(raw) {
+  let row = raw;
+  if (typeof raw === 'string') {
+    try { row = JSON.parse(raw); } catch (_) { row = null; }
+  }
+  if (!row || typeof row !== 'object') return '';
+  const value = pick(row, ['khambenhid', 'KhamBenhID', 'kham_benh_id', 'Mã lượt khám', 'Ma luot kham']);
+  if (!value) return '';
+  return value.startsWith('kb:') ? value : `kb:${value}`;
+}
+
+// Gắn kết quả XN / CĐHA vào lượt.
+// Ưu tiên định danh EMR; nếu chỉ có ngày thì chỉ gắn khi ngày đó khớp đúng 1 lượt.
+// Nhiều lượt cùng ngày là mơ hồ: để luot_id = NULL thay vì âm thầm gắn sai.
 function linkResults(conn, maBn) {
-  const visits = conn.prepare('SELECT id, loai, gio_vao, gio_ra FROM luot WHERE ma_bn = ?').all(maBn)
-    .map(v => ({ id: v.id, loai: v.loai, start: dayOf(v.gio_vao), end: dayOf(v.gio_ra) }))
+  const visits = conn.prepare('SELECT id, loai, khoa_emr, gio_vao, gio_ra FROM luot WHERE ma_bn = ? ORDER BY gio_vao, id').all(maBn)
+    .map(v => ({ id: v.id, loai: v.loai, khoa_emr: txt(v.khoa_emr), start: dayOf(v.gio_vao), end: dayOf(v.gio_ra) }))
     .filter(v => v.start);
-  const luotFor = (day) => {
+  const luotFor = (day, raw) => {
     if (!day) return null;
-    const stay = visits.find(v => v.loai === LOAI_NOI_TRU && v.start <= day && (!v.end || day <= v.end));
-    if (stay) return stay.id;
-    return visits.find(v => v.loai === LOAI_KHAM && v.start === day)?.id ?? null;
+    const hint = resultVisitHint(raw);
+    if (hint) {
+      const exact = visits.find(v => v.khoa_emr === hint);
+      if (exact) return exact.id;
+    }
+    const candidates = visits.filter(v => (
+      (v.loai === LOAI_NOI_TRU && v.start <= day && (!v.end || day <= v.end))
+      || (v.loai === LOAI_KHAM && v.start === day)
+    ));
+    return candidates.length === 1 ? candidates[0].id : null;
   };
   for (const table of ['ket_qua_xn', 'ket_qua_cdha']) {
-    const rows = conn.prepare(`SELECT id, thoi_gian, luot_id FROM ${table} WHERE ma_bn = ?`).all(maBn);
+    const rows = conn.prepare(`SELECT id, thoi_gian, luot_id, du_lieu FROM ${table} WHERE ma_bn = ?`).all(maBn);
     const upd = conn.prepare(`UPDATE ${table} SET luot_id = ? WHERE id = ?`);
     for (const r of rows) {
-      const next = luotFor(dayOf(r.thoi_gian));
+      const next = luotFor(dayOf(r.thoi_gian), r.du_lieu);
       if ((next ?? null) !== (r.luot_id ?? null)) upd.run(next, r.id);
     }
   }
@@ -676,7 +698,9 @@ function recordResults(rows, { kind = 'xn', source = 'kho_nghien_cuu', tier, now
           kq: pick(raw, ['Kết quả']), dv: pick(raw, ['Đơn vị']), tc: pick(raw, ['Khoảng tham chiếu']), bt: pick(raw, ['Bất thường']), tt: pick(raw, ['Trạng thái']),
         };
         if (!f.chiSo) { skipped += 1; continue; }
-        const hash = contentHash({ kind, code, time, loai: f.loai, chiSo: f.chiSo, kq: f.kq, dv: f.dv });
+        // Hash gồm toàn bộ dữ liệu lâm sàng có thể thay đổi. Không bỏ nhầm bản EMR đã
+        // sửa mã phiếu, khoảng tham chiếu, cờ bất thường hoặc trạng thái.
+        const hash = contentHash({ kind, code, time, loai: f.loai, phieu: f.phieu, chiSo: f.chiSo, kq: f.kq, dv: f.dv, tc: f.tc, bt: f.bt, tt: f.tt });
         res = insXn.run(code, time, f.loai, f.phieu, f.chiSo, f.kq, f.dv, f.tc, f.bt, f.tt, source, muc, now, hash, JSON.stringify(clean));
       } else {
         const f = {
@@ -684,7 +708,7 @@ function recordResults(rows, { kind = 'xn', source = 'kho_nghien_cuu', tier, now
           moTa: pick(raw, ['Mô tả/Kết quả', 'Kết quả']), kl: pick(raw, ['Kết luận']), tt: pick(raw, ['Trạng thái']),
         };
         if (!f.ten) { skipped += 1; continue; }
-        const hash = contentHash({ kind, code, time, ten: f.ten, moTa: f.moTa, kl: f.kl });
+        const hash = contentHash({ kind, code, time, nhom: f.nhom, ten: f.ten, moTa: f.moTa, kl: f.kl, tt: f.tt });
         res = insCd.run(code, time, f.nhom, f.ten, f.moTa, f.kl, f.tt, source, muc, now, hash, JSON.stringify(clean));
       }
       if (Number(res.changes) > 0) { added += 1; patients.add(code); } else skipped += 1;
@@ -833,6 +857,35 @@ function summary() {
   };
 }
 
+/** Kiểm tra nhanh tính toàn vẹn của file SQLite đang dùng. */
+function integrityCheck() {
+  const rows = open().prepare('PRAGMA quick_check').all();
+  const messages = rows.map(r => txt(r.quick_check || Object.values(r)[0])).filter(Boolean);
+  return { ok: messages.length === 1 && messages[0].toLowerCase() === 'ok', messages };
+}
+
+/**
+ * Tạo một bản sao SQLite nhất quán bằng VACUUM INTO (an toàn cả khi kho đang ở WAL mode).
+ * Ghi vào file tạm rồi đổi tên để không để lại bản sao dở dang.
+ */
+function backupTo(destination) {
+  const dest = path.resolve(String(destination || '').trim());
+  if (!destination || dest === path.resolve(defaultDbPath())) throw new Error('Đường dẫn sao lưu không hợp lệ.');
+  const check = integrityCheck();
+  if (!check.ok) throw new Error(`Kho người bệnh không toàn vẹn: ${check.messages.join('; ')}`);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  const tmp = `${dest}.tmp-${process.pid}-${Date.now()}`;
+  const quoteSql = value => String(value).replace(/'/g, "''");
+  try {
+    open().exec(`VACUUM INTO '${quoteSql(tmp)}'`);
+    fs.renameSync(tmp, dest);
+    return { ok: true, path: dest, size_bytes: fs.statSync(dest).size };
+  } catch (err) {
+    try { fs.unlinkSync(tmp); } catch (_) {}
+    throw err;
+  }
+}
+
 function luotDetail(conn, l) {
   return {
     ...l,
@@ -938,7 +991,15 @@ function patientJourney(maBn) {
   const patient = conn.prepare('SELECT * FROM benh_nhan WHERE ma_bn = ?').get(code);
   if (!patient) return null;
   const visits = conn.prepare('SELECT * FROM luot WHERE ma_bn = ? ORDER BY gio_vao, id').all(code);
-  return { benh_nhan: { ...patient }, luot: visits.map(l => luotDetail(conn, { ...l })) };
+  const unlinkedXn = conn.prepare(`SELECT thoi_gian, loai_xn, chi_so, ket_qua, don_vi, tham_chieu, bat_thuong, muc
+    FROM ket_qua_xn WHERE ma_bn = ? AND luot_id IS NULL ORDER BY thoi_gian, id`).all(code);
+  const unlinkedCdha = conn.prepare(`SELECT thoi_gian, nhom, ten_dich_vu, mo_ta, ket_luan, trang_thai, muc
+    FROM ket_qua_cdha WHERE ma_bn = ? AND luot_id IS NULL ORDER BY thoi_gian, id`).all(code);
+  return {
+    benh_nhan: { ...patient },
+    luot: visits.map(l => luotDetail(conn, { ...l })),
+    ket_qua_chua_xac_dinh: { xet_nghiem: unlinkedXn.map(r => ({ ...r })), cdha: unlinkedCdha.map(r => ({ ...r })) },
+  };
 }
 
 /** Danh sách lượt theo khoảng ngày / loại / khoa. */
@@ -978,7 +1039,7 @@ function searchPatients(query, limit = 30) {
 module.exports = {
   available, unavailableReason, open, close,
   recordInpatient, recordClinicVisit, recordAction, recordResults, resultRows, findStay, patientContext, dataVersion,
-  summary, patientJourney, listVisits, searchPatients, appointmentReport, readmissionReport,
+  summary, integrityCheck, backupTo, patientJourney, listVisits, searchPatients, appointmentReport, readmissionReport,
   HEN_LECH_TOI_DA, TAI_NHAP_VIEN_NGAY,
   isoTime, splitIcd, contentHash,
   TIER_GOC, TIER_TAM_THOI, LOAI_KHAM, LOAI_NOI_TRU,
