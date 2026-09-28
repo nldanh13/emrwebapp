@@ -7,6 +7,7 @@ import * as api from '../../features/hchanh/api.js';
 import { DISCHARGE_FULL_FILES, SCOPE_FILES, SCOPE_LABEL, getHchanhPatientKey } from '../../features/hchanh/model.js';
 import { buildHchanhVtytBatchDraft } from '../../engine/hchanhVtytPlanner.js';
 import { collectionRows, eligibleInputJobs } from '../../engine/hchanhVtytWorkspace.js';
+import { matchesManualReviewFilter } from '../../engine/hchanhManualReviewView.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -173,7 +174,7 @@ export { SCOPE_LABEL, SCOPE_FILES, DISCHARGE_FULL_FILES, getMaBn };
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
-export function useHchanh({ toast, workDateRange } = {}) {
+export function useHchanh({ toast, workDateRange, manualReviewFilterEnabled = true } = {}) {
   const [dashboard, setDashboard]         = useState(null);
   const [loading, setLoading]             = useState(false);
   const [fetchingKey, setFetchingKey]     = useState('');   // ma_bn đang fetch
@@ -193,6 +194,7 @@ export function useHchanh({ toast, workDateRange } = {}) {
   const [search, setSearch]               = useState('');
   const [filterScope, setFilterScope]     = useState('all');
   const [filterStatus, setFilterStatus]   = useState('all');
+  const [filterManualReview, setFilterManualReview] = useState('all');
   const [snapshotState, setSnapshotState] = useState(null);
   const abortRef = useRef(false);
 
@@ -818,6 +820,7 @@ export function useHchanh({ toast, workDateRange } = {}) {
     }
     if (filterScope  !== 'all' && scope  !== filterScope)  return false;
     if (filterStatus !== 'all' && status !== filterStatus) return false;
+    if (manualReviewFilterEnabled && !matchesManualReviewFilter(card, filterManualReview)) return false;
     return true;
   });
 
@@ -897,6 +900,8 @@ export function useHchanh({ toast, workDateRange } = {}) {
     setFilterScope,
     filterStatus,
     setFilterStatus,
+    filterManualReview,
+    setFilterManualReview,
     snapshotState,
     // Data
     dashboard,
