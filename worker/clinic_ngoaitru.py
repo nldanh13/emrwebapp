@@ -191,9 +191,31 @@ boxes.forEach(function (c) { c.checked = true; });
 if (typeof OnGetValueYeucau === 'function') OnGetValueYeucau('KQXNCLS');
 return boxes.length;
 """
-OPEN_MODALS_JS = ("return [].slice.call(document.querySelectorAll('.modal')).filter(function(m){var s=getComputedStyle(m);"
-                  " return s.display!=='none' && m.offsetParent!==null && !/modalYeuCauThucHiens/.test(m.id);})"
-                  ".map(function(m){return (m.querySelector('.modal-title')||m).innerText.trim().slice(0,120);});")
+# Hộp EMR mở thêm sau khi bấm (ví dụ lý do hoàn tất, tỷ lệ thanh toán): đọc tiêu đề + nội dung để báo lại
+# nguyên văn, rồi đóng (không chọn / không đồng ý gì).
+OPEN_MODALS_JS = r"""
+function clean(t) { return (t || '').replace(/\s+/g, ' ').trim(); }
+return [].slice.call(document.querySelectorAll('.modal')).filter(function (m) {
+  var s = getComputedStyle(m); return s.display !== 'none' && m.offsetParent !== null && !/modalYeuCauThucHiens/.test(m.id);
+}).map(function (m) {
+  var title = m.querySelector('.modal-title'), body = m.querySelector('.modal-body') || m;
+  var fields = [].slice.call(body.querySelectorAll('input,select,textarea')).filter(function (e) { return e.offsetParent !== null && e.type !== 'hidden'; })
+    .map(function (e) { var l = e.closest('div'); return clean(l ? l.innerText : '').slice(0, 60) || e.id; }).filter(Boolean).slice(0, 8);
+  var out = { id: m.id || '', title: clean(title ? title.innerText : ''), text: clean(body.innerText).slice(0, 600), fields: fields };
+  try { if (window.jQuery) jQuery(m).modal('hide'); else m.style.display = 'none'; } catch (e) { m.style.display = 'none'; }
+  return out;
+});
+"""
+
+
+def describe_modal(modal: Dict[str, Any]) -> str:
+    """Mô tả hộp EMR mở thêm để người dùng quyết định cách xử lý sau."""
+    parts = [f"«{modal.get('title') or modal.get('id') or 'không tiêu đề'}»"]
+    if modal.get("text"):
+        parts.append(f"nội dung: {modal['text']}")
+    if modal.get("fields"):
+        parts.append(f"ô cần điền: {'; '.join(modal['fields'])}")
+    return " — ".join(parts)
 
 
 class NgoaiTruFlow:
@@ -273,7 +295,8 @@ class NgoaiTruFlow:
         toasts = self.dialogs.check_dialogs(what)
         modals = self.js(OPEN_MODALS_JS) or []
         if modals:
-            raise RuntimeError(f"{what}: EMR mở thêm hộp '{modals[0]}' — chưa tự xử lý, cần làm tay")
+            raise RuntimeError(f"{what}: EMR hiện hộp {describe_modal(modals[0])}. Đã đóng, chưa chọn gì — "
+                               "gửi nội dung này để thêm cách xử lý")
         return toasts
 
     # 1. Nhập khoa

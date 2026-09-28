@@ -149,3 +149,10 @@ def test_server_keeps_clinic_doctor_outside_nurse_roster():
     data = json.loads(out)
     assert data['day'] == {'admin': [], 'work': ['ĐD A'], 'oncall': [], 'doctor': ['Hồ Điền']}
     assert 'doctor' not in data['def']   # không thêm khoá rỗng vào lịch cũ
+
+
+def test_extra_emr_box_is_described_for_the_user():
+    msg = nt.describe_modal({'id': 'divFormModalLyDoHoanTat', 'title': 'Lý do hoàn tất',
+                             'text': 'Thời gian thực hiện ngắn hơn định mức. Nhập lý do.', 'fields': ['Lý do *']})
+    assert msg == '«Lý do hoàn tất» — nội dung: Thời gian thực hiện ngắn hơn định mức. Nhập lý do. — ô cần điền: Lý do *'
+    assert nt.describe_modal({'id': 'x'}) == '«x»'
