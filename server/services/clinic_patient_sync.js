@@ -50,4 +50,36 @@ function syncClinicState(state, { sid = 'default', force = false } = {}) {
   return { ok: true, visits, new_scans: newScans, actions, errors };
 }
 
-module.exports = { syncClinicState };
+const historyCache = new Map(); // sid -> { mark, byKey }
+
+function visitDay(thoiGian) {
+  const iso = patientDb.isoTime(thoiGian);
+  return iso ? iso.slice(0, 10) : '';
+}
+
+/**
+ * Gắn lịch sử từ Kho người bệnh vào mỗi dòng Danh sách Khám bệnh (row.lich_su): lượt trước,
+ * hẹn tái khám (lượt này đúng hẹn / trễ / trước hẹn), lần ra viện gần nhất. Tính lại khi trạng thái đổi.
+ */
+function attachHistory(state, { sid = 'default' } = {}) {
+  if (!patientDb.available() || !state || !Array.isArray(state.rows)) return state;
+  const mark = stateMark(state);
+  let cached = historyCache.get(sid);
+  if (!cached || cached.mark !== mark) {
+    const byKey = {};
+    for (const row of state.rows) {
+      const key = String(row?.khambenhid || '');
+      if (!key || !row?.ma_bn) continue;
+      try {
+        byKey[key] = patientDb.patientContext(row.ma_bn, { day: visitDay(row.thoi_gian) || undefined, excludeKhoaEmr: `kb:${key}` });
+      } catch (err) {
+        byKey[key] = null;
+      }
+    }
+    cached = { mark, byKey };
+    historyCache.set(sid, cached);
+  }
+  return { ...state, rows: state.rows.map(r => ({ ...r, lich_su: cached.byKey[String(r?.khambenhid || '')] || null })) };
+}
+
+module.exports = { syncClinicState, attachHistory };

@@ -18,7 +18,7 @@ const { WORKER_DIR } = require('../constants');
 const { appendActivity } = require('../services/activity_logger');
 const { writeJsonAtomic, readJsonSafe, safeUnlink, safeFilePart } = require('../utils/file');
 const { issueInputPrecheckToken, validateAndConsumeInputPrecheckToken } = require('../services/input_precheck_tokens');
-const { syncClinicState } = require('../services/clinic_patient_sync');
+const { syncClinicState, attachHistory } = require('../services/clinic_patient_sync');
 
 function sanitizeClinicSchedule(raw = {}) {
   const obj = raw && typeof raw === 'object' ? raw : {};
@@ -219,7 +219,13 @@ function monitorStatePayload(ctx) {
   const running = Boolean(entry?.running);
   const payload = state && typeof state === 'object' ? state : { status: 'idle', rows: [], summary: null };
   if (!running && ['starting', 'running', 'error'].includes(payload.status)) payload.status = 'stopped';
-  return { ...payload, running, exit_message: entry?.exitMessage || '' };
+  let withHistory = payload;
+  try {
+    withHistory = attachHistory(payload, { sid: ctx.sid });
+  } catch (err) {
+    console.warn(`[clinic] Không đọc được lịch sử từ Kho người bệnh: ${err.message}`);
+  }
+  return { ...withHistory, running, exit_message: entry?.exitMessage || '' };
 }
 
 router.post('/clinic/monitor/start', async (req, res) => {

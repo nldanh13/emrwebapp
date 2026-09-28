@@ -175,6 +175,20 @@ function syncAllToPatientDb() {
  * Chỉ trả đợt đã có ngày ra (đã kết thúc) và ngày vào nghiên cứu nằm trong đợt.
  */
 function findStoredStay(maBn, admissionIso, wantedFiles = [], { onlyGoc = false } = {}) {
+  // Kho người bệnh (SQLite) là nguồn đọc chính; file JSON này là dự phòng khi kho tắt
+  // (Node cũ) hoặc chưa có đợt đó (vd kho mới tạo, chưa góp dữ liệu cũ).
+  if (patientDb.available()) {
+    try {
+      const hit = patientDb.findStay(maBn, admissionIso, wantedFiles, { onlyGoc });
+      if (hit) return hit;
+    } catch (err) {
+      console.warn(`[patient_db] Không đọc được kho người bệnh, dùng kho đợt nằm viện: ${err.message}`);
+    }
+  }
+  return findStoredStayJson(maBn, admissionIso, wantedFiles, { onlyGoc });
+}
+
+function findStoredStayJson(maBn, admissionIso, wantedFiles = [], { onlyGoc = false } = {}) {
   const code = String(maBn || '').trim();
   const day = isoDay(admissionIso) || String(admissionIso || '');
   if (!code || !day || !fs.existsSync(storePath(code))) return null;
@@ -216,4 +230,4 @@ function storeSummary() {
   return { dir, patients, stays, closed_stays: closed };
 }
 
-module.exports = { recordHchanhFetch, findStoredStay, storeSummary, syncAllToPatientDb, stayRange, isoDay, STAY_FILES, TIER_GOC, TIER_TAM_THOI };
+module.exports = { recordHchanhFetch, findStoredStay, findStoredStayJson, storeSummary, syncAllToPatientDb, stayRange, isoDay, STAY_FILES, TIER_GOC, TIER_TAM_THOI };

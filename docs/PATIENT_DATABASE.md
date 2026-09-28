@@ -81,11 +81,25 @@ Màn hình **Người bệnh & tái khám** (nhóm Nghiên cứu) có 3 phần:
 | `GET /api/kho/tai-nhap-vien?tu=&den=` | báo cáo tái nhập viện trong 30 ngày, theo ngày ra viện |
 | `POST /api/kho/dong-bo` | chép kho đợt nằm viện đã có sang kho người bệnh |
 
+## Các tab đọc từ kho
+
+- **Kho nghiên cứu, Kiểm hồ sơ:**
+  - `hchanh_stay_store.findStoredStay` đọc Kho người bệnh trước (`patient_db.findStay`): đợt đã ra viện chứa ngày cần tìm, mỗi file lấy bản gốc trước, cùng mức thì lấy bản mới hơn.
+  - File JSON `hchanh_stays` chỉ còn là dự phòng, dùng khi kho tắt hoặc chưa có đợt đó.
+- **Phòng khám:** mỗi dòng Danh sách Khám bệnh có thêm `lich_su` (`patient_db.patientContext`), không tính chính lượt đang khám. Dòng hiển thị:
+  - lượt này là tái khám đúng hẹn (±3 ngày), trễ hẹn hay khám trước hẹn;
+  - ra viện trong 30 ngày gần đây, nếu có;
+  - hoặc số lần đã đến và lần gần nhất.
+  - Hẹn cũ hơn 90 ngày không được tính.
+- **Hành chánh:**
+  - Thẻ người bệnh có `lich_su`, không tính đợt đang nằm.
+  - Danh sách báo "Tái nhập viện: ra viện dd/mm, sau N ngày" khi lần ra viện trước cách đợt này không quá 30 ngày.
+  - Tab Hồ sơ có mục "Lịch sử trong kho người bệnh".
+
 ## Sao lưu
 
 Kho là một file duy nhất. Khi sao lưu, chép cả `kho.sqlite3`, `kho.sqlite3-wal` và `kho.sqlite3-shm` lúc máy chủ đã dừng.
 
 ## Các đợt tiếp theo
 
-- **Đợt 4:** các tab đọc dữ liệu từ kho.
 - **Đợt 5:** Kho nghiên cứu chuẩn hoá từ kho chung.

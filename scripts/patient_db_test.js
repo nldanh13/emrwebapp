@@ -216,6 +216,55 @@ async function main() {
     assert.strictEqual(conn().prepare("SELECT value FROM meta WHERE key = 'schema_version'").get().value, '2');
   });
 
+  await test('Đọc chung: findStay lấy bản gốc trước, onlyGoc bỏ tạm thời, thiếu file thì không trả; findStoredStay đọc kho trước, JSON dự phòng', () => {
+    const hit = patientDb.findStay('BN1', '2026-09-03', ['discharge']);
+    assert.strictEqual(hit.output.discharge.chan_doan_chinh, 'Thoát vị đĩa đệm');
+    assert.deepStrictEqual(hit.provisional_files, []);
+    assert.strictEqual(hit.sourceKey, 'kho_nghien_cuu_goc');
+    const all = patientDb.findStay('BN1', '2026-09-03', ['profile', 'discharge']);
+    assert.deepStrictEqual(all.provisional_files, ['profile']);
+    assert.strictEqual(patientDb.findStay('BN1', '2026-09-03', ['profile'], { onlyGoc: true }), null);
+    assert.strictEqual(patientDb.findStay('BN1', '2026-09-03', ['surgery']), null);
+    assert.strictEqual(patientDb.findStay('BN1', '2026-08-01', ['discharge']), null, 'ngoài đợt');
+    assert.strictEqual(patientDb.findStay('BN2', '2026-10-02', ['profile']), null, 'đợt chưa ra viện');
+
+    const { findStoredStay, findStoredStayJson } = require('../server/services/hchanh_stay_store');
+    const viaStore = findStoredStay('BN4', '2026-09-03', ['discharge']);
+    assert.strictEqual(viaStore.luot_id > 0, true, 'đọc từ kho người bệnh');
+    // Đợt chỉ có trong file JSON (vd kho mới tạo) → vẫn tìm được.
+    const storeFile = path.join(RUNTIME_ROOT, 'research', 'research_store', 'hchanh_stays', 'JSONONLY.json');
+    fs.writeFileSync(storeFile, JSON.stringify({ ma_bn: 'JSONONLY', stays: [{ from: '2026-07-01', to: '2026-07-05', sources: ['hanh_chanh'],
+      files: { discharge: { data: { ngay_ra: '05/07/2026' }, tier: 'tam_thoi', source: 'hanh_chanh' } } }] }));
+    const fallback = findStoredStay('JSONONLY', '2026-07-02', ['discharge']);
+    assert.ok(fallback && !fallback.luot_id, 'dự phòng JSON');
+    assert.ok(findStoredStayJson('JSONONLY', '2026-07-02', ['discharge']));
+  });
+
+  await test('Lịch sử cho Phòng khám / Hành chánh: hẹn tái khám (đúng / trễ / trước hẹn), tái nhập viện ≤ 30 ngày, bỏ lượt đang xem', () => {
+    // BN10: K1 01/08 (hẹn 15/08), K2 17/08 (hẹn 30/08), K3 10/09 (nhập viện), nội trú 11–15/09, nội trú 01–03/10 (hẹn 20/10).
+    const onTime = patientDb.patientContext('BN10', { day: '2026-10-21', excludeKhoaEmr: 'kb:NEW' });
+    assert.strictEqual(onTime.hen.trang_thai, 'dung_hen');
+    assert.strictEqual(onTime.hen.lech_hen, 1);
+    assert.strictEqual(onTime.so_luot_kham, 3);
+    assert.strictEqual(onTime.so_dot_noi_tru, 2);
+    assert.strictEqual(onTime.lan_truoc.loai, 'noi_tru');
+    assert.strictEqual(patientDb.patientContext('BN10', { day: '2026-10-30' }).hen.trang_thai, 'tre_hen');
+    assert.strictEqual(patientDb.patientContext('BN10', { day: '2026-10-10' }).hen.trang_thai, 'truoc_hen');
+    assert.strictEqual(patientDb.patientContext('BN10', { day: '2027-03-01' }).hen, null, 'hẹn quá cũ không còn liên quan');
+
+    // Hành chánh đang xem đợt 01/10: bỏ chính đợt đó; lần ra viện trước 15/09 → tái nhập sau 16 ngày.
+    const stay = patientDb.patientContext('BN10', { day: '2026-10-01', loai: 'noi_tru' });
+    assert.strictEqual(stay.so_dot_noi_tru, 1);
+    assert.strictEqual(stay.ra_vien_gan_nhat.so_ngay, 16);
+    assert.strictEqual(stay.ra_vien_gan_nhat.trong_30_ngay, true);
+    assert.strictEqual(patientDb.patientContext('KHONGCO', { day: '2026-10-01' }), null);
+
+    const { attachHistory } = require('../server/services/clinic_patient_sync');
+    const out = attachHistory({ updated_at: 'x', rows: [{ khambenhid: 'NEW', ma_bn: 'BN10', thoi_gian: '08:00 21/10/2026' }, { khambenhid: 'NEW2', ma_bn: 'KHONGCO', thoi_gian: '08:00 21/10/2026' }] }, { sid: 'h' });
+    assert.strictEqual(out.rows[0].lich_su.hen.trang_thai, 'dung_hen');
+    assert.strictEqual(out.rows[1].lich_su, null);
+  });
+
   await test('Tra cứu: tìm không dấu, hành trình theo thời gian, danh sách lượt theo ngày/loại, API', async () => {
     const found = patientDb.searchPatients('tran thi');
     assert.deepStrictEqual(found.map(r => r.ma_bn), ['BN3']);
