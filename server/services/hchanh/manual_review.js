@@ -66,17 +66,40 @@ function applyManualReviewPatch(current, patch, now = new Date().toISOString()) 
   return review;
 }
 
-function manualReviewSummary(raw) {
+function validTime(value) {
+  const ms = Date.parse(String(value || ''));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function latestFetchedAt(fetched) {
+  const values = fetched && typeof fetched === 'object' && !Array.isArray(fetched)
+    ? Object.values(fetched)
+    : [];
+  const latest = values.reduce((max, value) => Math.max(max, validTime(value)), 0);
+  return latest ? new Date(latest).toISOString() : '';
+}
+
+function manualReviewSummary(raw, options = {}) {
   const review = normalizeManualReview(raw);
-  const rows = REVIEW_ITEMS.map(definition => ({ ...definition, ...review.items[definition.key] }));
+  const latest_fetch_at = latestFetchedAt(options.fetched);
+  const latestFetchMs = validTime(latest_fetch_at);
+  const rows = REVIEW_ITEMS.map(definition => {
+    const item = review.items[definition.key];
+    const stale = item.status !== 'pending' && latestFetchMs > validTime(item.updated_at);
+    return { ...definition, ...item, stale };
+  });
   const pending = rows.filter(row => row.status === 'pending').length;
+  const stale = rows.filter(row => row.stale).length;
   const issues = rows.filter(row => row.status === 'issue');
-  const complete = pending === 0;
+  const complete = pending === 0 && stale === 0;
   return {
     ...review,
     rows,
     pending_count: pending,
+    stale_count: stale,
+    remaining_count: pending + stale,
     issue_count: issues.length,
+    latest_fetch_at,
     complete,
     passed: complete && issues.length === 0,
   };
