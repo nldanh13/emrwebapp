@@ -3,6 +3,7 @@
 // Máy chủ chạy nền worker clinic_monitor.py giữ Chrome đăng nhập sẵn, tự đọc lại danh
 // sách theo chu kỳ và tự đăng nhập lại khi EMR hết phiên; màn này chỉ hiển thị trạng thái.
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import HistoryNote from './patient/HistoryNote.jsx';
 import { IconChecks, IconPlayerPlay, IconPlayerStop, IconRefresh } from '@tabler/icons-react';
 import { C, FS } from '../tokens.js';
 import { Btn, Segmented } from './shared.jsx';
@@ -413,6 +414,7 @@ export default function ClinicTab({ toast }) {
                         {r.cho_doc_kq && <span style={{ color: C.red, fontWeight: 650 }}>Chờ đọc KQ</span>}
                         {r.bbhc?.length > 0 && <span style={{ color: C.amber, fontWeight: 650 }} title="Cần lập Sổ biên bản hội chẩn">SBBHC: {r.bbhc.join(', ')}</span>}
                       </div>
+                      {r.lich_su && <HistoryNote lichSu={r.lich_su} mode="clinic" />}
                     </td>
                     <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', color: C.text2 }}>{r.thoi_gian}</td>
                     <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{r.trang_thai}</td>

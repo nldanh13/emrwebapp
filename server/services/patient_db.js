@@ -308,8 +308,8 @@ function insertScan(conn, { maBn, luotId, loai, nguon, muc, now, data }) {
 }
 
 // Bản tốt nhất của 1 loại dữ liệu trong 1 lượt: gốc trước, rồi bản mới nhất.
-function bestScans(conn, luotId) {
-  const rows = conn.prepare(`SELECT id, loai, nguon, muc, lay_luc, du_lieu FROM lan_quet WHERE luot_id = ?
+function bestScans(conn, luotId, { onlyGoc = false } = {}) {
+  const rows = conn.prepare(`SELECT id, loai, nguon, muc, lay_luc, du_lieu FROM lan_quet WHERE luot_id = ? ${onlyGoc ? "AND muc = 'goc'" : ''}
     ORDER BY CASE muc WHEN 'goc' THEN 0 ELSE 1 END, lay_luc DESC, id DESC`).all(luotId);
   const out = {};
   for (const r of rows) {
@@ -336,6 +336,17 @@ function splitIcd(value, icdHint = '') {
   const tail = s.match(/^(.+?)\s*[([]\s*([A-Z]\d{2}(?:\.\d{1,2})?)\s*[)\]]$/i);
   if (lead) { icd = icd || lead[1].toUpperCase(); ten = lead[2]; } else if (tail) { icd = icd || tail[2].toUpperCase(); ten = tail[1]; }
   return { icd, ten: txt(ten) };
+}
+
+// Ngày vào của đợt nội trú: lấy ngày sớm nhất đã biết (hồ sơ có thể là ngày vào khoa, còn kho đợt nằm viện
+// suy từ ngày ra − tổng số ngày điều trị); cùng ngày thì giữ bản có giờ.
+function earliestStart(profileTime, current) {
+  const a = txt(profileTime);
+  const b = txt(current);
+  if (!a) return b;
+  if (!b) return a;
+  if (a.slice(0, 10) === b.slice(0, 10)) return a.length >= b.length ? a : b;
+  return a < b ? a : b;
 }
 
 // Dựng lại các cột tổng hợp của lượt + bảng con từ bản tốt nhất mỗi loại dữ liệu.
@@ -381,7 +392,7 @@ function rebuildLuot(conn, luotId, now) {
     const out = isoTime(discharge.raw_time) || isoTime([discharge.gio_ra, discharge.ngay_ra].filter(Boolean).join(' ')) || isoTime(discharge.ngay_ra);
     Object.assign(upd, {
       khoa: txt(profile.khoa || discharge.khoa),
-      gio_vao: isoTime(profile.ngay_vao_vien || profile.ngay_vao) || luot.gio_vao,
+      gio_vao: earliestStart(isoTime(profile.ngay_vao_vien || profile.ngay_vao), luot.gio_vao),
       gio_ra: out || luot.gio_ra,
       trang_thai: (out || luot.gio_ra) ? 'da_ket_thuc' : 'dang_dieu_tri',
       trang_thai_emr: txt(discharge.tinh_trang_ra),
@@ -577,6 +588,98 @@ function recordAction({ ma_bn: maBn, khambenhid, kind = '', result = '', message
   });
 }
 
+// ── Đọc dùng chung cho các tab ────────────────────────────────────────────────
+
+/**
+ * Đợt nằm viện ĐÃ RA VIỆN chứa ngày `admissionIso`, có đủ các file `wantedFiles`.
+ * Mỗi file lấy bản tốt nhất: gốc trước, cùng mức thì mới hơn. onlyGoc: chỉ tính dữ liệu gốc.
+ * Trả cùng dạng với hchanh_stay_store.findStoredStay để Kho nghiên cứu / Kiểm hồ sơ dùng thẳng.
+ */
+function findStay(maBn, admissionIso, wantedFiles = [], { onlyGoc = false } = {}) {
+  const code = txt(maBn);
+  const day = dayOf(admissionIso);
+  if (!code || !day) return null;
+  const conn = open();
+  const stays = conn.prepare(`SELECT * FROM luot WHERE ma_bn = ? AND loai = '${LOAI_NOI_TRU}' AND gio_ra IS NOT NULL AND gio_ra <> ''
+    ORDER BY gio_vao DESC, id DESC`).all(code);
+  for (const stay of stays) {
+    const from = dayOf(stay.gio_vao);
+    const to = dayOf(stay.gio_ra);
+    if (!from || !to || day < from || day > to) continue;
+    const best = bestScans(conn, stay.id, { onlyGoc });
+    const files = Object.fromEntries(INPATIENT_FILES.filter(k => best[k]?.data).map(k => [k, best[k]]));
+    if (!Object.keys(files).length || !wantedFiles.every(k => files[k])) continue;
+    const used = wantedFiles.length ? wantedFiles : Object.keys(files);
+    const provisional = used.filter(k => files[k].muc !== TIER_GOC);
+    const sources = [...new Set(Object.values(files).map(f => f.nguon))].sort();
+    return {
+      from, to,
+      output: Object.fromEntries(Object.entries(files).map(([k, f]) => [k, f.data])),
+      sourceKey: provisional.length ? `kho_hanh_chanh:${sources.join('+')}` : 'kho_nghien_cuu_goc',
+      updated_at: stay.cap_nhat_luc,
+      provisional_files: provisional,
+      tiers: Object.fromEntries(Object.entries(files).map(([k, f]) => [k, f.muc])),
+      luot_id: stay.id,
+    };
+  }
+  return null;
+}
+
+// Hẹn tái khám cũ hơn chừng này ngày không còn được coi là liên quan tới lượt đang xem.
+const HEN_LIEN_QUAN_NGAY = 90;
+
+/**
+ * Lịch sử trước một lượt đang xem (Phòng khám / Hành chánh): số lượt trước, lượt gần nhất, hẹn tái khám
+ * (lượt này là đúng hẹn / trễ / trước hẹn), lần ra viện gần nhất (tái nhập viện trong 30 ngày).
+ * @param {{ day: string, excludeKhoaEmr?: string, loai?: string }} opts  loai = 'noi_tru' bỏ đợt đang nằm chứa `day`
+ * @returns {object|null}  null khi chưa có lượt nào trước đó trong kho
+ */
+function patientContext(maBn, { day = todayIso(), excludeKhoaEmr = '', loai = '' } = {}) {
+  const code = txt(maBn);
+  const d = dayOf(day) || todayIso();
+  if (!code) return null;
+  const conn = open();
+  const prior = conn.prepare('SELECT * FROM luot WHERE ma_bn = ? ORDER BY gio_vao, id').all(code)
+    .filter(v => {
+      if (excludeKhoaEmr && v.khoa_emr === excludeKhoaEmr) return false;
+      const start = dayOf(v.gio_vao);
+      const end = dayOf(v.gio_ra) || start;
+      if (!start) return false;
+      if (loai === LOAI_NOI_TRU && v.loai === LOAI_NOI_TRU && start <= d && (!dayOf(v.gio_ra) || end >= d)) return false; // đợt đang nằm
+      return end < d;
+    });
+  if (!prior.length) return null;
+  const last = prior[prior.length - 1];
+  const out = {
+    so_luot_kham: prior.filter(v => v.loai === LOAI_KHAM).length,
+    so_dot_noi_tru: prior.filter(v => v.loai === LOAI_NOI_TRU).length,
+    lan_truoc: {
+      loai: last.loai, gio_vao: last.gio_vao, gio_ra: last.gio_ra, khoa: last.khoa,
+      chan_doan_chinh: last.chan_doan_chinh, icd_chinh: last.icd_chinh, xu_tri: last.xu_tri,
+    },
+    hen: null,
+    ra_vien_gan_nhat: null,
+  };
+  const withHen = [...prior].reverse().find(v => dayOf(v.hen_tai_kham));
+  if (withHen) {
+    const hen = dayOf(withHen.hen_tai_kham);
+    const lech = daysBetween(hen, d);
+    if (lech !== null && lech <= HEN_LIEN_QUAN_NGAY) {
+      const trangThai = Math.abs(lech) <= HEN_LECH_TOI_DA ? 'dung_hen' : (lech > 0 ? 'tre_hen' : 'truoc_hen');
+      out.hen = { ngay_hen: hen, lech_hen: lech, trang_thai: trangThai, tu_luot: { loai: withHen.loai, gio_vao: withHen.gio_vao, gio_ra: withHen.gio_ra } };
+    }
+  }
+  const lastStay = [...prior].reverse().find(v => v.loai === LOAI_NOI_TRU && dayOf(v.gio_ra));
+  if (lastStay) {
+    const soNgay = daysBetween(dayOf(lastStay.gio_ra), d);
+    out.ra_vien_gan_nhat = {
+      gio_ra: lastStay.gio_ra, khoa: lastStay.khoa, chan_doan_chinh: lastStay.chan_doan_chinh,
+      so_ngay: soNgay, trong_30_ngay: soNgay !== null && soNgay <= TAI_NHAP_VIEN_NGAY,
+    };
+  }
+  return out;
+}
+
 // ── Tra cứu ───────────────────────────────────────────────────────────────────
 
 function summary() {
@@ -737,7 +840,7 @@ function searchPatients(query, limit = 30) {
 
 module.exports = {
   available, unavailableReason, open, close,
-  recordInpatient, recordClinicVisit, recordAction,
+  recordInpatient, recordClinicVisit, recordAction, findStay, patientContext,
   summary, patientJourney, listVisits, searchPatients, appointmentReport, readmissionReport,
   HEN_LECH_TOI_DA, TAI_NHAP_VIEN_NGAY,
   isoTime, splitIcd, contentHash,

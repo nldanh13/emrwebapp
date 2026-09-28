@@ -2,6 +2,8 @@
 // Tab Hành chánh — dùng Btn và Spinner từ shared.jsx
 
 import React, { useEffect, useState } from 'react';
+import HistoryNote from '../patient/HistoryNote.jsx';
+import { formatDmy } from '../DateField.jsx';
 import { C, FS } from '../../tokens.js';
 import {
   IconAlertTriangle, IconCheck, IconChevronDown, IconCircleDashed, IconCloudDownload, IconMinus,
@@ -337,6 +339,7 @@ function PatientTableRow({ card, selected, onSelect, onFetchDischargeFull, fetch
         <div style={{ fontSize:FS.xs, color:C.text2, marginTop:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', fontVariantNumeric:'tabular-nums' }}>
           {txt(ma_bn)}{card?.department ? ` · ${txt(card.department)}` : ''}
         </div>
+        {card?.lich_su?.ra_vien_gan_nhat?.trong_30_ngay && <HistoryNote lichSu={card.lich_su} mode="inpatient" />}
       </td>
       <td style={{ ...cell, color:C.text2, fontSize:FS.sm, whiteSpace:'nowrap' }}>{txt(card?.phong)}</td>
       <td style={{ ...cell }}>
@@ -373,6 +376,7 @@ function PatientListItem({ card, selected, onSelect }) {
           <Chip tone={SCOPE_TONE[scope] || 'gray'}>{scopeFilterLabel(scope)}</Chip>
           <Chip tone={st.tone}>{st.label}</Chip>
         </span>
+        {card?.lich_su?.ra_vien_gan_nhat?.trong_30_ngay && <HistoryNote lichSu={card.lich_su} mode="inpatient" />}
         <span style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
           {FILE_COLUMNS.map(([key, label]) => {
             const info = fileStatusInfo(card, key);
@@ -888,6 +892,19 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
             <FieldRow label="Đối tượng"    value={profile.doi_tuong} />
             <FieldRow label="BHYT"         value={profile.bhyt_code} tone={profile.bhyt_code ? 'green' : 'amber'} />
             <FieldRow label="Loại BHYT"    value={profile.bhyt_loai} />
+            {card?.lich_su && (
+              <>
+                <div style={{ marginTop:16, fontSize:FS.xs, fontWeight:700, color:C.text2, marginBottom:8 }}>Lịch sử trong kho người bệnh</div>
+                <FieldRow label="Trước đợt này" value={`${card.lich_su.so_luot_kham} lượt khám, ${card.lich_su.so_dot_noi_tru} đợt nằm viện`} />
+                {card.lich_su.lan_truoc && (
+                  <FieldRow label="Lần gần nhất" value={`${card.lich_su.lan_truoc.loai === 'noi_tru' ? 'Nằm viện' : 'Khám'} ${formatDmy(String(card.lich_su.lan_truoc.gio_vao || '').slice(0, 10))}${card.lich_su.lan_truoc.chan_doan_chinh ? ` — ${card.lich_su.lan_truoc.chan_doan_chinh}` : ''}`} />
+                )}
+                {card.lich_su.ra_vien_gan_nhat && (
+                  <FieldRow label="Ra viện gần nhất" tone={card.lich_su.ra_vien_gan_nhat.trong_30_ngay ? 'amber' : undefined}
+                    value={`${formatDmy(String(card.lich_su.ra_vien_gan_nhat.gio_ra || '').slice(0, 10))} (cách ${card.lich_su.ra_vien_gan_nhat.so_ngay} ngày${card.lich_su.ra_vien_gan_nhat.trong_30_ngay ? ' — tái nhập viện trong 30 ngày' : ''})`} />
+                )}
+              </>
+            )}
             <FieldRow label="Giá trị BHYT" value={[profile.bhyt_tu_ngay, profile.bhyt_den_ngay].filter(Boolean).join(' → ')} />
             <FieldRow label="Ngày vào viện" value={profile.ngay_vao_vien || profile.ngay_vao} />
             <FieldRow label="Ngày ra viện" value={profile.ngay_ra_vien || profile.ngay_ra} />

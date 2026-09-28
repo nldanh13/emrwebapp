@@ -19,6 +19,7 @@ const {
 const { readJsonSafe }                    = require('../../utils/file');
 const { readTicketStore }                 = require('./ticket_store');
 const { runDischargeQA_Hchanh }           = require('./discharge_qa');
+const patientDb                         = require('../patient_db');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -436,6 +437,17 @@ function buildBillingOverview(billing, issues) {
 
 // ── Build card cho 1 BN ───────────────────────────────────────────────────────
 
+// Lịch sử trước đợt đang nằm (Kho người bệnh): lượt trước, lần ra viện gần nhất (tái nhập viện ≤ 30 ngày).
+function patientHistory(meta) {
+  if (!patientDb.available()) return null;
+  try {
+    const day = patientDb.isoTime(meta?.admission_time).slice(0, 10);
+    return patientDb.patientContext(meta?.ma_bn, { day: day || undefined, loai: 'noi_tru' });
+  } catch (_) {
+    return null;
+  }
+}
+
 function buildPatientCard(ctx, meta, ticket) {
   const ma_bn  = meta.ma_bn;
   const scope  = meta.scope_default || 'daily';
@@ -525,6 +537,7 @@ function buildPatientCard(ctx, meta, ticket) {
     bed_days:  data.bed_days,
     surgery:   data.surgery,
     order_history: data.order_history,
+    lich_su: patientHistory(meta),
   };
 }
 
