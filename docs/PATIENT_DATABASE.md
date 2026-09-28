@@ -96,10 +96,25 @@ Màn hình **Người bệnh & tái khám** (nhóm Nghiên cứu) có 3 phần:
   - Danh sách báo "Tái nhập viện: ra viện dd/mm, sau N ngày" khi lần ra viện trước cách đợt này không quá 30 ngày.
   - Tab Hồ sơ có mục "Lịch sử trong kho người bệnh".
 
+## Kho nghiên cứu chuẩn hoá từ kho chung
+
+Khi bấm Chuẩn hoá, phần hành chánh của từng ca (thông tin nền, ra viện, phẫu thuật, y lệnh) được đối chiếu với Kho người bệnh. Hàm xử lý là `overlayHchanhFromPatientDb` trong `server/routes/research.js`.
+
+| Trường hợp | Kết quả |
+|---|---|
+| Lần quét của nghiên cứu chưa có phần đó | Lấy từ kho. Dòng có cột `Nguồn kho` = `kho_nguoi_benh:goc` hoặc `kho_nguoi_benh:tam_thoi` |
+| Lần quét đang dùng dữ liệu tạm thời (`provisional_files` trong file tiến độ) và kho đã có dữ liệu gốc | Thay bằng dữ liệu gốc |
+| Còn lại | Giữ nguyên dữ liệu của lần quét |
+
+- CSV thô của lần quét (`hchanh_*.csv`) không bị sửa. Kết quả đối chiếu ghi vào `kho_nguoi_benh_overlay.json` và `action_log.txt`.
+- Thông báo sau khi chuẩn hoá cho biết đã lấy / thay bao nhiêu phần và còn bao nhiêu phần tạm thời.
+- Chữ ký đầu vào có kèm phiên bản dữ liệu của kho (`patient_db.dataVersion`). Kho có bản quét mới thì lần bấm Chuẩn hoá sau sẽ chạy lại, không dùng kết quả cũ.
+- XN / CĐHA (`lich_su_xn.csv`, `lich_su_cdha.csv`) vẫn lấy từ lần quét của nghiên cứu, vì kho người bệnh chưa lưu các kết quả này.
+
 ## Sao lưu
 
 Kho là một file duy nhất. Khi sao lưu, chép cả `kho.sqlite3`, `kho.sqlite3-wal` và `kho.sqlite3-shm` lúc máy chủ đã dừng.
 
-## Các đợt tiếp theo
+## Việc có thể làm tiếp
 
-- **Đợt 5:** Kho nghiên cứu chuẩn hoá từ kho chung.
+- Kho người bệnh lưu thêm kết quả XN / CĐHA, để Kho nghiên cứu lấy toàn bộ từ kho chung.

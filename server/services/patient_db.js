@@ -680,6 +680,12 @@ function patientContext(maBn, { day = todayIso(), excludeKhoaEmr = '', loai = ''
   return out;
 }
 
+/** Dấu phiên bản dữ liệu thô của kho: đổi mỗi khi có bản quét mới (dùng để biết cần chuẩn hoá lại). */
+function dataVersion() {
+  const r = open().prepare('SELECT COALESCE(MAX(id), 0) m, COUNT(*) n FROM lan_quet').get();
+  return `${r.m}:${r.n}`;
+}
+
 // ── Tra cứu ───────────────────────────────────────────────────────────────────
 
 function summary() {
@@ -840,7 +846,7 @@ function searchPatients(query, limit = 30) {
 
 module.exports = {
   available, unavailableReason, open, close,
-  recordInpatient, recordClinicVisit, recordAction, findStay, patientContext,
+  recordInpatient, recordClinicVisit, recordAction, findStay, patientContext, dataVersion,
   summary, patientJourney, listVisits, searchPatients, appointmentReport, readmissionReport,
   HEN_LECH_TOI_DA, TAI_NHAP_VIEN_NGAY,
   isoTime, splitIcd, contentHash,
