@@ -201,7 +201,7 @@ export default function ClinicTab({ toast }) {
 
   const completeReady = async () => {
     const n = readyToComplete.length;
-    if (!window.confirm(`Hoàn tất khám ${n} người bệnh đã sẵn sàng trên EMR?\n\nHệ thống sẽ kiểm tra lại từng người ngay trước khi thao tác (đủ giờ, cân nặng, thời gian ra) và dừng lại ở người nào EMR báo lỗi hoặc hỏi xác nhận.`)) return;
+    if (!window.confirm(`Hoàn tất khám ${n} người bệnh đã sẵn sàng trên EMR?\n\nHệ thống sẽ kiểm tra lại từng người ngay trước khi thao tác (thủ thuật, đủ giờ, cân nặng, thời gian ra) và dừng lại ở người nào EMR báo lỗi hoặc hỏi xác nhận.`)) return;
     setBusy('complete');
     try {
       const r = await api.completeReadyClinicPatients();
@@ -332,8 +332,8 @@ export default function ClinicTab({ toast }) {
               {monitor?.action_running ? 'Đang hoàn tất…' : `Hoàn tất ${readyToComplete.length} người bệnh đã sẵn sàng`}
             </Btn>
             <span style={{ fontSize: FS.sm, color: C.text2, flex: '1 1 320px' }}>
-              Chỉ người có BHYT, xử trí Cho về, dịch vụ đã xong. Thời gian ra được giữ nếu hợp lệ, không thì đặt bằng giờ hiện tại của máy.
-              Người chờ đọc KQ chưa có thuốc và người thiếu cân nặng sẽ không được hoàn tất.
+              Chỉ người có BHYT, xử trí Cho về, dịch vụ đã xong. Thủ thuật chưa xong thì nhập trước (giờ chỉ định → +10 phút, thủ thuật viên theo Lịch Phòng khám).
+              Thời gian ra được giữ nếu hợp lệ, không thì đặt bằng giờ hiện tại của máy. Người chờ đọc KQ chưa có thuốc và người thiếu cân nặng sẽ không được hoàn tất.
             </span>
           </div>
 
