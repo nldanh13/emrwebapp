@@ -155,6 +155,7 @@ function apiActionLabel(method, url) {
     'POST /api/hchanh/print-billing': 'in/lưu bảng kê hành chánh',
     'POST /api/hchanh/print-discharge-bundle': 'tổng hợp file in ra viện bệnh phòng',
     'GET /api/hchanh/print-ward-list': 'in danh sách xếp phòng',
+    'POST /api/hchanh/print-ward-list-pdf': 'lưu PDF danh sách xếp phòng',
     'GET /api/export-data': 'xuất dữ liệu phiên',
     'POST /api/import-data': 'nhập dữ liệu phiên',
     'GET /api/research/studies': 'tải danh sách nghiên cứu',
@@ -856,6 +857,19 @@ export async function downloadWard_DischargeBundle(fileName) {
 }
 export const printHchanh_Ticket  = (ticketId)    => openHtmlBlobInNewTab(`/api/hchanh/ticket/${encodeURIComponent(ticketId)}/print`, `hchanh_ticket_${ticketId}.html`);
 export const printHchanh_WardList = ()           => openHtmlBlobInNewTab('/api/hchanh/print-ward-list', 'hchanh_danh_sach_xep_phong.html');
+export async function downloadWardListPdf(patients = []) {
+  const url = '/api/hchanh/print-ward-list-pdf';
+  const res = await fetchWithAuth(url, {
+    method: 'POST',
+    headers: headers({ Accept: 'application/pdf' }),
+    body: JSON.stringify({ patients }),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res));
+  return {
+    blob: await res.blob(),
+    filename: parseDownloadFilename(res.headers.get('Content-Disposition'), `DANH_SACH_XEP_PHONG_${new Date().toISOString().slice(0, 10)}.pdf`),
+  };
+}
 export async function exportHchanh_Issues(format = 'csv', owner = '') {
   const qs  = new URLSearchParams({ format, ...(owner ? { owner } : {}) }).toString();
   const url = `/api/hchanh/export/issues?${qs}`;
