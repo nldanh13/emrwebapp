@@ -2910,26 +2910,15 @@ def fetch_bed_days(sess: Optional["EmrHttpSession"], ma_bn: str,
     base: Dict[str, Any] = {
         "ma_bn":         ma_bn,
         "so_ngay_tinh":  0,    # tổng ngày giường đã được phân (trừ Hủy)
-        "so_ngay_thuc":  0,    # tính từ profile: ngay_vao → ngay_ra
+        # Không tự tính: date_from/date_to là khoảng ngày lọc trên màn hình (thường chỉ 1 ngày), không
+        # phải thời gian nằm viện — trước đây làm mọi ca bị báo "thực tế chỉ nằm 1 ngày". Máy chủ so
+        # ngày giường với ngày vào/ra + mốc hậu phẫu (buildBedDaysReview).
+        "so_ngay_thuc":  0,
         "rows":          [],   # chi tiết từng đợt giường
         "warnings":      [],
         "_source":       "emr_buong_giuong",
         "_fetch_status": "pending",
     }
-
-    # Tính so_ngay_thuc từ date_from/date_to nếu có
-    def _parse_dmy(s: str):
-        m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", _t(s))
-        if m:
-            from datetime import date
-            try: return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
-            except: pass
-        return None
-
-    d_from = _parse_dmy(date_from)
-    d_to   = _parse_dmy(date_to)
-    if d_from and d_to:
-        base["so_ngay_thuc"] = max(0, (d_to - d_from).days + 1)
 
     if sess is None:
         base["_fetch_status"] = "no_session"

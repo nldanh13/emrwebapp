@@ -1189,10 +1189,12 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:12 }}>
                     {[
                       ['Tổng ngày kê giường', bed.so_ngay_tinh, 'blue'],
-                      ['Thời gian điều trị', bed.so_ngay_thuc, 'green'],
+                      // Dự kiến theo ngày vào/ra + mốc hậu phẫu (máy chủ tính). Không dùng so_ngay_thuc cũ:
+                      // trước đây nó là số ngày của khoảng lọc trên màn hình (thường 1), không phải thời gian nằm viện.
+                      ['Ngày giường dự kiến', bedReview?.expected_total ?? '—', 'green'],
                     ].map(([label, value, tone]) => {
                       const s   = tS(tone);
-                      const bad = bed.so_ngay_tinh > 0 && bed.so_ngay_thuc > 0 && bed.so_ngay_tinh !== bed.so_ngay_thuc;
+                      const bad = bedReview?.status === 'mismatch';
                       return (
                         <div key={label} style={{ padding:'8px 12px', borderRadius:6, background:s.bg,
                           border:`1px solid ${bad ? C.redBorder : s.border}` }}>
