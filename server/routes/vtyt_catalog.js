@@ -10,6 +10,7 @@
 
 const router = require('express').Router();
 const path   = require('path');
+const crypto = require('crypto');
 
 const { readJsonSafe, writeJsonAtomic, safeUnlink } = require('../utils/file');
 const { getRuntimePaths, ensureSessionAssets } = require('../services/session');
@@ -19,6 +20,92 @@ const { runScript, fmtPyError } = require('../services/python_runner');
 const { enqueueHeavy, registerCancel, unregisterCancel } = require('../services/task_queue');
 
 const DICT_PATH = path.join(__dirname, '..', '..', 'config', 'vtyt_dictionary.json');
+const COMBO_PATH = path.join(__dirname, '..', '..', 'config', 'vtyt_combos.json');
+const DEFAULT_COMBOS = [{
+  id: 'thay-kim-luon',
+  name: 'Thay kim luồn',
+  description: 'Kim luồn, băng dính cố định và nút chặn kim luồn.',
+  enabled: true,
+  items: [
+    { code: 'VTYT.000004258', name: 'Kim luồn tĩnh mạch an toàn kín INTROCAN SAFETY', quantity: 1, required: true },
+    { code: 'VTYT.000003881', name: 'Băng dính vô trùng WEMSO', quantity: 1, required: true },
+    { code: 'VTYT.000004522', name: 'SafeTouch Plug IV Connector', quantity: 1, required: true },
+  ],
+}];
+
+function safeCombo(raw = {}, fallbackId = '') {
+  const id = String(raw.id || fallbackId || crypto.randomUUID()).trim().replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 80);
+  const items = (Array.isArray(raw.items) ? raw.items : []).slice(0, 50).map(item => ({
+    code: String(item?.code || '').trim().slice(0, 80),
+    name: String(item?.name || '').trim().slice(0, 300),
+    quantity: Math.max(1, Math.min(999, Number(item?.quantity || 1) || 1)),
+    required: item?.required !== false,
+  })).filter(item => item.code && item.name);
+  return {
+    id,
+    name: String(raw.name || '').trim().slice(0, 160),
+    description: String(raw.description || '').trim().slice(0, 500),
+    enabled: raw.enabled !== false,
+    items,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function loadCombos() {
+  const current = readJsonSafe(COMBO_PATH, null);
+  if (current && Array.isArray(current.combos)) return current;
+  return { version: 1, updated_at: new Date().toISOString(), combos: DEFAULT_COMBOS.map(row => safeCombo(row, row.id)) };
+}
+
+function saveCombos(value) {
+  const next = { version: 1, updated_at: new Date().toISOString(), combos: (value.combos || []).map(row => safeCombo(row, row.id)) };
+  writeJsonAtomic(COMBO_PATH, next);
+  return next;
+}
+
+router.get('/vtyt-combos', (_req, res) => res.json({ status: 'ok', ...loadCombos() }));
+
+router.post('/vtyt-combos', (req, res) => {
+  try {
+    const ctx = getRuntimePaths(req);
+    const combo = safeCombo(req.body || {});
+    if (!combo.name || !combo.items.length) return res.status(400).json({ status: 'error', message: 'Combo cần tên và ít nhất một vật tư.' });
+    const data = loadCombos();
+    if (data.combos.some(row => row.id === combo.id)) combo.id = `${combo.id}-${Date.now()}`;
+    data.combos.push(combo);
+    const saved = saveCombos(data);
+    appendActivity(ctx, { kind: 'vtyt_combo.create', combo_id: combo.id, item_count: combo.items.length });
+    return res.json({ status: 'ok', combo: saved.combos.find(row => row.id === combo.id) });
+  } catch (e) { return res.status(500).json({ status: 'error', message: String(e.message || e) }); }
+});
+
+router.patch('/vtyt-combos/:id', (req, res) => {
+  try {
+    const ctx = getRuntimePaths(req);
+    const data = loadCombos();
+    const index = data.combos.findIndex(row => row.id === req.params.id);
+    if (index < 0) return res.status(404).json({ status: 'error', message: 'Không tìm thấy combo.' });
+    const combo = safeCombo({ ...data.combos[index], ...(req.body || {}), id: data.combos[index].id }, data.combos[index].id);
+    if (!combo.name || !combo.items.length) return res.status(400).json({ status: 'error', message: 'Combo cần tên và ít nhất một vật tư.' });
+    data.combos[index] = combo;
+    saveCombos(data);
+    appendActivity(ctx, { kind: 'vtyt_combo.update', combo_id: combo.id, item_count: combo.items.length });
+    return res.json({ status: 'ok', combo });
+  } catch (e) { return res.status(500).json({ status: 'error', message: String(e.message || e) }); }
+});
+
+router.delete('/vtyt-combos/:id', (req, res) => {
+  try {
+    const ctx = getRuntimePaths(req);
+    const data = loadCombos();
+    const before = data.combos.length;
+    data.combos = data.combos.filter(row => row.id !== req.params.id);
+    if (data.combos.length === before) return res.status(404).json({ status: 'error', message: 'Không tìm thấy combo.' });
+    saveCombos(data);
+    appendActivity(ctx, { kind: 'vtyt_combo.delete', combo_id: req.params.id });
+    return res.json({ status: 'ok', message: 'Đã xóa combo.' });
+  } catch (e) { return res.status(500).json({ status: 'error', message: String(e.message || e) }); }
+});
 
 function loadDict() {
   const dict = readJsonSafe(DICT_PATH, null);
