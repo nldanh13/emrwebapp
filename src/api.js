@@ -101,6 +101,8 @@ function apiActionLabel(method, url) {
     'POST /api/clinic/monitor/stop': 'dừng theo dõi phòng khám',
     'POST /api/clinic/monitor/refresh': 'làm mới danh sách phòng khám',
     'GET /api/clinic/monitor/state': 'đọc danh sách phòng khám',
+    'POST /api/clinic/monitor/complete': 'hoàn tất khám các người bệnh đã sẵn sàng',
+    'POST /api/clinic/monitor/weight': 'ghi cân nặng người bệnh',
     'GET /api/data-sessions': 'tải danh sách phiên dữ liệu',
     'DELETE /api/data-sessions': 'xoá phiên dữ liệu',
     'POST /api/cancel': 'huỷ tác vụ đang chạy',
@@ -689,6 +691,8 @@ export const startClinicMonitor = (payload) => post('/api/clinic/monitor/start',
 export const stopClinicMonitor = () => post('/api/clinic/monitor/stop', {});
 export const refreshClinicMonitor = () => post('/api/clinic/monitor/refresh', {});
 export const getClinicMonitorState = () => get('/api/clinic/monitor/state');
+export const completeReadyClinicPatients = () => post('/api/clinic/monitor/complete', {});
+export const setClinicPatientWeight = (khambenhid, kg) => post('/api/clinic/monitor/weight', { khambenhid, kg });
 
 // ── Export / Import session data ──────────────────────────────────────────────
 

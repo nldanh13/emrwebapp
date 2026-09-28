@@ -189,8 +189,11 @@ function sanitizeMonitorRequest(body = {}) {
   };
 }
 
+// Gộp vào file điều khiển (không ghi đè) để lệnh làm mới không xoá cân nặng đã nhập.
 function writeControl(ctx, data) {
-  writeJsonAtomic(monitorPaths(ctx).control, { ...data, at: Date.now() });
+  const file = monitorPaths(ctx).control;
+  const current = readJsonSafe(file, {}) || {};
+  writeJsonAtomic(file, { ...current, ...data, at: Date.now() });
 }
 
 function monitorStatePayload(ctx) {
@@ -260,6 +263,39 @@ router.post('/clinic/monitor/refresh', (req, res) => {
   }
   writeControl(ctx, { refresh: Date.now() });
   return res.json({ status: 'ok' });
+});
+
+// Người dùng bấm "Hoàn tất các người bệnh đã sẵn sàng": worker hoàn tất khám những người
+// có BHYT, xử trí Cho về, dịch vụ đã xong — mỗi người được kiểm tra lại ngay trước khi thao tác.
+router.post('/clinic/monitor/complete', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  if (!monitors.get(ctx.sid)?.running) {
+    return res.status(409).json({ status: 'error', message: 'Chưa bắt đầu theo dõi.' });
+  }
+  writeControl(ctx, { completeNow: Date.now() });
+  appendActivity(ctx, { kind: 'workflow.clinic.monitor.complete_requested' });
+  return res.json({ status: 'ok', message: 'Đang hoàn tất các người bệnh đã sẵn sàng.' });
+});
+
+// Cân nặng thật do người dùng nhập cho 1 người bệnh (điều dưỡng cân xong gõ vào).
+router.post('/clinic/monitor/weight', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  if (!monitors.get(ctx.sid)?.running) {
+    return res.status(409).json({ status: 'error', message: 'Chưa bắt đầu theo dõi.' });
+  }
+  const khambenhid = String(req.body?.khambenhid || '').trim();
+  const kg = Number(String(req.body?.kg ?? '').replace(',', '.'));
+  if (!/^[A-Za-z0-9-]{1,64}$/.test(khambenhid)) {
+    return res.status(400).json({ status: 'error', message: 'Mã khám bệnh không hợp lệ.' });
+  }
+  if (!Number.isFinite(kg) || kg < 1 || kg > 300) {
+    return res.status(400).json({ status: 'error', message: 'Cân nặng phải từ 1 đến 300 kg.' });
+  }
+  const current = readJsonSafe(monitorPaths(ctx).control, {}) || {};
+  const weights = { ...(current.weights && typeof current.weights === 'object' ? current.weights : {}), [khambenhid]: Math.round(kg * 10) / 10 };
+  writeControl(ctx, { weights, refresh: Date.now() });
+  appendActivity(ctx, { kind: 'workflow.clinic.monitor.weight', kg: weights[khambenhid] });
+  return res.json({ status: 'ok', message: `Đã ghi nhận ${weights[khambenhid]} kg.` });
 });
 
 router.get('/clinic/monitor/state', (req, res) => {

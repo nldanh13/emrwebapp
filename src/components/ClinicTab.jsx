@@ -2,7 +2,7 @@
 // Máy chủ chạy nền worker clinic_monitor.py giữ Chrome đăng nhập sẵn, tự đọc lại danh
 // sách theo chu kỳ và tự đăng nhập lại khi EMR hết phiên; màn này chỉ hiển thị trạng thái.
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { IconPlayerPlay, IconPlayerStop, IconRefresh } from '@tabler/icons-react';
+import { IconChecks, IconPlayerPlay, IconPlayerStop, IconRefresh } from '@tabler/icons-react';
 import { C, FS } from '../tokens.js';
 import { Btn, Segmented } from './shared.jsx';
 import * as api from '../api.js';
@@ -81,6 +81,58 @@ function ServiceChip({ s }) {
   );
 }
 
+const CHECK_VIEW = {
+  ready: { text: 'Sẵn sàng', color: C.green },
+  waiting: { color: C.amber },
+  need_weight: { color: C.amber },
+  no_drug: { color: C.text2 },
+  done: { text: 'Đã hoàn tất', color: C.green },
+  error: { color: C.red },
+  session: { color: C.amber },
+};
+
+function WeightInput({ row, toast, onSaved }) {
+  const [kg, setKg] = useState('');
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    try {
+      const r = await api.setClinicPatientWeight(row.khambenhid, kg);
+      if (r.status !== 'ok') throw new Error(r.message);
+      toast?.(r.message, 'ok');
+      setKg('');
+      onSaved?.();
+    } catch (e) {
+      toast?.(String(e.message || e), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <form onSubmit={e => { e.preventDefault(); if (kg) save(); }} style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+      <input type="number" min={1} max={300} step="0.1" value={kg} onChange={e => setKg(e.target.value)}
+        placeholder="kg" aria-label={`Cân nặng của ${row.ho_ten}`}
+        style={{ width: 64, height: 26, padding: '0 6px', border: `1px solid ${C.border}`, borderRadius: 4, fontFamily: 'inherit', fontSize: FS.sm }} />
+      <Btn type="submit" loading={saving} disabled={!kg || saving} style={{ minHeight: 26, padding: '2px 8px', fontSize: FS.xs }}>Lưu</Btn>
+    </form>
+  );
+}
+
+function CompletionCell({ row, toast, onSaved }) {
+  if (!row.eligible) return <span style={{ color: C.text3 }}>—</span>;
+  const check = row.check;
+  if (!check) return <span style={{ color: C.text3, fontSize: FS.sm }}>Đang kiểm tra…</span>;
+  const view = CHECK_VIEW[check.status] || { color: C.text2 };
+  return (
+    <div style={{ fontSize: FS.sm }}>
+      <span style={{ color: view.color, fontWeight: 650 }}>{view.text || check.message}</span>
+      {check.status === 'need_weight' && (row.weight_entered
+        ? <div style={{ color: C.text2, fontSize: FS.xs }}>Đã nhập {row.weight_entered} kg, sẽ ghi khi hoàn tất</div>
+        : <WeightInput row={row} toast={toast} onSaved={onSaved} />)}
+    </div>
+  );
+}
+
 function Stat({ label, value, tone }) {
   const color = tone === 'green' ? C.green : tone === 'amber' ? C.amber : C.text;
   return (
@@ -145,6 +197,22 @@ export default function ClinicTab({ toast }) {
     }
   };
 
+  const completeReady = async () => {
+    const n = readyToComplete.length;
+    if (!window.confirm(`Hoàn tất khám ${n} người bệnh đã sẵn sàng trên EMR?\n\nHệ thống sẽ kiểm tra lại từng người ngay trước khi thao tác (đủ giờ, cân nặng, thời gian ra) và dừng lại ở người nào EMR báo lỗi hoặc hỏi xác nhận.`)) return;
+    setBusy('complete');
+    try {
+      const r = await api.completeReadyClinicPatients();
+      if (r.status !== 'ok') throw new Error(r.message);
+      toast?.(r.message, 'info');
+      await loadState();
+    } catch (e) {
+      toast?.(String(e.message || e), 'error');
+    } finally {
+      setBusy('');
+    }
+  };
+
   const refresh = async () => {
     setBusy('refresh');
     try {
@@ -184,6 +252,8 @@ export default function ClinicTab({ toast }) {
   ];
 
   const readyCount = rows.filter(r => r.ready).length;
+  const readyToComplete = rows.filter(r => r.eligible && (r.check?.status === 'ready' || (r.check?.status === 'need_weight' && r.weight_entered)));
+  const actionLog = [...(monitor?.action_log || [])].reverse();
   const blockedCount = rows.filter(r => r.stage !== 'xong' && r.blockers?.length).length;
   const choDocKq = rows.filter(r => r.stage !== 'xong' && r.cho_doc_kq).length;
 
@@ -252,6 +322,17 @@ export default function ClinicTab({ toast }) {
             <Stat label="Chờ đọc kết quả" value={choDocKq} tone="amber" />
           </div>
 
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: 10, border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface }}>
+            <Btn variant="primary" icon={IconChecks} loading={busy === 'complete' || monitor?.action_running}
+              disabled={!running || !readyToComplete.length || busy === 'complete' || monitor?.action_running} onClick={completeReady}>
+              {monitor?.action_running ? 'Đang hoàn tất…' : `Hoàn tất ${readyToComplete.length} người bệnh đã sẵn sàng`}
+            </Btn>
+            <span style={{ fontSize: FS.sm, color: C.text2, flex: '1 1 320px' }}>
+              Chỉ người có BHYT, xử trí Cho về, dịch vụ đã xong. Thời gian ra được giữ nếu hợp lệ, không thì đặt bằng giờ hiện tại của máy.
+              Người chờ đọc KQ chưa có thuốc và người thiếu cân nặng sẽ không được hoàn tất.
+            </span>
+          </div>
+
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <Segmented value={group} options={groupOptions} onChange={setGroup} label="Nhóm người bệnh" />
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: FS.sm, color: C.text2 }}>
@@ -264,7 +345,7 @@ export default function ClinicTab({ toast }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.md }}>
               <thead>
                 <tr style={{ background: C.surface2 }}>
-                  {['STT', 'Mã BN', 'Họ tên', 'Thời gian', 'Trạng thái', 'Xử trí', 'Dịch vụ', 'Việc tiếp theo', 'Còn vướng'].map(h => (
+                  {['STT', 'Mã BN', 'Họ tên', 'Thời gian', 'Trạng thái', 'Xử trí', 'Dịch vụ', 'Việc tiếp theo', 'Còn vướng', 'Hoàn tất khám'].map(h => (
                     <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: FS.xs, color: C.text2, fontWeight: 700, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -296,17 +377,29 @@ export default function ClinicTab({ toast }) {
                     <td style={{ padding: '8px 10px', color: C.amber, fontSize: FS.sm }}>
                       {r.stage === 'xong' ? '' : (r.blockers || []).join(' · ')}
                     </td>
+                    <td style={{ padding: '8px 10px', minWidth: 150 }}>
+                      <CompletionCell row={r} toast={toast} onSaved={loadState} />
+                    </td>
                   </tr>
                 ))}
                 {!visible.length && (
-                  <tr><td colSpan={9} style={{ padding: 16, textAlign: 'center', color: C.text2 }}>Không có người bệnh trong nhóm này.</td></tr>
+                  <tr><td colSpan={10} style={{ padding: 16, textAlign: 'center', color: C.text2 }}>Không có người bệnh trong nhóm này.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
-          <div style={{ fontSize: FS.xs, color: C.text3 }}>
-            Đợt 1 chỉ đọc danh sách, chưa thao tác gì trên EMR. Điều kiện 3 phút, cân nặng và các trường bắt buộc sẽ kiểm tra ở màn khám (đợt 2).
-          </div>
+          {actionLog.length > 0 && (
+            <section style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, padding: 12 }}>
+              <div style={{ fontSize: FS.md, fontWeight: 700, marginBottom: 6 }}>Nhật ký hoàn tất khám</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: FS.sm }}>
+                {actionLog.map((e, i) => (
+                  <div key={`${e.at}-${i}`} style={{ color: e.result === 'done' ? C.green : e.result === 'error' ? C.red : C.text2 }}>
+                    <b>{hhmm(e.at, true)}</b> · {e.ma_bn} {e.ho_ten} — {e.message}{e.steps?.length ? ` (${e.steps.join(' → ')})` : ''}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </>
       ) : (
         <div style={{ padding: 24, textAlign: 'center', color: C.text2, border: `1px dashed ${C.border}`, borderRadius: 8 }}>
