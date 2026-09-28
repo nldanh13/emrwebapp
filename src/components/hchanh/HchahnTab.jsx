@@ -86,6 +86,12 @@ const tS = t => TONE[t] || TONE.gray;
 
 const SCOPE_TONE  = { discharge: 'red', surgery: 'amber', admission: 'blue', daily: 'gray' };
 const FILE_LABELS = { profile:'Thông tin nền', discharge:'Ra viện / ra khoa', billing:'Bảng kê chi phí', bed_days:'Ngày giường', surgery:'Phẫu thuật', order_history:'Lịch sử y lệnh' };
+const MANUAL_REVIEW_STATUS = [
+  ['pending', 'Chưa kiểm'],
+  ['pass', 'Đạt'],
+  ['issue', 'Cần sửa'],
+  ['na', 'Không áp dụng'],
+];
 
 
 function money(v) {
@@ -703,7 +709,7 @@ function ResourceListPanel({ type = 'vtyt', onClose }) {
 
 // ── Detail panel ──────────────────────────────────────────────────────────────
 
-function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischargeFull, onOpenBedEdit, onPrintBilling, onCreateTicket, onRescan, fetchingKey, bedEditKey, printBillingKey, ticketKey }) {
+function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischargeFull, onOpenBedEdit, onPrintBilling, onCreateTicket, onRescan, onSaveManualReview, fetchingKey, bedEditKey, printBillingKey, ticketKey, manualReviewKey }) {
   const [tab, setTab] = useState('fetch');
   const [tabTouched, setTabTouched] = useState(false);
   const [showMoreActions, setShowMoreActions] = useState(false);
@@ -714,7 +720,8 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
   const isBedEdit = bedEditKey === ma_bn;
   const isPrintBilling = printBillingKey === ma_bn;
   const isCreatingTicket = ticketKey === ma_bn;
-  const busyAny   = isFetching || isBedEdit || isPrintBilling || isCreatingTicket || Boolean(bedEditKey) || Boolean(printBillingKey) || Boolean(ticketKey);
+  const isSavingReview = manualReviewKey === ma_bn;
+  const busyAny   = isFetching || isBedEdit || isPrintBilling || isCreatingTicket || isSavingReview || Boolean(bedEditKey) || Boolean(printBillingKey) || Boolean(ticketKey);
   const fetched    = card?.fetched || {};
   const issues     = safeArr(card?.issues).filter(i => i.severity !== 'info');
   const scopeFiles = SCOPE_FILES.discharge || ['profile'];
@@ -749,7 +756,11 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
     setShowMoreActions(false);
     setBillingView('overview');
     setTabTouched(false);
-    const nextTab = issues.length ? 'issues' : ((card?.scope === 'discharge' && hasDischargeData) ? 'discharge' : 'fetch');
+    const nextTab = issues.length
+      ? 'issues'
+      : (card?.scope === 'discharge' && card?.manual_review?.pending_count
+        ? 'checklist'
+        : ((card?.scope === 'discharge' && hasDischargeData) ? 'discharge' : 'fetch'));
     setTab(nextTab);
   }, [ma_bn]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -757,10 +768,12 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
   useEffect(() => {
     if (tabTouched) return;
     if (issues.length && tab !== 'issues') setTab('issues');
+    else if (!issues.length && card?.scope === 'discharge' && card?.manual_review?.pending_count && tab !== 'checklist') setTab('checklist');
     else if (!issues.length && card?.scope === 'discharge' && hasDischargeData && tab === 'fetch') setTab('discharge');
-  }, [card?.scope, hasDischargeData, issues.length, tab, tabTouched]);
+  }, [card?.scope, card?.manual_review?.pending_count, hasDischargeData, issues.length, tab, tabTouched]);
 
   const TABS = [
+    { id:'checklist', label:`Checklist${card?.manual_review?.pending_count ? ` (${card.manual_review.pending_count})` : ''}`, hide: scope !== 'discharge' },
     { id:'fetch',     label:'Dữ liệu' },
     { id:'issues',    label:`Vấn đề${issues.length ? ` (${issues.length})` : ''}` },
     { id:'discharge', label:'Ra viện' },
@@ -835,7 +848,7 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
           background: card.qa.canPrint ? C.greenBg : C.amberBg,
           border:`1px solid ${card.qa.canPrint ? C.greenBorder : C.amberBorder}`,
           fontSize:FS.sm, color: card.qa.canPrint ? C.green : C.amber }}>
-          {card.qa.canPrint ? <span style={{ display:'inline-flex', alignItems:'center', gap:6 }}><IconCheck size={15} stroke={2.2} aria-hidden="true" />Đủ điều kiện in/chốt hồ sơ</span> : card.qa.summary}
+          {card.qa.canPrint ? <span style={{ display:'inline-flex', alignItems:'center', gap:6 }}><IconCheck size={15} stroke={2.2} aria-hidden="true" />Đã kiểm tự động và thủ công — đủ điều kiện chốt hồ sơ</span> : card.qa.summary}
         </div>
       )}
       <BhytAssessmentBox bhyt={card?.qa?.bhyt} />
@@ -857,6 +870,32 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
       {/* Tab body */}
       <div style={{ flex: isMobile ? 'none' : 1, overflow: isMobile ? 'visible' : 'auto', padding:'14px 16px' }}>
 
+        {tab === 'checklist' && (
+          <div>
+            <div style={{ fontSize:FS.xs, fontWeight:700, color:C.text2, marginBottom:5 }}>CHECKLIST KIỂM THỦ CÔNG</div>
+            <div style={{ fontSize:FS.sm, color:C.text2, marginBottom:12, lineHeight:1.45 }}>
+              Máy chỉ hỗ trợ dò lỗi. Chỉ khi các mục dưới đây đã được kiểm thì hồ sơ mới được xem là hoàn tất.
+            </div>
+            {safeArr(card?.manual_review?.rows).map(row => (
+              <div key={row.key} style={{ padding:'10px 0', borderBottom:`1px solid ${C.border2}` }}>
+                <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+                  <b style={{ flex:'1 1 240px', fontSize:FS.sm, color:C.text }}>{row.label}</b>
+                  <select value={row.status || 'pending'} disabled={isSavingReview}
+                    aria-label={`Kết quả kiểm ${row.label}`}
+                    onChange={e => onSaveManualReview?.(card, { items: { [row.key]: { status:e.target.value, note:row.note || '' } } })}
+                    style={{ ...SELECT_STYLE, minWidth:130, color:row.status === 'issue' ? C.red : row.status === 'pass' ? C.green : C.text2 }}>
+                    {MANUAL_REVIEW_STATUS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </div>
+                <input type="text" defaultValue={row.note || ''} disabled={isSavingReview}
+                  placeholder="Ghi chú nội dung thiếu hoặc cần sửa..."
+                  onBlur={e => { if (e.target.value !== (row.note || '')) onSaveManualReview?.(card, { items: { [row.key]: { status:row.status || 'pending', note:e.target.value } } }); }}
+                  style={{ width:'100%', marginTop:7, height:32, padding:'0 9px', borderRadius:5, border:`1px solid ${C.border}`, background:C.surface, color:C.text, fontSize:FS.sm, fontFamily:'inherit', boxSizing:'border-box' }} />
+              </div>
+            ))}
+            {isSavingReview && <div style={{ marginTop:10, display:'flex', gap:7, alignItems:'center', color:C.text2, fontSize:FS.sm }}><Spinner size={13} /> Đang lưu checklist…</div>}
+          </div>
+        )}
 
         {tab === 'fetch' && (
           <div>
@@ -1523,14 +1562,14 @@ export default function HchahnTab({ toast, workDateRange, view = 'check' }) {
   const hc = useHchanh({ toast, workDateRange });
   const isMobile = useIsMobile();
   const {
-    loading, fetchingKey, bedEditKey, printBillingKey, ticketKey,
+    loading, fetchingKey, bedEditKey, printBillingKey, ticketKey, manualReviewKey,
     selectedCard, setSelectedCard,
     search, setSearch,
     filterScope, setFilterScope,
     filterStatus, setFilterStatus,
     counts, filteredCards, dashboard,
     fetchPatient, fetchDischargeFull, openBedEdit, printBilling,
-    createTicket, rescanPatient, exportIssues, batchFetchMissing, batchProgress,
+    createTicket, rescanPatient, exportIssues, batchFetchMissing, batchProgress, saveManualReview,
     clearPatient,
     vtytBatchDraft, setVtytBatchDraft, vtytBatchLoading, vtytBatchInputting,
     previewBatchVTYT, inputBatchVTYT, clearBatchVTYTDraft,
@@ -1720,10 +1759,12 @@ export default function HchahnTab({ toast, workDateRange, view = 'check' }) {
               onPrintBilling={printBilling}
               onCreateTicket={createTicket}
               onRescan={rescanPatient}
+              onSaveManualReview={saveManualReview}
               fetchingKey={fetchingKey}
               bedEditKey={bedEditKey}
               printBillingKey={printBillingKey}
               ticketKey={ticketKey}
+              manualReviewKey={manualReviewKey}
             />
           )}
         </div>

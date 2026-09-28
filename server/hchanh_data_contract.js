@@ -442,6 +442,11 @@ function sync_index_from_patients(ctx, patient_rows) {
         order_history: null,
       },
       fetch_error: existing.fetch_error || null,
+      // Checklist thuộc đúng một lượt điều trị. Nếu cùng mã BN tái nhập viện,
+      // không được mang kết quả kiểm của lượt cũ sang lượt mới.
+      manual_review: existing.encounter_key && existing.encounter_key !== encounter_key
+        ? undefined
+        : existing.manual_review,
     };
   }
 

@@ -183,6 +183,7 @@ export function useHchanh({ toast, workDateRange } = {}) {
   const [bedEditKey, setBedEditKey]     = useState('');   // ma_bn đang mở popup sửa giường
   const [printBillingKey, setPrintBillingKey] = useState(''); // ma_bn đang in/lưu bảng kê
   const [ticketKey, setTicketKey]       = useState('');   // ma_bn đang tạo/cập nhật phiếu sửa
+  const [manualReviewKey, setManualReviewKey] = useState('');
   const [vtytPreviewByPatient, setVtytPreviewByPatient] = useState({});
   const [vtytBatchDraft, setVtytBatchDraft] = useState(null);
   const [vtytBatchLoading, setVtytBatchLoading] = useState(false);
@@ -722,6 +723,23 @@ export function useHchanh({ toast, workDateRange } = {}) {
     }
   }, [load, toast]);
 
+  const saveManualReview = useCallback(async (card, patch) => {
+    const ma_bn = getMaBn(card);
+    if (!ma_bn || manualReviewKey) return;
+    setManualReviewKey(ma_bn);
+    try {
+      await api.saveHchanh_ManualReview(ma_bn, {
+        ...patch,
+        encounter_key: card?.encounter_key || '',
+      });
+      await load();
+    } catch (e) {
+      toast?.(`Không lưu được checklist: ${String(e.message || e)}`, 'error');
+    } finally {
+      setManualReviewKey('');
+    }
+  }, [load, manualReviewKey, toast]);
+
   // ── Snapshot ───────────────────────────────────────────────────────────────
 
   const loadSnapshot = useCallback(async () => {
@@ -868,6 +886,7 @@ export function useHchanh({ toast, workDateRange } = {}) {
     bedEditKey,
     printBillingKey,
     ticketKey,
+    manualReviewKey,
     vtytPreviewByPatient,
     vtytBatchDraft, setVtytBatchDraft, vtytBatchLoading, vtytBatchInputting,
     selectedCard,
@@ -896,6 +915,7 @@ export function useHchanh({ toast, workDateRange } = {}) {
     printBilling,
     createTicket,
     updateTicket,
+    saveManualReview,
     rescanPatient,
     exportIssues,
     batchFetchMissing,

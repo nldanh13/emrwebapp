@@ -19,6 +19,7 @@ const {
 const { readJsonSafe }                    = require('../../utils/file');
 const { readTicketStore }                 = require('./ticket_store');
 const { runDischargeQA_Hchanh }           = require('./discharge_qa');
+const { manualReviewSummary, manualReviewIssues } = require('./manual_review');
 const patientDb                         = require('../patient_db');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -464,6 +465,8 @@ function buildPatientCard(ctx, meta, ticket) {
     issues = normalizeIssuesForDashboard(qa_result.issues);
   }
 
+  const manual_review = manualReviewSummary(meta.manual_review);
+  if (scope === 'discharge') issues = [...issues, ...manualReviewIssues(meta.manual_review)];
   const ic     = countIssues(issues);
   const complete = check.missing.length === 0;
   const state    = dataStateFromCheck(meta, check);
@@ -477,13 +480,33 @@ function buildPatientCard(ctx, meta, ticket) {
   const fileAttentionCount = countFileAttention(file_statuses);
   const hasFileFetchError = Object.values(file_statuses || {}).some(s => s?.state === 'fetch_error');
   const bhytBlocking = Boolean(qa?.bhyt?.applicable) && qa?.bhyt?.assessment?.code !== 'safe';
-  const status = computeWorkflowStatus({ fetchErrorActive: fetch_error_active || hasFileFetchError, issueCounts: ic, dataState: state, dataComplete: complete, fileAttentionCount, bhytBlocking });
-  const status_label = statusLabelFor({ workflowStatus: status, issueCounts: ic, dataState: state, missingCount: check.missing.length, fileAttentionCount, bhytBlocking });
+  let status = computeWorkflowStatus({ fetchErrorActive: fetch_error_active || hasFileFetchError, issueCounts: ic, dataState: state, dataComplete: complete, fileAttentionCount, bhytBlocking });
+  if (scope === 'discharge' && status === 'green' && !manual_review.passed) status = 'amber';
+  let status_label = statusLabelFor({ workflowStatus: status, issueCounts: ic, dataState: state, missingCount: check.missing.length, fileAttentionCount, bhytBlocking });
+  if (scope === 'discharge' && complete && !ic.errors && !ic.warnings && !bhytBlocking && !manual_review.complete) {
+    status_label = `Còn kiểm tay ${manual_review.pending_count}`;
+  }
   const score  = priorityScore(issues, scope, ticket) + ((fetch_error_active || hasFileFetchError) ? 120 : 0);
   const billing_overview = buildBillingOverview(data.billing, issues);
   const billing_with_overview = data.billing && typeof data.billing === 'object'
     ? { ...data.billing, overview: billing_overview }
     : data.billing;
+
+  if (qa && scope === 'discharge') {
+    const autoCanPrint = Boolean(qa.canPrint);
+    qa = {
+      ...qa,
+      autoCanPrint,
+      canPrint: autoCanPrint && manual_review.passed,
+      summary: !autoCanPrint
+        ? qa.summary
+        : manual_review.issue_count
+          ? `Còn ${manual_review.issue_count} mục kiểm thủ công cần sửa.`
+          : manual_review.pending_count
+            ? `Máy chưa phát hiện lỗi; còn ${manual_review.pending_count} mục cần kiểm thủ công.`
+            : 'Đã kiểm tự động và thủ công — đủ điều kiện chốt hồ sơ.',
+    };
+  }
 
   return {
     ma_bn,
@@ -524,6 +547,7 @@ function buildPatientCard(ctx, meta, ticket) {
     issues,
     issueCounts:     ic,
     qa,
+    manual_review,
     // Worklist
     workflowStatus:  status,
     priorityScore:   score,
