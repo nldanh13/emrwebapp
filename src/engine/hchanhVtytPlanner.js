@@ -98,6 +98,9 @@ function emptyRequirement(spec, reason) {
     input_quantity: 0,
     selected: true,
     manual: false,
+    usage_status: 'planned',
+    input_status: 'pending',
+    source_type: 'auto',
     reasons: reason ? [reason] : [],
     warnings: [],
   };

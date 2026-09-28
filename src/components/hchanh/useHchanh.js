@@ -6,6 +6,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import * as api from '../../features/hchanh/api.js';
 import { DISCHARGE_FULL_FILES, SCOPE_FILES, SCOPE_LABEL, getHchanhPatientKey } from '../../features/hchanh/model.js';
 import { buildHchanhVtytBatchDraft } from '../../engine/hchanhVtytPlanner.js';
+import { collectionRows, eligibleInputJobs } from '../../engine/hchanhVtytWorkspace.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -145,10 +146,15 @@ function mergeVtytDraftEdits(previous, fresh) {
         selected: old.selected !== false,
         input_quantity: Number(old.input_quantity ?? item.input_quantity ?? 0),
         manual: old.manual === true || item.manual === true,
+        usage_status: old.usage_status || item.usage_status || 'planned',
+        input_status: old.input_status || item.input_status || 'pending',
+        source_type: old.source_type || item.source_type || 'auto',
+        combo_id: old.combo_id || '',
+        combo_name: old.combo_name || '',
       };
     });
     for (const old of oldItems.values()) {
-      if (old?.manual) supplies.push(old);
+      if (old?.manual || old?.source_type === 'combo') supplies.push(old);
     }
     return { ...job, supplies, reviewed: false };
   });
@@ -410,13 +416,17 @@ export function useHchanh({ toast, workDateRange } = {}) {
       toast?.('Xác nhận quét VTYT đã hết hiệu lực. Hãy quét lại trước khi nhập.', 'error');
       return;
     }
-    const previewJobs = jobs.map(job => ({
+    const blockedStock = collectionRows(draft).filter(row => row.blocked);
+    if (blockedStock.length) {
+      toast?.(`Không thể nhập: ${blockedStock.map(row => row.name).join(', ')} hết hoặc chưa xác định tồn.`, 'error');
+      return;
+    }
+    const eligibleJobs = eligibleInputJobs(draft);
+    const previewJobs = eligibleJobs.map(job => ({
       ...job,
       manual_vtyt_plan: true,
       hchanh_direct_vtyt: true,
-      supplies: safeArray(job.supplies)
-        .filter(item => item.selected !== false && Number(item.input_quantity || 0) > 0)
-        .map(item => ({
+      supplies: safeArray(job.supplies).map(item => ({
           ...item,
           required_quantity: Number(item.input_quantity || 0),
           desired_total_quantity: Number(item.existing_quantity || 0) + Number(item.input_quantity || 0),
@@ -424,7 +434,7 @@ export function useHchanh({ toast, workDateRange } = {}) {
           input_allowed: true,
           needs_review: false,
         })),
-    })).filter(job => job.supplies.length > 0);
+    }));
     if (!previewJobs.length) {
       toast?.('Không có vật tư nào được chọn với số lượng cần nhập lớn hơn 0.', 'error');
       return;
@@ -456,8 +466,23 @@ export function useHchanh({ toast, workDateRange } = {}) {
         precheck_token: draft.precheck_token,
         vtytPreviewJobs: previewJobs,
       });
-      setVtytBatchDraft(previous => previous ? { ...previous, input_result: result, updated_at: new Date().toISOString() } : previous);
       const okStatus = ['ok', 'partial', 'skipped'].includes(result?.status);
+      setVtytBatchDraft(previous => {
+        if (!previous) return previous;
+        const submitted = new Set(previewJobs.flatMap(job => safeArray(job.supplies).map(item => `${job.ma_bn}::${job.ngay_lam}::${item.code}`)));
+        const markEntered = result?.status === 'ok' || result?.status === 'skipped';
+        return {
+          ...previous,
+          jobs: safeArray(previous.jobs).map(job => ({
+            ...job,
+            supplies: safeArray(job.supplies).map(item => submitted.has(`${job.ma_bn}::${job.ngay_lam}::${item.code}`)
+              ? { ...item, usage_status: markEntered ? 'entered' : 'error', input_status: markEntered ? 'entered' : 'error', entered_at: markEntered ? new Date().toISOString() : '' }
+              : item),
+          })),
+          input_result: result,
+          updated_at: new Date().toISOString(),
+        };
+      });
       toast?.(result?.message || 'Đã chạy nhập VTYT hàng loạt.', okStatus ? (result.status === 'ok' ? 'ok' : 'info') : 'error');
       await load();
     } catch (e) {

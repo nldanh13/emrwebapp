@@ -89,6 +89,8 @@ function apiActionLabel(method, url) {
     'POST /api/run-input-vtyt': 'nhập/kiểm VTYT',
     'POST /api/preview-input-vtyt': 'quét xem trước VTYT',
     'POST /api/vtyt-catalog/scan-emr': 'dò danh mục VTYT trên EMR',
+    'GET /api/vtyt-combos': 'tải danh sách combo VTYT',
+    'POST /api/vtyt-combos': 'tạo combo VTYT',
     'POST /api/report-token': 'lấy quyền mở phiếu in',
     'GET /api/run-report-infusion': 'mở phiếu PDF',
     'GET /api/data-info': 'kiểm tra trạng thái dữ liệu',
@@ -867,6 +869,10 @@ export const updateVtytCatalog   = (key, body)    => patch(`/api/vtyt-catalog/${
 export const resetVtytCatalog    = (key)           => post(`/api/vtyt-catalog/reset/${encodeURIComponent(key)}`, {});
 export const scanVtytCatalogEmr  = (maBn, queries) => post('/api/vtyt-catalog/scan-emr', { ma_bn: maBn, queries });
 export const getVtytCatalogEmrScan = ()            => get('/api/vtyt-catalog/emr-scan');
+export const getVtytCombos          = ()            => get('/api/vtyt-combos');
+export const createVtytCombo        = (body)        => post('/api/vtyt-combos', body);
+export const updateVtytCombo        = (id, body)    => patch(`/api/vtyt-combos/${encodeURIComponent(id)}`, body);
+export const deleteVtytCombo        = (id)          => del(`/api/vtyt-combos/${encodeURIComponent(id)}`);
 
 // ── Danh mục thuốc ────────────────────────────────────────────────────────────
 export const getMedicationCatalog    = ()           => get('/api/medication-catalog');
