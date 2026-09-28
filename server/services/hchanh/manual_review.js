@@ -5,12 +5,13 @@
 const REVIEW_STATUSES = new Set(['pending', 'pass', 'issue', 'na']);
 
 const REVIEW_ITEMS = Object.freeze([
-  { key: 'administrative', label: 'Hành chính và BHYT' },
+  { key: 'administrative', label: 'Hành chính và BHYT trên EMR' },
   { key: 'clinical', label: 'Bệnh án, chẩn đoán và giấy ra viện' },
   { key: 'orders', label: 'Y lệnh, thuốc và VTYT' },
-  { key: 'nursing', label: 'Theo dõi và chăm sóc điều dưỡng' },
+  { key: 'nursing', label: 'Theo dõi và chăm sóc điều dưỡng trên EMR' },
   { key: 'billing', label: 'Ngày giường và bảng kê' },
-  { key: 'signatures', label: 'Chữ ký và giấy tờ kèm theo' },
+  { key: 'surgery', label: 'Hồ sơ phẫu thuật/thủ thuật và gây mê' },
+  { key: 'signatures', label: 'Giấy ra viện và giấy tờ kèm theo trên EMR' },
 ]);
 
 function cleanText(value, max = 1000) {
