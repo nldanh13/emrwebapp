@@ -28,6 +28,7 @@ export default function BedBoardMobile({
   saving,
   handleSaveOnly,
   handlePrintRooms,
+  printingRooms,
   selectAllUnassigned,
 }) {
   const inspecting = inspectRoom ? { room: inspectRoom, pts: roomPatients(inspectRoom), cap: roomConfig[inspectRoom] || 0 } : null;
@@ -54,7 +55,7 @@ export default function BedBoardMobile({
             ? <b style={{ color: C.blue }}>Đang chọn {selCount} người bệnh — bấm phòng để xếp</b>
             : <><b style={{ color: C.text }}>{assigned.length}</b> đã xếp · <span style={{ color: unassigned.length ? C.amber : C.text2, fontWeight: unassigned.length ? 600 : 400 }}>{unassigned.length} chưa xếp</span></>}
         </div>
-        <Btn icon={IconPrinter} onClick={handlePrintRooms} style={{ minHeight: 40 }}>In danh sách xếp phòng</Btn>
+        <Btn icon={IconPrinter} loading={printingRooms} disabled={printingRooms} onClick={handlePrintRooms} style={{ minHeight: 40 }}>{printingRooms ? 'Đang tạo PDF…' : 'Lưu PDF xếp phòng'}</Btn>
       </div>
 
       {/* Phòng */}
