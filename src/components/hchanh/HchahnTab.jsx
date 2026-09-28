@@ -9,11 +9,11 @@ import {
   IconAlertTriangle, IconCheck, IconChevronDown, IconCircleDashed, IconCloudDownload, IconMinus,
   IconRefresh, IconSearch, IconTool, IconX,
 } from '@tabler/icons-react';
-import { Btn, Segmented, Spinner } from '../shared.jsx';
+import { Btn, Spinner } from '../shared.jsx';
 import useIsMobile from '../../hooks/useIsMobile.js';
 import { useHchanh, SCOPE_LABEL, SCOPE_FILES, getMaBn } from './useHchanh.js';
 import { HCHANH_VTYT_ITEMS, HCHANH_BED_SERVICE_ITEMS } from '../../config/hchanhLists.js';
-import { printHchanh_Ticket, printHchanh_WardList, importHchanhStayStore } from '../../api.js';
+import { printHchanh_Ticket } from '../../api.js';
 import HchanhVtytBatchPanel from './HchanhVtytBatchPanel.jsx';
 import { formatPersonName } from '../../utils/personName.js';
 
@@ -1549,7 +1549,7 @@ function ScopeSelect({ value, onChange }) {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-export default function HchahnTab({ toast, workDateRange }) {
+export default function HchahnTab({ toast, workDateRange, view = 'check' }) {
   const hc = useHchanh({ toast, workDateRange });
   const isMobile = useIsMobile();
   const {
@@ -1566,7 +1566,6 @@ export default function HchahnTab({ toast, workDateRange }) {
     vtytBatchDraft, setVtytBatchDraft, vtytBatchLoading, vtytBatchInputting,
     previewBatchVTYT, inputBatchVTYT, clearBatchVTYTDraft,
   } = hc;
-  const [resourceList, setResourceList] = useState('');
   const [showTools, setShowTools] = useState(false);
   const [runHeadless, setRunHeadless] = useState(() => {
     try { return localStorage.getItem('emr_hchanh_headless_v1') === '1'; }
@@ -1575,16 +1574,7 @@ export default function HchahnTab({ toast, workDateRange }) {
   useEffect(() => {
     try { localStorage.setItem('emr_hchanh_headless_v1', runHeadless ? '1' : '0'); } catch {}
   }, [runHeadless]);
-  const [workspace, setWorkspace] = useState(() => {
-    try { return localStorage.getItem('emr_hchanh_workspace_v1') === 'vtyt' ? 'vtyt' : 'discharge'; }
-    catch { return 'discharge'; }
-  });
-
-  useEffect(() => {
-    try { localStorage.setItem('emr_hchanh_workspace_v1', workspace); } catch {}
-    setShowTools(false);
-    setResourceList('');
-  }, [workspace]);
+  const workspace = view === 'vtyt' ? 'vtyt' : 'discharge';
 
   if (loading && !dashboard) {
     return (
@@ -1602,15 +1592,9 @@ export default function HchahnTab({ toast, workDateRange }) {
       {/* Khu làm việc + tìm kiếm */}
       <div style={{ padding:'10px 12px', borderBottom:`1px solid ${C.border2}`, background:C.surface, display:'grid', gap:10 }}>
         <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
-          <Segmented
-            label="Khu làm việc Kiểm HSBA"
-            value={workspace}
-            onChange={setWorkspace}
-            options={[
-              { value:'discharge', label:'Kiểm ra viện' },
-              { value:'vtyt', label:`Nhập VTYT${vtytCount ? ` (${vtytCount})` : ''}` },
-            ]}
-          />
+          <span style={{ fontSize:FS.md, color:C.text, fontWeight:700 }}>
+            {workspace === 'discharge' ? 'Kiểm hồ sơ ra viện' : `Nhập VTYT${vtytCount ? ` (${vtytCount})` : ''}`}
+          </span>
           <span style={{ fontSize:FS.xs, color:C.text2, flex:'1 1 200px' }}>
             {workspace === 'discharge' ? 'Hồ sơ, chi phí, ngày giường và y lệnh của người bệnh.' : 'Quét toàn đợt, sửa kế hoạch rồi nhập vật tư hàng loạt.'}
           </span>
@@ -1647,13 +1631,6 @@ export default function HchahnTab({ toast, workDateRange }) {
                   padding:4, borderRadius:7, background:C.surface, border:`1px solid ${C.border}`, boxShadow:C.shadow2, display:'grid' }}>
                   {[
                     ['Xuất danh sách lỗi (CSV)', () => exportIssues('csv')],
-                    ['In danh sách xếp phòng', () => printHchanh_WardList().catch(err => alert(err.message || err))],
-                    ['Danh mục vật tư', () => setResourceList('vtyt')],
-                    ['Danh mục giường', () => setResourceList('bed')],
-                    // Dữ liệu lấy mới đã tự góp vào kho; mục này góp một lần phần đã lấy từ trước.
-                    ['Góp dữ liệu đã lấy vào kho nghiên cứu', () => importHchanhStayStore()
-                      .then(r => toast?.(r.message, 'ok'))
-                      .catch(err => toast?.(String(err.message || err), 'error'))],
                   ].map(([label, run]) => (
                     <button key={label} type="button" role="menuitem" className="emr-menu-item" onClick={() => { run(); setShowTools(false); }}>{label}</button>
                   ))}
@@ -1722,7 +1699,7 @@ export default function HchahnTab({ toast, workDateRange }) {
                     key={getMaBn(card) || card.key}
                     card={card}
                     selected={getMaBn(selectedCard) === getMaBn(card)}
-                    onSelect={card => { setResourceList(''); setSelectedCard(card); }}
+                    onSelect={setSelectedCard}
                   />
                 ))}
               </ul>
@@ -1752,7 +1729,7 @@ export default function HchahnTab({ toast, workDateRange }) {
                         key={getMaBn(card) || card.key}
                         card={card}
                         selected={getMaBn(selectedCard) === getMaBn(card)}
-                        onSelect={card => { setResourceList(''); setSelectedCard(card); }}
+                        onSelect={setSelectedCard}
                         onFetchDischargeFull={fetchDischargeFull}
                         fetchingKey={fetchingKey}
                       />
@@ -1763,11 +1740,7 @@ export default function HchahnTab({ toast, workDateRange }) {
             )}
           </div>
 
-          {resourceList && (
-            <ResourceListPanel type={resourceList} onClose={() => setResourceList('')} />
-          )}
-
-          {!resourceList && selectedCard && (
+          {selectedCard && (
             <DetailPanel
               isMobile={isMobile}
               card={selectedCard}
