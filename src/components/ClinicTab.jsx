@@ -89,6 +89,7 @@ const CHECK_VIEW = {
   waiting: { color: C.amber },
   need_weight: { color: C.amber },
   no_drug: { color: C.text2 },
+  incomplete: { color: C.amber },
   done: { text: 'Đã hoàn tất', color: C.green },
   error: { color: C.red },
   session: { color: C.amber },
@@ -336,7 +337,7 @@ export default function ClinicTab({ toast }) {
               {monitor?.action_running ? 'Đang hoàn tất…' : `Hoàn tất ${readyToComplete.length} người bệnh đã sẵn sàng`}
             </Btn>
             <span style={{ fontSize: FS.sm, color: C.text2, flex: '1 1 320px' }}>
-              Chỉ người có BHYT, xử trí Cho về hoặc Chuyển viện, dịch vụ đã xong. Thủ thuật chưa xong thì nhập trước (giờ chỉ định → +10 phút, thủ thuật viên theo Lịch Phòng khám).
+              Chỉ người có BHYT, xử trí Cho về hoặc Chuyển viện, dịch vụ đã xong. Thủ thuật chưa xong thì nhập trước (còn "Mới" thì bấm Thực hiện; giờ chỉ định → +10 phút, thủ thuật viên theo Lịch Phòng khám).
               Thời gian ra được giữ nếu hợp lệ, không thì đặt bằng giờ hiện tại của máy. Người chờ đọc KQ chưa có thuốc và người thiếu cân nặng sẽ không được hoàn tất.
             </span>
           </div>

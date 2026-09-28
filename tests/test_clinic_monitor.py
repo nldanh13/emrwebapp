@@ -195,6 +195,9 @@ class FakePage:
         self.writes = []
 
     def needs_enter(self): return self.enter
+    def missing_required(self): return list(getattr(self, 'missing', []))
+    def new_procedures(self): return getattr(self, 'new_tt', 0)
+    def send_to_services(self): self.writes.append('thuc_hien'); self.new_tt = 0; return []
     def drug_count(self): return self.drugs
     def exam_start(self): return self.start
     def read_exit_time(self): return self.exit_time
@@ -465,3 +468,27 @@ def test_scan_imaging_reads_once_per_order_count():
     cm.scan_imaging(mon, [no_cdha], cache)
     assert mon.calls == 2
     assert cm.public_rows([{**row, 'href': 'x', 'case': 'cho_ve'}], {}, {}, cache)[0]['bbhc'] == ['Chụp CT']
+
+
+def test_missing_required_fields_stop_before_any_click():
+    page = FakePage(exit_time=cm.parse_emr_dt('09:40 28/09/2026'))
+    page.missing = ['chẩn đoán sơ bộ', 'dấu hiệu LS / triệu chứng']
+    res = cm.check_patient(page, {}, None, NOW)
+    assert res['status'] == 'incomplete' and 'chẩn đoán sơ bộ' in res['message']
+    res = cm.complete_patient(page, {}, None, NOW, None)
+    assert res['result'] == 'incomplete' and page.writes == []
+
+
+def test_new_procedure_is_sent_with_thuc_hien_before_procedure_list():
+    page = FakePage(exit_time=cm.parse_emr_dt('09:40 28/09/2026'))
+    page.new_tt = 1
+    res = cm.ready_for_procedures(page, _tt_row(0, 1), None, NOW)
+    assert res['status'] == 'ready' and page.writes == ['thuc_hien'] and res['steps'][0].startswith('Bấm Thực hiện')
+    # Không có thủ thuật "Mới" → không bấm gì.
+    page = FakePage(exit_time=cm.parse_emr_dt('09:40 28/09/2026'))
+    assert cm.ready_for_procedures(page, _tt_row(0, 1), None, NOW)['steps'] == [] and page.writes == []
+    # Thiếu ô bắt buộc → không bấm Thực hiện.
+    page = FakePage()
+    page.new_tt, page.missing = 1, ['chẩn đoán sơ bộ']
+    assert cm.ready_for_procedures(page, _tt_row(0, 1), None, NOW)['status'] == 'incomplete' and page.writes == []
+

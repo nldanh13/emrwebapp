@@ -380,6 +380,36 @@ JS_VISIBLE = ("var e=document.getElementById(arguments[0]); if(!e) return false;
 JS_VALUE = "var e=document.getElementById(arguments[0]); return e ? e.value : null;"
 JS_SET_VALUE = ("var e=document.getElementById(arguments[0]); e.value=arguments[1];"
                 " e.dispatchEvent(new Event('change', {bubbles:true}));")
+# Các ô EMR bắt buộc trước khi Hoàn tất khám (OnExecutingHOANTAT): chẩn đoán sơ bộ, bệnh chính,
+# xử trí, dấu hiệu LS / triệu chứng. Thiếu thì để bác sĩ nhập, hệ thống không tự điền.
+JS_MISSING_REQUIRED = r"""
+function v(id) { var e = document.getElementById(id); return e ? String(e.value || '').trim() : null; }
+var out = [];
+if (v('txtChanDoanSoBo') === '') out.push('chẩn đoán sơ bộ');
+if (v('cbbCDBChinh') === '') out.push('bệnh chính');
+if (v('cbbXuTri') === '') out.push('xử trí');
+if (v('txtMoTaDauHieuLamSang') === '') out.push('dấu hiệu LS / triệu chứng');
+return out;
+"""
+# Thủ thuật còn "Mới" trong bảng Chỉ định DVKT (chưa chuyển đi làm dịch vụ nên chưa có trên
+# D/s Thủ thuật): dòng tr.dichvu thuộc nhóm có tiêu đề "Thủ thuật", EMR đánh dấu class chuyendichvu
+# (dòng nút Thực hiện sẽ chuyển) hoặc cột Trạng thái là "Mới".
+JS_NEW_PROCEDURES = r"""
+function n(s) { return (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().replace(/\s+/g, ' ').trim(); }
+var t = document.getElementById('tblDichVu'); if (!t) return 0;
+var inTT = false, count = 0;
+[].slice.call(t.querySelectorAll('tbody tr')).forEach(function (tr) {
+  if (!tr.classList.contains('dichvu')) {
+    var h = n(tr.innerText);
+    if (h) inTT = h.indexOf('thu thuat') >= 0;
+    return;
+  }
+  var tds = tr.querySelectorAll('td');
+  var status = tds.length > 6 ? n(tds[6].innerText) : '';
+  if (inTT && !tr.classList.contains('hoantat') && (tr.classList.contains('chuyendichvu') || status === 'moi')) count++;
+});
+return count;
+"""
 JS_DRUG_COUNT = "return document.querySelectorAll('#tblThuoc tr[class*=groupthuoc]').length;"
 
 
@@ -431,6 +461,21 @@ class ExamPage:
 
     def needs_enter(self) -> bool:
         return self.visible("btnVAOKHAM")
+
+    def new_procedures(self) -> int:
+        return int(self.js(JS_NEW_PROCEDURES) or 0)
+
+    def send_to_services(self) -> List[str]:
+        """Bấm Thực hiện (btnDILAMDV) để chuyển thủ thuật "Mới" sang D/s Thủ thuật."""
+        if not self.wait_visible("btnDILAMDV", 6):
+            raise ExamStepError("Không thấy nút Thực hiện để chuyển thủ thuật")
+        self.js("document.getElementById('btnDILAMDV').click();")
+        self.pause(2.5)
+        wait_page(self.driver, 1.0)
+        return self.check_dialogs("Thực hiện (chuyển thủ thuật)")
+
+    def missing_required(self) -> List[str]:
+        return list(self.js(JS_MISSING_REQUIRED) or [])
 
     def drug_count(self) -> int:
         return int(self.js(JS_DRUG_COUNT) or 0)
@@ -502,6 +547,9 @@ def check_patient(page: ExamPage, row: Dict[str, Any], services_done: Optional[d
     """Kiểm tra (chỉ đọc) người bệnh có hoàn tất được lúc này không. Không bấm gì trên EMR."""
     if page.needs_enter() and row.get("cho_doc_kq") and page.drug_count() == 0:
         return {"status": "no_drug", "message": "Chờ đọc KQ, chưa có thuốc — để bác sĩ xử lý"}
+    missing = page.missing_required()
+    if missing:
+        return {"status": "incomplete", "message": f"Bác sĩ chưa nhập: {', '.join(missing)}"}
     earliest = earliest_completion(page.exam_start(), services_done)
     base = {"earliest": earliest.isoformat()}
     if now < earliest:
@@ -509,6 +557,18 @@ def check_patient(page: ExamPage, row: Dict[str, Any], services_done: Optional[d
     if pending_procedures(row):
         return {**base, "status": "ready", "message": "Sẵn sàng — sẽ nhập thủ thuật trước rồi hoàn tất"}
     return {**base, "status": "ready", "message": "Sẵn sàng hoàn tất"}
+
+
+def ready_for_procedures(page: ExamPage, row: Dict[str, Any], services_done: Optional[datetime], now: datetime) -> Dict[str, Any]:
+    """Trước khi vào D/s Thủ thuật: kiểm tra màn khám (chỉ đọc); thủ thuật còn "Mới" thì bấm Thực hiện."""
+    res = check_patient(page, row, services_done, now)
+    if res.get("status") != "ready":
+        return res
+    steps: List[str] = []
+    if page.new_procedures():
+        toasts = page.send_to_services()
+        steps.append("Bấm Thực hiện (thủ thuật mới)" + (f" ({toasts[-1]})" if toasts else ""))
+    return {**res, "steps": steps}
 
 
 def is_weight_warning(message: str) -> bool:
@@ -523,6 +583,9 @@ def complete_patient(page: ExamPage, row: Dict[str, Any], services_done: Optiona
     must_enter = page.needs_enter()
     if must_enter and row.get("cho_doc_kq") and page.drug_count() == 0:
         return {"result": "no_drug", "message": "Chờ đọc KQ, chưa có thuốc — để bác sĩ xử lý", "steps": steps}
+    missing = page.missing_required()
+    if missing:
+        return {"result": "incomplete", "message": f"Bác sĩ chưa nhập: {', '.join(missing)}", "steps": steps}
     earliest = earliest_completion(page.exam_start(), services_done)
     if now < earliest:
         return {"result": "waiting", "message": f"Chờ tới {earliest:%H:%M} mới hoàn tất được", "steps": steps}
@@ -889,6 +952,10 @@ def prepare_bbhc(page: ExamPage, row: Dict[str, Any], imaging: Dict[str, Any], c
     """Đọc (không ghi) màn khám và soạn nháp SBBHC cho 1 người bệnh."""
     bb = clinic_bbhc.BbhcPage(page)
     info = bb.exam_info()
+    exam_orders = bb.imaging_services()
+    if exam_orders is not None:
+        # Bảng Chỉ định DVKT của màn khám chính xác hơn popup lịch sử (đúng tên, giờ chỉ định).
+        imaging = {"orders": [{**o, "time": fmt_emr_dt(o["time"]) if isinstance(o.get("time"), datetime) else ""} for o in exam_orders]}
     transfer = bb.transfer_info() if row.get("case") == "chuyen_vien" else None
     existing = bb.existing()
     reasons = bbhc_reason_list(row, imaging, transfer)
@@ -971,8 +1038,12 @@ def run_completions(monitor: "Monitor", rows: List[Dict[str, Any]], checks: Dict
         tt: Dict[str, Any] = {"result": "done", "steps": [], "procedure_end": None}
         if pending_procedures(row):
             # Kiểm tra (chỉ đọc) màn khám trước: chờ đọc KQ chưa có thuốc / chưa đủ giờ thì chưa nhập thủ thuật.
-            pre = monitor.on_exam_page(row, lambda page, done_at, now: check_patient(page, row, done_at, now))
-            tt = monitor.run_procedures(row) if pre.get("status") == "ready" else {**pre, "result": pre.get("status")}
+            pre = monitor.on_exam_page(row, lambda page, done_at, now: ready_for_procedures(page, row, done_at, now))
+            if pre.get("status") == "ready":
+                tt = monitor.run_procedures(row)
+                tt["steps"] = (pre.get("steps") or []) + (tt.get("steps") or [])
+            else:
+                tt = {**pre, "result": pre.get("status")}
         if tt["result"] == "done":
             tt_end = tt.get("procedure_end")
 
