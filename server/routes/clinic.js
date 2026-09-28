@@ -1,7 +1,9 @@
 // server/routes/clinic.js — phần Phòng khám còn giữ lại (tab Phòng khám đang được làm lại).
 //   POST /api/clinic/preview    đọc danh sách Khám bệnh (worker clinic_outpatient.py) — tab Nghỉ ốm dùng.
 //   GET  /api/clinic/care-draft đọc bản nháp chăm sóc phòng khám cũ — tab Nghỉ ốm lấy danh sách ngoại trú.
-//   /api/clinic/monitor/*       theo dõi Danh sách Khám bệnh liên tục (worker clinic_monitor.py, chỉ đọc).
+//   /api/clinic/monitor/*       theo dõi Danh sách Khám bệnh liên tục và hoàn tất khám Cho về (worker clinic_monitor.py).
+//   POST /api/clinic/care-preview, /care-order-seeds, /input-care
+//                               TH3 Nhập viện: tìm, gợi ý diễn biến và nhập chăm sóc (worker clinic_input_care.py).
 
 'use strict';
 
@@ -15,6 +17,7 @@ const { runPython, runScript, fmtPyError } = require('../services/python_runner'
 const { WORKER_DIR } = require('../constants');
 const { appendActivity } = require('../services/activity_logger');
 const { writeJsonAtomic, readJsonSafe, safeUnlink, safeFilePart } = require('../utils/file');
+const { issueInputPrecheckToken, validateAndConsumeInputPrecheckToken } = require('../services/input_precheck_tokens');
 
 function sanitizeClinicSchedule(raw = {}) {
   const obj = raw && typeof raw === 'object' ? raw : {};
@@ -301,6 +304,321 @@ router.post('/clinic/monitor/weight', (req, res) => {
 router.get('/clinic/monitor/state', (req, res) => {
   const ctx = getRuntimePaths(req);
   return res.json({ status: 'ok', monitor: monitorStatePayload(ctx) });
+});
+
+// ── TH3 Nhập viện: nhập chăm sóc cho người bệnh từ Khoa Khám Bệnh (worker clinic_input_care.py) ──
+
+function normalizeClinicCareDate(value = '') {
+  const text = String(value || '').trim();
+  let m = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return `${m[3].padStart(2, '0')}/${m[2].padStart(2, '0')}/${m[1]}`;
+  m = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+  if (!m) return '';
+  const year = m[3].length === 2 ? `20${m[3]}` : m[3];
+  return `${m[1].padStart(2, '0')}/${m[2].padStart(2, '0')}/${year}`;
+}
+
+function clinicCarePrecheckTargets(payload = {}, rows = []) {
+  const signatures = (Array.isArray(rows) ? rows : [])
+    .filter(r => r && typeof r === 'object'
+      && Boolean(r.has_nursing_link || r.nursing_url || r.noitruid)
+      && Boolean(String(r.dieu_duong || payload?.clinicSchedule?.nurseName || '').trim()))
+    .map(r => {
+      const code = String(r.ma_bn || '').replace(/\D+/g, '').trim();
+      const time = String(r.care_time_str || r.tg_vao || r.thoi_gian_vao_khoa || '').trim();
+      const stayId = String(r.noitruid || '').trim();
+      const department = String(r.khoa_chuyen_den || payload.targetDepartment || '').trim().toLowerCase();
+      const nurse = String(r.dieu_duong || payload?.clinicSchedule?.nurseName || '').trim();
+      return `${code}|${time}|${stayId}|${department}|${nurse}`;
+    })
+    .filter(Boolean)
+    .sort();
+  const schedule = payload.clinicSchedule && typeof payload.clinicSchedule === 'object'
+    ? payload.clinicSchedule
+    : {};
+  signatures.push([
+    'context',
+    String(payload.loginUrl || '').trim(),
+    String(payload.careListUrl || '').trim(),
+    String(payload.targetDepartment || '').trim().toLowerCase(),
+    String(schedule.nurseName || '').trim(),
+    String(payload.careContent || '').trim(),
+    'per-patient-dien-bien:v1',
+    payload.needsVitals ? 'vitals:1' : 'vitals:0',
+  ].join('|'));
+  return {
+    patientIds: signatures.sort(),
+    selectedDates: payload.careDate ? [payload.careDate] : [],
+  };
+}
+
+function sanitizeClinicCareRequest(body = {}, { requireRows = false } = {}) {
+  const username         = String(body.username || '').trim();
+  const password         = String(body.password || '');
+  const loginUrl         = String(body.loginUrl || '').trim();
+  const careListUrl      = String(body.careListUrl || body.care_list_url || '').trim();
+  const headless         = body.headless !== false;
+  const careDate         = normalizeClinicCareDate(body.careDate || body.care_date || '');
+  const targetDepartment = 'Khoa Khám Bệnh';
+  const clinicSchedule   = sanitizeClinicSchedule(body.clinicSchedule || body.clinic_schedule || {});
+  const careContent      = String(body.careContent || '').trim().slice(0, 1000)
+    || 'Hoàn tất hồ sơ nhập viện + Kính chuyển Khoa Ngoại Chấn Thương Chỉnh Hình và Thần Kinh + Hồ sơ';
+  const dienBien         = String(body.dienBien || '').trim().slice(0, 1500)
+    || 'Phòng khám Chấn thương chỉnh hình - Thần kinh nhận\nNgười bệnh tỉnh\nTiếp xúc tốt\nDa niêm hồng\nMạch rõ, chi ấm\nĐau vùng tổn thương\nVận động hạn chế\nTiền sử dị ứng thuốc chưa ghi nhận';
+  const needsVitals      = Boolean(body.needsVitals);
+  const precheckToken    = String(body.precheck_token || body.precheckToken || '').trim();
+
+  const rawRows = Array.isArray(body.rows) ? body.rows : [];
+  const rows = rawRows
+    .filter(r => r && typeof r === 'object' && String(r.ma_bn || '').replace(/\D+/g, '').trim())
+    .slice(0, 120)
+    .map(r => ({
+      ma_bn:               String(r.ma_bn || '').replace(/\D+/g, '').trim(),
+      ho_ten:              String(r.ho_ten || '').trim().slice(0, 160),
+      tg_vao:              String(r.tg_vao || r.thoi_gian_vao_khoa || '').trim().slice(0, 60),
+      thoi_gian_vao_khoa:  String(r.thoi_gian_vao_khoa || r.tg_vao || '').trim().slice(0, 60),
+      care_time_str:       String(r.care_time_str || '').trim().slice(0, 40),
+      care_hour:           Number.isFinite(Number(r.care_hour)) ? Number(r.care_hour) : null,
+      ngay_lam:            normalizeClinicCareDate(r.ngay_lam || '') || String(r.ngay_lam || '').trim().slice(0, 20),
+      khoa_chuyen_den:     String(r.khoa_chuyen_den || '').trim().slice(0, 200),
+      trang_thai:          String(r.trang_thai || '').trim().slice(0, 80),
+      has_nursing_link:    Boolean(r.has_nursing_link || r.nursing_url),
+      noitruid:            String(r.noitruid || '').trim().slice(0, 120),
+      dieu_duong:          String(r.dieu_duong || '').trim().slice(0, 120),
+      dien_bien:           String(r.dien_bien || r.dienBien || '').trim().slice(0, 1500),
+      saved_for_input:     r.saved_for_input === true || r.savedForInput === true,
+      source:              'inpatient_list_clinic_care',
+    }));
+
+  // Chăm sóc phòng khám dùng cùng cấu hình EMR với luồng bệnh phòng.
+  // Các giá trị dưới đây chỉ là override tùy chọn; worker sẽ tự merge
+  // url_login/username/password/url_inpatient_list từ config/config.json.
+  if (!careDate) throw new Error('Ngày T/G vào không hợp lệ.');
+  if (!targetDepartment) throw new Error('Thiếu Khoa chuyển đến cần lọc.');
+  if (requireRows && !rows.length) throw new Error('Chưa có người bệnh phù hợp đã được xem trước.');
+  if (requireRows && rows.some(r => !r.saved_for_input)) {
+    throw new Error('Còn người bệnh chưa được lưu diễn biến để nhập.');
+  }
+  if (requireRows && rows.some(r => !r.dien_bien)) {
+    throw new Error('Diễn biến của từng người bệnh không được để trống.');
+  }
+
+  return {
+    username, password, loginUrl, careListUrl, headless,
+    careDate, targetDepartment, clinicSchedule,
+    careContent, dienBien, needsVitals, rows, precheckToken,
+  };
+}
+
+router.post('/clinic/care-preview', async (req, res) => {
+  const ctx = getRuntimePaths(req);
+  let reqPath = '';
+  let outPath = '';
+  try {
+    const payload = sanitizeClinicCareRequest(req.body || {});
+    const stamp = `${Date.now()}_clinic_care_preview`;
+    reqPath = path.join(ctx.dir, `clinic_care_request_${stamp}.json`);
+    outPath = path.join(ctx.dir, `clinic_care_preview_${stamp}.json`);
+    writeJsonAtomic(reqPath, payload);
+
+    appendActivity(ctx, {
+      kind: 'workflow.clinic.care_preview.start',
+      care_date: payload.careDate,
+      target_department: payload.targetDepartment,
+      username: payload.username ? '[set]' : '',
+    });
+
+    const result = await enqueueHeavy(ctx.sid, async () => {
+      try {
+        return await runScript('clinic_input_care.py', ['preview', reqPath, outPath], {
+          runtimeDir: ctx.dir,
+          onSpawn: killFn => registerCancel(ctx.sid, killFn),
+        });
+      } finally {
+        unregisterCancel(ctx.sid);
+      }
+    });
+    safeUnlink(reqPath);
+
+    const data = readJsonSafe(outPath, null);
+    safeUnlink(outPath);
+    if (result.spawnError) return res.status(500).json({ status: 'error', message: `Không khởi động được Python: ${result.spawnError}` });
+    if (result.killedByTimeout) return res.status(504).json({ status: 'error', message: 'Timeout khi tìm người bệnh cần nhập chăm sóc.' });
+    if (result.code !== 0 || !data || data.status === 'error') {
+      return res.status(500).json({ status: 'error', message: data?.message || fmtPyError('Python lỗi khi tìm người bệnh cần chăm sóc.', result) });
+    }
+
+    const eligibleRows = (Array.isArray(data.rows) ? data.rows : [])
+      .filter(r => Boolean(r?.has_nursing_link || r?.nursing_url || r?.noitruid) && Boolean(String(r?.dieu_duong || '').trim()));
+    const precheck = eligibleRows.length
+      ? issueInputPrecheckToken(
+          ctx,
+          'clinic_input_care',
+          clinicCarePrecheckTargets(payload, eligibleRows),
+          { checked_count: eligibleRows.length },
+        )
+      : {};
+
+    appendActivity(ctx, {
+      kind: 'workflow.clinic.care_preview.success',
+      care_date: payload.careDate,
+      target_department: payload.targetDepartment,
+      rows: Array.isArray(data.rows) ? data.rows.length : 0,
+      eligible_rows: eligibleRows.length,
+    });
+    return res.json({ ...data, ...precheck });
+  } catch (err) {
+    safeUnlink(reqPath);
+    safeUnlink(outPath);
+    try { appendActivity(ctx, { kind: 'workflow.clinic.care_preview.error', message: String(err.message || err) }); } catch (_) {}
+    return res.status(500).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+function sanitizeClinicCareOrderSeedsRequest(body = {}) {
+  const payload = sanitizeClinicCareRequest(body || {});
+  const rows = (Array.isArray(body.rows) ? body.rows : [])
+    .filter(row => row && typeof row === 'object')
+    .slice(0, 120)
+    .map(row => ({
+      ma_bn: String(row.ma_bn || '').replace(/\D+/g, '').trim(),
+      ho_ten: String(row.ho_ten || '').trim().slice(0, 160),
+      tg_vao: String(row.tg_vao || row.thoi_gian_vao_khoa || '').trim().slice(0, 60),
+      care_time_str: String(row.care_time_str || row.tg_vao || '').trim().slice(0, 40),
+      noitruid: String(row.noitruid || '').trim().slice(0, 120),
+      khoa_chuyen_den: String(row.khoa_chuyen_den || payload.targetDepartment || '').trim().slice(0, 200),
+      client_key: String(row.client_key || '').trim().slice(0, 240),
+    }))
+    .filter(row => row.ma_bn);
+  if (!rows.length) throw new Error('Không có người bệnh để lấy y lệnh đầu tiên.');
+  return { ...payload, rows };
+}
+
+router.post('/clinic/care-order-seeds', async (req, res) => {
+  const ctx = getRuntimePaths(req);
+  let reqPath = '';
+  let outPath = '';
+  try {
+    const payload = sanitizeClinicCareOrderSeedsRequest(req.body || {});
+    const stamp = `${Date.now()}_clinic_care_order_seeds`;
+    reqPath = path.join(ctx.dir, `clinic_care_order_seeds_${stamp}.json`);
+    outPath = path.join(ctx.dir, `clinic_care_order_seeds_${stamp}.out.json`);
+    writeJsonAtomic(reqPath, payload);
+
+    appendActivity(ctx, {
+      kind: 'workflow.clinic.care_order_seeds.start',
+      care_date: payload.careDate,
+      target_department: payload.targetDepartment,
+      rows: payload.rows.length,
+    });
+
+    const result = await enqueueHeavy(ctx.sid, async () => {
+      try {
+        return await runScript('clinic_input_care.py', ['order-seeds', reqPath, outPath], {
+          runtimeDir: ctx.dir,
+          onSpawn: killFn => registerCancel(ctx.sid, killFn),
+        });
+      } finally {
+        unregisterCancel(ctx.sid);
+      }
+    });
+    safeUnlink(reqPath);
+
+    const data = readJsonSafe(outPath, null);
+    safeUnlink(outPath);
+    if (result.spawnError) return res.status(500).json({ status: 'error', message: `Không khởi động được Python: ${result.spawnError}` });
+    if (result.killedByTimeout) return res.status(504).json({ status: 'error', message: 'Timeout khi lấy y lệnh đầu tiên cho danh sách.' });
+    if (!data) return res.status(500).json({ status: 'error', message: fmtPyError('Python không trả kết quả lấy y lệnh đầu tiên.', result) });
+
+    appendActivity(ctx, {
+      kind: 'workflow.clinic.care_order_seeds.finish',
+      status: data.status || 'ok',
+      succeeded: Number(data.succeeded || 0),
+      failed: Number(data.failed || 0),
+    });
+    return res.json(data);
+  } catch (err) {
+    safeUnlink(reqPath);
+    safeUnlink(outPath);
+    try { appendActivity(ctx, { kind: 'workflow.clinic.care_order_seeds.error', message: String(err.message || err) }); } catch (_) {}
+    return res.status(500).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+router.post('/clinic/input-care', async (req, res) => {
+  const ctx = getRuntimePaths(req);
+  let reqPath = '';
+  const resultPath = path.join(ctx.dir, 'clinic_input_care_result.json');
+  try {
+    const payload = sanitizeClinicCareRequest(req.body || {}, { requireRows: true });
+    const tokenCheck = validateAndConsumeInputPrecheckToken(
+      ctx,
+      'clinic_input_care',
+      { ...clinicCarePrecheckTargets(payload, payload.rows), precheck_token: payload.precheckToken },
+    );
+    if (!tokenCheck.ok) {
+      appendActivity(ctx, {
+        kind: 'workflow.clinic.input_care.needs_precheck',
+        rows: payload.rows.length,
+        care_date: payload.careDate,
+        message: tokenCheck.message,
+      });
+      return res.status(tokenCheck.status || 428).json({ status: 'needs_precheck', message: tokenCheck.message });
+    }
+
+    const stamp = `${Date.now()}_clinic_care_input`;
+    reqPath = path.join(ctx.dir, `clinic_care_request_${stamp}.json`);
+    const workerPayload = { ...payload };
+    delete workerPayload.precheckToken;
+    writeJsonAtomic(reqPath, workerPayload);
+    safeUnlink(resultPath);
+
+    appendActivity(ctx, {
+      kind: 'workflow.clinic.input_care.start',
+      rows: payload.rows.length,
+      care_date: payload.careDate,
+      target_department: payload.targetDepartment,
+      username: payload.username ? '[set]' : '',
+      needsVitals: payload.needsVitals,
+    });
+
+    const result = await enqueueHeavy(ctx.sid, async () => {
+      try {
+        return await runScript('clinic_input_care.py', ['input', reqPath, resultPath], {
+          runtimeDir: ctx.dir,
+          onSpawn: killFn => registerCancel(ctx.sid, killFn),
+        });
+      } finally {
+        unregisterCancel(ctx.sid);
+      }
+    });
+    safeUnlink(reqPath);
+
+    const pyResult = readJsonSafe(resultPath, null);
+    safeUnlink(resultPath);
+    if (result.spawnError) return res.status(500).json({ status: 'error', message: `Không khởi động được Python: ${result.spawnError}` });
+    if (result.killedByTimeout) return res.status(504).json({ status: 'error', message: 'Timeout khi nhập chăm sóc phòng khám.' });
+    if (result.code !== 0 && result.code !== 2 && !pyResult) {
+      return res.status(500).json({ status: 'error', message: fmtPyError('Python lỗi khi nhập chăm sóc phòng khám.', result) });
+    }
+    if (!pyResult) return res.status(500).json({ status: 'error', message: 'Worker không tạo được file kết quả nhập chăm sóc.' });
+
+    const failed = pyResult?.failed && typeof pyResult.failed === 'object' ? Object.keys(pyResult.failed).length : 0;
+    const succeeded = Array.isArray(pyResult?.succeeded) ? pyResult.succeeded.length : 0;
+    const skipped = Number(pyResult?.summary?.skipped_count || 0);
+    const status = failed ? (succeeded ? 'partial' : 'error') : 'ok';
+    const message = status === 'ok'
+      ? `Đã nhập chăm sóc: ${succeeded} người bệnh.${skipped ? ` Bỏ qua an toàn: ${skipped}.` : ''}`
+      : `Nhập chăm sóc: ${succeeded} thành công, ${failed} lỗi.${skipped ? ` Bỏ qua an toàn: ${skipped}.` : ''}`;
+
+    appendActivity(ctx, { kind: 'workflow.clinic.input_care.finish', status, succeeded, failed, skipped });
+    return res.status(status === 'error' ? 500 : 200).json({ status, message, result: pyResult, succeeded, failed, skipped });
+  } catch (err) {
+    safeUnlink(reqPath);
+    safeUnlink(resultPath);
+    try { appendActivity(ctx, { kind: 'workflow.clinic.input_care.error', message: String(err.message || err) }); } catch (_) {}
+    return res.status(500).json({ status: 'error', message: String(err.message || err) });
+  }
 });
 
 module.exports = router;

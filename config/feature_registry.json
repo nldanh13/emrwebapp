@@ -982,6 +982,51 @@
       ]
     },
     {
+      "id": "clinic-care.input",
+      "label": "Nhập chăm sóc phòng khám",
+      "icon": "＋",
+      "group": "Phòng khám & nghiên cứu",
+      "description": "TH3 Nhập viện: nhập chăm sóc cho người bệnh từ Khoa Khám Bệnh theo T/G vào và lịch Phòng khám.",
+      "entryTab": "clinic",
+      "requires": [
+        "clinic.patients",
+        "nurse.schedule"
+      ],
+      "provides": [
+        "clinic-care.result"
+      ],
+      "actions": [
+        "preview",
+        "execute",
+        "verify",
+        "audit"
+      ],
+      "enabled": true,
+      "protected": false,
+      "failurePolicy": "continue",
+      "executor": {
+        "type": "http",
+        "method": "POST",
+        "path": "/clinic/input-care",
+        "inputKey": "clinicCareTargets",
+        "payloadRequired": true
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/clinic/care-preview",
+          "action": "preview",
+          "gate": true
+        },
+        {
+          "method": "POST",
+          "path": "/clinic/input-care",
+          "action": "execute",
+          "gate": true
+        }
+      ]
+    },
+    {
       "id": "duty-report.print",
       "label": "In báo cáo ca trực",
       "icon": "▤",
