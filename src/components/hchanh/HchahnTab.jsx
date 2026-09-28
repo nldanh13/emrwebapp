@@ -6,7 +6,7 @@ import HistoryNote from '../patient/HistoryNote.jsx';
 import { formatDmy } from '../DateField.jsx';
 import { C, FS } from '../../tokens.js';
 import {
-  IconAlertTriangle, IconCheck, IconChevronDown, IconCircleDashed, IconCloudDownload, IconMinus,
+  IconAlertTriangle, IconCheck, IconChevronDown, IconChevronLeft, IconChevronRight, IconCircleDashed, IconCloudDownload, IconMinus,
   IconRefresh, IconSearch, IconTool, IconX,
 } from '@tabler/icons-react';
 import { Btn, Spinner } from '../shared.jsx';
@@ -18,6 +18,7 @@ import HchanhVtytBatchPanel from './HchanhVtytBatchPanel.jsx';
 import { formatPersonName } from '../../utils/personName.js';
 import { getHchanhIssueTarget } from '../../engine/hchanhIssueNavigation.js';
 import { getManualReviewView } from '../../engine/hchanhManualReviewView.js';
+import { getHchanhPatientNavigation } from '../../engine/hchanhPatientNavigation.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -792,7 +793,7 @@ function ResourceListPanel({ type = 'vtyt', onClose }) {
 
 // ── Detail panel ──────────────────────────────────────────────────────────────
 
-function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischargeFull, onOpenBedEdit, onPrintBilling, onCreateTicket, onRescan, onSaveManualReview, fetchingKey, bedEditKey, printBillingKey, ticketKey, manualReviewKey }) {
+function DetailPanel({ isMobile = false, card, navigation, onNavigate, onClose, onFetch, onFetchDischargeFull, onOpenBedEdit, onPrintBilling, onCreateTicket, onRescan, onSaveManualReview, fetchingKey, bedEditKey, printBillingKey, ticketKey, manualReviewKey }) {
   const [tab, setTab] = useState('fetch');
   const [tabTouched, setTabTouched] = useState(false);
   const [showMoreActions, setShowMoreActions] = useState(false);
@@ -884,7 +885,22 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
             <Chip tone={SCOPE_TONE[scope]||'gray'}>{scopeFilterLabel(scope)}</Chip>
           </div>
         </div>
-        <button type="button" className="emr-icon-btn" onClick={onClose} aria-label="Đóng chi tiết"><IconX size={18} stroke={1.75} /></button>
+        <div style={{ display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
+          <button type="button" className="emr-icon-btn" disabled={!navigation?.previous}
+            onClick={() => navigation?.previous && onNavigate?.(navigation.previous)}
+            title="Hồ sơ trước trong danh sách đang lọc" aria-label="Mở hồ sơ trước">
+            <IconChevronLeft size={18} stroke={1.9} />
+          </button>
+          <span title="Vị trí trong danh sách đang lọc" style={{ minWidth:42, textAlign:'center', color:C.text2, fontSize:FS.xs, fontVariantNumeric:'tabular-nums' }}>
+            {navigation?.position || '—'}/{navigation?.total || 0}
+          </span>
+          <button type="button" className="emr-icon-btn" disabled={!navigation?.next}
+            onClick={() => navigation?.next && onNavigate?.(navigation.next)}
+            title="Hồ sơ tiếp theo trong danh sách đang lọc" aria-label="Mở hồ sơ tiếp theo">
+            <IconChevronRight size={18} stroke={1.9} />
+          </button>
+          <button type="button" className="emr-icon-btn" onClick={onClose} aria-label="Đóng chi tiết"><IconX size={18} stroke={1.75} /></button>
+        </div>
       </div>
 
       {/* Actions */}
@@ -1699,6 +1715,7 @@ export default function HchahnTab({ toast, workDateRange, view = 'check' }) {
   }
 
   const vtytCount = vtytBatchDraft?.patients?.length || 0;
+  const patientNavigation = getHchanhPatientNavigation(filteredCards, selectedCard);
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', overflow:'hidden', background:C.bg }}>
@@ -1865,6 +1882,8 @@ export default function HchahnTab({ toast, workDateRange, view = 'check' }) {
             <DetailPanel
               isMobile={isMobile}
               card={selectedCard}
+              navigation={patientNavigation}
+              onNavigate={setSelectedCard}
               onClose={() => setSelectedCard(null)}
               onFetch={fetchPatient}
               onFetchDischargeFull={fetchDischargeFull}
