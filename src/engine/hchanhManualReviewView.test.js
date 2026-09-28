@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getManualReviewView, matchesManualReviewFilter } from './hchanhManualReviewView.js';
+import { getManualReviewView, matchesManualReviewFilter, summarizeManualReviews } from './hchanhManualReviewView.js';
 
 describe('manual-review list view', () => {
   it('does not apply to a non-discharge patient', () => {
@@ -32,5 +32,16 @@ describe('manual-review list view', () => {
     const card = { scope:'discharge', manual_review:{ rows:Array(7).fill({}), remaining_count:0, issue_count:0 } };
     expect(getManualReviewView(card)).toMatchObject({ state:'complete', reviewed:7, label:'Đã kiểm 7/7' });
     expect(matchesManualReviewFilter(card, 'complete')).toBe(true);
+  });
+
+  it('summarizes discharge checklists without counting other scopes', () => {
+    const rows = Array(7).fill({});
+    const summary = summarizeManualReviews([
+      { scope:'discharge', manual_review:{ rows, remaining_count:3 } },
+      { scope:'discharge', manual_review:{ rows, remaining_count:2, issue_count:1 } },
+      { scope:'discharge', manual_review:{ rows, remaining_count:0, issue_count:0 } },
+      { scope:'daily' },
+    ]);
+    expect(summary).toEqual({ total:3, pending:2, issue:1, complete:1 });
   });
 });
