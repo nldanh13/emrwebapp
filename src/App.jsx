@@ -251,6 +251,7 @@ export default function App() {
           {tab === 'bed'          && <ShiftTab toast={toast} mode="bed" {...sharedDateProps} />}
           {tab === 'ward'         && <ShiftTab toast={toast} mode="ward" workflowTitle="Điều dưỡng bệnh phòng" workflowHint="Nhập chăm sóc, dịch truyền và thủ thuật cho mọi người bệnh trong ngày đã chọn, gồm cả ca trực (mới vào khoa, chuyển khoa, về từ GMHS)." {...sharedDateProps} />}
           {tab === 'hchanh'       && <HchahnTab toast={toast} workDateRange={workDateRange} />}
+          {tab === 'hchanh-vtyt'  && <HchahnTab toast={toast} workDateRange={workDateRange} view="vtyt" />}
           {tab === 'discharge-sign' && <DischargeSignTab toast={toast} />}
           {tab === 'records-check' && <RecordsCheckTab toast={toast} workDateRange={workDateRange} />}
           {tab === 'sick-leave'    && <SickLeaveTab toast={toast} workDateRange={workDateRange} />}
