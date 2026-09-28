@@ -22,7 +22,11 @@ const fs = require('fs');
 const path = require('path');
 const { RUNTIME_ROOT } = require('../constants');
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
+// Tái khám đúng hẹn: lệch tối đa ±3 ngày so với ngày hẹn. Tái nhập viện: trong 30 ngày sau ra viện.
+const HEN_LECH_TOI_DA = 3;
+const TAI_NHAP_VIEN_NGAY = 30;
+const KHAM_NHAP_VIEN_NGAY = 2;
 const TIER_GOC = 'goc';
 const TIER_TAM_THOI = 'tam_thoi';
 const LOAI_KHAM = 'kham';
@@ -132,6 +136,26 @@ CREATE TABLE IF NOT EXISTS thao_tac (
   hash TEXT UNIQUE
 );
 CREATE INDEX IF NOT EXISTS thao_tac_luot ON thao_tac(luot_id);
+
+-- Nối 2 lượt của cùng người bệnh (tính lại từ bảng luot, không nhập tay):
+--   tai_kham_dung_hen / tai_kham_tre_hen — lượt sau ứng với ngày hẹn của lượt trước
+--   tai_nhap_vien_30  — nhập viện lại trong 30 ngày sau ra viện
+--   kham_nhap_vien    — lượt khám có xử trí Nhập viện → đợt nội trú bắt đầu trong 2 ngày
+CREATE TABLE IF NOT EXISTS lien_ket_luot (
+  id INTEGER PRIMARY KEY,
+  ma_bn TEXT NOT NULL,
+  luot_truoc INTEGER NOT NULL,
+  luot_sau INTEGER NOT NULL,
+  loai TEXT NOT NULL,
+  so_ngay INTEGER,                 -- từ ngày kết thúc lượt trước đến ngày bắt đầu lượt sau
+  ngay_hen TEXT,
+  lech_hen INTEGER                 -- ngày quay lại − ngày hẹn (âm = sớm, dương = trễ)
+);
+CREATE INDEX IF NOT EXISTS lien_ket_bn ON lien_ket_luot(ma_bn);
+CREATE INDEX IF NOT EXISTS lien_ket_truoc ON lien_ket_luot(luot_truoc, loai);
+CREATE INDEX IF NOT EXISTS lien_ket_sau ON lien_ket_luot(luot_sau);
+CREATE INDEX IF NOT EXISTS luot_hen ON luot(hen_tai_kham);
+CREATE INDEX IF NOT EXISTS luot_ra ON luot(loai, gio_ra);
 `;
 
 function open() {
@@ -143,8 +167,12 @@ function open() {
   db = new sqlite.DatabaseSync(wanted);
   dbPath = wanted;
   db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+  const hadMeta = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();
+  const previous = hadMeta ? Number(db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get()?.value) || 0 : SCHEMA_VERSION;
   db.exec(SCHEMA);
   db.prepare('INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)').run('schema_version', String(SCHEMA_VERSION));
+  // Kho tạo từ bản trước chưa có bảng nối lượt: tính cho toàn bộ người bệnh 1 lần.
+  if (previous < 2) rebuildAllLinks(db);
   return db;
 }
 
@@ -394,6 +422,77 @@ function rebuildLuot(conn, luotId, now) {
   }
 }
 
+// ── Nối lượt: tái khám, tái nhập viện, khám → nhập viện ─────────────────────
+
+function daysBetween(fromDay, toDay) {
+  const a = Date.parse(`${fromDay}T00:00:00Z`);
+  const b = Date.parse(`${toDay}T00:00:00Z`);
+  return Number.isFinite(a) && Number.isFinite(b) ? Math.round((b - a) / 86400000) : null;
+}
+
+function todayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Tính lại mọi mối nối giữa các lượt của 1 người bệnh (gọi sau mỗi lần lượt thay đổi). */
+function rebuildLinks(conn, maBn) {
+  const code = txt(maBn);
+  const visits = conn.prepare('SELECT id, loai, gio_vao, gio_ra, xu_tri, hen_tai_kham FROM luot WHERE ma_bn = ? ORDER BY gio_vao, id').all(code)
+    .map(v => ({ ...v, start: dayOf(v.gio_vao), end: dayOf(v.gio_ra) || dayOf(v.gio_vao) }))
+    .filter(v => v.start);
+  conn.prepare('DELETE FROM lien_ket_luot WHERE ma_bn = ?').run(code);
+  const ins = conn.prepare('INSERT INTO lien_ket_luot (ma_bn, luot_truoc, luot_sau, loai, so_ngay, ngay_hen, lech_hen) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  for (const a of visits) {
+    const later = visits.filter(v => v.id !== a.id && v.start > a.end);
+
+    // Tái khám: lượt sau gần ngày hẹn nhất trong ±3 ngày; không có thì lượt đầu tiên sau hạn (trễ hẹn).
+    const hen = dayOf(a.hen_tai_kham);
+    if (hen) {
+      const inWindow = later
+        .map(v => ({ v, lech: daysBetween(hen, v.start) }))
+        .filter(x => x.lech !== null && Math.abs(x.lech) <= HEN_LECH_TOI_DA)
+        .sort((x, y) => Math.abs(x.lech) - Math.abs(y.lech)
+          // Cùng ngày: lượt khám mới là lượt tái khám, không phải đợt nội trú.
+          || (x.v.loai === LOAI_KHAM ? 0 : 1) - (y.v.loai === LOAI_KHAM ? 0 : 1)
+          || x.v.start.localeCompare(y.v.start))[0];
+      const late = inWindow ? null : later
+        .filter(v => (daysBetween(hen, v.start) ?? 0) > HEN_LECH_TOI_DA)
+        .sort((x, y) => x.start.localeCompare(y.start) || (x.loai === LOAI_KHAM ? 0 : 1) - (y.loai === LOAI_KHAM ? 0 : 1))[0];
+      const hit = inWindow ? inWindow.v : late;
+      if (hit) {
+        ins.run(code, a.id, hit.id, inWindow ? 'tai_kham_dung_hen' : 'tai_kham_tre_hen', daysBetween(a.end, hit.start), hen, daysBetween(hen, hit.start));
+      }
+    }
+
+    // Tái nhập viện trong 30 ngày sau ra viện.
+    if (a.loai === LOAI_NOI_TRU && dayOf(a.gio_ra)) {
+      const next = later.find(v => v.loai === LOAI_NOI_TRU);
+      const gap = next ? daysBetween(a.end, next.start) : null;
+      if (next && gap !== null && gap <= TAI_NHAP_VIEN_NGAY) ins.run(code, a.id, next.id, 'tai_nhap_vien_30', gap, null, null);
+    }
+
+    // Khám có xử trí Nhập viện → đợt nội trú bắt đầu trong 2 ngày.
+    if (a.loai === LOAI_KHAM && stripMarks(a.xu_tri).includes('nhap vien')) {
+      const stay = visits.find(v => v.loai === LOAI_NOI_TRU && (daysBetween(a.start, v.start) ?? -1) >= 0 && daysBetween(a.start, v.start) <= KHAM_NHAP_VIEN_NGAY);
+      if (stay) ins.run(code, a.id, stay.id, 'kham_nhap_vien', daysBetween(a.start, stay.start), null, null);
+    }
+  }
+}
+
+function rebuildAllLinks(conn) {
+  const codes = conn.prepare('SELECT DISTINCT ma_bn FROM luot').all().map(r => r.ma_bn);
+  if (!codes.length) return;
+  conn.exec('BEGIN IMMEDIATE');
+  try {
+    for (const code of codes) rebuildLinks(conn, code);
+    conn.exec('COMMIT');
+  } catch (err) {
+    try { conn.exec('ROLLBACK'); } catch (_) {}
+    throw err;
+  }
+}
+
 // ── Ghi từ các module ─────────────────────────────────────────────────────────
 
 const INPATIENT_FILES = ['profile', 'discharge', 'surgery', 'order_history', 'bed_days', 'billing', 'cls'];
@@ -426,6 +525,7 @@ function recordInpatient(maBn, files, { from = '', to = '', source = 'hanh_chanh
       if (insertScan(conn, { maBn: code, luotId: luot.id, loai: key, nguon: source, muc, now, data: files[key] })) added += 1;
     }
     rebuildLuot(conn, luot.id, now);
+    rebuildLinks(conn, code);
     return { saved: true, luot_id: luot.id, new_scans: added };
   });
 }
@@ -454,7 +554,10 @@ function recordClinicVisit(row, { now = new Date().toISOString(), day = '' } = {
       const { at, status, ...content } = det;
       if (insertScan(conn, { maBn: code, luotId: luot.id, loai: 'kham_chi_tiet', nguon: 'phong_kham', muc: detMuc, now, data: content })) added += 1;
     }
-    if (added) rebuildLuot(conn, luot.id, now);
+    if (added) {
+      rebuildLuot(conn, luot.id, now);
+      rebuildLinks(conn, code);
+    }
     return { saved: true, luot_id: luot.id, new_scans: added };
   });
 }
@@ -490,6 +593,7 @@ function summary() {
     luot_noi_tru: one(`SELECT COUNT(*) n FROM luot WHERE loai = '${LOAI_NOI_TRU}'`),
     lan_quet: one('SELECT COUNT(*) n FROM lan_quet'),
     thao_tac: one('SELECT COUNT(*) n FROM thao_tac'),
+    lien_ket: one('SELECT COUNT(*) n FROM lien_ket_luot'),
   };
 }
 
@@ -500,6 +604,90 @@ function luotDetail(conn, l) {
     dich_vu: conn.prepare('SELECT nhom, ma, ten, thoi_gian, so_da_xong, so_chi_dinh, trang_thai FROM dich_vu WHERE luot_id = ? ORDER BY id').all(l.id),
     thao_tac: conn.prepare('SELECT loai, ket_qua, thong_diep, luc FROM thao_tac WHERE luot_id = ? ORDER BY luc').all(l.id),
     nguon_du_lieu: conn.prepare('SELECT loai, nguon, muc, MAX(lay_luc) lay_luc, COUNT(*) so_ban FROM lan_quet WHERE luot_id = ? GROUP BY loai, nguon, muc ORDER BY loai').all(l.id),
+    lien_ket: conn.prepare(`SELECT loai, luot_truoc, luot_sau, so_ngay, ngay_hen, lech_hen FROM lien_ket_luot
+      WHERE luot_truoc = ? OR luot_sau = ? ORDER BY id`).all(l.id, l.id).map(r => ({ ...r })),
+    trang_thai_hen: appointmentStatus(conn, l, todayIso()),
+  };
+}
+
+// Trạng thái hẹn tái khám của 1 lượt: dung_hen | tre_hen | qua_hen (chưa thấy quay lại) | chua_den_hen.
+function appointmentStatus(conn, l, homNay) {
+  const hen = dayOf(l.hen_tai_kham);
+  if (!hen) return null;
+  const link = conn.prepare(`SELECT * FROM lien_ket_luot WHERE luot_truoc = ? AND loai IN ('tai_kham_dung_hen', 'tai_kham_tre_hen')`).get(l.id);
+  if (link) return { trang_thai: link.loai === 'tai_kham_dung_hen' ? 'dung_hen' : 'tre_hen', ngay_hen: hen, lech_hen: link.lech_hen, luot_sau: link.luot_sau };
+  const qua = (daysBetween(hen, homNay) ?? 0) > HEN_LECH_TOI_DA;
+  return { trang_thai: qua ? 'qua_hen' : 'chua_den_hen', ngay_hen: hen, lech_hen: null, luot_sau: null };
+}
+
+/**
+ * Báo cáo tái khám: mọi lượt có ngày hẹn trong [tu, den].
+ * Tỉ lệ đúng hẹn tính trên các hẹn đã quá hạn theo dõi (bỏ các hẹn chưa tới / đang trong ±3 ngày).
+ */
+function appointmentReport({ tu = '', den = '', homNay = todayIso(), loai = '' } = {}) {
+  const conn = open();
+  const where = ["l.hen_tai_kham IS NOT NULL", "l.hen_tai_kham <> ''"];
+  const args = [];
+  if (tu) { where.push('substr(l.hen_tai_kham, 1, 10) >= ?'); args.push(dayOf(tu)); }
+  if (den) { where.push('substr(l.hen_tai_kham, 1, 10) <= ?'); args.push(dayOf(den)); }
+  const visits = conn.prepare(`SELECT l.*, b.ho_ten, b.nam_sinh FROM luot l LEFT JOIN benh_nhan b ON b.ma_bn = l.ma_bn
+    WHERE ${where.join(' AND ')} ORDER BY l.hen_tai_kham, l.id`).all(...args);
+  const sau = conn.prepare('SELECT id, loai, gio_vao, khoa, chan_doan_chinh FROM luot WHERE id = ?');
+  const rows = [];
+  const dem = { tong: 0, dung_hen: 0, tre_hen: 0, qua_hen: 0, chua_den_hen: 0 };
+  for (const v of visits) {
+    const st = appointmentStatus(conn, v, homNay);
+    if (!st || (loai && st.trang_thai !== loai)) continue;
+    dem.tong += 1;
+    dem[st.trang_thai] += 1;
+    const next = st.luot_sau ? sau.get(st.luot_sau) : null;
+    rows.push({
+      ma_bn: v.ma_bn, ho_ten: v.ho_ten, nam_sinh: v.nam_sinh,
+      luot_id: v.id, loai_luot: v.loai, khoa: v.khoa, gio_vao: v.gio_vao, gio_ra: v.gio_ra, chan_doan_chinh: v.chan_doan_chinh,
+      ...st, luot_sau: next ? { ...next } : null,
+    });
+  }
+  const daTheoDoi = dem.dung_hen + dem.tre_hen + dem.qua_hen;
+  return {
+    hom_nay: homNay,
+    tong_ket: { ...dem, da_theo_doi: daTheoDoi, ti_le_dung_hen: daTheoDoi ? Math.round((dem.dung_hen / daTheoDoi) * 1000) / 10 : null },
+    rows,
+  };
+}
+
+/**
+ * Báo cáo tái nhập viện trong 30 ngày: các đợt nội trú ra viện trong [tu, den].
+ * Đợt ra viện chưa đủ 30 ngày mà chưa thấy tái nhập được đếm riêng (chưa đủ thời gian theo dõi).
+ */
+function readmissionReport({ tu = '', den = '', homNay = todayIso() } = {}) {
+  const conn = open();
+  const where = [`l.loai = '${LOAI_NOI_TRU}'`, "l.gio_ra IS NOT NULL", "l.gio_ra <> ''"];
+  const args = [];
+  if (tu) { where.push('substr(l.gio_ra, 1, 10) >= ?'); args.push(dayOf(tu)); }
+  if (den) { where.push('substr(l.gio_ra, 1, 10) <= ?'); args.push(dayOf(den)); }
+  const stays = conn.prepare(`SELECT l.*, b.ho_ten, b.nam_sinh FROM luot l LEFT JOIN benh_nhan b ON b.ma_bn = l.ma_bn
+    WHERE ${where.join(' AND ')} ORDER BY l.gio_ra, l.id`).all(...args);
+  const linkOf = conn.prepare(`SELECT k.so_ngay, s.id, s.gio_vao, s.khoa, s.chan_doan_chinh FROM lien_ket_luot k JOIN luot s ON s.id = k.luot_sau
+    WHERE k.luot_truoc = ? AND k.loai = 'tai_nhap_vien_30'`);
+  const dem = { ra_vien: 0, tai_nhap_vien: 0, khong_tai_nhap: 0, chua_du_30_ngay: 0 };
+  const rows = stays.map(v => {
+    const link = linkOf.get(v.id);
+    let trang_thai = 'khong_tai_nhap';
+    if (link) trang_thai = 'tai_nhap_vien';
+    else if ((daysBetween(dayOf(v.gio_ra), homNay) ?? 0) < TAI_NHAP_VIEN_NGAY) trang_thai = 'chua_du_30_ngay';
+    dem.ra_vien += 1;
+    dem[trang_thai] += 1;
+    return {
+      ma_bn: v.ma_bn, ho_ten: v.ho_ten, nam_sinh: v.nam_sinh, luot_id: v.id, khoa: v.khoa, gio_vao: v.gio_vao, gio_ra: v.gio_ra,
+      chan_doan_chinh: v.chan_doan_chinh, trang_thai,
+      tai_nhap: link ? { luot_id: link.id, gio_vao: link.gio_vao, khoa: link.khoa, chan_doan_chinh: link.chan_doan_chinh, so_ngay: link.so_ngay } : null,
+    };
+  });
+  const daTheoDoi = dem.tai_nhap_vien + dem.khong_tai_nhap;
+  return {
+    hom_nay: homNay,
+    tong_ket: { ...dem, da_theo_doi: daTheoDoi, ti_le_tai_nhap: daTheoDoi ? Math.round((dem.tai_nhap_vien / daTheoDoi) * 1000) / 10 : null },
+    rows,
   };
 }
 
@@ -550,7 +738,8 @@ function searchPatients(query, limit = 30) {
 module.exports = {
   available, unavailableReason, open, close,
   recordInpatient, recordClinicVisit, recordAction,
-  summary, patientJourney, listVisits, searchPatients,
+  summary, patientJourney, listVisits, searchPatients, appointmentReport, readmissionReport,
+  HEN_LECH_TOI_DA, TAI_NHAP_VIEN_NGAY,
   isoTime, splitIcd, contentHash,
   TIER_GOC, TIER_TAM_THOI, LOAI_KHAM, LOAI_NOI_TRU,
 };

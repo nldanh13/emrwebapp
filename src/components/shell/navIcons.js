@@ -16,6 +16,7 @@ import {
   IconScan,
   IconSignature,
   IconStethoscope,
+  IconTimeline,
   IconUserCog,
   IconCalendarOff,
 } from '@tabler/icons-react';
@@ -31,6 +32,7 @@ const NAV_ICONS = {
   'records-check': IconChecklist,
   'sick-leave': IconCalendarOff,
   clinic: IconStethoscope,
+  'patient-journey': IconTimeline,
   research: IconDatabaseSearch,
   'vtyt-catalog': IconPackage,
   'medication-catalog': IconPill,

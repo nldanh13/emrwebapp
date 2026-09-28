@@ -14,6 +14,7 @@ import AccountSettingsTab from './components/AccountSettingsTab.jsx';
 import EmrStructureScanTab from './components/EmrStructureScanTab.jsx';
 import ClinicTab from './components/ClinicTab.jsx';
 import ResearchTab from './components/ResearchTab.jsx';
+import PatientJourneyTab from './components/PatientJourneyTab.jsx';
 import ReportTab from './components/ReportTab.jsx';
 import FunctionHubTab from './components/FunctionHubTab.jsx';
 import FeatureContextBanner from './components/FeatureContextBanner.jsx';
@@ -242,6 +243,7 @@ export default function App() {
           {tab === 'functions'    && <FunctionHubTab onOpenContext={handleOpenContext} toast={toast} />}
           {tab === 'acquire'      && <DataProcessingTab toast={toast} workDateRange={workDateRange} />}
           {tab === 'research'     && <ResearchTab toast={toast} />}
+          {tab === 'patient-journey' && <PatientJourneyTab toast={toast} />}
           {tab === 'bed'          && <ShiftTab toast={toast} mode="bed" {...sharedDateProps} />}
           {tab === 'ward'         && <ShiftTab toast={toast} mode="ward" workflowTitle="Điều dưỡng bệnh phòng" workflowHint="Nhập chăm sóc, dịch truyền và thủ thuật cho mọi người bệnh trong ngày đã chọn, gồm cả ca trực (mới vào khoa, chuyển khoa, về từ GMHS)." {...sharedDateProps} />}
           {tab === 'hchanh'       && <HchahnTab toast={toast} workDateRange={workDateRange} />}

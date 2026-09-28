@@ -3,6 +3,8 @@
 //   GET  /api/kho/tim?q=                 tìm theo mã BN, họ tên (không dấu), SĐT, số thẻ BHYT
 //   GET  /api/kho/benh-nhan/:maBn        hành trình 1 người bệnh (mọi lượt khám / nằm viện)
 //   GET  /api/kho/luot?tu=&den=&loai=&khoa=&limit=&offset=
+//   GET  /api/kho/tai-kham?tu=&den=&trang_thai=   hẹn tái khám trong khoảng ngày: đúng hẹn (±3 ngày), trễ, quá hẹn, chưa đến
+//   GET  /api/kho/tai-nhap-vien?tu=&den=          ra viện trong khoảng ngày: tái nhập viện trong 30 ngày
 //   POST /api/kho/dong-bo                chép dữ liệu hành chánh đã lấy từ trước vào kho
 // Dữ liệu có định danh: yêu cầu vai trò operator trở lên, mỗi lần xem hồ sơ được ghi nhật ký.
 
@@ -53,6 +55,18 @@ router.get('/kho/luot', requireRole('operator'), guard((req, res) => {
   });
   return res.json({ status: 'ok', ...data });
 }));
+
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const dayParam = v => (DAY_RE.test(String(v || '')) ? String(v) : '');
+
+router.get('/kho/tai-kham', requireRole('operator'), guard((req, res) => {
+  const trangThai = ['dung_hen', 'tre_hen', 'qua_hen', 'chua_den_hen'].includes(req.query.trang_thai) ? req.query.trang_thai : '';
+  return res.json({ status: 'ok', ...patientDb.appointmentReport({ tu: dayParam(req.query.tu), den: dayParam(req.query.den), loai: trangThai }) });
+}));
+
+router.get('/kho/tai-nhap-vien', requireRole('operator'), guard((req, res) => (
+  res.json({ status: 'ok', ...patientDb.readmissionReport({ tu: dayParam(req.query.tu), den: dayParam(req.query.den) }) })
+)));
 
 router.post('/kho/dong-bo', requireRole('operator'), guard((req, res) => {
   const result = syncAllToPatientDb();

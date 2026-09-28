@@ -102,6 +102,16 @@
       "usesDateRange": false
     },
     {
+      "id": "patient-journey",
+      "label": "Người bệnh & tái khám",
+      "icon": "◷",
+      "group": "Nghiên cứu",
+      "hint": "Hành trình từng người bệnh, tái khám, tái nhập viện",
+      "order": 105,
+      "compact": true,
+      "usesDateRange": false
+    },
+    {
       "id": "research",
       "label": "Kho nghiên cứu",
       "icon": "◌",
