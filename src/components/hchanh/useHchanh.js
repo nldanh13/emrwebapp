@@ -564,7 +564,7 @@ export function useHchanh({ toast, workDateRange } = {}) {
     const ok = typeof window === 'undefined' ? true : window.confirm(
       `Nhập thuốc/VTYT sử dụng vào EMR cho ${card?.ho_ten || ma_bn}?\n\n` +
       `Ngày VTYT cần nhập: ${dates.join(', ')}.\n` +
-      `Hệ thống sẽ dùng đúng kế hoạch VTYT đã xử lý trong tab Hành chánh.`
+      `Hệ thống sẽ dùng đúng kế hoạch VTYT đã xử lý trong tab Kiểm HSBA.`
     );
     if (!ok) {
       toast?.('Đã hủy nhập VTYT.', 'info');
