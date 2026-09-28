@@ -374,7 +374,7 @@ export default function ClinicTab({ toast }) {
               </Btn>
               <span style={{ fontSize: FS.sm, color: C.text2, flex: '1 1 320px' }}>
                 Người có BHYT xử trí Điều trị ngoại trú: nhập khoa (giữ giờ vào khoa nếu hợp lệ, Người nhận = Bác sĩ nhận bệnh), kết thúc mổ
-                (Gây Tê Tại Chỗ, Nằm ngửa, +15 phút, BS mổ chính = Gây mê chính = bác sĩ trong Lịch Phòng khám), Tổng kết ra khoa lấy từ hồ sơ, rồi Kết thúc điều trị.
+                (bắt đầu = vào khoa + 1 phút, +15 phút, Gây Tê Tại Chỗ, Nằm ngửa, BS mổ chính = Gây mê chính = bác sĩ trong Lịch Phòng khám), Tổng kết ra khoa lấy từ hồ sơ (không có KQ XN, CLS thì ghi "."), rồi Kết thúc điều trị.
               </span>
             </div>
           )}

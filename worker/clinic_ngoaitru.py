@@ -6,9 +6,9 @@ Làm theo từng màn một lượt (đỡ tốn thời gian hơn đi từng ng�
      Người nhận = Bác sĩ nhận bệnh, chọn mã bệnh án khi chỉ có 1).
   2. D/s Phẫu thuật: ca mổ chưa hoàn tất → điền và Kết thúc mổ (Gây Tê Tại Chỗ, Nằm ngửa,
      chẩn đoán trước = sau, BS mổ chính = Gây mê chính = bác sĩ trong Lịch Phòng khám,
-     kết thúc = bắt đầu + 15 phút).
+     bắt đầu = vào khoa + 1 phút, kết thúc = bắt đầu + 15 phút).
   3. Ds điều trị ngoại trú: Tổng kết ra khoa (Dấu hiệu LS, KQ XN-CLS, PP điều trị lấy từ hồ sơ)
-     rồi Kết thúc điều trị.
+     rồi Kết thúc điều trị (không có KQ XN-CLS thì ghi ".").
 Không tự đồng ý hộp xác nhận; thiếu dữ liệu thì dừng ở người đó và báo lại.
 """
 from __future__ import annotations
@@ -34,7 +34,7 @@ AFTER_EXAM_MINUTES = 3
 PT_MINUTES = 15
 ANESTHESIA = "Gây Tê Tại Chỗ"
 POSITION = "Nằm ngửa"
-DEFAULT_START_TOLERANCE = timedelta(minutes=2)
+NO_RESULT = "."  # người bệnh không có kết quả XN, CLS nào
 
 
 def parse_dt(value: Any) -> Optional[datetime]:
@@ -126,14 +126,9 @@ def admission_time(current: Optional[datetime], exam_time: Optional[datetime], n
     return {"result": "ok", "value": earliest, "changed": True}
 
 
-def surgery_window(current_start: Optional[datetime], admitted: datetime, now: datetime,
-                   minutes: int = PT_MINUTES) -> Dict[str, Any]:
-    """Giờ mổ: bắt đầu giữ giờ EMR đã có nếu sau giờ vào khoa; ô đang là giờ mở trang (chưa từng nhập)
-    hoặc sớm hơn vào khoa thì = vào khoa + 1 phút. Kết thúc = bắt đầu + `minutes`, không ở tương lai."""
-    earliest = admitted + timedelta(minutes=1)
-    start = current_start
-    if not start or start < earliest or abs(start - now) <= DEFAULT_START_TOLERANCE:
-        start = earliest
+def surgery_window(admitted: datetime, now: datetime, minutes: int = PT_MINUTES) -> Dict[str, Any]:
+    """Giờ mổ: bắt đầu = giờ vào khoa + 1 phút, kết thúc = bắt đầu + `minutes`, không ở tương lai."""
+    start = admitted + timedelta(minutes=1)
     end = start + timedelta(minutes=minutes)
     if end > now:
         return {"result": "waiting", "message": f"Ca mổ chưa đủ {minutes} phút, chờ tới {end:%H:%M} mới kết thúc mổ được"}
@@ -321,7 +316,7 @@ class NgoaiTruFlow:
             return {"result": "already", "message": "Ca mổ đã hoàn tất", "end": end}
         if not doctor:
             raise RuntimeError("Chưa có bác sĩ phòng khám trong Lịch Phòng khám (Lịch điều dưỡng) để làm BS mổ chính")
-        rule = surgery_window(parse_dt(self.js(VALUE_JS, "txtBatDauPT")), admitted, now)
+        rule = surgery_window(admitted, now)
         if rule["result"] != "ok":
             return rule
         start, end = rule["start"], rule["end"]
@@ -385,6 +380,9 @@ class NgoaiTruFlow:
             self.js("if (window.jQuery) jQuery('#modalYeuCauThucHiens').modal('hide');")
             if picked:
                 steps.append(f"KQ XN, CLS lấy từ {picked} kết quả")
+            if not (self.js(VALUE_JS, "txtCanLamSang") or "").strip():
+                self.set_value("txtCanLamSang", NO_RESULT)
+                steps.append("Không có kết quả XN, CLS → ghi \".\"")
         missing = [label for field, label in (("txtDauHieuLamSang", "Dấu hiệu lâm sàng"), ("txtCanLamSang", "Kết quả XN, CLS"),
                                               ("txtPPDieuTri", "Phương pháp điều trị"))
                    if not (self.js(VALUE_JS, field) or "").strip()]

@@ -54,11 +54,9 @@ def test_time_rules():
     assert nt.admission_time(None, DT(2026, 9, 28, 10, 59), NOW)['result'] == 'waiting'
 
     admitted = DT(2026, 9, 28, 10, 5)
-    # Giờ bắt đầu mổ đã lưu (sau vào khoa) → giữ; kết thúc + 15 phút.
-    assert nt.surgery_window(DT(2026, 9, 28, 10, 20), admitted, NOW) == {'result': 'ok', 'start': DT(2026, 9, 28, 10, 20), 'end': DT(2026, 9, 28, 10, 35)}
-    # Ô đang là giờ mở trang (≈ giờ hiện tại) → coi như chưa nhập: bắt đầu = vào khoa + 1 phút.
-    assert nt.surgery_window(DT(2026, 9, 28, 11, 0), admitted, NOW)['start'] == DT(2026, 9, 28, 10, 6)
-    assert nt.surgery_window(DT(2026, 9, 28, 10, 50), admitted, NOW)['result'] == 'waiting'
+    # Bắt đầu mổ = vào khoa + 1 phút, kết thúc + 15 phút; chưa tới giờ kết thúc thì chờ.
+    assert nt.surgery_window(admitted, NOW) == {'result': 'ok', 'start': DT(2026, 9, 28, 10, 6), 'end': DT(2026, 9, 28, 10, 21)}
+    assert nt.surgery_window(DT(2026, 9, 28, 10, 50), NOW)['result'] == 'waiting'
 
     lower = DT(2026, 9, 28, 10, 35)
     assert nt.discharge_time(DT(2026, 9, 28, 10, 50), lower, NOW)['changed'] is False
