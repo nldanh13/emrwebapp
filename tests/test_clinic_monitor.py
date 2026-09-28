@@ -64,7 +64,7 @@ def test_classify_cases_and_blockers():
     assert rows['c']['has_tt'] is True and rows['c']['blockers'] == ['TT chưa xong (0/1)']
     assert rows['c']['next_action'] == 'Hoàn tất thủ thuật rồi hoàn tất khám'
     assert rows['d']['case'] == 'nhap_vien' and rows['d']['next_action'] == 'Nhập chăm sóc'
-    assert rows['e']['case'] == 'chuyen_vien' and rows['e']['next_action'] == 'Nhập BBHC'
+    assert rows['e']['case'] == 'chuyen_vien' and rows['e']['next_action'] == 'Hoàn tất khám, lập SBBHC'
     assert rows['f']['stage'] == 'xong' and rows['f']['ready'] is False and rows['f']['next_action'] == 'Đã xong'
     assert rows['g']['has_bhyt'] is False and rows['g']['doi_tuong'] == 'Viện phí'
     assert rows['g']['stage'] == 'cho_kham' and rows['g']['blockers'] == [] and rows['g']['next_action'] == 'Chờ khám'
@@ -317,6 +317,9 @@ def test_pending_procedure_is_still_eligible_but_other_blockers_are_not():
     assert cm.eligible_for_completion(_tt_row(0, 1)) is True
     assert cm.eligible_for_completion(_tt_row(0, 1, ['XN chưa xong (0/1)'])) is False
     assert cm.eligible_for_completion({**_tt_row(0, 1), 'has_bhyt': False}) is False
+    # Chuyển viện hoàn tất khám như Cho về (rồi bổ sung SBBHC); nhập viện thì không.
+    assert cm.eligible_for_completion({**_tt_row(1, 1), 'case': 'chuyen_vien'}) is True
+    assert cm.eligible_for_completion({**_tt_row(1, 1), 'case': 'nhap_vien'}) is False
 
 
 def test_procedure_window():
@@ -435,7 +438,8 @@ def test_imaging_kinds_and_bbhc_reasons():
     assert cm.bbhc_reasons({**base, 'case': 'chuyen_vien'}, None) == ['Chuyển viện']
     assert cm.bbhc_reasons({**base, 'case': 'chuyen_vien'}, ['MRI']) == ['Chuyển viện', 'Chụp MRI']
     assert cm.bbhc_reasons({**base, 'has_bhyt': False}, ['CT']) == []
-    assert cm.bbhc_reasons({**base, 'stage': 'xong'}, ['CT']) == []
+    assert cm.bbhc_reasons({**base, 'stage': 'xong'}, ['CT']) == ['Chụp CT']   # đã hoàn tất vẫn cần bổ sung SBBHC
+    assert cm.bbhc_reasons({**base, 'stage': 'cho_kham'}, ['CT']) == []
 
 
 class HistoryMonitor:
@@ -444,7 +448,7 @@ class HistoryMonitor:
 
     def imaging(self, row):
         self.calls += 1
-        return cm.imaging_kinds(self.html)
+        return cm.clinic_bbhc.imaging_orders(self.html)
 
 
 def test_scan_imaging_reads_once_per_order_count():

@@ -161,7 +161,7 @@ router.get('/clinic/care-draft', (req, res) => {
 // ── Theo dõi Danh sách Khám bệnh ─────────────────────────────────────────────
 // Một tiến trình Python chạy nền cho mỗi phiên dữ liệu, giữ Chrome đăng nhập sẵn
 // và tự đọc lại danh sách theo chu kỳ. Không đi qua hàng đợi tác vụ nặng vì
-// chạy liên tục hàng giờ; chỉ đọc, không ghi EMR. Mật khẩu chỉ nằm trong file
+// chạy liên tục hàng giờ; chỉ ghi EMR khi người dùng bấm nút. Mật khẩu chỉ nằm trong file
 // yêu cầu tạm, worker đọc xong xoá ngay.
 
 const MONITOR_MAX_RUNTIME_MS = 14 * 60 * 60 * 1000;
@@ -299,6 +299,64 @@ router.post('/clinic/monitor/weight', (req, res) => {
   writeControl(ctx, { weights, refresh: Date.now() });
   appendActivity(ctx, { kind: 'workflow.clinic.monitor.weight', kg: weights[khambenhid] });
   return res.json({ status: 'ok', message: `Đã ghi nhận ${weights[khambenhid]} kg.` });
+});
+
+// TH4 Sổ biên bản hội chẩn: bước 1 soạn nháp (worker chỉ đọc màn khám), bước 2 lập theo nháp đã duyệt.
+const BBHC_FIELDS = ['ThoiGianHoiChan', 'HopTai', 'ThuKy', 'YeuCau', 'TomTat', 'TinhTrang', 'ChanDoanTuyenDuoi',
+  'TomTatBenhAn', 'NguyenNhan', 'HuongDieuTri', 'ChamSoc', 'KetLuan'];
+
+function sanitizeBbhcDrafts(raw) {
+  const out = {};
+  const entries = raw && typeof raw === 'object' ? Object.entries(raw) : [];
+  if (!entries.length) throw new Error('Chưa có SBBHC nào được chọn để lập.');
+  if (entries.length > 60) throw new Error('Quá nhiều người bệnh trong một lần lập SBBHC.');
+  for (const [khambenhid, drafts] of entries) {
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(khambenhid)) throw new Error('Mã khám bệnh không hợp lệ.');
+    if (!Array.isArray(drafts) || !drafts.length || drafts.length > 5) throw new Error('Danh sách SBBHC của người bệnh không hợp lệ.');
+    out[khambenhid] = drafts.map((d) => {
+      const fields = {};
+      for (const key of BBHC_FIELDS) fields[key] = String(d?.fields?.[key] ?? '').slice(0, 4000);
+      return { key: String(d?.key ?? '').slice(0, 20), label: String(d?.label ?? '').slice(0, 300), fields };
+    });
+  }
+  return out;
+}
+
+router.post('/clinic/monitor/bbhc/prepare', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  if (!monitors.get(ctx.sid)?.running) {
+    return res.status(409).json({ status: 'error', message: 'Chưa bắt đầu theo dõi.' });
+  }
+  writeControl(ctx, { bbhcPrepare: Date.now() });
+  appendActivity(ctx, { kind: 'workflow.clinic.monitor.bbhc_prepare' });
+  return res.json({ status: 'ok', message: 'Đang soạn nháp Sổ biên bản hội chẩn.' });
+});
+
+router.post('/clinic/monitor/bbhc/run', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  if (!monitors.get(ctx.sid)?.running) {
+    return res.status(409).json({ status: 'error', message: 'Chưa bắt đầu theo dõi.' });
+  }
+  let drafts;
+  try {
+    drafts = sanitizeBbhcDrafts(req.body?.drafts);
+  } catch (err) {
+    return res.status(400).json({ status: 'error', message: String(err.message || err) });
+  }
+  const count = Object.values(drafts).reduce((n, list) => n + list.length, 0);
+  writeControl(ctx, { bbhcRun: Date.now(), bbhcDrafts: drafts });
+  appendActivity(ctx, { kind: 'workflow.clinic.monitor.bbhc_run', patients: Object.keys(drafts).length, forms: count });
+  return res.json({ status: 'ok', message: `Đang lập ${count} Sổ biên bản hội chẩn.` });
+});
+
+router.get('/clinic/monitor/bbhc/pdf', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  const state = readJsonSafe(monitorPaths(ctx).state, null);
+  const file = String(state?.bbhc_pdf?.file || '');
+  if (!/^clinic_bbhc_\d{8}\.pdf$/.test(file)) return res.status(404).json({ status: 'error', message: 'Chưa có file in SBBHC.' });
+  const full = path.join(ctx.dir, file);
+  if (!fs.existsSync(full)) return res.status(404).json({ status: 'error', message: 'Chưa có file in SBBHC.' });
+  return res.download(full, file, { dotfiles: 'allow' });
 });
 
 router.get('/clinic/monitor/state', (req, res) => {

@@ -8,6 +8,7 @@ import { C, FS } from '../tokens.js';
 import { Btn, Segmented } from './shared.jsx';
 import * as api from '../api.js';
 import ClinicAdmissionCare from './ClinicAdmissionCare.jsx';
+import ClinicBbhc from './ClinicBbhc.jsx';
 
 const CONFIG_KEY = 'emr_clinic_monitor_cfg_v1';
 const DEFAULT_CONFIG = {
@@ -335,10 +336,12 @@ export default function ClinicTab({ toast }) {
               {monitor?.action_running ? 'Đang hoàn tất…' : `Hoàn tất ${readyToComplete.length} người bệnh đã sẵn sàng`}
             </Btn>
             <span style={{ fontSize: FS.sm, color: C.text2, flex: '1 1 320px' }}>
-              Chỉ người có BHYT, xử trí Cho về, dịch vụ đã xong. Thủ thuật chưa xong thì nhập trước (giờ chỉ định → +10 phút, thủ thuật viên theo Lịch Phòng khám).
+              Chỉ người có BHYT, xử trí Cho về hoặc Chuyển viện, dịch vụ đã xong. Thủ thuật chưa xong thì nhập trước (giờ chỉ định → +10 phút, thủ thuật viên theo Lịch Phòng khám).
               Thời gian ra được giữ nếu hợp lệ, không thì đặt bằng giờ hiện tại của máy. Người chờ đọc KQ chưa có thuốc và người thiếu cân nặng sẽ không được hoàn tất.
             </span>
           </div>
+
+          <ClinicBbhc monitor={monitor} toast={toast} onChanged={loadState} />
 
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <Segmented value={group} options={groupOptions} onChange={setGroup} label="Nhóm người bệnh" />

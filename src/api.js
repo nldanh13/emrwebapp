@@ -99,6 +99,8 @@ function apiActionLabel(method, url) {
     'POST /api/clinic/care-preview': 'tìm người bệnh nhập viện cần nhập chăm sóc',
     'POST /api/clinic/care-order-seeds': 'lấy vị trí đau từ y lệnh đầu tiên',
     'POST /api/clinic/input-care': 'nhập chăm sóc người bệnh nhập viện',
+    'POST /api/clinic/monitor/bbhc/prepare': 'soạn nháp Sổ biên bản hội chẩn',
+    'POST /api/clinic/monitor/bbhc/run': 'lập Sổ biên bản hội chẩn',
     'GET /api/clinic/care-draft': 'tải bản nháp chăm sóc phòng khám',
     'POST /api/clinic/monitor/start': 'bắt đầu theo dõi phòng khám',
     'POST /api/clinic/monitor/stop': 'dừng theo dõi phòng khám',
@@ -682,6 +684,9 @@ export const checkCurrentBed = (patient) => post('/api/check-current-bed', { pat
 
 // ── Phòng khám ───────────────────────────────────────────────────────────────
 export const runClinicPreview = (payload) => post('/api/clinic/preview', payload);
+export const prepareClinicBbhc = () => post('/api/clinic/monitor/bbhc/prepare', {});
+export const runClinicBbhc = (drafts) => post('/api/clinic/monitor/bbhc/run', { drafts });
+export const downloadClinicBbhcPdf = () => downloadBlob('/api/clinic/monitor/bbhc/pdf', 'so_bien_ban_hoi_chan.pdf');
 export const runClinicCarePreview = (payload) => post('/api/clinic/care-preview', payload);
 export const runClinicCareOrderSeeds = (payload) => post('/api/clinic/care-order-seeds', payload);
 export const runClinicInputCare = (payload) => post('/api/clinic/input-care', payload);

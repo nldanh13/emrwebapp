@@ -35,6 +35,7 @@ from clinic_outpatient import (
     write_json,
 )
 from utils import init_driver, load_config, login_emr
+import clinic_bbhc
 
 try:
     from bs4 import BeautifulSoup
@@ -120,7 +121,7 @@ def _case(xu_tri: str, trang_thai: str) -> str:
 NEXT_ACTION = {
     "cho_ve": "Hoàn tất khám",
     "nhap_vien": "Nhập chăm sóc",
-    "chuyen_vien": "Nhập BBHC",
+    "chuyen_vien": "Hoàn tất khám, lập SBBHC",
     "chuyen_kham_ck": "Không cần làm",
     "ngoai_tru": "Làm ở D/s điều trị ngoại trú",
     "chua_xu_tri": "Chờ bác sĩ xử trí",
@@ -168,7 +169,7 @@ def classify_row(row: Dict[str, Any]) -> Dict[str, Any]:
             blockers.append("Chưa có xử trí")
 
     next_action = NEXT_ACTION[case]
-    if case == "cho_ve" and has_tt:
+    if case in {"cho_ve", "chuyen_vien"} and has_tt:
         next_action = "Hoàn tất thủ thuật rồi hoàn tất khám"
     if stage == "xong":
         next_action = "Đã xong"
@@ -251,6 +252,10 @@ def fmt_emr_dt(dt: datetime) -> str:
     return dt.strftime("%H:%M %d/%m/%Y")
 
 
+# Cho về (TH1) và Chuyển viện (TH4: hoàn tất như cho về, rồi bổ sung SBBHC).
+COMPLETION_CASES = {"cho_ve", "chuyen_vien"}
+
+
 def pending_procedures(row: Dict[str, Any]) -> int:
     """Số thủ thuật (TT) chưa hoàn tất của người bệnh."""
     tt = next((s for s in row.get("services") or [] if s.get("code") == "TT"), None)
@@ -261,7 +266,7 @@ def eligible_for_completion(row: Dict[str, Any]) -> bool:
     """Người bệnh có BHYT, xử trí Cho về, đang khám / làm dịch vụ và mọi dịch vụ đã xong —
     trừ thủ thuật: TT chưa xong thì hệ thống tự nhập thủ thuật trước khi hoàn tất (TH2)."""
     blockers = [b for b in row.get("blockers") or [] if not (pending_procedures(row) and b.startswith("TT "))]
-    return bool(row.get("has_bhyt")) and row.get("case") == "cho_ve" \
+    return bool(row.get("has_bhyt")) and row.get("case") in COMPLETION_CASES \
         and row.get("stage") in ACTIVE_STAGES and not blockers
 
 
@@ -296,18 +301,7 @@ def procedure_window(order_time: datetime, not_before: Optional[datetime], now: 
 
 
 # TH4: ca cần Sổ biên bản hội chẩn (SBBHC) = chuyển viện, hoặc có chụp CT / MRI.
-IMAGING_BBHC_RE = re.compile(r"\b(?:MS)?CT\b|\bMRI\b|c[aắ]t l[oớ]p|c[oộ]ng h[uư][oở]ng t[uừ]", re.I)
-
-
-def imaging_kinds(history_html: str) -> List[str]:
-    """Loại chụp cần hội chẩn (CT, MRI) nhắc tới trong popup lịch sử dịch vụ."""
-    text = BeautifulSoup(history_html or "", "html.parser").get_text(" ") if BeautifulSoup else (history_html or "")
-    kinds = []
-    for m in IMAGING_BBHC_RE.finditer(text):
-        kind = "MRI" if norm(m.group(0)) in {"mri", "cong huong tu"} else "CT"
-        if kind not in kinds:
-            kinds.append(kind)
-    return kinds
+imaging_kinds = clinic_bbhc.imaging_kinds
 
 
 def has_imaging_order(row: Dict[str, Any]) -> bool:
@@ -315,8 +309,8 @@ def has_imaging_order(row: Dict[str, Any]) -> bool:
 
 
 def bbhc_reasons(row: Dict[str, Any], imaging: Optional[List[str]]) -> List[str]:
-    """Lý do người bệnh (có BHYT, chưa xong) cần lập SBBHC; rỗng nếu không cần."""
-    if not row.get("has_bhyt") or row.get("stage") in {"xong", "cho_kham"}:
+    """Lý do người bệnh (có BHYT, đã vào khám — kể cả đã hoàn tất) cần lập SBBHC; rỗng nếu không cần."""
+    if not row.get("has_bhyt") or row.get("stage") == "cho_kham":
         return []
     reasons = ["Chuyển viện"] if row.get("case") == "chuyen_vien" else []
     reasons += [f"Chụp {k}" for k in imaging or []]
@@ -567,7 +561,8 @@ PROCEDURE_FINISH_IDS = ["btnHoanTat", "btnHOANTAT", "btnPopupHOANTAT", "btnKetTh
 
 
 def procedure_staff(config: Dict[str, Any], start: datetime) -> str:
-    """Thủ thuật viên: Lịch Phòng khám (Lịch điều dưỡng) theo ngày/thứ, không có thì lịch ca chung."""
+    """Điều dưỡng phòng khám (thủ thuật viên, thư ký SBBHC): Lịch Phòng khám (Lịch điều dưỡng)
+    theo ngày/thứ, không có thì lịch ca chung."""
     from clinic_input_care import _clinic_nurses_for_date
     from utils import get_nurse_by_shift
 
@@ -779,12 +774,12 @@ class Monitor:
                 result = {"result": "session", "message": "Không mở lại được Danh sách Khám bệnh sau khi nhập thủ thuật"}
         return {**result, "steps": steps, "procedure_end": last_end}
 
-    def imaging(self, row: Dict[str, Any]) -> List[str]:
-        """Đọc popup lịch sử dịch vụ (đang ở trang danh sách) để biết có chụp CT / MRI không."""
+    def imaging(self, row: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Đọc popup lịch sử dịch vụ (đang ở trang danh sách): các chỉ định chụp CT / MRI."""
         res = self.driver.execute_script(HISTORY_JS, row.get("khambenhid")) or {}
         if not res.get("ok"):
             raise ExamStepError(f"Không đọc được lịch sử dịch vụ: {compact(res.get('message'))}")
-        return imaging_kinds(res.get("html") or "")
+        return clinic_bbhc.imaging_orders(res.get("html") or "")
 
     def on_exam_page(self, row: Dict[str, Any], action: Callable[[ExamPage, Optional[datetime], datetime], Dict[str, Any]]) -> Dict[str, Any]:
         """Mở màn khám của người bệnh, chạy `action`, rồi quay về danh sách."""
@@ -860,15 +855,108 @@ def scan_imaging(monitor: "Monitor", rows: List[Dict[str, Any]], cache: Dict[str
     """Người bệnh có BHYT có chỉ định CĐHA: đọc (1 lần cho mỗi số chỉ định) xem có CT / MRI không."""
     for row in rows:
         key = row.get("khambenhid") or ""
-        if not key or not row.get("has_bhyt") or row.get("stage") in {"xong", "cho_kham"} or not has_imaging_order(row):
+        if not key or not row.get("has_bhyt") or row.get("stage") == "cho_kham" or not has_imaging_order(row):
             continue
         total = sum(int(s.get("total") or 0) for s in row.get("services") or [] if s.get("code") == "CDHA")
         if cache.get(key, {}).get("total") == total:
             continue
         try:
-            cache[key] = {"total": total, "kinds": monitor.imaging(row)}
+            orders = monitor.imaging(row)
+            kinds: List[str] = []
+            for o in orders:
+                if o["kind"] not in kinds:
+                    kinds.append(o["kind"])
+            cache[key] = {"total": total, "kinds": kinds, "orders": [
+                {**o, "time": fmt_emr_dt(o["time"]) if isinstance(o.get("time"), datetime) else ""} for o in orders]}
         except ExamStepError as e:
             print(f"[CLINIC-MONITOR] [WARN] STT {row.get('stt')}: {e}")
+
+
+# ── TH4: soạn và lập SBBHC ───────────────────────────────────────────────────
+
+def bbhc_reason_list(row: Dict[str, Any], imaging: Dict[str, Any], transfer: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Mỗi chỉ định chụp CT / MRI và việc chuyển viện là 1 SBBHC."""
+    reasons: List[Dict[str, Any]] = []
+    for o in (imaging or {}).get("orders") or []:
+        reasons.append({"type": "imaging", "kind": o["kind"], "name": o["name"], "time": parse_emr_dt(o.get("time")) or o.get("time") or "",
+                        "label": f"Chụp {o['kind']}: {o['name']}"})
+    if row.get("case") == "chuyen_vien" and transfer is not None:
+        reasons.append({**transfer, "label": "Chuyển viện" + (f" {transfer['hospital']}" if transfer.get("hospital") else "")})
+    return reasons
+
+
+def prepare_bbhc(page: ExamPage, row: Dict[str, Any], imaging: Dict[str, Any], config: Dict[str, Any], now: datetime) -> Dict[str, Any]:
+    """Đọc (không ghi) màn khám và soạn nháp SBBHC cho 1 người bệnh."""
+    bb = clinic_bbhc.BbhcPage(page)
+    info = bb.exam_info()
+    transfer = bb.transfer_info() if row.get("case") == "chuyen_vien" else None
+    existing = bb.existing()
+    reasons = bbhc_reason_list(row, imaging, transfer)
+    nurse = procedure_staff(config, now)
+    drafts = []
+    for i, reason in enumerate(reasons):
+        fields = {**clinic_bbhc.build_bbhc(reason, info), "ThuKy": nurse}
+        drafts.append({"key": f"{i}", "label": reason["label"], "fields": fields, "missing": clinic_bbhc.missing_fields(fields)})
+    status = "exists" if reasons and len(existing) >= len(reasons) else "draft"
+    message = (f"Đã có {len(existing)} SBBHC trên EMR — không lập thêm" if status == "exists"
+               else f"{len(drafts)} SBBHC cần lập" + (f" (đã có {len(existing)})" if existing else ""))
+    return {"status": status, "message": message, "existing": len(existing), "drafts": drafts if status == "draft" else []}
+
+
+def create_bbhc(page: ExamPage, row: Dict[str, Any], drafts: List[Dict[str, Any]], pdf_dir: str) -> Dict[str, Any]:
+    """Lập các SBBHC đã được người dùng duyệt cho 1 người bệnh."""
+    bb = clinic_bbhc.BbhcPage(page)
+    existing = bb.existing()
+    if existing and len(existing) >= len(drafts):
+        return {"result": "exists", "message": f"Đã có {len(existing)} SBBHC trên EMR — không lập thêm", "pdfs": []}
+    todo = drafts[len(existing):]
+    pdfs, steps = [], []
+    bb.open_attachments()
+    try:
+        for d in todo:
+            missing = clinic_bbhc.missing_fields(d["fields"])
+            if missing:
+                raise ExamStepError(f"{d['label']}: còn thiếu {', '.join(missing)}")
+            hoso_id = bb.add_form()
+            out = os.path.join(pdf_dir, f"clinic_bbhc_{re.sub(r'[^A-Za-z0-9-]', '', hoso_id)[:40]}.pdf")
+            res = bb.fill_and_finish(hoso_id, d["fields"], out)
+            if res.get("pdf"):
+                pdfs.append(res["pdf"])
+            steps.append(f"Lập SBBHC {d['label']}" + ("" if res.get("pdf") else " (chưa lấy được phiếu in)"))
+    finally:
+        bb.close_attachments()
+    return {"result": "done", "message": f"Đã lập {len(steps)} SBBHC", "steps": steps, "pdfs": pdfs}
+
+
+def run_bbhc_prepare(monitor: "Monitor", rows: List[Dict[str, Any]], imaging: Dict[str, Dict[str, Any]],
+                     bbhc: Dict[str, Dict[str, Any]]) -> None:
+    for row in rows:
+        key = row.get("khambenhid") or ""
+        if not key or not row.get("href") or not bbhc_reasons(row, (imaging.get(key) or {}).get("kinds")):
+            continue
+        res = monitor.on_exam_page(row, lambda page, done_at, now: prepare_bbhc(page, row, imaging.get(key) or {}, monitor.config, now))
+        bbhc[key] = {k: v for k, v in res.items() if k != "result"}
+        if res.get("status") == "session":
+            break
+
+
+def run_bbhc_create(monitor: "Monitor", rows: List[Dict[str, Any]], approved: Dict[str, Any], bbhc: Dict[str, Dict[str, Any]],
+                    pdf_dir: str, log: List[Dict[str, Any]]) -> List[str]:
+    pdfs: List[str] = []
+    by_key = {r.get("khambenhid"): r for r in rows}
+    for key, drafts in approved.items():
+        row = by_key.get(key)
+        if not row or not row.get("href") or not isinstance(drafts, list) or not drafts:
+            continue
+        res = monitor.on_exam_page(row, lambda page, done_at, now: create_bbhc(page, row, drafts, pdf_dir))
+        result = res.get("result") or res.get("status")
+        pdfs += res.get("pdfs") or []
+        bbhc[key] = {"status": "done" if result in {"done", "exists"} else result, "message": res.get("message"), "drafts": []}
+        log.append({"at": _now().isoformat(), "ma_bn": row.get("ma_bn"), "ho_ten": row.get("ho_ten"),
+                    "result": result, "message": res.get("message"), "steps": res.get("steps") or []})
+        if result == "session":
+            break
+    return pdfs
 
 
 def run_completions(monitor: "Monitor", rows: List[Dict[str, Any]], checks: Dict[str, Dict[str, Any]],
@@ -909,12 +997,14 @@ def run_completions(monitor: "Monitor", rows: List[Dict[str, Any]], checks: Dict
 
 
 def public_rows(rows: List[Dict[str, Any]], checks: Dict[str, Dict[str, Any]], weights: Dict[str, Any],
-                imaging: Optional[Dict[str, Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+                imaging: Optional[Dict[str, Dict[str, Any]]] = None,
+                bbhc_state: Optional[Dict[str, Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     out = []
     for r in rows:
         item = {k: v for k, v in r.items() if k != "href"}  # href mang mã phiên EMR
         key = r.get("khambenhid") or ""
         item["bbhc"] = bbhc_reasons(r, ((imaging or {}).get(key) or {}).get("kinds"))
+        item["bbhc_state"] = (bbhc_state or {}).get(key) if item["bbhc"] else None
         item["eligible"] = eligible_for_completion(r)
         item["check"] = checks.get(key) if item["eligible"] else None
         item["weight_entered"] = parse_weight(weights.get(key)) or None
@@ -952,6 +1042,11 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
     handled_complete = initial.get("completeNow")
     checks: Dict[str, Dict[str, Any]] = {}
     imaging: Dict[str, Dict[str, Any]] = {}
+    bbhc: Dict[str, Dict[str, Any]] = {}
+    bbhc_pdfs: List[str] = []
+    handled_prepare = initial.get("bbhcPrepare")
+    handled_bbhc = initial.get("bbhcRun")
+    state_dir = os.path.dirname(os.path.abspath(state_path))
     action_log: List[Dict[str, Any]] = []
     try:
         while True:
@@ -970,9 +1065,29 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                     state["last_action_at"] = _now().isoformat()
                 run_checks(monitor, rows, checks)
                 scan_imaging(monitor, rows, imaging)
+                if ctrl.get("bbhcPrepare") and ctrl.get("bbhcPrepare") != handled_prepare:
+                    handled_prepare = ctrl.get("bbhcPrepare")
+                    state["action_running"] = True
+                    write_json(state_path, state)
+                    run_bbhc_prepare(monitor, rows, imaging, bbhc)
+                    state["action_running"] = False
+                if ctrl.get("bbhcRun") and ctrl.get("bbhcRun") != handled_bbhc:
+                    handled_bbhc = ctrl.get("bbhcRun")
+                    state["action_running"] = True
+                    write_json(state_path, state)
+                    approved = ctrl.get("bbhcDrafts") if isinstance(ctrl.get("bbhcDrafts"), dict) else {}
+                    new_pdfs = run_bbhc_create(monitor, rows, approved, bbhc, state_dir, action_log)
+                    if new_pdfs:
+                        bbhc_pdfs += new_pdfs
+                        merged = os.path.join(state_dir, f"clinic_bbhc_{_now():%Y%m%d}.pdf")
+                        clinic_bbhc.merge_pdfs([p for p in bbhc_pdfs if os.path.exists(p)], merged)
+                        state["bbhc_pdf"] = {"file": os.path.basename(merged), "count": len(bbhc_pdfs), "at": _now().isoformat()}
+                    state["action_running"] = False
+                    state["last_action_at"] = _now().isoformat()
+                    rows = monitor.read()
                 state.update({
                     "status": "running",
-                    "rows": public_rows(rows, checks, weights, imaging),
+                    "rows": public_rows(rows, checks, weights, imaging, bbhc),
                     "action_log": action_log[-50:],
                     "summary": summarize(rows),
                     "updated_at": _now().isoformat(),
@@ -1000,6 +1115,9 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                     handled_refresh = ctrl.get("refresh")
                     break
                 if ctrl.get("completeNow") and ctrl.get("completeNow") != handled_complete:
+                    break
+                if (ctrl.get("bbhcPrepare") and ctrl.get("bbhcPrepare") != handled_prepare) or \
+                        (ctrl.get("bbhcRun") and ctrl.get("bbhcRun") != handled_bbhc):
                     break
                 time.sleep(2)
     finally:
