@@ -393,26 +393,31 @@ def _weekday_key_from_iso(iso: str) -> str:
         return ""
 
 
-def _first_work_names(day_cfg: Any) -> List[str]:
+def _first_work_names(day_cfg: Any, key: str = "work") -> List[str]:
     if not isinstance(day_cfg, dict):
         return []
-    return [str(n).strip() for n in (day_cfg.get("work") or []) if str(n).strip()]
+    return [str(n).strip() for n in (day_cfg.get(key) or []) if str(n).strip()]
 
 
-def _clinic_nurses_for_date(schedule: Dict[str, Any], ngay_lam: str) -> List[str]:
+def _clinic_nurses_for_date(schedule: Dict[str, Any], ngay_lam: str, key: str = "work") -> List[str]:
+    """Tên trong Lịch Phòng khám theo ngày → thứ → mẫu mặc định. key='doctor' cho bác sĩ phòng khám."""
     sched = schedule or {}
     iso = _iso_from_dmy(ngay_lam)
     days = sched.get("days") or {}
     if iso and isinstance(days, dict) and iso in days:
-        names = _first_work_names(days[iso])
+        names = _first_work_names(days[iso], key)
         if names:
             return names
     if iso:
         weekday = _weekday_key_from_iso(iso)
-        names = _first_work_names(sched.get(weekday) or {})
+        names = _first_work_names(sched.get(weekday) or {}, key)
         if names:
             return names
-    return _first_work_names(sched.get("Default") or {})
+    return _first_work_names(sched.get("Default") or {}, key)
+
+
+def clinic_doctors_for_date(schedule: Dict[str, Any], ngay_lam: str) -> List[str]:
+    return _clinic_nurses_for_date(schedule, ngay_lam, "doctor")
 
 
 def _refresh_inpatient_list(driver: Any, wait: Any) -> None:

@@ -95,11 +95,15 @@ function normalizeDaySchedule(dayValue) {
     return { admin: [], work: arr.slice(0, 1), oncall: arr.slice(1) };
   }
   const src = (dayValue && typeof dayValue === 'object') ? dayValue : {};
-  return {
+  const out = {
     admin:  normalizeShiftBucket(src.admin || src.hanh_chanh || src.hanhChanh || src.administrative || src.ward_admin || src.dieu_duong_hanh_chanh || src.dd_hanh_chanh || []),
     work:   normalizeShiftBucket(src.work   || src.ca_lam  || src.caLam  || src.regular || src.day || []),
     oncall: normalizeShiftBucket(src.oncall || src.ca_truc || src.caTruc || src.night   || src.direct || []),
   };
+  // Lịch Phòng khám: bác sĩ phòng khám trong ngày (BS mổ chính / gây mê chính ở TH6), tên gõ tay.
+  const doctor = normalizeShiftBucket(src.doctor || src.bac_si || []);
+  if (doctor.length) out.doctor = doctor;
+  return out;
 }
 
 function hasAnyNurse(dayCfg) {
@@ -135,11 +139,13 @@ function normalizeSchedule(input) {
 
 function filterDayScheduleByNurseList(dayCfg, allow) {
   const v = normalizeDaySchedule(dayCfg);
-  return {
+  const out = {
     admin:  (v.admin  || []).filter(n => allow.has(normalizeName(n).toLowerCase())),
     work:   (v.work   || []).filter(n => allow.has(normalizeName(n).toLowerCase())),
     oncall: (v.oncall || []).filter(n => allow.has(normalizeName(n).toLowerCase())),
   };
+  if (v.doctor?.length) out.doctor = v.doctor; // bác sĩ không nằm trong danh sách điều dưỡng
+  return out;
 }
 
 function filterScheduleByNurseList(schedule, nurseList) {

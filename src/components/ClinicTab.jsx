@@ -122,7 +122,14 @@ function WeightInput({ row, toast, onSaved }) {
   );
 }
 
+const NGOAITRU_COLOR = { done: C.green, error: C.red, waiting: C.amber, incomplete: C.amber, session: C.amber };
+
 function CompletionCell({ row, toast, onSaved }) {
+  if (row.ngoaitru) {
+    const st = row.ngoaitru_state;
+    if (!st) return <span style={{ color: C.text2, fontSize: FS.sm }}>Chờ bấm Điều trị ngoại trú</span>;
+    return <span style={{ color: NGOAITRU_COLOR[st.status] || C.text2, fontSize: FS.sm, fontWeight: 650 }}>{st.message || (st.status === 'done' ? 'Đã kết thúc điều trị' : st.status)}</span>;
+  }
   if (!row.eligible) return <span style={{ color: C.text3 }}>—</span>;
   const check = row.check;
   if (!check) return <span style={{ color: C.text3, fontSize: FS.sm }}>Đang kiểm tra…</span>;
@@ -217,6 +224,22 @@ export default function ClinicTab({ toast }) {
     }
   };
 
+  const runNgoaiTru = async () => {
+    const n = ngoaitruRows.length;
+    if (!window.confirm(`Làm điều trị ngoại trú cho ${n} người bệnh (BHYT) trên EMR?\n\nLần lượt: nhập khoa (D/s tiếp nhận ngoại trú) → kết thúc mổ nếu có (D/s Phẫu thuật) → Tổng kết ra khoa và Kết thúc điều trị. Dừng ở người nào EMR báo lỗi, hỏi xác nhận hoặc hồ sơ còn thiếu.`)) return;
+    setBusy('ngoaitru');
+    try {
+      const r = await api.runClinicNgoaiTru();
+      if (r.status !== 'ok') throw new Error(r.message);
+      toast?.(r.message, 'info');
+      await loadState();
+    } catch (e) {
+      toast?.(String(e.message || e), 'error');
+    } finally {
+      setBusy('');
+    }
+  };
+
   const refresh = async () => {
     setBusy('refresh');
     try {
@@ -259,6 +282,7 @@ export default function ClinicTab({ toast }) {
   ];
 
   const readyCount = rows.filter(r => r.ready).length;
+  const ngoaitruRows = rows.filter(r => r.ngoaitru && r.ngoaitru_state?.status !== 'done');
   const readyToComplete = rows.filter(r => r.eligible && (r.check?.status === 'ready' || (r.check?.status === 'need_weight' && r.weight_entered)));
   const actionLog = [...(monitor?.action_log || [])].reverse();
   const blockedCount = rows.filter(r => r.stage !== 'xong' && r.blockers?.length).length;
@@ -341,6 +365,19 @@ export default function ClinicTab({ toast }) {
               Thời gian ra được giữ nếu hợp lệ, không thì đặt bằng giờ hiện tại của máy. Người chờ đọc KQ chưa có thuốc và người thiếu cân nặng sẽ không được hoàn tất.
             </span>
           </div>
+
+          {ngoaitruRows.length > 0 && (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: 10, border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface }}>
+              <Btn variant="primary" icon={IconChecks} loading={busy === 'ngoaitru'}
+                disabled={!running || busy === 'ngoaitru' || monitor?.action_running} onClick={runNgoaiTru}>
+                {`Điều trị ngoại trú ${ngoaitruRows.length} người bệnh`}
+              </Btn>
+              <span style={{ fontSize: FS.sm, color: C.text2, flex: '1 1 320px' }}>
+                Người có BHYT xử trí Điều trị ngoại trú: nhập khoa (giữ giờ vào khoa nếu hợp lệ, Người nhận = Bác sĩ nhận bệnh), kết thúc mổ
+                (Gây Tê Tại Chỗ, Nằm ngửa, +15 phút, BS mổ chính = Gây mê chính = bác sĩ trong Lịch Phòng khám), Tổng kết ra khoa lấy từ hồ sơ, rồi Kết thúc điều trị.
+              </span>
+            </div>
+          )}
 
           <ClinicBbhc monitor={monitor} toast={toast} onChanged={loadState} />
 
