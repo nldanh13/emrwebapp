@@ -69,8 +69,32 @@ const fetchRun = router._fetchHchanhForResearchRun;
   assert.ok(profile.includes('EMR-444') && profile.includes('HC-333'));
 
   const log = fs.readFileSync(path.join(runDir, 'action_log.txt'), 'utf-8');
-  assert.ok(log.includes('tab Hành chánh / Kiểm hồ sơ, không mở EMR lại'));
+  assert.ok(log.includes('tab Hành chánh / Kiểm hồ sơ (dữ liệu tạm thời), không mở EMR lại'));
   assert.ok(log.includes('DÙNG MỘT PHẦN'));
+
+  // Đánh dấu dữ liệu tạm thời: 333 dùng lại toàn bộ từ Hành chánh, 444 còn phần ra viện từ Kiểm hồ sơ.
+  const progress = JSON.parse(fs.readFileSync(path.join(runDir, 'hchanh_auto_progress.json'), 'utf-8'));
+  const byBn = bn => Object.values(progress).find(p => p.ma_bn === bn);
+  assert.deepStrictEqual(byBn('333').provisional_files, ['profile', 'discharge', 'surgery']);
+  assert.deepStrictEqual(byBn('444').provisional_files, ['discharge']);
+  assert.deepStrictEqual(byBn('555').provisional_files, []);
+
+  // Phần Kho nghiên cứu tự quét là dữ liệu gốc: Hành chánh quét sau KHÔNG được ghi đè.
+  const kept = store.recordHchanhFetch('555', { profile: { _fetch_status: 'ok', bhyt_code: 'HC-MOI' } }, { admission: '21/09/2026', source: 'hanh_chanh' });
+  assert.strictEqual(kept.saved, false);
+  assert.strictEqual(store.findStoredStay('555', '2026-09-21', ['profile']).output.profile.bhyt_code, 'EMR-555');
+  // Ngược lại, quét của Kho nghiên cứu thay dữ liệu tạm thời.
+  assert.strictEqual(store.findStoredStay('444', '2026-09-21', ['profile']).tiers.profile, 'goc');
+  assert.strictEqual(store.findStoredStay('444', '2026-09-21', ['discharge']).tiers.discharge, 'tam_thoi');
+
+  // Quét lại dữ liệu tạm thời: chỉ 333 và 444 được mở EMR lại, 555 (đã là gốc) giữ nguyên.
+  spawned.length = 0;
+  await fetchRun(ctx, runDir, { sourceRows, sourceRunId: 'r1', refreshProvisional: true });
+  assert.deepStrictEqual(spawned.sort(), ['333:profile+discharge+surgery', '444:discharge'],
+    `Quét lại tạm thời, thực tế: ${spawned.join(', ')}`);
+  const after = JSON.parse(fs.readFileSync(path.join(runDir, 'hchanh_auto_progress.json'), 'utf-8'));
+  assert.ok(Object.values(after).every(p => (p.provisional_files || []).length === 0), 'sau khi quét lại không còn dữ liệu tạm thời');
+  assert.strictEqual(store.findStoredStay('444', '2026-09-21', ['discharge']).tiers.discharge, 'goc');
 
   // force=true: bỏ qua kho, lấy lại toàn bộ từ EMR.
   spawned.length = 0;

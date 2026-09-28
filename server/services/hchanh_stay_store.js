@@ -5,7 +5,12 @@
 // tự động) tra kho này trước khi mở EMR: đợt nào đã có đủ file thì dùng lại, không quét lại.
 //
 // Vị trí: <RESEARCH_STORE_DIR>/hchanh_stays/<mã BN>.json
-// { ma_bn, updated_at, stays: [{ from, to, updated_at, sources: [...], files: { key: { data, status, fetched_at, source } } }] }
+// { ma_bn, updated_at, stays: [{ from, to, updated_at, sources: [...], files: { key: { data, status, fetched_at, source, tier } } }] }
+//
+// Mức tin cậy (tier) của từng file:
+//   'goc'      — Kho nghiên cứu tự quét (dữ liệu gốc). Luôn được ưu tiên.
+//   'tam_thoi' — tab Hành chánh / Kiểm hồ sơ quét khi người bệnh đang điều trị hoặc mới ra viện.
+//                Chỉ dùng khi chưa có dữ liệu gốc và không bao giờ ghi đè lên dữ liệu gốc.
 
 'use strict';
 
@@ -15,6 +20,9 @@ const { RESEARCH_STORE_DIR } = require('../constants');
 const { writeJsonAtomic, readJsonSafe } = require('../utils/file');
 
 const OK_STATUSES = new Set(['ok', 'done', 'success', 'partial', 'empty']);
+const TIER_GOC = 'goc';
+const TIER_TAM_THOI = 'tam_thoi';
+const tierOf = source => (source === 'kho_nghien_cuu' ? TIER_GOC : TIER_TAM_THOI);
 const STAY_FILES = ['profile', 'discharge', 'surgery', 'order_history', 'bed_days', 'billing', 'cls'];
 
 function storeDir() {
@@ -98,9 +106,15 @@ function recordHchanhFetch(maBn, output, { admission = '', source = 'hanh_chanh'
     stay = { from: range.from, to: range.to, files: {}, sources: [] };
     store.stays.push(stay);
   }
+  const tier = tierOf(source);
+  const written = [];
   for (const [key, data] of Object.entries(incoming)) {
-    stay.files[key] = { data, status: fileStatus(data), fetched_at: now, source };
+    // Dữ liệu tạm thời (Hành chánh / Kiểm hồ sơ) không ghi đè dữ liệu gốc của Kho nghiên cứu.
+    if (tier === TIER_TAM_THOI && stay.files[key]?.tier === TIER_GOC) continue;
+    stay.files[key] = { data, status: fileStatus(data), fetched_at: now, source, tier };
+    written.push(key);
   }
+  if (!written.length) return { saved: false, from: stay.from, to: stay.to, files: [], kept_goc: true };
   range = stayRange(Object.fromEntries(Object.entries(stay.files).map(([k, v]) => [k, v.data])), admission || stay.from);
   stay.from = [stay.from, range.from].filter(Boolean).sort()[0] || '';
   stay.to = range.to || stay.to || '';
@@ -110,23 +124,35 @@ function recordHchanhFetch(maBn, output, { admission = '', source = 'hanh_chanh'
   store.updated_at = now;
   store.stays.sort((a, b) => String(a.from).localeCompare(String(b.from)));
   writeJsonAtomic(storePath(code), store);
-  return { saved: true, from: stay.from, to: stay.to, files: Object.keys(stay.files) };
+  return { saved: true, from: stay.from, to: stay.to, files: written };
 }
 
 /**
  * Tìm đợt nằm viện đã có đủ các file cần (Kho nghiên cứu dùng lại thay vì mở EMR).
  * Chỉ trả đợt đã có ngày ra (đã kết thúc) và ngày vào nghiên cứu nằm trong đợt.
  */
-function findStoredStay(maBn, admissionIso, wantedFiles = []) {
+function findStoredStay(maBn, admissionIso, wantedFiles = [], { onlyGoc = false } = {}) {
   const code = String(maBn || '').trim();
   const day = isoDay(admissionIso) || String(admissionIso || '');
   if (!code || !day || !fs.existsSync(storePath(code))) return null;
   const store = readStore(code);
   for (const stay of store.stays) {
     if (!stay.to || !stay.from || day < stay.from || day > stay.to) continue;
-    if (!wantedFiles.every(key => stay.files?.[key])) continue;
-    const output = Object.fromEntries(Object.entries(stay.files).map(([k, v]) => [k, v.data]));
-    return { from: stay.from, to: stay.to, output, sourceKey: `kho_hanh_chanh:${stay.sources.join('+')}`, updated_at: stay.updated_at };
+    // onlyGoc: đang quét lại để thay dữ liệu tạm thời → chỉ tính file gốc của Kho nghiên cứu.
+    const files = Object.fromEntries(Object.entries(stay.files || {}).filter(([, v]) => !onlyGoc || v.tier === TIER_GOC));
+    if (!Object.keys(files).length) continue;
+    if (!wantedFiles.every(key => files[key])) continue;
+    const output = Object.fromEntries(Object.entries(files).map(([k, v]) => [k, v.data]));
+    const used = wantedFiles.length ? wantedFiles : Object.keys(files);
+    const provisional = used.filter(k => (files[k]?.tier || TIER_TAM_THOI) !== TIER_GOC);
+    return {
+      from: stay.from, to: stay.to, output,
+      sourceKey: provisional.length ? `kho_hanh_chanh:${stay.sources.join('+')}` : 'kho_nghien_cuu_goc',
+      updated_at: stay.updated_at,
+      // File nào đang là dữ liệu tạm thời (Hành chánh / Kiểm hồ sơ) — lần quét lại của Kho nghiên cứu sẽ thay.
+      provisional_files: provisional,
+      tiers: Object.fromEntries(Object.entries(files).map(([k, v]) => [k, v.tier || TIER_TAM_THOI])),
+    };
   }
   return null;
 }
@@ -147,4 +173,4 @@ function storeSummary() {
   return { dir, patients, stays, closed_stays: closed };
 }
 
-module.exports = { recordHchanhFetch, findStoredStay, storeSummary, stayRange, isoDay, STAY_FILES };
+module.exports = { recordHchanhFetch, findStoredStay, storeSummary, stayRange, isoDay, STAY_FILES, TIER_GOC, TIER_TAM_THOI };

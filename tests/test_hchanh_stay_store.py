@@ -47,3 +47,20 @@ def test_errors_and_open_stays_are_not_reused(tmp_path):
     assert res['bad'] == {'saved': False}
     assert res['open']['saved'] is True and res['open']['to'] == ''
     assert res['reuse'] is None
+
+
+def test_research_data_is_primary_over_hanh_chanh(tmp_path):
+    res = run_node(tmp_path, """
+      const d={ngay_ra:'28/09/2026',tong_so_ngay_dt:'5',_fetch_status:'ok'};
+      s.recordHchanhFetch('9',{discharge:{...d,xu_tri:'HC'}},{admission:'24/09/2026',source:'hanh_chanh'});
+      const goc=s.recordHchanhFetch('9',{discharge:{...d,xu_tri:'NC'}},{admission:'24/09/2026',source:'kho_nghien_cuu'});
+      const blocked=s.recordHchanhFetch('9',{discharge:{...d,xu_tri:'HC2'}},{admission:'24/09/2026',source:'kiem_ho_so'});
+      const st=s.findStoredStay('9','2026-09-25',['discharge']);
+      const onlyGoc=s.findStoredStay('9','2026-09-25',['discharge'],{onlyGoc:true});
+      console.log(JSON.stringify({goc:goc.saved,blocked,xu_tri:st.output.discharge.xu_tri,tier:st.tiers.discharge,
+        provisional:st.provisional_files,src:st.sourceKey,onlyGoc:!!onlyGoc}));
+    """)
+    assert res['goc'] is True
+    assert res['blocked']['saved'] is False and res['blocked']['kept_goc'] is True
+    assert res['xu_tri'] == 'NC' and res['tier'] == 'goc'
+    assert res['provisional'] == [] and res['src'] == 'kho_nghien_cuu_goc' and res['onlyGoc'] is True
