@@ -404,12 +404,6 @@ class ExamPage:
         self.js("if (window.jQuery) jQuery('#modalSinhHieu').modal('hide');")
         self.pause(0.5)
 
-    def read_weight(self) -> float:
-        self._open_vitals()
-        weight = parse_weight(self.js(JS_VALUE, "txtCanNangDHST"))
-        self._close_vitals()
-        return weight
-
     def save_weight(self, kg: float) -> None:
         self._open_vitals()
         self.js(JS_SET_VALUE, "txtCanNangDHST", f"{kg:g}")
@@ -465,9 +459,11 @@ def check_patient(page: ExamPage, row: Dict[str, Any], services_done: Optional[d
     base = {"earliest": earliest.isoformat()}
     if now < earliest:
         return {**base, "status": "waiting", "message": f"Chờ tới {earliest:%H:%M} mới hoàn tất được"}
-    if page.read_weight() <= 0:
-        return {**base, "status": "need_weight", "message": "Thiếu cân nặng — nhập cân nặng thật để hoàn tất"}
     return {**base, "status": "ready", "message": "Sẵn sàng hoàn tất"}
+
+
+def is_weight_warning(message: str) -> bool:
+    return "can nang" in norm(message)
 
 
 def complete_patient(page: ExamPage, row: Dict[str, Any], services_done: Optional[datetime], now: datetime,
@@ -478,26 +474,30 @@ def complete_patient(page: ExamPage, row: Dict[str, Any], services_done: Optiona
     must_enter = page.needs_enter()
     if must_enter and row.get("cho_doc_kq") and page.drug_count() == 0:
         return {"result": "no_drug", "message": "Chờ đọc KQ, chưa có thuốc — để bác sĩ xử lý", "steps": steps}
-    if now < earliest_completion(page.exam_start(), services_done):
-        earliest = earliest_completion(page.exam_start(), services_done)
+    earliest = earliest_completion(page.exam_start(), services_done)
+    if now < earliest:
         return {"result": "waiting", "message": f"Chờ tới {earliest:%H:%M} mới hoàn tất được", "steps": steps}
-    missing_weight = page.read_weight() <= 0
-    if missing_weight and not weight_kg:
-        return {"result": "need_weight", "message": "Thiếu cân nặng — nhập cân nặng thật để hoàn tất", "steps": steps}
     if must_enter:
         page.enter_exam()
         steps.append("Vào khám")
-    earliest = earliest_completion(page.exam_start(), services_done)  # Vào khám có thể đổi Ngày khám
-    if now < earliest:
-        return {"result": "waiting", "message": f"Chờ tới {earliest:%H:%M} mới hoàn tất được", "steps": steps}
-    if missing_weight:
-        page.save_weight(weight_kg)
-        steps.append(f"Nhập cân nặng {weight_kg:g} kg")
+        earliest = earliest_completion(page.exam_start(), services_done)  # Vào khám có thể đổi Ngày khám
+        if now < earliest:
+            return {"result": "waiting", "message": f"Chờ tới {earliest:%H:%M} mới hoàn tất được", "steps": steps}
     exit_time = page.read_exit_time()
     if not exit_time_is_valid(exit_time, earliest, now):
         page.save_exit_time(now)
         steps.append(f"Thời gian ra → {fmt_emr_dt(now)}")
-    toasts = page.finish()
+    # Cân nặng thường đã có từ đầu: cứ hoàn tất, EMR cảnh báo thiếu cân nặng mới nhập.
+    try:
+        toasts = page.finish()
+    except ExamStepError as e:
+        if not is_weight_warning(str(e)):
+            raise
+        if not weight_kg:
+            return {"result": "need_weight", "message": f"EMR báo thiếu cân nặng — nhập cân nặng thật để hoàn tất ({e})", "steps": steps}
+        page.save_weight(weight_kg)
+        steps.append(f"Nhập cân nặng {weight_kg:g} kg")
+        toasts = page.finish()
     steps.append("Hoàn tất khám" + (f" ({toasts[-1]})" if toasts else ""))
     return {"result": "done", "message": "Đã hoàn tất khám", "steps": steps}
 
@@ -630,6 +630,8 @@ MAX_CHECKS_PER_CYCLE = 8
 def _need_check(check: Optional[Dict[str, Any]], now: datetime) -> bool:
     if not check:
         return True
+    if check.get("status") in {"need_weight", "done"}:
+        return False  # chờ người dùng nhập cân nặng / đã xong — không kiểm tra lại
     if check.get("status") == "waiting" and check.get("earliest"):
         return now >= datetime.fromisoformat(check["earliest"])
     return now - datetime.fromisoformat(check["at"]) >= CHECK_EVERY

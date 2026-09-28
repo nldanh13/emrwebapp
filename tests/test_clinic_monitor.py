@@ -187,9 +187,9 @@ def test_count_prescribed_drugs():
 
 
 class FakePage:
-    """Màn khám giả: ghi lại mọi thao tác ghi để kiểm tra luồng."""
+    """Màn khám giả: ghi lại mọi thao tác ghi. Hoàn tất bị EMR chặn khi chưa có cân nặng."""
 
-    def __init__(self, *, enter=False, drugs=1, start='08:00 28/09/2026', weight=0.0, exit_time=None, finish_error=None):
+    def __init__(self, *, enter=False, drugs=1, start='08:00 28/09/2026', weight=60.0, exit_time=None, finish_error=None):
         self.enter, self.drugs, self.start = enter, drugs, cm.parse_emr_dt(start)
         self.weight, self.exit_time, self.finish_error = weight, exit_time, finish_error
         self.writes = []
@@ -197,15 +197,16 @@ class FakePage:
     def needs_enter(self): return self.enter
     def drug_count(self): return self.drugs
     def exam_start(self): return self.start
-    def read_weight(self): return self.weight
     def read_exit_time(self): return self.exit_time
     def enter_exam(self): self.writes.append('vao_kham'); self.enter = False
     def save_weight(self, kg): self.writes.append(('can_nang', kg)); self.weight = kg
-    def save_exit_time(self, v): self.writes.append(('thoi_gian_ra', cm.fmt_emr_dt(v)))
+    def save_exit_time(self, v): self.writes.append(('thoi_gian_ra', cm.fmt_emr_dt(v))); self.exit_time = v
 
     def finish(self):
         if self.finish_error:
             raise cm.ExamStepError(self.finish_error)
+        if not self.weight:
+            raise cm.ExamStepError('Hoàn tất khám: THÔNG BÁO: Chưa nhập cân nặng')
         self.writes.append('hoan_tat')
         return ['Cập nhập trạng thái thành công!']
 
@@ -217,46 +218,62 @@ def test_check_patient_is_read_only():
     row = {'cho_doc_kq': True}
     page = FakePage(enter=True, drugs=0)
     assert cm.check_patient(page, row, None, NOW)['status'] == 'no_drug'
-    page = FakePage(enter=True, drugs=2, weight=0)
-    assert cm.check_patient(page, row, None, NOW)['status'] == 'need_weight'
-    page = FakePage(start='09:58 28/09/2026', weight=55)
+    page = FakePage(start='09:58 28/09/2026')
     res = cm.check_patient(page, {}, None, NOW)
     assert res['status'] == 'waiting' and '10:01' in res['message']
-    page = FakePage(weight=55)
-    assert cm.check_patient(page, {}, DT(2026, 9, 28, 9, 0), NOW)['status'] == 'ready'
+    page = FakePage(enter=True, drugs=2, weight=0)
+    assert cm.check_patient(page, row, DT(2026, 9, 28, 9, 0), NOW)['status'] == 'ready'  # không đọc cân nặng trước
     assert page.writes == []
 
 
 def test_complete_patient_flow():
-    # Chờ đọc KQ có thuốc: vào khám → nhập cân nặng người dùng nhập → sửa thời gian ra về giờ hiện tại → hoàn tất.
-    page = FakePage(enter=True, drugs=3, weight=0, exit_time=cm.parse_emr_dt('08:01 28/09/2026'))
-    res = cm.complete_patient(page, {'cho_doc_kq': True}, DT(2026, 9, 28, 9, 0), NOW, 52)
+    # Chờ đọc KQ có thuốc: vào khám → sửa thời gian ra về giờ hiện tại → hoàn tất.
+    page = FakePage(enter=True, drugs=3, exit_time=cm.parse_emr_dt('08:01 28/09/2026'))
+    res = cm.complete_patient(page, {'cho_doc_kq': True}, DT(2026, 9, 28, 9, 0), NOW, None)
     assert res['result'] == 'done'
-    assert page.writes == ['vao_kham', ('can_nang', 52), ('thoi_gian_ra', '10:00 28/09/2026'), 'hoan_tat']
+    assert page.writes == ['vao_kham', ('thoi_gian_ra', '10:00 28/09/2026'), 'hoan_tat']
 
     # Thời gian ra đã hợp lệ → giữ nguyên, không sửa.
-    page = FakePage(weight=60, exit_time=cm.parse_emr_dt('09:40 28/09/2026'))
+    page = FakePage(exit_time=cm.parse_emr_dt('09:40 28/09/2026'))
     assert cm.complete_patient(page, {}, DT(2026, 9, 28, 9, 0), NOW, None)['result'] == 'done'
     assert page.writes == ['hoan_tat']
 
 
-def test_complete_patient_stops_without_real_data():
+def test_weight_only_entered_after_emr_warning():
+    # EMR báo thiếu cân nặng, người dùng đã nhập 52 kg → ghi cân nặng rồi hoàn tất lại.
+    page = FakePage(weight=0, exit_time=cm.parse_emr_dt('09:40 28/09/2026'))
+    res = cm.complete_patient(page, {}, None, NOW, 52)
+    assert res['result'] == 'done' and page.writes == [('can_nang', 52), 'hoan_tat']
+
+    # Chưa nhập cân nặng → dừng, báo nguyên văn cảnh báo của EMR, không tự điền.
+    page = FakePage(weight=0, exit_time=cm.parse_emr_dt('09:40 28/09/2026'))
+    res = cm.complete_patient(page, {}, None, NOW, None)
+    assert res['result'] == 'need_weight' and 'Chưa nhập cân nặng' in res['message']
+    assert page.writes == []
+
+    # Lỗi khác của EMR không bị coi là thiếu cân nặng.
+    page = FakePage(finish_error='Hoàn tất khám: THÔNG BÁO: Vui lòng nhập bệnh chính.', exit_time=cm.parse_emr_dt('09:40 28/09/2026'))
+    try:
+        cm.complete_patient(page, {}, None, NOW, 52)
+        raised = False
+    except cm.ExamStepError:
+        raised = True
+    assert raised and ('can_nang', 52) not in page.writes
+
+
+def test_complete_patient_stops_before_any_click():
     page = FakePage(enter=True, drugs=0)
     assert cm.complete_patient(page, {'cho_doc_kq': True}, None, NOW, None)['result'] == 'no_drug'
     assert page.writes == []  # không bấm Vào khám khi chưa có thuốc
 
-    page = FakePage(weight=0)
-    res = cm.complete_patient(page, {}, None, NOW, None)
-    assert res['result'] == 'need_weight' and page.writes == []  # không tự điền cân nặng
-
-    # Chờ đọc KQ có thuốc nhưng thiếu cân nặng: dừng TRƯỚC khi bấm Vào khám.
-    page = FakePage(enter=True, drugs=2, weight=0)
-    assert cm.complete_patient(page, {'cho_doc_kq': True}, None, NOW, None)['result'] == 'need_weight'
-    assert page.writes == []
-
-    page = FakePage(start='09:58 28/09/2026', weight=60)
+    page = FakePage(start='09:58 28/09/2026')
     assert cm.complete_patient(page, {}, None, NOW, None)['result'] == 'waiting'
     assert page.writes == []
+
+
+def test_need_weight_status_is_kept_until_user_acts():
+    assert cm._need_check({'status': 'need_weight', 'at': '2026-09-28T08:00:00'}, NOW) is False
+    assert cm._need_check({'status': 'ready', 'at': '2026-09-28T09:50:00'}, NOW) is True
 
 
 class DialogDriver:
