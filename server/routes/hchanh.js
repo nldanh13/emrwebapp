@@ -3805,7 +3805,7 @@ router.patch('/hchanh/manual-review/:ma_bn', handleRoute((req, res, ctx) => {
   meta.manual_review = applyManualReviewPatch(meta.manual_review, req.body || {});
   write_index(ctx, index);
   appendActivity(ctx, { kind: 'hchanh.manual_review.update', ma_bn, encounter_key: meta.encounter_key || '' });
-  return res.json({ status: 'ok', review: manualReviewSummary(meta.manual_review) });
+  return res.json({ status: 'ok', review: manualReviewSummary(meta.manual_review, { fetched: meta.fetched }) });
 }));
 
 
