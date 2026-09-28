@@ -30,6 +30,8 @@ Một file SQLite gom mọi lượt khám và mọi đợt nằm viện của t�
 | `chan_doan` | 1 chẩn đoán của lượt (`chinh`, `kem`, `vao`, `ra`) |
 | `dich_vu` | 1 dịch vụ: XN / CĐHA (số đã xong / số chỉ định) hoặc chỉ định chụp |
 | `thao_tac` | 1 việc hệ thống đã làm trên EMR (`hoan_tat_kham`, `sbbhc`, `dieu_tri_ngoai_tru`) |
+| `ket_qua_xn` | 1 kết quả xét nghiệm (1 chỉ số): thời gian, loại XN, chỉ số, kết quả, đơn vị, tham chiếu, cờ bất thường, kèm dòng nguồn nguyên văn |
+| `ket_qua_cdha` | 1 dịch vụ CĐHA: thời gian, nhóm, tên dịch vụ, mô tả, kết luận, kèm dòng nguồn nguyên văn |
 | `lien_ket_luot` | 1 mối nối giữa 2 lượt của cùng người bệnh (xem mục Tái khám). Tính lại mỗi khi lượt thay đổi, không nhập tay |
 
 ## Tái khám và tái nhập viện
@@ -109,7 +111,15 @@ Khi bấm Chuẩn hoá, phần hành chánh của từng ca (thông tin nền, r
 - CSV thô của lần quét (`hchanh_*.csv`) không bị sửa. Kết quả đối chiếu ghi vào `kho_nguoi_benh_overlay.json` và `action_log.txt`.
 - Thông báo sau khi chuẩn hoá cho biết đã lấy / thay bao nhiêu phần và còn bao nhiêu phần tạm thời.
 - Chữ ký đầu vào có kèm phiên bản dữ liệu của kho (`patient_db.dataVersion`). Kho có bản quét mới thì lần bấm Chuẩn hoá sau sẽ chạy lại, không dùng kết quả cũ.
-- XN / CĐHA (`lich_su_xn.csv`, `lich_su_cdha.csv`) vẫn lấy từ lần quét của nghiên cứu, vì kho người bệnh chưa lưu các kết quả này.
+- **XN / CĐHA:**
+  - Mỗi lần chuẩn hoá, kết quả trong `lich_su_xn.csv` / `lich_su_cdha.csv` của lần quét được ghi vào kho ở mức gốc.
+  - Ca **chưa có kết quả nào** trong lần quét (theo Mã BN và khoảng ngày của ca) thì lấy từ kho, ví dụ kho gốc hay nghiên cứu khác đã lấy trước. Các dòng lấy từ kho mang Mã NC của nghiên cứu hiện tại.
+  - Ca đã có kết quả trong lần quét thì giữ nguyên.
+  - Kho không lưu Mã NC. Cùng người bệnh, thời điểm, chỉ số và kết quả chỉ được lưu một lần, dù lấy ở nhiều lần quét.
+  - Kết quả được gắn vào lượt theo ngày: đợt nội trú chứa ngày đó, không có thì lượt khám cùng ngày. Việc gắn được tính lại mỗi khi lượt thay đổi.
+  - Dòng thiếu Mã BN, thời gian hoặc tên chỉ số / dịch vụ bị bỏ qua; hệ thống không tự điền.
+- **Góp kết quả đã lấy từ trước:** nút "Góp dữ liệu đã lấy vào kho nghiên cứu" (Hành chánh → Công cụ) hoặc `POST /api/kho/dong-bo` đọc XN / CĐHA của mọi lần quét nghiên cứu đã có.
+- Màn "Người bệnh & tái khám" cho mỗi lượt một mục thu gọn "Xét nghiệm: N kết quả (M bất thường) · CĐHA: K", bấm vào để xem bảng kết quả và kết luận CĐHA.
 
 ## Sao lưu
 
@@ -117,4 +127,4 @@ Kho là một file duy nhất. Khi sao lưu, chép cả `kho.sqlite3`, `kho.sqli
 
 ## Việc có thể làm tiếp
 
-- Kho người bệnh lưu thêm kết quả XN / CĐHA, để Kho nghiên cứu lấy toàn bộ từ kho chung.
+- Lấy XN / CĐHA ngay khi người bệnh đang nằm viện (Hành chánh / Phòng khám) để có kết quả tạm thời trước khi Kho nghiên cứu chốt.

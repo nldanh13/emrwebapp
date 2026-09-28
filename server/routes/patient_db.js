@@ -70,11 +70,21 @@ router.get('/kho/tai-nhap-vien', requireRole('operator'), guard((req, res) => (
 
 router.post('/kho/dong-bo', requireRole('operator'), guard((req, res) => {
   const result = syncAllToPatientDb();
+  // XN / CĐHA đã lấy ở Kho nghiên cứu (nạp chậm: module nghiên cứu lớn).
+  try {
+    const { ingestAllResearchResultsToPatientDb } = require('./research');
+    result.ket_qua = ingestAllResearchResultsToPatientDb();
+  } catch (err) {
+    result.ket_qua = { error: err.message };
+  }
   try { appendActivity(getRuntimePaths(req), { kind: 'patient_db.sync', ...result }); } catch (_) {}
   return res.json({
     status: result.ok ? 'ok' : 'error',
     ...result,
-    message: result.ok ? `Đã góp ${result.stays} đợt của ${result.patients} người bệnh (${result.new_scans} bản dữ liệu mới).` : result.message,
+    message: result.ok
+      ? `Đã góp ${result.stays} đợt của ${result.patients} người bệnh (${result.new_scans} bản dữ liệu mới)`
+        + (result.ket_qua?.runs ? `; XN ${result.ket_qua.xn} dòng, CĐHA ${result.ket_qua.cdha} dòng mới từ ${result.ket_qua.runs} lần quét nghiên cứu.` : '.')
+      : result.message,
     kho: patientDb.summary(),
   });
 }));

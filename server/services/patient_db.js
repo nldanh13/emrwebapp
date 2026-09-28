@@ -22,7 +22,7 @@ const fs = require('fs');
 const path = require('path');
 const { RUNTIME_ROOT } = require('../constants');
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 // Tái khám đúng hẹn: lệch tối đa ±3 ngày so với ngày hẹn. Tái nhập viện: trong 30 ngày sau ra viện.
 const HEN_LECH_TOI_DA = 3;
 const TAI_NHAP_VIEN_NGAY = 30;
@@ -156,6 +156,30 @@ CREATE INDEX IF NOT EXISTS lien_ket_truoc ON lien_ket_luot(luot_truoc, loai);
 CREATE INDEX IF NOT EXISTS lien_ket_sau ON lien_ket_luot(luot_sau);
 CREATE INDEX IF NOT EXISTS luot_hen ON luot(hen_tai_kham);
 CREATE INDEX IF NOT EXISTS luot_ra ON luot(loai, gio_ra);
+
+-- Kết quả xét nghiệm / CĐHA (từ Kho nghiên cứu: lich_su_xn.csv, lich_su_cdha.csv).
+-- Mỗi dòng giữ nguyên văn dòng nguồn (du_lieu, bỏ Mã NC vì là mã riêng của từng nghiên cứu);
+-- cùng người bệnh + thời điểm + chỉ số + kết quả chỉ lưu 1 lần dù lấy ở nhiều lần quét.
+-- luot_id gắn theo ngày: đợt nội trú chứa ngày đó, không có thì lượt khám cùng ngày; tính lại khi lượt đổi.
+CREATE TABLE IF NOT EXISTS ket_qua_xn (
+  id INTEGER PRIMARY KEY,
+  ma_bn TEXT NOT NULL, luot_id INTEGER,
+  thoi_gian TEXT, loai_xn TEXT, ma_phieu TEXT, chi_so TEXT, ket_qua TEXT, don_vi TEXT, tham_chieu TEXT, bat_thuong TEXT, trang_thai TEXT,
+  nguon TEXT, muc TEXT, lay_luc TEXT,
+  hash TEXT NOT NULL UNIQUE, du_lieu TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ket_qua_xn_bn ON ket_qua_xn(ma_bn, thoi_gian);
+CREATE INDEX IF NOT EXISTS ket_qua_xn_luot ON ket_qua_xn(luot_id);
+
+CREATE TABLE IF NOT EXISTS ket_qua_cdha (
+  id INTEGER PRIMARY KEY,
+  ma_bn TEXT NOT NULL, luot_id INTEGER,
+  thoi_gian TEXT, nhom TEXT, ten_dich_vu TEXT, mo_ta TEXT, ket_luan TEXT, trang_thai TEXT,
+  nguon TEXT, muc TEXT, lay_luc TEXT,
+  hash TEXT NOT NULL UNIQUE, du_lieu TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ket_qua_cdha_bn ON ket_qua_cdha(ma_bn, thoi_gian);
+CREATE INDEX IF NOT EXISTS ket_qua_cdha_luot ON ket_qua_cdha(luot_id);
 `;
 
 function open() {
@@ -449,6 +473,7 @@ function todayIso() {
 /** Tính lại mọi mối nối giữa các lượt của 1 người bệnh (gọi sau mỗi lần lượt thay đổi). */
 function rebuildLinks(conn, maBn) {
   const code = txt(maBn);
+  linkResults(conn, code);
   const visits = conn.prepare('SELECT id, loai, gio_vao, gio_ra, xu_tri, hen_tai_kham FROM luot WHERE ma_bn = ? ORDER BY gio_vao, id').all(code)
     .map(v => ({ ...v, start: dayOf(v.gio_vao), end: dayOf(v.gio_ra) || dayOf(v.gio_vao) }))
     .filter(v => v.start);
@@ -487,6 +512,27 @@ function rebuildLinks(conn, maBn) {
     if (a.loai === LOAI_KHAM && stripMarks(a.xu_tri).includes('nhap vien')) {
       const stay = visits.find(v => v.loai === LOAI_NOI_TRU && (daysBetween(a.start, v.start) ?? -1) >= 0 && daysBetween(a.start, v.start) <= KHAM_NHAP_VIEN_NGAY);
       if (stay) ins.run(code, a.id, stay.id, 'kham_nhap_vien', daysBetween(a.start, stay.start), null, null);
+    }
+  }
+}
+
+// Gắn kết quả XN / CĐHA vào lượt theo ngày: đợt nội trú chứa ngày đó, không có thì lượt khám cùng ngày.
+function linkResults(conn, maBn) {
+  const visits = conn.prepare('SELECT id, loai, gio_vao, gio_ra FROM luot WHERE ma_bn = ?').all(maBn)
+    .map(v => ({ id: v.id, loai: v.loai, start: dayOf(v.gio_vao), end: dayOf(v.gio_ra) }))
+    .filter(v => v.start);
+  const luotFor = (day) => {
+    if (!day) return null;
+    const stay = visits.find(v => v.loai === LOAI_NOI_TRU && v.start <= day && (!v.end || day <= v.end));
+    if (stay) return stay.id;
+    return visits.find(v => v.loai === LOAI_KHAM && v.start === day)?.id ?? null;
+  };
+  for (const table of ['ket_qua_xn', 'ket_qua_cdha']) {
+    const rows = conn.prepare(`SELECT id, thoi_gian, luot_id FROM ${table} WHERE ma_bn = ?`).all(maBn);
+    const upd = conn.prepare(`UPDATE ${table} SET luot_id = ? WHERE id = ?`);
+    for (const r of rows) {
+      const next = luotFor(dayOf(r.thoi_gian));
+      if ((next ?? null) !== (r.luot_id ?? null)) upd.run(next, r.id);
     }
   }
 }
@@ -588,6 +634,82 @@ function recordAction({ ma_bn: maBn, khambenhid, kind = '', result = '', message
   });
 }
 
+// ── Kết quả xét nghiệm / CĐHA ────────────────────────────────────────────────
+
+const pick = (row, keys) => {
+  for (const k of keys) {
+    const v = txt(row?.[k]);
+    if (v) return v;
+  }
+  return '';
+};
+const resultTime = row => isoTime(pick(row, ['TG chỉ định', 'TG xét nghiệm', 'Thời gian xét nghiệm', 'Thời gian']))
+  || isoTime([pick(row, ['Giờ chỉ định']), pick(row, ['Ngày chỉ định', 'Ngày xét nghiệm'])].filter(Boolean).join(' '));
+const resultMaBn = row => pick(row, ['Mã BN', 'Ma BN', 'ma_bn', 'patient_code']);
+
+/**
+ * Góp các dòng kết quả XN (kind 'xn') hoặc CĐHA (kind 'cdha') vào kho. Trùng nội dung thì bỏ qua.
+ * @param {object[]} rows  dòng CSV lich_su_xn.csv / lich_su_cdha.csv
+ * @returns {{ added: number, skipped: number }}
+ */
+function recordResults(rows, { kind = 'xn', source = 'kho_nghien_cuu', tier, now = new Date().toISOString() } = {}) {
+  const muc = tier || (source === 'kho_nghien_cuu' ? TIER_GOC : TIER_TAM_THOI);
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return { added: 0, skipped: 0 };
+  return tx(conn => {
+    let added = 0;
+    let skipped = 0;
+    const patients = new Set();
+    const insXn = conn.prepare(`INSERT OR IGNORE INTO ket_qua_xn (ma_bn, thoi_gian, loai_xn, ma_phieu, chi_so, ket_qua, don_vi, tham_chieu, bat_thuong, trang_thai, nguon, muc, lay_luc, hash, du_lieu)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const insCd = conn.prepare(`INSERT OR IGNORE INTO ket_qua_cdha (ma_bn, thoi_gian, nhom, ten_dich_vu, mo_ta, ket_luan, trang_thai, nguon, muc, lay_luc, hash, du_lieu)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    for (const raw of list) {
+      const code = resultMaBn(raw);
+      const time = resultTime(raw);
+      const clean = Object.fromEntries(Object.entries(raw || {}).filter(([k]) => !['Mã NC', 'Ma NC', 'research_code', 'Nguồn kho'].includes(k)));
+      if (!code || !time) { skipped += 1; continue; }
+      let res;
+      if (kind === 'xn') {
+        const f = {
+          loai: pick(raw, ['Loại XN', 'Nhóm XN']), phieu: pick(raw, ['Mã phiếu']), chiSo: pick(raw, ['Chỉ số', 'Tên xét nghiệm']),
+          kq: pick(raw, ['Kết quả']), dv: pick(raw, ['Đơn vị']), tc: pick(raw, ['Khoảng tham chiếu']), bt: pick(raw, ['Bất thường']), tt: pick(raw, ['Trạng thái']),
+        };
+        if (!f.chiSo) { skipped += 1; continue; }
+        const hash = contentHash({ kind, code, time, loai: f.loai, chiSo: f.chiSo, kq: f.kq, dv: f.dv });
+        res = insXn.run(code, time, f.loai, f.phieu, f.chiSo, f.kq, f.dv, f.tc, f.bt, f.tt, source, muc, now, hash, JSON.stringify(clean));
+      } else {
+        const f = {
+          nhom: pick(raw, ['Nhóm dịch vụ']), ten: pick(raw, ['Tên dịch vụ', 'Dịch vụ']),
+          moTa: pick(raw, ['Mô tả/Kết quả', 'Kết quả']), kl: pick(raw, ['Kết luận']), tt: pick(raw, ['Trạng thái']),
+        };
+        if (!f.ten) { skipped += 1; continue; }
+        const hash = contentHash({ kind, code, time, ten: f.ten, moTa: f.moTa, kl: f.kl });
+        res = insCd.run(code, time, f.nhom, f.ten, f.moTa, f.kl, f.tt, source, muc, now, hash, JSON.stringify(clean));
+      }
+      if (Number(res.changes) > 0) { added += 1; patients.add(code); } else skipped += 1;
+    }
+    for (const code of patients) linkResults(conn, code);
+    return { added, skipped };
+  });
+}
+
+/** Dòng kết quả (nguyên văn) của 1 người bệnh trong khoảng ngày [fromDay, toDay]. */
+function resultRows(maBn, fromDay, toDay, kind = 'xn') {
+  const code = txt(maBn);
+  const from = dayOf(fromDay);
+  const to = dayOf(toDay) || from;
+  if (!code || !from) return [];
+  const table = kind === 'xn' ? 'ket_qua_xn' : 'ket_qua_cdha';
+  return open().prepare(`SELECT du_lieu, muc FROM ${table} WHERE ma_bn = ? AND substr(thoi_gian, 1, 10) BETWEEN ? AND ? ORDER BY thoi_gian, id`)
+    .all(code, from, to)
+    .map(r => {
+      let data = {};
+      try { data = JSON.parse(r.du_lieu); } catch (_) {}
+      return { ...data, 'Nguồn kho': `kho_nguoi_benh:${r.muc}` };
+    });
+}
+
 // ── Đọc dùng chung cho các tab ────────────────────────────────────────────────
 
 /**
@@ -682,8 +804,11 @@ function patientContext(maBn, { day = todayIso(), excludeKhoaEmr = '', loai = ''
 
 /** Dấu phiên bản dữ liệu thô của kho: đổi mỗi khi có bản quét mới (dùng để biết cần chuẩn hoá lại). */
 function dataVersion() {
-  const r = open().prepare('SELECT COALESCE(MAX(id), 0) m, COUNT(*) n FROM lan_quet').get();
-  return `${r.m}:${r.n}`;
+  const conn = open();
+  return ['lan_quet', 'ket_qua_xn', 'ket_qua_cdha'].map(t => {
+    const r = conn.prepare(`SELECT COALESCE(MAX(id), 0) m, COUNT(*) n FROM ${t}`).get();
+    return `${r.m}:${r.n}`;
+  }).join('|');
 }
 
 // ── Tra cứu ───────────────────────────────────────────────────────────────────
@@ -703,6 +828,8 @@ function summary() {
     lan_quet: one('SELECT COUNT(*) n FROM lan_quet'),
     thao_tac: one('SELECT COUNT(*) n FROM thao_tac'),
     lien_ket: one('SELECT COUNT(*) n FROM lien_ket_luot'),
+    ket_qua_xn: one('SELECT COUNT(*) n FROM ket_qua_xn'),
+    ket_qua_cdha: one('SELECT COUNT(*) n FROM ket_qua_cdha'),
   };
 }
 
@@ -716,6 +843,10 @@ function luotDetail(conn, l) {
     lien_ket: conn.prepare(`SELECT loai, luot_truoc, luot_sau, so_ngay, ngay_hen, lech_hen FROM lien_ket_luot
       WHERE luot_truoc = ? OR luot_sau = ? ORDER BY id`).all(l.id, l.id).map(r => ({ ...r })),
     trang_thai_hen: appointmentStatus(conn, l, todayIso()),
+    xet_nghiem: conn.prepare(`SELECT thoi_gian, loai_xn, chi_so, ket_qua, don_vi, tham_chieu, bat_thuong, muc FROM ket_qua_xn
+      WHERE luot_id = ? ORDER BY thoi_gian, id`).all(l.id).map(r => ({ ...r })),
+    cdha: conn.prepare(`SELECT thoi_gian, nhom, ten_dich_vu, mo_ta, ket_luan, trang_thai, muc FROM ket_qua_cdha
+      WHERE luot_id = ? ORDER BY thoi_gian, id`).all(l.id).map(r => ({ ...r })),
   };
 }
 
@@ -846,7 +977,7 @@ function searchPatients(query, limit = 30) {
 
 module.exports = {
   available, unavailableReason, open, close,
-  recordInpatient, recordClinicVisit, recordAction, findStay, patientContext, dataVersion,
+  recordInpatient, recordClinicVisit, recordAction, recordResults, resultRows, findStay, patientContext, dataVersion,
   summary, patientJourney, listVisits, searchPatients, appointmentReport, readmissionReport,
   HEN_LECH_TOI_DA, TAI_NHAP_VIEN_NGAY,
   isoTime, splitIcd, contentHash,

@@ -117,6 +117,49 @@ function RangeBar({ tu, den, setTu, setDen, loading, onReload, children }) {
 
 // ── Hành trình 1 người bệnh ──────────────────────────────────────────────────
 
+const ABNORMAL_RE = /^(h|l|hh|ll|cao|thấp|bất thường|\*|↑|↓|[<>])/i;
+
+// Kết quả XN / CĐHA của lượt (lấy từ Kho nghiên cứu), thu gọn mặc định.
+function ResultsBlock({ l }) {
+  const xn = l.xet_nghiem || [];
+  const cd = l.cdha || [];
+  if (!xn.length && !cd.length) return null;
+  const abnormal = xn.filter(r => r.bat_thuong && ABNORMAL_RE.test(String(r.bat_thuong).trim())).length;
+  return (
+    <details style={{ fontSize: FS.sm }}>
+      <summary style={{ cursor: 'pointer', color: C.text2, fontWeight: 600 }}>
+        {[xn.length && `Xét nghiệm: ${xn.length} kết quả${abnormal ? ` (${abnormal} bất thường)` : ''}`, cd.length && `CĐHA: ${cd.length}`].filter(Boolean).join(' · ')}
+      </summary>
+      {xn.length > 0 && (
+        <div className="emr-hscroll" style={{ overflowX: 'auto', marginTop: 6 }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 520 }}>
+            <thead><tr>{['Thời gian', 'Chỉ số', 'Kết quả', 'Đơn vị', 'Tham chiếu', 'Cờ'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <tbody>
+              {xn.map((r, i) => (
+                <tr key={i}>
+                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtTime(r.thoi_gian)}</td>
+                  <td style={td}>{r.chi_so}{r.loai_xn ? <span style={{ color: C.text3, fontSize: FS.xs }}> · {r.loai_xn}</span> : null}</td>
+                  <td style={{ ...td, fontVariantNumeric: 'tabular-nums', fontWeight: r.bat_thuong ? 650 : 400, color: r.bat_thuong ? C.red : C.text }}>{r.ket_qua}</td>
+                  <td style={td}>{r.don_vi}</td>
+                  <td style={td}>{r.tham_chieu}</td>
+                  <td style={td}>{r.bat_thuong}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {cd.map((r, i) => (
+        <div key={i} style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${C.border2}` }}>
+          <b>{fmtTime(r.thoi_gian)}</b> · {r.ten_dich_vu}{r.nhom ? ` (${r.nhom})` : ''}
+          {r.ket_luan && <div>Kết luận: {r.ket_luan}</div>}
+          {r.mo_ta && <div style={{ color: C.text2, whiteSpace: 'pre-wrap' }}>{r.mo_ta}</div>}
+        </div>
+      ))}
+    </details>
+  );
+}
+
 function VisitCard({ l, byId }) {
   const isKham = l.loai === 'kham';
   const hen = l.trang_thai_hen;
@@ -161,6 +204,7 @@ function VisitCard({ l, byId }) {
           {services.length > 8 ? ` · +${services.length - 8}` : ''}
         </div>
       )}
+      <ResultsBlock l={l} />
       {(l.thao_tac || []).length > 0 && (
         <div style={{ fontSize: FS.xs, color: C.text3 }}>
           Hệ thống đã làm: {l.thao_tac.map(t => `${THAO_TAC[t.loai] || t.loai} (${t.ket_qua})`).join(' · ')}

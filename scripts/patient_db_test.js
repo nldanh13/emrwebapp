@@ -207,13 +207,35 @@ async function main() {
     assert.strictEqual(link.khoa_emr, 'kb:T2');
   });
 
+  await test('XN / CĐHA: lưu vào kho không trùng dù lấy nhiều lần, gắn đúng lượt theo ngày, đọc lại nguyên văn theo khoảng ngày', () => {
+    const xn = (time, chiSo, kq, nc = 'NC1') => ({ 'Mã NC': nc, 'Mã BN': 'BN10', 'TG chỉ định': time, 'Loại XN': 'Huyết học', 'Chỉ số': chiSo, 'Kết quả': kq, 'Đơn vị': 'g/L', 'Bất thường': kq < 120 ? 'L' : '' });
+    const r1 = patientDb.recordResults([xn('08:00 12/09/2026', 'HGB', '110'), xn('08:00 12/09/2026', 'WBC', '9.1'), xn('09:00 17/08/2026', 'HGB', '130'), { 'Mã BN': 'BN10', 'Chỉ số': 'X' }], { kind: 'xn' });
+    assert.deepStrictEqual(r1, { added: 3, skipped: 1 }, 'dòng thiếu thời gian bị bỏ, không tự điền');
+    // Nghiên cứu khác lấy lại cùng kết quả (khác Mã NC) → không lưu thêm.
+    assert.strictEqual(patientDb.recordResults([xn('08:00 12/09/2026', 'HGB', '110', 'NC9')], { kind: 'xn' }).added, 0);
+    patientDb.recordResults([{ 'Mã BN': 'BN10', 'TG chỉ định': '10:00 13/09/2026', 'Tên dịch vụ': 'Chụp MRI cột sống thắt lưng', 'Nhóm dịch vụ': 'MRI', 'Kết luận': 'Thoát vị L4-L5' }], { kind: 'cdha' });
+
+    const j = patientDb.patientJourney('BN10');
+    const stay = j.luot.find(l => l.loai === 'noi_tru' && l.gio_vao.startsWith('2026-09-1'));
+    assert.deepStrictEqual(stay.xet_nghiem.map(r => `${r.chi_so}=${r.ket_qua}`), ['HGB=110', 'WBC=9.1']);
+    assert.strictEqual(stay.cdha[0].ket_luan, 'Thoát vị L4-L5');
+    const k2 = j.luot.find(l => l.khoa_emr === 'kb:K2');
+    assert.deepStrictEqual(k2.xet_nghiem.map(r => r.chi_so), ['HGB'], 'không có đợt nội trú → gắn lượt khám cùng ngày');
+
+    const rows = patientDb.resultRows('BN10', '2026-09-11', '2026-09-15', 'xn');
+    assert.strictEqual(rows.length, 2);
+    assert.strictEqual(rows[0]['Mã NC'], undefined, 'không lưu Mã NC của nghiên cứu');
+    assert.strictEqual(rows[0]['Nguồn kho'], 'kho_nguoi_benh:goc');
+    assert.strictEqual(patientDb.summary().ket_qua_xn, 3);
+  });
+
   await test('Kho tạo từ bản trước (chưa có bảng nối lượt) → mở lại tự tính nối lượt cho mọi người bệnh', () => {
     conn().prepare("UPDATE meta SET value = '1' WHERE key = 'schema_version'").run();
     conn().prepare('DELETE FROM lien_ket_luot').run();
     patientDb.close();
     const n = Number(conn().prepare("SELECT COUNT(*) n FROM lien_ket_luot WHERE ma_bn = 'BN10'").get().n);
     assert.strictEqual(n, 4);
-    assert.strictEqual(conn().prepare("SELECT value FROM meta WHERE key = 'schema_version'").get().value, '2');
+    assert.ok(Number(conn().prepare("SELECT value FROM meta WHERE key = 'schema_version'").get().value) >= 2);
   });
 
   await test('Đọc chung: findStay lấy bản gốc trước, onlyGoc bỏ tạm thời, thiếu file thì không trả; findStoredStay đọc kho trước, JSON dự phòng', () => {
