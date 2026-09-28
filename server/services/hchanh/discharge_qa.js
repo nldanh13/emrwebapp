@@ -606,7 +606,22 @@ function buildBedDaysReview({ profile, discharge, bed_days, surgery, billing }) 
   };
 }
 
-function checkBedDays(bed_days, rules = {}, review = null) {
+// File ngày giường lấy trước bản sửa lỗi có so_ngay_thuc = số ngày của khoảng lọc trên màn hình
+// (thường 1) chứ không phải thời gian nằm viện, kèm cảnh báo "thực tế chỉ nằm N ngày" sai.
+// Bỏ các giá trị đó để không báo nhầm; so sánh chuẩn dùng buildBedDaysReview.
+const STALE_BED_WARNING_RE = /thực tế (chỉ )?nằm \d+ ngày/i;
+
+function sanitizeBedDays(bed_days) {
+  if (!bed_days || typeof bed_days !== 'object') return bed_days;
+  return {
+    ...bed_days,
+    so_ngay_thuc: 0,
+    warnings: safeArray(bed_days.warnings).filter(w => !STALE_BED_WARNING_RE.test(text(w))),
+  };
+}
+
+function checkBedDays(rawBedDays, rules = {}, review = null) {
+  const bed_days = sanitizeBedDays(rawBedDays);
   const issues = [];
   const cfg = rules.bed_days_rules || {};
   if (cfg.enabled === false) return issues;
@@ -942,4 +957,5 @@ function runDischargeQA_Hchanh({ ma_bn, meta, data }) {
   };
 }
 
-module.exports = { runDischargeQA_Hchanh, loadQaRules, extractClsFromBilling, buildQaGate };
+module.exports = {
+  sanitizeBedDays, runDischargeQA_Hchanh, loadQaRules, extractClsFromBilling, buildQaGate };

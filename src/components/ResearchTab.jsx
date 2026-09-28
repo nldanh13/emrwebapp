@@ -2495,6 +2495,25 @@ export default function ResearchTab({ toast }) {
     setArchiveMode('update');
   }, [archiveOptions, isArchive, runAutomaticWorkflow, t]);
 
+  // Ca đang dùng dữ liệu tạm thời lấy từ tab Hành chánh / Kiểm hồ sơ: quét lại từ EMR để có dữ liệu gốc.
+  const runRefreshProvisional = useCallback(async () => {
+    if (!window.confirm('Quét lại từ EMR các ca đang dùng dữ liệu tạm thời lấy từ tab Hành chánh / Kiểm hồ sơ?\n\nKết quả quét lại là dữ liệu gốc và sẽ thay dữ liệu tạm thời.')) return;
+    setBusy(true);
+    try {
+      const today = todayInputDate();
+      const options = isArchive
+        ? { headless: archiveOptions.headless, fromDate: archiveOptions.fromDate, toDate: archiveOptions.toDate || today, refreshProvisional: true }
+        : { headless: studyOptions.headless, fromDate: studyOptions.fromDate || archiveOptions.fromDate, toDate: studyOptions.toDate || archiveOptions.toDate || today, refreshProvisional: true };
+      const r = isArchive
+        ? await api.fetchHchanhAllForResearchArchive(options)
+        : await api.fetchHchanhAllForResearchStudy(selectedId, options);
+      t(r.message || 'Đã quét lại các ca dùng dữ liệu tạm thời.', 'ok');
+      await loadSummary();
+      await loadProgressSnapshot(isArchive ? ARCHIVE_SCOPE : selectedId, { silent: true });
+    } catch (e) { t(String(e.message || e), 'error'); }
+    finally { setBusy(false); }
+  }, [isArchive, selectedId, archiveOptions.headless, archiveOptions.fromDate, archiveOptions.toDate, studyOptions.headless, studyOptions.fromDate, studyOptions.toDate, loadSummary, loadProgressSnapshot, t]);
+
   const runSimpleDataCollection = useCallback(async () => {
     const today = todayInputDate();
     const scope = isArchive ? ARCHIVE_API_SCOPE : selectedId;
@@ -3945,8 +3964,21 @@ export default function ResearchTab({ toast }) {
                   >
                     {uiBusy && automationRun.kind === 'collect' ? 'Đang lấy…' : `${isArchive ? '2. ' : ''}Lấy dữ liệu`}
                   </button>
+                  <button
+                    type="button"
+                    onClick={runRefreshProvisional}
+                    disabled={uiBusy || (isArchive ? !archive?.latest_run?.id : !activeStudy?.has_cohort)}
+                    title="Ca đã dùng dữ liệu tạm thời từ tab Hành chánh / Kiểm hồ sơ sẽ được quét lại từ EMR để có dữ liệu gốc"
+                    style={{
+                      height: 34, padding: '0 12px', borderRadius: 6, cursor: uiBusy ? 'not-allowed' : 'pointer',
+                      border: `1px solid ${C.border}`, background: C.surface, color: C.text,
+                      fontFamily: 'inherit', fontSize: 11.5, fontWeight: 650, opacity: uiBusy ? 0.55 : 1,
+                    }}
+                  >
+                    Quét lại dữ liệu tạm thời
+                  </button>
                   <span style={{ fontSize: 10.5, color: C.text3 }}>
-                    Chuẩn hóa và cập nhật kho chạy tự động.
+                    Chuẩn hóa và cập nhật kho chạy tự động. Ca đã có ở tab Hành chánh / Kiểm hồ sơ được dùng lại (tạm thời) thay vì mở EMR.
                   </span>
                 </div>
 

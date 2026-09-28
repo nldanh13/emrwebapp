@@ -15,6 +15,7 @@ const { redactLogLine } = require('../utils/log_redact');
 const { runPython, runScript, fmtPyError } = require('../services/python_runner');
 const { getRuntimePaths } = require('../services/session');
 const { appendActivity } = require('../services/activity_logger');
+const { findStoredStay, recordHchanhFetch } = require('../services/hchanh_stay_store');
 const { appendSecurityAudit } = require('../services/security_audit');
 const { hasRole } = require('../services/authz');
 const { enqueueHeavy, registerCancel, unregisterCancel, isCancelRequested } = require('../services/task_queue');
@@ -4654,7 +4655,7 @@ function hchanhFileStatusPatch(output, rowCounts, wantedFiles, previousCounts, a
 async function fetchHchanhForResearchRun(ctx, runDir, {
   sourceRows = [], sourceRunId = '', files = null, headless = true, force = false,
   fallbackDateFrom = '', fallbackDateTo = '', limit = 0,
-  mode = 'hchanh_auto', saveRaw = false, forceKeys = null,
+  mode = 'hchanh_auto', saveRaw = false, forceKeys = null, refreshProvisional = false,
 } = {}) {
   const normalizedMode = String(mode || '').trim() === 'order_history_auto' ? 'order_history_auto' : 'hchanh_auto';
   const wantedFiles = normalizedMode === 'order_history_auto' ? orderHistoryDefaultFiles(files) : hchanhDefaultFiles(files);
@@ -4737,7 +4738,10 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
   const findFetchedStay = (meta) => {
     const admission = isoDate(meta.admission_raw || '');
     if (!admission) return null;
-    return (fetchedStays.get(meta.ma_bn) || []).find(st => st.from <= admission && admission <= st.to) || null;
+    return (fetchedStays.get(meta.ma_bn) || []).find(st => st.from <= admission && admission <= st.to)
+      // Đợt đã lấy ở tab Hành chánh / Kiểm hồ sơ (kho dùng chung) — dùng lại, không mở EMR.
+      || findStoredStay(meta.ma_bn, admission, wantedFiles, { onlyGoc: refreshProvisional })
+      || null;
   };
   const writeHchanhCsvs = () => {
     writeCsvUnion(path.join(runPath, 'hchanh_profile.csv'), profileRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Giới', 'Ngày sinh', 'Tuổi', 'Địa chỉ', 'Điện thoại', 'Số CMND', 'Đối tượng', 'Số thẻ', 'Ngày vào viện', 'Ngày ra viện', 'Chẩn đoán', 'Research key']);
@@ -4773,7 +4777,9 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
         const display = `${idx + 1}/${selectedRows.length} ${meta.ma_bn}${meta.research_code ? ` (${meta.research_code})` : ''}`;
         // forceKeys: điều phối tự động yêu cầu lấy lại đúng ca này (thiếu/lỗi/đã đổi)
         // dù progress cũ ghi done.
-        const forcedCase = force || Boolean(forceKeys?.has(key));
+        // refreshProvisional: ca đang dùng dữ liệu tạm thời (Hành chánh / Kiểm hồ sơ) được quét lại để lấy dữ liệu gốc.
+        const forcedCase = force || Boolean(forceKeys?.has(key))
+          || (refreshProvisional && (progress[key]?.provisional_files || []).length > 0);
         if (!forcedCase && progress[key]?.status === 'done') {
           stats.skipped += 1;
           continue;
@@ -4827,10 +4833,12 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
             status: sc.attention ? 'partial' : 'done', finished_at: nowIso(), files: [...new Set([...(progress[key]?.files || []), ...wantedFiles])], counts: sc,
             file_status: { ...(progress[key]?.file_status || {}), ...hchanhFileStatusPatch(reuse.output, reuseCounts, wantedFiles, {}, nowIso()) },
             reused_from: reuse.sourceKey,
+            // Dùng lại từ tab Hành chánh / Kiểm hồ sơ → dữ liệu tạm thời; lần quét lại của Kho nghiên cứu sẽ thay.
+            provisional_files: reuse.provisional_files || [],
             rows: { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length },
           };
           chunkReused += 1;
-          appendResearchRunLog(runPath, `[${logPrefix}] DÙNG LẠI ${display}: cùng đợt nằm viện ${reuse.from} → ${reuse.to} đã lấy ở ${reuse.sourceKey}, không mở EMR lại.`);
+          appendResearchRunLog(runPath, `[${logPrefix}] DÙNG LẠI ${display}: cùng đợt nằm viện ${reuse.from} → ${reuse.to} đã lấy ở ${String(reuse.sourceKey).startsWith('kho_hanh_chanh') ? 'tab Hành chánh / Kiểm hồ sơ (dữ liệu tạm thời)' : reuse.sourceKey === 'kho_nghien_cuu_goc' ? 'lần quét trước của Kho nghiên cứu (dữ liệu gốc)' : reuse.sourceKey}, không mở EMR lại.`);
           continue;
         }
 
@@ -4841,7 +4849,21 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
 
         const dateFrom = meta.date_from || fallbackDateFrom || '';
         const dateTo = meta.date_to || fallbackDateTo || dateFrom || '';
-        batchItems.push({ idx, row, meta, key, failKey, display, dateFrom, dateTo });
+        // Kho dùng chung có sẵn một phần (vd ra viện từ Kiểm hồ sơ): dùng phần đó, chỉ mở EMR lấy file còn thiếu.
+        let storedFiles = null;
+        let storedTiers = null;
+        let filesOverride = null;
+        const storedPart = force ? null : findStoredStay(meta.ma_bn, isoDate(meta.admission_raw || ''), [], { onlyGoc: refreshProvisional });
+        if (storedPart) {
+          const have = wantedFiles.filter(k => storedPart.output?.[k]);
+          if (have.length) {
+            storedFiles = Object.fromEntries(have.map(k => [k, storedPart.output[k]]));
+            storedTiers = storedPart.tiers || {};
+            filesOverride = wantedFiles.filter(k => !storedPart.output?.[k]);
+            appendResearchRunLog(runPath, `[${logPrefix}] DÙNG MỘT PHẦN ${display}: đã có ${have.join(',')} từ tab Hành chánh / Kiểm hồ sơ; chỉ lấy ${filesOverride.join(',')}.`);
+          }
+        }
+        batchItems.push({ idx, row, meta, key, failKey, display, dateFrom, dateTo, storedFiles, storedTiers, filesOverride });
       }
       if (postponed.length) queue.unshift(...postponed);
 
@@ -4855,8 +4877,9 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
       batchNo += 1;
       const batchInputPath = path.join(rawDir, `batch_input_${String(batchNo).padStart(4, '0')}.json`);
       const batchOutputPath = path.join(rawDir, `batch_output_${String(batchNo).padStart(4, '0')}.json`);
-      const batchPayload = batchItems.map(({ row, meta, key, dateFrom, dateTo }) => ({
+      const batchPayload = batchItems.map(({ row, meta, key, dateFrom, dateTo, filesOverride }) => ({
         ...row,
+        ...(filesOverride?.length ? { _files_override: filesOverride } : {}),
         ma_bn: meta.ma_bn,
         ho_ten: meta.ho_ten,
         research_code: meta.research_code,
@@ -4910,7 +4933,9 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
       for (const item of batchItems) {
         const { idx, row, meta, key, failKey, display, dateFrom, dateTo } = item;
         stats.processed += 1;
-        const output = batchOutput[key];
+        const fetchedOutput = batchOutput[key];
+        // Ghép phần đã có trong kho dùng chung; file vừa lấy từ EMR được ưu tiên.
+        const output = fetchedOutput && item.storedFiles ? { ...item.storedFiles, ...fetchedOutput } : fetchedOutput;
 
         // Nếu worker bị kill vì người dùng bấm Dừng và ca này chưa kịp có kết quả
         // trong batchOutput, đây không phải lỗi dữ liệu của BN — đưa về pending_refetch.
@@ -4974,6 +4999,15 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
         else if (sc.attention) stats.attention += 1;
         else stats.ok += 1;
         if (!sc.error) rememberFetchedStay(meta, key, output);
+        // Phần Kho nghiên cứu vừa tự quét là dữ liệu gốc: ghi vào kho dùng chung, thay dữ liệu tạm thời.
+        try {
+          if (fetchedOutput && !sc.error) recordHchanhFetch(meta.ma_bn, fetchedOutput, { admission: meta.admission_raw || dateFrom || '', source: 'kho_nghien_cuu' });
+        } catch (err) {
+          appendResearchRunLog(runPath, `[${logPrefix}] CẢNH BÁO ${display}: không ghi được vào kho dùng chung: ${String(err.message || err)}`);
+        }
+        const provisionalFromStore = item.storedFiles
+          ? Object.keys(item.storedFiles).filter(k => !(fetchedOutput && fetchedOutput[k]) && item.storedTiers?.[k] !== 'goc')
+          : [];
         const rowCounts = { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length };
         progress[key] = {
           ...progress[key], status: sc.error ? 'error' : (sc.attention ? 'partial' : 'done'),
@@ -4981,6 +5015,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
           files: [...new Set([...(progress[key]?.files || []), ...wantedFiles])],
           rows: { ...(progress[key]?.rows || {}), ...Object.fromEntries(wantedFiles.map(f => [f, rowCounts[f] || 0])) },
           file_status: { ...(progress[key]?.file_status || {}), ...hchanhFileStatusPatch(output, rowCounts, wantedFiles, previousCounts, nowIso()) },
+          provisional_files: provisionalFromStore,
         };
         // Progress của cả lô được ghi SAU khi CSV đã ghi xong (xem cuối lô). Nếu tiến trình
         // chết giữa hai bước, progress còn cũ → ca được lấy lại, không có "done" mà thiếu CSV.
@@ -6688,6 +6723,7 @@ router.post('/research/archive/fetch-hchanh', async (req, res) => {
           files,
           headless: researchHeadlessFromBody(req.body),
           force: req.body?.force === true,
+          refreshProvisional: req.body?.refreshProvisional === true,
           fallbackDateFrom: dateContext?.from_date || effectiveFromDate || '',
           fallbackDateTo: dateContext?.to_date || effectiveToDate || todayDateInput(),
           limit,
@@ -6754,6 +6790,7 @@ router.post('/research/archive/fetch-order-history', async (req, res) => {
           files,
           headless: researchHeadlessFromBody(req.body),
           force: req.body?.force === true,
+          refreshProvisional: req.body?.refreshProvisional === true,
           fallbackDateFrom: dateContext?.from_date || effectiveFromDate || '',
           fallbackDateTo: dateContext?.to_date || effectiveToDate || todayDateInput(),
           limit,
@@ -7820,6 +7857,7 @@ async function handleCollectAuto(req, res, studyIdParam = '') {
       fromDate: sc.fromDate, toDate: sc.toDate, headless: researchHeadlessFromBody(req.body),
       maxAttempts: maxAttemptsFrom(req, sc.study),
       force: req.body?.force === true,
+      refreshProvisional: req.body?.refreshProvisional === true,
       retryBlocked: req.body?.retryBlocked === true,
       parts: requestedParts.length ? requestedParts : collection.PART_KEYS,
       limit: Number.isFinite(Number(req.body?.limit)) ? Math.max(0, Math.trunc(Number(req.body.limit))) : 0,
@@ -8450,6 +8488,7 @@ router.post('/research/studies/:studyId/fetch-hchanh', async (req, res) => {
         files,
         headless: researchHeadlessFromBody(req.body),
         force: req.body?.force === true,
+        refreshProvisional: req.body?.refreshProvisional === true,
         fallbackDateFrom: dateContext?.from_date || String(req.body?.fromDate || ''),
         fallbackDateTo: dateContext?.to_date || String(req.body?.toDate || ''),
         limit,
@@ -8531,6 +8570,7 @@ router.post('/research/studies/:studyId/fetch-order-history', async (req, res) =
         files,
         headless: researchHeadlessFromBody(req.body),
         force: req.body?.force === true,
+        refreshProvisional: req.body?.refreshProvisional === true,
         fallbackDateFrom: dateContext?.from_date || String(req.body?.fromDate || ''),
         fallbackDateTo: dateContext?.to_date || String(req.body?.toDate || ''),
         limit,

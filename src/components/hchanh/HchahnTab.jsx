@@ -11,7 +11,7 @@ import { Btn, Segmented, Spinner } from '../shared.jsx';
 import useIsMobile from '../../hooks/useIsMobile.js';
 import { useHchanh, SCOPE_LABEL, SCOPE_FILES, getMaBn } from './useHchanh.js';
 import { HCHANH_VTYT_ITEMS, HCHANH_BED_SERVICE_ITEMS } from '../../config/hchanhLists.js';
-import { printHchanh_Ticket, printHchanh_WardList } from '../../api.js';
+import { printHchanh_Ticket, printHchanh_WardList, importHchanhStayStore } from '../../api.js';
 import HchanhVtytBatchPanel from './HchanhVtytBatchPanel.jsx';
 import { formatPersonName } from '../../utils/personName.js';
 
@@ -1189,10 +1189,12 @@ function DetailPanel({ isMobile = false, card, onClose, onFetch, onFetchDischarg
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:12 }}>
                     {[
                       ['Tổng ngày kê giường', bed.so_ngay_tinh, 'blue'],
-                      ['Thời gian điều trị', bed.so_ngay_thuc, 'green'],
+                      // Dự kiến theo ngày vào/ra + mốc hậu phẫu (máy chủ tính). Không dùng so_ngay_thuc cũ:
+                      // trước đây nó là số ngày của khoảng lọc trên màn hình (thường 1), không phải thời gian nằm viện.
+                      ['Ngày giường dự kiến', bedReview?.expected_total ?? '—', 'green'],
                     ].map(([label, value, tone]) => {
                       const s   = tS(tone);
-                      const bad = bed.so_ngay_tinh > 0 && bed.so_ngay_thuc > 0 && bed.so_ngay_tinh !== bed.so_ngay_thuc;
+                      const bad = bedReview?.status === 'mismatch';
                       return (
                         <div key={label} style={{ padding:'8px 12px', borderRadius:6, background:s.bg,
                           border:`1px solid ${bad ? C.redBorder : s.border}` }}>
@@ -1631,6 +1633,10 @@ export default function HchahnTab({ toast, workDateRange }) {
                     ['In danh sách xếp phòng', () => printHchanh_WardList().catch(err => alert(err.message || err))],
                     ['Danh mục vật tư', () => setResourceList('vtyt')],
                     ['Danh mục giường', () => setResourceList('bed')],
+                    // Dữ liệu lấy mới đã tự góp vào kho; mục này góp một lần phần đã lấy từ trước.
+                    ['Góp dữ liệu đã lấy vào kho nghiên cứu', () => importHchanhStayStore()
+                      .then(r => toast?.(r.message, 'ok'))
+                      .catch(err => toast?.(String(err.message || err), 'error'))],
                   ].map(([label, run]) => (
                     <button key={label} type="button" role="menuitem" className="emr-menu-item" onClick={() => { run(); setShowTools(false); }}>{label}</button>
                   ))}

@@ -845,11 +845,12 @@ class Monitor:
             raise ExamStepError(f"Không đọc được lịch sử dịch vụ: {compact(res.get('message'))}")
         return clinic_bbhc.imaging_orders(res.get("html") or "")
 
-    def on_exam_page(self, row: Dict[str, Any], action: Callable[[ExamPage, Optional[datetime], datetime], Dict[str, Any]]) -> Dict[str, Any]:
+    def on_exam_page(self, row: Dict[str, Any], action: Callable[[ExamPage, Optional[datetime], datetime], Dict[str, Any]],
+                     need_services: bool = True) -> Dict[str, Any]:
         """Mở màn khám của người bệnh, chạy `action`, rồi quay về danh sách."""
         now = _now()
         try:
-            done_at = self.services_done(row, now)
+            done_at = self.services_done(row, now) if need_services else None
             base_url = self.driver.current_url
             page = ExamPage(self.driver)
             page.open(urljoin(base_url, row["href"]))
@@ -936,6 +937,95 @@ def scan_imaging(monitor: "Monitor", rows: List[Dict[str, Any]], cache: Dict[str
             print(f"[CLINIC-MONITOR] [WARN] STT {row.get('stt')}: {e}")
 
 
+# ── Kho người bệnh: chi tiết từng lượt khám (chỉ đọc) ──────────────────────────
+# Mỗi lượt đã có xử trí được mở màn khám 1 lần để đọc chẩn đoán, lý do khám, chi tiết xử trí và
+# ngày hẹn tái khám; khi lượt chuyển sang Hoàn tất thì đọc lại 1 lần nữa để chốt (dữ liệu gốc).
+# Máy chủ ghi kết quả vào Kho người bệnh. Không bấm nút nào trên EMR.
+
+MAX_DETAILS_PER_CYCLE = 4
+DETAIL_RETRY_AFTER = timedelta(minutes=15)
+DETAIL_MAX_ERRORS = 3
+HEN_RE = re.compile(r"\bhen\b|tai kham")
+
+
+def hen_tai_kham_from_xutri(fields: List[Dict[str, Any]]) -> str:
+    """Ngày hẹn tái khám trong popup Chi tiết xử trí (tìm theo nhãn có chữ "hẹn" / "tái khám")."""
+    for f in fields or []:
+        value = compact(f.get("value"))
+        if value and HEN_RE.search(norm(f.get("label"))):
+            dt = parse_emr_dt(value)
+            if dt:
+                return fmt_emr_dt(dt)
+            m = re.search(r"\d{1,2}/\d{1,2}/\d{4}", value)
+            if m:
+                return m.group(0)
+    return ""
+
+
+def read_visit_details(page: "ExamPage", row: Dict[str, Any]) -> Dict[str, Any]:
+    info = page.js(clinic_bbhc.EXAM_INFO_JS) or {}
+    fields: List[Dict[str, Any]] = []
+    try:
+        page._open_xutri()
+        fields = page.js(clinic_bbhc.XUTRI_FIELDS_JS) or []
+    except ExamStepError:
+        fields = []  # lượt chưa có / không mở được popup xử trí: vẫn giữ phần chẩn đoán
+    finally:
+        page._close_xutri()
+    by_id = {f.get("id"): compact(f.get("value")) for f in fields if f.get("id")}
+    return {
+        "status": "ok",
+        "stage": row.get("stage"),
+        "trang_thai": row.get("trang_thai"),
+        "xu_tri": row.get("xu_tri"),
+        "ly_do": compact(info.get("ly_do")),
+        "dau_hieu": compact(info.get("dau_hieu")),
+        "so_bo": compact(info.get("so_bo")),
+        "cd_chinh": compact(info.get("cd_chinh")),
+        "cd_kem_theo": [compact(x) for x in info.get("cd_kem_theo") or [] if compact(x)],
+        "ket_luan": compact(info.get("ket_luan")),
+        "thoi_gian_ra": by_id.get("txtThoigianRa", ""),
+        "hen_tai_kham": hen_tai_kham_from_xutri(fields),
+        "xu_tri_fields": [{"label": compact(f.get("label")), "value": compact(f.get("value"))}
+                          for f in fields if compact(f.get("value")) and f.get("label") != f.get("id")],
+    }
+
+
+def _need_details(row: Dict[str, Any], cached: Optional[Dict[str, Any]], now: datetime) -> bool:
+    if not row.get("khambenhid") or not row.get("href") or row.get("stage") == "cho_kham":
+        return False
+    if row.get("case") == "chua_xu_tri" and row.get("stage") != "xong":
+        return False  # bác sĩ chưa xử trí: chưa có gì để đọc
+    if not cached:
+        return True
+    if cached.get("status") != "ok":
+        if int(cached.get("errors") or 0) >= DETAIL_MAX_ERRORS:
+            return False
+        return now - datetime.fromisoformat(cached["at"]) >= DETAIL_RETRY_AFTER
+    # Đã đọc lúc còn đang khám → đọc lại khi Hoàn tất hoặc khi xử trí đổi.
+    return (cached.get("stage") != "xong" and row.get("stage") == "xong") or cached.get("xu_tri") != row.get("xu_tri")
+
+
+def scan_visit_details(monitor: "Monitor", rows: List[Dict[str, Any]], cache: Dict[str, Dict[str, Any]]) -> None:
+    """Đọc chi tiết tối đa MAX_DETAILS_PER_CYCLE lượt mỗi chu kỳ; lượt đã Hoàn tất được ưu tiên."""
+    todo = [r for r in rows if _need_details(r, cache.get(r.get("khambenhid") or ""), _now())]
+    todo.sort(key=lambda r: 0 if r.get("stage") == "xong" else 1)
+    for row in todo[:MAX_DETAILS_PER_CYCLE]:
+        key = row["khambenhid"]
+        res = monitor.on_exam_page(row, lambda page, _done, _now_: read_visit_details(page, row), need_services=False)
+        if res.get("status") == "ok":
+            cache[key] = {**res, "at": _now().isoformat()}
+        else:
+            prev = cache.get(key) or {}
+            errors = int(prev.get("errors") or 0) + 1 if prev.get("status") != "ok" else 1
+            # Lỗi lần đọc lại: giữ bản đã đọc được trước đó.
+            cache[key] = prev if prev.get("status") == "ok" else {"status": res.get("status") or "error", "message": res.get("message"),
+                                                                   "errors": errors, "at": _now().isoformat()}
+            print(f"[CLINIC-MONITOR] [WARN] STT {row.get('stt')}: không đọc được chi tiết lượt khám: {res.get('message')}")
+        if res.get("status") == "session":
+            break
+
+
 # ── TH4: soạn và lập SBBHC ───────────────────────────────────────────────────
 
 def bbhc_reason_list(row: Dict[str, Any], imaging: Dict[str, Any], transfer: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -1020,7 +1110,7 @@ def run_bbhc_create(monitor: "Monitor", rows: List[Dict[str, Any]], approved: Di
         result = res.get("result") or res.get("status")
         pdfs += res.get("pdfs") or []
         bbhc[key] = {"status": "done" if result in {"done", "exists"} else result, "message": res.get("message"), "drafts": []}
-        log.append({"at": _now().isoformat(), "ma_bn": row.get("ma_bn"), "ho_ten": row.get("ho_ten"),
+        log.append({"at": _now().isoformat(), "kind": "sbbhc", "khambenhid": key, "ma_bn": row.get("ma_bn"), "ho_ten": row.get("ho_ten"),
                     "result": result, "message": res.get("message"), "steps": res.get("steps") or []})
         if result == "session":
             break
@@ -1044,7 +1134,8 @@ def clinic_doctor(config: Dict[str, Any], now: datetime) -> str:
 def run_ngoaitru(monitor: "Monitor", rows: List[Dict[str, Any]], state: Dict[str, Dict[str, Any]],
                  log: List[Dict[str, Any]]) -> int:
     """TH6 cho mọi người bệnh đủ điều kiện — chỉ gọi khi người dùng bấm nút."""
-    patients = [{"ma_bn": compact(r.get("ma_bn")), "ho_ten": r.get("ho_ten"), "exam_time": parse_emr_dt(r.get("thoi_gian"))}
+    patients = [{"ma_bn": compact(r.get("ma_bn")), "ho_ten": r.get("ho_ten"), "exam_time": parse_emr_dt(r.get("thoi_gian")),
+                 "khambenhid": r.get("khambenhid") or ""}
                 for r in rows if ngoaitru_candidate(r) and compact(r.get("ma_bn"))]
     if not patients:
         return 0
@@ -1064,7 +1155,8 @@ def run_ngoaitru(monitor: "Monitor", rows: List[Dict[str, Any]], state: Dict[str
     for p in patients:
         res = results.get(p["ma_bn"]) or {}
         state[p["ma_bn"]] = {"status": res.get("result"), "message": res.get("message") or "", "at": _now().isoformat()}
-        log.append({"at": _now().isoformat(), "ma_bn": p["ma_bn"], "ho_ten": p["ho_ten"], "result": res.get("result"),
+        log.append({"at": _now().isoformat(), "kind": "dieu_tri_ngoai_tru", "khambenhid": p["khambenhid"], "ma_bn": p["ma_bn"],
+                    "ho_ten": p["ho_ten"], "result": res.get("result"),
                     "message": res.get("message") or ("Đã kết thúc điều trị ngoại trú" if res.get("result") == "done" else ""),
                     "steps": res.get("steps") or []})
     return len(patients)
@@ -1102,7 +1194,7 @@ def run_completions(monitor: "Monitor", rows: List[Dict[str, Any]], checks: Dict
         res = {**res, "steps": (tt.get("steps") or []) + ([] if res is tt else (res.get("steps") or []))}
         result = res.get("result") or res.get("status")
         checks[key] = {"status": "done" if result == "done" else result, "message": res.get("message"), "at": _now().isoformat()}
-        log.append({"at": _now().isoformat(), "ma_bn": row.get("ma_bn"), "ho_ten": row.get("ho_ten"),
+        log.append({"at": _now().isoformat(), "kind": "hoan_tat_kham", "khambenhid": key, "ma_bn": row.get("ma_bn"), "ho_ten": row.get("ho_ten"),
                     "result": result, "message": res.get("message"), "steps": res.get("steps") or []})
         acted += 1
         print(f"[CLINIC-MONITOR] Hoàn tất khám STT {row.get('stt')}: {result}")
@@ -1114,7 +1206,8 @@ def run_completions(monitor: "Monitor", rows: List[Dict[str, Any]], checks: Dict
 def public_rows(rows: List[Dict[str, Any]], checks: Dict[str, Dict[str, Any]], weights: Dict[str, Any],
                 imaging: Optional[Dict[str, Dict[str, Any]]] = None,
                 bbhc_state: Optional[Dict[str, Dict[str, Any]]] = None,
-                ngoaitru_state: Optional[Dict[str, Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+                ngoaitru_state: Optional[Dict[str, Dict[str, Any]]] = None,
+                details: Optional[Dict[str, Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     out = []
     for r in rows:
         item = {k: v for k, v in r.items() if k != "href"}  # href mang mã phiên EMR
@@ -1126,6 +1219,8 @@ def public_rows(rows: List[Dict[str, Any]], checks: Dict[str, Dict[str, Any]], w
         item["eligible"] = eligible_for_completion(r)
         item["check"] = checks.get(key) if item["eligible"] else None
         item["weight_entered"] = parse_weight(weights.get(key)) or None
+        item["imaging_orders"] = ((imaging or {}).get(key) or {}).get("orders") or []
+        item["details"] = (details or {}).get(key)
         out.append(item)
     return out
 
@@ -1166,6 +1261,7 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
     handled_bbhc = initial.get("bbhcRun")
     handled_ngoaitru = initial.get("ngoaitruNow")
     ngoaitru_state: Dict[str, Dict[str, Any]] = {}
+    visit_details: Dict[str, Dict[str, Any]] = {}
     state_dir = os.path.dirname(os.path.abspath(state_path))
     action_log: List[Dict[str, Any]] = []
     try:
@@ -1213,9 +1309,10 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                     state["action_running"] = False
                     state["last_action_at"] = _now().isoformat()
                     rows = monitor.read()
+                scan_visit_details(monitor, rows, visit_details)
                 state.update({
                     "status": "running",
-                    "rows": public_rows(rows, checks, weights, imaging, bbhc, ngoaitru_state),
+                    "rows": public_rows(rows, checks, weights, imaging, bbhc, ngoaitru_state, visit_details),
                     "action_log": action_log[-50:],
                     "summary": summarize(rows),
                     "updated_at": _now().isoformat(),

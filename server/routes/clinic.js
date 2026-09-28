@@ -18,6 +18,7 @@ const { WORKER_DIR } = require('../constants');
 const { appendActivity } = require('../services/activity_logger');
 const { writeJsonAtomic, readJsonSafe, safeUnlink, safeFilePart } = require('../utils/file');
 const { issueInputPrecheckToken, validateAndConsumeInputPrecheckToken } = require('../services/input_precheck_tokens');
+const { syncClinicState } = require('../services/clinic_patient_sync');
 
 function sanitizeClinicSchedule(raw = {}) {
   const obj = raw && typeof raw === 'object' ? raw : {};
@@ -199,9 +200,22 @@ function writeControl(ctx, data) {
   writeJsonAtomic(file, { ...current, ...data, at: Date.now() });
 }
 
+// Chép từng lượt khám vào Kho người bệnh (bỏ qua nếu trạng thái chưa đổi từ lần chép trước).
+function syncMonitorToPatientDb(ctx, state = readJsonSafe(monitorPaths(ctx).state, null)) {
+  try {
+    return syncClinicState(state, { sid: ctx.sid });
+  } catch (err) {
+    console.warn(`[clinic] Không chép được vào Kho người bệnh: ${err.message}`);
+    return { ok: false, message: err.message };
+  }
+}
+
+const PATIENT_DB_SYNC_MS = 60_000;
+
 function monitorStatePayload(ctx) {
   const entry = monitors.get(ctx.sid);
   const state = readJsonSafe(monitorPaths(ctx).state, null);
+  if (state) syncMonitorToPatientDb(ctx, state);
   const running = Boolean(entry?.running);
   const payload = state && typeof state === 'object' ? state : { status: 'idle', rows: [], summary: null };
   if (!running && ['starting', 'running', 'error'].includes(payload.status)) payload.status = 'stopped';
@@ -224,10 +238,14 @@ router.post('/clinic/monitor/start', async (req, res) => {
   writeJsonAtomic(paths.request, payload);
   try { fs.chmodSync(paths.request, 0o600); } catch (_) {}
   writeJsonAtomic(paths.control, { at: Date.now() });
+  syncMonitorToPatientDb(ctx); // lần theo dõi trước: chép nốt trước khi xoá file trạng thái
   safeUnlink(paths.state);
 
   const entry = { running: true, kill: null, exitMessage: '' };
   monitors.set(ctx.sid, entry);
+  // Không cần mở màn hình Phòng khám: máy chủ tự chép lịch sử khám mỗi phút.
+  entry.syncTimer = setInterval(() => syncMonitorToPatientDb(ctx), PATIENT_DB_SYNC_MS);
+  if (typeof entry.syncTimer.unref === 'function') entry.syncTimer.unref();
   appendActivity(ctx, { kind: 'workflow.clinic.monitor.start', interval_minutes: payload.intervalMinutes, headless: payload.headless });
 
   runPython(['-u', path.join(WORKER_DIR, 'clinic_monitor.py'), 'monitor', paths.request, paths.state, paths.control], {
@@ -237,6 +255,8 @@ router.post('/clinic/monitor/start', async (req, res) => {
   }).then((result) => {
     entry.running = false;
     if (entry.stopTimer) clearTimeout(entry.stopTimer);
+    if (entry.syncTimer) clearInterval(entry.syncTimer);
+    syncMonitorToPatientDb(ctx);
     safeUnlink(paths.request);
     if (result.spawnError) entry.exitMessage = `Không khởi động được Python: ${result.spawnError}`;
     else if (result.killedByTimeout) entry.exitMessage = 'Đã tự dừng sau 14 giờ theo dõi.';

@@ -605,6 +605,7 @@ module.exports = {
   TAG_TO_SCOPE,
   HCHANH_FILE_DEFS,
   HCHANH_FILE_KEYS,
+  hchanh_file_candidate_stems,
   hchanh_file_label,
   hchanh_file_stem,
 

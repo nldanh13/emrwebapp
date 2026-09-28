@@ -56,7 +56,7 @@ router.use(HEAVY_TASK_ROUTES, heavyTaskLimiter);
 router.use('/research', researchReadLimiter);
 
 // Endpoint đọc/ghi nhẹ — giới hạn 60 lần/phút/session
-router.use(['/data', '/save', '/get-raw', '/get-patients', '/has-processed', '/data-info', '/nurse-settings', '/admin-nurse-state', '/sick-leave-state', '/sick-leave-import', '/sick-leave-launch-bhyt-tool', '/export-data', '/import-data', '/cancel', '/session-logs', '/data-sessions', '/hchanh', '/features', '/workflows', '/artifacts', '/report-token', '/clinic/care-draft', '/clinic/monitor'], readWriteLimiter);
+router.use(['/data', '/save', '/get-raw', '/get-patients', '/has-processed', '/data-info', '/nurse-settings', '/admin-nurse-state', '/sick-leave-state', '/sick-leave-import', '/sick-leave-launch-bhyt-tool', '/export-data', '/import-data', '/cancel', '/session-logs', '/data-sessions', '/hchanh', '/features', '/workflows', '/artifacts', '/report-token', '/clinic/care-draft', '/clinic/monitor', '/kho'], readWriteLimiter);
 router.use('/client-log', clientLogLimiter);
 // Health/diagnostics nhẹ — vẫn yêu cầu token nếu EMR_APP_TOKEN được bật.
 router.use(['/health', '/diagnostics'], readWriteLimiter);
@@ -82,6 +82,7 @@ router.use(require('./admin_nurse'));
 router.use(require('./sick_leave'));
 router.use(require('./clinic'));
 router.use(require('./hchanh'));
+router.use(require('./patient_db'));
 router.use(require('./vtyt_catalog'));
 router.use(require('./medication_catalog'));
 router.use(require('./route_table'));
