@@ -334,7 +334,7 @@ function useReport(load, deps) {
   return { data, loading, error, reload };
 }
 
-const SCOPE_NOTE = 'Chỉ tính các lượt đã có trong kho (Phòng khám đang theo dõi, Hành chánh, Kiểm hồ sơ, Kho nghiên cứu). Người bệnh quay lại nơi hệ thống không quét sẽ không thấy.';
+const SCOPE_NOTE = 'Chỉ tính các lượt đã có trong kho (Phòng khám đang theo dõi, Kiểm HSBA, Trả HSBA, Kho nghiên cứu). Người bệnh quay lại nơi hệ thống không quét sẽ không thấy.';
 
 function AppointmentView({ onOpen }) {
   const [tu, setTu] = useState(shiftDays(-30));

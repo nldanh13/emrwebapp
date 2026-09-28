@@ -3,7 +3,7 @@ import { Btn } from './shared.jsx';
 import DateField from './DateField.jsx';
 import { defaultWorkDateRange, sanitizeWorkDateRange } from '../utils/workDateRange.js';
 
-const LONG_HINT = 'Mặc định tự lấy ngày hôm nay khi mở app; có thể chỉnh lại nếu cần. Áp dụng chung cho lấy dữ liệu. Riêng Hành chánh/VTYT: nếu chọn 1 ngày thì quét VTYT ngày kế tiếp; nếu chọn nhiều ngày thì lấy ngày cuối khoảng.';
+const LONG_HINT = 'Mặc định tự lấy ngày hôm nay khi mở app; có thể chỉnh lại nếu cần. Áp dụng chung cho lấy dữ liệu. Riêng Kiểm HSBA/VTYT: nếu chọn 1 ngày thì quét VTYT ngày kế tiếp; nếu chọn nhiều ngày thì lấy ngày cuối khoảng.';
 
 export default function WorkDateRangeBar({ value, onChange }) {
   const range = sanitizeWorkDateRange(value);

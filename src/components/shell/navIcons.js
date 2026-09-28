@@ -50,9 +50,9 @@ export const SHORT_LABELS = {
   acquire: 'Lấy dữ liệu',
   bed: 'Xếp phòng',
   ward: 'Nhập BP',
-  hchanh: 'Hành chánh',
+  hchanh: 'Kiểm HSBA',
   report: 'Báo cáo',
-  'records-check': 'Kiểm HS',
+  'records-check': 'Trả HSBA',
   nurse: 'Lịch ĐD',
 };
 
