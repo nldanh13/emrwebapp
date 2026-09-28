@@ -17,7 +17,7 @@ import { printHchanh_Ticket } from '../../api.js';
 import HchanhVtytBatchPanel from './HchanhVtytBatchPanel.jsx';
 import { formatPersonName } from '../../utils/personName.js';
 import { getHchanhIssueTarget } from '../../engine/hchanhIssueNavigation.js';
-import { getManualReviewView } from '../../engine/hchanhManualReviewView.js';
+import { getManualReviewView, summarizeManualReviews } from '../../engine/hchanhManualReviewView.js';
 import { getHchanhPatientNavigation } from '../../engine/hchanhPatientNavigation.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1625,7 +1625,7 @@ function DetailPanel({ isMobile = false, card, navigation, onNavigate, onClose, 
 
 // ── Count bar ─────────────────────────────────────────────────────────────────
 
-function CountBar({ counts, dashboard, filterStatus, setFilterStatus }) {
+function CountBar({ counts, dashboard, filterStatus, setFilterStatus, filterManualReview, setFilterManualReview }) {
   const ready = Number(counts.quality_ready ?? counts.data_complete ?? 0);
   const needReview = Number(counts.needs_review ?? 0);
   const notStarted = Number(counts.not_started ?? counts.data_not_started ?? 0);
@@ -1640,6 +1640,12 @@ function CountBar({ counts, dashboard, filterStatus, setFilterStatus }) {
     { label:'lỗi máy', value:machineError, tone:machineError ? 'red' : 'gray', filter:'red' },
     { label:'đủ, hoàn tất', value:ready, tone:ready ? 'green' : 'gray', filter:'green' },
   ];
+  const reviewCounts = summarizeManualReviews(dashboard?.patients);
+  const reviewItems = [
+    { label:'chưa kiểm HSBA', value:reviewCounts.pending, tone:reviewCounts.pending ? 'blue' : 'gray', filter:'pending' },
+    { label:'cần sửa thủ công', value:reviewCounts.issue, tone:reviewCounts.issue ? 'amber' : 'gray', filter:'issue' },
+    { label:'đã kiểm HSBA', value:reviewCounts.complete, tone:reviewCounts.complete ? 'green' : 'gray', filter:'complete' },
+  ];
   const syncInfo = dashboard?.syncInfo || dashboard?.lastSync || {};
   const syncAt = syncInfo.at || dashboard?.generatedAt;
   return (
@@ -1649,11 +1655,30 @@ function CountBar({ counts, dashboard, filterStatus, setFilterStatus }) {
         const active = filter && filter !== 'all' && filterStatus === filter;
         const content = (<><b style={{ fontSize:FS.lg, color:fg, fontVariantNumeric:'tabular-nums' }}>{value ?? 0}</b> <span style={{ color:C.text2 }}>{label}</span></>);
         return filter ? (
-          <button key={label} type="button" aria-pressed={active} onClick={() => setFilterStatus(active ? 'all' : filter)} style={{
+          <button key={label} type="button" aria-pressed={active} onClick={() => {
+            if (filter === 'all') { setFilterStatus('all'); setFilterManualReview('all'); }
+            else setFilterStatus(active ? 'all' : filter);
+          }} style={{
             height:30, padding:'0 10px', borderRadius:5, cursor:'pointer', fontFamily:'inherit', fontSize:FS.sm,
             border:`1px solid ${active ? C.blueBorder : 'transparent'}`, background:active ? C.blueBg : 'transparent',
           }}>{content}</button>
         ) : <span key={label} style={{ padding:'0 10px', fontSize:FS.sm }}>{content}</span>;
+      })}
+      <span aria-hidden="true" style={{ height:22, borderLeft:`1px solid ${C.border}`, margin:'0 3px' }} />
+      {reviewItems.map(({ label, value, tone, filter }) => {
+        const active = filterManualReview === filter;
+        const fg = tone === 'gray' ? C.text : tS(tone).fg;
+        return (
+          <button key={filter} type="button" aria-pressed={active}
+            title={`Lọc người bệnh: ${label}`}
+            onClick={() => setFilterManualReview(active ? 'all' : filter)} style={{
+              height:30, padding:'0 10px', borderRadius:5, cursor:'pointer', fontFamily:'inherit', fontSize:FS.sm,
+              border:`1px solid ${active ? C.blueBorder : 'transparent'}`, background:active ? C.blueBg : 'transparent',
+            }}>
+            <b style={{ fontSize:FS.lg, color:fg, fontVariantNumeric:'tabular-nums' }}>{value}</b>{' '}
+            <span style={{ color:C.text2 }}>{label}</span>
+          </button>
+        );
       })}
       <span style={{ marginLeft:'auto', color:C.text3, fontSize:FS.xs, padding:'0 4px' }}>
         Phiên quét {syncInfo.active_count ?? counts.total ?? 0} người bệnh · đồng bộ {formatDateTime(syncAt)}
@@ -1801,7 +1826,9 @@ export default function HchahnTab({ toast, workDateRange, view = 'check' }) {
         )}
       </div>
 
-      {workspace === 'discharge' && <CountBar counts={counts} dashboard={dashboard} filterStatus={filterStatus} setFilterStatus={setFilterStatus} />}
+      {workspace === 'discharge' && <CountBar counts={counts} dashboard={dashboard}
+        filterStatus={filterStatus} setFilterStatus={setFilterStatus}
+        filterManualReview={filterManualReview} setFilterManualReview={setFilterManualReview} />}
 
       {/* Nội dung theo quy trình */}
       {workspace === 'vtyt' ? (
