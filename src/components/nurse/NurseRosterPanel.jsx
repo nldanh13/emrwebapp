@@ -174,7 +174,7 @@ export default function NurseRosterPanel({
       {canEditEmrAccounts && roster.length > 0 && (
         <div style={{ padding: '8px 12px 0', fontSize: FS.xs, color: C.text2, lineHeight: 1.5 }}>
           Tài khoản EMR riêng giúp ca làm/ca trực đăng nhập đúng người khi nhập chăm sóc; bỏ trống thì dùng tài khoản mặc định.
-          {' '}Ảnh chữ ký dùng để chèn vào bộ phiếu "In ra viện" (màn Chữ ký ra viện).
+          {' '}Ảnh chữ ký dùng để chèn vào bộ phiếu "In ra viện" (màn Ký tên ĐD HSBA).
         </div>
       )}
       {roster.map(name => (
