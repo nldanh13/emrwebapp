@@ -1,4 +1,4 @@
-import { getPatientId, getPatientName, canonicalRoomKey, roomPriceTier, formatVND } from './bedBoardUtils.js';
+import { getPatientId, getPatientName, canonicalRoomKey } from './bedBoardUtils.js';
 
 const COLUMNS_PER_PAGE = 3;
 const COLUMN_CAPACITY_UNITS = 30;
@@ -41,7 +41,6 @@ export function buildPrintableRoomGroups(patients = []) {
       id: getPatientId(patient),
       name: getPatientName(patient),
       transferDate: String(patient?.NgayChuyenPhong || '').trim(),
-      priceNote: String(patient?.GhiChuGiaPhong || '').trim(),
       occupancy: String(patient?.DangKyPhong || '').trim(),
     });
   }
@@ -51,7 +50,6 @@ export function buildPrintableRoomGroups(patients = []) {
     .map(([room, roomPatients]) => ({
       room,
       displayRoom: displayRoom(room),
-      price: roomPriceTier(room),
       patients: roomPatients,
     }));
 }
@@ -91,7 +89,6 @@ export function paginateRoomGroups(groups = [], options = {}) {
       current.blocks.push({
         room: group.room,
         displayRoom: group.displayRoom,
-        price: group.price,
         continuation,
         totalPatients: group.patients.length,
         startNumber: consumed + 1,
@@ -118,8 +115,7 @@ export function paginateRoomGroups(groups = [], options = {}) {
 
 function patientNoteLine(patient) {
   const parts = [];
-  if (patient.priceNote) parts.push(escapeHtml(patient.priceNote));
-  else if (patient.transferDate) parts.push(`Chuyển phòng ${escapeHtml(patient.transferDate)}`);
+  if (patient.transferDate) parts.push(`Chuyển phòng ${escapeHtml(patient.transferDate)}`);
   if (patient.occupancy) parts.push(`Đăng ký ${escapeHtml(patient.occupancy)} người`);
   return parts.join(' · ');
 }
@@ -137,7 +133,7 @@ function renderBlock(block) {
   }).join('');
   return `
     <section class="room-block">
-      <div class="room-title">${title}<span class="room-price">${formatVND(block.price)}/giường</span></div>
+      <div class="room-title">${title}</div>
       <div class="patient-list">${rows}</div>
     </section>
   `;
@@ -174,8 +170,7 @@ function renderPrintHtml(groups, pages) {
     .room-columns { min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8mm; align-items: start; }
     .room-column { min-width: 0; }
     .room-block { margin: 0 0 5mm; break-inside: avoid; page-break-inside: avoid; }
-    .room-title { margin: 0 0 1.5mm; font-size: 14pt; font-weight: 700; display: flex; align-items: baseline; gap: 2mm; }
-    .room-price { font-size: 9pt; font-weight: 400; color: #555; }
+    .room-title { margin: 0 0 1.5mm; font-size: 14pt; font-weight: 700; }
     .patient-list { display: grid; gap: 1.2mm; }
     .patient-row { font-size: 12pt; line-height: 1.25; }
     .patient-name { display: block; }
