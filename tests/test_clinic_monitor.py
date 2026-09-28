@@ -301,3 +301,120 @@ def test_confirm_dialog_is_never_accepted():
     assert 'chưa tự đồng ý' in raised and 'Vượt trần BHYT' in raised
     # Hộp nút đóng chỉ bấm "cancel" khi có — xem CLOSE_DIALOGS_JS.
     assert "c.click()" in cm.CLOSE_DIALOGS_JS.split('else')[0]
+
+
+# ── TH2: thủ thuật ───────────────────────────────────────────────────────────
+
+def _tt_row(done, total, extra_blockers=()):
+    services = [{'code': 'TT', 'label': 'TT', 'done': done, 'total': total}]
+    blockers = ([f'TT chưa xong ({done}/{total})'] if done < total else []) + list(extra_blockers)
+    return {'has_bhyt': True, 'case': 'cho_ve', 'stage': 'dang_lam_dv', 'services': services,
+            'blockers': blockers, 'ma_bn': '99000001', 'thoi_gian': '08:00 28/09/2026'}
+
+
+def test_pending_procedure_is_still_eligible_but_other_blockers_are_not():
+    assert cm.pending_procedures(_tt_row(0, 2)) == 2
+    assert cm.eligible_for_completion(_tt_row(0, 1)) is True
+    assert cm.eligible_for_completion(_tt_row(0, 1, ['XN chưa xong (0/1)'])) is False
+    assert cm.eligible_for_completion({**_tt_row(0, 1), 'has_bhyt': False}) is False
+
+
+def test_procedure_window():
+    order = DT(2026, 9, 28, 9, 0)
+    ok = cm.procedure_window(order, DT(2026, 9, 28, 8, 0), NOW)
+    assert ok == {'result': 'ok', 'start': order, 'end': DT(2026, 9, 28, 9, 10)}
+    wait = cm.procedure_window(DT(2026, 9, 28, 9, 55), None, NOW)  # kết thúc 10:05 > giờ máy
+    assert wait['result'] == 'waiting' and '10:05' in wait['message']
+    bad = cm.procedure_window(DT(2026, 9, 28, 7, 0), DT(2026, 9, 28, 8, 0), NOW)  # trước giờ khám
+    assert bad['result'] == 'error'
+
+
+class FakeProcedurePage:
+    def __init__(self, order):
+        self.order, self.writes = order, []
+
+    def open_pending(self, ma_bn, day):
+        self.writes.append(('open', ma_bn, day))
+        return self.order
+
+    def enter(self): self.writes.append('vao_thuc_hien')
+    def fill(self, start, end, staff, template): self.writes.append(('fill', cm.fmt_emr_dt(start), cm.fmt_emr_dt(end), staff, template))
+    def save_and_finish(self): self.writes.append('luu_hoan_tat'); return []
+
+
+def test_enter_procedure_uses_order_time_and_clinic_schedule():
+    config = {'clinic_nurse_schedule': {'days': {'2026-09-28': {'work': ['ĐD Phòng khám']}}}}
+    page = FakeProcedurePage(DT(2026, 9, 28, 9, 0))
+    res = cm.enter_procedure(page, _tt_row(0, 1), config, NOW)
+    assert res['result'] == 'done' and res['end'] == DT(2026, 9, 28, 9, 10)
+    assert page.writes == [('open', '99000001', '28/09/2026'), 'vao_thuc_hien',
+                           ('fill', '09:00 28/09/2026', '09:10 28/09/2026', 'ĐD Phòng khám', 'CTCH-thay băng'),
+                           'luu_hoan_tat']
+
+    # Chưa đủ 10 phút → không bấm Vào thực hiện.
+    page = FakeProcedurePage(DT(2026, 9, 28, 9, 55))
+    assert cm.enter_procedure(page, _tt_row(0, 1), config, NOW)['result'] == 'waiting'
+    assert page.writes == [('open', '99000001', '28/09/2026')]
+
+    # Đã hoàn tất trên D/s Thủ thuật (danh sách khám chưa kịp cập nhật).
+    page = FakeProcedurePage(None)
+    assert cm.enter_procedure(page, _tt_row(0, 1), config, NOW)['result'] == 'already'
+
+
+def test_completion_after_procedure_moves_exit_time_after_procedure_end():
+    # Thời gian ra 09:05 hợp lệ trước đó nhưng sớm hơn giờ kết thúc thủ thuật 09:10 + 1 phút → sửa về giờ máy.
+    page = FakePage(exit_time=cm.parse_emr_dt('09:05 28/09/2026'))
+    res = cm.complete_patient(page, {}, DT(2026, 9, 28, 9, 10), NOW, None)
+    assert res['result'] == 'done'
+    assert page.writes == [('thoi_gian_ra', '10:00 28/09/2026'), 'hoan_tat']
+
+
+class FakeMonitor:
+    def __init__(self, check_status, tt_result):
+        self.check_status, self.tt_result, self.calls = check_status, tt_result, []
+
+    def on_exam_page(self, row, action):
+        page = FakePage(exit_time=cm.parse_emr_dt('09:05 28/09/2026'))
+        res = action(page, None, NOW)
+        self.calls.append(('exam', res.get('status') or res.get('result'), list(page.writes)))
+        return res
+
+    def run_procedures(self, row):
+        self.calls.append('procedures')
+        return self.tt_result
+
+
+def test_run_completions_enters_procedure_then_completes():
+    row = {**_tt_row(0, 1), 'khambenhid': 'k1', 'href': 'x', 'stt': '1', 'ho_ten': 'A'}
+    mon = FakeMonitor('ready', {'result': 'done', 'steps': ['Đã nhập thủ thuật 09:00–09:10'], 'procedure_end': DT(2026, 9, 28, 9, 10)})
+    checks, log = {}, []
+    cm.run_completions(mon, [row], checks, {}, log)
+    assert mon.calls[0][0] == 'exam' and mon.calls[0][2] == []   # kiểm tra chỉ đọc trước
+    assert mon.calls[1] == 'procedures'
+    assert mon.calls[2] == ('exam', 'done', [('thoi_gian_ra', '10:00 28/09/2026'), 'hoan_tat'])
+    assert log[0]['result'] == 'done' and log[0]['steps'][0].startswith('Đã nhập thủ thuật')
+
+    # Nhập thủ thuật chưa được (chưa đủ giờ) → không hoàn tất khám.
+    mon = FakeMonitor('ready', {'result': 'waiting', 'message': 'chờ', 'steps': [], 'procedure_end': None})
+    log = []
+    cm.run_completions(mon, [row], {}, {}, log)
+    assert [c for c in mon.calls if c != 'procedures'][1:] == [] and log[0]['result'] == 'waiting'
+
+
+def test_procedure_list_popups_are_closed_without_accepting(monkeypatch):
+    import input_procedures as ip
+
+    drv = DialogDriver([])
+    seen = {}
+
+    def fake_goto(driver, wait, config):
+        seen['handler_closes'] = ip.handle_popups(driver)  # bộ lọc gọi handle_popups
+    monkeypatch.setattr(ip, '_goto_procedure_list', fake_goto)
+    monkeypatch.setattr(ip, '_apply_procedure_date_range_filter', lambda *a, **k: None)
+    monkeypatch.setattr(ip, '_try_search_on_list', lambda *a, **k: None)
+    monkeypatch.setattr(ip, '_open_procedure_row', lambda *a, **k: (DT(2026, 9, 28, 9, 0), False, 'Chờ thực hiện'))
+    original = ip.handle_popups
+    page = cm.ProcedurePage(drv, None, {}, pause=lambda s: None)
+    assert page.open_pending('99000001', '28/09/2026') == DT(2026, 9, 28, 9, 0)
+    assert drv.closed is True               # dùng CLOSE_DIALOGS_JS (bấm Không ở hộp xác nhận)
+    assert ip.handle_popups is original     # trả lại như cũ cho các luồng khác

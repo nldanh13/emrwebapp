@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Theo dõi Danh sách Khám bệnh (tab Phòng khám) — chỉ đọc, không ghi EMR.
+"""Theo dõi Danh sách Khám bệnh (tab Phòng khám); chỉ ghi EMR khi người dùng bấm Hoàn tất
+(nhập thủ thuật chưa xong — TH2 — rồi hoàn tất khám Cho về — TH1).
 
 Giữ một Chrome đã đăng nhập, cứ mỗi chu kỳ gọi thẳng hàm AjaxPro mà trang dùng
 khi bấm Tìm kiếm (ServerSideDrawSearchResult) với cỡ trang lớn, nên đọc được
@@ -250,10 +251,18 @@ def fmt_emr_dt(dt: datetime) -> str:
     return dt.strftime("%H:%M %d/%m/%Y")
 
 
+def pending_procedures(row: Dict[str, Any]) -> int:
+    """Số thủ thuật (TT) chưa hoàn tất của người bệnh."""
+    tt = next((s for s in row.get("services") or [] if s.get("code") == "TT"), None)
+    return max(int(tt["total"]) - int(tt["done"]), 0) if tt else 0
+
+
 def eligible_for_completion(row: Dict[str, Any]) -> bool:
-    """Người bệnh có BHYT, xử trí Cho về, đang khám / làm dịch vụ và mọi dịch vụ đã xong."""
+    """Người bệnh có BHYT, xử trí Cho về, đang khám / làm dịch vụ và mọi dịch vụ đã xong —
+    trừ thủ thuật: TT chưa xong thì hệ thống tự nhập thủ thuật trước khi hoàn tất (TH2)."""
+    blockers = [b for b in row.get("blockers") or [] if not (pending_procedures(row) and b.startswith("TT "))]
     return bool(row.get("has_bhyt")) and row.get("case") == "cho_ve" \
-        and row.get("stage") in ACTIVE_STAGES and not row.get("blockers")
+        and row.get("stage") in ACTIVE_STAGES and not blockers
 
 
 def latest_service_time(history_html: str, now: datetime) -> Optional[datetime]:
@@ -268,6 +277,22 @@ def earliest_completion(exam_start: datetime, services_done: Optional[datetime])
     if services_done:
         earliest = max(earliest, services_done + timedelta(minutes=AFTER_SERVICES_MINUTES))
     return earliest
+
+
+PROCEDURE_MINUTES = 10
+
+
+def procedure_window(order_time: datetime, not_before: Optional[datetime], now: datetime,
+                     minutes: int = PROCEDURE_MINUTES) -> Dict[str, Any]:
+    """Giờ thực hiện thủ thuật: bắt đầu = giờ chỉ định, kết thúc = bắt đầu + `minutes` phút.
+    Kết thúc phải không ở tương lai (chưa tới thì chờ); giờ chỉ định sớm hơn giờ vào khám
+    là bất thường nên không tự nhập."""
+    if not_before and order_time < not_before:
+        return {"result": "error", "message": f"Giờ chỉ định thủ thuật {fmt_emr_dt(order_time)} sớm hơn giờ khám {fmt_emr_dt(not_before)} — không tự nhập"}
+    end = order_time + timedelta(minutes=max(int(minutes or PROCEDURE_MINUTES), 1))
+    if end > now:
+        return {"result": "waiting", "earliest": end, "message": f"Thủ thuật chưa đủ {minutes} phút, chờ tới {end:%H:%M} mới nhập được"}
+    return {"result": "ok", "start": order_time, "end": end}
 
 
 def exit_time_is_valid(exit_time: Optional[datetime], earliest: datetime, now: datetime) -> bool:
@@ -459,6 +484,8 @@ def check_patient(page: ExamPage, row: Dict[str, Any], services_done: Optional[d
     base = {"earliest": earliest.isoformat()}
     if now < earliest:
         return {**base, "status": "waiting", "message": f"Chờ tới {earliest:%H:%M} mới hoàn tất được"}
+    if pending_procedures(row):
+        return {**base, "status": "ready", "message": "Sẵn sàng — sẽ nhập thủ thuật trước rồi hoàn tất"}
     return {**base, "status": "ready", "message": "Sẵn sàng hoàn tất"}
 
 
@@ -500,6 +527,116 @@ def complete_patient(page: ExamPage, row: Dict[str, Any], services_done: Optiona
         toasts = page.finish()
     steps.append("Hoàn tất khám" + (f" ({toasts[-1]})" if toasts else ""))
     return {"result": "done", "message": "Đã hoàn tất khám", "steps": steps}
+
+
+# ── Thủ thuật (TH2): D/s Thủ thuật ───────────────────────────────────────────
+
+DEFAULT_PROCEDURE_TEMPLATE = "CTCH-thay băng"
+DEFAULT_ANESTHESIA = "Không"
+PROCEDURE_SAVE_IDS = ["btnSave", "btnLuu", "btnGhi", "btnGhiNhan", "btnSaveTT", "btnLuuTT",
+                      "btnSaveTuongTrinh", "btnLuuTuongTrinh", "btnSaveThuThuat", "btnUpdate"]
+PROCEDURE_FINISH_IDS = ["btnHoanTat", "btnHOANTAT", "btnPopupHOANTAT", "btnKetThuc", "btnFinish", "btnHT"]
+
+
+def procedure_staff(config: Dict[str, Any], start: datetime) -> str:
+    """Thủ thuật viên: Lịch Phòng khám (Lịch điều dưỡng) theo ngày/thứ, không có thì lịch ca chung."""
+    from clinic_input_care import _clinic_nurses_for_date
+    from utils import get_nurse_by_shift
+
+    names = _clinic_nurses_for_date(config.get("clinic_nurse_schedule") or {}, start.strftime("%d/%m/%Y"))
+    if names:
+        return names[0]
+    return compact(get_nurse_by_shift(fmt_emr_dt(start), config.get("ten_dieu_duong") or {}))
+
+
+class ProcedurePage:
+    """Nhập 1 thủ thuật trên D/s Thủ thuật. Dùng lại cách tìm dòng / điền form của
+    input_procedures.py nhưng tự bấm Lưu / Hoàn tất để không tự đồng ý hộp xác nhận."""
+
+    def __init__(self, driver: Any, wait: Any, config: Dict[str, Any], pause: Callable[[float], None] = time.sleep) -> None:
+        import input_procedures as ip
+
+        self.ip = ip
+        self.driver, self.wait, self.config = driver, wait, config
+        self.dialogs = ExamPage(driver, pause)
+        self.pause = pause
+
+    def open_pending(self, ma_bn: str, day: str) -> Optional[datetime]:
+        """Mở dòng thủ thuật chưa hoàn tất; trả giờ chỉ định, None nếu đã hoàn tất hết."""
+        ip = self.ip
+        # Bộ lọc D/s Thủ thuật của input_procedures tự đóng popup bằng handle_popups (bấm đồng ý);
+        # ở đây thay bằng cách đóng không đồng ý như màn khám.
+        original = ip.handle_popups
+        ip.handle_popups = lambda _driver: bool(self.dialogs.js(CLOSE_DIALOGS_JS))
+        try:
+            ip._goto_procedure_list(self.driver, self.wait, self.config)
+            ip._apply_procedure_date_range_filter(self.driver, self.wait, day, self.config)
+            ip._try_search_on_list(self.driver, self.wait, ma_bn)
+            order_time, _completed, _status = ip._open_procedure_row(
+                self.driver, self.wait, ma_bn, day, "", clinic_mode=True,
+                allow_completed_update=False, return_meta=True)
+        except ip.ProcedureAlreadyCompleted:
+            return None
+        finally:
+            ip.handle_popups = original
+        return order_time
+
+    def enter(self) -> None:
+        self.ip._enter_execution_form_for_check(self.driver, self.wait)
+        self.dialogs.check_dialogs("Vào thực hiện thủ thuật")
+
+    def fill(self, start: datetime, end: datetime, staff: str, template: str) -> None:
+        ip = self.ip
+        ip._set_input_value(self.driver, "txtTgBatDau", fmt_emr_dt(start))
+        ip._set_input_value(self.driver, "txtTgKetThuc", fmt_emr_dt(end))
+        if not ip._pick_select2_text(self.driver, self.wait, "cbbPhuongPhapVoCam", DEFAULT_ANESTHESIA, allow_first=False):
+            raise ExamStepError(f"Không chọn được phương pháp vô cảm: {DEFAULT_ANESTHESIA}")
+        ok = bool(ip.chon_select2_bac_si_y_ta and ip.chon_select2_bac_si_y_ta(self.driver, "cbbTTChinh", staff, timeout=15))
+        if not ok and not ip._pick_select2_text(self.driver, self.wait, "cbbTTChinh", staff, allow_first=False):
+            raise ExamStepError(f"Không chọn được thủ thuật viên: {staff}")
+        if not ip._pick_select2_text(self.driver, self.wait, "cbbMauTuongTrinh", template, allow_first=True):
+            raise ExamStepError(f"Không chọn được mẫu tường trình: {template}")
+        errors = ip._compare_procedure_form(self.driver, {
+            "start_dt": start, "end_dt": end, "start_text": fmt_emr_dt(start), "end_text": fmt_emr_dt(end),
+            "anesthesia": DEFAULT_ANESTHESIA, "staff_name": staff, "template_name": template,
+        })
+        if errors:
+            raise ExamStepError("Điền phiếu thủ thuật chưa đúng: " + "; ".join(errors))
+
+    def _click_first(self, ids: List[str]) -> bool:
+        return bool(self.dialogs.js(
+            "for (var i=0;i<arguments[0].length;i++){var e=document.getElementById(arguments[0][i]);"
+            " if(e && e.offsetParent!==null && !e.disabled){e.click(); return true;}} return false;", ids))
+
+    def save_and_finish(self) -> List[str]:
+        if not self._click_first(PROCEDURE_SAVE_IDS):
+            raise ExamStepError("Không thấy nút Lưu phiếu thủ thuật")
+        self.pause(1.5)
+        toasts = self.dialogs.check_dialogs("Lưu thủ thuật")
+        if self._click_first(PROCEDURE_FINISH_IDS):
+            self.pause(2.0)
+            toasts += self.dialogs.check_dialogs("Hoàn tất thủ thuật")
+        return toasts
+
+
+def enter_procedure(page: ProcedurePage, row: Dict[str, Any], config: Dict[str, Any], now: datetime) -> Dict[str, Any]:
+    """Nhập 1 thủ thuật chưa hoàn tất của người bệnh (chỉ chạy khi người dùng bấm nút)."""
+    order_time = page.open_pending(compact(row.get("ma_bn")), now.strftime("%d/%m/%Y"))
+    if order_time is None:
+        return {"result": "already", "message": "Thủ thuật đã hoàn tất trên D/s Thủ thuật"}
+    window = procedure_window(order_time, parse_emr_dt(row.get("thoi_gian")), now,
+                              int(config.get("procedure_duration_minutes") or PROCEDURE_MINUTES))
+    if window["result"] != "ok":
+        return window
+    start, end = window["start"], window["end"]
+    staff = procedure_staff(config, start)
+    if not staff:
+        return {"result": "error", "message": "Chưa có lịch Phòng khám / lịch ca để chọn thủ thuật viên"}
+    page.enter()
+    page.fill(start, end, staff, compact(config.get("procedure_template_name")) or DEFAULT_PROCEDURE_TEMPLATE)
+    page.save_and_finish()
+    return {"result": "done", "end": end,
+            "message": f"Đã nhập thủ thuật {start:%H:%M}–{end:%H:%M}, thủ thuật viên {staff}"}
 
 
 # ── Đọc danh sách trên EMR ───────────────────────────────────────────────────
@@ -584,6 +721,36 @@ class Monitor:
             raise ExamStepError(f"Không đọc được giờ xong chỉ định: {compact(res.get('message'))}")
         return latest_service_time(res.get("html") or "", now)
 
+    def run_procedures(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        """Nhập các thủ thuật chưa hoàn tất rồi quay về danh sách. Trả giờ kết thúc muộn nhất."""
+        steps: List[str] = []
+        last_end: Optional[datetime] = None
+        result: Dict[str, Any] = {"result": "done"}
+        try:
+            for _ in range(min(pending_procedures(row), 3)):
+                res = enter_procedure(ProcedurePage(self.driver, self.wait, self.config), row, self.config, _now())
+                if res["result"] == "already":
+                    break
+                if res["result"] != "done":
+                    result = res
+                    break
+                steps.append(res["message"])
+                last_end = max(last_end, res["end"]) if last_end else res["end"]
+        except ExamStepError as e:
+            result = {"result": "error", "message": str(e)}
+        except Exception as e:
+            result = {"result": "error", "message": f"Lỗi khi nhập thủ thuật: {compact(str(e))[:300]}"}
+        if "login.aspx" in (self.driver.current_url or "").lower():
+            self.close()
+            return {"result": "session", "message": "EMR hết phiên giữa chừng, sẽ thử lại sau khi đăng nhập lại", "steps": steps}
+        try:
+            self._open_list()
+        except Exception:
+            self.close()
+            if result["result"] == "done":
+                result = {"result": "session", "message": "Không mở lại được Danh sách Khám bệnh sau khi nhập thủ thuật"}
+        return {**result, "steps": steps, "procedure_end": last_end}
+
     def on_exam_page(self, row: Dict[str, Any], action: Callable[[ExamPage, Optional[datetime], datetime], Dict[str, Any]]) -> Dict[str, Any]:
         """Mở màn khám của người bệnh, chạy `action`, rồi quay về danh sách."""
         now = _now()
@@ -663,7 +830,23 @@ def run_completions(monitor: "Monitor", rows: List[Dict[str, Any]], checks: Dict
         if not key or not row.get("href") or not eligible_for_completion(row):
             continue
         kg = parse_weight(weights.get(key))
-        res = monitor.on_exam_page(row, lambda page, done_at, now: complete_patient(page, row, done_at, now, kg or None))
+        tt: Dict[str, Any] = {"result": "done", "steps": [], "procedure_end": None}
+        if pending_procedures(row):
+            # Kiểm tra (chỉ đọc) màn khám trước: chờ đọc KQ chưa có thuốc / chưa đủ giờ thì chưa nhập thủ thuật.
+            pre = monitor.on_exam_page(row, lambda page, done_at, now: check_patient(page, row, done_at, now))
+            tt = monitor.run_procedures(row) if pre.get("status") == "ready" else {**pre, "result": pre.get("status")}
+        if tt["result"] == "done":
+            tt_end = tt.get("procedure_end")
+
+            def complete(page: ExamPage, done_at: Optional[datetime], now: datetime) -> Dict[str, Any]:
+                # Hoàn tất khám phải sau khi thủ thuật kết thúc (+1 phút), thời gian ra sửa theo đó.
+                latest = max(d for d in (done_at, tt_end) if d) if (done_at or tt_end) else None
+                return complete_patient(page, row, latest, now, kg or None)
+
+            res = monitor.on_exam_page(row, complete)
+        else:
+            res = tt
+        res = {**res, "steps": (tt.get("steps") or []) + ([] if res is tt else (res.get("steps") or []))}
         result = res.get("result") or res.get("status")
         checks[key] = {"status": "done" if result == "done" else result, "message": res.get("message"), "at": _now().isoformat()}
         log.append({"at": _now().isoformat(), "ma_bn": row.get("ma_bn"), "ho_ten": row.get("ho_ten"),
