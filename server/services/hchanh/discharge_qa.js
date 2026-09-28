@@ -89,6 +89,12 @@ function checkDischarge(discharge, profile, rules = {}) {
       title:'Chưa có chẩn đoán chính ra viện',
       action:'Bác sĩ bổ sung chẩn đoán chính ICD10.', owner:'Bác sĩ điều trị' }));
 
+  // Lời dặn đã có trong cấu hình từ đầu nhưng trước đây chưa được thực thi.
+  if (cfg.require_loi_dan !== false && !text(discharge.loi_dan || discharge.huong_dieu_tri))
+    issues.push(makeIssue({ group:'Ra viện', severity:'warn', code:'DISCHARGE_ADVICE_MISSING',
+      title:'Thiếu lời dặn/hướng điều trị sau ra viện',
+      action:'Bác sĩ bổ sung lời dặn, chế độ chăm sóc và hướng theo dõi sau ra viện.' }));
+
   // Kết quả điều trị
   if (cfg.require_ket_qua && !text(discharge.ket_qua))
     issues.push(makeIssue({ group:'Ra viện', severity:'warn', code:'DISCHARGE_OUTCOME_MISSING',
@@ -820,6 +826,65 @@ function checkDocuments(documents) {
   return issues;
 }
 
+// ── Kiểm mức độ hoàn chỉnh hồ sơ phẫu thuật ─────────────────────────────────
+
+function surgeryValue(row, ...keys) {
+  const detail = row?.detail && typeof row.detail === 'object' ? row.detail : {};
+  for (const key of keys) {
+    const value = text(detail[key] ?? row?.[key]);
+    if (value) return value;
+  }
+  return '';
+}
+
+function checkSurgeryCompleteness(surgery) {
+  const rows = safeArray(surgery?.surgeries);
+  if (!rows.length) return [];
+
+  const definitions = [
+    {
+      code:'SURGERY_NAME_MISSING', severity:'error', title:'phẫu thuật chưa có tên/dịch vụ',
+      keys:['dich_vu_phau_thuat', 'noi_dung_phau_thuat', 'ten', 'name'],
+      action:'Bổ sung tên phẫu thuật/thủ thuật trên biên bản phẫu thuật.',
+    },
+    {
+      code:'SURGERY_TIME_MISSING', severity:'warn', title:'phẫu thuật thiếu giờ bắt đầu hoặc kết thúc',
+      test: row => !surgeryValue(row, 'bat_dau') || !surgeryValue(row, 'ket_thuc'),
+      action:'Kiểm tra và bổ sung đầy đủ giờ bắt đầu, giờ kết thúc phẫu thuật.',
+    },
+    {
+      code:'SURGERY_METHOD_MISSING', severity:'warn', title:'phẫu thuật chưa có phương pháp thực hiện',
+      keys:['phuong_phap_pt', 'phuong_phap_phau_thuat', 'pppt'],
+      action:'Bổ sung phương pháp phẫu thuật trên biên bản.',
+    },
+    {
+      code:'SURGERY_MAIN_SURGEON_MISSING', severity:'warn', title:'phẫu thuật chưa có bác sĩ mổ chính',
+      keys:['bs_mo_chinh', 'phau_thuat_vien_chinh', 'ptv_chinh'],
+      action:'Bổ sung bác sĩ phẫu thuật chính và kiểm tra chữ ký tương ứng.',
+    },
+    {
+      code:'SURGERY_ANESTHESIA_MISSING', severity:'warn', title:'phẫu thuật chưa có phương pháp vô cảm',
+      keys:['pp_vo_cam', 'phuong_phap_vo_cam', 'vo_cam'],
+      action:'Bổ sung phương pháp vô cảm trên biên bản phẫu thuật/gây mê.',
+    },
+  ];
+
+  const issues = [];
+  for (const definition of definitions) {
+    const missing = rows.filter(row => definition.test
+      ? definition.test(row)
+      : !surgeryValue(row, ...definition.keys));
+    if (!missing.length) continue;
+    const names = missing.slice(0, 4).map((row, index) => surgeryValue(row,
+      'dich_vu_phau_thuat', 'noi_dung_phau_thuat', 'ten', 'name') || `PT/TT ${index + 1}`);
+    issues.push(makeIssue({
+      group:'Phẫu thuật/thủ thuật', severity:definition.severity, code:definition.code,
+      title:`${missing.length} ${definition.title}`, detail:names.join('; '), action:definition.action,
+    }));
+  }
+  return issues;
+}
+
 // ── Kiểm lịch sử y lệnh ──────────────────────────────────────────────────────
 
 function checkOrderHistory(order_history) {
@@ -926,6 +991,7 @@ function runDischargeQA_Hchanh({ ma_bn, meta, data }) {
     ...checkBilling(billing, rules),
     ...checkClsDiagnosis(billing, discharge, rules),
     ...checkSpecialtyRules(profile, discharge, billing, rules),
+    ...checkSurgeryCompleteness(surgery),
     ...checkOrderHistory(order_history),
   ];
 
@@ -958,4 +1024,6 @@ function runDischargeQA_Hchanh({ ma_bn, meta, data }) {
 }
 
 module.exports = {
-  sanitizeBedDays, runDischargeQA_Hchanh, loadQaRules, extractClsFromBilling, buildQaGate };
+  sanitizeBedDays, runDischargeQA_Hchanh, loadQaRules, extractClsFromBilling, buildQaGate,
+  checkDischarge, checkSurgeryCompleteness,
+};
