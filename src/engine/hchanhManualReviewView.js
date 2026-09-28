@@ -38,3 +38,16 @@ export function matchesManualReviewFilter(card, filter = 'all') {
   if (filter === 'complete') return view.state === 'complete';
   return true;
 }
+
+export function summarizeManualReviews(cards) {
+  const summary = { total:0, pending:0, issue:0, complete:0 };
+  for (const card of Array.isArray(cards) ? cards : []) {
+    const view = getManualReviewView(card);
+    if (view.state === 'na') continue;
+    summary.total += 1;
+    if (view.remaining > 0) summary.pending += 1;
+    if (view.issues > 0) summary.issue += 1;
+    if (view.state === 'complete') summary.complete += 1;
+  }
+  return summary;
+}
