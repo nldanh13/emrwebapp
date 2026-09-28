@@ -295,6 +295,34 @@ def procedure_window(order_time: datetime, not_before: Optional[datetime], now: 
     return {"result": "ok", "start": order_time, "end": end}
 
 
+# TH4: ca cần Sổ biên bản hội chẩn (SBBHC) = chuyển viện, hoặc có chụp CT / MRI.
+IMAGING_BBHC_RE = re.compile(r"\b(?:MS)?CT\b|\bMRI\b|c[aắ]t l[oớ]p|c[oộ]ng h[uư][oở]ng t[uừ]", re.I)
+
+
+def imaging_kinds(history_html: str) -> List[str]:
+    """Loại chụp cần hội chẩn (CT, MRI) nhắc tới trong popup lịch sử dịch vụ."""
+    text = BeautifulSoup(history_html or "", "html.parser").get_text(" ") if BeautifulSoup else (history_html or "")
+    kinds = []
+    for m in IMAGING_BBHC_RE.finditer(text):
+        kind = "MRI" if norm(m.group(0)) in {"mri", "cong huong tu"} else "CT"
+        if kind not in kinds:
+            kinds.append(kind)
+    return kinds
+
+
+def has_imaging_order(row: Dict[str, Any]) -> bool:
+    return any(s.get("code") == "CDHA" and int(s.get("total") or 0) > 0 for s in row.get("services") or [])
+
+
+def bbhc_reasons(row: Dict[str, Any], imaging: Optional[List[str]]) -> List[str]:
+    """Lý do người bệnh (có BHYT, chưa xong) cần lập SBBHC; rỗng nếu không cần."""
+    if not row.get("has_bhyt") or row.get("stage") in {"xong", "cho_kham"}:
+        return []
+    reasons = ["Chuyển viện"] if row.get("case") == "chuyen_vien" else []
+    reasons += [f"Chụp {k}" for k in imaging or []]
+    return reasons
+
+
 def exit_time_is_valid(exit_time: Optional[datetime], earliest: datetime, now: datetime) -> bool:
     """Thời gian ra giữ nguyên nếu không sớm hơn mốc được phép và không ở tương lai."""
     return bool(exit_time) and earliest <= exit_time <= now
@@ -751,6 +779,13 @@ class Monitor:
                 result = {"result": "session", "message": "Không mở lại được Danh sách Khám bệnh sau khi nhập thủ thuật"}
         return {**result, "steps": steps, "procedure_end": last_end}
 
+    def imaging(self, row: Dict[str, Any]) -> List[str]:
+        """Đọc popup lịch sử dịch vụ (đang ở trang danh sách) để biết có chụp CT / MRI không."""
+        res = self.driver.execute_script(HISTORY_JS, row.get("khambenhid")) or {}
+        if not res.get("ok"):
+            raise ExamStepError(f"Không đọc được lịch sử dịch vụ: {compact(res.get('message'))}")
+        return imaging_kinds(res.get("html") or "")
+
     def on_exam_page(self, row: Dict[str, Any], action: Callable[[ExamPage, Optional[datetime], datetime], Dict[str, Any]]) -> Dict[str, Any]:
         """Mở màn khám của người bệnh, chạy `action`, rồi quay về danh sách."""
         now = _now()
@@ -821,6 +856,21 @@ def run_checks(monitor: "Monitor", rows: List[Dict[str, Any]], checks: Dict[str,
             break
 
 
+def scan_imaging(monitor: "Monitor", rows: List[Dict[str, Any]], cache: Dict[str, Dict[str, Any]]) -> None:
+    """Người bệnh có BHYT có chỉ định CĐHA: đọc (1 lần cho mỗi số chỉ định) xem có CT / MRI không."""
+    for row in rows:
+        key = row.get("khambenhid") or ""
+        if not key or not row.get("has_bhyt") or row.get("stage") in {"xong", "cho_kham"} or not has_imaging_order(row):
+            continue
+        total = sum(int(s.get("total") or 0) for s in row.get("services") or [] if s.get("code") == "CDHA")
+        if cache.get(key, {}).get("total") == total:
+            continue
+        try:
+            cache[key] = {"total": total, "kinds": monitor.imaging(row)}
+        except ExamStepError as e:
+            print(f"[CLINIC-MONITOR] [WARN] STT {row.get('stt')}: {e}")
+
+
 def run_completions(monitor: "Monitor", rows: List[Dict[str, Any]], checks: Dict[str, Dict[str, Any]],
                     weights: Dict[str, Any], log: List[Dict[str, Any]]) -> int:
     """Hoàn tất khám mọi người bệnh đủ điều kiện — chỉ gọi khi người dùng bấm nút."""
@@ -858,11 +908,13 @@ def run_completions(monitor: "Monitor", rows: List[Dict[str, Any]], checks: Dict
     return acted
 
 
-def public_rows(rows: List[Dict[str, Any]], checks: Dict[str, Dict[str, Any]], weights: Dict[str, Any]) -> List[Dict[str, Any]]:
+def public_rows(rows: List[Dict[str, Any]], checks: Dict[str, Dict[str, Any]], weights: Dict[str, Any],
+                imaging: Optional[Dict[str, Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     out = []
     for r in rows:
         item = {k: v for k, v in r.items() if k != "href"}  # href mang mã phiên EMR
         key = r.get("khambenhid") or ""
+        item["bbhc"] = bbhc_reasons(r, ((imaging or {}).get(key) or {}).get("kinds"))
         item["eligible"] = eligible_for_completion(r)
         item["check"] = checks.get(key) if item["eligible"] else None
         item["weight_entered"] = parse_weight(weights.get(key)) or None
@@ -899,6 +951,7 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
     handled_refresh = initial.get("refresh")
     handled_complete = initial.get("completeNow")
     checks: Dict[str, Dict[str, Any]] = {}
+    imaging: Dict[str, Dict[str, Any]] = {}
     action_log: List[Dict[str, Any]] = []
     try:
         while True:
@@ -916,9 +969,10 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                     state["action_running"] = False
                     state["last_action_at"] = _now().isoformat()
                 run_checks(monitor, rows, checks)
+                scan_imaging(monitor, rows, imaging)
                 state.update({
                     "status": "running",
-                    "rows": public_rows(rows, checks, weights),
+                    "rows": public_rows(rows, checks, weights, imaging),
                     "action_log": action_log[-50:],
                     "summary": summarize(rows),
                     "updated_at": _now().isoformat(),

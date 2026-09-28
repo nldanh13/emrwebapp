@@ -229,8 +229,9 @@ export default function ClinicTab({ toast }) {
 
   const rows = useMemo(() => (monitor?.rows || []).filter(r => !onlyBhyt || r.has_bhyt), [monitor?.rows, onlyBhyt]);
   const counts = useMemo(() => {
-    const c = { can_lam: 0, all: rows.length };
+    const c = { can_lam: 0, all: rows.length, bbhc: 0 };
     for (const r of rows) {
+      if (r.bbhc?.length) c.bbhc += 1;
       const g = rowGroup(r);
       c[g] = (c[g] || 0) + 1;
       if (ACTIONABLE_CASES.has(g)) c.can_lam += 1;
@@ -241,6 +242,7 @@ export default function ClinicTab({ toast }) {
     const g = rowGroup(r);
     if (group === 'all') return true;
     if (group === 'can_lam') return ACTIONABLE_CASES.has(g);
+    if (group === 'bbhc') return Boolean(r.bbhc?.length);
     return g === group;
   }), [rows, group]);
 
@@ -248,6 +250,7 @@ export default function ClinicTab({ toast }) {
     { value: 'can_lam', label: `Cần làm (${counts.can_lam})` },
     ...['cho_ve', 'nhap_vien', 'chuyen_vien', 'chuyen_kham_ck', 'ngoai_tru', 'chua_xu_tri']
       .map(k => ({ value: k, label: `${CASE_LABELS[k]} (${counts[k] || 0})` })),
+    { value: 'bbhc', label: `Cần SBBHC (${counts.bbhc})` },
     { value: 'cho_kham', label: `Chờ khám (${counts.cho_kham || 0})` },
     { value: 'xong', label: `Đã xong (${counts.xong || 0})` },
     { value: 'all', label: `Tất cả (${counts.all})` },
@@ -367,6 +370,7 @@ export default function ClinicTab({ toast }) {
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: FS.xs, color: C.text2 }}>
                         <span>{r.doi_tuong}{r.nam_sinh ? ` · ${r.nam_sinh}` : ''}{r.uu_tien ? ` · ${r.uu_tien}` : ''}</span>
                         {r.cho_doc_kq && <span style={{ color: C.red, fontWeight: 650 }}>Chờ đọc KQ</span>}
+                        {r.bbhc?.length > 0 && <span style={{ color: C.amber, fontWeight: 650 }} title="Cần lập Sổ biên bản hội chẩn">SBBHC: {r.bbhc.join(', ')}</span>}
                       </div>
                     </td>
                     <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', color: C.text2 }}>{r.thoi_gian}</td>
