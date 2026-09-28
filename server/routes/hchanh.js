@@ -30,7 +30,7 @@ const { runScript, runWorker, fmtPyError, PYTHON_BIN }   = require('../services/
 const { enqueueHeavy, registerCancel, unregisterCancel, cancelSession } = require('../services/task_queue');
 const { readJsonSafe, writeJsonAtomic, safeFilePart } = require('../utils/file');
 const { appendActivity }                          = require('../services/activity_logger');
-const { recordHchanhFetch, storeSummary: stayStoreSummary } = require('../services/hchanh_stay_store');
+const { recordHchanhFetch, findStoredStay, isoDay: stayIsoDay, storeSummary: stayStoreSummary } = require('../services/hchanh_stay_store');
 const { getSecret }                               = require('../services/secret_store');
 const { escapeHtml }                              = require('../utils/html');
 const { rowsToCsv }                               = require('../utils/csv');
@@ -462,7 +462,26 @@ function sharedHchanhDataMatchesEncounter(ctx, shared, ma_bn, dischargeTimeHint,
   return true;
 }
 
+// Đợt tương ứng trong kho dữ liệu dùng chung (hchanh_stays) cho 1 ca Kiểm hồ sơ.
+function records_stay_from_store(case_key, fileKey, dischargeTimeHint, admissionTimeHint, onlyGoc) {
+  const ma_bn = records_ma_bn_from_case_key(case_key);
+  const day = stayIsoDay(admissionTimeHint) || stayIsoDay(dischargeTimeHint);
+  if (!ma_bn || !day) return null;
+  try {
+    const stay = findStoredStay(ma_bn, day, [fileKey], { onlyGoc });
+    if (!stay?.output?.[fileKey]) return null;
+    const data = stay.output[fileKey];
+    return { ...data, _meta: { ...(data._meta || {}), stay_store_tier: stay.tiers?.[fileKey] || '', stay_store_source: stay.sourceKey } };
+  } catch (_) {
+    return null;
+  }
+}
+
 function read_records_patient_file(ctx, case_key, fileKey, dischargeTimeHint, admissionTimeHint) {
+  // Thứ tự ưu tiên: dữ liệu gốc của Kho nghiên cứu > dữ liệu Kiểm hồ sơ tự lấy >
+  // dữ liệu Hành chánh cùng đợt > dữ liệu tạm thời khác trong kho dùng chung.
+  const goc = records_stay_from_store(case_key, fileKey, dischargeTimeHint, admissionTimeHint, true);
+  if (goc) return goc;
   const filePath = records_check_patient_file(ctx, case_key, fileKey);
   const data = readJsonSafe(filePath, null);
   if (data !== null && data !== undefined) return data;
@@ -474,9 +493,9 @@ function read_records_patient_file(ctx, case_key, fileKey, dischargeTimeHint, ad
   const ma_bn = records_ma_bn_from_case_key(case_key);
   if (!ma_bn) return null;
   const shared = read_patient_file(ctx, ma_bn, fileKey);
-  if (!shared) return null;
-  if (!sharedHchanhDataMatchesEncounter(ctx, shared, ma_bn, dischargeTimeHint, admissionTimeHint)) return null;
-  return shared;
+  if (shared && sharedHchanhDataMatchesEncounter(ctx, shared, ma_bn, dischargeTimeHint, admissionTimeHint)) return shared;
+  // Cuối cùng: dữ liệu tạm thời đã góp vào kho dùng chung (vd Hành chánh lấy ở phiên khác).
+  return records_stay_from_store(case_key, fileKey, dischargeTimeHint, admissionTimeHint, false);
 }
 
 function write_records_patient_file(ctx, case_key, fileKey, payload) {

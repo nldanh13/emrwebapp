@@ -190,6 +190,41 @@ async function main() {
     assert.strictEqual(card?.discharge?.so_luu_tru, '77777', 'phải dùng lại được dữ liệu đóng dấu đúng đợt A dù Hành chánh đã chuyển sang đợt B');
   });
 
+  await test('Kho dùng chung: dữ liệu gốc (Kho nghiên cứu) thắng bản Kiểm hồ sơ tự lấy; tạm thời chỉ dùng khi không còn gì khác', async () => {
+    const { recordHchanhFetch } = require('../server/services/hchanh_stay_store');
+    const discharge = so => ({ so_luu_tru: so, ngay_ra: '05/09/2026', raw_time: '05/09/2026 08:00', tong_so_ngay_dt: '5' });
+
+    // Ca 1: Kiểm hồ sơ đã tự lấy (tạm thời) nhưng sau đó Kho nghiên cứu quét lại -> gốc được ưu tiên.
+    const GOC_BN = 'STOREGOC1';
+    const GOC_KEY = `${GOC_BN}::a`;
+    const ownDir = path.join(RUNTIME_ROOT, 'records_check', 'patients', GOC_KEY.replace(/[^a-zA-Z0-9._-]/g, '_'));
+    fs.mkdirSync(ownDir, { recursive: true });
+    fs.writeFileSync(path.join(ownDir, 'ra_vien.json'), JSON.stringify(discharge('TAMTHOI')));
+    recordHchanhFetch(GOC_BN, { discharge: discharge('TAMTHOI') }, { source: 'kiem_ho_so' });
+    recordHchanhFetch(GOC_BN, { discharge: discharge('GOC') }, { source: 'kho_nghien_cuu' });
+    // Kiểm hồ sơ lấy lại lần nữa cũng không đè được dữ liệu gốc trong kho.
+    assert.strictEqual(recordHchanhFetch(GOC_BN, { discharge: discharge('TAMTHOI2') }, { source: 'kiem_ho_so' }).kept_goc, true);
+
+    // Ca 2: chỉ có dữ liệu tạm thời trong kho (Hành chánh phiên khác) -> vẫn dùng được.
+    const TAM_BN = 'STORETAM1';
+    const TAM_KEY = `${TAM_BN}::b`;
+    recordHchanhFetch(TAM_BN, { discharge: discharge('HC_TAM'), cls: { rows: [], _fetch_status: 'empty' } }, { source: 'hanh_chanh' });
+
+    const meta = key => ({ ma_bn: key.split('::')[0], case_key: key, ho_ten: 'X', active: true,
+      admission_time: '2026-09-02T00:00:00.000Z', discharge_time: '2026-09-05T08:00:00.000Z', fetched: {}, checked: false });
+    const dir = path.join(RUNTIME_ROOT, 'records_check');
+    fs.writeFileSync(path.join(dir, 'records_check_index.json'), JSON.stringify({
+      patients: { [GOC_KEY]: meta(GOC_KEY), [TAM_KEY]: meta(TAM_KEY) },
+      checked: {}, checked_aliases: {}, checklist: {}, checklist_aliases: {},
+    }, null, 2));
+
+    const dash = await getJson(base, '/hchanh/records-check/dashboard');
+    const find = key => (dash.json.patients || []).find(p => p.case_key === key || p.storage_key === key);
+    assert.strictEqual(find(GOC_KEY)?.discharge?.so_luu_tru, 'GOC', 'dữ liệu gốc của Kho nghiên cứu phải được ưu tiên');
+    assert.strictEqual(find(TAM_KEY)?.discharge?.so_luu_tru, 'HC_TAM', 'không có gì khác thì dùng dữ liệu tạm thời trong kho');
+    assert.ok(find(TAM_KEY)?.cls, 'cls tạm thời trong kho cũng dùng được');
+  });
+
   server.close();
   fs.rmSync(RUNTIME_ROOT, { recursive: true, force: true });
 
