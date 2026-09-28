@@ -18,6 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const { RESEARCH_STORE_DIR } = require('../constants');
 const { writeJsonAtomic, readJsonSafe } = require('../utils/file');
+const patientDb = require('./patient_db');
 
 const OK_STATUSES = new Set(['ok', 'done', 'success', 'partial', 'empty']);
 const TIER_GOC = 'goc';
@@ -114,7 +115,10 @@ function recordHchanhFetch(maBn, output, { admission = '', source = 'hanh_chanh'
     stay.files[key] = { data, status: fileStatus(data), fetched_at: now, source, tier };
     written.push(key);
   }
-  if (!written.length) return { saved: false, from: stay.from, to: stay.to, files: [], kept_goc: true };
+  if (!written.length) {
+    mirrorToPatientDb(code, incoming, stay, source, now);
+    return { saved: false, from: stay.from, to: stay.to, files: [], kept_goc: true };
+  }
   range = stayRange(Object.fromEntries(Object.entries(stay.files).map(([k, v]) => [k, v.data])), admission || stay.from);
   stay.from = [stay.from, range.from].filter(Boolean).sort()[0] || '';
   stay.to = range.to || stay.to || '';
@@ -124,7 +128,46 @@ function recordHchanhFetch(maBn, output, { admission = '', source = 'hanh_chanh'
   store.updated_at = now;
   store.stays.sort((a, b) => String(a.from).localeCompare(String(b.from)));
   writeJsonAtomic(storePath(code), store);
+  mirrorToPatientDb(code, incoming, stay, source, now);
   return { saved: true, from: stay.from, to: stay.to, files: written };
+}
+
+// Chép sang Kho người bệnh (SQLite). Kho đó giữ mọi bản quét kèm mức gốc/tạm thời nên ghi cả khi
+// dữ liệu tạm thời không được nhận ở đây. Lỗi kho không được làm hỏng việc lấy dữ liệu.
+function mirrorToPatientDb(maBn, files, stay, source, now) {
+  if (!patientDb.available()) return;
+  try {
+    patientDb.recordInpatient(maBn, files, { from: stay.from, to: stay.to, source, now });
+  } catch (err) {
+    console.warn(`[patient_db] Không ghi được đợt nằm viện vào kho: ${err.message}`);
+  }
+}
+
+/** Chép toàn bộ kho đợt nằm viện (hchanh_stays) sang Kho người bệnh — dùng cho dữ liệu đã lấy từ trước. */
+function syncAllToPatientDb() {
+  if (!patientDb.available()) return { ok: false, message: patientDb.unavailableReason() };
+  const dir = storeDir();
+  let patients = 0;
+  let stays = 0;
+  let newScans = 0;
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.endsWith('.json')) continue;
+    const data = readJsonSafe(path.join(dir, name), null);
+    if (!data || !Array.isArray(data.stays)) continue;
+    patients += 1;
+    for (const stay of data.stays) {
+      // Mỗi file giữ nguồn / mức / thời điểm lấy của chính nó.
+      for (const [key, entry] of Object.entries(stay.files || {})) {
+        if (!entry || typeof entry !== 'object') continue;
+        const res = patientDb.recordInpatient(data.ma_bn || name.replace(/\.json$/, ''), { [key]: entry.data }, {
+          from: stay.from, to: stay.to, source: entry.source || 'hanh_chanh', tier: entry.tier || TIER_TAM_THOI, now: entry.fetched_at || stay.updated_at,
+        });
+        newScans += res.new_scans || 0;
+      }
+      stays += 1;
+    }
+  }
+  return { ok: true, patients, stays, new_scans: newScans };
 }
 
 /**
@@ -173,4 +216,4 @@ function storeSummary() {
   return { dir, patients, stays, closed_stays: closed };
 }
 
-module.exports = { recordHchanhFetch, findStoredStay, storeSummary, stayRange, isoDay, STAY_FILES, TIER_GOC, TIER_TAM_THOI };
+module.exports = { recordHchanhFetch, findStoredStay, storeSummary, syncAllToPatientDb, stayRange, isoDay, STAY_FILES, TIER_GOC, TIER_TAM_THOI };

@@ -34,7 +34,7 @@ server.js (Express)
 
 ## Chạy dự án
 
-Yêu cầu Node.js ≥ 20.19, Python 3 (cho worker), Chrome + ChromeDriver (Selenium ≥ 4.6 có thể tự quản lý driver).
+Yêu cầu Node.js ≥ 20.19 (khuyến nghị 22 LTS ≥ 22.13: Kho người bệnh dùng `node:sqlite` có sẵn từ bản này; Node cũ hơn thì riêng kho tắt, phần khác vẫn chạy), Python 3 (cho worker), Chrome + ChromeDriver (Selenium ≥ 4.6 có thể tự quản lý driver).
 
 ```bash
 npm install

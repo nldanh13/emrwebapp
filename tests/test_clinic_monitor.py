@@ -139,7 +139,7 @@ def test_run_monitor_writes_state_deletes_request_and_stops(monkeypatch, tmp_pat
         def read(self):
             return cm.rows_from_html(html)
 
-        def on_exam_page(self, row, action):
+        def on_exam_page(self, row, action, need_services=True):
             return {'status': 'ready', 'message': 'Sẵn sàng hoàn tất'}
 
     monkeypatch.setattr(cm, 'Monitor', FakeMonitor)
@@ -379,7 +379,7 @@ class FakeMonitor:
     def __init__(self, check_status, tt_result):
         self.check_status, self.tt_result, self.calls = check_status, tt_result, []
 
-    def on_exam_page(self, row, action):
+    def on_exam_page(self, row, action, need_services=True):
         page = FakePage(exit_time=cm.parse_emr_dt('09:05 28/09/2026'))
         res = action(page, None, NOW)
         self.calls.append(('exam', res.get('status') or res.get('result'), list(page.writes)))

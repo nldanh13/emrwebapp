@@ -20,7 +20,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19.0'
+          node-version: '22.22.0'
           cache: 'npm'
 
       - name: Setup Python
@@ -37,3 +37,5 @@ jobs:
 
       - name: Run test suite
         run: npm run test:ci
+        env:
+          REQUIRE_PATIENT_DB: '1'

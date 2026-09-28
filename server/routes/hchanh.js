@@ -30,7 +30,7 @@ const { runScript, runWorker, fmtPyError, PYTHON_BIN }   = require('../services/
 const { enqueueHeavy, registerCancel, unregisterCancel, cancelSession } = require('../services/task_queue');
 const { readJsonSafe, writeJsonAtomic, safeFilePart } = require('../utils/file');
 const { appendActivity }                          = require('../services/activity_logger');
-const { recordHchanhFetch, findStoredStay, isoDay: stayIsoDay, storeSummary: stayStoreSummary } = require('../services/hchanh_stay_store');
+const { recordHchanhFetch, findStoredStay, isoDay: stayIsoDay, storeSummary: stayStoreSummary, syncAllToPatientDb: syncStayStoreToPatientDb } = require('../services/hchanh_stay_store');
 const { getSecret }                               = require('../services/secret_store');
 const { escapeHtml }                              = require('../utils/html');
 const { rowsToCsv }                               = require('../utils/csv');
@@ -3757,11 +3757,20 @@ router.get('/hchanh/stay-store', handleRoute((_req, res) => res.json({ status: '
 router.post('/hchanh/stay-store/import', handleRoute((_req, res, ctx) => {
   const stats = import_existing_into_stay_store(ctx);
   const store = stayStoreSummary();
+  // Chép cả sang Kho người bệnh (SQLite) — gồm các đợt đã có trong kho từ trước.
+  let patientDbNote = '';
+  try {
+    const synced = syncStayStoreToPatientDb();
+    patientDbNote = synced.ok ? ` Kho người bệnh: thêm ${synced.new_scans} bản dữ liệu mới.` : ` (${synced.message})`;
+  } catch (err) {
+    patientDbNote = ` (Không ghi được Kho người bệnh: ${err.message})`;
+  }
   appendActivity(ctx, { kind: 'hchanh.stay_store.import', ...stats, stays: store.stays });
   return res.json({
     status: 'ok',
     message: `Đã góp ${stats.stays_saved} lượt dữ liệu từ ${stats.folders} thư mục người bệnh vào kho`
-      + ` (bỏ qua ${stats.skipped} lượt chưa có dữ liệu dùng được). Kho hiện có ${store.stays} đợt nằm viện của ${store.patients} người, ${store.closed_stays} đợt đã ra viện.`,
+      + ` (bỏ qua ${stats.skipped} lượt chưa có dữ liệu dùng được). Kho hiện có ${store.stays} đợt nằm viện của ${store.patients} người, ${store.closed_stays} đợt đã ra viện.`
+      + patientDbNote,
     stats,
     store,
   });

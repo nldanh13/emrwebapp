@@ -104,6 +104,11 @@ function apiActionLabel(method, url) {
     'POST /api/clinic/monitor/bbhc/run': 'lập Sổ biên bản hội chẩn',
     'GET /api/clinic/care-draft': 'tải bản nháp chăm sóc phòng khám',
     'POST /api/hchanh/stay-store/import': 'góp dữ liệu hành chánh vào kho nghiên cứu',
+    'GET /api/kho/tong-quan': 'đọc tổng quan kho người bệnh',
+    'GET /api/kho/tim': 'tìm người bệnh trong kho',
+    'GET /api/kho/benh-nhan': 'đọc hành trình người bệnh',
+    'GET /api/kho/luot': 'đọc danh sách lượt khám / nằm viện',
+    'POST /api/kho/dong-bo': 'góp dữ liệu đã lấy vào kho người bệnh',
     'POST /api/clinic/monitor/start': 'bắt đầu theo dõi phòng khám',
     'POST /api/clinic/monitor/stop': 'dừng theo dõi phòng khám',
     'POST /api/clinic/monitor/refresh': 'làm mới danh sách phòng khám',
@@ -683,6 +688,14 @@ export const saveNurseSettings = (payload) => post('/api/nurse-settings', payloa
 export const getAdminNurseState = () => get('/api/admin-nurse-state');
 export const saveAdminNurseState = (payload) => post('/api/admin-nurse-state', payload);
 export const checkCurrentBed = (patient) => post('/api/check-current-bed', { patient });
+
+// ── Kho người bệnh ───────────────────────────────────────────────────────────
+export const getPatientDbSummary = () => get('/api/kho/tong-quan');
+export const searchPatientDb = (q) => get(`/api/kho/tim?q=${encodeURIComponent(q || '')}`);
+export const getPatientJourney = (maBn) => get(`/api/kho/benh-nhan/${encodeURIComponent(maBn || '')}`);
+export const listPatientDbVisits = ({ tu = '', den = '', loai = '', khoa = '', limit = 200, offset = 0 } = {}) =>
+  get(`/api/kho/luot?${new URLSearchParams({ tu, den, loai, khoa, limit: String(limit), offset: String(offset) })}`);
+export const syncPatientDb = () => post('/api/kho/dong-bo', {});
 
 // ── Phòng khám ───────────────────────────────────────────────────────────────
 export const importHchanhStayStore = () => post('/api/hchanh/stay-store/import', {});
