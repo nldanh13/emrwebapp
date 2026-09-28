@@ -418,7 +418,7 @@ function VTYTPreviewPanel({ preview, onPreview, onProcess, onInput, canRun = tru
 
       {!preview ? (
         <div style={{ padding:10, borderRadius:6, background:C.surface2, border:`1px solid ${C.border}`, color:C.text2, fontSize:FS.sm, lineHeight:1.45 }}>
-          Chưa có dữ liệu y lệnh ngày mai. Bấm <b>Quét y lệnh mai</b> để mở EMR và lấy danh sách thuốc/y lệnh riêng cho tab Hành chánh.
+          Chưa có dữ liệu y lệnh ngày mai. Bấm <b>Quét y lệnh mai</b> để mở EMR và lấy danh sách thuốc/y lệnh riêng cho tab Kiểm HSBA.
         </div>
       ) : (
         <>
@@ -1603,7 +1603,7 @@ export default function HchahnTab({ toast, workDateRange }) {
       <div style={{ padding:'10px 12px', borderBottom:`1px solid ${C.border2}`, background:C.surface, display:'grid', gap:10 }}>
         <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
           <Segmented
-            label="Khu làm việc hành chánh"
+            label="Khu làm việc Kiểm HSBA"
             value={workspace}
             onChange={setWorkspace}
             options={[
