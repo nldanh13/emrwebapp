@@ -37,6 +37,7 @@ export default function BedBoardDesktop({
   saving,
   handleSaveOnly,
   handlePrintRooms,
+  printingRooms,
 }) {
   const total = patients.length;
   return (
@@ -121,7 +122,7 @@ export default function BedBoardDesktop({
           <Btn variant="solidPrimary" icon={IconDeviceFloppy} loading={saving} onClick={handleSaveOnly} disabled={saving}>
             {saving ? 'Đang lưu…' : 'Lưu xếp phòng'}
           </Btn>
-          <Btn icon={IconPrinter} onClick={handlePrintRooms}>In danh sách xếp phòng</Btn>
+          <Btn icon={IconPrinter} loading={printingRooms} disabled={printingRooms} onClick={handlePrintRooms}>{printingRooms ? 'Đang tạo PDF…' : 'Lưu PDF xếp phòng'}</Btn>
         </div>
 
         <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
