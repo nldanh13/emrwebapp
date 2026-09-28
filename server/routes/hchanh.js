@@ -30,6 +30,7 @@ const { runScript, runWorker, fmtPyError, PYTHON_BIN }   = require('../services/
 const { enqueueHeavy, registerCancel, unregisterCancel, cancelSession } = require('../services/task_queue');
 const { readJsonSafe, writeJsonAtomic, safeFilePart } = require('../utils/file');
 const { appendActivity }                          = require('../services/activity_logger');
+const { recordHchanhFetch, storeSummary: stayStoreSummary } = require('../services/hchanh_stay_store');
 const { getSecret }                               = require('../services/secret_store');
 const { escapeHtml }                              = require('../utils/html');
 const { rowsToCsv }                               = require('../utils/csv');
@@ -62,6 +63,8 @@ const {
   HCHANH_DATA_VERSION,
   hchanh_file_label,
   hchanh_file_stem,
+  hchanh_file_candidate_stems,
+  HCHANH_FILE_KEYS,
 } = require('../hchanh_data_contract');
 const { buildHchanh_Dashboard, buildPatientCard }        = require('../services/hchanh/dashboard');
 const { upsertTicket, updateTicket, readTicketStore } = require('../services/hchanh/ticket_store');
@@ -2284,6 +2287,15 @@ function apply_records_check_fetch_output(ctx, item, output) {
     clear_records_fetch_error(ctx, storage_key);
   }
   appendActivity(ctx, { kind: 'records_check.fetch_background.success', ma_bn, case_key: storage_key, saved, file_failures });
+  // Góp vào kho dữ liệu dùng chung để Kho nghiên cứu dùng lại (ca Hoàn tất — đợt đã kết thúc).
+  try {
+    recordHchanhFetch(ma_bn, output, {
+      admission: item.payload?.admission_time || item.payload?.['Ngày vào viện'] || item.date_from || '',
+      source: 'kiem_ho_so',
+    });
+  } catch (err) {
+    console.warn('[RECORDS_CHECK] Không góp được vào kho dữ liệu:', String(err.message || err));
+  }
   return { ma_bn, case_key: storage_key, saved, file_failures };
 }
 
@@ -2796,6 +2808,18 @@ router.post('/hchanh/fetch', async (req, res) => {
         const info = normalizeFetchOutputInfo(file_key, payload);
         if (TECHNICAL_FETCH_STATUSES.has(info.status)) file_failures.push(info);
         else if (ATTENTION_FETCH_STATUSES.has(info.status)) file_attention.push(info);
+      }
+
+      // Góp vào kho dữ liệu dùng chung (Kho nghiên cứu dùng lại, khỏi quét EMR lần nữa).
+      // Lỗi ở bước này không được làm hỏng lần lấy dữ liệu hành chánh.
+      try {
+        const stored = recordHchanhFetch(ma_bn, output, {
+          admission: patient_meta?.admission_time || patient_row?.admission_time || '',
+          source: records_check ? 'kiem_ho_so' : 'hanh_chanh',
+        });
+        if (stored.saved) appendActivity(ctx, { kind: 'hchanh.stay_store.saved', from: stored.from, to: stored.to, files: stored.files });
+      } catch (err) {
+        console.warn('[HCHANH] Không góp được vào kho dữ liệu:', String(err.message || err));
       }
 
       // Dọn file tạm
@@ -3656,6 +3680,73 @@ router.get('/hchanh/patient/:ma_bn', handleRoute((req, res, ctx) => {
 
 // ── GET /api/hchanh/dashboard ─────────────────────────────────────────────────
 // Build dashboard từ dữ liệu trong hchanh/ (không đọc data/).
+
+// ── Kho dữ liệu dùng chung (đợt nằm viện đã lấy) ─────────────────────────────
+// Mỗi lần lấy dữ liệu hành chánh / kiểm hồ sơ đều tự góp vào kho (xem recordHchanhFetch). Route
+// import góp một lần toàn bộ dữ liệu đã lấy TRƯỚC khi có tính năng này để Kho nghiên cứu dùng lại.
+
+// Đọc mọi file dữ liệu trong 1 thư mục người bệnh (tên file mới lẫn tên cũ), nhóm theo đợt
+// (_meta.admission_time) vì kho Hành chánh cũ chỉ giữ bản mới nhất theo mã BN.
+function read_patient_dir_groups(dir) {
+  const groups = new Map();
+  for (const fileKey of HCHANH_FILE_KEYS) {
+    for (const stem of hchanh_file_candidate_stems(fileKey)) {
+      const data = readJsonSafe(path.join(dir, `${stem}.json`), null);
+      if (!data || typeof data !== 'object') continue;
+      const admission = String(data?._meta?.admission_time || '').trim();
+      if (!groups.has(admission)) groups.set(admission, {});
+      if (!groups.get(admission)[fileKey]) groups.get(admission)[fileKey] = data;
+      break;
+    }
+  }
+  // File không ghi đợt (bản cũ) gộp vào đợt duy nhất nếu chỉ có 1 đợt.
+  if (groups.has('') && groups.size === 2) {
+    const [other] = [...groups.keys()].filter(k => k);
+    groups.set(other, { ...groups.get(''), ...groups.get(other) });
+    groups.delete('');
+  }
+  return groups;
+}
+
+function import_existing_into_stay_store(ctx) {
+  const stats = { folders: 0, stays_saved: 0, skipped: 0 };
+  const roots = [
+    [path.join(hchanh_dir(ctx), 'patients'), 'hanh_chanh'],
+    [path.join(records_check_persistent_dir(ctx), 'patients'), 'kiem_ho_so'],
+  ];
+  for (const [root, defaultSource] of roots) {
+    let names = [];
+    try { names = fs.readdirSync(root, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name); } catch (_) {}
+    for (const name of names) {
+      // Thư mục Kiểm hồ sơ (kể cả bản cũ nằm trong hchanh/patients) có dạng "<mã BN>__<đợt>".
+      const ma_bn = name.split('__')[0].replace(/\D/g, '');
+      if (!ma_bn) continue;
+      stats.folders += 1;
+      const source = name.includes('__') ? 'kiem_ho_so' : defaultSource;
+      for (const [admission, files] of read_patient_dir_groups(path.join(root, name))) {
+        const fetchedAt = Object.values(files).map(v => v?._meta?.fetched_at).filter(Boolean).sort().pop();
+        const res = recordHchanhFetch(ma_bn, files, { admission, source, now: fetchedAt || undefined });
+        if (res.saved) stats.stays_saved += 1; else stats.skipped += 1;
+      }
+    }
+  }
+  return stats;
+}
+
+router.get('/hchanh/stay-store', handleRoute((_req, res) => res.json({ status: 'ok', store: stayStoreSummary() })));
+
+router.post('/hchanh/stay-store/import', handleRoute((_req, res, ctx) => {
+  const stats = import_existing_into_stay_store(ctx);
+  const store = stayStoreSummary();
+  appendActivity(ctx, { kind: 'hchanh.stay_store.import', ...stats, stays: store.stays });
+  return res.json({
+    status: 'ok',
+    message: `Đã góp ${stats.stays_saved} lượt dữ liệu từ ${stats.folders} thư mục người bệnh vào kho`
+      + ` (bỏ qua ${stats.skipped} lượt chưa có dữ liệu dùng được). Kho hiện có ${store.stays} đợt nằm viện của ${store.patients} người, ${store.closed_stays} đợt đã ra viện.`,
+    stats,
+    store,
+  });
+}));
 
 router.get('/hchanh/dashboard', handleRoute((_req, res, ctx) => {
   return res.json(buildHchanh_Dashboard(ctx));

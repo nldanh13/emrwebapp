@@ -11,7 +11,7 @@ import { Btn, Segmented, Spinner } from '../shared.jsx';
 import useIsMobile from '../../hooks/useIsMobile.js';
 import { useHchanh, SCOPE_LABEL, SCOPE_FILES, getMaBn } from './useHchanh.js';
 import { HCHANH_VTYT_ITEMS, HCHANH_BED_SERVICE_ITEMS } from '../../config/hchanhLists.js';
-import { printHchanh_Ticket, printHchanh_WardList } from '../../api.js';
+import { printHchanh_Ticket, printHchanh_WardList, importHchanhStayStore } from '../../api.js';
 import HchanhVtytBatchPanel from './HchanhVtytBatchPanel.jsx';
 import { formatPersonName } from '../../utils/personName.js';
 
@@ -1633,6 +1633,10 @@ export default function HchahnTab({ toast, workDateRange }) {
                     ['In danh sách xếp phòng', () => printHchanh_WardList().catch(err => alert(err.message || err))],
                     ['Danh mục vật tư', () => setResourceList('vtyt')],
                     ['Danh mục giường', () => setResourceList('bed')],
+                    // Dữ liệu lấy mới đã tự góp vào kho; mục này góp một lần phần đã lấy từ trước.
+                    ['Góp dữ liệu đã lấy vào kho nghiên cứu', () => importHchanhStayStore()
+                      .then(r => toast?.(r.message, 'ok'))
+                      .catch(err => toast?.(String(err.message || err), 'error'))],
                   ].map(([label, run]) => (
                     <button key={label} type="button" role="menuitem" className="emr-menu-item" onClick={() => { run(); setShowTools(false); }}>{label}</button>
                   ))}

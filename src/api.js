@@ -103,6 +103,7 @@ function apiActionLabel(method, url) {
     'POST /api/clinic/monitor/ngoaitru': 'làm điều trị ngoại trú',
     'POST /api/clinic/monitor/bbhc/run': 'lập Sổ biên bản hội chẩn',
     'GET /api/clinic/care-draft': 'tải bản nháp chăm sóc phòng khám',
+    'POST /api/hchanh/stay-store/import': 'góp dữ liệu hành chánh vào kho nghiên cứu',
     'POST /api/clinic/monitor/start': 'bắt đầu theo dõi phòng khám',
     'POST /api/clinic/monitor/stop': 'dừng theo dõi phòng khám',
     'POST /api/clinic/monitor/refresh': 'làm mới danh sách phòng khám',
@@ -684,6 +685,7 @@ export const saveAdminNurseState = (payload) => post('/api/admin-nurse-state', p
 export const checkCurrentBed = (patient) => post('/api/check-current-bed', { patient });
 
 // ── Phòng khám ───────────────────────────────────────────────────────────────
+export const importHchanhStayStore = () => post('/api/hchanh/stay-store/import', {});
 export const runClinicPreview = (payload) => post('/api/clinic/preview', payload);
 export const prepareClinicBbhc = () => post('/api/clinic/monitor/bbhc/prepare', {});
 export const runClinicNgoaiTru = () => post('/api/clinic/monitor/ngoaitru', {});

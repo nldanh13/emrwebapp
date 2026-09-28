@@ -15,6 +15,7 @@ const { redactLogLine } = require('../utils/log_redact');
 const { runPython, runScript, fmtPyError } = require('../services/python_runner');
 const { getRuntimePaths } = require('../services/session');
 const { appendActivity } = require('../services/activity_logger');
+const { findStoredStay } = require('../services/hchanh_stay_store');
 const { appendSecurityAudit } = require('../services/security_audit');
 const { hasRole } = require('../services/authz');
 const { enqueueHeavy, registerCancel, unregisterCancel, isCancelRequested } = require('../services/task_queue');
@@ -4737,7 +4738,10 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
   const findFetchedStay = (meta) => {
     const admission = isoDate(meta.admission_raw || '');
     if (!admission) return null;
-    return (fetchedStays.get(meta.ma_bn) || []).find(st => st.from <= admission && admission <= st.to) || null;
+    return (fetchedStays.get(meta.ma_bn) || []).find(st => st.from <= admission && admission <= st.to)
+      // Đợt đã lấy ở tab Hành chánh / Kiểm hồ sơ (kho dùng chung) — dùng lại, không mở EMR.
+      || findStoredStay(meta.ma_bn, admission, wantedFiles)
+      || null;
   };
   const writeHchanhCsvs = () => {
     writeCsvUnion(path.join(runPath, 'hchanh_profile.csv'), profileRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Giới', 'Ngày sinh', 'Tuổi', 'Địa chỉ', 'Điện thoại', 'Số CMND', 'Đối tượng', 'Số thẻ', 'Ngày vào viện', 'Ngày ra viện', 'Chẩn đoán', 'Research key']);
@@ -4830,7 +4834,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
             rows: { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length },
           };
           chunkReused += 1;
-          appendResearchRunLog(runPath, `[${logPrefix}] DÙNG LẠI ${display}: cùng đợt nằm viện ${reuse.from} → ${reuse.to} đã lấy ở ${reuse.sourceKey}, không mở EMR lại.`);
+          appendResearchRunLog(runPath, `[${logPrefix}] DÙNG LẠI ${display}: cùng đợt nằm viện ${reuse.from} → ${reuse.to} đã lấy ở ${String(reuse.sourceKey).startsWith('kho_hanh_chanh') ? 'tab Hành chánh / Kiểm hồ sơ' : reuse.sourceKey}, không mở EMR lại.`);
           continue;
         }
 
@@ -4841,7 +4845,19 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
 
         const dateFrom = meta.date_from || fallbackDateFrom || '';
         const dateTo = meta.date_to || fallbackDateTo || dateFrom || '';
-        batchItems.push({ idx, row, meta, key, failKey, display, dateFrom, dateTo });
+        // Kho dùng chung có sẵn một phần (vd ra viện từ Kiểm hồ sơ): dùng phần đó, chỉ mở EMR lấy file còn thiếu.
+        let storedFiles = null;
+        let filesOverride = null;
+        const storedPart = force ? null : findStoredStay(meta.ma_bn, isoDate(meta.admission_raw || ''), []);
+        if (storedPart) {
+          const have = wantedFiles.filter(k => storedPart.output?.[k]);
+          if (have.length) {
+            storedFiles = Object.fromEntries(have.map(k => [k, storedPart.output[k]]));
+            filesOverride = wantedFiles.filter(k => !storedPart.output?.[k]);
+            appendResearchRunLog(runPath, `[${logPrefix}] DÙNG MỘT PHẦN ${display}: đã có ${have.join(',')} từ tab Hành chánh / Kiểm hồ sơ; chỉ lấy ${filesOverride.join(',')}.`);
+          }
+        }
+        batchItems.push({ idx, row, meta, key, failKey, display, dateFrom, dateTo, storedFiles, filesOverride });
       }
       if (postponed.length) queue.unshift(...postponed);
 
@@ -4855,8 +4871,9 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
       batchNo += 1;
       const batchInputPath = path.join(rawDir, `batch_input_${String(batchNo).padStart(4, '0')}.json`);
       const batchOutputPath = path.join(rawDir, `batch_output_${String(batchNo).padStart(4, '0')}.json`);
-      const batchPayload = batchItems.map(({ row, meta, key, dateFrom, dateTo }) => ({
+      const batchPayload = batchItems.map(({ row, meta, key, dateFrom, dateTo, filesOverride }) => ({
         ...row,
+        ...(filesOverride?.length ? { _files_override: filesOverride } : {}),
         ma_bn: meta.ma_bn,
         ho_ten: meta.ho_ten,
         research_code: meta.research_code,
@@ -4910,7 +4927,9 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
       for (const item of batchItems) {
         const { idx, row, meta, key, failKey, display, dateFrom, dateTo } = item;
         stats.processed += 1;
-        const output = batchOutput[key];
+        const fetchedOutput = batchOutput[key];
+        // Ghép phần đã có trong kho dùng chung; file vừa lấy từ EMR được ưu tiên.
+        const output = fetchedOutput && item.storedFiles ? { ...item.storedFiles, ...fetchedOutput } : fetchedOutput;
 
         // Nếu worker bị kill vì người dùng bấm Dừng và ca này chưa kịp có kết quả
         // trong batchOutput, đây không phải lỗi dữ liệu của BN — đưa về pending_refetch.
