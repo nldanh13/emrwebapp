@@ -15,7 +15,7 @@
 //   POST /api/hchanh/snapshot/:kind         → chốt snapshot sáng/chiều
 //   GET  /api/hchanh/snapshot               → đọc snapshot
 //   POST /api/hchanh/clear                  → xóa toàn bộ dữ liệu hành chánh
-//   GET  /api/hchanh/print-ward-list        → in danh sách xếp phòng (HTML)
+//   POST /api/hchanh/print-ward-list-pdf    → tải PDF danh sách xếp phòng
 
 'use strict';
 
@@ -4818,6 +4818,52 @@ router.get('/hchanh/print-ward-list', handleRoute((_req, res, ctx) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   return res.send(html);
 }));
+
+// POST /api/hchanh/print-ward-list-pdf
+// Tạo PDF từ trạng thái xếp phòng hiện tại trên giao diện. Chỉ nhận những trường
+// cần thiết để in và tuyệt đối không đưa giá giường/ghi chú giá vào PDF.
+router.post('/hchanh/print-ward-list-pdf', async (req, res) => {
+  const ctx = getRuntimePaths(req);
+  const rawRows = Array.isArray(req.body?.patients) ? req.body.patients : [];
+  const rows = rawRows.slice(0, 500).map(row => ({
+    id: String(row?.['Mã BN'] ?? row?.ma_bn ?? row?.['Mã YT'] ?? row?.ma_yt ?? '').trim().slice(0, 40),
+    name: String(row?.['Họ tên'] ?? row?.ho_ten ?? '').replace(/\s+/g, ' ').trim().slice(0, 180),
+    room: String(row?.Vi_Tri ?? row?.vi_tri ?? '').replace(/\s+/g, ' ').trim().slice(0, 80),
+    transfer_date: String(row?.NgayChuyenPhong ?? '').replace(/\s+/g, ' ').trim().slice(0, 80),
+    occupancy: String(row?.DangKyPhong ?? '').replace(/\s+/g, ' ').trim().slice(0, 20),
+  })).filter(row => row.room && (row.name || row.id));
+  if (!rows.length) return res.status(400).json({ status: 'error', message: 'Chưa có người bệnh nào được xếp phòng để tạo PDF.' });
+
+  ensureSessionAssets(ctx.dir, ROOT_DIR);
+  const printDir = path.join(hchanh_dir(ctx), 'ward_list_print');
+  try { fs.mkdirSync(printDir, { recursive: true, mode: 0o700 }); } catch (_) {}
+  const stamp = `${new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)}_${crypto.randomUUID().slice(0, 6)}`;
+  const inputPath = path.join(printDir, `ward_list_${stamp}.json`);
+  const outputPath = path.join(printDir, `DANH_SACH_XEP_PHONG_${stamp}.pdf`);
+  try {
+    writeJsonAtomic(inputPath, {
+      generated_at: new Date().toISOString(),
+      generated_label: new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }),
+      rows,
+    });
+    const result = await runScript('ward_list_print_pdf.py', ['--input', inputPath, '--out', outputPath], { runtimeDir: ctx.dir });
+    if (result.spawnError) throw new Error(`Không khởi động được Python tạo PDF: ${result.spawnError}`);
+    if (result.killedByTimeout) throw new Error('Timeout khi tạo PDF danh sách xếp phòng.');
+    if (result.code !== 0 || !fs.existsSync(outputPath)) throw new Error(fmtPyError('Python lỗi khi tạo PDF danh sách xếp phòng.', result));
+    const pdf = fs.readFileSync(outputPath);
+    const fileName = `DANH_SACH_XEP_PHONG_${new Date().toISOString().slice(0, 10)}.pdf`;
+    appendActivity(ctx, { kind: 'ward.print_room_list_pdf', patient_count: rows.length, file_name: fileName });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+    return res.send(pdf);
+  } catch (err) {
+    console.error('[HCHANH/print-ward-list-pdf]', err);
+    if (!res.headersSent) return res.status(500).json({ status: 'error', message: String(err.message || err) });
+  } finally {
+    try { fs.rmSync(inputPath, { force: true }); } catch (_) {}
+    try { fs.rmSync(outputPath, { force: true }); } catch (_) {}
+  }
+});
 
 // G: Export danh sách vấn đề theo người phụ trách
 // GET /api/hchanh/export/issues?format=json|csv&owner=BS|DD
