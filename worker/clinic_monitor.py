@@ -391,6 +391,25 @@ if (v('cbbXuTri') === '') out.push('xử trí');
 if (v('txtMoTaDauHieuLamSang') === '') out.push('dấu hiệu LS / triệu chứng');
 return out;
 """
+# Thủ thuật còn "Mới" trong bảng Chỉ định DVKT (chưa chuyển đi làm dịch vụ nên chưa có trên
+# D/s Thủ thuật): dòng tr.dichvu thuộc nhóm có tiêu đề "Thủ thuật", EMR đánh dấu class chuyendichvu
+# (dòng nút Thực hiện sẽ chuyển) hoặc cột Trạng thái là "Mới".
+JS_NEW_PROCEDURES = r"""
+function n(s) { return (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().replace(/\s+/g, ' ').trim(); }
+var t = document.getElementById('tblDichVu'); if (!t) return 0;
+var inTT = false, count = 0;
+[].slice.call(t.querySelectorAll('tbody tr')).forEach(function (tr) {
+  if (!tr.classList.contains('dichvu')) {
+    var h = n(tr.innerText);
+    if (h) inTT = h.indexOf('thu thuat') >= 0;
+    return;
+  }
+  var tds = tr.querySelectorAll('td');
+  var status = tds.length > 6 ? n(tds[6].innerText) : '';
+  if (inTT && !tr.classList.contains('hoantat') && (tr.classList.contains('chuyendichvu') || status === 'moi')) count++;
+});
+return count;
+"""
 JS_DRUG_COUNT = "return document.querySelectorAll('#tblThuoc tr[class*=groupthuoc]').length;"
 
 
@@ -442,6 +461,18 @@ class ExamPage:
 
     def needs_enter(self) -> bool:
         return self.visible("btnVAOKHAM")
+
+    def new_procedures(self) -> int:
+        return int(self.js(JS_NEW_PROCEDURES) or 0)
+
+    def send_to_services(self) -> List[str]:
+        """Bấm Thực hiện (btnDILAMDV) để chuyển thủ thuật "Mới" sang D/s Thủ thuật."""
+        if not self.wait_visible("btnDILAMDV", 6):
+            raise ExamStepError("Không thấy nút Thực hiện để chuyển thủ thuật")
+        self.js("document.getElementById('btnDILAMDV').click();")
+        self.pause(2.5)
+        wait_page(self.driver, 1.0)
+        return self.check_dialogs("Thực hiện (chuyển thủ thuật)")
 
     def missing_required(self) -> List[str]:
         return list(self.js(JS_MISSING_REQUIRED) or [])
@@ -526,6 +557,18 @@ def check_patient(page: ExamPage, row: Dict[str, Any], services_done: Optional[d
     if pending_procedures(row):
         return {**base, "status": "ready", "message": "Sẵn sàng — sẽ nhập thủ thuật trước rồi hoàn tất"}
     return {**base, "status": "ready", "message": "Sẵn sàng hoàn tất"}
+
+
+def ready_for_procedures(page: ExamPage, row: Dict[str, Any], services_done: Optional[datetime], now: datetime) -> Dict[str, Any]:
+    """Trước khi vào D/s Thủ thuật: kiểm tra màn khám (chỉ đọc); thủ thuật còn "Mới" thì bấm Thực hiện."""
+    res = check_patient(page, row, services_done, now)
+    if res.get("status") != "ready":
+        return res
+    steps: List[str] = []
+    if page.new_procedures():
+        toasts = page.send_to_services()
+        steps.append("Bấm Thực hiện (thủ thuật mới)" + (f" ({toasts[-1]})" if toasts else ""))
+    return {**res, "steps": steps}
 
 
 def is_weight_warning(message: str) -> bool:
@@ -995,8 +1038,12 @@ def run_completions(monitor: "Monitor", rows: List[Dict[str, Any]], checks: Dict
         tt: Dict[str, Any] = {"result": "done", "steps": [], "procedure_end": None}
         if pending_procedures(row):
             # Kiểm tra (chỉ đọc) màn khám trước: chờ đọc KQ chưa có thuốc / chưa đủ giờ thì chưa nhập thủ thuật.
-            pre = monitor.on_exam_page(row, lambda page, done_at, now: check_patient(page, row, done_at, now))
-            tt = monitor.run_procedures(row) if pre.get("status") == "ready" else {**pre, "result": pre.get("status")}
+            pre = monitor.on_exam_page(row, lambda page, done_at, now: ready_for_procedures(page, row, done_at, now))
+            if pre.get("status") == "ready":
+                tt = monitor.run_procedures(row)
+                tt["steps"] = (pre.get("steps") or []) + (tt.get("steps") or [])
+            else:
+                tt = {**pre, "result": pre.get("status")}
         if tt["result"] == "done":
             tt_end = tt.get("procedure_end")
 
