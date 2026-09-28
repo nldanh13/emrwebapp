@@ -1,22 +1,6 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { lazy, Suspense, useState, useCallback, useEffect, useRef } from 'react';
 import useIsMobile from './hooks/useIsMobile.js';
 import { useAuth } from './hooks/useAuth.jsx';
-import DataProcessingTab from './components/DataProcessingTab.jsx';
-import ShiftTab  from './components/ShiftTab.jsx';
-import NurseTab  from './components/NurseTab.jsx';
-import HchahnTab from './components/hchanh/HchahnTab.jsx';
-import RecordsCheckTab from './components/records/RecordsCheckTab.jsx';
-import DischargeSignTab from './components/records/DischargeSignTab.jsx';
-import SickLeaveTab from './components/SickLeaveTab.jsx';
-import VtytCatalogManager from './components/VtytCatalogManager.jsx';
-import MedicationCatalogManager from './components/MedicationCatalogManager.jsx';
-import AccountSettingsTab from './components/AccountSettingsTab.jsx';
-import EmrStructureScanTab from './components/EmrStructureScanTab.jsx';
-import ClinicTab from './components/ClinicTab.jsx';
-import ResearchTab from './components/ResearchTab.jsx';
-import PatientJourneyTab from './components/PatientJourneyTab.jsx';
-import ReportTab from './components/ReportTab.jsx';
-import FunctionHubTab from './components/FunctionHubTab.jsx';
 import FeatureContextBanner from './components/FeatureContextBanner.jsx';
 import WorkDateRangeBar from './components/WorkDateRangeBar.jsx';
 import Sidebar from './components/shell/Sidebar.jsx';
@@ -28,6 +12,25 @@ import * as api from './api.js';
 import { defaultWorkDateRange, loadWorkDateRange, saveWorkDateRange, sanitizeWorkDateRange, workDateRangeLabel } from './utils/workDateRange.js';
 import { installGlobalClickLogger, logActivity, setActivityTab, flushActivityLogs } from './utils/activityLogger.js';
 import { NAV_ENTRIES, getNavigationEntry, resolveContextDefinition } from './features/registry.js';
+
+// Các màn hình nghiệp vụ lớn chỉ được tải khi người dùng mở tab tương ứng.
+// Điều này giảm đáng kể gói JS ban đầu trên máy trạm và điện thoại.
+const DataProcessingTab = lazy(() => import('./components/DataProcessingTab.jsx'));
+const ShiftTab = lazy(() => import('./components/ShiftTab.jsx'));
+const NurseTab = lazy(() => import('./components/NurseTab.jsx'));
+const HchahnTab = lazy(() => import('./components/hchanh/HchahnTab.jsx'));
+const RecordsCheckTab = lazy(() => import('./components/records/RecordsCheckTab.jsx'));
+const DischargeSignTab = lazy(() => import('./components/records/DischargeSignTab.jsx'));
+const SickLeaveTab = lazy(() => import('./components/SickLeaveTab.jsx'));
+const VtytCatalogManager = lazy(() => import('./components/VtytCatalogManager.jsx'));
+const MedicationCatalogManager = lazy(() => import('./components/MedicationCatalogManager.jsx'));
+const AccountSettingsTab = lazy(() => import('./components/AccountSettingsTab.jsx'));
+const EmrStructureScanTab = lazy(() => import('./components/EmrStructureScanTab.jsx'));
+const ClinicTab = lazy(() => import('./components/ClinicTab.jsx'));
+const ResearchTab = lazy(() => import('./components/ResearchTab.jsx'));
+const PatientJourneyTab = lazy(() => import('./components/PatientJourneyTab.jsx'));
+const ReportTab = lazy(() => import('./components/ReportTab.jsx'));
+const FunctionHubTab = lazy(() => import('./components/FunctionHubTab.jsx'));
 
 function safeText(value, max = 140) {
   const s = String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -240,6 +243,7 @@ export default function App() {
         <FeatureContextBanner context={featureContext} definition={selectedContextDefinition} onBack={handleOpenFunctionHub} onClose={() => setFeatureContext(null)} />
         {shouldShowDateBar(tab) && <WorkDateRangeBar value={workDateRange} onChange={setWorkDateRange} />}
         <ContentFrame compact={Boolean(currentTab(tab)?.compact)}>
+          <Suspense fallback={<div style={{ padding: 16, color: 'var(--emr-ink-secondary)' }}>Đang mở chức năng…</div>}>
           {tab === 'functions'    && <FunctionHubTab onOpenContext={handleOpenContext} toast={toast} />}
           {tab === 'acquire'      && <DataProcessingTab toast={toast} workDateRange={workDateRange} />}
           {tab === 'research'     && <ResearchTab toast={toast} />}
@@ -257,6 +261,7 @@ export default function App() {
           {tab === 'clinic'       && <ClinicTab toast={toast} />}
           {tab === 'nurse'        && <NurseTab toast={toast} />}
           {tab === 'report'       && <ReportTab toast={toast} workDateRange={workDateRange} />}
+          </Suspense>
         </ContentFrame>
         {isMobile && <BottomNav tabs={TABS} active={tab} onChange={handleTabChange} onOpenMenu={() => setSidebarOpen(true)} />}
       </div>

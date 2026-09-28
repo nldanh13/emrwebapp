@@ -118,13 +118,14 @@ function RangeBar({ tu, den, setTu, setDen, loading, onReload, children }) {
 // ── Hành trình 1 người bệnh ──────────────────────────────────────────────────
 
 const ABNORMAL_RE = /^(h|l|hh|ll|cao|thấp|bất thường|\*|↑|↓|[<>])/i;
+const isAbnormalFlag = value => Boolean(value && ABNORMAL_RE.test(String(value).trim()));
 
 // Kết quả XN / CĐHA của lượt (lấy từ Kho nghiên cứu), thu gọn mặc định.
 function ResultsBlock({ l }) {
   const xn = l.xet_nghiem || [];
   const cd = l.cdha || [];
   if (!xn.length && !cd.length) return null;
-  const abnormal = xn.filter(r => r.bat_thuong && ABNORMAL_RE.test(String(r.bat_thuong).trim())).length;
+  const abnormal = xn.filter(r => isAbnormalFlag(r.bat_thuong)).length;
   return (
     <details style={{ fontSize: FS.sm }}>
       <summary style={{ cursor: 'pointer', color: C.text2, fontWeight: 600 }}>
@@ -135,16 +136,19 @@ function ResultsBlock({ l }) {
           <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 520 }}>
             <thead><tr>{['Thời gian', 'Chỉ số', 'Kết quả', 'Đơn vị', 'Tham chiếu', 'Cờ'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
             <tbody>
-              {xn.map((r, i) => (
+              {xn.map((r, i) => {
+                const abnormalFlag = isAbnormalFlag(r.bat_thuong);
+                return (
                 <tr key={i}>
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtTime(r.thoi_gian)}</td>
                   <td style={td}>{r.chi_so}{r.loai_xn ? <span style={{ color: C.text3, fontSize: FS.xs }}> · {r.loai_xn}</span> : null}</td>
-                  <td style={{ ...td, fontVariantNumeric: 'tabular-nums', fontWeight: r.bat_thuong ? 650 : 400, color: r.bat_thuong ? C.red : C.text }}>{r.ket_qua}</td>
+                  <td style={{ ...td, fontVariantNumeric: 'tabular-nums', fontWeight: abnormalFlag ? 650 : 400, color: abnormalFlag ? C.red : C.text }}>{r.ket_qua}</td>
                   <td style={td}>{r.don_vi}</td>
                   <td style={td}>{r.tham_chieu}</td>
                   <td style={td}>{r.bat_thuong}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -231,6 +235,8 @@ function Journey({ maBn, onBack, toast }) {
   const visits = [...(data?.luot || [])].reverse();
   const byId = Object.fromEntries((data?.luot || []).map(l => [l.id, l]));
   const counts = (data?.luot || []).reduce((acc, l) => ({ ...acc, [l.loai]: (acc[l.loai] || 0) + 1 }), {});
+  const unlinked = data?.ket_qua_chua_xac_dinh || {};
+  const unlinkedCount = (unlinked.xet_nghiem || []).length + (unlinked.cdha || []).length;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -245,6 +251,11 @@ function Journey({ maBn, onBack, toast }) {
           </div>
         )}
       </div>
+      {unlinkedCount > 0 && (
+        <div style={{ border: `1px solid ${C.amber}`, borderRadius: R.md, background: C.amberBg, color: C.text, padding: '8px 10px', fontSize: FS.sm }}>
+          Có {unlinkedCount} kết quả XN/CĐHA chưa xác định được lượt vì người bệnh có nhiều lượt trùng ngày. Hệ thống giữ lại dữ liệu và không tự gắn để tránh sai hồ sơ.
+        </div>
+      )}
       {visits.map(l => <VisitCard key={l.id} l={l} byId={byId} />)}
       {!loading && !visits.length && <Note>Chưa có lượt nào trong kho.</Note>}
     </div>

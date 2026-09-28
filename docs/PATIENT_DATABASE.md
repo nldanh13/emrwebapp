@@ -123,7 +123,17 @@ Khi bấm Chuẩn hoá, phần hành chánh của từng ca (thông tin nền, r
 
 ## Sao lưu
 
-Kho là một file duy nhất. Khi sao lưu, chép cả `kho.sqlite3`, `kho.sqlite3-wal` và `kho.sqlite3-shm` lúc máy chủ đã dừng.
+Kiểm tra toàn vẹn và tạo bản sao nhất quán (có thể chạy khi máy chủ đang hoạt động):
+
+```bash
+npm run patient-db:check
+npm run patient-db:backup
+```
+
+- Bản sao mặc định nằm trong `.runtime/backups/kho_benh_nhan/` và không được commit.
+- Có thể đổi thư mục bằng biến `EMR_PATIENT_DB_BACKUP_DIR`.
+- Lệnh sao lưu kiểm tra kho trước, dùng `VACUUM INTO`, ghi file tạm rồi mới đổi tên; không để lại file chính thức dở dang khi lỗi.
+- Nên lên lịch chạy `npm run patient-db:backup` hằng ngày bằng Task Scheduler trên máy Windows vận hành.
 
 ## Việc có thể làm tiếp
 

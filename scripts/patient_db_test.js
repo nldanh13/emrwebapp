@@ -226,7 +226,27 @@ async function main() {
     assert.strictEqual(rows.length, 2);
     assert.strictEqual(rows[0]['Mã NC'], undefined, 'không lưu Mã NC của nghiên cứu');
     assert.strictEqual(rows[0]['Nguồn kho'], 'kho_nguoi_benh:goc');
-    assert.strictEqual(patientDb.summary().ket_qua_xn, 3);
+    // EMR sửa metadata lâm sàng nhưng giữ nguyên giá trị: phải lưu bản sửa, không coi là trùng.
+    const corrected = { ...xn('08:00 12/09/2026', 'HGB', '110'), 'Khoảng tham chiếu': '120-160', 'Bất thường': 'LL', 'Trạng thái': 'Đã duyệt' };
+    assert.strictEqual(patientDb.recordResults([corrected], { kind: 'xn' }).added, 1);
+    assert.strictEqual(patientDb.summary().ket_qua_xn, 4);
+  });
+
+  await test('XN / CĐHA: nhiều lượt cùng ngày không tự gắn; có khambenhid thì gắn đúng lượt', () => {
+    patientDb.recordClinicVisit({ khambenhid: 'AMB1', ma_bn: 'BN13', ho_ten: 'Người bệnh trùng ngày', thoi_gian: '08:00 20/09/2026', stage: 'xong', xu_tri: 'Nhập viện', services: [] },
+      { now: '2026-09-20T08:30:00Z' });
+    patientDb.recordInpatient('BN13', { profile: { ...profile, ngay_vao_vien: '20/09/2026' } },
+      { from: '2026-09-20', source: 'hanh_chanh', now: '2026-09-20T09:00:00Z' });
+
+    patientDb.recordResults([
+      { 'Mã BN': 'BN13', 'TG chỉ định': '09:00 20/09/2026', 'Chỉ số': 'HGB', 'Kết quả': '120' },
+      { 'Mã BN': 'BN13', 'TG chỉ định': '09:05 20/09/2026', 'Chỉ số': 'WBC', 'Kết quả': '8.0', khambenhid: 'AMB1' },
+    ], { kind: 'xn' });
+
+    const j = patientDb.patientJourney('BN13');
+    const clinic = j.luot.find(l => l.khoa_emr === 'kb:AMB1');
+    assert.deepStrictEqual(clinic.xet_nghiem.map(r => r.chi_so), ['WBC'], 'dòng có khambenhid phải gắn đúng lượt khám');
+    assert.deepStrictEqual(j.ket_qua_chua_xac_dinh.xet_nghiem.map(r => r.chi_so), ['HGB'], 'dòng mơ hồ phải được giữ nhưng không tự gắn');
   });
 
   await test('Kho tạo từ bản trước (chưa có bảng nối lượt) → mở lại tự tính nối lượt cho mọi người bệnh', () => {
@@ -309,7 +329,7 @@ async function main() {
       const r2 = await fetch(`${base}/kho/benh-nhan/KHONGCO`);
       assert.strictEqual(r2.status, 404);
       const r3 = await (await fetch(`${base}/kho/tong-quan`)).json();
-      assert.strictEqual(r3.benh_nhan, 6);
+      assert.strictEqual(r3.benh_nhan, 7);
       const r5 = await (await fetch(`${base}/kho/tai-kham?tu=2026-08-01&den=2026-08-31&trang_thai=tre_hen`)).json();
       assert.deepStrictEqual(r5.rows.map(r => r.ngay_hen), ['2026-08-30']);
       const r6 = await (await fetch(`${base}/kho/tai-nhap-vien?tu=2026-09-01&den=2026-09-30`)).json();
