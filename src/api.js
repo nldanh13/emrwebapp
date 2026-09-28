@@ -765,6 +765,7 @@ export async function importData(bundle) {
 export const getHchanh_Index     = ()            => get('/api/hchanh/index');
 export const syncHchanh          = (patients)    => post('/api/hchanh/sync', patients ? { patients } : {});
 export const getHchanh_Dashboard = ()            => get('/api/hchanh/dashboard');
+export const saveHchanh_ManualReview = (ma_bn, patchBody = {}) => patch(`/api/hchanh/manual-review/${encodeURIComponent(ma_bn)}`, patchBody);
 export const getHchanh_VtytDraft = ()             => get('/api/hchanh/vtyt-draft');
 export const saveHchanh_VtytDraft = (draft)          => post('/api/hchanh/vtyt-draft', { draft });
 export const clearHchanh_VtytDraft = ()               => del('/api/hchanh/vtyt-draft');
