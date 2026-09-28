@@ -14,6 +14,7 @@ const empty = normalizeManualReview(null);
 assert.strictEqual(Object.keys(empty.items).length, REVIEW_ITEMS.length);
 assert.strictEqual(manualReviewSummary(empty).pending_count, REVIEW_ITEMS.length);
 assert.strictEqual(manualReviewSummary(empty).passed, false);
+assert.ok(REVIEW_ITEMS.some(item => item.key === 'surgery'));
 
 let review = empty;
 for (const item of REVIEW_ITEMS) {
