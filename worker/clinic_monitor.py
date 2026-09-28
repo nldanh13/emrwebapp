@@ -36,6 +36,7 @@ from clinic_outpatient import (
 )
 from utils import init_driver, load_config, login_emr
 import clinic_bbhc
+import clinic_ngoaitru
 
 try:
     from bs4 import BeautifulSoup
@@ -1026,6 +1027,49 @@ def run_bbhc_create(monitor: "Monitor", rows: List[Dict[str, Any]], approved: Di
     return pdfs
 
 
+# ── TH6: điều trị ngoại trú ──────────────────────────────────────────────────
+
+def ngoaitru_candidate(row: Dict[str, Any]) -> bool:
+    """Người bệnh có BHYT, xử trí / trạng thái Điều trị ngoại trú."""
+    return bool(row.get("has_bhyt")) and (row.get("case") == "ngoai_tru" or row.get("stage") == "ngoai_tru")
+
+
+def clinic_doctor(config: Dict[str, Any], now: datetime) -> str:
+    from clinic_input_care import clinic_doctors_for_date
+
+    names = clinic_doctors_for_date(config.get("clinic_nurse_schedule") or {}, now.strftime("%d/%m/%Y"))
+    return names[0] if names else ""
+
+
+def run_ngoaitru(monitor: "Monitor", rows: List[Dict[str, Any]], state: Dict[str, Dict[str, Any]],
+                 log: List[Dict[str, Any]]) -> int:
+    """TH6 cho mọi người bệnh đủ điều kiện — chỉ gọi khi người dùng bấm nút."""
+    patients = [{"ma_bn": compact(r.get("ma_bn")), "ho_ten": r.get("ho_ten"), "exam_time": parse_emr_dt(r.get("thoi_gian"))}
+                for r in rows if ngoaitru_candidate(r) and compact(r.get("ma_bn"))]
+    if not patients:
+        return 0
+    flow = clinic_ngoaitru.NgoaiTruFlow(monitor.driver, monitor.config, ExamPage(monitor.driver))
+    try:
+        results = clinic_ngoaitru.run_all(flow, patients, clinic_doctor(monitor.config, _now()), _now)
+    except Exception as e:  # lỗi đọc danh sách: báo chung cho mọi người
+        results = {p["ma_bn"]: {"result": "error", "message": f"Lỗi đọc danh sách ngoại trú: {compact(str(e))[:300]}", "steps": []}
+                   for p in patients}
+    if "login.aspx" in (monitor.driver.current_url or "").lower():
+        monitor.close()
+    else:
+        try:
+            monitor._open_list()
+        except Exception:
+            monitor.close()
+    for p in patients:
+        res = results.get(p["ma_bn"]) or {}
+        state[p["ma_bn"]] = {"status": res.get("result"), "message": res.get("message") or "", "at": _now().isoformat()}
+        log.append({"at": _now().isoformat(), "ma_bn": p["ma_bn"], "ho_ten": p["ho_ten"], "result": res.get("result"),
+                    "message": res.get("message") or ("Đã kết thúc điều trị ngoại trú" if res.get("result") == "done" else ""),
+                    "steps": res.get("steps") or []})
+    return len(patients)
+
+
 def run_completions(monitor: "Monitor", rows: List[Dict[str, Any]], checks: Dict[str, Dict[str, Any]],
                     weights: Dict[str, Any], log: List[Dict[str, Any]]) -> int:
     """Hoàn tất khám mọi người bệnh đủ điều kiện — chỉ gọi khi người dùng bấm nút."""
@@ -1069,13 +1113,16 @@ def run_completions(monitor: "Monitor", rows: List[Dict[str, Any]], checks: Dict
 
 def public_rows(rows: List[Dict[str, Any]], checks: Dict[str, Dict[str, Any]], weights: Dict[str, Any],
                 imaging: Optional[Dict[str, Dict[str, Any]]] = None,
-                bbhc_state: Optional[Dict[str, Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+                bbhc_state: Optional[Dict[str, Dict[str, Any]]] = None,
+                ngoaitru_state: Optional[Dict[str, Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     out = []
     for r in rows:
         item = {k: v for k, v in r.items() if k != "href"}  # href mang mã phiên EMR
         key = r.get("khambenhid") or ""
         item["bbhc"] = bbhc_reasons(r, ((imaging or {}).get(key) or {}).get("kinds"))
         item["bbhc_state"] = (bbhc_state or {}).get(key) if item["bbhc"] else None
+        item["ngoaitru"] = ngoaitru_candidate(r)
+        item["ngoaitru_state"] = (ngoaitru_state or {}).get(compact(r.get("ma_bn"))) if item["ngoaitru"] else None
         item["eligible"] = eligible_for_completion(r)
         item["check"] = checks.get(key) if item["eligible"] else None
         item["weight_entered"] = parse_weight(weights.get(key)) or None
@@ -1117,6 +1164,8 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
     bbhc_pdfs: List[str] = []
     handled_prepare = initial.get("bbhcPrepare")
     handled_bbhc = initial.get("bbhcRun")
+    handled_ngoaitru = initial.get("ngoaitruNow")
+    ngoaitru_state: Dict[str, Dict[str, Any]] = {}
     state_dir = os.path.dirname(os.path.abspath(state_path))
     action_log: List[Dict[str, Any]] = []
     try:
@@ -1142,6 +1191,14 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                     write_json(state_path, state)
                     run_bbhc_prepare(monitor, rows, imaging, bbhc)
                     state["action_running"] = False
+                if ctrl.get("ngoaitruNow") and ctrl.get("ngoaitruNow") != handled_ngoaitru:
+                    handled_ngoaitru = ctrl.get("ngoaitruNow")
+                    state["action_running"] = True
+                    write_json(state_path, state)
+                    if run_ngoaitru(monitor, rows, ngoaitru_state, action_log):
+                        rows = monitor.read()
+                    state["action_running"] = False
+                    state["last_action_at"] = _now().isoformat()
                 if ctrl.get("bbhcRun") and ctrl.get("bbhcRun") != handled_bbhc:
                     handled_bbhc = ctrl.get("bbhcRun")
                     state["action_running"] = True
@@ -1158,7 +1215,7 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                     rows = monitor.read()
                 state.update({
                     "status": "running",
-                    "rows": public_rows(rows, checks, weights, imaging, bbhc),
+                    "rows": public_rows(rows, checks, weights, imaging, bbhc, ngoaitru_state),
                     "action_log": action_log[-50:],
                     "summary": summarize(rows),
                     "updated_at": _now().isoformat(),
@@ -1186,6 +1243,8 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                     handled_refresh = ctrl.get("refresh")
                     break
                 if ctrl.get("completeNow") and ctrl.get("completeNow") != handled_complete:
+                    break
+                if ctrl.get("ngoaitruNow") and ctrl.get("ngoaitruNow") != handled_ngoaitru:
                     break
                 if (ctrl.get("bbhcPrepare") and ctrl.get("bbhcPrepare") != handled_prepare) or \
                         (ctrl.get("bbhcRun") and ctrl.get("bbhcRun") != handled_bbhc):

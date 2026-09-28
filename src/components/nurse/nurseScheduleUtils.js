@@ -80,11 +80,13 @@ export function weekdayLabelFromIso(iso) {
 
 export function cloneShift(dayValue) {
   const src = dayValue && typeof dayValue === 'object' ? dayValue : EMPTY_SHIFT;
-  return {
+  const out = {
     admin: Array.isArray(src.admin) ? [...src.admin] : [],
     work: Array.isArray(src.work) ? [...src.work] : [],
     oncall: Array.isArray(src.oncall) ? [...src.oncall] : [],
   };
+  if (Array.isArray(src.doctor) && src.doctor.length) out.doctor = [...src.doctor];
+  return out;
 }
 
 export function normalizeScheduleShape(input) {

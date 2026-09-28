@@ -211,6 +211,13 @@ export default function NurseTab({ toast }) {
     updateClinicScheduleForKey(selKey, { ...current, [shift]: nextBucket });
   }, [clinicSchedule, selKey, updateClinicScheduleForKey]);
 
+  const setClinicDoctors = useCallback((names) => {
+    const current = getDaySchedule(clinicSchedule, selKey);
+    const next = { ...current };
+    if (names.length) next.doctor = names; else delete next.doctor;
+    updateClinicScheduleForKey(selKey, next);
+  }, [clinicSchedule, selKey, updateClinicScheduleForKey]);
+
   const toggleShiftForKey = useCallback((key, shift, name) => {
     const current = getDaySchedule(schedule, key);
     const prev = current[shift] || [];
@@ -306,6 +313,7 @@ export default function NurseTab({ toast }) {
           onApplyDefaultToEmptyVisibleDays={applyDefaultToEmptyVisibleDays}
           clinicDaySchedule={clinicDaySched}
           onToggleClinicShift={toggleClinicShift}
+          onSetClinicDoctors={setClinicDoctors}
         />
       </div>
       <div style={{ width: 280, borderLeft: `1px solid ${C.border}`, overflow: 'auto', flexShrink: 0, background: C.surface }}>

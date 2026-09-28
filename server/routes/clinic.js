@@ -301,6 +301,18 @@ router.post('/clinic/monitor/weight', (req, res) => {
   return res.json({ status: 'ok', message: `Đã ghi nhận ${weights[khambenhid]} kg.` });
 });
 
+// TH6 Điều trị ngoại trú: nhập khoa, kết thúc mổ, tổng kết ra khoa, kết thúc điều trị cho người bệnh
+// BHYT xử trí Điều trị ngoại trú — chỉ chạy khi người dùng bấm nút.
+router.post('/clinic/monitor/ngoaitru', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  if (!monitors.get(ctx.sid)?.running) {
+    return res.status(409).json({ status: 'error', message: 'Chưa bắt đầu theo dõi.' });
+  }
+  writeControl(ctx, { ngoaitruNow: Date.now() });
+  appendActivity(ctx, { kind: 'workflow.clinic.monitor.ngoaitru_requested' });
+  return res.json({ status: 'ok', message: 'Đang làm điều trị ngoại trú cho các người bệnh.' });
+});
+
 // TH4 Sổ biên bản hội chẩn: bước 1 soạn nháp (worker chỉ đọc màn khám), bước 2 lập theo nháp đã duyệt.
 const BBHC_FIELDS = ['ThoiGianHoiChan', 'HopTai', 'ThuKy', 'YeuCau', 'TomTat', 'TinhTrang', 'ChanDoanTuyenDuoi',
   'TomTatBenhAn', 'NguyenNhan', 'HuongDieuTri', 'ChamSoc', 'KetLuan'];
