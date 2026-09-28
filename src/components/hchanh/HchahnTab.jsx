@@ -17,6 +17,7 @@ import { printHchanh_Ticket } from '../../api.js';
 import HchanhVtytBatchPanel from './HchanhVtytBatchPanel.jsx';
 import { formatPersonName } from '../../utils/personName.js';
 import { getHchanhIssueTarget } from '../../engine/hchanhIssueNavigation.js';
+import { getManualReviewView } from '../../engine/hchanhManualReviewView.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -337,6 +338,7 @@ function PatientTableRow({ card, selected, onSelect, onFetchDischargeFull, fetch
   const scope = card?.scope || 'daily';
   const st = patientStatus(card);
   const issueText = rowIssueText(card);
+  const manualReview = getManualReviewView(card);
   const cell = { padding:'8px 8px', borderBottom:`1px solid ${C.border2}` };
   return (
     <tr onClick={() => onSelect(card)} aria-selected={selected} style={{ cursor:'pointer', background:selected ? C.blueBg : C.surface }}>
@@ -352,6 +354,11 @@ function PatientTableRow({ card, selected, onSelect, onFetchDischargeFull, fetch
       <td style={{ ...cell, color:C.text2, fontSize:FS.sm, whiteSpace:'nowrap' }}>{txt(card?.phong)}</td>
       <td style={{ ...cell }}>
         <Chip tone={SCOPE_TONE[scope] || 'gray'}>{scopeFilterLabel(scope)}</Chip>
+      </td>
+      <td style={{ ...cell, whiteSpace:'nowrap' }}>
+        {manualReview.state === 'na'
+          ? <span style={{ color:C.text3, fontSize:FS.xs }}>—</span>
+          : <Chip tone={manualReview.tone}>{manualReview.label}</Chip>}
       </td>
       {FILE_COLUMNS.map(([key, label]) => <FileStatusCell key={key} card={card} fileKey={key} label={label} />)}
       <td style={{ ...cell, minWidth:160 }}>
@@ -369,6 +376,7 @@ function PatientListItem({ card, selected, onSelect }) {
   const scope = card?.scope || 'daily';
   const st = patientStatus(card);
   const issueText = rowIssueText(card);
+  const manualReview = getManualReviewView(card);
   return (
     <li style={{ listStyle:'none', borderBottom:`1px solid ${C.border2}` }}>
       <button type="button" onClick={() => onSelect(card)} aria-current={selected ? 'true' : undefined} style={{
@@ -383,6 +391,7 @@ function PatientListItem({ card, selected, onSelect }) {
           <span style={{ fontSize:FS.xs, color:C.text2, fontVariantNumeric:'tabular-nums' }}>{txt(getMaBn(card))}</span>
           <Chip tone={SCOPE_TONE[scope] || 'gray'}>{scopeFilterLabel(scope)}</Chip>
           <Chip tone={st.tone}>{st.label}</Chip>
+          {manualReview.state !== 'na' && <Chip tone={manualReview.tone}>{manualReview.label}</Chip>}
         </span>
         {card?.lich_su?.ra_vien_gan_nhat?.trong_30_ngay && <HistoryNote lichSu={card.lich_su} mode="inpatient" />}
         <span style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
@@ -1655,7 +1664,7 @@ function ScopeSelect({ value, onChange }) {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function HchahnTab({ toast, workDateRange, view = 'check' }) {
-  const hc = useHchanh({ toast, workDateRange });
+  const hc = useHchanh({ toast, workDateRange, manualReviewFilterEnabled:view !== 'vtyt' });
   const isMobile = useIsMobile();
   const {
     loading, fetchingKey, bedEditKey, printBillingKey, ticketKey, manualReviewKey,
@@ -1663,6 +1672,7 @@ export default function HchahnTab({ toast, workDateRange, view = 'check' }) {
     search, setSearch,
     filterScope, setFilterScope,
     filterStatus, setFilterStatus,
+    filterManualReview, setFilterManualReview,
     counts, filteredCards, dashboard,
     fetchPatient, fetchDischargeFull, openBedEdit, printBilling,
     createTicket, rescanPatient, exportIssues, batchFetchMissing, batchProgress, saveManualReview,
@@ -1751,6 +1761,12 @@ export default function HchahnTab({ toast, workDateRange, view = 'check' }) {
               <option value="green">Đủ dữ liệu</option>
               <option value="gray">Chưa lấy</option>
             </select>
+            <select aria-label="Tiến độ checklist" value={filterManualReview} onChange={e => setFilterManualReview(e.target.value)} style={SELECT_STYLE}>
+              <option value="all">Mọi checklist</option>
+              <option value="pending">Chưa kiểm / cần kiểm lại</option>
+              <option value="issue">Có mục cần sửa</option>
+              <option value="complete">Đã kiểm xong</option>
+            </select>
             {!isMobile && (
               <span style={{ fontSize:FS.sm, color:C.text2, fontVariantNumeric:'tabular-nums' }} title="Đang hiện / tổng số người bệnh">
                 <b style={{ color:C.text }}>{filteredCards.length}</b>/{dashboard?.total || 0}
@@ -1816,6 +1832,7 @@ export default function HchahnTab({ toast, workDateRange, view = 'check' }) {
                         ['Người bệnh', 'left', 220],
                         ['Phòng', 'left', 50],
                         ['Nhóm', 'left', 80],
+                        ['Checklist', 'left', 110],
                         ...FILE_COLUMNS.map(([, label]) => [label, 'center', 52]),
                         ['Tình trạng', 'left', 160],
                         ['', 'right', 100],
