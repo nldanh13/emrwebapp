@@ -8,6 +8,7 @@ import { DISCHARGE_FULL_FILES, SCOPE_FILES, SCOPE_LABEL, getHchanhPatientKey } f
 import { buildHchanhVtytBatchDraft } from '../../engine/hchanhVtytPlanner.js';
 import { collectionRows, eligibleInputJobs } from '../../engine/hchanhVtytWorkspace.js';
 import { matchesManualReviewFilter } from '../../engine/hchanhManualReviewView.js';
+import { mergeVtytDraftEdits } from '../../engine/hchanhVtytDraftMerge.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -123,47 +124,6 @@ function vtytThreeDayDates(card = {}) {
     cur = addDaysInputDate(cur, 1);
   }
   return out;
-}
-
-function mergeVtytDraftEdits(previous, fresh) {
-  if (!previous || !fresh) return fresh;
-  const oldJobs = new Map();
-  for (const job of safeArray(previous.jobs)) {
-    const jobKey = `${String(job.ma_bn || '').trim()}::${String(job.ngay_lam || '').trim()}`;
-    oldJobs.set(jobKey, job);
-  }
-  const jobs = safeArray(fresh.jobs).map(job => {
-    const jobKey = `${String(job.ma_bn || '').trim()}::${String(job.ngay_lam || '').trim()}`;
-    const oldJob = oldJobs.get(jobKey);
-    if (!oldJob) return job;
-    const oldItems = new Map(safeArray(oldJob.supplies).map(item => [String(item.code || item.key || item.name || '').trim(), item]));
-    const supplies = safeArray(job.supplies).map(item => {
-      const key = String(item.code || item.key || item.name || '').trim();
-      const old = oldItems.get(key);
-      if (!old) return item;
-      oldItems.delete(key);
-      return {
-        ...item,
-        selected: old.selected !== false,
-        input_quantity: Number(old.input_quantity ?? item.input_quantity ?? 0),
-        manual: old.manual === true || item.manual === true,
-        usage_status: old.usage_status || item.usage_status || 'planned',
-        input_status: old.input_status || item.input_status || 'pending',
-        source_type: old.source_type || item.source_type || 'auto',
-        combo_id: old.combo_id || '',
-        combo_name: old.combo_name || '',
-      };
-    });
-    for (const old of oldItems.values()) {
-      if (old?.manual || old?.source_type === 'combo') supplies.push(old);
-    }
-    return { ...job, supplies, reviewed: false };
-  });
-  return {
-    ...fresh,
-    jobs,
-    patients: safeArray(fresh.patients).map(patient => ({ ...patient, reviewed: false })),
-  };
 }
 
 function previewKeyFor(card, dates = []) {
