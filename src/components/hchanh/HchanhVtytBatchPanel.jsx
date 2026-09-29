@@ -12,6 +12,7 @@ import {
   eligibleInputJobs, everyPatientAvailability, everyPatientRequirements,
   missingEveryPatientSupplies, safeQty, stockOf,
 } from '../../engine/hchanhVtytWorkspace.js';
+import { existingVtytQuantity } from '../../engine/hchanhVtytDraftMerge.js';
 
 const inputStyle = {
   width: '100%', boxSizing: 'border-box', padding: '7px 8px', borderRadius: 7,
@@ -209,7 +210,7 @@ function VtytEditor({ draft, setDraft, jobIndex, combos }) {
         const index = next.findIndex(item => supplyKey(item) === row.code && item.input_status !== 'entered');
         const quantity = safeQty(row.quantity || 1);
         if (index >= 0) next[index] = { ...next[index], input_quantity: safeQty(next[index].input_quantity) + quantity, usage_status: 'used', selected: true, source_type: source.type, combo_id: source.id, combo_name: source.name };
-        else next.push({ key: row.code, code: row.code, name: found?.name || row.name, searchKeyword: found?.name || row.name, input_quantity: quantity, required_quantity: quantity, existing_quantity: 0, selected: true, manual: true, usage_status: 'used', input_status: 'pending', source_type: source.type, combo_id: source.id || '', combo_name: source.name || '', reasons: [source.name || 'Phát sinh trong ngày'], warnings: [] });
+        else next.push({ key: row.code, code: row.code, name: found?.name || row.name, searchKeyword: found?.name || row.name, input_quantity: quantity, required_quantity: quantity, existing_quantity: existingVtytQuantity(job, row.code), selected: true, manual: true, usage_status: 'used', input_status: 'pending', source_type: source.type, combo_id: source.id || '', combo_name: source.name || '', reasons: [source.name || 'Phát sinh trong ngày'], warnings: [] });
       }
       return next;
     });
@@ -256,7 +257,6 @@ function VtytEditor({ draft, setDraft, jobIndex, combos }) {
 }
 
 export default function HchanhVtytBatchPanel({ cards = [], draft, setDraft, onPreview, onInput, onClear, loading = false, inputting = false, onClose }) {
-  const [selectedIds, setSelectedIds] = useState(() => new Set(safeArray(draft?.selected_patient_ids)));
   const [activeId, setActiveId] = useState(safeArray(draft?.patients)[0]?.ma_bn || '');
   const [activeDate, setActiveDate] = useState('');
   const [combos, setCombos] = useState([]);
@@ -341,12 +341,9 @@ export default function HchanhVtytBatchPanel({ cards = [], draft, setDraft, onPr
       };
     });
   }
-  function toggleAll(checked) { setSelectedIds(checked ? new Set(selectableCards.map(patientId)) : new Set()); }
-  const selectedCards = selectableCards.filter(card => selectedIds.has(patientId(card)));
-
   return <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
     <div style={{ padding: '9px 11px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-      <Btn variant="primary" icon={draft ? IconRefresh : IconChecklist} loading={loading} disabled={loading || inputting || (!draft && !selectedCards.length)} onClick={() => onPreview?.(draft ? selectableCards.filter(card => safeArray(draft.selected_patient_ids).includes(patientId(card))) : selectedCards)}>{draft ? 'Cập nhật y lệnh & tồn' : `Tạo danh sách (${selectedCards.length})`}</Btn>
+      <Btn variant="primary" icon={draft ? IconRefresh : IconChecklist} loading={loading} disabled={loading || inputting || !selectableCards.length} onClick={() => onPreview?.(selectableCards)}>{draft ? 'Cập nhật y lệnh & tồn' : `Tạo danh sách tất cả (${selectableCards.length})`}</Btn>
       {draft && <><Btn variant="secondary" icon={IconSettings} onClick={() => setShowCombos(true)}>Combo</Btn>{commonRequirements.length > 0 && <Btn variant="secondary" icon={IconPlus} disabled={!commonMissing.length} onClick={applyEveryPatientSupplies}>VTYT mỗi NB ({commonMissing.length})</Btn>}<Btn variant="secondary" icon={IconChecklist} onClick={() => setShowCollection(true)}>Danh sách thu thập</Btn></>}
       <Btn variant="solidPrimary" icon={IconPackageImport} loading={inputting} disabled={!draft || inputting || loading || !allReviewed || precheckExpired || !eligible.length || stockBlocked || commonMissing.length > 0} onClick={onInput}>Chốt & nhập ({eligible.reduce((sum, job) => sum + job.supplies.length, 0)})</Btn>
       <Btn variant="danger" icon={IconTrash} disabled={!draft || loading || inputting} onClick={onClear}>Xóa nháp</Btn>
@@ -356,8 +353,15 @@ export default function HchanhVtytBatchPanel({ cards = [], draft, setDraft, onPr
 
     {!draft ? <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
       <div style={panelStyle}>
-        <div style={{ padding: 9, background: C.surface2, display: 'flex', gap: 8 }}><input type="checkbox" checked={selectableCards.length > 0 && selectedIds.size === selectableCards.length} onChange={e => toggleAll(e.target.checked)} /><b>Chọn người bệnh cần lập danh sách VTYT</b><span style={{ marginLeft: 'auto', color: C.text3, fontSize: FS.xs }}>{selectedIds.size}/{selectableCards.length}</span></div>
-        {selectableCards.map(card => { const id = patientId(card); return <label key={id} style={{ display: 'grid', gridTemplateColumns: '28px 1fr auto', padding: 9, borderTop: `1px solid ${C.border2}`, cursor: 'pointer' }}><input type="checkbox" checked={selectedIds.has(id)} onChange={e => setSelectedIds(current => { const next = new Set(current); if (e.target.checked) next.add(id); else next.delete(id); return next; })} /><div><b>{card.ho_ten || id}</b><div style={{ color: C.text3, fontSize: FS.xs }}>Mã {id}</div></div><span style={{ color: C.text2, fontSize: FS.xs }}>{card.phong || card.so_phong || ''}</span></label>; })}
+        <div style={{ padding: 14, background:C.surface2, borderBottom:`1px solid ${C.border}` }}>
+          <b>Tự động lập danh sách cho toàn bộ người bệnh</b>
+          <div style={{ marginTop:5, color:C.text2, fontSize:FS.xs, lineHeight:1.45 }}>
+            Hiện có {selectableCards.length} người bệnh trong danh sách. Không cần chọn từng ca; nhập riêng một người bệnh vẫn thực hiện tại Nhập bệnh phòng.
+          </div>
+        </div>
+        <div style={{ padding:14, color:C.text2, fontSize:FS.sm }}>
+          Bấm “Tạo danh sách tất cả” để quét y lệnh, lập VTYT dự kiến và bắt đầu ghi nhận phát sinh trong ngày.
+        </div>
       </div>
     </div> : <>
       <div style={{ padding: '7px 11px', fontSize: FS.xs, color: stockBlocked || precheckExpired ? C.red : C.text2, background: stockBlocked || precheckExpired ? C.redBg : C.surface2, borderBottom: `1px solid ${C.border}` }}>
