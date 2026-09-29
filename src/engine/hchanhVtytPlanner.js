@@ -281,7 +281,10 @@ function finalizeRequirements(requirementMap, existingMap) {
 function safeJobHasContent(job) {
   return (Array.isArray(job?.drugs) && job.drugs.length > 0)
     || (Array.isArray(job?.supplies) && job.supplies.length > 0)
-    || (Array.isArray(job?.orders) && job.orders.some(order => Array.isArray(order?.items) && order.items.length > 0));
+    || (Array.isArray(job?.orders) && job.orders.some(order =>
+      (Array.isArray(order?.drugs) && order.drugs.length > 0)
+      || (Array.isArray(order?.items) && order.items.length > 0)
+    ));
 }
 
 export function buildHchanhVtytBatchDraft({ previewResult = {}, cards = [] } = {}) {

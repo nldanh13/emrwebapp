@@ -104,3 +104,28 @@ def test_incremental_filter_no_longer_crashes():
     prev = {"succeeded": ["BN1::25/09/2026"], "full_plan": [{"key": "BN1::25/09/2026", "supplies": [{"key": "BANG_THUN_3_MOC", "required_quantity": 1}]}]}
     jobs, noop = _filter_incremental_jobs([job], prev)
     assert jobs[0]["supplies"][0]["required_quantity"] == 1 and noop == {}
+
+
+def test_preview_plan_compaction_removes_duplicate_payload_but_keeps_rules_data():
+    from input_vtyt import _compact_preview_plan
+
+    drug = {
+        "order_id": "YL1", "order_text": "Paracetamol TTM 3 cử", "order_time": "08:00 25/09/2026",
+        "code": "THUOC.1", "name": "Paracetamol", "content": "TTM 3 cử", "quantity": 3, "route": "TTM",
+    }
+    supply = {
+        "code": "VTYT.1", "name": "Dây truyền dịch", "required_quantity": 3,
+        "sources": [{"order_id": "YL1", "name": "Dây truyền dịch", "quantity": 3}],
+    }
+    compact = _compact_preview_plan([{
+        "ma_bn": "BN1", "ngay_lam": "25/09/2026", "drugs": [drug], "supplies": [supply],
+        "orders": [{"id": "YL1", "text": "Paracetamol TTM 3 cử", "items": [drug, supply], "drugs": [drug], "supplies": [supply]}],
+    }])[0]
+
+    assert "drugs" not in compact
+    assert "items" not in compact["orders"][0] and "supplies" not in compact["orders"][0]
+    assert compact["orders"][0]["drugs"][0]["name"] == "Paracetamol"
+    assert compact["orders"][0]["drugs"][0]["order_time"] == "08:00 25/09/2026"
+    assert "order_id" not in compact["orders"][0]["drugs"][0]
+    assert compact["supplies"][0]["required_quantity"] == 3
+    assert "sources" not in compact["supplies"][0]

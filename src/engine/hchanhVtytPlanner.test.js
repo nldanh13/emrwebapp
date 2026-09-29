@@ -10,6 +10,16 @@ function suppliesFor(drugs) {
 }
 
 describe('hchanh VTYT medication rules', () => {
+  it('accepts compact preview jobs with drugs stored only under orders', () => {
+    const drugs = [{ name:'Paracetamol 10mg/ml', content:'TTM 3 cử', route:'TTM', quantity:3 }];
+    const draft = buildHchanhVtytBatchDraft({
+      cards:[{ ma_bn:'01', ho_ten:'Người bệnh A', scope:'daily' }],
+      previewResult:{ plan:[{ ma_bn:'01', ngay_lam:'30/09/2026', orders:[{ text:'Y lệnh', drugs }], supplies:[] }] },
+    });
+    expect(draft.jobs).toHaveLength(1);
+    expect(draft.jobs[0].supplies.find(item => item.code === 'VTYT.000004114')?.required_quantity).toBe(3);
+  });
+
   it('requires one infusion set for each Paracetamol infusion dose', () => {
     const supplies = suppliesFor([{ name:'Paracetamol 10mg/ml', content:'TTM 3 cử 08h 16h 24h', route:'TTM', quantity:3 }]);
     expect(supplies.get('VTYT.000004114')?.required_quantity).toBe(3);

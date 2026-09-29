@@ -768,6 +768,46 @@ def _aggregate_preview_supplies(orders: List[Mapping[str, Any]]) -> List[Dict[st
     return sorted(grouped.values(), key=lambda x: (_norm(x.get('name') or ''), x.get('code') or ''))
 
 
+def _compact_preview_plan(plan: List[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+    """Bỏ các bản sao chỉ phục vụ lúc quét trước khi trả dữ liệu cho Node/UI.
+
+    Popup tạo cùng một dòng ở ``items``, ``orders[].drugs`` và ``job.drugs``;
+    VTYT còn giữ lại toàn bộ ``sources``. Với quét cả đợt nhiều người bệnh,
+    các bản sao này làm JSON phình rất lớn và Node có thể vượt heap 2 GB khi
+    đọc/serialize response. UI và bộ quy tắc chỉ cần thuốc theo từng y lệnh và
+    VTYT đã gộp theo ngày.
+    """
+    compact: List[Dict[str, Any]] = []
+    for raw_job in plan or []:
+        if not isinstance(raw_job, Mapping):
+            continue
+        job = dict(raw_job)
+        compact_orders: List[Dict[str, Any]] = []
+        for raw_order in (job.get('orders') or []):
+            if not isinstance(raw_order, Mapping):
+                continue
+            order = {k: v for k, v in raw_order.items() if k not in ('items', 'supplies')}
+            compact_drugs: List[Dict[str, Any]] = []
+            for raw_drug in (raw_order.get('drugs') or []):
+                if not isinstance(raw_drug, Mapping):
+                    continue
+                # id/text của y lệnh đã có ở object cha; order_time vẫn cần
+                # cho giao diện và quy tắc tính số cử.
+                drug = {k: v for k, v in raw_drug.items() if k not in ('order_id', 'order_text')}
+                compact_drugs.append(drug)
+            order['drugs'] = compact_drugs
+            compact_orders.append(order)
+        job['orders'] = compact_orders
+        job.pop('drugs', None)
+        job['supplies'] = [
+            {k: v for k, v in raw_supply.items() if k != 'sources'}
+            for raw_supply in (job.get('supplies') or [])
+            if isinstance(raw_supply, Mapping)
+        ]
+        compact.append(job)
+    return compact
+
+
 def _date_range_dmy(start: str, end: str, limit: int = 366) -> List[str]:
     first = _parse_dmy(start)
     last = _parse_dmy(end)
@@ -1342,8 +1382,11 @@ def main(argv: List[str]) -> int:
                     except Exception:
                         pass
                     exit_code = 2
-        # Ghi lại result đầy đủ với plan (override kết quả WorkerSession đã ghi)
-        _write_result(result_path, results, plan=plan_jobs, full_plan=plan_jobs, mode="hchanh_vtyt_preview")
+        # Chỉ ghi một bản kế hoạch đã rút gọn. Trước đây plan/full_plan cùng giữ
+        # một dữ liệu và mỗi thuốc/VTYT còn bị lặp ở nhiều cấp, dễ làm Node hết
+        # heap khi quét cả đợt điều trị của nhiều BN.
+        compact_plan = _compact_preview_plan(plan_jobs)
+        _write_result(result_path, results, plan=compact_plan, mode="hchanh_vtyt_preview")
         return exit_code
 
     if dry_run:

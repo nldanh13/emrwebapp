@@ -1668,7 +1668,6 @@ router.post('/preview-input-vtyt', async (req, res) => {
         status: failedCount ? 'partial' : 'ok',
         message: failedCount ? `Quét xong nhưng ${failedCount} BN/ngày lỗi; chưa cấp quyền nhập.` : `Đã quét ${planCount} BN/ngày thuốc/VTYT để xem trước và cấp xác nhận nhập một lần.`,
         plan: pyResult.plan || [],
-        full_plan: pyResult.full_plan || pyResult.plan || [],
         succeeded: pyResult.succeeded || [],
         failed,
         mode: pyResult.mode || 'hchanh_vtyt_preview',

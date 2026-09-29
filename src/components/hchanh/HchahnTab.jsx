@@ -416,7 +416,11 @@ function VTYTPreviewPanel({ preview, onPreview, onProcess, onInput, canRun = tru
   const plan = safeArr(preview?.plan);
   const jobs = plan.length ? plan : safeArr(preview?.full_plan);
   const allWarnings = jobs.flatMap(job => safeArr(job?.warnings).map(w => ({ job, text: w })));
-  const allDrugs = jobs.flatMap(job => safeArr(job?.drugs).map(x => ({ ...x, ngay_lam: job.ngay_lam, input_time: job.input_time })));
+  const allDrugs = jobs.flatMap(job => {
+    const drugs = safeArr(job?.drugs);
+    const rows = drugs.length ? drugs : safeArr(job?.orders).flatMap(order => safeArr(order?.drugs));
+    return rows.map(x => ({ ...x, ngay_lam: job.ngay_lam, input_time: job.input_time }));
+  });
   const allSupplies = jobs.flatMap(job => safeArr(job?.supplies).map(x => ({ ...x, ngay_lam: job.ngay_lam, input_time: job.input_time })));
   const processed = Boolean(preview?.processed);
 
