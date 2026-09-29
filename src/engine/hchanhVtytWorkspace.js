@@ -167,3 +167,49 @@ export function eligibleInputJobs(draft = {}) {
     )),
   })).filter(job => job.supplies.length > 0);
 }
+
+function normalized(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function isInfusionSet(item = {}) {
+  const code = String(item.code || item.key || '').trim();
+  const name = normalized(item.name || item.searchKeyword || '');
+  return ['VTYT.000004109', 'VTYT.000004114'].includes(code) || name.includes('day truyen dich');
+}
+
+function itemQuantity(item = {}) {
+  return safeQty(item.required_quantity ?? item.quantity ?? item.so_luong ?? item.existing_quantity);
+}
+
+export function infusionSetAudit(draft = {}, patientId = '', tolerance = 3) {
+  const id = String(patientId || '').trim();
+  const patient = (Array.isArray(draft?.patients) ? draft.patients : []).find(row => String(row.ma_bn || '').trim() === id);
+  const jobs = (Array.isArray(draft?.jobs) ? draft.jobs : []).filter(job => String(job.ma_bn || '').trim() === id);
+  const days = jobs.map(job => {
+    const planned = (Array.isArray(job.supplies) ? job.supplies : []).filter(isInfusionSet);
+    const original = (Array.isArray(job.original_supplies) ? job.original_supplies : []).filter(isInfusionSet);
+    const expected = planned.reduce((sum, item) => sum + safeQty(item.required_quantity), 0);
+    const actual = original.length
+      ? original.reduce((sum, item) => sum + itemQuantity(item), 0)
+      : planned.reduce((sum, item) => sum + safeQty(item.existing_quantity), 0);
+    const difference = actual - expected;
+    return { date:job.ngay_lam || '', expected, actual, difference };
+  }).filter(row => row.expected > 0 || row.actual > 0);
+  const expected = days.reduce((sum, row) => sum + row.expected, 0);
+  const actual = days.reduce((sum, row) => sum + row.actual, 0);
+  const difference = actual - expected;
+  const status = difference < 0 ? 'missing' : (difference <= tolerance ? 'acceptable' : 'excess');
+  return {
+    patient,
+    full_episode: patient?.review_mode === 'full_episode',
+    expected,
+    actual,
+    difference,
+    tolerance,
+    status,
+    days,
+    mismatches: days.filter(row => row.difference !== 0),
+  };
+}

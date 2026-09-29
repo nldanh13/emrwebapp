@@ -1752,7 +1752,7 @@ export default function HchahnTab({ toast, workDateRange, view = 'check' }) {
             {workspace === 'discharge' ? 'Kiểm hồ sơ ra viện' : `Nhập VTYT${vtytCount ? ` (${vtytCount})` : ''}`}
           </span>
           <span style={{ fontSize:FS.xs, color:C.text2, flex:'1 1 200px' }}>
-            {workspace === 'discharge' ? 'Hồ sơ, chi phí, ngày giường và y lệnh của người bệnh.' : 'Quét toàn đợt, sửa kế hoạch rồi nhập vật tư hàng loạt.'}
+            {workspace === 'discharge' ? 'Hồ sơ, chi phí, ngày giường và y lệnh của người bệnh.' : 'Ra viện kiểm toàn đợt; tiếp tục điều trị chỉ xem y lệnh ngày hôm sau.'}
           </span>
           <label style={{ position:'relative', flex: isMobile ? '1 1 100%' : '0 1 280px' }}>
             <IconSearch size={16} stroke={1.75} color={C.text3} aria-hidden="true" style={{ position:'absolute', left:9, top:8 }} />
