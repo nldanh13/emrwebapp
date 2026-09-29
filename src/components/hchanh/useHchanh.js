@@ -9,6 +9,7 @@ import { buildHchanhVtytBatchDraft } from '../../engine/hchanhVtytPlanner.js';
 import { collectionRows, eligibleInputJobs } from '../../engine/hchanhVtytWorkspace.js';
 import { matchesManualReviewFilter } from '../../engine/hchanhManualReviewView.js';
 import { mergeVtytDraftEdits } from '../../engine/hchanhVtytDraftMerge.js';
+import { buildVtytReviewWindows } from '../../engine/hchanhVtytScope.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -62,68 +63,6 @@ function hchanhVtytDatesToDmy(workDateRange) {
   const nextInput = addDaysInputDate(cleanTo, 1);
   const nextDmy = inputDateToDmy(nextInput);
   return nextDmy ? [nextDmy] : rangeDates;
-}
-
-function dateTextToInput(value) {
-  const raw = String(value || '').trim();
-  let m = raw.match(/(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
-  if (m) {
-    const year = m[3].length === 2 ? `20${m[3]}` : m[3];
-    return `${year}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
-  }
-  m = raw.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
-  return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : '';
-}
-
-function cardAdmissionInputDate(card = {}) {
-  return dateTextToInput(
-    card.admission_time
-    || card?.profile?.ngay_vao_vien
-    || card?.profile?.ngay_vao
-    || card?.discharge?.ngay_vao
-    || card?.source_row?.admission_time
-    || card?.source_row?.['Ngày vào viện']
-    || card?.source_row?.['T/G vào']
-  );
-}
-
-function cardDischargeInputDate(card = {}) {
-  return dateTextToInput(
-    card.discharge_time
-    || card?.discharge?.ngay_ra_vien
-    || card?.discharge?.ngay_ra
-    || card?.source_row?.discharge_time
-    || card?.source_row?.['Ngày ra viện']
-    || card?.source_row?.['T/G ra']
-  );
-}
-
-function todayInputDate() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function vtytThreeDayDates(card = {}) {
-  const today = todayInputDate();
-  let start = addDaysInputDate(today, -1);
-  let end = addDaysInputDate(today, 1);
-  const admission = cardAdmissionInputDate(card);
-  const discharge = cardDischargeInputDate(card);
-
-  // Chỉ lập kế hoạch trong cửa sổ vận hành: hôm qua, hôm nay, ngày mai.
-  // Nếu người bệnh nhập viện muộn hơn hoặc đã ra viện sớm hơn thì chặn theo đúng đợt.
-  if (admission && admission > start) start = admission;
-  if (discharge && discharge < end) end = discharge;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || end < start) return [];
-
-  const out = [];
-  let cur = start;
-  for (let guard = 0; guard < 3 && cur <= end; guard += 1) {
-    const dmy = inputDateToDmy(cur);
-    if (dmy) out.push(dmy);
-    cur = addDaysInputDate(cur, 1);
-  }
-  return out;
 }
 
 function previewKeyFor(card, dates = []) {
@@ -303,25 +242,28 @@ export function useHchanh({ toast, workDateRange, manualReviewFilterEnabled = tr
       toast?.('Đang có tác vụ chạy, vui lòng chờ xong rồi quét VTYT.', 'error');
       return;
     }
-    const patientDates = {};
-    for (const card of selectedCards) {
-      const id = getMaBn(card);
-      const dates = vtytThreeDayDates(card);
-      if (dates.length) patientDates[id] = dates;
-    }
-    const patientIds = selectedCards.map(getMaBn).filter(id => safeArray(patientDates[id]).length);
+    const windows = buildVtytReviewWindows(selectedCards, workDateRange);
+    const invalid = windows.filter(row => row.error || !row.dates.length);
+    const valid = windows.filter(row => !row.error && row.dates.length);
+    const patientDates = Object.fromEntries(valid.map(row => [row.ma_bn, row.dates]));
+    const patientIds = valid.map(row => row.ma_bn);
     const vtytBatchRanges = Object.fromEntries(patientIds.map(id => {
       const dates = safeArray(patientDates[id]);
       return [id, { from: dates[0] || '', to: dates[dates.length - 1] || '' }];
     }));
     if (!patientIds.length) {
-      toast?.('Không xác định được cửa sổ VTYT hôm qua - hôm nay - ngày mai cho người bệnh đã chọn.', 'error');
+      toast?.('Không xác định được phạm vi VTYT. Người bệnh ra viện phải có đủ ngày vào và ngày ra viện.', 'error');
       return;
     }
-    const totalDays = patientIds.reduce((sum, id) => sum + safeArray(patientDates[id]).length, 0);
+    const dischargeCount = valid.filter(row => row.mode === 'full_episode').length;
+    const continuingCount = valid.filter(row => row.mode === 'next_day').length;
+    const totalDays = valid.reduce((sum, row) => sum + row.dates.length, 0);
+    const skippedText = invalid.length ? `\nBỏ qua ${invalid.length} người bệnh thiếu ngày vào/ra viện.` : '';
     const ok = typeof window === 'undefined' ? true : window.confirm(
-      `Quét VTYT 3 ngày cho ${patientIds.length} người bệnh?\n\n` +
-      `Khoảng mặc định: hôm qua, hôm nay và ngày mai (${totalDays} BN/ngày sau khi giới hạn theo ngày vào/ra viện). Bước này chỉ lập kế hoạch và chưa nhập EMR.`
+      `Lập danh sách VTYT cho ${patientIds.length} người bệnh?\n\n` +
+      `• ${dischargeCount} người bệnh ra viện: kiểm toàn bộ từ ngày vào đến ngày ra viện.\n` +
+      `• ${continuingCount} người bệnh tiếp tục điều trị: chỉ xem y lệnh ngày hôm sau.\n` +
+      `Tổng phạm vi: ${totalDays} BN/ngày.${skippedText}\n\nBước này chỉ lập kế hoạch và chưa nhập EMR.`
     );
     if (!ok) return;
 
@@ -339,7 +281,8 @@ export function useHchanh({ toast, workDateRange, manualReviewFilterEnabled = tr
         allowMissingProcessed: true,
         forceFullVtyt: true,
       });
-      const draft = mergeVtytDraftEdits(vtytBatchDraft, buildHchanhVtytBatchDraft({ previewResult: result, cards: selectedCards }));
+      const scannedCards = valid.map(row => row.card);
+      const draft = mergeVtytDraftEdits(vtytBatchDraft, buildHchanhVtytBatchDraft({ previewResult: result, cards: scannedCards }));
       setVtytBatchDraft(draft);
       const supplyCount = safeArray(draft.jobs).reduce((sum, job) => sum + safeArray(job.supplies).filter(item => Number(item.input_quantity || 0) > 0).length, 0);
       toast?.(`Đã lập kế hoạch ${draft.jobs.length} BN/ngày, có ${supplyCount} dòng VTYT dự kiến nhập.`, result?.status === 'partial' ? 'info' : 'ok');
