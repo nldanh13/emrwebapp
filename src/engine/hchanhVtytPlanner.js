@@ -1,5 +1,6 @@
 import { HCHANH_VTYT_ITEMS } from '../config/hchanhLists.js';
 import { detectRouteCode, mentionedRoutes, routeCategory, routeReportMode } from '../config/routes.js';
+import { isDischargeVtytCard } from './hchanhVtytScope.js';
 
 const SUPPLY_KEYS = Object.freeze({
   PILL_BOX: { code: 'VTYT.000004231', name: 'Hộp phân liều thuốc', searchKeyword: 'Hộp phân liều thuốc' },
@@ -175,14 +176,23 @@ function applyMedicationRules(job, requirementMap) {
       const text = `${drug.name || ''} ${drug.content || ''} ${drug.route || ''} ${drug.order_text || ''}`;
       const dose = doseCount(drug);
       const routes = mentionedRoutes(text);
-      const tmc = detectRouteCode(text) === 'TMC';
+      const routeCode = detectRouteCode(text);
+      const tmc = routeCode === 'TMC';
+      const intramuscular = routeCode === 'TB';
       const infusion = routes.some(code => routeCategory(code) === 'dich_truyen');
       const oral = (routes.some(code => routeReportMode(code) === 'daily') || includesAny(text, ORAL_FORM_WORDS)) && !tmc && !infusion;
       if (oral) hasOral = true;
 
       if (tmc) {
-        addRequirement(requirementMap, SUPPLY_KEYS.SYRINGE_20, dose, `${drug.name || 'Thuốc TMC'}: bơm 20ml theo ${dose} cử`);
+        const syringe = includesAny(text, ANTIBIOTIC_WORDS) || /\b10\s*ml\b/i.test(text)
+          ? SUPPLY_KEYS.SYRINGE_10
+          : mixingSyringeFor(text);
+        addRequirement(requirementMap, syringe, dose, `${drug.name || 'Thuốc TMC'}: bơm ${syringe === SUPPLY_KEYS.SYRINGE_5 ? '5ml' : '10ml'} theo ${dose} cử`);
         addRequirement(requirementMap, SUPPLY_KEYS.MIXING_NEEDLE, dose, `${drug.name || 'Thuốc TMC'}: kim pha theo ${dose} cử`);
+      }
+      if (intramuscular) {
+        addRequirement(requirementMap, SUPPLY_KEYS.SYRINGE_5, dose, `${drug.name || 'Thuốc tiêm bắp'}: bơm 5ml theo ${dose} cử`);
+        addRequirement(requirementMap, SUPPLY_KEYS.MIXING_NEEDLE, dose, `${drug.name || 'Thuốc tiêm bắp'}: kim pha theo ${dose} cử`);
       }
       if (infusion) infusionItems.push({ drug, text, dose, isDiluent: includesAny(`${drug.name || ''}`, DILUENT_WORDS) });
     }
@@ -199,10 +209,12 @@ function applyMedicationRules(job, requirementMap) {
         for (const item of additives) {
           const antibiotic = includesAny(item.text, ANTIBIOTIC_WORDS);
           if (antibiotic) {
-            addRequirement(requirementMap, SUPPLY_KEYS.SYRINGE_20, item.dose, `${item.drug.name}: pha kháng sinh, bơm 20ml theo ${item.dose} cử`);
+            addRequirement(requirementMap, SUPPLY_KEYS.SYRINGE_10, item.dose, `${item.drug.name}: pha kháng sinh với 10ml, bơm 10ml theo ${item.dose} cử`);
+            addRequirement(requirementMap, SUPPLY_KEYS.MIXING_NEEDLE, item.dose, `${item.drug.name}: kim pha theo ${item.dose} cử`);
           } else {
             const syringe = mixingSyringeFor(item.text);
             addRequirement(requirementMap, syringe, item.dose, `${item.drug.name}: thuốc pha truyền, bơm ${syringe === SUPPLY_KEYS.SYRINGE_5 ? '5ml' : '10ml'} theo ${item.dose} cử`);
+            addRequirement(requirementMap, SUPPLY_KEYS.MIXING_NEEDLE, item.dose, `${item.drug.name}: kim pha theo ${item.dose} cử`);
           }
         }
       }
@@ -328,10 +340,16 @@ export function buildHchanhVtytBatchDraft({ previewResult = {}, cards = [] } = {
   const patients = cards.map(card => {
     const patientId = String(card?.ma_bn || card?.patient_id || card?.id || '').trim();
     const patientJobs = jobs.filter(job => String(job.ma_bn || '').trim() === patientId);
+    const dates = patient_dates[patientId] || [];
+    const fullEpisode = isDischargeVtytCard(card);
     return {
       ma_bn: patientId,
       ho_ten: card?.ho_ten || card?.name || '',
       phong: card?.phong || card?.so_phong || '',
+      review_mode: fullEpisode ? 'full_episode' : 'next_day',
+      review_label: fullEpisode ? 'Toàn đợt điều trị' : 'Y lệnh ngày hôm sau',
+      review_from: dates[0] || '',
+      review_to: dates[dates.length - 1] || '',
       reviewed: false,
       job_count: patientJobs.length,
     };
