@@ -10,7 +10,7 @@ import * as api from '../../api.js';
 import {
   VTYT_USAGE_STATUS, allocatedByCode, collectionRows, comboAvailability,
   eligibleInputJobs, everyPatientAvailability, everyPatientRequirements,
-  missingEveryPatientSupplies, safeQty, stockOf,
+  infusionSetAudit, missingEveryPatientSupplies, safeQty, stockOf,
 } from '../../engine/hchanhVtytWorkspace.js';
 import { existingVtytQuantity } from '../../engine/hchanhVtytDraftMerge.js';
 
@@ -181,9 +181,29 @@ function PatientQueue({ patients, jobs, activeId, setActiveId }) {
       const planned = patientJobs.reduce((sum, job) => sum + safeArray(job.supplies).filter(row => !['cancelled', 'entered'].includes(row.usage_status || 'planned')).length, 0);
       return <button key={patient.ma_bn} type="button" onClick={() => setActiveId(patient.ma_bn)} style={{ display: 'block', width: '100%', textAlign: 'left', border: 0, borderBottom: `1px solid ${C.border2}`, borderLeft: active ? `4px solid ${C.blue}` : '4px solid transparent', padding: '9px 8px', background: active ? C.blueBg : C.surface, cursor: 'pointer', color: C.text }}>
         <b style={{ fontSize: FS.sm }}>{patient.ho_ten || patient.ma_bn}</b><div style={{ fontSize: FS.xs, color: C.text3 }}>Mã {patient.ma_bn} · {patient.phong || 'chưa rõ phòng'}</div>
+        <div style={{ marginTop: 3, color: patient.review_mode === 'full_episode' ? C.purple : C.blue, fontSize: FS.xs, fontWeight: 700 }}>{patient.review_label || 'Phạm vi chưa xác định'}{patient.review_from ? ` · ${patient.review_from}${patient.review_to && patient.review_to !== patient.review_from ? ` → ${patient.review_to}` : ''}` : ''}</div>
         <div style={{ marginTop: 4, fontSize: FS.xs, color: used ? C.green : C.text2 }}>{used ? `${used} dòng chờ nhập` : `${planned} dòng đang theo dõi`}</div>
       </button>;
     })}
+  </div>;
+}
+
+
+function InfusionAuditCard({ audit, onPickDate }) {
+  if (!audit?.patient) return null;
+  if (!audit.full_episode) return <div style={{ padding: 9, borderRadius: 7, background: C.blueBg, border: `1px solid ${C.blueBorder}`, color: C.blue, fontSize: FS.xs }}>
+    <b>Tiếp tục điều trị:</b> chỉ kiểm và lập VTYT theo y lệnh ngày hôm sau.
+  </div>;
+  const tone = audit.status === 'missing' ? C.red : audit.status === 'excess' ? C.amber : C.green;
+  const background = audit.status === 'missing' ? C.redBg : audit.status === 'excess' ? C.amberBg : C.greenBg;
+  const verdict = audit.status === 'missing'
+    ? `Thiếu ${Math.abs(audit.difference)} dây — phải bổ sung`
+    : audit.status === 'excess'
+      ? `Dư ${audit.difference} dây — vượt mức +${audit.tolerance}, cần kiểm tra`
+      : audit.difference > 0 ? `Dư +${audit.difference}, trong mức chấp nhận` : 'Số dây khớp số lượt truyền';
+  return <div style={{ padding: 9, borderRadius: 7, background, border: `1px solid ${tone}`, color: tone, fontSize: FS.xs }}>
+    <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}><b>Đối chiếu toàn đợt ra viện</b><span>Lượt truyền: <b>{audit.expected}</b></span><span>Dây đã có: <b>{audit.actual}</b></span><b style={{ marginLeft:'auto' }}>{verdict}</b></div>
+    {audit.mismatches.length > 0 && <div style={{ marginTop:7, display:'flex', alignItems:'center', gap:5, flexWrap:'wrap' }}><span>Ngày lệch:</span>{audit.mismatches.map(row => <button key={row.date} type="button" onClick={() => onPickDate(row.date)} style={{ border:`1px solid ${tone}`, borderRadius:12, padding:'2px 7px', color:tone, background:C.surface, cursor:'pointer', fontSize:FS.xs }}>{row.date} {row.difference > 0 ? `+${row.difference}` : row.difference}</button>)}</div>}
   </div>;
 }
 
@@ -274,6 +294,7 @@ export default function HchanhVtytBatchPanel({ cards = [], draft, setDraft, onPr
   const precheckExpired = Boolean(draft?.precheck_expires_at && Date.parse(draft.precheck_expires_at) <= Date.now());
   const commonRequirements = everyPatientRequirements(combos);
   const commonMissing = missingEveryPatientSupplies(draft, combos);
+  const activeInfusionAudit = infusionSetAudit(draft, activeId);
 
   useEffect(() => { api.getVtytCombos().then(result => setCombos(safeArray(result?.combos))).catch(() => setCombos([])); }, []);
   useEffect(() => { if (draft && !activeId) setActiveId(patients[0]?.ma_bn || ''); }, [draft, activeId, patients]);
@@ -359,8 +380,10 @@ export default function HchanhVtytBatchPanel({ cards = [], draft, setDraft, onPr
             Hiện có {selectableCards.length} người bệnh trong danh sách. Không cần chọn từng ca; nhập riêng một người bệnh vẫn thực hiện tại Nhập bệnh phòng.
           </div>
         </div>
-        <div style={{ padding:14, color:C.text2, fontSize:FS.sm }}>
-          Bấm “Tạo danh sách tất cả” để quét y lệnh, lập VTYT dự kiến và bắt đầu ghi nhận phát sinh trong ngày.
+        <div style={{ padding:14, color:C.text2, fontSize:FS.sm, lineHeight:1.55 }}>
+          <b>Ra viện:</b> kiểm toàn bộ y lệnh từ ngày vào đến ngày ra viện và đối chiếu dây truyền theo từng ngày.<br />
+          <b>Tiếp tục điều trị:</b> chỉ lập VTYT theo y lệnh ngày hôm sau.<br />
+          Bấm “Tạo danh sách tất cả” để bắt đầu; bước này chưa nhập dữ liệu vào EMR.
         </div>
       </div>
     </div> : <>
@@ -370,6 +393,7 @@ export default function HchanhVtytBatchPanel({ cards = [], draft, setDraft, onPr
       <div style={{ flex: 1, minHeight: 0, padding: 10, display: 'grid', gridTemplateColumns: '260px minmax(310px,.95fr) minmax(380px,1.15fr)', gap: 10, overflow: 'auto' }}>
         <PatientQueue patients={patients} jobs={jobs} activeId={activeId} setActiveId={id => { setActiveId(id); setActiveDate(''); }} />
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <InfusionAuditCard audit={activeInfusionAudit} onPickDate={setActiveDate} />
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{patientJobs.map(row => <button key={row.job.ngay_lam} type="button" onClick={() => setActiveDate(row.job.ngay_lam)} style={{ padding: '6px 9px', borderRadius: 7, border: `1px solid ${activeJobRow?.job?.ngay_lam === row.job.ngay_lam ? C.blue : C.border}`, background: activeJobRow?.job?.ngay_lam === row.job.ngay_lam ? C.blueBg : C.surface, color: C.text, cursor: 'pointer', fontSize: FS.xs }}>{row.job.ngay_lam}</button>)}</div>
           <div style={{ minHeight: 0, flex: 1 }}><OrdersPanel job={activeJobRow?.job} /></div>
         </div>
