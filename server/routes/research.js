@@ -38,6 +38,8 @@ const {
 const SCRIPT_PATH = path.join(ROOT_DIR, 'research', 'nghien_cuu_1', 'lay_lich_su_xn_cdha.py');
 const MAX_CSV_BYTES = 50 * 1024 * 1024;
 const MAX_TABLE_ROWS = 20000;
+const VARIABLE_PREVIEW_MAX_SOURCE_ROWS = Math.max(5000, Number(process.env.EMR_VARIABLE_PREVIEW_MAX_SOURCE_ROWS || 100000));
+const VARIABLE_PREVIEW_MAX_ENCOUNTERS = Math.max(100, Number(process.env.EMR_VARIABLE_PREVIEW_MAX_ENCOUNTERS || 10000));
 const ARCHIVE_ID = 'du_lieu_goc';
 const ARCHIVE_LABEL = 'Kho dữ liệu gốc';
 
@@ -6804,6 +6806,45 @@ router.get('/research/archive/variable-catalog', (req, res) => {
   }
 });
 
+router.post('/research/archive/variable-preview', (req, res) => {
+  try {
+    const selection = sanitizeVariableSelection(req.body?.variable_selection || req.body || {});
+    if (!selection.selected_variables?.length) return res.status(400).json({ status: 'error', message: 'Chọn ít nhất 1 biến để xem trước.' });
+    const runId = resolveArchiveRunId(String(selection.run_id || req.body?.runId || 'latest'));
+    const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
+    if (!runDir || !fs.existsSync(runDir)) return res.status(400).json({ status: 'error', message: 'Chưa có dữ liệu chuẩn hóa để xem trước.' });
+
+    const analysisFile = path.join(runDir, TABLES.analysis_ready.file);
+    const analysisTable = readCsvTable(analysisFile, VARIABLE_PREVIEW_MAX_ENCOUNTERS);
+    const tableRows = loadRunTablesForSelection(runDir, selection, [], VARIABLE_PREVIEW_MAX_SOURCE_ROWS);
+    const cohortRows = variableSelection.filterCohortRowsByVariableSelection(analysisTable.rows || [], selection, tableRows);
+    const dataset = variableSelection.buildSelectedAnalysisDataset(cohortRows, selection, tableRows);
+    const summary = variableSelection.summarizeSelectedDataset(dataset);
+    const redact = researchResponseShouldRedact(req);
+    const sensitiveOutput = new Set(dataset.manifest.variables
+      .filter(variable => redact && isSensitiveColumn(variable.name))
+      .map(variable => variable.output_column));
+    const redacted = redact
+      ? redactCsvTable(dataset.columns.filter(column => !sensitiveOutput.has(column)), dataset.rows, EXPORT_SENSITIVE_COLUMNS)
+      : { columns: dataset.columns, rows: dataset.rows, removed_columns: [] };
+    const limit = Math.max(1, Math.min(100, Number(req.body?.limit || 20)));
+    return res.json({
+      status: 'ok',
+      run_id: runId,
+      redacted: redact,
+      summary,
+      variables: dataset.manifest.variables,
+      columns: redacted.columns,
+      rows: redacted.rows.slice(0, limit),
+      preview_limit: limit,
+      source_limited: Boolean(analysisTable.limited) || Object.values(tableRows).some(rows => rows.length >= VARIABLE_PREVIEW_MAX_SOURCE_ROWS),
+      removed_columns: [...(redacted.removed_columns || []), ...sensitiveOutput],
+    });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
 router.get('/research/archive/data', (req, res) => {
   try {
     const archive = readArchive();
@@ -8570,21 +8611,21 @@ function activeVariableSelectionFromStudy(study) {
   return study?.variable_selection || study?.analysis_config?.variable_selection || null;
 }
 
-function readRunRowsForSelection(runDir, tableKey, fallbackRows = []) {
+function readRunRowsForSelection(runDir, tableKey, fallbackRows = [], maxRows = Number.MAX_SAFE_INTEGER) {
   if (!tableKey) return [];
   if (Array.isArray(fallbackRows) && ['cohort', 'initial_list', 'research_source'].includes(tableKey) && fallbackRows.length) return fallbackRows;
   const table = TABLES[tableKey];
   if (!table || table.root !== 'run') return [];
-  return readCsvTable(path.join(runDir, table.file), Number.MAX_SAFE_INTEGER).rows || [];
+  return readCsvTable(path.join(runDir, table.file), maxRows).rows || [];
 }
 
-function loadRunTablesForSelection(runDir, selection, fallbackRows = []) {
+function loadRunTablesForSelection(runDir, selection, fallbackRows = [], maxRows = Number.MAX_SAFE_INTEGER) {
   const out = {};
   const keys = new Set();
   for (const item of [...(selection?.selected_variables || []), ...(selection?.conditions || [])]) {
     if (item?.table) keys.add(item.table);
   }
-  for (const key of keys) out[key] = readRunRowsForSelection(runDir, key, fallbackRows);
+  for (const key of keys) out[key] = readRunRowsForSelection(runDir, key, fallbackRows, maxRows);
   if (fallbackRows?.length) {
     out.initial_list = out.initial_list || fallbackRows;
     out.cohort = out.cohort || fallbackRows;
