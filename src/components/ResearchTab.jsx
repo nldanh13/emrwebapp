@@ -1840,6 +1840,7 @@ export default function ResearchTab({ toast }) {
   const [variableCatalogLoading, setVariableCatalogLoading] = useState(false);
   const [variableCatalogError, setVariableCatalogError] = useState('');
   const [variableQuery, setVariableQuery]   = useState('');
+  const [questionnaireVariables, setQuestionnaireVariables] = useState('');
   const [variableGroupFilter, setVariableGroupFilter] = useState('admin');
   const [variableTypeFilter, setVariableTypeFilter] = useState('all');
   const [variableFillFilter, setVariableFillFilter] = useState('all');
@@ -2844,8 +2845,15 @@ export default function ResearchTab({ toast }) {
       .map(g => ({ ...g, count: counts.get(g.key) || 0 }))
       .filter(g => g.count > 0 && (showTechnicalVariables || g.key !== 'technical'));
   }, [allCatalogVariables, showTechnicalVariables]);
+  const questionnaireTerms = useMemo(() => [...new Set(
+    String(questionnaireVariables || '')
+      .split(/[\n;]+/)
+      .map(x => lower(x).trim())
+      .filter(x => x.length >= 2)
+  )], [questionnaireVariables]);
   const filteredCatalogVariables = useMemo(() => {
     const q = lower(variableQuery);
+    const terms = [q, ...questionnaireTerms].filter(Boolean);
     return allCatalogVariables.filter(v => {
       if (!showTechnicalVariables && v.technical_or_identity) return false;
       if (variableGroupFilter !== 'all' && v.clinical_group_key !== variableGroupFilter) return false;
@@ -2853,12 +2861,23 @@ export default function ResearchTab({ toast }) {
       if (variableFillFilter === 'high' && Number(v.fill_rate || 0) < 80) return false;
       if (variableFillFilter === 'medium' && (Number(v.fill_rate || 0) < 30 || Number(v.fill_rate || 0) >= 80)) return false;
       if (variableFillFilter === 'low' && Number(v.fill_rate || 0) >= 30) return false;
-      if (!q) return true;
-      return lower(`${v.clinical_group_label} ${v.clinical_section} ${v.source_group_label} ${v.display_label} ${v.raw_name} ${v.description} ${v.type} ${v.role} ${v.sample_values?.map(x => x.value).join(' ')}`).includes(q);
+      if (!terms.length) return true;
+      const haystack = lower(`${v.clinical_group_label} ${v.clinical_section} ${v.source_group_label} ${v.display_label} ${v.raw_name} ${v.description} ${v.type} ${v.role} ${v.sample_values?.map(x => x.value).join(' ')}`);
+      const labels = [lower(v.display_label), lower(v.raw_name)].filter(x => x.length >= 2);
+      return terms.some(term => haystack.includes(term) || labels.some(label => term.includes(label)));
     });
-  }, [allCatalogVariables, variableQuery, variableGroupFilter, variableTypeFilter, variableFillFilter, showTechnicalVariables]);
+  }, [allCatalogVariables, variableQuery, questionnaireTerms, variableGroupFilter, variableTypeFilter, variableFillFilter, showTechnicalVariables]);
   const filteredVariableSections = useMemo(() => groupVariablesBySection(filteredCatalogVariables), [filteredCatalogVariables]);
   const selectedVariables = useMemo(() => allCatalogVariables.filter(v => selectedVariableIds.has(v.id)), [allCatalogVariables, selectedVariableIds]);
+  const selectedCoverage = useMemo(() => {
+    const rates = selectedVariables.map(v => Number(v.fill_rate || 0));
+    return {
+      high: rates.filter(x => x >= 80).length,
+      medium: rates.filter(x => x >= 30 && x < 80).length,
+      low: rates.filter(x => x < 30).length,
+      lowest: rates.length ? Math.min(...rates) : 0,
+    };
+  }, [selectedVariables]);
   const selectedVariablesByGroup = useMemo(() => {
     const map = new Map();
     for (const v of selectedVariables) {
@@ -2875,6 +2894,17 @@ export default function ResearchTab({ toast }) {
       return next;
     });
   }, []);
+  const addVariables = useCallback((variables) => {
+    setSelectedVariableIds(prev => {
+      const next = new Set(prev);
+      for (const variable of variables || []) if (variable?.id && !variable.technical_or_identity) next.add(variable.id);
+      return next;
+    });
+  }, []);
+  const addCoreVariables = useCallback(() => {
+    const coreName = /^(sex|birth_year|age|admission_date|discharge_date|hospital_stay_days|diagnosis_raw|surgery_date|surgery_name)$/i;
+    addVariables(allCatalogVariables.filter(v => coreName.test(String(v.name || ''))));
+  }, [allCatalogVariables, addVariables]);
   const addConditionForVariable = useCallback((variable) => {
     if (!variable) return;
     setVariableConditions(prev => [...prev, { id: `${Date.now()}_${prev.length}`, variable_id: variable.id, label: `${variable.group_label || variable.table_label}.${variable.display_label || variable.name}`, operator: variable.operators?.[0] || 'contains', value: '', value2: '' }]);
@@ -3347,21 +3377,67 @@ export default function ResearchTab({ toast }) {
         </div>
       );
     };
+    const workflowSteps = [
+      ['1', 'Nhập biến phiếu khảo sát', questionnaireTerms.length ? `${questionnaireTerms.length} mục` : 'Có thể bỏ qua'],
+      ['2', 'Chọn biến trong kho', selectedVariables.length ? `${selectedVariables.length} biến` : 'Chưa chọn'],
+      ['3', 'Đặt điều kiện lọc', variableConditions.length ? `${variableConditions.length} điều kiện` : 'Không bắt buộc'],
+      ['4', 'Tạo nghiên cứu', text(variableStudyDraft.name) && selectedVariables.length ? 'Sẵn sàng' : 'Chưa sẵn sàng'],
+    ];
     return (
-      <div style={{ padding: '10px 12px 16px', display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
+      <div style={{ padding: '10px 12px 16px' }}>
+        <div style={{ marginBottom: 12, border: `1px solid ${C.border2}`, borderRadius: 9, background: C.surface, overflow: 'hidden' }}>
+          <div style={{ padding: '11px 12px 9px', borderBottom: `1px solid ${C.border2}` }}>
+            <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Thiết kế bộ dữ liệu từ phiếu khảo sát</div>
+            <div style={{ marginTop: 4, fontSize: FS.xs, lineHeight: 1.45, color: C.text3 }}>
+              Dùng dữ liệu đã có trong Kho nghiên cứu; bước này không mở EMR và không cần kết nối Wi-Fi bệnh viện.
+            </div>
+          </div>
+          <div style={{ padding: 10, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))', gap: 8 }}>
+            {workflowSteps.map(([number, label, sub], index) => {
+              const done = index === 0 ? questionnaireTerms.length > 0 : index === 1 ? selectedVariables.length > 0 : index === 2 ? variableConditions.length > 0 : text(variableStudyDraft.name) && selectedVariables.length > 0;
+              return (
+                <div key={number} style={{ display: 'grid', gridTemplateColumns: '27px minmax(0,1fr)', gap: 8, alignItems: 'center', padding: '7px 8px', borderRadius: 7, background: done ? C.greenBg : C.surface2, border: `1px solid ${done ? C.greenBorder : C.border2}` }}>
+                  <span style={{ width: 27, height: 27, borderRadius: 999, display: 'grid', placeItems: 'center', background: done ? C.green : C.surface, color: done ? '#fff' : C.text2, border: `1px solid ${done ? C.green : C.border2}`, fontWeight: 700 }}>{done ? '✓' : number}</span>
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: FS.xs, fontWeight: 700, color: C.text }}>{label}</span>
+                    <span style={{ display: 'block', marginTop: 2, fontSize: FS.xs, color: done ? C.green : C.text3 }}>{sub}</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, flex: '1 1 720px' }}>
           <div style={{ background: C.surface, overflow: 'hidden' }}>
             <div style={{ padding: '4px 0 10px', borderBottom: `1px solid ${C.border2}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                 <div>
-                  <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Chọn biến nghiên cứu</div>
+                  <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Đối chiếu biến trong kho</div>
                   <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 4, lineHeight: 1.45 }}>
-                    Tìm và chọn biến cần dùng; thêm điều kiện lọc khi cần.
+                    Dán danh sách biến của phiếu khảo sát, kiểm tra gợi ý rồi chủ động chọn biến phù hợp.
                   </div>
                 </div>
                 <Btn onClick={() => loadVariableCatalog()} disabled={variableCatalogLoading} style={{ height: 30 }}>{variableCatalogLoading ? <><Spinner size={9} /> Đang tải</> : 'Tải lại danh mục'}</Btn>
               </div>
-              <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 140px 140px', gap: 7 }}>
+              <div style={{ marginTop: 10, padding: 10, border: `1px solid ${C.blueBorder}`, background: C.blueBg, borderRadius: 7 }}>
+                <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.blue }}>Biến trên phiếu khảo sát</div>
+                <div style={{ marginTop: 3, fontSize: FS.xs, color: C.text2 }}>Mỗi biến một dòng, ví dụ: Tuổi, giới, ngày vào viện, Hb trước mổ, phương pháp phẫu thuật.</div>
+                <textarea
+                  value={questionnaireVariables}
+                  onChange={e => { setQuestionnaireVariables(e.target.value); if (e.target.value.trim()) setVariableGroupFilter('all'); }}
+                  placeholder={'Tuổi\nGiới\nChẩn đoán\nHb trước mổ\nPhương pháp phẫu thuật'}
+                  rows={4}
+                  style={{ ...inp, height: 'auto', marginTop: 8, paddingTop: 7, paddingBottom: 7, resize: 'vertical', background: C.surface }}
+                />
+                <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                  <Btn onClick={() => addVariables(filteredCatalogVariables.filter(v => v.recommended && Number(v.fill_rate || 0) >= 30))} disabled={!questionnaireTerms.length || !filteredCatalogVariables.length} style={{ height: 27, fontSize: FS.xs }}>＋ Chọn gợi ý phù hợp</Btn>
+                  <Btn onClick={addCoreVariables} style={{ height: 27, fontSize: FS.xs }}>＋ Bộ biến nền thường dùng</Btn>
+                  {!!questionnaireTerms.length && <span style={{ fontSize: FS.xs, color: C.text2 }}>{questionnaireTerms.length} mục khảo sát · tìm thấy {filteredCatalogVariables.length} biến gợi ý</span>}
+                </div>
+              </div>
+              <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 7 }}>
                 <input value={variableQuery} onChange={e => setVariableQuery(e.target.value)} placeholder="Tìm biến: tuổi, giới, ngày nhập viện, Hb, creatinine, X-quang, CT, MRI, kháng sinh..." style={inp} />
                 <select value={variableTypeFilter} onChange={e => setVariableTypeFilter(e.target.value)} style={inp}>
                   {typeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -3374,6 +3450,14 @@ export default function ResearchTab({ toast }) {
                 <input type="checkbox" checked={showTechnicalVariables} onChange={e => setShowTechnicalVariables(e.target.checked)} />
                 Hiện cả biến định danh/kỹ thuật
               </label>
+              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                <Btn onClick={() => addVariables(filteredCatalogVariables)} disabled={!filteredCatalogVariables.length} style={{ height: 26, fontSize: FS.xs }}>Chọn tất cả đang hiển thị</Btn>
+                <Btn onClick={() => setSelectedVariableIds(prev => {
+                  const next = new Set(prev);
+                  for (const variable of filteredCatalogVariables) next.delete(variable.id);
+                  return next;
+                })} disabled={!filteredCatalogVariables.some(v => selectedVariableIds.has(v.id))} style={{ height: 26, fontSize: FS.xs }}>Bỏ chọn đang hiển thị</Btn>
+              </div>
             </div>
 
             {variableCatalogLoading && <div style={{ padding: 20, color: C.text2 }}><Spinner size={12} /> Đang lập danh mục biến...</div>}
@@ -3425,6 +3509,20 @@ export default function ResearchTab({ toast }) {
         <div style={{ background: C.surface, padding: '4px 0 12px 14px', position: 'sticky', top: 10, flex: '0 1 330px', minWidth: 300, borderLeft: `1px solid ${C.border2}` }}>
           <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Tạo nghiên cứu từ biến đã chọn</div>
           <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 4 }}>{selectedVariables.length} biến · {variableConditions.length} điều kiện</div>
+
+          {!!selectedVariables.length && (
+            <div style={{ marginTop: 10, padding: 9, borderRadius: 7, background: selectedCoverage.low ? C.amberBg : C.greenBg, border: `1px solid ${selectedCoverage.low ? C.amberBorder : C.greenBorder}` }}>
+              <div style={{ fontSize: FS.xs, fontWeight: 700, color: selectedCoverage.low ? C.amber : C.green }}>Kiểm tra độ phủ biến đã chọn</div>
+              <div style={{ marginTop: 6, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 5 }}>
+                <StatBadge label="≥80%" value={selectedCoverage.high} tone="ok" />
+                <StatBadge label="30–79%" value={selectedCoverage.medium} tone="info" />
+                <StatBadge label="<30%" value={selectedCoverage.low} tone={selectedCoverage.low ? 'warn' : 'neutral'} />
+              </div>
+              <div style={{ marginTop: 7, fontSize: FS.xs, lineHeight: 1.4, color: C.text2 }}>
+                Độ phủ thấp nhất: <b>{selectedCoverage.lowest}%</b>. Đây là độ phủ từng biến, chưa phải số hồ sơ hoàn chỉnh cuối cùng.
+              </div>
+            </div>
+          )}
 
           <div style={{ marginTop: 10, padding: '10px 0', display: 'grid', gap: 8, borderTop: `1px solid ${C.border2}`, borderBottom: `1px solid ${C.border2}` }}>
             <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Thông tin nghiên cứu</div>
@@ -3496,6 +3594,7 @@ export default function ResearchTab({ toast }) {
             <Btn variant="success" onClick={exportVariableSpec} disabled={!selectedVariables.length && !variableConditions.length} style={{ height: 28 }}>Tải cấu hình JSON</Btn>
             <Btn onClick={() => { setSelectedVariableIds(new Set()); setVariableAggregations({}); setVariableConditions([]); }} style={{ height: 28 }}>Xóa chọn</Btn>
           </div>
+        </div>
         </div>
       </div>
     );
