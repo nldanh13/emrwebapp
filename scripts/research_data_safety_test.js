@@ -28,6 +28,7 @@ const R = research._test;
 const { buildQualityReport } = require('../server/research/quality');
 const { redactCsvTable } = require('../server/research/export_utils');
 const { requiredRoleForRequest } = require('../server/services/authz');
+const variableSelection = require('../server/research/variable_selection');
 
 let passed = 0;
 function test(name, fn) {
@@ -130,6 +131,24 @@ test('Danh mục biến giới hạn mẫu và số giá trị khác nhau để 
   assert.ok(many.samples.size <= 30);
   assert.strictEqual(category.distinct.size, 2);
   assert.strictEqual(R.VARIABLE_CATALOG_MAX_ROWS, 50000);
+});
+
+test('Xem trước biến báo đúng lượt đủ, thiếu, trống và cần rà soát', () => {
+  const selection = variableSelection.sanitizeVariableSelection({ selected_variables: [
+    { id: 'age', table: 'analysis_ready', name: 'age', label: 'Tuổi', survey_label: 'Tuổi lúc nhập viện' },
+    { id: 'hb', table: 'analysis_ready', name: 'hb', label: 'Hb', survey_label: 'Hb trước mổ' },
+  ] });
+  assert.strictEqual(selection.selected_variables[0].survey_label, 'Tuổi lúc nhập viện');
+  const dataset = variableSelection.buildSelectedAnalysisDataset([
+    { encounter_id: 'e1', age: '70', hb: '120' },
+    { encounter_id: 'e2', age: '65', hb: '' },
+    { encounter_id: '', age: '', hb: '', needs_manual_review: 'ambiguous' },
+  ], selection, {});
+  const summary = variableSelection.summarizeSelectedDataset(dataset);
+  assert.deepStrictEqual({ total: summary.total, complete: summary.complete, partial: summary.partial, empty: summary.empty, review: summary.review }, {
+    total: 3, complete: 1, partial: 1, empty: 1, review: 1,
+  });
+  assert.strictEqual(summary.variables.find(v => v.id === 'hb').missing, 2);
 });
 
 test('Mã NC duy nhất, giữ nguyên khi quét lại đổi thứ tự, dòng mới nhận số kế tiếp', () => {
