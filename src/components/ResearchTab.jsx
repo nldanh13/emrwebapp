@@ -1065,7 +1065,7 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
 
         {snap.stopped && (
           <div style={{ marginTop: 9, borderLeft: `3px solid ${C.amber}`, background: C.surface2, color: C.text2, padding: '7px 9px', fontSize: 10.5 }}>
-            Tác vụ đã dừng giữa chừng. Bấm <b>Cập nhật</b> để tiếp tục phần còn thiếu.
+            Tác vụ đã dừng giữa chừng. Bấm <b>Lấy dữ liệu</b> để tiếp tục phần còn thiếu; nút Cập nhật chỉ làm mới trạng thái hiển thị.
           </div>
         )}
 
