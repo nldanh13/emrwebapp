@@ -90,9 +90,22 @@ const units = collection.buildCollectionUnits({ sourceRows: source, encounterRow
 const matched = units.filter(u => u.encounter_id);
 const alone = units.filter(u => !u.encounter_id);
 const aloneNoEnc = alone.filter(u => !encCodes.has(u.patient_code)).length;
+const matchSummary = collection.collectionUnitMatchSummary(units);
 console.log('\n[Đơn vị thu thập = lượt]');
 console.log(`  tổng: ${units.length}`);
 console.log(`  ghép được về encounters.csv: ${matched.length} (gom ${matched.reduce((a, u) => a + u.members.length, 0)} dòng)`);
 console.log(`  đứng riêng: ${alone.length}`);
 console.log(`    - người bệnh chưa có trong encounters.csv: ${aloneNoEnc}`);
 console.log(`    - người bệnh có trong encounters.csv nhưng không khớp chắc: ${alone.length - aloneNoEnc}`);
+if (Object.keys(matchSummary.by_method).length) {
+  console.log('  cách ghép chắc chắn:');
+  for (const [method, count] of Object.entries(matchSummary.by_method).sort((a, b) => b[1] - a[1])) {
+    console.log(`    - ${method}: ${count}`);
+  }
+}
+if (Object.keys(matchSummary.by_reason).length) {
+  console.log('  lý do còn đứng riêng:');
+  for (const [reason, count] of Object.entries(matchSummary.by_reason).sort((a, b) => b[1] - a[1])) {
+    console.log(`    - ${collection.REASON_LABELS[reason] || reason}: ${count}`);
+  }
+}
