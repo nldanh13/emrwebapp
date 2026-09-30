@@ -3652,6 +3652,14 @@ function isTimeInsideVisit(timeValue, admissionValue, dischargeValue) {
 
 function combineEncounterSources({ initialRows = [], deepRows = [], patientRows = [], hchanhProfileRows = [], hchanhDischargeRows = [], sourceRunId = '' } = {}) {
   const map = new Map();
+  // Chỉ dò các bản ghi của cùng một người bệnh. Trước đây mỗi dòng mới đều quét
+  // toàn bộ Map (và còn tạo Array.from(...)), khiến chuẩn hoá tăng theo O(n²).
+  const signaturesByPatient = new Map();
+
+  function patientSignatures(code) {
+    if (!signaturesByPatient.has(code)) signaturesByPatient.set(code, new Set());
+    return signaturesByPatient.get(code);
+  }
 
   function sameStrongIdentity(row, existing, sourceStatus = '') {
     // Research key là khóa của đúng dòng nguồn mà worker đã lấy: bằng nhau là cùng đợt.
@@ -3690,8 +3698,9 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
   function findExistingSigFor(row, sourceStatus) {
     const code = patientCode(row);
     if (!code || sourceStatus === 'initial') return '';
-    for (const [sig, existing] of map.entries()) {
-      if (patientCode(existing) !== code) continue;
+    for (const sig of patientSignatures(code)) {
+      const existing = map.get(sig);
+      if (!existing) continue;
       if (sameStrongIdentity(row, existing, sourceStatus)) return sig;
     }
     return '';
@@ -3704,7 +3713,7 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
     if (sourceStatus && !withStatus.__source_status) withStatus.__source_status = sourceStatus;
 
     const existingSig = findExistingSigFor(withStatus, sourceStatus);
-    const sameCodeCount = Array.from(map.values()).filter(x => patientCode(x) === code).length;
+    const sameCodeCount = patientSignatures(code).size;
     if (!existingSig && sameCodeCount > 0 && sourceStatus !== 'initial') {
       withStatus = appendManualReview(withStatus, 'encounter_match_ambiguous');
     }
@@ -3714,7 +3723,11 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
       ? `row:${code}|${stableHash(withStatus)}`
       : baseSig;
     const existing = map.get(sig);
-    if (!existing) { map.set(sig, withStatus); return; }
+    if (!existing) {
+      map.set(sig, withStatus);
+      patientSignatures(code).add(sig);
+      return;
+    }
     const merged = rowCompletenessScore(withStatus) >= rowCompletenessScore(existing)
       ? mergeSameStayRows(withStatus, existing)
       : mergeSameStayRows(existing, withStatus);
@@ -5357,25 +5370,61 @@ function caseDayRange(meta) {
   return from && to && from <= to ? { from, to } : null;
 }
 
+function resultDay(row) {
+  return isoDate(firstNonEmpty(row, ['TG chỉ định', 'TG xét nghiệm', 'Ngày chỉ định', 'Ngày xét nghiệm', 'Thời gian']));
+}
+
+// Chỉ mục Mã BN -> các ngày đã có kết quả. Một lần chuẩn hoá thực tế có thể có
+// hàng chục nghìn dòng XN/CĐHA; không được quét toàn bộ bảng cho từng lượt điều trị.
+function buildResultDayIndex(rows) {
+  const index = new Map();
+  for (const row of rows || []) {
+    const code = patientCode(row);
+    const day = resultDay(row);
+    if (!code || !day) continue;
+    if (!index.has(code)) index.set(code, new Set());
+    index.get(code).add(day);
+  }
+  return index;
+}
+
+function resultDayIndexHasRange(index, code, from, to) {
+  const days = index.get(code);
+  if (!days) return false;
+  for (const day of days) if (day >= from && day <= to) return true;
+  return false;
+}
+
+function addRowsToResultDayIndex(index, rows) {
+  for (const row of rows || []) {
+    const code = patientCode(row);
+    const day = resultDay(row);
+    if (!code || !day) continue;
+    if (!index.has(code)) index.set(code, new Set());
+    index.get(code).add(day);
+  }
+}
+
 function overlayResultsFromPatientDb(dir, sourceRows, sourceRunId, labRaw, imagingRaw) {
   const report = { ingested: { xn: 0, cdha: 0 }, filled_cases: { xn: 0, cdha: 0 }, filled_rows: { xn: 0, cdha: 0 } };
   if (!patientDb.available()) return { labRaw, imagingRaw, report };
   report.ingested.xn = patientDb.recordResults(labRaw, { kind: 'xn', source: 'kho_nghien_cuu' }).added;
   report.ingested.cdha = patientDb.recordResults(imagingRaw, { kind: 'cdha', source: 'kho_nghien_cuu' }).added;
   const out = { xn: labRaw.slice(), cdha: imagingRaw.slice() };
-  const dayOfRow = r => isoDate(firstNonEmpty(r, ['TG chỉ định', 'TG xét nghiệm', 'Ngày chỉ định', 'Ngày xét nghiệm', 'Thời gian']));
+  const dayIndex = { xn: buildResultDayIndex(out.xn), cdha: buildResultDayIndex(out.cdha) };
   for (const row of uniqueResearchHchanhRows(sourceRows, sourceRunId)) {
     const meta = researchHchanhMeta(row, sourceRunId);
     if (!meta.ma_bn) continue;
     const range = caseDayRange(meta);
     if (!range) continue;
     for (const kind of ['xn', 'cdha']) {
-      const has = out[kind].some(r => patientCode(r) === meta.ma_bn && (() => { const d = dayOfRow(r); return d && d >= range.from && d <= range.to; })());
+      const has = resultDayIndexHasRange(dayIndex[kind], meta.ma_bn, range.from, range.to);
       if (has) continue;
       const fromKho = patientDb.resultRows(meta.ma_bn, range.from, range.to, kind)
         .map(r => ({ ...r, 'Mã NC': meta.research_code || '' }));
       if (!fromKho.length) continue;
       out[kind] = out[kind].concat(fromKho);
+      addRowsToResultDayIndex(dayIndex[kind], fromKho);
       report.filled_cases[kind] += 1;
       report.filled_rows[kind] += fromKho.length;
     }
@@ -5444,6 +5493,10 @@ function overlayHchanhFromPatientDb(dir, sourceRows, sourceRunId, tables) {
     return { tables, report };
   }
   const out = { ...tables };
+  const sourceKeysByPart = new Map(KHO_OVERLAY_PARTS.map(([fileKey]) => [
+    fileKey,
+    new Set((out[fileKey] || []).map(r => String(r?.['Research key'] || '')).filter(Boolean)),
+  ]));
   const provisionalInRun = provisionalFilesFromProgress(dir);
   for (const row of uniqueResearchHchanhRows(sourceRows, sourceRunId)) {
     const meta = researchHchanhMeta(row, sourceRunId);
@@ -5457,13 +5510,14 @@ function overlayHchanhFromPatientDb(dir, sourceRows, sourceRunId, tables) {
       const data = stay.output?.[fileKey];
       if (!data) continue;
       const tier = stay.tiers?.[fileKey] || patientDb.TIER_TAM_THOI;
-      const hasRun = (out[fileKey] || []).some(r => String(r?.['Research key'] || '') === meta.source_key);
+      const hasRun = sourceKeysByPart.get(fileKey).has(meta.source_key);
       const runProvisional = provisionalInRun.get(meta.source_key)?.has(fileKey);
       if (hasRun && !(runProvisional && tier === patientDb.TIER_GOC)) continue;
       const flat = hchanhFetchOutputToRows({ [fileKey]: data }, row, sourceRunId)[rowsKey] || [];
       if (!flat.length) continue;
       const tagged = flat.map(r => ({ ...r, 'Nguồn kho': `kho_nguoi_benh:${tier}` }));
       out[fileKey] = removeResearchSourceKey(out[fileKey] || [], meta.source_key).concat(tagged);
+      sourceKeysByPart.get(fileKey).add(meta.source_key);
       report[hasRun ? 'replaced_by_goc' : 'filled'][fileKey] += 1;
       if (tier !== patientDb.TIER_GOC) report.provisional.push({ research_key: meta.source_key, research_code: meta.research_code || '', file: fileKey });
     }
@@ -8926,4 +8980,4 @@ module.exports._fetchHchanhForResearchRun = fetchHchanhForResearchRun;
 // Danh sách cột chuẩn hóa, dùng để đối chiếu từ điển dữ liệu (server/research/data_dictionary.js).
 module.exports.NORMALIZED_COLUMNS = NORMALIZED_COLUMNS;
 module.exports.ingestAllResearchResultsToPatientDb = ingestAllResearchResultsToPatientDb;
-module.exports._test = { readCsvTable, overlayHchanhFromPatientDb, overlayResultsFromPatientDb, ingestAllResearchResultsToPatientDb, researchHchanhMeta, normalizeInputSignature, identifiedAccessStatus, normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, writeDatasetSnapshot, verifyDatasetSnapshot, verifyAllDatasetSnapshots, cleanupStaleDatasetStaging, finalizeAnalysisDataset, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };
+module.exports._test = { readCsvTable, overlayHchanhFromPatientDb, overlayResultsFromPatientDb, buildResultDayIndex, resultDayIndexHasRange, addRowsToResultDayIndex, ingestAllResearchResultsToPatientDb, researchHchanhMeta, normalizeInputSignature, identifiedAccessStatus, normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, writeDatasetSnapshot, verifyDatasetSnapshot, verifyAllDatasetSnapshots, cleanupStaleDatasetStaging, finalizeAnalysisDataset, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };
