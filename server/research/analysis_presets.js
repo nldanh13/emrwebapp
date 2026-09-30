@@ -1,6 +1,11 @@
 'use strict';
 
 // Preset phân tích theo chuyên khoa: cột suy luận từ văn bản, kiểm tra cần duyệt tay, cột tự định nghĩa.
+//
+// Mỗi preset định nghĩa: inference_fields (các cột tự động suy luận từ text)
+// và needs_review_checks (các điều kiện dùng để tạo cột needs_manual_review).
+// Khi tạo nghiên cứu mới, user chọn preset; config lưu vào study.json.
+// normalizeRunOutputs đọc config này để sinh analysis_ready phù hợp.
 
 const { normalizeSimple, parseAnyDate } = require('./encounter_context');
 const { NORMALIZED_COLUMNS } = require('./normalized_schema');

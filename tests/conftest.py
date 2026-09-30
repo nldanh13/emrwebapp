@@ -16,14 +16,15 @@ for path_item in (ROOT_DIR, WORKER_DIR):
 
 
 # ── Mã nguồn backend Kho nghiên cứu ───────────────────────────────────────────
-# Phần Kho nghiên cứu được tách thành server/routes/research.js (route) và các module
-# server/research/*.js. Test kiểm tra mã nguồn đọc cả hai, để chuyển code giữa các file
+# Phần Kho nghiên cứu được tách thành server/routes/research.js, server/routes/research_*.js
+# (route) và các module server/research/*.js. Test kiểm tra mã nguồn đọc cả hai, để chuyển code giữa các file
 # không làm hỏng test (nội dung được kiểm tra giữ nguyên). research.js đứng đầu để các
 # test cắt khối route theo vị trí vẫn đúng.
 def read_research_backend_source():
     from pathlib import Path
     root = Path(ROOT_DIR)
     parts = [(root / "server" / "routes" / "research.js").read_text(encoding="utf-8")]
+    parts += [f.read_text(encoding="utf-8") for f in sorted((root / "server" / "routes").glob("research_*.js"))]
     parts += [f.read_text(encoding="utf-8") for f in sorted((root / "server" / "research").glob("*.js"))]
     return "\n".join(parts)
 

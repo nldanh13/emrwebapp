@@ -121,7 +121,7 @@ function safeDownloadName(value, fallback = 'research_export') {
   return cleaned || fallback;
 }
 
-// ── Research simplified workspace helpers ──────────────────────────────────
+// ── Lấy giá trị ô theo danh sách tên cột ──────────────────────────────────────
 function cell(row, keys, fallback = '') {
   for (const key of keys) {
     const v = row?.[key];
