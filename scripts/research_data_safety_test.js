@@ -6,11 +6,12 @@
 //  2. Dữ liệu hành chánh gắn đúng đợt khi 1 BN có nhiều đợt (lỗi NC0001 cũ).
 //  3. Dòng chuyển khoa chung Mã nội trú gộp thành 1 đợt với ngày vào sớm nhất; ca nghi
 //     cùng đợt nhưng KHÔNG chung khóa EMR thì chỉ đưa vào danh sách duyệt, không tự gộp.
-//  4. Báo cáo chất lượng: lỗi chặn (trùng khóa, mồ côi khóa ngoại) và cảnh báo.
-//  5. Chuẩn hóa dở dang/lỗi bị phát hiện, chặn tạo dataset cuối, chạy lại không dùng cache.
-//  6. Dataset cuối không bị mất khi Chuẩn hóa lại (được lưu phiên bản).
-//  7. Xuất ẩn danh che cả Mã nội trú và URL EMR (chứa Mã BN).
-//  8. Xóa nghiên cứu chỉ dành cho admin.
+//  4. Ghép bảng con vào đúng lượt bằng khóa chuẩn hóa/ngày duy nhất, không đoán ca mơ hồ.
+//  5. Báo cáo chất lượng: lỗi chặn (trùng khóa, mồ côi khóa ngoại) và cảnh báo.
+//  6. Chuẩn hóa dở dang/lỗi bị phát hiện, chặn tạo dataset cuối, chạy lại không dùng cache.
+//  7. Dataset cuối không bị mất khi Chuẩn hóa lại (được lưu phiên bản).
+//  8. Xuất ẩn danh che cả Mã nội trú và URL EMR (chứa Mã BN).
+//  9. Xóa nghiên cứu chỉ dành cho admin.
 // Chạy: node scripts/research_data_safety_test.js
 
 const assert = require('assert');
@@ -65,6 +66,54 @@ const INITIAL_ROWS = [
   { 'T/G vào': '09:00 25/02/2026', 'Mã BN': '111', 'Mã nội trú': 'nt-b', 'Họ tên': 'BN GIA LAP A' },
   { 'T/G vào': '10:00 01/03/2026', 'Mã BN': '222', 'Mã nội trú': 'nt-c', 'Họ tên': 'BN GIA LAP B' },
 ];
+
+test('Ghép lượt chấp nhận Mã NC khác hoa/thường và khoảng trắng, có lưu phương pháp ghép', () => {
+  const rows = [
+    { 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'Mã NC': 'NC0001', 'T/G vào': '08:00 20/02/2026' },
+    { 'Mã BN': '111', 'Mã nội trú': 'nt-b', 'Mã NC': 'NC0002', 'T/G vào': '09:00 25/02/2026' },
+  ];
+  const map = R.buildContextMap(rows, 'r');
+  const ctx = R.contextForRow(map, { 'Mã BN': '111', 'Mã NC': '  nc0002  ' }, '111');
+  assert.ok(ctx.encounter_id);
+  assert.strictEqual(ctx.research_code, 'NC0002');
+  assert.strictEqual(R.encounterMatchStatus(ctx), 'matched');
+  assert.strictEqual(R.encounterMatchMethod(ctx), 'research_code');
+});
+
+test('Ghép theo ngày vào duy nhất khi nguồn thiếu giờ/ngày ra; không ghép nếu ngày đó có nhiều lượt', () => {
+  const rows = [
+    { 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'T/G vào': '08:00 20/02/2026' },
+    { 'Mã BN': '111', 'Mã nội trú': 'nt-b', 'T/G vào': '09:00 25/02/2026' },
+  ];
+  const map = R.buildContextMap(rows, 'r');
+  const matched = R.contextForRow(map, { 'Mã BN': '111', 'Ngày vào viện': '20/02/2026' }, '111');
+  assert.ok(matched.encounter_id);
+  assert.strictEqual(matched.emr_noitru_id, 'nt-a');
+  assert.strictEqual(R.encounterMatchMethod(matched), 'admission_date');
+
+  const ambiguousMap = R.buildContextMap([
+    ...rows,
+    { 'Mã BN': '111', 'Mã nội trú': 'nt-c', 'T/G vào': '18:00 20/02/2026' },
+  ], 'r');
+  const ambiguous = R.contextForRow(ambiguousMap, { 'Mã BN': '111', 'Ngày vào viện': '20/02/2026' }, '111');
+  assert.strictEqual(ambiguous.encounter_id, '');
+  assert.strictEqual(R.encounterMatchStatus(ambiguous), 'ambiguous');
+});
+
+test('Ghép theo ngày sự kiện chỉ khi nằm trong đúng một lượt, không nới sang ngày ngoài viện', () => {
+  const rows = [
+    { 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
+    { 'Mã BN': '111', 'Mã nội trú': 'nt-b', 'T/G vào': '09:00 25/02/2026', 'Ngày ra viện': '28/02/2026' },
+  ];
+  const map = R.buildContextMap(rows, 'r');
+  const matched = R.contextForRow(map, { 'Mã BN': '111', 'TG chỉ định': '21/02/2026' }, '111');
+  assert.strictEqual(matched.emr_noitru_id, 'nt-a');
+  assert.strictEqual(R.encounterMatchMethod(matched), 'event_date_range');
+
+  const outside = R.contextForRow(map, { 'Mã BN': '111', 'TG chỉ định': '23/02/2026' }, '111');
+  assert.strictEqual(outside.encounter_id, '');
+  assert.strictEqual(R.encounterMatchStatus(outside), 'ambiguous');
+});
 
 test('Mã NC duy nhất, giữ nguyên khi quét lại đổi thứ tự, dòng mới nhận số kế tiếp', () => {
   const first = R.normalizeResearchSourceRows(INITIAL_ROWS, { sourceRunId: 'r' });

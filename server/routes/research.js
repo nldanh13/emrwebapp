@@ -3001,7 +3001,8 @@ function copyRowsByPatients(sourceFile, targetFile, patientSet, codeMap) {
 // encounter_review.csv + normalize_state.json + normalize_history.jsonl.
 // v11: gộp dòng chuyển khoa chung Mã nội trú lấy ngày vào sớm nhất.
 // v12: bỏ dòng XN/CĐHA thô giống hệt nhau; QA báo kết quả mâu thuẫn.
-const NORMALIZED_SCHEMA_VERSION = 12;
+// v13: ghép lượt theo Mã NC đã chuẩn hóa/ngày vào-ra duy nhất, không đoán ca mơ hồ.
+const NORMALIZED_SCHEMA_VERSION = 13;
 
 const NORMALIZED_COLUMNS = {
   patients: [
@@ -3250,6 +3251,10 @@ function uniqueContext(value) {
   return value;
 }
 
+function matchedContext(ctx, method) {
+  return ctx ? { ...ctx, _encounter_match_method: method || '' } : null;
+}
+
 function rowEventDate(row) {
   return isoDateTime(firstNonEmpty(row, [
     'lab_datetime', 'ordered_at', 'surgery_datetime', 'order_datetime', 'note_datetime',
@@ -3267,9 +3272,13 @@ function eventInsideContext(eventDate, ctx) {
   const admission = parseAnyDate(ctx.admission_date);
   const discharge = parseAnyDate(ctx.discharge_date);
   if (!event || !admission) return false;
-  const start = admission.getTime() - 86400000;
-  const end = (discharge || new Date(admission.getTime() + 60 * 86400000)).getTime() + 86400000;
-  return event.getTime() >= start && event.getTime() <= end;
+  // So theo ngày để một kết quả chỉ có ngày (00:00) vẫn thuộc ngày nhập viện
+  // có giờ. Không nới ±1 ngày: dữ liệu nghiên cứu phải ưu tiên không gán nhầm.
+  const day = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const start = day(admission);
+  const end = discharge ? day(discharge) : start + 60 * 86400000;
+  const at = day(event);
+  return at >= start && at <= end;
 }
 
 function unresolvedContext(code, candidates = []) {
@@ -3286,6 +3295,10 @@ function encounterMatchStatus(ctx) {
   const reason = String(ctx?.needs_manual_review || '');
   if (reason.includes('ambiguous')) return 'ambiguous';
   return 'missing';
+}
+
+function encounterMatchMethod(ctx) {
+  return ctx?.encounter_id ? String(ctx._encounter_match_method || '') : '';
 }
 
 function buildContextMap(patientRows, sourceRunId = '') {
@@ -3334,12 +3347,20 @@ function buildContextMap(patientRows, sourceRunId = '') {
     if (!patientList.some(item => item.encounter_id === ctx.encounter_id)) patientList.push(ctx);
     byPatient.set(code, patientList);
 
-    addContextMapKey(map, `encounter:${ctx.encounter_id}`, ctx);
-    if (ctx.research_code) addContextMapKey(map, `research:${ctx.research_code}`, ctx);
+    addContextMapKey(map, `encounter:${normalizedIdentity(ctx.encounter_id)}`, ctx);
+    if (ctx.research_code) addContextMapKey(map, `research:${normalizedIdentity(ctx.research_code)}`, ctx);
     if (ctx.emr_treatment_id) addContextMapKey(map, `treatment:${normalizedIdentity(ctx.emr_treatment_id)}`, ctx);
     if (ctx.emr_noitru_id) addContextMapKey(map, `noitru:${normalizedIdentity(ctx.emr_noitru_id)}`, ctx);
     if (ctx.emr_admission_id) addContextMapKey(map, `admission:${normalizedIdentity(ctx.emr_admission_id)}`, ctx);
     if (admission || discharge) addContextMapKey(map, `visit:${contextVisitKey(code, admission, discharge)}`, ctx);
+    if (admission) {
+      addContextMapKey(map, `admission_time:${contextVisitKey(code, admission, '')}`, ctx);
+      addContextMapKey(map, `admission_day:${contextVisitKey(code, isoDate(admission), '')}`, ctx);
+    }
+    if (discharge) {
+      addContextMapKey(map, `discharge_time:${contextVisitKey(code, discharge, '')}`, ctx);
+      addContextMapKey(map, `discharge_day:${contextVisitKey(code, isoDate(discharge), '')}`, ctx);
+    }
   }
   for (const [code, list] of byPatient.entries()) map.set(`patient:${code}`, list);
   return map;
@@ -3348,30 +3369,30 @@ function buildContextMap(patientRows, sourceRunId = '') {
 function contextForRow(ctxMap, row, code) {
   const explicitEncounter = rowExistingEncounterId(row);
   if (explicitEncounter) {
-    const exact = uniqueContext(ctxMap.get(`encounter:${explicitEncounter}`));
-    if (exact) return exact;
+    const exact = uniqueContext(ctxMap.get(`encounter:${normalizedIdentity(explicitEncounter)}`));
+    if (exact) return matchedContext(exact, 'encounter_id');
   }
 
   const treatmentId = rowEmrTreatmentId(row);
   if (treatmentId) {
     const exact = uniqueContext(ctxMap.get(`treatment:${normalizedIdentity(treatmentId)}`));
-    if (exact) return exact;
+    if (exact) return matchedContext(exact, 'emr_treatment_id');
   }
   const noitruId = rowNoitruId(row);
   if (noitruId) {
     const exact = uniqueContext(ctxMap.get(`noitru:${normalizedIdentity(noitruId)}`));
-    if (exact) return exact;
+    if (exact) return matchedContext(exact, 'emr_noitru_id');
   }
   const admissionId = rowEmrAdmissionId(row);
   if (admissionId) {
     const exact = uniqueContext(ctxMap.get(`admission:${normalizedIdentity(admissionId)}`));
-    if (exact) return exact;
+    if (exact) return matchedContext(exact, 'emr_admission_id');
   }
 
   const researchCode = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
   if (researchCode) {
-    const exact = uniqueContext(ctxMap.get(`research:${researchCode}`));
-    if (exact) return exact;
+    const exact = uniqueContext(ctxMap.get(`research:${normalizedIdentity(researchCode)}`));
+    if (exact) return matchedContext(exact, 'research_code');
   }
 
   const admission = isoDateTime(firstNonEmpty(row, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'admission_date']))
@@ -3380,15 +3401,27 @@ function contextForRow(ctxMap, row, code) {
     || isoDate(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'discharge_date']));
   if (admission || discharge) {
     const exact = uniqueContext(ctxMap.get(`visit:${contextVisitKey(code, admission, discharge)}`));
-    if (exact) return exact;
+    if (exact) return matchedContext(exact, 'visit_exact');
+  }
+  if (admission) {
+    const exactTime = uniqueContext(ctxMap.get(`admission_time:${contextVisitKey(code, admission, '')}`));
+    if (exactTime) return matchedContext(exactTime, 'admission_time');
+    const exactDay = uniqueContext(ctxMap.get(`admission_day:${contextVisitKey(code, isoDate(admission), '')}`));
+    if (exactDay) return matchedContext(exactDay, 'admission_date');
+  }
+  if (discharge) {
+    const exactTime = uniqueContext(ctxMap.get(`discharge_time:${contextVisitKey(code, discharge, '')}`));
+    if (exactTime) return matchedContext(exactTime, 'discharge_time');
+    const exactDay = uniqueContext(ctxMap.get(`discharge_day:${contextVisitKey(code, isoDate(discharge), '')}`));
+    if (exactDay) return matchedContext(exactDay, 'discharge_date');
   }
 
   const candidates = ctxMap.get(`patient:${code}`) || [];
-  if (candidates.length === 1) return candidates[0];
+  if (candidates.length === 1) return matchedContext(candidates[0], 'patient_unique_encounter');
   const eventDate = rowEventDate(row);
   if (eventDate && candidates.length > 1) {
     const temporal = candidates.filter(ctx => eventInsideContext(eventDate, ctx));
-    if (temporal.length === 1) return temporal[0];
+    if (temporal.length === 1) return matchedContext(temporal[0], 'event_date_range');
   }
   return unresolvedContext(code, candidates);
 }
@@ -9111,4 +9144,4 @@ module.exports._fetchHchanhForResearchRun = fetchHchanhForResearchRun;
 // Danh sách cột chuẩn hóa, dùng để đối chiếu từ điển dữ liệu (server/research/data_dictionary.js).
 module.exports.NORMALIZED_COLUMNS = NORMALIZED_COLUMNS;
 module.exports.ingestAllResearchResultsToPatientDb = ingestAllResearchResultsToPatientDb;
-module.exports._test = { readCsvTable, overlayHchanhFromPatientDb, overlayResultsFromPatientDb, buildResultDayIndex, resultDayIndexHasRange, addRowsToResultDayIndex, ingestAllResearchResultsToPatientDb, researchHchanhMeta, normalizeInputSignature, identifiedAccessStatus, normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, writeDatasetSnapshot, verifyDatasetSnapshot, verifyAllDatasetSnapshots, cleanupStaleDatasetStaging, finalizeAnalysisDataset, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };
+module.exports._test = { readCsvTable, overlayHchanhFromPatientDb, overlayResultsFromPatientDb, buildResultDayIndex, resultDayIndexHasRange, addRowsToResultDayIndex, ingestAllResearchResultsToPatientDb, researchHchanhMeta, normalizeInputSignature, identifiedAccessStatus, normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, buildContextMap, contextForRow, encounterMatchStatus, encounterMatchMethod, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, writeDatasetSnapshot, verifyDatasetSnapshot, verifyAllDatasetSnapshots, cleanupStaleDatasetStaging, finalizeAnalysisDataset, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };
