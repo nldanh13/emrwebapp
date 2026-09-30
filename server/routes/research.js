@@ -35,61 +35,13 @@ const {
   read_index: readHchanhIndex,
   read_patient_all: readHchanhPatientAll,
 } = require('../hchanh_data_contract');
+const { ARCHIVE_ID, ARCHIVE_LABEL, EXPORT_SENSITIVE_COLUMNS, MAX_CSV_BYTES, MAX_TABLE_ROWS, TABLES, archiveMetaPath, archiveRunsDir, archiveSourcePath, cleanStudyId, cohortPath, dateOnlyMs, ensureArchiveStore, ensureResearchStore, normalizedKey, nowIso, removeVietnameseMarks, runsDir, studyDir, studyMetaPath, todayDateInput, uniqueStudyId } = require('../research/store_paths');
+const { cell, countCsvRows, getCell, parseCsv, parseDateCell, parseDateTimeCell, patientCode, readCsvTable, readRunTableRowsWhere, safeDownloadName, safeReadRunTable, writeCsv, writeCsvUnion } = require('../research/table_io');
+const { buildContextMap, buildEncounterId, contextForRow, dateOffsetDays, daysBetween, encounterMatchMethod, encounterMatchStatus, eventTemporalFields, firstNonEmpty, isoDate, isoDateTime, normalizeSimple, normalizeToken, normalizedIdentity, openStayEnd, parseAnyDate, rowAdmissionTime, rowDischargeTime, rowEmrAdmissionId, rowEmrTreatmentId, rowExistingEncounterId, rowNoitruId, stableHash } = require('../research/encounter_context');
 
 const SCRIPT_PATH = path.join(ROOT_DIR, 'research', 'nghien_cuu_1', 'lay_lich_su_xn_cdha.py');
-const MAX_CSV_BYTES = 50 * 1024 * 1024;
-const MAX_TABLE_ROWS = 20000;
 const VARIABLE_PREVIEW_MAX_SOURCE_ROWS = Math.max(5000, Number(process.env.EMR_VARIABLE_PREVIEW_MAX_SOURCE_ROWS || 100000));
 const VARIABLE_PREVIEW_MAX_ENCOUNTERS = Math.max(100, Number(process.env.EMR_VARIABLE_PREVIEW_MAX_ENCOUNTERS || 10000));
-const ARCHIVE_ID = 'du_lieu_goc';
-const ARCHIVE_LABEL = 'Kho dữ liệu gốc';
-
-const TABLES = {
-  cohort: { label: 'Danh sách yêu cầu', file: 'cohort.csv', root: 'study' },
-  initial_list: { label: 'Dữ liệu ban đầu', file: 'du_lieu_ban_dau.csv', root: 'run' },
-  research_source: { label: 'Nguồn chuẩn', file: 'research_source.csv', root: 'run' },
-  deep_source: { label: 'Dữ liệu gốc đã lấy sâu', file: 'du_lieu_goc.csv', root: 'run' },
-  patient_extra: { label: 'Thông tin khác', file: 'thong_tin_benh_nhan_bo_sung.csv', root: 'run' },
-  patients: { label: 'Mẫu nghiên cứu raw', file: 'mau_nghien_cuu.csv', root: 'run' },
-  patient_master: { label: 'BN chuẩn hóa', file: 'patients.csv', root: 'run', normalized: true },
-  encounters: { label: 'Đợt điều trị', file: 'encounters.csv', root: 'run', normalized: true },
-  diagnoses: { label: 'Chẩn đoán', file: 'diagnoses.csv', root: 'run', normalized: true },
-  lab_results: { label: 'XN chuẩn hóa', file: 'lab_results.csv', root: 'run', normalized: true },
-  imaging_results: { label: 'CĐHA chuẩn hóa', file: 'imaging_results.csv', root: 'run', normalized: true },
-  surgery_results: { label: 'Phẫu thuật/TT', file: 'surgery_results.csv', root: 'run', normalized: true },
-  medication_orders: { label: 'Y lệnh thuốc', file: 'medication_orders.csv', root: 'run', normalized: true },
-  medication_day_summary: { label: 'Thuốc theo ngày', file: 'medication_day_summary.csv', root: 'run', normalized: true },
-  clinical_notes: { label: 'Diễn biến/Y lệnh', file: 'clinical_notes.csv', root: 'run', normalized: true },
-  patient_day: { label: 'Patient-day', file: 'patient_day.csv', root: 'run', normalized: true },
-  analysis_ready: { label: 'Bảng phân tích', file: 'analysis_ready.csv', root: 'run', normalized: true },
-  analysis_selected: { label: 'Bảng biến đã chọn', file: 'analysis_selected.csv', root: 'run', normalized: true },
-  analysis_final: { label: 'Dataset cuối', file: 'analysis_final.csv', root: 'run', normalized: true },
-  analysis_ready_encoded: { label: 'Bảng phân tích encoded', file: 'encoded/analysis_ready_encoded.csv', root: 'run', normalized: true, encoded: true },
-  analysis_selected_encoded: { label: 'Bảng biến đã chọn encoded', file: 'encoded/analysis_selected_encoded.csv', root: 'run', normalized: true, encoded: true },
-  lab_results_encoded: { label: 'XN encoded', file: 'encoded/lab_results_encoded.csv', root: 'run', normalized: true, encoded: true },
-  lab_dictionary: { label: 'Dict XN', file: 'encoded/lab_dictionary.csv', root: 'run', normalized: true, encoded: true },
-  imaging_results_encoded: { label: 'CĐHA encoded', file: 'encoded/imaging_results_encoded.csv', root: 'run', normalized: true, encoded: true },
-  imaging_dictionary: { label: 'Dict CĐHA', file: 'encoded/imaging_dictionary.csv', root: 'run', normalized: true, encoded: true },
-  medication_orders_encoded: { label: 'Y lệnh encoded', file: 'encoded/medication_orders_encoded.csv', root: 'run', normalized: true, encoded: true },
-  drug_dictionary: { label: 'Dict thuốc', file: 'encoded/drug_dictionary.csv', root: 'run', normalized: true, encoded: true },
-  route_dictionary: { label: 'Dict đường dùng', file: 'encoded/route_dictionary.csv', root: 'run', normalized: true, encoded: true },
-  diagnoses_encoded: { label: 'Chẩn đoán encoded', file: 'encoded/diagnoses_encoded.csv', root: 'run', normalized: true, encoded: true },
-  diagnosis_dictionary: { label: 'Dict chẩn đoán', file: 'encoded/diagnosis_dictionary.csv', root: 'run', normalized: true, encoded: true },
-  surgery_results_encoded: { label: 'PT/TT encoded', file: 'encoded/surgery_results_encoded.csv', root: 'run', normalized: true, encoded: true },
-  procedure_dictionary: { label: 'Dict PT/TT', file: 'encoded/procedure_dictionary.csv', root: 'run', normalized: true, encoded: true },
-  anesthesia_dictionary: { label: 'Dict vô cảm', file: 'encoded/anesthesia_dictionary.csv', root: 'run', normalized: true, encoded: true },
-  extract_status: { label: 'Tiến độ lấy dữ liệu', file: 'extract_status.csv', root: 'run', normalized: true },
-  // Bảng raw giữ lại để đối chiếu khi cần.
-  hchanh_profile: { label: 'Raw HC nền', file: 'hchanh_profile.csv', root: 'run' },
-  hchanh_discharge: { label: 'Raw HC ra viện', file: 'hchanh_discharge.csv', root: 'run' },
-  hchanh_surgery: { label: 'Raw HC phẫu thuật', file: 'hchanh_surgery.csv', root: 'run' },
-  hchanh_order_history: { label: 'Raw HC y lệnh', file: 'hchanh_order_history.csv', root: 'run' },
-  xn: { label: 'Raw XN', file: 'lich_su_xn.csv', root: 'run' },
-  cdha: { label: 'Raw CĐHA', file: 'lich_su_cdha.csv', root: 'run' },
-  errors: { label: 'Lỗi', file: 'errors.csv', root: 'run' },
-};
-
-const EXPORT_SENSITIVE_COLUMNS = DEFAULT_SENSITIVE_COLUMNS;
 
 const DATABASE_TABLE_NAME_OVERRIDES = {
   cohort: 'cohort',
@@ -191,219 +143,6 @@ function forceSyncDatabaseAfterDerivedOutput(runDir) {
   return publicDatabaseInfo(info);
 }
 
-
-function nowIso() {
-  return new Date().toISOString();
-}
-
-
-function todayDateInput() {
-  // Dùng ngày local của máy chạy server, không dùng ISO UTC để tránh lệch ngày.
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function dateOnlyMs(value) {
-  const s = String(value || '').trim();
-  const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (!m) return NaN;
-  const d = strictLocalDate(Number(m[1]), Number(m[2]), Number(m[3]));
-  return d ? d.getTime() : NaN;
-}
-
-function removeVietnameseMarks(value) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D');
-}
-
-function normalizedKey(value) {
-  return removeVietnameseMarks(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
-}
-
-function slugify(value, fallback = 'nghien_cuu') {
-  const raw = removeVietnameseMarks(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 80);
-  return raw || fallback;
-}
-
-function cleanStudyId(value) {
-  const id = slugify(value, 'nghien_cuu');
-  if (!/^[a-z0-9][a-z0-9_-]{0,79}$/.test(id)) throw new Error('Mã nghiên cứu không hợp lệ.');
-  return id;
-}
-
-function studyDir(studyId) {
-  return path.join(RESEARCH_STORE_DIR, cleanStudyId(studyId));
-}
-
-function studyMetaPath(studyId) {
-  return path.join(studyDir(studyId), 'study.json');
-}
-
-function cohortPath(studyId) {
-  return path.join(studyDir(studyId), 'cohort.csv');
-}
-
-function runsDir(studyId) {
-  return path.join(studyDir(studyId), 'runs');
-}
-
-function archiveDir() {
-  return path.join(RESEARCH_STORE_DIR, ARCHIVE_ID);
-}
-
-function archiveMetaPath() {
-  return path.join(archiveDir(), 'archive.json');
-}
-
-function archiveSourcePath() {
-  return path.join(archiveDir(), 'source.csv');
-}
-
-function archiveRunsDir() {
-  return path.join(archiveDir(), 'runs');
-}
-
-function ensureResearchStore() {
-  ensureDir(RESEARCH_STORE_DIR);
-}
-
-function ensureArchiveStore() {
-  ensureResearchStore();
-  ensureDir(archiveDir());
-}
-
-function uniqueStudyId(name) {
-  ensureResearchStore();
-  const base = cleanStudyId(name || 'nghien_cuu');
-  let id = base;
-  let i = 2;
-  while (fs.existsSync(studyDir(id))) {
-    id = `${base}_${i}`;
-    i += 1;
-  }
-  return id;
-}
-
-function parseCsv(text, { maxRows = MAX_TABLE_ROWS } = {}) {
-  const source = String(text || '').replace(/^\ufeff/, '');
-  const rows = [];
-  let row = [];
-  let cell = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < source.length; i += 1) {
-    const ch = source[i];
-    const next = source[i + 1];
-    if (inQuotes) {
-      if (ch === '"' && next === '"') {
-        cell += '"';
-        i += 1;
-      } else if (ch === '"') {
-        inQuotes = false;
-      } else {
-        cell += ch;
-      }
-      continue;
-    }
-    if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === ',') {
-      row.push(cell);
-      cell = '';
-    } else if (ch === '\n') {
-      row.push(cell);
-      rows.push(row);
-      row = [];
-      cell = '';
-      if (rows.length > maxRows + 1) break;
-    } else if (ch === '\r') {
-      // bỏ qua, xử lý ở \n
-    } else {
-      cell += ch;
-    }
-  }
-  if (cell || row.length) {
-    row.push(cell);
-    rows.push(row);
-  }
-
-  while (rows.length && rows[rows.length - 1].every(v => String(v || '').trim() === '')) rows.pop();
-  if (!rows.length) return { columns: [], rows: [], count: 0, limited: false };
-  const columns = rows[0].map((v, idx) => String(v || `Cột ${idx + 1}`).trim() || `Cột ${idx + 1}`);
-  const body = rows.slice(1, maxRows + 1).filter(r => r.some(v => String(v || '').trim() !== ''));
-  const objects = body.map(values => {
-    const obj = {};
-    columns.forEach((col, i) => { obj[col] = String(values[i] ?? '').trim(); });
-    return obj;
-  });
-  return { columns, rows: objects, count: Math.max(0, rows.length - 1), limited: rows.length - 1 > maxRows };
-}
-
-function writeCsv(filePath, columns, rows) {
-  writeFileAtomic(filePath, `\ufeff${rowsToCsvRaw(columns, rows)}`, 'utf-8');
-}
-
-const CSV_TABLE_CACHE = new Map();
-// Cache object CSV lớn tốn RAM gấp nhiều lần kích thước file (chuỗi + object cho
-// từng ô). Chỉ cache các bảng nhỏ thường dùng; bảng lớn/toàn bộ dữ liệu phải được
-// giải phóng sau request để server không chạm giới hạn heap 2 GB.
-const CSV_CACHE_MAX_ENTRIES = 16;
-const CSV_CACHE_MAX_FILE_BYTES = Math.max(64 * 1024, Number(process.env.EMR_CSV_CACHE_MAX_FILE_BYTES || 1024 * 1024));
-
-function _csvCacheKey(filePath, maxRows) {
-  try {
-    const stat = fs.statSync(filePath);
-    return `${path.resolve(filePath)}|${stat.size}|${Math.floor(stat.mtimeMs)}|${maxRows}`;
-  } catch (_) {
-    return '';
-  }
-}
-
-function _trimCsvCache() {
-  if (CSV_TABLE_CACHE.size <= CSV_CACHE_MAX_ENTRIES) return;
-  const extra = CSV_TABLE_CACHE.size - CSV_CACHE_MAX_ENTRIES;
-  for (const key of [...CSV_TABLE_CACHE.keys()].slice(0, extra)) CSV_TABLE_CACHE.delete(key);
-}
-
-function readCsvTable(filePath, maxRows = MAX_TABLE_ROWS) {
-  if (!fs.existsSync(filePath)) return { columns: [], rows: [], count: 0, limited: false, exists: false };
-  let fileSize = 0;
-  try { fileSize = fs.statSync(filePath).size; } catch (_) { /* đọc bên dưới sẽ báo lỗi thật */ }
-  const cacheEligible = fileSize > 0 && fileSize <= CSV_CACHE_MAX_FILE_BYTES && Number(maxRows) <= MAX_TABLE_ROWS;
-  const cacheKey = cacheEligible ? _csvCacheKey(filePath, maxRows) : '';
-  if (cacheKey && CSV_TABLE_CACHE.has(cacheKey)) return CSV_TABLE_CACHE.get(cacheKey);
-
-  // Đọc theo khối: không nạp cả file thành một chuỗi (file XN/CĐHA có thể vài trăm MB).
-  const result = { ...readCsvFileRows(filePath, maxRows), exists: true };
-  if (cacheKey) {
-    // Xóa cache cũ của cùng file khi file đã thay đổi.
-    const prefix = `${path.resolve(filePath)}|`;
-    for (const key of CSV_TABLE_CACHE.keys()) {
-      if (key !== cacheKey && key.startsWith(prefix)) CSV_TABLE_CACHE.delete(key);
-    }
-    CSV_TABLE_CACHE.set(cacheKey, result);
-    _trimCsvCache();
-  }
-  return result;
-}
-
-function safeDownloadName(value, fallback = 'research_export') {
-  const cleaned = String(value || fallback).normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9_.-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 120);
-  return cleaned || fallback;
-}
-
 function researchResponseShouldRedact(req) {
   const requestedIdentified = String(req.query?.identified || '') === '1'
     || String(req.query.redact || '').toLowerCase() === '0'
@@ -497,17 +236,6 @@ function sendCsvFile(res, filePath, filenameBase, { redact = true } = {}) {
   return stream.pipe(res);
 }
 
-
-
-// ── Research simplified workspace helpers ──────────────────────────────────
-function cell(row, keys, fallback = '') {
-  for (const key of keys) {
-    const v = row?.[key];
-    if (v != null && String(v).trim() !== '') return String(v).trim();
-  }
-  return fallback;
-}
-
 function foldSearchText(value) {
   return String(value || '')
     .normalize('NFD')
@@ -533,18 +261,6 @@ function sortByDateLike(rows, keys) {
     const bv = cell(b, keys);
     return String(av).localeCompare(String(bv));
   });
-}
-
-function readRunTableRowsWhere(runDir, filename, predicate) {
-  const filePath = path.join(runDir, filename);
-  if (!fs.existsSync(filePath)) return [];
-  const rows = [];
-  readCsvFileRows(filePath, Number.MAX_SAFE_INTEGER, { onRow: row => { if (predicate(row)) rows.push(row); } });
-  return rows;
-}
-
-function safeReadRunTable(runDir, filename) {
-  return readCsvTable(path.join(runDir, filename), Number.MAX_SAFE_INTEGER).rows || [];
 }
 
 function normalizedPersonName(row) {
@@ -607,7 +323,6 @@ function uniqueBy(rows, keyFn) {
   }
   return out;
 }
-
 
 function queryPatientHistoryEventTables(runDir, {
   patientCodes = [],
@@ -863,7 +578,6 @@ function buildPatientHistory(runDir, query) {
     truncated = true;
   }
 
-
   // Mở rộng mã BN: nếu HIS cấp mã BN khác cho các lần nhập viện nhưng họ tên/giới/tuổi hoặc năm sinh khớp,
   // tra cứu một mã vẫn phải hiện đủ toàn bộ lịch sử điều trị của người bệnh đó.
   const expandedCodes = new Set(candidateCodes);
@@ -1094,7 +808,6 @@ function summarizeVariableColumns(columns, rows) {
   return stats;
 }
 
-
 function makeVirtualVariableId(prefix, value) {
   const hash = stableHash(String(value || '')).slice(0, 10);
   return `${prefix}.${hash}`;
@@ -1293,76 +1006,6 @@ function buildVariableCatalog(runDir, { redact = true } = {}) {
   return { run_id: path.basename(runDir), groups, sample_limit: VARIABLE_CATALOG_MAX_ROWS, generated_at: nowIso() };
 }
 
-// Chỉ đếm dòng (không tạo object) và nhớ kết quả theo kích thước + mtime: dashboard
-// gọi hàm này cho mọi bảng ở mỗi lần làm mới, kể cả file XN/CĐHA vài trăm MB.
-const CSV_ROW_COUNT_CACHE = new Map();
-const CSV_ROW_COUNT_CACHE_MAX = 512;
-
-function countCsvRows(filePath) {
-  try {
-    const stat = fs.statSync(filePath);
-    const resolved = path.resolve(filePath);
-    const stamp = `${stat.size}|${Math.floor(stat.mtimeMs)}`;
-    const cached = CSV_ROW_COUNT_CACHE.get(resolved);
-    if (cached && cached.stamp === stamp) return cached.count;
-    const count = Number(readCsvFileRows(filePath, 0).count || 0);
-    CSV_ROW_COUNT_CACHE.delete(resolved);
-    CSV_ROW_COUNT_CACHE.set(resolved, { stamp, count });
-    if (CSV_ROW_COUNT_CACHE.size > CSV_ROW_COUNT_CACHE_MAX) {
-      CSV_ROW_COUNT_CACHE.delete(CSV_ROW_COUNT_CACHE.keys().next().value);
-    }
-    return count;
-  } catch (_) {
-    return 0;
-  }
-}
-
-function getCell(row, names) {
-  if (!row) return '';
-  const byKey = new Map(Object.keys(row).map(key => [normalizedKey(key), row[key]]));
-  for (const name of names) {
-    const v = byKey.get(normalizedKey(name));
-    if (String(v || '').trim()) return String(v || '').trim();
-  }
-  return '';
-}
-
-function patientCode(row) {
-  return getCell(row, [
-    'Mã BN', 'Ma BN', 'MABN', 'Mã bệnh nhân', 'Ma benh nhan',
-    'patient_code', 'patientCode', 'code', 'ma_bn', 'maBN', 'Mã YT', 'Ma YT',
-  ]);
-}
-
-function parseDateCell(value) {
-  const s = String(value || '').trim();
-  if (!s) return null;
-  let m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (m) return strictLocalDate(Number(m[3]), Number(m[2]), Number(m[1]));
-  m = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (m) return strictLocalDate(Number(m[1]), Number(m[2]), Number(m[3]));
-  return null;
-}
-
-function parseDateTimeCell(value) {
-  const s = String(value || '').trim();
-  if (!s) return null;
-
-  // Các bảng EMR thường ghi: "08:38 02/06/2026".
-  let m = s.match(/(\d{1,2}):(\d{2})\s+(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (m) return strictLocalDate(Number(m[5]), Number(m[4]), Number(m[3]), Number(m[1]), Number(m[2]));
-
-  // Một số file có thể ghi: "02/06/2026 08:38".
-  m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})/);
-  if (m) return strictLocalDate(Number(m[3]), Number(m[2]), Number(m[1]), Number(m[4]), Number(m[5]));
-
-  // ISO/local: "2026-06-02 08:38" hoặc "2026-06-02T08:38".
-  m = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T]+(\d{1,2}):(\d{2}))?/);
-  if (m) return strictLocalDate(Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4] || 0), Number(m[5] || 0));
-
-  return parseDateCell(s);
-}
-
 function sortRowsForTable(tableKey, rows) {
   const sortable = new Set(['initial_list', 'deep_source', 'patients', 'cohort']);
   if (!sortable.has(String(tableKey || ''))) return rows;
@@ -1453,7 +1096,6 @@ function listRunsForDir(dir) {
     })
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
 }
-
 
 function latestRunIdFast(dir) {
   if (!fs.existsSync(dir)) return '';
@@ -1700,7 +1342,6 @@ function computeExtractCoverage(runDir) {
   }
   return { total, ready, manual_review: manualReview, by_overall: byOverall, by_completion: byCompletion, file_done: fileDone };
 }
-
 
 const RESEARCH_PROGRESS_PARTS = [
   { key: 'xn_cdha', label: 'XN & CĐHA', fields: ['popup_status', 'xn_status', 'cdha_status'] },
@@ -2670,7 +2311,6 @@ function finalizeAnalysisDataset(runDir) {
   return { count: rows.length, source: path.basename(src), coverage: buildCoverageSummary(runDir), database, database_warning };
 }
 
-
 function pathSizeBytes(targetPath) {
   try {
     const st = fs.statSync(targetPath);
@@ -2776,7 +2416,6 @@ function cleanResearchGenerated(runDir, { encoded = true, debug = true, derived 
     removed: removed.filter(x => x.removed || x.error || x.skipped),
   };
 }
-
 
 const ENCODED_DIRNAME = 'encoded';
 const RESEARCH_DERIVED_FILES = [
@@ -3244,355 +2883,6 @@ const NORMALIZED_COLUMNS = {
   ],
 };
 
-function stableHash(value) {
-  return crypto.createHash('sha1').update(JSON.stringify(value || {})).digest('hex').slice(0, 16);
-}
-
-function normalizeSimple(value) {
-  return removeVietnameseMarks(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
-function normalizeToken(value) {
-  return normalizeSimple(value).replace(/\s+/g, '_');
-}
-
-function parseAnyDate(value) {
-  const s = String(value || '').trim();
-  if (!s) return null;
-  let m = s.match(/(\d{1,2}):(\d{2})\s+(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
-  if (m) return strictLocalDate(Number(m[5]), Number(m[4]), Number(m[3]), Number(m[1]), Number(m[2]));
-  m = s.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})\s+(\d{1,2}):(\d{2})/);
-  if (m) return strictLocalDate(Number(m[3]), Number(m[2]), Number(m[1]), Number(m[4]), Number(m[5]));
-  m = s.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
-  if (m) return strictLocalDate(Number(m[3]), Number(m[2]), Number(m[1]));
-  m = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s](\d{1,2}):(\d{2}))?/);
-  if (m) return strictLocalDate(Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4] || 0), Number(m[5] || 0));
-  return null;
-}
-
-function isoDate(value) {
-  const d = parseAnyDate(value);
-  if (!d || Number.isNaN(d.getTime())) return '';
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-function isoDateTime(value) {
-  const d = parseAnyDate(value);
-  if (!d || Number.isNaN(d.getTime())) return '';
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${y}-${m}-${day} ${hh}:${mm}`;
-}
-
-function dateOffsetDays(startDate, date) {
-  const a = parseAnyDate(startDate);
-  const b = parseAnyDate(date);
-  if (!a || !b) return '';
-  const a0 = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
-  const b0 = new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime();
-  return String(Math.floor((b0 - a0) / 86400000));
-}
-
-function daysBetween(startDate, date) {
-  const offset = dateOffsetDays(startDate, date);
-  return offset === '' ? '' : String(Number(offset) + 1);
-}
-
-// Đợt chưa có ngày ra viện (đang nằm hoặc chưa lấy được ngày ra): coi khoảng nằm viện
-// kéo tới hôm nay. Trước đây cắt cứng 60 ngày sau ngày vào, nên người bệnh nằm lâu hơn
-// bị mất kết quả mà không có cảnh báo. QA báo riêng số đợt chưa có ngày ra viện.
-function openStayEnd(admissionDt) {
-  const now = Date.now();
-  return new Date(Math.max(admissionDt.getTime(), now));
-}
-
-function eventTemporalFields(ctx, eventDate) {
-  const admission = ctx?.admission_date || '';
-  const surgery = ctx?.surgery_date || '';
-  const discharge = ctx?.discharge_date || '';
-  const event = parseAnyDate(eventDate);
-  const admissionDt = parseAnyDate(admission);
-  const dischargeDt = parseAnyDate(discharge);
-  let within = '';
-  if (event && admissionDt) {
-    const end = dischargeDt || openStayEnd(admissionDt);
-    within = event.getTime() >= admissionDt.getTime() && event.getTime() <= end.getTime() ? '1' : '0';
-  }
-  return {
-    days_from_admission: dateOffsetDays(admission, eventDate),
-    days_from_surgery: dateOffsetDays(surgery, eventDate),
-    days_from_discharge: dateOffsetDays(discharge, eventDate),
-    is_within_encounter: within,
-  };
-}
-
-function firstNonEmpty(row, names) {
-  return getCell(row, names);
-}
-
-function normalizedIdentity(value) {
-  return String(value || '').trim().toLowerCase().replace(/\s+/g, '');
-}
-
-function rowNoitruId(row) {
-  return firstNonEmpty(row, [
-    'noitruid', 'noi_tru_id', 'NoiTruID', 'Mã nội trú', 'Ma noi tru',
-    'emr_noitru_id', 'treatment_uuid',
-  ]);
-}
-
-function rowExistingEncounterId(row) {
-  return firstNonEmpty(row, ['encounter_id', 'visit_id']);
-}
-
-function buildEncounterId(row, sourceRunId = '') {
-  // sourceRunId cố ý không tham gia khóa: cùng một lượt điều trị phải giữ nguyên ID
-  // khi chạy lại ở ngày khác hoặc từ một run khác.
-  const existing = rowExistingEncounterId(row);
-  if (existing) return existing;
-
-  const treatmentId = normalizedIdentity(rowEmrTreatmentId(row) || rowNoitruId(row));
-  if (treatmentId) return `enc_${stableHash(['treatment', treatmentId])}`;
-
-  const admissionId = normalizedIdentity(rowEmrAdmissionId(row));
-  if (admissionId) return `enc_${stableHash(['admission', admissionId])}`;
-
-  const maBn = patientCode(row);
-  const admission = isoDateTime(firstNonEmpty(row, [
-    'Ngày vào viện', 'Ngay vao vien', 'Ngày nhập viện', 'Ngay nhap vien',
-    'T/G vào', 'TG vao', 'admission_date', 'ngay_vao_vien', 'ngay_vao',
-  ])) || isoDate(firstNonEmpty(row, [
-    'Ngày vào viện', 'Ngay vao vien', 'Ngày nhập viện', 'Ngay nhap vien',
-    'T/G vào', 'TG vao', 'admission_date', 'ngay_vao_vien', 'ngay_vao',
-  ]));
-  const discharge = isoDateTime(firstNonEmpty(row, [
-    'Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien',
-    'T/G ra', 'TG ra', 'discharge_date', 'ngay_ra_vien', 'ngay_ra',
-  ])) || isoDate(firstNonEmpty(row, [
-    'Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien',
-    'T/G ra', 'TG ra', 'discharge_date', 'ngay_ra_vien', 'ngay_ra',
-  ]));
-  if (maBn && admission) return `enc_${stableHash(['visit', maBn, admission, discharge || ''])}`;
-
-  const researchCode = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
-  if (researchCode) return `enc_${stableHash(['research', researchCode])}`;
-
-  // Khóa cuối cùng chỉ để không làm hỏng schema. Dòng này phải được đánh dấu
-  // manual review vì không đủ bằng chứng để ghép lượt tự động.
-  return `enc_unresolved_${stableHash([
-    maBn,
-    firstNonEmpty(row, ['Họ tên', 'Ho ten', 'patient_name']),
-    firstNonEmpty(row, ['Khoa', 'department']),
-    firstNonEmpty(row, ['Chẩn đoán', 'Chan doan', 'diagnosis_raw']),
-  ])}`;
-}
-
-function contextVisitKey(code, admission, discharge) {
-  return [code || '', admission || '', discharge || ''].join('|');
-}
-
-function addContextMapKey(map, key, ctx) {
-  if (!key) return;
-  const current = map.get(key);
-  if (!current) {
-    map.set(key, ctx);
-    return;
-  }
-  const list = Array.isArray(current) ? current : [current];
-  if (!list.some(item => item?.encounter_id === ctx.encounter_id)) list.push(ctx);
-  map.set(key, list);
-}
-
-function uniqueContext(value) {
-  if (!value) return null;
-  if (Array.isArray(value)) return value.length === 1 ? value[0] : null;
-  return value;
-}
-
-function matchedContext(ctx, method) {
-  return ctx ? { ...ctx, _encounter_match_method: method || '' } : null;
-}
-
-function rowEventDate(row) {
-  return isoDateTime(firstNonEmpty(row, [
-    'lab_datetime', 'ordered_at', 'surgery_datetime', 'order_datetime', 'note_datetime',
-    'TG xét nghiệm', 'Thời gian xét nghiệm', 'TG chỉ định', 'TG y lệnh',
-    'Ngày chỉ định', 'Ngày xét nghiệm', 'Ngày phẫu thuật', 'Thời gian', 'Ngày',
-  ])) || isoDate(firstNonEmpty(row, [
-    'lab_date', 'order_date', 'surgery_date', 'note_date',
-    'Ngày chỉ định', 'Ngày xét nghiệm', 'Ngày phẫu thuật', 'Ngày',
-  ]));
-}
-
-function eventInsideContext(eventDate, ctx) {
-  if (!eventDate || !ctx?.admission_date) return false;
-  const event = parseAnyDate(eventDate);
-  const admission = parseAnyDate(ctx.admission_date);
-  const discharge = parseAnyDate(ctx.discharge_date);
-  if (!event || !admission) return false;
-  // So theo ngày để một kết quả chỉ có ngày (00:00) vẫn thuộc ngày nhập viện
-  // có giờ. Không nới ±1 ngày: dữ liệu nghiên cứu phải ưu tiên không gán nhầm.
-  const day = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const start = day(admission);
-  const end = discharge ? day(discharge) : day(openStayEnd(admission));
-  const at = day(event);
-  return at >= start && at <= end;
-}
-
-function unresolvedContext(code, candidates = []) {
-  return {
-    patient_code: code || '',
-    encounter_id: '',
-    research_code: '',
-    needs_manual_review: candidates.length > 1 ? 'encounter_match_ambiguous' : 'encounter_match_missing',
-  };
-}
-
-function encounterMatchStatus(ctx) {
-  if (ctx?.encounter_id) return 'matched';
-  const reason = String(ctx?.needs_manual_review || '');
-  if (reason.includes('ambiguous')) return 'ambiguous';
-  return 'missing';
-}
-
-function encounterMatchMethod(ctx) {
-  return ctx?.encounter_id ? String(ctx._encounter_match_method || '') : '';
-}
-
-function buildContextMap(patientRows, sourceRunId = '') {
-  const map = new Map();
-  const byPatient = new Map();
-  for (const row of patientRows) {
-    const code = patientCode(row);
-    if (!code) continue;
-    const admission = isoDateTime(firstNonEmpty(row, ['Ngày vào viện', 'Ngay vao vien', 'Ngày nhập viện', 'Ngay nhap vien', 'T/G vào', 'TG vao', 'admission_date']))
-      || isoDate(firstNonEmpty(row, ['Ngày vào viện', 'Ngay vao vien', 'Ngày nhập viện', 'Ngay nhap vien', 'T/G vào', 'TG vao', 'admission_date']));
-    const discharge = isoDateTime(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien', 'discharge_date']))
-      || isoDate(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien', 'discharge_date']));
-    const admissionDiagnosis = firstNonEmpty(row, ['Chẩn đoán vào viện', 'Chan doan vao vien', 'Chẩn đoán', 'Chan doan', 'diagnosis_raw']);
-    const ctx = {
-      research_code: firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']),
-      patient_code: code,
-      patient_name: firstNonEmpty(row, ['Họ tên', 'Ho ten', 'Tên BN', 'Ten BN', 'patient_name']),
-      sex: firstNonEmpty(row, ['Giới', 'Gioi', 'GT', 'sex']),
-      birth_date: isoDate(firstNonEmpty(row, ['Ngày sinh', 'Ngay sinh', 'birth_date', 'DOB'])),
-      age: firstNonEmpty(row, ['Tuổi', 'Tuoi', 'age']),
-      address: firstNonEmpty(row, ['Địa chỉ', 'Dia chi', 'address']),
-      phone_number: firstNonEmpty(row, ['Điện thoại', 'Dien thoai', 'SĐT', 'SDT', 'Số điện thoại', 'So dien thoai', 'phone', 'phone_number']),
-      citizen_id: firstNonEmpty(row, ['Số CMND', 'So CMND', 'Số CMT', 'So CMT', 'CMND', 'CMT', 'CCCD', 'citizen_id']),
-      insurance_subject: firstNonEmpty(row, ['Đối tượng', 'Doi tuong', 'insurance_subject']),
-      insurance_card: firstNonEmpty(row, ['Số thẻ', 'So the', 'Số thẻ BHYT', 'So the BHYT', 'insurance_card']),
-      insurance_type: firstNonEmpty(row, ['Loại', 'Loai', 'Loại BHYT', 'Loai BHYT', 'insurance_type']),
-      insurance_valid_from: isoDate(firstNonEmpty(row, ['Giá trị từ', 'Gia tri tu', 'Từ ngày', 'Tu ngay', 'valid_from'])),
-      insurance_valid_to: isoDate(firstNonEmpty(row, ['Giá trị đến', 'Gia tri den', 'Đến ngày', 'Den ngay', 'valid_to'])),
-      source_input: firstNonEmpty(row, ['Nguồn input', 'Nguon input', 'source_input']),
-      admission_date: admission,
-      discharge_date: discharge,
-      treatment_duration: firstNonEmpty(row, ['Thời gian điều trị', 'Thoi gian dieu tri', 'treatment_duration']),
-      department: firstNonEmpty(row, ['Khoa', 'department', 'Khoa chuyển đến', 'Khoa dieu tri']),
-      room_bed: firstNonEmpty(row, ['Phòng/Giường', 'Phong/Giuong', 'Phòng', 'Phong', 'room_bed']),
-      admission_diagnosis: admissionDiagnosis,
-      diagnosis_raw: admissionDiagnosis,
-      surgery_date: isoDate(firstNonEmpty(row, ['Ngày mổ', 'Ngay mo', 'Ngày phẫu thuật', 'Ngay phau thuat', 'surgery_date'])),
-      emr_admission_id: rowEmrAdmissionId(row),
-      emr_treatment_id: rowEmrTreatmentId(row),
-      emr_noitru_id: rowNoitruId(row),
-      needs_manual_review: firstNonEmpty(row, ['__needs_manual_review', 'needs_manual_review']),
-      encounter_id: buildEncounterId(row, sourceRunId),
-    };
-
-    const patientList = byPatient.get(code) || [];
-    if (!patientList.some(item => item.encounter_id === ctx.encounter_id)) patientList.push(ctx);
-    byPatient.set(code, patientList);
-
-    addContextMapKey(map, `encounter:${normalizedIdentity(ctx.encounter_id)}`, ctx);
-    if (ctx.research_code) addContextMapKey(map, `research:${normalizedIdentity(ctx.research_code)}`, ctx);
-    if (ctx.emr_treatment_id) addContextMapKey(map, `treatment:${normalizedIdentity(ctx.emr_treatment_id)}`, ctx);
-    if (ctx.emr_noitru_id) addContextMapKey(map, `noitru:${normalizedIdentity(ctx.emr_noitru_id)}`, ctx);
-    if (ctx.emr_admission_id) addContextMapKey(map, `admission:${normalizedIdentity(ctx.emr_admission_id)}`, ctx);
-    if (admission || discharge) addContextMapKey(map, `visit:${contextVisitKey(code, admission, discharge)}`, ctx);
-    if (admission) {
-      addContextMapKey(map, `admission_time:${contextVisitKey(code, admission, '')}`, ctx);
-      addContextMapKey(map, `admission_day:${contextVisitKey(code, isoDate(admission), '')}`, ctx);
-    }
-    if (discharge) {
-      addContextMapKey(map, `discharge_time:${contextVisitKey(code, discharge, '')}`, ctx);
-      addContextMapKey(map, `discharge_day:${contextVisitKey(code, isoDate(discharge), '')}`, ctx);
-    }
-  }
-  for (const [code, list] of byPatient.entries()) map.set(`patient:${code}`, list);
-  return map;
-}
-
-function contextForRow(ctxMap, row, code) {
-  const explicitEncounter = rowExistingEncounterId(row);
-  if (explicitEncounter) {
-    const exact = uniqueContext(ctxMap.get(`encounter:${normalizedIdentity(explicitEncounter)}`));
-    if (exact) return matchedContext(exact, 'encounter_id');
-  }
-
-  const treatmentId = rowEmrTreatmentId(row);
-  if (treatmentId) {
-    const exact = uniqueContext(ctxMap.get(`treatment:${normalizedIdentity(treatmentId)}`));
-    if (exact) return matchedContext(exact, 'emr_treatment_id');
-  }
-  const noitruId = rowNoitruId(row);
-  if (noitruId) {
-    const exact = uniqueContext(ctxMap.get(`noitru:${normalizedIdentity(noitruId)}`));
-    if (exact) return matchedContext(exact, 'emr_noitru_id');
-  }
-  const admissionId = rowEmrAdmissionId(row);
-  if (admissionId) {
-    const exact = uniqueContext(ctxMap.get(`admission:${normalizedIdentity(admissionId)}`));
-    if (exact) return matchedContext(exact, 'emr_admission_id');
-  }
-
-  const researchCode = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
-  if (researchCode) {
-    const exact = uniqueContext(ctxMap.get(`research:${normalizedIdentity(researchCode)}`));
-    if (exact) return matchedContext(exact, 'research_code');
-  }
-
-  const admission = isoDateTime(firstNonEmpty(row, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'admission_date']))
-    || isoDate(firstNonEmpty(row, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'admission_date']));
-  const discharge = isoDateTime(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'discharge_date']))
-    || isoDate(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'discharge_date']));
-  if (admission || discharge) {
-    const exact = uniqueContext(ctxMap.get(`visit:${contextVisitKey(code, admission, discharge)}`));
-    if (exact) return matchedContext(exact, 'visit_exact');
-  }
-  if (admission) {
-    const exactTime = uniqueContext(ctxMap.get(`admission_time:${contextVisitKey(code, admission, '')}`));
-    if (exactTime) return matchedContext(exactTime, 'admission_time');
-    const exactDay = uniqueContext(ctxMap.get(`admission_day:${contextVisitKey(code, isoDate(admission), '')}`));
-    if (exactDay) return matchedContext(exactDay, 'admission_date');
-  }
-  if (discharge) {
-    const exactTime = uniqueContext(ctxMap.get(`discharge_time:${contextVisitKey(code, discharge, '')}`));
-    if (exactTime) return matchedContext(exactTime, 'discharge_time');
-    const exactDay = uniqueContext(ctxMap.get(`discharge_day:${contextVisitKey(code, isoDate(discharge), '')}`));
-    if (exactDay) return matchedContext(exactDay, 'discharge_date');
-  }
-
-  const candidates = ctxMap.get(`patient:${code}`) || [];
-  if (candidates.length === 1) return matchedContext(candidates[0], 'patient_unique_encounter');
-  const eventDate = rowEventDate(row);
-  if (eventDate && candidates.length > 1) {
-    const temporal = candidates.filter(ctx => eventInsideContext(eventDate, ctx));
-    if (temporal.length === 1) return matchedContext(temporal[0], 'event_date_range');
-  }
-  return unresolvedContext(code, candidates);
-}
-
 function normalizeSex(value) {
   const s = normalizeSimple(value);
   if (!s) return '';
@@ -3772,7 +3062,6 @@ function mergeRowsPreferFilled(base, patch) {
   return out;
 }
 
-
 // Các dòng chuyển khoa của CÙNG một đợt nằm viện dùng chung Mã nội trú (đã được bệnh
 // viện xác nhận) nên được gộp thành một đợt. Mỗi dòng mang thời điểm vào KHOA của nó;
 // khi gộp phải lấy thời điểm vào SỚM NHẤT (vào viện) và khoảng lấy dữ liệu RỘNG NHẤT,
@@ -3802,26 +3091,8 @@ function mergeSameStayRows(base, patch) {
   return out;
 }
 
-function rowAdmissionTime(row) {
-  return isoDateTime(firstNonEmpty(row, ['T/G vào', 'TG vao', 'Thời gian vào', 'Thoi gian vao', 'Ngày vào viện', 'Ngay vao vien', 'ngay_vao_vien', 'ngay_vao', 'admission_date']))
-    || isoDate(firstNonEmpty(row, ['T/G vào', 'TG vao', 'Ngày vào viện', 'Ngay vao vien', 'ngay_vao_vien', 'ngay_vao', 'admission_date']));
-}
-
-function rowDischargeTime(row) {
-  return isoDateTime(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien', 'ngay_ra_vien', 'ngay_ra', 'discharge_date']))
-    || isoDate(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien', 'ngay_ra_vien', 'ngay_ra', 'discharge_date']));
-}
-
 function rowResearchCode(row) {
   return firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
-}
-
-function rowEmrAdmissionId(row) {
-  return firstNonEmpty(row, ['Mã vào viện', 'Ma vao vien', 'emr_admission_id', 'vaovienid', 'admission_id']);
-}
-
-function rowEmrTreatmentId(row) {
-  return firstNonEmpty(row, ['Mã điều trị', 'Ma dieu tri', 'emr_treatment_id', 'dieutriid', 'treatment_id']);
 }
 
 function appendManualReview(row, message) {
@@ -4131,30 +3402,6 @@ function flattenHchanhIntoResearchRun(ctx, runDir) {
   if (surgeryRows.length) writeCsv(path.join(dir, 'hchanh_surgery.csv'), Object.keys(surgeryRows[0]), surgeryRows);
   if (orderRows.length) writeCsv(path.join(dir, 'hchanh_order_history.csv'), Object.keys(orderRows[0]), orderRows);
   return { profile: profileRows.length, discharge: dischargeRows.length, surgery: surgeryRows.length, order_history: orderRows.length };
-}
-
-
-function unionColumnsForRows(rows, preferred = []) {
-  const seen = new Set();
-  const out = [];
-  for (const col of preferred || []) {
-    if (!seen.has(col)) { seen.add(col); out.push(col); }
-  }
-  for (const row of rows || []) {
-    for (const col of Object.keys(row || {})) {
-      if (!seen.has(col)) { seen.add(col); out.push(col); }
-    }
-  }
-  return out;
-}
-
-function writeCsvUnion(filePath, rows, preferred = []) {
-  const cols = unionColumnsForRows(rows, preferred);
-  if (!cols.length) {
-    writeFileAtomic(filePath, '\ufeff\n', 'utf-8');
-    return;
-  }
-  writeCsv(filePath, cols, rows || []);
 }
 
 function researchHchanhSourceKey(row, sourceRunId = '') {
@@ -4566,8 +3813,6 @@ function appendResearchRunLog(runDir, line) {
   } catch (_) {}
 }
 
-
-
 const CASE_TRACE_JSONL = 'research_case_trace.jsonl';
 const CASE_TRACE_RECENT_JSON = 'research_case_trace_recent.json';
 const CASE_TRACE_RECENT_LIMIT = 10;
@@ -4795,7 +4040,6 @@ function orderHistoryRunLabel(files) {
   return joined === 'order_history' ? 'lịch sử y lệnh' : `lịch sử y lệnh (${joined})`;
 }
 
-
 function parseResearchHeadless(value, defaultValue = true) {
   if (value === undefined || value === null || value === '') return defaultValue;
   if (typeof value === 'boolean') return value;
@@ -4843,7 +4087,6 @@ function hchanhFailureSignatureFromTrace(workerTrace = [], output = {}) {
   if (statuses.includes('error')) return 'error';
   return '';
 }
-
 
 // Trạng thái RIÊNG từng file của một ca (profile/discharge/surgery/order_history) để sổ
 // thu thập biết phần nào có dữ liệu, phần nào EMR không có, phần nào lỗi.
@@ -5483,7 +4726,6 @@ function hoursBetween(start, end) {
   const diff = (b.getTime() - a.getTime()) / 3600000;
   return Number.isFinite(diff) ? String(Math.round(diff * 10) / 10) : '';
 }
-
 
 const NORMALIZE_INPUT_FILES = [
   'research_source.csv',
@@ -6877,7 +6119,6 @@ lockedResearchRoute('post', '/research/archive/source', 'Nạp danh sách nguồ
   }
 });
 
-
 // Trạng thái quyền xem dữ liệu có định danh, để giao diện hiện "đang khóa" thay vì gọi
 // API rồi báo lỗi. Không trả dữ liệu nào; server vẫn tự chặn ở từng API như cũ.
 function identifiedAccessStatus(req) {
@@ -7240,7 +6481,6 @@ lockedResearchRoute('post', '/research/archive/import-hchanh', 'Nạp dữ liệ
   }
 });
 
-
 lockedResearchRoute('post', '/research/archive/fetch-hchanh', 'Lấy dữ liệu hành chánh', async (req, res) => {
   const ctx = getRuntimePaths(req);
   try {
@@ -7307,7 +6547,6 @@ lockedResearchRoute('post', '/research/archive/fetch-hchanh', 'Lấy dữ liệu
   }
 });
 
-
 lockedResearchRoute('post', '/research/archive/fetch-order-history', 'Lấy lịch sử y lệnh', async (req, res) => {
   const ctx = getRuntimePaths(req);
   try {
@@ -7373,7 +6612,6 @@ lockedResearchRoute('post', '/research/archive/fetch-order-history', 'Lấy lị
     if (!res.headersSent) res.status(500).json({ status: 'error', message: String(err.message || err) });
   }
 });
-
 
 lockedResearchRoute('post', '/research/archive/patient-info', 'Lấy thông tin người bệnh', async (req, res) => {
   const ctx = getRuntimePaths(req);
@@ -8127,7 +7365,6 @@ function syncCollectionLedger(runDir, sourceRows) {
   return ledger;
 }
 
-
 // Lượt không ghép chắc chắn sau chuẩn hóa (không đủ khóa EMR để xác định đợt).
 function unresolvedEncountersForRun(runDir) {
   const rows = readCsvTable(path.join(runDir, 'encounters.csv'), Number.MAX_SAFE_INTEGER).rows || [];
@@ -8739,7 +7976,6 @@ router.get('/research/analysis-presets', (_req, res) => {
   return res.json({ status: 'ok', presets: out });
 });
 
-
 function sanitizeVariableSelection(input) {
   return variableSelection.sanitizeVariableSelection(input);
 }
@@ -9067,7 +8303,6 @@ lockedResearchRoute('post', '/research/studies/:studyId/normalize', 'Chuẩn hó
   }
 });
 
-
 lockedResearchRoute('post', '/research/studies/:studyId/fetch-hchanh', 'Lấy dữ liệu hành chánh', async (req, res) => {
   const ctx = getRuntimePaths(req);
   try {
@@ -9149,7 +8384,6 @@ lockedResearchRoute('post', '/research/studies/:studyId/fetch-hchanh', 'Lấy d�
   }
 });
 
-
 lockedResearchRoute('post', '/research/studies/:studyId/fetch-order-history', 'Lấy lịch sử y lệnh', async (req, res) => {
   const ctx = getRuntimePaths(req);
   try {
@@ -9230,7 +8464,6 @@ lockedResearchRoute('post', '/research/studies/:studyId/fetch-order-history', 'L
     if (!res.headersSent) res.status(500).json({ status: 'error', message: String(err.message || err) });
   }
 });
-
 
 lockedResearchRoute('post', '/research/studies/:studyId/patient-info', 'Lấy thông tin người bệnh', async (req, res) => {
   const ctx = getRuntimePaths(req);

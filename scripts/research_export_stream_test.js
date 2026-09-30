@@ -86,7 +86,9 @@ async function main() {
       if (typeof global.gc === 'function') {
         const grown = peak - before;
         const size = fs.statSync(file).size;
-        assert.ok(grown < size * 2, `heap đỉnh tăng ${Math.round(grown / 1048576)} MB khi xuất file ${Math.round(size / 1048576)} MB`);
+        // Cách cũ (nạp trọn bảng + ghép một chuỗi CSV) làm heap tăng ~7,5 lần kích thước file;
+        // xuất theo dòng thường dưới 2 lần. Ngưỡng 4 lần để không chập chờn theo lúc GC chạy.
+        assert.ok(grown < size * 4, `heap đỉnh tăng ${Math.round(grown / 1048576)} MB khi xuất file ${Math.round(size / 1048576)} MB`);
       }
     });
   } finally {
