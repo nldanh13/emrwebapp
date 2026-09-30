@@ -4059,6 +4059,7 @@ export default function ResearchTab({ toast }) {
                 <StatBadge label="Dòng" value={archiveInitial || 0} tone="info" />
                 {!!operationSnapshot?.total && <StatBadge label="Theo dõi" value={operationSnapshot.total} tone="neutral" />}
                 {!!operationSnapshot?.counts?.error && <StatBadge label="Lỗi" value={operationSnapshot.counts.error} tone="danger" />}
+                {!!operationSnapshot?.unmatched_progress && <StatBadge label="Tiến độ chưa ghép" value={operationSnapshot.unmatched_progress} tone="warn" />}
               </div>
             )}
           </SideItem>
