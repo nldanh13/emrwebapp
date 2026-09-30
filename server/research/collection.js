@@ -58,6 +58,7 @@ const REASON_LABELS = {
   manual_refresh: 'Người dùng chọn Làm mới',
   patient_not_in_encounters: 'Người bệnh chưa có trong danh sách lượt chuẩn hóa',
   ambiguous_research_code: 'Mã nghiên cứu khớp nhiều lượt',
+  ambiguous_admission_time: 'Thời điểm vào viện khớp nhiều lượt',
   ambiguous_date_range: 'Ngày vào nằm trong nhiều lượt',
   identity_conflict: 'Định danh nội trú không khớp lượt chuẩn hóa',
   missing_admission_date: 'Thiếu ngày vào viện để ghép lượt',
@@ -110,6 +111,20 @@ function isoDateOnly(value) {
   m = raw.match(/(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
   if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
   return '';
+}
+
+// Chỉ dùng khi cả hai phía đều có giờ/phút. So khớp chính xác đến phút là bằng
+// chứng an toàn hơn khoảng ngày, đặc biệt khi một BN có hai lượt chồng ngày.
+function isoDateMinute(value) {
+  const raw = String(value || '').trim();
+  const date = isoDateOnly(raw);
+  if (!date) return '';
+  const time = raw.match(/(?:T|\s)(\d{1,2}):(\d{2})(?::\d{2})?/) || raw.match(/\b(\d{1,2}):(\d{2})\b/);
+  if (!time) return '';
+  const hour = Number(time[1]);
+  const minute = Number(time[2]);
+  if (hour > 23 || minute > 59) return '';
+  return `${date} ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
 function reasonKind(reason) {
@@ -240,13 +255,16 @@ function classifyHchanhFile(entry, file) {
 // Chỉ nhận khi ghép được về ĐÚNG MỘT dòng nguồn ở mức chắc chắn nhất; mức nào ra
 // nhiều dòng thì bỏ (không đoán).
 function sourceIdentity(row) {
+  const admissionRaw = cell(row, ['Ngày vào viện', 'T/G vào', 'TG vào', 'admission_date']);
+  const admissionTimeRaw = cell(row, ['T/G vào', 'TG vào', 'Ngày vào viện', 'admission_date']);
   return {
     key: cell(row, ['Research key']),
     research_code: cell(row, ['Mã NC', 'research_code']),
     patient_code: cell(row, ['Mã BN', 'patient_code']),
     noitru: clean(cell(row, ['Mã nội trú', 'noitruid', 'emr_noitru_id'])),
     treatment: clean(cell(row, ['Mã điều trị', 'emr_treatment_id'])),
-    admission_date: isoDateOnly(cell(row, ['Ngày vào viện', 'T/G vào', 'admission_date'])),
+    admission_date: isoDateOnly(admissionRaw),
+    admission_time: isoDateMinute(admissionTimeRaw),
   };
 }
 
@@ -286,6 +304,7 @@ function buildCollectionUnits({ sourceRows = [], encounterRows = [] } = {}) {
     noitru: clean(cell(r, ['emr_noitru_id'])),
     treatment: clean(cell(r, ['emr_treatment_id'])),
     from: isoDateOnly(cell(r, ['admission_date'])),
+    admission_time: isoDateMinute(cell(r, ['admission_date'])),
     to: isoDateOnly(cell(r, ['discharge_date'])),
   })).filter(e => e.id && e.patient_code && !e.id.startsWith('enc_unresolved_'));
   const hasEncounterCatalog = encs.length > 0;
@@ -310,6 +329,7 @@ function buildCollectionUnits({ sourceRows = [], encounterRows = [] } = {}) {
       // danh sách cũ thiếu Mã nội trú và một người bệnh có nhiều lượt cùng ngày.
       // Vẫn bắt buộc cùng Mã BN và không được mâu thuẫn Mã nội trú.
       ['research_code', () => (id.research_code ? cands.filter(e => e.research_code === id.research_code && noConflict(e)) : [])],
+      ['admission_time', () => (id.admission_time ? cands.filter(e => e.admission_time === id.admission_time && noConflict(e)) : [])],
       ['date_range', () => (rowDate ? cands.filter(e => noConflict(e) && e.from && rowDate >= e.from && rowDate <= (e.to || e.from)) : [])],
     ];
     let match = null;
@@ -324,6 +344,7 @@ function buildCollectionUnits({ sourceRows = [], encounterRows = [] } = {}) {
     if (!match) {
       if (!cands.length) unmatchedReason = 'patient_not_in_encounters';
       else if (ambiguousMethod === 'research_code') unmatchedReason = 'ambiguous_research_code';
+      else if (ambiguousMethod === 'admission_time') unmatchedReason = 'ambiguous_admission_time';
       else if (ambiguousMethod === 'date_range') unmatchedReason = 'ambiguous_date_range';
       else if ((id.noitru || id.treatment) && cands.some(e => e.noitru || e.treatment)) unmatchedReason = 'identity_conflict';
       else if (!rowDate) unmatchedReason = 'missing_admission_date';
@@ -831,10 +852,17 @@ function planCollection(ledger, {
   const summary = {
     encounters: scope.length, unchanged: 0, to_fetch: 0, new_encounters: 0, parts_to_fetch: 0,
     by_reason: {}, exhausted_parts: 0, blocked_parts: 0, deferred_encounters: 0, refresh_parts: 0,
+    unmatched_encounters: 0,
   };
   for (const key of scope) {
     const enc = ledger?.encounters?.[key];
     if (!enc) continue;
+    // Không giao một dòng chưa ghép chắc lượt cho worker, kể cả force hoặc
+    // retryBlocked. Thu thập nhầm lượt tạo dữ liệu sai nhưng nhìn vẫn hợp lệ.
+    if (enc.match_status === 'unmatched') {
+      summary.unmatched_encounters += 1;
+      continue;
+    }
     const needs = {};
     let deferredOnly = true;
     let allCurrent = true;
