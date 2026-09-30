@@ -100,7 +100,7 @@ function ClinicDoctorInput({ value, onSave }) {
     if (names.join('|') !== value.join('|')) onSave(names);
   };
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, margin: '4px 0 12px', fontSize: FS.sm, fontWeight: 650, color: C.text }}>
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, margin: '4px 0 12px', fontSize: FS.sm, fontWeight: 600, color: C.text }}>
       Bác sĩ phòng khám
       <input value={text} onChange={e => setText(e.target.value)} onBlur={commit}
         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } }}

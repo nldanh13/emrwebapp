@@ -19,7 +19,7 @@ export default function ShiftToolbar({ subTab, isMobile, setSubTab, onShowPicker
         return (
           <button type="button" role="tab" aria-selected={active} key={t.id} onClick={() => setSubTab(t.id)} style={{
             height: 44, padding: '0 10px', border: 'none', background: 'none',
-            cursor: 'pointer', fontSize: FS.sm, fontWeight: active ? 650 : 550, fontFamily: 'inherit',
+            cursor: 'pointer', fontSize: FS.sm, fontWeight: active ? 600 : 500, fontFamily: 'inherit',
             color: active ? C.blue : C.text2,
             boxShadow: active ? `inset 0 -2px 0 ${C.blue}` : 'none',
             whiteSpace: 'nowrap',

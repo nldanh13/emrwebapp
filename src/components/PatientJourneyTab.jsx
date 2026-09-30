@@ -61,7 +61,7 @@ function signed(n) {
 function Chip({ meta, children }) {
   if (!meta) return null;
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', height: 22, padding: '0 8px', borderRadius: R.sm, background: meta.bg, color: meta.color, fontSize: FS.xs, fontWeight: 650, whiteSpace: 'nowrap' }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', height: 22, padding: '0 8px', borderRadius: R.sm, background: meta.bg, color: meta.color, fontSize: FS.xs, fontWeight: 600, whiteSpace: 'nowrap' }}>
       {children || meta.label}
     </span>
   );
@@ -71,7 +71,7 @@ function Tile({ label, value, tone }) {
   return (
     <div style={{ flex: '1 1 140px', border: `1px solid ${C.border2}`, borderRadius: R.md, background: C.surface, padding: '8px 12px' }}>
       <div style={{ fontSize: FS.xs, color: C.text2, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: tone || C.text, fontVariantNumeric: 'tabular-nums' }}>{value ?? '—'}</div>
+      <div style={{ fontSize: FS.stat, fontWeight: 700, color: tone || C.text, fontVariantNumeric: 'tabular-nums' }}>{value ?? '—'}</div>
     </div>
   );
 }
@@ -80,7 +80,7 @@ function Note({ children }) {
   return <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.45 }}>{children}</div>;
 }
 
-const th = { textAlign: 'left', padding: '6px 8px', fontSize: FS.xs, color: C.text2, fontWeight: 650, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' };
+const th = { textAlign: 'left', padding: '6px 8px', fontSize: FS.xs, color: C.text2, fontWeight: 600, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' };
 const td = { padding: '7px 8px', fontSize: FS.sm, color: C.text, borderBottom: `1px solid ${C.border2}`, verticalAlign: 'top' };
 
 function Table({ head, children }) {
@@ -96,7 +96,7 @@ function Table({ head, children }) {
 
 function PatientCell({ row, onOpen }) {
   return (
-    <button type="button" onClick={() => onOpen(row.ma_bn)} style={{ border: 0, background: 'transparent', padding: 0, textAlign: 'left', cursor: 'pointer', color: C.blue, fontSize: FS.sm, fontWeight: 650 }}>
+    <button type="button" onClick={() => onOpen(row.ma_bn)} style={{ border: 0, background: 'transparent', padding: 0, textAlign: 'left', cursor: 'pointer', color: C.blue, fontSize: FS.sm, fontWeight: 600 }}>
       {row.ho_ten || row.ma_bn}
       <span style={{ display: 'block', color: C.text3, fontWeight: 500, fontSize: FS.xs }}>{row.ma_bn}{row.nam_sinh ? ` · ${row.nam_sinh}` : ''}</span>
     </button>
@@ -142,7 +142,7 @@ function ResultsBlock({ l }) {
                 <tr key={i}>
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtTime(r.thoi_gian)}</td>
                   <td style={td}>{r.chi_so}{r.loai_xn ? <span style={{ color: C.text3, fontSize: FS.xs }}> · {r.loai_xn}</span> : null}</td>
-                  <td style={{ ...td, fontVariantNumeric: 'tabular-nums', fontWeight: abnormalFlag ? 650 : 400, color: abnormalFlag ? C.red : C.text }}>{r.ket_qua}</td>
+                  <td style={{ ...td, fontVariantNumeric: 'tabular-nums', fontWeight: abnormalFlag ? 600 : 400, color: abnormalFlag ? C.red : C.text }}>{r.ket_qua}</td>
                   <td style={td}>{r.don_vi}</td>
                   <td style={td}>{r.tham_chieu}</td>
                   <td style={td}>{r.bat_thuong}</td>

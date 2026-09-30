@@ -344,7 +344,7 @@ function PatientTableRow({ card, selected, onSelect, onFetchDischargeFull, fetch
   return (
     <tr onClick={() => onSelect(card)} aria-selected={selected} style={{ cursor:'pointer', background:selected ? C.blueBg : C.surface }}>
       <td style={{ ...cell, padding:'8px 12px', minWidth:220 }}>
-        <div style={{ fontSize:FS.md, fontWeight:650, color:selected ? C.blue : C.text, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+        <div style={{ fontSize:FS.md, fontWeight:600, color:selected ? C.blue : C.text, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
           {formatPersonName(card?.ho_ten, 'Không rõ tên')}
         </div>
         <div style={{ fontSize:FS.xs, color:C.text2, marginTop:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', fontVariantNumeric:'tabular-nums' }}>
@@ -385,7 +385,7 @@ function PatientListItem({ card, selected, onSelect }) {
         background:selected ? C.blueBg : C.surface, fontFamily:'inherit', color:C.text,
       }}>
         <span style={{ display:'flex', alignItems:'baseline', gap:8 }}>
-          <b style={{ flex:1, minWidth:0, fontSize:14, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{formatPersonName(card?.ho_ten, 'Không rõ tên')}</b>
+          <b style={{ flex:1, minWidth:0, fontSize:FS.lg, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{formatPersonName(card?.ho_ten, 'Không rõ tên')}</b>
           <span style={{ fontSize:FS.sm, color:C.text2 }}>{txt(card?.phong)}</span>
         </span>
         <span style={{ display:'flex', flexWrap:'wrap', alignItems:'center', gap:6 }}>
@@ -456,7 +456,7 @@ function VTYTPreviewPanel({ preview, onPreview, onProcess, onInput, canRun = tru
               const st = tS(tone);
               return <div key={label} style={{ padding:'6px 8px', borderRadius:6, background:st.bg, border:`1px solid ${st.border}` }}>
                 <div style={{ fontSize:FS.xs, color:C.text2 }}>{label}</div>
-                <div style={{ fontSize:18, fontWeight:700, color:st.fg }}>{value}</div>
+                <div style={{ fontSize:FS.stat, fontWeight:700, color:st.fg }}>{value}</div>
               </div>;
             })}
           </div>
@@ -609,7 +609,7 @@ function QuickEvidencePanel({ profile, discharge, orderHistory, surgery, billing
         ? <div style={{ fontSize:FS.xs, color:C.text3, marginBottom:10 }}>Chưa có dữ liệu y lệnh.</div>
         : recentOrders.map((row, index) => (
             <div key={row.so_phieu || index} style={{ padding:'5px 0', borderBottom:`1px solid ${C.border2}`, fontSize:FS.xs }}>
-              <div style={{ color:C.text, fontWeight:650 }}>{txt(row.ten_y_lenh || row.dien_bien || row.kq_text)}</div>
+              <div style={{ color:C.text, fontWeight:600 }}>{txt(row.ten_y_lenh || row.dien_bien || row.kq_text)}</div>
               <div style={{ color:C.text2 }}>{txt(row.tg_ylenh || row.ngay, '')}{row.so_phieu ? ` · Phiếu ${row.so_phieu}` : ''}</div>
             </div>
           ))}
@@ -626,7 +626,7 @@ function QuickEvidencePanel({ profile, discharge, orderHistory, surgery, billing
       {surgeries.slice(0, 3).map((row, index) => {
         const detail = row?.detail || {};
         return <div key={row.phauthuatid || index} style={{ padding:'5px 0', borderBottom:`1px solid ${C.border2}`, fontSize:FS.xs }}>
-          <div style={{ color:C.text, fontWeight:650 }}>{txt(detail.dich_vu_phau_thuat || row.noi_dung_phau_thuat || row.ten)}</div>
+          <div style={{ color:C.text, fontWeight:600 }}>{txt(detail.dich_vu_phau_thuat || row.noi_dung_phau_thuat || row.ten)}</div>
           <div style={{ color:C.text2 }}>{txt(detail.bat_dau || row.bat_dau || row.thoi_gian, '')} · {txt(detail.phuong_phap_pt || row.phuong_phap_pt, 'Chưa có phương pháp')}</div>
         </div>;
       })}
@@ -964,7 +964,7 @@ function DetailPanel({ isMobile = false, card, navigation, onNavigate, onClose, 
           return (
             <button key={t.id} type="button" role="tab" aria-selected={active} onClick={() => { setTabTouched(true); setTab(t.id); }} style={{
               flexShrink:0, height:38, padding:'0 10px', border:0, borderBottom:`2px solid ${active ? C.blue : 'transparent'}`, marginBottom:-1,
-              background:'transparent', color: active ? C.blue : C.text2, fontSize:FS.sm, fontWeight: active ? 650 : 550, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap',
+              background:'transparent', color: active ? C.blue : C.text2, fontSize:FS.sm, fontWeight: active ? 600 : 500, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap',
             }}>{t.label}</button>
           );
         })}
@@ -1181,7 +1181,7 @@ function DetailPanel({ isMobile = false, card, navigation, onNavigate, onClose, 
                             return (
                               <div key={card.label} style={{ padding:'9px 11px', borderRadius: 6, background:s.bg, border:`1px solid ${s.border}` }}>
                                 <div style={{ fontSize:FS.xs, color:C.text2, marginBottom:2 }}>{card.label}</div>
-                                <div style={{ fontSize:18, fontWeight: 700, color:s.fg, lineHeight:1.15 }}>{card.display || moneyText(card.value)}</div>
+                                <div style={{ fontSize:FS.stat, fontWeight: 700, color:s.fg, lineHeight:1.15 }}>{card.display || moneyText(card.value)}</div>
                                 <div style={{ fontSize:FS.xs, color:C.text2, marginTop:3 }}>{card.note}</div>
                               </div>
                             );
@@ -1342,7 +1342,7 @@ function DetailPanel({ isMobile = false, card, navigation, onNavigate, onClose, 
                       return (
                         <div key={label} style={{ padding:'8px 10px', borderRadius:6, background:s.bg, border:`1px solid ${s.border}` }}>
                           <div style={{ fontSize:FS.xs, color:C.text2 }}>{label}</div>
-                          <div style={{ fontSize:20, fontWeight:700, color:s.fg }}>{value ?? 0}</div>
+                          <div style={{ fontSize:FS.stat, fontWeight:700, color:s.fg }}>{value ?? 0}</div>
                           <div style={{ fontSize:FS.xs, color:C.text2 }}>{unit}</div>
                         </div>
                       );
@@ -1362,7 +1362,7 @@ function DetailPanel({ isMobile = false, card, navigation, onNavigate, onClose, 
                         <div key={label} style={{ padding:'8px 12px', borderRadius:6, background:s.bg,
                           border:`1px solid ${bad ? C.redBorder : s.border}` }}>
                           <div style={{ fontSize:FS.xs, color:C.text2 }}>{label}</div>
-                          <div style={{ fontSize:22, fontWeight:700, color:s.fg }}>{value ?? '?'}</div>
+                          <div style={{ fontSize:FS.stat, fontWeight:700, color:s.fg }}>{value ?? '?'}</div>
                           <div style={{ fontSize:FS.xs, color:C.text2 }}>ngày</div>
                         </div>
                       );
@@ -1579,7 +1579,7 @@ function DetailPanel({ isMobile = false, card, navigation, onNavigate, onClose, 
                       const st = tS(tone);
                       return <div key={label} style={{ padding:'6px 8px', borderRadius:6, background:st.bg, border:`1px solid ${st.border}` }}>
                         <div style={{ fontSize:FS.xs, color:C.text2 }}>{label}</div>
-                        <div style={{ fontSize:18, fontWeight:700, color:st.fg }}>{value ?? 0}</div>
+                        <div style={{ fontSize:FS.stat, fontWeight:700, color:st.fg }}>{value ?? 0}</div>
                       </div>;
                     })}
                   </div>
@@ -1885,7 +1885,7 @@ export default function HchahnTab({ toast, workDateRange, view = 'check' }) {
                         ['Tình trạng', 'left', 160],
                         ['', 'right', 100],
                       ].map(([label, align, minWidth], i) => (
-                        <th key={label || `c${i}`} scope="col" style={{ padding: i === 0 ? '8px 12px' : '8px 8px', borderBottom:`1px solid ${C.border}`, color:C.text2, fontSize:FS.xs, fontWeight:650,
+                        <th key={label || `c${i}`} scope="col" style={{ padding: i === 0 ? '8px 12px' : '8px 8px', borderBottom:`1px solid ${C.border}`, color:C.text2, fontSize:FS.xs, fontWeight:600,
                           textAlign:align, whiteSpace:'nowrap', minWidth }}>
                           {label || <span className="emr-sr-only">Thao tác</span>}
                         </th>

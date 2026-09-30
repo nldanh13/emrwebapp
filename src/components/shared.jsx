@@ -1,6 +1,6 @@
 import { C, FONT_UI, FS, R, mono } from '../tokens.js';
 
-export function Badge({ text, bg, color, size = 11 }) {
+export function Badge({ text, bg, color, size = FS.xs }) {
   return (
     <span className="emr-badge" style={{
       display: 'inline-block', padding: '1px 6px', borderRadius: 4,
@@ -26,7 +26,7 @@ export function Mono({ children, style = {} }) {
 export function SectionLabel({ children }) {
   return (
     <div style={{
-      fontSize: FS.sm, fontWeight: 650,
+      fontSize: FS.sm, fontWeight: 600,
       color: C.text2, padding: '10px 12px 4px',
     }}>{children}</div>
   );
@@ -55,7 +55,7 @@ export function Btn({ children, variant = 'default', onClick, disabled, style = 
   const base = {
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5,
     padding: '6px 10px', minHeight: 30, borderRadius: R.sm, border: '1px solid',
-    cursor: disabled ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 600,
+    cursor: disabled ? 'not-allowed' : 'pointer', fontSize: FS.sm, fontWeight: 600,
     fontFamily: FONT_UI,
     opacity: disabled ? 0.55 : 1,
     transition: 'filter 0.12s ease, opacity 0.1s ease, transform 0.08s ease',
@@ -104,7 +104,7 @@ export function Segmented({ value, options, onChange, label = 'Lựa chọn' }) 
           <button key={o.value} type="button" role="radio" aria-checked={active} onClick={() => onChange?.(o.value)} style={{
             height: 28, padding: '0 10px', border: 0, borderRadius: 5, cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap',
             background: active ? C.surface : 'transparent', color: active ? C.text : C.text2,
-            boxShadow: active ? '0 1px 2px rgba(25,45,75,0.10)' : 'none', fontSize: FS.sm, fontWeight: active ? 650 : 550,
+            boxShadow: active ? '0 1px 2px rgba(25,45,75,0.10)' : 'none', fontSize: FS.sm, fontWeight: active ? 600 : 500,
           }}>{o.label}</button>
         );
       })}

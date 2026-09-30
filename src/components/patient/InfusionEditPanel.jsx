@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { C, FONT_MONO, FS } from '../../tokens.js';
+import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import * as api from '../../api.js';
 import { normalizeGio } from './patientDetailUtils.js';
@@ -50,7 +50,7 @@ function InfusionEditRow({ item, patientId, ngayLam, toast, onSaved }) {
       borderRadius: 7, padding: '9px 10px',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontFamily: FONT_MONO, fontSize: FS.md, fontWeight: 700, color: C.blue }}>
+        <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: FS.md, fontWeight: 700, color: C.blue }}>
           {normalizeGio(item.tg_bat_dau || item.gio_dung) || '—'}
         </span>
         <span style={{ fontSize: FS.sm, color: C.text, fontWeight: 600 }}>
@@ -68,7 +68,7 @@ function InfusionEditRow({ item, patientId, ngayLam, toast, onSaved }) {
             onChange={e => setTheTich(e.target.value)}
             style={{
               width: 90, padding: '5px 7px', borderRadius: 4,
-              border: `1px solid ${C.border}`, fontSize: FS.sm, fontFamily: FONT_MONO,
+              border: `1px solid ${C.border}`, fontSize: FS.sm, fontVariantNumeric: 'tabular-nums',
               color: C.text, background: C.surface,
             }}
           />
@@ -82,7 +82,7 @@ function InfusionEditRow({ item, patientId, ngayLam, toast, onSaved }) {
             onChange={e => setTocDo(e.target.value)}
             style={{
               width: 90, padding: '5px 7px', borderRadius: 4,
-              border: `1px solid ${C.border}`, fontSize: FS.sm, fontFamily: FONT_MONO,
+              border: `1px solid ${C.border}`, fontSize: FS.sm, fontVariantNumeric: 'tabular-nums',
               color: C.text, background: C.surface,
             }}
           />

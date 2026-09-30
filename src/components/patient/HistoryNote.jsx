@@ -43,7 +43,7 @@ export default function HistoryNote({ lichSu, mode = 'clinic' }) {
   }
   return (
     <span title={historyTitle(ls)} style={{ display: 'inline-flex', gap: 8, flexWrap: 'wrap', fontSize: FS.xs }}>
-      {items.map(i => <span key={i.text} style={{ color: i.color, fontWeight: i.color === C.text3 ? 500 : 650 }}>{i.text}</span>)}
+      {items.map(i => <span key={i.text} style={{ color: i.color, fontWeight: i.color === C.text3 ? 500 : 600 }}>{i.text}</span>)}
     </span>
   );
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { IconAlertTriangle, IconChevronDown, IconChevronRight, IconChevronUp } from '@tabler/icons-react';
-import { C, FONT_MONO, FS } from '../../tokens.js';
+import { C, FS } from '../../tokens.js';
 import { Badge } from '../shared.jsx';
 import { normalizeGio, parseCheDoAn } from './patientDetailUtils.js';
 import { wardVtytItems } from '../../utils/patientScope.js';
@@ -137,7 +137,7 @@ function PreviewValue({ children, mono = false, accent = null }) {
     <div style={{
       fontSize: FS.sm,
       color: accent || C.text,
-      fontFamily: mono ? FONT_MONO : 'inherit',
+      fontVariantNumeric: mono ? 'tabular-nums' : 'normal',
       lineHeight: 1.7,
       whiteSpace: 'pre-wrap',
       wordBreak: 'break-word',
@@ -171,7 +171,7 @@ function CarePreviewSection({ careItems = [] }) {
           padding: '9px 10px',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontFamily: FONT_MONO, fontSize: FS.md, fontWeight: 700, color: C.green }}>
+            <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: FS.md, fontWeight: 700, color: C.green }}>
               {item.time_label || normalizeGio(item.time_full) || '—'}
             </span>
             {item.dieu_duong && <Badge text={item.dieu_duong} bg={C.greenBg} color={C.green} />}
@@ -211,7 +211,7 @@ function InfusionPreviewSection({ infusionItems = [] }) {
           padding: '9px 10px',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontFamily: FONT_MONO, fontSize: FS.md, fontWeight: 700, color: C.blue }}>
+            <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: FS.md, fontWeight: 700, color: C.blue }}>
               {normalizeGio(item.tg_bat_dau) || '—'}
             </span>
           </div>

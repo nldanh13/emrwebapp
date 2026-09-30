@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { C } from '../tokens.js';
+import { C, FS } from '../tokens.js';
 import { Badge, Btn, Spinner } from './shared.jsx';
 import * as api from '../api.js';
 import { getPatientDischargeDates } from '../utils/dischargePrint.js';
@@ -285,7 +285,7 @@ function MatchHint({ row, candidates }) {
   if (!candidates.length) {
     const searchWindow = searchWindowFor(row);
     return (
-      <div style={{ fontSize: 10.5, color: C.amber, lineHeight: 1.5 }}>
+      <div style={{ fontSize: FS.xs, color: C.amber, lineHeight: 1.5 }}>
         ⚠ Chưa thấy trong dữ liệu đã tải trong app — dò trên EMR: nhập đầy đủ họ tên{' '}
         <b>{row.ho_ten || '—'}</b>
         {(searchWindow.from || searchWindow.to) && <> trong khoảng <b>{searchWindow.from || '?'} → {searchWindow.to || '?'}</b></>},
@@ -295,7 +295,7 @@ function MatchHint({ row, candidates }) {
     );
   }
   return (
-    <div style={{ fontSize: 10.5, color: C.text2, lineHeight: 1.6 }}>
+    <div style={{ fontSize: FS.xs, color: C.text2, lineHeight: 1.6 }}>
       <span style={{ color: C.green, fontWeight: 700 }}>✓ {candidates.length} gợi ý trùng tên trong dữ liệu đã tải</span> — đối chiếu tuổi/ngày sinh trước khi dùng:
       {candidates.map((c, idx) => (
         <div key={idx} style={{ marginLeft: 10 }}>
@@ -321,7 +321,7 @@ function BhxhCandidateRow({ item, fields, candidates, entry, onToggle, onNoteCha
       borderLeft: hasIssue ? `3px solid ${C.red}` : '3px solid transparent',
     }}>
       {hasIssue && (
-        <div style={{ marginBottom: 6, fontSize: 10.5, fontWeight: 800, color: C.red }}>
+        <div style={{ marginBottom: 6, fontSize: FS.xs, fontWeight: 700, color: C.red }}>
           ⚠ BHXH báo cần sửa: {reviewNoteOf(item) || `${item.so_loi_ra_soat || ''} lỗi rà soát`}
         </div>
       )}
@@ -336,12 +336,12 @@ function BhxhCandidateRow({ item, fields, candidates, entry, onToggle, onNoteCha
           placeholder="Ghi chú (đã cập nhật cổng BHXH...)"
           defaultValue={entry?.note || ''}
           onBlur={e => onNoteChange(item.key, e.target.value)}
-          style={{ flex: '1 1 180px', minWidth: 140, padding: '5px 7px', fontSize: 11, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }}
+          style={{ flex: '1 1 180px', minWidth: 140, padding: '5px 7px', fontSize: FS.xs, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }}
         />
         {onDelete && (
           <button type="button" onClick={() => onDelete(item)} title="Xoá dòng này khỏi danh sách đã nhập (vd nhập nhầm)"
             style={{
-              flexShrink: 0, padding: '5px 9px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+              flexShrink: 0, padding: '5px 9px', fontSize: FS.xs, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
               border: `1px solid ${C.redBorder || C.border}`, background: C.redBg || C.surface, color: C.red || '#c0392b', borderRadius: 5,
             }}>
             ✕ Xoá
@@ -361,14 +361,14 @@ function BhxhSection({ title, list, fields, matchFn, matchSource, stateEntries, 
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{title}</div>
-        <Badge text={`${list.length} ca`} bg={C.surface2} color={C.text2} size={10} />
-        {list.length > 0 && <Badge text={`Đã nộp ${submittedCount}/${list.length}`} bg={submittedCount === list.length ? C.greenBg : C.amberBg} color={submittedCount === list.length ? C.green : C.amber} size={10} />}
-        {issueCount > 0 && <Badge text={`⚠ ${issueCount} cần sửa`} bg={C.redBg} color={C.red} size={10} />}
+        <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>{title}</div>
+        <Badge text={`${list.length} ca`} bg={C.surface2} color={C.text2} size={FS.xs} />
+        {list.length > 0 && <Badge text={`Đã nộp ${submittedCount}/${list.length}`} bg={submittedCount === list.length ? C.greenBg : C.amberBg} color={submittedCount === list.length ? C.green : C.amber} size={FS.xs} />}
+        {issueCount > 0 && <Badge text={`⚠ ${issueCount} cần sửa`} bg={C.redBg} color={C.red} size={FS.xs} />}
       </div>
       <div style={{ border: `1px solid ${C.border2}`, borderRadius: 8, overflow: 'hidden' }}>
         {list.length === 0 ? (
-          <div style={{ padding: 16, fontSize: 12, color: C.text3, textAlign: 'center' }}>{emptyMessage}</div>
+          <div style={{ padding: 16, fontSize: FS.sm, color: C.text3, textAlign: 'center' }}>{emptyMessage}</div>
         ) : list.map(item => (
           <BhxhCandidateRow key={item.key} item={item} fields={fields} candidates={matchFn(item, matchSource)}
             entry={stateEntries[item.key]} onToggle={onToggle} onNoteChange={onNoteChange} onDelete={onDelete} />
@@ -381,8 +381,8 @@ function BhxhSection({ title, list, fields, matchFn, matchSource, stateEntries, 
 function Field({ label, value }) {
   return (
     <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 9.5, color: C.text3, fontWeight: 700, letterSpacing: '0.03em' }}>{label}</div>
-      <div style={{ fontSize: 11.5, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={value || ''}>{value || '—'}</div>
+      <div style={{ fontSize: FS.xs, color: C.text3, fontWeight: 700 }}>{label}</div>
+      <div style={{ fontSize: FS.xs, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={value || ''}>{value || '—'}</div>
     </div>
   );
 }
@@ -404,7 +404,7 @@ function CandidateRow({ item, fields, entry, onToggle, onNoteChange }) {
         placeholder="Ghi chú (số ngày nghỉ, người nộp...)"
         defaultValue={entry?.note || ''}
         onBlur={e => onNoteChange(item.key, e.target.value)}
-        style={{ flex: '1 1 180px', minWidth: 140, padding: '5px 7px', fontSize: 11, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }}
+        style={{ flex: '1 1 180px', minWidth: 140, padding: '5px 7px', fontSize: FS.xs, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }}
       />
     </div>
   );
@@ -415,14 +415,14 @@ function Section({ title, hint, list, fields, stateEntries, onToggle, onNoteChan
   return (
     <div style={{ marginBottom: compact ? 0 : 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{title}</div>
-        <Badge text={`${list.length} ca`} bg={C.surface2} color={C.text2} size={10} />
-        {list.length > 0 && <Badge text={`Đã nộp ${submittedCount}/${list.length}`} bg={submittedCount === list.length ? C.greenBg : C.amberBg} color={submittedCount === list.length ? C.green : C.amber} size={10} />}
+        <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>{title}</div>
+        <Badge text={`${list.length} ca`} bg={C.surface2} color={C.text2} size={FS.xs} />
+        {list.length > 0 && <Badge text={`Đã nộp ${submittedCount}/${list.length}`} bg={submittedCount === list.length ? C.greenBg : C.amberBg} color={submittedCount === list.length ? C.green : C.amber} size={FS.xs} />}
       </div>
-      {hint && <div style={{ fontSize: 11, color: C.text3, marginBottom: 8 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: FS.xs, color: C.text3, marginBottom: 8 }}>{hint}</div>}
       <div style={{ border: `1px solid ${C.border2}`, borderRadius: 8, overflow: 'hidden' }}>
         {list.length === 0 ? (
-          <div style={{ padding: 16, fontSize: 12, color: C.text3, textAlign: 'center' }}>{emptyMessage}</div>
+          <div style={{ padding: 16, fontSize: FS.sm, color: C.text3, textAlign: 'center' }}>{emptyMessage}</div>
         ) : list.map(item => (
           <CandidateRow key={item.key} item={item} fields={fields} entry={stateEntries[item.key]}
             onToggle={onToggle} onNoteChange={onNoteChange} />
@@ -443,10 +443,10 @@ function Collapsible({ title, subtitle, badge, open, onToggle }) {
       background: C.blueBg || C.surface2, cursor: 'pointer', fontFamily: 'inherit',
       borderRadius: open ? '8px 8px 0 0' : 8,
     }}>
-      <span style={{ fontSize: 10, color: C.text3, transition: 'transform 0.12s ease', transform: open ? 'rotate(90deg)' : 'none', flexShrink: 0 }}>▶</span>
+      <span style={{ fontSize: FS.xs, color: C.text3, transition: 'transform 0.12s ease', transform: open ? 'rotate(90deg)' : 'none', flexShrink: 0 }}>▶</span>
       <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: C.text }}>{title}</span>
-        {subtitle && <span style={{ display: 'block', fontSize: 10.5, color: C.text3, marginTop: 1 }}>{subtitle}</span>}
+        <span style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>{title}</span>
+        {subtitle && <span style={{ display: 'block', fontSize: FS.xs, color: C.text3, marginTop: 1 }}>{subtitle}</span>}
       </span>
       {badge}
     </button>
@@ -457,7 +457,7 @@ function Collapsible({ title, subtitle, badge, open, onToggle }) {
 // thêm — hai nguồn dữ liệu khác hẳn nhau về độ tin cậy, không nên trộn lẫn trực quan.
 function AutoDetectLabel({ children }) {
   return (
-    <div style={{ fontSize: 10.5, fontWeight: 800, color: C.text3, letterSpacing: '0.03em', margin: '18px 0 10px', paddingTop: 12, borderTop: `1px dashed ${C.border2}` }}>
+    <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text3, margin: '18px 0 10px', paddingTop: 12, borderTop: `1px dashed ${C.border2}` }}>
       {children}
     </div>
   );
@@ -634,11 +634,11 @@ export default function SickLeaveTab({ toast, workDateRange }) {
   return (
     <div style={{ padding: 14, overflow: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-        <div style={{ fontSize: 14, fontWeight: 850, color: C.text }}>Nghỉ ốm</div>
+        <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Nghỉ ốm</div>
         {loading && <Spinner size={12} />}
-        <Btn variant="default" onClick={load} disabled={loading} style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: 11 }}>⟳ Làm mới</Btn>
+        <Btn variant="default" onClick={load} disabled={loading} style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: FS.xs }}>⟳ Làm mới</Btn>
       </div>
-      <div style={{ fontSize: 11, color: C.text3, marginBottom: 10, lineHeight: 1.5 }}>
+      <div style={{ fontSize: FS.xs, color: C.text3, marginBottom: 10, lineHeight: 1.5 }}>
         Danh sách người bệnh cần chuẩn bị Giấy chứng nhận nghỉ việc hưởng BHXH, lọc từ dữ liệu đã có trong app
         cho khoảng ngày <b style={{ color: C.text2 }}>{workDateRangeLabel(workDateRange)}</b>. Chưa tự động nộp lên
         Cổng Dịch vụ công BHXH (khác hệ thống/tài khoản đăng nhập) — tick "Đã nộp" sau khi làm thủ công.
@@ -650,10 +650,10 @@ export default function SickLeaveTab({ toast, workDateRange }) {
           background: C.blueBg || C.surface2, cursor: 'pointer', fontFamily: 'inherit',
           borderRadius: bhytPanelOpen ? '8px 8px 0 0' : 8,
         }}>
-          <span style={{ fontSize: 10, color: C.text3, transition: 'transform 0.12s ease', transform: bhytPanelOpen ? 'rotate(90deg)' : 'none', flexShrink: 0 }}>▶</span>
+          <span style={{ fontSize: FS.xs, color: C.text3, transition: 'transform 0.12s ease', transform: bhytPanelOpen ? 'rotate(90deg)' : 'none', flexShrink: 0 }}>▶</span>
           <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 800, color: C.text }}>Nhập/sửa lên Cổng BHXH</span>
-            <span style={{ display: 'block', fontSize: 10.5, color: C.text3, marginTop: 1 }}>
+            <span style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Nhập/sửa lên Cổng BHXH</span>
+            <span style={{ display: 'block', fontSize: FS.xs, color: C.text3, marginTop: 1 }}>
               Đăng nhập, lấy dữ liệu đã rà soát, điền thử rồi nhập thật — ngay tại đây, không cần mở tab riêng.
             </span>
           </span>
@@ -669,8 +669,8 @@ export default function SickLeaveTab({ toast, workDateRange }) {
         border: `1px solid ${C.blueBorder || C.border}`, background: C.blueBg || C.surface2,
         borderRadius: 8, padding: 12, marginBottom: 18,
       }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: C.text, marginBottom: 4 }}>Nhập danh sách BHXH gửi rà soát (.xlsx)</div>
-        <div style={{ fontSize: 11, color: C.text3, marginBottom: 8, lineHeight: 1.5 }}>
+        <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text, marginBottom: 4 }}>Nhập danh sách BHXH gửi rà soát (.xlsx)</div>
+        <div style={{ fontSize: FS.xs, color: C.text3, marginBottom: 8, lineHeight: 1.5 }}>
           File phải có 2 sheet "Ngoại trú" và "Nội trú" (đúng định dạng BHXH gửi). Ô tìm trên EMR chỉ nhận
           họ tên đầy đủ + khoảng thời gian (không lọc được theo ngày sinh), nên mỗi dòng sẽ kèm gợi ý khớp
           tên trong dữ liệu đã tải ở app hoặc khoảng ngày để tự tìm lại — luôn đối chiếu ngày sinh trước khi tin.
@@ -678,10 +678,10 @@ export default function SickLeaveTab({ toast, workDateRange }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <input type="file" accept=".xlsx" disabled={importing}
             onChange={e => { const f = e.target.files?.[0]; handleImportFile(f); e.target.value = ''; }}
-            style={{ fontSize: 11 }} />
+            style={{ fontSize: FS.xs }} />
           {importing && <Spinner size={12} />}
           {bhxhImport?.filename && (
-            <span style={{ fontSize: 10.5, color: C.text3 }}>
+            <span style={{ fontSize: FS.xs, color: C.text3 }}>
               Đã nhập: {bhxhImport.filename} lúc {bhxhImport.imported_at ? new Date(bhxhImport.imported_at).toLocaleString('vi-VN') : '—'}
             </span>
           )}
@@ -697,9 +697,9 @@ export default function SickLeaveTab({ toast, workDateRange }) {
             borderColor: recordType === t.id ? C.blue : 'transparent',
             color: recordType === t.id ? C.blue : C.text2,
           }}>
-            <span style={{ fontSize: 13, fontWeight: 800 }}>{t.label}</span>
-            <Badge text={`${t.total} ca`} bg={recordType === t.id ? C.blueBg : C.surface2} color={recordType === t.id ? C.blue : C.text3} size={10} />
-            {t.pending > 0 && <Badge text={`${t.pending} chưa nộp`} bg={C.amberBg} color={C.amber} size={10} />}
+            <span style={{ fontSize: FS.md, fontWeight: 700 }}>{t.label}</span>
+            <Badge text={`${t.total} ca`} bg={recordType === t.id ? C.blueBg : C.surface2} color={recordType === t.id ? C.blue : C.text3} size={FS.xs} />
+            {t.pending > 0 && <Badge text={`${t.pending} chưa nộp`} bg={C.amberBg} color={C.amber} size={FS.xs} />}
           </button>
         ))}
       </div>
@@ -776,7 +776,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
             />
             {scanPanelOpen && (
               <div style={{ border: `1px solid ${C.blueBorder || C.border}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: 12 }}>
-                <div style={{ fontSize: 11, color: C.text3, marginBottom: 8, lineHeight: 1.5 }}>
+                <div style={{ fontSize: FS.xs, color: C.text3, marginBottom: 8, lineHeight: 1.5 }}>
                   Tìm mù trên "Danh sách Khám bệnh" trong khoảng ngày đang chọn ở trên ({workDateRangeLabel(workDateRange)}),
                   rồi lọc bớt người ngoài tuổi lao động (trẻ em/đã nghỉ hưu). "Giấy chứng nhận nghỉ việc hưởng BHXH" là form
                   riêng trên EMR nên không quét được ai đã có giấy — cần tự rà soát trong danh sách còn lại. Chưa test với
@@ -784,18 +784,18 @@ export default function SickLeaveTab({ toast, workDateRange }) {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginBottom: 8 }}>
                   <input placeholder="Tài khoản phòng khám" value={clinicUsername} onChange={e => setClinicUsername(e.target.value)}
-                    style={{ padding: '6px 8px', fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
+                    style={{ padding: '6px 8px', fontSize: FS.sm, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
                   <input placeholder="Mật khẩu" type="password" value={clinicPassword} onChange={e => setClinicPassword(e.target.value)}
-                    style={{ padding: '6px 8px', fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
+                    style={{ padding: '6px 8px', fontSize: FS.sm, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
                   <input placeholder="URL đăng nhập" value={clinicLoginUrl} onChange={e => setClinicLoginUrl(e.target.value)}
-                    style={{ padding: '6px 8px', fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
+                    style={{ padding: '6px 8px', fontSize: FS.sm, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
                   <input placeholder="URL Danh sách Khám bệnh" value={clinicListUrl} onChange={e => setClinicListUrl(e.target.value)}
-                    style={{ padding: '6px 8px', fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
+                    style={{ padding: '6px 8px', fontSize: FS.sm, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
                 </div>
-                <Btn variant="primary" onClick={handleScanOutpatient} disabled={scanning} style={{ padding: '6px 12px', fontSize: 12 }}>
+                <Btn variant="primary" onClick={handleScanOutpatient} disabled={scanning} style={{ padding: '6px 12px', fontSize: FS.sm }}>
                   {scanning ? <><Spinner size={11} /> Đang quét...</> : '⟳ Quét EMR theo khoảng ngày'}
                 </Btn>
-                {scanMessage && <div style={{ fontSize: 10.5, color: C.text3, marginTop: 6 }}>{scanMessage}</div>}
+                {scanMessage && <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 6 }}>{scanMessage}</div>}
 
                 <div style={{ marginTop: 14 }}>
                   <Section

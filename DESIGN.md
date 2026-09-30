@@ -104,7 +104,11 @@ Xanh xám mát, một nhấn xanh dương. Mọi màu chữ đạt WCAG AA (≥4
 
 Họ chữ hệ thống Windows (`Aptos`, `Segoe UI Variable`, `Segoe UI`), không tải font từ ngoài vì app chạy trong mạng nội bộ. Thang cố định (px), tỉ lệ ~1.13: 11.5 · 12 · 13 · 14.5 · 16.5.
 
-- **Tối thiểu 11.5px** cho mọi chữ người dùng cần đọc (trước đây có nhãn 9.5–10.5px).
+- Chỉ dùng các cỡ trong thang: `FS.xs` 11.5 · `FS.sm` 12 · `FS.md` 13 · `FS.lg` 14.5 · `FS.xl` 16.5, cộng `FS.stat` 20 cho số liệu lớn trên thẻ thống kê. Trong JSX dùng `FS.*` (`src/tokens.js`), trong CSS dùng `var(--emr-fs-*)`; không viết số px trực tiếp.
+- **Tối thiểu 11.5px** cho mọi chữ người dùng cần đọc (trước đây có nhãn 9–10.5px).
+- Độ đậm chỉ gồm 400 · 500 · 600 · 700 (`FW`). Không dùng 550/650/750/800/850/900: Segoe UI/Aptos không có các mức này, trình duyệt làm tròn sang Semibold/Black nên chữ trông như một font khác.
+- Font mono (`FONT_MONO`, `--emr-font-mono`) chỉ dùng cho log, mã lệnh, biến môi trường, stacktrace. Giờ, liều, mã đợt, số đếm dùng font giao diện với `tabular-nums` (style `mono` trong tokens).
+- Không nới/siết `letter-spacing` cho chữ thường; chỉ tiêu đề màn hình và tên ứng dụng giữ `-0.015em`.
 - Không viết HOA toàn bộ cho nhãn nhóm hay nhãn trường; dùng chữ thường có dấu (sentence case).
 - Không đặt "eyebrow" (nhãn nhỏ viết hoa) phía trên tiêu đề.
 

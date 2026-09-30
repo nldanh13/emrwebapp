@@ -88,7 +88,7 @@ function MobileScheduleEntry({ title, subtitle, isOpen, onToggleOpen, children }
         border: 0, fontFamily: 'inherit', background: isOpen ? C.blueBg : 'transparent', color: C.text,
       }}>
         <span style={{ flex: 1, minWidth: 0 }}>
-          <span style={{ display: 'block', fontSize: FS.lg, fontWeight: 650, color: isOpen ? C.blue : C.text }}>{title}</span>
+          <span style={{ display: 'block', fontSize: FS.lg, fontWeight: 600, color: isOpen ? C.blue : C.text }}>{title}</span>
           <span style={{ display: 'block', fontSize: FS.sm, color: C.text2, marginTop: 3 }}>{subtitle}</span>
         </span>
         {isOpen ? <IconChevronUp size={18} stroke={1.75} color={C.text2} aria-hidden="true" /> : <IconChevronDown size={18} stroke={1.75} color={C.text2} aria-hidden="true" />}
@@ -105,7 +105,7 @@ function ScheduleSummary({ admin = [], work = [], oncall = [] }) {
     <span style={{ display: 'grid', gap: 1 }}>
       {[['admin', admin], ['work', work], ['oncall', oncall]].map(([shift, names]) => (
         <span key={shift}>
-          <b style={{ color: SHIFT_META[shift].fg, fontWeight: 650 }}>{SHIFT_META[shift].short}:</b> {names.join(', ') || '—'}
+          <b style={{ color: SHIFT_META[shift].fg, fontWeight: 600 }}>{SHIFT_META[shift].short}:</b> {names.join(', ') || '—'}
         </span>
       ))}
     </span>

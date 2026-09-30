@@ -5,7 +5,7 @@
 //   - Nhập mã vật tư thay thế
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { C } from '../tokens.js';
+import { C, FS } from '../tokens.js';
 import { Btn, Spinner } from './shared.jsx';
 import * as api from '../api.js';
 
@@ -15,12 +15,12 @@ function txt(v, fb = '—') { return String(v ?? '').trim() || fb; }
 
 function StatusBadge({ item }) {
   if (item.disabled)
-    return <span style={{ padding:'2px 8px', borderRadius: 4, fontSize:11, fontWeight:600,
+    return <span style={{ padding:'2px 8px', borderRadius: 4, fontSize:FS.xs, fontWeight:600,
       background: C.redBg, color: C.red, border:`1px solid ${C.redBorder}` }}>Tắt</span>;
   if (item.overridden)
-    return <span style={{ padding:'2px 8px', borderRadius: 4, fontSize:11, fontWeight:600,
+    return <span style={{ padding:'2px 8px', borderRadius: 4, fontSize:FS.xs, fontWeight:600,
       background: C.amberBg, color: C.amber, border:`1px solid ${C.amberBorder}` }}>Thay thế</span>;
-  return <span style={{ padding:'2px 8px', borderRadius: 4, fontSize:11, fontWeight:600,
+  return <span style={{ padding:'2px 8px', borderRadius: 4, fontSize:FS.xs, fontWeight:600,
     background: C.greenBg, color: C.green, border:`1px solid ${C.greenBorder}` }}>Hoạt động</span>;
 }
 
@@ -66,10 +66,10 @@ function EditModal({ item, onClose, onSave }) {
         padding:18, width:470, maxWidth:'95vw' }}
         onClick={e => e.stopPropagation()}>
 
-        <div style={{ fontSize:15, fontWeight:700, color:C.text, marginBottom:4 }}>
+        <div style={{ fontSize:FS.lg, fontWeight:700, color:C.text, marginBottom:4 }}>
           Điều chỉnh vật tư
         </div>
-        <div style={{ fontSize:12, color:C.text2, marginBottom:16 }}>
+        <div style={{ fontSize:FS.sm, color:C.text2, marginBottom:16 }}>
           {txt(item.original_name)} — Mã gốc: <code style={{ color:C.amber }}>{item.original_code}</code>
         </div>
 
@@ -84,10 +84,10 @@ function EditModal({ item, onClose, onSave }) {
             <input type="radio" value="active" checked={mode==='active'}
               onChange={() => setMode('active')} style={{ marginTop:2 }} />
             <div>
-              <div style={{ fontSize:13, fontWeight:600, color: mode==='active' ? C.green : C.text }}>
+              <div style={{ fontSize:FS.md, fontWeight:600, color: mode==='active' ? C.green : C.text }}>
                 Hoạt động bình thường
               </div>
-              <div style={{ fontSize:11, color:C.text2, marginTop:2 }}>
+              <div style={{ fontSize:FS.xs, color:C.text2, marginTop:2 }}>
                 Dùng mã gốc: <code>{item.original_code}</code>
               </div>
             </div>
@@ -101,10 +101,10 @@ function EditModal({ item, onClose, onSave }) {
             <input type="radio" value="disable" checked={mode==='disable'}
               onChange={() => setMode('disable')} style={{ marginTop:2 }} />
             <div>
-              <div style={{ fontSize:13, fontWeight:600, color: mode==='disable' ? C.red : C.text }}>
+              <div style={{ fontSize:FS.md, fontWeight:600, color: mode==='disable' ? C.red : C.text }}>
                 Tắt — không nhập vật tư này
               </div>
-              <div style={{ fontSize:11, color:C.text2, marginTop:2 }}>
+              <div style={{ fontSize:FS.xs, color:C.text2, marginTop:2 }}>
                 Khi hết hàng hoặc không cần thiết. Worker sẽ bỏ qua.
               </div>
             </div>
@@ -118,29 +118,29 @@ function EditModal({ item, onClose, onSave }) {
             <input type="radio" value="replace" checked={mode==='replace'}
               onChange={() => setMode('replace')} style={{ marginTop:2 }} />
             <div style={{ flex:1 }}>
-              <div style={{ fontSize:13, fontWeight:600, color: mode==='replace' ? C.amber : C.text }}>
+              <div style={{ fontSize:FS.md, fontWeight:600, color: mode==='replace' ? C.amber : C.text }}>
                 Thay thế bằng vật tư khác
               </div>
-              <div style={{ fontSize:11, color:C.text2, marginTop:2, marginBottom:8 }}>
+              <div style={{ fontSize:FS.xs, color:C.text2, marginTop:2, marginBottom:8 }}>
                 Khi có hàng tương đương — nhập mã vật tư từ EMR.
               </div>
               {mode === 'replace' && (
                 <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                   <div>
-                    <div style={{ fontSize:11, color:C.text2, marginBottom:3 }}>Mã vật tư thay thế *</div>
+                    <div style={{ fontSize:FS.xs, color:C.text2, marginBottom:3 }}>Mã vật tư thay thế *</div>
                     <input value={newCode} onChange={e => setNewCode(e.target.value)}
                       placeholder="VD: VTYT.000004115"
                       style={{ width:'100%', padding:'6px 10px', borderRadius:6,
                         background:C.surface, border:`1px solid ${C.border}`,
-                        color:C.text, fontSize:13, boxSizing:'border-box' }} />
+                        color:C.text, fontSize:FS.md, boxSizing:'border-box' }} />
                   </div>
                   <div>
-                    <div style={{ fontSize:11, color:C.text2, marginBottom:3 }}>Tên vật tư (để nhận biết)</div>
+                    <div style={{ fontSize:FS.xs, color:C.text2, marginBottom:3 }}>Tên vật tư (để nhận biết)</div>
                     <input value={newName} onChange={e => setNewName(e.target.value)}
                       placeholder="VD: Dây truyền dịch Baxter"
                       style={{ width:'100%', padding:'6px 10px', borderRadius:6,
                         background:C.surface, border:`1px solid ${C.border}`,
-                        color:C.text, fontSize:13, boxSizing:'border-box' }} />
+                        color:C.text, fontSize:FS.md, boxSizing:'border-box' }} />
                   </div>
                 </div>
               )}
@@ -150,7 +150,7 @@ function EditModal({ item, onClose, onSave }) {
 
         {error && (
           <div style={{ padding:'6px 10px', borderRadius:6, background:C.redBg,
-            border:`1px solid ${C.redBorder}`, color:C.red, fontSize:12, marginBottom:12 }}>
+            border:`1px solid ${C.redBorder}`, color:C.red, fontSize:FS.sm, marginBottom:12 }}>
             {error}
           </div>
         )}
@@ -203,19 +203,19 @@ function EmrScanPanel({ items, onUseForKey, showToast }) {
 
   return (
     <div style={{ marginBottom: 20, padding: 12, border: `1px solid ${C.border}`, borderRadius: 6, background: C.surface }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Dò danh mục VTYT trên EMR</div>
-      <div style={{ fontSize: 12, color: C.text2, margin: '4px 0 10px' }}>
+      <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Dò danh mục VTYT trên EMR</div>
+      <div style={{ fontSize: FS.sm, color: C.text2, margin: '4px 0 10px' }}>
         Chỉ đọc: mở popup VTYT của 1 người bệnh, gõ các từ khóa vào ô chọn vật tư và ghi lại mọi loại EMR đang có.
         Trước khi nhập VTYT, tool đối chiếu mã với danh sách này; vật tư không thấy trên EMR sẽ không nhập.
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <input value={maBn} onChange={e => setMaBn(e.target.value)} placeholder="Mã người bệnh đang nằm khoa"
-          style={{ padding: '5px 8px', fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 4, minWidth: 220 }} />
+          style={{ padding: '5px 8px', fontSize: FS.md, border: `1px solid ${C.border}`, borderRadius: 4, minWidth: 220 }} />
         <Btn variant="primary" disabled={scanning} onClick={handleScan}>
           {scanning ? <><Spinner size={12} /> Đang dò...</> : 'Dò danh mục VTYT'}
         </Btn>
         {report && (
-          <span style={{ fontSize: 12, color: C.text2 }}>
+          <span style={{ fontSize: FS.sm, color: C.text2 }}>
             Lần dò gần nhất: {report.scanned_at || '—'} · {report.count || 0} loại
           </span>
         )}
@@ -224,15 +224,15 @@ function EmrScanPanel({ items, onUseForKey, showToast }) {
         <>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '10px 0 6px' }}>
             <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Lọc theo tên/mã (vd: urgo, thun)"
-              style={{ padding: '5px 8px', fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 4, minWidth: 220 }} />
+              style={{ padding: '5px 8px', fontSize: FS.md, border: `1px solid ${C.border}`, borderRadius: 4, minWidth: 220 }} />
             <select value={assignKey} onChange={e => setAssignKey(e.target.value)}
-              style={{ padding: '5px 8px', fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 4 }}>
+              style={{ padding: '5px 8px', fontSize: FS.md, border: `1px solid ${C.border}`, borderRadius: 4 }}>
               <option value="">— Gán mã cho vật tư trong danh mục —</option>
               {items.map(i => <option key={i.key} value={i.key}>{i.name} ({i.key})</option>)}
             </select>
           </div>
           <div style={{ maxHeight: 320, overflow: 'auto', borderTop: `1px solid ${C.border2}` }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.sm }}>
               <thead>
                 <tr style={{ background: C.surface2 }}>
                   {['Mã', 'Tên trên EMR', 'Trong danh mục', ''].map(h => (
@@ -249,7 +249,7 @@ function EmrScanPanel({ items, onUseForKey, showToast }) {
                       {knownCodes.has(String(r.code).toUpperCase()) ? 'Có' : '—'}
                     </td>
                     <td style={{ padding: '6px 8px' }}>
-                      <Btn variant="default" disabled={!assignKey || !r.code} style={{ fontSize: 11, padding: '2px 8px' }}
+                      <Btn variant="default" disabled={!assignKey || !r.code} style={{ fontSize: FS.xs, padding: '2px 8px' }}
                         title={assignKey ? `Dùng mã này cho ${assignKey}` : 'Chọn vật tư trong danh mục ở ô bên trên trước'}
                         onClick={() => onUseForKey(assignKey, r)}>
                         Dùng mã này
@@ -326,8 +326,8 @@ export default function VtytCatalogManager() {
 
       {/* Header */}
       <div style={{ marginBottom:12 }}>
-        <div style={{ fontSize:16, fontWeight:700, color:C.text }}>Quản lý vật tư y tế</div>
-        <div style={{ fontSize:12, color:C.text2, marginTop:4 }}>
+        <div style={{ fontSize:FS.xl, fontWeight:700, color:C.text }}>Quản lý vật tư y tế</div>
+        <div style={{ fontSize:FS.sm, color:C.text2, marginTop:4 }}>
           Điều chỉnh khi hết hàng hoặc cần thay thế mã vật tư.
         </div>
       </div>
@@ -354,8 +354,8 @@ export default function VtytCatalogManager() {
           ['Thay thế',  counts.replaced, C.amber,  C.amberBg],
         ].map(([label, value, color, bg]) => (
           <div key={label} style={{ padding:'4px 16px 5px 0', borderRight:`1px solid ${C.border2}` }}>
-            <div style={{ fontSize:19, fontWeight:800, color }}>{value}</div>
-            <div style={{ fontSize:10, color:C.text3 }}>{label}</div>
+            <div style={{ fontSize:FS.stat, fontWeight:700, color }}>{value}</div>
+            <div style={{ fontSize:FS.xs, color:C.text3 }}>{label}</div>
           </div>
         ))}
       </div>
@@ -371,9 +371,8 @@ export default function VtytCatalogManager() {
             <thead>
               <tr style={{ background:C.surface2 }}>
                 {['Tên vật tư', 'Mã đang dùng', 'Mã gốc', 'Trạng thái', 'Tác vụ'].map(h => (
-                  <th key={h} style={{ padding:'8px 12px', textAlign:'left', fontSize:11,
-                    fontWeight:700, color:C.text2, borderBottom:`1px solid ${C.border}`,
-                    letterSpacing:0.15 }}>{h}</th>
+                  <th key={h} style={{ padding:'8px 12px', textAlign:'left', fontSize:FS.xs,
+                    fontWeight:700, color:C.text2, borderBottom:`1px solid ${C.border}` }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -385,19 +384,19 @@ export default function VtytCatalogManager() {
                   background: item.disabled ? C.redBg + '20' : 'transparent',
                 }}>
                   <td style={{ padding:'10px 12px' }}>
-                    <div style={{ fontSize:13, color:C.text, fontWeight:500 }}>
+                    <div style={{ fontSize:FS.md, color:C.text, fontWeight:500 }}>
                       {txt(item.name)}
                     </div>
-                    <div style={{ fontSize:10, color:C.text3, marginTop:2 }}>{item.key}</div>
+                    <div style={{ fontSize:FS.xs, color:C.text3, marginTop:2 }}>{item.key}</div>
                   </td>
                   <td style={{ padding:'10px 12px' }}>
-                    <code style={{ fontSize:12,
+                    <code style={{ fontSize:FS.sm,
                       color: item.overridden ? C.amber : item.disabled ? C.text3 : C.blue }}>
                       {item.disabled ? '—' : txt(item.code)}
                     </code>
                   </td>
                   <td style={{ padding:'10px 12px' }}>
-                    <code style={{ fontSize:11, color:C.text3 }}>{txt(item.original_code)}</code>
+                    <code style={{ fontSize:FS.xs, color:C.text3 }}>{txt(item.original_code)}</code>
                   </td>
                   <td style={{ padding:'10px 12px' }}>
                     <StatusBadge item={item} />
@@ -405,13 +404,13 @@ export default function VtytCatalogManager() {
                   <td style={{ padding:'10px 12px' }}>
                     <div style={{ display:'flex', gap:6 }}>
                       <Btn variant="secondary" onClick={() => setEditing(item)}
-                           style={{ fontSize:11, padding:'2px 10px' }}>
+                           style={{ fontSize:FS.xs, padding:'2px 10px' }}>
                         Điều chỉnh
                       </Btn>
                       {(item.disabled || item.overridden) && (
                         <Btn variant="default" disabled={resetting === item.key}
                              onClick={() => handleReset(item.key)}
-                             style={{ fontSize:11, padding:'2px 10px' }}>
+                             style={{ fontSize:FS.xs, padding:'2px 10px' }}>
                           {resetting === item.key ? <Spinner size={10} /> : 'Reset'}
                         </Btn>
                       )}
@@ -428,7 +427,7 @@ export default function VtytCatalogManager() {
       {toast && (
         <div style={{ position:'fixed', bottom:24, right:24, padding:'10px 18px',
           borderRadius:8, background:C.surface, border:`1px solid ${C.border}`,
-          color:C.text, fontSize:13, boxShadow:C.shadow2, zIndex:100 }}>
+          color:C.text, fontSize:FS.md, boxShadow:C.shadow2, zIndex:100 }}>
           {toast}
         </div>
       )}

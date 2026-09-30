@@ -37,7 +37,7 @@ function DraftEditor({ draft, fields, onChange, disabled }) {
   const missing = missingFields(fields);
   return (
     <details open={missing.length > 0} style={{ border: `1px solid ${C.border2}`, borderRadius: 6, padding: '6px 10px', background: C.surface }}>
-      <summary style={{ cursor: 'pointer', fontSize: FS.sm, fontWeight: 650 }}>
+      <summary style={{ cursor: 'pointer', fontSize: FS.sm, fontWeight: 600 }}>
         {draft.label}
         <span style={{ marginLeft: 8, fontWeight: 500, color: missing.length ? C.red : C.green }}>
           {missing.length ? `Còn thiếu: ${missing.join(', ')}` : 'Đủ thông tin'}
@@ -151,7 +151,7 @@ export default function ClinicBbhc({ monitor, toast, onChanged }) {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'baseline', fontSize: FS.sm }}>
               <b>{r.ho_ten}</b>
               <span style={{ color: C.text2 }}>{r.ma_bn}</span>
-              <span style={{ color: C.amber, fontWeight: 650 }}>{r.bbhc.join(', ')}</span>
+              <span style={{ color: C.amber, fontWeight: 600 }}>{r.bbhc.join(', ')}</span>
               <span style={{ color: STATUS_COLOR[st?.status] || C.text3 }}>{st ? st.message : 'Chưa soạn nháp'}</span>
             </div>
             {(st?.drafts || []).map(d => (

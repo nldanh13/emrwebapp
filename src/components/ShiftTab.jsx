@@ -1,6 +1,6 @@
 import { IconDatabaseImport, IconFolderOpen, IconRefresh } from '@tabler/icons-react';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { C } from '../tokens.js';
+import { C, FS } from '../tokens.js';
 import { Btn, Spinner } from './shared.jsx';
 import BedBoard from './BedBoard.jsx';
 import * as api from '../api.js';
@@ -30,7 +30,7 @@ function LoadingState() {
   return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10, color: C.text2 }}>
       <Spinner size={20} />
-      <span style={{ fontSize: 12 }}>Đang tải dữ liệu...</span>
+      <span style={{ fontSize: FS.sm }}>Đang tải dữ liệu...</span>
     </div>
   );
 }
@@ -43,16 +43,16 @@ function StartupState({ showPicker, setShowPicker, handleUseSession, handleFetch
         borderRadius: 6, padding: 28, width: '100%', maxWidth: 400, textAlign: 'center',
       }}>
         <div style={{ display: 'grid', placeItems: 'center', width: 44, height: 44, margin: '0 auto 12px', borderRadius: 10, background: C.blueBg, color: C.blue }}><IconDatabaseImport size={24} stroke={1.75} aria-hidden="true" /></div>
-        <div style={{ fontSize: 15, fontWeight: 600, color: C.text, marginBottom: 6 }}>Chưa có dữ liệu ca trực</div>
-        <div style={{ fontSize: 12.5, color: C.text2, marginBottom: 24, lineHeight: 1.6 }}>
+        <div style={{ fontSize: FS.lg, fontWeight: 600, color: C.text, marginBottom: 6 }}>Chưa có dữ liệu ca trực</div>
+        <div style={{ fontSize: FS.md, color: C.text2, marginBottom: 24, lineHeight: 1.6 }}>
           Kết nối EMR để quét danh sách bệnh nhân và lấy y lệnh.
         </div>
         <Btn variant="primary" onClick={() => setSubTab('board')}
-          style={{ width: '100%', justifyContent: 'center', padding: '10px', fontSize: 14, marginBottom: 10 }}>
+          style={{ width: '100%', justifyContent: 'center', padding: '10px', fontSize: FS.lg, marginBottom: 10 }}>
           <IconRefresh size={16} stroke={2} aria-hidden="true" /> Quét dữ liệu từ EMR
         </Btn>
         <Btn variant="default" onClick={() => setShowPicker(true)}
-          style={{ width: '100%', justifyContent: 'center', padding: '8px', fontSize: 12 }}>
+          style={{ width: '100%', justifyContent: 'center', padding: '8px', fontSize: FS.sm }}>
           <IconFolderOpen size={16} stroke={1.75} aria-hidden="true" /> Chọn dữ liệu đã lưu
         </Btn>
       </div>
@@ -261,7 +261,7 @@ function InputConfirmModal({ message, onConfirm, onCancel }) {
       }}>
         <div style={{ padding: '12px 16px 8px', overflowY: 'auto' }}>
           <pre style={{
-            margin: 0, fontFamily: 'inherit', fontSize: 12.5, color: C.text,
+            margin: 0, fontFamily: 'inherit', fontSize: FS.md, color: C.text,
             whiteSpace: 'pre-wrap', wordBreak: 'break-word',
           }}>{message}</pre>
         </div>

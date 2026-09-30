@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { C, FONT_MONO } from '../tokens.js';
+import { C, FONT_MONO, FS } from '../tokens.js';
 import { Btn, Spinner } from './shared.jsx';
 import * as api from '../api.js';
 
@@ -794,8 +794,8 @@ function StatusPill({ value, state = '', wide = false }) {
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
       minWidth: wide ? 72 : 50, height: 19, padding: '0 6px', borderRadius: 4,
       border: `1px solid ${C.border2}`, background: C.surface, color,
-      fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', lineHeight: 1,
-    }}><b style={{ fontSize: 10 }}>{symbol}</b>{v}</span>
+      fontSize: FS.xs, fontWeight: 700, whiteSpace: 'nowrap', lineHeight: 1,
+    }}><b style={{ fontSize: FS.xs }}>{symbol}</b>{v}</span>
   );
 }
 
@@ -826,8 +826,8 @@ function ModuleProgressCard({ part }) {
   return (
     <div style={{ background: 'transparent', padding: '6px 2px 7px', minWidth: 145 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
-        <div style={{ fontSize: 11, color: C.text, fontWeight: 750 }}>{part.label}</div>
-        <div style={{ fontSize: 10, color: C.text3 }}>
+        <div style={{ fontSize: FS.xs, color: C.text, fontWeight: 700 }}>{part.label}</div>
+        <div style={{ fontSize: FS.xs, color: C.text3 }}>
           <b style={{ color: done === total && total ? C.green : C.text }}>{pct}%</b> · {compactNumber(done)}/{compactNumber(total)}
         </div>
       </div>
@@ -839,7 +839,7 @@ function ModuleProgressCard({ part }) {
           <div key={label} style={{ width: `${Math.min(100, n * 100 / total)}%`, background: color }} />
         ))}
       </div>
-      <div style={{ marginTop: 5, minHeight: 15, fontSize: 10, color: C.text3, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div style={{ marginTop: 5, minHeight: 15, fontSize: FS.xs, color: C.text3, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {!!running && <span style={{ color: C.blue }}>{compactNumber(running)} đang lấy</span>}
         {!!missing && <span>{compactNumber(missing)} chưa lấy</span>}
         {!!error && <span style={{ color: C.red }}>{compactNumber(error)} lỗi</span>}
@@ -859,7 +859,7 @@ function MiniPartStatus({ label, value }) {
   return (
     <span title={`${label}: ${text(value) || 'Chưa lấy'}`} style={{
       display: 'inline-flex', alignItems: 'center', gap: 3, color,
-      fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
+      fontSize: FS.xs, fontWeight: 700, whiteSpace: 'nowrap',
     }}><b>{symbol}</b>{label}</span>
   );
 }
@@ -880,7 +880,7 @@ function ResearchMonitorTable({ rows = [], max = 80, filter = 'need', query = ''
   const shown = filtered.slice(0, max);
   if (!shown.length) {
     return (
-      <div style={{ padding: 16, border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, fontSize: 11, color: C.text3, textAlign: 'center' }}>
+      <div style={{ padding: 16, border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, fontSize: FS.xs, color: C.text3, textAlign: 'center' }}>
         Không có dữ liệu phù hợp.
       </div>
     );
@@ -888,11 +888,11 @@ function ResearchMonitorTable({ rows = [], max = 80, filter = 'need', query = ''
   return (
     <div style={{ border: `1px solid ${C.border2}`, borderRadius: 8, overflow: 'hidden', background: C.surface }}>
       <div style={{ maxHeight: 500, overflow: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.xs }}>
           <thead style={{ position: 'sticky', top: 0, background: C.surface2, zIndex: 1 }}>
             <tr>
               {['Người bệnh / mẫu','Tiến độ','Trạng thái','Thiếu hoặc lỗi','Cập nhật'].map(label => (
-                <th key={label} style={{ textAlign: 'left', padding: '8px 10px', color: C.text3, whiteSpace: 'nowrap', fontWeight: 750, borderBottom: `1px solid ${C.border2}` }}>{label}</th>
+                <th key={label} style={{ textAlign: 'left', padding: '8px 10px', color: C.text3, whiteSpace: 'nowrap', fontWeight: 700, borderBottom: `1px solid ${C.border2}` }}>{label}</th>
               ))}
             </tr>
           </thead>
@@ -900,8 +900,8 @@ function ResearchMonitorTable({ rows = [], max = 80, filter = 'need', query = ''
             {shown.map((row, idx) => (
               <tr key={row.key || `${row.sample}_${idx}`} style={{ borderBottom: `1px solid ${C.border2}` }}>
                 <td style={{ padding: '8px 10px', minWidth: 210 }}>
-                  <div style={{ color: C.text, fontWeight: 750, fontSize: 11.5 }}>{text(row.patient_name) || '—'}</div>
-                  <div style={{ marginTop: 2, color: C.text3, fontSize: 10 }}>
+                  <div style={{ color: C.text, fontWeight: 700, fontSize: FS.xs }}>{text(row.patient_name) || '—'}</div>
+                  <div style={{ marginTop: 2, color: C.text3, fontSize: FS.xs }}>
                     BN {text(row.patient_code) || '—'} · NC {text(row.sample) || '—'}
                   </div>
                 </td>
@@ -922,13 +922,13 @@ function ResearchMonitorTable({ rows = [], max = 80, filter = 'need', query = ''
                     {text(row.last_error) || text(row.missing) || '—'}
                   </div>
                 </td>
-                <td style={{ padding: '8px 10px', color: C.text3, whiteSpace: 'nowrap', fontSize: 10 }}>{text(row.updated_at) || '—'}</td>
+                <td style={{ padding: '8px 10px', color: C.text3, whiteSpace: 'nowrap', fontSize: FS.xs }}>{text(row.updated_at) || '—'}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <div style={{ padding: '7px 10px', fontSize: 10, color: C.text3, borderTop: `1px solid ${C.border2}` }}>
+      <div style={{ padding: '7px 10px', fontSize: FS.xs, color: C.text3, borderTop: `1px solid ${C.border2}` }}>
         {compactNumber(shown.length)}/{compactNumber(filtered.length)} dòng
       </div>
     </div>
@@ -943,13 +943,13 @@ function EncounterHistoryCard({ enc, index }) {
         width: '100%', border: 0, background: 'transparent', padding: 0, cursor: 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, textAlign: 'left',
       }}>
-        <span style={{ fontSize: 11.5, fontWeight: 850, color: C.blue }}>
+        <span style={{ fontSize: FS.xs, fontWeight: 700, color: C.blue }}>
           Đợt {index + 1}: {enc.admission_date || '—'} → {enc.discharge_date || '—'}
         </span>
-        <span style={{ fontSize: 10, color: C.text3 }}>{expanded ? 'Thu gọn' : 'Xem chi tiết'}</span>
+        <span style={{ fontSize: FS.xs, color: C.text3 }}>{expanded ? 'Thu gọn' : 'Xem chi tiết'}</span>
       </button>
       <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-        <span style={{ fontSize: 10.5, color: C.text2, flex: '1 1 280px' }}>{enc.diagnosis_raw || 'Chưa có chẩn đoán'}</span>
+        <span style={{ fontSize: FS.xs, color: C.text2, flex: '1 1 280px' }}>{enc.diagnosis_raw || 'Chưa có chẩn đoán'}</span>
         <StatBadge label="XN" value={enc.counts?.labs || 0} tone="neutral" />
         <StatBadge label="CĐHA" value={enc.counts?.imaging || 0} tone="neutral" />
         <StatBadge label="Thuốc" value={enc.counts?.medications || 0} tone="neutral" />
@@ -957,16 +957,16 @@ function EncounterHistoryCard({ enc, index }) {
       </div>
       {expanded && (
         <div style={{ marginTop: 9, display: 'grid', gap: 8 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 6, fontSize: 10.5, color: C.text2 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 6, fontSize: FS.xs, color: C.text2 }}>
             <div><b>Khoa/phòng:</b> {[enc.department, enc.room_bed].filter(Boolean).join(' · ') || '—'}</div>
             <div><b>Ngày mổ:</b> {enc.surgery_date || '—'}</div>
             <div><b>Số ngày điều trị:</b> {enc.treatment_duration || '—'}</div>
             <div><b>Mã NC:</b> {enc.research_code || '—'}</div>
           </div>
-          <details><summary style={{ cursor: 'pointer', fontSize: 10.5, fontWeight: 800, color: C.text2 }}>Xét nghiệm ({enc.counts?.labs || 0})</summary><SmallRowsTable max={120} rows={enc.labs || []} columns={[{key:'lab_datetime',label:'Thời gian'}, {key:'test_name_raw',label:'Tên XN'}, {key:'result_raw',label:'KQ'}, {key:'unit',label:'Đơn vị'}]} /></details>
-          <details><summary style={{ cursor: 'pointer', fontSize: 10.5, fontWeight: 800, color: C.text2 }}>CĐHA ({enc.counts?.imaging || 0})</summary><SmallRowsTable max={80} rows={enc.imaging || []} columns={[{key:'ordered_at',label:'Thời gian'}, {key:'service_name_raw',label:'Dịch vụ'}, {key:'conclusion_text',label:'Kết luận', long:true}]} /></details>
-          <details><summary style={{ cursor: 'pointer', fontSize: 10.5, fontWeight: 800, color: C.text2 }}>Thuốc / y lệnh ({enc.counts?.medications || 0})</summary><SmallRowsTable max={120} rows={enc.medications || []} columns={[{key:'order_datetime',label:'Thời gian'}, {key:'drug_name_raw',label:'Thuốc'}, {key:'dose_raw',label:'Liều'}, {key:'route_raw',label:'Đường'}]} /></details>
-          <details><summary style={{ cursor: 'pointer', fontSize: 10.5, fontWeight: 800, color: C.text2 }}>Phẫu thuật / thủ thuật ({enc.counts?.surgeries || 0})</summary><SmallRowsTable max={60} rows={enc.surgeries || []} columns={[{key:'surgery_datetime',label:'Thời gian'}, {key:'surgery_name',label:'Tên PT/TT'}, {key:'surgery_method',label:'Phương pháp'}, {key:'anesthesia_method',label:'Vô cảm'}]} /></details>
+          <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Xét nghiệm ({enc.counts?.labs || 0})</summary><SmallRowsTable max={120} rows={enc.labs || []} columns={[{key:'lab_datetime',label:'Thời gian'}, {key:'test_name_raw',label:'Tên XN'}, {key:'result_raw',label:'KQ'}, {key:'unit',label:'Đơn vị'}]} /></details>
+          <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>CĐHA ({enc.counts?.imaging || 0})</summary><SmallRowsTable max={80} rows={enc.imaging || []} columns={[{key:'ordered_at',label:'Thời gian'}, {key:'service_name_raw',label:'Dịch vụ'}, {key:'conclusion_text',label:'Kết luận', long:true}]} /></details>
+          <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Thuốc / y lệnh ({enc.counts?.medications || 0})</summary><SmallRowsTable max={120} rows={enc.medications || []} columns={[{key:'order_datetime',label:'Thời gian'}, {key:'drug_name_raw',label:'Thuốc'}, {key:'dose_raw',label:'Liều'}, {key:'route_raw',label:'Đường'}]} /></details>
+          <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Phẫu thuật / thủ thuật ({enc.counts?.surgeries || 0})</summary><SmallRowsTable max={60} rows={enc.surgeries || []} columns={[{key:'surgery_datetime',label:'Thời gian'}, {key:'surgery_name',label:'Tên PT/TT'}, {key:'surgery_method',label:'Phương pháp'}, {key:'anesthesia_method',label:'Vô cảm'}]} /></details>
         </div>
       )}
     </div>
@@ -1010,8 +1010,8 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
       <section style={{ borderTop: `1px solid ${C.border2}`, borderBottom: `1px solid ${C.border2}`, background: C.surface, padding: '10px 2px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>Giám sát dữ liệu</span>
-            {loading && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: C.text3, fontSize: 10 }}><Spinner size={8} /> đang cập nhật</span>}
+            <span style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Giám sát dữ liệu</span>
+            {loading && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: C.text3, fontSize: FS.xs }}><Spinner size={8} /> đang cập nhật</span>}
             <StatBadge label="tổng ca" value={total || rows.length} tone="neutral" />
             <StatBadge label="đủ cả 5 phần" value={counts.done || snap.ready || 0} tone="ok" />
             <StatBadge label="chưa đủ" value={(counts.missing || 0) + (counts.waiting || 0)} tone={(counts.missing || counts.waiting) ? 'warn' : 'neutral'} />
@@ -1022,12 +1022,12 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
               onClick={() => setManualShowRows(v => !v)}
               disabled={isTaskActive}
               title={isTaskActive ? 'Đang tự động hiện trong lúc chạy tác vụ' : undefined}
-              style={{ height: 26, padding: '0 9px', fontSize: 10 }}
+              style={{ height: 26, padding: '0 9px', fontSize: FS.xs }}
             >
               {showRows ? 'Ẩn danh sách' : `Xem ca thiếu/lỗi (${compactNumber(need)})`}
             </Btn>
             {onRefresh && (
-              <Btn onClick={onRefresh} disabled={loading} style={{ height: 26, padding: '0 9px', fontSize: 10 }}>
+              <Btn onClick={onRefresh} disabled={loading} style={{ height: 26, padding: '0 9px', fontSize: FS.xs }}>
                 {loading ? <Spinner size={8} /> : '↻'}
               </Btn>
             )}
@@ -1035,7 +1035,7 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
         </div>
 
         {snap.active_task && (
-          <div style={{ marginTop: 9, borderTop: `1px solid ${C.border2}`, paddingTop: 8, fontSize: 10.5, color: C.text2, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+          <div style={{ marginTop: 9, borderTop: `1px solid ${C.border2}`, paddingTop: 8, fontSize: FS.xs, color: C.text2, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
             <Spinner size={9} />
             <b>{snap.active_task.status === 'queued' ? 'Đang chờ' : 'Đang chạy'}:</b>
             <span>{snap.active_task.label || 'Tác vụ nghiên cứu'}</span>
@@ -1045,7 +1045,7 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
 
         {snap.current_case && (
           <div style={{
-            marginTop: 6, fontSize: 10.5, color: C.blue, display: 'flex',
+            marginTop: 6, fontSize: FS.xs, color: C.blue, display: 'flex',
             alignItems: 'center', gap: 7, flexWrap: 'wrap',
           }}>
             <span>🔎</span>
@@ -1064,7 +1064,7 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
         )}
 
         {snap.stopped && (
-          <div style={{ marginTop: 9, borderLeft: `3px solid ${C.amber}`, background: C.surface2, color: C.text2, padding: '7px 9px', fontSize: 10.5 }}>
+          <div style={{ marginTop: 9, borderLeft: `3px solid ${C.amber}`, background: C.surface2, color: C.text2, padding: '7px 9px', fontSize: FS.xs }}>
             Tác vụ đã dừng giữa chừng. Bấm <b>Lấy dữ liệu</b> để tiếp tục phần còn thiếu; nút Cập nhật chỉ làm mới trạng thái hiển thị.
           </div>
         )}
@@ -1073,7 +1073,7 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
           {(snap.modules || []).map(part => <ModuleProgressCard key={part.key} part={part} />)}
         </div>
         {!!(snap.modules || []).length && (
-          <div style={{ marginTop: 2, fontSize: 9.5, color: C.text3, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ marginTop: 2, fontSize: FS.xs, color: C.text3, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             {[[C.green, 'Đã lấy'], [C.blue, 'Đang lấy'], [C.red, 'Lỗi'], [C.surface2, 'Chưa lấy']].map(([color, label]) => (
               <span key={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 <span style={{ width: 10, height: 6, borderRadius: 2, background: color, border: `1px solid ${C.border2}` }} />{label}
@@ -1095,13 +1095,13 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
                 border: `1px solid ${active ? C.text3 : C.border2}`,
                 background: active ? C.surface2 : C.surface,
                 color: active ? C.text : C.text2,
-                fontSize: 10.5, fontWeight: active ? 750 : 600,
+                fontSize: FS.xs, fontWeight: active ? 700 : 600,
               }}>{label}</button>
             );
           })}
         </div>
-        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Mã BN, mã NC, tên hoặc lỗi" style={{ ...inp, width: 235, marginLeft: 'auto', background: C.surface, fontSize: 11 }} />
-        {generatedAt && <span style={{ fontSize: 9.5, color: C.text3 }}>{generatedAt}</span>}
+        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Mã BN, mã NC, tên hoặc lỗi" style={{ ...inp, width: 235, marginLeft: 'auto', background: C.surface, fontSize: FS.xs }} />
+        {generatedAt && <span style={{ fontSize: FS.xs, color: C.text3 }}>{generatedAt}</span>}
       </div>
 
       <ResearchMonitorTable rows={rows} max={90} filter={filter} query={query} />
@@ -1111,7 +1111,7 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
           border: `1px solid ${isTaskActive ? C.blueBorder : C.border2}`, borderRadius: 8,
           background: isTaskActive ? C.blueBg : C.surface, padding: '8px 10px',
         }}>
-          <summary style={{ cursor: 'pointer', color: isTaskActive ? C.blue : C.text2, fontSize: 10.5, fontWeight: 750 }}>
+          <summary style={{ cursor: 'pointer', color: isTaskActive ? C.blue : C.text2, fontSize: FS.xs, fontWeight: 700 }}>
             {isTaskActive && <Spinner size={8} />} {updateBlock.title} · {compactNumber(updateBlock.totalChanged)} mẫu
           </summary>
           <div style={{ marginTop: 8 }}>
@@ -1300,21 +1300,21 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
   return (
     <section style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, padding: '9px 11px', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: C.text }}>Thu thập tự động</span>
-        <span style={{ fontSize: 10.5, color: C.text3 }}>
+        <span style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Thu thập tự động</span>
+        <span style={{ fontSize: FS.xs, color: C.text3 }}>
           Chỉ lấy ca mới, phần còn thiếu, phần lỗi (tự thử lại tối đa {status?.max_attempts || 3} lần) và ca mà EMR đã thay đổi.
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
-          <Btn onClick={() => setShowRefresh(v => !v)} style={{ height: 26, padding: '0 9px', fontSize: 10 }}>{showRefresh ? 'Đóng làm mới' : 'Làm mới…'}</Btn>
-          <Btn variant="primary" onClick={() => run([])} disabled={busy} style={{ height: 26, padding: '0 12px', fontSize: 11 }}>
+          <Btn onClick={() => setShowRefresh(v => !v)} style={{ height: 26, padding: '0 9px', fontSize: FS.xs }}>{showRefresh ? 'Đóng làm mới' : 'Làm mới…'}</Btn>
+          <Btn variant="primary" onClick={() => run([])} disabled={busy} style={{ height: 26, padding: '0 12px', fontSize: FS.xs }}>
             {running ? <><Spinner size={9} /> Đang thu thập</> : 'Thu thập tự động'}
           </Btn>
-          <Btn onClick={load} disabled={loading} style={{ height: 26, padding: '0 9px', fontSize: 10 }}>{loading ? <Spinner size={8} /> : '↻'}</Btn>
+          <Btn onClick={load} disabled={loading} style={{ height: 26, padding: '0 9px', fontSize: FS.xs }}>{loading ? <Spinner size={8} /> : '↻'}</Btn>
         </div>
       </div>
 
       {plan && (
-        <div style={{ fontSize: 10.5, color: C.text2 }}>
+        <div style={{ fontSize: FS.xs, color: C.text2 }}>
           Lần chạy tới: lấy <b>{compactNumber(plan.to_fetch || 0)}</b> lượt ({compactNumber(plan.parts_to_fetch || 0)} phần), bỏ qua <b>{compactNumber(plan.unchanged || 0)}</b> lượt đã đủ và không đổi
           {plan.exhausted_parts ? <>, <b>{compactNumber(plan.exhausted_parts)}</b> phần đã hết lượt thử</> : null}
           {plan.blocked_parts ? <>, <b>{compactNumber(plan.blocked_parts)}</b> phần cần người xem</> : null}.
@@ -1324,7 +1324,7 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
 
       {report ? (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: 10, color: C.text3 }}>Lần gần nhất{reportAt ? ` (${reportAt})` : ''}{report.cancelled ? ' — đã dừng giữa chừng' : ''}:</span>
+          <span style={{ fontSize: FS.xs, color: C.text3 }}>Lần gần nhất{reportAt ? ` (${reportAt})` : ''}{report.cancelled ? ' — đã dừng giữa chừng' : ''}:</span>
           <StatBadge label="ca đã lấy" value={report.fetched_encounters || 0} tone="ok" />
           <StatBadge label="bỏ qua vì không đổi" value={report.skipped_unchanged || 0} tone="neutral" />
           <StatBadge label="phần đã tự lấy bù" value={report.parts_backfilled || 0} tone="ok" />
@@ -1335,24 +1335,24 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
           {!!(report.readiness_changes || []).length && <StatBadge label="đổi mức đủ dùng" value={report.readiness_changes.length} tone="info" />}
         </div>
       ) : (
-        <div style={{ fontSize: 10.5, color: C.text3 }}>Chưa chạy thu thập tự động lần nào.</div>
+        <div style={{ fontSize: FS.xs, color: C.text3 }}>Chưa chạy thu thập tự động lần nào.</div>
       )}
 
       {readiness && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: 10, color: C.text3 }}>
+          <span style={{ fontSize: FS.xs, color: C.text3 }}>
             Đủ dùng cho đề cương này ({readiness.requirements?.source === 'explicit' ? 'theo yêu cầu đã khai báo' : readiness.requirements?.source === 'variables' ? 'suy ra từ biến đã chọn' : 'mặc định: cần đủ 6 phần'}):
           </span>
           {Object.entries(READINESS_LABEL).map(([k, [label, tone]]) => (
             <StatBadge key={k} label={label} value={readiness.counts?.[k] || 0} tone={readiness.counts?.[k] ? tone : 'neutral'} />
           ))}
-          <Btn onClick={() => setShowReq(v => !v)} style={{ height: 24, padding: '0 8px', fontSize: 10 }}>{showReq ? 'Đóng' : 'Yêu cầu dữ liệu'}</Btn>
+          <Btn onClick={() => setShowReq(v => !v)} style={{ height: 24, padding: '0 8px', fontSize: FS.xs }}>{showReq ? 'Đóng' : 'Yêu cầu dữ liệu'}</Btn>
         </div>
       )}
 
       {showReq && studyId && (
         <div style={{ borderTop: `1px solid ${C.border2}`, paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', fontSize: 11, color: C.text2 }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', fontSize: FS.xs, color: C.text2 }}>
             <span style={{ fontWeight: 700 }}>Phần bắt buộc:</span>
             {COLLECTION_PARTS.map(([id, label]) => (
               <label key={id} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
@@ -1365,43 +1365,43 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
           {req.items.map((it, i) => (
             <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <select value={it.kind} onChange={e => setReq(p => { const items = [...p.items]; items[i] = { ...items[i], kind: e.target.value }; return { ...p, items }; })}
-                style={{ fontSize: 11, padding: '3px 6px', borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text }}>
+                style={{ fontSize: FS.xs, padding: '3px 6px', borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text }}>
                 {REQUIREMENT_ITEM_KINDS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
               </select>
               <input value={it.value || ''} placeholder="VD: CT, MRI, Hb, CRP"
                 onChange={e => setReq(p => { const items = [...p.items]; items[i] = { ...items[i], value: e.target.value, label: e.target.value }; return { ...p, items }; })}
-                style={{ ...inp, width: 180, fontSize: 11 }} />
+                style={{ ...inp, width: 180, fontSize: FS.xs }} />
               <button type="button" onClick={() => setReq(p => ({ ...p, items: p.items.filter((_, j) => j !== i) }))}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.text3, fontSize: 14 }}>✕</button>
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.text3, fontSize: FS.lg }}>✕</button>
             </div>
           ))}
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-            <Btn onClick={() => setReq(p => ({ ...p, items: [...p.items, { kind: 'imaging_modality', value: '' }] }))} style={{ height: 24, padding: '0 8px', fontSize: 10 }}>+ Dữ liệu phải có</Btn>
-            <Btn variant="primary" onClick={saveRequirements} style={{ height: 24, padding: '0 10px', fontSize: 10 }}>Lưu</Btn>
-            <span style={{ fontSize: 10, color: C.text3 }}>Ca đã lấy đủ nhưng EMR không có dữ liệu bắt buộc (ví dụ không có CT) được ghi "không đạt điều kiện đề tài", không phải "thiếu".</span>
+            <Btn onClick={() => setReq(p => ({ ...p, items: [...p.items, { kind: 'imaging_modality', value: '' }] }))} style={{ height: 24, padding: '0 8px', fontSize: FS.xs }}>+ Dữ liệu phải có</Btn>
+            <Btn variant="primary" onClick={saveRequirements} style={{ height: 24, padding: '0 10px', fontSize: FS.xs }}>Lưu</Btn>
+            <span style={{ fontSize: FS.xs, color: C.text3 }}>Ca đã lấy đủ nhưng EMR không có dữ liệu bắt buộc (ví dụ không có CT) được ghi "không đạt điều kiện đề tài", không phải "thiếu".</span>
           </div>
         </div>
       )}
 
       {showRefresh && (
         <div style={{ borderTop: `1px solid ${C.border2}`, paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
-          <div style={{ fontSize: 10.5, color: C.text2 }}>
+          <div style={{ fontSize: FS.xs, color: C.text2 }}>
             <b>Chính sách làm mới:</b> kiểm tra lại một phần khi lần kiểm tra gần nhất đã quá số ngày đặt cho phần đó.
             Để trống = không tự kiểm tra lại (chỉ lấy lại khi danh sách EMR đổi hoặc bấm Làm mới).
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             {COLLECTION_PARTS.map(([id, label]) => (
-              <label key={id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: C.text2 }}>
+              <label key={id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: FS.xs, color: C.text2 }}>
                 {label}
                 <input type="number" min="1" max="3650" value={policy[id] ?? ''} placeholder="—"
                   onChange={e => setPolicy(p => ({ ...p, [id]: e.target.value === '' ? undefined : Number(e.target.value) }))}
-                  style={{ ...inp, width: 56, fontSize: 11 }} />
+                  style={{ ...inp, width: 56, fontSize: FS.xs }} />
                 <span style={{ color: C.text3 }}>ngày</span>
               </label>
             ))}
-            <Btn onClick={savePolicy} style={{ height: 24, padding: '0 10px', fontSize: 10 }}>Lưu chính sách</Btn>
+            <Btn onClick={savePolicy} style={{ height: 24, padding: '0 10px', fontSize: FS.xs }}>Lưu chính sách</Btn>
           </div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', fontSize: 11, color: C.text2 }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', fontSize: FS.xs, color: C.text2 }}>
             <b>Làm mới ngay:</b>
             {COLLECTION_PARTS.map(([id, label]) => (
               <label key={id} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
@@ -1410,14 +1410,14 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
                 {label}
               </label>
             ))}
-            <Btn variant="solidWarn" onClick={() => run(refreshParts)} disabled={busy || !refreshParts.length} style={{ height: 24, padding: '0 10px', fontSize: 10 }}>
+            <Btn variant="solidWarn" onClick={() => run(refreshParts)} disabled={busy || !refreshParts.length} style={{ height: 24, padding: '0 10px', fontSize: FS.xs }}>
               Làm mới phần đã chọn
             </Btn>
-            <span style={{ fontSize: 10, color: C.text3 }}>Lấy lại các phần này cho mọi lượt, so với bản trước: không đổi thì giữ nguyên, đổi thì lưu phiên bản mới.</span>
+            <span style={{ fontSize: FS.xs, color: C.text3 }}>Lấy lại các phần này cho mọi lượt, so với bản trước: không đổi thì giữ nguyên, đổi thì lưu phiên bản mới.</span>
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <Btn onClick={loadChanges} style={{ height: 24, padding: '0 9px', fontSize: 10 }}>Xem lịch sử thay đổi</Btn>
-            {changes && !changes.length && <span style={{ fontSize: 10, color: C.text3 }}>Chưa ghi nhận thay đổi nào.</span>}
+            <Btn onClick={loadChanges} style={{ height: 24, padding: '0 9px', fontSize: FS.xs }}>Xem lịch sử thay đổi</Btn>
+            {changes && !changes.length && <span style={{ fontSize: FS.xs, color: C.text3 }}>Chưa ghi nhận thay đổi nào.</span>}
           </div>
           {!!changes?.length && (
             <SmallRowsTable max={100} rows={changes.map(c => ({ ...c, at: c.changed_at ? new Date(c.changed_at).toLocaleString('vi-VN') : '', version: `v${c.from_version} → v${c.to_version}`, diff: `+${c.rows_added} / −${c.rows_removed}` }))} columns={[
@@ -1433,18 +1433,18 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
 
       {status && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <Btn onClick={() => setShowExceptions(v => !v)} disabled={!exceptions.length} style={{ height: 24, padding: '0 9px', fontSize: 10 }}>
+          <Btn onClick={() => setShowExceptions(v => !v)} disabled={!exceptions.length} style={{ height: 24, padding: '0 9px', fontSize: FS.xs }}>
             {showExceptions ? 'Ẩn ngoại lệ' : `Danh sách ngoại lệ (${compactNumber(status.exceptions_total || 0)})`}
           </Btn>
           {!!exceptions.length && (
-            <Btn onClick={() => api.downloadResearchCollectionExceptions(studyId).catch(e => t(String(e.message || e), 'error'))} style={{ height: 24, padding: '0 9px', fontSize: 10 }}>Tải CSV</Btn>
+            <Btn onClick={() => api.downloadResearchCollectionExceptions(studyId).catch(e => t(String(e.message || e), 'error'))} style={{ height: 24, padding: '0 9px', fontSize: FS.xs }}>Tải CSV</Btn>
           )}
           {!!plan?.unmatched_encounters && (
-            <Btn onClick={reconcileEncounters} disabled={busy || reconciling} style={{ height: 24, padding: '0 9px', fontSize: 10 }}>
+            <Btn onClick={reconcileEncounters} disabled={busy || reconciling} style={{ height: 24, padding: '0 9px', fontSize: FS.xs }}>
               {reconciling ? <><Spinner size={8} /> Đang tải</> : (showEncounterReviews ? 'Đóng rà soát' : 'Rà soát ghép lượt')}
             </Btn>
           )}
-          {!exceptions.length && <span style={{ fontSize: 10, color: C.text3 }}>Không có ngoại lệ — không cần rà từng ca.</span>}
+          {!exceptions.length && <span style={{ fontSize: FS.xs, color: C.text3 }}>Không có ngoại lệ — không cần rà từng ca.</span>}
         </div>
       )}
 
@@ -1466,7 +1466,7 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
 
       {showEncounterReviews && encounterReviews && (
         <div style={{ borderTop: `1px solid ${C.border2}`, paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
-          <div style={{ fontSize: 10.5, color: C.text2 }}>
+          <div style={{ fontSize: FS.xs, color: C.text2 }}>
             <b>{compactNumber(encounterReviews.pending || 0)}</b> ca chờ chọn; <b>{compactNumber(encounterReviews.confirmed_unresolved || 0)}</b> ca đã xác nhận chưa đủ thông tin.
             {!!encounterReviews.manual_linked && <> <b>{compactNumber(encounterReviews.manual_linked)}</b> ca đã ghép thủ công.</>}
             Chỉ các lượt cùng Mã BN mới được hiển thị. Sau khi lưu, quyết định được dùng lại khi chuẩn hóa.
@@ -1476,7 +1476,7 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
             const confirmed = item.review_status === 'confirmed_unresolved';
             return (
               <div key={item.source_key} style={{ border: `1px solid ${confirmed ? C.border2 : C.amberBorder}`, borderRadius: 7, padding: '8px 9px', background: confirmed ? C.surface2 : C.amberBg }}>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', fontSize: 10.5, color: C.text2 }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', fontSize: FS.xs, color: C.text2 }}>
                   <b style={{ color: C.text }}>{item.research_code || 'Chưa có Mã NC'}</b>
                   <span>Mã BN: <b>{item.patient_code}</b></span>
                   {item.patient_name && <span>{item.patient_name}</span>}
@@ -1486,14 +1486,14 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
                 </div>
                 {confirmed ? (
                   <div style={{ marginTop: 6, display: 'flex', gap: 7, alignItems: 'center' }}>
-                    <span style={{ fontSize: 10, color: C.text3 }}>Đã xác nhận chưa đủ bằng chứng để ghép.</span>
-                    <Btn onClick={() => saveEncounterReview(item, 'clear')} disabled={acting} style={{ height: 23, padding: '0 8px', fontSize: 10 }}>Xem lại</Btn>
+                    <span style={{ fontSize: FS.xs, color: C.text3 }}>Đã xác nhận chưa đủ bằng chứng để ghép.</span>
+                    <Btn onClick={() => saveEncounterReview(item, 'clear')} disabled={acting} style={{ height: 23, padding: '0 8px', fontSize: FS.xs }}>Xem lại</Btn>
                   </div>
                 ) : (
                   <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                     <select value={reviewSelections[item.source_key] || ''}
                       onChange={e => setReviewSelections(p => ({ ...p, [item.source_key]: e.target.value }))}
-                      style={{ ...inp, minWidth: 360, maxWidth: '100%', fontSize: 10.5 }}>
+                      style={{ ...inp, minWidth: 360, maxWidth: '100%', fontSize: FS.xs }}>
                       {!item.candidates?.length && <option value="">Không có lượt ứng viên</option>}
                       {(item.candidates || []).map(c => (
                         <option key={c.encounter_id} value={c.encounter_id}>
@@ -1501,29 +1501,29 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
                         </option>
                       ))}
                     </select>
-                    <Btn variant="primary" onClick={() => saveEncounterReview(item, 'link')} disabled={acting || !item.candidates?.length} style={{ height: 26, padding: '0 10px', fontSize: 10 }}>
+                    <Btn variant="primary" onClick={() => saveEncounterReview(item, 'link')} disabled={acting || !item.candidates?.length} style={{ height: 26, padding: '0 10px', fontSize: FS.xs }}>
                       {acting ? <Spinner size={8} /> : 'Chọn lượt này'}
                     </Btn>
-                    <Btn onClick={() => saveEncounterReview(item, 'unresolved')} disabled={acting} style={{ height: 26, padding: '0 9px', fontSize: 10 }}>Chưa đủ thông tin</Btn>
+                    <Btn onClick={() => saveEncounterReview(item, 'unresolved')} disabled={acting} style={{ height: 26, padding: '0 9px', fontSize: FS.xs }}>Chưa đủ thông tin</Btn>
                   </div>
                 )}
               </div>
             );
           })}
-          {!encounterReviews.items?.length && <div style={{ fontSize: 10.5, color: C.green }}>Không còn lượt nào cần rà soát.</div>}
+          {!encounterReviews.items?.length && <div style={{ fontSize: FS.xs, color: C.green }}>Không còn lượt nào cần rà soát.</div>}
           {!!encounterReviews.linked_items?.length && (
             <details style={{ borderTop: `1px solid ${C.border2}`, paddingTop: 6 }}>
-              <summary style={{ cursor: 'pointer', fontSize: 10.5, fontWeight: 700, color: C.text2 }}>
+              <summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>
                 Đã ghép thủ công ({compactNumber(encounterReviews.manual_linked)}) — mở để xem hoặc hoàn tác
               </summary>
               <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 5 }}>
                 {encounterReviews.linked_items.map(item => (
-                  <div key={item.source_key} style={{ display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center', border: `1px solid ${C.border2}`, borderRadius: 6, padding: '6px 8px', fontSize: 10.5, color: C.text2 }}>
+                  <div key={item.source_key} style={{ display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center', border: `1px solid ${C.border2}`, borderRadius: 6, padding: '6px 8px', fontSize: FS.xs, color: C.text2 }}>
                     <b>{item.research_code || 'Chưa Mã NC'}</b><span>Mã BN: {item.patient_code}</span>
                     {item.patient_name && <span>{item.patient_name}</span>}
                     <span>→ {item.admission_date || '—'} đến {item.discharge_date || 'chưa ra viện'}</span>
                     <span>NT: {item.emr_noitru_id || '—'}</span>
-                    <Btn onClick={() => saveEncounterReview(item, 'clear')} disabled={reviewActing === item.source_key} style={{ height: 23, padding: '0 8px', fontSize: 10 }}>Hoàn tác</Btn>
+                    <Btn onClick={() => saveEncounterReview(item, 'clear')} disabled={reviewActing === item.source_key} style={{ height: 23, padding: '0 8px', fontSize: FS.xs }}>Hoàn tác</Btn>
                   </div>
                 ))}
               </div>
@@ -1562,7 +1562,7 @@ function datasetCount(source, id, isArchive = false) {
 const inp = {
   height: 28, borderRadius: 5, border: `1px solid ${C.border}`,
   background: C.bg, color: C.text, padding: '0 8px',
-  fontSize: 12, fontFamily: 'inherit', outline: 'none',
+  fontSize: FS.sm, fontFamily: 'inherit', outline: 'none',
   transition: 'border-color 0.15s',
 };
 const wizInp = { ...inp, width: '100%' };
@@ -1581,7 +1581,7 @@ function StatBadge({ label, value, tone = 'neutral' }) {
       display: 'inline-flex', alignItems: 'center', gap: 4,
       height: 20, padding: '0 7px', borderRadius: 5,
       border: `1px solid ${s.b}`, background: s.bg,
-      fontSize: 10, fontWeight: 700, color: s.c, whiteSpace: 'nowrap',
+      fontSize: FS.xs, fontWeight: 700, color: s.c, whiteSpace: 'nowrap',
     }}>
       <span style={{ color: C.text3, fontWeight: 600 }}>{label}</span>
       <span>{compactNumber(value)}</span>
@@ -1601,17 +1601,17 @@ function CoveragePanel({ coverage }) {
       background: missing ? C.amberBg : C.greenBg,
       display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', flexShrink: 0,
     }}>
-      <span style={{ fontSize: 11, fontWeight: 850, color: missing ? C.amber : C.green }}>Tiến độ dữ liệu</span>
+      <span style={{ fontSize: FS.xs, fontWeight: 700, color: missing ? C.amber : C.green }}>Tiến độ dữ liệu</span>
       <StatBadge label="đủ" value={`${ready}/${total || 0}`} tone={missing ? 'warn' : 'ok'} />
       <StatBadge label="thiếu" value={missing} tone={missing ? 'warn' : 'ok'} />
       <StatBadge label="xem tay" value={ex.manual_review || 0} tone={ex.manual_review ? 'danger' : 'ok'} />
-      {coverage.final_dataset_ready && <span style={{ fontSize: 10, color: C.green }}>Đã đủ điều kiện tạo dataset cuối.</span>}
+      {coverage.final_dataset_ready && <span style={{ fontSize: FS.xs, color: C.green }}>Đã đủ điều kiện tạo dataset cuối.</span>}
     </div>
   );
 }
 
 
-const actionBtn = { height: 28, padding: '0 10px', fontSize: 11, whiteSpace: 'nowrap' };
+const actionBtn = { height: 28, padding: '0 10px', fontSize: FS.xs, whiteSpace: 'nowrap' };
 
 function ActionGroup({ title, subtitle, tone = 'neutral', children, style = {} }) {
   const colors = {
@@ -1629,8 +1629,8 @@ function ActionGroup({ title, subtitle, tone = 'neutral', children, style = {} }
       ...style,
     }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <span style={{ fontSize: 10, fontWeight: 850, color: t.title, letterSpacing: '0.03em', textTransform: 'uppercase' }}>{title}</span>
-        {subtitle && <span style={{ fontSize: 9, color: C.text3, lineHeight: 1.25 }}>{subtitle}</span>}
+        <span style={{ fontSize: FS.xs, fontWeight: 700, color: t.title }}>{title}</span>
+        {subtitle && <span style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.25 }}>{subtitle}</span>}
       </div>
       <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>{children}</div>
     </div>
@@ -1643,7 +1643,7 @@ function AdvancedActions({ label = 'Tác vụ phụ', children }) {
       border: `1px solid ${C.border2}`, borderRadius: 6,
       background: C.surface2, padding: '6px 8px', alignSelf: 'stretch', minWidth: 180,
     }}>
-      <summary style={{ cursor: 'pointer', fontSize: 11, fontWeight: 750, color: C.text2, listStylePosition: 'inside' }}>
+      <summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2, listStylePosition: 'inside' }}>
         {label}
       </summary>
       <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', marginTop: 7 }}>
@@ -1664,7 +1664,7 @@ function ModeButton({ active, title, hint, onClick }) {
         background: 'transparent', color: active ? C.text : C.text3,
         padding: '0 12px', fontFamily: 'inherit',
       }}>
-      <span style={{ fontSize: 11.5, fontWeight: active ? 800 : 650, whiteSpace: 'nowrap' }}>{title}</span>
+      <span style={{ fontSize: FS.xs, fontWeight: active ? 700 : 600, whiteSpace: 'nowrap' }}>{title}</span>
     </button>
   );
 }
@@ -1679,19 +1679,19 @@ function SimpleCard({ title, value, hint, tone = 'neutral' }) {
   const t = colors[tone] || colors.neutral;
   return (
     <div style={{ border: `1px solid ${t.b}`, background: t.bg, borderRadius: 7, padding: 12, minWidth: 160, flex: '1 1 180px' }}>
-      <div style={{ fontSize: 11, color: C.text3, fontWeight: 750 }}>{title}</div>
-      <div style={{ fontSize: 22, color: t.c, fontWeight: 850, marginTop: 3 }}>{value}</div>
-      {hint && <div style={{ fontSize: 11, color: C.text3, marginTop: 5, lineHeight: 1.4 }}>{hint}</div>}
+      <div style={{ fontSize: FS.xs, color: C.text3, fontWeight: 700 }}>{title}</div>
+      <div style={{ fontSize: FS.stat, color: t.c, fontWeight: 700, marginTop: 3 }}>{value}</div>
+      {hint && <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 5, lineHeight: 1.4 }}>{hint}</div>}
     </div>
   );
 }
 
 function SmallRowsTable({ columns = [], rows = [], max = 8 }) {
   const shown = rows.slice(0, max);
-  if (!shown.length) return <div style={{ fontSize: 11, color: C.text3, padding: '6px 0' }}>Không có dữ liệu.</div>;
+  if (!shown.length) return <div style={{ fontSize: FS.xs, color: C.text3, padding: '6px 0' }}>Không có dữ liệu.</div>;
   return (
     <div style={{ overflowX: 'auto', border: `1px solid ${C.border2}`, borderRadius: 8 }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.xs }}>
         <thead style={{ background: C.surface2 }}>
           <tr>{columns.map(c => <th key={c.key} style={{ textAlign: 'left', padding: '6px 8px', color: C.text3, borderBottom: `1px solid ${C.border2}`, whiteSpace: 'nowrap' }}>{c.label}</th>)}</tr>
         </thead>
@@ -1703,7 +1703,7 @@ function SmallRowsTable({ columns = [], rows = [], max = 8 }) {
           ))}
         </tbody>
       </table>
-      {rows.length > max && <div style={{ padding: '5px 8px', fontSize: 10, color: C.text3, borderTop: `1px solid ${C.border2}` }}>Hiển thị {max}/{rows.length} dòng đầu.</div>}
+      {rows.length > max && <div style={{ padding: '5px 8px', fontSize: FS.xs, color: C.text3, borderTop: `1px solid ${C.border2}` }}>Hiển thị {max}/{rows.length} dòng đầu.</div>}
     </div>
   );
 }
@@ -1724,12 +1724,12 @@ function SideItem({ label, sub, badge, active, onClick, children }) {
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
         <span style={{
-          fontSize: 12, fontWeight: 750, color: active ? C.blue : C.text,
+          fontSize: FS.sm, fontWeight: 700, color: active ? C.blue : C.text,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>{label}</span>
         {badge}
       </div>
-      {sub && <div style={{ marginTop: 3, fontSize: 10, color: C.text3, fontFamily: FONT_MONO }}>{sub}</div>}
+      {sub && <div style={{ marginTop: 3, fontSize: FS.xs, color: C.text3, fontVariantNumeric: 'tabular-nums' }}>{sub}</div>}
       {children && <div style={{ marginTop: 5 }}>{children}</div>}
     </button>
   );
@@ -1739,8 +1739,7 @@ function SectionHead({ children }) {
   return (
     <div style={{
       padding: '8px 12px 5px',
-      fontSize: 9, fontWeight: 850, letterSpacing: '0.10em',
-      textTransform: 'uppercase', color: C.text3,
+      fontSize: FS.xs, fontWeight: 600, color: C.text3,
       borderBottom: `1px solid ${C.border2}`,
     }}>{children}</div>
   );
@@ -1749,14 +1748,14 @@ function SectionHead({ children }) {
 function EmptyState({ title, hint }) {
   return (
     <div style={{ padding: '40px 24px', textAlign: 'center' }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{title}</div>
-      <div style={{ fontSize: 11, color: C.text3, marginTop: 6, lineHeight: 1.5 }}>{hint}</div>
+      <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>{title}</div>
+      <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 6, lineHeight: 1.5 }}>{hint}</div>
     </div>
   );
 }
 
 function WizLabel({ children }) {
-  return <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>{children}</div>;
+  return <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text3, marginBottom: 4 }}>{children}</div>;
 }
 function WizField({ label, value, onChange, type = 'text', placeholder = '' }) {
   return (
@@ -1764,7 +1763,7 @@ function WizField({ label, value, onChange, type = 'text', placeholder = '' }) {
       <WizLabel>{label}</WizLabel>
       <input type={type} value={value} placeholder={placeholder}
         onChange={e => onChange(e.target.value)}
-        style={{ height: 28, borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, padding: '0 8px', fontSize: 12, fontFamily: 'inherit', outline: 'none' }} />
+        style={{ height: 28, borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, padding: '0 8px', fontSize: FS.sm, fontFamily: 'inherit', outline: 'none' }} />
     </label>
   );
 }
@@ -1773,7 +1772,7 @@ function WizSelect({ label, value, onChange, options = [] }) {
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <WizLabel>{label}</WizLabel>
       <select value={value} onChange={e => onChange(e.target.value)}
-        style={{ height: 28, borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, padding: '0 8px', fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
+        style={{ height: 28, borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, padding: '0 8px', fontSize: FS.sm, fontFamily: 'inherit', outline: 'none' }}>
         {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
     </label>
@@ -3038,9 +3037,9 @@ export default function ResearchTab({ toast }) {
     const counts = ov?.counts || {};
     const overviewCard = (label, value, sub = '') => (
       <div style={{ padding: '5px 14px 6px 0', minWidth: 120, borderRight: `1px solid ${C.border2}` }}>
-        <div style={{ fontSize: 10, color: C.text3, fontWeight: 700 }}>{label}</div>
-        <div style={{ marginTop: 1, fontSize: 21, lineHeight: 1.1, color: C.text, fontWeight: 850, letterSpacing: '-0.02em' }}>{compactNumber(value || 0)}</div>
-        {sub && <div style={{ marginTop: 2, fontSize: 9.5, color: C.text3 }}>{sub}</div>}
+        <div style={{ fontSize: FS.xs, color: C.text3, fontWeight: 700 }}>{label}</div>
+        <div style={{ marginTop: 1, fontSize: FS.stat, lineHeight: 1.1, color: C.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{compactNumber(value || 0)}</div>
+        {sub && <div style={{ marginTop: 2, fontSize: FS.xs, color: C.text3 }}>{sub}</div>}
       </div>
     );
     const miniStatus = (label, done, total) => {
@@ -3048,13 +3047,13 @@ export default function ResearchTab({ toast }) {
       return (
         <div key={label} style={{ background: 'transparent', padding: '6px 0 7px', minWidth: 145 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-            <span style={{ fontSize: 11, color: C.text, fontWeight: 750 }}>{label}</span>
-            <span style={{ fontSize: 10, color: pct >= 95 ? C.green : pct >= 70 ? C.blue : C.amber, fontWeight: 800 }}>{pct}%</span>
+            <span style={{ fontSize: FS.xs, color: C.text, fontWeight: 700 }}>{label}</span>
+            <span style={{ fontSize: FS.xs, color: pct >= 95 ? C.green : pct >= 70 ? C.blue : C.amber, fontWeight: 700 }}>{pct}%</span>
           </div>
           <div style={{ height: 4, marginTop: 7, background: C.surface2, borderRadius: 3, overflow: 'hidden' }}>
             <div style={{ height: '100%', width: `${Math.max(0, Math.min(100, pct))}%`, background: pct >= 95 ? C.green : pct >= 70 ? C.blue : C.amber }} />
           </div>
-          <div style={{ marginTop: 5, fontSize: 10, color: C.text3 }}>{compactNumber(done)}/{compactNumber(total)} lượt đã đủ</div>
+          <div style={{ marginTop: 5, fontSize: FS.xs, color: C.text3 }}>{compactNumber(done)}/{compactNumber(total)} lượt đã đủ</div>
         </div>
       );
     };
@@ -3064,8 +3063,8 @@ export default function ResearchTab({ toast }) {
         <div style={{ background: C.surface, padding: '8px 0 10px', borderBottom: `1px solid ${C.border2}` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
             <div>
-              <div style={{ fontSize: 14, fontWeight: 850, color: C.text }}>Dữ liệu tổng quát</div>
-              <div style={{ marginTop: 3, fontSize: 10.5, color: C.text3 }}>
+              <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Dữ liệu tổng quát</div>
+              <div style={{ marginTop: 3, fontSize: FS.xs, color: C.text3 }}>
                 Chỉ đọc dữ liệu đã thu thập và chuẩn hóa; không chạy lại EMR.
                 {ov?.date_from || ov?.date_to ? ` · Khoảng dữ liệu: ${ov?.date_from || '—'} → ${ov?.date_to || '—'}` : ''}
               </div>
@@ -3082,8 +3081,8 @@ export default function ResearchTab({ toast }) {
           {ov && (
             <>
               <div style={{ marginTop: 10, display: 'flex', alignItems: 'baseline', gap: 7, flexWrap: 'wrap' }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: C.text }}>Kho dữ liệu chuẩn hóa</div>
-                <div style={{ fontSize: 10, color: C.text3 }}>Các số dưới đây được đếm từ cùng snapshot file hiện tại; không quét lại EMR.</div>
+                <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Kho dữ liệu chuẩn hóa</div>
+                <div style={{ fontSize: FS.xs, color: C.text3 }}>Các số dưới đây được đếm từ cùng snapshot file hiện tại; không quét lại EMR.</div>
               </div>
               <div style={{ display: 'flex', alignItems: 'stretch', gap: 14, flexWrap: 'wrap', marginTop: 6 }}>
                 {overviewCard('Người bệnh', counts.patients, 'BN trong kho')}
@@ -3095,8 +3094,8 @@ export default function ResearchTab({ toast }) {
 
               <div style={{ marginTop: 10 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, flexWrap: 'wrap', marginBottom: 6 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: C.text }}>Mức độ đầy đủ — đợt thu thập hiện tại</div>
-                  <div style={{ fontSize: 10, color: C.text3 }}>
+                  <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Mức độ đầy đủ — đợt thu thập hiện tại</div>
+                  <div style={{ fontSize: FS.xs, color: C.text3 }}>
                     {generalOverview?.run_id ? `run ${generalOverview.run_id}` : ''} · mẫu số {compactNumber(summary.total || 0)} lượt
                   </div>
                 </div>
@@ -3110,7 +3109,7 @@ export default function ResearchTab({ toast }) {
                 <StatBadge label="Còn thiếu" value={summary.missingCount || 0} tone={(summary.missingCount || 0) ? 'warn' : 'neutral'} />
                 <StatBadge label="Lỗi" value={summary.counts?.error || 0} tone={(summary.counts?.error || 0) ? 'danger' : 'neutral'} />
                 <StatBadge label="Cần xem tay" value={summary.manualReview || 0} tone={(summary.manualReview || 0) ? 'danger' : 'neutral'} />
-                {ov.limited && <span style={{ fontSize: 10, color: C.amber }}>Một số bảng lớn chỉ tải phần hiển thị; số tổng lấy từ metadata.</span>}
+                {ov.limited && <span style={{ fontSize: FS.xs, color: C.amber }}>Một số bảng lớn chỉ tải phần hiển thị; số tổng lấy từ metadata.</span>}
               </div>
             </>
           )}
@@ -3119,7 +3118,7 @@ export default function ResearchTab({ toast }) {
         {ov && (
           <div style={{ background: C.surface, borderTop: `1px solid ${C.border2}`, overflow: 'hidden' }}>
             <div style={{ padding: '8px 9px', borderBottom: `1px solid ${C.border2}`, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-              <div style={{ fontSize: 12, fontWeight: 850, color: C.text, marginRight: 5 }}>
+              <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text, marginRight: 5 }}>
                 {ov.row_kind === 'monitor' ? 'Danh sách lượt đang theo dõi' : ov.row_kind === 'encounter' ? 'Danh sách đợt điều trị' : 'Danh sách người bệnh trong kho'}
               </div>
               <input
@@ -3128,29 +3127,29 @@ export default function ResearchTab({ toast }) {
                 placeholder="Tìm mã NC, mã BN, họ tên, chẩn đoán..."
                 style={{ ...inp, flex: '1 1 260px' }}
               />
-              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: C.text2, whiteSpace: 'nowrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: FS.xs, color: C.text2, whiteSpace: 'nowrap' }}>
                 <input type="checkbox" checked={generalOverviewMissingOnly} onChange={e => setGeneralOverviewMissingOnly(e.target.checked)} />
                 Chỉ xem còn thiếu/lỗi
               </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: C.text2, whiteSpace: 'nowrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: FS.xs, color: C.text2, whiteSpace: 'nowrap' }}>
                 <input type="checkbox" checked={filters.hideSensitive}
                   onChange={e => setFilters(p => ({ ...p, hideSensitive: e.target.checked }))} />
                 Ẩn định danh
               </label>
-              <span style={{ fontSize: 10, color: C.text3 }}>{compactNumber(overviewRows.length)}/{compactNumber(ov.rows?.length || 0)} {ov.row_unit || 'lượt'}</span>
+              <span style={{ fontSize: FS.xs, color: C.text3 }}>{compactNumber(overviewRows.length)}/{compactNumber(ov.rows?.length || 0)} {ov.row_unit || 'lượt'}</span>
             </div>
 
             <div style={{ maxHeight: 'calc(100vh - 430px)', overflow: 'auto' }}>
               {!overviewRows.length && <EmptyState title="Không có người bệnh phù hợp" hint="Thử bỏ bộ lọc hoặc tắt “Chỉ xem còn thiếu/lỗi”." />}
               {!!overviewRows.length && (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, tableLayout: 'fixed' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.xs, tableLayout: 'fixed' }}>
                   <thead style={{ position: 'sticky', top: 0, background: C.surface2, zIndex: 2 }}>
                     <tr>
                       {[
                         ['Mã NC', 90], ['Mã BN', 90], ['Họ tên', 170], ['Ngày vào', 85], ['Ngày ra', 85],
                         ['Chẩn đoán', 260], ['XN', 52], ['CĐHA', 52], ['PT/TT', 52], ['YL', 52], ['Trạng thái', 120],
                       ].map(([label, width]) => (
-                        <th key={label} style={{ width, textAlign: 'left', padding: '7px 8px', borderBottom: `1px solid ${C.border}`, color: C.text2, fontSize: 10.5, fontWeight: 800 }}>{label}</th>
+                        <th key={label} style={{ width, textAlign: 'left', padding: '7px 8px', borderBottom: `1px solid ${C.border}`, color: C.text2, fontSize: FS.xs, fontWeight: 700 }}>{label}</th>
                       ))}
                     </tr>
                   </thead>
@@ -3170,7 +3169,7 @@ export default function ResearchTab({ toast }) {
                           onMouseEnter={e => { if (q) e.currentTarget.style.background = C.surface2; }}
                           onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                         >
-                          <td style={{ padding: '7px 8px', color: C.blue, fontWeight: 750, overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.research_code || '—'}</td>
+                          <td style={{ padding: '7px 8px', color: C.blue, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.research_code || '—'}</td>
                           <td style={{ padding: '7px 8px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.patient_code || '—'}</td>
                           <td style={{ padding: '7px 8px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.patient_name || '—'}</td>
                           <td style={{ padding: '7px 8px' }}>{row.admission_date || '—'}</td>
@@ -3183,7 +3182,7 @@ export default function ResearchTab({ toast }) {
                           <td style={{ padding: '7px 8px' }}>
                             <span style={{
                               display: 'inline-flex', alignItems: 'center', height: 20, padding: '0 6px', borderRadius: 4,
-                              fontSize: 10, fontWeight: 750,
+                              fontSize: FS.xs, fontWeight: 700,
                               color: row.status_tone === 'ok' ? C.green : row.status_tone === 'danger' ? C.red : row.status_tone === 'warn' ? C.amber : C.text3,
                               background: C.surface2, border: `1px solid ${C.border2}`,
                             }}>{row.status_label}</span>
@@ -3196,7 +3195,7 @@ export default function ResearchTab({ toast }) {
               )}
             </div>
             {overviewRows.length > 1000 && (
-              <div style={{ padding: '7px 10px', fontSize: 10, color: C.text3, borderTop: `1px solid ${C.border2}` }}>
+              <div style={{ padding: '7px 10px', fontSize: FS.xs, color: C.text3, borderTop: `1px solid ${C.border2}` }}>
                 Hiển thị 1.000 người bệnh đầu tiên sau lọc.
               </div>
             )}
@@ -3209,8 +3208,8 @@ export default function ResearchTab({ toast }) {
 
   const identifiedLocked = Boolean(identifiedAccess && !identifiedAccess.allowed);
   const renderIdentifiedLock = () => (
-    <div style={{ border: `1px solid ${C.amberBorder}`, background: C.amberBg, color: C.text, borderRadius: 7, padding: '10px 12px', fontSize: 11, lineHeight: 1.55 }}>
-      <div style={{ fontWeight: 850, color: C.amber, marginBottom: 4 }}>Chức năng đang khóa</div>
+    <div style={{ border: `1px solid ${C.amberBorder}`, background: C.amberBg, color: C.text, borderRadius: 7, padding: '10px 12px', fontSize: FS.xs, lineHeight: 1.55 }}>
+      <div style={{ fontWeight: 700, color: C.amber, marginBottom: 4 }}>Chức năng đang khóa</div>
       <div>Tra cứu người bệnh hiện họ tên, Mã BN và toàn bộ lịch sử điều trị, nên chỉ mở khi đủ điều kiện:</div>
       <ul style={{ margin: '4px 0 4px 18px', padding: 0 }}>
         <li style={{ color: identifiedAccess?.env_enabled ? C.green : C.text }}>
@@ -3227,7 +3226,7 @@ export default function ResearchTab({ toast }) {
   const renderPatientLookup = () => (
     <div style={{ padding: '10px 12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ background: C.surface, padding: '2px 0 10px', borderBottom: `1px solid ${C.border2}` }}>
-        <div style={{ fontSize: 14, fontWeight: 850, color: C.text }}>Tra cứu người bệnh</div>
+        <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Tra cứu người bệnh</div>
         <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
           <input value={patientQuery} disabled={identifiedLocked} onChange={e => setPatientQuery(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') loadPatientHistory(); }} placeholder="Mã BN, họ tên, mã NC hoặc chẩn đoán" style={{ ...inp, flex: '1 1 320px' }} />
           <Btn variant="primary" onClick={() => loadPatientHistory()} disabled={identifiedLocked || patientHistoryLoading || !text(patientQuery)} style={{ height: 28 }}>
@@ -3235,7 +3234,7 @@ export default function ResearchTab({ toast }) {
           </Btn>
         </div>
         {patientHistoryMeta && !patientHistoryLoading && (
-          <div style={{ marginTop: 6, fontSize: 9.5, color: C.text3 }}>
+          <div style={{ marginTop: 6, fontSize: FS.xs, color: C.text3 }}>
             {patientHistoryMeta.source ? `Nguồn: ${patientHistoryMeta.source.toUpperCase()} · ` : ''}{(patientHistoryMeta.elapsedMs / 1000).toFixed(2)} giây
             {patientHistory?.selection_required ? ` · Tìm thấy ${patientHistoryMeta.matched} kết quả; chọn đúng người bệnh để mở chi tiết.` : ''}
             {patientHistoryMeta.truncated ? ` · Hiển thị ${Math.min(30, patientHistoryMeta.matched)} kết quả đầu.` : ''}
@@ -3245,15 +3244,15 @@ export default function ResearchTab({ toast }) {
 
       {identifiedLocked && renderIdentifiedLock()}
       {!identifiedLocked && patientHistoryError && (
-        <div style={{ border: `1px solid ${C.redBorder}`, background: C.redBg, color: C.red, borderRadius: 7, padding: '8px 10px', fontSize: 10.5 }}>
+        <div style={{ border: `1px solid ${C.redBorder}`, background: C.redBg, color: C.red, borderRadius: 7, padding: '8px 10px', fontSize: FS.xs }}>
           <b>Không tra cứu được:</b> {patientHistoryError}
         </div>
       )}
       {!patientHistoryLoading && patientHistory?.selection_required && !!patientHistory?.candidates?.length && (
         <div style={{ borderTop: `1px solid ${C.border2}`, borderBottom: `1px solid ${C.border2}`, background: C.surface, overflow: 'hidden' }}>
           <div style={{ padding: '8px 10px', borderBottom: `1px solid ${C.border2}` }}>
-            <div style={{ fontSize: 11.5, fontWeight: 850, color: C.text }}>Chọn người bệnh</div>
-            <div style={{ marginTop: 2, fontSize: 10, color: C.text3 }}>
+            <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Chọn người bệnh</div>
+            <div style={{ marginTop: 2, fontSize: FS.xs, color: C.text3 }}>
               Từ khóa khớp nhiều hồ sơ. Chỉ khi chọn một BN hệ thống mới tải XN/CĐHA/thuốc/PT chi tiết.
             </div>
           </div>
@@ -3279,15 +3278,15 @@ export default function ResearchTab({ toast }) {
                   onMouseLeave={e => { e.currentTarget.style.background = C.surface; }}
                 >
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 11.5, fontWeight: 850, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {cand.patient_name || 'Chưa rõ họ tên'}
                     </div>
-                    <div style={{ marginTop: 2, fontSize: 10, color: C.text3 }}>
+                    <div style={{ marginTop: 2, fontSize: FS.xs, color: C.text3 }}>
                       BN {cand.patient_code || '—'}{cand.research_code ? ` · NC ${cand.research_code}` : ''}
                       {cand.sex ? ` · ${cand.sex}` : ''}{cand.age ? ` · ${cand.age} tuổi` : ''}
                     </div>
                   </div>
-                  <span style={{ fontSize: 10, color: C.blue, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: FS.xs, color: C.blue, fontWeight: 700, whiteSpace: 'nowrap' }}>
                     {cand.encounter_count || 0} đợt · Xem
                   </span>
                 </button>
@@ -3298,7 +3297,7 @@ export default function ResearchTab({ toast }) {
       )}
 
       {patientHistoryLoading && patientHistory?.patients?.length ? (
-        <div style={{ fontSize: 10, color: C.blue }}><Spinner size={9} /> Đang cập nhật kết quả; dữ liệu cũ vẫn được giữ để xem.</div>
+        <div style={{ fontSize: FS.xs, color: C.blue }}><Spinner size={9} /> Đang cập nhật kết quả; dữ liệu cũ vẫn được giữ để xem.</div>
       ) : null}
       {patientHistoryLoading && !patientHistory?.patients?.length && <div style={{ padding: 14, color: C.text2 }}><Spinner size={11} /> Đang tra cứu...</div>}
       {!patientHistoryLoading && patientHistory && !patientHistory.selection_required && !patientHistory.patients?.length && !patientHistoryError && <EmptyState title="Không tìm thấy" hint="Thử mã BN/mã NC hoặc họ tên chính xác hơn." />}
@@ -3307,8 +3306,8 @@ export default function ResearchTab({ toast }) {
         <div key={`${p.patient_code}_${pi}`} style={{ borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`, background: C.surface, overflow: 'hidden' }}>
           <div style={{ padding: '9px 11px', borderBottom: `1px solid ${C.border2}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 850, color: C.text }}>{p.patient_name || 'Người bệnh'} <span style={{ color: C.text3, fontWeight: 650 }}>· BN {(p.patient_codes?.length ? p.patient_codes.join(', ') : p.patient_code) || '—'}</span></div>
-              <div style={{ marginTop: 2, fontSize: 10, color: C.text3 }}>{p.sex || '—'} · {p.age ? `${p.age} tuổi` : 'chưa rõ tuổi'}{p.first_research_code ? ` · NC ${p.first_research_code}` : ''}</div>
+              <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>{p.patient_name || 'Người bệnh'} <span style={{ color: C.text3, fontWeight: 600 }}>· BN {(p.patient_codes?.length ? p.patient_codes.join(', ') : p.patient_code) || '—'}</span></div>
+              <div style={{ marginTop: 2, fontSize: FS.xs, color: C.text3 }}>{p.sex || '—'} · {p.age ? `${p.age} tuổi` : 'chưa rõ tuổi'}{p.first_research_code ? ` · NC ${p.first_research_code}` : ''}</div>
             </div>
             <StatBadge label="Đợt" value={p.encounter_count || 0} tone="info" />
           </div>
@@ -3333,7 +3332,7 @@ export default function ResearchTab({ toast }) {
       height: 30, borderRadius: 5, border: 0,
       borderBottom: `2px solid ${active ? C.blue : 'transparent'}`,
       background: 'transparent', color: active ? C.text : C.text3,
-      padding: '0 8px', fontSize: 11, fontWeight: active ? 850 : 650, cursor: 'pointer',
+      padding: '0 8px', fontSize: FS.xs, fontWeight: active ? 700 : 600, cursor: 'pointer',
       display: 'inline-flex', alignItems: 'center', gap: 5,
     });
     const pill = (label, tone = 'neutral') => {
@@ -3345,7 +3344,7 @@ export default function ResearchTab({ toast }) {
         neutral: { bg: C.surface2, color: C.text2, border: C.border2 },
       };
       const c = map[tone] || map.neutral;
-      return <span style={{ display: 'inline-flex', alignItems: 'center', border: `1px solid ${c.border}`, background: c.bg, color: c.color, borderRadius: 999, padding: '1px 7px', fontSize: 10, fontWeight: 800 }}>{label}</span>;
+      return <span style={{ display: 'inline-flex', alignItems: 'center', border: `1px solid ${c.border}`, background: c.bg, color: c.color, borderRadius: 999, padding: '1px 7px', fontSize: FS.xs, fontWeight: 700 }}>{label}</span>;
     };
     const renderVariableCard = (v) => {
       const typeTone = variableTypeTone(v.type);
@@ -3356,25 +3355,25 @@ export default function ResearchTab({ toast }) {
           <input type="checkbox" checked={selected} onChange={() => toggleVariable(v.id)} style={{ marginTop: 3 }} />
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-              <div style={{ fontSize: 13, fontWeight: 850, color: C.text }}>{v.display_label}</div>
-              <span style={{ border: `1px solid ${typeTone.border}`, background: typeTone.bg, color: typeTone.color, borderRadius: 999, padding: '1px 7px', fontSize: 10, fontWeight: 850 }}>{variableTypeLabel(v.type)}</span>
+              <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>{v.display_label}</div>
+              <span style={{ border: `1px solid ${typeTone.border}`, background: typeTone.bg, color: typeTone.color, borderRadius: 999, padding: '1px 7px', fontSize: FS.xs, fontWeight: 700 }}>{variableTypeLabel(v.type)}</span>
               {pill(variableRoleLabel(v.role), v.role === 'identity' || v.role === 'technical' ? 'warn' : 'neutral')}
               {!v.recommended && pill('Ít dùng', 'warn')}
             </div>
-            <div style={{ marginTop: 4, color: C.text3, fontSize: 10 }}>
-              <span style={{ fontWeight: 750 }}>{v.clinical_group_label}</span>
+            <div style={{ marginTop: 4, color: C.text3, fontSize: FS.xs }}>
+              <span style={{ fontWeight: 700 }}>{v.clinical_group_label}</span>
               <span> · nguồn: {v.source_group_label}</span>
               <span> · cột gốc: </span>
-              <code style={{ fontSize: 10, color: C.text2 }}>{v.raw_name}</code>
+              <code style={{ fontSize: FS.xs, color: C.text2 }}>{v.raw_name}</code>
             </div>
-            <div style={{ marginTop: 7, color: C.text2, fontSize: 11, lineHeight: 1.45 }}>{v.description}</div>
+            <div style={{ marginTop: 7, color: C.text2, fontSize: FS.xs, lineHeight: 1.45 }}>{v.description}</div>
             <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
               {pill(`${v.fill_rate}% có dữ liệu · ${variableCompletenessLabel(v.fill_rate)}`, completenessTone)}
               {pill(`${compactNumber(v.distinct_count)} giá trị khác nhau`, 'neutral')}
-              <span style={{ color: C.text3, fontSize: 10 }}>Mẫu: {sampleText(v.sample_values)}</span>
+              <span style={{ color: C.text3, fontSize: FS.xs }}>Mẫu: {sampleText(v.sample_values)}</span>
             </div>
           </div>
-          <Btn onClick={() => addConditionForVariable(v)} style={{ height: 26, padding: '0 9px', fontSize: 10 }}>+ Điều kiện</Btn>
+          <Btn onClick={() => addConditionForVariable(v)} style={{ height: 26, padding: '0 9px', fontSize: FS.xs }}>+ Điều kiện</Btn>
         </div>
       );
     };
@@ -3388,8 +3387,8 @@ export default function ResearchTab({ toast }) {
       <div style={{ padding: '10px 12px 16px' }}>
         <div style={{ marginBottom: 12, border: `1px solid ${C.border2}`, borderRadius: 9, background: C.surface, overflow: 'hidden' }}>
           <div style={{ padding: '11px 12px 9px', borderBottom: `1px solid ${C.border2}` }}>
-            <div style={{ fontSize: 15, fontWeight: 900, color: C.text }}>Thiết kế bộ dữ liệu từ phiếu khảo sát</div>
-            <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.45, color: C.text3 }}>
+            <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Thiết kế bộ dữ liệu từ phiếu khảo sát</div>
+            <div style={{ marginTop: 4, fontSize: FS.xs, lineHeight: 1.45, color: C.text3 }}>
               Dùng dữ liệu đã có trong Kho nghiên cứu; bước này không mở EMR và không cần kết nối Wi-Fi bệnh viện.
             </div>
           </div>
@@ -3398,10 +3397,10 @@ export default function ResearchTab({ toast }) {
               const done = index === 0 ? questionnaireTerms.length > 0 : index === 1 ? selectedVariables.length > 0 : index === 2 ? variableConditions.length > 0 : text(variableStudyDraft.name) && selectedVariables.length > 0;
               return (
                 <div key={number} style={{ display: 'grid', gridTemplateColumns: '27px minmax(0,1fr)', gap: 8, alignItems: 'center', padding: '7px 8px', borderRadius: 7, background: done ? C.greenBg : C.surface2, border: `1px solid ${done ? C.greenBorder : C.border2}` }}>
-                  <span style={{ width: 27, height: 27, borderRadius: 999, display: 'grid', placeItems: 'center', background: done ? C.green : C.surface, color: done ? '#fff' : C.text2, border: `1px solid ${done ? C.green : C.border2}`, fontWeight: 900 }}>{done ? '✓' : number}</span>
+                  <span style={{ width: 27, height: 27, borderRadius: 999, display: 'grid', placeItems: 'center', background: done ? C.green : C.surface, color: done ? '#fff' : C.text2, border: `1px solid ${done ? C.green : C.border2}`, fontWeight: 700 }}>{done ? '✓' : number}</span>
                   <span style={{ minWidth: 0 }}>
-                    <span style={{ display: 'block', fontSize: 11, fontWeight: 850, color: C.text }}>{label}</span>
-                    <span style={{ display: 'block', marginTop: 2, fontSize: 10, color: done ? C.green : C.text3 }}>{sub}</span>
+                    <span style={{ display: 'block', fontSize: FS.xs, fontWeight: 700, color: C.text }}>{label}</span>
+                    <span style={{ display: 'block', marginTop: 2, fontSize: FS.xs, color: done ? C.green : C.text3 }}>{sub}</span>
                   </span>
                 </div>
               );
@@ -3415,16 +3414,16 @@ export default function ResearchTab({ toast }) {
             <div style={{ padding: '4px 0 10px', borderBottom: `1px solid ${C.border2}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                 <div>
-                  <div style={{ fontSize: 15, fontWeight: 850, color: C.text }}>Đối chiếu biến trong kho</div>
-                  <div style={{ fontSize: 11, color: C.text3, marginTop: 4, lineHeight: 1.45 }}>
+                  <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Đối chiếu biến trong kho</div>
+                  <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 4, lineHeight: 1.45 }}>
                     Dán danh sách biến của phiếu khảo sát, kiểm tra gợi ý rồi chủ động chọn biến phù hợp.
                   </div>
                 </div>
                 <Btn onClick={() => loadVariableCatalog()} disabled={variableCatalogLoading} style={{ height: 30 }}>{variableCatalogLoading ? <><Spinner size={9} /> Đang tải</> : 'Tải lại danh mục'}</Btn>
               </div>
               <div style={{ marginTop: 10, padding: 10, border: `1px solid ${C.blueBorder}`, background: C.blueBg, borderRadius: 7 }}>
-                <div style={{ fontSize: 11, fontWeight: 850, color: C.blue }}>Biến trên phiếu khảo sát</div>
-                <div style={{ marginTop: 3, fontSize: 10, color: C.text2 }}>Mỗi biến một dòng, ví dụ: Tuổi, giới, ngày vào viện, Hb trước mổ, phương pháp phẫu thuật.</div>
+                <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.blue }}>Biến trên phiếu khảo sát</div>
+                <div style={{ marginTop: 3, fontSize: FS.xs, color: C.text2 }}>Mỗi biến một dòng, ví dụ: Tuổi, giới, ngày vào viện, Hb trước mổ, phương pháp phẫu thuật.</div>
                 <textarea
                   value={questionnaireVariables}
                   onChange={e => { setQuestionnaireVariables(e.target.value); if (e.target.value.trim()) setVariableGroupFilter('all'); }}
@@ -3433,9 +3432,9 @@ export default function ResearchTab({ toast }) {
                   style={{ ...inp, height: 'auto', marginTop: 8, paddingTop: 7, paddingBottom: 7, resize: 'vertical', background: C.surface }}
                 />
                 <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                  <Btn onClick={() => addVariables(filteredCatalogVariables.filter(v => v.recommended && Number(v.fill_rate || 0) >= 30))} disabled={!questionnaireTerms.length || !filteredCatalogVariables.length} style={{ height: 27, fontSize: 10 }}>＋ Chọn gợi ý phù hợp</Btn>
-                  <Btn onClick={addCoreVariables} style={{ height: 27, fontSize: 10 }}>＋ Bộ biến nền thường dùng</Btn>
-                  {!!questionnaireTerms.length && <span style={{ fontSize: 10, color: C.text2 }}>{questionnaireTerms.length} mục khảo sát · tìm thấy {filteredCatalogVariables.length} biến gợi ý</span>}
+                  <Btn onClick={() => addVariables(filteredCatalogVariables.filter(v => v.recommended && Number(v.fill_rate || 0) >= 30))} disabled={!questionnaireTerms.length || !filteredCatalogVariables.length} style={{ height: 27, fontSize: FS.xs }}>＋ Chọn gợi ý phù hợp</Btn>
+                  <Btn onClick={addCoreVariables} style={{ height: 27, fontSize: FS.xs }}>＋ Bộ biến nền thường dùng</Btn>
+                  {!!questionnaireTerms.length && <span style={{ fontSize: FS.xs, color: C.text2 }}>{questionnaireTerms.length} mục khảo sát · tìm thấy {filteredCatalogVariables.length} biến gợi ý</span>}
                 </div>
               </div>
               <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 7 }}>
@@ -3447,17 +3446,17 @@ export default function ResearchTab({ toast }) {
                   {fillOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select>
               </div>
-              <label style={{ marginTop: 9, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.text2 }}>
+              <label style={{ marginTop: 9, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: FS.xs, color: C.text2 }}>
                 <input type="checkbox" checked={showTechnicalVariables} onChange={e => setShowTechnicalVariables(e.target.checked)} />
                 Hiện cả biến định danh/kỹ thuật
               </label>
               <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                <Btn onClick={() => addVariables(filteredCatalogVariables)} disabled={!filteredCatalogVariables.length} style={{ height: 26, fontSize: 10 }}>Chọn tất cả đang hiển thị</Btn>
+                <Btn onClick={() => addVariables(filteredCatalogVariables)} disabled={!filteredCatalogVariables.length} style={{ height: 26, fontSize: FS.xs }}>Chọn tất cả đang hiển thị</Btn>
                 <Btn onClick={() => setSelectedVariableIds(prev => {
                   const next = new Set(prev);
                   for (const variable of filteredCatalogVariables) next.delete(variable.id);
                   return next;
-                })} disabled={!filteredCatalogVariables.some(v => selectedVariableIds.has(v.id))} style={{ height: 26, fontSize: 10 }}>Bỏ chọn đang hiển thị</Btn>
+                })} disabled={!filteredCatalogVariables.some(v => selectedVariableIds.has(v.id))} style={{ height: 26, fontSize: FS.xs }}>Bỏ chọn đang hiển thị</Btn>
               </div>
             </div>
 
@@ -3480,8 +3479,8 @@ export default function ResearchTab({ toast }) {
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'baseline', padding: '2px 0' }}>
-                  <div style={{ fontSize: 12, fontWeight: 850, color: C.text }}>{variableGroupFilter === 'all' ? 'Biến phù hợp' : activeGroup?.label || 'Nhóm biến'}</div>
-                  <div style={{ fontSize: 10, color: C.text3 }}>
+                  <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text }}>{variableGroupFilter === 'all' ? 'Biến phù hợp' : activeGroup?.label || 'Nhóm biến'}</div>
+                  <div style={{ fontSize: FS.xs, color: C.text3 }}>
                     {compactNumber(totalVisible)} biến{!showTechnicalVariables ? ' · đã ẩn định danh/kỹ thuật' : ''}
                   </div>
                 </div>
@@ -3492,7 +3491,7 @@ export default function ResearchTab({ toast }) {
                     {filteredVariableSections.map(section => (
                       <div key={section.label} style={{ background: C.surface, overflow: 'hidden', borderTop: `1px solid ${C.border2}` }}>
                         <div style={{ padding: '9px 11px', borderBottom: `1px solid ${C.border2}`, display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
-                          <div style={{ fontSize: 12, fontWeight: 850, color: C.text }}>{section.label}</div>
+                          <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text }}>{section.label}</div>
                           {pill(`${section.variables.length} biến`, 'neutral')}
                         </div>
                         <div style={{ display: 'grid', gap: 0 }}>
@@ -3508,58 +3507,58 @@ export default function ResearchTab({ toast }) {
         </div>
 
         <div style={{ background: C.surface, padding: '4px 0 12px 14px', position: 'sticky', top: 10, flex: '0 1 330px', minWidth: 300, borderLeft: `1px solid ${C.border2}` }}>
-          <div style={{ fontSize: 13, fontWeight: 850, color: C.text }}>Tạo nghiên cứu từ biến đã chọn</div>
-          <div style={{ fontSize: 11, color: C.text3, marginTop: 4 }}>{selectedVariables.length} biến · {variableConditions.length} điều kiện</div>
+          <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Tạo nghiên cứu từ biến đã chọn</div>
+          <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 4 }}>{selectedVariables.length} biến · {variableConditions.length} điều kiện</div>
 
           {!!selectedVariables.length && (
             <div style={{ marginTop: 10, padding: 9, borderRadius: 7, background: selectedCoverage.low ? C.amberBg : C.greenBg, border: `1px solid ${selectedCoverage.low ? C.amberBorder : C.greenBorder}` }}>
-              <div style={{ fontSize: 11, fontWeight: 850, color: selectedCoverage.low ? C.amber : C.green }}>Kiểm tra độ phủ biến đã chọn</div>
+              <div style={{ fontSize: FS.xs, fontWeight: 700, color: selectedCoverage.low ? C.amber : C.green }}>Kiểm tra độ phủ biến đã chọn</div>
               <div style={{ marginTop: 6, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 5 }}>
                 <StatBadge label="≥80%" value={selectedCoverage.high} tone="ok" />
                 <StatBadge label="30–79%" value={selectedCoverage.medium} tone="info" />
                 <StatBadge label="<30%" value={selectedCoverage.low} tone={selectedCoverage.low ? 'warn' : 'neutral'} />
               </div>
-              <div style={{ marginTop: 7, fontSize: 10, lineHeight: 1.4, color: C.text2 }}>
+              <div style={{ marginTop: 7, fontSize: FS.xs, lineHeight: 1.4, color: C.text2 }}>
                 Độ phủ thấp nhất: <b>{selectedCoverage.lowest}%</b>. Đây là độ phủ từng biến, chưa phải số hồ sơ hoàn chỉnh cuối cùng.
               </div>
             </div>
           )}
 
           <div style={{ marginTop: 10, padding: '10px 0', display: 'grid', gap: 8, borderTop: `1px solid ${C.border2}`, borderBottom: `1px solid ${C.border2}` }}>
-            <div style={{ fontSize: 11, fontWeight: 850, color: C.text }}>Thông tin nghiên cứu</div>
+            <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Thông tin nghiên cứu</div>
             <input value={variableStudyDraft.name} onChange={e => setVariableStudyDraft(p => ({ ...p, name: e.target.value }))} placeholder="Tên nghiên cứu, VD: Gãy cổ xương đùi 2026" style={inp} />
             <textarea value={variableStudyDraft.description} onChange={e => setVariableStudyDraft(p => ({ ...p, description: e.target.value }))} placeholder="Mô tả ngắn / mục tiêu nghiên cứu" rows={2} style={{ ...inp, height: 'auto', paddingTop: 7, paddingBottom: 7, resize: 'vertical' }} />
             <Btn variant="primary" onClick={createStudyFromVariableSelection} disabled={busy || !selectedVariables.length || !text(variableStudyDraft.name)} style={{ height: 30 }}>
               {busy ? <><Spinner size={9} /> Đang tạo</> : '＋ Tạo nghiên cứu'}
             </Btn>
-            <div style={{ fontSize: 10, color: C.text3, lineHeight: 1.4 }}>Tạo nghiên cứu từ biến và điều kiện đã chọn.</div>
+            <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.4 }}>Tạo nghiên cứu từ biến và điều kiện đã chọn.</div>
           </div>
 
-          <div style={{ marginTop: 12, fontSize: 12, fontWeight: 850, color: C.text }}>Biến sẽ lấy</div>
+          <div style={{ marginTop: 12, fontSize: FS.sm, fontWeight: 700, color: C.text }}>Biến sẽ lấy</div>
           <div style={{ marginTop: 8, maxHeight: 190, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {!selectedVariables.length && <div style={{ border: `1px dashed ${C.border}`, borderRadius: 6, padding: 10, fontSize: 11, color: C.text3, lineHeight: 1.45 }}>Chưa chọn biến. Nên bắt đầu từ <b>Hành chánh</b> và <b>Đợt điều trị</b>, sau đó thêm Xét nghiệm/CĐHA/Phẫu thuật theo mục tiêu nghiên cứu.</div>}
+            {!selectedVariables.length && <div style={{ border: `1px dashed ${C.border}`, borderRadius: 6, padding: 10, fontSize: FS.xs, color: C.text3, lineHeight: 1.45 }}>Chưa chọn biến. Nên bắt đầu từ <b>Hành chánh</b> và <b>Đợt điều trị</b>, sau đó thêm Xét nghiệm/CĐHA/Phẫu thuật theo mục tiêu nghiên cứu.</div>}
             {selectedVariablesByGroup.map(group => (
               <div key={group.label} style={{ border: `1px solid ${C.border2}`, borderRadius: 6, overflow: 'hidden' }}>
-                <div style={{ padding: '6px 8px', background: C.surface2, fontSize: 11, fontWeight: 850, color: C.text2 }}>{group.label}</div>
+                <div style={{ padding: '6px 8px', background: C.surface2, fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>{group.label}</div>
                 {group.variables.map(v => {
                   const isRepeatedTable = !['analysis_ready', 'encounters', 'patients', 'cohort', 'research_source'].includes(String(v.table || ''));
                   return (
                   <div key={v.id} style={{ padding: '7px 8px', borderTop: `1px solid ${C.border2}`, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 8, alignItems: 'center' }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.display_label}</div>
-                      <div style={{ fontSize: 10, color: C.text3 }}>{v.raw_name}</div>
+                      <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.display_label}</div>
+                      <div style={{ fontSize: FS.xs, color: C.text3 }}>{v.raw_name}</div>
                       {isRepeatedTable && (
                         <select
                           value={variableAggregations[v.id] || 'list'}
                           onChange={e => setVariableAggregations(prev => ({ ...prev, [v.id]: e.target.value }))}
                           title="Cách tổng hợp khi một lượt có nhiều dòng dữ liệu"
-                          style={{ ...inp, height: 26, marginTop: 5, fontSize: 10, padding: '2px 6px' }}
+                          style={{ ...inp, height: 26, marginTop: 5, fontSize: FS.xs, padding: '2px 6px' }}
                         >
                           {VARIABLE_AGGREGATIONS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                         </select>
                       )}
                     </div>
-                    <button type="button" onClick={() => toggleVariable(v.id)} style={{ border: 0, background: 'transparent', color: C.red, cursor: 'pointer', fontSize: 13 }}>✕</button>
+                    <button type="button" onClick={() => toggleVariable(v.id)} style={{ border: 0, background: 'transparent', color: C.red, cursor: 'pointer', fontSize: FS.md }}>✕</button>
                   </div>
                   );
                 })}
@@ -3567,18 +3566,18 @@ export default function ResearchTab({ toast }) {
             ))}
           </div>
 
-          <div style={{ marginTop: 14, fontSize: 13, fontWeight: 850, color: C.text }}>Điều kiện lọc</div>
-          <div style={{ fontSize: 10, color: C.text3, marginTop: 3 }}>Điều kiện dùng để lọc đối tượng nghiên cứu, ví dụ: tuổi ≥ 60, Hb &lt; 90, có phẫu thuật.</div>
+          <div style={{ marginTop: 14, fontSize: FS.md, fontWeight: 700, color: C.text }}>Điều kiện lọc</div>
+          <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 3 }}>Điều kiện dùng để lọc đối tượng nghiên cứu, ví dụ: tuổi ≥ 60, Hb &lt; 90, có phẫu thuật.</div>
           <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 300, overflow: 'auto' }}>
-            {!variableConditions.length && <div style={{ border: `1px dashed ${C.border}`, borderRadius: 6, padding: 10, fontSize: 11, color: C.text3 }}>Bấm <b>+ Điều kiện</b> ở biến cần ràng buộc.</div>}
+            {!variableConditions.length && <div style={{ border: `1px dashed ${C.border}`, borderRadius: 6, padding: 10, fontSize: FS.xs, color: C.text3 }}>Bấm <b>+ Điều kiện</b> ở biến cần ràng buộc.</div>}
             {variableConditions.map((cond, i) => {
               const variable = allCatalogVariables.find(v => v.id === cond.variable_id);
               return (
                 <div key={cond.id} style={{ border: `1px solid ${C.border2}`, borderRadius: 6, padding: 9, display: 'grid', gap: 7 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 11, fontWeight: 850, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{variable?.display_label || cond.label}</div>
-                      <div style={{ fontSize: 10, color: C.text3 }}>{variable?.clinical_group_label || variable?.group_label || ''}</div>
+                      <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{variable?.display_label || cond.label}</div>
+                      <div style={{ fontSize: FS.xs, color: C.text3 }}>{variable?.clinical_group_label || variable?.group_label || ''}</div>
                     </div>
                     <button type="button" onClick={() => setVariableConditions(prev => prev.filter((_, j) => j !== i))} style={{ border: 0, background: 'transparent', color: C.red, cursor: 'pointer' }}>✕</button>
                   </div>
@@ -3611,7 +3610,7 @@ export default function ResearchTab({ toast }) {
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden', background: C.bg, fontFamily: '\"Segoe UI Variable\",\"Aptos\",\"Segoe UI\",sans-serif', fontSize: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden', background: C.bg, fontFamily: '\"Segoe UI Variable\",\"Aptos\",\"Segoe UI\",sans-serif', fontSize: FS.sm }}>
 
       {/* ── Top bar ── */}
       <div style={{
@@ -3623,7 +3622,7 @@ export default function ResearchTab({ toast }) {
           onClick={reloadCurrentView}
           disabled={loading || tableLoading || busy}
           title="Tải lại dữ liệu đang xem"
-          style={{ height: 26, padding: '0 9px', fontSize: 10.5 }}
+          style={{ height: 26, padding: '0 9px', fontSize: FS.xs }}
         >
           {(loading || tableLoading) ? <><Spinner size={8} /> Đang tải</> : '↻ Tải lại'}
         </Btn>
@@ -3640,13 +3639,13 @@ export default function ResearchTab({ toast }) {
             background: C.surface, border: `1px solid ${C.redBorder}`,
             borderRadius: 6, padding: '24px 28px', maxWidth: 380, width: '90%',
           }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 8 }}>Xóa nghiên cứu?</div>
-            <div style={{ fontSize: 12, color: C.text2, marginBottom: 20, lineHeight: 1.6 }}>
+            <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text, marginBottom: 8 }}>Xóa nghiên cứu?</div>
+            <div style={{ fontSize: FS.sm, color: C.text2, marginBottom: 20, lineHeight: 1.6 }}>
               Toàn bộ dữ liệu của nghiên cứu <b style={{ color: C.text }}>{studies.find(s => s.id === deleteConfirm)?.name || deleteConfirm}</b> sẽ bị xóa vĩnh viễn, bao gồm cohort và tất cả dữ liệu đã lấy.
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <Btn onClick={() => setDeleteConfirm(null)} style={{ height: 30, padding: '0 14px', fontSize: 12 }}>Huỷ</Btn>
-              <Btn variant="danger" onClick={() => deleteStudy(deleteConfirm)} disabled={uiBusy} style={{ height: 30, padding: '0 14px', fontSize: 12, background: C.redBg, borderColor: C.redBorder, color: C.red }}>
+              <Btn onClick={() => setDeleteConfirm(null)} style={{ height: 30, padding: '0 14px', fontSize: FS.sm }}>Huỷ</Btn>
+              <Btn variant="danger" onClick={() => deleteStudy(deleteConfirm)} disabled={uiBusy} style={{ height: 30, padding: '0 14px', fontSize: FS.sm, background: C.redBg, borderColor: C.redBorder, color: C.red }}>
                 {busy ? <><Spinner size={9} /> Đang xóa</> : 'Xóa'}
               </Btn>
             </div>
@@ -3668,18 +3667,18 @@ export default function ResearchTab({ toast }) {
           }}>
             {/* Wizard header */}
             <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: 14, fontWeight: 850, color: C.text }}>Tạo nghiên cứu mới</span>
+              <span style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Tạo nghiên cứu mới</span>
               <div style={{ display: 'flex', gap: 6, marginLeft: 8 }}>
                 {[['1','Thông tin'], ['2','Lọc mẫu'], ['3','Xác nhận']].map(([s, label]) => (
                   <span key={s} style={{
-                    fontSize: 10, fontWeight: 700, padding: '2px 9px', borderRadius: 20,
+                    fontSize: FS.xs, fontWeight: 700, padding: '2px 9px', borderRadius: 20,
                     background: wizardStep === Number(s) ? C.blueBg : C.surface2,
                     color: wizardStep === Number(s) ? C.blue : C.text3,
                     border: `1px solid ${wizardStep === Number(s) ? C.blueBorder : C.border2}`,
                   }}>{s}. {label}</span>
                 ))}
               </div>
-              <Btn onClick={() => setShowWizard(false)} style={{ marginLeft: 'auto', height: 26, padding: '0 8px', fontSize: 11 }}>✕</Btn>
+              <Btn onClick={() => setShowWizard(false)} style={{ marginLeft: 'auto', height: 26, padding: '0 8px', fontSize: FS.xs }}>✕</Btn>
             </div>
 
             {/* Step 1: Thông tin cơ bản */}
@@ -3716,7 +3715,7 @@ export default function ResearchTab({ toast }) {
                   {analysisPresets.length > 0 && (() => {
                     const chosen = analysisPresets.find(p => p.id === wizardForm.analysis_config.preset);
                     return chosen?.inference_fields?.length ? (
-                      <div style={{ fontSize: 10, color: C.text3, marginTop: 4 }}>
+                      <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 4 }}>
                         Sẽ tự suy luận: {chosen.inference_fields.map(f => f.label).join(' · ')}
                       </div>
                     ) : null;
@@ -3729,12 +3728,12 @@ export default function ResearchTab({ toast }) {
                     <WizLabel>Trường tuỳ chỉnh (regex từ chẩn đoán)</WizLabel>
                     <button type="button"
                       onClick={() => setWizardForm(p => ({ ...p, analysis_config: { ...p.analysis_config, custom_fields: [...(p.analysis_config.custom_fields || []), { name: '', pattern: '', label: '' }] } }))}
-                      style={{ background: C.blueBg, border: `1px solid ${C.blueBorder}`, color: C.blue, borderRadius: 5, padding: '2px 8px', fontSize: 11, cursor: 'pointer' }}>
+                      style={{ background: C.blueBg, border: `1px solid ${C.blueBorder}`, color: C.blue, borderRadius: 5, padding: '2px 8px', fontSize: FS.xs, cursor: 'pointer' }}>
                       + Thêm
                     </button>
                   </div>
                   {(wizardForm.analysis_config.custom_fields || []).length === 0 && (
-                    <div style={{ fontSize: 10, color: C.text3, fontStyle: 'italic' }}>VD: tên="diabetes", pattern="đái tháo đường|type 2" → cột diabetes = 1/0</div>
+                    <div style={{ fontSize: FS.xs, color: C.text3, fontStyle: 'italic' }}>VD: tên="diabetes", pattern="đái tháo đường|type 2" → cột diabetes = 1/0</div>
                   )}
                   {(wizardForm.analysis_config.custom_fields || []).map((cf, i) => (
                     <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 28px', gap: 6, marginTop: 6 }}>
@@ -3746,14 +3745,14 @@ export default function ResearchTab({ toast }) {
                         placeholder="Regex (VD: đái tháo đường|type 2)" style={inp} />
                       <button type="button"
                         onClick={() => setWizardForm(p => { const cfs = p.analysis_config.custom_fields.filter((_, j) => j !== i); return { ...p, analysis_config: { ...p.analysis_config, custom_fields: cfs } }; })}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.text3, fontSize: 16 }}>✕</button>
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.text3, fontSize: FS.xl }}>✕</button>
                     </div>
                   ))}
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-                  <Btn onClick={() => setShowWizard(false)} style={{ height: 30, padding: '0 14px', fontSize: 12 }}>Huỷ</Btn>
-                  <Btn variant="primary" onClick={() => { if (!text(wizardForm.name)) { t('Cần nhập tên nghiên cứu.', 'error'); return; } setWizardStep(2); loadWizardPreview(); }} style={{ height: 30, padding: '0 14px', fontSize: 12 }}>
+                  <Btn onClick={() => setShowWizard(false)} style={{ height: 30, padding: '0 14px', fontSize: FS.sm }}>Huỷ</Btn>
+                  <Btn variant="primary" onClick={() => { if (!text(wizardForm.name)) { t('Cần nhập tên nghiên cứu.', 'error'); return; } setWizardStep(2); loadWizardPreview(); }} style={{ height: 30, padding: '0 14px', fontSize: FS.sm }}>
                     Tiếp theo →
                   </Btn>
                 </div>
@@ -3790,12 +3789,12 @@ export default function ResearchTab({ toast }) {
                     <WizLabel>Xét nghiệm — bệnh nhân phải có</WizLabel>
                     <button type="button"
                       onClick={() => setWizardFilters(p => ({ ...p, xnList: [...p.xnList, { ten: '', min: '', max: '' }] }))}
-                      style={{ background: C.blueBg, border: `1px solid ${C.blueBorder}`, color: C.blue, borderRadius: 5, padding: '2px 10px', fontSize: 11, cursor: 'pointer' }}>
+                      style={{ background: C.blueBg, border: `1px solid ${C.blueBorder}`, color: C.blue, borderRadius: 5, padding: '2px 10px', fontSize: FS.xs, cursor: 'pointer' }}>
                       + Thêm XN
                     </button>
                   </div>
                   {wizardFilters.xnList.length === 0 && (
-                    <div style={{ fontSize: 11, color: C.text3, fontStyle: 'italic' }}>Chưa có điều kiện XN nào — bấm "+ Thêm XN" để thêm</div>
+                    <div style={{ fontSize: FS.xs, color: C.text3, fontStyle: 'italic' }}>Chưa có điều kiện XN nào — bấm "+ Thêm XN" để thêm</div>
                   )}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {wizardFilters.xnList.map((xn, i) => (
@@ -3823,7 +3822,7 @@ export default function ResearchTab({ toast }) {
                         </div>
                         <button type="button"
                           onClick={() => setWizardFilters(p => ({ ...p, xnList: p.xnList.filter((_, j) => j !== i) }))}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.text3, fontSize: 16, marginTop: i === 0 ? 18 : 0 }}>✕</button>
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.text3, fontSize: FS.xl, marginTop: i === 0 ? 18 : 0 }}>✕</button>
                       </div>
                     ))}
                   </div>
@@ -3835,12 +3834,12 @@ export default function ResearchTab({ toast }) {
                     <WizLabel>CĐHA — bệnh nhân phải có</WizLabel>
                     <button type="button"
                       onClick={() => setWizardFilters(p => ({ ...p, cdhaList: [...p.cdhaList, ''] }))}
-                      style={{ background: C.blueBg, border: `1px solid ${C.blueBorder}`, color: C.blue, borderRadius: 5, padding: '2px 10px', fontSize: 11, cursor: 'pointer' }}>
+                      style={{ background: C.blueBg, border: `1px solid ${C.blueBorder}`, color: C.blue, borderRadius: 5, padding: '2px 10px', fontSize: FS.xs, cursor: 'pointer' }}>
                       + Thêm CĐHA
                     </button>
                   </div>
                   {wizardFilters.cdhaList.length === 0 && (
-                    <div style={{ fontSize: 11, color: C.text3, fontStyle: 'italic' }}>Chưa có điều kiện CĐHA nào — bấm "+ Thêm CĐHA" để thêm</div>
+                    <div style={{ fontSize: FS.xs, color: C.text3, fontStyle: 'italic' }}>Chưa có điều kiện CĐHA nào — bấm "+ Thêm CĐHA" để thêm</div>
                   )}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {wizardFilters.cdhaList.map((cdha, i) => (
@@ -3851,7 +3850,7 @@ export default function ResearchTab({ toast }) {
                           style={wizInp} />
                         <button type="button"
                           onClick={() => setWizardFilters(p => ({ ...p, cdhaList: p.cdhaList.filter((_, j) => j !== i) }))}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.text3, fontSize: 16 }}>✕</button>
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.text3, fontSize: FS.xl }}>✕</button>
                       </div>
                     ))}
                   </div>
@@ -3865,16 +3864,16 @@ export default function ResearchTab({ toast }) {
                   display: 'flex', alignItems: 'center', gap: 12,
                 }}>
                   {wizardLoadingPreview
-                    ? <><Spinner size={10} /><span style={{ fontSize: 12, color: C.text2 }}>Đang tải dữ liệu kho gốc...</span></>
+                    ? <><Spinner size={10} /><span style={{ fontSize: FS.sm, color: C.text2 }}>Đang tải dữ liệu kho gốc...</span></>
                     : <>
-                        <span style={{ fontSize: 28, fontWeight: 850, color: wizardFiltered.length > 0 ? C.blue : C.text3, lineHeight: 1 }}>
+                        <span style={{ fontSize: FS.stat, fontWeight: 700, color: wizardFiltered.length > 0 ? C.blue : C.text3, lineHeight: 1 }}>
                           {compactNumber(wizardFiltered.length)}
                         </span>
                         <div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: wizardFiltered.length > 0 ? C.text : C.text2 }}>
+                          <div style={{ fontSize: FS.md, fontWeight: 700, color: wizardFiltered.length > 0 ? C.text : C.text2 }}>
                             BN phù hợp tiêu chí
                           </div>
-                          <div style={{ fontSize: 11, color: C.text3 }}>
+                          <div style={{ fontSize: FS.xs, color: C.text3 }}>
                             {wizardRows.length
                               ? `trên tổng ${compactNumber(wizardRows.length)} BN trong kho gốc`
                               : <span style={{ color: C.amber }}>Kho gốc chưa có dữ liệu Bước 2</span>
@@ -3886,11 +3885,11 @@ export default function ResearchTab({ toast }) {
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                  <Btn onClick={() => setWizardStep(1)} style={{ height: 30, padding: '0 14px', fontSize: 12 }}>← Quay lại</Btn>
+                  <Btn onClick={() => setWizardStep(1)} style={{ height: 30, padding: '0 14px', fontSize: FS.sm }}>← Quay lại</Btn>
                   <Btn variant="primary"
                     onClick={() => { setWizardExcluded(new Set()); setWizardStep(3); }}
                     disabled={wizardFiltered.length === 0 || wizardLoadingPreview}
-                    style={{ height: 30, padding: '0 14px', fontSize: 12 }}>
+                    style={{ height: 30, padding: '0 14px', fontSize: FS.sm }}>
                     Xem danh sách →
                   </Btn>
                 </div>
@@ -3901,17 +3900,17 @@ export default function ResearchTab({ toast }) {
             {wizardStep === 3 && (
               <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>
+                  <span style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>
                     {compactNumber(wizardFinalRows.length)} BN sẽ vào danh sách mẫu
                   </span>
                   {wizardExcluded.size > 0 && (
-                    <span style={{ fontSize: 11, color: C.amber }}>({compactNumber(wizardExcluded.size)} đã loại)</span>
+                    <span style={{ fontSize: FS.xs, color: C.amber }}>({compactNumber(wizardExcluded.size)} đã loại)</span>
                   )}
-                  <span style={{ marginLeft: 'auto', fontSize: 11, color: C.text3 }}>Bấm ✕ để loại BN không đạt tiêu chí</span>
+                  <span style={{ marginLeft: 'auto', fontSize: FS.xs, color: C.text3 }}>Bấm ✕ để loại BN không đạt tiêu chí</span>
                 </div>
 
                 <div style={{ maxHeight: 340, overflow: 'auto', borderRadius: 6, border: `1px solid ${C.border}` }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.xs }}>
                     <thead style={{ position: 'sticky', top: 0, background: C.surface2 }}>
                       <tr>
                         <th style={{ width: 32 }} />
@@ -3929,9 +3928,9 @@ export default function ResearchTab({ toast }) {
                             <td style={{ padding: '4px 6px', textAlign: 'center' }}>
                               {excluded
                                 ? <button type="button" onClick={() => setWizardExcluded(s => { const n = new Set(s); n.delete(code); return n; })}
-                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.green, fontSize: 13, lineHeight: 1 }}>↩</button>
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.green, fontSize: FS.md, lineHeight: 1 }}>↩</button>
                                 : <button type="button" onClick={() => setWizardExcluded(s => new Set([...s, code]))}
-                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.red, fontSize: 15, lineHeight: 1 }}>✕</button>
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.red, fontSize: FS.lg, lineHeight: 1 }}>✕</button>
                               }
                             </td>
                             {['patient_code','Họ tên','Tuổi','GT','Ngày vào viện','Ngày ra viện'].map(col => (
@@ -3947,8 +3946,8 @@ export default function ResearchTab({ toast }) {
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                  <Btn onClick={() => setWizardStep(2)} style={{ height: 30, padding: '0 14px', fontSize: 12 }}>← Sửa bộ lọc</Btn>
-                  <Btn variant="success" onClick={createStudyFromWizard} disabled={busy || wizardFinalRows.length === 0} style={{ height: 30, padding: '0 18px', fontSize: 12 }}>
+                  <Btn onClick={() => setWizardStep(2)} style={{ height: 30, padding: '0 14px', fontSize: FS.sm }}>← Sửa bộ lọc</Btn>
+                  <Btn variant="success" onClick={createStudyFromWizard} disabled={busy || wizardFinalRows.length === 0} style={{ height: 30, padding: '0 18px', fontSize: FS.sm }}>
                     {busy ? <><Spinner size={9} /> Đang tạo...</> : `✓ Tạo nghiên cứu (${compactNumber(wizardFinalRows.length)} BN)`}
                   </Btn>
                 </div>
@@ -3969,25 +3968,25 @@ export default function ResearchTab({ toast }) {
             display: 'flex', alignItems: 'center', gap: 8, padding: '4px 12px',
             borderBottom: `1px solid ${C.border2}`, background: C.surface,
           }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: C.blue }}>📋 action_log.txt</span>
-            <span style={{ fontSize: 10, color: C.text3 }}>{caseTraces.length ? `${caseTraces.length} ca gần nhất · ` : ''}{logLines.length} dòng cuối</span>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: C.text3 }}>
+            <span style={{ fontSize: FS.xs, fontWeight: 700, color: C.blue }}>📋 action_log.txt</span>
+            <span style={{ fontSize: FS.xs, color: C.text3 }}>{caseTraces.length ? `${caseTraces.length} ca gần nhất · ` : ''}{logLines.length} dòng cuối</span>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: FS.xs, color: C.text3 }}>
               <input type="checkbox" checked={caseTraceRedact} onChange={e => setCaseTraceRedact(e.target.checked)} />
               Ẩn thông tin nhạy cảm
             </label>
-            <Btn onClick={loadLog} disabled={logLoading} style={{ height: 22, padding: '0 7px', fontSize: 10, marginLeft: 'auto' }}>
+            <Btn onClick={loadLog} disabled={logLoading} style={{ height: 22, padding: '0 7px', fontSize: FS.xs, marginLeft: 'auto' }}>
               {logLoading ? <><Spinner size={8} /> Đang tải</> : '↻'}
             </Btn>
-            <Btn onClick={() => setShowLog(false)} style={{ height: 22, padding: '0 7px', fontSize: 10 }}>✕</Btn>
+            <Btn onClick={() => setShowLog(false)} style={{ height: 22, padding: '0 7px', fontSize: FS.xs }}>✕</Btn>
           </div>
-          <div style={{ flex: 1, overflow: 'auto', padding: '6px 12px', fontFamily: FONT_MONO, fontSize: 11 }}>
+          <div style={{ flex: 1, overflow: 'auto', padding: '6px 12px', fontFamily: FONT_MONO, fontSize: FS.xs }}>
             {logLoading && <div style={{ color: C.text3 }}>Đang tải log...</div>}
             {!logLoading && !logLines.length && !caseTraces.length && (
               <div style={{ color: C.text3 }}>Chưa có log. Bấm Bước 2 — Lấy XN & CĐHA hoặc lấy Hành chánh/Y lệnh để bắt đầu. Log chi tiết 10 ca gần nhất sẽ ghi vào <b>research_case_trace_recent.json</b>.</div>
             )}
             {!logLoading && !!caseTraces.length && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
-                <div style={{ color: '#58a6ff', fontWeight: 800 }}>[CASE_TRACE] 10 ca gần nhất — tag ở đầu mỗi bước</div>
+                <div style={{ color: '#58a6ff', fontWeight: 700 }}>[CASE_TRACE] 10 ca gần nhất — tag ở đầu mỗi bước</div>
                 {caseTraces.map((c, ci) => (
                   <details key={c.case_id || ci} open={ci === 0} style={{ border: '1px solid #263442', borderRadius: 8, padding: '6px 8px', background: '#0d141b' }}>
                     <summary style={{ cursor: 'pointer', color: '#d1d7e0', fontWeight: 700 }}>
@@ -4025,10 +4024,10 @@ export default function ResearchTab({ toast }) {
       )}
 
       {researchError && (
-        <div style={{ padding: '7px 12px', background: C.redBg, borderBottom: `1px solid ${C.redBorder}`, color: C.red, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 10.5 }}>
+        <div style={{ padding: '7px 12px', background: C.redBg, borderBottom: `1px solid ${C.redBorder}`, color: C.red, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: FS.xs }}>
           <b>Lỗi:</b><span style={{ flex: 1 }}>{researchError}</span>
-          <Btn onClick={() => { setShowLog(true); loadLog(); }} style={{ height: 24, fontSize: 10 }}>Xem log</Btn>
-          <Btn onClick={() => setResearchError('')} style={{ height: 24, fontSize: 10 }}>Đóng</Btn>
+          <Btn onClick={() => { setShowLog(true); loadLog(); }} style={{ height: 24, fontSize: FS.xs }}>Xem log</Btn>
+          <Btn onClick={() => setResearchError('')} style={{ height: 24, fontSize: FS.xs }}>Đóng</Btn>
         </div>
       )}
 
@@ -4071,13 +4070,13 @@ export default function ResearchTab({ toast }) {
               <span style={{
                 marginLeft: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                 width: 16, height: 16, borderRadius: '50%',
-                background: C.surface2, color: C.text2, fontSize: 9, fontWeight: 800,
+                background: C.surface2, color: C.text2, fontSize: FS.xs, fontWeight: 700,
               }}>{studies.length}</span>
             )}
           </SectionHead>
 
           {studies.length === 0 && (
-            <div style={{ padding: '10px 12px 14px', fontSize: 10.5, color: C.text3, lineHeight: 1.45 }}>
+            <div style={{ padding: '10px 12px 14px', fontSize: FS.xs, color: C.text3, lineHeight: 1.45 }}>
               Chưa có nghiên cứu riêng.
             </div>
           )}
@@ -4104,7 +4103,7 @@ export default function ResearchTab({ toast }) {
                   )}
                   <button type="button" onClick={e => { e.stopPropagation(); setDeleteConfirm(item.id); }}
                     title="Xóa nghiên cứu"
-                    style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: C.text3, fontSize: 13, lineHeight: 1, padding: '0 2px' }}>🗑</button>
+                    style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: C.text3, fontSize: FS.md, lineHeight: 1, padding: '0 2px' }}>🗑</button>
                 </div>
               </SideItem>
             );
@@ -4121,22 +4120,22 @@ export default function ResearchTab({ toast }) {
           }}>
             {/* Title row */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, minHeight: 26 }}>
-              <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>
+              <span style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>
                 {isArchive ? 'Dữ liệu gốc' : (activeStudy?.name || selectedId)}
               </span>
               {latest?.id && (
-                <span style={{ fontSize: 10, color: C.text3, fontFamily: FONT_MONO }}>
+                <span style={{ fontSize: FS.xs, color: C.text3, fontVariantNumeric: 'tabular-nums' }}>
                   đợt {latest.id}
                 </span>
               )}
               {!isArchive && activeStudy?.description && (
-                <span style={{ fontSize: 11, color: C.text2 }}> — {activeStudy.description}</span>
+                <span style={{ fontSize: FS.xs, color: C.text2 }}> — {activeStudy.description}</span>
               )}
               {!isArchive && activeStudy?.analysis_config?.preset && (() => {
                 const presetLabel = analysisPresets.find(p => p.id === activeStudy.analysis_config.preset)?.label
                   || activeStudy.analysis_config.preset;
                 return (
-                  <span style={{ fontSize: 10, color: C.blue, background: C.blueBg, border: `1px solid ${C.blueBorder}`, borderRadius: 4, padding: '1px 6px', marginLeft: 4 }}>
+                  <span style={{ fontSize: FS.xs, color: C.blue, background: C.blueBg, border: `1px solid ${C.blueBorder}`, borderRadius: 4, padding: '1px 6px', marginLeft: 4 }}>
                     {presetLabel}
                   </span>
                 );
@@ -4163,7 +4162,7 @@ export default function ResearchTab({ toast }) {
                       style={{
                         height: 34, padding: '0 14px', borderRadius: 6, cursor: uiBusy ? 'not-allowed' : 'pointer',
                         border: `1px solid ${C.border}`, background: C.surface, color: C.text,
-                        fontFamily: 'inherit', fontSize: 11.5, fontWeight: 750, opacity: uiBusy ? 0.6 : 1,
+                        fontFamily: 'inherit', fontSize: FS.xs, fontWeight: 700, opacity: uiBusy ? 0.6 : 1,
                       }}
                     >
                       {uiBusy && automationRun.kind === 'scan' ? 'Đang quét…' : '1. Quét danh sách'}
@@ -4178,7 +4177,7 @@ export default function ResearchTab({ toast }) {
                       height: 34, padding: '0 16px', borderRadius: 6,
                       cursor: uiBusy ? 'not-allowed' : 'pointer',
                       border: `1px solid ${C.blue}`, background: C.blue, color: '#fff',
-                      fontFamily: 'inherit', fontSize: 11.5, fontWeight: 750,
+                      fontFamily: 'inherit', fontSize: FS.xs, fontWeight: 700,
                       opacity: (uiBusy || (isArchive ? !archive?.latest_run?.id : !activeStudy?.has_cohort)) ? 0.55 : 1,
                     }}
                   >
@@ -4192,12 +4191,12 @@ export default function ResearchTab({ toast }) {
                     style={{
                       height: 34, padding: '0 12px', borderRadius: 6, cursor: uiBusy ? 'not-allowed' : 'pointer',
                       border: `1px solid ${C.border}`, background: C.surface, color: C.text,
-                      fontFamily: 'inherit', fontSize: 11.5, fontWeight: 650, opacity: uiBusy ? 0.55 : 1,
+                      fontFamily: 'inherit', fontSize: FS.xs, fontWeight: 600, opacity: uiBusy ? 0.55 : 1,
                     }}
                   >
                     Quét lại dữ liệu tạm thời
                   </button>
-                  <span style={{ fontSize: 10.5, color: C.text3 }}>
+                  <span style={{ fontSize: FS.xs, color: C.text3 }}>
                     Chuẩn hóa và cập nhật kho chạy tự động. Ca đã có ở tab Kiểm HSBA / Trả HSBA được dùng lại (tạm thời) thay vì mở EMR.
                   </span>
                 </div>
@@ -4205,7 +4204,7 @@ export default function ResearchTab({ toast }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   {isArchive && (
                     <>
-                      <span style={{ fontSize: 10, color: C.text3, fontWeight: 850 }}>KHOẢNG QUÉT</span>
+                      <span style={{ fontSize: FS.xs, color: C.text3, fontWeight: 700 }}>KHOẢNG QUÉT</span>
                       <input type="date" value={archiveOptions.fromDate}
                         onChange={e => setArchiveOptions(p => ({ ...p, fromDate: e.target.value }))}
                         disabled={uiBusy} style={{ ...inp, width: 128 }} />
@@ -4217,8 +4216,8 @@ export default function ResearchTab({ toast }) {
                     </>
                   )}
                   <details style={{ marginLeft: isArchive ? 'auto' : 0 }}>
-                    <summary style={{ cursor: 'pointer', fontSize: 11, color: C.text3, fontWeight: 800 }}>Cài đặt chạy</summary>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, fontSize: 11, color: C.text2 }}>
+                    <summary style={{ cursor: 'pointer', fontSize: FS.xs, color: C.text3, fontWeight: 700 }}>Cài đặt chạy</summary>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, fontSize: FS.xs, color: C.text2 }}>
                       <input type="checkbox"
                         checked={isArchive ? archiveOptions.headless : studyOptions.headless}
                         onChange={e => isArchive
@@ -4241,21 +4240,21 @@ export default function ResearchTab({ toast }) {
 
                 {automationRun.status !== 'idle' && (
                   <div style={{ border: `1px solid ${C.border2}`, background: C.surface2, borderRadius: 7, padding: '8px 10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 10.5, fontWeight: 750, color: automationRun.status === 'error' ? C.red : ['warning', 'cancelled'].includes(automationRun.status) ? C.amber : automationRun.status === 'done' ? C.green : C.text }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: FS.xs, fontWeight: 700, color: automationRun.status === 'error' ? C.red : ['warning', 'cancelled'].includes(automationRun.status) ? C.amber : automationRun.status === 'done' ? C.green : C.text }}>
                       {automationRun.status === 'running' && <Spinner size={8} />}
                       {automationRun.status === 'running' ? automationRun.current : automationRun.status === 'done' ? 'Đã hoàn tất' : automationRun.status === 'warning' ? 'Hoàn tất, có cảnh báo' : automationRun.status === 'cancelled' ? 'Đã dừng theo yêu cầu' : 'Đã dừng do lỗi'}
                     </div>
                     {(automationRun.steps.length > 0 || automationRun.error || automationRun.warning) && (
                       <details style={{ marginTop: 5 }}>
-                        <summary style={{ cursor: 'pointer', fontSize: 10, color: C.text3 }}>Chi tiết quy trình</summary>
+                        <summary style={{ cursor: 'pointer', fontSize: FS.xs, color: C.text3 }}>Chi tiết quy trình</summary>
                         <div style={{ display: 'grid', gap: 4, marginTop: 6 }}>
                           {automationRun.steps.map((step, index) => {
                             const tone = step.status === 'error' ? C.red : ['warning', 'cancelled'].includes(step.status) ? C.amber : step.status === 'done' ? C.green : step.status === 'running' ? C.blue : C.text3;
                             const symbol = step.status === 'done' ? '✓' : step.status === 'error' ? '!' : step.status === 'warning' ? '!' : step.status === 'cancelled' ? '■' : step.status === 'running' ? '…' : '·';
-                            return <div key={`${step.label}_${index}`} style={{ fontSize: 10, color: tone }}>{symbol} {step.label}{step.detail ? ` — ${step.detail}` : ''}</div>;
+                            return <div key={`${step.label}_${index}`} style={{ fontSize: FS.xs, color: tone }}>{symbol} {step.label}{step.detail ? ` — ${step.detail}` : ''}</div>;
                           })}
-                          {automationRun.error && <div style={{ fontSize: 10, color: C.red }}>Lỗi: {automationRun.error}</div>}
-                          {automationRun.warning && <div style={{ fontSize: 10, color: C.amber }}>{automationRun.warning}</div>}
+                          {automationRun.error && <div style={{ fontSize: FS.xs, color: C.red }}>Lỗi: {automationRun.error}</div>}
+                          {automationRun.warning && <div style={{ fontSize: FS.xs, color: C.amber }}>{automationRun.warning}</div>}
                         </div>
                       </details>
                     )}
@@ -4266,7 +4265,7 @@ export default function ResearchTab({ toast }) {
                   display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
                   padding: '7px 0', borderTop: `1px solid ${C.border2}`, background: C.surface,
                 }}>
-                  <span style={{ fontSize: 10.5, color: C.text3 }}>Tiến độ được lưu tự động.</span>
+                  <span style={{ fontSize: FS.xs, color: C.text3 }}>Tiến độ được lưu tự động.</span>
                   <Btn onClick={() => loadProgressSnapshot(selectedId, { silent: false })} disabled={statusLoading || uiBusy} style={{ ...actionBtn, marginLeft: 'auto' }}>
                     {statusLoading ? <Spinner size={8} /> : 'Cập nhật'}
                   </Btn>
@@ -4279,7 +4278,7 @@ export default function ResearchTab({ toast }) {
           {/* ── Panel lấy lại chỗ thiếu ── */}
           {showMissingPanel && (
             <div style={{ padding: '10px 14px', borderBottom: `1px solid ${C.amberBorder}`, background: C.amberBg, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 11, fontWeight: 650, color: C.amber }}>Bổ sung phần thiếu:</span>
+              <span style={{ fontSize: FS.xs, fontWeight: 600, color: C.amber }}>Bổ sung phần thiếu:</span>
               {[
                 { id: 'profile',       label: 'Hồ sơ nền' },
                 { id: 'discharge',     label: 'Ra viện' },
@@ -4287,7 +4286,7 @@ export default function ResearchTab({ toast }) {
                 { id: 'order_history', label: 'Y lệnh' },
                 { id: 'xn_cdha',       label: 'XN & CĐHA' },
               ].map(({ id, label }) => (
-                <label key={id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: C.text2, cursor: 'pointer' }}>
+                <label key={id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: FS.xs, color: C.text2, cursor: 'pointer' }}>
                   <input type="checkbox"
                     checked={missingTypes.includes(id)}
                     onChange={e => setMissingTypes(prev => e.target.checked ? [...prev, id] : prev.filter(x => x !== id))}
@@ -4295,12 +4294,12 @@ export default function ResearchTab({ toast }) {
                   {label}
                 </label>
               ))}
-              <Btn variant="solidWarn" onClick={runRefetchMissing} disabled={uiBusy || !missingTypes.length} style={{ height: 26, padding: '0 12px', fontSize: 11 }}>
+              <Btn variant="solidWarn" onClick={runRefetchMissing} disabled={uiBusy || !missingTypes.length} style={{ height: 26, padding: '0 12px', fontSize: FS.xs }}>
                 {uiBusy ? <><Spinner size={9} /> Đang lấy lại</> : 'Chạy'}
               </Btn>
-              <span style={{ fontSize: 10, color: C.amber }}>Chỉ xử lý BN/lượt còn thiếu hoặc lỗi, bỏ qua dòng đã đủ.</span>
+              <span style={{ fontSize: FS.xs, color: C.amber }}>Chỉ xử lý BN/lượt còn thiếu hoặc lỗi, bỏ qua dòng đã đủ.</span>
               {missingTypes.includes('xn_cdha') && (
-                <span style={{ fontSize: 10, color: C.text3 }}>XN/CĐHA: chạy lấy lại ngay trên danh sách BN/lượt còn thiếu.</span>
+                <span style={{ fontSize: FS.xs, color: C.text3 }}>XN/CĐHA: chạy lấy lại ngay trên danh sách BN/lượt còn thiếu.</span>
               )}
             </div>
           )}
@@ -4309,10 +4308,10 @@ export default function ResearchTab({ toast }) {
           {showConfigPanel && !isArchive && (
             <div style={{ padding: '12px 14px', borderBottom: `1px solid ${C.blueBorder}`, background: C.blueBg, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: C.blue }}>Cấu hình phân tích:</span>
+                <span style={{ fontSize: FS.xs, fontWeight: 700, color: C.blue }}>Cấu hình phân tích:</span>
                 <select value={editConfig.preset}
                   onChange={e => setEditConfig(p => ({ ...p, preset: e.target.value }))}
-                  style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.surface, color: C.text }}>
+                  style={{ fontSize: FS.xs, padding: '3px 8px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.surface, color: C.text }}>
                   {(analysisPresets.length ? analysisPresets : [
                     { id: 'ortho_fracture', label: 'Chấn thương chỉnh hình — Gãy xương' },
                     { id: 'ortho_joint',    label: 'Chấn thương chỉnh hình — Khớp / Thay khớp' },
@@ -4323,7 +4322,7 @@ export default function ResearchTab({ toast }) {
                 </select>
                 <button type="button"
                   onClick={() => setEditConfig(p => ({ ...p, custom_fields: [...(p.custom_fields || []), { name: '', pattern: '', label: '' }] }))}
-                  style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text2, borderRadius: 5, padding: '2px 8px', fontSize: 11, cursor: 'pointer' }}>
+                  style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text2, borderRadius: 5, padding: '2px 8px', fontSize: FS.xs, cursor: 'pointer' }}>
                   + Trường tuỳ chỉnh
                 </button>
               </div>
@@ -4331,20 +4330,20 @@ export default function ResearchTab({ toast }) {
                 <div key={i} style={{ display: 'grid', gridTemplateColumns: '160px 1fr 28px', gap: 6, alignItems: 'center' }}>
                   <input value={cf.name}
                     onChange={e => setEditConfig(p => { const cfs = [...p.custom_fields]; cfs[i] = { ...cfs[i], name: e.target.value }; return { ...p, custom_fields: cfs }; })}
-                    placeholder="Tên cột" style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text }} />
+                    placeholder="Tên cột" style={{ fontSize: FS.xs, padding: '3px 8px', borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text }} />
                   <input value={cf.pattern}
                     onChange={e => setEditConfig(p => { const cfs = [...p.custom_fields]; cfs[i] = { ...cfs[i], pattern: e.target.value }; return { ...p, custom_fields: cfs }; })}
-                    placeholder="Regex (VD: đái tháo đường|diabetes)" style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text }} />
+                    placeholder="Regex (VD: đái tháo đường|diabetes)" style={{ fontSize: FS.xs, padding: '3px 8px', borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text }} />
                   <button type="button" onClick={() => setEditConfig(p => ({ ...p, custom_fields: p.custom_fields.filter((_, j) => j !== i) }))}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.text3, fontSize: 16 }}>✕</button>
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.text3, fontSize: FS.xl }}>✕</button>
                 </div>
               ))}
               <div style={{ display: 'flex', gap: 8 }}>
-                <Btn variant="primary" onClick={saveAnalysisConfig} disabled={uiBusy} style={{ height: 26, padding: '0 12px', fontSize: 11 }}>
+                <Btn variant="primary" onClick={saveAnalysisConfig} disabled={uiBusy} style={{ height: 26, padding: '0 12px', fontSize: FS.xs }}>
                   {busy ? <><Spinner size={9} /> Lưu</> : '✓ Lưu & đóng'}
                 </Btn>
-                <Btn onClick={() => setShowConfigPanel(false)} style={{ height: 26, padding: '0 10px', fontSize: 11 }}>Huỷ</Btn>
-                <span style={{ fontSize: 10, color: C.text3, alignSelf: 'center' }}>Sau khi lưu, bấm "Chuẩn hóa" để sinh lại analysis_ready với cấu hình mới.</span>
+                <Btn onClick={() => setShowConfigPanel(false)} style={{ height: 26, padding: '0 10px', fontSize: FS.xs }}>Huỷ</Btn>
+                <span style={{ fontSize: FS.xs, color: C.text3, alignSelf: 'center' }}>Sau khi lưu, bấm "Chuẩn hóa" để sinh lại analysis_ready với cấu hình mới.</span>
               </div>
             </div>
           )}
@@ -4398,7 +4397,7 @@ export default function ResearchTab({ toast }) {
                         border: 0, borderBottom: `2px solid ${active ? C.blue : 'transparent'}`,
                         background: 'transparent',
                         color: active ? C.blue : C.text2,
-                        cursor: 'pointer', fontSize: 11, fontWeight: active ? 800 : 600,
+                        cursor: 'pointer', fontSize: FS.xs, fontWeight: active ? 700 : 600,
                         whiteSpace: 'nowrap',
                         transition: 'color 0.12s, border-color 0.12s',
                       }}
@@ -4406,7 +4405,7 @@ export default function ResearchTab({ toast }) {
                       {label}
                       {cnt > 0 && (
                         <span style={{
-                          marginLeft: 5, fontSize: 9, fontWeight: 700,
+                          marginLeft: 5, fontSize: FS.xs, fontWeight: 700,
                           color: active ? C.blue : C.text3,
                           background: active ? C.blueBg : C.surface2,
                           border: `1px solid ${active ? C.blueBorder : C.border2}`,
@@ -4446,24 +4445,24 @@ export default function ResearchTab({ toast }) {
               <input type="date" value={filters.to}
                 onChange={e => setFilters(p => ({ ...p, to: e.target.value }))}
                 style={{ ...inp, width: 126, flexShrink: 0 }} />
-              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: C.text2, whiteSpace: 'nowrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: FS.xs, color: C.text2, whiteSpace: 'nowrap' }}>
                 <input type="checkbox" checked={filters.hideSensitive}
                   onChange={e => setFilters(p => ({ ...p, hideSensitive: e.target.checked }))} />
                 Ẩn định danh
               </label>
               {(filters.q || filters.patient || filters.from || filters.to || !filters.hideSensitive) && (
-                <Btn onClick={resetFilters} style={{ height: 28, padding: '0 8px', fontSize: 11 }}>✕ Xoá lọc</Btn>
+                <Btn onClick={resetFilters} style={{ height: 28, padding: '0 8px', fontSize: FS.xs }}>✕ Xoá lọc</Btn>
               )}
             </div>
             {/* Row 2: count + actions — luôn hiển thị đủ */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 10, color: C.text3 }}>
+              <span style={{ fontSize: FS.xs, color: C.text3 }}>
                 {compactNumber(filteredRows.length)}/{compactNumber(rows.length)} dòng
               </span>
-              <Btn onClick={() => loadTable(selectedId, table)} disabled={tableLoading || busy} style={{ height: 26, padding: '0 8px', fontSize: 11 }}>
+              <Btn onClick={() => loadTable(selectedId, table)} disabled={tableLoading || busy} style={{ height: 26, padding: '0 8px', fontSize: FS.xs }}>
                 {tableLoading ? <><Spinner size={9} /> Đang tải</> : '↻ Tải lại'}
               </Btn>
-              <Btn variant="success" onClick={exportCurrent} disabled={!filteredRows.length} style={{ height: 26, padding: '0 10px', fontSize: 11 }}>
+              <Btn variant="success" onClick={exportCurrent} disabled={!filteredRows.length} style={{ height: 26, padding: '0 10px', fontSize: FS.xs }}>
                 ⬇ Xuất CSV
               </Btn>
             </div>
@@ -4486,7 +4485,7 @@ export default function ResearchTab({ toast }) {
             )}
             {rows.length > 0 && (
               <div style={{ opacity: tableLoading ? 0.5 : 1, transition: 'opacity 0.2s' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, tableLayout: 'fixed' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.sm, tableLayout: 'fixed' }}>
                 <thead style={{ position: 'sticky', top: 0, background: C.surface2, zIndex: 2 }}>
                   <tr>
                     {editMode && <th style={{ width: 28, borderBottom: `1px solid ${C.border}` }} />}
@@ -4498,7 +4497,7 @@ export default function ResearchTab({ toast }) {
                         <th key={col} style={{
                           textAlign: 'left', padding: '7px 10px',
                           borderBottom: `1px solid ${C.border}`,
-                          color: C.text2, fontWeight: 800, fontSize: 11,
+                          color: C.text2, fontWeight: 700, fontSize: FS.xs,
                           whiteSpace: 'nowrap', letterSpacing: '0.02em',
                           width: w, overflow: 'hidden',
                         }}>{col}</th>
@@ -4516,7 +4515,7 @@ export default function ResearchTab({ toast }) {
                         <td style={{ padding: '0 6px', width: 28, textAlign: 'center' }}>
                           <button type="button"
                             onClick={() => setRows(prev => prev.filter((_, i) => i !== idx))}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.red, fontSize: 15, lineHeight: 1 }}>✕</button>
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.red, fontSize: FS.lg, lineHeight: 1 }}>✕</button>
                         </td>
                       )}
                       {visibleColumns.map((col, ci) => {
@@ -4527,7 +4526,7 @@ export default function ResearchTab({ toast }) {
                           <td key={col} style={{
                             padding: '7px 10px',
                             color: isCode ? C.blue : C.text2,
-                            fontWeight: isCode ? 800 : 500,
+                            fontWeight: isCode ? 700 : 500,
                             verticalAlign: 'top',
                             whiteSpace: isLong ? 'pre-wrap' : 'nowrap',
                             overflow: 'hidden',
@@ -4543,11 +4542,11 @@ export default function ResearchTab({ toast }) {
             )}
             {tableLoading && rows.length > 0 && (
               <div style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6, borderTop: `1px solid ${C.border2}` }}>
-                <Spinner size={9} /><span style={{ fontSize: 11, color: C.text3 }}>Đang cập nhật...</span>
+                <Spinner size={9} /><span style={{ fontSize: FS.xs, color: C.text3 }}>Đang cập nhật...</span>
               </div>
             )}
             {!loading && !tableLoading && filteredRows.length > 1000 && (
-              <div style={{ padding: '8px 12px', color: C.text3, fontSize: 11, borderTop: `1px solid ${C.border2}` }}>
+              <div style={{ padding: '8px 12px', color: C.text3, fontSize: FS.xs, borderTop: `1px solid ${C.border2}` }}>
                 Hiển thị 1.000 dòng đầu · Xuất CSV để lấy toàn bộ {compactNumber(filteredRows.length)} dòng.
               </div>
             )}

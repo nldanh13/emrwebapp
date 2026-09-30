@@ -5,7 +5,7 @@
 // xem lại khi EMR đổi cấu trúc.
 
 import { useState, useCallback } from 'react';
-import { C } from '../tokens.js';
+import { C, FS } from '../tokens.js';
 import { Btn, Spinner } from './shared.jsx';
 import * as api from '../api.js';
 
@@ -20,7 +20,7 @@ function StatusDot({ status }) {
     known_ajax_limitation: { color: C.blue, label: 'ℹ Giới hạn kỹ thuật (đã xác nhận)' },
   };
   const info = map[status] || { color: C.text3, label: status || '—' };
-  return <span style={{ color: info.color, fontWeight: 700, fontSize: 12 }}>{info.label}</span>;
+  return <span style={{ color: info.color, fontWeight: 700, fontSize: FS.sm }}>{info.label}</span>;
 }
 
 function KnownPageRow({ page }) {
@@ -31,8 +31,8 @@ function KnownPageRow({ page }) {
     <div style={{ borderBottom: `1px solid ${C.border2}`, padding: '8px 12px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{page.label || page.page_key}</div>
-          <div style={{ fontSize: 11, color: C.text3, marginTop: 1 }}>
+          <div style={{ fontSize: FS.md, color: C.text, fontWeight: 600 }}>{page.label || page.page_key}</div>
+          <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 1 }}>
             wpid={page.wpid || '—'} {page.field_ids_found_count != null && `· ${page.field_ids_found_count} field · ${page.tables_found_count} bảng`}
           </div>
         </div>
@@ -41,18 +41,18 @@ function KnownPageRow({ page }) {
           {hasDetail && (
             <button type="button" onClick={() => setOpen(v => !v)} style={{
               background: 'none', border: `1px solid ${C.border}`, borderRadius: 4,
-              padding: '2px 7px', cursor: 'pointer', fontSize: 11, color: C.text2, fontFamily: 'inherit',
+              padding: '2px 7px', cursor: 'pointer', fontSize: FS.xs, color: C.text2, fontFamily: 'inherit',
             }}>{open ? 'Ẩn' : 'Xem chi tiết'}</button>
           )}
         </div>
       </div>
       {open && isKnownLimitation && (
-        <div style={{ marginTop: 6, fontSize: 12, color: C.blue, background: C.blueBg, border: `1px solid ${C.blueBorder}`, borderRadius: 4, padding: '6px 10px' }}>
+        <div style={{ marginTop: 6, fontSize: FS.sm, color: C.blue, background: C.blueBg, border: `1px solid ${C.blueBorder}`, borderRadius: 4, padding: '6px 10px' }}>
           {page.note}
         </div>
       )}
       {open && !isKnownLimitation && (
-        <div style={{ marginTop: 6, fontSize: 12, color: C.red, background: C.redBg, border: `1px solid ${C.redBorder}`, borderRadius: 4, padding: '6px 10px' }}>
+        <div style={{ marginTop: 6, fontSize: FS.sm, color: C.red, background: C.redBg, border: `1px solid ${C.redBorder}`, borderRadius: 4, padding: '6px 10px' }}>
           {page.missing_fields?.length > 0 && <div>Thiếu field: {page.missing_fields.join(', ')}</div>}
           {page.missing_tables?.length > 0 && <div>Thiếu bảng: {page.missing_tables.join(', ')}</div>}
           {page.error && <div>Lỗi: {page.error}</div>}
@@ -65,18 +65,18 @@ function KnownPageRow({ page }) {
 function DiscoveredPageRow({ page }) {
   return (
     <div style={{ borderBottom: `1px solid ${C.border2}`, padding: '8px 12px' }}>
-      <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>
+      <div style={{ fontSize: FS.md, color: C.text, fontWeight: 600 }}>
         wpid={page.wpid} {page.status !== 'ok' && <span style={{ color: C.red, fontWeight: 700 }}> — lỗi</span>}
       </div>
-      <div style={{ fontSize: 11, color: C.text3, marginTop: 1 }}>
+      <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 1 }}>
         Link tìm thấy: “{page.link_text || '—'}”
       </div>
       {page.status === 'ok' && (
-        <div style={{ fontSize: 11, color: C.text2, marginTop: 3 }}>
+        <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 3 }}>
           {(page.field_ids || []).length} field · {(page.tables || []).length} bảng có id · {(page.dropdowns || []).length} dropdown
         </div>
       )}
-      {page.error && <div style={{ fontSize: 11, color: C.red, marginTop: 3 }}>{page.error}</div>}
+      {page.error && <div style={{ fontSize: FS.xs, color: C.red, marginTop: 3 }}>{page.error}</div>}
     </div>
   );
 }
@@ -109,8 +109,8 @@ function InspectPageSection() {
 
   return (
     <div style={{ marginBottom: 20, padding: 12, background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 6 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>Dò 1 trang cụ thể</div>
-      <div style={{ fontSize: 11, color: C.text3, marginBottom: 8 }}>
+      <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text, marginBottom: 4 }}>Dò 1 trang cụ thể</div>
+      <div style={{ fontSize: FS.xs, color: C.text3, marginBottom: 8 }}>
         Dán nguyên URL của trang đang xem (copy từ thanh địa chỉ trình duyệt khi đang mở
         đúng trang trên EMR) — không cần đợi quét toàn bộ danh mục.
       </div>
@@ -123,7 +123,7 @@ function InspectPageSection() {
           placeholder="http://.../home.aspx?scope=sys&wpid=...&..."
           style={{
             flex: 1, height: 32, borderRadius: 5, border: `1px solid ${C.border}`,
-            background: C.bg, color: C.text, padding: '0 9px', fontSize: 12,
+            background: C.bg, color: C.text, padding: '0 9px', fontSize: FS.sm,
             fontFamily: 'inherit', outline: 'none', minWidth: 0,
           }}
         />
@@ -133,13 +133,13 @@ function InspectPageSection() {
       </div>
 
       {error && (
-        <div style={{ marginTop: 10, padding: '8px 12px', background: C.redBg, border: `1px solid ${C.redBorder}`, borderRadius: 6, color: C.red, fontSize: 12 }}>
+        <div style={{ marginTop: 10, padding: '8px 12px', background: C.redBg, border: `1px solid ${C.redBorder}`, borderRadius: 6, color: C.red, fontSize: FS.sm }}>
           {error}
         </div>
       )}
 
       {result && (
-        <div style={{ marginTop: 10, fontSize: 12 }}>
+        <div style={{ marginTop: 10, fontSize: FS.sm }}>
           <div style={{ color: C.text3, marginBottom: 6 }}>
             wpid={result.wpid || '—'} · {result.field_ids?.length || 0} field · {result.tables?.length || 0} bảng có id · {result.dropdowns?.length || 0} dropdown
           </div>
@@ -192,8 +192,8 @@ export default function EmrStructureScanTab() {
   return (
     <div style={{ padding: 12, maxWidth: 980, margin: '0 auto' }}>
       <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>Kiểm tra cấu trúc EMR</div>
-        <div style={{ fontSize: 12, color: C.text2, marginTop: 4 }}>
+        <div style={{ fontSize: FS.xl, fontWeight: 700, color: C.text }}>Kiểm tra cấu trúc EMR</div>
+        <div style={{ fontSize: FS.sm, color: C.text2, marginTop: 4 }}>
           Đăng nhập EMR (chỉ đọc), so các trang/field code đang dùng với danh mục đã biết
           (config/hchanh/emr_structure_manifest.json), và dò thêm trang mới qua liên kết.
           Không bấm/gửi form nào — chỉ tải trang để đọc cấu trúc. Không tự sửa code.
@@ -207,7 +207,7 @@ export default function EmrStructureScanTab() {
       <InspectPageSection />
 
       {error && (
-        <div style={{ marginBottom: 16, padding: '8px 12px', background: C.redBg, border: `1px solid ${C.redBorder}`, borderRadius: 6, color: C.red, fontSize: 13 }}>
+        <div style={{ marginBottom: 16, padding: '8px 12px', background: C.redBg, border: `1px solid ${C.redBorder}`, borderRadius: 6, color: C.red, fontSize: FS.md }}>
           {error}
         </div>
       )}
@@ -223,14 +223,14 @@ export default function EmrStructureScanTab() {
               ['Trang mới tìm thấy', summary.discovered_pages_new, C.blue, C.blueBg],
             ].map(([label, value, color]) => (
               <div key={label} style={{ padding: '4px 16px 5px 0', borderRight: `1px solid ${C.border2}` }}>
-                <div style={{ fontSize: 19, fontWeight: 800, color }}>{value ?? 0}</div>
-                <div style={{ fontSize: 10, color: C.text3 }}>{label}</div>
+                <div style={{ fontSize: FS.stat, fontWeight: 700, color }}>{value ?? 0}</div>
+                <div style={{ fontSize: FS.xs, color: C.text3 }}>{label}</div>
               </div>
             ))}
           </div>
 
           {report.warning && (
-            <div style={{ marginBottom: 16, padding: '8px 12px', background: C.amberBg, border: `1px solid ${C.amberBorder}`, borderRadius: 6, color: C.amber, fontSize: 12 }}>
+            <div style={{ marginBottom: 16, padding: '8px 12px', background: C.amberBg, border: `1px solid ${C.amberBorder}`, borderRadius: 6, color: C.amber, fontSize: FS.sm }}>
               {report.warning}
               {report.inpatient_scan_diag && (
                 <div style={{ marginTop: 4, color: C.text2 }}>
@@ -250,18 +250,18 @@ export default function EmrStructureScanTab() {
           )}
 
           {!report.warning && report.inpatient_list_source === 'ajaxpro_fallback' && (
-            <div style={{ marginBottom: 16, fontSize: 11, color: C.text3 }}>
+            <div style={{ marginBottom: 16, fontSize: FS.xs, color: C.text3 }}>
               Danh sách nội trú lấy qua đường dự phòng AjaxPro (bảng HTML gốc trống/không thấy).
             </div>
           )}
 
           {report.known_gaps?.length > 0 && (
-            <div style={{ marginBottom: 16, fontSize: 12, color: C.text3 }}>
+            <div style={{ marginBottom: 16, fontSize: FS.sm, color: C.text3 }}>
               <b>Chưa kiểm được:</b> {report.known_gaps.join(' ')}
             </div>
           )}
 
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.text2, marginBottom: 6, marginTop: 10 }}>
+          <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text2, marginBottom: 6, marginTop: 10 }}>
             CÁC TRANG ĐÃ BIẾT
           </div>
           <div style={{ background: C.surface, borderTop: `1px solid ${C.border2}`, marginBottom: 20 }}>
@@ -270,7 +270,7 @@ export default function EmrStructureScanTab() {
 
           {(report.discovered_pages || []).length > 0 && (
             <>
-              <div style={{ fontSize: 12, fontWeight: 700, color: C.text2, marginBottom: 6 }}>
+              <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text2, marginBottom: 6 }}>
                 TRANG MỚI TÌM THẤY (chưa có trong danh mục — chỉ để biết, chưa tự dùng)
               </div>
               <div style={{ background: C.surface, borderTop: `1px solid ${C.border2}` }}>
