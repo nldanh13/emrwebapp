@@ -7,11 +7,12 @@
 //  3. Dòng chuyển khoa chung Mã nội trú gộp thành 1 đợt với ngày vào sớm nhất; ca nghi
 //     cùng đợt nhưng KHÔNG chung khóa EMR thì chỉ đưa vào danh sách duyệt, không tự gộp.
 //  4. Ghép bảng con vào đúng lượt bằng khóa chuẩn hóa/ngày duy nhất, không đoán ca mơ hồ.
-//  5. Báo cáo chất lượng: lỗi chặn (trùng khóa, mồ côi khóa ngoại) và cảnh báo.
-//  6. Chuẩn hóa dở dang/lỗi bị phát hiện, chặn tạo dataset cuối, chạy lại không dùng cache.
-//  7. Dataset cuối không bị mất khi Chuẩn hóa lại (được lưu phiên bản).
-//  8. Xuất ẩn danh che cả Mã nội trú và URL EMR (chứa Mã BN).
-//  9. Xóa nghiên cứu chỉ dành cho admin.
+//  5. Thống kê danh mục biến có giới hạn bộ nhớ với cột nhiều giá trị khác nhau.
+//  6. Báo cáo chất lượng: lỗi chặn (trùng khóa, mồ côi khóa ngoại) và cảnh báo.
+//  7. Chuẩn hóa dở dang/lỗi bị phát hiện, chặn tạo dataset cuối, chạy lại không dùng cache.
+//  8. Dataset cuối không bị mất khi Chuẩn hóa lại (được lưu phiên bản).
+//  9. Xuất ẩn danh che cả Mã nội trú và URL EMR (chứa Mã BN).
+// 10. Xóa nghiên cứu chỉ dành cho admin.
 // Chạy: node scripts/research_data_safety_test.js
 
 const assert = require('assert');
@@ -113,6 +114,22 @@ test('Ghép theo ngày sự kiện chỉ khi nằm trong đúng một lượt, k
   const outside = R.contextForRow(map, { 'Mã BN': '111', 'TG chỉ định': '23/02/2026' }, '111');
   assert.strictEqual(outside.encounter_id, '');
   assert.strictEqual(R.encounterMatchStatus(outside), 'ambiguous');
+});
+
+test('Danh mục biến giới hạn mẫu và số giá trị khác nhau để không tăng RAM vô hạn', () => {
+  const rows = Array.from({ length: 7000 }, (_, index) => ({
+    bien_nhieu_gia_tri: `gia_tri_${index}`,
+    bien_phan_loai: index % 2 ? 'Có' : 'Không',
+  }));
+  const stats = R.summarizeVariableColumns(['bien_nhieu_gia_tri', 'bien_phan_loai'], rows);
+  const many = stats.get('bien_nhieu_gia_tri');
+  const category = stats.get('bien_phan_loai');
+  assert.strictEqual(many.nonempty, 7000);
+  assert.strictEqual(many.distinct.size, 5000);
+  assert.strictEqual(many.distinct_truncated, true);
+  assert.ok(many.samples.size <= 30);
+  assert.strictEqual(category.distinct.size, 2);
+  assert.strictEqual(R.VARIABLE_CATALOG_MAX_ROWS, 50000);
 });
 
 test('Mã NC duy nhất, giữ nguyên khi quét lại đổi thứ tự, dòng mới nhận số kế tiếp', () => {
