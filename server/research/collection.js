@@ -56,6 +56,12 @@ const REASON_LABELS = {
   retry_exhausted: 'Đã thử lại đủ số lần, vẫn lỗi',
   refresh_due: 'Quá hạn kiểm tra lại theo chính sách làm mới',
   manual_refresh: 'Người dùng chọn Làm mới',
+  patient_not_in_encounters: 'Người bệnh chưa có trong danh sách lượt chuẩn hóa',
+  ambiguous_research_code: 'Mã nghiên cứu khớp nhiều lượt',
+  ambiguous_date_range: 'Ngày vào nằm trong nhiều lượt',
+  identity_conflict: 'Định danh nội trú không khớp lượt chuẩn hóa',
+  missing_admission_date: 'Thiếu ngày vào viện để ghép lượt',
+  no_unique_encounter: 'Chưa đủ bằng chứng để ghép đúng một lượt',
 };
 
 // Trường nội dung/phiên bản của một phần, giữ qua các lần dựng lại sổ.
@@ -256,6 +262,11 @@ function sourceUnitFromRow(row) {
     stay_from: id.admission_date,
     stay_to: '',
     signatures: cell(row, ['list_row_signatures']),
+    // Chưa có encounters.csv để đối chiếu: đây là chế độ cũ, không được báo nhầm
+    // là một lỗi ghép lượt.
+    match_status: 'source_only',
+    match_method: '',
+    unmatched_reason: '',
     row,
   };
 }
@@ -277,6 +288,7 @@ function buildCollectionUnits({ sourceRows = [], encounterRows = [] } = {}) {
     from: isoDateOnly(cell(r, ['admission_date'])),
     to: isoDateOnly(cell(r, ['discharge_date'])),
   })).filter(e => e.id && e.patient_code && !e.id.startsWith('enc_unresolved_'));
+  const hasEncounterCatalog = encs.length > 0;
   const byCode = new Map();
   for (const e of encs) {
     if (!byCode.has(e.patient_code)) byCode.set(e.patient_code, []);
@@ -292,15 +304,30 @@ function buildCollectionUnits({ sourceRows = [], encounterRows = [] } = {}) {
     const cands = byCode.get(id.patient_code) || [];
     const noConflict = e => !(id.noitru && e.noitru && e.noitru !== id.noitru);
     const levels = [
-      () => (id.noitru ? cands.filter(e => e.noitru === id.noitru || e.treatment === id.noitru) : []),
-      () => (id.treatment ? cands.filter(e => e.treatment === id.treatment || e.noitru === id.treatment) : []),
-      () => (rowDate ? cands.filter(e => noConflict(e) && e.from && rowDate >= e.from && rowDate <= (e.to || e.from)) : []),
+      ['noitru', () => (id.noitru ? cands.filter(e => e.noitru === id.noitru || e.treatment === id.noitru) : [])],
+      ['treatment', () => (id.treatment ? cands.filter(e => e.treatment === id.treatment || e.noitru === id.treatment) : [])],
+      // Mã NC được cấp duy nhất cho từng Research key. Đây là bằng chứng mạnh khi
+      // danh sách cũ thiếu Mã nội trú và một người bệnh có nhiều lượt cùng ngày.
+      // Vẫn bắt buộc cùng Mã BN và không được mâu thuẫn Mã nội trú.
+      ['research_code', () => (id.research_code ? cands.filter(e => e.research_code === id.research_code && noConflict(e)) : [])],
+      ['date_range', () => (rowDate ? cands.filter(e => noConflict(e) && e.from && rowDate >= e.from && rowDate <= (e.to || e.from)) : [])],
     ];
     let match = null;
-    for (const level of levels) {
-      const found = level();
-      if (found.length === 1) { match = found[0]; break; }
-      if (found.length > 1) break; // nhiều lượt khớp → không đoán, đứng riêng
+    let matchMethod = '';
+    let ambiguousMethod = '';
+    for (const [method, find] of levels) {
+      const found = find();
+      if (found.length === 1) { match = found[0]; matchMethod = method; break; }
+      if (found.length > 1) { ambiguousMethod = method; break; } // nhiều lượt khớp → không đoán
+    }
+    let unmatchedReason = '';
+    if (!match) {
+      if (!cands.length) unmatchedReason = 'patient_not_in_encounters';
+      else if (ambiguousMethod === 'research_code') unmatchedReason = 'ambiguous_research_code';
+      else if (ambiguousMethod === 'date_range') unmatchedReason = 'ambiguous_date_range';
+      else if ((id.noitru || id.treatment) && cands.some(e => e.noitru || e.treatment)) unmatchedReason = 'identity_conflict';
+      else if (!rowDate) unmatchedReason = 'missing_admission_date';
+      else unmatchedReason = 'no_unique_encounter';
     }
     const key = match ? match.id : id.key;
     if (!units.has(key)) {
@@ -314,11 +341,15 @@ function buildCollectionUnits({ sourceRows = [], encounterRows = [] } = {}) {
         admission_date: match?.from || id.admission_date,
         stay_from: match?.from || id.admission_date,
         stay_to: match?.to || '',
+        match_status: match ? 'matched' : (hasEncounterCatalog ? 'unmatched' : 'source_only'),
+        match_methods: new Set(matchMethod ? [matchMethod] : []),
+        unmatched_reason: hasEncounterCatalog ? unmatchedReason : '',
         members: [],
         rows: [],
       });
     }
     const u = units.get(key);
+    if (matchMethod) u.match_methods.add(matchMethod);
     u.members.push(id.key);
     u.rows.push(row);
   }
@@ -344,6 +375,9 @@ function buildCollectionUnits({ sourceRows = [], encounterRows = [] } = {}) {
       admission_date: u.admission_date,
       stay_from: u.stay_from,
       stay_to: u.stay_to,
+      match_status: u.match_status,
+      match_method: [...u.match_methods].sort().join(';'),
+      unmatched_reason: u.unmatched_reason,
       members: u.members,
       member_codes: [...new Set(rows.map(r => cell(r, ['Mã NC', 'research_code'])).filter(Boolean))],
       signatures: mergeSignatures(...rows.map(r => cell(r, ['list_row_signatures']))),
@@ -351,6 +385,25 @@ function buildCollectionUnits({ sourceRows = [], encounterRows = [] } = {}) {
     });
   }
   return out;
+}
+
+function collectionUnitMatchSummary(units = []) {
+  const summary = { total: units.length, matched: 0, unmatched: 0, source_only: 0, by_method: {}, by_reason: {} };
+  for (const unit of units || []) {
+    if (unit.encounter_id) {
+      summary.matched += 1;
+      for (const method of String(unit.match_method || 'unknown').split(';').filter(Boolean)) {
+        summary.by_method[method] = (summary.by_method[method] || 0) + 1;
+      }
+    } else if (unit.match_status === 'unmatched') {
+      summary.unmatched += 1;
+      const reason = unit.unmatched_reason || 'no_unique_encounter';
+      summary.by_reason[reason] = (summary.by_reason[reason] || 0) + 1;
+    } else {
+      summary.source_only += 1;
+    }
+  }
+  return summary;
 }
 
 function matchXnEntriesToSources(progress, sources) {
@@ -561,6 +614,9 @@ function buildLedger({ sourceRows = [], units = null, xnProgress = {}, hchanhPro
       research_code: src.research_code,
       patient_code: src.patient_code,
       admission_date: src.admission_date,
+      match_status: src.match_status || (src.encounter_id ? 'matched' : 'source_only'),
+      match_method: src.match_method || '',
+      unmatched_reason: src.unmatched_reason || '',
       in_source: true,
       first_seen_at: prev?.first_seen_at || now,
       change_seq: changeSeq,
@@ -862,6 +918,24 @@ function exceptionRows(ledger, { keys = null, maxAttempts = DEFAULT_MAX_ATTEMPTS
   for (const [key, enc] of Object.entries(ledger?.encounters || {})) {
     if (enc.in_source === false) continue;
     if (scope && !scope.has(key)) continue;
+    if (enc.match_status === 'unmatched') {
+      const reason = enc.unmatched_reason || 'no_unique_encounter';
+      out.push({
+        key,
+        research_code: enc.research_code || '',
+        patient_code: enc.patient_code || '',
+        part: 'encounter_match',
+        part_label: 'Ghép lượt điều trị',
+        status: 'blocked',
+        reason,
+        reason_label: REASON_LABELS[reason] || REASON_LABELS.encounter_not_identified,
+        detail: 'Dòng nguồn được giữ riêng; chưa tự gán vào lượt điều trị khác.',
+        attempts: 0,
+        auto_retry: 'no',
+        category: 'unmatched',
+        updated_at: '',
+      });
+    }
     for (const k of PART_KEYS) {
       const p = enc.parts?.[k];
       if (!p || !['failed', 'blocked'].includes(p.status)) continue;
@@ -1144,6 +1218,7 @@ module.exports = {
   listRowSignature,
   mergeSignatures,
   buildCollectionUnits,
+  collectionUnitMatchSummary,
   parseSignatures,
   classifyFetchStatus,
   classifyXnTab,
