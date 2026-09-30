@@ -10,7 +10,7 @@ const crypto = require('crypto');
 
 const { ROOT_DIR, RESEARCH_STORE_DIR, ALLOW_IDENTIFIED_RESEARCH_EXPORT } = require('../constants');
 const { ensureDir, writeFileAtomic, writeJsonAtomic, readJsonSafe, nowFileStamp, safeFilePart } = require('../utils/file');
-const { csvEscape, rowsToCsv } = require('../utils/csv');
+const { csvEscape, rowsToCsv, rowsToCsvRaw } = require('../utils/csv');
 const { redactLogLine } = require('../utils/log_redact');
 const { runPython, runScript, fmtPyError } = require('../services/python_runner');
 const { getRuntimePaths } = require('../services/session');
@@ -350,7 +350,7 @@ function parseCsv(text, { maxRows = MAX_TABLE_ROWS } = {}) {
 }
 
 function writeCsv(filePath, columns, rows) {
-  writeFileAtomic(filePath, `\ufeff${rowsToCsv(columns, rows)}`, 'utf-8');
+  writeFileAtomic(filePath, `\ufeff${rowsToCsvRaw(columns, rows)}`, 'utf-8');
 }
 
 const CSV_TABLE_CACHE = new Map();
@@ -1418,13 +1418,13 @@ function latestRunIdFast(dir) {
 
 function resolveArchiveRunIdFast(requested = 'latest') {
   const req = String(requested || 'latest');
-  if (req && req !== 'latest') return safeFilePart(req);
+  if (req && req !== 'latest') return safeRunId(req);
   return latestRunIdFast(archiveRunsDir());
 }
 
 function resolveStudyRunIdFast(studyId, requested = 'latest') {
   const req = String(requested || 'latest');
-  if (req && req !== 'latest') return safeFilePart(req);
+  if (req && req !== 'latest') return safeRunId(req);
   return latestRunIdFast(runsDir(studyId));
 }
 
@@ -1494,7 +1494,7 @@ function updateStudy(studyId, patch) {
 }
 
 function resolveRunId(studyId, requested) {
-  if (requested && requested !== 'latest') return safeFilePart(requested);
+  if (requested && requested !== 'latest') return safeRunId(requested);
   const runs = listRuns(studyId);
   return runs[0]?.id || '';
 }
@@ -1569,8 +1569,15 @@ function updateArchive(patch) {
   return readArchive();
 }
 
+// Mã run lấy từ URL/body: chỉ ký tự an toàn cho tên file, và không được là "." hay ".."
+// (safeFilePart giữ dấu chấm nên "..", "runId=.." sẽ trỏ lên thư mục cha).
+function safeRunId(value) {
+  const id = safeFilePart(value);
+  return /^\.*$/.test(id) ? '' : id;
+}
+
 function resolveArchiveRunId(requested) {
-  if (requested && requested !== 'latest') return safeFilePart(requested);
+  if (requested && requested !== 'latest') return safeRunId(requested);
   const runs = listArchiveRuns();
   return runs[0]?.id || '';
 }
@@ -1583,7 +1590,7 @@ function resolveArchiveRunIdForAction(requested = 'latest') {
 }
 
 function resolveStudyRunIdForAction(studyId, requested = 'latest') {
-  if (requested && requested !== 'latest') return safeFilePart(requested);
+  if (requested && requested !== 'latest') return safeRunId(requested);
   return resolveRunId(studyId, 'latest') || nowFileStamp();
 }
 
@@ -3094,7 +3101,8 @@ function copyRowsByPatients(sourceFile, targetFile, patientSet, codeMap) {
 // v11: gộp dòng chuyển khoa chung Mã nội trú lấy ngày vào sớm nhất.
 // v12: bỏ dòng XN/CĐHA thô giống hệt nhau; QA báo kết quả mâu thuẫn.
 // v13: ghép lượt theo Mã NC đã chuẩn hóa/ngày vào-ra duy nhất, không đoán ca mơ hồ.
-const NORMALIZED_SCHEMA_VERSION = 13;
+// v14: bảng chuẩn hóa không còn dấu ' trước số âm/"+" (lỗi ghi CSV cũ); chuẩn hóa lại toàn bộ.
+const NORMALIZED_SCHEMA_VERSION = 14;
 
 const NORMALIZED_COLUMNS = {
   patients: [
@@ -7083,7 +7091,7 @@ router.post('/research/archive/normalize', (_req, res) => {
 router.post('/research/archive/import-hchanh', (req, res) => {
   const ctx = getRuntimePaths(req);
   try {
-    const runId = resolveArchiveRunId(String(req.body?.runId || 'latest')) || safeFilePart(req.body?.runId || nowFileStamp());
+    const runId = resolveArchiveRunId(String(req.body?.runId || 'latest')) || safeRunId(req.body?.runId) || nowFileStamp();
     if (!runId) return res.status(400).json({ status: 'error', message: 'Kho dữ liệu gốc chưa có run để gộp dữ liệu hành chánh.' });
     const runDir = path.join(archiveRunsDir(), runId);
     ensureDir(runDir);
@@ -7245,7 +7253,7 @@ router.post('/research/archive/patient-info', async (req, res) => {
     if (!fs.existsSync(SCRIPT_PATH)) return res.status(500).json({ status: 'error', message: 'Thiếu script lấy dữ liệu nghiên cứu.' });
     const effectiveFromDate = String(req.body?.fromDate || archive.scan_from_date || '').trim();
     const effectiveToDate = String(req.body?.toDate || archive.scan_to_date || todayDateInput()).trim();
-    const runId = safeFilePart(req.body?.runId || archive.latest_run?.id || chooseArchiveRunIdForResume({ fromDate: effectiveFromDate, toDate: effectiveToDate }) || nowFileStamp());
+    const runId = safeRunId(req.body?.runId || archive.latest_run?.id || chooseArchiveRunIdForResume({ fromDate: effectiveFromDate, toDate: effectiveToDate }) || nowFileStamp()) || nowFileStamp();
     const runDir = path.join(archiveRunsDir(), runId);
     const sourceInfo = readResearchHchanhSourceRows(runDir, archiveSourcePath(), {
       sourceRunId: runId,
@@ -7309,10 +7317,10 @@ router.post('/research/archive/run', async (req, res) => {
     const deep = req.body?.deep === true || mode === 'deep';
     const fromDate = String(req.body?.fromDate || '2026-01-01').trim();
     const toDate = String(req.body?.toDate || todayDateInput()).trim();
-    const runId = safeFilePart(req.body?.runId || (deep
+    const runId = safeRunId(req.body?.runId || (deep
       ? (archive.latest_run?.id || chooseArchiveRunIdForResume({ fromDate, toDate }) || nowFileStamp())
       : (req.body?.resume === false ? nowFileStamp() : chooseArchiveRunIdForResume({ fromDate, toDate }))
-    ));
+    )) || nowFileStamp();
     const initialListPath = archiveTablePath('initial_list', runId);
     const inputPath = deep ? initialListPath : archiveSourcePath();
     if (deep && (!inputPath || !fs.existsSync(inputPath))) {
@@ -9214,7 +9222,7 @@ router.post('/research/studies/:studyId/run', async (req, res) => {
     if (!fs.existsSync(cohortPath(study.id))) return res.status(400).json({ status: 'error', message: 'Chưa có danh sách bệnh nhân cho nghiên cứu này.' });
     if (!fs.existsSync(SCRIPT_PATH)) return res.status(500).json({ status: 'error', message: 'Thiếu script lấy dữ liệu nghiên cứu.' });
 
-    const runId = safeFilePart(req.body?.runId || (req.body?.resume === false ? nowFileStamp() : chooseStudyRunIdForResume(study.id)));
+    const runId = safeRunId(req.body?.runId || (req.body?.resume === false ? nowFileStamp() : chooseStudyRunIdForResume(study.id))) || nowFileStamp();
     const args = [
       '-u', SCRIPT_PATH,
       '--input', cohortPath(study.id),
@@ -9275,4 +9283,4 @@ module.exports._fetchHchanhForResearchRun = fetchHchanhForResearchRun;
 // Danh sách cột chuẩn hóa, dùng để đối chiếu từ điển dữ liệu (server/research/data_dictionary.js).
 module.exports.NORMALIZED_COLUMNS = NORMALIZED_COLUMNS;
 module.exports.ingestAllResearchResultsToPatientDb = ingestAllResearchResultsToPatientDb;
-module.exports._test = { readCsvTable, buildResearchProgressSnapshot, overlayHchanhFromPatientDb, overlayResultsFromPatientDb, buildResultDayIndex, resultDayIndexHasRange, addRowsToResultDayIndex, ingestAllResearchResultsToPatientDb, researchHchanhMeta, normalizeInputSignature, identifiedAccessStatus, normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, buildContextMap, contextForRow, encounterMatchStatus, encounterMatchMethod, summarizeVariableColumns, VARIABLE_CATALOG_MAX_ROWS, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, writeDatasetSnapshot, verifyDatasetSnapshot, verifyAllDatasetSnapshots, cleanupStaleDatasetStaging, finalizeAnalysisDataset, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };
+module.exports._test = { readCsvTable, buildResearchProgressSnapshot, safeRunId, overlayHchanhFromPatientDb, overlayResultsFromPatientDb, buildResultDayIndex, resultDayIndexHasRange, addRowsToResultDayIndex, ingestAllResearchResultsToPatientDb, researchHchanhMeta, normalizeInputSignature, identifiedAccessStatus, normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, buildContextMap, contextForRow, encounterMatchStatus, encounterMatchMethod, summarizeVariableColumns, VARIABLE_CATALOG_MAX_ROWS, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, writeDatasetSnapshot, verifyDatasetSnapshot, verifyAllDatasetSnapshots, cleanupStaleDatasetStaging, finalizeAnalysisDataset, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };

@@ -39,6 +39,14 @@ function unquoteCell(raw) {
   return out;
 }
 
+// Bản cũ ghi CSV nội bộ qua bộ chặn công thức Excel, chèn ' trước giá trị bắt đầu bằng
+// = + - @ (vd. -3.5 thành '-3.5). Đọc lại thì bỏ dấu ' đó để số âm và kết quả "+"/"-"
+// đúng như gốc. File tải về vẫn được chặn công thức khi xuất (rowsToCsv).
+const LEGACY_FORMULA_GUARD_RE = /^'(?=\s*[=+\-@])/;
+function repairFormulaGuard(value) {
+  return value.charCodeAt(0) === 0x27 ? value.replace(LEGACY_FORMULA_GUARD_RE, '') : value;
+}
+
 function readCsvFileRows(filePath, maxRows) {
   const limit = Number.isFinite(Number(maxRows)) ? Math.max(0, Number(maxRows)) : Number.MAX_SAFE_INTEGER;
   const intern = new Map();
@@ -87,7 +95,7 @@ function readCsvFileRows(filePath, maxRows) {
             return v || `Cột ${idx + 1}`;
           });
         } else if (collecting) {
-          const values = cells.map(v => v.trim());
+          const values = cells.map(v => repairFormulaGuard(v.trim()));
           if (values.some(Boolean)) {
             count += 1;
             const obj = {};
@@ -142,4 +150,4 @@ function readCsvFileRows(filePath, maxRows) {
   return { columns, rows, count, limited: count > rows.length };
 }
 
-module.exports = { readCsvFileRows };
+module.exports = { readCsvFileRows, repairFormulaGuard };

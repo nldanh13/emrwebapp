@@ -342,6 +342,34 @@ test('Số lượt theo dõi = số lượt trong danh sách; mục tiến độ
   assert.ok(snap.counts.error <= 1, `lỗi chỉ tính trên lượt có thật, nhận ${snap.counts.error}`);
 });
 
+test('Chuẩn hóa giữ nguyên số âm và kết quả "+" trong lab_results.csv (không chèn dấu \')', () => {
+  const runDir = newRunDir();
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), ['T/G vào', 'Mã BN', 'Mã nội trú', 'Họ tên', 'Ngày ra viện'], [
+    { 'T/G vào': '08:00 20/02/2026', 'Mã BN': '333', 'Mã nội trú': 'nt-neg', 'Họ tên': 'BN GIA LAP C', 'Ngày ra viện': '28/02/2026' },
+  ]);
+  R.normalizeRunOutputs(runDir, { sourceRunId: 'r' });
+  const nc = readCsv(path.join(runDir, 'research_source.csv'))[0]['Mã NC'];
+  writeCsv(path.join(runDir, 'lich_su_xn.csv'), ['Mã NC', 'Mã BN', 'Thời gian', 'Chỉ số', 'Kết quả', 'Đơn vị'], [
+    { 'Mã NC': nc, 'Mã BN': '333', 'Thời gian': '08:00 22/02/2026', 'Chỉ số': 'Kiềm dư (BE)', 'Kết quả': '-3.5', 'Đơn vị': 'mmol/L' },
+    { 'Mã NC': nc, 'Mã BN': '333', 'Thời gian': '08:00 23/02/2026', 'Chỉ số': 'Protein niệu', 'Kết quả': '+', 'Đơn vị': '' },
+  ]);
+  R.normalizeRunOutputs(runDir, { sourceRunId: 'r', force: true });
+  const text = fs.readFileSync(path.join(runDir, 'lab_results.csv'), 'utf-8');
+  assert.ok(!/(^|,)'[-+]/m.test(text), 'không có dấu \' trước số âm/"+"');
+  const labs = readCsv(path.join(runDir, 'lab_results.csv'));
+  const be = labs.find(r => r.test_name_raw === 'Kiềm dư (BE)');
+  assert.strictEqual(be.result_num, '-3.5');
+  assert.strictEqual(be.days_from_discharge, '-6');
+  assert.strictEqual(labs.find(r => r.test_name_raw === 'Protein niệu').result_raw, '+');
+});
+
+test('Mã run từ URL/body không được là "." hoặc ".." (không trỏ lên thư mục cha)', () => {
+  assert.strictEqual(R.safeRunId('..'), '');
+  assert.strictEqual(R.safeRunId('.'), '');
+  assert.strictEqual(R.safeRunId('../../etc'), '.._.._etc');
+  assert.strictEqual(R.safeRunId('20260529_162615'), '20260529_162615');
+});
+
 test('Xuất ẩn danh che Mã nội trú và URL EMR (URL chứa keyword=Mã BN)', () => {
   const cols = ['Mã NC', 'Mã nội trú', 'URL bác sĩ', 'URL điều dưỡng', 'emr_noitru_id', 'Số lưu trữ', 'hb'];
   const out = redactCsvTable(cols, [{}]);
