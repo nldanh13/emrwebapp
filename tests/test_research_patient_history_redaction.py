@@ -12,8 +12,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_patient_history_route_requires_identified_export_gate():
-    source = (ROOT / "server/routes/research.js").read_text(encoding="utf-8")
+def test_patient_history_route_requires_identified_export_gate(research_backend_src):
+    source = research_backend_src
     start = source.index("router.get('/research/archive/patient-history'")
     end = source.index("router.get('/research/archive/variable-catalog'", start)
     block = source[start:end]
@@ -27,8 +27,8 @@ def test_patient_history_route_requires_identified_export_gate():
     assert gate_pos < build_pos
 
 
-def test_variable_catalog_route_redacts_sensitive_columns_by_default():
-    source = (ROOT / "server/routes/research.js").read_text(encoding="utf-8")
+def test_variable_catalog_route_redacts_sensitive_columns_by_default(research_backend_src):
+    source = research_backend_src
     start = source.index("router.get('/research/archive/variable-catalog'")
     end = source.index("router.get(", start + 1)
     block = source[start:end]
@@ -37,8 +37,8 @@ def test_variable_catalog_route_redacts_sensitive_columns_by_default():
     assert "buildVariableCatalog(runDir, { redact })" in block
 
 
-def test_build_variable_catalog_strips_sensitive_columns_when_redacting():
-    source = (ROOT / "server/routes/research.js").read_text(encoding="utf-8")
+def test_build_variable_catalog_strips_sensitive_columns_when_redacting(research_backend_src):
+    source = research_backend_src
     start = source.index("function buildVariableCatalog(")
     end = source.index("\n}\n", start)
     block = source[start:end]

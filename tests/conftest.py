@@ -15,6 +15,24 @@ for path_item in (ROOT_DIR, WORKER_DIR):
         sys.path.insert(0, path_item)
 
 
+# ── Mã nguồn backend Kho nghiên cứu ───────────────────────────────────────────
+# Phần Kho nghiên cứu được tách thành server/routes/research.js (route) và các module
+# server/research/*.js. Test kiểm tra mã nguồn đọc cả hai, để chuyển code giữa các file
+# không làm hỏng test (nội dung được kiểm tra giữ nguyên). research.js đứng đầu để các
+# test cắt khối route theo vị trí vẫn đúng.
+def read_research_backend_source():
+    from pathlib import Path
+    root = Path(ROOT_DIR)
+    parts = [(root / "server" / "routes" / "research.js").read_text(encoding="utf-8")]
+    parts += [f.read_text(encoding="utf-8") for f in sorted((root / "server" / "research").glob("*.js"))]
+    return "\n".join(parts)
+
+
+@pytest.fixture
+def research_backend_src():
+    return read_research_backend_source()
+
+
 # ── Helpers tạo record Y lệnh thô ────────────────────────────────────────────
 
 def make_record(ma_bn="TEST001", ngay_lam="26/04/2026", y_lenh="", dien_bien="", **kwargs):

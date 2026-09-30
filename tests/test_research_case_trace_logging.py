@@ -29,8 +29,8 @@ def test_hchanh_trace_event_uses_precise_step_tag_and_fields():
     assert "rows y lệnh" in ev["writes"]
 
 
-def test_research_case_trace_recent_endpoint_and_limit_exist():
-    src = (ROOT / "server" / "routes" / "research.js").read_text(encoding="utf-8")
+def test_research_case_trace_recent_endpoint_and_limit_exist(research_backend_src):
+    src = research_backend_src
     assert "research_case_trace_recent.json" in src
     assert "CASE_TRACE_RECENT_LIMIT = 10" in src
     assert "/research/archive/case-trace" in src
@@ -68,8 +68,8 @@ def test_research_trace_has_new_diagnostic_tags():
         assert tag in src
 
 
-def test_research_case_trace_redaction_api_exists():
-    src = (ROOT / "server" / "routes" / "research.js").read_text(encoding="utf-8")
+def test_research_case_trace_redaction_api_exists(research_backend_src):
+    src = research_backend_src
     ui = (ROOT / "src" / "components" / "ResearchTab.jsx").read_text(encoding="utf-8")
     api = (ROOT / "src" / "api.js").read_text(encoding="utf-8")
     assert "redactCaseTracePayload" in src

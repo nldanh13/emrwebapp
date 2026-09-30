@@ -91,9 +91,9 @@ def test_session_retention_is_disabled_by_default(tmp_path):
     assert payload == {"mode": "disabled", "scanned": 0, "archived": 0, "deleted": 0}
 
 
-def test_public_sheet_and_identified_export_are_opt_in():
+def test_public_sheet_and_identified_export_are_opt_in(research_backend_src):
     constants = (ROOT / "server" / "constants.js").read_text(encoding="utf-8")
-    research = (ROOT / "server" / "routes" / "research.js").read_text(encoding="utf-8")
+    research = research_backend_src
     sheet = (ROOT / "server" / "utils" / "google_sheet_records.js").read_text(encoding="utf-8")
     assert "EMR_ALLOW_PUBLIC_GOOGLE_SHEET" in constants
     assert "EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT" in constants
