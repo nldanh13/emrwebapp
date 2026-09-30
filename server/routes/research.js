@@ -7504,6 +7504,7 @@ const COLLECTION_LEDGER_FILE = 'collection_ledger.json';
 const COLLECTION_REPORT_FILE = 'collection_report.json';
 const COLLECTION_HISTORY_FILE = 'collection_history.jsonl';
 const COLLECTION_EXCEPTIONS_FILE = 'collection_exceptions.csv';
+const COLLECTION_ENCOUNTER_OVERRIDES_FILE = 'collection_encounter_overrides.json';
 const COLLECTION_EXCEPTION_COLUMNS = [
   'category', 'research_code', 'patient_code', 'part_label', 'status', 'reason_label', 'detail',
   'attempts', 'auto_retry', 'updated_at', 'key', 'part', 'reason',
@@ -7784,9 +7785,19 @@ const IN_RUN_RETRY_REASONS = new Set(['retry']);
 
 // Đơn vị theo dõi = lượt điều trị: gom các dòng danh sách (chuyển khoa) về lượt đã chuẩn
 // hóa trong encounters.csv. Chưa chuẩn hóa thì mỗi dòng là một đơn vị.
+function collectionEncounterOverrideState(runDir) {
+  const raw = readJsonSafe(path.join(runDir, COLLECTION_ENCOUNTER_OVERRIDES_FILE), {}) || {};
+  return {
+    version: 1,
+    updated_at: String(raw.updated_at || ''),
+    decisions: raw.decisions && typeof raw.decisions === 'object' ? raw.decisions : {},
+  };
+}
+
 function collectionUnitsForRun(runDir, sourceRows) {
   const encounterRows = readCsvTable(path.join(runDir, 'encounters.csv'), Number.MAX_SAFE_INTEGER).rows || [];
-  return collection.buildCollectionUnits({ sourceRows, encounterRows });
+  const overrides = collectionEncounterOverrideState(runDir).decisions;
+  return collection.buildCollectionUnits({ sourceRows, encounterRows, encounterOverrides: overrides });
 }
 
 function unitKeysForRun(runDir, sourceRows) {
@@ -7841,6 +7852,122 @@ function collectionStatusSummary(ledger, keys) {
     if (all) complete += 1;
   }
   return { encounters: scope.length, complete, parts: Object.values(parts) };
+}
+
+function collectionEncounterReviewPayload(sc) {
+  const encounterRows = readCsvTable(path.join(sc.runDir, 'encounters.csv'), Number.MAX_SAFE_INTEGER).rows || [];
+  const overrideState = collectionEncounterOverrideState(sc.runDir);
+  const units = collection.buildCollectionUnits({
+    sourceRows: sc.sourceRows,
+    encounterRows,
+    encounterOverrides: overrideState.decisions,
+  });
+  const validEncounters = encounterRows.filter(r => {
+    const id = String(r.encounter_id || '').trim();
+    return id && !id.startsWith('enc_unresolved_');
+  });
+  const dateMs = value => {
+    const date = isoDate(value);
+    const parsed = date ? Date.parse(date) : NaN;
+    return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+  };
+  const items = units
+    .filter(u => u.match_status === 'unmatched')
+    .map(u => {
+      const sourceKey = String(u.members?.[0] || u.key || '');
+      const decision = overrideState.decisions[sourceKey] || {};
+      const sourceDate = firstNonEmpty(u.row || {}, ['T/G vào', 'TG vào', 'Ngày vào viện', 'admission_date']);
+      const candidates = validEncounters
+        .filter(r => String(r.patient_code || '').trim() === String(u.patient_code || '').trim())
+        .sort((a, b) => Math.abs(dateMs(a.admission_date) - dateMs(sourceDate)) - Math.abs(dateMs(b.admission_date) - dateMs(sourceDate)))
+        .slice(0, 12)
+        .map(r => ({
+          encounter_id: String(r.encounter_id || ''),
+          research_code: String(r.research_code || ''),
+          admission_date: String(r.admission_date || ''),
+          discharge_date: String(r.discharge_date || ''),
+          emr_noitru_id: String(r.emr_noitru_id || ''),
+          emr_treatment_id: String(r.emr_treatment_id || ''),
+        }));
+      return {
+        source_key: sourceKey,
+        research_code: String(u.research_code || ''),
+        patient_code: String(u.patient_code || ''),
+        patient_name: firstNonEmpty(u.row || {}, ['Họ tên', 'Ho ten', 'patient_name']),
+        admission_date: sourceDate,
+        source_noitru_id: firstNonEmpty(u.row || {}, ['Mã nội trú', 'noitruid', 'emr_noitru_id']),
+        reason: String(u.unmatched_reason || 'no_unique_encounter'),
+        reason_label: collection.REASON_LABELS[u.unmatched_reason] || 'Chưa xác định chắc lượt điều trị',
+        review_status: decision.status === 'unresolved' ? 'confirmed_unresolved' : 'pending',
+        reviewed_at: String(decision.updated_at || ''),
+        candidates,
+      };
+    });
+  const linkedItems = Object.entries(overrideState.decisions)
+    .filter(([, d]) => d?.status === 'linked' && d.encounter_id)
+    .map(([sourceKey, decision]) => {
+      const sourceRow = sc.sourceRows.find(r => String(firstNonEmpty(r, ['Research key', 'research_key', 'source_key']) || '').trim() === sourceKey);
+      const target = validEncounters.find(r => String(r.encounter_id || '') === String(decision.encounter_id || ''));
+      if (!sourceRow || !target) return null;
+      return {
+        source_key: sourceKey,
+        research_code: firstNonEmpty(sourceRow, ['Mã NC', 'Ma NC', 'research_code']),
+        patient_code: patientCode(sourceRow),
+        patient_name: firstNonEmpty(sourceRow, ['Họ tên', 'Ho ten', 'patient_name']),
+        encounter_id: String(target.encounter_id || ''),
+        admission_date: String(target.admission_date || ''),
+        discharge_date: String(target.discharge_date || ''),
+        emr_noitru_id: String(target.emr_noitru_id || ''),
+        reviewed_at: String(decision.updated_at || ''),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => String(b.reviewed_at).localeCompare(String(a.reviewed_at)));
+  return {
+    status: 'ok', run_id: sc.runId, total: items.length,
+    pending: items.filter(x => x.review_status === 'pending').length,
+    confirmed_unresolved: items.filter(x => x.review_status === 'confirmed_unresolved').length,
+    manual_linked: linkedItems.length,
+    items, linked_items: linkedItems,
+  };
+}
+
+function handleCollectionEncounterReviews(req, res, studyIdParam = '') {
+  try {
+    const sc = collectionScopeFromRequest(req, studyIdParam);
+    if (sc.error) return res.status(sc.status || 400).json({ status: 'error', message: sc.error });
+    if (req.method === 'GET') return res.json(collectionEncounterReviewPayload(sc));
+
+    const sourceKey = String(req.body?.source_key || '').trim();
+    const action = String(req.body?.action || '').trim();
+    if (!sourceKey || sourceKey.length > 500) return res.status(400).json({ status: 'error', message: 'Research key không hợp lệ.' });
+    const sourceRow = sc.sourceRows.find(r => String(firstNonEmpty(r, ['Research key', 'research_key', 'source_key']) || '').trim() === sourceKey);
+    if (!sourceRow) return res.status(404).json({ status: 'error', message: 'Không còn tìm thấy dòng nguồn này.' });
+
+    const state = collectionEncounterOverrideState(sc.runDir);
+    if (action === 'clear') {
+      delete state.decisions[sourceKey];
+    } else if (action === 'unresolved') {
+      state.decisions[sourceKey] = { status: 'unresolved', encounter_id: '', updated_at: nowIso() };
+    } else if (action === 'link') {
+      const encounterId = String(req.body?.encounter_id || '').trim();
+      const encounterRows = readCsvTable(path.join(sc.runDir, 'encounters.csv'), Number.MAX_SAFE_INTEGER).rows || [];
+      const target = encounterRows.find(r => String(r.encounter_id || '').trim() === encounterId && !encounterId.startsWith('enc_unresolved_'));
+      if (!target) return res.status(404).json({ status: 'error', message: 'Lượt điều trị được chọn không còn tồn tại.' });
+      if (String(patientCode(sourceRow) || '').trim() !== String(target.patient_code || '').trim()) {
+        return res.status(400).json({ status: 'error', message: 'Không thể ghép hai Mã BN khác nhau.' });
+      }
+      state.decisions[sourceKey] = { status: 'linked', encounter_id: encounterId, updated_at: nowIso() };
+    } else {
+      return res.status(400).json({ status: 'error', message: 'Thao tác rà soát không hợp lệ.' });
+    }
+    state.updated_at = nowIso();
+    writeJsonAtomic(path.join(sc.runDir, COLLECTION_ENCOUNTER_OVERRIDES_FILE), state);
+    if (sc.sourceRows.length) syncCollectionLedger(sc.runDir, sc.sourceRows);
+    return res.json(collectionEncounterReviewPayload(sc));
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
 }
 
 function writeCollectionOutputs(runDir, report) {
@@ -8220,6 +8347,10 @@ router.get('/research/archive/collection-status', (req, res) => handleCollection
 router.get('/research/studies/:studyId/collection-status', (req, res) => handleCollectionStatus(req, res, req.params.studyId));
 router.get('/research/archive/collection-exceptions', (req, res) => handleCollectionExceptionsExport(req, res));
 router.get('/research/studies/:studyId/collection-exceptions', (req, res) => handleCollectionExceptionsExport(req, res, req.params.studyId));
+router.get('/research/archive/encounter-reviews', (req, res) => handleCollectionEncounterReviews(req, res));
+router.post('/research/archive/encounter-reviews', (req, res) => handleCollectionEncounterReviews(req, res));
+router.get('/research/studies/:studyId/encounter-reviews', (req, res) => handleCollectionEncounterReviews(req, res, req.params.studyId));
+router.post('/research/studies/:studyId/encounter-reviews', (req, res) => handleCollectionEncounterReviews(req, res, req.params.studyId));
 
 // Đủ dùng của các lượt trong run nghiên cứu, theo phần bắt buộc + điều kiện dữ liệu của đề cương.
 router.get('/research/studies/:studyId/readiness', (req, res) => {
