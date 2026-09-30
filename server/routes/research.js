@@ -25,6 +25,7 @@ const collection = require('../research/collection');
 const { sanitizeCustomFields, evaluateCustomFields } = require('../research/analysis_config');
 const { firstSurgeryByEncounter, surgeryForMedicationContext } = require('../research/encounter_linkage');
 const { strictLocalDate } = require('../research/date_utils');
+const { readCsvFileRows } = require('../research/csv_reader');
 const { DEFAULT_SENSITIVE_COLUMNS, redactCsvTable, isSensitiveColumn } = require('../research/export_utils');
 const quality = require('../research/quality');
 const dataDictionary = require('../research/data_dictionary');
@@ -380,8 +381,8 @@ function readCsvTable(filePath, maxRows = MAX_TABLE_ROWS) {
   const cacheKey = cacheEligible ? _csvCacheKey(filePath, maxRows) : '';
   if (cacheKey && CSV_TABLE_CACHE.has(cacheKey)) return CSV_TABLE_CACHE.get(cacheKey);
 
-  const text = fs.readFileSync(filePath, 'utf-8');
-  const result = { ...parseCsv(text, { maxRows }), exists: true };
+  // Đọc theo khối: không nạp cả file thành một chuỗi (file XN/CĐHA có thể vài trăm MB).
+  const result = { ...readCsvFileRows(filePath, maxRows), exists: true };
   if (cacheKey) {
     // Xóa cache cũ của cùng file khi file đã thay đổi.
     const prefix = `${path.resolve(filePath)}|`;
@@ -1237,10 +1238,25 @@ function buildVariableCatalog(runDir, { redact = true } = {}) {
   return { run_id: path.basename(runDir), groups, sample_limit: VARIABLE_CATALOG_MAX_ROWS, generated_at: nowIso() };
 }
 
+// Chỉ đếm dòng (không tạo object) và nhớ kết quả theo kích thước + mtime: dashboard
+// gọi hàm này cho mọi bảng ở mỗi lần làm mới, kể cả file XN/CĐHA vài trăm MB.
+const CSV_ROW_COUNT_CACHE = new Map();
+const CSV_ROW_COUNT_CACHE_MAX = 512;
+
 function countCsvRows(filePath) {
-  if (!fs.existsSync(filePath)) return 0;
   try {
-    return Number(readCsvTable(filePath, Number.MAX_SAFE_INTEGER).count || 0);
+    const stat = fs.statSync(filePath);
+    const resolved = path.resolve(filePath);
+    const stamp = `${stat.size}|${Math.floor(stat.mtimeMs)}`;
+    const cached = CSV_ROW_COUNT_CACHE.get(resolved);
+    if (cached && cached.stamp === stamp) return cached.count;
+    const count = Number(readCsvFileRows(filePath, 0).count || 0);
+    CSV_ROW_COUNT_CACHE.delete(resolved);
+    CSV_ROW_COUNT_CACHE.set(resolved, { stamp, count });
+    if (CSV_ROW_COUNT_CACHE.size > CSV_ROW_COUNT_CACHE_MAX) {
+      CSV_ROW_COUNT_CACHE.delete(CSV_ROW_COUNT_CACHE.keys().next().value);
+    }
+    return count;
   } catch (_) {
     return 0;
   }
