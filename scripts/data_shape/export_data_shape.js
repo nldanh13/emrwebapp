@@ -12,6 +12,8 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const { StringDecoder } = require('string_decoder');
 
 const DEFAULT_DATA_ROOTS = [
   'data',
@@ -29,6 +31,8 @@ const DEFAULT_MAX_FILE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_MAX_ROWS_PER_FILE = 120;
 const DEFAULT_MAX_SAMPLE_ARRAY = 3;
 const DEFAULT_MAX_DEPTH = 8;
+const DEFAULT_CSV_CHUNK_BYTES = 64 * 1024;
+const DEFAULT_MAX_DISTINCT_VALUES = 10000;
 
 const EXCLUDE_DIR_NAMES = new Set([
   '.git',
@@ -102,6 +106,17 @@ function safeWriteText(file, value) {
   fs.writeFileSync(file, value, 'utf8');
 }
 
+function csvCell(value) {
+  const text = String(value ?? '');
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function safeWriteCsv(file, rows) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const text = rows.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+  fs.writeFileSync(file, text, 'utf8');
+}
+
 function clampString(s, max = 160) {
   const text = String(s ?? '');
   return text.length > max ? `${text.slice(0, max)}…` : text;
@@ -142,7 +157,8 @@ function shouldExcludeFile(sourceRoot, absFile) {
   if (parts.some(part => EXCLUDE_DIR_NAMES.has(part))) return 'excluded_dir';
   if (parts.some(part => EXCLUDE_PATH_PARTS.has(part))) return 'sensitive_dir';
   if (SECRET_FILE_RE.test(base) || RAW_FILE_RE.test(base)) return 'sensitive_file_name';
-  if (fs.statSync(absFile).size > DEFAULT_MAX_FILE_BYTES) return 'too_large';
+  // CSV lớn được đọc tuần tự ở bước phân tích, không nạp toàn bộ vào RAM.
+  if (fs.statSync(absFile).size > DEFAULT_MAX_FILE_BYTES && ext !== '.csv') return 'too_large';
   return '';
 }
 
@@ -196,13 +212,58 @@ function createFieldStat(pathName) {
     array_min_len: null,
     array_max_len: null,
     object_observed: false,
+    empty_count: 0,
+    non_empty_count: 0,
+    _distinct_hashes: new Set(),
+    _distinct_count_capped: false,
+    _formats: new Set(),
   };
+}
+
+function isEmptyValue(value) {
+  if (value === null || value === undefined) return true;
+  if (typeof value === 'string') return value.trim() === '';
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}
+
+function valueFormat(value) {
+  if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) return 'empty';
+  if (typeof value === 'boolean') return 'boolean';
+  if (typeof value === 'number') return Number.isInteger(value) ? 'integer' : 'decimal';
+  if (Array.isArray(value)) return 'array';
+  if (value && typeof value === 'object') return 'object';
+  const text = String(value).trim();
+  if (/^-?\d+$/.test(text)) return 'integer_text';
+  if (/^-?\d+(?:[.,]\d+)$/.test(text)) return 'decimal_text';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return 'date_yyyy_mm_dd';
+  if (/^\d{1,2}[/-]\d{1,2}[/-]\d{4}$/.test(text)) return 'date_dd_mm_yyyy';
+  if (/^\d{4}-\d{2}-\d{2}T/.test(text)) return 'datetime_iso';
+  if (/^[\[{].*[\]}]$/s.test(text)) return 'json_text';
+  return 'text';
+}
+
+function trackDistinct(stat, value) {
+  if (isEmptyValue(value) || stat._distinct_count_capped) return;
+  if (stat._distinct_hashes.size >= DEFAULT_MAX_DISTINCT_VALUES) {
+    stat._distinct_count_capped = true;
+    return;
+  }
+  let normalized;
+  if (typeof value === 'string') normalized = value;
+  else if (typeof value === 'number' || typeof value === 'boolean') normalized = String(value);
+  else return;
+  stat._distinct_hashes.add(crypto.createHash('sha256').update(normalized).digest('hex'));
 }
 
 function updateFieldStat(stat, value) {
   const type = valueType(value);
   stat.types[type] = (stat.types[type] || 0) + 1;
   stat.count += 1;
+  if (isEmptyValue(value)) stat.empty_count += 1;
+  else stat.non_empty_count += 1;
+  stat._formats.add(valueFormat(value));
+  trackDistinct(stat, value);
   if (type === 'null') {
     stat.null_count += 1;
   } else if (type === 'string') {
@@ -310,6 +371,124 @@ function parseCsvRows(text, maxRows = DEFAULT_MAX_ROWS_PER_FILE) {
     rows.push(row);
   }
   return rows;
+}
+
+/**
+ * Đọc CSV theo từng khối nhỏ. Bộ nhớ chỉ giữ một dòng đang phân tích và tối đa
+ * DEFAULT_MAX_ROWS_PER_FILE dòng mẫu; toàn bộ giá trị thật không được ghi ra bundle.
+ */
+function scanCsvFile(absFile) {
+  const stats = {};
+  let schema = null;
+  const sampleRows = [];
+  let header = null;
+  let totalRows = 0;
+  let row = [];
+  let field = '';
+  let quoted = false;
+  let pendingQuote = false;
+  let firstCharacter = true;
+
+  function finishField() {
+    row.push(field);
+    field = '';
+  }
+
+  function finishRow() {
+    finishField();
+    if (row.length === 1 && row[0].trim() === '') {
+      row = [];
+      return;
+    }
+    if (!header) {
+      header = row.map((name, idx) => name.trim() || `column_${idx + 1}`);
+      row = [];
+      return;
+    }
+    const record = {};
+    header.forEach((name, idx) => { record[name] = row[idx] ?? ''; });
+    totalRows += 1;
+    if (sampleRows.length < DEFAULT_MAX_ROWS_PER_FILE) {
+      sampleRows.push(record);
+      schema = mergeSchemas(schema, inferSchema(record));
+    }
+    addStat(stats, '$[]', record);
+    for (const [key, value] of Object.entries(record)) addStat(stats, `$[].${key}`, value);
+    row = [];
+  }
+
+  function feed(text) {
+    for (let i = 0; i < text.length; i += 1) {
+      let ch = text[i];
+      if (firstCharacter) {
+        firstCharacter = false;
+        if (ch === '\uFEFF') continue;
+      }
+      if (pendingQuote) {
+        pendingQuote = false;
+        if (ch === '"') {
+          field += '"';
+          continue;
+        }
+        quoted = false;
+      }
+      if (quoted) {
+        if (ch === '"') {
+          if (i + 1 < text.length) {
+            if (text[i + 1] === '"') {
+              field += '"';
+              i += 1;
+            } else {
+              quoted = false;
+            }
+          } else {
+            pendingQuote = true;
+          }
+        } else {
+          field += ch;
+        }
+      } else if (ch === '"' && field === '') {
+        quoted = true;
+      } else if (ch === ',') {
+        finishField();
+      } else if (ch === '\n') {
+        finishRow();
+      } else if (ch !== '\r') {
+        field += ch;
+      }
+    }
+  }
+
+  const fd = fs.openSync(absFile, 'r');
+  const decoder = new StringDecoder('utf8');
+  const buffer = Buffer.allocUnsafe(DEFAULT_CSV_CHUNK_BYTES);
+  try {
+    let bytesRead;
+    do {
+      bytesRead = fs.readSync(fd, buffer, 0, buffer.length, null);
+      if (bytesRead) feed(decoder.write(buffer.subarray(0, bytesRead)));
+    } while (bytesRead);
+    feed(decoder.end());
+    if (pendingQuote) {
+      pendingQuote = false;
+      quoted = false;
+    }
+    if (field !== '' || row.length) finishRow();
+  } finally {
+    fs.closeSync(fd);
+  }
+
+  return {
+    data: sampleRows,
+    schema: {
+      type: ['array'],
+      observed_count: 1,
+      items: schema || { type: ['object'], observed_count: 0, properties: {} },
+    },
+    stats,
+    recordsObserved: totalRows,
+    fullScan: true,
+  };
 }
 
 function parseFile(absFile) {
@@ -433,10 +612,50 @@ function summarizeStats(stats, recordsObserved) {
   return Object.fromEntries(Object.entries(stats)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, stat]) => {
-      const out = { ...stat };
+      const { _distinct_hashes, _distinct_count_capped, _formats, ...out } = stat;
+      out.distinct_count = _distinct_hashes.size;
+      out.distinct_count_capped = _distinct_count_capped;
+      out.example_format = Array.from(_formats).sort().join('|');
       out.presence_ratio = recordsObserved ? Number((stat.count / recordsObserved).toFixed(4)) : null;
       return [key, out];
     }));
+}
+
+function makeCoverageRows(groupProfiles) {
+  const rows = [[
+    'table_name',
+    'field_name',
+    'total_rows',
+    'non_empty_rows',
+    'empty_rows',
+    'coverage_pct',
+    'distinct_count',
+    'distinct_count_capped',
+    'example_format',
+    'full_scan',
+  ]];
+  for (const group of groupProfiles) {
+    for (const [fieldPath, stat] of Object.entries(group.fields || {})) {
+      if (!/^\$\[\]\.[^.]+$/.test(fieldPath)) continue;
+      const total = group.records_observed || 0;
+      const nonEmpty = Math.min(Number(stat.non_empty_count || 0), total);
+      const empty = Math.max(total - nonEmpty, 0);
+      const coverage = total ? Number(((nonEmpty / total) * 100).toFixed(2)) : 0;
+      rows.push([
+        group.group_key,
+        fieldPath.slice(4),
+        total,
+        nonEmpty,
+        empty,
+        coverage,
+        stat.distinct_count || 0,
+        stat.distinct_count_capped ? 'true' : 'false',
+        stat.example_format || '',
+        group.full_scan ? 'true' : 'false',
+      ]);
+    }
+  }
+  return rows;
 }
 
 function discoverRelationships(groupProfiles) {
@@ -456,7 +675,7 @@ function discoverRelationships(groupProfiles) {
 }
 
 function makeReadme(manifest) {
-  return `# Data Shape Bundle\n\nBundle này chỉ chứa cấu trúc dữ liệu đã ẩn danh, dùng để phân tích/refactor model mà không gửi dữ liệu thật.\n\n## Nội dung\n\n- \`manifest.json\`: thống kê tổng quan và danh sách nhóm file đã phân tích.\n- \`schemas/\`: schema suy luận từ JSON/CSV/JSONL.\n- \`stats/\`: thống kê field, kiểu dữ liệu, null count, min/max.\n- \`samples/\`: mẫu đã ẩn danh, chỉ giữ hình dạng dữ liệu.\n- \`relationships.json\`: các field khóa có thể liên kết dữ liệu giữa module/tab.\n- \`redaction_report.json\`: báo cáo loại trừ và số lượng giá trị đã ẩn danh.\n\n## Cam kết giới hạn\n\n- Không đưa nguyên thư mục \`.runtime\`, \`research_store\`, \`care_baseline_store\`, \`logs\`, \`config/config.json\`.\n- Không giữ họ tên, mã bệnh nhân, token, cookie, password, tài khoản thật trong sample.\n- File quá lớn, log, raw HTML, cookie/token/auth/debug bị loại trừ.\n\n## Thống kê nhanh\n\n- Generated at: ${manifest.generated_at}\n- Source roots scanned: ${manifest.source_roots_scanned.join(', ') || 'none'}\n- Files scanned: ${manifest.files_scanned}\n- File groups: ${manifest.groups.length}\n`;
+  return `# Data Shape Bundle\n\nBundle này chỉ chứa cấu trúc dữ liệu đã ẩn danh, dùng để phân tích/refactor model mà không gửi dữ liệu thật.\n\n## Nội dung\n\n- \`manifest.json\`: thống kê tổng quan và danh sách nhóm file đã phân tích.\n- \`coverage_summary.csv\`: số dòng có dữ liệu, số dòng trống và tỷ lệ đầy đủ từng cột.\n- \`schemas/\`: schema suy luận từ JSON/CSV/JSONL.\n- \`stats/\`: thống kê field, kiểu dữ liệu, null/blank count, min/max và số giá trị khác nhau.\n- \`samples/\`: mẫu đã ẩn danh, chỉ giữ hình dạng dữ liệu.\n- \`relationships.json\`: các field khóa có thể liên kết dữ liệu giữa module/tab.\n- \`redaction_report.json\`: báo cáo loại trừ và số lượng giá trị đã ẩn danh.\n\n## Cách đọc coverage_summary.csv\n\n- \`coverage_pct\`: tỷ lệ dòng có giá trị khác rỗng.\n- \`full_scan=true\`: toàn bộ CSV đã được đọc tuần tự, kể cả file lớn.\n- \`distinct_count_capped=true\`: số giá trị khác nhau đã chạm ngưỡng an toàn ${DEFAULT_MAX_DISTINCT_VALUES}; đây là cận dưới.\n- \`example_format\`: chỉ mô tả định dạng, không chứa giá trị thật.\n\n## Cam kết giới hạn\n\n- Không đưa nguyên thư mục \`.runtime\`, \`research_store\`, \`care_baseline_store\`, \`logs\`, \`config/config.json\`.\n- Không giữ họ tên, mã bệnh nhân, token, cookie, password, tài khoản thật trong sample.\n- CSV lớn chỉ được đọc tuần tự để lấy schema/thống kê; không được chép nguyên vào bundle.\n- JSON/JSONL quá lớn, log, raw HTML, cookie/token/auth/debug vẫn bị loại trừ.\n\n## Thống kê nhanh\n\n- Generated at: ${manifest.generated_at}\n- Source roots scanned: ${manifest.source_roots_scanned.join(', ') || 'none'}\n- Files scanned: ${manifest.files_scanned}\n- File groups: ${manifest.groups.length}\n`;
 }
 
 function buildDataShapeBundle(options = {}) {
@@ -510,17 +729,53 @@ function buildDataShapeBundle(options = {}) {
     let recordsObserved = 0;
     let scannedInGroup = 0;
     const examples = [];
+    let fullScan = groupFiles.length <= maxFilesPerGroup;
 
     for (const file of groupFiles.slice(0, maxFilesPerGroup)) {
       if (filesScanned >= maxTotalFiles) break;
       const rel = relPath(sourceRoot, file);
       try {
-        const data = parseFile(file);
-        const safeData = sanitizeStructureKeys(data);
-        schema = mergeSchemas(schema, inferSchema(safeData));
-        collectStats(safeData, stats);
-        if (Array.isArray(safeData)) recordsObserved += Math.max(safeData.length, 1);
-        else recordsObserved += 1;
+        const ext = path.extname(file).toLowerCase();
+        let safeData;
+        if (ext === '.csv') {
+          const scan = scanCsvFile(file);
+          safeData = sanitizeStructureKeys(scan.data);
+          schema = mergeSchemas(schema, scan.schema);
+          for (const [fieldPath, fieldStat] of Object.entries(scan.stats)) {
+            if (!stats[fieldPath]) stats[fieldPath] = createFieldStat(fieldPath);
+            const target = stats[fieldPath];
+            for (const [type, count] of Object.entries(fieldStat.types)) target.types[type] = (target.types[type] || 0) + count;
+            target.count += fieldStat.count;
+            target.null_count += fieldStat.null_count;
+            target.empty_count += fieldStat.empty_count;
+            target.non_empty_count += fieldStat.non_empty_count;
+            target.string_min_len = target.string_min_len === null ? fieldStat.string_min_len : (fieldStat.string_min_len === null ? target.string_min_len : Math.min(target.string_min_len, fieldStat.string_min_len));
+            target.string_max_len = target.string_max_len === null ? fieldStat.string_max_len : (fieldStat.string_max_len === null ? target.string_max_len : Math.max(target.string_max_len, fieldStat.string_max_len));
+            target.number_min = target.number_min === null ? fieldStat.number_min : (fieldStat.number_min === null ? target.number_min : Math.min(target.number_min, fieldStat.number_min));
+            target.number_max = target.number_max === null ? fieldStat.number_max : (fieldStat.number_max === null ? target.number_max : Math.max(target.number_max, fieldStat.number_max));
+            target.array_min_len = target.array_min_len === null ? fieldStat.array_min_len : (fieldStat.array_min_len === null ? target.array_min_len : Math.min(target.array_min_len, fieldStat.array_min_len));
+            target.array_max_len = target.array_max_len === null ? fieldStat.array_max_len : (fieldStat.array_max_len === null ? target.array_max_len : Math.max(target.array_max_len, fieldStat.array_max_len));
+            target.object_observed = target.object_observed || fieldStat.object_observed;
+            for (const hash of fieldStat._distinct_hashes) {
+              if (target._distinct_hashes.size >= DEFAULT_MAX_DISTINCT_VALUES) {
+                target._distinct_count_capped = true;
+                break;
+              }
+              target._distinct_hashes.add(hash);
+            }
+            target._distinct_count_capped = target._distinct_count_capped || fieldStat._distinct_count_capped;
+            for (const format of fieldStat._formats) target._formats.add(format);
+          }
+          recordsObserved += scan.recordsObserved;
+        } else {
+          const data = parseFile(file);
+          safeData = sanitizeStructureKeys(data);
+          schema = mergeSchemas(schema, inferSchema(safeData));
+          collectStats(safeData, stats);
+          if (Array.isArray(safeData)) recordsObserved += Math.max(safeData.length, 1);
+          else recordsObserved += 1;
+          fullScan = false;
+        }
         if (sample === undefined) sample = redactValue(path.basename(file), safeData, redactionReport);
         scannedInGroup += 1;
         filesScanned += 1;
@@ -529,6 +784,8 @@ function buildDataShapeBundle(options = {}) {
         redactionReport.parse_errors.push({ path: normalizeGroupKey(rel), error: clampString(err.message, 200) });
       }
     }
+
+    if (scannedInGroup < groupFiles.length) fullScan = false;
 
     if (!scannedInGroup) continue;
     const id = safeName(groupKey.replace(/\.[a-z0-9]+$/i, ''));
@@ -541,6 +798,7 @@ function buildDataShapeBundle(options = {}) {
       files_in_group: groupFiles.length,
       files_scanned: scannedInGroup,
       records_observed: recordsObserved,
+      full_scan: fullScan,
       fields: summarizeStats(stats, recordsObserved),
     };
 
@@ -558,6 +816,7 @@ function buildDataShapeBundle(options = {}) {
       files_in_group: groupFiles.length,
       files_scanned: scannedInGroup,
       records_observed: recordsObserved,
+      full_scan: fullScan,
       schema_file: schemaFile,
       stats_file: statFile,
       sample_file: sampleFile,
@@ -568,7 +827,7 @@ function buildDataShapeBundle(options = {}) {
   const existingRoots = DEFAULT_DATA_ROOTS.filter(root => fs.existsSync(path.join(sourceRoot, root)));
   const manifest = {
     bundle_type: 'emr_dashboard_data_shape',
-    bundle_version: 1,
+    bundle_version: 2,
     generated_at: new Date().toISOString(),
     source_root_name: path.basename(sourceRoot),
     source_roots_scanned: existingRoots,
@@ -583,10 +842,13 @@ function buildDataShapeBundle(options = {}) {
       max_files_per_group: maxFilesPerGroup,
       max_total_files: maxTotalFiles,
       max_file_bytes: DEFAULT_MAX_FILE_BYTES,
+      large_csv_streamed: true,
+      max_distinct_values: DEFAULT_MAX_DISTINCT_VALUES,
     },
   };
 
   safeWriteJson(path.join(outDir, 'manifest.json'), manifest);
+  safeWriteCsv(path.join(outDir, 'coverage_summary.csv'), makeCoverageRows(groupProfiles));
   safeWriteJson(path.join(outDir, 'relationships.json'), discoverRelationships(groupProfiles));
   safeWriteJson(path.join(outDir, 'redaction_report.json'), redactionReport);
   safeWriteText(path.join(outDir, 'README.md'), makeReadme(manifest));
