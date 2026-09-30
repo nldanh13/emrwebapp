@@ -332,6 +332,30 @@ function enhanceCatalogVariable(variable, group) {
     technical_or_identity: technicalOrIdentity,
   };
 }
+// Bảng tổng quát, Đợt điều trị và Người bệnh đều là bảng rộng có chung nhiều cột
+// (sex, age, birth_year, admission_date...). Cùng tên cột ở các bảng này là cùng một
+// biến: chỉ hiện một lần, ưu tiên Bảng tổng quát (mỗi dòng một đợt, là nền của dataset).
+// Bảng dài (XN, CĐHA, thuốc...) không gộp: cùng tên cột nhưng khác nghĩa theo bảng.
+const VARIABLE_WIDE_TABLE_PRIORITY = ['analysis_ready', 'encounters', 'patients'];
+function dedupeWideTableVariables(variables) {
+  const keep = new Map();
+  for (const table of VARIABLE_WIDE_TABLE_PRIORITY) {
+    for (const v of variables) {
+      if (v.table !== table || v.virtual_kind) continue;
+      const key = lower(v.name);
+      const first = keep.get(key);
+      if (!first) keep.set(key, { ...v, also_in: [] });
+      else if (!first.also_in.includes(v.source_group_label)) first.also_in.push(v.source_group_label);
+    }
+  }
+  const out = [];
+  for (const v of variables) {
+    if (!VARIABLE_WIDE_TABLE_PRIORITY.includes(v.table) || v.virtual_kind) { out.push(v); continue; }
+    const kept = keep.get(lower(v.name));
+    if (kept && kept.id === v.id) out.push(kept);
+  }
+  return out;
+}
 function variableRoleLabel(role) {
   return ({
     baseline: 'Nền', time: 'Thời gian', lab: 'XN', imaging: 'CĐHA', medication: 'Thuốc', diagnosis: 'Chẩn đoán', procedure: 'PT/TT', identity: 'Định danh', technical: 'Kỹ thuật', other: 'Khác',
@@ -2839,9 +2863,12 @@ export default function ResearchTab({ toast }) {
   const allCatalogVariables = useMemo(() => (
     variableCatalog?.groups || []
   ).flatMap(g => (g.variables || []).map(v => enhanceCatalogVariable(v, g))), [variableCatalog]);
+  // Danh sách để duyệt/chọn: không lặp biến chung giữa các bảng rộng. allCatalogVariables
+  // vẫn giữ đủ để nhận ra biến đã chọn từ trước (vd. patients.sex).
+  const browseCatalogVariables = useMemo(() => dedupeWideTableVariables(allCatalogVariables), [allCatalogVariables]);
   const catalogGroupOptions = useMemo(() => {
     const counts = new Map();
-    for (const v of allCatalogVariables) {
+    for (const v of browseCatalogVariables) {
       if (!showTechnicalVariables && v.technical_or_identity) continue;
       const key = v.clinical_group_key || v.group_key || 'other';
       counts.set(key, (counts.get(key) || 0) + 1);
@@ -2849,7 +2876,7 @@ export default function ResearchTab({ toast }) {
     return VARIABLE_CLINICAL_GROUPS
       .map(g => ({ ...g, count: counts.get(g.key) || 0 }))
       .filter(g => g.count > 0 && (showTechnicalVariables || g.key !== 'technical'));
-  }, [allCatalogVariables, showTechnicalVariables]);
+  }, [browseCatalogVariables, showTechnicalVariables]);
   const questionnaireTerms = useMemo(() => [...new Set(
     String(questionnaireVariables || '')
       .split(/[\n;]+/)
@@ -2859,7 +2886,7 @@ export default function ResearchTab({ toast }) {
   const filteredCatalogVariables = useMemo(() => {
     const q = lower(variableQuery);
     const terms = [q, ...questionnaireTerms].filter(Boolean);
-    return allCatalogVariables.filter(v => {
+    return browseCatalogVariables.filter(v => {
       if (!showTechnicalVariables && v.technical_or_identity) return false;
       if (variableGroupFilter !== 'all' && v.clinical_group_key !== variableGroupFilter) return false;
       if (variableTypeFilter !== 'all' && v.type !== variableTypeFilter) return false;
@@ -2871,7 +2898,7 @@ export default function ResearchTab({ toast }) {
       const labels = [lower(v.display_label), lower(v.raw_name)].filter(x => x.length >= 2);
       return terms.some(term => haystack.includes(term) || labels.some(label => term.includes(label)));
     });
-  }, [allCatalogVariables, variableQuery, questionnaireTerms, variableGroupFilter, variableTypeFilter, variableFillFilter, showTechnicalVariables]);
+  }, [browseCatalogVariables, variableQuery, questionnaireTerms, variableGroupFilter, variableTypeFilter, variableFillFilter, showTechnicalVariables]);
   const filteredVariableSections = useMemo(() => groupVariablesBySection(filteredCatalogVariables), [filteredCatalogVariables]);
   const selectedVariables = useMemo(() => allCatalogVariables.filter(v => selectedVariableIds.has(v.id)), [allCatalogVariables, selectedVariableIds]);
   const selectedCoverage = useMemo(() => {
@@ -2908,8 +2935,8 @@ export default function ResearchTab({ toast }) {
   }, []);
   const addCoreVariables = useCallback(() => {
     const coreName = /^(sex|birth_year|age|admission_date|discharge_date|hospital_stay_days|diagnosis_raw|surgery_date|surgery_name)$/i;
-    addVariables(allCatalogVariables.filter(v => coreName.test(String(v.name || ''))));
-  }, [allCatalogVariables, addVariables]);
+    addVariables(browseCatalogVariables.filter(v => coreName.test(String(v.name || ''))));
+  }, [browseCatalogVariables, addVariables]);
   const addConditionForVariable = useCallback((variable) => {
     if (!variable) return;
     setVariableConditions(prev => [...prev, { id: `${Date.now()}_${prev.length}`, variable_id: variable.id, label: `${variable.group_label || variable.table_label}.${variable.display_label || variable.name}`, operator: variable.operators?.[0] || 'contains', value: '', value2: '' }]);
@@ -3393,7 +3420,7 @@ export default function ResearchTab({ toast }) {
             </div>
             <div style={{ marginTop: 4, color: C.text3, fontSize: FS.xs }}>
               <span style={{ fontWeight: 700 }}>{v.clinical_group_label}</span>
-              <span> · nguồn: {v.source_group_label}</span>
+              <span> · nguồn: {v.source_group_label}{v.also_in?.length ? ` (cũng có ở ${v.also_in.join(', ')})` : ''}</span>
               <span> · cột gốc: </span>
               <code style={{ fontSize: FS.xs, color: C.text2 }}>{v.raw_name}</code>
             </div>
