@@ -1159,6 +1159,10 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [reconciling, setReconciling] = useState(false);
+  const [showEncounterReviews, setShowEncounterReviews] = useState(false);
+  const [encounterReviews, setEncounterReviews] = useState(null);
+  const [reviewSelections, setReviewSelections] = useState({});
+  const [reviewActing, setReviewActing] = useState('');
   const [showExceptions, setShowExceptions] = useState(false);
   const [readiness, setReadiness] = useState(null);
   const [showReq, setShowReq] = useState(false);
@@ -1211,16 +1215,44 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
   };
 
   const reconcileEncounters = async () => {
+    if (showEncounterReviews) {
+      setShowEncounterReviews(false);
+      return;
+    }
     setReconciling(true);
     try {
-      await (studyId ? api.normalizeResearchStudy(studyId) : api.normalizeResearchArchive());
-      await load();
-      t('Đã chuẩn hóa và rà soát lại các lượt chưa ghép. Lượt còn mơ hồ vẫn được giữ ngoài thu thập tự động.', 'ok');
-      if (onDone) await onDone();
+      const r = await api.getResearchEncounterReviews(studyId);
+      setEncounterReviews(r);
+      setReviewSelections(Object.fromEntries((r?.items || []).map(it => [it.source_key, it.candidates?.[0]?.encounter_id || ''])));
+      setShowEncounterReviews(true);
     } catch (e) {
       t(String(e.message || e), 'error');
     } finally {
       setReconciling(false);
+    }
+  };
+
+  const saveEncounterReview = async (item, action) => {
+    const encounterId = reviewSelections[item.source_key] || '';
+    if (action === 'link' && !encounterId) return t('Ca này không có lượt ứng viên để chọn.', 'error');
+    setReviewActing(item.source_key);
+    try {
+      const r = await api.updateResearchEncounterReview(studyId, {
+        source_key: item.source_key,
+        action,
+        ...(action === 'link' ? { encounter_id: encounterId } : {}),
+      });
+      setEncounterReviews(r);
+      setReviewSelections(p => ({ ...p, ...Object.fromEntries((r?.items || []).filter(x => !p[x.source_key]).map(x => [x.source_key, x.candidates?.[0]?.encounter_id || ''])) }));
+      await load();
+      if (action === 'link') t('Đã lưu lượt điều trị đúng.', 'ok');
+      else if (action === 'unresolved') t('Đã ghi nhận ca chưa đủ thông tin.', 'info');
+      else t('Đã mở lại ca để rà soát.', 'ok');
+      if (onDone) await onDone();
+    } catch (e) {
+      t(String(e.message || e), 'error');
+    } finally {
+      setReviewActing('');
     }
   };
 
@@ -1409,7 +1441,7 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
           )}
           {!!plan?.unmatched_encounters && (
             <Btn onClick={reconcileEncounters} disabled={busy || reconciling} style={{ height: 24, padding: '0 9px', fontSize: 10 }}>
-              {reconciling ? <><Spinner size={8} /> Đang rà soát</> : 'Rà soát ghép lượt'}
+              {reconciling ? <><Spinner size={8} /> Đang tải</> : (showEncounterReviews ? 'Đóng rà soát' : 'Rà soát ghép lượt')}
             </Btn>
           )}
           {!exceptions.length && <span style={{ fontSize: 10, color: C.text3 }}>Không có ngoại lệ — không cần rà từng ca.</span>}
@@ -1430,6 +1462,74 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
           { key: 'detail', label: 'Chi tiết' },
           { key: 'attempts_label', label: 'Lần thử' },
         ]} />
+      )}
+
+      {showEncounterReviews && encounterReviews && (
+        <div style={{ borderTop: `1px solid ${C.border2}`, paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
+          <div style={{ fontSize: 10.5, color: C.text2 }}>
+            <b>{compactNumber(encounterReviews.pending || 0)}</b> ca chờ chọn; <b>{compactNumber(encounterReviews.confirmed_unresolved || 0)}</b> ca đã xác nhận chưa đủ thông tin.
+            {!!encounterReviews.manual_linked && <> <b>{compactNumber(encounterReviews.manual_linked)}</b> ca đã ghép thủ công.</>}
+            Chỉ các lượt cùng Mã BN mới được hiển thị. Sau khi lưu, quyết định được dùng lại khi chuẩn hóa.
+          </div>
+          {(encounterReviews.items || []).map(item => {
+            const acting = reviewActing === item.source_key;
+            const confirmed = item.review_status === 'confirmed_unresolved';
+            return (
+              <div key={item.source_key} style={{ border: `1px solid ${confirmed ? C.border2 : C.amberBorder}`, borderRadius: 7, padding: '8px 9px', background: confirmed ? C.surface2 : C.amberBg }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', fontSize: 10.5, color: C.text2 }}>
+                  <b style={{ color: C.text }}>{item.research_code || 'Chưa có Mã NC'}</b>
+                  <span>Mã BN: <b>{item.patient_code}</b></span>
+                  {item.patient_name && <span>{item.patient_name}</span>}
+                  <span>Nguồn vào: <b>{item.admission_date || '—'}</b></span>
+                  {item.source_noitru_id && <span>Mã nội trú nguồn: <b>{item.source_noitru_id}</b></span>}
+                  <span style={{ color: C.amber }}>{item.reason_label}</span>
+                </div>
+                {confirmed ? (
+                  <div style={{ marginTop: 6, display: 'flex', gap: 7, alignItems: 'center' }}>
+                    <span style={{ fontSize: 10, color: C.text3 }}>Đã xác nhận chưa đủ bằng chứng để ghép.</span>
+                    <Btn onClick={() => saveEncounterReview(item, 'clear')} disabled={acting} style={{ height: 23, padding: '0 8px', fontSize: 10 }}>Xem lại</Btn>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <select value={reviewSelections[item.source_key] || ''}
+                      onChange={e => setReviewSelections(p => ({ ...p, [item.source_key]: e.target.value }))}
+                      style={{ ...inp, minWidth: 360, maxWidth: '100%', fontSize: 10.5 }}>
+                      {!item.candidates?.length && <option value="">Không có lượt ứng viên</option>}
+                      {(item.candidates || []).map(c => (
+                        <option key={c.encounter_id} value={c.encounter_id}>
+                          {`${c.admission_date || '—'} → ${c.discharge_date || 'chưa ra viện'} · NT ${c.emr_noitru_id || '—'} · ${c.research_code || 'chưa Mã NC'}`}
+                        </option>
+                      ))}
+                    </select>
+                    <Btn variant="primary" onClick={() => saveEncounterReview(item, 'link')} disabled={acting || !item.candidates?.length} style={{ height: 26, padding: '0 10px', fontSize: 10 }}>
+                      {acting ? <Spinner size={8} /> : 'Chọn lượt này'}
+                    </Btn>
+                    <Btn onClick={() => saveEncounterReview(item, 'unresolved')} disabled={acting} style={{ height: 26, padding: '0 9px', fontSize: 10 }}>Chưa đủ thông tin</Btn>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {!encounterReviews.items?.length && <div style={{ fontSize: 10.5, color: C.green }}>Không còn lượt nào cần rà soát.</div>}
+          {!!encounterReviews.linked_items?.length && (
+            <details style={{ borderTop: `1px solid ${C.border2}`, paddingTop: 6 }}>
+              <summary style={{ cursor: 'pointer', fontSize: 10.5, fontWeight: 700, color: C.text2 }}>
+                Đã ghép thủ công ({compactNumber(encounterReviews.manual_linked)}) — mở để xem hoặc hoàn tác
+              </summary>
+              <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {encounterReviews.linked_items.map(item => (
+                  <div key={item.source_key} style={{ display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center', border: `1px solid ${C.border2}`, borderRadius: 6, padding: '6px 8px', fontSize: 10.5, color: C.text2 }}>
+                    <b>{item.research_code || 'Chưa Mã NC'}</b><span>Mã BN: {item.patient_code}</span>
+                    {item.patient_name && <span>{item.patient_name}</span>}
+                    <span>→ {item.admission_date || '—'} đến {item.discharge_date || 'chưa ra viện'}</span>
+                    <span>NT: {item.emr_noitru_id || '—'}</span>
+                    <Btn onClick={() => saveEncounterReview(item, 'clear')} disabled={reviewActing === item.source_key} style={{ height: 23, padding: '0 8px', fontSize: 10 }}>Hoàn tác</Btn>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
       )}
     </section>
   );

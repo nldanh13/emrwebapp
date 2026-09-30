@@ -61,6 +61,7 @@ const REASON_LABELS = {
   ambiguous_admission_time: 'Thời điểm vào viện khớp nhiều lượt',
   ambiguous_date_range: 'Ngày vào nằm trong nhiều lượt',
   identity_conflict: 'Định danh nội trú không khớp lượt chuẩn hóa',
+  invalid_manual_override: 'Lựa chọn thủ công không còn hợp lệ',
   missing_admission_date: 'Thiếu ngày vào viện để ghép lượt',
   no_unique_encounter: 'Chưa đủ bằng chứng để ghép đúng một lượt',
 };
@@ -296,7 +297,7 @@ function rowAdmissionSortKey(row) {
   return `${d} ${t}`;
 }
 
-function buildCollectionUnits({ sourceRows = [], encounterRows = [] } = {}) {
+function buildCollectionUnits({ sourceRows = [], encounterRows = [], encounterOverrides = {} } = {}) {
   const encs = (encounterRows || []).map(r => ({
     id: cell(r, ['encounter_id']),
     research_code: cell(r, ['research_code']),
@@ -322,7 +323,9 @@ function buildCollectionUnits({ sourceRows = [], encounterRows = [] } = {}) {
     const rowDate = isoDateOnly(cell(row, ['T/G vào', 'Ngày vào viện', 'admission_date']));
     const cands = byCode.get(id.patient_code) || [];
     const noConflict = e => !(id.noitru && e.noitru && e.noitru !== id.noitru);
-    const levels = [
+    const override = encounterOverrides?.[id.key];
+    const manualEncounterId = String(override?.encounter_id || '').trim();
+    const automaticLevels = [
       ['noitru', () => (id.noitru ? cands.filter(e => e.noitru === id.noitru || e.treatment === id.noitru) : [])],
       ['treatment', () => (id.treatment ? cands.filter(e => e.treatment === id.treatment || e.noitru === id.treatment) : [])],
       // Mã NC được cấp duy nhất cho từng Research key. Đây là bằng chứng mạnh khi
@@ -332,6 +335,11 @@ function buildCollectionUnits({ sourceRows = [], encounterRows = [] } = {}) {
       ['admission_time', () => (id.admission_time ? cands.filter(e => e.admission_time === id.admission_time && noConflict(e)) : [])],
       ['date_range', () => (rowDate ? cands.filter(e => noConflict(e) && e.from && rowDate >= e.from && rowDate <= (e.to || e.from)) : [])],
     ];
+    // Đã có quyết định thủ công thì không âm thầm rơi về luật tự động khi lượt
+    // được chọn biến mất/đổi Mã BN; phải báo lại để người dùng xem.
+    const levels = manualEncounterId
+      ? [['manual', () => cands.filter(e => e.id === manualEncounterId)]]
+      : automaticLevels;
     let match = null;
     let matchMethod = '';
     let ambiguousMethod = '';
@@ -342,7 +350,8 @@ function buildCollectionUnits({ sourceRows = [], encounterRows = [] } = {}) {
     }
     let unmatchedReason = '';
     if (!match) {
-      if (!cands.length) unmatchedReason = 'patient_not_in_encounters';
+      if (manualEncounterId) unmatchedReason = 'invalid_manual_override';
+      else if (!cands.length) unmatchedReason = 'patient_not_in_encounters';
       else if (ambiguousMethod === 'research_code') unmatchedReason = 'ambiguous_research_code';
       else if (ambiguousMethod === 'admission_time') unmatchedReason = 'ambiguous_admission_time';
       else if (ambiguousMethod === 'date_range') unmatchedReason = 'ambiguous_date_range';

@@ -562,6 +562,8 @@ export const collectResearchAuto = (studyId, options = {}) => post(`${researchSc
 export const getResearchCollectionStatus = (studyId) => get(`${researchScopePath(studyId)}/collection-status`);
 export const downloadResearchCollectionExceptions = (studyId) =>
   downloadBlob(`${researchScopePath(studyId)}/collection-exceptions`, `${studyId || 'du_lieu_goc'}_ngoai_le_thu_thap.csv`);
+export const getResearchEncounterReviews = (studyId) => get(`${researchScopePath(studyId)}/encounter-reviews`);
+export const updateResearchEncounterReview = (studyId, decision) => post(`${researchScopePath(studyId)}/encounter-reviews`, decision);
 export const getResearchStudyReadiness = (studyId) => get(`/api/research/studies/${encodeURIComponent(studyId)}/readiness`);
 export const updateResearchRefreshPolicy = (studyId, refreshPolicy) =>
   post(`${researchScopePath(studyId)}/refresh-policy`, { refresh_policy: refreshPolicy });

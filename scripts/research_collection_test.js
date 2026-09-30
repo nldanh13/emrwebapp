@@ -430,6 +430,23 @@ test('Hai lượt chồng ngày: ghép bằng thời điểm vào chính xác, l
   }
 });
 
+test('Lựa chọn thủ công chỉ ghép được lượt cùng người bệnh; lựa chọn hỏng vẫn bị chặn', () => {
+  const rows = [src('k_manual', '', 'BN_MANUAL', { 'Mã nội trú': 'NT_SAI', 'T/G vào': '05/03/2026 10:00', 'Ngày vào viện': '' })];
+  const encounterRows = [
+    { encounter_id: 'e_manual', patient_code: 'BN_MANUAL', admission_date: '2026-03-01 08:00', discharge_date: '2026-03-10', emr_noitru_id: 'NT_DUNG' },
+    { encounter_id: 'e_other', patient_code: 'BN_KHAC', admission_date: '2026-03-01 08:00', discharge_date: '2026-03-10' },
+  ];
+  const linked = c.buildCollectionUnits({ sourceRows: rows, encounterRows, encounterOverrides: { k_manual: { encounter_id: 'e_manual' } } });
+  assert.deepStrictEqual([linked[0].key, linked[0].match_method, linked[0].match_status], ['e_manual', 'manual', 'matched']);
+
+  for (const encounter_id of ['e_other', 'e_missing']) {
+    const invalid = c.buildCollectionUnits({ sourceRows: rows, encounterRows, encounterOverrides: { k_manual: { encounter_id } } });
+    assert.strictEqual(invalid[0].match_status, 'unmatched');
+    assert.strictEqual(invalid[0].unmatched_reason, 'invalid_manual_override');
+    assert.strictEqual(c.planCollection(c.buildLedger({ units: invalid }), { force: true }).tasks.length, 0);
+  }
+});
+
 test('Thiếu Mã nội trú: dùng Mã NC duy nhất để ghép đúng lượt, không đoán khi mã bị trùng', () => {
   const rows = [
     src('k1', 'NC_A', 'BN_R', { 'Mã nội trú': '', 'T/G vào': '05/03/2026 09:00' }),
