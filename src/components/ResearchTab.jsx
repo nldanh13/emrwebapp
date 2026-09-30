@@ -1158,6 +1158,7 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
   const [showExceptions, setShowExceptions] = useState(false);
   const [readiness, setReadiness] = useState(null);
   const [showReq, setShowReq] = useState(false);
@@ -1206,6 +1207,20 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
       t(String(e.message || e), 'error');
     } finally {
       setRunning(false);
+    }
+  };
+
+  const reconcileEncounters = async () => {
+    setReconciling(true);
+    try {
+      await (studyId ? api.normalizeResearchStudy(studyId) : api.normalizeResearchArchive());
+      await load();
+      t('Đã chuẩn hóa và rà soát lại các lượt chưa ghép. Lượt còn mơ hồ vẫn được giữ ngoài thu thập tự động.', 'ok');
+      if (onDone) await onDone();
+    } catch (e) {
+      t(String(e.message || e), 'error');
+    } finally {
+      setReconciling(false);
     }
   };
 
@@ -1271,6 +1286,7 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
           Lần chạy tới: lấy <b>{compactNumber(plan.to_fetch || 0)}</b> lượt ({compactNumber(plan.parts_to_fetch || 0)} phần), bỏ qua <b>{compactNumber(plan.unchanged || 0)}</b> lượt đã đủ và không đổi
           {plan.exhausted_parts ? <>, <b>{compactNumber(plan.exhausted_parts)}</b> phần đã hết lượt thử</> : null}
           {plan.blocked_parts ? <>, <b>{compactNumber(plan.blocked_parts)}</b> phần cần người xem</> : null}.
+          {plan.unmatched_encounters ? <> <b>{compactNumber(plan.unmatched_encounters)}</b> lượt chưa ghép chắc đã được chặn, không tự thu thập.</> : null}
         </div>
       )}
 
@@ -1390,6 +1406,11 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
           </Btn>
           {!!exceptions.length && (
             <Btn onClick={() => api.downloadResearchCollectionExceptions(studyId).catch(e => t(String(e.message || e), 'error'))} style={{ height: 24, padding: '0 9px', fontSize: 10 }}>Tải CSV</Btn>
+          )}
+          {!!plan?.unmatched_encounters && (
+            <Btn onClick={reconcileEncounters} disabled={busy || reconciling} style={{ height: 24, padding: '0 9px', fontSize: 10 }}>
+              {reconciling ? <><Spinner size={8} /> Đang rà soát</> : 'Rà soát ghép lượt'}
+            </Btn>
           )}
           {!exceptions.length && <span style={{ fontSize: 10, color: C.text3 }}>Không có ngoại lệ — không cần rà từng ca.</span>}
         </div>

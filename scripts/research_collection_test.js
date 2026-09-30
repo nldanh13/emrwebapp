@@ -405,6 +405,31 @@ test('Dòng không ghép chắc về đúng 1 lượt (2 lượt chồng ngày, 
   assert.deepStrictEqual(units.map(u => u.unmatched_reason).sort(), ['ambiguous_date_range', 'identity_conflict']);
 });
 
+test('Hai lượt chồng ngày: ghép bằng thời điểm vào chính xác, lượt chưa chắc không bao giờ được tự thu thập', () => {
+  const rows = [
+    src('k_dung', '', 'BN_TIME', { 'Mã nội trú': '', 'T/G vào': '05/03/2026 09:15', 'Ngày vào viện': '' }),
+    src('k_mo', '', 'BN_AMBIG', { 'Mã nội trú': '', 'T/G vào': '05/03/2026 10:00', 'Ngày vào viện': '' }),
+  ];
+  const encounterRows = [
+    { encounter_id: 'e_time_1', patient_code: 'BN_TIME', admission_date: '2026-03-01 07:00', discharge_date: '2026-03-10' },
+    { encounter_id: 'e_time_2', patient_code: 'BN_TIME', admission_date: '2026-03-05 09:15', discharge_date: '2026-03-06' },
+    { encounter_id: 'e_ambig_1', patient_code: 'BN_AMBIG', admission_date: '2026-03-01 07:00', discharge_date: '2026-03-10' },
+    { encounter_id: 'e_ambig_2', patient_code: 'BN_AMBIG', admission_date: '2026-03-04 08:00', discharge_date: '2026-03-06' },
+  ];
+  const units = c.buildCollectionUnits({ sourceRows: rows, encounterRows });
+  const exact = units.find(u => u.key === 'e_time_2');
+  const unresolved = units.find(u => u.key === 'k_mo');
+  assert.strictEqual(exact.match_method, 'admission_time');
+  assert.strictEqual(unresolved.unmatched_reason, 'ambiguous_date_range');
+
+  const ledger = c.buildLedger({ units });
+  for (const options of [{}, { force: true }, { retryBlocked: true }, { force: true, retryBlocked: true }]) {
+    const plan = c.planCollection(ledger, options);
+    assert.deepStrictEqual(plan.tasks.map(t => t.key), ['e_time_2']);
+    assert.strictEqual(plan.summary.unmatched_encounters, 1);
+  }
+});
+
 test('Thiếu Mã nội trú: dùng Mã NC duy nhất để ghép đúng lượt, không đoán khi mã bị trùng', () => {
   const rows = [
     src('k1', 'NC_A', 'BN_R', { 'Mã nội trú': '', 'T/G vào': '05/03/2026 09:00' }),
