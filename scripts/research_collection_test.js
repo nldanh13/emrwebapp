@@ -402,6 +402,33 @@ test('Dòng không ghép chắc về đúng 1 lượt (2 lượt chồng ngày, 
   ];
   const units = c.buildCollectionUnits({ sourceRows: rows, encounterRows });
   assert.deepStrictEqual(units.map(u => u.key).sort(), ['k1', 'k2']);
+  assert.deepStrictEqual(units.map(u => u.unmatched_reason).sort(), ['ambiguous_date_range', 'identity_conflict']);
+});
+
+test('Thiếu Mã nội trú: dùng Mã NC duy nhất để ghép đúng lượt, không đoán khi mã bị trùng', () => {
+  const rows = [
+    src('k1', 'NC_A', 'BN_R', { 'Mã nội trú': '', 'T/G vào': '05/03/2026 09:00' }),
+    src('k2', 'NC_B', 'BN_R', { 'Mã nội trú': '', 'T/G vào': '05/03/2026 10:00' }),
+  ];
+  const encounterRows = [
+    { encounter_id: 'e1', research_code: 'NC_A', patient_code: 'BN_R', admission_date: '2026-03-05', discharge_date: '2026-03-10' },
+    { encounter_id: 'e2', research_code: 'NC_B', patient_code: 'BN_R', admission_date: '2026-03-05', discharge_date: '2026-03-12' },
+  ];
+  const units = c.buildCollectionUnits({ sourceRows: rows, encounterRows });
+  assert.deepStrictEqual(units.map(u => [u.key, u.match_method]).sort(), [['e1', 'research_code'], ['e2', 'research_code']]);
+  assert.deepStrictEqual(c.collectionUnitMatchSummary(units), {
+    total: 2, matched: 2, unmatched: 0, source_only: 0, by_method: { research_code: 2 }, by_reason: {},
+  });
+
+  const duplicated = c.buildCollectionUnits({
+    sourceRows: [src('k3', 'NC_DUP', 'BN_D', { 'Mã nội trú': '', 'T/G vào': '05/03/2026 09:00' })],
+    encounterRows: [
+      { encounter_id: 'd1', research_code: 'NC_DUP', patient_code: 'BN_D', admission_date: '2026-03-05', discharge_date: '2026-03-10' },
+      { encounter_id: 'd2', research_code: 'NC_DUP', patient_code: 'BN_D', admission_date: '2026-03-05', discharge_date: '2026-03-12' },
+    ],
+  });
+  assert.strictEqual(duplicated[0].encounter_id, '');
+  assert.strictEqual(duplicated[0].unmatched_reason, 'ambiguous_research_code');
 });
 
 test('Progress hành chánh theo khóa dòng cũ (không còn trong nguồn) vẫn ghép được vào lượt theo Mã BN + ngày vào', () => {
