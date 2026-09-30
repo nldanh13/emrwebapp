@@ -117,6 +117,44 @@ test('Ghép theo ngày sự kiện chỉ khi nằm trong đúng một lượt, k
   assert.strictEqual(R.encounterMatchStatus(outside), 'ambiguous');
 });
 
+test('Đợt chưa có ngày ra viện nhận kết quả quá 60 ngày sau ngày vào (tính tới hôm nay)', () => {
+  const rows = [
+    { 'Mã BN': '444', 'Mã nội trú': 'nt-cu', 'T/G vào': '08:00 01/01/2025', 'Ngày ra viện': '10/01/2025' },
+    { 'Mã BN': '444', 'Mã nội trú': 'nt-dang-nam', 'T/G vào': '08:00 01/01/2026' },
+  ];
+  const map = R.buildContextMap(rows, 'r');
+  const late = R.contextForRow(map, { 'Mã BN': '444', 'TG chỉ định': '15/03/2026' }, '444');
+  assert.strictEqual(late.emr_noitru_id, 'nt-dang-nam', 'kết quả 73 ngày sau ngày vào vẫn thuộc đợt đang nằm');
+  assert.strictEqual(R.encounterMatchMethod(late), 'event_date_range');
+});
+
+test('QA cảnh báo dòng đã gắn đợt nhưng ngoài thời gian nằm viện, và đợt chưa có ngày ra viện', () => {
+  const encounters = [
+    { encounter_id: 'e1', research_code: 'NC1', patient_code: 'p1', admission_date: '2026-01-01', discharge_date: '2026-01-05' },
+    { encounter_id: 'e2', research_code: 'NC2', patient_code: 'p2', admission_date: '2026-02-01', discharge_date: '' },
+  ];
+  const labs = [
+    { lab_result_id: 'l1', encounter_id: 'e1', encounter_match_status: 'matched', is_within_encounter: '0' },
+    { lab_result_id: 'l2', encounter_id: 'e1', encounter_match_status: 'matched', is_within_encounter: '1' },
+  ];
+  const report = buildQualityReport({ tables: { patients: [{ patient_code: 'p1' }, { patient_code: 'p2' }], encounters, lab_results: labs } });
+  const outside = report.warnings.find(w => w.code === 'child_outside_encounter');
+  assert.ok(outside && outside.count === 1 && outside.table === 'lab_results');
+  assert.ok(report.warnings.some(w => w.code === 'missing_discharge_date' && w.count === 1));
+});
+
+test('Ca mổ đầu tiên của đợt: dòng có ngày thắng dòng không ngày, chọn ngày sớm nhất', () => {
+  const { firstSurgeryByEncounter } = require('../server/research/encounter_linkage');
+  const map = firstSurgeryByEncounter([
+    { encounter_id: 'e1', surgery_name: 'không ngày', surgery_date: '' },
+    { encounter_id: 'e1', surgery_name: 'mổ lần 2', surgery_date: '2026-03-02' },
+    { encounter_id: 'e1', surgery_name: 'mổ lần 1', surgery_datetime: '2026-03-01T08:00:00' },
+    { encounter_id: '', surgery_name: 'thiếu đợt', surgery_date: '2026-01-01' },
+  ]);
+  assert.strictEqual(map.get('e1').surgery_name, 'mổ lần 1');
+  assert.strictEqual(map.size, 1, 'dòng thiếu encounter_id không được gắn vào đợt nào');
+});
+
 test('Danh mục biến giới hạn mẫu và số giá trị khác nhau để không tăng RAM vô hạn', () => {
   const rows = Array.from({ length: 7000 }, (_, index) => ({
     bien_nhieu_gia_tri: `gia_tri_${index}`,

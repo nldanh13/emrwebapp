@@ -47,7 +47,12 @@ function repairFormulaGuard(value) {
   return value.charCodeAt(0) === 0x27 ? value.replace(LEGACY_FORMULA_GUARD_RE, '') : value;
 }
 
-function readCsvFileRows(filePath, maxRows) {
+// options.onRow(obj): nhận từng dòng thay vì gom vào mảng rows (rows trả về rỗng), để
+// xử lý bảng lớn (xuất file) mà RAM không tăng theo số dòng.
+function readCsvFileRows(filePath, maxRows, options = {}) {
+  const onRow = typeof options.onRow === 'function' ? options.onRow : null;
+  const onHeader = typeof options.onHeader === 'function' ? options.onHeader : null;
+  let delivered = 0;
   const limit = Number.isFinite(Number(maxRows)) ? Math.max(0, Number(maxRows)) : Number.MAX_SAFE_INTEGER;
   const intern = new Map();
   const internValue = value => {
@@ -94,14 +99,22 @@ function readCsvFileRows(filePath, maxRows) {
             const v = (idx === 0 ? value.replace(/^\ufeff/, '') : value).trim();
             return v || `Cột ${idx + 1}`;
           });
+          if (onHeader) onHeader(columns);
         } else if (collecting) {
           const values = cells.map(v => repairFormulaGuard(v.trim()));
           if (values.some(Boolean)) {
             count += 1;
             const obj = {};
-            for (let i = 0; i < columns.length; i += 1) obj[columns[i]] = internValue(values[i] ?? '');
-            rows.push(obj);
-            if (rows.length >= limit) collecting = false;
+            if (onRow) {
+              for (let i = 0; i < columns.length; i += 1) obj[columns[i]] = values[i] ?? '';
+              onRow(obj);
+              delivered += 1;
+              if (delivered >= limit) collecting = false;
+            } else {
+              for (let i = 0; i < columns.length; i += 1) obj[columns[i]] = internValue(values[i] ?? '');
+              rows.push(obj);
+              if (rows.length >= limit) collecting = false;
+            }
           }
         } else if (visible) {
           count += 1;
@@ -147,7 +160,7 @@ function readCsvFileRows(filePath, maxRows) {
   }
 
   if (!columns) return { columns: [], rows: [], count: 0, limited: false };
-  return { columns, rows, count, limited: count > rows.length };
+  return { columns, rows, count, limited: count > (onRow ? delivered : rows.length) };
 }
 
 module.exports = { readCsvFileRows, repairFormulaGuard };

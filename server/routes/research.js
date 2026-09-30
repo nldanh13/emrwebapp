@@ -444,18 +444,56 @@ function auditIdentifiedResearchAccess(req) {
   });
 }
 
+// Xuất theo từng dòng ra file tạm cạnh file nguồn rồi stream về trình duyệt: bảng XN/CĐHA
+// vài trăm MB không còn bị nạp trọn thành object + một chuỗi CSV khổng lồ (hết RAM).
+// File tạm có thể chứa định danh (khi được phép xuất có định danh) nên đặt cạnh dữ liệu
+// gốc, quyền 600, và xóa ngay khi gửi xong/ngắt kết nối.
 function sendCsvFile(res, filePath, filenameBase, { redact = true } = {}) {
   if (!filePath || !fs.existsSync(filePath)) {
     return res.status(404).json({ status: 'error', message: 'Bảng chưa có file CSV để xuất.' });
   }
   const filename = `${safeDownloadName(filenameBase)}.csv`;
+  const tmpPath = path.join(path.dirname(filePath), `.export_tmp_${process.pid}_${crypto.randomBytes(6).toString('hex')}.csv`);
+  let fd = null;
+  try {
+    fd = fs.openSync(tmpPath, 'w', 0o600);
+    let buffer = '\ufeff';
+    const flush = (force = false) => {
+      if (buffer.length && (force || buffer.length >= 1024 * 1024)) {
+        fs.writeSync(fd, buffer, null, 'utf-8');
+        buffer = '';
+      }
+    };
+    let columns = [];
+    readCsvFileRows(filePath, Number.MAX_SAFE_INTEGER, {
+      onHeader(header) {
+        columns = redact ? redactCsvTable(header, [], EXPORT_SENSITIVE_COLUMNS).columns : header;
+        buffer += rowsToCsv(columns, []);
+      },
+      onRow(row) {
+        buffer += `${columns.map(col => csvEscape(row[col] ?? '')).join(',')}\n`;
+        flush();
+      },
+    });
+    flush(true);
+    fs.closeSync(fd);
+    fd = null;
+  } catch (err) {
+    if (fd !== null) { try { fs.closeSync(fd); } catch (_) { /* bỏ qua */ } }
+    try { fs.unlinkSync(tmpPath); } catch (_) { /* bỏ qua */ }
+    throw err;
+  }
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
-  const table = readCsvTable(filePath, Number.MAX_SAFE_INTEGER);
-  const exportTable = redact
-    ? redactCsvTable(table.columns, table.rows, EXPORT_SENSITIVE_COLUMNS)
-    : table;
-  return res.send(`\ufeff${rowsToCsv(exportTable.columns, exportTable.rows)}`);
+  const cleanup = () => { fs.unlink(tmpPath, () => {}); };
+  const stream = fs.createReadStream(tmpPath);
+  stream.on('error', (err) => {
+    cleanup();
+    if (!res.headersSent) res.status(500).json({ status: 'error', message: String(err.message || err) });
+    else res.destroy(err);
+  });
+  res.on('close', cleanup);
+  return stream.pipe(res);
 }
 
 
@@ -494,6 +532,14 @@ function sortByDateLike(rows, keys) {
     const bv = cell(b, keys);
     return String(av).localeCompare(String(bv));
   });
+}
+
+function readRunTableRowsWhere(runDir, filename, predicate) {
+  const filePath = path.join(runDir, filename);
+  if (!fs.existsSync(filePath)) return [];
+  const rows = [];
+  readCsvFileRows(filePath, Number.MAX_SAFE_INTEGER, { onRow: row => { if (predicate(row)) rows.push(row); } });
+  return rows;
 }
 
 function safeReadRunTable(runDir, filename) {
@@ -891,11 +937,17 @@ function buildPatientHistory(runDir, query) {
     researchCodes: expandedCodes.size ? [] : [...historyResearchCodes],
     encounterIds: expandedCodes.size ? [] : [...historyEncounterIds],
   });
+  // Không có SQLite: đọc CSV theo dòng và chỉ giữ dòng của người bệnh đang tra (cùng khóa
+  // như truy vấn SQLite), không nạp trọn bảng XN/CĐHA/thuốc vào RAM.
+  // Giữ rộng (mã BN, Mã NC hoặc mã đợt), bước ghép theo đợt bên dưới lọc chính xác.
+  const historyRowMatches = row => expandedCodes.has(String(row.patient_code || '').trim())
+    || historyResearchCodes.has(String(row.research_code || '').trim())
+    || historyEncounterIds.has(String(row.encounter_id || '').trim());
   const tables = sqliteTables || {
-    labs: safeReadRunTable(runDir, 'lab_results.csv'),
-    imaging: safeReadRunTable(runDir, 'imaging_results.csv'),
-    medications: safeReadRunTable(runDir, 'medication_orders.csv'),
-    surgeries: safeReadRunTable(runDir, 'surgery_results.csv'),
+    labs: readRunTableRowsWhere(runDir, 'lab_results.csv', historyRowMatches),
+    imaging: readRunTableRowsWhere(runDir, 'imaging_results.csv', historyRowMatches),
+    medications: readRunTableRowsWhere(runDir, 'medication_orders.csv', historyRowMatches),
+    surgeries: readRunTableRowsWhere(runDir, 'surgery_results.csv', historyRowMatches),
     source: 'csv',
   };
 
@@ -3248,6 +3300,14 @@ function daysBetween(startDate, date) {
   return offset === '' ? '' : String(Number(offset) + 1);
 }
 
+// Đợt chưa có ngày ra viện (đang nằm hoặc chưa lấy được ngày ra): coi khoảng nằm viện
+// kéo tới hôm nay. Trước đây cắt cứng 60 ngày sau ngày vào, nên người bệnh nằm lâu hơn
+// bị mất kết quả mà không có cảnh báo. QA báo riêng số đợt chưa có ngày ra viện.
+function openStayEnd(admissionDt) {
+  const now = Date.now();
+  return new Date(Math.max(admissionDt.getTime(), now));
+}
+
 function eventTemporalFields(ctx, eventDate) {
   const admission = ctx?.admission_date || '';
   const surgery = ctx?.surgery_date || '';
@@ -3257,7 +3317,7 @@ function eventTemporalFields(ctx, eventDate) {
   const dischargeDt = parseAnyDate(discharge);
   let within = '';
   if (event && admissionDt) {
-    const end = dischargeDt || new Date(admissionDt.getTime() + 60 * 86400000);
+    const end = dischargeDt || openStayEnd(admissionDt);
     within = event.getTime() >= admissionDt.getTime() && event.getTime() <= end.getTime() ? '1' : '0';
   }
   return {
@@ -3376,7 +3436,7 @@ function eventInsideContext(eventDate, ctx) {
   // có giờ. Không nới ±1 ngày: dữ liệu nghiên cứu phải ưu tiên không gán nhầm.
   const day = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const start = day(admission);
-  const end = discharge ? day(discharge) : start + 60 * 86400000;
+  const end = discharge ? day(discharge) : day(openStayEnd(admission));
   const at = day(event);
   return at >= start && at <= end;
 }
@@ -3779,7 +3839,7 @@ function isTimeInsideVisit(timeValue, admissionValue, dischargeValue) {
   const a = parseAnyDate(admissionValue);
   const d = parseAnyDate(dischargeValue);
   if (!t || !a) return false;
-  const end = d || new Date(a.getTime() + 60 * 86400000);
+  const end = d || openStayEnd(a);
   return t.getTime() >= a.getTime() - 86400000 && t.getTime() <= end.getTime() + 86400000;
 }
 
@@ -5578,13 +5638,30 @@ function ingestAllResearchResultsToPatientDb() {
       if (run.isDirectory()) runDirs.push(path.join(runsDir, run.name));
     }
   }
+  // Đọc theo dòng, ghi theo lô: file lich_su_xn.csv có thể vài trăm MB.
+  const ingestFile = (filePath, kind) => {
+    if (!fs.existsSync(filePath)) return { rows: 0, added: 0 };
+    let batch = [];
+    let rows = 0;
+    let added = 0;
+    const flush = () => {
+      if (!batch.length) return;
+      added += Number(patientDb.recordResults(batch, { kind, source: 'kho_nghien_cuu' }).added || 0);
+      batch = [];
+    };
+    readCsvFileRows(filePath, Number.MAX_SAFE_INTEGER, {
+      onRow: row => { rows += 1; batch.push(row); if (batch.length >= 5000) flush(); },
+    });
+    flush();
+    return { rows, added };
+  };
   for (const dir of runDirs) {
-    const xn = readCsvTable(path.join(dir, 'lich_su_xn.csv'), Number.MAX_SAFE_INTEGER).rows;
-    const cdha = readCsvTable(path.join(dir, 'lich_su_cdha.csv'), Number.MAX_SAFE_INTEGER).rows;
-    if (!xn.length && !cdha.length) continue;
+    const xn = ingestFile(path.join(dir, 'lich_su_xn.csv'), 'xn');
+    const cdha = ingestFile(path.join(dir, 'lich_su_cdha.csv'), 'cdha');
+    if (!xn.rows && !cdha.rows) continue;
     stats.runs += 1;
-    stats.xn += patientDb.recordResults(xn, { kind: 'xn', source: 'kho_nghien_cuu' }).added;
-    stats.cdha += patientDb.recordResults(cdha, { kind: 'cdha', source: 'kho_nghien_cuu' }).added;
+    stats.xn += xn.added;
+    stats.cdha += cdha.added;
   }
   return stats;
 }
@@ -6253,21 +6330,9 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   // sẽ khiến JS coi cả hàm này nằm trong "vùng chết tạm thời" (TDZ) của tên đó
   // ngay từ đầu, làm lệnh gọi hàm import ở trên ném lỗi "Cannot access before
   // initialization" mỗi khi chạy nhánh không lấy từ cache.
-  const firstSurgeryByEncounterMap = new Map();
-  for (const surg of surgeryResults) {
-    const timeStr = String(surg.surgery_datetime || surg.surgery_date || '');
-    const upsert = (key) => {
-      if (!key) return;
-      const old = firstSurgeryByEncounterMap.get(key);
-      const oldTime = old ? String(old.surgery_datetime || old.surgery_date || '') : '';
-      if (!old || (timeStr && timeStr.localeCompare(oldTime) < 0)) {
-        firstSurgeryByEncounterMap.set(key, surg);
-      }
-    };
-    // Chỉ ghép theo đúng lượt điều trị. Dòng thiếu encounter_id phải được xử lý thủ công,
-    // không được phát tán sang mọi lượt của cùng người bệnh.
-    upsert(surg.encounter_id);
-  }
+  // Chỉ ghép theo đúng lượt điều trị (dòng thiếu encounter_id không phát tán sang mọi
+  // lượt của cùng người bệnh). Dùng chung quy tắc chọn ca mổ đầu tiên với y lệnh.
+  const firstSurgeryByEncounterMap = firstSurgeryByEncounter(surgeryResults);
   const imagingTextByEncounter = new Map();
   for (const img of imagingResults) {
     const key = img.encounter_id;
@@ -6717,6 +6782,53 @@ function importArchiveToStudy(study, filters) {
   };
 }
 
+// ── Khóa theo phạm vi (kho gốc / từng nghiên cứu) ───────────────────────────
+// Các thao tác ghi dữ liệu của một kho (lấy dữ liệu, thu thập tự động, chuẩn hóa, chốt
+// dataset...) không được chạy chồng: server cho phép 2 tác vụ nặng song song, nên trước
+// đây hai người (hoặc hai tab) có thể cùng ghi progress.json, sổ thu thập và các CSV của
+// cùng một run. Khóa giữ tới khi handler xong hẳn (các handler này chờ worker chạy xong
+// mới trả lời). Thao tác chỉ đọc và nút Dừng (/api/cancel) không bị khóa.
+const RESEARCH_SCOPE_LOCKS = new Map();
+
+function researchScopeKey(req) {
+  const studyId = req.params?.studyId;
+  if (studyId) {
+    try { return `study:${cleanStudyId(studyId)}`; } catch (_) { return `study:${String(studyId)}`; }
+  }
+  if (req.path === '/research/refetch-missing') {
+    const raw = String(req.body?.scope || ARCHIVE_ID).trim();
+    if (raw === ARCHIVE_ID || raw === '__archive__' || raw === 'archive') return 'archive';
+    try { return `study:${cleanStudyId(raw)}`; } catch (_) { return `study:${raw}`; }
+  }
+  return 'archive';
+}
+
+function researchScopeBusy(key) {
+  return RESEARCH_SCOPE_LOCKS.get(key) || null;
+}
+
+function lockedResearchRoute(method, routePath, label, handler) {
+  router[method](routePath, async (req, res, next) => {
+    const key = researchScopeKey(req);
+    const holder = RESEARCH_SCOPE_LOCKS.get(key);
+    if (holder) {
+      return res.status(409).json({
+        status: 'error',
+        code: 'RESEARCH_SCOPE_BUSY',
+        message: `Kho này đang chạy "${holder.label}" (từ ${holder.since}). Chờ tác vụ đó xong hoặc bấm Dừng rồi thử lại.`,
+        busy: { label: holder.label, since: holder.since },
+      });
+    }
+    const token = { label, since: nowIso() };
+    RESEARCH_SCOPE_LOCKS.set(key, token);
+    try {
+      return await handler(req, res, next);
+    } finally {
+      if (RESEARCH_SCOPE_LOCKS.get(key) === token) RESEARCH_SCOPE_LOCKS.delete(key);
+    }
+  });
+}
+
 router.post('/research/archive/dismiss-alert', (_req, res) => {
   try {
     const runId = resolveArchiveRunId('latest');
@@ -6734,7 +6846,7 @@ router.get('/research/archive', (_req, res) => {
   return res.json({ status: 'ok', archive: readArchive() });
 });
 
-router.post('/research/archive/source', (req, res) => {
+lockedResearchRoute('post', '/research/archive/source', 'Nạp danh sách nguồn', (req, res) => {
   try {
     ensureArchiveStore();
     const csv = String(req.body?.csv || '');
@@ -6974,7 +7086,7 @@ router.get('/research/archive/progress', (req, res) => {
   }
 });
 
-router.post('/research/archive/finalize-dataset', (_req, res) => {
+lockedResearchRoute('post', '/research/archive/finalize-dataset', 'Tạo dataset cuối', (_req, res) => {
   try {
     const runId = resolveArchiveRunIdForAction('latest');
     if (!runId) return res.status(400).json({ status: 'error', message: 'Kho gốc chưa có run.' });
@@ -6986,7 +7098,7 @@ router.post('/research/archive/finalize-dataset', (_req, res) => {
   }
 });
 
-router.post('/research/archive/build-encoded-dataset', (_req, res) => {
+lockedResearchRoute('post', '/research/archive/build-encoded-dataset', 'Tạo dataset mã hóa', (_req, res) => {
   try {
     const runId = resolveArchiveRunIdForAction('latest');
     if (!runId) return res.status(400).json({ status: 'error', message: 'Kho gốc chưa có run.' });
@@ -6998,7 +7110,7 @@ router.post('/research/archive/build-encoded-dataset', (_req, res) => {
   }
 });
 
-router.post('/research/archive/clean-generated', (req, res) => {
+lockedResearchRoute('post', '/research/archive/clean-generated', 'Dọn dữ liệu sinh ra', (req, res) => {
   try {
     const runId = resolveArchiveRunIdForAction('latest');
     if (!runId) return res.status(400).json({ status: 'error', message: 'Kho gốc chưa có run.' });
@@ -7078,7 +7190,7 @@ router.get('/research/studies/:studyId/case-trace', (req, res) => {
   }
 });
 
-router.post('/research/archive/normalize', (_req, res) => {
+lockedResearchRoute('post', '/research/archive/normalize', 'Chuẩn hóa', (_req, res) => {
   try {
     const result = normalizeArchiveLatest();
     const archive = result.counts?.cached ? readArchive() : updateArchive({ last_normalized_at: nowIso() });
@@ -7088,7 +7200,7 @@ router.post('/research/archive/normalize', (_req, res) => {
   }
 });
 
-router.post('/research/archive/import-hchanh', (req, res) => {
+lockedResearchRoute('post', '/research/archive/import-hchanh', 'Nạp dữ liệu hành chánh', (req, res) => {
   const ctx = getRuntimePaths(req);
   try {
     const runId = resolveArchiveRunId(String(req.body?.runId || 'latest')) || safeRunId(req.body?.runId) || nowFileStamp();
@@ -7112,7 +7224,7 @@ router.post('/research/archive/import-hchanh', (req, res) => {
 });
 
 
-router.post('/research/archive/fetch-hchanh', async (req, res) => {
+lockedResearchRoute('post', '/research/archive/fetch-hchanh', 'Lấy dữ liệu hành chánh', async (req, res) => {
   const ctx = getRuntimePaths(req);
   try {
     const archive = readArchive();
@@ -7179,7 +7291,7 @@ router.post('/research/archive/fetch-hchanh', async (req, res) => {
 });
 
 
-router.post('/research/archive/fetch-order-history', async (req, res) => {
+lockedResearchRoute('post', '/research/archive/fetch-order-history', 'Lấy lịch sử y lệnh', async (req, res) => {
   const ctx = getRuntimePaths(req);
   try {
     const archive = readArchive();
@@ -7246,7 +7358,7 @@ router.post('/research/archive/fetch-order-history', async (req, res) => {
 });
 
 
-router.post('/research/archive/patient-info', async (req, res) => {
+lockedResearchRoute('post', '/research/archive/patient-info', 'Lấy thông tin người bệnh', async (req, res) => {
   const ctx = getRuntimePaths(req);
   try {
     const archive = readArchive();
@@ -7307,7 +7419,7 @@ router.post('/research/archive/patient-info', async (req, res) => {
   }
 });
 
-router.post('/research/archive/run', async (req, res) => {
+lockedResearchRoute('post', '/research/archive/run', 'Lấy dữ liệu', async (req, res) => {
   const ctx = getRuntimePaths(req);
   try {
     const archive = readArchive();
@@ -7400,7 +7512,7 @@ router.get('/research/studies', (_req, res) => {
 // Đọc extract_status.csv, lọc BN còn thiếu loại dữ liệu nào, gọi đúng fetcher.
 // scope = 'archive' | studyId
 // missingTypes = ['xn_cdha', 'profile', 'discharge', 'surgery', 'order_history'] (mảng)
-router.post('/research/refetch-missing', async (req, res) => {
+lockedResearchRoute('post', '/research/refetch-missing', 'Lấy lại chỗ thiếu', async (req, res) => {
   const ctx = getRuntimePaths(req);
   try {
     const rawScope     = String(req.body?.scope || ARCHIVE_ID).trim();
@@ -8513,16 +8625,16 @@ function studyReadinessForRun(study, runDir, sourceRows, { write = false, maxAtt
   return result;
 }
 
-router.post('/research/archive/collect-auto', (req, res) => handleCollectAuto(req, res));
-router.post('/research/studies/:studyId/collect-auto', (req, res) => handleCollectAuto(req, res, req.params.studyId));
+lockedResearchRoute('post', '/research/archive/collect-auto', 'Thu thập tự động', (req, res) => handleCollectAuto(req, res));
+lockedResearchRoute('post', '/research/studies/:studyId/collect-auto', 'Thu thập tự động', (req, res) => handleCollectAuto(req, res, req.params.studyId));
 router.get('/research/archive/collection-status', (req, res) => handleCollectionStatus(req, res));
 router.get('/research/studies/:studyId/collection-status', (req, res) => handleCollectionStatus(req, res, req.params.studyId));
 router.get('/research/archive/collection-exceptions', (req, res) => handleCollectionExceptionsExport(req, res));
 router.get('/research/studies/:studyId/collection-exceptions', (req, res) => handleCollectionExceptionsExport(req, res, req.params.studyId));
 router.get('/research/archive/encounter-reviews', (req, res) => handleCollectionEncounterReviews(req, res));
-router.post('/research/archive/encounter-reviews', (req, res) => handleCollectionEncounterReviews(req, res));
+lockedResearchRoute('post', '/research/archive/encounter-reviews', 'Duyệt lượt chưa ghép', (req, res) => handleCollectionEncounterReviews(req, res));
 router.get('/research/studies/:studyId/encounter-reviews', (req, res) => handleCollectionEncounterReviews(req, res, req.params.studyId));
-router.post('/research/studies/:studyId/encounter-reviews', (req, res) => handleCollectionEncounterReviews(req, res, req.params.studyId));
+lockedResearchRoute('post', '/research/studies/:studyId/encounter-reviews', 'Duyệt lượt chưa ghép', (req, res) => handleCollectionEncounterReviews(req, res, req.params.studyId));
 
 // Đủ dùng của các lượt trong run nghiên cứu, theo phần bắt buộc + điều kiện dữ liệu của đề cương.
 router.get('/research/studies/:studyId/readiness', (req, res) => {
@@ -8764,7 +8876,7 @@ router.get('/research/studies/:studyId', (req, res) => {
   }
 });
 
-router.post('/research/studies/:studyId/cohort', (req, res) => {
+lockedResearchRoute('post', '/research/studies/:studyId/cohort', 'Nạp cohort', (req, res) => {
   try {
     const study = readStudy(req.params.studyId);
     if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
@@ -8779,7 +8891,7 @@ router.post('/research/studies/:studyId/cohort', (req, res) => {
   }
 });
 
-router.delete('/research/studies/:studyId', (req, res) => {
+lockedResearchRoute('delete', '/research/studies/:studyId', 'Xóa nghiên cứu', (req, res) => {
   try {
     const { studyId } = req.params;
     const study = readStudy(studyId);
@@ -8804,7 +8916,7 @@ router.delete('/research/studies/:studyId', (req, res) => {
 });
 
 // Lưu cohort từ danh sách đã lọc trên frontend (mảng rows JSON → ghi thành cohort.csv)
-router.post('/research/studies/:studyId/cohort-from-filtered', (req, res) => {
+lockedResearchRoute('post', '/research/studies/:studyId/cohort-from-filtered', 'Nạp cohort', (req, res) => {
   try {
     const study = readStudy(req.params.studyId);
     if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
@@ -8844,7 +8956,7 @@ router.post('/research/studies/:studyId/cohort-from-filtered', (req, res) => {
   }
 });
 
-router.post('/research/studies/:studyId/import-from-archive', (req, res) => {
+lockedResearchRoute('post', '/research/studies/:studyId/import-from-archive', 'Nhập từ kho gốc', (req, res) => {
   try {
     const study = readStudy(req.params.studyId);
     if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
@@ -8928,7 +9040,7 @@ router.get('/research/studies/:studyId/progress', (req, res) => {
   }
 });
 
-router.post('/research/studies/:studyId/finalize-dataset', (req, res) => {
+lockedResearchRoute('post', '/research/studies/:studyId/finalize-dataset', 'Tạo dataset cuối', (req, res) => {
   try {
     const study = readStudy(req.params.studyId);
     if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
@@ -8942,7 +9054,7 @@ router.post('/research/studies/:studyId/finalize-dataset', (req, res) => {
   }
 });
 
-router.post('/research/studies/:studyId/build-encoded-dataset', (req, res) => {
+lockedResearchRoute('post', '/research/studies/:studyId/build-encoded-dataset', 'Tạo dataset mã hóa', (req, res) => {
   try {
     const study = readStudy(req.params.studyId);
     if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
@@ -8956,7 +9068,7 @@ router.post('/research/studies/:studyId/build-encoded-dataset', (req, res) => {
   }
 });
 
-router.post('/research/studies/:studyId/clean-generated', (req, res) => {
+lockedResearchRoute('post', '/research/studies/:studyId/clean-generated', 'Dọn dữ liệu sinh ra', (req, res) => {
   try {
     const study = readStudy(req.params.studyId);
     if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
@@ -8974,7 +9086,7 @@ router.post('/research/studies/:studyId/clean-generated', (req, res) => {
   }
 });
 
-router.post('/research/studies/:studyId/normalize', (req, res) => {
+lockedResearchRoute('post', '/research/studies/:studyId/normalize', 'Chuẩn hóa', (req, res) => {
   try {
     const study = readStudy(req.params.studyId);
     if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
@@ -8987,7 +9099,7 @@ router.post('/research/studies/:studyId/normalize', (req, res) => {
 });
 
 
-router.post('/research/studies/:studyId/fetch-hchanh', async (req, res) => {
+lockedResearchRoute('post', '/research/studies/:studyId/fetch-hchanh', 'Lấy dữ liệu hành chánh', async (req, res) => {
   const ctx = getRuntimePaths(req);
   try {
     const study = readStudy(req.params.studyId);
@@ -9069,7 +9181,7 @@ router.post('/research/studies/:studyId/fetch-hchanh', async (req, res) => {
 });
 
 
-router.post('/research/studies/:studyId/fetch-order-history', async (req, res) => {
+lockedResearchRoute('post', '/research/studies/:studyId/fetch-order-history', 'Lấy lịch sử y lệnh', async (req, res) => {
   const ctx = getRuntimePaths(req);
   try {
     const study = readStudy(req.params.studyId);
@@ -9151,7 +9263,7 @@ router.post('/research/studies/:studyId/fetch-order-history', async (req, res) =
 });
 
 
-router.post('/research/studies/:studyId/patient-info', async (req, res) => {
+lockedResearchRoute('post', '/research/studies/:studyId/patient-info', 'Lấy thông tin người bệnh', async (req, res) => {
   const ctx = getRuntimePaths(req);
   try {
     const study = readStudy(req.params.studyId);
@@ -9214,7 +9326,7 @@ router.post('/research/studies/:studyId/patient-info', async (req, res) => {
   }
 });
 
-router.post('/research/studies/:studyId/run', async (req, res) => {
+lockedResearchRoute('post', '/research/studies/:studyId/run', 'Lấy dữ liệu', async (req, res) => {
   const ctx = getRuntimePaths(req);
   try {
     const study = readStudy(req.params.studyId);
@@ -9283,4 +9395,4 @@ module.exports._fetchHchanhForResearchRun = fetchHchanhForResearchRun;
 // Danh sách cột chuẩn hóa, dùng để đối chiếu từ điển dữ liệu (server/research/data_dictionary.js).
 module.exports.NORMALIZED_COLUMNS = NORMALIZED_COLUMNS;
 module.exports.ingestAllResearchResultsToPatientDb = ingestAllResearchResultsToPatientDb;
-module.exports._test = { readCsvTable, buildResearchProgressSnapshot, safeRunId, overlayHchanhFromPatientDb, overlayResultsFromPatientDb, buildResultDayIndex, resultDayIndexHasRange, addRowsToResultDayIndex, ingestAllResearchResultsToPatientDb, researchHchanhMeta, normalizeInputSignature, identifiedAccessStatus, normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, buildContextMap, contextForRow, encounterMatchStatus, encounterMatchMethod, summarizeVariableColumns, VARIABLE_CATALOG_MAX_ROWS, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, writeDatasetSnapshot, verifyDatasetSnapshot, verifyAllDatasetSnapshots, cleanupStaleDatasetStaging, finalizeAnalysisDataset, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };
+module.exports._test = { buildPatientHistory, sendCsvFile, RESEARCH_SCOPE_LOCKS, researchScopeKey, readCsvTable, buildResearchProgressSnapshot, safeRunId, overlayHchanhFromPatientDb, overlayResultsFromPatientDb, buildResultDayIndex, resultDayIndexHasRange, addRowsToResultDayIndex, ingestAllResearchResultsToPatientDb, researchHchanhMeta, normalizeInputSignature, identifiedAccessStatus, normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, buildContextMap, contextForRow, encounterMatchStatus, encounterMatchMethod, summarizeVariableColumns, VARIABLE_CATALOG_MAX_ROWS, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, writeDatasetSnapshot, verifyDatasetSnapshot, verifyAllDatasetSnapshots, cleanupStaleDatasetStaging, finalizeAnalysisDataset, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };

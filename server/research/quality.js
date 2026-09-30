@@ -181,6 +181,11 @@ function buildQualityReport({
     unmatchedByTable[name] = { ambiguous, missing };
     if (ambiguous) warnings.push({ code: 'child_match_ambiguous', message: `${name}: ${ambiguous} dòng khớp nhiều đợt, chưa gắn vào đợt nào.`, table: name, count: ambiguous });
     if (missing) warnings.push({ code: 'child_match_missing', message: `${name}: ${missing} dòng không khớp đợt nào.`, table: name, count: missing });
+    // Đã gắn vào đợt nhưng thời điểm nằm ngoài khoảng nằm viện (vd. người bệnh chỉ có một
+    // đợt nên kết quả trước/sau đợt vẫn gắn vào đợt đó). Giữ dữ liệu, cột
+    // is_within_encounter = 0 để lọc; báo để người duyệt biết.
+    const outside = rows.filter(r => text(r.encounter_id) && text(r.is_within_encounter) === '0').length;
+    if (outside) warnings.push({ code: 'child_outside_encounter', message: `${name}: ${outside} dòng đã gắn đợt nhưng nằm ngoài thời gian nằm viện (is_within_encounter = 0).`, table: name, count: outside });
   }
 
   // Dòng thô giống hệt nhau đã được bỏ bớt (chỉ giữ một) — báo để biết nguồn bị lặp.
@@ -224,6 +229,7 @@ function buildQualityReport({
   let invalidOrder = 0;
   let futureDates = 0;
   let longStay = 0;
+  let openStay = 0;
   for (const enc of encounters) {
     const a = isoToTime(enc.admission_date);
     const d = isoToTime(enc.discharge_date);
@@ -231,6 +237,7 @@ function buildQualityReport({
     if (d != null && d < a) { invalidOrder += 1; addReview(enc, 'discharge_before_admission', 'Ngày ra viện trước ngày vào viện.'); }
     if (a > nowMs + DAY_MS || (d != null && d > nowMs + DAY_MS)) { futureDates += 1; addReview(enc, 'future_date', 'Ngày vào/ra viện ở tương lai.'); }
     if (d != null && d - a > 365 * DAY_MS) { longStay += 1; addReview(enc, 'stay_over_365_days', 'Thời gian nằm viện trên 365 ngày.'); }
+    if (d == null) openStay += 1;
     const reason = text(enc.needs_manual_review);
     if (reason) addReview(enc, 'needs_manual_review', reason);
   }
@@ -238,6 +245,7 @@ function buildQualityReport({
   if (invalidOrder) warnings.push({ code: 'discharge_before_admission', message: `${invalidOrder} đợt có ngày ra trước ngày vào.`, count: invalidOrder });
   if (futureDates) warnings.push({ code: 'future_date', message: `${futureDates} đợt có ngày ở tương lai.`, count: futureDates });
   if (longStay) warnings.push({ code: 'stay_over_365_days', message: `${longStay} đợt nằm viện trên 365 ngày.`, count: longStay });
+  if (openStay) warnings.push({ code: 'missing_discharge_date', message: `${openStay} đợt chưa có ngày ra viện: khoảng nằm viện được tính tới hôm nay khi ghép kết quả.`, count: openStay });
 
   const pairs = possibleSameStayPairs(encounters);
   for (const p of pairs) {

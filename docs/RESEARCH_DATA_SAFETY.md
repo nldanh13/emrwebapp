@@ -47,6 +47,12 @@ Mỗi kho (kho gốc `du_lieu_goc` hoặc một nghiên cứu riêng) nằm ở
   nằm viện chồng lấn hoặc cùng ngày ra viện được liệt kê trong `encounter_review.csv`
   (`possible_same_stay`) để người duyệt. Quét lại danh sách bằng bản hiện tại để có
   Mã nội trú.
+- **Đợt chưa có ngày ra viện** (đang nằm hoặc chưa lấy được ngày ra): khi ghép kết quả,
+  khoảng nằm viện được tính **tới hôm nay** (trước đây cắt ở 60 ngày sau ngày vào, nên
+  người bệnh nằm lâu hơn bị mất kết quả). QA báo số đợt này (`missing_discharge_date`).
+- Người bệnh chỉ có **một** đợt thì dòng XN/CĐHA của họ được gắn vào đợt đó cả khi thời
+  điểm nằm ngoài khoảng nằm viện; dòng đó có `is_within_encounter = 0` và QA báo số
+  lượng (`child_outside_encounter`) để người duyệt quyết định giữ hay loại.
 
 ## 3. Kiểm soát sau mỗi lần Chuẩn hóa
 
@@ -64,8 +70,9 @@ hoặc lệch với CSV (so sha256), lần chuẩn hóa trước dừng giữa c
 
 **Cảnh báo** (cần xem lại): dòng con chưa ghép được đợt, thiếu ngày vào viện, ngày
 ra trước ngày vào, ngày ở tương lai, nằm viện trên 365 ngày, ca nghi cùng đợt, dòng
-XN/CĐHA thô giống hệt nhau đã bỏ bớt, và cùng BN + cùng thời điểm + cùng chỉ số mà kết
-quả khác nhau (giữ tất cả, không tự chọn).
+XN/CĐHA thô giống hệt nhau đã bỏ bớt, cùng BN + cùng thời điểm + cùng chỉ số mà kết
+quả khác nhau (giữ tất cả, không tự chọn), dòng đã gắn đợt nhưng ngoài thời gian nằm
+viện, và đợt chưa có ngày ra viện.
 Hệ thống không tự sửa giá trị lâm sàng. Các cột suy luận (ví dụ
 `injury_side_suggested`) được liệt kê trong `qa_report.json` → `notes` với trạng
 thái `needs_human_confirmation`.
@@ -226,6 +233,20 @@ lượt:
 
 Một ca thiếu CT vẫn `usable` cho đề tài không cần CT.
 
+## 3d. Chạy chồng và bảng lớn
+
+- **Một thao tác ghi mỗi kho:** trong lúc kho gốc (hoặc một nghiên cứu) đang Lấy dữ liệu,
+  Thu thập tự động, Chuẩn hóa, Tạo dataset..., thao tác ghi khác trên **cùng kho** bị từ
+  chối (HTTP 409, `RESEARCH_SCOPE_BUSY`) kèm tên tác vụ đang chạy. Kho khác, thao tác chỉ
+  đọc và nút Dừng không bị chặn. Trước đây hai người/hai tab có thể cùng ghi
+  `progress.json`, sổ thu thập và CSV của cùng một run.
+- **CSV nội bộ không có dấu `'`:** bảng chuẩn hóa được ghi nguyên giá trị (số âm như
+  `-3.5`, kết quả `+`/`-`). Bản trước chèn `'` (bộ chặn công thức Excel) vào các giá trị
+  này; bộ đọc tự bỏ dấu đó ở file cũ. File người dùng **tải về** vẫn được chặn công thức.
+- **Bảng lớn đọc theo dòng:** đếm dòng, xuất CSV (ghi ra file tạm cạnh dữ liệu, quyền
+  600, xóa ngay sau khi gửi), tra cứu người bệnh khi không có SQLite và đồng bộ XN/CĐHA
+  sang Kho người bệnh không nạp trọn bảng vào RAM.
+
 ## 4. Dữ liệu định danh
 
 - Có định danh trực tiếp: `du_lieu_ban_dau.csv`, `research_source.csv`,
@@ -286,8 +307,11 @@ Không có migration phá dữ liệu. Các bước:
 
 1. Sao lưu như mục 6.1.
 2. `git pull`, khởi động lại server.
-3. Mở từng kho/nghiên cứu, bấm **Chuẩn hóa**. Schema tăng lên v12 nên lần đầu sẽ
-   chuẩn hóa lại đầy đủ và tạo `qa_report.json`, `encounter_review.csv`.
+3. Mở từng kho/nghiên cứu, bấm **Chuẩn hóa**. Schema tăng lên v14 nên lần đầu sẽ
+   chuẩn hóa lại đầy đủ và tạo `qa_report.json`, `encounter_review.csv`. v14 ghi lại
+   các bảng chuẩn hóa và SQLite không còn dấu `'` trước số âm/`+`; dataset cuối đã lưu
+   trong `datasets/` trước đó vẫn giữ nguyên (bất biến), cần **tạo lại dataset cuối**
+   và kiểm tra các file đã xuất để phân tích trước đây.
 4. Nếu `research_source.csv` cũ có Mã NC bị trùng (lỗi cũ cấp `NC0001` cho mọi
    dòng), file này được tạo lại với Mã NC duy nhất. Mã được lấy theo thứ tự ưu tiên
    (1) mã hợp lệ cũ của cùng dòng, (2) mã script XN/CĐHA đã cấp cho cùng đợt trong
