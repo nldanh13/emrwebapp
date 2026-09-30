@@ -351,7 +351,11 @@ function writeCsv(filePath, columns, rows) {
 }
 
 const CSV_TABLE_CACHE = new Map();
-const CSV_CACHE_MAX_ENTRIES = 48;
+// Cache object CSV lớn tốn RAM gấp nhiều lần kích thước file (chuỗi + object cho
+// từng ô). Chỉ cache các bảng nhỏ thường dùng; bảng lớn/toàn bộ dữ liệu phải được
+// giải phóng sau request để server không chạm giới hạn heap 2 GB.
+const CSV_CACHE_MAX_ENTRIES = 16;
+const CSV_CACHE_MAX_FILE_BYTES = Math.max(64 * 1024, Number(process.env.EMR_CSV_CACHE_MAX_FILE_BYTES || 1024 * 1024));
 
 function _csvCacheKey(filePath, maxRows) {
   try {
@@ -370,7 +374,10 @@ function _trimCsvCache() {
 
 function readCsvTable(filePath, maxRows = MAX_TABLE_ROWS) {
   if (!fs.existsSync(filePath)) return { columns: [], rows: [], count: 0, limited: false, exists: false };
-  const cacheKey = _csvCacheKey(filePath, maxRows);
+  let fileSize = 0;
+  try { fileSize = fs.statSync(filePath).size; } catch (_) { /* đọc bên dưới sẽ báo lỗi thật */ }
+  const cacheEligible = fileSize > 0 && fileSize <= CSV_CACHE_MAX_FILE_BYTES && Number(maxRows) <= MAX_TABLE_ROWS;
+  const cacheKey = cacheEligible ? _csvCacheKey(filePath, maxRows) : '';
   if (cacheKey && CSV_TABLE_CACHE.has(cacheKey)) return CSV_TABLE_CACHE.get(cacheKey);
 
   const text = fs.readFileSync(filePath, 'utf-8');
@@ -988,7 +995,12 @@ function buildPatientHistory(runDir, query) {
 
 function inferVariableType(name, rows) {
   const n = String(name || '').toLowerCase();
-  const sample = rows.map(r => String(r?.[name] || '').trim()).filter(Boolean).slice(0, 200);
+  const sample = [];
+  for (const row of rows || []) {
+    const value = String(row?.[name] || '').trim();
+    if (value) sample.push(value);
+    if (sample.length >= 200) break;
+  }
   if (/date|ngày|datetime|time|thời gian|_at$/.test(n)) return 'date';
   if (/age|tuổi|day|days|giờ|hours|num|value|result_num|count|số|tổng/.test(n)) return 'number';
   let numeric = 0;
@@ -997,6 +1009,33 @@ function inferVariableType(name, rows) {
   const distinct = new Set(sample.map(v => v.toLowerCase()));
   if (distinct.size <= 20) return 'category';
   return 'text';
+}
+
+const VARIABLE_CATALOG_MAX_ROWS = Math.max(1000, Number(process.env.EMR_VARIABLE_CATALOG_MAX_ROWS || 50000));
+const VARIABLE_CATALOG_DISTINCT_LIMIT = 5000;
+
+function summarizeVariableColumns(columns, rows) {
+  const stats = new Map((columns || []).map(name => [name, {
+    nonempty: 0,
+    samples: new Map(),
+    distinct: new Set(),
+    distinct_truncated: false,
+  }]));
+  for (const row of rows || []) {
+    for (const name of columns || []) {
+      const value = String(row?.[name] || '').trim();
+      if (!value) continue;
+      const stat = stats.get(name);
+      stat.nonempty += 1;
+      if (stat.samples.has(value)) stat.samples.set(value, stat.samples.get(value) + 1);
+      else if (stat.samples.size < 30) stat.samples.set(value, 1);
+      if (!stat.distinct_truncated) {
+        stat.distinct.add(value.toLowerCase());
+        if (stat.distinct.size >= VARIABLE_CATALOG_DISTINCT_LIMIT) stat.distinct_truncated = true;
+      }
+    }
+  }
+  return stats;
 }
 
 
@@ -1013,6 +1052,9 @@ function shortSamples(values, max = 8) {
     if (map.size >= max) break;
   }
   return [...map.entries()].map(([value, count]) => ({ value, count }));
+}
+function pushCatalogSample(values, value, max = 32) {
+  if (value && values.length < max) values.push(value);
 }
 function buildVirtualVariablesForTable(def, rows) {
   const variables = [];
@@ -1036,10 +1078,17 @@ function buildVirtualVariablesForTable(def, rows) {
       const raw = getCell(row, ['test_name_raw', 'Tên XN', 'Tên xét nghiệm']) || norm;
       if (!norm && !raw) continue;
       const key = norm || normalizeToken(raw);
-      const bucket = byTest.get(key) || { raw, norm: key, group: getCell(row, ['lab_group', 'Nhóm xét nghiệm']), unit: getCell(row, ['unit', 'Đơn vị']), count: 0, values: [] };
+      const bucket = byTest.get(key) || { raw, norm: key, group: getCell(row, ['lab_group', 'Nhóm xét nghiệm']), unit: getCell(row, ['unit', 'Đơn vị']), count: 0, values: [], distinctValues: new Set(), distinctTruncated: false };
       bucket.count += 1;
       const val = getCell(row, ['result_num', 'Kết quả số']) || getCell(row, ['result_raw', 'Kết quả']);
-      if (val) bucket.values.push(`${val}${bucket.unit ? ` ${bucket.unit}` : ''}`);
+      if (val) {
+        const displayValue = `${val}${bucket.unit ? ` ${bucket.unit}` : ''}`;
+        pushCatalogSample(bucket.values, displayValue);
+        if (!bucket.distinctTruncated) {
+          bucket.distinctValues.add(displayValue.toLowerCase());
+          if (bucket.distinctValues.size >= VARIABLE_CATALOG_DISTINCT_LIMIT) bucket.distinctTruncated = true;
+        }
+      }
       if (!bucket.raw && raw) bucket.raw = raw;
       if (!bucket.group) bucket.group = getCell(row, ['lab_group', 'Nhóm xét nghiệm']);
       if (!bucket.unit) bucket.unit = getCell(row, ['unit', 'Đơn vị']);
@@ -1052,7 +1101,8 @@ function buildVirtualVariablesForTable(def, rows) {
         label: `${b.raw || b.norm}${b.unit ? ` (${b.unit})` : ''}`,
         type: 'number',
         nonempty: b.count,
-        distinct_count: new Set(b.values.map(v => String(v).toLowerCase())).size,
+        distinct_count: b.distinctValues.size,
+        distinct_truncated: b.distinctTruncated,
         sample_values: shortSamples(b.values),
         operators: ['=', '!=', '>', '>=', '<', '<=', 'between', 'not_empty'],
         virtual_kind: 'lab_test',
@@ -1068,7 +1118,7 @@ function buildVirtualVariablesForTable(def, rows) {
       const modality = getCell(row, ['modality', 'Loại']) || 'Khác';
       const bucket = byModality.get(modality) || { modality, count: 0, samples: [] };
       bucket.count += 1;
-      bucket.samples.push(getCell(row, ['service_name_raw', 'Dịch vụ']) || getCell(row, ['conclusion_text', 'Kết luận']));
+      pushCatalogSample(bucket.samples, getCell(row, ['service_name_raw', 'Dịch vụ']) || getCell(row, ['conclusion_text', 'Kết luận']));
       byModality.set(modality, bucket);
     }
     for (const b of [...byModality.values()].sort((a, b) => b.count - a.count)) {
@@ -1096,7 +1146,7 @@ function buildVirtualVariablesForTable(def, rows) {
       for (const group of String(groupText || '').split(/[;,]/).map(x => x.trim()).filter(Boolean)) {
         const bucket = byDrugGroup.get(group) || { value: group, count: 0, samples: [] };
         bucket.count += 1;
-        bucket.samples.push(getCell(row, ['drug_name_raw', 'Tên thuốc']) || getCell(row, ['drug_name_norm']));
+        pushCatalogSample(bucket.samples, getCell(row, ['drug_name_raw', 'Tên thuốc']) || getCell(row, ['drug_name_norm']));
         byDrugGroup.set(group, bucket);
       }
       const drug = getCell(row, ['active_ingredient', 'drug_name_norm', 'drug_name_raw']);
@@ -1104,7 +1154,7 @@ function buildVirtualVariablesForTable(def, rows) {
         const key = normalizeToken(drug);
         const bucket = byDrug.get(key) || { value: drug, count: 0, samples: [] };
         bucket.count += 1;
-        bucket.samples.push(getCell(row, ['dose_raw', 'Liều dùng']) || getCell(row, ['route_raw', 'Đường dùng']));
+        pushCatalogSample(bucket.samples, getCell(row, ['dose_raw', 'Liều dùng']) || getCell(row, ['route_raw', 'Đường dùng']));
         byDrug.set(key, bucket);
       }
     }
@@ -1124,7 +1174,7 @@ function buildVirtualVariablesForTable(def, rows) {
       const key = normalizeToken(method);
       const bucket = byProcedure.get(key) || { value: method, count: 0, samples: [] };
       bucket.count += 1;
-      bucket.samples.push(getCell(row, ['anesthesia_method', 'Vô cảm']) || getCell(row, ['surgery_date', 'Ngày mổ']));
+      pushCatalogSample(bucket.samples, getCell(row, ['anesthesia_method', 'Vô cảm']) || getCell(row, ['surgery_date', 'Ngày mổ']));
       byProcedure.set(key, bucket);
     }
     for (const b of [...byProcedure.values()].sort((a, b) => b.count - a.count).slice(0, 120)) {
@@ -1153,20 +1203,15 @@ function buildVariableCatalog(runDir, { redact = true } = {}) {
   ];
   const groups = [];
   for (const def of defs) {
-    const table = readCsvTable(path.join(runDir, def.file), Number.MAX_SAFE_INTEGER);
+    // Danh mục biến chỉ cần thống kê đại diện để hướng dẫn chọn biến. Không đọc vô
+    // hạn vì một run thực tế có thể có hàng trăm nghìn dòng XN/y lệnh.
+    const table = readCsvTable(path.join(runDir, def.file), VARIABLE_CATALOG_MAX_ROWS);
     const rows = table.rows || [];
     const visibleColumns = (table.columns || []).filter(col => !redact || !isSensitiveColumn(col));
+    const columnStats = summarizeVariableColumns(visibleColumns, rows);
     const variables = visibleColumns.map(col => {
-      let nonempty = 0;
-      const values = new Map();
-      for (const row of rows) {
-        const v = String(row?.[col] || '').trim();
-        if (!v) continue;
-        nonempty += 1;
-        if (values.size <= 30) values.set(v, (values.get(v) || 0) + 1);
-      }
+      const stat = columnStats.get(col) || { nonempty: 0, samples: new Map(), distinct: new Set(), distinct_truncated: false };
       const type = inferVariableType(col, rows);
-      const distinct_count = new Set(rows.map(r => String(r?.[col] || '').trim()).filter(Boolean).map(v => v.toLowerCase())).size;
       const operators = type === 'number' ? ['=', '!=', '>', '>=', '<', '<=', 'between', 'not_empty']
         : type === 'date' ? ['between', '>=', '<=', '=', 'not_empty']
         : ['contains', '=', '!=', 'in', 'not_empty', 'empty'];
@@ -1178,17 +1223,18 @@ function buildVariableCatalog(runDir, { redact = true } = {}) {
         label: col,
         type,
         rows: rows.length,
-        nonempty,
-        fill_rate: rows.length ? Math.round((nonempty / rows.length) * 100) : 0,
-        distinct_count,
-        sample_values: [...values.entries()].slice(0, 10).map(([value, count]) => ({ value, count })),
+        nonempty: stat.nonempty,
+        fill_rate: rows.length ? Math.round((stat.nonempty / rows.length) * 100) : 0,
+        distinct_count: stat.distinct.size,
+        distinct_truncated: stat.distinct_truncated,
+        sample_values: [...stat.samples.entries()].slice(0, 10).map(([value, count]) => ({ value, count })),
         operators,
       };
     });
     const virtualVariables = buildVirtualVariablesForTable(def, rows);
-    groups.push({ ...def, rows: rows.length, variables: [...variables, ...virtualVariables] });
+    groups.push({ ...def, rows: rows.length, sampled: Boolean(table.limited), sample_limit: VARIABLE_CATALOG_MAX_ROWS, variables: [...variables, ...virtualVariables] });
   }
-  return { run_id: path.basename(runDir), groups, generated_at: nowIso() };
+  return { run_id: path.basename(runDir), groups, sample_limit: VARIABLE_CATALOG_MAX_ROWS, generated_at: nowIso() };
 }
 
 function countCsvRows(filePath) {
@@ -9144,4 +9190,4 @@ module.exports._fetchHchanhForResearchRun = fetchHchanhForResearchRun;
 // Danh sách cột chuẩn hóa, dùng để đối chiếu từ điển dữ liệu (server/research/data_dictionary.js).
 module.exports.NORMALIZED_COLUMNS = NORMALIZED_COLUMNS;
 module.exports.ingestAllResearchResultsToPatientDb = ingestAllResearchResultsToPatientDb;
-module.exports._test = { readCsvTable, overlayHchanhFromPatientDb, overlayResultsFromPatientDb, buildResultDayIndex, resultDayIndexHasRange, addRowsToResultDayIndex, ingestAllResearchResultsToPatientDb, researchHchanhMeta, normalizeInputSignature, identifiedAccessStatus, normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, buildContextMap, contextForRow, encounterMatchStatus, encounterMatchMethod, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, writeDatasetSnapshot, verifyDatasetSnapshot, verifyAllDatasetSnapshots, cleanupStaleDatasetStaging, finalizeAnalysisDataset, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };
+module.exports._test = { readCsvTable, overlayHchanhFromPatientDb, overlayResultsFromPatientDb, buildResultDayIndex, resultDayIndexHasRange, addRowsToResultDayIndex, ingestAllResearchResultsToPatientDb, researchHchanhMeta, normalizeInputSignature, identifiedAccessStatus, normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, buildContextMap, contextForRow, encounterMatchStatus, encounterMatchMethod, summarizeVariableColumns, VARIABLE_CATALOG_MAX_ROWS, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, writeDatasetSnapshot, verifyDatasetSnapshot, verifyAllDatasetSnapshots, cleanupStaleDatasetStaging, finalizeAnalysisDataset, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };
