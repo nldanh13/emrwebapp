@@ -29,6 +29,20 @@ def read_research_backend_source():
     return "\n".join(parts)
 
 
+def read_research_ui_source():
+    """ResearchTab.jsx cùng các file đã tách trong src/components/research/."""
+    from pathlib import Path
+    root = Path(ROOT_DIR)
+    parts = [(root / "src" / "components" / "ResearchTab.jsx").read_text(encoding="utf-8")]
+    parts += [f.read_text(encoding="utf-8") for f in sorted((root / "src" / "components" / "research").glob("*.js*"))]
+    return "\n".join(parts)
+
+
+@pytest.fixture
+def research_ui_src():
+    return read_research_ui_source()
+
+
 @pytest.fixture
 def research_backend_src():
     return read_research_backend_source()
