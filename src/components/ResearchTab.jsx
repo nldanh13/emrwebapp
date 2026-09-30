@@ -86,7 +86,7 @@ const SENSITIVE_COLUMNS = new Set([
 
 const VARIABLE_FRIENDLY_LABELS = {
   research_code: 'Mã nghiên cứu',
-  patient_key: 'Khóa người bệnh',
+  patient_key: 'Mã người bệnh giả danh',
   patient_code: 'Mã người bệnh',
   patient_codes: 'Các mã người bệnh',
   patient_name: 'Họ tên người bệnh',
@@ -167,7 +167,7 @@ const VARIABLE_FRIENDLY_LABELS = {
   source_row_id: 'ID dòng nguồn',
   row_hash: 'Mã kiểm tra dòng',
 };
-const VARIABLE_TECHNICAL_RE = /(^row_|_hash$|hash|source_|raw_row|debug|internal|session|cookie|token|password|secret|(^|_)id$|encounter_id|lab_result_id|imaging_id|med_order_id|diagnosis_id|surgery_id)/i;
+const VARIABLE_TECHNICAL_RE = /(^row_|_hash$|hash|source_|raw_row|debug|internal|session|cookie|token|password|secret|(^|_)id$|patient_key|encounter_id|lab_result_id|imaging_id|med_order_id|diagnosis_id|surgery_id)/i;
 const VARIABLE_IDENTITY_RE = /(patient_name|patient_code|patient_codes|phone|citizen|cccd|cmnd|address|dia_chi|bhyt|insurance|research_code|emr_admission_id|emr_treatment_id|so_benh_an|medical_record)/i;
 const VARIABLE_RECOMMENDED_TABLES = new Set(['analysis_ready', 'encounters', 'lab_results', 'imaging_results', 'medication_orders', 'diagnoses', 'surgery_results']);
 function humanizeVariableName(name) {

@@ -26,6 +26,7 @@ const { sanitizeCustomFields, evaluateCustomFields } = require('../research/anal
 const { firstSurgeryByEncounter, surgeryForMedicationContext } = require('../research/encounter_linkage');
 const { strictLocalDate } = require('../research/date_utils');
 const { readCsvFileRows } = require('../research/csv_reader');
+const { loadPatientLink, applyPatientKeys, savePatientLink, patientLinkPath } = require('../research/patient_link');
 const { DEFAULT_SENSITIVE_COLUMNS, redactCsvTable, isSensitiveColumn } = require('../research/export_utils');
 const quality = require('../research/quality');
 const dataDictionary = require('../research/data_dictionary');
@@ -2633,7 +2634,11 @@ function finalizeAnalysisDataset(runDir) {
   const dst = path.join(runDir, 'analysis_final.csv');
   const table = readCsvTable(src, Number.MAX_SAFE_INTEGER);
   const rows = (table.rows || []).filter(row => !String(row.needs_manual_review || '').trim());
-  writeCsv(dst, table.columns, rows);
+  // Dataset cuối là dữ liệu phân tích: không mang định danh trực tiếp (Mã BN, họ tên, địa
+  // chỉ, thẻ BHYT...), kể cả khi lấy từ analysis_ready hay biến định danh được chọn nhầm.
+  // Người bệnh được nối qua patient_key.
+  const finalColumns = (table.columns || []).filter(col => !isSensitiveColumn(col));
+  writeCsv(dst, finalColumns, rows);
   const manifestPath = path.join(runDir, 'manifest.json');
   const manifest = readJsonSafe(manifestPath, {});
   const outputs = { ...(manifest.outputs || {}), analysis_final: rows.length };
@@ -2870,7 +2875,7 @@ function buildEncodedDataset(runDir) {
       ref_range_raw: dictCell(row, 'ref_range_raw'),
     });
     return {
-      lab_result_id: dictCell(row, 'lab_result_id'), research_code: dictCell(row, 'research_code'), patient_code: dictCell(row, 'patient_code'), encounter_id: dictCell(row, 'encounter_id'), encounter_match_status: dictCell(row, 'encounter_match_status'),
+      lab_result_id: dictCell(row, 'lab_result_id'), research_code: dictCell(row, 'research_code'), patient_key: dictCell(row, 'patient_key'), encounter_id: dictCell(row, 'encounter_id'), encounter_match_status: dictCell(row, 'encounter_match_status'),
       lab_datetime: dictCell(row, 'lab_datetime'), lab_date: dictCell(row, 'lab_date'), lab_code: labCode,
       result_raw: dictCell(row, 'result_raw'), result_operator: dictCell(row, 'result_operator'), result_num: dictCell(row, 'result_num'), result_text: dictCell(row, 'result_text'),
       flag_raw: dictCell(row, 'flag_raw'), flag_norm: dictCell(row, 'flag_norm'),
@@ -2878,7 +2883,7 @@ function buildEncodedDataset(runDir) {
       source_run_id: dictCell(row, 'source_run_id'), row_hash: dictCell(row, 'row_hash'),
     };
   });
-  const labEncodedCols = ['lab_result_id', 'research_code', 'patient_code', 'encounter_id', 'encounter_match_status', 'lab_datetime', 'lab_date', 'lab_code', 'result_raw', 'result_operator', 'result_num', 'result_text', 'flag_raw', 'flag_norm', 'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter', 'source_run_id', 'row_hash'];
+  const labEncodedCols = ['lab_result_id', 'research_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'lab_datetime', 'lab_date', 'lab_code', 'result_raw', 'result_operator', 'result_num', 'result_text', 'flag_raw', 'flag_norm', 'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter', 'source_run_id', 'row_hash'];
 
   const imagingRows = readCsvTable(path.join(runDir, 'imaging_results.csv'), Number.MAX_SAFE_INTEGER).rows || [];
   const imagingEncoded = imagingRows.map(row => {
@@ -2890,13 +2895,13 @@ function buildEncodedDataset(runDir) {
       body_region: dictCell(row, 'body_region'),
     });
     return {
-      imaging_id: dictCell(row, 'imaging_id'), research_code: dictCell(row, 'research_code'), patient_code: dictCell(row, 'patient_code'), encounter_id: dictCell(row, 'encounter_id'), encounter_match_status: dictCell(row, 'encounter_match_status'),
+      imaging_id: dictCell(row, 'imaging_id'), research_code: dictCell(row, 'research_code'), patient_key: dictCell(row, 'patient_key'), encounter_id: dictCell(row, 'encounter_id'), encounter_match_status: dictCell(row, 'encounter_match_status'),
       ordered_at: dictCell(row, 'ordered_at'), order_date: dictCell(row, 'order_date'), imaging_code: imagingCode,
       has_result_text: dictCell(row, 'result_text') ? '1' : '0', has_conclusion_text: dictCell(row, 'conclusion_text') ? '1' : '0',
       status: dictCell(row, 'status'), days_from_admission: dictCell(row, 'days_from_admission'), days_from_surgery: dictCell(row, 'days_from_surgery'), days_from_discharge: dictCell(row, 'days_from_discharge'), is_within_encounter: dictCell(row, 'is_within_encounter'), source_run_id: dictCell(row, 'source_run_id'), row_hash: dictCell(row, 'row_hash'),
     };
   });
-  const imagingEncodedCols = ['imaging_id', 'research_code', 'patient_code', 'encounter_id', 'encounter_match_status', 'ordered_at', 'order_date', 'imaging_code', 'has_result_text', 'has_conclusion_text', 'status', 'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter', 'source_run_id', 'row_hash'];
+  const imagingEncodedCols = ['imaging_id', 'research_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'ordered_at', 'order_date', 'imaging_code', 'has_result_text', 'has_conclusion_text', 'status', 'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter', 'source_run_id', 'row_hash'];
 
   const medRows = readCsvTable(path.join(runDir, 'medication_orders.csv'), Number.MAX_SAFE_INTEGER).rows || [];
   const medEncoded = medRows.map(row => {
@@ -2911,14 +2916,14 @@ function buildEncodedDataset(runDir) {
       route_norm: dictCell(row, 'route_norm') || normalizeSimple(dictCell(row, 'route_raw')),
     });
     return {
-      med_order_id: dictCell(row, 'med_order_id'), research_code: dictCell(row, 'research_code'), patient_code: dictCell(row, 'patient_code'), encounter_id: dictCell(row, 'encounter_id'),
+      med_order_id: dictCell(row, 'med_order_id'), research_code: dictCell(row, 'research_code'), patient_key: dictCell(row, 'patient_key'), encounter_id: dictCell(row, 'encounter_id'),
       order_datetime: dictCell(row, 'order_datetime'), order_date: dictCell(row, 'order_date'), drug_code: drugCode, route_code: routeCode,
       dose_raw: dictCell(row, 'dose_raw'), times_per_day: dictCell(row, 'times_per_day'),
       surgery_datetime_ref: dictCell(row, 'surgery_datetime_ref'), surgery_date_ref: dictCell(row, 'surgery_date_ref'), postop_day_index: dictCell(row, 'postop_day_index'), postop_day_label: dictCell(row, 'postop_day_label'), is_postop_day_1_3: dictCell(row, 'is_postop_day_1_3'),
       source: dictCell(row, 'source'), source_run_id: dictCell(row, 'source_run_id'), row_hash: dictCell(row, 'row_hash'),
     };
   });
-  const medEncodedCols = ['med_order_id', 'research_code', 'patient_code', 'encounter_id', 'order_datetime', 'order_date', 'drug_code', 'route_code', 'dose_raw', 'times_per_day', 'surgery_datetime_ref', 'surgery_date_ref', 'postop_day_index', 'postop_day_label', 'is_postop_day_1_3', 'source', 'source_run_id', 'row_hash'];
+  const medEncodedCols = ['med_order_id', 'research_code', 'patient_key', 'encounter_id', 'order_datetime', 'order_date', 'drug_code', 'route_code', 'dose_raw', 'times_per_day', 'surgery_datetime_ref', 'surgery_date_ref', 'postop_day_index', 'postop_day_label', 'is_postop_day_1_3', 'source', 'source_run_id', 'row_hash'];
 
   const diagnosisRows = readCsvTable(path.join(runDir, 'diagnoses.csv'), Number.MAX_SAFE_INTEGER).rows || [];
   const diagnosisEncoded = diagnosisRows.map(row => {
@@ -2928,12 +2933,12 @@ function buildEncodedDataset(runDir) {
       diagnosis_text_norm: normalizeSimple(dictCell(row, 'diagnosis_text')),
     });
     return {
-      diagnosis_id: dictCell(row, 'diagnosis_id'), research_code: dictCell(row, 'research_code'), patient_code: dictCell(row, 'patient_code'), encounter_id: dictCell(row, 'encounter_id'),
+      diagnosis_id: dictCell(row, 'diagnosis_id'), research_code: dictCell(row, 'research_code'), patient_key: dictCell(row, 'patient_key'), encounter_id: dictCell(row, 'encounter_id'),
       diagnosis_date: dictCell(row, 'diagnosis_date'), diagnosis_type: dictCell(row, 'diagnosis_type'), diagnosis_code: diagnosisCode,
       source: dictCell(row, 'source'), source_run_id: dictCell(row, 'source_run_id'), row_hash: dictCell(row, 'row_hash'),
     };
   });
-  const diagnosisEncodedCols = ['diagnosis_id', 'research_code', 'patient_code', 'encounter_id', 'diagnosis_date', 'diagnosis_type', 'diagnosis_code', 'source', 'source_run_id', 'row_hash'];
+  const diagnosisEncodedCols = ['diagnosis_id', 'research_code', 'patient_key', 'encounter_id', 'diagnosis_date', 'diagnosis_type', 'diagnosis_code', 'source', 'source_run_id', 'row_hash'];
 
   const surgeryRows = readCsvTable(path.join(runDir, 'surgery_results.csv'), Number.MAX_SAFE_INTEGER).rows || [];
   const surgeryEncoded = surgeryRows.map(row => {
@@ -2948,12 +2953,12 @@ function buildEncodedDataset(runDir) {
       anesthesia_method_norm: normalizeSimple(dictCell(row, 'anesthesia_method')),
     });
     return {
-      surgery_id: dictCell(row, 'surgery_id'), research_code: dictCell(row, 'research_code'), patient_code: dictCell(row, 'patient_code'), encounter_id: dictCell(row, 'encounter_id'),
+      surgery_id: dictCell(row, 'surgery_id'), research_code: dictCell(row, 'research_code'), patient_key: dictCell(row, 'patient_key'), encounter_id: dictCell(row, 'encounter_id'),
       surgery_datetime: dictCell(row, 'surgery_datetime'), surgery_date: dictCell(row, 'surgery_date'), procedure_code: procedureCode, anesthesia_code: anesthesiaCode,
       status: dictCell(row, 'status'), source: dictCell(row, 'source'), source_run_id: dictCell(row, 'source_run_id'), row_hash: dictCell(row, 'row_hash'),
     };
   });
-  const surgeryEncodedCols = ['surgery_id', 'research_code', 'patient_code', 'encounter_id', 'surgery_datetime', 'surgery_date', 'procedure_code', 'anesthesia_code', 'status', 'source', 'source_run_id', 'row_hash'];
+  const surgeryEncodedCols = ['surgery_id', 'research_code', 'patient_key', 'encounter_id', 'surgery_datetime', 'surgery_date', 'procedure_code', 'anesthesia_code', 'status', 'source', 'source_run_id', 'row_hash'];
 
   const selectedAnalysisPath = path.join(runDir, 'analysis_selected.csv');
   const analysisSourceFile = fs.existsSync(selectedAnalysisPath) ? 'analysis_selected.csv' : 'analysis_ready.csv';
@@ -2969,6 +2974,7 @@ function buildEncodedDataset(runDir) {
       anesthesia_method: dictCell(row, 'anesthesia_method'), anesthesia_method_norm: normalizeSimple(dictCell(row, 'anesthesia_method')),
     });
     const out = { ...row };
+    delete out.patient_code;
     delete out.patient_name;
     delete out.diagnosis_raw;
     delete out.surgery_name;
@@ -2981,7 +2987,7 @@ function buildEncodedDataset(runDir) {
     return out;
   });
   const analysisEncodedPreferred = [
-    'research_code', 'patient_code', 'sex_code', 'birth_year', 'age', 'admission_date', 'surgery_date', 'discharge_date', 'hospital_stay_days', 'time_to_surgery_hours',
+    'research_code', 'patient_key', 'sex_code', 'birth_year', 'age', 'admission_date', 'surgery_date', 'discharge_date', 'hospital_stay_days', 'time_to_surgery_hours',
     'diagnosis_code', 'procedure_code', 'anesthesia_code',
   ];
 
@@ -3153,48 +3159,50 @@ function copyRowsByPatients(sourceFile, targetFile, patientSet, codeMap) {
 // v12: bỏ dòng XN/CĐHA thô giống hệt nhau; QA báo kết quả mâu thuẫn.
 // v13: ghép lượt theo Mã NC đã chuẩn hóa/ngày vào-ra duy nhất, không đoán ca mơ hồ.
 // v14: bảng chuẩn hóa không còn dấu ' trước số âm/"+" (lỗi ghi CSV cũ); chuẩn hóa lại toàn bộ.
-const NORMALIZED_SCHEMA_VERSION = 14;
+// v15: thêm patient_key (mã người bệnh giả danh, bảng liên kết patient_link.csv của kho);
+//      dataset chọn biến/dataset cuối/bảng mã hóa không còn Mã BN và họ tên.
+const NORMALIZED_SCHEMA_VERSION = 15;
 
 const NORMALIZED_COLUMNS = {
   patients: [
-    'patient_code', 'patient_name', 'sex', 'birth_date', 'age', 'birth_year',
+    'patient_code', 'patient_key', 'patient_name', 'sex', 'birth_date', 'age', 'birth_year',
     'address', 'phone_number', 'citizen_id', 'insurance_subject', 'insurance_card', 'insurance_type',
     'insurance_valid_from', 'insurance_valid_to', 'first_research_code', 'encounter_count',
     'source_input', 'source_run_id', 'row_hash',
   ],
   encounters: [
-    'encounter_id', 'research_code', 'patient_code', 'admission_date', 'discharge_date',
+    'encounter_id', 'research_code', 'patient_code', 'patient_key', 'admission_date', 'discharge_date',
     'treatment_duration', 'department', 'room_bed', 'admission_diagnosis', 'discharge_diagnosis',
     'diagnosis_raw', 'comorbidity_text', 'complication_text', 'discharge_status',
     'surgery_date', 'emr_admission_id', 'emr_treatment_id', 'emr_noitru_id', 'needs_manual_review',
     'source_run_id', 'source_status', 'row_hash',
   ],
   diagnoses: [
-    'diagnosis_id', 'research_code', 'patient_code', 'encounter_id', 'diagnosis_date',
+    'diagnosis_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'diagnosis_date',
     'diagnosis_type', 'icd_code', 'diagnosis_text', 'source', 'source_run_id', 'row_hash',
   ],
   lab_results: [
-    'lab_result_id', 'research_code', 'patient_code', 'encounter_id', 'encounter_match_status', 'lab_datetime', 'lab_date',
+    'lab_result_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'lab_datetime', 'lab_date',
     'lab_group', 'test_name_raw', 'test_name_norm', 'result_raw', 'result_operator', 'result_num', 'result_text',
     'unit', 'ref_range_raw', 'flag_raw', 'flag_norm',
     'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter',
     'source_run_id', 'row_hash',
   ],
   imaging_results: [
-    'imaging_id', 'research_code', 'patient_code', 'encounter_id', 'encounter_match_status', 'ordered_at', 'order_date',
+    'imaging_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'ordered_at', 'order_date',
     'service_name_raw', 'modality', 'body_region', 'result_text', 'conclusion_text',
     'status', 'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter',
     'source_run_id', 'row_hash',
   ],
   surgery_results: [
-    'surgery_id', 'research_code', 'patient_code', 'encounter_id', 'encounter_match_status', 'surgery_datetime', 'surgery_date',
+    'surgery_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'surgery_datetime', 'surgery_date',
     'surgery_name', 'surgery_method', 'anesthesia_method', 'surgery_class', 'status',
     'preop_diagnosis', 'postop_diagnosis', 'operating_room',
     'days_from_admission', 'days_from_discharge', 'is_within_encounter',
     'source', 'source_run_id', 'row_hash',
   ],
   medication_orders: [
-    'med_order_id', 'research_code', 'patient_code', 'encounter_id', 'encounter_match_status', 'order_datetime', 'order_date',
+    'med_order_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'order_datetime', 'order_date',
     'drug_name_raw', 'drug_name_norm', 'drug_group_guess', 'active_ingredient', 'route_raw', 'route_norm',
     'dose_raw', 'times_per_day', 'raw_line',
     'surgery_datetime_ref', 'surgery_date_ref', 'postop_day_index', 'postop_day_label', 'is_postop_day_1_3',
@@ -3202,23 +3210,23 @@ const NORMALIZED_COLUMNS = {
     'source', 'source_run_id', 'row_hash',
   ],
   medication_day_summary: [
-    'research_code', 'patient_code', 'encounter_id', 'order_date', 'drug_count',
+    'research_code', 'patient_code', 'patient_key', 'encounter_id', 'order_date', 'drug_count',
     'route_set', 'drugs_display', 'drugs_json', 'source_run_id', 'row_hash',
   ],
   clinical_notes: [
-    'note_id', 'research_code', 'patient_code', 'encounter_id', 'encounter_match_status', 'note_datetime', 'note_date',
+    'note_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'note_datetime', 'note_date',
     'doctor_name', 'note_type', 'clinical_text', 'order_text', 'status',
     'days_from_admission', 'days_from_discharge', 'is_within_encounter',
     'source', 'source_run_id', 'row_hash',
   ],
   patient_day: [
-    'research_code', 'patient_code', 'encounter_id', 'date', 'hospital_day',
+    'research_code', 'patient_code', 'patient_key', 'encounter_id', 'date', 'hospital_day',
     'has_lab', 'lab_count', 'has_imaging', 'imaging_count', 'has_surgery', 'surgery_count', 'has_medication', 'medication_count',
     'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt',
     'creatinine', 'egfr', 'wbc', 'crp', 'source_run_id', 'row_hash',
   ],
   analysis_ready: [
-    'research_code', 'encounter_id', 'patient_code', 'patient_name', 'sex', 'birth_year', 'age',
+    'research_code', 'encounter_id', 'patient_code', 'patient_key', 'patient_name', 'sex', 'birth_year', 'age',
     'admission_date', 'surgery_date', 'discharge_date', 'hospital_stay_days', 'time_to_surgery_hours',
     'diagnosis_raw',
     // inference fields (injury_side_suggested, hip_fracture_suggested, v.v.) được sinh động theo analysis_config
@@ -3228,7 +3236,7 @@ const NORMALIZED_COLUMNS = {
     'imaging_summary', 'needs_manual_review', 'source_run_id', 'row_hash',
   ],
   extract_status: [
-    'research_code', 'encounter_id', 'patient_code', 'patient_name', 'popup_status', 'xn_status', 'cdha_status',
+    'research_code', 'encounter_id', 'patient_code', 'patient_key', 'patient_name', 'popup_status', 'xn_status', 'cdha_status',
     'profile_status', 'discharge_status', 'surgery_status', 'order_history_status',
     'overall_status', 'completion_level', 'ready_for_analysis', 'missing_required',
     'lab_count', 'imaging_count', 'surgery_count', 'medication_count',
@@ -6526,6 +6534,16 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     };
   });
 
+  // Mã người bệnh giả danh: mọi bảng có patient_code có thêm patient_key, lấy từ bảng liên
+  // kết riêng của kho (patient_link.csv). Dataset/phân tích chỉ mang patient_key.
+  const patientLink = loadPatientLink(patientLinkPath(dir));
+  const keyStamp = nowIso();
+  for (const rows of [patients, finalEncounters, diagnoses, labResults, imagingResults, surgeryResults,
+    medicationOrders, medicationDaySummary, clinicalNotes, patientDay, analysisReady, extractStatus]) {
+    applyPatientKeys(patientLink, rows, keyStamp);
+  }
+  savePatientLink(patientLink);
+
   writeCsv(path.join(dir, 'patients.csv'), NORMALIZED_COLUMNS.patients, patients);
   writeCsv(path.join(dir, 'encounters.csv'), NORMALIZED_COLUMNS.encounters, finalEncounters);
   writeCsv(path.join(dir, 'diagnoses.csv'), NORMALIZED_COLUMNS.diagnoses, diagnoses);
@@ -6538,7 +6556,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   writeCsv(path.join(dir, 'patient_day.csv'), NORMALIZED_COLUMNS.patient_day, patientDay);
   // Cột analysis_ready = cột cố định + inference fields của preset + custom fields
   const analysisReadyBaseCols = [
-    'research_code', 'encounter_id', 'patient_code', 'patient_name', 'sex', 'birth_year', 'age',
+    'research_code', 'encounter_id', 'patient_code', 'patient_key', 'patient_name', 'sex', 'birth_year', 'age',
     'admission_date', 'surgery_date', 'discharge_date', 'hospital_stay_days', 'time_to_surgery_hours',
     'diagnosis_raw',
   ];
@@ -9346,4 +9364,4 @@ module.exports._fetchHchanhForResearchRun = fetchHchanhForResearchRun;
 // Danh sách cột chuẩn hóa, dùng để đối chiếu từ điển dữ liệu (server/research/data_dictionary.js).
 module.exports.NORMALIZED_COLUMNS = NORMALIZED_COLUMNS;
 module.exports.ingestAllResearchResultsToPatientDb = ingestAllResearchResultsToPatientDb;
-module.exports._test = { buildPatientHistory, sendCsvFile, RESEARCH_SCOPE_LOCKS, researchScopeKey, readCsvTable, buildResearchProgressSnapshot, safeRunId, overlayHchanhFromPatientDb, overlayResultsFromPatientDb, buildResultDayIndex, resultDayIndexHasRange, addRowsToResultDayIndex, ingestAllResearchResultsToPatientDb, researchHchanhMeta, normalizeInputSignature, identifiedAccessStatus, normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, buildContextMap, contextForRow, encounterMatchStatus, encounterMatchMethod, summarizeVariableColumns, VARIABLE_CATALOG_MAX_ROWS, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, writeDatasetSnapshot, verifyDatasetSnapshot, verifyAllDatasetSnapshots, cleanupStaleDatasetStaging, finalizeAnalysisDataset, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };
+module.exports._test = { buildEncodedDataset, buildPatientHistory, sendCsvFile, RESEARCH_SCOPE_LOCKS, researchScopeKey, readCsvTable, buildResearchProgressSnapshot, safeRunId, overlayHchanhFromPatientDb, overlayResultsFromPatientDb, buildResultDayIndex, resultDayIndexHasRange, addRowsToResultDayIndex, ingestAllResearchResultsToPatientDb, researchHchanhMeta, normalizeInputSignature, identifiedAccessStatus, normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, buildContextMap, contextForRow, encounterMatchStatus, encounterMatchMethod, summarizeVariableColumns, VARIABLE_CATALOG_MAX_ROWS, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, writeDatasetSnapshot, verifyDatasetSnapshot, verifyAllDatasetSnapshots, cleanupStaleDatasetStaging, finalizeAnalysisDataset, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };

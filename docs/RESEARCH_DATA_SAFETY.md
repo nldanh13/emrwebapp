@@ -250,7 +250,8 @@ Một ca thiếu CT vẫn `usable` cho đề tài không cần CT.
 ## 4. Dữ liệu định danh
 
 - Có định danh trực tiếp: `du_lieu_ban_dau.csv`, `research_source.csv`,
-  `hchanh_*.csv`, `patients.csv`, `analysis_ready.csv` (họ tên), `research.sqlite3`.
+  `hchanh_*.csv`, `patients.csv`, `analysis_ready.csv` (họ tên), `research.sqlite3`,
+  `patient_link.csv` (bảng liên kết của kho).
 - Xem/xuất mặc định **đã che** theo tên cột (`server/research/export_utils.js`),
   gồm cả Mã nội trú, số lưu trữ và URL EMR (URL chứa `keyword=<Mã BN>`).
 - Xem/xuất có định danh cần đồng thời: `identified=1`, vai trò supervisor/admin, và
@@ -269,9 +270,18 @@ Một ca thiếu CT vẫn `usable` cho đề tài không cần CT.
   Stacktrace chromedriver bị lược khỏi log.
 - Tab "Tra cứu người bệnh" hỏi `GET /research/identified-access` trước; khi đang khóa
   thì hiện điều kiện cần bật thay vì gọi API rồi báo lỗi.
-- Chưa tách bảng liên kết Mã BN ↔ Mã NC khỏi dữ liệu phân tích: các bảng chuẩn hóa
-  vẫn giữ `patient_code` để ghép. Việc tách là thay đổi cấu trúc lớn, đề xuất làm ở
-  bước sau.
+- **Bảng liên kết Mã BN ↔ mã giả danh** (`patient_link.csv`) nằm ở thư mục **kho**
+  (`research_store/<kho>/patient_link.csv`, quyền 600), không nằm trong run hay dataset.
+  Mỗi Mã BN có một `patient_key` (`P000123`) cấp tuần tự, giữ nguyên qua các lần Chuẩn hóa
+  và các run của cùng kho; mã tuần tự không suy ngược được ra Mã BN nếu không có file liên
+  kết.
+- Mọi bảng chuẩn hóa có `patient_code` có thêm `patient_key`. Bảng làm việc nội bộ (thư
+  mục run, SQLite) **vẫn giữ `patient_code`** để ghép dữ liệu và tra cứu người bệnh.
+- **Dữ liệu phân tích chỉ mang `patient_key`:** `analysis_selected.csv`,
+  `analysis_final.csv` (và bản lưu trong `datasets/`) không có Mã BN, họ tên hay cột định
+  danh trực tiếp nào; các bảng trong `encoded/` dùng `patient_key` thay Mã BN. Bản xuất ẩn
+  danh của các bảng khác bỏ Mã BN nhưng giữ `patient_key`, nên vẫn nối được các đợt của
+  cùng người bệnh.
 
 ## 5. Nghiên cứu riêng
 
@@ -301,11 +311,13 @@ Không có migration phá dữ liệu. Các bước:
 
 1. Sao lưu như mục 6.1.
 2. `git pull`, khởi động lại server.
-3. Mở từng kho/nghiên cứu, bấm **Chuẩn hóa**. Schema tăng lên v14 nên lần đầu sẽ
+3. Mở từng kho/nghiên cứu, bấm **Chuẩn hóa**. Schema tăng lên v15 nên lần đầu sẽ
    chuẩn hóa lại đầy đủ và tạo `qa_report.json`, `encounter_review.csv`. v14 ghi lại
    các bảng chuẩn hóa và SQLite không còn dấu `'` trước số âm/`+`; dataset cuối đã lưu
    trong `datasets/` trước đó vẫn giữ nguyên (bất biến), cần **tạo lại dataset cuối**
    và kiểm tra các file đã xuất để phân tích trước đây.
+   v15 thêm `patient_key` và tạo `patient_link.csv` cho mỗi kho; dataset cuối/bảng mã hóa
+   tạo sau đó không còn Mã BN, họ tên.
 4. Nếu `research_source.csv` cũ có Mã NC bị trùng (lỗi cũ cấp `NC0001` cho mọi
    dòng), file này được tạo lại với Mã NC duy nhất. Mã được lấy theo thứ tự ưu tiên
    (1) mã hợp lệ cũ của cùng dòng, (2) mã script XN/CĐHA đã cấp cho cùng đợt trong

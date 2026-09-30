@@ -424,8 +424,10 @@ function summarizeVariableValue(variable, rows, identity = {}) {
 function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByKey = {}) {
   const selection = sanitizeVariableSelection(selectionInput);
   const selected = selection.selected_variables || [];
+  // Dataset phân tích không mang Mã BN/họ tên: người bệnh được nhận diện bằng patient_key
+  // (mã giả danh, bảng liên kết patient_link.csv nằm riêng ở thư mục kho).
   const baseColumns = [
-    'research_code', 'encounter_id', 'patient_code', 'patient_name', 'sex', 'birth_year', 'age',
+    'research_code', 'encounter_id', 'patient_key', 'sex', 'birth_year', 'age',
     'admission_date', 'surgery_date', 'discharge_date', 'hospital_stay_days', 'time_to_surgery_hours',
     'diagnosis_raw', 'needs_manual_review', 'source_run_id', 'row_hash',
   ];
