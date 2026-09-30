@@ -2104,12 +2104,38 @@ function buildResearchProgressSnapshot(runDir, scopeMeta = {}, { isArchive = tru
 
   seedRows.forEach(putRow);
 
+  // progress.json của script XN/CĐHA ghi theo từng lượt trên EMR (`Mã BN|row:N`), nhiều
+  // mục (vd. lỗi mở popup, lượt ngoài khoảng lọc) không có Mã NC. Khi đã có danh sách
+  // nguồn, chỉ ghép mục vào lượt có sẵn: đúng Mã NC, hoặc Mã BN chỉ có đúng một lượt.
+  // Không tạo lượt mới, nếu không số "lượt theo dõi" và số lỗi bị đếm dư.
+  const seededByResearch = new Map();
+  const seededByPatient = new Map();
+  for (const row of rowsByKey.values()) {
+    if (row.research_code) seededByResearch.set(normalizedIdentity(row.research_code), row);
+    const pc = normalizedIdentity(row.patient_code);
+    if (pc) seededByPatient.set(pc, [...(seededByPatient.get(pc) || []), row]);
+  }
+  const hasSeedRows = rowsByKey.size > 0;
+  let unmatchedProgress = 0;
+
   for (const [key, item] of Object.entries(progress || {})) {
     if (!item || typeof item !== 'object' || String(key).startsWith('__')) continue;
     const code = progressCodeFromKey(key, item);
     const researchCode = progressResearchCode(item);
     const rowKey = researchCode || code || key;
-    const row = rowsByKey.get(rowKey) || rowsByKey.get(code) || rowsByKey.get(researchCode) || {
+    let seeded = null;
+    if (hasSeedRows) {
+      seeded = (researchCode && seededByResearch.get(normalizedIdentity(researchCode))) || null;
+      if (!seeded) {
+        const samePatient = seededByPatient.get(normalizedIdentity(code)) || [];
+        if (samePatient.length === 1) seeded = samePatient[0];
+      }
+      if (!seeded) {
+        unmatchedProgress += 1;
+        continue;
+      }
+    }
+    const row = seeded || rowsByKey.get(rowKey) || rowsByKey.get(code) || rowsByKey.get(researchCode) || {
       key: rowKey,
       research_code: researchCode,
       patient_code: code,
@@ -2235,6 +2261,8 @@ function buildResearchProgressSnapshot(runDir, scopeMeta = {}, { isArchive = tru
     ready,
     missingCount: Math.max(0, total - ready),
     manualReview,
+    // Mục tiến độ không ghép được vào lượt nào trong danh sách (không tính vào total/lỗi).
+    unmatched_progress: unmatchedProgress,
     modules,
     missingRows,
     rows: monitorRows.slice(0, 500),
@@ -9206,4 +9234,4 @@ module.exports._fetchHchanhForResearchRun = fetchHchanhForResearchRun;
 // Danh sách cột chuẩn hóa, dùng để đối chiếu từ điển dữ liệu (server/research/data_dictionary.js).
 module.exports.NORMALIZED_COLUMNS = NORMALIZED_COLUMNS;
 module.exports.ingestAllResearchResultsToPatientDb = ingestAllResearchResultsToPatientDb;
-module.exports._test = { readCsvTable, overlayHchanhFromPatientDb, overlayResultsFromPatientDb, buildResultDayIndex, resultDayIndexHasRange, addRowsToResultDayIndex, ingestAllResearchResultsToPatientDb, researchHchanhMeta, normalizeInputSignature, identifiedAccessStatus, normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, buildContextMap, contextForRow, encounterMatchStatus, encounterMatchMethod, summarizeVariableColumns, VARIABLE_CATALOG_MAX_ROWS, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, writeDatasetSnapshot, verifyDatasetSnapshot, verifyAllDatasetSnapshots, cleanupStaleDatasetStaging, finalizeAnalysisDataset, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };
+module.exports._test = { readCsvTable, buildResearchProgressSnapshot, overlayHchanhFromPatientDb, overlayResultsFromPatientDb, buildResultDayIndex, resultDayIndexHasRange, addRowsToResultDayIndex, ingestAllResearchResultsToPatientDb, researchHchanhMeta, normalizeInputSignature, identifiedAccessStatus, normalizeResearchSourceRows, ensureResearchSourceRows, combineEncounterSources, buildContextMap, contextForRow, encounterMatchStatus, encounterMatchMethod, summarizeVariableColumns, VARIABLE_CATALOG_MAX_ROWS, normalizeRunOutputs, buildCoverageSummary, listDatasetSnapshots, writeDatasetSnapshot, verifyDatasetSnapshot, verifyAllDatasetSnapshots, cleanupStaleDatasetStaging, finalizeAnalysisDataset, runCollectionOrchestration, readCollectionPartRows, recoverCollectionTransactions, recoverPythonPatientCommits, appendCollectionVersions, readCollectionVersionIds, syncCollectionLedger, studyReadinessForRun, hchanhFileStatusPatch, hchanhEntryFileStatus };

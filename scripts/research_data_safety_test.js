@@ -294,6 +294,35 @@ test('Chuẩn hóa lại không làm mất analysis_final.csv đã chốt (lưu 
   assert.ok(snaps[0].sha256 && snaps[0].normalized_input_signature);
 });
 
+test('Số lượt theo dõi = số lượt trong danh sách; mục tiến độ không có Mã NC không tạo lượt mới', () => {
+  const runDir = fs.mkdtempSync(path.join(RUNTIME_ROOT, 'progress_snapshot_'));
+  const cols = ['research_code', 'encounter_id', 'patient_code', 'patient_name', 'xn_status', 'cdha_status', 'overall_status', 'last_error'];
+  const csv = [cols.join(','),
+    'NC0001,enc_a1,1000001,A,,,,',
+    'NC0002,enc_b1,1000002,B,,,,',
+    'NC0003,enc_b2,1000002,B,,,,',
+  ].join('\n') + '\n';
+  fs.writeFileSync(path.join(runDir, 'extract_status.csv'), csv);
+  fs.writeFileSync(path.join(runDir, 'progress.json'), JSON.stringify({
+    // Có Mã NC: ghép đúng lượt.
+    '1000001|row:1': { 'Mã BN': '1000001', 'Mã NC': 'NC0001', popup: 'done', xn: 'done', cdha: 'done', status: 'done' },
+    // Không Mã NC, BN chỉ có 1 lượt: ghép vào lượt đó.
+    '1000001|row:2': { 'Mã BN': '1000001', popup: 'error', last_error: 'Không mở được popup' },
+    // Không Mã NC, BN có 2 lượt: không đoán, không tạo lượt mới.
+    '1000002|row:3': { 'Mã BN': '1000002', popup: 'error', last_error: 'Không mở được popup' },
+    // BN không có trong danh sách.
+    '9999999|row:1': { 'Mã BN': '9999999', popup: 'error', last_error: 'x' },
+    // Mã NC cũ (trước khi đánh lại) của BN 2 lượt: không ghép.
+    'NC0999': { 'Mã BN': '1000002', 'Mã NC': 'NC0999', popup: 'error' },
+  }));
+  const snap = R.buildResearchProgressSnapshot(runDir, {}, { isArchive: true });
+  assert.strictEqual(snap.total, 3);
+  assert.strictEqual(snap.unmatched_progress, 3);
+  const a = snap.rows.find(r => (r.research_code || r.sample) === 'NC0001' || r.key === 'NC0001');
+  assert.ok(a, 'có dòng NC0001');
+  assert.ok(snap.counts.error <= 1, `lỗi chỉ tính trên lượt có thật, nhận ${snap.counts.error}`);
+});
+
 test('Xuất ẩn danh che Mã nội trú và URL EMR (URL chứa keyword=Mã BN)', () => {
   const cols = ['Mã NC', 'Mã nội trú', 'URL bác sĩ', 'URL điều dưỡng', 'emr_noitru_id', 'Số lưu trữ', 'hb'];
   const out = redactCsvTable(cols, [{}]);

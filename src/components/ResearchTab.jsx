@@ -3429,7 +3429,7 @@ export default function ResearchTab({ toast }) {
                   onChange={e => { setQuestionnaireVariables(e.target.value); if (e.target.value.trim()) setVariableGroupFilter('all'); }}
                   placeholder={'Tuổi\nGiới\nChẩn đoán\nHb trước mổ\nPhương pháp phẫu thuật'}
                   rows={4}
-                  style={{ ...inp, height: 'auto', marginTop: 8, paddingTop: 7, paddingBottom: 7, resize: 'vertical', background: C.surface }}
+                  style={{ ...inp, display: 'block', width: '100%', boxSizing: 'border-box', height: 'auto', marginTop: 8, paddingTop: 7, paddingBottom: 7, resize: 'vertical', background: C.surface }}
                 />
                 <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                   <Btn onClick={() => addVariables(filteredCatalogVariables.filter(v => v.recommended && Number(v.fill_rate || 0) >= 30))} disabled={!questionnaireTerms.length || !filteredCatalogVariables.length} style={{ height: 27, fontSize: FS.xs }}>＋ Chọn gợi ý phù hợp</Btn>
@@ -4059,6 +4059,7 @@ export default function ResearchTab({ toast }) {
                 <StatBadge label="Dòng" value={archiveInitial || 0} tone="info" />
                 {!!operationSnapshot?.total && <StatBadge label="Theo dõi" value={operationSnapshot.total} tone="neutral" />}
                 {!!operationSnapshot?.counts?.error && <StatBadge label="Lỗi" value={operationSnapshot.counts.error} tone="danger" />}
+                {!!operationSnapshot?.unmatched_progress && <StatBadge label="Tiến độ chưa ghép" value={operationSnapshot.unmatched_progress} tone="warn" />}
               </div>
             )}
           </SideItem>
