@@ -159,6 +159,7 @@ function sanitizeVariableSelection(input) {
       table_label: String(v?.table_label || '').slice(0, 120),
       name: String(v?.name || '').slice(0, 180),
       label: String(v?.label || v?.name || '').slice(0, 220),
+      survey_label: String(v?.survey_label || v?.label || v?.name || '').slice(0, 220),
       type: String(v?.type || '').slice(0, 40),
       role: String(v?.role || '').slice(0, 40),
       virtual_kind: String(v?.virtual_kind || '').slice(0, 80),
@@ -431,6 +432,7 @@ function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByK
   const used = new Set(baseColumns);
   const variableColumns = selected.map(variable => ({ ...variable, output_column: selectedColumnName(variable, used) }));
   const columns = [...baseColumns, ...variableColumns.map(v => v.output_column)];
+  const relatedCache = new Map();
   const rows = (analysisRows || []).map(row => {
     const identity = {
       patient_code: patientCode(row),
@@ -444,9 +446,12 @@ function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByK
     for (const col of baseColumns) out[col] = row?.[col] ?? getCell(row, col) ?? '';
     for (const variable of variableColumns) {
       const table = variable.table || 'analysis_ready';
-      const rowsForVariable = table === 'analysis_ready'
-        ? [row]
-        : relatedRows(tableRowsByKey?.[table] || [], identity);
+      const cacheKey = `${table}\u0000${identity.encounter_id}\u0000${identity.research_code}\u0000${identity.patient_code}\u0000${identity.admission_date}\u0000${identity.discharge_date}`;
+      let rowsForVariable = [row];
+      if (table !== 'analysis_ready') {
+        if (!relatedCache.has(cacheKey)) relatedCache.set(cacheKey, relatedRows(tableRowsByKey?.[table] || [], identity));
+        rowsForVariable = relatedCache.get(cacheKey);
+      }
       out[variable.output_column] = summarizeVariableValue(variable, rowsForVariable, identity);
     }
     return out;
@@ -464,6 +469,7 @@ function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByK
         table: v.table,
         name: v.name,
         label: v.label,
+        survey_label: v.survey_label || v.label,
         type: v.type,
         role: v.role,
         virtual_kind: v.virtual_kind,
@@ -473,6 +479,42 @@ function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByK
       })),
       conditions: selection.conditions || [],
     },
+  };
+}
+
+function summarizeSelectedDataset(dataset) {
+  const rows = Array.isArray(dataset?.rows) ? dataset.rows : [];
+  const variables = Array.isArray(dataset?.manifest?.variables) ? dataset.manifest.variables : [];
+  const hasValue = value => String(value ?? '').trim() !== '';
+  let complete = 0;
+  let partial = 0;
+  let empty = 0;
+  let review = 0;
+  for (const row of rows) {
+    const filled = variables.reduce((count, variable) => count + (hasValue(row?.[variable.output_column]) ? 1 : 0), 0);
+    if (variables.length && filled === variables.length) complete += 1;
+    else if (filled > 0) partial += 1;
+    else empty += 1;
+    if (hasValue(row?.needs_manual_review) || !hasValue(row?.encounter_id)) review += 1;
+  }
+  return {
+    total: rows.length,
+    complete,
+    partial,
+    empty,
+    review,
+    variables: variables.map(variable => {
+      const filled = rows.reduce((count, row) => count + (hasValue(row?.[variable.output_column]) ? 1 : 0), 0);
+      return {
+        id: variable.id,
+        survey_label: variable.survey_label || variable.label || variable.name,
+        source_label: variable.label || variable.name,
+        output_column: variable.output_column,
+        filled,
+        missing: rows.length - filled,
+        fill_rate: rows.length ? Number(((filled / rows.length) * 100).toFixed(1)) : 0,
+      };
+    }),
   };
 }
 
@@ -491,4 +533,5 @@ module.exports = {
   relatedRows,
   filterCohortRowsByVariableSelection,
   buildSelectedAnalysisDataset,
+  summarizeSelectedDataset,
 };

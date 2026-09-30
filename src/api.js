@@ -475,6 +475,7 @@ export const getResearchArchiveVariableCatalog = ({ runId = 'latest' } = {}) => 
   if (runId) params.set('runId', runId);
   return get(`/api/research/archive/variable-catalog?${params}`);
 };
+export const previewResearchArchiveVariables = (payload = {}) => post('/api/research/archive/variable-preview', payload);
 export const downloadResearchArchiveCsv = ({ table = 'analysis_ready', runId = 'latest', redact = true } = {}) => {
   const params = new URLSearchParams();
   params.set('table', table);
