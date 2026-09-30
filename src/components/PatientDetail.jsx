@@ -155,7 +155,7 @@ function PatientHeader({ patient, activeDay, status, subTab, setSubTab, availabl
                     fontSize: FS.sm, cursor: 'pointer', fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums',
                     borderColor: active ? C.blueBorder : C.border,
                     background: active ? C.blueBg : C.surface,
-                    color: active ? C.blue : C.text2, fontWeight: active ? 650 : 500,
+                    color: active ? C.blue : C.text2, fontWeight: active ? 600 : 500,
                   }}>
                     {date}
                     {stale
@@ -177,7 +177,7 @@ function PatientHeader({ patient, activeDay, status, subTab, setSubTab, availabl
           return (
             <button type="button" role="tab" aria-selected={active} key={t.id} onClick={() => setSubTab(t.id)} style={{
               flexShrink: 0, height: 38, padding: '0 10px', border: 0, borderBottom: `2px solid ${active ? C.blue : 'transparent'}`, marginBottom: -1,
-              background: 'transparent', color: active ? C.blue : C.text2, fontSize: FS.sm, fontWeight: active ? 650 : 550,
+              background: 'transparent', color: active ? C.blue : C.text2, fontSize: FS.sm, fontWeight: active ? 600 : 500,
               cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
             }}>{t.label}</button>
           );
@@ -245,7 +245,7 @@ function RawOrdersPanel({ patientDay = {} }) {
 function ActionGroup({ label, children }) {
   return (
     <div role="group" aria-label={label} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-      <span style={{ fontSize: FS.xs, fontWeight: 650, color: C.text2, whiteSpace: 'nowrap' }}>{label}</span>
+      <span style={{ fontSize: FS.xs, fontWeight: 600, color: C.text2, whiteSpace: 'nowrap' }}>{label}</span>
       {children}
     </div>
   );

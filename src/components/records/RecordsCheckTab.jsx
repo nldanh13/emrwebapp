@@ -1426,7 +1426,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
         return (
           <button key={mode} type="button" role="tab" aria-selected={active} onClick={() => setViewMode(mode)} style={{
             flexShrink: 0, height: 40, padding: '0 10px', border: 0, borderBottom: `2px solid ${active ? C.blue : 'transparent'}`, marginBottom: -1,
-            background: 'transparent', color: active ? C.blue : C.text2, fontSize: FS.sm, fontWeight: active ? 650 : 550, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+            background: 'transparent', color: active ? C.blue : C.text2, fontSize: FS.sm, fontWeight: active ? 600 : 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
           }}>{label}</button>
         );
       })}
@@ -1511,7 +1511,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
             value={dischargeMonth}
             onChange={e => setDischargeMonthPref(e.target.value)}
             title="Chỉ hiển thị hồ sơ có ngày ra viện thuộc tháng đã chọn"
-            style={{ ...FIELD_STYLE, borderColor: dischargeMonth ? C.blueBorder : C.border, color: dischargeMonth ? C.blue : C.text, fontWeight: dischargeMonth ? 650 : 400 }}
+            style={{ ...FIELD_STYLE, borderColor: dischargeMonth ? C.blueBorder : C.border, color: dischargeMonth ? C.blue : C.text, fontWeight: dischargeMonth ? 600 : 400 }}
           >
             <option value="">Ra viện: tất cả tháng</option>
             {dischargeMonthOptions.map(month => (
@@ -1548,7 +1548,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
       </div>
 
       <div className={isMobile ? 'emr-hscroll' : undefined} style={{ padding: '8px 12px', background: C.surface, display: 'flex', alignItems: 'center', gap: 6, flexWrap: isMobile ? 'nowrap' : 'wrap', overflowX: isMobile ? 'auto' : 'visible', borderBottom: `1px solid ${C.border2}` }}>
-        <span style={{ fontSize: FS.sm, fontWeight: 650, color: C.text, marginRight: 4, whiteSpace: 'nowrap' }}>Cần xử lý hôm nay</span>
+        <span style={{ fontSize: FS.sm, fontWeight: 600, color: C.text, marginRight: 4, whiteSpace: 'nowrap' }}>Cần xử lý hôm nay</span>
         {[
           ['none', 'Tất cả', counts.total, 'gray'],
           ['overdue_48h', 'Quá hạn 48 giờ', counts.overdue48h, 'red'],
@@ -1574,7 +1574,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                 display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 10px', borderRadius: 5, flexShrink: 0, whiteSpace: 'nowrap',
                 cursor: empty && !active ? 'default' : 'pointer', fontFamily: 'inherit',
                 border: `1px solid ${active ? C.blueBorder : C.border2}`, background: active ? C.blueBg : C.surface,
-                color: active ? C.blue : (empty ? C.text3 : C.text), fontSize: FS.sm, fontWeight: active ? 650 : 500,
+                color: active ? C.blue : (empty ? C.text3 : C.text), fontSize: FS.sm, fontWeight: active ? 600 : 500,
               }}
               title={`Lọc theo: ${label}`}
             >
@@ -1602,7 +1602,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
       </div>
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '8px 12px', background: updateSelectedKeys.size ? C.blueBg : C.surface, borderBottom: `1px solid ${C.border2}` }}>
-        <span style={{ fontSize: FS.sm, color: updateSelectedKeys.size ? C.blue : C.text2, fontWeight: updateSelectedKeys.size ? 650 : 400 }}>
+        <span style={{ fontSize: FS.sm, color: updateSelectedKeys.size ? C.blue : C.text2, fontWeight: updateSelectedKeys.size ? 600 : 400 }}>
           {updateSelectedKeys.size ? `Đã chọn ${updateSelectedKeys.size} ca để cập nhật` : 'Chọn ca ở cột đầu để cập nhật lại dữ liệu EMR'}
         </span>
         <Btn variant={updateSelectedKeys.size ? 'solidPrimary' : 'default'} icon={IconCloudDownload} disabled={!updateSelectedKeys.size || effectiveRunning} onClick={fetchSelectedRows}>
@@ -1700,10 +1700,10 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                                 ? `Hồ sơ đã nộp${submissionLock?.submission_date ? ` ngày ${formatSubmissionDate(submissionLock.submission_date)}` : ''}; không thể thay đổi dấu đã kiểm.`
                                 : 'Đánh dấu đã kiểm hồ sơ'}
                           />
-                          {checkedLocked ? <span style={{ color: C.green, fontSize: FS.xs, fontWeight: 650, whiteSpace: 'nowrap' }}>Đã nộp</span> : null}
+                          {checkedLocked ? <span style={{ color: C.green, fontSize: FS.xs, fontWeight: 600, whiteSpace: 'nowrap' }}>Đã nộp</span> : null}
                         </div>
                       </td>
-                      <td title={row.storage || ''} style={{ padding: '8px 8px', borderBottom: `1px solid ${C.border2}`, color: row.storage ? C.text : C.text3, fontSize: FS.sm, fontWeight: row.storage ? 650 : 500, whiteSpace: 'nowrap', minWidth: 145 }}>{row.storage || '—'}</td>
+                      <td title={row.storage || ''} style={{ padding: '8px 8px', borderBottom: `1px solid ${C.border2}`, color: row.storage ? C.text : C.text3, fontSize: FS.sm, fontWeight: row.storage ? 600 : 500, whiteSpace: 'nowrap', minWidth: 145 }}>{row.storage || '—'}</td>
                       <td style={{ padding: '8px 8px', borderBottom: `1px solid ${C.border2}`, minWidth: 235, maxWidth: 310 }}>
                         <Chip tone={row.paperRecord?.tone || 'gray'} title={paperTitle}>{row.paperRecord?.label || 'Chưa có hồ sơ'}</Chip>
                         {row.paperRecord?.record ? (

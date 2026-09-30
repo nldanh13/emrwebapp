@@ -22,11 +22,11 @@ const TONE_OPTIONS = [
 ];
 const EDITABLE = ['label', 'short', 'category', 'report', 'tone'];
 
-const FIELD_LABEL_STYLE = { fontSize: 11, color: C.text2, marginBottom: 3 };
+const FIELD_LABEL_STYLE = { fontSize: FS.xs, color: C.text2, marginBottom: 3 };
 export const INPUT_STYLE = {
   width: '100%', padding: '6px 10px', borderRadius: 6,
   background: C.surface, border: `1px solid ${C.border}`,
-  color: C.text, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit',
+  color: C.text, fontSize: FS.md, boxSizing: 'border-box', fontFamily: 'inherit',
 };
 
 function Field({ label, hint, children }) {
@@ -34,7 +34,7 @@ function Field({ label, hint, children }) {
     <div>
       <div style={FIELD_LABEL_STYLE}>{label}</div>
       {children}
-      {hint && <div style={{ fontSize: 11, color: C.text3, marginTop: 3 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 3 }}>{hint}</div>}
     </div>
   );
 }
@@ -113,7 +113,7 @@ function RouteEditModal({ route, baseRoute, customItem, categories, existingCode
         style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 6,
           padding: 18, width: 520, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }}
         onClick={e => e.stopPropagation()}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 14 }}>
+        <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text, marginBottom: 14 }}>
           {isNew ? 'Thêm đường dùng' : `Sửa đường dùng ${route.code}`}
         </div>
 
@@ -169,7 +169,7 @@ function RouteEditModal({ route, baseRoute, customItem, categories, existingCode
 
         {error && (
           <div role="alert" style={{ padding: '6px 10px', borderRadius: 6, background: C.redBg,
-            border: `1px solid ${C.redBorder}`, color: C.red, fontSize: 12, marginTop: 12 }}>{error}</div>
+            border: `1px solid ${C.redBorder}`, color: C.red, fontSize: FS.sm, marginTop: 12 }}>{error}</div>
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
@@ -242,7 +242,7 @@ export default function RouteDesigner({ onSaved }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-        <div style={{ fontSize: 12, color: C.text2, lineHeight: 1.5, maxWidth: 680 }}>
+        <div style={{ fontSize: FS.sm, color: C.text2, lineHeight: 1.5, maxWidth: 680 }}>
           Một bảng đường dùng chung cho cả hệ thống: nhận diện y lệnh, chia chuyên mục, báo cáo ca trực, phiếu in.
           Sửa ở đây có hiệu lực ngay trên giao diện; dữ liệu đã phân loại cần chạy lại "③ Xử lý &amp; phân loại".
         </div>
@@ -252,7 +252,7 @@ export default function RouteDesigner({ onSaved }) {
       <div style={{ display: 'grid', gap: 12 }}>
         {grouped.map(({ cat, routes }) => (
           <section key={cat.code} style={{ border: `1px solid ${C.border2}`, borderRadius: 7, background: C.surface, overflow: 'hidden' }}>
-            <header style={{ padding: '7px 12px', background: C.surface2, fontSize: FS.sm, fontWeight: 650, color: C.text }}>
+            <header style={{ padding: '7px 12px', background: C.surface2, fontSize: FS.sm, fontWeight: 600, color: C.text }}>
               {catLabel[cat.code] || cat.code}
             </header>
             {routes.map(route => {
@@ -275,10 +275,10 @@ export default function RouteDesigner({ onSaved }) {
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                    <Btn variant="secondary" onClick={() => setEditing({ route })} style={{ fontSize: 11, padding: '2px 10px' }}>Sửa</Btn>
+                    <Btn variant="secondary" onClick={() => setEditing({ route })} style={{ fontSize: FS.xs, padding: '2px 10px' }}>Sửa</Btn>
                     {item && (
                       <Btn variant="default" loading={busy === route.code} onClick={() => remove(route)}
-                        style={{ fontSize: 11, padding: '2px 10px', color: builtin ? C.text2 : C.red }}>
+                        style={{ fontSize: FS.xs, padding: '2px 10px', color: builtin ? C.text2 : C.red }}>
                         {builtin ? 'Khôi phục' : 'Xoá'}
                       </Btn>
                     )}

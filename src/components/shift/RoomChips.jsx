@@ -10,7 +10,7 @@ export default function RoomChips({ rooms, patients, selRoom, onSelect }) {
       <button type="button" onClick={() => onSelect(null)} aria-pressed={!selRoom} style={{
         minHeight: 36, padding: '0 12px', borderRadius: 5, border: `1px solid ${!selRoom ? C.blueBorder : C.border}`, cursor: 'pointer',
         background: !selRoom ? C.blueBg : C.surface,
-        color: !selRoom ? C.blue : C.text2, fontWeight: !selRoom ? 650 : 550,
+        color: !selRoom ? C.blue : C.text2, fontWeight: !selRoom ? 600 : 500,
         fontSize: FS.sm, whiteSpace: 'nowrap', fontFamily: 'inherit',
       }}>
         Tất cả ({patients.length})
@@ -24,7 +24,7 @@ export default function RoomChips({ rooms, patients, selRoom, onSelect }) {
             display: 'inline-flex', alignItems: 'center', gap: 6,
             minHeight: 36, padding: '0 12px', borderRadius: 5, border: `1px solid ${active ? C.blueBorder : C.border}`, cursor: 'pointer',
             background: active ? C.blueBg : C.surface,
-            color: active ? C.blue : C.text, fontWeight: active ? 650 : 550,
+            color: active ? C.blue : C.text, fontWeight: active ? 600 : 500,
             fontSize: FS.sm, whiteSpace: 'nowrap', fontFamily: 'inherit',
           }}>
             {r} <span style={{ color: active ? C.blue : C.text3, fontWeight: 500 }}>{pts.length}</span>

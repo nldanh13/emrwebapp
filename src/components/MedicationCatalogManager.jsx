@@ -69,11 +69,11 @@ function formFromMedication(med) {
   };
 }
 
-const FIELD_LABEL_STYLE = { fontSize: 11, color: C.text2, marginBottom: 3 };
+const FIELD_LABEL_STYLE = { fontSize: FS.xs, color: C.text2, marginBottom: 3 };
 const INPUT_STYLE = {
   width: '100%', padding: '6px 10px', borderRadius: 6,
   background: C.surface, border: `1px solid ${C.border}`,
-  color: C.text, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit',
+  color: C.text, fontSize: FS.md, boxSizing: 'border-box', fontFamily: 'inherit',
 };
 
 function Field({ label, children }) {
@@ -97,7 +97,7 @@ function RoutePicker({ routes, value, onChange }) {
           <button key={r.code} type="button" aria-pressed={on} title={r.label} onClick={() => toggle(r.code)} style={{
             height: 28, padding: '0 9px', borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit',
             border: `1px solid ${on ? C.blueBorder : C.border2}`, background: on ? C.blueBg : C.surface,
-            color: on ? C.blue : C.text2, fontSize: FS.sm, fontWeight: on ? 650 : 500,
+            color: on ? C.blue : C.text2, fontSize: FS.sm, fontWeight: on ? 600 : 500,
           }}>{r.short}</button>
         );
       })}
@@ -158,7 +158,7 @@ function EditModal({ mode, initial, onClose, onSave }) {
         padding: 18, width: 520, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }}
         onClick={e => e.stopPropagation()}>
 
-        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 14 }}>
+        <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text, marginBottom: 14 }}>
           {mode === 'create' ? 'Thêm thuốc vào danh mục' : `Sửa thuốc: ${initial.canonical}`}
         </div>
 
@@ -192,7 +192,7 @@ function EditModal({ mode, initial, onClose, onSave }) {
           </div>
           <Field label="Đường dùng cho phép (y lệnh ghi đường khác → cảnh báo)">
             <RoutePicker routes={ROUTES} value={form.routes} onChange={routes => setForm(prev => ({ ...prev, routes }))} />
-            <div style={{ fontSize: 11, color: C.text3, marginTop: 4, lineHeight: 1.45 }}>
+            <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 4, lineHeight: 1.45 }}>
               {form.routes.length
                 ? `Chấp nhận: ${[...new Set([form.default_route, ...form.routes].filter(Boolean))].map(routeShort).join(', ')}.`
                 : form.default_route
@@ -242,7 +242,7 @@ function EditModal({ mode, initial, onClose, onSave }) {
 
         {error && (
           <div style={{ padding: '6px 10px', borderRadius: 6, background: C.redBg,
-            border: `1px solid ${C.redBorder}`, color: C.red, fontSize: 12, marginTop: 12 }}>
+            border: `1px solid ${C.redBorder}`, color: C.red, fontSize: FS.sm, marginTop: 12 }}>
             {error}
           </div>
         )}
@@ -332,8 +332,8 @@ export default function MedicationCatalogManager() {
     <div style={{ padding: 12, maxWidth: 1080, margin: '0 auto' }}>
       <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
         <div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>Danh mục thuốc</div>
-          <div style={{ fontSize: 12, color: C.text2, marginTop: 4 }}>
+          <div style={{ fontSize: FS.xl, fontWeight: 700, color: C.text }}>Danh mục thuốc</div>
+          <div style={{ fontSize: FS.sm, color: C.text2, marginTop: 4 }}>
             {tab === 'drugs'
               ? 'Tên chuẩn, alias, đường dùng cho phép và thể tích mặc định — dùng để suy luận và cảnh báo khi y lệnh ghi khác.'
               : 'Tự thiết kế đường dùng: tên, nhãn, chuyên mục, cách hiện trên báo cáo ca trực và từ khoá nhận diện.'}
@@ -353,7 +353,7 @@ export default function MedicationCatalogManager() {
       <div style={{
         marginBottom: 14, padding: '9px 12px', borderRadius: 7,
         background: C.blueBg, border: `1px solid ${C.blueBorder}`,
-        fontSize: 12, color: C.text2, lineHeight: 1.5,
+        fontSize: FS.sm, color: C.text2, lineHeight: 1.5,
       }}>
         Thêm/sửa thuốc ở đây <b>không áp dụng ngược</b> cho dữ liệu đã quét/phân loại trước đó — chỉ có hiệu lực từ lần chạy
         "③ Xử lý &amp; phân loại" tiếp theo (tab "Lấy dữ liệu"). Đã thêm thuốc mới nhưng phần nhập dịch truyền chưa thấy?
@@ -383,37 +383,36 @@ export default function MedicationCatalogManager() {
             <thead>
               <tr style={{ background: C.surface2 }}>
                 {['Tên chuẩn', 'Tên khác', 'Đường dùng', 'Chuyên mục', 'Thể tích (ml)', 'Tốc độ', 'Tác vụ'].map(h => (
-                  <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11,
-                    fontWeight: 700, color: C.text2, borderBottom: `1px solid ${C.border}`,
-                    letterSpacing: 0.15, whiteSpace: 'nowrap' }}>{h}</th>
+                  <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: FS.xs,
+                    fontWeight: 700, color: C.text2, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.map((item, i) => (
                 <tr key={item.key} style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${C.border2}` : 'none' }}>
-                  <td style={{ padding: '10px 12px', fontSize: 13, color: C.text, fontWeight: 500 }}>{txt(item.canonical)}</td>
-                  <td style={{ padding: '10px 12px', fontSize: 11.5, color: C.text2, maxWidth: 320 }}>
+                  <td style={{ padding: '10px 12px', fontSize: FS.md, color: C.text, fontWeight: 500 }}>{txt(item.canonical)}</td>
+                  <td style={{ padding: '10px 12px', fontSize: FS.xs, color: C.text2, maxWidth: 320 }}>
                     {item.aliases?.length ? joinList(item.aliases) : <span style={{ color: C.text3 }}>—</span>}
                   </td>
-                  <td style={{ padding: '10px 12px', fontSize: 12, color: C.text2 }}>
+                  <td style={{ padding: '10px 12px', fontSize: FS.sm, color: C.text2 }}>
                     <RouteCell item={item} />
                   </td>
-                  <td style={{ padding: '10px 12px', fontSize: 12, color: C.text2 }}>{txt(CATEGORY_LABEL[item.category] || item.category)}</td>
-                  <td style={{ padding: '10px 12px', fontSize: 12 }}>
+                  <td style={{ padding: '10px 12px', fontSize: FS.sm, color: C.text2 }}>{txt(CATEGORY_LABEL[item.category] || item.category)}</td>
+                  <td style={{ padding: '10px 12px', fontSize: FS.sm }}>
                     <code style={{ color: C.blue }}>{txt(item.default_volume_ml)}</code>
                   </td>
-                  <td style={{ padding: '10px 12px', fontSize: 12 }}>
+                  <td style={{ padding: '10px 12px', fontSize: FS.sm }}>
                     <code style={{ color: C.text2 }}>{txt(item.default_rate)}</code>
                   </td>
                   <td style={{ padding: '10px 12px' }}>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <Btn variant="secondary" onClick={() => setEditing({ mode: 'edit', key: item.key, form: formFromMedication(item) })}
-                        style={{ fontSize: 11, padding: '2px 10px' }}>
+                        style={{ fontSize: FS.xs, padding: '2px 10px' }}>
                         Sửa
                       </Btn>
                       <Btn variant="default" disabled={deleting === item.key} onClick={() => handleDelete(item)}
-                        style={{ fontSize: 11, padding: '2px 10px', color: C.red }}>
+                        style={{ fontSize: FS.xs, padding: '2px 10px', color: C.red }}>
                         {deleting === item.key ? <Spinner size={10} /> : 'Xoá'}
                       </Btn>
                     </div>
@@ -430,7 +429,7 @@ export default function MedicationCatalogManager() {
       {toast && (
         <div style={{ position: 'fixed', bottom: 24, right: 24, maxWidth: 380, padding: '10px 18px',
           borderRadius: 8, background: C.surface, border: `1px solid ${C.border}`,
-          color: C.text, fontSize: 13, lineHeight: 1.5, boxShadow: C.shadow2, zIndex: 100 }}>
+          color: C.text, fontSize: FS.md, lineHeight: 1.5, boxShadow: C.shadow2, zIndex: 100 }}>
           {toast}
         </div>
       )}

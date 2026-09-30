@@ -17,11 +17,11 @@ export default function RoomCard({ room, capacity, patients, selectedCount, onAs
         alignItems: 'center', borderBottom: `1px solid ${C.border2}`, background: C.surface2,
       }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{room}</div>
+          <div style={{ fontWeight: 700, fontSize: FS.lg, color: C.text }}>{room}</div>
           <div style={{ fontSize: FS.xs, color: C.text2, fontVariantNumeric: 'tabular-nums' }}>{formatVND(roomPriceTier(room))}/giường</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ fontSize: FS.sm, fontWeight: 650, fontVariantNumeric: 'tabular-nums', color: isFull ? C.red : C.text2 }}>
+          <span style={{ fontSize: FS.sm, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: isFull ? C.red : C.text2 }}>
             {patients.length}/{capacity}{isFull ? ' · Đầy' : ''}
           </span>
           {!isDefault && (
@@ -36,7 +36,7 @@ export default function RoomCard({ room, capacity, patients, selectedCount, onAs
         <button type="button" onClick={() => onAssign(room)} style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
           width: '100%', minHeight: 34, background: C.blue, color: '#fff',
-          border: 'none', cursor: 'pointer', fontSize: FS.sm, fontWeight: 650, fontFamily: 'inherit',
+          border: 'none', cursor: 'pointer', fontSize: FS.sm, fontWeight: 600, fontFamily: 'inherit',
         }}>
           <IconArrowBarToDown size={15} stroke={2} aria-hidden="true" />
           Xếp {selectedCount > 1 ? `${selectedCount} người bệnh` : 'vào đây'}

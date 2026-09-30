@@ -78,7 +78,7 @@ function ServiceChip({ s }) {
   const pending = s.done < s.total;
   return (
     <span style={{
-      display: 'inline-block', padding: '1px 6px', borderRadius: 4, fontSize: FS.xs, fontWeight: 650, whiteSpace: 'nowrap',
+      display: 'inline-block', padding: '1px 6px', borderRadius: 4, fontSize: FS.xs, fontWeight: 600, whiteSpace: 'nowrap',
       background: pending ? C.amberBg : C.surface2, color: pending ? C.amber : C.text2,
       border: `1px solid ${pending ? C.amberBorder : C.border2}`,
     }}>{s.label} {s.done}/{s.total}</span>
@@ -129,7 +129,7 @@ function CompletionCell({ row, toast, onSaved }) {
   if (row.ngoaitru) {
     const st = row.ngoaitru_state;
     if (!st) return <span style={{ color: C.text2, fontSize: FS.sm }}>Chờ bấm Điều trị ngoại trú</span>;
-    return <span style={{ color: NGOAITRU_COLOR[st.status] || C.text2, fontSize: FS.sm, fontWeight: 650 }}>{st.message || (st.status === 'done' ? 'Đã kết thúc điều trị' : st.status)}</span>;
+    return <span style={{ color: NGOAITRU_COLOR[st.status] || C.text2, fontSize: FS.sm, fontWeight: 600 }}>{st.message || (st.status === 'done' ? 'Đã kết thúc điều trị' : st.status)}</span>;
   }
   if (!row.eligible) return <span style={{ color: C.text3 }}>—</span>;
   const check = row.check;
@@ -137,7 +137,7 @@ function CompletionCell({ row, toast, onSaved }) {
   const view = CHECK_VIEW[check.status] || { color: C.text2 };
   return (
     <div style={{ fontSize: FS.sm }}>
-      <span style={{ color: view.color, fontWeight: 650 }}>{view.text || check.message}</span>
+      <span style={{ color: view.color, fontWeight: 600 }}>{view.text || check.message}</span>
       {check.status === 'need_weight' && (row.weight_entered
         ? <div style={{ color: C.text2, fontSize: FS.xs }}>Đã nhập {row.weight_entered} kg, sẽ ghi khi hoàn tất</div>
         : <WeightInput row={row} toast={toast} onSaved={onSaved} />)}
@@ -150,7 +150,7 @@ function Stat({ label, value, tone }) {
   return (
     <div style={{ padding: '8px 12px', border: `1px solid ${C.border2}`, borderRadius: 7, background: C.surface, minWidth: 120 }}>
       <div style={{ fontSize: FS.xs, color: C.text2 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 750, color }}>{value}</div>
+      <div style={{ fontSize: FS.stat, fontWeight: 700, color }}>{value}</div>
     </div>
   );
 }
@@ -411,8 +411,8 @@ export default function ClinicTab({ toast }) {
                       <div style={{ fontWeight: 600 }}>{r.ho_ten}</div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: FS.xs, color: C.text2 }}>
                         <span>{r.doi_tuong}{r.nam_sinh ? ` · ${r.nam_sinh}` : ''}{r.uu_tien ? ` · ${r.uu_tien}` : ''}</span>
-                        {r.cho_doc_kq && <span style={{ color: C.red, fontWeight: 650 }}>Chờ đọc KQ</span>}
-                        {r.bbhc?.length > 0 && <span style={{ color: C.amber, fontWeight: 650 }} title="Cần lập Sổ biên bản hội chẩn">SBBHC: {r.bbhc.join(', ')}</span>}
+                        {r.cho_doc_kq && <span style={{ color: C.red, fontWeight: 600 }}>Chờ đọc KQ</span>}
+                        {r.bbhc?.length > 0 && <span style={{ color: C.amber, fontWeight: 600 }} title="Cần lập Sổ biên bản hội chẩn">SBBHC: {r.bbhc.join(', ')}</span>}
                       </div>
                       {r.lich_su && <HistoryNote lichSu={r.lich_su} mode="clinic" />}
                     </td>

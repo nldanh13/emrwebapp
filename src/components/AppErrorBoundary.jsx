@@ -1,5 +1,5 @@
 import { Component } from 'react';
-import { C, FONT_MONO, FONT_UI } from '../tokens.js';
+import { C, FONT_MONO, FONT_UI, FS } from '../tokens.js';
 
 const box = {
   minHeight: '100vh',
@@ -61,10 +61,10 @@ export default class AppErrorBoundary extends Component {
     return (
       <div style={box}>
         <main style={panel}>
-          <div style={{ color: C.red, fontSize: 11, fontWeight: 800 }}>
+          <div style={{ color: C.red, fontSize: FS.xs, fontWeight: 700 }}>
             Lỗi giao diện
           </div>
-          <h1 style={{ margin: '6px 0 8px', fontSize: 20 }}>Không tải được màn hình chính</h1>
+          <h1 style={{ margin: '6px 0 8px', fontSize: FS.stat }}>Không tải được màn hình chính</h1>
           <p style={{ color: C.text2, lineHeight: 1.6, margin: 0 }}>
             Ứng dụng đã bắt được lỗi thay vì để màn hình đen. Hãy thử xóa trạng thái giao diện đã lưu rồi tải lại.
           </p>
@@ -72,7 +72,7 @@ export default class AppErrorBoundary extends Component {
             <button type="button" style={button} onClick={clearSavedUiState}>Xóa trạng thái và tải lại</button>
             <button type="button" style={button} onClick={() => window.location.reload()}>Tải lại</button>
           </div>
-          <pre style={{ whiteSpace: 'pre-wrap', maxHeight: 260, overflow: 'auto', background: C.surface2, color: C.red, border: `1px solid ${C.border2}`, borderRadius: 5, padding: 10, fontSize: 11, fontFamily: FONT_MONO }}>
+          <pre style={{ whiteSpace: 'pre-wrap', maxHeight: 260, overflow: 'auto', background: C.surface2, color: C.red, border: `1px solid ${C.border2}`, borderRadius: 5, padding: 10, fontSize: FS.xs, fontFamily: FONT_MONO }}>
             {message}
           </pre>
         </main>

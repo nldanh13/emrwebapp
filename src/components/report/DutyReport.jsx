@@ -72,7 +72,7 @@ function MedLine({ row }) {
       <span className="emr-med-line__room">{roomOf(row)}</span>
       <span className="emr-med-line__name">{row.patientName}</span>
       <span className="emr-med-line__drug">
-        <b style={{ fontWeight: 650 }}>{row.drugName}</b>{row.tuTuc && <TuTucMark />}
+        <b style={{ fontWeight: 600 }}>{row.drugName}</b>{row.tuTuc && <TuTucMark />}
         <span style={{ color: C.text2, fontVariantNumeric: 'tabular-nums' }}> × {formatQty(row.quantity)} {row.unit}</span>
         {row.mixWith && <span style={{ color: C.text2 }}> · pha {row.mixWith}</span>}
       </span>
@@ -134,7 +134,7 @@ function OralList({ rows, empty }) {
           <span className="emr-oral-line__drugs">
             {[...p.drugs.values()].map((d, i) => (
               <span key={i} style={{ display: 'inline-block', marginRight: 12 }}>
-                <b style={{ fontWeight: 650 }}>{d.name}</b>{d.tuTuc && <TuTucMark />}
+                <b style={{ fontWeight: 600 }}>{d.name}</b>{d.tuTuc && <TuTucMark />}
                 <span style={{ color: C.text2, fontVariantNumeric: 'tabular-nums' }}> × {formatQty(d.qty)} {d.unit}{d.times.size ? ` (${[...d.times].sort().join(', ')})` : ''}</span>
               </span>
             ))}

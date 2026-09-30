@@ -49,7 +49,7 @@ export default function InputRoomSelector({
           ? <IconAlertTriangle size={18} stroke={1.9} color={C.red} aria-hidden="true" />
           : <IconUsers size={18} stroke={1.75} color={C.text2} aria-hidden="true" />}
         <div style={{ flex: '1 1 180px', minWidth: 0 }}>
-          <div style={{ fontSize: FS.md, fontWeight: 650, color: empty ? C.red : C.text }}>
+          <div style={{ fontSize: FS.md, fontWeight: 600, color: empty ? C.red : C.text }}>
             {empty ? 'Chưa có người bệnh nào để nhập hàng loạt' : `Sẽ nhập ${selectedPatientCount} người bệnh`}
           </div>
           <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 1 }}>{scopeText}</div>

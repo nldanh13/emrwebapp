@@ -32,7 +32,7 @@ export function ListSummary({ count, stats, loading }) {
   if (stats.green > 0) parts.push(<span key="o" style={{ color: C.green }}>{stats.green} ổn</span>);
   return (
     <div style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border2}`, display: 'flex', columnGap: 12, rowGap: 2, flexWrap: 'wrap', alignItems: 'center', fontSize: FS.sm, color: C.text2, background: C.surface2 }} aria-live="polite">
-      <b style={{ color: C.text, fontWeight: 650 }}>{count} người bệnh</b>
+      <b style={{ color: C.text, fontWeight: 600 }}>{count} người bệnh</b>
       {parts}
       {loading && <Spinner size={12} />}
     </div>
@@ -44,7 +44,7 @@ export function EmptyList({ hasData }) {
     <div style={{ padding: '28px 16px', color: C.text2, fontSize: FS.md, textAlign: 'center', lineHeight: 1.5 }}>
       {hasData ? 'Không có người bệnh trong phòng này.' : (
         <>
-          <div style={{ fontWeight: 650, color: C.text }}>Chưa có dữ liệu cho ngày đã chọn</div>
+          <div style={{ fontWeight: 600, color: C.text }}>Chưa có dữ liệu cho ngày đã chọn</div>
           <div style={{ marginTop: 4 }}>Vào <b>Lấy dữ liệu</b>, chạy lần lượt Quét danh sách → Lấy chi tiết → Xử lý &amp; phân loại.</div>
         </>
       )}

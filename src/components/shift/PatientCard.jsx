@@ -86,10 +86,10 @@ export default function PatientCard({ p, selected, onClick, showInputToggle = fa
       <div style={{ minWidth: 0, flex: 1 }}>
         <PatientNoticePills notices={notices} compact />
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 14, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: FS.lg, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {name}
           </div>
-          <span style={{ flexShrink: 0, fontSize: FS.xs, fontWeight: 650, color: st.text }}>{st.label}</span>
+          <span style={{ flexShrink: 0, fontSize: FS.xs, fontWeight: 600, color: st.text }}>{st.label}</span>
         </div>
         <div style={{ fontSize: FS.sm, color: C.text2, marginTop: 2 }}>
           {p.age && <>{p.age} tuổi · </>}

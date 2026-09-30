@@ -204,7 +204,7 @@ export function PatientNoticePills({ notices = [], compact = false }) {
           maxWidth: compact ? 150 : 260,
           padding: compact ? '1px 6px' : '2px 7px',
           borderRadius: 4,
-          fontSize: compact ? 10 : 11,
+          fontSize: FS.xs,
           fontWeight: 700,
           lineHeight: compact ? '15px' : '17px',
           background: n.bg,

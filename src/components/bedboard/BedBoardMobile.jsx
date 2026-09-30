@@ -48,7 +48,7 @@ export default function BedBoardMobile({
         <label style={{ position: 'relative', display: 'block' }}>
           <IconSearch size={17} stroke={1.75} color={C.text3} style={{ position: 'absolute', left: 10, top: 11 }} aria-hidden="true" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Tìm tên hoặc mã người bệnh" aria-label="Tìm người bệnh"
-            style={{ width: '100%', height: 40, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: '0 10px 0 34px', color: C.text, fontSize: 14, fontFamily: 'inherit' }} />
+            style={{ width: '100%', height: 40, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: '0 10px 0 34px', color: C.text, fontSize: FS.lg, fontFamily: 'inherit' }} />
         </label>
         <div style={{ fontSize: FS.sm, color: C.text2 }} role="status">
           {selCount > 0
@@ -81,8 +81,8 @@ export default function BedBoardMobile({
                 opacity: selCount > 0 && full ? 0.55 : 1,
               }}>
                 <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 4 }}>
-                  <b style={{ fontSize: 14, color: isInspecting ? C.blue : C.text }}>{room}</b>
-                  <span style={{ fontSize: FS.xs, fontWeight: 650, color: full ? C.red : C.text2, fontVariantNumeric: 'tabular-nums' }}>{pts.length}/{cap}{full ? ' Đầy' : ''}</span>
+                  <b style={{ fontSize: FS.lg, color: isInspecting ? C.blue : C.text }}>{room}</b>
+                  <span style={{ fontSize: FS.xs, fontWeight: 600, color: full ? C.red : C.text2, fontVariantNumeric: 'tabular-nums' }}>{pts.length}/{cap}{full ? ' Đầy' : ''}</span>
                 </span>
                 <span style={{ fontSize: FS.xs, color: C.text3 }}>{formatVND(roomPriceTier(room))}</span>
               </button>
@@ -94,7 +94,7 @@ export default function BedBoardMobile({
         {inspecting && (
           <div style={{ marginTop: 12, padding: 12, borderRadius: 7, background: C.surface, border: `1px solid ${C.blueBorder}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <b style={{ fontSize: 14, color: C.text }}>Phòng {inspecting.room} · {inspecting.pts.length}/{inspecting.cap}</b>
+              <b style={{ fontSize: FS.lg, color: C.text }}>Phòng {inspecting.room} · {inspecting.pts.length}/{inspecting.cap}</b>
               <button type="button" className="emr-icon-btn" onClick={() => setInspectRoom(null)} aria-label="Đóng phòng"><IconX size={18} stroke={1.75} /></button>
             </div>
             {inspecting.pts.length === 0 && <div style={{ fontSize: FS.sm, color: C.text2 }}>Phòng trống</div>}
@@ -105,7 +105,7 @@ export default function BedBoardMobile({
                 <div key={id} style={{ padding: '8px 0', borderTop: `1px solid ${C.border2}` }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{getPatientName(p)}</div>
+                      <div style={{ fontSize: FS.lg, fontWeight: 600, color: C.text }}>{getPatientName(p)}</div>
                       <div style={{ fontSize: FS.xs, color: C.text2, fontVariantNumeric: 'tabular-nums' }}>{id}</div>
                       {meta && <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta}</div>}
                     </div>
@@ -155,7 +155,7 @@ export default function BedBoardMobile({
             }}>
               <input type="checkbox" checked={isSelected} onChange={() => toggleSelectPx(id)} style={{ width: 20, height: 20, margin: '1px 0 0', accentColor: C.blue, flexShrink: 0 }} />
               <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ display: 'block', fontSize: 14, color: C.text, fontWeight: 600 }}>{getPatientName(p)}</span>
+                <span style={{ display: 'block', fontSize: FS.lg, color: C.text, fontWeight: 600 }}>{getPatientName(p)}</span>
                 <span style={{ display: 'block', fontSize: FS.xs, color: C.text2, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{id}</span>
                 {meta && <span style={{ display: 'block', fontSize: FS.xs, color: C.text3, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta}</span>}
               </span>
@@ -166,7 +166,7 @@ export default function BedBoardMobile({
 
       {/* Lưu — dính đáy vùng nội dung, phía trên thanh điều hướng dưới */}
       <div style={{ position: 'sticky', bottom: 0, padding: '10px 12px', borderTop: `1px solid ${C.border}`, background: C.surface }}>
-        <Btn variant="solidPrimary" icon={IconDeviceFloppy} loading={saving} onClick={handleSaveOnly} disabled={saving} style={{ width: '100%', minHeight: 42, fontSize: 14 }}>
+        <Btn variant="solidPrimary" icon={IconDeviceFloppy} loading={saving} onClick={handleSaveOnly} disabled={saving} style={{ width: '100%', minHeight: 42, fontSize: FS.lg }}>
           {saving ? 'Đang lưu…' : 'Lưu xếp phòng'}
         </Btn>
       </div>

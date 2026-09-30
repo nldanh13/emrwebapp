@@ -1,4 +1,4 @@
-import { C, TL_TYPE, FONT_MONO, FS } from '../../tokens.js';
+import { C, TL_TYPE, FS } from '../../tokens.js';
 import { Badge } from '../shared.jsx';
 import { buildTimelineFromThuoc } from './patientDetailUtils.js';
 import { routeInfo, routeShort } from '../../config/routes.js';
@@ -51,7 +51,7 @@ export default function PatientTimeline({ items = [], thuoc = null }) {
             <div style={{ flex: 1, marginBottom: 18 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <span style={{
-                  fontFamily: FONT_MONO,
+                  fontVariantNumeric: 'tabular-nums',
                   fontSize: FS.sm, fontWeight: 700,
                   color: timeKey === '—' ? C.text3 : C.blue,
                 }}>{timeKey}</span>
@@ -101,10 +101,10 @@ export default function PatientTimeline({ items = [], thuoc = null }) {
                             }} title={routeInfo(item.detail.duong_dung).label}>{routeShort(item.detail.duong_dung)}</span>
                           )}
                           {item.flag === 'TT' && (
-                            <Badge text="TT" bg={C.amberBg} color={C.amber} size={10} />
+                            <Badge text="TT" bg={C.amberBg} color={C.amber} size={FS.xs} />
                           )}
                           {item.flag && item.flag !== 'TT' && (
-                            <Badge text={item.flag} bg={C.redBg} color={C.red} size={10} />
+                            <Badge text={item.flag} bg={C.redBg} color={C.red} size={FS.xs} />
                           )}
                         </div>
                         {parts.length > 0 && (

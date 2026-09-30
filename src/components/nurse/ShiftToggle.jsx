@@ -15,11 +15,11 @@ export function ShiftToggle({ name, active, shift, onClick, large = false }) {
     <button type="button" aria-pressed={active} onClick={onClick} style={{
       display: 'inline-flex', alignItems: 'center', gap: 5,
       minHeight: large ? 40 : 34, padding: large ? '0 14px' : '0 12px', borderRadius: 5, border: '1px solid',
-      cursor: 'pointer', fontSize: large ? 14 : FS.md, fontFamily: 'inherit',
+      cursor: 'pointer', fontSize: large ? FS.lg : FS.md, fontFamily: 'inherit',
       background: active ? tone.bg : C.surface,
       borderColor: active ? tone.border : C.border,
       color: active ? tone.fg : C.text2,
-      fontWeight: active ? 650 : 450,
+      fontWeight: active ? 600 : 500,
     }}>
       {active && <IconCheck size={15} stroke={2.2} aria-hidden="true" />}
       {name}
@@ -32,7 +32,7 @@ export function ShiftBucket({ label, shift, roster, selected = [], onToggle, emp
   const tone = SHIFT_META[shift] || SHIFT_META.oncall;
   return (
     <section style={{ marginBottom: 16 }}>
-      <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: FS.lg, fontWeight: 650, color: C.text }}>
+      <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: FS.lg, fontWeight: 600, color: C.text }}>
         <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 999, background: tone.fg }} />
         {label || tone.label}
         <span style={{ fontSize: FS.sm, fontWeight: 500, color: C.text2 }}>{selected.length} người</span>

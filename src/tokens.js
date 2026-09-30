@@ -18,7 +18,13 @@ export const FS = {
   md: 13,     // nội dung
   lg: 14.5,   // tiêu đề mục
   xl: 16.5,   // tiêu đề màn hình
+  stat: 20,   // số liệu lớn trên thẻ thống kê (KPI)
 };
+
+// Độ đậm: chỉ dùng 400 (thường) · 500 (vừa) · 600 (nhãn, mục đang chọn) · 700 (tiêu đề, số liệu).
+// Không dùng 550/650/750/800/850/900: Segoe UI/Aptos không có các mức này nên trình duyệt
+// làm tròn sang Black/Semibold và chữ trông như khác font.
+export const FW = { regular: 400, medium: 500, semibold: 600, bold: 700 };
 
 // Khoảng cách theo bội số 4px.
 export const SP = { 1: 4, 2: 8, 3: 12, 4: 16, 5: 24 };
@@ -92,4 +98,6 @@ export const FLAG = {
   new_order:      { text: 'YL mới',    bg: C.blueBg,  color: C.blue  },
 };
 
-export const mono = { fontFamily: FONT_MONO, fontSize: 11 };
+// Số liệu (giờ, liều, mã) dùng cùng font giao diện, chỉ đổi sang chữ số đều.
+// FONT_MONO chỉ dành cho log, mã lệnh, biến môi trường, stacktrace.
+export const mono = { fontVariantNumeric: 'tabular-nums' };

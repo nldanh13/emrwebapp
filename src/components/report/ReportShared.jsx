@@ -14,7 +14,7 @@ function Chip({ active, children, onClick, title }) {
         height: 30, padding: '0 10px', borderRadius: 5, cursor: 'pointer', flexShrink: 0,
         border: `1px solid ${active ? C.blueBorder : C.border2}`,
         background: active ? C.blueBg : C.surface, color: active ? C.blue : C.text,
-        fontSize: FS.sm, fontWeight: active ? 650 : 500, fontFamily: 'inherit', whiteSpace: 'nowrap',
+        fontSize: FS.sm, fontWeight: active ? 600 : 500, fontFamily: 'inherit', whiteSpace: 'nowrap',
       }}
     >{children}</button>
   );
@@ -43,7 +43,7 @@ function EmptyFilter() {
 }
 
 function Th({ children, align = 'left' }) {
-  return <th scope="col" style={{ padding: '8px 10px', fontWeight: 650, fontSize: FS.xs, color: C.text2, textAlign: align, whiteSpace: 'nowrap' }}>{children}</th>;
+  return <th scope="col" style={{ padding: '8px 10px', fontWeight: 600, fontSize: FS.xs, color: C.text2, textAlign: align, whiteSpace: 'nowrap' }}>{children}</th>;
 }
 
 function Td({ children, align = 'left', num = false, style = {} }) {
@@ -64,7 +64,7 @@ function TimeBadge({ row }) {
         color: odd ? C.amber : C.text,
         background: odd ? C.amberBg : C.surface2,
         border: `1px solid ${odd ? C.amberBorder : C.border2}`,
-        borderRadius: 4, padding: '1px 6px', fontVariantNumeric: 'tabular-nums', fontSize: FS.sm, fontWeight: 650,
+        borderRadius: 4, padding: '1px 6px', fontVariantNumeric: 'tabular-nums', fontSize: FS.sm, fontWeight: 600,
       }}
     >
       {row.timeText}
@@ -84,7 +84,7 @@ const TONES = {
 
 function RouteBadge({ route }) {
   const [fg, bg, border] = TONES[routeInfo(route).tone] || TONES.gray;
-  return <span style={{ display: 'inline-block', color: fg, background: bg, border: `1px solid ${border}`, borderRadius: 4, padding: '0 6px', lineHeight: 1.6, fontSize: FS.xs, fontWeight: 650, whiteSpace: 'nowrap' }}>{route || 'Khác'}</span>;
+  return <span style={{ display: 'inline-block', color: fg, background: bg, border: `1px solid ${border}`, borderRadius: 4, padding: '0 6px', lineHeight: 1.6, fontSize: FS.xs, fontWeight: 600, whiteSpace: 'nowrap' }}>{route || 'Khác'}</span>;
 }
 
 function TuTucMark() {
@@ -105,7 +105,7 @@ function MedRow({ time, name, tuTuc, quantity, unit, route, note, odd = false })
     <div style={{ padding: '7px 12px', borderTop: `1px solid ${C.border2}`, background: odd ? C.amberBg : 'transparent' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px 10px', flexWrap: 'wrap' }}>
         {time}
-        <span style={{ flex: '1 1 160px', minWidth: 0, color: C.text, fontWeight: 650, fontSize: FS.md }}>
+        <span style={{ flex: '1 1 160px', minWidth: 0, color: C.text, fontWeight: 600, fontSize: FS.md }}>
           {name}{tuTuc && <TuTucMark />}
         </span>
         <span style={{ color: C.text, fontVariantNumeric: 'tabular-nums', fontSize: FS.md, whiteSpace: 'nowrap' }}>{quantity} {unit}</span>
@@ -121,7 +121,7 @@ function PatientMedGroup({ room, patientName, meta, children }) {
   return (
     <section style={{ border: `1px solid ${C.border2}`, borderRadius: 7, background: C.surface, overflow: 'hidden' }}>
       <header style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '8px 12px', background: C.surface2, flexWrap: 'wrap' }}>
-        <span style={{ color: C.text2, fontSize: FS.sm, fontWeight: 650, fontVariantNumeric: 'tabular-nums' }}>{room}</span>
+        <span style={{ color: C.text2, fontSize: FS.sm, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{room}</span>
         <b style={{ color: C.text, fontSize: FS.md, flex: 1, minWidth: 0 }}>{patientName}</b>
         {meta && <span style={{ color: C.text2, fontSize: FS.xs }}>{meta}</span>}
       </header>

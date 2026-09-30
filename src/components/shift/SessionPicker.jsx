@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { IconCheck, IconPlayerPlay, IconTrash, IconX } from '@tabler/icons-react';
-import { C } from '../../tokens.js';
+import { C, FS } from '../../tokens.js';
 import { Badge, Btn, SectionLabel, Spinner } from '../shared.jsx';
 import * as api from '../../api.js';
 import { setSessionId } from '../../hooks/useSession.js';
@@ -50,12 +50,12 @@ export default function SessionPicker({ onUseSession, onFetchNew, onClose, toast
         padding: '20px 20px 36px', maxHeight: '80vh', overflowY: 'auto',
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>Chọn dữ liệu</span>
+          <span style={{ fontSize: FS.lg, fontWeight: 600, color: C.text }}>Chọn dữ liệu</span>
           <button type="button" className="emr-icon-btn" onClick={onClose} aria-label="Đóng" title="Đóng"><IconX size={18} stroke={1.75} /></button>
         </div>
 
         <Btn variant="primary" onClick={onFetchNew}
-          style={{ width: '100%', justifyContent: 'center', marginBottom: 16, padding: '10px', fontSize: 13 }}>
+          style={{ width: '100%', justifyContent: 'center', marginBottom: 16, padding: '10px', fontSize: FS.md }}>
           ⟳ Quét & lấy dữ liệu mới từ EMR
         </Btn>
 
@@ -66,7 +66,7 @@ export default function SessionPicker({ onUseSession, onFetchNew, onClose, toast
             <Spinner size={16} />
           </div>
         ) : sessions.length === 0 ? (
-          <div style={{ padding: '14px 0', fontSize: 12, color: C.text3 }}>
+          <div style={{ padding: '14px 0', fontSize: FS.sm, color: C.text3 }}>
             Chưa có dữ liệu cũ.
           </div>
         ) : (
@@ -81,11 +81,11 @@ export default function SessionPicker({ onUseSession, onFetchNew, onClose, toast
                   borderRadius: 8, padding: 12,
                 }}>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{dateRangeLabel(item)}</span>
+                    <span style={{ fontSize: FS.md, fontWeight: 600, color: C.text }}>{dateRangeLabel(item)}</span>
                     <Badge text={primaryLabel(item.primary)} bg={color + '22'} color={color} />
                     {item.is_current && <Badge text="Đang dùng" bg={C.blueBg} color={C.blue} />}
                   </div>
-                  <div style={{ fontSize: 11, color: C.text3, marginBottom: 10 }}>
+                  <div style={{ fontSize: FS.xs, color: C.text3, marginBottom: 10 }}>
                     {item.count || 0} BN · {fmtTime(item.modified)} · {fmtAge(item.modified)}
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
