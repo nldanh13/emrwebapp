@@ -8,7 +8,9 @@ function firstSurgeryByEncounter(surgeryRows) {
     const current = byEncounter.get(encounterId);
     const currentTime = String(current?.surgery_datetime || current?.surgery_date || '');
     const candidateTime = String(surg?.surgery_datetime || surg?.surgery_date || '');
-    if (!current || (candidateTime && candidateTime.localeCompare(currentTime) < 0)) {
+    // Dòng có ngày luôn thắng dòng không có ngày (trước đây dòng không ngày đứng trước giữ
+    // chỗ mãi); giữa hai dòng có ngày, chọn dòng sớm hơn (chuỗi ISO so sánh được).
+    if (!current || (candidateTime && (!currentTime || candidateTime.localeCompare(currentTime) < 0))) {
       byEncounter.set(encounterId, surg);
     }
   }

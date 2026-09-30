@@ -54,7 +54,6 @@ function newStudyRun() {
   fs.writeFileSync(path.join(studyDir, 'study.json'), JSON.stringify({
     id: `nc_test_${seq}`,
     name: 'Đề tài thử',
-    governance: { protocol_code: 'DC-01', approval_status: 'approved', inclusion_criteria: 'Gãy cổ xương đùi', exclusion_criteria: 'Dưới 18 tuổi' },
     data_requirements: { parts: ['xn', 'cdha'], items: [{ kind: 'imaging_modality', value: 'CT', label: 'Có CT' }] },
   }));
   fs.writeFileSync(path.join(runDir, 'manifest.json'), JSON.stringify({
@@ -100,7 +99,7 @@ test('Snapshot hoàn tất: đủ file, SHA256SUMS, manifest truy nguồn đư�
   assert.strictEqual(snap.normalized_schema_version, 12);
   assert.ok(snap.data_dictionary_version && snap.data_dictionary_sha256);
   assert.ok('analysis_config' in snap && snap.variable_selection_hash);
-  assert.strictEqual(snap.study.governance.inclusion_criteria, 'Gãy cổ xương đùi');
+  assert.ok(!('governance' in snap.study), 'không còn thông tin phê duyệt đề cương');
   assert.deepStrictEqual(snap.study.data_requirements.parts, ['xn', 'cdha']);
   assert.ok(snap.study.requirements.parts.includes('cdha'));
   const v = R.verifyDatasetSnapshot(runDir, snap.name);

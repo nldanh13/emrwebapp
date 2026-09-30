@@ -47,6 +47,12 @@ Mỗi kho (kho gốc `du_lieu_goc` hoặc một nghiên cứu riêng) nằm ở
   nằm viện chồng lấn hoặc cùng ngày ra viện được liệt kê trong `encounter_review.csv`
   (`possible_same_stay`) để người duyệt. Quét lại danh sách bằng bản hiện tại để có
   Mã nội trú.
+- **Đợt chưa có ngày ra viện** (đang nằm hoặc chưa lấy được ngày ra): khi ghép kết quả,
+  khoảng nằm viện được tính **tới hôm nay** (trước đây cắt ở 60 ngày sau ngày vào, nên
+  người bệnh nằm lâu hơn bị mất kết quả). QA báo số đợt này (`missing_discharge_date`).
+- Người bệnh chỉ có **một** đợt thì dòng XN/CĐHA của họ được gắn vào đợt đó cả khi thời
+  điểm nằm ngoài khoảng nằm viện; dòng đó có `is_within_encounter = 0` và QA báo số
+  lượng (`child_outside_encounter`) để người duyệt quyết định giữ hay loại.
 
 ## 3. Kiểm soát sau mỗi lần Chuẩn hóa
 
@@ -56,7 +62,7 @@ Mỗi kho (kho gốc `du_lieu_goc` hoặc một nghiên cứu riêng) nằm ở
 | `normalize_history.jsonl` | Mỗi lần chuẩn hóa thêm 1 dòng (không ghi đè): thời điểm, run_id, phiên bản schema, phiên bản code (version + git commit), chữ ký input, số dòng vào/ra, trạng thái SQLite, tóm tắt QA. |
 | `qa_report.json` | Lỗi **chặn** và **cảnh báo**, chỉ chứa mã giả danh và số đếm. |
 | `encounter_review.csv` | Danh sách đợt cần người duyệt kèm lý do. |
-| `datasets/<tên>/` | Bản bất biến của mỗi dataset cuối: `analysis_final.csv`, `data_dictionary.json`, `dataset_manifest.json` (run, chữ ký dữ liệu chuẩn hóa, phiên bản schema/code/từ điển, cấu hình biến, đề cương + tiêu chí + yêu cầu dữ liệu của nghiên cứu, QA, checksum từng file) và `SHA256SUMS` (gồm cả checksum của manifest). Xem mục 3c. |
+| `datasets/<tên>/` | Bản bất biến của mỗi dataset cuối: `analysis_final.csv`, `data_dictionary.json`, `dataset_manifest.json` (run, chữ ký dữ liệu chuẩn hóa, phiên bản schema/code/từ điển, cấu hình biến, yêu cầu dữ liệu của nghiên cứu, QA, checksum từng file) và `SHA256SUMS` (gồm cả checksum của manifest). Xem mục 3c. |
 
 **Lỗi chặn** (không cho tạo dataset cuối): trùng `encounter_id`/Mã NC/`patient_code`,
 thiếu khóa bắt buộc, dòng con trỏ tới đợt không tồn tại, trùng mã dòng, SQLite lỗi
@@ -64,8 +70,9 @@ hoặc lệch với CSV (so sha256), lần chuẩn hóa trước dừng giữa c
 
 **Cảnh báo** (cần xem lại): dòng con chưa ghép được đợt, thiếu ngày vào viện, ngày
 ra trước ngày vào, ngày ở tương lai, nằm viện trên 365 ngày, ca nghi cùng đợt, dòng
-XN/CĐHA thô giống hệt nhau đã bỏ bớt, và cùng BN + cùng thời điểm + cùng chỉ số mà kết
-quả khác nhau (giữ tất cả, không tự chọn).
+XN/CĐHA thô giống hệt nhau đã bỏ bớt, cùng BN + cùng thời điểm + cùng chỉ số mà kết
+quả khác nhau (giữ tất cả, không tự chọn), dòng đã gắn đợt nhưng ngoài thời gian nằm
+viện, và đợt chưa có ngày ra viện.
 Hệ thống không tự sửa giá trị lâm sàng. Các cột suy luận (ví dụ
 `injury_side_suggested`) được liệt kê trong `qa_report.json` → `notes` với trạng
 thái `needs_human_confirmation`.
@@ -226,10 +233,25 @@ lượt:
 
 Một ca thiếu CT vẫn `usable` cho đề tài không cần CT.
 
+## 3d. Chạy chồng và bảng lớn
+
+- **Một thao tác ghi mỗi kho:** trong lúc kho gốc (hoặc một nghiên cứu) đang Lấy dữ liệu,
+  Thu thập tự động, Chuẩn hóa, Tạo dataset..., thao tác ghi khác trên **cùng kho** bị từ
+  chối (HTTP 409, `RESEARCH_SCOPE_BUSY`) kèm tên tác vụ đang chạy. Kho khác, thao tác chỉ
+  đọc và nút Dừng không bị chặn. Trước đây hai người/hai tab có thể cùng ghi
+  `progress.json`, sổ thu thập và CSV của cùng một run.
+- **CSV nội bộ không có dấu `'`:** bảng chuẩn hóa được ghi nguyên giá trị (số âm như
+  `-3.5`, kết quả `+`/`-`). Bản trước chèn `'` (bộ chặn công thức Excel) vào các giá trị
+  này; bộ đọc tự bỏ dấu đó ở file cũ. File người dùng **tải về** vẫn được chặn công thức.
+- **Bảng lớn đọc theo dòng:** đếm dòng, xuất CSV (ghi ra file tạm cạnh dữ liệu, quyền
+  600, xóa ngay sau khi gửi), tra cứu người bệnh khi không có SQLite và đồng bộ XN/CĐHA
+  sang Kho người bệnh không nạp trọn bảng vào RAM.
+
 ## 4. Dữ liệu định danh
 
 - Có định danh trực tiếp: `du_lieu_ban_dau.csv`, `research_source.csv`,
-  `hchanh_*.csv`, `patients.csv`, `analysis_ready.csv` (họ tên), `research.sqlite3`.
+  `hchanh_*.csv`, `patients.csv`, `analysis_ready.csv` (họ tên), `research.sqlite3`,
+  `patient_link.csv` (bảng liên kết của kho).
 - Xem/xuất mặc định **đã che** theo tên cột (`server/research/export_utils.js`),
   gồm cả Mã nội trú, số lưu trữ và URL EMR (URL chứa `keyword=<Mã BN>`).
 - Xem/xuất có định danh cần đồng thời: `identified=1`, vai trò supervisor/admin, và
@@ -248,20 +270,23 @@ Một ca thiếu CT vẫn `usable` cho đề tài không cần CT.
   Stacktrace chromedriver bị lược khỏi log.
 - Tab "Tra cứu người bệnh" hỏi `GET /research/identified-access` trước; khi đang khóa
   thì hiện điều kiện cần bật thay vì gọi API rồi báo lỗi.
-- Chưa tách bảng liên kết Mã BN ↔ Mã NC khỏi dữ liệu phân tích: các bảng chuẩn hóa
-  vẫn giữ `patient_code` để ghép. Việc tách là thay đổi cấu trúc lớn, đề xuất làm ở
-  bước sau.
+- **Bảng liên kết Mã BN ↔ mã giả danh** (`patient_link.csv`) nằm ở thư mục **kho**
+  (`research_store/<kho>/patient_link.csv`, quyền 600), không nằm trong run hay dataset.
+  Mỗi Mã BN có một `patient_key` (`P000123`) cấp tuần tự, giữ nguyên qua các lần Chuẩn hóa
+  và các run của cùng kho; mã tuần tự không suy ngược được ra Mã BN nếu không có file liên
+  kết.
+- Mọi bảng chuẩn hóa có `patient_code` có thêm `patient_key`. Bảng làm việc nội bộ (thư
+  mục run, SQLite) **vẫn giữ `patient_code`** để ghép dữ liệu và tra cứu người bệnh.
+- **Dữ liệu phân tích chỉ mang `patient_key`:** `analysis_selected.csv`,
+  `analysis_final.csv` (và bản lưu trong `datasets/`) không có Mã BN, họ tên hay cột định
+  danh trực tiếp nào; các bảng trong `encoded/` dùng `patient_key` thay Mã BN. Bản xuất ẩn
+  danh của các bảng khác bỏ Mã BN nhưng giữ `patient_key`, nên vẫn nối được các đợt của
+  cùng người bệnh.
 
 ## 5. Nghiên cứu riêng
 
 - Mỗi nghiên cứu có thư mục, cohort, run, SQLite và dataset riêng. Thay đổi một
   nghiên cứu không ghi vào thư mục nghiên cứu khác.
-- `study.json` → `governance`: mã/phiên bản đề cương, trạng thái phê duyệt, số và
-  ngày phê duyệt, giai đoạn dữ liệu, tiêu chí chọn/loại trừ, trường định danh được
-  duyệt, người được phép truy cập. Cập nhật qua
-  `POST /api/research/studies/:id/governance` (supervisor). Hiện tại **chỉ lưu và
-  ghi vào manifest dataset**, chưa dùng để chặn truy cập. **[Bệnh viện xác nhận]**
-  có bắt buộc `approval_status=approved` trước khi xuất hay không.
 - Xóa nghiên cứu: chỉ admin, thư mục được chuyển vào `research_store/_deleted/`
   (có audit `research.study_deleted`), không xóa vĩnh viễn.
 
@@ -286,8 +311,13 @@ Không có migration phá dữ liệu. Các bước:
 
 1. Sao lưu như mục 6.1.
 2. `git pull`, khởi động lại server.
-3. Mở từng kho/nghiên cứu, bấm **Chuẩn hóa**. Schema tăng lên v12 nên lần đầu sẽ
-   chuẩn hóa lại đầy đủ và tạo `qa_report.json`, `encounter_review.csv`.
+3. Mở từng kho/nghiên cứu, bấm **Chuẩn hóa**. Schema tăng lên v15 nên lần đầu sẽ
+   chuẩn hóa lại đầy đủ và tạo `qa_report.json`, `encounter_review.csv`. v14 ghi lại
+   các bảng chuẩn hóa và SQLite không còn dấu `'` trước số âm/`+`; dataset cuối đã lưu
+   trong `datasets/` trước đó vẫn giữ nguyên (bất biến), cần **tạo lại dataset cuối**
+   và kiểm tra các file đã xuất để phân tích trước đây.
+   v15 thêm `patient_key` và tạo `patient_link.csv` cho mỗi kho; dataset cuối/bảng mã hóa
+   tạo sau đó không còn Mã BN, họ tên.
 4. Nếu `research_source.csv` cũ có Mã NC bị trùng (lỗi cũ cấp `NC0001` cho mọi
    dòng), file này được tạo lại với Mã NC duy nhất. Mã được lấy theo thứ tự ưu tiên
    (1) mã hợp lệ cũ của cùng dòng, (2) mã script XN/CĐHA đã cấp cho cùng đợt trong

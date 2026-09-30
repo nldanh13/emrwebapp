@@ -44,8 +44,8 @@ def test_vtyt_catalog_uses_atomic_json_helpers_and_logs_mutations():
     assert "appendActivity(ctx, { kind: 'vtyt_catalog.reset'" in source
 
 
-def test_research_fetch_hchanh_run_is_audited():
-    source = (ROOT / "server/routes/research.js").read_text(encoding="utf-8")
+def test_research_fetch_hchanh_run_is_audited(research_backend_src):
+    source = research_backend_src
     start = source.index("async function fetchHchanhForResearchRun")
     end = source.index("\nfunction ", source.index("\n}\n", start))
     block = source[start:end]

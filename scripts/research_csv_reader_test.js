@@ -63,6 +63,20 @@ test('Bỏ dòng trống, dòng thiếu/thừa ô, tiêu đề trống, dòng cu
   assert.strictEqual(r.count, 3);
 });
 
+test('Số âm và kết quả "+"/"-" ghi ra rồi đọc lại giữ nguyên; file cũ có dấu \' được sửa khi đọc', () => {
+  const { rowsToCsvRaw, rowsToCsv } = require('../server/utils/csv');
+  const cols = ['result_num', 'days_from_discharge', 'result_raw', 'note'];
+  const rows = [{ result_num: '-3.5', days_from_discharge: '-6', result_raw: '+', note: '=SUM(A1)' }];
+  const file = write('neg.csv', `\ufeff${rowsToCsvRaw(cols, rows)}`);
+  assert.deepStrictEqual(readCsvFileRows(file, 10).rows, rows);
+  // File ghi bằng bản cũ (qua bộ chặn công thức) vẫn đọc ra đúng giá trị gốc.
+  const legacy = write('legacy.csv', `\ufeff${rowsToCsv(cols, rows)}`);
+  assert.ok(fs.readFileSync(legacy, 'utf8').includes("'-3.5"), 'bộ chặn công thức vẫn dùng cho file tải về');
+  assert.deepStrictEqual(readCsvFileRows(legacy, 10).rows, rows);
+  // Giá trị có dấu ' nhưng không theo sau bởi = + - @ thì giữ nguyên.
+  assert.deepStrictEqual(readCsvFileRows(write('q2.csv', "a\n'abc\n"), 10).rows, [{ a: "'abc" }]);
+});
+
 test('File rỗng hoặc chỉ có tiêu đề', () => {
   assert.deepStrictEqual(readCsvFileRows(write('e.csv', ''), 10), { columns: [], rows: [], count: 0, limited: false });
   const h = readCsvFileRows(write('h.csv', 'a,b\n'), 10);
