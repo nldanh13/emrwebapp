@@ -2378,7 +2378,7 @@ function buildCoverageSummary(runDir) {
 
 // Mỗi dataset cuối được lưu thành một phiên bản bất biến trong datasets/<tên>/ kèm
 // dataset_manifest.json ghi cách tạo ra nó (nguồn, chữ ký input đã chuẩn hóa, phiên
-// bản schema/code, cấu hình biến, thông tin đề cương của nghiên cứu, QA). File
+// bản schema/code, cấu hình biến, yêu cầu dữ liệu và chọn biến của nghiên cứu, QA). File
 // analysis_final.csv ở gốc run chỉ là bản "hiện hành" và có thể bị Chuẩn hóa gỡ đi.
 //
 // Ghi an toàn: mọi file được ghi vào thư mục tạm datasets/.tmp_<tên>_<ngẫu nhiên>/, kiểm
@@ -2498,14 +2498,13 @@ function cleanupStaleDatasetStaging(runDir, { now = Date.now() } = {}) {
   return removed;
 }
 
-// Thông tin truy nguồn của nghiên cứu: đề cương (tiêu chí chọn/loại trừ), yêu cầu dữ liệu,
-// chọn biến. Kho gốc không có study.json → null.
+// Thông tin truy nguồn của nghiên cứu: yêu cầu dữ liệu, chọn biến.
+// Kho gốc không có study.json → null.
 function studyTraceInfo(studyMeta) {
   if (!studyMeta) return null;
   return {
     id: studyMeta.id,
     name: studyMeta.name,
-    governance: studyMeta.governance || null,
     data_requirements: studyMeta.data_requirements || null,
     requirements: collection.requirementsFromStudy(studyMeta),
     variable_selection: studyMeta.variable_selection || studyMeta.analysis_config?.variable_selection || null,
@@ -8766,34 +8765,6 @@ function buildSelectedAnalysisForRun(runDir, analysisReadyRows, normalizedRowsBy
   return { rows: selected.rows.length, columns: selected.columns.length, manifest: selected.manifest };
 }
 
-// Thông tin quản trị của một nghiên cứu. Hệ thống CHỈ LƯU và ghi kèm vào
-// dataset_manifest.json của mỗi dataset cuối; việc phê duyệt đề cương, ai được truy
-// cập, trường định danh nào được phép là quyết định của hội đồng đạo đức/bệnh viện.
-const STUDY_APPROVAL_STATUSES = ['draft', 'submitted', 'approved', 'rejected', 'expired', 'unknown'];
-function sanitizeStudyGovernance(input, current = null) {
-  const src = input && typeof input === 'object' ? input : {};
-  const str = (key, max = 300) => String(src[key] ?? current?.[key] ?? '').replace(/[\u0000-\u001f]+/g, ' ').trim().slice(0, max);
-  const status = String(src.approval_status ?? current?.approval_status ?? 'unknown').trim();
-  const list = (key) => {
-    const raw = src[key] ?? current?.[key] ?? [];
-    return (Array.isArray(raw) ? raw : String(raw).split(/[,\n]/)).map(v => String(v).trim()).filter(Boolean).slice(0, 100);
-  };
-  return {
-    protocol_code: str('protocol_code', 80),
-    protocol_version: str('protocol_version', 40),
-    approval_status: STUDY_APPROVAL_STATUSES.includes(status) ? status : 'unknown',
-    approval_ref: str('approval_ref', 120),
-    approval_date: str('approval_date', 20),
-    data_period_from: str('data_period_from', 20),
-    data_period_to: str('data_period_to', 20),
-    inclusion_criteria: str('inclusion_criteria', 2000),
-    exclusion_criteria: str('exclusion_criteria', 2000),
-    approved_identified_fields: list('approved_identified_fields'),
-    authorized_users: list('authorized_users'),
-    updated_at: nowIso(),
-  };
-}
-
 router.post('/research/studies', (req, res) => {
   try {
     const name = String(req.body?.name || '').trim();
@@ -8819,7 +8790,6 @@ router.post('/research/studies', (req, res) => {
       type: 'archive_derived',
       analysis_config,
       variable_selection,
-      governance: sanitizeStudyGovernance(req.body?.governance),
       created_at: nowIso(),
       updated_at: nowIso(),
     };
@@ -8842,25 +8812,6 @@ router.post('/research/studies/:studyId/analysis-config', (req, res) => {
     if (study.analysis_config?.variable_selection) analysis_config.variable_selection = study.analysis_config.variable_selection;
     const updated = updateStudy(study.id, { analysis_config });
     return res.json({ status: 'ok', message: `Đã cập nhật cấu hình phân tích: ${ANALYSIS_PRESETS[presetId].label}.`, study: updated });
-  } catch (err) {
-    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
-  }
-});
-
-router.post('/research/studies/:studyId/governance', (req, res) => {
-  try {
-    const study = readStudy(req.params.studyId);
-    if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
-    const governance = sanitizeStudyGovernance(req.body || {}, study.governance || null);
-    const updated = updateStudy(study.id, { governance });
-    appendSecurityAudit({
-      kind: 'research.study_governance_updated',
-      actor: { id: String(req.auth?.id || ''), role: String(req.auth?.role || '') },
-      study_id: study.id,
-      approval_status: governance.approval_status,
-      protocol_version: governance.protocol_version,
-    });
-    return res.json({ status: 'ok', study: updated });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }

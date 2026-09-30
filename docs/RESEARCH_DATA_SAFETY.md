@@ -62,7 +62,7 @@ Mỗi kho (kho gốc `du_lieu_goc` hoặc một nghiên cứu riêng) nằm ở
 | `normalize_history.jsonl` | Mỗi lần chuẩn hóa thêm 1 dòng (không ghi đè): thời điểm, run_id, phiên bản schema, phiên bản code (version + git commit), chữ ký input, số dòng vào/ra, trạng thái SQLite, tóm tắt QA. |
 | `qa_report.json` | Lỗi **chặn** và **cảnh báo**, chỉ chứa mã giả danh và số đếm. |
 | `encounter_review.csv` | Danh sách đợt cần người duyệt kèm lý do. |
-| `datasets/<tên>/` | Bản bất biến của mỗi dataset cuối: `analysis_final.csv`, `data_dictionary.json`, `dataset_manifest.json` (run, chữ ký dữ liệu chuẩn hóa, phiên bản schema/code/từ điển, cấu hình biến, đề cương + tiêu chí + yêu cầu dữ liệu của nghiên cứu, QA, checksum từng file) và `SHA256SUMS` (gồm cả checksum của manifest). Xem mục 3c. |
+| `datasets/<tên>/` | Bản bất biến của mỗi dataset cuối: `analysis_final.csv`, `data_dictionary.json`, `dataset_manifest.json` (run, chữ ký dữ liệu chuẩn hóa, phiên bản schema/code/từ điển, cấu hình biến, yêu cầu dữ liệu của nghiên cứu, QA, checksum từng file) và `SHA256SUMS` (gồm cả checksum của manifest). Xem mục 3c. |
 
 **Lỗi chặn** (không cho tạo dataset cuối): trùng `encounter_id`/Mã NC/`patient_code`,
 thiếu khóa bắt buộc, dòng con trỏ tới đợt không tồn tại, trùng mã dòng, SQLite lỗi
@@ -277,12 +277,6 @@ Một ca thiếu CT vẫn `usable` cho đề tài không cần CT.
 
 - Mỗi nghiên cứu có thư mục, cohort, run, SQLite và dataset riêng. Thay đổi một
   nghiên cứu không ghi vào thư mục nghiên cứu khác.
-- `study.json` → `governance`: mã/phiên bản đề cương, trạng thái phê duyệt, số và
-  ngày phê duyệt, giai đoạn dữ liệu, tiêu chí chọn/loại trừ, trường định danh được
-  duyệt, người được phép truy cập. Cập nhật qua
-  `POST /api/research/studies/:id/governance` (supervisor). Hiện tại **chỉ lưu và
-  ghi vào manifest dataset**, chưa dùng để chặn truy cập. **[Bệnh viện xác nhận]**
-  có bắt buộc `approval_status=approved` trước khi xuất hay không.
 - Xóa nghiên cứu: chỉ admin, thư mục được chuyển vào `research_store/_deleted/`
   (có audit `research.study_deleted`), không xóa vĩnh viễn.
 
