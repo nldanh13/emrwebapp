@@ -1847,8 +1847,13 @@ export default function ResearchTab({ toast }) {
   const [showTechnicalVariables, setShowTechnicalVariables] = useState(false);
   const [selectedVariableIds, setSelectedVariableIds] = useState(() => new Set());
   const [variableAggregations, setVariableAggregations] = useState({});
+  const [variableSurveyLabels, setVariableSurveyLabels] = useState({});
   const [variableConditions, setVariableConditions] = useState([]);
   const [variableStudyDraft, setVariableStudyDraft] = useState({ name: '', description: '' });
+  const [variablePreview, setVariablePreview] = useState(null);
+  const [variablePreviewLoading, setVariablePreviewLoading] = useState(false);
+  const [variablePreviewError, setVariablePreviewError] = useState('');
+  const [variablePreviewConfirmed, setVariablePreviewConfirmed] = useState(false);
 
   // Dùng ref cho toast để tránh callback recreation mỗi khi parent re-render
   const toastRef = useRef(toast);
@@ -2921,6 +2926,7 @@ export default function ResearchTab({ toast }) {
       table_label: v.group_label || v.table_label || '',
       name: v.name,
       label: v.display_label || v.name,
+      survey_label: variableSurveyLabels[v.id] || v.display_label || v.name,
       type: v.type,
       role: v.role,
       virtual_kind: v.virtual_kind || '',
@@ -2939,7 +2945,31 @@ export default function ResearchTab({ toast }) {
         source_filter: variable?.source_filter || cond.source_filter || null,
       };
     }),
-  }), [selectedVariables, variableAggregations, variableConditions, variableCatalog, latest, allCatalogVariables]);
+  }), [selectedVariables, variableAggregations, variableSurveyLabels, variableConditions, variableCatalog, latest, allCatalogVariables]);
+
+  useEffect(() => {
+    setVariablePreview(null);
+    setVariablePreviewError('');
+    setVariablePreviewConfirmed(false);
+  }, [selectedVariableIds, variableAggregations, variableSurveyLabels, variableConditions]);
+
+  const loadVariablePreview = useCallback(async () => {
+    if (!selectedVariables.length) { t('Chọn ít nhất 1 biến để xem trước.', 'error'); return; }
+    setVariablePreviewLoading(true);
+    setVariablePreviewError('');
+    setVariablePreviewConfirmed(false);
+    try {
+      const result = await api.previewResearchArchiveVariables({ variable_selection: buildVariableSpec(), limit: 20 });
+      setVariablePreview(result);
+      t(`Đã kiểm tra ${compactNumber(result.summary?.total || 0)} lượt điều trị.`, 'ok');
+    } catch (error) {
+      const message = String(error?.message || error || 'Không xem trước được dữ liệu.');
+      setVariablePreviewError(message);
+      t(message, 'error');
+    } finally {
+      setVariablePreviewLoading(false);
+    }
+  }, [selectedVariables.length, buildVariableSpec, t]);
 
   const exportVariableSpec = useCallback(() => {
     const spec = buildVariableSpec();
@@ -2952,6 +2982,7 @@ export default function ResearchTab({ toast }) {
     const name = text(variableStudyDraft.name);
     if (!name) { t('Nhập tên nghiên cứu trước khi tạo.', 'error'); return; }
     if (!selectedVariables.length) { t('Chọn ít nhất 1 biến cần lấy.', 'error'); return; }
+    if (!variablePreview || !variablePreviewConfirmed) { t('Hãy xem trước dữ liệu và xác nhận bảng ánh xạ trước khi tạo.', 'error'); return; }
     setBusy(true);
     try {
       const spec = buildVariableSpec();
@@ -2984,7 +3015,7 @@ export default function ResearchTab({ toast }) {
         : `Đã tạo nghiên cứu "${name}".`, 'ok');
     } catch (e) { t(String(e.message || e), 'error'); }
     finally { setBusy(false); }
-  }, [variableStudyDraft, selectedVariables.length, buildVariableSpec, loadSummary, t]);
+  }, [variableStudyDraft, selectedVariables.length, variablePreview, variablePreviewConfirmed, buildVariableSpec, loadSummary, t]);
 
 
   // ── TABLE TAB GROUPS ──────────────────────────────────────────────────────
@@ -3381,7 +3412,7 @@ export default function ResearchTab({ toast }) {
       ['1', 'Nhập biến phiếu khảo sát', questionnaireTerms.length ? `${questionnaireTerms.length} mục` : 'Có thể bỏ qua'],
       ['2', 'Chọn biến trong kho', selectedVariables.length ? `${selectedVariables.length} biến` : 'Chưa chọn'],
       ['3', 'Đặt điều kiện lọc', variableConditions.length ? `${variableConditions.length} điều kiện` : 'Không bắt buộc'],
-      ['4', 'Tạo nghiên cứu', text(variableStudyDraft.name) && selectedVariables.length ? 'Sẵn sàng' : 'Chưa sẵn sàng'],
+      ['4', 'Xem trước và tạo', variablePreviewConfirmed ? 'Đã xác nhận' : 'Chưa xác nhận'],
     ];
     return (
       <div style={{ padding: '10px 12px 16px' }}>
@@ -3394,7 +3425,7 @@ export default function ResearchTab({ toast }) {
           </div>
           <div style={{ padding: 10, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))', gap: 8 }}>
             {workflowSteps.map(([number, label, sub], index) => {
-              const done = index === 0 ? questionnaireTerms.length > 0 : index === 1 ? selectedVariables.length > 0 : index === 2 ? variableConditions.length > 0 : text(variableStudyDraft.name) && selectedVariables.length > 0;
+              const done = index === 0 ? questionnaireTerms.length > 0 : index === 1 ? selectedVariables.length > 0 : index === 2 ? variableConditions.length > 0 : variablePreviewConfirmed;
               return (
                 <div key={number} style={{ display: 'grid', gridTemplateColumns: '27px minmax(0,1fr)', gap: 8, alignItems: 'center', padding: '7px 8px', borderRadius: 7, background: done ? C.greenBg : C.surface2, border: `1px solid ${done ? C.greenBorder : C.border2}` }}>
                   <span style={{ width: 27, height: 27, borderRadius: 999, display: 'grid', placeItems: 'center', background: done ? C.green : C.surface, color: done ? '#fff' : C.text2, border: `1px solid ${done ? C.green : C.border2}`, fontWeight: 700 }}>{done ? '✓' : number}</span>
@@ -3528,10 +3559,13 @@ export default function ResearchTab({ toast }) {
             <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Thông tin nghiên cứu</div>
             <input value={variableStudyDraft.name} onChange={e => setVariableStudyDraft(p => ({ ...p, name: e.target.value }))} placeholder="Tên nghiên cứu, VD: Gãy cổ xương đùi 2026" style={inp} />
             <textarea value={variableStudyDraft.description} onChange={e => setVariableStudyDraft(p => ({ ...p, description: e.target.value }))} placeholder="Mô tả ngắn / mục tiêu nghiên cứu" rows={2} style={{ ...inp, height: 'auto', paddingTop: 7, paddingBottom: 7, resize: 'vertical' }} />
-            <Btn variant="primary" onClick={createStudyFromVariableSelection} disabled={busy || !selectedVariables.length || !text(variableStudyDraft.name)} style={{ height: 30 }}>
+            <Btn onClick={loadVariablePreview} disabled={variablePreviewLoading || !selectedVariables.length} style={{ height: 30 }}>
+              {variablePreviewLoading ? <><Spinner size={9} /> Đang kiểm tra</> : 'Xem trước 20 lượt'}
+            </Btn>
+            <Btn variant="primary" onClick={createStudyFromVariableSelection} disabled={busy || !selectedVariables.length || !text(variableStudyDraft.name) || !variablePreviewConfirmed} style={{ height: 30 }}>
               {busy ? <><Spinner size={9} /> Đang tạo</> : '＋ Tạo nghiên cứu'}
             </Btn>
-            <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.4 }}>Tạo nghiên cứu từ biến và điều kiện đã chọn.</div>
+            <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.4 }}>Phải xem trước và xác nhận dữ liệu trước khi tạo nghiên cứu.</div>
           </div>
 
           <div style={{ marginTop: 12, fontSize: FS.sm, fontWeight: 700, color: C.text }}>Biến sẽ lấy</div>
@@ -3547,6 +3581,13 @@ export default function ResearchTab({ toast }) {
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.display_label}</div>
                       <div style={{ fontSize: FS.xs, color: C.text3 }}>{v.raw_name}</div>
+                      <input
+                        value={variableSurveyLabels[v.id] ?? v.display_label ?? v.name}
+                        onChange={e => setVariableSurveyLabels(prev => ({ ...prev, [v.id]: e.target.value }))}
+                        placeholder="Tên biến trên phiếu khảo sát"
+                        title="Tên cột muốn xuất theo phiếu khảo sát"
+                        style={{ ...inp, height: 26, marginTop: 5, fontSize: FS.xs, padding: '2px 6px' }}
+                      />
                       {isRepeatedTable && (
                         <select
                           value={variableAggregations[v.id] || 'list'}
@@ -3592,9 +3633,54 @@ export default function ResearchTab({ toast }) {
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
             <Btn variant="success" onClick={exportVariableSpec} disabled={!selectedVariables.length && !variableConditions.length} style={{ height: 28 }}>Tải cấu hình JSON</Btn>
-            <Btn onClick={() => { setSelectedVariableIds(new Set()); setVariableAggregations({}); setVariableConditions([]); }} style={{ height: 28 }}>Xóa chọn</Btn>
+            <Btn onClick={() => { setSelectedVariableIds(new Set()); setVariableAggregations({}); setVariableSurveyLabels({}); setVariableConditions([]); }} style={{ height: 28 }}>Xóa chọn</Btn>
           </div>
         </div>
+        {(variablePreview || variablePreviewError) && (
+          <div style={{ flex: '1 0 100%', minWidth: 0, borderTop: `1px solid ${C.border2}`, paddingTop: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Kiểm tra dữ liệu trước khi tạo nghiên cứu</div>
+                <div style={{ marginTop: 3, fontSize: FS.xs, color: C.text3 }}>Hiển thị tối đa 20 lượt; thông tin định danh được ẩn mặc định.</div>
+              </div>
+              <Btn onClick={loadVariablePreview} disabled={variablePreviewLoading} style={{ height: 28 }}>↻ Kiểm tra lại</Btn>
+            </div>
+            {variablePreviewError && <div style={{ marginTop: 10, color: C.red, background: C.redBg, border: `1px solid ${C.redBorder}`, borderRadius: 7, padding: 9 }}>{variablePreviewError}</div>}
+            {variablePreview && (
+              <>
+                <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(125px, 1fr))', gap: 7 }}>
+                  <StatBadge label="Tổng lượt" value={compactNumber(variablePreview.summary?.total || 0)} tone="info" />
+                  <StatBadge label="Đủ tất cả biến" value={compactNumber(variablePreview.summary?.complete || 0)} tone="ok" />
+                  <StatBadge label="Thiếu một phần" value={compactNumber(variablePreview.summary?.partial || 0)} tone="warn" />
+                  <StatBadge label="Trống toàn bộ" value={compactNumber(variablePreview.summary?.empty || 0)} tone="warn" />
+                  <StatBadge label="Cần rà soát" value={compactNumber(variablePreview.summary?.review || 0)} tone="warn" />
+                </div>
+                <div style={{ marginTop: 10, overflow: 'auto', border: `1px solid ${C.border2}`, borderRadius: 7, maxHeight: 390 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.xs, whiteSpace: 'nowrap' }}>
+                    <thead style={{ position: 'sticky', top: 0, background: C.surface2, zIndex: 1 }}><tr>
+                      {(variablePreview.columns || []).map(column => <th key={column} style={{ textAlign: 'left', padding: '7px 8px', borderBottom: `1px solid ${C.border2}` }}>{variablePreview.variables?.find(v => v.output_column === column)?.survey_label || column}</th>)}
+                    </tr></thead>
+                    <tbody>{(variablePreview.rows || []).map((row, index) => <tr key={row.encounter_id || row.research_code || index}>
+                      {(variablePreview.columns || []).map(column => <td key={column} style={{ padding: '6px 8px', borderBottom: `1px solid ${C.border2}`, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis' }}>{text(row[column]) || '—'}</td>)}
+                    </tr>)}</tbody>
+                  </table>
+                </div>
+                <div style={{ marginTop: 10, display: 'grid', gap: 5 }}>
+                  <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Độ đầy đủ theo từng biến</div>
+                  {(variablePreview.summary?.variables || []).map(variable => (
+                    <div key={variable.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(150px,1fr) auto auto', gap: 10, fontSize: FS.xs, color: C.text2 }}>
+                      <span>{variable.survey_label}</span><span>{variable.fill_rate}% có dữ liệu</span><span>thiếu {compactNumber(variable.missing)}</span>
+                    </div>
+                  ))}
+                </div>
+                <label style={{ marginTop: 12, padding: 10, display: 'flex', gap: 8, alignItems: 'flex-start', border: `1px solid ${variablePreviewConfirmed ? C.greenBorder : C.amberBorder}`, background: variablePreviewConfirmed ? C.greenBg : C.amberBg, borderRadius: 7, color: C.text, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={variablePreviewConfirmed} onChange={e => setVariablePreviewConfirmed(e.target.checked)} />
+                  <span><b>Tôi đã kiểm tra bảng ánh xạ và dữ liệu xem trước.</b><br/><span style={{ fontSize: FS.xs, color: C.text2 }}>Sau khi xác nhận, nút Tạo nghiên cứu sẽ được mở.</span></span>
+                </label>
+              </>
+            )}
+          </div>
+        )}
         </div>
       </div>
     );
