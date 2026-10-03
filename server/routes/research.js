@@ -49,7 +49,7 @@ const { archiveTablePath, chooseArchiveRunIdForResume, isStoppedRunResult, readA
 const { ensureResearchSourceRows, flattenHchanhIntoResearchRun, normalizeResearchSourceRows, readResearchHchanhSourceRows, researchHchanhMeta } = require('../research/research_source');
 const { fetchHchanhForResearchRun, hchanhDefaultFiles, hchanhFileStatusPatch, orderHistoryDefaultFiles, orderHistoryRunLabel, researchHeadlessFromBody } = require('../research/hchanh_fetch');
 const { addRowsToResultDayIndex, buildResultDayIndex, ingestAllResearchResultsToPatientDb, khoOverlayNote, overlayHchanhFromPatientDb, overlayResultsFromPatientDb, resultDayIndexHasRange } = require('../research/patient_db_overlay');
-const { loadRunTablesForSelection, sanitizeVariableSelection } = require('../research/selection_runtime');
+const { sanitizeVariableSelection, summarizeSelectionForRun } = require('../research/selection_runtime');
 const { normalizeArchiveLatest, normalizeInputSignature, normalizeRunOutputs } = require('../research/normalize');
 const { SCRIPT_PATH } = require('../research/worker_paths');
 const { appendCollectionVersions, readCollectionPartRows, readCollectionVersionIds, recoverCollectionTransactions, recoverPythonPatientCommits, runCollectionOrchestration, studyReadinessForRun, syncCollectionLedger } = require('../research/collection_runtime');
@@ -154,12 +154,10 @@ router.post('/research/archive/variable-preview', (req, res) => {
     const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
     if (!runDir || !fs.existsSync(runDir)) return res.status(400).json({ status: 'error', message: 'Chưa có dữ liệu chuẩn hóa để xem trước.' });
 
-    const analysisFile = path.join(runDir, TABLES.analysis_ready.file);
-    const analysisTable = readCsvTable(analysisFile, VARIABLE_PREVIEW_MAX_ENCOUNTERS);
-    const tableRows = loadRunTablesForSelection(runDir, selection, [], VARIABLE_PREVIEW_MAX_SOURCE_ROWS);
-    const cohortRows = variableSelection.filterCohortRowsByVariableSelection(analysisTable.rows || [], selection, tableRows);
-    const dataset = variableSelection.buildSelectedAnalysisDataset(cohortRows, selection, tableRows);
-    const summary = variableSelection.summarizeSelectedDataset(dataset);
+    const { dataset, summary, source_total: sourceTotal, source_limited: sourceLimited } = summarizeSelectionForRun(runDir, selection, {
+      maxEncounters: VARIABLE_PREVIEW_MAX_ENCOUNTERS,
+      maxSourceRows: VARIABLE_PREVIEW_MAX_SOURCE_ROWS,
+    });
     const redact = researchResponseShouldRedact(req);
     const sensitiveOutput = new Set(dataset.manifest.variables
       .filter(variable => redact && isSensitiveColumn(variable.name))
@@ -175,9 +173,11 @@ router.post('/research/archive/variable-preview', (req, res) => {
       summary,
       variables: dataset.manifest.variables,
       columns: redacted.columns,
-      rows: redacted.rows.slice(0, limit),
+      // Màn hình Tạo nghiên cứu chỉ hiện thống kê; dữ liệu từng lượt chỉ trả khi được yêu cầu rõ.
+      rows: req.body?.include_rows ? redacted.rows.slice(0, limit) : [],
       preview_limit: limit,
-      source_limited: Boolean(analysisTable.limited) || Object.values(tableRows).some(rows => rows.length >= VARIABLE_PREVIEW_MAX_SOURCE_ROWS),
+      source_total: sourceTotal,
+      source_limited: sourceLimited,
       removed_columns: [...(redacted.removed_columns || []), ...sensitiveOutput],
     });
   } catch (err) {

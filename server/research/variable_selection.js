@@ -484,6 +484,76 @@ function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByK
   };
 }
 
+// ── Thống kê mô tả cho từng biến (đo lường biến, không trả dữ liệu từng dòng) ──
+const STRICT_NUMBER = /^[-+]?\d+(?:[.,]\d+)?$/;
+
+function quantile(sorted, q) {
+  if (!sorted.length) return NaN;
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+
+const round = (n, digits = 2) => (Number.isFinite(n) ? Number(n.toFixed(digits)) : null);
+
+// Loại đo lường thực tế của cột kết quả: số (liên tục), ngày, phân loại hay văn bản tự do.
+function measureKind(variable, values) {
+  const aggregation = String(variable?.aggregation || 'list').toLowerCase();
+  if (['count', 'min', 'max', 'mean'].includes(aggregation)) return 'number';
+  if (aggregation === 'any') return 'category';
+  const type = String(variable?.type || '').toLowerCase();
+  if (type === 'date') return 'date';
+  const numeric = values.filter(v => STRICT_NUMBER.test(v)).length;
+  if (type === 'number' || (values.length && numeric / values.length >= 0.8)) return 'number';
+  if (type === 'category') return 'category';
+  const distinct = new Set(values).size;
+  return distinct <= 20 ? 'category' : 'text';
+}
+
+function describeValues(variable, rawValues) {
+  const values = rawValues.map(v => String(v ?? '').trim()).filter(Boolean);
+  const kind = measureKind(variable, values);
+  const out = { kind, n: values.length, distinct: new Set(values).size };
+  if (kind === 'number') {
+    const nums = values.filter(v => STRICT_NUMBER.test(v)).map(v => Number(v.replace(',', '.'))).sort((a, b) => a - b);
+    const mean = nums.length ? nums.reduce((sum, n) => sum + n, 0) / nums.length : NaN;
+    const sd = nums.length > 1 ? Math.sqrt(nums.reduce((sum, n) => sum + (n - mean) ** 2, 0) / (nums.length - 1)) : NaN;
+    Object.assign(out, {
+      n_numeric: nums.length,
+      non_numeric: values.length - nums.length,
+      mean: round(mean), sd: round(sd),
+      min: round(nums[0]), q1: round(quantile(nums, 0.25)), median: round(quantile(nums, 0.5)),
+      q3: round(quantile(nums, 0.75)), max: round(nums[nums.length - 1]),
+    });
+  } else if (kind === 'date') {
+    const times = values.map(v => parseComparableDate(v)).filter(Number.isFinite).sort((a, b) => a - b);
+    const fmt = t => { const d = new Date(t); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`; };
+    Object.assign(out, { n_date: times.length, min: times.length ? fmt(times[0]) : '', max: times.length ? fmt(times[times.length - 1]) : '' });
+  } else if (kind === 'category') {
+    const counts = new Map();
+    for (const v of values) counts.set(v, (counts.get(v) || 0) + 1);
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])));
+    const shown = top.slice(0, 6).map(([value, count]) => ({ value, count, pct: round((count / values.length) * 100, 1) }));
+    const restCount = top.slice(6).reduce((sum, [, count]) => sum + count, 0);
+    out.top = shown;
+    if (restCount) out.other = { groups: top.length - 6, count: restCount, pct: round((restCount / values.length) * 100, 1) };
+  }
+  // Văn bản tự do: chỉ số lượng và số giá trị khác nhau, không đưa giá trị ra màn hình.
+  return out;
+}
+
+function describeCohort(rows) {
+  const keys = new Set(rows.map(row => String(row?.patient_key || '').trim()).filter(Boolean));
+  return {
+    encounters: rows.length,
+    patients: keys.size || null,
+    age: describeValues({ type: 'number' }, rows.map(row => row?.age)),
+    sex: describeValues({ type: 'category' }, rows.map(row => row?.sex)),
+    hospital_stay_days: describeValues({ type: 'number' }, rows.map(row => row?.hospital_stay_days)),
+  };
+}
+
 function summarizeSelectedDataset(dataset) {
   const rows = Array.isArray(dataset?.rows) ? dataset.rows : [];
   const variables = Array.isArray(dataset?.manifest?.variables) ? dataset.manifest.variables : [];
@@ -515,8 +585,11 @@ function summarizeSelectedDataset(dataset) {
         filled,
         missing: rows.length - filled,
         fill_rate: rows.length ? Number(((filled / rows.length) * 100).toFixed(1)) : 0,
+        aggregation: variable.aggregation || 'list',
+        stats: describeValues(variable, rows.map(row => row?.[variable.output_column])),
       };
     }),
+    cohort: describeCohort(rows),
   };
 }
 
@@ -536,4 +609,5 @@ module.exports = {
   filterCohortRowsByVariableSelection,
   buildSelectedAnalysisDataset,
   summarizeSelectedDataset,
+  describeValues,
 };

@@ -5,14 +5,14 @@ import { inp, EmptyState, StatBadge } from './researchUi.jsx';
 import { Btn, Spinner } from '../shared.jsx';
 
 export function GeneralOverviewView({
-  filters, generalOverview, generalOverviewLoading, generalOverviewMissingOnly,
-  generalOverviewQuery, loadPatientHistory, overviewRows, setArchiveMode, setFilters,
+  hideSensitive, setHideSensitive, generalOverview, generalOverviewLoading, generalOverviewMissingOnly,
+  generalOverviewQuery, loadPatientHistory, overviewRows, setArchiveMode,
   setGeneralOverviewMissingOnly, setGeneralOverviewQuery, setPatientQuery,
 }) {
   const ov = generalOverview;
   const summary = ov?.statusSummary || { total: 0, ready: 0, missingCount: 0, manualReview: 0, modules: [] };
   const counts = ov?.counts || {};
-  const showIdentity = !filters.hideSensitive;
+  const showIdentity = !hideSensitive;
   // Gợi ý việc nên làm tiếp, để người mới không phải đoán bắt đầu từ đâu.
   const anyCollected = (summary.modules || []).some(part => Number(part.done || 0) > 0);
   const nextStep = !ov && !generalOverviewLoading
@@ -118,8 +118,8 @@ export function GeneralOverviewView({
               Chỉ xem còn thiếu/lỗi
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: FS.xs, color: C.text2, whiteSpace: 'nowrap' }}>
-              <input type="checkbox" checked={filters.hideSensitive}
-                onChange={e => setFilters(p => ({ ...p, hideSensitive: e.target.checked }))} />
+              <input type="checkbox" checked={hideSensitive}
+                onChange={e => setHideSensitive(e.target.checked)} />
               Ẩn định danh
             </label>
             <span style={{ fontSize: FS.xs, color: C.text3 }}>{compactNumber(overviewRows.length)}/{compactNumber(ov.rows?.length || 0)} {ov.row_unit || 'lượt'}</span>

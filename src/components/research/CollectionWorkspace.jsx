@@ -2,8 +2,9 @@
 //   Bước 1  Quét danh sách người bệnh trên EMR (chỉ kho gốc)
 //   Bước 2  Thu thập dữ liệu chi tiết (Thu thập tự động: chỉ lấy phần mới/thiếu/lỗi/đã đổi)
 //   Bước 3  Theo dõi tiến độ từng phần
-// Các thao tác ít dùng (lấy theo quy trình đầy đủ, quét lại dữ liệu tạm thời, chạy hiện Chrome)
-// gom vào "Thao tác khác" để không tranh chỗ với nút chính.
+// Lần đầu của nghiên cứu (chưa có đợt chạy) dùng "Lấy dữ liệu lần đầu"; từ đó về sau chỉ một nút
+// chính là Thu thập tự động. Thao tác ít dùng (quét lại dữ liệu tạm thời, chạy hiện Chrome, log)
+// gom vào "Thao tác khác".
 import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import { compactNumber } from './researchFormat.js';
@@ -173,7 +174,6 @@ export function CollectionWorkspace({
             snapshot={operationSnapshot}
             lastUpdate={lastUpdateSummary}
             loading={statusLoading}
-            onRefresh={() => loadProgressSnapshot(selectedId, { silent: false })}
           />
         </section>
       )}
@@ -181,14 +181,6 @@ export function CollectionWorkspace({
       <details style={{ ...card, padding: '8px 12px' }}>
         <summary style={{ cursor: 'pointer', fontSize: FS.sm, fontWeight: 600, color: C.text2 }}>Thao tác khác</summary>
         <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <Btn onClick={runSimpleDataCollection} disabled={uiBusy || !hasList} loading={uiBusy && automationRun.kind === 'collect'} style={{ height: 30 }}>
-              Lấy dữ liệu theo quy trình đầy đủ
-            </Btn>
-            <span style={{ fontSize: FS.xs, color: C.text3, flex: '1 1 260px' }}>
-              Lấy lần lượt XN &amp; CĐHA, hồ sơ, y lệnh rồi chuẩn hóa, mã hóa và tạo dataset cuối. Dùng khi Thu thập tự động chưa đủ.
-            </span>
-          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <Btn onClick={runRefreshProvisional} disabled={uiBusy || !hasList} style={{ height: 30 }}>Quét lại dữ liệu tạm thời</Btn>
             <span style={{ fontSize: FS.xs, color: C.text3, flex: '1 1 260px' }}>

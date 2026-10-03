@@ -29,8 +29,6 @@ const inp = {
   transition: 'border-color 0.15s',
 };
 
-const wizInp = { ...inp, width: '100%' };
-
 function StatBadge({ label, value, tone = 'neutral' }) {
   const colors = {
     ok:      { c: C.green,  bg: C.greenBg,  b: C.greenBorder  },
@@ -53,68 +51,7 @@ function StatBadge({ label, value, tone = 'neutral' }) {
   );
 }
 
-function CoveragePanel({ coverage }) {
-  if (!coverage?.exists) return null;
-  const ex = coverage.extract || {};
-  const total = Number(ex.total || 0);
-  const ready = Number(ex.ready || 0);
-  const missing = Math.max(0, total - ready);
-  return (
-    <div style={{
-      padding: '7px 12px', borderBottom: `1px solid ${missing ? C.amberBorder : C.greenBorder}`,
-      background: missing ? C.amberBg : C.greenBg,
-      display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', flexShrink: 0,
-    }}>
-      <span style={{ fontSize: FS.xs, fontWeight: 700, color: missing ? C.amber : C.green }}>Tiến độ dữ liệu</span>
-      <StatBadge label="đủ" value={`${ready}/${total || 0}`} tone={missing ? 'warn' : 'ok'} />
-      <StatBadge label="thiếu" value={missing} tone={missing ? 'warn' : 'ok'} />
-      <StatBadge label="xem tay" value={ex.manual_review || 0} tone={ex.manual_review ? 'danger' : 'ok'} />
-      {coverage.final_dataset_ready && <span style={{ fontSize: FS.xs, color: C.green }}>Đã đủ điều kiện tạo dataset cuối.</span>}
-    </div>
-  );
-}
-
 const actionBtn = { height: 28, padding: '0 10px', fontSize: FS.xs, whiteSpace: 'nowrap' };
-
-function ActionGroup({ title, subtitle, tone = 'neutral', children, style = {} }) {
-  const colors = {
-    neutral: { bg: C.surface, border: C.border, title: C.text },
-    info:    { bg: C.blueBg, border: C.blueBorder, title: C.blue },
-    warn:    { bg: C.amberBg, border: C.amberBorder, title: C.amber },
-    ok:      { bg: C.greenBg, border: C.greenBorder, title: C.green },
-  };
-  const t = colors[tone] || colors.neutral;
-  return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', gap: 5,
-      minWidth: 150, padding: '7px 8px', borderRadius: 6,
-      border: `1px solid ${t.border}`, background: t.bg,
-      ...style,
-    }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <span style={{ fontSize: FS.xs, fontWeight: 700, color: t.title }}>{title}</span>
-        {subtitle && <span style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.25 }}>{subtitle}</span>}
-      </div>
-      <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>{children}</div>
-    </div>
-  );
-}
-
-function AdvancedActions({ label = 'Tác vụ phụ', children }) {
-  return (
-    <details style={{
-      border: `1px solid ${C.border2}`, borderRadius: 6,
-      background: C.surface2, padding: '6px 8px', alignSelf: 'stretch', minWidth: 180,
-    }}>
-      <summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2, listStylePosition: 'inside' }}>
-        {label}
-      </summary>
-      <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', marginTop: 7 }}>
-        {children}
-      </div>
-    </details>
-  );
-}
 
 function ModeButton({ active, title, hint, onClick }) {
   return (
@@ -128,23 +65,6 @@ function ModeButton({ active, title, hint, onClick }) {
       }}>
       <span style={{ fontSize: FS.sm, fontWeight: active ? 700 : 500, whiteSpace: 'nowrap' }}>{title}</span>
     </button>
-  );
-}
-
-function SimpleCard({ title, value, hint, tone = 'neutral' }) {
-  const colors = {
-    neutral: { b: C.border2, bg: C.surface, c: C.text },
-    info: { b: C.blueBorder, bg: C.blueBg, c: C.blue },
-    ok: { b: C.greenBorder, bg: C.greenBg, c: C.green },
-    warn: { b: C.amberBorder, bg: C.amberBg, c: C.amber },
-  };
-  const t = colors[tone] || colors.neutral;
-  return (
-    <div style={{ border: `1px solid ${t.b}`, background: t.bg, borderRadius: 7, padding: 12, minWidth: 160, flex: '1 1 180px' }}>
-      <div style={{ fontSize: FS.xs, color: C.text3, fontWeight: 700 }}>{title}</div>
-      <div style={{ fontSize: FS.stat, color: t.c, fontWeight: 700, marginTop: 3 }}>{value}</div>
-      {hint && <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 5, lineHeight: 1.4 }}>{hint}</div>}
-    </div>
   );
 }
 
@@ -216,49 +136,14 @@ function EmptyState({ title, hint }) {
   );
 }
 
-function WizLabel({ children }) {
-  return <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text3, marginBottom: 4 }}>{children}</div>;
-}
-
-function WizField({ label, value, onChange, type = 'text', placeholder = '' }) {
-  return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <WizLabel>{label}</WizLabel>
-      <input type={type} value={value} placeholder={placeholder}
-        onChange={e => onChange(e.target.value)}
-        style={{ height: 28, borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, padding: '0 8px', fontSize: FS.sm, fontFamily: 'inherit', outline: 'none' }} />
-    </label>
-  );
-}
-
-function WizSelect({ label, value, onChange, options = [] }) {
-  return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <WizLabel>{label}</WizLabel>
-      <select value={value} onChange={e => onChange(e.target.value)}
-        style={{ height: 28, borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, padding: '0 8px', fontSize: FS.sm, fontFamily: 'inherit', outline: 'none' }}>
-        {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-      </select>
-    </label>
-  );
-}
-
 export {
   StatusPill,
   inp,
-  wizInp,
   StatBadge,
-  CoveragePanel,
   actionBtn,
-  ActionGroup,
-  AdvancedActions,
   ModeButton,
-  SimpleCard,
   SmallRowsTable,
   SideItem,
   SectionHead,
   EmptyState,
-  WizLabel,
-  WizField,
-  WizSelect,
 };

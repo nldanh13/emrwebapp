@@ -187,7 +187,6 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
           <Btn variant="solidPrimary" onClick={() => run([])} disabled={busy} style={{ height: 30, padding: '0 14px', fontSize: FS.sm }}>
             {running ? <><Spinner size={9} /> Đang thu thập</> : 'Thu thập tự động'}
           </Btn>
-          <Btn onClick={load} disabled={loading} style={{ height: 26, padding: '0 9px', fontSize: FS.xs }}>{loading ? <Spinner size={8} /> : '↻'}</Btn>
         </div>
       </div>
 

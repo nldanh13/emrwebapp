@@ -51,7 +51,25 @@ function buildSelectedAnalysisForRun(runDir, analysisReadyRows, normalizedRowsBy
   return { rows: selected.rows.length, columns: selected.columns.length, manifest: selected.manifest };
 }
 
+// Thống kê mô tả các biến đã chọn trên một run (dùng cho bước Kiểm tra của Tạo nghiên cứu và
+// phần Thống kê của nghiên cứu). Chỉ trả số liệu tổng hợp, không trả dữ liệu từng lượt.
+function summarizeSelectionForRun(runDir, selectionInput, { maxEncounters = Number.MAX_SAFE_INTEGER, maxSourceRows = Number.MAX_SAFE_INTEGER } = {}) {
+  const selection = sanitizeVariableSelection(selectionInput);
+  const analysisTable = readCsvTable(path.join(runDir, TABLES.analysis_ready.file), maxEncounters);
+  const tableRows = loadRunTablesForSelection(runDir, selection, [], maxSourceRows);
+  // filterCohortRowsByVariableSelection trả { rows, matched, conditions }, không phải mảng.
+  const cohort = variableSelection.filterCohortRowsByVariableSelection(analysisTable.rows || [], selection, tableRows);
+  const dataset = variableSelection.buildSelectedAnalysisDataset(cohort.rows, selection, tableRows);
+  return {
+    dataset,
+    summary: variableSelection.summarizeSelectedDataset(dataset),
+    source_total: (analysisTable.rows || []).length,
+    source_limited: Boolean(analysisTable.limited) || Object.values(tableRows).some(rows => rows.length >= maxSourceRows),
+  };
+}
+
 module.exports = {
+  summarizeSelectionForRun,
   sanitizeVariableSelection,
   activeVariableSelectionFromStudy,
   readRunRowsForSelection,

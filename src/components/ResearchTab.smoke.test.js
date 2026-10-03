@@ -33,10 +33,18 @@ const PROGRESS = {
 
 // Nghiên cứu mới tạo: có danh sách mẫu nhưng chưa có đợt chạy (chưa lấy dữ liệu lần nào).
 const NEW_STUDY = { id: 'gay_co_xuong_dui', name: 'Gãy cổ xương đùi (giả lập)', has_cohort: true, cohort_count: 12, latest_run: null };
+// Nghiên cứu đã lấy dữ liệu: màn hình chỉ có thống kê và nút xuất, không có bảng dữ liệu.
+const DONE_STUDY = { id: 'thoat_vi_dia_dem', name: 'Thoát vị đĩa đệm (giả lập)', has_cohort: true, cohort_count: 30, latest_run: { id: 'r1', outputs: { analysis_selected: 30, analysis_ready: 30 } } };
+const STATS_SUMMARY = {
+  total: 30, complete: 20, partial: 8, empty: 2, review: 0,
+  cohort: { encounters: 30, patients: 28, age: { kind: 'number', n: 30, n_numeric: 30, mean: 61.2, sd: 12.4, median: 63, q1: 52, q3: 71, min: 25, max: 90 }, sex: { kind: 'category', n: 30, top: [{ value: 'Nam', count: 16, pct: 53.3 }, { value: 'Nữ', count: 14, pct: 46.7 }] }, hospital_stay_days: { kind: 'number', n: 30, n_numeric: 30, median: 6, q1: 4, q3: 9 } },
+  variables: [{ id: 'analysis_ready.age', survey_label: 'Tuổi', output_column: 'var_age', filled: 30, missing: 0, fill_rate: 100, stats: { kind: 'number', n: 30, n_numeric: 30, mean: 61.2, sd: 12.4, median: 63, q1: 52, q3: 71, min: 25, max: 90 } }],
+};
 
 function responseFor(name) {
   if (name === 'getResearchArchive') return { status: 'ok', archive: ARCHIVE };
-  if (name === 'listResearchStudies') return { status: 'ok', studies: [NEW_STUDY] };
+  if (name === 'listResearchStudies') return { status: 'ok', studies: [NEW_STUDY, DONE_STUDY] };
+  if (name === 'previewResearchArchiveVariables' || name === 'getResearchStudyVariableStats') return { status: 'ok', summary: STATS_SUMMARY, rows: [] };
   if (name === 'getResearchArchiveVariableCatalog') return { status: 'ok', run_id: CATALOG.run_id, catalog: CATALOG };
   if (name === 'getResearchArchiveProgress' || name === 'getResearchStudyProgress') return { status: 'ok', run_id: '20260529_162615', progress: PROGRESS };
   if (name === 'getResearchArchiveCoverage' || name === 'getResearchStudyCoverage') return { status: 'ok', coverage: { exists: true, counts: { patients: 2900, encounters: 3100 }, extract: { total: 3100, ready: 1000 }, blockers: [] } };
@@ -63,6 +71,11 @@ const { default: ResearchTab } = await import('./ResearchTab.jsx');
 let container;
 let root;
 const flush = async () => { for (let i = 0; i < 5; i += 1) await act(async () => { await Promise.resolve(); }); };
+const setInput = async (el, value) => {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  await act(async () => { setter.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await flush();
+};
 const clickText = async (text) => {
   const el = [...container.querySelectorAll('button')].find(b => b.textContent.includes(text));
   expect(el, `có nút "${text}"`).toBeTruthy();
@@ -103,15 +116,38 @@ describe('ResearchTab (khói)', () => {
     expect(text.indexOf('Quét danh sách người bệnh')).toBeLessThan(text.indexOf('Thu thập dữ liệu chi tiết'));
   });
 
-  it('chuyển qua các mục không lỗi; Tạo nghiên cứu không lặp biến chung của bảng rộng', async () => {
-    await clickText('Thu thập dữ liệu');
-    await clickText('Tra cứu người bệnh');
+  it('Tạo nghiên cứu đi theo 4 bước; bước kiểm tra chỉ hiện thống kê, không hiện dữ liệu từng lượt', async () => {
     await clickText('Tạo nghiên cứu mới');
+    expect(container.textContent).toContain('Thông tin nghiên cứu');
+    const next = () => [...container.querySelectorAll('button')].find(b => b.textContent.includes('Tiếp tục'));
+    expect(next().disabled, 'chưa có tên thì chưa sang bước 2').toBe(true);
+    await setInput(container.querySelector('#study-name'), 'Đề tài thử');
+    await clickText('Tiếp tục');
+    // Bước 2: "sex" có ở Bảng tổng quát và Người bệnh nhưng chỉ hiện một lần.
+    const items = [...container.querySelectorAll('[role="listitem"]')];
+    expect(items.filter(el => el.textContent.includes('Giới tính')).length).toBe(1);
+    expect(next().disabled, 'chưa chọn biến thì chưa sang bước 3').toBe(true);
+    await act(async () => { items[0].querySelector('input[type="checkbox"]').click(); });
+    await flush();
+    await clickText('Tiếp tục');
+    expect(container.textContent).toContain('Không đặt điều kiện thì lấy toàn bộ lượt trong kho');
+    await clickText('Tiếp tục');
     const text = container.textContent;
-    expect(text).toContain('Chọn biến trong kho');
-    // "sex" có ở Bảng tổng quát và Người bệnh: chỉ hiện một lần, ghi "cũng có ở".
-    expect(text).toContain('cũng có ở Người bệnh');
-    await clickText('Dữ liệu tổng quát');
+    expect(text).toContain('Đo lường từng biến');
+    expect(text).toContain('61,2 ± 12,4');
+    expect(container.querySelector('[role="listitem"]')).toBeNull();
+    expect(api.previewResearchArchiveVariables).toHaveBeenCalled();
+    await clickText('Toàn bộ kho');
+    expect(container.textContent).toContain('Dữ liệu tổng quát');
+  });
+
+  it('nghiên cứu đã lấy dữ liệu: chỉ thống kê và nút Xuất CSV, không có bảng dữ liệu', async () => {
+    await clickText(DONE_STUDY.name);
+    const text = container.textContent;
+    expect(text).toContain('Đo lường từng biến');
+    expect(text).toContain('Xuất dữ liệu để xử lý số liệu');
+    expect(api.getResearchStudyVariableStats).toHaveBeenCalledWith(DONE_STUDY.id);
+    expect(text).not.toContain('NC0001');
   });
 
   it('nghiên cứu chưa lấy dữ liệu: mở thẳng Thu thập, mời lấy lần đầu, không gọi Thu thập tự động', async () => {
