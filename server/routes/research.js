@@ -34,7 +34,7 @@ const { enqueueHeavy, registerCancel, unregisterCancel, isCancelRequested } = re
 const variableSelection = require('../research/variable_selection');
 const { redactCsvTable, isSensitiveColumn } = require('../research/export_utils');
 const dataDictionary = require('../research/data_dictionary');
-const { ARCHIVE_ID, EXPORT_SENSITIVE_COLUMNS, MAX_TABLE_ROWS, TABLES, archiveRunsDir, archiveSourcePath, cohortPath, ensureArchiveStore, nowIso, runsDir, todayDateInput } = require('../research/store_paths');
+const { ARCHIVE_ID, EXPORT_SENSITIVE_COLUMNS, MAX_TABLE_ROWS, TABLES, archiveDir, archiveRunsDir, archiveSourcePath, cohortPath, ensureArchiveStore, nowIso, runsDir, todayDateInput } = require('../research/store_paths');
 const { patientCode, readCsvTable, writeCsvUnion } = require('../research/table_io');
 const { buildContextMap, contextForRow, encounterMatchMethod, encounterMatchStatus } = require('../research/encounter_context');
 const { CASE_TRACE_RECENT_LIMIT, appendResearchRunLog, readResearchCaseTrace, redactCaseTracePayload } = require('../research/case_trace');
@@ -50,6 +50,7 @@ const { ensureResearchSourceRows, flattenHchanhIntoResearchRun, normalizeResearc
 const { fetchHchanhForResearchRun, hchanhDefaultFiles, hchanhFileStatusPatch, orderHistoryDefaultFiles, orderHistoryRunLabel, researchHeadlessFromBody } = require('../research/hchanh_fetch');
 const { addRowsToResultDayIndex, buildResultDayIndex, ingestAllResearchResultsToPatientDb, khoOverlayNote, overlayHchanhFromPatientDb, overlayResultsFromPatientDb, resultDayIndexHasRange } = require('../research/patient_db_overlay');
 const { sanitizeVariableSelection, summarizeSelectionForRun } = require('../research/selection_runtime');
+const { buildPipelineInfo } = require('../research/pipeline_info');
 const { normalizeArchiveLatest, normalizeInputSignature, normalizeRunOutputs } = require('../research/normalize');
 const { SCRIPT_PATH } = require('../research/worker_paths');
 const { appendCollectionVersions, readCollectionPartRows, readCollectionVersionIds, recoverCollectionTransactions, recoverPythonPatientCommits, runCollectionOrchestration, studyReadinessForRun, syncCollectionLedger } = require('../research/collection_runtime');
@@ -141,6 +142,17 @@ router.get('/research/archive/variable-catalog', (req, res) => {
     const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
     const catalog = buildVariableCatalog(runDir, { redact });
     return res.json({ status: 'ok', run_id: runId || '', redacted: redact, catalog });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+// Nhật ký quy trình dữ liệu (quét → thu thập → chuẩn hóa → lưu) cho tab Tổng quát.
+router.get('/research/archive/pipeline', (req, res) => {
+  try {
+    const runId = resolveArchiveRunId(String(req.query.runId || 'latest'));
+    const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
+    return res.json({ status: 'ok', pipeline: buildPipelineInfo(archiveDir(), runDir) });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }

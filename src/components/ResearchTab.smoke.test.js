@@ -41,7 +41,22 @@ const STATS_SUMMARY = {
   variables: [{ id: 'analysis_ready.age', survey_label: 'Tuổi', output_column: 'var_age', filled: 30, missing: 0, fill_rate: 100, stats: { kind: 'number', n: 30, n_numeric: 30, mean: 61.2, sd: 12.4, median: 63, q1: 52, q3: 71, min: 25, max: 90 } }],
 };
 
+const PIPELINE = {
+  exists: true, run_id: '20260529_162615',
+  scan: { at: '2026-05-29T09:26:15Z', from_date: '2026-01-01', to_date: '2026-05-29', rows: 3127, file: 'du_lieu_ban_dau.csv' },
+  collect: { at: '2026-05-30T01:00:00Z', cancelled: false, fetched_encounters: 120, skipped_unchanged: 2980, parts_backfilled: 14, selenium_errors_open: 3, unmatched_encounters: 2 },
+  collect_runs: 4, versions_written: 260, reused_from_patient_db: { cases: 0, provisional: 0, replaced_by_goc: 0 },
+  normalize: { status: 'complete', at: '2026-05-30T01:05:00Z', duration_ms: 4200, schema_version: 15, qa: { status: 'ok', blocking: 0, warning: 1, review: 0 }, unmatched: [], history: [] },
+  storage: {
+    run_dir: 'research/research_store/du_lieu_goc/runs/20260529_162615',
+    tables: [{ key: 'encounters', label: 'Đợt điều trị', file: 'encounters.csv', rows: 3100, exists: true, size_bytes: 2048000, updated_at: '2026-05-30T01:05:00Z' }],
+    sqlite: { file: 'research/research_store/du_lieu_goc/research.sqlite3', status: 'ok', size_bytes: 9000000, updated_at: '2026-05-30T01:05:00Z', table_count: 14 },
+    patient_link: { file: 'research/research_store/du_lieu_goc/patient_link.csv', exists: true, updated_at: '2026-05-30T01:05:00Z' },
+  },
+};
+
 function responseFor(name) {
+  if (name === 'getResearchArchivePipeline') return { status: 'ok', pipeline: PIPELINE };
   if (name === 'getResearchArchive') return { status: 'ok', archive: ARCHIVE };
   if (name === 'listResearchStudies') return { status: 'ok', studies: [NEW_STUDY, DONE_STUDY] };
   if (name === 'previewResearchArchiveVariables' || name === 'getResearchStudyVariableStats') return { status: 'ok', summary: STATS_SUMMARY, rows: [] };
@@ -105,6 +120,17 @@ describe('ResearchTab (khói)', () => {
     expect(text).toContain('Thu thập dữ liệu');
     expect(text).toContain('Tra cứu người bệnh');
     expect(text).toContain('Tạo nghiên cứu mới');
+  });
+
+  it('Tổng quát chỉ hiện số liệu và quy trình quét → thu thập → chuẩn hóa → lưu, không có danh sách từng lượt', () => {
+    const text = container.textContent;
+    expect(text).toContain('Số liệu kho');
+    expect(text).toContain('Quy trình dữ liệu');
+    for (const stage of ['Quét danh sách từ EMR', 'Thu thập dữ liệu chi tiết', 'Chuẩn hóa và kiểm tra chất lượng', 'Lưu trữ']) expect(text).toContain(stage);
+    expect(text).toContain('research.sqlite3');
+    expect(text).toContain('3 phần lỗi còn tồn');
+    expect(text).not.toContain('NC0001');
+    expect(container.querySelector('input[placeholder^="Tìm mã NC"]')).toBeNull();
   });
 
   it('Thu thập dữ liệu xếp theo bước: quét danh sách rồi thu thập chi tiết, thao tác phụ gom lại', async () => {

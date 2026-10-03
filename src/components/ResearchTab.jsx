@@ -36,7 +36,6 @@ export default function ResearchTab({ toast }) {
   const [loading, setLoading]         = useState(false);
   const [busy, setBusy]               = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null); // studyId cần xác nhận xóa
-  const [hideSensitive, setHideSensitive] = useState(true);
   const [archiveOptions, setArchiveOptions] = useState(() => ({ headless: true, fromDate: '2026-01-01', toDate: todayInputDate() }));
   const [studyOptions, setStudyOptions]     = useState({ headless: true });
   const [archiveMode, setArchiveMode] = useState('overview'); // overview | update | patient | create
@@ -52,8 +51,7 @@ export default function ResearchTab({ toast }) {
   const [lastUpdateSummary, setLastUpdateSummary] = useState(null);
   const [generalOverview, setGeneralOverview] = useState(null);
   const [generalOverviewLoading, setGeneralOverviewLoading] = useState(false);
-  const [generalOverviewQuery, setGeneralOverviewQuery] = useState('');
-  const [generalOverviewMissingOnly, setGeneralOverviewMissingOnly] = useState(false);
+  const [pipeline, setPipeline] = useState(null);
   const [researchError, setResearchError] = useState('');
   const [automationRun, setAutomationRun] = useState({ kind: '', status: 'idle', current: '', steps: [], error: '', warning: '' });
   // Tra cứu người bệnh. Quyền xem dữ liệu có định danh (null = chưa biết): khi đang khóa,
@@ -137,16 +135,19 @@ export default function ResearchTab({ toast }) {
   const loadGeneralOverview = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setGeneralOverviewLoading(true);
     try {
-      const fetchTable = tableKey => api.getResearchArchiveData({ table: tableKey, runId: 'latest', redact: hideSensitive });
+      // Tổng quát chỉ đếm số liệu: luôn đọc bản đã ẩn định danh.
+      const fetchTable = tableKey => api.getResearchArchiveData({ table: tableKey, runId: 'latest', redact: true });
       // Dùng cùng một snapshot backend cho số lượng và dùng extract_status đầy đủ
       // cho bảng theo dõi. Không trộn rows.length của dữ liệu đã redact với metadata.
-      const [patientRes0, encounterRes, statusRes, progressRes, coverageRes] = await Promise.all([
+      const [patientRes0, encounterRes, statusRes, progressRes, coverageRes, pipelineRes] = await Promise.all([
         fetchTable('patient_master'),
         fetchTable('encounters'),
         fetchTable('extract_status'),
         api.getResearchArchiveProgress({ runId: 'latest' }),
         api.getResearchArchiveCoverage({ runId: 'latest' }),
+        api.getResearchArchivePipeline().catch(() => null),
       ]);
+      setPipeline(pipelineRes?.pipeline || null);
       let patientRes = patientRes0;
       if (!Array.isArray(patientRes?.rows) || !patientRes.rows.length) patientRes = await fetchTable('initial_list');
       const nextProgress = progressRes?.progress || null;
@@ -171,7 +172,7 @@ export default function ResearchTab({ toast }) {
     } finally {
       if (!silent) setGeneralOverviewLoading(false);
     }
-  }, [hideSensitive, archive, showErrorOnce]);
+  }, [archive, showErrorOnce]);
 
   const loadProgressSnapshot = useCallback(async (scopeId = selectedId, { silent = false } = {}) => {
     if (!silent) setStatusLoading(true);
@@ -276,9 +277,9 @@ export default function ResearchTab({ toast }) {
   useEffect(() => {
     if (!(isArchive && archiveMode === 'overview')) return;
     loadGeneralOverview({ silent: true });
-    // Chỉ tự tải khi đổi run hoặc đổi chế độ ẩn định danh.
-    // Không phụ thuộc identity của callback để tránh vòng tải lại khi summary auto-poll cập nhật object archive.
-  }, [isArchive, archiveMode, archive?.latest_run?.id, hideSensitive]); // eslint-disable-line
+    // Chỉ tự tải khi đổi run. Không phụ thuộc identity của callback để tránh vòng tải lại
+    // khi summary auto-poll cập nhật object archive.
+  }, [isArchive, archiveMode, archive?.latest_run?.id]); // eslint-disable-line
 
   // Auto-poll: progress cần realtime, summary thì chậm hơn để không tự tạo 429 khi task dài.
   useEffect(() => {
@@ -640,17 +641,6 @@ export default function ResearchTab({ toast }) {
     finally { setBusy(false); }
   }, [variableStudyDraft, selectedVariables.length, variablePreview, buildVariableSpec, loadSummary, t]);
 
-  const overviewRows = useMemo(() => {
-    const sourceRows = Array.isArray(generalOverview?.rows) ? generalOverview.rows : [];
-    const q = lower(generalOverviewQuery);
-    return sourceRows.filter(row => {
-      if (generalOverviewMissingOnly && row.ready) return false;
-      if (!q) return true;
-      return [row.research_code, row.patient_code, row.patient_name, row.diagnosis, row.admission_date, row.discharge_date, row.status_label, row.missing_text]
-        .some(v => lower(v).includes(q));
-    });
-  }, [generalOverview, generalOverviewQuery, generalOverviewMissingOnly]);
-
   const identifiedLocked = Boolean(identifiedAccess && !identifiedAccess.allowed);
 
   // ── điều hướng ────────────────────────────────────────────────────────────
@@ -672,7 +662,7 @@ export default function ResearchTab({ toast }) {
   const studyCountLabel = (item) => `${compactNumber(item?.cohort_count || 0)} mẫu · ${item?.latest_run ? 'đã lấy dữ liệu' : 'chưa lấy dữ liệu'}`;
 
   const archiveModes = [
-    ['overview', 'Dữ liệu tổng quát', 'Số lượng, độ đầy đủ và danh sách lượt đang theo dõi'],
+    ['overview', 'Dữ liệu tổng quát', 'Số liệu kho và quy trình quét, thu thập, chuẩn hóa, lưu trữ'],
     ['update', 'Thu thập dữ liệu', 'Quét danh sách, lấy dữ liệu và theo dõi tiến độ'],
     ['patient', 'Tra cứu người bệnh', 'Xem toàn bộ các lần điều trị của một người bệnh'],
   ];
@@ -697,11 +687,7 @@ export default function ResearchTab({ toast }) {
         ? collectionWorkspace
         : <StudyStatsView study={activeStudy} toast={t} onGoCollect={() => setStudyMode('collect')} />;
     }
-    if (archiveMode === 'overview') return <GeneralOverviewView {...{
-      hideSensitive, setHideSensitive, generalOverview, generalOverviewLoading, generalOverviewMissingOnly,
-      generalOverviewQuery, loadPatientHistory, overviewRows, setArchiveMode,
-      setGeneralOverviewMissingOnly, setGeneralOverviewQuery, setPatientQuery,
-    }} />;
+    if (archiveMode === 'overview') return <GeneralOverviewView {...{ generalOverview, generalOverviewLoading, pipeline, setArchiveMode }} />;
     if (archiveMode === 'patient') return <PatientLookupView {...{
       identifiedAccess, identifiedLocked, loadPatientHistory, patientHistory,
       patientHistoryError, patientHistoryLoading, patientHistoryMeta, patientQuery, setPatientQuery,
