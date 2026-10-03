@@ -1,5 +1,5 @@
-// Test khói cho màn hình Kho nghiên cứu: dựng component với API giả, chuyển qua 4 mục
-// của kho gốc và kiểm tra các phần chính hiện ra, không lỗi render. Giữ an toàn khi
+// Test khói cho màn hình Kho nghiên cứu: dựng component với API giả, chuyển qua 3 mục
+// của kho gốc và phần Tạo nghiên cứu mới và kiểm tra các phần chính hiện ra, không lỗi render. Giữ an toàn khi
 // tách ResearchTab.jsx thành nhiều file (không có testing-library nên dùng react-dom trực tiếp).
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createElement } from 'react';
@@ -31,9 +31,12 @@ const PROGRESS = {
   counts: { running: 0, error: 1, missing: 1, waiting: 0, done: 1 }, recentUpdates: [], active_task: null, current_case: null,
 };
 
+// Nghiên cứu mới tạo: có danh sách mẫu nhưng chưa có đợt chạy (chưa lấy dữ liệu lần nào).
+const NEW_STUDY = { id: 'gay_co_xuong_dui', name: 'Gãy cổ xương đùi (giả lập)', has_cohort: true, cohort_count: 12, latest_run: null };
+
 function responseFor(name) {
   if (name === 'getResearchArchive') return { status: 'ok', archive: ARCHIVE };
-  if (name === 'listResearchStudies') return { status: 'ok', studies: [] };
+  if (name === 'listResearchStudies') return { status: 'ok', studies: [NEW_STUDY] };
   if (name === 'getResearchArchiveVariableCatalog') return { status: 'ok', run_id: CATALOG.run_id, catalog: CATALOG };
   if (name === 'getResearchArchiveProgress' || name === 'getResearchStudyProgress') return { status: 'ok', run_id: '20260529_162615', progress: PROGRESS };
   if (name === 'getResearchArchiveCoverage' || name === 'getResearchStudyCoverage') return { status: 'ok', coverage: { exists: true, counts: { patients: 2900, encounters: 3100 }, extract: { total: 3100, ready: 1000 }, blockers: [] } };
@@ -54,6 +57,7 @@ vi.mock('../api.js', async (importOriginal) => {
   return mocked;
 });
 
+const api = await import('../api.js');
 const { default: ResearchTab } = await import('./ResearchTab.jsx');
 
 let container;
@@ -81,23 +85,42 @@ afterEach(async () => {
 });
 
 describe('ResearchTab (khói)', () => {
-  it('hiện kho gốc với số dòng danh sách và 4 mục làm việc', () => {
+  it('hiện kho gốc, 3 mục làm việc và nút Tạo nghiên cứu mới ở danh sách nghiên cứu', () => {
     const text = container.textContent;
     expect(text).toContain('Kho dữ liệu gốc');
     expect(text).toContain('Dữ liệu tổng quát');
     expect(text).toContain('Thu thập dữ liệu');
     expect(text).toContain('Tra cứu người bệnh');
-    expect(text).toContain('Tạo nghiên cứu');
+    expect(text).toContain('Tạo nghiên cứu mới');
+  });
+
+  it('Thu thập dữ liệu xếp theo bước: quét danh sách rồi thu thập chi tiết, thao tác phụ gom lại', async () => {
+    await clickText('Thu thập dữ liệu');
+    const text = container.textContent;
+    expect(text).toContain('Quét danh sách người bệnh');
+    expect(text).toContain('Thu thập dữ liệu chi tiết');
+    expect(text).toContain('Thao tác khác');
+    expect(text.indexOf('Quét danh sách người bệnh')).toBeLessThan(text.indexOf('Thu thập dữ liệu chi tiết'));
   });
 
   it('chuyển qua các mục không lỗi; Tạo nghiên cứu không lặp biến chung của bảng rộng', async () => {
     await clickText('Thu thập dữ liệu');
     await clickText('Tra cứu người bệnh');
-    await clickText('Tạo nghiên cứu');
+    await clickText('Tạo nghiên cứu mới');
     const text = container.textContent;
     expect(text).toContain('Chọn biến trong kho');
     // "sex" có ở Bảng tổng quát và Người bệnh: chỉ hiện một lần, ghi "cũng có ở".
     expect(text).toContain('cũng có ở Người bệnh');
     await clickText('Dữ liệu tổng quát');
+  });
+
+  it('nghiên cứu chưa lấy dữ liệu: mở thẳng Thu thập, mời lấy lần đầu, không gọi Thu thập tự động', async () => {
+    api.getResearchCollectionStatus.mockClear();
+    await clickText(NEW_STUDY.name);
+    const text = container.textContent;
+    expect(text).toContain('Chưa lấy dữ liệu lần nào');
+    expect(text).toContain('Lấy dữ liệu lần đầu');
+    // Thu thập tự động cần đợt chạy sẵn có; gọi khi chưa có sẽ bật lỗi đỏ.
+    expect(api.getResearchCollectionStatus).not.toHaveBeenCalledWith(NEW_STUDY.id);
   });
 });

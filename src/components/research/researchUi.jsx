@@ -126,7 +126,7 @@ function ModeButton({ active, title, hint, onClick }) {
         background: 'transparent', color: active ? C.text : C.text3,
         padding: '0 12px', fontFamily: 'inherit',
       }}>
-      <span style={{ fontSize: FS.xs, fontWeight: active ? 700 : 600, whiteSpace: 'nowrap' }}>{title}</span>
+      <span style={{ fontSize: FS.sm, fontWeight: active ? 700 : 500, whiteSpace: 'nowrap' }}>{title}</span>
     </button>
   );
 }

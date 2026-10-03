@@ -3,23 +3,25 @@
 //   researchScope, researchFormat              phạm vi kho/nghiên cứu, bảng xem được, định dạng
 //   variableCatalogModel, researchStatusModel  mô hình danh mục biến; trạng thái/tiến độ/tổng quan
 //   researchUi                                 component nhỏ dùng chung (nhãn, thẻ, nút, ô nhập)
-//   ResearchMonitor, CollectionAutoPanel       theo dõi tiến độ; khung Thu thập tự động
-//   GeneralOverviewView, ArchiveUpdateView,    các mục của kho gốc: tổng quan, thu thập,
-//   PatientLookupView, VariableCatalogView     tra cứu người bệnh, tạo nghiên cứu từ biến
+//   CollectionWorkspace                        khu Thu thập dữ liệu theo bước (dùng ResearchMonitor,
+//                                              CollectionAutoPanel); chung cho kho gốc và nghiên cứu
+//   GeneralOverviewView, PatientLookupView,    các mục của kho gốc: tổng quan, tra cứu người bệnh,
+//   VariableCatalogView                        tạo nghiên cứu từ biến
+// Bố cục: cột trái chọn Kho gốc / từng nghiên cứu (+ Tạo nghiên cứu mới); bên phải là tiêu đề,
+// các chế độ (kho: Tổng quát · Thu thập · Tra cứu; nghiên cứu: Bảng dữ liệu · Thu thập) và nội dung.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { C, FONT_MONO, FS } from '../tokens.js';
 import { Btn, Spinner } from './shared.jsx';
 import * as api from '../api.js';
 import { compactNumber, downloadCsv, lower, pick, rowInDateRange, saveBlob, sortRowsForDisplay, text } from './research/researchFormat.js';
-import { ARCHIVE_API_SCOPE, ARCHIVE_DEFAULT_TABLE, ARCHIVE_SCOPE, SENSITIVE_COLUMNS, datasetCount, defaultTableForScope, primaryTableAfterRun, tableIdsForScope, tableLabel, todayInputDate } from './research/researchScope.js';
+import { ARCHIVE_API_SCOPE, ARCHIVE_DEFAULT_TABLE, ARCHIVE_SCOPE, SENSITIVE_COLUMNS, STUDY_PRIMARY_TABLES, STUDY_TABLES, datasetCount, defaultTableForScope, initialStudyTable, primaryTableAfterRun, tableIdsForScope, tableLabel, todayInputDate } from './research/researchScope.js';
 import { VARIABLE_CLINICAL_GROUPS, dedupeWideTableVariables, enhanceCatalogVariable, groupVariablesBySection } from './research/variableCatalogModel.js';
 import { buildGeneralOverviewModel, diffProgressSnapshots, summarizeStatusRows } from './research/researchStatusModel.js';
 import { EmptyState, ModeButton, SectionHead, SideItem, StatBadge, WizField, WizLabel, WizSelect, actionBtn, inp, wizInp } from './research/researchUi.jsx';
-import { ResearchOperationDashboard } from './research/ResearchMonitor.jsx';
-import { CollectionAutoPanel } from './research/CollectionAutoPanel.jsx';
+import { CollectionWorkspace } from './research/CollectionWorkspace.jsx';
+import useIsMobile from '../hooks/useIsMobile.js';
 import { PatientLookupView } from './research/PatientLookupView.jsx';
 import { GeneralOverviewView } from './research/GeneralOverviewView.jsx';
-import { ArchiveUpdateView } from './research/ArchiveUpdateView.jsx';
 import { VariableCatalogView } from './research/VariableCatalogView.jsx';
 
 // ── main component ────────────────────────────────────────────────────────────
@@ -64,7 +66,9 @@ export default function ResearchTab({ toast }) {
   const [progressSnapshot, setProgressSnapshot] = useState(null);
   const [statusLoading, setStatusLoading]   = useState(false);
   const [lastUpdateSummary, setLastUpdateSummary] = useState(null);
-  const [archiveMode, setArchiveMode]       = useState('overview'); // overview | update | patient | variables
+  const [archiveMode, setArchiveMode]       = useState('overview'); // overview | update | patient | variables (tạo nghiên cứu)
+  const [studyMode, setStudyMode]           = useState('data');     // data | collect
+  const isMobile = useIsMobile();
   const [generalOverview, setGeneralOverview] = useState(null);
   const [generalOverviewLoading, setGeneralOverviewLoading] = useState(false);
   const [generalOverviewQuery, setGeneralOverviewQuery] = useState('');
@@ -159,7 +163,9 @@ export default function ResearchTab({ toast }) {
         setColumns(Array.isArray(r.columns) ? r.columns : []);
       }
     } catch (e) {
-      showErrorOnce(e);
+      // Nghiên cứu chưa lấy dữ liệu lần nào: bảng trống là bình thường, màn hình tự hướng dẫn
+      // sang Thu thập dữ liệu; không bật thông báo lỗi đỏ.
+      if (!/chưa có run/i.test(String(e?.message || ''))) showErrorOnce(e);
       setRows([]); setColumns([]);
     } finally {
       setTableLoading(false);
@@ -551,6 +557,7 @@ export default function ResearchTab({ toast }) {
       await loadCoverage(ARCHIVE_SCOPE);
       setSelectedId(studyId);
       setTable('cohort');
+      setStudyMode('collect');
       setShowWizard(false);
       t(`Đã tạo nghiên cứu "${name}" với ${wizardFinalRows.length} BN.`, 'ok');
     } catch (e) { t(String(e.message || e), 'error'); }
@@ -1250,27 +1257,14 @@ export default function ResearchTab({ toast }) {
       await loadSummary();
       setSelectedId(studyId);
       setTable('cohort');
-      setArchiveMode('update');
+      // Nghiên cứu mới chưa có dữ liệu: mở thẳng phần Thu thập của nghiên cứu.
+      setStudyMode('collect');
       t(imported
         ? `Đã tạo nghiên cứu "${name}" và nạp ${compactNumber(imported)} dòng từ kho hiện tại.`
         : `Đã tạo nghiên cứu "${name}".`, 'ok');
     } catch (e) { t(String(e.message || e), 'error'); }
     finally { setBusy(false); }
   }, [variableStudyDraft, selectedVariables.length, variablePreview, variablePreviewConfirmed, buildVariableSpec, loadSummary, t]);
-
-  // ── TABLE TAB GROUPS ──────────────────────────────────────────────────────
-  const tabGroups = isArchive
-    ? [
-        { label: 'Kho gốc',  ids: ['initial_list','research_source','deep_source','patient_master','encounters','analysis_ready','analysis_selected','analysis_final'] },
-        { label: 'Lâm sàng', ids: ['diagnoses','patient_day','lab_results','imaging_results','surgery_results'] },
-        { label: 'Khác',     ids: ['medication_orders','clinical_notes','patient_extra'] },
-      ]
-    : [
-        { label: 'Mẫu NC',    ids: ['cohort','research_source','patient_master','encounters','analysis_ready','analysis_selected','analysis_final'] },
-        { label: 'Lâm sàng',  ids: ['diagnoses','patient_day','lab_results','imaging_results','surgery_results'] },
-        { label: 'Khác',      ids: ['medication_orders','clinical_notes','patient_extra'] },
-      ];
-
 
   const overviewRows = useMemo(() => {
     const sourceRows = Array.isArray(generalOverview?.rows) ? generalOverview.rows : [];
@@ -1289,6 +1283,51 @@ export default function ResearchTab({ toast }) {
   const identifiedLocked = Boolean(identifiedAccess && !identifiedAccess.allowed);
 
 
+
+  const openLog = () => { setShowLog(true); loadLog(); };
+  const selectArchive = (mode = 'overview') => {
+    setSelectedId(ARCHIVE_SCOPE); setTable(ARCHIVE_DEFAULT_TABLE); setArchiveMode(mode); setEditMode(false);
+  };
+  const selectStudy = (item) => {
+    if (!item) return;
+    setSelectedId(item.id);
+    setTable(initialStudyTable(item));
+    // Nghiên cứu chưa lấy dữ liệu lần nào thì mở thẳng phần Thu thập, vì bảng nào cũng trống.
+    setStudyMode(item.latest_run ? 'data' : 'collect');
+    setEditMode(false);
+  };
+  const openCreateStudy = () => selectArchive('variables');
+  const creatingStudy = isArchive && archiveMode === 'variables';
+
+  const archiveSummaryText = archive?.latest_run
+    ? [
+        archivePatients ? `${compactNumber(archivePatients)} người bệnh` : '',
+        `${compactNumber(archiveEncounters || archiveInitial)} lượt điều trị`,
+      ].filter(Boolean).join(' · ')
+    : 'Chưa quét dữ liệu';
+  const studyCountLabel = (item) => `${compactNumber(item?.cohort_count || 0)} mẫu · ${item?.latest_run ? 'đã lấy dữ liệu' : 'chưa lấy dữ liệu'}`;
+
+  const archiveModes = [
+    ['overview', 'Dữ liệu tổng quát', 'Số lượng, độ đầy đủ và danh sách người bệnh'],
+    ['update', 'Thu thập dữ liệu', 'Quét danh sách, lấy dữ liệu và theo dõi tiến độ'],
+    ['patient', 'Tra cứu người bệnh', 'Xem toàn bộ các lần điều trị của một người bệnh'],
+  ];
+  const studyModes = [
+    ['data', 'Bảng dữ liệu', 'Danh sách mẫu, bảng phân tích và các bảng lâm sàng'],
+    ['collect', 'Thu thập dữ liệu', 'Lấy dữ liệu cho danh sách mẫu và theo dõi tiến độ'],
+  ];
+  const otherStudyTables = STUDY_TABLES.filter(([id]) => !STUDY_PRIMARY_TABLES.includes(id));
+  const studyHasRun = Boolean(activeStudy?.latest_run);
+
+  const collectionWorkspace = (
+    <CollectionWorkspace {...{
+      isArchive, archive, study: activeStudy, selectedId, uiBusy, automationRun,
+      archiveOptions, setArchiveOptions, studyOptions, setStudyOptions,
+      runSimpleListScan, runSimpleDataCollection, runRefreshProvisional,
+      operationSnapshot, lastUpdateSummary, statusLoading, loadProgressSnapshot, loadSummary,
+      openLog, toast,
+    }} />
+  );
 
   const renderArchiveWorkspace = () => {
     if (archiveMode === 'overview') return <GeneralOverviewView {...{
@@ -1317,32 +1356,189 @@ export default function ResearchTab({ toast }) {
           variablePreviewLoading, variableQuery, variableStudyDraft, variableSurveyLabels,
           variableTypeFilter,
         }} />;
-    if (archiveMode === 'update') return <ArchiveUpdateView {...{
-          archiveOptions, lastUpdateSummary, loadProgressSnapshot, loadSummary, operationSnapshot,
-          selectedId, statusLoading, toast, uiBusy,
-        }} />;
+    if (archiveMode === 'update') return collectionWorkspace;
     return null;
   };
 
+  const tableTabStyle = (active) => ({
+    height: 34, padding: '0 10px',
+    border: 0, borderBottom: `2px solid ${active ? C.blue : 'transparent'}`,
+    background: 'transparent', color: active ? C.blue : C.text2,
+    cursor: 'pointer', fontSize: FS.sm, fontWeight: active ? 700 : 500,
+    whiteSpace: 'nowrap', fontFamily: 'inherit', flexShrink: 0,
+  });
+
+  const renderStudyData = () => (
+    <>
+      {/* ── Chọn bảng: bảng hay dùng thành tab, phần còn lại trong "Bảng khác" ── */}
+      <div className="emr-hscroll" style={{
+        display: 'flex', alignItems: 'center', gap: 0,
+        padding: '0 12px', flexShrink: 0, minHeight: 36,
+        borderBottom: `1px solid ${C.border}`, background: C.surface,
+        overflowX: 'auto', overflowY: 'hidden',
+      }}>
+        {STUDY_PRIMARY_TABLES.map(id => {
+          const cnt = datasetCount(activeSource, id, false);
+          const active = table === id;
+          return (
+            <button key={id} type="button" onClick={() => setTable(id)} style={tableTabStyle(active)}>
+              {tableLabel(id, false)}
+              {cnt > 0 && <span style={{ marginLeft: 5, fontSize: FS.xs, color: active ? C.blue : C.text3, fontVariantNumeric: 'tabular-nums' }}>{compactNumber(cnt)}</span>}
+            </button>
+          );
+        })}
+        <select
+          value={STUDY_PRIMARY_TABLES.includes(table) ? '' : table}
+          onChange={e => { if (e.target.value) setTable(e.target.value); }}
+          aria-label="Bảng khác"
+          style={{ ...inp, height: 28, marginLeft: 8, flexShrink: 0, background: STUDY_PRIMARY_TABLES.includes(table) ? C.surface : C.blueBg, color: STUDY_PRIMARY_TABLES.includes(table) ? C.text2 : C.blue }}
+        >
+          <option value="">Bảng khác…</option>
+          {otherStudyTables.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+        </select>
+      </div>
+
+      {/* ── Lọc + xuất ── */}
+      <div style={{
+        padding: '7px 12px', borderBottom: `1px solid ${C.border2}`,
+        background: C.surface, flexShrink: 0,
+        display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',
+      }}>
+        <input
+          value={filters.q}
+          onChange={e => setFilters(p => ({ ...p, q: e.target.value }))}
+          placeholder="Tìm trong bảng: xét nghiệm, chẩn đoán..."
+          aria-label="Tìm trong bảng"
+          style={{ ...inp, flex: '1 1 200px', minWidth: 0 }}
+        />
+        <input
+          value={filters.patient}
+          onChange={e => setFilters(p => ({ ...p, patient: e.target.value }))}
+          placeholder="Mã NC / Mã BN"
+          aria-label="Lọc theo mã"
+          style={{ ...inp, width: 130, flexShrink: 0 }}
+        />
+        <input type="date" value={filters.from} aria-label="Từ ngày"
+          onChange={e => setFilters(p => ({ ...p, from: e.target.value }))}
+          style={{ ...inp, width: 132, flexShrink: 0 }} />
+        <input type="date" value={filters.to} aria-label="Đến ngày"
+          onChange={e => setFilters(p => ({ ...p, to: e.target.value }))}
+          style={{ ...inp, width: 132, flexShrink: 0 }} />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: FS.sm, color: C.text2, whiteSpace: 'nowrap' }}>
+          <input type="checkbox" checked={filters.hideSensitive}
+            onChange={e => setFilters(p => ({ ...p, hideSensitive: e.target.checked }))} />
+          Ẩn định danh
+        </label>
+        {(filters.q || filters.patient || filters.from || filters.to || !filters.hideSensitive) && (
+          <Btn onClick={resetFilters} style={{ height: 28, padding: '0 8px', fontSize: FS.xs }}>Xoá lọc</Btn>
+        )}
+        <span style={{ marginLeft: 'auto', fontSize: FS.xs, color: C.text3, fontVariantNumeric: 'tabular-nums' }}>
+          {compactNumber(filteredRows.length)}/{compactNumber(rows.length)} dòng
+        </span>
+        {table === 'cohort' && (
+          editMode
+            ? <>
+                <Btn variant="success" onClick={saveEditedCohort} disabled={uiBusy} style={actionBtn}>Lưu danh sách mẫu</Btn>
+                <Btn onClick={() => setEditMode(false)} disabled={uiBusy} style={actionBtn}>Huỷ</Btn>
+              </>
+            : <Btn onClick={() => setEditMode(true)} disabled={uiBusy} style={actionBtn}>Sửa danh sách mẫu</Btn>
+        )}
+        <Btn variant="success" onClick={exportCurrent} disabled={!filteredRows.length} style={actionBtn}>Xuất CSV</Btn>
+      </div>
+
+      {/* ── Bảng ── */}
+      <div style={{ flex: 1, overflow: 'auto', minHeight: 0, background: C.surface }}>
+        {initialLoading && (
+          <div style={{ padding: 24, color: C.text2, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Spinner size={12} /> Đang tải dữ liệu...
+          </div>
+        )}
+        {!initialLoading && !tableLoading && !rows.length && (
+          !studyHasRun && table !== 'cohort'
+            ? <div style={{ padding: '36px 24px', textAlign: 'center' }}>
+                <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Nghiên cứu này chưa lấy dữ liệu</div>
+                <div style={{ fontSize: FS.sm, color: C.text3, marginTop: 6 }}>
+                  Đã có {compactNumber(activeStudy?.cohort_count || 0)} mẫu. Thu thập dữ liệu để có bảng phân tích, xét nghiệm, CĐHA...
+                </div>
+                <Btn variant="solidPrimary" onClick={() => setStudyMode('collect')} style={{ marginTop: 12, height: 30 }}>Đi tới Thu thập dữ liệu</Btn>
+              </div>
+            : <EmptyState title="Bảng này chưa có dữ liệu" hint="Thử chọn bảng khác, hoặc chạy Thu thập dữ liệu nếu dữ liệu còn thiếu." />
+        )}
+        {rows.length > 0 && (
+          <div style={{ opacity: tableLoading ? 0.5 : 1, transition: 'opacity 0.2s' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.sm, tableLayout: 'fixed' }}>
+            <thead style={{ position: 'sticky', top: 0, background: C.surface2, zIndex: 2 }}>
+              <tr>
+                {editMode && <th style={{ width: 28, borderBottom: `1px solid ${C.border}` }} />}
+                {visibleColumns.map((col, ci) => {
+                  const isLong = /thuốc|chi tiết|chẩn đoán|mô tả|kết luận|dòng/i.test(col);
+                  const isLast = ci === visibleColumns.length - 1;
+                  const w = isLast ? undefined : isLong ? 320 : /họ tên|ho ten|patient_name/i.test(col) ? 200 : /t\/g|ngày|thời gian/i.test(col) ? 140 : /mã bn|mã nc|mã vào/i.test(col) ? 110 : /tuổi|age/i.test(col) ? 60 : /gt|giới/i.test(col) ? 60 : 130;
+                  return (
+                    <th key={col} style={{
+                      textAlign: 'left', padding: '7px 10px',
+                      borderBottom: `1px solid ${C.border}`,
+                      color: C.text2, fontWeight: 700, fontSize: FS.xs,
+                      whiteSpace: 'nowrap', width: w, overflow: 'hidden',
+                    }}>{col}</th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.slice(0, 1000).map((row, idx) => (
+                <tr key={idx} style={{ borderBottom: `1px solid ${C.border2}` }}
+                  onMouseEnter={e => e.currentTarget.style.background = C.surface2}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  {editMode && (
+                    <td style={{ padding: '0 6px', width: 28, textAlign: 'center' }}>
+                      <button type="button" aria-label="Bỏ dòng này khỏi danh sách mẫu"
+                        onClick={() => setRows(prev => prev.filter((_, i) => i !== idx))}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.red, fontSize: FS.lg, lineHeight: 1 }}>✕</button>
+                    </td>
+                  )}
+                  {visibleColumns.map((col, ci) => {
+                    const isCode = col === 'Mã NC';
+                    const isLong = /thuốc|chi tiết|chẩn đoán|mô tả|kết luận|dòng/i.test(col);
+                    const isLast = ci === visibleColumns.length - 1;
+                    return (
+                      <td key={col} style={{
+                        padding: '7px 10px',
+                        color: isCode ? C.blue : C.text2,
+                        fontWeight: isCode ? 700 : 500,
+                        verticalAlign: 'top',
+                        whiteSpace: isLong ? 'pre-wrap' : 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: isLast ? 'clip' : 'ellipsis',
+                      }}>{text(row?.[col]) || <span style={{ color: C.text3 }}>—</span>}</td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          </div>
+        )}
+        {tableLoading && rows.length > 0 && (
+          <div style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6, borderTop: `1px solid ${C.border2}` }}>
+            <Spinner size={9} /><span style={{ fontSize: FS.xs, color: C.text3 }}>Đang cập nhật...</span>
+          </div>
+        )}
+        {!loading && !tableLoading && filteredRows.length > 1000 && (
+          <div style={{ padding: '8px 12px', color: C.text3, fontSize: FS.xs, borderTop: `1px solid ${C.border2}` }}>
+            Hiển thị 1.000 dòng đầu · Xuất CSV để lấy toàn bộ {compactNumber(filteredRows.length)} dòng.
+          </div>
+        )}
+      </div>
+    </>
+  );
+
+  const dot = (on) => <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: on ? C.green : C.text3, flexShrink: 0 }} />;
+
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden', background: C.bg, fontFamily: '\"Segoe UI Variable\",\"Aptos\",\"Segoe UI\",sans-serif', fontSize: FS.sm }}>
-
-      {/* ── Top bar ── */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-        padding: '0 12px', height: 34, flexShrink: 0,
-        borderBottom: `1px solid ${C.border2}`, background: C.surface,
-      }}>
-        <Btn
-          onClick={reloadCurrentView}
-          disabled={loading || tableLoading || busy}
-          title="Tải lại dữ liệu đang xem"
-          style={{ height: 26, padding: '0 9px', fontSize: FS.xs }}
-        >
-          {(loading || tableLoading) ? <><Spinner size={8} /> Đang tải</> : '↻ Tải lại'}
-        </Btn>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden', background: C.bg, fontSize: FS.sm }}>
 
       {/* ── Delete confirm ── */}
       {deleteConfirm && (
@@ -1683,7 +1879,7 @@ export default function ResearchTab({ toast }) {
             display: 'flex', alignItems: 'center', gap: 8, padding: '4px 12px',
             borderBottom: `1px solid ${C.border2}`, background: C.surface,
           }}>
-            <span style={{ fontSize: FS.xs, fontWeight: 700, color: C.blue }}>📋 action_log.txt</span>
+            <span style={{ fontSize: FS.xs, fontWeight: 700, color: C.blue }}>Log chạy · action_log.txt</span>
             <span style={{ fontSize: FS.xs, color: C.text3 }}>{caseTraces.length ? `${caseTraces.length} ca gần nhất · ` : ''}{logLines.length} dòng cuối</span>
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: FS.xs, color: C.text3 }}>
               <input type="checkbox" checked={caseTraceRedact} onChange={e => setCaseTraceRedact(e.target.checked)} />
@@ -1697,7 +1893,7 @@ export default function ResearchTab({ toast }) {
           <div style={{ flex: 1, overflow: 'auto', padding: '6px 12px', fontFamily: FONT_MONO, fontSize: FS.xs }}>
             {logLoading && <div style={{ color: C.text3 }}>Đang tải log...</div>}
             {!logLoading && !logLines.length && !caseTraces.length && (
-              <div style={{ color: C.text3 }}>Chưa có log. Bấm Bước 2 — Lấy XN & CĐHA hoặc lấy Hành chánh/Y lệnh để bắt đầu. Log chi tiết 10 ca gần nhất sẽ ghi vào <b>research_case_trace_recent.json</b>.</div>
+              <div style={{ color: C.text3 }}>Chưa có log. Log xuất hiện sau khi chạy Quét danh sách hoặc Thu thập dữ liệu. Log chi tiết 10 ca gần nhất sẽ ghi vào <b>research_case_trace_recent.json</b>.</div>
             )}
             {!logLoading && !!caseTraces.length && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
@@ -1741,534 +1937,146 @@ export default function ResearchTab({ toast }) {
       {researchError && (
         <div style={{ padding: '7px 12px', background: C.redBg, borderBottom: `1px solid ${C.redBorder}`, color: C.red, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: FS.xs }}>
           <b>Lỗi:</b><span style={{ flex: 1 }}>{researchError}</span>
-          <Btn onClick={() => { setShowLog(true); loadLog(); }} style={{ height: 24, fontSize: FS.xs }}>Xem log</Btn>
+          <Btn onClick={openLog} style={{ height: 24, fontSize: FS.xs }}>Xem log</Btn>
           <Btn onClick={() => setResearchError('')} style={{ height: 24, fontSize: FS.xs }}>Đóng</Btn>
         </div>
       )}
 
-      {/* ── Body: sidebar + content ── */}
+      {/* ── Body: danh sách kho/nghiên cứu + nội dung ── */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
 
-        {/* ── SIDEBAR ── */}
-        <div style={{
-          width: 194, flexShrink: 0, display: 'flex', flexDirection: 'column',
-          borderRight: `1px solid ${C.border}`, background: C.surface, overflowY: 'auto',
-        }}>
-          {/* Kho gốc */}
-          <SectionHead>Kho dữ liệu gốc</SectionHead>
-          <SideItem
-            label="Danh sách ban đầu"
-            sub={archive?.latest_run
-              ? `${compactNumber(archiveInitial)} dòng danh sách${operationSnapshot?.total ? ` · ${compactNumber(operationSnapshot.total)} lượt theo dõi` : ''}`
-              : 'Chưa quét dữ liệu'}
-            active={isArchive}
-            onClick={() => { setSelectedId(ARCHIVE_SCOPE); setTable(ARCHIVE_DEFAULT_TABLE); setArchiveMode('overview'); }}
-            badge={
-              archive?.latest_run
-                ? <span style={{ width: 7, height: 7, borderRadius: '50%', background: C.green, flexShrink: 0 }} />
-                : <span style={{ width: 7, height: 7, borderRadius: '50%', background: C.text3, flexShrink: 0 }} />
-            }
-          >
-            {archive?.latest_run && (
-              <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                <StatBadge label="Dòng" value={archiveInitial || 0} tone="info" />
-                {!!operationSnapshot?.total && <StatBadge label="Theo dõi" value={operationSnapshot.total} tone="neutral" />}
-                {!!operationSnapshot?.counts?.error && <StatBadge label="Lỗi" value={operationSnapshot.counts.error} tone="danger" />}
-                {!!operationSnapshot?.unmatched_progress && <StatBadge label="Tiến độ chưa ghép" value={operationSnapshot.unmatched_progress} tone="warn" />}
+        {!isMobile && (
+          <nav aria-label="Kho và nghiên cứu" style={{
+            width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column',
+            borderRight: `1px solid ${C.border}`, background: C.surface, overflowY: 'auto',
+          }}>
+            <SectionHead>Kho dữ liệu gốc</SectionHead>
+            <SideItem
+              label="Toàn bộ kho"
+              sub={archiveSummaryText}
+              active={isArchive && !creatingStudy}
+              onClick={() => selectArchive(creatingStudy ? 'overview' : archiveMode)}
+              badge={dot(Boolean(archive?.latest_run))}
+            >
+              {(!!operationSnapshot?.counts?.error || !!operationSnapshot?.unmatched_progress) && isArchive && (
+                <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                  {!!operationSnapshot?.counts?.error && <StatBadge label="Lỗi" value={operationSnapshot.counts.error} tone="danger" />}
+                  {!!operationSnapshot?.unmatched_progress && <StatBadge label="Chưa ghép" value={operationSnapshot.unmatched_progress} tone="warn" />}
+                </div>
+              )}
+            </SideItem>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '12px 12px 6px', borderBottom: `1px solid ${C.border2}` }}>
+              <span style={{ fontSize: FS.xs, fontWeight: 600, color: C.text3 }}>Nghiên cứu riêng{studies.length ? ` (${studies.length})` : ''}</span>
+            </div>
+            <button
+              type="button"
+              onClick={openCreateStudy}
+              aria-pressed={creatingStudy}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, width: '100%', textAlign: 'left',
+                border: 0, borderBottom: `1px solid ${C.border2}`, borderLeft: `2px solid ${creatingStudy ? C.blue : 'transparent'}`,
+                background: creatingStudy ? C.blueBg : 'transparent', color: C.blue,
+                padding: '9px 12px', cursor: 'pointer', fontSize: FS.sm, fontWeight: 700, fontFamily: 'inherit',
+              }}
+            >
+              <span aria-hidden="true" style={{ fontSize: FS.lg, lineHeight: 1 }}>+</span> Tạo nghiên cứu mới
+            </button>
+
+            {studies.length === 0 && (
+              <div style={{ padding: '10px 12px 14px', fontSize: FS.xs, color: C.text3, lineHeight: 1.45 }}>
+                Chưa có nghiên cứu riêng. Tạo nghiên cứu bằng cách chọn biến từ kho gốc.
               </div>
             )}
-          </SideItem>
 
-          {/* Nghiên cứu riêng */}
-          <SectionHead>
-            Nghiên cứu riêng
-            {studies.length > 0 && (
-              <span style={{
-                marginLeft: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 16, height: 16, borderRadius: '50%',
-                background: C.surface2, color: C.text2, fontSize: FS.xs, fontWeight: 700,
-              }}>{studies.length}</span>
-            )}
-          </SectionHead>
-
-          {studies.length === 0 && (
-            <div style={{ padding: '10px 12px 14px', fontSize: FS.xs, color: C.text3, lineHeight: 1.45 }}>
-              Chưa có nghiên cứu riêng.
-            </div>
-          )}
-
-          {studies.map(item => {
-            const active = item.id === selectedId;
-            return (
+            {studies.map(item => (
               <SideItem
                 key={item.id}
                 label={item.name}
-                sub={item.id}
-                active={active}
-                onClick={() => { setSelectedId(item.id); setTable(primaryTableAfterRun(false)); }}
-                badge={
-                  item.latest_run
-                    ? <span style={{ width: 7, height: 7, borderRadius: '50%', background: C.green, flexShrink: 0 }} />
-                    : <span style={{ width: 7, height: 7, borderRadius: '50%', background: C.text3, flexShrink: 0 }} />
-                }
+                sub={studyCountLabel(item)}
+                active={item.id === selectedId}
+                onClick={() => selectStudy(item)}
+                badge={dot(Boolean(item.latest_run))}
               >
-                <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <StatBadge label="Mẫu" value={item.cohort_count || 0} tone="info" />
-                  {item.latest_run && (
-                    <StatBadge label="Lỗi" value={datasetCount(item,'errors',false)} tone={datasetCount(item,'errors',false) ? 'danger' : 'neutral'} />
-                  )}
-                  <button type="button" onClick={e => { e.stopPropagation(); setDeleteConfirm(item.id); }}
-                    title="Xóa nghiên cứu"
-                    style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: C.text3, fontSize: FS.md, lineHeight: 1, padding: '0 2px' }}>🗑</button>
-                </div>
+                {item.latest_run && datasetCount(item, 'errors', false) > 0 && (
+                  <StatBadge label="Lỗi" value={datasetCount(item, 'errors', false)} tone="danger" />
+                )}
               </SideItem>
-            );
-          })}
-        </div>
+            ))}
+          </nav>
+        )}
 
-        {/* ── MAIN CONTENT ── */}
+        {/* ── NỘI DUNG ── */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
 
-          {/* ── Action strip ── */}
-          <div style={{
-            padding: '6px 12px 0', borderBottom: `1px solid ${C.border}`,
-            background: C.surface, flexShrink: 0,
-          }}>
-            {/* Title row */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, minHeight: 26 }}>
-              <span style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>
-                {isArchive ? 'Dữ liệu gốc' : (activeStudy?.name || selectedId)}
+          {isMobile && (
+            <div style={{ display: 'flex', gap: 6, padding: '8px 12px', borderBottom: `1px solid ${C.border2}`, background: C.surface, flexShrink: 0 }}>
+              <select
+                value={creatingStudy ? '__create__' : selectedId}
+                aria-label="Chọn kho hoặc nghiên cứu"
+                onChange={e => {
+                  const v = e.target.value;
+                  if (v === '__create__') openCreateStudy();
+                  else if (v === ARCHIVE_SCOPE) selectArchive('overview');
+                  else selectStudy(studies.find(s => s.id === v));
+                }}
+                style={{ ...inp, flex: 1, minWidth: 0, height: 40 }}
+              >
+                <option value={ARCHIVE_SCOPE}>Kho dữ liệu gốc · {archiveSummaryText}</option>
+                {studies.map(item => <option key={item.id} value={item.id}>{item.name} · {studyCountLabel(item)}</option>)}
+                <option value="__create__">+ Tạo nghiên cứu mới</option>
+              </select>
+            </div>
+          )}
+
+          {/* ── Tiêu đề + chế độ ── */}
+          <div style={{ padding: '8px 12px 0', borderBottom: `1px solid ${C.border}`, background: C.surface, flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minHeight: 30 }}>
+              <span style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>
+                {creatingStudy ? 'Tạo nghiên cứu mới' : isArchive ? 'Kho dữ liệu gốc' : (activeStudy?.name || selectedId)}
               </span>
-              {latest?.id && (
-                <span style={{ fontSize: FS.xs, color: C.text3, fontVariantNumeric: 'tabular-nums' }}>
-                  đợt {latest.id}
-                </span>
+              {!creatingStudy && latest?.id && (
+                <span style={{ fontSize: FS.xs, color: C.text3, fontVariantNumeric: 'tabular-nums' }}>đợt {latest.id}</span>
               )}
-              {!isArchive && activeStudy?.description && (
-                <span style={{ fontSize: FS.xs, color: C.text2 }}> — {activeStudy.description}</span>
-              )}
-              {!isArchive && activeStudy?.analysis_config?.preset && (() => {
-                const presetLabel = analysisPresets.find(p => p.id === activeStudy.analysis_config.preset)?.label
-                  || activeStudy.analysis_config.preset;
-                return (
-                  <span style={{ fontSize: FS.xs, color: C.blue, background: C.blueBg, border: `1px solid ${C.blueBorder}`, borderRadius: 4, padding: '1px 6px', marginLeft: 4 }}>
-                    {presetLabel}
-                  </span>
-                );
-              })()}
-            </div>
-
-            {isArchive && (
-              <div style={{ display: 'flex', gap: 0, flexWrap: 'wrap', marginTop: 2 }}>
-                <ModeButton active={archiveMode === 'overview'} title="Dữ liệu tổng quát" hint="Số lượng, độ đầy đủ và danh sách người bệnh" onClick={() => setArchiveMode('overview')} />
-                <ModeButton active={archiveMode === 'update'} title="Thu thập dữ liệu" hint="Quét, lấy dữ liệu và kiểm soát lỗi" onClick={() => setArchiveMode('update')} />
-                <ModeButton active={archiveMode === 'patient'} title="Tra cứu người bệnh" hint="Xem toàn bộ các lần điều trị" onClick={() => setArchiveMode('patient')} />
-                <ModeButton active={archiveMode === 'variables'} title="Tạo nghiên cứu" hint="Chọn biến và tạo bộ nghiên cứu" onClick={() => setArchiveMode('variables')} />
-              </div>
-            )}
-
-            {(isArchive ? archiveMode === 'update' : true) && (
-              <div style={{ display: 'grid', gap: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                  {isArchive && (
-                    <button
-                      type="button"
-                      onClick={runSimpleListScan}
-                      disabled={uiBusy}
-                      style={{
-                        height: 34, padding: '0 14px', borderRadius: 6, cursor: uiBusy ? 'not-allowed' : 'pointer',
-                        border: `1px solid ${C.border}`, background: C.surface, color: C.text,
-                        fontFamily: 'inherit', fontSize: FS.xs, fontWeight: 700, opacity: uiBusy ? 0.6 : 1,
-                      }}
-                    >
-                      {uiBusy && automationRun.kind === 'scan' ? 'Đang quét…' : '1. Quét danh sách'}
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={runSimpleDataCollection}
-                    disabled={uiBusy || (isArchive ? !archive?.latest_run?.id : !activeStudy?.has_cohort)}
-                    style={{
-                      height: 34, padding: '0 16px', borderRadius: 6,
-                      cursor: uiBusy ? 'not-allowed' : 'pointer',
-                      border: `1px solid ${C.blue}`, background: C.blue, color: '#fff',
-                      fontFamily: 'inherit', fontSize: FS.xs, fontWeight: 700,
-                      opacity: (uiBusy || (isArchive ? !archive?.latest_run?.id : !activeStudy?.has_cohort)) ? 0.55 : 1,
-                    }}
-                  >
-                    {uiBusy && automationRun.kind === 'collect' ? 'Đang lấy…' : `${isArchive ? '2. ' : ''}Lấy dữ liệu`}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={runRefreshProvisional}
-                    disabled={uiBusy || (isArchive ? !archive?.latest_run?.id : !activeStudy?.has_cohort)}
-                    title="Ca đã dùng dữ liệu tạm thời từ tab Kiểm HSBA / Trả HSBA sẽ được quét lại từ EMR để có dữ liệu gốc"
-                    style={{
-                      height: 34, padding: '0 12px', borderRadius: 6, cursor: uiBusy ? 'not-allowed' : 'pointer',
-                      border: `1px solid ${C.border}`, background: C.surface, color: C.text,
-                      fontFamily: 'inherit', fontSize: FS.xs, fontWeight: 600, opacity: uiBusy ? 0.55 : 1,
-                    }}
-                  >
-                    Quét lại dữ liệu tạm thời
-                  </button>
-                  <span style={{ fontSize: FS.xs, color: C.text3 }}>
-                    Chuẩn hóa và cập nhật kho chạy tự động. Ca đã có ở tab Kiểm HSBA / Trả HSBA được dùng lại (tạm thời) thay vì mở EMR.
-                  </span>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  {isArchive && (
-                    <>
-                      <span style={{ fontSize: FS.xs, color: C.text3, fontWeight: 700 }}>KHOẢNG QUÉT</span>
-                      <input type="date" value={archiveOptions.fromDate}
-                        onChange={e => setArchiveOptions(p => ({ ...p, fromDate: e.target.value }))}
-                        disabled={uiBusy} style={{ ...inp, width: 128 }} />
-                      <span style={{ color: C.text3 }}>—</span>
-                      <input type="date" value={archiveOptions.toDate}
-                        onChange={e => setArchiveOptions(p => ({ ...p, toDate: e.target.value }))}
-                        disabled={uiBusy} style={{ ...inp, width: 128 }} />
-                      <Btn onClick={() => setArchiveOptions(p => ({ ...p, toDate: todayInputDate() }))} disabled={uiBusy} style={actionBtn}>Hôm nay</Btn>
-                    </>
-                  )}
-                  <details style={{ marginLeft: isArchive ? 'auto' : 0 }}>
-                    <summary style={{ cursor: 'pointer', fontSize: FS.xs, color: C.text3, fontWeight: 700 }}>Cài đặt chạy</summary>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, fontSize: FS.xs, color: C.text2 }}>
-                      <input type="checkbox"
-                        checked={isArchive ? archiveOptions.headless : studyOptions.headless}
-                        onChange={e => isArchive
-                          ? setArchiveOptions(p => ({ ...p, headless: e.target.checked }))
-                          : setStudyOptions(p => ({ ...p, headless: e.target.checked }))}
-                        disabled={uiBusy}
-                      />
-                      Chạy ẩn, không mở cửa sổ Chrome
-                    </label>
-                  </details>
-                  {!isArchive && table === 'cohort' && (
-                    editMode
-                      ? <>
-                          <Btn variant="success" onClick={saveEditedCohort} disabled={uiBusy} style={actionBtn}>Lưu danh sách mẫu</Btn>
-                          <Btn onClick={() => setEditMode(false)} disabled={uiBusy} style={actionBtn}>Huỷ</Btn>
-                        </>
-                      : <Btn onClick={() => setEditMode(true)} disabled={uiBusy} style={actionBtn}>Sửa danh sách mẫu</Btn>
-                  )}
-                </div>
-
-                {automationRun.status !== 'idle' && (
-                  <div style={{ border: `1px solid ${C.border2}`, background: C.surface2, borderRadius: 7, padding: '8px 10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: FS.xs, fontWeight: 700, color: automationRun.status === 'error' ? C.red : ['warning', 'cancelled'].includes(automationRun.status) ? C.amber : automationRun.status === 'done' ? C.green : C.text }}>
-                      {automationRun.status === 'running' && <Spinner size={8} />}
-                      {automationRun.status === 'running' ? automationRun.current : automationRun.status === 'done' ? 'Đã hoàn tất' : automationRun.status === 'warning' ? 'Hoàn tất, có cảnh báo' : automationRun.status === 'cancelled' ? 'Đã dừng theo yêu cầu' : 'Đã dừng do lỗi'}
-                    </div>
-                    {(automationRun.steps.length > 0 || automationRun.error || automationRun.warning) && (
-                      <details style={{ marginTop: 5 }}>
-                        <summary style={{ cursor: 'pointer', fontSize: FS.xs, color: C.text3 }}>Chi tiết quy trình</summary>
-                        <div style={{ display: 'grid', gap: 4, marginTop: 6 }}>
-                          {automationRun.steps.map((step, index) => {
-                            const tone = step.status === 'error' ? C.red : ['warning', 'cancelled'].includes(step.status) ? C.amber : step.status === 'done' ? C.green : step.status === 'running' ? C.blue : C.text3;
-                            const symbol = step.status === 'done' ? '✓' : step.status === 'error' ? '!' : step.status === 'warning' ? '!' : step.status === 'cancelled' ? '■' : step.status === 'running' ? '…' : '·';
-                            return <div key={`${step.label}_${index}`} style={{ fontSize: FS.xs, color: tone }}>{symbol} {step.label}{step.detail ? ` — ${step.detail}` : ''}</div>;
-                          })}
-                          {automationRun.error && <div style={{ fontSize: FS.xs, color: C.red }}>Lỗi: {automationRun.error}</div>}
-                          {automationRun.warning && <div style={{ fontSize: FS.xs, color: C.amber }}>{automationRun.warning}</div>}
-                        </div>
-                      </details>
-                    )}
-                  </div>
-                )}
-
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
-                  padding: '7px 0', borderTop: `1px solid ${C.border2}`, background: C.surface,
-                }}>
-                  <span style={{ fontSize: FS.xs, color: C.text3 }}>Tiến độ được lưu tự động.</span>
-                  <Btn onClick={() => loadProgressSnapshot(selectedId, { silent: false })} disabled={statusLoading || uiBusy} style={{ ...actionBtn, marginLeft: 'auto' }}>
-                    {statusLoading ? <Spinner size={8} /> : 'Cập nhật'}
-                  </Btn>
-                  <Btn onClick={() => { setShowLog(true); loadLog(); }} disabled={logLoading} style={actionBtn}>Log</Btn>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* ── Panel lấy lại chỗ thiếu ── */}
-          {showMissingPanel && (
-            <div style={{ padding: '10px 14px', borderBottom: `1px solid ${C.amberBorder}`, background: C.amberBg, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: FS.xs, fontWeight: 600, color: C.amber }}>Bổ sung phần thiếu:</span>
-              {[
-                { id: 'profile',       label: 'Hồ sơ nền' },
-                { id: 'discharge',     label: 'Ra viện' },
-                { id: 'surgery',       label: 'Phẫu thuật' },
-                { id: 'order_history', label: 'Y lệnh' },
-                { id: 'xn_cdha',       label: 'XN & CĐHA' },
-              ].map(({ id, label }) => (
-                <label key={id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: FS.xs, color: C.text2, cursor: 'pointer' }}>
-                  <input type="checkbox"
-                    checked={missingTypes.includes(id)}
-                    onChange={e => setMissingTypes(prev => e.target.checked ? [...prev, id] : prev.filter(x => x !== id))}
-                  />
-                  {label}
-                </label>
-              ))}
-              <Btn variant="solidWarn" onClick={runRefetchMissing} disabled={uiBusy || !missingTypes.length} style={{ height: 26, padding: '0 12px', fontSize: FS.xs }}>
-                {uiBusy ? <><Spinner size={9} /> Đang lấy lại</> : 'Chạy'}
-              </Btn>
-              <span style={{ fontSize: FS.xs, color: C.amber }}>Chỉ xử lý BN/lượt còn thiếu hoặc lỗi, bỏ qua dòng đã đủ.</span>
-              {missingTypes.includes('xn_cdha') && (
-                <span style={{ fontSize: FS.xs, color: C.text3 }}>XN/CĐHA: chạy lấy lại ngay trên danh sách BN/lượt còn thiếu.</span>
-              )}
-            </div>
-          )}
-
-          {/* ── Panel cấu hình phân tích (chỉ hiện khi chọn study riêng) ── */}
-          {showConfigPanel && !isArchive && (
-            <div style={{ padding: '12px 14px', borderBottom: `1px solid ${C.blueBorder}`, background: C.blueBg, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: FS.xs, fontWeight: 700, color: C.blue }}>Cấu hình phân tích:</span>
-                <select value={editConfig.preset}
-                  onChange={e => setEditConfig(p => ({ ...p, preset: e.target.value }))}
-                  style={{ fontSize: FS.xs, padding: '3px 8px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.surface, color: C.text }}>
-                  {(analysisPresets.length ? analysisPresets : [
-                    { id: 'ortho_fracture', label: 'Chấn thương chỉnh hình — Gãy xương' },
-                    { id: 'ortho_joint',    label: 'Chấn thương chỉnh hình — Khớp / Thay khớp' },
-                    { id: 'neuro_spine',    label: 'Thần kinh — Cột sống / Tủy sống' },
-                    { id: 'neuro_brain',    label: 'Thần kinh — Sọ não / Đột quỵ' },
-                    { id: 'general',        label: 'Tổng quát (không inference)' },
-                  ]).map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-                </select>
-                <button type="button"
-                  onClick={() => setEditConfig(p => ({ ...p, custom_fields: [...(p.custom_fields || []), { name: '', pattern: '', label: '' }] }))}
-                  style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text2, borderRadius: 5, padding: '2px 8px', fontSize: FS.xs, cursor: 'pointer' }}>
-                  + Trường tuỳ chỉnh
-                </button>
-              </div>
-              {(editConfig.custom_fields || []).map((cf, i) => (
-                <div key={i} style={{ display: 'grid', gridTemplateColumns: '160px 1fr 28px', gap: 6, alignItems: 'center' }}>
-                  <input value={cf.name}
-                    onChange={e => setEditConfig(p => { const cfs = [...p.custom_fields]; cfs[i] = { ...cfs[i], name: e.target.value }; return { ...p, custom_fields: cfs }; })}
-                    placeholder="Tên cột" style={{ fontSize: FS.xs, padding: '3px 8px', borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text }} />
-                  <input value={cf.pattern}
-                    onChange={e => setEditConfig(p => { const cfs = [...p.custom_fields]; cfs[i] = { ...cfs[i], pattern: e.target.value }; return { ...p, custom_fields: cfs }; })}
-                    placeholder="Regex (VD: đái tháo đường|diabetes)" style={{ fontSize: FS.xs, padding: '3px 8px', borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text }} />
-                  <button type="button" onClick={() => setEditConfig(p => ({ ...p, custom_fields: p.custom_fields.filter((_, j) => j !== i) }))}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.text3, fontSize: FS.xl }}>✕</button>
-                </div>
-              ))}
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Btn variant="primary" onClick={saveAnalysisConfig} disabled={uiBusy} style={{ height: 26, padding: '0 12px', fontSize: FS.xs }}>
-                  {busy ? <><Spinner size={9} /> Lưu</> : '✓ Lưu & đóng'}
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                <Btn onClick={openLog} disabled={logLoading} style={actionBtn}>Log</Btn>
+                <Btn onClick={reloadCurrentView} disabled={loading || tableLoading || busy} title="Tải lại dữ liệu đang xem" style={actionBtn}>
+                  {(loading || tableLoading) ? <><Spinner size={8} /> Đang tải</> : 'Tải lại'}
                 </Btn>
-                <Btn onClick={() => setShowConfigPanel(false)} style={{ height: 26, padding: '0 10px', fontSize: FS.xs }}>Huỷ</Btn>
-                <span style={{ fontSize: FS.xs, color: C.text3, alignSelf: 'center' }}>Sau khi lưu, bấm "Chuẩn hóa" để sinh lại analysis_ready với cấu hình mới.</span>
+                {!isArchive && (
+                  <Btn variant="danger" onClick={() => setDeleteConfirm(selectedId)} disabled={uiBusy} style={actionBtn}>Xóa nghiên cứu</Btn>
+                )}
               </div>
             </div>
-          )}
-
-          {!isArchive && (
-            <div style={{ padding: 10, borderBottom: `1px solid ${C.border}`, background: C.bg, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <CollectionAutoPanel
-                studyId={selectedId}
-                study={activeStudy}
-                options={{ ...studyOptions, fromDate: studyOptions.fromDate || archiveOptions.fromDate, toDate: studyOptions.toDate || archiveOptions.toDate }}
-                disabled={uiBusy}
-                toast={toast}
-                onDone={async () => { await loadSummary(); await loadProgressSnapshot(selectedId, { silent: true }); }}
-              />
-              <ResearchOperationDashboard
-                snapshot={operationSnapshot}
-                lastUpdate={lastUpdateSummary}
-                loading={statusLoading}
-                onRefresh={() => loadProgressSnapshot(selectedId, { silent: false })}
-              />
+            <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 2 }}>
+              {creatingStudy
+                ? 'Chọn biến từ kho gốc, đặt điều kiện lọc, xem trước rồi tạo. Không mở EMR.'
+                : isArchive
+                  ? `${archiveSummaryText}. Toàn bộ người bệnh quét từ EMR; nghiên cứu riêng được tạo từ kho này.`
+                  : [activeStudy?.description, studyCountLabel(activeStudy)].filter(Boolean).join(' · ')}
             </div>
-          )}
+            <div role="tablist" className="emr-hscroll" style={{ display: 'flex', gap: 0, marginTop: 4, overflowX: 'auto' }}>
+              {(isArchive ? archiveModes : studyModes).map(([key, title, hint]) => (
+                <ModeButton
+                  key={key}
+                  title={title}
+                  hint={hint}
+                  active={isArchive ? archiveMode === key : studyMode === key}
+                  onClick={() => (isArchive ? setArchiveMode(key) : setStudyMode(key))}
+                />
+              ))}
+            </div>
+          </div>
 
           {isArchive ? (
             <div style={{ flex: 1, overflow: 'auto', minHeight: 0, background: C.bg }}>
               {renderArchiveWorkspace()}
             </div>
-          ) : (
-            <>
-          {/* ── Tab bar ── */}
-          <div style={{
-            display: 'flex', alignItems: 'stretch', gap: 0,
-            padding: '0 12px', flexShrink: 0, minHeight: 36,
-            borderBottom: `1px solid ${C.border}`, background: C.bg,
-            overflowX: 'auto', overflowY: 'hidden',
-          }}>
-            {tabGroups.map((group, gi) => (
-              <div key={gi} style={{ display: 'flex', alignItems: 'stretch', gap: 0, flexShrink: 0 }}>
-                {gi > 0 && <div style={{ width: 1, background: C.border2, margin: '8px 4px', flexShrink: 0 }} />}
-                {group.ids.map(id => {
-                  const label = tableLabel(id, isArchive);
-                  const cnt   = datasetCount(activeSource, id, isArchive);
-                  const active = table === id;
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => setTable(id)}
-                      style={{
-                        height: 32, padding: '0 9px',
-                        border: 0, borderBottom: `2px solid ${active ? C.blue : 'transparent'}`,
-                        background: 'transparent',
-                        color: active ? C.blue : C.text2,
-                        cursor: 'pointer', fontSize: FS.xs, fontWeight: active ? 700 : 600,
-                        whiteSpace: 'nowrap',
-                        transition: 'color 0.12s, border-color 0.12s',
-                      }}
-                    >
-                      {label}
-                      {cnt > 0 && (
-                        <span style={{
-                          marginLeft: 5, fontSize: FS.xs, fontWeight: 700,
-                          color: active ? C.blue : C.text3,
-                          background: active ? C.blueBg : C.surface2,
-                          border: `1px solid ${active ? C.blueBorder : C.border2}`,
-                          borderRadius: 3, padding: '0 4px',
-                        }}>{compactNumber(cnt)}</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-
-          {/* ── Filter bar ── */}
-          <div style={{
-            padding: '6px 12px', borderBottom: `1px solid ${C.border2}`,
-            background: C.surface, flexShrink: 0,
-            display: 'grid', gap: 5,
-          }}>
-            {/* Row 1: inputs */}
-            <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
-              <input
-                value={filters.q}
-                onChange={e => setFilters(p => ({ ...p, q: e.target.value }))}
-                placeholder={isArchive ? 'Họ tên, Mã BN, xét nghiệm...' : 'Tên xét nghiệm, chẩn đoán...'}
-                style={{ ...inp, flex: '1 1 200px', minWidth: 0 }}
-              />
-              <input
-                value={filters.patient}
-                onChange={e => setFilters(p => ({ ...p, patient: e.target.value }))}
-                placeholder="Mã NC / BN..."
-                style={{ ...inp, width: 130, flexShrink: 0 }}
-              />
-              <input type="date" value={filters.from}
-                onChange={e => setFilters(p => ({ ...p, from: e.target.value }))}
-                style={{ ...inp, width: 126, flexShrink: 0 }} />
-              <input type="date" value={filters.to}
-                onChange={e => setFilters(p => ({ ...p, to: e.target.value }))}
-                style={{ ...inp, width: 126, flexShrink: 0 }} />
-              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: FS.xs, color: C.text2, whiteSpace: 'nowrap' }}>
-                <input type="checkbox" checked={filters.hideSensitive}
-                  onChange={e => setFilters(p => ({ ...p, hideSensitive: e.target.checked }))} />
-                Ẩn định danh
-              </label>
-              {(filters.q || filters.patient || filters.from || filters.to || !filters.hideSensitive) && (
-                <Btn onClick={resetFilters} style={{ height: 28, padding: '0 8px', fontSize: FS.xs }}>✕ Xoá lọc</Btn>
-              )}
+          ) : studyMode === 'collect' ? (
+            <div style={{ flex: 1, overflow: 'auto', minHeight: 0, background: C.bg }}>
+              {collectionWorkspace}
             </div>
-            {/* Row 2: count + actions — luôn hiển thị đủ */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: FS.xs, color: C.text3 }}>
-                {compactNumber(filteredRows.length)}/{compactNumber(rows.length)} dòng
-              </span>
-              <Btn onClick={() => loadTable(selectedId, table)} disabled={tableLoading || busy} style={{ height: 26, padding: '0 8px', fontSize: FS.xs }}>
-                {tableLoading ? <><Spinner size={9} /> Đang tải</> : '↻ Tải lại'}
-              </Btn>
-              <Btn variant="success" onClick={exportCurrent} disabled={!filteredRows.length} style={{ height: 26, padding: '0 10px', fontSize: FS.xs }}>
-                ⬇ Xuất CSV
-              </Btn>
-            </div>
-          </div>
-
-          {/* ── Table ── */}
-          <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-            {initialLoading && (
-              <div style={{ padding: 24, color: C.text2, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Spinner size={12} /> Đang tải dữ liệu...
-              </div>
-            )}
-            {!initialLoading && !tableLoading && !rows.length && (
-              <EmptyState
-                title="Chưa có dữ liệu"
-                hint={isArchive
-                  ? 'Bấm Bước 1 — Quét danh sách để tạo danh sách ban đầu, sau đó Bước 2 — Lấy XN & CĐHA để lấy dữ liệu lâm sàng.'
-                  : 'Nghiên cứu riêng sẽ được thiết lập từ dữ liệu gốc ở phần khác.'}
-              />
-            )}
-            {rows.length > 0 && (
-              <div style={{ opacity: tableLoading ? 0.5 : 1, transition: 'opacity 0.2s' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.sm, tableLayout: 'fixed' }}>
-                <thead style={{ position: 'sticky', top: 0, background: C.surface2, zIndex: 2 }}>
-                  <tr>
-                    {editMode && <th style={{ width: 28, borderBottom: `1px solid ${C.border}` }} />}
-                    {visibleColumns.map((col, ci) => {
-                      const isLong = /thuốc|chi tiết|chẩn đoán|mô tả|kết luận|dòng/i.test(col);
-                      const isLast = ci === visibleColumns.length - 1;
-                      const w = isLast ? undefined : isLong ? 320 : /họ tên|ho ten|patient_name/i.test(col) ? 200 : /t\/g|ngày|thời gian/i.test(col) ? 140 : /mã bn|mã nc|mã vào/i.test(col) ? 110 : /tuổi|age/i.test(col) ? 60 : /gt|giới/i.test(col) ? 60 : 130;
-                      return (
-                        <th key={col} style={{
-                          textAlign: 'left', padding: '7px 10px',
-                          borderBottom: `1px solid ${C.border}`,
-                          color: C.text2, fontWeight: 700, fontSize: FS.xs,
-                          whiteSpace: 'nowrap', letterSpacing: '0.02em',
-                          width: w, overflow: 'hidden',
-                        }}>{col}</th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRows.slice(0, 1000).map((row, idx) => (
-                    <tr key={idx} style={{ borderBottom: `1px solid ${C.border2}` }}
-                      onMouseEnter={e => e.currentTarget.style.background = C.surface2}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                    >
-                      {editMode && (
-                        <td style={{ padding: '0 6px', width: 28, textAlign: 'center' }}>
-                          <button type="button"
-                            onClick={() => setRows(prev => prev.filter((_, i) => i !== idx))}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.red, fontSize: FS.lg, lineHeight: 1 }}>✕</button>
-                        </td>
-                      )}
-                      {visibleColumns.map((col, ci) => {
-                        const isCode = col === 'Mã NC';
-                        const isLong = /thuốc|chi tiết|chẩn đoán|mô tả|kết luận|dòng/i.test(col);
-                        const isLast = ci === visibleColumns.length - 1;
-                        return (
-                          <td key={col} style={{
-                            padding: '7px 10px',
-                            color: isCode ? C.blue : C.text2,
-                            fontWeight: isCode ? 700 : 500,
-                            verticalAlign: 'top',
-                            whiteSpace: isLong ? 'pre-wrap' : 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: isLast ? 'clip' : 'ellipsis',
-                          }}>{text(row?.[col]) || <span style={{ color: C.text3 }}>—</span>}</td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              </div>
-            )}
-            {tableLoading && rows.length > 0 && (
-              <div style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6, borderTop: `1px solid ${C.border2}` }}>
-                <Spinner size={9} /><span style={{ fontSize: FS.xs, color: C.text3 }}>Đang cập nhật...</span>
-              </div>
-            )}
-            {!loading && !tableLoading && filteredRows.length > 1000 && (
-              <div style={{ padding: '8px 12px', color: C.text3, fontSize: FS.xs, borderTop: `1px solid ${C.border2}` }}>
-                Hiển thị 1.000 dòng đầu · Xuất CSV để lấy toàn bộ {compactNumber(filteredRows.length)} dòng.
-              </div>
-            )}
-          </div>
-            </>
-          )}
+          ) : renderStudyData()}
         </div>
       </div>
     </div>

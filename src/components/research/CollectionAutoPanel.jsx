@@ -184,7 +184,7 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
           <Btn onClick={() => setShowRefresh(v => !v)} style={{ height: 26, padding: '0 9px', fontSize: FS.xs }}>{showRefresh ? 'Đóng làm mới' : 'Làm mới…'}</Btn>
-          <Btn variant="primary" onClick={() => run([])} disabled={busy} style={{ height: 26, padding: '0 12px', fontSize: FS.xs }}>
+          <Btn variant="solidPrimary" onClick={() => run([])} disabled={busy} style={{ height: 30, padding: '0 14px', fontSize: FS.sm }}>
             {running ? <><Spinner size={9} /> Đang thu thập</> : 'Thu thập tự động'}
           </Btn>
           <Btn onClick={load} disabled={loading} style={{ height: 26, padding: '0 9px', fontSize: FS.xs }}>{loading ? <Spinner size={8} /> : '↻'}</Btn>
