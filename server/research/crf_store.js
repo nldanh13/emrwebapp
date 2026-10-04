@@ -1,7 +1,7 @@
 'use strict';
 
-// Phiếu nhập tay (CRF) của nghiên cứu: các biến không có trên EMR (phỏng vấn, đo tại giường,
-// gọi điện/theo dõi...). Lưu trong thư mục nghiên cứu:
+// Phiếu nhập tay (CRF) của nghiên cứu: các biến không có trên EMR (phỏng vấn, đo lúc truyền,
+// gọi điện theo dõi sau truyền...). Lưu trong thư mục nghiên cứu:
 //   crf_form.json     thiết kế phiếu: trường (field) và mốc theo dõi (timepoint)
 //   crf_entries.json  dữ liệu đã nhập theo Mã NC (gồm cả trường định danh như số điện thoại)
 //   crf_data.csv      bản xuất để phân tích: mỗi Mã NC một dòng, KHÔNG có trường định danh
@@ -22,10 +22,6 @@ const TIMEPOINT_STATUSES = new Set(['pending', 'done', 'unreachable']);
 const MAX_FIELDS = 400;
 const MAX_TIMEPOINTS = 20;
 
-const HADS_A_IDS = ['hads_a1', 'hads_a3', 'hads_a5', 'hads_a7', 'hads_a9', 'hads_a11', 'hads_a13'];
-const HADS_D_IDS = ['hads_d2', 'hads_d4', 'hads_d6', 'hads_d8', 'hads_d10', 'hads_d12', 'hads_d14'];
-const AIS_IDS = ['ais_1', 'ais_2', 'ais_3', 'ais_4', 'ais_5'];
-
 function badRequest(message) {
   const err = new Error(message);
   err.status = 400;
@@ -35,6 +31,7 @@ function badRequest(message) {
 const slug = (value, max = 40) => String(value || '').trim().toLowerCase()
   .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd')
   .replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, max);
+// Mã mốc theo dõi giữ chữ hoa (T24, D7) vì người dùng đọc thẳng trên cột xuất.
 const tpSlug = value => String(value || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   .replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 20);
 const str = (value, max) => String(value ?? '').replace(/[\r\n\t]+/g, ' ').trim().slice(0, max);
@@ -58,6 +55,7 @@ function sanitizeForm(input) {
     if (!label) continue;
     let id = slug(f?.id || label);
     if (!id) continue;
+    // Mã trường chỉ cần không trùng trong cùng một mốc: cùng câu hỏi ở T24/T48/T72 dùng chung mã.
     const timepoint = f?.timepoint && tpIds.has(String(f.timepoint)) ? String(f.timepoint) : '';
     for (let i = 2; fieldIds.has(`${timepoint}:${id}`); i += 1) id = `${slug(f?.id || label, 36)}_${i}`;
     const type = FIELD_TYPES.has(String(f?.type)) ? String(f.type) : 'text';
@@ -101,6 +99,7 @@ function cohortCodes(studyId) {
   return [...new Set((table.rows || []).map(row => researchCode(row)).filter(Boolean))];
 }
 
+// Chuẩn hóa một giá trị theo kiểu trường; giá trị sai kiểu thì báo lỗi rõ trường nào.
 function cleanValue(field, value) {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
@@ -118,6 +117,8 @@ function cleanValue(field, value) {
   return raw.slice(0, 1000);
 }
 
+// Ghép giá trị mới vào giá trị cũ: chỉ đổi các trường có gửi lên (trường định danh bị ẩn
+// ở phía người nhập thì không gửi, giữ nguyên giá trị cũ).
 function mergeValues(fields, current, incoming) {
   const out = { ...(current || {}) };
   for (const field of fields) {
@@ -128,53 +129,9 @@ function mergeValues(fields, current, incoming) {
   return out;
 }
 
-function completeNumericSum(values, ids) {
-  const nums = ids.map(id => {
-    const raw = values?.[id];
-    if (raw === '' || raw == null) return null;
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : null;
-  });
-  return nums.every(n => n != null) ? nums.reduce((a, b) => a + b, 0) : '';
-}
-
-function hadsClass(score) {
-  if (!Number.isFinite(Number(score))) return '';
-  const n = Number(score);
-  if (n <= 7) return 'Bình thường';
-  if (n <= 10) return 'Nguy cơ';
-  return 'Có rối loạn';
-}
-
-function derivedValues(values = {}) {
-  const out = {};
-  const hadsA = completeNumericSum(values, HADS_A_IDS);
-  const hadsD = completeNumericSum(values, HADS_D_IDS);
-  const ais = completeNumericSum(values, AIS_IDS);
-  if (hadsA !== '') { out.hads_a_total = hadsA; out.hads_a_class = hadsClass(hadsA); }
-  if (hadsD !== '') { out.hads_d_total = hadsD; out.hads_d_class = hadsClass(hadsD); }
-  if (ais !== '') { out.ais_total = ais; out.ais_class = Number(ais) <= 4 ? 'Bình thường' : 'Rối loạn giấc ngủ'; }
-  const psqi = values.psqi_total;
-  if (psqi !== '' && psqi != null && Number.isFinite(Number(psqi))) {
-    out.psqi_class = Number(psqi) <= 5 ? 'Giấc ngủ tốt' : 'Rối loạn giấc ngủ';
-  }
-  return out;
-}
-
-function derivedColumnsForForm(form) {
-  const ids = new Set((form.fields || []).filter(f => !f.timepoint).map(f => f.id));
-  const cols = [];
-  if (HADS_A_IDS.some(id => ids.has(id))) cols.push('hads_a_total', 'hads_a_class');
-  if (HADS_D_IDS.some(id => ids.has(id))) cols.push('hads_d_total', 'hads_d_class');
-  if (AIS_IDS.some(id => ids.has(id))) cols.push('ais_total', 'ais_class');
-  if (ids.has('psqi_total')) cols.push('psqi_class');
-  return cols;
-}
-
 function writeDataCsv(studyId, form, entries) {
   const baseFields = form.fields.filter(f => !f.timepoint && !f.identifier);
-  const derivedColumns = derivedColumnsForForm(form);
-  const columns = ['research_code', 'anchor_at', ...baseFields.map(f => f.id), ...derivedColumns];
+  const columns = ['research_code', 'anchor_at', ...baseFields.map(f => f.id)];
   for (const tp of form.timepoints) {
     columns.push(`${tp.id}_status`);
     for (const f of form.fields.filter(x => x.timepoint === tp.id && !x.identifier)) columns.push(`${tp.id}_${f.id}`);
@@ -182,7 +139,6 @@ function writeDataCsv(studyId, form, entries) {
   const rows = Object.entries(entries).sort(([a], [b]) => a.localeCompare(b)).map(([code, entry]) => {
     const row = { research_code: code, anchor_at: entry.anchor_at || '' };
     for (const f of baseFields) row[f.id] = entry.values?.[f.id] ?? '';
-    Object.assign(row, derivedValues(entry.values || {}));
     for (const tp of form.timepoints) {
       const t = entry.timepoints?.[tp.id] || {};
       row[`${tp.id}_status`] = t.status || '';
@@ -238,35 +194,21 @@ function saveEntry(studyId, code, input, actor = '') {
   return { entry: next, entry_count: count };
 }
 
-function normalizedAnchor(value) {
-  const s = String(value || '').trim();
-  if (!s) return '';
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return `${s}T00:00`;
-  return s.replace(' ', 'T').slice(0, 16);
-}
-
-// Mốc CRF: ưu tiên anchor_datetime của dataset chọn biến; nếu nghiên cứu không khai báo
-// anchor riêng thì tự dùng ngày/giờ phẫu thuật. Đây là nền để N1/N2/N3 không phải nhập mốc tay.
+// Mốc tính tự động cho lịch theo dõi: cột anchor_datetime của analysis_selected (mốc thuốc).
 function computedAnchors(runDir) {
   if (!runDir) return {};
+  const file = path.join(runDir, 'analysis_selected.csv');
+  if (!fs.existsSync(file)) return {};
   const out = {};
-  const ingest = (file, candidates) => {
-    if (!fs.existsSync(file)) return;
-    for (const row of readCsvTable(file, Number.MAX_SAFE_INTEGER).rows || []) {
-      const code = researchCode(row);
-      if (!code || out[code]) continue;
-      for (const key of candidates) {
-        const value = normalizedAnchor(row[key]);
-        if (value) { out[code] = value; break; }
-      }
-    }
-  };
-  ingest(path.join(runDir, 'analysis_selected.csv'), ['anchor_datetime', 'surgery_datetime', 'surgery_date']);
-  ingest(path.join(runDir, 'analysis_ready.csv'), ['anchor_datetime', 'surgery_datetime', 'surgery_date']);
-  ingest(path.join(runDir, 'surgery_results.csv'), ['surgery_datetime', 'surgery_date']);
+  for (const row of readCsvTable(file, Number.MAX_SAFE_INTEGER).rows || []) {
+    const code = researchCode(row);
+    if (code && row.anchor_datetime && !out[code]) out[code] = String(row.anchor_datetime);
+  }
   return out;
 }
 
+// Dữ liệu cho màn hình: thiết kế phiếu + từng Mã NC trong danh sách mẫu (giá trị đã nhập,
+// mốc thủ công/tự động). Trường định danh chỉ trả về khi được phép xem dữ liệu định danh.
 function readCrfView(studyId, { runDir = '', includeIdentifiers = false } = {}) {
   const form = readForm(studyId);
   const entries = readEntries(studyId);
@@ -285,7 +227,6 @@ function readCrfView(studyId, { runDir = '', includeIdentifiers = false } = {}) 
       anchor_at: entry?.anchor_at || '',
       anchor_auto: auto[code] || '',
       values: strip(entry?.values),
-      derived_values: derivedValues(entry?.values || {}),
       identifiers_saved: entry ? [...hidden].filter(id => entry.values?.[id]) : [],
       timepoints: Object.fromEntries(Object.entries(entry?.timepoints || {}).map(([tp, t]) => [tp, { ...t, values: strip(t.values) }])),
       updated_at: entry?.updated_at || '',
@@ -294,4 +235,4 @@ function readCrfView(studyId, { runDir = '', includeIdentifiers = false } = {}) 
   return { form, samples, identifiers_visible: includeIdentifiers };
 }
 
-module.exports = { sanitizeForm, readForm, saveForm, saveEntry, readCrfView, derivedValues, DATA_FILE };
+module.exports = { sanitizeForm, readForm, saveForm, saveEntry, readCrfView, DATA_FILE };
