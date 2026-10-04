@@ -8,31 +8,53 @@ import { Btn, Spinner } from '../shared.jsx';
 import { IdentifiedLockNotice } from './IdentifiedLockNotice.jsx';
 import { EncounterHistoryCard } from './ResearchMonitor.jsx';
 
+const PATIENT_CODE_RE = /^[A-Za-z0-9._-]{1,64}$/;
+const MAX_DIRECT_PATIENTS = 200;
+
+function parsePatientCodes(raw) {
+  const seen = new Set();
+  const codes = [];
+  for (const item of String(raw || '').split(/[\s,;]+/)) {
+    const code = item.trim();
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    codes.push(code);
+  }
+  return codes;
+}
+
 export function PatientLookupView({
   identifiedAccess, identifiedLocked, loadPatientHistory, patientHistory, patientHistoryError,
   patientHistoryLoading, patientHistoryMeta, patientQuery, setPatientQuery,
 }) {
-  const [directPatientCode, setDirectPatientCode] = useState('');
+  const [directPatientCodes, setDirectPatientCodes] = useState('');
   const [directState, setDirectState] = useState({ loading: false, message: '', error: '' });
+  const parsedDirectCodes = parsePatientCodes(directPatientCodes);
 
-  const collectDirectPatient = async () => {
-    const code = String(directPatientCode || '').trim();
-    if (!code) {
-      setDirectState({ loading: false, message: '', error: 'Nhập Mã BN cần lấy dữ liệu.' });
+  const collectDirectPatients = async () => {
+    const codes = parsePatientCodes(directPatientCodes);
+    if (!codes.length) {
+      setDirectState({ loading: false, message: '', error: 'Nhập ít nhất một Mã BN cần lấy dữ liệu.' });
       return;
     }
-    if (!/^[A-Za-z0-9._-]{1,64}$/.test(code)) {
-      setDirectState({ loading: false, message: '', error: 'Mã BN không hợp lệ.' });
+    if (codes.length > MAX_DIRECT_PATIENTS) {
+      setDirectState({ loading: false, message: '', error: `Mỗi lần chỉ lấy tối đa ${MAX_DIRECT_PATIENTS} Mã BN.` });
+      return;
+    }
+    if (codes.some(code => !PATIENT_CODE_RE.test(code))) {
+      setDirectState({ loading: false, message: '', error: 'Danh sách có Mã BN không hợp lệ.' });
       return;
     }
 
     setDirectState({ loading: true, message: '', error: '' });
     try {
-      const r = await api.collectResearchAuto('', { patientCode: code, headless: true });
-      setPatientQuery(code);
+      const r = await api.collectResearchAuto('', { patientCodes: codes, headless: true });
+      if (codes.length === 1) setPatientQuery(codes[0]);
+      const missing = Number(r?.missing_count || 0);
+      const base = r?.message || `Đã nhận ${codes.length} Mã BN. Hệ thống sẽ lấy tuần tự từng ca ở backend.`;
       setDirectState({
         loading: false,
-        message: r?.message || 'Đã nhận yêu cầu. Tác vụ đang chạy ở backend; xem tiến độ tại tab Thu thập dữ liệu.',
+        message: missing ? `${base} Có ${missing} mã chưa có trong danh sách đã quét.` : base,
         error: '',
       });
     } catch (e) {
@@ -59,27 +81,38 @@ export function PatientLookupView({
 
       <div style={{ marginTop: 10, paddingTop: 9, borderTop: `1px solid ${C.border2}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div style={{ fontSize: FS.xs, color: C.text2 }}>
-          <b>Lấy trực tiếp từ EMR theo Mã BN</b> · lấy Hồ sơ nền, Ra viện, Phẫu thuật, Y lệnh, XN và CĐHA cho các lượt đã quét của người bệnh này.
+          <b>Lấy trực tiếp từ EMR theo Mã BN</b> · có thể dán một hoặc nhiều Mã BN, mỗi dòng một mã. Hệ thống lấy Hồ sơ nền, Ra viện, Phẫu thuật, Y lệnh, XN và CĐHA theo đúng thứ tự đã dán.
         </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input
-            value={directPatientCode}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <textarea
+            value={directPatientCodes}
             disabled={identifiedLocked || directState.loading}
-            onChange={e => setDirectPatientCode(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !directState.loading) collectDirectPatient(); }}
-            placeholder="Nhập Mã BN"
+            onChange={e => setDirectPatientCodes(e.target.value)}
+            onKeyDown={e => {
+              if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !directState.loading) collectDirectPatients();
+            }}
+            placeholder={'Dán Mã BN, mỗi dòng một mã\nVí dụ:\n26000001\n26000002'}
             autoComplete="off"
-            style={{ ...inp, width: 190 }}
+            rows={5}
+            style={{ ...inp, width: 260, minHeight: 92, resize: 'vertical', paddingTop: 7, paddingBottom: 7 }}
           />
-          <Btn
-            variant="solidPrimary"
-            onClick={collectDirectPatient}
-            disabled={identifiedLocked || directState.loading || !text(directPatientCode)}
-            style={{ height: 28, padding: '0 12px' }}
-          >
-            {directState.loading ? <><Spinner size={9} /> Đang gửi</> : 'Lấy ca này'}
-          </Btn>
-          <span style={{ fontSize: FS.xs, color: C.text3 }}>Server nhận yêu cầu rồi chạy nền; không cần giữ tab mở.</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+            <Btn
+              variant="solidPrimary"
+              onClick={collectDirectPatients}
+              disabled={identifiedLocked || directState.loading || !parsedDirectCodes.length}
+              style={{ height: 28, padding: '0 12px' }}
+            >
+              {directState.loading
+                ? <><Spinner size={9} /> Đang gửi</>
+                : parsedDirectCodes.length > 1
+                  ? `Lấy ${parsedDirectCodes.length} ca này`
+                  : 'Lấy ca này'}
+            </Btn>
+            <span style={{ fontSize: FS.xs, color: C.text3 }}>
+              {parsedDirectCodes.length ? `${parsedDirectCodes.length} mã hợp lệ sau khi loại trùng · ` : ''}Ctrl+Enter để gửi. Server chạy tuần tự ở nền; không cần giữ tab mở.
+            </span>
+          </div>
         </div>
         {directState.message && <div style={{ fontSize: FS.xs, color: C.green }}>{directState.message}</div>}
         {directState.error && <div style={{ fontSize: FS.xs, color: C.red }}><b>Không lấy được:</b> {directState.error}</div>}

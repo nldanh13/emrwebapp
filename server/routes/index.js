@@ -90,6 +90,8 @@ router.use(require('./patient_db'));
 router.use(require('./vtyt_catalog'));
 router.use(require('./medication_catalog'));
 router.use(require('./route_table'));
+// Batch Mã BN phải đứng trước route collect-auto 1 Mã BN để giữ nguyên thứ tự người dùng dán.
+router.use(require('./research_collection_batch'));
 // Phải đứng trước research.js: hai endpoint collect-auto được trả 202 ngay và chạy nền;
 // các route collection-status/ngoại lệ vẫn do research_collection.js hiện hữu xử lý.
 router.use(require('./research_collection_async'));
