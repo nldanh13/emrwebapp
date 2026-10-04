@@ -12,6 +12,7 @@ import * as api from '../api.js';
 import { normalizeRouteCode, routeCategory, routeShort } from '../config/routes.js';
 import { useRouteTable } from '../hooks/useRouteModel.js';
 import RouteDesigner from './RouteDesigner.jsx';
+import DrugNameIngredientPanel from './DrugNameIngredientPanel.jsx';
 import { RouteBadge } from './report/ReportShared.jsx';
 
 function routeOptions(table) {
@@ -330,21 +331,24 @@ export default function MedicationCatalogManager() {
           <div style={{ fontSize: FS.sm, color: C.text2, marginTop: 4 }}>
             {tab === 'drugs'
               ? 'Khai báo chế phẩm, hoạt chất và các tên thương mại/cách viết trong EMR. Nhiều chế phẩm có thể cùng một hoạt chất để nghiên cứu gom chung.'
+              : tab === 'ingredients'
+              ? 'Tên thuốc (tên thương mại) đang có trong y lệnh của kho: gắn hoạt chất để tạo nghiên cứu theo hoạt chất.'
               : 'Tự thiết kế đường dùng: tên, nhãn, chuyên mục, cách hiện trên báo cáo ca trực và từ khoá nhận diện.'}
           </div>
         </div>
         <Segmented label="Mục danh mục" value={tab} onChange={setTab}
-          options={[{ value: 'drugs', label: 'Thuốc' }, { value: 'routes', label: 'Đường dùng' }]} />
+          options={[{ value: 'drugs', label: 'Thuốc' }, { value: 'ingredients', label: 'Gắn hoạt chất' }, { value: 'routes', label: 'Đường dùng' }]} />
       </div>
 
-      {tab === 'routes' ? <RouteDesigner onSaved={showToast} /> : <>
+      {tab === 'routes' ? <RouteDesigner onSaved={showToast} />
+        : tab === 'ingredients' ? <DrugNameIngredientPanel medications={items} onChanged={load} /> : <>
       <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
         <Btn variant="primary" onClick={() => setEditing({ mode: 'create', key: '', form: emptyForm() })}>+ Thêm thuốc</Btn>
       </div>
 
       <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 7,
         background: C.blueBg, border: `1px solid ${C.blueBorder}`, fontSize: FS.sm, color: C.text2, lineHeight: 1.5 }}>
-        <b>Hoạt chất dùng cho nghiên cứu.</b> Mỗi chế phẩm/tên thương mại nên khai báo đúng hoạt chất. Nếu cùng một hoạt chất có nhiều tên thương mại, có thể tạo nhiều thuốc hoặc thêm tên vào mục "Tên khác". Hệ thống giữ tên gốc để truy vết; việc có y lệnh không tự động được coi là đã thực hiện thuốc.
+        <b>Hoạt chất dùng cho nghiên cứu.</b> Mỗi chế phẩm/tên thương mại nên khai báo đúng hoạt chất (nhanh nhất: mục <b>Gắn hoạt chất</b> liệt kê sẵn tên thuốc trong kho chưa có hoạt chất). Nếu cùng một hoạt chất có nhiều tên thương mại, có thể tạo nhiều thuốc hoặc thêm tên vào mục "Tên khác". Hệ thống giữ tên gốc để truy vết; việc có y lệnh không tự động được coi là đã thực hiện thuốc.
       </div>
 
       <div style={{ marginBottom: 14 }}>
