@@ -861,7 +861,10 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       const view = studyMode === 'collect' ? collectionWorkspace
         : studyMode === 'crf' ? <CrfView key={`${activeStudy?.id}:${activeStudy?.cohort_count || 0}`} study={activeStudy} toast={t} />
         : <StudyStatsView study={activeStudy} toast={t} onGoCollect={() => setStudyMode('collect')} />;
-      return <><EmptyCohortNotice study={activeStudy} toast={t} onImported={loadSummary} />{view}</>;
+      // Chưa có mẫu: Thống kê và Thu thập đều chưa làm được gì, chỉ hiện một thông báo kèm cách nạp mẫu
+      // (không lặp hai khung "chưa có dữ liệu"/"chưa thể thu thập"). Phiếu nhập tay vẫn thiết kế được.
+      const noCohort = activeStudy?.id && !Number(activeStudy.cohort_count || 0);
+      return <><EmptyCohortNotice study={activeStudy} toast={t} onImported={loadSummary} />{noCohort && studyMode !== 'crf' ? null : view}</>;
     }
     if (archiveMode === 'overview') return <GeneralOverviewView {...{ generalOverview, generalOverviewLoading, pipeline, setArchiveMode }} />;
     if (archiveMode === 'patient') return <PatientLookupView {...{

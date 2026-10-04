@@ -33,7 +33,7 @@ export function EmptyCohortNotice({ study, onImported, toast }) {
       <div style={{ flex: '1 1 320px', fontSize: FS.sm, color: C.text2 }}>
         <b style={{ color: C.text }}>Nghiên cứu này chưa có mẫu.</b>{' '}
         {canImport
-          ? 'Nạp danh sách người bệnh từ kho theo đúng điều kiện chọn mẫu đã lưu khi tạo nghiên cứu. Phiếu nhập tay đã thiết kế được giữ nguyên.'
+          ? 'Nạp danh sách người bệnh từ kho theo đúng điều kiện chọn mẫu đã lưu khi tạo nghiên cứu. Có mẫu rồi mới thu thập và thống kê được; phiếu nhập tay đã thiết kế được giữ nguyên.'
           : 'Nghiên cứu không lưu điều kiện chọn mẫu: vào Tạo nghiên cứu mới để chọn mẫu rồi Lưu thành nghiên cứu.'}
         {error ? <div style={{ color: C.red, marginTop: 4 }}>{error}</div> : null}
       </div>
