@@ -669,7 +669,8 @@ function buildResearchProgressSnapshot(runDir, scopeMeta = {}, { isArchive = tru
   if (fatalAlert) {
     try { fatalAt = new Date(fs.statSync(fatalPath).mtimeMs).toISOString(); } catch (_) { fatalAt = ''; }
     const lastStart = Date.parse(lastFinishedTask?.started_at || '');
-    if (fatalAt && Number.isFinite(lastStart) && Date.parse(fatalAt) < lastStart) fatalAlert = null;
+    // Dung sai 2 giây: hệ thống file có thể làm tròn mtime xuống theo giây.
+    if (fatalAt && Number.isFinite(lastStart) && Date.parse(fatalAt) < lastStart - 2000) fatalAlert = null;
   }
   // Không hiển thị đồng thời “Đang chạy” và “đã dừng giữa chừng”. Ngoài fatal
   // của worker, cancellation/restart cũng được coi là trạng thái có thể resume.
