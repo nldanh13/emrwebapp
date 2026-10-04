@@ -5,7 +5,8 @@
   "description": "Web app điều phối dữ liệu giường bệnh, y lệnh và tự động nhập EMR",
   "main": "server.js",
   "scripts": {
-    "start": "node scripts/start.js",
+    "start": "node server.js",
+    "start:build": "node scripts/start.js",
     "dev:server": "node --watch server.js",
     "dev:ui": "vite",
     "dev": "concurrently -n SERVER,UI -c blue,green \"npm run dev:server\" \"npm run dev:ui\"",
@@ -60,6 +61,7 @@
   "notes": {
     "python_deps": "pip install -r requirements.txt",
     "dev_workflow": "npm run dev  →  UI: http://localhost:5173  |  API: http://localhost:3001",
-    "prod_workflow": "npm install → npm start → tự build UI nếu cần → http://localhost:3001"
+    "prod_workflow": "npm run build khi frontend thay đổi → npm start để mở server nhanh → http://localhost:3001",
+    "prod_build_and_start": "npm run start:build → tự build UI nếu cần rồi mở server"
   }
 }
