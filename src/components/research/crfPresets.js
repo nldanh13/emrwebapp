@@ -75,7 +75,6 @@ Sau khi truyền & dự phòng | Đã đi tiểu trước khi về | yesno
 Kết luận của nghiên cứu viên | Chẩn đoán phản ứng pha cấp (APR) | choice | Không (Non-APR); Có (APR)
 Kết luận của nghiên cứu viên | Mức độ APR | choice | Độ 1 (nhẹ); Độ 2 (vừa); Độ 3 (nặng)
 `,
-  // Câu hỏi lặp lại ở mỗi lần gọi 24/48/72 giờ.
   repeated: ['T24', 'T48', 'T72'],
   followup: `
 Theo dõi | Nhiệt độ max (đo tại nhà) | number |  | °C | 34-43
@@ -99,6 +98,54 @@ Theo dõi | Mệt mỏi (ảnh hưởng chức năng) | ${GRADE}
 `,
 };
 
+const scoreField = (id, label, section, max = 3) => ({ id, label, section, type: 'number', min: 0, max });
+const yesNoField = (id, label, section) => ({ id, label, section, type: 'yesno' });
+
+const ORTHO_PSYCH_SLEEP_PAIN = {
+  key: 'ortho_psych_sleep_pain',
+  label: 'Lo âu, trầm cảm, giấc ngủ và đau sau phẫu thuật CTCH',
+  description: 'Phiếu điện tử theo nghiên cứu CTCH: HADS, PSQI, AIS-5 trước mổ; VAS và tác dụng/ADR giảm đau N1–N3; vận động, biến chứng và hài lòng. Thuốc, ngày mổ và dữ liệu bệnh án lấy từ EMR, không nhập lặp.',
+  form: {
+    timepoints: [
+      { id: 'N1', label: 'Hậu phẫu ngày 1', offset_hours: 24 },
+      { id: 'N2', label: 'Hậu phẫu ngày 2', offset_hours: 48 },
+      { id: 'N3', label: 'Hậu phẫu ngày 3', offset_hours: 72 },
+    ],
+    fields: [
+      { id: 'weight_kg', label: 'Cân nặng', section: 'Thông tin trước mổ', type: 'number', min: 20, max: 300, unit: 'kg' },
+      { id: 'height_cm', label: 'Chiều cao', section: 'Thông tin trước mổ', type: 'number', min: 80, max: 250, unit: 'cm' },
+      { id: 'vas_admission', label: 'VAS lúc vào viện', section: 'Đau trước mổ', type: 'number', min: 0, max: 10, unit: 'điểm' },
+      ...[1,3,5,7,9,11,13].map(n => scoreField(`hads_a${n}`, `HADS-A câu ${n}`, 'HADS trước mổ')),
+      ...[2,4,6,8,10,12,14].map(n => scoreField(`hads_d${n}`, `HADS-D câu ${n}`, 'HADS trước mổ')),
+      { id: 'psqi_bed_time', label: 'Giờ thường đi ngủ', section: 'PSQI trước mổ', type: 'text' },
+      { id: 'psqi_latency_min', label: 'Thời gian để ngủ được', section: 'PSQI trước mổ', type: 'number', min: 0, max: 600, unit: 'phút' },
+      { id: 'psqi_wake_time', label: 'Giờ thường thức dậy', section: 'PSQI trước mổ', type: 'text' },
+      { id: 'psqi_sleep_hours', label: 'Số giờ ngủ thực tế mỗi đêm', section: 'PSQI trước mổ', type: 'number', min: 0, max: 24, unit: 'giờ' },
+      { id: 'psqi_total', label: 'Tổng điểm PSQI (0–21)', section: 'PSQI trước mổ', type: 'number', min: 0, max: 21, unit: 'điểm' },
+      ...[1,2,3,4,5].map(n => scoreField(`ais_${n}`, `AIS-5 câu ${n}`, 'AIS-5 trước mổ')),
+      ...[
+        ['anxiety_pain', 'Sợ đau'], ['anxiety_complication', 'Sợ biến chứng/tử vong'], ['anxiety_outcome', 'Lo kết quả phẫu thuật'],
+        ['anxiety_cost', 'Lo chi phí'], ['anxiety_work', 'Lo mất khả năng lao động'], ['anxiety_family', 'Lo gia đình/xã hội'], ['anxiety_none', 'Không có nguyên nhân lo âu nêu trên'],
+      ].map(([id, label]) => yesNoField(id, label, 'Nguyên nhân lo âu')),
+      ...[
+        ['sleep_pain', 'Đau'], ['sleep_noise', 'Tiếng ồn/môi trường bệnh viện'], ['sleep_anxiety', 'Lo âu'], ['sleep_care', 'Can thiệp chăm sóc/điều trị'], ['sleep_other', 'Nguyên nhân khác'],
+      ].map(([id, label]) => yesNoField(id, label, 'Nguyên nhân rối loạn giấc ngủ')),
+      { id: 'first_mobilization', label: 'Thời điểm vận động lần đầu', section: 'Hậu phẫu', type: 'choice', options: ['<12 giờ', '12–24 giờ', '24–48 giờ', '>48 giờ', 'Chưa vận động'] },
+      { id: 'day1_mobility', label: 'Khả năng vận động ngày 1', section: 'Hậu phẫu', type: 'text' },
+      { id: 'postop_complication', label: 'Biến chứng hậu phẫu ghi nhận thêm', section: 'Hậu phẫu', type: 'text' },
+      ...['pain_control','nursing_care','information','mobility_support','surgery_outcome'].map((id, i) => ({ id: `satisfaction_${id}`, label: ['Kiểm soát đau','Chăm sóc điều dưỡng','Thông tin được cung cấp','Hỗ trợ vận động','Kết quả phẫu thuật chung'][i], section: 'Hài lòng', type: 'number', min: 1, max: 5, unit: 'điểm' })),
+      { id: 'satisfaction_comment', label: 'Ý kiến khác', section: 'Hài lòng', type: 'text' },
+      ...['N1','N2','N3'].flatMap(tp => [
+        { id: 'vas', label: 'VAS', section: 'Đau hậu phẫu', type: 'number', min: 0, max: 10, unit: 'điểm', timepoint: tp },
+        { id: 'analgesic_effect', label: 'Hiệu quả giảm đau', section: 'Đau hậu phẫu', type: 'choice', options: ['Tốt', 'Trung bình', 'Kém'], timepoint: tp },
+        { id: 'side_effect_nausea', label: 'Buồn nôn/nôn', section: 'Tác dụng không mong muốn', type: 'yesno', timepoint: tp },
+        { id: 'side_effect_dizziness', label: 'Chóng mặt', section: 'Tác dụng không mong muốn', type: 'yesno', timepoint: tp },
+        { id: 'side_effect_other', label: 'Tác dụng không mong muốn khác', section: 'Tác dụng không mong muốn', type: 'text', timepoint: tp },
+      ]),
+    ],
+  },
+};
+
 function parseLines(textBlock, timepoint = '') {
   return textBlock.trim().split('\n').filter(Boolean).map(line => {
     const [section, label, type, options, unit, range, flag] = line.split('|').map(x => x.trim());
@@ -113,6 +160,10 @@ function parseLines(textBlock, timepoint = '') {
 }
 
 function buildPresetForm(preset) {
+  if (preset?.form) return {
+    timepoints: (preset.form.timepoints || []).map(tp => ({ ...tp })),
+    fields: (preset.form.fields || []).map(field => ({ ...field, options: Array.isArray(field.options) ? [...field.options] : field.options })),
+  };
   const fields = [
     ...parseLines(preset.base),
     ...preset.repeated.flatMap(tp => parseLines(preset.followup, tp)),
@@ -121,6 +172,6 @@ function buildPresetForm(preset) {
   return { timepoints: preset.timepoints, fields };
 }
 
-const CRF_PRESETS = [APR_ZOLEDRONIC];
+const CRF_PRESETS = [ORTHO_PSYCH_SLEEP_PAIN, APR_ZOLEDRONIC];
 
 export { CRF_PRESETS, buildPresetForm };
