@@ -11,22 +11,26 @@ function source(rel) {
 }
 
 describe('direct patient Research Store collection', () => {
-  it('offers a patient-code action in the patient lookup UI', () => {
+  it('accepts one or many patient codes in the patient lookup UI', () => {
     const ui = source('src/components/research/PatientLookupView.jsx');
     expect(ui).toContain('Lấy trực tiếp từ EMR theo Mã BN');
-    expect(ui).toContain("patientCode: code");
-    expect(ui).toContain('Lấy ca này');
+    expect(ui).toContain('<textarea');
+    expect(ui).toContain('patientCodes: codes');
+    expect(ui).toContain('Lấy ${parsedDirectCodes.length} ca này');
+    expect(ui).toContain('Ctrl+Enter để gửi');
   });
 
-  it('mounts the asynchronous collect-auto handler before the legacy research router', () => {
+  it('mounts batch collection before single-patient async collection and the legacy research router', () => {
     const routes = source('server/routes/index.js');
+    const batchAt = routes.indexOf("require('./research_collection_batch')");
     const asyncAt = routes.indexOf("require('./research_collection_async')");
     const legacyAt = routes.indexOf("require('./research')");
-    expect(asyncAt).toBeGreaterThan(-1);
+    expect(batchAt).toBeGreaterThan(-1);
+    expect(asyncAt).toBeGreaterThan(batchAt);
     expect(legacyAt).toBeGreaterThan(asyncAt);
   });
 
-  it('acknowledges long collection requests immediately and keeps the scope lock until background completion', () => {
+  it('acknowledges long single-patient collection requests immediately and keeps the scope lock until background completion', () => {
     const backend = source('server/routes/research_collection_async.js');
     expect(backend).toContain('res.status(202).json');
     expect(backend).toContain('const queued = enqueueHeavy');
@@ -34,5 +38,17 @@ describe('direct patient Research Store collection', () => {
     expect(backend).toContain('RESEARCH_SCOPE_LOCKS.set');
     expect(backend).toContain(".finally(() =>");
     expect(backend).toContain('directPatientCode');
+  });
+
+  it('runs pasted patient codes sequentially, continues after one case error, and normalizes once after the batch', () => {
+    const backend = source('server/routes/research_collection_batch.js');
+    expect(backend).toContain('MAX_BATCH_PATIENTS = 200');
+    expect(backend).toContain('for (let index = 0; index < cases.length; index += 1)');
+    expect(backend).toContain('await runDirectPatientNoFinalize');
+    expect(backend).toContain("one case failed");
+    expect(backend).toContain('normalizeRunOutputs(sc.runDir');
+    expect(backend).toContain('Đang lấy ca ${index + 1}/${cases.length}');
+    expect(backend).toContain("taskType: 'research_collect_patient_batch'");
+    expect(backend).toContain('isCancelRequested(ctx.sid)');
   });
 });
