@@ -52,8 +52,10 @@ writeCsv(path.join(runDir, 'hchanh_profile.csv'), ['Mã NC', 'Mã BN', 'Mã nộ
   { 'Mã NC': 'NC2', 'Mã BN': '1001', 'Mã nội trú': 'NT2', 'Giới tính': 'Nữ', 'Năm sinh': '1950' },
   { 'Mã NC': 'NC3', 'Mã BN': '1002', 'Mã nội trú': 'NT3', 'Giới tính': 'Nam', 'Năm sinh': '1960' },
 ]);
-writeCsv(path.join(runDir, 'extract_status.csv'), ['research_code', 'encounter_id', 'patient_code', 'popup_status', 'xn_status', 'cdha_status', 'profile_status', 'discharge_status', 'surgery_status', 'order_history_status'], [
-  { research_code: 'NC2', encounter_id: 'enc_a2', patient_code: '1001', popup_status: 'done', xn_status: 'done', cdha_status: 'empty', profile_status: 'done', discharge_status: 'error', surgery_status: '', order_history_status: 'done' },
+// Trạng thái kho: XN/CĐHA chưa ghi "đã lấy" nhưng có dòng XN (lấy bổ sung từ Kho người bệnh);
+// y lệnh chưa ghi trạng thái nhưng có y lệnh thuốc → vẫn coi là đã có.
+writeCsv(path.join(runDir, 'extract_status.csv'), ['research_code', 'encounter_id', 'patient_code', 'popup_status', 'xn_status', 'cdha_status', 'profile_status', 'discharge_status', 'surgery_status', 'order_history_status', 'lab_count', 'imaging_count', 'medication_count'], [
+  { research_code: 'NC2', encounter_id: 'enc_a2', patient_code: '1001', popup_status: '', xn_status: '', cdha_status: '', profile_status: 'done', discharge_status: 'error', surgery_status: '', order_history_status: '', lab_count: '1', imaging_count: '0', medication_count: '1' },
 ]);
 
 const STUDY = 'zol';
@@ -80,7 +82,10 @@ fs.writeFileSync(studyMetaPath(STUDY), JSON.stringify({ id: STUDY, name: 'Zol', 
     const code = readCsvTable(cohortPath(STUDY), 10).rows[0]['Mã NC'];
     assert.deepStrictEqual(profile.map(r => r['Mã NC']), [code], 'Mã NC đổi sang mã của nghiên cứu');
     const progress = JSON.parse(fs.readFileSync(path.join(sRun, 'progress.json'), 'utf8'));
-    assert.strictEqual(progress.enc_a2.xn, 'done');
+    assert.strictEqual(progress.enc_a2.xn, 'done', 'có dòng XN trong kho → đã có');
+    assert.strictEqual(progress.enc_a2.cdha, 'empty');
+    const orders = JSON.parse(fs.readFileSync(path.join(sRun, 'order_history_auto_progress.json'), 'utf8'));
+    assert.strictEqual(orders['enc_a2#order_history'].status, 'done', 'có y lệnh thuốc trong kho → đã có');
     const hchanh = JSON.parse(fs.readFileSync(path.join(sRun, 'hchanh_auto_progress.json'), 'utf8'));
     assert.ok(hchanh['enc_a2#profile'], 'hồ sơ kho đã lấy → mang sang');
     assert.ok(!hchanh['enc_a2#discharge'], 'ra viện kho bị lỗi → để Thu thập tự động lấy');

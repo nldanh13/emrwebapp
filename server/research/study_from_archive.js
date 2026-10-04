@@ -140,12 +140,20 @@ function buildProgressFromArchive(archiveRunDir, links) {
     const st = byEid.get(String(link.encounter_id || '').trim());
     if (!st || !link.encounter_id) continue;
     const base = { encounter_id: link.encounter_id, research_code: link.research_code, ma_bn: link.patient_code, source: 'archive', updated_at: at };
-    const xnDone = st.popup_status === 'done' && GOT.has(st.xn_status) && GOT.has(st.cdha_status);
+    // Kho có thể đã có dữ liệu mà trạng thái chưa ghi "đã lấy" (vd. lúc chuẩn hóa lấy bổ sung từ Kho
+    // người bệnh): có dòng XN/CĐHA hoặc y lệnh của lượt thì coi phần đó đã có, khỏi mở EMR lấy lại.
+    const labs = Number(st.lab_count || 0);
+    const imaging = Number(st.imaging_count || 0);
+    const meds = Number(st.medication_count || 0);
+    const xnDone = (st.popup_status === 'done' && GOT.has(st.xn_status) && GOT.has(st.cdha_status)) || labs > 0 || imaging > 0;
     if (xnDone) {
-      progress[link.encounter_id] = { ...base, popup: 'done', xn: st.xn_status, cdha: st.cdha_status, status: 'done', committed: true };
+      const xn = GOT.has(st.xn_status) ? st.xn_status : (labs > 0 ? 'done' : 'empty');
+      const cdha = GOT.has(st.cdha_status) ? st.cdha_status : (imaging > 0 ? 'done' : 'empty');
+      progress[link.encounter_id] = { ...base, popup: 'done', xn, cdha, status: 'done', committed: true };
     }
     for (const file of HCHANH_FILES) {
-      const value = String(st[`${file}_status`] || '').trim();
+      let value = String(st[`${file}_status`] || '').trim();
+      if (!GOT.has(value) && file === 'order_history' && meds > 0) value = 'done';
       if (!GOT.has(value)) continue;
       const target = file === 'order_history' ? orders : hchanh;
       target[`${link.encounter_id}#${file}`] = { ...base, files: [file], status: value };
