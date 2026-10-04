@@ -29,7 +29,8 @@ describe('direct patient Research Store collection', () => {
   it('acknowledges long collection requests immediately and keeps the scope lock until background completion', () => {
     const backend = source('server/routes/research_collection_async.js');
     expect(backend).toContain('res.status(202).json');
-    expect(backend).toContain('void enqueueHeavy');
+    expect(backend).toContain('const queued = enqueueHeavy');
+    expect(backend).toContain('void queued.catch');
     expect(backend).toContain('RESEARCH_SCOPE_LOCKS.set');
     expect(backend).toContain(".finally(() =>");
     expect(backend).toContain('directPatientCode');

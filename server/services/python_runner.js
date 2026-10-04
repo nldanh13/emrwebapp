@@ -28,6 +28,40 @@ const PYTHON_BIN = resolvePythonBin();
 // ── Spawn Python với timeout & kill ──────────────────────────────────────────
 
 /**
+ * Dừng cả cây tiến trình. Trên Windows, py.kill() chỉ chắc chắn dừng python.exe;
+ * chromedriver.exe/chrome.exe do Selenium sinh ra có thể còn sống và tiếp tục
+ * truy cập EMR. taskkill /T dừng cả descendants theo PID của worker.
+ */
+function terminateProcessTree(child, { force = false } = {}) {
+  if (!child || !child.pid) return;
+
+  if (process.platform === 'win32') {
+    try {
+      const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+        shell: false,
+        windowsHide: true,
+        stdio: 'ignore',
+      });
+      killer.on('error', () => {
+        try { child.kill('SIGKILL'); } catch (_) {}
+      });
+      return;
+    } catch (_) {
+      try { child.kill('SIGKILL'); } catch (_) {}
+      return;
+    }
+  }
+
+  try { child.kill(force ? 'SIGKILL' : 'SIGTERM'); } catch (_) {}
+  if (!force) {
+    const forceTimer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch (_) {}
+    }, 3000);
+    forceTimer.unref?.();
+  }
+}
+
+/**
  * @param {string[]} args - argv cho Python
  * @param {object}   opts
  * @param {string}   [opts.cwd]       - working directory (default: ROOT_DIR)
@@ -91,16 +125,12 @@ function runPython(args, { cwd, timeoutMs, onSpawn, extraEnv = {}, runtimeDir } 
     const safeResolve = (val) => { if (!resolved) { resolved = true; resolve(val); } };
 
     if (typeof onSpawn === 'function') {
-      onSpawn(() => {
-        try { py.kill('SIGTERM'); } catch (_) {}
-        setTimeout(() => { try { py.kill('SIGKILL'); } catch (_) {} }, 3000);
-      });
+      onSpawn(() => terminateProcessTree(py));
     }
 
     const timer = setTimeout(() => {
       killedByTimeout = true;
-      try { py.kill('SIGTERM'); } catch (_) {}
-      setTimeout(() => { try { py.kill('SIGKILL'); } catch (_) {} }, 3000);
+      terminateProcessTree(py);
     }, Math.max(5_000, timeoutMs || PY_TIMEOUT_MS));
 
     py.stdout.on('data', d => {
@@ -195,4 +225,4 @@ function runScript(scriptName, args = [], opts = {}) {
   });
 }
 
-module.exports = { runPython, runWorker, runScript, fmtPyError, PYTHON_BIN };
+module.exports = { runPython, runWorker, runScript, fmtPyError, PYTHON_BIN, terminateProcessTree };

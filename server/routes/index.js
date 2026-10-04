@@ -76,6 +76,8 @@ router.use(require('./activity_log'));
 router.use(require('./scan'));
 router.use(require('./emr_structure_scan'));
 router.use(require('./board'));
+// Phải đứng trước details.js vì details.js vẫn có /cancel legacy theo session.
+router.use(require('./cancel_scope'));
 router.use(require('./details'));
 router.use(require('./patients'));
 router.use(require('./nurse'));
