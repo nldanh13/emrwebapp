@@ -211,6 +211,723 @@ async function extractErrorMessage(res) {
   }
 }
 
-async function fetchWithAuth(url, options = {}, retried = false, details = null) {
-  // ... unchanged ...
+async function fetchWithAuth(url, options = {}, retryAuth = true, details = null) {
+  const res = await fetch(url, options);
+  if (res.status === 401 && retryAuth) {
+    if (details) logActivity('api.auth.required', { ...details, status: res.status });
+    reportAuthRequired();
+  }
+  return res;
 }
+
+async function request(url, options = {}, retryAuth = true) {
+  const method = String(options.method || 'GET').toUpperCase();
+  const label = apiActionLabel(method, url);
+  const started = Date.now();
+  const details = {
+    method,
+    url: cleanApiPath(url),
+    label,
+    body: summarizeApiBody(parseRequestBody(options)),
+  };
+  logActivity('api.request.start', details);
+
+  let res;
+  try {
+    res = await fetchWithAuth(url, options, retryAuth, details);
+  } catch (err) {
+    logActivity('api.request.error', {
+      ...details,
+      duration_ms: Date.now() - started,
+      message: String(err.message || err),
+    });
+    throw err;
+  }
+
+  if (res.ok) {
+    const data = await res.json();
+    logActivity('api.request.ok', {
+      ...details,
+      status: res.status,
+      duration_ms: Date.now() - started,
+      result: {
+        status: data?.status || '',
+        count: data?.count ?? data?.patients?.length ?? data?.rows?.length ?? data?.items?.length ?? '',
+        message: data?.message || '',
+      },
+    });
+    return data;
+  }
+
+  const msg = await extractErrorMessage(res);
+  logActivity('api.request.error', {
+    ...details,
+    status: res.status,
+    duration_ms: Date.now() - started,
+    message: msg,
+  });
+  throw new Error(msg);
+}
+
+// ── Đăng nhập ────────────────────────────────────────────────────────────────
+// Không dùng request()/get() vì lỗi 401 ở đây là trạng thái bình thường (chưa
+// đăng nhập), không phải lỗi cần throw/log như các API nghiệp vụ khác.
+export async function getAuthMe() {
+  try {
+    const res = await fetch('/api/auth/me', { headers: headers() });
+    const data = await res.json().catch(() => null);
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    return { ok: false, status: 0, data: null, error: String(err?.message || err) };
+  }
+}
+
+export function setAuthToken(token) { setStoredAppToken(String(token || '').trim()); }
+export function clearAuthToken() { setStoredAppToken(''); }
+
+async function get(url) {
+  return request(url, { headers: headers() });
+}
+
+async function post(url, body) {
+  return request(url, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+}
+
+async function del(url) {
+  return request(url, {
+    method: 'DELETE',
+    headers: headers(),
+  });
+}
+
+function parseDownloadFilename(disposition, fallback) {
+  const s = String(disposition || '');
+  const utf = s.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf) { try { return decodeURIComponent(utf[1]); } catch {} }
+  const plain = s.match(/filename=\"?([^\";]+)\"?/i);
+  return plain?.[1] || fallback;
+}
+
+async function downloadBlob(url, fallbackFilename, { method = 'GET', body = null } = {}) {
+  const label = apiActionLabel(method, url);
+  const details = { method, url: cleanApiPath(url), label, body: null };
+  logActivity('api.request.start', details);
+  const started = Date.now();
+  let res;
+  try {
+    const init = body == null ? { headers: headers() } : { method, headers: headers(), body: JSON.stringify(body) };
+    res = await fetchWithAuth(url, init, true, details);
+  } catch (err) {
+    logActivity('api.request.error', { ...details, duration_ms: Date.now() - started, message: String(err.message || err) });
+    throw err;
+  }
+  if (!res.ok) {
+    const msg = await extractErrorMessage(res);
+    logActivity('api.request.error', { ...details, status: res.status, duration_ms: Date.now() - started, message: msg });
+    throw new Error(msg);
+  }
+  const blob = await res.blob();
+  const filename = parseDownloadFilename(res.headers.get('Content-Disposition'), fallbackFilename);
+  logActivity('api.request.ok', { ...details, status: res.status, duration_ms: Date.now() - started, result: { filename, size: blob.size } });
+  return { blob, filename };
+}
+
+async function openHtmlBlobInNewTab(url, fallbackTitle = 'emr_print.html') {
+  const popup = typeof window !== 'undefined' ? window.open('', '_blank') : null;
+  if (popup) {
+    popup.document.write('<!doctype html><meta charset="utf-8"><title>Đang tải...</title><body>Đang tải phiếu in...</body>');
+    popup.document.close();
+  }
+
+  const method = 'GET';
+  const label = apiActionLabel(method, url);
+  const details = { method, url: cleanApiPath(url), label, body: null };
+  const started = Date.now();
+  logActivity('api.request.start', details);
+
+  let res;
+  try {
+    res = await fetchWithAuth(url, { headers: headers({ Accept: 'text/html' }) }, true, details);
+  } catch (err) {
+    if (popup) popup.close();
+    logActivity('api.request.error', { ...details, duration_ms: Date.now() - started, message: String(err.message || err) });
+    throw err;
+  }
+
+  if (!res.ok) {
+    if (popup) popup.close();
+    const msg = await extractErrorMessage(res);
+    logActivity('api.request.error', { ...details, status: res.status, duration_ms: Date.now() - started, message: msg });
+    throw new Error(msg);
+  }
+
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(new Blob([blob], { type: 'text/html;charset=utf-8' }));
+  if (popup) {
+    popup.location.replace(blobUrl);
+  } else if (typeof window !== 'undefined') {
+    window.open(blobUrl, '_blank');
+  }
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 5 * 60 * 1000);
+  logActivity('api.request.ok', { ...details, status: res.status, duration_ms: Date.now() - started, result: { filename: fallbackTitle, size: blob.size } });
+  return { blobUrl, size: blob.size };
+}
+
+async function put(url, body) {
+  return request(url, {
+    method: 'PUT',
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+}
+
+async function patch(url, body) {
+  return request(url, {
+    method: 'PATCH',
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+}
+
+// ── Scan ──────────────────────────────────────────────────────────────────────
+export const runScan = () => get('/api/run-scan');
+export const runEmrStructureScan = () => get('/api/run-emr-structure-scan');
+export const inspectEmrPage = (url) => get(`/api/inspect-emr-page?url=${encodeURIComponent(url)}`);
+export const getRaw = () => get('/api/get-raw');
+
+// ── Board (room assignment) ───────────────────────────────────────────────────
+export const getBoardData = () => get('/api/data');
+export const saveBoardData = (rows) => post('/api/save', rows);
+export const getRoomMismatches = () => get('/api/room-mismatches');
+export const fixRooms = (patientIds = []) => post('/api/fix-rooms', { patientIds });
+
+// ── Details (fetch Y lệnh per patient) ───────────────────────────────────────
+export function runDetails(sortedRows, { dateFrom, dateTo, rooms, partial = false, scope = '' } = {}) {
+  const params = new URLSearchParams();
+  if (dateFrom) params.set('date_from', dateFrom);
+  if (dateTo) params.set('date_to', dateTo);
+  if (rooms?.length) params.set('rooms', rooms.join(','));
+  if (partial) params.set('partial', '1');
+  if (scope) params.set('scope', scope);
+  return post(`/api/run-details?${params}`, sortedRows);
+}
+export const removeDetailsRooms = (rooms = []) => post('/api/remove-details-rooms', { rooms });
+
+
+export function runDetailsOne(patient, { dateFrom, dateTo, selectedDates } = {}) {
+  return post('/api/run-details-one', {
+    patientId: patient?.ma_bn || patient?.id || patient?.['Mã BN'] || patient?.['Mã YT'],
+    ho_ten: patient?.ho_ten || patient?.name || patient?.['Họ tên'],
+    so_phong: patient?.so_phong || patient?.room || patient?.Vi_Tri,
+    thoi_gian_vao_khoa: patient?.thoi_gian_vao_khoa || patient?.tg_vao || patient?.['T/G vào'] || patient?.thoi_gian_vao || patient?.admission_time,
+    ten_khoa_dieu_tri: patient?.ten_khoa_dieu_tri || patient?.khoa_dieu_tri || patient?.khoa_chuyen_den || patient?.['Tên khoa điều trị'] || patient?.['Khoa điều trị'] || patient?.['Khoa chuyển đến'] || patient?.department_name || patient?.department,
+    dateFrom,
+    dateTo,
+    selectedDates,
+  });
+}
+
+// ── Post-process (classify Y lệnh) ───────────────────────────────────────────
+export const runPostprocess = () => get('/api/run-postprocess');
+export const hasProcessed = () => get('/api/has-processed');
+
+// ── Patients (processed) ─────────────────────────────────────────────────────
+export const getPatients = () => get('/api/get-patients');
+export const updateInfusionItem = (ma_bn, ngay_lam, match, updates) =>
+  post('/api/update-infusion-item', { ma_bn, ngay_lam, match, updates });
+
+// ── Research ────────────────────────────────────────────────────────────────
+export const getResearchArchive = () => get('/api/research/archive');
+export const uploadResearchArchiveSource = (payload) => post('/api/research/archive/source', payload);
+export const getResearchArchiveData = ({ table = 'patients', runId = 'latest', redact = true } = {}) => {
+  const params = new URLSearchParams();
+  params.set('table', table);
+  if (runId) params.set('runId', runId);
+  params.set('redact', redact ? '1' : '0');
+  return get(`/api/research/archive/data?${params}`);
+};
+export const getResearchArchiveCoverage = ({ runId = 'latest' } = {}) => {
+  const params = new URLSearchParams();
+  if (runId) params.set('runId', runId);
+  return get(`/api/research/archive/coverage?${params}`);
+};
+export const getResearchArchiveProgress = ({ runId = 'latest' } = {}) => {
+  const params = new URLSearchParams();
+  if (runId) params.set('runId', runId);
+  return get(`/api/research/archive/progress?${params}`);
+};
+export const getResearchIdentifiedAccess = () => get('/api/research/identified-access');
+export const getResearchArchivePatientHistory = ({ q = '', runId = 'latest' } = {}) => {
+  const params = new URLSearchParams();
+  if (runId) params.set('runId', runId);
+  if (q) params.set('q', q);
+  // Tra cứu luôn trả dữ liệu định danh; server vẫn tự chặn nếu chưa bật
+  // EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT hoặc không phải supervisor/admin.
+  params.set('identified', '1');
+  return get(`/api/research/archive/patient-history?${params}`);
+};
+export const getResearchArchiveVariableCatalog = ({ runId = 'latest' } = {}) => {
+  const params = new URLSearchParams();
+  if (runId) params.set('runId', runId);
+  return get(`/api/research/archive/variable-catalog?${params}`);
+};
+export const previewResearchArchiveVariables = (payload = {}) => post('/api/research/archive/variable-preview', payload);
+export const exportResearchArchiveVariables = (payload = {}) => downloadBlob('/api/research/archive/variable-export', 'du_lieu_nghien_cuu.csv', { method: 'POST', body: payload });
+export const getResearchStudySuggestions = () => get('/api/research/archive/study-suggestions');
+export const getResearchArchivePipeline = () => get('/api/research/archive/pipeline');
+export const getResearchStudyVariableStats = (studyId) => get(`/api/research/studies/${encodeURIComponent(studyId)}/variable-stats`);
+export const downloadResearchArchiveCsv = ({ table = 'analysis_ready', runId = 'latest', redact = true } = {}) => {
+  const params = new URLSearchParams();
+  params.set('table', table);
+  if (runId) params.set('runId', runId);
+  params.set('redact', redact ? '1' : '0');
+  return downloadBlob(`/api/research/archive/export?${params}`, `archive_${table}.csv`);
+};
+export const finalizeResearchArchiveDataset = () => post('/api/research/archive/finalize-dataset', {});
+export const buildResearchArchiveEncodedDataset = () => post('/api/research/archive/build-encoded-dataset', {});
+// Tác vụ nghiên cứu đang chạy trên server (kho và các nghiên cứu).
+export const getResearchRunning = () => get('/api/research/running');
+export const runResearchArchive = (options = {}) => post('/api/research/archive/run', options);
+export const runResearchArchivePatientInfo = (options = {}) => post('/api/research/archive/patient-info', options);
+
+export const getResearchArchiveLog = ({ runId = 'latest', lines = 500 } = {}) => {
+  const params = new URLSearchParams({ runId, lines });
+  return get(`/api/research/archive/log?${params}`);
+};
+export const getResearchStudyLog = (studyId, { runId = 'latest', lines = 500 } = {}) => {
+  const params = new URLSearchParams({ runId, lines });
+  return get(`/api/research/studies/${encodeURIComponent(studyId)}/log?${params}`);
+};
+export const getResearchArchiveCaseTrace = ({ runId = 'latest', limit = 10, redact = true } = {}) => {
+  const params = new URLSearchParams({ runId, limit, redact: redact ? '1' : '0' });
+  return get(`/api/research/archive/case-trace?${params}`);
+};
+export const getResearchStudyCaseTrace = (studyId, { runId = 'latest', limit = 10, redact = true } = {}) => {
+  const params = new URLSearchParams({ runId, limit, redact: redact ? '1' : '0' });
+  return get(`/api/research/studies/${encodeURIComponent(studyId)}/case-trace?${params}`);
+};
+export const normalizeResearchArchive = () => post('/api/research/archive/normalize', {});
+export const cleanResearchArchiveGenerated = (options = {}) => post('/api/research/archive/clean-generated', options);
+export const importHchanhToResearchArchive = (options = {}) => post('/api/research/archive/import-hchanh', options);
+export const fetchHchanhForResearchArchive = (options = {}) => post('/api/research/archive/fetch-hchanh', options);
+export const fetchOrderHistoryForResearchArchive = (options = {}) => post('/api/research/archive/fetch-order-history', options);
+export const listResearchStudies = () => get('/api/research/studies');
+export const dismissFatalAlert = () => post('/api/research/archive/dismiss-alert', {});
+export const deleteResearchStudy = (studyId) =>
+  del(`/api/research/studies/${encodeURIComponent(studyId)}`);
+export const saveCohortFromFiltered = (studyId, rows) =>
+  post(`/api/research/studies/${encodeURIComponent(studyId)}/cohort-from-filtered`, { rows });
+export const createResearchStudy = (payload) => post('/api/research/studies', payload);
+export const getResearchStudy = (studyId) => get(`/api/research/studies/${encodeURIComponent(studyId)}`);
+export const uploadResearchCohort = (studyId, payload) => post(`/api/research/studies/${encodeURIComponent(studyId)}/cohort`, payload);
+export const getResearchData = (studyId, { table = 'patients', runId = 'latest', redact = true } = {}) => {
+  const params = new URLSearchParams();
+  params.set('table', table);
+  if (runId) params.set('runId', runId);
+  params.set('redact', redact ? '1' : '0');
+  return get(`/api/research/studies/${encodeURIComponent(studyId)}/data?${params}`);
+};
+export const getResearchStudyCoverage = (studyId, { runId = 'latest' } = {}) => {
+  const params = new URLSearchParams();
+  if (runId) params.set('runId', runId);
+  return get(`/api/research/studies/${encodeURIComponent(studyId)}/coverage?${params}`);
+};
+export const getResearchStudyProgress = (studyId, { runId = 'latest' } = {}) => {
+  const params = new URLSearchParams();
+  if (runId) params.set('runId', runId);
+  return get(`/api/research/studies/${encodeURIComponent(studyId)}/progress?${params}`);
+};
+export const downloadResearchStudyCsv = (studyId, { table = 'analysis_ready', runId = 'latest', redact = true } = {}) => {
+  const params = new URLSearchParams();
+  params.set('table', table);
+  if (runId) params.set('runId', runId);
+  params.set('redact', redact ? '1' : '0');
+  return downloadBlob(`/api/research/studies/${encodeURIComponent(studyId)}/export?${params}`, `${studyId}_${table}.csv`);
+};
+// Phiếu nhập tay (CRF) và lịch theo dõi của nghiên cứu.
+export const getResearchStudyCrf = (studyId, { identified = false } = {}) => get(`/api/research/studies/${encodeURIComponent(studyId)}/crf${identified ? '?identified=1' : ''}`);
+export const saveResearchStudyCrfForm = (studyId, form) => put(`/api/research/studies/${encodeURIComponent(studyId)}/crf/form`, { form });
+export const saveResearchStudyCrfEntry = (studyId, researchCode, entry) => put(`/api/research/studies/${encodeURIComponent(studyId)}/crf/entries/${encodeURIComponent(researchCode)}`, entry);
+export const downloadResearchStudyMerged = (studyId) => downloadBlob(`/api/research/studies/${encodeURIComponent(studyId)}/crf/export-merged`, `${studyId}_du_lieu_day_du.csv`);
+export const finalizeResearchStudyDataset = (studyId) => post(`/api/research/studies/${encodeURIComponent(studyId)}/finalize-dataset`, {});
+export const buildResearchStudyEncodedDataset = (studyId) => post(`/api/research/studies/${encodeURIComponent(studyId)}/build-encoded-dataset`, {});
+export const cleanResearchStudyGenerated = (studyId, options = {}) => post(`/api/research/studies/${encodeURIComponent(studyId)}/clean-generated`, options);
+export const importResearchFromArchive = (studyId, filters = {}) => post(`/api/research/studies/${encodeURIComponent(studyId)}/import-from-archive`, filters);
+export const normalizeResearchStudy = (studyId) => post(`/api/research/studies/${encodeURIComponent(studyId)}/normalize`, {});
+export const runResearchStudy = (studyId, options = {}) => post(`/api/research/studies/${encodeURIComponent(studyId)}/run`, options);
+export const runResearchStudyPatientInfo = (studyId, options = {}) => post(`/api/research/studies/${encodeURIComponent(studyId)}/patient-info`, options);
+export const fetchHchanhForResearchStudy = (studyId, options = {}) => post(`/api/research/studies/${encodeURIComponent(studyId)}/fetch-hchanh`, options);
+export const fetchOrderHistoryForResearchStudy = (studyId, options = {}) => post(`/api/research/studies/${encodeURIComponent(studyId)}/fetch-order-history`, options);
+// Lấy hành chánh + y lệnh trong 1 lần (gộp files)
+export const fetchHchanhAllForResearchArchive = (options = {}) => post('/api/research/archive/fetch-hchanh', { ...options, files: ['profile', 'discharge', 'surgery', 'order_history'] });
+export const fetchHchanhAllForResearchStudy = (studyId, options = {}) => post(`/api/research/studies/${encodeURIComponent(studyId)}/fetch-hchanh`, { ...options, files: ['profile', 'discharge', 'surgery', 'order_history'] });
+// Lấy lại chỗ thiếu
+export const refetchMissingResearch = (options = {}) => post('/api/research/refetch-missing', options);
+
+// Thu thập tự động: chỉ lấy phần thiếu/lỗi/đã thay đổi; báo cáo vận hành + danh sách ngoại lệ.
+const researchScopePath = (studyId) => (studyId ? `/api/research/studies/${encodeURIComponent(studyId)}` : '/api/research/archive');
+export const collectResearchAuto = (studyId, options = {}) => post(`${researchScopePath(studyId)}/collect-auto`, options);
+export const getResearchCollectionStatus = (studyId) => get(`${researchScopePath(studyId)}/collection-status`);
+export const downloadResearchCollectionExceptions = (studyId) =>
+  downloadBlob(`${researchScopePath(studyId)}/collection-exceptions`, `${studyId || 'du_lieu_goc'}_ngoai_le_thu_thap.csv`);
+export const getResearchEncounterReviews = (studyId) => get(`${researchScopePath(studyId)}/encounter-reviews`);
+export const updateResearchEncounterReview = (studyId, decision) => post(`${researchScopePath(studyId)}/encounter-reviews`, decision);
+export const getResearchStudyReadiness = (studyId) => get(`/api/research/studies/${encodeURIComponent(studyId)}/readiness`);
+export const updateResearchRefreshPolicy = (studyId, refreshPolicy) =>
+  post(`${researchScopePath(studyId)}/refresh-policy`, { refresh_policy: refreshPolicy });
+export const getResearchCollectionChanges = (studyId) => get(`${researchScopePath(studyId)}/collection-changes`);
+export const updateResearchStudyDataRequirements = (studyId, dataRequirements) =>
+  post(`/api/research/studies/${encodeURIComponent(studyId)}/data-requirements`, { data_requirements: dataRequirements });
+// Analysis config
+export const getAnalysisPresets = () => get('/api/research/analysis-presets');
+export const updateStudyAnalysisConfig = (studyId, config) => post(`/api/research/studies/${encodeURIComponent(studyId)}/analysis-config`, config);
+export const getDiagnostics = () => get('/api/diagnostics');
+
+export async function checkInputChanges(targets) {
+  const url = '/api/check-input-changes';
+  const method = 'POST';
+  const label = apiActionLabel(method, url);
+  const started = Date.now();
+  const details = { method, url, label, body: summarizeApiBody(targets) };
+  logActivity('api.request.start', details);
+
+  let res;
+  try {
+    res = await fetchWithAuth(url, {
+      method,
+      headers: headers(),
+      body: JSON.stringify(targets),
+    }, true, details);
+  } catch (err) {
+    logActivity('api.request.error', { ...details, duration_ms: Date.now() - started, message: String(err.message || err) });
+    throw err;
+  }
+
+  // 409 = phát hiện thay đổi và đã cập nhật dữ liệu; đây là kết quả hợp lệ để UI chặn nhập.
+  if (res.status === 409) {
+    const data = await res.json();
+    logActivity('api.request.ok', {
+      ...details,
+      status: res.status,
+      duration_ms: Date.now() - started,
+      result: { status: data?.status || 'changed', message: data?.message || 'Có thay đổi mới' },
+    });
+    return data;
+  }
+  if (res.ok) {
+    const data = await res.json();
+    logActivity('api.request.ok', {
+      ...details,
+      status: res.status,
+      duration_ms: Date.now() - started,
+      result: { status: data?.status || '', message: data?.message || '' },
+    });
+    return data;
+  }
+  const msg = await extractErrorMessage(res);
+  logActivity('api.request.error', { ...details, status: res.status, duration_ms: Date.now() - started, message: msg });
+  throw new Error(msg);
+}
+
+// ── Input care ────────────────────────────────────────────────────────────────
+export const runInputCare = (targets) => post('/api/run-input-care', targets);
+
+// ── Input infusions ───────────────────────────────────────────────────────────
+export const runInputInfusions = (targets) => post('/api/run-input-infusions', targets);
+
+// ── Input procedures ─────────────────────────────────────────────────────────
+export const runInputProcedures = (targets) => post('/api/run-input-procedures', targets);
+
+// ── Input VTYT ───────────────────────────────────────────────────────────────
+export const runInputVTYT = (targets) => post('/api/run-input-vtyt', targets);
+export const previewInputVTYT = (targets) => post('/api/preview-input-vtyt', targets);
+
+// ── Report PDF ────────────────────────────────────────────────────────────────
+// Dùng One-Time Token (OTT) thay vì APP_TOKEN trực tiếp trên URL.
+// APP_TOKEN trên URL lọt vào browser history và server access log — OTT thì không.
+//
+// Flow:
+//  1. POST /api/report-token → { ott }  (token 1 lần, hết hạn sau 2 phút)
+//  2. Mở URL /api/run-report-infusion?ott=<ott>&...  (không có APP_TOKEN)
+
+export async function reportUrl({ date, dateFrom, dateTo, rows = null, source = '', start = 0, end = 23, no0 = false }) {
+  const p = new URLSearchParams();
+  if (dateFrom) { p.set('date_from', dateFrom); p.set('date_to', dateTo || dateFrom); }
+  else if (date) p.set('date', date);
+  p.set('start', String(start));
+  p.set('end', String(end));
+  if (no0) p.set('no0', '1');
+  p.set('sid', getSessionId());
+
+  // Lấy OTT nếu server đang dùng APP_TOKEN. Snapshot rows (nếu có) được gắn vào
+  // OTT ở server để PDF dùng đúng dữ liệu đang hiển thị, không đọc/parsing nguồn lại.
+  const report = Array.isArray(rows)
+    ? { date: date || '', source: source || '', rows }
+    : null;
+  const { ott } = await post('/api/report-token', report ? { report } : {});
+  if (ott) p.set('ott', ott);
+
+  return `/api/run-report-infusion?${p}`;
+}
+
+// ── Data info (for startup choice screen) ────────────────────────────────────
+export const getFeatureRegistry = () => get('/api/features');
+export const getFeatureDefinition = (featureId) => get(`/api/features/${encodeURIComponent(featureId)}`);
+export const updateFeatureState = (featureId, payload) => patch(`/api/features/${encodeURIComponent(featureId)}/state`, payload);
+export const resetFeatureState = (featureId) => del(`/api/features/${encodeURIComponent(featureId)}/state`);
+export const reloadFeatureRegistry = () => post('/api/features/reload', {});
+export const getWorkflows = () => get('/api/workflows');
+export const planWorkflow = (workflowId, payload = {}) => post(`/api/workflows/${encodeURIComponent(workflowId)}/plan`, payload);
+export const runWorkflow = (workflowId, payload = {}) => post(`/api/workflows/${encodeURIComponent(workflowId)}/run`, payload);
+export const getWorkflowRuns = (workflowId = '') => get(`/api/workflows/runs${workflowId ? `?workflow_id=${encodeURIComponent(workflowId)}` : ''}`);
+export const getWorkflowRun = (runId) => get(`/api/workflows/runs/${encodeURIComponent(runId)}`);
+export const cancelWorkflowRun = (runId) => post(`/api/workflows/runs/${encodeURIComponent(runId)}/cancel`, {});
+export const getArtifacts = () => get('/api/artifacts');
+export const updateWorkflowState = (workflowId, payload) => patch(`/api/workflows/${encodeURIComponent(workflowId)}/state`, payload);
+export const resetWorkflowState = (workflowId) => del(`/api/workflows/${encodeURIComponent(workflowId)}/state`);
+
+export const getDataInfo = () => get('/api/data-info');
+export const getSessionLogs = () => get('/api/session-logs');
+export const getDataSessions = () => get('/api/data-sessions');
+export const deleteDataSession = (sid) => del('/api/data-sessions/' + encodeURIComponent(sid));
+
+// ── Cancel running task ───────────────────────────────────────────────────────
+export const cancelTask = () => post('/api/cancel', {});
+
+// ── Nurse settings ────────────────────────────────────────────────────────────
+export const getNurseSettings = () => get('/api/nurse-settings');
+export const saveNurseSettings = (payload) => post('/api/nurse-settings', payload);
+
+
+// ── Điều dưỡng hành chánh ───────────────────────────────────────────────────
+export const getAdminNurseState = () => get('/api/admin-nurse-state');
+export const saveAdminNurseState = (payload) => post('/api/admin-nurse-state', payload);
+export const checkCurrentBed = (patient) => post('/api/check-current-bed', { patient });
+
+// ── Kho người bệnh ───────────────────────────────────────────────────────────
+export const getPatientDbSummary = () => get('/api/kho/tong-quan');
+export const searchPatientDb = (q) => get(`/api/kho/tim?q=${encodeURIComponent(q || '')}`);
+export const getPatientJourney = (maBn) => get(`/api/kho/benh-nhan/${encodeURIComponent(maBn || '')}`);
+export const listPatientDbVisits = ({ tu = '', den = '', loai = '', khoa = '', limit = 200, offset = 0 } = {}) =>
+  get(`/api/kho/luot?${new URLSearchParams({ tu, den, loai, khoa, limit: String(limit), offset: String(offset) })}`);
+export const syncPatientDb = () => post('/api/kho/dong-bo', {});
+export const getAppointmentReport = ({ tu = '', den = '', trangThai = '' } = {}) =>
+  get(`/api/kho/tai-kham?${new URLSearchParams({ tu, den, trang_thai: trangThai })}`);
+export const getReadmissionReport = ({ tu = '', den = '' } = {}) =>
+  get(`/api/kho/tai-nhap-vien?${new URLSearchParams({ tu, den })}`);
+
+// ── Phòng khám ───────────────────────────────────────────────────────────────
+export const importHchanhStayStore = () => post('/api/hchanh/stay-store/import', {});
+export const runClinicPreview = (payload) => post('/api/clinic/preview', payload);
+export const prepareClinicBbhc = () => post('/api/clinic/monitor/bbhc/prepare', {});
+export const runClinicNgoaiTru = () => post('/api/clinic/monitor/ngoaitru', {});
+export const runClinicBbhc = (drafts) => post('/api/clinic/monitor/bbhc/run', { drafts });
+export const downloadClinicBbhcPdf = () => downloadBlob('/api/clinic/monitor/bbhc/pdf', 'so_bien_ban_hoi_chan.pdf');
+export const runClinicCarePreview = (payload) => post('/api/clinic/care-preview', payload);
+export const runClinicCareOrderSeeds = (payload) => post('/api/clinic/care-order-seeds', payload);
+export const runClinicInputCare = (payload) => post('/api/clinic/input-care', payload);
+export const getSickLeaveState = () => get('/api/sick-leave-state');
+export const saveSickLeaveState = (payload) => post('/api/sick-leave-state', payload);
+export const getSickLeaveImport = () => get('/api/sick-leave-import');
+export const importSickLeaveList = (payload) => post('/api/sick-leave-import', payload);
+export const deleteSickLeaveImportRow = (payload) => post('/api/sick-leave-import/delete-row', payload);
+export const launchBhytTool = () => post('/api/sick-leave-launch-bhyt-tool', {});
+
+export const getClinicCareDraft = () => get('/api/clinic/care-draft');
+export const startClinicMonitor = (payload) => post('/api/clinic/monitor/start', payload);
+export const stopClinicMonitor = () => post('/api/clinic/monitor/stop', {});
+export const refreshClinicMonitor = () => post('/api/clinic/monitor/refresh', {});
+export const getClinicMonitorState = () => get('/api/clinic/monitor/state');
+export const completeReadyClinicPatients = () => post('/api/clinic/monitor/complete', {});
+export const setClinicPatientWeight = (khambenhid, kg) => post('/api/clinic/monitor/weight', { khambenhid, kg });
+
+// ── Export / Import session data ──────────────────────────────────────────────
+
+/** Tải dữ liệu session về dưới dạng Blob JSON (không để token trên URL). */
+export async function exportData() {
+  const url = '/api/export-data';
+  const method = 'GET';
+  const label = apiActionLabel(method, url);
+  const started = Date.now();
+  const details = { method, url, label };
+  logActivity('api.request.start', details);
+  let res;
+  try {
+    res = await fetchWithAuth(url, { headers: headers() }, true, details);
+  } catch (err) {
+    logActivity('api.request.error', { ...details, duration_ms: Date.now() - started, message: String(err.message || err) });
+    throw err;
+  }
+  if (!res.ok) {
+    const msg = await extractErrorMessage(res);
+    logActivity('api.request.error', { ...details, status: res.status, duration_ms: Date.now() - started, message: msg });
+    throw new Error(msg);
+  }
+  logActivity('api.request.ok', { ...details, status: res.status, duration_ms: Date.now() - started, result: { status: 'ok' } });
+  return res.blob();
+}
+
+export async function importData(bundle) {
+  return post('/api/import-data', { bundle });
+}
+
+// ── Hành chánh (hchanh) ───────────────────────────────────────────────────────
+export const getHchanh_Index     = ()            => get('/api/hchanh/index');
+export const syncHchanh          = (patients)    => post('/api/hchanh/sync', patients ? { patients } : {});
+export const getHchanh_Dashboard = ()            => get('/api/hchanh/dashboard');
+export const saveHchanh_ManualReview = (ma_bn, patchBody = {}) => patch(`/api/hchanh/manual-review/${encodeURIComponent(ma_bn)}`, patchBody);
+export const getHchanh_VtytDraft = ()             => get('/api/hchanh/vtyt-draft');
+export const saveHchanh_VtytDraft = (draft)          => post('/api/hchanh/vtyt-draft', { draft });
+export const clearHchanh_VtytDraft = ()               => del('/api/hchanh/vtyt-draft');
+export const getRecordsCheckDashboard = ()       => get('/api/hchanh/records-check/dashboard');
+export const getRecordsCheckGoogleSheet = ()      => get('/api/hchanh/records-check/google-sheet');
+export const syncRecordsCheckGoogleSheet = (options = {}) => post('/api/hchanh/records-check/google-sheet/sync', options);
+export const updateRecordsCheckGoogleSheetRow = (payload = {}) => post('/api/hchanh/records-check/google-sheet/update-row', payload);
+export const setRecordsCheckChecked = (caseKeyOrKeys, checked) => {
+  const caseKeys = Array.isArray(caseKeyOrKeys) ? caseKeyOrKeys.filter(Boolean) : [caseKeyOrKeys].filter(Boolean);
+  return post('/api/hchanh/records-check/checked', { case_key: caseKeys[0] || '', case_keys: caseKeys, checked: Boolean(checked) });
+};
+export const startRecordsCheckFetchBatch = (payload = {}) => post('/api/hchanh/records-check/fetch-batch', payload);
+export const stopRecordsCheckFetchBatch = () => post('/api/hchanh/records-check/stop', {});
+export const exportRecordsCheckPdf = (payload = {}) => post('/api/hchanh/records-check/export-pdf', payload);
+export const setRecordsCheckPaperChecklist = (caseKeyOrKeys, patch, actor = '') => {
+  const caseKeys = Array.isArray(caseKeyOrKeys) ? caseKeyOrKeys.filter(Boolean) : [caseKeyOrKeys].filter(Boolean);
+  return post('/api/hchanh/records-check/paper-checklist', { case_keys: caseKeys, patch: patch || {}, actor });
+};
+export const getRecordsCheckSubmissions = () => get('/api/hchanh/records-check/submissions');
+export const addRecordsCheckSubmission = (payload = {}) => post('/api/hchanh/records-check/submissions/add', payload);
+export const submitRecordsCheckSubmission = (payload = {}) => post('/api/hchanh/records-check/submissions/submit', payload);
+export const markRecordsCheckSubmissionReturned = (payload = {}) => post('/api/hchanh/records-check/submissions/returned', payload);
+export const removeRecordsCheckSubmissionItems = (payload = {}) => post('/api/hchanh/records-check/submissions/remove', payload);
+export const exportRecordsCheckSubmissionPdf = (payload = {}) => post('/api/hchanh/records-check/submissions/export-pdf', payload);
+export const addRecordsCheckSubmissionDiscrepancy = (payload = {}) => post('/api/hchanh/records-check/submissions/discrepancy', payload);
+export const scanRecordsCheckCompleted = (options = {}) => {
+  const hasHeadless = Object.prototype.hasOwnProperty.call(options || {}, 'headless')
+    || Object.prototype.hasOwnProperty.call(options || {}, 'hidden')
+    || Object.prototype.hasOwnProperty.call(options || {}, 'run_hidden')
+    || Object.prototype.hasOwnProperty.call(options || {}, 'runHidden');
+  return post('/api/hchanh/records-check/scan-completed', {
+    ...(options?.date_from || options?.dateFrom ? { date_from: options.date_from || options.dateFrom } : {}),
+    ...(options?.date_to || options?.dateTo ? { date_to: options.date_to || options.dateTo } : {}),
+    ...(hasHeadless ? { headless: Boolean(options.headless ?? options.hidden ?? options.run_hidden ?? options.runHidden) } : { headless: true }),
+  });
+};
+export const getHchanh_Patient   = (ma_bn)       => get(`/api/hchanh/patient/${encodeURIComponent(ma_bn)}`);
+export const fetchHchanh         = (ma_bn, scope, files, dateFrom, dateTo, options = {}) => {
+  const inpatientStatus = String(options?.inpatient_status || options?.inpatientStatus || options?.status || '').trim();
+  const caseKey = String(options?.case_key || options?.caseKey || options?.encounter_key || options?.encounterKey || '').trim();
+  const hasHeadless = Object.prototype.hasOwnProperty.call(options || {}, 'headless')
+    || Object.prototype.hasOwnProperty.call(options || {}, 'hidden')
+    || Object.prototype.hasOwnProperty.call(options || {}, 'run_hidden')
+    || Object.prototype.hasOwnProperty.call(options || {}, 'runHidden');
+  return post('/api/hchanh/fetch', {
+    ma_bn,
+    scope,
+    ...(files ? { files } : {}),
+    ...(dateFrom ? { date_from: dateFrom, date_to: dateTo || dateFrom } : {}),
+    ...(inpatientStatus ? { inpatient_status: inpatientStatus } : {}),
+    ...(caseKey ? { case_key: caseKey, records_check: true } : {}),
+    ...(options?.records_check || options?.recordsCheck ? { records_check: true } : {}),
+    ...(hasHeadless ? { headless: Boolean(options.headless ?? options.hidden ?? options.run_hidden ?? options.runHidden) } : {}),
+  });
+};
+export const getHchanh_Tickets   = ()            => get('/api/hchanh/tickets');
+export const createHchanh_Ticket = (ma_bn, payload = {}) => post('/api/hchanh/ticket', { ma_bn, ...payload });
+export const updateHchanh_Ticket = (ticketId, payload)   => patch(`/api/hchanh/ticket/${encodeURIComponent(ticketId)}`, payload);
+export const createHchanh_Snapshot = (kind)     => post(`/api/hchanh/snapshot/${encodeURIComponent(kind)}`, {});
+export const getHchanh_Snapshot  = ()           => get('/api/hchanh/snapshot');
+export const clearHchanh_Patient = (ma_bn)      => post('/api/hchanh/clear-patient', { ma_bn });
+export const clearHchanh         = ()           => post('/api/hchanh/clear', {});
+
+export const rescanHchanh        = (ma_bn)       => post('/api/hchanh/rescan', { ma_bn });
+export const openHchanh_BedEdit = (ma_bn, dateTo = '') => post('/api/hchanh/open-bed-edit', { ma_bn, ...(dateTo ? { date_to: dateTo } : {}) });
+export const printHchanh_BillingPdf = (ma_bn, ho_ten = '', dateTo = '') => post('/api/hchanh/print-billing', { ma_bn, ho_ten, ...(dateTo ? { date_to: dateTo } : {}) });
+export async function downloadHchanh_BillingPdf(fileName) {
+  const res = await fetchWithAuth(`/api/hchanh/printed-billing/${encodeURIComponent(fileName)}`, { headers: headers() });
+  if (!res.ok) throw new Error(await extractErrorMessage(res));
+  return res.blob();
+}
+
+export const printWard_DischargeBundle = (ma_bn, ho_ten = '', dateTo = '', dischargeDate = '') =>
+  post('/api/hchanh/print-discharge-bundle', {
+    ma_bn,
+    ho_ten,
+    ...(dateTo ? { date_to: dateTo, selected_dates: [dateTo] } : {}),
+    ...(dischargeDate ? { ngay_ra_vien_date: dischargeDate } : {}),
+  });
+export const printWard_DischargeBundleBatch = (patients = [], dateTo = '', selectedDates = []) =>
+  post('/api/hchanh/print-discharge-bundle-batch', {
+    patients,
+    ...(dateTo ? { date_to: dateTo } : {}),
+    ...(Array.isArray(selectedDates) && selectedDates.length ? { selected_dates: selectedDates } : {}),
+  });
+export async function downloadWard_DischargeBundle(fileName) {
+  const res = await fetchWithAuth(`/api/hchanh/discharge-bundle/${encodeURIComponent(fileName)}`, { headers: headers() });
+  if (!res.ok) throw new Error(await extractErrorMessage(res));
+  return res.blob();
+}
+export const printHchanh_Ticket  = (ticketId)    => openHtmlBlobInNewTab(`/api/hchanh/ticket/${encodeURIComponent(ticketId)}/print`, `hchanh_ticket_${ticketId}.html`);
+export const printHchanh_WardList = ()           => openHtmlBlobInNewTab('/api/hchanh/print-ward-list', 'hchanh_danh_sach_xep_phong.html');
+export async function downloadWardListPdf(patients = []) {
+  const url = '/api/hchanh/print-ward-list-pdf';
+  const res = await fetchWithAuth(url, {
+    method: 'POST',
+    headers: headers({ Accept: 'application/pdf' }),
+    body: JSON.stringify({ patients }),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res));
+  return {
+    blob: await res.blob(),
+    filename: parseDownloadFilename(res.headers.get('Content-Disposition'), `DANH_SACH_XEP_PHONG_${new Date().toISOString().slice(0, 10)}.pdf`),
+  };
+}
+export async function exportHchanh_Issues(format = 'csv', owner = '') {
+  const qs  = new URLSearchParams({ format, ...(owner ? { owner } : {}) }).toString();
+  const url = `/api/hchanh/export/issues?${qs}`;
+  const res = await fetchWithAuth(url, { headers: headers() });
+  return res;
+}
+
+// ── VTYT Catalog ──────────────────────────────────────────────────────────────
+export const getVtytCatalog      = ()              => get('/api/vtyt-catalog');
+export const updateVtytCatalog   = (key, body)    => patch(`/api/vtyt-catalog/${encodeURIComponent(key)}`, body);
+export const resetVtytCatalog    = (key)           => post(`/api/vtyt-catalog/reset/${encodeURIComponent(key)}`, {});
+export const scanVtytCatalogEmr  = (maBn, queries) => post('/api/vtyt-catalog/scan-emr', { ma_bn: maBn, queries });
+export const getVtytCatalogEmrScan = ()            => get('/api/vtyt-catalog/emr-scan');
+export const getVtytCombos          = ()            => get('/api/vtyt-combos');
+export const createVtytCombo        = (body)        => post('/api/vtyt-combos', body);
+export const updateVtytCombo        = (id, body)    => patch(`/api/vtyt-combos/${encodeURIComponent(id)}`, body);
+export const deleteVtytCombo        = (id)          => del(`/api/vtyt-combos/${encodeURIComponent(id)}`);
+
+// ── Danh mục thuốc ────────────────────────────────────────────────────────────
+export const getMedicationCatalog    = ()           => get('/api/medication-catalog');
+export const createMedicationCatalog = (body)        => post('/api/medication-catalog', body);
+export const updateMedicationCatalog = (key, body)  => patch(`/api/medication-catalog/${encodeURIComponent(key)}`, body);
+export const deleteMedicationCatalog = (key)         => del(`/api/medication-catalog/${encodeURIComponent(key)}`);
+
+// ── Đường dùng (model chung + phần tự cài) ───────────────────────────────────
+export const getRouteTable    = ()     => get('/api/routes');
+export const saveCustomRoutes = (body) => put('/api/routes/custom', body);
+
+// ── Thiết lập tài khoản (admin) ─────────────────────────────────────────────
+export const getAdminUsers    = ()           => get('/api/admin/users');
+export const createAdminUser  = (body)        => post('/api/admin/users', body);
+export const updateAdminUser  = (id, body)   => patch(`/api/admin/users/${encodeURIComponent(id)}`, body);
+export const deleteAdminUser  = (id)          => del(`/api/admin/users/${encodeURIComponent(id)}`);
+
+// ── Tài khoản EMR theo điều dưỡng (ca làm/ca trực — admin) ──────────────────
+export const getNurseEmrAccounts  = ()      => get('/api/nurse-emr-accounts');
+export const saveNurseEmrAccounts = (body)  => post('/api/nurse-emr-accounts', body);
+export const saveNurseSignature   = (name, imageDataUrl) => post('/api/nurse-emr-accounts/signature', { name, imageDataUrl });
+export const removeNurseSignature = (name)   => del(`/api/nurse-emr-accounts/signature/${encodeURIComponent(name)}`);
+
+// ── Chữ ký bộ phiếu "IN RA VIỆN" ─────────────────────────────────────────────
+export const listDischargeBundles = ()             => get('/api/hchanh/discharge-bundles');
+export const signDischargeBundle  = (fileName)     => post('/api/hchanh/sign-discharge-bundle', { file_name: fileName });
+export const deleteDischargeBundle = (fileName)    => del(`/api/hchanh/discharge-bundle/${encodeURIComponent(fileName)}`);
+export const cleanupDischargeBundles = (olderThanDays) => post('/api/hchanh/discharge-bundles/cleanup', { older_than_days: olderThanDays });
+export const uploadDischargePdf   = (fileName, pdfDataUrl) => post('/api/hchanh/upload-discharge-pdf', { file_name: fileName, pdf_data_url: pdfDataUrl });
