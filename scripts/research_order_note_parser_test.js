@@ -107,7 +107,7 @@ test('clinical events: chỉ ghi nhận điều có bằng chứng rõ và giữ
   assert.strictEqual(byType.get('discharge_plan').value_norm, 'planned');
 });
 
-test('table_io: làm sạch order-history in-memory nhưng không sửa file raw', () => {
+test('table_io: raw giữ nguyên, getCell mới dedupe cho parser', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'order_history_parser_'));
   const file = path.join(dir, 'hchanh_order_history.csv');
   const clinical = 'Bệnh nhân tỉnh';
@@ -121,12 +121,15 @@ test('table_io: làm sạch order-history in-memory nhưng không sửa file raw
   fs.writeFileSync(file, csv, 'utf8');
   const before = fs.readFileSync(file, 'utf8');
   const t = tableIo.readCsvTable(file, 100);
-  assert.strictEqual(t.rows[0]['Tên y lệnh'], '');
-  assert.strictEqual(t.rows[1]['Tên y lệnh'], med);
-  assert.strictEqual(t.rows[1]['Y lệnh khác'], '');
-  assert.strictEqual(t.rows[2]['Tên y lệnh'], '');
-  assert.strictEqual(t.rows[2]['Y lệnh khác'], '');
-  assert.strictEqual(fs.readFileSync(file, 'utf8'), before, 'raw CSV phải giữ nguyên');
+
+  assert.strictEqual(t.rows[0]['Tên y lệnh'], clinical, 'bảng raw không bị sửa');
+  assert.strictEqual(t.rows[1]['Y lệnh khác'], med, 'bảng raw vẫn giữ duplicate nguồn');
+  assert.strictEqual(tableIo.getCell(t.rows[0], ['Tên y lệnh']), '', 'copy từ diễn biến bị bỏ khi parser đọc');
+  assert.strictEqual(tableIo.getCell(t.rows[1], ['Tên y lệnh']), med);
+  assert.strictEqual(tableIo.getCell(t.rows[1], ['Y lệnh khác']), '', 'duplicate order_other bị bỏ');
+  assert.strictEqual(tableIo.getCell(t.rows[2], ['Tên y lệnh']), '', 'placeholder không tạo thuốc giả');
+  assert.strictEqual(tableIo.getCell(t.rows[2], ['Y lệnh khác']), '');
+  assert.strictEqual(fs.readFileSync(file, 'utf8'), before, 'raw CSV trên đĩa phải giữ nguyên');
 });
 
 console.log(`${passed} test(s) passed`);
