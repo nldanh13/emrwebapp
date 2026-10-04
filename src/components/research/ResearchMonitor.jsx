@@ -172,6 +172,30 @@ function EncounterHistoryCard({ enc, index }) {
   );
 }
 
+const whenText = (iso) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+};
+
+// Lần chạy gần nhất kết thúc ra sao: dừng theo yêu cầu, bị ngắt, lỗi hay xong — kèm thời điểm,
+// thay cho câu chung "đã dừng giữa chừng" không biết từ lúc nào.
+function LastRunNote({ stopped, lastTask }) {
+  const resume = <> Bấm <b>Thu thập tự động</b> để chạy tiếp phần còn thiếu.</>;
+  const box = (color, children) => (
+    <div style={{ marginTop: 9, borderLeft: `3px solid ${color}`, background: C.surface2, color: C.text2, padding: '7px 9px', fontSize: FS.xs, lineHeight: 1.5 }}>{children}</div>
+  );
+  const label = stopped?.label || lastTask?.label || 'Tác vụ';
+  if (stopped?.reason === 'cancelled') return box(C.amber, <>"{label}" đã dừng theo yêu cầu lúc {whenText(stopped.at)}.{resume}</>);
+  if (stopped?.reason === 'interrupted') return box(C.amber, <>"{label}" bị ngắt lúc {whenText(stopped.at)} do máy chủ khởi động lại.{resume}</>);
+  if (stopped) {
+    const who = stopped.ho_ten || stopped.ma_bn ? ` ở ca ${stopped.ho_ten || ''}${stopped.ma_bn ? ` (${stopped.ma_bn})` : ''}` : '';
+    return box(C.red, <>Lần chạy trước gặp lỗi và dừng{who}{stopped.at ? ` lúc ${whenText(stopped.at)}` : ''}.{resume}</>);
+  }
+  if (lastTask?.status === 'error') return box(C.red, <>"{label}" lỗi lúc {whenText(lastTask.finished_at)}: {lastTask.message || 'không rõ lỗi'}.{resume}</>);
+  if (lastTask?.status === 'done') return box(C.green, <>Lần chạy gần nhất: "{label}" xong lúc {whenText(lastTask.finished_at)}.{lastTask.message ? ` ${lastTask.message}` : ''}</>);
+  return null;
+}
+
 function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onRefresh }) {
   const [filter, setFilter] = useState('need');
   const [query, setQuery] = useState('');
@@ -271,11 +295,7 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
           </div>
         )}
 
-        {snap.stopped && !isTaskActive && (
-          <div style={{ marginTop: 9, borderLeft: `3px solid ${C.amber}`, background: C.surface2, color: C.text2, padding: '7px 9px', fontSize: FS.xs }}>
-            Tác vụ đã dừng giữa chừng. Bấm <b>Thu thập tự động</b> để tiếp tục phần còn thiếu.
-          </div>
-        )}
+        {!isTaskActive && <LastRunNote stopped={snap.stopped} lastTask={snap.last_task} />}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', columnGap: 18, rowGap: 2, marginTop: 8 }}>
           {(snap.modules || []).map(part => <ModuleProgressCard key={part.key} part={part} />)}

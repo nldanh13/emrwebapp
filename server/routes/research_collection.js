@@ -7,6 +7,7 @@ const { collectionEncounterReviewPayload, collectionEncounterOverrideState, COLL
 const { firstNonEmpty } = require('../research/encounter_context');
 const { nowIso, archiveRunsDir, todayDateInput, archiveSourcePath, ARCHIVE_ID, runsDir, cohortPath } = require('../research/store_paths');
 const { readCsvTable, patientCode, writeCsv } = require('../research/table_io');
+const fs = require('fs');
 const path = require('path');
 const { writeJsonAtomic, readJsonSafe } = require('../utils/file');
 const { readArchive, resolveArchiveRunIdForAction, readStudy, resolveRunId, updateArchive, updateStudy } = require('../research/run_registry');
@@ -108,6 +109,8 @@ async function handleCollectAuto(req, res, studyIdParam = '') {
       refreshPolicy: sc.refreshPolicy,
       study: sc.study,
     };
+    // Chạy lại: bỏ cảnh báo fatal của lần trước (lần này gặp lỗi thật thì worker ghi lại).
+    try { const oldAlert = path.join(sc.runDir, 'fatal_alert.json'); if (fs.existsSync(oldAlert)) fs.unlinkSync(oldAlert); } catch (_) {}
     const task = beginResearchTask(sc.runDir, {
       type: 'collect_auto', label: 'Thu thập tự động', status: 'queued', scope: sc.scope, run_id: sc.runId,
       message: 'Đã nhận yêu cầu thu thập tự động (chỉ lấy phần thiếu/lỗi/đã thay đổi).',

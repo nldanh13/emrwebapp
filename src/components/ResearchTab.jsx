@@ -287,11 +287,11 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   }, [selectedId]); // eslint-disable-line
 
   useEffect(() => {
-    if (!(isArchive && archiveMode === 'overview')) return;
+    if (!(isArchive && archiveMode === 'overview') || !tabActive) return;
     loadGeneralOverview({ silent: true });
-    // Chỉ tự tải khi đổi run. Không phụ thuộc identity của callback để tránh vòng tải lại
-    // khi summary auto-poll cập nhật object archive.
-  }, [isArchive, archiveMode, archive?.latest_run?.id]); // eslint-disable-line
+    // Tải khi đổi run, khi quay lại màn hình này (dữ liệu có thể đã được lấy ở nơi khác) và khi
+    // tác vụ vừa kết thúc. Không phụ thuộc identity của callback để tránh vòng tải lại.
+  }, [isArchive, archiveMode, archive?.latest_run?.id, tabActive, lastFinished]); // eslint-disable-line
 
   // Auto-poll: progress cần realtime, summary thì chậm hơn để không tự tạo 429 khi task dài.
   useEffect(() => {
@@ -457,6 +457,16 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       setBusy(false);
     }
   }, [loadCoverage, loadProgressSnapshot, loadSummary, selectedId, t, updateAutomationStep]);
+
+  // Chuẩn hóa lại kho từ dữ liệu đã lấy (không mở EMR): khi có dữ liệu mới chưa vào bảng chuẩn.
+  const runNormalizeArchive = useCallback(async () => {
+    await runAutomaticWorkflow({
+      kind: 'normalize',
+      successMessage: 'Đã chuẩn hóa kho: số liệu và bảng chuẩn đã gồm dữ liệu mới.',
+      steps: [{ label: 'Chuẩn hóa và kiểm tra chất lượng', run: () => api.normalizeResearchArchive() }],
+    });
+    await loadGeneralOverview({ silent: true });
+  }, [runAutomaticWorkflow, loadGeneralOverview]);
 
   const runSimpleListScan = useCallback(async () => {
     const options = { ...archiveOptions, toDate: archiveOptions.toDate || todayInputDate() };
@@ -831,7 +841,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       if (studyMode === 'crf') return <CrfView key={activeStudy?.id} study={activeStudy} toast={t} />;
       return <StudyStatsView study={activeStudy} toast={t} onGoCollect={() => setStudyMode('collect')} />;
     }
-    if (archiveMode === 'overview') return <GeneralOverviewView {...{ generalOverview, generalOverviewLoading, pipeline, setArchiveMode }} />;
+    if (archiveMode === 'overview') return <GeneralOverviewView {...{ generalOverview, generalOverviewLoading, pipeline, setArchiveMode, uiBusy }} onNormalize={runNormalizeArchive} />;
     if (archiveMode === 'patient') return <PatientLookupView {...{
       identifiedAccess, identifiedLocked, loadPatientHistory, patientHistory,
       patientHistoryError, patientHistoryLoading, patientHistoryMeta, patientQuery, setPatientQuery,
