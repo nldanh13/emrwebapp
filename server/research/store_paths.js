@@ -94,8 +94,18 @@ function removeVietnameseMarks(value) {
     .replace(/Đ/g, 'D');
 }
 
+// Ghi nhớ: tên cột/tên trường lặp lại hàng triệu lần khi chuẩn hóa (mỗi dòng × mỗi lần tra ô),
+// bỏ dấu Unicode mỗi lần chiếm phần lớn thời gian chuẩn hóa.
+const NORMALIZED_KEY_CACHE = new Map();
 function normalizedKey(value) {
-  return removeVietnameseMarks(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const raw = String(value || '');
+  let key = NORMALIZED_KEY_CACHE.get(raw);
+  if (key === undefined) {
+    key = removeVietnameseMarks(raw).toLowerCase().replace(/[^a-z0-9]+/g, '');
+    if (NORMALIZED_KEY_CACHE.size >= 20000) NORMALIZED_KEY_CACHE.clear();
+    NORMALIZED_KEY_CACHE.set(raw, key);
+  }
+  return key;
 }
 
 function slugify(value, fallback = 'nghien_cuu') {

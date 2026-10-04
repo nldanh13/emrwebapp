@@ -408,21 +408,6 @@ describe('ResearchTab (khói)', () => {
     expect(text).toContain('EMR không phản hồi');
   });
 
-  it('Tổng quát: có dữ liệu lấy sau lần chuẩn hóa thì báo rõ ngày lấy và cho chuẩn hóa ngay', async () => {
-    await act(async () => { root.unmount(); });
-    PIPELINE.fetch = { last_at: '2026-10-04T08:00:00Z', parts: [{ label: 'Hồ sơ nền, ra viện, phẫu thuật', updated_at: '2026-10-04T08:00:00Z' }], pending_normalize: true };
-    root = createRoot(container);
-    await act(async () => { root.render(createElement(ResearchTab, { toast: () => {} })); });
-    await flush();
-    const text = container.textContent;
-    expect(text).toContain('Có dữ liệu mới chưa được chuẩn hóa');
-    expect(text).toContain('04/10/2026');
-    expect(text).toContain('chưa được chuẩn hóa: số liệu kho');
-    await clickText('Chuẩn hóa ngay');
-    expect(api.normalizeResearchArchive).toHaveBeenCalled();
-    delete PIPELINE.fetch;
-  });
-
   it('Tra cứu người bệnh khóa: chỉ đúng bước còn thiếu để bật (vd. lỡ lưu .env.txt)', async () => {
     api.getResearchIdentifiedAccess.mockImplementation(async () => ({ status: 'ok', allowed: false, env_enabled: false, role_ok: true, env_diagnosis: { reason: 'saved_as_txt' } }));
     await clickText('Tra cứu người bệnh');
@@ -433,12 +418,41 @@ describe('ResearchTab (khói)', () => {
     api.getResearchIdentifiedAccess.mockImplementation(async () => responseFor('getResearchIdentifiedAccess'));
   });
 
-  it('Thu thập dữ liệu: có dữ liệu mới chưa chuẩn hóa thì hiện nút Chuẩn hóa ngay ngay tại tab', async () => {
-    api.getResearchArchivePipeline.mockImplementation(async () => ({ status: 'ok', pipeline: { ...PIPELINE, fetch: { last_at: '2026-10-04T13:01:00Z', parts: [], pending_normalize: true } } }));
+  it('Chuẩn hóa: một khung duy nhất; đang chuẩn hóa hiện bước + thời gian và KHÔNG khóa Thu thập; xong báo đã chuẩn hóa', async () => {
+    await act(async () => { root.unmount(); });
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    PIPELINE.fetch = { last_at: '2026-10-04T13:42:00Z', parts: [], pending_normalize: true };
+    root = createRoot(container);
+    await act(async () => { root.render(createElement(ResearchTab, { toast: () => {} })); });
+    await flush();
+    const count = (text) => container.textContent.split(text).length - 1;
+    expect(count('Có dữ liệu mới chưa được chuẩn hóa'), 'chỉ một chỗ ở Tổng quát').toBe(1);
     await clickText('Thu thập dữ liệu');
-    expect(container.textContent).toContain('Có dữ liệu mới chưa được chuẩn hóa.');
+    expect(count('Có dữ liệu mới chưa được chuẩn hóa'), 'chỉ một chỗ ở Thu thập').toBe(1);
+
+    let finish;
+    api.normalizeResearchArchive.mockImplementationOnce(() => new Promise(r => { finish = r; }));
+    RUNNING = [{ scope_key: 'archive:normalize', scope: 'archive', lane: 'normalize', kind: 'archive', study_id: '', label: 'Chuẩn hóa',
+      since: new Date(Date.now() - 65000).toISOString(), normalize: { stage: 'Xét nghiệm và CĐHA', stage_index: 3, stage_total: 8 } }];
     await clickText('Chuẩn hóa ngay');
-    expect(api.normalizeResearchArchive).toHaveBeenCalled();
-    api.getResearchArchivePipeline.mockImplementation(async () => responseFor('getResearchArchivePipeline'));
+    await act(async () => { vi.advanceTimersByTime(10100); });
+    await flush();
+    let text = container.textContent;
+    expect(text).toContain('Đang chuẩn hóa');
+    expect(text).toContain('bước 3/8');
+    expect(text).toContain('Xét nghiệm và CĐHA');
+    expect(text).toContain('Đã chạy 1 phút');
+    expect(text).not.toContain('Đang chạy: Chuẩn hóa', 'không lặp ở dải trên cùng');
+    const collect = [...container.querySelectorAll('button')].find(b => b.textContent.trim() === 'Thu thập tự động');
+    expect(collect?.disabled, 'đang chuẩn hóa vẫn thu thập được').toBe(false);
+
+    RUNNING = [];
+    PIPELINE.fetch = { ...PIPELINE.fetch, pending_normalize: false };
+    await act(async () => { finish({ status: 'ok', message: 'Đã chuẩn hóa kho dữ liệu gốc.' }); });
+    await flush();
+    text = container.textContent;
+    expect(text).toContain('Đã chuẩn hóa xong');
+    expect(text).not.toContain('Có dữ liệu mới chưa được chuẩn hóa');
+    delete PIPELINE.fetch;
   });
 });

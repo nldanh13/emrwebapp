@@ -18,7 +18,6 @@ const { RESEARCH_STORE_DIR, ROOT_DIR } = require('../constants');
 const { runPython, fmtPyError } = require('../services/python_runner');
 const { registerCancel, unregisterCancel, isCancelRequested } = require('../services/task_queue');
 const { fetchHchanhForResearchRun } = require('./hchanh_fetch');
-const { runNormalizeJob } = require('./normalize_runner');
 
 // ── Điều phối thu thập tự động ───────────────────────────────────────────────
 // So sổ thu thập (collection_ledger.json) với nguồn hiện tại: ca không đổi thì bỏ qua;
@@ -515,8 +514,9 @@ async function runXnCdhaSubsetForCollection(ctx, { runDir, runId, scope, isArchi
 const DEFAULT_COLLECTION_RUNNERS = {
   hchanh: (ctx, opts) => fetchHchanhForResearchRun(ctx, opts.runDir, opts),
   xnCdha: (ctx, opts) => runXnCdhaSubsetForCollection(ctx, opts),
-  // Tiến trình riêng: không chặn máy chủ trong lúc chuẩn hóa sau thu thập.
-  normalize: (runDir, runId) => runNormalizeJob({ kind: 'run', runDir, options: { sourceRunId: runId } }),
+  // Không chuẩn hóa trong lúc thu thập: Chuẩn hóa là quy trình riêng, được xếp hàng chạy nền sau
+  // khi thu thập xong (xem scheduleNormalizeAfterCollection). Test có thể truyền runner riêng.
+  normalize: null,
 };
 
 async function runCollectionOrchestration(ctx, {
@@ -641,10 +641,12 @@ async function runCollectionOrchestration(ctx, {
   }
 
   let normalized = null;
-  try {
-    normalized = await runners.normalize(runDir, runId);
-  } catch (err) {
-    errors.push(`Chuẩn hóa: ${err.message || err}`);
+  if (runners.normalize) {
+    try {
+      normalized = await runners.normalize(runDir, runId);
+    } catch (err) {
+      errors.push(`Chuẩn hóa: ${err.message || err}`);
+    }
   }
   // Sau khi cập nhật: đánh giá lại các lượt vừa lấy theo yêu cầu của từng nghiên cứu.
   let readinessChanges = [];
@@ -701,6 +703,26 @@ function readinessTablesForRun(runDir) {
 
 // Đủ dùng cho nghiên cứu `study`, đánh giá trên run `runDir` (run của chính nghiên cứu,
 // hoặc kho gốc để biết ca nào trong kho đạt điều kiện đề tài).
+// Sau thu thập: xếp hàng Chuẩn hóa chạy nền (không giữ khóa Thu thập), xong thì đánh giá lại
+// "đủ dùng" của nghiên cứu trên bảng vừa chuẩn hóa. Trả promise (người gọi không cần chờ).
+function scheduleNormalizeAfterCollection({ runDir, runId, isArchive, study = null, sourceRows = [], reason = 'Sau thu thập', onDone = null }) {
+  const { runNormalizeJob } = require('./normalize_runner');
+  const scopeKey = isArchive ? 'archive' : `study:${study?.id || ''}`;
+  return runNormalizeJob({ kind: 'run', runDir, options: { sourceRunId: runId }, scopeKey }, { reason })
+    .then((normalized) => {
+      if (!isArchive && study) {
+        try { studyReadinessForRun(study, runDir, sourceRows, { write: true }); } catch (err) { console.error('[COLLECT] readiness sau chuẩn hóa', err.message); }
+      }
+      if (onDone) { try { onDone(normalized); } catch (_) { /* chỉ cập nhật metadata */ } }
+      return normalized;
+    })
+    .catch((err) => {
+      console.error('[COLLECT] Chuẩn hóa sau thu thập lỗi:', err.message);
+      appendResearchRunLog(runDir, `[${new Date().toLocaleString('vi-VN')}] Chuẩn hóa sau thu thập lỗi: ${err.message}`);
+      return null;
+    });
+}
+
 function studyReadinessForRun(study, runDir, sourceRows, { write = false, maxAttempts } = {}) {
   const keys = unitKeysForRun(runDir, sourceRows);
   const ledger = syncCollectionLedger(runDir, sourceRows);
@@ -747,6 +769,7 @@ module.exports = {
   refreshPolicyFor,
   readinessByStudy,
   readinessDiff,
+  scheduleNormalizeAfterCollection,
   IN_RUN_RETRY_REASONS,
   collectionEncounterOverrideState,
   collectionUnitsForRun,

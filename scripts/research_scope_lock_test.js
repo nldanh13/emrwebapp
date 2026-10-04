@@ -2,7 +2,8 @@
 'use strict';
 
 // Kiểm tra khóa theo phạm vi của Kho nghiên cứu (lockedResearchRoute):
-//  1. Khi kho gốc đang chạy một thao tác ghi, thao tác ghi khác trên kho gốc bị 409.
+//  1. Khi kho gốc đang chạy một thao tác ghi, thao tác ghi khác trên kho gốc bị 409 (trừ Chuẩn
+//     hóa: quy trình riêng có khóa riêng).
 //  2. Nghiên cứu riêng không bị khóa bởi kho gốc (khóa theo từng kho).
 //  3. Thao tác chỉ đọc không bị khóa.
 //  4. Thao tác xong (kể cả khi lỗi) thì khóa được nhả.
@@ -35,7 +36,7 @@ async function main() {
   try {
     await test('Kho gốc đang bận: thao tác ghi khác trên kho gốc trả 409, kho riêng không bị chặn', async () => {
       R.RESEARCH_SCOPE_LOCKS.set('archive', { label: 'Thu thập tự động', since: '2026-09-30T12:00:00Z' });
-      const busy = await post('/research/archive/normalize');
+      const busy = await post('/research/archive/finalize-dataset');
       assert.strictEqual(busy.status, 409);
       const body = await busy.json();
       assert.strictEqual(body.code, 'RESEARCH_SCOPE_BUSY');
@@ -44,6 +45,9 @@ async function main() {
       assert.strictEqual(refetch.status, 409);
       const other = await post('/research/studies/nc_khac/normalize');
       assert.notStrictEqual(other.status, 409, 'nghiên cứu riêng không bị khóa bởi kho gốc');
+      // Chuẩn hóa là quy trình riêng (khóa "archive:normalize"): đang thu thập vẫn chuẩn hóa được.
+      const normalize = await post('/research/archive/normalize');
+      assert.notStrictEqual((await normalize.json()).code, 'RESEARCH_SCOPE_BUSY', 'chuẩn hóa không bị khóa Thu thập chặn');
       const read = await fetch(`${base}/research/archive`);
       assert.strictEqual(read.status, 200, 'thao tác chỉ đọc không bị khóa');
       R.RESEARCH_SCOPE_LOCKS.delete('archive');

@@ -3,7 +3,7 @@
 // Route thu thập tự động của Kho nghiên cứu (kho gốc và từng nghiên cứu): chạy thu thập, trạng thái, ngoại lệ, duyệt lượt chưa ghép, đủ dùng, chính sách làm mới.
 
 const router = require('express').Router();
-const { collectionEncounterReviewPayload, collectionEncounterOverrideState, COLLECTION_ENCOUNTER_OVERRIDES_FILE, syncCollectionLedger, refreshPolicyFor, runCollectionOrchestration, redactCollectionRows, unitKeysForRun, unresolvedEncountersForRun, COLLECTION_REPORT_FILE, collectionStatusSummary, COLLECTION_EXCEPTIONS_FILE, COLLECTION_EXCEPTION_COLUMNS, studyReadinessForRun, COLLECTION_CHANGES_FILE } = require('../research/collection_runtime');
+const { scheduleNormalizeAfterCollection, collectionEncounterReviewPayload, collectionEncounterOverrideState, COLLECTION_ENCOUNTER_OVERRIDES_FILE, syncCollectionLedger, refreshPolicyFor, runCollectionOrchestration, redactCollectionRows, unitKeysForRun, unresolvedEncountersForRun, COLLECTION_REPORT_FILE, collectionStatusSummary, COLLECTION_EXCEPTIONS_FILE, COLLECTION_EXCEPTION_COLUMNS, studyReadinessForRun, COLLECTION_CHANGES_FILE } = require('../research/collection_runtime');
 const { firstNonEmpty } = require('../research/encounter_context');
 const { nowIso, archiveRunsDir, todayDateInput, archiveSourcePath, ARCHIVE_ID, runsDir, cohortPath } = require('../research/store_paths');
 const { readCsvTable, patientCode, writeCsv } = require('../research/table_io');
@@ -120,10 +120,19 @@ async function handleCollectAuto(req, res, studyIdParam = '') {
       updateResearchTask(sc.runDir, task.id, { status: 'running', message: 'Đang thu thập tự động. Có thể chuyển tab, tiến độ vẫn được lưu ở backend.' });
       try {
         const { report, normalized } = await runCollectionOrchestration(ctx, options);
-        const metaPatch = { last_run_id: sc.runId, last_run_at: nowIso(), last_normalized_at: nowIso(), last_collect_at: nowIso() };
+        const metaPatch = { last_run_id: sc.runId, last_run_at: nowIso(), last_collect_at: nowIso() };
         if (sc.isArchive) updateArchive({ ...metaPatch, active_run_id: '', active_mode: '' });
         else updateStudy(sc.scope, metaPatch);
-        const message = `${report.cancelled ? 'Đã dừng' : 'Xong'}: lấy ${report.fetched_encounters} lượt, bỏ qua ${report.skipped_unchanged} lượt không đổi, lấy bù ${report.parts_backfilled} phần, kiểm tra lại ${report.parts_rechecked} phần (${report.parts_changed} phần có thay đổi), lỗi còn tồn ${report.selenium_errors_open} phần, không ghép chắc ${report.unmatched_encounters} lượt.`;
+        // Chuẩn hóa là quy trình riêng: xếp hàng chạy nền, không giữ khóa Thu thập.
+        const gotData = Number(report.fetched_encounters || 0) + Number(report.parts_backfilled || 0) + Number(report.parts_changed || 0) > 0;
+        if (gotData) {
+          scheduleNormalizeAfterCollection({
+            runDir: sc.runDir, runId: sc.runId, isArchive: sc.isArchive, study: sc.study, sourceRows: sc.sourceRows,
+            reason: 'Sau thu thập tự động',
+            onDone: () => (sc.isArchive ? updateArchive({ last_normalized_at: nowIso() }) : updateStudy(sc.scope, { last_normalized_at: nowIso() })),
+          });
+        }
+        const message = `${report.cancelled ? 'Đã dừng' : 'Xong'}${gotData ? ' (chuẩn hóa đang chạy nền)' : ''}: lấy ${report.fetched_encounters} lượt, bỏ qua ${report.skipped_unchanged} lượt không đổi, lấy bù ${report.parts_backfilled} phần, kiểm tra lại ${report.parts_rechecked} phần (${report.parts_changed} phần có thay đổi), lỗi còn tồn ${report.selenium_errors_open} phần, không ghép chắc ${report.unmatched_encounters} lượt.`;
         finishResearchTask(sc.runDir, task.id, report.cancelled ? 'cancelled' : (report.errors.length ? 'error' : 'done'), { message });
         const redact = researchResponseShouldRedact(req);
         return res.json({

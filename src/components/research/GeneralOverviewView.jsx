@@ -75,7 +75,7 @@ function Stage({ n, title, state, tone = 'neutral', what, children }) {
 
 const B = ({ children }) => <b style={{ color: C.text, fontVariantNumeric: 'tabular-nums' }}>{children}</b>;
 
-function PipelineView({ pipeline, summary, onNormalize, uiBusy = false }) {
+function PipelineView({ pipeline, summary }) {
   if (!pipeline?.exists) return null;
   const { scan, collect, normalize, storage, reused_from_patient_db: reused } = pipeline;
   const fetch = pipeline.fetch || {};
@@ -124,12 +124,6 @@ function PipelineView({ pipeline, summary, onNormalize, uiBusy = false }) {
           what="Ghép file thô thành bảng chuẩn theo lượt điều trị (người bệnh, đợt, XN, CĐHA, PT/TT, y lệnh...), tách Mã BN sang mã giả danh, rồi kiểm tra chất lượng (QA). Chạy tự động sau mỗi lần quét/thu thập.">
           Lúc <B>{when(normalize.at)}</B>{normalize.duration_ms != null ? <> · chạy <B>{(normalize.duration_ms / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}</B> giây</> : null}
           {normalize.schema_version ? <> · cấu trúc bảng phiên bản <B>{normalize.schema_version}</B></> : null}.
-          {fetch.pending_normalize && (
-            <div style={{ color: C.amber }}>
-              Dữ liệu lấy lúc <B>{when(fetch.last_at)}</B> chưa được chuẩn hóa: số liệu kho, bảng chuẩn và Tạo nghiên cứu chưa gồm phần mới này.
-              {onNormalize && <Btn variant="primary" onClick={onNormalize} disabled={uiBusy} style={{ height: 26, marginLeft: 8, fontSize: FS.xs }}>Chuẩn hóa ngay</Btn>}
-            </div>
-          )}
           {!!normalize.unmatched.length && (
             <div style={{ color: C.amber }}>Không ghép được vào lượt điều trị: {normalize.unmatched.map(u => `${u.label} ${compactNumber(u.rows)} dòng`).join(' · ')} (giữ riêng, không đưa vào phân tích).</div>
           )}
@@ -169,7 +163,7 @@ function PipelineView({ pipeline, summary, onNormalize, uiBusy = false }) {
   );
 }
 
-export function GeneralOverviewView({ generalOverview, generalOverviewLoading, pipeline, setArchiveMode, onNormalize, uiBusy = false }) {
+export function GeneralOverviewView({ generalOverview, generalOverviewLoading, pipeline, setArchiveMode }) {
   const ov = generalOverview;
   const summary = ov?.statusSummary || { total: 0, ready: 0, missingCount: 0, manualReview: 0, modules: [] };
   const counts = ov?.counts || {};
@@ -190,19 +184,6 @@ export function GeneralOverviewView({ generalOverview, generalOverviewLoading, p
             <div style={{ marginTop: 2, fontSize: FS.xs, color: C.text2 }}>{nextStep.hint}</div>
           </div>
           <Btn variant="solidPrimary" onClick={() => setArchiveMode('update')} style={{ height: 30 }}>Đi tới Thu thập dữ liệu</Btn>
-        </div>
-      )}
-
-      {pipeline?.fetch?.pending_normalize && (
-        <div role="status" style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${C.amberBorder}`, background: C.amberBg, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 300px' }}>
-            <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text }}>Có dữ liệu mới chưa được chuẩn hóa</div>
-            <div style={{ marginTop: 2, fontSize: FS.xs, color: C.text2 }}>
-              Lấy dữ liệu gần nhất lúc {when(pipeline.fetch.last_at)}, nhưng lần chuẩn hóa gần nhất là {when(pipeline.normalize?.at) || 'chưa có'}.
-              Số liệu bên dưới, bảng chuẩn và Tạo nghiên cứu vẫn là bản cũ cho tới khi chuẩn hóa lại (thường vài phút, không mở EMR).
-            </div>
-          </div>
-          {onNormalize && <Btn variant="solidPrimary" onClick={onNormalize} disabled={uiBusy} style={{ height: 30 }}>Chuẩn hóa ngay</Btn>}
         </div>
       )}
 
@@ -235,7 +216,7 @@ export function GeneralOverviewView({ generalOverview, generalOverviewLoading, p
         </section>
       )}
 
-      <PipelineView pipeline={pipeline} summary={summary} onNormalize={onNormalize} uiBusy={uiBusy} />
+      <PipelineView pipeline={pipeline} summary={summary} />
     </div>
   );
 }

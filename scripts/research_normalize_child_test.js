@@ -12,7 +12,8 @@ const path = require('path');
 
 process.env.EMR_RUNTIME_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'research_normalize_child_'));
 delete process.env.EMR_NORMALIZE_INLINE;
-const { runNormalizeJob } = require('../server/research/normalize_runner');
+const { runNormalizeJob, normalizeRunning } = require('../server/research/normalize_runner');
+const { RESEARCH_SCOPE_LOCKS, listRunningResearch } = require('../server/research/research_http');
 
 function writeCsv(file, cols, rows) {
   const esc = v => (/[",\n]/.test(String(v ?? '')) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? ''));
@@ -44,9 +45,23 @@ function writeCsv(file, cols, rows) {
   assert.ok(ticks >= Math.floor(elapsed / 5) * 0.3, `event loop không bị chặn (${ticks} tick trong ${elapsed} ms)`);
   console.log(`  ok - chuẩn hóa ở tiến trình riêng: ${result.encounters} lượt, ${elapsed} ms, ${ticks} tick`);
 
+  // Khóa riêng của Chuẩn hóa: không dùng khóa Thu thập ("archive"), có tên làn để giao diện tách.
+  const p1 = runNormalizeJob({ kind: 'run', runDir, options: { sourceRunId: 'r1', force: true }, scopeKey: 'archive' }, { reason: 'Sau thu thập tự động' });
+  const p2 = runNormalizeJob({ kind: 'run', runDir, options: { sourceRunId: 'r1', force: true }, scopeKey: 'archive' });
+  assert.strictEqual(p1, p2, 'yêu cầu trùng khi đang chờ thì gộp làm một');
+  await new Promise(r => setTimeout(r, 20));
+  assert.ok(normalizeRunning('archive'), 'đang chuẩn hóa có khóa archive:normalize');
+  assert.ok(!RESEARCH_SCOPE_LOCKS.has('archive'), 'không giữ khóa Thu thập');
+  const item = listRunningResearch().find(x => x.lane === 'normalize');
+  assert.strictEqual(item.scope, 'archive');
+  assert.strictEqual(item.reason, 'Sau thu thập tự động');
+  await p1;
+  assert.ok(!normalizeRunning('archive'), 'xong thì nhả khóa');
+  console.log('  ok - chuẩn hóa có hàng đợi và khóa riêng, không đụng khóa Thu thập');
+
   await assert.rejects(runNormalizeJob({ kind: 'study', studyId: 'khong_ton_tai' }), 'lỗi ở tiến trình con được trả về');
   console.log('  ok - lỗi trong tiến trình con được báo lại cho máy chủ');
 
   fs.rmSync(process.env.EMR_RUNTIME_ROOT, { recursive: true, force: true });
-  console.log('\n2 test(s) passed.');
+  console.log('\n3 test(s) passed.');
 })().catch(err => { console.error(err); process.exitCode = 1; });

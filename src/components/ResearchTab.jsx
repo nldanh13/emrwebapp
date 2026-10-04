@@ -26,6 +26,7 @@ import { CreateStudyView } from './research/CreateStudyView.jsx';
 import { StudyStatsView } from './research/StudyStatsView.jsx';
 import { CrfView } from './research/CrfView.jsx';
 import { RunningBanner, formatDuration } from './research/RunningBanner.jsx';
+import { NormalizeStatus } from './research/NormalizeStatus.jsx';
 import useIsMobile from '../hooks/useIsMobile.js';
 
 const CORE_VARIABLE_NAME = /^(sex|birth_year|age|admission_date|discharge_date|hospital_stay_days|diagnosis_raw|surgery_date|surgery_name)$/i;
@@ -59,6 +60,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   // Tác vụ đang chạy theo máy chủ (đúng cả khi rời tab / tải lại trang) và tác vụ vừa kết thúc.
   const [serverRunning, setServerRunning] = useState({ items: [], checkedAt: 0, clockOffset: 0 });
   const [lastFinished, setLastFinished] = useState(null);
+  const [normalizeRequest, setNormalizeRequest] = useState({ status: 'idle' }); // Chuẩn hóa bấm tay
   const runningRef = useRef(new Map());
   // Tra cứu người bệnh. Quyền xem dữ liệu có định danh (null = chưa biết): khi đang khóa,
   // tab Tra cứu hiện hướng dẫn thay vì gọi API rồi báo lỗi đỏ.
@@ -465,14 +467,26 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   }, [loadCoverage, loadProgressSnapshot, loadSummary, selectedId, t, updateAutomationStep]);
 
   // Chuẩn hóa lại kho từ dữ liệu đã lấy (không mở EMR): khi có dữ liệu mới chưa vào bảng chuẩn.
+  // Chuẩn hóa là quy trình riêng: không dùng cờ busy của Thu thập, nên không khóa nút thu thập.
   const runNormalizeArchive = useCallback(async () => {
-    await runAutomaticWorkflow({
-      kind: 'normalize',
-      successMessage: 'Đã chuẩn hóa kho: số liệu và bảng chuẩn đã gồm dữ liệu mới.',
-      steps: [{ label: 'Chuẩn hóa và kiểm tra chất lượng', run: () => api.normalizeResearchArchive() }],
-    });
-    await loadGeneralOverview({ silent: true });
-  }, [runAutomaticWorkflow, loadGeneralOverview]);
+    setNormalizeRequest({ status: 'starting', started_at: new Date().toISOString() });
+    setTimeout(() => { loadServerRunning(); }, 700);
+    try {
+      const r = await api.normalizeResearchArchive();
+      setNormalizeRequest({ status: 'done', message: r?.message || '' });
+      t(r?.message || 'Đã chuẩn hóa kho.', 'ok');
+    } catch (e) {
+      const message = String(e?.message || e || 'Chuẩn hóa lỗi.');
+      setNormalizeRequest({ status: 'error', error: message });
+      t(message, 'error');
+    } finally {
+      loadServerRunning();
+      api.getResearchArchivePipeline().then(r => setPipeline(r?.pipeline || null)).catch(() => {});
+      loadSummary(false);
+      loadProgressSnapshot(selectedId, { silent: true });
+      if (archiveMode === 'overview') loadGeneralOverview({ silent: true });
+    }
+  }, [loadServerRunning, loadSummary, loadProgressSnapshot, selectedId, archiveMode, loadGeneralOverview, t]);
 
   const runSimpleListScan = useCallback(async () => {
     const options = { ...archiveOptions, toDate: archiveOptions.toDate || todayInputDate() };
@@ -834,7 +848,6 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const collectionWorkspace = (
     <CollectionWorkspace {...{
       isArchive, archive, study: activeStudy, selectedId, uiBusy, automationRun, scopeRunning: scopeRunningItem,
-      pipeline: isArchive ? pipeline : null, onNormalize: runNormalizeArchive,
       archiveOptions, setArchiveOptions, studyOptions, setStudyOptions,
       runSimpleListScan, runSimpleDataCollection, runRefreshProvisional,
       operationSnapshot: monitorSnapshot, lastUpdateSummary, statusLoading, loadProgressSnapshot, loadSummary,
@@ -848,7 +861,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       if (studyMode === 'crf') return <CrfView key={activeStudy?.id} study={activeStudy} toast={t} />;
       return <StudyStatsView study={activeStudy} toast={t} onGoCollect={() => setStudyMode('collect')} />;
     }
-    if (archiveMode === 'overview') return <GeneralOverviewView {...{ generalOverview, generalOverviewLoading, pipeline, setArchiveMode, uiBusy }} onNormalize={runNormalizeArchive} />;
+    if (archiveMode === 'overview') return <GeneralOverviewView {...{ generalOverview, generalOverviewLoading, pipeline, setArchiveMode }} />;
     if (archiveMode === 'patient') return <PatientLookupView {...{
       identifiedAccess, identifiedLocked, loadPatientHistory, patientHistory,
       patientHistoryError, patientHistoryLoading, patientHistoryMeta, patientQuery, setPatientQuery,
@@ -935,8 +948,9 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
         </div>
       )}
 
-      <RunningBanner running={serverRunning.items} checkedAt={serverRunning.checkedAt} clockOffset={serverRunning.clockOffset}
-        lastFinished={lastFinished} scopeName={scopeName} onOpen={openRunning} onCancel={cancelRunning}
+      {/* Chuẩn hóa hiện ở khung riêng trong Kho dữ liệu gốc (NormalizeStatus), không lặp lại ở đây. */}
+      <RunningBanner running={serverRunning.items.filter(item => item.lane !== 'normalize')} checkedAt={serverRunning.checkedAt} clockOffset={serverRunning.clockOffset}
+        lastFinished={lastFinished?.lane === 'normalize' ? null : lastFinished} scopeName={scopeName} onOpen={openRunning} onCancel={cancelRunning}
         onDismissFinished={() => setLastFinished(null)} />
 
       {researchError && (
@@ -1032,6 +1046,14 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
           </div>
 
           <div style={{ flex: 1, overflow: 'auto', minHeight: 0, background: C.bg }}>
+            {isArchive && !creatingStudy && ['overview', 'update'].includes(archiveMode) && (
+              <div style={{ padding: '10px 12px 0' }}>
+                <NormalizeStatus pipeline={pipeline} clockOffset={serverRunning.clockOffset}
+                  running={serverRunning.items.find(item => item.lane === 'normalize' && item.scope === 'archive') || null}
+                  request={normalizeRequest} onNormalize={runNormalizeArchive}
+                  onDismiss={() => setNormalizeRequest({ status: 'idle' })} />
+              </div>
+            )}
             {renderWorkspace()}
           </div>
         </div>
