@@ -73,7 +73,7 @@ export function CollectionWorkspace({
   archiveOptions, setArchiveOptions, studyOptions, setStudyOptions,
   runSimpleListScan, runSimpleDataCollection, runRefreshProvisional,
   operationSnapshot, lastUpdateSummary, statusLoading, loadProgressSnapshot, loadSummary,
-  openLog, toast, scopeRunning = null,
+  openLog, toast, scopeRunning = null, pipeline = null, onNormalize,
 }) {
   const latestRun = archive?.latest_run || null;
   const listCount = Number(latestRun?.outputs?.initial_list || archive?.source_count || 0);
@@ -95,6 +95,16 @@ export function CollectionWorkspace({
   return (
     <div style={{ padding: '10px 12px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       <AutomationStatus run={automationRun} />
+
+      {pipeline?.fetch?.pending_normalize && (
+        <div role="status" style={{ ...card, borderColor: C.amberBorder, background: C.amberBg, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 300px', fontSize: FS.xs, color: C.text2 }}>
+            <b style={{ color: C.text, fontSize: FS.sm }}>Có dữ liệu mới chưa được chuẩn hóa.</b>{' '}
+            Lấy gần nhất lúc {new Date(pipeline.fetch.last_at).toLocaleString('vi-VN')}; số liệu kho và Tạo nghiên cứu chưa gồm phần này cho tới khi chuẩn hóa (vài phút, không mở EMR).
+          </div>
+          {onNormalize && <Btn variant="solidPrimary" onClick={onNormalize} disabled={uiBusy} loading={uiBusy && automationRun.kind === 'normalize'} style={{ height: 30 }}>Chuẩn hóa ngay</Btn>}
+        </div>
+      )}
 
       {isArchive && (
         <section>

@@ -2,7 +2,7 @@
 
 // Hỗ trợ HTTP của Kho nghiên cứu: che/ghi nhận truy cập định danh, xuất CSV theo dòng, khóa theo kho cho thao tác ghi.
 
-const { ALLOW_IDENTIFIED_RESEARCH_EXPORT } = require('../constants');
+const { ALLOW_IDENTIFIED_RESEARCH_EXPORT, ROOT_DIR } = require('../constants');
 const { hasRole } = require('../services/authz');
 const { appendSecurityAudit } = require('../services/security_audit');
 const fs = require('fs');
@@ -192,10 +192,35 @@ function lockedResearchRoute(targetRouter, method, routePath, label, handler) {
 
 // Trạng thái quyền xem dữ liệu có định danh, để giao diện hiện "đang khóa" thay vì gọi
 // API rồi báo lỗi. Không trả dữ liệu nào; server vẫn tự chặn ở từng API như cũ.
+// Chẩn đoán vì sao công tắc chưa bật (chỉ cho supervisor/admin, không trả nội dung file):
+// không có .env, lỡ lưu thành .env.txt (Notepad trên Windows), có file nhưng thiếu dòng, hoặc
+// đã thêm dòng nhưng chưa khởi động lại máy chủ.
+function identifiedEnvDiagnosis(rootDir = ROOT_DIR) {
+  const envPath = path.join(rootDir, '.env');
+  const txtExists = fs.existsSync(path.join(rootDir, '.env.txt'));
+  let exists = false;
+  let hasKey = false;
+  let keyOn = false;
+  try {
+    const text = fs.readFileSync(envPath, 'utf8');
+    exists = true;
+    const m = text.match(/^\s*EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT\s*=\s*["']?([^"'\r\n#]*)/m);
+    hasKey = Boolean(m);
+    keyOn = Boolean(m && ['1', 'true', 'yes', 'on'].includes(m[1].trim().toLowerCase()));
+  } catch (_) { exists = false; }
+  const reason = keyOn ? 'restart_needed' : hasKey ? 'value_off' : exists ? 'missing_key' : txtExists ? 'saved_as_txt' : 'no_env_file';
+  return { env_file: '.env', env_file_exists: exists, env_txt_exists: txtExists, has_key: hasKey, reason };
+}
+
 function identifiedAccessStatus(req) {
   const envEnabled = Boolean(ALLOW_IDENTIFIED_RESEARCH_EXPORT);
   const roleOk = hasRole(req.auth, 'supervisor');
-  return { allowed: envEnabled && roleOk, env_enabled: envEnabled, role_ok: roleOk };
+  return {
+    allowed: envEnabled && roleOk,
+    env_enabled: envEnabled,
+    role_ok: roleOk,
+    ...(!envEnabled && roleOk ? { env_diagnosis: identifiedEnvDiagnosis() } : {}),
+  };
 }
 
 // Kiểm tra toàn vẹn snapshot dataset: valid | missing | modified. Chỉ đọc — không sửa,
@@ -218,5 +243,6 @@ module.exports = {
   withScopeRunning,
   lockedResearchRoute,
   identifiedAccessStatus,
+  identifiedEnvDiagnosis,
   datasetVerifyResponse,
 };

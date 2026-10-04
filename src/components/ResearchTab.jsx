@@ -228,7 +228,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const ensureIdentifiedAccess = useCallback(async () => {
     try {
       const r = await api.getResearchIdentifiedAccess();
-      const next = { allowed: Boolean(r?.allowed), env_enabled: Boolean(r?.env_enabled), role_ok: Boolean(r?.role_ok) };
+      const next = { allowed: Boolean(r?.allowed), env_enabled: Boolean(r?.env_enabled), role_ok: Boolean(r?.role_ok), env_diagnosis: r?.env_diagnosis || null };
       setIdentifiedAccess(next);
       return next;
     } catch (_) {
@@ -285,6 +285,12 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     loadProgressSnapshot(selectedId, { silent: true });
     if (!isArchive) loadCoverage(selectedId);
   }, [selectedId]); // eslint-disable-line
+
+  // Tab Thu thập cũng cần biết có dữ liệu mới chưa chuẩn hóa (để hiện nút Chuẩn hóa ngay).
+  useEffect(() => {
+    if (!(isArchive && archiveMode === 'update') || !tabActive) return;
+    api.getResearchArchivePipeline().then(r => setPipeline(r?.pipeline || null)).catch(() => {});
+  }, [isArchive, archiveMode, tabActive, lastFinished]);
 
   useEffect(() => {
     if (!(isArchive && archiveMode === 'overview') || !tabActive) return;
@@ -828,6 +834,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const collectionWorkspace = (
     <CollectionWorkspace {...{
       isArchive, archive, study: activeStudy, selectedId, uiBusy, automationRun, scopeRunning: scopeRunningItem,
+      pipeline: isArchive ? pipeline : null, onNormalize: runNormalizeArchive,
       archiveOptions, setArchiveOptions, studyOptions, setStudyOptions,
       runSimpleListScan, runSimpleDataCollection, runRefreshProvisional,
       operationSnapshot: monitorSnapshot, lastUpdateSummary, statusLoading, loadProgressSnapshot, loadSummary,

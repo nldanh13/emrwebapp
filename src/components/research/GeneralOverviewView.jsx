@@ -75,7 +75,7 @@ function Stage({ n, title, state, tone = 'neutral', what, children }) {
 
 const B = ({ children }) => <b style={{ color: C.text, fontVariantNumeric: 'tabular-nums' }}>{children}</b>;
 
-function PipelineView({ pipeline, summary }) {
+function PipelineView({ pipeline, summary, onNormalize, uiBusy = false }) {
   if (!pipeline?.exists) return null;
   const { scan, collect, normalize, storage, reused_from_patient_db: reused } = pipeline;
   const fetch = pipeline.fetch || {};
@@ -127,6 +127,7 @@ function PipelineView({ pipeline, summary }) {
           {fetch.pending_normalize && (
             <div style={{ color: C.amber }}>
               Dữ liệu lấy lúc <B>{when(fetch.last_at)}</B> chưa được chuẩn hóa: số liệu kho, bảng chuẩn và Tạo nghiên cứu chưa gồm phần mới này.
+              {onNormalize && <Btn variant="primary" onClick={onNormalize} disabled={uiBusy} style={{ height: 26, marginLeft: 8, fontSize: FS.xs }}>Chuẩn hóa ngay</Btn>}
             </div>
           )}
           {!!normalize.unmatched.length && (
@@ -234,7 +235,7 @@ export function GeneralOverviewView({ generalOverview, generalOverviewLoading, p
         </section>
       )}
 
-      <PipelineView pipeline={pipeline} summary={summary} />
+      <PipelineView pipeline={pipeline} summary={summary} onNormalize={onNormalize} uiBusy={uiBusy} />
     </div>
   );
 }
