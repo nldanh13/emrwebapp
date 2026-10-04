@@ -1,5 +1,5 @@
 // Khung Thu thập tự động: chạy lấy phần thiếu/lỗi/đã đổi, chính sách làm mới, yêu cầu dữ liệu, đủ dùng, ngoại lệ, duyệt lượt chưa ghép.
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import * as api from '../../api.js';
 import { todayInputDate } from './researchScope.js';
 import { C, FS } from '../../tokens.js';
@@ -32,7 +32,9 @@ const READINESS_LABEL = {
 };
 
 // Thu thập tự động: một nút chạy, một báo cáo ngắn, danh sách ngoại lệ chỉ mở khi cần.
-function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onDone, toast, study = null }) {
+// serverRunning: tác vụ máy chủ đang chạy ở kho/nghiên cứu này ({ label, since }) hoặc null. Dùng để
+// nút và báo cáo đúng cả khi tác vụ được bấm chạy từ trước (rời tab, tải lại trang, máy khác).
+function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onDone, toast, study = null, serverRunning = null }) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
@@ -68,6 +70,12 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
   }, [studyId]);
 
   useEffect(() => { load(); }, [load]);
+  // Tác vụ máy chủ vừa kết thúc (kể cả không do nút ở đây bấm): tải lại báo cáo.
+  const wasServerRunning = useRef(Boolean(serverRunning));
+  useEffect(() => {
+    if (wasServerRunning.current && !serverRunning && !running) load();
+    wasServerRunning.current = Boolean(serverRunning);
+  }, [serverRunning, running, load]);
   useEffect(() => {
     const dr = study?.data_requirements || {};
     setReq({ parts: Array.isArray(dr.parts) ? dr.parts : [], items: Array.isArray(dr.items) ? dr.items : [] });
@@ -173,6 +181,8 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
   const plan = status?.next_plan || null;
   const exceptions = Array.isArray(status?.exceptions) ? status.exceptions : [];
   const busy = disabled || running;
+  const collecting = running || /thu thập/i.test(String(serverRunning?.label || ''));
+  const runningLabel = collecting ? 'Đang thu thập' : serverRunning ? `Đang chạy: ${serverRunning.label}` : '';
   const reportAt = report?.finished_at ? new Date(report.finished_at).toLocaleString('vi-VN') : '';
 
   return (
@@ -185,7 +195,7 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
           <Btn onClick={() => setShowRefresh(v => !v)} style={{ height: 26, padding: '0 9px', fontSize: FS.xs }}>{showRefresh ? 'Đóng làm mới' : 'Làm mới…'}</Btn>
           <Btn variant="solidPrimary" onClick={() => run([])} disabled={busy} style={{ height: 30, padding: '0 14px', fontSize: FS.sm }}>
-            {running ? <><Spinner size={9} /> Đang thu thập</> : 'Thu thập tự động'}
+            {runningLabel ? <><Spinner size={9} /> {runningLabel}</> : 'Thu thập tự động'}
           </Btn>
         </div>
       </div>
@@ -212,7 +222,9 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
           {!!(report.readiness_changes || []).length && <StatBadge label="đổi mức đủ dùng" value={report.readiness_changes.length} tone="info" />}
         </div>
       ) : (
-        <div style={{ fontSize: FS.xs, color: C.text3 }}>Chưa chạy thu thập tự động lần nào.</div>
+        <div style={{ fontSize: FS.xs, color: C.text3 }}>
+          {collecting ? 'Đang chạy lần thu thập tự động đầu tiên; báo cáo hiện ở đây khi xong.' : 'Chưa chạy thu thập tự động lần nào.'}
+        </div>
       )}
 
       {readiness && (

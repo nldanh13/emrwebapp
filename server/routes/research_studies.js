@@ -4,7 +4,7 @@
 
 const router = require('express').Router();
 const { readStudy, resolveRunId, listStudies, updateStudy, validatePatientCsv, tablePathFor, sortRowsForTable, resolveStudyRunIdFast, readStudyProgressMeta, resolveStudyRunIdForAction, isStoppedRunResult, safeRunId, chooseStudyRunIdForResume, archiveTablePath } = require('../research/run_registry');
-const { datasetVerifyResponse, researchResponseShouldRedact, lockedResearchRoute, sendCsvFile } = require('../research/research_http');
+const { datasetVerifyResponse, researchResponseShouldRedact, lockedResearchRoute, sendCsvFile, withScopeRunning } = require('../research/research_http');
 const path = require('path');
 const { runsDir, cleanStudyId, uniqueStudyId, ARCHIVE_ID, studyDir, nowIso, studyMetaPath, cohortPath, TABLES, MAX_TABLE_ROWS, EXPORT_SENSITIVE_COLUMNS, archiveRunsDir } = require('../research/store_paths');
 const { listDatasetSnapshots, finalizeAnalysisDataset, cleanResearchGenerated } = require('../research/dataset_store');
@@ -413,7 +413,7 @@ router.get('/research/studies/:studyId/progress', (req, res) => {
     const study = readStudyProgressMeta(req.params.studyId, runId);
     if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
     const runDir = runId ? path.join(runsDir(study.id), runId) : '';
-    const progress = buildResearchProgressSnapshot(runDir, study, { isArchive: false });
+    const progress = withScopeRunning(buildResearchProgressSnapshot(runDir, study, { isArchive: false }), `study:${study.id}`);
     return res.json({ status: 'ok', run_id: runId || '', progress });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });

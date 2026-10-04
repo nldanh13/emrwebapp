@@ -365,6 +365,8 @@ describe('ResearchTab (khói)', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     RUNNING = [{ scope_key: 'archive', kind: 'archive', study_id: '', label: 'Lấy dữ liệu', since: new Date(Date.now() - 125000).toISOString(),
       task: { message: 'Đang lấy 12/40 lượt', heartbeat_at: new Date().toISOString() } }];
+    // Snapshot tiến độ cũ (chưa có khóa): còn ghi "đã dừng" và ca của lần trước.
+    Object.assign(PROGRESS, { stopped: { hint: 'dừng' }, current_case: { ho_ten: 'TRẦN VĂN TỰ', ma_bn: '26033731' } });
     const onRunningChange = vi.fn();
     root = createRoot(container);
     await act(async () => { root.render(createElement(ResearchTab, { toast: () => {}, onRunningChange })); });
@@ -379,6 +381,12 @@ describe('ResearchTab (khói)', () => {
     await clickText('Xem tiến độ');
     const scan = [...container.querySelectorAll('button')].find(b => /^Quét (lại )?danh sách$/.test(b.textContent.trim()));
     expect(scan?.disabled, 'đang chạy thì không bấm chạy thêm được').toBe(true);
+    // Khung thu thập và tiến độ cùng báo đang chạy, không báo "đã dừng giữa chừng".
+    text = container.textContent;
+    expect(text).toContain('Đang chạy: Lấy dữ liệu');
+    expect(text).not.toContain('Tác vụ đã dừng giữa chừng');
+    expect(text).toContain('Đang quét:');
+    Object.assign(PROGRESS, { stopped: undefined, current_case: null });
     RUNNING = [];
     await act(async () => { vi.advanceTimersByTime(3100); });
     await flush();

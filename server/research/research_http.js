@@ -149,6 +149,21 @@ function listRunningResearch(describeScope = () => ({}), now = Date.now()) {
   });
 }
 
+// Gắn trạng thái khóa (tác vụ đang chạy theo máy chủ) vào snapshot tiến độ của một phạm vi, để
+// giao diện không hiện cùng lúc "đang chạy" và "đã dừng giữa chừng". Không chạy mà còn ca gần
+// nhất trong file theo dõi thì đánh dấu stale: đó là ca của lần chạy trước, không phải đang quét.
+function withScopeRunning(progress, key) {
+  if (!progress || typeof progress !== 'object') return progress;
+  const lock = RESEARCH_SCOPE_LOCKS.get(key) || null;
+  const running = Boolean(lock || progress.active_task);
+  return {
+    ...progress,
+    scope_running: lock ? { label: lock.label, since: lock.since } : null,
+    stopped: running ? null : progress.stopped,
+    current_case: progress.current_case ? { ...progress.current_case, stale: !running } : progress.current_case,
+  };
+}
+
 function researchScopeBusy(key) {
   return RESEARCH_SCOPE_LOCKS.get(key) || null;
 }
@@ -200,6 +215,7 @@ module.exports = {
   researchScopeKey,
   researchScopeBusy,
   listRunningResearch,
+  withScopeRunning,
   lockedResearchRoute,
   identifiedAccessStatus,
   datasetVerifyResponse,
