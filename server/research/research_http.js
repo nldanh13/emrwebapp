@@ -195,21 +195,44 @@ function lockedResearchRoute(targetRouter, method, routePath, label, handler) {
 // Chẩn đoán vì sao công tắc chưa bật (chỉ cho supervisor/admin, không trả nội dung file):
 // không có .env, lỡ lưu thành .env.txt (Notepad trên Windows), có file nhưng thiếu dòng, hoặc
 // đã thêm dòng nhưng chưa khởi động lại máy chủ.
-function identifiedEnvDiagnosis(rootDir = ROOT_DIR) {
+const IDENTIFIED_KEY = 'EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT';
+const isOn = (v) => ['1', 'true', 'yes', 'on'].includes(String(v ?? '').trim().toLowerCase());
+
+function identifiedEnvDiagnosis(rootDir = ROOT_DIR, { runtimeValue = process.env[IDENTIFIED_KEY], serverStartedAt = Date.now() - process.uptime() * 1000 } = {}) {
   const envPath = path.join(rootDir, '.env');
   const txtExists = fs.existsSync(path.join(rootDir, '.env.txt'));
   let exists = false;
+  let utf16 = false;
   let hasKey = false;
   let keyOn = false;
+  let keyLines = 0;
+  let envUpdatedAt = 0;
   try {
-    const text = fs.readFileSync(envPath, 'utf8');
+    const buf = fs.readFileSync(envPath);
     exists = true;
-    const m = text.match(/^\s*EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT\s*=\s*["']?([^"'\r\n#]*)/m);
-    hasKey = Boolean(m);
-    keyOn = Boolean(m && ['1', 'true', 'yes', 'on'].includes(m[1].trim().toLowerCase()));
-  } catch (_) { exists = false; }
-  const reason = keyOn ? 'restart_needed' : hasKey ? 'value_off' : exists ? 'missing_key' : txtExists ? 'saved_as_txt' : 'no_env_file';
-  return { env_file: '.env', env_file_exists: exists, env_txt_exists: txtExists, has_key: hasKey, reason };
+    envUpdatedAt = fs.statSync(envPath).mtimeMs;
+    utf16 = (buf[0] === 0xff && buf[1] === 0xfe) || (buf[0] === 0xfe && buf[1] === 0xff);
+    const text = buf.toString('utf8').replace(/^﻿/, '');
+    // Đọc bằng đúng bộ phân tích máy chủ dùng lúc khởi động (dòng trùng: dòng sau cùng thắng).
+    const value = require('dotenv').parse(text)[IDENTIFIED_KEY];
+    hasKey = value !== undefined;
+    keyOn = isOn(value);
+    keyLines = (text.match(new RegExp(`^\\s*(?:export\\s+)?${IDENTIFIED_KEY}\\s*=`, 'gm')) || []).length;
+  } catch (_) { /* không có file */ }
+  let reason;
+  if (!exists) reason = txtExists ? 'saved_as_txt' : 'no_env_file';
+  else if (utf16) reason = 'utf16';
+  else if (!hasKey) reason = 'missing_key';
+  else if (!keyOn) reason = keyLines > 1 ? 'duplicate_key' : 'value_off';
+  else if (runtimeValue !== undefined && runtimeValue !== '' && !isOn(runtimeValue)) reason = 'overridden_by_env';
+  else if (envUpdatedAt > serverStartedAt) reason = 'restart_needed';
+  else reason = 'not_loaded';
+  return {
+    env_file: '.env', env_file_exists: exists, env_txt_exists: txtExists, has_key: hasKey, reason,
+    server_started_at: new Date(serverStartedAt).toISOString(),
+    env_updated_at: envUpdatedAt ? new Date(envUpdatedAt).toISOString() : '',
+    ...(reason === 'overridden_by_env' ? { runtime_value: String(runtimeValue).slice(0, 20) } : {}),
+  };
 }
 
 function identifiedAccessStatus(req) {

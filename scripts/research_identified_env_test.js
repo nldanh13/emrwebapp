@@ -27,11 +27,29 @@ test('Notepad lưu thành .env.txt', () => {
 });
 test('có .env nhưng thiếu dòng', () => { env('PORT=3001\n'); assert.strictEqual(identifiedEnvDiagnosis(dir).reason, 'missing_key'); });
 test('giá trị tắt', () => { env('EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT=0\n'); assert.strictEqual(identifiedEnvDiagnosis(dir).reason, 'value_off'); });
-test('đã bật (kể cả BOM, khoảng trắng, CRLF) → cần khởi động lại', () => {
-  env('﻿EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT = 1\r\n');
-  const d = identifiedEnvDiagnosis(dir);
+const started = (msAgo) => ({ runtimeValue: undefined, serverStartedAt: Date.now() - msAgo });
+test('đã bật (kể cả BOM, khoảng trắng, CRLF), sửa sau lúc máy chủ khởi động → cần khởi động lại', () => {
+  env('\uFEFFEMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT = 1\r\n');
+  const d = identifiedEnvDiagnosis(dir, started(60000));
   assert.strictEqual(d.reason, 'restart_needed');
   assert.ok(!JSON.stringify(d).includes(dir), 'không lộ đường dẫn máy');
+});
+test('đã khởi động lại nhưng biến môi trường Windows đặt giá trị khác che mất .env', () => {
+  const d = identifiedEnvDiagnosis(dir, { runtimeValue: '0', serverStartedAt: Date.now() + 60000 });
+  assert.strictEqual(d.reason, 'overridden_by_env');
+  assert.strictEqual(d.runtime_value, '0');
+});
+test('dòng trùng: dòng sau cùng (giá trị tắt) thắng như lúc máy chủ đọc', () => {
+  env('EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT=1\nPORT=3001\nEMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT=0\n');
+  assert.strictEqual(identifiedEnvDiagnosis(dir, started(60000)).reason, 'duplicate_key');
+});
+test('file lưu bằng mã hóa UTF-16 (Unicode của Notepad)', () => {
+  fs.writeFileSync(path.join(dir, '.env'), Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT=1\n', 'utf16le')]));
+  assert.strictEqual(identifiedEnvDiagnosis(dir, started(60000)).reason, 'utf16');
+});
+test('đã bật, máy chủ khởi động sau khi sửa file mà vẫn không nhận → not_loaded', () => {
+  env('EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT=1\n');
+  assert.strictEqual(identifiedEnvDiagnosis(dir, { runtimeValue: undefined, serverStartedAt: Date.now() + 60000 }).reason, 'not_loaded');
 });
 
 fs.rmSync(dir, { recursive: true, force: true });
