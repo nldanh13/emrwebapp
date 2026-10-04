@@ -1,4 +1,6 @@
 // Tra cứu người bệnh trong kho gốc (lịch sử các đợt, XN/CĐHA/thuốc/phẫu thuật).
+import { useState } from 'react';
+import * as api from '../../api.js';
 import { C, FS } from '../../tokens.js';
 import { inp, EmptyState, StatBadge } from './researchUi.jsx';
 import { text } from './researchFormat.js';
@@ -10,6 +12,34 @@ export function PatientLookupView({
   identifiedAccess, identifiedLocked, loadPatientHistory, patientHistory, patientHistoryError,
   patientHistoryLoading, patientHistoryMeta, patientQuery, setPatientQuery,
 }) {
+  const [directPatientCode, setDirectPatientCode] = useState('');
+  const [directState, setDirectState] = useState({ loading: false, message: '', error: '' });
+
+  const collectDirectPatient = async () => {
+    const code = String(directPatientCode || '').trim();
+    if (!code) {
+      setDirectState({ loading: false, message: '', error: 'Nhập Mã BN cần lấy dữ liệu.' });
+      return;
+    }
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(code)) {
+      setDirectState({ loading: false, message: '', error: 'Mã BN không hợp lệ.' });
+      return;
+    }
+
+    setDirectState({ loading: true, message: '', error: '' });
+    try {
+      const r = await api.collectResearchAuto('', { patientCode: code, headless: true });
+      setPatientQuery(code);
+      setDirectState({
+        loading: false,
+        message: r?.message || 'Đã nhận yêu cầu. Tác vụ đang chạy ở backend; xem tiến độ tại tab Thu thập dữ liệu.',
+        error: '',
+      });
+    } catch (e) {
+      setDirectState({ loading: false, message: '', error: String(e?.message || e) });
+    }
+  };
+
   return <div style={{ padding: '10px 12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
     <div style={{ background: C.surface, padding: '2px 0 10px', borderBottom: `1px solid ${C.border2}` }}>
       <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Tra cứu người bệnh</div>
@@ -26,6 +56,34 @@ export function PatientLookupView({
           {patientHistoryMeta.truncated ? ` · Hiển thị ${Math.min(30, patientHistoryMeta.matched)} kết quả đầu.` : ''}
         </div>
       )}
+
+      <div style={{ marginTop: 10, paddingTop: 9, borderTop: `1px solid ${C.border2}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ fontSize: FS.xs, color: C.text2 }}>
+          <b>Lấy trực tiếp từ EMR theo Mã BN</b> · lấy Hồ sơ nền, Ra viện, Phẫu thuật, Y lệnh, XN và CĐHA cho các lượt đã quét của người bệnh này.
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
+            value={directPatientCode}
+            disabled={identifiedLocked || directState.loading}
+            onChange={e => setDirectPatientCode(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !directState.loading) collectDirectPatient(); }}
+            placeholder="Nhập Mã BN"
+            autoComplete="off"
+            style={{ ...inp, width: 190 }}
+          />
+          <Btn
+            variant="solidPrimary"
+            onClick={collectDirectPatient}
+            disabled={identifiedLocked || directState.loading || !text(directPatientCode)}
+            style={{ height: 28, padding: '0 12px' }}
+          >
+            {directState.loading ? <><Spinner size={9} /> Đang gửi</> : 'Lấy ca này'}
+          </Btn>
+          <span style={{ fontSize: FS.xs, color: C.text3 }}>Server nhận yêu cầu rồi chạy nền; không cần giữ tab mở.</span>
+        </div>
+        {directState.message && <div style={{ fontSize: FS.xs, color: C.green }}>{directState.message}</div>}
+        {directState.error && <div style={{ fontSize: FS.xs, color: C.red }}><b>Không lấy được:</b> {directState.error}</div>}
+      </div>
     </div>
 
     {identifiedLocked && <IdentifiedLockNotice {...{ identifiedAccess }} />}
