@@ -54,7 +54,8 @@ const { addRowsToResultDayIndex, buildResultDayIndex, ingestAllResearchResultsTo
 const { sanitizeVariableSelection, summarizeSelectionForRun } = require('../research/selection_runtime');
 const { buildPipelineInfo } = require('../research/pipeline_info');
 const { buildStudySuggestions } = require('../research/study_suggestions');
-const { normalizeArchiveLatest, normalizeInputSignature, normalizeRunOutputs } = require('../research/normalize');
+const { normalizeInputSignature, normalizeRunOutputs } = require('../research/normalize');
+const { runNormalizeJob } = require('../research/normalize_runner');
 const { SCRIPT_PATH } = require('../research/worker_paths');
 const { appendCollectionVersions, readCollectionPartRows, readCollectionVersionIds, recoverCollectionTransactions, recoverPythonPatientCommits, runCollectionOrchestration, studyReadinessForRun, syncCollectionLedger } = require('../research/collection_runtime');
 const { RESEARCH_SCOPE_LOCKS, datasetVerifyResponse, listRunningResearch, withScopeRunning, identifiedAccessStatus, lockedResearchRoute, researchResponseShouldRedact, researchScopeKey, sendCsvFile } = require('../research/research_http');
@@ -447,9 +448,10 @@ router.get('/research/archive/case-trace', (req, res) => {
   }
 });
 
-lockedResearchRoute(router, 'post', '/research/archive/normalize', 'Chuẩn hóa', (_req, res) => {
+lockedResearchRoute(router, 'post', '/research/archive/normalize', 'Chuẩn hóa', async (_req, res) => {
   try {
-    const result = normalizeArchiveLatest();
+    // Chạy ở tiến trình riêng: máy chủ vẫn trả lời tiến độ/các màn hình khác trong lúc chuẩn hóa.
+    const result = await runNormalizeJob({ kind: 'archive' });
     const archive = result.counts?.cached ? readArchive() : updateArchive({ last_normalized_at: nowIso() });
     return res.json({ status: 'ok', message: result.counts?.cached ? 'Dữ liệu đã chuẩn hóa sẵn, không cần chạy lại.' : `Đã chuẩn hóa kho dữ liệu gốc.${khoOverlayNote(result.counts)}`, archive, ...result });
   } catch (err) {

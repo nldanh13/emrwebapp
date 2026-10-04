@@ -16,7 +16,8 @@ const { activeVariableSelectionFromStudy, sanitizeVariableSelection, summarizeSe
 const { RESEARCH_STORE_DIR, ROOT_DIR } = require('../constants');
 const { appendSecurityAudit } = require('../services/security_audit');
 const { firstNonEmpty } = require('../research/encounter_context');
-const { importArchiveToStudy, normalizeStudyLatest, normalizeRunOutputs } = require('../research/normalize');
+const { importArchiveToStudy, normalizeRunOutputs } = require('../research/normalize');
+const { runNormalizeJob } = require('../research/normalize_runner');
 const { readCsvTable, countCsvRows, writeCsv } = require('../research/table_io');
 const crfStore = require('../research/crf_store');
 const { researchCode } = require('../research/variable_selection');
@@ -466,11 +467,11 @@ lockedResearchRoute(router, 'post', '/research/studies/:studyId/clean-generated'
   }
 });
 
-lockedResearchRoute(router, 'post', '/research/studies/:studyId/normalize', 'Chuẩn hóa', (req, res) => {
+lockedResearchRoute(router, 'post', '/research/studies/:studyId/normalize', 'Chuẩn hóa', async (req, res) => {
   try {
     const study = readStudy(req.params.studyId);
     if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
-    const result = normalizeStudyLatest(study.id);
+    const result = await runNormalizeJob({ kind: 'study', studyId: study.id });
     const updated = result.counts?.cached ? study : updateStudy(study.id, { last_normalized_at: nowIso() });
     return res.json({ status: 'ok', message: result.counts?.cached ? 'Dữ liệu nghiên cứu đã chuẩn hóa sẵn, không cần chạy lại.' : `Đã chuẩn hóa dữ liệu nghiên cứu.${khoOverlayNote(result.counts)}`, study: updated, ...result });
   } catch (err) {

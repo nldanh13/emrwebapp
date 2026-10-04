@@ -18,7 +18,7 @@ const { RESEARCH_STORE_DIR, ROOT_DIR } = require('../constants');
 const { runPython, fmtPyError } = require('../services/python_runner');
 const { registerCancel, unregisterCancel, isCancelRequested } = require('../services/task_queue');
 const { fetchHchanhForResearchRun } = require('./hchanh_fetch');
-const { normalizeRunOutputs } = require('./normalize');
+const { runNormalizeJob } = require('./normalize_runner');
 
 // ── Điều phối thu thập tự động ───────────────────────────────────────────────
 // So sổ thu thập (collection_ledger.json) với nguồn hiện tại: ca không đổi thì bỏ qua;
@@ -515,7 +515,8 @@ async function runXnCdhaSubsetForCollection(ctx, { runDir, runId, scope, isArchi
 const DEFAULT_COLLECTION_RUNNERS = {
   hchanh: (ctx, opts) => fetchHchanhForResearchRun(ctx, opts.runDir, opts),
   xnCdha: (ctx, opts) => runXnCdhaSubsetForCollection(ctx, opts),
-  normalize: (runDir, runId) => normalizeRunOutputs(runDir, { sourceRunId: runId }),
+  // Tiến trình riêng: không chặn máy chủ trong lúc chuẩn hóa sau thu thập.
+  normalize: (runDir, runId) => runNormalizeJob({ kind: 'run', runDir, options: { sourceRunId: runId } }),
 };
 
 async function runCollectionOrchestration(ctx, {
@@ -641,7 +642,7 @@ async function runCollectionOrchestration(ctx, {
 
   let normalized = null;
   try {
-    normalized = runners.normalize(runDir, runId);
+    normalized = await runners.normalize(runDir, runId);
   } catch (err) {
     errors.push(`Chuẩn hóa: ${err.message || err}`);
   }
