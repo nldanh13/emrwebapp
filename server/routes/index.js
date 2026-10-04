@@ -35,6 +35,7 @@ const HEAVY_TASK_ROUTES = [
   '/research/archive/patient-info',
   '/research/archive/fetch-hchanh',
   '/research/archive/fetch-order-history',
+  '/research/archive/collect-auto',
   '/research/archive/normalize',
   '/research/archive/finalize-dataset',
   '/research/archive/build-encoded-dataset',
@@ -42,6 +43,7 @@ const HEAVY_TASK_ROUTES = [
   '/research/studies/:studyId/patient-info',
   '/research/studies/:studyId/fetch-hchanh',
   '/research/studies/:studyId/fetch-order-history',
+  '/research/studies/:studyId/collect-auto',
   '/research/studies/:studyId/import-from-archive',
   '/research/studies/:studyId/normalize',
   '/research/studies/:studyId/finalize-dataset',
@@ -86,6 +88,9 @@ router.use(require('./patient_db'));
 router.use(require('./vtyt_catalog'));
 router.use(require('./medication_catalog'));
 router.use(require('./route_table'));
+// Phải đứng trước research.js: hai endpoint collect-auto được trả 202 ngay và chạy nền;
+// các route collection-status/ngoại lệ vẫn do research_collection.js hiện hữu xử lý.
+router.use(require('./research_collection_async'));
 router.use(require('./research'));
 router.use(require('./report'));
 router.use(require('./data_transfer'));
