@@ -539,7 +539,10 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       if (!m) return true;
       return Number(m.done || 0) < Number(m.total || beforeProgress?.total || 0) || Number(m.error || 0) > 0 || Number(m.missing || 0) > 0 || Number(m.waiting || 0) > 0;
     });
-    const hasProgress = Number(beforeProgress?.total || 0) > 0 && (Number(beforeProgress?.counts?.done || 0) + Number(beforeProgress?.counts?.error || 0) + Number(beforeProgress?.counts?.missing || 0) > 0);
+    // Chưa có đợt chạy (exists: false) thì "thiếu" chỉ là cả danh sách chưa lấy: phải lấy lần đầu,
+    // không gọi "chỉ lấy phần còn thiếu" (cần đợt chạy có sẵn, báo "Nghiên cứu chưa có run").
+    const hasRun = beforeProgress?.exists !== false && Boolean(beforeProgress?.run_id);
+    const hasProgress = hasRun && Number(beforeProgress?.total || 0) > 0 && (Number(beforeProgress?.counts?.done || 0) + Number(beforeProgress?.counts?.error || 0) + Number(beforeProgress?.counts?.missing || 0) > 0);
 
     const steps = [];
     if (hasProgress) {

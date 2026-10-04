@@ -93,7 +93,7 @@ const SUGGESTIONS = {
 
 let RUNNING = [];
 
-function responseFor(name) {
+function responseFor(name, args = []) {
   if (name === 'getResearchRunning') return { status: 'ok', running: RUNNING, server_time: new Date().toISOString() };
   if (name === 'getResearchStudySuggestions') return { status: 'ok', ...SUGGESTIONS };
   if (name === 'exportResearchArchiveVariables') return { filename: 'apr.csv', blob: new Blob(['a']) };
@@ -104,6 +104,10 @@ function responseFor(name) {
   if (name === 'listResearchStudies') return { status: 'ok', studies: [NEW_STUDY, DONE_STUDY] };
   if (name === 'previewResearchArchiveVariables' || name === 'getResearchStudyVariableStats') return { status: 'ok', summary: STATS_SUMMARY, rows: [] };
   if (name === 'getResearchArchiveVariableCatalog') return { status: 'ok', run_id: CATALOG.run_id, catalog: CATALOG };
+  if (name === 'getResearchStudyProgress' && args[0] === NEW_STUDY.id) {
+    // Nghiên cứu chưa có đợt chạy: server trả exists:false, mọi mẫu đều "thiếu".
+    return { status: 'ok', run_id: '', progress: { ...PROGRESS, exists: false, run_id: '', total: 12, ready: 0, missingCount: 12, rows: [], counts: { running: 0, error: 0, missing: 12, waiting: 12, done: 0 } } };
+  }
   if (name === 'getResearchArchiveProgress' || name === 'getResearchStudyProgress') return { status: 'ok', run_id: '20260529_162615', progress: PROGRESS };
   if (name === 'getResearchArchiveCoverage' || name === 'getResearchStudyCoverage') return { status: 'ok', coverage: { exists: true, counts: { patients: 2900, encounters: 3100 }, extract: { total: 3100, ready: 1000 }, blockers: [] } };
   if (name === 'getResearchIdentifiedAccess') return { status: 'ok', allowed: false, env_enabled: false, role_ok: false };
@@ -118,7 +122,7 @@ vi.mock('../api.js', async (importOriginal) => {
   const actual = await importOriginal();
   const mocked = {};
   for (const [name, value] of Object.entries(actual)) {
-    mocked[name] = typeof value === 'function' ? vi.fn(async () => responseFor(name)) : value;
+    mocked[name] = typeof value === 'function' ? vi.fn(async (...args) => responseFor(name, args)) : value;
   }
   return mocked;
 });
@@ -243,6 +247,16 @@ describe('ResearchTab (khói)', () => {
     expect(text).toContain('Lấy dữ liệu lần đầu');
     // Thu thập tự động cần đợt chạy sẵn có; gọi khi chưa có sẽ bật lỗi đỏ.
     expect(api.getResearchCollectionStatus).not.toHaveBeenCalledWith(NEW_STUDY.id);
+  });
+
+  it('bấm "Lấy dữ liệu lần đầu" ở nghiên cứu chưa có đợt chạy: lấy toàn bộ, không gọi "chỉ lấy phần còn thiếu"', async () => {
+    api.refetchMissingResearch.mockClear();
+    api.runResearchStudy.mockClear();
+    await clickText(NEW_STUDY.name);
+    await clickText('Lấy dữ liệu lần đầu');
+    for (let i = 0; i < 5; i += 1) await flush();
+    expect(api.refetchMissingResearch).not.toHaveBeenCalled();
+    expect(api.runResearchStudy).toHaveBeenCalledWith(NEW_STUDY.id, expect.objectContaining({ resume: true }));
   });
 
   it('Tạo nghiên cứu: đặt mốc "lần đầu dùng thuốc" và cửa sổ ngày, gửi kèm khi tính thống kê', async () => {
