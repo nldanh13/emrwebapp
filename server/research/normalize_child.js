@@ -7,8 +7,16 @@ process.on('message', (job) => {
     const normalize = require('./normalize');
     const { repairRawSurgeryCsv } = require('./surgery_raw_repair');
     let result;
-    if (job?.kind === 'archive') result = normalize.normalizeArchiveLatest();
-    else if (job?.kind === 'study') result = normalize.normalizeStudyLatest(job.studyId);
+    if (job?.kind === 'archive') {
+      // Archive cũng phải repair raw surgery trước khi normalize; nếu không thì
+      // các run lịch sử có `Ngày phẫu thuật` chỉ chứa giờ sẽ tiếp tục bị rơi.
+      const archiveRunId = require('./run_registry').resolveArchiveRunId('latest');
+      if (!archiveRunId) throw new Error('Kho dữ liệu gốc chưa có run để chuẩn hóa.');
+      const runDir = require('path').join(require('./store_paths').archiveRunsDir(), archiveRunId);
+      const surgeryRepair = repairRawSurgeryCsv(runDir);
+      result = normalize.normalizeRunOutputs(runDir, { sourceRunId: archiveRunId });
+      if (result && typeof result === 'object') result.surgery_raw_repair = surgeryRepair;
+    } else if (job?.kind === 'study') result = normalize.normalizeStudyLatest(job.studyId);
     else {
       // Hành chánh đã lưu Raw JSON của màn hình phẫu thuật. Sửa các dòng legacy
       // (đặc biệt trường hợp `bat_dau` chỉ có giờ, còn ngày nằm ở `thoi_gian`)

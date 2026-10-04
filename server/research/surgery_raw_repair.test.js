@@ -13,9 +13,14 @@ describe('research surgery raw repair', () => {
       .toBe('21/04/2026 08:15');
   });
 
-  it('keeps a complete explicit surgery datetime', () => {
+  it('keeps a complete explicit surgery datetime from detail when current value lacks a date', () => {
     expect(repairSurgeryTimestamp('08:15', '21/04/2026 07:30', '21/04/2026 08:15'))
       .toBe('21/04/2026 08:15');
+  });
+
+  it('preserves an existing complete surgery datetime instead of replacing its date from the list row', () => {
+    expect(repairSurgeryTimestamp('20/04/2026 08:15', '21/04/2026 07:30', '08:15'))
+      .toBe('20/04/2026 08:15');
   });
 
   it('recovers worker detail fields from Raw JSON without inventing values', () => {
