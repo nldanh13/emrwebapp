@@ -29,6 +29,8 @@ const initial = [
   { 'T/G vào': '09:00 03/02/2026', 'Mã BN': '1001', 'Mã nội trú': 'NT2', 'Họ tên': 'A', 'Ngày ra viện': '07/02/2026' },
   { 'T/G vào': '10:00 10/01/2026', 'Mã BN': '1002', 'Mã nội trú': 'NT3', 'Họ tên': 'B', 'Ngày ra viện': '12/01/2026' },
   { 'T/G vào': '11:00 15/01/2026', 'Mã BN': '1003', 'Mã nội trú': 'NT4', 'Họ tên': 'C', 'Ngày ra viện': '20/01/2026' },
+  // Dòng lặp của cùng lượt NT4 (vd. chuyển khoa): không được thành mẫu thứ hai.
+  { 'T/G vào': '11:00 15/01/2026', 'Mã BN': '1003', 'Mã nội trú': '', 'Họ tên': 'C', 'Ngày ra viện': '20/01/2026' },
 ];
 writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), Object.keys(initial[0]), initial);
 const analysis = [

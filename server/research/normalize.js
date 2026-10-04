@@ -1153,8 +1153,18 @@ function importArchiveToStudy(study, filters) {
   const probes = dateFilteredPatients.map(row => ({ row, probe: { ...row, ...linkEncounter(row) } }));
   const selectionResult = variableSelection.filterCohortRowsByVariableSelection(probes.map(p => p.probe), selection, tableRowsByKey);
   const keptProbes = new Set(selectionResult.rows);
+  // Danh sách ban đầu có thể có nhiều dòng cho cùng một lượt (vd. chuyển khoa, dòng lặp): giữ một dòng
+  // mỗi lượt để số mẫu khớp số lượt ở bước xem trước và không thu thập trùng.
+  const seenEncounters = new Set();
   const selectedPatients = variableSelection.hasActiveSelection(selection)
-    ? probes.filter(p => keptProbes.has(p.probe)).map(p => p.row)
+    ? probes.filter(p => {
+      if (!keptProbes.has(p.probe)) return false;
+      const eid = p.probe.encounter_id;
+      if (!eid) return true;
+      if (seenEncounters.has(eid)) return false;
+      seenEncounters.add(eid);
+      return true;
+    }).map(p => p.row)
     : dateFilteredPatients;
   const selectedVisits = selectedPatients.filter(row => patientCode(row));
   if (!selectedVisits.length) throw new Error(variableSelection.hasActiveSelection(selection)
