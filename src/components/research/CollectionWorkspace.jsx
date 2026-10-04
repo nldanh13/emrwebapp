@@ -73,7 +73,7 @@ export function CollectionWorkspace({
   archiveOptions, setArchiveOptions, studyOptions, setStudyOptions,
   runSimpleListScan, runSimpleDataCollection, runRefreshProvisional,
   operationSnapshot, lastUpdateSummary, statusLoading, loadProgressSnapshot, loadSummary,
-  openLog, toast,
+  openLog, toast, scopeRunning = null,
 }) {
   const latestRun = archive?.latest_run || null;
   const listCount = Number(latestRun?.outputs?.initial_list || archive?.source_count || 0);
@@ -163,6 +163,7 @@ export function CollectionWorkspace({
               disabled={uiBusy}
               toast={toast}
               onDone={onCollected}
+              serverRunning={scopeRunning}
             />
           : !hasList && <div style={{ ...card, fontSize: FS.xs, color: C.text3 }}>Chưa thể thu thập.</div>}
       </section>

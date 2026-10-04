@@ -6,7 +6,7 @@
 // Chạy: node scripts/research_running_status_test.js
 
 const assert = require('assert');
-const { lockedResearchRoute, listRunningResearch } = require('../server/research/research_http');
+const { lockedResearchRoute, listRunningResearch, withScopeRunning } = require('../server/research/research_http');
 
 let passed = 0;
 async function test(name, fn) {
@@ -52,6 +52,22 @@ const fakeRes = (extra = {}) => ({ status() { return this; }, json(body) { this.
     d.resolve(); await pending;
     await routes['/research/studies/:studyId/normalize']({ params: { studyId: 'nc_1' }, path: '/x', body: {} }, fakeRes(), () => {}).catch(() => {});
     assert.deepStrictEqual(listRunningResearch(), []);
+  });
+
+  await test('tiến độ: đang chạy thì không báo "đã dừng giữa chừng", ca đang quét không bị coi là cũ', async () => {
+    const snap = { active_task: null, stopped: { hint: 'dừng' }, current_case: { ma_bn: '26033731' } };
+    const d = deferred();
+    const pending = routes['/research/archive/run']({ params: {}, path: '/research/archive/run', body: {} }, fakeRes({ wait: d.wait }), () => {});
+    const running = withScopeRunning(snap, 'archive');
+    assert.strictEqual(running.stopped, null);
+    assert.strictEqual(running.scope_running.label, 'Lấy dữ liệu');
+    assert.strictEqual(running.current_case.stale, false);
+    d.resolve(); await pending;
+    const idle = withScopeRunning(snap, 'archive');
+    assert.deepStrictEqual(idle.stopped, { hint: 'dừng' });
+    assert.strictEqual(idle.scope_running, null);
+    assert.strictEqual(idle.current_case.stale, true, 'không chạy: ca trong file là của lần chạy trước');
+    assert.strictEqual(withScopeRunning({ ...snap, active_task: { status: 'running' } }, 'archive').stopped, null);
   });
 
   console.log(`\n${passed} test(s) passed.`);

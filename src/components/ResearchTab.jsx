@@ -351,7 +351,18 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   );
   const remoteTaskActive = Boolean(operationSnapshot?.active_task && ['queued', 'running'].includes(String(operationSnapshot.active_task.status || '').toLowerCase()));
   const currentScopeKey = isArchive ? 'archive' : `study:${selectedId}`;
-  const scopeRunning = serverRunning.items.some(item => item.scope_key === currentScopeKey);
+  const scopeRunningItem = serverRunning.items.find(item => item.scope_key === currentScopeKey) || null;
+  const scopeRunning = Boolean(scopeRunningItem);
+  // Máy chủ báo đang chạy thì khung tiến độ không được hiện "đã dừng giữa chừng" (snapshot có thể cũ hơn).
+  const monitorSnapshot = useMemo(() => {
+    if (!scopeRunningItem || !operationSnapshot || operationSnapshot.scope_running || operationSnapshot.active_task) return operationSnapshot;
+    return {
+      ...operationSnapshot,
+      scope_running: { label: scopeRunningItem.label, since: scopeRunningItem.since },
+      stopped: null,
+      current_case: operationSnapshot.current_case ? { ...operationSnapshot.current_case, stale: false } : operationSnapshot.current_case,
+    };
+  }, [operationSnapshot, scopeRunningItem]);
   const uiBusy = busy || remoteTaskActive || scopeRunning;
   const scopeName = useCallback((item) => (item.kind === 'study'
     ? `nghiên cứu "${item.study_name || studies.find(s => s.id === item.study_id)?.name || item.study_id}"`
@@ -806,10 +817,10 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
 
   const collectionWorkspace = (
     <CollectionWorkspace {...{
-      isArchive, archive, study: activeStudy, selectedId, uiBusy, automationRun,
+      isArchive, archive, study: activeStudy, selectedId, uiBusy, automationRun, scopeRunning: scopeRunningItem,
       archiveOptions, setArchiveOptions, studyOptions, setStudyOptions,
       runSimpleListScan, runSimpleDataCollection, runRefreshProvisional,
-      operationSnapshot, lastUpdateSummary, statusLoading, loadProgressSnapshot, loadSummary,
+      operationSnapshot: monitorSnapshot, lastUpdateSummary, statusLoading, loadProgressSnapshot, loadSummary,
       openLog, toast,
     }} />
   );

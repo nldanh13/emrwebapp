@@ -57,7 +57,7 @@ const { buildStudySuggestions } = require('../research/study_suggestions');
 const { normalizeArchiveLatest, normalizeInputSignature, normalizeRunOutputs } = require('../research/normalize');
 const { SCRIPT_PATH } = require('../research/worker_paths');
 const { appendCollectionVersions, readCollectionPartRows, readCollectionVersionIds, recoverCollectionTransactions, recoverPythonPatientCommits, runCollectionOrchestration, studyReadinessForRun, syncCollectionLedger } = require('../research/collection_runtime');
-const { RESEARCH_SCOPE_LOCKS, datasetVerifyResponse, listRunningResearch, identifiedAccessStatus, lockedResearchRoute, researchResponseShouldRedact, researchScopeKey, sendCsvFile } = require('../research/research_http');
+const { RESEARCH_SCOPE_LOCKS, datasetVerifyResponse, listRunningResearch, withScopeRunning, identifiedAccessStatus, lockedResearchRoute, researchResponseShouldRedact, researchScopeKey, sendCsvFile } = require('../research/research_http');
 
 const VARIABLE_PREVIEW_MAX_SOURCE_ROWS = Math.max(5000, Number(process.env.EMR_VARIABLE_PREVIEW_MAX_SOURCE_ROWS || 1000000));
 const VARIABLE_PREVIEW_MAX_ENCOUNTERS = Math.max(100, Number(process.env.EMR_VARIABLE_PREVIEW_MAX_ENCOUNTERS || 50000));
@@ -370,7 +370,7 @@ router.get('/research/archive/progress', (req, res) => {
     const runId = resolveArchiveRunIdFast(String(req.query.runId || 'latest'));
     const archive = readArchiveProgressMeta(runId);
     const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
-    const progress = buildResearchProgressSnapshot(runDir, archive, { isArchive: true });
+    const progress = withScopeRunning(buildResearchProgressSnapshot(runDir, archive, { isArchive: true }), 'archive');
     return res.json({ status: 'ok', run_id: runId || '', progress });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });

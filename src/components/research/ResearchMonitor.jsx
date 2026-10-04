@@ -180,7 +180,8 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
   // Đang có tác vụ chạy thì tự mở bảng chi tiết + khối "Mới cập nhật" — không
   // cần bấm "Xem ca thiếu/lỗi" mới thấy từng ca vừa quét xong. Hết tác vụ thì
   // quay lại đúng lựa chọn tay của người dùng.
-  const isTaskActive = Boolean(snap.active_task);
+  // Đang chạy theo máy chủ: tác vụ ghi trạng thái (active_task) hoặc khóa phạm vi (scope_running).
+  const isTaskActive = Boolean(snap.active_task || snap.scope_running);
   const showRows = manualShowRows || isTaskActive;
   const rows = Array.isArray(snap.rows) ? snap.rows : [];
   const counts = snap.counts || {
@@ -233,6 +234,15 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
           </div>
         </div>
 
+        {!snap.active_task && snap.scope_running && (
+          <div style={{ marginTop: 9, borderTop: `1px solid ${C.border2}`, paddingTop: 8, fontSize: FS.xs, color: C.text2, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+            <Spinner size={9} />
+            <b>Đang chạy:</b>
+            <span>{snap.scope_running.label}</span>
+            <span style={{ color: C.text3 }}>— từ {new Date(snap.scope_running.since).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+        )}
+
         {snap.active_task && (
           <div style={{ marginTop: 9, borderTop: `1px solid ${C.border2}`, paddingTop: 8, fontSize: FS.xs, color: C.text2, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
             <Spinner size={9} />
@@ -244,10 +254,10 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
 
         {snap.current_case && (
           <div style={{
-            marginTop: 6, fontSize: FS.xs, color: C.blue, display: 'flex',
+            marginTop: 6, fontSize: FS.xs, color: snap.current_case.stale ? C.text3 : C.blue, display: 'flex',
             alignItems: 'center', gap: 7, flexWrap: 'wrap',
           }}>
-            <b>Đang quét:</b>
+            <b>{snap.current_case.stale ? 'Ca xử lý cuối của lần chạy trước:' : 'Đang quét:'}</b>
             <span>{snap.current_case.ho_ten || snap.current_case.ma_bn || 'BN'}{snap.current_case.ma_bn ? ` (${snap.current_case.ma_bn})` : ''}</span>
             {!!snap.current_case.total && (
               <span style={{ color: C.text3 }}>ca {snap.current_case.index}/{snap.current_case.total}</span>
@@ -261,7 +271,7 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
           </div>
         )}
 
-        {snap.stopped && (
+        {snap.stopped && !isTaskActive && (
           <div style={{ marginTop: 9, borderLeft: `3px solid ${C.amber}`, background: C.surface2, color: C.text2, padding: '7px 9px', fontSize: FS.xs }}>
             Tác vụ đã dừng giữa chừng. Bấm <b>Thu thập tự động</b> để tiếp tục phần còn thiếu.
           </div>
