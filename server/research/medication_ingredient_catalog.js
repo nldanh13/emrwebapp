@@ -1,8 +1,8 @@
 'use strict';
 
 // Ánh xạ hoạt chất <-> tên thuốc/tên thương mại từ config/medication_catalog.json.
-// Phần này chỉ dùng để nhận diện/tìm kiếm nghiên cứu; KHÔNG suy ra rằng thuốc đã được thực hiện
-// chỉ vì xuất hiện trong y lệnh.
+// Chỉ dùng để nhận diện/tìm kiếm nghiên cứu. Việc một tên thuốc xuất hiện trong y lệnh
+// KHÔNG tự động được diễn giải là người bệnh đã được thực hiện/cấp dùng thuốc.
 
 const path = require('path');
 const { readJsonSafe } = require('../utils/file');
@@ -52,6 +52,10 @@ function namesOf(med) {
   ]);
 }
 
+function allActiveIngredients(medications = loadCatalog()) {
+  return uniqueStrings(medications.flatMap(activeIngredientsOf));
+}
+
 function resolveIngredientTargets(targets, medications = loadCatalog()) {
   const wanted = uniqueStrings(Array.isArray(targets) ? targets : [targets]);
   const resolved = [];
@@ -76,16 +80,16 @@ function resolveIngredientTargets(targets, medications = loadCatalog()) {
 }
 
 function textMatchesAnyName(text, names) {
-  const hay = ` ${normalizeText(text)} `;
-  if (!hay.trim()) return false;
+  const normalized = normalizeText(text);
+  if (!normalized) return false;
+  const hay = ` ${normalized} `;
   return (names || []).some(name => {
     const needle = normalizeText(name);
-    if (!needle) return false;
-    return hay.includes(` ${needle} `) || hay.includes(` ${needle}`) || hay.includes(`${needle} `);
+    return needle ? hay.includes(` ${needle} `) : false;
   });
 }
 
-function ingredientEvidence(text, targets, medications = loadCatalog()) {
+function ingredientEvidence(text, targets = allActiveIngredients(), medications = loadCatalog()) {
   const resolved = resolveIngredientTargets(targets, medications);
   const hits = [];
   for (const item of resolved.targets) {
@@ -102,6 +106,78 @@ function ingredientEvidence(text, targets, medications = loadCatalog()) {
   return hits;
 }
 
+function firstValue(row, names) {
+  for (const name of names) {
+    const value = row?.[name];
+    if (String(value ?? '').trim()) return String(value).trim();
+  }
+  return '';
+}
+
+function augmentMedicationRowsForResearch(medicationRows = [], clinicalNoteRows = [], medications = loadCatalog()) {
+  const ingredients = allActiveIngredients(medications);
+  if (!ingredients.length) return Array.isArray(medicationRows) ? medicationRows.slice() : [];
+  const out = [];
+
+  for (const row of medicationRows || []) {
+    const explicit = firstValue(row, ['active_ingredient', 'Hoạt chất', 'Hoat chat']);
+    if (explicit) {
+      out.push(row);
+      continue;
+    }
+    const text = [
+      firstValue(row, ['drug_name_raw', 'Tên thuốc', 'ten_thuoc']),
+      firstValue(row, ['drug_name_norm']),
+      firstValue(row, ['raw_line']),
+    ].filter(Boolean).join(' ');
+    const hits = ingredientEvidence(text, ingredients, medications);
+    if (!hits.length) {
+      out.push(row);
+      continue;
+    }
+    // Một chế phẩm phối hợp có thể có nhiều hoạt chất. Tách thành các dòng ảo chỉ trong lúc
+    // chọn mẫu để toán tử '='/'in' hoạt động đúng; không sửa medication_orders.csv gốc.
+    for (const hit of hits) {
+      out.push({
+        ...row,
+        active_ingredient: hit.active_ingredient,
+        active_ingredient_source: 'medication_catalog',
+        catalog_matched_name: hit.matched_names[0] || (hit.direct_active_ingredient ? hit.active_ingredient : ''),
+      });
+    }
+  }
+
+  // "Y lệnh khác" có thể chứa tên thương mại nhưng không được parser tách thành thuốc.
+  // Tạo bằng chứng y lệnh ảo cho bước chọn mẫu; source cho biết đây không phải medication order chuẩn.
+  for (const note of clinicalNoteRows || []) {
+    const text = [
+      firstValue(note, ['order_text', 'Y lệnh', 'y_lenh']),
+      firstValue(note, ['clinical_text', 'Diễn biến', 'dien_bien']),
+    ].filter(Boolean).join(' ');
+    if (!text) continue;
+    const hits = ingredientEvidence(text, ingredients, medications);
+    for (const hit of hits) {
+      out.push({
+        research_code: firstValue(note, ['research_code']),
+        patient_code: firstValue(note, ['patient_code', 'Mã BN', 'Ma BN']),
+        patient_key: firstValue(note, ['patient_key']),
+        encounter_id: firstValue(note, ['encounter_id']),
+        order_datetime: firstValue(note, ['note_datetime', 'order_datetime']),
+        order_date: firstValue(note, ['note_date', 'order_date']),
+        drug_name_raw: hit.matched_names.join('; ') || hit.active_ingredient,
+        drug_name_norm: hit.matched_names[0] || hit.active_ingredient,
+        active_ingredient: hit.active_ingredient,
+        active_ingredient_source: 'medication_catalog_from_other_order',
+        raw_line: text,
+        source: 'clinical_notes_order_text',
+        source_run_id: firstValue(note, ['source_run_id']),
+      });
+    }
+  }
+
+  return out;
+}
+
 module.exports = {
   CATALOG_PATH,
   normalizeText,
@@ -109,7 +185,9 @@ module.exports = {
   loadCatalog,
   activeIngredientsOf,
   namesOf,
+  allActiveIngredients,
   resolveIngredientTargets,
   textMatchesAnyName,
   ingredientEvidence,
+  augmentMedicationRowsForResearch,
 };
