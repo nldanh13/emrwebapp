@@ -91,7 +91,10 @@ const SUGGESTIONS = {
   }],
 };
 
+let RUNNING = [];
+
 function responseFor(name) {
+  if (name === 'getResearchRunning') return { status: 'ok', running: RUNNING, server_time: new Date().toISOString() };
   if (name === 'getResearchStudySuggestions') return { status: 'ok', ...SUGGESTIONS };
   if (name === 'exportResearchArchiveVariables') return { filename: 'apr.csv', blob: new Blob(['a']) };
   if (name === 'getResearchStudyCrf') return { status: 'ok', ...CRF };
@@ -157,6 +160,8 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(async () => { root.unmount(); });
   container.remove();
+  RUNNING = [];
+  vi.useRealTimers();
 });
 
 describe('ResearchTab (khói)', () => {
@@ -353,5 +358,33 @@ describe('ResearchTab (khói)', () => {
     await setInput(container.querySelector('input[aria-label="Sai số tuyệt đối (cùng đơn vị)"]'), '10');
     text = container.textContent;
     expect(text).toContain('Đủ cỡ mẫu');
+  });
+
+  it('tác vụ đang chạy: dải trạng thái luôn hiện, báo lên menu, nút bị khóa; xong thì báo đã kết thúc', async () => {
+    await act(async () => { root.unmount(); });
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    RUNNING = [{ scope_key: 'archive', kind: 'archive', study_id: '', label: 'Lấy dữ liệu', since: new Date(Date.now() - 125000).toISOString(),
+      task: { message: 'Đang lấy 12/40 lượt', heartbeat_at: new Date().toISOString() } }];
+    const onRunningChange = vi.fn();
+    root = createRoot(container);
+    await act(async () => { root.render(createElement(ResearchTab, { toast: () => {}, onRunningChange })); });
+    await flush();
+    let text = container.textContent;
+    expect(text).toContain('Đang chạy: Lấy dữ liệu');
+    expect(text).toContain('Kho dữ liệu gốc');
+    expect(text).toContain('đã chạy 2 phút');
+    expect(text).toContain('Đang lấy 12/40 lượt');
+    expect(text).toContain('Máy chủ xác nhận vẫn đang chạy');
+    expect(onRunningChange).toHaveBeenLastCalledWith({ title: 'Đang chạy: Lấy dữ liệu · Kho dữ liệu gốc' });
+    await clickText('Xem tiến độ');
+    const scan = [...container.querySelectorAll('button')].find(b => /^Quét (lại )?danh sách$/.test(b.textContent.trim()));
+    expect(scan?.disabled, 'đang chạy thì không bấm chạy thêm được').toBe(true);
+    RUNNING = [];
+    await act(async () => { vi.advanceTimersByTime(3100); });
+    await flush();
+    text = container.textContent;
+    expect(text).not.toContain('Đang chạy: Lấy dữ liệu');
+    expect(text).toContain('Đã kết thúc: Lấy dữ liệu');
+    expect(onRunningChange).toHaveBeenLastCalledWith(null);
   });
 });

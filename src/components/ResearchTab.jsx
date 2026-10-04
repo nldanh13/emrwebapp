@@ -25,11 +25,12 @@ import { GeneralOverviewView } from './research/GeneralOverviewView.jsx';
 import { CreateStudyView } from './research/CreateStudyView.jsx';
 import { StudyStatsView } from './research/StudyStatsView.jsx';
 import { CrfView } from './research/CrfView.jsx';
+import { RunningBanner, formatDuration } from './research/RunningBanner.jsx';
 import useIsMobile from '../hooks/useIsMobile.js';
 
 const CORE_VARIABLE_NAME = /^(sex|birth_year|age|admission_date|discharge_date|hospital_stay_days|diagnosis_raw|surgery_date|surgery_name)$/i;
 
-export default function ResearchTab({ toast }) {
+export default function ResearchTab({ toast, active: tabActive = true, onRunningChange }) {
   const isMobile = useIsMobile();
   const [archive, setArchive]         = useState(null);
   const [studies, setStudies]         = useState([]);
@@ -55,6 +56,10 @@ export default function ResearchTab({ toast }) {
   const [pipeline, setPipeline] = useState(null);
   const [researchError, setResearchError] = useState('');
   const [automationRun, setAutomationRun] = useState({ kind: '', status: 'idle', current: '', steps: [], error: '', warning: '' });
+  // Tác vụ đang chạy theo máy chủ (đúng cả khi rời tab / tải lại trang) và tác vụ vừa kết thúc.
+  const [serverRunning, setServerRunning] = useState({ items: [], checkedAt: 0, clockOffset: 0 });
+  const [lastFinished, setLastFinished] = useState(null);
+  const runningRef = useRef(new Map());
   // Tra cứu người bệnh. Quyền xem dữ liệu có định danh (null = chưa biết): khi đang khóa,
   // tab Tra cứu hiện hướng dẫn thay vì gọi API rồi báo lỗi đỏ.
   const [patientQuery, setPatientQuery]     = useState('');
@@ -303,9 +308,39 @@ export default function ResearchTab({ toast }) {
         summaryPollRef.current = now;
         loadSummary(false);
       }
-    }, active ? 2500 : 15000);
+    }, active ? 2500 : tabActive ? 15000 : 30000);
     return () => clearInterval(tid);
-  }, [busy, archive, progressSnapshot?.active_task?.status, selectedId, loadSummary, loadProgressSnapshot]);
+  }, [busy, archive, progressSnapshot?.active_task?.status, selectedId, loadSummary, loadProgressSnapshot, tabActive]);
+
+  // Hỏi máy chủ tác vụ nào đang chạy. Tác vụ biến khỏi danh sách = đã kết thúc: báo và tải lại.
+  const loadServerRunning = useCallback(async () => {
+    try {
+      const r = await api.getResearchRunning();
+      const items = Array.isArray(r?.running) ? r.running : [];
+      const serverTime = Date.parse(r?.server_time || '');
+      setServerRunning({ items, checkedAt: Date.now(), clockOffset: Number.isFinite(serverTime) ? serverTime - Date.now() : 0 });
+      const prev = runningRef.current;
+      const next = new Map(items.map(item => [item.scope_key, item]));
+      const finished = [...prev.values()].filter(item => !next.has(item.scope_key));
+      runningRef.current = next;
+      if (finished.length) {
+        const item = finished[finished.length - 1];
+        const finishedAt = Number.isFinite(serverTime) ? serverTime : Date.now();
+        setLastFinished({ ...item, finished_at: new Date(finishedAt).toISOString(), elapsed_ms: finishedAt - Date.parse(item.since) });
+        loadSummary(false);
+        loadProgressSnapshot(selectedId, { silent: true });
+      }
+      return { items, finished };
+    } catch (_) {
+      return null;
+    }
+  }, [loadSummary, loadProgressSnapshot, selectedId]);
+  useEffect(() => {
+    const anyRunning = serverRunning.items.length > 0 || busy;
+    loadServerRunning();
+    const tid = setInterval(loadServerRunning, anyRunning ? 3000 : tabActive ? 10000 : 20000);
+    return () => clearInterval(tid);
+  }, [serverRunning.items.length > 0, busy, tabActive]); // eslint-disable-line
 
   const activeStudy  = useMemo(() => studies.find(s => s.id === selectedId) || null, [studies, selectedId]);
   const activeSource = isArchive ? archive : activeStudy;
@@ -315,7 +350,38 @@ export default function ResearchTab({ toast }) {
     [progressSnapshot, activeSource, coverage, isArchive]
   );
   const remoteTaskActive = Boolean(operationSnapshot?.active_task && ['queued', 'running'].includes(String(operationSnapshot.active_task.status || '').toLowerCase()));
-  const uiBusy = busy || remoteTaskActive;
+  const currentScopeKey = isArchive ? 'archive' : `study:${selectedId}`;
+  const scopeRunning = serverRunning.items.some(item => item.scope_key === currentScopeKey);
+  const uiBusy = busy || remoteTaskActive || scopeRunning;
+  const scopeName = useCallback((item) => (item.kind === 'study'
+    ? `nghiên cứu "${item.study_name || studies.find(s => s.id === item.study_id)?.name || item.study_id}"`
+    : 'Kho dữ liệu gốc'), [studies]);
+
+  // Báo cho thanh menu: Kho nghiên cứu đang chạy gì (hiện dấu "Đang chạy" kể cả khi ở màn hình khác).
+  const runningTitle = serverRunning.items.length
+    ? serverRunning.items.map(item => `Đang chạy: ${item.label} · ${scopeName(item)}`).join('\n')
+    : busy && automationRun.status === 'running' ? `Đang chạy: ${automationRun.current || 'tác vụ nghiên cứu'}` : '';
+  useEffect(() => {
+    onRunningChange?.(runningTitle ? { title: runningTitle } : null);
+  }, [runningTitle, onRunningChange]);
+  useEffect(() => () => onRunningChange?.(null), [onRunningChange]);
+
+  // Tác vụ kết thúc lúc đang ở màn hình khác: báo bằng thông báo chung (tác vụ chạy từ đây đã tự báo).
+  useEffect(() => {
+    if (!lastFinished || busy || tabActive) return;
+    t(`Kho nghiên cứu: đã kết thúc "${lastFinished.label}" (${scopeName(lastFinished)}) sau ${formatDuration(lastFinished.elapsed_ms)}.`, 'info');
+  }, [lastFinished]); // eslint-disable-line
+
+  const cancelRunning = useCallback(async (item) => {
+    if (!window.confirm(`Dừng "${item.label}" của ${scopeName(item)}?\n\nPhần đã lấy được giữ lại; chạy lại sẽ tiếp tục phần còn thiếu.`)) return;
+    try { const r = await api.cancelTask(); t(r?.message || 'Đã gửi lệnh dừng.', 'ok'); }
+    catch (e) { t(String(e.message || e), 'error'); }
+    finally { loadServerRunning(); }
+  }, [scopeName, loadServerRunning, t]);
+  const openRunning = useCallback((item) => {
+    if (item.kind === 'study') { setSelectedId(item.study_id); setStudyMode('collect'); }
+    else { setSelectedId(ARCHIVE_SCOPE); setArchiveMode('update'); }
+  }, []);
 
   const deleteStudy = useCallback(async (studyId) => {
     setBusy(true);
@@ -777,7 +843,10 @@ export default function ResearchTab({ toast }) {
     return collectionWorkspace;
   };
 
-  const dot = (on) => <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: on ? C.green : C.text3, flexShrink: 0 }} />;
+  const runningScopes = new Set(serverRunning.items.map(item => item.scope_key));
+  const dot = (on, running = false) => (running
+    ? <span className="emr-running-dot" title="Đang chạy" aria-label="Đang chạy" />
+    : <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: on ? C.green : C.text3, flexShrink: 0 }} />);
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
@@ -838,6 +907,10 @@ export default function ResearchTab({ toast }) {
         </div>
       )}
 
+      <RunningBanner running={serverRunning.items} checkedAt={serverRunning.checkedAt} clockOffset={serverRunning.clockOffset}
+        lastFinished={lastFinished} scopeName={scopeName} onOpen={openRunning} onCancel={cancelRunning}
+        onDismissFinished={() => setLastFinished(null)} />
+
       {researchError && (
         <div role="alert" style={{ padding: '7px 12px', background: C.redBg, borderBottom: `1px solid ${C.redBorder}`, color: C.red, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: FS.sm }}>
           <b>Lỗi:</b><span style={{ flex: 1 }}>{researchError}</span>
@@ -855,7 +928,7 @@ export default function ResearchTab({ toast }) {
               sub={archiveSummaryText}
               active={isArchive && !creatingStudy}
               onClick={() => selectArchive(creatingStudy ? 'overview' : archiveMode)}
-              badge={dot(Boolean(archive?.latest_run))}
+              badge={dot(Boolean(archive?.latest_run), runningScopes.has('archive'))}
             >
               {isArchive && (!!operationSnapshot?.counts?.error || !!operationSnapshot?.unmatched_progress) && (
                 <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
@@ -876,7 +949,7 @@ export default function ResearchTab({ toast }) {
             </button>
             {studies.map(item => (
               <SideItem key={item.id} label={item.name} sub={studyCountLabel(item)} active={item.id === selectedId}
-                onClick={() => selectStudy(item)} badge={dot(Boolean(item.latest_run))} />
+                onClick={() => selectStudy(item)} badge={dot(Boolean(item.latest_run), runningScopes.has(`study:${item.id}`))} />
             ))}
           </nav>
         )}

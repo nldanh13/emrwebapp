@@ -489,6 +489,8 @@ export const downloadResearchArchiveCsv = ({ table = 'analysis_ready', runId = '
 };
 export const finalizeResearchArchiveDataset = () => post('/api/research/archive/finalize-dataset', {});
 export const buildResearchArchiveEncodedDataset = () => post('/api/research/archive/build-encoded-dataset', {});
+// Tác vụ nghiên cứu đang chạy trên server (kho và các nghiên cứu).
+export const getResearchRunning = () => get('/api/research/running');
 export const runResearchArchive = (options = {}) => post('/api/research/archive/run', options);
 export const runResearchArchivePatientInfo = (options = {}) => post('/api/research/archive/patient-info', options);
 
