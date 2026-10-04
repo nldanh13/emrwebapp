@@ -477,6 +477,7 @@ export const getResearchArchiveVariableCatalog = ({ runId = 'latest' } = {}) => 
 };
 export const previewResearchArchiveVariables = (payload = {}) => post('/api/research/archive/variable-preview', payload);
 export const exportResearchArchiveVariables = (payload = {}) => downloadBlob('/api/research/archive/variable-export', 'du_lieu_nghien_cuu.csv', { method: 'POST', body: payload });
+export const getResearchStudySuggestions = () => get('/api/research/archive/study-suggestions');
 export const getResearchArchivePipeline = () => get('/api/research/archive/pipeline');
 export const getResearchStudyVariableStats = (studyId) => get(`/api/research/studies/${encodeURIComponent(studyId)}/variable-stats`);
 export const downloadResearchArchiveCsv = ({ table = 'analysis_ready', runId = 'latest', redact = true } = {}) => {

@@ -73,7 +73,25 @@ const CRF = {
   identifiers_visible: false,
 };
 
+const SUGGESTIONS = {
+  total_encounters: 3100, min_encounters: 20, sampled: false,
+  suggestions: [{
+    id: 's1', design: 'before_after', design_label: 'Trước – sau', cohort_kind: 'drug', cohort_label: 'Zoledronic acid',
+    title: 'Thay đổi tuổi trước và sau dùng Zoledronic acid', outcome: 'Chênh lệch xét nghiệm sau – trước dùng thuốc',
+    stats: { encounters: 120, patients: 110, with_labs: 90, with_imaging: 40, with_surgery: 10, with_meds: 100, common_labs: [] },
+    anchor: { kind: 'drug', drug: 'Zoledronic acid' },
+    variables: [
+      { id: 'analysis_ready.sex', survey_label: 'Giới' },
+      { id: 'lab_results.days_from_admission', survey_label: 'Ngày XN trước', aggregation: 'closest_before_anchor', window_from_days: -14, window_to_days: 0 },
+      { id: 'lab_results.days_from_admission', survey_label: 'Ngày XN sau', aggregation: 'closest_after_anchor', window_from_days: 1, window_to_days: 14 },
+    ],
+    conditions: [{ variable_id: 'analysis_ready.age', operator: '>=', value: '50' }],
+    reasons: [],
+  }],
+};
+
 function responseFor(name) {
+  if (name === 'getResearchStudySuggestions') return { status: 'ok', ...SUGGESTIONS };
   if (name === 'exportResearchArchiveVariables') return { filename: 'apr.csv', blob: new Blob(['a']) };
   if (name === 'getResearchStudyCrf') return { status: 'ok', ...CRF };
   if (name === 'saveResearchStudyCrfEntry') return { status: 'ok', message: 'Đã lưu phiếu NC0001.' };
@@ -267,5 +285,23 @@ describe('ResearchTab (khói)', () => {
     const payload = api.exportResearchArchiveVariables.mock.calls.at(-1)[0];
     expect(payload.name).toBe('APR_Zoledronic');
     expect(payload.variable_selection.selected_variables.map(v => v.survey_label)).toEqual(['Giới tính']);
+  });
+
+  it('Gợi ý đề tài: dùng gợi ý điền sẵn tên, mốc, biến lấy 2 lần (trước/sau), điều kiện và mở bước kiểm tra', async () => {
+    await clickText('Tạo nghiên cứu mới');
+    await clickText('Xem gợi ý đề tài');
+    expect(container.textContent).toContain('Thay đổi tuổi trước và sau dùng Zoledronic acid');
+    expect(container.textContent).toContain('120 lượt');
+    await clickText('Dùng gợi ý này');
+    expect(container.textContent).toContain('Kiểm tra & xuất dữ liệu');
+    const spec = api.previewResearchArchiveVariables.mock.calls.at(-1)[0].variable_selection;
+    expect(spec.anchor).toMatchObject({ kind: 'drug', drug: 'Zoledronic acid' });
+    expect(spec.selected_variables.map(v => [v.id, v.aggregation, v.survey_label])).toEqual([
+      ['analysis_ready.sex', 'list', 'Giới'],
+      ['lab_results.days_from_admission', 'closest_before_anchor', 'Ngày XN trước'],
+      ['lab_results.days_from_admission', 'closest_after_anchor', 'Ngày XN sau'],
+    ]);
+    expect(spec.selected_variables[1]).toMatchObject({ window_from_days: -14, window_to_days: 0 });
+    expect(spec.conditions).toEqual([expect.objectContaining({ variable_id: 'analysis_ready.age', operator: '>=', value: '50' })]);
   });
 });

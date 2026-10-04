@@ -52,6 +52,7 @@ const { fetchHchanhForResearchRun, hchanhDefaultFiles, hchanhFileStatusPatch, or
 const { addRowsToResultDayIndex, buildResultDayIndex, ingestAllResearchResultsToPatientDb, khoOverlayNote, overlayHchanhFromPatientDb, overlayResultsFromPatientDb, resultDayIndexHasRange } = require('../research/patient_db_overlay');
 const { sanitizeVariableSelection, summarizeSelectionForRun } = require('../research/selection_runtime');
 const { buildPipelineInfo } = require('../research/pipeline_info');
+const { buildStudySuggestions } = require('../research/study_suggestions');
 const { normalizeArchiveLatest, normalizeInputSignature, normalizeRunOutputs } = require('../research/normalize');
 const { SCRIPT_PATH } = require('../research/worker_paths');
 const { appendCollectionVersions, readCollectionPartRows, readCollectionVersionIds, recoverCollectionTransactions, recoverPythonPatientCommits, runCollectionOrchestration, studyReadinessForRun, syncCollectionLedger } = require('../research/collection_runtime');
@@ -143,6 +144,18 @@ router.get('/research/archive/variable-catalog', (req, res) => {
     const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
     const catalog = buildVariableCatalog(runDir, { redact });
     return res.json({ status: 'ok', run_id: runId || '', redacted: redact, catalog });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+// Gợi ý đề tài từ dữ liệu đang có trong kho (nhóm người bệnh đủ lớn + biến + điều kiện).
+router.get('/research/archive/study-suggestions', (req, res) => {
+  try {
+    const runId = resolveArchiveRunId(String(req.query.runId || 'latest'));
+    const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
+    if (!runDir || !fs.existsSync(runDir)) return res.json({ status: 'ok', suggestions: [], total_encounters: 0 });
+    return res.json({ status: 'ok', ...buildStudySuggestions(runDir) });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }

@@ -6,6 +6,7 @@
 //     "Lưu thành nghiên cứu" khi cần theo dõi tiếp hoặc lấy bổ sung từ EMR.
 // Màn hình chỉ hiện thống kê, không hiện dữ liệu từng lượt.
 import { useEffect, useMemo, useState } from 'react';
+import * as api from '../../api.js';
 import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import { compactNumber, text } from './researchFormat.js';
@@ -89,6 +90,79 @@ function AnchorPicker({ anchor, setAnchor, drugNames }) {
         (vd. xét nghiệm trong 14 ngày trước truyền, thuốc dùng trong 3 ngày sau truyền).
       </div>
     </fieldset>
+  );
+}
+
+const DESIGN_TONE = { describe: [C.blue, C.blueBg], risk: [C.amber, C.amberBg], before_after: [C.green, C.greenBg] };
+
+// Gợi ý đề tài từ dữ liệu kho cho người chưa biết nghiên cứu gì: nhóm người bệnh đủ lớn, dữ liệu
+// sẵn có, kiểu thiết kế, biến và điều kiện dựng sẵn. Bấm "Dùng gợi ý này" để điền vào các bước.
+function SuggestionPanel({ onUse, catalogReady }) {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const load = async () => {
+    setOpen(true);
+    if (data) return;
+    setLoading(true); setError('');
+    try { setData(await api.getResearchStudySuggestions()); }
+    catch (e) { setError(String(e.message || e)); }
+    finally { setLoading(false); }
+  };
+  const chip = (label, value) => (
+    <span style={{ fontSize: FS.xs, color: value >= 50 ? C.text2 : C.text3 }}>{label} <b style={{ color: value >= 50 ? C.text : C.text3 }}>{value}%</b></span>
+  );
+  return (
+    <section style={{ ...card, borderColor: C.blueBorder, background: open ? C.surface : C.blueBg, display: 'grid', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 320px' }}>
+          <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Chưa biết nghiên cứu gì? Xem gợi ý từ dữ liệu kho</div>
+          <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 2 }}>
+            App xem kho có nhóm người bệnh nào đủ lớn và đủ dữ liệu, rồi đề xuất đề tài kèm sẵn biến và điều kiện chọn mẫu. Tính ngay trên máy chủ, dữ liệu không gửi ra ngoài.
+          </div>
+        </div>
+        {!open && <Btn variant="solidPrimary" onClick={load} disabled={!catalogReady} style={{ height: 32 }}>Xem gợi ý đề tài</Btn>}
+        {open && <Btn onClick={() => setOpen(false)} style={{ height: 30 }}>Ẩn gợi ý</Btn>}
+      </div>
+      {open && loading && <div style={{ fontSize: FS.sm, color: C.text2 }}><Spinner size={10} /> Đang phân tích dữ liệu kho...</div>}
+      {open && error && <div role="alert" style={{ fontSize: FS.sm, color: C.red }}>{error}</div>}
+      {open && data && !data.suggestions?.length && (
+        <EmptyState title="Chưa đủ dữ liệu để gợi ý" hint={`Cần nhóm có ít nhất ${data.min_encounters || 20} lượt điều trị. Hãy quét danh sách và thu thập thêm dữ liệu ở Kho dữ liệu gốc.`} />
+      )}
+      {open && !!data?.suggestions?.length && (
+        <>
+          <div style={{ fontSize: FS.xs, color: C.text3 }}>
+            {data.suggestions.length} gợi ý từ {compactNumber(data.total_encounters)} lượt điều trị trong kho{data.sampled ? ' (kho lớn: tính trên phần đầu của kho)' : ''}.
+            Gợi ý dựa trên số lượng và độ đầy đủ dữ liệu; giá trị khoa học và tính khả thi do nghiên cứu viên đánh giá.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))', gap: 10 }}>
+            {data.suggestions.map(s => {
+              const [tone, bg] = DESIGN_TONE[s.design] || [C.text2, C.surface2];
+              return (
+                <article key={s.id} style={{ border: `1px solid ${C.border2}`, borderRadius: 8, padding: '10px 12px', display: 'grid', gap: 7, alignContent: 'start' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: FS.xs, fontWeight: 700, color: tone, background: bg, borderRadius: 999, padding: '1px 8px' }}>{s.design_label}</span>
+                    <span style={{ fontSize: FS.xs, color: C.text2 }}><b style={{ color: C.text }}>{compactNumber(s.stats.encounters)}</b> lượt · {compactNumber(s.stats.patients)} người bệnh</span>
+                  </div>
+                  <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text, lineHeight: 1.4 }}>{s.title}</div>
+                  <div style={{ fontSize: FS.xs, color: C.text2 }}>Kết cục chính: {s.outcome}</div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    {chip('Có XN', s.stats.with_labs)}{chip('CĐHA', s.stats.with_imaging)}{chip('PT/TT', s.stats.with_surgery)}{chip('Thuốc', s.stats.with_meds)}
+                  </div>
+                  <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.45 }}>
+                    {s.variables.length} biến: {s.variables.slice(0, 8).map(v => v.survey_label).join(', ')}{s.variables.length > 8 ? ', …' : ''}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <Btn variant="primary" onClick={() => onUse(s)} style={{ height: 30 }}>Dùng gợi ý này</Btn>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -196,6 +270,7 @@ function StepVariables(props) {
   } = props;
   const aggregationOptions = VARIABLE_AGGREGATIONS.filter(([key]) => variableAnchor || !ANCHOR_AGGREGATIONS.has(key));
   const setWindow = (id, patch) => setVariableWindows(prev => ({ ...prev, [id]: { ...(prev[id] || {}), ...patch } }));
+  const addVariant = (v) => props.setSelectedVariableIds(prev => new Set([...prev, `${v.id}@@${Date.now()}`]));
   if (variableCatalogLoading) return <div style={{ ...card, color: C.text2 }}><Spinner size={11} /> Đang lập danh mục biến...</div>;
   if (!variableCatalog) {
     return <div style={card}><EmptyState
@@ -269,20 +344,26 @@ function StepVariables(props) {
           {selectedVariables.map(v => {
             const repeated = !SINGLE_ROW_TABLES.includes(String(v.table || ''));
             return (
-              <div key={v.id} style={{ border: `1px solid ${C.border2}`, borderRadius: 7, padding: '7px 8px', display: 'grid', gap: 5 }}>
+              <div key={v.key} style={{ border: `1px solid ${C.border2}`, borderRadius: 7, padding: '7px 8px', display: 'grid', gap: 5 }}>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <span style={{ flex: 1, minWidth: 0, fontSize: FS.sm, fontWeight: 700, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.display_label}</span>
-                  <button type="button" aria-label={`Bỏ biến ${v.display_label}`} onClick={() => toggleVariable(v.id)}
+                  <button type="button" aria-label={`Bỏ biến ${v.display_label}`} onClick={() => toggleVariable(v.key)}
                     style={{ border: 0, background: 'transparent', color: C.text3, cursor: 'pointer', fontSize: FS.md, padding: '0 4px' }}>✕</button>
                 </div>
-                <input value={variableSurveyLabels[v.id] ?? v.display_label ?? v.name}
-                  onChange={e => setVariableSurveyLabels(prev => ({ ...prev, [v.id]: e.target.value }))}
+                {repeated && (
+                  <button type="button" onClick={() => addVariant(v)} title="Lấy thêm biến này một lần nữa với cách lấy/cửa sổ khác (vd. trước và sau mốc)"
+                    style={{ justifySelf: 'start', border: 0, background: 'transparent', color: C.blue, cursor: 'pointer', fontSize: FS.xs, padding: 0, fontFamily: 'inherit' }}>
+                    + Lấy thêm một lần (cách lấy khác)
+                  </button>
+                )}
+                <input value={variableSurveyLabels[v.key] ?? v.display_label ?? v.name}
+                  onChange={e => setVariableSurveyLabels(prev => ({ ...prev, [v.key]: e.target.value }))}
                   aria-label="Tên cột khi xuất" title="Tên cột khi xuất dữ liệu (theo phiếu khảo sát)"
                   style={{ ...inp, height: 28, fontSize: FS.xs }} />
                 {repeated && (
-                  <select value={variableAggregations[v.id] || 'list'} aria-label="Cách lấy khi một lượt có nhiều giá trị"
+                  <select value={variableAggregations[v.key] || 'list'} aria-label="Cách lấy khi một lượt có nhiều giá trị"
                     title="Một lượt điều trị có nhiều giá trị: chọn cách lấy"
-                    onChange={e => setVariableAggregations(prev => ({ ...prev, [v.id]: e.target.value }))}
+                    onChange={e => setVariableAggregations(prev => ({ ...prev, [v.key]: e.target.value }))}
                     style={{ ...inp, height: 28, fontSize: FS.xs }}>
                     {aggregationOptions.map(([key, l]) => <option key={key} value={key}>{l}</option>)}
                   </select>
@@ -291,10 +372,10 @@ function StepVariables(props) {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: FS.xs, color: C.text2, flexWrap: 'wrap' }}
                     title="Để trống = không giới hạn. Số âm là trước mốc, 0 là ngày mốc, số dương là sau mốc.">
                     <span>Chỉ lấy từ ngày</span>
-                    <input type="number" value={variableWindows[v.id]?.from ?? ''} onChange={e => setWindow(v.id, { from: e.target.value })}
+                    <input type="number" value={variableWindows[v.key]?.from ?? ''} onChange={e => setWindow(v.key, { from: e.target.value })}
                       aria-label="Từ ngày so với mốc" placeholder="-14" style={{ ...inp, width: 58, height: 26, fontSize: FS.xs }} />
                     <span>đến</span>
-                    <input type="number" value={variableWindows[v.id]?.to ?? ''} onChange={e => setWindow(v.id, { to: e.target.value })}
+                    <input type="number" value={variableWindows[v.key]?.to ?? ''} onChange={e => setWindow(v.key, { to: e.target.value })}
                       aria-label="Đến ngày so với mốc" placeholder="0" style={{ ...inp, width: 58, height: 26, fontSize: FS.xs }} />
                     <span>so với mốc</span>
                   </div>
@@ -343,7 +424,7 @@ function StepConditions({ allCatalogVariables, selectedVariables, variableCondit
         style={{ ...inp, height: 34, maxWidth: 420 }}>
         <option value="">+ Thêm điều kiện theo biến…</option>
         {!!selectedVariables.length && <optgroup label="Biến đã chọn">
-          {selectedVariables.map(v => <option key={v.id} value={v.id}>{v.display_label}</option>)}
+          {[...new Map(selectedVariables.map(v => [v.id, v])).values()].map(v => <option key={v.id} value={v.id}>{v.display_label}</option>)}
         </optgroup>}
         <optgroup label="Biến khác trong kho">
           {others.slice(0, 500).map(v => <option key={v.id} value={v.id}>{v.clinical_group_label} · {v.display_label}</option>)}
@@ -450,6 +531,10 @@ export function CreateStudyView(props) {
     <div style={{ padding: '10px 12px 16px', display: 'grid', gap: 12 }}>
       <StepBar step={step} canOpen={canOpen} onOpen={setStep} />
 
+      {step === 1 && props.applySuggestion && (
+        <SuggestionPanel catalogReady={Boolean(props.allCatalogVariables?.length)}
+          onUse={s => { props.applySuggestion(s); setSurveyOverrides({}); setStep(4); }} />
+      )}
       {step === 1 && <StepInfo draft={variableStudyDraft} setDraft={setVariableStudyDraft}
         questionnaire={questionnaireVariables} setQuestionnaire={setQuestionnaireVariables} surveyLineCount={surveyLines.length}
         anchor={props.variableAnchor} setAnchor={props.setVariableAnchor} drugNames={drugNames} />}

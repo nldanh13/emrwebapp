@@ -523,7 +523,13 @@ export default function ResearchTab({ toast }) {
     // Theo nhóm lâm sàng; trong nhóm, biến nên dùng và đầy đủ hơn lên trước.
     return groupVariablesBySection(filtered).flatMap(section => section.variables);
   }, [browseCatalogVariables, variableQuery, variableGroupFilter, variableFillFilter]);
-  const selectedVariables = useMemo(() => allCatalogVariables.filter(v => selectedVariableIds.has(v.id)), [allCatalogVariables, selectedVariableIds]);
+  // Khóa chọn = id biến, hoặc "id@@lần" khi lấy cùng một biến nhiều lần với cách lấy khác nhau
+  // (vd. Canxi trước và sau dùng thuốc). Cách lấy, cửa sổ, tên cột lưu theo khóa chọn.
+  const catalogById = useMemo(() => new Map(allCatalogVariables.map(v => [v.id, v])), [allCatalogVariables]);
+  const selectedVariables = useMemo(() => [...selectedVariableIds].map(key => {
+    const base = catalogById.get(String(key).split('@@')[0]);
+    return base ? { ...base, key } : null;
+  }).filter(Boolean), [catalogById, selectedVariableIds]);
   const toggleVariable = useCallback((id) => {
     setSelectedVariableIds(prev => {
       const next = new Set(prev);
@@ -556,15 +562,15 @@ export default function ResearchTab({ toast }) {
       table_label: v.group_label || v.table_label || '',
       name: v.name,
       label: v.display_label || v.name,
-      survey_label: variableSurveyLabels[v.id] || v.display_label || v.name,
+      survey_label: variableSurveyLabels[v.key] || v.display_label || v.name,
       type: v.type,
       role: v.role,
       virtual_kind: v.virtual_kind || '',
       source_filter: v.source_filter || null,
       // Bỏ mốc thì cách lấy theo mốc không còn nghĩa: quay về liệt kê giá trị.
-      aggregation: (!variableAnchor && ANCHOR_AGGREGATIONS.has(variableAggregations[v.id])) ? 'list' : (variableAggregations[v.id] || 'list'),
-      ...(variableAnchor && (variableWindows[v.id]?.from !== undefined || variableWindows[v.id]?.to !== undefined)
-        ? { window_from_days: variableWindows[v.id]?.from ?? '', window_to_days: variableWindows[v.id]?.to ?? '' }
+      aggregation: (!variableAnchor && ANCHOR_AGGREGATIONS.has(variableAggregations[v.key])) ? 'list' : (variableAggregations[v.key] || 'list'),
+      ...(variableAnchor && (variableWindows[v.key]?.from !== undefined || variableWindows[v.key]?.to !== undefined)
+        ? { window_from_days: variableWindows[v.key]?.from ?? '', window_to_days: variableWindows[v.key]?.to ?? '' }
         : {}),
     })),
     ...(variableAnchor ? { anchor: { ...variableAnchor, label: variableAnchor.kind === 'drug' ? `Dùng ${variableAnchor.drug}` : '' } } : {}),
@@ -602,6 +608,31 @@ export default function ResearchTab({ toast }) {
       setVariablePreviewLoading(false);
     }
   }, [selectedVariables.length, buildVariableSpec, t]);
+
+  // Dùng một đề tài gợi ý: điền sẵn tên, mốc, biến (kể cả biến lấy nhiều lần), cách lấy,
+  // cửa sổ ngày, tên cột và điều kiện chọn mẫu. Người dùng vẫn sửa được ở các bước.
+  const applySuggestion = useCallback((s) => {
+    const keys = [];
+    const aggregations = {}; const windows = {}; const labels = {};
+    s.variables.forEach((v, i) => {
+      if (!catalogById.has(v.id)) return;
+      const key = keys.some(k => k.split('@@')[0] === v.id) ? `${v.id}@@s${i}` : v.id;
+      keys.push(key);
+      if (v.aggregation) aggregations[key] = v.aggregation;
+      if (v.window_from_days != null || v.window_to_days != null) windows[key] = { from: v.window_from_days ?? '', to: v.window_to_days ?? '' };
+      if (v.survey_label) labels[key] = v.survey_label;
+    });
+    setSelectedVariableIds(new Set(keys));
+    setVariableAggregations(aggregations);
+    setVariableWindows(windows);
+    setVariableSurveyLabels(labels);
+    setVariableAnchor(s.anchor || null);
+    setVariableConditions((s.conditions || []).filter(c => catalogById.has(c.variable_id)).map((c, i) => {
+      const variable = catalogById.get(c.variable_id);
+      return { id: `sg_${i}`, variable_id: c.variable_id, label: variable.display_label || variable.name, operator: c.operator, value: c.value || '', value2: '' };
+    }));
+    setVariableStudyDraft({ name: s.title, description: `${s.design_label}. Nhóm: ${s.cohort_label}. Kết cục chính: ${s.outcome}.` });
+  }, [catalogById]);
 
   // Xuất ngay từ kho theo biến + điều kiện (đã ẩn định danh), không cần tạo nghiên cứu.
   const exportVariableDataset = useCallback(async () => {
@@ -717,13 +748,13 @@ export default function ResearchTab({ toast }) {
       catalogGroupOptions, filteredCatalogVariables, allCatalogVariables, browseCatalogVariables,
       variableQuery, setVariableQuery, variableGroupFilter, setVariableGroupFilter, variableFillFilter, setVariableFillFilter,
       questionnaireVariables, setQuestionnaireVariables,
-      selectedVariableIds, selectedVariables, toggleVariable, addVariables, addCoreVariables,
+      selectedVariableIds, setSelectedVariableIds, selectedVariables, toggleVariable, addVariables, addCoreVariables,
       variableAggregations, setVariableAggregations, variableSurveyLabels, setVariableSurveyLabels,
       variableConditions, setVariableConditions, addConditionForVariable,
       variableAnchor, setVariableAnchor, variableWindows, setVariableWindows,
       variableStudyDraft, setVariableStudyDraft,
       variablePreview, variablePreviewLoading, variablePreviewError, loadVariablePreview,
-      createStudyFromVariableSelection, exportVariableDataset, variableExporting, busy,
+      createStudyFromVariableSelection, exportVariableDataset, variableExporting, applySuggestion, busy,
     }} />;
     return collectionWorkspace;
   };

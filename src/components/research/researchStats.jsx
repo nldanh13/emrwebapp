@@ -98,7 +98,7 @@ function VariableStatsTable({ variables = [] }) {
         </thead>
         <tbody>
           {variables.map(v => (
-            <tr key={v.id || v.output_column} style={{ borderBottom: `1px solid ${C.border2}`, verticalAlign: 'top' }}>
+            <tr key={v.output_column || v.id} style={{ borderBottom: `1px solid ${C.border2}`, verticalAlign: 'top' }}>
               <td style={{ padding: '8px 10px' }}>
                 <div style={{ fontWeight: 700, color: C.text }}>{v.survey_label}</div>
                 {v.source_label && v.source_label !== v.survey_label && <div style={{ fontSize: FS.xs, color: C.text3 }}>{v.source_label}</div>}
