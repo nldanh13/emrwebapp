@@ -51,18 +51,26 @@ function timePart(value) {
 }
 
 function repairSurgeryTimestamp(currentValue, itemTime, detailStart) {
+  // Giá trị hiện có trong cột chuẩn là bằng chứng ưu tiên cao nhất khi đã có ngày.
+  // Không được ghi đè một ngày PT hoàn chỉnh bằng ngày ở dòng danh sách, vì
+  // item.thoi_gian có thể là thời điểm hiển thị/ghi nhận của danh sách chứ không
+  // phải ngày PT thực tế.
+  const currentDate = datePart(currentValue);
+  const currentClock = timePart(currentValue);
+  if (currentDate) return `${currentDate}${currentClock ? ` ${currentClock}` : ''}`;
+
+  // Nếu detail có ngày rõ ràng thì dùng trực tiếp.
   const detailDate = datePart(detailStart);
   const detailClock = timePart(detailStart);
   if (detailDate) return `${detailDate}${detailClock ? ` ${detailClock}` : ''}`;
 
+  // Chỉ khi cột hiện tại thiếu ngày mới ghép ngày từ dòng danh sách với giờ PT
+  // trong detail. Đây là trường hợp legacy `Ngày phẫu thuật = 08:15`.
   const listDate = datePart(itemTime);
   const listClock = timePart(itemTime);
   if (listDate && detailClock) return `${listDate} ${detailClock}`;
   if (listDate) return `${listDate}${listClock ? ` ${listClock}` : ''}`;
 
-  const currentDate = datePart(currentValue);
-  const currentClock = timePart(currentValue);
-  if (currentDate) return `${currentDate}${currentClock ? ` ${currentClock}` : ''}`;
   return clean(currentValue);
 }
 
