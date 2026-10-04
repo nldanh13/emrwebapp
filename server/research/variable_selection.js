@@ -8,9 +8,23 @@ function normalizeText(value) {
   return stripMarks(value).toLowerCase().replace(/đ/g, 'd').replace(/\s+/g, ' ').trim();
 }
 
-function normalizedKey(value) {
-  return normalizeText(value).replace(/[^a-z0-9]+/g, '');
+// Ghi nhớ kết quả chuẩn hoá chuỗi: tên cột và tên thuốc/XN lặp lại rất nhiều lần khi quét
+// hàng trăm nghìn dòng, chuẩn hoá Unicode mỗi lần là phần tốn thời gian nhất.
+function memoizeText(fn, limit = 50000) {
+  const cache = new Map();
+  return value => {
+    const key = String(value ?? '');
+    let out = cache.get(key);
+    if (out === undefined) {
+      if (cache.size >= limit) cache.clear();
+      out = fn(key);
+      cache.set(key, out);
+    }
+    return out;
+  };
 }
+
+const normalizedKey = memoizeText(value => normalizeText(value).replace(/[^a-z0-9]+/g, ''));
 
 function safeSegment(value, fallback = '') {
   const s = stripMarks(value)
@@ -271,9 +285,7 @@ function hasActiveSelection(selection) {
   ));
 }
 
-function normalizeForFilter(value) {
-  return normalizeText(value).replace(/[^a-z0-9]+/g, ' ').trim();
-}
+const normalizeForFilter = memoizeText(value => normalizeText(value).replace(/[^a-z0-9]+/g, ' ').trim());
 
 function sourceFilterMatches(row, sourceFilter = {}) {
   for (const [key, expectedRaw] of Object.entries(sourceFilter || {})) {
@@ -360,34 +372,60 @@ function timeInsideEncounter(value, admission, discharge) {
   return t >= a - 86400000 && t <= end + 86400000;
 }
 
+// Chỉ mục theo mã đợt / Mã NC / Mã BN cho từng bảng, lập một lần cho mỗi mảng dòng.
+// Trước đây mỗi lượt điều trị quét lại toàn bộ bảng (XN, thuốc...), nên thời gian tăng theo
+// bình phương dữ liệu: 500 lượt × 25.000 dòng XN mất ~110 giây. Có chỉ mục, mỗi lượt chỉ
+// xem đúng các dòng ứng viên của nó; kết quả giữ nguyên thứ tự và quy tắc ghép như cũ.
+const ROW_INDEX = new WeakMap();
+function rowIndex(list) {
+  let index = ROW_INDEX.get(list);
+  if (index) return index;
+  index = { byEid: new Map(), byRc: new Map(), noEidByRc: new Map(), noEidByPc: new Map(), noEidNoRcByPc: new Map() };
+  // allowEmpty: cách ghép cũ so "Mã BN dòng === Mã BN lượt" nên cả hai cùng rỗng vẫn khớp (khi ngày nằm trong đợt).
+  const push = (map, key, entry, allowEmpty = false) => { if (!key && !allowEmpty) return; const arr = map.get(key); if (arr) arr.push(entry); else map.set(key, [entry]); };
+  list.forEach((row, i) => {
+    const entry = { row, i, eid: encounterId(row), rc: researchCode(row), pc: patientCode(row) };
+    push(index.byEid, entry.eid, entry);
+    push(index.byRc, entry.rc, entry);
+    if (!entry.eid) {
+      push(index.noEidByRc, entry.rc, entry);
+      push(index.noEidByPc, entry.pc, entry, true);
+      if (!entry.rc) push(index.noEidNoRcByPc, entry.pc, entry, true);
+    }
+  });
+  ROW_INDEX.set(list, index);
+  return index;
+}
+
 function relatedRows(rows, identity) {
   const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return [];
   const pc = String(identity.patient_code || '').trim();
   const rc = String(identity.research_code || '').trim();
   const eid = String(identity.encounter_id || '').trim();
   const admission = String(identity.admission_date || '').trim();
   const discharge = String(identity.discharge_date || '').trim();
-  return list.filter(row => {
-    const rowEid = encounterId(row);
-    const rowRc = researchCode(row);
-    const rowPc = patientCode(row);
-
-    if (eid) {
-      if (rowEid) return rowEid === eid;
-      if (rc && rowRc) return rowRc === rc;
-      if (rowPc !== pc) return false;
-      const event = eventTime(row);
-      return Boolean(event && timeInsideEncounter(event, admission, discharge));
-    }
+  const index = rowIndex(list);
+  const inside = entry => {
+    const event = eventTime(entry.row);
+    return Boolean(event && timeInsideEncounter(event, admission, discharge));
+  };
+  let picked;
+  if (eid) {
+    // Dòng có mã đợt: đúng mã đợt. Không mã đợt: theo Mã NC nếu cả hai có, còn lại Mã BN + thời gian.
+    picked = [...(index.byEid.get(eid) || [])];
     if (rc) {
-      if (rowRc) return rowRc === rc;
-      if (rowEid) return false;
-      if (rowPc !== pc) return false;
-      const event = eventTime(row);
-      return Boolean(event && timeInsideEncounter(event, admission, discharge));
+      picked.push(...(index.noEidByRc.get(rc) || []));
+      picked.push(...(index.noEidNoRcByPc.get(pc) || []).filter(inside));
+    } else {
+      picked.push(...(index.noEidByPc.get(pc) || []).filter(inside));
     }
-    return Boolean(pc && rowPc === pc && !rowEid && !rowRc);
-  });
+  } else if (rc) {
+    picked = [...(index.byRc.get(rc) || []), ...(index.noEidNoRcByPc.get(pc) || []).filter(inside)];
+  } else {
+    picked = pc ? [...(index.noEidNoRcByPc.get(pc) || [])] : [];
+  }
+  return picked.sort((a, b) => a.i - b.i).map(entry => entry.row);
 }
 
 function conditionRowsForSource(sourceRow, condition, tableRowsByKey) {

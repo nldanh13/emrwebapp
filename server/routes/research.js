@@ -58,8 +58,8 @@ const { SCRIPT_PATH } = require('../research/worker_paths');
 const { appendCollectionVersions, readCollectionPartRows, readCollectionVersionIds, recoverCollectionTransactions, recoverPythonPatientCommits, runCollectionOrchestration, studyReadinessForRun, syncCollectionLedger } = require('../research/collection_runtime');
 const { RESEARCH_SCOPE_LOCKS, datasetVerifyResponse, identifiedAccessStatus, lockedResearchRoute, researchResponseShouldRedact, researchScopeKey, sendCsvFile } = require('../research/research_http');
 
-const VARIABLE_PREVIEW_MAX_SOURCE_ROWS = Math.max(5000, Number(process.env.EMR_VARIABLE_PREVIEW_MAX_SOURCE_ROWS || 100000));
-const VARIABLE_PREVIEW_MAX_ENCOUNTERS = Math.max(100, Number(process.env.EMR_VARIABLE_PREVIEW_MAX_ENCOUNTERS || 10000));
+const VARIABLE_PREVIEW_MAX_SOURCE_ROWS = Math.max(5000, Number(process.env.EMR_VARIABLE_PREVIEW_MAX_SOURCE_ROWS || 1000000));
+const VARIABLE_PREVIEW_MAX_ENCOUNTERS = Math.max(100, Number(process.env.EMR_VARIABLE_PREVIEW_MAX_ENCOUNTERS || 50000));
 
 router.post('/research/archive/dismiss-alert', (_req, res) => {
   try {
@@ -180,6 +180,7 @@ router.post('/research/archive/variable-preview', (req, res) => {
     const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
     if (!runDir || !fs.existsSync(runDir)) return res.status(400).json({ status: 'error', message: 'Chưa có dữ liệu chuẩn hóa để xem trước.' });
 
+    const startedAt = Date.now();
     const { dataset, summary, source_total: sourceTotal, source_limited: sourceLimited } = summarizeSelectionForRun(runDir, selection, {
       maxEncounters: VARIABLE_PREVIEW_MAX_ENCOUNTERS,
       maxSourceRows: VARIABLE_PREVIEW_MAX_SOURCE_ROWS,
@@ -204,6 +205,7 @@ router.post('/research/archive/variable-preview', (req, res) => {
       preview_limit: limit,
       source_total: sourceTotal,
       source_limited: sourceLimited,
+      elapsed_ms: Date.now() - startedAt,
       removed_columns: [...(redacted.removed_columns || []), ...sensitiveOutput],
     });
   } catch (err) {

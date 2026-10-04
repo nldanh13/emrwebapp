@@ -434,6 +434,17 @@ function StepConditions({ allCatalogVariables, selectedVariables, variableCondit
   );
 }
 
+// Đồng hồ chạy trong lúc server tính thống kê, để biết việc vẫn đang chạy và đã mất bao lâu.
+function ElapsedTimer() {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const id = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 500);
+    return () => clearInterval(id);
+  }, []);
+  return <span style={{ fontVariantNumeric: 'tabular-nums' }}>{seconds} giây</span>;
+}
+
 function StepReview({ draft, selectedVariables, variableConditions, variablePreview, variablePreviewLoading, variablePreviewError, loadVariablePreview }) {
   const summary = variablePreview?.summary || null;
   return (
@@ -445,7 +456,12 @@ function StepReview({ draft, selectedVariables, variableConditions, variablePrev
         <Btn onClick={loadVariablePreview} disabled={variablePreviewLoading} loading={variablePreviewLoading} style={{ height: 30 }}>Tính lại thống kê</Btn>
       </div>
       {variablePreviewError && <div role="alert" style={{ ...card, color: C.red, background: C.redBg, borderColor: C.redBorder }}>{variablePreviewError}</div>}
-      {variablePreviewLoading && !summary && <div style={{ ...card, color: C.text2 }}><Spinner size={11} /> Đang tính thống kê trên kho...</div>}
+      {variablePreviewLoading && (
+        <div role="status" style={{ ...card, color: C.text2, fontSize: FS.sm, display: 'grid', gap: 4 }}>
+          <div><Spinner size={11} /> Đang đọc kho và tính thống kê… <b style={{ color: C.text }}><ElapsedTimer /></b></div>
+          <div style={hint}>Server đọc bảng lượt điều trị và các bảng liên quan (xét nghiệm, thuốc…), lọc theo điều kiện rồi tính từng biến. Thường xong trong vài giây; kho càng lớn thì càng lâu, khoảng 1 giây cho mỗi 3.000 lượt.</div>
+        </div>
+      )}
       {summary && (
         <>
           {summary.funnel?.length > 1 && (
@@ -480,6 +496,9 @@ function StepReview({ draft, selectedVariables, variableConditions, variablePrev
               </div>
             )}
             {variablePreview.source_limited && <div style={{ ...hint, color: C.amber }}>Kho lớn: thống kê tính trên phần đầu của kho; số chính xác có sau khi tạo và thu thập.</div>}
+            {Number.isFinite(variablePreview.elapsed_ms) && !variablePreviewLoading && (
+              <div style={{ ...hint, color: C.text3 }}>Tính xong trong {(variablePreview.elapsed_ms / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} giây.</div>
+            )}
           </section>
           <section>
             <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text, margin: '2px 0 8px' }}>Đo lường từng biến</div>
