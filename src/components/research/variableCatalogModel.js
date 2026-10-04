@@ -336,6 +336,19 @@ const VARIABLE_AGGREGATIONS = [
 // Cách lấy theo mốc chỉ có nghĩa khi nghiên cứu đã đặt mốc thời gian.
 const ANCHOR_AGGREGATIONS = new Set(['closest_before_anchor', 'closest_after_anchor']);
 
+// Biến dẫn xuất kiểu "có/không" (dùng hoạt chất/thuốc/nhóm thuốc, có CĐHA, có phẫu thuật): mặc định
+// xuất Có (1) / Không (0) cho mỗi lượt. Liệt kê giá trị sẽ ra tên thuốc/dịch vụ, và lượt không dùng bị
+// tính là "thiếu dữ liệu".
+const PRESENCE_VIRTUAL_KINDS = new Set(['active_ingredient', 'drug_item', 'drug_group', 'imaging_modality', 'procedure_item']);
+
+function isPresenceVariable(variable) {
+  return PRESENCE_VIRTUAL_KINDS.has(String(variable?.virtual_kind || ''));
+}
+
+function defaultAggregationFor(variable) {
+  return isPresenceVariable(variable) ? 'any' : 'list';
+}
+
 function aggregationLabel(value) {
   return VARIABLE_AGGREGATIONS.find(([key]) => key === value)?.[1] || 'Liệt kê giá trị';
 }
@@ -421,4 +434,7 @@ export {
   operatorLabel,
   VARIABLE_AGGREGATIONS,
   aggregationLabel,
+  PRESENCE_VIRTUAL_KINDS,
+  isPresenceVariable,
+  defaultAggregationFor,
 };

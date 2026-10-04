@@ -16,7 +16,7 @@ import { Btn, Spinner } from './shared.jsx';
 import * as api from '../api.js';
 import { compactNumber, lower, saveBlob, text } from './research/researchFormat.js';
 import { ARCHIVE_API_SCOPE, ARCHIVE_SCOPE, datasetCount, todayInputDate } from './research/researchScope.js';
-import { ANCHOR_AGGREGATIONS, VARIABLE_CLINICAL_GROUPS, dedupeWideTableVariables, enhanceCatalogVariable, groupVariablesBySection } from './research/variableCatalogModel.js';
+import { ANCHOR_AGGREGATIONS, defaultAggregationFor, VARIABLE_CLINICAL_GROUPS, dedupeWideTableVariables, enhanceCatalogVariable, groupVariablesBySection } from './research/variableCatalogModel.js';
 import { buildGeneralOverviewModel, diffProgressSnapshots, summarizeStatusRows } from './research/researchStatusModel.js';
 import { ModeButton, SectionHead, SideItem, StatBadge, actionBtn, inp } from './research/researchUi.jsx';
 import { CollectionWorkspace } from './research/CollectionWorkspace.jsx';
@@ -679,7 +679,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       virtual_kind: v.virtual_kind || '',
       source_filter: v.source_filter || null,
       // Bỏ mốc thì cách lấy theo mốc không còn nghĩa: quay về liệt kê giá trị.
-      aggregation: (!variableAnchor && ANCHOR_AGGREGATIONS.has(variableAggregations[v.key])) ? 'list' : (variableAggregations[v.key] || 'list'),
+      aggregation: (!variableAnchor && ANCHOR_AGGREGATIONS.has(variableAggregations[v.key])) ? 'list' : (variableAggregations[v.key] || defaultAggregationFor(v)),
       ...(variableAnchor && (variableWindows[v.key]?.from !== undefined || variableWindows[v.key]?.to !== undefined)
         ? { window_from_days: variableWindows[v.key]?.from ?? '', window_to_days: variableWindows[v.key]?.to ?? '' }
         : {}),
