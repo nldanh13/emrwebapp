@@ -27,7 +27,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { ROOT_DIR, RESEARCH_STORE_DIR } = require('../constants');
-const { ensureDir, writeFileAtomic, nowFileStamp } = require('../utils/file');
+const { ensureDir, writeFileAtomic, nowFileStamp, readJsonSafe } = require('../utils/file');
 const { runPython, fmtPyError } = require('../services/python_runner');
 const { getRuntimePaths } = require('../services/session');
 const { enqueueHeavy, registerCancel, unregisterCancel, isCancelRequested } = require('../services/task_queue');
@@ -55,7 +55,7 @@ const { sanitizeVariableSelection, summarizeSelectionForRun } = require('../rese
 const { buildPipelineInfo } = require('../research/pipeline_info');
 const { buildStudySuggestions } = require('../research/study_suggestions');
 const { normalizeInputSignature, normalizeRunOutputs } = require('../research/normalize');
-const { runNormalizeJob } = require('../research/normalize_runner');
+const { runNormalizeJob, normalizeRunning } = require('../research/normalize_runner');
 const { SCRIPT_PATH } = require('../research/worker_paths');
 const { appendCollectionVersions, readCollectionPartRows, readCollectionVersionIds, recoverCollectionTransactions, recoverPythonPatientCommits, runCollectionOrchestration, studyReadinessForRun, syncCollectionLedger } = require('../research/collection_runtime');
 const { RESEARCH_SCOPE_LOCKS, datasetVerifyResponse, listRunningResearch, withScopeRunning, identifiedAccessStatus, lockedResearchRoute, researchResponseShouldRedact, researchScopeKey, sendCsvFile } = require('../research/research_http');
@@ -342,8 +342,9 @@ router.use(require('./research_studies'));
 // Tác vụ đang chạy của kho và các nghiên cứu (nhẹ: đọc khóa trong bộ nhớ và file trạng thái).
 router.get('/research/running', (_req, res) => {
   try {
-    const running = listRunningResearch((key) => {
+    const running = listRunningResearch((key, lane) => {
       const studyId = key.startsWith('study:') ? key.slice(6) : '';
+      // key là phạm vi (đã bỏ hậu tố làn); task chỉ là của Thu thập, tiến độ chuẩn hóa đọc riêng.
       let runDir = '';
       let studyName = '';
       if (studyId) {
@@ -355,9 +356,15 @@ router.get('/research/running', (_req, res) => {
         runDir = runId ? path.join(archiveRunsDir(), runId) : '';
       }
       const task = runDir ? activeResearchTask(runDir) : null;
+      // Chuẩn hóa ghi bước đang chạy (từ tiến trình con) vào normalize_state.json.
+      const normState = runDir ? readJsonSafe(path.join(runDir, 'normalize_state.json'), null) : null;
       return {
         study_name: studyName,
-        task: task ? { label: task.label, status: task.status, message: task.message || '', summary: task.summary || {}, heartbeat_at: task.heartbeat_at || '' } : null,
+        normalize: lane === 'normalize' && normState?.status === 'running' ? {
+          stage: String(normState.stage || 'Bắt đầu'), stage_index: Number(normState.stage_index || 0),
+          stage_total: Number(normState.stage_total || 8), started_at: String(normState.started_at || ''),
+        } : null,
+        task: task && lane !== 'normalize' ? { label: task.label, status: task.status, message: task.message || '', summary: task.summary || {}, heartbeat_at: task.heartbeat_at || '' } : null,
       };
     });
     return res.json({ status: 'ok', running, server_time: nowIso() });
@@ -448,9 +455,12 @@ router.get('/research/archive/case-trace', (req, res) => {
   }
 });
 
-lockedResearchRoute(router, 'post', '/research/archive/normalize', 'Chuẩn hóa', async (_req, res) => {
+// Chuẩn hóa có khóa riêng (không dùng khóa Thu thập): đang thu thập vẫn chuẩn hóa được và ngược lại.
+// Mỗi lúc một lần chuẩn hóa; chạy ở tiến trình riêng nên máy chủ không bị treo.
+router.post('/research/archive/normalize', async (_req, res) => {
   try {
-    // Chạy ở tiến trình riêng: máy chủ vẫn trả lời tiến độ/các màn hình khác trong lúc chuẩn hóa.
+    const busy = normalizeRunning('archive');
+    if (busy) return res.status(409).json({ status: 'error', code: 'NORMALIZE_BUSY', message: `Đang chuẩn hóa kho (từ ${busy.since}). Chờ lần này xong rồi chạy lại nếu cần.` });
     const result = await runNormalizeJob({ kind: 'archive' });
     const archive = result.counts?.cached ? readArchive() : updateArchive({ last_normalized_at: nowIso() });
     return res.json({ status: 'ok', message: result.counts?.cached ? 'Dữ liệu đã chuẩn hóa sẵn, không cần chạy lại.' : `Đã chuẩn hóa kho dữ liệu gốc.${khoOverlayNote(result.counts)}`, archive, ...result });

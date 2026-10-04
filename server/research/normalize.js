@@ -104,6 +104,17 @@ function normalizedOutputsAvailable(runDir) {
 // tạm rồi đổi tên), nên nếu tiến trình chết giữa chừng, thư mục có thể lẫn bảng mới
 // và cũ: trạng thái "running" còn sót lại là dấu hiệu để chặn tạo dataset cuối và
 // buộc lần Chuẩn hóa sau chạy lại đầy đủ thay vì dùng cache.
+// Ghi bước đang chạy vào normalize_state.json (đang "running") để giao diện hiện tiến độ chuẩn hóa.
+const NORMALIZE_STAGE_TOTAL = 8;
+function markNormalizeStage(dir, index, label) {
+  try {
+    const statePath = path.join(dir, quality.NORMALIZE_STATE_FILE);
+    const state = readJsonSafe(statePath, null);
+    if (!state || state.status !== 'running') return;
+    writeJsonAtomic(statePath, { ...state, stage: label, stage_index: index, stage_total: NORMALIZE_STAGE_TOTAL, stage_at: nowIso() });
+  } catch (_) { /* tiến độ chỉ để hiển thị */ }
+}
+
 function normalizeRunOutputs(runDir, options = {}) {
   const dir = path.resolve(runDir);
   ensureDir(dir);
@@ -172,6 +183,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   const preset = ANALYSIS_PRESETS[analysisConfig.preset] || ANALYSIS_PRESETS.general;
   const customFields = Array.isArray(analysisConfig.custom_fields) ? analysisConfig.custom_fields : [];
 
+  markNormalizeStage(dir, 1, 'Đọc dữ liệu thô và lấy bổ sung từ Kho người bệnh');
   const sourceTable = readCsvTable(path.join(dir, 'research_source.csv'), Number.MAX_SAFE_INTEGER);
   const patientTable = readCsvTable(path.join(dir, 'mau_nghien_cuu.csv'), Number.MAX_SAFE_INTEGER);
   const deepTable = readCsvTable(path.join(dir, 'du_lieu_goc.csv'), Number.MAX_SAFE_INTEGER);
@@ -204,6 +216,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     console.warn('[RESEARCH] Không đọc được Kho người bệnh khi chuẩn hoá:', err.message);
   }
 
+  markNormalizeStage(dir, 2, 'Ghép lượt điều trị');
   const encounterSourceRows = combineEncounterSources({
     initialRows: sourceTable.rows.length ? sourceTable.rows : initialTable.rows,
     patientRows: patientTable.rows,
@@ -336,6 +349,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   }
   const patients = Array.from(patientByCode.values()).sort((a, b) => String(a.patient_code).localeCompare(String(b.patient_code)));
 
+  markNormalizeStage(dir, 3, 'Xét nghiệm và CĐHA');
   let labRaw = readCsvTable(path.join(dir, 'lich_su_xn.csv'), Number.MAX_SAFE_INTEGER).rows;
   let imagingRaw = readCsvTable(path.join(dir, 'lich_su_cdha.csv'), Number.MAX_SAFE_INTEGER).rows;
   try {
@@ -444,6 +458,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   }
   const diagnoses = dedupeByHash(diagnosisRows);
 
+  markNormalizeStage(dir, 4, 'Phẫu thuật, y lệnh, diễn biến');
   const surgeryRaw = [
     ...hchanhSurgeryTable.rows,
     ...readCsvTable(path.join(dir, 'lich_su_phau_thuat.csv'), Number.MAX_SAFE_INTEGER).rows,
@@ -693,6 +708,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     const old = imagingTextByEncounter.get(key) || '';
     imagingTextByEncounter.set(key, `${old}\n${img.service_name_raw || ''}\n${img.result_text || ''}\n${img.conclusion_text || ''}`.trim());
   }
+  markNormalizeStage(dir, 5, 'Bảng phân tích');
   const analysisReady = finalEncounters.map(enc => {
     const p = patientByCode.get(enc.patient_code) || {};
     const labs = firstLabByEncounter.get(enc.encounter_id) || {};
@@ -891,6 +907,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   savePatientLink(patientLink);
 
   writeCsv(path.join(dir, 'patients.csv'), NORMALIZED_COLUMNS.patients, patients);
+  markNormalizeStage(dir, 6, 'Ghi bảng chuẩn');
   writeCsv(path.join(dir, 'encounters.csv'), NORMALIZED_COLUMNS.encounters, finalEncounters);
   writeCsv(path.join(dir, 'diagnoses.csv'), NORMALIZED_COLUMNS.diagnoses, diagnoses);
   writeCsv(path.join(dir, 'lab_results.csv'), NORMALIZED_COLUMNS.lab_results, labResults);
@@ -985,6 +1002,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   let database = null;
   let databaseError = '';
   try {
+    markNormalizeStage(dir, 7, 'Nạp cơ sở dữ liệu SQLite');
     database = syncDatabaseForRun(dir, { runId, inputSignature, force: true });
   } catch (err) {
     databaseError = String(err?.message || err);
@@ -995,6 +1013,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     : publicDatabaseInfo(databaseInfo(datasetDirFromRunDir(dir)));
   const databaseStatus = databaseError ? 'failed' : 'ok';
 
+  markNormalizeStage(dir, 8, 'Kiểm tra chất lượng');
   const qaReport = quality.buildQualityReport({
     runId,
     runDir: dir,
@@ -1042,8 +1061,9 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     console.warn('[RESEARCH][HISTORY] Không ghi được normalize_history.jsonl:', err.message);
   }
 
+  // Đọc lại manifest ngay trước khi ghi: Thu thập có thể chạy song song và vừa ghi thêm thông tin.
   writeJsonAtomic(manifestPath, {
-    ...manifest,
+    ...(readJsonSafe(manifestPath, null) || manifest),
     normalized_at: nowIso(),
     normalized_schema_version: NORMALIZED_SCHEMA_VERSION,
     normalized_input_signature: inputSignature,

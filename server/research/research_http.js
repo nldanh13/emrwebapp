@@ -134,14 +134,20 @@ function researchScopeKey(req) {
 // describeScope(key) trả thêm { study_id, study_name, task } (task: tiến độ ghi bởi worker).
 function listRunningResearch(describeScope = () => ({}), now = Date.now()) {
   return [...RESEARCH_SCOPE_LOCKS.entries()].map(([key, lock]) => {
+    // Khóa của quy trình riêng có hậu tố làn, vd. "archive:normalize", "study:abc:normalize".
+    const lane = lock.lane || '';
+    const scope = lane && key.endsWith(`:${lane}`) ? key.slice(0, -(lane.length + 1)) : key;
     let extra = {};
-    try { extra = describeScope(key) || {}; } catch (_) { extra = {}; }
+    try { extra = describeScope(scope, lane) || {}; } catch (_) { extra = {}; }
     const sinceMs = Date.parse(lock.since);
     return {
       scope_key: key,
-      kind: key.startsWith('study:') ? 'study' : 'archive',
-      study_id: key.startsWith('study:') ? key.slice(6) : '',
+      scope,
+      lane,
+      kind: scope.startsWith('study:') ? 'study' : 'archive',
+      study_id: scope.startsWith('study:') ? scope.slice(6) : '',
       label: lock.label,
+      ...(lock.reason ? { reason: lock.reason } : {}),
       since: lock.since,
       elapsed_ms: Number.isFinite(sinceMs) ? Math.max(0, now - sinceMs) : 0,
       ...extra,

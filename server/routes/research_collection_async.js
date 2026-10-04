@@ -32,11 +32,11 @@ const {
 } = require('../research/run_registry');
 const { readResearchHchanhSourceRows } = require('../research/research_source');
 const { researchHeadlessFromBody, fetchHchanhForResearchRun } = require('../research/hchanh_fetch');
-const { normalizeRunOutputs } = require('../research/normalize');
 const {
   refreshPolicyFor,
   runCollectionOrchestration,
   runXnCdhaSubsetForCollection,
+  scheduleNormalizeAfterCollection,
   syncCollectionLedger,
 } = require('../research/collection_runtime');
 const { beginResearchTask, updateResearchTask, finishResearchTask } = require('../research/progress_snapshot');
@@ -147,7 +147,9 @@ async function runDirectPatient(ctx, sc, rows, requestedParts, headless) {
 
   if (isCancelRequested(ctx.sid) || results.xn_cdha?.stopped) return { cancelled: true, results };
 
-  results.normalized = normalizeRunOutputs(sc.runDir, { sourceRunId: sc.runId });
+  // Chuẩn hóa là quy trình riêng: xếp hàng chạy nền, không chặn máy chủ.
+  scheduleNormalizeAfterCollection({ runDir: sc.runDir, runId: sc.runId, isArchive: sc.isArchive, study: sc.study || null, sourceRows: sc.sourceRows, reason: 'Sau khi lấy ca' });
+  results.normalized = { deferred: true };
   syncCollectionLedger(sc.runDir, sc.sourceRows);
   return { cancelled: false, results };
 }
@@ -272,13 +274,16 @@ async function handleCollectAccepted(req, res, studyIdParam = '') {
             study: sc.study,
           };
           result = await runCollectionOrchestration(ctx, options);
+          const r = result?.report || {};
+          if (Number(r.fetched_encounters || 0) + Number(r.parts_backfilled || 0) + Number(r.parts_changed || 0) > 0) {
+            scheduleNormalizeAfterCollection({ runDir: sc.runDir, runId: sc.runId, isArchive: sc.isArchive, study: sc.study || null, sourceRows: sc.sourceRows, reason: 'Sau thu thập tự động' });
+          }
         }
 
         const cancelled = directPatientCode ? Boolean(result?.cancelled) : Boolean(result?.report?.cancelled);
         const metaPatch = {
           last_run_id: sc.runId,
           last_run_at: nowIso(),
-          last_normalized_at: nowIso(),
           last_collect_at: nowIso(),
         };
         if (sc.isArchive) updateArchive({ ...metaPatch, active_run_id: '', active_mode: '', ...(cancelled ? { stopped_at: nowIso() } : {}) });
@@ -286,7 +291,7 @@ async function handleCollectAccepted(req, res, studyIdParam = '') {
 
         const report = result?.report || null;
         const message = directPatientCode
-          ? (cancelled ? 'Đã dừng lấy trực tiếp người bệnh. Phần đã lấy được vẫn được giữ.' : 'Đã lấy trực tiếp người bệnh và chuẩn hóa lại dữ liệu.')
+          ? (cancelled ? 'Đã dừng lấy trực tiếp người bệnh. Phần đã lấy được vẫn được giữ.' : 'Đã lấy trực tiếp người bệnh; chuẩn hóa đang chạy nền.')
           : `${report?.cancelled ? 'Đã dừng' : 'Xong'}: lấy ${report?.fetched_encounters || 0} lượt, bỏ qua ${report?.skipped_unchanged || 0} lượt không đổi, lỗi còn tồn ${report?.selenium_errors_open || 0} phần.`;
         finishResearchTask(sc.runDir, task.id, cancelled ? 'cancelled' : (report?.errors?.length ? 'error' : 'done'), { message });
         return result;
