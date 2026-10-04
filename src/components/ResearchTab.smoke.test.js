@@ -395,4 +395,16 @@ describe('ResearchTab (khói)', () => {
     expect(text).toContain('Đã kết thúc: Lấy dữ liệu');
     expect(onRunningChange).toHaveBeenLastCalledWith(null);
   });
+
+  it('Thu thập tự động bấm mà lỗi: báo lỗi ngay tại khung, kèm thời điểm, không chỉ thông báo thoáng qua', async () => {
+    await clickText('Thu thập dữ liệu');
+    api.collectResearchAuto.mockRejectedValueOnce(new Error('EMR không phản hồi'));
+    const btn = [...container.querySelectorAll('button')].find(b => b.textContent.trim() === 'Thu thập tự động');
+    expect(btn, 'có nút Thu thập tự động').toBeTruthy();
+    await act(async () => { btn.click(); });
+    await flush();
+    const text = container.textContent;
+    expect(text).toContain('Chưa chạy được');
+    expect(text).toContain('EMR không phản hồi');
+  });
 });

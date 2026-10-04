@@ -38,6 +38,8 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
+  // Kết quả lần bấm gần nhất ở đây (lỗi hiện tại chỗ, không chỉ thoáng qua ở thông báo góc màn hình).
+  const [lastClick, setLastClick] = useState(null);
   const [reconciling, setReconciling] = useState(false);
   const [showEncounterReviews, setShowEncounterReviews] = useState(false);
   const [encounterReviews, setEncounterReviews] = useState(null);
@@ -83,6 +85,7 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
 
   const run = async (manualParts = []) => {
     setRunning(true);
+    setLastClick(null);
     try {
       const r = await api.collectResearchAuto(studyId, {
         headless: options.headless !== false,
@@ -94,7 +97,9 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
       await load();
       if (onDone) await onDone(r);
     } catch (e) {
-      t(String(e.message || e), 'error');
+      const message = String(e.message || e);
+      setLastClick({ at: new Date(), message });
+      t(message, 'error');
     } finally {
       setRunning(false);
     }
@@ -199,6 +204,15 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
           </Btn>
         </div>
       </div>
+
+      {lastClick && (
+        <div role="alert" style={{ fontSize: FS.xs, color: C.red, background: C.redBg, border: `1px solid ${C.redBorder}`, borderRadius: 6, padding: '6px 9px', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ flex: 1 }}>
+            <b>Chưa chạy được</b> (lúc {lastClick.at.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}): {lastClick.message}
+          </span>
+          <button type="button" onClick={() => setLastClick(null)} aria-label="Đóng" style={{ border: 0, background: 'transparent', color: C.red, cursor: 'pointer' }}>✕</button>
+        </div>
+      )}
 
       {plan && (
         <div style={{ fontSize: FS.xs, color: C.text2 }}>
