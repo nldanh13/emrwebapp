@@ -93,6 +93,28 @@ function _trimCsvCache() {
   for (const key of [...CSV_TABLE_CACHE.keys()].slice(0, extra)) CSV_TABLE_CACHE.delete(key);
 }
 
+function _cleanOrderText(value) {
+  return String(value || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map(line => line.replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
+function _compareOrderText(value) {
+  return _cleanOrderText(value)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+    .toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function _isOrderPlaceholder(value) {
+  const s = _compareOrderText(value).replace(/[.!,:;]+$/g, '').trim();
+  return /^(?:thuc hien\s+)?y lenh thuoc da co$|^thuoc da co$/.test(s);
+}
+
 function readCsvTable(filePath, maxRows = MAX_TABLE_ROWS) {
   if (!fs.existsSync(filePath)) return { columns: [], rows: [], count: 0, limited: false, exists: false };
   let fileSize = 0;
@@ -102,6 +124,7 @@ function readCsvTable(filePath, maxRows = MAX_TABLE_ROWS) {
   if (cacheKey && CSV_TABLE_CACHE.has(cacheKey)) return CSV_TABLE_CACHE.get(cacheKey);
 
   // Đọc theo khối: không nạp cả file thành một chuỗi (file XN/CĐHA có thể vài trăm MB).
+  // Luôn trả đúng dữ liệu raw; dedupe y lệnh chỉ diễn ra khi getCell() được parser gọi.
   const result = { ...readCsvFileRows(filePath, maxRows), exists: true };
   if (cacheKey) {
     // Xóa cache cũ của cùng file khi file đã thay đổi.
@@ -167,10 +190,44 @@ function countCsvRows(filePath) {
   }
 }
 
+function _rawCellByNormalizedKey(row, key) {
+  const wanted = normalizedKey(key);
+  for (const [name, value] of Object.entries(row || {})) {
+    if (normalizedKey(name) === wanted && String(value || '').trim()) return String(value || '').trim();
+  }
+  return '';
+}
+
+function _orderAwareCell(row, name) {
+  const key = normalizedKey(name);
+  const orderNameKey = normalizedKey('Tên y lệnh');
+  const orderOtherKey = normalizedKey('Y lệnh khác');
+  if (key !== orderNameKey && key !== orderOtherKey) return null;
+
+  const clinical = _cleanOrderText(_rawCellByNormalizedKey(row, 'Diễn biến'));
+  const orderName = _cleanOrderText(_rawCellByNormalizedKey(row, 'Tên y lệnh'));
+  const orderOther = _cleanOrderText(_rawCellByNormalizedKey(row, 'Y lệnh khác'));
+  const clinicalKey = _compareOrderText(clinical);
+  const orderKey = _compareOrderText(orderName);
+  const otherKey = _compareOrderText(orderOther);
+
+  if (key === orderNameKey) {
+    if (!orderKey || orderKey === clinicalKey || _isOrderPlaceholder(orderName)) return '';
+    return orderName;
+  }
+  if (!otherKey || otherKey === clinicalKey || otherKey === orderKey || _isOrderPlaceholder(orderOther)) return '';
+  return orderOther;
+}
+
 function getCell(row, names) {
   if (!row) return '';
   const byKey = new Map(Object.keys(row).map(key => [normalizedKey(key), row[key]]));
   for (const name of names) {
+    const orderAware = _orderAwareCell(row, name);
+    if (orderAware !== null) {
+      if (orderAware) return orderAware;
+      continue;
+    }
     const v = byKey.get(normalizedKey(name));
     if (String(v || '').trim()) return String(v || '').trim();
   }
@@ -244,6 +301,9 @@ module.exports = {
   CSV_CACHE_MAX_FILE_BYTES,
   _csvCacheKey,
   _trimCsvCache,
+  _cleanOrderText,
+  _compareOrderText,
+  _isOrderPlaceholder,
   readCsvTable,
   safeDownloadName,
   cell,

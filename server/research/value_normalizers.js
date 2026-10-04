@@ -101,8 +101,29 @@ function bodyRegionFromService(value) {
   return '';
 }
 
+function extractDrugNameFromOrderText(value) {
+  const raw = String(value || '').replace(/\r\n?/g, '\n').trim();
+  if (!raw) return '';
+  const simple = normalizeSimple(raw);
+  if (/^(?:thuc hien )?y lenh thuoc da co$|^thuoc da co$/.test(simple)) return '';
+
+  let text = raw.replace(/^\((?:TT|CS)\)\s*/i, '').trim();
+  text = text
+    .replace(/^(?:Ngưng|Dừng|Dung)\s+(?:y lệnh\s+)?(?:thuốc\s+)?/i, '')
+    .replace(/^(?:Duy trì|Tiếp tục)\s+(?:y lệnh\s+)?/i, '')
+    .trim();
+
+  const cut = text.search(/\s+(?=\d+(?:[.,]\d+)?\s*(?:mg|mcg|g|ml|iu|ui|đv|dv)\b|\d+\s*(?:v|viên|vien|ống|ong|chai|lọ|lo|gói|goi)\b|x\s*\d+\b|\((?:u|t|ttm|tdt|tdd)\)|\b(?:uống|uong|tiêm|tiem|truyền|truyen|ttm|tdt|tdd)\b)/i);
+  const candidate = (cut >= 0 ? text.slice(0, cut) : text).replace(/[,:;\-]+$/g, '').trim();
+  const candidateSimple = normalizeSimple(candidate);
+  if (!candidateSimple || /^(?:y lenh|thuoc|khang sinh|y lenh khang sinh)$/.test(candidateSimple)) return '';
+  if (/^(?:rut dan luu|thay bang|cat chi|tap van dong|cham soc|theo doi|xuat vien|tai kham)\b/.test(candidateSimple)) return '';
+  return candidate.slice(0, 180);
+}
+
 function normalizeDrugName(value) {
-  return normalizeToken(String(value || '').replace(/\([^)]*\)/g, ''));
+  const drug = extractDrugNameFromOrderText(value);
+  return drug ? normalizeToken(drug.replace(/\([^)]*\)/g, '')) : '';
 }
 
 // Đường dùng chuẩn cho dữ liệu nghiên cứu: nhận diện bằng model duy nhất
@@ -137,6 +158,7 @@ module.exports = {
   normalizeFlag,
   modalityFromService,
   bodyRegionFromService,
+  extractDrugNameFromOrderText,
   normalizeDrugName,
   normalizeRoute,
   classifyDrugGroup,
