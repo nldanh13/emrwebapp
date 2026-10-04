@@ -1,10 +1,11 @@
-'use strict';
+import { describe, expect, it } from 'vitest';
+import { createRequire } from 'node:module';
 
-const { describe, expect, it } = require('vitest');
+const require = createRequire(import.meta.url);
 const {
   repairSurgeryTimestamp,
   repairSurgeryRow,
-} = require('./surgery_raw_repair');
+} = require('./surgery_raw_repair.js');
 
 describe('research surgery raw repair', () => {
   it('combines the surgery list date with a detail start clock', () => {
