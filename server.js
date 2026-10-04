@@ -5,7 +5,15 @@
 'use strict';
 
 // Load .env trước mọi thứ
-require('dotenv').config();
+// Đọc .env cạnh server.js, kể cả khi chạy máy chủ từ thư mục khác. Bỏ ký tự BOM đầu file
+// (Notepad trên Windows hay lưu UTF-8 có BOM, làm dòng đầu không được nhận). Biến đã đặt
+// sẵn trong môi trường thì giữ nguyên.
+try {
+  const envText = require('fs').readFileSync(require('path').join(__dirname, '.env'), 'utf8').replace(/^\uFEFF/, '');
+  for (const [key, value] of Object.entries(require('dotenv').parse(envText))) {
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
+} catch (_) { /* không có .env: dùng biến môi trường sẵn có */ }
 
 const express = require('express');
 const path    = require('path');

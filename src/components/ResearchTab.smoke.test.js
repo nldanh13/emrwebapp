@@ -422,4 +422,23 @@ describe('ResearchTab (khói)', () => {
     expect(api.normalizeResearchArchive).toHaveBeenCalled();
     delete PIPELINE.fetch;
   });
+
+  it('Tra cứu người bệnh khóa: chỉ đúng bước còn thiếu để bật (vd. lỡ lưu .env.txt)', async () => {
+    api.getResearchIdentifiedAccess.mockImplementation(async () => ({ status: 'ok', allowed: false, env_enabled: false, role_ok: true, env_diagnosis: { reason: 'saved_as_txt' } }));
+    await clickText('Tra cứu người bệnh');
+    const text = container.textContent;
+    expect(text).toContain('Chức năng đang khóa');
+    expect(text).toContain('Thấy file .env.txt');
+    expect(text).toContain('EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT=1');
+    api.getResearchIdentifiedAccess.mockImplementation(async () => responseFor('getResearchIdentifiedAccess'));
+  });
+
+  it('Thu thập dữ liệu: có dữ liệu mới chưa chuẩn hóa thì hiện nút Chuẩn hóa ngay ngay tại tab', async () => {
+    api.getResearchArchivePipeline.mockImplementation(async () => ({ status: 'ok', pipeline: { ...PIPELINE, fetch: { last_at: '2026-10-04T13:01:00Z', parts: [], pending_normalize: true } } }));
+    await clickText('Thu thập dữ liệu');
+    expect(container.textContent).toContain('Có dữ liệu mới chưa được chuẩn hóa.');
+    await clickText('Chuẩn hóa ngay');
+    expect(api.normalizeResearchArchive).toHaveBeenCalled();
+    api.getResearchArchivePipeline.mockImplementation(async () => responseFor('getResearchArchivePipeline'));
+  });
 });
