@@ -22,6 +22,7 @@ function comparableText(value) {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/g, 'd').replace(/Đ/g, 'D')
     .toLowerCase()
+    .replace(/[^a-z0-9.,%]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -71,7 +72,7 @@ const PLACEHOLDER_RE = /^(?:thuc hien\s+)?y lenh thuoc da co\.?$|^thuoc da co\.?
 const STOP_RE = /^(?:ngung|dung)\s+(?:y lenh\s+)?(?:thuoc\s+)?/i;
 const CONTINUE_RE = /^(?:duy tri|tiep tuc)\s+(?:y lenh\s+)?/i;
 const CARE_RE = /\b(?:rut dan luu|thay bang|cat chi|tap van dong|cham soc|theo doi|xuat vien|tai kham)\b/i;
-const MED_HINT_RE = /(?:^|\s)\((?:tt|cs)\)|\b\d+(?:[.,]\d+)?\s*(?:mg|mcg|g|ml|iu|ui|đv|dv)\b|\b\d+\s*(?:v|vien|ong|chai|lo|goi)\b|\bx\s*\d+\b|\b(?:uong|tiem|truyen|ttm|tdt|tdd|xịt|xit|hit|bom|boi)\b/i;
+const MED_HINT_RE = /(?:^|\s)(?:tt|cs)(?:\s|$)|\b\d+(?:[.,]\d+)?\s*(?:mg|mcg|g|ml|iu|ui|dv)\b|\b\d+\s*(?:v|vien|ong|chai|lo|goi)\b|\bx\s*\d+\b|\b(?:u|t|uong|tiem|truyen|ttm|tdt|tdd|xit|hit|bom|boi)\b/i;
 
 function classifyOrderLine(line) {
   const raw = cleanText(line);
@@ -102,15 +103,16 @@ function parseTimesPerDay(text) {
 
 function parseSchedule(text) {
   const raw = cleanText(text);
-  const matches = [...raw.matchAll(/(?<!\d)(\d{1,2})(?:[:h](\d{2}))?h?(?!\d)/gi)];
   const values = [];
-  for (const m of matches) {
-    const hour = Number(m[1]);
-    const minute = m[2] == null ? 0 : Number(m[2]);
-    if (hour > 23 || minute > 59) continue;
+  const add = (hourRaw, minuteRaw = '0') => {
+    const hour = Number(hourRaw);
+    const minute = Number(minuteRaw || 0);
+    if (hour > 23 || minute > 59) return;
     const value = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
     if (!values.includes(value)) values.push(value);
-  }
+  };
+  for (const m of raw.matchAll(/(?<!\d)(\d{1,2})\s*h(?:\s*(\d{2}))?(?!\d)/gi)) add(m[1], m[2]);
+  for (const m of raw.matchAll(/(?<!\d)(\d{1,2}):(\d{2})(?!\d)/g)) add(m[1], m[2]);
   return values;
 }
 
