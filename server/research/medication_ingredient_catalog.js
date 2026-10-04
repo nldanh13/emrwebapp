@@ -104,12 +104,24 @@ function textMatchesAnyName(text, names) {
   });
 }
 
-function ingredientEvidence(text, targets = allActiveIngredients(), medications = loadCatalog()) {
-  const resolved = resolveIngredientTargets(targets, medications);
+// Chuẩn bị sẵn tên đã chuẩn hóa cho từng hoạt chất: dò hàng chục nghìn dòng y lệnh mà mỗi dòng
+// lại tra danh mục và chuẩn hóa lại tên thì rất chậm.
+function compileIngredientMatchers(targets = allActiveIngredients(), medications = loadCatalog()) {
+  return resolveIngredientTargets(targets, medications).targets.map(item => ({
+    active_ingredient: item.active_ingredient,
+    ingredient_key: normalizeText(item.active_ingredient),
+    names: item.medication_names.map(name => ({ name, key: normalizeText(name) })).filter(x => x.key),
+  }));
+}
+
+function evidenceWithMatchers(text, matchers) {
+  const normalized = normalizeText(text);
+  if (!normalized) return [];
+  const hay = ` ${normalized} `;
   const hits = [];
-  for (const item of resolved.targets) {
-    const directIngredient = textMatchesAnyName(text, [item.active_ingredient]);
-    const matchedNames = item.medication_names.filter(name => textMatchesAnyName(text, [name]));
+  for (const item of matchers) {
+    const directIngredient = Boolean(item.ingredient_key) && hay.includes(` ${item.ingredient_key} `);
+    const matchedNames = item.names.filter(x => hay.includes(` ${x.key} `)).map(x => x.name);
     if (directIngredient || matchedNames.length) {
       hits.push({
         active_ingredient: item.active_ingredient,
@@ -119,6 +131,10 @@ function ingredientEvidence(text, targets = allActiveIngredients(), medications 
     }
   }
   return hits;
+}
+
+function ingredientEvidence(text, targets = allActiveIngredients(), medications = loadCatalog()) {
+  return evidenceWithMatchers(text, compileIngredientMatchers(targets, medications));
 }
 
 function firstValue(row, names) {
@@ -132,6 +148,7 @@ function firstValue(row, names) {
 function augmentMedicationRowsForResearch(medicationRows = [], clinicalNoteRows = [], medications = loadCatalog()) {
   const ingredients = allActiveIngredients(medications);
   if (!ingredients.length) return Array.isArray(medicationRows) ? medicationRows.slice() : [];
+  const matchers = compileIngredientMatchers(ingredients, medications);
   const out = [];
 
   for (const row of medicationRows || []) {
@@ -145,7 +162,7 @@ function augmentMedicationRowsForResearch(medicationRows = [], clinicalNoteRows 
       firstValue(row, ['drug_name_norm']),
       firstValue(row, ['raw_line']),
     ].filter(Boolean).join(' ');
-    const hits = ingredientEvidence(text, ingredients, medications);
+    const hits = evidenceWithMatchers(text, matchers);
     if (!hits.length) {
       out.push(row);
       continue;
@@ -170,7 +187,7 @@ function augmentMedicationRowsForResearch(medicationRows = [], clinicalNoteRows 
       firstValue(note, ['clinical_text', 'Diễn biến', 'dien_bien']),
     ].filter(Boolean).join(' ');
     if (!text) continue;
-    const hits = ingredientEvidence(text, ingredients, medications);
+    const hits = evidenceWithMatchers(text, matchers);
     for (const hit of hits) {
       out.push({
         research_code: firstValue(note, ['research_code']),
@@ -205,5 +222,6 @@ module.exports = {
   resolveIngredientTargets,
   textMatchesAnyName,
   ingredientEvidence,
+  compileIngredientMatchers,
   augmentMedicationRowsForResearch,
 };

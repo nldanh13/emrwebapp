@@ -18,6 +18,7 @@ const { RESEARCH_STORE_DIR, ROOT_DIR } = require('../constants');
 const { runPython, fmtPyError } = require('../services/python_runner');
 const { registerCancel, unregisterCancel, isCancelRequested } = require('../services/task_queue');
 const { fetchHchanhForResearchRun } = require('./hchanh_fetch');
+const { augmentMedicationRowsForResearch } = require('./medication_ingredient_catalog');
 
 // ── Điều phối thu thập tự động ───────────────────────────────────────────────
 // So sổ thu thập (collection_ledger.json) với nguồn hiện tại: ca không đổi thì bỏ qua;
@@ -690,14 +691,16 @@ async function runCollectionOrchestration(ctx, {
 
 function readinessTablesForRun(runDir) {
   const read = name => readCsvTable(path.join(runDir, `${name}.csv`), Number.MAX_SAFE_INTEGER).rows || [];
+  const clinicalNotes = read('clinical_notes');
   return {
     encounters: read('encounters'),
     lab_results: read('lab_results'),
     imaging_results: read('imaging_results'),
     surgery_results: read('surgery_results'),
-    medication_orders: read('medication_orders'),
+    // Gắn hoạt chất theo Danh mục thuốc để điều kiện "Dùng hoạt chất: …" nhận mọi tên thương mại.
+    medication_orders: augmentMedicationRowsForResearch(read('medication_orders'), clinicalNotes),
     diagnoses: read('diagnoses'),
-    clinical_notes: read('clinical_notes'),
+    clinical_notes: clinicalNotes,
   };
 }
 

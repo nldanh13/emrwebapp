@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { isSensitiveColumn } = require('./export_utils');
 const { nowIso } = require('./store_paths');
+const medicationCatalog = require('./medication_ingredient_catalog');
 
 function inferVariableType(name, rows) {
   const n = String(name || '').toLowerCase();
@@ -76,7 +77,54 @@ function pushCatalogSample(values, value, max = 32) {
   if (value && values.length < max) values.push(value);
 }
 
-function buildVirtualVariablesForTable(def, rows) {
+// "Dùng hoạt chất: X" — một cú chọn gộp mọi tên thương mại/tên gọi khác của hoạt chất X đã khai báo
+// ở Cài đặt → Danh mục thuốc. Hoạt chất đã khai báo luôn có mặt (kể cả khi kho chưa có lượt nào dùng,
+// để biết là chưa có dữ liệu chứ không phải tìm không ra); hoạt chất có sẵn trong dữ liệu cũng được thêm.
+function addActiveIngredientVariables(add, rows, medications = medicationCatalog.loadCatalog()) {
+  const byIngredient = new Map();
+  const bucketFor = (value) => {
+    const key = normalizeToken(value);
+    if (!key) return null;
+    if (!byIngredient.has(key)) byIngredient.set(key, { value, count: 0, encounters: new Set(), samples: [], names: [] });
+    return byIngredient.get(key);
+  };
+  for (const ingredient of medicationCatalog.allActiveIngredients(medications)) {
+    const bucket = bucketFor(ingredient);
+    if (bucket) bucket.names = medicationCatalog.resolveIngredientTargets([ingredient], medications).medication_names;
+  }
+  for (const row of rows || []) {
+    for (const ingredient of String(getCell(row, ['active_ingredient', 'Hoạt chất', 'Hoat chat']) || '').split(/[;+]/).map(x => x.trim()).filter(Boolean)) {
+      const bucket = bucketFor(ingredient);
+      if (!bucket) continue;
+      bucket.count += 1;
+      const encounter = getCell(row, ['encounter_id']) || getCell(row, ['research_code', 'patient_key', 'patient_code']);
+      if (encounter) bucket.encounters.add(encounter);
+      pushCatalogSample(bucket.samples, getCell(row, ['drug_name_raw', 'Tên thuốc']) || getCell(row, ['drug_name_norm']));
+    }
+  }
+  const list = [...byIngredient.values()].sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+  for (const b of list) {
+    const names = b.names.length ? ` Gồm các tên: ${b.names.slice(0, 12).join(', ')}${b.names.length > 12 ? '…' : ''}.` : '';
+    add({
+      id: makeVirtualVariableId('active_ingredient', b.value),
+      name: `ingredient:${b.value}`,
+      label: `Dùng hoạt chất: ${b.value}`,
+      type: 'category',
+      nonempty: b.count,
+      encounters: b.encounters.size,
+      distinct_count: 2,
+      sample_values: shortSamples(b.samples.length ? b.samples : b.names),
+      operators: ['not_empty', '='],
+      virtual_kind: 'active_ingredient',
+      trade_names: b.names.slice(0, 50),
+      source_note: `Có y lệnh thuốc chứa hoạt chất ${b.value} trong đợt điều trị (theo Danh mục thuốc, mọi tên thương mại đều tính).${names}`,
+    });
+  }
+}
+
+// extra.ingredientRows: y lệnh đã gắn hoạt chất theo Danh mục thuốc (augmentMedicationRowsForResearch);
+// extra.medications: Danh mục thuốc (mặc định đọc config/medication_catalog.json).
+function buildVirtualVariablesForTable(def, rows, extra = {}) {
   const variables = [];
   const total = rows.length || 0;
   const add = (item) => variables.push({
@@ -181,6 +229,7 @@ function buildVirtualVariablesForTable(def, rows) {
     for (const b of [...byDrugGroup.values()].sort((a, b) => b.count - a.count).slice(0, 80)) {
       add({ id: makeVirtualVariableId('drug_group', b.value), name: `drug_group:${b.value}`, label: `Dùng nhóm thuốc: ${b.value}`, type: 'category', nonempty: b.count, distinct_count: 2, sample_values: shortSamples(b.samples), operators: ['=', 'not_empty'], virtual_kind: 'drug_group', source_filter: { drug_group_guess: b.value } });
     }
+    addActiveIngredientVariables(add, extra.ingredientRows || rows, extra.medications);
     for (const b of [...byDrug.values()].sort((a, b) => b.count - a.count).slice(0, 120)) {
       add({ id: makeVirtualVariableId('drug_item', b.value), name: `drug:${b.value}`, label: `Dùng thuốc: ${b.value}`, type: 'category', nonempty: b.count, distinct_count: 2, sample_values: shortSamples(b.samples), operators: ['=', 'not_empty'], virtual_kind: 'drug_item', source_filter: { drug_name_norm: normalizeToken(b.value) } });
     }
@@ -251,7 +300,13 @@ function buildVariableCatalog(runDir, { redact = true } = {}) {
         operators,
       };
     });
-    const virtualVariables = buildVirtualVariablesForTable(def, rows);
+    let extra = {};
+    if (def.key === 'medication_orders') {
+      // Tên thương mại -> hoạt chất theo Danh mục thuốc, gồm cả "Y lệnh khác" trong Diễn biến (chỉ trong bộ nhớ).
+      const notes = readCsvTable(path.join(runDir, 'clinical_notes.csv'), VARIABLE_CATALOG_MAX_ROWS).rows || [];
+      extra = { ingredientRows: medicationCatalog.augmentMedicationRowsForResearch(rows, notes) };
+    }
+    const virtualVariables = buildVirtualVariablesForTable(def, rows, extra);
     groups.push({ ...def, rows: rows.length, sampled: Boolean(table.limited), sample_limit: VARIABLE_CATALOG_MAX_ROWS, variables: [...variables, ...virtualVariables] });
   }
   return { run_id: path.basename(runDir), groups, sample_limit: VARIABLE_CATALOG_MAX_ROWS, generated_at: nowIso() };
@@ -266,5 +321,6 @@ module.exports = {
   shortSamples,
   pushCatalogSample,
   buildVirtualVariablesForTable,
+  addActiveIngredientVariables,
   buildVariableCatalog,
 };

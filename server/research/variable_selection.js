@@ -367,6 +367,13 @@ function virtualVariableMatches(row, variable) {
     const hay = normalizeForFilter(getCell(row, ['drug_group_guess', 'Nhóm thuốc dự đoán']));
     return !needle || hay.includes(needle);
   }
+  if (kind === 'active_ingredient' || name.startsWith('ingredient:')) {
+    // Y lệnh đã gắn hoạt chất theo Danh mục thuốc (selection_runtime): khớp đúng tên hoạt chất,
+    // không lọc theo tên thuốc nên mọi tên thương mại của hoạt chất đều được tính.
+    if (!needle) return false;
+    return String(getCell(row, ['active_ingredient', 'Hoạt chất', 'Hoat chat']) || '').split(/[;+]/)
+      .some(part => normalizeForFilter(part) === needle);
+  }
   if (kind === 'drug_item' || name.startsWith('drug:')) {
     const hay = normalizeForFilter([getCell(row, ['drug_name_norm', 'drug_name_raw', 'Tên thuốc']), getCell(row, ['active_ingredient'])].join(' '));
     return !needle || hay.includes(needle);

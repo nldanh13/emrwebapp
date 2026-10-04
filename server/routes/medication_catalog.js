@@ -4,6 +4,8 @@
 // GET    /api/medication-catalog          → đọc toàn bộ danh mục
 // POST   /api/medication-catalog          → thêm thuốc mới
 // POST   /api/medication-catalog/resolve-active-ingredients → đổi hoạt chất thành các tên có thể gặp trong EMR
+// GET    /api/medication-catalog/archive-drug-names → tên thuốc trong kho + đã/chưa gắn hoạt chất
+// POST   /api/medication-catalog/assign-ingredient  → gắn một hoạt chất cho nhiều tên thuốc
 // PATCH  /api/medication-catalog/:key     → sửa thuốc đã có (key = canonical)
 // DELETE /api/medication-catalog/:key     → xoá thuốc
 
@@ -16,7 +18,12 @@ const { readJsonSafe, writeJsonAtomic } = require('../utils/file');
 const { getRuntimePaths } = require('../services/session');
 const { appendActivity } = require('../services/activity_logger');
 const routeModel = require('../utils/routeModel');
+const fs     = require('fs');
 const { resolveIngredientTargets } = require('../research/medication_ingredient_catalog');
+const { buildDrugNameInventory, assignIngredientToNames } = require('../research/drug_name_inventory');
+const { readCsvTable } = require('../research/table_io');
+const { archiveRunsDir } = require('../research/store_paths');
+const { resolveArchiveRunId } = require('../research/run_registry');
 
 const CATALOG_PATH = path.join(__dirname, '..', '..', 'config', 'medication_catalog.json');
 
@@ -102,6 +109,42 @@ router.post('/medication-catalog/resolve-active-ingredients', (req, res) => {
     return res.json({ status: 'ok', ...resolved });
   } catch (e) {
     return res.status(500).json({ status: 'error', message: String(e.message) });
+  }
+});
+
+// GET /api/medication-catalog/archive-drug-names
+// Tên thuốc (tên thương mại như EMR ghi) trong y lệnh của kho, gom theo tên, kèm số lượt/người bệnh
+// và trạng thái: đã nhận ra hoạt chất / có trong danh mục nhưng chưa ghi hoạt chất / chưa có trong danh mục.
+router.get('/medication-catalog/archive-drug-names', (req, res) => {
+  try {
+    const runId = resolveArchiveRunId(String(req.query.runId || 'latest'));
+    const file = runId ? path.join(archiveRunsDir(), runId, 'medication_orders.csv') : '';
+    if (!file || !fs.existsSync(file)) {
+      return res.json({ status: 'ok', run_id: runId || '', counts: { total: 0, mapped: 0, catalog_no_ingredient: 0, not_in_catalog: 0 }, unmapped_encounters: 0, items: [] });
+    }
+    const rows = readCsvTable(file, Number.MAX_SAFE_INTEGER).rows || [];
+    const inventory = buildDrugNameInventory(rows, loadCatalog().medications);
+    return res.json({ status: 'ok', run_id: runId, ...inventory });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: String(e.message) });
+  }
+});
+
+// POST /api/medication-catalog/assign-ingredient { active_ingredient, items: [{ name, catalog_keys }] }
+// Thuốc đã có trong danh mục thì thêm hoạt chất; chưa có thì tạo mới với tên chuẩn = tên thuốc trong EMR.
+router.post('/medication-catalog/assign-ingredient', (req, res) => {
+  try {
+    const ctx = getRuntimePaths(req);
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (!items.length) return res.status(400).json({ status: 'error', message: 'Chọn ít nhất một tên thuốc.' });
+    const data = loadCatalog();
+    const changes = assignIngredientToNames(data.medications, items, req.body?.active_ingredient);
+    data.medications = data.medications.map(pruneEmpty);
+    saveCatalog(data);
+    appendActivity(ctx, { kind: 'medication_catalog.assign_ingredient', active_ingredient: String(req.body?.active_ingredient || '').trim(), count: changes.length });
+    return res.json({ status: 'ok', changes });
+  } catch (e) {
+    return res.status(e.status || 500).json({ status: 'error', message: String(e.message) });
   }
 });
 
