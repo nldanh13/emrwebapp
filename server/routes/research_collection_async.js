@@ -34,6 +34,7 @@ const { readResearchHchanhSourceRows } = require('../research/research_source');
 const { researchHeadlessFromBody, fetchHchanhForResearchRun } = require('../research/hchanh_fetch');
 const { normalizeRunOutputs } = require('../research/normalize');
 const {
+  refreshPolicyFor,
   runCollectionOrchestration,
   runXnCdhaSubsetForCollection,
   syncCollectionLedger,
@@ -246,7 +247,7 @@ async function handleCollectAccepted(req, res, studyIdParam = '') {
             limit: Number.isFinite(Number(req.body?.limit)) ? Math.max(0, Math.trunc(Number(req.body.limit))) : 0,
             refreshParts: Array.isArray(req.body?.refreshParts) ? req.body.refreshParts.filter(p => collection.PART_KEYS.includes(p)) : [],
             refreshKeys: Array.isArray(req.body?.refreshKeys) && req.body.refreshKeys.length ? req.body.refreshKeys.map(String).slice(0, 20000) : null,
-            refreshPolicy: sc.isArchive ? {} : (sc.study?.refresh_policy || {}),
+            refreshPolicy: refreshPolicyFor(sc.isArchive, sc.study),
             study: sc.study,
           };
           result = await runCollectionOrchestration(ctx, options);
