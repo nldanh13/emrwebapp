@@ -20,11 +20,14 @@ const catalog = [
 ];
 
 describe('medication catalog active ingredients', () => {
-  it('lets the user maintain active ingredients separately from product/trade names', () => {
+  it('edits ingredients and trade names as tags without exposing a separate canonical field', () => {
     const ui = source('src/components/MedicationCatalogManager.jsx');
     expect(ui).toContain('active_ingredients');
-    expect(ui).toContain('Hoạt chất');
-    expect(ui).toContain('Tên khác / tên thương mại');
+    expect(ui).toContain('trade_names');
+    expect(ui).toContain('TagEditor');
+    expect(ui).toContain('Hoạt chất *');
+    expect(ui).toContain('Tên thương mại / tên chế phẩm / cách viết trong EMR *');
+    expect(ui).not.toContain('Tên chuẩn / tên chế phẩm *');
   });
 
   it('persists active ingredients and exposes a generic resolver for research', () => {
