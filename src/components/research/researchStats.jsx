@@ -12,8 +12,13 @@ function fmt(n, digits = 1) {
 }
 
 // Một dòng mô tả gọn theo loại đo lường.
-function describeStats(stats) {
+function describeStats(stats, variable = null) {
   if (!stats || !stats.n) return 'Không có dữ liệu';
+  if (variable?.aggregation === 'any' && stats.kind === 'category') {
+    const pct = (value) => (stats.top || []).find(t => String(t.value) === value)?.pct || 0;
+    const count = (value) => (stats.top || []).find(t => String(t.value) === value)?.count || 0;
+    return `Có (1): ${compactNumber(count('1'))} lượt, ${fmt(pct('1'))}% · Không (0): ${compactNumber(count('0'))} lượt, ${fmt(pct('0'))}%`;
+  }
   if (stats.kind === 'number') {
     if (!stats.n_numeric) return `${compactNumber(stats.n)} giá trị, không đọc được dạng số`;
     const parts = [
@@ -118,7 +123,7 @@ function VariableStatsTable({ variables = [], roleOf = v => v.role }) {
                 <FillBar rate={v.fill_rate} />
                 <div style={{ marginTop: 3, fontSize: FS.xs, color: C.text3 }}>thiếu {compactNumber(v.missing || 0)} lượt</div>
               </td>
-              <td style={{ padding: '8px 10px', color: C.text2, lineHeight: 1.45 }}>{describeStats(v.stats)}</td>
+              <td style={{ padding: '8px 10px', color: C.text2, lineHeight: 1.45 }}>{describeStats(v.stats, v)}</td>
             </tr>
           ))}
         </tbody>

@@ -11,7 +11,7 @@ import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import { compactNumber, text } from './researchFormat.js';
 import { inp, EmptyState } from './researchUi.jsx';
-import { ANCHOR_AGGREGATIONS, VARIABLE_AGGREGATIONS, matchSurveyLines, operatorLabel, variableTypeLabel } from './variableCatalogModel.js';
+import { ANCHOR_AGGREGATIONS, defaultAggregationFor, isPresenceVariable, VARIABLE_AGGREGATIONS, matchSurveyLines, operatorLabel, variableTypeLabel } from './variableCatalogModel.js';
 import { CohortSummary, FillBar, VariableStatsTable } from './researchStats.jsx';
 import { VARIABLE_ROLE_OPTIONS, roleTone } from './studyRoles.js';
 import { SampleSizePanel } from './SampleSizePanel.jsx';
@@ -377,7 +377,7 @@ function StepVariables(props) {
                   aria-label="Tên cột khi xuất" title="Tên cột khi xuất dữ liệu (theo phiếu khảo sát)"
                   style={{ ...inp, height: 28, fontSize: FS.xs }} />
                 {repeated && (
-                  <select value={variableAggregations[v.key] || 'list'} aria-label="Cách lấy khi một lượt có nhiều giá trị"
+                  <select value={variableAggregations[v.key] || defaultAggregationFor(v)} aria-label="Cách lấy khi một lượt có nhiều giá trị"
                     title="Một lượt điều trị có nhiều giá trị: chọn cách lấy"
                     onChange={e => setVariableAggregations(prev => ({ ...prev, [v.key]: e.target.value }))}
                     style={{ ...inp, height: 28, fontSize: FS.xs }}>
@@ -509,7 +509,22 @@ function StepReview(props) {
   const {
     draft, selectedVariables, variableConditions, variablePreview, variablePreviewLoading, variablePreviewError, loadVariablePreview,
     variableRoles, variablePeriod, variableOnePerPatient, variableSampleSize, setVariableSampleSize, variableAnchor, variableWindows, onGoStep,
+    addConditionForVariable,
   } = props;
+  // Sửa ngay tại bước 4 (vd. đưa "Dùng hoạt chất: X" thành tiêu chuẩn chọn vào) rồi tự tính lại thống kê.
+  const [recalcAfterFix, setRecalcAfterFix] = useState(false);
+  useEffect(() => {
+    if (!recalcAfterFix) return;
+    setRecalcAfterFix(false);
+    loadVariablePreview();
+  }, [recalcAfterFix, loadVariablePreview]);
+  const onFix = addConditionForVariable ? (fix) => {
+    if (fix?.kind !== 'include_condition' || !fix.variable) return;
+    addConditionForVariable({ ...fix.variable, operators: ['not_empty', ...(fix.variable.operators || []).filter(op => op !== 'not_empty')] });
+    setRecalcAfterFix(true);
+  } : null;
+  const usedAsInclude = new Set(variableConditions.filter(c => !c.exclude).map(c => c.variable_id));
+  const presenceVariables = selectedVariables.filter(v => isPresenceVariable(v) && !usedAsInclude.has(v.id));
   const summary = variablePreview?.summary || null;
   // Thống kê giữ thứ tự biến đã chọn: vai trò lấy theo lựa chọn hiện tại (đổi vai trò không cần tính lại).
   const keyByColumn = new Map((summary?.variables || []).map((v, i) => [v.output_column || v.id, selectedVariables[i]?.key]));
@@ -524,7 +539,7 @@ function StepReview(props) {
   };
   const items = summary ? readinessItems({
     summary, roleOf, conditions: variableConditions, period: variablePeriod, onePerPatient: variableOnePerPatient,
-    sampleSize: variableSampleSize, anchor: variableAnchor,
+    sampleSize: variableSampleSize, anchor: variableAnchor, presenceVariables,
   }) : [];
   const codebookName = `tu_dien_bien_${String(draft.name || 'nghien_cuu').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 60)}.csv`;
   return (
@@ -550,7 +565,7 @@ function StepReview(props) {
       )}
       {summary && (
         <>
-          <ReadinessChecklist items={items} onGoStep={onGoStep} />
+          <ReadinessChecklist items={items} onGoStep={onGoStep} onFix={onFix} />
           {summary.funnel?.length > 1 && (
             <section style={card}>
               <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text, marginBottom: 8 }}>Sàng lọc mẫu theo điều kiện</div>

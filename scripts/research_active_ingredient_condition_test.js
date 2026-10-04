@@ -75,6 +75,13 @@ test('dò tên vẫn theo ranh giới từ như trước (ingredientEvidence)', 
   assert.deepStrictEqual(ingredientEvidence('Zometab', ['Acid Zoledronic'], medications), []);
 });
 
+test('biến "Dùng hoạt chất" lấy kiểu Có/Không: 1 cho lượt dùng (mọi tên thương mại), 0 cho lượt không dùng', () => {
+  const variable = { id: 'v1', table: 'medication_orders', name: 'ingredient:Acid Zoledronic', virtual_kind: 'active_ingredient', type: 'category', aggregation: 'any' };
+  const ds = vs.buildSelectedAnalysisDataset(encounters, { selected_variables: [variable] }, { medication_orders: augmented });
+  const col = ds.columns[ds.columns.length - 1];
+  assert.deepStrictEqual(ds.rows.map(r => r[col]), ['1', '1', '0', '0', '1', '0']);
+});
+
 const { buildDrugNameInventory, assignIngredientToNames } = require('../server/research/drug_name_inventory');
 
 test('danh sách tên thuốc trong kho: gom theo tên, đếm lượt, biết tên nào chưa có hoạt chất', () => {

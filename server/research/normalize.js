@@ -1094,6 +1094,42 @@ function normalizeStudyLatest(studyId) {
   return { run_id: runId, counts };
 }
 
+// Ghép một dòng danh sách ban đầu với lượt điều trị đã chuẩn hóa của kho: theo mã lượt (cùng cách
+// tạo khi chuẩn hóa), rồi Mã BN + ngày vào viện, rồi Mã BN nếu người bệnh chỉ có một lượt.
+// Trả các trường định danh lượt để lọc, hoặc {} nếu không ghép chắc được.
+function archiveEncounterLinker(runDir) {
+  const file = ['analysis_ready.csv', 'encounters.csv'].map(f => path.join(runDir, f)).find(f => fs.existsSync(f));
+  const rows = file ? (readCsvTable(file, Number.MAX_SAFE_INTEGER).rows || []) : [];
+  const byEid = new Map();
+  const byVisit = new Map();
+  const byPatient = new Map();
+  const push = (map, key, row) => { if (!key) return; if (!map.has(key)) map.set(key, []); map.get(key).push(row); };
+  for (const row of rows) {
+    const pc = patientCode(row);
+    push(byEid, getCell(row, ['encounter_id']), row);
+    if (pc) {
+      push(byVisit, `${pc}|${isoDate(getCell(row, ['admission_date']))}`, row);
+      push(byPatient, pc, row);
+    }
+  }
+  const only = list => (list && list.length === 1 ? list[0] : null);
+  const ADMISSION = ['Ngày vào viện', 'Ngay vao vien', 'Ngày nhập viện', 'Ngay nhap vien', 'T/G vào', 'TG vao', 'admission_date'];
+  return (row) => {
+    const pc = patientCode(row);
+    const admission = isoDate(firstNonEmpty(row, ADMISSION));
+    const hit = only(byEid.get(buildEncounterId(row)))
+      || (pc && admission ? only(byVisit.get(`${pc}|${admission}`)) : null)
+      || (pc && !admission ? only(byPatient.get(pc)) : null);
+    if (!hit) return {};
+    const out = {};
+    for (const key of ['encounter_id', 'research_code', 'patient_key', 'admission_date', 'discharge_date', 'surgery_date']) {
+      const value = getCell(hit, [key]);
+      if (value && !getCell(row, [key])) out[key] = value;
+    }
+    return out;
+  };
+}
+
 function importArchiveToStudy(study, filters) {
   const archive = readArchive();
   if (!archive.latest_run?.id) throw new Error('Kho dữ liệu gốc chưa có lần quét dữ liệu.');
@@ -1110,8 +1146,16 @@ function importArchiveToStudy(study, filters) {
   const selection = sanitizeVariableSelection(filters?.variable_selection || activeVariableSelectionFromStudy(study));
   const archiveRunDir = path.join(archiveRunsDir(), archiveRunId);
   const tableRowsByKey = loadRunTablesForSelection(archiveRunDir, selection, dateFilteredPatients);
-  const selectionResult = variableSelection.filterCohortRowsByVariableSelection(dateFilteredPatients, selection, tableRowsByKey);
-  const selectedPatients = variableSelection.hasActiveSelection(selection) ? selectionResult.rows : dateFilteredPatients;
+  // Danh sách ban đầu chỉ có Mã BN + giờ vào viện, không có mã lượt/Mã NC: điều kiện trên y lệnh thuốc,
+  // XN... (ghép theo mã lượt) sẽ không khớp lượt nào. Gắn mã lượt từ bảng lượt điều trị của kho (bản sao
+  // chỉ dùng để lọc) để kết quả giống hệt bước "Kiểm tra & xuất dữ liệu"; file danh sách mẫu giữ dòng gốc.
+  const linkEncounter = archiveEncounterLinker(archiveRunDir);
+  const probes = dateFilteredPatients.map(row => ({ row, probe: { ...row, ...linkEncounter(row) } }));
+  const selectionResult = variableSelection.filterCohortRowsByVariableSelection(probes.map(p => p.probe), selection, tableRowsByKey);
+  const keptProbes = new Set(selectionResult.rows);
+  const selectedPatients = variableSelection.hasActiveSelection(selection)
+    ? probes.filter(p => keptProbes.has(p.probe)).map(p => p.row)
+    : dateFilteredPatients;
   const selectedVisits = selectedPatients.filter(row => patientCode(row));
   if (!selectedVisits.length) throw new Error(variableSelection.hasActiveSelection(selection)
     ? 'Không có bệnh nhân phù hợp điều kiện lọc và variable selection.'
@@ -1166,6 +1210,7 @@ function importArchiveToStudy(study, filters) {
 }
 
 module.exports = {
+  archiveEncounterLinker,
   NORMALIZE_INPUT_FILES,
   NORMALIZE_OUTPUT_FILES,
   normalizeInputSignature,
