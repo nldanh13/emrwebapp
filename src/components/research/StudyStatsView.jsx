@@ -13,6 +13,7 @@ const MAIN_EXPORTS = [
   ['analysis_selected', 'Các biến đã chọn của nghiên cứu, mỗi lượt điều trị một dòng.'],
   ['analysis_final', 'Dataset cuối đã kiểm tra, dùng cho phân tích thống kê.'],
   ['analysis_ready', 'Bảng tổng hợp đầy đủ mọi biến của kho cho từng lượt.'],
+  ['crf', 'Phiếu nhập tay và kết quả gọi theo dõi, mỗi Mã NC một dòng (không có số điện thoại).'],
   ['cohort', 'Danh sách mẫu của nghiên cứu.'],
 ];
 
@@ -43,6 +44,19 @@ export function StudyStatsView({ study, toast, onGoCollect }) {
       const r = await api.downloadResearchStudyCsv(studyId, { table: tableKey, runId: 'latest', redact: hideSensitive });
       saveBlob(r.filename || `${studyId}_${tableKey}.csv`, r.blob);
       toast?.(`Đã xuất ${tableLabel(tableKey, false)}${hideSensitive ? ' (đã ẩn định danh)' : ''}.`, 'ok');
+    } catch (e) {
+      toast?.(String(e.message || e), 'error');
+    } finally {
+      setExporting('');
+    }
+  };
+
+  const exportMerged = async () => {
+    setExporting('__merged__');
+    try {
+      const r = await api.downloadResearchStudyMerged(studyId);
+      saveBlob(r.filename || `${studyId}_du_lieu_day_du.csv`, r.blob);
+      toast?.('Đã xuất dữ liệu đầy đủ (đã ẩn định danh).', 'ok');
     } catch (e) {
       toast?.(String(e.message || e), 'error');
     } finally {
@@ -98,6 +112,13 @@ export function StudyStatsView({ study, toast, onGoCollect }) {
             <input type="checkbox" checked={hideSensitive} onChange={e => setHideSensitive(e.target.checked)} />
             Ẩn định danh khi xuất
           </label>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', borderTop: `1px solid ${C.border2}`, paddingTop: 9 }}>
+          <div style={{ flex: '1 1 280px' }}>
+            <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text }}>Dữ liệu đầy đủ: biến từ EMR + phiếu nhập tay</div>
+            <div style={{ fontSize: FS.xs, color: C.text3 }}>Ghép theo Mã NC, đã ẩn định danh. Dùng file này để xử lý số liệu.</div>
+          </div>
+          <Btn variant="solidSuccess" onClick={exportMerged} disabled={Boolean(exporting)} loading={exporting === '__merged__'} style={{ height: 30 }}>Xuất CSV</Btn>
         </div>
         {MAIN_EXPORTS.map(([key, desc]) => {
           const count = datasetCount(study, key, false);

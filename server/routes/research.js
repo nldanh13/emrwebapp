@@ -35,7 +35,8 @@ const variableSelection = require('../research/variable_selection');
 const { redactCsvTable, isSensitiveColumn } = require('../research/export_utils');
 const dataDictionary = require('../research/data_dictionary');
 const { ARCHIVE_ID, EXPORT_SENSITIVE_COLUMNS, MAX_TABLE_ROWS, TABLES, archiveDir, archiveRunsDir, archiveSourcePath, cohortPath, ensureArchiveStore, nowIso, runsDir, todayDateInput } = require('../research/store_paths');
-const { patientCode, readCsvTable, writeCsvUnion } = require('../research/table_io');
+const { patientCode, readCsvTable, writeCsv, writeCsvUnion } = require('../research/table_io');
+const { appendSecurityAudit } = require('../services/security_audit');
 const { buildContextMap, contextForRow, encounterMatchMethod, encounterMatchStatus } = require('../research/encounter_context');
 const { CASE_TRACE_RECENT_LIMIT, appendResearchRunLog, readResearchCaseTrace, redactCaseTracePayload } = require('../research/case_trace');
 const { beginResearchTask, buildCoverageSummary, buildResearchProgressSnapshot, finishResearchTask, hchanhEntryFileStatus, isRowMissingXnCdha, resetXnCdhaProgress, rowResearchCode, sourceRowsForXnCdhaRefetch, updateResearchTask } = require('../research/progress_snapshot');
@@ -192,6 +193,49 @@ router.post('/research/archive/variable-preview', (req, res) => {
       source_limited: sourceLimited,
       removed_columns: [...(redacted.removed_columns || []), ...sensitiveOutput],
     });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+// Xuất dữ liệu ngay từ kho theo danh sách biến + điều kiện (không cần tạo nghiên cứu, không
+// quét lại EMR). Mỗi lượt điều trị đạt điều kiện một dòng; cột biến đặt theo tên trên phiếu
+// khảo sát; luôn ẩn định danh (cột định danh bị loại cả theo tên biến gốc lẫn tên mới).
+// Chỉ giữ cột nhận diện dòng; còn lại đúng các biến người dùng đã chọn (không lặp tuổi/giới...).
+const EXPORT_BASE_HEADERS = {
+  research_code: 'Mã NC', patient_key: 'Mã người bệnh (giả danh)', anchor_datetime: 'Thời điểm mốc',
+};
+router.post('/research/archive/variable-export', (req, res) => {
+  try {
+    const selection = sanitizeVariableSelection(req.body?.variable_selection || req.body || {});
+    if (!selection.selected_variables?.length) return res.status(400).json({ status: 'error', message: 'Chọn ít nhất 1 biến để xuất.' });
+    const runId = resolveArchiveRunId(String(selection.run_id || 'latest'));
+    const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
+    if (!runDir || !fs.existsSync(runDir)) return res.status(400).json({ status: 'error', message: 'Kho chưa có dữ liệu chuẩn hóa để xuất.' });
+    const { dataset } = summarizeSelectionForRun(runDir, selection);
+    const sensitive = new Set(dataset.manifest.variables.filter(v => isSensitiveColumn(v.name)).map(v => v.output_column));
+    const used = new Set();
+    const header = (col) => {
+      const variable = dataset.manifest.variables.find(v => v.output_column === col);
+      let name = String((variable ? (variable.survey_label || variable.label) : EXPORT_BASE_HEADERS[col]) || col).trim() || col;
+      for (let i = 2; used.has(name); i += 1) name = `${variable?.survey_label || col} (${i})`;
+      used.add(name);
+      return name;
+    };
+    const keep = dataset.columns.filter(col => !sensitive.has(col) && (EXPORT_BASE_HEADERS[col] || dataset.manifest.variables.some(v => v.output_column === col)));
+    const headers = keep.map(header);
+    const rows = dataset.rows.map(row => Object.fromEntries(keep.map((col, i) => [headers[i], row[col] ?? ''])));
+    const file = path.join(runDir, `.variable_export_${process.pid}_${Date.now()}.csv`);
+    writeCsv(file, headers, rows);
+    appendSecurityAudit({
+      kind: 'research.variable_export',
+      actor: { id: String(req.auth?.id || ''), role: String(req.auth?.role || '') },
+      scope: { run_id: runId, variables: selection.selected_variables.length, conditions: (selection.conditions || []).length, rows: rows.length },
+    });
+    const name = String(req.body?.name || 'du_lieu_nghien_cuu').slice(0, 80);
+    res.on('finish', () => fs.unlink(file, () => {}));
+    res.on('close', () => fs.unlink(file, () => {}));
+    return sendCsvFile(res, file, `${name}_${runId}`, { redact: true });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }

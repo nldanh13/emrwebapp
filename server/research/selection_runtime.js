@@ -30,6 +30,8 @@ function loadRunTablesForSelection(runDir, selection, fallbackRows = [], maxRows
   for (const item of [...(selection?.selected_variables || []), ...(selection?.conditions || [])]) {
     if (item?.table) keys.add(item.table);
   }
+  // Mốc "lần đầu dùng thuốc" cần y lệnh thuốc của từng lượt.
+  if (selection?.anchor?.kind === 'drug') keys.add('medication_orders');
   for (const key of keys) out[key] = readRunRowsForSelection(runDir, key, fallbackRows, maxRows);
   if (fallbackRows?.length) {
     out.initial_list = out.initial_list || fallbackRows;
@@ -51,18 +53,36 @@ function buildSelectedAnalysisForRun(runDir, analysisReadyRows, normalizedRowsBy
   return { rows: selected.rows.length, columns: selected.columns.length, manifest: selected.manifest };
 }
 
+const OPERATOR_TEXT = {
+  '=': '=', '!=': '≠', '>': '>', '>=': '≥', '<': '<', '<=': '≤', contains: 'chứa', starts_with: 'bắt đầu bằng',
+  ends_with: 'kết thúc bằng', in: 'thuộc', between: 'trong khoảng', not_empty: 'có dữ liệu', empty: 'không có dữ liệu',
+};
+function conditionLabel(c) {
+  const op = OPERATOR_TEXT[c.operator] || c.operator || 'có dữ liệu';
+  const value = ['not_empty', 'empty'].includes(c.operator) ? '' : c.operator === 'between' ? ` ${c.value} – ${c.value2}` : ` ${c.value}`;
+  return `${c.label || c.name} ${op}${value}`.trim();
+}
+
 // Thống kê mô tả các biến đã chọn trên một run (dùng cho bước Kiểm tra của Tạo nghiên cứu và
 // phần Thống kê của nghiên cứu). Chỉ trả số liệu tổng hợp, không trả dữ liệu từng lượt.
 function summarizeSelectionForRun(runDir, selectionInput, { maxEncounters = Number.MAX_SAFE_INTEGER, maxSourceRows = Number.MAX_SAFE_INTEGER } = {}) {
   const selection = sanitizeVariableSelection(selectionInput);
   const analysisTable = readCsvTable(path.join(runDir, TABLES.analysis_ready.file), maxEncounters);
   const tableRows = loadRunTablesForSelection(runDir, selection, [], maxSourceRows);
+  // Sàng lọc từng bước: áp lần lượt từng điều kiện để biết mỗi điều kiện loại bao nhiêu lượt.
+  // Kết quả cuối giống áp tất cả điều kiện cùng lúc (điều kiện nối bằng VÀ).
   // filterCohortRowsByVariableSelection trả { rows, matched, conditions }, không phải mảng.
-  const cohort = variableSelection.filterCohortRowsByVariableSelection(analysisTable.rows || [], selection, tableRows);
-  const dataset = variableSelection.buildSelectedAnalysisDataset(cohort.rows, selection, tableRows);
+  let rows = analysisTable.rows || [];
+  const countPatients = list => new Set(list.map(r => String(r?.patient_key || r?.patient_code || '').trim()).filter(Boolean)).size;
+  const funnel = [{ label: 'Toàn bộ kho', encounters: rows.length, patients: countPatients(rows) }];
+  for (const condition of selection.conditions || []) {
+    rows = variableSelection.filterCohortRowsByVariableSelection(rows, { ...selection, conditions: [condition] }, tableRows).rows;
+    funnel.push({ label: conditionLabel(condition), encounters: rows.length, patients: countPatients(rows) });
+  }
+  const dataset = variableSelection.buildSelectedAnalysisDataset(rows, selection, tableRows);
   return {
     dataset,
-    summary: variableSelection.summarizeSelectedDataset(dataset),
+    summary: { ...variableSelection.summarizeSelectedDataset(dataset), funnel },
     source_total: (analysisTable.rows || []).length,
     source_limited: Boolean(analysisTable.limited) || Object.values(tableRows).some(rows => rows.length >= maxSourceRows),
   };

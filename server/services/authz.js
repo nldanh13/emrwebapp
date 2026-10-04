@@ -343,6 +343,12 @@ function requiredRoleForRequest(req) {
   if (routePath.startsWith('/research')) {
     // Xóa nghiên cứu là thao tác phá hủy dữ liệu: chỉ admin.
     if (method === 'DELETE') return 'admin';
+    // Nhập phiếu theo dõi từng mẫu (CRF) là việc của người thu thập số liệu: researcher được ghi.
+    // Thiết kế phiếu và mọi thao tác ghi khác vẫn cần supervisor.
+    if (method === 'PUT' && /^\/research\/studies\/[^/]+\/crf\/entries\/[^/]+$/.test(routePath)) return 'researcher';
+    // Xem thống kê / xuất dữ liệu theo biến từ kho chỉ đọc và luôn ẩn định danh (giống GET xuất CSV);
+    // dùng POST vì gửi kèm danh sách biến dài.
+    if (method === 'POST' && ['/research/archive/variable-preview', '/research/archive/variable-export'].includes(routePath)) return 'researcher';
     return ['GET', 'HEAD'].includes(method) ? 'researcher' : 'supervisor';
   }
 

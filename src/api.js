@@ -312,15 +312,15 @@ function parseDownloadFilename(disposition, fallback) {
   return plain?.[1] || fallback;
 }
 
-async function downloadBlob(url, fallbackFilename) {
-  const method = 'GET';
+async function downloadBlob(url, fallbackFilename, { method = 'GET', body = null } = {}) {
   const label = apiActionLabel(method, url);
   const details = { method, url: cleanApiPath(url), label, body: null };
   logActivity('api.request.start', details);
   const started = Date.now();
   let res;
   try {
-    res = await fetchWithAuth(url, { headers: headers() }, true, details);
+    const init = body == null ? { headers: headers() } : { method, headers: headers(), body: JSON.stringify(body) };
+    res = await fetchWithAuth(url, init, true, details);
   } catch (err) {
     logActivity('api.request.error', { ...details, duration_ms: Date.now() - started, message: String(err.message || err) });
     throw err;
@@ -476,6 +476,7 @@ export const getResearchArchiveVariableCatalog = ({ runId = 'latest' } = {}) => 
   return get(`/api/research/archive/variable-catalog?${params}`);
 };
 export const previewResearchArchiveVariables = (payload = {}) => post('/api/research/archive/variable-preview', payload);
+export const exportResearchArchiveVariables = (payload = {}) => downloadBlob('/api/research/archive/variable-export', 'du_lieu_nghien_cuu.csv', { method: 'POST', body: payload });
 export const getResearchArchivePipeline = () => get('/api/research/archive/pipeline');
 export const getResearchStudyVariableStats = (studyId) => get(`/api/research/studies/${encodeURIComponent(studyId)}/variable-stats`);
 export const downloadResearchArchiveCsv = ({ table = 'analysis_ready', runId = 'latest', redact = true } = {}) => {
@@ -544,6 +545,11 @@ export const downloadResearchStudyCsv = (studyId, { table = 'analysis_ready', ru
   params.set('redact', redact ? '1' : '0');
   return downloadBlob(`/api/research/studies/${encodeURIComponent(studyId)}/export?${params}`, `${studyId}_${table}.csv`);
 };
+// Phiếu nhập tay (CRF) và lịch theo dõi của nghiên cứu.
+export const getResearchStudyCrf = (studyId, { identified = false } = {}) => get(`/api/research/studies/${encodeURIComponent(studyId)}/crf${identified ? '?identified=1' : ''}`);
+export const saveResearchStudyCrfForm = (studyId, form) => put(`/api/research/studies/${encodeURIComponent(studyId)}/crf/form`, { form });
+export const saveResearchStudyCrfEntry = (studyId, researchCode, entry) => put(`/api/research/studies/${encodeURIComponent(studyId)}/crf/entries/${encodeURIComponent(researchCode)}`, entry);
+export const downloadResearchStudyMerged = (studyId) => downloadBlob(`/api/research/studies/${encodeURIComponent(studyId)}/crf/export-merged`, `${studyId}_du_lieu_day_du.csv`);
 export const finalizeResearchStudyDataset = (studyId) => post(`/api/research/studies/${encodeURIComponent(studyId)}/finalize-dataset`, {});
 export const buildResearchStudyEncodedDataset = (studyId) => post(`/api/research/studies/${encodeURIComponent(studyId)}/build-encoded-dataset`, {});
 export const cleanResearchStudyGenerated = (studyId, options = {}) => post(`/api/research/studies/${encodeURIComponent(studyId)}/clean-generated`, options);

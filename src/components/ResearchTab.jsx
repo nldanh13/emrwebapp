@@ -14,9 +14,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { C, FONT_MONO, FS } from '../tokens.js';
 import { Btn, Spinner } from './shared.jsx';
 import * as api from '../api.js';
-import { compactNumber, lower, text } from './research/researchFormat.js';
+import { compactNumber, lower, saveBlob, text } from './research/researchFormat.js';
 import { ARCHIVE_API_SCOPE, ARCHIVE_SCOPE, datasetCount, todayInputDate } from './research/researchScope.js';
-import { VARIABLE_CLINICAL_GROUPS, dedupeWideTableVariables, enhanceCatalogVariable, groupVariablesBySection } from './research/variableCatalogModel.js';
+import { ANCHOR_AGGREGATIONS, VARIABLE_CLINICAL_GROUPS, dedupeWideTableVariables, enhanceCatalogVariable, groupVariablesBySection } from './research/variableCatalogModel.js';
 import { buildGeneralOverviewModel, diffProgressSnapshots, summarizeStatusRows } from './research/researchStatusModel.js';
 import { ModeButton, SectionHead, SideItem, StatBadge, actionBtn, inp } from './research/researchUi.jsx';
 import { CollectionWorkspace } from './research/CollectionWorkspace.jsx';
@@ -24,6 +24,7 @@ import { PatientLookupView } from './research/PatientLookupView.jsx';
 import { GeneralOverviewView } from './research/GeneralOverviewView.jsx';
 import { CreateStudyView } from './research/CreateStudyView.jsx';
 import { StudyStatsView } from './research/StudyStatsView.jsx';
+import { CrfView } from './research/CrfView.jsx';
 import useIsMobile from '../hooks/useIsMobile.js';
 
 const CORE_VARIABLE_NAME = /^(sex|birth_year|age|admission_date|discharge_date|hospital_stay_days|diagnosis_raw|surgery_date|surgery_name)$/i;
@@ -39,7 +40,7 @@ export default function ResearchTab({ toast }) {
   const [archiveOptions, setArchiveOptions] = useState(() => ({ headless: true, fromDate: '2026-01-01', toDate: todayInputDate() }));
   const [studyOptions, setStudyOptions]     = useState({ headless: true });
   const [archiveMode, setArchiveMode] = useState('overview'); // overview | update | patient | create
-  const [studyMode, setStudyMode]     = useState('stats');    // stats | collect
+  const [studyMode, setStudyMode]     = useState('stats');    // stats | collect | crf
   const [showLog, setShowLog]         = useState(false);
   const [logLines, setLogLines]       = useState([]);
   const [caseTraces, setCaseTraces]   = useState([]);
@@ -68,13 +69,15 @@ export default function ResearchTab({ toast }) {
   const [variableCatalogError, setVariableCatalogError] = useState('');
   const [variableQuery, setVariableQuery]   = useState('');
   const [questionnaireVariables, setQuestionnaireVariables] = useState('');
-  const [surveyOnly, setSurveyOnly]         = useState(true);
+  const [variableExporting, setVariableExporting] = useState(false);
   const [variableGroupFilter, setVariableGroupFilter] = useState('all');
   const [variableFillFilter, setVariableFillFilter] = useState('all');
   const [selectedVariableIds, setSelectedVariableIds] = useState(() => new Set());
   const [variableAggregations, setVariableAggregations] = useState({});
   const [variableSurveyLabels, setVariableSurveyLabels] = useState({});
   const [variableConditions, setVariableConditions] = useState([]);
+  const [variableAnchor, setVariableAnchor] = useState(null);       // { kind, drug } — mốc thời gian
+  const [variableWindows, setVariableWindows] = useState({});       // { [variableId]: { from, to } } ngày so với mốc
   const [variableStudyDraft, setVariableStudyDraft] = useState({ name: '', description: '' });
   const [variablePreview, setVariablePreview] = useState(null);
   const [variablePreviewLoading, setVariablePreviewLoading] = useState(false);
@@ -506,12 +509,8 @@ export default function ResearchTab({ toast }) {
       .map(g => ({ ...g, count: counts.get(g.key) || 0 }))
       .filter(g => g.count > 0 && g.key !== 'technical');
   }, [browseCatalogVariables]);
-  const questionnaireTerms = useMemo(() => [...new Set(
-    String(questionnaireVariables || '').split(/[\n;]+/).map(x => lower(x).trim()).filter(x => x.length >= 2)
-  )], [questionnaireVariables]);
   const filteredCatalogVariables = useMemo(() => {
     const q = lower(variableQuery);
-    const surveyTerms = surveyOnly ? questionnaireTerms : [];
     const filtered = browseCatalogVariables.filter(v => {
       if (variableGroupFilter !== 'all' && v.clinical_group_key !== variableGroupFilter) return false;
       const rate = Number(v.fill_rate || 0);
@@ -519,14 +518,11 @@ export default function ResearchTab({ toast }) {
       if (variableFillFilter === 'medium' && (rate < 30 || rate >= 80)) return false;
       if (variableFillFilter === 'low' && rate >= 30) return false;
       const haystack = lower(`${v.clinical_group_label} ${v.clinical_section} ${v.source_group_label} ${v.display_label} ${v.raw_name} ${v.description}`);
-      if (q && !haystack.includes(q)) return false;
-      if (!surveyTerms.length) return true;
-      const labels = [lower(v.display_label), lower(v.raw_name)].filter(x => x.length >= 2);
-      return surveyTerms.some(term => haystack.includes(term) || labels.some(label => term.includes(label)));
+      return !q || haystack.includes(q);
     });
     // Theo nhóm lâm sàng; trong nhóm, biến nên dùng và đầy đủ hơn lên trước.
     return groupVariablesBySection(filtered).flatMap(section => section.variables);
-  }, [browseCatalogVariables, variableQuery, questionnaireTerms, surveyOnly, variableGroupFilter, variableFillFilter]);
+  }, [browseCatalogVariables, variableQuery, variableGroupFilter, variableFillFilter]);
   const selectedVariables = useMemo(() => allCatalogVariables.filter(v => selectedVariableIds.has(v.id)), [allCatalogVariables, selectedVariableIds]);
   const toggleVariable = useCallback((id) => {
     setSelectedVariableIds(prev => {
@@ -565,8 +561,13 @@ export default function ResearchTab({ toast }) {
       role: v.role,
       virtual_kind: v.virtual_kind || '',
       source_filter: v.source_filter || null,
-      aggregation: variableAggregations[v.id] || 'list',
+      // Bỏ mốc thì cách lấy theo mốc không còn nghĩa: quay về liệt kê giá trị.
+      aggregation: (!variableAnchor && ANCHOR_AGGREGATIONS.has(variableAggregations[v.id])) ? 'list' : (variableAggregations[v.id] || 'list'),
+      ...(variableAnchor && (variableWindows[v.id]?.from !== undefined || variableWindows[v.id]?.to !== undefined)
+        ? { window_from_days: variableWindows[v.id]?.from ?? '', window_to_days: variableWindows[v.id]?.to ?? '' }
+        : {}),
     })),
+    ...(variableAnchor ? { anchor: { ...variableAnchor, label: variableAnchor.kind === 'drug' ? `Dùng ${variableAnchor.drug}` : '' } } : {}),
     conditions: variableConditions.map(cond => {
       const variable = allCatalogVariables.find(v => v.id === cond.variable_id);
       return {
@@ -579,13 +580,13 @@ export default function ResearchTab({ toast }) {
         source_filter: variable?.source_filter || cond.source_filter || null,
       };
     }),
-  }), [selectedVariables, variableAggregations, variableSurveyLabels, variableConditions, variableCatalog, archive?.latest_run?.id, allCatalogVariables]);
+  }), [selectedVariables, variableAggregations, variableSurveyLabels, variableConditions, variableAnchor, variableWindows, variableCatalog, archive?.latest_run?.id, allCatalogVariables]);
 
   // Lựa chọn đổi thì thống kê cũ không còn đúng.
   useEffect(() => {
     setVariablePreview(null);
     setVariablePreviewError('');
-  }, [selectedVariableIds, variableAggregations, variableSurveyLabels, variableConditions]);
+  }, [selectedVariableIds, variableAggregations, variableSurveyLabels, variableConditions, variableAnchor, variableWindows]);
 
   const loadVariablePreview = useCallback(async () => {
     if (!selectedVariables.length) { t('Chọn ít nhất 1 biến.', 'error'); return; }
@@ -601,6 +602,22 @@ export default function ResearchTab({ toast }) {
       setVariablePreviewLoading(false);
     }
   }, [selectedVariables.length, buildVariableSpec, t]);
+
+  // Xuất ngay từ kho theo biến + điều kiện (đã ẩn định danh), không cần tạo nghiên cứu.
+  const exportVariableDataset = useCallback(async () => {
+    if (!selectedVariables.length) { t('Chọn ít nhất 1 biến.', 'error'); return; }
+    setVariableExporting(true);
+    try {
+      const name = text(variableStudyDraft.name).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '') || 'du_lieu_nghien_cuu';
+      const r = await api.exportResearchArchiveVariables({ variable_selection: buildVariableSpec(), name });
+      saveBlob(r.filename || `${name}.csv`, r.blob);
+      t(`Đã xuất ${compactNumber(variablePreview?.summary?.total || 0)} lượt điều trị, ${selectedVariables.length} biến (đã ẩn định danh).`, 'ok');
+    } catch (e) {
+      t(String(e.message || e), 'error');
+    } finally {
+      setVariableExporting(false);
+    }
+  }, [selectedVariables.length, variableStudyDraft.name, buildVariableSpec, variablePreview, t]);
 
   const createStudyFromVariableSelection = useCallback(async () => {
     const name = text(variableStudyDraft.name);
@@ -634,6 +651,8 @@ export default function ResearchTab({ toast }) {
       setVariableConditions([]);
       setVariableAggregations({});
       setVariableSurveyLabels({});
+      setVariableAnchor(null);
+      setVariableWindows({});
       t(imported
         ? `Đã tạo nghiên cứu "${name}" và nạp ${compactNumber(imported)} lượt từ kho.`
         : `Đã tạo nghiên cứu "${name}".`, 'ok');
@@ -669,6 +688,7 @@ export default function ResearchTab({ toast }) {
   const studyModes = [
     ['stats', 'Thống kê & xuất dữ liệu', 'Đo lường biến; xuất CSV khi cần xử lý số liệu'],
     ['collect', 'Thu thập dữ liệu', 'Lấy dữ liệu cho danh sách mẫu và theo dõi tiến độ'],
+    ['crf', 'Phiếu nhập tay & theo dõi', 'Biến không có trên EMR và lịch gọi theo dõi sau mốc'],
   ];
 
   const collectionWorkspace = (
@@ -683,9 +703,9 @@ export default function ResearchTab({ toast }) {
 
   const renderWorkspace = () => {
     if (!isArchive) {
-      return studyMode === 'collect'
-        ? collectionWorkspace
-        : <StudyStatsView study={activeStudy} toast={t} onGoCollect={() => setStudyMode('collect')} />;
+      if (studyMode === 'collect') return collectionWorkspace;
+      if (studyMode === 'crf') return <CrfView key={activeStudy?.id} study={activeStudy} toast={t} />;
+      return <StudyStatsView study={activeStudy} toast={t} onGoCollect={() => setStudyMode('collect')} />;
     }
     if (archiveMode === 'overview') return <GeneralOverviewView {...{ generalOverview, generalOverviewLoading, pipeline, setArchiveMode }} />;
     if (archiveMode === 'patient') return <PatientLookupView {...{
@@ -694,15 +714,16 @@ export default function ResearchTab({ toast }) {
     }} />;
     if (archiveMode === 'create') return <CreateStudyView {...{
       variableCatalog, variableCatalogLoading, variableCatalogError,
-      catalogGroupOptions, filteredCatalogVariables, allCatalogVariables, questionnaireTerms, surveyOnly, setSurveyOnly,
+      catalogGroupOptions, filteredCatalogVariables, allCatalogVariables, browseCatalogVariables,
       variableQuery, setVariableQuery, variableGroupFilter, setVariableGroupFilter, variableFillFilter, setVariableFillFilter,
       questionnaireVariables, setQuestionnaireVariables,
       selectedVariableIds, selectedVariables, toggleVariable, addVariables, addCoreVariables,
       variableAggregations, setVariableAggregations, variableSurveyLabels, setVariableSurveyLabels,
       variableConditions, setVariableConditions, addConditionForVariable,
+      variableAnchor, setVariableAnchor, variableWindows, setVariableWindows,
       variableStudyDraft, setVariableStudyDraft,
       variablePreview, variablePreviewLoading, variablePreviewError, loadVariablePreview,
-      createStudyFromVariableSelection, busy,
+      createStudyFromVariableSelection, exportVariableDataset, variableExporting, busy,
     }} />;
     return collectionWorkspace;
   };
@@ -844,7 +865,7 @@ export default function ResearchTab({ toast }) {
             </div>
             <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 2, paddingBottom: creatingStudy ? 8 : 0 }}>
               {creatingStudy
-                ? 'Lấy từ dữ liệu đã có trong kho, không mở EMR. Màn hình chỉ hiện thống kê; dữ liệu chi tiết xuất ra sau khi tạo.'
+                ? 'Dán phiếu thu thập → app ghép biến với kho → đặt điều kiện chọn mẫu → xem số lượng và xuất CSV ngay. Lấy từ dữ liệu đã có, không mở EMR.'
                 : isArchive
                   ? `${archiveSummaryText}${latest?.id ? ` · đợt ${latest.id}` : ''}`
                   : [activeStudy?.description, studyCountLabel(activeStudy)].filter(Boolean).join(' · ')}

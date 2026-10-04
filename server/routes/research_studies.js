@@ -17,7 +17,9 @@ const { RESEARCH_STORE_DIR, ROOT_DIR } = require('../constants');
 const { appendSecurityAudit } = require('../services/security_audit');
 const { firstNonEmpty } = require('../research/encounter_context');
 const { importArchiveToStudy, normalizeStudyLatest, normalizeRunOutputs } = require('../research/normalize');
-const { readCsvTable, countCsvRows } = require('../research/table_io');
+const { readCsvTable, countCsvRows, writeCsv } = require('../research/table_io');
+const crfStore = require('../research/crf_store');
+const { researchCode } = require('../research/variable_selection');
 const { redactCsvTable } = require('../research/export_utils');
 const { buildCoverageSummary, buildResearchProgressSnapshot } = require('../research/progress_snapshot');
 const { buildEncodedDataset } = require('../research/encoded_dataset');
@@ -99,6 +101,81 @@ router.get('/research/studies/:studyId/variable-stats', (req, res) => {
     const runDir = path.join(runsDir(study.id), runId);
     const { summary, source_total: sourceTotal, source_limited: sourceLimited } = summarizeSelectionForRun(runDir, selection);
     return res.json({ status: 'ok', run_id: runId, summary, source_total: sourceTotal, source_limited: sourceLimited });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+// ── Phiếu nhập tay (CRF) và lịch theo dõi ─────────────────────────────────
+function studyOr404(req, res) {
+  const study = readStudy(req.params.studyId);
+  if (!study) { res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' }); return null; }
+  return study;
+}
+
+// Trường định danh (vd. số điện thoại để gọi theo dõi) chỉ trả về khi giao diện xin rõ
+// (?identified=1) VÀ được phép xem dữ liệu định danh như các màn hình nghiên cứu khác.
+router.get('/research/studies/:studyId/crf', (req, res) => {
+  try {
+    const study = studyOr404(req, res); if (!study) return undefined;
+    let includeIdentifiers = false;
+    let identifiedNote = '';
+    if (String(req.query.identified || '') === '1') {
+      try { includeIdentifiers = !researchResponseShouldRedact(req); } catch (err) { identifiedNote = String(err.message || err); }
+    }
+    const runId = resolveRunId(study.id, 'latest');
+    const runDir = runId ? path.join(runsDir(study.id), runId) : '';
+    return res.json({ status: 'ok', ...crfStore.readCrfView(study.id, { runDir, includeIdentifiers }), identified_note: identifiedNote });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+router.put('/research/studies/:studyId/crf/form', (req, res) => {
+  try {
+    const study = studyOr404(req, res); if (!study) return undefined;
+    const result = crfStore.saveForm(study.id, req.body?.form || req.body || {});
+    updateStudy(study.id, { crf_field_count: result.form.fields.length, crf_entry_count: result.entry_count });
+    return res.json({ status: 'ok', message: `Đã lưu phiếu: ${result.form.fields.length} trường, ${result.form.timepoints.length} mốc theo dõi.`, form: result.form });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+router.put('/research/studies/:studyId/crf/entries/:researchCode', (req, res) => {
+  try {
+    const study = studyOr404(req, res); if (!study) return undefined;
+    const result = crfStore.saveEntry(study.id, req.params.researchCode, req.body || {}, req.auth?.id || '');
+    updateStudy(study.id, { crf_entry_count: result.entry_count });
+    return res.json({ status: 'ok', message: `Đã lưu phiếu ${req.params.researchCode}.`, entry_count: result.entry_count });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+// Xuất gộp: biến lấy từ EMR (analysis_selected, không có thì Mã NC của danh sách mẫu) + phiếu
+// nhập tay, ghép theo Mã NC. Không có trường định danh (crf_data.csv đã loại sẵn).
+router.get('/research/studies/:studyId/crf/export-merged', (req, res) => {
+  try {
+    const study = studyOr404(req, res); if (!study) return undefined;
+    const runId = resolveRunId(study.id, 'latest');
+    const selectedFile = runId ? path.join(runsDir(study.id), runId, 'analysis_selected.csv') : '';
+    const base = selectedFile && fs.existsSync(selectedFile)
+      ? readCsvTable(selectedFile, Number.MAX_SAFE_INTEGER)
+      : { columns: ['research_code'], rows: [...new Set((readCsvTable(cohortPath(study.id), Number.MAX_SAFE_INTEGER).rows || []).map(researchCode).filter(Boolean))].map(code => ({ research_code: code })) };
+    const crf = readCsvTable(path.join(studyDir(study.id), crfStore.DATA_FILE), Number.MAX_SAFE_INTEGER);
+    const crfByCode = new Map((crf.rows || []).map(row => [row.research_code, row]));
+    const crfColumns = (crf.columns || []).filter(c => c !== 'research_code').map(c => [c, base.columns.includes(c) ? `crf_${c}` : c]);
+    const columns = [...base.columns, ...crfColumns.map(([, out]) => out)];
+    const rows = (base.rows || []).map(row => {
+      const extra = crfByCode.get(researchCode(row)) || {};
+      const out = { ...row };
+      for (const [src, dst] of crfColumns) out[dst] = extra[src] ?? '';
+      return out;
+    });
+    const file = path.join(studyDir(study.id), 'crf_merged_export.csv');
+    writeCsv(file, columns, rows);
+    return sendCsvFile(res, file, `${study.id}_du_lieu_day_du`, { redact: true });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }

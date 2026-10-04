@@ -9,12 +9,18 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+
+// Thư mục runtime tạm, đặt trước khi nạp module server (constants đọc biến này lúc nạp).
+process.env.EMR_RUNTIME_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'research_variable_stats_test_'));
 const { describeValues, summarizeSelectedDataset } = require('../server/research/variable_selection');
 const { summarizeSelectionForRun } = require('../server/research/selection_runtime');
 
 let passed = 0;
+const pending = [];
 function test(name, fn) {
-  try { fn(); passed += 1; console.log(`  ok - ${name}`); } catch (err) { console.error(`  FAIL - ${name}`); console.error(err); process.exitCode = 1; }
+  pending.push((async () => {
+    try { await fn(); passed += 1; console.log(`  ok - ${name}`); } catch (err) { console.error(`  FAIL - ${name}`); console.error(err); process.exitCode = 1; }
+  })());
 }
 
 test('biến số: n, trung bình, SD, trung vị, tứ phân vị, khoảng; đếm giá trị không phải số', () => {
@@ -90,6 +96,52 @@ test('summarizeSelectionForRun đọc run thật: có và không có điều ki�
   });
   assert.strictEqual(filtered.summary.total, 2, 'điều kiện tuổi ≥ 50 giữ 2 lượt');
   assert.strictEqual(filtered.source_total, 3);
+  // Sàng lọc từng bước: toàn kho 3 lượt → tuổi ≥ 50 còn 2; nhãn điều kiện đọc được.
+  assert.deepStrictEqual(filtered.summary.funnel.map(f => f.encounters), [3, 2]);
+  assert.strictEqual(filtered.summary.funnel[1].label, 'Tuổi ≥ 50');
+  assert.strictEqual(filtered.summary.funnel[0].patients, 3);
 });
 
-console.log(`${passed} test(s) passed`);
+test('route xuất theo biến: tên cột theo phiếu, có Mã NC, không có Mã BN/họ tên', async () => {
+  const express = require('express');
+  const http = require('http');
+  const { archiveRunsDir } = require('../server/research/store_paths');
+  const runDir = path.join(archiveRunsDir(), '20260101_000000');
+  fs.mkdirSync(runDir, { recursive: true });
+  fs.writeFileSync(path.join(runDir, 'manifest.json'), JSON.stringify({ created_at: '2026-01-01T00:00:00Z' }));
+  fs.writeFileSync(path.join(runDir, 'analysis_ready.csv'), [
+    'research_code,encounter_id,patient_key,patient_code,patient_name,sex,age',
+    'NC1,e1,P1,BN001,NGUYEN VAN A,Nam,60',
+    'NC2,e2,P2,BN002,TRAN THI B,Nữ,40',
+  ].join('\n'));
+  const app = express();
+  app.use(express.json());
+  app.use('/api', require('../server/routes/research'));
+  const server = http.createServer(app).listen(0);
+  try {
+    const port = server.address().port;
+    const body = JSON.stringify({ variable_selection: {
+      selected_variables: [
+        { id: 'analysis_ready.sex', table: 'analysis_ready', name: 'sex', label: 'Giới tính', survey_label: '2. Giới tính', type: 'category' },
+        { id: 'analysis_ready.patient_name', table: 'analysis_ready', name: 'patient_name', label: 'Họ tên', survey_label: 'Họ tên', type: 'text' },
+      ],
+      conditions: [{ variable_id: 'analysis_ready.age', table: 'analysis_ready', name: 'age', type: 'number', operator: '>=', value: '50' }],
+    } });
+    const csv = await new Promise((resolve, reject) => {
+      const req = http.request({ port, path: '/api/research/archive/variable-export', method: 'POST', headers: { 'Content-Type': 'application/json' } }, res => {
+        let data = ''; res.setEncoding('utf8'); res.on('data', c => { data += c; }); res.on('end', () => resolve({ status: res.statusCode, data }));
+      });
+      req.on('error', reject); req.end(body);
+    });
+    assert.strictEqual(csv.status, 200, csv.data);
+    const [header, ...lines] = csv.data.replace(/^\ufeff/, '').trim().split(/\r?\n/);
+    assert.ok(header.split(',').includes('2. Giới tính'), header);
+    assert.deepStrictEqual(header.split(','), ['Mã NC', 'Mã người bệnh (giả danh)', '2. Giới tính'], 'chỉ cột nhận diện + đúng biến đã chọn');
+    assert.ok(!/Họ tên|BN00|NGUYEN/.test(csv.data), 'không có định danh');
+    assert.strictEqual(lines.length, 1, 'chỉ lượt tuổi ≥ 50');
+  } finally {
+    server.close();
+  }
+});
+
+Promise.all(pending).then(() => console.log(`${passed} test(s) passed`));

@@ -40,6 +40,7 @@ const ARCHIVE_TABLES = [
 
 const STUDY_TABLES = [
   ['cohort',         'Danh sách mẫu'],
+  ['crf',            'Phiếu nhập tay'],
   ['research_source','Nguồn chuẩn'],
   ['patient_master', 'Người bệnh'],
   ['encounters',     'Đợt điều trị'],
@@ -97,6 +98,7 @@ function datasetCount(source, id, isArchive = false) {
   if (isArchive && id === 'deep_source')  return source?.latest_run?.outputs?.deep_source  || source?.latest_run?.outputs?.patients || 0;
   if (isArchive && id === 'patients')     return source?.latest_run?.outputs?.patients || 0;
   if (id === 'cohort') return isArchive ? source?.source_count || 0 : source?.cohort_count || 0;
+  if (id === 'crf') return isArchive ? 0 : Number(source?.crf_entry_count || 0);
   return source?.latest_run?.outputs?.[id] || 0;
 }
 

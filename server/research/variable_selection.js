@@ -165,6 +165,13 @@ function sanitizeVariableSelection(input) {
       virtual_kind: String(v?.virtual_kind || '').slice(0, 80),
       aggregation: String(v?.aggregation || 'list').slice(0, 40),
     };
+    // Cửa sổ ngày so với mốc thời gian của nghiên cứu (vd. -14 → 0: trong 14 ngày trước mốc).
+    const windowFrom = sanitizeWindowDays(v?.window_from_days);
+    const windowTo = sanitizeWindowDays(v?.window_to_days);
+    if (windowFrom != null || windowTo != null) {
+      out.window_from_days = windowFrom;
+      out.window_to_days = windowTo;
+    }
     const sourceFilter = sanitizeFilterObject(v?.source_filter);
     if (sourceFilter) out.source_filter = sourceFilter;
     return out;
@@ -198,7 +205,63 @@ function sanitizeVariableSelection(input) {
     created_at: String(src.created_at || new Date().toISOString()).slice(0, 80),
     selected_variables: selected,
     conditions,
+    ...(sanitizeAnchor(src.anchor) ? { anchor: sanitizeAnchor(src.anchor) } : {}),
   };
+}
+
+function sanitizeWindowDays(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  const n = Number(String(value).replace(',', '.'));
+  if (!Number.isFinite(n)) return null;
+  return Math.max(-3650, Math.min(3650, Math.round(n * 100) / 100));
+}
+
+// Mốc thời gian của nghiên cứu: ngày nhập viện, ngày phẫu thuật, hoặc lần đầu dùng một thuốc
+// trong đợt điều trị (vd. lần truyền Zoledronic Acid). Biến lấy "gần trước/sau mốc nhất" và
+// cửa sổ ngày đều tính theo mốc này.
+const ANCHOR_KINDS = new Set(['admission', 'surgery', 'drug']);
+function sanitizeAnchor(input) {
+  if (!input || typeof input !== 'object') return null;
+  const kind = String(input.kind || '').trim();
+  if (!ANCHOR_KINDS.has(kind)) return null;
+  const drug = String(input.drug || '').trim().slice(0, 120);
+  if (kind === 'drug' && normalizeForFilter(drug).length < 3) return null;
+  const label = String(input.label || '').trim().slice(0, 160);
+  return { kind, ...(kind === 'drug' ? { drug } : {}), ...(label ? { label } : {}) };
+}
+
+// Thời điểm mốc của một lượt điều trị. Thuốc: y lệnh sớm nhất trong đợt có tên/hoạt chất khớp.
+function anchorForEncounter(anchor, identity, tableRowsByKey = {}) {
+  if (!anchor) return { raw: '', time: NaN };
+  if (anchor.kind === 'admission' || anchor.kind === 'surgery') {
+    const raw = String(anchor.kind === 'admission' ? identity.admission_date : identity.surgery_date || '').trim();
+    return { raw, time: coerceComparable(raw).time };
+  }
+  const needle = normalizeForFilter(anchor.drug);
+  let best = { raw: '', time: NaN };
+  for (const row of relatedRows(tableRowsByKey.medication_orders || [], identity)) {
+    const hay = normalizeForFilter([getCell(row, ['drug_name_norm', 'drug_name_raw', 'Tên thuốc']), getCell(row, ['active_ingredient'])].join(' '));
+    if (!hay.includes(needle)) continue;
+    const raw = String(eventTime(row) || '').trim();
+    const time = coerceComparable(raw).time;
+    if (Number.isFinite(time) && (!Number.isFinite(best.time) || time < best.time)) best = { raw, time };
+  }
+  return best;
+}
+
+const DAY_MS = 86400000;
+const SINGLE_ROW_TABLES = new Set(['analysis_ready', 'encounters', 'patients', 'patient_master', 'cohort', 'research_source', 'initial_list']);
+function startOfDay(time) { const d = new Date(time); d.setHours(0, 0, 0, 0); return d.getTime(); }
+
+// Giữ các giá trị nằm trong cửa sổ ngày quanh mốc. Theo ngày lịch: -14 → 0 nghĩa là từ đầu ngày
+// thứ 14 trước ngày mốc đến đúng thời điểm mốc; 1 → 3 là từ đầu ngày thứ nhất sau mốc đến hết
+// ngày thứ 3. Không có mốc hoặc giá trị không có thời gian thì bị loại khi đã đặt cửa sổ.
+function insideAnchorWindow(time, anchorTime, fromDays, toDays) {
+  if (!Number.isFinite(time) || !Number.isFinite(anchorTime)) return false;
+  const day0 = startOfDay(anchorTime);
+  const lower = fromDays == null ? -Infinity : day0 + fromDays * DAY_MS;
+  const upper = toDays == null ? Infinity : (toDays === 0 ? anchorTime : day0 + (toDays + 1) * DAY_MS - 1);
+  return time >= lower && time <= upper;
 }
 
 function hasActiveSelection(selection) {
@@ -374,10 +437,18 @@ function variableValue(variable, row) {
 
 function summarizeVariableValue(variable, rows, identity = {}) {
   const candidates = Array.isArray(rows) ? rows : [];
-  const matched = isVirtual(variable)
+  const aggregation = String(variable?.aggregation || 'list').trim().toLowerCase();
+  // Bảng một dòng mỗi lượt (bảng tổng quát, đợt điều trị, người bệnh) không có "thời điểm"
+  // cho từng giá trị nên không áp cửa sổ.
+  const windowed = (variable?.window_from_days != null || variable?.window_to_days != null)
+    && !SINGLE_ROW_TABLES.has(String(variable?.table || ''));
+  let matched = isVirtual(variable)
     ? candidates.filter(row => virtualVariableMatches(row, variable))
     : candidates;
-  const aggregation = String(variable?.aggregation || 'list').trim().toLowerCase();
+  // Cửa sổ ngày áp cho mọi cách lấy, kể cả Số lần / Có-không.
+  if (windowed) {
+    matched = matched.filter(row => insideAnchorWindow(coerceComparable(eventTime(row)).time, identity.anchor_time, variable.window_from_days, variable.window_to_days));
+  }
   if (aggregation === 'count') return String(matched.length);
   if (aggregation === 'any') return matched.length ? '1' : '0';
   if (!matched.length) return '';
@@ -389,7 +460,10 @@ function summarizeVariableValue(variable, rows, identity = {}) {
     time: coerceComparable(eventTime(row)).time,
   })).filter(item => String(item.value ?? '').trim());
   if (!items.length) return '';
+  return aggregateItems(variable, aggregation, items, identity);
+}
 
+function aggregateItems(variable, aggregation, items, identity) {
   if (aggregation === 'first' || aggregation === 'last') {
     const datedItems = items.filter(item => Number.isFinite(item.time));
     const ordered = datedItems.length
@@ -406,14 +480,18 @@ function summarizeVariableValue(variable, rows, identity = {}) {
     return String(Number((nums.reduce((sum, n) => sum + n, 0) / nums.length).toFixed(6)));
   }
 
-  if (aggregation === 'closest_before_surgery' || aggregation === 'closest_after_surgery') {
-    const surgeryTime = coerceComparable(identity.surgery_date || '').time;
-    if (!Number.isFinite(surgeryTime)) return '';
-    const eligible = items.filter(item => Number.isFinite(item.time) && (
-      aggregation === 'closest_before_surgery' ? item.time <= surgeryTime : item.time >= surgeryTime
-    ));
+  const closest = {
+    closest_before_surgery: ['before', coerceComparable(identity.surgery_date || '').time],
+    closest_after_surgery: ['after', coerceComparable(identity.surgery_date || '').time],
+    closest_before_anchor: ['before', identity.anchor_time],
+    closest_after_anchor: ['after', identity.anchor_time],
+  }[aggregation];
+  if (closest) {
+    const [side, refTime] = closest;
+    if (!Number.isFinite(refTime)) return '';
+    const eligible = items.filter(item => Number.isFinite(item.time) && (side === 'before' ? item.time <= refTime : item.time >= refTime));
     if (!eligible.length) return '';
-    eligible.sort((a, b) => Math.abs(a.time - surgeryTime) - Math.abs(b.time - surgeryTime));
+    eligible.sort((a, b) => Math.abs(a.time - refTime) - Math.abs(b.time - refTime));
     return String(eligible[0].value);
   }
 
@@ -431,6 +509,9 @@ function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByK
     'admission_date', 'surgery_date', 'discharge_date', 'hospital_stay_days', 'time_to_surgery_hours',
     'diagnosis_raw', 'needs_manual_review', 'source_run_id', 'row_hash',
   ];
+  const anchor = selection.anchor || null;
+  // Có mốc thời gian thì xuất thêm cột thời điểm mốc của từng lượt (vd. giờ truyền thuốc).
+  if (anchor) baseColumns.splice(baseColumns.indexOf('discharge_date') + 1, 0, 'anchor_datetime');
   const used = new Set(baseColumns);
   const variableColumns = selected.map(variable => ({ ...variable, output_column: selectedColumnName(variable, used) }));
   const columns = [...baseColumns, ...variableColumns.map(v => v.output_column)];
@@ -444,8 +525,11 @@ function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByK
       discharge_date: getCell(row, ['discharge_date', 'Ngày ra viện']),
       surgery_date: getCell(row, ['surgery_date', 'Ngày phẫu thuật']),
     };
+    const anchorAt = anchorForEncounter(anchor, identity, tableRowsByKey);
+    identity.anchor_time = anchorAt.time;
     const out = {};
     for (const col of baseColumns) out[col] = row?.[col] ?? getCell(row, col) ?? '';
+    if (anchor) out.anchor_datetime = anchorAt.raw;
     for (const variable of variableColumns) {
       const table = variable.table || 'analysis_ready';
       const cacheKey = `${table}\u0000${identity.encounter_id}\u0000${identity.research_code}\u0000${identity.patient_code}\u0000${identity.admission_date}\u0000${identity.discharge_date}`;
@@ -477,9 +561,11 @@ function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByK
         virtual_kind: v.virtual_kind,
         source_filter: v.source_filter,
         aggregation: v.aggregation || 'list',
+        ...(v.window_from_days != null || v.window_to_days != null ? { window_from_days: v.window_from_days, window_to_days: v.window_to_days } : {}),
         output_column: v.output_column,
       })),
       conditions: selection.conditions || [],
+      ...(anchor ? { anchor } : {}),
     },
   };
 }
@@ -590,6 +676,13 @@ function summarizeSelectedDataset(dataset) {
       };
     }),
     cohort: describeCohort(rows),
+    ...(dataset?.manifest?.anchor ? {
+      anchor: {
+        ...dataset.manifest.anchor,
+        found: rows.filter(row => hasValue(row?.anchor_datetime)).length,
+        missing: rows.filter(row => !hasValue(row?.anchor_datetime)).length,
+      },
+    } : {}),
   };
 }
 
@@ -610,4 +703,7 @@ module.exports = {
   buildSelectedAnalysisDataset,
   summarizeSelectedDataset,
   describeValues,
+  sanitizeAnchor,
+  anchorForEncounter,
+  insideAnchorWindow,
 };
