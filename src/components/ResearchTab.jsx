@@ -24,6 +24,7 @@ import { PatientLookupView } from './research/PatientLookupView.jsx';
 import { GeneralOverviewView } from './research/GeneralOverviewView.jsx';
 import { CreateStudyView } from './research/CreateStudyView.jsx';
 import { StudyStatsView } from './research/StudyStatsView.jsx';
+import { EmptyCohortNotice } from './research/EmptyCohortNotice.jsx';
 import { CrfView } from './research/CrfView.jsx';
 import { RunningBanner, formatDuration } from './research/RunningBanner.jsx';
 import { NormalizeStatus } from './research/NormalizeStatus.jsx';
@@ -857,9 +858,10 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
 
   const renderWorkspace = () => {
     if (!isArchive) {
-      if (studyMode === 'collect') return collectionWorkspace;
-      if (studyMode === 'crf') return <CrfView key={activeStudy?.id} study={activeStudy} toast={t} />;
-      return <StudyStatsView study={activeStudy} toast={t} onGoCollect={() => setStudyMode('collect')} />;
+      const view = studyMode === 'collect' ? collectionWorkspace
+        : studyMode === 'crf' ? <CrfView key={`${activeStudy?.id}:${activeStudy?.cohort_count || 0}`} study={activeStudy} toast={t} />
+        : <StudyStatsView study={activeStudy} toast={t} onGoCollect={() => setStudyMode('collect')} />;
+      return <><EmptyCohortNotice study={activeStudy} toast={t} onImported={loadSummary} />{view}</>;
     }
     if (archiveMode === 'overview') return <GeneralOverviewView {...{ generalOverview, generalOverviewLoading, pipeline, setArchiveMode }} />;
     if (archiveMode === 'patient') return <PatientLookupView {...{
