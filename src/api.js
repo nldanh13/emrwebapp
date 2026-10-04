@@ -202,12 +202,16 @@ function parseRequestBody(options = {}) {
  * Đọc message lỗi từ response JSON của backend.
  * Tránh mất thông tin như "Python timeout", "thiếu file", "date_from sai định dạng".
  */
+// 404 không kèm JSON = máy chủ không có đường dẫn này: thường do vừa cập nhật code (giao diện mới)
+// mà máy chủ đang chạy vẫn là bản cũ.
+const STALE_SERVER_MESSAGE = 'Máy chủ chưa có chức năng này (404). Thường do vừa cập nhật code nhưng máy chủ chưa khởi động lại: tắt máy chủ rồi chạy lại npm start (lúc không có tác vụ nào đang chạy).';
+
 async function extractErrorMessage(res) {
   try {
     const data = await res.json();
-    return data?.message || `${res.status} ${res.statusText}`;
+    return data?.message || (res.status === 404 ? STALE_SERVER_MESSAGE : `${res.status} ${res.statusText}`);
   } catch {
-    return `${res.status} ${res.statusText}`;
+    return res.status === 404 ? STALE_SERVER_MESSAGE : `${res.status} ${res.statusText}`;
   }
 }
 
