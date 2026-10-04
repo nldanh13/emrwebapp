@@ -7,6 +7,7 @@ const { TABLES } = require('./store_paths');
 const { readCsvTable, writeCsv } = require('./table_io');
 const path = require('path');
 const { writeJsonAtomic } = require('../utils/file');
+const { augmentMedicationRowsForResearch } = require('./medication_ingredient_catalog');
 
 function sanitizeVariableSelection(input) {
   return variableSelection.sanitizeVariableSelection(input);
@@ -24,15 +25,36 @@ function readRunRowsForSelection(runDir, tableKey, fallbackRows = [], maxRows = 
   return readCsvTable(path.join(runDir, table.file), maxRows).rows || [];
 }
 
+function selectionNeedsMedicationData(selection) {
+  if (selection?.anchor?.kind === 'drug') return true;
+  return [...(selection?.selected_variables || []), ...(selection?.conditions || [])]
+    .some(item => item?.table === 'medication_orders');
+}
+
 function loadRunTablesForSelection(runDir, selection, fallbackRows = [], maxRows = Number.MAX_SAFE_INTEGER) {
   const out = {};
   const keys = new Set();
   for (const item of [...(selection?.selected_variables || []), ...(selection?.conditions || [])]) {
     if (item?.table) keys.add(item.table);
   }
-  // Mốc "lần đầu dùng thuốc" cần y lệnh thuốc của từng lượt.
-  if (selection?.anchor?.kind === 'drug') keys.add('medication_orders');
+
+  // Mốc thuốc/biến thuốc cần cả bảng thuốc chuẩn hóa và Diễn biến/Y lệnh. Danh mục thuốc
+  // sẽ ánh xạ tên thương mại -> hoạt chất trong bộ nhớ khi chọn mẫu, không sửa CSV gốc.
+  const needsMedication = selectionNeedsMedicationData(selection);
+  if (needsMedication) {
+    keys.add('medication_orders');
+    keys.add('clinical_notes');
+  }
+
   for (const key of keys) out[key] = readRunRowsForSelection(runDir, key, fallbackRows, maxRows);
+
+  if (needsMedication) {
+    out.medication_orders = augmentMedicationRowsForResearch(
+      out.medication_orders || [],
+      out.clinical_notes || [],
+    );
+  }
+
   if (fallbackRows?.length) {
     out.initial_list = out.initial_list || fallbackRows;
     out.cohort = out.cohort || fallbackRows;
@@ -43,7 +65,14 @@ function loadRunTablesForSelection(runDir, selection, fallbackRows = [], maxRows
 
 function buildSelectedAnalysisForRun(runDir, analysisReadyRows, normalizedRowsByKey, selection) {
   if (!variableSelection.hasActiveSelection(selection)) return null;
-  const selected = variableSelection.buildSelectedAnalysisDataset(analysisReadyRows || [], selection, normalizedRowsByKey || {});
+  const tables = { ...(normalizedRowsByKey || {}) };
+  if (selectionNeedsMedicationData(selection)) {
+    tables.medication_orders = augmentMedicationRowsForResearch(
+      tables.medication_orders || [],
+      tables.clinical_notes || [],
+    );
+  }
+  const selected = variableSelection.buildSelectedAnalysisDataset(analysisReadyRows || [], selection, tables);
   writeCsv(path.join(runDir, 'analysis_selected.csv'), selected.columns, selected.rows);
   writeJsonAtomic(path.join(runDir, 'analysis_selection_manifest.json'), {
     ...selected.manifest,
@@ -103,4 +132,5 @@ module.exports = {
   readRunRowsForSelection,
   loadRunTablesForSelection,
   buildSelectedAnalysisForRun,
+  selectionNeedsMedicationData,
 };
