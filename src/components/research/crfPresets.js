@@ -1,7 +1,7 @@
 // Mẫu phiếu nhập tay dựng sẵn. Mỗi dòng: "Nhóm | Nhãn | kiểu | lựa chọn (cách nhau ;) | đơn vị | min-max | cờ"
 // kiểu: number, text, choice, yesno, date, datetime. Cờ "id" = trường định danh (không ra file phân tích).
-// Các biến đã lấy được từ EMR (năm sinh, giới, khoa, chẩn đoán, xét nghiệm, thuốc) không lặp lại ở đây:
-// chọn chúng ở bước Chọn biến của Tạo nghiên cứu.
+// Cờ "auto:<khóa>" = câu hỏi EMR/kho trả lời được (năm sinh, giới, khoa, chẩn đoán, xét nghiệm 14 ngày,
+// thuốc 3 ngày trước truyền, bệnh kèm): app điền sẵn giá trị kèm nguồn, người nhập xem lại và sửa được.
 
 const NRS = 'number |  | điểm | 0-10';
 const GRADE = 'choice | 0; 1; 2; 3; 4';
@@ -18,30 +18,40 @@ const APR_ZOLEDRONIC = {
   ],
   base: `
 Nhân khẩu & lối sống | Số điện thoại liên lạc | text |  |  |  | id
+Nhân khẩu & lối sống | Năm sinh | number |  |  | 1900-2030 | auto:birth_year
+Nhân khẩu & lối sống | Giới tính | choice | Nam; Nữ |  |  | auto:sex
+Nhân khẩu & lối sống | Khoa | text |  |  |  | auto:department
 Nhân khẩu & lối sống | Chiều cao | number |  | cm | 50-250
 Nhân khẩu & lối sống | Cân nặng | number |  | kg | 20-250
 Nhân khẩu & lối sống | BMI | number |  | kg/m2 | 10-60
 Nhân khẩu & lối sống | Khoảng cách nhà – bệnh viện | number |  | km | 0-2000
 Nhân khẩu & lối sống | Hút thuốc lá | choice | Không; Đang hút/Cai < 6 tháng
 Nhân khẩu & lối sống | Uống rượu bia trong 24 giờ qua | yesno
-Tình trạng loãng xương | Chẩn đoán xác định | choice | Loãng xương sau mãn kinh/nguyên phát; Loãng xương nặng (có gãy xương)
+Tình trạng loãng xương | Chẩn đoán xác định | choice | Loãng xương sau mãn kinh/nguyên phát; Loãng xương nặng (có gãy xương) |  |  | auto:osteo_dx
 Tình trạng loãng xương | T-score thấp nhất | number |  | SD | -10-5
-Tình trạng loãng xương | Tiền sử gãy xương | yesno
+Tình trạng loãng xương | Tiền sử gãy xương | yesno |  |  |  | auto:fracture
 Tình trạng loãng xương | Vị trí gãy xương | text
 Tiền sử dùng thuốc | Bisphosphonate đường uống | choice | Chưa từng dùng; Đã dùng nhưng ngưng > 1 năm; Đang dùng đều đặn, nay chuyển sang truyền
 Tiền sử dùng thuốc | Tiền sử truyền Zoledronic Acid | choice | Lần đầu tiên trong đời; Đã truyền, ngưng ≥ 3 năm
-Bệnh kèm & thuốc đồng sử dụng | Kháng viêm/giảm đau trong 3 ngày trước truyền | yesno
-Bệnh kèm & thuốc đồng sử dụng | Tên thuốc kháng viêm/giảm đau | text
-Bệnh kèm & thuốc đồng sử dụng | Dùng Statin | yesno
-Bệnh kèm & thuốc đồng sử dụng | Đái tháo đường | yesno
-Bệnh kèm & thuốc đồng sử dụng | Bệnh dạ dày – tá tràng | yesno
-Bệnh kèm & thuốc đồng sử dụng | Bệnh tự miễn (Lupus/RA) | yesno
+Bệnh kèm & thuốc đồng sử dụng | Kháng viêm/giảm đau trong 3 ngày trước truyền | yesno |  |  |  | auto:analgesic_3d
+Bệnh kèm & thuốc đồng sử dụng | Tên thuốc kháng viêm/giảm đau | text |  |  |  | auto:analgesic_3d_names
+Bệnh kèm & thuốc đồng sử dụng | Dùng Statin | yesno |  |  |  | auto:statin
+Bệnh kèm & thuốc đồng sử dụng | Đái tháo đường | yesno |  |  |  | auto:dm
+Bệnh kèm & thuốc đồng sử dụng | Bệnh dạ dày – tá tràng | yesno |  |  |  | auto:gastro
+Bệnh kèm & thuốc đồng sử dụng | Bệnh tự miễn (Lupus/RA) | yesno |  |  |  | auto:autoimmune
+Cận lâm sàng (14 ngày trước truyền) | Vitamin D [25(OH)D] | number |  | ng/mL | 0-300 | auto:lab_vitd
+Cận lâm sàng (14 ngày trước truyền) | Ngày xét nghiệm Vitamin D | date |  |  |  | auto:lab_vitd_date
+Cận lâm sàng (14 ngày trước truyền) | Canxi ion hóa | number |  | mmol/L | 0-5 | auto:lab_ca_ion
+Cận lâm sàng (14 ngày trước truyền) | Mức lọc cầu thận (eGFR) | number |  | mL/phút/1.73m2 | 0-250 | auto:lab_egfr
+Cận lâm sàng (14 ngày trước truyền) | Bạch cầu (WBC) | number |  | G/L | 0-500 | auto:lab_wbc
+Cận lâm sàng (14 ngày trước truyền) | Tỷ lệ Lympho (%Lym) | number |  | % | 0-100 | auto:lab_lym
+Cận lâm sàng (14 ngày trước truyền) | Tỷ lệ Mono (%Mono) | number |  | % | 0-100 | auto:lab_mono
 Triệu chứng nền | Nhiệt độ cơ thể nền | number |  | °C | 34-43
 Triệu chứng nền | Đau cột sống thắt lưng (NRS) | ${NRS}
 Triệu chứng nền | Đau khớp gối/vai/háng (NRS) | ${NRS}
 Triệu chứng nền | Đau mỏi cơ toàn thân (NRS) | ${NRS}
 Triệu chứng nền | Mệt mỏi nền (NRS) | ${NRS}
-Trước khi truyền | Buổi truyền | choice | Sáng (trước 12h); Chiều (sau 12h)
+Trước khi truyền | Buổi truyền | choice | Sáng (trước 12h); Chiều (sau 12h) |  |  | auto:infusion_session
 Trước khi truyền | Tình trạng ăn uống | choice | Đói (> 6h chưa ăn); No (ăn trong vòng 4h)
 Trước khi truyền | Mức độ lo lắng (NRS) | ${NRS}
 Trước khi truyền | Kỳ vọng tác dụng phụ | choice | Không lo; Lo nhẹ; Tin chắc sẽ bị hành
@@ -108,6 +118,7 @@ function parseLines(textBlock, timepoint = '') {
     const m = /^(-?[\d.]+)-(-?[\d.]+)$/.exec(range || '');
     if (m) { field.min = Number(m[1]); field.max = Number(m[2]); }
     if (flag === 'id') field.identifier = true;
+    if (flag?.startsWith('auto:')) field.auto = flag.slice(5);
     return field;
   });
 }

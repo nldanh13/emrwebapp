@@ -45,6 +45,7 @@ const HEAVY_TASK_ROUTES = [
   '/research/studies/:studyId/fetch-order-history',
   '/research/studies/:studyId/collect-auto',
   '/research/studies/:studyId/import-from-archive',
+  '/research/studies/:studyId/from-archive',
   '/research/studies/:studyId/normalize',
   '/research/studies/:studyId/finalize-dataset',
   '/research/studies/:studyId/build-encoded-dataset',

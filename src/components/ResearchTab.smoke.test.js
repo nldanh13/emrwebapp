@@ -259,6 +259,23 @@ describe('ResearchTab (khói)', () => {
     expect(api.runResearchStudy).toHaveBeenCalledWith(NEW_STUDY.id, expect.objectContaining({ resume: true }));
   });
 
+  it('nghiên cứu chọn mẫu từ kho: lấy dữ liệu thẳng từ kho, không mở EMR', async () => {
+    NEW_STUDY.cohort_source = 'archive';
+    try {
+      api.runResearchStudy.mockClear();
+      api.fetchResearchStudyFromArchive.mockClear();
+      await clickText('Tải lại');
+      await clickText(NEW_STUDY.name);
+      expect(container.textContent).toContain('lấy thẳng từ kho, không mở EMR');
+      await clickText('Lấy dữ liệu từ kho');
+      for (let i = 0; i < 5; i += 1) await flush();
+      expect(api.fetchResearchStudyFromArchive).toHaveBeenCalledWith(NEW_STUDY.id);
+      expect(api.runResearchStudy).not.toHaveBeenCalled();
+    } finally {
+      delete NEW_STUDY.cohort_source;
+    }
+  });
+
   it('Tạo nghiên cứu: đặt mốc "lần đầu dùng thuốc" và cửa sổ ngày, gửi kèm khi tính thống kê', async () => {
     await clickText('Tạo nghiên cứu mới');
     await setInput(container.querySelector('#study-name'), 'APR Zoledronic');

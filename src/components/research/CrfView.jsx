@@ -63,13 +63,26 @@ function FieldInput({ field, value, onChange, hiddenSaved }) {
   );
 }
 
-function FieldGrid({ fields, values, onChange, hiddenSaved = [] }) {
+// autoValues: { [fieldId]: { value, source } } — giá trị gợi ý từ dữ liệu EMR/kho đã điền sẵn.
+function AutoNote({ auto, value }) {
+  if (!auto) return null;
+  const shown = auto.value === '1' ? 'Có' : auto.value === '0' ? 'Không' : auto.value;
+  const same = String(value ?? '') === String(auto.value);
+  return (
+    <span style={{ fontSize: FS.xs, color: same ? C.green : C.amber, lineHeight: 1.35 }}>
+      {same ? `Tự điền từ dữ liệu: ${auto.source}` : `Đã sửa · dữ liệu ghi: ${shown} (${auto.source})`}
+    </span>
+  );
+}
+
+function FieldGrid({ fields, values, onChange, hiddenSaved = [], autoValues = {} }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: '10px 14px' }}>
       {fields.map(f => (
-        <label key={f.id} style={{ display: 'grid', gap: 4, fontSize: FS.sm, color: C.text2 }}>
+        <label key={f.id} style={{ display: 'grid', gap: 4, fontSize: FS.sm, color: C.text2, alignContent: 'start' }}>
           <span>{f.label}{f.unit ? <span style={{ color: C.text3 }}> ({f.unit})</span> : null}{f.identifier ? <span style={{ color: C.amber }}> · định danh</span> : null}</span>
           <FieldInput field={f} value={values?.[f.id]} onChange={v => onChange(f.id, v)} hiddenSaved={hiddenSaved.includes(f.id) && values?.[f.id] === undefined} />
+          <AutoNote auto={autoValues[f.id]} value={values?.[f.id]} />
         </label>
       ))}
     </div>
@@ -166,22 +179,26 @@ function EntryView({ data, studyId, selected, setSelected, focusTp, toast, onSav
 
   useEffect(() => {
     if (!sample) { setDraft(null); return; }
+    // Trường chưa nhập tay: điền sẵn giá trị lấy từ dữ liệu EMR/kho (sửa được; bấm Lưu để giữ).
+    const autoDefaults = Object.fromEntries(Object.entries(sample.auto_values || {})
+      .filter(([id]) => sample.values?.[id] === undefined || sample.values?.[id] === '')
+      .map(([id, v]) => [id, v.value]));
     setDraft({
       anchor_at: sample.anchor_at || '',
-      values: { ...sample.values },
+      values: { ...autoDefaults, ...sample.values },
       timepoints: Object.fromEntries(data.form.timepoints.map(tp => [tp.id, {
         status: sample.timepoints?.[tp.id]?.status || 'pending',
         note: sample.timepoints?.[tp.id]?.note || '',
         values: { ...(sample.timepoints?.[tp.id]?.values || {}) },
       }])),
     });
-  }, [sample?.research_code, sample?.updated_at]); // eslint-disable-line
+  }, [sample?.research_code, sample?.updated_at, Object.keys(sample?.auto_values || {}).length]); // eslint-disable-line
 
   useEffect(() => {
     if (focusTp) document.getElementById(`crf-tp-${focusTp}`)?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
   }, [focusTp, selected, draft === null]); // eslint-disable-line
 
-  const filled = s => baseFields.length ? Math.round(baseFields.filter(f => s.values?.[f.id] || s.identifiers_saved?.includes(f.id)).length * 100 / baseFields.length) : 0;
+  const filled = s => baseFields.length ? Math.round(baseFields.filter(f => s.values?.[f.id] || s.auto_values?.[f.id] || s.identifiers_saved?.includes(f.id)).length * 100 / baseFields.length) : 0;
   const list = data.samples.filter(s => !query || s.research_code.toLowerCase().includes(query.toLowerCase()));
 
   const save = async () => {
@@ -235,14 +252,19 @@ function EntryView({ data, studyId, selected, setSelected, focusTp, toast, onSav
               </label>
               <div style={{ fontSize: FS.xs, color: C.text3, maxWidth: 260 }}>
                 {anchor ? <>Đang dùng mốc {anchor.source}: <b style={{ color: C.text2 }}>{fmt(anchor.at)}</b></> : 'Chưa có mốc: chưa tính được hạn gọi theo dõi.'}
-                {!draft.anchor_at && sample.anchor_auto ? ' (lấy từ y lệnh; nhập tay để thay)' : ''}
+                {!draft.anchor_at && sample.anchor_auto ? ` (${sample.anchor_auto_source || 'lấy từ y lệnh'}; nhập tay để thay)` : ''}
               </div>
             </section>
 
+            {!data.form.fields.some(f => f.auto) && (
+              <div style={{ ...card, background: C.amberBg, borderColor: C.amberBorder, fontSize: FS.sm, color: C.text2 }}>
+                Phiếu này chưa có câu tự điền từ dữ liệu EMR (năm sinh, giới, khoa, xét nghiệm, thuốc, bệnh kèm). Vào <b>Thiết kế phiếu</b> → <b>Dùng mẫu này</b> → <b>Lưu thiết kế phiếu</b> để có; dữ liệu đã nhập được giữ.
+              </div>
+            )}
             {Object.entries(sections).map(([section, fields]) => (
               <section key={section || 'chung'} style={card}>
                 <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text, marginBottom: 10 }}>{section || 'Thông tin chung'}</div>
-                <FieldGrid fields={fields} values={draft.values} onChange={setValue} hiddenSaved={sample.identifiers_saved || []} />
+                <FieldGrid fields={fields} values={draft.values} onChange={setValue} hiddenSaved={sample.identifiers_saved || []} autoValues={sample.auto_values || {}} />
               </section>
             ))}
 

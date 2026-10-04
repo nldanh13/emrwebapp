@@ -82,6 +82,7 @@ export function CollectionWorkspace({
   // nghiên cứu mới tạo thì chưa, nên lần đầu phải lấy theo quy trình đầy đủ.
   const hasRun = isArchive ? Boolean(latestRun?.id) : Boolean(study?.latest_run);
   const firstCollect = hasList && !hasRun;
+  const fromArchive = !isArchive && study?.cohort_source === 'archive';
   const headless = isArchive ? archiveOptions.headless : studyOptions.headless;
   const setHeadless = (value) => (isArchive
     ? setArchiveOptions(p => ({ ...p, headless: value }))
@@ -148,11 +149,13 @@ export function CollectionWorkspace({
         {firstCollect && (
           <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ flex: '1 1 300px', fontSize: FS.sm, color: C.text2 }}>
-              <b style={{ color: C.text }}>Chưa lấy dữ liệu lần nào.</b> Lần đầu sẽ lấy toàn bộ cho {compactNumber(study?.cohort_count || 0)} mẫu
-              (XN &amp; CĐHA, hồ sơ, y lệnh) rồi chuẩn hóa. Từ lần sau dùng Thu thập tự động để chỉ lấy phần còn thiếu.
+              <b style={{ color: C.text }}>Chưa lấy dữ liệu lần nào.</b>{' '}
+              {fromArchive
+                ? <>Mẫu chọn từ kho nên dữ liệu (XN &amp; CĐHA, hồ sơ, y lệnh) của {compactNumber(study?.cohort_count || 0)} mẫu đã có sẵn: lấy thẳng từ kho, không mở EMR. Phần kho còn thiếu thì dùng Thu thập tự động để lấy bổ sung từ EMR.</>
+                : <>Lần đầu sẽ lấy toàn bộ cho {compactNumber(study?.cohort_count || 0)} mẫu (XN &amp; CĐHA, hồ sơ, y lệnh) rồi chuẩn hóa. Từ lần sau dùng Thu thập tự động để chỉ lấy phần còn thiếu.</>}
             </div>
             <Btn variant="solidPrimary" onClick={runSimpleDataCollection} disabled={uiBusy} loading={uiBusy && automationRun.kind === 'collect'} style={{ height: 32 }}>
-              Lấy dữ liệu lần đầu
+              {fromArchive ? 'Lấy dữ liệu từ kho' : 'Lấy dữ liệu lần đầu'}
             </Btn>
           </div>
         )}
