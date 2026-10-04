@@ -1,8 +1,9 @@
 // server/routes/medication_catalog.js
 // Quản lý danh mục thuốc (config/medication_catalog.json) — tên chuẩn, alias,
-// hàm lượng/thể tích mặc định — dùng để worker suy luận khi EMR chỉ ghi tên thuốc.
+// hoạt chất, hàm lượng/thể tích mặc định — dùng cho worker và nghiên cứu.
 // GET    /api/medication-catalog          → đọc toàn bộ danh mục
 // POST   /api/medication-catalog          → thêm thuốc mới
+// POST   /api/medication-catalog/resolve-active-ingredients → đổi hoạt chất thành các tên có thể gặp trong EMR
 // PATCH  /api/medication-catalog/:key     → sửa thuốc đã có (key = canonical)
 // DELETE /api/medication-catalog/:key     → xoá thuốc
 
@@ -15,6 +16,7 @@ const { readJsonSafe, writeJsonAtomic } = require('../utils/file');
 const { getRuntimePaths } = require('../services/session');
 const { appendActivity } = require('../services/activity_logger');
 const routeModel = require('../utils/routeModel');
+const { resolveIngredientTargets } = require('../research/medication_ingredient_catalog');
 
 const CATALOG_PATH = path.join(__dirname, '..', '..', 'config', 'medication_catalog.json');
 
@@ -35,9 +37,21 @@ function keyOf(med) {
 }
 
 function normalizeStringList(value) {
-  if (Array.isArray(value)) return value.map(x => String(x || '').trim()).filter(Boolean);
-  if (typeof value === 'string') return value.split(',').map(x => x.trim()).filter(Boolean);
-  return [];
+  const raw = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(/[,;\n]/)
+      : [];
+  const out = [];
+  const seen = new Set();
+  for (const item of raw) {
+    const text = String(item || '').trim();
+    const key = text.toLocaleLowerCase('vi-VN');
+    if (!text || seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+  }
+  return out;
 }
 
 // Đường dùng cho phép: mã chuẩn theo model đường dùng chung, bỏ trùng, bỏ mã lạ.
@@ -74,6 +88,23 @@ router.get('/medication-catalog', (req, res) => {
   }
 });
 
+// POST /api/medication-catalog/resolve-active-ingredients
+// Dùng cho nghiên cứu: người dùng chọn một hoặc nhiều hoạt chất, server trả toàn bộ tên chuẩn/alias
+// đã khai báo trong danh mục. Không đồng nghĩa với "đã dùng thuốc"; đây chỉ là từ khóa nhận diện.
+router.post('/medication-catalog/resolve-active-ingredients', (req, res) => {
+  try {
+    const activeIngredients = normalizeStringList(req.body?.active_ingredients).slice(0, 100);
+    if (!activeIngredients.length) {
+      return res.status(400).json({ status: 'error', message: 'Cần ít nhất một hoạt chất.' });
+    }
+    const data = loadCatalog();
+    const resolved = resolveIngredientTargets(activeIngredients, data.medications);
+    return res.json({ status: 'ok', ...resolved });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: String(e.message) });
+  }
+});
+
 // POST /api/medication-catalog — thêm thuốc mới
 router.post('/medication-catalog', (req, res) => {
   try {
@@ -91,6 +122,7 @@ router.post('/medication-catalog', (req, res) => {
     const volumeNum = Number(volumeRaw);
     const med = pruneEmpty({
       canonical,
+      active_ingredients: normalizeStringList(body.active_ingredients ?? body.active_ingredient),
       aliases: normalizeStringList(body.aliases),
       semantic_aliases: normalizeStringList(body.semantic_aliases),
       category: String(body.category || '').trim(),
@@ -130,6 +162,10 @@ router.patch('/medication-catalog/:key', (req, res) => {
       const clashes = data.medications.some((m, i) => i !== idx && keyOf(m).toLowerCase() === nextCanonical.toLowerCase());
       if (clashes) return res.status(409).json({ status: 'error', message: `Đã có thuốc với tên chuẩn "${nextCanonical}".` });
       med.canonical = nextCanonical;
+    }
+    if (body.active_ingredients !== undefined || body.active_ingredient !== undefined) {
+      med.active_ingredients = normalizeStringList(body.active_ingredients ?? body.active_ingredient);
+      delete med.active_ingredient;
     }
     if (body.aliases !== undefined) med.aliases = normalizeStringList(body.aliases);
     if (body.semantic_aliases !== undefined) med.semantic_aliases = normalizeStringList(body.semantic_aliases);
