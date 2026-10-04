@@ -23,10 +23,12 @@ function normalizeLockKey(scopeKey = 'archive') {
 }
 
 function runInline(job) {
-  const normalize = require('./normalize');
-  if (job.kind === 'archive') return normalize.normalizeArchiveLatest();
-  if (job.kind === 'study') return normalize.normalizeStudyLatest(job.studyId);
-  return normalize.normalizeRunOutputs(job.runDir, job.options || {});
+  // Inline phải có cùng preflight/repair/integrity với child mode; trước đây đây
+  // là một đường vòng có thể gọi normalize trực tiếp và bỏ qua repair raw PT.
+  const safe = require('./normalize_safe');
+  if (job.kind === 'archive') return safe.normalizeArchiveLatestSafe();
+  if (job.kind === 'study') return safe.normalizeStudyLatestSafe(job.studyId);
+  return safe.normalizeRunOutputsSafe(job.runDir, job.options || {});
 }
 
 function runInChild(job) {
