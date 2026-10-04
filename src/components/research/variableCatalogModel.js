@@ -29,6 +29,7 @@ const VARIABLE_FRIENDLY_LABELS = {
   comorbidity_text: 'Bệnh kèm',
   complication_text: 'Biến chứng',
   encounter_count: 'Số đợt điều trị',
+  time_to_surgery_hours: 'Số giờ chờ mổ',
   days_from_admission: 'Số ngày từ lúc vào viện',
   days_from_surgery: 'Số ngày từ lúc phẫu thuật',
   days_from_discharge: 'Số ngày từ lúc ra viện',
@@ -104,6 +105,9 @@ function humanizeVariableName(name) {
   const raw = text(name);
   const key = raw.toLowerCase();
   if (VARIABLE_FRIENDLY_LABELS[key]) return VARIABLE_FRIENDLY_LABELS[key];
+  // Nhãn đã là chữ thường dùng (có dấu cách/dấu tiếng Việt, vd. "Dùng thuốc: zoledronic acid"):
+  // chỉ viết hoa chữ đầu. \b\w của JS coi chữ có dấu là ngắt từ nên sẽ ra "DùNg ThuốC".
+  if (!/^[a-z0-9_]+$/i.test(raw)) return raw.charAt(0).toUpperCase() + raw.slice(1);
   return raw
     .replace(/_/g, ' ')
     .replace(/\b\w/g, ch => ch.toUpperCase())

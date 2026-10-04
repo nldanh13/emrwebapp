@@ -695,6 +695,7 @@ module.exports = {
   sanitizeVariableSelection,
   hasActiveSelection,
   compareScalar,
+  coerceComparable,
   sourceFilterMatches,
   virtualVariableMatches,
   conditionMatchesRows,
