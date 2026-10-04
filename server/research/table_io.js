@@ -93,6 +93,56 @@ function _trimCsvCache() {
   for (const key of [...CSV_TABLE_CACHE.keys()].slice(0, extra)) CSV_TABLE_CACHE.delete(key);
 }
 
+function _cleanOrderText(value) {
+  return String(value || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map(line => line.replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
+function _compareOrderText(value) {
+  return _cleanOrderText(value)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+    .toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function _isOrderPlaceholder(value) {
+  const s = _compareOrderText(value).replace(/[.!,:;]+$/g, '').trim();
+  return /^(?:thuc hien\s+)?y lenh thuoc da co$|^thuoc da co$/.test(s);
+}
+
+// Dữ liệu lịch sử y lệnh thực tế có hiện tượng copy cùng một nội dung qua
+// Diễn biến -> Tên y lệnh -> Y lệnh khác. Nếu giữ nguyên, parser thuốc sẽ đọc
+// lại cùng text nhiều lần và thậm chí nhận nhầm diễn biến lâm sàng thành thuốc.
+// Chỉ làm sạch bản in-memory; CSV raw trên đĩa luôn được giữ nguyên để đối chiếu.
+function _sanitizeOrderHistoryRows(rows) {
+  return (rows || []).map(row => {
+    const next = { ...row };
+    const clinicalKeyName = Object.keys(next).find(k => normalizedKey(k) === normalizedKey('Diễn biến'));
+    const orderKeyName = Object.keys(next).find(k => normalizedKey(k) === normalizedKey('Tên y lệnh'));
+    const otherKeyName = Object.keys(next).find(k => normalizedKey(k) === normalizedKey('Y lệnh khác'));
+    const clinical = clinicalKeyName ? _cleanOrderText(next[clinicalKeyName]) : '';
+    const orderOriginal = orderKeyName ? _cleanOrderText(next[orderKeyName]) : '';
+    const otherOriginal = otherKeyName ? _cleanOrderText(next[otherKeyName]) : '';
+    const clinicalKey = _compareOrderText(clinical);
+    const orderKey = _compareOrderText(orderOriginal);
+    const otherKey = _compareOrderText(otherOriginal);
+
+    if (clinicalKeyName) next[clinicalKeyName] = clinical;
+    if (orderKeyName) {
+      next[orderKeyName] = (!orderKey || orderKey === clinicalKey || _isOrderPlaceholder(orderOriginal)) ? '' : orderOriginal;
+    }
+    if (otherKeyName) {
+      next[otherKeyName] = (!otherKey || otherKey === clinicalKey || otherKey === orderKey || _isOrderPlaceholder(otherOriginal)) ? '' : otherOriginal;
+    }
+    return next;
+  });
+}
+
 function readCsvTable(filePath, maxRows = MAX_TABLE_ROWS) {
   if (!fs.existsSync(filePath)) return { columns: [], rows: [], count: 0, limited: false, exists: false };
   let fileSize = 0;
@@ -103,6 +153,9 @@ function readCsvTable(filePath, maxRows = MAX_TABLE_ROWS) {
 
   // Đọc theo khối: không nạp cả file thành một chuỗi (file XN/CĐHA có thể vài trăm MB).
   const result = { ...readCsvFileRows(filePath, maxRows), exists: true };
+  if (path.basename(filePath).toLowerCase() === 'hchanh_order_history.csv') {
+    result.rows = _sanitizeOrderHistoryRows(result.rows);
+  }
   if (cacheKey) {
     // Xóa cache cũ của cùng file khi file đã thay đổi.
     const prefix = `${path.resolve(filePath)}|`;
@@ -244,6 +297,10 @@ module.exports = {
   CSV_CACHE_MAX_FILE_BYTES,
   _csvCacheKey,
   _trimCsvCache,
+  _cleanOrderText,
+  _compareOrderText,
+  _isOrderPlaceholder,
+  _sanitizeOrderHistoryRows,
   readCsvTable,
   safeDownloadName,
   cell,
