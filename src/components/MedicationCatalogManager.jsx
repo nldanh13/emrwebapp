@@ -1,6 +1,6 @@
 // src/components/MedicationCatalogManager.jsx
 // Danh mục thuốc (config/medication_catalog.json) và bảng đường dùng:
-//   - Tab "Thuốc": tên chuẩn, alias, đường dùng mặc định, các đường dùng cho phép
+//   - Tab "Thuốc": tên chuẩn, hoạt chất, alias, đường dùng mặc định, các đường dùng cho phép
 //     (y lệnh ghi khác → cảnh báo), thể tích/tốc độ mặc định.
 //   - Tab "Đường dùng": tự thiết kế đường dùng (RouteDesigner).
 
@@ -14,7 +14,6 @@ import { useRouteTable } from '../hooks/useRouteModel.js';
 import RouteDesigner from './RouteDesigner.jsx';
 import { RouteBadge } from './report/ReportShared.jsx';
 
-// Chuyên mục và đường dùng lấy từ model đường dùng chung (bảng chuẩn + phần tự cài).
 function routeOptions(table) {
   const categories = table.categories || [];
   return {
@@ -26,12 +25,10 @@ function routeOptions(table) {
 }
 
 function txt(v, fb = '—') { return String(v ?? '').trim() || fb; }
-
 function joinList(list) { return (Array.isArray(list) ? list : []).join(', '); }
-
 function parseList(text) {
   return String(text || '')
-    .split(/[,\n]/)
+    .split(/[,;\n]/)
     .map(x => x.trim())
     .filter(Boolean);
 }
@@ -39,6 +36,7 @@ function parseList(text) {
 function emptyForm() {
   return {
     canonical: '',
+    active_ingredients: '',
     aliases: '',
     semantic_aliases: '',
     category: '',
@@ -55,12 +53,12 @@ function emptyForm() {
 function formFromMedication(med) {
   return {
     canonical: med.canonical || '',
+    active_ingredients: joinList(med.active_ingredients || (med.active_ingredient ? [med.active_ingredient] : [])),
     aliases: joinList(med.aliases),
     semantic_aliases: joinList(med.semantic_aliases),
     category: med.category || (med.default_route ? routeCategory(med.default_route) : ''),
     default_volume_ml: med.default_volume_ml ?? '',
     default_rate: med.default_rate ?? '',
-    // Nhãn cũ (U, IV, IM…) được đổi sang mã chuẩn khi mở để sửa.
     default_route: normalizeRouteCode(med.default_route) || med.default_route || '',
     routes: (Array.isArray(med.routes) ? med.routes : []).map(r => normalizeRouteCode(r) || r),
     default_route_text: med.default_route_text || '',
@@ -77,15 +75,9 @@ const INPUT_STYLE = {
 };
 
 function Field({ label, children }) {
-  return (
-    <div>
-      <div style={FIELD_LABEL_STYLE}>{label}</div>
-      {children}
-    </div>
-  );
+  return <div><div style={FIELD_LABEL_STYLE}>{label}</div>{children}</div>;
 }
 
-// Chọn nhiều đường dùng bằng nút bật/tắt.
 function RoutePicker({ routes, value, onChange }) {
   const selected = new Set(value);
   const toggle = code => onChange(selected.has(code) ? value.filter(c => c !== code) : [...value, code]);
@@ -112,7 +104,6 @@ function EditModal({ mode, initial, onClose, onSave }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-
   const set = (key) => (e) => setForm(prev => ({ ...prev, [key]: e.target.value }));
 
   const handleSave = async () => {
@@ -129,13 +120,13 @@ function EditModal({ mode, initial, onClose, onSave }) {
     try {
       await onSave({
         canonical: form.canonical.trim(),
+        active_ingredients: parseList(form.active_ingredients),
         aliases: parseList(form.aliases),
         semantic_aliases: parseList(form.semantic_aliases),
         category: form.category.trim(),
         default_volume_ml: form.default_volume_ml,
         default_rate: form.default_rate,
         default_route: form.default_route.trim(),
-        // Đường mặc định luôn nằm trong danh sách cho phép (nếu có danh sách).
         routes: form.routes.length && form.default_route && !form.routes.includes(form.default_route)
           ? [form.default_route, ...form.routes] : form.routes,
         default_route_text: form.default_route_text.trim(),
@@ -152,29 +143,33 @@ function EditModal({ mode, initial, onClose, onSave }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(23,32,51,0.42)', zIndex: 50,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
-      onClick={onClose}>
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
       <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 6,
-        padding: 18, width: 520, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }}
-        onClick={e => e.stopPropagation()}>
-
+        padding: 18, width: 560, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text, marginBottom: 14 }}>
           {mode === 'create' ? 'Thêm thuốc vào danh mục' : `Sửa thuốc: ${initial.canonical}`}
         </div>
 
         <div style={{ display: 'grid', gap: 10 }}>
-          <Field label="Tên chuẩn *">
-            <input value={form.canonical} onChange={set('canonical')} placeholder="VD: THERMODOL" style={INPUT_STYLE} />
+          <Field label="Tên chuẩn / tên chế phẩm *">
+            <input value={form.canonical} onChange={set('canonical')} placeholder="VD: CLASTIZOL" style={INPUT_STYLE} />
           </Field>
-          <Field label="Tên khác (cách nhau bằng dấu phẩy hoặc xuống dòng)">
+          <Field label="Hoạt chất (có thể nhiều hoạt chất; cách nhau bằng dấu phẩy hoặc xuống dòng)">
+            <textarea value={form.active_ingredients} onChange={set('active_ingredients')} rows={2}
+              placeholder="VD: Acid Zoledronic" style={{ ...INPUT_STYLE, resize: 'vertical' }} />
+            <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 4, lineHeight: 1.45 }}>
+              Dùng cho nghiên cứu theo hoạt chất. Nhiều chế phẩm/tên thương mại có thể cùng khai báo một hoạt chất để được gom chung khi tìm mẫu.
+            </div>
+          </Field>
+          <Field label="Tên khác / tên thương mại / cách viết khác">
             <textarea value={form.aliases} onChange={set('aliases')} rows={3}
-              placeholder="THERMODON, PARACETAMOL 1G, EFFERALGAN 1G..." style={{ ...INPUT_STYLE, resize: 'vertical' }} />
+              placeholder="Các tên có thể xuất hiện trong EMR, cách nhau bằng dấu phẩy hoặc xuống dòng" style={{ ...INPUT_STYLE, resize: 'vertical' }} />
           </Field>
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
             <Field label="Đường dùng mặc định">
               <select value={form.default_route} onChange={e => {
                 const route = e.target.value;
-                // Chọn đường dùng thì tự điền chuyên mục tương ứng (vẫn đổi tay được).
                 setForm(prev => ({ ...prev, default_route: route, category: route ? routeCategory(route) : prev.category }));
               }} style={INPUT_STYLE}>
                 <option value="">Không đặt (lấy theo y lệnh)</option>
@@ -190,6 +185,7 @@ function EditModal({ mode, initial, onClose, onSave }) {
               </select>
             </Field>
           </div>
+
           <Field label="Đường dùng cho phép (y lệnh ghi đường khác → cảnh báo)">
             <RoutePicker routes={ROUTES} value={form.routes} onChange={routes => setForm(prev => ({ ...prev, routes }))} />
             <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 4, lineHeight: 1.45 }}>
@@ -201,6 +197,7 @@ function EditModal({ mode, initial, onClose, onSave }) {
               {' '}Cảnh báo hiện ở mục "Cảnh báo cần kiểm tra" trong chi tiết người bệnh sau khi xử lý dữ liệu.
             </div>
           </Field>
+
           {(INFUSION_ROUTES.has(form.default_route) || form.category === 'dich_truyen') && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
               <Field label="Thể tích mặc định (ml)">
@@ -242,9 +239,7 @@ function EditModal({ mode, initial, onClose, onSave }) {
 
         {error && (
           <div style={{ padding: '6px 10px', borderRadius: 6, background: C.redBg,
-            border: `1px solid ${C.redBorder}`, color: C.red, fontSize: FS.sm, marginTop: 12 }}>
-            {error}
-          </div>
+            border: `1px solid ${C.redBorder}`, color: C.red, fontSize: FS.sm, marginTop: 12 }}>{error}</div>
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
@@ -258,7 +253,6 @@ function EditModal({ mode, initial, onClose, onSave }) {
   );
 }
 
-// Đường mặc định (nhãn màu) + các đường khác được phép.
 function RouteCell({ item }) {
   const def = normalizeRouteCode(item.default_route) || item.default_route || '';
   const others = (item.routes || []).map(r => normalizeRouteCode(r) || r).filter(r => r && r !== def);
@@ -277,7 +271,7 @@ export default function MedicationCatalogManager() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
-  const [editing, setEditing] = useState(null); // { mode: 'create'|'edit', key, form }
+  const [editing, setEditing] = useState(null);
   const [deleting, setDeleting] = useState('');
   const [toast, setToast] = useState('');
 
@@ -299,13 +293,13 @@ export default function MedicationCatalogManager() {
 
   const handleCreate = async (payload) => {
     await api.createMedicationCatalog(payload);
-    showToast('Đã thêm thuốc. Cần chạy lại "③ Xử lý & phân loại" ở tab Lấy dữ liệu để áp dụng cho dữ liệu đã quét trước đó.');
+    showToast('Đã thêm thuốc. Hoạt chất/tên thương mại mới có thể dùng cho lọc nghiên cứu; dữ liệu xử lý thuốc cũ cần chạy lại bước xử lý nếu muốn áp dụng suy luận khác.');
     await load();
   };
 
   const handleUpdate = async (key, payload) => {
     await api.updateMedicationCatalog(key, payload);
-    showToast('Đã cập nhật. Cần chạy lại "③ Xử lý & phân loại" ở tab Lấy dữ liệu để áp dụng cho dữ liệu đã quét trước đó.');
+    showToast('Đã cập nhật danh mục thuốc. Hoạt chất và tên thương mại mới có thể dùng cho nghiên cứu.');
     await load();
   };
 
@@ -325,17 +319,17 @@ export default function MedicationCatalogManager() {
 
   const q = query.trim().toLowerCase();
   const filtered = q
-    ? items.filter(item => `${item.canonical} ${joinList(item.aliases)} ${item.category || ''}`.toLowerCase().includes(q))
+    ? items.filter(item => `${item.canonical} ${joinList(item.active_ingredients)} ${item.active_ingredient || ''} ${joinList(item.aliases)} ${item.category || ''}`.toLowerCase().includes(q))
     : items;
 
   return (
-    <div style={{ padding: 12, maxWidth: 1080, margin: '0 auto' }}>
+    <div style={{ padding: 12, maxWidth: 1180, margin: '0 auto' }}>
       <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
         <div>
           <div style={{ fontSize: FS.xl, fontWeight: 700, color: C.text }}>Danh mục thuốc</div>
           <div style={{ fontSize: FS.sm, color: C.text2, marginTop: 4 }}>
             {tab === 'drugs'
-              ? 'Tên chuẩn, alias, đường dùng cho phép và thể tích mặc định — dùng để suy luận và cảnh báo khi y lệnh ghi khác.'
+              ? 'Khai báo chế phẩm, hoạt chất và các tên thương mại/cách viết trong EMR. Nhiều chế phẩm có thể cùng một hoạt chất để nghiên cứu gom chung.'
               : 'Tự thiết kế đường dùng: tên, nhãn, chuyên mục, cách hiện trên báo cáo ca trực và từ khoá nhận diện.'}
           </div>
         </div>
@@ -345,34 +339,21 @@ export default function MedicationCatalogManager() {
 
       {tab === 'routes' ? <RouteDesigner onSaved={showToast} /> : <>
       <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
-        <Btn variant="primary" onClick={() => setEditing({ mode: 'create', key: '', form: emptyForm() })}>
-          + Thêm thuốc
-        </Btn>
+        <Btn variant="primary" onClick={() => setEditing({ mode: 'create', key: '', form: emptyForm() })}>+ Thêm thuốc</Btn>
       </div>
 
-      <div style={{
-        marginBottom: 14, padding: '9px 12px', borderRadius: 7,
-        background: C.blueBg, border: `1px solid ${C.blueBorder}`,
-        fontSize: FS.sm, color: C.text2, lineHeight: 1.5,
-      }}>
-        Thêm/sửa thuốc ở đây <b>không áp dụng ngược</b> cho dữ liệu đã quét/phân loại trước đó — chỉ có hiệu lực từ lần chạy
-        "③ Xử lý &amp; phân loại" tiếp theo (tab "Lấy dữ liệu"). Đã thêm thuốc mới nhưng phần nhập dịch truyền chưa thấy?
-        Vào tab "Lấy dữ liệu" và chạy lại bước ③.
+      <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 7,
+        background: C.blueBg, border: `1px solid ${C.blueBorder}`, fontSize: FS.sm, color: C.text2, lineHeight: 1.5 }}>
+        <b>Hoạt chất dùng cho nghiên cứu.</b> Mỗi chế phẩm/tên thương mại nên khai báo đúng hoạt chất. Nếu cùng một hoạt chất có nhiều tên thương mại, có thể tạo nhiều thuốc hoặc thêm tên vào mục "Tên khác". Hệ thống giữ tên gốc để truy vết; việc có y lệnh không tự động được coi là đã thực hiện thuốc.
       </div>
 
       <div style={{ marginBottom: 14 }}>
-        <input
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Tìm theo tên chuẩn, alias, chuyên mục..."
-          style={{ ...INPUT_STYLE, maxWidth: 360 }}
-        />
+        <input value={query} onChange={e => setQuery(e.target.value)}
+          placeholder="Tìm theo chế phẩm, hoạt chất, tên thương mại, chuyên mục..." style={{ ...INPUT_STYLE, maxWidth: 460 }} />
       </div>
 
       {loading ? (
-        <div style={{ color: C.text2, display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Spinner /> Đang tải...
-        </div>
+        <div style={{ color: C.text2, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Đang tải...</div>
       ) : !filtered.length ? (
         <div style={{ color: C.text3, padding: 20, textAlign: 'center' }}>
           {items.length ? 'Không tìm thấy thuốc phù hợp.' : 'Danh mục thuốc đang trống.'}
@@ -382,7 +363,7 @@ export default function MedicationCatalogManager() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: C.surface2 }}>
-                {['Tên chuẩn', 'Tên khác', 'Đường dùng', 'Chuyên mục', 'Thể tích (ml)', 'Tốc độ', 'Tác vụ'].map(h => (
+                {['Tên chuẩn / chế phẩm', 'Hoạt chất', 'Tên khác / thương mại', 'Đường dùng', 'Chuyên mục', 'Thể tích (ml)', 'Tốc độ', 'Tác vụ'].map(h => (
                   <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: FS.xs,
                     fontWeight: 700, color: C.text2, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
@@ -392,25 +373,22 @@ export default function MedicationCatalogManager() {
               {filtered.map((item, i) => (
                 <tr key={item.key} style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${C.border2}` : 'none' }}>
                   <td style={{ padding: '10px 12px', fontSize: FS.md, color: C.text, fontWeight: 500 }}>{txt(item.canonical)}</td>
+                  <td style={{ padding: '10px 12px', fontSize: FS.xs, color: C.text2, maxWidth: 220 }}>
+                    {(item.active_ingredients?.length || item.active_ingredient)
+                      ? joinList(item.active_ingredients || [item.active_ingredient])
+                      : <span style={{ color: C.text3 }}>—</span>}
+                  </td>
                   <td style={{ padding: '10px 12px', fontSize: FS.xs, color: C.text2, maxWidth: 320 }}>
                     {item.aliases?.length ? joinList(item.aliases) : <span style={{ color: C.text3 }}>—</span>}
                   </td>
-                  <td style={{ padding: '10px 12px', fontSize: FS.sm, color: C.text2 }}>
-                    <RouteCell item={item} />
-                  </td>
+                  <td style={{ padding: '10px 12px', fontSize: FS.sm, color: C.text2 }}><RouteCell item={item} /></td>
                   <td style={{ padding: '10px 12px', fontSize: FS.sm, color: C.text2 }}>{txt(CATEGORY_LABEL[item.category] || item.category)}</td>
-                  <td style={{ padding: '10px 12px', fontSize: FS.sm }}>
-                    <code style={{ color: C.blue }}>{txt(item.default_volume_ml)}</code>
-                  </td>
-                  <td style={{ padding: '10px 12px', fontSize: FS.sm }}>
-                    <code style={{ color: C.text2 }}>{txt(item.default_rate)}</code>
-                  </td>
+                  <td style={{ padding: '10px 12px', fontSize: FS.sm }}><code style={{ color: C.blue }}>{txt(item.default_volume_ml)}</code></td>
+                  <td style={{ padding: '10px 12px', fontSize: FS.sm }}><code style={{ color: C.text2 }}>{txt(item.default_rate)}</code></td>
                   <td style={{ padding: '10px 12px' }}>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <Btn variant="secondary" onClick={() => setEditing({ mode: 'edit', key: item.key, form: formFromMedication(item) })}
-                        style={{ fontSize: FS.xs, padding: '2px 10px' }}>
-                        Sửa
-                      </Btn>
+                        style={{ fontSize: FS.xs, padding: '2px 10px' }}>Sửa</Btn>
                       <Btn variant="default" disabled={deleting === item.key} onClick={() => handleDelete(item)}
                         style={{ fontSize: FS.xs, padding: '2px 10px', color: C.red }}>
                         {deleting === item.key ? <Spinner size={10} /> : 'Xoá'}
@@ -429,18 +407,12 @@ export default function MedicationCatalogManager() {
       {toast && (
         <div style={{ position: 'fixed', bottom: 24, right: 24, maxWidth: 380, padding: '10px 18px',
           borderRadius: 8, background: C.surface, border: `1px solid ${C.border}`,
-          color: C.text, fontSize: FS.md, lineHeight: 1.5, boxShadow: C.shadow2, zIndex: 100 }}>
-          {toast}
-        </div>
+          color: C.text, fontSize: FS.md, lineHeight: 1.5, boxShadow: C.shadow2, zIndex: 100 }}>{toast}</div>
       )}
 
       {editing && (
-        <EditModal
-          mode={editing.mode}
-          initial={editing.form}
-          onClose={() => setEditing(null)}
-          onSave={(payload) => editing.mode === 'create' ? handleCreate(payload) : handleUpdate(editing.key, payload)}
-        />
+        <EditModal mode={editing.mode} initial={editing.form} onClose={() => setEditing(null)}
+          onSave={(payload) => editing.mode === 'create' ? handleCreate(payload) : handleUpdate(editing.key, payload)} />
       )}
     </div>
   );
