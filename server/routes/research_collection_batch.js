@@ -29,10 +29,11 @@ const {
   updateArchive,
   updateStudy,
 } = require('../research/run_registry');
-const { readResearchHchanhSourceRows } = require('../research/research_source');
+const { readResearchHchanhSourceRows, researchHchanhMeta } = require('../research/research_source');
 const { researchHeadlessFromBody, fetchHchanhForResearchRun } = require('../research/hchanh_fetch');
 const { runXnCdhaSubsetForCollection, scheduleNormalizeAfterCollection, syncCollectionLedger } = require('../research/collection_runtime');
 const { appendResearchRunLog } = require('../research/case_trace');
+const { readJsonSafe } = require('../utils/file');
 const { beginResearchTask, updateResearchTask, finishResearchTask } = require('../research/progress_snapshot');
 const { RESEARCH_SCOPE_LOCKS, researchScopeKey } = require('../research/research_http');
 
@@ -113,13 +114,15 @@ function patientCodesFrom(req) {
   return codes;
 }
 
-// Lỗi của một ca: các bước lấy dữ liệu không ném lỗi mà trả kết quả có lỗi (Python dừng giữa chừng,
-// phần hành chánh lỗi...), nên phải đọc kết quả mới biết ca có lỗi hay không.
-function caseErrorsFromResults(results = {}) {
+// Lỗi của một ca trong lô. Các bước lấy dữ liệu không ném lỗi mà trả kết quả có lỗi: phần hành
+// chánh xem trạng thái từng lượt trong file tiến độ; XN/CĐHA chạy chung một tiến trình cho cả lô
+// nên nếu tiến trình đó dừng vì lỗi (vd. TimeoutException) thì mọi ca đều thiếu XN/CĐHA.
+function caseErrorsForBatch({ rows = [], hcProgress = {}, results = {}, runId = '', metaOf = researchHchanhMeta }) {
   const errors = [];
-  const hchanhErrors = Number(results.hchanh?.error || 0);
-  if (results.hchanh?.spawnError || results.hchanh?.fatal) errors.push(`Hồ sơ/y lệnh: ${results.hchanh.spawnError || results.hchanh.fatal}`);
-  else if (hchanhErrors > 0) errors.push(`Hồ sơ/y lệnh: ${hchanhErrors} phần lỗi`);
+  if (results.hchanh) {
+    const bad = rows.map(row => hcProgress[metaOf(row, runId).source_key]).filter(entry => entry && entry.status === 'error');
+    if (bad.length) errors.push(`Hồ sơ/y lệnh: ${String(bad[0].error || 'lỗi').split('\n')[0].slice(0, 160)}`);
+  }
   if (results.xn_cdha?.error) errors.push(`XN/CĐHA: ${String(results.xn_cdha.error).split('\n')[0].slice(0, 200)}`);
   return errors;
 }
@@ -263,45 +266,46 @@ async function handleBatch(req, res, studyIdParam = '') {
       let completed = 0;
       let failed = 0;
       let cancelled = false;
-      const progress = (index, step) => updateResearchTask(sc.runDir, task.id, {
-        status: 'running',
-        message: `Ca ${index + 1}/${cases.length}: ${step}. Đã xong ${completed}; lỗi ${failed}.`,
-        current: index + 1,
-        total: cases.length,
-        completed,
-        failed,
-      });
+      const report = (message) => updateResearchTask(sc.runDir, task.id, { status: 'running', message, total: cases.length, completed, failed });
 
       try {
-        for (let index = 0; index < cases.length; index += 1) {
-          if (isCancelRequested(ctx.sid)) {
-            cancelled = true;
-            break;
+        // Lấy CẢ LÔ trong ít phiên Chrome nhất: phần hồ sơ/y lệnh gộp nhiều ca/1 lần đăng nhập
+        // (hchanh_fetch theo lô), XN/CĐHA cả lô trong 1 lần đăng nhập. Trước đây mỗi ca mở Chrome
+        // và đăng nhập EMR 2 lần (20 ca = 40 lần đăng nhập).
+        const allRows = cases.flatMap(c => c.rows);
+        // Tiến độ phần hồ sơ/y lệnh theo từng ca: đếm ca có kết quả mới trong file tiến độ.
+        const startedIso = nowIso();
+        const keysByCase = cases.map(c => c.rows.map(row => researchHchanhMeta(row, sc.runId).source_key));
+        let step = '';
+        const tick = () => {
+          if (!step) return;
+          let extra = '';
+          if (step.includes('hồ sơ')) {
+            const hp = readJsonSafe(path.join(sc.runDir, 'hchanh_auto_progress.json'), {}) || {};
+            const finished = keysByCase.filter(keys => keys.every(k => String(hp[k]?.finished_at || '') >= startedIso)).length;
+            extra = ` — ${finished}/${cases.length} ca`;
           }
+          report(`Cả lô ${cases.length} ca: ${step}${extra} (đăng nhập EMR một lần cho cả lô, không đăng nhập lại từng ca).`);
+        };
+        const ticker = setInterval(tick, 5000);
+        let outcome;
+        try {
+          outcome = await runDirectPatientNoFinalize(ctx, sc, allRows, requestedParts, headless, (next) => { step = next; tick(); });
+        } finally {
+          clearInterval(ticker);
+        }
+        cancelled = Boolean(outcome?.cancelled) || isCancelRequested(ctx.sid);
 
-          progress(index, 'bắt đầu');
-
-          try {
-            const one = await runDirectPatientNoFinalize(ctx, sc, cases[index].rows, requestedParts, headless, step => progress(index, step));
-            if (one?.cancelled || isCancelRequested(ctx.sid)) {
-              cancelled = true;
-              break;
-            }
-            // Bước lấy dữ liệu báo lỗi qua kết quả (không ném lỗi): ca có lỗi thì tính là lỗi.
-            const caseErrors = caseErrorsFromResults(one?.results);
-            if (caseErrors.length) {
-              failed += 1;
-              appendResearchRunLog(sc.runDir, `[${new Date().toLocaleString('vi-VN')}] Lấy trực tiếp ca ${index + 1}/${cases.length} (Mã BN ${cases[index].code}) có lỗi: ${caseErrors.join(' | ')}`);
-            } else {
-              completed += 1;
-            }
-          } catch (err) {
-            if (isCancelRequested(ctx.sid)) {
-              cancelled = true;
-              break;
-            }
+        // Kết quả từng ca: phần hành chánh theo trạng thái từng lượt trong file tiến độ; XN/CĐHA
+        // chạy chung một tiến trình nên lỗi (nếu có) là lỗi của cả lô.
+        const hcProgress = readJsonSafe(path.join(sc.runDir, 'hchanh_auto_progress.json'), {}) || {};
+        for (const [index, c] of cases.entries()) {
+          const errors = caseErrorsForBatch({ rows: c.rows, hcProgress, results: outcome?.results || {}, runId: sc.runId });
+          if (errors.length) {
             failed += 1;
-            console.error('[research direct patient batch] one case failed:', String(err?.message || err));
+            appendResearchRunLog(sc.runDir, `[${new Date().toLocaleString('vi-VN')}] Lấy trực tiếp ca ${index + 1}/${cases.length} (Mã BN ${c.code}) có lỗi: ${errors.join(' | ')}`);
+          } else if (!cancelled) {
+            completed += 1;
           }
         }
 
@@ -380,4 +384,4 @@ router.post('/research/studies/:studyId/collect-auto', async (req, res, next) =>
 });
 
 module.exports = router;
-module.exports._test = { caseErrorsFromResults };
+module.exports._test = { caseErrorsForBatch };

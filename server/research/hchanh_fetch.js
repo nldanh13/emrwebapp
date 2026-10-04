@@ -153,7 +153,9 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
   // 1 Chrome + 1 lần đăng nhập EMR), gộp tối đa HCHANH_BATCH_SIZE ca liên tiếp vào
   // 1 tiến trình worker — Chrome chỉ đóng+mở lại (đăng nhập lại) sau mỗi lô, giảm
   // hẳn số lần mở/tắt Chrome và đăng nhập dồn dập lên server EMR.
-  const HCHANH_BATCH_SIZE = 10;
+  // Mặc định 25 ca/lô: lô 20 ca chỉ đăng nhập EMR 1 lần. Đổi bằng EMR_HCHANH_BATCH_SIZE nếu máy yếu
+  // (Chrome giữ lâu tốn RAM hơn) hoặc muốn ít lần đăng nhập hơn nữa.
+  const HCHANH_BATCH_SIZE = Math.max(1, Math.min(200, Number(process.env.EMR_HCHANH_BATCH_SIZE) || 25));
 
   // Danh sách chờ tìm lại: BN từng không tìm thấy trên HIS (no_url/no_patient_link,
   // ghi trong failure cache) bị dời xuống cuối. Chỉ tìm lại khi mọi ca còn lại đã
