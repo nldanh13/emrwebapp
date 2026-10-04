@@ -77,6 +77,11 @@ function safeError(err) {
   };
 }
 
+function latestCancelableTaskId(id) {
+  return taskJournal.listTasks({ sid: id, limit: 10 })
+    .find((task) => ['running', 'cancel_requested', 'queued'].includes(task.status))?.task_id || '';
+}
+
 /**
  * Xếp taskFn vào hàng đợi của session. options là tương thích ngược và cho phép
  * route mới gắn taskType/metadata mà không thay đổi chữ ký các route cũ.
@@ -93,6 +98,17 @@ function enqueue(sid, taskFn, options = {}) {
 
   const run = async () => {
     activeTaskMap.set(id, taskId);
+    const before = taskJournal.getTask(taskId);
+    // Có thể bấm Dừng ngay khi task còn chờ heavy slot/account lane. Trước đây
+    // trạng thái queued không được cancelSession tìm thấy, hoặc task vừa bắt đầu
+    // lại bị chuyển sang running và vẫn thực thi. Nếu đã yêu cầu huỷ thì bỏ qua
+    // taskFn hoàn toàn, không spawn Python/Selenium mới.
+    if (before?.status === 'cancel_requested' || cancelRequestedTasks.has(taskId)) {
+      taskJournal.updateTask(taskId, 'cancelled');
+      activeTaskMap.delete(id);
+      cancelRequestedTasks.delete(taskId);
+      return { cancelled: true };
+    }
     taskJournal.updateTask(taskId, 'running');
     try {
       const result = await taskFn();
@@ -145,13 +161,13 @@ function enqueueHeavy(sid, taskFn, options = {}) {
 function registerCancel(sid, killFn) {
   const id = sid || 'default';
   const taskId = activeTaskMap.get(id)
-    || taskJournal.listTasks({ sid: id, limit: 5 }).find((task) => task.status === 'running' || task.status === 'cancel_requested')?.task_id
+    || latestCancelableTaskId(id)
     || '';
   cancelMap.set(id, { killFn, taskId });
 
   // Đóng race: người dùng có thể bấm Dừng ngay giữa lúc vòng lặp chuẩn bị spawn worker kế tiếp.
   // Nếu task đã có cờ huỷ thì worker vừa spawn phải bị dừng ngay, không được chạy tiếp một ca mới.
-  if (taskId && cancelRequestedTasks.has(taskId)) {
+  if (taskId && (cancelRequestedTasks.has(taskId) || taskJournal.getTask(taskId)?.status === 'cancel_requested')) {
     try { killFn(); } catch (_) {}
   }
 }
@@ -177,11 +193,11 @@ function cancelSession(sid) {
   const entry = cancelMap.get(id);
   const taskId = activeTaskMap.get(id)
     || entry?.taskId
-    || taskJournal.listTasks({ sid: id, limit: 5 }).find((task) => task.status === 'running' || task.status === 'cancel_requested')?.task_id
+    || latestCancelableTaskId(id)
     || '';
 
-  // Trước đây chỉ huỷ được khi đúng lúc có Python process trong cancelMap.
-  // Với job nhiều ca, khoảng trống giữa hai worker khiến nút Dừng mất tác dụng và vòng lặp spawn ca tiếp.
+  // Huỷ được cả khi worker đang chạy lẫn lúc task còn xếp hàng/chờ account lane.
+  // Cờ huỷ tồn tại tới khi queue thật sự kết thúc task để vòng lặp không spawn ca tiếp.
   if (!taskId && !entry) return false;
 
   if (taskId) {
@@ -201,7 +217,7 @@ function cancelSession(sid) {
  */
 function isCancelRequested(sid) {
   const id = sid || 'default';
-  const taskId = activeTaskMap.get(id);
+  const taskId = activeTaskMap.get(id) || latestCancelableTaskId(id);
   if (!taskId) return false;
   if (cancelRequestedTasks.has(taskId)) return true;
   return taskJournal.getTask(taskId)?.status === 'cancel_requested';
