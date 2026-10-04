@@ -34,6 +34,21 @@ function uniqueStrings(values) {
   return out;
 }
 
+// Với tên thuốc/tên thương mại, giữ các cách viết khác nhau (vd. TRADE-B và TRADE B)
+// vì đây là các chuỗi có thể xuất hiện thật trong EMR. Chỉ bỏ trùng chính xác không phân biệt hoa/thường.
+function uniqueMedicationNames(values) {
+  const out = [];
+  const seen = new Set();
+  for (const value of values || []) {
+    const raw = String(value ?? '').trim();
+    const key = raw.toLocaleLowerCase('vi-VN');
+    if (!raw || seen.has(key)) continue;
+    seen.add(key);
+    out.push(raw);
+  }
+  return out;
+}
+
 function loadCatalog() {
   const data = readJsonSafe(CATALOG_PATH, {}) || {};
   return Array.isArray(data.medications) ? data.medications.filter(x => x && typeof x === 'object') : [];
@@ -45,7 +60,7 @@ function activeIngredientsOf(med) {
 }
 
 function namesOf(med) {
-  return uniqueStrings([
+  return uniqueMedicationNames([
     med?.canonical,
     ...(Array.isArray(med?.aliases) ? med.aliases : []),
     ...(Array.isArray(med?.semantic_aliases) ? med.semantic_aliases : []),
@@ -63,19 +78,19 @@ function resolveIngredientTargets(targets, medications = loadCatalog()) {
   for (const target of wanted) {
     const targetKey = normalizeText(target);
     const matching = medications.filter(med => activeIngredientsOf(med).some(x => normalizeText(x) === targetKey));
-    const names = uniqueStrings(matching.flatMap(namesOf));
+    const names = uniqueMedicationNames(matching.flatMap(namesOf));
     resolved.push({
       active_ingredient: target,
       catalog_matches: matching.length,
       medication_names: names,
-      canonical_names: uniqueStrings(matching.map(m => m.canonical)),
+      canonical_names: uniqueMedicationNames(matching.map(m => m.canonical)),
     });
   }
 
   return {
     targets: resolved,
     active_ingredients: wanted,
-    medication_names: uniqueStrings(resolved.flatMap(x => x.medication_names)),
+    medication_names: uniqueMedicationNames(resolved.flatMap(x => x.medication_names)),
   };
 }
 
@@ -182,6 +197,7 @@ module.exports = {
   CATALOG_PATH,
   normalizeText,
   uniqueStrings,
+  uniqueMedicationNames,
   loadCatalog,
   activeIngredientsOf,
   namesOf,
