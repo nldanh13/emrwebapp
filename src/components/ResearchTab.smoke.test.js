@@ -81,10 +81,11 @@ const SUGGESTIONS = {
     stats: { encounters: 120, patients: 110, with_labs: 90, with_imaging: 40, with_surgery: 10, with_meds: 100, common_labs: [] },
     anchor: { kind: 'drug', drug: 'Zoledronic acid' },
     variables: [
-      { id: 'analysis_ready.sex', survey_label: 'Giới' },
-      { id: 'lab_results.days_from_admission', survey_label: 'Ngày XN trước', aggregation: 'closest_before_anchor', window_from_days: -14, window_to_days: 0 },
-      { id: 'lab_results.days_from_admission', survey_label: 'Ngày XN sau', aggregation: 'closest_after_anchor', window_from_days: 1, window_to_days: 14 },
+      { id: 'analysis_ready.sex', survey_label: 'Giới', role: 'descriptive' },
+      { id: 'lab_results.days_from_admission', survey_label: 'Ngày XN trước', aggregation: 'closest_before_anchor', window_from_days: -14, window_to_days: 0, role: 'primary_outcome' },
+      { id: 'lab_results.days_from_admission', survey_label: 'Ngày XN sau', aggregation: 'closest_after_anchor', window_from_days: 1, window_to_days: 14, role: 'primary_outcome' },
     ],
+    sample_size_design: 'paired_means',
     conditions: [{ variable_id: 'analysis_ready.age', operator: '>=', value: '50' }],
     reasons: [],
   }],
@@ -129,6 +130,12 @@ const setInput = async (el, value) => {
   const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
   await act(async () => { setter.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await flush();
+};
+const setSelect = async (el, value) => {
+  expect(el, `có ô chọn cho "${value}"`).toBeTruthy();
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+  await act(async () => { setter.call(el, value); el.dispatchEvent(new Event('change', { bubbles: true })); });
   await flush();
 };
 const clickText = async (text) => {
@@ -196,10 +203,17 @@ describe('ResearchTab (khói)', () => {
     await act(async () => { items[0].querySelector('input[type="checkbox"]').click(); });
     await flush();
     await clickText('Tiếp tục');
-    expect(container.textContent).toContain('Không đặt điều kiện thì lấy toàn bộ lượt trong kho');
+    expect(container.textContent).toContain('Không đặt gì thì lấy toàn bộ kho.');
+    expect(container.textContent).toContain('Tiêu chuẩn chọn vào');
+    expect(container.textContent).toContain('Tiêu chuẩn loại trừ');
     await clickText('Tiếp tục');
     const text = container.textContent;
     expect(text).toContain('Đo lường từng biến');
+    // Danh sách "Còn thiếu gì?" nhắc chọn kết cục chính, tiêu chuẩn chọn vào và cỡ mẫu.
+    expect(text).toContain('Còn thiếu gì?');
+    expect(text).toContain('Chưa có biến kết cục chính');
+    expect(text).toContain('Chưa có tiêu chuẩn chọn vào');
+    expect(text).toContain('Chưa tính cỡ mẫu');
     expect(text).toContain('61,2 ± 12,4');
     expect(container.querySelector('[role="listitem"]')).toBeNull();
     expect(api.previewResearchArchiveVariables).toHaveBeenCalled();
@@ -303,5 +317,41 @@ describe('ResearchTab (khói)', () => {
     ]);
     expect(spec.selected_variables[1]).toMatchObject({ window_from_days: -14, window_to_days: 0 });
     expect(spec.conditions).toEqual([expect.objectContaining({ variable_id: 'analysis_ready.age', operator: '>=', value: '50' })]);
+    expect(spec.selected_variables.map(v => v.role)).toEqual(['descriptive', 'primary_outcome', 'primary_outcome']);
+    expect(spec.sample_size).toEqual({ design: 'paired_means' });
+    expect(container.textContent).toContain('So sánh trước – sau (cặp)');
+  });
+
+  it('Đề cương: vai trò biến, thời gian, tiêu chuẩn loại trừ, một lượt/người và cỡ mẫu được gửi kèm; báo đủ/thiếu cỡ mẫu', async () => {
+    await clickText('Tạo nghiên cứu mới');
+    await setInput(container.querySelector('#study-name'), 'APR Zoledronic');
+    await clickText('Tiếp tục');
+    const item = [...container.querySelectorAll('[role="listitem"]')][0];
+    await act(async () => { item.querySelector('input[type="checkbox"]').click(); });
+    await flush();
+    await setSelect(container.querySelector('select[aria-label^="Vai trò của"]'), 'primary_outcome');
+    await clickText('Tiếp tục');
+    await setInput(container.querySelector('input[aria-label="Từ ngày"]'), '2026-01-01');
+    await setSelect(container.querySelector('select[aria-label="Thêm tiêu chuẩn loại trừ"]'), 'analysis_ready.age');
+    await setInput(container.querySelector('input[aria-label="Giá trị"]'), '90');
+    await act(async () => { container.querySelector('input[type="checkbox"]').click(); });
+    await flush();
+    await clickText('Tiếp tục');
+    const spec = api.previewResearchArchiveVariables.mock.calls.at(-1)[0].variable_selection;
+    expect(spec.selected_variables[0].role).toBe('primary_outcome');
+    expect(spec.period).toEqual({ from: '2026-01-01', to: '' });
+    expect(spec.one_per_patient).toBe(true);
+    expect(spec.conditions[0]).toMatchObject({ variable_id: 'analysis_ready.age', exclude: true, value: '90' });
+    // Kết cục chính "Tuổi" có SD 12,4 trong kho: tính cỡ mẫu ước lượng trung bình với sai số ±2.
+    await setSelect(container.querySelector('select[aria-label="Thiết kế tính cỡ mẫu"]'), 'mean_one');
+    await clickText('Lấy từ kho: 12,4');
+    await setInput(container.querySelector('input[aria-label="Sai số tuyệt đối (cùng đơn vị)"]'), '2');
+    let text = container.textContent;
+    // n = 1,96² × 12,4² / 2² = 147,7 → 148, +10% hao hụt → 165; kho có 30 → thiếu 135.
+    expect(text).toContain('Thiếu 135 lượt');
+    expect(text).toContain('Chưa đủ cỡ mẫu: cần 165, hiện có 30');
+    await setInput(container.querySelector('input[aria-label="Sai số tuyệt đối (cùng đơn vị)"]'), '10');
+    text = container.textContent;
+    expect(text).toContain('Đủ cỡ mẫu');
   });
 });

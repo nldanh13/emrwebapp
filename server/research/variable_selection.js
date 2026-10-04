@@ -175,7 +175,7 @@ function sanitizeVariableSelection(input) {
       label: String(v?.label || v?.name || '').slice(0, 220),
       survey_label: String(v?.survey_label || v?.label || v?.name || '').slice(0, 220),
       type: String(v?.type || '').slice(0, 40),
-      role: String(v?.role || '').slice(0, 40),
+      role: VARIABLE_ROLES.has(String(v?.role || '')) ? String(v.role) : '',
       virtual_kind: String(v?.virtual_kind || '').slice(0, 80),
       aggregation: String(v?.aggregation || 'list').slice(0, 40),
     };
@@ -207,6 +207,8 @@ function sanitizeVariableSelection(input) {
       value: String(c?.value ?? '').slice(0, 500),
       value2: String(c?.value2 ?? '').slice(0, 500),
       virtual_kind: String(c?.virtual_kind || base.virtual_kind || '').slice(0, 80),
+      // Tiêu chuẩn loại trừ: lượt khớp điều kiện này bị loại khỏi mẫu.
+      exclude: c?.exclude === true || c?.exclude === 'true',
     };
     const sourceFilter = sanitizeFilterObject(c?.source_filter) || base.source_filter;
     if (sourceFilter) out.source_filter = sourceFilter;
@@ -220,7 +222,48 @@ function sanitizeVariableSelection(input) {
     selected_variables: selected,
     conditions,
     ...(sanitizeAnchor(src.anchor) ? { anchor: sanitizeAnchor(src.anchor) } : {}),
+    ...(sanitizePeriod(src.period) ? { period: sanitizePeriod(src.period) } : {}),
+    ...(src.one_per_patient === true || src.one_per_patient === 'true' ? { one_per_patient: true } : {}),
+    ...(sanitizeSampleSize(src.sample_size) ? { sample_size: sanitizeSampleSize(src.sample_size) } : {}),
   };
+}
+
+// Vai trò của biến trong nghiên cứu (đặt ở bước Ghép biến).
+const VARIABLE_ROLES = new Set(['primary_outcome', 'secondary_outcome', 'exposure', 'covariate', 'descriptive']);
+
+// Ngày lịch dạng 'YYYY-MM-DD' từ ngày ISO hoặc dd/mm/yyyy (bỏ phần giờ) để so khoảng thời gian.
+function dayKey(value) {
+  const raw = String(value ?? '').trim();
+  let m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  m = raw.match(/(?:^|\s)(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return '';
+}
+
+// Thời gian nghiên cứu: lượt có ngày nhập viện trong [from, to] (theo ngày, hai đầu đều tính).
+function sanitizePeriod(input) {
+  if (!input || typeof input !== 'object') return null;
+  const from = dayKey(input.from);
+  const to = dayKey(input.to);
+  if (!from && !to) return null;
+  return { ...(from ? { from } : {}), ...(to ? { to } : {}) };
+}
+
+// Thông số tính cỡ mẫu chỉ được lưu lại cùng nghiên cứu (tính ở giao diện), không ảnh hưởng lọc.
+function sanitizeSampleSize(input) {
+  if (!input || typeof input !== 'object') return null;
+  const design = String(input.design || '').slice(0, 40);
+  if (!design) return null;
+  const out = { design };
+  for (const [key, raw] of Object.entries(input)) {
+    if (key === 'design' || Object.keys(out).length > 20) continue;
+    const cleanKey = safeSegment(key, '').slice(0, 40);
+    if (!cleanKey || ['__proto__', 'constructor', 'prototype'].includes(cleanKey)) continue;
+    const n = Number(raw);
+    if (raw !== '' && raw !== null && Number.isFinite(n)) out[cleanKey] = n;
+  }
+  return out;
 }
 
 function sanitizeWindowDays(value) {
@@ -281,7 +324,8 @@ function insideAnchorWindow(time, anchorTime, fromDays, toDays) {
 function hasActiveSelection(selection) {
   return Boolean(selection && typeof selection === 'object' && (
     (Array.isArray(selection.selected_variables) && selection.selected_variables.length) ||
-    (Array.isArray(selection.conditions) && selection.conditions.length)
+    (Array.isArray(selection.conditions) && selection.conditions.length) ||
+    selection.period || selection.one_per_patient
   ));
 }
 
@@ -447,15 +491,60 @@ function conditionRowsForSource(sourceRow, condition, tableRowsByKey) {
   return relatedRows(tableRowsByKey?.[table] || [], identity);
 }
 
+function conditionPasses(condition, row, tableRowsByKey) {
+  const matched = conditionMatchesRows(condition, conditionRowsForSource(row, condition, tableRowsByKey));
+  return condition.exclude ? !matched : matched;
+}
+
+function filterRowsByPeriod(rows, period) {
+  if (!period) return rows;
+  return rows.filter(row => {
+    const day = dayKey(getCell(row, ['admission_date', 'Ngày vào viện']));
+    if (!day) return false;
+    return (!period.from || day >= period.from) && (!period.to || day <= period.to);
+  });
+}
+
+// Mỗi người bệnh chỉ giữ lượt nhập viện sớm nhất (tránh một người được tính nhiều lần).
+function keepFirstEncounterPerPatient(rows) {
+  const firstByPatient = new Map();
+  rows.forEach((row, i) => {
+    const key = String(getCell(row, ['patient_key']) || patientCode(row) || '').trim();
+    if (!key) return;
+    const day = dayKey(getCell(row, ['admission_date', 'Ngày vào viện'])) || '9999-99-99';
+    const best = firstByPatient.get(key);
+    if (!best || day < best.day) firstByPatient.set(key, { i, day });
+  });
+  const keep = new Set([...firstByPatient.values()].map(x => x.i));
+  return rows.filter((row, i) => keep.has(i) || !String(getCell(row, ['patient_key']) || patientCode(row) || '').trim());
+}
+
+// Chọn mẫu theo thứ tự: thời gian nghiên cứu → từng tiêu chuẩn chọn/loại trừ → mỗi người một lượt.
+// onStep(label, rows) được gọi sau mỗi bước để dựng sơ đồ sàng lọc.
+function selectCohortRows(rows, selection, tableRowsByKey = {}, onStep = null) {
+  let out = Array.isArray(rows) ? rows : [];
+  if (selection.period) {
+    out = filterRowsByPeriod(out, selection.period);
+    if (onStep) onStep({ kind: 'period' }, out);
+  }
+  for (const condition of selection.conditions || []) {
+    out = out.filter(row => conditionPasses(condition, row, tableRowsByKey));
+    if (onStep) onStep({ kind: 'condition', condition }, out);
+  }
+  if (selection.one_per_patient) {
+    out = keepFirstEncounterPerPatient(out);
+    if (onStep) onStep({ kind: 'one_per_patient' }, out);
+  }
+  return out;
+}
+
 function filterCohortRowsByVariableSelection(rows, selectionInput, tableRowsByKey = {}) {
   const selection = sanitizeVariableSelection(selectionInput);
   const conditions = selection.conditions || [];
-  if (!conditions.length) return { rows: Array.isArray(rows) ? rows : [], matched: Array.isArray(rows) ? rows.length : 0, conditions: [] };
-  const out = [];
-  for (const row of rows || []) {
-    const ok = conditions.every(condition => conditionMatchesRows(condition, conditionRowsForSource(row, condition, tableRowsByKey)));
-    if (ok) out.push(row);
+  if (!conditions.length && !selection.period && !selection.one_per_patient) {
+    return { rows: Array.isArray(rows) ? rows : [], matched: Array.isArray(rows) ? rows.length : 0, conditions: [] };
   }
+  const out = selectCohortRows(rows, selection, tableRowsByKey);
   return { rows: out, matched: out.length, conditions };
 }
 
@@ -706,6 +795,7 @@ function summarizeSelectedDataset(dataset) {
         survey_label: variable.survey_label || variable.label || variable.name,
         source_label: variable.label || variable.name,
         output_column: variable.output_column,
+        role: variable.role || '',
         filled,
         missing: rows.length - filled,
         fill_rate: rows.length ? Number(((filled / rows.length) * 100).toFixed(1)) : 0,
@@ -739,6 +829,9 @@ module.exports = {
   conditionMatchesRows,
   relatedRows,
   filterCohortRowsByVariableSelection,
+  selectCohortRows,
+  dayKey,
+  VARIABLE_ROLES,
   buildSelectedAnalysisDataset,
   summarizeSelectedDataset,
   describeValues,

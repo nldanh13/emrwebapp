@@ -13,6 +13,9 @@ import { compactNumber, text } from './researchFormat.js';
 import { inp, EmptyState } from './researchUi.jsx';
 import { ANCHOR_AGGREGATIONS, VARIABLE_AGGREGATIONS, matchSurveyLines, operatorLabel, variableTypeLabel } from './variableCatalogModel.js';
 import { CohortSummary, FillBar, VariableStatsTable } from './researchStats.jsx';
+import { VARIABLE_ROLE_OPTIONS, roleTone } from './studyRoles.js';
+import { SampleSizePanel } from './SampleSizePanel.jsx';
+import { ReadinessChecklist, downloadCodebook, readinessItems } from './studyReadiness.jsx';
 
 const STEPS = ['Thông tin & phiếu', 'Ghép biến', 'Điều kiện chọn mẫu', 'Kiểm tra & xuất dữ liệu'];
 const FILL_OPTIONS = [['all', 'Mọi mức đầy đủ'], ['high', 'Có dữ liệu ≥ 80%'], ['medium', '30–79%'], ['low', 'Dưới 30%']];
@@ -266,8 +269,9 @@ function StepVariables(props) {
     variableQuery, setVariableQuery, variableGroupFilter, setVariableGroupFilter, variableFillFilter, setVariableFillFilter,
     selectedVariableIds, selectedVariables, toggleVariable, addVariables, addCoreVariables,
     variableAggregations, setVariableAggregations, variableSurveyLabels, setVariableSurveyLabels,
-    variableAnchor, variableWindows, setVariableWindows,
+    variableAnchor, variableWindows, setVariableWindows, variableRoles, setVariableRoles,
   } = props;
+  const primaryCount = selectedVariables.filter(v => variableRoles[v.key] === 'primary_outcome').length;
   const aggregationOptions = VARIABLE_AGGREGATIONS.filter(([key]) => variableAnchor || !ANCHOR_AGGREGATIONS.has(key));
   const setWindow = (id, patch) => setVariableWindows(prev => ({ ...prev, [id]: { ...(prev[id] || {}), ...patch } }));
   const addVariant = (v) => props.setSelectedVariableIds(prev => new Set([...prev, `${v.id}@@${Date.now()}`]));
@@ -340,6 +344,13 @@ function StepVariables(props) {
       <aside style={{ ...card, flex: '0 1 340px', minWidth: 280, position: 'sticky', top: 10, display: 'grid', gap: 8 }}>
         <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Biến đã chọn ({selectedVariables.length})</div>
         {!selectedVariables.length && <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.5 }}>Chưa chọn biến nào. Đánh dấu biến ở danh sách bên trái.</div>}
+        {!!selectedVariables.length && (
+          <div style={{ fontSize: FS.xs, lineHeight: 1.45, color: primaryCount ? C.text3 : C.amber }}>
+            {primaryCount
+              ? 'Vai trò biến dùng để kiểm tra đủ dữ liệu và tính cỡ mẫu ở bước 4.'
+              : 'Chọn vai trò cho từng biến, ít nhất một biến "Kết cục chính", là biến trả lời câu hỏi nghiên cứu (vd. có phản ứng pha cấp).'}
+          </div>
+        )}
         <div style={{ display: 'grid', gap: 6, maxHeight: 'calc(100vh - 330px)', overflow: 'auto' }}>
           {selectedVariables.map(v => {
             const repeated = !SINGLE_ROW_TABLES.includes(String(v.table || ''));
@@ -356,6 +367,11 @@ function StepVariables(props) {
                     + Lấy thêm một lần (cách lấy khác)
                   </button>
                 )}
+                <select value={variableRoles[v.key] || ''} aria-label={`Vai trò của ${v.display_label}`}
+                  onChange={e => setVariableRoles(prev => ({ ...prev, [v.key]: e.target.value }))}
+                  style={{ ...inp, height: 28, fontSize: FS.xs, fontWeight: 600, color: variableRoles[v.key] ? roleTone(variableRoles[v.key])[0] : C.text3 }}>
+                  {VARIABLE_ROLE_OPTIONS.map(([value, l]) => <option key={value || 'none'} value={value}>{l}</option>)}
+                </select>
                 <input value={variableSurveyLabels[v.key] ?? v.display_label ?? v.name}
                   onChange={e => setVariableSurveyLabels(prev => ({ ...prev, [v.key]: e.target.value }))}
                   aria-label="Tên cột khi xuất" title="Tên cột khi xuất dữ liệu (theo phiếu khảo sát)"
@@ -389,47 +405,91 @@ function StepVariables(props) {
   );
 }
 
-function StepConditions({ allCatalogVariables, selectedVariables, variableConditions, setVariableConditions, addConditionForVariable }) {
+function ConditionRow({ cond, variable, onChange, onRemove }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px,1.3fr) minmax(130px,1fr) minmax(120px,1fr) auto', gap: 8, alignItems: 'center', border: `1px solid ${cond.exclude ? C.redBorder : C.border2}`, borderRadius: 7, padding: '8px 10px' }}>
+      <span style={{ fontSize: FS.sm, fontWeight: 700, color: C.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{variable?.display_label || cond.label}</span>
+      <select value={cond.operator} onChange={e => onChange({ operator: e.target.value })} aria-label="Phép so sánh" style={{ ...inp, height: 30 }}>
+        {(variable?.operators || ['contains', '=']).map(op => <option key={op} value={op}>{operatorLabel(op)}</option>)}
+      </select>
+      {['not_empty', 'empty'].includes(cond.operator)
+        ? <span />
+        : <span style={{ display: 'flex', gap: 6 }}>
+            <input value={cond.value} onChange={e => onChange({ value: e.target.value })} placeholder="Giá trị" aria-label="Giá trị" style={{ ...inp, height: 30, flex: 1, minWidth: 0 }} />
+            {cond.operator === 'between' && <input value={cond.value2} onChange={e => onChange({ value2: e.target.value })} placeholder="đến" aria-label="Giá trị đến" style={{ ...inp, height: 30, flex: 1, minWidth: 0 }} />}
+          </span>}
+      <button type="button" aria-label="Xóa điều kiện" onClick={onRemove}
+        style={{ border: 0, background: 'transparent', color: C.red, cursor: 'pointer', fontSize: FS.md }}>✕</button>
+    </div>
+  );
+}
+
+function StepConditions(props) {
+  const {
+    allCatalogVariables, selectedVariables, variableConditions, setVariableConditions, addConditionForVariable,
+    variablePeriod, setVariablePeriod, variableOnePerPatient, setVariableOnePerPatient,
+  } = props;
   const pickable = allCatalogVariables.filter(v => !v.technical_or_identity);
   const selectedIds = new Set(selectedVariables.map(v => v.id));
   const others = pickable.filter(v => !selectedIds.has(v.id));
-  const update = (i, patch) => setVariableConditions(prev => prev.map((x, j) => (j === i ? { ...x, ...patch } : x)));
-  return (
-    <div style={{ ...card, display: 'grid', gap: 12, maxWidth: 900 }}>
-      <div style={{ fontSize: FS.sm, color: C.text2, lineHeight: 1.5 }}>
-        Điều kiện quyết định lượt điều trị nào được đưa vào nghiên cứu (ví dụ tuổi ≥ 60, có phẫu thuật).
-        <b> Không đặt điều kiện thì lấy toàn bộ lượt trong kho.</b>
-      </div>
-      {variableConditions.map((cond, i) => {
-        const variable = allCatalogVariables.find(v => v.id === cond.variable_id);
-        return (
-          <div key={cond.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(160px,1.3fr) minmax(130px,1fr) minmax(120px,1fr) auto', gap: 8, alignItems: 'center', border: `1px solid ${C.border2}`, borderRadius: 7, padding: '8px 10px' }}>
-            <span style={{ fontSize: FS.sm, fontWeight: 700, color: C.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{variable?.display_label || cond.label}</span>
-            <select value={cond.operator} onChange={e => update(i, { operator: e.target.value })} aria-label="Phép so sánh" style={{ ...inp, height: 30 }}>
-              {(variable?.operators || ['contains', '=']).map(op => <option key={op} value={op}>{operatorLabel(op)}</option>)}
-            </select>
-            {['not_empty', 'empty'].includes(cond.operator)
-              ? <span />
-              : <span style={{ display: 'flex', gap: 6 }}>
-                  <input value={cond.value} onChange={e => update(i, { value: e.target.value })} placeholder="Giá trị" aria-label="Giá trị" style={{ ...inp, height: 30, flex: 1, minWidth: 0 }} />
-                  {cond.operator === 'between' && <input value={cond.value2} onChange={e => update(i, { value2: e.target.value })} placeholder="đến" aria-label="Giá trị đến" style={{ ...inp, height: 30, flex: 1, minWidth: 0 }} />}
-                </span>}
-            <button type="button" aria-label="Xóa điều kiện" onClick={() => setVariableConditions(prev => prev.filter((_, j) => j !== i))}
-              style={{ border: 0, background: 'transparent', color: C.red, cursor: 'pointer', fontSize: FS.md }}>✕</button>
+  const update = (id, patch) => setVariableConditions(prev => prev.map(x => (x.id === id ? { ...x, ...patch } : x)));
+  const remove = (id) => setVariableConditions(prev => prev.filter(x => x.id !== id));
+  const section = (exclude) => {
+    const list = variableConditions.filter(c => Boolean(c.exclude) === exclude);
+    return (
+      <section style={{ display: 'grid', gap: 8 }}>
+        <div>
+          <div style={{ fontSize: FS.md, fontWeight: 700, color: exclude ? C.red : C.text }}>{exclude ? 'Tiêu chuẩn loại trừ' : 'Tiêu chuẩn chọn vào'}</div>
+          <div style={hint}>
+            {exclude
+              ? 'Lượt điều trị khớp BẤT KỲ tiêu chuẩn nào ở đây sẽ bị loại (vd. suy thận nặng, đã dùng Zoledronic trước đó, thiếu hồ sơ).'
+              : 'Lượt điều trị phải thỏa TẤT CẢ tiêu chuẩn ở đây (vd. chẩn đoán loãng xương M80–M81, có dùng Zoledronic Acid, tuổi ≥ 50).'}
           </div>
-        );
-      })}
-      <select value="" aria-label="Thêm điều kiện theo biến"
-        onChange={e => { const v = pickable.find(x => x.id === e.target.value); if (v) addConditionForVariable(v); }}
-        style={{ ...inp, height: 34, maxWidth: 420 }}>
-        <option value="">+ Thêm điều kiện theo biến…</option>
-        {!!selectedVariables.length && <optgroup label="Biến đã chọn">
-          {[...new Map(selectedVariables.map(v => [v.id, v])).values()].map(v => <option key={v.id} value={v.id}>{v.display_label}</option>)}
-        </optgroup>}
-        <optgroup label="Biến khác trong kho">
-          {others.slice(0, 500).map(v => <option key={v.id} value={v.id}>{v.clinical_group_label} · {v.display_label}</option>)}
-        </optgroup>
-      </select>
+        </div>
+        {list.map(cond => (
+          <ConditionRow key={cond.id} cond={cond} variable={allCatalogVariables.find(v => v.id === cond.variable_id)}
+            onChange={patch => update(cond.id, patch)} onRemove={() => remove(cond.id)} />
+        ))}
+        <select value="" aria-label={exclude ? 'Thêm tiêu chuẩn loại trừ' : 'Thêm tiêu chuẩn chọn vào'}
+          onChange={e => { const v = pickable.find(x => x.id === e.target.value); if (v) addConditionForVariable(v, { exclude }); }}
+          style={{ ...inp, height: 34, maxWidth: 420 }}>
+          <option value="">{exclude ? '+ Thêm tiêu chuẩn loại trừ…' : '+ Thêm tiêu chuẩn chọn vào…'}</option>
+          {!!selectedVariables.length && <optgroup label="Biến đã chọn">
+            {[...new Map(selectedVariables.map(v => [v.id, v])).values()].map(v => <option key={v.id} value={v.id}>{v.display_label}</option>)}
+          </optgroup>}
+          <optgroup label="Biến khác trong kho">
+            {others.slice(0, 500).map(v => <option key={v.id} value={v.id}>{v.clinical_group_label} · {v.display_label}</option>)}
+          </optgroup>
+        </select>
+      </section>
+    );
+  };
+  return (
+    <div style={{ ...card, display: 'grid', gap: 16, maxWidth: 900 }}>
+      <div style={{ fontSize: FS.sm, color: C.text2, lineHeight: 1.5 }}>
+        Chọn mẫu theo thứ tự: thời gian nghiên cứu → tiêu chuẩn chọn vào → tiêu chuẩn loại trừ → mỗi người bệnh một lượt.
+        Bước 4 hiện số lượt còn lại sau từng bước. <b>Không đặt gì thì lấy toàn bộ kho.</b>
+      </div>
+      <section style={{ display: 'grid', gap: 6 }}>
+        <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Thời gian nghiên cứu</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: FS.sm, color: C.text2 }}>
+          <span>Ngày nhập viện từ</span>
+          <input type="date" value={variablePeriod.from} aria-label="Từ ngày" onChange={e => setVariablePeriod(p => ({ ...p, from: e.target.value }))} style={{ ...inp, height: 32 }} />
+          <span>đến</span>
+          <input type="date" value={variablePeriod.to} aria-label="Đến ngày" onChange={e => setVariablePeriod(p => ({ ...p, to: e.target.value }))} style={{ ...inp, height: 32 }} />
+          {(variablePeriod.from || variablePeriod.to) && <Btn onClick={() => setVariablePeriod({ from: '', to: '' })} style={{ height: 30 }}>Bỏ</Btn>}
+        </div>
+        <div style={hint}>Để trống = không giới hạn thời gian.</div>
+      </section>
+      {section(false)}
+      {section(true)}
+      <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: FS.sm, color: C.text, cursor: 'pointer' }}>
+        <input type="checkbox" checked={variableOnePerPatient} onChange={e => setVariableOnePerPatient(e.target.checked)} style={{ marginTop: 3 }} />
+        <span>
+          <b>Mỗi người bệnh chỉ lấy một lượt</b> (lượt nhập viện đầu tiên thỏa điều kiện)
+          <span style={{ display: 'block', ...hint, marginTop: 1 }}>Nên bật khi đơn vị phân tích là người bệnh, để một người không bị tính nhiều lần.</span>
+        </span>
+      </label>
     </div>
   );
 }
@@ -445,14 +505,40 @@ function ElapsedTimer() {
   return <span style={{ fontVariantNumeric: 'tabular-nums' }}>{seconds} giây</span>;
 }
 
-function StepReview({ draft, selectedVariables, variableConditions, variablePreview, variablePreviewLoading, variablePreviewError, loadVariablePreview }) {
+function StepReview(props) {
+  const {
+    draft, selectedVariables, variableConditions, variablePreview, variablePreviewLoading, variablePreviewError, loadVariablePreview,
+    variableRoles, variablePeriod, variableOnePerPatient, variableSampleSize, setVariableSampleSize, variableAnchor, variableWindows, onGoStep,
+  } = props;
   const summary = variablePreview?.summary || null;
+  // Thống kê giữ thứ tự biến đã chọn: vai trò lấy theo lựa chọn hiện tại (đổi vai trò không cần tính lại).
+  const keyByColumn = new Map((summary?.variables || []).map((v, i) => [v.output_column || v.id, selectedVariables[i]?.key]));
+  const roleOf = (v) => {
+    const key = keyByColumn.get(v.output_column || v.id);
+    return key !== undefined ? (variableRoles[key] || '') : (v.role || '');
+  };
+  const windowText = (key) => {
+    const w = variableWindows?.[key];
+    if (!w || (w.from === '' && w.to === '') || (w.from === undefined && w.to === undefined)) return '';
+    return `${w.from === '' || w.from === undefined ? '…' : w.from} → ${w.to === '' || w.to === undefined ? '…' : w.to} ngày`;
+  };
+  const items = summary ? readinessItems({
+    summary, roleOf, conditions: variableConditions, period: variablePeriod, onePerPatient: variableOnePerPatient,
+    sampleSize: variableSampleSize, anchor: variableAnchor,
+  }) : [];
+  const codebookName = `tu_dien_bien_${String(draft.name || 'nghien_cuu').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 60)}.csv`;
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ ...card, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ flex: '1 1 300px', fontSize: FS.sm, color: C.text2 }}>
-          <b style={{ color: C.text }}>{draft.name}</b> · {selectedVariables.length} biến · {variableConditions.length ? `${variableConditions.length} điều kiện` : 'không có điều kiện (toàn bộ kho)'}
+          <b style={{ color: C.text }}>{draft.name}</b> · {selectedVariables.length} biến · {variableConditions.length ? `${variableConditions.filter(c => !c.exclude).length} tiêu chuẩn chọn vào, ${variableConditions.filter(c => c.exclude).length} loại trừ` : 'không có tiêu chuẩn chọn mẫu (toàn bộ kho)'}
         </div>
+        {summary && (
+          <Btn onClick={() => downloadCodebook(codebookName, summary, roleOf, (v, i) => ({ window: windowText(selectedVariables[i]?.key) }))}
+            title="Bảng mô tả từng cột của file dữ liệu: vai trò, nguồn, cách lấy, độ đầy đủ" style={{ height: 30 }}>
+            Tải từ điển biến
+          </Btn>
+        )}
         <Btn onClick={loadVariablePreview} disabled={variablePreviewLoading} loading={variablePreviewLoading} style={{ height: 30 }}>Tính lại thống kê</Btn>
       </div>
       {variablePreviewError && <div role="alert" style={{ ...card, color: C.red, background: C.redBg, borderColor: C.redBorder }}>{variablePreviewError}</div>}
@@ -464,6 +550,7 @@ function StepReview({ draft, selectedVariables, variableConditions, variablePrev
       )}
       {summary && (
         <>
+          <ReadinessChecklist items={items} onGoStep={onGoStep} />
           {summary.funnel?.length > 1 && (
             <section style={card}>
               <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text, marginBottom: 8 }}>Sàng lọc mẫu theo điều kiện</div>
@@ -473,7 +560,7 @@ function StepReview({ draft, selectedVariables, variableConditions, variablePrev
                   const removed = i ? summary.funnel[i - 1].encounters - f.encounters : 0;
                   return (
                     <li key={i} style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1.4fr) minmax(120px, 2fr) auto', gap: 10, alignItems: 'center', fontSize: FS.sm }}>
-                      <span style={{ color: C.text, fontWeight: i ? 500 : 700 }}>{i ? `+ ${f.label}` : f.label}</span>
+                      <span style={{ color: f.exclude ? C.red : C.text, fontWeight: i ? 500 : 700 }}>{i ? `${f.exclude ? '−' : '+'} ${f.label}` : f.label}</span>
                       <span style={{ height: 8, background: C.surface2, borderRadius: 4, overflow: 'hidden' }}>
                         <span style={{ display: 'block', height: '100%', width: `${Math.max(1, (f.encounters / first) * 100)}%`, background: i === summary.funnel.length - 1 ? C.green : C.blue }} />
                       </span>
@@ -500,9 +587,10 @@ function StepReview({ draft, selectedVariables, variableConditions, variablePrev
               <div style={{ ...hint, color: C.text3 }}>Tính xong trong {(variablePreview.elapsed_ms / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} giây.</div>
             )}
           </section>
+          <SampleSizePanel sampleSize={variableSampleSize} setSampleSize={setVariableSampleSize} summary={summary} roleOf={roleOf} />
           <section>
             <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text, margin: '2px 0 8px' }}>Đo lường từng biến</div>
-            <VariableStatsTable variables={summary.variables || []} />
+            <VariableStatsTable variables={summary.variables || []} roleOf={roleOf} />
           </section>
         </>
       )}
@@ -559,7 +647,7 @@ export function CreateStudyView(props) {
         anchor={props.variableAnchor} setAnchor={props.setVariableAnchor} drugNames={drugNames} />}
       {step === 2 && <StepVariables {...props} surveyMatches={surveyMatches} />}
       {step === 3 && <StepConditions {...props} />}
-      {step === 4 && <StepReview draft={variableStudyDraft} {...props} />}
+      {step === 4 && <StepReview draft={variableStudyDraft} {...props} onGoStep={setStep} />}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', borderTop: `1px solid ${C.border2}`, paddingTop: 10 }}>
         {step > 1 && <Btn onClick={() => setStep(step - 1)} style={{ height: 34 }}>← Quay lại</Btn>}
