@@ -115,34 +115,6 @@ function _isOrderPlaceholder(value) {
   return /^(?:thuc hien\s+)?y lenh thuoc da co$|^thuoc da co$/.test(s);
 }
 
-// Dữ liệu lịch sử y lệnh thực tế có hiện tượng copy cùng một nội dung qua
-// Diễn biến -> Tên y lệnh -> Y lệnh khác. Nếu giữ nguyên, parser thuốc sẽ đọc
-// lại cùng text nhiều lần và thậm chí nhận nhầm diễn biến lâm sàng thành thuốc.
-// Chỉ làm sạch bản in-memory; CSV raw trên đĩa luôn được giữ nguyên để đối chiếu.
-function _sanitizeOrderHistoryRows(rows) {
-  return (rows || []).map(row => {
-    const next = { ...row };
-    const clinicalKeyName = Object.keys(next).find(k => normalizedKey(k) === normalizedKey('Diễn biến'));
-    const orderKeyName = Object.keys(next).find(k => normalizedKey(k) === normalizedKey('Tên y lệnh'));
-    const otherKeyName = Object.keys(next).find(k => normalizedKey(k) === normalizedKey('Y lệnh khác'));
-    const clinical = clinicalKeyName ? _cleanOrderText(next[clinicalKeyName]) : '';
-    const orderOriginal = orderKeyName ? _cleanOrderText(next[orderKeyName]) : '';
-    const otherOriginal = otherKeyName ? _cleanOrderText(next[otherKeyName]) : '';
-    const clinicalKey = _compareOrderText(clinical);
-    const orderKey = _compareOrderText(orderOriginal);
-    const otherKey = _compareOrderText(otherOriginal);
-
-    if (clinicalKeyName) next[clinicalKeyName] = clinical;
-    if (orderKeyName) {
-      next[orderKeyName] = (!orderKey || orderKey === clinicalKey || _isOrderPlaceholder(orderOriginal)) ? '' : orderOriginal;
-    }
-    if (otherKeyName) {
-      next[otherKeyName] = (!otherKey || otherKey === clinicalKey || otherKey === orderKey || _isOrderPlaceholder(otherOriginal)) ? '' : otherOriginal;
-    }
-    return next;
-  });
-}
-
 function readCsvTable(filePath, maxRows = MAX_TABLE_ROWS) {
   if (!fs.existsSync(filePath)) return { columns: [], rows: [], count: 0, limited: false, exists: false };
   let fileSize = 0;
@@ -152,10 +124,8 @@ function readCsvTable(filePath, maxRows = MAX_TABLE_ROWS) {
   if (cacheKey && CSV_TABLE_CACHE.has(cacheKey)) return CSV_TABLE_CACHE.get(cacheKey);
 
   // Đọc theo khối: không nạp cả file thành một chuỗi (file XN/CĐHA có thể vài trăm MB).
+  // Luôn trả đúng dữ liệu raw; dedupe y lệnh chỉ diễn ra khi getCell() được parser gọi.
   const result = { ...readCsvFileRows(filePath, maxRows), exists: true };
-  if (path.basename(filePath).toLowerCase() === 'hchanh_order_history.csv') {
-    result.rows = _sanitizeOrderHistoryRows(result.rows);
-  }
   if (cacheKey) {
     // Xóa cache cũ của cùng file khi file đã thay đổi.
     const prefix = `${path.resolve(filePath)}|`;
@@ -220,10 +190,44 @@ function countCsvRows(filePath) {
   }
 }
 
+function _rawCellByNormalizedKey(row, key) {
+  const wanted = normalizedKey(key);
+  for (const [name, value] of Object.entries(row || {})) {
+    if (normalizedKey(name) === wanted && String(value || '').trim()) return String(value || '').trim();
+  }
+  return '';
+}
+
+function _orderAwareCell(row, name) {
+  const key = normalizedKey(name);
+  const orderNameKey = normalizedKey('Tên y lệnh');
+  const orderOtherKey = normalizedKey('Y lệnh khác');
+  if (key !== orderNameKey && key !== orderOtherKey) return null;
+
+  const clinical = _cleanOrderText(_rawCellByNormalizedKey(row, 'Diễn biến'));
+  const orderName = _cleanOrderText(_rawCellByNormalizedKey(row, 'Tên y lệnh'));
+  const orderOther = _cleanOrderText(_rawCellByNormalizedKey(row, 'Y lệnh khác'));
+  const clinicalKey = _compareOrderText(clinical);
+  const orderKey = _compareOrderText(orderName);
+  const otherKey = _compareOrderText(orderOther);
+
+  if (key === orderNameKey) {
+    if (!orderKey || orderKey === clinicalKey || _isOrderPlaceholder(orderName)) return '';
+    return orderName;
+  }
+  if (!otherKey || otherKey === clinicalKey || otherKey === orderKey || _isOrderPlaceholder(orderOther)) return '';
+  return orderOther;
+}
+
 function getCell(row, names) {
   if (!row) return '';
   const byKey = new Map(Object.keys(row).map(key => [normalizedKey(key), row[key]]));
   for (const name of names) {
+    const orderAware = _orderAwareCell(row, name);
+    if (orderAware !== null) {
+      if (orderAware) return orderAware;
+      continue;
+    }
     const v = byKey.get(normalizedKey(name));
     if (String(v || '').trim()) return String(v || '').trim();
   }
@@ -300,7 +304,6 @@ module.exports = {
   _cleanOrderText,
   _compareOrderText,
   _isOrderPlaceholder,
-  _sanitizeOrderHistoryRows,
   readCsvTable,
   safeDownloadName,
   cell,
