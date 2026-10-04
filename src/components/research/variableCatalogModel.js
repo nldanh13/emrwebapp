@@ -74,6 +74,8 @@ const VARIABLE_FRIENDLY_LABELS = {
   drug_name_raw: 'Tên thuốc/y lệnh',
   drug_name_norm: 'Tên thuốc chuẩn hóa',
   drug_group_guess: 'Nhóm thuốc dự đoán',
+  active_ingredient: 'Hoạt chất (ghi trong y lệnh)',
+  active_ingredient_source: 'Nguồn xác định hoạt chất',
   dose_raw: 'Liều dùng',
   route_raw: 'Đường dùng',
   route_norm: 'Đường dùng chuẩn hóa',

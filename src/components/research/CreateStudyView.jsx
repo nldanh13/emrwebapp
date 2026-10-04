@@ -618,8 +618,8 @@ export function CreateStudyView(props) {
   const anchorReady = props.variableAnchor?.kind !== 'drug' || text(props.variableAnchor?.drug).length >= 3;
   const hasName = Boolean(text(variableStudyDraft.name)) && anchorReady;
   const drugNames = useMemo(() => [...new Set((props.allCatalogVariables || [])
-    .filter(v => v.virtual_kind === 'drug_item')
-    .map(v => String(v.name || '').replace(/^drug:/, '').trim())
+    .filter(v => v.virtual_kind === 'drug_item' || v.virtual_kind === 'active_ingredient')
+    .map(v => String(v.name || '').replace(/^(drug|ingredient):/, '').trim())
     .filter(Boolean))].sort((a, b) => a.localeCompare(b)), [props.allCatalogVariables]);
   const hasVariables = selectedVariables.length > 0;
   // Điều kiện để trống giá trị sẽ loại hết mẫu: phải nhập xong mới sang bước kiểm tra.
