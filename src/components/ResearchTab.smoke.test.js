@@ -55,7 +55,27 @@ const PIPELINE = {
   },
 };
 
+const CRF = {
+  form: {
+    timepoints: [{ id: 'T24', label: '24 giờ', offset_hours: 24 }],
+    fields: [
+      { id: 'so_dien_thoai', label: 'Số điện thoại', type: 'text', section: 'Nhân khẩu', timepoint: '', identifier: true },
+      { id: 'chieu_cao', label: 'Chiều cao', type: 'number', section: 'Nhân khẩu', timepoint: '', unit: 'cm' },
+      { id: 'nhiet_do_max', label: 'Nhiệt độ max', type: 'number', section: 'Theo dõi', timepoint: 'T24' },
+    ],
+    updated_at: '2026-03-01T00:00:00Z',
+  },
+  samples: [
+    // Mốc 3 ngày trước → lần gọi 24 giờ đã quá hạn.
+    { research_code: 'NC0001', anchor_at: '', anchor_auto: new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 16), values: { chieu_cao: '155' }, identifiers_saved: ['so_dien_thoai'], timepoints: {}, updated_at: '2026-03-02T00:00:00Z' },
+    { research_code: 'NC0002', anchor_at: '', anchor_auto: '', values: {}, identifiers_saved: [], timepoints: {}, updated_at: '' },
+  ],
+  identifiers_visible: false,
+};
+
 function responseFor(name) {
+  if (name === 'getResearchStudyCrf') return { status: 'ok', ...CRF };
+  if (name === 'saveResearchStudyCrfEntry') return { status: 'ok', message: 'Đã lưu phiếu NC0001.' };
   if (name === 'getResearchArchivePipeline') return { status: 'ok', pipeline: PIPELINE };
   if (name === 'getResearchArchive') return { status: 'ok', archive: ARCHIVE };
   if (name === 'listResearchStudies') return { status: 'ok', studies: [NEW_STUDY, DONE_STUDY] };
@@ -184,5 +204,44 @@ describe('ResearchTab (khói)', () => {
     expect(text).toContain('Lấy dữ liệu lần đầu');
     // Thu thập tự động cần đợt chạy sẵn có; gọi khi chưa có sẽ bật lỗi đỏ.
     expect(api.getResearchCollectionStatus).not.toHaveBeenCalledWith(NEW_STUDY.id);
+  });
+
+  it('Tạo nghiên cứu: đặt mốc "lần đầu dùng thuốc" và cửa sổ ngày, gửi kèm khi tính thống kê', async () => {
+    await clickText('Tạo nghiên cứu mới');
+    await setInput(container.querySelector('#study-name'), 'APR Zoledronic');
+    const drugRadio = [...container.querySelectorAll('input[name="study-anchor"]')].find(el => el.parentElement.textContent.includes('Lần đầu dùng một thuốc'));
+    await act(async () => { drugRadio.click(); });
+    await flush();
+    const next = () => [...container.querySelectorAll('button')].find(b => b.textContent.includes('Tiếp tục'));
+    expect(next().disabled, 'chưa có tên thuốc').toBe(true);
+    await setInput(container.querySelector('input[aria-label="Tên thuốc làm mốc"]'), 'Zoledronic');
+    await clickText('Tiếp tục');
+    const item = [...container.querySelectorAll('[role="listitem"]')].find(el => el.textContent.includes('Days From Admission') || el.textContent.length);
+    await act(async () => { item.querySelector('input[type="checkbox"]').click(); });
+    await flush();
+    await clickText('Tiếp tục');
+    await clickText('Tiếp tục');
+    const spec = api.previewResearchArchiveVariables.mock.calls.at(-1)[0].variable_selection;
+    expect(spec.anchor).toMatchObject({ kind: 'drug', drug: 'Zoledronic' });
+  });
+
+  it('Phiếu nhập tay: lịch gọi báo quá hạn, mở đúng mẫu, lưu không gửi số điện thoại đang ẩn', async () => {
+    await clickText(DONE_STUDY.name);
+    await clickText('Phiếu nhập tay & theo dõi');
+    let text = container.textContent;
+    expect(text).toContain('Quá hạn');
+    expect(text).toContain('NC0001');
+    expect(text).toContain('đang ẩn');
+    expect(text).not.toContain('NC0002', 'mẫu chưa có mốc chỉ hiện khi bật xem tất cả');
+    await clickText('Nhập kết quả');
+    text = container.textContent;
+    expect(text).toContain('Theo dõi 24 giờ');
+    expect(container.querySelector('input[aria-label="Số điện thoại"]').placeholder).toBe('Đã lưu (đang ẩn)');
+    await setInput(container.querySelector('input[aria-label="Nhiệt độ max"]'), '38.4');
+    await clickText('Lưu phiếu NC0001');
+    const [studyId, code, body] = api.saveResearchStudyCrfEntry.mock.calls.at(-1);
+    expect([studyId, code]).toEqual([DONE_STUDY.id, 'NC0001']);
+    expect(body.timepoints.T24.values.nhiet_do_max).toBe('38.4');
+    expect('so_dien_thoai' in body.values).toBe(false);
   });
 });

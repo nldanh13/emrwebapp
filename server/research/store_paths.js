@@ -19,6 +19,7 @@ const ARCHIVE_LABEL = 'Kho dữ liệu gốc';
 
 const TABLES = {
   cohort: { label: 'Danh sách yêu cầu', file: 'cohort.csv', root: 'study' },
+  crf: { label: 'Phiếu nhập tay', file: 'crf_data.csv', root: 'study' },
   initial_list: { label: 'Dữ liệu ban đầu', file: 'du_lieu_ban_dau.csv', root: 'run' },
   research_source: { label: 'Nguồn chuẩn', file: 'research_source.csv', root: 'run' },
   deep_source: { label: 'Dữ liệu gốc đã lấy sâu', file: 'du_lieu_goc.csv', root: 'run' },

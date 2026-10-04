@@ -30,6 +30,8 @@ function loadRunTablesForSelection(runDir, selection, fallbackRows = [], maxRows
   for (const item of [...(selection?.selected_variables || []), ...(selection?.conditions || [])]) {
     if (item?.table) keys.add(item.table);
   }
+  // Mốc "lần đầu dùng thuốc" cần y lệnh thuốc của từng lượt.
+  if (selection?.anchor?.kind === 'drug') keys.add('medication_orders');
   for (const key of keys) out[key] = readRunRowsForSelection(runDir, key, fallbackRows, maxRows);
   if (fallbackRows?.length) {
     out.initial_list = out.initial_list || fallbackRows;

@@ -544,6 +544,11 @@ export const downloadResearchStudyCsv = (studyId, { table = 'analysis_ready', ru
   params.set('redact', redact ? '1' : '0');
   return downloadBlob(`/api/research/studies/${encodeURIComponent(studyId)}/export?${params}`, `${studyId}_${table}.csv`);
 };
+// Phiếu nhập tay (CRF) và lịch theo dõi của nghiên cứu.
+export const getResearchStudyCrf = (studyId, { identified = false } = {}) => get(`/api/research/studies/${encodeURIComponent(studyId)}/crf${identified ? '?identified=1' : ''}`);
+export const saveResearchStudyCrfForm = (studyId, form) => put(`/api/research/studies/${encodeURIComponent(studyId)}/crf/form`, { form });
+export const saveResearchStudyCrfEntry = (studyId, researchCode, entry) => put(`/api/research/studies/${encodeURIComponent(studyId)}/crf/entries/${encodeURIComponent(researchCode)}`, entry);
+export const downloadResearchStudyMerged = (studyId) => downloadBlob(`/api/research/studies/${encodeURIComponent(studyId)}/crf/export-merged`, `${studyId}_du_lieu_day_du.csv`);
 export const finalizeResearchStudyDataset = (studyId) => post(`/api/research/studies/${encodeURIComponent(studyId)}/finalize-dataset`, {});
 export const buildResearchStudyEncodedDataset = (studyId) => post(`/api/research/studies/${encodeURIComponent(studyId)}/build-encoded-dataset`, {});
 export const cleanResearchStudyGenerated = (studyId, options = {}) => post(`/api/research/studies/${encodeURIComponent(studyId)}/clean-generated`, options);

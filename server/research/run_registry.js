@@ -6,7 +6,7 @@ const { parseDateTimeCell, getCell, patientCode, parseDateCell, countCsvRows, re
 const fs = require('fs');
 const path = require('path');
 const { readJsonSafe, writeJsonAtomic, safeFilePart, nowFileStamp } = require('../utils/file');
-const { TABLES, archiveRunsDir, runsDir, ensureArchiveStore, archiveMetaPath, archiveSourcePath, ARCHIVE_ID, ARCHIVE_LABEL, cleanStudyId, studyMetaPath, cohortPath, ensureResearchStore, nowIso, todayDateInput, dateOnlyMs, MAX_CSV_BYTES, normalizedKey } = require('./store_paths');
+const { TABLES, archiveRunsDir, runsDir, ensureArchiveStore, archiveMetaPath, archiveSourcePath, ARCHIVE_ID, ARCHIVE_LABEL, cleanStudyId, studyDir, studyMetaPath, cohortPath, ensureResearchStore, nowIso, todayDateInput, dateOnlyMs, MAX_CSV_BYTES, normalizedKey } = require('./store_paths');
 const { RESEARCH_STORE_DIR } = require('../constants');
 const collection = require('./collection');
 
@@ -200,7 +200,7 @@ function resolveRunId(studyId, requested) {
 
 function tablePathFor(studyId, tableKey, runId = 'latest') {
   const table = TABLES[tableKey] || TABLES.patients;
-  if (table.root === 'study') return cohortPath(studyId);
+  if (table.root === 'study') return tableKey === 'cohort' || !TABLES[tableKey] ? cohortPath(studyId) : path.join(studyDir(studyId), table.file);
   const rid = resolveRunId(studyId, runId);
   if (!rid) return '';
   return path.join(runsDir(studyId), rid, table.file);

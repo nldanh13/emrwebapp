@@ -315,13 +315,19 @@ const VARIABLE_AGGREGATIONS = [
   ['any', 'Có / không'],
   ['closest_before_surgery', 'Gần trước mổ nhất'],
   ['closest_after_surgery', 'Gần sau mổ nhất'],
+  ['closest_before_anchor', 'Gần trước mốc nhất'],
+  ['closest_after_anchor', 'Gần sau mốc nhất'],
 ];
+
+// Cách lấy theo mốc chỉ có nghĩa khi nghiên cứu đã đặt mốc thời gian.
+const ANCHOR_AGGREGATIONS = new Set(['closest_before_anchor', 'closest_after_anchor']);
 
 function aggregationLabel(value) {
   return VARIABLE_AGGREGATIONS.find(([key]) => key === value)?.[1] || 'Liệt kê giá trị';
 }
 
 export {
+  ANCHOR_AGGREGATIONS,
   VARIABLE_FRIENDLY_LABELS,
   VARIABLE_TECHNICAL_RE,
   VARIABLE_IDENTITY_RE,

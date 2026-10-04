@@ -5,12 +5,12 @@
 //   4 Kiểm tra bằng thống kê mô tả rồi tạo
 // Màn hình chỉ hiển thị thống kê, không hiển thị dữ liệu từng lượt. Dữ liệu chi tiết chỉ lấy ra
 // khi cần xử lý số liệu, bằng nút Xuất CSV ở nghiên cứu sau khi tạo.
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import { compactNumber, text } from './researchFormat.js';
 import { inp, EmptyState } from './researchUi.jsx';
-import { VARIABLE_AGGREGATIONS, operatorLabel, variableTypeLabel } from './variableCatalogModel.js';
+import { ANCHOR_AGGREGATIONS, VARIABLE_AGGREGATIONS, operatorLabel, variableTypeLabel } from './variableCatalogModel.js';
 import { CohortSummary, FillBar, VariableStatsTable } from './researchStats.jsx';
 
 const STEPS = ['Thông tin nghiên cứu', 'Chọn biến', 'Điều kiện chọn mẫu', 'Kiểm tra và tạo'];
@@ -55,7 +55,44 @@ function StepBar({ step, canOpen, onOpen }) {
   );
 }
 
-function StepInfo({ draft, setDraft, questionnaire, setQuestionnaire, questionnaireTerms }) {
+const ANCHOR_OPTIONS = [
+  ['', 'Không dùng mốc'],
+  ['admission', 'Ngày nhập viện'],
+  ['surgery', 'Ngày phẫu thuật'],
+  ['drug', 'Lần đầu dùng một thuốc trong đợt (vd. truyền Zoledronic Acid)'],
+];
+
+function AnchorPicker({ anchor, setAnchor, drugNames }) {
+  const kind = anchor?.kind || '';
+  return (
+    <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+      <legend style={label}>Mốc thời gian của nghiên cứu</legend>
+      <div style={{ display: 'grid', gap: 6 }}>
+        {ANCHOR_OPTIONS.map(([value, text_]) => (
+          <label key={value || 'none'} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: FS.sm, color: C.text2, cursor: 'pointer' }}>
+            <input type="radio" name="study-anchor" checked={kind === value}
+              onChange={() => setAnchor(value ? { kind: value, drug: value === 'drug' ? (anchor?.drug || '') : undefined } : null)} />
+            {text_}
+          </label>
+        ))}
+        {kind === 'drug' && (
+          <div style={{ marginLeft: 24 }}>
+            <input list="study-anchor-drugs" value={anchor?.drug || ''} aria-label="Tên thuốc làm mốc"
+              onChange={e => setAnchor({ kind: 'drug', drug: e.target.value })}
+              placeholder="Gõ tên thuốc, vd. Zoledronic" style={{ ...inp, width: 'min(100%, 420px)', height: 32 }} />
+            <datalist id="study-anchor-drugs">{drugNames.slice(0, 300).map(n => <option key={n} value={n} />)}</datalist>
+          </div>
+        )}
+      </div>
+      <div style={hint}>
+        Mốc là thời điểm can thiệp của đề tài. Ở bước sau có thể lấy biến "gần trước/sau mốc nhất" hoặc chỉ trong một số ngày quanh mốc
+        (vd. xét nghiệm trong 14 ngày trước truyền, thuốc dùng trong 3 ngày sau truyền).
+      </div>
+    </fieldset>
+  );
+}
+
+function StepInfo({ draft, setDraft, questionnaire, setQuestionnaire, questionnaireTerms, anchor, setAnchor, drugNames }) {
   return (
     <div style={{ ...card, display: 'grid', gap: 14, maxWidth: 760 }}>
       <div>
@@ -71,6 +108,7 @@ function StepInfo({ draft, setDraft, questionnaire, setQuestionnaire, questionna
           placeholder="VD: Khảo sát thời gian chờ mổ và biến chứng ở người bệnh trên 60 tuổi"
           style={{ ...inp, width: '100%', height: 'auto', padding: '7px 8px', resize: 'vertical', boxSizing: 'border-box' }} />
       </div>
+      <AnchorPicker anchor={anchor} setAnchor={setAnchor} drugNames={drugNames} />
       <div>
         <label style={label} htmlFor="study-survey">Biến trên phiếu khảo sát (không bắt buộc)</label>
         <textarea id="study-survey" value={questionnaire} rows={4}
@@ -94,7 +132,10 @@ function StepVariables(props) {
     variableQuery, setVariableQuery, variableGroupFilter, setVariableGroupFilter, variableFillFilter, setVariableFillFilter,
     selectedVariableIds, selectedVariables, toggleVariable, addVariables, addCoreVariables,
     variableAggregations, setVariableAggregations, variableSurveyLabels, setVariableSurveyLabels,
+    variableAnchor, variableWindows, setVariableWindows,
   } = props;
+  const aggregationOptions = VARIABLE_AGGREGATIONS.filter(([key]) => variableAnchor || !ANCHOR_AGGREGATIONS.has(key));
+  const setWindow = (id, patch) => setVariableWindows(prev => ({ ...prev, [id]: { ...(prev[id] || {}), ...patch } }));
   if (variableCatalogLoading) return <div style={{ ...card, color: C.text2 }}><Spinner size={11} /> Đang lập danh mục biến...</div>;
   if (!variableCatalog) {
     return <div style={card}><EmptyState
@@ -191,8 +232,20 @@ function StepVariables(props) {
                     title="Một lượt điều trị có nhiều giá trị: chọn cách lấy"
                     onChange={e => setVariableAggregations(prev => ({ ...prev, [v.id]: e.target.value }))}
                     style={{ ...inp, height: 28, fontSize: FS.xs }}>
-                    {VARIABLE_AGGREGATIONS.map(([key, l]) => <option key={key} value={key}>{l}</option>)}
+                    {aggregationOptions.map(([key, l]) => <option key={key} value={key}>{l}</option>)}
                   </select>
+                )}
+                {repeated && variableAnchor && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: FS.xs, color: C.text2, flexWrap: 'wrap' }}
+                    title="Để trống = không giới hạn. Số âm là trước mốc, 0 là ngày mốc, số dương là sau mốc.">
+                    <span>Chỉ lấy từ ngày</span>
+                    <input type="number" value={variableWindows[v.id]?.from ?? ''} onChange={e => setWindow(v.id, { from: e.target.value })}
+                      aria-label="Từ ngày so với mốc" placeholder="-14" style={{ ...inp, width: 58, height: 26, fontSize: FS.xs }} />
+                    <span>đến</span>
+                    <input type="number" value={variableWindows[v.id]?.to ?? ''} onChange={e => setWindow(v.id, { to: e.target.value })}
+                      aria-label="Đến ngày so với mốc" placeholder="0" style={{ ...inp, width: 58, height: 26, fontSize: FS.xs }} />
+                    <span>so với mốc</span>
+                  </div>
                 )}
               </div>
             );
@@ -265,6 +318,12 @@ function StepReview({ draft, selectedVariables, variableConditions, variablePrev
           <section style={card}>
             <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text, marginBottom: 8 }}>Mẫu nghiên cứu</div>
             <CohortSummary summary={summary} />
+            {summary.anchor && (
+              <div style={{ marginTop: 8, fontSize: FS.xs, color: summary.anchor.missing ? C.amber : C.text2 }}>
+                Mốc thời gian: tìm thấy ở <b>{summary.anchor.found}</b> lượt
+                {summary.anchor.missing ? <>, <b>không tìm thấy ở {summary.anchor.missing} lượt</b> (các biến theo mốc của những lượt này để trống; có thể thêm điều kiện "Dùng thuốc" ở bước 3 để loại)</> : ''}.
+              </div>
+            )}
             {variablePreview.source_limited && <div style={{ ...hint, color: C.amber }}>Kho lớn: thống kê tính trên phần đầu của kho; số chính xác có sau khi tạo và thu thập.</div>}
           </section>
           <section>
@@ -284,7 +343,13 @@ export function CreateStudyView(props) {
     createStudyFromVariableSelection, busy,
   } = props;
   const [step, setStep] = useState(1);
-  const hasName = Boolean(text(variableStudyDraft.name));
+  // Mốc "dùng thuốc" phải có tên thuốc (≥ 3 ký tự) thì mới sang bước sau.
+  const anchorReady = props.variableAnchor?.kind !== 'drug' || text(props.variableAnchor?.drug).length >= 3;
+  const hasName = Boolean(text(variableStudyDraft.name)) && anchorReady;
+  const drugNames = useMemo(() => [...new Set((props.allCatalogVariables || [])
+    .filter(v => v.virtual_kind === 'drug_item')
+    .map(v => String(v.name || '').replace(/^drug:/, '').trim())
+    .filter(Boolean))].sort((a, b) => a.localeCompare(b)), [props.allCatalogVariables]);
   const hasVariables = selectedVariables.length > 0;
   // Điều kiện để trống giá trị sẽ loại hết mẫu: phải nhập xong mới sang bước kiểm tra.
   const conditionsReady = props.variableConditions.every(c => ['not_empty', 'empty'].includes(c.operator)
@@ -303,7 +368,8 @@ export function CreateStudyView(props) {
       <StepBar step={step} canOpen={canOpen} onOpen={setStep} />
 
       {step === 1 && <StepInfo draft={variableStudyDraft} setDraft={setVariableStudyDraft}
-        questionnaire={questionnaireVariables} setQuestionnaire={setQuestionnaireVariables} questionnaireTerms={questionnaireTerms} />}
+        questionnaire={questionnaireVariables} setQuestionnaire={setQuestionnaireVariables} questionnaireTerms={questionnaireTerms}
+        anchor={props.variableAnchor} setAnchor={props.setVariableAnchor} drugNames={drugNames} />}
       {step === 2 && <StepVariables {...props} />}
       {step === 3 && <StepConditions {...props} />}
       {step === 4 && <StepReview draft={variableStudyDraft} {...props} />}
@@ -311,7 +377,7 @@ export function CreateStudyView(props) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', borderTop: `1px solid ${C.border2}`, paddingTop: 10 }}>
         {step > 1 && <Btn onClick={() => setStep(step - 1)} style={{ height: 34 }}>← Quay lại</Btn>}
         <span style={{ fontSize: FS.xs, color: C.text3, flex: '1 1 200px' }}>
-          {step === 1 && !hasName && 'Nhập tên nghiên cứu để tiếp tục.'}
+          {step === 1 && !hasName && (anchorReady ? 'Nhập tên nghiên cứu để tiếp tục.' : 'Nhập tên thuốc làm mốc (ít nhất 3 ký tự).')}
           {step === 2 && !hasVariables && 'Chọn ít nhất 1 biến để tiếp tục.'}
           {step === 3 && !conditionsReady && 'Nhập giá trị cho mọi điều kiện, hoặc xóa điều kiện không dùng.'}
           {step === 4 && 'Dữ liệu chi tiết không hiện ở đây. Sau khi tạo, xuất CSV ở mục Thống kê & xuất dữ liệu của nghiên cứu khi cần xử lý số liệu.'}
