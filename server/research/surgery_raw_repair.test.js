@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const require = createRequire(import.meta.url);
 const {
+  BACKUP_FILE,
+  AUDIT_FILE,
   repairSurgeryTimestamp,
   repairSurgeryRow,
+  repairRawSurgeryCsv,
 } = require('./surgery_raw_repair.js');
 
 describe('research surgery raw repair', () => {
@@ -23,7 +29,7 @@ describe('research surgery raw repair', () => {
       .toBe('20/04/2026 08:15');
   });
 
-  it('recovers worker detail fields from Raw JSON without inventing values', () => {
+  it('recovers worker detail fields and current PT diagnosis aliases without inventing values', () => {
     const raw = {
       thoi_gian: '21/04/2026 07:30',
       noi_dung_phau_thuat: 'Kết hợp xương',
@@ -32,8 +38,8 @@ describe('research surgery raw repair', () => {
         ket_thuc: '09:45',
         phuong_phap_pt: 'Kết hợp xương bằng nẹp vít',
         pp_vo_cam: 'Tê tủy sống',
-        chan_doan_truoc: 'Gãy xương cẳng chân',
-        chan_doan_sau: 'Gãy xương cẳng chân đã kết hợp xương',
+        chan_doan_truoc_pt: 'Gãy xương cẳng chân',
+        chan_doan_sau_pt: 'Gãy xương cẳng chân đã kết hợp xương',
         bien_chung: 'Không ghi nhận',
       },
     };
@@ -69,5 +75,21 @@ describe('research surgery raw repair', () => {
     expect(row['Tên phẫu thuật']).toBe('');
     expect(row['Phương pháp phẫu thuật']).toBe('');
     expect(row.PPVC).toBe('');
+  });
+
+  it('backs up raw surgery and appends audit before/when repairing', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'surgery-repair-'));
+    const raw = JSON.stringify({ thoi_gian: '21/04/2026 07:30', detail: { bat_dau: '08:15' } }).replaceAll('"', '""');
+    const file = path.join(dir, 'hchanh_surgery.csv');
+    fs.writeFileSync(file, `Mã BN,Ngày phẫu thuật,Raw JSON\nX,08:15,"${raw}"\n`, 'utf8');
+
+    const result = repairRawSurgeryCsv(dir);
+    expect(result.changed).toBe(1);
+    expect(fs.existsSync(path.join(dir, BACKUP_FILE))).toBe(true);
+    expect(fs.existsSync(path.join(dir, AUDIT_FILE))).toBe(true);
+    expect(fs.readFileSync(file, 'utf8')).toContain('21/04/2026 08:15');
+
+    // Idempotent: chạy lại không tạo thay đổi mới.
+    expect(repairRawSurgeryCsv(dir).changed).toBe(0);
   });
 });
