@@ -407,4 +407,19 @@ describe('ResearchTab (khói)', () => {
     expect(text).toContain('Chưa chạy được');
     expect(text).toContain('EMR không phản hồi');
   });
+
+  it('Tổng quát: có dữ liệu lấy sau lần chuẩn hóa thì báo rõ ngày lấy và cho chuẩn hóa ngay', async () => {
+    await act(async () => { root.unmount(); });
+    PIPELINE.fetch = { last_at: '2026-10-04T08:00:00Z', parts: [{ label: 'Hồ sơ nền, ra viện, phẫu thuật', updated_at: '2026-10-04T08:00:00Z' }], pending_normalize: true };
+    root = createRoot(container);
+    await act(async () => { root.render(createElement(ResearchTab, { toast: () => {} })); });
+    await flush();
+    const text = container.textContent;
+    expect(text).toContain('Có dữ liệu mới chưa được chuẩn hóa');
+    expect(text).toContain('04/10/2026');
+    expect(text).toContain('chưa được chuẩn hóa: số liệu kho');
+    await clickText('Chuẩn hóa ngay');
+    expect(api.normalizeResearchArchive).toHaveBeenCalled();
+    delete PIPELINE.fetch;
+  });
 });

@@ -78,6 +78,7 @@ const B = ({ children }) => <b style={{ color: C.text, fontVariantNumeric: 'tabu
 function PipelineView({ pipeline, summary }) {
   if (!pipeline?.exists) return null;
   const { scan, collect, normalize, storage, reused_from_patient_db: reused } = pipeline;
+  const fetch = pipeline.fetch || {};
   const modules = summary.modules || [];
   const anyCollected = modules.some(m => Number(m.done || 0) > 0);
   const qa = normalize.qa || {};
@@ -91,7 +92,7 @@ function PipelineView({ pipeline, summary }) {
       <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 12 }}>
         <Stage n={1} title="Quét danh sách từ EMR" tone={scan.rows ? 'ok' : 'neutral'} state={scan.rows ? 'đã quét' : 'chưa quét'}
           what="Selenium mở EMR, lấy danh sách người bệnh đã hoàn tất hồ sơ trong khoảng ngày, ghi thành file danh sách của đợt.">
-          Lúc <B>{when(scan.at)}</B> · khoảng <B>{ymd(scan.from_date)}</B> → <B>{ymd(scan.to_date)}</B> · <B>{compactNumber(scan.rows)}</B> lượt
+          Lúc <B>{when(scan.at)}</B>{scan.first_at && scan.first_at !== scan.at && when(scan.first_at) !== when(scan.at) ? <span style={{ color: C.text3 }}> (đợt tạo lúc {when(scan.first_at)})</span> : null} · khoảng <B>{ymd(scan.from_date)}</B> → <B>{ymd(scan.to_date)}</B> · <B>{compactNumber(scan.rows)}</B> lượt
           {' '}→ ghi vào <code style={{ fontSize: FS.xs }}>{scan.file}</code>
         </Stage>
 
@@ -104,6 +105,12 @@ function PipelineView({ pipeline, summary }) {
               {collect.unmatched_encounters ? <>, <span style={{ color: C.amber }}><B>{compactNumber(collect.unmatched_encounters)}</B> lượt chưa ghép chắc</span></> : null}.
               {' '}Đã chạy <B>{compactNumber(pipeline.collect_runs)}</B> lần, lưu <B>{compactNumber(pipeline.versions_written)}</B> phiên bản dữ liệu.</>
             : 'Chưa chạy Thu thập tự động lần nào.'}
+          {fetch.last_at && (
+            <div>
+              Lấy dữ liệu gần nhất lúc <B>{when(fetch.last_at)}</B>
+              {fetch.parts?.length ? <span style={{ color: C.text3 }}> ({fetch.parts.map(p => `${p.label}: ${when(p.updated_at)}`).join(' · ')})</span> : null}.
+            </div>
+          )}
           {!!reused.cases && <div>Dùng lại từ Kho người bệnh (tab Kiểm/Trả HSBA): <B>{compactNumber(reused.cases)}</B> ca, trong đó <B>{compactNumber(reused.provisional)}</B> ca còn dữ liệu tạm thời, <B>{compactNumber(reused.replaced_by_goc)}</B> ca đã thay bằng dữ liệu gốc.</div>}
           {!!modules.length && (
             <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', columnGap: 18, rowGap: 8 }}>
@@ -117,6 +124,11 @@ function PipelineView({ pipeline, summary }) {
           what="Ghép file thô thành bảng chuẩn theo lượt điều trị (người bệnh, đợt, XN, CĐHA, PT/TT, y lệnh...), tách Mã BN sang mã giả danh, rồi kiểm tra chất lượng (QA). Chạy tự động sau mỗi lần quét/thu thập.">
           Lúc <B>{when(normalize.at)}</B>{normalize.duration_ms != null ? <> · chạy <B>{(normalize.duration_ms / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}</B> giây</> : null}
           {normalize.schema_version ? <> · cấu trúc bảng phiên bản <B>{normalize.schema_version}</B></> : null}.
+          {fetch.pending_normalize && (
+            <div style={{ color: C.amber }}>
+              Dữ liệu lấy lúc <B>{when(fetch.last_at)}</B> chưa được chuẩn hóa: số liệu kho, bảng chuẩn và Tạo nghiên cứu chưa gồm phần mới này.
+            </div>
+          )}
           {!!normalize.unmatched.length && (
             <div style={{ color: C.amber }}>Không ghép được vào lượt điều trị: {normalize.unmatched.map(u => `${u.label} ${compactNumber(u.rows)} dòng`).join(' · ')} (giữ riêng, không đưa vào phân tích).</div>
           )}
@@ -156,7 +168,7 @@ function PipelineView({ pipeline, summary }) {
   );
 }
 
-export function GeneralOverviewView({ generalOverview, generalOverviewLoading, pipeline, setArchiveMode }) {
+export function GeneralOverviewView({ generalOverview, generalOverviewLoading, pipeline, setArchiveMode, onNormalize, uiBusy = false }) {
   const ov = generalOverview;
   const summary = ov?.statusSummary || { total: 0, ready: 0, missingCount: 0, manualReview: 0, modules: [] };
   const counts = ov?.counts || {};
@@ -177,6 +189,19 @@ export function GeneralOverviewView({ generalOverview, generalOverviewLoading, p
             <div style={{ marginTop: 2, fontSize: FS.xs, color: C.text2 }}>{nextStep.hint}</div>
           </div>
           <Btn variant="solidPrimary" onClick={() => setArchiveMode('update')} style={{ height: 30 }}>Đi tới Thu thập dữ liệu</Btn>
+        </div>
+      )}
+
+      {pipeline?.fetch?.pending_normalize && (
+        <div role="status" style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${C.amberBorder}`, background: C.amberBg, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 300px' }}>
+            <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text }}>Có dữ liệu mới chưa được chuẩn hóa</div>
+            <div style={{ marginTop: 2, fontSize: FS.xs, color: C.text2 }}>
+              Lấy dữ liệu gần nhất lúc {when(pipeline.fetch.last_at)}, nhưng lần chuẩn hóa gần nhất là {when(pipeline.normalize?.at) || 'chưa có'}.
+              Số liệu bên dưới, bảng chuẩn và Tạo nghiên cứu vẫn là bản cũ cho tới khi chuẩn hóa lại (thường vài phút, không mở EMR).
+            </div>
+          </div>
+          {onNormalize && <Btn variant="solidPrimary" onClick={onNormalize} disabled={uiBusy} style={{ height: 30 }}>Chuẩn hóa ngay</Btn>}
         </div>
       )}
 

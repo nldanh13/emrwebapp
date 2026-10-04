@@ -61,4 +61,24 @@ test('đọc đủ 4 bước từ manifest, normalize_state, qa_report, collecti
   assert.strictEqual(p.storage.tables.find(t => t.key === 'lab_results').exists, false);
 });
 
+test('lấy dữ liệu sau lần chuẩn hóa: báo thời điểm lấy gần nhất và cần chuẩn hóa lại; quét lại lấy giờ ghi danh sách', () => {
+  const setTime = (file, iso) => { const t = new Date(iso); fs.utimesSync(path.join(runDir, file), t, t); };
+  write('du_lieu_ban_dau.csv', 'ma_bn\n1\n');
+  setTime('du_lieu_ban_dau.csv', '2026-09-23T10:50:00Z');
+  write('hchanh_auto_progress.json', {});
+  setTime('hchanh_auto_progress.json', '2026-10-04T08:00:00Z');
+  setTime('collection_report.json', '2026-05-30T01:00:00Z');
+  let p = buildPipelineInfo(scopeDir, runDir);
+  assert.strictEqual(p.scan.at, '2026-09-23T10:50:00.000Z', 'quét lại trong cùng đợt: không hiện ngày tạo đợt 29/05');
+  assert.strictEqual(p.scan.first_at, '2026-05-29T09:26:15Z');
+  assert.strictEqual(p.fetch.last_at, '2026-10-04T08:00:00.000Z');
+  assert.strictEqual(p.fetch.pending_normalize, true, 'lấy 4/10, chuẩn hóa 30/05 → chưa gồm dữ liệu mới');
+  assert.ok(p.fetch.parts.some(x => x.label.startsWith('Hồ sơ nền')));
+  // Chuẩn hóa sau lần lấy → hết báo.
+  const manifest = JSON.parse(fs.readFileSync(path.join(runDir, 'manifest.json'), 'utf8'));
+  write('manifest.json', { ...manifest, normalized_at: '2026-10-04T09:00:00Z' });
+  p = buildPipelineInfo(scopeDir, runDir);
+  assert.strictEqual(p.fetch.pending_normalize, false);
+});
+
 console.log(`${passed} test(s) passed`);

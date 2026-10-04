@@ -58,6 +58,16 @@ const UNMATCHED_KEYS = [
   ['unmatched_medication_orders', 'Y lệnh'],
 ];
 
+// File tiến độ thô mà các nút lấy dữ liệu ghi mỗi khi lấy xong một ca (trước khi chuẩn hóa).
+const RAW_PROGRESS_FILES = [
+  ['progress.json', 'XN & CĐHA'],
+  ['hchanh_auto_progress.json', 'Hồ sơ nền, ra viện, phẫu thuật'],
+  ['order_history_auto_progress.json', 'Y lệnh'],
+  ['collection_report.json', 'Thu thập tự động'],
+];
+
+const latestIso = (...values) => values.filter(Boolean).sort((a, b) => Date.parse(b) - Date.parse(a))[0] || '';
+
 function buildPipelineInfo(scopeDir, runDir) {
   if (!runDir || !fs.existsSync(runDir)) return { exists: false };
   const manifest = readJsonSafe(path.join(runDir, 'manifest.json'), {}) || {};
@@ -70,6 +80,14 @@ function buildPipelineInfo(scopeDir, runDir) {
   const linkFile = path.join(scopeDir, 'patient_link.csv');
   const overlay = outputs.kho_nguoi_benh || {};
 
+  // Lần lấy dữ liệu gần nhất (bất kỳ nút nào), để biết bảng chuẩn hóa đã gồm dữ liệu mới chưa.
+  const rawParts = RAW_PROGRESS_FILES
+    .map(([file, label]) => ({ file, label, updated_at: fileInfo(path.join(runDir, file)).updated_at }))
+    .filter(x => x.updated_at);
+  const lastFetchAt = latestIso(...rawParts.map(x => x.updated_at));
+  const normalizedAt = manifest.normalized_at || normalizeState.finished_at || '';
+  const initialListFile = fileInfo(path.join(runDir, 'du_lieu_ban_dau.csv'));
+
   const startedAt = Date.parse(normalizeState.started_at || '');
   const finishedAt = Date.parse(normalizeState.finished_at || '');
 
@@ -77,7 +95,9 @@ function buildPipelineInfo(scopeDir, runDir) {
     exists: true,
     run_id: path.basename(runDir),
     scan: {
-      at: manifest.created_at || '',
+      // Quét lại ghi đè danh sách trong cùng đợt: lấy thời điểm ghi danh sách, không phải lúc tạo đợt.
+      at: latestIso(manifest.created_at, initialListFile.updated_at),
+      first_at: manifest.created_at || '',
       from_date: manifest.from_date || manifest.research_source_scan_from_date || '',
       to_date: manifest.to_date || manifest.research_source_scan_to_date || '',
       rows: Number(outputs.initial_list ?? manifest.research_source_rows ?? manifest.patients_count ?? 0),
@@ -92,6 +112,12 @@ function buildPipelineInfo(scopeDir, runDir) {
       selenium_errors_open: Number(report.selenium_errors_open || 0),
       unmatched_encounters: Number(report.unmatched_encounters || 0),
     } : null,
+    fetch: {
+      last_at: lastFetchAt,
+      parts: rawParts.map(({ label, updated_at }) => ({ label, updated_at })),
+      // Có dữ liệu lấy sau lần chuẩn hóa gần nhất: số liệu và bảng chuẩn hóa chưa gồm phần này.
+      pending_normalize: Boolean(lastFetchAt && (!normalizedAt || Date.parse(lastFetchAt) > Date.parse(normalizedAt) + 1000)),
+    },
     collect_runs: countLines(path.join(runDir, 'collection_history.jsonl')),
     versions_written: countLines(path.join(runDir, 'collection_versions.jsonl')),
     reused_from_patient_db: {
