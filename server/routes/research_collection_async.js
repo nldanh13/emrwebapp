@@ -10,7 +10,7 @@ const path = require('path');
 
 const collection = require('../research/collection');
 const { getRuntimePaths } = require('../services/session');
-const { enqueueHeavy } = require('../services/task_queue');
+const { enqueueHeavy, isCancelRequested } = require('../services/task_queue');
 const { patientCode } = require('../research/table_io');
 const { firstNonEmpty } = require('../research/encounter_context');
 const {
@@ -86,8 +86,8 @@ function scopeFromRequest(req, studyIdParam = '') {
   };
 }
 
-function maxAttemptsFrom(req, study) {
-  const fromBody = Number(req.body?.maxAttempts);
+function maxAttemptsFrom(body, study) {
+  const fromBody = Number(body?.maxAttempts);
   if (Number.isInteger(fromBody) && fromBody >= 1 && fromBody <= 10) return fromBody;
   const fromStudy = Number(study?.data_requirements?.max_attempts);
   if (Number.isInteger(fromStudy) && fromStudy >= 1 && fromStudy <= 10) return fromStudy;
@@ -111,6 +111,8 @@ async function runDirectPatient(ctx, sc, rows, requestedParts, headless) {
   const xnCdhaParts = wanted.filter(p => ['xn', 'cdha'].includes(p));
   const results = {};
 
+  if (isCancelRequested(ctx.sid)) return { cancelled: true, results };
+
   if (hchanhFiles.length) {
     const forceKeys = new Set(rows.map(r => String(firstNonEmpty(r, ['Research key', 'research_key', 'source_key']) || '').trim()).filter(Boolean));
     results.hchanh = await fetchHchanhForResearchRun(ctx, sc.runDir, {
@@ -127,6 +129,8 @@ async function runDirectPatient(ctx, sc, rows, requestedParts, headless) {
     });
   }
 
+  if (isCancelRequested(ctx.sid) || results.hchanh?.cancelled) return { cancelled: true, results };
+
   if (xnCdhaParts.length) {
     const subset = rows.map(r => ({ ...r, refetch_parts: xnCdhaParts.join(';') }));
     results.xn_cdha = await runXnCdhaSubsetForCollection(ctx, {
@@ -141,9 +145,11 @@ async function runDirectPatient(ctx, sc, rows, requestedParts, headless) {
     });
   }
 
+  if (isCancelRequested(ctx.sid) || results.xn_cdha?.stopped) return { cancelled: true, results };
+
   results.normalized = normalizeRunOutputs(sc.runDir, { sourceRunId: sc.runId });
   syncCollectionLedger(sc.runDir, sc.sourceRows);
-  return results;
+  return { cancelled: false, results };
 }
 
 async function handleCollectAccepted(req, res, studyIdParam = '') {
@@ -181,13 +187,23 @@ async function handleCollectAccepted(req, res, studyIdParam = '') {
     }
 
     const label = directPatientCode ? 'Thu thập trực tiếp 1 người bệnh' : 'Thu thập tự động';
-    lockToken = { label, since: nowIso() };
+    // Lưu sid của session sở hữu job vào lock nội bộ. Không trả sid ra API /research/running.
+    // Nhờ vậy nút Dừng vẫn huỷ đúng worker kể cả người dùng reload/mở tab khác.
+    lockToken = { label, since: nowIso(), sid: ctx.sid };
     RESEARCH_SCOPE_LOCKS.set(lockKey, lockToken);
 
-    const requestedParts = Array.isArray(req.body?.parts)
-      ? req.body.parts.filter(p => collection.PART_KEYS.includes(p))
+    const body = { ...(req.body || {}) };
+    const requestedParts = Array.isArray(body.parts)
+      ? body.parts.filter(p => collection.PART_KEYS.includes(p))
       : [];
-    const headless = researchHeadlessFromBody(req.body);
+    const headless = researchHeadlessFromBody(body);
+    const maxAttempts = maxAttemptsFrom(body, sc.study);
+    const force = body.force === true;
+    const refreshProvisional = body.refreshProvisional === true;
+    const retryBlocked = body.retryBlocked === true;
+    const limit = Number.isFinite(Number(body.limit)) ? Math.max(0, Math.trunc(Number(body.limit))) : 0;
+    const refreshParts = Array.isArray(body.refreshParts) ? body.refreshParts.filter(p => collection.PART_KEYS.includes(p)) : [];
+    const refreshKeys = Array.isArray(body.refreshKeys) && body.refreshKeys.length ? body.refreshKeys.map(String).slice(0, 20000) : null;
 
     const task = beginResearchTask(sc.runDir, {
       type: directPatientCode ? 'collect_patient' : 'collect_auto',
@@ -217,7 +233,12 @@ async function handleCollectAccepted(req, res, studyIdParam = '') {
       direct_patient: Boolean(directPatientCode),
     });
 
-    void enqueueHeavy(ctx.sid, async () => {
+    const queued = enqueueHeavy(ctx.sid, async () => {
+      if (isCancelRequested(ctx.sid)) {
+        finishResearchTask(sc.runDir, task.id, 'cancelled', { message: 'Đã dừng trước khi worker bắt đầu.' });
+        return { cancelled: true };
+      }
+
       updateResearchTask(sc.runDir, task.id, {
         status: 'running',
         message: directPatientCode
@@ -239,41 +260,52 @@ async function handleCollectAccepted(req, res, studyIdParam = '') {
             fromDate: sc.fromDate,
             toDate: sc.toDate,
             headless,
-            maxAttempts: maxAttemptsFrom(req, sc.study),
-            force: req.body?.force === true,
-            refreshProvisional: req.body?.refreshProvisional === true,
-            retryBlocked: req.body?.retryBlocked === true,
+            maxAttempts,
+            force,
+            refreshProvisional,
+            retryBlocked,
             parts: requestedParts.length ? requestedParts : collection.PART_KEYS,
-            limit: Number.isFinite(Number(req.body?.limit)) ? Math.max(0, Math.trunc(Number(req.body.limit))) : 0,
-            refreshParts: Array.isArray(req.body?.refreshParts) ? req.body.refreshParts.filter(p => collection.PART_KEYS.includes(p)) : [],
-            refreshKeys: Array.isArray(req.body?.refreshKeys) && req.body.refreshKeys.length ? req.body.refreshKeys.map(String).slice(0, 20000) : null,
+            limit,
+            refreshParts,
+            refreshKeys,
             refreshPolicy: refreshPolicyFor(sc.isArchive, sc.study),
             study: sc.study,
           };
           result = await runCollectionOrchestration(ctx, options);
         }
 
+        const cancelled = directPatientCode ? Boolean(result?.cancelled) : Boolean(result?.report?.cancelled);
         const metaPatch = {
           last_run_id: sc.runId,
           last_run_at: nowIso(),
           last_normalized_at: nowIso(),
           last_collect_at: nowIso(),
         };
-        if (sc.isArchive) updateArchive({ ...metaPatch, active_run_id: '', active_mode: '' });
+        if (sc.isArchive) updateArchive({ ...metaPatch, active_run_id: '', active_mode: '', ...(cancelled ? { stopped_at: nowIso() } : {}) });
         else updateStudy(sc.scope, metaPatch);
 
         const report = result?.report || null;
         const message = directPatientCode
-          ? 'Đã lấy trực tiếp người bệnh và chuẩn hóa lại dữ liệu.'
+          ? (cancelled ? 'Đã dừng lấy trực tiếp người bệnh. Phần đã lấy được vẫn được giữ.' : 'Đã lấy trực tiếp người bệnh và chuẩn hóa lại dữ liệu.')
           : `${report?.cancelled ? 'Đã dừng' : 'Xong'}: lấy ${report?.fetched_encounters || 0} lượt, bỏ qua ${report?.skipped_unchanged || 0} lượt không đổi, lỗi còn tồn ${report?.selenium_errors_open || 0} phần.`;
-        finishResearchTask(sc.runDir, task.id, report?.cancelled ? 'cancelled' : (report?.errors?.length ? 'error' : 'done'), { message });
+        finishResearchTask(sc.runDir, task.id, cancelled ? 'cancelled' : (report?.errors?.length ? 'error' : 'done'), { message });
         return result;
       } catch (err) {
+        const cancelled = isCancelRequested(ctx.sid);
         if (sc.isArchive) updateArchive({ active_run_id: '', active_mode: '', stopped_at: nowIso() });
-        finishResearchTask(sc.runDir, task.id, 'error', { message: String(err?.message || err) });
+        finishResearchTask(sc.runDir, task.id, cancelled ? 'cancelled' : 'error', {
+          message: cancelled ? 'Đã dừng theo yêu cầu.' : String(err?.message || err),
+        });
+        if (cancelled) return { cancelled: true };
         throw err;
       }
-    }).catch(err => {
+    }, {
+      taskType: directPatientCode ? 'research_collect_patient' : 'research_collect_auto',
+      metadata: { scope_key: lockKey, run_id: sc.runId },
+    });
+    lockToken.queue_task_id = queued.taskId || '';
+
+    void queued.catch(err => {
       console.error('[research collect background]', err);
     }).finally(() => {
       if (RESEARCH_SCOPE_LOCKS.get(lockKey) === lockToken) RESEARCH_SCOPE_LOCKS.delete(lockKey);
