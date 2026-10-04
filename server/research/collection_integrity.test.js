@@ -12,14 +12,26 @@ function tempRun() {
 }
 
 describe('research collection integrity', () => {
-  it('does not treat ok + zero surgery rows as verified absence', () => {
+  it('blocks ok + zero surgery rows when lookup was not verified', () => {
     const dir = tempRun();
     fs.writeFileSync(path.join(dir, 'hchanh_auto_progress.json'), JSON.stringify({
       case1: { file_status: { surgery: { fetch_status: 'ok', rows: 0 } } },
     }), 'utf8');
     const report = buildCollectionIntegrityReport(dir, { phase: 'test' });
     expect(report.surgery_progress.ok_zero_unverified).toBe(1);
-    expect(report.warnings.some(x => x.code === 'SURGERY_ZERO_UNVERIFIED')).toBe(true);
+    expect(report.ready_for_analysis).toBe(false);
+    expect(report.blocking.some(x => x.code === 'SURGERY_ZERO_UNVERIFIED')).toBe(true);
+  });
+
+  it('accepts explicit empty only after surgery list was verified', () => {
+    const dir = tempRun();
+    fs.writeFileSync(path.join(dir, 'hchanh_auto_progress.json'), JSON.stringify({
+      case1: { file_status: { surgery: { fetch_status: 'empty', rows: 0, reason: 'verified_surgery_list_empty' } } },
+    }), 'utf8');
+    const report = buildCollectionIntegrityReport(dir, { phase: 'test' });
+    expect(report.surgery_progress.verified_empty).toBe(1);
+    expect(report.surgery_progress.ok_zero_unverified).toBe(0);
+    expect(report.ready_for_analysis).toBe(true);
   });
 
   it('blocks incomplete surgery collection errors', () => {
