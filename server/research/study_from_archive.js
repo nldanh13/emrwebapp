@@ -1,0 +1,206 @@
+'use strict';
+
+// Lấy dữ liệu cho nghiên cứu thẳng từ Kho dữ liệu gốc, không mở EMR.
+// Mẫu của nghiên cứu được chọn từ kho, nên XN/CĐHA, hồ sơ, ra viện, phẫu thuật, y lệnh của các lượt
+// này đã có sẵn trong kho. Tạo một đợt chạy (run) cho nghiên cứu gồm:
+//   - du_lieu_ban_dau.csv = danh sách mẫu của nghiên cứu (Mã NC của nghiên cứu);
+//   - các file dữ liệu thô của kho, chỉ giữ dòng của người bệnh/lượt đã chọn, Mã NC đổi sang mã của
+//     nghiên cứu;
+//   - trạng thái "đã lấy" từng phần (progress) theo kho: phần kho đã lấy xong thì không bị đòi lấy lại;
+//     phần kho còn thiếu để trống, Thu thập tự động sẽ chỉ lấy phần đó từ EMR.
+// Sau đó chuẩn hóa như một đợt chạy bình thường (bảng chuẩn, analysis_selected theo biến đã chọn).
+
+const fs = require('fs');
+const path = require('path');
+const { ensureDir, writeJsonAtomic } = require('../utils/file');
+const { readCsvTable, writeCsv, patientCode, getCell } = require('./table_io');
+const { nowIso, runsDir, cohortPath, archiveRunsDir } = require('./store_paths');
+const { rowNoitruId, normalizedIdentity } = require('./encounter_context');
+
+// File thô của kho được chép (lọc) sang nghiên cứu. du_lieu_ban_dau / research_source tạo lại từ
+// danh sách mẫu của nghiên cứu.
+const RAW_FILES = [
+  'du_lieu_goc.csv',
+  'thong_tin_benh_nhan_bo_sung.csv',
+  'hchanh_profile.csv',
+  'hchanh_discharge.csv',
+  'hchanh_surgery.csv',
+  'hchanh_order_history.csv',
+  'lich_su_xn.csv',
+  'lich_su_cdha.csv',
+];
+
+const NOITRU_COLUMNS = ['Mã nội trú', 'Ma noi tru', 'Mã điều trị', 'Ma dieu tri', 'noitruid', 'NoiTruID', 'emr_noitru_id'];
+const RESEARCH_CODE_COLUMNS = ['Mã NC', 'Ma NC', 'research_code'];
+const HCHANH_FILES = ['profile', 'discharge', 'surgery', 'order_history'];
+const GOT = new Set(['done', 'empty']);
+
+function nowStamp() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+const ENCOUNTER_ID_COLUMNS = ['emr_noitru_id', 'emr_treatment_id', 'emr_admission_id'];
+
+// Mọi mã lượt (mã nội trú/điều trị/nhập viện) ghi trên một dòng.
+function rowVisitIds(row, extra = []) {
+  const ids = new Set();
+  for (const value of [rowNoitruId(row), ...NOITRU_COLUMNS.map(c => row?.[c]), ...extra.map(c => row?.[c])]) {
+    const id = normalizedIdentity(value);
+    if (id) ids.add(id);
+  }
+  return ids;
+}
+
+// Bộ lọc dòng thô của kho cho danh sách mẫu. Dòng có mã lượt: thuộc lượt đã chọn thì giữ (gắn Mã NC của
+// nghiên cứu), thuộc lượt khác của cùng người bệnh trong kho thì bỏ; mã lạ thì giữ, để chuẩn hóa xếp
+// theo thời gian. Dòng không có mã lượt: giữ nếu là người bệnh trong mẫu.
+// links: [{ research_code, patient_code, encounter_id }] (lượt kho của từng mẫu); encounterRows: bảng
+// lượt điều trị của kho.
+function buildCohortIndex(cohortRows, links = [], encounterRows = []) {
+  const encById = new Map(encounterRows.map(e => [String(e.encounter_id || '').trim(), e]));
+  const visitsByPatient = new Map(); // Mã BN -> [{ code, ids }]
+  for (const [i, row] of cohortRows.entries()) {
+    const pc = normalizedIdentity(patientCode(row));
+    if (!pc) continue;
+    const enc = encById.get(String(links[i]?.encounter_id || '').trim());
+    const ids = rowVisitIds(row);
+    if (enc) for (const id of rowVisitIds(enc, ENCOUNTER_ID_COLUMNS)) ids.add(id);
+    if (!visitsByPatient.has(pc)) visitsByPatient.set(pc, []);
+    visitsByPatient.get(pc).push({ code: getCell(row, RESEARCH_CODE_COLUMNS), ids });
+  }
+  const otherVisitIds = new Map(); // Mã BN -> mã các lượt KHÔNG thuộc mẫu
+  const selectedEids = new Set(links.map(l => String(l?.encounter_id || '').trim()).filter(Boolean));
+  for (const enc of encounterRows) {
+    const pc = normalizedIdentity(patientCode(enc));
+    if (!visitsByPatient.has(pc) || selectedEids.has(String(enc.encounter_id || '').trim())) continue;
+    if (!otherVisitIds.has(pc)) otherVisitIds.set(pc, new Set());
+    for (const id of rowVisitIds(enc, ENCOUNTER_ID_COLUMNS)) otherVisitIds.get(pc).add(id);
+  }
+  return {
+    // Mã NC của nghiên cứu cho dòng thô; '' nếu thuộc người bệnh nhưng chưa rõ lượt; null nếu bỏ.
+    // strict: dòng có mã lượt mà không trùng lượt nào đã chọn (của người bệnh có mã lượt) thì bỏ.
+    codeFor(row, { strict = true } = {}) {
+      const pc = normalizedIdentity(patientCode(row));
+      const visits = visitsByPatient.get(pc);
+      if (!visits) return null;
+      const ids = rowVisitIds(row);
+      if (ids.size) {
+        const hit = visits.find(v => [...ids].some(id => v.ids.has(id)));
+        if (hit) return hit.code;
+        const others = otherVisitIds.get(pc);
+        if (others && [...ids].some(id => others.has(id))) return null;
+        if (strict && visits.some(v => v.ids.size)) return null;
+      }
+      return visits.length === 1 ? visits[0].code : '';
+    },
+    // Dòng có mã lượt khớp đúng một lượt đã chọn (dùng để biết cột mã lượt của file có dùng được không).
+    matchesVisit(row) {
+      const visits = visitsByPatient.get(normalizedIdentity(patientCode(row)));
+      const ids = rowVisitIds(row);
+      return Boolean(visits && ids.size && visits.some(v => [...ids].some(id => v.ids.has(id))));
+    },
+  };
+}
+
+function copyFilteredRaw(archiveRunDir, runDir, index) {
+  const counts = {};
+  for (const file of RAW_FILES) {
+    const src = path.join(archiveRunDir, file);
+    if (!fs.existsSync(src)) continue;
+    const table = readCsvTable(src, Number.MAX_SAFE_INTEGER);
+    const codeColumn = (table.columns || []).find(c => RESEARCH_CODE_COLUMNS.includes(c));
+    const rows = [];
+    // Lọc chặt theo mã lượt; nếu cột mã lượt của file không khớp lượt nào (mã kiểu khác) thì lọc theo
+    // người bệnh, để không mất cả file.
+    const strict = (table.rows || []).some(row => index.matchesVisit(row));
+    for (const row of table.rows || []) {
+      const code = index.codeFor(row, { strict });
+      if (code === null) continue;
+      rows.push(codeColumn ? { ...row, [codeColumn]: code } : row);
+    }
+    writeCsv(path.join(runDir, file), table.columns || [], rows);
+    counts[file] = rows.length;
+  }
+  return counts;
+}
+
+// Trạng thái từng phần theo kho (extract_status của kho, theo mã lượt): chỉ mang sang phần kho đã
+// lấy xong ('done'/'empty'); phần còn thiếu/lỗi để trống cho Thu thập tự động lấy từ EMR.
+function buildProgressFromArchive(archiveRunDir, links) {
+  const status = readCsvTable(path.join(archiveRunDir, 'extract_status.csv'), Number.MAX_SAFE_INTEGER).rows || [];
+  const byEid = new Map(status.map(r => [String(r.encounter_id || '').trim(), r]));
+  const at = nowIso();
+  const progress = {};
+  const hchanh = {};
+  const orders = {};
+  let carried = 0;
+  for (const link of links) {
+    const st = byEid.get(String(link.encounter_id || '').trim());
+    if (!st || !link.encounter_id) continue;
+    const base = { encounter_id: link.encounter_id, research_code: link.research_code, ma_bn: link.patient_code, source: 'archive', updated_at: at };
+    const xnDone = st.popup_status === 'done' && GOT.has(st.xn_status) && GOT.has(st.cdha_status);
+    if (xnDone) {
+      progress[link.encounter_id] = { ...base, popup: 'done', xn: st.xn_status, cdha: st.cdha_status, status: 'done', committed: true };
+    }
+    for (const file of HCHANH_FILES) {
+      const value = String(st[`${file}_status`] || '').trim();
+      if (!GOT.has(value)) continue;
+      const target = file === 'order_history' ? orders : hchanh;
+      target[`${link.encounter_id}#${file}`] = { ...base, files: [file], status: value };
+    }
+    carried += 1;
+  }
+  return { progress, hchanh, orders, carried };
+}
+
+// Tạo đợt chạy của nghiên cứu từ kho. Không chuẩn hóa (người gọi xếp hàng chuẩn hóa).
+function seedStudyRunFromArchive(study, { runId = '' } = {}) {
+  const fail = (message, status = 400) => { const err = new Error(message); err.status = status; throw err; };
+  if (!study?.id) fail('Không tìm thấy nghiên cứu.', 404);
+  const cohortFile = cohortPath(study.id);
+  if (!fs.existsSync(cohortFile)) fail('Nghiên cứu chưa có danh sách mẫu.');
+  const archiveRunId = study.cohort_source === 'archive' ? String(study.cohort_source_run_id || '') : '';
+  if (!archiveRunId) fail('Nghiên cứu không chọn mẫu từ kho nên không lấy dữ liệu từ kho được. Dùng Thu thập dữ liệu (mở EMR).');
+  const archiveRunDir = path.join(archiveRunsDir(), archiveRunId);
+  if (!fs.existsSync(archiveRunDir)) fail('Không còn đợt dữ liệu của kho mà nghiên cứu đã chọn mẫu.');
+
+  const cohort = readCsvTable(cohortFile, Number.MAX_SAFE_INTEGER);
+  const cohortRows = cohort.rows || [];
+  if (!cohortRows.length) fail('Nghiên cứu chưa có mẫu.');
+  // Mã NC của nghiên cứu ↔ lượt điều trị trong kho (cùng cách ghép khi Lưu thành nghiên cứu).
+  const { archiveEncounterLinker } = require('./normalize');
+  const linkEncounter = archiveEncounterLinker(archiveRunDir);
+  const links = cohortRows.map(row => ({
+    research_code: getCell(row, RESEARCH_CODE_COLUMNS),
+    patient_code: patientCode(row),
+    encounter_id: linkEncounter(row).encounter_id || '',
+  }));
+
+  const id = runId || nowStamp();
+  const runDir = path.join(runsDir(study.id), id);
+  if (fs.existsSync(path.join(runDir, 'manifest.json'))) fail('Đợt chạy đã tồn tại.', 409);
+  ensureDir(runDir);
+
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), cohort.columns || [], cohortRows);
+  const encounterRows = readCsvTable(path.join(archiveRunDir, 'encounters.csv'), Number.MAX_SAFE_INTEGER).rows || [];
+  const index = buildCohortIndex(cohortRows, links, encounterRows);
+  const rawCounts = copyFilteredRaw(archiveRunDir, runDir, index);
+  const { progress, hchanh, orders, carried } = buildProgressFromArchive(archiveRunDir, links);
+  writeJsonAtomic(path.join(runDir, 'progress.json'), progress);
+  writeJsonAtomic(path.join(runDir, 'hchanh_auto_progress.json'), hchanh);
+  writeJsonAtomic(path.join(runDir, 'order_history_auto_progress.json'), orders);
+  writeJsonAtomic(path.join(runDir, 'manifest.json'), {
+    run_id: id,
+    created_at: nowIso(),
+    patients_count: cohortRows.length,
+    source: 'archive',
+    source_archive_run_id: archiveRunId,
+    raw_rows_from_archive: rawCounts,
+    progress_from_archive: carried,
+  });
+  return { run_id: id, run_dir: runDir, archive_run_id: archiveRunId, samples: cohortRows.length, linked: carried, raw_rows: rawCounts };
+}
+
+module.exports = { seedStudyRunFromArchive, buildCohortIndex, buildProgressFromArchive };

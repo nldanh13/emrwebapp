@@ -539,7 +539,10 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       if (!m) return true;
       return Number(m.done || 0) < Number(m.total || beforeProgress?.total || 0) || Number(m.error || 0) > 0 || Number(m.missing || 0) > 0 || Number(m.waiting || 0) > 0;
     });
-    const hasProgress = Number(beforeProgress?.total || 0) > 0 && (Number(beforeProgress?.counts?.done || 0) + Number(beforeProgress?.counts?.error || 0) + Number(beforeProgress?.counts?.missing || 0) > 0);
+    // Chưa có đợt chạy (exists: false) thì "thiếu" chỉ là cả danh sách chưa lấy: phải lấy lần đầu,
+    // không gọi "chỉ lấy phần còn thiếu" (cần đợt chạy có sẵn, báo "Nghiên cứu chưa có run").
+    const hasRun = beforeProgress?.exists !== false && Boolean(beforeProgress?.run_id);
+    const hasProgress = hasRun && Number(beforeProgress?.total || 0) > 0 && (Number(beforeProgress?.counts?.done || 0) + Number(beforeProgress?.counts?.error || 0) + Number(beforeProgress?.counts?.missing || 0) > 0);
 
     const steps = [];
     if (hasProgress) {
@@ -556,6 +559,9 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
         { label: 'Lấy hồ sơ, ra viện, phẫu thuật và y lệnh', run: () => api.fetchHchanhAllForResearchArchive({ headless, fromDate, toDate }) },
         { label: 'Bổ sung thông tin hành chánh', run: () => api.runResearchArchivePatientInfo({ headless, fromDate, toDate }), optional: true },
       );
+    } else if (activeStudy?.cohort_source === 'archive') {
+      // Mẫu chọn từ kho: dữ liệu đã có trong kho, lấy thẳng từ kho (đã chuẩn hóa luôn), không mở EMR.
+      steps.push({ label: 'Lấy dữ liệu từ kho (không mở EMR)', run: () => api.fetchResearchStudyFromArchive(selectedId) });
     } else {
       steps.push(
         { label: 'Lấy XN và CĐHA', run: () => api.runResearchStudy(selectedId, { ...studyOptions, headless, fromDate, toDate, resume: true }) },
@@ -579,7 +585,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     const afterProgress = await loadProgressSnapshot(selectedId, { silent: true });
     setLastUpdateSummary(diffProgressSnapshots(beforeProgress, afterProgress, 'Lấy dữ liệu'));
   }, [
-    activeStudy?.has_cohort, archive?.latest_run?.id, archiveOptions, isArchive,
+    activeStudy?.has_cohort, activeStudy?.cohort_source, archive?.latest_run?.id, archiveOptions, isArchive,
     loadProgressSnapshot, runAutomaticWorkflow, selectedId, showErrorOnce, studyOptions,
   ]);
 
@@ -787,16 +793,25 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       const studyId = r.study?.id;
       if (!studyId) throw new Error('Không lấy được ID nghiên cứu.');
       let imported = 0;
+      let fromArchive = null;
       try {
         const imp = await api.importResearchFromArchive(studyId, {});
         imported = Number(imp?.count || 0);
       } catch (importErr) {
         t(`Đã tạo nghiên cứu, nhưng chưa nạp được danh sách mẫu: ${String(importErr.message || importErr)}`, 'error');
       }
+      // Mẫu chọn từ kho thì dữ liệu cũng đã có trong kho: lấy luôn từ kho, không mở EMR.
+      if (imported) {
+        try {
+          fromArchive = await api.fetchResearchStudyFromArchive(studyId);
+        } catch (seedErr) {
+          t(`Đã nạp mẫu, nhưng chưa lấy được dữ liệu từ kho: ${String(seedErr.message || seedErr)}. Vào Thu thập dữ liệu để lấy.`, 'error');
+        }
+      }
       await loadSummary();
       setSelectedId(studyId);
-      // Nghiên cứu mới chưa có dữ liệu: mở thẳng phần Thu thập của nghiên cứu.
-      setStudyMode('collect');
+      // Đã có dữ liệu từ kho: mở Thống kê; chưa có thì mở Thu thập.
+      setStudyMode(fromArchive ? 'stats' : 'collect');
       setVariableStudyDraft({ name: '', description: '' });
       setSelectedVariableIds(new Set());
       setVariableConditions([]);
@@ -808,9 +823,11 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       setVariablePeriod({ from: '', to: '' });
       setVariableOnePerPatient(false);
       setVariableSampleSize({ design: '' });
-      t(imported
-        ? `Đã tạo nghiên cứu "${name}" và nạp ${compactNumber(imported)} lượt từ kho.`
-        : `Đã tạo nghiên cứu "${name}".`, 'ok');
+      t(fromArchive
+        ? `Đã tạo nghiên cứu "${name}": ${compactNumber(imported)} lượt, dữ liệu lấy sẵn từ kho. ${fromArchive.message || ''}`
+        : imported
+          ? `Đã tạo nghiên cứu "${name}" và nạp ${compactNumber(imported)} lượt từ kho.`
+          : `Đã tạo nghiên cứu "${name}".`, 'ok');
     } catch (e) { t(String(e.message || e), 'error'); }
     finally { setBusy(false); }
   }, [variableStudyDraft, selectedVariables.length, variablePreview, buildVariableSpec, loadSummary, t]);

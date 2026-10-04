@@ -557,6 +557,7 @@ export const finalizeResearchStudyDataset = (studyId) => post(`/api/research/stu
 export const buildResearchStudyEncodedDataset = (studyId) => post(`/api/research/studies/${encodeURIComponent(studyId)}/build-encoded-dataset`, {});
 export const cleanResearchStudyGenerated = (studyId, options = {}) => post(`/api/research/studies/${encodeURIComponent(studyId)}/clean-generated`, options);
 export const importResearchFromArchive = (studyId, filters = {}) => post(`/api/research/studies/${encodeURIComponent(studyId)}/import-from-archive`, filters);
+export const fetchResearchStudyFromArchive = (studyId) => post(`/api/research/studies/${encodeURIComponent(studyId)}/from-archive`, {});
 export const normalizeResearchStudy = (studyId) => post(`/api/research/studies/${encodeURIComponent(studyId)}/normalize`, {});
 export const runResearchStudy = (studyId, options = {}) => post(`/api/research/studies/${encodeURIComponent(studyId)}/run`, options);
 export const runResearchStudyPatientInfo = (studyId, options = {}) => post(`/api/research/studies/${encodeURIComponent(studyId)}/patient-info`, options);

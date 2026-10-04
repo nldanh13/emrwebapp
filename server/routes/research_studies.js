@@ -18,6 +18,7 @@ const { appendSecurityAudit } = require('../services/security_audit');
 const { firstNonEmpty } = require('../research/encounter_context');
 const { importArchiveToStudy, normalizeRunOutputs } = require('../research/normalize');
 const { runNormalizeJob, normalizeRunning } = require('../research/normalize_runner');
+const { seedStudyRunFromArchive } = require('../research/study_from_archive');
 const { readCsvTable, countCsvRows, writeCsv } = require('../research/table_io');
 const crfStore = require('../research/crf_store');
 const { researchCode } = require('../research/variable_selection');
@@ -126,7 +127,8 @@ router.get('/research/studies/:studyId/crf', (req, res) => {
     }
     const runId = resolveRunId(study.id, 'latest');
     const runDir = runId ? path.join(runsDir(study.id), runId) : '';
-    return res.json({ status: 'ok', ...crfStore.readCrfView(study.id, { runDir, includeIdentifiers }), identified_note: identifiedNote });
+    const selection = activeVariableSelectionFromStudy(study);
+    return res.json({ status: 'ok', ...crfStore.readCrfView(study.id, { runDir, includeIdentifiers, selection }), identified_note: identifiedNote });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }
@@ -168,10 +170,20 @@ router.get('/research/studies/:studyId/crf/export-merged', (req, res) => {
     const crfByCode = new Map((crf.rows || []).map(row => [row.research_code, row]));
     const crfColumns = (crf.columns || []).filter(c => c !== 'research_code').map(c => [c, base.columns.includes(c) ? `crf_${c}` : c]);
     const columns = [...base.columns, ...crfColumns.map(([, out]) => out)];
+    // Trường phiếu chưa nhập tay thì lấy giá trị tự điền từ EMR/kho, để file có đủ biến.
+    const autoFill = crfStore.autoFillForExport(study.id, {
+      runDir: runId ? path.join(runsDir(study.id), runId) : '',
+      selection: activeVariableSelectionFromStudy(study),
+    });
     const rows = (base.rows || []).map(row => {
-      const extra = crfByCode.get(researchCode(row)) || {};
+      const code = researchCode(row);
+      const extra = crfByCode.get(code) || {};
+      const auto = autoFill.values[code] || {};
       const out = { ...row };
-      for (const [src, dst] of crfColumns) out[dst] = extra[src] ?? '';
+      for (const [src, dst] of crfColumns) {
+        const v = extra[src] ?? '';
+        out[dst] = v === '' && auto[src] != null ? auto[src] : v;
+      }
       return out;
     });
     const file = path.join(studyDir(study.id), 'crf_merged_export.csv');
@@ -462,6 +474,33 @@ lockedResearchRoute(router, 'post', '/research/studies/:studyId/clean-generated'
     });
     const updated = updateStudy(study.id, { last_cleaned_at: nowIso() });
     return res.json({ status: 'ok', message: `Đã dọn file phụ cho ${runId}.`, study: updated, run_id: runId, ...result });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+// Lấy dữ liệu cho nghiên cứu thẳng từ kho (mẫu chọn từ kho): không mở EMR. Tạo đợt chạy từ dữ liệu
+// kho của đúng các lượt đã chọn rồi chuẩn hóa (tiến trình con). Phần kho còn thiếu để Thu thập tự
+// động lấy bổ sung từ EMR.
+lockedResearchRoute(router, 'post', '/research/studies/:studyId/from-archive', 'Lấy dữ liệu từ kho', async (req, res) => {
+  try {
+    const study = readStudy(req.params.studyId);
+    if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
+    const seeded = seedStudyRunFromArchive(study);
+    const result = await runNormalizeJob(
+      { kind: 'run', runDir: seeded.run_dir, options: { sourceRunId: seeded.run_id }, scopeKey: `study:${study.id}` },
+      { reason: 'Lấy dữ liệu từ kho' },
+    );
+    const updated = updateStudy(study.id, { last_normalized_at: nowIso(), data_source: 'archive', data_from_archive_at: nowIso() });
+    const missingParts = seeded.samples - seeded.linked;
+    return res.json({
+      status: 'ok',
+      message: `Đã lấy dữ liệu từ kho cho ${seeded.samples} mẫu, không mở EMR.${missingParts > 0 ? ` ${missingParts} mẫu chưa ghép được lượt trong kho: dùng Thu thập tự động để lấy bổ sung.` : ''}`,
+      study: updated,
+      run_id: seeded.run_id,
+      seeded: { samples: seeded.samples, linked: seeded.linked, raw_rows: seeded.raw_rows },
+      counts: result,
+    });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }

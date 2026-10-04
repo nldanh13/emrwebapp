@@ -13,6 +13,7 @@ const { readJsonSafe, writeJsonAtomic } = require('../utils/file');
 const { studyDir, cohortPath } = require('./store_paths');
 const { readCsvTable, writeCsv } = require('./table_io');
 const { researchCode } = require('./variable_selection');
+const { AUTO_KEYS, computeAutoValues } = require('./crf_autofill');
 
 const FORM_FILE = 'crf_form.json';
 const ENTRIES_FILE = 'crf_entries.json';
@@ -73,6 +74,8 @@ function sanitizeForm(input) {
     const unit = str(f?.unit, 30);
     if (unit) field.unit = unit;
     if (f?.identifier) field.identifier = true;
+    // Trường tự điền từ dữ liệu EMR/kho (chỉ trường thông tin nền, không theo mốc gọi).
+    if (!timepoint && f?.auto && AUTO_KEYS.has(String(f.auto))) field.auto = String(f.auto);
     fieldIds.add(`${timepoint}:${id}`);
     fields.push(field);
   }
@@ -209,10 +212,12 @@ function computedAnchors(runDir) {
 
 // Dữ liệu cho màn hình: thiết kế phiếu + từng Mã NC trong danh sách mẫu (giá trị đã nhập,
 // mốc thủ công/tự động). Trường định danh chỉ trả về khi được phép xem dữ liệu định danh.
-function readCrfView(studyId, { runDir = '', includeIdentifiers = false } = {}) {
+function readCrfView(studyId, { runDir = '', includeIdentifiers = false, selection = null } = {}) {
   const form = readForm(studyId);
   const entries = readEntries(studyId);
   const auto = computedAnchors(runDir);
+  const codes = cohortCodes(studyId);
+  const autoValues = computeAutoValues({ runDir, form, entries, codes, selection });
   const hidden = new Set(form.fields.filter(f => f.identifier).map(f => f.id));
   const strip = values => {
     if (includeIdentifiers || !hidden.size) return values || {};
@@ -220,12 +225,15 @@ function readCrfView(studyId, { runDir = '', includeIdentifiers = false } = {}) 
     for (const [k, v] of Object.entries(values || {})) if (!hidden.has(k)) out[k] = v;
     return out;
   };
-  const samples = cohortCodes(studyId).map(code => {
+  const samples = codes.map(code => {
     const entry = entries[code] || null;
     return {
       research_code: code,
       anchor_at: entry?.anchor_at || '',
-      anchor_auto: auto[code] || '',
+      anchor_auto: auto[code] || autoValues[code]?.anchor?.at || '',
+      anchor_auto_source: auto[code] ? 'mốc tự động' : (autoValues[code]?.anchor?.source || ''),
+      // Giá trị gợi ý từ dữ liệu EMR/kho cho trường có `auto` (người nhập xem và sửa được).
+      auto_values: autoValues[code]?.values || {},
       values: strip(entry?.values),
       identifiers_saved: entry ? [...hidden].filter(id => entry.values?.[id]) : [],
       timepoints: Object.fromEntries(Object.entries(entry?.timepoints || {}).map(([tp, t]) => [tp, { ...t, values: strip(t.values) }])),
@@ -235,4 +243,16 @@ function readCrfView(studyId, { runDir = '', includeIdentifiers = false } = {}) 
   return { form, samples, identifiers_visible: includeIdentifiers };
 }
 
-module.exports = { sanitizeForm, readForm, saveForm, saveEntry, readCrfView, DATA_FILE };
+// Giá trị phiếu để xuất: đã nhập tay, trống thì lấy giá trị tự điền từ EMR/kho.
+function autoFillForExport(studyId, { runDir = '', selection = null } = {}) {
+  const form = readForm(studyId);
+  const entries = readEntries(studyId);
+  const values = computeAutoValues({ runDir, form, entries, codes: cohortCodes(studyId), selection });
+  const out = {};
+  for (const [code, item] of Object.entries(values)) {
+    out[code] = Object.fromEntries(Object.entries(item.values).map(([id, v]) => [id, v.value]));
+  }
+  return { form, values: out };
+}
+
+module.exports = { sanitizeForm, readForm, saveForm, saveEntry, readCrfView, autoFillForExport, DATA_FILE };
