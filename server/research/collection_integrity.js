@@ -53,10 +53,14 @@ function surgeryProgressSummary(runDir) {
       pendingOrError += 1;
       if (examples.length < 20) examples.push({ source_key: sourceKey, fetch_status: fetchStatus, rows, reason });
     }
-    if (fetchStatus === 'ok' && rows === 0) {
+    if (fetchStatus === 'empty') {
+      // Entry mới của research worker: màn hình D/s Phẫu thuật đã được lookup thật
+      // và trả 0 dòng. Đây mới là explicit empty có thể dùng cho QA.
+      verifiedEmpty += 1;
+    } else if (fetchStatus === 'ok' && rows === 0) {
       if (explicitlyVerified) verifiedEmpty += 1;
       else {
-        // Một worker cũ có thể trả ok+0 chỉ vì không thấy marker PT ở lịch sử y lệnh.
+        // Worker cũ có thể trả ok+0 chỉ vì không thấy marker PT ở lịch sử y lệnh.
         // Không được coi đó là bằng chứng "không phẫu thuật".
         zeroRowsReportedOk += 1;
         if (examples.length < 20) examples.push({ source_key: sourceKey, fetch_status: fetchStatus, rows, reason: reason || 'ok_zero_unverified' });
@@ -106,9 +110,9 @@ function buildCollectionIntegrityReport(runDir, { phase = 'check' } = {}) {
   const warnings = [];
 
   if (progress.pending_or_error > 0) blocking.push({ code: 'SURGERY_COLLECTION_INCOMPLETE', count: progress.pending_or_error });
+  if (progress.ok_zero_unverified > 0) blocking.push({ code: 'SURGERY_ZERO_UNVERIFIED', count: progress.ok_zero_unverified });
   if (rawSurgery.invalid_raw_json > 0) blocking.push({ code: 'SURGERY_RAW_JSON_INVALID', count: rawSurgery.invalid_raw_json });
   if (rawSurgery.missing_full_date > 0) warnings.push({ code: 'SURGERY_RAW_DATE_INCOMPLETE', count: rawSurgery.missing_full_date });
-  if (progress.ok_zero_unverified > 0) warnings.push({ code: 'SURGERY_ZERO_UNVERIFIED', count: progress.ok_zero_unverified });
   if (normalizedSurgery.unmatched > 0) warnings.push({ code: 'SURGERY_NORMALIZED_UNMATCHED', count: normalizedSurgery.unmatched });
 
   const report = {
