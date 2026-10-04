@@ -15,7 +15,8 @@ function groupTabs(tabs) {
   return groups;
 }
 
-function NavItem({ tab, active, onPick }) {
+// badge: { title } — tác vụ đang chạy ở màn hình đó (vd. Kho nghiên cứu đang lấy dữ liệu).
+function NavItem({ tab, active, onPick, badge }) {
   const Icon = navIcon(tab.id);
   return (
     <button
@@ -23,15 +24,16 @@ function NavItem({ tab, active, onPick }) {
       className="emr-nav-item"
       aria-current={active ? 'page' : undefined}
       onClick={() => onPick(tab.id)}
-      title={tab.hint}
+      title={badge?.title || tab.hint}
     >
       <Icon size={18} stroke={1.75} aria-hidden="true" />
       <span className="emr-nav-item__label">{tab.label}</span>
+      {badge && <span className="emr-nav-item__running" role="status" aria-label={badge.title}><span aria-hidden="true" />Đang chạy</span>}
     </button>
   );
 }
 
-export default function Sidebar({ tabs, active, onChange, mobile = false, open = false, onClose }) {
+export default function Sidebar({ tabs, active, onChange, mobile = false, open = false, onClose, badges = {} }) {
   const groups = useMemo(() => groupTabs(tabs), [tabs]);
   const mainGroups = groups.filter(g => g.name !== FOOTER_GROUP);
   const footerGroup = groups.find(g => g.name === FOOTER_GROUP);
@@ -61,7 +63,7 @@ export default function Sidebar({ tabs, active, onChange, mobile = false, open =
           {mainGroups.map(group => (
             <div key={group.name} className="emr-sidebar__group" role="group" aria-label={group.name}>
               <div className="emr-sidebar__group-label">{group.name}</div>
-              {group.tabs.map(tab => <NavItem key={tab.id} tab={tab} active={active === tab.id} onPick={handlePick} />)}
+              {group.tabs.map(tab => <NavItem key={tab.id} tab={tab} active={active === tab.id} onPick={handlePick} badge={badges[tab.id]} />)}
             </div>
           ))}
         </nav>

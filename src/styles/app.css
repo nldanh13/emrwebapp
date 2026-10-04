@@ -111,6 +111,13 @@ a { color: var(--emr-accent); text-underline-offset: 2px; }
 .emr-nav-item[aria-current="page"] { background: var(--emr-accent-soft); color: var(--emr-accent); font-weight: 600; }
 .emr-nav-item[aria-current="page"] svg { color: var(--emr-accent); }
 .emr-nav-item__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Tác vụ đang chạy ở màn hình này (vẫn chạy khi đang xem màn hình khác). */
+.emr-nav-item__running { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; font-size: 11px; font-weight: 700; color: var(--emr-accent); background: var(--emr-accent-soft); border-radius: 999px; padding: 1px 7px; }
+.emr-nav-item__running > span { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: emr-running-pulse 1.2s ease-in-out infinite; }
+.emr-topbar__running { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--emr-accent); background: var(--emr-accent-soft); color: var(--emr-accent); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.emr-topbar__running:hover { filter: brightness(0.97); }
+.emr-running-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--emr-accent); animation: emr-running-pulse 1.2s ease-in-out infinite; }
+@keyframes emr-running-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.7); } }
 
 /* Thanh trên */
 .emr-topbar { height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 16px; background: var(--emr-surface); border-bottom: 1px solid var(--emr-border-soft); }

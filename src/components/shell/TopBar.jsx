@@ -17,7 +17,7 @@ function IconButton({ label, onClick, danger = false, children }) {
   );
 }
 
-export default function TopBar({ tab, now, onCancel, onViewLog, onDiagnostics, onOpenFunctions, mobile = false, onMenuClick, user, authMode, onLogout }) {
+export default function TopBar({ tab, now, onCancel, onViewLog, onDiagnostics, onOpenFunctions, mobile = false, onMenuClick, user, authMode, onLogout, running = null }) {
   const dateStr = now.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const timeStr = now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
   const isLocalOnly = authMode === 'local_only';
@@ -35,6 +35,12 @@ export default function TopBar({ tab, now, onCancel, onViewLog, onDiagnostics, o
         {!mobile && tab?.hint && <p>{tab.hint}</p>}
       </div>
       <div className="emr-topbar__actions">
+        {running && (
+          <button type="button" className="emr-topbar__running" onClick={running.onOpen} title={running.title}>
+            <span className="emr-running-dot" aria-hidden="true" />
+            <span>{mobile ? 'Đang chạy' : running.label}</span>
+          </button>
+        )}
         {mobile ? (
           <IconButton label="Tìm chức năng" onClick={onOpenFunctions}><IconSearch {...iconProps} /></IconButton>
         ) : (

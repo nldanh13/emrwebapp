@@ -39,13 +39,14 @@ const { patientCode, readCsvTable, writeCsv, writeCsvUnion } = require('../resea
 const { appendSecurityAudit } = require('../services/security_audit');
 const { buildContextMap, contextForRow, encounterMatchMethod, encounterMatchStatus } = require('../research/encounter_context');
 const { CASE_TRACE_RECENT_LIMIT, appendResearchRunLog, readResearchCaseTrace, redactCaseTracePayload } = require('../research/case_trace');
-const { beginResearchTask, buildCoverageSummary, buildResearchProgressSnapshot, finishResearchTask, hchanhEntryFileStatus, isRowMissingXnCdha, resetXnCdhaProgress, rowResearchCode, sourceRowsForXnCdhaRefetch, updateResearchTask } = require('../research/progress_snapshot');
+const { activeResearchTask, beginResearchTask, buildCoverageSummary, buildResearchProgressSnapshot, finishResearchTask, hchanhEntryFileStatus, isRowMissingXnCdha, resetXnCdhaProgress, rowResearchCode, sourceRowsForXnCdhaRefetch, updateResearchTask } = require('../research/progress_snapshot');
 const { NORMALIZED_COLUMNS } = require('../research/normalized_schema');
 const { combineEncounterSources } = require('../research/source_merge');
 const { cleanResearchGenerated, cleanupStaleDatasetStaging, finalizeAnalysisDataset, listDatasetSnapshots, verifyAllDatasetSnapshots, verifyDatasetSnapshot, writeDatasetSnapshot } = require('../research/dataset_store');
 const { buildEncodedDataset } = require('../research/encoded_dataset');
 const { buildPatientHistory } = require('../research/patient_history');
 const { VARIABLE_CATALOG_MAX_ROWS, buildVariableCatalog, summarizeVariableColumns } = require('../research/variable_catalog');
+const { resolveStudyRunIdFast } = require('../research/run_registry');
 const { archiveTablePath, chooseArchiveRunIdForResume, isStoppedRunResult, readArchive, readArchiveProgressMeta, readStudy, resolveArchiveRunId, resolveArchiveRunIdFast, resolveArchiveRunIdForAction, resolveRunId, safeRunId, sortRowsForTable, updateArchive, updateStudy, validatePatientCsv } = require('../research/run_registry');
 const { ensureResearchSourceRows, flattenHchanhIntoResearchRun, normalizeResearchSourceRows, readResearchHchanhSourceRows, researchHchanhMeta } = require('../research/research_source');
 const { fetchHchanhForResearchRun, hchanhDefaultFiles, hchanhFileStatusPatch, orderHistoryDefaultFiles, orderHistoryRunLabel, researchHeadlessFromBody } = require('../research/hchanh_fetch');
@@ -56,7 +57,7 @@ const { buildStudySuggestions } = require('../research/study_suggestions');
 const { normalizeArchiveLatest, normalizeInputSignature, normalizeRunOutputs } = require('../research/normalize');
 const { SCRIPT_PATH } = require('../research/worker_paths');
 const { appendCollectionVersions, readCollectionPartRows, readCollectionVersionIds, recoverCollectionTransactions, recoverPythonPatientCommits, runCollectionOrchestration, studyReadinessForRun, syncCollectionLedger } = require('../research/collection_runtime');
-const { RESEARCH_SCOPE_LOCKS, datasetVerifyResponse, identifiedAccessStatus, lockedResearchRoute, researchResponseShouldRedact, researchScopeKey, sendCsvFile } = require('../research/research_http');
+const { RESEARCH_SCOPE_LOCKS, datasetVerifyResponse, listRunningResearch, identifiedAccessStatus, lockedResearchRoute, researchResponseShouldRedact, researchScopeKey, sendCsvFile } = require('../research/research_http');
 
 const VARIABLE_PREVIEW_MAX_SOURCE_ROWS = Math.max(5000, Number(process.env.EMR_VARIABLE_PREVIEW_MAX_SOURCE_ROWS || 1000000));
 const VARIABLE_PREVIEW_MAX_ENCOUNTERS = Math.max(100, Number(process.env.EMR_VARIABLE_PREVIEW_MAX_ENCOUNTERS || 50000));
@@ -336,6 +337,33 @@ router.get('/research/archive/datasets/verify', (req, res) => {
   }
 });
 router.use(require('./research_studies'));
+
+// Tác vụ đang chạy của kho và các nghiên cứu (nhẹ: đọc khóa trong bộ nhớ và file trạng thái).
+router.get('/research/running', (_req, res) => {
+  try {
+    const running = listRunningResearch((key) => {
+      const studyId = key.startsWith('study:') ? key.slice(6) : '';
+      let runDir = '';
+      let studyName = '';
+      if (studyId) {
+        studyName = String(readStudy(studyId)?.name || '');
+        const runId = resolveStudyRunIdFast(studyId, 'latest');
+        runDir = runId ? path.join(runsDir(studyId), runId) : '';
+      } else {
+        const runId = resolveArchiveRunIdFast('latest');
+        runDir = runId ? path.join(archiveRunsDir(), runId) : '';
+      }
+      const task = runDir ? activeResearchTask(runDir) : null;
+      return {
+        study_name: studyName,
+        task: task ? { label: task.label, status: task.status, message: task.message || '', summary: task.summary || {}, heartbeat_at: task.heartbeat_at || '' } : null,
+      };
+    });
+    return res.json({ status: 'ok', running, server_time: nowIso() });
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: String(err.message || err) });
+  }
+});
 
 router.get('/research/archive/progress', (req, res) => {
   try {

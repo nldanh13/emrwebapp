@@ -129,6 +129,26 @@ function researchScopeKey(req) {
   return 'archive';
 }
 
+// Danh sách tác vụ nghiên cứu đang chạy (theo khóa phạm vi): cho giao diện biết chắc chắn có
+// đang chạy hay không, kể cả khi người dùng rời tab rồi quay lại hoặc tải lại trang.
+// describeScope(key) trả thêm { study_id, study_name, task } (task: tiến độ ghi bởi worker).
+function listRunningResearch(describeScope = () => ({}), now = Date.now()) {
+  return [...RESEARCH_SCOPE_LOCKS.entries()].map(([key, lock]) => {
+    let extra = {};
+    try { extra = describeScope(key) || {}; } catch (_) { extra = {}; }
+    const sinceMs = Date.parse(lock.since);
+    return {
+      scope_key: key,
+      kind: key.startsWith('study:') ? 'study' : 'archive',
+      study_id: key.startsWith('study:') ? key.slice(6) : '',
+      label: lock.label,
+      since: lock.since,
+      elapsed_ms: Number.isFinite(sinceMs) ? Math.max(0, now - sinceMs) : 0,
+      ...extra,
+    };
+  });
+}
+
 function researchScopeBusy(key) {
   return RESEARCH_SCOPE_LOCKS.get(key) || null;
 }
@@ -179,6 +199,7 @@ module.exports = {
   RESEARCH_SCOPE_LOCKS,
   researchScopeKey,
   researchScopeBusy,
+  listRunningResearch,
   lockedResearchRoute,
   identifiedAccessStatus,
   datasetVerifyResponse,

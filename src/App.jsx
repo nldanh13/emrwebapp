@@ -143,6 +143,29 @@ export default function App() {
   const [notices, setNotices] = useState([]);
   const [workDateRange, setWorkDateRangeState] = useState(loadWorkDateRange);
   const [featureContext, setFeatureContext] = useState(null);
+  // Kho nghiên cứu được giữ lại (ẩn) sau lần mở đầu tiên: rời tab không làm mất thao tác đang
+  // làm dở, và tác vụ đang chạy vẫn được theo dõi, báo khi xong.
+  const [researchMounted, setResearchMounted] = useState(() => tab === 'research');
+  const [researchRunning, setResearchRunning] = useState(null); // { title } khi có tác vụ đang chạy
+  useEffect(() => { if (tab === 'research') setResearchMounted(true); }, [tab]);
+  // Chưa mở Kho nghiên cứu (vd. vừa tải lại trang) mà máy chủ đang chạy tác vụ nghiên cứu: vẫn báo.
+  // Mở Kho rồi thì chính màn hình đó theo dõi và báo lên (onRunningChange).
+  useEffect(() => {
+    if (researchMounted) return undefined;
+    let stopped = false;
+    const check = async () => {
+      try {
+        const r = await api.getResearchRunning();
+        const items = Array.isArray(r?.running) ? r.running : [];
+        if (!stopped) setResearchRunning(items.length ? { title: items.map(i => `Đang chạy: ${i.label}${i.study_name ? ` · nghiên cứu "${i.study_name}"` : ' · Kho dữ liệu gốc'}`).join('\n') } : null);
+      } catch (e) {
+        if (/401|403|quyền|đăng nhập/i.test(String(e?.message || ''))) stopped = true;
+      }
+    };
+    check();
+    const id = setInterval(() => { if (!stopped) check(); }, 15000);
+    return () => { stopped = true; clearInterval(id); };
+  }, [researchMounted]);
   const toastIdRef = useRef(0);
   const lastTodayRef = useRef(defaultWorkDateRange().from);
 
@@ -237,16 +260,22 @@ export default function App() {
 
   return (
     <div className="emr-shell">
-      <Sidebar tabs={TABS} active={tab} onChange={handleTabChange} mobile={isMobile} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar tabs={TABS} active={tab} onChange={handleTabChange} mobile={isMobile} open={sidebarOpen} onClose={() => setSidebarOpen(false)}
+        badges={researchRunning ? { research: researchRunning } : {}} />
       <div className="emr-shell__main">
-        <TopBar tab={currentTab(tab)} now={now} onCancel={handleCancel} onViewLog={handleViewLog} onDiagnostics={handleDiagnostics} onOpenFunctions={handleOpenFunctionHub} mobile={isMobile} onMenuClick={() => setSidebarOpen(o => !o)} user={user} authMode={authMode} onLogout={logout} />
+        <TopBar tab={currentTab(tab)} now={now}
+          running={researchRunning && tab !== 'research' ? { label: 'Kho nghiên cứu đang chạy', title: `${researchRunning.title}\nBấm để mở Kho nghiên cứu`, onOpen: () => handleTabChange('research') } : null} onCancel={handleCancel} onViewLog={handleViewLog} onDiagnostics={handleDiagnostics} onOpenFunctions={handleOpenFunctionHub} mobile={isMobile} onMenuClick={() => setSidebarOpen(o => !o)} user={user} authMode={authMode} onLogout={logout} />
         <FeatureContextBanner context={featureContext} definition={selectedContextDefinition} onBack={handleOpenFunctionHub} onClose={() => setFeatureContext(null)} />
         {shouldShowDateBar(tab) && <WorkDateRangeBar value={workDateRange} onChange={setWorkDateRange} />}
         <ContentFrame compact={Boolean(currentTab(tab)?.compact)}>
           <Suspense fallback={<div style={{ padding: 16, color: 'var(--emr-ink-secondary)' }}>Đang mở chức năng…</div>}>
           {tab === 'functions'    && <FunctionHubTab onOpenContext={handleOpenContext} toast={toast} />}
           {tab === 'acquire'      && <DataProcessingTab toast={toast} workDateRange={workDateRange} />}
-          {tab === 'research'     && <ResearchTab toast={toast} />}
+          {researchMounted && (
+            <div style={{ display: tab === 'research' ? 'contents' : 'none' }}>
+              <ResearchTab toast={toast} active={tab === 'research'} onRunningChange={setResearchRunning} />
+            </div>
+          )}
           {tab === 'patient-journey' && <PatientJourneyTab toast={toast} />}
           {tab === 'bed'          && <ShiftTab toast={toast} mode="bed" {...sharedDateProps} />}
           {tab === 'ward'         && <ShiftTab toast={toast} mode="ward" workflowTitle="Điều dưỡng bệnh phòng" workflowHint="Nhập chăm sóc, dịch truyền và thủ thuật cho mọi người bệnh trong ngày đã chọn, gồm cả ca trực (mới vào khoa, chuyển khoa, về từ GMHS)." {...sharedDateProps} />}
