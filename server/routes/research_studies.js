@@ -12,7 +12,7 @@ const fs = require('fs');
 const { CASE_TRACE_RECENT_LIMIT, readResearchCaseTrace, redactCaseTracePayload } = require('../research/case_trace');
 const { ANALYSIS_PRESETS, cleanCustomFields } = require('../research/analysis_presets');
 const { ensureDir, writeJsonAtomic, writeFileAtomic, nowFileStamp, readJsonSafe, safeFilePart } = require('../utils/file');
-const { sanitizeVariableSelection } = require('../research/selection_runtime');
+const { activeVariableSelectionFromStudy, sanitizeVariableSelection, summarizeSelectionForRun } = require('../research/selection_runtime');
 const { RESEARCH_STORE_DIR, ROOT_DIR } = require('../constants');
 const { appendSecurityAudit } = require('../services/security_audit');
 const { firstNonEmpty } = require('../research/encounter_context');
@@ -81,6 +81,24 @@ router.get('/research/studies/:studyId/case-trace', (req, res) => {
     const cases = readResearchCaseTrace(runDir, limit);
     const redact = researchResponseShouldRedact(req);
     return res.json({ status: 'ok', run_id: runId, cases: redact ? redactCaseTracePayload(cases) : cases, limit, redacted: redact });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+// Thống kê mô tả các biến đã chọn của nghiên cứu, tính trên run mới nhất của nghiên cứu.
+// Chỉ trả số liệu tổng hợp (không có dữ liệu từng lượt); muốn xử lý số liệu thì xuất CSV.
+router.get('/research/studies/:studyId/variable-stats', (req, res) => {
+  try {
+    const study = readStudy(req.params.studyId);
+    if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
+    const selection = activeVariableSelectionFromStudy(study);
+    if (!selection?.selected_variables?.length) return res.json({ status: 'ok', summary: null, reason: 'no_selection' });
+    const runId = resolveRunId(study.id, 'latest');
+    if (!runId) return res.json({ status: 'ok', summary: null, reason: 'no_run' });
+    const runDir = path.join(runsDir(study.id), runId);
+    const { summary, source_total: sourceTotal, source_limited: sourceLimited } = summarizeSelectionForRun(runDir, selection);
+    return res.json({ status: 'ok', run_id: runId, summary, source_total: sourceTotal, source_limited: sourceLimited });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }

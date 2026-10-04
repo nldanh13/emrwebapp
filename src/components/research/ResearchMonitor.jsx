@@ -247,7 +247,6 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
             marginTop: 6, fontSize: FS.xs, color: C.blue, display: 'flex',
             alignItems: 'center', gap: 7, flexWrap: 'wrap',
           }}>
-            <span>🔎</span>
             <b>Đang quét:</b>
             <span>{snap.current_case.ho_ten || snap.current_case.ma_bn || 'BN'}{snap.current_case.ma_bn ? ` (${snap.current_case.ma_bn})` : ''}</span>
             {!!snap.current_case.total && (
@@ -264,7 +263,7 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
 
         {snap.stopped && (
           <div style={{ marginTop: 9, borderLeft: `3px solid ${C.amber}`, background: C.surface2, color: C.text2, padding: '7px 9px', fontSize: FS.xs }}>
-            Tác vụ đã dừng giữa chừng. Bấm <b>Lấy dữ liệu</b> để tiếp tục phần còn thiếu; nút Cập nhật chỉ làm mới trạng thái hiển thị.
+            Tác vụ đã dừng giữa chừng. Bấm <b>Thu thập tự động</b> để tiếp tục phần còn thiếu.
           </div>
         )}
 
