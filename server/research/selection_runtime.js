@@ -63,22 +63,30 @@ function conditionLabel(c) {
   return `${c.label || c.name} ${op}${value}`.trim();
 }
 
+function stepLabel(step, selection) {
+  if (step.kind === 'period') {
+    const { from, to } = selection.period || {};
+    const fmt = d => (d ? d.split('-').reverse().join('/') : '');
+    return from && to ? `Nhập viện từ ${fmt(from)} đến ${fmt(to)}` : from ? `Nhập viện từ ${fmt(from)}` : `Nhập viện đến ${fmt(to)}`;
+  }
+  if (step.kind === 'one_per_patient') return 'Mỗi người bệnh lấy lượt nhập viện đầu tiên';
+  return `${step.condition.exclude ? 'Loại trừ: ' : ''}${conditionLabel(step.condition)}`;
+}
+
 // Thống kê mô tả các biến đã chọn trên một run (dùng cho bước Kiểm tra của Tạo nghiên cứu và
 // phần Thống kê của nghiên cứu). Chỉ trả số liệu tổng hợp, không trả dữ liệu từng lượt.
 function summarizeSelectionForRun(runDir, selectionInput, { maxEncounters = Number.MAX_SAFE_INTEGER, maxSourceRows = Number.MAX_SAFE_INTEGER } = {}) {
   const selection = sanitizeVariableSelection(selectionInput);
   const analysisTable = readCsvTable(path.join(runDir, TABLES.analysis_ready.file), maxEncounters);
   const tableRows = loadRunTablesForSelection(runDir, selection, [], maxSourceRows);
-  // Sàng lọc từng bước: áp lần lượt từng điều kiện để biết mỗi điều kiện loại bao nhiêu lượt.
-  // Kết quả cuối giống áp tất cả điều kiện cùng lúc (điều kiện nối bằng VÀ).
-  // filterCohortRowsByVariableSelection trả { rows, matched, conditions }, không phải mảng.
-  let rows = analysisTable.rows || [];
+  // Sàng lọc từng bước: thời gian nghiên cứu → từng tiêu chuẩn chọn/loại trừ → mỗi người một lượt,
+  // để biết mỗi bước loại bao nhiêu lượt. Kết quả cuối giống áp tất cả cùng lúc (nối bằng VÀ).
   const countPatients = list => new Set(list.map(r => String(r?.patient_key || r?.patient_code || '').trim()).filter(Boolean)).size;
-  const funnel = [{ label: 'Toàn bộ kho', encounters: rows.length, patients: countPatients(rows) }];
-  for (const condition of selection.conditions || []) {
-    rows = variableSelection.filterCohortRowsByVariableSelection(rows, { ...selection, conditions: [condition] }, tableRows).rows;
-    funnel.push({ label: conditionLabel(condition), encounters: rows.length, patients: countPatients(rows) });
-  }
+  const sourceRows = analysisTable.rows || [];
+  const funnel = [{ label: 'Toàn bộ kho', encounters: sourceRows.length, patients: countPatients(sourceRows) }];
+  const rows = variableSelection.selectCohortRows(sourceRows, selection, tableRows, (step, list) => {
+    funnel.push({ label: stepLabel(step, selection), kind: step.kind, exclude: Boolean(step.condition?.exclude), encounters: list.length, patients: countPatients(list) });
+  });
   const dataset = variableSelection.buildSelectedAnalysisDataset(rows, selection, tableRows);
   return {
     dataset,

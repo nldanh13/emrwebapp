@@ -89,6 +89,12 @@ test('đề tài trước–sau: mốc thuốc, xét nghiệm gần trước/sau
   const after = summary.variables.find(v => /sau dùng thuốc/.test(v.survey_label));
   assert.strictEqual(before.stats.mean, 1.1);
   assert.strictEqual(after.stats.mean, 1);
+  // Vai trò: hai lần đo của xét nghiệm đầu tiên là kết cục chính; cỡ mẫu tính theo thiết kế cặp.
+  const primary = s.variables.filter(v => v.role === 'primary_outcome');
+  assert.strictEqual(primary.length, 2);
+  assert.deepStrictEqual(primary.map(v => v.aggregation).sort(), ['closest_after_anchor', 'closest_before_anchor']);
+  assert.strictEqual(s.sample_size_design, 'paired_means');
+  assert.strictEqual(summary.variables.filter(v => v.role === 'primary_outcome').length, 2);
 });
 
 console.log(`${passed} test(s) passed`);

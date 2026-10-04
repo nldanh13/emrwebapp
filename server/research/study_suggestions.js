@@ -242,6 +242,25 @@ function buildStudySuggestions(runDir) {
     }
   }
 
+  // Vai trò biến và cách tính cỡ mẫu gợi ý theo thiết kế, để người mới biết biến nào là biến chính.
+  for (const sg of suggestions) {
+    const role = (x) => {
+      if (sg.design === 'before_after') {
+        // Kết cục chính là chênh lệch sau – trước của xét nghiệm đầu tiên: cả hai lần đo đều là biến chính.
+        if (x.aggregation && x.id === sg.variables.find(y => y.aggregation === 'closest_before_anchor')?.id) return 'primary_outcome';
+        return x.aggregation ? 'secondary_outcome' : 'descriptive';
+      }
+      if (x.id === 'analysis_ready.hospital_stay_days') return 'primary_outcome';
+      if (sg.design === 'risk') {
+        if (['analysis_ready.time_to_surgery_hours', 'analysis_ready.anesthesia_method'].includes(x.id)) return 'exposure';
+        if (['analysis_ready.age', 'analysis_ready.sex', 'analysis_ready.comorbidity_text'].includes(x.id) || x.aggregation) return 'covariate';
+      }
+      return 'descriptive';
+    };
+    sg.variables = sg.variables.map(x => ({ ...x, role: role(x) }));
+    sg.sample_size_design = sg.design === 'before_after' ? 'paired_means' : sg.design === 'risk' ? 'correlation' : 'mean_one';
+  }
+
   // Một nhóm tối đa 2 đề tài; ưu tiên nhóm lớn và đủ dữ liệu.
   const perCohort = new Map();
   const picked = suggestions.sort((a, b) => b.score - a.score).filter(s => {

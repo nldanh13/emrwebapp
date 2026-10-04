@@ -78,6 +78,10 @@ export default function ResearchTab({ toast }) {
   const [variableConditions, setVariableConditions] = useState([]);
   const [variableAnchor, setVariableAnchor] = useState(null);       // { kind, drug } — mốc thời gian
   const [variableWindows, setVariableWindows] = useState({});       // { [variableId]: { from, to } } ngày so với mốc
+  const [variableRoles, setVariableRoles] = useState({});           // { [key]: 'primary_outcome' | ... } vai trò biến
+  const [variablePeriod, setVariablePeriod] = useState({ from: '', to: '' }); // thời gian nghiên cứu (ngày nhập viện)
+  const [variableOnePerPatient, setVariableOnePerPatient] = useState(false);  // mỗi người bệnh một lượt
+  const [variableSampleSize, setVariableSampleSize] = useState({ design: '' }); // thông số tính cỡ mẫu
   const [variableStudyDraft, setVariableStudyDraft] = useState({ name: '', description: '' });
   const [variablePreview, setVariablePreview] = useState(null);
   const [variablePreviewLoading, setVariablePreviewLoading] = useState(false);
@@ -547,9 +551,9 @@ export default function ResearchTab({ toast }) {
   const addCoreVariables = useCallback(() => {
     addVariables(browseCatalogVariables.filter(v => CORE_VARIABLE_NAME.test(String(v.name || ''))));
   }, [browseCatalogVariables, addVariables]);
-  const addConditionForVariable = useCallback((variable) => {
+  const addConditionForVariable = useCallback((variable, { exclude = false } = {}) => {
     if (!variable) return;
-    setVariableConditions(prev => [...prev, { id: `${Date.now()}_${prev.length}`, variable_id: variable.id, label: `${variable.group_label || variable.table_label}.${variable.display_label || variable.name}`, operator: variable.operators?.[0] || 'contains', value: '', value2: '' }]);
+    setVariableConditions(prev => [...prev, { id: `${Date.now()}_${prev.length}`, variable_id: variable.id, label: `${variable.group_label || variable.table_label}.${variable.display_label || variable.name}`, operator: variable.operators?.[0] || 'contains', value: '', value2: '', exclude }]);
   }, []);
   const buildVariableSpec = useCallback(() => ({
     schema_version: 1,
@@ -564,7 +568,7 @@ export default function ResearchTab({ toast }) {
       label: v.display_label || v.name,
       survey_label: variableSurveyLabels[v.key] || v.display_label || v.name,
       type: v.type,
-      role: v.role,
+      role: variableRoles[v.key] || '',
       virtual_kind: v.virtual_kind || '',
       source_filter: v.source_filter || null,
       // Bỏ mốc thì cách lấy theo mốc không còn nghĩa: quay về liệt kê giá trị.
@@ -574,6 +578,9 @@ export default function ResearchTab({ toast }) {
         : {}),
     })),
     ...(variableAnchor ? { anchor: { ...variableAnchor, label: variableAnchor.kind === 'drug' ? `Dùng ${variableAnchor.drug}` : '' } } : {}),
+    ...(variablePeriod.from || variablePeriod.to ? { period: variablePeriod } : {}),
+    ...(variableOnePerPatient ? { one_per_patient: true } : {}),
+    ...(variableSampleSize.design ? { sample_size: variableSampleSize } : {}),
     conditions: variableConditions.map(cond => {
       const variable = allCatalogVariables.find(v => v.id === cond.variable_id);
       return {
@@ -586,13 +593,13 @@ export default function ResearchTab({ toast }) {
         source_filter: variable?.source_filter || cond.source_filter || null,
       };
     }),
-  }), [selectedVariables, variableAggregations, variableSurveyLabels, variableConditions, variableAnchor, variableWindows, variableCatalog, archive?.latest_run?.id, allCatalogVariables]);
+  }), [selectedVariables, variableAggregations, variableSurveyLabels, variableConditions, variableAnchor, variableWindows, variableRoles, variablePeriod, variableOnePerPatient, variableSampleSize, variableCatalog, archive?.latest_run?.id, allCatalogVariables]);
 
   // Lựa chọn đổi thì thống kê cũ không còn đúng.
   useEffect(() => {
     setVariablePreview(null);
     setVariablePreviewError('');
-  }, [selectedVariableIds, variableAggregations, variableSurveyLabels, variableConditions, variableAnchor, variableWindows]);
+  }, [selectedVariableIds, variableAggregations, variableSurveyLabels, variableConditions, variableAnchor, variableWindows, variablePeriod, variableOnePerPatient]);
 
   const loadVariablePreview = useCallback(async () => {
     if (!selectedVariables.length) { t('Chọn ít nhất 1 biến.', 'error'); return; }
@@ -613,7 +620,7 @@ export default function ResearchTab({ toast }) {
   // cửa sổ ngày, tên cột và điều kiện chọn mẫu. Người dùng vẫn sửa được ở các bước.
   const applySuggestion = useCallback((s) => {
     const keys = [];
-    const aggregations = {}; const windows = {}; const labels = {};
+    const aggregations = {}; const windows = {}; const labels = {}; const roles = {};
     s.variables.forEach((v, i) => {
       if (!catalogById.has(v.id)) return;
       const key = keys.some(k => k.split('@@')[0] === v.id) ? `${v.id}@@s${i}` : v.id;
@@ -621,11 +628,16 @@ export default function ResearchTab({ toast }) {
       if (v.aggregation) aggregations[key] = v.aggregation;
       if (v.window_from_days != null || v.window_to_days != null) windows[key] = { from: v.window_from_days ?? '', to: v.window_to_days ?? '' };
       if (v.survey_label) labels[key] = v.survey_label;
+      if (v.role) roles[key] = v.role;
     });
     setSelectedVariableIds(new Set(keys));
     setVariableAggregations(aggregations);
     setVariableWindows(windows);
     setVariableSurveyLabels(labels);
+    setVariableRoles(roles);
+    setVariableSampleSize({ design: s.sample_size_design || '' });
+    setVariablePeriod({ from: '', to: '' });
+    setVariableOnePerPatient(false);
     setVariableAnchor(s.anchor || null);
     setVariableConditions((s.conditions || []).filter(c => catalogById.has(c.variable_id)).map((c, i) => {
       const variable = catalogById.get(c.variable_id);
@@ -684,6 +696,10 @@ export default function ResearchTab({ toast }) {
       setVariableSurveyLabels({});
       setVariableAnchor(null);
       setVariableWindows({});
+      setVariableRoles({});
+      setVariablePeriod({ from: '', to: '' });
+      setVariableOnePerPatient(false);
+      setVariableSampleSize({ design: '' });
       t(imported
         ? `Đã tạo nghiên cứu "${name}" và nạp ${compactNumber(imported)} lượt từ kho.`
         : `Đã tạo nghiên cứu "${name}".`, 'ok');
@@ -752,6 +768,8 @@ export default function ResearchTab({ toast }) {
       variableAggregations, setVariableAggregations, variableSurveyLabels, setVariableSurveyLabels,
       variableConditions, setVariableConditions, addConditionForVariable,
       variableAnchor, setVariableAnchor, variableWindows, setVariableWindows,
+      variableRoles, setVariableRoles, variablePeriod, setVariablePeriod, variableOnePerPatient, setVariableOnePerPatient,
+      variableSampleSize, setVariableSampleSize,
       variableStudyDraft, setVariableStudyDraft,
       variablePreview, variablePreviewLoading, variablePreviewError, loadVariablePreview,
       createStudyFromVariableSelection, exportVariableDataset, variableExporting, applySuggestion, busy,
