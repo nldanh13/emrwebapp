@@ -40,14 +40,17 @@ describe('direct patient Research Store collection', () => {
     expect(backend).toContain('directPatientCode');
   });
 
-  it('runs pasted patient codes sequentially, continues after one case error, and normalizes once after the batch', () => {
+  it('fetches pasted patient codes as one batch (one EMR login), counts case errors, and queues one background normalize', () => {
     const backend = source('server/routes/research_collection_batch.js');
     expect(backend).toContain('MAX_BATCH_PATIENTS = 200');
-    expect(backend).toContain('for (let index = 0; index < cases.length; index += 1)');
-    expect(backend).toContain('await runDirectPatientNoFinalize');
-    expect(backend).toContain("one case failed");
-    expect(backend).toContain('normalizeRunOutputs(sc.runDir');
-    expect(backend).toContain('Đang lấy ca ${index + 1}/${cases.length}');
+    // Cả lô trong một lần gọi (không đăng nhập lại từng ca).
+    expect(backend).toContain('const allRows = cases.flatMap(c => c.rows);');
+    expect(backend).toContain('await runDirectPatientNoFinalize(ctx, sc, allRows');
+    // Chuẩn hóa một lần sau cả lô, chạy nền ở tiến trình riêng (không chặn máy chủ).
+    expect(backend).toContain('scheduleNormalizeAfterCollection({');
+    expect(backend).not.toContain('normalizeRunOutputs(');
+    // Ca có bước lấy dữ liệu báo lỗi (không ném lỗi) vẫn được tính là lỗi.
+    expect(backend).toContain('caseErrorsForBatch({');
     expect(backend).toContain("taskType: 'research_collect_patient_batch'");
     expect(backend).toContain('isCancelRequested(ctx.sid)');
   });

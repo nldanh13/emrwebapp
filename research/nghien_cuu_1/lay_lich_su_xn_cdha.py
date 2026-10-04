@@ -2308,18 +2308,52 @@ def login(driver, wait, cfg):
     log_ok("Đăng nhập xong")
 
 
+def _cho_roi_trang_dang_nhap(driver, timeout=20):
+    """Chờ EMR chuyển khỏi login.aspx sau khi bấm Đăng nhập (máy EMR chậm có thể mất vài giây)."""
+    het_han = time.time() + timeout
+    while time.time() < het_han:
+        if "login.aspx" not in (driver.current_url or "").lower():
+            return True
+        time.sleep(0.4)
+    return False
+
+
 def vao_noi_tru(driver, wait):
+    """Vào D/s Điều trị nội trú.
+
+    Cách chính: bấm menu bên trái. Menu có thể chưa hiện kịp (EMR chậm, menu đang thu gọn,
+    trang chủ có thông báo che) làm Selenium chờ hết giờ — khi đó mở thẳng danh sách bằng URL
+    của phiên đăng nhập hiện tại (giữ usid/scope/role), giống cách phục hồi danh sách đang dùng.
+    """
     log_step("[2] Vào Nội trú...")
-    log_click("Click menu 'Điều trị Nội trú'")
-    wait.until(EC.element_to_be_clickable(
-        (By.XPATH, "//span[contains(text(),'Điều trị Nội trú') or contains(text(),'Điều trị nội trú')]")
-    )).click()
-    time.sleep(0.4)
-    log_click("Click link 'D/s Điều trị nội trú'")
-    wait.until(EC.element_to_be_clickable((By.PARTIAL_LINK_TEXT, "D/s Điều trị nội trú"))).click()
-    log_find("Chờ txtTimKiem hiện")
-    wait.until(EC.visibility_of_element_located((By.ID, "txtTimKiem")))
-    log_ok("Đã vào danh sách nội trú")
+    if not _cho_roi_trang_dang_nhap(driver):
+        raise RuntimeError(
+            "Đăng nhập EMR chưa thành công: sau 20 giây vẫn ở trang đăng nhập. "
+            "Kiểm tra tài khoản/mật khẩu EMR, hoặc tài khoản đang bị khóa/đăng nhập ở nơi khác."
+        )
+    cho_menu = WebDriverWait(driver, 12)
+    try:
+        log_click("Click menu 'Điều trị Nội trú'")
+        cho_menu.until(EC.element_to_be_clickable(
+            (By.XPATH, "//span[contains(text(),'Điều trị Nội trú') or contains(text(),'Điều trị nội trú')]")
+        )).click()
+        time.sleep(0.4)
+        log_click("Click link 'D/s Điều trị nội trú'")
+        cho_menu.until(EC.element_to_be_clickable((By.PARTIAL_LINK_TEXT, "D/s Điều trị nội trú"))).click()
+        log_find("Chờ txtTimKiem hiện")
+        wait.until(EC.visibility_of_element_located((By.ID, "txtTimKiem")))
+        log_ok("Đã vào danh sách nội trú")
+        return
+    except Exception as loi_menu:
+        url = _noi_tru_list_url_from_current(driver)
+        if "usid=" not in url.lower():
+            raise
+        log_warn(f"Không bấm được menu 'Điều trị Nội trú' ({type(loi_menu).__name__}); mở thẳng danh sách nội trú bằng URL của phiên")
+    driver.get(url)
+    WebDriverWait(driver, 25).until(EC.visibility_of_element_located((By.ID, "txtTimKiem")))
+    if "danhsachdieutrinoitrudraw" not in (driver.current_url or "").lower():
+        raise RuntimeError("Mở danh sách nội trú bằng URL nhưng EMR chuyển sang trang khác.")
+    log_ok("Đã vào danh sách nội trú (mở bằng URL)")
 
 
 
