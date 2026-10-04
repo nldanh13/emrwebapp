@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { C, FONT_MONO, FS } from '../tokens.js';
 import { Btn, Spinner } from './shared.jsx';
 import * as api from '../api.js';
-import { compactNumber, lower, text } from './research/researchFormat.js';
+import { compactNumber, lower, saveBlob, text } from './research/researchFormat.js';
 import { ARCHIVE_API_SCOPE, ARCHIVE_SCOPE, datasetCount, todayInputDate } from './research/researchScope.js';
 import { ANCHOR_AGGREGATIONS, VARIABLE_CLINICAL_GROUPS, dedupeWideTableVariables, enhanceCatalogVariable, groupVariablesBySection } from './research/variableCatalogModel.js';
 import { buildGeneralOverviewModel, diffProgressSnapshots, summarizeStatusRows } from './research/researchStatusModel.js';
@@ -69,7 +69,7 @@ export default function ResearchTab({ toast }) {
   const [variableCatalogError, setVariableCatalogError] = useState('');
   const [variableQuery, setVariableQuery]   = useState('');
   const [questionnaireVariables, setQuestionnaireVariables] = useState('');
-  const [surveyOnly, setSurveyOnly]         = useState(true);
+  const [variableExporting, setVariableExporting] = useState(false);
   const [variableGroupFilter, setVariableGroupFilter] = useState('all');
   const [variableFillFilter, setVariableFillFilter] = useState('all');
   const [selectedVariableIds, setSelectedVariableIds] = useState(() => new Set());
@@ -509,12 +509,8 @@ export default function ResearchTab({ toast }) {
       .map(g => ({ ...g, count: counts.get(g.key) || 0 }))
       .filter(g => g.count > 0 && g.key !== 'technical');
   }, [browseCatalogVariables]);
-  const questionnaireTerms = useMemo(() => [...new Set(
-    String(questionnaireVariables || '').split(/[\n;]+/).map(x => lower(x).trim()).filter(x => x.length >= 2)
-  )], [questionnaireVariables]);
   const filteredCatalogVariables = useMemo(() => {
     const q = lower(variableQuery);
-    const surveyTerms = surveyOnly ? questionnaireTerms : [];
     const filtered = browseCatalogVariables.filter(v => {
       if (variableGroupFilter !== 'all' && v.clinical_group_key !== variableGroupFilter) return false;
       const rate = Number(v.fill_rate || 0);
@@ -522,14 +518,11 @@ export default function ResearchTab({ toast }) {
       if (variableFillFilter === 'medium' && (rate < 30 || rate >= 80)) return false;
       if (variableFillFilter === 'low' && rate >= 30) return false;
       const haystack = lower(`${v.clinical_group_label} ${v.clinical_section} ${v.source_group_label} ${v.display_label} ${v.raw_name} ${v.description}`);
-      if (q && !haystack.includes(q)) return false;
-      if (!surveyTerms.length) return true;
-      const labels = [lower(v.display_label), lower(v.raw_name)].filter(x => x.length >= 2);
-      return surveyTerms.some(term => haystack.includes(term) || labels.some(label => term.includes(label)));
+      return !q || haystack.includes(q);
     });
     // Theo nhóm lâm sàng; trong nhóm, biến nên dùng và đầy đủ hơn lên trước.
     return groupVariablesBySection(filtered).flatMap(section => section.variables);
-  }, [browseCatalogVariables, variableQuery, questionnaireTerms, surveyOnly, variableGroupFilter, variableFillFilter]);
+  }, [browseCatalogVariables, variableQuery, variableGroupFilter, variableFillFilter]);
   const selectedVariables = useMemo(() => allCatalogVariables.filter(v => selectedVariableIds.has(v.id)), [allCatalogVariables, selectedVariableIds]);
   const toggleVariable = useCallback((id) => {
     setSelectedVariableIds(prev => {
@@ -609,6 +602,22 @@ export default function ResearchTab({ toast }) {
       setVariablePreviewLoading(false);
     }
   }, [selectedVariables.length, buildVariableSpec, t]);
+
+  // Xuất ngay từ kho theo biến + điều kiện (đã ẩn định danh), không cần tạo nghiên cứu.
+  const exportVariableDataset = useCallback(async () => {
+    if (!selectedVariables.length) { t('Chọn ít nhất 1 biến.', 'error'); return; }
+    setVariableExporting(true);
+    try {
+      const name = text(variableStudyDraft.name).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '') || 'du_lieu_nghien_cuu';
+      const r = await api.exportResearchArchiveVariables({ variable_selection: buildVariableSpec(), name });
+      saveBlob(r.filename || `${name}.csv`, r.blob);
+      t(`Đã xuất ${compactNumber(variablePreview?.summary?.total || 0)} lượt điều trị, ${selectedVariables.length} biến (đã ẩn định danh).`, 'ok');
+    } catch (e) {
+      t(String(e.message || e), 'error');
+    } finally {
+      setVariableExporting(false);
+    }
+  }, [selectedVariables.length, variableStudyDraft.name, buildVariableSpec, variablePreview, t]);
 
   const createStudyFromVariableSelection = useCallback(async () => {
     const name = text(variableStudyDraft.name);
@@ -705,7 +714,7 @@ export default function ResearchTab({ toast }) {
     }} />;
     if (archiveMode === 'create') return <CreateStudyView {...{
       variableCatalog, variableCatalogLoading, variableCatalogError,
-      catalogGroupOptions, filteredCatalogVariables, allCatalogVariables, questionnaireTerms, surveyOnly, setSurveyOnly,
+      catalogGroupOptions, filteredCatalogVariables, allCatalogVariables, browseCatalogVariables,
       variableQuery, setVariableQuery, variableGroupFilter, setVariableGroupFilter, variableFillFilter, setVariableFillFilter,
       questionnaireVariables, setQuestionnaireVariables,
       selectedVariableIds, selectedVariables, toggleVariable, addVariables, addCoreVariables,
@@ -714,7 +723,7 @@ export default function ResearchTab({ toast }) {
       variableAnchor, setVariableAnchor, variableWindows, setVariableWindows,
       variableStudyDraft, setVariableStudyDraft,
       variablePreview, variablePreviewLoading, variablePreviewError, loadVariablePreview,
-      createStudyFromVariableSelection, busy,
+      createStudyFromVariableSelection, exportVariableDataset, variableExporting, busy,
     }} />;
     return collectionWorkspace;
   };
@@ -856,7 +865,7 @@ export default function ResearchTab({ toast }) {
             </div>
             <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 2, paddingBottom: creatingStudy ? 8 : 0 }}>
               {creatingStudy
-                ? 'Lấy từ dữ liệu đã có trong kho, không mở EMR. Màn hình chỉ hiện thống kê; dữ liệu chi tiết xuất ra sau khi tạo.'
+                ? 'Dán phiếu thu thập → app ghép biến với kho → đặt điều kiện chọn mẫu → xem số lượng và xuất CSV ngay. Lấy từ dữ liệu đã có, không mở EMR.'
                 : isArchive
                   ? `${archiveSummaryText}${latest?.id ? ` · đợt ${latest.id}` : ''}`
                   : [activeStudy?.description, studyCountLabel(activeStudy)].filter(Boolean).join(' · ')}

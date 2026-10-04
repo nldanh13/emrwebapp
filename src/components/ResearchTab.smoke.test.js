@@ -74,6 +74,7 @@ const CRF = {
 };
 
 function responseFor(name) {
+  if (name === 'exportResearchArchiveVariables') return { filename: 'apr.csv', blob: new Blob(['a']) };
   if (name === 'getResearchStudyCrf') return { status: 'ok', ...CRF };
   if (name === 'saveResearchStudyCrfEntry') return { status: 'ok', message: 'Đã lưu phiếu NC0001.' };
   if (name === 'getResearchArchivePipeline') return { status: 'ok', pipeline: PIPELINE };
@@ -107,7 +108,8 @@ let container;
 let root;
 const flush = async () => { for (let i = 0; i < 5; i += 1) await act(async () => { await Promise.resolve(); }); };
 const setInput = async (el, value) => {
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
   await act(async () => { setter.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); });
   await flush();
 };
@@ -164,7 +166,7 @@ describe('ResearchTab (khói)', () => {
 
   it('Tạo nghiên cứu đi theo 4 bước; bước kiểm tra chỉ hiện thống kê, không hiện dữ liệu từng lượt', async () => {
     await clickText('Tạo nghiên cứu mới');
-    expect(container.textContent).toContain('Thông tin nghiên cứu');
+    expect(container.textContent).toContain('Thông tin & phiếu');
     const next = () => [...container.querySelectorAll('button')].find(b => b.textContent.includes('Tiếp tục'));
     expect(next().disabled, 'chưa có tên thì chưa sang bước 2').toBe(true);
     await setInput(container.querySelector('#study-name'), 'Đề tài thử');
@@ -243,5 +245,27 @@ describe('ResearchTab (khói)', () => {
     expect([studyId, code]).toEqual([DONE_STUDY.id, 'NC0001']);
     expect(body.timepoints.T24.values.nhiet_do_max).toBe('38.4');
     expect('so_dien_thoai' in body.values).toBe(false);
+  });
+
+  it('Dán phiếu: tự ghép dòng với biến trong kho, đặt tên cột theo phiếu, báo dòng không có, xuất CSV ngay', async () => {
+    globalThis.URL.createObjectURL = globalThis.URL.createObjectURL || (() => 'blob:x');
+    globalThis.URL.revokeObjectURL = globalThis.URL.revokeObjectURL || (() => {});
+    await clickText('Tạo nghiên cứu mới');
+    await setInput(container.querySelector('#study-name'), 'APR Zoledronic');
+    await setInput(container.querySelector('#study-survey'), '2. Giới tính: ☐ 0. Nam ☐1. Nữ\n5. Chiều cao: ....... (cm)');
+    await clickText('Tiếp tục');
+    let text = container.textContent;
+    expect(text).toContain('Ghép phiếu với dữ liệu trong kho');
+    expect(text).toContain('1/2 dòng của phiếu có biến tương ứng');
+    expect(text).toContain('1 dòng không có trong kho');
+    await clickText('Chọn 1 biến đã ghép');
+    await clickText('Tiếp tục');
+    await clickText('Tiếp tục');
+    text = container.textContent;
+    expect(text).toContain('Kiểm tra & xuất dữ liệu');
+    await clickText('Xuất dữ liệu (CSV)');
+    const payload = api.exportResearchArchiveVariables.mock.calls.at(-1)[0];
+    expect(payload.name).toBe('APR_Zoledronic');
+    expect(payload.variable_selection.selected_variables.map(v => v.survey_label)).toEqual(['Giới tính']);
   });
 });

@@ -1,19 +1,19 @@
-// Tạo nghiên cứu mới từ kho gốc, theo trình tự 4 bước:
-//   1 Thông tin nghiên cứu (tên, mục tiêu, danh sách biến trên phiếu khảo sát — không bắt buộc)
-//   2 Chọn biến (xem độ đầy đủ của từng biến trong kho)
+// Tạo nghiên cứu / xuất dữ liệu theo phiếu, từ dữ liệu đã có trong kho (không mở EMR), 4 bước:
+//   1 Thông tin & phiếu: tên, mốc thời gian, dán nguyên các dòng biến của phiếu thu thập
+//   2 Ghép biến: app tự ghép từng dòng phiếu với một biến trong kho (đổi được), thêm biến khác
 //   3 Điều kiện chọn mẫu (không bắt buộc)
-//   4 Kiểm tra bằng thống kê mô tả rồi tạo
-// Màn hình chỉ hiển thị thống kê, không hiển thị dữ liệu từng lượt. Dữ liệu chi tiết chỉ lấy ra
-// khi cần xử lý số liệu, bằng nút Xuất CSV ở nghiên cứu sau khi tạo.
+//   4 Kiểm tra & xuất: sàng lọc mẫu theo từng điều kiện, thống kê mô tả, Xuất CSV ngay;
+//     "Lưu thành nghiên cứu" khi cần theo dõi tiếp hoặc lấy bổ sung từ EMR.
+// Màn hình chỉ hiện thống kê, không hiện dữ liệu từng lượt.
 import { useEffect, useMemo, useState } from 'react';
 import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import { compactNumber, text } from './researchFormat.js';
 import { inp, EmptyState } from './researchUi.jsx';
-import { ANCHOR_AGGREGATIONS, VARIABLE_AGGREGATIONS, operatorLabel, variableTypeLabel } from './variableCatalogModel.js';
+import { ANCHOR_AGGREGATIONS, VARIABLE_AGGREGATIONS, matchSurveyLines, operatorLabel, variableTypeLabel } from './variableCatalogModel.js';
 import { CohortSummary, FillBar, VariableStatsTable } from './researchStats.jsx';
 
-const STEPS = ['Thông tin nghiên cứu', 'Chọn biến', 'Điều kiện chọn mẫu', 'Kiểm tra và tạo'];
+const STEPS = ['Thông tin & phiếu', 'Ghép biến', 'Điều kiện chọn mẫu', 'Kiểm tra & xuất dữ liệu'];
 const FILL_OPTIONS = [['all', 'Mọi mức đầy đủ'], ['high', 'Có dữ liệu ≥ 80%'], ['medium', '30–79%'], ['low', 'Dưới 30%']];
 // Bảng một dòng mỗi lượt: không cần chọn cách tổng hợp.
 const SINGLE_ROW_TABLES = ['analysis_ready', 'encounters', 'patients', 'cohort', 'research_source'];
@@ -92,11 +92,11 @@ function AnchorPicker({ anchor, setAnchor, drugNames }) {
   );
 }
 
-function StepInfo({ draft, setDraft, questionnaire, setQuestionnaire, questionnaireTerms, anchor, setAnchor, drugNames }) {
+function StepInfo({ draft, setDraft, questionnaire, setQuestionnaire, surveyLineCount, anchor, setAnchor, drugNames }) {
   return (
     <div style={{ ...card, display: 'grid', gap: 14, maxWidth: 760 }}>
       <div>
-        <label style={label} htmlFor="study-name">Tên nghiên cứu *</label>
+        <label style={label} htmlFor="study-name">Tên nghiên cứu / bộ dữ liệu *</label>
         <input id="study-name" value={draft.name} autoFocus
           onChange={e => setDraft(p => ({ ...p, name: e.target.value }))}
           placeholder="VD: Gãy cổ xương đùi 2026" style={{ ...inp, width: '100%', height: 34 }} />
@@ -110,25 +110,85 @@ function StepInfo({ draft, setDraft, questionnaire, setQuestionnaire, questionna
       </div>
       <AnchorPicker anchor={anchor} setAnchor={setAnchor} drugNames={drugNames} />
       <div>
-        <label style={label} htmlFor="study-survey">Biến trên phiếu khảo sát (không bắt buộc)</label>
+        <label style={label} htmlFor="study-survey">Dán các dòng biến của phiếu thu thập</label>
         <textarea id="study-survey" value={questionnaire} rows={4}
           onChange={e => setQuestionnaire(e.target.value)}
-          placeholder={'Mỗi biến một dòng, ví dụ:\nTuổi\nGiới\nHb trước mổ\nPhương pháp phẫu thuật'}
+          placeholder={'Dán nguyên các dòng từ phiếu, mỗi biến một dòng, ví dụ:\n1. Năm sinh: ……..\n2. Giới tính: ☐ 0. Nam ☐1. Nữ\nNồng độ Vitamin D [25(OH)D]: ........... (ng/mL)\nSố lượng Bạch cầu (WBC): ........... (G/L)'}
           style={{ ...inp, width: '100%', height: 'auto', padding: '7px 8px', resize: 'vertical', boxSizing: 'border-box' }} />
         <div style={hint}>
-          {questionnaireTerms.length
-            ? `${questionnaireTerms.length} biến trên phiếu. Ở bước sau, kho sẽ gợi ý các biến khớp với phiếu.`
-            : 'Nếu có phiếu khảo sát, dán danh sách biến vào đây để kho tự gợi ý biến tương ứng.'}
+          {surveyLineCount
+            ? `${surveyLineCount} dòng. Ở bước sau, app tự ghép từng dòng với biến trong kho và đặt tên cột theo phiếu.`
+            : 'Không cần gõ lại: dán thẳng từ file Word/PDF của phiếu, phần chấm chấm và ô lựa chọn sẽ được bỏ qua. Không có phiếu thì chọn biến bằng tay ở bước sau.'}
         </div>
       </div>
     </div>
   );
 }
 
+// Tên cột lấy từ dòng trên phiếu: bỏ số thứ tự và phần điền sau dấu ":".
+const surveyColumnLabel = (line) => String(line).replace(/^\s*\d+[.)]\s*/, '').split(':')[0].replace(/[.…_☐]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+
+// Ghép từng dòng của phiếu với một biến trong kho. Tự chọn biến khớp nhất; người dùng đổi được.
+function SurveyMapping({ surveyMatches, addVariables, setVariableSurveyLabels, selectedVariableIds }) {
+  const { rows, choice, setChoice } = surveyMatches;
+  const chosen = rows.map(r => ({ r, v: r.candidates.find(c => c.id === choice[r.line]) || null }));
+  const matched = chosen.filter(x => x.v);
+  const missing = chosen.filter(x => !x.v);
+  const applied = matched.length > 0 && matched.every(x => selectedVariableIds.has(x.v.id));
+  const apply = () => {
+    addVariables(matched.map(x => x.v));
+    setVariableSurveyLabels(prev => ({ ...prev, ...Object.fromEntries(matched.map(x => [x.v.id, surveyColumnLabel(x.r.line) || x.v.display_label])) }));
+  };
+  return (
+    <section style={{ ...card, flex: '1 1 100%', display: 'grid', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 300px' }}>
+          <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Ghép phiếu với dữ liệu trong kho</div>
+          <div style={{ fontSize: FS.xs, color: C.text3 }}>
+            <b style={{ color: C.green }}>{matched.length}</b>/{rows.length} dòng của phiếu có biến tương ứng trong kho. Kiểm tra lại ô "Biến trong kho" nếu ghép chưa đúng.
+          </div>
+        </div>
+        <Btn variant={applied ? 'default' : 'solidPrimary'} onClick={apply} disabled={!matched.length} style={{ height: 32 }}>
+          {applied ? 'Đã chọn các biến đã ghép' : `Chọn ${matched.length} biến đã ghép`}
+        </Btn>
+      </div>
+      <div style={{ maxHeight: 340, overflow: 'auto', border: `1px solid ${C.border2}`, borderRadius: 7 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.sm, minWidth: 640 }}>
+          <thead style={{ position: 'sticky', top: 0, background: C.surface2 }}><tr>
+            {[['Dòng trên phiếu', '38%'], ['Biến trong kho', '42%'], ['Có dữ liệu', undefined]].map(([h, w]) => (
+              <th key={h} style={{ width: w, textAlign: 'left', padding: '6px 10px', fontSize: FS.xs, color: C.text2, borderBottom: `1px solid ${C.border2}` }}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {chosen.map(({ r, v }) => (
+              <tr key={r.line} style={{ borderBottom: `1px solid ${C.border2}` }}>
+                <td style={{ padding: '5px 10px', color: C.text }} title={r.line}>{surveyColumnLabel(r.line) || r.line}</td>
+                <td style={{ padding: '4px 10px' }}>
+                  <select value={choice[r.line] || ''} onChange={e => setChoice(r.line, e.target.value)} aria-label={`Biến cho ${surveyColumnLabel(r.line)}`}
+                    style={{ ...inp, width: '100%', height: 30, color: v ? C.text : C.amber }}>
+                    <option value="">— Không có trong kho</option>
+                    {r.candidates.map(c => <option key={c.id} value={c.id}>{c.display_label} · {c.fill_rate}% có dữ liệu</option>)}
+                  </select>
+                </td>
+                <td style={{ padding: '5px 10px' }}>{v ? <FillBar rate={v.fill_rate} /> : <span style={{ fontSize: FS.xs, color: C.amber }}>cần nguồn khác</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {!!missing.length && (
+        <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.5 }}>
+          <b style={{ color: C.amber }}>{missing.length} dòng không có trong kho</b> (EMR không ghi hoặc kho chưa lấy): {missing.map(x => surveyColumnLabel(x.r.line)).slice(0, 25).join(' · ')}{missing.length > 25 ? ' …' : ''}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function StepVariables(props) {
   const {
     variableCatalog, variableCatalogLoading, variableCatalogError,
-    catalogGroupOptions, filteredCatalogVariables, questionnaireTerms, surveyOnly, setSurveyOnly,
+    catalogGroupOptions, filteredCatalogVariables, surveyMatches,
     variableQuery, setVariableQuery, variableGroupFilter, setVariableGroupFilter, variableFillFilter, setVariableFillFilter,
     selectedVariableIds, selectedVariables, toggleVariable, addVariables, addCoreVariables,
     variableAggregations, setVariableAggregations, variableSurveyLabels, setVariableSurveyLabels,
@@ -148,10 +208,11 @@ function StepVariables(props) {
     border: `1px solid ${active ? C.blue : C.border2}`, background: active ? C.blueBg : C.surface,
     color: active ? C.blue : C.text2, fontSize: FS.sm, fontWeight: active ? 700 : 500, whiteSpace: 'nowrap',
   });
-  const suggested = filteredCatalogVariables.filter(v => v.recommended && Number(v.fill_rate || 0) >= 30 && !selectedVariableIds.has(v.id));
   return (
     <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      {!!surveyMatches?.rows.length && <SurveyMapping {...props} />}
       <div style={{ ...card, flex: '1 1 560px', minWidth: 0, display: 'grid', gap: 10 }}>
+        <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>{surveyMatches?.rows.length ? 'Thêm biến khác từ kho' : 'Chọn biến từ kho'}</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <input value={variableQuery} onChange={e => setVariableQuery(e.target.value)} aria-label="Tìm biến"
             placeholder="Tìm biến: tuổi, Hb, creatinine, X-quang, kháng sinh..." style={{ ...inp, flex: '1 1 240px', height: 32 }} />
@@ -159,12 +220,6 @@ function StepVariables(props) {
             {FILL_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </div>
-        {!!questionnaireTerms.length && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: FS.sm, color: C.text2 }}>
-            <input type="checkbox" checked={surveyOnly} onChange={e => setSurveyOnly(e.target.checked)} />
-            Chỉ hiện biến khớp phiếu khảo sát ({questionnaireTerms.length} mục)
-          </label>
-        )}
         <div className="emr-hscroll" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
           <button type="button" style={chip(variableGroupFilter === 'all')} onClick={() => setVariableGroupFilter('all')}>
             Tất cả {catalogGroupOptions.reduce((sum, g) => sum + Number(g.count || 0), 0)}
@@ -178,9 +233,6 @@ function StepVariables(props) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: FS.xs, color: C.text3 }}>
           <span>{compactNumber(filteredCatalogVariables.length)} biến</span>
           <Btn onClick={addCoreVariables} style={{ height: 28, fontSize: FS.xs, marginLeft: 'auto' }}>+ Biến nền (tuổi, giới, ngày vào/ra, chẩn đoán)</Btn>
-          {!!questionnaireTerms.length && surveyOnly && (
-            <Btn onClick={() => addVariables(suggested)} disabled={!suggested.length} style={{ height: 28, fontSize: FS.xs }}>+ Chọn {suggested.length} biến gợi ý</Btn>
-          )}
         </div>
         {!filteredCatalogVariables.length
           ? <EmptyState title="Không có biến phù hợp" hint="Thử từ khóa khác, chọn nhóm Tất cả hoặc bỏ lọc mức đầy đủ." />
@@ -315,6 +367,28 @@ function StepReview({ draft, selectedVariables, variableConditions, variablePrev
       {variablePreviewLoading && !summary && <div style={{ ...card, color: C.text2 }}><Spinner size={11} /> Đang tính thống kê trên kho...</div>}
       {summary && (
         <>
+          {summary.funnel?.length > 1 && (
+            <section style={card}>
+              <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text, marginBottom: 8 }}>Sàng lọc mẫu theo điều kiện</div>
+              <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 6 }}>
+                {summary.funnel.map((f, i) => {
+                  const first = summary.funnel[0].encounters || 1;
+                  const removed = i ? summary.funnel[i - 1].encounters - f.encounters : 0;
+                  return (
+                    <li key={i} style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1.4fr) minmax(120px, 2fr) auto', gap: 10, alignItems: 'center', fontSize: FS.sm }}>
+                      <span style={{ color: C.text, fontWeight: i ? 500 : 700 }}>{i ? `+ ${f.label}` : f.label}</span>
+                      <span style={{ height: 8, background: C.surface2, borderRadius: 4, overflow: 'hidden' }}>
+                        <span style={{ display: 'block', height: '100%', width: `${Math.max(1, (f.encounters / first) * 100)}%`, background: i === summary.funnel.length - 1 ? C.green : C.blue }} />
+                      </span>
+                      <span style={{ color: C.text2, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                        <b style={{ color: C.text }}>{compactNumber(f.encounters)}</b> lượt · {compactNumber(f.patients)} người bệnh{removed ? <span style={{ color: C.text3 }}> (loại {compactNumber(removed)})</span> : null}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+            </section>
+          )}
           <section style={card}>
             <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text, marginBottom: 8 }}>Mẫu nghiên cứu</div>
             <CohortSummary summary={summary} />
@@ -338,11 +412,20 @@ function StepReview({ draft, selectedVariables, variableConditions, variablePrev
 
 export function CreateStudyView(props) {
   const {
-    variableStudyDraft, setVariableStudyDraft, questionnaireVariables, setQuestionnaireVariables, questionnaireTerms,
+    variableStudyDraft, setVariableStudyDraft, questionnaireVariables, setQuestionnaireVariables,
     selectedVariables, variablePreview, variablePreviewLoading, loadVariablePreview,
     createStudyFromVariableSelection, busy,
   } = props;
   const [step, setStep] = useState(1);
+  // Dòng của phiếu (giữ nguyên chữ để làm tên cột) và biến ghép cho từng dòng.
+  const surveyLines = useMemo(() => [...new Set(String(questionnaireVariables || '').split(/\n+/).map(x => x.trim()).filter(x => x.length >= 2))], [questionnaireVariables]);
+  const surveyRows = useMemo(() => matchSurveyLines(surveyLines, props.browseCatalogVariables || []), [surveyLines, props.browseCatalogVariables]);
+  const [surveyOverrides, setSurveyOverrides] = useState({});
+  const surveyMatches = useMemo(() => ({
+    rows: surveyRows,
+    choice: Object.fromEntries(surveyRows.map(r => [r.line, surveyOverrides[r.line] ?? (r.best?.id || '')])),
+    setChoice: (line, id) => setSurveyOverrides(prev => ({ ...prev, [line]: id })),
+  }), [surveyRows, surveyOverrides]);
   // Mốc "dùng thuốc" phải có tên thuốc (≥ 3 ký tự) thì mới sang bước sau.
   const anchorReady = props.variableAnchor?.kind !== 'drug' || text(props.variableAnchor?.drug).length >= 3;
   const hasName = Boolean(text(variableStudyDraft.name)) && anchorReady;
@@ -368,9 +451,9 @@ export function CreateStudyView(props) {
       <StepBar step={step} canOpen={canOpen} onOpen={setStep} />
 
       {step === 1 && <StepInfo draft={variableStudyDraft} setDraft={setVariableStudyDraft}
-        questionnaire={questionnaireVariables} setQuestionnaire={setQuestionnaireVariables} questionnaireTerms={questionnaireTerms}
+        questionnaire={questionnaireVariables} setQuestionnaire={setQuestionnaireVariables} surveyLineCount={surveyLines.length}
         anchor={props.variableAnchor} setAnchor={props.setVariableAnchor} drugNames={drugNames} />}
-      {step === 2 && <StepVariables {...props} />}
+      {step === 2 && <StepVariables {...props} surveyMatches={surveyMatches} />}
       {step === 3 && <StepConditions {...props} />}
       {step === 4 && <StepReview draft={variableStudyDraft} {...props} />}
 
@@ -380,14 +463,20 @@ export function CreateStudyView(props) {
           {step === 1 && !hasName && (anchorReady ? 'Nhập tên nghiên cứu để tiếp tục.' : 'Nhập tên thuốc làm mốc (ít nhất 3 ký tự).')}
           {step === 2 && !hasVariables && 'Chọn ít nhất 1 biến để tiếp tục.'}
           {step === 3 && !conditionsReady && 'Nhập giá trị cho mọi điều kiện, hoặc xóa điều kiện không dùng.'}
-          {step === 4 && 'Dữ liệu chi tiết không hiện ở đây. Sau khi tạo, xuất CSV ở mục Thống kê & xuất dữ liệu của nghiên cứu khi cần xử lý số liệu.'}
+          {step === 4 && 'Xuất ngay từ dữ liệu đã có trong kho, đã ẩn định danh. "Lưu thành nghiên cứu" khi cần theo dõi tiếp hoặc lấy bổ sung từ EMR.'}
         </span>
         {step < 4
           ? <Btn variant="solidPrimary" onClick={() => setStep(step + 1)} disabled={!canNext} style={{ height: 34, padding: '0 18px' }}>Tiếp tục →</Btn>
-          : <Btn variant="solidPrimary" onClick={createStudyFromVariableSelection}
-              disabled={busy || !variablePreview?.summary || !hasName || !hasVariables} loading={busy} style={{ height: 34, padding: '0 18px' }}>
-              Tạo nghiên cứu
-            </Btn>}
+          : <>
+              <Btn onClick={createStudyFromVariableSelection}
+                disabled={busy || !variablePreview?.summary || !hasName || !hasVariables} loading={busy} style={{ height: 34 }}>
+                Lưu thành nghiên cứu
+              </Btn>
+              <Btn variant="solidSuccess" onClick={props.exportVariableDataset}
+                disabled={props.variableExporting || !variablePreview?.summary || !hasName || !hasVariables} loading={props.variableExporting} style={{ height: 34, padding: '0 18px' }}>
+                Xuất dữ liệu (CSV) · {compactNumber(variablePreview?.summary?.total || 0)} lượt
+              </Btn>
+            </>}
       </div>
     </div>
   );

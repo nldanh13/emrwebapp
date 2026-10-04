@@ -24,6 +24,14 @@ const VARIABLE_FRIENDLY_LABELS = {
   ward: 'Buồng/khoa/phòng',
   bed: 'Giường',
   primary_diagnosis: 'Chẩn đoán chính',
+  diagnosis_raw: 'Chẩn đoán',
+  admission_diagnosis: 'Chẩn đoán vào viện',
+  comorbidity_text: 'Bệnh kèm',
+  complication_text: 'Biến chứng',
+  encounter_count: 'Số đợt điều trị',
+  days_from_admission: 'Số ngày từ lúc vào viện',
+  days_from_surgery: 'Số ngày từ lúc phẫu thuật',
+  days_from_discharge: 'Số ngày từ lúc ra viện',
   discharge_diagnosis: 'Chẩn đoán ra viện',
   diagnosis_text: 'Nội dung chẩn đoán',
   diagnosis_type: 'Loại chẩn đoán',
@@ -326,7 +334,62 @@ function aggregationLabel(value) {
   return VARIABLE_AGGREGATIONS.find(([key]) => key === value)?.[1] || 'Liệt kê giá trị';
 }
 
+// ── Ghép dòng trên phiếu khảo sát với biến trong kho ──────────────────────────
+const plain = (value) => String(value ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, ' ').trim();
+// Bỏ phần chú thích/đơn vị trên phiếu: "Chiều cao: ....... (cm)" → "chieu cao".
+// Phần sau dấu ":" là chỗ điền/ô lựa chọn nên bỏ; không có ":" thì bỏ chú thích trong ngoặc tròn.
+const surveyKey = (line) => {
+  const text = String(line).replace(/^\s*\d+[.)]\s*/, '');
+  const head = text.includes(':') ? text.split(':')[0] : text.replace(/\((?:[^()]*)\)\s*$/g, ' ');
+  return plain(head.replace(/[.…_☐]+/g, ' '));
+};
+// Từ chung chung trên phiếu/danh mục, không giúp phân biệt biến.
+const STOP_WORDS = new Set(['va', 'cua', 'trong', 'co', 'khong', 'la', 'cac', 'nhung', 'so', 'muc', 'do', 'ty', 'le', 'ngay', 'gio',
+  'su', 'dung', 'nhom', 'thuoc', 'luong', 'nong', 'chi', 'xet', 'nghiem', 'ket', 'qua', 'benh', 'tien', 'tinh', 'trang']);
+const words = (text) => plain(text).split(' ').filter(w => w.length >= 2 && !STOP_WORDS.has(w));
+
+function matchScore(key, variable) {
+  const label = plain(variable.display_label);
+  const raw = plain(variable.raw_name);
+  if (!key) return 0;
+  if (key === label || key === raw) return 100;
+  let score = 0;
+  if (label.length >= 3 && (label.includes(key) || key.includes(label))) score = 70 - Math.abs(label.length - key.length) / 4;
+  const a = new Set(words(key));
+  const b = new Set([...words(variable.display_label), ...words(variable.raw_name)]);
+  if (a.size && b.size) {
+    // Khớp cả một phần từ (≥ 4 ký tự): "statin" ↔ "atorvastatin".
+    const common = [...a].reduce((n, w) => n + (b.has(w) ? 1 : (w.length >= 4 && [...b].some(x => x.length >= 4 && (x.includes(w) || w.includes(x))) ? 0.8 : 0)), 0);
+    score = Math.max(score, (common / a.size) * 55 * (common / Math.max(b.size, 1)) ** 0.3);
+  }
+  if (!score) return 0;
+  return score + (variable.recommended ? 4 : 0) + Number(variable.fill_rate || 0) / 25;
+}
+
+// Chữ viết tắt trong ngoặc trên phiếu thường là tên xét nghiệm: "Số lượng Bạch cầu (WBC)" → "wbc".
+const surveyKeys = (line) => {
+  const head = String(line).includes(':') ? String(line).split(':')[0] : String(line);
+  const inner = [...head.matchAll(/[([]([^()[\]]{2,30})[)\]]/g)].map(m => plain(m[1])).filter(k => k.length >= 2);
+  return [surveyKey(line), ...inner].filter(Boolean);
+};
+
+// Mỗi dòng trên phiếu → tối đa 6 biến ứng viên, biến tốt nhất đứng đầu (điểm ≥ 30 mới coi là khớp).
+function matchSurveyLines(lines, variables) {
+  return lines.map(line => {
+    const keys = surveyKeys(line);
+    const candidates = variables
+      .map(v => ({ v, score: Math.max(...keys.map(key => matchScore(key, v))) }))
+      .filter(x => x.score > 0)
+      .sort((x, y) => y.score - x.score)
+      .slice(0, 6);
+    return { line, candidates: candidates.map(x => x.v), best: candidates[0]?.score >= 30 ? candidates[0].v : null };
+  });
+}
+
 export {
+  matchSurveyLines,
+  surveyKey,
   ANCHOR_AGGREGATIONS,
   VARIABLE_FRIENDLY_LABELS,
   VARIABLE_TECHNICAL_RE,
