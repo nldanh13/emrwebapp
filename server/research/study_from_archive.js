@@ -128,7 +128,10 @@ function copyFilteredRaw(archiveRunDir, runDir, index) {
 
 // Trạng thái từng phần theo kho (extract_status của kho, theo mã lượt): chỉ mang sang phần kho đã
 // lấy xong ('done'/'empty'); phần còn thiếu/lỗi để trống cho Thu thập tự động lấy từ EMR.
-function buildProgressFromArchive(archiveRunDir, links) {
+// Ghi theo đúng định dạng worker ghi (để cả bảng chuẩn hóa lẫn sổ "Thu thập tự động" đều nhận):
+// XN/CĐHA có số dòng + dấu đã lưu từng tab; hành chánh có Mã BN + ngày vào viện để ghép lượt.
+function buildProgressFromArchive(archiveRunDir, links, encounterRows = []) {
+  const encById = new Map(encounterRows.map(e => [String(e.encounter_id || '').trim(), e]));
   const status = readCsvTable(path.join(archiveRunDir, 'extract_status.csv'), Number.MAX_SAFE_INTEGER).rows || [];
   const byEid = new Map(status.map(r => [String(r.encounter_id || '').trim(), r]));
   const at = nowIso();
@@ -139,7 +142,16 @@ function buildProgressFromArchive(archiveRunDir, links) {
   for (const link of links) {
     const st = byEid.get(String(link.encounter_id || '').trim());
     if (!st || !link.encounter_id) continue;
-    const base = { encounter_id: link.encounter_id, research_code: link.research_code, ma_bn: link.patient_code, source: 'archive', updated_at: at };
+    const enc = encById.get(String(link.encounter_id).trim()) || {};
+    const admission = String(enc.admission_date || '').trim();
+    const noitru = String(enc.emr_noitru_id || '').trim();
+    const base = {
+      encounter_id: link.encounter_id, research_code: link.research_code, ma_bn: link.patient_code,
+      'Mã BN': link.patient_code, 'Mã NC': link.research_code,
+      ...(noitru ? { 'Mã nội trú': noitru } : {}),
+      ...(admission ? { admission_date: admission, 'Ngày vào viện': admission } : {}),
+      source: 'archive', updated_at: at,
+    };
     // Kho có thể đã có dữ liệu mà trạng thái chưa ghi "đã lấy" (vd. lúc chuẩn hóa lấy bổ sung từ Kho
     // người bệnh): có dòng XN/CĐHA hoặc y lệnh của lượt thì coi phần đó đã có, khỏi mở EMR lấy lại.
     const labs = Number(st.lab_count || 0);
@@ -149,14 +161,19 @@ function buildProgressFromArchive(archiveRunDir, links) {
     if (xnDone) {
       const xn = GOT.has(st.xn_status) ? st.xn_status : (labs > 0 ? 'done' : 'empty');
       const cdha = GOT.has(st.cdha_status) ? st.cdha_status : (imaging > 0 ? 'done' : 'empty');
-      progress[link.encounter_id] = { ...base, popup: 'done', xn, cdha, status: 'done', committed: true };
+      progress[link.encounter_id] = {
+        ...base, popup: 'done', xn, cdha, status: 'done', committed: true,
+        tab_saved: { xn: true, cdha: true }, tab_at: { xn: at, cdha: at },
+        counts: { xn: labs, cdha: imaging },
+      };
     }
     for (const file of HCHANH_FILES) {
       let value = String(st[`${file}_status`] || '').trim();
       if (!GOT.has(value) && file === 'order_history' && meds > 0) value = 'done';
       if (!GOT.has(value)) continue;
       const target = file === 'order_history' ? orders : hchanh;
-      target[`${link.encounter_id}#${file}`] = { ...base, files: [file], status: value };
+      const rows = file === 'order_history' ? meds : 0;
+      target[`${link.encounter_id}#${file}`] = { ...base, files: [file], status: 'done', rows: { [file]: rows }, finished_at: at, ...(value === 'empty' ? { empty: true } : {}) };
     }
     carried += 1;
   }
@@ -195,7 +212,7 @@ function seedStudyRunFromArchive(study, { runId = '' } = {}) {
   const encounterRows = readCsvTable(path.join(archiveRunDir, 'encounters.csv'), Number.MAX_SAFE_INTEGER).rows || [];
   const index = buildCohortIndex(cohortRows, links, encounterRows);
   const rawCounts = copyFilteredRaw(archiveRunDir, runDir, index);
-  const { progress, hchanh, orders, carried } = buildProgressFromArchive(archiveRunDir, links);
+  const { progress, hchanh, orders, carried } = buildProgressFromArchive(archiveRunDir, links, encounterRows);
   writeJsonAtomic(path.join(runDir, 'progress.json'), progress);
   writeJsonAtomic(path.join(runDir, 'hchanh_auto_progress.json'), hchanh);
   writeJsonAtomic(path.join(runDir, 'order_history_auto_progress.json'), orders);

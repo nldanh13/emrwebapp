@@ -105,6 +105,18 @@ fs.writeFileSync(studyMetaPath(STUDY), JSON.stringify({ id: STUDY, name: 'Zol', 
     assert.ok(fs.existsSync(path.join(sRun, 'analysis_selected.csv')), 'có bảng phân tích theo biến đã chọn');
   });
 
+  await test('"Thu thập tự động" chỉ định lấy phần kho còn thiếu, không mở EMR lấy lại phần đã có', async () => {
+    const sRun = path.join(runsDir(STUDY), '20260301_000000');
+    const { syncCollectionLedger } = require('../server/research/collection_runtime');
+    const { readResearchHchanhSourceRows } = require('../server/research/research_source');
+    const collection = require('../server/research/collection');
+    const ledger = syncCollectionLedger(sRun, readResearchHchanhSourceRows(sRun).rows);
+    const plan = collection.planCollection(ledger, {});
+    assert.strictEqual(plan.tasks.length, 1);
+    // Kho: XN có, CĐHA không có dòng, hồ sơ xong, y lệnh có; ra viện lỗi; lượt không có phẫu thuật.
+    assert.deepStrictEqual(plan.tasks[0].parts.filter(p => p !== 'surgery').sort(), ['discharge']);
+  });
+
   await test('nghiên cứu không chọn mẫu từ kho: báo rõ, không tạo đợt chạy', async () => {
     fs.mkdirSync(path.dirname(studyMetaPath('khac')), { recursive: true });
     fs.writeFileSync(studyMetaPath('khac'), JSON.stringify({ id: 'khac', name: 'Khác' }));
