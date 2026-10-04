@@ -38,9 +38,9 @@ Sự cố trước buộc phải phục hồi từ Raw JSON vì không có backu
 
 Marker lịch sử y lệnh chỉ là tín hiệu sàng lọc. Không có marker **không chứng minh** không có phẫu thuật.
 
-**Biện pháp hiện tại:** `collection_integrity.json` tách `ok_zero_unverified` khỏi `verified_empty`; tuyệt đối không dùng `ok + 0` làm bằng chứng “không phẫu thuật”. Các ca này phải được xác minh/thu thập lại trước khi dùng kết luận âm tính.
+**Biện pháp:** `hchanh_fetch_entry.py` là entrypoint tương thích ngược cho worker Hành chánh. Riêng luồng `hchanh_auto` của nghiên cứu, nếu không có marker PT nhưng có khoảng ngày đợt điều trị, worker vẫn mở/xác minh D/s Phẫu thuật trên toàn khoảng admission–discharge. Kết quả zero sau lookup thật được ghi `fetch_status=empty` + `verified_surgery_list_empty`; nếu không thể xác minh thì là `partial`, không phải `ok`.
 
-> Việc tối ưu worker để luôn mở/xác minh D/s Phẫu thuật trong research mode là bước acquisition cần duy trì: nếu chưa có `verified_lookup/verified_empty`, ca zero-row vẫn là **unverified**, không phải negative.
+`collection_integrity.json` coi legacy `ok + 0` không có bằng chứng lookup là `SURGERY_ZERO_UNVERIFIED` **blocking**. Chỉ `empty` sau lookup thật mới là `verified_empty`.
 
 ### 6. Dùng run lịch sử/stale và normalize khi thu thập chưa xong
 
@@ -52,7 +52,7 @@ Một file chuẩn hóa có timestamp mới không chứng minh raw đã đầy 
 
 Ghép theo mã BN hoặc chẩn đoán có thể kéo PT từ đợt khác.
 
-**Biện pháp:** ưu tiên encounter đã xác lập + admission/discharge window; fallback chỉ khi có mốc ngày PT nằm trong đúng đợt và kết quả là duy nhất. Không tự ép 8 ca `ENCOUNTER_UNRESOLVED`.
+**Biện pháp:** ưu tiên encounter đã xác lập + admission/discharge window; fallback chỉ khi có mốc ngày PT nằm trong đúng đợt và kết quả là duy nhất. Encounter không duy nhất phải giữ unresolved, không tự ép ghép.
 
 ## SOP chuẩn từ nay
 
@@ -60,7 +60,8 @@ Ghép theo mã BN hoặc chẩn đoán có thể kéo PT từ đợt khác.
 
 - Lưu run id ngay từ đầu.
 - Lấy đủ các file được yêu cầu cho từng ca.
-- Surgery zero-row chỉ được coi là âm tính khi worker đã thực sự kiểm tra màn hình surgery và lưu bằng chứng `verified_lookup/verified_empty`.
+- Với research `hchanh_auto`, surgery được xác minh trực tiếp trên D/s Phẫu thuật trong toàn đợt; marker y lệnh chỉ hỗ trợ, không còn là điều kiện để bỏ qua lookup.
+- Surgery zero-row chỉ được coi là explicit empty sau khi worker đã thực sự kiểm tra màn hình surgery (`fetch_status=empty`, reason `verified_surgery_list_empty`).
 - Không điền “Không” từ sự vắng mặt của raw.
 
 ### B. Preflight
@@ -75,8 +76,8 @@ Chạy normalize qua queue/UI hoặc `normalize_safe.js`. Preflight sẽ:
 Các mã cần xử lý:
 
 - `SURGERY_COLLECTION_INCOMPLETE`: blocking;
+- `SURGERY_ZERO_UNVERIFIED`: blocking;
 - `SURGERY_RAW_JSON_INVALID`: blocking;
-- `SURGERY_ZERO_UNVERIFIED`: chưa được coi là âm tính;
 - `SURGERY_RAW_DATE_INCOMPLETE`: cần rà ngày;
 - `SURGERY_NORMALIZED_UNMATCHED`: cần rà linkage.
 
@@ -94,7 +95,7 @@ Không gọi `normalize.normalizeRunOutputs(...)` trực tiếp trong thao tác 
 
 ### E. Chốt dataset
 
-Chỉ chốt sau khi xem cả QA chuẩn hóa và `collection_integrity.json`. Mọi unresolved còn lại phải có lý do rõ ràng và được giữ trong audit/unresolved output.
+Chỉ chốt sau khi xem cả QA chuẩn hóa và `collection_integrity.json`. `ready_for_analysis` phải là `true`; mọi unresolved còn lại phải có lý do rõ ràng và được giữ trong audit/unresolved output.
 
 ## Lệnh normalize an toàn cho một run cụ thể
 
