@@ -7,7 +7,7 @@ const { buildDiagnostics } = require('../services/diagnostics');
 const { getRuntimePaths } = require('../services/session');
 const { buildRuntimeHealth } = require('../services/runtime_health');
 const { migrateRuntimeKeys, refreshRuntimeV2 } = require('../services/runtime_v2');
-const { authStatus } = require('../services/authz');
+const { authStatus, hasRole } = require('../services/authz');
 const { auditPath, verifyAuditFile } = require('../services/security_audit');
 const { listDurableTasks, getDurableTask } = require('../services/task_queue');
 
@@ -32,15 +32,32 @@ router.get('/audit/verify', (_req, res) => {
   }
 });
 
+// Mặc định chỉ trả task của workspace hiện tại. Trước đây bỏ ?sid sẽ trả task của
+// MỌI session, khiến một thiết bị/tài khoản có thể nhìn thấy lịch sử vận hành của
+// workspace khác. Supervisor/admin vẫn có thể chủ động dùng ?scope=all để chẩn đoán.
 router.get('/tasks', (req, res) => {
-  const sid = String(req.query.sid || '').trim();
+  const currentSid = getRuntimePaths(req).sid;
+  const requestedSid = String(req.query.sid || '').trim();
+  const wantsAll = String(req.query.scope || '').trim().toLowerCase() === 'all';
+  const elevated = hasRole(req.auth, 'supervisor');
+  if (wantsAll && !elevated) {
+    return res.status(403).json({ status: 'error', code: 'TASK_SCOPE_FORBIDDEN', message: 'Không có quyền xem tác vụ của mọi workspace.' });
+  }
+  if (requestedSid && requestedSid !== currentSid && !elevated) {
+    return res.status(403).json({ status: 'error', code: 'TASK_SCOPE_FORBIDDEN', message: 'Không có quyền xem tác vụ của workspace khác.' });
+  }
+  const sid = wantsAll ? '' : (requestedSid || currentSid);
   const limit = Number.parseInt(req.query.limit || '100', 10);
-  return res.json({ status: 'ok', tasks: listDurableTasks({ sid, limit }) });
+  return res.json({ status: 'ok', workspace: sid || 'all', tasks: listDurableTasks({ sid, limit }) });
 });
 
 router.get('/tasks/:taskId', (req, res) => {
   const task = getDurableTask(String(req.params.taskId || ''));
   if (!task) return res.status(404).json({ status: 'error', code: 'TASK_NOT_FOUND', message: 'Không tìm thấy tác vụ.' });
+  const currentSid = getRuntimePaths(req).sid;
+  if (task.sid !== currentSid && !hasRole(req.auth, 'supervisor')) {
+    return res.status(403).json({ status: 'error', code: 'TASK_SCOPE_FORBIDDEN', message: 'Không có quyền xem tác vụ của workspace khác.' });
+  }
   return res.json({ status: 'ok', task });
 });
 
