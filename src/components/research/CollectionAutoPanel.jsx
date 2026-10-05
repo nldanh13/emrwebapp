@@ -1,4 +1,5 @@
 // Khung Thu thập tự động: chạy lấy phần thiếu/lỗi/đã đổi, chính sách làm mới, yêu cầu dữ liệu, đủ dùng, ngoại lệ, duyệt lượt chưa ghép.
+import { buildPlanView } from './collectionPlanText.js';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import * as api from '../../api.js';
 import { todayInputDate } from './researchScope.js';
@@ -188,6 +189,7 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
   const busy = disabled || running;
   const collecting = running || /thu thập/i.test(String(serverRunning?.label || ''));
   const runningLabel = collecting ? 'Đang thu thập' : serverRunning ? `Đang chạy: ${serverRunning.label}` : '';
+  const planView = buildPlanView(plan, { running: Boolean(collecting || serverRunning), maxAttempts: status?.max_attempts || 3, busy });
   const reportAt = report?.finished_at ? new Date(report.finished_at).toLocaleString('vi-VN') : '';
 
   return (
@@ -214,12 +216,20 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
         </div>
       )}
 
-      {plan && (
-        <div style={{ fontSize: FS.xs, color: C.text2 }}>
-          Lần chạy tới: lấy <b>{compactNumber(plan.to_fetch || 0)}</b> lượt ({compactNumber(plan.parts_to_fetch || 0)} phần), bỏ qua <b>{compactNumber(plan.unchanged || 0)}</b> lượt đã đủ và không đổi
-          {plan.exhausted_parts ? <>, <b>{compactNumber(plan.exhausted_parts)}</b> phần đã hết lượt thử</> : null}
-          {plan.blocked_parts ? <>, <b>{compactNumber(plan.blocked_parts)}</b> phần cần người xem</> : null}.
-          {plan.unmatched_encounters ? <> <b>{compactNumber(plan.unmatched_encounters)}</b> lượt chưa ghép chắc đã được chặn, không tự thu thập.</> : null}
+      {planView && (
+        <div style={{ fontSize: FS.xs, color: C.text2, display: 'grid', gap: 4 }}>
+          <div>
+            {planView.title}, trong <b>{compactNumber(planView.total)}</b> lượt của danh sách thu thập:{' '}
+            {planView.groups.filter(g => g.value || g.key === 'fetch').map((g, i) => (
+              <span key={g.key}>{i ? ' · ' : ''}{g.label} <b>{compactNumber(g.value)}</b>{g.extra ? ` (${g.extra})` : ''}</span>
+            ))}.
+          </div>
+          {planView.notes.map(note => (
+            <div key={note.key} style={{ borderLeft: `3px solid ${C.amber}`, paddingLeft: 8 }}>
+              <b style={{ color: C.text }}>{compactNumber(note.value)} lượt {note.label}:</b> {note.meaning}
+              <div style={{ color: C.text }}><b>Cần làm:</b> {note.action}</div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -237,7 +247,7 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
         </div>
       ) : (
         <div style={{ fontSize: FS.xs, color: C.text3 }}>
-          {collecting ? 'Đang chạy lần thu thập tự động đầu tiên; báo cáo hiện ở đây khi xong.' : 'Chưa chạy thu thập tự động lần nào.'}
+          {collecting || serverRunning ? 'Báo cáo của lần chạy này sẽ hiện ở đây khi xong.' : 'Chưa chạy thu thập tự động lần nào.'}
         </div>
       )}
 
@@ -337,14 +347,16 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
       {status && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <Btn onClick={() => setShowExceptions(v => !v)} disabled={!exceptions.length} style={{ height: 24, padding: '0 9px', fontSize: FS.xs }}>
-            {showExceptions ? 'Ẩn ngoại lệ' : `Danh sách ngoại lệ (${compactNumber(status.exceptions_total || 0)})`}
+            {showExceptions ? 'Ẩn danh sách cần xử lý' : `Danh sách cần xử lý (${compactNumber(status.exceptions_total || 0)} mục)`}
           </Btn>
           {!!exceptions.length && (
             <Btn onClick={() => api.downloadResearchCollectionExceptions(studyId).catch(e => t(String(e.message || e), 'error'))} style={{ height: 24, padding: '0 9px', fontSize: FS.xs }}>Tải CSV</Btn>
           )}
           {!!plan?.unmatched_encounters && (
-            <Btn onClick={reconcileEncounters} disabled={busy || reconciling} style={{ height: 24, padding: '0 9px', fontSize: FS.xs }}>
-              {reconciling ? <><Spinner size={8} /> Đang tải</> : (showEncounterReviews ? 'Đóng rà soát' : 'Rà soát ghép lượt')}
+            <Btn onClick={reconcileEncounters} disabled={busy || reconciling}
+              title={busy ? 'Làm được khi lượt thu thập đang chạy xong.' : undefined}
+              style={{ height: 24, padding: '0 9px', fontSize: FS.xs }}>
+              {reconciling ? <><Spinner size={8} /> Đang tải</> : (showEncounterReviews ? 'Đóng rà soát' : busy ? 'Rà soát ghép lượt (sau khi thu thập xong)' : 'Rà soát ghép lượt')}
             </Btn>
           )}
           {!exceptions.length && <span style={{ fontSize: FS.xs, color: C.text3 }}>Không có ngoại lệ — không cần rà từng ca.</span>}

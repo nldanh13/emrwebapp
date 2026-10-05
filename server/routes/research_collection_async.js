@@ -228,8 +228,8 @@ async function handleCollectAccepted(req, res, studyIdParam = '') {
     res.status(202).json({
       status: 'accepted',
       message: directPatientCode
-        ? 'Đã nhận yêu cầu lấy Mã BN này. Tác vụ đang chạy ở backend; có thể chuyển tab và xem tiến độ.'
-        : 'Đã nhận yêu cầu thu thập. Tác vụ đang chạy ở backend; có thể chuyển tab và xem tiến độ.',
+        ? 'Đã nhận yêu cầu lấy Mã BN này. Máy chủ đang chạy; có thể chuyển tab và xem tiến độ.'
+        : 'Đã nhận yêu cầu thu thập. Máy chủ đang chạy; có thể chuyển tab và xem tiến độ.',
       run_id: sc.runId,
       task_id: task.id,
       direct_patient: Boolean(directPatientCode),
@@ -245,7 +245,7 @@ async function handleCollectAccepted(req, res, studyIdParam = '') {
         status: 'running',
         message: directPatientCode
           ? 'Đang lấy trực tiếp dữ liệu người bệnh từ EMR.'
-          : 'Đang thu thập tự động. Có thể chuyển tab, tiến độ vẫn được lưu ở backend.',
+          : 'Đang thu thập tự động.',
       });
 
       try {

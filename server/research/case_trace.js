@@ -168,6 +168,33 @@ function readCurrentHchanhCase(runDir) {
   };
 }
 
+// Tiến độ thật của lượt thu thập đang chạy, cho dải "Đang chạy": ca đang lấy (mới nhất giữa
+// vết XN/CĐHA và Hồ sơ/Y lệnh) và LẦN GHI TIẾN ĐỘ GẦN NHẤT (giờ sửa file tiến độ). Trước đây
+// dải chỉ có câu thông báo ghi một lần lúc bắt đầu, nên "cập nhật N giây trước" tăng mãi dù
+// máy vẫn chạy.
+const LIVE_PROGRESS_FILES = ['progress.json', 'hchanh_auto_progress.json', 'order_history_auto_progress.json'];
+
+function readLiveProgress(runDir) {
+  if (!runDir) return null;
+  const candidates = [readCurrentCaseTrace(runDir), readCurrentHchanhCase(runDir)].filter(Boolean);
+  candidates.sort((a, b) => (Date.parse(b.started_at || '') || 0) - (Date.parse(a.started_at || '') || 0));
+  const current = candidates[0] || null;
+  let updatedMs = 0;
+  for (const name of [CASE_TRACE_CURRENT_JSON, ...LIVE_PROGRESS_FILES]) {
+    try { updatedMs = Math.max(updatedMs, fs.statSync(path.join(runDir, name)).mtimeMs); } catch (_) { /* chưa có */ }
+  }
+  if (!current && !updatedMs) return null;
+  return {
+    ma_bn: current?.ma_bn || '',
+    ho_ten: current?.ho_ten || '',
+    research_code: current?.research_code || '',
+    index: current?.index || 0,
+    total: current?.total || 0,
+    step: current?.last_step?.step || '',
+    updated_at: updatedMs ? new Date(updatedMs).toISOString() : '',
+  };
+}
+
 function readResearchCaseTrace(runDir, limit = CASE_TRACE_RECENT_LIMIT) {
   const max = Math.max(1, Math.min(50, Number(limit || CASE_TRACE_RECENT_LIMIT)));
   const recent = readCaseTraceRecent(runDir);
@@ -236,6 +263,7 @@ module.exports = {
   appendResearchCaseTrace,
   CASE_TRACE_CURRENT_JSON,
   readCurrentCaseTrace,
+  readLiveProgress,
   HCHANH_CURRENT_CASE_SOURCES,
   readCurrentHchanhCase,
   readResearchCaseTrace,

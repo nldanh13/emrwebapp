@@ -56,6 +56,12 @@ Giữ tên sự kiện dạng `emr:<việc>`.
 hay mở máy khác vẫn thấy đúng. Luôn hiện: việc gì, ở đâu, bắt đầu lúc nào, đã bao lâu, tiến độ gần nhất.
 
 3.2 Một nơi hiển thị cho mỗi loại trạng thái; không rải cùng một thông báo ở nhiều chỗ.
+- Kho nghiên cứu: "đang chạy" chỉ hiện ở dải đầu trang (`RunningBanner`).
+- "Cập nhật … trước" tính theo **lần ghi tiến độ thật**, không theo câu thông báo lúc bắt đầu.
+- Viết thời gian dạng "x phút trước".
+- Quá 10 phút không có tiến độ mới thì cảnh báo kèm việc cần làm.
+
+*Vì:* dải từng ghi "cập nhật 5185 giây trước" ngay cạnh "máy chủ vẫn đang chạy", trông như treo.
 
 3.3 Các quy trình khác nhau thì tách rời: đang chuẩn hóa vẫn thu thập được và ngược lại; khóa theo
 từng quy trình, không dùng chung một khóa.

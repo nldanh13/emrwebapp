@@ -395,7 +395,8 @@ describe('ResearchTab (khói)', () => {
     await act(async () => { root.unmount(); });
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     RUNNING = [{ scope_key: 'archive', kind: 'archive', study_id: '', label: 'Lấy dữ liệu', since: new Date(Date.now() - 125000).toISOString(),
-      task: { message: 'Đang lấy 12/40 lượt', heartbeat_at: new Date().toISOString() } }];
+      task: { message: 'Đang thu thập tự động.', heartbeat_at: new Date(Date.now() - 5185000).toISOString() },
+      progress: { ho_ten: 'TRẦN VĂN TỰ', ma_bn: '26033731', step: 'Đang lấy Y lệnh', index: 12, total: 40, updated_at: new Date().toISOString() } }];
     // Snapshot tiến độ cũ (chưa có khóa): còn ghi "đã dừng" và ca của lần trước.
     Object.assign(PROGRESS, { stopped: { hint: 'dừng' }, current_case: { ho_ten: 'TRẦN VĂN TỰ', ma_bn: '26033731' } });
     const onRunningChange = vi.fn();
@@ -406,17 +407,22 @@ describe('ResearchTab (khói)', () => {
     expect(text).toContain('Đang chạy: Lấy dữ liệu');
     expect(text).toContain('Kho dữ liệu gốc');
     expect(text).toContain('đã chạy 2 phút');
-    expect(text).toContain('Đang lấy 12/40 lượt');
-    expect(text).toContain('Máy chủ xác nhận vẫn đang chạy');
+    // Ca đang lấy + tuổi tiến độ thật (không phải "5185 giây trước" của câu thông báo lúc bắt đầu).
+    expect(text).toContain('Đang lấy: TRẦN VĂN TỰ (26033731) — Đang lấy Y lệnh (ca 12/40)');
+    expect(text).toContain('tiến độ cập nhật 0 giây trước');
+    expect(text).not.toContain('5185');
+    expect(text).toContain('Có thể chuyển màn hình khác');
     expect(onRunningChange).toHaveBeenLastCalledWith({ title: 'Đang chạy: Lấy dữ liệu · Kho dữ liệu gốc' });
     await clickText('Xem tiến độ');
     const scan = [...container.querySelectorAll('button')].find(b => /^Quét (lại )?danh sách$/.test(b.textContent.trim()));
     expect(scan?.disabled, 'đang chạy thì không bấm chạy thêm được').toBe(true);
-    // Khung thu thập và tiến độ cùng báo đang chạy, không báo "đã dừng giữa chừng".
+    // "Đang chạy" chỉ báo ở dải đầu trang (UX_RULES 3.2): không lặp ca đang lấy ở bảng tiến độ,
+    // không báo "đã dừng giữa chừng".
     text = container.textContent;
     expect(text).toContain('Đang chạy: Lấy dữ liệu');
     expect(text).not.toContain('Tác vụ đã dừng giữa chừng');
-    expect(text).toContain('Đang quét:');
+    expect(text.split('TRẦN VĂN TỰ').length - 1).toBe(1);
+    expect(text).not.toContain('Đang quét:');
     Object.assign(PROGRESS, { stopped: undefined, current_case: null });
     RUNNING = [];
     await act(async () => { vi.advanceTimersByTime(3100); });

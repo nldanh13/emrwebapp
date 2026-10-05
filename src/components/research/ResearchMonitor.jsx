@@ -275,43 +275,8 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
           )}
         </div>
 
-        {!snap.active_task && snap.scope_running && (
-          <div style={{ marginTop: 9, borderTop: `1px solid ${C.border2}`, paddingTop: 8, fontSize: FS.xs, color: C.text2, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-            <Spinner size={9} />
-            <b>Đang chạy:</b>
-            <span>{snap.scope_running.label}</span>
-            <span style={{ color: C.text3 }}>— từ {new Date(snap.scope_running.since).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>
-          </div>
-        )}
-
-        {snap.active_task && (
-          <div style={{ marginTop: 9, borderTop: `1px solid ${C.border2}`, paddingTop: 8, fontSize: FS.xs, color: C.text2, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-            <Spinner size={9} />
-            <b>{snap.active_task.status === 'queued' ? 'Đang chờ' : 'Đang chạy'}:</b>
-            <span>{snap.active_task.label || 'Tác vụ nghiên cứu'}</span>
-            {snap.active_task.message && <span style={{ color: C.text3 }}>— {snap.active_task.message}</span>}
-          </div>
-        )}
-
-        {snap.current_case && (
-          <div style={{
-            marginTop: 6, fontSize: FS.xs, color: snap.current_case.stale ? C.text3 : C.blue, display: 'flex',
-            alignItems: 'center', gap: 7, flexWrap: 'wrap',
-          }}>
-            <b>{snap.current_case.stale ? 'Ca xử lý cuối của lần chạy trước:' : 'Đang quét:'}</b>
-            <span>{snap.current_case.ho_ten || snap.current_case.ma_bn || 'BN'}{snap.current_case.ma_bn ? ` (${snap.current_case.ma_bn})` : ''}</span>
-            {!!snap.current_case.total && (
-              <span style={{ color: C.text3 }}>ca {snap.current_case.index}/{snap.current_case.total}</span>
-            )}
-            {snap.current_case.last_step && (
-              <span style={{ color: C.text3 }} title={snap.current_case.last_step.takes || undefined}>
-                — {snap.current_case.last_step.step}
-                {snap.current_case.last_step.takes ? `: ${snap.current_case.last_step.takes}` : ''}
-              </span>
-            )}
-          </div>
-        )}
-
+        {/* Trạng thái "đang chạy" (tác vụ, ca đang lấy, tuổi tiến độ) chỉ hiện ở dải đầu trang
+            (RunningBanner) — không lặp lại ở đây (UX_RULES 3.2). */}
         {!isTaskActive && <LastRunNote stopped={snap.stopped} lastTask={snap.last_task} />}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18, marginTop: 10 }}>

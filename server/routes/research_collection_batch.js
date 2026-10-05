@@ -253,7 +253,7 @@ async function handleBatch(req, res, studyIdParam = '') {
 
     res.status(202).json({
       status: 'accepted',
-      message: `Đã nhận ${cases.length} Mã BN. Hệ thống sẽ lấy tuần tự từng ca ở backend.`,
+      message: `Đã nhận ${cases.length} Mã BN. Máy chủ sẽ lấy lần lượt từng ca.`,
       run_id: sc.runId,
       task_id: task.id,
       direct_patient_batch: true,
