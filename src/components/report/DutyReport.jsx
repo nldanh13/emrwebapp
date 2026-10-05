@@ -221,6 +221,13 @@ function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState,
     </label>
   );
 
+  // "Chưa rõ giờ" đứng đầu cột ở cả hai vai trò: phải hỏi lại bác sĩ trước khi làm thuốc.
+  const noTimeSection = plan.noTime.length > 0 && (
+    <Section title="Chưa rõ giờ" hint="Y lệnh không ghi giờ, cần hỏi lại bác sĩ trước khi làm." count={`${plan.noTime.length} thuốc`} tone="amber">
+      <TimeList rows={plan.noTime} date={date} />
+    </Section>
+  );
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ border: `1px solid ${C.border}`, borderRadius: 7, background: C.surface, padding: 12, display: 'grid', gap: 10 }}>
@@ -252,6 +259,7 @@ function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState,
       {role === 'work' ? (
         <div className="emr-duty-grid">
           <div style={{ display: 'grid', gap: 12, alignContent: 'start', minWidth: 0 }}>
+            {noTimeSection}
             <Section title="Thuốc uống" hint="Phát cho cả ngày." count={`${new Set(plan.oral.map(r => r.patientId || r.patientName)).size} người bệnh`}>
               <OralList rows={plan.oral} empty="Không có thuốc uống trong ngày." />
             </Section>
@@ -259,11 +267,6 @@ function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState,
               <TimeList rows={plan.mine} date={date} empty="Không còn cữ nào trong ca làm." />
               <PastToggle rows={plan.past} date={date} />
             </Section>
-            {plan.noTime.length > 0 && (
-              <Section title="Chưa rõ giờ" hint="Y lệnh không ghi giờ, cần hỏi lại bác sĩ." count={`${plan.noTime.length} thuốc`} tone="amber">
-                <TimeList rows={plan.noTime} date={date} />
-              </Section>
-            )}
           </div>
           <Section title="Bàn giao ca trực" hint="Trực trưa 11:00–13:00 và từ 17:00 đến 07:00 sáng mai." count={`${plan.handover.length} thuốc`}>
             <TimeList rows={plan.handover} date={date} empty="Không có cữ nào cần bàn giao." />
@@ -272,6 +275,7 @@ function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState,
       ) : (
         <div className="emr-duty-grid">
           <div style={{ display: 'grid', gap: 12, alignContent: 'start', minWidth: 0 }}>
+            {noTimeSection}
             <Section title="Cữ trong ca trực" hint={`${todayRest ? 'Từ 11:00 (người bệnh mới vào: từ 07:00)' : 'Trực trưa 11:00–13:00 và từ 17:00'} đến 23:59${fromNow}.`} count={`${plan.mine.length} thuốc`}>
               <TimeList rows={plan.mine} date={date} empty="Không còn cữ nào trong ca trực hôm nay." />
               <PastToggle rows={plan.past} date={date} />
@@ -282,11 +286,6 @@ function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState,
             <Section title="Thuốc uống người bệnh mới vào" hint="Người bệnh vào khoa trong tua trực, chưa được phát thuốc uống." count={`${new Set(plan.oral.map(r => r.patientId || r.patientName)).size} người bệnh`}>
               <OralList rows={plan.oral} empty="Không có người bệnh mới vào trong tua trực." />
             </Section>
-            {plan.noTime.length > 0 && (
-              <Section title="Chưa rõ giờ" hint="Y lệnh không ghi giờ, cần hỏi lại bác sĩ." count={`${plan.noTime.length} thuốc`} tone="amber">
-                <TimeList rows={plan.noTime} date={date} />
-              </Section>
-            )}
           </div>
           {tomorrowRest ? (
             <div style={{ display: 'grid', gap: 12, alignContent: 'start', minWidth: 0 }}>
