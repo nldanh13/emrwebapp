@@ -71,7 +71,7 @@ from input_care_utils import (
 from task_progress_writer import mark_task_status, progress_path_from_input
 
 from care_web_actions import (
-    check_trang_thai_badge, click_thu_hoi_va_xoa, click_thu_hoi_cham_soc,
+    check_trang_thai_badge, click_thu_hoi_va_xoa, click_thu_hoi_cham_soc, mo_khoa_phieu_dang_mo,
 )
 from care_cache import (
     scan_cham_soc_cache, cleanup_cham_soc_cache, kiem_tra_bang_cached,
@@ -1396,49 +1396,63 @@ def main():
                         LOG.warning(_ctx_prefix() + f"[job_uneditable] {msg_skip}")
                         return
 
+                    # Sửa/xóa phiếu cũ: làm bằng tài khoản đang dùng trước (đúng macro
+                    # người dùng — tài khoản ca làm tự Thu hồi/sửa/Hoàn tất); chỉ khi EMR
+                    # không cho mới đổi sang tài khoản người lập phiếu đó.
                     switched_for_edit = False
-                    if stt in ("UPDATE", "EDIT") and existing_creator:
-                        if not ws.switch_to_creator_account(existing_creator, ma_bn, allow_completed=is_discharge_day):
+                    if stt == "UPDATE":
+                        print("-> [ACTION] SỬA PHIẾU CŨ: Sửa → Thu hồi → cập nhật → Hoàn tất.", end=" ")
+
+                        def _mo_khoa_phieu_cu():
+                            if not care_id:
+                                return False
+                            try:
+                                open_cham_soc_by_id(ws.driver, care_id)
+                                WebDriverWait(ws.driver, 30).until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
+                            except Exception as _e:
+                                print(f"[WARN] Không mở được phiếu cũ: {_e}", end=" ")
+                                return False
+                            return mo_khoa_phieu_dang_mo(ws.driver)
+
+                        if _mo_khoa_phieu_cu():
+                            pass
+                        elif existing_creator and ws.switch_to_creator_account(existing_creator, ma_bn, allow_completed=is_discharge_day) \
+                                and str(ws.config.get("username") or "").strip() != username:
+                            # EMR không cho tài khoản đang dùng: sửa bằng tài khoản người lập,
+                            # xong đổi lại (cuối job, _restore_group_account).
+                            switched_for_edit = True
+                            if not _mo_khoa_phieu_cu():
+                                print("[WARN] Không Thu hồi được phiếu cũ.", end=" ")
+                        else:
+                            if str(ws.config.get("username") or "").strip() != username:
+                                _restore_group_account()
                             msg_sw2 = (
-                                f"{time_str}: không đổi được tài khoản EMR của người lập "
-                                f"'{existing_creator}' để sửa/xóa phiếu cũ"
+                                f"{time_str}: tài khoản đang dùng không sửa được phiếu cũ của "
+                                f"'{existing_creator}' và không đổi được sang tài khoản người lập"
                             )
                             print(f"-> [WARN] {msg_sw2}")
                             job_failures.append(msg_sw2)
-                            LOG.warning(_ctx_prefix() + f"[switch_creator_failed] {msg_sw2}")
+                            LOG.warning(_ctx_prefix() + f"[edit_not_allowed] {msg_sw2}")
                             return
                         driver, wait = ws.driver, ws.wait
-                        switched_for_edit = True
-
-                    if stt == "UPDATE":
-                        print("-> [ACTION] SỬA PHIẾU CŨ: Sửa → Thu hồi → cập nhật → Hoàn tất.", end=" ")
-                        try:
-                            if care_id:
-                                open_cham_soc_by_id(driver, care_id)
-                            else:
-                                raise RuntimeError("Không lấy được id phiếu")
-                            wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
-                            click_thu_hoi_cham_soc(driver)
-                        except Exception as _e:
-                            print(f"[WARN] Không mở/thu hồi được phiếu cũ: {_e}", end=" ")
                     elif stt == "EDIT":
                         print("-> [ACTION] THU HỒI/XÓA PHIẾU CŨ.", end=" ")
-                        try:
-                            if care_id:
-                                open_cham_soc_by_id(driver, care_id)
-                            else:
-                                raise RuntimeError("Không lấy được id phiếu")
-                            wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
-                            click_thu_hoi_va_xoa(driver)
-                        except Exception as _e:
-                            print(f"[WARN] Không thu hồi/xóa được: {_e}")
-                            # vẫn tiếp tục tạo lại phiếu mới
-                        if switched_for_edit:
-                            # Phiếu mới phải được tạo dưới đúng tài khoản của nhóm job
-                            # này (người lập dự kiến), không phải tài khoản người tạo
-                            # phiếu cũ vừa xóa.
-                            _restore_group_account()
-                            switched_for_edit = False
+
+                        def _xoa_phieu_cu():
+                            if not care_id:
+                                return False
+                            try:
+                                open_cham_soc_by_id(ws.driver, care_id)
+                                WebDriverWait(ws.driver, 30).until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
+                                return click_thu_hoi_va_xoa(ws.driver)
+                            except Exception as _e:
+                                print(f"[WARN] Không thu hồi/xóa được: {_e}")
+                                return False
+
+                        # Tài khoản đang dùng trước; không được mới nhờ tài khoản người lập,
+                        # xong tự đổi lại để phiếu mới tạo đúng tài khoản ca làm.
+                        ws.run_with_creator_fallback(existing_creator, ma_bn, _xoa_phieu_cu, allow_completed=is_discharge_day)
+                        driver, wait = ws.driver, ws.wait
                         print("-> TẠO LẠI.", end=" ")
                         _safe_js_click(driver, wait.until(EC.element_to_be_clickable((By.ID, "btnThemCS"))))
                     else:

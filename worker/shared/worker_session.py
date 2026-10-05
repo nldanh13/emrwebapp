@@ -356,6 +356,41 @@ class WorkerSession:
             allow_completed=allow_completed, reopen=reopen,
         )
 
+    def run_with_creator_fallback(
+        self,
+        creator: str,
+        ma_bn: str,
+        action: Callable[[], Any],
+        *,
+        allow_completed: bool = False,
+        reopen: Optional[Callable[["WorkerSession", str], None]] = None,
+    ) -> bool:
+        """Sửa/xóa phiếu đứng tên `creator`: làm bằng TÀI KHOẢN ĐANG DÙNG trước
+        (người dùng ghi macro: tài khoản ca làm tự Thu hồi/đổi Người lập/Hoàn tất,
+        không cần đổi tài khoản). `action()` trả True nếu làm được.
+
+        Chỉ khi EMR không cho (action trả False) mới đổi sang tài khoản EMR của
+        `creator`, làm lại, rồi đổi về tài khoản cũ. Không có tài khoản của
+        `creator`, hoặc đó chính là tài khoản đang dùng, thì trả False.
+        """
+        if action():
+            return True
+        account = get_emr_account_for_nurse(creator) if creator else None
+        current = str(self.config.get("username") or "").strip()
+        if not account or str(account.get("username") or "").strip() == current:
+            return False
+        original_password = str(self.config.get("password") or "")
+        _print(f"[INFO] Tài khoản {current} không sửa/xóa được phiếu của {creator}; thử bằng tài khoản người lập.")
+        if not self.switch_account_to(
+            account["username"], account["password"], ma_bn,
+            allow_completed=allow_completed, reopen=reopen,
+        ):
+            return False
+        try:
+            return bool(action())
+        finally:
+            self.restore_account(current, original_password, ma_bn, allow_completed=allow_completed, reopen=reopen)
+
     def restore_account(
         self,
         original_username: str,

@@ -22,11 +22,46 @@ def check_trang_thai_badge(driver):
         return ""
 
 
+def _hien(driver, element_id):
+    try:
+        return bool(driver.find_element(By.ID, element_id).is_displayed())
+    except Exception:
+        return False
+
+
+def bam_xac_nhan_cham_soc(driver):
+    """Bấm nút xác nhận (id=submit_handle_ChamSoc) hiện ra sau Thu hồi/Hoàn tất, nếu có."""
+    clicked = False
+    try:
+        btn = driver.find_element(By.ID, "submit_handle_ChamSoc")
+        if btn.is_displayed():
+            driver.execute_script("arguments[0].click();", btn)
+            clicked = True
+            time.sleep(1.0)
+    except Exception as _e:
+        LOG.debug(f"[except] {_e}")
+    handle_popups(driver)
+    return clicked
+
+
+def mo_khoa_phieu_dang_mo(driver):
+    """Phiếu chăm sóc đang mở: đã Hoàn tất thì Thu hồi. Trả True nếu tài khoản
+    đang dùng sửa được phiếu (đã hết trạng thái Hoàn tất và có nút Lưu/Hoàn tất);
+    False nếu EMR không cho (vd phiếu của tài khoản khác)."""
+    if "Hoàn tất" in check_trang_thai_badge(driver):
+        click_thu_hoi_cham_soc(driver)
+        if "Hoàn tất" in check_trang_thai_badge(driver):
+            return False
+    return _hien(driver, "btnSaveChamSocPopupDraw") or _hien(driver, "btnPopupHOANTAT")
+
+
 def click_thu_hoi_va_xoa(driver):
+    """Thu hồi (nếu cần) rồi Xóa phiếu đang mở. Trả True nếu đã bấm được Xóa."""
     try:
         btn = WebDriverWait(driver, 1).until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Thu hồi') or contains(@title,'Thu hồi')]")))
         driver.execute_script("arguments[0].click();", btn)
         time.sleep(1.5); handle_popups(driver)
+        bam_xac_nhan_cham_soc(driver)
     except Exception as _e:
         LOG.debug(f"[except] {_e}")  # was: except: pass
     try:
@@ -37,8 +72,10 @@ def click_thu_hoi_va_xoa(driver):
             try: driver.find_element(By.CSS_SELECTOR, ".sweet-alert .confirm").click()
             except Exception as _e:
                 LOG.debug(f"[except] {_e}")  # was: except: pass
+            return True
     except Exception as _e:
         LOG.debug(f"[except] {_e}")  # was: except: pass
+    return False
 
 
 def click_thu_hoi_cham_soc(driver, timeout=5):
@@ -63,6 +100,7 @@ def click_thu_hoi_cham_soc(driver, timeout=5):
             driver.execute_script("arguments[0].click();", btn)
             time.sleep(1.0)
             handle_popups(driver)
+            bam_xac_nhan_cham_soc(driver)
             time.sleep(0.5)
             handle_popups(driver)
             return True

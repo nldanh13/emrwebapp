@@ -271,19 +271,9 @@ def chi_luu(driver):
 
 def _bam_xac_nhan_cham_soc(driver):
     """Bấm nút xác nhận (id=submit_handle_ChamSoc) hiện ra sau Thu hồi/Hoàn tất, nếu có."""
-    from utils import handle_popups
+    from care_web_actions import bam_xac_nhan_cham_soc
 
-    clicked = False
-    try:
-        btn = driver.find_element(By.ID, "submit_handle_ChamSoc")
-        if btn.is_displayed():
-            driver.execute_script("arguments[0].click();", btn)
-            clicked = True
-            time.sleep(1.0)
-    except Exception as _e:
-        LOG.debug(f"[except] {_e}")
-    handle_popups(driver)
-    return clicked
+    return bam_xac_nhan_cham_soc(driver)
 
 
 def hoan_tat_ngay(driver):
