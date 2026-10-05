@@ -110,6 +110,6 @@ def test_reset_creator_noop_when_already_owner_or_owner_unknown(monkeypatch):
 def test_input_care_update_resets_creator_before_filling():
     source = (WORKER / "input_care.py").read_text(encoding="utf-8")
     update = source.index('if stt == "UPDATE":')
-    reset = source.index("dat_nguoi_lap_ve_chu_tai_khoan(driver, account_owner_name)", update)
+    reset = source.index("dat_nguoi_lap_ve_chu_tai_khoan(driver, current_owner_name)", update)
     fill = source.index("form_ok = dien_thong_tin(", update)
     assert reset < fill

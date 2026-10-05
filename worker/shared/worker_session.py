@@ -114,7 +114,7 @@ class WorkerSession:
             raise
         return self
 
-    def switch_account(self, username: str, password: str) -> bool:
+    def switch_account(self, username: str, password: str, *, end_of_run: bool = False) -> bool:
         """Đóng phiên đăng nhập hiện tại và đăng nhập lại bằng tài khoản khác.
 
         Dùng khi cần đổi tài khoản EMR giữa chừng (ví dụ: nhập chăm sóc ca làm
@@ -134,7 +134,7 @@ class WorkerSession:
         current_username = str(old_config.get("username") or "").strip()
         if username == current_username:
             return True
-        if old_config.get("single_login"):
+        if old_config.get("single_login") and not end_of_run:
             # Lượt nhập liệu chỉ đăng nhập MỘT lần (người dùng yêu cầu): không đổi
             # tài khoản giữa chừng; phần nào cần tài khoản khác thì báo để xử lý tay.
             self.add_warning(

@@ -119,8 +119,10 @@ def test_unlock_open_form_thu_hoi_then_checks_badge(monkeypatch):
 def test_input_care_tries_current_account_before_creator():
     src = (WORKER / "input_care.py").read_text(encoding="utf-8")
     update = src.index('if stt == "UPDATE":')
-    # Sửa phiếu cũ: thử mở khóa bằng tài khoản đang dùng trước khi đổi sang người lập.
-    assert src.index("if _mo_khoa_phieu_cu():", update) < src.index("ws.switch_to_creator_account(existing_creator", update)
+    # Sửa phiếu cũ: thử mở khóa bằng tài khoản đang dùng trước; không được thì để cuối lượt
+    # (không đổi tài khoản giữa chừng).
+    assert src.index("if _mo_khoa_phieu_cu():", update) < src.index("_defer(job, time_str, existing_creator)", update)
+    assert "ws.switch_to_creator_account(existing_creator" not in src
     assert "run_with_creator_fallback(existing_creator" in src
     cleanup = (WORKER / "care_cache.py").read_text(encoding="utf-8")
     assert "ws.switch_to_creator_account(creator" not in cleanup
