@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { getRuntimePaths } = require('../services/session');
+const { watchScreen } = require('../services/screen_watch');
 const { enqueueHeavy, registerCancel, unregisterCancel } = require('../services/task_queue');
 const { runPython, runScript, fmtPyError } = require('../services/python_runner');
 const { WORKER_DIR } = require('../constants');
@@ -399,6 +400,10 @@ router.get('/clinic/monitor/bbhc/pdf', (req, res) => {
 
 router.get('/clinic/monitor/state', (req, res) => {
   const ctx = getRuntimePaths(req);
+  watchScreen({
+    sid: ctx.sid, key: 'clinic-monitor', files: [monitorPaths(ctx).state],
+    extra: () => { const e = monitors.get(ctx.sid); return `${e?.running ? 1 : 0}|${e?.exitMessage || ''}`; },
+  });
   return res.json({ status: 'ok', monitor: monitorStatePayload(ctx) });
 });
 

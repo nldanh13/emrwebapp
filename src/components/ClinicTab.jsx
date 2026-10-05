@@ -11,6 +11,10 @@ import * as api from '../api.js';
 import ClinicAdmissionCare from './ClinicAdmissionCare.jsx';
 import ClinicBbhc from './ClinicBbhc.jsx';
 import { useTabActive } from '../hooks/useTabActivity.js';
+import { revalidate, useServerData } from '../hooks/useServerData.js';
+import { useRealtimeConnected } from '../hooks/useRealtimeStatus.js';
+
+const CLINIC_MONITOR_KEY = 'screen:clinic-monitor';
 
 const CONFIG_KEY = 'emr_clinic_monitor_cfg_v1';
 const DEFAULT_CONFIG = {
@@ -159,7 +163,6 @@ function Stat({ label, value, tone }) {
 export default function ClinicTab({ toast }) {
   const [cfg, setCfg] = useState(loadConfig);
   const [password, setPassword] = useState('');
-  const [monitor, setMonitor] = useState(null);
   const [busy, setBusy] = useState('');
   const [group, setGroup] = useState('can_lam');
   const [onlyBhyt, setOnlyBhyt] = useState(true);
@@ -169,22 +172,22 @@ export default function ClinicTab({ toast }) {
     setCfg(prev => { const next = { ...prev, [key]: value }; saveConfig(next); return next; });
   };
 
-  const loadState = useCallback(async () => {
-    try {
-      const r = await api.getClinicMonitorState();
-      setMonitor(r.monitor || null);
-    } catch {}
-  }, []);
+  // Trạng thái theo dõi nằm trong kho dùng chung (UX_RULES mục 9): máy chủ báo khi file trạng thái
+  // đổi (kênh sự kiện, khóa screen:clinic-monitor) nên không cần hẹn giờ hỏi lại; quay lại tab thì
+  // hiện ngay bản đang có rồi cập nhật ngầm.
+  const monitorQuery = useServerData(CLINIC_MONITOR_KEY, api.getClinicMonitorState);
+  const monitor = monitorQuery.data?.monitor || null;
+  const loadState = useCallback(() => revalidate(CLINIC_MONITOR_KEY), []);
 
   const running = Boolean(monitor?.running);
-  // Tab ẩn và không có việc đang chạy: không tự làm mới định kỳ; quay lại tab thì tải lại ngay.
   const tabActive = useTabActive();
+  const realtimeConnected = useRealtimeConnected();
+  // ux-rules: polling-ok — chỉ là dự phòng khi mất kênh sự kiện; tab ẩn mà không chạy thì không hỏi.
   useEffect(() => {
-    if (!tabActive && !running) return undefined;
-    loadState();
+    if (realtimeConnected || (!tabActive && !running)) return undefined;
     const id = setInterval(loadState, running ? 5000 : 15000);
     return () => clearInterval(id);
-  }, [loadState, running, tabActive]);
+  }, [loadState, running, tabActive, realtimeConnected]);
 
   const start = async () => {
     setBusy('start');

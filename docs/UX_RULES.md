@@ -189,9 +189,28 @@ gửi sự kiện `research` qua `/api/events` (Server-Sent Events). Giao diện
 `emr:research-changed` rồi `invalidate('research:<phạm vi>:')`. Hẹn giờ chỉ còn là dự phòng
 thưa khi mất kết nối kênh sự kiện (`useRealtimeConnected`). Sự kiện không chứa dữ liệu người bệnh.
 
-9.6 Tự kiểm (R4 trong `scripts/ux_rules_check.mjs`): khung hiển thị ở 9.2 không import `api.js`;
+9.6 **Áp dụng cho mọi tab.** Route trả số liệu cho một màn hình gọi
+`watchScreen({ sid, key, files, extra })` (`server/services/screen_watch.js`): máy chủ theo dõi
+file/thư mục nguồn (và trạng thái trong bộ nhớ qua `extra`), đổi thì gửi sự kiện `screen` cho
+đúng workspace. Giao diện: màn hình dùng kho chung đặt khóa `screen:<key>` (kênh sự kiện tự
+`invalidate`); màn hình chưa chuyển hẳn thì `useScreenChanged('<key>', () => tải lại im lặng)`.
+Tải lại do sự kiện luôn im lặng: không vòng chờ, không xóa màn hình, không báo lỗi bật lên.
+
+| Màn hình | Khóa | Máy chủ theo dõi |
+|---|---|---|
+| Lấy dữ liệu (Hành chánh) | `hchanh-dashboard` | thư mục hchanh, index, phiếu |
+| Kiểm HSBA | `records-check-dashboard` | thư mục records_check, index, tác vụ nền |
+| Ký tên ĐD HSBA | `discharge-bundles` | thư mục bộ in ra viện |
+| Phòng khám | `clinic-monitor` (kho chung) | file trạng thái theo dõi + tiến trình còn chạy |
+| Kho nghiên cứu | `research:<phạm vi>:…` | file tiến độ/sổ thu thập (`research_watch.js`) |
+
+Nguồn không theo dõi được (vd. công cụ BHYT chạy riêng ở cổng khác) giữ hẹn giờ khi có việc đang
+chạy, ghi rõ `ux-rules: no-realtime — <lý do>`.
+
+9.7 Tự kiểm (R4 trong `scripts/ux_rules_check.mjs`): khung hiển thị ở 9.2 không import `api.js`;
 file dùng `useServerData` không tự `setInterval` gọi máy chủ, trừ hẹn giờ dự phòng có theo
-`useRealtimeConnected` (kênh nối thì hỏi thưa, mất nối mới hỏi dày).
+`useRealtimeConnected` (kênh nối thì hỏi thưa, mất nối mới hỏi dày). R5: màn hình tab còn hẹn giờ
+hỏi máy chủ phải theo `useRealtimeConnected`, hoặc ghi `ux-rules: no-realtime — <lý do>`.
 
 ---
 

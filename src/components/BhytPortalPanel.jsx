@@ -186,6 +186,7 @@ export default function BhytPortalPanel({ toast, sessionId }) {
   }, [typeFilter, statusFilter, search, available]);
 
   // Poll khi worker đang chạy (điền thử/nhập thật) — giống setInterval trong app.js gốc.
+  // ux-rules: no-realtime — công cụ BHYT chạy riêng ở cổng khác, máy chủ app không theo dõi được file của nó.
   useEffect(() => {
     if (!available || !workerStatus.running) return undefined;
     const id = setInterval(() => { loadAll(); if (logsOpen) loadLogs(); }, 2000);

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { getWorkspaceId } from '../hooks/useSession.js';
+import { invalidate } from '../hooks/useServerData.js';
 
 const TOKEN_KEY = 'emr_app_token_v1';
 const ACTIVE_TAB_KEY = 'emr_active_tab_v2';
@@ -83,6 +84,13 @@ export default function WorkspaceRealtimeBridge({ children }) {
           buffer = parseSseChunk(buffer, (eventName, payload) => {
             if (eventName === 'workspace_snapshot') {
               window.dispatchEvent(new CustomEvent('emr:workspace-snapshot', { detail: payload }));
+              return;
+            }
+            if (eventName === 'screen') {
+              // Số liệu một màn hình của workspace này đổi (máy chủ tự theo dõi file nguồn):
+              // tải lại đúng gói đó trong kho dùng chung, mọi khung đang hiện đổi cùng lúc.
+              invalidate(`screen:${String(payload?.key || '')}`);
+              window.dispatchEvent(new CustomEvent('emr:screen-changed', { detail: payload }));
               return;
             }
             if (eventName === 'research') {

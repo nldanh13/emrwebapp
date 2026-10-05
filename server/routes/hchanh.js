@@ -42,10 +42,12 @@ const {
 } = require('../utils/discharge_print');
 const { WORKER_DIR, ROOT_DIR, RUNTIME_ROOT, ALLOW_PUBLIC_GOOGLE_SHEET } = require('../constants');
 const GOOGLE_SHEET_WRITE_TOKEN = getSecret('google_sheet_write_token');
+const { watchScreen } = require('../services/screen_watch');
 
 const {
   FETCH_SCOPES,
   hchanh_dir,
+  hchanh_index_path,
   hchanh_tickets_path,
   hchanh_snapshot_path,
   read_index,
@@ -3465,8 +3467,9 @@ function _uploadedDischargeFileName(originalName) {
   return `${UPLOADED_DISCHARGE_PREFIX}${stem || 'file'}.pdf`;
 }
 
-router.get('/hchanh/discharge-bundles', handleRoute((_req, res, _ctx) => {
+router.get('/hchanh/discharge-bundles', handleRoute((_req, res, ctx) => {
   const dir = discharge_print_bundle_dir();
+  watchScreen({ sid: ctx.sid, key: 'discharge-bundles', files: [dir] });
   let entries = [];
   try { entries = fs.readdirSync(dir); } catch (_) { entries = []; }
   const fileSet = new Set(entries);
@@ -3781,7 +3784,11 @@ router.post('/hchanh/stay-store/import', handleRoute((_req, res, ctx) => {
 }));
 
 router.get('/hchanh/dashboard', handleRoute((_req, res, ctx) => {
-  return res.json(buildHchanh_Dashboard(ctx));
+  // Máy chủ tự báo khi danh sách/hồ sơ đổi (UX_RULES mục 9): giao diện không hẹn giờ hỏi lại.
+  // Đăng ký SAU khi dựng: lần dựng có thể tự sửa index, không tính là "đổi".
+  const dashboard = buildHchanh_Dashboard(ctx);
+  watchScreen({ sid: ctx.sid, key: 'hchanh-dashboard', files: [hchanh_dir(ctx), hchanh_index_path(ctx), hchanh_tickets_path(ctx)] });
+  return res.json(dashboard);
 }));
 
 // Lưu checklist kiểm HSBA thủ công ngay trong metadata của đúng người bệnh.
@@ -3983,7 +3990,9 @@ router.post('/hchanh/records-check/paper-checklist', handleRoute((req, res, ctx)
 }));
 
 router.get('/hchanh/records-check/dashboard', handleRoute((_req, res, ctx) => {
-  return res.json(buildRecordsCheckDashboard(ctx));
+  const dashboard = buildRecordsCheckDashboard(ctx);
+  watchScreen({ sid: ctx.sid, key: 'records-check-dashboard', files: [records_check_persistent_dir(ctx), records_check_index_path(ctx), records_check_job_path(ctx)] });
+  return res.json(dashboard);
 }));
 
 async function refreshRecordsCheckGoogleSheetCache(ctx, config) {

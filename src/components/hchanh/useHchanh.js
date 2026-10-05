@@ -11,6 +11,7 @@ import { matchesManualReviewFilter } from '../../engine/hchanhManualReviewView.j
 import { mergeVtytDraftEdits } from '../../engine/hchanhVtytDraftMerge.js';
 import { buildVtytReviewWindows } from '../../engine/hchanhVtytScope.js';
 import { useOnTabReturn } from '../../hooks/useTabActivity.js';
+import { useScreenChanged } from '../../hooks/useRealtimeStatus.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -100,8 +101,8 @@ export function useHchanh({ toast, workDateRange, manualReviewFilterEnabled = tr
 
   // ── Load dashboard ─────────────────────────────────────────────────────────
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const data = await api.getHchanh_Dashboard();
       setDashboard(data);
@@ -112,11 +113,15 @@ export function useHchanh({ toast, workDateRange, manualReviewFilterEnabled = tr
         if (updated) setSelectedCard(updated);
       }
     } catch (e) {
-      toast?.(String(e.message || e), 'error');
+      if (!silent) toast?.(String(e.message || e), 'error');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [selectedCard, toast]);
+
+  // Hồ sơ vừa lấy xong / phiếu đổi (kể cả do tác vụ nền hay thiết bị khác): máy chủ báo qua kênh
+  // sự kiện, tải lại im lặng — không xóa màn hình, không hiện vòng chờ (UX_RULES mục 9).
+  useScreenChanged('hchanh-dashboard', () => { load({ silent: true }); });
 
   // Load dashboard + sync khi mount.
   // Hành chánh có kho dữ liệu riêng, nên mỗi lần mở tab phải đồng bộ lại index

@@ -9,6 +9,8 @@
 //  R4  Màn hình số liệu (mục 9): khung hiển thị chỉ nhận gói số liệu qua props, không tự gọi
 //      máy chủ (không import api.js); file dùng kho chung useServerData không tự setInterval gọi
 //      máy chủ — máy chủ báo qua kênh sự kiện (hẹn giờ dự phòng chỉ khi có useRealtimeConnected).
+//  R5  Màn hình tab còn hẹn giờ gọi máy chủ thì hẹn giờ đó phải là dự phòng theo kênh sự kiện
+//      (useRealtimeConnected), hoặc ghi "ux-rules: no-realtime — <lý do>" khi nguồn không theo dõi được.
 // Chạy: node scripts/ux_rules_check.mjs
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -42,6 +44,11 @@ for (const file of tabFiles) {
   const loadsOnMount = /useEffect\(\(\) => \{ *(load|reload)\(\); *\}, \[/.test(src) || /useEffect\(\(\) => \{\s*let cancelled = false;[\s\S]{0,200}?(getHchanh_Dashboard|getRecordsCheckDashboard)/.test(src);
   // R2
   if (loadsOnMount && !refreshesOnReturn) problems.push(`R2: ${file} tải dữ liệu lúc mở nhưng không cập nhật khi quay lại tab (thêm useOnTabReturn).`);
+  const pollsServer = /setInterval\(\s*(\(\)\s*=>\s*\{?\s*)?(load|refresh|fetch|revalidate)\w*/.test(src);
+  // R5
+  if (pollsServer && !/useRealtimeConnected\(|ux-rules: no-realtime/.test(src)) {
+    problems.push(`R5: ${file} hẹn giờ hỏi máy chủ mà không theo kênh sự kiện. Đăng ký watchScreen ở route, dùng useServerData/useScreenChanged, hẹn giờ chỉ khi !useRealtimeConnected() (hoặc ghi "ux-rules: no-realtime — lý do").`);
+  }
   // R3
   if (/setInterval\(\s*(load|refresh|fetch)\w*/.test(src) && !/useTabActive\(|ux-rules: polling-ok/.test(src)) {
     problems.push(`R3: ${file} tự làm mới định kỳ mà không dừng khi tab ẩn (dùng useTabActive, hoặc ghi "ux-rules: polling-ok" nếu chỉ chạy khi có việc đang chạy).`);
@@ -83,4 +90,4 @@ if (problems.length) {
   for (const p of problems) console.error(`  - ${p}`);
   process.exit(1);
 }
-console.log(`[ux-rules] OK: ${navIds.length + 1} tab giữ lại khi chuyển tab, ${tabFiles.length} màn hình đạt R2/R3, ${SCREEN_VIEWS.length} khung hiển thị + ${screenFiles} màn hình dùng kho chung đạt R4.`);
+console.log(`[ux-rules] OK: ${navIds.length + 1} tab giữ lại khi chuyển tab, ${tabFiles.length} màn hình đạt R2/R3/R5, ${SCREEN_VIEWS.length} khung hiển thị + ${screenFiles} màn hình dùng kho chung đạt R4.`);
