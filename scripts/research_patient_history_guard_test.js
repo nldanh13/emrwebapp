@@ -4,6 +4,7 @@ const assert = require('assert');
 const {
   sameDisplayStay,
   collapseDisplayEncounters,
+  sanitizeEncounterEvents,
   sanitizePatientHistory,
 } = require('../server/research/patient_history_guard');
 
@@ -73,6 +74,88 @@ test('tra đúng Mã BN không kéo Mã BN khác chỉ vì trước đó bị g�
   assert.deepStrictEqual(out.patients[0].patient_codes, ['BN1']);
   assert.strictEqual(out.patients[0].encounter_count, 1);
   assert.ok(out.patients[0].encounters.every(e => e.patient_code === 'BN1'));
+});
+
+test('phẫu thuật ngoài khoảng nằm viện bị loại và ngày mổ tóm tắt sai bị xóa', () => {
+  const enc = sanitizeEncounterEvents({
+    patient_code: 'BN1', encounter_id: 'e1',
+    admission_date: '2026-04-21 09:55', discharge_date: '2026-04-23 13:00',
+    surgery_date: '2026-10-04 18:39',
+    surgeries: [
+      { patient_code: 'BN1', encounter_id: 'e1', surgery_datetime: '2026-10-04 18:39', surgery_name: 'Rút đinh', method: 'Rút đinh', anesthesia: 'Gây mê' },
+      { patient_code: 'BN1', encounter_id: 'e1', surgery_datetime: '2026-10-04 18:39', surgery_name: 'Rút đinh', method: 'Rút đinh', anesthesia: 'Gây mê' },
+    ],
+    labs: [], imaging: [], medications: [],
+  });
+  assert.strictEqual(enc.surgeries.length, 0);
+  assert.strictEqual(enc.counts.surgeries, 0);
+  assert.strictEqual(enc.surgery_date, '');
+  assert.strictEqual(enc.excluded_counts.surgeries, 2);
+});
+
+test('phẫu thuật trùng nội dung trong đúng đợt chỉ giữ một dòng', () => {
+  const enc = sanitizeEncounterEvents({
+    patient_code: 'BN1', encounter_id: 'e1',
+    admission_date: '2026-04-21', discharge_date: '2026-04-23',
+    surgeries: [
+      { id: 'raw-a', patient_code: 'BN1', surgery_datetime: '2026-04-22 08:00', surgery_name: 'Kết hợp xương', method: 'Nẹp vít', anesthesia: 'Tê tủy sống' },
+      { id: 'raw-b', patient_code: 'BN1', surgery_datetime: '2026-04-22 08:00', surgery_name: 'Kết hợp xương', method: 'Nẹp vít', anesthesia: 'Tê tủy sống' },
+    ],
+    labs: [], imaging: [], medications: [],
+  });
+  assert.strictEqual(enc.surgeries.length, 1);
+  assert.strictEqual(enc.counts.surgeries, 1);
+  assert.strictEqual(enc.surgery_date, '2026-04-22 08:00');
+});
+
+test('XN chỉ giữ kết quả trong khoảng nằm viện và loại bản trùng lâm sàng', () => {
+  const enc = sanitizeEncounterEvents({
+    patient_code: 'BN1', encounter_id: 'e1',
+    admission_date: '2026-04-21', discharge_date: '2026-04-23',
+    labs: [
+      { id: 1, patient_code: 'BN1', lab_datetime: '2026-04-20 07:00', test_name_raw: 'Hb', result_raw: '120', unit_raw: 'g/L' },
+      { id: 2, patient_code: 'BN1', lab_datetime: '2026-04-22 07:00', test_name_raw: 'Hb', result_raw: '118', unit_raw: 'g/L' },
+      { id: 3, patient_code: 'BN1', lab_datetime: '2026-04-22 07:00', test_name_raw: 'Hb', result_raw: '118', unit_raw: 'g/L' },
+      { id: 4, patient_code: 'BN1', lab_datetime: '2026-04-24 07:00', test_name_raw: 'Hb', result_raw: '116', unit_raw: 'g/L' },
+    ],
+    imaging: [], medications: [], surgeries: [],
+  });
+  assert.strictEqual(enc.labs.length, 1);
+  assert.strictEqual(enc.labs[0].result_raw, '118');
+  assert.strictEqual(enc.excluded_counts.labs, 3);
+});
+
+test('CĐHA và thuốc ngoài đợt hoặc sai encounter_id không được hiển thị', () => {
+  const enc = sanitizeEncounterEvents({
+    patient_code: 'BN1', encounter_id: 'e1',
+    admission_date: '2026-04-21', discharge_date: '2026-04-23',
+    labs: [], surgeries: [],
+    imaging: [
+      { patient_code: 'BN1', encounter_id: 'e1', ordered_at: '2026-04-22 09:00', service_name_raw: 'X-quang', conclusion_raw: 'Không lệch' },
+      { patient_code: 'BN1', encounter_id: 'e1', ordered_at: '2026-05-01 09:00', service_name_raw: 'X-quang', conclusion_raw: 'Khác' },
+    ],
+    medications: [
+      { patient_code: 'BN1', encounter_id: 'e1', order_datetime: '2026-04-22 10:00', medication_name_raw: 'Paracetamol', dose_raw: '1 g' },
+      { patient_code: 'BN1', encounter_id: 'e2', order_datetime: '2026-04-22 10:00', medication_name_raw: 'Ceftriaxone', dose_raw: '2 g' },
+      { patient_code: 'BN1', encounter_id: 'e1', order_datetime: '2026-04-25 10:00', medication_name_raw: 'Ibuprofen', dose_raw: '400 mg' },
+    ],
+  });
+  assert.strictEqual(enc.imaging.length, 1);
+  assert.strictEqual(enc.medications.length, 1);
+  assert.strictEqual(enc.medications[0].medication_name_raw, 'Paracetamol');
+  assert.strictEqual(enc.excluded_counts.imaging, 1);
+  assert.strictEqual(enc.excluded_counts.medications, 2);
+});
+
+test('dòng dữ liệu có Mã BN khác không được đi theo encounter đang hiển thị', () => {
+  const enc = sanitizeEncounterEvents({
+    patient_code: 'BN1', encounter_id: 'e1',
+    admission_date: '2026-04-21', discharge_date: '2026-04-23',
+    labs: [{ patient_code: 'BN2', lab_datetime: '2026-04-22', test_name_raw: 'CRP', result_raw: '5' }],
+    imaging: [], medications: [], surgeries: [],
+  });
+  assert.strictEqual(enc.labs.length, 0);
+  assert.strictEqual(enc.excluded_counts.labs, 1);
 });
 
 console.log(`research_patient_history_guard_test: ${passed} kịch bản pass.`);
