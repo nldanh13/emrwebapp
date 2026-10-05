@@ -75,6 +75,7 @@ function MedLine({ row }) {
         <b style={{ fontWeight: 600 }}>{row.drugName}</b>{row.tuTuc && <TuTucMark />}
         <span style={{ color: C.text2, fontVariantNumeric: 'tabular-nums' }}> × {formatQty(row.quantity)} {row.unit}</span>
         {row.mixWith && <span style={{ color: C.text2 }}> · pha {row.mixWith}</span>}
+        {row.timeGuess && <span style={{ color: C.amber, fontSize: FS.xs }}> · giờ theo chữ "{row.timeGuess}" trong y lệnh</span>}
       </span>
       <span className="emr-med-line__route"><RouteBadge route={row.route} /></span>
     </div>
@@ -120,7 +121,7 @@ function OralList({ rows, empty }) {
       if (!drugs.has(dKey)) drugs.set(dKey, { name: row.drugName, unit: row.unit, tuTuc: row.tuTuc, qty: 0, times: new Set() });
       const drug = drugs.get(dKey);
       drug.qty += Number(row.quantity || 0);
-      if (!row.noTime && row.time) drug.times.add(row.time);
+      if (!row.noTime && row.time) drug.times.add(row.timeGuess ? `${row.timeGuess} ~${row.time}` : row.time);
     }
     return [...map.values()].sort((a, b) => a.room.localeCompare(b.room, 'vi', { numeric: true }) || String(a.name).localeCompare(String(b.name), 'vi'));
   }, [rows]);

@@ -144,7 +144,9 @@ function collectDrugRows(patients, selectedDate) {
           route,
           time: tm.time,
           date: tm.date || bundle.date || selectedDate,
-          timeText: tm.noTime ? 'Chưa rõ giờ' : `${tm.time}${tm.date && tm.date !== selectedDate ? ` ${tm.date}` : ''}`,
+          timeText: tm.noTime ? 'Chưa rõ giờ' : `${tm.time}${tm.date && tm.date !== selectedDate ? ` ${tm.date}` : ''}${tm.guessFrom ? ` (theo chữ "${tm.guessFrom}")` : ''}`,
+          // Giờ suy từ chữ buổi trong y lệnh (sáng/trưa/chiều/tối), không phải giờ bác sĩ ghi.
+          timeGuess: tm.guessFrom || '',
           hour: tm.hour,
           noTime: Boolean(tm.noTime),
           quantity: quantityOf(item, category, tm.hour),
