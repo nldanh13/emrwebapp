@@ -117,6 +117,19 @@ export default function DataProcessingTab({ toast, workDateRange }) {
 
   useEffect(() => { load(); }, [load]);
 
+  // Màn hình được giữ lại khi chuyển tab: quay lại thì cập nhật ngầm (không mất phòng đang chọn);
+  // vừa lưu xếp phòng thì tải lại danh sách phòng.
+  useEffect(() => {
+    const onActive = (e) => { if (e.detail === 'acquire') load(); };
+    const onBoardSaved = () => load();
+    window.addEventListener('emr:tab-active', onActive);
+    window.addEventListener('emr:board-saved', onBoardSaved);
+    return () => {
+      window.removeEventListener('emr:tab-active', onActive);
+      window.removeEventListener('emr:board-saved', onBoardSaved);
+    };
+  }, [load]);
+
   const rowsForDetails = useMemo(() => {
     const assigned = boardRows.filter(row => String(row?.Vi_Tri || row?.so_phong || row?.room || '').trim());
     if (assigned.length) return boardRows;
@@ -125,6 +138,11 @@ export default function DataProcessingTab({ toast, workDateRange }) {
   }, [boardRows, rawRows]);
 
   const availableRooms = useMemo(() => getUniqueRooms(rowsForDetails), [rowsForDetails]);
+
+  // Phòng đã chọn mà không còn trong danh sách (đổi tên/bỏ phòng ở Xếp phòng): bỏ khỏi lựa chọn.
+  useEffect(() => {
+    setSelectedRooms(prev => prev.filter(r => availableRooms.includes(r)));
+  }, [availableRooms]);
 
   const targetRowsForDetails = useMemo(() => {
     const list = Array.isArray(rowsForDetails) ? rowsForDetails : [];

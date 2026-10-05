@@ -1,4 +1,5 @@
 import { IconArrowBarToDown, IconDeviceFloppy, IconListSearch, IconPrinter, IconReload, IconSearch, IconX } from '@tabler/icons-react';
+import { AutoSaveNote } from './AutoSaveNote.jsx';
 import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import { getPatientId, getPatientName, getWardMetaLine, roomPriceTier, formatVND } from './bedBoardUtils.js';
@@ -26,6 +27,7 @@ export default function BedBoardMobile({
   assigned,
   filtered,
   saving,
+  autoSave,
   handleSaveOnly,
   handlePrintRooms,
   printingRooms,
@@ -166,6 +168,7 @@ export default function BedBoardMobile({
 
       {/* Lưu — dính đáy vùng nội dung, phía trên thanh điều hướng dưới */}
       <div style={{ position: 'sticky', bottom: 0, padding: '10px 12px', borderTop: `1px solid ${C.border}`, background: C.surface }}>
+        <div style={{ textAlign: 'center', marginBottom: 4 }}><AutoSaveNote autoSave={autoSave} /></div>
         <Btn variant="solidPrimary" icon={IconDeviceFloppy} loading={saving} onClick={handleSaveOnly} disabled={saving} style={{ width: '100%', minHeight: 42, fontSize: FS.lg }}>
           {saving ? 'Đang lưu…' : 'Lưu xếp phòng'}
         </Btn>
