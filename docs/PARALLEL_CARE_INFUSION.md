@@ -5,8 +5,9 @@
 - **Nhập liệu** (ghi vào EMR) đăng nhập bằng tài khoản EMR của **điều dưỡng ca làm theo Lịch
   điều dưỡng** của ngày đang nhập. Tài khoản lấy từ Thiết lập tài khoản
   (`secrets/nurse_emr_accounts.json`, xem `SECRETS.md`).
-  - Chăm sóc: người ca làm nhập hết phiếu của ngày, kể cả phiếu giờ trực. Phiếu giờ trực vẫn
-    được Thu hồi, đổi Người lập sang người trực rồi Hoàn tất bằng tài khoản người trực như trước.
+  - Chăm sóc: người ca làm nhập hết phiếu của ngày, kể cả phiếu giờ trực. Phiếu giờ trực:
+    Hoàn tất → Thu hồi → đổi Người lập sang người trực → Hoàn tất, tất cả **bằng tài khoản ca làm**.
+    Các bước này theo đúng macro người dùng ghi lại; không đăng nhập tài khoản người trực.
   - Nhập nhiều ngày: người bệnh/phiếu được xếp theo ngày. Mỗi ngày đổi sang tài khoản ca làm
     của ngày đó, và chỉ đổi khi khác tài khoản đang dùng.
   - Dịch truyền nhập theo từng người bệnh. Nếu một người bệnh có nhiều ngày với người ca làm khác

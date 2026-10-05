@@ -269,6 +269,40 @@ def chi_luu(driver):
     return True
 
 
+def _bam_xac_nhan_cham_soc(driver):
+    """Bấm nút xác nhận (id=submit_handle_ChamSoc) hiện ra sau Thu hồi/Hoàn tất, nếu có."""
+    from utils import handle_popups
+
+    clicked = False
+    try:
+        btn = driver.find_element(By.ID, "submit_handle_ChamSoc")
+        if btn.is_displayed():
+            driver.execute_script("arguments[0].click();", btn)
+            clicked = True
+            time.sleep(1.0)
+    except Exception as _e:
+        LOG.debug(f"[except] {_e}")
+    handle_popups(driver)
+    return clicked
+
+
+def hoan_tat_ngay(driver):
+    """Bấm Hoàn tất → xác nhận (đúng các bước người dùng ghi macro, không bấm Lưu trước);
+    trả True nếu badge chuyển sang 'Hoàn tất'."""
+    from care_web_actions import check_trang_thai_badge
+
+    try:
+        btn = driver.find_element(By.ID, "btnPopupHOANTAT")
+        driver.execute_script("arguments[0].click();", btn)
+    except Exception as _e:
+        LOG.debug(f"[except] {_e}")
+        return False
+    time.sleep(1.0)
+    _bam_xac_nhan_cham_soc(driver)
+    time.sleep(1.0)
+    return "Hoàn tất" in check_trang_thai_badge(driver)
+
+
 def doi_nguoi_lap_sau_hoan_tat(driver, ten_nguoi_lap, hoan_tat=True):
     """Phiếu đang mở đã Hoàn tất dưới tên chủ tài khoản đang đăng nhập:
     Thu hồi → đổi Người lập sang ``ten_nguoi_lap`` → Lưu (→ Hoàn tất).
@@ -276,15 +310,18 @@ def doi_nguoi_lap_sau_hoan_tat(driver, ten_nguoi_lap, hoan_tat=True):
     EMR báo lỗi nếu đổi Người lập sang người khác ngay lúc tạo phiếu (trước khi
     Hoàn tất lần đầu), nên việc đổi tên luôn làm SAU khi phiếu đã Hoàn tất.
 
-    ``hoan_tat=False``: chỉ Lưu, để phiếu ở trạng thái Mới — EMR chỉ cho chính
-    tài khoản của ``ten_nguoi_lap`` bấm Hoàn tất, nên bước đó làm ở lượt đăng
-    nhập tài khoản người đó (``hoan_tat_phieu_cho_duyet`` trong input_care).
+    Cùng tài khoản đang đăng nhập làm hết (đúng macro người dùng): Thu hồi →
+    xác nhận → chọn Người lập → Hoàn tất → xác nhận; không cần đăng nhập tài
+    khoản của ``ten_nguoi_lap``.
+
+    ``hoan_tat=False``: chỉ Lưu, để phiếu ở trạng thái Mới.
     """
     from care_web_actions import click_thu_hoi_cham_soc
 
     if not click_thu_hoi_cham_soc(driver):
         LOG.warning(_ctx_prefix() + f"[NguoiLap] Không bấm được Thu hồi để đổi sang '{ten_nguoi_lap}'")
         return False
+    _bam_xac_nhan_cham_soc(driver)
     if not _chon_nguoi_lap_select2(driver, ten_nguoi_lap):
         LOG.warning(_ctx_prefix() + f"[NguoiLap] Thu hồi xong nhưng không chọn được '{ten_nguoi_lap}'")
         # Không bỏ phiếu ở trạng thái Mới: Hoàn tất lại với tên cũ.
@@ -292,4 +329,5 @@ def doi_nguoi_lap_sau_hoan_tat(driver, ten_nguoi_lap, hoan_tat=True):
         return False
     if not hoan_tat:
         return chi_luu(driver)
-    return luu_va_hoan_tat(driver)
+    # Hoàn tất thẳng như macro; không lên Hoàn tất thì thử lại kiểu Lưu → Hoàn tất.
+    return hoan_tat_ngay(driver) or luu_va_hoan_tat(driver)
