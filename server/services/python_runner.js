@@ -213,9 +213,13 @@ function runWorker(cmd, args, opts = {}) {
 
 /** Chạy một script Python cụ thể trong worker/. */
 function runScript(scriptName, args = [], opts = {}) {
-  const scriptPath = path.join(WORKER_DIR, scriptName);
-  if (!fs.existsSync(scriptPath)) throw new Error(`Thiếu script: worker/${scriptName}`);
-  console.log(`>>> [NODE] Script: ${scriptName} ${argsForLog(args)}`);
+  // hchanh_fetch_safe.py giữ nguyên CLI của hchanh_fetch.py nhưng buộc màn Lịch sử
+  // y lệnh chọn 1000 = “Tất cả” và chờ AJAX ổn định trước khi parse. Giữ redirect
+  // ở một chỗ để mọi caller hchanh_fetch đều nhận cùng cơ chế an toàn.
+  const actualScriptName = scriptName === 'hchanh_fetch.py' ? 'hchanh_fetch_safe.py' : scriptName;
+  const scriptPath = path.join(WORKER_DIR, actualScriptName);
+  if (!fs.existsSync(scriptPath)) throw new Error(`Thiếu script: worker/${actualScriptName}`);
+  console.log(`>>> [NODE] Script: ${actualScriptName} ${argsForLog(args)}`);
   return runPython(['-u', scriptPath, ...args], {
     timeoutMs: PY_TIMEOUT_MS,
     cwd:       opts.cwd,
