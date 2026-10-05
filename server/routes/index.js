@@ -7,6 +7,7 @@ const { heavyTaskLimiter, readWriteLimiter, researchReadLimiter, clientLogLimite
 const { requestAuditMiddleware } = require('../services/activity_logger');
 const { featureGate } = require('../middleware/feature_gate');
 const { resourceConcurrency } = require('../middleware/resource_concurrency');
+const { dangerousActionDedupe } = require('../middleware/dangerous_action_dedupe');
 
 // Endpoint kích hoạt Python process — giới hạn 5 lần/phút/session
 const HEAVY_TASK_ROUTES = [
@@ -74,6 +75,9 @@ router.use(resourceConcurrency);
 
 // Gate dùng registry hiệu lực: chỉ route thuộc module bị tắt mới bị skip.
 router.use(featureGate);
+
+// Chặn bấm lặp / retry mạng khiến cùng một thao tác có tác dụng ngoài bị chạy hai lần.
+router.use(dangerousActionDedupe);
 
 router.use(require('./health'));
 router.use(require('./features'));
