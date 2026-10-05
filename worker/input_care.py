@@ -80,6 +80,7 @@ from care_cache import (
 from care_form_actions import (
     set_thoi_gian_lap, dien_thong_tin, set_log_context as set_care_form_log_context,
     doi_nguoi_lap_sau_hoan_tat, doc_nguoi_lap_hien_tai, cung_nguoi_lap, luu_va_hoan_tat,
+    dat_nguoi_lap_ve_chu_tai_khoan,
 )
 
 # ==============================================================================
@@ -811,6 +812,10 @@ def main():
         # Tên chủ tài khoản mặc định (tra từ secrets/nurse_emr_accounts.json) — chỉ
         # dùng khi người ca làm chưa có tài khoản EMR và phải nhập bằng tài khoản mặc định.
         default_owner_name = get_nurse_name_for_username(default_emr_username)
+        # Tên chủ tài khoản đang đăng nhập (Người lập EMR tự điền khi tạo phiếu).
+        account_owner_name = (
+            run_account.get("nurse_name") if run_account.get("source") == "schedule" else default_owner_name
+        ) or ""
 
         # ── PHASE 1: tính toán (KHÔNG mở trình duyệt) danh sách care_jobs của
         # từng bệnh nhân, rồi nhóm theo tài khoản EMR cần đăng nhập (điều dưỡng
@@ -1435,6 +1440,12 @@ def main():
                             LOG.warning(_ctx_prefix() + f"[edit_not_allowed] {msg_sw2}")
                             return
                         driver, wait = ws.driver, ws.wait
+                        # Phiếu cũ đứng tên người khác (vd 'Mới' tên người trực do bản cũ để
+                        # lại): đưa Người lập về chủ tài khoản để Hoàn tất được; nếu cần tên
+                        # người khác thì bước sau Thu hồi → đổi Người lập → Hoàn tất (macro).
+                        if existing_creator and not switched_for_edit and account_owner_name:
+                            if not dat_nguoi_lap_ve_chu_tai_khoan(driver, account_owner_name):
+                                print(f"[WARN] Không đưa được Người lập về {account_owner_name}.", end=" ")
                     elif stt == "EDIT":
                         print("-> [ACTION] THU HỒI/XÓA PHIẾU CŨ.", end=" ")
 

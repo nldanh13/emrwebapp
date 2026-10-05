@@ -231,6 +231,22 @@ def cung_nguoi_lap(a, b):
     return bool(ka and kb and (ka == kb or ka in kb or kb in ka))
 
 
+def dat_nguoi_lap_ve_chu_tai_khoan(driver, owner_name):
+    """Phiếu đang mở để sửa mà Người lập là người khác: đưa về chủ tài khoản
+    đang đăng nhập (``owner_name``) trước khi Lưu/Hoàn tất.
+
+    Tài khoản A không Hoàn tất được phiếu 'Mới' đang đứng tên B; như macro người
+    dùng: Hoàn tất dưới tên A trước, rồi mới Thu hồi → đổi sang B → Hoàn tất.
+    Trả False nếu không biết chủ tài khoản hoặc chọn không được.
+    """
+    owner_name = str(owner_name or "").strip()
+    if not owner_name:
+        return False
+    if cung_nguoi_lap(doc_nguoi_lap_hien_tai(driver), owner_name):
+        return True
+    return _chon_nguoi_lap_select2(driver, owner_name)
+
+
 def luu_va_hoan_tat(driver, attempts=3):
     """Bấm Lưu rồi Hoàn tất trên popup phiếu chăm sóc đang mở; trả True nếu
     badge trạng thái chuyển sang 'Hoàn tất'."""
