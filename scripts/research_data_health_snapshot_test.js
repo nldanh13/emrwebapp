@@ -63,4 +63,31 @@ test('danh sách lượt: lượt lỗi lên đầu, lượt đang chạy sau l�
   assert.deepStrictEqual(order, ['NC3', 'NC2', 'NC1']);
 });
 
+test('đang thu thập: trạng thái MỚI trong file tiến độ thắng trạng thái cũ của lần chuẩn hóa trước', () => {
+  // Người dùng: "bộ đếm dữ liệu sao không cập nhật gì hết". extract_status.csv (lần chuẩn hóa
+  // trước) ghi profile=error; thu thập vừa lấy lại xong (done) nhưng bộ đếm vẫn đếm lỗi vì chỉ
+  // dùng tiến độ mới khi ô cũ để trống.
+  const dir = path.join(process.env.EMR_RUNTIME_ROOT, 'run_live');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'extract_status.csv'), [
+    'research_code,patient_code,patient_name,profile_status,discharge_status,surgery_status,order_history_status,xn_status,cdha_status,popup_status,last_error',
+    'NC1,26000001,A,error,error,error,partial,done,done,done,',
+    'NC2,26000001,A,done,done,done,done,done,done,done,',
+  ].join('\n'));
+  const now = new Date().toISOString();
+  fs.writeFileSync(path.join(dir, 'hchanh_auto_progress.json'), JSON.stringify({
+    k1: { research_code: 'NC1', ma_bn: '26000001', files: ['profile', 'discharge', 'surgery'], status: 'done', updated_at: now },
+  }));
+  fs.writeFileSync(path.join(dir, 'order_history_auto_progress.json'), JSON.stringify({
+    k1: { research_code: 'NC1', ma_bn: '26000001', files: ['order_history'], status: 'done', updated_at: now },
+    // Lượt KHÁC của cùng người bệnh đang lỗi: không được đè sang NC2.
+    k2: { research_code: 'NC9', ma_bn: '26000001', files: ['order_history'], status: 'error', updated_at: now },
+  }));
+  const s = ps.buildResearchProgressSnapshot(dir, { id: 'archive' }, { isArchive: true });
+  const byCode = Object.fromEntries(s.rows.map(r => [r.research_code, r]));
+  assert.strictEqual(byCode.NC1.state, 'done', JSON.stringify(byCode.NC1));
+  assert.strictEqual(byCode.NC2.state, 'done', JSON.stringify(byCode.NC2));
+  assert.strictEqual(s.counts.done, 2);
+});
+
 console.log(`\n${passed} test(s) passed.`);

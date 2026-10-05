@@ -221,14 +221,46 @@ function hchanhEntryFileStatus(entry, fileKey) {
   return String(entry.status || '').trim();
 }
 
+// Chỉ mục theo Mã NC / Mã BN cho mỗi file tiến độ: bảng theo dõi tra trạng thái cho mọi lượt
+// (~3.000) mỗi vài giây; không quét lại toàn bộ file tiến độ cho từng lượt.
+const progressIndexCache = new WeakMap();
+
+function progressIndex(progressMap) {
+  const key = progressMap || {};
+  let idx = progressIndexCache.get(key);
+  if (idx) return idx;
+  idx = { byRc: new Map(), byCode: new Map() };
+  for (const v of Object.values(key)) {
+    if (!v || typeof v !== 'object' || !Array.isArray(v.files)) continue;
+    const vRc = String(v.research_code || v.ma_nc || v['Mã NC'] || '').trim();
+    const vCode = String(v.ma_bn || v.patient_code || v['Mã BN'] || '').trim();
+    if (vRc) {
+      if (!idx.byRc.has(vRc)) idx.byRc.set(vRc, []);
+      idx.byRc.get(vRc).push(v);
+    }
+    if (vCode) {
+      if (!idx.byCode.has(vCode)) idx.byCode.set(vCode, []);
+      idx.byCode.get(vCode).push(v);
+    }
+  }
+  progressIndexCache.set(key, idx);
+  return idx;
+}
+
 function buildHchanhFileStatus(progressMap, code, researchCode, fileKey) {
-  const candidates = Object.values(progressMap || {}).filter(v => {
-    if (!v || typeof v !== 'object') return false;
-    const files = Array.isArray(v.files) ? v.files : [];
-    if (!files.includes(fileKey)) return false;
+  const idx = progressIndex(progressMap);
+  const pool = [
+    ...(researchCode ? idx.byRc.get(researchCode) || [] : []),
+    ...(code ? idx.byCode.get(code) || [] : []),
+  ];
+  const seen = new Set();
+  const candidates = pool.filter(v => {
+    if (seen.has(v)) return false;
+    seen.add(v);
+    if (!v.files.includes(fileKey)) return false;
     const vCode = String(v.ma_bn || v.patient_code || v['Mã BN'] || '').trim();
     const vRc = String(v.research_code || v.ma_nc || v['Mã NC'] || '').trim();
-    if (researchCode && vRc && vRc === researchCode) return true;
+    if (researchCode && vRc) return vRc === researchCode;  // lượt khác của cùng BN: không lấy
     return vCode && code && vCode === code;
   });
   if (!candidates.length) return '';
@@ -577,10 +609,12 @@ function buildResearchProgressSnapshot(runDir, scopeMeta = {}, { isArchive = tru
   for (const row of rowsByKey.values()) {
     const code = row.patient_code;
     const rc = row.research_code;
-    row.profile_status = row.profile_status || buildHchanhFileStatus(hchanhProgress, code, rc, 'profile');
-    row.discharge_status = row.discharge_status || buildHchanhFileStatus(hchanhProgress, code, rc, 'discharge');
-    row.surgery_status = row.surgery_status || buildHchanhFileStatus(hchanhProgress, code, rc, 'surgery');
-    row.order_history_status = row.order_history_status || buildHchanhFileStatus(orderProgress, code, rc, 'order_history') || buildHchanhFileStatus(hchanhProgress, code, rc, 'order_history');
+    // Trạng thái MỚI trong file tiến độ (đang thu thập) thắng trạng thái của lần chuẩn hóa trước
+    // (extract_status.csv); trước đây chỉ dùng tiến độ mới khi ô cũ trống nên bộ đếm đứng yên.
+    row.profile_status = buildHchanhFileStatus(hchanhProgress, code, rc, 'profile') || row.profile_status;
+    row.discharge_status = buildHchanhFileStatus(hchanhProgress, code, rc, 'discharge') || row.discharge_status;
+    row.surgery_status = buildHchanhFileStatus(hchanhProgress, code, rc, 'surgery') || row.surgery_status;
+    row.order_history_status = buildHchanhFileStatus(orderProgress, code, rc, 'order_history') || buildHchanhFileStatus(hchanhProgress, code, rc, 'order_history') || row.order_history_status;
     const missing = missingLabelsForProgressRow(row);
     row.missing = missing;
     row.ready = missing.length === 0;
