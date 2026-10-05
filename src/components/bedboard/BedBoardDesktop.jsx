@@ -1,4 +1,5 @@
 import { IconDeviceFloppy, IconHandClick, IconListSearch, IconPlus, IconPrinter, IconReload, IconSearch, IconX } from '@tabler/icons-react';
+import { AutoSaveNote } from './AutoSaveNote.jsx';
 import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import RoomCard from './RoomCard.jsx';
@@ -35,6 +36,7 @@ export default function BedBoardDesktop({
   setNewRoom,
   addRoom,
   saving,
+  autoSave,
   handleSaveOnly,
   handlePrintRooms,
   printingRooms,
@@ -119,6 +121,7 @@ export default function BedBoardDesktop({
               {unassigned.length > 0 && <> · <span style={{ color: C.amber, fontWeight: 600 }}>{unassigned.length} chưa xếp</span></>}
             </span>
           )}
+          <AutoSaveNote autoSave={autoSave} />
           <Btn variant="solidPrimary" icon={IconDeviceFloppy} loading={saving} onClick={handleSaveOnly} disabled={saving}>
             {saving ? 'Đang lưu…' : 'Lưu xếp phòng'}
           </Btn>

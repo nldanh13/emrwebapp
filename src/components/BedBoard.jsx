@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import * as api from '../api.js';
 import BedBoardDesktop from './bedboard/BedBoardDesktop.jsx';
 import BedBoardMobile from './bedboard/BedBoardMobile.jsx';
@@ -75,9 +75,17 @@ export default function BedBoard({ toast }) {
   const [fixingRooms, setFixingRooms] = useState(false);
 
   const selCount = selectedPxSet.size;
+  // Tự lưu xếp phòng: mỗi lần xếp/bỏ/ghi chú thì lưu sau 0,8 giây. Trước đây chỉ lưu khi bấm
+  // "Lưu xếp phòng"; chuyển tab trước khi bấm là mất, và Lấy dữ liệu không thấy phòng nào để chọn.
+  const [editVersion, setEditVersion] = useState(0);
+  const [autoSave, setAutoSave] = useState({ state: 'idle', at: '' });
+  const patientsRef = useRef(patients);
+  patientsRef.current = patients;
+  const pendingRef = useRef(false);
+  const markEdited = useCallback(() => { pendingRef.current = true; setEditVersion(v => v + 1); }, []);
 
-  const loadData = useCallback(() => {
-    setLoading(true);
+  const loadData = useCallback(({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     Promise.all([api.getRaw(), api.getBoardData()])
       .then(([raw, saved]) => {
         const rawRows = Array.isArray(raw) ? raw : [];
@@ -103,6 +111,49 @@ export default function BedBoard({ toast }) {
   }, []);
 
   useEffect(() => { loadData(); loadRoomMismatches(); }, [loadData, loadRoomMismatches]);
+
+  const saveNow = useCallback(async () => {
+    pendingRef.current = false;
+    setAutoSave({ state: 'saving', at: '' });
+    try {
+      await api.saveBoardData(sanitizePatientsForSave(patientsRef.current));
+      setAutoSave({ state: 'saved', at: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) });
+      window.dispatchEvent(new CustomEvent('emr:board-saved'));
+      loadRoomMismatches();
+      return true;
+    } catch (e) {
+      pendingRef.current = true;
+      setAutoSave({ state: 'error', at: '' });
+      toast?.(`Chưa tự lưu được xếp phòng: ${String(e.message || e)}`, 'error');
+      return false;
+    }
+  }, [toast, loadRoomMismatches]);
+
+  useEffect(() => {
+    if (!editVersion) return undefined;
+    setAutoSave({ state: 'pending', at: '' });
+    const id = setTimeout(() => { saveNow(); }, 800);
+    return () => clearTimeout(id);
+  }, [editVersion, saveNow]);
+
+  // Rời màn hình khi còn thay đổi chưa lưu: lưu ngay.
+  useEffect(() => () => {
+    if (pendingRef.current) api.saveBoardData(sanitizePatientsForSave(patientsRef.current)).catch(() => {});
+  }, []);
+
+  // Quay lại tab Xếp phòng: cập nhật ngầm (danh sách vừa quét ở tab khác), không làm mất thay đổi đang chờ lưu.
+  useEffect(() => {
+    const onActive = (e) => {
+      if (e.detail === 'bed') {
+        if (!pendingRef.current) loadData({ silent: true });
+      } else if (pendingRef.current) {
+        // Rời tab khi còn thay đổi chưa lưu: lưu ngay để tab khác (vd. Lấy dữ liệu) thấy phòng mới xếp.
+        saveNow();
+      }
+    };
+    window.addEventListener('emr:tab-active', onActive);
+    return () => window.removeEventListener('emr:tab-active', onActive);
+  }, [loadData, saveNow]);
 
   const handleFixRooms = useCallback(async (patientIds) => {
     setFixingRooms(true);
@@ -166,21 +217,24 @@ export default function BedBoard({ toast }) {
     setPatients(prev => prev.map(p =>
       selectedPxSet.has(getPatientId(p)) ? { ...p, Vi_Tri: room } : p
     ));
+    markEdited();
     setSelectedPxSet(new Set());
     setInspectRoom(null);
-  }, [selectedPxSet]);
+  }, [selectedPxSet, markEdited]);
 
   const removeFromRoom = useCallback((pid) => {
     setPatients(prev => prev.map(p =>
       getPatientId(p) === pid ? { ...p, Vi_Tri: '' } : p
     ));
-  }, []);
+    markEdited();
+  }, [markEdited]);
 
   const clearRoom = useCallback((room) => {
     setPatients(prev => prev.map(p =>
       matchesRoom(p.Vi_Tri, room) ? { ...p, Vi_Tri: '' } : p
     ));
-  }, []);
+    markEdited();
+  }, [markEdited]);
 
   const addRoom = useCallback(() => {
     // Phòng dạng "P12" được chuẩn hoá như trước; phòng đặt tên tự do (không khớp
@@ -198,7 +252,8 @@ export default function BedBoard({ toast }) {
     setPatients(prev => prev.map(p =>
       getPatientId(p) === id ? { ...p, [field]: value } : p
     ));
-  }, []);
+    markEdited();
+  }, [markEdited]);
 
   const deleteRoom = useCallback((room) => {
     clearRoom(room);
@@ -236,7 +291,10 @@ export default function BedBoard({ toast }) {
   const handleSaveOnly = useCallback(async () => {
     setSaving(true);
     try {
+      pendingRef.current = false;
       await api.saveBoardData(sanitizePatientsForSave(patients));
+      setAutoSave({ state: 'saved', at: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) });
+      window.dispatchEvent(new CustomEvent('emr:board-saved'));
       toast?.('Đã lưu xếp phòng!', 'ok');
       loadRoomMismatches();
     } catch (e) {
@@ -267,6 +325,7 @@ export default function BedBoard({ toast }) {
     filtered,
     patients,
     saving,
+    autoSave,
     handleSaveOnly,
     handlePrintRooms,
     printingRooms,
