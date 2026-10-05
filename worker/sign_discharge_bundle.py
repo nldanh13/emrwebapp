@@ -147,12 +147,14 @@ def _norm_text(value: str) -> str:
 
 
 # Khoảng cách (pt) giữa mép trên của chữ và mép dưới của ảnh chữ ký.
-_STAMP_GAP = 2.0
-# Hệ số phóng bề dày chữ ký so với bề dày dòng chữ, và biên trên/dưới (pt).
-_HORIZ_THICKNESS_FACTOR = 1.55
-_HORIZ_THICKNESS_MIN, _HORIZ_THICKNESS_MAX = 10.0, 32.0
-_VERT_THICKNESS_FACTOR = 1.75
-_VERT_THICKNESS_MIN, _VERT_THICKNESS_MAX = 10.0, 26.0
+# Giảm nhẹ khoảng hở để chữ ký lớn hơn vẫn nằm gọn sát tên người ký.
+_STAMP_GAP = 1.5
+# Tăng khoảng 30-35% so với bản cũ: chữ ký rõ hơn khi in A4 nhưng vẫn giữ
+# trần kích thước để không chạm đường kẻ ở những hàng thấp.
+_HORIZ_THICKNESS_FACTOR = 2.05
+_HORIZ_THICKNESS_MIN, _HORIZ_THICKNESS_MAX = 12.0, 36.0
+_VERT_THICKNESS_FACTOR = 2.10
+_VERT_THICKNESS_MIN, _VERT_THICKNESS_MAX = 12.0, 30.0
 
 # Ảnh chữ ký được chuẩn hoá trước khi chèn: thu nhỏ (ảnh chụp điện thoại rất
 # lớn làm PDF nặng), bỏ nền trắng, làm nét đậm và dày hơn.
