@@ -1,4 +1,5 @@
-import { IconActivityHeartbeat, IconHistory, IconLogout, IconMenu2, IconPlayerStop, IconSearch } from '@tabler/icons-react';
+import { IconActivityHeartbeat, IconHistory, IconLogout, IconMenu2, IconPlayerStop, IconSearch, IconShare } from '@tabler/icons-react';
+import { getWorkspaceShareUrl } from '../../hooks/useSession.js';
 
 const ROLE_LABELS = { viewer: 'Người xem', researcher: 'Nghiên cứu', operator: 'Vận hành', supervisor: 'Giám sát', admin: 'Quản trị' };
 
@@ -15,6 +16,25 @@ function IconButton({ label, onClick, danger = false, children }) {
       {children}
     </button>
   );
+}
+
+async function shareWorkspace() {
+  const url = getWorkspaceShareUrl();
+  const title = 'EMR Web App — cùng workspace';
+  const text = 'Mở link này trên thiết bị khác để dùng đúng cùng dữ liệu và hàng đợi tác vụ. Thiết bị kia vẫn phải nhập mã truy cập riêng.';
+  try {
+    if (navigator.share) {
+      await navigator.share({ title, text, url });
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    window.alert('Đã sao chép link dùng chung dữ liệu. Gửi/mở link này trên thiết bị khác.');
+  } catch (err) {
+    // Người dùng bấm Hủy bảng Share thì không hiện lỗi. Nếu clipboard/share không hỗ trợ,
+    // dùng prompt để họ vẫn copy được URL mà không cần mở DevTools.
+    if (err?.name === 'AbortError') return;
+    window.prompt('Sao chép link này để mở cùng workspace trên thiết bị khác:', url);
+  }
 }
 
 export default function TopBar({ tab, now, onCancel, onViewLog, onDiagnostics, onOpenFunctions, mobile = false, onMenuClick, user, authMode, onLogout, running = null }) {
@@ -49,6 +69,7 @@ export default function TopBar({ tab, now, onCancel, onViewLog, onDiagnostics, o
             <span style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>Tìm chức năng, quy trình…</span>
           </button>
         )}
+        <IconButton label="Mở cùng dữ liệu trên thiết bị khác" onClick={shareWorkspace}><IconShare {...iconProps} /></IconButton>
         <IconButton label="Chẩn đoán hệ thống" onClick={onDiagnostics}><IconActivityHeartbeat {...iconProps} /></IconButton>
         {!mobile && <IconButton label="Xem nhật ký" onClick={onViewLog}><IconHistory {...iconProps} /></IconButton>}
         <IconButton label="Dừng tác vụ đang chạy" onClick={onCancel} danger><IconPlayerStop {...iconProps} /></IconButton>
