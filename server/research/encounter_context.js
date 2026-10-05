@@ -342,7 +342,7 @@ function contextForRow(ctxMap, row, code) {
     const exact = uniqueContext(ctxMap.get(
       `research_patient:${normalizedIdentity(code)}|${normalizedIdentity(researchCode)}`,
     ));
-    if (exact) return matchedContext(exact, 'research_code_patient_scoped');
+    if (exact) return matchedContext(exact, 'research_code');
   }
 
   const admission = isoDateTime(firstNonEmpty(row, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'admission_date']))
