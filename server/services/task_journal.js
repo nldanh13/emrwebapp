@@ -7,6 +7,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { RUNTIME_ROOT } = require('../constants');
 const { ensureDir, readJsonCritical, writeJsonAtomic } = require('../utils/file');
+const { publishTaskEvent } = require('./realtime_bus');
 
 const JOURNAL_DIR = path.join(RUNTIME_ROOT, 'task_journal');
 const STATE_PATH = path.join(JOURNAL_DIR, 'task_state.json');
@@ -38,6 +39,10 @@ function appendEvent(event) {
   ensureJournalDir();
   fs.appendFileSync(EVENTS_PATH, `${JSON.stringify(event)}\n`, { encoding: 'utf8', mode: 0o600 });
   try { fs.chmodSync(EVENTS_PATH, 0o600); } catch (_) {}
+  try { publishTaskEvent(event); } catch (err) {
+    // Realtime là kênh phụ; không được làm hỏng tác vụ thật nếu client stream lỗi.
+    console.warn('[REALTIME] Không phát được task event:', String(err?.message || err));
+  }
 }
 
 function pruneState() {
@@ -84,7 +89,16 @@ function updateTask(taskId, status, fields = {}) {
     task.attempts = Number(task.attempts || 0) + 1;
   }
   if (['succeeded', 'failed', 'cancelled', 'unknown_after_restart'].includes(status)) task.finished_at = at;
-  appendEvent({ event: `task_${status}`, at, task_id: taskId, sid: task.sid, task_type: task.task_type, ...fields });
+  appendEvent({
+    event: `task_${status}`,
+    at,
+    status,
+    task_id: taskId,
+    sid: task.sid,
+    task_type: task.task_type,
+    queue_type: task.queue_type,
+    ...fields,
+  });
   persistState();
   return { ...task };
 }
