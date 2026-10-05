@@ -24,6 +24,9 @@ class FakeWS:
     def restore_account(self, *a, **k):
         pass
 
+    def run_with_creator_fallback(self, creator, ma_bn, action, allow_completed=False, reopen=None):
+        return bool(action())
+
 
 def _cache():
     return {

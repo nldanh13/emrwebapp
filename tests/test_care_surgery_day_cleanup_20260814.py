@@ -95,6 +95,18 @@ class _FakeWS:
     def open_care_form(self, ma_bn, allow_completed=False):
         self.open_care_form_calls.append((ma_bn, allow_completed))
 
+    def run_with_creator_fallback(self, creator, ma_bn, action, allow_completed=False, reopen=None):
+        # Cùng quy tắc WorkerSession thật: tài khoản đang dùng trước, không được mới đổi.
+        if action():
+            return True
+        original = self.config.get('username')
+        if not self.switch_to_creator_account(creator, ma_bn, allow_completed=allow_completed):
+            return False
+        try:
+            return bool(action())
+        finally:
+            self.restore_account(original, 'pw', ma_bn, allow_completed=allow_completed)
+
     def restore_account(self, original_username, original_password, ma_bn, allow_completed=False):
         if not original_username or self.config.get('username') == original_username:
             return
@@ -122,7 +134,7 @@ def test_surgery_cleanup_removes_only_tool_rows_at_or_after_cutoff(monkeypatch):
     monkeypatch.setattr(care_cache, 'EC', DummyEC)
     monkeypatch.setattr(care_cache, 'By', type('DummyBy', (), {'ID': 'id'}))
     monkeypatch.setattr(care_cache, 'open_cham_soc_by_id', lambda driver, care_id: deleted.append(('open', care_id)))
-    monkeypatch.setattr(care_cache, 'click_thu_hoi_va_xoa', lambda driver: deleted.append(('delete', None)))
+    monkeypatch.setattr(care_cache, 'click_thu_hoi_va_xoa', lambda driver: deleted.append(('delete', None)) or True)
     monkeypatch.setattr(care_cache, 'delete_cham_soc_new_by_id', lambda driver, care_id: deleted.append(('delete_new', care_id)))
 
     def row(time_full, care_id, care='Thực hiện chỉ định thuốc', creator='Lê Ngọc Diệu'):
@@ -199,30 +211,29 @@ def test_final_verify_detects_tool_rows_still_left_after_surgery_cutoff():
     assert {x['time_full'] for x in leftovers} == {'08:00 15/08/2026', '05:00 16/08/2026'}
 
 
-def test_cleanup_switches_to_creator_account_before_deleting_and_restores_after(monkeypatch):
-    """EMR hiện chỉ cho đúng tài khoản người tạo phiếu tự sửa/xóa phiếu của họ.
-    cleanup_cham_soc_cache phải đổi sang tài khoản người tạo của TỪNG phiếu
-    trước khi xóa, rồi khôi phục lại đúng tài khoản ban đầu sau khi dọn xong."""
+def _moi_row(time_full, care_id, creator):
+    return {
+        'time_full': time_full,
+        'hhmm': time_full.split()[0],
+        'status': 'Mới',
+        'creator': creator,
+        'dien_bien': 'Người bệnh tỉnh',
+        'cham_soc': 'Thực hiện chỉ định thuốc',
+        'id_edit': care_id,
+        'id_delete': care_id,
+    }
+
+
+def test_cleanup_deletes_with_current_account_without_switching(monkeypatch):
+    """Macro người dùng: tài khoản ca làm đang dùng tự xóa/sửa được phiếu, không
+    cần đăng nhập tài khoản người lập (log cũ: lndieu -> vtynhi -> lndieu)."""
     import care_cache
 
     deleted = []
     monkeypatch.setattr(care_cache, 'delete_cham_soc_new_by_id', lambda driver, care_id: deleted.append(care_id))
-
-    def row(time_full, care_id, creator):
-        return {
-            'time_full': time_full,
-            'hhmm': time_full.split()[0],
-            'status': 'Mới',
-            'creator': creator,
-            'dien_bien': 'Người bệnh tỉnh',
-            'cham_soc': 'Thực hiện chỉ định thuốc',
-            'id_edit': care_id,
-            'id_delete': care_id,
-        }
-
     cache = {
-        '08:00 15/08/2026': [row('08:00 15/08/2026', 'A1', 'Lê Ngọc Diệu')],
-        '09:00 15/08/2026': [row('09:00 15/08/2026', 'B1', 'Nguyễn Văn Bình')],
+        '08:00 15/08/2026': [_moi_row('08:00 15/08/2026', 'A1', 'Lê Ngọc Diệu')],
+        '09:00 15/08/2026': [_moi_row('09:00 15/08/2026', 'B1', 'Nguyễn Văn Bình')],
     }
 
     ws = _FakeWS(username='acct.goc')
@@ -231,12 +242,42 @@ def test_cleanup_switches_to_creator_account_before_deleting_and_restores_after(
     )
 
     assert set(deleted) == {'A1', 'B1'}
-    creator_switches = [c[1] for c in ws.switch_calls if c[0] == 'creator']
-    assert creator_switches == ['Lê Ngọc Diệu', 'Nguyễn Văn Bình']
-    # Khôi phục lại đúng tài khoản gốc sau khi dọn xong.
-    account_switches = [c for c in ws.switch_calls if c[0] == 'account']
-    assert account_switches[-1] == ('account', 'acct.goc', 'pw')
-    assert ws.open_care_form_calls[-1] == ('BN_TEST', False)
+    assert ws.switch_calls == []
+    assert ws.config['username'] == 'acct.goc'
+
+
+def test_cleanup_falls_back_to_creator_account_only_when_current_cannot_delete(monkeypatch):
+    import care_cache
+
+    ws = _FakeWS(username='acct.goc')
+    remaining = {'A1'}
+
+    class _Driver:
+        @property
+        def page_source(self):
+            return ' '.join(sorted(remaining))
+
+    def fake_delete(driver, care_id):
+        # Tài khoản đang dùng không xóa được; chỉ tài khoản người lập xóa được.
+        if ws.config['username'] == 'acct.Lê Ngọc Diệu':
+            remaining.discard(care_id)
+
+    monkeypatch.setattr(care_cache, 'delete_cham_soc_new_by_id', fake_delete)
+    ws.driver = _Driver()
+    _orig_switch = ws.switch_to_creator_account
+
+    def switch_keep_driver(*a, **k):
+        ok = _orig_switch(*a, **k)
+        ws.driver = _Driver()
+        return ok
+
+    ws.switch_to_creator_account = switch_keep_driver
+    cache = {'08:00 15/08/2026': [_moi_row('08:00 15/08/2026', 'A1', 'Lê Ngọc Diệu')]}
+    care_cache.cleanup_cham_soc_cache(ws, 'BN_TEST', cache, [], ['Lê Ngọc Diệu'], phase='TEST')
+
+    assert remaining == set()
+    assert [c[1] for c in ws.switch_calls if c[0] == 'creator'] == ['Lê Ngọc Diệu']
+    assert ws.config['username'] == 'acct.goc'
 
 
 def test_cleanup_skips_delete_but_still_clears_cache_when_no_account_for_creator(monkeypatch):
@@ -264,10 +305,15 @@ def test_cleanup_skips_delete_but_still_clears_cache_when_no_account_for_creator
             self.switch_calls.append(('creator', creator, ma_bn, allow_completed))
             return False
 
+    class _StillThere:
+        page_source = 'X1'
+
     ws = _NoAccountWS()
+    ws.driver = _StillThere()
     care_cache.cleanup_cham_soc_cache(
         ws, 'BN_TEST', cache, [], ['Người Không Có Tài Khoản'], phase='TEST',
     )
 
-    assert deleted == []
+    # Thử bằng tài khoản đang dùng một lần; không được và không có tài khoản người lập thì bỏ qua.
+    assert deleted == ['X1']
     assert '08:00 15/08/2026' not in cache

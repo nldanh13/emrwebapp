@@ -37,7 +37,7 @@ Với `users.json` và `nurse_emr_accounts.json`: dùng `EMR_USERS_FILE` / `EMR_
 | --- | --- | --- |
 | `emr.username`, `emr.password` | `EMR_USERNAME`, `EMR_PASSWORD` | Tài khoản EMR chung (quét, lấy dữ liệu, nhập khi người dùng chưa có tài khoản riêng) — **bắt buộc** |
 | `hchanh.username`, `hchanh.password` | `EMR_HCHANH_USERNAME`, `EMR_HCHANH_PASSWORD` | Module Hành chánh / Kiểm hồ sơ — bắt buộc nếu dùng module này |
-| `infusion.username`, `infusion.password` | `EMR_INFUSION_USERNAME`, `EMR_INFUSION_PASSWORD` | Dịch truyền chạy song song (tùy chọn, xem `PARALLEL_CARE_INFUSION.md`) |
+| `infusion.username`, `infusion.password` | `EMR_INFUSION_USERNAME`, `EMR_INFUSION_PASSWORD` | Không còn dùng: dịch truyền nay nhập bằng tài khoản người ca làm theo lịch (xem `PARALLEL_CARE_INFUSION.md`) |
 | `app.token` | `EMR_APP_TOKEN` | Token chung khi mở app ra LAN mà không dùng `users.json` |
 | `app.log_hash_salt` | `EMR_LOG_HASH_SALT` | Salt băm định danh trong nhật ký hoạt động |
 | `google_sheet.write_token` | `EMR_GOOGLE_SHEET_WRITE_TOKEN` | Ghi Google Sheet nộp hồ sơ |

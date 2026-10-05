@@ -130,3 +130,125 @@ def get_signature_for_nurse(name: Any) -> Optional[str]:
         if normalize_name(row['name']) == key:
             return row['path']
     return None
+
+
+# ── Tài khoản đăng nhập khi NHẬP LIỆU ────────────────────────────────────────
+# Quy tắc (docs/UX_RULES.md mục 4.4): mọi tác vụ GHI vào EMR (chăm sóc, truyền
+# dịch, thủ thuật, VTYT...) đăng nhập bằng tài khoản EMR của điều dưỡng CA LÀM
+# theo Lịch điều dưỡng của ngày đó, không dùng tài khoản mặc định. Người ca làm
+# chưa có tài khoản EMR (Thiết lập tài khoản) thì dùng tài khoản mặc định và
+# cảnh báo. Tác vụ chỉ đọc (quét, lấy dữ liệu) vẫn dùng tài khoản mặc định.
+
+def _work_date_dmy(work_date: Any) -> str:
+    """'dd/mm/yyyy' từ 'dd/mm/yyyy', 'd/m/yy' hoặc 'yyyy-mm-dd' ('' nếu không đọc được)."""
+    text = str(work_date or '').strip()
+    m = re.search(r'(\d{4})-(\d{1,2})-(\d{1,2})', text)
+    if m:
+        return f"{int(m.group(3)):02d}/{int(m.group(2)):02d}/{int(m.group(1)):04d}"
+    m = re.search(r'(\d{1,2})/(\d{1,2})/(\d{2,4})', text)
+    if m:
+        year = int(m.group(3))
+        if year < 100:
+            year += 2000
+        return f"{int(m.group(1)):02d}/{int(m.group(2)):02d}/{year:04d}"
+    return ''
+
+
+def scheduled_work_nurse(schedule: Any, work_date: Any) -> str:
+    """Tên điều dưỡng ca làm của `work_date` theo lịch (config['ten_dieu_duong'])."""
+    dmy = _work_date_dmy(work_date)
+    if not dmy or not isinstance(schedule, dict):
+        return ''
+    from utils import get_nurse_by_shift  # import muộn: utils kéo theo selenium
+    try:
+        return str(get_nurse_by_shift(f"08:00 {dmy}", schedule, force_shift='work') or '').strip()
+    except Exception:
+        return ''
+
+
+def resolve_entry_account(
+    work_date: Any,
+    *,
+    schedule: Any,
+    default_username: Any,
+    default_password: Any,
+    lookup=None,
+) -> Dict[str, str]:
+    """Tài khoản EMR để NHẬP LIỆU cho ngày `work_date`.
+
+    Trả {"username", "password", "nurse_name", "source": "schedule"|"default", "warning"}.
+    - source="schedule": người ca làm theo lịch có tài khoản EMR riêng.
+    - source="default": không tra được người ca làm hoặc người đó chưa có tài
+      khoản → tài khoản mặc định, kèm `warning` tiếng Việt nói rõ cần làm gì.
+    """
+    lookup = lookup or get_emr_account_for_nurse
+    dmy = _work_date_dmy(work_date) or str(work_date or '').strip()
+    nurse = scheduled_work_nurse(schedule, work_date)
+    account = lookup(nurse) if nurse else None
+    if account and account.get('username') and account.get('password'):
+        return {
+            'username': str(account['username']).strip(),
+            'password': str(account['password']),
+            'nurse_name': nurse,
+            'source': 'schedule',
+            'warning': '',
+        }
+    if nurse:
+        warning = (f"Ngày {dmy}: điều dưỡng ca làm {nurse} chưa có tài khoản EMR trong Thiết lập tài khoản "
+                   f"→ nhập bằng tài khoản mặc định. Thêm tài khoản EMR cho {nurse} để lần sau nhập đúng tên.")
+    else:
+        warning = (f"Ngày {dmy}: chưa có người ca làm trong Lịch điều dưỡng → nhập bằng tài khoản mặc định. "
+                   f"Xếp lịch ngày này để lần sau nhập đúng tài khoản.")
+    return {
+        'username': str(default_username or '').strip(),
+        'password': str(default_password or ''),
+        'nurse_name': nurse,
+        'source': 'default',
+        'warning': warning,
+    }
+
+
+class EntryAccountResolver:
+    """Gọi resolve_entry_account theo từng ngày, nhớ kết quả và chỉ cảnh báo một lần mỗi ngày."""
+
+    def __init__(self, config: Dict[str, Any], *, schedule: Any = None, warn=None, lookup=None) -> None:
+        self.schedule = schedule if schedule is not None else (config or {}).get('ten_dieu_duong')
+        self.default_username = str((config or {}).get('username') or '').strip()
+        self.default_password = str((config or {}).get('password') or '')
+        self.warn = warn or (lambda msg: print(f"   [WARN] {msg}"))
+        self.lookup = lookup
+        self.warnings: List[str] = []
+        self._cache: Dict[str, Dict[str, str]] = {}
+
+    def for_date(self, work_date: Any) -> Dict[str, str]:
+        key = _work_date_dmy(work_date) or str(work_date or '').strip()
+        if key not in self._cache:
+            info = resolve_entry_account(
+                work_date, schedule=self.schedule,
+                default_username=self.default_username, default_password=self.default_password,
+                lookup=self.lookup,
+            )
+            self._cache[key] = info
+            if info['warning'] and info['warning'] not in self.warnings:
+                self.warnings.append(info['warning'])
+                self.warn(info['warning'])
+            elif info['source'] == 'schedule':
+                print(f">>> Ngày {key}: nhập bằng tài khoản EMR của {info['nurse_name']} (ca làm theo lịch).")
+        return self._cache[key]
+
+    def login_config(self, config: Dict[str, Any], work_date: Any) -> Dict[str, Any]:
+        """Bản sao config đăng nhập bằng tài khoản ca làm của `work_date` (đăng nhập một lần ngay từ đầu)."""
+        info = self.for_date(work_date)
+        out = dict(config or {})
+        if info['username'] and info['password']:
+            out['username'] = info['username']
+            out['password'] = info['password']
+        return out
+
+
+def sort_tasks_by_work_date(tasks: List[Dict[str, Any]], key: str = 'ngay_lam') -> List[Dict[str, Any]]:
+    """Xếp task theo ngày làm (giữ thứ tự cũ trong cùng ngày) để mỗi tài khoản ca làm chỉ đăng nhập một lần."""
+    def _k(task: Dict[str, Any]):
+        dmy = _work_date_dmy((task or {}).get(key))
+        return (dmy[6:10], dmy[3:5], dmy[0:2]) if dmy else ('9999', '99', '99')
+    return sorted(list(tasks or []), key=_k)

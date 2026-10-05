@@ -14,13 +14,29 @@ import care_web_actions
 
 
 def test_rename_runs_thu_hoi_then_select_then_complete(monkeypatch):
+    """Đúng các bước người dùng ghi macro: Thu hồi → xác nhận → chọn Người lập
+    → Hoàn tất → xác nhận, cùng tài khoản đang đăng nhập (không bấm Lưu trước)."""
     calls = []
     monkeypatch.setattr(care_web_actions, "click_thu_hoi_cham_soc", lambda d: calls.append("thu_hoi") or True)
+    monkeypatch.setattr(actions, "_bam_xac_nhan_cham_soc", lambda d: calls.append("xac_nhan") or True)
     monkeypatch.setattr(actions, "_chon_nguoi_lap_select2", lambda d, name: calls.append(("chon", name)) or True)
-    monkeypatch.setattr(actions, "luu_va_hoan_tat", lambda d: calls.append("hoan_tat") or True)
+    monkeypatch.setattr(actions, "hoan_tat_ngay", lambda d: calls.append("hoan_tat") or True)
+    monkeypatch.setattr(actions, "luu_va_hoan_tat", lambda d: calls.append("luu_hoan_tat") or True)
 
     assert actions.doi_nguoi_lap_sau_hoan_tat(object(), "Điều Dưỡng B") is True
-    assert calls == ["thu_hoi", ("chon", "Điều Dưỡng B"), "hoan_tat"]
+    assert calls == ["thu_hoi", "xac_nhan", ("chon", "Điều Dưỡng B"), "hoan_tat"]
+
+
+def test_rename_falls_back_to_save_then_complete(monkeypatch):
+    calls = []
+    monkeypatch.setattr(care_web_actions, "click_thu_hoi_cham_soc", lambda d: True)
+    monkeypatch.setattr(actions, "_bam_xac_nhan_cham_soc", lambda d: True)
+    monkeypatch.setattr(actions, "_chon_nguoi_lap_select2", lambda d, name: True)
+    monkeypatch.setattr(actions, "hoan_tat_ngay", lambda d: calls.append("hoan_tat") or False)
+    monkeypatch.setattr(actions, "luu_va_hoan_tat", lambda d: calls.append("luu_hoan_tat") or True)
+
+    assert actions.doi_nguoi_lap_sau_hoan_tat(object(), "Điều Dưỡng B") is True
+    assert calls == ["hoan_tat", "luu_hoan_tat"]
 
 
 def test_rename_stops_when_thu_hoi_fails(monkeypatch):
@@ -39,24 +55,26 @@ def test_same_creator_ignores_accents_and_titles():
     assert not actions.cung_nguoi_lap("", "Thạch Thị Thúy Đa")
 
 
-def test_rename_for_other_account_only_saves(monkeypatch):
-    """Đổi sang người có tài khoản khác: chỉ Lưu, để người đó đăng nhập Hoàn tất."""
+def test_rename_only_save_mode_still_available(monkeypatch):
     calls = []
     monkeypatch.setattr(care_web_actions, "click_thu_hoi_cham_soc", lambda d: calls.append("thu_hoi") or True)
+    monkeypatch.setattr(actions, "_bam_xac_nhan_cham_soc", lambda d: True)
     monkeypatch.setattr(actions, "_chon_nguoi_lap_select2", lambda d, name: calls.append(("chon", name)) or True)
-    monkeypatch.setattr(actions, "luu_va_hoan_tat", lambda d: calls.append("hoan_tat") or True)
     monkeypatch.setattr(actions, "chi_luu", lambda d: calls.append("luu") or True)
 
     assert actions.doi_nguoi_lap_sau_hoan_tat(object(), "Điều Dưỡng B", hoan_tat=False) is True
     assert calls == ["thu_hoi", ("chon", "Điều Dưỡng B"), "luu"]
 
 
-def test_input_care_queues_hoan_tat_for_owner_account():
+def test_input_care_renames_and_completes_without_switching_account():
+    """Macro người dùng: tài khoản ca làm Thu hồi, đổi Người lập sang người trực
+    rồi Hoàn tất luôn — không đăng nhập tài khoản người trực."""
     source = (WORKER / "input_care.py").read_text(encoding="utf-8")
-    assert "doi_nguoi_lap_sau_hoan_tat(driver, nguoi_lap_cuoi, hoan_tat=False)" in source
-    assert "keep_moi_time_keys=keep_moi_time_keys" in source
-    phase2b = source.index("PHASE 2b")
-    assert source.index("ws.switch_account(username_ht", phase2b) < source.index("hoan_tat_phieu_cho_duyet(ws, it)", phase2b)
+    assert "doi_nguoi_lap_sau_hoan_tat(driver, nguoi_lap_cuoi)" in source
+    assert "hoan_tat=False" not in source
+    assert "PHASE 2b" not in source
+    assert "pending_hoan_tat" not in source
+    assert "get_emr_account_for_nurse(nguoi_lap_cuoi)" not in source
 
 
 def test_input_care_renames_only_after_hoan_tat():

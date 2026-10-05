@@ -35,6 +35,7 @@ except Exception:  # pragma: no cover - cho phép unit test helper khi chưa cà
 from utils import chuan_hoa_unicode, get_nurse_by_shift, handle_popups, login_emr
 from shared.text_utils import norm_vi as _norm
 from shared.worker_session import WorkerSession, open_session
+from nurse_emr_accounts import EntryAccountResolver, sort_tasks_by_work_date
 from shared.json_io import read_json_critical, read_json_optional
 from selenium_emr_helpers import build_inpatient_url, debug_page, safe_js_click, wait_after_action
 from task_progress_writer import mark_task_status, progress_path_from_input
@@ -1347,10 +1348,17 @@ def main() -> int:
         return 0
 
     _log(f">>> Chuẩn bị nhập thủ thuật cho {len(tasks)} BN/ngày")
-    with open_session(result_path, config=config) as ws:
+    # Nhập bằng tài khoản EMR của người ca làm theo lịch từng ngày (xem
+    # nurse_emr_accounts.resolve_entry_account); gom theo ngày để ít đổi tài khoản.
+    tasks = sort_tasks_by_work_date(tasks)
+    entry_accounts = EntryAccountResolver(config)
+    login_config = entry_accounts.login_config(config, tasks[0].get("ngay_lam"))
+    with open_session(result_path, config=login_config) as ws:
+        ws._result_kwargs.setdefault("warnings", entry_accounts.warnings)
         for task in tasks:
             ma_bn = task.get("ma_bn") or ""
             ngay = task.get("ngay_lam") or ""
+            ws.use_entry_account(entry_accounts.for_date(ngay))
             service_name = task.get("service_name") or ""
             key = _done_key(ma_bn, ngay, service_name)
             _log(f"\n[{ma_bn} {task.get('ho_ten') or ''} | {ngay} | {service_name or 'DVKT thay băng/cắt chỉ'}]")

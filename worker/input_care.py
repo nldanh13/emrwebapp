@@ -33,7 +33,7 @@ from utils import (
 from shared.worker_session import WorkerSession, open_session
 from shared.json_io import read_json_critical
 from shared.logging_utils import make_worker_logger
-from nurse_emr_accounts import get_emr_account_for_nurse, get_nurse_name_for_username
+from nurse_emr_accounts import EntryAccountResolver, get_nurse_name_for_username
 
 from selenium_emr_helpers import (
     build_inpatient_url as _build_inpatient_url,
@@ -71,7 +71,7 @@ from input_care_utils import (
 from task_progress_writer import mark_task_status, progress_path_from_input
 
 from care_web_actions import (
-    check_trang_thai_badge, click_thu_hoi_va_xoa, click_thu_hoi_cham_soc,
+    check_trang_thai_badge, click_thu_hoi_va_xoa, click_thu_hoi_cham_soc, mo_khoa_phieu_dang_mo,
 )
 from care_cache import (
     scan_cham_soc_cache, cleanup_cham_soc_cache, kiem_tra_bang_cached,
@@ -467,41 +467,6 @@ def _format_order_hours_after_discharge(hours, work_date, discharge_dt):
 # ==============================================================================
 # 3. MAIN
 # ==============================================================================
-def hoan_tat_phieu_cho_duyet(ws, item):
-    """Đang đăng nhập đúng tài khoản người lập: mở phiếu 'Mới' đứng tên họ tại
-    mốc giờ ``item['time_str']`` rồi Lưu + Hoàn tất."""
-    try:
-        ws.open_care_form(item["ma_bn"], allow_completed=item.get("allow_completed", False))
-    except Exception as _e:
-        LOG.warning(_ctx_prefix() + f"[hoan_tat] không mở được hồ sơ: {_e}")
-        return False
-    driver, wait = ws.driver, ws.wait
-    cache, _ = scan_cham_soc_cache(driver, item["ngay_lam_viec"], hours_needed=[item["time_str"]])
-    rows = [
-        e for e in (cache.get(item["time_str"]) or [])
-        if "moi" in chuan_hoa_unicode(e.get("status") or "")
-        and cung_nguoi_lap(e.get("creator") or "", item["nurse"])
-        and e.get("id_edit")
-    ]
-    if not rows:
-        LOG.warning(_ctx_prefix() + f"[hoan_tat] không thấy phiếu Mới {item['time_str']} đứng tên {item['nurse']}")
-        return False
-    try:
-        open_cham_soc_by_id(driver, rows[0]["id_edit"])
-        wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
-    except Exception as _e:
-        LOG.warning(_ctx_prefix() + f"[hoan_tat] không mở được phiếu: {_e}")
-        return False
-    ok = luu_va_hoan_tat(driver)
-    try:
-        back_btn = driver.find_element(By.XPATH, "//a[contains(@onclick, 'fnbackFormChamSoc')]")
-        driver.execute_script("arguments[0].click();", back_btn)
-        time.sleep(1)
-    except Exception as _e:
-        LOG.debug(f"[except] {_e}")
-    return ok
-
-
 def main():
     global CONFIG_TEN_GOC
     CONFIG = load_config()
@@ -824,19 +789,26 @@ def main():
     def _after_login(ws: WorkerSession) -> None:
         ws.ensure_inpatient_list()
 
-    with open_session(result_path, config=CONFIG, post_login=_after_login) as ws:
+    # Nhập liệu đăng nhập bằng tài khoản EMR của điều dưỡng CA LÀM theo lịch của
+    # từng ngày (không dùng tài khoản mặc định); người ca làm chưa có tài khoản
+    # thì dùng tài khoản mặc định + cảnh báo. Đăng nhập ngay bằng tài khoản của
+    # ngày đầu tiên để khỏi đăng nhập thừa một lần bằng tài khoản mặc định.
+    entry_accounts = EntryAccountResolver(CONFIG, schedule=CONFIG_TEN_GOC or {})
+    _first_work_date = sorted(
+        (k[1] for k in patient_data.keys()),
+        key=lambda d: (str(d)[6:10], str(d)[3:5], str(d)[0:2]) if re.match(r"\d{2}/\d{2}/\d{4}", str(d)) else (str(d), "", ""),
+    )[0]
+    login_config = entry_accounts.login_config(CONFIG, _first_work_date)
+
+    with open_session(result_path, config=login_config, post_login=_after_login) as ws:
         driver, wait = ws.driver, ws.wait
+        ws._result_kwargs.setdefault("warnings", entry_accounts.warnings)
 
         count = 0
         default_emr_username = str(CONFIG.get("username") or "").strip()
-        default_emr_password = str(CONFIG.get("password") or "")
-        # Tên chủ tài khoản EMR đang dùng (tra từ secrets/nurse_emr_accounts.json).
-        # Rỗng thì từng job lấy tên người ca làm của ngày đó.
-        logged_in_nurse_name = get_nurse_name_for_username(default_emr_username)
-        # Phiếu đã đổi Người lập sang người khác (vd ca trực) và để ở trạng thái
-        # Mới: EMR chỉ cho chính tài khoản người đó bấm Hoàn tất, nên gom lại để
-        # cuối đợt đăng nhập lần lượt từng tài khoản vào bấm Hoàn tất.
-        pending_hoan_tat = []
+        # Tên chủ tài khoản mặc định (tra từ secrets/nurse_emr_accounts.json) — chỉ
+        # dùng khi người ca làm chưa có tài khoản EMR và phải nhập bằng tài khoản mặc định.
+        default_owner_name = get_nurse_name_for_username(default_emr_username)
 
         # ── PHASE 1: tính toán (KHÔNG mở trình duyệt) danh sách care_jobs của
         # từng bệnh nhân, rồi nhóm theo tài khoản EMR cần đăng nhập (điều dưỡng
@@ -1149,11 +1121,12 @@ def main():
 
             care_jobs = sorted(care_jobs, key=_care_job_sort_key)
 
-            # Mọi phiếu (ca làm lẫn ca trực) đều nhập bằng tài khoản EMR đang dùng,
-            # KHÔNG đăng nhập lại bằng tài khoản người trực. Phiếu của người khác
-            # (vd ca trực) được tạo + Hoàn tất dưới tên chủ tài khoản trước, rồi
-            # mới Thu hồi đổi Người lập sang người trực — EMR báo lỗi nếu đổi tên
-            # ngay lúc tạo phiếu.
+            # Mọi phiếu (ca làm lẫn ca trực) của ngày đều nhập bằng tài khoản EMR
+            # của người CA LÀM theo lịch ngày đó (không đăng nhập bằng tài khoản
+            # người trực). Phiếu của người trực được tạo + Hoàn tất dưới tên người
+            # ca làm trước, rồi mới Thu hồi đổi Người lập sang người trực — EMR báo
+            # lỗi nếu đổi tên ngay lúc tạo phiếu.
+            day_account = entry_accounts.for_date(ngay_lam_viec)
             jobs_by_account = {}
             for job in care_jobs:
                 h_g = int(job.get("hour") or 0)
@@ -1162,7 +1135,10 @@ def main():
                     nurse_name_g = get_nurse_by_shift(time_str_g, CONFIG_TEN_GOC or {})
                 except Exception:
                     nurse_name_g = ""
-                owner_name_g = logged_in_nurse_name
+                if day_account["source"] == "schedule":
+                    owner_name_g = day_account["nurse_name"]
+                else:
+                    owner_name_g = default_owner_name
                 if not owner_name_g:
                     try:
                         owner_name_g = get_nurse_by_shift(time_str_g, CONFIG_TEN_GOC or {}, force_shift="work")
@@ -1172,9 +1148,9 @@ def main():
                         and chuan_hoa_unicode(nurse_name_g) != chuan_hoa_unicode(owner_name_g)):
                     job["nguoi_lap_tam"] = owner_name_g
                     job["nguoi_lap_cuoi"] = nurse_name_g
-                username_g = default_emr_username
+                username_g = day_account["username"]
                 jobs_by_account.setdefault(username_g, []).append(job)
-                account_passwords.setdefault(username_g, default_emr_password)
+                account_passwords.setdefault(username_g, day_account["password"])
                 shift_kind_g = _shift_kind_for_hour(h_g)
                 target_order_g = work_account_order if shift_kind_g == "work" else oncall_account_order
                 if username_g not in target_order_g:
@@ -1183,13 +1159,14 @@ def main():
             if not jobs_by_account:
                 # Không có job cụ thể nào (vd: toàn bộ giờ bị lọc do đang đi mổ) nhưng
                 # vẫn cần 1 lượt mở hồ sơ để dọn phiếu dư/kiểm tra trạng thái — dùng
-                # tạm tài khoản mặc định, không có job để nhập.
-                jobs_by_account[default_emr_username] = []
-                account_passwords.setdefault(default_emr_username, default_emr_password)
-                if (default_emr_username not in work_account_order
-                        and default_emr_username not in oncall_account_order
-                        and default_emr_username not in other_account_order):
-                    other_account_order.append(default_emr_username)
+                # tài khoản ca làm của ngày đó, không có job để nhập.
+                _day_user = day_account["username"]
+                jobs_by_account[_day_user] = []
+                account_passwords.setdefault(_day_user, day_account["password"])
+                if (_day_user not in work_account_order
+                        and _day_user not in oncall_account_order
+                        and _day_user not in other_account_order):
+                    other_account_order.append(_day_user)
 
             patient_plans.append({
                 "result_key": result_key,
@@ -1419,49 +1396,63 @@ def main():
                         LOG.warning(_ctx_prefix() + f"[job_uneditable] {msg_skip}")
                         return
 
+                    # Sửa/xóa phiếu cũ: làm bằng tài khoản đang dùng trước (đúng macro
+                    # người dùng — tài khoản ca làm tự Thu hồi/sửa/Hoàn tất); chỉ khi EMR
+                    # không cho mới đổi sang tài khoản người lập phiếu đó.
                     switched_for_edit = False
-                    if stt in ("UPDATE", "EDIT") and existing_creator:
-                        if not ws.switch_to_creator_account(existing_creator, ma_bn, allow_completed=is_discharge_day):
+                    if stt == "UPDATE":
+                        print("-> [ACTION] SỬA PHIẾU CŨ: Sửa → Thu hồi → cập nhật → Hoàn tất.", end=" ")
+
+                        def _mo_khoa_phieu_cu():
+                            if not care_id:
+                                return False
+                            try:
+                                open_cham_soc_by_id(ws.driver, care_id)
+                                WebDriverWait(ws.driver, 30).until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
+                            except Exception as _e:
+                                print(f"[WARN] Không mở được phiếu cũ: {_e}", end=" ")
+                                return False
+                            return mo_khoa_phieu_dang_mo(ws.driver)
+
+                        if _mo_khoa_phieu_cu():
+                            pass
+                        elif existing_creator and ws.switch_to_creator_account(existing_creator, ma_bn, allow_completed=is_discharge_day) \
+                                and str(ws.config.get("username") or "").strip() != username:
+                            # EMR không cho tài khoản đang dùng: sửa bằng tài khoản người lập,
+                            # xong đổi lại (cuối job, _restore_group_account).
+                            switched_for_edit = True
+                            if not _mo_khoa_phieu_cu():
+                                print("[WARN] Không Thu hồi được phiếu cũ.", end=" ")
+                        else:
+                            if str(ws.config.get("username") or "").strip() != username:
+                                _restore_group_account()
                             msg_sw2 = (
-                                f"{time_str}: không đổi được tài khoản EMR của người lập "
-                                f"'{existing_creator}' để sửa/xóa phiếu cũ"
+                                f"{time_str}: tài khoản đang dùng không sửa được phiếu cũ của "
+                                f"'{existing_creator}' và không đổi được sang tài khoản người lập"
                             )
                             print(f"-> [WARN] {msg_sw2}")
                             job_failures.append(msg_sw2)
-                            LOG.warning(_ctx_prefix() + f"[switch_creator_failed] {msg_sw2}")
+                            LOG.warning(_ctx_prefix() + f"[edit_not_allowed] {msg_sw2}")
                             return
                         driver, wait = ws.driver, ws.wait
-                        switched_for_edit = True
-
-                    if stt == "UPDATE":
-                        print("-> [ACTION] SỬA PHIẾU CŨ: Sửa → Thu hồi → cập nhật → Hoàn tất.", end=" ")
-                        try:
-                            if care_id:
-                                open_cham_soc_by_id(driver, care_id)
-                            else:
-                                raise RuntimeError("Không lấy được id phiếu")
-                            wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
-                            click_thu_hoi_cham_soc(driver)
-                        except Exception as _e:
-                            print(f"[WARN] Không mở/thu hồi được phiếu cũ: {_e}", end=" ")
                     elif stt == "EDIT":
                         print("-> [ACTION] THU HỒI/XÓA PHIẾU CŨ.", end=" ")
-                        try:
-                            if care_id:
-                                open_cham_soc_by_id(driver, care_id)
-                            else:
-                                raise RuntimeError("Không lấy được id phiếu")
-                            wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
-                            click_thu_hoi_va_xoa(driver)
-                        except Exception as _e:
-                            print(f"[WARN] Không thu hồi/xóa được: {_e}")
-                            # vẫn tiếp tục tạo lại phiếu mới
-                        if switched_for_edit:
-                            # Phiếu mới phải được tạo dưới đúng tài khoản của nhóm job
-                            # này (người lập dự kiến), không phải tài khoản người tạo
-                            # phiếu cũ vừa xóa.
-                            _restore_group_account()
-                            switched_for_edit = False
+
+                        def _xoa_phieu_cu():
+                            if not care_id:
+                                return False
+                            try:
+                                open_cham_soc_by_id(ws.driver, care_id)
+                                WebDriverWait(ws.driver, 30).until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
+                                return click_thu_hoi_va_xoa(ws.driver)
+                            except Exception as _e:
+                                print(f"[WARN] Không thu hồi/xóa được: {_e}")
+                                return False
+
+                        # Tài khoản đang dùng trước; không được mới nhờ tài khoản người lập,
+                        # xong tự đổi lại để phiếu mới tạo đúng tài khoản ca làm.
+                        ws.run_with_creator_fallback(existing_creator, ma_bn, _xoa_phieu_cu, allow_completed=is_discharge_day)
+                        driver, wait = ws.driver, ws.wait
                         print("-> TẠO LẠI.", end=" ")
                         _safe_js_click(driver, wait.until(EC.element_to_be_clickable((By.ID, "btnThemCS"))))
                     else:
@@ -1528,54 +1519,20 @@ def main():
                             nguoi_lap_tam = job.get("nguoi_lap_tam") or "chủ tài khoản"
                             nguoi_lap_cuoi = job.get("nguoi_lap_cuoi")
                     if success and nguoi_lap_cuoi:
-                        # EMR: A không Hoàn tất được phiếu đứng tên B — phải đăng nhập
-                        # tài khoản B. Không có tài khoản B thì giữ nguyên tên A
-                        # (đã Hoàn tất) thay vì để phiếu kẹt ở trạng thái Mới.
-                        account_cuoi = get_emr_account_for_nurse(nguoi_lap_cuoi)
-                        current_username = str(ws.config.get("username") or "").strip()
-                        if not account_cuoi:
-                            msg_rename = (
-                                f"{time_str}: chưa cấu hình tài khoản EMR của {nguoi_lap_cuoi} "
-                                f"nên giữ Người lập {nguoi_lap_tam} (đã Hoàn tất)"
-                            )
-                            print(f"-> [WARN] {msg_rename}")
-                            job_failures.append(msg_rename)
-                            LOG.warning(_ctx_prefix() + f"[rename_skipped] {msg_rename}")
-                        elif account_cuoi["username"] == current_username:
-                            print(f"   -> Thu hồi, đổi Người lập sang {nguoi_lap_cuoi}.", end=" ")
-                            if doi_nguoi_lap_sau_hoan_tat(driver, nguoi_lap_cuoi):
-                                print("-> [RESULT] XONG.")
-                            else:
-                                msg_rename = (
-                                    f"{time_str}: đã Hoàn tất dưới tên {nguoi_lap_tam} nhưng không "
-                                    f"Thu hồi/đổi được Người lập sang {nguoi_lap_cuoi}"
-                                )
-                                print(" -> FAIL đổi tên.")
-                                job_failures.append(msg_rename)
-                                LOG.warning(_ctx_prefix() + f"[rename_failed] {msg_rename}")
+                        # Cùng tài khoản ca làm: Thu hồi → đổi Người lập sang người
+                        # trực → Hoàn tất ngay (đúng macro người dùng ghi lại), không
+                        # đăng nhập tài khoản người trực.
+                        print(f"   -> Thu hồi, đổi Người lập sang {nguoi_lap_cuoi}, Hoàn tất.", end=" ")
+                        if doi_nguoi_lap_sau_hoan_tat(driver, nguoi_lap_cuoi):
+                            print("-> [RESULT] XONG.")
                         else:
-                            print(f"   -> Thu hồi, đổi Người lập sang {nguoi_lap_cuoi}, Lưu (chờ {nguoi_lap_cuoi} Hoàn tất).", end=" ")
-                            if doi_nguoi_lap_sau_hoan_tat(driver, nguoi_lap_cuoi, hoan_tat=False):
-                                print("-> CHỜ HOÀN TẤT.")
-                                keep_moi_time_keys.add(time_str)
-                                pending_hoan_tat.append({
-                                    "username": account_cuoi["username"],
-                                    "password": account_cuoi["password"],
-                                    "nurse": nguoi_lap_cuoi,
-                                    "ma_bn": ma_bn,
-                                    "ngay_lam_viec": ngay_lam_viec,
-                                    "time_str": time_str,
-                                    "allow_completed": is_discharge_day,
-                                    "plan": plan,
-                                })
-                            else:
-                                msg_rename = (
-                                    f"{time_str}: đã Hoàn tất dưới tên {nguoi_lap_tam} nhưng không "
-                                    f"Thu hồi/đổi được Người lập sang {nguoi_lap_cuoi}"
-                                )
-                                print(" -> FAIL đổi tên.")
-                                job_failures.append(msg_rename)
-                                LOG.warning(_ctx_prefix() + f"[rename_failed] {msg_rename}")
+                            msg_rename = (
+                                f"{time_str}: đã Hoàn tất dưới tên {nguoi_lap_tam} nhưng không "
+                                f"Thu hồi/đổi được Người lập sang {nguoi_lap_cuoi}"
+                            )
+                            print(" -> FAIL đổi tên.")
+                            job_failures.append(msg_rename)
+                            LOG.warning(_ctx_prefix() + f"[rename_failed] {msg_rename}")
 
                     if not success:
                         msg_fail = f"{time_str}: không lưu/hoàn tất được phiếu chăm sóc"
@@ -1645,37 +1602,6 @@ def main():
 
                 # Quay về danh sách bằng URL/session hiện tại thay vì driver.back() để tránh lệch history stack.
                 ws.goto_inpatient_list()
-
-        # ── PHASE 2b: đăng nhập lần lượt tài khoản từng người lập (vd ca trực) để
-        # bấm Hoàn tất các phiếu đã đổi Người lập sang họ ở lượt trên.
-        for username_ht in dict.fromkeys(p["username"] for p in pending_hoan_tat):
-            items_ht = [p for p in pending_hoan_tat if p["username"] == username_ht]
-            if not ws.switch_account(username_ht, items_ht[0]["password"]):
-                for it in items_ht:
-                    it["plan"]["job_failures"].append(
-                        f"{it['time_str']}: đã đổi Người lập sang {it['nurse']} nhưng không đăng nhập "
-                        f"được tài khoản EMR ({username_ht}) để Hoàn tất — phiếu còn trạng thái Mới"
-                    )
-                continue
-            print(f"\n[TÀI KHOẢN {username_ht}] Hoàn tất {len(items_ht)} phiếu đứng tên {items_ht[0]['nurse']}")
-            for it in items_ht:
-                LOG_CTX.update({'bn': it["ma_bn"], 'name': it["plan"].get('ho_ten', ''), 'date': it["ngay_lam_viec"]})
-                set_care_form_log_context(it["ma_bn"], it["plan"].get('ho_ten', ''), it["ngay_lam_viec"])
-                print(f"   + BN {it['ma_bn']} giờ {it['time_str']}:", end=" ")
-                if hoan_tat_phieu_cho_duyet(ws, it):
-                    print("-> [RESULT] XONG.")
-                else:
-                    msg_ht = (
-                        f"{it['time_str']}: đã đổi Người lập sang {it['nurse']} nhưng không Hoàn tất "
-                        f"được bằng tài khoản của {it['nurse']} — phiếu còn trạng thái Mới"
-                    )
-                    print(" -> FAIL.")
-                    it["plan"]["job_failures"].append(msg_ht)
-                    LOG.warning(_ctx_prefix() + f"[hoan_tat_failed] {msg_ht}")
-                try:
-                    ws.goto_inpatient_list()
-                except Exception as _e:
-                    LOG.debug(f"[except] {_e}")
 
         # ── PHASE 3: tổng hợp kết quả cuối cùng cho từng BN sau khi đã chạy hết mọi
         # tài khoản EMR cần dùng.

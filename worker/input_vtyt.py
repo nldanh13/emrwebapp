@@ -32,6 +32,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from utils import handle_popups, load_config, login_emr
 from shared.text_utils import norm_vi as _norm
 from shared.worker_session import WorkerSession, open_session
+from nurse_emr_accounts import EntryAccountResolver, sort_tasks_by_work_date
 from selenium_emr_helpers import (
     debug_page,
     goto_inpatient_list,
@@ -1398,9 +1399,17 @@ def main(argv: List[str]) -> int:
     config = load_config()
     results: Dict[str, Dict[str, Any]] = {}
     exit_code = 0
-    with open_session(result_path, config=config) as ws:
+    # Nhập bằng tài khoản EMR của người ca làm theo lịch từng ngày (xem
+    # nurse_emr_accounts.resolve_entry_account); gom theo ngày để ít đổi tài khoản.
+    # Bước xem trước (--plan-only) chỉ đọc nên vẫn dùng tài khoản mặc định.
+    jobs = sort_tasks_by_work_date(jobs)
+    entry_accounts = EntryAccountResolver(config)
+    login_config = entry_accounts.login_config(config, jobs[0].get("ngay_lam"))
+    with open_session(result_path, config=login_config) as ws:
+        ws._result_kwargs.setdefault("warnings", entry_accounts.warnings)
         for job in jobs:
             key = str(job.get("key") or f"{job.get('ma_bn')}::{job.get('ngay_lam')}")
+            ws.use_entry_account(entry_accounts.for_date(job.get("ngay_lam")))
             try:
                 results[key] = _input_one_job(ws.driver, ws.wait, ws.config, job)
                 ws.results[key] = results[key]

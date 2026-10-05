@@ -176,6 +176,36 @@ class WorkerSession:
             ) from e2
         return False
 
+    def use_entry_account(self, info: Optional[Dict[str, Any]]) -> bool:
+        """Đổi sang tài khoản nhập liệu `info` (kết quả EntryAccountResolver.for_date
+        trong worker/nurse_emr_accounts.py) nếu khác tài khoản đang đăng nhập.
+
+        Đổi thất bại thì switch_account đã khôi phục tài khoản cũ: ghi cảnh báo,
+        trả False, worker nhập tiếp bằng tài khoản đang có.
+        """
+        info = info or {}
+        username = str(info.get("username") or "").strip()
+        password = str(info.get("password") or "")
+        if not username or username == str(self.config.get("username") or "").strip():
+            return True
+        if self.switch_account(username, password):
+            return True
+        self.add_warning(
+            f"Không đăng nhập được tài khoản EMR của {info.get('nurse_name') or username}; "
+            f"nhập tiếp bằng tài khoản đang dùng. Kiểm tra mật khẩu trong Thiết lập tài khoản."
+        )
+        return False
+
+    def add_warning(self, message: str) -> None:
+        """Ghi cảnh báo vào file kết quả (và in ra log tác vụ)."""
+        msg = str(message or "").strip()
+        if not msg:
+            return
+        warnings = self._result_kwargs.setdefault("warnings", [])
+        if msg not in warnings:
+            warnings.append(msg)
+            _print(f"[WARN] {msg}")
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
         # 1) Đóng trình duyệt
         _safe_quit(self.driver)
@@ -325,6 +355,41 @@ class WorkerSession:
             account["username"], account["password"], ma_bn,
             allow_completed=allow_completed, reopen=reopen,
         )
+
+    def run_with_creator_fallback(
+        self,
+        creator: str,
+        ma_bn: str,
+        action: Callable[[], Any],
+        *,
+        allow_completed: bool = False,
+        reopen: Optional[Callable[["WorkerSession", str], None]] = None,
+    ) -> bool:
+        """Sửa/xóa phiếu đứng tên `creator`: làm bằng TÀI KHOẢN ĐANG DÙNG trước
+        (người dùng ghi macro: tài khoản ca làm tự Thu hồi/đổi Người lập/Hoàn tất,
+        không cần đổi tài khoản). `action()` trả True nếu làm được.
+
+        Chỉ khi EMR không cho (action trả False) mới đổi sang tài khoản EMR của
+        `creator`, làm lại, rồi đổi về tài khoản cũ. Không có tài khoản của
+        `creator`, hoặc đó chính là tài khoản đang dùng, thì trả False.
+        """
+        if action():
+            return True
+        account = get_emr_account_for_nurse(creator) if creator else None
+        current = str(self.config.get("username") or "").strip()
+        if not account or str(account.get("username") or "").strip() == current:
+            return False
+        original_password = str(self.config.get("password") or "")
+        _print(f"[INFO] Tài khoản {current} không sửa/xóa được phiếu của {creator}; thử bằng tài khoản người lập.")
+        if not self.switch_account_to(
+            account["username"], account["password"], ma_bn,
+            allow_completed=allow_completed, reopen=reopen,
+        ):
+            return False
+        try:
+            return bool(action())
+        finally:
+            self.restore_account(current, original_password, ma_bn, allow_completed=allow_completed, reopen=reopen)
 
     def restore_account(
         self,
