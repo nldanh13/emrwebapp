@@ -34,8 +34,6 @@ function parseSseChunk(buffer, onMessage) {
 }
 
 function nudgeActiveScreen(detail) {
-  // Các màn nghiệp vụ đã có cơ chế làm mới khi tab được kích hoạt. Phát cùng sự kiện
-  // sau khi job server kết thúc để thiết bị còn lại tự tải lại dữ liệu mà không reload trang.
   let tab = '';
   try { tab = localStorage.getItem(ACTIVE_TAB_KEY) || ''; } catch {}
   window.dispatchEvent(new CustomEvent('emr:data-invalidated', { detail }));
@@ -43,7 +41,7 @@ function nudgeActiveScreen(detail) {
 }
 
 /**
- * Giữ mọi thiết bị trong cùng workspace bám theo trạng thái job ở SERVER.
+ * Giữ mọi thiết bị trong cùng workspace bám theo trạng thái ở SERVER.
  * Không dùng EventSource vì EventSource không gửi được x-app-token header; dùng fetch
  * streaming để token không nằm trong URL/log.
  */
@@ -85,6 +83,11 @@ export default function WorkspaceRealtimeBridge({ children }) {
           buffer = parseSseChunk(buffer, (eventName, payload) => {
             if (eventName === 'workspace_snapshot') {
               window.dispatchEvent(new CustomEvent('emr:workspace-snapshot', { detail: payload }));
+              return;
+            }
+            if (eventName === 'resource') {
+              window.dispatchEvent(new CustomEvent('emr:server-resource', { detail: payload }));
+              nudgeActiveScreen(payload);
               return;
             }
             if (eventName !== 'task') return;
