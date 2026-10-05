@@ -75,7 +75,10 @@ EMR lấy lại. Chỉ mở EMR cho đúng phần còn thiếu, và cho người
 `hchanh_auto_progress.json`, `order_history_auto_progress.json`), và có test chạy qua bước lập
 kế hoạch của Thu thập tự động (`planCollection`) để chắc phần đã có không bị lấy lại.
 
-4.3 Dùng lại phiên đăng nhập EMR; không bắt đăng nhập lại nhiều lần trong một lượt chạy.
+4.3 **Một lượt chạy = một lần đăng nhập EMR.** Không đổi tài khoản giữa chừng: phiên nhập liệu có
+`single_login`, và `WorkerSession.switch_account` từ chối đổi. Việc cần tên người khác thì làm trên
+phiếu (đổi Người lập). Việc EMR không cho thì báo để xử lý tay.
+*Vì:* log cũ đăng nhập qua lại lndieu → vtynhi → lndieu nhiều lần trong một lượt.
 
 4.4 **Nhập liệu đăng nhập bằng tài khoản người ca làm theo lịch**, không dùng tài khoản mặc định.
 - Dùng `EntryAccountResolver` (`worker/nurse_emr_accounts.py`) và `ws.use_entry_account(...)`.

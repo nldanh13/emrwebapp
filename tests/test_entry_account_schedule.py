@@ -132,7 +132,6 @@ def test_input_workers_log_in_with_scheduled_account():
     # Chăm sóc: phiếu của ngày gán vào tài khoản ca làm của ngày đó, không phải tài khoản mặc định.
     care = _src('worker/input_care.py')
     assert 'username_g = default_emr_username' not in care
-    assert 'username_g = day_account["username"]' in care
 
 
 def test_infusion_no_longer_uses_separate_account_or_parallel_lane():
@@ -140,3 +139,36 @@ def test_infusion_no_longer_uses_separate_account_or_parallel_lane():
     assert "config['username'] = config['infusion_username']" not in infusion
     patients = _src('server/routes/patients.js')
     assert not re.search(r"accountKey\s*=\s*\([^;]*'infusion'", patients)
+
+
+# ── Một lượt nhập = một lần đăng nhập ────────────────────────────────────────
+# Người dùng: "trong 1 phiên đăng nhập có thể nhập xong hết, không phải đăng
+# nhập đi lại nhiều lần". Tài khoản ca làm đăng nhập một lần; phiếu cần đứng
+# tên người khác thì đổi Người lập ngay trên phiếu (như macro), không đổi tài khoản.
+
+def test_login_config_marks_single_login(monkeypatch, tmp_path):
+    _accounts(monkeypatch, tmp_path)
+    resolver = EntryAccountResolver(DEFAULT, warn=lambda m: None)
+    assert resolver.login_config(DEFAULT, '05/10/2026')['single_login'] is True
+
+
+def test_single_login_session_refuses_to_switch_account():
+    ws = WorkerSession({'username': 'dieu.emr', 'password': 'pw-dieu', 'single_login': True}, os.devnull)
+    driver = object()
+    ws.driver = driver
+    assert ws.switch_account('doan.emr', 'pw-doan') is False
+    assert ws.switch_account('doan.emr', 'pw-doan') is False
+    assert ws.driver is driver, 'không được đóng trình duyệt / đăng nhập lại'
+    assert ws.config['username'] == 'dieu.emr'
+    warnings = ws._result_kwargs.get('warnings') or []
+    assert len(warnings) == 1 and 'doan.emr' in warnings[0] and 'pw-' not in warnings[0]
+    # Cùng tài khoản thì vẫn "đúng" (không cần đổi).
+    assert ws.switch_account('dieu.emr', 'pw-dieu') is True
+
+
+def test_input_workers_do_not_switch_per_date():
+    for rel in ('worker/input_procedures.py', 'worker/input_vtyt.py', 'worker/input_infusions.py'):
+        assert 'use_entry_account(' not in _src(rel), rel
+    care = _src('worker/input_care.py')
+    assert 'day_account = entry_accounts.for_date(ngay_lam_viec)' not in care
+    assert 'username_g = run_account["username"]' in care

@@ -111,75 +111,70 @@ def _patch_common(monkeypatch, ip, *, existing_staff_text):
     monkeypatch.setattr(ip, "WebDriverWait", _DummyWebDriverWait)
 
 
-def test_process_task_switches_to_existing_staff_account_before_recall_then_restores(monkeypatch):
-    import input_procedures as ip
-
-    _patch_common(monkeypatch, ip, existing_staff_text="BS. Nguyễn Văn A")
-
-    recall_calls = []
-    monkeypatch.setattr(ip, "_click_recall_procedure_if_available", lambda driver, wait: recall_calls.append(True) or True)
+def _fill_spy(monkeypatch, ip):
     fill_calls = []
     monkeypatch.setattr(
         ip, "_fill_one_procedure",
         lambda driver, wait, config, start_dt, discharge_dt=None, service_name="", task=None: fill_calls.append(True),
     )
+    return fill_calls
+
+
+TASK = {"ma_bn": "BN001", "ngay_lam": "21/09/2026", "ho_ten": "Test", "service_name": "Thay băng"}
+
+
+def test_process_task_recalls_with_current_account_without_switching(monkeypatch):
+    """Một phiên đăng nhập: tài khoản đang dùng Thu hồi được thì sửa luôn, không đổi tài khoản."""
+    import input_procedures as ip
+
+    _patch_common(monkeypatch, ip, existing_staff_text="BS. Nguyễn Văn A")
+    monkeypatch.setattr(ip, "_click_recall_procedure_if_available", lambda driver, wait: True)
+    fill_calls = _fill_spy(monkeypatch, ip)
 
     accounts = {"nguyễn văn a": {"username": "acct.a", "password": "pw_a"}}
     ws = _FakeWS(username="acct.goc", accounts=accounts)
-    task = {"ma_bn": "BN001", "ngay_lam": "21/09/2026", "ho_ten": "Test", "service_name": "Thay băng"}
 
-    action = ip._process_task(ws, task)
-
-    assert action == "updated"
-    assert recall_calls == [True]
+    assert ip._process_task(ws, dict(TASK)) == "updated"
     assert fill_calls == [True]
-    # Đổi sang đúng tài khoản thủ thuật viên hiện có trên phiếu để Thu hồi/sửa,
-    # rồi đổi lại tài khoản gốc trước khi trả về.
+    assert ws.switch_calls == []
+
+
+def test_process_task_falls_back_to_staff_account_when_current_cannot_recall(monkeypatch):
+    import input_procedures as ip
+
+    _patch_common(monkeypatch, ip, existing_staff_text="BS. Nguyễn Văn A")
+    ws = _FakeWS(username="acct.goc", accounts={"nguyễn văn a": {"username": "acct.a", "password": "pw_a"}})
+    recall_calls = []
+
+    def recall(driver, wait):
+        recall_calls.append(ws.config["username"])
+        return ws.config["username"] == "acct.a"
+
+    monkeypatch.setattr(ip, "_click_recall_procedure_if_available", recall)
+    fill_calls = _fill_spy(monkeypatch, ip)
+
+    assert ip._process_task(ws, dict(TASK)) == "updated"
+    assert recall_calls == ["acct.goc", "acct.a"]
+    assert fill_calls == [True]
     assert ws.switch_calls == [("acct.a", "pw_a"), ("acct.goc", "pw_goc")]
     assert ws.config["username"] == "acct.goc"
 
 
-def test_process_task_fails_and_does_not_recall_when_existing_staff_has_no_account(monkeypatch):
+def test_process_task_fails_when_current_cannot_recall_and_staff_has_no_account(monkeypatch):
     import input_procedures as ip
 
     _patch_common(monkeypatch, ip, existing_staff_text="Người Không Có Tài Khoản")
-
-    recall_calls = []
-    monkeypatch.setattr(ip, "_click_recall_procedure_if_available", lambda driver, wait: recall_calls.append(True) or True)
-
-    ws = _FakeWS(username="acct.goc")  # accounts={} -> tra không ra
-    task = {"ma_bn": "BN001", "ngay_lam": "21/09/2026", "ho_ten": "Test", "service_name": "Thay băng"}
-
-    try:
-        ip._process_task(ws, task)
-        assert False, "expected RuntimeError"
-    except RuntimeError as e:
-        assert "Người Không Có Tài Khoản" in str(e)
-
-    assert recall_calls == []
-    assert ws.switch_calls == []
-    assert ws.config["username"] == "acct.goc"
-
-
-def test_process_task_recall_failure_still_restores_account(monkeypatch):
-    """Nếu Thu hồi thất bại sau khi đã đổi tài khoản, vẫn phải khôi phục lại
-    tài khoản gốc trước khi raise (dùng finally)."""
-    import input_procedures as ip
-
-    _patch_common(monkeypatch, ip, existing_staff_text="Nguyễn Văn A")
     monkeypatch.setattr(ip, "_click_recall_procedure_if_available", lambda driver, wait: False)
-
-    accounts = {"nguyễn văn a": {"username": "acct.a", "password": "pw_a"}}
-    ws = _FakeWS(username="acct.goc", accounts=accounts)
-    task = {"ma_bn": "BN001", "ngay_lam": "21/09/2026", "ho_ten": "Test", "service_name": "Thay băng"}
+    ws = _FakeWS(username="acct.goc")
 
     try:
-        ip._process_task(ws, task)
+        ip._process_task(ws, dict(TASK))
         assert False, "expected RuntimeError"
     except RuntimeError as e:
         assert "không cho Thu hồi" in str(e)
+        assert "Người Không Có Tài Khoản" in str(e)
 
-    assert ws.switch_calls == [("acct.a", "pw_a"), ("acct.goc", "pw_goc")]
+    assert ws.switch_calls == []
     assert ws.config["username"] == "acct.goc"
 
 

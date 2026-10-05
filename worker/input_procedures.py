@@ -1299,29 +1299,25 @@ def _process_task(ws: Any, task: Dict[str, str]) -> str:
 
     _log(f"[UPDATE] Phiếu đã {status_text or 'Hoàn tất'} nhưng sai: {'; '.join(errors)}")
 
-    # EMR hiện chỉ cho đúng tài khoản người tạo phiếu tự Thu hồi/sửa phiếu
-    # của họ. Đọc tên thủ thuật viên đang ghi trên phiếu (người tạo) để đổi
-    # đúng tài khoản EMR của người đó trước khi Thu hồi/sửa — tập trung xử
-    # lý đổi/khôi phục tài khoản ở WorkerSession (worker/shared/worker_session.py).
+    # Thu hồi bằng tài khoản đang dùng trước (một phiên đăng nhập cho cả lượt).
+    # Chỉ khi EMR không cho mới thử tài khoản của thủ thuật viên đang ghi trên
+    # phiếu (WorkerSession.switch_to_creator_account), xong đổi lại.
     existing_staff_name = _clean_staff_display_name(_select_current_text(driver, "cbbTTChinh"))
     original_username = str(ws.config.get("username") or "").strip()
     original_password = str(ws.config.get("password") or "")
     switched = False
-    if existing_staff_name:
-        if not ws.switch_to_creator_account(existing_staff_name, ma_bn, reopen=_reopen):
-            raise RuntimeError(
-                f"Phiếu thủ thuật do '{existing_staff_name}' lập; không đổi được tài khoản EMR "
-                "của người đó nên không thể Thu hồi/sửa (EMR chỉ cho đúng tài khoản người tạo; "
-                "chưa cấu hình tài khoản EMR cho người này hoặc đổi/mở lại phiếu thất bại)."
-            )
+    recalled = _click_recall_procedure_if_available(driver, wait)
+    if not recalled and existing_staff_name and ws.switch_to_creator_account(existing_staff_name, ma_bn, reopen=_reopen):
         driver, wait = ws.driver, ws.wait
-        switched = True
+        switched = str(ws.config.get("username") or "").strip() != original_username
+        recalled = _click_recall_procedure_if_available(driver, wait)
 
     try:
-        if not _click_recall_procedure_if_available(driver, wait):
+        if not recalled:
+            who = f" Phiếu do '{existing_staff_name}' lập; cần tài khoản người đó Thu hồi." if existing_staff_name else ""
             raise RuntimeError(
-                "Phiếu thủ thuật đã có nhưng sai; EMR không cho Thu hồi nên không sửa và không tạo trùng. "
-                + "; ".join(errors)
+                "Phiếu thủ thuật đã có nhưng sai; EMR không cho Thu hồi nên không sửa và không tạo trùng."
+                + who + " " + "; ".join(errors)
             )
         WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.ID, "txtTgBatDau")))
         _fill_one_procedure(driver, wait, ws.config, start_dt, discharge_dt=discharge_dt, service_name=service_name, task=task)
@@ -1348,8 +1344,8 @@ def main() -> int:
         return 0
 
     _log(f">>> Chuẩn bị nhập thủ thuật cho {len(tasks)} BN/ngày")
-    # Nhập bằng tài khoản EMR của người ca làm theo lịch từng ngày (xem
-    # nurse_emr_accounts.resolve_entry_account); gom theo ngày để ít đổi tài khoản.
+    # Đăng nhập MỘT lần bằng tài khoản người ca làm theo lịch của ngày đầu tiên
+    # (nurse_emr_accounts.resolve_entry_account) và nhập hết cả lượt bằng phiên đó.
     tasks = sort_tasks_by_work_date(tasks)
     entry_accounts = EntryAccountResolver(config)
     login_config = entry_accounts.login_config(config, tasks[0].get("ngay_lam"))
@@ -1358,7 +1354,6 @@ def main() -> int:
         for task in tasks:
             ma_bn = task.get("ma_bn") or ""
             ngay = task.get("ngay_lam") or ""
-            ws.use_entry_account(entry_accounts.for_date(ngay))
             service_name = task.get("service_name") or ""
             key = _done_key(ma_bn, ngay, service_name)
             _log(f"\n[{ma_bn} {task.get('ho_ten') or ''} | {ngay} | {service_name or 'DVKT thay băng/cắt chỉ'}]")
