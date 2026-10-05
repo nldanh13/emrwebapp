@@ -73,6 +73,10 @@ function conflictingStrongIdentity(left, right) {
   const codeB = normalizedIdentity(patientCode(right));
   if (codeA && codeB && codeA !== codeB) return true;
 
+  const encounterA = normalizedIdentity(rowExistingEncounterId(left));
+  const encounterB = normalizedIdentity(rowExistingEncounterId(right));
+  if (encounterA && encounterB && encounterA !== encounterB) return true;
+
   const treatmentA = normalizedIdentity(rowEmrTreatmentId(left) || rowNoitruId(left));
   const treatmentB = normalizedIdentity(rowEmrTreatmentId(right) || rowNoitruId(right));
   if (treatmentA && treatmentB && treatmentA !== treatmentB) return true;
@@ -86,9 +90,10 @@ function conflictingStrongIdentity(left, right) {
   if (admissionA && admissionB && admissionA !== admissionB) {
     // Khác thời điểm vào chưa chắc khác đợt nếu một dòng là thời điểm vào khoa;
     // trường hợp đó được xử lý riêng bằng isTimeInsideVisit ở sameStrongIdentity().
+    const encounterShared = encounterA && encounterB && encounterA === encounterB;
     const treatmentShared = treatmentA && treatmentB && treatmentA === treatmentB;
     const admissionShared = admissionIdA && admissionIdB && admissionIdA === admissionIdB;
-    if (!treatmentShared && !admissionShared) return true;
+    if (!encounterShared && !treatmentShared && !admissionShared) return true;
   }
   return false;
 }
@@ -206,20 +211,55 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
   }
 
   function sameStrongIdentity(row, existing, sourceStatus = '') {
-    const aliasesA = encounterIdentityAliases(row);
-    const aliasesB = encounterIdentityAliases(existing);
-    if (aliasesIntersect(aliasesA, aliasesB)) return true;
+    const codeA = normalizedIdentity(patientCode(row));
+    const codeB = normalizedIdentity(patientCode(existing));
+    if (!codeA || !codeB || codeA !== codeB) return false;
+
+    // ID mạnh bằng nhau là bằng chứng trực tiếp cùng lượt. Nếu cả hai phía đều có
+    // cùng loại ID mạnh nhưng giá trị khác nhau thì không được dùng ngày/Mã NC để
+    // gộp lại, vì đó có thể là hai lần nhập viện khác nhau.
+    const encounterA = normalizedIdentity(rowExistingEncounterId(row));
+    const encounterB = normalizedIdentity(rowExistingEncounterId(existing));
+    if (encounterA && encounterB) {
+      if (encounterA === encounterB) return true;
+      return false;
+    }
+
+    const treatmentA = normalizedIdentity(rowEmrTreatmentId(row) || rowNoitruId(row));
+    const treatmentB = normalizedIdentity(rowEmrTreatmentId(existing) || rowNoitruId(existing));
+    if (treatmentA && treatmentB) {
+      if (treatmentA === treatmentB) return true;
+      return false;
+    }
+
+    const admissionIdA = normalizedIdentity(rowEmrAdmissionId(row));
+    const admissionIdB = normalizedIdentity(rowEmrAdmissionId(existing));
+    if (admissionIdA && admissionIdB) {
+      if (admissionIdA === admissionIdB) return true;
+      return false;
+    }
+
+    const keyA = normalizedIdentity(firstNonEmpty(row, ['Research key', 'research_key']));
+    const keyB = normalizedIdentity(firstNonEmpty(existing, ['Research key', 'research_key']));
+    if (keyA && keyB && keyA === keyB) return true;
 
     const a1 = rowAdmissionTime(row);
     const a2 = rowDischargeTime(row);
     const b1 = rowAdmissionTime(existing);
     const b2 = rowDischargeTime(existing);
 
+    // Cùng Mã BN + cùng thời điểm vào là cùng một lượt fallback. Điều này đặc biệt
+    // quan trọng khi một dòng đã có ngày ra còn dòng cũ vẫn đang để mở: trước đây
+    // hai dòng bị tách thành hai "Đợt" dù thực tế là cùng lần nằm viện.
+    if (a1 && b1 && a1 === b1 && !conflictingStrongIdentity(row, existing)) return true;
+
     // Chỉ cho phép ghép T/G vào khoa nằm trong khoảng điều trị khi một phía thực sự
     // là dòng initial. Không dùng overlap chung vì hai lượt gần nhau có thể bị gộp sai.
     const existingIsInitial = String(existing.__source_status || '').split('+').includes('initial');
-    if (existingIsInitial && a1 && a2 && b1 && isTimeInsideVisit(b1, a1, a2)) return true;
-    if (sourceStatus === 'initial' && b1 && b2 && a1 && isTimeInsideVisit(a1, b1, b2)) return true;
+    if (!conflictingStrongIdentity(row, existing)) {
+      if (existingIsInitial && a1 && a2 && b1 && isTimeInsideVisit(b1, a1, a2)) return true;
+      if (sourceStatus === 'initial' && b1 && b2 && a1 && isTimeInsideVisit(a1, b1, b2)) return true;
+    }
 
     // Mã NC là alias yếu: chỉ dùng khi không có bằng chứng mạnh mâu thuẫn. Điều này
     // giữ tương thích dữ liệu cũ nhưng không còn cho NC0001 hay mã tái dùng gộp nhầm
@@ -233,7 +273,10 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
 
   function findExistingSigFor(row, sourceStatus) {
     const code = patientCode(row);
-    if (!code || sourceStatus === 'initial') return '';
+    if (!code) return '';
+    // Cả initialRows cũng phải được dò trùng. Trước đây initial bị bỏ qua hoàn toàn,
+    // nên cùng một lần nằm viện xuất hiện hai dòng (một dòng có ngày ra, một dòng mở)
+    // sẽ luôn tạo thành hai Đợt khác nhau trên màn Tra cứu người bệnh.
     for (const sig of patientSignatures(code)) {
       const existing = map.get(sig);
       if (!existing) continue;
