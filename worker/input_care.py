@@ -34,6 +34,7 @@ from shared.worker_session import WorkerSession, open_session
 from shared.json_io import read_json_critical
 from shared.logging_utils import make_worker_logger
 from nurse_emr_accounts import EntryAccountResolver, get_nurse_name_for_username
+from care_deferred import DeferredCreatorJobs
 
 from selenium_emr_helpers import (
     build_inpatient_url as _build_inpatient_url,
@@ -817,6 +818,16 @@ def main():
             run_account.get("nurse_name") if run_account.get("source") == "schedule" else default_owner_name
         ) or ""
 
+        def owner_name_for_account(username_x):
+            # Tài khoản của lượt: tên theo lịch; tài khoản người lập ở lượt cuối: tra theo tài khoản.
+            if username_x == run_account.get("username"):
+                return account_owner_name
+            return get_nurse_name_for_username(username_x) or ""
+
+        # Phiếu tài khoản ca làm không sửa/Hoàn tất được → gom theo người lập, cuối
+        # lượt đăng nhập tài khoản đó MỘT lần (người dùng chọn "Cuối lượt mới đổi").
+        deferred_jobs = DeferredCreatorJobs()
+
         # ── PHASE 1: tính toán (KHÔNG mở trình duyệt) danh sách care_jobs của
         # từng bệnh nhân, rồi nhóm theo tài khoản EMR cần đăng nhập (điều dưỡng
         # phụ trách giờ đó — xem worker/nurse_emr_accounts.py). Tách phase này để
@@ -1216,7 +1227,11 @@ def main():
             password = account_passwords.get(username) or ""
             prev_emr_username = str(ws.config.get("username") or "").strip()
             if username and username != prev_emr_username:
-                switched_ok = ws.switch_account(username, password)
+                if deferred_jobs.is_deferred_account(username):
+                    print(f"\n>>> CUỐI LƯỢT: đăng nhập {username} một lần để sửa + Hoàn tất các phiếu đứng tên người này.")
+                switched_ok = ws.switch_account(
+                    username, password, end_of_run=deferred_jobs.is_deferred_account(username)
+                )
                 if not switched_ok:
                     msg_sw = f"Không đổi được tài khoản EMR ({username}); bỏ qua lượt của tài khoản này."
                     print(f"   [WARN] {msg_sw}")
@@ -1226,6 +1241,7 @@ def main():
                             plan["job_skip_reasons"].append(msg_sw)
                     continue
             driver, wait = ws.driver, ws.wait
+            current_owner_name = owner_name_for_account(username)
 
             for plan in patient_plans:
                 jobs = plan["jobs_by_account"].get(username)
@@ -1291,8 +1307,19 @@ def main():
                     protect_before_time_key=receive_time_key if is_postop_receive_day else None,
                     remove_tool_rows_at_or_after_time_key=surgery_cutoff_text if surgery_active else None,
                     allow_completed=is_discharge_day,
+                    keep_moi_time_keys=plan.get("deferred_time_keys"),
                 )
                 driver, wait = ws.driver, ws.wait
+
+                def _defer(job, time_str, existing_creator):
+                    # Không đổi tài khoản giữa chừng: gom phiếu này cho lượt cuối của người lập.
+                    if not deferred_jobs.defer(plan, job, existing_creator, username, time_str,
+                                               account_order, account_passwords):
+                        return False
+                    keep_moi_time_keys.add(time_str)
+                    print(f"-> ĐỂ CUỐI LƯỢT: tài khoản {username} không làm được, sẽ đăng nhập tài khoản của {existing_creator} một lần ở cuối lượt.")
+                    LOG.info(_ctx_prefix() + f"[deferred_to_creator] {time_str} creator={existing_creator}")
+                    return True
 
                 def _process_job(job):
                     nonlocal driver, wait
@@ -1421,19 +1448,18 @@ def main():
 
                         if _mo_khoa_phieu_cu():
                             pass
-                        elif existing_creator and ws.switch_to_creator_account(existing_creator, ma_bn, allow_completed=is_discharge_day) \
-                                and str(ws.config.get("username") or "").strip() != username:
-                            # EMR không cho tài khoản đang dùng: sửa bằng tài khoản người lập,
-                            # xong đổi lại (cuối job, _restore_group_account).
-                            switched_for_edit = True
-                            if not _mo_khoa_phieu_cu():
-                                print("[WARN] Không Thu hồi được phiếu cũ.", end=" ")
                         else:
-                            if str(ws.config.get("username") or "").strip() != username:
-                                _restore_group_account()
+                            try:
+                                _ve_danh_sach = driver.find_element(By.XPATH, "//a[contains(@onclick, 'fnbackFormChamSoc')]")
+                                driver.execute_script("arguments[0].click();", _ve_danh_sach)
+                                time.sleep(1)
+                            except Exception as _e:
+                                LOG.debug(f"[except] {_e}")
+                            if _defer(job, time_str, existing_creator):
+                                return
                             msg_sw2 = (
                                 f"{time_str}: tài khoản đang dùng không sửa được phiếu cũ của "
-                                f"'{existing_creator}' và không đổi được sang tài khoản người lập"
+                                f"'{existing_creator}' và không có tài khoản người lập để làm nốt cuối lượt"
                             )
                             print(f"-> [WARN] {msg_sw2}")
                             job_failures.append(msg_sw2)
@@ -1443,9 +1469,9 @@ def main():
                         # Phiếu cũ đứng tên người khác (vd 'Mới' tên người trực do bản cũ để
                         # lại): đưa Người lập về chủ tài khoản để Hoàn tất được; nếu cần tên
                         # người khác thì bước sau Thu hồi → đổi Người lập → Hoàn tất (macro).
-                        if existing_creator and not switched_for_edit and account_owner_name:
-                            if not dat_nguoi_lap_ve_chu_tai_khoan(driver, account_owner_name):
-                                print(f"[WARN] Không đưa được Người lập về {account_owner_name}.", end=" ")
+                        if existing_creator and not switched_for_edit and current_owner_name:
+                            if not dat_nguoi_lap_ve_chu_tai_khoan(driver, current_owner_name):
+                                print(f"[WARN] Không đưa được Người lập về {current_owner_name}.", end=" ")
                     elif stt == "EDIT":
                         print("-> [ACTION] THU HỒI/XÓA PHIẾU CŨ.", end=" ")
 
@@ -1462,7 +1488,17 @@ def main():
 
                         # Tài khoản đang dùng trước; không được mới nhờ tài khoản người lập,
                         # xong tự đổi lại để phiếu mới tạo đúng tài khoản ca làm.
-                        ws.run_with_creator_fallback(existing_creator, ma_bn, _xoa_phieu_cu, allow_completed=is_discharge_day)
+                        if not ws.run_with_creator_fallback(existing_creator, ma_bn, _xoa_phieu_cu, allow_completed=is_discharge_day):
+                            # Không xóa được phiếu cũ thì không tạo thêm (tránh trùng): để cuối lượt.
+                            driver, wait = ws.driver, ws.wait
+                            try:
+                                _ve_danh_sach = driver.find_element(By.XPATH, "//a[contains(@onclick, 'fnbackFormChamSoc')]")
+                                driver.execute_script("arguments[0].click();", _ve_danh_sach)
+                                time.sleep(1)
+                            except Exception as _e:
+                                LOG.debug(f"[except] {_e}")
+                            if _defer(job, time_str, existing_creator):
+                                return
                         driver, wait = ws.driver, ws.wait
                         print("-> TẠO LẠI.", end=" ")
                         _safe_js_click(driver, wait.until(EC.element_to_be_clickable((By.ID, "btnThemCS"))))
@@ -1545,7 +1581,11 @@ def main():
                             job_failures.append(msg_rename)
                             LOG.warning(_ctx_prefix() + f"[rename_failed] {msg_rename}")
 
-                    if not success:
+                    deferred_now = False
+                    if not success and stt == "UPDATE" and existing_creator \
+                            and not cung_nguoi_lap(existing_creator, current_owner_name):
+                        deferred_now = _defer(job, time_str, existing_creator)
+                    if not success and not deferred_now:
                         msg_fail = f"{time_str}: không lưu/hoàn tất được phiếu chăm sóc"
                         job_failures.append(msg_fail)
                         print(" -> FAIL.")
@@ -1564,7 +1604,7 @@ def main():
                         # đổi lại đúng tài khoản của nhóm job này trước khi xử lý job kế.
                         _restore_group_account()
 
-                keep_moi_time_keys = set()
+                keep_moi_time_keys = set(plan.get("deferred_time_keys") or ())
                 for job in jobs:
                     _process_job(job)
 

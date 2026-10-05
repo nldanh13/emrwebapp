@@ -11,8 +11,14 @@
     rồi Thu hồi → đổi Người lập → Hoàn tất ngay trên phiếu. Các bước này theo đúng macro người dùng ghi lại.
   - Dịch truyền, thủ thuật: tên điều dưỡng/thủ thuật viên trên phiếu vẫn theo lịch từng giờ.
 - **Sửa/xóa phiếu cũ** (dọn phiếu "Mới", phiếu sai giờ, phiếu sau mổ, phiếu thủ thuật sai, dịch truyền
-  thừa): làm bằng tài khoản đang dùng. EMR không cho thì ghi lỗi và cảnh báo "Giữ nguyên một phiên
-  đăng nhập… cần xử lý tay", không đăng nhập tài khoản người lập.
+  thừa) làm bằng tài khoản đang dùng.
+  - **Chăm sóc:** phiếu cũ đứng tên người khác mà tài khoản ca làm không sửa/Hoàn tất được thì
+    **để cuối lượt** (`worker/care_deferred.py`).
+    - Hết lượt chính, công cụ đăng nhập tài khoản của người lập đó **một lần**
+      (`switch_account(..., end_of_run=True)`) để sửa và Hoàn tất hết các phiếu đứng tên người đó.
+    - Người lập chưa có tài khoản EMR thì ghi lỗi để xử lý tay.
+  - **Việc khác** (thủ thuật, dịch truyền, dọn phiếu): EMR không cho thì ghi lỗi và cảnh báo
+    "Giữ nguyên một phiên đăng nhập… cần xử lý tay".
 - Người ca làm **chưa có tài khoản EMR** hoặc ngày đó **chưa xếp lịch**: dùng tài khoản mặc định
   và ghi cảnh báo `[WARN] Ngày dd/mm/yyyy: …` trong log tác vụ.
   - Tài khoản mặc định là tài khoản EMR riêng của người đang đăng nhập Data Hub, nếu có.
