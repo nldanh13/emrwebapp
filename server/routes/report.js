@@ -9,7 +9,7 @@ const crypto = require('crypto');
 
 const { getRuntimePaths }  = require('../services/session');
 const { runScript, fmtPyError } = require('../services/python_runner');
-const { enqueueHeavy, registerCancel, unregisterCancel } = require('../services/task_queue');
+const { enqueueLocal } = require('../services/task_queue');
 const { ensureDir, safeFilePart } = require('../utils/file');
 const { appendActivity } = require('../services/activity_logger');
 const { isValidDmy, clampHour }   = require('../utils/validation');
@@ -113,15 +113,14 @@ router.get('/run-report-infusion', requireOttOrAppToken, async (req, res) => {
   if (excludeZero) args.push('--no0');
 
   try {
-    await enqueueHeavy(ctx.sid, async () => {
+    // Tạo báo cáo từ file trên máy, không mở EMR: chạy ngay, không chờ tác vụ EMR của phiên.
+    await enqueueLocal(ctx.sid, async () => {
       let result;
       try {
         result = await runScript('generate_report.py', args, {
-          onSpawn: killFn => registerCancel(ctx.sid, killFn),
           runtimeDir: ctx.dir,
         });
       } finally {
-        unregisterCancel(ctx.sid);
         if (snapshotPath) {
           try { fs.unlinkSync(snapshotPath); } catch (_) {}
         }

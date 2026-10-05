@@ -158,6 +158,38 @@ function enqueueHeavy(sid, taskFn, options = {}) {
   }, { ...options, queueType: 'heavy' });
 }
 
+// ── Tác vụ chạy trên máy, KHÔNG mở EMR (chèn chữ ký PDF, tạo báo cáo từ file...) ─────────
+// Không xếp sau hàng đợi phiên / lane tài khoản EMR: đang thu thập Kho nghiên cứu hàng giờ thì
+// bấm "Thêm chữ ký" vẫn chạy ngay. Chỉ giới hạn số tác vụ cùng lúc để không chiếm hết CPU.
+// Không gọi registerCancel trong các tác vụ này: nút Dừng của phiên thuộc về tác vụ EMR đang chạy.
+const parsedMaxLocalJobs = Number.parseInt(process.env.MAX_LOCAL_JOBS || '2', 10);
+const MAX_LOCAL_JOBS = Number.isFinite(parsedMaxLocalJobs) && parsedMaxLocalJobs > 0 ? parsedMaxLocalJobs : 2;
+let activeLocalJobs = 0;
+const localWaiters = [];
+
+async function enqueueLocal(sid, taskFn, options = {}) {
+  const taskId = taskJournal.createTask({
+    sid: sid || 'default',
+    queue_type: 'local',
+    task_type: options.taskType || taskFn?.taskType || taskFn?.name || 'anonymous',
+    metadata: options.metadata || {},
+  });
+  if (activeLocalJobs >= MAX_LOCAL_JOBS) await new Promise(resolve => localWaiters.push(resolve));
+  else activeLocalJobs += 1;
+  taskJournal.updateTask(taskId, 'running');
+  try {
+    const result = await taskFn();
+    taskJournal.updateTask(taskId, 'succeeded');
+    return result;
+  } catch (err) {
+    taskJournal.updateTask(taskId, 'failed', safeError(err));
+    throw err;
+  } finally {
+    const next = localWaiters.shift();
+    if (next) next(); else activeLocalJobs = Math.max(0, activeLocalJobs - 1);
+  }
+}
+
 function registerCancel(sid, killFn) {
   const id = sid || 'default';
   const taskId = activeTaskMap.get(id)
@@ -180,6 +212,8 @@ function unregisterCancel(sid) {
 function getQueueStatus() {
   return {
     max_heavy_jobs: MAX_HEAVY_JOBS,
+    max_local_jobs: MAX_LOCAL_JOBS,
+    active_local_jobs: activeLocalJobs,
     active_heavy_jobs: activeHeavyJobs,
     heavy_waiters: heavyWaiters.length,
     active_account_lanes: [...accountChains.keys()],
@@ -226,6 +260,7 @@ function isCancelRequested(sid) {
 module.exports = {
   enqueue,
   enqueueHeavy,
+  enqueueLocal,
   registerCancel,
   unregisterCancel,
   cancelSession,

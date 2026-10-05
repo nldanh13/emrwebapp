@@ -10,7 +10,7 @@
 process.env.MAX_HEAVY_JOBS = '4';
 
 const assert = require('assert');
-const { enqueueHeavy } = require('../server/services/task_queue');
+const { enqueueHeavy, enqueueLocal, registerCancel } = require('../server/services/task_queue');
 
 let passed = 0;
 async function test(name, fn) {
@@ -83,6 +83,32 @@ async function main() {
     const p2 = enqueueHeavy('sid-err-B', job('E2', 5, log), { accountKey: 'main' });
     await p2;
     assert.deepStrictEqual(log, ['E1:start', 'E1:end', 'E2:start', 'E2:end']);
+  });
+
+  // Ảnh chụp người dùng 05/10/2026: đang thu thập Kho nghiên cứu (hàng giờ, mở EMR) thì bấm
+  // "Thêm chữ ký" (chỉ chèn ảnh vào PDF trên máy) quay mãi — vì cùng hàng đợi phiên + lane EMR.
+  await test('Tác vụ chạy trên máy (không mở EMR) không chờ tác vụ EMR dài cùng phiên', async () => {
+    const log = [];
+    const long = enqueueHeavy('sid-local', job('EMR', 120, log));
+    await delay(10);
+    await enqueueLocal('sid-local', job('KY', 5, log), { taskType: 'sign_discharge_bundle' });
+    assert.deepStrictEqual(log.slice(0, 3), ['EMR:start', 'KY:start', 'KY:end'],
+      `Ký phải xong khi tác vụ EMR còn chạy, thực tế: ${log.join(', ')}`);
+    await long;
+  });
+
+  await test('Tác vụ trên máy không giành nút Dừng của tác vụ EMR đang chạy', async () => {
+    const killed = [];
+    const long = enqueueHeavy('sid-cancel', async () => {
+      registerCancel('sid-cancel', () => killed.push('EMR'));
+      await delay(60);
+    });
+    await delay(10);
+    await enqueueLocal('sid-cancel', async () => { await delay(5); });
+    const { cancelSession } = require('../server/services/task_queue');
+    assert.strictEqual(cancelSession('sid-cancel'), true);
+    assert.deepStrictEqual(killed, ['EMR']);
+    await long.catch(() => {});
   });
 
   console.log(`\n${passed} kịch bản pass.`);

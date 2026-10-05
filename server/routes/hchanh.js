@@ -27,7 +27,7 @@ const { spawn, spawnSync } = require('child_process');
 
 const { getRuntimePaths, ensureSessionAssets }           = require('../services/session');
 const { runScript, runWorker, fmtPyError, PYTHON_BIN }   = require('../services/python_runner');
-const { enqueueHeavy, registerCancel, unregisterCancel, cancelSession } = require('../services/task_queue');
+const { enqueueHeavy, enqueueLocal, registerCancel, unregisterCancel, cancelSession } = require('../services/task_queue');
 const { readJsonSafe, writeJsonAtomic, safeFilePart } = require('../utils/file');
 const { appendActivity }                          = require('../services/activity_logger');
 const { recordHchanhFetch, findStoredStay, isoDay: stayIsoDay, storeSummary: stayStoreSummary, syncAllToPatientDb: syncStayStoreToPatientDb } = require('../services/hchanh_stay_store');
@@ -3606,20 +3606,16 @@ router.post('/hchanh/sign-discharge-bundle', async (req, res) => {
   const outJsonPath = path.join(hchanh_dir(ctx), `sign_discharge_bundle_${safeFilePart(fileName)}_${Date.now()}.json`);
 
   try {
-    await enqueueHeavy(ctx.sid, async () => {
-      let result;
-      try {
-        result = await runScript('sign_discharge_bundle.py', [
-          '--in-pdf', inPath,
-          '--out-pdf', outPath,
-          '--out', outJsonPath,
-        ], {
-          onSpawn: killFn => registerCancel(ctx.sid, killFn),
-          runtimeDir: ctx.dir,
-        });
-      } finally {
-        unregisterCancel(ctx.sid);
-      }
+    // Chỉ chèn ảnh vào PDF trên máy, không mở EMR: chạy ngay, không chờ tác vụ EMR của phiên
+    // (vd đang thu thập Kho nghiên cứu) và không giành nút Dừng của tác vụ đó.
+    await enqueueLocal(ctx.sid, async () => {
+      const result = await runScript('sign_discharge_bundle.py', [
+        '--in-pdf', inPath,
+        '--out-pdf', outPath,
+        '--out', outJsonPath,
+      ], {
+        runtimeDir: ctx.dir,
+      });
 
       const output = readJsonSafe(outJsonPath, null);
       try { if (fs.existsSync(outJsonPath)) fs.rmSync(outJsonPath, { force: true }); } catch (_) {}
@@ -3647,7 +3643,7 @@ router.post('/hchanh/sign-discharge-bundle', async (req, res) => {
         signed_names: output.signed_names || [],
         download_url: `/api/hchanh/discharge-bundle/${encodeURIComponent(signedFileName)}`,
       });
-    });
+    }, { taskType: 'sign_discharge_bundle' });
   } catch (err) {
     console.error('[HCHANH/sign-discharge-bundle]', err);
     if (!res.headersSent) res.status(500).json({ status: 'error', message: String(err.message || err) });
