@@ -54,4 +54,22 @@ describe('ResearchOperationDashboard', () => {
     expect(host.textContent).toContain('Xét nghiệm: Hết thời gian chờ EMR');
     expect(host.textContent).not.toContain('THIẾU');
   });
+
+  it('nút làm mới có chữ; ghi chú chuẩn hóa bằng tiếng Việt; ngày giờ một định dạng', () => {
+    const withNotes = {
+      ...screen,
+      generated_at: '2026-10-05T14:14:00',
+      qa: { ...screen.qa, generated_at: '2026-10-05T14:16:38', warnings: [
+        { code: 'child_outside_encounter', table: 'lab_results', count: 5296, message: 'lab_results: 5296 dòng … (is_within_encounter = 0).' },
+      ] },
+    };
+    act(() => root.render(createElement(ResearchOperationDashboard, { screen: withNotes, onRefresh: () => {} })));
+    const t = host.textContent;
+    expect(t).toContain('Làm mới số liệu');
+    expect(t).not.toContain('↻');
+    expect(t).toContain('Xét nghiệm 5.296');
+    expect(t).not.toMatch(/lab_results|is_within_encounter/);
+    expect(t).toContain('số liệu lúc 14:14 05/10/2026');
+    expect(t).toContain('kiểm tra lúc 14:16 05/10/2026');
+  });
 });

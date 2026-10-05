@@ -780,6 +780,21 @@ function buildResearchProgressSnapshot(runDir, scopeMeta = {}, { isArchive = tru
 // Tóm tắt kiểm tra độ CHÍNH XÁC (qa_report.json do bước chuẩn hóa ghi) cho bảng theo dõi:
 // lỗi chặn, số lượt cần người kiểm tra theo từng loại, mẫu danh sách, và có cũ hơn dữ liệu
 // vừa lấy không (lấy thêm sau lần chuẩn hóa thì phải chuẩn hóa lại mới kiểm tra phần mới).
+// Danh sách cần kiểm tra có thể nhiều dòng cho một lượt (vd. "có thể cùng một đợt" ghi cho cả hai
+// lượt của cặp, một lượt nằm trong nhiều cặp). Đếm theo lượt để không ra số lớn hơn tổng số lượt.
+function summarizeReviewRows(review = []) {
+  const keyOf = r => String(r?.encounter_id || r?.research_code || '').trim() || `${r?.patient_code || ''}|${r?.detail || ''}`;
+  const all = new Set();
+  const perIssue = {};
+  for (const r of review) {
+    const k = keyOf(r);
+    const issue = String(r?.issue || 'other');
+    all.add(k);
+    (perIssue[issue] ||= new Set()).add(k);
+  }
+  return { encounters: all.size, byIssue: Object.fromEntries(Object.entries(perIssue).map(([i, set]) => [i, set.size])) };
+}
+
 function qaSummaryForSnapshot(runDir) {
   const qa = quality.readQaReport(runDir);
   if (!qa || typeof qa !== 'object') return null;
@@ -787,11 +802,7 @@ function qaSummaryForSnapshot(runDir) {
   const review = Array.isArray(qa.review)
     ? qa.review
     : (readCsvTable(path.join(runDir, quality.ENCOUNTER_REVIEW_FILE), 20000).rows || []);
-  const byIssue = {};
-  for (const item of review) {
-    const issue = String(item?.issue || 'other');
-    byIssue[issue] = (byIssue[issue] || 0) + 1;
-  }
+  const { encounters: reviewEncounters, byIssue } = summarizeReviewRows(review);
   const generatedAt = String(qa.generated_at || '');
   let latestCollectMs = 0;
   for (const name of ['progress.json', 'hchanh_auto_progress.json', 'order_history_auto_progress.json']) {
@@ -799,7 +810,7 @@ function qaSummaryForSnapshot(runDir) {
   }
   const checkedMs = Date.parse(generatedAt);
   const short = (list) => (Array.isArray(list) ? list : []).slice(0, 30).map(x => ({
-    code: String(x?.code || ''), message: String(x?.message || ''), count: Number(x?.count || 0) || 0,
+    code: String(x?.code || ''), message: String(x?.message || ''), count: Number(x?.count || 0) || 0, table: String(x?.table || ''),
   }));
   return {
     status: String(qa.status || ''),
@@ -807,7 +818,9 @@ function qaSummaryForSnapshot(runDir) {
     stale: Number.isFinite(checkedMs) && latestCollectMs > checkedMs + 2000,
     blocking: short(qa.blocking),
     warnings: short(qa.warnings),
-    review_count: review.length || Number(qa.review_count || 0) || 0,
+    // Đếm theo LƯỢT (cùng đơn vị với "N lượt điều trị" trên màn hình); số dòng giữ riêng.
+    review_count: review.length ? reviewEncounters : Number(qa.review_count || 0) || 0,
+    review_rows: review.length,
     review_by_issue: byIssue,
     review: review.slice(0, 300).map(r => ({
       research_code: String(r?.research_code || ''),
@@ -853,6 +866,7 @@ function rowResearchCode(row) {
 }
 
 module.exports = {
+  summarizeReviewRows,
   taskStatusForRun,
   qaSummaryForSnapshot,
   tableCountsForRunDir,

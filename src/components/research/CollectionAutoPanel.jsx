@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import * as api from '../../api.js';
 import { todayInputDate } from './researchScope.js';
 import { C, FS } from '../../tokens.js';
-import { compactNumber } from './researchFormat.js';
+import { compactNumber, formatWhen } from './researchFormat.js';
 import { inp, StatBadge, SmallRowsTable } from './researchUi.jsx';
 import { Btn, Spinner } from '../shared.jsx';
 
@@ -192,7 +192,14 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
   const collecting = running || /thu thập/i.test(String(serverRunning?.label || ''));
   const runningLabel = collecting ? 'Đang thu thập' : serverRunning ? `Đang chạy: ${serverRunning.label}` : '';
   const planView = buildPlanView(plan, { running: Boolean(collecting || serverRunning), maxAttempts: status?.max_attempts || 3, busy });
-  const reportAt = report?.finished_at ? new Date(report.finished_at).toLocaleString('vi-VN') : '';
+  const reportAt = formatWhen(report?.finished_at);
+  // Đếm theo LƯỢT, cùng đơn vị với "Đánh giá dữ liệu" (danh sách có thể nhiều dòng/lượt).
+  const exceptionsLabel = screen?.exceptions_encounters != null
+    ? `Danh sách cần xử lý (${compactNumber(screen.exceptions_encounters)} lượt)`
+    : `Danh sách cần xử lý (${compactNumber(status?.exceptions_total || 0)} dòng)`;
+  // Đã có lần chạy (dù bị ngắt/dừng) thì không nói "chưa chạy lần nào"; ghi chú lần chạy gần nhất
+  // nằm ở "Đánh giá dữ liệu".
+  const hasRunBefore = Boolean(screen?.task?.stopped || screen?.task?.last_task);
 
   return (
     <section style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, padding: '9px 11px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -240,7 +247,9 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
         </div>
       ) : (
         <div style={{ fontSize: FS.xs, color: C.text3 }}>
-          {collecting || serverRunning ? 'Báo cáo của lần chạy này sẽ hiện ở đây khi xong.' : 'Chưa chạy thu thập tự động lần nào.'}
+          {collecting || serverRunning
+            ? 'Báo cáo của lần chạy này sẽ hiện ở đây khi xong.'
+            : hasRunBefore ? 'Lần chạy gần nhất chưa xong: xem ghi chú ở Đánh giá dữ liệu bên dưới.' : 'Chưa chạy thu thập tự động lần nào.'}
         </div>
       )}
 
@@ -326,7 +335,7 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
             {changes && !changes.length && <span style={{ fontSize: FS.xs, color: C.text3 }}>Chưa ghi nhận thay đổi nào.</span>}
           </div>
           {!!changes?.length && (
-            <SmallRowsTable max={100} rows={changes.map(c => ({ ...c, at: c.changed_at ? new Date(c.changed_at).toLocaleString('vi-VN') : '', version: `v${c.from_version} → v${c.to_version}`, diff: `+${c.rows_added} / −${c.rows_removed}` }))} columns={[
+            <SmallRowsTable max={100} rows={changes.map(c => ({ ...c, at: formatWhen(c.changed_at), version: `v${c.from_version} → v${c.to_version}`, diff: `+${c.rows_added} / −${c.rows_removed}` }))} columns={[
               { key: 'at', label: 'Thời điểm' },
               { key: 'research_code', label: 'Mã NC' },
               { key: 'part_label', label: 'Phần' },
@@ -340,7 +349,7 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
       {status && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <Btn onClick={() => setShowExceptions(v => !v)} disabled={!exceptions.length} style={{ height: 24, padding: '0 9px', fontSize: FS.xs }}>
-            {showExceptions ? 'Ẩn danh sách cần xử lý' : `Danh sách cần xử lý (${compactNumber(status.exceptions_total || 0)} mục)`}
+            {showExceptions ? 'Ẩn danh sách cần xử lý' : exceptionsLabel}
           </Btn>
           {!!exceptions.length && (
             <Btn onClick={() => api.downloadResearchCollectionExceptions(studyId).catch(e => t(String(e.message || e), 'error'))} style={{ height: 24, padding: '0 9px', fontSize: FS.xs }}>Tải CSV</Btn>

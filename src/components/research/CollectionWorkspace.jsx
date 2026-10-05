@@ -1,7 +1,7 @@
 // Khu Thu thập dữ liệu (kho gốc và nghiên cứu riêng), xếp theo thứ tự làm việc:
 //   Bước 1  Quét danh sách người bệnh trên EMR (chỉ kho gốc)
 //   Bước 2  Thu thập dữ liệu chi tiết (Thu thập tự động: chỉ lấy phần mới/thiếu/lỗi/đã đổi)
-//   Bước 3  Theo dõi tiến độ từng phần
+//   Bước 3  Đánh giá dữ liệu (đủ / chính xác / việc cần làm)
 // Lần đầu của nghiên cứu (chưa có đợt chạy) dùng "Lấy dữ liệu lần đầu"; từ đó về sau chỉ một nút
 // chính là Thu thập tự động. Thao tác ít dùng (quét lại dữ liệu tạm thời, chạy hiện Chrome, log)
 // gom vào "Thao tác khác".
@@ -186,7 +186,7 @@ export function CollectionWorkspace({
 
       {hasRun && (
         <section>
-          <StepHeader number={++step} title="Theo dõi tiến độ" hint="Tự cập nhật khi đang chạy." />
+          <StepHeader number={++step} title="Đánh giá dữ liệu" hint="Đủ chưa, chính xác chưa và việc cần làm. Tự cập nhật khi số liệu đổi." />
           <ResearchOperationDashboard
             screen={screen}
             loading={screenQuery.refreshing}
