@@ -137,17 +137,19 @@ function buildEncounterId(row, sourceRunId = '') {
     'Ngày vào viện', 'Ngay vao vien', 'Ngày nhập viện', 'Ngay nhap vien',
     'T/G vào', 'TG vao', 'admission_date', 'ngay_vao_vien', 'ngay_vao',
   ]));
-  const discharge = isoDateTime(firstNonEmpty(row, [
-    'Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien',
-    'T/G ra', 'TG ra', 'discharge_date', 'ngay_ra_vien', 'ngay_ra',
-  ])) || isoDate(firstNonEmpty(row, [
-    'Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien',
-    'T/G ra', 'TG ra', 'discharge_date', 'ngay_ra_vien', 'ngay_ra',
-  ]));
-  if (maBn && admission) return `enc_${stableHash(['visit', maBn, admission, discharge || ''])}`;
+  if (maBn && admission) {
+    // Ngày ra viện KHÔNG tham gia encounter_id. Cùng một lượt lúc đang nằm viện và
+    // sau khi đã có ngày ra phải giữ nguyên khóa; trước đây thêm discharge làm sinh
+    // hai encounter khác nhau cho cùng một lần nhập viện.
+    return `enc_${stableHash(['visit', normalizedIdentity(maBn), admission])}`;
+  }
 
   const researchCode = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
-  if (researchCode) return `enc_${stableHash(['research', researchCode])}`;
+  if (researchCode && maBn) {
+    // Mã NC có thể bị tái dùng/cấp trùng; luôn khóa kèm Mã BN để không thể nối hai
+    // người bệnh khác nhau chỉ vì cùng research_code.
+    return `enc_${stableHash(['research', normalizedIdentity(maBn), normalizedIdentity(researchCode)])}`;
+  }
 
   // Khóa cuối cùng chỉ để không làm hỏng schema. Dòng này phải được đánh dấu
   // manual review vì không đủ bằng chứng để ghép lượt tự động.
@@ -278,7 +280,15 @@ function buildContextMap(patientRows, sourceRunId = '') {
     byPatient.set(code, patientList);
 
     addContextMapKey(map, `encounter:${normalizedIdentity(ctx.encounter_id)}`, ctx);
-    if (ctx.research_code) addContextMapKey(map, `research:${normalizedIdentity(ctx.research_code)}`, ctx);
+    // Research code là alias yếu và có thể tái dùng. Chỉ lập chỉ mục theo cặp
+    // Mã BN + Mã NC để không bao giờ gán một dòng của BN A sang BN B.
+    if (ctx.research_code) {
+      addContextMapKey(
+        map,
+        `research_patient:${normalizedIdentity(code)}|${normalizedIdentity(ctx.research_code)}`,
+        ctx,
+      );
+    }
     if (ctx.emr_treatment_id) addContextMapKey(map, `treatment:${normalizedIdentity(ctx.emr_treatment_id)}`, ctx);
     if (ctx.emr_noitru_id) addContextMapKey(map, `noitru:${normalizedIdentity(ctx.emr_noitru_id)}`, ctx);
     if (ctx.emr_admission_id) addContextMapKey(map, `admission:${normalizedIdentity(ctx.emr_admission_id)}`, ctx);
@@ -300,29 +310,39 @@ function contextForRow(ctxMap, row, code) {
   const explicitEncounter = rowExistingEncounterId(row);
   if (explicitEncounter) {
     const exact = uniqueContext(ctxMap.get(`encounter:${normalizedIdentity(explicitEncounter)}`));
-    if (exact) return matchedContext(exact, 'encounter_id');
+    if (exact && normalizedIdentity(exact.patient_code) === normalizedIdentity(code)) {
+      return matchedContext(exact, 'encounter_id');
+    }
   }
 
   const treatmentId = rowEmrTreatmentId(row);
   if (treatmentId) {
     const exact = uniqueContext(ctxMap.get(`treatment:${normalizedIdentity(treatmentId)}`));
-    if (exact) return matchedContext(exact, 'emr_treatment_id');
+    if (exact && normalizedIdentity(exact.patient_code) === normalizedIdentity(code)) {
+      return matchedContext(exact, 'emr_treatment_id');
+    }
   }
   const noitruId = rowNoitruId(row);
   if (noitruId) {
     const exact = uniqueContext(ctxMap.get(`noitru:${normalizedIdentity(noitruId)}`));
-    if (exact) return matchedContext(exact, 'emr_noitru_id');
+    if (exact && normalizedIdentity(exact.patient_code) === normalizedIdentity(code)) {
+      return matchedContext(exact, 'emr_noitru_id');
+    }
   }
   const admissionId = rowEmrAdmissionId(row);
   if (admissionId) {
     const exact = uniqueContext(ctxMap.get(`admission:${normalizedIdentity(admissionId)}`));
-    if (exact) return matchedContext(exact, 'emr_admission_id');
+    if (exact && normalizedIdentity(exact.patient_code) === normalizedIdentity(code)) {
+      return matchedContext(exact, 'emr_admission_id');
+    }
   }
 
   const researchCode = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
   if (researchCode) {
-    const exact = uniqueContext(ctxMap.get(`research:${normalizedIdentity(researchCode)}`));
-    if (exact) return matchedContext(exact, 'research_code');
+    const exact = uniqueContext(ctxMap.get(
+      `research_patient:${normalizedIdentity(code)}|${normalizedIdentity(researchCode)}`,
+    ));
+    if (exact) return matchedContext(exact, 'research_code_patient_scoped');
   }
 
   const admission = isoDateTime(firstNonEmpty(row, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'admission_date']))
