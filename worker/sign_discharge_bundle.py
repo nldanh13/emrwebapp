@@ -67,7 +67,7 @@ def _prepared_signature_png(img_path: str) -> Tuple[bytes, float]:
         r, g, b = src[o], src[o + 1], src[o + 2]
         a = src[o + 3] if has_alpha else 255
         lum = (r * 299 + g * 587 + b * 114) // 1000
-        d = ((255 - lum) * a) // 255  # độ tối sau khi đặt lên nền trắng
+        d = ((255 - lum) * a) // 255
         dark[i] = d
         if d > 100:
             sum_r += r; sum_g += g; sum_b += b; cnt += 1
@@ -76,8 +76,6 @@ def _prepared_signature_png(img_path: str) -> Tuple[bytes, float]:
     else:
         ink = (0, 0, 0)
 
-    # Làm dày nét (ảnh sẽ bị thu rất nhỏ trên phiếu): lấy độ tối lớn nhất trong
-    # cửa sổ bán kính r quanh mỗi điểm, lọc theo hàng rồi theo cột cho nhanh.
     r = max(1, h // _STROKE_RATIO)
     rows = bytearray(w * h)
     for y in range(h):
@@ -90,7 +88,6 @@ def _prepared_signature_png(img_path: str) -> Tuple[bytes, float]:
         for y in range(h):
             thick[y * w + x] = max(col[max(0, y - r):min(h, y + r + 1)])
 
-    # Độ đặc tính theo nét tối nhất của chính ảnh: chữ ký viết mực nhạt cũng thành nét đặc.
     peak = max(thick) if thick else 0
     span = max(peak - _BG_CUTOFF, 1)
     out = bytearray(w * h * 4)
@@ -103,9 +100,6 @@ def _prepared_signature_png(img_path: str) -> Tuple[bytes, float]:
 
 
 def _match_groups(page: "fitz.Page", name: str) -> List[List["fitz.Rect"]]:
-    """Các lần xuất hiện của `name` trên trang, mỗi lần là danh sách vùng chữ.
-    Tên bị xuống dòng ("Trần Quỳnh Minh" / "Thư") được search_for() trả thành
-    nhiều vùng liên tiếp — gộp lại thành 1 lần xuất hiện để chỉ ký 1 lần."""
     try:
         quads = page.search_for(name, quads=True)
     except Exception:
@@ -131,8 +125,6 @@ def _match_groups(page: "fitz.Page", name: str) -> List[List["fitz.Rect"]]:
 
 
 def _core_text(page: "fitz.Page", rect: "fitz.Rect") -> str:
-    """Chữ nằm trong dải giữa của vùng — vùng tìm được thường chạm sát dòng
-    trên/dưới, đọc cả vùng sẽ dính chữ của dòng bên cạnh."""
     if _is_vertical_quad(rect):
         pad = rect.width * 0.3
         core = fitz.Rect(rect.x0 + pad, rect.y0, rect.x1 - pad, rect.y1)
@@ -146,33 +138,25 @@ def _norm_text(value: str) -> str:
     return " ".join(unicodedata.normalize("NFC", str(value or "")).split())
 
 
-# Khoảng cách (pt) giữa mép trên của chữ và mép dưới của ảnh chữ ký.
-# Giảm nhẹ khoảng hở để chữ ký lớn hơn vẫn nằm gọn sát tên người ký.
-_STAMP_GAP = 1.5
-# Tăng khoảng 30-35% so với bản cũ: chữ ký rõ hơn khi in A4 nhưng vẫn giữ
-# trần kích thước để không chạm đường kẻ ở những hàng thấp.
+# Đưa chữ ký sát tên hơn và ưu tiên tăng rõ kích thước ở cột tên xoay dọc.
+_STAMP_GAP = 1.0
 _HORIZ_THICKNESS_FACTOR = 2.05
 _HORIZ_THICKNESS_MIN, _HORIZ_THICKNESS_MAX = 12.0, 36.0
-_VERT_THICKNESS_FACTOR = 2.10
-_VERT_THICKNESS_MIN, _VERT_THICKNESS_MAX = 12.0, 30.0
+_VERT_THICKNESS_FACTOR = 2.60
+_VERT_THICKNESS_MIN, _VERT_THICKNESS_MAX = 14.0, 40.0
 
-# Ảnh chữ ký được chuẩn hoá trước khi chèn: thu nhỏ (ảnh chụp điện thoại rất
-# lớn làm PDF nặng), bỏ nền trắng, làm nét đậm và dày hơn.
 _SIG_MAX_WIDTH_PX = 480
-_INK_DARKEN = 0.3        # màu mực = màu trung bình của nét × hệ số này (gần đen hơn)
-_STROKE_RATIO = 45       # nét được làm dày thêm ~chiều cao ảnh / hệ số này mỗi bên
-_BG_CUTOFF = 30          # độ tối dưới mức này coi là nền giấy → trong suốt
-_ALPHA_GAIN = 1.8        # nét đạt ~55% độ tối đậm nhất của ảnh là đã đặc hoàn toàn
+_INK_DARKEN = 0.3
+_STROKE_RATIO = 45
+_BG_CUTOFF = 30
+_ALPHA_GAIN = 1.8
 
 
 def _is_vertical_quad(rect: "fitz.Rect") -> bool:
-    """Chữ bị xoay dọc 90° (cột 'Ký và ghi tên') có bbox cao hơn nhiều so với rộng."""
     return rect.height > rect.width * 1.3
 
 
 def _rects_overlap(a: "fitz.Rect", b: "fitz.Rect", threshold: float = 0.5) -> bool:
-    """True nếu 2 vùng chữ chồng lấn đáng kể (vùng giao >= threshold lần vùng
-    nhỏ hơn) — dùng để nhận ra tên A là chuỗi con của tên B đã khớp trước đó."""
     inter = a & b
     if inter.is_empty:
         return False
@@ -183,8 +167,6 @@ def _rects_overlap(a: "fitz.Rect", b: "fitz.Rect", threshold: float = 0.5) -> bo
 
 
 def _stamp_rect_for(rect: "fitz.Rect", aspect: float) -> Tuple["fitz.Rect", bool]:
-    """Tính hình chữ nhật để chèn ảnh chữ ký ngay phía trên `rect` (bbox chữ),
-    và có cần xoay ảnh 90° hay không. Căn giữa theo trục ngang của `rect`."""
     cx = (rect.x0 + rect.x1) / 2
     vertical = _is_vertical_quad(rect)
     if vertical:
@@ -208,12 +190,7 @@ def sign_bundle(in_pdf: str, out_pdf: str) -> Dict[str, Any]:
 
     sig_rows = load_nurse_signature_rows()
     if not sig_rows:
-        return {
-            "status": "error",
-            "message": "Chưa cấu hình ảnh chữ ký cho điều dưỡng/bác sĩ nào (tab Lịch điều dưỡng).",
-        }
-    # Tên dài xử lý trước để không bị tên ngắn hơn "ăn theo" cùng vị trí
-    # (trường hợp tên A là chuỗi con của tên B).
+        return {"status": "error", "message": "Chưa cấu hình ảnh chữ ký cho điều dưỡng/bác sĩ nào (tab Lịch điều dưỡng)."}
     sig_rows = sorted(sig_rows, key=lambda r: -len(r["name"]))
     prepared: Dict[str, Tuple[bytes, float]] = {}
     for row in sig_rows:
@@ -224,11 +201,7 @@ def sign_bundle(in_pdf: str, out_pdf: str) -> Dict[str, Any]:
 
     doc = fitz.open(in_pdf)
     stamped: List[Dict[str, Any]] = []
-    # Vùng chữ đã chèn theo từng trang — tránh chèn trùng/chồng khi 1 tên là
-    # chuỗi con của 1 tên khác đã cấu hình (xử lý tên dài trước nên vùng của
-    # tên dài đã "chiếm chỗ" trước khi tên ngắn hơn được xét tới).
     claimed_rects: Dict[int, List["fitz.Rect"]] = {}
-    # Mỗi ảnh chữ ký chỉ nhúng 1 lần vào PDF; các chỗ ký sau dùng lại (xref).
     image_xrefs: Dict[str, int] = {}
 
     for page in doc:
@@ -246,7 +219,6 @@ def sign_bundle(in_pdf: str, out_pdf: str) -> Dict[str, Any]:
                 for r in group[1:]:
                     anchor |= r
                 if len(group) > 1 and not _is_vertical_quad(group[0]):
-                    # Tên xuống dòng: ký phía trên dòng đầu, căn giữa theo cả khối tên.
                     anchor = fitz.Rect(anchor.x0, group[0].y0, anchor.x1, group[0].y1)
                 stamp_rect, rotated = _stamp_rect_for(anchor, aspect)
                 try:
