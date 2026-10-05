@@ -8,6 +8,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { C, FS } from '../tokens.js';
 import { Btn, Spinner } from './shared.jsx';
 import * as api from '../api.js';
+import { useOnTabReturn } from '../hooks/useTabActivity.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -293,6 +294,7 @@ export default function VtytCatalogManager() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useOnTabReturn(() => load());
 
   const handleSave = async (key, patch) => {
     await api.updateVtytCatalog(key, patch);

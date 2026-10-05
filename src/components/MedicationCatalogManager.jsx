@@ -14,6 +14,7 @@ import { useRouteTable } from '../hooks/useRouteModel.js';
 import RouteDesigner from './RouteDesigner.jsx';
 import DrugNameIngredientPanel from './DrugNameIngredientPanel.jsx';
 import { RouteBadge } from './report/ReportShared.jsx';
+import { useOnTabReturn } from '../hooks/useTabActivity.js';
 
 function routeOptions(table) {
   const categories = table.categories || [];
@@ -291,6 +292,7 @@ export default function MedicationCatalogManager() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useOnTabReturn(() => load());
 
   const handleCreate = async (payload) => {
     await api.createMedicationCatalog(payload);

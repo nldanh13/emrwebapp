@@ -10,6 +10,7 @@ import { C, FS } from '../tokens.js';
 import { Btn, Spinner, Badge } from './shared.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import * as api from '../api.js';
+import { useOnTabReturn } from '../hooks/useTabActivity.js';
 
 const ROLE_OPTIONS = [
   { value: 'viewer', label: 'Người xem — chỉ xem' },
@@ -233,6 +234,7 @@ export default function AccountSettingsTab() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useOnTabReturn(() => load());
 
   const handleCreate = async (payload) => {
     const r = await api.createAdminUser(payload);

@@ -7,6 +7,7 @@ import { C, FS, R } from '../tokens.js';
 import { Btn, Segmented, Spinner } from './shared.jsx';
 import DateField, { formatDmy } from './DateField.jsx';
 import * as api from '../api.js';
+import { useOnTabReturn } from '../hooks/useTabActivity.js';
 
 const VIEWS = [
   { value: 'tim', label: 'Tìm người bệnh' },
@@ -331,6 +332,7 @@ function useReport(load, deps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   useEffect(() => { reload(); }, [reload]);
+  useOnTabReturn(() => reload());
   return { data, loading, error, reload };
 }
 

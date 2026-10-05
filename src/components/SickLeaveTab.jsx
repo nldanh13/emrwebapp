@@ -6,6 +6,7 @@ import { getPatientDischargeDates } from '../utils/dischargePrint.js';
 import { sanitizeWorkDateRange, dmyToInputDate, workDateRangeToDmy, workDateRangeLabel } from '../utils/workDateRange.js';
 import { getSessionId } from '../hooks/useSession.js';
 import BhytPortalPanel from './BhytPortalPanel.jsx';
+import { useOnTabReturn } from '../hooks/useTabActivity.js';
 
 const DEFAULT_CLINIC_LOGIN_URL = import.meta.env.VITE_EMR_LOGIN_URL || '';
 const DEFAULT_CLINIC_LIST_URL = import.meta.env.VITE_EMR_CLINIC_LIST_URL || '';
@@ -510,6 +511,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
   }, [toast]);
 
   useEffect(() => { load(); }, [load]);
+  useOnTabReturn(() => load());
 
   const handleImportFile = useCallback(async (file) => {
     if (!file) return;

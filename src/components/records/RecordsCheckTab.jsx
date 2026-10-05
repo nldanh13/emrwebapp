@@ -9,6 +9,7 @@ import RecordsSubmissionTab from './RecordsSubmissionTab.jsx';
 import useIsMobile from '../../hooks/useIsMobile.js';
 import { PAPER_ISSUE_STATES, applyGoogleSheetValidation, buildGoogleSheetIndex, buildUnlinkedSheetIssues, paperFilterMatches } from './googleSheetValidation.mjs';
 import { exportRecordsCheckPdf, getRecordsCheckDashboard, getRecordsCheckGoogleSheet, getRecordsCheckSubmissions, scanRecordsCheckCompleted, setRecordsCheckChecked, setRecordsCheckPaperChecklist, startRecordsCheckFetchBatch, stopRecordsCheckFetchBatch, syncRecordsCheckGoogleSheet, updateRecordsCheckGoogleSheetRow } from '../../api.js';
+import { useOnTabReturn } from '../../hooks/useTabActivity.js';
 
 const CHECK_FILES = ['discharge', 'cls'];
 const COMPLETED_STATUS = 'Hoàn tất';
@@ -1102,6 +1103,8 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
     })();
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useOnTabReturn(() => { refreshDashboard({ silent: true }); });
 
   useEffect(() => {
     const jobRunningNow = Boolean(dashboard?.job?.running);

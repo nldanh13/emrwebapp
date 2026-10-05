@@ -10,6 +10,7 @@ import { Btn, Segmented } from './shared.jsx';
 import * as api from '../api.js';
 import ClinicAdmissionCare from './ClinicAdmissionCare.jsx';
 import ClinicBbhc from './ClinicBbhc.jsx';
+import { useTabActive } from '../hooks/useTabActivity.js';
 
 const CONFIG_KEY = 'emr_clinic_monitor_cfg_v1';
 const DEFAULT_CONFIG = {
@@ -176,11 +177,14 @@ export default function ClinicTab({ toast }) {
   }, []);
 
   const running = Boolean(monitor?.running);
+  // Tab ẩn và không có việc đang chạy: không tự làm mới định kỳ; quay lại tab thì tải lại ngay.
+  const tabActive = useTabActive();
   useEffect(() => {
+    if (!tabActive && !running) return undefined;
     loadState();
     const id = setInterval(loadState, running ? 5000 : 15000);
     return () => clearInterval(id);
-  }, [loadState, running]);
+  }, [loadState, running, tabActive]);
 
   const start = async () => {
     setBusy('start');
