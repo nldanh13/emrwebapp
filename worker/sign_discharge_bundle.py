@@ -1,24 +1,10 @@
 # -*- coding: utf-8 -*-
-"""worker/sign_discharge_bundle.py — Chèn ảnh chữ ký lên bộ phiếu "IN RA VIỆN"
-(xem ward_print_discharge_bundle.py) tại mọi chỗ tên điều dưỡng/bác sĩ xuất
-hiện trong các cột kiểu "Ký và ghi tên" / "Điều dưỡng thực hiện" / "Tên ĐD",
-CHỈ với những người đã cấu hình sẵn ảnh chữ ký (tab Lịch điều dưỡng — xem
-worker/nurse_emr_accounts.py: trường signature_file). Người chưa cấu hình
-chữ ký thì giữ nguyên, không đụng tới.
+"""worker/sign_discharge_bundle.py — Chèn ảnh chữ ký lên bộ phiếu "IN RA VIỆN".
 
-Cách khớp vị trí: dùng PyMuPDF (fitz) search_for() để tìm đúng cụm tên trên
-từng trang (PDF có lớp chữ thật, không phải ảnh scan), rồi chèn ảnh ngay
-phía trên vùng chữ đó — bù hình chữ nhật của chữ (quad) sẽ cho biết cả
-trường hợp chữ bị xoay dọc 90° (như cột "Ký và ghi tên" ở phiếu chức năng
-sống) lẫn chữ nằm ngang bình thường (phiếu chăm sóc/truyền dịch), công thức
-kích thước/khoảng cách đã đối chiếu khớp với 1 bản mẫu do người dùng cung
-cấp.
-
-Giới hạn đã biết: tìm theo khớp chuỗi con trên toàn trang, không giới hạn
-theo đúng cột "ký tên" — nếu tên một người trùng lặp/là chuỗi con của một
-đoạn văn bản khác trên phiếu (hiếm với họ tên đầy đủ 3-4 từ) có thể bị chèn
-nhầm chỗ. Xử lý tên dài trước để tên ngắn không "ăn theo" vị trí đã khớp bởi
-tên dài hơn chứa nó.
+Chữ ký được tìm theo tên người ký trên lớp text PDF. Ảnh chữ ký được làm nền
+trong suốt, tự cắt viền trắng theo bounding-box nét mực rồi mới scale/chèn.
+Việc crop trước khi tính aspect giúp những ảnh có nhiều khoảng trắng không bị
+thu nhỏ giả tạo và giữ hình dáng chữ ký đồng đều hơn giữa các biểu mẫu.
 """
 from __future__ import annotations
 
@@ -28,16 +14,16 @@ import os
 import sys
 import unicodedata
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from nurse_emr_accounts import load_nurse_signature_rows  # noqa: E402
 
 try:
-    import pymupdf as fitz  # PyMuPDF; tên `fitz` cũ in cảnh báo "deprecated" ra log
+    import pymupdf as fitz
 except Exception:
     try:
-        import fitz  # PyMuPDF bản cũ (< 1.24.3) chỉ có tên này
+        import fitz
     except Exception:
         fitz = None
 
@@ -52,19 +38,70 @@ def _json_out(path: str, payload: Dict[str, Any]) -> None:
     tmp.replace(p)
 
 
+# Kích thước/vị trí trên phiếu.
+_STAMP_GAP = 0.8
+_HORIZ_THICKNESS_FACTOR = 2.20
+_HORIZ_THICKNESS_MIN, _HORIZ_THICKNESS_MAX = 12.0, 38.0
+_VERT_THICKNESS_FACTOR = 3.00
+_VERT_THICKNESS_MIN, _VERT_THICKNESS_MAX = 16.0, 46.0
+
+# Xử lý ảnh: ưu tiên giữ hình dáng nét ký thật, không làm đặc cứng.
+_SIG_MAX_WIDTH_PX = 900
+_INK_DARKEN = 0.68
+_STROKE_RATIO = 180
+_BG_CUTOFF = 16
+_ALPHA_GAIN = 1.05
+_CROP_ALPHA_MIN = 18
+_CROP_PAD_RATIO = 0.055
+_CROP_PAD_MIN = 3
+
+
+def _crop_rgba_to_ink(rgba: bytearray, w: int, h: int) -> Tuple[bytes, int, int]:
+    """Cắt viền trắng/trong suốt theo phần nét ký thật và giữ một ít padding."""
+    xs: List[int] = []
+    ys: List[int] = []
+    for y in range(h):
+        row = y * w * 4
+        for x in range(w):
+            if rgba[row + x * 4 + 3] >= _CROP_ALPHA_MIN:
+                xs.append(x)
+                ys.append(y)
+    if not xs:
+        return bytes(rgba), w, h
+
+    x0, x1 = min(xs), max(xs) + 1
+    y0, y1 = min(ys), max(ys) + 1
+    ink_w, ink_h = x1 - x0, y1 - y0
+    pad = max(_CROP_PAD_MIN, int(max(ink_w, ink_h) * _CROP_PAD_RATIO))
+    x0 = max(0, x0 - pad)
+    y0 = max(0, y0 - pad)
+    x1 = min(w, x1 + pad)
+    y1 = min(h, y1 + pad)
+
+    cw, ch = x1 - x0, y1 - y0
+    cropped = bytearray(cw * ch * 4)
+    for y in range(ch):
+        src0 = ((y0 + y) * w + x0) * 4
+        src1 = src0 + cw * 4
+        dst0 = y * cw * 4
+        cropped[dst0:dst0 + cw * 4] = rgba[src0:src1]
+    return bytes(cropped), cw, ch
+
+
 def _prepared_signature_png(img_path: str) -> Tuple[bytes, float]:
-    """Ảnh chữ ký đã chuẩn hoá (PNG nền trong suốt) nhưng giữ chi tiết nét ký."""
+    """Chuẩn hoá chữ ký, crop theo nét mực và trả PNG + aspect thực sau crop."""
     pix = fitz.Pixmap(img_path)
     if pix.colorspace is None or pix.colorspace.n != 3:
         pix = fitz.Pixmap(fitz.csRGB, pix)
     while pix.width > _SIG_MAX_WIDTH_PX:
         pix.shrink(1)
+
     w, h, n = pix.width, pix.height, pix.n
     src = pix.samples
     has_alpha = n == 4
-
     dark = bytearray(w * h)
     sum_r = sum_g = sum_b = cnt = 0
+
     for i in range(w * h):
         o = i * n
         r, g, b = src[o], src[o + 1], src[o + 2]
@@ -73,25 +110,35 @@ def _prepared_signature_png(img_path: str) -> Tuple[bytes, float]:
         d = ((255 - lum) * a) // 255
         dark[i] = d
         if d > 100:
-            sum_r += r; sum_g += g; sum_b += b; cnt += 1
+            sum_r += r
+            sum_g += g
+            sum_b += b
+            cnt += 1
+
     if cnt:
-        ink = (int(sum_r / cnt * _INK_DARKEN), int(sum_g / cnt * _INK_DARKEN), int(sum_b / cnt * _INK_DARKEN))
+        ink = (
+            min(255, int(sum_r / cnt * _INK_DARKEN)),
+            min(255, int(sum_g / cnt * _INK_DARKEN)),
+            min(255, int(sum_b / cnt * _INK_DARKEN)),
+        )
     else:
         ink = (0, 0, 0)
 
-    # Chỉ làm dày rất nhẹ để nét không biến mất khi thu nhỏ. Tỉ lệ càng lớn
-    # thì bán kính xử lý càng nhỏ, nhờ đó giữ được hình dạng chữ ký gốc.
-    r = max(1, h // _STROKE_RATIO)
-    rows = bytearray(w * h)
-    for y in range(h):
-        base = y * w
-        for x in range(w):
-            rows[base + x] = max(dark[base + max(0, x - r):base + min(w, x + r + 1)])
-    thick = bytearray(w * h)
-    for x in range(w):
-        col = rows[x::w]
+    # Chỉ làm dày khi ảnh rất lớn; ảnh vừa/nhỏ giữ nguyên nét để không bị "cục đen".
+    radius = h // _STROKE_RATIO
+    if radius > 0:
+        rows = bytearray(w * h)
         for y in range(h):
-            thick[y * w + x] = max(col[max(0, y - r):min(h, y + r + 1)])
+            base = y * w
+            for x in range(w):
+                rows[base + x] = max(dark[base + max(0, x - radius):base + min(w, x + radius + 1)])
+        thick = bytearray(w * h)
+        for x in range(w):
+            col = rows[x::w]
+            for y in range(h):
+                thick[y * w + x] = max(col[max(0, y - radius):min(h, y + radius + 1)])
+    else:
+        thick = dark
 
     peak = max(thick) if thick else 0
     span = max(peak - _BG_CUTOFF, 1)
@@ -99,9 +146,31 @@ def _prepared_signature_png(img_path: str) -> Tuple[bytes, float]:
     for i, d in enumerate(thick):
         o = i * 4
         out[o], out[o + 1], out[o + 2] = ink
-        out[o + 3] = 0 if d < _BG_CUTOFF else min(255, int((d - _BG_CUTOFF) * 255 * _ALPHA_GAIN / span))
-    prepared = fitz.Pixmap(fitz.csRGB, w, h, bytes(out), 1)
-    return prepared.tobytes("png"), (w / h if h else 2.2)
+        out[o + 3] = 0 if d < _BG_CUTOFF else min(
+            255, int((d - _BG_CUTOFF) * 255 * _ALPHA_GAIN / span)
+        )
+
+    cropped, cw, ch = _crop_rgba_to_ink(out, w, h)
+    prepared = fitz.Pixmap(fitz.csRGB, cw, ch, cropped, 1)
+    return prepared.tobytes("png"), (cw / ch if ch else 2.2)
+
+
+def _norm_text(value: str) -> str:
+    return " ".join(unicodedata.normalize("NFC", str(value or "")).split())
+
+
+def _is_vertical_quad(rect: "fitz.Rect") -> bool:
+    return rect.height > rect.width * 1.3
+
+
+def _core_text(page: "fitz.Page", rect: "fitz.Rect") -> str:
+    if _is_vertical_quad(rect):
+        pad = rect.width * 0.3
+        core = fitz.Rect(rect.x0 + pad, rect.y0, rect.x1 - pad, rect.y1)
+    else:
+        pad = rect.height * 0.3
+        core = fitz.Rect(rect.x0, rect.y0 + pad, rect.x1, rect.y1 - pad)
+    return _norm_text(page.get_textbox(core))
 
 
 def _match_groups(page: "fitz.Page", name: str) -> List[List["fitz.Rect"]]:
@@ -129,47 +198,12 @@ def _match_groups(page: "fitz.Page", name: str) -> List[List["fitz.Rect"]]:
     return groups
 
 
-def _core_text(page: "fitz.Page", rect: "fitz.Rect") -> str:
-    if _is_vertical_quad(rect):
-        pad = rect.width * 0.3
-        core = fitz.Rect(rect.x0 + pad, rect.y0, rect.x1 - pad, rect.y1)
-    else:
-        pad = rect.height * 0.3
-        core = fitz.Rect(rect.x0, rect.y0 + pad, rect.x1, rect.y1 - pad)
-    return _norm_text(page.get_textbox(core))
-
-
-def _norm_text(value: str) -> str:
-    return " ".join(unicodedata.normalize("NFC", str(value or "")).split())
-
-
-# Tăng diện tích chữ ký nhưng giữ nét thanh để vẫn nhận ra hình chữ ký gốc.
-_STAMP_GAP = 0.8
-_HORIZ_THICKNESS_FACTOR = 2.20
-_HORIZ_THICKNESS_MIN, _HORIZ_THICKNESS_MAX = 12.0, 38.0
-_VERT_THICKNESS_FACTOR = 3.00
-_VERT_THICKNESS_MIN, _VERT_THICKNESS_MAX = 16.0, 46.0
-
-# Giữ nhiều pixel nguồn hơn và giảm mạnh bước làm đậm/làm dày so với bản trước.
-_SIG_MAX_WIDTH_PX = 640
-_INK_DARKEN = 0.58
-_STROKE_RATIO = 85
-_BG_CUTOFF = 18
-_ALPHA_GAIN = 1.15
-
-
-def _is_vertical_quad(rect: "fitz.Rect") -> bool:
-    return rect.height > rect.width * 1.3
-
-
 def _rects_overlap(a: "fitz.Rect", b: "fitz.Rect", threshold: float = 0.5) -> bool:
     inter = a & b
     if inter.is_empty:
         return False
     min_area = min(a.get_area(), b.get_area())
-    if min_area <= 0:
-        return False
-    return (inter.get_area() / min_area) >= threshold
+    return min_area > 0 and (inter.get_area() / min_area) >= threshold
 
 
 def _stamp_rect_for(rect: "fitz.Rect", aspect: float) -> Tuple["fitz.Rect", bool]:
@@ -198,6 +232,7 @@ def sign_bundle(in_pdf: str, out_pdf: str) -> Dict[str, Any]:
     if not sig_rows:
         return {"status": "error", "message": "Chưa cấu hình ảnh chữ ký cho điều dưỡng/bác sĩ nào (tab Lịch điều dưỡng)."}
     sig_rows = sorted(sig_rows, key=lambda r: -len(r["name"]))
+
     prepared: Dict[str, Tuple[bytes, float]] = {}
     for row in sig_rows:
         try:
