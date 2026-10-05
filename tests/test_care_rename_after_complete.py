@@ -84,3 +84,32 @@ def test_input_care_renames_only_after_hoan_tat():
     rename = source.index("doi_nguoi_lap_sau_hoan_tat(driver, nguoi_lap_cuoi)")
     assert fill < hoan_tat < rename
     assert "nguoi_lap=" not in source[fill:hoan_tat]
+
+
+# Log 05/10/2026: phiếu 05:00/06:00 06/10 còn 'Mới' đứng tên Võ Thị Yến Nhi (bản cũ để lại),
+# tài khoản ca làm (tttda) sửa rồi Lưu/Hoàn tất thất bại 3 lần. Làm như macro: đưa Người lập về
+# chủ tài khoản → Hoàn tất → Thu hồi → đổi Người lập sang người trực → Hoàn tất.
+
+def test_reset_creator_to_account_owner_when_other_name(monkeypatch):
+    calls = []
+    monkeypatch.setattr(actions, "doc_nguoi_lap_hien_tai", lambda d: "Võ Thị Yến Nhi")
+    monkeypatch.setattr(actions, "_chon_nguoi_lap_select2", lambda d, name: calls.append(name) or True)
+    assert actions.dat_nguoi_lap_ve_chu_tai_khoan(object(), "Thạch Thị Thúy Đa") is True
+    assert calls == ["Thạch Thị Thúy Đa"]
+
+
+def test_reset_creator_noop_when_already_owner_or_owner_unknown(monkeypatch):
+    calls = []
+    monkeypatch.setattr(actions, "doc_nguoi_lap_hien_tai", lambda d: "ĐD. Thạch Thị Thúy Đa")
+    monkeypatch.setattr(actions, "_chon_nguoi_lap_select2", lambda d, name: calls.append(name) or True)
+    assert actions.dat_nguoi_lap_ve_chu_tai_khoan(object(), "Thạch Thị Thúy Đa") is True
+    assert actions.dat_nguoi_lap_ve_chu_tai_khoan(object(), "") is False
+    assert calls == []
+
+
+def test_input_care_update_resets_creator_before_filling():
+    source = (WORKER / "input_care.py").read_text(encoding="utf-8")
+    update = source.index('if stt == "UPDATE":')
+    reset = source.index("dat_nguoi_lap_ve_chu_tai_khoan(driver, account_owner_name)", update)
+    fill = source.index("form_ok = dien_thong_tin(", update)
+    assert reset < fill
