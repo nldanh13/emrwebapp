@@ -25,6 +25,7 @@ import { getPatientWorkflowDates, scopePatientToDates, withPatientWorkflowScope 
 import { getMatchingDischargeDate, isDischargePrintPatientOnDates } from '../utils/dischargePrint.js';
 import { useFeatureStates } from '../features/runtime.js';
 import { getDaySchedule, toIsoDate, weekdayLabelFromIso } from './nurse/nurseScheduleUtils.js';
+import { useOnTabReturn } from '../hooks/useTabActivity.js';
 
 function LoadingState() {
   return (
@@ -524,6 +525,8 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
   useEffect(() => {
     if (subTab === 'patients') loadPatients();
   }, [subTab, loadPatients]);
+  // Quay lại tab: danh sách/phòng có thể vừa đổi ở Lấy dữ liệu hoặc Xếp phòng.
+  useOnTabReturn(() => { if (subTab === 'patients') loadPatients(); });
 
   const handleUseSession = useCallback((item) => {
     setShowPicker(false);

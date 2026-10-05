@@ -10,6 +10,7 @@ import { collectionRows, eligibleInputJobs } from '../../engine/hchanhVtytWorksp
 import { matchesManualReviewFilter } from '../../engine/hchanhManualReviewView.js';
 import { mergeVtytDraftEdits } from '../../engine/hchanhVtytDraftMerge.js';
 import { buildVtytReviewWindows } from '../../engine/hchanhVtytScope.js';
+import { useOnTabReturn } from '../../hooks/useTabActivity.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -137,6 +138,11 @@ export function useHchanh({ toast, workDateRange, manualReviewFilterEnabled = tr
     })();
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Quay lại tab: đồng bộ lại (danh sách có thể vừa quét ở Lấy dữ liệu), không xoá màn hình đang xem.
+  useOnTabReturn(() => {
+    api.syncHchanh().catch(() => {}).then(() => load());
+  });
 
   // Khôi phục bản nháp VTYT đã lưu trong runtime của session.
   useEffect(() => {

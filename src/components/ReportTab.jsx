@@ -10,6 +10,7 @@ import {
   collectDrugRows, routeCounts, summarize, isOddHour,
 } from './report/reportUtils.js';
 import { SelectBox, SummaryTable, DutyReport } from './report/ReportSections.jsx';
+import { useOnTabReturn } from '../hooks/useTabActivity.js';
 
 export default function ReportTab({ toast, workDateRange }) {
   const [patients, setPatients] = useState([]);
@@ -37,6 +38,7 @@ export default function ReportTab({ toast, workDateRange }) {
   };
 
   useEffect(() => { load(); }, []);
+  useOnTabReturn(() => load());
 
   const availableDates = useMemo(() => {
     const set = new Set();

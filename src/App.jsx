@@ -12,6 +12,7 @@ import * as api from './api.js';
 import { defaultWorkDateRange, loadWorkDateRange, saveWorkDateRange, sanitizeWorkDateRange, workDateRangeLabel } from './utils/workDateRange.js';
 import { installGlobalClickLogger, logActivity, setActivityTab, flushActivityLogs } from './utils/activityLogger.js';
 import { NAV_ENTRIES, getNavigationEntry, resolveContextDefinition } from './features/registry.js';
+import KeepAliveTab from './components/shell/KeepAliveTab.jsx';
 
 // Các màn hình nghiệp vụ lớn chỉ được tải khi người dùng mở tab tương ứng.
 // Điều này giảm đáng kể gói JS ban đầu trên máy trạm và điện thoại.
@@ -99,7 +100,6 @@ const TABS = NAV_ENTRIES;
 const ACTIVE_TAB_KEY = 'emr_active_tab_v2';
 const VALID_TAB_IDS = new Set(TABS.map(t => t.id));
 const DEFAULT_TAB_ID = TABS[0]?.id || 'acquire';
-const KEEP_ALIVE_TABS = new Set(['acquire', 'bed']);
 // 'functions' (Bộ chức năng) was removed from the sidebar nav but the tab still exists,
 // reachable via TopBar's "Tìm chức năng" button and the feature-context banner's back button.
 // 'duty' (Nhập trực) đã gộp vào 'ward' (Nhập bệnh phòng).
@@ -144,18 +144,16 @@ export default function App() {
   const [notices, setNotices] = useState([]);
   const [workDateRange, setWorkDateRangeState] = useState(loadWorkDateRange);
   const [featureContext, setFeatureContext] = useState(null);
-  // Kho nghiên cứu được giữ lại (ẩn) sau lần mở đầu tiên: rời tab không làm mất thao tác đang
-  // làm dở, và tác vụ đang chạy vẫn được theo dõi, báo khi xong.
-  const [researchMounted, setResearchMounted] = useState(() => tab === 'research');
-  const [researchRunning, setResearchRunning] = useState(null); // { title } khi có tác vụ đang chạy
-  useEffect(() => { if (tab === 'research') setResearchMounted(true); }, [tab]);
-  // Lấy dữ liệu và Xếp phòng cũng được giữ lại sau lần mở đầu: chuyển tab không tải lại từ đầu,
-  // không mất phòng đang chọn/đang xếp; quay lại thì màn hình tự cập nhật ngầm (sự kiện emr:tab-active).
-  const [keptTabs, setKeptTabs] = useState(() => new Set(KEEP_ALIVE_TABS.has(tab) ? [tab] : []));
+  // Mọi tab được giữ lại (ẩn) sau lần mở đầu (docs/UX_RULES.md): chuyển tab không dựng lại màn
+  // hình, không tải lại từ đầu, không mất thao tác đang làm dở; tác vụ đang chạy vẫn được theo dõi.
+  // Quay lại tab thì màn hình tự cập nhật ngầm (useOnTabReturn / sự kiện emr:tab-active).
+  const [visitedTabs, setVisitedTabs] = useState(() => new Set([tab]));
   useEffect(() => {
-    if (KEEP_ALIVE_TABS.has(tab)) setKeptTabs(prev => (prev.has(tab) ? prev : new Set([...prev, tab])));
+    setVisitedTabs(prev => (prev.has(tab) ? prev : new Set([...prev, tab])));
     window.dispatchEvent(new CustomEvent('emr:tab-active', { detail: tab }));
   }, [tab]);
+  const researchMounted = visitedTabs.has('research');
+  const [researchRunning, setResearchRunning] = useState(null); // { title } khi có tác vụ đang chạy
   // Chưa mở Kho nghiên cứu (vd. vừa tải lại trang) mà máy chủ đang chạy tác vụ nghiên cứu: vẫn báo.
   // Mở Kho rồi thì chính màn hình đó theo dõi và báo lên (onRunningChange).
   useEffect(() => {
@@ -277,36 +275,28 @@ export default function App() {
         {shouldShowDateBar(tab) && <WorkDateRangeBar value={workDateRange} onChange={setWorkDateRange} />}
         <ContentFrame compact={Boolean(currentTab(tab)?.compact)}>
           <Suspense fallback={<div style={{ padding: 16, color: 'var(--emr-ink-secondary)' }}>Đang mở chức năng…</div>}>
-          {tab === 'functions'    && <FunctionHubTab onOpenContext={handleOpenContext} toast={toast} />}
-          {keptTabs.has('acquire') && (
-            <div style={{ display: tab === 'acquire' ? 'contents' : 'none' }}>
-              <DataProcessingTab toast={toast} workDateRange={workDateRange} />
-            </div>
-          )}
-          {researchMounted && (
-            <div style={{ display: tab === 'research' ? 'contents' : 'none' }}>
-              <ResearchTab toast={toast} active={tab === 'research'} onRunningChange={setResearchRunning} />
-            </div>
-          )}
-          {tab === 'patient-journey' && <PatientJourneyTab toast={toast} />}
-          {keptTabs.has('bed') && (
-            <div style={{ display: tab === 'bed' ? 'contents' : 'none' }}>
-              <ShiftTab toast={toast} mode="bed" {...sharedDateProps} />
-            </div>
-          )}
-          {tab === 'ward'         && <ShiftTab toast={toast} mode="ward" workflowTitle="Điều dưỡng bệnh phòng" workflowHint="Nhập chăm sóc, dịch truyền và thủ thuật cho mọi người bệnh trong ngày đã chọn, gồm cả ca trực (mới vào khoa, chuyển khoa, về từ GMHS)." {...sharedDateProps} />}
-          {tab === 'hchanh'       && <HchahnTab toast={toast} workDateRange={workDateRange} />}
-          {tab === 'hchanh-vtyt'  && <HchahnTab toast={toast} workDateRange={workDateRange} view="vtyt" />}
-          {tab === 'discharge-sign' && <DischargeSignTab toast={toast} />}
-          {tab === 'records-check' && <RecordsCheckTab toast={toast} workDateRange={workDateRange} />}
-          {tab === 'sick-leave'    && <SickLeaveTab toast={toast} workDateRange={workDateRange} />}
-          {tab === 'vtyt-catalog' && <VtytCatalogManager />}
-          {tab === 'medication-catalog' && <MedicationCatalogManager />}
-          {tab === 'account-settings' && <AccountSettingsTab />}
-          {tab === 'emr-structure-scan' && <EmrStructureScanTab />}
-          {tab === 'clinic'       && <ClinicTab toast={toast} />}
-          {tab === 'nurse'        && <NurseTab toast={toast} />}
-          {tab === 'report'       && <ReportTab toast={toast} workDateRange={workDateRange} />}
+          {[
+            ['functions', () => <FunctionHubTab onOpenContext={handleOpenContext} toast={toast} />],
+            ['acquire', () => <DataProcessingTab toast={toast} workDateRange={workDateRange} />],
+            ['research', () => <ResearchTab toast={toast} active={tab === 'research'} onRunningChange={setResearchRunning} />],
+            ['patient-journey', () => <PatientJourneyTab toast={toast} />],
+            ['bed', () => <ShiftTab toast={toast} mode="bed" {...sharedDateProps} />],
+            ['ward', () => <ShiftTab toast={toast} mode="ward" workflowTitle="Điều dưỡng bệnh phòng" workflowHint="Nhập chăm sóc, dịch truyền và thủ thuật cho mọi người bệnh trong ngày đã chọn, gồm cả ca trực (mới vào khoa, chuyển khoa, về từ GMHS)." {...sharedDateProps} />],
+            ['hchanh', () => <HchahnTab toast={toast} workDateRange={workDateRange} />],
+            ['hchanh-vtyt', () => <HchahnTab toast={toast} workDateRange={workDateRange} view="vtyt" />],
+            ['discharge-sign', () => <DischargeSignTab toast={toast} />],
+            ['records-check', () => <RecordsCheckTab toast={toast} workDateRange={workDateRange} />],
+            ['sick-leave', () => <SickLeaveTab toast={toast} workDateRange={workDateRange} />],
+            ['vtyt-catalog', () => <VtytCatalogManager />],
+            ['medication-catalog', () => <MedicationCatalogManager />],
+            ['account-settings', () => <AccountSettingsTab />],
+            ['emr-structure-scan', () => <EmrStructureScanTab />],
+            ['clinic', () => <ClinicTab toast={toast} />],
+            ['nurse', () => <NurseTab toast={toast} />],
+            ['report', () => <ReportTab toast={toast} workDateRange={workDateRange} />],
+          ].map(([id, render]) => (visitedTabs.has(id) ? (
+            <KeepAliveTab key={id} id={id} active={tab === id}>{render()}</KeepAliveTab>
+          ) : null))}
           </Suspense>
         </ContentFrame>
         {isMobile && <BottomNav tabs={TABS} active={tab} onChange={handleTabChange} onOpenMenu={() => setSidebarOpen(true)} />}

@@ -344,6 +344,8 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       return null;
     }
   }, [loadSummary, loadProgressSnapshot, selectedId]);
+  // ux-rules: polling-ok — tab ẩn vẫn hỏi thưa (20 giây) để báo tác vụ nghiên cứu đang chạy/đã xong
+  // lên menu và thanh trên; đang hiện thì 10 giây, có việc chạy thì 3 giây.
   useEffect(() => {
     const anyRunning = serverRunning.items.length > 0 || busy;
     loadServerRunning();

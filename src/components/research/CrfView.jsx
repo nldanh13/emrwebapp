@@ -11,6 +11,7 @@ import { Btn, Segmented, Spinner } from '../shared.jsx';
 import { compactNumber, text } from './researchFormat.js';
 import { inp, EmptyState } from './researchUi.jsx';
 import { CRF_PRESETS, buildPresetForm } from './crfPresets.js';
+import { useUnsavedChangesGuard } from '../../hooks/useTabActivity.js';
 
 const card = { border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, padding: '12px 14px' };
 const TYPE_LABELS = [['number', 'Số'], ['text', 'Chữ'], ['choice', 'Lựa chọn'], ['yesno', 'Có/Không'], ['date', 'Ngày'], ['datetime', 'Ngày giờ']];
@@ -171,8 +172,12 @@ function ScheduleView({ data, onOpen }) {
 function EntryView({ data, studyId, selected, setSelected, focusTp, toast, onSaved }) {
   const [query, setQuery] = useState('');
   const [draft, setDraft] = useState(null);
+  const [baseline, setBaseline] = useState('');
   const [saving, setSaving] = useState(false);
   const sample = data.samples.find(s => s.research_code === selected) || null;
+  // Phiếu đang nhập có thay đổi chưa lưu (so với lúc mở phiếu).
+  const dirty = Boolean(draft) && JSON.stringify(draft) !== baseline;
+  useUnsavedChangesGuard(dirty);
   const baseFields = data.form.fields.filter(f => !f.timepoint);
   const sections = groupBy(baseFields, 'section');
   const tpFields = groupBy(data.form.fields.filter(f => f.timepoint), 'timepoint');
@@ -183,7 +188,7 @@ function EntryView({ data, studyId, selected, setSelected, focusTp, toast, onSav
     const autoDefaults = Object.fromEntries(Object.entries(sample.auto_values || {})
       .filter(([id]) => sample.values?.[id] === undefined || sample.values?.[id] === '')
       .map(([id, v]) => [id, v.value]));
-    setDraft({
+    const next = {
       anchor_at: sample.anchor_at || '',
       values: { ...autoDefaults, ...sample.values },
       timepoints: Object.fromEntries(data.form.timepoints.map(tp => [tp.id, {
@@ -191,7 +196,10 @@ function EntryView({ data, studyId, selected, setSelected, focusTp, toast, onSav
         note: sample.timepoints?.[tp.id]?.note || '',
         values: { ...(sample.timepoints?.[tp.id]?.values || {}) },
       }])),
-    });
+    };
+    setDraft(next);
+    // Giá trị tự điền không tính là thay đổi (xuất dữ liệu đã tự lấy giá trị tự điền khi chưa nhập tay).
+    setBaseline(JSON.stringify(next));
   }, [sample?.research_code, sample?.updated_at, Object.keys(sample?.auto_values || {}).length]); // eslint-disable-line
 
   useEffect(() => {
@@ -202,18 +210,27 @@ function EntryView({ data, studyId, selected, setSelected, focusTp, toast, onSav
   const list = data.samples.filter(s => !query || s.research_code.toLowerCase().includes(query.toLowerCase()));
 
   const save = async () => {
-    if (!draft || !sample) return;
+    if (!draft || !sample) return false;
     setSaving(true);
     try {
       // Chỉ gửi trường định danh khi người nhập đã gõ giá trị (đang ẩn thì giữ giá trị cũ).
       const values = { ...draft.values };
       for (const f of data.form.fields.filter(x => x.identifier)) if (values[f.id] === undefined) delete values[f.id];
       const r = await api.saveResearchStudyCrfEntry(studyId, sample.research_code, { ...draft, values });
+      setBaseline(JSON.stringify(draft));
       toast?.(r.message || 'Đã lưu.', 'ok');
       await onSaved();
+      return true;
     } catch (e) {
       toast?.(String(e.message || e), 'error');
+      return false;
     } finally { setSaving(false); }
+  };
+  // Chọn mẫu khác khi phiếu đang nhập chưa lưu: lưu trước rồi mới chuyển (lưu lỗi thì ở lại).
+  const choose = async (code) => {
+    if (code === selected) return;
+    if (dirty && !(await save())) return;
+    setSelected(code);
   };
 
   const setValue = (id, v) => setDraft(p => ({ ...p, values: { ...p.values, [id]: v } }));
@@ -229,7 +246,7 @@ function EntryView({ data, studyId, selected, setSelected, focusTp, toast, onSav
             const pct = filled(s);
             const active = s.research_code === selected;
             return (
-              <button key={s.research_code} type="button" onClick={() => setSelected(s.research_code)} style={{
+              <button key={s.research_code} type="button" onClick={() => choose(s.research_code)} style={{
                 display: 'flex', justifyContent: 'space-between', gap: 8, padding: '7px 8px', border: 0, borderRadius: 5, cursor: 'pointer',
                 background: active ? C.blueBg : 'transparent', color: active ? C.blue : C.text, fontFamily: 'inherit', fontSize: FS.sm, fontWeight: active ? 700 : 500, textAlign: 'left',
               }}>
@@ -289,6 +306,7 @@ function EntryView({ data, studyId, selected, setSelected, focusTp, toast, onSav
             })}
 
             <div style={{ position: 'sticky', bottom: 0, background: C.bg, padding: '8px 0', display: 'flex', justifyContent: 'flex-end' }}>
+              {dirty && <span role="status" style={{ fontSize: FS.sm, color: C.amber, alignSelf: 'center', marginRight: 10 }}>Chưa lưu — chọn mẫu khác sẽ tự lưu phiếu này</span>}
               <Btn variant="solidPrimary" onClick={save} loading={saving} style={{ height: 34, padding: '0 20px' }}>Lưu phiếu {sample.research_code}</Btn>
             </div>
           </>

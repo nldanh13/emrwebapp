@@ -9,6 +9,7 @@ import { IconCheck, IconRefresh, IconTrash, IconUpload } from '@tabler/icons-rea
 import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import * as api from '../../api.js';
+import { useOnTabReturn } from '../../hooks/useTabActivity.js';
 
 function fmtBytes(n) {
   const num = Number(n) || 0;
@@ -74,6 +75,7 @@ export default function DischargeSignTab({ toast }) {
   }, [toast]);
 
   useEffect(() => { load(); }, [load]);
+  useOnTabReturn(() => load());
 
   const signFile = async (fileName) => {
     const r = await api.signDischargeBundle(fileName);
