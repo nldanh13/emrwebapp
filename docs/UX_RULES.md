@@ -65,6 +65,17 @@ từng quy trình, không dùng chung một khóa.
 3.5 Trạng thái các nút phải nhất quán với trạng thái thật: không có nút "đang chạy" khi máy chủ báo
 đã dừng, không hiện "Dừng" khi không có gì chạy.
 
+3.6 **Xếp hàng theo tài nguyên thật sự dùng**, không xếp mọi thứ chung một hàng:
+- Tác vụ **mở EMR** (quét, thu thập, nhập liệu) dùng `enqueueHeavy`, chạy lần lượt theo tài khoản
+  EMR (`server/services/task_queue.js`).
+- Tác vụ **chỉ chạy trên máy** (chèn chữ ký PDF, tạo báo cáo từ file đã có) dùng `enqueueLocal`.
+  Loại này chạy ngay, không chờ tác vụ EMR, và **không gọi `registerCancel`**: nút Dừng của phiên
+  thuộc về tác vụ EMR đang chạy.
+- Chuẩn hóa dữ liệu nghiên cứu có làn riêng (mục 3.3).
+
+*Vì:* đang thu thập Kho nghiên cứu (hàng giờ) thì bấm "Thêm chữ ký" quay mãi, vì nó phải chờ lượt
+thu thập xong.
+
 ## 4. Không mở EMR khi không cần
 
 4.1 Dữ liệu đã có (kho dữ liệu gốc, Kho người bệnh, dữ liệu của tab khác) thì **dùng lại**, không mở
