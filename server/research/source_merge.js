@@ -20,19 +20,92 @@ function byEncounterCount(rows, dateKey) {
   return map;
 }
 
-function visitSignature(row, sourceRunId = '') {
-  const existingEncounter = rowExistingEncounterId(row);
-  if (existingEncounter) return `encounter:${existingEncounter}`;
+function normalizeAliases(values) {
+  const list = Array.isArray(values) ? values : [values];
+  return [...new Set(list.map(value => String(value || '').trim()).filter(Boolean))];
+}
+
+function aliasesIntersect(left, right) {
+  const set = new Set(normalizeAliases(left));
+  return normalizeAliases(right).some(alias => set.has(alias));
+}
+
+// Cùng ý tưởng với phần Trả HSBA: mỗi hồ sơ không chỉ có một khóa mà có một tập
+// alias định danh. Khi nguồn khác nhau đổi cách gọi khóa (encounter/noitru/admission/
+// Research key) ta vẫn nhận ra cùng lượt điều trị qua giao của hai tập alias.
+// Không bao giờ dùng riêng Mã BN làm alias vì một người bệnh có thể nhập viện nhiều lần.
+function encounterIdentityAliases(row) {
+  const aliases = [];
+  const existingEncounter = normalizedIdentity(rowExistingEncounterId(row));
+  if (existingEncounter) aliases.push(`encounter:${existingEncounter}`);
+
+  const researchKey = normalizedIdentity(firstNonEmpty(row, ['Research key', 'research_key']));
+  if (researchKey) aliases.push(`research_key:${researchKey}`);
+
   const treatmentId = normalizedIdentity(rowEmrTreatmentId(row) || rowNoitruId(row));
-  if (treatmentId) return `treatment:${treatmentId}`;
+  if (treatmentId) aliases.push(`treatment:${treatmentId}`);
+
   const admissionId = normalizedIdentity(rowEmrAdmissionId(row));
-  if (admissionId) return `admission:${admissionId}`;
-  const code = patientCode(row);
-  const researchCode = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
+  if (admissionId) aliases.push(`admission:${admissionId}`);
+
+  const code = normalizedIdentity(patientCode(row));
   const admission = rowAdmissionTime(row);
   const discharge = rowDischargeTime(row);
-  if (researchCode) return `research:${researchCode}`;
-  if (code && admission) return `visit:${code}|${admission}|${discharge || ''}`;
+  if (code && admission) {
+    // Alias ngày/giờ vào là khóa fallback quan trọng khi một nguồn chưa có ID nội trú.
+    aliases.push(`visit:${code}|${admission}`);
+    if (discharge) aliases.push(`visit_range:${code}|${admission}|${discharge}`);
+  }
+  return normalizeAliases(aliases);
+}
+
+function researchIdentityAliases(row) {
+  const code = normalizedIdentity(patientCode(row));
+  const researchCode = normalizedIdentity(rowResearchCode(row));
+  return researchCode ? normalizeAliases([
+    `research:${researchCode}`,
+    code ? `patient_research:${code}|${researchCode}` : '',
+  ]) : [];
+}
+
+function conflictingStrongIdentity(left, right) {
+  const codeA = normalizedIdentity(patientCode(left));
+  const codeB = normalizedIdentity(patientCode(right));
+  if (codeA && codeB && codeA !== codeB) return true;
+
+  const treatmentA = normalizedIdentity(rowEmrTreatmentId(left) || rowNoitruId(left));
+  const treatmentB = normalizedIdentity(rowEmrTreatmentId(right) || rowNoitruId(right));
+  if (treatmentA && treatmentB && treatmentA !== treatmentB) return true;
+
+  const admissionIdA = normalizedIdentity(rowEmrAdmissionId(left));
+  const admissionIdB = normalizedIdentity(rowEmrAdmissionId(right));
+  if (admissionIdA && admissionIdB && admissionIdA !== admissionIdB) return true;
+
+  const admissionA = rowAdmissionTime(left);
+  const admissionB = rowAdmissionTime(right);
+  if (admissionA && admissionB && admissionA !== admissionB) {
+    // Khác thời điểm vào chưa chắc khác đợt nếu một dòng là thời điểm vào khoa;
+    // trường hợp đó được xử lý riêng bằng isTimeInsideVisit ở sameStrongIdentity().
+    const treatmentShared = treatmentA && treatmentB && treatmentA === treatmentB;
+    const admissionShared = admissionIdA && admissionIdB && admissionIdA === admissionIdB;
+    if (!treatmentShared && !admissionShared) return true;
+  }
+  return false;
+}
+
+function visitSignature(row, sourceRunId = '') {
+  const aliases = encounterIdentityAliases(row);
+  const preferred = ['encounter:', 'research_key:', 'treatment:', 'admission:', 'visit_range:', 'visit:'];
+  for (const prefix of preferred) {
+    const found = aliases.find(alias => alias.startsWith(prefix));
+    if (found) return found;
+  }
+
+  const code = patientCode(row);
+  const researchCode = rowResearchCode(row);
+  // Mã NC chỉ là fallback. Kèm Mã BN để một mã NC cấp trùng không thể gộp hai BN.
+  // Nếu cùng BN nhưng thiếu mọi bằng chứng lượt điều trị thì giữ riêng và bắt rà soát.
+  if (code && researchCode) return `research_unresolved:${normalizedIdentity(code)}|${normalizedIdentity(researchCode)}|${stableHash(row)}`;
   if (code) return `patient_unresolved:${code}|${stableHash([
     firstNonEmpty(row, ['Họ tên', 'Ho ten', 'patient_name']),
     firstNonEmpty(row, ['Khoa', 'department']),
@@ -133,36 +206,28 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
   }
 
   function sameStrongIdentity(row, existing, sourceStatus = '') {
-    // Research key là khóa của đúng dòng nguồn mà worker đã lấy: bằng nhau là cùng đợt.
-    // Khi cả hai có Research key mà khác nhau thì KHÔNG dùng Mã NC để ghép, vì Mã NC
-    // từng bị cấp trùng (NC0001 cho mọi dòng) và ghép theo nó gán nhầm dữ liệu giữa
-    // các đợt của cùng người bệnh.
-    const keyA = firstNonEmpty(row, ['Research key', 'research_key']);
-    const keyB = firstNonEmpty(existing, ['Research key', 'research_key']);
-    if (keyA && keyB && keyA === keyB) return true;
-    const researchA = rowResearchCode(row);
-    const researchB = rowResearchCode(existing);
-    if (!(keyA && keyB) && researchA && researchB && researchA === researchB) return true;
-
-    const admissionIdA = normalizedIdentity(rowEmrAdmissionId(row));
-    const admissionIdB = normalizedIdentity(rowEmrAdmissionId(existing));
-    if (admissionIdA && admissionIdB && admissionIdA === admissionIdB) return true;
-
-    const treatmentIdA = normalizedIdentity(rowEmrTreatmentId(row) || rowNoitruId(row));
-    const treatmentIdB = normalizedIdentity(rowEmrTreatmentId(existing) || rowNoitruId(existing));
-    if (treatmentIdA && treatmentIdB && treatmentIdA === treatmentIdB) return true;
+    const aliasesA = encounterIdentityAliases(row);
+    const aliasesB = encounterIdentityAliases(existing);
+    if (aliasesIntersect(aliasesA, aliasesB)) return true;
 
     const a1 = rowAdmissionTime(row);
     const a2 = rowDischargeTime(row);
     const b1 = rowAdmissionTime(existing);
     const b2 = rowDischargeTime(existing);
-    if (a1 && b1 && a1 === b1 && (!a2 || !b2 || a2 === b2)) return true;
 
     // Chỉ cho phép ghép T/G vào khoa nằm trong khoảng điều trị khi một phía thực sự
     // là dòng initial. Không dùng overlap chung vì hai lượt gần nhau có thể bị gộp sai.
     const existingIsInitial = String(existing.__source_status || '').split('+').includes('initial');
     if (existingIsInitial && a1 && a2 && b1 && isTimeInsideVisit(b1, a1, a2)) return true;
     if (sourceStatus === 'initial' && b1 && b2 && a1 && isTimeInsideVisit(a1, b1, b2)) return true;
+
+    // Mã NC là alias yếu: chỉ dùng khi không có bằng chứng mạnh mâu thuẫn. Điều này
+    // giữ tương thích dữ liệu cũ nhưng không còn cho NC0001 hay mã tái dùng gộp nhầm
+    // hai lượt điều trị khác nhau.
+    if (!conflictingStrongIdentity(row, existing)
+        && aliasesIntersect(researchIdentityAliases(row), researchIdentityAliases(existing))) {
+      return true;
+    }
     return false;
   }
 
@@ -190,7 +255,7 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
     }
 
     const baseSig = existingSig || visitSignature(withStatus, sourceRunId);
-    const sig = (!existingSig && withStatus.__needs_manual_review && /^patient_unresolved:/.test(baseSig))
+    const sig = (!existingSig && withStatus.__needs_manual_review && /^(?:patient|research)_unresolved:/.test(baseSig))
       ? `row:${code}|${stableHash(withStatus)}`
       : baseSig;
     const existing = map.get(sig);
@@ -199,6 +264,17 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
       patientSignatures(code).add(sig);
       return;
     }
+
+    // Cùng chữ ký nhưng thuộc BN khác là dữ liệu định danh xung đột: tuyệt đối không
+    // gộp. Tạo khóa riêng để không mất dòng và buộc người dùng rà soát.
+    if (normalizedIdentity(patientCode(existing)) !== normalizedIdentity(code)) {
+      const conflicted = appendManualReview(withStatus, 'duplicate_identity_conflict');
+      const conflictSig = `row:${normalizedIdentity(code)}|${stableHash(conflicted)}`;
+      map.set(conflictSig, conflicted);
+      patientSignatures(code).add(conflictSig);
+      return;
+    }
+
     const merged = rowCompletenessScore(withStatus) >= rowCompletenessScore(existing)
       ? mergeSameStayRows(withStatus, existing)
       : mergeSameStayRows(existing, withStatus);
@@ -241,6 +317,11 @@ function dedupeByHash(rows) {
 
 module.exports = {
   byEncounterCount,
+  normalizeAliases,
+  aliasesIntersect,
+  encounterIdentityAliases,
+  researchIdentityAliases,
+  conflictingStrongIdentity,
   visitSignature,
   rowCompletenessScore,
   mergeRowsPreferFilled,
