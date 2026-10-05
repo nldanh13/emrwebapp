@@ -14,6 +14,11 @@ process.env.EMR_RUNTIME_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'research_n
 delete process.env.EMR_NORMALIZE_INLINE;
 const { runNormalizeJob, normalizeRunning } = require('../server/research/normalize_runner');
 const { RESEARCH_SCOPE_LOCKS, listRunningResearch } = require('../server/research/research_http');
+const {
+  captureNormalizeInputs,
+  changedNormalizeInputs,
+  evaluateNormalizationIntegrity,
+} = require('../server/research/normalization_integrity');
 
 function writeCsv(file, cols, rows) {
   const esc = v => (/[",\n]/.test(String(v ?? '')) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? ''));
@@ -40,10 +45,44 @@ function writeCsv(file, cols, rows) {
   assert.ok(result && result.cached === false, 'trả về kết quả chuẩn hóa từ tiến trình con');
   assert.strictEqual(Number(result.encounters), 60);
   assert.ok(fs.existsSync(path.join(runDir, 'analysis_ready.csv')), 'đã ghi bảng chuẩn');
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(runDir, 'normalize_state.json'), 'utf8')).status, 'complete');
+  const normalizedState = JSON.parse(fs.readFileSync(path.join(runDir, 'normalize_state.json'), 'utf8'));
+  assert.ok(['completed_clean', 'completed_with_warnings'].includes(normalizedState.status), `integrity state hợp lệ: ${normalizedState.status}`);
+  assert.ok(fs.existsSync(path.join(runDir, 'integrity_report.json')), 'đã ghi integrity_report.json');
+  assert.ok(result.integrity && result.integrity.status === normalizedState.status, 'API trả cùng integrity status với normalize_state');
   // Event loop vẫn chạy trong lúc chờ: số tick ~ thời gian / 5 ms (cho phép máy CI chậm).
   assert.ok(ticks >= Math.floor(elapsed / 5) * 0.3, `event loop không bị chặn (${ticks} tick trong ${elapsed} ms)`);
-  console.log(`  ok - chuẩn hóa ở tiến trình riêng: ${result.encounters} lượt, ${elapsed} ms, ${ticks} tick`);
+  console.log(`  ok - chuẩn hóa ở tiến trình riêng + integrity gate: ${result.encounters} lượt, ${elapsed} ms, ${ticks} tick`);
+
+  // Fingerprint nguồn phải phát hiện file thay đổi giữa lúc chuẩn hóa.
+  const snap1 = captureNormalizeInputs(runDir);
+  fs.appendFileSync(path.join(runDir, 'du_lieu_ban_dau.csv'), '\n');
+  const snap2 = captureNormalizeInputs(runDir);
+  assert.ok(changedNormalizeInputs(snap1, snap2).includes('du_lieu_ban_dau.csv'));
+  console.log('  ok - fingerprint phát hiện nguồn thu thập thay đổi giữa chừng');
+
+  // Lỗi linkage nghiêm trọng phải đổi normalize_state thành failed_integrity và nhập vào QA blocking.
+  const badDir = path.join(process.env.EMR_RUNTIME_ROOT, 'integrity_bad');
+  fs.mkdirSync(badDir, { recursive: true });
+  writeCsv(path.join(badDir, 'encounters.csv'),
+    ['encounter_id', 'research_code', 'patient_code', 'admission_date', 'discharge_date', 'emr_treatment_id'], [
+      { encounter_id: 'e1', research_code: 'NC1', patient_code: 'BN1', admission_date: '2026-01-01', discharge_date: '2026-01-03', emr_treatment_id: 'T1' },
+      { encounter_id: 'e2', research_code: 'NC2', patient_code: 'BN2', admission_date: '2026-02-01', discharge_date: '2026-02-03', emr_treatment_id: 'T1' },
+    ]);
+  writeCsv(path.join(badDir, 'surgery_results.csv'),
+    ['surgery_id', 'patient_code', 'encounter_id', 'encounter_match_status', 'surgery_datetime', 'surgery_name', 'is_within_encounter'], [
+      { surgery_id: 's1', patient_code: 'BN1', encounter_id: 'e1', encounter_match_status: 'matched', surgery_datetime: '2026-10-04 18:39', surgery_name: 'Rút đinh', is_within_encounter: '0' },
+    ]);
+  for (const file of ['lab_results.csv', 'imaging_results.csv', 'medication_orders.csv', 'clinical_notes.csv']) writeCsv(path.join(badDir, file), ['patient_code'], []);
+  fs.writeFileSync(path.join(badDir, 'qa_report.json'), JSON.stringify({ status: 'ok', blocking: [], warnings: [], blocking_count: 0, warning_count: 0 }));
+  fs.writeFileSync(path.join(badDir, 'normalize_state.json'), JSON.stringify({ status: 'complete' }));
+  const integrity = evaluateNormalizationIntegrity(badDir);
+  assert.strictEqual(integrity.status, 'failed_integrity');
+  assert.ok(integrity.critical.some(x => x.code === 'strong_id_cross_patient'));
+  assert.ok(integrity.critical.some(x => x.code === 'event_outside_encounter' && x.table === 'surgery_results'));
+  const badQa = JSON.parse(fs.readFileSync(path.join(badDir, 'qa_report.json'), 'utf8'));
+  assert.strictEqual(badQa.status, 'blocked');
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(badDir, 'normalize_state.json'), 'utf8')).status, 'failed_integrity');
+  console.log('  ok - strong ID dùng chéo BN và PT ngoài đợt bị chặn ở tầng chuẩn hóa');
 
   // Khóa riêng của Chuẩn hóa: không dùng khóa Thu thập ("archive"), có tên làn để giao diện tách.
   const p1 = runNormalizeJob({ kind: 'run', runDir, options: { sourceRunId: 'r1', force: true }, scopeKey: 'archive' }, { reason: 'Sau thu thập tự động' });
@@ -63,5 +102,5 @@ function writeCsv(file, cols, rows) {
   console.log('  ok - lỗi trong tiến trình con được báo lại cho máy chủ');
 
   fs.rmSync(process.env.EMR_RUNTIME_ROOT, { recursive: true, force: true });
-  console.log('\n3 test(s) passed.');
+  console.log('\n5 nhóm kiểm thử pass.');
 })().catch(err => { console.error(err); process.exitCode = 1; });
