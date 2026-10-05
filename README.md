@@ -93,7 +93,7 @@ npm run build
 
 - [`CLAUDE.md`](CLAUDE.md) và [`docs/UX_RULES.md`](docs/UX_RULES.md) — **đọc trước mỗi lần sửa**: quy tắc hành vi giao diện (chuyển tab, tự lưu, tác vụ chạy lâu, không mở EMR khi đã có dữ liệu, thông báo lỗi). Một phần được `scripts/ux_rules_check.mjs` tự kiểm trong `npm run test:ci`.
 - [`docs/FEATURE_MODULE_ARCHITECTURE.md`](docs/FEATURE_MODULE_ARCHITECTURE.md) — module hóa, feature gate, workflow planner/runner, cách thêm module mới.
-- [`docs/PARALLEL_CARE_INFUSION.md`](docs/PARALLEL_CARE_INFUSION.md) — chạy song song hai tài khoản EMR (chăm sóc + dịch truyền).
+- [`docs/PARALLEL_CARE_INFUSION.md`](docs/PARALLEL_CARE_INFUSION.md) — nhập liệu đăng nhập bằng tài khoản người ca làm theo lịch; quét dữ liệu dùng tài khoản mặc định.
 - [`docs/SECURITY_AND_OPERATIONS.md`](docs/SECURITY_AND_OPERATIONS.md) — bảo mật, secret, retention, backup, khôi phục sự cố.
 - [`docs/SECRETS.md`](docs/SECRETS.md) — nơi lưu và cách quản lý mật khẩu/token.
 - [`docs/CHANGELOG_2.3.0.md`](docs/CHANGELOG_2.3.0.md) — thay đổi phiên bản gần nhất.

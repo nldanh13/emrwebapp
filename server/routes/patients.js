@@ -1227,14 +1227,13 @@ async function runInputTask(req, res, ctx, { scriptName, taskName, targetsFilePr
 
   try {
     ensureSessionAssets(ctx.dir, ROOT_DIR);
-    // Dịch truyền dùng tài khoản EMR riêng (EMR_INFUSION_USERNAME/PASSWORD) nên
-    // được gắn accountKey riêng để chạy song song an toàn với các tác vụ khác
-    // (chăm sóc, thủ thuật...) đang dùng tài khoản chính. Xem docs/PARALLEL_CARE_INFUSION.md.
-    const accountKey = (taskName || scriptName) === 'input_infusions' ? 'infusion' : 'default';
-    // Nhập/ghi vào EMR cần hiện đúng tên người thao tác hôm đó: nếu người đang
-    // đăng nhập Data Hub có tài khoản EMR riêng (secrets/users.json), dùng tài
-    // khoản đó thay vì tài khoản chung; nếu chưa được cấp thì tự rơi về tài
-    // khoản chung trong config.json như cũ (worker/utils.py đã xử lý fallback).
+    // Mọi tác vụ nhập liệu (kể cả dịch truyền) đăng nhập bằng tài khoản EMR của
+    // người ca làm theo lịch nên dùng chung một làn, chạy lần lượt — không mở hai
+    // phiên cùng một tài khoản. Xem docs/PARALLEL_CARE_INFUSION.md.
+    const accountKey = 'default';
+    // Tài khoản DỰ PHÒNG khi người ca làm chưa có tài khoản EMR: người đang đăng
+    // nhập Data Hub nếu có tài khoản EMR riêng (secrets/users.json), không thì
+    // tài khoản chung trong config.json (worker/utils.py đã xử lý fallback).
     const personalEmrCreds = getEmrCredentials(req.auth?.id);
     const inputExtraEnv = personalEmrCreds
       ? { EMR_USERNAME: personalEmrCreds.username, EMR_PASSWORD: personalEmrCreds.password }

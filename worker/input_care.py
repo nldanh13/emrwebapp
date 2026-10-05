@@ -33,7 +33,7 @@ from utils import (
 from shared.worker_session import WorkerSession, open_session
 from shared.json_io import read_json_critical
 from shared.logging_utils import make_worker_logger
-from nurse_emr_accounts import get_emr_account_for_nurse, get_nurse_name_for_username
+from nurse_emr_accounts import EntryAccountResolver, get_emr_account_for_nurse, get_nurse_name_for_username
 
 from selenium_emr_helpers import (
     build_inpatient_url as _build_inpatient_url,
@@ -824,15 +824,26 @@ def main():
     def _after_login(ws: WorkerSession) -> None:
         ws.ensure_inpatient_list()
 
-    with open_session(result_path, config=CONFIG, post_login=_after_login) as ws:
+    # Nhập liệu đăng nhập bằng tài khoản EMR của điều dưỡng CA LÀM theo lịch của
+    # từng ngày (không dùng tài khoản mặc định); người ca làm chưa có tài khoản
+    # thì dùng tài khoản mặc định + cảnh báo. Đăng nhập ngay bằng tài khoản của
+    # ngày đầu tiên để khỏi đăng nhập thừa một lần bằng tài khoản mặc định.
+    entry_accounts = EntryAccountResolver(CONFIG, schedule=CONFIG_TEN_GOC or {})
+    _first_work_date = sorted(
+        (k[1] for k in patient_data.keys()),
+        key=lambda d: (str(d)[6:10], str(d)[3:5], str(d)[0:2]) if re.match(r"\d{2}/\d{2}/\d{4}", str(d)) else (str(d), "", ""),
+    )[0]
+    login_config = entry_accounts.login_config(CONFIG, _first_work_date)
+
+    with open_session(result_path, config=login_config, post_login=_after_login) as ws:
         driver, wait = ws.driver, ws.wait
+        ws._result_kwargs.setdefault("warnings", entry_accounts.warnings)
 
         count = 0
         default_emr_username = str(CONFIG.get("username") or "").strip()
-        default_emr_password = str(CONFIG.get("password") or "")
-        # Tên chủ tài khoản EMR đang dùng (tra từ secrets/nurse_emr_accounts.json).
-        # Rỗng thì từng job lấy tên người ca làm của ngày đó.
-        logged_in_nurse_name = get_nurse_name_for_username(default_emr_username)
+        # Tên chủ tài khoản mặc định (tra từ secrets/nurse_emr_accounts.json) — chỉ
+        # dùng khi người ca làm chưa có tài khoản EMR và phải nhập bằng tài khoản mặc định.
+        default_owner_name = get_nurse_name_for_username(default_emr_username)
         # Phiếu đã đổi Người lập sang người khác (vd ca trực) và để ở trạng thái
         # Mới: EMR chỉ cho chính tài khoản người đó bấm Hoàn tất, nên gom lại để
         # cuối đợt đăng nhập lần lượt từng tài khoản vào bấm Hoàn tất.
@@ -1149,11 +1160,12 @@ def main():
 
             care_jobs = sorted(care_jobs, key=_care_job_sort_key)
 
-            # Mọi phiếu (ca làm lẫn ca trực) đều nhập bằng tài khoản EMR đang dùng,
-            # KHÔNG đăng nhập lại bằng tài khoản người trực. Phiếu của người khác
-            # (vd ca trực) được tạo + Hoàn tất dưới tên chủ tài khoản trước, rồi
-            # mới Thu hồi đổi Người lập sang người trực — EMR báo lỗi nếu đổi tên
-            # ngay lúc tạo phiếu.
+            # Mọi phiếu (ca làm lẫn ca trực) của ngày đều nhập bằng tài khoản EMR
+            # của người CA LÀM theo lịch ngày đó (không đăng nhập bằng tài khoản
+            # người trực). Phiếu của người trực được tạo + Hoàn tất dưới tên người
+            # ca làm trước, rồi mới Thu hồi đổi Người lập sang người trực — EMR báo
+            # lỗi nếu đổi tên ngay lúc tạo phiếu.
+            day_account = entry_accounts.for_date(ngay_lam_viec)
             jobs_by_account = {}
             for job in care_jobs:
                 h_g = int(job.get("hour") or 0)
@@ -1162,7 +1174,10 @@ def main():
                     nurse_name_g = get_nurse_by_shift(time_str_g, CONFIG_TEN_GOC or {})
                 except Exception:
                     nurse_name_g = ""
-                owner_name_g = logged_in_nurse_name
+                if day_account["source"] == "schedule":
+                    owner_name_g = day_account["nurse_name"]
+                else:
+                    owner_name_g = default_owner_name
                 if not owner_name_g:
                     try:
                         owner_name_g = get_nurse_by_shift(time_str_g, CONFIG_TEN_GOC or {}, force_shift="work")
@@ -1172,9 +1187,9 @@ def main():
                         and chuan_hoa_unicode(nurse_name_g) != chuan_hoa_unicode(owner_name_g)):
                     job["nguoi_lap_tam"] = owner_name_g
                     job["nguoi_lap_cuoi"] = nurse_name_g
-                username_g = default_emr_username
+                username_g = day_account["username"]
                 jobs_by_account.setdefault(username_g, []).append(job)
-                account_passwords.setdefault(username_g, default_emr_password)
+                account_passwords.setdefault(username_g, day_account["password"])
                 shift_kind_g = _shift_kind_for_hour(h_g)
                 target_order_g = work_account_order if shift_kind_g == "work" else oncall_account_order
                 if username_g not in target_order_g:
@@ -1183,13 +1198,14 @@ def main():
             if not jobs_by_account:
                 # Không có job cụ thể nào (vd: toàn bộ giờ bị lọc do đang đi mổ) nhưng
                 # vẫn cần 1 lượt mở hồ sơ để dọn phiếu dư/kiểm tra trạng thái — dùng
-                # tạm tài khoản mặc định, không có job để nhập.
-                jobs_by_account[default_emr_username] = []
-                account_passwords.setdefault(default_emr_username, default_emr_password)
-                if (default_emr_username not in work_account_order
-                        and default_emr_username not in oncall_account_order
-                        and default_emr_username not in other_account_order):
-                    other_account_order.append(default_emr_username)
+                # tài khoản ca làm của ngày đó, không có job để nhập.
+                _day_user = day_account["username"]
+                jobs_by_account[_day_user] = []
+                account_passwords.setdefault(_day_user, day_account["password"])
+                if (_day_user not in work_account_order
+                        and _day_user not in oncall_account_order
+                        and _day_user not in other_account_order):
+                    other_account_order.append(_day_user)
 
             patient_plans.append({
                 "result_key": result_key,

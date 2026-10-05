@@ -19,6 +19,7 @@ from utils import get_nurse_by_shift, load_config
 from selenium_emr_helpers import wait_after_action as _wait_after_action
 from task_progress_writer import mark_many, progress_path_from_input
 from shared.worker_session import WorkerSession, open_session
+from nurse_emr_accounts import EntryAccountResolver, sort_tasks_by_work_date
 from shared.json_io import read_json_critical
 
 try:
@@ -429,13 +430,9 @@ def main():
     force_reinput_infusions = bool(target_options.get('force_reinput_infusions'))
     cleanup_orphan_infusions = bool(target_options.get('cleanup_orphan_infusions'))
     config = load_config()
-    # Dịch truyền ưu tiên tài khoản EMR riêng nếu đã cấu hình, để có thể chạy
-    # song song với chăm sóc (tài khoản chính) mà không đăng nhập trùng phiên.
-    # Không cấu hình -> giữ nguyên hành vi cũ (dùng tài khoản chính).
-    if config.get('infusion_username'):
-        config['username'] = config['infusion_username']
-    if config.get('infusion_password'):
-        config['password'] = config['infusion_password']
+    # Nhập dịch truyền đăng nhập bằng tài khoản EMR của người CA LÀM theo lịch
+    # (không dùng tài khoản dịch truyền riêng hay tài khoản mặc định); chạy lần
+    # lượt với các tác vụ nhập khác. Xem nurse_emr_accounts.resolve_entry_account.
     if target_options.get('direct_emr_sync') or target_options.get('visible_browser'):
         config['headless'] = False
         _log('[i] Chế độ đồng bộ trực tiếp: mở Chrome để kiểm tra / nhập / sửa dịch truyền trên EMR.')
@@ -458,8 +455,19 @@ def main():
     def _after_login(ws: WorkerSession) -> None:
         ws.ensure_inpatient_list()
 
-    with open_session(result_path, config=config, post_login=_after_login) as ws:
-        for ma_bn, list_thuoc in DATA.items():
+    # Người bệnh xếp theo ngày đầu tiên cần nhập để mỗi tài khoản ca làm chỉ đăng nhập một lần.
+    def _patient_dates(item):
+        return [k.split('::', 1)[1] for k in _result_keys_for_patient(item[0], item[1]) if '::' in k]
+    patient_items = sort_tasks_by_work_date(
+        [{'item': it, 'ngay_lam': (_patient_dates(it) or [''])[0]} for it in DATA.items()]
+    )
+    entry_accounts = EntryAccountResolver(config)
+    login_config = entry_accounts.login_config(config, patient_items[0]['ngay_lam'])
+
+    with open_session(result_path, config=login_config, post_login=_after_login) as ws:
+        ws._result_kwargs.setdefault("warnings", entry_accounts.warnings)
+        for patient_item in patient_items:
+            ma_bn, list_thuoc = patient_item['item']
             # Bỏ qua BN không có gì để làm
             co_viec_can_lam = any(
                 (m.get('Time_Start_Str') or '').strip() or m.get("__managed_date")
@@ -470,6 +478,16 @@ def main():
                 continue
 
             _log(f"\n[{ma_bn}]")
+            day_account = entry_accounts.for_date(patient_item['ngay_lam'])
+            other_users = {
+                entry_accounts.for_date(d)['username'] for d in _patient_dates(patient_item['item'])
+            } - {day_account['username']}
+            if other_users:
+                ws.add_warning(
+                    f"BN {ma_bn}: nhập dịch truyền nhiều ngày có người ca làm khác nhau; cả lượt nhập bằng "
+                    f"tài khoản ca làm ngày {patient_item['ngay_lam']}. Muốn đúng tên từng ngày thì nhập từng ngày một."
+                )
+            ws.use_entry_account(day_account)
             progress_keys = _result_keys_for_patient(ma_bn, list_thuoc)
             mark_many(progress_path, "input_infusions", progress_keys, "running")
 

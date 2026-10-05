@@ -77,6 +77,14 @@ kế hoạch của Thu thập tự động (`planCollection`) để chắc phầ
 
 4.3 Dùng lại phiên đăng nhập EMR; không bắt đăng nhập lại nhiều lần trong một lượt chạy.
 
+4.4 **Nhập liệu đăng nhập bằng tài khoản người ca làm theo lịch**, không dùng tài khoản mặc định.
+- Dùng `EntryAccountResolver` (`worker/nurse_emr_accounts.py`) và `ws.use_entry_account(...)`.
+- Người ca làm chưa có tài khoản EMR thì dùng tài khoản mặc định và cảnh báo rõ cần thêm tài khoản cho ai.
+- Quét, lấy dữ liệu, xem trước thì dùng tài khoản mặc định.
+- Chi tiết: [PARALLEL_CARE_INFUSION.md](PARALLEL_CARE_INFUSION.md).
+
+*Vì:* phiếu nhập bằng tài khoản chung bị ghi sai người thực hiện.
+
 ## 5. Số liệu phải khớp nhau giữa các bước
 
 5.1 Bước xem trước và bước lưu/xuất dùng **cùng một hàm** lọc/ghép (không viết hai bản). Có test so

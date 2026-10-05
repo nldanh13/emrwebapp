@@ -176,6 +176,36 @@ class WorkerSession:
             ) from e2
         return False
 
+    def use_entry_account(self, info: Optional[Dict[str, Any]]) -> bool:
+        """Đổi sang tài khoản nhập liệu `info` (kết quả EntryAccountResolver.for_date
+        trong worker/nurse_emr_accounts.py) nếu khác tài khoản đang đăng nhập.
+
+        Đổi thất bại thì switch_account đã khôi phục tài khoản cũ: ghi cảnh báo,
+        trả False, worker nhập tiếp bằng tài khoản đang có.
+        """
+        info = info or {}
+        username = str(info.get("username") or "").strip()
+        password = str(info.get("password") or "")
+        if not username or username == str(self.config.get("username") or "").strip():
+            return True
+        if self.switch_account(username, password):
+            return True
+        self.add_warning(
+            f"Không đăng nhập được tài khoản EMR của {info.get('nurse_name') or username}; "
+            f"nhập tiếp bằng tài khoản đang dùng. Kiểm tra mật khẩu trong Thiết lập tài khoản."
+        )
+        return False
+
+    def add_warning(self, message: str) -> None:
+        """Ghi cảnh báo vào file kết quả (và in ra log tác vụ)."""
+        msg = str(message or "").strip()
+        if not msg:
+            return
+        warnings = self._result_kwargs.setdefault("warnings", [])
+        if msg not in warnings:
+            warnings.append(msg)
+            _print(f"[WARN] {msg}")
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
         # 1) Đóng trình duyệt
         _safe_quit(self.driver)

@@ -1,33 +1,34 @@
-# Chạy song song chăm sóc và dịch truyền
+# Tài khoản EMR khi nhập liệu (chăm sóc, dịch truyền, thủ thuật, VTYT)
 
-Ứng dụng có thể mở hai Chrome độc lập:
+## Quy tắc
 
-- Chăm sóc dùng tài khoản chính (`emr.*` trong `secrets/secrets.json`, hoặc `EMR_USERNAME` / `EMR_PASSWORD`).
-- Dịch truyền dùng `infusion.*` trong `secrets/secrets.json` (hoặc `EMR_INFUSION_USERNAME` / `EMR_INFUSION_PASSWORD`).
+- **Nhập liệu** (ghi vào EMR) đăng nhập bằng tài khoản EMR của **điều dưỡng ca làm theo Lịch
+  điều dưỡng** của ngày đang nhập. Tài khoản lấy từ Thiết lập tài khoản
+  (`secrets/nurse_emr_accounts.json`, xem `SECRETS.md`).
+  - Chăm sóc: người ca làm nhập hết phiếu của ngày, kể cả phiếu giờ trực. Phiếu giờ trực vẫn
+    được Thu hồi, đổi Người lập sang người trực rồi Hoàn tất bằng tài khoản người trực như trước.
+  - Nhập nhiều ngày: người bệnh/phiếu được xếp theo ngày. Mỗi ngày đổi sang tài khoản ca làm
+    của ngày đó, và chỉ đổi khi khác tài khoản đang dùng.
+  - Dịch truyền nhập theo từng người bệnh. Nếu một người bệnh có nhiều ngày với người ca làm khác
+    nhau, cả lượt dùng tài khoản ca làm của ngày đầu tiên và có cảnh báo trong log tác vụ.
+- Người ca làm **chưa có tài khoản EMR** hoặc ngày đó **chưa xếp lịch**: dùng tài khoản mặc định
+  và ghi cảnh báo `[WARN] Ngày dd/mm/yyyy: …` trong log tác vụ.
+  - Tài khoản mặc định là tài khoản EMR riêng của người đang đăng nhập Data Hub, nếu có.
+  - Không có thì dùng tài khoản chung `emr.*`.
+- **Quét, lấy dữ liệu, xem trước** (không ghi vào EMR) vẫn dùng tài khoản mặc định.
 
-Thiết lập trên Windows PowerShell trước khi chạy:
+Mã nguồn chính:
 
-```powershell
-$env:EMR_INFUSION_USERNAME="tai_khoan_dich_truyen"
-$env:EMR_INFUSION_PASSWORD="mat_khau_dich_truyen"
-npm start
-```
+- `worker/nurse_emr_accounts.py`: `resolve_entry_account` và `EntryAccountResolver`.
+- `worker/shared/worker_session.py`: `WorkerSession.use_entry_account`.
+- Test: `tests/test_entry_account_schedule.py`.
 
-Cách khuyến nghị: điền `infusion.username`, `infusion.password` trong
-`secrets/secrets.json` (xem `SECRETS.md`). Thư mục này đã nằm trong `.gitignore`;
-không đưa mật khẩu vào file mẫu, mã nguồn, log hoặc ZIP chia sẻ.
+## Không còn chạy song song chăm sóc và dịch truyền
 
-`MAX_HEAVY_JOBS` mặc định là `2`. Có thể đặt lại thành `1` để quay về chế độ
-tuần tự.
+Trước đây dịch truyền dùng tài khoản riêng (`infusion.*` / `EMR_INFUSION_USERNAME`) để chạy song song
+với chăm sóc. Nay mọi tác vụ nhập đều dùng tài khoản ca làm theo lịch. Vì vậy chúng chạy **lần lượt**
+trên cùng một làn `accountKey = 'default'` của `server/services/task_queue.js`, để không mở hai phiên
+cùng một tài khoản. Cấu hình `infusion.*` cũ không còn được dùng khi nhập dịch truyền.
 
-## Vì sao an toàn khi chạy song song
-
-`server/services/task_queue.js` gắn mỗi tác vụ nặng với một `accountKey`
-(tài khoản EMR mà tác vụ đó đăng nhập). Hai tác vụ dùng CHUNG một `accountKey`
-không bao giờ chạy Selenium/HTTP session cùng lúc, bất kể `MAX_HEAVY_JOBS` là
-bao nhiêu — chỉ những tác vụ dùng accountKey KHÁC NHAU (ví dụ `default` cho
-chăm sóc/hành chánh và `infusion` cho dịch truyền) mới thật sự chạy song song.
-Vì vậy nếu bạn KHÔNG cấu hình `infusion_username`/`infusion_password`, dịch
-truyền tự động dùng lại tài khoản chính và vẫn chạy tuần tự với các tác vụ
-khác như trước — tăng `MAX_HEAVY_JOBS` một mình không làm hai tác vụ cùng
-tài khoản chạy song song.
+`task_queue.js` vẫn hỗ trợ làn theo `accountKey` (`scripts/task_queue_account_lane_test.js`): hai
+tác vụ cùng `accountKey` không bao giờ chạy chồng lên nhau.
