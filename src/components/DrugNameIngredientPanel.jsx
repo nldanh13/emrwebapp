@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { C, FS } from '../tokens.js';
 import { Btn, Spinner, Segmented } from './shared.jsx';
 import * as api from '../api.js';
+import { SkeletonTable } from './Skeleton.jsx';
 
 const STATUS = {
   mapped: ['Đã có hoạt chất', C.green, C.greenBg],
@@ -99,7 +100,7 @@ export default function DrugNameIngredientPanel({ medications = [], onChanged })
       </div>
 
       {loading && !data ? (
-        <div style={{ color: C.text2, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Đang đọc y lệnh thuốc trong kho...</div>
+        <div role="status" aria-busy="true" aria-label="Đang đọc y lệnh thuốc trong kho"><SkeletonTable rows={5} cols={3} /></div>
       ) : error ? (
         <div role="alert" style={{ color: C.red, fontSize: FS.sm }}>Không đọc được tên thuốc trong kho: {error} <Btn onClick={load} style={{ marginLeft: 8 }}>Thử lại</Btn></div>
       ) : !counts.total ? (

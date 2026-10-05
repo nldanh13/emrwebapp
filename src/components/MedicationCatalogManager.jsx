@@ -15,6 +15,7 @@ import RouteDesigner from './RouteDesigner.jsx';
 import DrugNameIngredientPanel from './DrugNameIngredientPanel.jsx';
 import { RouteBadge } from './report/ReportShared.jsx';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
+import { SkeletonTable } from './Skeleton.jsx';
 
 function routeOptions(table) {
   const categories = table.categories || [];
@@ -358,8 +359,8 @@ export default function MedicationCatalogManager() {
           placeholder="Tìm theo chế phẩm, hoạt chất, tên thương mại, chuyên mục..." style={{ ...INPUT_STYLE, maxWidth: 460 }} />
       </div>
 
-      {loading ? (
-        <div style={{ color: C.text2, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Đang tải...</div>
+      {loading && !items.length ? (
+        <div role="status" aria-busy="true" aria-label="Đang tải danh mục thuốc" style={{ padding: 14 }}><SkeletonTable rows={8} cols={5} /></div>
       ) : !filtered.length ? (
         <div style={{ color: C.text3, padding: 20, textAlign: 'center' }}>
           {items.length ? 'Không tìm thấy thuốc phù hợp.' : 'Danh mục thuốc đang trống.'}

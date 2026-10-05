@@ -1,5 +1,6 @@
 import { C, FS } from '../../tokens.js';
 import { Spinner } from '../shared.jsx';
+import { SkeletonLines } from '../Skeleton.jsx';
 
 export default function PatientLogModal({ open, onClose, loading, data }) {
   if (!open) return null;
@@ -22,7 +23,7 @@ export default function PatientLogModal({ open, onClose, loading, data }) {
           <span style={{ marginLeft: 'auto', fontSize: FS.xs, color: C.text3 }}>Click ngoài để đóng</span>
         </div>
         <div style={{ flex: 1, overflow: 'auto', padding: '10px 14px' }}>
-          {loading && <div style={{ color: C.text3, fontSize: FS.sm }}>Đang tải...</div>}
+          {loading && <div role="status" aria-busy="true" aria-label="Đang tải log"><SkeletonLines lines={8} /></div>}
           {!loading && data && (<>
             {data.diagnostics && (
               <div style={{ marginBottom: 12 }}>

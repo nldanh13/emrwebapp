@@ -8,6 +8,7 @@ import { Btn, Segmented, Spinner } from './shared.jsx';
 import DateField, { formatDmy } from './DateField.jsx';
 import * as api from '../api.js';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
+import { SkeletonBlock } from './Skeleton.jsx';
 
 const VIEWS = [
   { value: 'tim', label: 'Tìm người bệnh' },
@@ -255,6 +256,11 @@ function Journey({ maBn, onBack, toast }) {
       {unlinkedCount > 0 && (
         <div style={{ border: `1px solid ${C.amber}`, borderRadius: R.md, background: C.amberBg, color: C.text, padding: '8px 10px', fontSize: FS.sm }}>
           Có {unlinkedCount} kết quả XN/CĐHA chưa xác định được lượt vì người bệnh có nhiều lượt trùng ngày. Hệ thống giữ lại dữ liệu và không tự gắn để tránh sai hồ sơ.
+        </div>
+      )}
+      {loading && !visits.length && (
+        <div role="status" aria-busy="true" aria-label="Đang tải các lượt khám/điều trị" style={{ display: 'grid', gap: 10 }}>
+          {[0, 1, 2].map(i => <SkeletonBlock key={i} height={72} radius={8} />)}
         </div>
       )}
       {visits.map(l => <VisitCard key={l.id} l={l} byId={byId} />)}

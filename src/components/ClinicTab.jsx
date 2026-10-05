@@ -13,6 +13,7 @@ import ClinicBbhc from './ClinicBbhc.jsx';
 import { useTabActive } from '../hooks/useTabActivity.js';
 import { revalidate, useServerData } from '../hooks/useServerData.js';
 import { useRealtimeConnected } from '../hooks/useRealtimeStatus.js';
+import { SkeletonTable } from './Skeleton.jsx';
 
 const CLINIC_MONITOR_KEY = 'screen:clinic-monitor';
 
@@ -459,6 +460,10 @@ export default function ClinicTab({ toast }) {
             </section>
           )}
         </>
+      ) : monitorQuery.loading ? (
+        <div role="status" aria-busy="true" aria-label="Đang tải danh sách Khám bệnh" style={{ padding: 14, border: `1px solid ${C.border}`, borderRadius: 8 }}>
+          <SkeletonTable rows={6} cols={6} />
+        </div>
       ) : (
         <div style={{ padding: 24, textAlign: 'center', color: C.text2, border: `1px dashed ${C.border}`, borderRadius: 8 }}>
           {running ? 'Đang đọc Danh sách Khám bệnh lần đầu…' : 'Nhập tài khoản EMR rồi bấm "Bắt đầu theo dõi" để hệ thống tự đọc Danh sách Khám bệnh theo chu kỳ.'}

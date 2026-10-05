@@ -9,6 +9,7 @@ import { C, FS } from '../tokens.js';
 import { Btn, Spinner } from './shared.jsx';
 import * as api from '../api.js';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
+import { SkeletonTable } from './Skeleton.jsx';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -363,9 +364,9 @@ export default function VtytCatalogManager() {
       </div>
 
       {/* Table */}
-      {loading ? (
-        <div style={{ color:C.text2, display:'flex', gap:8, alignItems:'center' }}>
-          <Spinner /> Đang tải...
+      {loading && !items.length ? (
+        <div role="status" aria-busy="true" aria-label="Đang tải danh mục VTYT" style={{ background:C.surface, borderTop:`1px solid ${C.border2}`, padding:14 }}>
+          <SkeletonTable rows={8} cols={5} />
         </div>
       ) : (
         <div style={{ background:C.surface, borderTop:`1px solid ${C.border2}`, overflow:'hidden' }}>

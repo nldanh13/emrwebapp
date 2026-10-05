@@ -1,7 +1,7 @@
 import { IconDatabaseImport, IconFolderOpen, IconRefresh } from '@tabler/icons-react';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { C, FS } from '../tokens.js';
-import { Btn, Spinner } from './shared.jsx';
+import { Btn } from './shared.jsx';
 import BedBoard from './BedBoard.jsx';
 import * as api from '../api.js';
 import SessionPicker from './shift/SessionPicker.jsx';
@@ -26,13 +26,11 @@ import { getMatchingDischargeDate, isDischargePrintPatientOnDates } from '../uti
 import { useFeatureStates } from '../features/runtime.js';
 import { getDaySchedule, toIsoDate, weekdayLabelFromIso } from './nurse/nurseScheduleUtils.js';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
+import { SkeletonScreen } from './Skeleton.jsx';
 
 function LoadingState() {
   return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10, color: C.text2 }}>
-      <Spinner size={20} />
-      <span style={{ fontSize: FS.sm }}>Đang tải dữ liệu...</span>
-    </div>
+    <SkeletonScreen label="Đang tải dữ liệu" stats={4} rows={8} cols={6} style={{ flex: 1 }} />
   );
 }
 

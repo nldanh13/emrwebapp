@@ -11,6 +11,7 @@ import { Btn, Spinner, Badge } from './shared.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import * as api from '../api.js';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
+import { SkeletonTable } from './Skeleton.jsx';
 
 const ROLE_OPTIONS = [
   { value: 'viewer', label: 'Người xem — chỉ xem' },
@@ -332,10 +333,8 @@ export default function AccountSettingsTab() {
         </div>
       )}
 
-      {loading ? (
-        <div style={{ color: C.text2, display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Spinner /> Đang tải...
-        </div>
+      {loading && !items.length ? (
+        <div role="status" aria-busy="true" aria-label="Đang tải danh sách tài khoản" style={{ padding: 14 }}><SkeletonTable rows={4} cols={4} /></div>
       ) : !items.length ? (
         <div style={{ color: C.text3, padding: 20, textAlign: 'center' }}>
           Chưa có tài khoản nào — bấm "+ Thêm tài khoản" để tạo tài khoản đầu tiên.

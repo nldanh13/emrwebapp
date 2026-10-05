@@ -12,6 +12,7 @@ import {
   exportRecordsCheckSubmissionPdf,
   addRecordsCheckSubmissionDiscrepancy,
 } from '../../api.js';
+import { SkeletonScreen } from '../Skeleton.jsx';
 
 function txt(value, fallback = '—') {
   const text = String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -455,7 +456,7 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
   const allItemsSelected = selectableBatchItems.length > 0 && selectableBatchItems.every(item => selectedItemIds.has(item.id));
 
   if (loading && !dashboard) {
-    return <div style={{ padding: 28, display: 'flex', gap: 10, alignItems: 'center', color: C.text2 }}><Spinner /> Đang tải lịch nộp hồ sơ...</div>;
+    return <SkeletonScreen label="Đang tải lịch nộp hồ sơ" stats={3} cols={5} />;
   }
 
   return (

@@ -207,10 +207,17 @@ Tải lại do sự kiện luôn im lặng: không vòng chờ, không xóa màn
 Nguồn không theo dõi được (vd. công cụ BHYT chạy riêng ở cổng khác) giữ hẹn giờ khi có việc đang
 chạy, ghi rõ `ux-rules: no-realtime — <lý do>`.
 
-9.7 Tự kiểm (R4 trong `scripts/ux_rules_check.mjs`): khung hiển thị ở 9.2 không import `api.js`;
+9.7 **Khung xám ở mọi tab.** Lần đầu mở tab (chưa có số liệu) dùng `SkeletonScreen` (thanh công
+cụ + ô số + bảng) hoặc `SkeletonTable`/`SkeletonBlock`/`SkeletonLines` đúng chỗ nội dung sẽ hiện.
+Đã có số liệu mà đang tải lại thì **giữ nguyên nội dung cũ** (chỉ nút "Tải lại" quay), không thay
+bảng bằng vòng xoay. Chưa biết số liệu thì không nói "Chưa có…/Chưa quét" (vd. các bước ở Lấy dữ
+liệu hiện khung xám tới khi tải xong). Vòng xoay chỉ dùng trên nút đang chạy thao tác.
+
+9.8 Tự kiểm (R4 trong `scripts/ux_rules_check.mjs`): khung hiển thị ở 9.2 không import `api.js`;
 file dùng `useServerData` không tự `setInterval` gọi máy chủ, trừ hẹn giờ dự phòng có theo
 `useRealtimeConnected` (kênh nối thì hỏi thưa, mất nối mới hỏi dày). R5: màn hình tab còn hẹn giờ
 hỏi máy chủ phải theo `useRealtimeConnected`, hoặc ghi `ux-rules: no-realtime — <lý do>`.
+R6: không còn chỗ hiện vòng xoay + "Đang tải…" thay cho nội dung (dùng khung xám, mục 9.7).
 
 ---
 
