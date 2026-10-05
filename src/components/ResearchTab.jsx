@@ -996,10 +996,9 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
               onClick={() => selectArchive(creatingStudy ? 'overview' : archiveMode)}
               badge={dot(Boolean(archive?.latest_run), runningScopes.has('archive'))}
             >
-              {isArchive && (!!operationSnapshot?.counts?.error || !!operationSnapshot?.unmatched_progress) && (
+              {isArchive && !!operationSnapshot?.counts?.error && (
                 <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                  {!!operationSnapshot?.counts?.error && <StatBadge label="Lỗi" value={operationSnapshot.counts.error} tone="danger" />}
-                  {!!operationSnapshot?.unmatched_progress && <StatBadge label="Chưa ghép" value={operationSnapshot.unmatched_progress} tone="warn" />}
+                  <StatBadge label="Lấy lỗi" value={operationSnapshot.counts.error} tone="danger" />
                 </div>
               )}
             </SideItem>

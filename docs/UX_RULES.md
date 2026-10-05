@@ -97,6 +97,18 @@ kết quả hai bước.
 
 5.2 Một đơn vị đếm rõ ràng (lượt điều trị / người bệnh / dòng) và ghi rõ trên màn hình.
 
+5.3 **Mỗi con số hiện ra phải trả lời được hai câu: "nó là gì?" và "tôi phải làm gì?"** Không trả
+lời được câu thứ hai thì con số không đứng ở phần chính. Đưa nó vào mục "Chi tiết kỹ thuật" thu gọn,
+hoặc bỏ đi.
+- Các con số cùng nhóm dùng **một mẫu số** và cộng lại phải khớp.
+- Đánh giá dữ liệu thu thập theo hai tiêu chí: **Đủ** (lấy đủ các phần chưa) và **Chính xác**
+  (trùng, ngày tháng vô lý, kết quả mâu thuẫn).
+- Việc máy đang tự làm thì ghi "không cần làm gì", không trộn vào số "cần xử lý".
+- Xem `src/components/research/dataHealth.js`.
+
+*Vì:* màn Kho nghiên cứu từng có 4 con số tổng khác nhau (3.127 / 3.016 / 3.015 / 500), "Cần xử lý
+2.706" gồm cả ca máy đang lấy, và "Chưa ghép 553" mà không ai biết phải làm gì.
+
 ## 6. Thông báo, lỗi và trạng thái rỗng
 
 6.1 Lỗi nói **việc gì không làm được, vì sao, làm gì tiếp**, bằng tiếng Việt. Không hiện thông báo kỹ

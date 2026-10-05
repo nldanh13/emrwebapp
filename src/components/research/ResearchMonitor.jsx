@@ -2,8 +2,9 @@
 import { C, FS } from '../../tokens.js';
 import { compactNumber, lower, text } from './researchFormat.js';
 import { statusIsDone, summarizeStatusRows } from './researchStatusModel.js';
-import { StatusPill, StatBadge, SmallRowsTable, inp } from './researchUi.jsx';
+import { StatBadge, SmallRowsTable, inp } from './researchUi.jsx';
 import { useState } from 'react';
+import { buildDataHealth, issueLabel } from './dataHealth.js';
 import { Spinner, Btn } from '../shared.jsx';
 
 function ModuleProgressCard({ part }) {
@@ -68,6 +69,7 @@ function ResearchMonitorTable({ rows = [], max = 80, filter = 'need', query = ''
   const filtered = (Array.isArray(rows) ? rows : []).filter(row => {
     if (filter === 'running' && row.state !== 'running') return false;
     if (filter === 'need' && !['running','error','missing','waiting'].includes(row.state)) return false;
+    if (filter === 'missing' && !['missing','waiting'].includes(row.state)) return false;
     if (filter === 'error' && row.state !== 'error') return false;
     if (filter === 'done' && row.state !== 'done') return false;
     if (q) {
@@ -90,7 +92,7 @@ function ResearchMonitorTable({ rows = [], max = 80, filter = 'need', query = ''
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.xs }}>
           <thead style={{ position: 'sticky', top: 0, background: C.surface2, zIndex: 1 }}>
             <tr>
-              {['Người bệnh / mẫu','Tiến độ','Trạng thái','Thiếu hoặc lỗi','Cập nhật'].map(label => (
+              {['Người bệnh / mẫu','Còn thiếu phần','Lý do lỗi','Cập nhật'].map(label => (
                 <th key={label} style={{ textAlign: 'left', padding: '8px 10px', color: C.text3, whiteSpace: 'nowrap', fontWeight: 700, borderBottom: `1px solid ${C.border2}` }}>{label}</th>
               ))}
             </tr>
@@ -104,21 +106,12 @@ function ResearchMonitorTable({ rows = [], max = 80, filter = 'need', query = ''
                     BN {text(row.patient_code) || '—'} · NC {text(row.sample) || '—'}
                   </div>
                 </td>
-                <td style={{ padding: '8px 10px', minWidth: 245 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-                    <MiniPartStatus label="XN" value={row.xn_cdha} />
-                    <MiniPartStatus label="HS" value={row.profile} />
-                    <MiniPartStatus label="RV" value={row.discharge} />
-                    <MiniPartStatus label="PT" value={row.surgery} />
-                    <MiniPartStatus label="YL" value={row.order_history} />
-                  </div>
+                <td style={{ padding: '8px 10px', minWidth: 200, color: row.missing ? C.amber : C.green, fontWeight: 600 }}>
+                  {text(row.missing) || 'Đủ'}
                 </td>
-                <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
-                  <StatusPill value={row.state_label} state={row.state} wide />
-                </td>
-                <td title={[text(row.missing), text(row.last_error)].filter(Boolean).join(' — ')} style={{ padding: '8px 10px', minWidth: 190, maxWidth: 360 }}>
-                  <div style={{ color: row.last_error ? C.red : row.missing ? C.amber : C.text3, fontWeight: row.last_error || row.missing ? 700 : 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {text(row.last_error) || text(row.missing) || '—'}
+                <td title={text(row.last_error)} style={{ padding: '8px 10px', minWidth: 190, maxWidth: 360 }}>
+                  <div style={{ color: row.last_error ? C.red : C.text3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {text(row.last_error) || '—'}
                   </div>
                 </td>
                 <td style={{ padding: '8px 10px', color: C.text3, whiteSpace: 'nowrap', fontSize: FS.xs }}>{text(row.updated_at) || '—'}</td>
@@ -196,66 +189,90 @@ function LastRunNote({ stopped, lastTask }) {
   return null;
 }
 
+const TONE = {
+  ok: [C.green, C.greenBg],
+  warn: [C.amber, C.amberBg],
+  danger: [C.red, C.redBg],
+  info: [C.blue, C.blueBg],
+};
+
+// Một con số: nó là gì + phải làm gì (+ nút mở danh sách lượt liên quan).
+function HealthItem({ item, active, onOpen }) {
+  const [color] = TONE[item.tone] || TONE.info;
+  return (
+    <div style={{ padding: '7px 0', borderTop: `1px solid ${C.border2}`, display: 'grid', gridTemplateColumns: '78px 1fr', gap: 10 }}>
+      <div style={{ fontSize: FS.lg || 18, fontWeight: 700, color, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>
+        {item.value == null ? '—' : compactNumber(item.value)}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <b style={{ fontSize: FS.sm, color: C.text }}>{item.label}</b>
+          {item.filter && (
+            <button type="button" onClick={() => onOpen(active ? null : item.filter)} aria-pressed={active} style={{
+              border: `1px solid ${active ? C.text3 : C.border2}`, background: active ? C.surface2 : C.surface,
+              color: C.text2, borderRadius: 5, height: 22, padding: '0 8px', fontSize: FS.xs, cursor: 'pointer',
+            }}>{active ? 'Ẩn danh sách' : 'Xem danh sách'}</button>
+          )}
+        </div>
+        <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 2, lineHeight: 1.5 }}>{item.meaning}</div>
+        {item.action && (
+          <div style={{ fontSize: FS.xs, color: C.text, marginTop: 2, lineHeight: 1.5 }}><b>Cần làm:</b> {item.action}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReviewTable({ rows = [] }) {
+  if (!rows.length) {
+    return <div style={{ padding: 14, fontSize: FS.xs, color: C.text3, textAlign: 'center' }}>Không có lượt cần kiểm tra.</div>;
+  }
+  return (
+    <SmallRowsTable max={300} rows={rows.map(r => ({ ...r, issue_label: issueLabel(r.issue) }))} columns={[
+      { key: 'research_code', label: 'Mã NC' },
+      { key: 'patient_code', label: 'Mã BN' },
+      { key: 'issue_label', label: 'Vấn đề' },
+      { key: 'detail', label: 'Chi tiết', long: true },
+    ]} />
+  );
+}
+
 function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onRefresh }) {
-  const [filter, setFilter] = useState('need');
+  const [filter, setFilter] = useState(null);
   const [query, setQuery] = useState('');
-  const [manualShowRows, setManualShowRows] = useState(false);
   const snap = snapshot || summarizeStatusRows([]);
-  // Đang có tác vụ chạy thì tự mở bảng chi tiết + khối "Mới cập nhật" — không
-  // cần bấm "Xem ca thiếu/lỗi" mới thấy từng ca vừa quét xong. Hết tác vụ thì
-  // quay lại đúng lựa chọn tay của người dùng.
-  // Đang chạy theo máy chủ: tác vụ ghi trạng thái (active_task) hoặc khóa phạm vi (scope_running).
   const isTaskActive = Boolean(snap.active_task || snap.scope_running);
-  const showRows = manualShowRows || isTaskActive;
   const rows = Array.isArray(snap.rows) ? snap.rows : [];
-  const counts = snap.counts || {
-    running: rows.filter(r => r.state === 'running').length,
-    error: rows.filter(r => r.state === 'error').length,
-    missing: rows.filter(r => r.state === 'missing').length,
-    waiting: rows.filter(r => r.state === 'waiting').length,
-    done: rows.filter(r => r.state === 'done').length,
-  };
-  const total = Number(snap.total || rows.length || 0);
-  const need = Number(counts.running || 0) + Number(counts.error || 0) + Number(counts.missing || 0) + Number(counts.waiting || 0);
+  const health = buildDataHealth(snap);
+  const [verdictColor, verdictBg] = TONE[health.verdict.tone] || TONE.info;
   const generatedAt = snap.generated_at ? new Date(snap.generated_at).toLocaleString('vi-VN') : '';
   const updateBlock = lastUpdate || (Array.isArray(snap.recentUpdates) && snap.recentUpdates.length
     ? { title: 'Mới cập nhật', at: generatedAt, totalChanged: snap.recentUpdates.length, rows: snap.recentUpdates }
     : null);
-  const filterButtons = [
-    ['need', `Cần xử lý ${compactNumber(need)}`],
-    ['running', `Đang chạy ${compactNumber(counts.running || 0)}`],
-    ['error', `Lỗi ${compactNumber(counts.error || 0)}`],
-    ['done', `Đã đủ ${compactNumber(counts.done || snap.ready || 0)}`],
-    ['all', `Tất cả ${compactNumber(rows.length || total)}`],
-  ];
+  const total = health.total;
+  const bar = [
+    [health.done, C.green, 'đủ'],
+    [Number(snap.counts?.running || 0), C.blue, 'đang lấy'],
+    [Number(snap.counts?.error || 0), C.red, 'lỗi'],
+  ].filter(([n]) => n > 0);
+  const qaWarnings = Array.isArray(snap.qa?.warnings) ? snap.qa.warnings : [];
+  const openItem = [...health.complete, ...health.accurate].find(i => i.filter && i.filter === filter);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <section style={{ borderTop: `1px solid ${C.border2}`, borderBottom: `1px solid ${C.border2}`, background: C.surface, padding: '10px 2px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Giám sát dữ liệu</span>
-            {loading && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: C.text3, fontSize: FS.xs }}><Spinner size={8} /> đang cập nhật</span>}
-            <StatBadge label="tổng ca" value={total || rows.length} tone="neutral" />
-            <StatBadge label="đủ cả 5 phần" value={counts.done || snap.ready || 0} tone="ok" />
-            <StatBadge label="chưa đủ" value={(counts.missing || 0) + (counts.waiting || 0)} tone={(counts.missing || counts.waiting) ? 'warn' : 'neutral'} />
-            <StatBadge label="có lỗi" value={counts.error || 0} tone={counts.error ? 'danger' : 'neutral'} />
-          </div>
-          <div style={{ display: 'flex', gap: 5 }}>
-            <Btn
-              onClick={() => setManualShowRows(v => !v)}
-              disabled={isTaskActive}
-              title={isTaskActive ? 'Đang tự động hiện trong lúc chạy tác vụ' : undefined}
-              style={{ height: 26, padding: '0 9px', fontSize: FS.xs }}
-            >
-              {showRows ? 'Ẩn danh sách' : `Xem ca thiếu/lỗi (${compactNumber(need)})`}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Đánh giá dữ liệu</span>
+          <span style={{ fontSize: FS.sm, color: C.text2 }}>{compactNumber(total)} lượt điều trị</span>
+          <span role="status" style={{ fontSize: FS.sm, fontWeight: 600, color: verdictColor, background: verdictBg, borderRadius: 5, padding: '2px 8px' }}>
+            {health.verdict.text}
+          </span>
+          {loading && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: C.text3, fontSize: FS.xs }}><Spinner size={8} /> đang cập nhật</span>}
+          {onRefresh && (
+            <Btn onClick={onRefresh} disabled={loading} style={{ height: 26, padding: '0 9px', fontSize: FS.xs, marginLeft: 'auto' }}>
+              {loading ? <Spinner size={8} /> : '↻'}
             </Btn>
-            {onRefresh && (
-              <Btn onClick={onRefresh} disabled={loading} style={{ height: 26, padding: '0 9px', fontSize: FS.xs }}>
-                {loading ? <Spinner size={8} /> : '↻'}
-              </Btn>
-            )}
-          </div>
+          )}
         </div>
 
         {!snap.active_task && snap.scope_running && (
@@ -297,65 +314,82 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
 
         {!isTaskActive && <LastRunNote stopped={snap.stopped} lastTask={snap.last_task} />}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', columnGap: 18, rowGap: 2, marginTop: 8 }}>
-          {(snap.modules || []).map(part => <ModuleProgressCard key={part.key} part={part} />)}
-        </div>
-        {!!(snap.modules || []).length && (
-          <div style={{ marginTop: 2, fontSize: FS.xs, color: C.text3, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            {[[C.green, 'Đã lấy'], [C.blue, 'Đang lấy'], [C.red, 'Lỗi'], [C.surface2, 'Chưa lấy']].map(([color, label]) => (
-              <span key={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ width: 10, height: 6, borderRadius: 2, background: color, border: `1px solid ${C.border2}` }} />{label}
-              </span>
-            ))}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18, marginTop: 10 }}>
+          <div>
+            <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text }}>
+              1. Đủ dữ liệu: {compactNumber(health.done)}/{compactNumber(total)} lượt ({health.pct}%)
+            </div>
+            <div
+              title={`${compactNumber(health.done)} đủ, ${compactNumber(snap.counts?.running || 0)} đang lấy, ${compactNumber(snap.counts?.error || 0)} lỗi / ${compactNumber(total)} lượt`}
+              style={{ display: 'flex', height: 6, borderRadius: 3, background: C.surface2, margin: '6px 0 4px', overflow: 'hidden' }}
+            >
+              {total > 0 && bar.map(([n, color, label]) => (
+                <div key={label} style={{ width: `${Math.min(100, n * 100 / total)}%`, background: color }} />
+              ))}
+            </div>
+            {health.complete.map(item => <HealthItem key={item.key} item={item} active={filter === item.filter} onOpen={setFilter} />)}
           </div>
-        )}
+          <div>
+            <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text }}>
+              2. Chính xác{snap.qa?.generated_at ? <span style={{ fontWeight: 400, color: C.text3, fontSize: FS.xs }}> · kiểm tra lúc {new Date(snap.qa.generated_at).toLocaleString('vi-VN')}</span> : null}
+            </div>
+            <div style={{ height: 10 }} />
+            {health.accurate.map(item => <HealthItem key={item.key} item={item} active={filter === item.filter} onOpen={setFilter} />)}
+          </div>
+        </div>
       </section>
 
-      {showRows && (
-        <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          {filterButtons.map(([id, label]) => {
-            const active = filter === id;
-            return (
-              <button key={id} type="button" onClick={() => setFilter(id)} style={{
-                height: 26, padding: '0 9px', borderRadius: 5, cursor: 'pointer',
-                border: `1px solid ${active ? C.text3 : C.border2}`,
-                background: active ? C.surface2 : C.surface,
-                color: active ? C.text : C.text2,
-                fontSize: FS.xs, fontWeight: active ? 700 : 600,
-              }}>{label}</button>
-            );
-          })}
-        </div>
-        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Mã BN, mã NC, tên hoặc lỗi" style={{ ...inp, width: 235, marginLeft: 'auto', background: C.surface, fontSize: FS.xs }} />
-        {generatedAt && <span style={{ fontSize: FS.xs, color: C.text3 }}>{generatedAt}</span>}
-      </div>
-
-      <ResearchMonitorTable rows={rows} max={90} filter={filter} query={query} />
-
-      {updateBlock?.rows?.length ? (
-        <details open={isTaskActive} style={{
-          border: `1px solid ${isTaskActive ? C.blueBorder : C.border2}`, borderRadius: 8,
-          background: isTaskActive ? C.blueBg : C.surface, padding: '8px 10px',
-        }}>
-          <summary style={{ cursor: 'pointer', color: isTaskActive ? C.blue : C.text2, fontSize: FS.xs, fontWeight: 700 }}>
-            {isTaskActive && <Spinner size={8} />} {updateBlock.title} · {compactNumber(updateBlock.totalChanged)} mẫu
-          </summary>
-          <div style={{ marginTop: 8 }}>
-            <SmallRowsTable max={8} rows={updateBlock.rows} columns={[
-              { key: 'sample', label: 'Mẫu' },
-              { key: 'patient_code', label: 'Mã BN' },
-              { key: 'patient_name', label: 'Họ tên' },
-              { key: 'updated', label: 'Đã cập nhật' },
-              { key: 'result', label: 'Kết quả' },
-              { key: 'missing', label: 'Còn thiếu' },
-            ]} />
+      {filter && (
+        <section aria-label={openItem ? `Danh sách: ${openItem.label}` : 'Danh sách'}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+            <b style={{ fontSize: FS.sm, color: C.text }}>{openItem?.label || 'Danh sách'}</b>
+            {filter !== 'review' && (
+              <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Mã BN, mã NC, tên hoặc lỗi" style={{ ...inp, width: 235, marginLeft: 'auto', background: C.surface, fontSize: FS.xs }} />
+            )}
           </div>
-        </details>
-      ) : null}
-        </>
+          {filter === 'review'
+            ? <ReviewTable rows={snap.qa?.review || []} />
+            : <ResearchMonitorTable rows={rows} max={200} filter={filter} query={query} />}
+        </section>
       )}
+
+      <details style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, padding: '8px 10px' }}>
+        <summary style={{ cursor: 'pointer', color: C.text2, fontSize: FS.xs, fontWeight: 700 }}>
+          Chi tiết kỹ thuật (không cần xử lý)
+        </summary>
+        <div style={{ display: 'grid', gap: 10, marginTop: 8 }}>
+          <div style={{ fontSize: FS.xs, color: C.text3 }}>Tiến độ từng phần trên {compactNumber(total)} lượt:</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', columnGap: 18, rowGap: 2 }}>
+            {(snap.modules || []).map(part => <ModuleProgressCard key={part.key} part={part} />)}
+          </div>
+          {!!snap.unmatched_progress && (
+            <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.5 }}>
+              {compactNumber(snap.unmatched_progress)} mục tiến độ thuộc lượt không có trong danh sách kho (vd. lượt ngoài khoảng ngày quét). Không tính vào số liệu, không cần làm gì.
+            </div>
+          )}
+          {!!qaWarnings.length && (
+            <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.6 }}>
+              <b style={{ color: C.text2 }}>Ghi chú khi chuẩn hóa (đã tự xử lý, chỉ để biết):</b>
+              <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                {qaWarnings.map(w => <li key={`${w.code}_${w.message}`}>{w.message}</li>)}
+              </ul>
+            </div>
+          )}
+          {updateBlock?.rows?.length ? (
+            <div>
+              <div style={{ fontSize: FS.xs, color: C.text3, marginBottom: 4 }}>{updateBlock.title} · {compactNumber(updateBlock.totalChanged)} lượt</div>
+              <SmallRowsTable max={8} rows={updateBlock.rows} columns={[
+                { key: 'sample', label: 'Mã NC' },
+                { key: 'patient_code', label: 'Mã BN' },
+                { key: 'patient_name', label: 'Họ tên' },
+                { key: 'updated', label: 'Đã cập nhật' },
+                { key: 'missing', label: 'Còn thiếu' },
+              ]} />
+            </div>
+          ) : null}
+          {generatedAt && <div style={{ fontSize: FS.xs, color: C.text3 }}>Số liệu lúc {generatedAt}.</div>}
+        </div>
+      </details>
     </div>
   );
 }
