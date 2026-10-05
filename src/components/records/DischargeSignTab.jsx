@@ -10,6 +10,7 @@ import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import * as api from '../../api.js';
 import { useOnTabReturn } from '../../hooks/useTabActivity.js';
+import { useScreenChanged } from '../../hooks/useRealtimeStatus.js';
 
 function fmtBytes(n) {
   const num = Number(n) || 0;
@@ -61,21 +62,23 @@ export default function DischargeSignTab({ toast }) {
   const [cleaning, setCleaning] = useState(false);
   const uploadInputRef = useRef(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const r = await api.listDischargeBundles();
       setBundles(Array.isArray(r.bundles) ? r.bundles : []);
       setTotalBytes(Number(r.total_bytes) || 0);
     } catch (e) {
-      toast?.(String(e.message || e), 'error');
+      if (!silent) toast?.(String(e.message || e), 'error');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [toast]);
 
   useEffect(() => { load(); }, [load]);
   useOnTabReturn(() => load());
+  // Có bộ in ra viện mới / vừa ký (kể cả từ thiết bị khác): máy chủ báo, tải lại im lặng (UX_RULES mục 9).
+  useScreenChanged('discharge-bundles', () => { load({ silent: true }); });
 
   const signFile = async (fileName) => {
     const r = await api.signDischargeBundle(fileName);
