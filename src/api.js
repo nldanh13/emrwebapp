@@ -577,6 +577,8 @@ export const refetchMissingResearch = (options = {}) => post('/api/research/refe
 const researchScopePath = (studyId) => (studyId ? `/api/research/studies/${encodeURIComponent(studyId)}` : '/api/research/archive');
 export const collectResearchAuto = (studyId, options = {}) => post(`${researchScopePath(studyId)}/collect-auto`, options);
 export const getResearchCollectionStatus = (studyId) => get(`${researchScopePath(studyId)}/collection-status`);
+// Mô hình màn hình Thu thập dữ liệu: một gói số liệu tính sẵn (UX_RULES mục 9).
+export const getResearchCollectionScreen = (studyId) => get(`${researchScopePath(studyId)}/screen/collection`);
 export const downloadResearchCollectionExceptions = (studyId) =>
   downloadBlob(`${researchScopePath(studyId)}/collection-exceptions`, `${studyId || 'du_lieu_goc'}_ngoai_le_thu_thap.csv`);
 export const getResearchEncounterReviews = (studyId) => get(`${researchScopePath(studyId)}/encounter-reviews`);

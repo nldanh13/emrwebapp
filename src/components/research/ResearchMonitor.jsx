@@ -1,10 +1,11 @@
 // Bảng theo dõi tiến độ lấy dữ liệu của Kho nghiên cứu: thẻ từng phần, bảng lượt, lịch sử đợt, dashboard vận hành.
 import { C, FS } from '../../tokens.js';
 import { compactNumber, lower, text } from './researchFormat.js';
-import { statusIsDone, summarizeStatusRows } from './researchStatusModel.js';
+import { statusIsDone } from './researchStatusModel.js';
 import { StatBadge, SmallRowsTable, inp } from './researchUi.jsx';
 import { useState } from 'react';
 import { buildDataHealth, issueLabel } from './dataHealth.js';
+import { SkeletonBlock, SkeletonLines } from '../Skeleton.jsx';
 import { Spinner, Btn } from '../shared.jsx';
 
 function ModuleProgressCard({ part }) {
@@ -237,26 +238,71 @@ function ReviewTable({ rows = [] }) {
   );
 }
 
-function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onRefresh }) {
+const SCREEN_STATE_LABEL = {
+  error: 'Lỗi, sẽ tự thử lại',
+  waiting: 'Chờ người xem',
+  unmatched: 'Chưa ghép chắc',
+  missing: 'Còn thiếu',
+};
+
+// Danh sách lượt của một nhóm (từ mô hình màn hình): phần còn thiếu và lý do bằng lời.
+function ScreenRowsTable({ rows = [], state, query = '' }) {
+  const q = text(query).toLowerCase();
+  const filtered = rows.filter(r => r.state === state && (!q || [r.research_code, r.patient_code, r.patient_name, r.reason].map(text).join(' ').toLowerCase().includes(q)));
+  if (!filtered.length) {
+    return <div style={{ padding: 14, fontSize: FS.xs, color: C.text3, textAlign: 'center', border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface }}>Không có lượt phù hợp.</div>;
+  }
+  return (
+    <SmallRowsTable max={300} rows={filtered.map(r => ({ ...r, who: [r.patient_name, r.patient_code ? `BN ${r.patient_code}` : ''].filter(Boolean).join(' · ') }))} columns={[
+      { key: 'research_code', label: 'Mã NC' },
+      { key: 'who', label: 'Người bệnh' },
+      { key: 'missing', label: 'Còn thiếu phần' },
+      { key: 'reason', label: 'Lý do', long: true },
+    ]} />
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <section aria-busy="true" aria-label="Đang tải đánh giá dữ liệu" style={{ borderTop: `1px solid ${C.border2}`, borderBottom: `1px solid ${C.border2}`, background: C.surface, padding: '10px 2px', display: 'grid', gap: 10 }}>
+      <SkeletonBlock width="45%" height={16} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18 }}>
+        <SkeletonLines lines={5} />
+        <SkeletonLines lines={3} />
+      </div>
+    </section>
+  );
+}
+
+// screen: mô hình màn hình từ máy chủ (useServerData). Khung này CHỈ hiển thị, không tự gọi API,
+// không tự tính lại số liệu (UX_RULES mục 9).
+function ResearchOperationDashboard({ screen, loading = false, error = null, autoRunning = false, onRefresh }) {
   const [filter, setFilter] = useState(null);
   const [query, setQuery] = useState('');
-  const snap = snapshot || summarizeStatusRows([]);
-  const isTaskActive = Boolean(snap.active_task || snap.scope_running);
-  const rows = Array.isArray(snap.rows) ? snap.rows : [];
-  const health = buildDataHealth(snap);
+  if (!screen) {
+    if (error) {
+      return (
+        <div role="alert" style={{ fontSize: FS.sm, color: C.red, padding: 10 }}>
+          Không tải được đánh giá dữ liệu: {String(error.message || error)}
+          {onRefresh && <Btn onClick={onRefresh} style={{ marginLeft: 8, height: 26, fontSize: FS.xs }}>Thử lại</Btn>}
+        </div>
+      );
+    }
+    return <DashboardSkeleton />;
+  }
+  const health = buildDataHealth(screen, { autoRunning });
   const [verdictColor, verdictBg] = TONE[health.verdict.tone] || TONE.info;
-  const generatedAt = snap.generated_at ? new Date(snap.generated_at).toLocaleString('vi-VN') : '';
-  const updateBlock = lastUpdate || (Array.isArray(snap.recentUpdates) && snap.recentUpdates.length
-    ? { title: 'Mới cập nhật', at: generatedAt, totalChanged: snap.recentUpdates.length, rows: snap.recentUpdates }
-    : null);
+  const generatedAt = screen.generated_at ? new Date(screen.generated_at).toLocaleTimeString('vi-VN') : '';
   const total = health.total;
+  const counts = screen.counts || {};
   const bar = [
     [health.done, C.green, 'đủ'],
-    [Number(snap.counts?.running || 0), C.blue, 'đang lấy'],
-    [Number(snap.counts?.error || 0), C.red, 'lỗi'],
+    [Number(counts.error || 0), C.blue, 'lỗi, sẽ thử lại'],
+    [Number(counts.waiting || 0) + Number(counts.unmatched || 0), C.red, 'cần người'],
   ].filter(([n]) => n > 0);
-  const qaWarnings = Array.isArray(snap.qa?.warnings) ? snap.qa.warnings : [];
+  const qaWarnings = Array.isArray(screen.qa?.warnings) ? screen.qa.warnings : [];
   const openItem = [...health.complete, ...health.accurate].find(i => i.filter && i.filter === filter);
+  const task = screen.task || {};
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -267,17 +313,15 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
           <span role="status" style={{ fontSize: FS.sm, fontWeight: 600, color: verdictColor, background: verdictBg, borderRadius: 5, padding: '2px 8px' }}>
             {health.verdict.text}
           </span>
-          {loading && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: C.text3, fontSize: FS.xs }}><Spinner size={8} /> đang cập nhật</span>}
-          {onRefresh && (
-            <Btn onClick={onRefresh} disabled={loading} style={{ height: 26, padding: '0 9px', fontSize: FS.xs, marginLeft: 'auto' }}>
-              {loading ? <Spinner size={8} /> : '↻'}
-            </Btn>
-          )}
+          <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: FS.xs, color: C.text3 }}>
+            {loading ? <><Spinner size={8} /> đang cập nhật</> : generatedAt ? `số liệu lúc ${generatedAt}` : ''}
+            {onRefresh && <Btn onClick={onRefresh} disabled={loading} aria-label="Tải lại số liệu" style={{ height: 26, padding: '0 9px', fontSize: FS.xs }}>↻</Btn>}
+          </span>
         </div>
 
         {/* Trạng thái "đang chạy" (tác vụ, ca đang lấy, tuổi tiến độ) chỉ hiện ở dải đầu trang
             (RunningBanner) — không lặp lại ở đây (UX_RULES 3.2). */}
-        {!isTaskActive && <LastRunNote stopped={snap.stopped} lastTask={snap.last_task} />}
+        {!autoRunning && <LastRunNote stopped={task.stopped} lastTask={task.last_task} />}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18, marginTop: 10 }}>
           <div>
@@ -285,7 +329,7 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
               1. Đủ dữ liệu: {compactNumber(health.done)}/{compactNumber(total)} lượt ({health.pct}%)
             </div>
             <div
-              title={`${compactNumber(health.done)} đủ, ${compactNumber(snap.counts?.running || 0)} đang lấy, ${compactNumber(snap.counts?.error || 0)} lỗi / ${compactNumber(total)} lượt`}
+              title={bar.map(([n, , label]) => `${compactNumber(n)} ${label}`).join(', ') + ` / ${compactNumber(total)} lượt`}
               style={{ display: 'flex', height: 6, borderRadius: 3, background: C.surface2, margin: '6px 0 4px', overflow: 'hidden' }}
             >
               {total > 0 && bar.map(([n, color, label]) => (
@@ -296,7 +340,7 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
           </div>
           <div>
             <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text }}>
-              2. Chính xác{snap.qa?.generated_at ? <span style={{ fontWeight: 400, color: C.text3, fontSize: FS.xs }}> · kiểm tra lúc {new Date(snap.qa.generated_at).toLocaleString('vi-VN')}</span> : null}
+              2. Chính xác{screen.qa?.generated_at ? <span style={{ fontWeight: 400, color: C.text3, fontSize: FS.xs }}> · kiểm tra lúc {new Date(screen.qa.generated_at).toLocaleString('vi-VN')}</span> : null}
             </div>
             <div style={{ height: 10 }} />
             {health.accurate.map(item => <HealthItem key={item.key} item={item} active={filter === item.filter} onOpen={setFilter} />)}
@@ -307,14 +351,14 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
       {filter && (
         <section aria-label={openItem ? `Danh sách: ${openItem.label}` : 'Danh sách'}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-            <b style={{ fontSize: FS.sm, color: C.text }}>{openItem?.label || 'Danh sách'}</b>
+            <b style={{ fontSize: FS.sm, color: C.text }}>{openItem?.label || SCREEN_STATE_LABEL[filter] || 'Danh sách'}</b>
             {filter !== 'review' && (
-              <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Mã BN, mã NC, tên hoặc lỗi" style={{ ...inp, width: 235, marginLeft: 'auto', background: C.surface, fontSize: FS.xs }} />
+              <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Mã BN, mã NC, tên hoặc lý do" style={{ ...inp, width: 235, marginLeft: 'auto', background: C.surface, fontSize: FS.xs }} />
             )}
           </div>
           {filter === 'review'
-            ? <ReviewTable rows={snap.qa?.review || []} />
-            : <ResearchMonitorTable rows={rows} max={200} filter={filter} query={query} />}
+            ? <ReviewTable rows={screen.qa?.review || []} />
+            : <ScreenRowsTable rows={screen.rows || []} state={filter} query={query} />}
         </section>
       )}
 
@@ -323,15 +367,10 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
           Chi tiết kỹ thuật (không cần xử lý)
         </summary>
         <div style={{ display: 'grid', gap: 10, marginTop: 8 }}>
-          <div style={{ fontSize: FS.xs, color: C.text3 }}>Tiến độ từng phần trên {compactNumber(total)} lượt:</div>
+          <div style={{ fontSize: FS.xs, color: C.text3 }}>Tiến độ từng phần trên {compactNumber(total - Number(counts.unmatched || 0))} lượt đã ghép chắc:</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', columnGap: 18, rowGap: 2 }}>
-            {(snap.modules || []).map(part => <ModuleProgressCard key={part.key} part={part} />)}
+            {(screen.parts || []).map(part => <ModuleProgressCard key={part.key} part={{ ...part, error: part.failed || 0, missing: Math.max(0, part.total - part.done - (part.failed || 0)) }} />)}
           </div>
-          {!!snap.unmatched_progress && (
-            <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.5 }}>
-              {compactNumber(snap.unmatched_progress)} mục tiến độ thuộc lượt không có trong danh sách kho (vd. lượt ngoài khoảng ngày quét). Không tính vào số liệu, không cần làm gì.
-            </div>
-          )}
           {!!qaWarnings.length && (
             <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.6 }}>
               <b style={{ color: C.text2 }}>Ghi chú khi chuẩn hóa (đã tự xử lý, chỉ để biết):</b>
@@ -340,19 +379,7 @@ function ResearchOperationDashboard({ snapshot, lastUpdate, loading = false, onR
               </ul>
             </div>
           )}
-          {updateBlock?.rows?.length ? (
-            <div>
-              <div style={{ fontSize: FS.xs, color: C.text3, marginBottom: 4 }}>{updateBlock.title} · {compactNumber(updateBlock.totalChanged)} lượt</div>
-              <SmallRowsTable max={8} rows={updateBlock.rows} columns={[
-                { key: 'sample', label: 'Mã NC' },
-                { key: 'patient_code', label: 'Mã BN' },
-                { key: 'patient_name', label: 'Họ tên' },
-                { key: 'updated', label: 'Đã cập nhật' },
-                { key: 'missing', label: 'Còn thiếu' },
-              ]} />
-            </div>
-          ) : null}
-          {generatedAt && <div style={{ fontSize: FS.xs, color: C.text3 }}>Số liệu lúc {generatedAt}.</div>}
+          {generatedAt && <div style={{ fontSize: FS.xs, color: C.text3 }}>Mọi số trên màn hình này tính cùng lúc từ sổ thu thập, lúc {generatedAt}.</div>}
         </div>
       </details>
     </div>

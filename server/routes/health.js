@@ -11,6 +11,7 @@ const { authStatus, hasRole } = require('../services/authz');
 const { auditPath, verifyAuditFile } = require('../services/security_audit');
 const { listDurableTasks, getDurableTask } = require('../services/task_queue');
 const { subscribeTaskEvents, subscribeResourceEvents } = require('../services/realtime_bus');
+const { subscribeResearchEvents } = require('../services/research_watch');
 
 router.get('/auth/me', (req, res) => {
   const status = authStatus();
@@ -64,6 +65,8 @@ router.get('/events', (req, res) => {
     if (event.sid !== sid) return;
     send('resource', event);
   });
+  // Kho nghiên cứu dùng chung cho mọi workspace: báo số liệu/tác vụ đổi (không kèm dữ liệu người bệnh).
+  const unsubscribeResearch = subscribeResearchEvents((event) => send('research', event));
   const heartbeat = setInterval(() => send('ping', { at: new Date().toISOString() }), 20_000);
   heartbeat.unref?.();
 
@@ -71,6 +74,7 @@ router.get('/events', (req, res) => {
     clearInterval(heartbeat);
     unsubscribeTasks();
     unsubscribeResources();
+    unsubscribeResearch();
   };
   req.on('close', close);
   req.on('aborted', close);

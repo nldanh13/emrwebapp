@@ -85,6 +85,12 @@ export default function WorkspaceRealtimeBridge({ children }) {
               window.dispatchEvent(new CustomEvent('emr:workspace-snapshot', { detail: payload }));
               return;
             }
+            if (eventName === 'research') {
+              // Số liệu Kho nghiên cứu đổi (máy chủ tự theo dõi file tiến độ) hoặc danh sách tác vụ
+              // đang chạy đổi: màn hình nghiên cứu tải lại đúng gói đó, không cần hẹn giờ hỏi lại.
+              window.dispatchEvent(new CustomEvent('emr:research-changed', { detail: payload }));
+              return;
+            }
             if (eventName === 'resource') {
               window.dispatchEvent(new CustomEvent('emr:server-resource', { detail: payload }));
               nudgeActiveScreen(payload);

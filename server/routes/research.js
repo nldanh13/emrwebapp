@@ -58,6 +58,7 @@ const { normalizeInputSignature, normalizeRunOutputs } = require('../research/no
 const { runNormalizeJob, normalizeRunning } = require('../research/normalize_runner');
 const { SCRIPT_PATH } = require('../research/worker_paths');
 const { appendCollectionVersions, readCollectionPartRows, readCollectionVersionIds, recoverCollectionTransactions, recoverPythonPatientCommits, runCollectionOrchestration, studyReadinessForRun, syncCollectionLedger } = require('../research/collection_runtime');
+const { watchResearchScope, setRunningSignature } = require('../services/research_watch');
 const { RESEARCH_SCOPE_LOCKS, datasetVerifyResponse, listRunningResearch, withScopeRunning, identifiedAccessStatus, lockedResearchRoute, researchResponseShouldRedact, researchScopeKey, sendCsvFile } = require('../research/research_http');
 
 const VARIABLE_PREVIEW_MAX_SOURCE_ROWS = Math.max(5000, Number(process.env.EMR_VARIABLE_PREVIEW_MAX_SOURCE_ROWS || 1000000));
@@ -375,11 +376,15 @@ router.get('/research/running', (_req, res) => {
   }
 });
 
+// Kênh sự kiện (/api/events) báo khi danh sách tác vụ đang chạy đổi: giao diện không phải hỏi theo giờ.
+setRunningSignature(() => [...RESEARCH_SCOPE_LOCKS.entries()].map(([k, v]) => `${k}|${v?.label || ''}|${v?.since || ''}`).sort().join(';'));
+
 router.get('/research/archive/progress', (req, res) => {
   try {
     const runId = resolveArchiveRunIdFast(String(req.query.runId || 'latest'));
     const archive = readArchiveProgressMeta(runId);
     const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
+    watchResearchScope('archive', runDir);
     const progress = withScopeRunning(buildResearchProgressSnapshot(runDir, archive, { isArchive: true }), 'archive');
     return res.json({ status: 'ok', run_id: runId || '', progress });
   } catch (err) {

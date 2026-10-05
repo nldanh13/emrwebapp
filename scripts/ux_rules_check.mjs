@@ -6,8 +6,11 @@
 //      dùng quay lại tab (useOnTabReturn hoặc nghe sự kiện emr:tab-active).
 //  R3  Màn hình tab có tự làm mới định kỳ (setInterval gọi máy chủ) phải dừng khi tab ẩn
 //      (useTabActive) hoặc chỉ chạy khi có việc đang chạy; ghi rõ bằng chú thích "ux-rules: polling-ok".
+//  R4  Màn hình số liệu (mục 9): khung hiển thị chỉ nhận gói số liệu qua props, không tự gọi
+//      máy chủ (không import api.js); file dùng kho chung useServerData không tự setInterval gọi
+//      máy chủ — máy chủ báo qua kênh sự kiện (hẹn giờ dự phòng chỉ khi có useRealtimeConnected).
 // Chạy: node scripts/ux_rules_check.mjs
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 
 const ROOT = process.cwd();
@@ -45,9 +48,39 @@ for (const file of tabFiles) {
   }
 }
 
+// R4
+const SCREEN_VIEWS = [
+  'src/components/research/ResearchMonitor.jsx',
+  'src/components/research/GeneralOverviewView.jsx',
+  'src/components/research/dataHealth.js',
+];
+for (const file of SCREEN_VIEWS) {
+  if (!existsSync(join(ROOT, file))) { problems.push(`R4: không thấy ${file} (cập nhật danh sách SCREEN_VIEWS).`); continue; }
+  if (/from '[^']*\/api(\.js)?'/.test(read(file))) problems.push(`R4: ${file} là khung hiển thị số liệu nhưng tự gọi máy chủ (import api.js). Nhận gói số liệu qua props.`);
+}
+const srcFiles = [];
+const walk = (dir) => {
+  for (const name of readdirSync(join(ROOT, dir))) {
+    const rel = join(dir, name);
+    if (statSync(join(ROOT, rel)).isDirectory()) walk(rel);
+    else if (/\.(jsx?|mjs)$/.test(name) && !/\.test\./.test(name)) srcFiles.push(rel);
+  }
+};
+walk('src');
+let screenFiles = 0;
+for (const file of srcFiles) {
+  const src = read(file);
+  if (!/useServerData\(/.test(src) || file.endsWith('useServerData.js')) continue;
+  screenFiles += 1;
+  if (/setInterval\(\s*(\(\)\s*=>\s*\{?\s*)?(load|refresh|fetch|revalidate|screenQuery)\w*/.test(src)
+    && !/useRealtimeConnected\(/.test(src)) {
+    problems.push(`R4: ${file} dùng kho chung useServerData nhưng tự hẹn giờ gọi máy chủ. Để kênh sự kiện (invalidate) báo khi số liệu đổi; hẹn giờ dự phòng phải theo useRealtimeConnected (thưa khi kênh đang nối).`);
+  }
+}
+
 if (problems.length) {
   console.error('[ux-rules] Không đạt docs/UX_RULES.md:');
   for (const p of problems) console.error(`  - ${p}`);
   process.exit(1);
 }
-console.log(`[ux-rules] OK: ${navIds.length + 1} tab giữ lại khi chuyển tab, ${tabFiles.length} màn hình đạt R2/R3.`);
+console.log(`[ux-rules] OK: ${navIds.length + 1} tab giữ lại khi chuyển tab, ${tabFiles.length} màn hình đạt R2/R3, ${SCREEN_VIEWS.length} khung hiển thị + ${screenFiles} màn hình dùng kho chung đạt R4.`);

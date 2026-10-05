@@ -35,7 +35,9 @@ const READINESS_LABEL = {
 // Thu thập tự động: một nút chạy, một báo cáo ngắn, danh sách ngoại lệ chỉ mở khi cần.
 // serverRunning: tác vụ máy chủ đang chạy ở kho/nghiên cứu này ({ label, since }) hoặc null. Dùng để
 // nút và báo cáo đúng cả khi tác vụ được bấm chạy từ trước (rời tab, tải lại trang, máy khác).
-function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onDone, toast, study = null, serverRunning = null }) {
+// screen: mô hình màn hình (useServerData) — kế hoạch và báo cáo lần gần nhất lấy từ đây, cùng nguồn
+// với Đánh giá dữ liệu; status chỉ còn dùng cho danh sách cần xử lý, chính sách làm mới.
+function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onDone, toast, study = null, serverRunning = null, screen = null }) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
@@ -183,8 +185,8 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
     }
   };
 
-  const report = status?.last_report || null;
-  const plan = status?.next_plan || null;
+  const report = (screen ? screen.last_report : status?.last_report) || null;
+  const plan = (screen ? screen.plan : status?.next_plan) || null;
   const exceptions = Array.isArray(status?.exceptions) ? status.exceptions : [];
   const busy = disabled || running;
   const collecting = running || /thu thập/i.test(String(serverRunning?.label || ''));
@@ -217,19 +219,10 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
       )}
 
       {planView && (
-        <div style={{ fontSize: FS.xs, color: C.text2, display: 'grid', gap: 4 }}>
-          <div>
-            {planView.title}, trong <b>{compactNumber(planView.total)}</b> lượt của danh sách thu thập:{' '}
-            {planView.groups.filter(g => g.value || g.key === 'fetch').map((g, i) => (
-              <span key={g.key}>{i ? ' · ' : ''}{g.label} <b>{compactNumber(g.value)}</b>{g.extra ? ` (${g.extra})` : ''}</span>
-            ))}.
-          </div>
-          {planView.notes.map(note => (
-            <div key={note.key} style={{ borderLeft: `3px solid ${C.amber}`, paddingLeft: 8 }}>
-              <b style={{ color: C.text }}>{compactNumber(note.value)} lượt {note.label}:</b> {note.meaning}
-              <div style={{ color: C.text }}><b>Cần làm:</b> {note.action}</div>
-            </div>
-          ))}
+        <div style={{ fontSize: FS.xs, color: C.text2 }}>
+          {planView.title} máy lấy <b>{compactNumber(planView.groups[0].value)}</b> lượt
+          {planView.groups[0].extra ? ` (${planView.groups[0].extra})` : ''} trong <b>{compactNumber(planView.total)}</b> lượt.
+          {' '}Lượt chờ người xem / chưa ghép chắc và việc cần làm: xem <b>Đánh giá dữ liệu</b> bên dưới.
         </div>
       )}
 

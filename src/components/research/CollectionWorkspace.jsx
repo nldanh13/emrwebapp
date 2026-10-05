@@ -12,6 +12,8 @@ import { todayInputDate } from './researchScope.js';
 import { inp } from './researchUi.jsx';
 import { CollectionAutoPanel } from './CollectionAutoPanel.jsx';
 import { ResearchOperationDashboard } from './ResearchMonitor.jsx';
+import * as api from '../../api.js';
+import { useServerData } from '../../hooks/useServerData.js';
 
 function StepHeader({ number, title, hint, done = false, right = null }) {
   return (
@@ -90,7 +92,14 @@ export function CollectionWorkspace({
   const collectOptions = isArchive
     ? archiveOptions
     : { ...studyOptions, fromDate: studyOptions.fromDate || archiveOptions.fromDate, toDate: studyOptions.toDate || archiveOptions.toDate };
-  const onCollected = async () => { await loadSummary(); await loadProgressSnapshot(selectedId, { silent: true }); };
+  // MỘT gói số liệu cho cả màn hình, tính sẵn ở máy chủ từ sổ thu thập (UX_RULES mục 9). Các
+  // khung bên dưới chỉ hiển thị gói này; máy chủ báo đổi qua kênh sự kiện thì gói tự tải lại.
+  const screenKey = hasRun ? `research:${isArchive ? 'archive' : selectedId}:collection-screen` : '';
+  const screenQuery = useServerData(screenKey, () => api.getResearchCollectionScreen(isArchive ? '' : selectedId), { enabled: Boolean(screenKey) });
+  const screen = screenQuery.data?.screen || null;
+  const onCollected = async () => {
+    await Promise.all([loadSummary(), loadProgressSnapshot(selectedId, { silent: true }), screenQuery.refresh()]);
+  };
   let step = 0;
 
   return (
@@ -131,7 +140,9 @@ export function CollectionWorkspace({
             </Btn>
             <div style={{ flexBasis: '100%', fontSize: FS.xs, color: C.text3 }}>
               {hasList
-                ? <>Lần quét gần nhất: <b style={{ color: C.text2 }}>{compactNumber(listCount)}</b> lượt (đợt {latestRun.id}). Quét lại chỉ thêm người bệnh mới, không xóa dữ liệu đã lấy.</>
+                ? <>Lần quét gần nhất: danh sách EMR có <b style={{ color: C.text2 }}>{compactNumber(listCount)}</b> dòng
+                    {screen ? <>, ghép thành <b style={{ color: C.text2 }}>{compactNumber(screen.total)}</b> lượt điều trị</> : null} (đợt {latestRun.id}).
+                    {' '}Quét lại chỉ thêm người bệnh mới, không xóa dữ liệu đã lấy.</>
                 : 'Chưa quét lần nào. Đây là bước đầu tiên để có dữ liệu.'}
             </div>
           </div>
@@ -168,6 +179,7 @@ export function CollectionWorkspace({
               toast={toast}
               onDone={onCollected}
               serverRunning={scopeRunning}
+              screen={screen}
             />
           : !hasList && <div style={{ ...card, fontSize: FS.xs, color: C.text3 }}>Chưa thể thu thập.</div>}
       </section>
@@ -176,9 +188,11 @@ export function CollectionWorkspace({
         <section>
           <StepHeader number={++step} title="Theo dõi tiến độ" hint="Tự cập nhật khi đang chạy." />
           <ResearchOperationDashboard
-            snapshot={operationSnapshot}
-            lastUpdate={lastUpdateSummary}
-            loading={statusLoading}
+            screen={screen}
+            loading={screenQuery.refreshing}
+            error={screenQuery.error}
+            autoRunning={Boolean(scopeRunning)}
+            onRefresh={screenQuery.refresh}
           />
         </section>
       )}
