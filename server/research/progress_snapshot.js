@@ -496,6 +496,58 @@ function sourceRowsForXnCdhaRefetch(runDir, fallbackPath, statusRows = [], sourc
   return picked;
 }
 
+// Trạng thái tác vụ của run: đang chạy, đã dừng (lý do, lúc nào), lần chạy gần nhất kết thúc ra sao.
+// Dùng chung cho bảng tiến độ cũ và mô hình màn hình (screen_model).
+function taskStatusParts(runDir) {
+  const activeTask = activeResearchTask(runDir);
+  const taskState = readResearchTaskState(runDir);
+  const lastFinishedTask = Array.isArray(taskState.history) && taskState.history.length
+    ? taskState.history[taskState.history.length - 1]
+    : null;
+  const lastTaskStopped = ['cancelled', 'interrupted'].includes(String(lastFinishedTask?.status || '').toLowerCase());
+  // Cảnh báo fatal của worker chỉ còn đúng nếu ghi sau khi lần chạy gần nhất bắt đầu; cảnh báo cũ
+  // hơn là của lần chạy trước đó, không được báo mãi "đã dừng giữa chừng".
+  const fatalPath = path.join(runDir, 'fatal_alert.json');
+  let fatalAlert = readJsonSafe(fatalPath, null);
+  let fatalAt = '';
+  if (fatalAlert) {
+    try { fatalAt = new Date(fs.statSync(fatalPath).mtimeMs).toISOString(); } catch (_) { fatalAt = ''; }
+    const lastStart = Date.parse(lastFinishedTask?.started_at || '');
+    // Dung sai 2 giây: hệ thống file có thể làm tròn mtime xuống theo giây.
+    if (fatalAt && Number.isFinite(lastStart) && Date.parse(fatalAt) < lastStart - 2000) fatalAlert = null;
+  }
+  // Không hiển thị đồng thời “Đang chạy” và “đã dừng giữa chừng”. Ngoài fatal
+  // của worker, cancellation/restart cũng được coi là trạng thái có thể resume.
+  const stopped = !activeTask && (fatalAlert || lastTaskStopped) ? {
+    ma_nc: String(fatalAlert?.ma_nc || '').trim(),
+    ma_bn: String(fatalAlert?.ma_bn || '').trim(),
+    ho_ten: String(fatalAlert?.ho_ten || '').trim(),
+    hint: 'Tác vụ đã dừng giữa chừng. Bấm cập nhật lại để chạy tiếp từ phần chưa lấy.',
+    reason: lastTaskStopped ? String(lastFinishedTask.status).toLowerCase() : 'fatal',
+    label: lastTaskStopped ? String(lastFinishedTask.label || '') : '',
+    at: lastTaskStopped ? String(lastFinishedTask.finished_at || '') : fatalAt,
+  } : null;
+  // Lần chạy gần nhất đã kết thúc (xong / lỗi / dừng): để giao diện nói rõ chuyện gì đã xảy ra.
+  const lastTask = lastFinishedTask ? {
+    label: String(lastFinishedTask.label || ''),
+    status: String(lastFinishedTask.status || ''),
+    message: String(lastFinishedTask.message || ''),
+    started_at: String(lastFinishedTask.started_at || ''),
+    finished_at: String(lastFinishedTask.finished_at || ''),
+  } : null;
+
+  return { activeTask, stopped, lastTask };
+}
+
+function taskStatusForRun(runDir) {
+  const { activeTask, stopped, lastTask } = taskStatusParts(runDir);
+  return {
+    active_task: activeTask ? { id: activeTask.id, type: activeTask.type, label: activeTask.label, status: activeTask.status, message: activeTask.message || '', started_at: activeTask.started_at || '', heartbeat_at: activeTask.heartbeat_at || '' } : null,
+    stopped,
+    last_task: activeTask ? null : lastTask,
+  };
+}
+
 function buildResearchProgressSnapshot(runDir, scopeMeta = {}, { isArchive = true } = {}) {
   if (!runDir || !fs.existsSync(runDir)) {
     const total = Number(scopeMeta?.source_count || scopeMeta?.cohort_count || 0) || 0;
@@ -690,42 +742,7 @@ function buildResearchProgressSnapshot(runDir, scopeMeta = {}, { isArchive = tru
   }
   updateEvents.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
 
-  const activeTask = activeResearchTask(runDir);
-  const taskState = readResearchTaskState(runDir);
-  const lastFinishedTask = Array.isArray(taskState.history) && taskState.history.length
-    ? taskState.history[taskState.history.length - 1]
-    : null;
-  const lastTaskStopped = ['cancelled', 'interrupted'].includes(String(lastFinishedTask?.status || '').toLowerCase());
-  // Cảnh báo fatal của worker chỉ còn đúng nếu ghi sau khi lần chạy gần nhất bắt đầu; cảnh báo cũ
-  // hơn là của lần chạy trước đó, không được báo mãi "đã dừng giữa chừng".
-  const fatalPath = path.join(runDir, 'fatal_alert.json');
-  let fatalAlert = readJsonSafe(fatalPath, null);
-  let fatalAt = '';
-  if (fatalAlert) {
-    try { fatalAt = new Date(fs.statSync(fatalPath).mtimeMs).toISOString(); } catch (_) { fatalAt = ''; }
-    const lastStart = Date.parse(lastFinishedTask?.started_at || '');
-    // Dung sai 2 giây: hệ thống file có thể làm tròn mtime xuống theo giây.
-    if (fatalAt && Number.isFinite(lastStart) && Date.parse(fatalAt) < lastStart - 2000) fatalAlert = null;
-  }
-  // Không hiển thị đồng thời “Đang chạy” và “đã dừng giữa chừng”. Ngoài fatal
-  // của worker, cancellation/restart cũng được coi là trạng thái có thể resume.
-  const stopped = !activeTask && (fatalAlert || lastTaskStopped) ? {
-    ma_nc: String(fatalAlert?.ma_nc || '').trim(),
-    ma_bn: String(fatalAlert?.ma_bn || '').trim(),
-    ho_ten: String(fatalAlert?.ho_ten || '').trim(),
-    hint: 'Tác vụ đã dừng giữa chừng. Bấm cập nhật lại để chạy tiếp từ phần chưa lấy.',
-    reason: lastTaskStopped ? String(lastFinishedTask.status).toLowerCase() : 'fatal',
-    label: lastTaskStopped ? String(lastFinishedTask.label || '') : '',
-    at: lastTaskStopped ? String(lastFinishedTask.finished_at || '') : fatalAt,
-  } : null;
-  // Lần chạy gần nhất đã kết thúc (xong / lỗi / dừng): để giao diện nói rõ chuyện gì đã xảy ra.
-  const lastTask = lastFinishedTask ? {
-    label: String(lastFinishedTask.label || ''),
-    status: String(lastFinishedTask.status || ''),
-    message: String(lastFinishedTask.message || ''),
-    started_at: String(lastFinishedTask.started_at || ''),
-    finished_at: String(lastFinishedTask.finished_at || ''),
-  } : null;
+  const { activeTask, stopped, lastTask } = taskStatusParts(runDir);
 
   return {
     exists: true,
@@ -836,6 +853,8 @@ function rowResearchCode(row) {
 }
 
 module.exports = {
+  taskStatusForRun,
+  qaSummaryForSnapshot,
   tableCountsForRunDir,
   computeExtractCoverage,
   RESEARCH_PROGRESS_PARTS,

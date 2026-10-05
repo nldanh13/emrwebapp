@@ -29,6 +29,8 @@ import { CrfView } from './research/CrfView.jsx';
 import { RunningBanner, formatDuration } from './research/RunningBanner.jsx';
 import { NormalizeStatus } from './research/NormalizeStatus.jsx';
 import useIsMobile from '../hooks/useIsMobile.js';
+import { useRealtimeConnected, useResearchEvents } from '../hooks/useRealtimeStatus.js';
+import { invalidate, revalidate, useServerData } from '../hooks/useServerData.js';
 
 const CORE_VARIABLE_NAME = /^(sex|birth_year|age|admission_date|discharge_date|hospital_stay_days|diagnosis_raw|surgery_date|surgery_name)$/i;
 
@@ -37,6 +39,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const [archive, setArchive]         = useState(null);
   const [studies, setStudies]         = useState([]);
   const [selectedId, setSelectedId]   = useState(ARCHIVE_SCOPE);
+  const realtimeConnected = useRealtimeConnected();
   const [loading, setLoading]         = useState(false);
   const [busy, setBusy]               = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null); // studyId cần xác nhận xóa
@@ -53,8 +56,6 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const [progressSnapshot, setProgressSnapshot] = useState(null);
   const [statusLoading, setStatusLoading] = useState(false);
   const [lastUpdateSummary, setLastUpdateSummary] = useState(null);
-  const [generalOverview, setGeneralOverview] = useState(null);
-  const [generalOverviewLoading, setGeneralOverviewLoading] = useState(false);
   const [pipeline, setPipeline] = useState(null);
   const [researchError, setResearchError] = useState('');
   const [automationRun, setAutomationRun] = useState({ kind: '', status: 'idle', current: '', steps: [], error: '', warning: '' });
@@ -147,47 +148,55 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     }
   }, [selectedId]);
 
-  const loadGeneralOverview = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) setGeneralOverviewLoading(true);
-    try {
-      // Tổng quát chỉ đếm số liệu: luôn đọc bản đã ẩn định danh.
-      const fetchTable = tableKey => api.getResearchArchiveData({ table: tableKey, runId: 'latest', redact: true });
-      // Dùng cùng một snapshot backend cho số lượng và dùng extract_status đầy đủ
-      // cho bảng theo dõi. Không trộn rows.length của dữ liệu đã redact với metadata.
-      const [patientRes0, encounterRes, statusRes, progressRes, coverageRes, pipelineRes] = await Promise.all([
-        fetchTable('patient_master'),
-        fetchTable('encounters'),
-        fetchTable('extract_status'),
-        api.getResearchArchiveProgress({ runId: 'latest' }),
-        api.getResearchArchiveCoverage({ runId: 'latest' }),
-        api.getResearchArchivePipeline().catch(() => null),
-      ]);
-      setPipeline(pipelineRes?.pipeline || null);
-      let patientRes = patientRes0;
-      if (!Array.isArray(patientRes?.rows) || !patientRes.rows.length) patientRes = await fetchTable('initial_list');
-      const nextProgress = progressRes?.progress || null;
-      const nextCoverage = coverageRes?.coverage || null;
-      setProgressSnapshot(nextProgress);
-      setCoverage(nextCoverage);
-      setGeneralOverview(buildGeneralOverviewModel({
-        patientRows: Array.isArray(patientRes?.rows) ? patientRes.rows : [],
-        encounterRows: Array.isArray(encounterRes?.rows) ? encounterRes.rows : [],
-        statusRows: Array.isArray(statusRes?.rows) ? statusRes.rows : [],
-        coverage: nextCoverage,
-        progressSnapshot: nextProgress,
-        source: archive,
-        isArchive: true,
-        limited: Boolean(patientRes?.limited || encounterRes?.limited || statusRes?.limited),
-        patientCount: Number(patientRes?.count || 0),
-        encounterCount: Number(encounterRes?.count || 0),
-      }));
-    } catch (e) {
-      setGeneralOverview(null);
-      showErrorOnce(e);
-    } finally {
-      if (!silent) setGeneralOverviewLoading(false);
-    }
-  }, [archive, showErrorOnce]);
+  // Dữ liệu tổng quát: MỘT gói cho cả màn hình (UX_RULES mục 9). Sáu nguồn được tải cùng lúc,
+  // tính xong mới thay một lần — không hiện từng ô một, không trộn số của hai thời điểm. Gói nằm
+  // trong kho dùng chung (useServerData): quay lại tab hiện ngay bản cũ rồi cập nhật ngầm; máy chủ
+  // báo số liệu đổi (kênh sự kiện) thì tải lại đúng gói này.
+  const archiveRef = useRef(archive);
+  archiveRef.current = archive;
+  const overviewKey = isArchive && archiveMode === 'overview' && archive ? `research:archive:overview-screen:${archive?.latest_run?.id || 'latest'}` : '';
+  const overviewQuery = useServerData(overviewKey, async () => {
+    // Tổng quát chỉ đếm số liệu: luôn đọc bản đã ẩn định danh.
+    const fetchTable = tableKey => api.getResearchArchiveData({ table: tableKey, runId: 'latest', redact: true });
+    // Dùng cùng một snapshot backend cho số lượng và dùng extract_status đầy đủ
+    // cho bảng theo dõi. Không trộn rows.length của dữ liệu đã redact với metadata.
+    const [patientRes0, encounterRes, statusRes, progressRes, coverageRes, pipelineRes] = await Promise.all([
+      fetchTable('patient_master'),
+      fetchTable('encounters'),
+      fetchTable('extract_status'),
+      api.getResearchArchiveProgress({ runId: 'latest' }),
+      api.getResearchArchiveCoverage({ runId: 'latest' }),
+      api.getResearchArchivePipeline().catch(() => null),
+    ]);
+    let patientRes = patientRes0;
+    if (!Array.isArray(patientRes?.rows) || !patientRes.rows.length) patientRes = await fetchTable('initial_list');
+    const progress = progressRes?.progress || null;
+    const coverage = coverageRes?.coverage || null;
+    const overview = buildGeneralOverviewModel({
+      patientRows: Array.isArray(patientRes?.rows) ? patientRes.rows : [],
+      encounterRows: Array.isArray(encounterRes?.rows) ? encounterRes.rows : [],
+      statusRows: Array.isArray(statusRes?.rows) ? statusRes.rows : [],
+      coverage,
+      progressSnapshot: progress,
+      source: archiveRef.current,
+      isArchive: true,
+      limited: Boolean(patientRes?.limited || encounterRes?.limited || statusRes?.limited),
+      patientCount: Number(patientRes?.count || 0),
+      encounterCount: Number(encounterRes?.count || 0),
+    });
+    return { overview, progress, coverage, pipeline: pipelineRes?.pipeline || null };
+  }, { enabled: Boolean(overviewKey) });
+  const generalOverview = overviewQuery.data?.overview || null;
+  const generalOverviewLoading = overviewQuery.loading;
+  useEffect(() => {
+    const d = overviewQuery.data;
+    if (!d || !isArchive) return;
+    setProgressSnapshot(d.progress);
+    setCoverage(d.coverage);
+    setPipeline(d.pipeline);
+  }, [overviewQuery.data]); // eslint-disable-line
+  useEffect(() => { if (overviewQuery.error) showErrorOnce(overviewQuery.error); }, [overviewQuery.error]); // eslint-disable-line
+  const loadGeneralOverview = useCallback(() => (overviewKey ? revalidate(overviewKey) : Promise.resolve()), [overviewKey]);
 
   const loadProgressSnapshot = useCallback(async (scopeId = selectedId, { silent = false } = {}) => {
     if (!silent) setStatusLoading(true);
@@ -295,12 +304,10 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     api.getResearchArchivePipeline().then(r => setPipeline(r?.pipeline || null)).catch(() => {});
   }, [isArchive, archiveMode, tabActive, lastFinished]);
 
+  // Đổi run / quay lại tab: kho dùng chung tự tải (khóa có mã run). Tác vụ vừa kết thúc: tải lại.
   useEffect(() => {
-    if (!(isArchive && archiveMode === 'overview') || !tabActive) return;
-    loadGeneralOverview({ silent: true });
-    // Tải khi đổi run, khi quay lại màn hình này (dữ liệu có thể đã được lấy ở nơi khác) và khi
-    // tác vụ vừa kết thúc. Không phụ thuộc identity của callback để tránh vòng tải lại.
-  }, [isArchive, archiveMode, archive?.latest_run?.id, tabActive, lastFinished]); // eslint-disable-line
+    if (lastFinished && overviewKey) loadGeneralOverview();
+  }, [lastFinished]); // eslint-disable-line
 
   // Auto-poll: progress cần realtime, summary thì chậm hơn để không tự tạo 429 khi task dài.
   useEffect(() => {
@@ -310,6 +317,9 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     );
     const taskIsActive = Boolean(progressSnapshot?.active_task && ['queued', 'running'].includes(String(progressSnapshot.active_task.status || '').toLowerCase()));
     const active = busy || runIsActive || taskIsActive;
+    // Kênh sự kiện đang nối: máy chủ tự báo khi số liệu đổi (useResearchEvents bên dưới), ở đây chỉ
+    // còn hỏi dự phòng thưa (60 giây). Mất nối thì quay về hỏi như cũ.
+    const delay = realtimeConnected ? 60000 : (active ? 2500 : tabActive ? 15000 : 30000);
     const tid = setInterval(() => {
       loadProgressSnapshot(selectedId, { silent: true });
       const now = Date.now();
@@ -317,9 +327,9 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
         summaryPollRef.current = now;
         loadSummary(false);
       }
-    }, active ? 2500 : tabActive ? 15000 : 30000);
+    }, delay);
     return () => clearInterval(tid);
-  }, [busy, archive, progressSnapshot?.active_task?.status, selectedId, loadSummary, loadProgressSnapshot, tabActive]);
+  }, [busy, archive, progressSnapshot?.active_task?.status, selectedId, loadSummary, loadProgressSnapshot, tabActive, realtimeConnected]);
 
   // Hỏi máy chủ tác vụ nào đang chạy. Tác vụ biến khỏi danh sách = đã kết thúc: báo và tải lại.
   const loadServerRunning = useCallback(async () => {
@@ -344,14 +354,26 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       return null;
     }
   }, [loadSummary, loadProgressSnapshot, selectedId]);
-  // ux-rules: polling-ok — tab ẩn vẫn hỏi thưa (20 giây) để báo tác vụ nghiên cứu đang chạy/đã xong
-  // lên menu và thanh trên; đang hiện thì 10 giây, có việc chạy thì 3 giây.
+  // ux-rules: polling-ok — danh sách tác vụ đang chạy do máy chủ báo qua kênh sự kiện (kind
+  // 'running'); hẹn giờ chỉ là dự phòng: nối được thì 30 giây, mất nối thì như cũ (3/10/20 giây).
   useEffect(() => {
     const anyRunning = serverRunning.items.length > 0 || busy;
     loadServerRunning();
-    const tid = setInterval(loadServerRunning, anyRunning ? 3000 : tabActive ? 10000 : 20000);
+    const delay = realtimeConnected ? 30000 : (anyRunning ? 3000 : tabActive ? 10000 : 20000);
+    const tid = setInterval(loadServerRunning, delay);
     return () => clearInterval(tid);
-  }, [serverRunning.items.length > 0, busy, tabActive]); // eslint-disable-line
+  }, [serverRunning.items.length > 0, busy, tabActive, realtimeConnected]); // eslint-disable-line
+
+  // Máy chủ báo số liệu đổi: tải lại đúng phạm vi đang xem (mọi khung cùng khóa đổi cùng lúc).
+  const onResearchEvent = useCallback((ev) => {
+    if (ev.kind === 'running') { loadServerRunning(); return; }
+    if (ev.kind !== 'data' || !ev.scope) return;
+    invalidate(`research:${ev.scope}:`);
+    const current = isArchive ? 'archive' : selectedId;
+    if (ev.scope !== current) return;
+    loadProgressSnapshot(selectedId, { silent: true });
+  }, [loadServerRunning, loadProgressSnapshot, isArchive, selectedId]);
+  useResearchEvents(onResearchEvent);
 
   const activeStudy  = useMemo(() => studies.find(s => s.id === selectedId) || null, [studies, selectedId]);
   const activeSource = isArchive ? archive : activeStudy;
@@ -487,7 +509,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       api.getResearchArchivePipeline().then(r => setPipeline(r?.pipeline || null)).catch(() => {});
       loadSummary(false);
       loadProgressSnapshot(selectedId, { silent: true });
-      if (archiveMode === 'overview') loadGeneralOverview({ silent: true });
+      if (archiveMode === 'overview') loadGeneralOverview();
     }
   }, [loadServerRunning, loadSummary, loadProgressSnapshot, selectedId, archiveMode, loadGeneralOverview, t]);
 

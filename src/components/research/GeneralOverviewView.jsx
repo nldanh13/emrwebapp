@@ -4,7 +4,8 @@
 import { C, FS } from '../../tokens.js';
 import { compactNumber } from './researchFormat.js';
 import { EmptyState, StatBadge } from './researchUi.jsx';
-import { Btn, Spinner } from '../shared.jsx';
+import { Btn } from '../shared.jsx';
+import { SkeletonBlock, SkeletonLines } from '../Skeleton.jsx';
 
 function when(iso) {
   if (!iso) return '—';
@@ -187,7 +188,16 @@ export function GeneralOverviewView({ generalOverview, generalOverviewLoading, p
         </div>
       )}
 
-      {!ov && generalOverviewLoading && <div style={{ ...card, color: C.text2 }}><Spinner size={11} /> Đang tổng hợp số liệu...</div>}
+      {/* Lần đầu: khung xám giữ chỗ cả màn hình, số liệu tính xong mới hiện một lần (UX_RULES mục 9). */}
+      {!ov && generalOverviewLoading && (
+        <div style={{ ...card, display: 'grid', gap: 10 }} aria-busy="true" aria-label="Đang tổng hợp số liệu">
+          <SkeletonBlock width={180} height={16} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+            {[0, 1, 2, 3].map(i => <SkeletonBlock key={i} height={54} />)}
+          </div>
+          <SkeletonLines lines={5} />
+        </div>
+      )}
       {!ov && !generalOverviewLoading && !nextStep && <div style={card}><EmptyState title="Chưa có số liệu" hint="Sau khi quét danh sách và thu thập dữ liệu, số liệu sẽ hiện ở đây." /></div>}
 
       {ov && (

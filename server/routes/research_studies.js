@@ -3,6 +3,7 @@
 // Route nghiên cứu riêng: tạo/xóa nghiên cứu, cohort, cấu hình phân tích, dữ liệu, dataset, lấy dữ liệu và chuẩn hóa theo từng nghiên cứu.
 
 const router = require('express').Router();
+const { watchResearchScope } = require('../services/research_watch');
 const { readStudy, resolveRunId, listStudies, updateStudy, validatePatientCsv, tablePathFor, sortRowsForTable, resolveStudyRunIdFast, readStudyProgressMeta, resolveStudyRunIdForAction, isStoppedRunResult, safeRunId, chooseStudyRunIdForResume, archiveTablePath } = require('../research/run_registry');
 const { datasetVerifyResponse, researchResponseShouldRedact, lockedResearchRoute, sendCsvFile, withScopeRunning } = require('../research/research_http');
 const path = require('path');
@@ -426,6 +427,7 @@ router.get('/research/studies/:studyId/progress', (req, res) => {
     const study = readStudyProgressMeta(req.params.studyId, runId);
     if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
     const runDir = runId ? path.join(runsDir(study.id), runId) : '';
+    watchResearchScope(study.id, runDir);
     const progress = withScopeRunning(buildResearchProgressSnapshot(runDir, study, { isArchive: false }), `study:${study.id}`);
     return res.json({ status: 'ok', run_id: runId || '', progress });
   } catch (err) {

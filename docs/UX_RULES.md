@@ -160,6 +160,39 @@ có tác vụ đang chạy. Thay đổi chỉ ở giao diện: tải lại trang
 8.5 Dữ liệu cũ do bản trước tạo ra (vd. nghiên cứu lưu trước bản sửa) không tự sửa: nói rõ cho người
 dùng cần làm gì (tạo lại, nạp lại...), hoặc cung cấp nút làm việc đó.
 
+## 9. Màn hình số liệu: tính sẵn ở máy chủ, giao diện chỉ hiển thị
+
+Lý do: trước đây mỗi khung tự gọi API riêng, mỗi lúc một khác, nên cùng một màn hình hiện ba bốn
+mẫu số (3.016 / 3.041 / 3.127 lượt) và số nhảy dần từng ô. Người xem không biết tin con số nào.
+
+9.1 **Một màn hình, một gói số liệu (screen model).** Máy chủ tính sẵn mọi con số của màn hình từ
+**một nguồn** rồi trả về một lần (vd. `GET /research/archive/screen/collection`, file
+`server/research/screen_model.js`). Các nhóm chia rời nhau và cộng lại đúng tổng; có test kiểm
+bất biến đó (`scripts/research_screen_model_test.js`). Khi chưa làm được ở máy chủ, giao diện vẫn
+tải mọi nguồn **cùng lúc trong một hàm** rồi dựng gói một lần (vd. Dữ liệu tổng quát).
+
+9.2 **Khung hiển thị không tự gọi máy chủ.** Thành phần vẽ số liệu (`ResearchMonitor.jsx`,
+`GeneralOverviewView.jsx`, `dataHealth.js`) chỉ nhận gói qua props, không import `api.js`.
+
+9.3 **Kho dữ liệu dùng chung** (`src/hooks/useServerData.js`, kiểu stale-while-revalidate):
+nhiều khung cùng khóa dùng chung một bản, một lần gọi; quay lại tab hiện ngay bản đang có rồi cập
+nhật ngầm; bản mới về thì mọi khung đổi **cùng lúc**; lỗi khi tải lại thì giữ bản cũ và báo lỗi.
+Khóa đặt theo phạm vi (`research:<archive|mã nghiên cứu>:<màn hình>`) để kênh sự kiện báo đúng chỗ.
+
+9.4 **Khung xám (skeleton) lần đầu.** Chưa có gói thì vẽ khung xám đúng bố cục
+(`src/components/Skeleton.jsx`), không hiện "0" hay số lẻ tẻ, không để bố cục nhảy khi số về.
+Số liệu luôn kèm giờ tính ("số liệu lúc HH:mm:ss").
+
+9.5 **Máy chủ báo khi đổi, không hẹn giờ hỏi.** Máy chủ tự theo dõi file nguồn của các phạm vi
+đang có người xem và danh sách tác vụ đang chạy (`server/services/research_watch.js`), đổi thì
+gửi sự kiện `research` qua `/api/events` (Server-Sent Events). Giao diện nhận
+`emr:research-changed` rồi `invalidate('research:<phạm vi>:')`. Hẹn giờ chỉ còn là dự phòng
+thưa khi mất kết nối kênh sự kiện (`useRealtimeConnected`). Sự kiện không chứa dữ liệu người bệnh.
+
+9.6 Tự kiểm (R4 trong `scripts/ux_rules_check.mjs`): khung hiển thị ở 9.2 không import `api.js`;
+file dùng `useServerData` không tự `setInterval` gọi máy chủ, trừ hẹn giờ dự phòng có theo
+`useRealtimeConnected` (kênh nối thì hỏi thưa, mất nối mới hỏi dày).
+
 ---
 
 ## Danh sách tab và cách giữ trạng thái (rà 10/2026)

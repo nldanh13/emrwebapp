@@ -5,7 +5,7 @@
 const router = require('express').Router();
 const { scheduleNormalizeAfterCollection, collectionEncounterReviewPayload, collectionEncounterOverrideState, COLLECTION_ENCOUNTER_OVERRIDES_FILE, syncCollectionLedger, refreshPolicyFor, runCollectionOrchestration, redactCollectionRows, unitKeysForRun, unresolvedEncountersForRun, COLLECTION_REPORT_FILE, collectionStatusSummary, COLLECTION_EXCEPTIONS_FILE, COLLECTION_EXCEPTION_COLUMNS, studyReadinessForRun, COLLECTION_CHANGES_FILE } = require('../research/collection_runtime');
 const { firstNonEmpty } = require('../research/encounter_context');
-const { nowIso, archiveRunsDir, todayDateInput, archiveSourcePath, ARCHIVE_ID, runsDir, cohortPath } = require('../research/store_paths');
+const { nowIso, archiveRunsDir, todayDateInput, archiveSourcePath, ARCHIVE_ID, runsDir, cohortPath, archiveDir, studyDir } = require('../research/store_paths');
 const { readCsvTable, patientCode, writeCsv } = require('../research/table_io');
 const fs = require('fs');
 const path = require('path');
@@ -15,7 +15,10 @@ const { readResearchHchanhSourceRows } = require('../research/research_source');
 const collection = require('../research/collection');
 const { getRuntimePaths } = require('../services/session');
 const { researchHeadlessFromBody } = require('../research/hchanh_fetch');
-const { beginResearchTask, updateResearchTask, finishResearchTask } = require('../research/progress_snapshot');
+const { beginResearchTask, updateResearchTask, finishResearchTask, taskStatusForRun, qaSummaryForSnapshot } = require('../research/progress_snapshot');
+const { watchResearchScope } = require('../services/research_watch');
+const { buildCollectionScreen } = require('../research/screen_model');
+const { buildPipelineInfo } = require('../research/pipeline_info');
 const { enqueueHeavy } = require('../services/task_queue');
 const { researchResponseShouldRedact, sendCsvFile, lockedResearchRoute } = require('../research/research_http');
 
@@ -156,6 +159,7 @@ function handleCollectionStatus(req, res, studyIdParam = '') {
   try {
     const sc = collectionScopeFromRequest(req, studyIdParam);
     if (sc.error) return res.status(sc.status || 400).json({ status: 'error', message: sc.error });
+    watchResearchScope(sc.isArchive ? 'archive' : sc.scope, sc.runDir);
     const keys = unitKeysForRun(sc.runDir, sc.sourceRows);
     const ledger = sc.sourceRows.length ? syncCollectionLedger(sc.runDir, sc.sourceRows) : { encounters: {} };
     const maxAttempts = maxAttemptsFrom(req, sc.study);
@@ -174,6 +178,36 @@ function handleCollectionStatus(req, res, studyIdParam = '') {
       exceptions_total: exceptions.length,
       exceptions: redactCollectionRows(exceptions.slice(0, 500), redact),
     });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+}
+
+// Mô hình màn hình Thu thập dữ liệu: MỘT gói số liệu tính sẵn từ sổ thu thập (UX_RULES mục 9).
+function handleCollectionScreen(req, res, studyIdParam = '') {
+  try {
+    const sc = collectionScopeFromRequest(req, studyIdParam);
+    if (sc.error) return res.status(sc.status === 404 ? 404 : 200).json({ status: sc.status === 404 ? 'error' : 'ok', screen: null, message: sc.error });
+    watchResearchScope(sc.isArchive ? 'archive' : sc.scope, sc.runDir);
+    const keys = unitKeysForRun(sc.runDir, sc.sourceRows);
+    const ledger = sc.sourceRows.length ? syncCollectionLedger(sc.runDir, sc.sourceRows) : { encounters: {} };
+    const maxAttempts = maxAttemptsFrom(req, sc.study);
+    const exceptions = collection.exceptionRows(ledger, { keys, maxAttempts, unmatchedEncounters: unresolvedEncountersForRun(sc.runDir) });
+    const lastReport = readJsonSafe(path.join(sc.runDir, COLLECTION_REPORT_FILE), null);
+    const screen = buildCollectionScreen({
+      ledger, keys, sourceRows: sc.sourceRows, runDir: sc.runDir, runId: sc.runId, scope: sc.scope,
+      maxAttempts, refreshPolicy: sc.refreshPolicy,
+      qa: qaSummaryForSnapshot(sc.runDir),
+      taskStatus: taskStatusForRun(sc.runDir),
+      lastReport: lastReport ? { ...lastReport, exceptions: undefined } : null,
+      exceptionsTotal: exceptions.length,
+      pipeline: buildPipelineInfo(sc.isArchive ? archiveDir() : studyDir(sc.scope), sc.runDir),
+    });
+    if (researchResponseShouldRedact(req)) {
+      screen.rows = screen.rows.map(r => ({ ...r, patient_code: r.patient_code ? '[đã che]' : '', patient_name: '' }));
+      if (screen.live) screen.live = { ...screen.live, ma_bn: '', ho_ten: '' };
+    }
+    return res.json({ status: 'ok', screen, refresh_policy: sc.refreshPolicy });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }
@@ -198,6 +232,8 @@ lockedResearchRoute(router, 'post', '/research/archive/collect-auto', 'Thu thậ
 lockedResearchRoute(router, 'post', '/research/studies/:studyId/collect-auto', 'Thu thập tự động', (req, res) => handleCollectAuto(req, res, req.params.studyId));
 
 router.get('/research/archive/collection-status', (req, res) => handleCollectionStatus(req, res));
+router.get('/research/archive/screen/collection', (req, res) => handleCollectionScreen(req, res));
+router.get('/research/studies/:studyId/screen/collection', (req, res) => handleCollectionScreen(req, res, req.params.studyId));
 
 router.get('/research/studies/:studyId/collection-status', (req, res) => handleCollectionStatus(req, res, req.params.studyId));
 
