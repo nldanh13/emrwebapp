@@ -10,7 +10,7 @@ const { migrateRuntimeKeys, refreshRuntimeV2 } = require('../services/runtime_v2
 const { authStatus, hasRole } = require('../services/authz');
 const { auditPath, verifyAuditFile } = require('../services/security_audit');
 const { listDurableTasks, getDurableTask } = require('../services/task_queue');
-const { subscribeTaskEvents } = require('../services/realtime_bus');
+const { subscribeTaskEvents, subscribeResourceEvents } = require('../services/realtime_bus');
 
 router.get('/auth/me', (req, res) => {
   const status = authStatus();
@@ -56,16 +56,21 @@ router.get('/events', (req, res) => {
     tasks: listDurableTasks({ sid, limit: 25 }),
   });
 
-  const unsubscribe = subscribeTaskEvents((event) => {
+  const unsubscribeTasks = subscribeTaskEvents((event) => {
     if (event.sid !== sid) return;
     send('task', event);
+  });
+  const unsubscribeResources = subscribeResourceEvents((event) => {
+    if (event.sid !== sid) return;
+    send('resource', event);
   });
   const heartbeat = setInterval(() => send('ping', { at: new Date().toISOString() }), 20_000);
   heartbeat.unref?.();
 
   const close = () => {
     clearInterval(heartbeat);
-    unsubscribe();
+    unsubscribeTasks();
+    unsubscribeResources();
   };
   req.on('close', close);
   req.on('aborted', close);

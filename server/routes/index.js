@@ -6,6 +6,7 @@ const router = require('express').Router();
 const { heavyTaskLimiter, readWriteLimiter, researchReadLimiter, clientLogLimiter } = require('../middleware/rate_limit');
 const { requestAuditMiddleware } = require('../services/activity_logger');
 const { featureGate } = require('../middleware/feature_gate');
+const { resourceConcurrency } = require('../middleware/resource_concurrency');
 
 // Endpoint kích hoạt Python process — giới hạn 5 lần/phút/session
 const HEAVY_TASK_ROUTES = [
@@ -66,6 +67,10 @@ router.use(['/health', '/diagnostics'], readWriteLimiter);
 
 // Ghi log mọi API sau khi qua giới hạn tần suất.
 router.use(requestAuditMiddleware);
+
+// Các resource chỉnh tay dùng chung giữa nhiều thiết bị phải kiểm tra version trước khi ghi.
+// Middleware này cũng phát resource_changed qua kênh realtime sau khi commit thành công.
+router.use(resourceConcurrency);
 
 // Gate dùng registry hiệu lực: chỉ route thuộc module bị tắt mới bị skip.
 router.use(featureGate);

@@ -1,7 +1,7 @@
 'use strict';
 
 // Event bus chỉ sống trong tiến trình Node. Trạng thái bền vững vẫn nằm trong
-// task_journal; bus này chỉ giúp các trình duyệt đang mở nhận thay đổi ngay.
+// task_journal/files; bus này chỉ giúp các trình duyệt đang mở nhận thay đổi ngay.
 const { EventEmitter } = require('events');
 
 const emitter = new EventEmitter();
@@ -22,6 +22,17 @@ function safeTaskEvent(event = {}) {
   };
 }
 
+function safeResourceEvent(event = {}) {
+  return {
+    event: 'resource_changed',
+    at: String(event.at || new Date().toISOString()),
+    sid: String(event.sid || 'default'),
+    resource: String(event.resource || '').slice(0, 120),
+    version: String(event.version || '').slice(0, 100),
+    actor_id: String(event.actor_id || '').slice(0, 120),
+  };
+}
+
 function publishTaskEvent(event) {
   const payload = safeTaskEvent(event);
   emitter.emit('task', payload);
@@ -33,4 +44,23 @@ function subscribeTaskEvents(listener) {
   return () => emitter.off('task', listener);
 }
 
-module.exports = { publishTaskEvent, subscribeTaskEvents, safeTaskEvent };
+function publishResourceEvent(event) {
+  const payload = safeResourceEvent(event);
+  if (!payload.resource) return payload;
+  emitter.emit('resource', payload);
+  return payload;
+}
+
+function subscribeResourceEvents(listener) {
+  emitter.on('resource', listener);
+  return () => emitter.off('resource', listener);
+}
+
+module.exports = {
+  publishTaskEvent,
+  subscribeTaskEvents,
+  safeTaskEvent,
+  publishResourceEvent,
+  subscribeResourceEvents,
+  safeResourceEvent,
+};
