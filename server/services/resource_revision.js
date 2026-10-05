@@ -26,6 +26,27 @@ function revisionForFile(filePath) {
   }
 }
 
+function revisionForFiles(filePaths) {
+  const hash = crypto.createHash('sha256');
+  let seen = 0;
+  for (const filePath of (Array.isArray(filePaths) ? filePaths : [filePaths])) {
+    const name = String(filePath || '');
+    hash.update(`path:${name}\n`);
+    try {
+      if (name && fs.existsSync(name)) {
+        hash.update(fs.readFileSync(name));
+        seen += 1;
+      } else {
+        hash.update('<missing>');
+      }
+    } catch {
+      hash.update('<unreadable>');
+    }
+    hash.update('\n');
+  }
+  return seen ? `sha256-${hash.digest('hex')}` : EMPTY_REVISION;
+}
+
 function setRevisionHeaders(res, revision) {
   const rev = normalizeRevision(revision) || EMPTY_REVISION;
   res.setHeader('ETag', `"${rev}"`);
@@ -42,14 +63,26 @@ function requestRevision(req) {
   );
 }
 
-function checkRevision(req, res, currentRevision, { resource = 'resource' } = {}) {
+function checkRevision(req, res, currentRevision, { resource = 'resource', requireForModernClient = false } = {}) {
   const expected = requestRevision(req);
   const current = normalizeRevision(currentRevision) || EMPTY_REVISION;
   setRevisionHeaders(res, current);
 
-  // Tương thích client cũ: chỉ bật optimistic concurrency khi client gửi version.
-  if (!expected || expected === '*') return true;
-  if (expected === current) return true;
+  if (!expected) {
+    if (requireForModernClient && String(req.get('x-client-concurrency') || '') === '1') {
+      res.status(428).json({
+        status: 'conflict',
+        code: 'RESOURCE_VERSION_REQUIRED',
+        resource,
+        current_version: current,
+        message: 'Thiết bị này chưa có phiên bản dữ liệu hiện tại. Hãy tải lại màn hình trước khi lưu.',
+      });
+      return false;
+    }
+    // Tương thích client cũ chưa có cơ chế version.
+    return true;
+  }
+  if (expected === '*' || expected === current) return true;
 
   res.status(409).json({
     status: 'conflict',
@@ -67,6 +100,7 @@ module.exports = {
   normalizeRevision,
   revisionForBuffer,
   revisionForFile,
+  revisionForFiles,
   setRevisionHeaders,
   requestRevision,
   checkRevision,
