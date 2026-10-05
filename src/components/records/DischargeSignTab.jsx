@@ -11,6 +11,7 @@ import { Btn, Spinner } from '../shared.jsx';
 import * as api from '../../api.js';
 import { useOnTabReturn } from '../../hooks/useTabActivity.js';
 import { useScreenChanged } from '../../hooks/useRealtimeStatus.js';
+import { SkeletonTable } from '../Skeleton.jsx';
 
 function fmtBytes(n) {
   const num = Number(n) || 0;
@@ -200,9 +201,9 @@ export default function DischargeSignTab({ toast }) {
         </div>
       )}
 
-      {loading ? (
-        <div style={{ color: C.text2, display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Spinner /> Đang tải...
+      {loading && !bundles.length ? (
+        <div role="status" aria-busy="true" aria-label="Đang tải danh sách bộ in ra viện" style={{ background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 7, padding: 14 }}>
+          <SkeletonTable rows={5} cols={4} />
         </div>
       ) : !bundles.length ? (
         <div style={{ color: C.text2, fontSize: FS.md, padding: 24, textAlign: 'center', background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 7 }}>

@@ -11,6 +11,7 @@ import { PAPER_ISSUE_STATES, applyGoogleSheetValidation, buildGoogleSheetIndex, 
 import { exportRecordsCheckPdf, getRecordsCheckDashboard, getRecordsCheckGoogleSheet, getRecordsCheckSubmissions, scanRecordsCheckCompleted, setRecordsCheckChecked, setRecordsCheckPaperChecklist, startRecordsCheckFetchBatch, stopRecordsCheckFetchBatch, syncRecordsCheckGoogleSheet, updateRecordsCheckGoogleSheetRow } from '../../api.js';
 import { useOnTabReturn } from '../../hooks/useTabActivity.js';
 import { useRealtimeConnected, useScreenChanged } from '../../hooks/useRealtimeStatus.js';
+import { SkeletonScreen } from '../Skeleton.jsx';
 
 const CHECK_FILES = ['discharge', 'cls'];
 const COMPLETED_STATUS = 'Hoàn tất';
@@ -1443,7 +1444,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
   );
 
   if (loading && !dashboard) {
-    return <div style={{ padding: 32, color: C.text2, display: 'flex', alignItems: 'center', gap: 10 }}><Spinner /> Đang tải dữ liệu kiểm hồ sơ...</div>;
+    return <SkeletonScreen label="Đang tải dữ liệu kiểm hồ sơ" stats={4} rows={8} cols={6} />;
   }
 
   if (viewMode === 'submission') {

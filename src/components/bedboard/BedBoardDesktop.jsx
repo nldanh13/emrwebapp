@@ -1,9 +1,10 @@
 import { IconDeviceFloppy, IconHandClick, IconListSearch, IconPlus, IconPrinter, IconReload, IconSearch, IconX } from '@tabler/icons-react';
 import { AutoSaveNote } from './AutoSaveNote.jsx';
 import { C, FS } from '../../tokens.js';
-import { Btn, Spinner } from '../shared.jsx';
+import { Btn } from '../shared.jsx';
 import RoomCard from './RoomCard.jsx';
 import { buildDefaultRooms, getPatientId, getPatientName, getWardMetaLine } from './bedBoardUtils.js';
+import { SkeletonBlock } from '../Skeleton.jsx';
 
 const fieldStyle = {
   width: '100%', height: 34, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5,
@@ -66,9 +67,9 @@ export default function BedBoardDesktop({
         </div>
 
         <div style={{ flex: 1, overflow: 'auto' }}>
-          {loading && (
-            <div style={{ padding: 12, color: C.text2, display: 'flex', gap: 6, alignItems: 'center', fontSize: FS.sm }}>
-              <Spinner size={12} /> Đang tải…
+          {loading && filtered.length === 0 && (
+            <div role="status" aria-busy="true" aria-label="Đang tải danh sách người bệnh" style={{ padding: 10, display: 'grid', gap: 8 }}>
+              {Array.from({ length: 6 }, (_, i) => <SkeletonBlock key={i} height={44} radius={6} />)}
             </div>
           )}
           {!loading && filtered.length === 0 && (

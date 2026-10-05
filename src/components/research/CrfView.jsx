@@ -7,11 +7,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as api from '../../api.js';
 import { C, FS } from '../../tokens.js';
-import { Btn, Segmented, Spinner } from '../shared.jsx';
+import { Btn, Segmented } from '../shared.jsx';
 import { compactNumber, text } from './researchFormat.js';
 import { inp, EmptyState } from './researchUi.jsx';
 import { CRF_PRESETS, buildPresetForm } from './crfPresets.js';
 import { useUnsavedChangesGuard } from '../../hooks/useTabActivity.js';
+import { SkeletonLines } from '../Skeleton.jsx';
 
 const card = { border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, padding: '12px 14px' };
 const TYPE_LABELS = [['number', 'Số'], ['text', 'Chữ'], ['choice', 'Lựa chọn'], ['yesno', 'Có/Không'], ['date', 'Ngày'], ['datetime', 'Ngày giờ']];
@@ -445,7 +446,7 @@ export function CrfView({ study, toast }) {
   const activeMode = mode || (!hasForm ? 'design' : data.form.timepoints.length ? 'schedule' : 'entry');
   const doneCount = useMemo(() => (data?.samples || []).filter(s => s.updated_at).length, [data]);
 
-  if (!data) return <div style={{ padding: 12 }}><div style={card}>{loading ? <><Spinner size={10} /> Đang tải phiếu...</> : 'Chưa tải được phiếu.'}</div></div>;
+  if (!data) return <div style={{ padding: 12 }}><div style={card}>{loading ? <div role="status" aria-busy="true" aria-label="Đang tải phiếu"><SkeletonLines lines={6} /></div> : 'Chưa tải được phiếu.'}</div></div>;
   return (
     <div style={{ padding: '10px 12px 16px', display: 'grid', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>

@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { C } from '../tokens.js';
-import { Spinner } from './shared.jsx';
 import * as api from '../api.js';
 import { useAuth } from '../hooks/useAuth.jsx';
 import {
@@ -20,6 +19,7 @@ import NurseDatePanel from './nurse/NurseDatePanel.jsx';
 import NurseSchedulePanel from './nurse/NurseSchedulePanel.jsx';
 import NurseRosterPanel from './nurse/NurseRosterPanel.jsx';
 import NurseMobileView from './nurse/NurseMobileView.jsx';
+import { SkeletonScreen } from './Skeleton.jsx';
 
 export default function NurseTab({ toast }) {
   const isMobile = useIsMobile();
@@ -257,7 +257,7 @@ export default function NurseTab({ toast }) {
   const prevDate = selectedIsDate ? addDaysIso(selKey, -1) : '';
   const prevWeekDate = selectedIsDate ? addDaysIso(selKey, -7) : '';
 
-  if (loading) return <div style={{ padding: 24, color: C.text2, display: 'flex', alignItems: 'center', gap: 8 }}><Spinner /> Đang tải lịch điều dưỡng…</div>;
+  if (loading) return <SkeletonScreen label="Đang tải lịch điều dưỡng" rows={8} cols={7} />;
 
 
   if (isMobile) {

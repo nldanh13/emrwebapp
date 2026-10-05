@@ -7,9 +7,17 @@ import { sanitizeWorkDateRange, dmyToInputDate, workDateRangeToDmy, workDateRang
 import { getSessionId } from '../hooks/useSession.js';
 import BhytPortalPanel from './BhytPortalPanel.jsx';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
+import { SkeletonTable } from './Skeleton.jsx';
 
 const DEFAULT_CLINIC_LOGIN_URL = import.meta.env.VITE_EMR_LOGIN_URL || '';
 const DEFAULT_CLINIC_LIST_URL = import.meta.env.VITE_EMR_CLINIC_LIST_URL || '';
+
+// Lần đầu chưa có danh sách: khung xám thay cho chữ "Đang tải..." (UX_RULES mục 9).
+const LOADING_ROWS = (
+  <div role="status" aria-busy="true" aria-label="Đang tải danh sách" style={{ textAlign: 'left' }}>
+    <SkeletonTable rows={3} cols={4} />
+  </div>
+);
 
 function normalizeText(value) {
   return String(value || '')
@@ -718,7 +726,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
             onToggle={toggle}
             onNoteChange={setNote}
             onDelete={item => handleDeleteBhxhRow('inpatient', item)}
-            emptyMessage={loading ? 'Đang tải...' : 'Chưa nhập danh sách BHXH (Nội trú), hoặc file chưa có dòng nào.'}
+            emptyMessage={loading ? LOADING_ROWS : 'Chưa nhập danh sách BHXH (Nội trú), hoặc file chưa có dòng nào.'}
           />
 
           <AutoDetectLabel>Tự phát hiện thêm trong app (ngoài danh sách BHXH ở trên)</AutoDetectLabel>
@@ -731,7 +739,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
             stateEntries={stateEntries}
             onToggle={toggle}
             onNoteChange={setNote}
-            emptyMessage={loading ? 'Đang tải...' : 'Không có người bệnh ra viện trong khoảng ngày đã chọn.'}
+            emptyMessage={loading ? LOADING_ROWS : 'Không có người bệnh ra viện trong khoảng ngày đã chọn.'}
           />
         </>
       )}
@@ -748,7 +756,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
             onToggle={toggle}
             onNoteChange={setNote}
             onDelete={item => handleDeleteBhxhRow('outpatient', item)}
-            emptyMessage={loading ? 'Đang tải...' : 'Chưa nhập danh sách BHXH (Ngoại trú), hoặc file chưa có dòng nào.'}
+            emptyMessage={loading ? LOADING_ROWS : 'Chưa nhập danh sách BHXH (Ngoại trú), hoặc file chưa có dòng nào.'}
           />
 
           <AutoDetectLabel>Tự phát hiện thêm trong app (ngoài danh sách BHXH ở trên)</AutoDetectLabel>
@@ -762,7 +770,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
             onToggle={toggle}
             onNoteChange={setNote}
             emptyMessage={loading
-              ? 'Đang tải...'
+              ? LOADING_ROWS
               : (clinicDraft
                 ? 'Có bản xem trước Phòng khám nhưng không có ca nào còn tuổi lao động trong khoảng ngày đã chọn.'
                 : 'Chưa có bản xem trước ở tab Phòng khám. Vào tab Phòng khám, dán/tải danh sách rồi quay lại đây.')}

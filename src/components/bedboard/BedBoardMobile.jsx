@@ -1,9 +1,10 @@
 import { IconArrowBarToDown, IconDeviceFloppy, IconListSearch, IconPrinter, IconReload, IconSearch, IconX } from '@tabler/icons-react';
 import { AutoSaveNote } from './AutoSaveNote.jsx';
 import { C, FS } from '../../tokens.js';
-import { Btn, Spinner } from '../shared.jsx';
+import { Btn } from '../shared.jsx';
 import { getPatientId, getPatientName, getWardMetaLine, roomPriceTier, formatVND } from './bedBoardUtils.js';
 import PatientRoomNotes from './PatientRoomNotes.jsx';
+import { SkeletonBlock } from '../Skeleton.jsx';
 
 export default function BedBoardMobile({
   rooms,
@@ -130,9 +131,9 @@ export default function BedBoardMobile({
 
       {/* Người bệnh chưa xếp */}
       <div style={{ background: C.bg }}>
-        {loading && (
-          <div style={{ padding: 16, color: C.text2, display: 'flex', gap: 8, alignItems: 'center', fontSize: FS.sm }}>
-            <Spinner size={13} /> Đang tải…
+        {loading && filtered.length === 0 && (
+          <div role="status" aria-busy="true" aria-label="Đang tải danh sách người bệnh" style={{ padding: 12, display: 'grid', gap: 8 }}>
+            {Array.from({ length: 5 }, (_, i) => <SkeletonBlock key={i} height={56} radius={6} />)}
           </div>
         )}
         {!loading && filtered.length === 0 && (

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { IconPrinter, IconRefresh } from '@tabler/icons-react';
 import { C, FS } from '../tokens.js';
-import { Btn, Segmented, Spinner } from './shared.jsx';
+import { Btn, Segmented } from './shared.jsx';
 import * as api from '../api.js';
 import { inputDateToDmy } from '../utils/workDateRange.js';
 import { getPatientWorkflowDates, scopePatientToDates } from '../utils/patientScope.js';
@@ -11,6 +11,7 @@ import {
 } from './report/reportUtils.js';
 import { SelectBox, SummaryTable, DutyReport } from './report/ReportSections.jsx';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
+import { SkeletonTable } from './Skeleton.jsx';
 
 export default function ReportTab({ toast, workDateRange }) {
   const [patients, setPatients] = useState([]);
@@ -183,8 +184,10 @@ export default function ReportTab({ toast, workDateRange }) {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
-        {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.text2 }}><Spinner /> Đang tải dữ liệu…</div>
+        {loading && !allRows.length ? (
+          <div role="status" aria-busy="true" aria-label="Đang tải dữ liệu báo cáo" style={{ background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 7, padding: 14 }}>
+            <SkeletonTable rows={8} cols={6} />
+          </div>
         ) : !allRows.length ? (
           <div style={{ color: C.text2, fontSize: FS.md, padding: 20, background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 7 }}>
             Chưa có thuốc trong ngày đã chọn. Vào <b>Lấy dữ liệu</b> để quét, lấy chi tiết và xử lý trước.
