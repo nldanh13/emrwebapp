@@ -938,6 +938,16 @@ def _add_blank_page_like(writer: Any, width: float = 595.0, height: float = 842.
         writer.add_blank_page(width=595.0, height=842.0)
 
 
+def _pad_to_front_page(writer: Any, width: float = 595.0, height: float = 842.0) -> bool:
+    """In 2 mặt: nếu đã có số trang lẻ thì chèn 1 trang trắng để phần kế tiếp bắt đầu ở mặt
+    trước. Tính theo tổng số trang thật trong file (không đoán theo từng phiếu) nên một phiếu
+    lẻ trang ở bất kỳ đâu cũng không kéo lệch phần phía sau. Trả True nếu đã chèn."""
+    if len(writer.pages) % 2 == 1:
+        _add_blank_page_like(writer, width, height)
+        return True
+    return False
+
+
 def _append_pdf_pages(writer: Any, pdf_path: Path) -> Tuple[int, float, float]:
     if PdfReader is None:
         raise RuntimeError("Thiếu thư viện pypdf để đọc/ghép PDF. Cài: pip install pypdf")
@@ -957,12 +967,15 @@ def _append_pdf_pages(writer: Any, pdf_path: Path) -> Tuple[int, float, float]:
 def _merge_discharge_bundle_records(records: List[Dict[str, Any]], out_file: Path) -> List[Dict[str, Any]]:
     """Ghép theo thứ tự in 2 mặt.
 
-    Quy tắc:
-      1. Phiếu chức năng sống vẽ đi chung toàn bộ trạng thái, không chèn trang trắng.
+    Quy tắc (mỗi nhóm/phiếu luôn bắt đầu ở MẶT TRƯỚC, tức trang lẻ):
+      1. Phiếu chức năng sống vẽ đi chung toàn bộ trạng thái (không chèn trang trắng giữa
+         các trạng thái); hết nhóm mà tổng số trang lẻ thì chèn 1 trang trắng.
       2. Phiếu theo dõi truyền dịch đi chung toàn bộ trạng thái; nếu tổng số trang lẻ,
          chèn 1 trang trắng sau nhóm này.
       3. Phiếu chăm sóc đi riêng theo từng trạng thái/lần hoàn tất; nếu từng phiếu có
          số trang lẻ, chèn 1 trang trắng sau phiếu đó.
+    Trang trắng tính theo tổng số trang thật đã ghép (_pad_to_front_page), không giả định
+    phiếu chức năng sống luôn 2 trang.
 
     Thứ tự trạng thái trong mỗi nhóm: Hoàn tất cũ → Hoàn tất tiếp theo theo T/G vào
     → Đang thực hiện.
@@ -1000,6 +1013,19 @@ def _merge_discharge_bundle_records(records: List[Dict[str, Any]], out_file: Pat
             "blank_after": False,
         })
 
+    # Hết nhóm chức năng sống mà lẻ trang (vd một trạng thái chỉ 1 hoặc 3 trang) thì chèn
+    # trang trắng, để truyền dịch bắt đầu ở mặt trước.
+    if merge_order and _pad_to_front_page(writer):
+        merge_order[-1]["blank_after"] = True
+        merge_order.append({
+            "file_name": "TRANG_TRANG_SAU_NHOM_CHUC_NANG_SONG",
+            "name": "Trang trắng sau nhóm chức năng sống",
+            "status_context": "",
+            "index": "",
+            "page_count": 1,
+            "blank_after": False,
+        })
+
     # 2. Truyền dịch: gom chung, tổng lẻ thì thêm 1 trang trắng.
     infusion_records = sorted_records("phieu_theo_doi_truyen_dich")
     infusion_pages = 0
@@ -1018,8 +1044,7 @@ def _merge_discharge_bundle_records(records: List[Dict[str, Any]], out_file: Pat
             "page_count": pages,
             "blank_after": False,
         })
-    if infusion_records and infusion_pages % 2 == 1:
-        _add_blank_page_like(writer, *last_size)
+    if infusion_records and _pad_to_front_page(writer, *last_size):
         infusion_records[-1]["blank_after"] = True
         if merge_order:
             merge_order[-1]["blank_after"] = True
@@ -1036,9 +1061,7 @@ def _merge_discharge_bundle_records(records: List[Dict[str, Any]], out_file: Pat
     for rec in sorted_records("phieu_cham_soc"):
         pages, w, h = _append_pdf_pages(writer, Path(str(rec["pdf_path"])))
         rec["page_count"] = pages
-        add_blank = bool(pages % 2 == 1)
-        if add_blank:
-            _add_blank_page_like(writer, w, h)
+        add_blank = _pad_to_front_page(writer, w, h)
         rec["blank_after"] = add_blank
         merge_order.append({
             "file_name": rec.get("file_name"),

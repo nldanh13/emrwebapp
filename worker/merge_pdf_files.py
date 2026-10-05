@@ -85,8 +85,9 @@ def merge_files(input_json: Path, out_file: Path, out_json: Path = None) -> int:
         label = str(item.get("label") or path.name).strip()
         try:
             reader = PdfReader(str(path))
-            page_count = len(reader.pages)
-            for page in reader.pages:
+            pages = list(reader.pages)  # đọc hết trước: file hỏng thì không thêm nửa chừng
+            page_count = len(pages)
+            for page in pages:
                 writer.add_page(page)
             merged.append({
                 "ma_bn": ma_bn,
@@ -95,7 +96,9 @@ def merge_files(input_json: Path, out_file: Path, out_json: Path = None) -> int:
                 "path": str(path),
                 "pages": page_count,
             })
-            if blank_between_patients and idx < len(valid_rows) - 1 and page_count % 2 == 1:
+            # In 2 mặt: tính theo tổng số trang đã ghép (không theo từng file) để người bệnh
+            # sau luôn bắt đầu ở mặt trước, kể cả khi một file trước đó lẻ/lỗi.
+            if blank_between_patients and idx < len(valid_rows) - 1 and len(writer.pages) % 2 == 1:
                 width, height = _page_size(reader)
                 writer.add_blank_page(width=width, height=height)
                 inserted_blank_pages += 1
