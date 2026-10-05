@@ -327,7 +327,8 @@ function progressMonitorRow(row) {
 }
 
 function monitorRowSortKey(row) {
-  const order = { running: 0, error: 1, missing: 2, waiting: 3, done: 4 };
+  // Lượt cần người xử lý (lỗi) lên đầu, rồi lượt còn thiếu; lượt máy đang lấy và lượt đã đủ sau cùng.
+  const order = { error: 0, missing: 1, waiting: 2, running: 3, done: 4 };
   return [order[row.state] ?? 9, String(row.updated_at || '')];
 }
 
@@ -701,6 +702,7 @@ function buildResearchProgressSnapshot(runDir, scopeMeta = {}, { isArchive = tru
     manualReview,
     // Mục tiến độ không ghép được vào lượt nào trong danh sách (không tính vào total/lỗi).
     unmatched_progress: unmatchedProgress,
+    qa: qaSummaryForSnapshot(runDir),
     modules,
     missingRows,
     rows: monitorRows.slice(0, 500),
@@ -721,6 +723,47 @@ function buildResearchProgressSnapshot(runDir, scopeMeta = {}, { isArchive = tru
     stopped,
     last_task: activeTask ? null : lastTask,
     generated_at: nowIso(),
+  };
+}
+
+// Tóm tắt kiểm tra độ CHÍNH XÁC (qa_report.json do bước chuẩn hóa ghi) cho bảng theo dõi:
+// lỗi chặn, số lượt cần người kiểm tra theo từng loại, mẫu danh sách, và có cũ hơn dữ liệu
+// vừa lấy không (lấy thêm sau lần chuẩn hóa thì phải chuẩn hóa lại mới kiểm tra phần mới).
+function qaSummaryForSnapshot(runDir) {
+  const qa = quality.readQaReport(runDir);
+  if (!qa || typeof qa !== 'object') return null;
+  // Danh sách cần kiểm tra nằm ở encounter_review.csv (qa_report.json không chép lại).
+  const review = Array.isArray(qa.review)
+    ? qa.review
+    : (readCsvTable(path.join(runDir, quality.ENCOUNTER_REVIEW_FILE), 20000).rows || []);
+  const byIssue = {};
+  for (const item of review) {
+    const issue = String(item?.issue || 'other');
+    byIssue[issue] = (byIssue[issue] || 0) + 1;
+  }
+  const generatedAt = String(qa.generated_at || '');
+  let latestCollectMs = 0;
+  for (const name of ['progress.json', 'hchanh_auto_progress.json', 'order_history_auto_progress.json']) {
+    try { latestCollectMs = Math.max(latestCollectMs, fs.statSync(path.join(runDir, name)).mtimeMs); } catch (_) { /* chưa có */ }
+  }
+  const checkedMs = Date.parse(generatedAt);
+  const short = (list) => (Array.isArray(list) ? list : []).slice(0, 30).map(x => ({
+    code: String(x?.code || ''), message: String(x?.message || ''), count: Number(x?.count || 0) || 0,
+  }));
+  return {
+    status: String(qa.status || ''),
+    generated_at: generatedAt,
+    stale: Number.isFinite(checkedMs) && latestCollectMs > checkedMs + 2000,
+    blocking: short(qa.blocking),
+    warnings: short(qa.warnings),
+    review_count: review.length || Number(qa.review_count || 0) || 0,
+    review_by_issue: byIssue,
+    review: review.slice(0, 300).map(r => ({
+      research_code: String(r?.research_code || ''),
+      patient_code: String(r?.patient_code || ''),
+      issue: String(r?.issue || ''),
+      detail: String(r?.detail || '').slice(0, 240),
+    })),
   };
 }
 
