@@ -10,6 +10,7 @@ const { migrateRuntimeKeys, refreshRuntimeV2 } = require('../services/runtime_v2
 const { authStatus, hasRole } = require('../services/authz');
 const { auditPath, verifyAuditFile } = require('../services/security_audit');
 const { listDurableTasks, getDurableTask } = require('../services/task_queue');
+const { subscribeTaskEvents } = require('../services/realtime_bus');
 
 router.get('/auth/me', (req, res) => {
   const status = authStatus();
@@ -30,6 +31,44 @@ router.get('/audit/verify', (_req, res) => {
   } catch (err) {
     return res.status(500).json({ status: 'error', message: String(err.message || err) });
   }
+});
+
+// Kênh realtime cho chính workspace hiện tại. Dùng SSE qua fetch stream để vẫn
+// gửi x-app-token trong header; không đưa token lên query string/URL/log.
+router.get('/events', (req, res) => {
+  const sid = getRuntimePaths(req).sid;
+  res.status(200);
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  const send = (eventName, payload) => {
+    if (res.writableEnded || res.destroyed) return;
+    res.write(`event: ${eventName}\n`);
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  send('workspace_snapshot', {
+    workspace: sid,
+    at: new Date().toISOString(),
+    tasks: listDurableTasks({ sid, limit: 25 }),
+  });
+
+  const unsubscribe = subscribeTaskEvents((event) => {
+    if (event.sid !== sid) return;
+    send('task', event);
+  });
+  const heartbeat = setInterval(() => send('ping', { at: new Date().toISOString() }), 20_000);
+  heartbeat.unref?.();
+
+  const close = () => {
+    clearInterval(heartbeat);
+    unsubscribe();
+  };
+  req.on('close', close);
+  req.on('aborted', close);
 });
 
 // Mặc định chỉ trả task của workspace hiện tại. Trước đây bỏ ?sid sẽ trả task của
@@ -70,7 +109,6 @@ router.get('/diagnostics', (req, res) => {
   const info = buildDiagnostics(req, { detailed: true });
   return res.status(info.status === 'ok' ? 200 : 503).json(info);
 });
-
 
 router.get('/runtime-health', (req, res) => {
   const ctx = getRuntimePaths(req);

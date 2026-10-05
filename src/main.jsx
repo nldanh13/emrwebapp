@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App.jsx';
 import AppErrorBoundary from './components/AppErrorBoundary.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
+import WorkspaceRealtimeBridge from './components/WorkspaceRealtimeBridge.jsx';
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
 import { C, FONT_UI } from './tokens.js';
 import { Spinner } from './components/shared.jsx';
@@ -41,7 +42,11 @@ function AuthGate() {
     );
   }
   if (status === 'unauthenticated') return <LoginScreen />;
-  return <RouteModelGate><App /></RouteModelGate>;
+  return (
+    <WorkspaceRealtimeBridge>
+      <RouteModelGate><App /></RouteModelGate>
+    </WorkspaceRealtimeBridge>
+  );
 }
 
 const rootElement = document.getElementById('root');
