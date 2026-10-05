@@ -1399,8 +1399,8 @@ def main(argv: List[str]) -> int:
     config = load_config()
     results: Dict[str, Dict[str, Any]] = {}
     exit_code = 0
-    # Nhập bằng tài khoản EMR của người ca làm theo lịch từng ngày (xem
-    # nurse_emr_accounts.resolve_entry_account); gom theo ngày để ít đổi tài khoản.
+    # Đăng nhập MỘT lần bằng tài khoản người ca làm theo lịch của ngày đầu tiên
+    # (nurse_emr_accounts.resolve_entry_account) và nhập hết cả lượt bằng phiên đó.
     # Bước xem trước (--plan-only) chỉ đọc nên vẫn dùng tài khoản mặc định.
     jobs = sort_tasks_by_work_date(jobs)
     entry_accounts = EntryAccountResolver(config)
@@ -1409,7 +1409,6 @@ def main(argv: List[str]) -> int:
         ws._result_kwargs.setdefault("warnings", entry_accounts.warnings)
         for job in jobs:
             key = str(job.get("key") or f"{job.get('ma_bn')}::{job.get('ngay_lam')}")
-            ws.use_entry_account(entry_accounts.for_date(job.get("ngay_lam")))
             try:
                 results[key] = _input_one_job(ws.driver, ws.wait, ws.config, job)
                 ws.results[key] = results[key]

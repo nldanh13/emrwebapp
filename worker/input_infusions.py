@@ -455,7 +455,8 @@ def main():
     def _after_login(ws: WorkerSession) -> None:
         ws.ensure_inpatient_list()
 
-    # Người bệnh xếp theo ngày đầu tiên cần nhập để mỗi tài khoản ca làm chỉ đăng nhập một lần.
+    # Đăng nhập MỘT lần bằng tài khoản người ca làm của ngày đầu tiên và nhập hết
+    # cả lượt bằng phiên đó (tên điều dưỡng trên phiếu vẫn theo lịch từng giờ).
     def _patient_dates(item):
         return [k.split('::', 1)[1] for k in _result_keys_for_patient(item[0], item[1]) if '::' in k]
     patient_items = sort_tasks_by_work_date(
@@ -478,16 +479,6 @@ def main():
                 continue
 
             _log(f"\n[{ma_bn}]")
-            day_account = entry_accounts.for_date(patient_item['ngay_lam'])
-            other_users = {
-                entry_accounts.for_date(d)['username'] for d in _patient_dates(patient_item['item'])
-            } - {day_account['username']}
-            if other_users:
-                ws.add_warning(
-                    f"BN {ma_bn}: nhập dịch truyền nhiều ngày có người ca làm khác nhau; cả lượt nhập bằng "
-                    f"tài khoản ca làm ngày {patient_item['ngay_lam']}. Muốn đúng tên từng ngày thì nhập từng ngày một."
-                )
-            ws.use_entry_account(day_account)
             progress_keys = _result_keys_for_patient(ma_bn, list_thuoc)
             mark_many(progress_path, "input_infusions", progress_keys, "running")
 

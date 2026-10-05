@@ -497,8 +497,12 @@ def _delete_info_with_creator_switch(ws, ma_bn, reopen_fn, info: dict) -> bool:
     if not rec_id:
         return False
     creator = (info.get("y_ta") or "").strip()
+    # Xóa bằng tài khoản đang dùng trước (một phiên đăng nhập cho cả lượt); chỉ
+    # khi không được mới thử tài khoản của người tạo.
+    if _delete_record_by_id(ws.driver, ws.wait, rec_id):
+        return True
     if creator and not ws.switch_to_creator_account(creator, ma_bn, reopen=reopen_fn):
-        _log(f"      [WARN] Không đổi được tài khoản EMR của '{creator}' — bỏ qua xóa dịch truyền.")
+        _log(f"      [WARN] Tài khoản đang dùng không xóa được dịch truyền của '{creator}' — để lại, cần xóa tay.")
         return False
     return _delete_record_by_id(ws.driver, ws.wait, rec_id)
 

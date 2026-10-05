@@ -789,16 +789,18 @@ def main():
     def _after_login(ws: WorkerSession) -> None:
         ws.ensure_inpatient_list()
 
-    # Nhập liệu đăng nhập bằng tài khoản EMR của điều dưỡng CA LÀM theo lịch của
-    # từng ngày (không dùng tài khoản mặc định); người ca làm chưa có tài khoản
-    # thì dùng tài khoản mặc định + cảnh báo. Đăng nhập ngay bằng tài khoản của
-    # ngày đầu tiên để khỏi đăng nhập thừa một lần bằng tài khoản mặc định.
+    # Nhập liệu đăng nhập MỘT lần bằng tài khoản EMR của điều dưỡng CA LÀM theo
+    # lịch của ngày đầu tiên (không dùng tài khoản mặc định; người ca làm chưa có
+    # tài khoản thì dùng tài khoản mặc định + cảnh báo) và nhập hết cả lượt bằng
+    # phiên đó. Phiếu cần đứng tên người khác (ca trực, ca làm ngày khác) thì
+    # Hoàn tất → Thu hồi → đổi Người lập → Hoàn tất ngay trên phiếu, như macro.
     entry_accounts = EntryAccountResolver(CONFIG, schedule=CONFIG_TEN_GOC or {})
     _first_work_date = sorted(
         (k[1] for k in patient_data.keys()),
         key=lambda d: (str(d)[6:10], str(d)[3:5], str(d)[0:2]) if re.match(r"\d{2}/\d{2}/\d{4}", str(d)) else (str(d), "", ""),
     )[0]
     login_config = entry_accounts.login_config(CONFIG, _first_work_date)
+    run_account = entry_accounts.run_account
 
     with open_session(result_path, config=login_config, post_login=_after_login) as ws:
         driver, wait = ws.driver, ws.wait
@@ -1121,12 +1123,10 @@ def main():
 
             care_jobs = sorted(care_jobs, key=_care_job_sort_key)
 
-            # Mọi phiếu (ca làm lẫn ca trực) của ngày đều nhập bằng tài khoản EMR
-            # của người CA LÀM theo lịch ngày đó (không đăng nhập bằng tài khoản
-            # người trực). Phiếu của người trực được tạo + Hoàn tất dưới tên người
-            # ca làm trước, rồi mới Thu hồi đổi Người lập sang người trực — EMR báo
-            # lỗi nếu đổi tên ngay lúc tạo phiếu.
-            day_account = entry_accounts.for_date(ngay_lam_viec)
+            # Mọi phiếu (mọi ngày, ca làm lẫn ca trực) nhập bằng tài khoản của lượt
+            # (run_account — đăng nhập một lần). Phiếu đứng tên người khác được tạo
+            # + Hoàn tất dưới tên chủ tài khoản trước, rồi mới Thu hồi đổi Người lập
+            # — EMR báo lỗi nếu đổi tên ngay lúc tạo phiếu.
             jobs_by_account = {}
             for job in care_jobs:
                 h_g = int(job.get("hour") or 0)
@@ -1135,8 +1135,8 @@ def main():
                     nurse_name_g = get_nurse_by_shift(time_str_g, CONFIG_TEN_GOC or {})
                 except Exception:
                     nurse_name_g = ""
-                if day_account["source"] == "schedule":
-                    owner_name_g = day_account["nurse_name"]
+                if run_account.get("source") == "schedule":
+                    owner_name_g = run_account["nurse_name"]
                 else:
                     owner_name_g = default_owner_name
                 if not owner_name_g:
@@ -1148,9 +1148,9 @@ def main():
                         and chuan_hoa_unicode(nurse_name_g) != chuan_hoa_unicode(owner_name_g)):
                     job["nguoi_lap_tam"] = owner_name_g
                     job["nguoi_lap_cuoi"] = nurse_name_g
-                username_g = day_account["username"]
+                username_g = run_account["username"]
                 jobs_by_account.setdefault(username_g, []).append(job)
-                account_passwords.setdefault(username_g, day_account["password"])
+                account_passwords.setdefault(username_g, run_account["password"])
                 shift_kind_g = _shift_kind_for_hour(h_g)
                 target_order_g = work_account_order if shift_kind_g == "work" else oncall_account_order
                 if username_g not in target_order_g:
@@ -1159,10 +1159,10 @@ def main():
             if not jobs_by_account:
                 # Không có job cụ thể nào (vd: toàn bộ giờ bị lọc do đang đi mổ) nhưng
                 # vẫn cần 1 lượt mở hồ sơ để dọn phiếu dư/kiểm tra trạng thái — dùng
-                # tài khoản ca làm của ngày đó, không có job để nhập.
-                _day_user = day_account["username"]
+                # tài khoản của lượt, không có job để nhập.
+                _day_user = run_account["username"]
                 jobs_by_account[_day_user] = []
-                account_passwords.setdefault(_day_user, day_account["password"])
+                account_passwords.setdefault(_day_user, run_account["password"])
                 if (_day_user not in work_account_order
                         and _day_user not in oncall_account_order
                         and _day_user not in other_account_order):

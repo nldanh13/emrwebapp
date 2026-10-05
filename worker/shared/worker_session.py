@@ -134,6 +134,14 @@ class WorkerSession:
         current_username = str(old_config.get("username") or "").strip()
         if username == current_username:
             return True
+        if old_config.get("single_login"):
+            # Lượt nhập liệu chỉ đăng nhập MỘT lần (người dùng yêu cầu): không đổi
+            # tài khoản giữa chừng; phần nào cần tài khoản khác thì báo để xử lý tay.
+            self.add_warning(
+                f"Giữ nguyên một phiên đăng nhập ({current_username}): không đăng nhập sang tài khoản "
+                f"{username}. Phiếu cần tài khoản này (nếu có) được ghi lỗi để xử lý tay."
+            )
+            return False
 
         _print(f">>> Đổi tài khoản EMR: {current_username or '(mặc định)'} -> {username}")
         _safe_quit(self.driver)

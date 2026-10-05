@@ -543,11 +543,8 @@ def test_legacy_cipro_cleanup_does_not_touch_real_nacl_or_wrong_shape(monkeypatc
     assert deleted_ids == []
 
 
-def test_infusion_cleanup_switches_to_creator_account_before_deleting_and_restores(monkeypatch):
-    """EMR hiện chỉ cho đúng tài khoản người tạo phiếu tự xóa phiếu của họ.
-    Khi bản dịch truyền cũ (y_ta) do người khác nhập, các hàm xoa_* trong
-    infusion_cleanup phải đổi sang đúng tài khoản người đó trước khi xóa,
-    rồi khôi phục lại tài khoản gốc sau khi dọn xong."""
+def test_infusion_cleanup_deletes_with_current_account_without_switching(monkeypatch):
+    """Một phiên đăng nhập cho cả lượt: tài khoản đang dùng xóa được thì không đổi tài khoản."""
     import infusion_cleanup
 
     deleted_ids = []
@@ -556,6 +553,62 @@ def test_infusion_cleanup_switches_to_creator_account_before_deleting_and_restor
         '_delete_record_by_id',
         lambda driver, wait, rec_id: deleted_ids.append(rec_id) or True,
     )
+    legacy, records, expected = _legacy_infusion_case(infusion_cleanup, 'Lê Ngọc Diệu')
+    ws = _FakeWS(username="acct.goc", accounts={"lê ngọc diệu": {"username": "acct.dieu", "password": "pw_dieu"}})
+    count = infusion_cleanup.xoa_dich_truyen_legacy_parser_cu(ws, 'BN_TEST', _noop_reopen, records, expected)
+
+    assert count == 1
+    assert deleted_ids == ['OLD_PHA_NACL']
+    assert ws.switch_calls == []
+
+
+def _legacy_infusion_case(infusion_cleanup, y_ta):
+    legacy = {
+        'id': 'OLD_PHA_NACL',
+        'ten': 'Pha natriclorid 0.9% 100ml',
+        'ten_key': infusion_cleanup._norm_med_key('Pha natriclorid 0.9% 100ml'),
+        'tg_bat_dau': '08:00 14/08/2026',
+        'the_tich': 100,
+        'toc_do': 30,
+        'y_ta': y_ta,
+    }
+    correct = {
+        'id': 'NEW_VANCO',
+        'ten': 'VANCOMYCIN + Natri clorid 0.9%',
+        'ten_key': infusion_cleanup._norm_med_key('VANCOMYCIN + Natri clorid 0.9%'),
+        'tg_bat_dau': '08:00 14/08/2026',
+        'the_tich': 100,
+        'toc_do': 30,
+    }
+    expected = [{
+        'Full_Name': 'VANCOMYCIN + Natri clorid 0.9%',
+        'Search_Name': 'VANCOMYCIN',
+        'Time_Start_Str': '08:00 14/08/2026',
+        'The_Tich': 100,
+        'Toc_Do': '30',
+    }]
+    records = {
+        (legacy['ten_key'], legacy['tg_bat_dau']): [legacy],
+        (correct['ten_key'], correct['tg_bat_dau']): [correct],
+    }
+    return legacy, records, expected
+
+
+def test_infusion_cleanup_falls_back_to_creator_account_when_current_cannot_delete(monkeypatch):
+    """Tài khoản đang dùng không xóa được thì mới đổi sang tài khoản người tạo,
+    xóa, rồi khôi phục lại tài khoản gốc sau khi dọn xong."""
+    import infusion_cleanup
+
+    ws_holder = {}
+    deleted_ids = []
+
+    def fake_delete(driver, wait, rec_id):
+        if ws_holder['ws'].config['username'] != 'acct.dieu':
+            return False
+        deleted_ids.append(rec_id)
+        return True
+
+    monkeypatch.setattr(infusion_cleanup, '_delete_record_by_id', fake_delete)
 
     accounts = {"lê ngọc diệu": {"username": "acct.dieu", "password": "pw_dieu"}}
 
@@ -589,6 +642,7 @@ def test_infusion_cleanup_switches_to_creator_account_before_deleting_and_restor
     }
 
     ws = _FakeWS(username="acct.goc", accounts=accounts)
+    ws_holder['ws'] = ws
     reopen_calls = []
     count = infusion_cleanup.xoa_dich_truyen_legacy_parser_cu(
         ws, 'BN_TEST', lambda w, ma_bn: reopen_calls.append((w is ws, ma_bn)), records, expected,
@@ -607,11 +661,13 @@ def test_infusion_cleanup_skips_delete_when_no_account_for_creator(monkeypatch):
     import infusion_cleanup
 
     deleted_ids = []
-    monkeypatch.setattr(
-        infusion_cleanup,
-        '_delete_record_by_id',
-        lambda driver, wait, rec_id: deleted_ids.append(rec_id) or True,
-    )
+    attempts = []
+
+    def fake_delete(driver, wait, rec_id):
+        attempts.append(rec_id)
+        return False  # tài khoản đang dùng không xóa được
+
+    monkeypatch.setattr(infusion_cleanup, '_delete_record_by_id', fake_delete)
     legacy = {
         'id': 'OLD_PHA_NACL',
         'ten': 'Pha natriclorid 0.9% 100ml',
@@ -647,5 +703,5 @@ def test_infusion_cleanup_skips_delete_when_no_account_for_creator(monkeypatch):
     )
 
     assert count == 0
-    assert deleted_ids == []
+    assert attempts == ['OLD_PHA_NACL']
     assert ws.switch_calls == []

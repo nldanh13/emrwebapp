@@ -2,16 +2,17 @@
 
 ## Quy tắc
 
-- **Nhập liệu** (ghi vào EMR) đăng nhập bằng tài khoản EMR của **điều dưỡng ca làm theo Lịch
-  điều dưỡng** của ngày đang nhập. Tài khoản lấy từ Thiết lập tài khoản
-  (`secrets/nurse_emr_accounts.json`, xem `SECRETS.md`).
-  - Chăm sóc: người ca làm nhập hết phiếu của ngày, kể cả phiếu giờ trực. Phiếu giờ trực:
-    Hoàn tất → Thu hồi → đổi Người lập sang người trực → Hoàn tất, tất cả **bằng tài khoản ca làm**.
-    Các bước này theo đúng macro người dùng ghi lại; không đăng nhập tài khoản người trực.
-  - Nhập nhiều ngày: người bệnh/phiếu được xếp theo ngày. Mỗi ngày đổi sang tài khoản ca làm
-    của ngày đó, và chỉ đổi khi khác tài khoản đang dùng.
-  - Dịch truyền nhập theo từng người bệnh. Nếu một người bệnh có nhiều ngày với người ca làm khác
-    nhau, cả lượt dùng tài khoản ca làm của ngày đầu tiên và có cảnh báo trong log tác vụ.
+- **Một lượt nhập = một lần đăng nhập.** Chăm sóc, dịch truyền, thủ thuật, VTYT đăng nhập EMR **một
+  lần** bằng tài khoản của **điều dưỡng ca làm theo Lịch điều dưỡng của ngày đầu tiên** trong lượt,
+  rồi nhập hết cả lượt (mọi người bệnh, mọi ngày) bằng phiên đó. Tài khoản lấy từ Thiết lập tài khoản
+  (`secrets/nurse_emr_accounts.json`, xem `SECRETS.md`). Phiên được đánh dấu `single_login`:
+  `WorkerSession.switch_account` từ chối đổi tài khoản giữa chừng.
+  - Chăm sóc: phiếu đứng tên người khác (ca trực, ca làm của ngày khác) được tạo và Hoàn tất,
+    rồi Thu hồi → đổi Người lập → Hoàn tất ngay trên phiếu. Các bước này theo đúng macro người dùng ghi lại.
+  - Dịch truyền, thủ thuật: tên điều dưỡng/thủ thuật viên trên phiếu vẫn theo lịch từng giờ.
+- **Sửa/xóa phiếu cũ** (dọn phiếu "Mới", phiếu sai giờ, phiếu sau mổ, phiếu thủ thuật sai, dịch truyền
+  thừa): làm bằng tài khoản đang dùng. EMR không cho thì ghi lỗi và cảnh báo "Giữ nguyên một phiên
+  đăng nhập… cần xử lý tay", không đăng nhập tài khoản người lập.
 - Người ca làm **chưa có tài khoản EMR** hoặc ngày đó **chưa xếp lịch**: dùng tài khoản mặc định
   và ghi cảnh báo `[WARN] Ngày dd/mm/yyyy: …` trong log tác vụ.
   - Tài khoản mặc định là tài khoản EMR riêng của người đang đăng nhập Data Hub, nếu có.

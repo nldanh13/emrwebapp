@@ -219,6 +219,7 @@ class EntryAccountResolver:
         self.lookup = lookup
         self.warnings: List[str] = []
         self._cache: Dict[str, Dict[str, str]] = {}
+        self.run_account: Dict[str, str] = {}
 
     def for_date(self, work_date: Any) -> Dict[str, str]:
         key = _work_date_dmy(work_date) or str(work_date or '').strip()
@@ -237,12 +238,17 @@ class EntryAccountResolver:
         return self._cache[key]
 
     def login_config(self, config: Dict[str, Any], work_date: Any) -> Dict[str, Any]:
-        """Bản sao config đăng nhập bằng tài khoản ca làm của `work_date` (đăng nhập một lần ngay từ đầu)."""
+        """Bản sao config đăng nhập bằng tài khoản ca làm của `work_date` — ngày đầu tiên
+        của lượt. Cả lượt (mọi ngày) nhập bằng tài khoản này, chỉ đăng nhập một lần."""
         info = self.for_date(work_date)
         out = dict(config or {})
         if info['username'] and info['password']:
             out['username'] = info['username']
             out['password'] = info['password']
+        # Cả lượt nhập dùng đúng phiên này, không đăng nhập lại tài khoản khác
+        # (WorkerSession.switch_account từ chối khi single_login).
+        out['single_login'] = True
+        self.run_account = info
         return out
 
 
