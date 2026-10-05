@@ -1,4 +1,4 @@
-import { IconActivityHeartbeat, IconHistory, IconLogout, IconMenu2, IconPlayerStop, IconSearch } from '@tabler/icons-react';
+import { IconActivityHeartbeat, IconHistory, IconLogout, IconMenu2, IconPlayerStop, IconSearch, IconShare } from '@tabler/icons-react';
 
 const ROLE_LABELS = { viewer: 'Người xem', researcher: 'Nghiên cứu', operator: 'Vận hành', supervisor: 'Giám sát', admin: 'Quản trị' };
 
@@ -17,7 +17,7 @@ function IconButton({ label, onClick, danger = false, children }) {
   );
 }
 
-export default function TopBar({ tab, now, onCancel, onViewLog, onDiagnostics, onOpenFunctions, mobile = false, onMenuClick, user, authMode, onLogout, running = null }) {
+export default function TopBar({ tab, now, onCancel, onViewLog, onDiagnostics, onOpenFunctions, onShareWorkspace, mobile = false, onMenuClick, user, authMode, onLogout, running = null }) {
   const dateStr = now.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const timeStr = now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
   const isLocalOnly = authMode === 'local_only';
@@ -49,6 +49,7 @@ export default function TopBar({ tab, now, onCancel, onViewLog, onDiagnostics, o
             <span style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>Tìm chức năng, quy trình…</span>
           </button>
         )}
+        <IconButton label="Mở cùng dữ liệu trên thiết bị khác" onClick={onShareWorkspace}><IconShare {...iconProps} /></IconButton>
         <IconButton label="Chẩn đoán hệ thống" onClick={onDiagnostics}><IconActivityHeartbeat {...iconProps} /></IconButton>
         {!mobile && <IconButton label="Xem nhật ký" onClick={onViewLog}><IconHistory {...iconProps} /></IconButton>}
         <IconButton label="Dừng tác vụ đang chạy" onClick={onCancel} danger><IconPlayerStop {...iconProps} /></IconButton>
