@@ -31,3 +31,13 @@ describe('DutyReport: mục Chưa rõ giờ đứng đầu', () => {
     });
   }
 });
+
+describe('DutyReport: giờ suy từ chữ buổi được ghi rõ', () => {
+  it('dòng có timeGuess hiện "giờ theo chữ … trong y lệnh"', () => {
+    localStorage.setItem('emr_report_role_v1', JSON.stringify('duty'));
+    const guessed = [{ id: 'g', date: DATE, time: '12:00', timeGuess: 'trưa', patientName: 'C', room: 'P11', drugName: 'Permethrine', route: 'Khác', quantity: 1, unit: 'chai' }];
+    act(() => root.render(createElement(DutyReport, { date: DATE, rows: guessed, nurseState: {} })));
+    expect(host.textContent).toContain('giờ theo chữ "trưa" trong y lệnh');
+    expect(headings()).not.toContain('Chưa rõ giờ');
+  });
+});
