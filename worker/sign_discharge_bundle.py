@@ -53,7 +53,7 @@ def _json_out(path: str, payload: Dict[str, Any]) -> None:
 
 
 def _prepared_signature_png(img_path: str) -> Tuple[bytes, float]:
-    """Ảnh chữ ký đã chuẩn hoá (PNG nền trong suốt, nét đậm/dày) và tỉ lệ rộng/cao."""
+    """Ảnh chữ ký đã chuẩn hoá (PNG nền trong suốt) nhưng giữ chi tiết nét ký."""
     pix = fitz.Pixmap(img_path)
     if pix.colorspace is None or pix.colorspace.n != 3:
         pix = fitz.Pixmap(fitz.csRGB, pix)
@@ -79,6 +79,8 @@ def _prepared_signature_png(img_path: str) -> Tuple[bytes, float]:
     else:
         ink = (0, 0, 0)
 
+    # Chỉ làm dày rất nhẹ để nét không biến mất khi thu nhỏ. Tỉ lệ càng lớn
+    # thì bán kính xử lý càng nhỏ, nhờ đó giữ được hình dạng chữ ký gốc.
     r = max(1, h // _STROKE_RATIO)
     rows = bytearray(w * h)
     for y in range(h):
@@ -141,18 +143,19 @@ def _norm_text(value: str) -> str:
     return " ".join(unicodedata.normalize("NFC", str(value or "")).split())
 
 
-# Đưa chữ ký sát tên hơn và ưu tiên tăng rõ kích thước ở cột tên xoay dọc.
-_STAMP_GAP = 1.0
-_HORIZ_THICKNESS_FACTOR = 2.05
-_HORIZ_THICKNESS_MIN, _HORIZ_THICKNESS_MAX = 12.0, 36.0
-_VERT_THICKNESS_FACTOR = 2.60
-_VERT_THICKNESS_MIN, _VERT_THICKNESS_MAX = 14.0, 40.0
+# Tăng diện tích chữ ký nhưng giữ nét thanh để vẫn nhận ra hình chữ ký gốc.
+_STAMP_GAP = 0.8
+_HORIZ_THICKNESS_FACTOR = 2.20
+_HORIZ_THICKNESS_MIN, _HORIZ_THICKNESS_MAX = 12.0, 38.0
+_VERT_THICKNESS_FACTOR = 3.00
+_VERT_THICKNESS_MIN, _VERT_THICKNESS_MAX = 16.0, 46.0
 
-_SIG_MAX_WIDTH_PX = 480
-_INK_DARKEN = 0.3
-_STROKE_RATIO = 45
-_BG_CUTOFF = 30
-_ALPHA_GAIN = 1.8
+# Giữ nhiều pixel nguồn hơn và giảm mạnh bước làm đậm/làm dày so với bản trước.
+_SIG_MAX_WIDTH_PX = 640
+_INK_DARKEN = 0.58
+_STROKE_RATIO = 85
+_BG_CUTOFF = 18
+_ALPHA_GAIN = 1.15
 
 
 def _is_vertical_quad(rect: "fitz.Rect") -> bool:
