@@ -106,7 +106,7 @@ export function buildDataHealth(screen, { autoRunning = false } = {}) {
     if (reviewCount > 0) {
       const top = Object.entries(qa.review_by_issue || {}).sort((a, b) => b[1] - a[1]).slice(0, 3);
       accurate.push({
-        key: 'review', label: 'Cần người kiểm tra', value: reviewCount, unit: 'lượt', tone: 'warn', filter: 'review',
+        key: 'review', label: 'Cần người kiểm tra', value: reviewCount, tone: 'warn', filter: 'review',
         meaning: top.length ? top.map(([code, n]) => `${issueLabel(code)}: ${fmt(n)} lượt`).join('; ') + '.' : 'Dữ liệu có điểm bất thường.',
         action: 'Mở danh sách, đối chiếu với EMR. Đúng thì giữ; sai thì sửa ở phiếu nhập tay hoặc loại lượt đó khỏi nghiên cứu.',
       });
