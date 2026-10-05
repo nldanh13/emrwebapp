@@ -24,7 +24,8 @@ function useTicking(active) {
 const box = (border, bg) => ({ padding: '10px 14px', borderRadius: 8, border: `1px solid ${border}`, background: bg, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' });
 
 // running: mục /research/running của làn chuẩn hóa (hoặc null); request: { status, message, error }.
-export function NormalizeStatus({ pipeline, running = null, request = {}, clockOffset = 0, onNormalize, onDismiss }) {
+// collecting: đang Thu thập tự động trên cùng kho — xong sẽ tự chuẩn hóa, nên không giục bấm "Chuẩn hóa ngay".
+export function NormalizeStatus({ pipeline, running = null, request = {}, clockOffset = 0, collecting = false, onNormalize, onDismiss }) {
   const starting = request.status === 'starting';
   const isRunning = Boolean(running) || starting;
   const now = useTicking(isRunning) + clockOffset;
@@ -66,6 +67,18 @@ export function NormalizeStatus({ pipeline, running = null, request = {}, clockO
           {' '}Số liệu vẫn là bản chuẩn hóa thành công trước đó.
         </div>
         {onNormalize && <Btn variant="solidPrimary" onClick={onNormalize} style={{ height: 30 }}>Chuẩn hóa lại</Btn>}
+      </div>
+    );
+  }
+
+  if (pipeline?.fetch?.pending_normalize && collecting) {
+    // Đang thu thập: chuẩn hóa bây giờ thì vài phút sau lại cũ; thu thập xong máy tự chuẩn hóa.
+    return (
+      <div role="status" style={{ ...box(C.border2, C.surface), padding: '7px 12px' }}>
+        <div style={{ flex: '1 1 300px', fontSize: FS.xs, color: C.text2 }}>
+          Đang thu thập dữ liệu: khi xong, máy <b>tự chuẩn hóa</b> phần mới. Không cần bấm gì.
+          {normalize.at ? ` Chuẩn hóa gần nhất lúc ${when(normalize.at)}.` : ''}
+        </div>
       </div>
     );
   }

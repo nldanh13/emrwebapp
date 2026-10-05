@@ -862,6 +862,9 @@ function planCollection(ledger, {
     encounters: scope.length, unchanged: 0, to_fetch: 0, new_encounters: 0, parts_to_fetch: 0,
     by_reason: {}, exhausted_parts: 0, blocked_parts: 0, deferred_encounters: 0, refresh_parts: 0,
     unmatched_encounters: 0,
+    // Lượt không tự lấy được nữa: chỉ còn phần đã hết lượt thử hoặc cần người xem. Cùng với
+    // to_fetch + unchanged + unmatched_encounters cộng lại đúng bằng encounters.
+    waiting_encounters: 0,
   };
   for (const key of scope) {
     const enc = ledger?.encounters?.[key];
@@ -911,6 +914,7 @@ function planCollection(ledger, {
     const partList = Object.keys(needs);
     if (!partList.length) {
       if (allCurrent) summary.unchanged += 1;
+      else summary.waiting_encounters += 1;
       continue;
     }
     // Chỉ kiểm tra lại định kỳ/làm mới (dữ liệu vẫn đủ) thì vẫn tính là lượt không đổi

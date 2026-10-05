@@ -485,4 +485,20 @@ test('Progress hành chánh theo khóa dòng cũ (không còn trong nguồn) v�
   assert.strictEqual(none.encounters.e_z.parts.discharge.status, 'pending', 'ngày ngoài lượt → không ghép');
 });
 
+test('Kế hoạch thu thập cộng lại đúng tổng: lấy + đủ + chờ người xem + chưa ghép chắc = số lượt', () => {
+  // Màn hình người dùng: "lấy 2.965, bỏ qua 32, 44 chưa ghép chắc" không khớp tổng nào vì lượt chỉ
+  // còn phần hết lượt thử / cần người xem không được đếm vào đâu.
+  const sources = [src('enc_a', 'NC0001', 'BN_A'), src('enc_b', 'NC0002', 'BN_B'), src('enc_c', 'NC0003', 'BN_C'), src('enc_d', 'NC0004', 'BN_D')];
+  const { xn, hc, oh } = fullyCollected(sources.slice(0, 3));
+  const ledger = c.buildLedger({ sourceRows: sources, xnProgress: xn, hchanhProgress: hc, orderProgress: oh });
+  ledger.encounters.enc_b.parts.xn = { ...ledger.encounters.enc_b.parts.xn, status: 'failed', attempts: 3, reason: 'tab_load' };
+  ledger.encounters.enc_c.match_status = 'unmatched';
+  const s = c.planCollection(ledger, { maxAttempts: 3 }).summary;
+  assert.deepStrictEqual(
+    { to_fetch: s.to_fetch, unchanged: s.unchanged, waiting: s.waiting_encounters, unmatched: s.unmatched_encounters },
+    { to_fetch: 1, unchanged: 1, waiting: 1, unmatched: 1 },
+  );
+  assert.strictEqual(s.to_fetch + s.unchanged + s.waiting_encounters + s.unmatched_encounters, s.encounters);
+});
+
 console.log(`\n${passed} kịch bản pass.`);

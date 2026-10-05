@@ -38,7 +38,7 @@ const { ARCHIVE_ID, EXPORT_SENSITIVE_COLUMNS, MAX_TABLE_ROWS, TABLES, archiveDir
 const { patientCode, readCsvTable, writeCsv, writeCsvUnion } = require('../research/table_io');
 const { appendSecurityAudit } = require('../services/security_audit');
 const { buildContextMap, contextForRow, encounterMatchMethod, encounterMatchStatus } = require('../research/encounter_context');
-const { CASE_TRACE_RECENT_LIMIT, appendResearchRunLog, readResearchCaseTrace, redactCaseTracePayload } = require('../research/case_trace');
+const { CASE_TRACE_RECENT_LIMIT, appendResearchRunLog, readResearchCaseTrace, redactCaseTracePayload, readLiveProgress } = require('../research/case_trace');
 const { activeResearchTask, beginResearchTask, buildCoverageSummary, buildResearchProgressSnapshot, finishResearchTask, hchanhEntryFileStatus, isRowMissingXnCdha, resetXnCdhaProgress, rowResearchCode, sourceRowsForXnCdhaRefetch, updateResearchTask } = require('../research/progress_snapshot');
 const { NORMALIZED_COLUMNS } = require('../research/normalized_schema');
 const { combineEncounterSources } = require('../research/source_merge');
@@ -365,6 +365,8 @@ router.get('/research/running', (_req, res) => {
           stage_total: Number(normState.stage_total || 8), started_at: String(normState.started_at || ''),
         } : null,
         task: task && lane !== 'normalize' ? { label: task.label, status: task.status, message: task.message || '', summary: task.summary || {}, heartbeat_at: task.heartbeat_at || '' } : null,
+        // Ca đang lấy + lần ghi tiến độ gần nhất (không phải câu thông báo lúc bắt đầu).
+        progress: runDir && lane !== 'normalize' ? readLiveProgress(runDir) : null,
       };
     });
     return res.json({ status: 'ok', running, server_time: nowIso() });
@@ -877,7 +879,7 @@ lockedResearchRoute(router, 'post', '/research/refetch-missing', 'Lấy lại ch
     await enqueueHeavy(ctx.sid, async () => {
       updateResearchTask(runDir, task.id, {
         status: 'running',
-        message: 'Đang chạy bổ sung dữ liệu còn thiếu. Có thể chuyển tab, tiến độ vẫn được lưu ở backend.',
+        message: 'Đang chạy bổ sung dữ liệu còn thiếu.',
       });
       const results = {};
       try {

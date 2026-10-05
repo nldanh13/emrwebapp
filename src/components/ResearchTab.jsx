@@ -1073,6 +1073,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
               <div style={{ padding: '10px 12px 0' }}>
                 <NormalizeStatus pipeline={pipeline} clockOffset={serverRunning.clockOffset}
                   running={serverRunning.items.find(item => item.lane === 'normalize' && item.scope === 'archive') || null}
+                  collecting={serverRunning.items.some(item => item.lane !== 'normalize' && item.scope === 'archive')}
                   request={normalizeRequest} onNormalize={runNormalizeArchive}
                   onDismiss={() => setNormalizeRequest({ status: 'idle' })} />
               </div>

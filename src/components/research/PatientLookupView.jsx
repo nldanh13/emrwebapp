@@ -51,7 +51,7 @@ export function PatientLookupView({
       const r = await api.collectResearchAuto('', { patientCodes: codes, headless: true });
       if (codes.length === 1) setPatientQuery(codes[0]);
       const missing = Number(r?.missing_count || 0);
-      const base = r?.message || `Đã nhận ${codes.length} Mã BN. Hệ thống sẽ lấy tuần tự từng ca ở backend.`;
+      const base = r?.message || `Đã nhận ${codes.length} Mã BN. Máy chủ sẽ lấy lần lượt từng ca.`;
       setDirectState({
         loading: false,
         message: missing ? `${base} Có ${missing} mã chưa có trong danh sách đã quét.` : base,

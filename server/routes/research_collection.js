@@ -117,7 +117,7 @@ async function handleCollectAuto(req, res, studyIdParam = '') {
     });
     if (sc.isArchive) updateArchive({ active_run_id: sc.runId, active_mode: 'collect_auto' });
     await enqueueHeavy(ctx.sid, async () => {
-      updateResearchTask(sc.runDir, task.id, { status: 'running', message: 'Đang thu thập tự động. Có thể chuyển tab, tiến độ vẫn được lưu ở backend.' });
+      updateResearchTask(sc.runDir, task.id, { status: 'running', message: 'Đang thu thập tự động.' });
       try {
         const { report, normalized } = await runCollectionOrchestration(ctx, options);
         const metaPatch = { last_run_id: sc.runId, last_run_at: nowIso(), last_collect_at: nowIso() };
