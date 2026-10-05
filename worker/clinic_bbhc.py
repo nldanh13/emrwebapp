@@ -445,7 +445,9 @@ class BbhcPage:
 
 def merge_pdfs(paths: List[str], out_path: str) -> str:
     """Gộp các phiếu in SBBHC thành 1 file."""
-    import fitz  # PyMuPDF, như sign_discharge_bundle.py
+    from sign_discharge_bundle import fitz  # PyMuPDF, cùng cách import với file ký
+    if fitz is None:
+        raise RuntimeError("Chưa cài PyMuPDF nên không gộp được file in (pip install pymupdf).")
 
     merged = fitz.open()
     try:

@@ -20,7 +20,7 @@ if WORKER not in sys.path:
 
 import pytest
 
-fitz = pytest.importorskip("fitz", reason="Cần PyMuPDF (pip install pymupdf) để test chèn chữ ký PDF.")
+fitz = pytest.importorskip("pymupdf", reason="Cần PyMuPDF (pip install pymupdf) để test chèn chữ ký PDF.")
 
 import nurse_emr_accounts as nea  # noqa: E402
 import sign_discharge_bundle as sdb  # noqa: E402
@@ -260,3 +260,15 @@ def test_prepared_signature_is_transparent_dark_and_small(tmp_path):
     # Nền trắng thành trong suốt; nét nhạt (xám xanh ~0.6) được làm tối hơn hẳn.
     assert s[3] == 0
     assert max(s[i] for i in opaque) < 0.6 * 255 * 0.6
+
+
+def test_import_has_no_fitz_deprecation_warning():
+    """Log người dùng: '[PY] warning: The `fitz` API is deprecated…' mỗi lần ký PDF.
+    Dùng `import pymupdf` (tên mới), chỉ rơi về `fitz` với bản PyMuPDF cũ."""
+    import subprocess
+    code = "import sign_discharge_bundle, clinic_bbhc; clinic_bbhc.merge_pdfs([], '')" 
+    proc = subprocess.run(
+        [sys.executable, '-c', f"import sys; sys.path.insert(0, {WORKER!r});\ntry:\n    {code}\nexcept Exception:\n    pass"],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert 'deprecated' not in (proc.stdout + proc.stderr), proc.stdout + proc.stderr

@@ -135,7 +135,7 @@ def test_prepare_is_read_only_and_create_skips_existing(monkeypatch, tmp_path):
 
 
 def test_merge_pdfs(tmp_path):
-    import fitz
+    import pymupdf as fitz
     paths = []
     for i in range(2):
         doc = fitz.open()

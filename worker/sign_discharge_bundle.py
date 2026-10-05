@@ -34,9 +34,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from nurse_emr_accounts import load_nurse_signature_rows  # noqa: E402
 
 try:
-    import fitz  # PyMuPDF
+    import pymupdf as fitz  # PyMuPDF; tên `fitz` cũ in cảnh báo "deprecated" ra log
 except Exception:
-    fitz = None
+    try:
+        import fitz  # PyMuPDF bản cũ (< 1.24.3) chỉ có tên này
+    except Exception:
+        fitz = None
 
 
 def _json_out(path: str, payload: Dict[str, Any]) -> None:
