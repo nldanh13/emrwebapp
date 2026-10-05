@@ -21,6 +21,9 @@ const fs      = require('fs');
 
 const { PORT, HOST, DIST_DIR, PUBLIC_DIR, CONFIG_PATH, SESSION_RETENTION_MODE } = require('./server/constants');
 const middleware                      = require('./server/middleware');
+// Cài lớp bảo vệ trước khi nạp routes để mọi nơi destructure buildPatientHistory
+// đều nhận phiên bản đã chống gộp nhầm Mã BN và chống hiển thị trùng đợt cũ.
+require('./server/research/patient_history_guard').installPatientHistoryGuard();
 const routes                          = require('./server/routes');
 const { cleanOldSessions, cleanOrphanFetchTempFiles } = require('./server/services/session');
 const { authStatus }                   = require('./server/services/authz');
