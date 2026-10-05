@@ -8,13 +8,15 @@ const emitter = new EventEmitter();
 emitter.setMaxListeners(200);
 
 function safeTaskEvent(event = {}) {
+  const eventName = String(event.event || 'task_changed');
+  const derivedStatus = eventName.startsWith('task_') ? eventName.slice(5) : '';
   return {
-    event: String(event.event || 'task_changed'),
+    event: eventName,
     at: String(event.at || new Date().toISOString()),
     task_id: String(event.task_id || ''),
     sid: String(event.sid || 'default'),
     task_type: String(event.task_type || ''),
-    status: String(event.status || '').replace(/^task_/, ''),
+    status: String(event.status || derivedStatus || ''),
     queue_type: String(event.queue_type || ''),
     error_code: String(event.error_code || ''),
   };
