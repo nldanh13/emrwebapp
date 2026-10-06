@@ -482,7 +482,9 @@ function relatedRows(rows, identity) {
     .filter(row => {
       const matchStatus = String(row?.encounter_match_status || '').trim();
       if (matchStatus && matchStatus !== 'matched') return false;
-      if (String(row?.is_within_encounter || '').trim() === '0') return false;
+      if (row && Object.prototype.hasOwnProperty.call(row, 'is_within_encounter')) {
+        if (String(row.is_within_encounter || '').trim() !== '1') return false;
+      }
       return true;
     });
 }
