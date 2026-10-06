@@ -68,12 +68,19 @@ function conflictingStrongIdentity(left, right) {
   const encounterB = normalizedIdentity(rowExistingEncounterId(right));
   if (encounterA && encounterB && encounterA !== encounterB) return true;
 
-  // Hai mốc vào khác nhau là hai khoảng khác nhau, trừ khi cùng encounter nội bộ.
+  // Hai mốc vào khác nhau vẫn có thể là cùng một lần nằm viện nếu một mốc là lúc
+  // chuyển khoa và nằm trong khoảng vào-ra của dòng kia. Chỉ coi là xung đột khi
+  // không có bằng chứng thời gian như vậy.
   const admissionA = rowAdmissionTime(left);
   const admissionB = rowAdmissionTime(right);
   if (admissionA && admissionB && admissionA !== admissionB) {
     const encounterShared = encounterA && encounterB && encounterA === encounterB;
-    if (!encounterShared) return true;
+    if (encounterShared) return false;
+    const dischargeA = rowDischargeTime(left);
+    const dischargeB = rowDischargeTime(right);
+    if (dischargeA && isTimeInsideVisit(admissionB, admissionA, dischargeA)) return false;
+    if (dischargeB && isTimeInsideVisit(admissionA, admissionB, dischargeB)) return false;
+    return true;
   }
   return false;
 }
@@ -121,10 +128,9 @@ function mergeRowsPreferFilled(base, patch) {
   return out;
 }
 
-// Các dòng chuyển khoa của CÙNG một đợt nằm viện dùng chung Mã nội trú (đã được bệnh
-// viện xác nhận) nên được gộp thành một đợt. Mỗi dòng mang thời điểm vào KHOA của nó;
-// khi gộp phải lấy thời điểm vào SỚM NHẤT (vào viện) và khoảng lấy dữ liệu RỘNG NHẤT,
-// không phụ thuộc dòng nào đứng trước trong file.
+// Các dòng của cùng Mã BN có thể mang thời điểm vào KHOA khác nhau trong cùng một
+// lần nằm viện. Khi có khoảng thời gian chứng minh chúng thuộc cùng lần nằm, gộp và
+// lấy thời điểm vào SỚM NHẤT cùng khoảng lấy dữ liệu RỘNG NHẤT.
 const EARLIEST_TIME_FIELDS = ['T/G vào', 'TG vao', 'Ngày vào viện', 'Ngay vao vien', 'admission_date', 'fetch_from_date'];
 
 const LATEST_TIME_FIELDS = ['fetch_to_date'];
