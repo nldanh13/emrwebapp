@@ -1,0 +1,20 @@
+# /etc/caddy/Caddyfile — HTTPS tự động (Let's Encrypt, tự gia hạn) trước Data Hub.
+# install.sh thay __DOMAIN__ và __ALLOW_IPS__.
+__DOMAIN__ {
+	encode gzip
+
+	# Chỉ cho các địa chỉ IP được phép (vd. IP Internet của bệnh viện) vào. Bỏ trống = mọi nơi.
+	__IP_RULE__
+
+	reverse_proxy 127.0.0.1:3001 {
+		# Kênh sự kiện (/api/events) cần đẩy dữ liệu ngay, không gom bộ đệm.
+		flush_interval -1
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+}

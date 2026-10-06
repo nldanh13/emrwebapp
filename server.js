@@ -53,6 +53,8 @@ middleware.applySecurityHeaders(app);
 // ── API authentication + body parser ──────────────────────────────────────────
 // Xác thực trước khi parse JSON để request không hợp lệ không thể buộc server giữ
 // payload lớn trong RAM.
+// Đăng nhập bằng tên + mật khẩu: trước bước kiểm tra mã truy cập (người dùng chưa có mã).
+app.use('/api', require('./server/routes/auth_login').router);
 app.use('/api', middleware.requireAppToken);
 // Chỉ các endpoint upload thực sự cần payload lớn. Các API khác bị giới hạn.
 app.use('/api/research/archive/source', express.json({ limit: process.env.EMR_RESEARCH_UPLOAD_LIMIT || '50mb' }));

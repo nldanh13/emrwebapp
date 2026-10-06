@@ -39,7 +39,7 @@ function Field({ label, children }) {
 }
 
 function emptyForm() {
-  return { name: '', role: 'operator', sessionsMode: 'all', sessionsList: '', enabled: true, emr_username: '', emr_password: '' };
+  return { name: '', role: 'operator', sessionsMode: 'all', sessionsList: '', enabled: true, emr_username: '', emr_password: '', id: '', password: '' };
 }
 
 function formFromUser(u) {
@@ -50,6 +50,7 @@ function formFromUser(u) {
     sessionsList: restricted ? u.sessions.join(', ') : '',
     enabled: u.enabled !== false,
     emr_username: u.emr_username || '', emr_password: u.emr_password || '',
+    id: u.id || '', password: '', has_password: Boolean(u.has_password),
   };
 }
 
@@ -87,6 +88,7 @@ function EditModal({ mode, initial, onClose, onSave, toast }) {
   const handleSave = async () => {
     setError('');
     if (!form.name.trim()) { setError('Cần nhập tên.'); return; }
+    if (form.password && form.password.length < 8) { setError('Mật khẩu đăng nhập phải có ít nhất 8 ký tự.'); return; }
     if (form.sessionsMode === 'restricted' && !form.sessionsList.trim()) {
       setError('Đã chọn "Giới hạn" thì cần nhập ít nhất 1 mã phiên, hoặc đổi lại "Tất cả".');
       return;
@@ -103,6 +105,8 @@ function EditModal({ mode, initial, onClose, onSave, toast }) {
         enabled: form.enabled,
         emr_username: form.emr_username.trim(),
         emr_password: form.emr_password,
+        ...(mode === 'create' && form.id.trim() ? { id: form.id.trim() } : {}),
+        ...(form.password ? { password: form.password } : {}),
         ...(mode === 'edit' && regenerateToken ? { regenerate_token: true } : {}),
       });
       onClose();
@@ -129,6 +133,16 @@ function EditModal({ mode, initial, onClose, onSave, toast }) {
           <Field label="Tên *">
             <input value={form.name} onChange={set('name')} placeholder="VD: Nguyễn Thị A" style={INPUT_STYLE} />
           </Field>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Field label="Tên đăng nhập">
+              {mode === 'create'
+                ? <input value={form.id} onChange={set('id')} placeholder="VD: nthia (bỏ trống: tự tạo)" autoComplete="off" style={INPUT_STYLE} />
+                : <input value={form.id} disabled style={{ ...INPUT_STYLE, color: C.text3 }} />}
+            </Field>
+            <Field label={mode === 'edit' && form.has_password ? 'Mật khẩu đăng nhập (bỏ trống: giữ nguyên)' : 'Mật khẩu đăng nhập'}>
+              <input type="password" value={form.password} onChange={set('password')} placeholder="Ít nhất 8 ký tự" autoComplete="new-password" style={INPUT_STYLE} />
+            </Field>
+          </div>
           <Field label="Vai trò">
             <select value={form.role} onChange={set('role')} style={INPUT_STYLE}>
               {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
