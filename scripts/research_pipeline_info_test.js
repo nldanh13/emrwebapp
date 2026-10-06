@@ -36,7 +36,7 @@ test('đọc đủ 4 bước từ manifest, normalize_state, qa_report, collecti
     normalized_database_status: 'ok',
   });
   write('normalize_state.json', { status: 'complete', started_at: '2026-05-30T01:04:55.000Z', finished_at: '2026-05-30T01:05:00.000Z' });
-  write('qa_report.json', { status: 'warning', blocking_count: 0, warning_count: 2 });
+  write('qa_report.json', { status: 'warning', blocking_count: 0, warning_count: 2, matching_quality: { total_rows: 100, matched_rows: 95, strong_key: 80, exact_visit_time: 5, event_time_range: 10, patient_only_no_event_time: 0, ambiguous: 2, missing: 3, outside_treatment_time: 1 } });
   write('collection_report.json', { finished_at: '2026-05-30T01:00:00Z', fetched_encounters: 120, skipped_unchanged: 2980, parts_backfilled: 14, selenium_errors_open: 3, unmatched_encounters: 2, diagnostics: [{ stage: 'patient_search', stage_label: '1. Tìm người bệnh', message: 'Không tìm thấy người bệnh theo Mã BN trên EMR.', rows: 2, encounters: 2 }] });
   write('collection_history.jsonl', '{"a":1}\n{"a":2}\n');
   write('normalize_history.jsonl', '{"at":"2026-05-29T10:00:00Z","counts":{"encounters":3000}}\nhỏng\n{"at":"2026-05-30T01:05:00Z","counts":{"encounters":3100,"lab_results":90000}}\n');
@@ -52,7 +52,12 @@ test('đọc đủ 4 bước từ manifest, normalize_state, qa_report, collecti
   assert.strictEqual(p.collect_runs, 2);
   assert.deepStrictEqual(p.reused_from_patient_db, { cases: 5, provisional: 2, replaced_by_goc: 3 });
   assert.strictEqual(p.normalize.duration_ms, 5000);
-  assert.deepStrictEqual(p.normalize.qa, { status: 'warning', blocking: 0, warning: 2, review: 0 });
+  assert.strictEqual(p.normalize.qa.status, 'warning');
+  assert.strictEqual(p.normalize.qa.blocking, 0);
+  assert.strictEqual(p.normalize.qa.warning, 2);
+  assert.strictEqual(p.normalize.qa.review, 0);
+  assert.strictEqual(p.normalize.qa.matching_quality.matched_rows, 95);
+  assert.strictEqual(p.normalize.qa.matching_quality.strong_key, 80);
   assert.deepStrictEqual(p.normalize.unmatched, [{ key: 'unmatched_lab_results', label: 'Xét nghiệm', rows: 12 }]);
   assert.deepStrictEqual(p.normalize.history.map(h => h.encounters), [3100, 3000], 'mới nhất trước, bỏ dòng hỏng');
   assert.strictEqual(p.storage.run_dir, 'research/research_store/du_lieu_goc/runs/r1', 'đường dẫn tương đối, không lộ đường dẫn máy');
