@@ -19,6 +19,13 @@ if [[ $FORCE -eq 0 ]] && pgrep -u emr -f "$APP_DIR/worker/.*\.py" >/dev/null; th
   exit 2
 fi
 
+VAULT_ON=0
+[[ -f "$APP_DIR/vault.enc/gocryptfs.conf" ]] && VAULT_ON=1
+if [[ $VAULT_ON -eq 1 ]] && ! mountpoint -q "$APP_DIR/vault"; then
+  echo "Kho dữ liệu đang khóa. Mở kho trên thiết bị tin cậy (trang web) rồi chạy lại."
+  exit 2
+fi
+
 cd "$APP_DIR"
 before="$(sudo -u emr git rev-parse --short HEAD)"
 sudo -u emr git fetch -q origin "$BRANCH"
@@ -36,6 +43,11 @@ sudo -u emr npm run build
 sudo -u emr "$APP_DIR/.venv/bin/pip" install -q -r requirements.txt
 # Bản mới có thể đổi file dịch vụ/sao lưu.
 cp deploy/vps/emrwebapp.service deploy/vps/emrwebapp-backup.service deploy/vps/emrwebapp-backup.timer /etc/systemd/system/
+if [[ $VAULT_ON -eq 1 ]]; then
+  cp deploy/vps/emrwebapp-unlock.service /etc/systemd/system/
+  mkdir -p /etc/systemd/system/emrwebapp.service.d
+  cp deploy/vps/emrwebapp-vault.conf /etc/systemd/system/emrwebapp.service.d/vault.conf
+fi
 systemctl daemon-reload
 systemctl restart emrwebapp
 sleep 3
