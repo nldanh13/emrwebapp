@@ -20,7 +20,7 @@ const { readCsvTable, patientCode, writeCsv, countCsvRows, getCell } = require('
 const { overlayHchanhFromPatientDb, KHO_OVERLAY_FILE, overlayResultsFromPatientDb } = require('./patient_db_overlay');
 const { appendResearchRunLog } = require('./case_trace');
 const { combineEncounterSources, mergeRowsPreferFilled, dedupeByHash, byEncounterCount } = require('./source_merge');
-const { normalizeSex, extractBirthYear, normalizeLabName, resultOperator, parseNumeric, resultText, normalizeFlag, modalityFromService, bodyRegionFromService, normalizeDrugName, classifyDrugGroup, normalizeRoute } = require('./value_normalizers');
+const { normalizeSex, extractBirthYear, normalizeLabName, resultOperator, parseNumeric, resultText, normalizeLabMeasurement, normalizeFlag, modalityFromService, bodyRegionFromService, normalizeDrugName, classifyDrugGroup, normalizeRoute } = require('./value_normalizers');
 const { dedupeRowsByHash, dedupeSurgeryRows, snapshotFinalDatasetIfUnsaved } = require('./dataset_store');
 const { firstSurgeryByEncounter, surgeryForMedicationContext } = require('./encounter_linkage');
 const { evaluateCustomFields } = require('./analysis_config');
@@ -386,6 +386,10 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     const rawTime = firstNonEmpty(row, ['TG xét nghiệm', 'Thời gian xét nghiệm', 'TG chỉ định', 'Thời gian', 'Ngày xét nghiệm', 'Ngày chỉ định']);
     const name = firstNonEmpty(row, ['Chỉ số', 'Chi so', 'Tên xét nghiệm', 'Ten xet nghiem']);
     const result = firstNonEmpty(row, ['Kết quả', 'Ket qua', 'result']);
+    const testNameNorm = normalizeLabName(name);
+    const resultNum = parseNumeric(result);
+    const unitRaw = firstNonEmpty(row, ['Đơn vị', 'Don vi', 'unit']);
+    const normalizedMeasurement = normalizeLabMeasurement(testNameNorm, resultNum, unitRaw);
     const base = {
       research_code: firstNonEmpty(row, ['Mã NC', 'Ma NC']) || ctx.research_code || '',
       patient_code: code,
@@ -396,12 +400,15 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       lab_group: firstNonEmpty(row, ['Loại XN', 'Loai XN', 'Nhóm XN']),
       lab_order_id: firstNonEmpty(row, ['Mã phiếu', 'Ma phieu', 'lab_order_id']),
       test_name_raw: name,
-      test_name_norm: normalizeLabName(name),
+      test_name_norm: testNameNorm,
       result_raw: result,
       result_operator: resultOperator(result),
-      result_num: parseNumeric(result),
+      result_num: resultNum,
       result_text: resultText(result),
-      unit: firstNonEmpty(row, ['Đơn vị', 'Don vi', 'unit']),
+      unit: unitRaw,
+      result_num_norm: normalizedMeasurement.result_num_norm,
+      unit_norm: normalizedMeasurement.unit_norm,
+      unit_conversion_status: normalizedMeasurement.unit_conversion_status,
       ref_range_raw: firstNonEmpty(row, ['Khoảng tham chiếu', 'Khoang tham chieu', 'ref_range']),
       flag_raw: firstNonEmpty(row, ['Bất thường', 'Bat thuong', 'flag']),
       flag_norm: normalizeFlag(firstNonEmpty(row, ['Bất thường', 'Bat thuong', 'flag'])),
