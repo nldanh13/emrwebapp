@@ -958,6 +958,10 @@ export const deleteMedicationCatalog = (key)         => del(`/api/medication-cat
 export const checkMedicationDilution = (body)       => post('/api/medication-catalog/dilution-check', body);
 export const getMedicationBuiltin    = ()           => get('/api/medication-catalog/builtin');
 export const getDilutionStats       = (refresh = false) => get(`/api/medication-catalog/dilution-stats${refresh ? '?refresh=1' : ''}`);
+export const getCatalogCleanup       = ()           => get('/api/medication-catalog/cleanup');
+export const applyCatalogCleanup     = (keys)       => post('/api/medication-catalog/cleanup', { keys });
+export const getNewDrugs             = ()           => get('/api/medication-catalog/new-drugs');
+export const ignoreNewDrug           = (key, ignore = true) => post('/api/medication-catalog/new-drugs/ignore', { key, ignore });
 export const getArchiveDrugNames      = ()           => get('/api/medication-catalog/archive-drug-names');
 export const assignMedicationIngredient = (body)      => post('/api/medication-catalog/assign-ingredient', body);
 

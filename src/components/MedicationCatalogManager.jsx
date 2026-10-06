@@ -19,6 +19,9 @@ import { SkeletonBlock, SkeletonTable } from './Skeleton.jsx';
 import { DILUTION_APPLY, DILUTION_SOLVENTS, dilutionForm, dilutionFromForm, dilutionSummary, emptyVariant } from '../utils/dilutionRule.js';
 import DilutionCheckPanel from './DilutionCheckPanel.jsx';
 import DilutionStatsPanel from './DilutionStatsPanel.jsx';
+import CatalogCleanupPanel from './CatalogCleanupPanel.jsx';
+import NewDrugsPanel from './NewDrugsPanel.jsx';
+import { catalogIssues, filterCatalog } from '../utils/catalogIssues.js';
 import MedicationBuiltinPanel from './MedicationBuiltinPanel.jsx';
 import { fillEmptyFields } from '../utils/medicationBuiltin.js';
 
@@ -77,6 +80,7 @@ function formFromMedication(med) {
     schedule_rule: med.schedule_rule || '',
     ten_hien_thi: med.ten_hien_thi || '',
     co_dung_moi_di_kem: Boolean(med.co_dung_moi_di_kem),
+    dilution_suggestions: Array.isArray(med.dilution_suggestions) ? med.dilution_suggestions : [],
     ...dilutionForm(med.dilution),
   };
 }
@@ -154,6 +158,32 @@ function VariantRows({ form, setForm, routes }) {
   );
 }
 
+// Cách pha gợi ý giữ lại khi dọn mục cũ "X + Natri clorid" (thể tích từng gặp, chưa rõ điều kiện).
+function SuggestionRows({ form, setForm }) {
+  const list = form.dilution_suggestions || [];
+  if (!list.length) return null;
+  const drop = i => setForm(prev => ({ ...prev, dilution_suggestions: prev.dilution_suggestions.filter((_, j) => j !== i) }));
+  const asDefault = (s, i) => { setForm(prev => ({ ...prev, dilution_solvent: s.solvent, dilution_volume_ml: String(s.volume_ml ?? ''), dilution_rate: s.rate ? String(s.rate) : prev.dilution_rate })); drop(i); };
+  const asVariant = (s, i) => {
+    setForm(prev => ({ ...prev, dilution_solvent: prev.dilution_solvent || s.solvent,
+      dilution_variants: [...(prev.dilution_variants || []), { ...emptyVariant(), solvent: s.solvent, volume_ml: String(s.volume_ml ?? ''), rate: s.rate ? String(s.rate) : '' }] }));
+    drop(i);
+  };
+  return (
+    <div style={{ display: 'grid', gap: 4, padding: 8, borderRadius: 6, background: C.amberBg, border: `1px solid ${C.amberBorder}`, fontSize: FS.xs, color: C.text2 }}>
+      <b>Cách pha gợi ý (từ mục cũ, chưa áp dụng)</b>
+      {list.map((s, i) => (
+        <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ flex: '1 1 200px', color: C.text }}>{dilutionSummary({ solvent: s.solvent, volume_ml: s.volume_ml, rate: s.rate })}{s.tu ? ` — từ "${s.tu}"` : ''}</span>
+          <Btn variant="default" onClick={() => asDefault(s, i)} style={{ fontSize: 11, padding: '1px 8px' }}>Đặt làm mặc định</Btn>
+          <Btn variant="default" onClick={() => asVariant(s, i)} style={{ fontSize: 11, padding: '1px 8px' }}>Thêm thành cách pha (đặt điều kiện)</Btn>
+          <Btn variant="default" onClick={() => drop(i)} style={{ fontSize: 11, padding: '1px 8px', color: C.red }}>Bỏ</Btn>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function DilutionFields({ form, set, setForm, effective, routes = [] }) {
   const solvent = form.dilution_solvent;
   const builtin = !solvent && effective?.source === 'luat_san_co' ? effective.rule : null;
@@ -186,6 +216,7 @@ function DilutionFields({ form, set, setForm, effective, routes = [] }) {
         )}
       </div>
       {solvent && solvent !== 'KHONG_PHA' && <VariantRows form={form} setForm={setForm} routes={routes} />}
+      <SuggestionRows form={form} setForm={setForm} />
       <DilutionStatsPanel drugName={form.canonical} setForm={setForm} />
       {solvent && (
         <Field label="Ghi chú pha (tuỳ chọn)">
@@ -263,6 +294,7 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
         dilution: dilution.value,
         ten_hien_thi: form.ten_hien_thi.trim(),
         co_dung_moi_di_kem: Boolean(form.co_dung_moi_di_kem),
+        ...(form.dilution_suggestions ? { dilution_suggestions: form.dilution_suggestions } : {}),
       });
       onClose();
     } catch (e) {
@@ -411,8 +443,6 @@ function DilutionCell({ item, info }) {
   );
 }
 
-const INJECTABLE_CATEGORIES = new Set(['thuoc_tiem', 'dich_truyen']);
-
 function RouteCell({ item }) {
   const def = normalizeRouteCode(item.default_route) || item.default_route || '';
   const others = (item.routes || []).map(r => normalizeRouteCode(r) || r).filter(r => r && r !== def);
@@ -437,6 +467,12 @@ export default function MedicationCatalogManager() {
   const [dilutionInfo, setDilutionInfo] = useState(null);
   const [builtin, setBuiltin] = useState(null);
   const [builtinError, setBuiltinError] = useState('');
+  const [cleanupPlan, setCleanupPlan] = useState([]);
+  const [newDrugs, setNewDrugs] = useState(null);
+  const [newDrugsError, setNewDrugsError] = useState('');
+  const loadNewDrugs = useCallback(() => api.getNewDrugs()
+    .then(r => { setNewDrugs(r); setNewDrugsError(''); })
+    .catch(e => setNewDrugsError('Không tìm được thuốc mới: ' + String(e.message || e))), []);
   const [ruleFilter, setRuleFilter] = useState('all');
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 6000); };
@@ -450,6 +486,8 @@ export default function MedicationCatalogManager() {
       api.checkMedicationDilution({ include_catalog: true })
         .then(info => setDilutionInfo({ catalog: info.catalog || {}, builtin: info.builtin || [] }))
         .catch(() => setDilutionInfo({ catalog: {}, builtin: [], failed: true }));
+      loadNewDrugs();
+      api.getCatalogCleanup().then(r => setCleanupPlan(r.plan || [])).catch(() => setCleanupPlan([]));
       api.getMedicationBuiltin()
         .then(r => { setBuiltin(r.builtin || {}); setBuiltinError(''); })
         .catch(e => setBuiltinError('Không tải được kiến thức sẵn có: ' + String(e.message || e)));
@@ -458,7 +496,7 @@ export default function MedicationCatalogManager() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadNewDrugs]);
 
   useEffect(() => { load(); }, [load]);
   useOnTabReturn(() => load());
@@ -491,10 +529,11 @@ export default function MedicationCatalogManager() {
 
   const q = query.trim().toLowerCase();
   const hasRule = item => Boolean(item.dilution || dilutionInfo?.catalog?.[item.canonical]?.rule);
-  const isInjectable = item => INJECTABLE_CATEGORIES.has(item.category) || ['thuoc_tiem', 'dich_truyen'].includes(routeCategory(item.default_route || ''));
-  const filtered = items
-    .filter(item => !q || `${item.canonical} ${joinList(item.active_ingredients)} ${item.active_ingredient || ''} ${joinList(item.aliases)} ${item.category || ''}`.toLowerCase().includes(q))
-    .filter(item => ruleFilter === 'all' || (ruleFilter === 'has_rule' ? hasRule(item) : (!hasRule(item) && isInjectable(item))));
+  const filtered = filterCatalog(
+    items.filter(item => !q || `${item.canonical} ${joinList(item.active_ingredients)} ${item.active_ingredient || ''} ${joinList(item.aliases)} ${item.category || ''}`.toLowerCase().includes(q)),
+    ruleFilter, { hasRule, routeCategoryOf: routeCategory },
+  );
+  const issueCount = filterCatalog(items, 'issues').length;
 
   return (
     <div style={{ padding: 12, maxWidth: 1180, margin: '0 auto' }}>
@@ -504,6 +543,8 @@ export default function MedicationCatalogManager() {
           <div style={{ fontSize: FS.sm, color: C.text2, marginTop: 4 }}>
             {tab === 'drugs'
               ? 'Khai báo chế phẩm, hoạt chất và các tên thương mại/cách viết trong EMR. Nhiều chế phẩm có thể cùng một hoạt chất để nghiên cứu gom chung.'
+              : tab === 'new'
+              ? 'Thuốc gặp trong y lệnh nhưng chưa có trong danh mục — thiết lập để bước xử lý dữ liệu nhận đúng thuốc.'
               : tab === 'builtin'
               ? 'Kiến thức thuốc đi kèm phần mềm: luật pha, thể tích mặc định, hoạt chất của tên thương mại, tên hiển thị. Chép vào danh mục để sửa.'
               : tab === 'ingredients'
@@ -512,10 +553,12 @@ export default function MedicationCatalogManager() {
           </div>
         </div>
         <Segmented label="Mục danh mục" value={tab} onChange={setTab}
-          options={[{ value: 'drugs', label: 'Thuốc' }, { value: 'builtin', label: 'Sẵn có' }, { value: 'ingredients', label: 'Gắn hoạt chất' }, { value: 'routes', label: 'Đường dùng' }]} />
+          options={[{ value: 'drugs', label: 'Thuốc' }, { value: 'new', label: `Thuốc mới${newDrugs?.pending ? ` (${newDrugs.pending})` : ''}` }, { value: 'builtin', label: 'Sẵn có' }, { value: 'ingredients', label: 'Gắn hoạt chất' }, { value: 'routes', label: 'Đường dùng' }]} />
       </div>
 
       {tab === 'routes' ? <RouteDesigner onSaved={showToast} />
+        : tab === 'new' ? <NewDrugsPanel data={newDrugs} error={newDrugsError} onChanged={loadNewDrugs}
+            onSetup={prefill => setEditing({ mode: 'create', key: '', form: { ...emptyForm(), ...prefill } })} />
         : tab === 'builtin' ? <MedicationBuiltinPanel builtin={builtin} error={builtinError}
             catalogNames={new Set(items.map(m => String(m.canonical || '').toLowerCase()))}
             onCopy={prefill => {
@@ -534,6 +577,7 @@ export default function MedicationCatalogManager() {
         <b>Hoạt chất dùng cho nghiên cứu.</b> Mỗi chế phẩm/tên thương mại nên khai báo đúng hoạt chất (nhanh nhất: mục <b>Gắn hoạt chất</b> liệt kê sẵn tên thuốc trong kho chưa có hoạt chất). Nếu cùng một hoạt chất có nhiều tên thương mại, có thể tạo nhiều thuốc hoặc thêm tên vào mục "Tên khác". Hệ thống giữ tên gốc để truy vết; việc có y lệnh không tự động được coi là đã thực hiện thuốc.
       </div>
 
+      <CatalogCleanupPanel plan={cleanupPlan} onDone={msg => { showToast(msg); load(); }} />
       <DilutionCheckPanel builtin={dilutionInfo?.builtin || []} />
       {dilutionInfo?.failed && (
         <div role="alert" style={{ marginBottom: 10, fontSize: FS.sm, color: C.amber }}>
@@ -547,7 +591,9 @@ export default function MedicationCatalogManager() {
         <Segmented label="Lọc theo quy tắc pha" value={ruleFilter} onChange={setRuleFilter} options={[
           { value: 'all', label: 'Tất cả' },
           { value: 'has_rule', label: 'Có quy tắc pha' },
-          { value: 'no_rule', label: 'Tiêm/truyền chưa có quy tắc' },
+          { value: 'no_rule', label: 'Cần pha, chưa có quy tắc' },
+          { value: 'no_ingredient', label: 'Thiếu hoạt chất' },
+          { value: 'issues', label: `Có thể sai${issueCount ? ` (${issueCount})` : ''}` },
         ]} />
       </div>
 
@@ -556,7 +602,9 @@ export default function MedicationCatalogManager() {
       ) : !filtered.length ? (
         <div style={{ color: C.text3, padding: 20, textAlign: 'center' }}>
           {!items.length ? 'Danh mục thuốc đang trống.'
-            : ruleFilter === 'no_rule' ? 'Mọi thuốc tiêm/truyền trong danh mục đều đã có quy tắc pha.'
+            : ruleFilter === 'no_rule' ? 'Mọi thuốc tiêm cần pha đều đã có quy tắc (chai/túi truyền pha sẵn không cần).'
+            : ruleFilter === 'issues' ? 'Không thấy mục nào có dấu hiệu sai.'
+            : ruleFilter === 'no_ingredient' ? 'Mọi thuốc đều đã có hoạt chất.'
             : 'Không tìm thấy thuốc phù hợp.'}
         </div>
       ) : (
@@ -573,7 +621,12 @@ export default function MedicationCatalogManager() {
             <tbody>
               {filtered.map((item, i) => (
                 <tr key={item.key} style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${C.border2}` : 'none' }}>
-                  <td style={{ padding: '10px 12px', fontSize: FS.md, color: C.text, fontWeight: 500 }}>{txt(item.canonical)}</td>
+                  <td style={{ padding: '10px 12px', fontSize: FS.md, color: C.text, fontWeight: 500 }}>
+                    {txt(item.canonical)}
+                    {catalogIssues(item, items).map((msg, k) => (
+                      <div key={k} style={{ fontSize: FS.xs, color: C.amber, fontWeight: 400, marginTop: 2, maxWidth: 280 }}>⚠ {msg}</div>
+                    ))}
+                  </td>
                   <td style={{ padding: '10px 12px', fontSize: FS.xs, color: C.text2, maxWidth: 220 }}>
                     {(item.active_ingredients?.length || item.active_ingredient)
                       ? joinList(item.active_ingredients || [item.active_ingredient])

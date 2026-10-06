@@ -55,3 +55,20 @@ trước một thuốc sẽ được xử lý thế nào.
     và trên dữ liệu đã xử lý của phiên (`worker/dilution_stats.py`), không mở EMR;
   - chỉ đếm những lần y lệnh ghi rõ dung môi/thể tích; phần hệ thống tự suy được đếm riêng;
   - có nút "Đặt làm mặc định" và "Thêm thành cách pha".
+
+## Dọn danh mục, bộ lọc, thuốc mới
+
+- **Dọn mục "thuốc + Natri clorid 0.9%"** (do bước tự đồng bộ cũ sinh ra): ở đầu tab Thuốc bấm "Xem và dọn".
+  - Có xem trước từng việc và chọn được mục nào cần dọn.
+  - Danh mục được sao lưu vào `<thư mục dữ liệu>/backups/` trước khi sửa.
+  - Thuốc gốc đã có → mục cũ được gộp vào. Thể tích cũ khác quy tắc thì được giữ thành "cách pha gợi ý"
+    trong form thuốc, chưa áp dụng cho tới khi bạn duyệt.
+  - Thuốc gốc chưa có → mục được đổi tên; thể tích cũ thành quy tắc pha "chỉ khi y lệnh ghi truyền".
+- **Bộ lọc:**
+  - "Cần pha, chưa có quy tắc": không tính chai/túi truyền pha sẵn (dịch truyền ≥ 50 ml).
+  - "Thiếu hoạt chất".
+  - "Có thể sai": mục cũ + dung môi, dịch truyền < 50 ml, hai mục trùng như NATRI CLORID / SODIUM CHLORIDE.
+- **Thuốc mới:** tab liệt kê thuốc có trong y lệnh (dữ liệu phiên + Kho nghiên cứu) nhưng chưa có
+  trong danh mục. Danh sách được khớp bằng đúng hàm tra danh mục của bước xử lý (`worker/catalog_gaps.py`).
+  - "Thiết lập" mở form thêm thuốc, đã điền sẵn tên, hoạt chất, đường dùng, thể tích theo dữ liệu.
+  - "Bỏ qua" chỉ ẩn thuốc khỏi danh sách, không sửa danh mục.
