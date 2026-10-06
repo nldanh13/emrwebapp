@@ -120,6 +120,13 @@
 | `treatment_duration` | chuỗi | Số ngày điều trị như EMR ghi. Lưu ý: Giữ nguyên văn bản EMR, không tính lại. | Đơn vị: ngày |  | — | Được dùng |
 | `department` | chuỗi | Khoa điều trị. |  |  | Gián tiếp | Được dùng |
 | `room_bed` | chuỗi | Phòng/giường. |  |  | Gián tiếp | Cần đề cương duyệt |
+| `admission_pulse` | số thập phân | Mạch lúc vào viện (Phiếu vào viện). | Đơn vị: lần/phút | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_temperature` | số thập phân | Nhiệt độ lúc vào viện (Phiếu vào viện). | Đơn vị: °C | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_bp_systolic` | số thập phân | Huyết áp tâm thu lúc vào viện (Phiếu vào viện). | Đơn vị: mmHg | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_bp_diastolic` | số thập phân | Huyết áp tâm trương lúc vào viện (Phiếu vào viện). | Đơn vị: mmHg | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_respiratory_rate` | số thập phân | Nhịp thở lúc vào viện (Phiếu vào viện). | Đơn vị: lần/phút | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_weight_kg` | số thập phân | Cân nặng lúc vào viện (Phiếu vào viện). | Đơn vị: kg | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_height_cm` | số thập phân | Chiều cao lúc vào viện (Phiếu vào viện). | Đơn vị: cm | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
 | `admission_diagnosis` | văn bản | Chẩn đoán vào viện (nguyên văn). |  |  | Văn bản tự do | Cần đề cương duyệt |
 | `discharge_diagnosis` | văn bản | Chẩn đoán ra viện (nguyên văn, thường có mã ICD đầu dòng). |  |  | Văn bản tự do | Cần đề cương duyệt |
 | `diagnosis_raw` | văn bản | Chẩn đoán dùng để phân tích: chẩn đoán ra viện, nếu trống thì chẩn đoán vào viện. |  |  | Văn bản tự do | Cần đề cương duyệt |
@@ -710,6 +717,13 @@
 | `hospital_stay_days` | chuỗi | Số ngày nằm viện. Cách tính: Lấy "Thời gian điều trị" của EMR nếu có; nếu không, tính (ngày ra − ngày vào) + 1. | Đơn vị: ngày | Chưa có ngày ra viện. | — | Được dùng |
 | `time_to_surgery_hours` | số thập phân | Số giờ từ vào viện đến ca mổ sớm nhất (làm tròn 0,1). | Đơn vị: giờ; Âm là bất thường → cần kiểm tra. | Không mổ hoặc thiếu thời điểm. | — | Được dùng |
 | `diagnosis_raw` | văn bản | Chẩn đoán (ra viện, nếu trống thì vào viện). |  |  | Văn bản tự do | Cần đề cương duyệt |
+| `admission_pulse` | số thập phân | Mạch lúc vào viện (Phiếu vào viện). | Đơn vị: lần/phút | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_temperature` | số thập phân | Nhiệt độ lúc vào viện (Phiếu vào viện). | Đơn vị: °C | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_bp_systolic` | số thập phân | Huyết áp tâm thu lúc vào viện (Phiếu vào viện). | Đơn vị: mmHg | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_bp_diastolic` | số thập phân | Huyết áp tâm trương lúc vào viện (Phiếu vào viện). | Đơn vị: mmHg | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_respiratory_rate` | số thập phân | Nhịp thở lúc vào viện (Phiếu vào viện). | Đơn vị: lần/phút | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_weight_kg` | số thập phân | Cân nặng lúc vào viện (Phiếu vào viện). | Đơn vị: kg | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_height_cm` | số thập phân | Chiều cao lúc vào viện (Phiếu vào viện). | Đơn vị: cm | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
 | `surgery_name` | chuỗi | Tên ca mổ sớm nhất. |  |  | — | Được dùng |
 | `surgery_method` | văn bản | Phương pháp ca mổ sớm nhất. |  |  | Văn bản tự do | Cần đề cương duyệt |
 | `anesthesia_method` | chuỗi | Vô cảm của ca mổ sớm nhất. |  |  | — | Được dùng |

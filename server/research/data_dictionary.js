@@ -111,6 +111,17 @@ function withCommon(order, own) {
   return out;
 }
 
+// Sinh hiệu lúc vào viện (Phiếu vào viện) — dùng chung cho encounters và analysis_ready.
+const ADMISSION_VITAL_COLUMNS = {
+  admission_pulse: col('decimal', 'Mạch lúc vào viện (Phiếu vào viện).', { unit: 'lần/phút', empty: 'Phiếu vào viện không ghi hoặc chưa lấy.' }),
+  admission_temperature: col('decimal', 'Nhiệt độ lúc vào viện (Phiếu vào viện).', { unit: '°C', empty: 'Phiếu vào viện không ghi hoặc chưa lấy.' }),
+  admission_bp_systolic: col('decimal', 'Huyết áp tâm thu lúc vào viện (Phiếu vào viện).', { unit: 'mmHg', empty: 'Phiếu vào viện không ghi hoặc chưa lấy.' }),
+  admission_bp_diastolic: col('decimal', 'Huyết áp tâm trương lúc vào viện (Phiếu vào viện).', { unit: 'mmHg', empty: 'Phiếu vào viện không ghi hoặc chưa lấy.' }),
+  admission_respiratory_rate: col('decimal', 'Nhịp thở lúc vào viện (Phiếu vào viện).', { unit: 'lần/phút', empty: 'Phiếu vào viện không ghi hoặc chưa lấy.' }),
+  admission_weight_kg: col('decimal', 'Cân nặng lúc vào viện (Phiếu vào viện).', { unit: 'kg', empty: 'Phiếu vào viện không ghi hoặc chưa lấy.' }),
+  admission_height_cm: col('decimal', 'Chiều cao lúc vào viện (Phiếu vào viện).', { unit: 'cm', empty: 'Phiếu vào viện không ghi hoặc chưa lấy.' }),
+};
+
 // ── Bảng chuẩn hóa ───────────────────────────────────────────────────────────
 const TABLES = {};
 
@@ -171,7 +182,7 @@ TABLES.encounters = {
     ],
     manual_review: ['needs_manual_review khác trống', 'Cặp khoảng cùng BN chồng lấn/cùng ngày ra viện nhưng không đủ mốc thời gian để xác định chắc chắn (possible_same_stay).'],
   },
-  columns: withCommon(['encounter_id', 'research_code', 'patient_code', 'patient_key', 'admission_date', 'discharge_date', 'treatment_duration', 'department', 'room_bed', 'admission_diagnosis', 'discharge_diagnosis', 'diagnosis_raw', 'comorbidity_text', 'complication_text', 'discharge_status', 'surgery_date', 'needs_manual_review', 'source_run_id', 'source_status', 'row_hash'], {
+  columns: withCommon(['encounter_id', 'research_code', 'patient_code', 'patient_key', 'admission_date', 'discharge_date', 'treatment_duration', 'department', 'room_bed', 'admission_pulse', 'admission_temperature', 'admission_bp_systolic', 'admission_bp_diastolic', 'admission_respiratory_rate', 'admission_weight_kg', 'admission_height_cm', 'admission_diagnosis', 'discharge_diagnosis', 'diagnosis_raw', 'comorbidity_text', 'complication_text', 'discharge_status', 'surgery_date', 'needs_manual_review', 'source_run_id', 'source_status', 'row_hash'], {
     encounter_id: { ...COMMON.encounter_id, meaning: 'Khóa chính của đợt điều trị (Research key).', empty: 'Không được trống (bắt buộc).' },
     admission_date: col('datetime', 'Thời điểm vào viện (vào khoa đầu tiên của đợt).', {
       identifier: 'quasi', use: 'approval_required', source: 'Ngày vào viện (hồ sơ) hoặc T/G vào sớm nhất trên danh sách.', empty: 'Không đọc được ngày vào.',
@@ -180,6 +191,7 @@ TABLES.encounters = {
     treatment_duration: col('string', 'Số ngày điều trị như EMR ghi.', { unit: 'ngày', note: 'Giữ nguyên văn bản EMR, không tính lại.' }),
     department: col('string', 'Khoa điều trị.', { identifier: 'quasi' }),
     room_bed: col('string', 'Phòng/giường.', { identifier: 'quasi', use: 'approval_required' }),
+    ...ADMISSION_VITAL_COLUMNS,
     admission_diagnosis: col('text', 'Chẩn đoán vào viện (nguyên văn).', { identifier: 'free_text', use: 'approval_required' }),
     discharge_diagnosis: col('text', 'Chẩn đoán ra viện (nguyên văn, thường có mã ICD đầu dòng).', { identifier: 'free_text', use: 'approval_required' }),
     diagnosis_raw: col('text', 'Chẩn đoán dùng để phân tích: chẩn đoán ra viện, nếu trống thì chẩn đoán vào viện.', { identifier: 'free_text', use: 'approval_required' }),
@@ -508,7 +520,7 @@ TABLES.analysis_ready = {
     inferred: 'Cột suy luận theo preset (ví dụ injury_side_suggested, hip_fracture_suggested, spine_involved, joint_type_suggested, neuro_deficit, stroke_type): suy từ văn bản chẩn đoán + CĐHA bằng từ khóa; ô trống = không tìm thấy từ khóa, KHÔNG có nghĩa là "không". Cần người xác nhận.',
     custom: 'Cột tự định nghĩa của nghiên cứu (custom_fields): so mẫu trên văn bản chẩn đoán đã bỏ dấu; cột boolean luôn là 1/0.',
   },
-  columns: withCommon(['research_code', 'encounter_id', 'patient_code', 'patient_key', 'patient_name', 'sex', 'birth_year', 'age', 'admission_date', 'surgery_date', 'discharge_date', 'hospital_stay_days', 'time_to_surgery_hours', 'diagnosis_raw', 'surgery_name', 'surgery_method', 'anesthesia_method', 'comorbidity_text', 'complication_text', 'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt', 'lab_result_count', 'imaging_result_count', 'needs_manual_review', 'source_run_id', 'row_hash'], {
+  columns: withCommon(['research_code', 'encounter_id', 'patient_code', 'patient_key', 'patient_name', 'sex', 'birth_year', 'age', 'admission_date', 'surgery_date', 'discharge_date', 'hospital_stay_days', 'time_to_surgery_hours', 'diagnosis_raw', 'admission_pulse', 'admission_temperature', 'admission_bp_systolic', 'admission_bp_diastolic', 'admission_respiratory_rate', 'admission_weight_kg', 'admission_height_cm', 'surgery_name', 'surgery_method', 'anesthesia_method', 'comorbidity_text', 'complication_text', 'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt', 'lab_result_count', 'imaging_result_count', 'needs_manual_review', 'source_run_id', 'row_hash'], {
     patient_name: col('string', 'Họ tên.', { identifier: 'direct', use: 'excluded' }),
     sex: col('enum', 'Giới tính.', { allowed: ['Nam', 'Nữ'], identifier: 'quasi' }),
     birth_year: col('integer', 'Năm sinh.', { identifier: 'quasi', use: 'approval_required' }),
@@ -522,6 +534,7 @@ TABLES.analysis_ready = {
     }),
     time_to_surgery_hours: col('decimal', 'Số giờ từ vào viện đến ca mổ sớm nhất (làm tròn 0,1).', { unit: 'giờ', empty: 'Không mổ hoặc thiếu thời điểm.', allowed: 'Âm là bất thường → cần kiểm tra.' }),
     diagnosis_raw: col('text', 'Chẩn đoán (ra viện, nếu trống thì vào viện).', { identifier: 'free_text', use: 'approval_required' }),
+    ...ADMISSION_VITAL_COLUMNS,
     surgery_name: col('string', 'Tên ca mổ sớm nhất.'),
     surgery_method: col('text', 'Phương pháp ca mổ sớm nhất.', { identifier: 'free_text', use: 'approval_required' }),
     anesthesia_method: col('string', 'Vô cảm của ca mổ sớm nhất.'),

@@ -39,6 +39,13 @@ function hchanhProfileRow(payload, meta = {}) {
     'Chẩn đoán vào viện': p.chan_doan_vao || '',
     'Chẩn đoán ra viện': p.chan_doan_ra || '',
     'Phòng/Giường': p.phong || '',
+    'Mạch vào viện': p.mach_vao_vien || '',
+    'Nhiệt độ vào viện': p.nhiet_do_vao_vien || '',
+    'HA tâm thu vào viện': p.huyet_ap_tam_thu_vao_vien || '',
+    'HA tâm trương vào viện': p.huyet_ap_tam_truong_vao_vien || '',
+    'Nhịp thở vào viện': p.nhip_tho_vao_vien || '',
+    'Cân nặng vào viện': p.can_nang_vao_vien || '',
+    'Chiều cao vào viện': p.chieu_cao_vao_vien || '',
     'Nguồn input': 'hchanh_profile',
   };
 }
