@@ -496,8 +496,8 @@ function ensureResearchSourceRows(runDir, { fallbackPath = '', sourceRunId = '',
   if (!pickedRows.length) return { rows: [], file: '', base_file: '', candidates, date_context: dateCtx };
 
   // Ưu tiên giữ mã của research_source.csv cũ; sau đó dùng mã mà script XN/CĐHA đã
-  // cấp cho cùng đợt trong du_lieu_goc.csv (cùng Research key qua Mã điều trị/nội trú),
-  // để hai nơi cấp mã không cho cùng một đợt hai Mã NC khác nhau.
+  // cấp cho cùng Mã BN + khoảng thời gian trong du_lieu_goc.csv (cùng Research key nội bộ),
+  // để hai nơi cấp mã không cho cùng một khoảng hai Mã NC khác nhau.
   const previousCodes = previousResearchCodes(existingRows);
   const reservedCodes = [];
   const deepPath = path.join(runPath, 'du_lieu_goc.csv');
