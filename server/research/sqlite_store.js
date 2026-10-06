@@ -52,6 +52,16 @@ function databaseInfo(datasetDir) {
   };
 }
 
+function sqlitePythonError(stderr) {
+  const lines = String(stderr || '').trim().split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  if (!lines.length) return '';
+  const root = [...lines].reverse().find(line =>
+    /^(?:[A-Za-z_][\w.]*Error|sqlite3\.[A-Za-z_]+|RuntimeError|PermissionError|OSError|FileNotFoundError|ValueError):/.test(line)
+  ) || lines[lines.length - 1];
+  const context = lines.slice(-8).filter(line => line !== root).slice(-3);
+  return [root, ...context].join('\n');
+}
+
 function syncResearchDatabase({
   datasetDir,
   datasetId,
@@ -110,7 +120,7 @@ function syncResearchDatabase({
     });
     if (result.error) throw new Error(`Không chạy được Python tạo SQLite: ${result.error.message}`);
     if (result.status !== 0) {
-      const stderr = String(result.stderr || '').trim().split(/\r?\n/).slice(-12).join('\n');
+      const stderr = sqlitePythonError(result.stderr);
       throw new Error(`Tạo SQLite thất bại${stderr ? `:\n${stderr}` : '.'}`);
     }
     let payload = null;
@@ -161,7 +171,7 @@ function queryResearchDatabase({
     });
     if (result.error) throw new Error(`Không chạy được SQLite query: ${result.error.message}`);
     if (result.status !== 0) {
-      const stderr = String(result.stderr || '').trim().split(/\r?\n/).slice(-12).join('\n');
+      const stderr = sqlitePythonError(result.stderr);
       throw new Error(`SQLite query thất bại${stderr ? `:\n${stderr}` : '.'}`);
     }
     let payload = null;
@@ -181,4 +191,5 @@ module.exports = {
   databaseInfo,
   syncResearchDatabase,
   queryResearchDatabase,
+  sqlitePythonError,
 };
