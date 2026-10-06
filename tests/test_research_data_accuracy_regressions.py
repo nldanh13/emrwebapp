@@ -113,6 +113,7 @@ def test_encounter_matching_is_auditable_and_strong_keys_fail_closed():
     assert "function resolveStrongEncounterKey" in ctx
     assert "encounter_match_identity_conflict" in ctx
     assert "encounter_match_strong_key_not_found" in ctx
+    assert "encounter_match_missing_event_time" in ctx
     assert "encounter_match_method: encounterMatchMethod(ctx)" in norm
     assert "encounter_match_reason: ctx.needs_manual_review || ''" in norm
     assert "encounter_match_method" in schema
@@ -126,6 +127,9 @@ def test_research_code_is_not_an_identity_blocker_and_matching_quality_is_report
     assert "matching_quality: matchingQuality" in qa
     assert "strong_key" in qa
     assert "outside_treatment_time" in qa
+    assert "missing_event_time" in qa
+    assert "identity_conflict" in qa
+    assert "encounter_match_identity_conflict" in qa
 
 
 def test_analysis_outputs_require_positive_temporal_membership():
