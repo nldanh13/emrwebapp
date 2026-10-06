@@ -103,13 +103,6 @@ function normalizedIdentity(value) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, '');
 }
 
-function rowNoitruId(row) {
-  return firstNonEmpty(row, [
-    'noitruid', 'noi_tru_id', 'NoiTruID', 'Mã nội trú', 'Ma noi tru',
-    'emr_noitru_id', 'treatment_uuid',
-  ]);
-}
-
 function rowExistingEncounterId(row) {
   return firstNonEmpty(row, ['encounter_id', 'visit_id']);
 }
