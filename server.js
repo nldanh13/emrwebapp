@@ -58,6 +58,8 @@ app.use('/api', require('./server/routes/auth_login').router);
 app.use('/api', middleware.requireAppToken);
 // Thiết bị tin cậy: kiểm chữ ký thiết bị (nếu có) → req.deviceTrusted.
 app.use('/api', require('./server/services/authz').attachDeviceTrust);
+// Bật EMR_REQUIRE_TRUSTED_DEVICE=1 (VPS): máy chưa tin cậy không nhận dữ liệu.
+app.use('/api', require('./server/services/authz').requireTrustedDevice);
 // Chỉ các endpoint upload thực sự cần payload lớn. Các API khác bị giới hạn.
 app.use('/api/research/archive/source', express.json({ limit: process.env.EMR_RESEARCH_UPLOAD_LIMIT || '50mb' }));
 app.use('/api/hchanh/upload-discharge-pdf', express.json({ limit: process.env.EMR_DISCHARGE_PDF_UPLOAD_LIMIT || '45mb' }));

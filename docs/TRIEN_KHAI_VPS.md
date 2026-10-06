@@ -68,9 +68,12 @@ Người dùng khác: vào tab **Thiết lập tài khoản** → Thêm tài kho
 
 ### Thiết bị tin cậy (điện thoại / máy của bạn)
 
-Chỉ thiết bị tin cậy được xem dữ liệu thật; thiết bị tin cậy mở lại không phải đăng nhập.
+Trên VPS bật sẵn `EMR_REQUIRE_TRUSTED_DEVICE=1`: **máy chưa tin cậy, dù đăng nhập đúng, không nhận
+dữ liệu nào** — chỉ thấy trang "Thiết bị này chưa được tin cậy" để đăng ký. Thiết bị tin cậy dùng bình
+thường và mở lại không phải đăng nhập. (Muốn tắt: xóa dòng đó trong `/etc/emrwebapp/emrwebapp.env`
+rồi `sudo systemctl restart emrwebapp` — không khuyên.)
 
-1. Trên điện thoại: đăng nhập → tab **Thiết lập tài khoản** → **Thiết bị tin cậy** → *Đăng ký thiết bị này*.
+1. Trên điện thoại: đăng nhập → trang **Thiết bị này chưa được tin cậy** → *Đăng ký thiết bị này*.
 2. Trên VPS lấy mã xác nhận (dùng một lần, 10 phút):
 
    ```bash
@@ -143,6 +146,7 @@ chạy lại; thật cần thì thêm `--force`. Cập nhật lỗi thì script 
 
 - [ ] `/etc/emrwebapp/emrwebapp.env` có dòng `EMR_USERS_FILE=...` (thiếu dòng này app **bỏ qua đăng nhập**).
 - [ ] Mở trang từ 4G (ngoài BV): bị chặn nếu đã đặt `--allow-ips`.
+- [ ] Đăng nhập trên một máy CHƯA đăng ký: chỉ thấy trang "Thiết bị này chưa được tin cậy", không thấy dữ liệu.
 - [ ] Mỗi người một tài khoản riêng, mật khẩu ≥ 8 ký tự; người nghỉ việc thì tắt tài khoản.
 - [ ] Đổi đăng nhập SSH sang khóa (SSH key) và tắt đăng nhập root bằng mật khẩu.
 - [ ] Đã chép `backup.pass` ra nơi an toàn và thử khôi phục một lần.

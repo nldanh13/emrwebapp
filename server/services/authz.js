@@ -397,6 +397,30 @@ function attachDeviceTrust(req, _res, next) {
   return next();
 }
 
+// EMR_REQUIRE_TRUSTED_DEVICE=1 (bật trên VPS): máy chưa tin cậy, dù đăng nhập đúng, KHÔNG nhận
+// dữ liệu nào — chỉ được xem trạng thái đăng nhập/thiết bị và đăng ký thiết bị. Chạy một máy
+// không đăng nhập (localhost) và link báo cáo dùng một lần không bị ảnh hưởng.
+const TRUSTED_DEVICE_OPEN_PATHS = ['/auth/me', '/health', '/devices'];
+
+function trustedDeviceRequired() {
+  return isTruthy(process.env.EMR_REQUIRE_TRUSTED_DEVICE);
+}
+
+function requireTrustedDevice(req, res, next) {
+  if (!trustedDeviceRequired() || req.method === 'OPTIONS') return next();
+  if (req.deviceTrusted) return next();
+  const type = req.auth?.auth_type;
+  if (type === 'local_only' || type === 'one_time_token') return next();
+  const p = String(req.path || '');
+  if (TRUSTED_DEVICE_OPEN_PATHS.some(open => p === open || p.startsWith(`${open}/`))) return next();
+  res.set('x-device-required', '1');
+  return res.status(403).json({
+    status: 'error',
+    code: 'DEVICE_NOT_TRUSTED',
+    message: 'Thiết bị này chưa được tin cậy nên không xem được dữ liệu. Vào "Đăng ký thiết bị này", rồi nhập mã xác nhận hoặc nhờ quản trị duyệt.',
+  });
+}
+
 function authenticateRequest(req, res, next) {
   if (req.method === 'OPTIONS') return next();
   if (isReportOttRequest(req)) {
@@ -528,6 +552,8 @@ module.exports = {
   assertAuthConfiguration,
   authenticateRequest,
   attachDeviceTrust,
+  requireTrustedDevice,
+  trustedDeviceRequired,
   authorizeRequest,
   requireRole,
   hasRole,
