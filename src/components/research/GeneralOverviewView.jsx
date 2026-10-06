@@ -155,9 +155,46 @@ function PipelineView({ pipeline, summary, onNormalize, normalizeBusy = false })
               </span>
             </div>
           )}
+          {!!qa.blocking_items?.length && (
+            <div style={{ marginTop: 8, border: `1px solid ${C.redBorder || C.border}`, background: C.redBg || C.surface2, borderRadius: 7, padding: '8px 9px' }}>
+              <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.red }}>Lỗi chặn phải xử lý trước khi tạo dataset</div>
+              <div style={{ marginTop: 5, display: 'grid', gap: 5 }}>
+                {qa.blocking_items.map((item, idx) => (
+                  <div key={`${item.code || 'block'}_${idx}`} style={{ fontSize: FS.xs, color: C.text2 }}>
+                    <b style={{ color: C.red }}>{item.code || 'blocking'}:</b>{' '}
+                    <span>{item.message || 'Lỗi chất lượng dữ liệu.'}</span>
+                    {item.table ? <span style={{ color: C.text3 }}> · bảng {item.table}</span> : null}
+                    {Number(item.count || 0) > 0 ? <span style={{ color: C.text3 }}> · {compactNumber(item.count)} dòng/nhóm</span> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {!!normalize.unmatched.length && (
             <div style={{ color: C.amber }}>Không ghép được vào lượt điều trị: {normalize.unmatched.map(u => `${u.label} ${compactNumber(u.rows)} dòng`).join(' · ')} (giữ riêng, không đưa vào phân tích).</div>
           )}
+          {qa.matching_quality && (() => {
+            const mq = qa.matching_quality;
+            const reasons = [
+              ['Ngoài thời gian điều trị', mq.outside_treatment_time, 'danger'],
+              ['Thiếu thời gian sự kiện', mq.missing_event_time, 'warn'],
+              ['Khóa đợt không tìm thấy', mq.strong_key_not_found, 'warn'],
+              ['Khóa đợt mơ hồ', mq.strong_key_ambiguous, 'warn'],
+              ['Xung đột Mã BN/khóa đợt', mq.identity_conflict, 'danger'],
+              ['Mơ hồ', mq.ambiguous, 'warn'],
+              ['Không ghép', mq.missing, 'danger'],
+            ].filter(([, value]) => Number(value || 0) > 0);
+            return reasons.length ? (
+              <div style={{ marginTop: 6, fontSize: FS.xs, color: C.text2 }}>
+                <b>Vì sao chưa ghép được:</b>{' '}
+                {reasons.map(([label, value, tone], idx) => (
+                  <span key={label} style={{ color: tone === 'danger' ? C.red : C.amber }}>
+                    {idx ? ' · ' : ''}{label}: <B>{compactNumber(value)}</B>
+                  </span>
+                ))}
+              </div>
+            ) : null;
+          })()}
           {qa.matching_quality && (() => {
             const mq = qa.matching_quality;
             const matched = Number(mq.matched_rows || 0);
