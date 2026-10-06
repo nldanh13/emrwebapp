@@ -1008,3 +1008,4 @@ export const emrBridgeResult      = (body) => bridgeCall('/api/emr-bridge/result
 export const emrBridgeDisconnect  = (id)   => bridgeCall('/api/emr-bridge/disconnect', { bridge_id: id });
 export const updateResearchStudyVariables = (studyId, selectedVariables) =>
   post(`/api/research/studies/${encodeURIComponent(studyId)}/variables`, { selected_variables: selectedVariables });
+export const downloadResearchStudyCodebook = (studyId) => downloadBlob(`/api/research/studies/${encodeURIComponent(studyId)}/codebook`, `${studyId}_tu_dien_bien.csv`);

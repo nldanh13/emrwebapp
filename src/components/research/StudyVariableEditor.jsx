@@ -6,7 +6,7 @@ import * as api from '../../api.js';
 import { C, FS } from '../../tokens.js';
 import { Btn } from '../shared.jsx';
 import { SkeletonLines } from '../Skeleton.jsx';
-import { defaultAggregationFor, dedupeWideTableVariables, enhanceCatalogVariable } from './variableCatalogModel.js';
+import { ANCHOR_AGGREGATIONS, VARIABLE_AGGREGATIONS, dedupeWideTableVariables, enhanceCatalogVariable, isPresenceVariable } from './variableCatalogModel.js';
 
 const lower = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd');
 
@@ -15,8 +15,25 @@ export function currentStudyVariables(study) {
   return Array.isArray(sel?.selected_variables) ? sel.selected_variables : [];
 }
 
+// Bảng một dòng mỗi lượt: chỉ có một giá trị, không cần chọn cách lấy.
+const SINGLE_ROW_TABLES = new Set(['analysis_ready', 'encounters', 'patients', 'cohort', 'initial_list']);
+export const needsAggregationChoice = (v) => !SINGLE_ROW_TABLES.has(String(v?.table || '')) && !isPresenceVariable(v);
+
+// Mặc định để phân tích được ngay (một số mỗi lượt): có mốc → gần trước mốc nhất; không → đầu tiên.
+export function defaultAggregationForStudy(v, hasAnchor) {
+  if (isPresenceVariable(v)) return 'any';
+  if (!needsAggregationChoice(v)) return 'list';
+  return hasAnchor ? 'closest_before_anchor' : 'first';
+}
+
+export function aggregationOptions(hasAnchor) {
+  return VARIABLE_AGGREGATIONS.filter(([key]) => key !== 'any' && (hasAnchor || !ANCHOR_AGGREGATIONS.has(key)));
+}
+
+const variableKey = (v) => `${v.id}:${v.aggregation || ''}`;
+
 // Biến trong danh mục kho → biến của nghiên cứu (cùng dạng lúc Tạo nghiên cứu).
-export function catalogVariableToSpec(v) {
+export function catalogVariableToSpec(v, hasAnchor = false) {
   return {
     id: v.id,
     table: v.table,
@@ -28,12 +45,15 @@ export function catalogVariableToSpec(v) {
     role: '',
     virtual_kind: v.virtual_kind || '',
     source_filter: v.source_filter || null,
-    aggregation: defaultAggregationFor(v),
+    aggregation: defaultAggregationForStudy(v, hasAnchor),
   };
 }
 
 export function StudyVariableEditor({ study, toast, onSaved }) {
   const saved = useMemo(() => currentStudyVariables(study), [study]);
+  const selection = study?.variable_selection || study?.analysis_config?.variable_selection || null;
+  const hasAnchor = Boolean(selection?.anchor);
+  const options = aggregationOptions(hasAnchor);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(saved);
   const [catalog, setCatalog] = useState(null);
@@ -62,7 +82,10 @@ export function StudyVariableEditor({ study, toast, onSaved }) {
   const results = q
     ? browse.filter(v => !chosen.has(v.id) && lower(`${v.display_label} ${v.clinical_group_label} ${v.raw_name}`).includes(q)).slice(0, 40)
     : [];
-  const dirty = draft.map(v => v.id).join('|') !== saved.map(v => v.id).join('|');
+  const dirty = draft.map(variableKey).join('|') !== saved.map(variableKey).join('|');
+  const setAggregation = (id, aggregation) => setDraft(d => d.map(v => (v.id === id ? { ...v, aggregation } : v)));
+  // Biến bảng dài đang "liệt kê" nhiều giá trị → không phân tích số được; nhắc chọn một giá trị.
+  const listing = draft.filter(v => needsAggregationChoice(v) && String(v.aggregation || 'list') === 'list');
 
   const save = async () => {
     setSaving(true);
@@ -79,7 +102,16 @@ export function StudyVariableEditor({ study, toast, onSaved }) {
   };
 
   if (!open) {
-    return <Btn onClick={() => setOpen(true)} style={{ height: 28 }}>Thêm / bớt biến</Btn>;
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <Btn onClick={() => setOpen(true)} style={{ height: 28 }}>Thêm / bớt biến</Btn>
+        {!!listing.length && (
+          <span style={{ fontSize: FS.xs, color: C.amber }}>
+            {listing.length} biến đang liệt kê nhiều giá trị/lượt — bấm Thêm / bớt biến để chọn cách lấy một giá trị.
+          </span>
+        )}
+      </span>
+    );
   }
 
   return (
@@ -89,10 +121,23 @@ export function StudyVariableEditor({ study, toast, onSaved }) {
         {dirty && <span style={{ fontSize: FS.xs, color: C.amber, fontWeight: 600 }}>Chưa lưu</span>}
         <span style={{ fontSize: FS.xs, color: C.text3 }}>Chỉ tính lại trên dữ liệu đã có — không đổi mẫu, không mở EMR, không ảnh hưởng kho chung.</span>
       </div>
+      {!!listing.length && (
+        <div style={{ fontSize: FS.xs, color: C.amber }}>
+          Biến xét nghiệm/thuốc có thể có nhiều kết quả trong một lượt. Chọn cách lấy <b>một giá trị</b>
+          {hasAnchor ? ' (vd. "Gần trước mốc nhất")' : ' (vd. "Giá trị đầu tiên")'} để file xuất là số, phân tích được ngay.
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {draft.map(v => (
           <span key={v.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 4px 3px 10px', borderRadius: 999, background: C.surface3, border: `1px solid ${C.blueBorder}`, fontSize: FS.sm, color: C.text }}>
             {v.label || v.name}
+            {needsAggregationChoice(v) && (
+              <select value={v.aggregation || 'list'} onChange={e => setAggregation(v.id, e.target.value)} aria-label={`Cách lấy giá trị: ${v.label || v.name}`}
+                title="Cách lấy giá trị khi một lượt có nhiều kết quả"
+                style={{ height: 22, borderRadius: 4, border: `1px solid ${String(v.aggregation || 'list') === 'list' ? C.amberBorder : C.border}`, background: C.surface, color: C.text2, fontSize: FS.xs, fontFamily: 'inherit' }}>
+                {options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}
+              </select>
+            )}
             <button type="button" aria-label={`Bỏ biến ${v.label || v.name}`} title={draft.length <= 1 ? 'Nghiên cứu cần ít nhất 1 biến' : 'Bỏ biến'}
               disabled={draft.length <= 1} onClick={() => setDraft(d => d.filter(x => x.id !== v.id))}
               style={{ border: 0, background: 'transparent', color: C.text2, cursor: draft.length <= 1 ? 'default' : 'pointer', fontSize: FS.md, lineHeight: 1, padding: '0 4px' }}>×</button>
@@ -113,7 +158,7 @@ export function StudyVariableEditor({ study, toast, onSaved }) {
                   <span style={{ color: C.text }}>{v.display_label}</span>
                   <span style={{ color: C.text3, fontSize: FS.xs }}> · {v.clinical_group_label}{Number.isFinite(Number(v.nonempty)) ? ` · có dữ liệu ${Number(v.nonempty).toLocaleString('vi-VN')} dòng trong kho` : ''}</span>
                 </span>
-                <Btn onClick={() => setDraft(d => [...d, catalogVariableToSpec(v)])} style={{ height: 24, fontSize: FS.xs }}>+ Thêm</Btn>
+                <Btn onClick={() => setDraft(d => [...d, catalogVariableToSpec(v, hasAnchor)])} style={{ height: 24, fontSize: FS.xs }}>+ Thêm</Btn>
               </div>
             ))}
           </div>

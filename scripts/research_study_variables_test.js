@@ -11,7 +11,8 @@ process.env.EMR_RUNTIME_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'study_vars
 const { writeCsv, readCsvTable } = require('../server/research/table_io');
 const { archiveRunsDir, ensureArchiveStore, studyMetaPath, runsDir, studyDir } = require('../server/research/store_paths');
 const { readStudy } = require('../server/research/run_registry');
-const { updateStudyVariables } = require('../server/research/study_variables');
+const { updateStudyVariables, buildStudyCodebook } = require('../server/research/study_variables');
+const { summarizeSelectionForRun } = require('../server/research/selection_runtime');
 
 let failed = 0;
 const test = (name, fn) => { try { fn(); console.log(`  ok - ${name}`); } catch (e) { failed += 1; console.error(`  FAIL - ${name}\n`, e); } };
@@ -42,6 +43,8 @@ fs.writeFileSync(path.join(runDir, 'manifest.json'), JSON.stringify({ run_id: '2
 writeCsv(path.join(runDir, 'analysis_ready.csv'), ['research_code', 'encounter_id', 'patient_key', 'sex', 'age'], [
   { research_code: 'NC1', encounter_id: 'e1', patient_key: 'p1', sex: 'Nữ', age: '70' },
   { research_code: 'NC2', encounter_id: 'e2', patient_key: 'p2', sex: 'Nam', age: '65' },
+  // Không đạt tiêu chuẩn chọn mẫu (tuổi < 50): có trong dữ liệu nhưng không thuộc mẫu phân tích.
+  { research_code: 'NC3', encounter_id: 'e3', patient_key: 'p3', sex: 'Nam', age: '40' },
 ]);
 writeCsv(path.join(runDir, 'analysis_final.csv'), ['research_code', 'sex'], [{ research_code: 'NC1', sex: 'Nữ' }]);
 
@@ -57,6 +60,17 @@ test('thêm biến → lưu vào nghiên cứu, "Biến đã chọn" dựng lạ
   const selected = readCsvTable(path.join(runDir, 'analysis_selected.csv'), 100);
   assert.ok(selected.columns.some(c => /age|Tuổi/i.test(c)), `có cột tuổi: ${selected.columns}`);
   assert.strictEqual(selected.rows.length, 2);
+});
+
+// Ảnh 06/10/2026: thống kê 77 lượt nhưng file "Biến đã chọn" 80 dòng — file xuất không lọc theo
+// tiêu chuẩn chọn mẫu. Xem trước (thống kê) và xuất phải dùng chung một cách chọn mẫu.
+test('file xuất đúng bằng số lượt của thống kê (cùng tiêu chuẩn chọn mẫu)', () => {
+  const sel = readStudy(STUDY).variable_selection;
+  const { summary } = summarizeSelectionForRun(runDir, sel);
+  const selected = readCsvTable(path.join(runDir, 'analysis_selected.csv'), 100);
+  assert.strictEqual(summary.total, 2);
+  assert.strictEqual(selected.rows.length, summary.total);
+  assert.ok(!selected.rows.some(r => r.research_code === 'NC3'), 'lượt không đạt điều kiện không vào file xuất');
 });
 
 test('tiêu chuẩn chọn mẫu, mỗi người một lượt giữ nguyên', () => {
@@ -75,6 +89,19 @@ test('bớt biến → còn đúng biến đã giữ', () => {
   assert.deepStrictEqual(readStudy(STUDY).variable_selection.selected_variables.map(v => v.id), ['analysis_ready.age']);
 });
 
+test('từ điển biến: mỗi cột của file xuất một dòng, nhãn/kiểu/cách lấy/số lượt thiếu đúng', () => {
+  const book = buildStudyCodebook(readStudy(STUDY));
+  assert.strictEqual(book.encounters, 2);
+  const cols = book.rows.map(r => r.cot);
+  assert.ok(cols.includes('research_code'));
+  const age = book.rows.find(r => r.nhan === 'Tuổi' && r.cot.startsWith('var_'));
+  assert.ok(age, `có dòng cho biến Tuổi: ${JSON.stringify(book.rows)}`);
+  assert.strictEqual(age.kieu, 'Số');
+  assert.strictEqual(age.co_du_lieu + age.thieu, 2);
+  assert.match(age.cach_lay, /đợt|mốc/);
+  assert.ok(!book.rows.some(r => /ho_ten|ma_bn|patient_code/i.test(r.cot)), 'không có cột định danh');
+});
+
 test('không còn biến nào → báo lỗi tiếng Việt, không ghi', () => {
   assert.throws(() => updateStudyVariables(STUDY, []), /Chọn ít nhất 1 biến/);
   assert.strictEqual(readStudy(STUDY).variable_selection.selected_variables.length, 1);
@@ -85,4 +112,4 @@ test('kho dữ liệu gốc không bị đụng tới', () => {
 });
 
 if (failed) process.exit(1);
-console.log('6 test(s) passed.');
+console.log('8 test(s) passed.');

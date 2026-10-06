@@ -11,15 +11,19 @@ import { STUDY_TABLES, datasetCount, tableLabel } from './researchScope.js';
 import { CohortSummary, VariableStatsTable } from './researchStats.jsx';
 import { StudyVariableEditor } from './StudyVariableEditor.jsx';
 
-// Bảng xuất chính, theo thứ tự hay dùng khi phân tích.
-const MAIN_EXPORTS = [
-  ['analysis_selected', 'Các biến đã chọn của nghiên cứu, mỗi lượt điều trị một dòng. Dùng file này để xử lý số liệu.'],
-  ['analysis_final', 'Dataset cuối đã kiểm tra, dùng cho phân tích thống kê.'],
-  ['analysis_ready', 'Bảng tổng hợp đầy đủ mọi biến của kho cho từng lượt.'],
-  ['cohort', 'Danh sách mẫu của nghiên cứu.'],
-];
-// Bảng không còn dùng ở nghiên cứu (phiếu nhập tay đã bỏ).
-const HIDDEN_TABLES = new Set(['crf']);
+// File xuất chính là "Biến đã chọn" (đúng các lượt đạt điều kiện, như thống kê) + Từ điển biến.
+// Bảng không còn dùng ở nghiên cứu: phiếu nhập tay (đã bỏ), dataset cuối (bước chốt dataset đã bỏ).
+const HIDDEN_TABLES = new Set(['crf', 'analysis_final', 'analysis_selected']);
+
+// "86 mẫu → 80 lượt có dữ liệu → Tuổi ≥ 50: 77" — giải thích vì sao số lượt phân tích khác số mẫu.
+export function cohortFunnelText(cohortCount, funnel = []) {
+  const steps = Array.isArray(funnel) ? funnel : [];
+  const parts = [];
+  if (Number.isFinite(Number(cohortCount)) && Number(cohortCount) > 0) parts.push(`${compactNumber(cohortCount)} mẫu trong danh sách`);
+  if (steps[0]) parts.push(`${compactNumber(steps[0].encounters)} lượt có dữ liệu`);
+  for (const st of steps.slice(1)) parts.push(`${st.exclude ? 'loại ' : ''}${st.label}: còn ${compactNumber(st.encounters)}`);
+  return parts.join(' → ');
+}
 
 const card = { border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, padding: '12px 14px' };
 
@@ -27,6 +31,8 @@ export function StudyStatsView({ study, toast, onStudyChanged }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [hideSensitive, setHideSensitive] = useState(true);
+  // Mở nghiên cứu khác: luôn bật lại "Ẩn định danh khi xuất".
+  useEffect(() => { setHideSensitive(true); }, [study?.id]);
   const [otherTable, setOtherTable] = useState('');
   const [exporting, setExporting] = useState('');
   const [seeding, setSeeding] = useState(false);
@@ -90,7 +96,22 @@ export function StudyStatsView({ study, toast, onStudyChanged }) {
   }
 
   const summary = stats?.summary || null;
-  const otherTables = STUDY_TABLES.filter(([id]) => !HIDDEN_TABLES.has(id) && !MAIN_EXPORTS.some(([m]) => m === id));
+  const otherTables = STUDY_TABLES.filter(([id]) => !HIDDEN_TABLES.has(id));
+  const analyzed = Number(summary?.total ?? summary?.cohort?.encounters ?? 0);
+  const variableCount = summary?.variables?.length || 0;
+  const funnelText = summary ? cohortFunnelText(study?.cohort_count, summary.funnel) : '';
+  const exportCodebook = async () => {
+    setExporting('__codebook__');
+    try {
+      const r = await api.downloadResearchStudyCodebook(studyId);
+      saveBlob(r.filename || `${studyId}_tu_dien_bien.csv`, r.blob);
+      toast?.('Đã xuất từ điển biến.', 'ok');
+    } catch (e) {
+      toast?.(String(e.message || e), 'error');
+    } finally {
+      setExporting('');
+    }
+  };
   return (
     <div style={{ padding: '10px 12px 16px', display: 'grid', gap: 14 }}>
       <section style={card}>
@@ -99,7 +120,10 @@ export function StudyStatsView({ study, toast, onStudyChanged }) {
           {loading && <Spinner size={9} />}
         </div>
         {summary
-          ? <CohortSummary summary={summary} />
+          ? <>
+            <CohortSummary summary={summary} />
+            {funnelText && <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 6 }}>{funnelText}</div>}
+          </>
           : !loading && (
             <div style={{ fontSize: FS.sm, color: C.text3 }}>
               {stats?.reason === 'no_selection'
@@ -125,23 +149,21 @@ export function StudyStatsView({ study, toast, onStudyChanged }) {
             Ẩn định danh khi xuất
           </label>
         </div>
-        {MAIN_EXPORTS.map(([key, desc]) => {
-          const count = datasetCount(study, key, false);
-          return (
-            <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', borderTop: `1px solid ${C.border2}`, paddingTop: 9 }}>
-              <div style={{ flex: '1 1 280px' }}>
-                <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text }}>
-                  {tableLabel(key, false)} <span style={{ fontWeight: 500, color: C.text3, fontVariantNumeric: 'tabular-nums' }}>· {compactNumber(count)} dòng</span>
-                </div>
-                <div style={{ fontSize: FS.xs, color: C.text3 }}>{desc}</div>
-              </div>
-              <Btn variant={key === 'analysis_selected' ? 'solidSuccess' : 'success'} onClick={() => exportTable(key)} disabled={!count || Boolean(exporting)} loading={exporting === key} style={{ height: 30 }}>Xuất CSV</Btn>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', borderTop: `1px solid ${C.border2}`, paddingTop: 9 }}>
+          <div style={{ flex: '1 1 280px' }}>
+            <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text }}>
+              Dữ liệu nghiên cứu <span style={{ fontWeight: 500, color: C.text3, fontVariantNumeric: 'tabular-nums' }}>· {compactNumber(analyzed)} lượt × {compactNumber(variableCount)} biến</span>
             </div>
-          );
-        })}
+            <div style={{ fontSize: FS.xs, color: C.text3 }}>
+              Mỗi lượt đạt điều kiện một dòng, đúng các lượt ở thống kê trên. Kèm Từ điển biến (nhãn, đơn vị, cách lấy giá trị, mã hóa) để nhập SPSS/R/Stata.
+            </div>
+          </div>
+          <Btn variant="solidSuccess" onClick={() => exportTable('analysis_selected')} disabled={!analyzed || Boolean(exporting)} loading={exporting === 'analysis_selected'} style={{ height: 30 }}>Xuất CSV</Btn>
+          <Btn variant="success" onClick={exportCodebook} disabled={!analyzed || Boolean(exporting)} loading={exporting === '__codebook__'} style={{ height: 30 }}>Từ điển biến</Btn>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', borderTop: `1px solid ${C.border2}`, paddingTop: 9 }}>
           <select value={otherTable} onChange={e => setOtherTable(e.target.value)} aria-label="Bảng khác" style={{ height: 30, borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text, padding: '0 8px', fontSize: FS.sm, fontFamily: 'inherit', flex: '0 1 320px' }}>
-            <option value="">Bảng khác (xét nghiệm, CĐHA, y lệnh, mã hóa...)</option>
+            <option value="">Bảng khác (danh sách mẫu, bảng phân tích, xét nghiệm, y lệnh…)</option>
             {otherTables.map(([id, l]) => <option key={id} value={id}>{l} · {compactNumber(datasetCount(study, id, false))} dòng</option>)}
           </select>
           <Btn variant="success" onClick={() => exportTable(otherTable)} disabled={!otherTable || Boolean(exporting)} loading={Boolean(otherTable) && exporting === otherTable} style={{ height: 30 }}>Xuất CSV</Btn>

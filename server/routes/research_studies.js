@@ -414,8 +414,29 @@ router.get('/research/studies/:studyId/export', (req, res) => {
     if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
     const tableKey = TABLES[req.query.table] ? String(req.query.table) : 'analysis_ready';
     const runId = resolveRunId(study.id, String(req.query.runId || 'latest'));
+    // "Biến đã chọn" dựng lại ngay trước khi xuất (cùng cách chọn mẫu với thống kê): file luôn khớp
+    // số lượt trên màn hình, kể cả file cũ dựng trước khi sửa lỗi lọc mẫu.
+    if (tableKey === 'analysis_selected' && runId && runId === resolveRunId(study.id, 'latest')) {
+      require('../research/study_variables').rebuildStudySelected(study, { keepFinal: true });
+    }
     const filePath = tablePathFor(study.id, tableKey, runId || 'latest');
     return sendCsvFile(res, filePath, `${study.id}_${runId || 'latest'}_${tableKey}`, { redact: researchResponseShouldRedact(req) });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+// Từ điển biến (codebook) của file "Biến đã chọn": tên cột, nhãn, kiểu, đơn vị, cách lấy, mã hóa, thiếu.
+router.get('/research/studies/:studyId/codebook', (req, res) => {
+  try {
+    const study = readStudy(req.params.studyId);
+    if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
+    const { buildStudyCodebook } = require('../research/study_variables');
+    const book = buildStudyCodebook(study);
+    const runId = resolveRunId(study.id, 'latest');
+    const file = path.join(runsDir(study.id), runId, 'analysis_codebook.csv');
+    writeCsv(file, book.columns, book.rows);
+    return sendCsvFile(res, file, `${study.id}_${runId}_tu_dien_bien`, { redact: false });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }
