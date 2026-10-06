@@ -159,7 +159,8 @@ test('Ghép theo ngày sự kiện chỉ khi nằm trong đúng một lượt, k
 
   const outside = R.contextForRow(map, { 'Mã BN': '111', 'TG chỉ định': '23/02/2026' }, '111');
   assert.strictEqual(outside.encounter_id, '');
-  assert.strictEqual(R.encounterMatchStatus(outside), 'ambiguous');
+  assert.strictEqual(R.encounterMatchStatus(outside), 'missing');
+  assert.strictEqual(outside.needs_manual_review, 'encounter_match_outside_time');
 });
 
 test('Kết quả chỉ thuộc đợt khi thời gian nằm trong khoảng vào-ra viện; có giờ thì so chính xác theo giờ', () => {
