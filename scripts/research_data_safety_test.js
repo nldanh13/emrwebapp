@@ -70,17 +70,20 @@ const INITIAL_ROWS = [
   { 'T/G vào': '10:00 01/03/2026', 'Mã BN': '222', 'Mã nội trú': 'nt-c', 'Họ tên': 'BN GIA LAP B' },
 ];
 
-test('Ghép lượt chấp nhận Mã NC khác hoa/thường và khoảng trắng, có lưu phương pháp ghép', () => {
+test('Ghép lượt không dùng Mã NC; chỉ Mã BN chưa đủ khi người bệnh có nhiều đợt', () => {
   const rows = [
-    { 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'Mã NC': 'NC0001', 'T/G vào': '08:00 20/02/2026' },
-    { 'Mã BN': '111', 'Mã nội trú': 'nt-b', 'Mã NC': 'NC0002', 'T/G vào': '09:00 25/02/2026' },
+    { 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'Mã NC': 'NC0001', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
+    { 'Mã BN': '111', 'Mã nội trú': 'nt-b', 'Mã NC': 'NC0002', 'T/G vào': '09:00 25/02/2026', 'Ngày ra viện': '28/02/2026' },
   ];
   const map = R.buildContextMap(rows, 'r');
-  const ctx = R.contextForRow(map, { 'Mã BN': '111', 'Mã NC': '  nc0002  ' }, '111');
-  assert.ok(ctx.encounter_id);
-  assert.strictEqual(ctx.research_code, 'NC0002');
-  assert.strictEqual(R.encounterMatchStatus(ctx), 'matched');
-  assert.strictEqual(R.encounterMatchMethod(ctx), 'research_code');
+
+  const byResearchCodeOnly = R.contextForRow(map, { 'Mã BN': '111', 'Mã NC': 'NC0002' }, '111');
+  assert.strictEqual(byResearchCodeOnly.encounter_id, '', 'Mã NC không được dùng để quyết định đợt');
+  assert.strictEqual(R.encounterMatchStatus(byResearchCodeOnly), 'ambiguous');
+
+  const byPatientAndEventTime = R.contextForRow(map, { 'Mã BN': '111', 'Mã NC': 'NC0001', 'TG chỉ định': '26/02/2026' }, '111');
+  assert.strictEqual(byPatientAndEventTime.emr_noitru_id, 'nt-b');
+  assert.strictEqual(R.encounterMatchMethod(byPatientAndEventTime), 'event_date_range');
 });
 
 test('Ghép theo ngày vào duy nhất khi nguồn thiếu giờ/ngày ra; không ghép nếu ngày đó có nhiều lượt', () => {
