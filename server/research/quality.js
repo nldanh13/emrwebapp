@@ -196,7 +196,10 @@ function buildQualityReport({
     strong_key_ambiguous: 0,
     by_table: {},
   };
-  const strongMethods = new Set(['encounter_id', 'emr_treatment_id', 'emr_noitru_id', 'emr_admission_id']);
+  const strongMethods = new Set([
+    'encounter_id', 'emr_treatment_id', 'emr_noitru_id', 'emr_admission_id',
+    'emr_treatment_noitru_alias', 'emr_noitru_treatment_alias',
+  ]);
   const exactVisitMethods = new Set(['visit_exact', 'admission_time', 'discharge_time']);
   const timeRangeMethods = new Set(['event_date_range', 'admission_date', 'discharge_date']);
   for (const [name, idCol] of CHILD_TABLES) {
