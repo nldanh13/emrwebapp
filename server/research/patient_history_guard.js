@@ -269,7 +269,10 @@ function collapseDisplayEncounters(encounters = []) {
   }
   return out
     .map(sanitizeEncounterEvents)
-    .sort((a, b) => text(a.admission_date).localeCompare(text(b.admission_date)));
+    .sort((a, b) => {
+      if (Boolean(a.unmatched) !== Boolean(b.unmatched)) return a.unmatched ? 1 : -1;
+      return text(a.admission_date).localeCompare(text(b.admission_date));
+    });
 }
 
 function splitPatientByCode(patient, query) {
@@ -291,7 +294,10 @@ function splitPatientByCode(patient, query) {
       patient_code: code,
       patient_codes: [code],
       first_research_code: researchCodes[0] || (selectedCodes.length === 1 ? patient.first_research_code : ''),
-      encounter_count: codeEncounters.length,
+      encounter_count: codeEncounters.filter(enc => !enc.unmatched).length,
+      unassigned_count: codeEncounters.filter(enc => enc.unmatched).reduce((sum, enc) =>
+        sum + Number(enc.counts?.labs || 0) + Number(enc.counts?.imaging || 0)
+          + Number(enc.counts?.medications || 0) + Number(enc.counts?.surgeries || 0), 0),
       possible_same_patient_codes: false,
       merge_reason: '',
       encounters: codeEncounters,
