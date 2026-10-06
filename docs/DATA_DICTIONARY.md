@@ -22,7 +22,7 @@
 | Bảng | Mỗi dòng là | Khóa chính |
 |---|---|---|
 | [`patients.csv`](#patients) | Một người bệnh (một Mã BN). | `patient_code` |
-| [`encounters.csv`](#encounters) | Một đợt điều trị nội trú. Các dòng chuyển khoa của cùng đợt (chung Mã nội trú) được gộp làm một. | `encounter_id` |
+| [`encounters.csv`](#encounters) | Một khoảng điều trị nội trú của một Mã BN; các dòng chuyển khoa được gộp khi mốc thời gian chứng minh thuộc cùng lần nằm viện. | `encounter_id` |
 | [`diagnoses.csv`](#diagnoses) | Một chẩn đoán của một đợt (vào viện, ra viện, bệnh kèm hoặc biến chứng). | `diagnosis_id` |
 | [`lab_results.csv`](#lab_results) | Một kết quả xét nghiệm (một chỉ số trong một phiếu). | `lab_result_id` |
 | [`imaging_results.csv`](#imaging_results) | Một dịch vụ chẩn đoán hình ảnh/thăm dò. | `imaging_id` |
