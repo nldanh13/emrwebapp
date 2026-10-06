@@ -190,6 +190,10 @@ function buildQualityReport({
     ambiguous: 0,
     missing: 0,
     outside_treatment_time: 0,
+    missing_event_time: 0,
+    identity_conflict: 0,
+    strong_key_not_found: 0,
+    strong_key_ambiguous: 0,
     by_table: {},
   };
   const strongMethods = new Set(['encounter_id', 'emr_treatment_id', 'emr_noitru_id', 'emr_admission_id']);
@@ -204,6 +208,10 @@ function buildQualityReport({
     const ambiguous = rows.filter(r => text(r.encounter_match_status) === 'ambiguous').length;
     const missing = rows.filter(r => text(r.encounter_match_status) === 'missing').length;
     const outsideTime = rows.filter(r => text(r.encounter_match_reason) === 'encounter_match_outside_time').length;
+    const missingEventTime = rows.filter(r => text(r.encounter_match_reason) === 'encounter_match_missing_event_time').length;
+    const identityConflict = rows.filter(r => text(r.encounter_match_reason) === 'encounter_match_identity_conflict').length;
+    const strongKeyNotFound = rows.filter(r => text(r.encounter_match_reason) === 'encounter_match_strong_key_not_found').length;
+    const strongKeyAmbiguous = rows.filter(r => text(r.encounter_match_reason) === 'encounter_match_strong_key_ambiguous').length;
     const matched = rows.filter(r => text(r.encounter_match_status) === 'matched');
     const strongKey = matched.filter(r => strongMethods.has(text(r.encounter_match_method))).length;
     const exactVisitTime = matched.filter(r => exactVisitMethods.has(text(r.encounter_match_method))).length;
@@ -222,6 +230,10 @@ function buildQualityReport({
       matchingQuality.ambiguous += ambiguous;
       matchingQuality.missing += missing;
       matchingQuality.outside_treatment_time += outsideTime;
+      matchingQuality.missing_event_time += missingEventTime;
+      matchingQuality.identity_conflict += identityConflict;
+      matchingQuality.strong_key_not_found += strongKeyNotFound;
+      matchingQuality.strong_key_ambiguous += strongKeyAmbiguous;
       matchingQuality.by_table[name] = {
         total: rows.length,
         matched: matched.length,
@@ -233,6 +245,10 @@ function buildQualityReport({
         ambiguous,
         missing,
         outside_treatment_time: outsideTime,
+        missing_event_time: missingEventTime,
+        identity_conflict: identityConflict,
+        strong_key_not_found: strongKeyNotFound,
+        strong_key_ambiguous: strongKeyAmbiguous,
       };
     }
     if (ambiguous) warnings.push({ code: 'child_match_ambiguous', message: `${name}: ${ambiguous} dòng khớp nhiều đợt, chưa gắn vào đợt nào.`, table: name, count: ambiguous });
@@ -242,7 +258,12 @@ function buildQualityReport({
     // is_within_encounter = 0 để lọc; báo để người duyệt biết.
     const outside = rows.filter(r => text(r.encounter_id) && text(r.is_within_encounter) === '0').length;
     if (outside) warnings.push({ code: 'child_outside_encounter', message: `${name}: ${outside} dòng đã gắn đợt nhưng nằm ngoài thời gian nằm viện (is_within_encounter = 0).`, table: name, count: outside });
-    if (patientOnly) warnings.push({ code: 'patient_only_match_without_event_time', message: `${name}: ${patientOnly} dòng chỉ ghép được vì Mã BN có đúng một đợt và nguồn không có thời gian sự kiện; cần thận trọng khi dùng.`, table: name, count: patientOnly });
+    if (outsideTime) warnings.push({ code: 'encounter_match_outside_time', message: `${name}: ${outsideTime} dòng có thời gian nhưng không nằm trong bất kỳ đợt điều trị nào của Mã BN.`, table: name, count: outsideTime });
+    if (missingEventTime) warnings.push({ code: 'encounter_match_missing_event_time', message: `${name}: ${missingEventTime} dòng thiếu thời gian và không có khóa đợt đủ mạnh để xác minh.`, table: name, count: missingEventTime });
+    if (strongKeyNotFound) warnings.push({ code: 'encounter_match_strong_key_not_found', message: `${name}: ${strongKeyNotFound} dòng có khóa đợt mạnh nhưng không tìm thấy đợt tương ứng trong cohort.`, table: name, count: strongKeyNotFound });
+    if (strongKeyAmbiguous) warnings.push({ code: 'encounter_match_strong_key_ambiguous', message: `${name}: ${strongKeyAmbiguous} dòng có khóa đợt mạnh nhưng khóa đó khớp nhiều đợt.`, table: name, count: strongKeyAmbiguous });
+    if (identityConflict) blocking.push({ code: 'encounter_match_identity_conflict', message: `${name}: ${identityConflict} dòng có khóa đợt mạnh trỏ tới Mã BN khác. Phải rà soát trước khi tạo dataset cuối.`, table: name, count: identityConflict });
+    if (patientOnly) warnings.push({ code: 'patient_only_match_without_event_time', message: `${name}: ${patientOnly} dòng legacy chỉ ghép theo Mã BN khi thiếu thời gian; schema mới không còn tạo kiểu matching này.`, table: name, count: patientOnly });
   }
 
   // Dòng thô giống hệt nhau đã được bỏ bớt (chỉ giữ một) — báo để biết nguồn bị lặp.
