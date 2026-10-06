@@ -12,7 +12,8 @@
 // v14: bảng chuẩn hóa không còn dấu ' trước số âm/"+" (lỗi ghi CSV cũ); chuẩn hóa lại toàn bộ.
 // v15: thêm patient_key (mã người bệnh giả danh, bảng liên kết patient_link.csv của kho);
 //      dataset chọn biến/dataset cuối/bảng mã hóa không còn Mã BN và họ tên.
-const NORMALIZED_SCHEMA_VERSION = 15;
+// Bổ sung parser cấu trúc cho y lệnh và diễn biến lâm sàng.
+const NORMALIZED_SCHEMA_VERSION = 16;
 
 const NORMALIZED_COLUMNS = {
   patients: [
@@ -67,6 +68,13 @@ const NORMALIZED_COLUMNS = {
   clinical_notes: [
     'note_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'note_datetime', 'note_date',
     'doctor_name', 'note_type', 'clinical_text', 'order_text', 'status',
+    'days_from_admission', 'days_from_discharge', 'is_within_encounter',
+    'source', 'source_run_id', 'row_hash',
+  ],
+  clinical_events: [
+    'clinical_event_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status',
+    'event_datetime', 'event_date', 'doctor_name', 'event_type', 'event_subtype',
+    'value_raw', 'value_norm', 'negated', 'certainty', 'source_text', 'parser_rule', 'confidence',
     'days_from_admission', 'days_from_discharge', 'is_within_encounter',
     'source', 'source_run_id', 'row_hash',
   ],
