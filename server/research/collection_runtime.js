@@ -36,8 +36,10 @@ const COLLECTION_EXCEPTIONS_FILE = 'collection_exceptions.csv';
 const COLLECTION_ENCOUNTER_OVERRIDES_FILE = 'collection_encounter_overrides.json';
 
 const COLLECTION_EXCEPTION_COLUMNS = [
-  'category', 'research_code', 'patient_code', 'part_label', 'status', 'reason_label', 'detail',
+  'category', 'patient_code', 'diagnostic_stage_label', 'diagnostic_message',
+  'part_label', 'status', 'reason_label', 'detail',
   'attempts', 'auto_retry', 'updated_at', 'key', 'part', 'reason',
+  'diagnostic_stage', 'research_code',
 ];
 
 const STUDY_READINESS_FILE = 'study_readiness.csv';
@@ -607,7 +609,11 @@ async function runCollectionOrchestration(ctx, {
         }
         for (const t of groups.order_history) dispatched.push({ key: t.key, part: 'order_history' });
       }
-      if (!cancelNow() && groups.xn_cdha.length) {
+      if (!cancelNow() && groups.xn_cdha.length && require('../services/emr_bridge').bridgeModeEnabled() && runners === DEFAULT_COLLECTION_RUNNERS) {
+        // Script XN/CĐHA còn bấm trên Chrome; qua tab EMR (chế độ cầu nối) chưa làm được — để nguyên
+        // "chưa lấy", không tính là lỗi của ca.
+        errors.push(`XN/CĐHA: chưa lấy được qua tab EMR (${groups.xn_cdha.length} lượt để lại "chưa lấy"); phần này sẽ được hỗ trợ ở bản sau.`);
+      } else if (!cancelNow() && groups.xn_cdha.length) {
         const rows = groups.xn_cdha
           .map(t => {
             const row = rowByKey.get(t.key);

@@ -200,7 +200,7 @@ function handleCollectionScreen(req, res, studyIdParam = '') {
       qa: qaSummaryForSnapshot(sc.runDir),
       taskStatus: taskStatusForRun(sc.runDir),
       lastReport: lastReport ? { ...lastReport, exceptions: undefined } : null,
-      exceptionsTotal: exceptions.length,
+      exceptions,
       pipeline: buildPipelineInfo(sc.isArchive ? archiveDir() : studyDir(sc.scope), sc.runDir),
     });
     if (researchResponseShouldRedact(req)) {

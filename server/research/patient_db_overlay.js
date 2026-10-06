@@ -45,6 +45,43 @@ function resultDay(row) {
   return isoDate(firstNonEmpty(row, ['TG chỉ định', 'TG xét nghiệm', 'Ngày chỉ định', 'Ngày xét nghiệm', 'Thời gian']));
 }
 
+
+function resultClinicalKey(row, kind = 'xn') {
+  const get = names => String(firstNonEmpty(row, names) || '').trim().toLowerCase();
+  const time = get(['TG chỉ định', 'TG xét nghiệm', 'Thời gian xét nghiệm', 'Thời gian'])
+    || [get(['Giờ chỉ định']), get(['Ngày chỉ định', 'Ngày xét nghiệm'])].filter(Boolean).join(' ');
+  if (kind === 'xn') {
+    return [
+      time,
+      get(['Loại XN', 'Nhóm XN']),
+      get(['Mã phiếu']),
+      get(['Chỉ số', 'Tên xét nghiệm']),
+      get(['Kết quả']),
+      get(['Đơn vị']),
+      get(['Khoảng tham chiếu']),
+      get(['Bất thường']),
+      get(['Trạng thái']),
+    ].join('|');
+  }
+  return [
+    time,
+    get(['Nhóm dịch vụ']),
+    get(['Tên dịch vụ', 'Dịch vụ']),
+    get(['Mô tả/Kết quả', 'Kết quả']),
+    get(['Kết luận']),
+    get(['Trạng thái']),
+  ].join('|');
+}
+
+function buildResultClinicalKeyIndex(rows, kind) {
+  const index = new Set();
+  for (const row of rows || []) {
+    const key = resultClinicalKey(row, kind);
+    if (key.replace(/\|/g, '')) index.add(key);
+  }
+  return index;
+}
+
 // Chỉ mục Mã BN -> các ngày đã có kết quả. Một lần chuẩn hoá thực tế có thể có
 // hàng chục nghìn dòng XN/CĐHA; không được quét toàn bộ bảng cho từng lượt điều trị.
 function buildResultDayIndex(rows) {
@@ -82,22 +119,32 @@ function overlayResultsFromPatientDb(dir, sourceRows, sourceRunId, labRaw, imagi
   report.ingested.xn = patientDb.recordResults(labRaw, { kind: 'xn', source: 'kho_nghien_cuu' }).added;
   report.ingested.cdha = patientDb.recordResults(imagingRaw, { kind: 'cdha', source: 'kho_nghien_cuu' }).added;
   const out = { xn: labRaw.slice(), cdha: imagingRaw.slice() };
-  const dayIndex = { xn: buildResultDayIndex(out.xn), cdha: buildResultDayIndex(out.cdha) };
+  // Bổ sung theo từng kết quả lâm sàng, không theo kiểu "ca đã có ít nhất một dòng thì bỏ qua".
+  // Một run có thể chỉ lấy được một phần XN/CĐHA; bỏ cả kho trong trường hợp đó gây thiếu dữ liệu im lặng.
+  const clinicalIndex = {
+    xn: buildResultClinicalKeyIndex(out.xn, 'xn'),
+    cdha: buildResultClinicalKeyIndex(out.cdha, 'cdha'),
+  };
   for (const row of uniqueResearchHchanhRows(sourceRows, sourceRunId)) {
     const meta = researchHchanhMeta(row, sourceRunId);
     if (!meta.ma_bn) continue;
     const range = caseDayRange(meta);
     if (!range) continue;
     for (const kind of ['xn', 'cdha']) {
-      const has = resultDayIndexHasRange(dayIndex[kind], meta.ma_bn, range.from, range.to);
-      if (has) continue;
-      const fromKho = patientDb.resultRows(meta.ma_bn, range.from, range.to, kind)
-        .map(r => ({ ...r, 'Mã NC': meta.research_code || '' }));
+      const fromKho = patientDb.resultRows(meta.ma_bn, range.from, range.to, kind);
       if (!fromKho.length) continue;
-      out[kind] = out[kind].concat(fromKho);
-      addRowsToResultDayIndex(dayIndex[kind], fromKho);
+      const missing = [];
+      for (const raw of fromKho) {
+        const key = resultClinicalKey(raw, kind);
+        if (!key.replace(/\|/g, '') || clinicalIndex[kind].has(key)) continue;
+        const tagged = { ...raw, 'Mã NC': meta.research_code || '' };
+        missing.push(tagged);
+        clinicalIndex[kind].add(key);
+      }
+      if (!missing.length) continue;
+      out[kind] = out[kind].concat(missing);
       report.filled_cases[kind] += 1;
-      report.filled_rows[kind] += fromKho.length;
+      report.filled_rows[kind] += missing.length;
     }
   }
   return { labRaw: out.xn, imagingRaw: out.cdha, report };
@@ -221,6 +268,8 @@ module.exports = {
   buildResultDayIndex,
   resultDayIndexHasRange,
   addRowsToResultDayIndex,
+  resultClinicalKey,
+  buildResultClinicalKeyIndex,
   overlayResultsFromPatientDb,
   ingestAllResearchResultsToPatientDb,
   khoOverlayNote,

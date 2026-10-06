@@ -80,3 +80,10 @@ debug/
 document/
 
 config/nurse_emr_accounts.json/
+
+# Kho mã hóa trên VPS (deploy/vps/vault-init.sh): .runtime và secrets thành liên kết vào kho.
+/.runtime
+/secrets
+/vault/
+/vault.enc/
+/device_trust/

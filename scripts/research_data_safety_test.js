@@ -29,6 +29,7 @@ const { buildQualityReport } = require('../server/research/quality');
 const { redactCsvTable } = require('../server/research/export_utils');
 const { requiredRoleForRequest } = require('../server/services/authz');
 const variableSelection = require('../server/research/variable_selection');
+const { readCsvTable } = require('../server/research/table_io');
 
 let passed = 0;
 function test(name, fn) {
@@ -69,17 +70,88 @@ const INITIAL_ROWS = [
   { 'T/G vào': '10:00 01/03/2026', 'Mã BN': '222', 'Mã nội trú': 'nt-c', 'Họ tên': 'BN GIA LAP B' },
 ];
 
-test('Ghép lượt chấp nhận Mã NC khác hoa/thường và khoảng trắng, có lưu phương pháp ghép', () => {
+test('Ghép lượt không dùng Mã NC; chỉ Mã BN chưa đủ khi người bệnh có nhiều đợt', () => {
   const rows = [
-    { 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'Mã NC': 'NC0001', 'T/G vào': '08:00 20/02/2026' },
-    { 'Mã BN': '111', 'Mã nội trú': 'nt-b', 'Mã NC': 'NC0002', 'T/G vào': '09:00 25/02/2026' },
+    { 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'Mã NC': 'NC0001', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
+    { 'Mã BN': '111', 'Mã nội trú': 'nt-b', 'Mã NC': 'NC0002', 'T/G vào': '09:00 25/02/2026', 'Ngày ra viện': '28/02/2026' },
   ];
   const map = R.buildContextMap(rows, 'r');
-  const ctx = R.contextForRow(map, { 'Mã BN': '111', 'Mã NC': '  nc0002  ' }, '111');
-  assert.ok(ctx.encounter_id);
-  assert.strictEqual(ctx.research_code, 'NC0002');
-  assert.strictEqual(R.encounterMatchStatus(ctx), 'matched');
-  assert.strictEqual(R.encounterMatchMethod(ctx), 'research_code');
+
+  const byResearchCodeOnly = R.contextForRow(map, { 'Mã BN': '111', 'Mã NC': 'NC0002' }, '111');
+  assert.strictEqual(byResearchCodeOnly.encounter_id, '', 'Mã NC không được dùng để quyết định đợt');
+  assert.strictEqual(R.encounterMatchStatus(byResearchCodeOnly), 'ambiguous');
+
+  const byPatientAndEventTime = R.contextForRow(map, { 'Mã BN': '111', 'Mã NC': 'NC0001', 'TG chỉ định': '26/02/2026' }, '111');
+  assert.strictEqual(byPatientAndEventTime.emr_noitru_id, 'nt-b');
+  assert.strictEqual(R.encounterMatchMethod(byPatientAndEventTime), 'event_date_range');
+});
+
+test('Chỉ có Mã BN và thiếu thời gian thì không được tự gán vào đợt duy nhất', () => {
+  const rows = [
+    { 'Mã BN': '777', 'Mã nội trú': 'nt-only', 'T/G vào': '08:00 10/04/2026', 'Ngày ra viện': '12/04/2026' },
+  ];
+  const map = R.buildContextMap(rows, 'r');
+  const unresolved = R.contextForRow(map, { 'Mã BN': '777' }, '777');
+  assert.strictEqual(unresolved.encounter_id, '');
+  assert.strictEqual(unresolved.needs_manual_review, 'encounter_match_missing_event_time');
+  assert.strictEqual(R.encounterMatchStatus(unresolved), 'missing');
+});
+
+test('Mã điều trị và Mã nội trú cùng giá trị được coi là alias khóa mạnh khi đúng BN và đúng thời gian', () => {
+  const rows = [
+    { 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
+  ];
+  const map = R.buildContextMap(rows, 'r');
+  const matched = R.contextForRow(map, {
+    'Mã BN': '111', 'Mã điều trị': 'nt-a', 'TG chỉ định': '21/02/2026',
+  }, '111');
+  assert.strictEqual(matched.emr_noitru_id, 'nt-a');
+  assert.strictEqual(R.encounterMatchStatus(matched), 'matched');
+  assert.strictEqual(R.encounterMatchMethod(matched), 'emr_treatment_noitru_alias');
+});
+
+test('Khóa đợt mạnh mâu thuẫn hoặc không tồn tại thì dừng, không fallback theo thời gian', () => {
+  const rows = [
+    { 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
+    { 'Mã BN': '222', 'Mã nội trú': 'nt-b', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
+  ];
+  const map = R.buildContextMap(rows, 'r');
+
+  const conflict = R.contextForRow(map, {
+    'Mã BN': '111', 'Mã nội trú': 'nt-b', 'TG chỉ định': '21/02/2026',
+  }, '111');
+  assert.strictEqual(conflict.encounter_id, '');
+  assert.strictEqual(conflict.needs_manual_review, 'encounter_match_identity_conflict');
+
+  const missingStrongKey = R.contextForRow(map, {
+    'Mã BN': '111', 'Mã nội trú': 'nt-khong-ton-tai', 'TG chỉ định': '21/02/2026',
+  }, '111');
+  assert.strictEqual(missingStrongKey.encounter_id, '');
+  assert.strictEqual(missingStrongKey.needs_manual_review, 'encounter_match_strong_key_not_found');
+});
+
+test('QA matching quality phân biệt khóa mạnh, thời gian, mơ hồ và ngoài đợt; Mã NC trùng không BLOCK', () => {
+  const patients = [{ patient_code: 'p1' }, { patient_code: 'p2' }];
+  const encounters = [
+    { encounter_id: 'e1', research_code: 'NCX', patient_code: 'p1', admission_date: '2026-01-01', discharge_date: '2026-01-05' },
+    { encounter_id: 'e2', research_code: 'NCX', patient_code: 'p2', admission_date: '2026-02-01', discharge_date: '2026-02-05' },
+  ];
+  const labs = [
+    { lab_result_id: 'l1', patient_code: 'p1', encounter_id: 'e1', encounter_match_status: 'matched', encounter_match_method: 'emr_noitru_id', encounter_match_reason: '', is_within_encounter: '1' },
+    { lab_result_id: 'l2', patient_code: 'p1', encounter_id: 'e1', encounter_match_status: 'matched', encounter_match_method: 'event_date_range', encounter_match_reason: '', is_within_encounter: '1' },
+    { lab_result_id: 'l3', patient_code: 'p1', encounter_id: '', encounter_match_status: 'missing', encounter_match_method: '', encounter_match_reason: 'encounter_match_outside_time', is_within_encounter: '' },
+    { lab_result_id: 'l4', patient_code: 'p1', encounter_id: '', encounter_match_status: 'missing', encounter_match_method: '', encounter_match_reason: 'encounter_match_identity_conflict', is_within_encounter: '' },
+  ];
+  const report = buildQualityReport({ tables: { patients, encounters, lab_results: labs } });
+  assert.ok(!report.blocking.some(x => x.code === 'duplicate_research_code'));
+  assert.ok(report.warnings.some(x => x.code === 'research_code_reused'));
+  assert.strictEqual(report.matching_quality.total_rows, 4);
+  assert.strictEqual(report.matching_quality.matched_rows, 2);
+  assert.strictEqual(report.matching_quality.strong_key, 1);
+  assert.strictEqual(report.matching_quality.event_time_range, 1);
+  assert.strictEqual(report.matching_quality.outside_treatment_time, 1);
+  assert.strictEqual(report.matching_quality.identity_conflict, 1);
+  assert.ok(report.blocking.some(x => x.code === 'encounter_match_identity_conflict'));
 });
 
 test('Ghép theo ngày vào duy nhất khi nguồn thiếu giờ/ngày ra; không ghép nếu ngày đó có nhiều lượt', () => {
@@ -114,7 +186,38 @@ test('Ghép theo ngày sự kiện chỉ khi nằm trong đúng một lượt, k
 
   const outside = R.contextForRow(map, { 'Mã BN': '111', 'TG chỉ định': '23/02/2026' }, '111');
   assert.strictEqual(outside.encounter_id, '');
-  assert.strictEqual(R.encounterMatchStatus(outside), 'ambiguous');
+  assert.strictEqual(R.encounterMatchStatus(outside), 'missing');
+  assert.strictEqual(outside.needs_manual_review, 'encounter_match_outside_time');
+});
+
+test('Kết quả chỉ thuộc đợt khi thời gian nằm trong khoảng vào-ra viện; có giờ thì so chính xác theo giờ', () => {
+  const rows = [
+    { 'Mã BN': '555', 'Mã nội trú': 'nt-time', 'T/G vào': '08:00 10/04/2026', 'Ngày ra viện': '17:00 12/04/2026' },
+  ];
+  const map = R.buildContextMap(rows, 'r');
+
+  const beforeAdmission = R.contextForRow(map, {
+    'Mã BN': '555', 'Mã nội trú': 'nt-time', 'TG chỉ định': '07:30 10/04/2026',
+  }, '555');
+  assert.strictEqual(beforeAdmission.encounter_id, '', 'trước giờ nhập viện không được thuộc đợt dù Mã nội trú khớp');
+  assert.strictEqual(beforeAdmission.needs_manual_review, 'encounter_match_outside_time');
+
+  const duringStay = R.contextForRow(map, {
+    'Mã BN': '555', 'Mã nội trú': 'nt-time', 'TG chỉ định': '09:00 10/04/2026',
+  }, '555');
+  assert.strictEqual(duringStay.emr_noitru_id, 'nt-time');
+  assert.strictEqual(R.encounterMatchStatus(duringStay), 'matched');
+
+  const afterDischarge = R.contextForRow(map, {
+    'Mã BN': '555', 'Mã nội trú': 'nt-time', 'TG chỉ định': '17:30 12/04/2026',
+  }, '555');
+  assert.strictEqual(afterDischarge.encounter_id, '', 'sau giờ ra viện không được thuộc đợt dù Mã nội trú khớp');
+  assert.strictEqual(afterDischarge.needs_manual_review, 'encounter_match_outside_time');
+
+  const dateOnlySameDay = R.contextForRow(map, {
+    'Mã BN': '555', 'TG chỉ định': '10/04/2026',
+  }, '555');
+  assert.strictEqual(dateOnlySameDay.emr_noitru_id, 'nt-time', 'khi nguồn chỉ có ngày thì chỉ có thể xác nhận theo ngày lịch');
 });
 
 test('Đợt chưa có ngày ra viện nhận kết quả quá 60 ngày sau ngày vào (tính tới hôm nay)', () => {
@@ -279,7 +382,7 @@ test('Dòng chuyển khoa chung Mã nội trú gộp thành 1 đợt, ngày vào
   assert.strictEqual(enc.admission_date, '2026-02-20 08:00');
 });
 
-test('XN: dòng giống hệt nhau giữ một (cảnh báo, không chặn); cùng giờ + chỉ số mà khác kết quả thì giữ cả hai và đưa vào duyệt', () => {
+test('XN: giữ đủ mọi lần xét nghiệm; dòng giống hệt chỉ cảnh báo nghi trùng, kết quả mâu thuẫn vẫn giữ cả hai', () => {
   const runDir = newRunDir();
   writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), INITIAL_COLS, INITIAL_ROWS);
   const xnCols = ['Mã BN', 'Mã điều trị', 'TG chỉ định', 'Chỉ số', 'Kết quả', 'Đơn vị'];
@@ -287,13 +390,48 @@ test('XN: dòng giống hệt nhau giữ một (cảnh báo, không chặn); cù
   const crp = { 'Mã BN': '111', 'Mã điều trị': 'nt-a', 'TG chỉ định': '07:30 21/02/2026', 'Chỉ số': 'CRP', 'Kết quả': '5', 'Đơn vị': 'mg/L' };
   writeCsv(path.join(runDir, 'lich_su_xn.csv'), xnCols, [hb, { ...hb }, crp, { ...crp, 'Kết quả': '50' }]);
   const out = R.normalizeRunOutputs(runDir, { sourceRunId: 'r' });
-  assert.strictEqual(out.lab_results, 3, 'Hb trùng giữ 1, CRP mâu thuẫn giữ cả 2');
+  assert.strictEqual(out.lab_results, 4, 'không xóa Hb giống hệt vì có thể là hai lần xét nghiệm thật');
+  const labs = readCsv(path.join(runDir, 'lab_results.csv'));
+  assert.strictEqual(new Set(labs.map(r => r.lab_result_id)).size, 4, 'mỗi dòng XN có ID riêng');
   const qa = JSON.parse(fs.readFileSync(path.join(runDir, 'qa_report.json'), 'utf-8'));
   assert.ok(!qa.blocking.some(b => b.code === 'duplicate_row_id'), JSON.stringify(qa.blocking));
-  assert.ok(qa.warnings.some(w => w.code === 'duplicate_raw_rows_removed' && w.count === 1));
+  assert.ok(qa.warnings.some(w => w.code === 'possible_duplicate_lab_rows'));
   assert.ok(qa.warnings.some(w => w.code === 'conflicting_results' && w.table === 'lab_results'));
-  const review = readCsv(path.join(runDir, 'encounter_review.csv')).filter(r => r.issue === 'conflicting_lab_result');
-  assert.strictEqual(review.length, 1);
+  const review = readCsv(path.join(runDir, 'encounter_review.csv'));
+  assert.strictEqual(review.filter(r => r.issue === 'possible_duplicate_lab_rows').length, 1);
+  assert.strictEqual(review.filter(r => r.issue === 'conflicting_lab_result').length, 1);
+});
+
+test('CĐHA và analysis_ready giữ đầy đủ mọi phần kết quả, không cắt ngắn hay tự xóa dòng giống nhau', () => {
+  const runDir = newRunDir();
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), INITIAL_COLS, INITIAL_ROWS);
+  const xnCols = ['Mã BN', 'Mã điều trị', 'TG chỉ định', 'Mã phiếu', 'Chỉ số', 'Kết quả', 'Đơn vị', 'Khoảng tham chiếu'];
+  writeCsv(path.join(runDir, 'lich_su_xn.csv'), xnCols, [
+    { 'Mã BN': '111', 'Mã điều trị': 'nt-a', 'TG chỉ định': '07:30 21/02/2026', 'Mã phiếu': 'P1', 'Chỉ số': 'Hb', 'Kết quả': '125', 'Đơn vị': 'g/L', 'Khoảng tham chiếu': '120-160' },
+    { 'Mã BN': '111', 'Mã điều trị': 'nt-a', 'TG chỉ định': '12:30 21/02/2026', 'Mã phiếu': 'P2', 'Chỉ số': 'Hb', 'Kết quả': '120', 'Đơn vị': 'g/L', 'Khoảng tham chiếu': '120-160' },
+  ]);
+  const longResult = 'Mô tả '.repeat(250) + 'ĐOẠN_CUỐI_KẾT_QUẢ';
+  const imagingCols = ['Mã BN', 'Mã điều trị', 'TG chỉ định', 'Tên dịch vụ', 'Mô tả/Kết quả', 'Kết luận', 'Trạng thái'];
+  const img = { 'Mã BN': '111', 'Mã điều trị': 'nt-a', 'TG chỉ định': '09:00 21/02/2026', 'Tên dịch vụ': 'CT ngực', 'Mô tả/Kết quả': longResult, 'Kết luận': 'KẾT_LUẬN_ĐẦY_ĐỦ', 'Trạng thái': 'Hoàn tất' };
+  writeCsv(path.join(runDir, 'lich_su_cdha.csv'), imagingCols, [img, { ...img }]);
+
+  const out = R.normalizeRunOutputs(runDir, { sourceRunId: 'r' });
+  assert.strictEqual(out.lab_results, 2);
+  assert.strictEqual(out.imaging_results, 2, 'hai lần CĐHA giống nội dung vẫn phải được giữ');
+
+  const ready = (readCsvTable(path.join(runDir, 'analysis_ready.csv'), Number.MAX_SAFE_INTEGER).rows || []).find(r => r.patient_code === '111');
+  assert.ok(ready);
+  const labs = JSON.parse(ready.lab_results_json);
+  const images = JSON.parse(ready.imaging_results_json);
+  assert.strictEqual(labs.length, 2, 'analysis_ready phải giữ cả hai lần Hb');
+  assert.deepStrictEqual(labs.map(x => x.lab_order_id), ['P1', 'P2']);
+  assert.strictEqual(images.length, 2, 'analysis_ready phải giữ cả hai lần CĐHA');
+  assert.ok(images.every(x => x.result_text.endsWith('ĐOẠN_CUỐI_KẾT_QUẢ')));
+  assert.ok(ready.imaging_summary.includes('ĐOẠN_CUỐI_KẾT_QUẢ'), 'không được cắt imaging_summary ở 1200 ký tự');
+  assert.ok(ready.imaging_summary.includes('KẾT_LUẬN_ĐẦY_ĐỦ'));
+
+  const qa = JSON.parse(fs.readFileSync(path.join(runDir, 'qa_report.json'), 'utf-8'));
+  assert.ok(qa.warnings.some(w => w.code === 'possible_duplicate_imaging_rows'));
 });
 
 test('Báo cáo chất lượng: trùng khóa và mồ côi khóa ngoại là lỗi chặn; ghép mơ hồ là cảnh báo', () => {

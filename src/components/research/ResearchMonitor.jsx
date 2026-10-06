@@ -1,6 +1,7 @@
 // Bảng theo dõi tiến độ lấy dữ liệu của Kho nghiên cứu: thẻ từng phần, bảng lượt, lịch sử đợt, dashboard vận hành.
 import { C, FS } from '../../tokens.js';
-import { compactNumber, lower, text } from './researchFormat.js';
+import { compactNumber, formatWhen, lower, text } from './researchFormat.js';
+import { describeQaWarnings } from './qaNotes.js';
 import { statusIsDone } from './researchStatusModel.js';
 import { StatBadge, SmallRowsTable, inp } from './researchUi.jsx';
 import { useState } from 'react';
@@ -136,8 +137,10 @@ function EncounterHistoryCard({ enc, index }) {
         width: '100%', border: 0, background: 'transparent', padding: 0, cursor: 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, textAlign: 'left',
       }}>
-        <span style={{ fontSize: FS.xs, fontWeight: 700, color: C.blue }}>
-          Đợt {index + 1}: {enc.admission_date || '—'} → {enc.discharge_date || '—'}
+        <span style={{ fontSize: FS.xs, fontWeight: 700, color: enc.unmatched ? C.amber : C.blue }}>
+          {enc.unmatched
+            ? 'Chưa xác định đợt điều trị'
+            : `Đợt ${index + 1}: ${enc.admission_date || '—'} → ${enc.discharge_date || '—'}`}
         </span>
         <span style={{ fontSize: FS.xs, color: C.text3 }}>{expanded ? 'Thu gọn' : 'Xem chi tiết'}</span>
       </button>
@@ -148,13 +151,19 @@ function EncounterHistoryCard({ enc, index }) {
         <StatBadge label="Thuốc" value={enc.counts?.medications || 0} tone="neutral" />
         <StatBadge label="PT/TT" value={enc.counts?.surgeries || 0} tone="neutral" />
       </div>
+      {enc.unmatched && !!enc.match_reasons?.length && (
+        <div style={{ marginTop: 6, fontSize: FS.xs, color: C.amber }}>
+          <b>Lý do chưa ghép:</b> {enc.match_reasons.join(' · ')}
+        </div>
+      )}
+
       {expanded && (
         <div style={{ marginTop: 9, display: 'grid', gap: 8 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 6, fontSize: FS.xs, color: C.text2 }}>
             <div><b>Khoa/phòng:</b> {[enc.department, enc.room_bed].filter(Boolean).join(' · ') || '—'}</div>
             <div><b>Ngày mổ:</b> {enc.surgery_date || '—'}</div>
             <div><b>Số ngày điều trị:</b> {enc.treatment_duration || '—'}</div>
-            <div><b>Mã NC:</b> {enc.research_code || '—'}</div>
+            {!enc.unmatched && <div><b>Mã NC:</b> {enc.research_code || '—'}</div>}
           </div>
           <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Xét nghiệm ({enc.counts?.labs || 0})</summary><SmallRowsTable max={120} rows={enc.labs || []} columns={[{key:'lab_datetime',label:'Thời gian'}, {key:'test_name_raw',label:'Tên XN'}, {key:'result_raw',label:'KQ'}, {key:'unit',label:'Đơn vị'}]} /></details>
           <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>CĐHA ({enc.counts?.imaging || 0})</summary><SmallRowsTable max={80} rows={enc.imaging || []} columns={[{key:'ordered_at',label:'Thời gian'}, {key:'service_name_raw',label:'Dịch vụ'}, {key:'conclusion_text',label:'Kết luận', long:true}]} /></details>
@@ -166,10 +175,7 @@ function EncounterHistoryCard({ enc, index }) {
   );
 }
 
-const whenText = (iso) => {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
-};
+const whenText = formatWhen;
 
 // Lần chạy gần nhất kết thúc ra sao: dừng theo yêu cầu, bị ngắt, lỗi hay xong — kèm thời điểm,
 // thay cho câu chung "đã dừng giữa chừng" không biết từ lúc nào.
@@ -292,7 +298,7 @@ function ResearchOperationDashboard({ screen, loading = false, error = null, aut
   }
   const health = buildDataHealth(screen, { autoRunning });
   const [verdictColor, verdictBg] = TONE[health.verdict.tone] || TONE.info;
-  const generatedAt = screen.generated_at ? new Date(screen.generated_at).toLocaleTimeString('vi-VN') : '';
+  const generatedAt = formatWhen(screen.generated_at);
   const total = health.total;
   const counts = screen.counts || {};
   const bar = [
@@ -308,14 +314,13 @@ function ResearchOperationDashboard({ screen, loading = false, error = null, aut
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <section style={{ borderTop: `1px solid ${C.border2}`, borderBottom: `1px solid ${C.border2}`, background: C.surface, padding: '10px 2px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Đánh giá dữ liệu</span>
-          <span style={{ fontSize: FS.sm, color: C.text2 }}>{compactNumber(total)} lượt điều trị</span>
+          <span style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>{compactNumber(total)} lượt điều trị</span>
           <span role="status" style={{ fontSize: FS.sm, fontWeight: 600, color: verdictColor, background: verdictBg, borderRadius: 5, padding: '2px 8px' }}>
             {health.verdict.text}
           </span>
           <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: FS.xs, color: C.text3 }}>
             {loading ? <><Spinner size={8} /> đang cập nhật</> : generatedAt ? `số liệu lúc ${generatedAt}` : ''}
-            {onRefresh && <Btn onClick={onRefresh} disabled={loading} aria-label="Tải lại số liệu" style={{ height: 26, padding: '0 9px', fontSize: FS.xs }}>↻</Btn>}
+            {onRefresh && <Btn onClick={onRefresh} disabled={loading} style={{ height: 26, padding: '0 9px', fontSize: FS.xs }}>Làm mới số liệu</Btn>}
           </span>
         </div>
 
@@ -340,7 +345,7 @@ function ResearchOperationDashboard({ screen, loading = false, error = null, aut
           </div>
           <div>
             <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text }}>
-              2. Chính xác{screen.qa?.generated_at ? <span style={{ fontWeight: 400, color: C.text3, fontSize: FS.xs }}> · kiểm tra lúc {new Date(screen.qa.generated_at).toLocaleString('vi-VN')}</span> : null}
+              2. Chính xác{screen.qa?.generated_at ? <span style={{ fontWeight: 400, color: C.text3, fontSize: FS.xs }}> · kiểm tra lúc {formatWhen(screen.qa.generated_at)}</span> : null}
             </div>
             <div style={{ height: 10 }} />
             {health.accurate.map(item => <HealthItem key={item.key} item={item} active={filter === item.filter} onOpen={setFilter} />)}
@@ -367,7 +372,10 @@ function ResearchOperationDashboard({ screen, loading = false, error = null, aut
           Chi tiết kỹ thuật (không cần xử lý)
         </summary>
         <div style={{ display: 'grid', gap: 10, marginTop: 8 }}>
-          <div style={{ fontSize: FS.xs, color: C.text3 }}>Tiến độ từng phần trên {compactNumber(total - Number(counts.unmatched || 0))} lượt đã ghép chắc:</div>
+          <div style={{ fontSize: FS.xs, color: C.text3 }}>
+            Tiến độ từng phần trên {compactNumber(total - Number(counts.unmatched || 0))} lượt đã ghép chắc
+            {Number(counts.unmatched || 0) ? ` (${compactNumber(total)} lượt trừ ${compactNumber(counts.unmatched)} lượt chưa ghép chắc)` : ''}:
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', columnGap: 18, rowGap: 2 }}>
             {(screen.parts || []).map(part => <ModuleProgressCard key={part.key} part={{ ...part, error: part.failed || 0, missing: Math.max(0, part.total - part.done - (part.failed || 0)) }} />)}
           </div>
@@ -375,7 +383,7 @@ function ResearchOperationDashboard({ screen, loading = false, error = null, aut
             <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.6 }}>
               <b style={{ color: C.text2 }}>Ghi chú khi chuẩn hóa (đã tự xử lý, chỉ để biết):</b>
               <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
-                {qaWarnings.map(w => <li key={`${w.code}_${w.message}`}>{w.message}</li>)}
+                {describeQaWarnings(qaWarnings).map(line => <li key={line}>{line}</li>)}
               </ul>
             </div>
           )}

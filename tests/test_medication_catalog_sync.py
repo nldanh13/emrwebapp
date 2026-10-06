@@ -116,3 +116,43 @@ def test_sync_no_op_when_volume_already_matches(monkeypatch, tmp_path):
 
     assert (added, updated) == (0, 0)
     assert catalog_path.stat().st_mtime_ns == before_mtime
+
+
+def test_sync_does_not_overwrite_drug_edited_by_hand(monkeypatch, tmp_path):
+    # Người dùng sửa thể tích trên Danh mục thuốc; lần xử lý sau không được ghi đè im lặng.
+    catalog_path = _patch_catalog_path(monkeypatch, tmp_path)
+    _write_catalog(catalog_path, [
+        {'canonical': 'THERMODOL', 'category': 'dich_truyen', 'default_volume_ml': 100, 'default_rate': '100', 'sua_tay': True},
+    ])
+
+    added, updated = medication_catalog.sync_catalog_from_processed_records(_records_with_infusion('THERMODOL', 250, '60'))
+
+    assert (added, updated) == (0, 0)
+    med = json.loads(catalog_path.read_text(encoding='utf-8'))['medications'][0]
+    assert med['default_volume_ml'] == 100 and med['default_rate'] == '100'
+
+
+def test_sync_skips_diluted_and_inferred_lines(monkeypatch, tmp_path):
+    # Thuốc pha truyền: tên "X + Natri clorid 0.9%" và thể tích pha không phải dữ kiện của thuốc
+    # → không sinh mục rác, không tự học lại thể tích do chính hệ thống suy ra.
+    catalog_path = _patch_catalog_path(monkeypatch, tmp_path)
+    _write_catalog(catalog_path, [])
+    records = [{'ma_bn': 'BN001', 'ngay_lam': '17/09/2026', 'thuoc': {'dich_truyen': [
+        {'ten_thuoc': 'BIRONEM 500', 'ten_hien_thi': 'BIRONEM 500 + Natri clorid 0.9%', 'the_tich': 100, 'dung_moi': 'NACL_0.9'},
+        {'ten_thuoc': 'THUOC Y', 'the_tich': 100, 'nguon_pha': 'mac_dinh'},
+    ]}}]
+
+    assert medication_catalog.sync_catalog_from_processed_records(records) == (0, 0)
+    assert json.loads(catalog_path.read_text(encoding='utf-8'))['medications'] == []
+
+
+def test_sync_keeps_default_when_volume_is_a_declared_presentation(monkeypatch, tmp_path):
+    # Natri clorid khai báo túi 100 ml (mặc định) + chai 500 ml: gặp chai 500 ml không được đổi mặc định.
+    catalog_path = _patch_catalog_path(monkeypatch, tmp_path)
+    _write_catalog(catalog_path, [
+        {'canonical': 'NATRI CLORID 0,9%', 'category': 'dich_truyen', 'default_volume_ml': 100, 'default_rate': '30',
+         'quy_cach': [{'volume_ml': 500, 'rate': '40'}]},
+    ])
+    assert medication_catalog.sync_catalog_from_processed_records(_records_with_infusion('NATRI CLORID 0,9%', 500, '40')) == (0, 0)
+    med = json.loads(catalog_path.read_text(encoding='utf-8'))['medications'][0]
+    assert med['default_volume_ml'] == 100

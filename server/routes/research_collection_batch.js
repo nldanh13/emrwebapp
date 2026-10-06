@@ -181,6 +181,9 @@ async function handleBatch(req, res, studyIdParam = '') {
   try {
     const patientCodes = patientCodesFrom(req);
     if (patientCodes === null) return false;
+    // Chế độ cầu nối (VPS): chưa nối tab EMR ở bệnh viện thì báo ngay, không chạy worker để rồi lỗi từng ca.
+    const bridgeBlocker = require('../services/emr_bridge').collectionBlocker();
+    if (bridgeBlocker) { res.status(409).json({ status: 'error', code: 'EMR_BRIDGE_OFFLINE', message: bridgeBlocker }); return true; }
 
     const sc = scopeFromRequest(req, studyIdParam);
     if (sc.error) {

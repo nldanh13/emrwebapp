@@ -3,12 +3,12 @@
 const path = require('path');
 const { readJsonSafe } = require('../file');
 
-const _THUOC_PATH = path.resolve(__dirname, '../../../config/d_v2.json');
+// Tên hiển thị chuẩn: Danh mục thuốc (trường ten_hien_thi) trước, rồi kiến thức sẵn có
+// config/medication_builtin.json. Trước đây đọc d_v2.json mục 1 + 6.
+const ROOT = path.resolve(__dirname, '../../..');
+const _BUILTIN_PATH = path.join(ROOT, 'config', 'medication_builtin.json');
+const _CATALOG_PATH = path.join(ROOT, 'config', 'medication_catalog.json');
 
-/**
- * Trích hàm lượng từ tên thuốc: "paracetamol 1g/100ml" → "1g", "10mg/ml" → "10mg/ml"
- * Trả về chuỗi hàm lượng hoặc "" nếu không tìm thấy.
- */
 function extractDose(ten) {
   if (!ten) return '';
   // Bắt "số + đơn vị" kèm cả nồng độ dạng /ml hoặc /100ml
@@ -25,37 +25,48 @@ function extractDose(ten) {
  * Tra cứu tên hiển thị chuẩn cho thuốc dựa trên từ điển đồng nghĩa.
  * Trả về tên đầy đủ "Tên Hàmlượng" hoặc null nếu không tìm thấy.
  */
+function normKey(text) {
+  return String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'D')
+    .toUpperCase().replace(/[^A-Z0-9%]+/g, ' ').trim();
+}
+
+// Khớp NGUYÊN TỪ (không khớp "NATRI" trong "Diclofenac natri" của cụm khác, không khớp ngược).
+function hasWord(haystack, alias) {
+  const a = normKey(alias);
+  return Boolean(a) && ` ${haystack} `.includes(` ${a} `);
+}
+
+function displayGroups() {
+  const builtin = readJsonSafe(_BUILTIN_PATH, {}) || {};
+  const groups = ((builtin.ten_hien_thi_chuan || {}).nhom || []).filter(g => g && g.ten);
+  const catalog = ((readJsonSafe(_CATALOG_PATH, {}) || {}).medications || [])
+    .filter(m => m && String(m.ten_hien_thi || '').trim())
+    .map(m => ({ ten: String(m.ten_hien_thi).trim(), ham_luong_mac_dinh: '', aliases: [m.canonical, ...(m.aliases || [])].filter(Boolean) }));
+  return [...catalog, ...groups];
+}
+
+/**
+ * Tra cứu tên hiển thị chuẩn cho thuốc. Chỉ xét phần tên thuốc trước dấu "+" (phần sau là dung
+ * môi pha: "VANCOMYCIN 1G + Natri clorid 0.9%" không được thành "Natri clorid").
+ * Trả về "Tên Hàmlượng" hoặc null nếu không có trong từ điển.
+ */
 function resolveCanonicalDrugName(ten) {
   if (!ten) return null;
   try {
-    const cfg      = readJsonSafe(_THUOC_PATH, {});
-    const synonyms = cfg['1_TU_DIEN_DONG_NGHIA'] || {};
-    const display  = cfg['6_TEN_HIEN_THI_CHUAN']  || {};
-
-    const needle = ten
+    const drugPart = String(ten)
       .replace(/^\(\s*TT\s*\)\s*/i, '')
       .replace(/\s+\d+\s*(?:túi|lọ|ống|chai|viên)\s*$/i, '')
-      .toUpperCase()
-      .trim();
-
-    for (const [canonicalKey, aliases] of Object.entries(synonyms)) {
-      if (!Array.isArray(aliases)) continue;
-      const matched = aliases.some(alias =>
-        needle.includes(alias.toUpperCase()) || alias.toUpperCase().includes(needle)
-      );
-      if (!matched) continue;
-
-      const entry = display[canonicalKey];
-      if (!entry) continue;
-
-      const baseName = typeof entry === 'object' ? entry.ten : entry;
-      if (!baseName) continue;
-
-      // ham_luong_mac_dinh trong config là nguồn chân lý khi được đặt
-      // → luôn dùng nó, không trích từ tên gốc (tránh "1g" vs "10mg/ml" không nhất quán)
-      const configDose = typeof entry === 'object' ? entry.ham_luong_mac_dinh || '' : '';
-      const dose = configDose || extractDose(ten);
-      return dose ? `${baseName} ${dose}` : baseName;
+      .split('+')[0];
+    const needle = normKey(drugPart);
+    if (!needle) return null;
+    for (const group of displayGroups()) {
+      if (!(group.aliases || []).some(alias => hasWord(needle, alias))) continue;
+      // ham_luong_mac_dinh là nguồn chân lý khi được đặt (tránh "1g" vs "10mg/ml" không nhất quán),
+      // trừ thể tích chai/túi: tên ghi "500ml" thì không được hiện thành "100ml" mặc định.
+      const nameVolume = (drugPart.match(/(\d+(?:[.,]\d+)?)\s*ml\b/i) || [])[1];
+      const defaultIsVolume = /^\d+(?:[.,]\d+)?\s*ml$/i.test(String(group.ham_luong_mac_dinh || '').trim());
+      const dose = (defaultIsVolume && nameVolume) ? `${nameVolume}ml` : (group.ham_luong_mac_dinh || extractDose(drugPart));
+      return dose ? `${group.ten} ${dose}` : group.ten;
     }
   } catch (_) {}
   return null;

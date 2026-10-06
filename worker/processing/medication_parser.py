@@ -17,6 +17,10 @@ from xu_ly_config import (
     format_quantity_value,
     parse_quantity_int,
 )
+from processing.rule_engine import nacl_text_keywords
+from processing.solvents import nacl_display
+
+NACL_TEXT_KEYWORDS = nacl_text_keywords()
 
 try:
     from processing.rule_engine import detect_drug_category
@@ -63,7 +67,10 @@ def get_volume_from_config(brand_name, active_name, form):
             return 100.0
         return 0.0
 
-    # 1) Tra trong THE_TICH_AO (match trực tiếp, không core)
+    # Bước phân loại chỉ dùng kiến thức sẵn có (config/medication_builtin.json). Thể tích trong
+    # Danh mục thuốc được áp ở bước sau (complete_medication_from_catalog); đưa lên đây làm đổi
+    # kết quả phân loại (test mốc tests/test_medication_golden.py).
+    # 1) Thể tích theo cụm tên (match trực tiếp, không core)
     if isinstance(THE_TICH_AO, dict):
         for k, v in THE_TICH_AO.items():
             k_norm = str(k).upper().replace("_", " ")
@@ -74,7 +81,7 @@ def get_volume_from_config(brand_name, active_name, form):
                     LOG.debug("Handled xu_ly fallback exception", exc_info=True)
                     pass
 
-    # 2) Fallback mặc định (keyword đủ đặc trưng)
+    # 2) Thể tích theo từ khoá (đủ đặc trưng)
     for k, v in DEFAULT_VOLUMES.items():
         if k in full_name:
             return float(v)
@@ -434,9 +441,7 @@ def update_drug_usage(info, usage_line, time_map):
     solvent_kind = semantic_solvent_kind(usage_line_norm) if callable(semantic_solvent_kind) else None
     has_sodium_09 = ("sodium" in u) and (("0.9" in u) or ("0,9" in u))
     has_nacl = has_sodium_09 or any(k in u for k in [
-        "natri clorid", "natri chlorid", "natri chloride",
-        "sodium clorid", "sodium chlorid", "sodium chloride",
-        "nacl", "nước muối", "nuoc muoi"
+        *NACL_TEXT_KEYWORDS,
     ]) or solvent_kind in ("NACL", "SODIUM")
 
     
@@ -533,9 +538,7 @@ def update_drug_usage(info, usage_line, time_map):
     dang_u = (info.get("dang") or "").upper()
     is_para_inj = ("INJ" in name_u) or ("INJECTION" in name_u) or ("ỐNG" in dang_u) or ("ONG" in dang_u)
     has_explicit_nacl_text = any(k in u for k in [
-        "natri clorid", "natri chlorid", "natri chloride",
-        "sodium clorid", "sodium chlorid", "sodium chloride",
-        "nacl", "nước muối", "nuoc muoi",
+        *NACL_TEXT_KEYWORDS,
     ])
     if is_para_inj and any(k in name_u for k in ["PARACETAMOL", "THERMODOL"]) and (take_ml is None) and (pha_du_ml is None) and (bag_ml is None):
         try:
@@ -621,7 +624,7 @@ def update_drug_usage(info, usage_line, time_map):
     # =========================
     if info.get("dung_moi") in ("NACL_0.9", "SODIUM_0.9"):
         disp = info.get("ten_thuoc", "")
-        disp = f"{disp} + {'Sodium chloride 0.9%' if info.get('dung_moi') == 'SODIUM_0.9' else 'Natri clorid 0.9%'}"
+        disp = f"{disp} + {nacl_display(info.get('dung_moi'))}"
         info["ten_hien_thi"] = disp
 
     return info
@@ -645,9 +648,7 @@ def categorize_drug(drug_info):
     if callable(detect_drug_category):
         category, reason = detect_drug_category(
             drug_info or {},
-            extra_true_infusions=TRUE_INFUSIONS,
-            extra_infusion_keywords=INFUSION_NAME_KEYWORDS,
-            extra_always_infusion_drugs=ALWAYS_INFUSION_DRUGS,
+            # Danh sách dịch truyền theo tên rule_engine tự đọc từ order_rules.json (một nguồn).
             safety_nacl_volume_getter=get_safety_nacl_volume,
             with_reason=True,
         )

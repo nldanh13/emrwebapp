@@ -9,15 +9,75 @@ except Exception:
     semantic_solvent_kind = None
 from xu_ly_config import (
     ALWAYS_INFUSION_DRUGS,
+    BRAND_ACTIVE_INGREDIENT,
     DEFAULT_NACL_VOLUME_BY_KEYWORD,
     _contains_any,
     _norm_upper,
+    effective_dilution,
+    get_catalog_dilution,
     get_safety_nacl_volume,
     parse_hours_from_gio_dung,
     parse_quantity_int,
 )
+from processing.rule_engine import nacl_text_keywords
+from processing.solvents import nacl_display
+
+NACL_TEXT_KEYWORDS = nacl_text_keywords()
 
 LOG = get_worker_logger('xu_ly.diluent')
+
+
+def _catalog_rule_of(drug):
+    """Quy tắc pha trong Danh mục thuốc cho một dòng thuốc (theo tên thuốc rồi hoạt chất)."""
+    if not isinstance(drug, dict):
+        return None
+    from processing.medication_catalog import _SOLVENT_TAIL
+    for key in ("ten_thuoc", "ten_hien_thi", "hoat_chat"):
+        # Bỏ đuôi "+ Natri clorid 0.9%" của tên hiển thị (không phải tên thuốc).
+        text = _SOLVENT_TAIL.sub("", str(drug.get(key) or "")).strip()
+        if text:
+            rule = get_catalog_dilution(text)
+            if rule:
+                return rule
+    return None
+
+
+def _catalog_single_ingredient(drug):
+    try:
+        from processing.medication_catalog import lookup_medication_with_meta, _single_ingredient
+        med, _meta = lookup_medication_with_meta(drug, allow_semantic=False)
+        return _norm_upper(_single_ingredient(med)) if med else ""
+    except Exception:
+        return ""
+
+
+def _catalog_resolved(drug):
+    """Quy tắc Danh mục đã chọn cách pha theo y lệnh (medication_catalog.resolve_dilution_for_drug)."""
+    if not isinstance(drug, dict):
+        return None
+    try:
+        from processing.medication_catalog import resolve_dilution_for_drug
+    except Exception:
+        return None
+    rule = resolve_dilution_for_drug(drug)
+    if rule is None and str(drug.get("hoat_chat") or "").strip():
+        # Như _catalog_rule_of: hoạt chất trùng tên chuẩn/tên khác trong danh mục.
+        rule = resolve_dilution_for_drug({**drug, "ten_thuoc": drug.get("hoat_chat"), "ten_hien_thi": ""})
+    return rule
+
+
+def _catalog_says_no_dilution(drug):
+    rule = _catalog_rule_of(drug)
+    return bool(rule and rule.get("solvent") == "KHONG_PHA")
+
+
+def _catalog_note_text(rule):
+    try:
+        from processing.medication_catalog import dilution_rule_text
+    except Exception:
+        return ""
+    return dilution_rule_text(rule)
+
 
 def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
     """Gắn dung môi NaCl theo gợi ý (cùng giờ) và chuẩn hoá thuốc cần pha truyền.
@@ -189,9 +249,7 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
         return any(k in route_l for k in [
             "ttm", "truyền", "truyen", "tiêm truyền", "tiem truyen", "pha truyền", "pha truyen",
             "giọt/phút", "giot/phut", "g/p", "ml/h", "ml/giờ", "ml/gio",
-            "natri clorid", "natri chlorid", "natri chloride",
-            "sodium clorid", "sodium chlorid", "sodium chloride",
-            "nacl", "nước muối", "nuoc muoi"
+            *NACL_TEXT_KEYWORDS,
         ]) or bool(drug.get("dung_moi"))
 
     def _route_is_clear_im_or_sc(drug):
@@ -227,12 +285,14 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
         # Y lệnh ghi rõ pha/truyền/NaCl thì chắc chắn ưu tiên trước Tramadol.
         if any(k in route_l for k in [
             "ttm", "truyền", "truyen", "tiêm truyền", "tiem truyen", "pha truyền", "pha truyen",
-            "natri clorid", "natri chlorid", "natri chloride",
-            "sodium clorid", "sodium chlorid", "sodium chloride",
-            "nacl", "nước muối", "nuoc muoi",
+            *NACL_TEXT_KEYWORDS,
             "giọt/phút", "giot/phut", "g/p", "ml/h", "ml/giờ", "ml/gio"
         ]):
             return True
+
+        # Danh mục thuốc ghi "Không pha" (chai/túi pha sẵn) → không giành túi NaCl.
+        if _catalog_says_no_dilution(drug):
+            return False
 
         # Thuốc trong nhóm thường phải pha truyền theo cấu hình.
         if get_safety_nacl_volume(name_u) is not None:
@@ -365,14 +425,15 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
             str(drug.get("hoat_chat") or ""),
             str(drug.get("ten_hien_thi") or ""),
         ]))
-        # Một số tên thương mại không chứa hoạt chất trong ten_thuoc.
-        brand_alias = {
-            "VECMID": "VANCOMYCIN",
-            "VECMID 1GM": "VANCOMYCIN",
-        }
-        for brand, active in brand_alias.items():
+        # Một số tên thương mại không chứa hoạt chất — config/medication_builtin.json.
+        for brand, active in BRAND_ACTIVE_INGREDIENT.items():
             if brand in text and active not in text:
                 text = f"{text} {active}"
+        # Danh mục thuốc: tên thương mại khai báo MỘT hoạt chất → thêm hoạt chất (cùng cơ chế trên,
+        # nhưng do người dùng tự khai báo, không phải sửa code).
+        active = _catalog_single_ingredient(drug)
+        if active and active not in text:
+            text = f"{text} {active}"
         return text
 
     def choose_bag_volume_and_type(drug):
@@ -394,7 +455,10 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
                 pass
         if take_self:
             dm = "SODIUM_0.9" if (take_self > 100 or "sodium" in route_l) else "NACL_0.9"
-            return float(take_self), dm, True
+            # Thể tích túi do Danh mục điền sẵn (không phải y lệnh ghi) → không coi là dữ kiện y lệnh.
+            from_catalog = drug.get("the_tich_nguon") == "danh_muc" and not (
+                drug.get("the_tich_lay_ml") or drug.get("the_tich_pha_du_ml"))
+            return float(take_self), dm, not from_catalog
 
         # TRAMADOL: ưu tiên tiêm bắp. Chỉ pha NaCl khi y lệnh ghi rõ truyền/NaCl
         # hoặc có một túi/chai NaCl rời cùng giờ không gắn với thuốc khác.
@@ -475,7 +539,14 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
                     return bag, dm, True
 
 
-        # C) Luật an toàn: chỉ áp dụng khi KHÔNG có dữ kiện thể tích từ y lệnh (A/B)
+        # C) Quy tắc pha NaCl trong Danh mục thuốc — chọn "cách pha" theo đường dùng/liều của y lệnh
+        # (kể cả loại "chỉ khi y lệnh ghi truyền": tới đây đã xác định thuốc được pha truyền).
+        catalog_rule = _catalog_resolved(drug)
+        if catalog_rule and catalog_rule.get("solvent") == "NACL_0.9" and catalog_rule.get("volume_ml"):
+            bag = float(catalog_rule["volume_ml"])
+            return bag, "NACL_0.9", False
+
+        # C2) Luật an toàn (Danh mục "luôn pha" không ghi thể tích → 100 ml; luật sẵn có).
         safety_vol = get_safety_nacl_volume(name_u)
         if safety_vol:
             return float(safety_vol), "NACL_0.9", False
@@ -518,12 +589,14 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
         # Chỉ chuyển thuốc tiêm sang dịch truyền khi có NaCl/Sodium chloride rõ ràng hoặc rule cấu hình.
         # Không dùng riêng chữ "natri" vì có thể là một phần tên hoạt chất như Ceftriaxone Natri/Diclofenac Natri.
         has_explicit_nacl = bool(drug.get("dung_moi") in ("NACL_0.9", "SODIUM_0.9")) or any(k in route_l for k in [
-            "natri clorid", "natri chlorid", "natri chloride",
-            "sodium clorid", "sodium chlorid", "sodium chloride",
-            "nacl", "nước muối", "nuoc muoi",
+            *NACL_TEXT_KEYWORDS,
         ])
         if has_explicit_nacl:
             return True
+
+        # Danh mục thuốc ghi "Không pha": không tự gắn NaCl (y lệnh ghi rõ NaCl đã xử lý ở trên).
+        if _catalog_says_no_dilution(drug):
+            return False
 
         # Chai/túi truyền sẵn có thể tích riêng (ví dụ CIPROFLOXACIN KABI 200mg/100ml)
         # KHÔNG được tự gắn thêm NaCl chỉ vì dạng thuốc có chuỗi tổng quát
@@ -586,17 +659,61 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
 
         return False
 
+    def _dilution_source(drug, bag, from_order, catalog_rule):
+        """Vì sao có dung môi/thể tích này — ghi lên dòng thuốc để người xem đối chiếu:
+        y_lenh (y lệnh/dòng dung môi ghi rõ) > danh_muc > luat_san_co > tui_cung_gio > mac_dinh.
+        Suy ra theo đúng thứ tự choose_bag_volume_and_type đi qua."""
+        if from_order:
+            return "y_lenh"
+        if drug.get("the_tich_nguon") == "danh_muc" and drug.get("tui_dich_truyen_ml"):
+            return "danh_muc"
+        if catalog_rule and catalog_rule.get("solvent") == "NACL_0.9":
+            vol = catalog_rule.get("volume_ml")
+            if (vol and float(vol) == float(bag)) or (not vol and catalog_rule.get("apply") == "always"):
+                return "danh_muc"
+        name_u = _drug_name_text_u(drug)
+        rule, source = effective_dilution(name_u)
+        if source == "luat_san_co" and rule.get("volume_ml") and float(rule["volume_ml"]) == float(bag):
+            return "luat_san_co"
+        hours = parse_hours_from_gio_dung(drug.get("gio_dung", ""))
+        if any(diluent_by_hour.get(h) for h in hours) or diluent_all:
+            return "tui_cung_gio"
+        return "mac_dinh"
+
     def enrich_with_diluent(drug):
         route_l = (drug.get("duong_dung_goc") or "").lower()
 
         # nếu text đã ghi rõ natri/sodium/nacl/nước muối... thì không set suy_luan_dung_moi
         explicit = any(k in route_l for k in [
-            "natri clorid", "natri chlorid", "natri chloride",
-            "sodium clorid", "sodium chlorid", "sodium chloride",
-            "nacl", "nước muối", "nuoc muoi"
+            *NACL_TEXT_KEYWORDS,
         ]) or bool(drug.get("dung_moi"))
 
         bag, dm, explicit_from_choose = choose_bag_volume_and_type(drug)
+        # Liều mỗi lần tính lúc còn đủ lịch giờ (bước sau tách mỗi cữ một dòng, so_luong vẫn là tổng ngày).
+        try:
+            from processing.dose import dose_mg_per_administration
+            dose = dose_mg_per_administration(drug, len(parse_hours_from_gio_dung(drug.get("gio_dung", ""))) or None)
+        except Exception:
+            dose = None
+        if dose is not None:
+            drug["lieu_moi_lan_mg"] = dose
+        catalog_rule = _catalog_resolved(drug)
+        drug["nguon_pha"] = _dilution_source(drug, bag, explicit or explicit_from_choose, catalog_rule)
+        from_catalog = drug["nguon_pha"] == "danh_muc" and bool(catalog_rule)
+        if from_catalog and catalog_rule.get("variant_label"):
+            drug["cach_pha"] = catalog_rule["variant_label"]
+        # Không chắc thì KHÔNG đoán im lặng: đánh dấu để người chuẩn bị thuốc hỏi lại.
+        if from_catalog and catalog_rule.get("can_xac_nhan"):
+            drug["can_xac_nhan_pha"] = True
+            drug["ly_do_xac_nhan_pha"] = catalog_rule.get("ly_do") or ""
+        elif drug["nguon_pha"] == "mac_dinh":
+            drug["can_xac_nhan_pha"] = True
+            drug["ly_do_xac_nhan_pha"] = "Y lệnh không ghi thể tích pha và chưa có quy tắc pha cho thuốc này; đang tạm tính 100 ml."
+        # Tốc độ theo quy tắc danh mục khi y lệnh không ghi.
+        if catalog_rule and catalog_rule.get("rate") and not str(drug.get("toc_do") or "").strip():
+            rate = catalog_rule["rate"]
+            drug["toc_do"] = str(int(rate) if float(rate).is_integer() else rate)
+            drug["toc_do_nguon"] = "danh_muc"
 
         if not (explicit or explicit_from_choose):
             drug["suy_luan_dung_moi"] = True
@@ -655,7 +772,7 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
             pass
 
         # ten_hien_thi: bỏ ml
-        dil_disp = "Sodium chloride 0.9%" if dm == "SODIUM_0.9" else "Natri clorid 0.9%"
+        dil_disp = nacl_display(dm)
         drug["ten_hien_thi"] = f"{drug.get('ten_thuoc','')} + {dil_disp}"
         return drug
 
@@ -730,5 +847,21 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
 
     if moved_to_truyen:
         enriched_dich_truyen.extend(moved_to_truyen)
+
+    # Ghi quy tắc pha của Danh mục thuốc lên dòng thuốc để người xem có chỗ đối chiếu
+    # (vd. Glucose 5%, nước cất: chỉ ghi nhận, không tự đổi dung môi).
+    kept_ids = {id(d) for d in kept_tiem}
+    for drug in list(enriched_dich_truyen) + list(kept_tiem):
+        if not isinstance(drug, dict) or drug.get("quy_tac_pha"):
+            continue
+        rule = _catalog_rule_of(drug)
+        # Thuốc vẫn ở dạng tiêm (vd. Nefopam tiêm bắp): ghi chú "Pha Natri clorid…" gây hiểu nhầm là
+        # phải pha truyền. Giữ ghi chú "Không pha thêm" và dung môi tự pha (Glucose, nước cất).
+        if rule and id(drug) in kept_ids and rule.get("solvent") == "NACL_0.9":
+            continue
+        if rule:
+            text = _catalog_note_text(rule)
+            if text:
+                drug["quy_tac_pha"] = text
 
     return enriched_dich_truyen, kept_tiem

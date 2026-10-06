@@ -2934,13 +2934,10 @@ router.post('/hchanh/open-bed-edit', handleRoute((req, res, ctx) => {
   const outFd = fs.openSync(logPath, 'a');
 
   const runtimeConfigPath = path.join(ctx.dir, 'config.json');
-  const runtimeDv2Path = path.join(ctx.dir, 'd_v2.json');
   const appConfigPath = fs.existsSync(runtimeConfigPath)
     ? runtimeConfigPath
     : path.join(path.resolve(__dirname, '../..'), 'config', 'config.json');
-  const dV2ConfigPath = fs.existsSync(runtimeDv2Path)
-    ? runtimeDv2Path
-    : path.join(path.resolve(__dirname, '../..'), 'config', 'd_v2.json');
+  const dV2ConfigPath = require('../utils/dv2_path').resolveDv2Path(ctx.dir);
 
   const args = ['-X', 'utf8', '-u', scriptPath, '--ma-bn', ma_bn, '--keep-open-sec', '3600'];
   if (date_to) args.push('--date-to', date_to);

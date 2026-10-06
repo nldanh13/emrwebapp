@@ -2,6 +2,8 @@ import { getSessionId } from './hooks/useSession.js';
 import { logActivity } from './utils/activityLogger.js';
 
 const APP_TOKEN_KEY = 'emr_app_token_v1';
+// Thiết bị tin cậy: nhớ đăng nhập qua các lần mở trình duyệt (máy lạ thì mã chỉ sống trong tab).
+const REMEMBERED_TOKEN_KEY = 'emr_app_token_trusted_v1';
 
 function getStoredAppToken() {
   // Ưu tiên sessionStorage để mã truy cập tự mất khi đóng tab/trình duyệt.
@@ -9,6 +11,12 @@ function getStoredAppToken() {
   try {
     const sessionToken = sessionStorage.getItem(APP_TOKEN_KEY) || '';
     if (sessionToken) return sessionToken;
+
+    const remembered = localStorage.getItem(REMEMBERED_TOKEN_KEY) || '';
+    if (remembered) {
+      sessionStorage.setItem(APP_TOKEN_KEY, remembered);
+      return remembered;
+    }
 
     const legacyToken = localStorage.getItem(APP_TOKEN_KEY) || '';
     if (legacyToken) {
@@ -32,6 +40,7 @@ function setStoredAppToken(token) {
 // và báo cho AuthGate quay lại màn hình đăng nhập, thay vì window.prompt() thô.
 function reportAuthRequired() {
   setStoredAppToken('');
+  try { localStorage.removeItem(REMEMBERED_TOKEN_KEY); } catch {}
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('emr:auth-required'));
   }
@@ -221,6 +230,10 @@ async function fetchWithAuth(url, options = {}, retryAuth = true, details = null
     if (details) logActivity('api.auth.required', { ...details, status: res.status });
     reportAuthRequired();
   }
+  // Thiết bị bị thu hồi giữa phiên (hoặc chưa tin cậy): chuyển sang trang đăng ký thiết bị.
+  if (res.status === 403 && res.headers?.get?.('x-device-required') === '1' && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('emr:device-untrusted'));
+  }
   return res;
 }
 
@@ -286,8 +299,35 @@ export async function getAuthMe() {
   }
 }
 
+// Tên + mật khẩu → mã truy cập (máy chủ trả mã sẵn có của người đó). Lỗi trả về câu tiếng Việt.
+export async function loginWithPassword(username, password) {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json().catch(() => null);
+    if (res.ok && data?.token) return { ok: true, token: data.token };
+    return { ok: false, message: data?.message || 'Không đăng nhập được. Kiểm tra mạng rồi thử lại.' };
+  } catch (_) {
+    return { ok: false, message: 'Không kết nối được máy chủ. Kiểm tra wifi/mạng rồi thử lại.' };
+  }
+}
+
 export function setAuthToken(token) { setStoredAppToken(String(token || '').trim()); }
-export function clearAuthToken() { setStoredAppToken(''); }
+export function clearAuthToken() {
+  setStoredAppToken('');
+  try { localStorage.removeItem(REMEMBERED_TOKEN_KEY); } catch {}
+}
+// Gọi khi máy chủ xác nhận đây là thiết bị tin cậy: lần sau mở lại không phải đăng nhập.
+export function rememberAuthOnTrustedDevice(trusted) {
+  try {
+    const token = sessionStorage.getItem(APP_TOKEN_KEY) || '';
+    if (trusted && token) localStorage.setItem(REMEMBERED_TOKEN_KEY, token);
+    else localStorage.removeItem(REMEMBERED_TOKEN_KEY);
+  } catch {}
+}
 
 async function get(url) {
   return request(url, { headers: headers() });
@@ -915,6 +955,13 @@ export const getMedicationCatalog    = ()           => get('/api/medication-cata
 export const createMedicationCatalog = (body)        => post('/api/medication-catalog', body);
 export const updateMedicationCatalog = (key, body)  => patch(`/api/medication-catalog/${encodeURIComponent(key)}`, body);
 export const deleteMedicationCatalog = (key)         => del(`/api/medication-catalog/${encodeURIComponent(key)}`);
+export const checkMedicationDilution = (body)       => post('/api/medication-catalog/dilution-check', body);
+export const getMedicationBuiltin    = ()           => get('/api/medication-catalog/builtin');
+export const getDilutionStats       = (refresh = false) => get(`/api/medication-catalog/dilution-stats${refresh ? '?refresh=1' : ''}`);
+export const getCatalogCleanup       = ()           => get('/api/medication-catalog/cleanup');
+export const applyCatalogCleanup     = (keys)       => post('/api/medication-catalog/cleanup', { keys });
+export const getNewDrugs             = ()           => get('/api/medication-catalog/new-drugs');
+export const ignoreNewDrug           = (key, ignore = true) => post('/api/medication-catalog/new-drugs/ignore', { key, ignore });
 export const getArchiveDrugNames      = ()           => get('/api/medication-catalog/archive-drug-names');
 export const assignMedicationIngredient = (body)      => post('/api/medication-catalog/assign-ingredient', body);
 
@@ -924,6 +971,12 @@ export const saveCustomRoutes = (body) => put('/api/routes/custom', body);
 
 // ── Thiết lập tài khoản (admin) ─────────────────────────────────────────────
 export const getAdminUsers    = ()           => get('/api/admin/users');
+// Thiết bị tin cậy (src/utils/deviceTrust.js ký từng yêu cầu; đây là các lệnh quản lý).
+export const getDeviceStatus  = ()           => get('/api/devices/me');
+export const listDevices      = ()           => get('/api/devices');
+export const registerDevice   = (name, publicKey) => post('/api/devices/register', { name, public_key: publicKey });
+export const approveDevice    = (id, setupCode)   => post(`/api/devices/${encodeURIComponent(id)}/approve`, setupCode ? { setup_code: setupCode } : {});
+export const revokeDevice     = (id)         => post(`/api/devices/${encodeURIComponent(id)}/revoke`, {});
 export const createAdminUser  = (body)        => post('/api/admin/users', body);
 export const updateAdminUser  = (id, body)   => patch(`/api/admin/users/${encodeURIComponent(id)}`, body);
 export const deleteAdminUser  = (id)          => del(`/api/admin/users/${encodeURIComponent(id)}`);
@@ -940,3 +993,26 @@ export const signDischargeBundle  = (fileName)     => post('/api/hchanh/sign-dis
 export const deleteDischargeBundle = (fileName)    => del(`/api/hchanh/discharge-bundle/${encodeURIComponent(fileName)}`);
 export const cleanupDischargeBundles = (olderThanDays) => post('/api/hchanh/discharge-bundles/cleanup', { older_than_days: olderThanDays });
 export const uploadDischargePdf   = (fileName, pdfDataUrl) => post('/api/hchanh/upload-discharge-pdf', { file_name: fileName, pdf_data_url: pdfDataUrl });
+
+// ── Cầu nối tab EMR (Data Hub trên cloud, EMR chỉ mở được trong bệnh viện) ───────────────────────
+// Gọi thẳng, không ghi nhật ký hoạt động: trang cầu nối hỏi việc liên tục, và kết quả chứa nội dung
+// trang EMR.
+async function bridgeCall(path, body) {
+  const res = await fetchWithAuth(path, { method: 'POST', headers: headers(), body: JSON.stringify(body || {}) }, true, null);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data?.message || (res.status === 404 ? STALE_SERVER_MESSAGE : `Lỗi máy chủ ${res.status}`));
+    err.status = res.status;
+    err.code = data?.code || '';
+    throw err;
+  }
+  return data;
+}
+export const getEmrBridgeStatus   = ()     => get('/api/emr-bridge/status');
+export const emrBridgeHello       = (body) => bridgeCall('/api/emr-bridge/hello', body);
+export const emrBridgePoll        = (id)   => bridgeCall('/api/emr-bridge/poll', { bridge_id: id });
+export const emrBridgeResult      = (body) => bridgeCall('/api/emr-bridge/result', body);
+export const emrBridgeDisconnect  = (id)   => bridgeCall('/api/emr-bridge/disconnect', { bridge_id: id });
+export const updateResearchStudyVariables = (studyId, selectedVariables) =>
+  post(`/api/research/studies/${encodeURIComponent(studyId)}/variables`, { selected_variables: selectedVariables });
+export const downloadResearchStudyCodebook = (studyId) => downloadBlob(`/api/research/studies/${encodeURIComponent(studyId)}/codebook`, `${studyId}_tu_dien_bien.csv`);

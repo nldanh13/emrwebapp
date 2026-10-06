@@ -76,7 +76,7 @@ function Stage({ n, title, state, tone = 'neutral', what, children }) {
 
 const B = ({ children }) => <b style={{ color: C.text, fontVariantNumeric: 'tabular-nums' }}>{children}</b>;
 
-function PipelineView({ pipeline, summary }) {
+function PipelineView({ pipeline, summary, onNormalize, normalizeBusy = false }) {
   if (!pipeline?.exists) return null;
   const { scan, collect, normalize, storage, reused_from_patient_db: reused } = pipeline;
   const fetch = pipeline.fetch || {};
@@ -112,6 +112,20 @@ function PipelineView({ pipeline, summary }) {
               {fetch.parts?.length ? <span style={{ color: C.text3 }}> ({fetch.parts.map(p => `${p.label}: ${when(p.updated_at)}`).join(' · ')})</span> : null}.
             </div>
           )}
+          {!!collect?.diagnostics?.length && (
+            <div style={{ marginTop: 8, border: `1px solid ${C.amberBorder}`, background: C.amberBg, borderRadius: 7, padding: '7px 9px' }}>
+              <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Lỗi đang nằm ở bước nào?</div>
+              <div style={{ marginTop: 5, display: 'grid', gap: 4 }}>
+                {collect.diagnostics.slice(0, 8).map((d, idx) => (
+                  <div key={`${d.stage || 'x'}_${idx}`} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: FS.xs, color: C.text2 }}>
+                    <b>{d.stage_label || 'Chưa phân loại'}:</b>
+                    <span>{d.message}</span>
+                    <span style={{ color: C.text3 }}>· {compactNumber(d.encounters || 0)} lượt / {compactNumber(d.rows || 0)} phần</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {!!reused.cases && <div>Dùng lại từ Kho người bệnh (tab Kiểm/Trả HSBA): <B>{compactNumber(reused.cases)}</B> ca, trong đó <B>{compactNumber(reused.provisional)}</B> ca còn dữ liệu tạm thời, <B>{compactNumber(reused.replaced_by_goc)}</B> ca đã thay bằng dữ liệu gốc.</div>}
           {!!modules.length && (
             <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', columnGap: 18, rowGap: 8 }}>
@@ -125,9 +139,89 @@ function PipelineView({ pipeline, summary }) {
           what="Ghép file thô thành bảng chuẩn theo lượt điều trị (người bệnh, đợt, XN, CĐHA, PT/TT, y lệnh...), tách Mã BN sang mã giả danh, rồi kiểm tra chất lượng (QA). Chạy tự động sau mỗi lần quét/thu thập.">
           Lúc <B>{when(normalize.at)}</B>{normalize.duration_ms != null ? <> · chạy <B>{(normalize.duration_ms / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}</B> giây</> : null}
           {normalize.schema_version ? <> · cấu trúc bảng phiên bản <B>{normalize.schema_version}</B></> : null}.
+          {onNormalize && (
+            <div style={{ marginTop: 9, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <Btn
+                variant="solidPrimary"
+                onClick={onNormalize}
+                disabled={normalizeBusy}
+                loading={normalizeBusy}
+                style={{ height: 32 }}
+              >
+                {normalizeBusy ? 'Đang chuẩn hóa…' : 'Chạy lại chuẩn hóa'}
+              </Btn>
+              <span style={{ fontSize: FS.xs, color: C.text3 }}>
+                Chạy trực tiếp từ dữ liệu đã có trong kho, <b>không cần chạy Thu thập dữ liệu</b> và không mở EMR.
+              </span>
+            </div>
+          )}
+          {!!qa.blocking_items?.length && (
+            <div style={{ marginTop: 8, border: `1px solid ${C.redBorder || C.border}`, background: C.redBg || C.surface2, borderRadius: 7, padding: '8px 9px' }}>
+              <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.red }}>Lỗi chặn phải xử lý trước khi tạo dataset</div>
+              <div style={{ marginTop: 5, display: 'grid', gap: 5 }}>
+                {qa.blocking_items.map((item, idx) => (
+                  <div key={`${item.code || 'block'}_${idx}`} style={{ fontSize: FS.xs, color: C.text2 }}>
+                    <b style={{ color: C.red }}>{item.code || 'blocking'}:</b>{' '}
+                    <span>{item.message || 'Lỗi chất lượng dữ liệu.'}</span>
+                    {item.table ? <span style={{ color: C.text3 }}> · bảng {item.table}</span> : null}
+                    {Number(item.count || 0) > 0 ? <span style={{ color: C.text3 }}> · {compactNumber(item.count)} dòng/nhóm</span> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {!!normalize.unmatched.length && (
             <div style={{ color: C.amber }}>Không ghép được vào lượt điều trị: {normalize.unmatched.map(u => `${u.label} ${compactNumber(u.rows)} dòng`).join(' · ')} (giữ riêng, không đưa vào phân tích).</div>
           )}
+          {qa.matching_quality && (() => {
+            const mq = qa.matching_quality;
+            const reasons = [
+              ['Ngoài thời gian điều trị', mq.outside_treatment_time, 'danger'],
+              ['Thiếu thời gian sự kiện', mq.missing_event_time, 'warn'],
+              ['Khóa đợt không tìm thấy', mq.strong_key_not_found, 'warn'],
+              ['Khóa đợt mơ hồ', mq.strong_key_ambiguous, 'warn'],
+              ['Xung đột Mã BN/khóa đợt', mq.identity_conflict, 'danger'],
+              ['Mơ hồ', mq.ambiguous, 'warn'],
+              ['Không ghép', mq.missing, 'danger'],
+            ].filter(([, value]) => Number(value || 0) > 0);
+            return reasons.length ? (
+              <div style={{ marginTop: 6, fontSize: FS.xs, color: C.text2 }}>
+                <b>Vì sao chưa ghép được:</b>{' '}
+                {reasons.map(([label, value, tone], idx) => (
+                  <span key={label} style={{ color: tone === 'danger' ? C.red : C.amber }}>
+                    {idx ? ' · ' : ''}{label}: <B>{compactNumber(value)}</B>
+                  </span>
+                ))}
+              </div>
+            ) : null;
+          })()}
+          {qa.matching_quality && (() => {
+            const mq = qa.matching_quality;
+            const matched = Number(mq.matched_rows || 0);
+            const total = Number(mq.total_rows || 0);
+            const pct = total ? Math.round((matched / total) * 1000) / 10 : 0;
+            return (
+              <div style={{ marginTop: 8, border: `1px solid ${C.border2}`, borderRadius: 7, padding: '8px 9px', background: C.surface2 }}>
+                <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Chất lượng ghép dữ liệu</div>
+                <div style={{ marginTop: 5, display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: FS.xs, color: C.text2 }}>
+                  <span><B>{compactNumber(matched)}</B> / {compactNumber(total)} dòng matched ({pct}%)</span>
+                  <span>Khóa đợt mạnh: <B>{compactNumber(mq.strong_key || 0)}</B></span>
+                  <span>Khớp mốc vào/ra chính xác: <B>{compactNumber(mq.exact_visit_time || 0)}</B></span>
+                  <span>Ghép theo khoảng thời gian: <B>{compactNumber(mq.event_time_range || 0)}</B></span>
+                  <span style={{ color: Number(mq.missing_event_time || 0) ? C.amber : C.text2 }}>Thiếu thời gian sự kiện: <B>{compactNumber(mq.missing_event_time || 0)}</B></span>
+                  <span style={{ color: Number(mq.outside_treatment_time || 0) ? C.red : C.text2 }}>Ngoài thời gian điều trị: <B>{compactNumber(mq.outside_treatment_time || 0)}</B></span>
+                  <span style={{ color: Number(mq.strong_key_not_found || 0) ? C.amber : C.text2 }}>Khóa đợt không tìm thấy: <B>{compactNumber(mq.strong_key_not_found || 0)}</B></span>
+                  <span style={{ color: Number(mq.strong_key_ambiguous || 0) ? C.amber : C.text2 }}>Khóa đợt mơ hồ: <B>{compactNumber(mq.strong_key_ambiguous || 0)}</B></span>
+                  <span style={{ color: Number(mq.identity_conflict || 0) ? C.red : C.text2 }}>Xung đột Mã BN/khóa đợt: <B>{compactNumber(mq.identity_conflict || 0)}</B></span>
+                  <span style={{ color: Number(mq.ambiguous || 0) ? C.amber : C.text2 }}>Mơ hồ: <B>{compactNumber(mq.ambiguous || 0)}</B></span>
+                  <span style={{ color: Number(mq.missing || 0) ? C.red : C.text2 }}>Không ghép: <B>{compactNumber(mq.missing || 0)}</B></span>
+                </div>
+                <div style={{ marginTop: 4, fontSize: FS.xs, color: C.text3 }}>
+                  Chỉ dòng matched và đúng khoảng điều trị mới được dùng cho bảng phân tích. Mã NC không tham gia quyết định matching.
+                </div>
+              </div>
+            );
+          })()}
           {normalize.history.length > 1 && (
             <div style={{ fontSize: FS.xs, color: C.text3 }}>
               Các lần chuẩn hóa gần nhất: {normalize.history.map(h => `${when(h.at)} (${compactNumber(h.encounters)} lượt, ${compactNumber(h.lab_results)} XN)`).join(' · ')}
@@ -164,7 +258,7 @@ function PipelineView({ pipeline, summary }) {
   );
 }
 
-export function GeneralOverviewView({ generalOverview, generalOverviewLoading, pipeline, setArchiveMode }) {
+export function GeneralOverviewView({ generalOverview, generalOverviewLoading, pipeline, setArchiveMode, onNormalize, normalizeBusy = false }) {
   const ov = generalOverview;
   const summary = ov?.statusSummary || { total: 0, ready: 0, missingCount: 0, manualReview: 0, modules: [] };
   const counts = ov?.counts || {};
@@ -226,7 +320,7 @@ export function GeneralOverviewView({ generalOverview, generalOverviewLoading, p
         </section>
       )}
 
-      <PipelineView pipeline={pipeline} summary={summary} />
+      <PipelineView pipeline={pipeline} summary={summary} onNormalize={onNormalize} normalizeBusy={normalizeBusy} />
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import * as api from '../../api.js';
 import { todayInputDate } from './researchScope.js';
 import { C, FS } from '../../tokens.js';
-import { compactNumber } from './researchFormat.js';
+import { compactNumber, formatWhen } from './researchFormat.js';
 import { inp, StatBadge, SmallRowsTable } from './researchUi.jsx';
 import { Btn, Spinner } from '../shared.jsx';
 
@@ -188,11 +188,21 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
   const report = (screen ? screen.last_report : status?.last_report) || null;
   const plan = (screen ? screen.plan : status?.next_plan) || null;
   const exceptions = Array.isArray(status?.exceptions) ? status.exceptions : [];
+  const diagnostics = Array.isArray(screen?.diagnostics) && screen.diagnostics.length
+    ? screen.diagnostics
+    : (Array.isArray(report?.diagnostics) ? report.diagnostics : []);
   const busy = disabled || running;
   const collecting = running || /thu thập/i.test(String(serverRunning?.label || ''));
   const runningLabel = collecting ? 'Đang thu thập' : serverRunning ? `Đang chạy: ${serverRunning.label}` : '';
   const planView = buildPlanView(plan, { running: Boolean(collecting || serverRunning), maxAttempts: status?.max_attempts || 3, busy });
-  const reportAt = report?.finished_at ? new Date(report.finished_at).toLocaleString('vi-VN') : '';
+  const reportAt = formatWhen(report?.finished_at);
+  // Đếm theo LƯỢT, cùng đơn vị với "Đánh giá dữ liệu" (danh sách có thể nhiều dòng/lượt).
+  const exceptionsLabel = screen?.exceptions_encounters != null
+    ? `Danh sách cần xử lý (${compactNumber(screen.exceptions_encounters)} lượt)`
+    : `Danh sách cần xử lý (${compactNumber(status?.exceptions_total || 0)} dòng)`;
+  // Đã có lần chạy (dù bị ngắt/dừng) thì không nói "chưa chạy lần nào"; ghi chú lần chạy gần nhất
+  // nằm ở "Đánh giá dữ liệu".
+  const hasRunBefore = Boolean(screen?.task?.stopped || screen?.task?.last_task);
 
   return (
     <section style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, padding: '9px 11px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -240,7 +250,9 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
         </div>
       ) : (
         <div style={{ fontSize: FS.xs, color: C.text3 }}>
-          {collecting || serverRunning ? 'Báo cáo của lần chạy này sẽ hiện ở đây khi xong.' : 'Chưa chạy thu thập tự động lần nào.'}
+          {collecting || serverRunning
+            ? 'Báo cáo của lần chạy này sẽ hiện ở đây khi xong.'
+            : hasRunBefore ? 'Lần chạy gần nhất chưa xong: xem ghi chú ở Đánh giá dữ liệu bên dưới.' : 'Chưa chạy thu thập tự động lần nào.'}
         </div>
       )}
 
@@ -326,7 +338,7 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
             {changes && !changes.length && <span style={{ fontSize: FS.xs, color: C.text3 }}>Chưa ghi nhận thay đổi nào.</span>}
           </div>
           {!!changes?.length && (
-            <SmallRowsTable max={100} rows={changes.map(c => ({ ...c, at: c.changed_at ? new Date(c.changed_at).toLocaleString('vi-VN') : '', version: `v${c.from_version} → v${c.to_version}`, diff: `+${c.rows_added} / −${c.rows_removed}` }))} columns={[
+            <SmallRowsTable max={100} rows={changes.map(c => ({ ...c, at: formatWhen(c.changed_at), version: `v${c.from_version} → v${c.to_version}`, diff: `+${c.rows_added} / −${c.rows_removed}` }))} columns={[
               { key: 'at', label: 'Thời điểm' },
               { key: 'research_code', label: 'Mã NC' },
               { key: 'part_label', label: 'Phần' },
@@ -337,10 +349,25 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
         </div>
       )}
 
+      {!!diagnostics.length && (
+        <div style={{ border: `1px solid ${C.amberBorder}`, background: C.amberBg, borderRadius: 7, padding: '7px 9px' }}>
+          <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Chẩn đoán lỗi thu thập</div>
+          <div style={{ marginTop: 5, display: 'grid', gap: 3 }}>
+            {diagnostics.slice(0, 8).map((d, idx) => (
+              <div key={`${d.stage || 'x'}_${idx}`} style={{ fontSize: FS.xs, color: C.text2, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <b>{d.stage_label || 'Chưa phân loại'}:</b>
+                <span>{d.message}</span>
+                <span style={{ color: C.text3 }}>· {compactNumber(d.encounters || 0)} lượt</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {status && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <Btn onClick={() => setShowExceptions(v => !v)} disabled={!exceptions.length} style={{ height: 24, padding: '0 9px', fontSize: FS.xs }}>
-            {showExceptions ? 'Ẩn danh sách cần xử lý' : `Danh sách cần xử lý (${compactNumber(status.exceptions_total || 0)} mục)`}
+            {showExceptions ? 'Ẩn danh sách cần xử lý' : exceptionsLabel}
           </Btn>
           {!!exceptions.length && (
             <Btn onClick={() => api.downloadResearchCollectionExceptions(studyId).catch(e => t(String(e.message || e), 'error'))} style={{ height: 24, padding: '0 9px', fontSize: FS.xs }}>Tải CSV</Btn>
@@ -363,11 +390,12 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
           attempts_label: e.status === 'failed' ? `${e.attempts}/${status.max_attempts || 3}` : '—',
         }))} columns={[
           { key: 'category_label', label: 'Loại' },
-          { key: 'research_code', label: 'Mã NC' },
           { key: 'patient_code', label: 'Mã BN' },
-          { key: 'part_label', label: 'Phần' },
-          { key: 'reason_label', label: 'Lý do' },
-          { key: 'detail', label: 'Chi tiết' },
+          { key: 'diagnostic_stage_label', label: 'Bước hỏng' },
+          { key: 'diagnostic_message', label: 'Chẩn đoán' },
+          { key: 'part_label', label: 'Phần dữ liệu' },
+          { key: 'reason_label', label: 'Mã lỗi' },
+          { key: 'detail', label: 'Chi tiết kỹ thuật' },
           { key: 'attempts_label', label: 'Lần thử' },
         ]} />
       )}

@@ -43,7 +43,7 @@ function useNow(intervalMs = 1000) {
 }
 
 // running: [{ scope_key, kind, study_id, study_name, label, since, task }]; clockOffset: giờ máy chủ − giờ máy này.
-export function RunningBanner({ running = [], clockOffset = 0, lastFinished = null, scopeName, onOpen, onCancel, onDismissFinished }) {
+export function RunningBanner({ running = [], clockOffset = 0, lastFinished = null, finishedWithError = false, scopeName, onOpen, onCancel, onDismissFinished }) {
   const now = useNow();
   if (!running.length && !lastFinished) return null;
   const serverNow = now + clockOffset;
@@ -87,10 +87,12 @@ export function RunningBanner({ running = [], clockOffset = 0, lastFinished = nu
         );
       })}
       {!running.length && lastFinished && (
-        <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '7px 12px', background: C.greenBg, borderBottom: `1px solid ${C.greenBorder}`, fontSize: FS.sm, color: C.text2 }}>
-          <span aria-hidden="true" style={{ color: C.green, fontWeight: 700 }}>✓</span>
+        // Kết thúc có lỗi: không dùng dấu ✓ xanh (trông như chạy xong bình thường); lý do ở khung lỗi bên dưới.
+        <div role={finishedWithError ? 'alert' : 'status'} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '7px 12px', background: finishedWithError ? C.redBg : C.greenBg, borderBottom: `1px solid ${finishedWithError ? C.redBorder : C.greenBorder}`, fontSize: FS.sm, color: C.text2 }}>
+          <span aria-hidden="true" style={{ color: finishedWithError ? C.red : C.green, fontWeight: 700 }}>{finishedWithError ? '!' : '✓'}</span>
           <span style={{ flex: '1 1 300px' }}>
-            <b style={{ color: C.green }}>Đã kết thúc: {lastFinished.label}</b> · {scopeName(lastFinished)} · lúc {clock(lastFinished.finished_at)} · chạy {formatDuration(lastFinished.elapsed_ms)}
+            <b style={{ color: finishedWithError ? C.red : C.green }}>{finishedWithError ? 'Đã dừng do lỗi' : 'Đã kết thúc'}: {lastFinished.label}</b> · {scopeName(lastFinished)} · lúc {clock(lastFinished.finished_at)} · chạy {formatDuration(lastFinished.elapsed_ms)}
+            {finishedWithError ? <> · lý do ở khung đỏ bên dưới</> : null}
           </span>
           <Btn onClick={() => onOpen(lastFinished)} style={{ height: 26, fontSize: FS.xs }}>Xem kết quả</Btn>
           <Btn onClick={onDismissFinished} style={{ height: 26, fontSize: FS.xs }}>Đóng</Btn>
