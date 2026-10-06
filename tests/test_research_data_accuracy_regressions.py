@@ -103,3 +103,25 @@ def test_normalized_detail_rows_keep_provenance():
     assert "patient_db" in norm
     for field in ["source_type", "source_quality", "source_file"]:
         assert field in schema
+
+
+def test_encounter_matching_is_auditable_and_strong_keys_fail_closed():
+    ctx = (ROOT / "server" / "research" / "encounter_context.js").read_text(encoding="utf-8")
+    norm = (ROOT / "server" / "research" / "normalize.js").read_text(encoding="utf-8")
+    schema = (ROOT / "server" / "research" / "normalized_schema.js").read_text(encoding="utf-8")
+    assert "function resolveStrongEncounterKey" in ctx
+    assert "encounter_match_identity_conflict" in ctx
+    assert "encounter_match_strong_key_not_found" in ctx
+    assert "encounter_match_method: encounterMatchMethod(ctx)" in norm
+    assert "encounter_match_reason: ctx.needs_manual_review || ''" in norm
+    assert "encounter_match_method" in schema
+    assert "encounter_match_reason" in schema
+
+
+def test_research_code_is_not_an_identity_blocker_and_matching_quality_is_reported():
+    qa = (ROOT / "server" / "research" / "quality.js").read_text(encoding="utf-8")
+    assert "research_code_reused" in qa
+    assert "duplicate_research_code" not in qa
+    assert "matching_quality: matchingQuality" in qa
+    assert "strong_key" in qa
+    assert "outside_treatment_time" in qa
