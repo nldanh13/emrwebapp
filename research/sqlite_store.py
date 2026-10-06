@@ -17,6 +17,7 @@ import os
 import re
 import sqlite3
 import sys
+import time
 import unicodedata
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
@@ -310,13 +311,21 @@ def build_database(request: Dict[str, Any]) -> Dict[str, Any]:
         conn.commit()
         conn.execute("PRAGMA optimize")
         conn.close()
-        try:
-            os.replace(temp_path, database_path)
-        except PermissionError as exc:
+        replace_error = None
+        for attempt in range(6):
+            try:
+                os.replace(temp_path, database_path)
+                replace_error = None
+                break
+            except PermissionError as exc:
+                replace_error = exc
+                if attempt < 5:
+                    time.sleep(0.35 * (attempt + 1))
+        if replace_error is not None:
             raise RuntimeError(
-                "Không thể cập nhật research.sqlite3 vì file đang được chương trình khác mở. "
-                "Hãy đóng DB Browser/Excel/Python đang dùng file rồi chuẩn hóa lại."
-            ) from exc
+                "Không thể cập nhật research.sqlite3 sau 6 lần thử vì file đang bị khóa. "
+                "Hãy đóng DB Browser/Excel/Python hoặc tiến trình khác đang mở file rồi chuẩn hóa lại."
+            ) from replace_error
         try:
             os.chmod(database_path, 0o600)
             os.chmod(database_path.parent, 0o700)

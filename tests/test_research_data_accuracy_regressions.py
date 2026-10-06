@@ -132,6 +132,19 @@ def test_research_code_is_not_an_identity_blocker_and_matching_quality_is_report
     assert "encounter_match_identity_conflict" in qa
 
 
+def test_sqlite_update_retries_windows_lock_and_surfaces_root_cause():
+    py = (ROOT / "research" / "sqlite_store.py").read_text(encoding="utf-8")
+    js = (ROOT / "server" / "research" / "sqlite_store.js").read_text(encoding="utf-8")
+    qa = (ROOT / "server" / "research" / "quality.js").read_text(encoding="utf-8")
+    assert "for attempt in range(6)" in py
+    assert "time.sleep(0.35 * (attempt + 1))" in py
+    assert "sau 6 lần thử" in py
+    assert "function sqlitePythonError" in js
+    assert "const root = [...lines].reverse().find" in js
+    assert "sqlitePythonError(result.stderr)" in js
+    assert "slice(0, 400)" in qa
+
+
 def test_analysis_outputs_require_positive_temporal_membership():
     norm = (ROOT / "server" / "research" / "normalize.js").read_text(encoding="utf-8")
     sel = (ROOT / "server" / "research" / "variable_selection.js").read_text(encoding="utf-8")

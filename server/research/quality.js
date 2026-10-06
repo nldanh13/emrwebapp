@@ -402,7 +402,7 @@ function buildQualityReport({
 
   // CSV ↔ SQLite.
   if (databaseError) {
-    blocking.push({ code: 'sqlite_failed', message: `Không tạo/cập nhật được research.sqlite3: ${text(databaseError).slice(0, 200)}` });
+    blocking.push({ code: 'sqlite_failed', message: `Không tạo/cập nhật được research.sqlite3: ${text(databaseError).slice(0, 400)}` });
   } else if (runDir && csvFilesInDatabase.length) {
     for (const issue of compareCsvWithSqlite(runDir, databaseManifest, csvFilesInDatabase)) blocking.push(issue);
   }
