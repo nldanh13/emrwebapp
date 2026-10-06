@@ -112,6 +112,7 @@ function buildPipelineInfo(scopeDir, runDir) {
       parts_backfilled: Number(report.parts_backfilled || 0),
       selenium_errors_open: Number(report.selenium_errors_open || 0),
       unmatched_encounters: Number(report.unmatched_encounters || 0),
+      diagnostics: Array.isArray(report.diagnostics) ? report.diagnostics.slice(0, 20) : [],
     } : null,
     fetch: {
       last_at: lastFetchAt,
