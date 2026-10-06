@@ -1,6 +1,6 @@
 # Từ điển dữ liệu Kho nghiên cứu
 
-> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-06.2`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
+> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-06.3`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
 >
 > Mô tả được viết từ code chuẩn hóa hiện tại. Cột "Dùng" là đề xuất kỹ thuật; phạm vi dùng thực tế phải theo đề cương được hội đồng đạo đức/bệnh viện phê duyệt.
 
@@ -197,7 +197,7 @@
 
 **Cần người kiểm tra khi:**
 
-- Các dòng XN giống hệt nhau (possible_duplicate_lab_rows): giữ tất cả, đối chiếu Mã phiếu/mẫu nếu nguồn có.\n- Cùng BN + cùng thời điểm + cùng chỉ số nhưng kết quả khác nhau (conflicting_lab_result): giữ tất cả, không tự chọn.
+- Các dòng XN giống hệt nhau (possible_duplicate_lab_rows): giữ tất cả. Khác Mã phiếu = các lần xét nghiệm riêng; cùng Mã phiếu vẫn cần đối chiếu nguồn nếu nghi lấy trùng kỹ thuật.\n- Cùng BN + cùng thời điểm + cùng chỉ số nhưng kết quả khác nhau (conflicting_lab_result): giữ tất cả, không tự chọn.
 - result_num trống nhưng result_raw có số
 - Đơn vị khác nhau cho cùng test_name_norm trong một nghiên cứu.
 
