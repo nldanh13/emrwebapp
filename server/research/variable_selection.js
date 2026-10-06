@@ -476,7 +476,15 @@ function relatedRows(rows, identity) {
   } else {
     picked = pc ? [...(index.noEidNoRcByPc.get(pc) || [])] : [];
   }
-  return picked.sort((a, b) => a.i - b.i).map(entry => entry.row);
+  return picked
+    .sort((a, b) => a.i - b.i)
+    .map(entry => entry.row)
+    .filter(row => {
+      const matchStatus = String(row?.encounter_match_status || '').trim();
+      if (matchStatus && matchStatus !== 'matched') return false;
+      if (String(row?.is_within_encounter || '').trim() === '0') return false;
+      return true;
+    });
 }
 
 function conditionRowsForSource(sourceRow, condition, tableRowsByKey) {
@@ -629,8 +637,16 @@ function aggregateItems(variable, aggregation, items, identity) {
     return String(eligible[0].value);
   }
 
-  const distinct = [...new Set(items.map(item => String(item.value)))].slice(0, 8);
-  return distinct.join('; ');
+  // list phải giữ số lần xuất hiện. Hai lần XN cùng giá trị vẫn là hai quan sát,
+  // không được âm thầm rút thành một giá trị bằng Set.
+  const ordered = [...items].sort((a, b) => {
+    const aTimed = Number.isFinite(a.time);
+    const bTimed = Number.isFinite(b.time);
+    if (aTimed && bTimed) return a.time - b.time || a.index - b.index;
+    if (aTimed !== bTimed) return aTimed ? -1 : 1;
+    return a.index - b.index;
+  });
+  return ordered.map(item => String(item.value)).join('; ');
 }
 
 function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByKey = {}) {
