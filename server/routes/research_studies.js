@@ -243,6 +243,18 @@ router.post('/research/studies', (req, res) => {
   }
 });
 
+// Thêm / bớt biến của nghiên cứu: chỉ ghi vào nghiên cứu, dựng lại "Biến đã chọn" từ dữ liệu sẵn có.
+router.post('/research/studies/:studyId/variables', (req, res) => {
+  try {
+    if (String(req.params.studyId) === ARCHIVE_ID) return res.status(400).json({ status: 'error', message: 'Kho dữ liệu gốc không có danh sách biến riêng.' });
+    const { updateStudyVariables } = require('../research/study_variables');
+    const r = updateStudyVariables(req.params.studyId, req.body?.selected_variables);
+    return res.json({ status: 'ok', message: `Đã lưu ${r.variables} biến${r.run_id ? ` và cập nhật ${r.rows} lượt` : ''}.`, ...r });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
 router.post('/research/studies/:studyId/analysis-config', (req, res) => {
   try {
     const study = readStudy(req.params.studyId);

@@ -1006,3 +1006,5 @@ export const emrBridgeHello       = (body) => bridgeCall('/api/emr-bridge/hello'
 export const emrBridgePoll        = (id)   => bridgeCall('/api/emr-bridge/poll', { bridge_id: id });
 export const emrBridgeResult      = (body) => bridgeCall('/api/emr-bridge/result', body);
 export const emrBridgeDisconnect  = (id)   => bridgeCall('/api/emr-bridge/disconnect', { bridge_id: id });
+export const updateResearchStudyVariables = (studyId, selectedVariables) =>
+  post(`/api/research/studies/${encodeURIComponent(studyId)}/variables`, { selected_variables: selectedVariables });

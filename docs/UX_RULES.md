@@ -236,7 +236,7 @@ R6: không còn chỗ hiện vòng xoay + "Đang tải…" thay cho nội dung (
 | Nghỉ ốm | Có | Có | Theo từng thao tác |
 | Phòng khám | Có | Có; ẩn thì ngừng tự làm mới | Theo từng thao tác |
 | Người bệnh & tái khám | Có | Có | — |
-| Kho nghiên cứu | Có | Theo dõi máy chủ | Phiếu nhập tay: "Chưa lưu", tự lưu khi chuyển mẫu, hỏi khi đóng trang |
+| Kho nghiên cứu | Có | Theo dõi máy chủ | Thêm / bớt biến của nghiên cứu: "Chưa lưu" cho tới khi bấm Lưu; chuyển tab vẫn giữ (KeepAlive) |
 | Danh mục VTYT, Danh mục thuốc | Có | Có | Hộp thoại sửa, bấm Lưu |
 | Kiểm tra cấu trúc EMR | Có | Không tự tải | — |
 | Thiết lập tài khoản | Có | Có | Bấm Lưu |
