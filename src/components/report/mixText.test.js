@@ -7,8 +7,13 @@ describe('mixTextOf', () => {
   it('mã dung môi worker → tên đọc được', () => {
     expect(mixTextOf({ dung_moi: 'NACL_0.9' }, 'Merovia 1g')).toBe('Natri clorid 0.9%');
   });
-  it('tên thuốc đã ghi "+ Natri clorid 0.9%" → không lặp', () => {
+  it('tên thuốc đã ghi "+ Natri clorid 0.9%" → không lặp, chỉ ghi thể tích', () => {
     expect(mixTextOf({ dung_moi: 'NACL_0.9' }, 'VANCOMYCIN 1G + Natri clorid 0.9%')).toBe('');
+    expect(mixTextOf({ dung_moi: 'NACL_0.9', the_tich: 200, nguon_pha: 'y_lenh' }, 'VANCOMYCIN 1G + Natri clorid 0.9%')).toBe('200 ml');
+  });
+  it('thể tích không từ y lệnh → nói rõ nguồn', () => {
+    expect(mixTextOf({ dung_moi: 'NACL_0.9', the_tich: 100, nguon_pha: 'danh_muc' }, 'Merovia 1g')).toBe('Natri clorid 0.9% 100 ml (theo danh mục)');
+    expect(mixTextOf({ dung_moi: 'NACL_0.9', tui_dich_truyen_ml: 100, nguon_pha: 'mac_dinh' }, 'X')).toBe('Natri clorid 0.9% 100 ml (mặc định, hỏi lại y lệnh)');
   });
   it('không có dung môi → dùng quy tắc pha của danh mục', () => {
     expect(mixTextOf({ quy_tac_pha: 'Pha Glucose 5% 250 ml (theo danh mục)' }, 'Amiodaron'))

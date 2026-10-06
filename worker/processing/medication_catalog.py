@@ -135,28 +135,57 @@ DILUTION_SOLVENT_TEXT = {
 }
 
 
+def _rule_from_med(med, matched_by):
+    rule = (med or {}).get('dilution')
+    if not isinstance(rule, dict) or rule.get('solvent') not in DILUTION_SOLVENT_TEXT:
+        return None
+    return {
+        'solvent': rule.get('solvent'),
+        'volume_ml': _valid_volume(rule.get('volume_ml')),
+        'apply': rule.get('apply') if rule.get('apply') in ('always', 'infusion_only') else 'always',
+        'rate': _valid_volume(rule.get('rate')),
+        'note': str(rule.get('note') or '').strip(),
+        'canonical': str(med.get('canonical') or ''),
+        'matched_by': matched_by,
+    }
+
+
+def _single_ingredient(med):
+    items = [str(x or '').strip() for x in (med.get('active_ingredients') or []) if str(x or '').strip()]
+    if not items and med.get('active_ingredient'):
+        items = [str(med.get('active_ingredient')).strip()]
+    return items[0] if len(items) == 1 else ''
+
+
 def catalog_dilution_rule(drug_or_text):
     """Quy tắc pha người dùng cài trong Danh mục thuốc (trường 'dilution').
 
-    Chỉ khớp chính xác tên/tên khác (không đoán gần đúng): quy tắc pha quyết định
-    thể tích dịch truyền, đoán sai tên thì hại hơn không có. Trả về dict
-    {solvent, volume_ml, apply, note, canonical} hoặc None.
+    Thứ tự khớp: tên chuẩn/tên khác (chính xác) → hoạt chất của thuốc chỉ có MỘT hoạt chất
+    (vd. quy tắc đặt cho VECMID, hoạt chất Vancomycin, cũng áp dụng cho "VANCOMYCIN KABI 1G").
+    Không đoán gần đúng: quy tắc pha quyết định thể tích dịch truyền, đoán sai tên thì hại hơn
+    không có. Trả về dict {solvent, volume_ml, apply, rate, note, canonical, matched_by} hoặc None.
     """
     try:
         med, _meta = lookup_medication_with_meta(drug_or_text, allow_semantic=False)
     except Exception:
         return None
-    rule = (med or {}).get('dilution')
-    if not isinstance(rule, dict) or rule.get('solvent') not in DILUTION_SOLVENT_TEXT:
+    rule = _rule_from_med(med, 'ten')
+    if rule:
+        return rule
+    text = _drug_search_text(drug_or_text)
+    if isinstance(drug_or_text, dict):
+        text = normalize_key(f"{text} {drug_or_text.get('hoat_chat') or ''}")
+    if not text:
         return None
-    out = {
-        'solvent': rule.get('solvent'),
-        'volume_ml': _valid_volume(rule.get('volume_ml')),
-        'apply': rule.get('apply') if rule.get('apply') in ('always', 'infusion_only') else 'always',
-        'note': str(rule.get('note') or '').strip(),
-        'canonical': str(med.get('canonical') or ''),
-    }
-    return out
+    for cand in load_medication_catalog():
+        if not isinstance(cand.get('dilution'), dict):
+            continue
+        ingredient = _single_ingredient(cand)
+        if ingredient and _catalog_alias_matches(text, ingredient, cand):
+            rule = _rule_from_med(cand, 'hoat_chat')
+            if rule:
+                return rule
+    return None
 
 
 def dilution_rule_text(rule):
@@ -171,6 +200,9 @@ def dilution_rule_text(rule):
         vol = rule.get('volume_ml')
         if vol:
             text += f" {int(vol) if float(vol).is_integer() else vol} ml"
+        rate = rule.get('rate')
+        if rate:
+            text += f", {int(rate) if float(rate).is_integer() else rate} giọt/phút"
     if rule.get('note'):
         text += f" — {rule['note']}"
     return text + ' (theo danh mục)'
@@ -511,6 +543,12 @@ def sync_catalog_from_processed_records(records):
         for item in (thuoc.get('dich_truyen') or []):
             if not isinstance(item, dict):
                 continue
+            # Thuốc pha truyền (có dung môi): thể tích là thể tích PHA, thuộc về quy tắc pha chứ không
+            # phải "thể tích mặc định" của thuốc; tên hiển thị lại kèm "+ Natri clorid 0.9%" → trước
+            # đây sinh mục rác "X + Natri clorid 0.9%" trong danh mục. Thể tích tự suy (không từ EMR)
+            # cũng bỏ qua để không tự học lại chính giá trị mình đoán.
+            if item.get('dung_moi') or item.get('suy_luan_dung_moi') or item.get('nguon_pha'):
+                continue
             name = _extract_display_name(item)
             volume = _valid_volume(item.get('the_tich'))
             if not name or volume is None:
@@ -532,6 +570,9 @@ def sync_catalog_from_processed_records(records):
             medications.append(med)
             alias_index[key] = med
             added += 1
+            continue
+        # Người dùng đã sửa tay trên Danh mục thuốc → không tự đổi nữa.
+        if existing.get('sua_tay'):
             continue
         changed = False
         if existing.get('default_volume_ml') != volume:

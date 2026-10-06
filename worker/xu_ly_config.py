@@ -248,6 +248,54 @@ def get_catalog_dilution(drug_name):
     return catalog_dilution_rule(drug_name)
 
 
+def builtin_dilution_rules():
+    """Luật pha cài sẵn (d_v2.json 3_LUAT_AN_TOAN_DAC_BIET + từ khóa trong code), dạng giống quy tắc
+    Danh mục thuốc để giao diện hiện ra và người dùng biết đang có luật gì. Quy tắc Danh mục thắng."""
+    out = []
+    seen = set()
+    for key, rule in (LUAT_AN_TOAN or {}).items():
+        try:
+            hoat_chat = _norm_upper(rule.get("hoat_chat", ""))
+            yc = rule.get("yeu_cau_pha_che", {}) or {}
+            dung_moi = _norm_upper(yc.get("dung_moi_bat_buoc", ""))
+        except Exception:
+            continue
+        if not hoat_chat or not any(k in dung_moi for k in ("CLORID", "CHLORIDE", "NACL")):
+            continue
+        vol = yc.get("tong_the_tich_sau_pha")
+        note = str(yc.get("ghi_chu") or "").strip()
+        if hoat_chat == "TRAMADOL":
+            note = "Ưu tiên tiêm bắp; chỉ pha khi y lệnh ghi truyền hoặc có túi Natri clorid rời cùng giờ."
+        out.append({"keyword": hoat_chat, "solvent": "NACL_0.9", "volume_ml": float(vol) if vol else None,
+                    "apply": "infusion_only" if hoat_chat == "TRAMADOL" else "always", "note": note,
+                    "nguon": "d_v2.json"})
+        seen.add(hoat_chat)
+    for kw, vol in DEFAULT_NACL_VOLUME_BY_KEYWORD.items():
+        if kw in seen:
+            continue
+        out.append({"keyword": kw, "solvent": "NACL_0.9", "volume_ml": float(vol), "apply": "always",
+                    "note": "", "nguon": "xu_ly_config.py"})
+        seen.add(kw)
+    for kw in ALWAYS_INFUSION_DRUGS:
+        if kw not in seen:
+            out.append({"keyword": kw, "solvent": "NACL_0.9", "volume_ml": 100.0, "apply": "always",
+                        "note": "", "nguon": "xu_ly_config.py"})
+    return out
+
+
+def effective_dilution(drug_name: str):
+    """(quy tắc, nguồn) đang áp dụng cho một tên thuốc: 'danh_muc' (Danh mục thuốc) thắng
+    'luat_san_co'. Dùng cho màn Danh mục thuốc và trang kiểm tra — cùng dữ liệu bước xử lý dùng."""
+    rule = get_catalog_dilution(drug_name)
+    if rule:
+        return rule, "danh_muc"
+    name_u = _norm_upper(drug_name)
+    for item in builtin_dilution_rules():
+        if item["keyword"] and item["keyword"] in name_u:
+            return dict(item), "luat_san_co"
+    return None, None
+
+
 def get_safety_nacl_volume(drug_name_upper: str):
     # Quy tắc pha trong Danh mục thuốc thắng luật cài sẵn: "Không pha" tắt hẳn việc tự gắn NaCl;
     # "Luôn pha NaCl X ml" coi như luật an toàn. "Chỉ khi y lệnh ghi truyền" không ép pha ở đây.

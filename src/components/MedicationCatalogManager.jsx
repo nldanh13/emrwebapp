@@ -15,8 +15,9 @@ import RouteDesigner from './RouteDesigner.jsx';
 import DrugNameIngredientPanel from './DrugNameIngredientPanel.jsx';
 import { RouteBadge } from './report/ReportShared.jsx';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
-import { SkeletonTable } from './Skeleton.jsx';
+import { SkeletonBlock, SkeletonTable } from './Skeleton.jsx';
 import { DILUTION_APPLY, DILUTION_SOLVENTS, dilutionForm, dilutionFromForm, dilutionSummary } from '../utils/dilutionRule.js';
+import DilutionCheckPanel from './DilutionCheckPanel.jsx';
 
 function routeOptions(table) {
   const categories = table.categories || [];
@@ -105,8 +106,9 @@ function RoutePicker({ routes, value, onChange }) {
 
 // Quy tắc pha: bước xử lý dữ liệu dựa vào khi y lệnh không ghi rõ dung môi/thể tích.
 // Y lệnh ghi rõ (vd. "pha NaCl 0.9% lấy đủ 50ml") vẫn thắng quy tắc này.
-function DilutionFields({ form, set }) {
+function DilutionFields({ form, set, setForm, effective }) {
   const solvent = form.dilution_solvent;
+  const builtin = !solvent && effective?.source === 'luat_san_co' ? effective.rule : null;
   return (
     <div style={{ display: 'grid', gap: 10, padding: 12, borderRadius: 6, border: `1px solid ${C.border2}`, background: C.surface2 }}>
       <div style={{ fontSize: FS.sm, fontWeight: 600, color: C.text }}>Quy tắc pha thuốc</div>
@@ -120,6 +122,11 @@ function DilutionFields({ form, set }) {
         {solvent && solvent !== 'KHONG_PHA' && (
           <Field label="Thể tích pha (ml)">
             <input value={form.dilution_volume_ml} onChange={set('dilution_volume_ml')} inputMode="decimal" placeholder="VD: 100" style={INPUT_STYLE} />
+          </Field>
+        )}
+        {solvent && solvent !== 'KHONG_PHA' && (
+          <Field label="Tốc độ truyền (giọt/phút, tuỳ chọn)">
+            <input value={form.dilution_rate} onChange={set('dilution_rate')} inputMode="decimal" placeholder="VD: 40" style={INPUT_STYLE} />
           </Field>
         )}
         {solvent && solvent !== 'KHONG_PHA' && (
@@ -137,7 +144,16 @@ function DilutionFields({ form, set }) {
         </Field>
       )}
       <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.45 }}>
-        {!solvent && 'Chưa đặt: hệ thống dùng luật sẵn có (vd. Vancomycin, Merovia, Nefopam pha Natri clorid 0.9% 100 ml).'}
+        {!solvent && !builtin && 'Chưa đặt và không có luật sẵn có cho thuốc này: chỉ pha khi y lệnh ghi rõ dung môi hoặc có túi Natri clorid cùng giờ.'}
+        {builtin && <>
+          Đang áp dụng <b>luật sẵn có</b> ({builtin.keyword}): {dilutionSummary(builtin)}.{' '}
+          <button type="button" onClick={() => setForm(prev => ({ ...prev,
+            dilution_solvent: builtin.solvent, dilution_volume_ml: builtin.volume_ml ?? '',
+            dilution_apply: builtin.apply || 'always', dilution_note: builtin.note || '' }))}
+            style={{ background: 'none', border: 'none', padding: 0, color: C.blue, cursor: 'pointer', fontSize: FS.xs, fontFamily: 'inherit', textDecoration: 'underline' }}>
+            Chép vào đây để sửa
+          </button>
+        </>}
         {solvent === 'KHONG_PHA' && 'Không tự gắn túi Natri clorid cho thuốc này (chai/túi đã pha sẵn). Y lệnh ghi rõ dung môi vẫn được giữ.'}
         {solvent === 'NACL_0.9' && (form.dilution_apply === 'infusion_only'
           ? 'Chỉ khi y lệnh ghi truyền/TTM: chuyển sang dịch truyền với thể tích này. Y lệnh tiêm tĩnh mạch chậm giữ nguyên.'
@@ -149,7 +165,7 @@ function DilutionFields({ form, set }) {
   );
 }
 
-function EditModal({ mode, initial, onClose, onSave }) {
+function EditModal({ mode, initial, effective, onClose, onSave }) {
   const { routes: ROUTES, categories: CATEGORIES, categoryLabel: CATEGORY_LABEL, infusion: INFUSION_ROUTES } = routeOptions(useRouteTable());
   const CATEGORY_OPTIONS = CATEGORIES.map(c => [c.code, c.label]);
   const [form, setForm] = useState(initial);
@@ -267,7 +283,7 @@ function EditModal({ mode, initial, onClose, onSave }) {
             </div>
           )}
 
-          <DilutionFields form={form} set={set} />
+          <DilutionFields form={form} set={set} setForm={setForm} effective={effective} />
 
           <button type="button" onClick={() => setShowAdvanced(v => !v)} aria-expanded={showAdvanced} style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,
@@ -313,6 +329,29 @@ function EditModal({ mode, initial, onClose, onSave }) {
   );
 }
 
+const SOURCE_TAG = {
+  danh_muc: { label: 'Danh mục', color: C.blue, bg: C.blueBg, border: C.blueBorder },
+  luat_san_co: { label: 'Sẵn có', color: C.text2, bg: C.surface2, border: C.border2 },
+};
+
+// Quy tắc pha ĐANG áp dụng (máy chủ tính bằng hàm của worker) + nguồn. Chưa tải xong → khung xám.
+function DilutionCell({ item, info }) {
+  if (!info) return item.dilution ? txt(dilutionSummary(item.dilution)) : <SkeletonBlock width={70} />;
+  const eff = info.catalog?.[item.canonical];
+  if (!eff?.rule) return <span style={{ color: C.text3 }}>—</span>;
+  const tag = SOURCE_TAG[eff.source];
+  return (
+    <span title={eff.rule.note || ''}>
+      {dilutionSummary(eff.rule)}
+      {eff.rule.matched_by === 'hoat_chat' && eff.rule.canonical !== item.canonical ? ` (theo ${eff.rule.canonical})` : ''}
+      {tag && <span style={{ marginLeft: 6, padding: '0 5px', borderRadius: 4, fontSize: 11, whiteSpace: 'nowrap',
+        color: tag.color, background: tag.bg, border: `1px solid ${tag.border}` }}>{tag.label}</span>}
+    </span>
+  );
+}
+
+const INJECTABLE_CATEGORIES = new Set(['thuoc_tiem', 'dich_truyen']);
+
 function RouteCell({ item }) {
   const def = normalizeRouteCode(item.default_route) || item.default_route || '';
   const others = (item.routes || []).map(r => normalizeRouteCode(r) || r).filter(r => r && r !== def);
@@ -334,6 +373,8 @@ export default function MedicationCatalogManager() {
   const [editing, setEditing] = useState(null);
   const [deleting, setDeleting] = useState('');
   const [toast, setToast] = useState('');
+  const [dilutionInfo, setDilutionInfo] = useState(null);
+  const [ruleFilter, setRuleFilter] = useState('all');
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 6000); };
 
@@ -342,6 +383,10 @@ export default function MedicationCatalogManager() {
     try {
       const data = await api.getMedicationCatalog();
       setItems(data.medications || []);
+      // Quy tắc pha đang áp dụng cho từng thuốc (gồm luật sẵn có) — tải sau, không chặn bảng.
+      api.checkMedicationDilution({ include_catalog: true })
+        .then(info => setDilutionInfo({ catalog: info.catalog || {}, builtin: info.builtin || [] }))
+        .catch(() => setDilutionInfo({ catalog: {}, builtin: [], failed: true }));
     } catch (e) {
       showToast('Lỗi tải danh mục thuốc: ' + String(e.message || e));
     } finally {
@@ -379,9 +424,11 @@ export default function MedicationCatalogManager() {
   };
 
   const q = query.trim().toLowerCase();
-  const filtered = q
-    ? items.filter(item => `${item.canonical} ${joinList(item.active_ingredients)} ${item.active_ingredient || ''} ${joinList(item.aliases)} ${item.category || ''}`.toLowerCase().includes(q))
-    : items;
+  const hasRule = item => Boolean(item.dilution || dilutionInfo?.catalog?.[item.canonical]?.rule);
+  const isInjectable = item => INJECTABLE_CATEGORIES.has(item.category) || ['thuoc_tiem', 'dich_truyen'].includes(routeCategory(item.default_route || ''));
+  const filtered = items
+    .filter(item => !q || `${item.canonical} ${joinList(item.active_ingredients)} ${item.active_ingredient || ''} ${joinList(item.aliases)} ${item.category || ''}`.toLowerCase().includes(q))
+    .filter(item => ruleFilter === 'all' || (ruleFilter === 'has_rule' ? hasRule(item) : (!hasRule(item) && isInjectable(item))));
 
   return (
     <div style={{ padding: 12, maxWidth: 1180, margin: '0 auto' }}>
@@ -411,16 +458,30 @@ export default function MedicationCatalogManager() {
         <b>Hoạt chất dùng cho nghiên cứu.</b> Mỗi chế phẩm/tên thương mại nên khai báo đúng hoạt chất (nhanh nhất: mục <b>Gắn hoạt chất</b> liệt kê sẵn tên thuốc trong kho chưa có hoạt chất). Nếu cùng một hoạt chất có nhiều tên thương mại, có thể tạo nhiều thuốc hoặc thêm tên vào mục "Tên khác". Hệ thống giữ tên gốc để truy vết; việc có y lệnh không tự động được coi là đã thực hiện thuốc.
       </div>
 
-      <div style={{ marginBottom: 14 }}>
+      <DilutionCheckPanel builtin={dilutionInfo?.builtin || []} />
+      {dilutionInfo?.failed && (
+        <div role="alert" style={{ marginBottom: 10, fontSize: FS.sm, color: C.amber }}>
+          Chưa tính được quy tắc pha đang áp dụng (cột "Quy tắc pha" chỉ hiện quy tắc đặt trong danh mục). Tải lại trang; nếu vẫn vậy, khởi động lại máy chủ.
+        </div>
+      )}
+
+      <div style={{ marginBottom: 14, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
         <input value={query} onChange={e => setQuery(e.target.value)}
           placeholder="Tìm theo chế phẩm, hoạt chất, tên thương mại, chuyên mục..." style={{ ...INPUT_STYLE, maxWidth: 460 }} />
+        <Segmented label="Lọc theo quy tắc pha" value={ruleFilter} onChange={setRuleFilter} options={[
+          { value: 'all', label: 'Tất cả' },
+          { value: 'has_rule', label: 'Có quy tắc pha' },
+          { value: 'no_rule', label: 'Tiêm/truyền chưa có quy tắc' },
+        ]} />
       </div>
 
       {loading && !items.length ? (
         <div role="status" aria-busy="true" aria-label="Đang tải danh mục thuốc" style={{ padding: 14 }}><SkeletonTable rows={8} cols={5} /></div>
       ) : !filtered.length ? (
         <div style={{ color: C.text3, padding: 20, textAlign: 'center' }}>
-          {items.length ? 'Không tìm thấy thuốc phù hợp.' : 'Danh mục thuốc đang trống.'}
+          {!items.length ? 'Danh mục thuốc đang trống.'
+            : ruleFilter === 'no_rule' ? 'Mọi thuốc tiêm/truyền trong danh mục đều đã có quy tắc pha.'
+            : 'Không tìm thấy thuốc phù hợp.'}
         </div>
       ) : (
         <div style={{ background: C.surface, borderTop: `1px solid ${C.border2}`, overflow: 'auto' }}>
@@ -449,7 +510,7 @@ export default function MedicationCatalogManager() {
                   <td style={{ padding: '10px 12px', fontSize: FS.sm, color: C.text2 }}>{txt(CATEGORY_LABEL[item.category] || item.category)}</td>
                   <td style={{ padding: '10px 12px', fontSize: FS.sm }}><code style={{ color: C.blue }}>{txt(item.default_volume_ml)}</code></td>
                   <td style={{ padding: '10px 12px', fontSize: FS.sm }}><code style={{ color: C.text2 }}>{txt(item.default_rate)}</code></td>
-                  <td style={{ padding: '10px 12px', fontSize: FS.xs, color: C.text2, maxWidth: 200 }} title={item.dilution?.note || ''}>{txt(dilutionSummary(item.dilution))}</td>
+                  <td style={{ padding: '10px 12px', fontSize: FS.xs, color: C.text2, maxWidth: 220 }}><DilutionCell item={item} info={dilutionInfo} /></td>
                   <td style={{ padding: '10px 12px' }}>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <Btn variant="secondary" onClick={() => setEditing({ mode: 'edit', key: item.key, form: formFromMedication(item) })}
@@ -476,7 +537,8 @@ export default function MedicationCatalogManager() {
       )}
 
       {editing && (
-        <EditModal mode={editing.mode} initial={editing.form} onClose={() => setEditing(null)}
+        <EditModal mode={editing.mode} initial={editing.form}
+          effective={editing.mode === 'edit' ? dilutionInfo?.catalog?.[editing.form.canonical] : null} onClose={() => setEditing(null)}
           onSave={(payload) => editing.mode === 'create' ? handleCreate(payload) : handleUpdate(editing.key, payload)} />
       )}
     </div>
