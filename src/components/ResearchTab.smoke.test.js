@@ -195,6 +195,27 @@ describe('ResearchTab (khói)', () => {
     expect(container.querySelector('input[placeholder^="Tìm mã NC"]')).toBeNull();
   });
 
+  it('Tổng quát hiện rõ nội dung lỗi chặn QA thay vì chỉ hiện số lượng', async () => {
+    const oldQa = PIPELINE.normalize.qa;
+    PIPELINE.normalize.qa = {
+      ...oldQa,
+      status: 'blocked',
+      blocking: 1,
+      blocking_items: [{ code: 'encounter_match_identity_conflict', message: '1 dòng có khóa đợt mạnh trỏ tới Mã BN khác.', table: 'lab_results', count: 1 }],
+      matching_quality: { total_rows: 10, matched_rows: 8, strong_key: 6, event_time_range: 2, identity_conflict: 1, missing: 2 },
+    };
+    await act(async () => { root.unmount(); });
+    root = createRoot(container);
+    await act(async () => { root.render(createElement(ResearchTab, { toast: () => {} })); });
+    await flush();
+    const text = container.textContent;
+    expect(text).toContain('Lỗi chặn phải xử lý trước khi tạo dataset');
+    expect(text).toContain('encounter_match_identity_conflict');
+    expect(text).toContain('khóa đợt mạnh trỏ tới Mã BN khác');
+    expect(text).toContain('Vì sao chưa ghép được');
+    PIPELINE.normalize.qa = oldQa;
+  });
+
   it('Tổng quát có nút Chạy lại chuẩn hóa cố định và gọi API trực tiếp, không cần Thu thập dữ liệu', async () => {
     api.normalizeResearchArchive.mockClear();
     await clickText('Chạy lại chuẩn hóa');
