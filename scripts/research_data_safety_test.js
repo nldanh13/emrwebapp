@@ -86,6 +86,47 @@ test('Ghép lượt không dùng Mã NC; chỉ Mã BN chưa đủ khi người b
   assert.strictEqual(R.encounterMatchMethod(byPatientAndEventTime), 'event_date_range');
 });
 
+test('Khóa đợt mạnh mâu thuẫn hoặc không tồn tại thì dừng, không fallback theo thời gian', () => {
+  const rows = [
+    { 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
+    { 'Mã BN': '222', 'Mã nội trú': 'nt-b', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
+  ];
+  const map = R.buildContextMap(rows, 'r');
+
+  const conflict = R.contextForRow(map, {
+    'Mã BN': '111', 'Mã nội trú': 'nt-b', 'TG chỉ định': '21/02/2026',
+  }, '111');
+  assert.strictEqual(conflict.encounter_id, '');
+  assert.strictEqual(conflict.needs_manual_review, 'encounter_match_identity_conflict');
+
+  const missingStrongKey = R.contextForRow(map, {
+    'Mã BN': '111', 'Mã nội trú': 'nt-khong-ton-tai', 'TG chỉ định': '21/02/2026',
+  }, '111');
+  assert.strictEqual(missingStrongKey.encounter_id, '');
+  assert.strictEqual(missingStrongKey.needs_manual_review, 'encounter_match_strong_key_not_found');
+});
+
+test('QA matching quality phân biệt khóa mạnh, thời gian, mơ hồ và ngoài đợt; Mã NC trùng không BLOCK', () => {
+  const patients = [{ patient_code: 'p1' }, { patient_code: 'p2' }];
+  const encounters = [
+    { encounter_id: 'e1', research_code: 'NCX', patient_code: 'p1', admission_date: '2026-01-01', discharge_date: '2026-01-05' },
+    { encounter_id: 'e2', research_code: 'NCX', patient_code: 'p2', admission_date: '2026-02-01', discharge_date: '2026-02-05' },
+  ];
+  const labs = [
+    { lab_result_id: 'l1', patient_code: 'p1', encounter_id: 'e1', encounter_match_status: 'matched', encounter_match_method: 'emr_noitru_id', encounter_match_reason: '', is_within_encounter: '1' },
+    { lab_result_id: 'l2', patient_code: 'p1', encounter_id: 'e1', encounter_match_status: 'matched', encounter_match_method: 'event_date_range', encounter_match_reason: '', is_within_encounter: '1' },
+    { lab_result_id: 'l3', patient_code: 'p1', encounter_id: '', encounter_match_status: 'missing', encounter_match_method: '', encounter_match_reason: 'encounter_match_outside_time', is_within_encounter: '' },
+  ];
+  const report = buildQualityReport({ tables: { patients, encounters, lab_results: labs } });
+  assert.ok(!report.blocking.some(x => x.code === 'duplicate_research_code'));
+  assert.ok(report.warnings.some(x => x.code === 'research_code_reused'));
+  assert.strictEqual(report.matching_quality.total_rows, 3);
+  assert.strictEqual(report.matching_quality.matched_rows, 2);
+  assert.strictEqual(report.matching_quality.strong_key, 1);
+  assert.strictEqual(report.matching_quality.event_time_range, 1);
+  assert.strictEqual(report.matching_quality.outside_treatment_time, 1);
+});
+
 test('Ghép theo ngày vào duy nhất khi nguồn thiếu giờ/ngày ra; không ghép nếu ngày đó có nhiều lượt', () => {
   const rows = [
     { 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'T/G vào': '08:00 20/02/2026' },
