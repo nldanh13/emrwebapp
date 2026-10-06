@@ -964,9 +964,6 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     const entryEncounter = String(entry.encounter_id || '').trim();
     if (key === enc.encounter_id || entryEncounter === enc.encounter_id) return 100;
 
-    const entryResearch = String(entry.research_code || entry['Mã NC'] || '').trim();
-    if (entryResearch && enc.research_code && entryResearch === enc.research_code) return 90;
-
     const entryCode = String(entry.ma_bn || entry['Mã BN'] || key.split('|')[0] || '').trim();
     if (!entryCode || entryCode !== enc.patient_code) return -1;
 
