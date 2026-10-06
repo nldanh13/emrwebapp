@@ -14,7 +14,7 @@
 //      dataset chọn biến/dataset cuối/bảng mã hóa không còn Mã BN và họ tên.
 // v16: bổ sung parser cấu trúc cho y lệnh và diễn biến lâm sàng.
 // v17: XN lossless — không tự xóa các lần xét nghiệm giống nhau; mỗi dòng có ID riêng.
-const NORMALIZED_SCHEMA_VERSION = 19;
+const NORMALIZED_SCHEMA_VERSION = 20;
 
 const NORMALIZED_COLUMNS = {
   patients: [
@@ -35,27 +35,27 @@ const NORMALIZED_COLUMNS = {
     'diagnosis_type', 'icd_code', 'diagnosis_text', 'source', 'source_run_id', 'row_hash',
   ],
   lab_results: [
-    'lab_result_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'lab_datetime', 'lab_date',
+    'lab_result_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'lab_datetime', 'lab_date',
     'lab_group', 'lab_order_id', 'test_name_raw', 'test_name_norm', 'result_raw', 'result_operator', 'result_num', 'result_text',
     'unit', 'result_num_norm', 'unit_norm', 'unit_conversion_status', 'ref_range_raw', 'flag_raw', 'flag_norm',
     'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter',
     'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash',
   ],
   imaging_results: [
-    'imaging_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'ordered_at', 'order_date',
+    'imaging_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'ordered_at', 'order_date',
     'service_name_raw', 'modality', 'body_region', 'result_text', 'conclusion_text',
     'status', 'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter',
     'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash',
   ],
   surgery_results: [
-    'surgery_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'surgery_datetime', 'surgery_date',
+    'surgery_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'surgery_datetime', 'surgery_date',
     'surgery_name', 'surgery_method', 'anesthesia_method', 'surgery_class', 'status',
     'preop_diagnosis', 'postop_diagnosis', 'operating_room',
     'days_from_admission', 'days_from_discharge', 'is_within_encounter',
     'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash',
   ],
   medication_orders: [
-    'med_order_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'order_datetime', 'order_date',
+    'med_order_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'order_datetime', 'order_date',
     'drug_name_raw', 'drug_name_norm', 'drug_group_guess', 'active_ingredient', 'route_raw', 'route_norm',
     'dose_raw', 'times_per_day', 'schedule', 'order_action', 'parser_confidence', 'source_field', 'raw_line',
     'surgery_datetime_ref', 'surgery_date_ref', 'postop_day_index', 'postop_day_label', 'is_postop_day_1_3',
@@ -67,13 +67,13 @@ const NORMALIZED_COLUMNS = {
     'route_set', 'drugs_display', 'drugs_json', 'source_run_id', 'row_hash',
   ],
   clinical_notes: [
-    'note_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'note_datetime', 'note_date',
+    'note_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'note_datetime', 'note_date',
     'doctor_name', 'note_type', 'clinical_text', 'order_text', 'status',
     'days_from_admission', 'days_from_discharge', 'is_within_encounter',
     'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash',
   ],
   clinical_events: [
-    'clinical_event_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status',
+    'clinical_event_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason',
     'event_datetime', 'event_date', 'doctor_name', 'event_type', 'event_subtype',
     'value_raw', 'value_norm', 'negated', 'certainty', 'source_text', 'parser_rule', 'confidence',
     'days_from_admission', 'days_from_discharge', 'is_within_encounter',
