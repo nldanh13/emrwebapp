@@ -8,6 +8,7 @@ const fs         = require('fs');
 
 const { PY_TIMEOUT_MS, ROOT_DIR, WORKER_DIR } = require('../constants');
 const { redactLogLine, isDriverStackNoise, LOG_REDACT_SALT } = require('../utils/log_redact');
+const { resolveDv2Path } = require('../utils/dv2_path');
 
 // ── Tìm Python binary ─────────────────────────────────────────────────────────
 
@@ -73,13 +74,10 @@ function runPython(args, { cwd, timeoutMs, onSpawn, extraEnv = {}, runtimeDir } 
   return new Promise((resolve) => {
     const effectiveCwd = cwd || ROOT_DIR;
     const runtimeConfigPath = runtimeDir ? path.join(runtimeDir, 'config.json') : '';
-    const runtimeDv2Path = runtimeDir ? path.join(runtimeDir, 'd_v2.json') : '';
     const appConfigPath = runtimeConfigPath && fs.existsSync(runtimeConfigPath)
       ? runtimeConfigPath
       : path.join(ROOT_DIR, 'config', 'config.json');
-    const dV2ConfigPath = runtimeDv2Path && fs.existsSync(runtimeDv2Path)
-      ? runtimeDv2Path
-      : path.join(ROOT_DIR, 'config', 'd_v2.json');
+    const dV2ConfigPath = resolveDv2Path(runtimeDir);
     const py = spawn(PYTHON_BIN, ['-X', 'utf8', ...args], {
       shell: false,
       windowsHide: true,
@@ -230,9 +228,16 @@ function runWorker(cmd, args, opts = {}) {
 
 /** Chạy một script Python cụ thể trong worker/. */
 function runScript(scriptName, args = [], opts = {}) {
-  const scriptPath = path.join(WORKER_DIR, scriptName);
-  if (!fs.existsSync(scriptPath)) throw new Error(`Thiếu script: worker/${scriptName}`);
-  console.log(`>>> [NODE] Script: ${scriptName} ${argsForLog(args)}`);
+  // Mọi lời gọi hchanh_fetch đi qua entrypoint tương thích ngược. Entrypoint chỉ
+  // thay đổi hành vi trong Research hchanh_auto: không dùng marker y lệnh làm gate
+  // quyết định cho surgery. Các ngữ cảnh khác delegate nguyên trạng.
+  const researchSafeEntry = path.join(WORKER_DIR, 'hchanh_fetch_entry.py');
+  const effectiveScriptName = scriptName === 'hchanh_fetch.py' && fs.existsSync(researchSafeEntry)
+    ? 'hchanh_fetch_entry.py'
+    : scriptName;
+  const scriptPath = path.join(WORKER_DIR, effectiveScriptName);
+  if (!fs.existsSync(scriptPath)) throw new Error(`Thiếu script: worker/${effectiveScriptName}`);
+  console.log(`>>> [NODE] Script: ${effectiveScriptName} ${argsForLog(args)}`);
   return runPython(['-u', scriptPath, ...args], {
     timeoutMs: PY_TIMEOUT_MS,
     cwd:       opts.cwd,

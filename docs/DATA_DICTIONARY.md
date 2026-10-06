@@ -1,6 +1,6 @@
 # Từ điển dữ liệu Kho nghiên cứu
 
-> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-09-23.3`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
+> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-07.1`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
 >
 > Mô tả được viết từ code chuẩn hóa hiện tại. Cột "Dùng" là đề xuất kỹ thuật; phạm vi dùng thực tế phải theo đề cương được hội đồng đạo đức/bệnh viện phê duyệt.
 
@@ -10,7 +10,7 @@
 - Cột cờ 1/0: "1" = có, "0" = không. Ô trống = không xác định được (khác với "0").
 - Ô trống nghĩa là nguồn không có hoặc hệ thống không đọc được giá trị. Hệ thống không tự điền giá trị thay thế.
 - Cột *_raw giữ nguyên văn bản EMR; cột *_norm/*_num là giá trị đã chuẩn hóa. Khi nghi ngờ, đối chiếu cột *_raw.
-- Số thập phân dùng dấu chấm. Kết quả xét nghiệm KHÔNG được quy đổi đơn vị; đơn vị nằm ở cột unit của cùng dòng.
+- Số thập phân dùng dấu chấm. result_raw/result_num/unit luôn giữ nguyên dữ liệu EMR; result_num_norm/unit_norm chỉ được sinh khi có quy tắc quy đổi đơn vị chắc chắn trong whitelist.
 - File CSV UTF-8 có BOM, phân tách bằng dấu phẩy.
 
 **Định danh:** Trực tiếp = nhận diện được người bệnh hoặc tra ngược EMR; Gián tiếp = có thể góp phần nhận diện khi kết hợp; Văn bản tự do = có thể lẫn tên/SĐT do người nhập gõ; Nhân viên = thông tin nhân viên y tế; Giả danh = mã do hệ thống tạo.
@@ -30,6 +30,7 @@
 | [`medication_orders.csv`](#medication_orders) | Một dòng thuốc trong một y lệnh. | `med_order_id` |
 | [`medication_day_summary.csv`](#medication_day_summary) | Một ngày y lệnh của một đợt (tổng hợp các thuốc trong ngày). | `encounter_id`, `order_date` |
 | [`clinical_notes.csv`](#clinical_notes) | Một dòng lịch sử y lệnh (diễn biến + nội dung y lệnh). | `note_id` |
+| [`clinical_events.csv`](#clinical_events) | Một sự kiện lâm sàng được parser nhận diện từ một dòng Diễn biến. | `clinical_event_id` |
 | [`patient_day.csv`](#patient_day) | Một ngày có hoạt động (XN/CĐHA/mổ/thuốc) của một đợt. | `encounter_id`, `date` |
 | [`extract_status.csv`](#extract_status) | Một đợt: tiến độ lấy dữ liệu và mức sẵn sàng phân tích. | `encounter_id` |
 | [`analysis_ready.csv`](#analysis_ready) | Một đợt điều trị: bảng rộng sẵn để phân tích. | `encounter_id` |
@@ -89,7 +90,7 @@
 
 **Khóa chính (duy nhất):** `encounter_id`
 
-**Khóa nối:** `patient_code` → `patients.patient_code` · Được nối từ: `diagnoses`, `lab_results`, `imaging_results`, `surgery_results`, `medication_orders`, `medication_day_summary`, `clinical_notes`, `patient_day`, `extract_status`, `analysis_ready`
+**Khóa nối:** `patient_code` → `patients.patient_code` · Được nối từ: `diagnoses`, `lab_results`, `imaging_results`, `surgery_results`, `medication_orders`, `medication_day_summary`, `clinical_notes`, `clinical_events`, `patient_day`, `extract_status`, `analysis_ready`
 
 **Nguồn:** research_source.csv (từ du_lieu_ban_dau.csv); du_lieu_goc.csv (script XN/CĐHA); hchanh_profile.csv; hchanh_discharge.csv (mục Ra khoa); hchanh_surgery.csv
 
@@ -110,7 +111,7 @@
 
 | Cột | Kiểu | Ý nghĩa | Giá trị / đơn vị | Ô trống nghĩa là | Định danh | Dùng |
 |---|---|---|---|---|---|---|
-| `encounter_id` | chuỗi | Khóa chính của đợt điều trị (Research key). Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra → Mã NC. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Không được trống (bắt buộc). | Giả danh | Được dùng |
+| `encounter_id` | chuỗi | Khóa chính của đợt điều trị (Research key). Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra. Mã NC không tham gia quyết định matching. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Không được trống (bắt buộc). | Giả danh | Được dùng |
 | `research_code` | chuỗi | Mã NC: mã giả danh của đợt điều trị, dùng thay tên khi xuất ẩn danh. Nguồn: research_source.csv (cấp khi tạo nguồn chuẩn) hoặc mã script XN/CĐHA đã cấp cho cùng đợt. | Dạng: NC + 4 chữ số (ví dụ NC0012) | Chưa ghép được đợt (xem encounter_match_status). | Giả danh | Được dùng |
 | `patient_code` | chuỗi | Mã BN trên EMR. Nguồn: Cột Mã BN của danh sách nội trú / file thô. |  | Không được trống (bắt buộc). | Trực tiếp | Loại (bị che khi xuất) |
 | `patient_key` | chuỗi | Mã người bệnh giả danh: cùng một người bệnh luôn cùng mã trong một kho, dùng để nối các đợt của cùng người khi xuất ẩn danh. Cách tính: Cấp tuần tự khi gặp Mã BN lần đầu; giữ nguyên qua các lần Chuẩn hóa. Không suy ngược được ra Mã BN nếu không có patient_link.csv. Nguồn: patient_link.csv của kho (bảng liên kết Mã BN ↔ patient_key, lưu riêng, không nằm trong dataset). | Dạng: P + 6 chữ số (ví dụ P000123) | Dòng không có Mã BN. | Giả danh | Được dùng |
@@ -119,6 +120,13 @@
 | `treatment_duration` | chuỗi | Số ngày điều trị như EMR ghi. Lưu ý: Giữ nguyên văn bản EMR, không tính lại. | Đơn vị: ngày |  | — | Được dùng |
 | `department` | chuỗi | Khoa điều trị. |  |  | Gián tiếp | Được dùng |
 | `room_bed` | chuỗi | Phòng/giường. |  |  | Gián tiếp | Cần đề cương duyệt |
+| `admission_pulse` | số thập phân | Mạch lúc vào viện (Phiếu vào viện). | Đơn vị: lần/phút | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_temperature` | số thập phân | Nhiệt độ lúc vào viện (Phiếu vào viện). | Đơn vị: °C | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_bp_systolic` | số thập phân | Huyết áp tâm thu lúc vào viện (Phiếu vào viện). | Đơn vị: mmHg | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_bp_diastolic` | số thập phân | Huyết áp tâm trương lúc vào viện (Phiếu vào viện). | Đơn vị: mmHg | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_respiratory_rate` | số thập phân | Nhịp thở lúc vào viện (Phiếu vào viện). | Đơn vị: lần/phút | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_weight_kg` | số thập phân | Cân nặng lúc vào viện (Phiếu vào viện). | Đơn vị: kg | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_height_cm` | số thập phân | Chiều cao lúc vào viện (Phiếu vào viện). | Đơn vị: cm | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
 | `admission_diagnosis` | văn bản | Chẩn đoán vào viện (nguyên văn). |  |  | Văn bản tự do | Cần đề cương duyệt |
 | `discharge_diagnosis` | văn bản | Chẩn đoán ra viện (nguyên văn, thường có mã ICD đầu dòng). |  |  | Văn bản tự do | Cần đề cương duyệt |
 | `diagnosis_raw` | văn bản | Chẩn đoán dùng để phân tích: chẩn đoán ra viện, nếu trống thì chẩn đoán vào viện. |  |  | Văn bản tự do | Cần đề cương duyệt |
@@ -164,12 +172,12 @@
 | `research_code` | chuỗi | Mã NC: mã giả danh của đợt điều trị, dùng thay tên khi xuất ẩn danh. Nguồn: research_source.csv (cấp khi tạo nguồn chuẩn) hoặc mã script XN/CĐHA đã cấp cho cùng đợt. | Dạng: NC + 4 chữ số (ví dụ NC0012) | Chưa ghép được đợt (xem encounter_match_status). | Giả danh | Được dùng |
 | `patient_code` | chuỗi | Mã BN trên EMR. Nguồn: Cột Mã BN của danh sách nội trú / file thô. |  | Không được trống (bắt buộc). | Trực tiếp | Loại (bị che khi xuất) |
 | `patient_key` | chuỗi | Mã người bệnh giả danh: cùng một người bệnh luôn cùng mã trong một kho, dùng để nối các đợt của cùng người khi xuất ẩn danh. Cách tính: Cấp tuần tự khi gặp Mã BN lần đầu; giữ nguyên qua các lần Chuẩn hóa. Không suy ngược được ra Mã BN nếu không có patient_link.csv. Nguồn: patient_link.csv của kho (bảng liên kết Mã BN ↔ patient_key, lưu riêng, không nằm trong dataset). | Dạng: P + 6 chữ số (ví dụ P000123) | Dòng không có Mã BN. | Giả danh | Được dùng |
-| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra → Mã NC. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
+| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra. Mã NC không tham gia quyết định matching. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
 | `diagnosis_date` | ngày | Ngày ra viện cho chẩn đoán ra viện; ngày vào viện cho các loại còn lại. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `diagnosis_type` | danh mục | Loại chẩn đoán. | `admission`, `discharge`, `comorbidity`, `complication` |  | — | Được dùng |
 | `icd_code` | chuỗi | Mã ICD-10 tách tự động từ văn bản. **Suy luận tự động.** | Dạng: A00 hoặc A00.0 | Văn bản không có mã ICD; không tự đoán mã. | — | Được dùng |
 | `diagnosis_text` | văn bản | Nội dung chẩn đoán (nguyên văn). |  |  | Văn bản tự do | Cần đề cương duyệt |
-| `source` | chuỗi | Nguồn của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
+| `source` | chuỗi | Nguồn nghiệp vụ của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
 
@@ -185,47 +193,57 @@
 
 **Nguồn:** lich_su_xn.csv (script XN/CĐHA, popup lịch sử xét nghiệm trên EMR)
 
-**Cách xử lý:** Giữ nguyên kết quả gốc; tách dấu so sánh, phần số và phần chữ; tên chỉ số chuẩn hóa theo bảng từ khóa. Không quy đổi đơn vị. Cùng BN + cùng thời điểm + cùng chỉ số là một kết quả (bệnh viện xác nhận): dòng thô giống hệt nhau chỉ giữ một.
+**Cách xử lý:** Giữ nguyên mọi lần xét nghiệm. Tách dấu so sánh, phần số và phần chữ; tên chỉ số chuẩn hóa theo bảng từ khóa. result_raw/result_num/unit luôn giữ nguyên; chỉ sinh result_num_norm/unit_norm cho whitelist quy đổi chắc chắn. Hai dòng giống hệt vẫn giữ riêng; QA chỉ đánh dấu nghi trùng.
 
 **Quy tắc chất lượng**
 
 - Bắt buộc: `lab_result_id`, `patient_code`, `test_name_raw`
 - Duy nhất: `lab_result_id`
-- Dòng thô giống hệt nhau: giữ một, cảnh báo số dòng đã bỏ (duplicate_raw_rows_removed).
-- Trùng lab_result_id sau khi bỏ dòng giống hệt: lỗi chặn.
+- Dòng giống hệt sau chuẩn hóa: giữ tất cả và cảnh báo possible_duplicate_lab_rows; không tự xóa.
+- Trùng lab_result_id: lỗi chặn.
 - encounter_match_status = ambiguous/missing: cảnh báo.
 
 **Cần người kiểm tra khi:**
 
+- Các dòng XN giống hệt nhau (possible_duplicate_lab_rows): giữ tất cả. Khác Mã phiếu = các lần xét nghiệm riêng; cùng Mã phiếu vẫn cần đối chiếu nguồn nếu nghi lấy trùng kỹ thuật.
 - Cùng BN + cùng thời điểm + cùng chỉ số nhưng kết quả khác nhau (conflicting_lab_result): giữ tất cả, không tự chọn.
 - result_num trống nhưng result_raw có số
 - Đơn vị khác nhau cho cùng test_name_norm trong một nghiên cứu.
 
 | Cột | Kiểu | Ý nghĩa | Giá trị / đơn vị | Ô trống nghĩa là | Định danh | Dùng |
 |---|---|---|---|---|---|---|
-| `lab_result_id` | chuỗi | Khóa dòng: lab_<row_hash>. |  |  | — | Được dùng |
+| `lab_result_id` | chuỗi | Khóa dòng: lab_<row_hash>_<lần xuất hiện>. Hai dòng có nội dung giống nhau vẫn có ID riêng để không mất lần xét nghiệm thật. |  |  | — | Được dùng |
 | `research_code` | chuỗi | Mã NC: mã giả danh của đợt điều trị, dùng thay tên khi xuất ẩn danh. Nguồn: research_source.csv (cấp khi tạo nguồn chuẩn) hoặc mã script XN/CĐHA đã cấp cho cùng đợt. | Dạng: NC + 4 chữ số (ví dụ NC0012) | Chưa ghép được đợt (xem encounter_match_status). | Giả danh | Được dùng |
 | `patient_code` | chuỗi | Mã BN trên EMR. Nguồn: Cột Mã BN của danh sách nội trú / file thô. |  | Không được trống (bắt buộc). | Trực tiếp | Loại (bị che khi xuất) |
 | `patient_key` | chuỗi | Mã người bệnh giả danh: cùng một người bệnh luôn cùng mã trong một kho, dùng để nối các đợt của cùng người khi xuất ẩn danh. Cách tính: Cấp tuần tự khi gặp Mã BN lần đầu; giữ nguyên qua các lần Chuẩn hóa. Không suy ngược được ra Mã BN nếu không có patient_link.csv. Nguồn: patient_link.csv của kho (bảng liên kết Mã BN ↔ patient_key, lưu riêng, không nằm trong dataset). | Dạng: P + 6 chữ số (ví dụ P000123) | Dòng không có Mã BN. | Giả danh | Được dùng |
-| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra → Mã NC. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
-| `encounter_match_status` | danh mục | Kết quả gắn dòng vào đợt điều trị. Cách tính: matched: khớp khóa EMR/Mã NC/khoảng thời gian duy nhất; ambiguous: khớp nhiều đợt; missing: không khớp đợt nào. Không tự gắn dòng ambiguous/missing. | `matched`, `ambiguous`, `missing` |  | — | Được dùng |
+| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra. Mã NC không tham gia quyết định matching. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
+| `encounter_match_status` | danh mục | Kết quả gắn dòng vào đợt điều trị. Cách tính: matched: đúng Mã BN và xác định duy nhất đợt bằng khóa EMR hoặc thời gian; ambiguous: khớp nhiều đợt; missing: không khớp đợt nào. Mã NC không tham gia quyết định matching. | `matched`, `ambiguous`, `missing` |  | — | Được dùng |
+| `encounter_match_method` | danh mục | Bằng chứng đã dùng để gắn dòng vào đợt điều trị. Cách tính: Khóa EMR mạnh được ưu tiên. Mã điều trị và Mã nội trú được phép đối chiếu chéo khi cùng giá trị, cùng Mã BN và dẫn tới đúng một đợt; nếu mâu thuẫn/không tìm thấy thì dừng, không fallback theo thời gian. | `encounter_id`, `emr_treatment_id`, `emr_noitru_id`, `emr_admission_id`, `emr_treatment_noitru_alias`, `emr_noitru_treatment_alias`, `visit_exact`, `admission_time`, `discharge_time`, `admission_date`, `discharge_date`, `event_date_range`, `patient_unique_encounter_no_event_time (legacy)` | Dòng chưa được ghép. | — | Được dùng |
+| `encounter_match_reason` | chuỗi | Lý do dòng chưa được ghép chắc vào đợt. | Ví dụ encounter_match_outside_time, encounter_match_missing_event_time, encounter_match_identity_conflict, encounter_match_strong_key_not_found, encounter_match_strong_key_ambiguous, encounter_match_ambiguous, encounter_match_missing. | Dòng đã matched. | — | Được dùng |
 | `lab_datetime` | ngày giờ | Thời điểm chỉ định/xét nghiệm. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `lab_date` | ngày | Ngày xét nghiệm. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `lab_group` | chuỗi | Nhóm xét nghiệm như EMR ghi (huyết học, sinh hóa…). |  |  | — | Được dùng |
+| `lab_order_id` | chuỗi | Mã phiếu xét nghiệm trên EMR. Dùng để phân biệt các lần xét nghiệm có thể cùng thời điểm/cùng chỉ số/cùng kết quả. |  | Nguồn cũ hoặc nguồn ngoài EMR không có Mã phiếu. | Gián tiếp | Cần đề cương duyệt |
 | `test_name_raw` | chuỗi | Tên chỉ số như EMR ghi. |  |  | — | Được dùng |
 | `test_name_norm` | chuỗi | Tên chỉ số chuẩn hóa. Cách tính: So khớp từ khóa (không dấu) theo thứ tự; khớp đầu tiên thắng. | `creatinine`, `egfr`, `wbc`, `crp`, `hemoglobin`, `hct`, `neutrophil`, `lymphocyte`, `monocyte`, `rdw`, `platelet`, `urea`, `ast`, `alt`, `glucose`, `(tên gốc dạng token nếu không khớp)` |  | — | Được dùng |
 | `result_raw` | chuỗi | Kết quả nguyên văn. |  |  | — | Được dùng |
 | `result_operator` | danh mục | Dấu so sánh đứng đầu kết quả. | `<`, `>`, `<=`, `>=`, `=` | Không có dấu. | — | Được dùng |
 | `result_num` | số thập phân | Phần số đầu tiên trong kết quả. | Đơn vị: theo cột unit | Kết quả không có số (ví dụ "Âm tính"). | — | Được dùng |
 | `result_text` | chuỗi | Kết quả dạng chữ khi kết quả không thuần số. |  | Kết quả chỉ là số. | — | Được dùng |
-| `unit` | chuỗi | Đơn vị như EMR ghi. |  | EMR không ghi đơn vị. | — | Được dùng |
+| `unit` | chuỗi | Đơn vị nguyên văn như EMR ghi. |  | EMR không ghi đơn vị. | — | Được dùng |
+| `result_num_norm` | số thập phân | Giá trị số đã quy đổi về đơn vị chuẩn khi có quy tắc chắc chắn. |  | Không phải số hoặc chưa có quy tắc quy đổi an toàn. | — | Được dùng |
+| `unit_norm` | chuỗi | Đơn vị chuẩn tương ứng với result_num_norm. |  | Chưa quy đổi. | — | Được dùng |
+| `unit_conversion_status` | danh mục | Trạng thái chuẩn hóa đơn vị. | `same_unit`, `converted`, `not_converted`, `missing_unit`, `non_numeric` |  | — | Được dùng |
 | `ref_range_raw` | chuỗi | Khoảng tham chiếu như EMR ghi. |  |  | — | Được dùng |
 | `flag_raw` | chuỗi | Cờ bất thường như EMR ghi. |  |  | — | Được dùng |
 | `flag_norm` | danh mục | Cờ bất thường đã chuẩn hóa. | `high`, `low`, `abnormal`, `normal`, `unknown` | EMR không đánh dấu. | — | Được dùng |
 | `days_from_admission` | số nguyên | Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện). | Đơn vị: ngày; Có thể âm (trước ngày vào viện). | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `days_from_surgery` | số nguyên | Số ngày từ ngày mổ của đợt đến thời điểm của dòng (0 = ngày mổ). | Đơn vị: ngày; Có thể âm. | Đợt không có ngày mổ hoặc thiếu thời điểm. | — | Được dùng |
 | `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
-| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, dùng mốc ngày vào + 60 ngày làm giới hạn trên. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `source_type` | danh mục | Loại nguồn dữ liệu chuẩn hóa. | `emr_direct`, `patient_db`, `derived_parser` |  | — | Được dùng |
+| `source_quality` | danh mục | Mức chất lượng/độ trực tiếp của nguồn. | `original`, `provisional`, `derived` |  | — | Được dùng |
+| `source_file` | chuỗi | File hoặc bảng nguồn gần nhất dùng để tạo dòng chuẩn hóa. |  |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
 
@@ -241,30 +259,33 @@
 
 **Nguồn:** lich_su_cdha.csv (script XN/CĐHA)
 
-**Cách xử lý:** Loại máy lấy từ Nhóm dịch vụ, nếu trống thì suy từ tên dịch vụ; vùng cơ thể suy từ tên dịch vụ. Dòng thô giống hệt nhau chỉ giữ một.
+**Cách xử lý:** Loại máy lấy từ Nhóm dịch vụ, nếu trống thì suy từ tên dịch vụ; vùng cơ thể suy từ tên dịch vụ. Giữ mọi lần CĐHA, kể cả khi nội dung giống hệt; QA chỉ đánh dấu nghi trùng, không tự xóa.
 
 **Quy tắc chất lượng**
 
 - Bắt buộc: `imaging_id`, `patient_code`
 - Duy nhất: `imaging_id`
-- Dòng thô giống hệt nhau: giữ một, cảnh báo số dòng đã bỏ.
+- Dòng CĐHA giống hệt sau chuẩn hóa: giữ tất cả và cảnh báo possible_duplicate_imaging_rows.
 - Trùng imaging_id: lỗi chặn.
 - Ghép đợt ambiguous/missing: cảnh báo.
 
 **Cần người kiểm tra khi:**
 
+- Dòng CĐHA giống hệt (possible_duplicate_imaging_rows): giữ tất cả để tránh mất lần khảo sát thật.
 - Cùng BN + cùng thời điểm + cùng dịch vụ nhưng kết quả khác nhau (conflicting_imaging_result).
 - modality = Khác
 - body_region trống
 
 | Cột | Kiểu | Ý nghĩa | Giá trị / đơn vị | Ô trống nghĩa là | Định danh | Dùng |
 |---|---|---|---|---|---|---|
-| `imaging_id` | chuỗi | Khóa dòng: img_<row_hash>. |  |  | — | Được dùng |
+| `imaging_id` | chuỗi | Khóa dòng: img_<row_hash>_<lần xuất hiện>. Các dòng giống nhau vẫn có ID riêng để không mất lần CĐHA thật. |  |  | — | Được dùng |
 | `research_code` | chuỗi | Mã NC: mã giả danh của đợt điều trị, dùng thay tên khi xuất ẩn danh. Nguồn: research_source.csv (cấp khi tạo nguồn chuẩn) hoặc mã script XN/CĐHA đã cấp cho cùng đợt. | Dạng: NC + 4 chữ số (ví dụ NC0012) | Chưa ghép được đợt (xem encounter_match_status). | Giả danh | Được dùng |
 | `patient_code` | chuỗi | Mã BN trên EMR. Nguồn: Cột Mã BN của danh sách nội trú / file thô. |  | Không được trống (bắt buộc). | Trực tiếp | Loại (bị che khi xuất) |
 | `patient_key` | chuỗi | Mã người bệnh giả danh: cùng một người bệnh luôn cùng mã trong một kho, dùng để nối các đợt của cùng người khi xuất ẩn danh. Cách tính: Cấp tuần tự khi gặp Mã BN lần đầu; giữ nguyên qua các lần Chuẩn hóa. Không suy ngược được ra Mã BN nếu không có patient_link.csv. Nguồn: patient_link.csv của kho (bảng liên kết Mã BN ↔ patient_key, lưu riêng, không nằm trong dataset). | Dạng: P + 6 chữ số (ví dụ P000123) | Dòng không có Mã BN. | Giả danh | Được dùng |
-| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra → Mã NC. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
-| `encounter_match_status` | danh mục | Kết quả gắn dòng vào đợt điều trị. Cách tính: matched: khớp khóa EMR/Mã NC/khoảng thời gian duy nhất; ambiguous: khớp nhiều đợt; missing: không khớp đợt nào. Không tự gắn dòng ambiguous/missing. | `matched`, `ambiguous`, `missing` |  | — | Được dùng |
+| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra. Mã NC không tham gia quyết định matching. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
+| `encounter_match_status` | danh mục | Kết quả gắn dòng vào đợt điều trị. Cách tính: matched: đúng Mã BN và xác định duy nhất đợt bằng khóa EMR hoặc thời gian; ambiguous: khớp nhiều đợt; missing: không khớp đợt nào. Mã NC không tham gia quyết định matching. | `matched`, `ambiguous`, `missing` |  | — | Được dùng |
+| `encounter_match_method` | danh mục | Bằng chứng đã dùng để gắn dòng vào đợt điều trị. Cách tính: Khóa EMR mạnh được ưu tiên. Mã điều trị và Mã nội trú được phép đối chiếu chéo khi cùng giá trị, cùng Mã BN và dẫn tới đúng một đợt; nếu mâu thuẫn/không tìm thấy thì dừng, không fallback theo thời gian. | `encounter_id`, `emr_treatment_id`, `emr_noitru_id`, `emr_admission_id`, `emr_treatment_noitru_alias`, `emr_noitru_treatment_alias`, `visit_exact`, `admission_time`, `discharge_time`, `admission_date`, `discharge_date`, `event_date_range`, `patient_unique_encounter_no_event_time (legacy)` | Dòng chưa được ghép. | — | Được dùng |
+| `encounter_match_reason` | chuỗi | Lý do dòng chưa được ghép chắc vào đợt. | Ví dụ encounter_match_outside_time, encounter_match_missing_event_time, encounter_match_identity_conflict, encounter_match_strong_key_not_found, encounter_match_strong_key_ambiguous, encounter_match_ambiguous, encounter_match_missing. | Dòng đã matched. | — | Được dùng |
 | `ordered_at` | ngày giờ | Thời điểm chỉ định. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `order_date` | ngày | Ngày chỉ định. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `service_name_raw` | chuỗi | Tên dịch vụ như EMR ghi. |  |  | — | Được dùng |
@@ -276,7 +297,10 @@
 | `days_from_admission` | số nguyên | Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện). | Đơn vị: ngày; Có thể âm (trước ngày vào viện). | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `days_from_surgery` | số nguyên | Số ngày từ ngày mổ của đợt đến thời điểm của dòng (0 = ngày mổ). | Đơn vị: ngày; Có thể âm. | Đợt không có ngày mổ hoặc thiếu thời điểm. | — | Được dùng |
 | `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
-| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, dùng mốc ngày vào + 60 ngày làm giới hạn trên. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `source_type` | danh mục | Loại nguồn dữ liệu chuẩn hóa. | `emr_direct`, `patient_db`, `derived_parser` |  | — | Được dùng |
+| `source_quality` | danh mục | Mức chất lượng/độ trực tiếp của nguồn. | `original`, `provisional`, `derived` |  | — | Được dùng |
+| `source_file` | chuỗi | File hoặc bảng nguồn gần nhất dùng để tạo dòng chuẩn hóa. |  |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
 
@@ -311,8 +335,10 @@
 | `research_code` | chuỗi | Mã NC: mã giả danh của đợt điều trị, dùng thay tên khi xuất ẩn danh. Nguồn: research_source.csv (cấp khi tạo nguồn chuẩn) hoặc mã script XN/CĐHA đã cấp cho cùng đợt. | Dạng: NC + 4 chữ số (ví dụ NC0012) | Chưa ghép được đợt (xem encounter_match_status). | Giả danh | Được dùng |
 | `patient_code` | chuỗi | Mã BN trên EMR. Nguồn: Cột Mã BN của danh sách nội trú / file thô. |  | Không được trống (bắt buộc). | Trực tiếp | Loại (bị che khi xuất) |
 | `patient_key` | chuỗi | Mã người bệnh giả danh: cùng một người bệnh luôn cùng mã trong một kho, dùng để nối các đợt của cùng người khi xuất ẩn danh. Cách tính: Cấp tuần tự khi gặp Mã BN lần đầu; giữ nguyên qua các lần Chuẩn hóa. Không suy ngược được ra Mã BN nếu không có patient_link.csv. Nguồn: patient_link.csv của kho (bảng liên kết Mã BN ↔ patient_key, lưu riêng, không nằm trong dataset). | Dạng: P + 6 chữ số (ví dụ P000123) | Dòng không có Mã BN. | Giả danh | Được dùng |
-| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra → Mã NC. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
-| `encounter_match_status` | danh mục | Kết quả gắn dòng vào đợt điều trị. Cách tính: matched: khớp khóa EMR/Mã NC/khoảng thời gian duy nhất; ambiguous: khớp nhiều đợt; missing: không khớp đợt nào. Không tự gắn dòng ambiguous/missing. | `matched`, `ambiguous`, `missing` |  | — | Được dùng |
+| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra. Mã NC không tham gia quyết định matching. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
+| `encounter_match_status` | danh mục | Kết quả gắn dòng vào đợt điều trị. Cách tính: matched: đúng Mã BN và xác định duy nhất đợt bằng khóa EMR hoặc thời gian; ambiguous: khớp nhiều đợt; missing: không khớp đợt nào. Mã NC không tham gia quyết định matching. | `matched`, `ambiguous`, `missing` |  | — | Được dùng |
+| `encounter_match_method` | danh mục | Bằng chứng đã dùng để gắn dòng vào đợt điều trị. Cách tính: Khóa EMR mạnh được ưu tiên. Mã điều trị và Mã nội trú được phép đối chiếu chéo khi cùng giá trị, cùng Mã BN và dẫn tới đúng một đợt; nếu mâu thuẫn/không tìm thấy thì dừng, không fallback theo thời gian. | `encounter_id`, `emr_treatment_id`, `emr_noitru_id`, `emr_admission_id`, `emr_treatment_noitru_alias`, `emr_noitru_treatment_alias`, `visit_exact`, `admission_time`, `discharge_time`, `admission_date`, `discharge_date`, `event_date_range`, `patient_unique_encounter_no_event_time (legacy)` | Dòng chưa được ghép. | — | Được dùng |
+| `encounter_match_reason` | chuỗi | Lý do dòng chưa được ghép chắc vào đợt. | Ví dụ encounter_match_outside_time, encounter_match_missing_event_time, encounter_match_identity_conflict, encounter_match_strong_key_not_found, encounter_match_strong_key_ambiguous, encounter_match_ambiguous, encounter_match_missing. | Dòng đã matched. | — | Được dùng |
 | `surgery_datetime` | ngày giờ | Thời điểm bắt đầu mổ. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `surgery_date` | ngày | Ngày mổ. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `surgery_name` | chuỗi | Tên phẫu thuật/dịch vụ. |  |  | — | Được dùng |
@@ -325,8 +351,11 @@
 | `operating_room` | chuỗi | Phòng mổ. |  |  | Gián tiếp | Được dùng |
 | `days_from_admission` | số nguyên | Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện). | Đơn vị: ngày; Có thể âm (trước ngày vào viện). | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
-| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, dùng mốc ngày vào + 60 ngày làm giới hạn trên. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
-| `source` | chuỗi | Nguồn của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
+| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `source` | chuỗi | Nguồn nghiệp vụ của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
+| `source_type` | danh mục | Loại nguồn dữ liệu chuẩn hóa. | `emr_direct`, `patient_db`, `derived_parser` |  | — | Được dùng |
+| `source_quality` | danh mục | Mức chất lượng/độ trực tiếp của nguồn. | `original`, `provisional`, `derived` |  | — | Được dùng |
+| `source_file` | chuỗi | File hoặc bảng nguồn gần nhất dùng để tạo dòng chuẩn hóa. |  |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
 
@@ -362,8 +391,10 @@
 | `research_code` | chuỗi | Mã NC: mã giả danh của đợt điều trị, dùng thay tên khi xuất ẩn danh. Nguồn: research_source.csv (cấp khi tạo nguồn chuẩn) hoặc mã script XN/CĐHA đã cấp cho cùng đợt. | Dạng: NC + 4 chữ số (ví dụ NC0012) | Chưa ghép được đợt (xem encounter_match_status). | Giả danh | Được dùng |
 | `patient_code` | chuỗi | Mã BN trên EMR. Nguồn: Cột Mã BN của danh sách nội trú / file thô. |  | Không được trống (bắt buộc). | Trực tiếp | Loại (bị che khi xuất) |
 | `patient_key` | chuỗi | Mã người bệnh giả danh: cùng một người bệnh luôn cùng mã trong một kho, dùng để nối các đợt của cùng người khi xuất ẩn danh. Cách tính: Cấp tuần tự khi gặp Mã BN lần đầu; giữ nguyên qua các lần Chuẩn hóa. Không suy ngược được ra Mã BN nếu không có patient_link.csv. Nguồn: patient_link.csv của kho (bảng liên kết Mã BN ↔ patient_key, lưu riêng, không nằm trong dataset). | Dạng: P + 6 chữ số (ví dụ P000123) | Dòng không có Mã BN. | Giả danh | Được dùng |
-| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra → Mã NC. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
-| `encounter_match_status` | danh mục | Kết quả gắn dòng vào đợt điều trị. Cách tính: matched: khớp khóa EMR/Mã NC/khoảng thời gian duy nhất; ambiguous: khớp nhiều đợt; missing: không khớp đợt nào. Không tự gắn dòng ambiguous/missing. | `matched`, `ambiguous`, `missing` |  | — | Được dùng |
+| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra. Mã NC không tham gia quyết định matching. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
+| `encounter_match_status` | danh mục | Kết quả gắn dòng vào đợt điều trị. Cách tính: matched: đúng Mã BN và xác định duy nhất đợt bằng khóa EMR hoặc thời gian; ambiguous: khớp nhiều đợt; missing: không khớp đợt nào. Mã NC không tham gia quyết định matching. | `matched`, `ambiguous`, `missing` |  | — | Được dùng |
+| `encounter_match_method` | danh mục | Bằng chứng đã dùng để gắn dòng vào đợt điều trị. Cách tính: Khóa EMR mạnh được ưu tiên. Mã điều trị và Mã nội trú được phép đối chiếu chéo khi cùng giá trị, cùng Mã BN và dẫn tới đúng một đợt; nếu mâu thuẫn/không tìm thấy thì dừng, không fallback theo thời gian. | `encounter_id`, `emr_treatment_id`, `emr_noitru_id`, `emr_admission_id`, `emr_treatment_noitru_alias`, `emr_noitru_treatment_alias`, `visit_exact`, `admission_time`, `discharge_time`, `admission_date`, `discharge_date`, `event_date_range`, `patient_unique_encounter_no_event_time (legacy)` | Dòng chưa được ghép. | — | Được dùng |
+| `encounter_match_reason` | chuỗi | Lý do dòng chưa được ghép chắc vào đợt. | Ví dụ encounter_match_outside_time, encounter_match_missing_event_time, encounter_match_identity_conflict, encounter_match_strong_key_not_found, encounter_match_strong_key_ambiguous, encounter_match_ambiguous, encounter_match_missing. | Dòng đã matched. | — | Được dùng |
 | `order_datetime` | ngày giờ | Thời điểm y lệnh. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `order_date` | ngày | Ngày y lệnh. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `drug_name_raw` | chuỗi | Tên thuốc/dòng y lệnh (tối đa 180 ký tự, bỏ tiền tố "(TT)"). |  |  | — | Được dùng |
@@ -373,7 +404,11 @@
 | `route_raw` | chuỗi | Đường dùng gốc (nếu không có cột riêng thì là cả dòng y lệnh). |  |  | — | Được dùng |
 | `route_norm` | chuỗi | Đường dùng chuẩn hóa. **Suy luận tự động.** | `truyền_tĩnh_mạch`, `truyền_bơm_tiêm_điện`, `tiêm_tĩnh_mạch`, `tiêm_bắp`, `tiêm_dưới_da`, `tiêm_trong_da`, `uống`, `ngậm_dưới_lưỡi`, `khí_dung`, `hít_xịt`, `ngậm`, `nhỏ_mắt`, `nhỏ_mũi`, `nhỏ_tai`, `bôi`, `dán`, `đặt_hậu_môn`, `đặt_âm_đạo`, `khác`, `(token văn bản gốc nếu không khớp)` |  | — | Được dùng |
 | `dose_raw` | chuỗi | Liều (nếu không có cột riêng thì là cả dòng y lệnh). |  |  | — | Được dùng |
-| `times_per_day` | chuỗi | Số lần/ngày (nếu nguồn có). |  |  | — | Được dùng |
+| `times_per_day` | chuỗi | Số lần/ngày parser đọc được từ y lệnh. |  |  | — | Được dùng |
+| `schedule` | chuỗi | Các giờ dùng thuốc chuẩn hóa từ y lệnh, nếu parser đọc được. **Suy luận tự động.** |  |  | — | Được dùng |
+| `order_action` | chuỗi | Hành động y lệnh thuốc do parser nhận diện, ví dụ bắt đầu/tiếp tục/ngưng. **Suy luận tự động.** |  |  | — | Được dùng |
+| `parser_confidence` | danh mục | Độ tin cậy của parser khi tách dòng thuốc. | `high`, `medium`, `low` | Nguồn cũ chưa qua parser mới. | — | Được dùng |
+| `source_field` | chuỗi | Trường nguồn đã sinh dòng thuốc, ví dụ Tên y lệnh hoặc Y lệnh khác. |  |  | — | Được dùng |
 | `raw_line` | văn bản | Dòng y lệnh gốc. |  |  | Văn bản tự do | Cần đề cương duyệt |
 | `surgery_datetime_ref` | ngày giờ | Thời điểm ca mổ đầu tiên của cùng đợt, dùng làm mốc hậu phẫu. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `surgery_date_ref` | ngày | Ngày ca mổ mốc. |  |  | Gián tiếp | Cần đề cương duyệt |
@@ -382,8 +417,11 @@
 | `is_postop_day_1_3` | cờ 1/0 | Y lệnh thuộc hậu phẫu ngày 1–3. | `1`, `0` | Không có ca mổ mốc. | — | Được dùng |
 | `days_from_admission` | số nguyên | Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện). | Đơn vị: ngày; Có thể âm (trước ngày vào viện). | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
-| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, dùng mốc ngày vào + 60 ngày làm giới hạn trên. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
-| `source` | chuỗi | Nguồn của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
+| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `source` | chuỗi | Nguồn nghiệp vụ của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
+| `source_type` | danh mục | Loại nguồn dữ liệu chuẩn hóa. | `emr_direct`, `patient_db`, `derived_parser` |  | — | Được dùng |
+| `source_quality` | danh mục | Mức chất lượng/độ trực tiếp của nguồn. | `original`, `provisional`, `derived` |  | — | Được dùng |
+| `source_file` | chuỗi | File hoặc bảng nguồn gần nhất dùng để tạo dòng chuẩn hóa. |  |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
 
@@ -399,7 +437,7 @@
 
 **Nguồn:** medication_orders.csv (chỉ dòng đã gắn đợt và có ngày)
 
-**Cách xử lý:** Nhóm theo đợt + ngày y lệnh.
+**Cách xử lý:** Chỉ dùng medication_orders đã matched và is_within_encounter = 1; sau đó nhóm theo đợt + ngày y lệnh. Dòng chưa chứng minh được thời gian vẫn giữ ở medication_orders nhưng không vào bảng tóm tắt.
 
 **Quy tắc chất lượng**
 
@@ -415,7 +453,7 @@
 | `research_code` | chuỗi | Mã NC: mã giả danh của đợt điều trị, dùng thay tên khi xuất ẩn danh. Nguồn: research_source.csv (cấp khi tạo nguồn chuẩn) hoặc mã script XN/CĐHA đã cấp cho cùng đợt. | Dạng: NC + 4 chữ số (ví dụ NC0012) | Chưa ghép được đợt (xem encounter_match_status). | Giả danh | Được dùng |
 | `patient_code` | chuỗi | Mã BN trên EMR. Nguồn: Cột Mã BN của danh sách nội trú / file thô. |  | Không được trống (bắt buộc). | Trực tiếp | Loại (bị che khi xuất) |
 | `patient_key` | chuỗi | Mã người bệnh giả danh: cùng một người bệnh luôn cùng mã trong một kho, dùng để nối các đợt của cùng người khi xuất ẩn danh. Cách tính: Cấp tuần tự khi gặp Mã BN lần đầu; giữ nguyên qua các lần Chuẩn hóa. Không suy ngược được ra Mã BN nếu không có patient_link.csv. Nguồn: patient_link.csv của kho (bảng liên kết Mã BN ↔ patient_key, lưu riêng, không nằm trong dataset). | Dạng: P + 6 chữ số (ví dụ P000123) | Dòng không có Mã BN. | Giả danh | Được dùng |
-| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra → Mã NC. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
+| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra. Mã NC không tham gia quyết định matching. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
 | `order_date` | ngày | Ngày y lệnh. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `drug_count` | số nguyên | Số dòng thuốc trong ngày. | ≥ 1 |  | — | Được dùng |
 | `route_set` | chuỗi | Các đường dùng trong ngày, nối "; ". |  |  | — | Được dùng |
@@ -436,7 +474,7 @@
 
 **Nguồn:** hchanh_order_history.csv
 
-**Cách xử lý:** Giữ nguyên văn diễn biến và y lệnh; bỏ dòng không có nội dung.
+**Cách xử lý:** Giữ nguyên văn diễn biến và y lệnh để truy nguyên; phần có cấu trúc được tách riêng sang medication_orders và clinical_events.
 
 **Quy tắc chất lượng**
 
@@ -455,8 +493,10 @@
 | `research_code` | chuỗi | Mã NC: mã giả danh của đợt điều trị, dùng thay tên khi xuất ẩn danh. Nguồn: research_source.csv (cấp khi tạo nguồn chuẩn) hoặc mã script XN/CĐHA đã cấp cho cùng đợt. | Dạng: NC + 4 chữ số (ví dụ NC0012) | Chưa ghép được đợt (xem encounter_match_status). | Giả danh | Được dùng |
 | `patient_code` | chuỗi | Mã BN trên EMR. Nguồn: Cột Mã BN của danh sách nội trú / file thô. |  | Không được trống (bắt buộc). | Trực tiếp | Loại (bị che khi xuất) |
 | `patient_key` | chuỗi | Mã người bệnh giả danh: cùng một người bệnh luôn cùng mã trong một kho, dùng để nối các đợt của cùng người khi xuất ẩn danh. Cách tính: Cấp tuần tự khi gặp Mã BN lần đầu; giữ nguyên qua các lần Chuẩn hóa. Không suy ngược được ra Mã BN nếu không có patient_link.csv. Nguồn: patient_link.csv của kho (bảng liên kết Mã BN ↔ patient_key, lưu riêng, không nằm trong dataset). | Dạng: P + 6 chữ số (ví dụ P000123) | Dòng không có Mã BN. | Giả danh | Được dùng |
-| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra → Mã NC. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
-| `encounter_match_status` | danh mục | Kết quả gắn dòng vào đợt điều trị. Cách tính: matched: khớp khóa EMR/Mã NC/khoảng thời gian duy nhất; ambiguous: khớp nhiều đợt; missing: không khớp đợt nào. Không tự gắn dòng ambiguous/missing. | `matched`, `ambiguous`, `missing` |  | — | Được dùng |
+| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra. Mã NC không tham gia quyết định matching. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
+| `encounter_match_status` | danh mục | Kết quả gắn dòng vào đợt điều trị. Cách tính: matched: đúng Mã BN và xác định duy nhất đợt bằng khóa EMR hoặc thời gian; ambiguous: khớp nhiều đợt; missing: không khớp đợt nào. Mã NC không tham gia quyết định matching. | `matched`, `ambiguous`, `missing` |  | — | Được dùng |
+| `encounter_match_method` | danh mục | Bằng chứng đã dùng để gắn dòng vào đợt điều trị. Cách tính: Khóa EMR mạnh được ưu tiên. Mã điều trị và Mã nội trú được phép đối chiếu chéo khi cùng giá trị, cùng Mã BN và dẫn tới đúng một đợt; nếu mâu thuẫn/không tìm thấy thì dừng, không fallback theo thời gian. | `encounter_id`, `emr_treatment_id`, `emr_noitru_id`, `emr_admission_id`, `emr_treatment_noitru_alias`, `emr_noitru_treatment_alias`, `visit_exact`, `admission_time`, `discharge_time`, `admission_date`, `discharge_date`, `event_date_range`, `patient_unique_encounter_no_event_time (legacy)` | Dòng chưa được ghép. | — | Được dùng |
+| `encounter_match_reason` | chuỗi | Lý do dòng chưa được ghép chắc vào đợt. | Ví dụ encounter_match_outside_time, encounter_match_missing_event_time, encounter_match_identity_conflict, encounter_match_strong_key_not_found, encounter_match_strong_key_ambiguous, encounter_match_ambiguous, encounter_match_missing. | Dòng đã matched. | — | Được dùng |
 | `note_datetime` | ngày giờ | Thời điểm y lệnh. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `note_date` | ngày | Ngày y lệnh. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `doctor_name` | chuỗi | Bác sĩ ra y lệnh. Lưu ý: Thông tin nhân viên y tế; hiện KHÔNG bị che tự động khi xuất. |  |  | Nhân viên | Cần đề cương duyệt |
@@ -466,8 +506,67 @@
 | `status` | chuỗi | Trạng thái y lệnh. |  |  | — | Được dùng |
 | `days_from_admission` | số nguyên | Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện). | Đơn vị: ngày; Có thể âm (trước ngày vào viện). | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
-| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, dùng mốc ngày vào + 60 ngày làm giới hạn trên. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
-| `source` | chuỗi | Nguồn của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
+| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `source` | chuỗi | Nguồn nghiệp vụ của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
+| `source_type` | danh mục | Loại nguồn dữ liệu chuẩn hóa. | `emr_direct`, `patient_db`, `derived_parser` |  | — | Được dùng |
+| `source_quality` | danh mục | Mức chất lượng/độ trực tiếp của nguồn. | `original`, `provisional`, `derived` |  | — | Được dùng |
+| `source_file` | chuỗi | File hoặc bảng nguồn gần nhất dùng để tạo dòng chuẩn hóa. |  |  | — | Được dùng |
+| `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
+| `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
+
+## clinical_events
+
+**File:** `clinical_events.csv` · **Tầng:** chuẩn hóa · **Có biến suy luận:** có
+
+**Mỗi dòng là:** Một sự kiện lâm sàng được parser nhận diện từ một dòng Diễn biến.
+
+**Khóa chính (duy nhất):** `clinical_event_id`
+
+**Khóa nối:** `encounter_id` → `encounters.encounter_id` (khi encounter_match_status = matched)
+
+**Nguồn:** hchanh_order_history.csv → cột Diễn biến
+
+**Cách xử lý:** Parser rule-based chỉ sinh sự kiện khi có bằng chứng rõ; không biến việc không thấy nhắc thành phủ định. Luôn giữ source_text và parser_rule để truy nguyên.
+
+**Quy tắc chất lượng**
+
+- Bắt buộc: `clinical_event_id`, `patient_code`, `event_type`
+- Duy nhất: `clinical_event_id`
+- confidence thấp cần thận trọng khi dùng phân tích.
+
+**Cần người kiểm tra khi:**
+
+- Sự kiện parser suy ra cần đối chiếu source_text nếu dùng làm biến kết cục/chính.
+
+| Cột | Kiểu | Ý nghĩa | Giá trị / đơn vị | Ô trống nghĩa là | Định danh | Dùng |
+|---|---|---|---|---|---|---|
+| `clinical_event_id` | chuỗi | Khóa sự kiện: ce_<row_hash>. |  |  | — | Được dùng |
+| `research_code` | chuỗi | Mã NC: mã giả danh của đợt điều trị, dùng thay tên khi xuất ẩn danh. Nguồn: research_source.csv (cấp khi tạo nguồn chuẩn) hoặc mã script XN/CĐHA đã cấp cho cùng đợt. | Dạng: NC + 4 chữ số (ví dụ NC0012) | Chưa ghép được đợt (xem encounter_match_status). | Giả danh | Được dùng |
+| `patient_code` | chuỗi | Mã BN trên EMR. Nguồn: Cột Mã BN của danh sách nội trú / file thô. |  | Không được trống (bắt buộc). | Trực tiếp | Loại (bị che khi xuất) |
+| `patient_key` | chuỗi | Mã người bệnh giả danh: cùng một người bệnh luôn cùng mã trong một kho, dùng để nối các đợt của cùng người khi xuất ẩn danh. Cách tính: Cấp tuần tự khi gặp Mã BN lần đầu; giữ nguyên qua các lần Chuẩn hóa. Không suy ngược được ra Mã BN nếu không có patient_link.csv. Nguồn: patient_link.csv của kho (bảng liên kết Mã BN ↔ patient_key, lưu riêng, không nằm trong dataset). | Dạng: P + 6 chữ số (ví dụ P000123) | Dòng không có Mã BN. | Giả danh | Được dùng |
+| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra. Mã NC không tham gia quyết định matching. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
+| `encounter_match_status` | danh mục | Kết quả gắn dòng vào đợt điều trị. Cách tính: matched: đúng Mã BN và xác định duy nhất đợt bằng khóa EMR hoặc thời gian; ambiguous: khớp nhiều đợt; missing: không khớp đợt nào. Mã NC không tham gia quyết định matching. | `matched`, `ambiguous`, `missing` |  | — | Được dùng |
+| `encounter_match_method` | danh mục | Bằng chứng đã dùng để gắn dòng vào đợt điều trị. Cách tính: Khóa EMR mạnh được ưu tiên. Mã điều trị và Mã nội trú được phép đối chiếu chéo khi cùng giá trị, cùng Mã BN và dẫn tới đúng một đợt; nếu mâu thuẫn/không tìm thấy thì dừng, không fallback theo thời gian. | `encounter_id`, `emr_treatment_id`, `emr_noitru_id`, `emr_admission_id`, `emr_treatment_noitru_alias`, `emr_noitru_treatment_alias`, `visit_exact`, `admission_time`, `discharge_time`, `admission_date`, `discharge_date`, `event_date_range`, `patient_unique_encounter_no_event_time (legacy)` | Dòng chưa được ghép. | — | Được dùng |
+| `encounter_match_reason` | chuỗi | Lý do dòng chưa được ghép chắc vào đợt. | Ví dụ encounter_match_outside_time, encounter_match_missing_event_time, encounter_match_identity_conflict, encounter_match_strong_key_not_found, encounter_match_strong_key_ambiguous, encounter_match_ambiguous, encounter_match_missing. | Dòng đã matched. | — | Được dùng |
+| `event_datetime` | ngày giờ | Thời điểm của dòng diễn biến. |  |  | Gián tiếp | Cần đề cương duyệt |
+| `event_date` | ngày | Ngày của dòng diễn biến. |  |  | Gián tiếp | Cần đề cương duyệt |
+| `doctor_name` | chuỗi | Bác sĩ ghi diễn biến/y lệnh. |  |  | Nhân viên | Cần đề cương duyệt |
+| `event_type` | chuỗi | Loại sự kiện chuẩn hóa, ví dụ pain_vas, wound_status, mobility, nausea_vomiting, consciousness. |  |  | — | Được dùng |
+| `event_subtype` | chuỗi | Phân nhóm phụ nếu parser có. |  |  | — | Được dùng |
+| `value_raw` | chuỗi | Giá trị đọc được trực tiếp từ câu nguồn. |  |  | — | Được dùng |
+| `value_norm` | chuỗi | Giá trị chuẩn hóa của sự kiện. |  |  | — | Được dùng |
+| `negated` | cờ 1/0 | 1 khi câu nguồn xác nhận phủ định rõ; không dùng 1 chỉ vì không thấy nhắc. | `1`, `0` |  | — | Được dùng |
+| `certainty` | chuỗi | Mức chắc chắn ngữ nghĩa, mặc định observed. |  |  | — | Được dùng |
+| `source_text` | văn bản | Câu Diễn biến gốc tạo ra sự kiện. |  |  | Văn bản tự do | Cần đề cương duyệt |
+| `parser_rule` | chuỗi | Quy tắc parser đã kích hoạt. |  |  | — | Được dùng |
+| `confidence` | danh mục | Độ tin cậy parser. | `high`, `medium`, `low` |  | — | Được dùng |
+| `days_from_admission` | số nguyên | Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện). | Đơn vị: ngày; Có thể âm (trước ngày vào viện). | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
+| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `source` | chuỗi | Nguồn nghiệp vụ của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
+| `source_type` | danh mục | Loại nguồn dữ liệu chuẩn hóa. | `emr_direct`, `patient_db`, `derived_parser` |  | — | Được dùng |
+| `source_quality` | danh mục | Mức chất lượng/độ trực tiếp của nguồn. | `original`, `provisional`, `derived` |  | — | Được dùng |
+| `source_file` | chuỗi | File hoặc bảng nguồn gần nhất dùng để tạo dòng chuẩn hóa. |  |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
 
@@ -483,7 +582,7 @@
 
 **Nguồn:** lab_results; imaging_results; surgery_results; medication_orders (chỉ dòng đã gắn đợt)
 
-**Cách xử lý:** Nhóm theo đợt + ngày. Ngày không có hoạt động nào thì không có dòng.
+**Cách xử lý:** Chỉ dùng XN/CĐHA/PT/y lệnh đã matched và is_within_encounter = 1; sau đó nhóm theo đợt + ngày. Dòng thiếu bằng chứng thời gian vẫn giữ ở bảng chi tiết nhưng không vào patient_day.
 
 **Quy tắc chất lượng**
 
@@ -499,7 +598,7 @@
 | `research_code` | chuỗi | Mã NC: mã giả danh của đợt điều trị, dùng thay tên khi xuất ẩn danh. Nguồn: research_source.csv (cấp khi tạo nguồn chuẩn) hoặc mã script XN/CĐHA đã cấp cho cùng đợt. | Dạng: NC + 4 chữ số (ví dụ NC0012) | Chưa ghép được đợt (xem encounter_match_status). | Giả danh | Được dùng |
 | `patient_code` | chuỗi | Mã BN trên EMR. Nguồn: Cột Mã BN của danh sách nội trú / file thô. |  | Không được trống (bắt buộc). | Trực tiếp | Loại (bị che khi xuất) |
 | `patient_key` | chuỗi | Mã người bệnh giả danh: cùng một người bệnh luôn cùng mã trong một kho, dùng để nối các đợt của cùng người khi xuất ẩn danh. Cách tính: Cấp tuần tự khi gặp Mã BN lần đầu; giữ nguyên qua các lần Chuẩn hóa. Không suy ngược được ra Mã BN nếu không có patient_link.csv. Nguồn: patient_link.csv của kho (bảng liên kết Mã BN ↔ patient_key, lưu riêng, không nằm trong dataset). | Dạng: P + 6 chữ số (ví dụ P000123) | Dòng không có Mã BN. | Giả danh | Được dùng |
-| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra → Mã NC. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
+| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra. Mã NC không tham gia quyết định matching. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
 | `date` | ngày | Ngày. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `hospital_day` | số nguyên | Ngày nằm viện thứ mấy (1 = ngày vào viện). | Đơn vị: ngày | Thiếu ngày vào viện. | — | Được dùng |
 | `has_lab` | cờ 1/0 | Có xét nghiệm trong ngày. | `1`, `0` |  | — | Được dùng |
@@ -510,17 +609,17 @@
 | `surgery_count` | số nguyên | Số ca mổ trong ngày. |  |  | — | Được dùng |
 | `has_medication` | cờ 1/0 | Có y lệnh thuốc trong ngày. | `1`, `0` |  | — | Được dùng |
 | `medication_count` | số nguyên | Số dòng thuốc trong ngày. |  |  | — | Được dùng |
-| `hb` | chuỗi | Kết quả hb trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (hemoglobin). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `hct` | chuỗi | Kết quả hct trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (hct). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `neutrophil` | chuỗi | Kết quả neutrophil trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (neutrophil). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `lymphocyte` | chuỗi | Kết quả lymphocyte trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (lymphocyte). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `monocyte` | chuỗi | Kết quả monocyte trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (monocyte). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `rdw` | chuỗi | Kết quả rdw trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (rdw). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `plt` | chuỗi | Kết quả plt trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (platelet). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `creatinine` | chuỗi | Kết quả creatinine trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (creatinine). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `egfr` | chuỗi | Kết quả egfr trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (egfr). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `wbc` | chuỗi | Kết quả wbc trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (wbc). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `crp` | chuỗi | Kết quả crp trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (crp). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `hb` | chuỗi | Kết quả hb trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (hemoglobin). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `hct` | chuỗi | Kết quả hct trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (hct). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `neutrophil` | chuỗi | Kết quả neutrophil trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (neutrophil). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `lymphocyte` | chuỗi | Kết quả lymphocyte trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (lymphocyte). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `monocyte` | chuỗi | Kết quả monocyte trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (monocyte). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `rdw` | chuỗi | Kết quả rdw trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (rdw). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `plt` | chuỗi | Kết quả plt trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (platelet). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `creatinine` | chuỗi | Kết quả creatinine trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (creatinine). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `egfr` | chuỗi | Kết quả egfr trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (egfr). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `wbc` | chuỗi | Kết quả wbc trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (wbc). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `crp` | chuỗi | Kết quả crp trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (crp). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
 
@@ -536,7 +635,7 @@
 
 **Nguồn:** progress.json (XN/CĐHA); hchanh_auto_progress.json; order_history_auto_progress.json
 
-**Cách xử lý:** Chọn bản ghi tiến độ khớp nhất với đợt (khóa đợt → Mã NC → Mã BN + ngày vào/ra; chỉ dùng Mã BN khi BN có đúng 1 đợt). Hành chánh dùng trạng thái riêng từng file khi có. Trạng thái chi tiết hơn (lý do lỗi, số lần thử, đã đổi trên EMR) nằm ở collection_ledger.json / collection_exceptions.csv.
+**Cách xử lý:** Chọn bản ghi tiến độ khớp nhất với đợt theo khóa đợt → Mã BN + ngày/giờ vào-ra; chỉ fallback Mã BN khi người bệnh có đúng 1 đợt. Mã NC không tham gia quyết định matching. Hành chánh dùng trạng thái riêng từng file khi có. Trạng thái chi tiết hơn nằm ở collection_ledger.json / collection_exceptions.csv.
 
 **Quy tắc chất lượng**
 
@@ -553,7 +652,7 @@
 | Cột | Kiểu | Ý nghĩa | Giá trị / đơn vị | Ô trống nghĩa là | Định danh | Dùng |
 |---|---|---|---|---|---|---|
 | `research_code` | chuỗi | Mã NC: mã giả danh của đợt điều trị, dùng thay tên khi xuất ẩn danh. Nguồn: research_source.csv (cấp khi tạo nguồn chuẩn) hoặc mã script XN/CĐHA đã cấp cho cùng đợt. | Dạng: NC + 4 chữ số (ví dụ NC0012) | Chưa ghép được đợt (xem encounter_match_status). | Giả danh | Được dùng |
-| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra → Mã NC. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
+| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra. Mã NC không tham gia quyết định matching. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
 | `patient_code` | chuỗi | Mã BN trên EMR. Nguồn: Cột Mã BN của danh sách nội trú / file thô. |  | Không được trống (bắt buộc). | Trực tiếp | Loại (bị che khi xuất) |
 | `patient_key` | chuỗi | Mã người bệnh giả danh: cùng một người bệnh luôn cùng mã trong một kho, dùng để nối các đợt của cùng người khi xuất ẩn danh. Cách tính: Cấp tuần tự khi gặp Mã BN lần đầu; giữ nguyên qua các lần Chuẩn hóa. Không suy ngược được ra Mã BN nếu không có patient_link.csv. Nguồn: patient_link.csv của kho (bảng liên kết Mã BN ↔ patient_key, lưu riêng, không nằm trong dataset). | Dạng: P + 6 chữ số (ví dụ P000123) | Dòng không có Mã BN. | Giả danh | Được dùng |
 | `patient_name` | chuỗi | Họ tên (để hiển thị tiến độ). |  |  | Trực tiếp | Loại (bị che khi xuất) |
@@ -587,7 +686,7 @@
 
 **Nguồn:** encounters; patients; lab_results; imaging_results; surgery_results
 
-**Cách xử lý:** Một dòng mỗi đợt. XN lấy kết quả SỚM NHẤT của đợt; phẫu thuật lấy ca SỚM NHẤT của đợt; biến suy luận chạy trên chẩn đoán + văn bản CĐHA theo preset của nghiên cứu.
+**Cách xử lý:** Một dòng mỗi đợt. Chỉ dữ liệu matched và is_within_encounter = 1 mới được dùng cho snapshot/tóm tắt phân tích; dữ liệu chưa đủ bằng chứng vẫn giữ nguyên ở bảng chi tiết. analysis_ready không chứa toàn bộ XN/CĐHA trong một ô: chi tiết đầy đủ nằm ở lab_results/imaging_results theo từng dòng; bảng rộng chỉ giữ số lượng và các snapshot/biến cần phân tích. Phẫu thuật lấy ca sớm nhất đã xác minh trong đợt; biến suy luận vẫn có thể dùng CĐHA hợp lệ trong bộ nhớ khi chuẩn hóa.
 
 **Quy tắc chất lượng**
 
@@ -608,19 +707,26 @@
 | Cột | Kiểu | Ý nghĩa | Giá trị / đơn vị | Ô trống nghĩa là | Định danh | Dùng |
 |---|---|---|---|---|---|---|
 | `research_code` | chuỗi | Mã NC: mã giả danh của đợt điều trị, dùng thay tên khi xuất ẩn danh. Nguồn: research_source.csv (cấp khi tạo nguồn chuẩn) hoặc mã script XN/CĐHA đã cấp cho cùng đợt. | Dạng: NC + 4 chữ số (ví dụ NC0012) | Chưa ghép được đợt (xem encounter_match_status). | Giả danh | Được dùng |
-| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra → Mã NC. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
+| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra. Mã NC không tham gia quyết định matching. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
 | `patient_code` | chuỗi | Mã BN trên EMR. Nguồn: Cột Mã BN của danh sách nội trú / file thô. |  | Không được trống (bắt buộc). | Trực tiếp | Loại (bị che khi xuất) |
 | `patient_key` | chuỗi | Mã người bệnh giả danh: cùng một người bệnh luôn cùng mã trong một kho, dùng để nối các đợt của cùng người khi xuất ẩn danh. Cách tính: Cấp tuần tự khi gặp Mã BN lần đầu; giữ nguyên qua các lần Chuẩn hóa. Không suy ngược được ra Mã BN nếu không có patient_link.csv. Nguồn: patient_link.csv của kho (bảng liên kết Mã BN ↔ patient_key, lưu riêng, không nằm trong dataset). | Dạng: P + 6 chữ số (ví dụ P000123) | Dòng không có Mã BN. | Giả danh | Được dùng |
 | `patient_name` | chuỗi | Họ tên. |  |  | Trực tiếp | Loại (bị che khi xuất) |
 | `sex` | danh mục | Giới tính. | `Nam`, `Nữ` |  | Gián tiếp | Được dùng |
 | `birth_year` | số nguyên | Năm sinh. |  |  | Gián tiếp | Cần đề cương duyệt |
-| `age` | chuỗi | Tuổi như EMR ghi. |  |  | Gián tiếp | Cần đề cương duyệt |
+| `age` | chuỗi | Tuổi tại thời điểm nhập viện. Cách tính: Tính từ ngày sinh và ngày nhập viện của chính đợt; nếu thiếu ngày sinh thì dùng tuổi EMR làm fallback. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `admission_date` | ngày giờ | Thời điểm vào viện. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `surgery_date` | ngày giờ | Thời điểm ca mổ sớm nhất của đợt. |  | Không có ca mổ đã ghép. | Gián tiếp | Cần đề cương duyệt |
 | `discharge_date` | ngày giờ | Thời điểm ra viện. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `hospital_stay_days` | chuỗi | Số ngày nằm viện. Cách tính: Lấy "Thời gian điều trị" của EMR nếu có; nếu không, tính (ngày ra − ngày vào) + 1. | Đơn vị: ngày | Chưa có ngày ra viện. | — | Được dùng |
 | `time_to_surgery_hours` | số thập phân | Số giờ từ vào viện đến ca mổ sớm nhất (làm tròn 0,1). | Đơn vị: giờ; Âm là bất thường → cần kiểm tra. | Không mổ hoặc thiếu thời điểm. | — | Được dùng |
 | `diagnosis_raw` | văn bản | Chẩn đoán (ra viện, nếu trống thì vào viện). |  |  | Văn bản tự do | Cần đề cương duyệt |
+| `admission_pulse` | số thập phân | Mạch lúc vào viện (Phiếu vào viện). | Đơn vị: lần/phút | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_temperature` | số thập phân | Nhiệt độ lúc vào viện (Phiếu vào viện). | Đơn vị: °C | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_bp_systolic` | số thập phân | Huyết áp tâm thu lúc vào viện (Phiếu vào viện). | Đơn vị: mmHg | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_bp_diastolic` | số thập phân | Huyết áp tâm trương lúc vào viện (Phiếu vào viện). | Đơn vị: mmHg | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_respiratory_rate` | số thập phân | Nhịp thở lúc vào viện (Phiếu vào viện). | Đơn vị: lần/phút | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_weight_kg` | số thập phân | Cân nặng lúc vào viện (Phiếu vào viện). | Đơn vị: kg | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
+| `admission_height_cm` | số thập phân | Chiều cao lúc vào viện (Phiếu vào viện). | Đơn vị: cm | Phiếu vào viện không ghi hoặc chưa lấy. | — | Được dùng |
 | `surgery_name` | chuỗi | Tên ca mổ sớm nhất. |  |  | — | Được dùng |
 | `surgery_method` | văn bản | Phương pháp ca mổ sớm nhất. |  |  | Văn bản tự do | Cần đề cương duyệt |
 | `anesthesia_method` | chuỗi | Vô cảm của ca mổ sớm nhất. |  |  | — | Được dùng |
@@ -633,7 +739,8 @@
 | `monocyte` | chuỗi | Kết quả monocyte đầu tiên của đợt (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (monocyte). Kết quả có lab_datetime sớm nhất trong đợt. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
 | `rdw` | chuỗi | Kết quả rdw đầu tiên của đợt (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (rdw). Kết quả có lab_datetime sớm nhất trong đợt. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
 | `plt` | chuỗi | Kết quả plt đầu tiên của đợt (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (platelet). Kết quả có lab_datetime sớm nhất trong đợt. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `imaging_summary` | văn bản | Tên dịch vụ + mô tả + kết luận CĐHA của đợt, nối lại, tối đa 1200 ký tự. |  |  | Văn bản tự do | Cần đề cương duyệt |
+| `lab_result_count` | số nguyên | Tổng số dòng kết quả XN đã ghép chắc chắn và nằm trong đợt. Lưu ý: Chi tiết từng kết quả nằm ở lab_results.csv, không nhét lại vào một ô JSON. |  |  | — | Được dùng |
+| `imaging_result_count` | số nguyên | Tổng số dòng CĐHA đã ghép chắc chắn và nằm trong đợt. Lưu ý: Chi tiết từng kết quả nằm ở imaging_results.csv, không nhét lại vào một ô JSON/text. |  |  | — | Được dùng |
 | `needs_manual_review` | chuỗi | Lý do cần người kiểm tra, nối "; ". | Nhãn thiếu biến của preset (ví dụ "bên tổn thương", "ngày phẫu thuật") và cờ ghép đợt. |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
@@ -655,7 +762,5 @@ Bảng thô giữ nguyên dữ liệu EMR, **đều chứa định danh**, khôn
 
 ## Hạn chế đã biết
 
-- analysis_ready: khi chọn kết quả XN sớm nhất, dòng thiếu lab_datetime được coi là sớm nhất.
-- patient_day: nhiều kết quả cùng chỉ số trong một ngày thì lấy kết quả gặp đầu tiên theo thứ tự file, không theo giờ.
 - clinical_notes.doctor_name (tên nhân viên) chưa bị che tự động khi xuất.
 - Nhãn body_region "Há/khu chậu" sai chính tả (đúng là "Háng/khung chậu").

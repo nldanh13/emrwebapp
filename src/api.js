@@ -955,6 +955,13 @@ export const getMedicationCatalog    = ()           => get('/api/medication-cata
 export const createMedicationCatalog = (body)        => post('/api/medication-catalog', body);
 export const updateMedicationCatalog = (key, body)  => patch(`/api/medication-catalog/${encodeURIComponent(key)}`, body);
 export const deleteMedicationCatalog = (key)         => del(`/api/medication-catalog/${encodeURIComponent(key)}`);
+export const checkMedicationDilution = (body)       => post('/api/medication-catalog/dilution-check', body);
+export const getMedicationBuiltin    = ()           => get('/api/medication-catalog/builtin');
+export const getDilutionStats       = (refresh = false) => get(`/api/medication-catalog/dilution-stats${refresh ? '?refresh=1' : ''}`);
+export const getCatalogCleanup       = ()           => get('/api/medication-catalog/cleanup');
+export const applyCatalogCleanup     = (keys)       => post('/api/medication-catalog/cleanup', { keys });
+export const getNewDrugs             = ()           => get('/api/medication-catalog/new-drugs');
+export const ignoreNewDrug           = (key, ignore = true) => post('/api/medication-catalog/new-drugs/ignore', { key, ignore });
 export const getArchiveDrugNames      = ()           => get('/api/medication-catalog/archive-drug-names');
 export const assignMedicationIngredient = (body)      => post('/api/medication-catalog/assign-ingredient', body);
 
@@ -1006,3 +1013,6 @@ export const emrBridgeHello       = (body) => bridgeCall('/api/emr-bridge/hello'
 export const emrBridgePoll        = (id)   => bridgeCall('/api/emr-bridge/poll', { bridge_id: id });
 export const emrBridgeResult      = (body) => bridgeCall('/api/emr-bridge/result', body);
 export const emrBridgeDisconnect  = (id)   => bridgeCall('/api/emr-bridge/disconnect', { bridge_id: id });
+export const updateResearchStudyVariables = (studyId, selectedVariables) =>
+  post(`/api/research/studies/${encodeURIComponent(studyId)}/variables`, { selected_variables: selectedVariables });
+export const downloadResearchStudyCodebook = (studyId) => downloadBlob(`/api/research/studies/${encodeURIComponent(studyId)}/codebook`, `${studyId}_tu_dien_bien.csv`);

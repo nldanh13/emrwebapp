@@ -68,6 +68,17 @@ function reasonOf(enc) {
   return '';
 }
 
+function diagnosticOf(enc) {
+  if (enc.match_status === 'unmatched') return collection.diagnosticFor(enc.unmatched_reason || 'encounter_not_identified', '');
+  for (const k of collection.PART_KEYS) {
+    const p = enc.parts?.[k];
+    if (p && ['failed', 'blocked'].includes(p.status) && !collection.partIsCurrent(enc, k)) {
+      return collection.diagnosticFor(p.reason, p.detail);
+    }
+  }
+  return { diagnostic_stage: '', diagnostic_stage_label: '', diagnostic_message: '' };
+}
+
 function namesBySource(sourceRows = []) {
   const byCode = new Map();
   for (const row of sourceRows) {
@@ -137,6 +148,7 @@ function buildCollectionScreen({
     if (state === 'done') continue;
     const bucket = rowsByState[state];
     if (bucket.length >= MAX_ROWS_PER_STATE) continue;
+    const diagnostic = diagnosticOf(enc);
     bucket.push({
       key,
       research_code: enc.research_code || '',
@@ -145,6 +157,7 @@ function buildCollectionScreen({
       state,
       missing: collection.PART_KEYS.filter(k => !collection.partIsCurrent(enc, k)).map(partLabel).join(', '),
       reason: reasonOf(enc),
+      ...diagnostic,
     });
   }
 
@@ -168,6 +181,7 @@ function buildCollectionScreen({
     task: taskStatus,
     last_report: lastReport,
     exceptions_total: exceptions ? exceptions.length : exceptionsTotal,
+    diagnostics: collection.summarizeDiagnostics(exceptions || []),
     // Số LƯỢT trong danh sách cần xử lý (danh sách có thể nhiều dòng/lượt: mỗi phần lỗi một dòng).
     exceptions_encounters: exceptions ? new Set(exceptions.map(e => e.key)).size : 0,
     pipeline,

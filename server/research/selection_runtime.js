@@ -72,7 +72,10 @@ function buildSelectedAnalysisForRun(runDir, analysisReadyRows, normalizedRowsBy
       tables.clinical_notes || [],
     );
   }
-  const selected = variableSelection.buildSelectedAnalysisDataset(analysisReadyRows || [], selection, tables);
+  // Cùng cách chọn mẫu với phần thống kê (summarizeSelectionForRun): file xuất chỉ gồm các lượt
+  // đạt tiêu chuẩn chọn mẫu, số dòng luôn bằng số lượt hiện trên màn hình.
+  const cohortRows = variableSelection.selectCohortRows(analysisReadyRows || [], selection, tables);
+  const selected = variableSelection.buildSelectedAnalysisDataset(cohortRows, selection, tables);
   writeCsv(path.join(runDir, 'analysis_selected.csv'), selected.columns, selected.rows);
   writeJsonAtomic(path.join(runDir, 'analysis_selection_manifest.json'), {
     ...selected.manifest,

@@ -1,5 +1,5 @@
 import { stripVN } from './reportBaseUtils.js';
-import { categoryDefaultRoute, detectRouteCode, normalizeRouteCode, routeShort } from '../../config/routes.js';
+import { categoryDefaultRoute, detectRouteCode, normalizeRouteCode, routeReportMode, routeShort } from '../../config/routes.js';
 
 // Nhãn ngắn dùng trong báo cáo (TTM, TMC, Uống, Khí dung…) theo bảng chuẩn config/routes.json.
 function routeFromText(text) {
@@ -15,7 +15,23 @@ function routeFromCategory(category) {
   return code ? routeShort(code) : '';
 }
 
+const ORAL_SOLID = /\b(?:vien|goi|nang|tablets?|capsules?|caps|tab)\b/;
+
 function routeOf(item, category) {
+  // Y lệnh ghi rõ dùng ngoài (thoa, bôi, dán, nhỏ, xịt…) thắng nhãn đường dùng/chuyên mục: worker hay
+  // xếp kem bôi vào thuốc uống (vd. "Triamcinolone … thoa xong 45ph" bị in là "× 1 viên" uống).
+  const nameCode = detectRouteCode(`${item?.ten_thuoc || item?.ten_hien_thi || ''} ${item?.duong_dung_goc || ''} ${item?.ghi_chu || ''}`);
+  if (nameCode && routeReportMode(nameCode) === 'hide') return routeShort(nameCode);
+  const routed = routeOfInner(item, category);
+  // Không rõ đường dùng nhưng là dạng viên/gói/nang → uống (vd. "BISOPROLOL 2.5MG TABLETS").
+  if (routed === 'Khác') {
+    const form = stripVN(`${item?.dang || item?.don_vi || ''} ${item?.ten_thuoc || item?.ten_hien_thi || ''}`).toLowerCase();
+    if (ORAL_SOLID.test(form)) return routeShort('UONG');
+  }
+  return routed;
+}
+
+function routeOfInner(item, category) {
   // Mã đã chuẩn hoá từ worker (TTM, UONG, KHI_DUNG…) hoặc nhãn cũ (U, IV, Hít/Xịt) dùng trực tiếp.
   const knownCode = normalizeRouteCode(item?.duong_dung);
   if (knownCode) return routeShort(knownCode);

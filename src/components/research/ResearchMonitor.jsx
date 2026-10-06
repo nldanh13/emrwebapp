@@ -137,8 +137,10 @@ function EncounterHistoryCard({ enc, index }) {
         width: '100%', border: 0, background: 'transparent', padding: 0, cursor: 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, textAlign: 'left',
       }}>
-        <span style={{ fontSize: FS.xs, fontWeight: 700, color: C.blue }}>
-          Đợt {index + 1}: {enc.admission_date || '—'} → {enc.discharge_date || '—'}
+        <span style={{ fontSize: FS.xs, fontWeight: 700, color: enc.unmatched ? C.amber : C.blue }}>
+          {enc.unmatched
+            ? 'Chưa xác định đợt điều trị'
+            : `Đợt ${index + 1}: ${enc.admission_date || '—'} → ${enc.discharge_date || '—'}`}
         </span>
         <span style={{ fontSize: FS.xs, color: C.text3 }}>{expanded ? 'Thu gọn' : 'Xem chi tiết'}</span>
       </button>
@@ -149,13 +151,19 @@ function EncounterHistoryCard({ enc, index }) {
         <StatBadge label="Thuốc" value={enc.counts?.medications || 0} tone="neutral" />
         <StatBadge label="PT/TT" value={enc.counts?.surgeries || 0} tone="neutral" />
       </div>
+      {enc.unmatched && !!enc.match_reasons?.length && (
+        <div style={{ marginTop: 6, fontSize: FS.xs, color: C.amber }}>
+          <b>Lý do chưa ghép:</b> {enc.match_reasons.join(' · ')}
+        </div>
+      )}
+
       {expanded && (
         <div style={{ marginTop: 9, display: 'grid', gap: 8 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 6, fontSize: FS.xs, color: C.text2 }}>
             <div><b>Khoa/phòng:</b> {[enc.department, enc.room_bed].filter(Boolean).join(' · ') || '—'}</div>
             <div><b>Ngày mổ:</b> {enc.surgery_date || '—'}</div>
             <div><b>Số ngày điều trị:</b> {enc.treatment_duration || '—'}</div>
-            <div><b>Mã NC:</b> {enc.research_code || '—'}</div>
+            {!enc.unmatched && <div><b>Mã NC:</b> {enc.research_code || '—'}</div>}
           </div>
           <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Xét nghiệm ({enc.counts?.labs || 0})</summary><SmallRowsTable max={120} rows={enc.labs || []} columns={[{key:'lab_datetime',label:'Thời gian'}, {key:'test_name_raw',label:'Tên XN'}, {key:'result_raw',label:'KQ'}, {key:'unit',label:'Đơn vị'}]} /></details>
           <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>CĐHA ({enc.counts?.imaging || 0})</summary><SmallRowsTable max={80} rows={enc.imaging || []} columns={[{key:'ordered_at',label:'Thời gian'}, {key:'service_name_raw',label:'Dịch vụ'}, {key:'conclusion_text',label:'Kết luận', long:true}]} /></details>

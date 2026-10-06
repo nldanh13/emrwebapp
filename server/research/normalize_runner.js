@@ -7,6 +7,8 @@
 //    và khóa riêng "<phạm vi>:normalize" — không dùng khóa của Thu thập, nên đang chuẩn hóa vẫn
 //    bấm thu thập được và ngược lại.
 //  - Yêu cầu chuẩn hóa trùng phạm vi khi đã có một lần đang chờ thì gộp làm một.
+//  - Trước/sau mỗi lần chạy, chụp hash các nguồn có thể bị Thu thập ghi. Nếu nguồn đổi giữa chừng,
+//    integrity gate đánh dấu failed_integrity thay vì báo một snapshot pha trộn là hoàn tất.
 //
 // EMR_NORMALIZE_INLINE=1: chạy ngay trong tiến trình hiện tại (dùng cho test / gỡ lỗi).
 
@@ -14,6 +16,11 @@ const path = require('path');
 const { fork } = require('child_process');
 const { RESEARCH_SCOPE_LOCKS } = require('./research_http');
 const { nowIso } = require('./store_paths');
+const {
+  resolveJobRunDir,
+  captureNormalizeInputs,
+  evaluateNormalizationIntegrity,
+} = require('./normalization_integrity');
 
 const CHILD = path.join(__dirname, 'normalize_child.js');
 const NORMALIZE_LANE = 'normalize';
@@ -23,10 +30,12 @@ function normalizeLockKey(scopeKey = 'archive') {
 }
 
 function runInline(job) {
-  const normalize = require('./normalize');
-  if (job.kind === 'archive') return normalize.normalizeArchiveLatest();
-  if (job.kind === 'study') return normalize.normalizeStudyLatest(job.studyId);
-  return normalize.normalizeRunOutputs(job.runDir, job.options || {});
+  // Inline phải có cùng preflight/repair/integrity với child mode; trước đây đây
+  // là một đường vòng có thể gọi normalize trực tiếp và bỏ qua repair raw PT.
+  const safe = require('./normalize_safe');
+  if (job.kind === 'archive') return safe.normalizeArchiveLatestSafe();
+  if (job.kind === 'study') return safe.normalizeStudyLatestSafe(job.studyId);
+  return safe.normalizeRunOutputsSafe(job.runDir, job.options || {});
 }
 
 function runInChild(job) {
@@ -59,6 +68,20 @@ function scopeKeyForJob(job) {
   return 'archive';
 }
 
+function withIntegritySummary(result, integrity) {
+  if (!result || typeof result !== 'object') return result;
+  return {
+    ...result,
+    integrity: {
+      status: integrity.status,
+      critical_count: integrity.critical_count,
+      warning_count: integrity.warning_count,
+      qa_blocking_count: integrity.qa_blocking_count,
+      qa_warning_count: integrity.qa_warning_count,
+    },
+  };
+}
+
 // Hàng đợi chung: một lần chuẩn hóa tại một thời điểm.
 let chain = Promise.resolve();
 const pendingByScope = new Map(); // scopeKey -> promise của lần đang chờ (chưa bắt đầu)
@@ -75,7 +98,27 @@ function runNormalizeJob(job, { reason = '' } = {}) {
     const token = { label: 'Chuẩn hóa', since: nowIso(), lane: NORMALIZE_LANE, reason };
     RESEARCH_SCOPE_LOCKS.set(key, token);
     try {
-      return await runInChild(job);
+      const runDir = resolveJobRunDir(job);
+      let beforeSnapshot = null;
+      if (runDir) {
+        try { beforeSnapshot = captureNormalizeInputs(runDir); }
+        catch (err) { console.warn('[RESEARCH][INTEGRITY] Không chụp được input trước normalize:', err.message); }
+      }
+
+      const result = await runInChild(job);
+      if (!runDir) return result;
+
+      let afterSnapshot = null;
+      try { afterSnapshot = captureNormalizeInputs(runDir); }
+      catch (err) { console.warn('[RESEARCH][INTEGRITY] Không chụp được input sau normalize:', err.message); }
+
+      try {
+        const integrity = evaluateNormalizationIntegrity(runDir, { beforeSnapshot, afterSnapshot });
+        return withIntegritySummary(result, integrity);
+      } catch (err) {
+        console.warn('[RESEARCH][INTEGRITY] Không chạy được integrity gate:', err.message);
+        return result;
+      }
     } finally {
       if (RESEARCH_SCOPE_LOCKS.get(key) === token) RESEARCH_SCOPE_LOCKS.delete(key);
     }

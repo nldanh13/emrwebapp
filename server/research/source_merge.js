@@ -68,10 +68,99 @@ function researchIdentityAliases(row) {
   ]) : [];
 }
 
+function verifiedStayKey(patientCodeValue, admissionValue, dischargeValue) {
+  const code = normalizedIdentity(patientCodeValue);
+  const admission = rowAdmissionTime({ 'T/G vào': admissionValue }) || '';
+  const discharge = rowDischargeTime({ 'Ngày ra viện': dischargeValue }) || '';
+  if (!code || !admission || !discharge) return '';
+  return `verified_stay:${code}|${admission}|${discharge}`;
+}
+
+function buildVerifiedStayIndex(profileRows = [], dischargeRows = []) {
+  const byResearchKey = new Map();
+  const touch = row => {
+    const code = normalizedIdentity(patientCode(row));
+    const researchKey = normalizedIdentity(firstNonEmpty(row, ['Research key', 'research_key']));
+    if (!code || !researchKey) return null;
+    const key = `${code}|${researchKey}`;
+    const bucket = byResearchKey.get(key) || { code, researchKey, admission: '', discharge: '' };
+    byResearchKey.set(key, bucket);
+    return bucket;
+  };
+
+  // Profile là nguồn đáng tin cậy cho ngày vào thực tế mà worker đọc từ EMR.
+  for (const row of profileRows || []) {
+    const bucket = touch(row);
+    if (!bucket) continue;
+    const admission = rowAdmissionTime(row);
+    if (admission) bucket.admission = admission;
+  }
+  // Discharge là nguồn đáng tin cậy cho ngày ra thực tế mà worker đọc từ EMR.
+  for (const row of dischargeRows || []) {
+    const bucket = touch(row);
+    if (!bucket) continue;
+    const discharge = rowDischargeTime(row);
+    if (discharge) bucket.discharge = discharge;
+  }
+
+  const direct = new Map();
+  const byPatient = new Map();
+  for (const bucket of byResearchKey.values()) {
+    if (!bucket.admission || !bucket.discharge) continue;
+    const key = verifiedStayKey(bucket.code, bucket.admission, bucket.discharge);
+    if (!key) continue;
+    const stay = { key, patient_code: bucket.code, admission: bucket.admission, discharge: bucket.discharge };
+    direct.set(`${bucket.code}|${bucket.researchKey}`, stay);
+    const list = byPatient.get(bucket.code) || [];
+    if (!list.some(item => item.key === key)) list.push(stay);
+    byPatient.set(bucket.code, list);
+  }
+  return { direct, byPatient };
+}
+
+function canonicalizeRowToVerifiedStay(row, verifiedIndex) {
+  const code = normalizedIdentity(patientCode(row));
+  if (!code || !verifiedIndex) return { ...(row || {}) };
+
+  const researchKey = normalizedIdentity(firstNonEmpty(row, ['Research key', 'research_key']));
+  let stay = researchKey ? verifiedIndex.direct.get(`${code}|${researchKey}`) : null;
+
+  if (!stay) {
+    const admission = parseAnyDate(rowAdmissionTime(row));
+    if (admission) {
+      const matches = (verifiedIndex.byPatient.get(code) || []).filter(item => {
+        const from = parseAnyDate(item.admission);
+        const to = parseAnyDate(item.discharge);
+        return from && to && admission.getTime() >= from.getTime() && admission.getTime() <= to.getTime();
+      });
+      if (matches.length === 1) stay = matches[0];
+    }
+  }
+  if (!stay) return { ...(row || {}) };
+
+  const out = { ...(row || {}) };
+  if (!out.__source_admission_raw) out.__source_admission_raw = rowAdmissionTime(row) || '';
+  if (!out.__source_discharge_raw) out.__source_discharge_raw = rowDischargeTime(row) || '';
+  out.__verified_stay_key = stay.key;
+  // Chỉ sửa bản làm việc trong bộ chuẩn hóa; file raw không bị đụng tới.
+  // Ghi vào mọi alias thời gian thường dùng để context/encounter không đọc lại mốc chuyển khoa cũ.
+  out['T/G vào'] = stay.admission;
+  out['TG vao'] = stay.admission;
+  out['Ngày vào viện'] = stay.admission;
+  out.admission_date = stay.admission;
+  out['Ngày ra viện'] = stay.discharge;
+  out.discharge_date = stay.discharge;
+  return out;
+}
+
 function conflictingStrongIdentity(left, right) {
   const codeA = normalizedIdentity(patientCode(left));
   const codeB = normalizedIdentity(patientCode(right));
   if (codeA && codeB && codeA !== codeB) return true;
+
+  const verifiedA = String(left?.__verified_stay_key || '').trim();
+  const verifiedB = String(right?.__verified_stay_key || '').trim();
+  if (verifiedA && verifiedB) return verifiedA !== verifiedB;
 
   const encounterA = normalizedIdentity(rowExistingEncounterId(left));
   const encounterB = normalizedIdentity(rowExistingEncounterId(right));
@@ -99,6 +188,8 @@ function conflictingStrongIdentity(left, right) {
 }
 
 function visitSignature(row, sourceRunId = '') {
+  const verified = String(row?.__verified_stay_key || '').trim();
+  if (verified) return verified;
   const aliases = encounterIdentityAliases(row);
   const preferred = ['encounter:', 'research_key:', 'treatment:', 'admission:', 'visit_range:', 'visit:'];
   for (const prefix of preferred) {
@@ -201,6 +292,7 @@ function isTimeInsideVisit(timeValue, admissionValue, dischargeValue) {
 
 function combineEncounterSources({ initialRows = [], deepRows = [], patientRows = [], hchanhProfileRows = [], hchanhDischargeRows = [], sourceRunId = '' } = {}) {
   const map = new Map();
+  const verifiedIndex = buildVerifiedStayIndex(hchanhProfileRows, hchanhDischargeRows);
   // Chỉ dò các bản ghi của cùng một người bệnh. Trước đây mỗi dòng mới đều quét
   // toàn bộ Map (và còn tạo Array.from(...)), khiến chuẩn hoá tăng theo O(n²).
   const signaturesByPatient = new Map();
@@ -214,6 +306,10 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
     const codeA = normalizedIdentity(patientCode(row));
     const codeB = normalizedIdentity(patientCode(existing));
     if (!codeA || !codeB || codeA !== codeB) return false;
+
+    const verifiedA = String(row?.__verified_stay_key || '').trim();
+    const verifiedB = String(existing?.__verified_stay_key || '').trim();
+    if (verifiedA && verifiedB) return verifiedA === verifiedB;
 
     // ID mạnh bằng nhau là bằng chứng trực tiếp cùng lượt. Nếu cả hai phía đều có
     // cùng loại ID mạnh nhưng giá trị khác nhau thì không được dùng ngày/Mã NC để
@@ -286,9 +382,10 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
   }
 
   function add(row, sourceStatus) {
-    const code = patientCode(row);
+    const canonicalRow = canonicalizeRowToVerifiedStay(row, verifiedIndex);
+    const code = patientCode(canonicalRow);
     if (!code) return;
-    let withStatus = { ...(row || {}) };
+    let withStatus = { ...canonicalRow };
     if (sourceStatus && !withStatus.__source_status) withStatus.__source_status = sourceStatus;
 
     const existingSig = findExistingSigFor(withStatus, sourceStatus);
@@ -364,6 +461,9 @@ module.exports = {
   aliasesIntersect,
   encounterIdentityAliases,
   researchIdentityAliases,
+  verifiedStayKey,
+  buildVerifiedStayIndex,
+  canonicalizeRowToVerifiedStay,
   conflictingStrongIdentity,
   visitSignature,
   rowCompletenessScore,

@@ -24,29 +24,67 @@ _PROJECT_CONFIG_FILE = os.path.join(os.path.dirname(BASE_DIR), 'config', 'd_v2.j
 CONFIG_FILE = os.environ.get('D_V2_CONFIG_PATH') or (_DEFAULT_CONFIG_FILE if os.path.exists(_DEFAULT_CONFIG_FILE) else _PROJECT_CONFIG_FILE)
 OUTPUT_FILE = os.path.join(BASE_DIR, 'data_phan_loai_chuan_v16.json')  # fallback nếu gọi trực tiếp
 DEFAULT_INPUT_FILE = os.path.join(BASE_DIR, 'KetQua_YLenh.json')
-# Thể tích mặc định (Dùng khi văn bản không ghi rõ thể tích túi/chai)
-DEFAULT_VOLUMES = {
-    # Các dịch truyền/thuốc truyền có thể tích rõ ràng theo tên sản phẩm
-    "THERMODOL": 100,
-    "PARACETAMOL": 100,
-    "GLUCOSE": 500,
-    "RINGER": 500,
-    "CIPRO": 200,
-    "LEVO": 100,
-    "METRO": 100,
-    # Aminoleban thường là chai dịch truyền; dùng để tránh mất lịch khi BS không ghi thể tích.
-    "AMINOLEBAN": 500,
+# ── Kiến thức thuốc sẵn có: MỘT file config/medication_builtin.json (chỉ đọc) ───────────────
+# Trước đây rải ở d_v2.json (mục 1, 3, 5, 6) và các hằng số trong file này / diluent_resolver.py.
+# Thuốc người dùng khai báo trong Danh mục thuốc luôn được ưu tiên hơn các mục sẵn có này.
+MEDICATION_BUILTIN_FILE = os.environ.get('MEDICATION_BUILTIN_PATH') or os.path.join(os.path.dirname(BASE_DIR), 'config', 'medication_builtin.json')
+
+
+def _load_builtin():
+    try:
+        with open(MEDICATION_BUILTIN_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        print(f"[WARN] Không đọc được kiến thức thuốc sẵn có ({MEDICATION_BUILTIN_FILE}): {e}")
+        return {}
+
+
+def _no_meta(d):
+    return {k: v for k, v in (d or {}).items() if not str(k).startswith('__')}
+
+
+MEDICATION_BUILTIN = _load_builtin()
+_TT = MEDICATION_BUILTIN.get('the_tich_mac_dinh') or {}
+_LP = MEDICATION_BUILTIN.get('luat_pha') or {}
+# Thể tích mặc định theo từ khoá (khi văn bản không ghi rõ thể tích túi/chai)
+DEFAULT_VOLUMES = _no_meta(_TT.get('theo_tu_khoa'))
+# Thể tích theo cụm tên (xét trước DEFAULT_VOLUMES)
+THE_TICH_AO = _no_meta(_TT.get('theo_ten'))
+# Luật an toàn pha dịch truyền, giữ dạng cũ {khoá: {hoat_chat, yeu_cau_pha_che}} cho code đang dùng.
+LUAT_AN_TOAN = {
+    r.get('key') or r.get('hoat_chat'): {
+        'hoat_chat': r.get('hoat_chat', ''),
+        'yeu_cau_pha_che': {
+            'loai': 'DICH_TRUYEN',
+            'dung_moi_bat_buoc': r.get('dung_moi', ''),
+            'tong_the_tich_sau_pha': r.get('the_tich_sau_pha_ml'),
+            **({'ghi_chu': r['ghi_chu']} if r.get('ghi_chu') else {}),
+        },
+    }
+    for r in (_LP.get('theo_hoat_chat') or []) if isinstance(r, dict)
 }
+# Thuốc thường pha NaCl nếu y lệnh không ghi rõ: thể tích theo từ khoá tên
+DEFAULT_NACL_VOLUME_BY_KEYWORD = _no_meta(_LP.get('the_tich_theo_tu_khoa'))
+# Tên thương mại không chứa hoạt chất (VECMID = Vancomycin)
+BRAND_ACTIVE_INGREDIENT = _no_meta(MEDICATION_BUILTIN.get('hoat_chat_theo_ten_thuong_mai'))
+# Thuốc có dung môi đi kèm: không gắn "+ Pha nước cất" (vd. Methylprednisolon)
+NO_WATER_TAG_KEYWORDS = list((MEDICATION_BUILTIN.get('co_dung_moi_di_kem') or {}).get('tu_khoa') or [])
 
-# Danh sách các dịch truyền chắc chắn (KHÔNG dùng keyword quá chung như 'SODIUM' để tránh dính vào hoạt chất dạng '... sodium')
-TRUE_INFUSIONS = [
-    "PARACETAMOL", "THERMODOL",
-    "NATRI CLORID", "SODIUM CHLORIDE", "NACL",
-    "GLUCOSE", "RINGER", "CIPRO", "LEVO", "METRO", "AMINOLEBAN"
-]
+# Danh sách nhận diện dịch truyền theo tên: MỘT nguồn là config/order_rules.json (name_keywords).
+# Trước đây chép y hệt ở đây + order_rules.json + rule_engine: xoá một thuốc khỏi file vẫn còn tác dụng.
+from processing.rule_engine import load_order_rules as _load_order_rules
 
-# Danh sách thuốc thể tích nhỏ nhưng BẮT BUỘC là pha truyền (Tránh bị ép thành tiêm)
-ALWAYS_INFUSION_DRUGS = ["NEFOPAM"]  # TRAMADOL xử lý riêng: ưu tiên tiêm bắp, chỉ pha NaCl khi có dung môi rời phù hợp
+
+def _order_rule_names(group):
+    vals = ((_load_order_rules().get("name_keywords") or {}).get(group) or [])
+    return [str(v).upper() for v in vals if str(v).strip()]
+
+
+# Dịch truyền chắc chắn (KHÔNG dùng keyword quá chung như 'SODIUM' để tránh dính hoạt chất '... sodium')
+TRUE_INFUSIONS = _order_rule_names("true_infusions")
+# Thuốc thể tích nhỏ nhưng BẮT BUỘC pha truyền. TRAMADOL xử lý riêng (ưu tiên tiêm bắp).
+ALWAYS_INFUSION_DRUGS = _order_rule_names("always_infusion_drugs")
 def load_config(config_path):
     default_config = {"gio_mac_dinh": {"sáng": "8 giờ", "trưa": "12 giờ", "chiều": "16 giờ", "tối": "20 giờ"}, "bo_sung_the_tich": []}
     if not os.path.exists(config_path):
@@ -59,27 +97,11 @@ def load_config(config_path):
         print(f"[WARN] Không đọc được cấu hình d_v2 ({config_path}): {e}")
         return default_config
 
-CONFIG = load_config(CONFIG_FILE)
-# ===== Config-derived helpers (from d.json) =====
-THE_TICH_AO = CONFIG.get("5_TU_DIEN_THE_TICH_AO", {}) if isinstance(CONFIG, dict) else {}
-LUAT_AN_TOAN = CONFIG.get("3_LUAT_AN_TOAN_DAC_BIET", {}) if isinstance(CONFIG, dict) else {}
+CONFIG = load_config(CONFIG_FILE)  # d_v2.json: giờ mặc định theo buổi (gio_mac_dinh)
 
-# Từ khóa nhận diện dịch truyền theo tên (bổ sung ngoài TRUE_INFUSIONS)
-INFUSION_NAME_KEYWORDS = [
-    "AMINOPLASMAL", "NEPHROSTERIL", "ALBUNORM", "ALBUMIN",
-    "INTRALIPID", "SMOF", "KABIVEN", "OLICLINOMEL", "NUTRIFLEX",
-    "AMINOLEBAN",
-]
+# Từ khóa nhận diện dịch truyền theo tên (bổ sung ngoài TRUE_INFUSIONS) — order_rules.json.
+INFUSION_NAME_KEYWORDS = _order_rule_names("infusion_products")
 
-# Thuốc thường pha NaCl nếu y lệnh không ghi rõ (bạn có thể mở rộng list này)
-DEFAULT_NACL_VOLUME_BY_KEYWORD = {
-    "MEROVIA": 100,  # Meropenem
-    "PIPERACILLIN/TAZOBACTAM": 100,
-    "TAZOBACTAM": 100,
-    "VANCOMYCIN": 100,  # fallback khi y lệnh không ghi thể tích; ưu tiên dữ liệu NaCl 100ml thực tế
-    "COLISTIMED": 50,
-    "COLISTIN": 50,
-}
 
 # ── Đường dùng thuốc ─────────────────────────────────────────────────────────
 # Bảng chuẩn nằm ở config/routes.json (dùng chung với giao diện), xem
@@ -94,10 +116,6 @@ def get_route_label(duong_dung_goc: str, ten_thuoc: str = "") -> str:
     """Mã đường dùng chuẩn — lấy từ model duy nhất processing/route_table.py."""
     return detect_drug_route(duong_dung_goc, ten_thuoc)
 
-# Những thuốc có dung môi đi kèm (không gắn nhãn '+ Pha nước cất')
-NO_WATER_TAG_KEYWORDS = [
-    "METHYLPREDNISOLON", "SOLU-MEDROL", "SOLU MEDROL"
-]
 
 def _norm_upper(s: str) -> str:
     return (s or "").upper()
@@ -239,7 +257,72 @@ def parse_hours_from_gio_dung(gio_dung: str):
                 _add_hour(h)
     return out
 
+def get_catalog_dilution(drug_name):
+    """Quy tắc pha trong Danh mục thuốc (người dùng tự cài), None nếu chưa cài."""
+    try:
+        from processing.medication_catalog import catalog_dilution_rule
+    except Exception:
+        return None
+    return catalog_dilution_rule(drug_name)
+
+
+def builtin_dilution_rules():
+    """Luật pha cài sẵn (d_v2.json 3_LUAT_AN_TOAN_DAC_BIET + từ khóa trong code), dạng giống quy tắc
+    Danh mục thuốc để giao diện hiện ra và người dùng biết đang có luật gì. Quy tắc Danh mục thắng."""
+    out = []
+    seen = set()
+    for key, rule in (LUAT_AN_TOAN or {}).items():
+        try:
+            hoat_chat = _norm_upper(rule.get("hoat_chat", ""))
+            yc = rule.get("yeu_cau_pha_che", {}) or {}
+            dung_moi = _norm_upper(yc.get("dung_moi_bat_buoc", ""))
+        except Exception:
+            continue
+        if not hoat_chat or not any(k in dung_moi for k in ("CLORID", "CHLORIDE", "NACL")):
+            continue
+        vol = yc.get("tong_the_tich_sau_pha")
+        note = str(yc.get("ghi_chu") or "").strip()
+        if hoat_chat == "TRAMADOL":
+            note = "Ưu tiên tiêm bắp; chỉ pha khi y lệnh ghi truyền hoặc có túi Natri clorid rời cùng giờ."
+        out.append({"keyword": hoat_chat, "solvent": "NACL_0.9", "volume_ml": float(vol) if vol else None,
+                    "apply": "infusion_only" if hoat_chat == "TRAMADOL" else "always", "note": note,
+                    "nguon": "d_v2.json"})
+        seen.add(hoat_chat)
+    for kw, vol in DEFAULT_NACL_VOLUME_BY_KEYWORD.items():
+        if kw in seen:
+            continue
+        out.append({"keyword": kw, "solvent": "NACL_0.9", "volume_ml": float(vol), "apply": "always",
+                    "note": "", "nguon": "xu_ly_config.py"})
+        seen.add(kw)
+    for kw in ALWAYS_INFUSION_DRUGS:
+        if kw not in seen:
+            out.append({"keyword": kw, "solvent": "NACL_0.9", "volume_ml": 100.0, "apply": "always",
+                        "note": "", "nguon": "xu_ly_config.py"})
+    return out
+
+
+def effective_dilution(drug_name: str):
+    """(quy tắc, nguồn) đang áp dụng cho một tên thuốc: 'danh_muc' (Danh mục thuốc) thắng
+    'luat_san_co'. Dùng cho màn Danh mục thuốc và trang kiểm tra — cùng dữ liệu bước xử lý dùng."""
+    rule = get_catalog_dilution(drug_name)
+    if rule:
+        return rule, "danh_muc"
+    name_u = _norm_upper(drug_name)
+    for item in builtin_dilution_rules():
+        if item["keyword"] and item["keyword"] in name_u:
+            return dict(item), "luat_san_co"
+    return None, None
+
+
 def get_safety_nacl_volume(drug_name_upper: str):
+    # Quy tắc pha trong Danh mục thuốc thắng luật cài sẵn: "Không pha" tắt hẳn việc tự gắn NaCl;
+    # "Luôn pha NaCl X ml" coi như luật an toàn. "Chỉ khi y lệnh ghi truyền" không ép pha ở đây.
+    rule = get_catalog_dilution(drug_name_upper)
+    if rule:
+        if rule.get("solvent") == "KHONG_PHA":
+            return None
+        if rule.get("solvent") == "NACL_0.9" and rule.get("apply") == "always":
+            return float(rule.get("volume_ml") or 100)
     # Tra cứu luật an toàn: NEFOPAM/TRAMADOL có tong_the_tich_sau_pha=100
     for _, rule in (LUAT_AN_TOAN or {}).items():
         try:

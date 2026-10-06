@@ -437,12 +437,40 @@ def build_cards_from_rows(rows, start=0, end=23, include0=True, report_date=""):
             quantity = None
 
         slot = time_value if not no_time else ""
-        so_lo_map = {slot: quantity} if slot and quantity is not None else {}
-        note_badge = "chưa rõ giờ" if no_time else ""
+        flags = []
+        if no_time:
+            flags.append("chưa rõ giờ — ghi giờ:")
         if raw.get("tuTuc"):
-            note_badge = f"{note_badge} · tự túc".strip(" ·") if note_badge else "tự túc"
+            flags.append("tự túc")
+        dup_of = str(raw.get("duplicateOf") or "").strip()
+        if dup_of:
+            flags.append(f"đã có cữ {dup_of}, có thể trùng")
+        if str(raw.get("confirmMix") or "").strip():
+            flags.append("xác nhận cách pha")
+        if raw.get("possibleDuplicate"):
+            flags.append("kiểm tra trùng y lệnh")
+        mix = norm(raw.get("mixWith") or "")
 
-        grouped[key]["rows"].append({
+        # Một thuốc một dòng: gộp các cữ của CÙNG thuốc (cùng tên, đường dùng, đơn vị, tự túc) vào
+        # một dòng, mỗi cữ một ô. Hai y lệnh trùng cùng một cữ vẫn tách dòng (không ghi đè số lượng).
+        merge_key = (name, route, unit, bool(raw.get("tuTuc")), no_time, mix)
+        rows_of_card = grouped[key]["rows"]
+        target = None
+        if not no_time:
+            for existing in rows_of_card:
+                if existing.get("_merge_key") == merge_key and slot not in existing["hours"]:
+                    target = existing
+                    break
+        if target is not None:
+            target["hours"].add(slot)
+            if quantity is not None:
+                target["so_lo_map"][slot] = quantity
+            for f in flags:
+                if f not in target["flags"]:
+                    target["flags"].append(f)
+            continue
+
+        rows_of_card.append({
             "name": name,
             "abbr": route,
             "prn": False,
@@ -450,10 +478,13 @@ def build_cards_from_rows(rows, start=0, end=23, include0=True, report_date=""):
             "hours": set([slot]) if slot else set(),
             "tg_bat_dau": "",
             "tg_ket_thuc": "",
-            "so_lo_map": so_lo_map,
+            "so_lo_map": {slot: quantity} if slot and quantity is not None else ({"": quantity} if quantity is not None else {}),
             "don_vi": unit,
             "toc_do": "",
-            "note_badge": note_badge,
+            "mix": mix,
+            "flags": flags,
+            "note_badge": "",
+            "_merge_key": merge_key,
             "_source_index": idx,
         })
 
@@ -469,7 +500,7 @@ def build_cards_from_rows(rows, start=0, end=23, include0=True, report_date=""):
     ))
     for card in cards:
         card["rows"].sort(key=lambda row: (
-            _snapshot_time_minutes(next(iter(row.get("hours") or []), "")) if row.get("hours") else 9999,
+            min((m if m is not None else 9999) for m in (_snapshot_time_minutes(h) for h in row["hours"])) if row.get("hours") else 99999,
             row.get("_source_index", 999999),
         ))
     return cards
@@ -541,25 +572,108 @@ def render_pdf(cards, out_path, start, end, gen_date, report_date_label=""):
         h, minute = int(m.group(1)), int(m.group(2))
         return f"{h:02d}h" if minute == 0 else f"{h:02d}:{minute:02d}"
 
-    def get_card_hours(rows):
-        hs = set()
-        for r in rows:
+    # ── Cột giờ CHUNG cho cả phiếu (không mỗi người bệnh một bộ cột): đi buồng lúc 16h thì ô 16h
+    # luôn cùng một vị trí. Giờ lẻ (vd. 10:13) gom vào cột "Khác", ghi giờ cạnh ô.
+    def is_whole_hour(slot):
+        if isinstance(slot, int):
+            return True
+        m = re.match(r"^(\d{1,2}):(\d{2})$", str(slot or "").strip())
+        return bool(m) and int(m.group(2)) == 0
+
+    OTHER = "__khac__"
+    sheet_slots = set()
+    has_other = False
+    for card in cards:
+        for r in card["rows"]:
             if r.get("prn") or r.get("cont"):
                 continue
-            hs.update(r.get("hours", []))
-        return sorted(hs, key=slot_sort_value)
+            for h in r.get("hours") or []:
+                if h == "":
+                    continue
+                if is_whole_hour(h):
+                    sheet_slots.add(h)
+                else:
+                    has_other = True
+            if not r.get("hours"):
+                has_other = True  # thuốc chưa rõ giờ: ô ghi giờ ở cột Khác
+    columns = sorted(sheet_slots, key=slot_sort_value)
+    if has_other:
+        columns.append(OTHER)
 
-    def col_layout(n_cols):
-        avail = CARD_W - 2 * PAD_X
-        for cw in (22, 20, 18, 16):
-            nw = avail - n_cols * cw
-            if nw >= MIN_NAME_W:
-                return cw, nw
-        cw = max(14, int((avail - MIN_NAME_W) / max(n_cols, 1)))
-        return cw, avail - n_cols * cw
+    avail = CARD_W - 2 * PAD_X
+    OTHER_W = 34
+    n_whole = len([c for c in columns if c != OTHER])
+    cw = 18
+    for cand in (20, 18, 16, 14, 12):
+        cw = cand
+        if avail - n_whole * cand - (OTHER_W if has_other else 0) >= MIN_NAME_W:
+            break
+    name_w = avail - n_whole * cw - (OTHER_W if has_other else 0)
 
-    def calc_card_h(rows, hours):
-        return PT_HDR_H + (COL_HDR_H if hours else 0) + len(rows) * ROW_H
+    def col_x(i):
+        return x_card_cols_offset + PAD_X + name_w + i * cw
+
+    NAME_FS, NOTE_FS, LINE_H = 7.5, 6, 8.5
+
+    def wrap(text, width, font, fs, max_lines=2):
+        words = str(text or "").split()
+        lines, cur = [], ""
+        for w in words:
+            trial = f"{cur} {w}".strip()
+            if sw(trial, fs, font) <= width or not cur:
+                cur = trial
+            else:
+                lines.append(cur)
+                cur = w
+        if cur:
+            lines.append(cur)
+        if len(lines) > max_lines:
+            lines = lines[:max_lines]
+            last = lines[-1]
+            while last and sw(last + "…", fs, font) > width:
+                last = last[:-1]
+            lines[-1] = last.rstrip() + "…"
+        return lines or [""]
+
+    UNIT_WORDS = ("viên", "gói", "lọ", "ống", "túi", "chai", "ml")
+
+    def qty_text(r):
+        vals = [v for v in (r.get("so_lo_map") or {}).values() if v is not None]
+        unit = (r.get("don_vi") or "").strip().lower()
+        unit = next((u for u in UNIT_WORDS if u in unit), unit[:8])
+        if not vals or not unit:
+            return ""
+        def f(v):
+            return str(int(v)) if float(v).is_integer() else str(v).replace(".", ",")
+        if len(set(vals)) == 1:
+            return f"{f(vals[0])} {unit}/lần" if len(vals) > 1 else f"{f(vals[0])} {unit}"
+        return " / ".join(f(v) for v in vals) + f" {unit}"
+
+    def row_layout(r):
+        badge = (r.get("abbr") or "").strip()
+        badge_w = (sw(badge, 5.5, font_r) + 6) if badge else 0
+        title = norm(r["name"])
+        q = qty_text(r)
+        if q:
+            title = f"{title} · {q}"
+        if r.get("mix"):
+            title = f"{title} · pha {r['mix']}"
+        lines = wrap(title, name_w - badge_w - 6, font_b, NAME_FS, 3)
+        notes = list(r.get("flags") or [])
+        if r.get("note_badge"):
+            notes.insert(0, str(r["note_badge"]))
+        if r.get("prn"):
+            notes.append("khi cần")
+        if r.get("cont"):
+            bd = _hour_from_tg(r.get("tg_bat_dau") or "")
+            kt = _hour_from_tg(r.get("tg_ket_thuc") or "")
+            notes.append(f"BD{bd:02d}h→KT{kt:02d}h" if bd is not None and kt is not None else "truyền liên tục")
+        note = "  ·  ".join(notes)
+        h = 6 + LINE_H * len(lines) + (NOTE_FS + 2.5 if note else 0) + 2
+        return {"lines": lines, "note": note, "badge": badge, "badge_w": badge_w, "h": max(ROW_H, h)}
+
+    def calc_card_h(layouts):
+        return PT_HDR_H + (COL_HDR_H if columns else 0) + sum(l["h"] for l in layouts)
 
     def draw_page_header(cv, pn):
         y = H - MARGIN
@@ -570,7 +684,7 @@ def render_pdf(cards, out_path, start, end, gen_date, report_date_label=""):
         cv.setFont(font_b, 8)
         date_part = f"NGÀY THỰC HIỆN: {report_date_label}  ·  " if report_date_label else ""
         cv.drawString(MARGIN + PAD_X, y - PAGE_HDR_H + 7,
-                      f"PHIẾU TIÊM TRUYỀN  ·  {ca_lbl}  ·  {date_part}Tạo lúc {gen_date}")
+                      f"PHIẾU THỰC HIỆN THUỐC  ·  {ca_lbl}  ·  {date_part}Tạo lúc {gen_date}")
         cv.setFillColor(C_PAGE_HDR_SUB)
         cv.setFont(font_r, 7)
         cv.drawRightString(W - MARGIN - PAD_X, y - PAGE_HDR_H + 7, f"Trang {pn}")
@@ -586,8 +700,8 @@ def render_pdf(cards, out_path, start, end, gen_date, report_date_label=""):
 
     for card in cards:
         rows  = card["rows"]
-        hours = get_card_hours(rows)
-        ch    = calc_card_h(rows, hours)
+        layouts = [row_layout(r) for r in rows]
+        ch    = calc_card_h(layouts)
 
         if y - ch < MARGIN:
             if col == 0:
@@ -601,25 +715,23 @@ def render_pdf(cards, out_path, start, end, gen_date, report_date_label=""):
                 y   = y_top
 
         x0 = x_card_cols[col]
+        x_card_cols_offset = x0
         y0 = y
 
-        # ── Dải tên bệnh nhân — màu nền, KHÔNG viền ───────────────────────
+        # ── Dải tên bệnh nhân ───────────────────────────────────────────
         cv.setFillColor(C_PT_HDR_BG)
         cv.rect(x0, y0 - PT_HDR_H, CARD_W, PT_HDR_H, stroke=0, fill=1)
-
         y_hdr_mid = y0 - PT_HDR_H / 2 - 2.5
         cv.setFillColor(C_PT_HDR_ROOM)
         cv.setFont(font_b, 8)
         phong_txt = card["phong"]
         cv.drawString(x0 + PAD_X, y_hdr_mid, phong_txt)
         phong_w = sw(phong_txt, 8, font_b)
-
         sep = "  ·  "
         sep_w = sw(sep, 7.5, font_r)
         cv.setFont(font_r, 7.5)
         cv.setFillColor(C_PT_HDR_ID)
         cv.drawString(x0 + PAD_X + phong_w, y_hdr_mid, sep)
-
         x_ten = x0 + PAD_X + phong_w + sep_w
         id_w  = sw(card["ma_bn"], 6.5, font_r) + PAD_X + 2
         max_ten = CARD_W - (x_ten - x0) - id_w
@@ -631,134 +743,90 @@ def render_pdf(cards, out_path, start, end, gen_date, report_date_label=""):
                 ten = ten[:-1]
             ten = ten.rstrip() + "…"
         cv.drawString(x_ten, y_hdr_mid, ten)
-
         if card["ma_bn"]:
             lbl = card["ma_bn"] + (f"  {card['ngay']}" if card.get("ngay") else "")
             cv.setFont(font_r, 6.5)
             cv.setFillColor(C_PT_HDR_ID)
             cv.drawRightString(x0 + CARD_W - PAD_X, y_hdr_mid, lbl)
 
-        # ── Dải tiêu đề cột giờ — KHÔNG đường kẻ dọc ─────────────────────
-        n_cols = len(hours)
-        if n_cols:
-            cw, name_w = col_layout(n_cols)
-            x_grid = x0 + PAD_X + name_w
-
-            y_col_top = y0 - PT_HDR_H
-            y_col_bot = y_col_top - COL_HDR_H
-
+        # ── Tiêu đề cột giờ (chung cả phiếu) ────────────────────────────
+        if columns:
+            y_col_bot = y0 - PT_HDR_H - COL_HDR_H
             cv.setFillColor(C_COL_HDR_BG)
             cv.rect(x0, y_col_bot, CARD_W, COL_HDR_H, stroke=0, fill=1)
-
             cv.setFont(font_b, 6)
             cv.setFillColor(C_COL_HDR_TXT)
-            for i, h in enumerate(hours):
-                xc = x_grid + i * cw
-                cv.drawCentredString(xc + cw / 2, y_col_bot + 3, slot_label(h))
-
-            y_rows_start = y_col_bot
-        else:
-            name_w       = CARD_W - 2 * PAD_X
-            cw           = 0
-            x_grid       = x0 + PAD_X + name_w
-            y_rows_start = y0 - PT_HDR_H
-
-        # ── Các dòng thuốc — zebra striping, không đường kẻ ──────────────
-        y_ln = y_rows_start
-        for idx, r in enumerate(rows):
-            y_mid = y_ln - ROW_H / 2
-
-            # Zebra: xen kẽ trắng / xám rất nhạt
-            cv.setFillColor(C_ROW_ODD if idx % 2 == 0 else C_ROW_EVEN)
-            cv.rect(x0, y_ln - ROW_H, CARD_W, ROW_H, stroke=0, fill=1)
-
-            # ── Tên thuốc (bold) + badge route/speed inline ───────────────
-            so_lo_map = r.get("so_lo_map") or {}
-            don_vi    = (r.get("don_vi") or "").strip().lower()
-            dv   = "lọ" if "lọ" in don_vi else "túi" if "túi" in don_vi else "ống" if "ống" in don_vi else ""
-            qtys = [v for v in so_lo_map.values() if v is not None]
-            qty_str = ""
-            if qtys and dv:
-                qty_str = f" {qtys[0]}{dv}" if len(set(qtys)) == 1 else f" {max(qtys)}/{min(qtys)}{dv}"
-
-            abbr   = r["abbr"]
-            toc_do = str(r.get("toc_do") or "").strip()
-
-            # Ghi chú KCN / BD→KT cho dòng phụ
-            note = str(r.get("note_badge") or "").strip()
-            note_color = C_BADGE_TXT
-            if note:
-                note_color = colors.HexColor("#92400e") if "chưa rõ giờ" in note else C_BADGE_TXT
-            elif r.get("prn"):
-                note = "khi cần"
-                note_color = colors.HexColor("#7f1d1d")
-            elif r.get("cont"):
-                bd = _hour_from_tg(r.get("tg_bat_dau") or "")
-                kt = _hour_from_tg(r.get("tg_ket_thuc") or "")
-                note = f"BD{bd:02d}h→KT{kt:02d}h" if bd is not None and kt is not None else "truyền liên tục"
-                note_color = colors.HexColor("#3730a3")
-
-            # Badge: route + speed — vẽ trước để biết độ rộng
-            badge_parts = []
-            if abbr:
-                badge_parts.append(abbr)
-            if toc_do:
-                badge_parts.append(f"{toc_do}g/ph")
-            if note:
-                badge_parts = [note]  # note thay thế badge thông thường
-            badge_txt = "  ".join(badge_parts)
-            badge_w = 0
-            BADGE_FS = 5.5
-            BADGE_PAD = 3
-            if badge_txt:
-                badge_w = sw(badge_txt, BADGE_FS, font_r) + BADGE_PAD * 2
-            badge_h = 7.5
-
-            # Tên thuốc — truncate để nhường chỗ cho badge
-            txt     = norm(f"{r['name']}{qty_str}")
-            max_w   = name_w - (badge_w + 4 if badge_w else 0) - 3
-            cv.setFont(font_b, 7.5)
-            if sw(txt, 7.5, font_b) > max_w:
-                while txt and sw(txt + "…", 7.5, font_b) > max_w:
-                    txt = txt[:-1]
-                txt = txt.rstrip() + "…"
-            cv.setFillColor(C_DRUG_BOLD)
-            y_name = y_ln - ROW_H * 0.42
-            cv.drawString(x0 + PAD_X, y_name, txt)
-
-            # Badge — cùng dòng với tên, sát lề phải cột tên
-            if badge_txt:
-                bx = x0 + PAD_X + name_w - badge_w - 1
-                by = y_mid - badge_h / 2
-                # Badge đặc biệt (KCN/cont) dùng màu khác
-                if note:
-                    cv.setFillColor(colors.HexColor("#f1f5f9"))
+            for i, h in enumerate(columns):
+                if h == OTHER:
+                    xo = col_x(n_whole)
+                    cv.drawCentredString(xo + OTHER_W / 2, y_col_bot + 3, "Giờ khác")
                 else:
-                    cv.setFillColor(C_BADGE_BG)
-                cv.roundRect(bx, by, badge_w, badge_h, 2, stroke=0, fill=1)
-                cv.setFillColor(note_color if note else C_BADGE_TXT)
-                cv.setFont(font_b if note else font_r, BADGE_FS)
-                cv.drawCentredString(bx + badge_w / 2, by + 1.8, badge_txt)
+                    cv.drawCentredString(col_x(i) + cw / 2, y_col_bot + 3, slot_label(h))
+            y_ln = y_col_bot
+        else:
+            y_ln = y0 - PT_HDR_H
 
-            # ── Checkbox □ để điều dưỡng ký nháy ─────────────────────────
-            if n_cols and not r.get("prn") and not r.get("cont"):
-                row_hours = r.get("hours", set())
+        # ── Dòng thuốc: một thuốc một dòng, tên xuống dòng thay vì bị cắt ──
+        for idx, (r, lay) in enumerate(zip(rows, layouts)):
+            rh = lay["h"]
+            cv.setFillColor(C_ROW_ODD if idx % 2 == 0 else C_ROW_EVEN)
+            cv.rect(x0, y_ln - rh, CARD_W, rh, stroke=0, fill=1)
+
+            y_text = y_ln - 4 - NAME_FS
+            cv.setFillColor(C_DRUG_BOLD)
+            cv.setFont(font_b, NAME_FS)
+            for line in lay["lines"]:
+                cv.drawString(x0 + PAD_X, y_text, line)
+                y_text -= LINE_H
+            if lay["note"]:
+                note_color = colors.HexColor("#92400e") if ("chưa rõ giờ" in lay["note"] or "trùng" in lay["note"]) else C_BADGE_TXT
+                cv.setFillColor(note_color)
+                cv.setFont(font_r, NOTE_FS)
+                note_txt = lay["note"]
+                # Dòng phụ nằm dưới hàng ô ký nên được dùng hết bề ngang thẻ, không bị cắt cụt.
+                max_note = CARD_W - 2 * PAD_X
+                if sw(note_txt, NOTE_FS, font_r) > max_note:
+                    while note_txt and sw(note_txt + "…", NOTE_FS, font_r) > max_note:
+                        note_txt = note_txt[:-1]
+                    note_txt = note_txt.rstrip() + "…"
+                cv.drawString(x0 + PAD_X, y_text + LINE_H - NOTE_FS - 2.5, note_txt)
+
+            # Badge đường dùng — luôn hiện (tự túc/chưa rõ giờ ghi ở dòng phụ, không thay đường dùng).
+            if lay["badge"]:
+                bw, bh = lay["badge_w"], 7.5
+                bx = x0 + PAD_X + name_w - bw - 2
+                by = y_ln - 4 - bh
+                cv.setFillColor(C_BADGE_BG)
+                cv.roundRect(bx, by, bw, bh, 2, stroke=0, fill=1)
+                cv.setFillColor(C_BADGE_TXT)
+                cv.setFont(font_r, 5.5)
+                cv.drawCentredString(bx + bw / 2, by + 1.8, lay["badge"])
+
+            # Ô ký tắt: chỉ ở cữ phải làm.
+            if columns and not r.get("prn") and not r.get("cont"):
                 sq = 6.5
-                for i, h in enumerate(hours):
-                    xc = x_grid + i * cw
-                    sx = xc + (cw - sq) / 2
-                    sy = y_mid - sq / 2
+                sy = y_ln - 4 - sq
+                row_hours = set(r.get("hours") or [])
+                cv.setStrokeColor(C_CHECK_BDR)
+                cv.setLineWidth(0.8)
+                for i, h in enumerate(columns):
+                    if h == OTHER:
+                        continue
                     if h in row_hours:
-                        # Ô rỗng □ — chỉ viền, để điều dưỡng ký nháy
                         cv.setFillColor(C_CHECK_BG)
-                        cv.setStrokeColor(C_CHECK_BDR)
-                        cv.setLineWidth(0.8)
-                        cv.rect(sx, sy, sq, sq, stroke=1, fill=1)
-                    # Ô không áp dụng: không vẽ gì — khoảng trắng sạch
+                        cv.rect(col_x(i) + (cw - sq) / 2, sy, sq, sq, stroke=1, fill=1)
+                odd = sorted([h for h in row_hours if h != "" and not is_whole_hour(h)], key=slot_sort_value)
+                if has_other and (odd or not row_hours):
+                    xo = col_x(n_whole) + 2
+                    cv.setFillColor(C_CHECK_BG)
+                    cv.rect(xo, sy, sq, sq, stroke=1, fill=1)
+                    cv.setFillColor(C_COL_HDR_TXT)
+                    cv.setFont(font_b, 5.5)
+                    label = ",".join(slot_label(h) for h in odd) if odd else "__:__"
+                    cv.drawString(xo + sq + 2, sy + 1.2, label[:12])
 
-            y_ln -= ROW_H
+            y_ln -= rh
 
-        # Khoảng trắng giữa bệnh nhân — thay cho viền card
         y = y0 - ch - CARD_GAP
 
     cv.save()

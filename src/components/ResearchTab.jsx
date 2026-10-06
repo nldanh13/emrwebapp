@@ -25,7 +25,6 @@ import { GeneralOverviewView } from './research/GeneralOverviewView.jsx';
 import { CreateStudyView } from './research/CreateStudyView.jsx';
 import { StudyStatsView } from './research/StudyStatsView.jsx';
 import { EmptyCohortNotice } from './research/EmptyCohortNotice.jsx';
-import { CrfView } from './research/CrfView.jsx';
 import { RunningBanner, formatDuration } from './research/RunningBanner.jsx';
 import { NormalizeStatus } from './research/NormalizeStatus.jsx';
 import useIsMobile from '../hooks/useIsMobile.js';
@@ -46,7 +45,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const [archiveOptions, setArchiveOptions] = useState(() => ({ headless: true, fromDate: '2026-01-01', toDate: todayInputDate() }));
   const [studyOptions, setStudyOptions]     = useState({ headless: true });
   const [archiveMode, setArchiveMode] = useState('overview'); // overview | update | patient | create
-  const [studyMode, setStudyMode]     = useState('stats');    // stats | collect | crf
+  const [studyMode, setStudyMode]     = useState('stats');    // nghiên cứu riêng chỉ có Thống kê & xuất
   const [showLog, setShowLog]         = useState(false);
   const [logLines, setLogLines]       = useState([]);
   const [caseTraces, setCaseTraces]   = useState([]);
@@ -428,7 +427,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     finally { loadServerRunning(); }
   }, [scopeName, loadServerRunning, t]);
   const openRunning = useCallback((item) => {
-    if (item.kind === 'study') { setSelectedId(item.study_id); setStudyMode('collect'); }
+    if (item.kind === 'study') { setSelectedId(item.study_id); setStudyMode('stats'); }
     else { setSelectedId(ARCHIVE_SCOPE); setArchiveMode('update'); }
   }, []);
 
@@ -834,13 +833,12 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
         try {
           fromArchive = await api.fetchResearchStudyFromArchive(studyId);
         } catch (seedErr) {
-          t(`Đã nạp mẫu, nhưng chưa lấy được dữ liệu từ kho: ${String(seedErr.message || seedErr)}. Vào Thu thập dữ liệu để lấy.`, 'error');
+          t(`Đã nạp mẫu, nhưng chưa lấy được dữ liệu từ kho: ${String(seedErr.message || seedErr)}. Bấm "Lấy dữ liệu từ kho" để thử lại.`, 'error');
         }
       }
       await loadSummary();
       setSelectedId(studyId);
-      // Đã có dữ liệu từ kho: mở Thống kê; chưa có thì mở Thu thập.
-      setStudyMode(fromArchive ? 'stats' : 'collect');
+      setStudyMode('stats');
       setVariableStudyDraft({ name: '', description: '' });
       setSelectedVariableIds(new Set());
       setVariableConditions([]);
@@ -868,8 +866,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const selectStudy = (item) => {
     if (!item) return;
     setSelectedId(item.id);
-    // Nghiên cứu chưa lấy dữ liệu lần nào thì mở thẳng phần Thu thập, vì chưa có gì để thống kê.
-    setStudyMode(item.latest_run ? 'stats' : 'collect');
+    setStudyMode('stats');
   };
   const openCreateStudy = () => selectArchive('create');
   const creatingStudy = isArchive && archiveMode === 'create';
@@ -891,10 +888,10 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     ['update', 'Thu thập dữ liệu', 'Quét danh sách, lấy dữ liệu và theo dõi tiến độ'],
     ['patient', 'Tra cứu người bệnh', 'Xem toàn bộ các lần điều trị của một người bệnh'],
   ];
+  // Nghiên cứu riêng chỉ thêm/bớt biến trên dữ liệu lấy từ kho: không thu thập, không phiếu nhập tay
+  // (tránh ảnh hưởng kho dùng chung).
   const studyModes = [
-    ['stats', 'Thống kê & xuất dữ liệu', 'Đo lường biến; xuất CSV khi cần xử lý số liệu'],
-    ['collect', 'Thu thập dữ liệu', 'Lấy dữ liệu cho danh sách mẫu và theo dõi tiến độ'],
-    ['crf', 'Phiếu nhập tay & theo dõi', 'Biến không có trên EMR và lịch gọi theo dõi sau mốc'],
+    ['stats', 'Thống kê & xuất dữ liệu', 'Đo lường biến, thêm/bớt biến; xuất CSV khi cần xử lý số liệu'],
   ];
 
   const collectionWorkspace = (
@@ -909,15 +906,16 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
 
   const renderWorkspace = () => {
     if (!isArchive) {
-      const view = studyMode === 'collect' ? collectionWorkspace
-        : studyMode === 'crf' ? <CrfView key={`${activeStudy?.id}:${activeStudy?.cohort_count || 0}`} study={activeStudy} toast={t} />
-        : <StudyStatsView study={activeStudy} toast={t} onGoCollect={() => setStudyMode('collect')} />;
-      // Chưa có mẫu: Thống kê và Thu thập đều chưa làm được gì, chỉ hiện một thông báo kèm cách nạp mẫu
-      // (không lặp hai khung "chưa có dữ liệu"/"chưa thể thu thập"). Phiếu nhập tay vẫn thiết kế được.
+      const view = <StudyStatsView study={activeStudy} toast={t} onStudyChanged={loadSummary} />;
+      // Chưa có mẫu: chỉ hiện một thông báo kèm cách nạp mẫu.
       const noCohort = activeStudy?.id && !Number(activeStudy.cohort_count || 0);
-      return <><EmptyCohortNotice study={activeStudy} toast={t} onImported={loadSummary} />{noCohort && studyMode !== 'crf' ? null : view}</>;
+      return <><EmptyCohortNotice study={activeStudy} toast={t} onImported={loadSummary} />{noCohort ? null : view}</>;
     }
-    if (archiveMode === 'overview') return <GeneralOverviewView {...{ generalOverview, generalOverviewLoading, pipeline, setArchiveMode }} />;
+    if (archiveMode === 'overview') return <GeneralOverviewView
+      {...{ generalOverview, generalOverviewLoading, pipeline, setArchiveMode }}
+      onNormalize={runNormalizeArchive}
+      normalizeBusy={normalizeRequest.status === 'starting' || serverRunning.items.some(item => item.lane === 'normalize' && item.scope === 'archive')}
+    />;
     if (archiveMode === 'patient') return <PatientLookupView {...{
       identifiedAccess, identifiedLocked, loadPatientHistory, patientHistory,
       patientHistoryError, patientHistoryLoading, patientHistoryMeta, patientQuery, setPatientQuery,
@@ -1092,7 +1090,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
             </div>
             {!creatingStudy && (
               <div role="tablist" className="emr-hscroll" style={{ display: 'flex', gap: 0, marginTop: 4, overflowX: 'auto' }}>
-                {(isArchive ? archiveModes : studyModes).map(([key, title, hint]) => (
+                {(isArchive ? archiveModes : studyModes.length > 1 ? studyModes : []).map(([key, title, hint]) => (
                   <ModeButton key={key} title={title} hint={hint}
                     active={isArchive ? archiveMode === key : studyMode === key}
                     onClick={() => (isArchive ? setArchiveMode(key) : setStudyMode(key))} />

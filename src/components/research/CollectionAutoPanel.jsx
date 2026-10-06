@@ -188,6 +188,9 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
   const report = (screen ? screen.last_report : status?.last_report) || null;
   const plan = (screen ? screen.plan : status?.next_plan) || null;
   const exceptions = Array.isArray(status?.exceptions) ? status.exceptions : [];
+  const diagnostics = Array.isArray(screen?.diagnostics) && screen.diagnostics.length
+    ? screen.diagnostics
+    : (Array.isArray(report?.diagnostics) ? report.diagnostics : []);
   const busy = disabled || running;
   const collecting = running || /thu thập/i.test(String(serverRunning?.label || ''));
   const runningLabel = collecting ? 'Đang thu thập' : serverRunning ? `Đang chạy: ${serverRunning.label}` : '';
@@ -346,6 +349,21 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
         </div>
       )}
 
+      {!!diagnostics.length && (
+        <div style={{ border: `1px solid ${C.amberBorder}`, background: C.amberBg, borderRadius: 7, padding: '7px 9px' }}>
+          <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Chẩn đoán lỗi thu thập</div>
+          <div style={{ marginTop: 5, display: 'grid', gap: 3 }}>
+            {diagnostics.slice(0, 8).map((d, idx) => (
+              <div key={`${d.stage || 'x'}_${idx}`} style={{ fontSize: FS.xs, color: C.text2, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <b>{d.stage_label || 'Chưa phân loại'}:</b>
+                <span>{d.message}</span>
+                <span style={{ color: C.text3 }}>· {compactNumber(d.encounters || 0)} lượt</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {status && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <Btn onClick={() => setShowExceptions(v => !v)} disabled={!exceptions.length} style={{ height: 24, padding: '0 9px', fontSize: FS.xs }}>
@@ -372,11 +390,12 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
           attempts_label: e.status === 'failed' ? `${e.attempts}/${status.max_attempts || 3}` : '—',
         }))} columns={[
           { key: 'category_label', label: 'Loại' },
-          { key: 'research_code', label: 'Mã NC' },
           { key: 'patient_code', label: 'Mã BN' },
-          { key: 'part_label', label: 'Phần' },
-          { key: 'reason_label', label: 'Lý do' },
-          { key: 'detail', label: 'Chi tiết' },
+          { key: 'diagnostic_stage_label', label: 'Bước hỏng' },
+          { key: 'diagnostic_message', label: 'Chẩn đoán' },
+          { key: 'part_label', label: 'Phần dữ liệu' },
+          { key: 'reason_label', label: 'Mã lỗi' },
+          { key: 'detail', label: 'Chi tiết kỹ thuật' },
           { key: 'attempts_label', label: 'Lần thử' },
         ]} />
       )}

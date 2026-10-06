@@ -67,6 +67,94 @@ const REASON_LABELS = {
   no_unique_encounter: 'Chưa đủ bằng chứng để ghép đúng một lượt',
 };
 
+const DIAGNOSTIC_STAGE_LABELS = {
+  patient_search: '1. Tìm người bệnh',
+  encounter_open: '2. Mở đúng đợt điều trị',
+  data_open: '3. Mở mục dữ liệu',
+  data_read: '4. Đọc dữ liệu',
+  result_commit: '5. Ghi nhận kết quả',
+  emr_session: 'Phiên EMR / trình duyệt',
+  encounter_match: 'Ghép đúng đợt điều trị',
+  technical: 'Lỗi kỹ thuật khác',
+};
+
+function diagnosticFor(reason = '', detail = '') {
+  const r = reasonKind(reason);
+  const d = String(detail || '').toLowerCase();
+  let stage = 'technical';
+  let message = REASON_LABELS[r] || reason || 'Lỗi kỹ thuật chưa phân loại';
+
+  if (r === 'not_found') {
+    stage = 'patient_search';
+    message = 'Không tìm thấy người bệnh theo Mã BN trên EMR.';
+  } else if (r === 'search_error') {
+    stage = 'patient_search';
+    message = 'Không hoàn tất được bước tìm người bệnh trên EMR.';
+  } else if (r === 'popup_error') {
+    stage = 'encounter_open';
+    message = 'Đã tìm thấy người bệnh nhưng không mở được lượt điều trị cần lấy dữ liệu.';
+  } else if ([
+    'encounter_not_identified', 'ambiguous_admission_time', 'ambiguous_date_range',
+    'identity_conflict', 'invalid_manual_override', 'missing_admission_date', 'no_unique_encounter',
+  ].includes(r)) {
+    stage = 'encounter_match';
+    message = 'Có người bệnh nhưng chưa xác định chắc đúng đợt điều trị.';
+  } else if (r === 'emr_ui_changed' || /no_results_popup|no_cdha_tab|no_table|no_tiepnhanid/.test(d)) {
+    stage = 'data_open';
+    message = 'Đã vào hồ sơ/lượt điều trị nhưng không mở được mục dữ liệu cần đọc.';
+  } else if (['no_content', 'partial', 'tab_load'].includes(r)) {
+    stage = 'data_read';
+    message = r === 'partial'
+      ? 'Đã mở mục dữ liệu nhưng chỉ đọc được một phần.'
+      : 'Đã mở mục dữ liệu nhưng không đọc được nội dung đầy đủ.';
+  } else if (r === 'session') {
+    stage = 'emr_session';
+    message = 'Không thể tiếp tục vì phiên EMR/trình duyệt không còn dùng được.';
+  } else if (r === 'timeout') {
+    stage = 'technical';
+    message = 'EMR không phản hồi kịp trong lúc lấy dữ liệu.';
+  } else if (['no_result', 'interrupted'].includes(r)) {
+    stage = 'result_commit';
+    message = r === 'interrupted'
+      ? 'Tiến trình dừng trước khi xác nhận/lưu xong kết quả.'
+      : 'Worker chạy nhưng không trả kết quả để ghi nhận.';
+  } else if (r === 'bridge_unsupported') {
+    stage = 'data_open';
+    message = 'Cần Chrome trên máy có phiên EMR để mở phần dữ liệu này.';
+  } else if (r === 'not_completed') {
+    stage = 'encounter_open';
+    message = 'Tìm thấy người bệnh nhưng hồ sơ/lượt hiện chưa ở trạng thái có thể lấy dữ liệu.';
+  }
+
+  return {
+    diagnostic_stage: stage,
+    diagnostic_stage_label: DIAGNOSTIC_STAGE_LABELS[stage] || stage,
+    diagnostic_message: message,
+  };
+}
+
+function summarizeDiagnostics(exceptions = []) {
+  const groups = new Map();
+  for (const row of exceptions || []) {
+    const diag = row.diagnostic_stage ? row : { ...row, ...diagnosticFor(row.reason, row.detail) };
+    const key = `${diag.diagnostic_stage}|${diag.diagnostic_message}`;
+    if (!groups.has(key)) groups.set(key, {
+      stage: diag.diagnostic_stage,
+      stage_label: diag.diagnostic_stage_label,
+      message: diag.diagnostic_message,
+      rows: 0,
+      encounters: new Set(),
+    });
+    const g = groups.get(key);
+    g.rows += 1;
+    if (diag.key) g.encounters.add(diag.key);
+  }
+  return [...groups.values()]
+    .map(g => ({ stage: g.stage, stage_label: g.stage_label, message: g.message, rows: g.rows, encounters: g.encounters.size }))
+    .sort((a, b) => b.encounters - a.encounters || b.rows - a.rows || String(a.stage_label).localeCompare(String(b.stage_label)));
+}
+
+
 // Trường nội dung/phiên bản của một phần, giữ qua các lần dựng lại sổ.
 const CONTENT_FIELDS = ['content_hash', 'content_version', 'content_changed_at', 'last_check_outcome', 'last_check_at', 'history_stored_version'];
 
@@ -195,7 +283,7 @@ function classifyFetchStatus(fetchStatus, rows = 0, extraReason = '') {
   if (['no_session', 'no_driver', 'no_selenium'].includes(st)) return part('failed', 'session');
   if (st === 'error') return part('failed', 'error');
   if (st === 'no_url' || st === 'no_patient_link') return part('failed', 'not_found');
-  if (['no_results_popup', 'no_cdha_tab', 'no_table', 'no_tiepnhanid'].includes(st)) return part('blocked', 'emr_ui_changed');
+  if (['no_results_popup', 'no_cdha_tab', 'no_table', 'no_tiepnhanid'].includes(st)) return part('blocked', 'emr_ui_changed', { detail: st });
   if (st === 'pending' || !st) return part('failed', 'no_result');
   return part('failed', 'unknown', { detail: st });
 }
@@ -330,10 +418,6 @@ function buildCollectionUnits({ sourceRows = [], encounterRows = [], encounterOv
     const automaticLevels = [
       ['noitru', () => (id.noitru ? cands.filter(e => e.noitru === id.noitru || e.treatment === id.noitru) : [])],
       ['treatment', () => (id.treatment ? cands.filter(e => e.treatment === id.treatment || e.noitru === id.treatment) : [])],
-      // Mã NC được cấp duy nhất cho từng Research key. Đây là bằng chứng mạnh khi
-      // danh sách cũ thiếu Mã nội trú và một người bệnh có nhiều lượt cùng ngày.
-      // Vẫn bắt buộc cùng Mã BN và không được mâu thuẫn Mã nội trú.
-      ['research_code', () => (id.research_code ? cands.filter(e => e.research_code === id.research_code && noConflict(e)) : [])],
       ['admission_time', () => (id.admission_time ? cands.filter(e => e.admission_time === id.admission_time && noConflict(e)) : [])],
       ['date_range', () => (rowDate ? cands.filter(e => noConflict(e) && e.from && rowDate >= e.from && rowDate <= (e.to || e.from)) : [])],
     ];
@@ -354,7 +438,6 @@ function buildCollectionUnits({ sourceRows = [], encounterRows = [], encounterOv
     if (!match) {
       if (manualEncounterId) unmatchedReason = 'invalid_manual_override';
       else if (!cands.length) unmatchedReason = 'patient_not_in_encounters';
-      else if (ambiguousMethod === 'research_code') unmatchedReason = 'ambiguous_research_code';
       else if (ambiguousMethod === 'admission_time') unmatchedReason = 'ambiguous_admission_time';
       else if (ambiguousMethod === 'date_range') unmatchedReason = 'ambiguous_date_range';
       else if ((id.noitru || id.treatment) && cands.some(e => e.noitru || e.treatment)) unmatchedReason = 'identity_conflict';
@@ -461,7 +544,6 @@ function matchXnEntriesToSources(progress, sources) {
       () => (explicit && byKey.has(explicit) ? [byKey.get(explicit)] : []),
       () => (noitru ? sources.filter(s => s.patient_code === code && (s.noitru === noitru || s.treatment === noitru)) : []),
       () => (treatment ? sources.filter(s => s.patient_code === code && (s.treatment === treatment || s.noitru === treatment)) : []),
-      () => (rc && code ? sources.filter(s => s.research_code === rc && s.patient_code === code) : []),
       () => (code && admission ? sources.filter(s => s.patient_code === code && inStay(s, admission)) : []),
     ];
     let picked = null;
@@ -963,10 +1045,12 @@ function exceptionRows(ledger, { keys = null, maxAttempts = DEFAULT_MAX_ATTEMPTS
     if (scope && !scope.has(key)) continue;
     if (enc.match_status === 'unmatched') {
       const reason = enc.unmatched_reason || 'no_unique_encounter';
+      const diagnostic = diagnosticFor(reason);
       out.push({
         key,
         research_code: enc.research_code || '',
         patient_code: enc.patient_code || '',
+        ...diagnostic,
         part: 'encounter_match',
         part_label: 'Ghép lượt điều trị',
         status: 'blocked',
@@ -983,10 +1067,12 @@ function exceptionRows(ledger, { keys = null, maxAttempts = DEFAULT_MAX_ATTEMPTS
       const p = enc.parts?.[k];
       if (!p || !['failed', 'blocked'].includes(p.status)) continue;
       const exhausted = p.status === 'failed' && (Number(p.attempts) || 0) >= maxAttempts;
+      const diagnostic = diagnosticFor(p.reason, p.detail);
       out.push({
         key,
         research_code: enc.research_code || '',
         patient_code: enc.patient_code || '',
+        ...diagnostic,
         part: k,
         part_label: PARTS.find(x => x.key === k)?.label || k,
         status: p.status,
@@ -1008,6 +1094,7 @@ function exceptionRows(ledger, { keys = null, maxAttempts = DEFAULT_MAX_ATTEMPTS
       key: u.key || u.encounter_id || '',
       research_code: u.research_code || '',
       patient_code: u.patient_code || '',
+      ...diagnosticFor('encounter_not_identified', u.detail),
       part: 'encounter_match',
       part_label: 'Ghép lượt điều trị',
       status: 'blocked',
@@ -1074,6 +1161,7 @@ function buildRunReport({ before, after, plan, keys = null, maxAttempts = DEFAUL
     unmatched_encounters: encCount(count('unmatched')),
     needs_review: count('needs_review').length,
     exceptions_total: exceptions.length,
+    diagnostics: summarizeDiagnostics(exceptions),
     parts_rechecked: content?.rechecked || 0,
     parts_rechecked_unchanged: content?.unchanged || 0,
     parts_changed: (content?.changes || []).length,
@@ -1257,6 +1345,9 @@ module.exports = {
   PARTS,
   PART_KEYS,
   REASON_LABELS,
+  DIAGNOSTIC_STAGE_LABELS,
+  diagnosticFor,
+  summarizeDiagnostics,
   scrubDetail,
   listRowSignature,
   mergeSignatures,

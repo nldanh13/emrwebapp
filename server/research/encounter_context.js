@@ -86,10 +86,7 @@ function eventTemporalFields(ctx, eventDate) {
   const admissionDt = parseAnyDate(admission);
   const dischargeDt = parseAnyDate(discharge);
   let within = '';
-  if (event && admissionDt) {
-    const end = dischargeDt || openStayEnd(admissionDt);
-    within = event.getTime() >= admissionDt.getTime() && event.getTime() <= end.getTime() ? '1' : '0';
-  }
+  if (event && admissionDt) within = eventInsideContext(eventDate, ctx) ? '1' : '0';
   return {
     days_from_admission: dateOffsetDays(admission, eventDate),
     days_from_surgery: dateOffsetDays(surgery, eventDate),
@@ -144,13 +141,6 @@ function buildEncounterId(row, sourceRunId = '') {
     return `enc_${stableHash(['visit', normalizedIdentity(maBn), admission])}`;
   }
 
-  const researchCode = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
-  if (researchCode && maBn) {
-    // Mã NC có thể bị tái dùng/cấp trùng; luôn khóa kèm Mã BN để không thể nối hai
-    // người bệnh khác nhau chỉ vì cùng research_code.
-    return `enc_${stableHash(['research', normalizedIdentity(maBn), normalizedIdentity(researchCode)])}`;
-  }
-
   // Khóa cuối cùng chỉ để không làm hỏng schema. Dòng này phải được đánh dấu
   // manual review vì không đủ bằng chứng để ghép lượt tự động.
   return `enc_unresolved_${stableHash([
@@ -188,14 +178,20 @@ function matchedContext(ctx, method) {
 }
 
 function rowEventDate(row) {
-  return isoDateTime(firstNonEmpty(row, [
+  const raw = firstNonEmpty(row, [
     'lab_datetime', 'ordered_at', 'surgery_datetime', 'order_datetime', 'note_datetime',
     'TG xét nghiệm', 'Thời gian xét nghiệm', 'TG chỉ định', 'TG y lệnh',
     'Ngày chỉ định', 'Ngày xét nghiệm', 'Ngày phẫu thuật', 'Thời gian', 'Ngày',
-  ])) || isoDate(firstNonEmpty(row, [
     'lab_date', 'order_date', 'surgery_date', 'note_date',
-    'Ngày chỉ định', 'Ngày xét nghiệm', 'Ngày phẫu thuật', 'Ngày',
-  ]));
+  ]);
+  if (!raw) return '';
+  // Giữ nguyên độ chính xác của nguồn: chỉ khi nguồn thật sự có giờ mới chuẩn hóa thành datetime.
+  // Dòng chỉ có ngày không được tự biến thành 00:00 vì sẽ gây loại nhầm sự kiện cùng ngày nhập viện.
+  return hasPreciseClock(raw) ? isoDateTime(raw) : isoDate(raw);
+}
+
+function hasPreciseClock(value) {
+  return /\b\d{1,2}:\d{2}\b/.test(String(value || ''));
 }
 
 function eventInsideContext(eventDate, ctx) {
@@ -204,22 +200,46 @@ function eventInsideContext(eventDate, ctx) {
   const admission = parseAnyDate(ctx.admission_date);
   const discharge = parseAnyDate(ctx.discharge_date);
   if (!event || !admission) return false;
-  // So theo ngày để một kết quả chỉ có ngày (00:00) vẫn thuộc ngày nhập viện
-  // có giờ. Không nới ±1 ngày: dữ liệu nghiên cứu phải ưu tiên không gán nhầm.
-  const day = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const start = day(admission);
-  const end = discharge ? day(discharge) : day(openStayEnd(admission));
-  const at = day(event);
-  return at >= start && at <= end;
+
+  const dayStart = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const dayEnd = d => dayStart(d) + 86400000 - 1;
+  const eventHasTime = hasPreciseClock(eventDate);
+  const admissionHasTime = hasPreciseClock(ctx.admission_date);
+  const dischargeHasTime = discharge && hasPreciseClock(ctx.discharge_date);
+
+  // Nếu kết quả có giờ, so chính xác theo giờ vào/ra nếu EMR có giờ.
+  // Nếu mốc vào/ra chỉ có ngày, dùng đầu/cuối ngày tương ứng.
+  if (eventHasTime) {
+    const startMs = admissionHasTime ? admission.getTime() : dayStart(admission);
+    const endMs = discharge
+      ? (dischargeHasTime ? discharge.getTime() : dayEnd(discharge))
+      : openStayEnd(admission).getTime();
+    return event.getTime() >= startMs && event.getTime() <= endMs;
+  }
+
+  // Nếu bản thân kết quả chỉ có ngày thì không thể suy ra giờ; chỉ xác nhận theo ngày lịch.
+  const atDay = dayStart(event);
+  const startDay = dayStart(admission);
+  const endDay = discharge ? dayStart(discharge) : dayStart(openStayEnd(admission));
+  return atDay >= startDay && atDay <= endDay;
 }
 
-function unresolvedContext(code, candidates = []) {
+function unresolvedContext(code, candidates = [], reason = '') {
   return {
     patient_code: code || '',
     encounter_id: '',
     research_code: '',
-    needs_manual_review: candidates.length > 1 ? 'encounter_match_ambiguous' : 'encounter_match_missing',
+    needs_manual_review: reason || (candidates.length > 1 ? 'encounter_match_ambiguous' : 'encounter_match_missing'),
   };
+}
+
+function matchedContextForRow(ctx, row, code, method) {
+  if (!ctx || normalizedIdentity(ctx.patient_code) !== normalizedIdentity(code)) return null;
+  const eventDate = rowEventDate(row);
+  if (eventDate && !eventInsideContext(eventDate, ctx)) {
+    return unresolvedContext(code, [ctx], 'encounter_match_outside_time');
+  }
+  return matchedContext(ctx, method);
 }
 
 function encounterMatchStatus(ctx) {
@@ -280,15 +300,6 @@ function buildContextMap(patientRows, sourceRunId = '') {
     byPatient.set(code, patientList);
 
     addContextMapKey(map, `encounter:${normalizedIdentity(ctx.encounter_id)}`, ctx);
-    // Research code là alias yếu và có thể tái dùng. Chỉ lập chỉ mục theo cặp
-    // Mã BN + Mã NC để không bao giờ gán một dòng của BN A sang BN B.
-    if (ctx.research_code) {
-      addContextMapKey(
-        map,
-        `research_patient:${normalizedIdentity(code)}|${normalizedIdentity(ctx.research_code)}`,
-        ctx,
-      );
-    }
     if (ctx.emr_treatment_id) addContextMapKey(map, `treatment:${normalizedIdentity(ctx.emr_treatment_id)}`, ctx);
     if (ctx.emr_noitru_id) addContextMapKey(map, `noitru:${normalizedIdentity(ctx.emr_noitru_id)}`, ctx);
     if (ctx.emr_admission_id) addContextMapKey(map, `admission:${normalizedIdentity(ctx.emr_admission_id)}`, ctx);
@@ -306,43 +317,65 @@ function buildContextMap(patientRows, sourceRunId = '') {
   return map;
 }
 
+function resolveStrongEncounterKey(ctxMap, keys, row, code, method, aliasMethod = '') {
+  const keyList = Array.isArray(keys) ? keys : [keys];
+  const candidates = [];
+  const seen = new Set();
+  let usedAlias = false;
+  for (let i = 0; i < keyList.length; i += 1) {
+    const value = ctxMap.get(keyList[i]);
+    if (!value) continue;
+    for (const ctx of (Array.isArray(value) ? value : [value])) {
+      const id = String(ctx?.encounter_id || '');
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      candidates.push(ctx);
+      if (i > 0) usedAlias = true;
+    }
+  }
+  if (!candidates.length) return unresolvedContext(code, [], 'encounter_match_strong_key_not_found');
+  const samePatient = candidates.filter(ctx => normalizedIdentity(ctx.patient_code) === normalizedIdentity(code));
+  if (samePatient.length !== 1) {
+    return unresolvedContext(code, samePatient, samePatient.length > 1
+      ? 'encounter_match_strong_key_ambiguous'
+      : 'encounter_match_identity_conflict');
+  }
+  return matchedContextForRow(samePatient[0], row, code, usedAlias && aliasMethod ? aliasMethod : method);
+}
+
 function contextForRow(ctxMap, row, code) {
   const explicitEncounter = rowExistingEncounterId(row);
   if (explicitEncounter) {
-    const exact = uniqueContext(ctxMap.get(`encounter:${normalizedIdentity(explicitEncounter)}`));
-    if (exact && normalizedIdentity(exact.patient_code) === normalizedIdentity(code)) {
-      return matchedContext(exact, 'encounter_id');
-    }
+    return resolveStrongEncounterKey(ctxMap, `encounter:${normalizedIdentity(explicitEncounter)}`, row, code, 'encounter_id');
   }
 
   const treatmentId = rowEmrTreatmentId(row);
   if (treatmentId) {
-    const exact = uniqueContext(ctxMap.get(`treatment:${normalizedIdentity(treatmentId)}`));
-    if (exact && normalizedIdentity(exact.patient_code) === normalizedIdentity(code)) {
-      return matchedContext(exact, 'emr_treatment_id');
-    }
+    const id = normalizedIdentity(treatmentId);
+    return resolveStrongEncounterKey(
+      ctxMap,
+      [`treatment:${id}`, `noitru:${id}`],
+      row,
+      code,
+      'emr_treatment_id',
+      'emr_treatment_noitru_alias',
+    );
   }
   const noitruId = rowNoitruId(row);
   if (noitruId) {
-    const exact = uniqueContext(ctxMap.get(`noitru:${normalizedIdentity(noitruId)}`));
-    if (exact && normalizedIdentity(exact.patient_code) === normalizedIdentity(code)) {
-      return matchedContext(exact, 'emr_noitru_id');
-    }
+    const id = normalizedIdentity(noitruId);
+    return resolveStrongEncounterKey(
+      ctxMap,
+      [`noitru:${id}`, `treatment:${id}`],
+      row,
+      code,
+      'emr_noitru_id',
+      'emr_noitru_treatment_alias',
+    );
   }
   const admissionId = rowEmrAdmissionId(row);
   if (admissionId) {
-    const exact = uniqueContext(ctxMap.get(`admission:${normalizedIdentity(admissionId)}`));
-    if (exact && normalizedIdentity(exact.patient_code) === normalizedIdentity(code)) {
-      return matchedContext(exact, 'emr_admission_id');
-    }
-  }
-
-  const researchCode = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
-  if (researchCode) {
-    const exact = uniqueContext(ctxMap.get(
-      `research_patient:${normalizedIdentity(code)}|${normalizedIdentity(researchCode)}`,
-    ));
-    if (exact) return matchedContext(exact, 'research_code');
+    return resolveStrongEncounterKey(ctxMap, `admission:${normalizedIdentity(admissionId)}`, row, code, 'emr_admission_id');
   }
 
   const admission = isoDateTime(firstNonEmpty(row, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'admission_date']))
@@ -351,28 +384,32 @@ function contextForRow(ctxMap, row, code) {
     || isoDate(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'discharge_date']));
   if (admission || discharge) {
     const exact = uniqueContext(ctxMap.get(`visit:${contextVisitKey(code, admission, discharge)}`));
-    if (exact) return matchedContext(exact, 'visit_exact');
+    if (exact) return matchedContextForRow(exact, row, code, 'visit_exact');
   }
   if (admission) {
     const exactTime = uniqueContext(ctxMap.get(`admission_time:${contextVisitKey(code, admission, '')}`));
-    if (exactTime) return matchedContext(exactTime, 'admission_time');
+    if (exactTime) return matchedContextForRow(exactTime, row, code, 'admission_time');
     const exactDay = uniqueContext(ctxMap.get(`admission_day:${contextVisitKey(code, isoDate(admission), '')}`));
-    if (exactDay) return matchedContext(exactDay, 'admission_date');
+    if (exactDay) return matchedContextForRow(exactDay, row, code, 'admission_date');
   }
   if (discharge) {
     const exactTime = uniqueContext(ctxMap.get(`discharge_time:${contextVisitKey(code, discharge, '')}`));
-    if (exactTime) return matchedContext(exactTime, 'discharge_time');
+    if (exactTime) return matchedContextForRow(exactTime, row, code, 'discharge_time');
     const exactDay = uniqueContext(ctxMap.get(`discharge_day:${contextVisitKey(code, isoDate(discharge), '')}`));
-    if (exactDay) return matchedContext(exactDay, 'discharge_date');
+    if (exactDay) return matchedContextForRow(exactDay, row, code, 'discharge_date');
   }
 
   const candidates = ctxMap.get(`patient:${code}`) || [];
-  if (candidates.length === 1) return matchedContext(candidates[0], 'patient_unique_encounter');
   const eventDate = rowEventDate(row);
-  if (eventDate && candidates.length > 1) {
+  if (eventDate) {
     const temporal = candidates.filter(ctx => eventInsideContext(eventDate, ctx));
     if (temporal.length === 1) return matchedContext(temporal[0], 'event_date_range');
+    if (!candidates.length) return unresolvedContext(code, [], 'encounter_match_missing');
+    if (!temporal.length) return unresolvedContext(code, candidates, 'encounter_match_outside_time');
+    return unresolvedContext(code, temporal, 'encounter_match_ambiguous');
   }
+  // Chỉ Mã BN không đủ để chứng minh một dòng lâm sàng thuộc đợt nào khi nguồn thiếu thời gian.
+  if (candidates.length === 1) return unresolvedContext(code, candidates, 'encounter_match_missing_event_time');
   return unresolvedContext(code, candidates);
 }
 
@@ -414,8 +451,11 @@ module.exports = {
   addContextMapKey,
   uniqueContext,
   matchedContext,
+  matchedContextForRow,
+  resolveStrongEncounterKey,
   rowEventDate,
   eventInsideContext,
+  hasPreciseClock,
   unresolvedContext,
   encounterMatchStatus,
   encounterMatchMethod,

@@ -1,0 +1,3232 @@
+{
+ "acupan": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Ống",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm 8h 20h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Nefopam",
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) ACUPAN (Nefopam) 20mg x 2 (Ống)",
+     "raw_text": "(1) ACUPAN (Nefopam) 20mg x 2 (Ống)",
+     "raw_usage_line": "Tiêm 8h 20h",
+     "so_luong": "2",
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "ACUPAN + Natri clorid 0.9%",
+     "ten_thuoc": "ACUPAN",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "09:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 100.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Ống",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm 8h 20h",
+     "gio_dung": "20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Nefopam",
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) ACUPAN (Nefopam) 20mg x 2 (Ống)",
+     "raw_text": "(1) ACUPAN (Nefopam) 20mg x 2 (Ống)",
+     "raw_usage_line": "Tiêm 8h 20h",
+     "so_luong": "2",
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "ACUPAN + Natri clorid 0.9%",
+     "ten_thuoc": "ACUPAN",
+     "tg_bat_dau": "20:00 03/05/2026",
+     "tg_ket_thuc": "21:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 100.0
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "albumin": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Truyền TM 10h",
+     "gio_dung": "10 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "raw_drug_part": "(1) HUMAN ALBUMIN BAXTER (Albumin) 20% 50ml x 1 (Chai)",
+     "raw_text": "(1) HUMAN ALBUMIN BAXTER (Albumin) 20% 50ml x 1 (Chai)",
+     "raw_usage_line": "Truyền TM 10h",
+     "so_luong": "1",
+     "ten_hien_thi": "HUMAN ALBUMIN BAXTER",
+     "ten_thuoc": "HUMAN ALBUMIN BAXTER",
+     "the_tich": 50.0,
+     "toc_do": ""
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "albunorm": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 20 giọt/phút 10h",
+     "gio_dung": "10 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "raw_drug_part": "(1) ALBUNORM 20% (Albumin) 20% x 1 (Chai)",
+     "raw_text": "(1) ALBUNORM 20% (Albumin) 20% x 1 (Chai)",
+     "raw_usage_line": "TTM 20 giọt/phút 10h",
+     "so_luong": "1",
+     "ten_hien_thi": "ALBUNORM 20%",
+     "ten_thuoc": "ALBUNORM 20%",
+     "tg_bat_dau": "10:00 03/05/2026",
+     "tg_ket_thuc": "10:50 03/05/2026",
+     "the_tich": 50.0,
+     "thoi_gian_chay_phut": 50,
+     "toc_do": "20"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "aminoleban": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Truyền tĩnh mạch 40 giọt/phút",
+     "gio_dung": "08:00",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Acid amin",
+     "raw_drug_part": "(1) AMINOLEBAN (Acid amin) x 1 (Chai)",
+     "raw_text": "(1) AMINOLEBAN (Acid amin) x 1 (Chai)",
+     "raw_usage_line": "Truyền tĩnh mạch 40g/p",
+     "so_luong": "1",
+     "ten_hien_thi": "AMINOLEBAN",
+     "ten_thuoc": "AMINOLEBAN",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "12:10 03/05/2026",
+     "the_tich": 500.0,
+     "thoi_gian_chay_phut": 250,
+     "toc_do": "40"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "aminoplasmal": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 30 giọt/phút 8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Acid amin",
+     "raw_drug_part": "(1) AMINOPLASMAL B.BRAUN 10% E (Acid amin) x 1 (Chai)",
+     "raw_text": "(1) AMINOPLASMAL B.BRAUN 10% E (Acid amin) x 1 (Chai)",
+     "raw_usage_line": "TTM 30 giọt/phút 8h",
+     "so_luong": "1",
+     "ten_hien_thi": "AMINOPLASMAL B.BRAUN 10% E",
+     "ten_thuoc": "AMINOPLASMAL B.BRAUN 10% E",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "13:33 03/05/2026",
+     "the_tich": 500.0,
+     "thoi_gian_chay_phut": 333,
+     "toc_do": "30"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "bironem": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "BIRONEM 500",
+     "catalog_match_alias": "BIRONEM 500",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Pha natri clorid 0,9% 100ml TTM 20 giọt/phút 8h-16h-23h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Meropenem",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "quy_tac_pha": "Pha Natri clorid 0.9% 100 ml, 30 giọt/phút (theo danh mục)",
+     "raw_drug_part": "(1) BIRONEM 500 (Meropenem) 500mg x 3 (Lọ)",
+     "raw_text": "(1) BIRONEM 500 (Meropenem) 500mg x 3 (Lọ)",
+     "raw_usage_line": "Pha natri clorid 0,9% 100ml TTM 20 giọt/phút 8h-16h-23h",
+     "so_luong": "3",
+     "ten_hien_thi": "BIRONEM 500 + Natri clorid 0.9%",
+     "ten_thuoc": "BIRONEM 500",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "09:40 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 100,
+     "toc_do": "20",
+     "tui_dich_truyen_ml": 100.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "BIRONEM 500",
+     "catalog_match_alias": "BIRONEM 500",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Pha natri clorid 0,9% 100ml TTM 20 giọt/phút 8h-16h-23h",
+     "gio_dung": "16 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Meropenem",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "quy_tac_pha": "Pha Natri clorid 0.9% 100 ml, 30 giọt/phút (theo danh mục)",
+     "raw_drug_part": "(1) BIRONEM 500 (Meropenem) 500mg x 3 (Lọ)",
+     "raw_text": "(1) BIRONEM 500 (Meropenem) 500mg x 3 (Lọ)",
+     "raw_usage_line": "Pha natri clorid 0,9% 100ml TTM 20 giọt/phút 8h-16h-23h",
+     "so_luong": "3",
+     "ten_hien_thi": "BIRONEM 500 + Natri clorid 0.9%",
+     "ten_thuoc": "BIRONEM 500",
+     "tg_bat_dau": "16:00 03/05/2026",
+     "tg_ket_thuc": "17:40 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 100,
+     "toc_do": "20",
+     "tui_dich_truyen_ml": 100.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "BIRONEM 500",
+     "catalog_match_alias": "BIRONEM 500",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Pha natri clorid 0,9% 100ml TTM 20 giọt/phút 8h-16h-23h",
+     "gio_dung": "23 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Meropenem",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "quy_tac_pha": "Pha Natri clorid 0.9% 100 ml, 30 giọt/phút (theo danh mục)",
+     "raw_drug_part": "(1) BIRONEM 500 (Meropenem) 500mg x 3 (Lọ)",
+     "raw_text": "(1) BIRONEM 500 (Meropenem) 500mg x 3 (Lọ)",
+     "raw_usage_line": "Pha natri clorid 0,9% 100ml TTM 20 giọt/phút 8h-16h-23h",
+     "so_luong": "3",
+     "ten_hien_thi": "BIRONEM 500 + Natri clorid 0.9%",
+     "ten_thuoc": "BIRONEM 500",
+     "tg_bat_dau": "23:00 03/05/2026",
+     "tg_ket_thuc": "00:40 04/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 100,
+     "toc_do": "20",
+     "tui_dich_truyen_ml": 100.0
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "bisoprolol": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Viên",
+     "duong_dung_goc": "",
+     "gio_dung": "",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Bisoprolol",
+     "raw_drug_part": "(1) BISOPROLOL 2.5MG TABLETS (Bisoprolol) 2,5mg x 1 (Viên)",
+     "raw_text": "(1) BISOPROLOL 2.5MG TABLETS (Bisoprolol) 2,5mg x 1 (Viên)",
+     "so_luong": "1",
+     "ten_thuoc": "BISOPROLOL 2.5MG TABLETS",
+     "the_tich": 0,
+     "toc_do": ""
+    }
+   ],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "cefoxitin_water": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Ống",
+     "duong_dung": "",
+     "duong_dung_goc": "Pha thuốc",
+     "gio_dung": "",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Nước cất",
+     "raw_drug_part": "(2) NƯỚC CẤT PHA TIÊM 5ML (Nước cất) x 4 (Ống)",
+     "raw_text": "(2) NƯỚC CẤT PHA TIÊM 5ML (Nước cất) x 4 (Ống)",
+     "raw_usage_line": "Pha thuốc",
+     "so_luong": "4",
+     "ten_thuoc": "NƯỚC CẤT PHA TIÊM 5ML",
+     "the_tich": 5.0,
+     "toc_do": ""
+    }
+   ],
+   "thuoc_tiem": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "duong_dung": "TMC",
+     "duong_dung_goc": "Tiêm tĩnh mạch chậm 8-16-20 giờ",
+     "gio_dung": "8 giờ, 16 giờ, 20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "raw_drug_part": "CEFOXITIN 1G x 4 (Lọ)",
+     "raw_text": "CEFOXITIN 1G x 4 (Lọ)",
+     "raw_usage_line": "Tiêm tĩnh mạch chậm 8-16-20 giờ",
+     "so_lan_dung": 3,
+     "so_lo_moi_lan": 1.333,
+     "so_lo_tong": 4,
+     "so_luong": "4",
+     "ten_hien_thi": "CEFOXITIN 1G",
+     "ten_thuoc": "CEFOXITIN 1G",
+     "the_tich": 0.0,
+     "toc_do": ""
+    }
+   ],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "ceftriaxone": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_tiem": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "duong_dung": "TMC",
+     "duong_dung_goc": "Tiêm tĩnh mạch chậm 8h 20h",
+     "gio_dung": "8 giờ, 20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Ceftriaxon natri",
+     "raw_drug_part": "(1) CEFTRIAXONE 1G (Ceftriaxon natri) 1g x 2 (Lọ)",
+     "raw_text": "(1) CEFTRIAXONE 1G (Ceftriaxon natri) 1g x 2 (Lọ)",
+     "raw_usage_line": "Tiêm tĩnh mạch chậm 8h 20h",
+     "so_lan_dung": 2,
+     "so_lo_moi_lan": 1,
+     "so_lo_tong": 2,
+     "so_luong": "2",
+     "ten_hien_thi": "CEFTRIAXONE 1G (1 lọ)",
+     "ten_thuoc": "CEFTRIAXONE 1G",
+     "the_tich": 0.0,
+     "toc_do": ""
+    }
+   ],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "cipazy": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "CIPAZY",
+     "catalog_match_alias": "CIPAZY",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 8h 20h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Ciprofloxacin",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "quy_tac_pha": "Không pha thêm (theo danh mục)",
+     "raw_drug_part": "(1) CIPAZY (Ciprofloxacin) 400mg x 2 (Chai)",
+     "raw_text": "(1) CIPAZY (Ciprofloxacin) 400mg x 2 (Chai)",
+     "raw_usage_line": "TTM 8h 20h",
+     "so_luong": "2",
+     "ten_hien_thi": "CIPAZY",
+     "ten_thuoc": "CIPAZY",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "09:06 03/05/2026",
+     "the_tich": 100.0,
+     "the_tich_nguon": "danh_muc",
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "tui_dich_truyen_ml": 100.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "CIPAZY",
+     "catalog_match_alias": "CIPAZY",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 8h 20h",
+     "gio_dung": "20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Ciprofloxacin",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "quy_tac_pha": "Không pha thêm (theo danh mục)",
+     "raw_drug_part": "(1) CIPAZY (Ciprofloxacin) 400mg x 2 (Chai)",
+     "raw_text": "(1) CIPAZY (Ciprofloxacin) 400mg x 2 (Chai)",
+     "raw_usage_line": "TTM 8h 20h",
+     "so_luong": "2",
+     "ten_hien_thi": "CIPAZY",
+     "ten_thuoc": "CIPAZY",
+     "tg_bat_dau": "20:00 03/05/2026",
+     "tg_ket_thuc": "21:06 03/05/2026",
+     "the_tich": 100.0,
+     "the_tich_nguon": "danh_muc",
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "tui_dich_truyen_ml": 100.0
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "cipro": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm truyền TM 30 giọt/phút (8 giờ, 20 giờ)",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Ciprofloxacin",
+     "raw_drug_part": "(1) CIPROFLOXACIN KABI (Ciprofloxacin) 200mg/100ml x 2 (Chai)",
+     "raw_text": "(1) CIPROFLOXACIN KABI (Ciprofloxacin) 200mg/100ml x 2 (Chai)",
+     "raw_usage_line": "Tiêm truyền TM 30 giọt/phút (8 giờ, 20 giờ)",
+     "so_luong": "2",
+     "so_luong_moi_gio": {
+      "20": null,
+      "8": null
+     },
+     "ten_hien_thi": "CIPROFLOXACIN KABI",
+     "ten_thuoc": "CIPROFLOXACIN KABI",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "09:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30"
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm truyền TM 30 giọt/phút (8 giờ, 20 giờ)",
+     "gio_dung": "20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Ciprofloxacin",
+     "raw_drug_part": "(1) CIPROFLOXACIN KABI (Ciprofloxacin) 200mg/100ml x 2 (Chai)",
+     "raw_text": "(1) CIPROFLOXACIN KABI (Ciprofloxacin) 200mg/100ml x 2 (Chai)",
+     "raw_usage_line": "Tiêm truyền TM 30 giọt/phút (8 giờ, 20 giờ)",
+     "so_luong": "2",
+     "so_luong_moi_gio": {
+      "20": null,
+      "8": null
+     },
+     "ten_hien_thi": "CIPROFLOXACIN KABI",
+     "ten_thuoc": "CIPROFLOXACIN KABI",
+     "tg_bat_dau": "20:00 03/05/2026",
+     "tg_ket_thuc": "21:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "ciprobid": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 40 giọt/phút 8h-20h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Ciprofloxacin",
+     "raw_drug_part": "(1) CIPROBID (Ciprofloxacin) 400mg x 2 (Chai)",
+     "raw_text": "(1) CIPROBID (Ciprofloxacin) 400mg x 2 (Chai)",
+     "raw_usage_line": "TTM 40 giọt/phút 8h-20h",
+     "so_luong": "2",
+     "ten_hien_thi": "CIPROBID",
+     "ten_thuoc": "CIPROBID",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "09:40 03/05/2026",
+     "the_tich": 200.0,
+     "thoi_gian_chay_phut": 100,
+     "toc_do": "40"
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 40 giọt/phút 8h-20h",
+     "gio_dung": "20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Ciprofloxacin",
+     "raw_drug_part": "(1) CIPROBID (Ciprofloxacin) 400mg x 2 (Chai)",
+     "raw_text": "(1) CIPROBID (Ciprofloxacin) 400mg x 2 (Chai)",
+     "raw_usage_line": "TTM 40 giọt/phút 8h-20h",
+     "so_luong": "2",
+     "ten_hien_thi": "CIPROBID",
+     "ten_thuoc": "CIPROBID",
+     "tg_bat_dau": "20:00 03/05/2026",
+     "tg_ket_thuc": "21:40 03/05/2026",
+     "the_tich": 200.0,
+     "thoi_gian_chay_phut": 100,
+     "toc_do": "40"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "clastizol": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "CLASTIZOL",
+     "catalog_match_alias": "CLASTIZOL",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 30 giọt/phút 10h",
+     "gio_dung": "10 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Acid Zoledronic",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "quy_tac_pha": "Không pha thêm (theo danh mục)",
+     "raw_drug_part": "(1) CLASTIZOL (Acid Zoledronic) 5mg/100ml x 1 (Chai)",
+     "raw_text": "(1) CLASTIZOL (Acid Zoledronic) 5mg/100ml x 1 (Chai)",
+     "raw_usage_line": "TTM 30 giọt/phút 10h",
+     "so_luong": "1",
+     "ten_hien_thi": "CLASTIZOL",
+     "ten_thuoc": "CLASTIZOL",
+     "tg_bat_dau": "10:00 03/05/2026",
+     "tg_ket_thuc": "11:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "colistimed": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 8h-16h-23h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Colistin",
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) COLISTIMED (Colistin) 2MUI x 3 (Lọ)",
+     "raw_text": "(1) COLISTIMED (Colistin) 2MUI x 3 (Lọ)",
+     "raw_usage_line": "TTM 8h-16h-23h",
+     "so_luong": "3",
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "COLISTIMED + Natri clorid 0.9%",
+     "ten_thuoc": "COLISTIMED",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "08:33 03/05/2026",
+     "the_tich": 50.0,
+     "thoi_gian_chay_phut": 33,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 50.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 8h-16h-23h",
+     "gio_dung": "16 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Colistin",
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) COLISTIMED (Colistin) 2MUI x 3 (Lọ)",
+     "raw_text": "(1) COLISTIMED (Colistin) 2MUI x 3 (Lọ)",
+     "raw_usage_line": "TTM 8h-16h-23h",
+     "so_luong": "3",
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "COLISTIMED + Natri clorid 0.9%",
+     "ten_thuoc": "COLISTIMED",
+     "tg_bat_dau": "16:00 03/05/2026",
+     "tg_ket_thuc": "16:33 03/05/2026",
+     "the_tich": 50.0,
+     "thoi_gian_chay_phut": 33,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 50.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 8h-16h-23h",
+     "gio_dung": "23 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Colistin",
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) COLISTIMED (Colistin) 2MUI x 3 (Lọ)",
+     "raw_text": "(1) COLISTIMED (Colistin) 2MUI x 3 (Lọ)",
+     "raw_usage_line": "TTM 8h-16h-23h",
+     "so_luong": "3",
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "COLISTIMED + Natri clorid 0.9%",
+     "ten_thuoc": "COLISTIMED",
+     "tg_bat_dau": "23:00 03/05/2026",
+     "tg_ket_thuc": "23:33 03/05/2026",
+     "the_tich": 50.0,
+     "thoi_gian_chay_phut": 33,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 50.0
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "colistin": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm truyền 8h 20h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Colistin",
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) COLISTIN TZF (Colistin) 1MUI x 2 (Lọ)",
+     "raw_text": "(1) COLISTIN TZF (Colistin) 1MUI x 2 (Lọ)",
+     "raw_usage_line": "Tiêm truyền 8h 20h",
+     "so_luong": "2",
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "COLISTIN TZF + Natri clorid 0.9%",
+     "ten_thuoc": "COLISTIN TZF",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "08:33 03/05/2026",
+     "the_tich": 50.0,
+     "thoi_gian_chay_phut": 33,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 50.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm truyền 8h 20h",
+     "gio_dung": "20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Colistin",
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) COLISTIN TZF (Colistin) 1MUI x 2 (Lọ)",
+     "raw_text": "(1) COLISTIN TZF (Colistin) 1MUI x 2 (Lọ)",
+     "raw_usage_line": "Tiêm truyền 8h 20h",
+     "so_luong": "2",
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "COLISTIN TZF + Natri clorid 0.9%",
+     "ten_thuoc": "COLISTIN TZF",
+     "tg_bat_dau": "20:00 03/05/2026",
+     "tg_ket_thuc": "20:33 03/05/2026",
+     "the_tich": 50.0,
+     "thoi_gian_chay_phut": 33,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 50.0
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "degevic": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Viên",
+     "duong_dung": "UONG",
+     "duong_dung_goc": "Uống 8h 20h",
+     "gio_dung": "8 giờ, 20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Paracetamol + Tramadol",
+     "raw_drug_part": "(1) DEGEVIC (Paracetamol + Tramadol) 325mg + 37,5mg x 2 (Viên)",
+     "raw_text": "(1) DEGEVIC (Paracetamol + Tramadol) 325mg + 37,5mg x 2 (Viên)",
+     "raw_usage_line": "Uống 8h 20h",
+     "so_luong": "2",
+     "ten_thuoc": "DEGEVIC",
+     "the_tich": 0,
+     "toc_do": ""
+    }
+   ]
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "diclofenac_natri": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_tiem": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Ống",
+     "duong_dung": "TB",
+     "duong_dung_goc": "Tiêm bắp 8 giờ",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "raw_drug_part": "Diclofenac Natri x 1 (Ống)",
+     "raw_text": "Diclofenac Natri x 1 (Ống)",
+     "raw_usage_line": "Tiêm bắp 8 giờ",
+     "so_lan_dung": 1,
+     "so_lo_moi_lan": 1,
+     "so_lo_tong": 1,
+     "so_luong": "1",
+     "ten_hien_thi": "Diclofenac Natri (1 ống)",
+     "ten_thuoc": "Diclofenac Natri",
+     "the_tich": 0.0,
+     "toc_do": ""
+    }
+   ],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "efferalgan": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Viên sủi",
+     "duong_dung": "UONG",
+     "duong_dung_goc": "Uống sáng tối",
+     "gio_dung": "8 giờ, 20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Paracetamol",
+     "raw_drug_part": "(1) EFFERALGAN (Paracetamol) 500mg x 2 (Viên sủi)",
+     "raw_text": "(1) EFFERALGAN (Paracetamol) 500mg x 2 (Viên sủi)",
+     "raw_usage_line": "Uống sáng tối",
+     "so_luong": "2",
+     "ten_thuoc": "EFFERALGAN",
+     "the_tich": 0,
+     "toc_do": ""
+    }
+   ]
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "eperison": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Viên",
+     "duong_dung": "UONG",
+     "duong_dung_goc": "Uống 8h-16h-23h",
+     "gio_dung": "8 giờ, 16 giờ, 23 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "raw_drug_part": "Eperison 50mg 01 viên x 3",
+     "raw_text": "(TT) Eperison 50mg 01 vx3 (u) 8h-16h-23h",
+     "raw_usage_part": "Uống 8h-16h-23h",
+     "so_luong": "3",
+     "ten_thuoc": "Eperison 50mg",
+     "the_tich": 0,
+     "toc_do": "",
+     "tu_tuc": true
+    }
+   ]
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "gemapaxane": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_tiem": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Ống",
+     "duong_dung": "TDD",
+     "duong_dung_goc": "Tiêm dưới da 8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "raw_drug_part": "Gemapaxane 40mg/0.4ml 01 ống",
+     "raw_text": "Gemapaxane 40mg/0.4ml 01 ống (TDD) 8h",
+     "raw_usage_part": "Tiêm dưới da 8h",
+     "so_luong": "",
+     "ten_hien_thi": "Gemapaxane 40mg/0.4ml",
+     "ten_thuoc": "Gemapaxane 40mg/0.4ml",
+     "the_tich": 0.4,
+     "toc_do": ""
+    }
+   ],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "glucose10_no_vol": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 40 giọt/phút 14h",
+     "gio_dung": "14 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "raw_drug_part": "(1) GLUCOSE 10% (Glucose) 10% x 1 (Chai)",
+     "raw_text": "(1) GLUCOSE 10% (Glucose) 10% x 1 (Chai)",
+     "raw_usage_line": "TTM 40 giọt/phút 14h",
+     "so_luong": "1",
+     "ten_hien_thi": "GLUCOSE 10%",
+     "ten_thuoc": "GLUCOSE 10%",
+     "tg_bat_dau": "14:00 03/05/2026",
+     "tg_ket_thuc": "18:10 03/05/2026",
+     "the_tich": 500.0,
+     "thoi_gian_chay_phut": 250,
+     "toc_do": "40"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "glucose5": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Truyền tĩnh mạch 30 giọt/phút (8 giờ)",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "raw_drug_part": "(1) GLUCOSE 5% (Glucose) 5% 500ml x 1 (Chai)",
+     "raw_text": "(1) GLUCOSE 5% (Glucose) 5% 500ml x 1 (Chai)",
+     "raw_usage_line": "Truyền tĩnh mạch 30 giọt/phút (8 giờ)",
+     "so_luong": "1",
+     "so_luong_moi_gio": {
+      "8": null
+     },
+     "ten_hien_thi": "GLUCOSE 5%",
+     "ten_thuoc": "GLUCOSE 5%",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "13:33 03/05/2026",
+     "the_tich": 500.0,
+     "thoi_gian_chay_phut": 333,
+     "toc_do": "30"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "hapacol": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Viên",
+     "duong_dung": "UONG",
+     "duong_dung_goc": "Uống 8h-16h-20h",
+     "gio_dung": "8 giờ, 16 giờ, 20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Paracetamol",
+     "raw_drug_part": "(1) HAPACOL 500 (Paracetamol) 500mg x 3 (Viên)",
+     "raw_text": "(1) HAPACOL 500 (Paracetamol) 500mg x 3 (Viên)",
+     "raw_usage_line": "Uống 8h-16h-20h",
+     "so_luong": "3",
+     "ten_thuoc": "HAPACOL 500",
+     "the_tich": 0,
+     "toc_do": ""
+    }
+   ]
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "kabiven": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Túi",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Truyền TM 40 giọt/phút 8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Dinh dưỡng",
+     "raw_drug_part": "(1) KABIVEN PERIPHERAL (Dinh dưỡng) 1440ml x 1 (Túi)",
+     "raw_text": "(1) KABIVEN PERIPHERAL (Dinh dưỡng) 1440ml x 1 (Túi)",
+     "raw_usage_line": "Truyền TM 40 giọt/phút 8h",
+     "so_luong": "1",
+     "ten_hien_thi": "KABIVEN PERIPHERAL",
+     "ten_thuoc": "KABIVEN PERIPHERAL",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "20:00 03/05/2026",
+     "the_tich": 1440.0,
+     "thoi_gian_chay_phut": 720,
+     "toc_do": "40"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "koric": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 100 giọt/phút 8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Paracetamol",
+     "raw_drug_part": "(1) KORIC (Paracetamol) 1g x 1 (Chai)",
+     "raw_text": "(1) KORIC (Paracetamol) 1g x 1 (Chai)",
+     "raw_usage_line": "TTM 100 giọt/phút 8h",
+     "so_luong": "1",
+     "ten_hien_thi": "KORIC",
+     "ten_thuoc": "KORIC",
+     "the_tich": 0.0,
+     "toc_do": "100"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "levo": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Túi",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 40 giọt/phút 8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Levofloxacin",
+     "raw_drug_part": "(1) LEVOFLOXACIN (Levofloxacin) 750mg/150ml x 1 (Túi)",
+     "raw_text": "(1) LEVOFLOXACIN (Levofloxacin) 750mg/150ml x 1 (Túi)",
+     "raw_usage_line": "TTM 40 giọt/phút 8h",
+     "so_luong": "1",
+     "ten_hien_thi": "LEVOFLOXACIN",
+     "ten_thuoc": "LEVOFLOXACIN",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "09:15 03/05/2026",
+     "the_tich": 150.0,
+     "thoi_gian_chay_phut": 75,
+     "toc_do": "40"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "levo_no_vol": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Truyền TM 8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Levofloxacin",
+     "raw_drug_part": "(1) LEVOGOLDS (Levofloxacin) 500mg x 1 (Chai)",
+     "raw_text": "(1) LEVOGOLDS (Levofloxacin) 500mg x 1 (Chai)",
+     "raw_usage_line": "Truyền TM 8h",
+     "so_luong": "1",
+     "ten_hien_thi": "LEVOGOLDS",
+     "ten_thuoc": "LEVOGOLDS",
+     "the_tich": 100.0,
+     "toc_do": ""
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "linezolid": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Túi",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 60 giọt/phút 8h-20h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Linezolid",
+     "raw_drug_part": "(1) LINEZOLID KABI (Linezolid) 600mg/300ml x 2 (Túi)",
+     "raw_text": "(1) LINEZOLID KABI (Linezolid) 600mg/300ml x 2 (Túi)",
+     "raw_usage_line": "TTM 60 giọt/phút 8h-20h",
+     "so_luong": "2",
+     "ten_hien_thi": "LINEZOLID KABI",
+     "ten_thuoc": "LINEZOLID KABI",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "09:40 03/05/2026",
+     "the_tich": 300.0,
+     "thoi_gian_chay_phut": 100,
+     "toc_do": "60"
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Túi",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 60 giọt/phút 8h-20h",
+     "gio_dung": "20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Linezolid",
+     "raw_drug_part": "(1) LINEZOLID KABI (Linezolid) 600mg/300ml x 2 (Túi)",
+     "raw_text": "(1) LINEZOLID KABI (Linezolid) 600mg/300ml x 2 (Túi)",
+     "raw_usage_line": "TTM 60 giọt/phút 8h-20h",
+     "so_luong": "2",
+     "ten_hien_thi": "LINEZOLID KABI",
+     "ten_thuoc": "LINEZOLID KABI",
+     "tg_bat_dau": "20:00 03/05/2026",
+     "tg_ket_thuc": "21:40 03/05/2026",
+     "the_tich": 300.0,
+     "thoi_gian_chay_phut": 100,
+     "toc_do": "60"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "merovia": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm truyền tĩnh mạch (8 giờ, 16 giờ, 23 giờ)",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Meropenem",
+     "lieu_moi_lan_mg": 1000.0,
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) MEROVIA 1G (Meropenem) 1g x 3 (Lọ)",
+     "raw_text": "(1) MEROVIA 1G (Meropenem) 1g x 3 (Lọ)",
+     "raw_usage_line": "Tiêm truyền tĩnh mạch (8 giờ, 16 giờ, 23 giờ)",
+     "so_luong": "3",
+     "so_luong_moi_gio": {
+      "16": null,
+      "23": null,
+      "8": null
+     },
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "MEROVIA 1G + Natri clorid 0.9%",
+     "ten_thuoc": "MEROVIA 1G",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "09:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 100.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm truyền tĩnh mạch (8 giờ, 16 giờ, 23 giờ)",
+     "gio_dung": "16 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Meropenem",
+     "lieu_moi_lan_mg": 1000.0,
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) MEROVIA 1G (Meropenem) 1g x 3 (Lọ)",
+     "raw_text": "(1) MEROVIA 1G (Meropenem) 1g x 3 (Lọ)",
+     "raw_usage_line": "Tiêm truyền tĩnh mạch (8 giờ, 16 giờ, 23 giờ)",
+     "so_luong": "3",
+     "so_luong_moi_gio": {
+      "16": null,
+      "23": null,
+      "8": null
+     },
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "MEROVIA 1G + Natri clorid 0.9%",
+     "ten_thuoc": "MEROVIA 1G",
+     "tg_bat_dau": "16:00 03/05/2026",
+     "tg_ket_thuc": "17:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 100.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm truyền tĩnh mạch (8 giờ, 16 giờ, 23 giờ)",
+     "gio_dung": "23 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Meropenem",
+     "lieu_moi_lan_mg": 1000.0,
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) MEROVIA 1G (Meropenem) 1g x 3 (Lọ)",
+     "raw_text": "(1) MEROVIA 1G (Meropenem) 1g x 3 (Lọ)",
+     "raw_usage_line": "Tiêm truyền tĩnh mạch (8 giờ, 16 giờ, 23 giờ)",
+     "so_luong": "3",
+     "so_luong_moi_gio": {
+      "16": null,
+      "23": null,
+      "8": null
+     },
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "MEROVIA 1G + Natri clorid 0.9%",
+     "ten_thuoc": "MEROVIA 1G",
+     "tg_bat_dau": "23:00 03/05/2026",
+     "tg_ket_thuc": "00:06 04/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 100.0
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "merovia_tmc": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm tĩnh mạch chậm (8 giờ, 16 giờ, 23 giờ)",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Meropenem",
+     "lieu_moi_lan_mg": 1000.0,
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) MEROVIA 1G (Meropenem) 1g x 3 (Lọ)",
+     "raw_text": "(1) MEROVIA 1G (Meropenem) 1g x 3 (Lọ)",
+     "raw_usage_line": "Tiêm tĩnh mạch chậm (8 giờ, 16 giờ, 23 giờ)",
+     "so_luong": "3",
+     "so_luong_moi_gio": {
+      "16": null,
+      "23": null,
+      "8": null
+     },
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "MEROVIA 1G + Natri clorid 0.9%",
+     "ten_thuoc": "MEROVIA 1G",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "09:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 100.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm tĩnh mạch chậm (8 giờ, 16 giờ, 23 giờ)",
+     "gio_dung": "16 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Meropenem",
+     "lieu_moi_lan_mg": 1000.0,
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) MEROVIA 1G (Meropenem) 1g x 3 (Lọ)",
+     "raw_text": "(1) MEROVIA 1G (Meropenem) 1g x 3 (Lọ)",
+     "raw_usage_line": "Tiêm tĩnh mạch chậm (8 giờ, 16 giờ, 23 giờ)",
+     "so_luong": "3",
+     "so_luong_moi_gio": {
+      "16": null,
+      "23": null,
+      "8": null
+     },
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "MEROVIA 1G + Natri clorid 0.9%",
+     "ten_thuoc": "MEROVIA 1G",
+     "tg_bat_dau": "16:00 03/05/2026",
+     "tg_ket_thuc": "17:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 100.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm tĩnh mạch chậm (8 giờ, 16 giờ, 23 giờ)",
+     "gio_dung": "23 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Meropenem",
+     "lieu_moi_lan_mg": 1000.0,
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) MEROVIA 1G (Meropenem) 1g x 3 (Lọ)",
+     "raw_text": "(1) MEROVIA 1G (Meropenem) 1g x 3 (Lọ)",
+     "raw_usage_line": "Tiêm tĩnh mạch chậm (8 giờ, 16 giờ, 23 giờ)",
+     "so_luong": "3",
+     "so_luong_moi_gio": {
+      "16": null,
+      "23": null,
+      "8": null
+     },
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "MEROVIA 1G + Natri clorid 0.9%",
+     "ten_thuoc": "MEROVIA 1G",
+     "tg_bat_dau": "23:00 03/05/2026",
+     "tg_ket_thuc": "00:06 04/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 100.0
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "methylcobalamin": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Viên",
+     "duong_dung": "UONG",
+     "duong_dung_goc": "uống 8h 16h",
+     "gio_dung": "8 giờ, 16 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "raw_drug_part": "methylcobalamin 500mg 01X2 viên",
+     "raw_text": "methylcobalamin 500mg 01X2 viên uống 8h 16h",
+     "raw_usage_part": "uống 8h 16h",
+     "so_luong": "2",
+     "ten_thuoc": "methylcobalamin 500mg",
+     "the_tich": 0,
+     "toc_do": ""
+    }
+   ]
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "methylpred_inj": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_tiem": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "duong_dung": "TMC",
+     "duong_dung_goc": "Tiêm tĩnh mạch chậm 8h 20h",
+     "gio_dung": "8 giờ, 20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Methylprednisolon",
+     "raw_drug_part": "(1) METHYLPREDNISOLON 40MG (Methylprednisolon) 40mg x 2 (Lọ)",
+     "raw_text": "(1) METHYLPREDNISOLON 40MG (Methylprednisolon) 40mg x 2 (Lọ)",
+     "raw_usage_line": "Tiêm tĩnh mạch chậm 8h 20h",
+     "so_lan_dung": 2,
+     "so_lo_moi_lan": 1,
+     "so_lo_tong": 2,
+     "so_luong": "2",
+     "ten_hien_thi": "METHYLPREDNISOLON 40MG (1 lọ)",
+     "ten_thuoc": "METHYLPREDNISOLON 40MG",
+     "the_tich": 0.0,
+     "toc_do": ""
+    }
+   ],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "methylpred_oral": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Viên",
+     "duong_dung": "UONG",
+     "duong_dung_goc": "Uống 8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Methylprednisolon",
+     "raw_drug_part": "(1) METHYLPREDNISOLON 16MG (Methylprednisolon) 16mg x 1 (Viên)",
+     "raw_text": "(1) METHYLPREDNISOLON 16MG (Methylprednisolon) 16mg x 1 (Viên)",
+     "raw_usage_line": "Uống 8h",
+     "so_luong": "1",
+     "ten_thuoc": "METHYLPREDNISOLON 16MG",
+     "the_tich": 0,
+     "toc_do": ""
+    }
+   ]
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "metro": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 60 giọt/phút 8h-16h-23h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "raw_drug_part": "(1) METRONIDAZOL (Metronidazol) 500mg/100ml x 3 (Chai)",
+     "raw_text": "(1) METRONIDAZOL (Metronidazol) 500mg/100ml x 3 (Chai)",
+     "raw_usage_line": "TTM 60 giọt/phút 8h-16h-23h",
+     "so_luong": "3",
+     "ten_hien_thi": "METRONIDAZOL",
+     "ten_thuoc": "METRONIDAZOL",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "08:33 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 33,
+     "toc_do": "60"
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 60 giọt/phút 8h-16h-23h",
+     "gio_dung": "16 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "raw_drug_part": "(1) METRONIDAZOL (Metronidazol) 500mg/100ml x 3 (Chai)",
+     "raw_text": "(1) METRONIDAZOL (Metronidazol) 500mg/100ml x 3 (Chai)",
+     "raw_usage_line": "TTM 60 giọt/phút 8h-16h-23h",
+     "so_luong": "3",
+     "ten_hien_thi": "METRONIDAZOL",
+     "ten_thuoc": "METRONIDAZOL",
+     "tg_bat_dau": "16:00 03/05/2026",
+     "tg_ket_thuc": "16:33 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 33,
+     "toc_do": "60"
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 60 giọt/phút 8h-16h-23h",
+     "gio_dung": "23 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "raw_drug_part": "(1) METRONIDAZOL (Metronidazol) 500mg/100ml x 3 (Chai)",
+     "raw_text": "(1) METRONIDAZOL (Metronidazol) 500mg/100ml x 3 (Chai)",
+     "raw_usage_line": "TTM 60 giọt/phút 8h-16h-23h",
+     "so_luong": "3",
+     "ten_hien_thi": "METRONIDAZOL",
+     "ten_thuoc": "METRONIDAZOL",
+     "tg_bat_dau": "23:00 03/05/2026",
+     "tg_ket_thuc": "23:33 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 33,
+     "toc_do": "60"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "nacl500_standalone": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "NATRI CLORID 0,9%",
+     "catalog_match_alias": "NATRI CLORID 0,9%",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Truyền tĩnh mạch 30 giọt/phút (8 giờ)",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Natri clorid",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "quy_tac_pha": "Không pha thêm (theo danh mục)",
+     "raw_drug_part": "(1) NATRI CLORID 0,9% (Natri clorid) 0,9% 500ml x 1 (Chai)",
+     "raw_text": "(1) NATRI CLORID 0,9% (Natri clorid) 0,9% 500ml x 1 (Chai)",
+     "raw_usage_line": "Truyền tĩnh mạch 30 giọt/phút (8 giờ)",
+     "so_luong": "1",
+     "so_luong_moi_gio": {
+      "8": null
+     },
+     "ten_hien_thi": "NATRI CLORID 0,9%",
+     "ten_thuoc": "NATRI CLORID 0,9%",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "13:33 03/05/2026",
+     "the_tich": 500.0,
+     "thoi_gian_chay_phut": 333,
+     "toc_do": "30"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "nacl_flush": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": [
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "NATRI CLORID 0,9%",
+     "catalog_match_alias": "NATRI CLORID 0,9%",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Ống",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tráng đường truyền 8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Natri clorid",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "raw_drug_part": "(1) NATRI CLORID 0,9% 10ML (Natri clorid) 0,9% 10ml x 2 (Ống)",
+     "raw_text": "(1) NATRI CLORID 0,9% 10ML (Natri clorid) 0,9% 10ml x 2 (Ống)",
+     "raw_usage_line": "Tráng đường truyền 8h",
+     "so_luong": "2",
+     "ten_hien_thi": "NATRI CLORID 0,9%",
+     "ten_thuoc": "NATRI CLORID 0,9% 10ML",
+     "the_tich": 10.0,
+     "toc_do": "30"
+    }
+   ]
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "nacl_pha_two": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 8h 20h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Cefoperazon",
+     "lieu_moi_lan_mg": 1000.0,
+     "nguon_pha": "tui_cung_gio",
+     "raw_drug_part": "(1) CEFOPERAZONE 1G (Cefoperazon) 1g x 2 (Lọ)",
+     "raw_text": "(1) CEFOPERAZONE 1G (Cefoperazon) 1g x 2 (Lọ)",
+     "raw_usage_line": "TTM 8h 20h",
+     "so_luong": "2",
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "CEFOPERAZONE 1G + Natri clorid 0.9%",
+     "ten_thuoc": "CEFOPERAZONE 1G",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "09:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 100.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 8h 20h",
+     "gio_dung": "20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Cefoperazon",
+     "lieu_moi_lan_mg": 1000.0,
+     "nguon_pha": "tui_cung_gio",
+     "raw_drug_part": "(1) CEFOPERAZONE 1G (Cefoperazon) 1g x 2 (Lọ)",
+     "raw_text": "(1) CEFOPERAZONE 1G (Cefoperazon) 1g x 2 (Lọ)",
+     "raw_usage_line": "TTM 8h 20h",
+     "so_luong": "2",
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "CEFOPERAZONE 1G + Natri clorid 0.9%",
+     "ten_thuoc": "CEFOPERAZONE 1G",
+     "tg_bat_dau": "20:00 03/05/2026",
+     "tg_ket_thuc": "21:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 100.0
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [
+    "Dùng để pha thuốc 8h 20h"
+   ],
+   "moi_hoi_chan": []
+  }
+ },
+ "nefopam": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Ống",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm 8h 20h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Nefopam",
+     "lieu_moi_lan_mg": 20.0,
+     "nguon_pha": "danh_muc",
+     "quy_tac_pha": "Pha Natri clorid 0.9% 100 ml, 30 giọt/phút (theo danh mục)",
+     "raw_drug_part": "(1) NEFOPAM MEDISOL 20MG/2ML (Nefopam) 20mg x 2 (Ống)",
+     "raw_text": "(1) NEFOPAM MEDISOL 20MG/2ML (Nefopam) 20mg x 2 (Ống)",
+     "raw_usage_line": "Tiêm 8h 20h",
+     "so_luong": "2",
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "NEFOPAM MEDISOL 20MG/2ML + Natri clorid 0.9%",
+     "ten_thuoc": "NEFOPAM MEDISOL 20MG/2ML",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "09:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_nguon": "danh_muc",
+     "tui_dich_truyen_ml": 100.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Ống",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm 8h 20h",
+     "gio_dung": "20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Nefopam",
+     "lieu_moi_lan_mg": 20.0,
+     "nguon_pha": "danh_muc",
+     "quy_tac_pha": "Pha Natri clorid 0.9% 100 ml, 30 giọt/phút (theo danh mục)",
+     "raw_drug_part": "(1) NEFOPAM MEDISOL 20MG/2ML (Nefopam) 20mg x 2 (Ống)",
+     "raw_text": "(1) NEFOPAM MEDISOL 20MG/2ML (Nefopam) 20mg x 2 (Ống)",
+     "raw_usage_line": "Tiêm 8h 20h",
+     "so_luong": "2",
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "NEFOPAM MEDISOL 20MG/2ML + Natri clorid 0.9%",
+     "ten_thuoc": "NEFOPAM MEDISOL 20MG/2ML",
+     "tg_bat_dau": "20:00 03/05/2026",
+     "tg_ket_thuc": "21:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_nguon": "danh_muc",
+     "tui_dich_truyen_ml": 100.0
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "nefopam_tb": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_tiem": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Ống",
+     "duong_dung": "TB",
+     "duong_dung_goc": "Tiêm bắp 8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Nefopam",
+     "raw_drug_part": "(1) NEFOPAM MEDISOL 20MG/2ML (Nefopam) 20mg x 1 (Ống)",
+     "raw_text": "(1) NEFOPAM MEDISOL 20MG/2ML (Nefopam) 20mg x 1 (Ống)",
+     "raw_usage_line": "Tiêm bắp 8h",
+     "so_lan_dung": 1,
+     "so_lo_moi_lan": 1,
+     "so_lo_tong": 1,
+     "so_luong": "1",
+     "ten_hien_thi": "NEFOPAM MEDISOL 20MG/2ML (1 ống)",
+     "ten_thuoc": "NEFOPAM MEDISOL 20MG/2ML",
+     "the_tich": 2.0,
+     "toc_do": ""
+    }
+   ],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "nephrosteril": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 20 giọt/phút 14h",
+     "gio_dung": "14 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Acid amin",
+     "raw_drug_part": "(1) NEPHROSTERIL (Acid amin) x 1 (Chai)",
+     "raw_text": "(1) NEPHROSTERIL (Acid amin) x 1 (Chai)",
+     "raw_usage_line": "TTM 20 giọt/phút 14h",
+     "so_luong": "1",
+     "ten_hien_thi": "NEPHROSTERIL",
+     "ten_thuoc": "NEPHROSTERIL",
+     "tg_bat_dau": "14:00 03/05/2026",
+     "tg_ket_thuc": "18:10 03/05/2026",
+     "the_tich": 250.0,
+     "thoi_gian_chay_phut": 250,
+     "toc_do": "20"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "paracetamol_chai": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "THERMODOL",
+     "catalog_match_alias": "PARACETAMOL 1G",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 100 giọt/phút 8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Paracetamol",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "quy_tac_pha": "Không pha thêm (theo danh mục)",
+     "raw_drug_part": "(1) PARACETAMOL 1G/100ML (Paracetamol) 1g x 1 (Chai)",
+     "raw_text": "(1) PARACETAMOL 1G/100ML (Paracetamol) 1g x 1 (Chai)",
+     "raw_usage_line": "TTM 100g/p 8h",
+     "so_luong": "1",
+     "ten_hien_thi": "PARACETAMOL 1G/100ML",
+     "ten_thuoc": "PARACETAMOL 1G/100ML",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "08:20 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 20,
+     "toc_do": "100"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "paracetamol_kabi": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "THERMODOL",
+     "catalog_match_alias": "PARACETAMOL 1G",
+     "catalog_match_score": 0.8846,
+     "catalog_match_type": "semantic",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Truyền tĩnh mạch 80 giọt/phút (8 giờ, 20 giờ)",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Paracetamol",
+     "inference_confidence": "medium",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog_semantic",
+     "raw_drug_part": "(1) PARACETAMOL KABI 1000 (Paracetamol) 10mg/ml x 2 (Chai)",
+     "raw_text": "(1) PARACETAMOL KABI 1000 (Paracetamol) 10mg/ml x 2 (Chai)",
+     "raw_usage_line": "Truyền tĩnh mạch 80 giọt/phút (8 giờ, 20 giờ)",
+     "so_luong": "2",
+     "so_luong_moi_gio": {
+      "20": null,
+      "8": null
+     },
+     "ten_hien_thi": "PARACETAMOL KABI 1000",
+     "ten_thuoc": "PARACETAMOL KABI 1000",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "08:25 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 25,
+     "toc_do": "80"
+    },
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "THERMODOL",
+     "catalog_match_alias": "PARACETAMOL 1G",
+     "catalog_match_score": 0.8846,
+     "catalog_match_type": "semantic",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Truyền tĩnh mạch 80 giọt/phút (8 giờ, 20 giờ)",
+     "gio_dung": "20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Paracetamol",
+     "inference_confidence": "medium",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog_semantic",
+     "raw_drug_part": "(1) PARACETAMOL KABI 1000 (Paracetamol) 10mg/ml x 2 (Chai)",
+     "raw_text": "(1) PARACETAMOL KABI 1000 (Paracetamol) 10mg/ml x 2 (Chai)",
+     "raw_usage_line": "Truyền tĩnh mạch 80 giọt/phút (8 giờ, 20 giờ)",
+     "so_luong": "2",
+     "so_luong_moi_gio": {
+      "20": null,
+      "8": null
+     },
+     "ten_hien_thi": "PARACETAMOL KABI 1000",
+     "ten_thuoc": "PARACETAMOL KABI 1000",
+     "tg_bat_dau": "20:00 03/05/2026",
+     "tg_ket_thuc": "20:25 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 25,
+     "toc_do": "80"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "pharbacol": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Viên",
+     "duong_dung": "UONG",
+     "duong_dung_goc": "Uống, chiều 1 viên, tối 1 viên.",
+     "gio_dung": "16 giờ, 20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Paracetamol",
+     "raw_drug_part": "(1) PHARBACOL (Paracetamol) 650mg x 2 (Viên)",
+     "raw_text": "(1) PHARBACOL (Paracetamol) 650mg x 2 (Viên)",
+     "raw_usage_line": "Uống, chiều 1 viên, tối 1 viên.",
+     "so_luong": "2",
+     "so_luong_moi_gio": {
+      "16": 1.0,
+      "20": 1.0
+     },
+     "ten_thuoc": "PHARBACOL",
+     "the_tich": 0,
+     "toc_do": ""
+    }
+   ]
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "ringer": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "LACTATED RINGER'S",
+     "catalog_match_alias": "LACTATED RINGER'S",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Truyền tĩnh mạch 30 giọt/phút (8 giờ)",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Ringer lactat",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "quy_tac_pha": "Không pha thêm (theo danh mục)",
+     "raw_drug_part": "(1) LACTATED RINGER'S (Ringer lactat) x 1 (Chai)",
+     "raw_text": "(1) LACTATED RINGER'S (Ringer lactat) x 1 (Chai)",
+     "raw_usage_line": "Truyền tĩnh mạch 30 giọt/phút (8 giờ)",
+     "so_luong": "1",
+     "so_luong_moi_gio": {
+      "8": null
+     },
+     "ten_hien_thi": "LACTATED RINGER'S",
+     "ten_thuoc": "LACTATED RINGER'S",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "13:33 03/05/2026",
+     "the_tich": 500.0,
+     "thoi_gian_chay_phut": 333,
+     "toc_do": "30"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "seretide": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_hit_xit": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "",
+     "duong_dung": "HIT_XIT",
+     "duong_dung_goc": "02 nhát x2 (hít) sáng tối",
+     "gio_dung": "8 giờ, 20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "raw_drug_part": "Seretide 25/250 ug",
+     "raw_text": "(TT) Seretide 25/250 ug",
+     "raw_usage_line": "02 nhát x2 (hít) sáng tối",
+     "so_luong": "",
+     "ten_thuoc": "Seretide 25/250 ug",
+     "the_tich": 0.0,
+     "toc_do": "",
+     "tu_tuc": true
+    }
+   ],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "smof": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 10 giọt/phút 20h",
+     "gio_dung": "20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Nhũ dịch lipid",
+     "raw_drug_part": "(1) SMOFLIPID 20% (Nhũ dịch lipid) 250ml x 1 (Chai)",
+     "raw_text": "(1) SMOFLIPID 20% (Nhũ dịch lipid) 250ml x 1 (Chai)",
+     "raw_usage_line": "TTM 10 giọt/phút 20h",
+     "so_luong": "1",
+     "ten_hien_thi": "SMOFLIPID 20%",
+     "ten_thuoc": "SMOFLIPID 20%",
+     "tg_bat_dau": "20:00 03/05/2026",
+     "tg_ket_thuc": "04:20 04/05/2026",
+     "the_tich": 250.0,
+     "thoi_gian_chay_phut": 500,
+     "toc_do": "10"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "sodium500": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "NATRI CLORID 0,9%",
+     "catalog_match_alias": "SODIUM CHLORIDE",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 40 giọt/phút 8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Natri clorid",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "quy_tac_pha": "Không pha thêm (theo danh mục)",
+     "raw_drug_part": "(1) SODIUM CHLORIDE INJECTION (Natri clorid) 0.9% 500ml x 1 (Chai)",
+     "raw_text": "(1) SODIUM CHLORIDE INJECTION (Natri clorid) 0.9% 500ml x 1 (Chai)",
+     "raw_usage_line": "TTM 40 giọt/phút 8h",
+     "so_luong": "1",
+     "ten_hien_thi": "SODIUM CHLORIDE INJECTION",
+     "ten_thuoc": "SODIUM CHLORIDE INJECTION",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "12:10 03/05/2026",
+     "the_tich": 500.0,
+     "thoi_gian_chay_phut": 250,
+     "toc_do": "40"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "solumedrol": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_tiem": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "duong_dung": "TMC",
+     "duong_dung_goc": "Tiêm TMC 8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Methylprednisolon",
+     "raw_drug_part": "(1) SOLU-MEDROL 40MG (Methylprednisolon) 40mg x 1 (Lọ)",
+     "raw_text": "(1) SOLU-MEDROL 40MG (Methylprednisolon) 40mg x 1 (Lọ)",
+     "raw_usage_line": "Tiêm TMC 8h",
+     "so_lan_dung": 1,
+     "so_lo_moi_lan": 1,
+     "so_lo_tong": 1,
+     "so_luong": "1",
+     "ten_hien_thi": "SOLU-MEDROL 40MG (1 lọ)",
+     "ten_thuoc": "SOLU-MEDROL 40MG",
+     "the_tich": 0.0,
+     "toc_do": ""
+    }
+   ],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "tazobactam_only": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm truyền 8h 20h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Piperacillin + Tazobactam",
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) TAZOPELIN (Piperacillin + Tazobactam) 4g + 0,5g x 2 (Lọ)",
+     "raw_text": "(1) TAZOPELIN (Piperacillin + Tazobactam) 4g + 0,5g x 2 (Lọ)",
+     "raw_usage_line": "Tiêm truyền 8h 20h",
+     "so_luong": "2",
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "TAZOPELIN + Natri clorid 0.9%",
+     "ten_thuoc": "TAZOPELIN",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "09:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 100.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm truyền 8h 20h",
+     "gio_dung": "20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Piperacillin + Tazobactam",
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) TAZOPELIN (Piperacillin + Tazobactam) 4g + 0,5g x 2 (Lọ)",
+     "raw_text": "(1) TAZOPELIN (Piperacillin + Tazobactam) 4g + 0,5g x 2 (Lọ)",
+     "raw_usage_line": "Tiêm truyền 8h 20h",
+     "so_luong": "2",
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "TAZOPELIN + Natri clorid 0.9%",
+     "ten_thuoc": "TAZOPELIN",
+     "tg_bat_dau": "20:00 03/05/2026",
+     "tg_ket_thuc": "21:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 100.0
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "tazocin": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 8h-16h-23h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Piperacillin + Tazobactam",
+     "lieu_moi_lan_mg": 4500.0,
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) PIPERACILLIN/TAZOBACTAM 4,5G (Piperacillin + Tazobactam) 4,5g x 3 (Lọ)",
+     "raw_text": "(1) PIPERACILLIN/TAZOBACTAM 4,5G (Piperacillin + Tazobactam) 4,5g x 3 (Lọ)",
+     "raw_usage_line": "TTM 8h-16h-23h",
+     "so_luong": "3",
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "PIPERACILLIN/TAZOBACTAM 4,5G + Natri clorid 0.9%",
+     "ten_thuoc": "PIPERACILLIN/TAZOBACTAM 4,5G",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "09:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 100.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 8h-16h-23h",
+     "gio_dung": "16 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Piperacillin + Tazobactam",
+     "lieu_moi_lan_mg": 4500.0,
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) PIPERACILLIN/TAZOBACTAM 4,5G (Piperacillin + Tazobactam) 4,5g x 3 (Lọ)",
+     "raw_text": "(1) PIPERACILLIN/TAZOBACTAM 4,5G (Piperacillin + Tazobactam) 4,5g x 3 (Lọ)",
+     "raw_usage_line": "TTM 8h-16h-23h",
+     "so_luong": "3",
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "PIPERACILLIN/TAZOBACTAM 4,5G + Natri clorid 0.9%",
+     "ten_thuoc": "PIPERACILLIN/TAZOBACTAM 4,5G",
+     "tg_bat_dau": "16:00 03/05/2026",
+     "tg_ket_thuc": "17:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 100.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 8h-16h-23h",
+     "gio_dung": "23 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Piperacillin + Tazobactam",
+     "lieu_moi_lan_mg": 4500.0,
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) PIPERACILLIN/TAZOBACTAM 4,5G (Piperacillin + Tazobactam) 4,5g x 3 (Lọ)",
+     "raw_text": "(1) PIPERACILLIN/TAZOBACTAM 4,5G (Piperacillin + Tazobactam) 4,5g x 3 (Lọ)",
+     "raw_usage_line": "TTM 8h-16h-23h",
+     "so_luong": "3",
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "PIPERACILLIN/TAZOBACTAM 4,5G + Natri clorid 0.9%",
+     "ten_thuoc": "PIPERACILLIN/TAZOBACTAM 4,5G",
+     "tg_bat_dau": "23:00 03/05/2026",
+     "tg_ket_thuc": "00:06 04/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 100.0
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "thermodol": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "THERMODOL",
+     "catalog_match_alias": "THERMODOL",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm truyền tĩnh mạch 100 giọt/phút (8 giờ, 16 giờ, 23 giờ)",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Paracetamol",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "quy_tac_pha": "Không pha thêm (theo danh mục)",
+     "raw_drug_part": "(1) THERMODOL (Paracetamol) 1g x 3 (Chai)",
+     "raw_text": "(1) THERMODOL (Paracetamol) 1g x 3 (Chai)",
+     "raw_usage_line": "Tiêm truyền tĩnh mạch 100 giọt/phút (8 giờ, 16 giờ, 23 giờ)",
+     "so_luong": "3",
+     "so_luong_moi_gio": {
+      "16": null,
+      "23": null,
+      "8": null
+     },
+     "ten_hien_thi": "THERMODOL",
+     "ten_thuoc": "THERMODOL",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "08:20 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 20,
+     "toc_do": "100"
+    },
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "THERMODOL",
+     "catalog_match_alias": "THERMODOL",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm truyền tĩnh mạch 100 giọt/phút (8 giờ, 16 giờ, 23 giờ)",
+     "gio_dung": "16 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Paracetamol",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "quy_tac_pha": "Không pha thêm (theo danh mục)",
+     "raw_drug_part": "(1) THERMODOL (Paracetamol) 1g x 3 (Chai)",
+     "raw_text": "(1) THERMODOL (Paracetamol) 1g x 3 (Chai)",
+     "raw_usage_line": "Tiêm truyền tĩnh mạch 100 giọt/phút (8 giờ, 16 giờ, 23 giờ)",
+     "so_luong": "3",
+     "so_luong_moi_gio": {
+      "16": null,
+      "23": null,
+      "8": null
+     },
+     "ten_hien_thi": "THERMODOL",
+     "ten_thuoc": "THERMODOL",
+     "tg_bat_dau": "16:00 03/05/2026",
+     "tg_ket_thuc": "16:20 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 20,
+     "toc_do": "100"
+    },
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "THERMODOL",
+     "catalog_match_alias": "THERMODOL",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm truyền tĩnh mạch 100 giọt/phút (8 giờ, 16 giờ, 23 giờ)",
+     "gio_dung": "23 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Paracetamol",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "quy_tac_pha": "Không pha thêm (theo danh mục)",
+     "raw_drug_part": "(1) THERMODOL (Paracetamol) 1g x 3 (Chai)",
+     "raw_text": "(1) THERMODOL (Paracetamol) 1g x 3 (Chai)",
+     "raw_usage_line": "Tiêm truyền tĩnh mạch 100 giọt/phút (8 giờ, 16 giờ, 23 giờ)",
+     "so_luong": "3",
+     "so_luong_moi_gio": {
+      "16": null,
+      "23": null,
+      "8": null
+     },
+     "ten_hien_thi": "THERMODOL",
+     "ten_thuoc": "THERMODOL",
+     "tg_bat_dau": "23:00 03/05/2026",
+     "tg_ket_thuc": "23:20 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 20,
+     "toc_do": "100"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "thermodon_typo": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "THERMODOL",
+     "catalog_match_alias": "THERMODON",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 100 giọt/phút/8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "inference_confidence": "high",
+     "inferred_schedule_expanded": true,
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "quy_tac_pha": "Không pha thêm (theo danh mục)",
+     "raw_drug_part": "Thermodon 1g 01 chai x 3",
+     "raw_text": "(TT) Thermodon 1g 01 chai x3 (TTM) 100g/p/8h",
+     "raw_usage_part": "TTM 100g/p/8h",
+     "so_luong": "3",
+     "ten_hien_thi": "Thermodon 1g",
+     "ten_thuoc": "Thermodon 1g",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "08:20 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 20,
+     "toc_do": "100",
+     "tu_tuc": true
+    },
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "THERMODOL",
+     "catalog_match_alias": "THERMODON",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 100 giọt/phút/8h",
+     "gio_dung": "16 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "inference_confidence": "high",
+     "inferred_schedule_expanded": true,
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "quy_tac_pha": "Không pha thêm (theo danh mục)",
+     "raw_drug_part": "Thermodon 1g 01 chai x 3",
+     "raw_text": "(TT) Thermodon 1g 01 chai x3 (TTM) 100g/p/8h",
+     "raw_usage_part": "TTM 100g/p/8h",
+     "so_luong": "3",
+     "ten_hien_thi": "Thermodon 1g",
+     "ten_thuoc": "Thermodon 1g",
+     "tg_bat_dau": "16:00 03/05/2026",
+     "tg_ket_thuc": "16:20 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 20,
+     "toc_do": "100",
+     "tu_tuc": true
+    },
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "THERMODOL",
+     "catalog_match_alias": "THERMODON",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 100 giọt/phút/8h",
+     "gio_dung": "23 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "inference_confidence": "high",
+     "inferred_schedule_expanded": true,
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "quy_tac_pha": "Không pha thêm (theo danh mục)",
+     "raw_drug_part": "Thermodon 1g 01 chai x 3",
+     "raw_text": "(TT) Thermodon 1g 01 chai x3 (TTM) 100g/p/8h",
+     "raw_usage_part": "TTM 100g/p/8h",
+     "so_luong": "3",
+     "ten_hien_thi": "Thermodon 1g",
+     "ten_thuoc": "Thermodon 1g",
+     "tg_bat_dau": "23:00 03/05/2026",
+     "tg_ket_thuc": "23:20 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 20,
+     "toc_do": "100",
+     "tu_tuc": true
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "tramadol_free_nacl": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "NATRI CLORID 0,9%",
+     "catalog_match_alias": "NATRI CLORID 0,9%",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Chai",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Natri clorid",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "quy_tac_pha": "Không pha thêm (theo danh mục)",
+     "raw_drug_part": "(2) NATRI CLORID 0,9% (Natri clorid) 0,9% 100ml x 1 (Chai)",
+     "raw_text": "(2) NATRI CLORID 0,9% (Natri clorid) 0,9% 100ml x 1 (Chai)",
+     "raw_usage_line": "TTM 8h",
+     "so_luong": "1",
+     "ten_hien_thi": "NATRI CLORID 0,9%",
+     "ten_thuoc": "NATRI CLORID 0,9%",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "09:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30"
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Ống",
+     "duong_dung": "TB",
+     "duong_dung_goc": "Tiêm 8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Tramadol",
+     "raw_drug_part": "(1) TRAMADOL 100MG/2ML (Tramadol) 100mg x 1 (Ống)",
+     "raw_text": "(1) TRAMADOL 100MG/2ML (Tramadol) 100mg x 1 (Ống)",
+     "raw_usage_line": "Tiêm 8h",
+     "so_lan_dung": 1,
+     "so_lo_moi_lan": 1,
+     "so_lo_tong": 1,
+     "so_luong": "1",
+     "ten_hien_thi": "TRAMADOL 100MG/2ML (1 ống)",
+     "ten_thuoc": "TRAMADOL 100MG/2ML",
+     "the_tich": 2.0,
+     "toc_do": "",
+     "tramadol_route_rule": "prefer_intramuscular_without_free_nacl"
+    }
+   ],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "tramadol_tb": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_tiem": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Ống",
+     "duong_dung": "TB",
+     "duong_dung_goc": "Tiêm bắp 8-16 giờ",
+     "gio_dung": "8 giờ, 16 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "raw_drug_part": "TRAMADOL x Hai (Ống)",
+     "raw_text": "TRAMADOL x Hai (Ống)",
+     "raw_usage_line": "Tiêm bắp 8-16 giờ",
+     "so_lan_dung": 2,
+     "so_lo_moi_lan": 1,
+     "so_lo_tong": 2,
+     "so_luong": "2",
+     "ten_hien_thi": "TRAMADOL (1 ống)",
+     "ten_thuoc": "TRAMADOL",
+     "the_tich": 0.0,
+     "toc_do": "",
+     "tramadol_route_rule": "prefer_intramuscular_without_free_nacl"
+    }
+   ],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "tramadol_tiem": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_tiem": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Ống",
+     "duong_dung": "TB",
+     "duong_dung_goc": "Tiêm 8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Tramadol",
+     "raw_drug_part": "(1) TRAMADOL 100MG/2ML (Tramadol) 100mg x 1 (Ống)",
+     "raw_text": "(1) TRAMADOL 100MG/2ML (Tramadol) 100mg x 1 (Ống)",
+     "raw_usage_line": "Tiêm 8h",
+     "so_lan_dung": 1,
+     "so_lo_moi_lan": 1,
+     "so_lo_tong": 1,
+     "so_luong": "1",
+     "ten_hien_thi": "TRAMADOL 100MG/2ML (1 ống)",
+     "ten_thuoc": "TRAMADOL 100MG/2ML",
+     "the_tich": 2.0,
+     "toc_do": "",
+     "tramadol_route_rule": "prefer_intramuscular_without_free_nacl"
+    }
+   ],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "tramadol_ttm": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "TRASOLU",
+     "catalog_match_alias": "TRASOLU",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Ống",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Pha natri clorid 0,9% TTM 30 giọt/phút 8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Tramadol",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "nguon_pha": "danh_muc",
+     "quy_tac_pha": "Pha Natri clorid 0.9% 100 ml, 30 giọt/phút (theo danh mục)",
+     "raw_drug_part": "(1) TRASOLU (Tramadol) 100mg/2ml x 1 (Ống)",
+     "raw_text": "(1) TRASOLU (Tramadol) 100mg/2ml x 1 (Ống)",
+     "raw_usage_line": "Pha natri clorid 0,9% TTM 30 giọt/phút 8h",
+     "so_luong": "1",
+     "ten_hien_thi": "TRASOLU + Natri clorid 0.9%",
+     "ten_thuoc": "TRASOLU",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "08:01 03/05/2026",
+     "the_tich": 100.0,
+     "the_tich_thuoc_goc_ml": 2.0,
+     "thoi_gian_chay_phut": 1,
+     "toc_do": "30",
+     "tui_dich_truyen_ml": 100.0,
+     "volume_normalized_final": true,
+     "volume_normalized_reason": "Tramadol/Trasolu pha NaCl: dùng thể tích túi truyền, không dùng 2ml của ống thuốc."
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "triamcinolone": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_boi": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Tuýp",
+     "duong_dung": "BOI",
+     "duong_dung_goc": "Thoa ngoài da sáng tối",
+     "gio_dung": "8 giờ, 20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Triamcinolon",
+     "raw_drug_part": "(1) TRIAMCINOLONE (Triamcinolon) 0,1% x 1 (Tuýp)",
+     "raw_text": "(1) TRIAMCINOLONE (Triamcinolon) 0,1% x 1 (Tuýp)",
+     "raw_usage_line": "Thoa ngoài da sáng tối",
+     "so_luong": "1",
+     "ten_thuoc": "TRIAMCINOLONE",
+     "the_tich": 0.0,
+     "toc_do": ""
+    }
+   ],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "vanco_200": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "VANCOMYCIN",
+     "catalog_match_alias": "VANCOMYCIN",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Lọ",
+     "dung_moi": "SODIUM_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Pha 200ml natriclorid X2 TTM 30 giọt/phút 8h-20h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Vancomycin",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "lieu_moi_lan_mg": 1000.0,
+     "nguon_pha": "y_lenh",
+     "raw_drug_part": "(1) VANCOMYCIN 1G (Vancomycin) 1g x 2 (Lọ)",
+     "raw_text": "(1) VANCOMYCIN 1G (Vancomycin) 1g x 2 (Lọ)",
+     "raw_usage_line": "Pha 200ml natriclorid X2 TTM 30 giọt/phút 8h-20h",
+     "so_luong": "2",
+     "ten_hien_thi": "VANCOMYCIN 1G + Sodium chloride 0.9%",
+     "ten_thuoc": "VANCOMYCIN 1G",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "10:13 03/05/2026",
+     "the_tich": 200.0,
+     "thoi_gian_chay_phut": 133,
+     "toc_do": "30",
+     "tui_dich_truyen_ml": 200.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "VANCOMYCIN",
+     "catalog_match_alias": "VANCOMYCIN",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Lọ",
+     "dung_moi": "SODIUM_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Pha 200ml natriclorid X2 TTM 30 giọt/phút 8h-20h",
+     "gio_dung": "20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Vancomycin",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "lieu_moi_lan_mg": 1000.0,
+     "nguon_pha": "y_lenh",
+     "raw_drug_part": "(1) VANCOMYCIN 1G (Vancomycin) 1g x 2 (Lọ)",
+     "raw_text": "(1) VANCOMYCIN 1G (Vancomycin) 1g x 2 (Lọ)",
+     "raw_usage_line": "Pha 200ml natriclorid X2 TTM 30 giọt/phút 8h-20h",
+     "so_luong": "2",
+     "ten_hien_thi": "VANCOMYCIN 1G + Sodium chloride 0.9%",
+     "ten_thuoc": "VANCOMYCIN 1G",
+     "tg_bat_dau": "20:00 03/05/2026",
+     "tg_ket_thuc": "22:13 03/05/2026",
+     "the_tich": 200.0,
+     "thoi_gian_chay_phut": 133,
+     "toc_do": "30",
+     "tui_dich_truyen_ml": 200.0
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "vanco_bare": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "VANCOMYCIN",
+     "catalog_match_alias": "VANCOMYCIN",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "TTM 8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "nguon_pha": "danh_muc",
+     "raw_drug_part": "Vancomycin 1 g 01 lọ",
+     "raw_text": "(TT) Vancomycin 1 g 01 lọ",
+     "raw_usage_line": "TTM 8h",
+     "so_luong": "",
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "Vancomycin 1 g + Natri clorid 0.9%",
+     "ten_thuoc": "Vancomycin 1 g",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "09:06 03/05/2026",
+     "the_tich": 100.0,
+     "the_tich_nguon": "danh_muc",
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "tu_tuc": true,
+     "tui_dich_truyen_ml": 100.0
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "vanco_pha": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "VANCOMYCIN",
+     "catalog_match_alias": "VANCOMYCIN",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "01 lọ x2 pha Natri clorid 0,9% 100ml (TTM) 30 giọt/phút 8h - 20h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "raw_drug_part": "Vancomycin 1g",
+     "raw_text": "(TT) Vancomycin 1g",
+     "raw_usage_line": "01 lọ x2 pha Natri clorid 0,9% 100ml (TTM) XXX g/p 8h - 20h",
+     "so_luong": "",
+     "ten_hien_thi": "Vancomycin 1g + Natri clorid 0.9%",
+     "ten_thuoc": "Vancomycin 1g",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "09:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "tu_tuc": true,
+     "tui_dich_truyen_ml": 100.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "catalog_match": "VANCOMYCIN",
+     "catalog_match_alias": "VANCOMYCIN",
+     "catalog_match_score": 1.0,
+     "catalog_match_type": "exact",
+     "dang": "",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "01 lọ x2 pha Natri clorid 0,9% 100ml (TTM) 30 giọt/phút 8h - 20h",
+     "gio_dung": "20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "inference_confidence": "high",
+     "inferred_usage": true,
+     "inferred_usage_reason": "medication_catalog",
+     "raw_drug_part": "Vancomycin 1g",
+     "raw_text": "(TT) Vancomycin 1g",
+     "raw_usage_line": "01 lọ x2 pha Natri clorid 0,9% 100ml (TTM) XXX g/p 8h - 20h",
+     "so_luong": "",
+     "ten_hien_thi": "Vancomycin 1g + Natri clorid 0.9%",
+     "ten_thuoc": "Vancomycin 1g",
+     "tg_bat_dau": "20:00 03/05/2026",
+     "tg_ket_thuc": "21:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "tu_tuc": true,
+     "tui_dich_truyen_ml": 100.0
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "vecmid": {
+  "thuoc": {
+   "dich_truyen": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm truyền tĩnh mạch (8 giờ, 20 giờ)",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Vancomycin",
+     "lieu_moi_lan_mg": 1000.0,
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) VECMID 1GM (Vancomycin) 1g x 2 (Lọ)",
+     "raw_text": "(1) VECMID 1GM (Vancomycin) 1g x 2 (Lọ)",
+     "raw_usage_line": "Tiêm truyền tĩnh mạch (8 giờ, 20 giờ)",
+     "so_luong": "2",
+     "so_luong_moi_gio": {
+      "20": null,
+      "8": null
+     },
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "VECMID 1GM + Natri clorid 0.9%",
+     "ten_thuoc": "VECMID 1GM",
+     "tg_bat_dau": "08:00 03/05/2026",
+     "tg_ket_thuc": "09:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 100.0
+    },
+    {
+     "bac_si": "BS MAU",
+     "dang": "Lọ",
+     "dung_moi": "NACL_0.9",
+     "duong_dung": "TTM",
+     "duong_dung_goc": "Tiêm truyền tĩnh mạch (8 giờ, 20 giờ)",
+     "gio_dung": "20 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "Vancomycin",
+     "lieu_moi_lan_mg": 1000.0,
+     "nguon_pha": "luat_san_co",
+     "raw_drug_part": "(1) VECMID 1GM (Vancomycin) 1g x 2 (Lọ)",
+     "raw_text": "(1) VECMID 1GM (Vancomycin) 1g x 2 (Lọ)",
+     "raw_usage_line": "Tiêm truyền tĩnh mạch (8 giờ, 20 giờ)",
+     "so_luong": "2",
+     "so_luong_moi_gio": {
+      "20": null,
+      "8": null
+     },
+     "suy_luan_dung_moi": true,
+     "ten_hien_thi": "VECMID 1GM + Natri clorid 0.9%",
+     "ten_thuoc": "VECMID 1GM",
+     "tg_bat_dau": "20:00 03/05/2026",
+     "tg_ket_thuc": "21:06 03/05/2026",
+     "the_tich": 100.0,
+     "thoi_gian_chay_phut": 66,
+     "toc_do": "30",
+     "toc_do_inferred": true,
+     "tui_dich_truyen_ml": 100.0
+    }
+   ],
+   "khac": [],
+   "thuoc_tiem": [],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ },
+ "vincynon": {
+  "thuoc": {
+   "dich_truyen": [],
+   "khac": [],
+   "thuoc_tiem": [
+    {
+     "bac_si": "BS MAU",
+     "dang": "Ống",
+     "duong_dung": "TMC",
+     "duong_dung_goc": "Tiêm mạch chậm 8h",
+     "gio_dung": "8 giờ",
+     "gio_y_lenh": "08:00",
+     "ham_luong": "",
+     "hoat_chat": "",
+     "raw_drug_part": "Vincynon 02 ống",
+     "raw_text": "((TT) Vincynon 02 ống",
+     "raw_usage_line": "Tiêm mạch chậm 8h",
+     "so_luong": "",
+     "ten_hien_thi": "Vincynon",
+     "ten_thuoc": "Vincynon",
+     "the_tich": 0.0,
+     "toc_do": "",
+     "tu_tuc": true
+    }
+   ],
+   "thuoc_tra": [],
+   "thuoc_uong": []
+  },
+  "y_lenh_khac": {
+   "khac": [],
+   "moi_hoi_chan": []
+  }
+ }
+}

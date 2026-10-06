@@ -1,0 +1,74 @@
+# Kiến thức thuốc nằm ở đâu
+
+Mỗi loại thông tin thuốc chỉ có **một** nơi lưu. Muốn đổi cách xử lý dữ liệu thì sửa đúng nơi đó.
+Không viết thêm danh sách tên thuốc vào code.
+
+| Thông tin | Nơi lưu | Ai sửa |
+|---|---|---|
+| Thuốc của khoa: tên chuẩn, tên khác, hoạt chất, đường dùng, thể tích/tốc độ mặc định, **quy tắc pha**, tên hiển thị, "có dung môi đi kèm" | `config/medication_catalog.json` — màn **Danh mục thuốc → Thuốc** | Người dùng, trên màn hình |
+| Kiến thức sẵn có đi kèm phần mềm: luật pha (Vancomycin, Merovia, Nefopam…), thể tích mặc định theo tên, hoạt chất của tên thương mại (VECMID), thuốc có dung môi đi kèm, tên hiển thị chuẩn | `config/medication_builtin.json` — xem ở **Danh mục thuốc → Sẵn có** | Theo phiên bản phần mềm (ứng dụng không ghi file này) |
+| Nhận diện dịch truyền theo tên, từ nhận diện dung môi (natri clorid, nước cất…), ngưỡng thể tích | `config/order_rules.json` | Người cài đặt |
+| Đường dùng (TTM, TMC, uống…) | `config/routes.json` + phần tự cài — **Danh mục thuốc → Đường dùng** | Người dùng |
+| Mã + tên dung môi (Natri clorid 0.9%, Glucose 5%…) | `config/solvents.json` | Người cài đặt |
+| Giờ mặc định theo chữ buổi (sáng 8 giờ, trưa 12 giờ…) | `config/d_v2.json` | Người cài đặt |
+| Lịch giờ khi y lệnh thiếu giờ (8–16–23) | `config/schedule_rules.json` | Người cài đặt |
+
+## Thứ tự ưu tiên khi xử lý dữ liệu
+
+1. **Y lệnh ghi rõ** (dung môi, thể tích, tốc độ) luôn thắng.
+2. **Danh mục thuốc** (người dùng khai báo).
+3. **Kiến thức sẵn có** (`medication_builtin.json`).
+4. Mặc định chung (vd. túi Natri clorid 100 ml). Báo cáo ca trực ghi "(mặc định, hỏi lại y lệnh)".
+
+Màn **Danh mục thuốc → Thuốc → Kiểm tra quy tắc pha thuốc** chạy đúng hàm của bước xử lý, để xem
+trước một thuốc sẽ được xử lý thế nào.
+
+## Thay đổi 10/2026 (gom về một nguồn)
+
+- `d_v2.json` trước đây được chép vào từng phiên một lần rồi dùng mãi, nên bản cập nhật không tới
+  được phiên cũ. Nay mọi phiên đọc chung một file. Bản riêng của phiên chỉ được dùng khi file đó ghi
+  `"__dung_ban_rieng__": true`.
+- `d_v2.json` mục 1, 3, 5, 6 đã chuyển sang `medication_builtin.json`. Mục 2, 4 và `tu_khoa_rac`
+  không còn code nào đọc nên đã bỏ.
+- Danh sách dịch truyền trước đây chép ở 3 nơi; nay chỉ còn `order_rules.json`. `rule_engine.py`
+  vẫn giữ một bản dự phòng, chỉ dùng khi file hỏng.
+- `tests/test_medication_golden.py` so kết quả xử lý của 62 y lệnh mẫu với file mốc. Sau khi gom,
+  kết quả không đổi.
+
+## Nhiều cách pha, cần xác nhận, thống kê thực tế
+
+- **Nhiều cách pha cho một thuốc.** Trong "Quy tắc pha thuốc" có:
+  - một **cách mặc định**;
+  - các **cách pha theo điều kiện**: đường dùng (TTM, bơm tiêm điện…) và/hoặc khoảng liều mỗi lần
+    (mg). Ví dụ Vancomycin: liều ≤ 500 mg → 100 ml; liều ≥ 501 mg → 200 ml; bơm tiêm điện → 50 ml.
+
+  Liều mỗi lần = hàm lượng trong tên × số lọ/ống mỗi lần (`worker/processing/dose.py`). Nếu thiếu
+  dữ kiện thì không tính.
+- **Không đoán khi không chắc.** Dòng thuốc được ghi `can_xac_nhan_pha` kèm lý do khi:
+  - nhiều cách pha cùng khớp;
+  - y lệnh thiếu đường dùng hoặc liều để chọn;
+  - phải dùng 100 ml mặc định.
+
+  Báo cáo ca trực hiện "cần xác nhận cách pha"; phiếu in ghi "xác nhận cách pha".
+- **Thống kê cách pha thực tế.** Trong form sửa thuốc, mục "Thực tế trong dữ liệu":
+  - máy chủ chạy lại đúng bước xử lý trên y lệnh nguyên văn của Kho nghiên cứu (`clinical_notes.csv`)
+    và trên dữ liệu đã xử lý của phiên (`worker/dilution_stats.py`), không mở EMR;
+  - chỉ đếm những lần y lệnh ghi rõ dung môi/thể tích; phần hệ thống tự suy được đếm riêng;
+  - có nút "Đặt làm mặc định" và "Thêm thành cách pha".
+
+## Dọn danh mục, bộ lọc, thuốc mới
+
+- **Dọn mục "thuốc + Natri clorid 0.9%"** (do bước tự đồng bộ cũ sinh ra): ở đầu tab Thuốc bấm "Xem và dọn".
+  - Có xem trước từng việc và chọn được mục nào cần dọn.
+  - Danh mục được sao lưu vào `<thư mục dữ liệu>/backups/` trước khi sửa.
+  - Thuốc gốc đã có → mục cũ được gộp vào. Thể tích cũ khác quy tắc thì được giữ thành "cách pha gợi ý"
+    trong form thuốc, chưa áp dụng cho tới khi bạn duyệt.
+  - Thuốc gốc chưa có → mục được đổi tên; thể tích cũ thành quy tắc pha "chỉ khi y lệnh ghi truyền".
+- **Bộ lọc:**
+  - "Cần pha, chưa có quy tắc": không tính chai/túi truyền pha sẵn (dịch truyền ≥ 50 ml).
+  - "Thiếu hoạt chất".
+  - "Có thể sai": mục cũ + dung môi, dịch truyền < 50 ml, hai mục trùng như NATRI CLORID / SODIUM CHLORIDE.
+- **Thuốc mới:** tab liệt kê thuốc có trong y lệnh (dữ liệu phiên + Kho nghiên cứu) nhưng chưa có
+  trong danh mục. Danh sách được khớp bằng đúng hàm tra danh mục của bước xử lý (`worker/catalog_gaps.py`).
+  - "Thiết lập" mở form thêm thuốc, đã điền sẵn tên, hoạt chất, đường dùng, thể tích theo dữ liệu.
+  - "Bỏ qua" chỉ ẩn thuốc khỏi danh sách, không sửa danh mục.

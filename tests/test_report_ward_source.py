@@ -12,11 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 ROUTES_URI = (ROOT / "src/config/routes.js").as_uri()
+SOLVENTS_URI = (ROOT / 'src' / 'config' / 'solvents.js').as_uri()
 
 
 def _fix_routes_import(src: str) -> str:
-    """Module báo cáo được chép sang thư mục tạm: trỏ import bảng đường dùng về file gốc."""
-    return src.replace("'../../config/routes.js'", f"'{ROUTES_URI}'")
+    """Module báo cáo được chép sang thư mục tạm: trỏ import bảng đường dùng/dung môi về file gốc."""
+    return (src.replace("'../../config/routes.js'", f"'{ROUTES_URI}'")
+               .replace("'../../config/solvents.js'", f"'{SOLVENTS_URI}'"))
 
 
 def run_node(script: str) -> dict:

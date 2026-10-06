@@ -36,8 +36,10 @@ const COLLECTION_EXCEPTIONS_FILE = 'collection_exceptions.csv';
 const COLLECTION_ENCOUNTER_OVERRIDES_FILE = 'collection_encounter_overrides.json';
 
 const COLLECTION_EXCEPTION_COLUMNS = [
-  'category', 'research_code', 'patient_code', 'part_label', 'status', 'reason_label', 'detail',
+  'category', 'patient_code', 'diagnostic_stage_label', 'diagnostic_message',
+  'part_label', 'status', 'reason_label', 'detail',
   'attempts', 'auto_retry', 'updated_at', 'key', 'part', 'reason',
+  'diagnostic_stage', 'research_code',
 ];
 
 const STUDY_READINESS_FILE = 'study_readiness.csv';
