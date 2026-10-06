@@ -139,11 +139,25 @@ function rawImagingRowForLookup(row = {}) {
   };
 }
 
+function canonicalLookupTime(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  let m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2}))?/);
+  if (m) return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')} ${String(m[4] || '00').padStart(2, '0')}:${String(m[5] || '00').padStart(2, '0')}`;
+  m = raw.match(/(?:(\d{1,2}):(\d{2})\s+)?(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if (m) {
+    const hh = m[1] || m[6] || '00';
+    const mm = m[2] || m[7] || '00';
+    return `${m[5]}-${String(m[4]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')} ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  }
+  return foldSearchText(raw);
+}
+
 function lookupClinicalKey(kind, row = {}) {
   if (kind === 'labs') {
     return [
       cell(row, ['patient_code', 'ma_bn']),
-      cell(row, ['lab_datetime', 'tg_chi_dinh', 'lab_date', 'ngay_chi_dinh']),
+      canonicalLookupTime(cell(row, ['lab_datetime', 'tg_chi_dinh', 'lab_date', 'ngay_chi_dinh'])),
       cell(row, ['lab_order_id', 'ma_phieu']),
       cell(row, ['test_name_raw', 'chi_so']),
       cell(row, ['result_raw', 'ket_qua']),
@@ -152,7 +166,7 @@ function lookupClinicalKey(kind, row = {}) {
   }
   return [
     cell(row, ['patient_code', 'ma_bn']),
-    cell(row, ['ordered_at', 'tg_chi_dinh', 'order_date', 'ngay_chi_dinh']),
+    canonicalLookupTime(cell(row, ['ordered_at', 'tg_chi_dinh', 'order_date', 'ngay_chi_dinh'])),
     cell(row, ['service_name_raw', 'ten_dich_vu']),
     cell(row, ['result_text', 'mo_ta_ket_qua']),
     cell(row, ['conclusion_text', 'ket_luan']),
@@ -673,6 +687,7 @@ module.exports = {
   uniqueBy,
   rawLabRowForLookup,
   rawImagingRowForLookup,
+  canonicalLookupTime,
   lookupClinicalKey,
   mergeLookupRows,
   queryPatientHistoryEventTables,
