@@ -2,7 +2,7 @@
 
 // Nguồn chuẩn của run (research_source.csv: Mã NC, Research key, khoảng lấy dữ liệu) và chuyển dữ liệu hành chánh thành dòng nghiên cứu.
 
-const { parseAnyDate, firstNonEmpty, buildEncounterId, isoDate, rowEmrAdmissionId, rowEmrTreatmentId, rowNoitruId, rowAdmissionTime, rowDischargeTime } = require('./encounter_context');
+const { parseAnyDate, firstNonEmpty, buildEncounterId, isoDate, rowAdmissionTime, rowDischargeTime } = require('./encounter_context');
 const { read_index: readHchanhIndex, read_patient_all: readHchanhPatientAll } = require('../hchanh_data_contract');
 const path = require('path');
 const { ensureDir, readJsonSafe, writeJsonAtomic } = require('../utils/file');
@@ -18,9 +18,6 @@ function hchanhProfileRow(payload, meta = {}) {
   const maBn = p.ma_bn || meta.ma_bn || '';
   return {
     'Mã BN': maBn,
-    'Mã vào viện': meta.emr_admission_id || meta.vaovienid || '',
-    'Mã điều trị': meta.emr_treatment_id || meta.dieutriid || meta.noitruid || '',
-    'Mã nội trú': meta.emr_noitru_id || meta.noitruid || '',
     'URL bác sĩ': meta.record_doctor_url || meta.doctor_url || '',
     'URL điều dưỡng': meta.record_nursing_url || meta.nursing_url || '',
     'Họ tên': p.ho_ten || meta.ho_ten || '',
@@ -51,9 +48,6 @@ function hchanhDischargeRow(payload, meta = {}) {
   const benhKem = Array.isArray(p.benh_kem) ? p.benh_kem.join('; ') : String(p.benh_kem || '');
   return {
     'Mã BN': p.ma_bn || meta.ma_bn || '',
-    'Mã vào viện': meta.emr_admission_id || meta.vaovienid || '',
-    'Mã điều trị': meta.emr_treatment_id || meta.dieutriid || meta.noitruid || '',
-    'Mã nội trú': meta.emr_noitru_id || meta.noitruid || '',
     'URL bác sĩ': meta.record_doctor_url || meta.doctor_url || '',
     'URL điều dưỡng': meta.record_nursing_url || meta.nursing_url || '',
     'Họ tên': meta.ho_ten || '',
@@ -127,9 +121,6 @@ function flattenHchanhIntoResearchRun(ctx, runDir) {
       const detail = item.detail || {};
       surgeryRows.push({
         'Mã BN': maBn,
-        'Mã vào viện': meta.emr_admission_id || meta.vaovienid || '',
-        'Mã điều trị': meta.emr_treatment_id || meta.dieutriid || meta.noitruid || '',
-        'Mã nội trú': meta.emr_noitru_id || meta.noitruid || '',
         'Ngày vào viện': meta.admission_time || '',
         'Ngày ra viện': meta.discharge_time || '',
         'Họ tên': item.ho_ten || meta.ho_ten || '',
@@ -150,9 +141,6 @@ function flattenHchanhIntoResearchRun(ctx, runDir) {
     for (const item of historyRows) {
       orderRows.push({
         'Mã BN': maBn,
-        'Mã vào viện': meta.emr_admission_id || meta.vaovienid || '',
-        'Mã điều trị': meta.emr_treatment_id || meta.dieutriid || meta.noitruid || '',
-        'Mã nội trú': meta.emr_noitru_id || meta.noitruid || '',
         'Ngày vào viện': meta.admission_time || '',
         'Ngày ra viện': meta.discharge_time || '',
         'Họ tên': meta.ho_ten || '',
@@ -202,9 +190,6 @@ function researchHchanhMeta(row, sourceRunId = '') {
     date_to: isoDate(dischargeRaw) || dischargeRaw || '',
     admission_raw: actualAdmission || admissionRaw || '',
     discharge_raw: actualDischarge || dischargeRaw || '',
-    emr_admission_id: rowEmrAdmissionId(row) || '',
-    emr_treatment_id: rowEmrTreatmentId(row) || '',
-    emr_noitru_id: rowNoitruId(row) || '',
     doctor_url: firstNonEmpty(row, ['URL bác sĩ', 'URL bac si', 'record_doctor_url', 'doctor_url']),
     nursing_url: firstNonEmpty(row, ['URL điều dưỡng', 'URL dieu duong', 'record_nursing_url', 'nursing_url']),
   };
@@ -219,9 +204,6 @@ function withResearchHchanhMeta(out, meta, sourceRunId) {
     // Ghi ngày vào/ra viện thật để contextForRow build được encounter_id đúng khi normalize
     'Ngày vào viện': out['Ngày vào viện'] || meta.admission_raw || '',
     'Ngày ra viện':  out['Ngày ra viện']  || meta.discharge_raw  || '',
-    'Mã vào viện': out['Mã vào viện'] || meta.emr_admission_id || '',
-    'Mã điều trị': out['Mã điều trị'] || meta.emr_treatment_id || meta.emr_noitru_id || '',
-    'Mã nội trú': out['Mã nội trú'] || meta.emr_noitru_id || '',
     'URL bác sĩ': out['URL bác sĩ'] || meta.doctor_url || '',
     'URL điều dưỡng': out['URL điều dưỡng'] || meta.nursing_url || '',
     'source_run_id': sourceRunId || '',
