@@ -19,7 +19,7 @@ const { databaseInfo } = require('./sqlite_store');
 const { readCsvTable, patientCode, writeCsv, countCsvRows, getCell } = require('./table_io');
 const { overlayHchanhFromPatientDb, KHO_OVERLAY_FILE, overlayResultsFromPatientDb } = require('./patient_db_overlay');
 const { appendResearchRunLog } = require('./case_trace');
-const { combineEncounterSources, mergeRowsPreferFilled, dedupeByHash, byEncounterCount } = require('./source_merge');
+const { combineEncounterSources, mergeRowsPreferFilled, dedupeByHash, byEncounterCount, buildVerifiedStayIndex, canonicalizeRowToVerifiedStay } = require('./source_merge');
 const { normalizeSex, extractBirthYear, normalizeLabName, resultOperator, parseNumeric, resultText, normalizeLabMeasurement, normalizeFlag, modalityFromService, bodyRegionFromService, normalizeDrugName, classifyDrugGroup, normalizeRoute } = require('./value_normalizers');
 const { dedupeRowsByHash, dedupeSurgeryRows, snapshotFinalDatasetIfUnsaved } = require('./dataset_store');
 const { firstSurgeryByEncounter, surgeryForMedicationContext } = require('./encounter_linkage');
@@ -245,6 +245,13 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   } catch (err) {
     console.warn('[RESEARCH] Không đọc được Kho người bệnh khi chuẩn hoá:', err.message);
   }
+
+  // Dùng ngày vào/ra thực tế EMR đã lấy được để chuẩn hóa các bảng con trong bộ nhớ.
+  // Raw CSV trên đĩa không thay đổi; việc này chỉ loại sai lệch do cùng payload được reuse
+  // cho nhiều dòng nguồn/chuyển khoa của cùng Mã BN.
+  const verifiedStayIndex = buildVerifiedStayIndex(hchanhProfileTable.rows, hchanhDischargeTable.rows);
+  const hchanhOrderRowsCanonical = (hchanhOrderTable.rows || []).map(row => canonicalizeRowToVerifiedStay(row, verifiedStayIndex));
+  const hchanhSurgeryRowsCanonical = (hchanhSurgeryTable.rows || []).map(row => canonicalizeRowToVerifiedStay(row, verifiedStayIndex));
 
   markNormalizeStage(dir, 2, 'Ghép lượt điều trị');
   const encounterSourceRows = combineEncounterSources({
@@ -519,7 +526,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
 
   markNormalizeStage(dir, 4, 'Phẫu thuật, y lệnh, diễn biến');
   const surgeryRaw = [
-    ...hchanhSurgeryTable.rows,
+    ...hchanhSurgeryRowsCanonical,
     ...readCsvTable(path.join(dir, 'lich_su_phau_thuat.csv'), Number.MAX_SAFE_INTEGER).rows,
     ...readCsvTable(path.join(dir, 'phau_thuat.csv'), Number.MAX_SAFE_INTEGER).rows,
   ];
@@ -561,7 +568,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
 
   const existingMedRows = readCsvTable(path.join(dir, 'medication_orders.csv'), Number.MAX_SAFE_INTEGER).rows;
   const medicationRowsFromHistory = [];
-  for (const row of hchanhOrderTable.rows || []) {
+  for (const row of hchanhOrderRowsCanonical) {
     for (const parsed of medicationRowsFromOrderRow(row)) {
       medicationRowsFromHistory.push({ ...parsed });
     }
@@ -658,7 +665,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     return row;
   });
 
-  let clinicalNotes = (hchanhOrderTable.rows || []).map((row, idx) => {
+  let clinicalNotes = hchanhOrderRowsCanonical.map((row, idx) => {
     const code = patientCode(row);
     const ctx = contextForRow(ctxMap, row, code);
     const rawTime = firstNonEmpty(row, ['TG y lệnh', 'TG y lenh', 'Thời gian', 'Ngày']);
@@ -688,7 +695,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   clinicalNotes = dedupeRowsByHash(clinicalNotes);
 
   let clinicalEvents = [];
-  for (const row of hchanhOrderTable.rows || []) {
+  for (const row of hchanhOrderRowsCanonical) {
     const code = patientCode(row);
     if (!code) continue;
     const ctx = contextForRow(ctxMap, row, code);
