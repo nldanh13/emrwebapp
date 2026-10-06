@@ -66,6 +66,21 @@ Người dùng khác: vào tab **Thiết lập tài khoản** → Thêm tài kho
 
 Đăng nhập sai 5 lần thì tài khoản đó (từ máy đó) bị khóa 15 phút.
 
+### Thiết bị tin cậy (điện thoại / máy của bạn)
+
+Chỉ thiết bị tin cậy được xem dữ liệu thật; thiết bị tin cậy mở lại không phải đăng nhập.
+
+1. Trên điện thoại: đăng nhập → tab **Thiết lập tài khoản** → **Thiết bị tin cậy** → *Đăng ký thiết bị này*.
+2. Trên VPS lấy mã xác nhận (dùng một lần, 10 phút):
+
+   ```bash
+   sudo -u emr env $(grep -v '^#' /etc/emrwebapp/emrwebapp.env | xargs) node /opt/emrwebapp/scripts/users_cli.js ma-tin-cay
+   ```
+3. Nhập mã 8 số trên điện thoại → **Xác nhận**. Xong.
+
+Thiết bị khác (máy khoa, máy nhà): đăng ký trên máy đó, rồi trên điện thoại bấm **Duyệt**.
+Mất điện thoại: dùng máy tin cậy khác bấm **Thu hồi**; hết máy tin cậy thì lấy mã mới trên VPS.
+
 ## 4. Tài khoản EMR
 
 ```bash

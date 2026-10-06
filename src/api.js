@@ -2,6 +2,8 @@ import { getSessionId } from './hooks/useSession.js';
 import { logActivity } from './utils/activityLogger.js';
 
 const APP_TOKEN_KEY = 'emr_app_token_v1';
+// Thiết bị tin cậy: nhớ đăng nhập qua các lần mở trình duyệt (máy lạ thì mã chỉ sống trong tab).
+const REMEMBERED_TOKEN_KEY = 'emr_app_token_trusted_v1';
 
 function getStoredAppToken() {
   // Ưu tiên sessionStorage để mã truy cập tự mất khi đóng tab/trình duyệt.
@@ -9,6 +11,12 @@ function getStoredAppToken() {
   try {
     const sessionToken = sessionStorage.getItem(APP_TOKEN_KEY) || '';
     if (sessionToken) return sessionToken;
+
+    const remembered = localStorage.getItem(REMEMBERED_TOKEN_KEY) || '';
+    if (remembered) {
+      sessionStorage.setItem(APP_TOKEN_KEY, remembered);
+      return remembered;
+    }
 
     const legacyToken = localStorage.getItem(APP_TOKEN_KEY) || '';
     if (legacyToken) {
@@ -32,6 +40,7 @@ function setStoredAppToken(token) {
 // và báo cho AuthGate quay lại màn hình đăng nhập, thay vì window.prompt() thô.
 function reportAuthRequired() {
   setStoredAppToken('');
+  try { localStorage.removeItem(REMEMBERED_TOKEN_KEY); } catch {}
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('emr:auth-required'));
   }
@@ -303,7 +312,18 @@ export async function loginWithPassword(username, password) {
 }
 
 export function setAuthToken(token) { setStoredAppToken(String(token || '').trim()); }
-export function clearAuthToken() { setStoredAppToken(''); }
+export function clearAuthToken() {
+  setStoredAppToken('');
+  try { localStorage.removeItem(REMEMBERED_TOKEN_KEY); } catch {}
+}
+// Gọi khi máy chủ xác nhận đây là thiết bị tin cậy: lần sau mở lại không phải đăng nhập.
+export function rememberAuthOnTrustedDevice(trusted) {
+  try {
+    const token = sessionStorage.getItem(APP_TOKEN_KEY) || '';
+    if (trusted && token) localStorage.setItem(REMEMBERED_TOKEN_KEY, token);
+    else localStorage.removeItem(REMEMBERED_TOKEN_KEY);
+  } catch {}
+}
 
 async function get(url) {
   return request(url, { headers: headers() });
@@ -940,6 +960,12 @@ export const saveCustomRoutes = (body) => put('/api/routes/custom', body);
 
 // ── Thiết lập tài khoản (admin) ─────────────────────────────────────────────
 export const getAdminUsers    = ()           => get('/api/admin/users');
+// Thiết bị tin cậy (src/utils/deviceTrust.js ký từng yêu cầu; đây là các lệnh quản lý).
+export const getDeviceStatus  = ()           => get('/api/devices/me');
+export const listDevices      = ()           => get('/api/devices');
+export const registerDevice   = (name, publicKey) => post('/api/devices/register', { name, public_key: publicKey });
+export const approveDevice    = (id, setupCode)   => post(`/api/devices/${encodeURIComponent(id)}/approve`, setupCode ? { setup_code: setupCode } : {});
+export const revokeDevice     = (id)         => post(`/api/devices/${encodeURIComponent(id)}/revoke`, {});
 export const createAdminUser  = (body)        => post('/api/admin/users', body);
 export const updateAdminUser  = (id, body)   => patch(`/api/admin/users/${encodeURIComponent(id)}`, body);
 export const deleteAdminUser  = (id)          => del(`/api/admin/users/${encodeURIComponent(id)}`);

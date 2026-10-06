@@ -105,5 +105,6 @@ router.use(require('./research'));
 router.use(require('./report'));
 router.use(require('./data_transfer'));
 router.use(require('./admin_users'));
+router.use(require('./devices'));
 
 module.exports = router;

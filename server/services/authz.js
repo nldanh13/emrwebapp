@@ -377,6 +377,26 @@ function isReportOttRequest(req) {
     && req.query.ott.trim();
 }
 
+// Gắn sau authenticateRequest: yêu cầu có chữ ký hợp lệ của thiết bị đã duyệt thì
+// req.deviceTrusted = true. Chạy một máy không đăng nhập (localhost) thì coi là tin cậy.
+function attachDeviceTrust(req, _res, next) {
+  const trusted = require('./trusted_devices');
+  req.device = null;
+  req.deviceTrusted = req.auth?.auth_type === 'local_only';
+  if (req.auth && !req.deviceTrusted) {
+    const device = trusted.verifyRequest({
+      deviceId: req.get('x-device-id'),
+      ts: req.get('x-device-ts'),
+      sig: req.get('x-device-sig'),
+      method: req.method,
+      url: req.originalUrl,
+      userId: req.auth.id,
+    });
+    if (device) { req.device = device; req.deviceTrusted = true; }
+  }
+  return next();
+}
+
 function authenticateRequest(req, res, next) {
   if (req.method === 'OPTIONS') return next();
   if (isReportOttRequest(req)) {
@@ -415,6 +435,8 @@ function requiredRoleForRequest(req) {
   const routePath = String(req.path || '');
   if (method === 'OPTIONS') return 'viewer';
   if (routePath === '/auth/me' || routePath === '/health') return 'viewer';
+  // Thiết bị tin cậy: ai cũng đăng ký được máy của mình; quyền duyệt/thu hồi kiểm trong route.
+  if (routePath.startsWith('/devices')) return 'viewer';
   // Quản lý tài khoản (token, tài khoản EMR riêng) — chỉ admin, mọi method.
   if (routePath.startsWith('/admin/users')) return 'admin';
   // Tài khoản EMR theo điều dưỡng (ca làm/ca trực) — chứa mật khẩu thật, chỉ admin.
@@ -505,6 +527,7 @@ module.exports = {
   ROLE_LEVEL,
   assertAuthConfiguration,
   authenticateRequest,
+  attachDeviceTrust,
   authorizeRequest,
   requireRole,
   hasRole,
