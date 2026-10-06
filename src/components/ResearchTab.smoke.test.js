@@ -189,8 +189,17 @@ describe('ResearchTab (khói)', () => {
     for (const stage of ['Quét danh sách từ EMR', 'Thu thập dữ liệu chi tiết', 'Chuẩn hóa và kiểm tra chất lượng', 'Lưu trữ']) expect(text).toContain(stage);
     expect(text).toContain('research.sqlite3');
     expect(text).toContain('3 phần lỗi còn tồn');
+    expect(text).toContain('Chạy lại chuẩn hóa');
+    expect(text).toContain('không cần chạy Thu thập dữ liệu');
     expect(text).not.toContain('NC0001');
     expect(container.querySelector('input[placeholder^="Tìm mã NC"]')).toBeNull();
+  });
+
+  it('Tổng quát có nút Chạy lại chuẩn hóa cố định và gọi API trực tiếp, không cần Thu thập dữ liệu', async () => {
+    api.normalizeResearchArchive.mockClear();
+    await clickText('Chạy lại chuẩn hóa');
+    expect(api.normalizeResearchArchive).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('Đã chuẩn hóa xong');
   });
 
   it('Thu thập dữ liệu xếp theo bước: quét danh sách rồi thu thập chi tiết, thao tác phụ gom lại', async () => {

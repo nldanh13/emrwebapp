@@ -76,7 +76,7 @@ function Stage({ n, title, state, tone = 'neutral', what, children }) {
 
 const B = ({ children }) => <b style={{ color: C.text, fontVariantNumeric: 'tabular-nums' }}>{children}</b>;
 
-function PipelineView({ pipeline, summary }) {
+function PipelineView({ pipeline, summary, onNormalize, normalizeBusy = false }) {
   if (!pipeline?.exists) return null;
   const { scan, collect, normalize, storage, reused_from_patient_db: reused } = pipeline;
   const fetch = pipeline.fetch || {};
@@ -139,6 +139,22 @@ function PipelineView({ pipeline, summary }) {
           what="Ghép file thô thành bảng chuẩn theo lượt điều trị (người bệnh, đợt, XN, CĐHA, PT/TT, y lệnh...), tách Mã BN sang mã giả danh, rồi kiểm tra chất lượng (QA). Chạy tự động sau mỗi lần quét/thu thập.">
           Lúc <B>{when(normalize.at)}</B>{normalize.duration_ms != null ? <> · chạy <B>{(normalize.duration_ms / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}</B> giây</> : null}
           {normalize.schema_version ? <> · cấu trúc bảng phiên bản <B>{normalize.schema_version}</B></> : null}.
+          {onNormalize && (
+            <div style={{ marginTop: 9, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <Btn
+                variant="solidPrimary"
+                onClick={onNormalize}
+                disabled={normalizeBusy}
+                loading={normalizeBusy}
+                style={{ height: 32 }}
+              >
+                {normalizeBusy ? 'Đang chuẩn hóa…' : 'Chạy lại chuẩn hóa'}
+              </Btn>
+              <span style={{ fontSize: FS.xs, color: C.text3 }}>
+                Chạy trực tiếp từ dữ liệu đã có trong kho, <b>không cần chạy Thu thập dữ liệu</b> và không mở EMR.
+              </span>
+            </div>
+          )}
           {!!normalize.unmatched.length && (
             <div style={{ color: C.amber }}>Không ghép được vào lượt điều trị: {normalize.unmatched.map(u => `${u.label} ${compactNumber(u.rows)} dòng`).join(' · ')} (giữ riêng, không đưa vào phân tích).</div>
           )}
@@ -205,7 +221,7 @@ function PipelineView({ pipeline, summary }) {
   );
 }
 
-export function GeneralOverviewView({ generalOverview, generalOverviewLoading, pipeline, setArchiveMode }) {
+export function GeneralOverviewView({ generalOverview, generalOverviewLoading, pipeline, setArchiveMode, onNormalize, normalizeBusy = false }) {
   const ov = generalOverview;
   const summary = ov?.statusSummary || { total: 0, ready: 0, missingCount: 0, manualReview: 0, modules: [] };
   const counts = ov?.counts || {};
@@ -267,7 +283,7 @@ export function GeneralOverviewView({ generalOverview, generalOverviewLoading, p
         </section>
       )}
 
-      <PipelineView pipeline={pipeline} summary={summary} />
+      <PipelineView pipeline={pipeline} summary={summary} onNormalize={onNormalize} normalizeBusy={normalizeBusy} />
     </div>
   );
 }
