@@ -375,8 +375,9 @@ function contextForRow(ctxMap, row, code) {
   if (eventDate) {
     const temporal = candidates.filter(ctx => eventInsideContext(eventDate, ctx));
     if (temporal.length === 1) return matchedContext(temporal[0], 'event_date_range');
-    // Có thời gian sự kiện nhưng không nằm duy nhất trong một đợt: không ép ghép chỉ vì cùng Mã BN.
-    return unresolvedContext(code, candidates);
+    if (!candidates.length) return unresolvedContext(code, [], 'encounter_match_missing');
+    if (!temporal.length) return unresolvedContext(code, candidates, 'encounter_match_outside_time');
+    return unresolvedContext(code, temporal, 'encounter_match_ambiguous');
   }
   // Chỉ fallback theo Mã BN khi BN chỉ có đúng một đợt và dòng nguồn hoàn toàn không có mốc thời gian.
   if (candidates.length === 1) return matchedContext(candidates[0], 'patient_unique_encounter_no_event_time');
