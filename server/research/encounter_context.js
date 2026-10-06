@@ -317,35 +317,65 @@ function buildContextMap(patientRows, sourceRunId = '') {
   return map;
 }
 
+function resolveStrongEncounterKey(ctxMap, keys, row, code, method, aliasMethod = '') {
+  const keyList = Array.isArray(keys) ? keys : [keys];
+  const candidates = [];
+  const seen = new Set();
+  let usedAlias = false;
+  for (let i = 0; i < keyList.length; i += 1) {
+    const value = ctxMap.get(keyList[i]);
+    if (!value) continue;
+    for (const ctx of (Array.isArray(value) ? value : [value])) {
+      const id = String(ctx?.encounter_id || '');
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      candidates.push(ctx);
+      if (i > 0) usedAlias = true;
+    }
+  }
+  if (!candidates.length) return unresolvedContext(code, [], 'encounter_match_strong_key_not_found');
+  const samePatient = candidates.filter(ctx => normalizedIdentity(ctx.patient_code) === normalizedIdentity(code));
+  if (samePatient.length !== 1) {
+    return unresolvedContext(code, samePatient, samePatient.length > 1
+      ? 'encounter_match_strong_key_ambiguous'
+      : 'encounter_match_identity_conflict');
+  }
+  return matchedContextForRow(samePatient[0], row, code, usedAlias && aliasMethod ? aliasMethod : method);
+}
+
 function contextForRow(ctxMap, row, code) {
   const explicitEncounter = rowExistingEncounterId(row);
   if (explicitEncounter) {
-    const exact = uniqueContext(ctxMap.get(`encounter:${normalizedIdentity(explicitEncounter)}`));
-    if (exact && normalizedIdentity(exact.patient_code) === normalizedIdentity(code)) {
-      return matchedContextForRow(exact, row, code, 'encounter_id');
-    }
+    return resolveStrongEncounterKey(ctxMap, `encounter:${normalizedIdentity(explicitEncounter)}`, row, code, 'encounter_id');
   }
 
   const treatmentId = rowEmrTreatmentId(row);
   if (treatmentId) {
-    const exact = uniqueContext(ctxMap.get(`treatment:${normalizedIdentity(treatmentId)}`));
-    if (exact && normalizedIdentity(exact.patient_code) === normalizedIdentity(code)) {
-      return matchedContextForRow(exact, row, code, 'emr_treatment_id');
-    }
+    const id = normalizedIdentity(treatmentId);
+    return resolveStrongEncounterKey(
+      ctxMap,
+      [`treatment:${id}`, `noitru:${id}`],
+      row,
+      code,
+      'emr_treatment_id',
+      'emr_treatment_noitru_alias',
+    );
   }
   const noitruId = rowNoitruId(row);
   if (noitruId) {
-    const exact = uniqueContext(ctxMap.get(`noitru:${normalizedIdentity(noitruId)}`));
-    if (exact && normalizedIdentity(exact.patient_code) === normalizedIdentity(code)) {
-      return matchedContextForRow(exact, row, code, 'emr_noitru_id');
-    }
+    const id = normalizedIdentity(noitruId);
+    return resolveStrongEncounterKey(
+      ctxMap,
+      [`noitru:${id}`, `treatment:${id}`],
+      row,
+      code,
+      'emr_noitru_id',
+      'emr_noitru_treatment_alias',
+    );
   }
   const admissionId = rowEmrAdmissionId(row);
   if (admissionId) {
-    const exact = uniqueContext(ctxMap.get(`admission:${normalizedIdentity(admissionId)}`));
-    if (exact && normalizedIdentity(exact.patient_code) === normalizedIdentity(code)) {
-      return matchedContextForRow(exact, row, code, 'emr_admission_id');
-    }
+    return resolveStrongEncounterKey(ctxMap, `admission:${normalizedIdentity(admissionId)}`, row, code, 'emr_admission_id');
   }
 
   const admission = isoDateTime(firstNonEmpty(row, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'admission_date']))
@@ -374,11 +404,12 @@ function contextForRow(ctxMap, row, code) {
   if (eventDate) {
     const temporal = candidates.filter(ctx => eventInsideContext(eventDate, ctx));
     if (temporal.length === 1) return matchedContext(temporal[0], 'event_date_range');
-    // Có thời gian sự kiện nhưng không nằm duy nhất trong một đợt: không ép ghép chỉ vì cùng Mã BN.
-    return unresolvedContext(code, candidates);
+    if (!candidates.length) return unresolvedContext(code, [], 'encounter_match_missing');
+    if (!temporal.length) return unresolvedContext(code, candidates, 'encounter_match_outside_time');
+    return unresolvedContext(code, temporal, 'encounter_match_ambiguous');
   }
-  // Chỉ fallback theo Mã BN khi BN chỉ có đúng một đợt và dòng nguồn hoàn toàn không có mốc thời gian.
-  if (candidates.length === 1) return matchedContext(candidates[0], 'patient_unique_encounter_no_event_time');
+  // Chỉ Mã BN không đủ để chứng minh một dòng lâm sàng thuộc đợt nào khi nguồn thiếu thời gian.
+  if (candidates.length === 1) return unresolvedContext(code, candidates, 'encounter_match_missing_event_time');
   return unresolvedContext(code, candidates);
 }
 
@@ -421,6 +452,7 @@ module.exports = {
   uniqueContext,
   matchedContext,
   matchedContextForRow,
+  resolveStrongEncounterKey,
   rowEventDate,
   eventInsideContext,
   hasPreciseClock,

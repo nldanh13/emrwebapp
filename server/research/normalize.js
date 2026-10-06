@@ -5,7 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { stableHash, buildContextMap, contextForRow, firstNonEmpty, buildEncounterId, isoDateTime, isoDate, parseAnyDate, rowEmrAdmissionId, rowEmrTreatmentId, rowNoitruId, encounterMatchStatus, eventTemporalFields, dateOffsetDays, daysBetween, normalizeSimple } = require('./encounter_context');
+const { stableHash, buildContextMap, contextForRow, firstNonEmpty, buildEncounterId, isoDateTime, isoDate, parseAnyDate, rowEmrAdmissionId, rowEmrTreatmentId, rowNoitruId, encounterMatchStatus, encounterMatchMethod, eventTemporalFields, dateOffsetDays, daysBetween, normalizeSimple } = require('./encounter_context');
 const { loadAnalysisConfig, ANALYSIS_PRESETS, _runInference, hoursBetween } = require('./analysis_presets');
 const patientDb = require('../services/patient_db');
 const variableSelection = require('./variable_selection');
@@ -412,6 +412,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       patient_code: code,
       encounter_id: ctx.encounter_id || '',
       encounter_match_status: encounterMatchStatus(ctx),
+      encounter_match_method: encounterMatchMethod(ctx),
+      encounter_match_reason: ctx.needs_manual_review || '',
       lab_datetime: isoDateTime(rawTime),
       lab_date: isoDate(firstNonEmpty(row, ['Ngày xét nghiệm', 'Ngày chỉ định'])) || isoDate(rawTime),
       lab_group: firstNonEmpty(row, ['Loại XN', 'Loai XN', 'Nhóm XN']),
@@ -459,6 +461,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       patient_code: code,
       encounter_id: ctx.encounter_id || '',
       encounter_match_status: encounterMatchStatus(ctx),
+      encounter_match_method: encounterMatchMethod(ctx),
+      encounter_match_reason: ctx.needs_manual_review || '',
       ordered_at: isoDateTime(rawTime),
       order_date: isoDate(firstNonEmpty(row, ['Ngày chỉ định', 'Ngay chi dinh'])) || isoDate(rawTime),
       service_name_raw: service,
@@ -528,6 +532,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       patient_code: code,
       encounter_id: ctx.encounter_id || '',
       encounter_match_status: encounterMatchStatus(ctx),
+      encounter_match_method: encounterMatchMethod(ctx),
+      encounter_match_reason: ctx.needs_manual_review || '',
       surgery_datetime: isoDateTime(dt),
       surgery_date: isoDate(dt),
       surgery_name: firstNonEmpty(row, ['Tên phẫu thuật', 'Ten phau thuat', 'Dịch vụ phẫu thuật', 'Dich vu phau thuat', 'dich_vu_phau_thuat', 'noi_dung_phau_thuat']),
@@ -551,7 +557,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
 
   // Chỉ index theo encounter đã ghép chắc chắn. Không dùng patient_code làm fallback:
   // một bệnh nhân có thể có nhiều đợt điều trị/phẫu thuật khác nhau.
-  const firstSurgeryForMedicationByEncounter = firstSurgeryByEncounter(surgeryResults);
+  const firstSurgeryForMedicationByEncounter = firstSurgeryByEncounter(surgeryResults.filter(row => row.encounter_match_status === 'matched' && row.is_within_encounter === '1'));
 
   const existingMedRows = readCsvTable(path.join(dir, 'medication_orders.csv'), Number.MAX_SAFE_INTEGER).rows;
   const medicationRowsFromHistory = [];
@@ -582,6 +588,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       patient_code: code,
       encounter_id: ctx.encounter_id || '',
       encounter_match_status: encounterMatchStatus(ctx),
+      encounter_match_method: encounterMatchMethod(ctx),
+      encounter_match_reason: ctx.needs_manual_review || '',
       order_datetime: isoDateTime(rawTime),
       order_date: orderDate,
       drug_name_raw: drug,
@@ -617,7 +625,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   const medicationDayMap = new Map();
   for (const med of medicationOrders) {
     if (!med.patient_code || !med.encounter_id || !med.order_date) continue;
-    if (med.encounter_match_status !== 'matched' || med.is_within_encounter === '0') continue;
+    if (med.encounter_match_status !== 'matched' || med.is_within_encounter !== '1') continue;
     const key = [med.patient_code, med.encounter_id || '', med.order_date].join('|');
     const bucket = medicationDayMap.get(key) || {
       research_code: med.research_code,
@@ -659,6 +667,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       patient_code: code,
       encounter_id: ctx.encounter_id || '',
       encounter_match_status: encounterMatchStatus(ctx),
+      encounter_match_method: encounterMatchMethod(ctx),
+      encounter_match_reason: ctx.needs_manual_review || '',
       note_datetime: isoDateTime(rawTime),
       note_date: isoDate(rawTime),
       doctor_name: firstNonEmpty(row, ['Bác sĩ', 'Bac si', 'doctor_name']),
@@ -690,6 +700,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
         patient_code: code,
         encounter_id: ctx.encounter_id || '',
         encounter_match_status: encounterMatchStatus(ctx),
+      encounter_match_method: encounterMatchMethod(ctx),
+      encounter_match_reason: ctx.needs_manual_review || '',
         event_datetime: isoDateTime(rawTime),
         event_date: isoDate(rawTime),
         doctor_name: firstNonEmpty(row, ['Bác sĩ', 'Bac si', 'doctor_name']),
@@ -714,15 +726,17 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   }
   clinicalEvents = dedupeRowsByHash(clinicalEvents);
 
-  const labByEncounter = byEncounterCount(labResults, 'lab_date');
-  const imagingByEncounter = byEncounterCount(imagingResults, 'order_date');
-  const surgeryByEncounter = byEncounterCount(surgeryResults, 'surgery_date');
-  const medicationByEncounter = byEncounterCount(medicationOrders, 'order_date');
+  const analysisEligible = rows => rows.filter(row =>
+    row.encounter_match_status === 'matched' && row.is_within_encounter === '1');
+  const labByEncounter = byEncounterCount(analysisEligible(labResults), 'lab_date');
+  const imagingByEncounter = byEncounterCount(analysisEligible(imagingResults), 'order_date');
+  const surgeryByEncounter = byEncounterCount(analysisEligible(surgeryResults), 'surgery_date');
+  const medicationByEncounter = byEncounterCount(analysisEligible(medicationOrders), 'order_date');
   const patientDayMap = new Map();
   function ensurePatientDay(row, date) {
     if (!row.patient_code || !row.encounter_id || !date) return null;
     if (row.encounter_match_status && row.encounter_match_status !== 'matched') return null;
-    if (row.is_within_encounter === '0') return null;
+    if (row.is_within_encounter !== '1') return null;
     const key = [row.patient_code, row.encounter_id || '', date].join('|');
     if (!patientDayMap.has(key)) {
       const ctx = contextForRow(ctxMap, row, row.patient_code);
@@ -793,7 +807,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   // Bản đầy đủ theo encounter để analysis_ready/final dataset không làm mất các lần kết quả.
   const labResultsByEncounter = new Map();
   for (const lab of labResults) {
-    if (!lab.encounter_id || lab.encounter_match_status !== 'matched' || lab.is_within_encounter === '0') continue;
+    if (!lab.encounter_id || lab.encounter_match_status !== 'matched' || lab.is_within_encounter !== '1') continue;
     const list = labResultsByEncounter.get(lab.encounter_id) || [];
     list.push({
       lab_datetime: lab.lab_datetime || '',
@@ -819,7 +833,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
 
   const imagingResultsByEncounter = new Map();
   for (const img of imagingResults) {
-    if (!img.encounter_id || img.encounter_match_status !== 'matched' || img.is_within_encounter === '0') continue;
+    if (!img.encounter_id || img.encounter_match_status !== 'matched' || img.is_within_encounter !== '1') continue;
     const list = imagingResultsByEncounter.get(img.encounter_id) || [];
     list.push({
       ordered_at: img.ordered_at || '',
@@ -847,7 +861,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     const col = pdLabMap[lab.test_name_norm];
     if (!col) continue;
     const key = lab.encounter_id;
-    if (!key || lab.encounter_match_status !== 'matched' || lab.is_within_encounter === '0') continue;
+    if (!key || lab.encounter_match_status !== 'matched' || lab.is_within_encounter !== '1') continue;
     const bucket = firstLabByEncounter.get(key) || {};
     const oldTime = bucket[`_${col}_time`] || '';
     const newTime = String(lab.lab_datetime || '');
@@ -868,11 +882,11 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   // initialization" mỗi khi chạy nhánh không lấy từ cache.
   // Chỉ ghép theo đúng lượt điều trị (dòng thiếu encounter_id không phát tán sang mọi
   // lượt của cùng người bệnh). Dùng chung quy tắc chọn ca mổ đầu tiên với y lệnh.
-  const firstSurgeryByEncounterMap = firstSurgeryByEncounter(surgeryResults);
+  const firstSurgeryByEncounterMap = firstSurgeryByEncounter(surgeryResults.filter(row => row.encounter_match_status === 'matched' && row.is_within_encounter === '1'));
   const imagingTextByEncounter = new Map();
   for (const img of imagingResults) {
     const key = img.encounter_id;
-    if (!key || img.encounter_match_status !== 'matched' || img.is_within_encounter === '0') continue;
+    if (!key || img.encounter_match_status !== 'matched' || img.is_within_encounter !== '1') continue;
     const old = imagingTextByEncounter.get(key) || '';
     imagingTextByEncounter.set(key, `${old}\n${img.service_name_raw || ''}\n${img.result_text || ''}\n${img.conclusion_text || ''}`.trim());
   }
@@ -949,9 +963,6 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     if (!entry || typeof entry !== 'object') return -1;
     const entryEncounter = String(entry.encounter_id || '').trim();
     if (key === enc.encounter_id || entryEncounter === enc.encounter_id) return 100;
-
-    const entryResearch = String(entry.research_code || entry['Mã NC'] || '').trim();
-    if (entryResearch && enc.research_code && entryResearch === enc.research_code) return 90;
 
     const entryCode = String(entry.ma_bn || entry['Mã BN'] || key.split('|')[0] || '').trim();
     if (!entryCode || entryCode !== enc.patient_code) return -1;

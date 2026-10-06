@@ -418,10 +418,6 @@ function buildCollectionUnits({ sourceRows = [], encounterRows = [], encounterOv
     const automaticLevels = [
       ['noitru', () => (id.noitru ? cands.filter(e => e.noitru === id.noitru || e.treatment === id.noitru) : [])],
       ['treatment', () => (id.treatment ? cands.filter(e => e.treatment === id.treatment || e.noitru === id.treatment) : [])],
-      // Mã NC được cấp duy nhất cho từng Research key. Đây là bằng chứng mạnh khi
-      // danh sách cũ thiếu Mã nội trú và một người bệnh có nhiều lượt cùng ngày.
-      // Vẫn bắt buộc cùng Mã BN và không được mâu thuẫn Mã nội trú.
-      ['research_code', () => (id.research_code ? cands.filter(e => e.research_code === id.research_code && noConflict(e)) : [])],
       ['admission_time', () => (id.admission_time ? cands.filter(e => e.admission_time === id.admission_time && noConflict(e)) : [])],
       ['date_range', () => (rowDate ? cands.filter(e => noConflict(e) && e.from && rowDate >= e.from && rowDate <= (e.to || e.from)) : [])],
     ];
@@ -442,7 +438,6 @@ function buildCollectionUnits({ sourceRows = [], encounterRows = [], encounterOv
     if (!match) {
       if (manualEncounterId) unmatchedReason = 'invalid_manual_override';
       else if (!cands.length) unmatchedReason = 'patient_not_in_encounters';
-      else if (ambiguousMethod === 'research_code') unmatchedReason = 'ambiguous_research_code';
       else if (ambiguousMethod === 'admission_time') unmatchedReason = 'ambiguous_admission_time';
       else if (ambiguousMethod === 'date_range') unmatchedReason = 'ambiguous_date_range';
       else if ((id.noitru || id.treatment) && cands.some(e => e.noitru || e.treatment)) unmatchedReason = 'identity_conflict';
@@ -549,7 +544,6 @@ function matchXnEntriesToSources(progress, sources) {
       () => (explicit && byKey.has(explicit) ? [byKey.get(explicit)] : []),
       () => (noitru ? sources.filter(s => s.patient_code === code && (s.noitru === noitru || s.treatment === noitru)) : []),
       () => (treatment ? sources.filter(s => s.patient_code === code && (s.treatment === treatment || s.noitru === treatment)) : []),
-      () => (rc && code ? sources.filter(s => s.research_code === rc && s.patient_code === code) : []),
       () => (code && admission ? sources.filter(s => s.patient_code === code && inStay(s, admission)) : []),
     ];
     let picked = null;

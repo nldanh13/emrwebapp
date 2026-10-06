@@ -24,7 +24,7 @@ const routeModel = require('../utils/routeModel');
 //   excluded           — mặc định bị che khi xem/xuất (server/research/export_utils.js).
 // Phân loại "use" là đề xuất kỹ thuật; bệnh viện/hội đồng đạo đức phải xác nhận.
 
-const DICTIONARY_VERSION = '2026-10-06.6';
+const DICTIONARY_VERSION = '2026-10-06.10';
 
 const CONVENTIONS = {
   dates: 'Ngày dạng YYYY-MM-DD; thời điểm dạng YYYY-MM-DD HH:mm (giờ địa phương, không có múi giờ). Cột "ngày giờ" có thể chỉ có phần ngày nếu nguồn không có giờ.',
@@ -59,12 +59,21 @@ const COMMON = {
   encounter_id: col('string', 'Khóa đợt điều trị (Research key), nối về encounters.encounter_id.', {
     format: 'enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép',
     identifier: 'pseudonymous',
-    derivation: 'Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra → Mã NC.',
+    derivation: 'Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra. Mã NC không tham gia quyết định matching.',
     empty: 'Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing).',
   }),
   encounter_match_status: col('enum', 'Kết quả gắn dòng vào đợt điều trị.', {
     allowed: ['matched', 'ambiguous', 'missing'],
-    derivation: 'matched: khớp khóa EMR/Mã NC/khoảng thời gian duy nhất; ambiguous: khớp nhiều đợt; missing: không khớp đợt nào. Không tự gắn dòng ambiguous/missing.',
+    derivation: 'matched: đúng Mã BN và xác định duy nhất đợt bằng khóa EMR hoặc thời gian; ambiguous: khớp nhiều đợt; missing: không khớp đợt nào. Mã NC không tham gia quyết định matching.',
+  }),
+  encounter_match_method: col('enum', 'Bằng chứng đã dùng để gắn dòng vào đợt điều trị.', {
+    allowed: ['encounter_id', 'emr_treatment_id', 'emr_noitru_id', 'emr_admission_id', 'emr_treatment_noitru_alias', 'emr_noitru_treatment_alias', 'visit_exact', 'admission_time', 'discharge_time', 'admission_date', 'discharge_date', 'event_date_range', 'patient_unique_encounter_no_event_time (legacy)'],
+    empty: 'Dòng chưa được ghép.',
+    derivation: 'Khóa EMR mạnh được ưu tiên. Mã điều trị và Mã nội trú được phép đối chiếu chéo khi cùng giá trị, cùng Mã BN và dẫn tới đúng một đợt; nếu mâu thuẫn/không tìm thấy thì dừng, không fallback theo thời gian.',
+  }),
+  encounter_match_reason: col('string', 'Lý do dòng chưa được ghép chắc vào đợt.', {
+    empty: 'Dòng đã matched.',
+    allowed: 'Ví dụ encounter_match_outside_time, encounter_match_missing_event_time, encounter_match_identity_conflict, encounter_match_strong_key_not_found, encounter_match_strong_key_ambiguous, encounter_match_ambiguous, encounter_match_missing.',
   }),
   days_from_admission: col('integer', 'Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện).', {
     unit: 'ngày', empty: 'Thiếu ngày vào viện hoặc thời điểm của dòng.', allowed: 'Có thể âm (trước ngày vào viện).',
@@ -229,7 +238,7 @@ TABLES.lab_results = {
       'Đơn vị khác nhau cho cùng test_name_norm trong một nghiên cứu.',
     ],
   },
-  columns: withCommon(['lab_result_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'lab_datetime', 'lab_date', 'lab_group', 'lab_order_id', 'test_name_raw', 'test_name_norm', 'result_raw', 'result_operator', 'result_num', 'result_text', 'unit', 'result_num_norm', 'unit_norm', 'unit_conversion_status', 'ref_range_raw', 'flag_raw', 'flag_norm', 'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
+  columns: withCommon(['lab_result_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'lab_datetime', 'lab_date', 'lab_group', 'lab_order_id', 'test_name_raw', 'test_name_norm', 'result_raw', 'result_operator', 'result_num', 'result_text', 'unit', 'result_num_norm', 'unit_norm', 'unit_conversion_status', 'ref_range_raw', 'flag_raw', 'flag_norm', 'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
     lab_result_id: col('string', 'Khóa dòng: lab_<row_hash>_<lần xuất hiện>. Hai dòng có nội dung giống nhau vẫn có ID riêng để không mất lần xét nghiệm thật.'),
     lab_datetime: col('datetime', 'Thời điểm chỉ định/xét nghiệm.', { identifier: 'quasi', use: 'approval_required' }),
     lab_date: col('date', 'Ngày xét nghiệm.', { identifier: 'quasi', use: 'approval_required' }),
@@ -263,7 +272,7 @@ TABLES.imaging_results = {
   processing: 'Loại máy lấy từ Nhóm dịch vụ, nếu trống thì suy từ tên dịch vụ; vùng cơ thể suy từ tên dịch vụ. Giữ mọi lần CĐHA, kể cả khi nội dung giống hệt; QA chỉ đánh dấu nghi trùng, không tự xóa.',
   inferred: true,
   quality: { required: ['imaging_id', 'patient_code'], unique: ['imaging_id'], checks: ['Dòng CĐHA giống hệt sau chuẩn hóa: giữ tất cả và cảnh báo possible_duplicate_imaging_rows.', 'Trùng imaging_id: lỗi chặn.', 'Ghép đợt ambiguous/missing: cảnh báo.'], manual_review: ['Dòng CĐHA giống hệt (possible_duplicate_imaging_rows): giữ tất cả để tránh mất lần khảo sát thật.', 'Cùng BN + cùng thời điểm + cùng dịch vụ nhưng kết quả khác nhau (conflicting_imaging_result).', 'modality = Khác', 'body_region trống'] },
-  columns: withCommon(['imaging_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'ordered_at', 'order_date', 'service_name_raw', 'modality', 'body_region', 'result_text', 'conclusion_text', 'status', 'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
+  columns: withCommon(['imaging_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'ordered_at', 'order_date', 'service_name_raw', 'modality', 'body_region', 'result_text', 'conclusion_text', 'status', 'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
     imaging_id: col('string', 'Khóa dòng: img_<row_hash>_<lần xuất hiện>. Các dòng giống nhau vẫn có ID riêng để không mất lần CĐHA thật.'),
     ordered_at: col('datetime', 'Thời điểm chỉ định.', { identifier: 'quasi', use: 'approval_required' }),
     order_date: col('date', 'Ngày chỉ định.', { identifier: 'quasi', use: 'approval_required' }),
@@ -289,7 +298,7 @@ TABLES.surgery_results = {
   processing: 'Bỏ dòng không có ngày, tên và phương pháp; gộp các dòng trùng ca mổ.',
   inferred: false,
   quality: { required: ['surgery_id', 'patient_code'], unique: ['surgery_id'], checks: ['Trùng surgery_id: lỗi chặn.', 'Ghép đợt ambiguous/missing: cảnh báo.'], manual_review: ['surgery_date nằm ngoài khoảng đợt (is_within_encounter = 0).'] },
-  columns: withCommon(['surgery_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'surgery_datetime', 'surgery_date', 'surgery_name', 'surgery_method', 'anesthesia_method', 'surgery_class', 'status', 'preop_diagnosis', 'postop_diagnosis', 'operating_room', 'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
+  columns: withCommon(['surgery_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'surgery_datetime', 'surgery_date', 'surgery_name', 'surgery_method', 'anesthesia_method', 'surgery_class', 'status', 'preop_diagnosis', 'postop_diagnosis', 'operating_room', 'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
     surgery_id: col('string', 'Khóa dòng: surg_<row_hash>.'),
     surgery_datetime: col('datetime', 'Thời điểm bắt đầu mổ.', { identifier: 'quasi', use: 'approval_required' }),
     surgery_date: col('date', 'Ngày mổ.', { identifier: 'quasi', use: 'approval_required' }),
@@ -313,7 +322,7 @@ TABLES.medication_orders = {
   processing: 'Tách nội dung y lệnh thành từng dòng; chỉ giữ dòng có từ khóa thuốc (tt, viên, ống, chai, uống, tiêm, truyền…). Đường dùng và nhóm thuốc suy từ văn bản. Ngày hậu phẫu tính theo ca mổ đầu tiên CÙNG đợt.',
   inferred: true,
   quality: { required: ['med_order_id', 'patient_code', 'drug_name_raw'], unique: ['med_order_id'], checks: ['Trùng med_order_id: lỗi chặn.', 'Ghép đợt ambiguous/missing: cảnh báo.'], manual_review: ['route_norm không thuộc danh sách chuẩn', 'drug_group_guess trống với thuốc cần phân tích'] },
-  columns: withCommon(['med_order_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'order_datetime', 'order_date', 'drug_name_raw', 'drug_name_norm', 'drug_group_guess', 'active_ingredient', 'route_raw', 'route_norm', 'dose_raw', 'times_per_day', 'schedule', 'order_action', 'parser_confidence', 'source_field', 'raw_line', 'surgery_datetime_ref', 'surgery_date_ref', 'postop_day_index', 'postop_day_label', 'is_postop_day_1_3', 'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
+  columns: withCommon(['med_order_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'order_datetime', 'order_date', 'drug_name_raw', 'drug_name_norm', 'drug_group_guess', 'active_ingredient', 'route_raw', 'route_norm', 'dose_raw', 'times_per_day', 'schedule', 'order_action', 'parser_confidence', 'source_field', 'raw_line', 'surgery_datetime_ref', 'surgery_date_ref', 'postop_day_index', 'postop_day_label', 'is_postop_day_1_3', 'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
     med_order_id: col('string', 'Khóa dòng: med_<row_hash>.'),
     order_datetime: col('datetime', 'Thời điểm y lệnh.', { identifier: 'quasi', use: 'approval_required' }),
     order_date: col('date', 'Ngày y lệnh.', { identifier: 'quasi', use: 'approval_required' }),
@@ -350,7 +359,7 @@ TABLES.medication_day_summary = {
   primary_key: ['encounter_id', 'order_date'],
   foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id' }],
   sources: ['medication_orders.csv (chỉ dòng đã gắn đợt và có ngày)'],
-  processing: 'Nhóm theo đợt + ngày y lệnh.',
+  processing: 'Chỉ dùng medication_orders đã matched và is_within_encounter = 1; sau đó nhóm theo đợt + ngày y lệnh. Dòng chưa chứng minh được thời gian vẫn giữ ở medication_orders nhưng không vào bảng tóm tắt.',
   inferred: false,
   quality: { required: ['encounter_id', 'order_date'], unique: ['encounter_id + order_date'], checks: [], manual_review: [] },
   columns: withCommon(['research_code', 'patient_code', 'patient_key', 'encounter_id', 'order_date', 'drug_count', 'route_set', 'drugs_display', 'drugs_json', 'source_run_id', 'row_hash'], {
@@ -371,7 +380,7 @@ TABLES.clinical_notes = {
   processing: 'Giữ nguyên văn diễn biến và y lệnh để truy nguyên; phần có cấu trúc được tách riêng sang medication_orders và clinical_events.',
   inferred: false,
   quality: { required: ['note_id', 'patient_code'], unique: ['note_id'], checks: ['Trùng note_id: lỗi chặn.', 'Ghép đợt ambiguous/missing: cảnh báo.'], manual_review: [] },
-  columns: withCommon(['note_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'note_datetime', 'note_date', 'doctor_name', 'note_type', 'clinical_text', 'order_text', 'status', 'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
+  columns: withCommon(['note_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'note_datetime', 'note_date', 'doctor_name', 'note_type', 'clinical_text', 'order_text', 'status', 'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
     note_id: col('string', 'Khóa dòng: note_<row_hash>.'),
     note_datetime: col('datetime', 'Thời điểm y lệnh.', { identifier: 'quasi', use: 'approval_required' }),
     note_date: col('date', 'Ngày y lệnh.', { identifier: 'quasi', use: 'approval_required' }),
@@ -392,7 +401,7 @@ TABLES.clinical_events = {
   processing: 'Parser rule-based chỉ sinh sự kiện khi có bằng chứng rõ; không biến việc không thấy nhắc thành phủ định. Luôn giữ source_text và parser_rule để truy nguyên.',
   inferred: true,
   quality: { required: ['clinical_event_id', 'patient_code', 'event_type'], unique: ['clinical_event_id'], checks: ['confidence thấp cần thận trọng khi dùng phân tích.'], manual_review: ['Sự kiện parser suy ra cần đối chiếu source_text nếu dùng làm biến kết cục/chính.'] },
-  columns: withCommon(['clinical_event_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'event_datetime', 'event_date', 'doctor_name', 'event_type', 'event_subtype', 'value_raw', 'value_norm', 'negated', 'certainty', 'source_text', 'parser_rule', 'confidence', 'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
+  columns: withCommon(['clinical_event_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'event_datetime', 'event_date', 'doctor_name', 'event_type', 'event_subtype', 'value_raw', 'value_norm', 'negated', 'certainty', 'source_text', 'parser_rule', 'confidence', 'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
     clinical_event_id: col('string', 'Khóa sự kiện: ce_<row_hash>.'),
     event_datetime: col('datetime', 'Thời điểm của dòng diễn biến.', { identifier: 'quasi', use: 'approval_required' }),
     event_date: col('date', 'Ngày của dòng diễn biến.', { identifier: 'quasi', use: 'approval_required' }),
@@ -428,7 +437,7 @@ TABLES.patient_day = {
   primary_key: ['encounter_id', 'date'],
   foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id' }],
   sources: ['lab_results', 'imaging_results', 'surgery_results', 'medication_orders (chỉ dòng đã gắn đợt)'],
-  processing: 'Nhóm theo đợt + ngày. Ngày không có hoạt động nào thì không có dòng.',
+  processing: 'Chỉ dùng XN/CĐHA/PT/y lệnh đã matched và is_within_encounter = 1; sau đó nhóm theo đợt + ngày. Dòng thiếu bằng chứng thời gian vẫn giữ ở bảng chi tiết nhưng không vào patient_day.',
   inferred: false,
   quality: { required: ['encounter_id', 'date'], unique: ['encounter_id + date'], checks: [], manual_review: ['hospital_day ≤ 0 (hoạt động trước ngày vào viện).'] },
   columns: withCommon(['research_code', 'patient_code', 'patient_key', 'encounter_id', 'date', 'hospital_day', 'has_lab', 'lab_count', 'has_imaging', 'imaging_count', 'has_surgery', 'surgery_count', 'has_medication', 'medication_count', 'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt', 'creatinine', 'egfr', 'wbc', 'crp', 'source_run_id', 'row_hash'], {
@@ -454,7 +463,7 @@ TABLES.extract_status = {
   primary_key: ['encounter_id'],
   foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id' }],
   sources: ['progress.json (XN/CĐHA)', 'hchanh_auto_progress.json', 'order_history_auto_progress.json'],
-  processing: 'Chọn bản ghi tiến độ khớp nhất với đợt (khóa đợt → Mã NC → Mã BN + ngày vào/ra; chỉ dùng Mã BN khi BN có đúng 1 đợt). Hành chánh dùng trạng thái riêng từng file khi có. Trạng thái chi tiết hơn (lý do lỗi, số lần thử, đã đổi trên EMR) nằm ở collection_ledger.json / collection_exceptions.csv.',
+  processing: 'Chọn bản ghi tiến độ khớp nhất với đợt theo khóa đợt → Mã BN + ngày/giờ vào-ra; chỉ fallback Mã BN khi người bệnh có đúng 1 đợt. Mã NC không tham gia quyết định matching. Hành chánh dùng trạng thái riêng từng file khi có. Trạng thái chi tiết hơn nằm ở collection_ledger.json / collection_exceptions.csv.',
   inferred: false,
   quality: { required: ['encounter_id'], unique: ['encounter_id'], checks: ['"empty" = đã lấy xong, EMR xác nhận không có; không phải lỗi'], manual_review: ['overall_status = error', 'một phần = blocked (cần người xem)', 'missing_required chứa encounter_match'] },
   columns: withCommon(['research_code', 'encounter_id', 'patient_code', 'patient_key', 'patient_name', 'popup_status', 'xn_status', 'cdha_status', 'profile_status', 'discharge_status', 'surgery_status', 'order_history_status', 'overall_status', 'completion_level', 'ready_for_analysis', 'missing_required', 'lab_count', 'imaging_count', 'surgery_count', 'medication_count', 'last_error', 'source_run_id'], {
@@ -490,7 +499,7 @@ TABLES.analysis_ready = {
   primary_key: ['encounter_id'],
   foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id' }, { columns: ['patient_code'], references: 'patients.patient_code' }],
   sources: ['encounters', 'patients', 'lab_results', 'imaging_results', 'surgery_results'],
-  processing: 'Một dòng mỗi đợt. Giữ toàn bộ XN và CĐHA của đúng đợt trong lab_results_json/imaging_results_json; các cột XN đơn lẻ chỉ là snapshot kết quả sớm nhất để tiện phân tích. imaging_summary giữ toàn bộ tên dịch vụ + mô tả + kết luận, không cắt ngắn. Phẫu thuật lấy ca sớm nhất của đợt; biến suy luận chạy trên chẩn đoán + toàn bộ văn bản CĐHA.',
+  processing: 'Một dòng mỗi đợt. Chỉ dữ liệu matched và is_within_encounter = 1 mới được dùng cho snapshot/tóm tắt phân tích; dữ liệu chưa đủ bằng chứng vẫn giữ nguyên ở bảng chi tiết. Giữ toàn bộ XN và CĐHA hợp lệ của đúng đợt trong lab_results_json/imaging_results_json. imaging_summary không cắt ngắn. Phẫu thuật lấy ca sớm nhất đã xác minh trong đợt; biến suy luận chạy trên chẩn đoán + CĐHA hợp lệ.',
   inferred: true,
   quality: {
     required: ['encounter_id', 'research_code'],
