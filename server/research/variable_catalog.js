@@ -266,7 +266,9 @@ function buildVariableCatalog(runDir, { redact = true } = {}) {
     { key: 'encounters', label: 'Đợt điều trị', file: 'encounters.csv', purpose: 'Mỗi lần nhập viện/điều trị là một dòng.' },
     { key: 'lab_results', label: 'Xét nghiệm', file: 'lab_results.csv', purpose: 'Dữ liệu dài, mỗi kết quả xét nghiệm là một dòng.' },
     { key: 'imaging_results', label: 'CĐHA', file: 'imaging_results.csv', purpose: 'Chẩn đoán hình ảnh.' },
-    { key: 'medication_orders', label: 'Thuốc/y lệnh', file: 'medication_orders.csv', purpose: 'Thuốc, đường dùng, liều, thời điểm.' },
+    { key: 'medication_orders', label: 'Thuốc/y lệnh', file: 'medication_orders.csv', purpose: 'Thuốc, đường dùng, liều, lịch dùng, hành động kê/ngưng/duy trì và thời điểm.' },
+    { key: 'clinical_notes', label: 'Diễn biến & y lệnh gốc', file: 'clinical_notes.csv', purpose: 'Văn bản gốc của diễn biến và nội dung y lệnh để truy nguyên.' },
+    { key: 'clinical_events', label: 'Sự kiện lâm sàng', file: 'clinical_events.csv', purpose: 'Sự kiện cấu trúc tách từ diễn biến: đau, ý thức, vết mổ, vận động, nôn/buồn nôn, xuất viện…' },
     { key: 'diagnoses', label: 'Chẩn đoán', file: 'diagnoses.csv', purpose: 'ICD/chẩn đoán theo đợt điều trị.' },
     { key: 'surgery_results', label: 'Phẫu thuật/thủ thuật', file: 'surgery_results.csv', purpose: 'Tên phẫu thuật, ngày mổ, vô cảm.' },
   ];
