@@ -88,19 +88,26 @@ test('Chuẩn hoá: dùng dữ liệu từ kho, không sửa CSV thô, ghi báo 
   assert.ok(sigBefore);
 });
 
-test('XN / CĐHA: kết quả lần quét được ghi vào kho; ca chưa có kết quả lấy từ kho theo khoảng ngày (gắn Mã NC của nghiên cứu); ca đã có giữ nguyên', () => {
+test('XN / CĐHA: bổ sung từng kết quả còn thiếu từ kho, không bỏ cả ca chỉ vì run đã có một dòng', () => {
   // Kết quả của A2 đã có trong kho từ lần quét khác (vd kho gốc).
   patientDb.recordResults([{ 'Mã NC': 'GOC1', 'Mã BN': 'A2', 'TG chỉ định': '08:00 22/09/2026', 'Chỉ số': 'HGB', 'Kết quả': '101', 'Đơn vị': 'g/L' },
     { 'Mã BN': 'A2', 'TG chỉ định': '08:00 01/09/2026', 'Chỉ số': 'HGB', 'Kết quả': '140' }], { kind: 'xn' });
   patientDb.recordResults([{ 'Mã BN': 'A2', 'TG chỉ định': '09:00 23/09/2026', 'Tên dịch vụ': 'Chụp CT sọ não', 'Kết luận': 'Bình thường' }], { kind: 'cdha' });
+  // A3 có CRP trong run nhưng kho còn HGB cùng đợt: phải bổ sung HGB, không nhân đôi CRP.
+  patientDb.recordResults([
+    { 'Mã BN': 'A3', 'TG chỉ định': '08:00 22/09/2026', 'Chỉ số': 'CRP', 'Kết quả': '12' },
+    { 'Mã BN': 'A3', 'TG chỉ định': '09:00 22/09/2026', 'Chỉ số': 'HGB', 'Kết quả': '115', 'Đơn vị': 'g/L' },
+  ], { kind: 'xn' });
   const labRaw = [{ 'Mã NC': 'NC3', 'Mã BN': 'A3', 'TG chỉ định': '08:00 22/09/2026', 'Chỉ số': 'CRP', 'Kết quả': '12' }];
   const { labRaw: xn, imagingRaw: cd, report } = R.overlayResultsFromPatientDb(RUNTIME_ROOT, sourceRows, 'r1', labRaw, []);
   assert.strictEqual(report.ingested.xn, 1, 'kết quả của lần quét được ghi vào kho');
   const a2 = xn.filter(r => r['Mã BN'] === 'A2');
   assert.deepStrictEqual(a2.map(r => `${r['Mã NC']}|${r['Kết quả']}|${r['Nguồn kho']}`), ['NC2|101|kho_nguoi_benh:goc'], 'chỉ trong khoảng ngày của ca, mang Mã NC của nghiên cứu này');
-  assert.strictEqual(xn.filter(r => r['Mã BN'] === 'A3').length, 1, 'ca đã có kết quả giữ nguyên, không nhân đôi');
+  const a3 = xn.filter(r => r['Mã BN'] === 'A3');
+  assert.deepStrictEqual(a3.map(r => `${r['Chỉ số']}|${r['Kết quả']}`).sort(), ['CRP|12', 'HGB|115'], 'giữ dòng run và bổ sung đúng dòng còn thiếu');
+  assert.strictEqual(a3.filter(r => r['Chỉ số'] === 'CRP').length, 1, 'kết quả đã có không bị nhân đôi');
   assert.deepStrictEqual(cd.map(r => r['Tên dịch vụ']), ['Chụp CT sọ não']);
-  assert.deepStrictEqual(report.filled_cases, { xn: 1, cdha: 1 });
+  assert.deepStrictEqual(report.filled_cases, { xn: 2, cdha: 1 });
   assert.strictEqual(labRaw.length, 1, 'bảng đầu vào không bị sửa');
 });
 
