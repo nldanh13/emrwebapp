@@ -24,6 +24,25 @@ from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 DB_SCHEMA_VERSION = 1
 
+
+def configure_csv_field_limit() -> int:
+    """Raise csv parser field limit to the largest value supported by this Python build.
+
+    Clinical notes/orders can legitimately contain very large cells. Never truncate
+    those values just to fit the csv module's small default (~128 KiB).
+    """
+    limit = sys.maxsize
+    while limit > 0:
+        try:
+            csv.field_size_limit(limit)
+            return limit
+        except OverflowError:
+            limit //= 10
+    raise RuntimeError("Không thể cấu hình giới hạn trường CSV.")
+
+
+CSV_FIELD_SIZE_LIMIT = configure_csv_field_limit()
+
 TEXT_HINTS = {
     "patient_code", "research_code", "encounter_id", "row_hash", "source_run_id",
     "patient_name", "phone_number", "citizen_id", "insurance_card", "icd_code",
