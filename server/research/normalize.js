@@ -1101,6 +1101,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   const analysisReadyTrailCols = [
     'surgery_name', 'surgery_method', 'anesthesia_method', 'comorbidity_text', 'complication_text',
     'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt',
+    'lab_result_count', 'lab_results_json', 'imaging_result_count', 'imaging_results_json',
     'imaging_summary', 'needs_manual_review', 'source_run_id', 'row_hash',
   ];
   const analysisReadyCols = [...analysisReadyBaseCols, ...inferenceColKeys, ...customColKeys, ...analysisReadyTrailCols];
