@@ -14,7 +14,7 @@
 //      dataset chọn biến/dataset cuối/bảng mã hóa không còn Mã BN và họ tên.
 // v16: bổ sung parser cấu trúc cho y lệnh và diễn biến lâm sàng.
 // v17: XN lossless — không tự xóa các lần xét nghiệm giống nhau; mỗi dòng có ID riêng.
-const NORMALIZED_SCHEMA_VERSION = 17;
+const NORMALIZED_SCHEMA_VERSION = 18;
 
 const NORMALIZED_COLUMNS = {
   patients: [
@@ -37,22 +37,22 @@ const NORMALIZED_COLUMNS = {
   lab_results: [
     'lab_result_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'lab_datetime', 'lab_date',
     'lab_group', 'lab_order_id', 'test_name_raw', 'test_name_norm', 'result_raw', 'result_operator', 'result_num', 'result_text',
-    'unit', 'ref_range_raw', 'flag_raw', 'flag_norm',
+    'unit', 'result_num_norm', 'unit_norm', 'unit_conversion_status', 'ref_range_raw', 'flag_raw', 'flag_norm',
     'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter',
-    'source_run_id', 'row_hash',
+    'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash',
   ],
   imaging_results: [
     'imaging_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'ordered_at', 'order_date',
     'service_name_raw', 'modality', 'body_region', 'result_text', 'conclusion_text',
     'status', 'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter',
-    'source_run_id', 'row_hash',
+    'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash',
   ],
   surgery_results: [
     'surgery_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'surgery_datetime', 'surgery_date',
     'surgery_name', 'surgery_method', 'anesthesia_method', 'surgery_class', 'status',
     'preop_diagnosis', 'postop_diagnosis', 'operating_room',
     'days_from_admission', 'days_from_discharge', 'is_within_encounter',
-    'source', 'source_run_id', 'row_hash',
+    'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash',
   ],
   medication_orders: [
     'med_order_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'order_datetime', 'order_date',
@@ -70,14 +70,14 @@ const NORMALIZED_COLUMNS = {
     'note_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'note_datetime', 'note_date',
     'doctor_name', 'note_type', 'clinical_text', 'order_text', 'status',
     'days_from_admission', 'days_from_discharge', 'is_within_encounter',
-    'source', 'source_run_id', 'row_hash',
+    'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash',
   ],
   clinical_events: [
     'clinical_event_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status',
     'event_datetime', 'event_date', 'doctor_name', 'event_type', 'event_subtype',
     'value_raw', 'value_norm', 'negated', 'certainty', 'source_text', 'parser_rule', 'confidence',
     'days_from_admission', 'days_from_discharge', 'is_within_encounter',
-    'source', 'source_run_id', 'row_hash',
+    'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash',
   ],
   patient_day: [
     'research_code', 'patient_code', 'patient_key', 'encounter_id', 'date', 'hospital_day',
