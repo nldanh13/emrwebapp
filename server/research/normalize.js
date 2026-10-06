@@ -5,7 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { stableHash, buildContextMap, contextForRow, firstNonEmpty, buildEncounterId, isoDateTime, isoDate, parseAnyDate, rowEmrAdmissionId, rowEmrTreatmentId, rowNoitruId, encounterMatchStatus, eventTemporalFields, dateOffsetDays, daysBetween, normalizeSimple } = require('./encounter_context');
+const { stableHash, buildContextMap, contextForRow, firstNonEmpty, buildEncounterId, isoDateTime, isoDate, parseAnyDate, rowEmrAdmissionId, rowEmrTreatmentId, rowNoitruId, encounterMatchStatus, encounterMatchMethod, eventTemporalFields, dateOffsetDays, daysBetween, normalizeSimple } = require('./encounter_context');
 const { loadAnalysisConfig, ANALYSIS_PRESETS, _runInference, hoursBetween } = require('./analysis_presets');
 const patientDb = require('../services/patient_db');
 const variableSelection = require('./variable_selection');
@@ -412,6 +412,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       patient_code: code,
       encounter_id: ctx.encounter_id || '',
       encounter_match_status: encounterMatchStatus(ctx),
+      encounter_match_method: encounterMatchMethod(ctx),
+      encounter_match_reason: ctx.needs_manual_review || '',
       lab_datetime: isoDateTime(rawTime),
       lab_date: isoDate(firstNonEmpty(row, ['Ngày xét nghiệm', 'Ngày chỉ định'])) || isoDate(rawTime),
       lab_group: firstNonEmpty(row, ['Loại XN', 'Loai XN', 'Nhóm XN']),
@@ -459,6 +461,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       patient_code: code,
       encounter_id: ctx.encounter_id || '',
       encounter_match_status: encounterMatchStatus(ctx),
+      encounter_match_method: encounterMatchMethod(ctx),
+      encounter_match_reason: ctx.needs_manual_review || '',
       ordered_at: isoDateTime(rawTime),
       order_date: isoDate(firstNonEmpty(row, ['Ngày chỉ định', 'Ngay chi dinh'])) || isoDate(rawTime),
       service_name_raw: service,
@@ -528,6 +532,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       patient_code: code,
       encounter_id: ctx.encounter_id || '',
       encounter_match_status: encounterMatchStatus(ctx),
+      encounter_match_method: encounterMatchMethod(ctx),
+      encounter_match_reason: ctx.needs_manual_review || '',
       surgery_datetime: isoDateTime(dt),
       surgery_date: isoDate(dt),
       surgery_name: firstNonEmpty(row, ['Tên phẫu thuật', 'Ten phau thuat', 'Dịch vụ phẫu thuật', 'Dich vu phau thuat', 'dich_vu_phau_thuat', 'noi_dung_phau_thuat']),
@@ -582,6 +588,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       patient_code: code,
       encounter_id: ctx.encounter_id || '',
       encounter_match_status: encounterMatchStatus(ctx),
+      encounter_match_method: encounterMatchMethod(ctx),
+      encounter_match_reason: ctx.needs_manual_review || '',
       order_datetime: isoDateTime(rawTime),
       order_date: orderDate,
       drug_name_raw: drug,
@@ -659,6 +667,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       patient_code: code,
       encounter_id: ctx.encounter_id || '',
       encounter_match_status: encounterMatchStatus(ctx),
+      encounter_match_method: encounterMatchMethod(ctx),
+      encounter_match_reason: ctx.needs_manual_review || '',
       note_datetime: isoDateTime(rawTime),
       note_date: isoDate(rawTime),
       doctor_name: firstNonEmpty(row, ['Bác sĩ', 'Bac si', 'doctor_name']),
@@ -690,6 +700,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
         patient_code: code,
         encounter_id: ctx.encounter_id || '',
         encounter_match_status: encounterMatchStatus(ctx),
+      encounter_match_method: encounterMatchMethod(ctx),
+      encounter_match_reason: ctx.needs_manual_review || '',
         event_datetime: isoDateTime(rawTime),
         event_date: isoDate(rawTime),
         doctor_name: firstNonEmpty(row, ['Bác sĩ', 'Bac si', 'doctor_name']),
