@@ -299,6 +299,38 @@ test('XN: giữ đủ mọi lần xét nghiệm; dòng giống hệt chỉ cản
   assert.strictEqual(review.filter(r => r.issue === 'conflicting_lab_result').length, 1);
 });
 
+test('CĐHA và analysis_ready giữ đầy đủ mọi phần kết quả, không cắt ngắn hay tự xóa dòng giống nhau', () => {
+  const runDir = newRunDir();
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), INITIAL_COLS, INITIAL_ROWS);
+  const xnCols = ['Mã BN', 'Mã điều trị', 'TG chỉ định', 'Mã phiếu', 'Chỉ số', 'Kết quả', 'Đơn vị', 'Khoảng tham chiếu'];
+  writeCsv(path.join(runDir, 'lich_su_xn.csv'), xnCols, [
+    { 'Mã BN': '111', 'Mã điều trị': 'nt-a', 'TG chỉ định': '07:30 21/02/2026', 'Mã phiếu': 'P1', 'Chỉ số': 'Hb', 'Kết quả': '125', 'Đơn vị': 'g/L', 'Khoảng tham chiếu': '120-160' },
+    { 'Mã BN': '111', 'Mã điều trị': 'nt-a', 'TG chỉ định': '12:30 21/02/2026', 'Mã phiếu': 'P2', 'Chỉ số': 'Hb', 'Kết quả': '120', 'Đơn vị': 'g/L', 'Khoảng tham chiếu': '120-160' },
+  ]);
+  const longResult = 'Mô tả '.repeat(250) + 'ĐOẠN_CUỐI_KẾT_QUẢ';
+  const imagingCols = ['Mã BN', 'Mã điều trị', 'TG chỉ định', 'Tên dịch vụ', 'Mô tả/Kết quả', 'Kết luận', 'Trạng thái'];
+  const img = { 'Mã BN': '111', 'Mã điều trị': 'nt-a', 'TG chỉ định': '09:00 21/02/2026', 'Tên dịch vụ': 'CT ngực', 'Mô tả/Kết quả': longResult, 'Kết luận': 'KẾT_LUẬN_ĐẦY_ĐỦ', 'Trạng thái': 'Hoàn tất' };
+  writeCsv(path.join(runDir, 'lich_su_cdha.csv'), imagingCols, [img, { ...img }]);
+
+  const out = R.normalizeRunOutputs(runDir, { sourceRunId: 'r' });
+  assert.strictEqual(out.lab_results, 2);
+  assert.strictEqual(out.imaging_results, 2, 'hai lần CĐHA giống nội dung vẫn phải được giữ');
+
+  const ready = readCsv(path.join(runDir, 'analysis_ready.csv')).find(r => r.patient_code === '111');
+  assert.ok(ready);
+  const labs = JSON.parse(ready.lab_results_json);
+  const images = JSON.parse(ready.imaging_results_json);
+  assert.strictEqual(labs.length, 2, 'analysis_ready phải giữ cả hai lần Hb');
+  assert.deepStrictEqual(labs.map(x => x.lab_order_id), ['P1', 'P2']);
+  assert.strictEqual(images.length, 2, 'analysis_ready phải giữ cả hai lần CĐHA');
+  assert.ok(images.every(x => x.result_text.endsWith('ĐOẠN_CUỐI_KẾT_QUẢ')));
+  assert.ok(ready.imaging_summary.includes('ĐOẠN_CUỐI_KẾT_QUẢ'), 'không được cắt imaging_summary ở 1200 ký tự');
+  assert.ok(ready.imaging_summary.includes('KẾT_LUẬN_ĐẦY_ĐỦ'));
+
+  const qa = JSON.parse(fs.readFileSync(path.join(runDir, 'qa_report.json'), 'utf-8'));
+  assert.ok(qa.warnings.some(w => w.code === 'possible_duplicate_imaging_rows'));
+});
+
 test('Báo cáo chất lượng: trùng khóa và mồ côi khóa ngoại là lỗi chặn; ghép mơ hồ là cảnh báo', () => {
   const encounters = [
     { encounter_id: 'e1', research_code: 'NC1', patient_code: 'p1', admission_date: '2026-01-01', discharge_date: '2026-01-05' },
