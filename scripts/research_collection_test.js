@@ -227,7 +227,7 @@ test('Không tìm thấy BN để cuối; không xác định chắc lượt th�
 test('Progress không ghép chắc về một dòng nguồn thì bỏ, không đoán', () => {
   const a = src('enc_a', 'NC0001', 'BN_A', { 'Mã nội trú': '' });
   const b = src('enc_b', 'NC0002', 'BN_A', { 'Mã nội trú': '' });
-  const entry = { 'Mã BN': 'BN_A', 'Ngày vào viện': '05/01/2026', xn: 'done', cdha: 'done', committed: true, counts: { xn: 3, cdha: 1 } };
+  const entry = { 'Mã BN': 'BN_A', 'Mã NC': 'NC0001', 'Ngày vào viện': '05/01/2026', xn: 'done', cdha: 'done', committed: true, counts: { xn: 3, cdha: 1 } };
   const { matches, unmatched } = c.matchXnEntriesToSources({ 'BN_A|2026-01-05|x': entry }, [a, b].map(r => ({
     key: r['Research key'], research_code: r['Mã NC'], patient_code: r['Mã BN'], noitru: '', treatment: '', admission_date: '2026-01-05',
   })));
