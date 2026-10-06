@@ -674,6 +674,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   const patientDayMap = new Map();
   function ensurePatientDay(row, date) {
     if (!row.patient_code || !row.encounter_id || !date) return null;
+    if (row.encounter_match_status && row.encounter_match_status !== 'matched') return null;
+    if (row.is_within_encounter === '0') return null;
     const key = [row.patient_code, row.encounter_id || '', date].join('|');
     if (!patientDayMap.has(key)) {
       const ctx = contextForRow(ctxMap, row, row.patient_code);
@@ -704,7 +706,18 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     pd.has_lab = '1';
     pd.lab_count += 1;
     const col = pdLabMap[lab.test_name_norm];
-    if (col && !pd[col]) pd[col] = lab.result_raw;
+    if (col) {
+      const timeKey = `_${col}_time`;
+      const oldTime = pd[timeKey] || '';
+      const newTime = String(lab.lab_datetime || '');
+      const shouldReplace = !pd[col]
+        || (!oldTime && Boolean(newTime))
+        || (Boolean(oldTime) && Boolean(newTime) && newTime.localeCompare(oldTime) < 0);
+      if (shouldReplace) {
+        pd[col] = lab.result_raw;
+        pd[timeKey] = newTime;
+      }
+    }
   }
   for (const img of imagingResults) {
     const pd = ensurePatientDay(img, img.order_date);
@@ -725,6 +738,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     pd.medication_count += 1;
   }
   const patientDay = Array.from(patientDayMap.values()).map(pd => {
+    for (const key of Object.keys(pd)) if (/^_.*_time$/.test(key)) delete pd[key];
     pd.row_hash = stableHash(pd);
     return pd;
   }).sort((a, b) => `${a.patient_code}|${a.encounter_id}|${a.date}`.localeCompare(`${b.patient_code}|${b.encounter_id}|${b.date}`));
