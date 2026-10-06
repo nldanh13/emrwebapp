@@ -121,6 +121,36 @@ test('Ghép theo ngày sự kiện chỉ khi nằm trong đúng một lượt, k
   assert.strictEqual(R.encounterMatchStatus(outside), 'ambiguous');
 });
 
+test('Kết quả chỉ thuộc đợt khi thời gian nằm trong khoảng vào-ra viện; có giờ thì so chính xác theo giờ', () => {
+  const rows = [
+    { 'Mã BN': '555', 'Mã nội trú': 'nt-time', 'T/G vào': '08:00 10/04/2026', 'Ngày ra viện': '17:00 12/04/2026' },
+  ];
+  const map = R.buildContextMap(rows, 'r');
+
+  const beforeAdmission = R.contextForRow(map, {
+    'Mã BN': '555', 'Mã nội trú': 'nt-time', 'TG chỉ định': '07:30 10/04/2026',
+  }, '555');
+  assert.strictEqual(beforeAdmission.encounter_id, '', 'trước giờ nhập viện không được thuộc đợt dù Mã nội trú khớp');
+  assert.strictEqual(beforeAdmission.needs_manual_review, 'encounter_match_outside_time');
+
+  const duringStay = R.contextForRow(map, {
+    'Mã BN': '555', 'Mã nội trú': 'nt-time', 'TG chỉ định': '09:00 10/04/2026',
+  }, '555');
+  assert.strictEqual(duringStay.emr_noitru_id, 'nt-time');
+  assert.strictEqual(R.encounterMatchStatus(duringStay), 'matched');
+
+  const afterDischarge = R.contextForRow(map, {
+    'Mã BN': '555', 'Mã nội trú': 'nt-time', 'TG chỉ định': '17:30 12/04/2026',
+  }, '555');
+  assert.strictEqual(afterDischarge.encounter_id, '', 'sau giờ ra viện không được thuộc đợt dù Mã nội trú khớp');
+  assert.strictEqual(afterDischarge.needs_manual_review, 'encounter_match_outside_time');
+
+  const dateOnlySameDay = R.contextForRow(map, {
+    'Mã BN': '555', 'TG chỉ định': '10/04/2026',
+  }, '555');
+  assert.strictEqual(dateOnlySameDay.emr_noitru_id, 'nt-time', 'khi nguồn chỉ có ngày thì chỉ có thể xác nhận theo ngày lịch');
+});
+
 test('Đợt chưa có ngày ra viện nhận kết quả quá 60 ngày sau ngày vào (tính tới hôm nay)', () => {
   const rows = [
     { 'Mã BN': '444', 'Mã nội trú': 'nt-cu', 'T/G vào': '08:00 01/01/2025', 'Ngày ra viện': '10/01/2025' },
