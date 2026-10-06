@@ -1,12 +1,10 @@
 // Quy tắc pha thuốc trong Danh mục thuốc — cùng mã với máy chủ (server/routes/medication_catalog.js
 // normalizeDilution) và worker (worker/processing/medication_catalog.py catalog_dilution_rule).
 
-export const DILUTION_SOLVENTS = [
-  ['NACL_0.9', 'Natri clorid 0.9%'],
-  ['GLUCOSE_5', 'Glucose 5%'],
-  ['NUOC_CAT', 'Nước cất pha tiêm'],
-  ['KHONG_PHA', 'Không pha (chai/túi pha sẵn)'],
-];
+import { RULE_SOLVENTS, SOLVENT_LABEL as ALL_SOLVENT_LABEL, SOLVENT_SHORT } from '../config/solvents.js';
+
+// Dung môi chọn được — config/solvents.json (một nguồn với worker và máy chủ).
+export const DILUTION_SOLVENTS = RULE_SOLVENTS;
 const SOLVENT_LABEL = Object.fromEntries(DILUTION_SOLVENTS);
 
 export const DILUTION_APPLY = [
@@ -51,7 +49,7 @@ export function dilutionFromForm(form) {
 // Chữ ngắn cho bảng danh mục.
 export function dilutionSummary(rule) {
   if (!rule?.solvent || !SOLVENT_LABEL[rule.solvent]) return '';
-  if (rule.solvent === 'KHONG_PHA') return 'Không pha';
+  if (rule.solvent === 'KHONG_PHA') return SOLVENT_SHORT.KHONG_PHA;
   let text = SOLVENT_LABEL[rule.solvent];
   if (rule.volume_ml) text += ` ${rule.volume_ml} ml`;
   if (rule.rate) text += `, ${rule.rate} giọt/phút`;
@@ -74,7 +72,7 @@ export function describeCheck(res) {
   if (res.error) return [res.error];
   const lines = [];
   if (res.moved_to_infusion && res.dung_moi) {
-    const solvent = res.dung_moi === 'SODIUM_0.9' ? 'Sodium chloride 0.9%' : 'Natri clorid 0.9%';
+    const solvent = ALL_SOLVENT_LABEL[res.dung_moi === 'SODIUM_0.9' ? 'SODIUM_0.9' : 'NACL_0.9'];
     const vol = res.the_tich ? ` ${Number(res.the_tich)} ml` : '';
     lines.push(`Chuyển sang dịch truyền: pha ${solvent}${vol} (${SOURCE_LABEL[res.nguon_pha] || 'không rõ nguồn'}).`);
     if (res.toc_do) lines.push(`Tốc độ: ${res.toc_do} giọt/phút${res.toc_do_nguon === 'danh_muc' ? ' (theo Danh mục thuốc)' : ''}.`);

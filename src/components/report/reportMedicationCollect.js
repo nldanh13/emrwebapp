@@ -3,6 +3,7 @@ import { routeOf, collectMedicationLists } from './reportRouteUtils.js';
 import { displayDrugName, quantityOf, unitOf, categoryLabel } from './reportMedicationBasics.js';
 import { groupOf, rowMinutes, markSeparatedHours } from './reportMedicationFlags.js';
 import { routeReportMode } from '../../config/routes.js';
+import { SOLVENT_LABEL } from '../../config/solvents.js';
 
 
 
@@ -123,7 +124,8 @@ function shouldHideFromDutyReport(item, category, route) {
   return route !== 'Ngưng/Trả' && routeReportMode(route) === 'hide';
 }
 
-const SOLVENT_CODE_TEXT = { 'NACL_0.9': 'Natri clorid 0.9%', 'SODIUM_0.9': 'Sodium chloride 0.9%' };
+// Chỉ NaCl/Sodium là mã worker ghi vào dung_moi khi pha truyền — tên lấy từ config/solvents.json.
+const SOLVENT_CODE_TEXT = { 'NACL_0.9': SOLVENT_LABEL['NACL_0.9'], 'SODIUM_0.9': SOLVENT_LABEL['SODIUM_0.9'] };
 
 // Chữ "pha …" hiện cạnh tên thuốc (màn hình và phiếu in dùng chung): mã dung môi của worker → tên
 // đọc được, kèm thể tích pha; tên thuốc đã ghi "+ Natri clorid 0.9%" thì chỉ ghi thể tích. Thể tích

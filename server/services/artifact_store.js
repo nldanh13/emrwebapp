@@ -85,7 +85,7 @@ function builtinArtifact(ctx, artifactId) {
   if (id === 'session.current') return { ready: true, source: 'runtime', virtual: true };
   if (id === 'emr.connection') return { ready: hasConfiguredConnection(), source: 'config', virtual: true };
   if (id === 'nurse.schedule') {
-    const configured = configuredListExists(CONFIG_PATH) || configuredListExists(path.join(ctx.dir, 'd_v2.json'));
+    const configured = configuredListExists(CONFIG_PATH) || configuredListExists(require('../utils/dv2_path').resolveDv2Path(ctx.dir));
     return { ready: configured, source: 'config', virtual: true };
   }
   if (id === 'material.catalog') {

@@ -18,6 +18,10 @@ from xu_ly_config import (
     parse_hours_from_gio_dung,
     parse_quantity_int,
 )
+from processing.rule_engine import nacl_text_keywords
+from processing.solvents import nacl_display
+
+NACL_TEXT_KEYWORDS = nacl_text_keywords()
 
 LOG = get_worker_logger('xu_ly.diluent')
 
@@ -218,9 +222,7 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
         return any(k in route_l for k in [
             "ttm", "truyền", "truyen", "tiêm truyền", "tiem truyen", "pha truyền", "pha truyen",
             "giọt/phút", "giot/phut", "g/p", "ml/h", "ml/giờ", "ml/gio",
-            "natri clorid", "natri chlorid", "natri chloride",
-            "sodium clorid", "sodium chlorid", "sodium chloride",
-            "nacl", "nước muối", "nuoc muoi"
+            *NACL_TEXT_KEYWORDS,
         ]) or bool(drug.get("dung_moi"))
 
     def _route_is_clear_im_or_sc(drug):
@@ -256,9 +258,7 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
         # Y lệnh ghi rõ pha/truyền/NaCl thì chắc chắn ưu tiên trước Tramadol.
         if any(k in route_l for k in [
             "ttm", "truyền", "truyen", "tiêm truyền", "tiem truyen", "pha truyền", "pha truyen",
-            "natri clorid", "natri chlorid", "natri chloride",
-            "sodium clorid", "sodium chlorid", "sodium chloride",
-            "nacl", "nước muối", "nuoc muoi",
+            *NACL_TEXT_KEYWORDS,
             "giọt/phút", "giot/phut", "g/p", "ml/h", "ml/giờ", "ml/gio"
         ]):
             return True
@@ -558,9 +558,7 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
         # Chỉ chuyển thuốc tiêm sang dịch truyền khi có NaCl/Sodium chloride rõ ràng hoặc rule cấu hình.
         # Không dùng riêng chữ "natri" vì có thể là một phần tên hoạt chất như Ceftriaxone Natri/Diclofenac Natri.
         has_explicit_nacl = bool(drug.get("dung_moi") in ("NACL_0.9", "SODIUM_0.9")) or any(k in route_l for k in [
-            "natri clorid", "natri chlorid", "natri chloride",
-            "sodium clorid", "sodium chlorid", "sodium chloride",
-            "nacl", "nước muối", "nuoc muoi",
+            *NACL_TEXT_KEYWORDS,
         ])
         if has_explicit_nacl:
             return True
@@ -654,9 +652,7 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
 
         # nếu text đã ghi rõ natri/sodium/nacl/nước muối... thì không set suy_luan_dung_moi
         explicit = any(k in route_l for k in [
-            "natri clorid", "natri chlorid", "natri chloride",
-            "sodium clorid", "sodium chlorid", "sodium chloride",
-            "nacl", "nước muối", "nuoc muoi"
+            *NACL_TEXT_KEYWORDS,
         ]) or bool(drug.get("dung_moi"))
 
         bag, dm, explicit_from_choose = choose_bag_volume_and_type(drug)
@@ -725,7 +721,7 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
             pass
 
         # ten_hien_thi: bỏ ml
-        dil_disp = "Sodium chloride 0.9%" if dm == "SODIUM_0.9" else "Natri clorid 0.9%"
+        dil_disp = nacl_display(dm)
         drug["ten_hien_thi"] = f"{drug.get('ten_thuoc','')} + {dil_disp}"
         return drug
 

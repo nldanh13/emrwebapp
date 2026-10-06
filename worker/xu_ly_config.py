@@ -38,15 +38,20 @@ DEFAULT_VOLUMES = {
     "AMINOLEBAN": 500,
 }
 
-# Danh sách các dịch truyền chắc chắn (KHÔNG dùng keyword quá chung như 'SODIUM' để tránh dính vào hoạt chất dạng '... sodium')
-TRUE_INFUSIONS = [
-    "PARACETAMOL", "THERMODOL",
-    "NATRI CLORID", "SODIUM CHLORIDE", "NACL",
-    "GLUCOSE", "RINGER", "CIPRO", "LEVO", "METRO", "AMINOLEBAN"
-]
+# Danh sách nhận diện dịch truyền theo tên: MỘT nguồn là config/order_rules.json (name_keywords).
+# Trước đây chép y hệt ở đây + order_rules.json + rule_engine: xoá một thuốc khỏi file vẫn còn tác dụng.
+from processing.rule_engine import load_order_rules as _load_order_rules
 
-# Danh sách thuốc thể tích nhỏ nhưng BẮT BUỘC là pha truyền (Tránh bị ép thành tiêm)
-ALWAYS_INFUSION_DRUGS = ["NEFOPAM"]  # TRAMADOL xử lý riêng: ưu tiên tiêm bắp, chỉ pha NaCl khi có dung môi rời phù hợp
+
+def _order_rule_names(group):
+    vals = ((_load_order_rules().get("name_keywords") or {}).get(group) or [])
+    return [str(v).upper() for v in vals if str(v).strip()]
+
+
+# Dịch truyền chắc chắn (KHÔNG dùng keyword quá chung như 'SODIUM' để tránh dính hoạt chất '... sodium')
+TRUE_INFUSIONS = _order_rule_names("true_infusions")
+# Thuốc thể tích nhỏ nhưng BẮT BUỘC pha truyền. TRAMADOL xử lý riêng (ưu tiên tiêm bắp).
+ALWAYS_INFUSION_DRUGS = _order_rule_names("always_infusion_drugs")
 def load_config(config_path):
     default_config = {"gio_mac_dinh": {"sáng": "8 giờ", "trưa": "12 giờ", "chiều": "16 giờ", "tối": "20 giờ"}, "bo_sung_the_tich": []}
     if not os.path.exists(config_path):
@@ -64,12 +69,8 @@ CONFIG = load_config(CONFIG_FILE)
 THE_TICH_AO = CONFIG.get("5_TU_DIEN_THE_TICH_AO", {}) if isinstance(CONFIG, dict) else {}
 LUAT_AN_TOAN = CONFIG.get("3_LUAT_AN_TOAN_DAC_BIET", {}) if isinstance(CONFIG, dict) else {}
 
-# Từ khóa nhận diện dịch truyền theo tên (bổ sung ngoài TRUE_INFUSIONS)
-INFUSION_NAME_KEYWORDS = [
-    "AMINOPLASMAL", "NEPHROSTERIL", "ALBUNORM", "ALBUMIN",
-    "INTRALIPID", "SMOF", "KABIVEN", "OLICLINOMEL", "NUTRIFLEX",
-    "AMINOLEBAN",
-]
+# Từ khóa nhận diện dịch truyền theo tên (bổ sung ngoài TRUE_INFUSIONS) — order_rules.json.
+INFUSION_NAME_KEYWORDS = _order_rule_names("infusion_products")
 
 # Thuốc thường pha NaCl nếu y lệnh không ghi rõ (bạn có thể mở rộng list này)
 DEFAULT_NACL_VOLUME_BY_KEYWORD = {

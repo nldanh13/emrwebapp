@@ -84,9 +84,9 @@ function getRuntimePaths(req) {
 function ensureSessionAssets(sessionDir, rootDir) {
   ensureDir(sessionDir);
   sanitizeSessionConfigFile(sessionDir);
-  const copies = [
-    [path.join(rootDir, 'config', 'd_v2.json'), path.join(sessionDir, 'd_v2.json')],
-  ];
+  // d_v2.json KHÔNG chép vào phiên nữa: worker đọc file chung (server/utils/dv2_path.js), để bản
+  // cập nhật luật thuốc tới mọi phiên. Còn chỗ cho tệp khác cần chép sau này.
+  const copies = [];
   for (const [src, dst] of copies) {
     try {
       if (fs.existsSync(src) && !fs.existsSync(dst)) fs.copyFileSync(src, dst);

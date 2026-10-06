@@ -58,8 +58,9 @@ def calculate_infusion_times(dich_truyen_list, ngay_mac_dinh=None):
     
     def normalize_name(name):
         n_upper = name.upper()
-        if "NEFOPAM" in n_upper: return f"{name} + Natri clorid 0.9%"
-        if "TRAMADOL" in n_upper: return f"{name} + Natri clorid 0.9%"
+        if "NEFOPAM" in n_upper or "TRAMADOL" in n_upper:
+            from processing.solvents import nacl_display
+            return f"{name} + {nacl_display('NACL_0.9')}"
         return name
     
     def get_priority(drug_name):

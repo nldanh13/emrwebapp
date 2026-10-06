@@ -83,12 +83,11 @@ function normalizeDefaultRoute(value) {
 
 // Quy tắc pha thuốc (worker dựa vào khi y lệnh không ghi rõ dung môi/thể tích — xem
 // worker/processing/medication_catalog.py catalog_dilution_rule). Dung môi theo mã cố định.
-const DILUTION_SOLVENTS = {
-  'NACL_0.9': 'Natri clorid 0.9%',
-  GLUCOSE_5: 'Glucose 5%',
-  NUOC_CAT: 'Nước cất pha tiêm',
-  KHONG_PHA: 'Không pha (chai/túi pha sẵn)',
-};
+// config/solvents.json: một nguồn với worker và giao diện.
+const DILUTION_SOLVENTS = Object.fromEntries(
+  ((readJsonSafe(path.join(__dirname, '..', '..', 'config', 'solvents.json'), {}) || {}).solvents || [])
+    .filter(x => x && x.code && x.label && x.in_rule).map(x => [x.code, x.label]),
+);
 const DILUTION_APPLY = ['always', 'infusion_only'];
 
 function badRequest(message) {
@@ -102,7 +101,7 @@ function normalizeDilution(value) {
   if (value == null || value === '' || (typeof value === 'object' && !value.solvent)) return undefined;
   if (typeof value !== 'object' || Array.isArray(value)) throw badRequest('Quy tắc pha không hợp lệ.');
   const solvent = String(value.solvent || '').trim().toUpperCase();
-  if (!DILUTION_SOLVENTS[solvent]) throw badRequest('Dung môi pha không hợp lệ. Chọn Natri clorid 0.9%, Glucose 5%, Nước cất pha tiêm hoặc Không pha.');
+  if (!DILUTION_SOLVENTS[solvent]) throw badRequest(`Dung môi pha không hợp lệ. Chọn: ${Object.values(DILUTION_SOLVENTS).join(', ')}.`);
   const out = { solvent };
   if (solvent !== 'KHONG_PHA') {
     const raw = value.volume_ml;
