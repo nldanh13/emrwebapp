@@ -199,7 +199,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
       || null;
   };
   const writeHchanhCsvs = () => {
-    writeCsvUnion(path.join(runPath, 'hchanh_profile.csv'), profileRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Giới', 'Ngày sinh', 'Tuổi', 'Địa chỉ', 'Điện thoại', 'Số CMND', 'Đối tượng', 'Số thẻ', 'Ngày vào viện', 'Ngày ra viện', 'Chẩn đoán', 'Research key']);
+    writeCsvUnion(path.join(runPath, 'hchanh_profile.csv'), profileRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Giới', 'Ngày sinh', 'Tuổi', 'Địa chỉ', 'Điện thoại', 'Số CMND', 'Đối tượng', 'Số thẻ', 'Ngày vào viện', 'Ngày ra viện', 'Chẩn đoán', 'Mạch vào viện', 'Nhiệt độ vào viện', 'HA tâm thu vào viện', 'HA tâm trương vào viện', 'Nhịp thở vào viện', 'Cân nặng vào viện', 'Chiều cao vào viện', 'Research key']);
     writeCsvUnion(path.join(runPath, 'hchanh_discharge.csv'), dischargeRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Ngày vào viện', 'Ngày ra viện', 'Thời gian điều trị', 'Chẩn đoán', 'Chẩn đoán ra viện', 'Bệnh kèm', 'Biến chứng', 'Tai biến', 'Tình trạng ra', 'Research key']);
     writeCsvUnion(path.join(runPath, 'hchanh_surgery.csv'), surgeryRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Ngày vào viện', 'Ngày ra viện', 'Ngày phẫu thuật', 'Tên phẫu thuật', 'Phương pháp phẫu thuật', 'PPVC', 'Phân loại PT', 'Trạng thái', 'Chẩn đoán trước mổ', 'Chẩn đoán sau mổ', 'Research key']);
     writeCsvUnion(path.join(runPath, 'hchanh_order_history.csv'), orderRows, ['Mã NC', 'Mã BN', 'Họ tên', 'TG y lệnh', 'Ngày', 'Bác sĩ', 'Diễn biến', 'Tên y lệnh', 'Y lệnh khác', 'KQ', 'Trạng thái', 'Research key']);
