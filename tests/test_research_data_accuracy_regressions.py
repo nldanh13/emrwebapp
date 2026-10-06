@@ -77,3 +77,29 @@ def test_list_aggregation_keeps_repeated_values_instead_of_using_set():
 def test_lab_conflict_key_uses_order_id():
     src = (ROOT / "server" / "research" / "quality.js").read_text(encoding="utf-8")
     assert "text(r.lab_order_id) || '(không mã phiếu)'" in src
+
+
+def test_lab_unit_normalization_is_conservative_and_keeps_raw_values():
+    norm = (ROOT / "server" / "research" / "normalize.js").read_text(encoding="utf-8")
+    values = (ROOT / "server" / "research" / "value_normalizers.js").read_text(encoding="utf-8")
+    schema = (ROOT / "server" / "research" / "normalized_schema.js").read_text(encoding="utf-8")
+    assert "normalizeLabMeasurement" in norm
+    assert "result_raw: result" in norm
+    assert "unit: unitRaw" in norm
+    assert "result_num_norm" in norm
+    assert "unit_conversion_status" in norm
+    assert "creatinine" in values and "88.4" in values
+    assert "glucose" in values and "/ 18" in values
+    assert "hemoglobin" in values and "* 10" in values
+    for field in ["result_num_norm", "unit_norm", "unit_conversion_status"]:
+        assert field in schema
+
+
+def test_normalized_detail_rows_keep_provenance():
+    norm = (ROOT / "server" / "research" / "normalize.js").read_text(encoding="utf-8")
+    schema = (ROOT / "server" / "research" / "normalized_schema.js").read_text(encoding="utf-8")
+    assert "function provenanceFromRaw" in norm
+    assert "derived_parser" in norm
+    assert "patient_db" in norm
+    for field in ["source_type", "source_quality", "source_file"]:
+        assert field in schema
