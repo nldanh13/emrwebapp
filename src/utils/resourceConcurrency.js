@@ -4,11 +4,17 @@ const PROTECTED = new Set([
   '/api/admin-nurse-state',
   '/api/sick-leave-state',
   '/api/sick-leave-import',
+  '/api/medication-catalog',
+  '/api/routes',
+  '/api/vtyt-catalog',
+  '/api/vtyt-combos',
 ]);
 
 const MUTATION_ALIAS = new Map([
   ['/api/save', '/api/data'],
   ['/api/sick-leave-import/delete-row', '/api/sick-leave-import'],
+  ['/api/medication-catalog/assign-ingredient', '/api/medication-catalog'],
+  ['/api/routes/custom', '/api/routes'],
 ]);
 
 const versions = new Map();
@@ -24,7 +30,12 @@ function pathnameOf(input) {
 }
 
 function resourceKeyFor(pathname) {
-  return MUTATION_ALIAS.get(pathname) || (PROTECTED.has(pathname) ? pathname : '');
+  const exact = MUTATION_ALIAS.get(pathname) || (PROTECTED.has(pathname) ? pathname : '');
+  if (exact) return exact;
+  if (pathname.startsWith('/api/medication-catalog/')) return '/api/medication-catalog';
+  if (pathname.startsWith('/api/vtyt-catalog/')) return '/api/vtyt-catalog';
+  if (pathname.startsWith('/api/vtyt-combos/')) return '/api/vtyt-combos';
+  return '';
 }
 
 function requestMethod(input, init = {}) {
@@ -84,6 +95,10 @@ export function installResourceConcurrencyFetch() {
       : name === 'admin-nurse-state' ? '/api/admin-nurse-state'
       : name === 'sick-leave-state' ? '/api/sick-leave-state'
       : name === 'sick-leave-import' ? '/api/sick-leave-import'
+      : name === 'medication-catalog' ? '/api/medication-catalog'
+      : name === 'routes-custom' ? '/api/routes'
+      : name === 'vtyt-catalog' ? '/api/vtyt-catalog'
+      : name === 'vtyt-combos' ? '/api/vtyt-combos'
       : '';
     if (!key) return;
     const current = versions.get(key) || '';

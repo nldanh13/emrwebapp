@@ -15,7 +15,7 @@ const path = require('path');
 const { ensureDir, writeJsonAtomic } = require('../utils/file');
 const { readCsvTable, writeCsv, patientCode, getCell } = require('./table_io');
 const { nowIso, runsDir, cohortPath, archiveRunsDir } = require('./store_paths');
-const { rowNoitruId, normalizedIdentity } = require('./encounter_context');
+const { normalizedIdentity, isoDate, isoDateTime } = require('./encounter_context');
 
 // File thô của kho được chép (lọc) sang nghiên cứu. du_lieu_ban_dau / research_source tạo lại từ
 // danh sách mẫu của nghiên cứu.
@@ -30,7 +30,6 @@ const RAW_FILES = [
   'lich_su_cdha.csv',
 ];
 
-const NOITRU_COLUMNS = ['Mã nội trú', 'Ma noi tru', 'Mã điều trị', 'Ma dieu tri', 'noitruid', 'NoiTruID', 'emr_noitru_id'];
 const RESEARCH_CODE_COLUMNS = ['Mã NC', 'Ma NC', 'research_code'];
 const HCHANH_FILES = ['profile', 'discharge', 'surgery', 'order_history'];
 const GOT = new Set(['done', 'empty']);
@@ -41,65 +40,72 @@ function nowStamp() {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
-const ENCOUNTER_ID_COLUMNS = ['emr_noitru_id', 'emr_treatment_id', 'emr_admission_id'];
+// Thời điểm của một dòng thô (ngày chỉ định, ngày y lệnh, giờ vào…). Ghép lượt theo Mã BN + thời gian,
+// không theo mã nội trú/điều trị/vào viện (quy ước khóa nguồn: chỉ Mã BN — encounter_context.js).
+const ROW_TIME_COLUMNS = [
+  'TG chỉ định', 'TG chi dinh', 'Thời gian chỉ định', 'Thoi gian chi dinh', 'Ngày chỉ định', 'Ngay chi dinh',
+  'Thời gian', 'Thoi gian', 'Ngày y lệnh', 'Ngay y lenh', 'Ngày', 'Ngay', 'ngay', 'date',
+  'Ngày phẫu thuật', 'Ngay phau thuat', 'Ngày mổ', 'Ngay mo',
+  'T/G vào', 'TG vao', 'Ngày vào viện', 'Ngay vao vien', 'Ngày ra viện', 'Ngay ra vien',
+  'order_datetime', 'order_date', 'lab_datetime', 'lab_date', 'note_datetime', 'note_date',
+];
 
-// Mọi mã lượt (mã nội trú/điều trị/nhập viện) ghi trên một dòng.
-function rowVisitIds(row, extra = []) {
-  const ids = new Set();
-  for (const value of [rowNoitruId(row), ...NOITRU_COLUMNS.map(c => row?.[c]), ...extra.map(c => row?.[c])]) {
-    const id = normalizedIdentity(value);
-    if (id) ids.add(id);
+function rowDay(row) {
+  for (const c of ROW_TIME_COLUMNS) {
+    const v = row?.[c];
+    if (v == null || String(v).trim() === '') continue;
+    const d = isoDate(isoDateTime(v) || v);
+    if (d) return d;
   }
-  return ids;
+  return '';
 }
 
-// Bộ lọc dòng thô của kho cho danh sách mẫu. Dòng có mã lượt: thuộc lượt đã chọn thì giữ (gắn Mã NC của
-// nghiên cứu), thuộc lượt khác của cùng người bệnh trong kho thì bỏ; mã lạ thì giữ, để chuẩn hóa xếp
-// theo thời gian. Dòng không có mã lượt: giữ nếu là người bệnh trong mẫu.
-// links: [{ research_code, patient_code, encounter_id }] (lượt kho của từng mẫu); encounterRows: bảng
-// lượt điều trị của kho.
+function encounterWindow(enc) {
+  const from = isoDate(isoDateTime(enc?.admission_date) || enc?.admission_date);
+  const to = isoDate(isoDateTime(enc?.discharge_date) || enc?.discharge_date);
+  return from ? { from, to: to || '9999-12-31' } : null;
+}
+
+const inWindow = (day, w) => Boolean(day && w && day >= w.from && day <= w.to);
+
+// Bộ lọc dòng thô của kho cho danh sách mẫu, theo Mã BN + thời gian. Dòng có ngày: rơi vào khoảng
+// vào–ra viện của lượt đã chọn thì giữ (gắn Mã NC của nghiên cứu); rơi vào lượt khác của cùng người
+// bệnh thì bỏ; không rơi vào lượt nào thì giữ khi người bệnh chỉ có một lượt được chọn (để chuẩn hóa
+// xếp tiếp theo thời gian). Dòng không có ngày: giữ nếu là người bệnh trong mẫu.
+// links: [{ research_code, patient_code, encounter_id }]; encounterRows: bảng lượt điều trị của kho.
 function buildCohortIndex(cohortRows, links = [], encounterRows = []) {
   const encById = new Map(encounterRows.map(e => [String(e.encounter_id || '').trim(), e]));
-  const visitsByPatient = new Map(); // Mã BN -> [{ code, ids }]
+  const visitsByPatient = new Map(); // Mã BN -> [{ code, window }]
   for (const [i, row] of cohortRows.entries()) {
     const pc = normalizedIdentity(patientCode(row));
     if (!pc) continue;
     const enc = encById.get(String(links[i]?.encounter_id || '').trim());
-    const ids = rowVisitIds(row);
-    if (enc) for (const id of rowVisitIds(enc, ENCOUNTER_ID_COLUMNS)) ids.add(id);
     if (!visitsByPatient.has(pc)) visitsByPatient.set(pc, []);
-    visitsByPatient.get(pc).push({ code: getCell(row, RESEARCH_CODE_COLUMNS), ids });
+    visitsByPatient.get(pc).push({ code: getCell(row, RESEARCH_CODE_COLUMNS), window: enc ? encounterWindow(enc) : null });
   }
-  const otherVisitIds = new Map(); // Mã BN -> mã các lượt KHÔNG thuộc mẫu
+  const otherWindows = new Map(); // Mã BN -> khoảng thời gian các lượt KHÔNG thuộc mẫu
   const selectedEids = new Set(links.map(l => String(l?.encounter_id || '').trim()).filter(Boolean));
   for (const enc of encounterRows) {
     const pc = normalizedIdentity(patientCode(enc));
     if (!visitsByPatient.has(pc) || selectedEids.has(String(enc.encounter_id || '').trim())) continue;
-    if (!otherVisitIds.has(pc)) otherVisitIds.set(pc, new Set());
-    for (const id of rowVisitIds(enc, ENCOUNTER_ID_COLUMNS)) otherVisitIds.get(pc).add(id);
+    const w = encounterWindow(enc);
+    if (!w) continue;
+    if (!otherWindows.has(pc)) otherWindows.set(pc, []);
+    otherWindows.get(pc).push(w);
   }
   return {
     // Mã NC của nghiên cứu cho dòng thô; '' nếu thuộc người bệnh nhưng chưa rõ lượt; null nếu bỏ.
-    // strict: dòng có mã lượt mà không trùng lượt nào đã chọn (của người bệnh có mã lượt) thì bỏ.
-    codeFor(row, { strict = true } = {}) {
+    codeFor(row) {
       const pc = normalizedIdentity(patientCode(row));
       const visits = visitsByPatient.get(pc);
       if (!visits) return null;
-      const ids = rowVisitIds(row);
-      if (ids.size) {
-        const hit = visits.find(v => [...ids].some(id => v.ids.has(id)));
+      const day = rowDay(row);
+      if (day) {
+        const hit = visits.find(v => inWindow(day, v.window));
         if (hit) return hit.code;
-        const others = otherVisitIds.get(pc);
-        if (others && [...ids].some(id => others.has(id))) return null;
-        if (strict && visits.some(v => v.ids.size)) return null;
+        if ((otherWindows.get(pc) || []).some(w => inWindow(day, w))) return null;
       }
       return visits.length === 1 ? visits[0].code : '';
-    },
-    // Dòng có mã lượt khớp đúng một lượt đã chọn (dùng để biết cột mã lượt của file có dùng được không).
-    matchesVisit(row) {
-      const visits = visitsByPatient.get(normalizedIdentity(patientCode(row)));
-      const ids = rowVisitIds(row);
-      return Boolean(visits && ids.size && visits.some(v => [...ids].some(id => v.ids.has(id))));
     },
   };
 }
@@ -112,11 +118,8 @@ function copyFilteredRaw(archiveRunDir, runDir, index) {
     const table = readCsvTable(src, Number.MAX_SAFE_INTEGER);
     const codeColumn = (table.columns || []).find(c => RESEARCH_CODE_COLUMNS.includes(c));
     const rows = [];
-    // Lọc chặt theo mã lượt; nếu cột mã lượt của file không khớp lượt nào (mã kiểu khác) thì lọc theo
-    // người bệnh, để không mất cả file.
-    const strict = (table.rows || []).some(row => index.matchesVisit(row));
     for (const row of table.rows || []) {
-      const code = index.codeFor(row, { strict });
+      const code = index.codeFor(row);
       if (code === null) continue;
       rows.push(codeColumn ? { ...row, [codeColumn]: code } : row);
     }
@@ -129,7 +132,7 @@ function copyFilteredRaw(archiveRunDir, runDir, index) {
 // Trạng thái từng phần theo kho (extract_status của kho, theo mã lượt): chỉ mang sang phần kho đã
 // lấy xong ('done'/'empty'); phần còn thiếu/lỗi để trống cho Thu thập tự động lấy từ EMR.
 // Ghi theo đúng định dạng worker ghi (để cả bảng chuẩn hóa lẫn sổ "Thu thập tự động" đều nhận):
-// XN/CĐHA có số dòng + dấu đã lưu từng tab; hành chánh có Mã BN + ngày vào viện để ghép lượt.
+// XN/CĐHA có số dòng + dấu đã lưu từng tab; hành chánh có Mã BN + ngày vào viện để ghép lượt (không dùng mã EMR).
 function buildProgressFromArchive(archiveRunDir, links, encounterRows = []) {
   const encById = new Map(encounterRows.map(e => [String(e.encounter_id || '').trim(), e]));
   const status = readCsvTable(path.join(archiveRunDir, 'extract_status.csv'), Number.MAX_SAFE_INTEGER).rows || [];
@@ -144,11 +147,9 @@ function buildProgressFromArchive(archiveRunDir, links, encounterRows = []) {
     if (!st || !link.encounter_id) continue;
     const enc = encById.get(String(link.encounter_id).trim()) || {};
     const admission = String(enc.admission_date || '').trim();
-    const noitru = String(enc.emr_noitru_id || '').trim();
     const base = {
       encounter_id: link.encounter_id, research_code: link.research_code, ma_bn: link.patient_code,
       'Mã BN': link.patient_code, 'Mã NC': link.research_code,
-      ...(noitru ? { 'Mã nội trú': noitru } : {}),
       ...(admission ? { admission_date: admission, 'Ngày vào viện': admission } : {}),
       source: 'archive', updated_at: at,
     };

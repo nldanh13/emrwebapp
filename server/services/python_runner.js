@@ -228,9 +228,10 @@ function runWorker(cmd, args, opts = {}) {
 
 /** Chạy một script Python cụ thể trong worker/. */
 function runScript(scriptName, args = [], opts = {}) {
-  // Mọi lời gọi hchanh_fetch đi qua entrypoint tương thích ngược. Entrypoint chỉ
-  // thay đổi hành vi trong Research hchanh_auto: không dùng marker y lệnh làm gate
-  // quyết định cho surgery. Các ngữ cảnh khác delegate nguyên trạng.
+  // Mọi lời gọi hchanh_fetch đi qua entrypoint tương thích ngược:
+  //   hchanh_fetch_entry.py → nạp hchanh_fetch_safe.py (Lịch sử y lệnh buộc "Tất cả" = 1000 và chờ
+  //   AJAX ổn định) → hchanh_fetch.py. Entrypoint chỉ đổi thêm hành vi trong Research hchanh_auto:
+  //   không dùng marker y lệnh làm gate quyết định cho surgery.
   const researchSafeEntry = path.join(WORKER_DIR, 'hchanh_fetch_entry.py');
   const effectiveScriptName = scriptName === 'hchanh_fetch.py' && fs.existsSync(researchSafeEntry)
     ? 'hchanh_fetch_entry.py'

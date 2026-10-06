@@ -1,6 +1,6 @@
 'use strict';
 
-// Ngày giờ, khóa đợt điều trị và ghép dòng dữ liệu vào đúng lượt (không đoán ca mơ hồ).
+// Ngày giờ và ghép dòng theo Mã BN + khoảng thời gian; không phụ thuộc mã điều trị/mã nội trú/mã vào viện.
 
 const crypto = require('crypto');
 const { removeVietnameseMarks } = require('./store_paths');
@@ -103,13 +103,6 @@ function normalizedIdentity(value) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, '');
 }
 
-function rowNoitruId(row) {
-  return firstNonEmpty(row, [
-    'noitruid', 'noi_tru_id', 'NoiTruID', 'Mã nội trú', 'Ma noi tru',
-    'emr_noitru_id', 'treatment_uuid',
-  ]);
-}
-
 function rowExistingEncounterId(row) {
   return firstNonEmpty(row, ['encounter_id', 'visit_id']);
 }
@@ -119,12 +112,6 @@ function buildEncounterId(row, sourceRunId = '') {
   // khi chạy lại ở ngày khác hoặc từ một run khác.
   const existing = rowExistingEncounterId(row);
   if (existing) return existing;
-
-  const treatmentId = normalizedIdentity(rowEmrTreatmentId(row) || rowNoitruId(row));
-  if (treatmentId) return `enc_${stableHash(['treatment', treatmentId])}`;
-
-  const admissionId = normalizedIdentity(rowEmrAdmissionId(row));
-  if (admissionId) return `enc_${stableHash(['admission', admissionId])}`;
 
   const maBn = patientCode(row);
   const admission = isoDateTime(firstNonEmpty(row, [
@@ -288,9 +275,6 @@ function buildContextMap(patientRows, sourceRunId = '') {
       admission_diagnosis: admissionDiagnosis,
       diagnosis_raw: admissionDiagnosis,
       surgery_date: isoDate(firstNonEmpty(row, ['Ngày mổ', 'Ngay mo', 'Ngày phẫu thuật', 'Ngay phau thuat', 'surgery_date'])),
-      emr_admission_id: rowEmrAdmissionId(row),
-      emr_treatment_id: rowEmrTreatmentId(row),
-      emr_noitru_id: rowNoitruId(row),
       needs_manual_review: firstNonEmpty(row, ['__needs_manual_review', 'needs_manual_review']),
       encounter_id: buildEncounterId(row, sourceRunId),
     };
@@ -300,9 +284,6 @@ function buildContextMap(patientRows, sourceRunId = '') {
     byPatient.set(code, patientList);
 
     addContextMapKey(map, `encounter:${normalizedIdentity(ctx.encounter_id)}`, ctx);
-    if (ctx.emr_treatment_id) addContextMapKey(map, `treatment:${normalizedIdentity(ctx.emr_treatment_id)}`, ctx);
-    if (ctx.emr_noitru_id) addContextMapKey(map, `noitru:${normalizedIdentity(ctx.emr_noitru_id)}`, ctx);
-    if (ctx.emr_admission_id) addContextMapKey(map, `admission:${normalizedIdentity(ctx.emr_admission_id)}`, ctx);
     if (admission || discharge) addContextMapKey(map, `visit:${contextVisitKey(code, admission, discharge)}`, ctx);
     if (admission) {
       addContextMapKey(map, `admission_time:${contextVisitKey(code, admission, '')}`, ctx);
@@ -347,35 +328,6 @@ function contextForRow(ctxMap, row, code) {
   const explicitEncounter = rowExistingEncounterId(row);
   if (explicitEncounter) {
     return resolveStrongEncounterKey(ctxMap, `encounter:${normalizedIdentity(explicitEncounter)}`, row, code, 'encounter_id');
-  }
-
-  const treatmentId = rowEmrTreatmentId(row);
-  if (treatmentId) {
-    const id = normalizedIdentity(treatmentId);
-    return resolveStrongEncounterKey(
-      ctxMap,
-      [`treatment:${id}`, `noitru:${id}`],
-      row,
-      code,
-      'emr_treatment_id',
-      'emr_treatment_noitru_alias',
-    );
-  }
-  const noitruId = rowNoitruId(row);
-  if (noitruId) {
-    const id = normalizedIdentity(noitruId);
-    return resolveStrongEncounterKey(
-      ctxMap,
-      [`noitru:${id}`, `treatment:${id}`],
-      row,
-      code,
-      'emr_noitru_id',
-      'emr_noitru_treatment_alias',
-    );
-  }
-  const admissionId = rowEmrAdmissionId(row);
-  if (admissionId) {
-    return resolveStrongEncounterKey(ctxMap, `admission:${normalizedIdentity(admissionId)}`, row, code, 'emr_admission_id');
   }
 
   const admission = isoDateTime(firstNonEmpty(row, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'admission_date']))
@@ -423,13 +375,6 @@ function rowDischargeTime(row) {
     || isoDate(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien', 'ngay_ra_vien', 'ngay_ra', 'discharge_date']));
 }
 
-function rowEmrAdmissionId(row) {
-  return firstNonEmpty(row, ['Mã vào viện', 'Ma vao vien', 'emr_admission_id', 'vaovienid', 'admission_id']);
-}
-
-function rowEmrTreatmentId(row) {
-  return firstNonEmpty(row, ['Mã điều trị', 'Ma dieu tri', 'emr_treatment_id', 'dieutriid', 'treatment_id']);
-}
 
 module.exports = {
   stableHash,
@@ -444,7 +389,6 @@ module.exports = {
   eventTemporalFields,
   firstNonEmpty,
   normalizedIdentity,
-  rowNoitruId,
   rowExistingEncounterId,
   buildEncounterId,
   contextVisitKey,
@@ -463,6 +407,4 @@ module.exports = {
   contextForRow,
   rowAdmissionTime,
   rowDischargeTime,
-  rowEmrAdmissionId,
-  rowEmrTreatmentId,
 };

@@ -9,15 +9,13 @@ const {
 } = require('./source_merge.js');
 
 describe('research encounter anti-duplicate aliases', () => {
-  it('recognizes the same stay through alternative strong aliases', () => {
+  it('recognizes the same stay from Mã BN and admission time', () => {
     const left = {
       'Mã BN': 'BN001',
-      'Mã điều trị': 'DT-123',
       'T/G vào': '08:00 01/10/2026',
     };
     const right = {
       'Mã BN': 'BN001',
-      emr_treatment_id: 'DT-123',
       admission_date: '2026-10-01 08:00',
     };
 
@@ -28,13 +26,11 @@ describe('research encounter anti-duplicate aliases', () => {
     const rows = combineEncounterSources({
       initialRows: [{
         'Mã BN': 'BN001',
-        'Mã điều trị': 'DT-123',
         'T/G vào': '08:00 01/10/2026',
         'Họ tên': 'Người bệnh A',
       }],
       hchanhProfileRows: [{
         'Mã BN': 'BN001',
-        emr_treatment_id: 'DT-123',
         admission_date: '2026-10-01 08:00',
         address: 'Địa chỉ từ hồ sơ',
       }],
@@ -111,14 +107,14 @@ describe('research encounter anti-duplicate aliases', () => {
     expect(rows.map(row => row['Mã BN']).sort()).toEqual(['BN001', 'BN002']);
   });
 
-  it('does not merge same-time rows when strong treatment ids conflict', () => {
+  it('ignores treatment-id-like fields and merges by Mã BN + admission time', () => {
     const rows = combineEncounterSources({
       initialRows: [
         { 'Mã BN': 'BN001', 'Mã điều trị': 'DT-A', 'T/G vào': '08:00 01/10/2026' },
         { 'Mã BN': 'BN001', 'Mã điều trị': 'DT-B', 'T/G vào': '08:00 01/10/2026' },
       ],
     });
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(1);
   });
 
   it('does not use patient code alone as a duplicate key', () => {

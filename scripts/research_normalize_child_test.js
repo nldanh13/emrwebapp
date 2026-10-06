@@ -21,7 +21,7 @@ function writeCsv(file, cols, rows) {
   const runDir = path.join(process.env.EMR_RUNTIME_ROOT, 'store', 'kho', 'runs', 'r1');
   fs.mkdirSync(runDir, { recursive: true });
   const rows = Array.from({ length: 60 }, (_, i) => ({
-    'T/G vào': `08:00 ${String(1 + (i % 27)).padStart(2, '0')}/02/2026`, 'Mã BN': `10${String(i % 40).padStart(5, '0')}`,
+    'T/G vào': `08:00 ${String(1 + (i % 27)).padStart(2, '0')}/02/2026`, 'Mã BN': `10${String(i).padStart(5, '0')}`,
     'Mã nội trú': `nt-${i}`, 'Họ tên': `BN GIA LAP ${i}`, 'Ngày ra viện': '28/02/2026',
   }));
   writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), ['T/G vào', 'Mã BN', 'Mã nội trú', 'Họ tên', 'Ngày ra viện'], rows);
