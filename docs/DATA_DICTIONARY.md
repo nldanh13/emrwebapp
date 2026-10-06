@@ -13,7 +13,7 @@
 - Số thập phân dùng dấu chấm. result_raw/result_num/unit luôn giữ nguyên dữ liệu EMR; result_num_norm/unit_norm chỉ được sinh khi có quy tắc quy đổi đơn vị chắc chắn trong whitelist.
 - File CSV UTF-8 có BOM, phân tách bằng dấu phẩy.
 
-**Định danh:** Trực tiếp = nhận diện được người bệnh hoặc tra ngược EMR; Gián tiếp = có thể góp phần nhận diện khi kết hợp; Văn bản tự do = có thể lẫn tên/SĐT/địa chỉ do người nhập gõ; Nhân viên = thông tin nhân viên y tế; Giả danh = mã do hệ thống tạo.
+**Định danh:** Trực tiếp = nhận diện được người bệnh hoặc tra ngược EMR; Gián tiếp = có thể góp phần nhận diện khi kết hợp; Văn bản tự do = có thể lẫn tên/SĐT do người nhập gõ; Nhân viên = thông tin nhân viên y tế; Giả danh = mã do hệ thống tạo.
 
 **Dùng:** Được dùng = đưa vào dataset nghiên cứu; Cần đề cương duyệt = chỉ đưa vào khi đề cương cần tới (hiện **không** bị tự che khi xuất); Loại = mặc định bị che khi xem/xuất.
 
