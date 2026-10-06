@@ -144,3 +144,15 @@ def test_sync_skips_diluted_and_inferred_lines(monkeypatch, tmp_path):
 
     assert medication_catalog.sync_catalog_from_processed_records(records) == (0, 0)
     assert json.loads(catalog_path.read_text(encoding='utf-8'))['medications'] == []
+
+
+def test_sync_keeps_default_when_volume_is_a_declared_presentation(monkeypatch, tmp_path):
+    # Natri clorid khai báo túi 100 ml (mặc định) + chai 500 ml: gặp chai 500 ml không được đổi mặc định.
+    catalog_path = _patch_catalog_path(monkeypatch, tmp_path)
+    _write_catalog(catalog_path, [
+        {'canonical': 'NATRI CLORID 0,9%', 'category': 'dich_truyen', 'default_volume_ml': 100, 'default_rate': '30',
+         'quy_cach': [{'volume_ml': 500, 'rate': '40'}]},
+    ])
+    assert medication_catalog.sync_catalog_from_processed_records(_records_with_infusion('NATRI CLORID 0,9%', 500, '40')) == (0, 0)
+    med = json.loads(catalog_path.read_text(encoding='utf-8'))['medications'][0]
+    assert med['default_volume_ml'] == 100

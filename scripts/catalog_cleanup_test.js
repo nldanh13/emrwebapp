@@ -51,6 +51,14 @@ test('thuốc gốc chưa có → đổi tên, thể tích/tốc độ cũ thàn
   assert.strictEqual(medications.length, CATALOG.length);   // chỉ áp mục được chọn
 });
 
+test('quy cách khác: Natri clorid 100 ml + 500 ml trong cùng một thuốc', () => {
+  const { normalizePresentations } = require('../server/routes/medication_catalog');
+  assert.deepStrictEqual(normalizePresentations([{ volume_ml: '500', rate: '40' }, { volume_ml: 100 }, { volume_ml: '' }], 100),
+    [{ volume_ml: 500, rate: '40' }]);   // 100 ml là quy cách mặc định → không lặp
+  assert.throws(() => normalizePresentations([{ volume_ml: 'abc' }]), e => e.status === 400 && /Quy cách 1/.test(e.message));
+  assert.strictEqual(normalizePresentations([], 100), undefined);
+});
+
 test('không có gì để dọn', () => {
   assert.deepStrictEqual(planCleanup([{ canonical: 'THERMODOL' }]), []);
 });

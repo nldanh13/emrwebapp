@@ -22,6 +22,7 @@ import DilutionStatsPanel from './DilutionStatsPanel.jsx';
 import CatalogCleanupPanel from './CatalogCleanupPanel.jsx';
 import NewDrugsPanel from './NewDrugsPanel.jsx';
 import { catalogIssues, filterCatalog } from '../utils/catalogIssues.js';
+import { presentationsForm, presentationsFromForm, volumesText } from '../utils/presentations.js';
 import MedicationBuiltinPanel from './MedicationBuiltinPanel.jsx';
 import { fillEmptyFields } from '../utils/medicationBuiltin.js';
 
@@ -60,6 +61,7 @@ function emptyForm() {
     schedule_rule: '',
     ten_hien_thi: '',
     co_dung_moi_di_kem: false,
+    quy_cach: [],
     ...dilutionForm(null),
   };
 }
@@ -81,6 +83,7 @@ function formFromMedication(med) {
     ten_hien_thi: med.ten_hien_thi || '',
     co_dung_moi_di_kem: Boolean(med.co_dung_moi_di_kem),
     dilution_suggestions: Array.isArray(med.dilution_suggestions) ? med.dilution_suggestions : [],
+    quy_cach: presentationsForm(med),
     ...dilutionForm(med.dilution),
   };
 }
@@ -154,6 +157,32 @@ function VariantRows({ form, setForm, routes }) {
         </div>
       ))}
       <div><Btn variant="secondary" onClick={add} style={{ fontSize: FS.xs, padding: '2px 10px' }}>+ Thêm cách pha</Btn></div>
+    </div>
+  );
+}
+
+// Quy cách khác của cùng thuốc (vd. Natri clorid túi 100 ml và chai 500 ml): không tạo 2 thuốc trùng tên.
+// Bước xử lý lấy tốc độ theo đúng thể tích của dòng thuốc (medication_catalog.presentation_rate).
+function PresentationRows({ form, setForm }) {
+  const rows = form.quy_cach || [];
+  const update = (i, key, value) => setForm(prev => ({ ...prev, quy_cach: prev.quy_cach.map((r, j) => (j === i ? { ...r, [key]: value } : r)) }));
+  const remove = i => setForm(prev => ({ ...prev, quy_cach: prev.quy_cach.filter((_, j) => j !== i) }));
+  const add = () => setForm(prev => ({ ...prev, quy_cach: [...(prev.quy_cach || []), { volume_ml: '', rate: '' }] }));
+  return (
+    <div style={{ gridColumn: '1 / -1', display: 'grid', gap: 6 }}>
+      <div style={{ fontSize: FS.xs, color: C.text2 }}>
+        <b>Quy cách khác</b> — cùng thuốc nhưng thể tích khác (vd. túi 100 ml và chai 500 ml), mỗi quy cách một tốc độ.
+      </div>
+      {rows.map((r, i) => (
+        <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input value={r.volume_ml} onChange={e => update(i, 'volume_ml', e.target.value)} inputMode="decimal" placeholder="Thể tích (ml), vd. 500"
+            aria-label={`Quy cách ${i + 1}: thể tích`} style={{ ...INPUT_STYLE, maxWidth: 180 }} />
+          <input value={r.rate} onChange={e => update(i, 'rate', e.target.value)} inputMode="decimal" placeholder="Tốc độ (giọt/phút)"
+            aria-label={`Quy cách ${i + 1}: tốc độ`} style={{ ...INPUT_STYLE, maxWidth: 180 }} />
+          <Btn variant="default" onClick={() => remove(i)} style={{ fontSize: FS.xs, padding: '2px 8px', color: C.red }}>Bỏ</Btn>
+        </div>
+      ))}
+      <div><Btn variant="secondary" onClick={add} style={{ fontSize: FS.xs, padding: '2px 10px' }}>+ Thêm quy cách</Btn></div>
     </div>
   );
 }
@@ -275,6 +304,11 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
       setError(dilution.error);
       return;
     }
+    const presentations = presentationsFromForm(form.quy_cach);
+    if (presentations.error) {
+      setError(presentations.error);
+      return;
+    }
     setSaving(true);
     try {
       await onSave({
@@ -294,6 +328,7 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
         dilution: dilution.value,
         ten_hien_thi: form.ten_hien_thi.trim(),
         co_dung_moi_di_kem: Boolean(form.co_dung_moi_di_kem),
+        quy_cach: presentations.value,
         ...(form.dilution_suggestions ? { dilution_suggestions: form.dilution_suggestions } : {}),
       });
       onClose();
@@ -372,6 +407,7 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
               <Field label={form.default_route === 'SE' ? 'Tốc độ mặc định (ml/giờ)' : 'Tốc độ mặc định (giọt/phút)'}>
                 <input value={form.default_rate} onChange={set('default_rate')} inputMode="decimal" placeholder="VD: 100" style={INPUT_STYLE} />
               </Field>
+              <PresentationRows form={form} setForm={setForm} />
             </div>
           )}
 
@@ -637,7 +673,7 @@ export default function MedicationCatalogManager() {
                   </td>
                   <td style={{ padding: '10px 12px', fontSize: FS.sm, color: C.text2 }}><RouteCell item={item} /></td>
                   <td style={{ padding: '10px 12px', fontSize: FS.sm, color: C.text2 }}>{txt(CATEGORY_LABEL[item.category] || item.category)}</td>
-                  <td style={{ padding: '10px 12px', fontSize: FS.sm }}><code style={{ color: C.blue }}>{txt(item.default_volume_ml)}</code></td>
+                  <td style={{ padding: '10px 12px', fontSize: FS.sm }}><code style={{ color: C.blue }}>{txt(volumesText(item))}</code></td>
                   <td style={{ padding: '10px 12px', fontSize: FS.sm }}><code style={{ color: C.text2 }}>{txt(item.default_rate)}</code></td>
                   <td style={{ padding: '10px 12px', fontSize: FS.xs, color: C.text2, maxWidth: 220 }}><DilutionCell item={item} info={dilutionInfo} /></td>
                   <td style={{ padding: '10px 12px' }}>
