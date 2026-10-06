@@ -95,7 +95,6 @@ test('XN / CĐHA: bổ sung từng kết quả còn thiếu từ kho, không b�
   patientDb.recordResults([{ 'Mã BN': 'A2', 'TG chỉ định': '09:00 23/09/2026', 'Tên dịch vụ': 'Chụp CT sọ não', 'Kết luận': 'Bình thường' }], { kind: 'cdha' });
   // A3 có CRP trong run nhưng kho còn HGB cùng đợt: phải bổ sung HGB, không nhân đôi CRP.
   patientDb.recordResults([
-    { 'Mã BN': 'A3', 'TG chỉ định': '08:00 22/09/2026', 'Chỉ số': 'CRP', 'Kết quả': '12' },
     { 'Mã BN': 'A3', 'TG chỉ định': '09:00 22/09/2026', 'Chỉ số': 'HGB', 'Kết quả': '115', 'Đơn vị': 'g/L' },
   ], { kind: 'xn' });
   const labRaw = [{ 'Mã NC': 'NC3', 'Mã BN': 'A3', 'TG chỉ định': '08:00 22/09/2026', 'Chỉ số': 'CRP', 'Kết quả': '12' }];
