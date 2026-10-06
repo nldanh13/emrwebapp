@@ -97,6 +97,19 @@ test('Chỉ có Mã BN và thiếu thời gian thì không được tự gán v�
   assert.strictEqual(R.encounterMatchStatus(unresolved), 'missing');
 });
 
+test('Mã điều trị và Mã nội trú cùng giá trị được coi là alias khóa mạnh khi đúng BN và đúng thời gian', () => {
+  const rows = [
+    { 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
+  ];
+  const map = R.buildContextMap(rows, 'r');
+  const matched = R.contextForRow(map, {
+    'Mã BN': '111', 'Mã điều trị': 'nt-a', 'TG chỉ định': '21/02/2026',
+  }, '111');
+  assert.strictEqual(matched.emr_noitru_id, 'nt-a');
+  assert.strictEqual(R.encounterMatchStatus(matched), 'matched');
+  assert.strictEqual(R.encounterMatchMethod(matched), 'emr_treatment_noitru_alias');
+});
+
 test('Khóa đợt mạnh mâu thuẫn hoặc không tồn tại thì dừng, không fallback theo thời gian', () => {
   const rows = [
     { 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
