@@ -394,6 +394,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       lab_datetime: isoDateTime(rawTime),
       lab_date: isoDate(firstNonEmpty(row, ['Ngày xét nghiệm', 'Ngày chỉ định'])) || isoDate(rawTime),
       lab_group: firstNonEmpty(row, ['Loại XN', 'Loai XN', 'Nhóm XN']),
+      lab_order_id: firstNonEmpty(row, ['Mã phiếu', 'Ma phieu', 'lab_order_id']),
       test_name_raw: name,
       test_name_norm: normalizeLabName(name),
       result_raw: result,
