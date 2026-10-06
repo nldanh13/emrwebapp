@@ -1,6 +1,6 @@
 # Từ điển dữ liệu Kho nghiên cứu
 
-> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-06.3`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
+> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-06.5`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
 >
 > Mô tả được viết từ code chuẩn hóa hiện tại. Cột "Dùng" là đề xuất kỹ thuật; phạm vi dùng thực tế phải theo đề cương được hội đồng đạo đức/bệnh viện phê duyệt.
 
@@ -10,7 +10,7 @@
 - Cột cờ 1/0: "1" = có, "0" = không. Ô trống = không xác định được (khác với "0").
 - Ô trống nghĩa là nguồn không có hoặc hệ thống không đọc được giá trị. Hệ thống không tự điền giá trị thay thế.
 - Cột *_raw giữ nguyên văn bản EMR; cột *_norm/*_num là giá trị đã chuẩn hóa. Khi nghi ngờ, đối chiếu cột *_raw.
-- Số thập phân dùng dấu chấm. Kết quả xét nghiệm KHÔNG được quy đổi đơn vị; đơn vị nằm ở cột unit của cùng dòng.
+- Số thập phân dùng dấu chấm. result_raw/result_num/unit luôn giữ nguyên dữ liệu EMR; result_num_norm/unit_norm chỉ được sinh khi có quy tắc quy đổi đơn vị chắc chắn trong whitelist.
 - File CSV UTF-8 có BOM, phân tách bằng dấu phẩy.
 
 **Định danh:** Trực tiếp = nhận diện được người bệnh hoặc tra ngược EMR; Gián tiếp = có thể góp phần nhận diện khi kết hợp; Văn bản tự do = có thể lẫn tên/SĐT do người nhập gõ; Nhân viên = thông tin nhân viên y tế; Giả danh = mã do hệ thống tạo.
@@ -185,19 +185,20 @@
 
 **Nguồn:** lich_su_xn.csv (script XN/CĐHA, popup lịch sử xét nghiệm trên EMR)
 
-**Cách xử lý:** Giữ nguyên mọi lần xét nghiệm. Tách dấu so sánh, phần số và phần chữ; tên chỉ số chuẩn hóa theo bảng từ khóa; không quy đổi đơn vị. Hai dòng giống hệt sau chuẩn hóa vẫn được giữ riêng vì có thể là hai lần xét nghiệm thật; QA chỉ đánh dấu nghi trùng, không tự xóa.
+**Cách xử lý:** Giữ nguyên mọi lần xét nghiệm. Tách dấu so sánh, phần số và phần chữ; tên chỉ số chuẩn hóa theo bảng từ khóa. result_raw/result_num/unit luôn giữ nguyên; chỉ sinh result_num_norm/unit_norm cho whitelist quy đổi chắc chắn. Hai dòng giống hệt vẫn giữ riêng; QA chỉ đánh dấu nghi trùng.
 
 **Quy tắc chất lượng**
 
 - Bắt buộc: `lab_result_id`, `patient_code`, `test_name_raw`
 - Duy nhất: `lab_result_id`
-- Dòng thô giống hệt nhau: giữ một, cảnh báo số dòng đã bỏ (duplicate_raw_rows_removed).
-- Trùng lab_result_id sau khi bỏ dòng giống hệt: lỗi chặn.
+- Dòng giống hệt sau chuẩn hóa: giữ tất cả và cảnh báo possible_duplicate_lab_rows; không tự xóa.
+- Trùng lab_result_id: lỗi chặn.
 - encounter_match_status = ambiguous/missing: cảnh báo.
 
 **Cần người kiểm tra khi:**
 
-- Các dòng XN giống hệt nhau (possible_duplicate_lab_rows): giữ tất cả. Khác Mã phiếu = các lần xét nghiệm riêng; cùng Mã phiếu vẫn cần đối chiếu nguồn nếu nghi lấy trùng kỹ thuật.\n- Cùng BN + cùng thời điểm + cùng chỉ số nhưng kết quả khác nhau (conflicting_lab_result): giữ tất cả, không tự chọn.
+- Các dòng XN giống hệt nhau (possible_duplicate_lab_rows): giữ tất cả. Khác Mã phiếu = các lần xét nghiệm riêng; cùng Mã phiếu vẫn cần đối chiếu nguồn nếu nghi lấy trùng kỹ thuật.
+- Cùng BN + cùng thời điểm + cùng chỉ số nhưng kết quả khác nhau (conflicting_lab_result): giữ tất cả, không tự chọn.
 - result_num trống nhưng result_raw có số
 - Đơn vị khác nhau cho cùng test_name_norm trong một nghiên cứu.
 
@@ -212,13 +213,17 @@
 | `lab_datetime` | ngày giờ | Thời điểm chỉ định/xét nghiệm. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `lab_date` | ngày | Ngày xét nghiệm. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `lab_group` | chuỗi | Nhóm xét nghiệm như EMR ghi (huyết học, sinh hóa…). |  |  | — | Được dùng |
+| `lab_order_id` | chuỗi | Mã phiếu xét nghiệm trên EMR. Dùng để phân biệt các lần xét nghiệm có thể cùng thời điểm/cùng chỉ số/cùng kết quả. |  | Nguồn cũ hoặc nguồn ngoài EMR không có Mã phiếu. | Gián tiếp | Cần đề cương duyệt |
 | `test_name_raw` | chuỗi | Tên chỉ số như EMR ghi. |  |  | — | Được dùng |
 | `test_name_norm` | chuỗi | Tên chỉ số chuẩn hóa. Cách tính: So khớp từ khóa (không dấu) theo thứ tự; khớp đầu tiên thắng. | `creatinine`, `egfr`, `wbc`, `crp`, `hemoglobin`, `hct`, `neutrophil`, `lymphocyte`, `monocyte`, `rdw`, `platelet`, `urea`, `ast`, `alt`, `glucose`, `(tên gốc dạng token nếu không khớp)` |  | — | Được dùng |
 | `result_raw` | chuỗi | Kết quả nguyên văn. |  |  | — | Được dùng |
 | `result_operator` | danh mục | Dấu so sánh đứng đầu kết quả. | `<`, `>`, `<=`, `>=`, `=` | Không có dấu. | — | Được dùng |
 | `result_num` | số thập phân | Phần số đầu tiên trong kết quả. | Đơn vị: theo cột unit | Kết quả không có số (ví dụ "Âm tính"). | — | Được dùng |
 | `result_text` | chuỗi | Kết quả dạng chữ khi kết quả không thuần số. |  | Kết quả chỉ là số. | — | Được dùng |
-| `unit` | chuỗi | Đơn vị như EMR ghi. |  | EMR không ghi đơn vị. | — | Được dùng |
+| `unit` | chuỗi | Đơn vị nguyên văn như EMR ghi. |  | EMR không ghi đơn vị. | — | Được dùng |
+| `result_num_norm` | số thập phân | Giá trị số đã quy đổi về đơn vị chuẩn khi có quy tắc chắc chắn. |  | Không phải số hoặc chưa có quy tắc quy đổi an toàn. | — | Được dùng |
+| `unit_norm` | chuỗi | Đơn vị chuẩn tương ứng với result_num_norm. |  | Chưa quy đổi. | — | Được dùng |
+| `unit_conversion_status` | danh mục | Trạng thái chuẩn hóa đơn vị. | `same_unit`, `converted`, `not_converted`, `missing_unit`, `non_numeric` |  | — | Được dùng |
 | `ref_range_raw` | chuỗi | Khoảng tham chiếu như EMR ghi. |  |  | — | Được dùng |
 | `flag_raw` | chuỗi | Cờ bất thường như EMR ghi. |  |  | — | Được dùng |
 | `flag_norm` | danh mục | Cờ bất thường đã chuẩn hóa. | `high`, `low`, `abnormal`, `normal`, `unknown` | EMR không đánh dấu. | — | Được dùng |
@@ -226,6 +231,9 @@
 | `days_from_surgery` | số nguyên | Số ngày từ ngày mổ của đợt đến thời điểm của dòng (0 = ngày mổ). | Đơn vị: ngày; Có thể âm. | Đợt không có ngày mổ hoặc thiếu thời điểm. | — | Được dùng |
 | `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
 | `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `source_type` | danh mục | Loại nguồn dữ liệu chuẩn hóa. | `emr_direct`, `patient_db`, `derived_parser` |  | — | Được dùng |
+| `source_quality` | danh mục | Mức chất lượng/độ trực tiếp của nguồn. | `original`, `provisional`, `derived` |  | — | Được dùng |
+| `source_file` | chuỗi | File hoặc bảng nguồn gần nhất dùng để tạo dòng chuẩn hóa. |  |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
 
@@ -277,6 +285,9 @@
 | `days_from_surgery` | số nguyên | Số ngày từ ngày mổ của đợt đến thời điểm của dòng (0 = ngày mổ). | Đơn vị: ngày; Có thể âm. | Đợt không có ngày mổ hoặc thiếu thời điểm. | — | Được dùng |
 | `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
 | `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `source_type` | danh mục | Loại nguồn dữ liệu chuẩn hóa. | `emr_direct`, `patient_db`, `derived_parser` |  | — | Được dùng |
+| `source_quality` | danh mục | Mức chất lượng/độ trực tiếp của nguồn. | `original`, `provisional`, `derived` |  | — | Được dùng |
+| `source_file` | chuỗi | File hoặc bảng nguồn gần nhất dùng để tạo dòng chuẩn hóa. |  |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
 
@@ -326,7 +337,10 @@
 | `days_from_admission` | số nguyên | Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện). | Đơn vị: ngày; Có thể âm (trước ngày vào viện). | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
 | `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
-| `source` | chuỗi | Nguồn của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
+| `source` | chuỗi | Nguồn nghiệp vụ của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
+| `source_type` | danh mục | Loại nguồn dữ liệu chuẩn hóa. | `emr_direct`, `patient_db`, `derived_parser` |  | — | Được dùng |
+| `source_quality` | danh mục | Mức chất lượng/độ trực tiếp của nguồn. | `original`, `provisional`, `derived` |  | — | Được dùng |
+| `source_file` | chuỗi | File hoặc bảng nguồn gần nhất dùng để tạo dòng chuẩn hóa. |  |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
 
@@ -373,7 +387,11 @@
 | `route_raw` | chuỗi | Đường dùng gốc (nếu không có cột riêng thì là cả dòng y lệnh). |  |  | — | Được dùng |
 | `route_norm` | chuỗi | Đường dùng chuẩn hóa. **Suy luận tự động.** | `truyền_tĩnh_mạch`, `truyền_bơm_tiêm_điện`, `tiêm_tĩnh_mạch`, `tiêm_bắp`, `tiêm_dưới_da`, `tiêm_trong_da`, `uống`, `ngậm_dưới_lưỡi`, `khí_dung`, `hít_xịt`, `ngậm`, `nhỏ_mắt`, `nhỏ_mũi`, `nhỏ_tai`, `bôi`, `dán`, `đặt_hậu_môn`, `đặt_âm_đạo`, `khác`, `(token văn bản gốc nếu không khớp)` |  | — | Được dùng |
 | `dose_raw` | chuỗi | Liều (nếu không có cột riêng thì là cả dòng y lệnh). |  |  | — | Được dùng |
-| `times_per_day` | chuỗi | Số lần/ngày (nếu nguồn có). |  |  | — | Được dùng |
+| `times_per_day` | chuỗi | Số lần/ngày parser đọc được từ y lệnh. |  |  | — | Được dùng |
+| `schedule` | chuỗi | Các giờ dùng thuốc chuẩn hóa từ y lệnh, nếu parser đọc được. **Suy luận tự động.** |  |  | — | Được dùng |
+| `order_action` | chuỗi | Hành động y lệnh thuốc do parser nhận diện, ví dụ bắt đầu/tiếp tục/ngưng. **Suy luận tự động.** |  |  | — | Được dùng |
+| `parser_confidence` | danh mục | Độ tin cậy của parser khi tách dòng thuốc. | `high`, `medium`, `low` | Nguồn cũ chưa qua parser mới. | — | Được dùng |
+| `source_field` | chuỗi | Trường nguồn đã sinh dòng thuốc, ví dụ Tên y lệnh hoặc Y lệnh khác. |  |  | — | Được dùng |
 | `raw_line` | văn bản | Dòng y lệnh gốc. |  |  | Văn bản tự do | Cần đề cương duyệt |
 | `surgery_datetime_ref` | ngày giờ | Thời điểm ca mổ đầu tiên của cùng đợt, dùng làm mốc hậu phẫu. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `surgery_date_ref` | ngày | Ngày ca mổ mốc. |  |  | Gián tiếp | Cần đề cương duyệt |
@@ -383,7 +401,10 @@
 | `days_from_admission` | số nguyên | Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện). | Đơn vị: ngày; Có thể âm (trước ngày vào viện). | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
 | `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
-| `source` | chuỗi | Nguồn của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
+| `source` | chuỗi | Nguồn nghiệp vụ của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
+| `source_type` | danh mục | Loại nguồn dữ liệu chuẩn hóa. | `emr_direct`, `patient_db`, `derived_parser` |  | — | Được dùng |
+| `source_quality` | danh mục | Mức chất lượng/độ trực tiếp của nguồn. | `original`, `provisional`, `derived` |  | — | Được dùng |
+| `source_file` | chuỗi | File hoặc bảng nguồn gần nhất dùng để tạo dòng chuẩn hóa. |  |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
 
@@ -467,7 +488,10 @@
 | `days_from_admission` | số nguyên | Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện). | Đơn vị: ngày; Có thể âm (trước ngày vào viện). | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
 | `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
-| `source` | chuỗi | Nguồn của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
+| `source` | chuỗi | Nguồn nghiệp vụ của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
+| `source_type` | danh mục | Loại nguồn dữ liệu chuẩn hóa. | `emr_direct`, `patient_db`, `derived_parser` |  | — | Được dùng |
+| `source_quality` | danh mục | Mức chất lượng/độ trực tiếp của nguồn. | `original`, `provisional`, `derived` |  | — | Được dùng |
+| `source_file` | chuỗi | File hoặc bảng nguồn gần nhất dùng để tạo dòng chuẩn hóa. |  |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
 
@@ -518,7 +542,10 @@
 | `days_from_admission` | số nguyên | Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện). | Đơn vị: ngày; Có thể âm (trước ngày vào viện). | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
 | `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
-| `source` | chuỗi | Nguồn của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
+| `source` | chuỗi | Nguồn nghiệp vụ của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
+| `source_type` | danh mục | Loại nguồn dữ liệu chuẩn hóa. | `emr_direct`, `patient_db`, `derived_parser` |  | — | Được dùng |
+| `source_quality` | danh mục | Mức chất lượng/độ trực tiếp của nguồn. | `original`, `provisional`, `derived` |  | — | Được dùng |
+| `source_file` | chuỗi | File hoặc bảng nguồn gần nhất dùng để tạo dòng chuẩn hóa. |  |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
 
