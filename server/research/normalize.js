@@ -723,12 +723,17 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     const col = pdLabMap[lab.test_name_norm];
     if (!col) continue;
     const key = lab.encounter_id;
-    if (!key) continue;
+    if (!key || lab.encounter_match_status !== 'matched' || lab.is_within_encounter === '0') continue;
     const bucket = firstLabByEncounter.get(key) || {};
-    const old = bucket[`_${col}_time`] || '';
-    if (!bucket[col] || String(lab.lab_datetime || '').localeCompare(old) < 0) {
+    const oldTime = bucket[`_${col}_time`] || '';
+    const newTime = String(lab.lab_datetime || '');
+    // Không để dòng thiếu thời gian thắng dòng có thời gian chỉ vì chuỗi rỗng sort trước.
+    const shouldReplace = !bucket[col]
+      || (!oldTime && Boolean(newTime))
+      || (Boolean(oldTime) && Boolean(newTime) && newTime.localeCompare(oldTime) < 0);
+    if (shouldReplace) {
       bucket[col] = lab.result_raw;
-      bucket[`_${col}_time`] = lab.lab_datetime || '';
+      bucket[`_${col}_time`] = newTime;
     }
     firstLabByEncounter.set(key, bucket);
   }
@@ -743,7 +748,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   const imagingTextByEncounter = new Map();
   for (const img of imagingResults) {
     const key = img.encounter_id;
-    if (!key) continue;
+    if (!key || img.encounter_match_status !== 'matched' || img.is_within_encounter === '0') continue;
     const old = imagingTextByEncounter.get(key) || '';
     imagingTextByEncounter.set(key, `${old}\n${img.service_name_raw || ''}\n${img.result_text || ''}\n${img.conclusion_text || ''}`.trim());
   }
