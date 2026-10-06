@@ -55,6 +55,9 @@ def load_medication_catalog():
     return normalized
 
 
+_SOLVENT_TAIL = re.compile(r'\s*\+\s*(?:natri\s*cl?orid|natri\s*chlorid|sodium\s*chlorid|nacl|glucose|dextrose|pha\s*n[uư][oớ]c\s*c[aấ]t|n[uư][oớ]c\s*c[aấ]t).*$', re.IGNORECASE)
+
+
 def _drug_search_text(drug):
     """Chuỗi tìm thuốc trong catalog.
 
@@ -63,7 +66,10 @@ def _drug_search_text(drug):
     THERMODOL vì catalog có alias Paracetamol.
     """
     if isinstance(drug, dict):
-        parts = [drug.get('ten_thuoc'), drug.get('ten_hien_thi')]
+        # Tên hiển thị của thuốc pha truyền có đuôi "+ Natri clorid 0.9%" / "+ Pha nước cất" do bước
+        # xử lý thêm vào — không phải tên thuốc; để lại thì thuốc bị khớp nhầm mục Natri clorid.
+        display = _SOLVENT_TAIL.sub('', str(drug.get('ten_hien_thi') or ''))
+        parts = [drug.get('ten_thuoc'), display]
         return normalize_key(' '.join(str(x or '') for x in parts))
     return normalize_key(drug)
 

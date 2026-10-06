@@ -141,3 +141,23 @@ def test_check_script_uses_processing_functions(catalog, tmp_path):
     assert data['catalog']['TAZOCIN']['source'] == 'danh_muc'
     assert data['catalog']['NEFOPAM 20MG']['source'] == 'luat_san_co'
     assert any(r['keyword'] == 'VANCOMYCIN' for r in data['builtin'])
+
+
+def test_solvent_suffix_in_display_name_does_not_match_nacl_entry(catalog):
+    # Lỗi thật: danh mục đặt NATRI CLORID 0,9% "Không pha" → Tazocin (tên hiển thị "… + Natri clorid 0.9%")
+    # bị ghi "Không pha thêm (theo danh mục)" vì phần tra cứu đọc cả đuôi dung môi.
+    from processing.diluent_resolver import infer_and_reclassify_diluents
+    catalog([{'canonical': 'NATRI CLORID 0,9%', 'aliases': ['NATRI CLORID 0,9%'], 'dilution': {'solvent': 'KHONG_PHA'}}])
+    infusions, _ = infer_and_reclassify_diluents([], [_vial('PIPERACILLIN/TAZOBACTAM 4,5G', 'Piperacillin + Tazobactam',
+                                                           'Tiêm truyền tĩnh mạch (8 giờ)')])
+    out = infusions[0]
+    assert out['dung_moi'] == 'NACL_0.9'
+    assert 'Không pha' not in str(out.get('quy_tac_pha') or '')
+
+
+def test_nacl_note_not_attached_to_drug_kept_as_injection(catalog):
+    from processing.diluent_resolver import infer_and_reclassify_diluents
+    catalog([{'canonical': 'NEFOPAM', 'dilution': {'solvent': 'NACL_0.9', 'volume_ml': 100, 'apply': 'always'}}])
+    _, injections = infer_and_reclassify_diluents([], [{'ten_thuoc': 'NEFOPAM 20MG/2ML', 'dang': 'Ống', 'so_luong': '1',
+                                                         'gio_dung': '8 giờ', 'duong_dung_goc': 'Tiêm bắp (8 giờ)'}])
+    assert injections and not injections[0].get('quy_tac_pha')

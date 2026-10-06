@@ -55,18 +55,21 @@ function keyOf(med) {
   return String(med?.canonical || '').trim();
 }
 
+// Dấu phẩy thập phân trong tên thuốc ("NATRI CLORID 0,9%") không phải dấu tách (cùng luật với
+// src/utils/listText.js). Bỏ mục không có chữ cái ("9%", "0"): khớp nhầm mọi thuốc có số đó.
+const LIST_SEPARATOR = /[;\n]|,(?!\d)|(?<!\d),/;
 function normalizeStringList(value) {
   const raw = Array.isArray(value)
     ? value
     : typeof value === 'string'
-      ? value.split(/[,;\n]/)
+      ? value.split(LIST_SEPARATOR)
       : [];
   const out = [];
   const seen = new Set();
   for (const item of raw) {
     const text = String(item || '').trim();
     const key = text.toLocaleLowerCase('vi-VN');
-    if (!text || seen.has(key)) continue;
+    if (!text || seen.has(key) || !/\p{L}/u.test(text)) continue;
     seen.add(key);
     out.push(text);
   }
@@ -623,4 +626,5 @@ module.exports.runDilutionCheck = runDilutionCheck;
 module.exports.computeDilutionStats = computeDilutionStats;
 module.exports.computeNewDrugs = computeNewDrugs;
 module.exports.normalizePresentations = normalizePresentations;
+module.exports.normalizeStringList = normalizeStringList;
 module.exports.DILUTION_SOLVENTS = DILUTION_SOLVENTS;

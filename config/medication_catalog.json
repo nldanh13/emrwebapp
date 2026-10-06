@@ -7,7 +7,6 @@
       "aliases": [
         "VANCOMYCIN",
         "VANCOMYCIN 1G",
-        "VANCOMYCIN 500mg",
         "VANCOMYCIN 500mg"
       ],
       "category": "dich_truyen",
@@ -80,7 +79,7 @@
       }
     },
     {
-      "canonical": "PARACETAMOL 10MG/ML",
+      "canonical": "THERMODOL",
       "category": "dich_truyen",
       "default_volume_ml": 100,
       "default_rate": "100",
@@ -90,8 +89,34 @@
       "sua_tay": true,
       "aliases": [
         "THERMODOL",
-        "PARACETAMOL 10MG/ML"
-      ]
+        "PARACETAMOL 10MG/ML",
+        "PARACETAMOL 1G",
+        "THERMODON",
+        "THERMO DON",
+        "THERMODOL 1G",
+        "PARACETAMON 1G",
+        "PARAXETAMOL 1G",
+        "PARA XETAMON 1G",
+        "PA RA XÊ TA MÔN 1G",
+        "PA RA XE TA MON 1G",
+        "PA RA CETAMOL 1G",
+        "EFFERALGAN 1G",
+        "HAPACOL 1G",
+        "PHARBACOL 1G",
+        "KORIC 1G"
+      ],
+      "semantic_aliases": [
+        "THERMODON",
+        "THERMO DON",
+        "PA RA XÊ TA MÔN 1G",
+        "PA RA XE TA MON 1G",
+        "PARA XETAMON 1G",
+        "PARACETAMON 1G"
+      ],
+      "default_route": "TTM",
+      "default_route_text": "TTM 100 giọt/phút (suy luận từ medication_catalog)",
+      "default_rate_text": "100 giọt/phút",
+      "schedule_rule": "order_time_first_then_remaining_routine"
     },
     {
       "canonical": "BACQURE 500MG",
@@ -142,9 +167,9 @@
       "default_volume_ml": 500,
       "default_rate": "30",
       "aliases": [
-        "NATRI CLORID 0",
-        "9%",
-        "SODIUM CHLORIDE 0"
+        "NATRI CLORID 0,9%",
+        "SODIUM CHLORIDE 0,9%",
+        "SODIUM CHLORIDE"
       ],
       "sua_tay": true,
       "dilution": {
