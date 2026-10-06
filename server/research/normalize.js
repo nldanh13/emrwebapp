@@ -726,10 +726,12 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   }
   clinicalEvents = dedupeRowsByHash(clinicalEvents);
 
-  const labByEncounter = byEncounterCount(labResults, 'lab_date');
-  const imagingByEncounter = byEncounterCount(imagingResults, 'order_date');
-  const surgeryByEncounter = byEncounterCount(surgeryResults, 'surgery_date');
-  const medicationByEncounter = byEncounterCount(medicationOrders, 'order_date');
+  const analysisEligible = rows => rows.filter(row =>
+    row.encounter_match_status === 'matched' && row.is_within_encounter === '1');
+  const labByEncounter = byEncounterCount(analysisEligible(labResults), 'lab_date');
+  const imagingByEncounter = byEncounterCount(analysisEligible(imagingResults), 'order_date');
+  const surgeryByEncounter = byEncounterCount(analysisEligible(surgeryResults), 'surgery_date');
+  const medicationByEncounter = byEncounterCount(analysisEligible(medicationOrders), 'order_date');
   const patientDayMap = new Map();
   function ensurePatientDay(row, date) {
     if (!row.patient_code || !row.encounter_id || !date) return null;
