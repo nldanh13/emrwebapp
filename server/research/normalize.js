@@ -573,6 +573,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   const medicationDayMap = new Map();
   for (const med of medicationOrders) {
     if (!med.patient_code || !med.encounter_id || !med.order_date) continue;
+    if (med.encounter_match_status !== 'matched' || med.is_within_encounter === '0') continue;
     const key = [med.patient_code, med.encounter_id || '', med.order_date].join('|');
     const bucket = medicationDayMap.get(key) || {
       research_code: med.research_code,
