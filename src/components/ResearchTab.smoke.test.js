@@ -251,6 +251,10 @@ describe('ResearchTab (khói)', () => {
     expect(text).not.toContain('Phiếu nhập tay & theo dõi');
     expect(text).not.toContain('Thu thập dữ liệu');
     expect(text).not.toContain('Dữ liệu đầy đủ: biến từ EMR + phiếu nhập tay');
+    // Xuất gọn: một file chính đúng số lượt của thống kê + từ điển biến; không còn Dataset cuối.
+    expect(text).toContain('Dữ liệu nghiên cứu · 30 lượt × 1 biến');
+    expect(text).toContain('Từ điển biến');
+    expect(text).not.toContain('Dataset cuối');
   });
 
   it('nghiên cứu chưa có dữ liệu: lấy thẳng từ kho, không mở EMR, không có Thu thập', async () => {
