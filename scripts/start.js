@@ -1,5 +1,5 @@
-// scripts/start.js — build UI if needed, then start the Express server.
-// Mục tiêu: chạy `npm start` là mở được web app, không còn màn hình đen do thiếu dist/.
+// scripts/start.js — build UI if source changed, then start the Express server.
+// Dùng fingerprint nội dung thay vì mtime để `git pull` trên Windows không bỏ sót frontend mới.
 
 'use strict';
 
@@ -17,18 +17,6 @@ const SOURCE_DIRS = [
   path.join(ROOT, 'vite.config.js'),
   path.join(ROOT, 'package.json'),
 ];
-
-function latestMtimeMs(target) {
-  if (!fs.existsSync(target)) return 0;
-  const stat = fs.statSync(target);
-  if (!stat.isDirectory()) return stat.mtimeMs;
-  let latest = stat.mtimeMs;
-  for (const name of fs.readdirSync(target)) {
-    if (name === 'node_modules' || name === '.git' || name === 'dist') continue;
-    latest = Math.max(latest, latestMtimeMs(path.join(target, name)));
-  }
-  return latest;
-}
 
 function hasBuiltAssets() {
   if (!fs.existsSync(DIST_INDEX)) return false;
