@@ -24,7 +24,7 @@ const routeModel = require('../utils/routeModel');
 //   excluded           — mặc định bị che khi xem/xuất (server/research/export_utils.js).
 // Phân loại "use" là đề xuất kỹ thuật; bệnh viện/hội đồng đạo đức phải xác nhận.
 
-const DICTIONARY_VERSION = '2026-10-06.8';
+const DICTIONARY_VERSION = '2026-10-06.9';
 
 const CONVENTIONS = {
   dates: 'Ngày dạng YYYY-MM-DD; thời điểm dạng YYYY-MM-DD HH:mm (giờ địa phương, không có múi giờ). Cột "ngày giờ" có thể chỉ có phần ngày nếu nguồn không có giờ.',
@@ -67,13 +67,13 @@ const COMMON = {
     derivation: 'matched: đúng Mã BN và xác định duy nhất đợt bằng khóa EMR hoặc thời gian; ambiguous: khớp nhiều đợt; missing: không khớp đợt nào. Mã NC không tham gia quyết định matching.',
   }),
   encounter_match_method: col('enum', 'Bằng chứng đã dùng để gắn dòng vào đợt điều trị.', {
-    allowed: ['encounter_id', 'emr_treatment_id', 'emr_noitru_id', 'emr_admission_id', 'visit_exact', 'admission_time', 'discharge_time', 'admission_date', 'discharge_date', 'event_date_range', 'patient_unique_encounter_no_event_time'],
+    allowed: ['encounter_id', 'emr_treatment_id', 'emr_noitru_id', 'emr_admission_id', 'visit_exact', 'admission_time', 'discharge_time', 'admission_date', 'discharge_date', 'event_date_range', 'patient_unique_encounter_no_event_time (legacy)'],
     empty: 'Dòng chưa được ghép.',
     derivation: 'Khóa EMR mạnh được ưu tiên. Nếu nguồn có khóa mạnh nhưng mâu thuẫn/không tìm thấy thì dừng, không fallback theo thời gian.',
   }),
   encounter_match_reason: col('string', 'Lý do dòng chưa được ghép chắc vào đợt.', {
     empty: 'Dòng đã matched.',
-    allowed: 'Ví dụ encounter_match_outside_time, encounter_match_identity_conflict, encounter_match_strong_key_not_found, encounter_match_strong_key_ambiguous, encounter_match_ambiguous, encounter_match_missing.',
+    allowed: 'Ví dụ encounter_match_outside_time, encounter_match_missing_event_time, encounter_match_identity_conflict, encounter_match_strong_key_not_found, encounter_match_strong_key_ambiguous, encounter_match_ambiguous, encounter_match_missing.',
   }),
   days_from_admission: col('integer', 'Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện).', {
     unit: 'ngày', empty: 'Thiếu ngày vào viện hoặc thời điểm của dòng.', allowed: 'Có thể âm (trước ngày vào viện).',
