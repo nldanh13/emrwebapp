@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Form dịch truyền mới: chọn đúng Y lệnh trước (EMR tự điền Bác sĩ), rồi Y tá,
-rồi Chọn thuốc (thuốc + dịch pha)."""
+"""Form dịch truyền mới: chọn Y lệnh, chọn lại Bác sĩ, rồi Y tá,
+sau đó Chọn thuốc (thuốc + dịch pha)."""
 import sys
 from pathlib import Path
 
@@ -39,14 +39,15 @@ def test_without_order_time_uses_latest_order_before_start_same_day():
     assert chon_y_lenh_phu_hop(ROWS, "", "25/09/2026", "", "06:45 25/09/2026") == 2
 
 
-def test_form_order_y_lenh_then_nurse_then_drugs_and_no_doctor_pick():
+def test_form_order_y_lenh_then_doctor_then_nurse_then_drugs():
     src = (WORKER / "infusion_form_actions.py").read_text(encoding="utf-8")
     body = src[src.index("def _nhap_moi_1_dich_truyen("):]
     i_yl = body.index("chon_y_lenh(")
+    i_bs = body.index('chon_select2_bac_si_y_ta(driver, "cbbBacSi"')
     i_yt = body.index('chon_select2_bac_si_y_ta(driver, "cbbYTa"')
     i_drug = body.index("_fill_form_dich_truyen_once(driver, med)")
-    assert i_yl < i_yt < i_drug
-    assert '"cbbBacSi"' not in body
+    assert i_yl < i_bs < i_yt < i_drug
+    assert "select2-cbbBacSi-container" in body
     assert "txtSoLo" not in src[src.index("def _chon_thuoc_va_dung_moi("):]
 
 
