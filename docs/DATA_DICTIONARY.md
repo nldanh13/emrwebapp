@@ -30,6 +30,7 @@
 | [`medication_orders.csv`](#medication_orders) | Một dòng thuốc trong một y lệnh. | `med_order_id` |
 | [`medication_day_summary.csv`](#medication_day_summary) | Một ngày y lệnh của một đợt (tổng hợp các thuốc trong ngày). | `encounter_id`, `order_date` |
 | [`clinical_notes.csv`](#clinical_notes) | Một dòng lịch sử y lệnh (diễn biến + nội dung y lệnh). | `note_id` |
+| [`clinical_events.csv`](#clinical_events) | Một sự kiện lâm sàng được parser nhận diện từ một dòng Diễn biến. | `clinical_event_id` |
 | [`patient_day.csv`](#patient_day) | Một ngày có hoạt động (XN/CĐHA/mổ/thuốc) của một đợt. | `encounter_id`, `date` |
 | [`extract_status.csv`](#extract_status) | Một đợt: tiến độ lấy dữ liệu và mức sẵn sàng phân tích. | `encounter_id` |
 | [`analysis_ready.csv`](#analysis_ready) | Một đợt điều trị: bảng rộng sẵn để phân tích. | `encounter_id` |
@@ -169,7 +170,7 @@
 | `diagnosis_type` | danh mục | Loại chẩn đoán. | `admission`, `discharge`, `comorbidity`, `complication` |  | — | Được dùng |
 | `icd_code` | chuỗi | Mã ICD-10 tách tự động từ văn bản. **Suy luận tự động.** | Dạng: A00 hoặc A00.0 | Văn bản không có mã ICD; không tự đoán mã. | — | Được dùng |
 | `diagnosis_text` | văn bản | Nội dung chẩn đoán (nguyên văn). |  |  | Văn bản tự do | Cần đề cương duyệt |
-| `source` | chuỗi | Nguồn của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
+| `source` | chuỗi | Nguồn nghiệp vụ của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
 
@@ -549,7 +550,6 @@
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
 
-
 ## patient_day
 
 **File:** `patient_day.csv` · **Tầng:** chuẩn hóa · **Có biến suy luận:** không
@@ -734,7 +734,5 @@ Bảng thô giữ nguyên dữ liệu EMR, **đều chứa định danh**, khôn
 
 ## Hạn chế đã biết
 
-- analysis_ready: khi chọn kết quả XN sớm nhất, dòng thiếu lab_datetime được coi là sớm nhất.
-- patient_day: nhiều kết quả cùng chỉ số trong một ngày thì lấy kết quả gặp đầu tiên theo thứ tự file, không theo giờ.
 - clinical_notes.doctor_name (tên nhân viên) chưa bị che tự động khi xuất.
 - Nhãn body_region "Há/khu chậu" sai chính tả (đúng là "Háng/khung chậu").
