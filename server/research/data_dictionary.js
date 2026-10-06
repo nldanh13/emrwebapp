@@ -24,7 +24,7 @@ const routeModel = require('../utils/routeModel');
 //   excluded           — mặc định bị che khi xem/xuất (server/research/export_utils.js).
 // Phân loại "use" là đề xuất kỹ thuật; bệnh viện/hội đồng đạo đức phải xác nhận.
 
-const DICTIONARY_VERSION = '2026-09-23.3';
+const DICTIONARY_VERSION = '2026-10-06.1';
 
 const CONVENTIONS = {
   dates: 'Ngày dạng YYYY-MM-DD; thời điểm dạng YYYY-MM-DD HH:mm (giờ địa phương, không có múi giờ). Cột "ngày giờ" có thể chỉ có phần ngày nếu nguồn không có giờ.',
@@ -145,7 +145,7 @@ TABLES.encounters = {
   grain: 'Một đợt điều trị nội trú. Các dòng chuyển khoa của cùng đợt (chung Mã nội trú) được gộp làm một.',
   primary_key: ['encounter_id'],
   foreign_keys: [{ columns: ['patient_code'], references: 'patients.patient_code' }],
-  referenced_by: ['diagnoses', 'lab_results', 'imaging_results', 'surgery_results', 'medication_orders', 'medication_day_summary', 'clinical_notes', 'patient_day', 'extract_status', 'analysis_ready'],
+  referenced_by: ['diagnoses', 'lab_results', 'imaging_results', 'surgery_results', 'medication_orders', 'medication_day_summary', 'clinical_notes', 'clinical_events', 'patient_day', 'extract_status', 'analysis_ready'],
   sources: ['research_source.csv (từ du_lieu_ban_dau.csv)', 'du_lieu_goc.csv (script XN/CĐHA)', 'hchanh_profile.csv', 'hchanh_discharge.csv (mục Ra khoa)', 'hchanh_surgery.csv'],
   processing: 'Ghép các nguồn theo khóa EMR (Research key, Mã điều trị/Mã nội trú, Mã vào viện) rồi mới theo thời gian. Khi gộp dòng cùng đợt, ngày vào là thời điểm vào sớm nhất. Không ghép theo họ tên.',
   inferred: false,
@@ -431,7 +431,7 @@ TABLES.patient_day = {
     has_medication: col('flag01', 'Có y lệnh thuốc trong ngày.', { allowed: ['1', '0'] }),
     medication_count: col('integer', 'Số dòng thuốc trong ngày.'),
     ...Object.fromEntries(Object.entries(labSnapshotColumns('trong ngày')).map(([k, v]) => [k, {
-      ...v, derivation: `${v.derivation} Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ).`,
+      ...v, derivation: `${v.derivation} Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày.`,
     }])),
   }),
 };
@@ -494,7 +494,7 @@ TABLES.analysis_ready = {
     patient_name: col('string', 'Họ tên.', { identifier: 'direct', use: 'excluded' }),
     sex: col('enum', 'Giới tính.', { allowed: ['Nam', 'Nữ'], identifier: 'quasi' }),
     birth_year: col('integer', 'Năm sinh.', { identifier: 'quasi', use: 'approval_required' }),
-    age: col('string', 'Tuổi như EMR ghi.', { identifier: 'quasi', use: 'approval_required' }),
+    age: col('string', 'Tuổi tại thời điểm nhập viện.', { identifier: 'quasi', use: 'approval_required', derivation: 'Tính từ ngày sinh và ngày nhập viện của chính đợt; nếu thiếu ngày sinh thì dùng tuổi EMR làm fallback.' }),
     admission_date: col('datetime', 'Thời điểm vào viện.', { identifier: 'quasi', use: 'approval_required' }),
     surgery_date: col('datetime', 'Thời điểm ca mổ sớm nhất của đợt.', { identifier: 'quasi', use: 'approval_required', empty: 'Không có ca mổ đã ghép.' }),
     discharge_date: col('datetime', 'Thời điểm ra viện.', { identifier: 'quasi', use: 'approval_required' }),
@@ -530,8 +530,6 @@ const RAW_TABLES = {
 };
 
 const KNOWN_ISSUES = [
-  'analysis_ready: khi chọn kết quả XN sớm nhất, dòng thiếu lab_datetime được coi là sớm nhất.',
-  'patient_day: nhiều kết quả cùng chỉ số trong một ngày thì lấy kết quả gặp đầu tiên theo thứ tự file, không theo giờ.',
   'clinical_notes.doctor_name (tên nhân viên) chưa bị che tự động khi xuất.',
   'Nhãn body_region "Há/khu chậu" sai chính tả (đúng là "Háng/khung chậu").',
 ];
