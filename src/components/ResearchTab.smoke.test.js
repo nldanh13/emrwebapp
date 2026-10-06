@@ -34,7 +34,11 @@ const PROGRESS = {
 // Nghiên cứu mới tạo: có danh sách mẫu nhưng chưa có đợt chạy (chưa lấy dữ liệu lần nào).
 const NEW_STUDY = { id: 'gay_co_xuong_dui', name: 'Gãy cổ xương đùi (giả lập)', has_cohort: true, cohort_count: 12, latest_run: null };
 // Nghiên cứu đã lấy dữ liệu: màn hình chỉ có thống kê và nút xuất, không có bảng dữ liệu.
-const DONE_STUDY = { id: 'thoat_vi_dia_dem', name: 'Thoát vị đĩa đệm (giả lập)', has_cohort: true, cohort_count: 30, latest_run: { id: 'r1', outputs: { analysis_selected: 30, analysis_ready: 30 } } };
+const DONE_STUDY = { id: 'thoat_vi_dia_dem', name: 'Thoát vị đĩa đệm (giả lập)', has_cohort: true, cohort_count: 30, latest_run: { id: 'r1', outputs: { analysis_selected: 30, analysis_ready: 30 } },
+  variable_selection: { selected_variables: [{ id: 'analysis_ready.sex', table: 'analysis_ready', name: 'sex', label: 'Giới tính', type: 'category' }], conditions: [] } };
+// Thêm / bớt biến: tìm "age" trong danh mục kho để thêm vào nghiên cứu.
+const CATALOG_ADD_QUERY = 'age';
+const currentVarCount = (study) => (study.variable_selection?.selected_variables || []).length;
 const STATS_SUMMARY = {
   total: 30, complete: 20, partial: 8, empty: 2, review: 0,
   cohort: { encounters: 30, patients: 28, age: { kind: 'number', n: 30, n_numeric: 30, mean: 61.2, sd: 12.4, median: 63, q1: 52, q3: 71, min: 25, max: 90 }, sex: { kind: 'category', n: 30, top: [{ value: 'Nam', count: 16, pct: 53.3 }, { value: 'Nữ', count: 14, pct: 46.7 }] }, hospital_stay_days: { kind: 'number', n: 30, n_numeric: 30, median: 6, q1: 4, q3: 9 } },
@@ -239,41 +243,48 @@ describe('ResearchTab (khói)', () => {
     expect(text).not.toContain('NC0001');
   });
 
-  it('nghiên cứu chưa lấy dữ liệu: mở thẳng Thu thập, mời lấy lần đầu, không gọi Thu thập tự động', async () => {
+  it('nghiên cứu chỉ có Thống kê & xuất: không còn tab Thu thập dữ liệu, Phiếu nhập tay', async () => {
+    await clickText(DONE_STUDY.name);
+    const text = container.textContent;
+    expect(text).toContain('Đo lường từng biến');
+    expect(text).toContain('Thêm / bớt biến');
+    expect(text).not.toContain('Phiếu nhập tay & theo dõi');
+    expect(text).not.toContain('Thu thập dữ liệu');
+    expect(text).not.toContain('Dữ liệu đầy đủ: biến từ EMR + phiếu nhập tay');
+  });
+
+  it('nghiên cứu chưa có dữ liệu: lấy thẳng từ kho, không mở EMR, không có Thu thập', async () => {
+    api.runResearchStudy.mockClear();
+    api.fetchResearchStudyFromArchive.mockClear();
     api.getResearchCollectionStatus.mockClear();
     await clickText(NEW_STUDY.name);
-    const text = container.textContent;
-    expect(text).toContain('Chưa lấy dữ liệu lần nào');
-    expect(text).toContain('Lấy dữ liệu lần đầu');
-    // Thu thập tự động cần đợt chạy sẵn có; gọi khi chưa có sẽ bật lỗi đỏ.
+    expect(container.textContent).toContain('không mở EMR');
+    expect(container.textContent).not.toContain('Lấy dữ liệu lần đầu');
+    await clickText('Lấy dữ liệu từ kho');
+    for (let i = 0; i < 5; i += 1) await flush();
+    expect(api.fetchResearchStudyFromArchive).toHaveBeenCalledWith(NEW_STUDY.id);
+    expect(api.runResearchStudy).not.toHaveBeenCalled();
     expect(api.getResearchCollectionStatus).not.toHaveBeenCalledWith(NEW_STUDY.id);
   });
 
-  it('bấm "Lấy dữ liệu lần đầu" ở nghiên cứu chưa có đợt chạy: lấy toàn bộ, không gọi "chỉ lấy phần còn thiếu"', async () => {
-    api.refetchMissingResearch.mockClear();
-    api.runResearchStudy.mockClear();
-    await clickText(NEW_STUDY.name);
-    await clickText('Lấy dữ liệu lần đầu');
+  it('thêm / bớt biến: tìm trong danh mục kho, thêm, bỏ, lưu chỉ gửi danh sách biến', async () => {
+    api.updateResearchStudyVariables.mockClear();
+    await clickText(DONE_STUDY.name);
+    await clickText('Thêm / bớt biến');
+    for (let i = 0; i < 3; i += 1) await flush();
+    const before = api.getResearchStudyVariableStats.mock.calls.length;
+    const search = container.querySelector('input[aria-label="Tìm biến để thêm"]');
+    expect(search, 'có ô tìm biến').toBeTruthy();
+    await setInput(search, CATALOG_ADD_QUERY);
+    await clickText('+ Thêm');
+    expect(container.textContent).toContain('Chưa lưu');
+    await clickText('Lưu danh sách biến');
     for (let i = 0; i < 5; i += 1) await flush();
-    expect(api.refetchMissingResearch).not.toHaveBeenCalled();
-    expect(api.runResearchStudy).toHaveBeenCalledWith(NEW_STUDY.id, expect.objectContaining({ resume: true }));
-  });
-
-  it('nghiên cứu chọn mẫu từ kho: lấy dữ liệu thẳng từ kho, không mở EMR', async () => {
-    NEW_STUDY.cohort_source = 'archive';
-    try {
-      api.runResearchStudy.mockClear();
-      api.fetchResearchStudyFromArchive.mockClear();
-      await clickText('Tải lại');
-      await clickText(NEW_STUDY.name);
-      expect(container.textContent).toContain('lấy thẳng từ kho, không mở EMR');
-      await clickText('Lấy dữ liệu từ kho');
-      for (let i = 0; i < 5; i += 1) await flush();
-      expect(api.fetchResearchStudyFromArchive).toHaveBeenCalledWith(NEW_STUDY.id);
-      expect(api.runResearchStudy).not.toHaveBeenCalled();
-    } finally {
-      delete NEW_STUDY.cohort_source;
-    }
+    const [studyId, vars] = api.updateResearchStudyVariables.mock.calls.at(-1);
+    expect(studyId).toBe(DONE_STUDY.id);
+    expect(vars.length).toBeGreaterThan(currentVarCount(DONE_STUDY));
+    expect(vars.every(v => v.id && v.table && v.name)).toBe(true);
+    expect(api.getResearchStudyVariableStats.mock.calls.length).toBeGreaterThan(before);
   });
 
   it('Tạo nghiên cứu: đặt mốc "lần đầu dùng thuốc" và cửa sổ ngày, gửi kèm khi tính thống kê', async () => {
@@ -293,26 +304,6 @@ describe('ResearchTab (khói)', () => {
     await clickText('Tiếp tục');
     const spec = api.previewResearchArchiveVariables.mock.calls.at(-1)[0].variable_selection;
     expect(spec.anchor).toMatchObject({ kind: 'drug', drug: 'Zoledronic' });
-  });
-
-  it('Phiếu nhập tay: lịch gọi báo quá hạn, mở đúng mẫu, lưu không gửi số điện thoại đang ẩn', async () => {
-    await clickText(DONE_STUDY.name);
-    await clickText('Phiếu nhập tay & theo dõi');
-    let text = container.textContent;
-    expect(text).toContain('Quá hạn');
-    expect(text).toContain('NC0001');
-    expect(text).toContain('đang ẩn');
-    expect(text).not.toContain('NC0002', 'mẫu chưa có mốc chỉ hiện khi bật xem tất cả');
-    await clickText('Nhập kết quả');
-    text = container.textContent;
-    expect(text).toContain('Theo dõi 24 giờ');
-    expect(container.querySelector('input[aria-label="Số điện thoại"]').placeholder).toBe('Đã lưu (đang ẩn)');
-    await setInput(container.querySelector('input[aria-label="Nhiệt độ max"]'), '38.4');
-    await clickText('Lưu phiếu NC0001');
-    const [studyId, code, body] = api.saveResearchStudyCrfEntry.mock.calls.at(-1);
-    expect([studyId, code]).toEqual([DONE_STUDY.id, 'NC0001']);
-    expect(body.timepoints.T24.values.nhiet_do_max).toBe('38.4');
-    expect('so_dien_thoai' in body.values).toBe(false);
   });
 
   it('Dán phiếu: tự ghép dòng với biến trong kho, đặt tên cột theo phiếu, báo dòng không có, xuất CSV ngay', async () => {
