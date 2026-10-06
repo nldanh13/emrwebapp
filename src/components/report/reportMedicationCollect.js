@@ -123,6 +123,20 @@ function shouldHideFromDutyReport(item, category, route) {
   return route !== 'Ngưng/Trả' && routeReportMode(route) === 'hide';
 }
 
+const SOLVENT_CODE_TEXT = { 'NACL_0.9': 'Natri clorid 0.9%', 'SODIUM_0.9': 'Sodium chloride 0.9%' };
+
+// Chữ "pha …" hiện cạnh tên thuốc: mã dung môi của worker → tên đọc được; tên thuốc đã ghi
+// "+ Natri clorid 0.9%" thì không lặp. Không có dung môi từ y lệnh → quy tắc pha của Danh mục thuốc.
+function mixTextOf(item, drugName = '') {
+  const raw = String(item?.dung_moi || item?.pha_voi || item?.mix_with || '').trim();
+  if (raw) {
+    const text = SOLVENT_CODE_TEXT[raw] || raw;
+    return normDrug(drugName).includes(normDrug(text)) ? '' : text;
+  }
+  const rule = String(item?.quy_tac_pha || '').trim();
+  return /^pha\s/i.test(rule) ? rule.replace(/^pha\s+/i, '') : '';
+}
+
 function collectDrugRows(patients, selectedDate) {
   const rows = [];
   const pushList = (patient, bundle, category, list) => {
@@ -132,6 +146,7 @@ function collectDrugRows(patients, selectedDate) {
       const route = routeOf(item, category);
       if (shouldHideFromDutyReport(item, category, route)) continue;
       const unit = unitOf(item, category, route);
+      const doseCount = times.filter(t => !t.noTime && t.time).length || 1;
       for (const tm of times) {
         if (!tm.time) continue;
         if (!isMedicationMomentAllowed(tm, selectedDate, dischargeCutoff)) continue;
@@ -149,10 +164,10 @@ function collectDrugRows(patients, selectedDate) {
           timeGuess: tm.guessFrom || '',
           hour: tm.hour,
           noTime: Boolean(tm.noTime),
-          quantity: quantityOf(item, category, tm.hour),
+          quantity: quantityOf(item, category, tm.hour, doseCount),
           unit,
           note: String(item.duong_dung_goc || item.ghi_chu || item.note || '').trim(),
-          mixWith: String(item.dung_moi || item.pha_voi || item.mix_with || '').trim(),
+          mixWith: mixTextOf(item, displayDrugName(item)),
           tuTuc: Boolean(item.tu_tuc),
           category,
           dischargeCutoffMinutes: dischargeCutoff,
@@ -173,6 +188,7 @@ function collectDrugRows(patients, selectedDate) {
   }
 
   markSeparatedHours(rows);
+  flagDuplicateRows(rows);
 
   return rows.sort((a, b) => {
     const g = (GROUP_ORDER[a.timeGroup] || 99) - (GROUP_ORDER[b.timeGroup] || 99);
@@ -221,7 +237,7 @@ function collectOralDispenseData(patients, selectedDate) {
             .filter(Boolean)
             .sort();
           if (!validTimes.length && dischargeCutoff != null) continue;
-          const qtyPerDose = quantityOf(item, category, null);
+          const qtyPerDose = quantityOf(item, category, null, times.filter(t => !t.noTime && t.time).length || 1);
           const unit = unitOf(item, category, route);
           const note = String(item.ghi_chu || item.note || '').trim();
           pData.drugs.set(drugKey, {
@@ -246,6 +262,40 @@ function collectOralDispenseData(patients, selectedDate) {
     );
 }
 
+
+// Nhận diện thuốc có thể trùng để người làm hỏi lại, KHÔNG tự bỏ dòng nào (bỏ nhầm = sót thuốc):
+// - cùng người, cùng ngày, cùng tên: dòng "chưa rõ giờ" ghi duplicateOf = các cữ đã có giờ;
+// - cùng người, cùng giờ, cùng đường dùng, cùng hoạt chất (từ đầu của tên) → possibleDuplicate.
+const SOLVENT_FIRST = new Set(['NATRI', 'SODIUM', 'GLUCOSE', 'NUOC', 'RINGER', 'DEXTROSE']);
+const normDrug = (name) => stripVN(String(name || '')).toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+const firstToken = (name) => (normDrug(name).split(' ').find(t => /[A-Z]{5,}/.test(t)) || '');
+
+function flagDuplicateRows(rows) {
+  const timedByName = new Map();
+  for (const row of rows) {
+    if (row.noTime) continue;
+    const key = `${row.patientId || row.patientName}|${row.date}|${normDrug(row.drugName)}`;
+    if (!timedByName.has(key)) timedByName.set(key, []);
+    timedByName.get(key).push(row.time);
+  }
+  const sameSlot = new Map();
+  for (const row of rows) {
+    if (row.noTime) {
+      const times = timedByName.get(`${row.patientId || row.patientName}|${row.date}|${normDrug(row.drugName)}`);
+      if (times?.length) row.duplicateOf = [...new Set(times)].sort().join(', ');
+      continue;
+    }
+    const tok = firstToken(row.drugName);
+    if (!tok || SOLVENT_FIRST.has(tok)) continue;
+    const key = `${row.patientId || row.patientName}|${row.date}|${row.time}|${row.route}|${tok}`;
+    if (!sameSlot.has(key)) sameSlot.set(key, []);
+    sameSlot.get(key).push(row);
+  }
+  for (const list of sameSlot.values()) {
+    if (list.length > 1) for (const row of list) row.possibleDuplicate = true;
+  }
+  return rows;
+}
 
 function summarize(rows) {
   const map = new Map();
@@ -305,7 +355,8 @@ function countRowsByCategory(rows) {
 }
 
 export {
+  mixTextOf,
   normalizeDmyToken, clockMinutesFrom, dischargeCutoffMinutes, isMedicationMomentAllowed,
-  shouldHideFromDutyReport, collectDrugRows, collectOralDispenseData, summarize,
+  shouldHideFromDutyReport, collectDrugRows, collectOralDispenseData, summarize, flagDuplicateRows,
   comparePrepRows, groupRowsByPatient, countRowsByCategory,
 };
