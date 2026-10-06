@@ -155,10 +155,13 @@ function PipelineView({ pipeline, summary }) {
                   <span>Khóa đợt mạnh: <B>{compactNumber(mq.strong_key || 0)}</B></span>
                   <span>Khớp mốc vào/ra chính xác: <B>{compactNumber(mq.exact_visit_time || 0)}</B></span>
                   <span>Ghép theo khoảng thời gian: <B>{compactNumber(mq.event_time_range || 0)}</B></span>
-                  <span style={{ color: Number(mq.patient_only_no_event_time || 0) ? C.amber : C.text2 }}>Chỉ Mã BN, thiếu thời gian: <B>{compactNumber(mq.patient_only_no_event_time || 0)}</B></span>
+                  <span style={{ color: Number(mq.missing_event_time || 0) ? C.amber : C.text2 }}>Thiếu thời gian sự kiện: <B>{compactNumber(mq.missing_event_time || 0)}</B></span>
+                  <span style={{ color: Number(mq.outside_treatment_time || 0) ? C.red : C.text2 }}>Ngoài thời gian điều trị: <B>{compactNumber(mq.outside_treatment_time || 0)}</B></span>
+                  <span style={{ color: Number(mq.strong_key_not_found || 0) ? C.amber : C.text2 }}>Khóa đợt không tìm thấy: <B>{compactNumber(mq.strong_key_not_found || 0)}</B></span>
+                  <span style={{ color: Number(mq.strong_key_ambiguous || 0) ? C.amber : C.text2 }}>Khóa đợt mơ hồ: <B>{compactNumber(mq.strong_key_ambiguous || 0)}</B></span>
+                  <span style={{ color: Number(mq.identity_conflict || 0) ? C.red : C.text2 }}>Xung đột Mã BN/khóa đợt: <B>{compactNumber(mq.identity_conflict || 0)}</B></span>
                   <span style={{ color: Number(mq.ambiguous || 0) ? C.amber : C.text2 }}>Mơ hồ: <B>{compactNumber(mq.ambiguous || 0)}</B></span>
                   <span style={{ color: Number(mq.missing || 0) ? C.red : C.text2 }}>Không ghép: <B>{compactNumber(mq.missing || 0)}</B></span>
-                  <span style={{ color: Number(mq.outside_treatment_time || 0) ? C.red : C.text2 }}>Ngoài thời gian điều trị: <B>{compactNumber(mq.outside_treatment_time || 0)}</B></span>
                 </div>
                 <div style={{ marginTop: 4, fontSize: FS.xs, color: C.text3 }}>
                   Chỉ dòng matched và đúng khoảng điều trị mới được dùng cho bảng phân tích. Mã NC không tham gia quyết định matching.
