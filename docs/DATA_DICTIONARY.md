@@ -1,6 +1,6 @@
 # Từ điển dữ liệu Kho nghiên cứu
 
-> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-06.1`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
+> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-06.2`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
 >
 > Mô tả được viết từ code chuẩn hóa hiện tại. Cột "Dùng" là đề xuất kỹ thuật; phạm vi dùng thực tế phải theo đề cương được hội đồng đạo đức/bệnh viện phê duyệt.
 
@@ -185,7 +185,7 @@
 
 **Nguồn:** lich_su_xn.csv (script XN/CĐHA, popup lịch sử xét nghiệm trên EMR)
 
-**Cách xử lý:** Giữ nguyên kết quả gốc; tách dấu so sánh, phần số và phần chữ; tên chỉ số chuẩn hóa theo bảng từ khóa. Không quy đổi đơn vị. Cùng BN + cùng thời điểm + cùng chỉ số là một kết quả (bệnh viện xác nhận): dòng thô giống hệt nhau chỉ giữ một.
+**Cách xử lý:** Giữ nguyên mọi lần xét nghiệm. Tách dấu so sánh, phần số và phần chữ; tên chỉ số chuẩn hóa theo bảng từ khóa; không quy đổi đơn vị. Hai dòng giống hệt sau chuẩn hóa vẫn được giữ riêng vì có thể là hai lần xét nghiệm thật; QA chỉ đánh dấu nghi trùng, không tự xóa.
 
 **Quy tắc chất lượng**
 
@@ -197,13 +197,13 @@
 
 **Cần người kiểm tra khi:**
 
-- Cùng BN + cùng thời điểm + cùng chỉ số nhưng kết quả khác nhau (conflicting_lab_result): giữ tất cả, không tự chọn.
+- Các dòng XN giống hệt nhau (possible_duplicate_lab_rows): giữ tất cả, đối chiếu Mã phiếu/mẫu nếu nguồn có.\n- Cùng BN + cùng thời điểm + cùng chỉ số nhưng kết quả khác nhau (conflicting_lab_result): giữ tất cả, không tự chọn.
 - result_num trống nhưng result_raw có số
 - Đơn vị khác nhau cho cùng test_name_norm trong một nghiên cứu.
 
 | Cột | Kiểu | Ý nghĩa | Giá trị / đơn vị | Ô trống nghĩa là | Định danh | Dùng |
 |---|---|---|---|---|---|---|
-| `lab_result_id` | chuỗi | Khóa dòng: lab_<row_hash>. |  |  | — | Được dùng |
+| `lab_result_id` | chuỗi | Khóa dòng: lab_<row_hash>_<lần xuất hiện>. Hai dòng có nội dung giống nhau vẫn có ID riêng để không mất lần xét nghiệm thật. |  |  | — | Được dùng |
 | `research_code` | chuỗi | Mã NC: mã giả danh của đợt điều trị, dùng thay tên khi xuất ẩn danh. Nguồn: research_source.csv (cấp khi tạo nguồn chuẩn) hoặc mã script XN/CĐHA đã cấp cho cùng đợt. | Dạng: NC + 4 chữ số (ví dụ NC0012) | Chưa ghép được đợt (xem encounter_match_status). | Giả danh | Được dùng |
 | `patient_code` | chuỗi | Mã BN trên EMR. Nguồn: Cột Mã BN của danh sách nội trú / file thô. |  | Không được trống (bắt buộc). | Trực tiếp | Loại (bị che khi xuất) |
 | `patient_key` | chuỗi | Mã người bệnh giả danh: cùng một người bệnh luôn cùng mã trong một kho, dùng để nối các đợt của cùng người khi xuất ẩn danh. Cách tính: Cấp tuần tự khi gặp Mã BN lần đầu; giữ nguyên qua các lần Chuẩn hóa. Không suy ngược được ra Mã BN nếu không có patient_link.csv. Nguồn: patient_link.csv của kho (bảng liên kết Mã BN ↔ patient_key, lưu riêng, không nằm trong dataset). | Dạng: P + 6 chữ số (ví dụ P000123) | Dòng không có Mã BN. | Giả danh | Được dùng |
