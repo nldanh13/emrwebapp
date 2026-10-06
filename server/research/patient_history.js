@@ -96,6 +96,96 @@ function uniqueBy(rows, keyFn) {
   return out;
 }
 
+function rawLabRowForLookup(row = {}) {
+  return {
+    patient_code: cell(row, ['ma_bn', 'patient_code', 'Mã BN']),
+    research_code: cell(row, ['ma_nc', 'research_code', 'Mã NC']),
+    encounter_id: '',
+    encounter_match_status: 'missing',
+    encounter_match_method: '',
+    encounter_match_reason: 'raw_patient_lookup_unassigned',
+    lab_datetime: cell(row, ['tg_chi_dinh', 'ngay_chi_dinh', 'TG chỉ định', 'Ngày chỉ định']),
+    lab_date: cell(row, ['ngay_chi_dinh', 'Ngày chỉ định']),
+    lab_group: cell(row, ['loai_xn', 'Loại XN']),
+    lab_order_id: cell(row, ['ma_phieu', 'Mã phiếu']),
+    test_name_raw: cell(row, ['chi_so', 'Chỉ số']),
+    result_raw: cell(row, ['ket_qua', 'Kết quả']),
+    ref_range_raw: cell(row, ['khoang_tham_chieu', 'Khoảng tham chiếu']),
+    unit: cell(row, ['don_vi', 'Đơn vị']),
+    flag_raw: cell(row, ['bat_thuong', 'Bất thường']),
+    status: cell(row, ['trang_thai', 'Trạng thái']),
+    source_type: 'raw_lookup_fallback',
+    source_file: 'lich_su_xn.csv',
+  };
+}
+
+function rawImagingRowForLookup(row = {}) {
+  return {
+    patient_code: cell(row, ['ma_bn', 'patient_code', 'Mã BN']),
+    research_code: cell(row, ['ma_nc', 'research_code', 'Mã NC']),
+    encounter_id: '',
+    encounter_match_status: 'missing',
+    encounter_match_method: '',
+    encounter_match_reason: 'raw_patient_lookup_unassigned',
+    ordered_at: cell(row, ['tg_chi_dinh', 'ngay_chi_dinh', 'TG chỉ định', 'Ngày chỉ định']),
+    order_date: cell(row, ['ngay_chi_dinh', 'Ngày chỉ định']),
+    service_name_raw: cell(row, ['ten_dich_vu', 'Tên dịch vụ']),
+    modality: cell(row, ['nhom_dich_vu', 'Nhóm dịch vụ']),
+    result_text: cell(row, ['mo_ta_ket_qua', 'Mô tả/Kết quả']),
+    conclusion_text: cell(row, ['ket_luan', 'Kết luận']),
+    status: cell(row, ['trang_thai', 'Trạng thái']),
+    source_type: 'raw_lookup_fallback',
+    source_file: 'lich_su_cdha.csv',
+  };
+}
+
+function canonicalLookupTime(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  let m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2}))?/);
+  if (m) return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')} ${String(m[4] || '00').padStart(2, '0')}:${String(m[5] || '00').padStart(2, '0')}`;
+  m = raw.match(/(?:(\d{1,2}):(\d{2})\s+)?(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if (m) {
+    const hh = m[1] || m[6] || '00';
+    const mm = m[2] || m[7] || '00';
+    return `${m[5]}-${String(m[4]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')} ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  }
+  return foldSearchText(raw);
+}
+
+function lookupClinicalKey(kind, row = {}) {
+  if (kind === 'labs') {
+    return [
+      cell(row, ['patient_code', 'ma_bn']),
+      canonicalLookupTime(cell(row, ['lab_datetime', 'tg_chi_dinh', 'lab_date', 'ngay_chi_dinh'])),
+      cell(row, ['lab_order_id', 'ma_phieu']),
+      cell(row, ['test_name_raw', 'chi_so']),
+      cell(row, ['result_raw', 'ket_qua']),
+      cell(row, ['unit', 'don_vi']),
+    ].map(v => foldSearchText(v)).join('|');
+  }
+  return [
+    cell(row, ['patient_code', 'ma_bn']),
+    canonicalLookupTime(cell(row, ['ordered_at', 'tg_chi_dinh', 'order_date', 'ngay_chi_dinh'])),
+    cell(row, ['service_name_raw', 'ten_dich_vu']),
+    cell(row, ['result_text', 'mo_ta_ket_qua']),
+    cell(row, ['conclusion_text', 'ket_luan']),
+  ].map(v => foldSearchText(v)).join('|');
+}
+
+function mergeLookupRows(kind, normalizedRows = [], rawRows = []) {
+  const out = [...normalizedRows];
+  const seen = new Set(normalizedRows.map(row => lookupClinicalKey(kind, row)).filter(Boolean));
+  for (const raw of rawRows) {
+    const row = kind === 'labs' ? rawLabRowForLookup(raw) : rawImagingRowForLookup(raw);
+    const key = lookupClinicalKey(kind, row);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
+}
+
 function queryPatientHistoryEventTables(runDir, {
   patientCodes = [],
   researchCodes = [],
@@ -114,21 +204,25 @@ function queryPatientHistoryEventTables(runDir, {
       encounter_id: [...new Set(encounterIds)].filter(Boolean),
     };
     const specs = [
-      ['labs', 'lab_results', 5000],
-      ['imaging', 'imaging_results', 2000],
-      ['medications', 'medication_orders', 3000],
-      ['surgeries', 'surgery_results', 500],
-    ].map(([name, table, limit]) => ({ name, table, where_any: whereAny, limit }));
+      { name: 'labs', table: 'lab_results', where_any: whereAny, limit: 5000 },
+      { name: 'imaging', table: 'imaging_results', where_any: whereAny, limit: 2000 },
+      { name: 'medications', table: 'medication_orders', where_any: whereAny, limit: 3000 },
+      { name: 'surgeries', table: 'surgery_results', where_any: whereAny, limit: 500 },
+      { name: 'raw_labs', table: 'raw_lab_results', where_any: { ma_bn: [...new Set(patientCodes)].filter(Boolean) }, limit: 5000 },
+      { name: 'raw_imaging', table: 'raw_imaging_results', where_any: { ma_bn: [...new Set(patientCodes)].filter(Boolean) }, limit: 2000 },
+    ];
 
     const payload = queryResearchDatabase({ datasetDir, queries: specs, timeoutMs: 20000 });
     if (!payload || payload.status !== 'ok') return null;
     const results = payload.results || {};
+    const labs = mergeLookupRows('labs', results.labs?.rows || [], results.raw_labs?.rows || []);
+    const imaging = mergeLookupRows('imaging', results.imaging?.rows || [], results.raw_imaging?.rows || []);
     return {
-      labs: results.labs?.rows || [],
-      imaging: results.imaging?.rows || [],
+      labs,
+      imaging,
       medications: results.medications?.rows || [],
       surgeries: results.surgeries?.rows || [],
-      source: 'sqlite',
+      source: (results.raw_labs?.rows?.length || results.raw_imaging?.rows?.length) ? 'sqlite+raw' : 'sqlite',
     };
   } catch (err) {
     console.warn('[RESEARCH][PATIENT_HISTORY] SQLite fallback:', err.message);
@@ -591,6 +685,11 @@ module.exports = {
   personIdentitySignatures,
   normalizeIdentityRow,
   uniqueBy,
+  rawLabRowForLookup,
+  rawImagingRowForLookup,
+  canonicalLookupTime,
+  lookupClinicalKey,
+  mergeLookupRows,
   queryPatientHistoryEventTables,
   PATIENT_LOOKUP_INDEX_CACHE,
   PATIENT_LOOKUP_MAX_MATCHES,

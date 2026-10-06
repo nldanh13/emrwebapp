@@ -141,3 +141,16 @@ def test_analysis_outputs_require_positive_temporal_membership():
     assert "row.encounter_match_status === 'matched' && row.is_within_encounter === '1'" in norm
     assert "hasOwnProperty.call(row, 'is_within_encounter')" in sel
     assert "trim() !== '1'" in sel
+
+
+def test_patient_lookup_falls_back_to_raw_xn_cdha_by_patient_code():
+    src = (ROOT / "server" / "research" / "patient_history.js").read_text(encoding="utf-8")
+    assert "table: 'raw_lab_results'" in src
+    assert "table: 'raw_imaging_results'" in src
+    assert "where_any: { ma_bn:" in src
+    assert "raw_patient_lookup_unassigned" in src
+    assert "rawLabRowForLookup" in src
+    assert "rawImagingRowForLookup" in src
+    assert "mergeLookupRows('labs'" in src
+    assert "mergeLookupRows('imaging'" in src
+    assert "canonicalLookupTime" in src
