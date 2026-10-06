@@ -1,6 +1,6 @@
 # Từ điển dữ liệu Kho nghiên cứu
 
-> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-06.7`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
+> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-06.8`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
 >
 > Mô tả được viết từ code chuẩn hóa hiện tại. Cột "Dùng" là đề xuất kỹ thuật; phạm vi dùng thực tế phải theo đề cương được hội đồng đạo đức/bệnh viện phê duyệt.
 
@@ -430,7 +430,7 @@
 
 **Nguồn:** medication_orders.csv (chỉ dòng đã gắn đợt và có ngày)
 
-**Cách xử lý:** Nhóm theo đợt + ngày y lệnh.
+**Cách xử lý:** Chỉ dùng medication_orders đã matched và is_within_encounter = 1; sau đó nhóm theo đợt + ngày y lệnh. Dòng chưa chứng minh được thời gian vẫn giữ ở medication_orders nhưng không vào bảng tóm tắt.
 
 **Quy tắc chất lượng**
 
@@ -575,7 +575,7 @@
 
 **Nguồn:** lab_results; imaging_results; surgery_results; medication_orders (chỉ dòng đã gắn đợt)
 
-**Cách xử lý:** Nhóm theo đợt + ngày. Ngày không có hoạt động nào thì không có dòng.
+**Cách xử lý:** Chỉ dùng XN/CĐHA/PT/y lệnh đã matched và is_within_encounter = 1; sau đó nhóm theo đợt + ngày. Dòng thiếu bằng chứng thời gian vẫn giữ ở bảng chi tiết nhưng không vào patient_day.
 
 **Quy tắc chất lượng**
 
@@ -628,7 +628,7 @@
 
 **Nguồn:** progress.json (XN/CĐHA); hchanh_auto_progress.json; order_history_auto_progress.json
 
-**Cách xử lý:** Chọn bản ghi tiến độ khớp nhất với đợt (khóa đợt → Mã NC → Mã BN + ngày vào/ra; chỉ dùng Mã BN khi BN có đúng 1 đợt). Hành chánh dùng trạng thái riêng từng file khi có. Trạng thái chi tiết hơn (lý do lỗi, số lần thử, đã đổi trên EMR) nằm ở collection_ledger.json / collection_exceptions.csv.
+**Cách xử lý:** Chọn bản ghi tiến độ khớp nhất với đợt theo khóa đợt → Mã BN + ngày/giờ vào-ra; chỉ fallback Mã BN khi người bệnh có đúng 1 đợt. Mã NC không tham gia quyết định matching. Hành chánh dùng trạng thái riêng từng file khi có. Trạng thái chi tiết hơn nằm ở collection_ledger.json / collection_exceptions.csv.
 
 **Quy tắc chất lượng**
 
@@ -679,7 +679,7 @@
 
 **Nguồn:** encounters; patients; lab_results; imaging_results; surgery_results
 
-**Cách xử lý:** Một dòng mỗi đợt. Giữ toàn bộ XN và CĐHA của đúng đợt trong lab_results_json/imaging_results_json; các cột XN đơn lẻ chỉ là snapshot kết quả sớm nhất để tiện phân tích. imaging_summary giữ toàn bộ tên dịch vụ + mô tả + kết luận, không cắt ngắn. Phẫu thuật lấy ca sớm nhất của đợt; biến suy luận chạy trên chẩn đoán + toàn bộ văn bản CĐHA.
+**Cách xử lý:** Một dòng mỗi đợt. Chỉ dữ liệu matched và is_within_encounter = 1 mới được dùng cho snapshot/tóm tắt phân tích; dữ liệu chưa đủ bằng chứng vẫn giữ nguyên ở bảng chi tiết. Giữ toàn bộ XN và CĐHA hợp lệ của đúng đợt trong lab_results_json/imaging_results_json. imaging_summary không cắt ngắn. Phẫu thuật lấy ca sớm nhất đã xác minh trong đợt; biến suy luận chạy trên chẩn đoán + CĐHA hợp lệ.
 
 **Quy tắc chất lượng**
 
