@@ -205,6 +205,34 @@ function mergeDisplayStay(base, incoming) {
 function sanitizeEncounterEvents(encounter) {
   const enc = { ...(encounter || {}) };
   const excluded = {};
+  if (enc.unmatched) {
+    for (const kind of ['labs', 'imaging', 'medications', 'surgeries']) {
+      const patient = text(enc.patient_code);
+      const samePatient = (enc[kind] || []).filter(row => {
+        const rowPatient = eventPatientCode(row);
+        return !patient || !rowPatient || patient === rowPatient;
+      });
+      const deduped = [];
+      const seen = new Set();
+      for (const row of samePatient) {
+        let key = clinicalEventKey(kind, row);
+        if (!key.replace(/\|/g, '')) key = stableKey(row);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(row);
+      }
+      enc[kind] = deduped;
+      excluded[kind] = Math.max(0, Number((encounter?.[kind] || []).length) - deduped.length);
+    }
+    enc.counts = {
+      labs: enc.labs.length,
+      imaging: enc.imaging.length,
+      medications: enc.medications.length,
+      surgeries: enc.surgeries.length,
+    };
+    enc.excluded_counts = excluded;
+    return enc;
+  }
   for (const kind of ['labs', 'imaging', 'medications', 'surgeries']) {
     const result = sanitizeEventRows(kind, enc[kind], enc);
     enc[kind] = result.rows;
