@@ -57,10 +57,10 @@ const NORMALIZED_COLUMNS = {
   medication_orders: [
     'med_order_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'order_datetime', 'order_date',
     'drug_name_raw', 'drug_name_norm', 'drug_group_guess', 'active_ingredient', 'route_raw', 'route_norm',
-    'dose_raw', 'times_per_day', 'raw_line',
+    'dose_raw', 'times_per_day', 'schedule', 'order_action', 'parser_confidence', 'source_field', 'raw_line',
     'surgery_datetime_ref', 'surgery_date_ref', 'postop_day_index', 'postop_day_label', 'is_postop_day_1_3',
     'days_from_admission', 'days_from_discharge', 'is_within_encounter',
-    'source', 'source_run_id', 'row_hash',
+    'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash',
   ],
   medication_day_summary: [
     'research_code', 'patient_code', 'patient_key', 'encounter_id', 'order_date', 'drug_count',
