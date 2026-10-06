@@ -3,6 +3,14 @@ import * as api from '../api.js';
 
 const AuthContext = createContext(null);
 
+// Thiết bị tin cậy thì nhớ đăng nhập (mở lại không phải nhập); bị thu hồi thì quên ngay.
+async function syncRememberedLogin() {
+  try {
+    const r = await api.getDeviceStatus();
+    api.rememberAuthOnTrustedDevice(Boolean(r?.trusted) && !r?.local_only);
+  } catch (_) { /* không biết thì để nguyên */ }
+}
+
 const INITIAL_STATE = { status: 'loading', user: null, authMode: null };
 
 export function AuthProvider({ children }) {
@@ -12,6 +20,7 @@ export function AuthProvider({ children }) {
     const result = await api.getAuthMe();
     if (result.ok && result.data?.user) {
       setState({ status: 'authenticated', user: result.data.user, authMode: result.data.auth_mode });
+      syncRememberedLogin();
     } else {
       setState({ status: 'unauthenticated', user: null, authMode: result.data?.auth_mode || null });
     }
@@ -30,6 +39,7 @@ export function AuthProvider({ children }) {
     const result = await api.getAuthMe();
     if (result.ok && result.data?.user) {
       setState({ status: 'authenticated', user: result.data.user, authMode: result.data.auth_mode });
+      syncRememberedLogin();
       return { ok: true };
     }
     api.clearAuthToken();

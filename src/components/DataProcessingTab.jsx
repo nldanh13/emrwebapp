@@ -7,6 +7,7 @@ import * as api from '../api.js';
 import { workDateRangeLabel, workDateRangeToDmy } from '../utils/workDateRange.js';
 import { filterPatientsByWorkflow, getUniqueRooms, patientRoom } from '../utils/patientScope.js';
 import { getSessionId, setSessionId } from '../hooks/useSession.js';
+import { SkeletonBlock } from './Skeleton.jsx';
 
 function pickPatientId(row) {
   return String(row?.ma_bn || row?.MaBN || row?.['Mã BN'] || row?.ma_yt || row?.['Mã YT'] || '').trim();
@@ -62,6 +63,9 @@ export default function DataProcessingTab({ toast, workDateRange }) {
   const [boardRows, setBoardRows] = useState([]);
   const [info, setInfo] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Lần tải đầu: các bước hiện khung xám thay vì "Chưa quét" (chưa biết thì không nói "chưa có").
+  const [loadedOnce, setLoadedOnce] = useState(false);
+  const firstLoad = loading && !loadedOnce;
   const [running, setRunning] = useState('');
   const [showPicker, setShowPicker] = useState(false);
   const [detailsScope, setDetailsScope] = useState('all');
@@ -112,6 +116,7 @@ export default function DataProcessingTab({ toast, workDateRange }) {
       toast?.(String(e.message || e), 'error');
     } finally {
       setLoading(false);
+      setLoadedOnce(true);
     }
   }, [toast]);
 
@@ -281,7 +286,7 @@ export default function DataProcessingTab({ toast, workDateRange }) {
             index={1}
             icon={IconListSearch}
             title="Quét danh sách người bệnh"
-            status={rawCount ? `Đã có ${rawCount} người bệnh · ${boardCount} đã xếp phòng` : 'Chưa quét'}
+            status={firstLoad ? <SkeletonBlock width={180} height={12} /> : rawCount ? `Đã có ${rawCount} người bệnh · ${boardCount} đã xếp phòng` : 'Chưa quét'}
             statusTone={rawCount ? 'ok' : 'neutral'}
             action={<Btn variant="solidPrimary" loading={running === 'scan'} disabled={!!running} onClick={runScan}>{running === 'scan' ? 'Đang quét…' : 'Quét danh sách'}</Btn>}
           />
@@ -289,7 +294,7 @@ export default function DataProcessingTab({ toast, workDateRange }) {
             index={2}
             icon={IconDatabaseImport}
             title="Lấy chi tiết y lệnh"
-            status={rowsForDetails.length ? `Sẽ lấy ${targetRowsForDetails.length}/${rowsForDetails.length} người bệnh · ${scopeHint}` : 'Cần quét danh sách trước'}
+            status={firstLoad ? <SkeletonBlock width={180} height={12} /> : rowsForDetails.length ? `Sẽ lấy ${targetRowsForDetails.length}/${rowsForDetails.length} người bệnh · ${scopeHint}` : 'Cần quét danh sách trước'}
             statusTone={!rowsForDetails.length ? 'neutral' : (targetRowsForDetails.length ? 'info' : 'warn')}
             action={<Btn variant="solidPrimary" loading={running === 'details'} disabled={!!running || !canFetchDetails} onClick={runDetails}>{running === 'details' ? 'Đang lấy…' : 'Lấy chi tiết'}</Btn>}
           >
@@ -315,7 +320,7 @@ export default function DataProcessingTab({ toast, workDateRange }) {
             index={3}
             icon={IconFileAnalytics}
             title="Xử lý và phân loại"
-            status={processedCount ? `Đã phân loại ${processedCount} người bệnh` : 'Chưa phân loại'}
+            status={firstLoad ? <SkeletonBlock width={180} height={12} /> : processedCount ? `Đã phân loại ${processedCount} người bệnh` : 'Chưa phân loại'}
             statusTone={processedCount ? 'ok' : 'warn'}
             action={<Btn variant="solidPrimary" loading={running === 'process'} disabled={!!running} onClick={runPostprocess}>{running === 'process' ? 'Đang xử lý…' : 'Xử lý & phân loại'}</Btn>}
           />

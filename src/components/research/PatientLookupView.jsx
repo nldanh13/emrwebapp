@@ -186,7 +186,10 @@ export function PatientLookupView({
             <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>{p.patient_name || 'Người bệnh'} <span style={{ color: C.text3, fontWeight: 600 }}>· BN {(p.patient_codes?.length ? p.patient_codes.join(', ') : p.patient_code) || '—'}</span></div>
             <div style={{ marginTop: 2, fontSize: FS.xs, color: C.text3 }}>{p.sex || '—'} · {p.age ? `${p.age} tuổi` : 'chưa rõ tuổi'}{p.first_research_code ? ` · NC ${p.first_research_code}` : ''}</div>
           </div>
-          <StatBadge label="Đợt" value={p.encounter_count || 0} tone="info" />
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <StatBadge label="Đợt" value={p.encounter_count || 0} tone="info" />
+            {Number(p.unassigned_count || 0) > 0 && <StatBadge label="Chưa ghép đợt" value={p.unassigned_count} tone="warn" />}
+          </div>
         </div>
         <div style={{ display: 'grid', gap: 7, padding: 9 }}>
           {(p.encounters || []).map((enc, ei) => <EncounterHistoryCard key={`${enc.encounter_id}_${ei}`} enc={enc} index={ei} />)}

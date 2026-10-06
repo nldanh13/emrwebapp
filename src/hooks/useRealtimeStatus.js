@@ -1,6 +1,6 @@
 // Kênh sự kiện máy chủ (/api/events, WorkspaceRealtimeBridge) đang nối hay không.
 // Đang nối: màn hình chờ sự kiện, không tự hỏi theo giờ; mất nối: quay về hỏi thưa (dự phòng).
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 let connected = false;
 if (typeof window !== 'undefined') {
@@ -29,4 +29,16 @@ export function useResearchEvents(handler) {
     window.addEventListener('emr:research-changed', onEvent);
     return () => window.removeEventListener('emr:research-changed', onEvent);
   }, [handler]);
+}
+
+// Nghe sự kiện "số liệu màn hình đã đổi" (khóa màn hình, vd. 'hchanh-dashboard') cho màn hình chưa
+// chuyển hẳn sang kho dùng chung: tự tải lại im lặng khi máy chủ báo.
+export function useScreenChanged(key, handler) {
+  const ref = useRef(handler);
+  ref.current = handler;
+  useEffect(() => {
+    const onEvent = (e) => { if (String(e?.detail?.key || '') === key) ref.current(e.detail); };
+    window.addEventListener('emr:screen-changed', onEvent);
+    return () => window.removeEventListener('emr:screen-changed', onEvent);
+  }, [key]);
 }

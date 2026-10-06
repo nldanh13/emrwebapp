@@ -8,6 +8,7 @@ const fs         = require('fs');
 
 const { PY_TIMEOUT_MS, ROOT_DIR, WORKER_DIR } = require('../constants');
 const { redactLogLine, isDriverStackNoise, LOG_REDACT_SALT } = require('../utils/log_redact');
+const { resolveDv2Path } = require('../utils/dv2_path');
 
 // ── Tìm Python binary ─────────────────────────────────────────────────────────
 
@@ -73,13 +74,10 @@ function runPython(args, { cwd, timeoutMs, onSpawn, extraEnv = {}, runtimeDir } 
   return new Promise((resolve) => {
     const effectiveCwd = cwd || ROOT_DIR;
     const runtimeConfigPath = runtimeDir ? path.join(runtimeDir, 'config.json') : '';
-    const runtimeDv2Path = runtimeDir ? path.join(runtimeDir, 'd_v2.json') : '';
     const appConfigPath = runtimeConfigPath && fs.existsSync(runtimeConfigPath)
       ? runtimeConfigPath
       : path.join(ROOT_DIR, 'config', 'config.json');
-    const dV2ConfigPath = runtimeDv2Path && fs.existsSync(runtimeDv2Path)
-      ? runtimeDv2Path
-      : path.join(ROOT_DIR, 'config', 'd_v2.json');
+    const dV2ConfigPath = resolveDv2Path(runtimeDir);
     const py = spawn(PYTHON_BIN, ['-X', 'utf8', ...args], {
       shell: false,
       windowsHide: true,
@@ -95,6 +93,8 @@ function runPython(args, { cwd, timeoutMs, onSpawn, extraEnv = {}, runtimeDir } 
         D_V2_CONFIG_PATH:   dV2ConfigPath,
         WORKER_RUNTIME_DIR: runtimeDir || '',
         LOG_REDACT_SALT,
+        // Chế độ cầu nối tab EMR (VPS): worker xin trang EMR qua máy chủ thay vì vào EMR trực tiếp.
+        ...require('./emr_bridge').workerEnv(),
         ...extraEnv,
       },
     });
@@ -191,11 +191,26 @@ function argsForLog(args = []) {
  * Kèm theo tối đa MAX_LINES dòng stderr cuối (đã lọc nhạy cảm).
  * Không kèm nếu result không có stderrTail hoặc rỗng.
  */
-function fmtPyError(baseMsg, result, { maxLines = 15 } = {}) {
-  const tail = Array.isArray(result?.stderrTail) ? result.stderrTail : [];
+// Dòng thuộc traceback Python (đường dẫn file, số dòng, mã nguồn, dấu ^^^) — không đưa cho người dùng.
+const TRACEBACK_LINE = /^(Traceback \(most recent call last\):|\s+File "|\s+\.\.\.<\d+ lines?>\.\.\.|\s*[~^]+\s*$|\s{2,}\S)/;
+// Dòng cuối của traceback: "RuntimeError: ..." hoặc "selenium.common.exceptions.TimeoutException: ...".
+const EXCEPTION_LINE = /^(?:[A-Za-z_][\w]*\.)*[A-Za-z_]\w*(?:Error|Exception|Exit|Interrupt|Warning)\s*:\s*(.+)$/;
+
+// Câu lỗi cho người dùng: câu gốc + lý do (câu của ngoại lệ Python). Không kèm traceback trần;
+// toàn bộ log vẫn xem được ở nút "Xem log" (CLAUDE.md: lỗi tiếng Việt, không traceback trần).
+function fmtPyError(baseMsg, result, { maxLines = 3 } = {}) {
+  const tail = Array.isArray(result?.stderrTail) ? result.stderrTail.map(l => String(l ?? '')) : [];
   if (!tail.length) return baseMsg;
-  const snippet = tail.slice(-maxLines).join('\n');
-  return `${baseMsg}\n\nLog (${tail.length} dòng cuối):\n${snippet}`;
+  for (let i = tail.length - 1; i >= 0; i -= 1) {
+    const m = EXCEPTION_LINE.exec(tail[i].trim());
+    if (m) {
+      const reason = m[1].replace(/^Message:\s*/i, '').trim();
+      if (reason) return `${baseMsg}\nLý do: ${reason}`;
+    }
+  }
+  const meaningful = tail.filter(l => l.trim() && !TRACEBACK_LINE.test(l)).slice(-maxLines);
+  if (!meaningful.length) return `${baseMsg}\nXem chi tiết ở nút "Xem log".`;
+  return `${baseMsg}\nChi tiết: ${meaningful.map(l => l.trim()).join(' · ')}`;
 }
 
 /** Chạy main_worker.py với subcommand (scan / details). */
@@ -213,13 +228,17 @@ function runWorker(cmd, args, opts = {}) {
 
 /** Chạy một script Python cụ thể trong worker/. */
 function runScript(scriptName, args = [], opts = {}) {
-  // hchanh_fetch_safe.py giữ nguyên CLI của hchanh_fetch.py nhưng buộc màn Lịch sử
-  // y lệnh chọn 1000 = “Tất cả” và chờ AJAX ổn định trước khi parse. Giữ redirect
-  // ở một chỗ để mọi caller hchanh_fetch đều nhận cùng cơ chế an toàn.
-  const actualScriptName = scriptName === 'hchanh_fetch.py' ? 'hchanh_fetch_safe.py' : scriptName;
-  const scriptPath = path.join(WORKER_DIR, actualScriptName);
-  if (!fs.existsSync(scriptPath)) throw new Error(`Thiếu script: worker/${actualScriptName}`);
-  console.log(`>>> [NODE] Script: ${actualScriptName} ${argsForLog(args)}`);
+  // Mọi lời gọi hchanh_fetch đi qua entrypoint tương thích ngược:
+  //   hchanh_fetch_entry.py → nạp hchanh_fetch_safe.py (Lịch sử y lệnh buộc "Tất cả" = 1000 và chờ
+  //   AJAX ổn định) → hchanh_fetch.py. Entrypoint chỉ đổi thêm hành vi trong Research hchanh_auto:
+  //   không dùng marker y lệnh làm gate quyết định cho surgery.
+  const researchSafeEntry = path.join(WORKER_DIR, 'hchanh_fetch_entry.py');
+  const effectiveScriptName = scriptName === 'hchanh_fetch.py' && fs.existsSync(researchSafeEntry)
+    ? 'hchanh_fetch_entry.py'
+    : scriptName;
+  const scriptPath = path.join(WORKER_DIR, effectiveScriptName);
+  if (!fs.existsSync(scriptPath)) throw new Error(`Thiếu script: worker/${effectiveScriptName}`);
+  console.log(`>>> [NODE] Script: ${effectiveScriptName} ${argsForLog(args)}`);
   return runPython(['-u', scriptPath, ...args], {
     timeoutMs: PY_TIMEOUT_MS,
     cwd:       opts.cwd,

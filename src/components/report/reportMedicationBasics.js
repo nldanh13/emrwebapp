@@ -1,11 +1,14 @@
 import { getCategories, categoryLabel as modelCategoryLabel, detectRouteCode, routeCategory, routeReportMode, routeShort } from '../../config/routes.js';
+const QUANTITY_ONLY = /^\(?\s*[\d.,]+\s*(?:ống|ong|lọ|lo|chai|túi|tui|viên|vien|gói|goi|ml|ampoule)\s*\)?$/i;
+
 function displayDrugName(item) {
   // Lấy rộng hơn để không mất các dòng thuốc có cấu trúc lạ từ dữ liệu cũ.
   const candidates = [
     item?.ten_chuan, item?.ten_hien_thi, item?.ten_thuoc, item?.hoat_chat,
     item?.ten, item?.name, item?.label, item?.text, item?.noi_dung, item?.raw,
   ];
-  const base = String(candidates.find(v => String(v || '').trim()) || '').trim();
+  // Một số dòng worker tách nhầm: tên chỉ còn phần số lượng "(1 ống)" → bỏ qua, lấy trường kế tiếp.
+  const base = String(candidates.find(v => String(v || '').trim() && !QUANTITY_ONLY.test(String(v).trim())) || '').trim();
   if (!base) return 'Chưa rõ tên thuốc';
 
   // Bỏ tiền tố (TT) text — badge trong cột Thuốc đã hiển thị rồi
@@ -24,7 +27,10 @@ function numericValue(raw) {
   return Number.isFinite(n) ? n : null;
 }
 
-function quantityOf(item, category, hour) {
+// Liều MỖI LẦN của một cữ. so_luong của worker là TỔNG trong ngày (worker chỉ tự chia cho thuốc tiêm,
+// ghi vào so_lo_moi_lan); bản cũ coi tổng là liều mỗi lần rồi nhân số cữ → thuốc uống 2 viên/ngày
+// chia 2 cữ hiện "× 4 viên". timesCount = số cữ có giờ của y lệnh.
+function quantityOf(item, category, hour, timesCount = 1) {
   const byHour = item?.so_luong_moi_gio || item?.so_luong_theo_gio;
   if (hour != null && hour !== '' && byHour && typeof byHour === 'object') {
     const hourKeys = [String(Number(hour)), String(hour).padStart(2, '0'), `${String(hour).padStart(2, '0')}:00`];
@@ -41,12 +47,27 @@ function quantityOf(item, category, hour) {
   if (category === 'dich_truyen') return 1;
 
   const total = numericValue(item?.so_luong);
-  return total != null ? total : 1;
+  if (total == null) return 1;
+  const n = Math.max(1, Number(timesCount) || 1);
+  if (n > 1) {
+    const per = total / n;
+    // Chia hết (kể cả nửa viên) mới là tổng ngày; không chia được thì giữ nguyên (đã là liều mỗi lần).
+    if (per > 0 && Number.isInteger(per * 2)) return per;
+  }
+  return total;
 }
 
+const CONTAINER_WORDS = ['chai', 'lọ', 'ống', 'túi', 'viên', 'gói'];
+
 function unitOf(item, category, route = '') {
-  const u = String(item?.dang || item?.don_vi || item?.unit || '').trim();
-  if (u) return u.toLowerCase();
+  let u = String(item?.dang || item?.don_vi || item?.unit || '').trim().toLowerCase();
+  // Chữ mẫu "chai/lọ/ống/túi" (không phải đơn vị thật): lấy đơn vị ghi trong tên, vd. "(1 lọ)".
+  if (u.includes('/') && u.split('/').filter(x => CONTAINER_WORDS.includes(x.trim())).length > 1) {
+    const name = String(item?.ten_thuoc || item?.ten_hien_thi || item?.ten_chuan || '').toLowerCase();
+    const m = name.match(/\(\s*[\d.,]+\s*(chai|lọ|ống|túi|viên|gói)\s*\)/);
+    u = m ? m[1] : u.split('/')[0].trim();
+  }
+  if (u) return u;
   const routeCat = routeCategory(route);
   if (routeCat === 'dich_truyen' || category === 'dich_truyen') return 'chai';
   if (routeReportMode(route) === 'daily' || category === 'thuoc_uong') return 'viên';

@@ -47,7 +47,8 @@ const STORED_TABLES = [
   ['imaging_results', 'CĐHA', 'imaging_results.csv'],
   ['surgery_results', 'Phẫu thuật/thủ thuật', 'surgery_results.csv'],
   ['medication_orders', 'Y lệnh thuốc', 'medication_orders.csv'],
-  ['clinical_notes', 'Diễn biến', 'clinical_notes.csv'],
+  ['clinical_notes', 'Diễn biến & y lệnh gốc', 'clinical_notes.csv'],
+  ['clinical_events', 'Sự kiện lâm sàng đã xử lý', 'clinical_events.csv'],
   ['analysis_ready', 'Bảng phân tích', 'analysis_ready.csv'],
 ];
 
@@ -62,7 +63,7 @@ const UNMATCHED_KEYS = [
 const RAW_PROGRESS_FILES = [
   ['progress.json', 'XN & CĐHA'],
   ['hchanh_auto_progress.json', 'Hồ sơ nền, ra viện, phẫu thuật'],
-  ['order_history_auto_progress.json', 'Y lệnh'],
+  ['order_history_auto_progress.json', 'Y lệnh & diễn biến'],
   ['collection_report.json', 'Thu thập tự động'],
 ];
 
@@ -77,6 +78,7 @@ function buildPipelineInfo(scopeDir, runDir) {
   const report = readJsonSafe(path.join(runDir, 'collection_report.json'), null);
   const db = manifest.normalized_database || {};
   const dbFile = path.join(scopeDir, db.database_file || 'research.sqlite3');
+  const dbFileInfo = fileInfo(dbFile);
   const linkFile = path.join(scopeDir, 'patient_link.csv');
   const overlay = outputs.kho_nguoi_benh || {};
 
@@ -111,6 +113,7 @@ function buildPipelineInfo(scopeDir, runDir) {
       parts_backfilled: Number(report.parts_backfilled || 0),
       selenium_errors_open: Number(report.selenium_errors_open || 0),
       unmatched_encounters: Number(report.unmatched_encounters || 0),
+      diagnostics: Array.isArray(report.diagnostics) ? report.diagnostics.slice(0, 20) : [],
     } : null,
     fetch: {
       last_at: lastFetchAt,
@@ -135,7 +138,11 @@ function buildPipelineInfo(scopeDir, runDir) {
         status: qa.status || manifest.normalized_qa?.status || '',
         blocking: Number(qa.blocking_count ?? manifest.normalized_qa?.blocking_count ?? 0),
         warning: Number(qa.warning_count ?? manifest.normalized_qa?.warning_count ?? 0),
-        review: Number(manifest.normalized_qa?.review_count ?? 0),
+        review: Number(qa.review_count ?? manifest.normalized_qa?.review_count ?? 0),
+        blocking_items: Array.isArray(qa.blocking) ? qa.blocking.slice(0, 20) : [],
+        warning_items: Array.isArray(qa.warnings) ? qa.warnings.slice(0, 20) : [],
+        matching_quality: qa.matching_quality || manifest.normalized_qa?.matching_quality || null,
+        unmatched_by_table: qa.unmatched_by_table || null,
       },
       unmatched: UNMATCHED_KEYS.map(([key, label]) => ({ key, label, rows: Number(outputs[key] || 0) })).filter(x => x.rows > 0),
       history: tailJsonl(path.join(runDir, 'normalize_history.jsonl'), 5).map(h => ({
@@ -152,10 +159,12 @@ function buildPipelineInfo(scopeDir, runDir) {
       })),
       sqlite: {
         file: relPath(dbFile),
-        status: manifest.normalized_database_status || (db.exists ? 'ok' : 'missing'),
-        size_bytes: Number(db.size_bytes || fileInfo(dbFile).size_bytes || 0),
-        updated_at: db.updated_at || fileInfo(dbFile).updated_at,
+        exists: dbFileInfo.exists,
+        status: dbFileInfo.exists ? 'ok' : (manifest.normalized_database_status || 'missing'),
+        size_bytes: Number(dbFileInfo.size_bytes || db.size_bytes || 0),
+        updated_at: dbFileInfo.updated_at || db.updated_at || '',
         table_count: Array.isArray(db.tables) ? db.tables.length : 0,
+        manifest_status: manifest.normalized_database_status || '',
       },
       patient_link: { file: relPath(linkFile), ...fileInfo(linkFile) },
     },

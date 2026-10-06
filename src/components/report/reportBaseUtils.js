@@ -182,6 +182,32 @@ function timeToMinutes(time) {
   return Number(m[1]) * 60 + Number(m[2]);
 }
 
+const START_MERGE_MINUTES = 60;
+
+// Giờ cữ của khoa cho y lệnh chỉ ghi buổi (khớp lịch thuốc uống: 08:00, 16:00, 20:00; trưa là
+// trực trưa 11:00–13:00).
+const SESSION_TIMES = { 'sáng': '08:00', 'trưa': '12:00', 'chiều': '16:00', 'tối': '20:00' };
+// Chữ buổi đứng riêng (không dính chữ khác); bỏ các cụm không phải buổi: "tối đa", "tối thiểu",
+// "tối ưu", "sáng tạo", "sáng kiến".
+const SESSION_RE = /(?<![\p{L}\p{N}])(sáng|trưa|chiều|tối)(?![\p{L}\p{N}])(?!\s+(?:đa|thiểu|ưu|tạo|kiến)(?![\p{L}\p{N}]))/gu;
+
+function sessionWords(text) {
+  const found = [];
+  for (const m of String(text || '').normalize('NFC').toLowerCase().matchAll(SESSION_RE)) {
+    if (!found.includes(m[1])) found.push(m[1]);
+  }
+  return found.sort((a, b) => SESSION_TIMES[a].localeCompare(SESSION_TIMES[b]));
+}
+
+// Phút tính từ 00:00 ngày recordDate (cữ của ngày hôm sau cộng 1440), để so hai giờ khác ngày.
+function absoluteMinutes(time, date, recordDate) {
+  const m = timeToMinutes(time);
+  const d = parseDmy(date);
+  const base = parseDmy(recordDate);
+  if (m == null || !d || !base) return null;
+  return Math.round((d - base) / 86400000) * 1440 + m;
+}
+
 function extractTimes(item, recordDate) {
   const out = [];
   const seen = new Set();
@@ -208,12 +234,12 @@ function extractTimes(item, recordDate) {
 
   // Một số dòng có tg_bat_dau và đồng thời gio_dung/lich_dung chứa nhiều cữ.
   // Bản cũ hễ có tg_bat_dau là return ngay, làm các giờ còn lại không hiện trên báo cáo.
+  // tg_bat_dau là giờ BẮT ĐẦU THỰC TẾ của một cữ (vd. 08:20 cho cữ 08:00): nếu cách một cữ trong
+  // giờ dùng dưới START_MERGE_MINUTES thì đó chính là cữ ấy, không thêm cữ mới (lỗi cũ: 08:00 và
+  // 08:20 hiện như hai cữ, người làm thấy cùng một thuốc hai lần).
   const fullStart = String(item?.tg_bat_dau || '').trim();
-  if (fullStart) {
-    const t = normalizeTime(fullStart);
-    const d = normalizeDate(fullStart) || recordDate;
-    if (t) push(t, d);
-  }
+  const startTime = fullStart ? normalizeTime(fullStart) : '';
+  const startDate = fullStart ? (normalizeDate(fullStart) || recordDate) : '';
 
   const timeFields = [
     item?.gio_dung, item?.lich_dung, item?.thoi_gian_dung, item?.gio,
@@ -227,6 +253,35 @@ function extractTimes(item, recordDate) {
     matches.forEach(x => push(x, recordDate));
   }
 
+  if (startTime) {
+    const startAbs = absoluteMinutes(startTime, startDate, recordDate);
+    const sameDose = out.some(o => startAbs != null
+      && Math.abs(absoluteMinutes(o.time, o.date, recordDate) - startAbs) < START_MERGE_MINUTES);
+    if (!sameDose) {
+      const before = out.length;
+      push(startTime, startDate);
+      // Giữ thứ tự cũ: giờ bắt đầu đứng trước các cữ trong giờ dùng.
+      if (out.length > before) out.unshift(out.pop());
+    }
+  }
+
+  // Không có giờ số: thử chữ buổi (sáng/trưa/chiều/tối) trong lịch dùng, cách dùng, tên thuốc.
+  // Giờ này là giờ SUY TỪ CHỮ (guessFrom) để giao diện ghi rõ, không phải giờ bác sĩ ghi.
+  if (!out.length) {
+    const texts = [
+      ...timeFields,
+      item?.cach_dung, item?.huong_dan, item?.ghi_chu, item?.note, item?.lieu_dung,
+      item?.ten_thuoc, item?.ten, item?.ten_hien_thi, item?.text, item?.noi_dung, item?.raw,
+    ].map(v => (Array.isArray(v) ? v.join(', ') : String(v || ''))).filter(Boolean);
+    for (const word of sessionWords(texts.join(' | '))) {
+      const t = SESSION_TIMES[word];
+      const key = `${t}|${recordDate}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ time: t, date: recordDate, hour: Number(t.slice(0, 2)), guessFrom: word });
+    }
+  }
+
   if (!out.length) push('', recordDate, true);
   return out;
 }
@@ -237,5 +292,5 @@ export {
   Q6_MIN_MATCHES, EARLY_ISOLATED_END_MINUTES, CONTINUOUS_INFUSION_GAP_MINUTES, routePriority,
   stripVN, todayDmy, parseDmy, addDaysDmy, toIsoDate, weekdayKeyFromIso,
   cloneShift, normalizeScheduleShape, firstNonEmptyDay, getDaySchedule, dayTypeOf, firstName,
-  normalizeDate, normalizeTime, timeToMinutes, extractTimes,
+  normalizeDate, normalizeTime, timeToMinutes, extractTimes, SESSION_TIMES,
 };

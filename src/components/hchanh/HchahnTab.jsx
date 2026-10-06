@@ -19,6 +19,7 @@ import { formatPersonName } from '../../utils/personName.js';
 import { getHchanhIssueTarget } from '../../engine/hchanhIssueNavigation.js';
 import { getManualReviewView, summarizeManualReviews } from '../../engine/hchanhManualReviewView.js';
 import { getHchanhPatientNavigation } from '../../engine/hchanhPatientNavigation.js';
+import { SkeletonScreen } from '../Skeleton.jsx';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1736,11 +1737,7 @@ export default function HchahnTab({ toast, workDateRange, view = 'check' }) {
   const workspace = view === 'vtyt' ? 'vtyt' : 'discharge';
 
   if (loading && !dashboard) {
-    return (
-      <div style={{ padding:32, color:C.text2, display:'flex', alignItems:'center', gap:10 }}>
-        <Spinner /> Đang tải dữ liệu hành chánh...
-      </div>
-    );
+    return <SkeletonScreen label="Đang tải dữ liệu hành chánh" stats={4} rows={8} cols={6} />;
   }
 
   const vtytCount = vtytBatchDraft?.patients?.length || 0;

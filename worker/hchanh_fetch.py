@@ -48,6 +48,23 @@ except Exception:
     _HAS_HTTP = False
     EmrHttpSession = None  # type: ignore
 
+try:
+    from emr_http_reader import bridge_mode as _bridge_mode, bridge_info as _bridge_info, EmrBridgeError
+except Exception:  # pragma: no cover
+    def _bridge_mode() -> bool:  # type: ignore[misc]
+        return False
+    _bridge_info = None  # type: ignore
+    EmrBridgeError = RuntimeError  # type: ignore
+
+_BRIDGE_WARNED: set = set()
+
+
+def _bridge_warn_once(key: str, message: str) -> None:
+    if key in _BRIDGE_WARNED:
+        return
+    _BRIDGE_WARNED.add(key)
+    print(f"WARN [emr-bridge] {message}", file=sys.stderr)
+
 
 try:
     from selenium_emr_helpers import (
@@ -371,6 +388,11 @@ def _build_hchanh_config(config: Dict[str, Any]) -> Dict[str, Any]:
     hchanh_config = dict(config or {})
     username = _t(config.get("hchanh_username"))
     password = str(config.get("hchanh_password") or "")
+    if _bridge_mode():
+        # Qua tab EMR: dùng phiên đăng nhập trên máy bệnh viện, máy chủ không cần tài khoản EMR.
+        hchanh_config["username"] = username
+        hchanh_config["password"] = password
+        return hchanh_config
     if not username or not password:
         raise RuntimeError(
             "Chưa cấu hình tài khoản EMR hành chánh. Điền hchanh.username / hchanh.password "
@@ -476,6 +498,20 @@ def _init_session(config: Dict[str, Any]) -> Optional["EmrHttpSession"]:
     except Exception as e:
         print(f"ERROR [hchanh-session] Không khởi tạo được HTTP session: {type(e).__name__}: {e}")
         return None
+
+    if _bridge_mode():
+        try:
+            info = _bridge_info() if _bridge_info else {}
+            current = str((info or {}).get("emr_url") or "")
+            if current:
+                # Giữ usid/st của phiên EMR đang mở trên máy bệnh viện, chuyển sang danh sách nội trú.
+                sess._session_inpatient_url = _build_inpatient_url_after_login(current, hchanh_config)
+            sess.login()
+            print("LOG [hchanh-session] Dùng phiên EMR qua tab trình duyệt ở bệnh viện (cầu nối).")
+            return sess
+        except Exception as e:
+            print(f"ERROR [hchanh-session] {e}")
+            return None
 
     try:
         sess.login()
@@ -591,6 +627,13 @@ def _find_patient_links_via_selenium(sess: "EmrHttpSession", ma_bn: str,
     Khác bản cũ: không đóng Chrome sau khi tìm link. Cùng phiên Chrome này sẽ được dùng tiếp
     cho billing/bed_days/order_history/documents để tránh cảnh đóng-mở nhiều cửa sổ.
     """
+    if _bridge_mode():
+        _bridge_warn_once(
+            f"link:{ma_bn}",
+            f"BN {ma_bn} không có trong danh sách nội trú đang hiện trên EMR. Qua tab EMR hiện chỉ tìm được "
+            "người bệnh có trong danh sách nội trú; tìm người bệnh đã ra viện (bấm lọc trên EMR) sẽ có ở bản sau.",
+        )
+        return {}
     ctx = _ensure_hchanh_click_context(sess, ma_bn, config, date_from=date_from, date_to=date_to, reason="link", inpatient_status=inpatient_status)
     if not ctx:
         return {}
@@ -1497,6 +1540,10 @@ def _ensure_hchanh_click_context(sess: Optional["EmrHttpSession"], ma_bn: str,
     nguyên và dùng lại cho TỐI ĐA batch_size BN liên tiếp (khác BN vẫn không cần mở
     lại Chrome) — chỉ đóng+mở lại hẳn khi hết quota lô hoặc Chrome đã chết.
     """
+    if _bridge_mode():
+        # Các bước phải bấm trên giao diện EMR chưa làm được qua tab EMR: dùng kết quả HTTP sẵn có.
+        _bridge_warn_once(f"click:{reason}", f"Bỏ qua bước bấm trên EMR ({reason}) — chưa hỗ trợ qua tab EMR.")
+        return None
     if not (_HAS_SELENIUM_LOGIN and _HAS_SELENIUM_SEARCH):
         print("WARN [hchanh-click] Không đủ Selenium helper để thao tác trên EMR.", file=sys.stderr)
         return None
@@ -4011,6 +4058,9 @@ def fetch_surgery(sess: Optional["EmrHttpSession"], ma_bn: str,
     if sess is None:
         base["_fetch_status"] = "no_session"
         return base
+    if _bridge_mode():
+        base["_fetch_status"] = "bridge_unsupported"
+        return base
     if not (_HAS_SELENIUM_LOGIN and _HAS_SELENIUM_SEARCH):
         base["_fetch_status"] = "no_selenium"
         return base
@@ -4732,6 +4782,9 @@ def fetch_cls(sess: Optional[EmrHttpSession], ma_bn: str,
         "date_filter_applied": False,
         "_fetch_status": "pending",
     }
+    if _bridge_mode():
+        base["_fetch_status"] = "bridge_unsupported"
+        return base
 
     try:
         ctx = _ensure_hchanh_click_context(
@@ -5515,7 +5568,8 @@ def _run_hchanh_fetch_core(patient_row: Dict[str, Any], scope: str, files: List[
             target="memory:link_map",
         )
     if sess is not None:
-        selenium_first = bool(research_mode or config.get("hchanh_research_selenium_first", True))
+        # Qua tab EMR (cầu nối) không có Chrome: tìm người bệnh trên danh sách nội trú bằng HTTP.
+        selenium_first = (not _bridge_mode()) and bool(research_mode or config.get("hchanh_research_selenium_first", True))
         if selenium_first:
             trace_event(
                 "EMR.PATIENT_LINKS_SKIP_HTTP",

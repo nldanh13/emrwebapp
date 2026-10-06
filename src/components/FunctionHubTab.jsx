@@ -3,6 +3,7 @@ import { C, FS } from '../tokens.js';
 import * as api from '../api.js';
 import { getFeatureDefinition, getFeatureGroups } from '../features/registry.js';
 import { invalidateRuntimeRegistry, useRuntimeRegistry } from '../features/runtime.js';
+import { SkeletonScreen } from './Skeleton.jsx';
 
 function normalize(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
@@ -206,7 +207,7 @@ export default function FunctionHubTab({ onOpenContext, toast }) {
         </div>
       </section>
 
-      {loading && !features.length ? <div style={{ color: C.text3, padding: 20 }}>Đang tải registry...</div> : null}
+      {loading && !features.length ? <SkeletonScreen label="Đang tải danh sách chức năng" rows={5} cols={3} style={{ padding: 0 }} /> : null}
       {mode === 'workflows' ? (
         <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 9 }}>
           {workflowMatches.map(workflow => <WorkflowCard key={workflow.id} workflow={workflow} features={features} onOpen={onOpenContext} onPlan={planWorkflow} onToggle={toggleWorkflow} plan={plans[workflow.id]} busy={busyId === workflow.id} />)}

@@ -10,6 +10,8 @@ import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import * as api from '../../api.js';
 import { useOnTabReturn } from '../../hooks/useTabActivity.js';
+import { useScreenChanged } from '../../hooks/useRealtimeStatus.js';
+import { SkeletonTable } from '../Skeleton.jsx';
 
 function fmtBytes(n) {
   const num = Number(n) || 0;
@@ -61,21 +63,23 @@ export default function DischargeSignTab({ toast }) {
   const [cleaning, setCleaning] = useState(false);
   const uploadInputRef = useRef(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const r = await api.listDischargeBundles();
       setBundles(Array.isArray(r.bundles) ? r.bundles : []);
       setTotalBytes(Number(r.total_bytes) || 0);
     } catch (e) {
-      toast?.(String(e.message || e), 'error');
+      if (!silent) toast?.(String(e.message || e), 'error');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [toast]);
 
   useEffect(() => { load(); }, [load]);
   useOnTabReturn(() => load());
+  // Có bộ in ra viện mới / vừa ký (kể cả từ thiết bị khác): máy chủ báo, tải lại im lặng (UX_RULES mục 9).
+  useScreenChanged('discharge-bundles', () => { load({ silent: true }); });
 
   const signFile = async (fileName) => {
     const r = await api.signDischargeBundle(fileName);
@@ -197,9 +201,9 @@ export default function DischargeSignTab({ toast }) {
         </div>
       )}
 
-      {loading ? (
-        <div style={{ color: C.text2, display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Spinner /> Đang tải...
+      {loading && !bundles.length ? (
+        <div role="status" aria-busy="true" aria-label="Đang tải danh sách bộ in ra viện" style={{ background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 7, padding: 14 }}>
+          <SkeletonTable rows={5} cols={4} />
         </div>
       ) : !bundles.length ? (
         <div style={{ color: C.text2, fontSize: FS.md, padding: 24, textAlign: 'center', background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 7 }}>

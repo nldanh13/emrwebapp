@@ -10,6 +10,8 @@ import useIsMobile from '../../hooks/useIsMobile.js';
 import { PAPER_ISSUE_STATES, applyGoogleSheetValidation, buildGoogleSheetIndex, buildUnlinkedSheetIssues, paperFilterMatches } from './googleSheetValidation.mjs';
 import { exportRecordsCheckPdf, getRecordsCheckDashboard, getRecordsCheckGoogleSheet, getRecordsCheckSubmissions, scanRecordsCheckCompleted, setRecordsCheckChecked, setRecordsCheckPaperChecklist, startRecordsCheckFetchBatch, stopRecordsCheckFetchBatch, syncRecordsCheckGoogleSheet, updateRecordsCheckGoogleSheetRow } from '../../api.js';
 import { useOnTabReturn } from '../../hooks/useTabActivity.js';
+import { useRealtimeConnected, useScreenChanged } from '../../hooks/useRealtimeStatus.js';
+import { SkeletonScreen } from '../Skeleton.jsx';
 
 const CHECK_FILES = ['discharge', 'cls'];
 const COMPLETED_STATUS = 'Hoàn tất';
@@ -1106,12 +1108,16 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
 
   useOnTabReturn(() => { refreshDashboard({ silent: true }); });
 
+  // Máy chủ báo khi danh sách/tác vụ kiểm hồ sơ đổi (UX_RULES mục 9): tải lại im lặng, không
+  // hẹn giờ. Hẹn giờ 2,5 giây chỉ còn là dự phòng khi mất kênh sự kiện và có việc đang chạy.
+  const realtimeConnected = useRealtimeConnected();
+  useScreenChanged('records-check-dashboard', () => { refreshDashboard({ silent: true }); });
   useEffect(() => {
     const jobRunningNow = Boolean(dashboard?.job?.running);
-    if (!batch.running && !fetchingKey && !jobRunningNow) return undefined;
+    if (realtimeConnected || (!batch.running && !fetchingKey && !jobRunningNow)) return undefined;
     const timer = window.setInterval(() => refreshDashboard({ silent: true }), 2500);
     return () => window.clearInterval(timer);
-  }, [batch.running, fetchingKey, dashboard?.job?.running]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [batch.running, fetchingKey, dashboard?.job?.running, realtimeConnected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const allRawCards = useMemo(() => (dashboard?.patients || []).filter(p => p?.active !== false), [dashboard]);
   const rows = useMemo(() => buildRows(allRawCards), [allRawCards]);
@@ -1438,7 +1444,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
   );
 
   if (loading && !dashboard) {
-    return <div style={{ padding: 32, color: C.text2, display: 'flex', alignItems: 'center', gap: 10 }}><Spinner /> Đang tải dữ liệu kiểm hồ sơ...</div>;
+    return <SkeletonScreen label="Đang tải dữ liệu kiểm hồ sơ" stats={4} rows={8} cols={6} />;
   }
 
   if (viewMode === 'submission') {

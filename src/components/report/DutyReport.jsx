@@ -75,6 +75,10 @@ function MedLine({ row }) {
         <b style={{ fontWeight: 600 }}>{row.drugName}</b>{row.tuTuc && <TuTucMark />}
         <span style={{ color: C.text2, fontVariantNumeric: 'tabular-nums' }}> × {formatQty(row.quantity)} {row.unit}</span>
         {row.mixWith && <span style={{ color: C.text2 }}> · pha {row.mixWith}</span>}
+        {row.timeGuess && <span style={{ color: C.amber, fontSize: FS.xs }}> · giờ theo chữ "{row.timeGuess}" trong y lệnh</span>}
+        {row.duplicateOf && <span style={{ color: C.amber, fontSize: FS.xs, fontWeight: 600 }}> · đã có cữ {row.duplicateOf} — có thể trùng, hỏi lại</span>}
+        {row.possibleDuplicate && <span style={{ color: C.red, fontSize: FS.xs, fontWeight: 600 }}> · cùng hoạt chất cùng giờ — kiểm tra trùng y lệnh</span>}
+        {row.confirmMix && <span title={row.confirmMix} style={{ color: C.amber, fontSize: FS.xs, fontWeight: 600 }}> · cần xác nhận cách pha</span>}
       </span>
       <span className="emr-med-line__route"><RouteBadge route={row.route} /></span>
     </div>
@@ -108,6 +112,16 @@ function TimeList({ rows, date, empty }) {
   );
 }
 
+// "1 viên/lần × 2 lần (08:00, 20:00)" — ghi LIỀU MỖI LẦN, tránh hiểu nhầm tổng ngày là liều một lần.
+function oralDoseText(d) {
+  const times = [...d.times].sort();
+  if (!times.length) return `× ${formatQty(d.qty)} ${d.unit}`;
+  const doses = times.map(t => d.doses.get(t));
+  if (times.length === 1) return `× ${formatQty(doses[0])} ${d.unit} (${times[0]})`;
+  if (new Set(doses).size === 1) return `${formatQty(doses[0])} ${d.unit}/lần × ${times.length} lần (${times.join(', ')})`;
+  return `cả ngày ${formatQty(d.qty)} ${d.unit}: ${times.map(t => `${t} ${formatQty(d.doses.get(t))}`).join(', ')}`;
+}
+
 // Thuốc uống: mỗi người bệnh một dòng, gom mọi giờ uống trong ngày.
 function OralList({ rows, empty }) {
   const patients = useMemo(() => {
@@ -117,10 +131,14 @@ function OralList({ rows, empty }) {
       if (!map.has(pKey)) map.set(pKey, { key: pKey, room: roomOf(row), name: row.patientName, drugs: new Map() });
       const drugs = map.get(pKey).drugs;
       const dKey = `${String(row.drugName).toLowerCase()}|${row.unit}|${row.tuTuc ? 'tt' : ''}`;
-      if (!drugs.has(dKey)) drugs.set(dKey, { name: row.drugName, unit: row.unit, tuTuc: row.tuTuc, qty: 0, times: new Set() });
+      if (!drugs.has(dKey)) drugs.set(dKey, { name: row.drugName, unit: row.unit, tuTuc: row.tuTuc, qty: 0, times: new Set(), doses: new Map() });
       const drug = drugs.get(dKey);
       drug.qty += Number(row.quantity || 0);
-      if (!row.noTime && row.time) drug.times.add(row.time);
+      if (!row.noTime && row.time) {
+        const label = row.timeGuess ? `${row.timeGuess} ~${row.time}` : row.time;
+        drug.times.add(label);
+        drug.doses.set(label, Number(row.quantity || 0));
+      }
     }
     return [...map.values()].sort((a, b) => a.room.localeCompare(b.room, 'vi', { numeric: true }) || String(a.name).localeCompare(String(b.name), 'vi'));
   }, [rows]);
@@ -133,9 +151,10 @@ function OralList({ rows, empty }) {
           <span className="emr-med-line__name">{p.name}</span>
           <span className="emr-oral-line__drugs">
             {[...p.drugs.values()].map((d, i) => (
-              <span key={i} style={{ display: 'inline-block', marginRight: 12 }}>
+              // Mỗi thuốc một dòng (trước đây thuốc ngắn bị dính chung một dòng với thuốc khác).
+              <span key={i} style={{ display: 'block' }}>
                 <b style={{ fontWeight: 600 }}>{d.name}</b>{d.tuTuc && <TuTucMark />}
-                <span style={{ color: C.text2, fontVariantNumeric: 'tabular-nums' }}> × {formatQty(d.qty)} {d.unit}{d.times.size ? ` (${[...d.times].sort().join(', ')})` : ''}</span>
+                <span style={{ color: C.text2, fontVariantNumeric: 'tabular-nums' }}> {oralDoseText(d)}</span>
               </span>
             ))}
           </span>
@@ -152,10 +171,10 @@ function PastToggle({ rows, date }) {
     <div style={{ borderTop: `1px solid ${C.border2}` }}>
       <button type="button" onClick={() => setOpen(v => !v)} aria-expanded={open} style={{
         display: 'flex', alignItems: 'center', gap: 6, width: '100%', minHeight: 36, padding: '0 12px',
-        border: 0, background: 'transparent', color: C.text2, fontSize: FS.sm, cursor: 'pointer', fontFamily: 'inherit',
+        border: 0, background: open ? 'transparent' : C.amberBg, color: C.amber, fontWeight: 600, fontSize: FS.sm, cursor: 'pointer', fontFamily: 'inherit',
       }}>
         {open ? <IconChevronUp size={15} stroke={1.9} aria-hidden="true" /> : <IconChevronDown size={15} stroke={1.9} aria-hidden="true" />}
-        Đã qua giờ: {rows.length} thuốc
+        Đã qua giờ: {rows.length} thuốc — bấm để kiểm tra đã làm đủ chưa
       </button>
       {open && <TimeList rows={rows} date={date} />}
     </div>
@@ -221,6 +240,13 @@ function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState,
     </label>
   );
 
+  // "Chưa rõ giờ" đứng đầu cột ở cả hai vai trò: phải hỏi lại bác sĩ trước khi làm thuốc.
+  const noTimeSection = plan.noTime.length > 0 && (
+    <Section title="Chưa rõ giờ" hint="Y lệnh không ghi giờ, cần hỏi lại bác sĩ trước khi làm." count={`${plan.noTime.length} thuốc`} tone="amber">
+      <TimeList rows={plan.noTime} date={date} />
+    </Section>
+  );
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ border: `1px solid ${C.border}`, borderRadius: 7, background: C.surface, padding: 12, display: 'grid', gap: 10 }}>
@@ -252,18 +278,15 @@ function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState,
       {role === 'work' ? (
         <div className="emr-duty-grid">
           <div style={{ display: 'grid', gap: 12, alignContent: 'start', minWidth: 0 }}>
-            <Section title="Thuốc uống" hint="Phát cho cả ngày." count={`${new Set(plan.oral.map(r => r.patientId || r.patientName)).size} người bệnh`}>
-              <OralList rows={plan.oral} empty="Không có thuốc uống trong ngày." />
-            </Section>
+            {noTimeSection}
+            {/* Việc theo giờ trước, danh sách phát thuốc uống cả ngày sau. */}
             <Section title="Cữ trong ca làm" hint={`Tiêm, truyền và đường khác${fromNow}.`} count={`${plan.mine.length} thuốc`}>
               <TimeList rows={plan.mine} date={date} empty="Không còn cữ nào trong ca làm." />
               <PastToggle rows={plan.past} date={date} />
             </Section>
-            {plan.noTime.length > 0 && (
-              <Section title="Chưa rõ giờ" hint="Y lệnh không ghi giờ, cần hỏi lại bác sĩ." count={`${plan.noTime.length} thuốc`} tone="amber">
-                <TimeList rows={plan.noTime} date={date} />
-              </Section>
-            )}
+            <Section title="Thuốc uống" hint="Phát cho cả ngày — ghi liều mỗi lần × số lần." count={`${new Set(plan.oral.map(r => r.patientId || r.patientName)).size} người bệnh`}>
+              <OralList rows={plan.oral} empty="Không có thuốc uống trong ngày." />
+            </Section>
           </div>
           <Section title="Bàn giao ca trực" hint="Trực trưa 11:00–13:00 và từ 17:00 đến 07:00 sáng mai." count={`${plan.handover.length} thuốc`}>
             <TimeList rows={plan.handover} date={date} empty="Không có cữ nào cần bàn giao." />
@@ -272,6 +295,7 @@ function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState,
       ) : (
         <div className="emr-duty-grid">
           <div style={{ display: 'grid', gap: 12, alignContent: 'start', minWidth: 0 }}>
+            {noTimeSection}
             <Section title="Cữ trong ca trực" hint={`${todayRest ? 'Từ 11:00 (người bệnh mới vào: từ 07:00)' : 'Trực trưa 11:00–13:00 và từ 17:00'} đến 23:59${fromNow}.`} count={`${plan.mine.length} thuốc`}>
               <TimeList rows={plan.mine} date={date} empty="Không còn cữ nào trong ca trực hôm nay." />
               <PastToggle rows={plan.past} date={date} />
@@ -282,11 +306,6 @@ function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState,
             <Section title="Thuốc uống người bệnh mới vào" hint="Người bệnh vào khoa trong tua trực, chưa được phát thuốc uống." count={`${new Set(plan.oral.map(r => r.patientId || r.patientName)).size} người bệnh`}>
               <OralList rows={plan.oral} empty="Không có người bệnh mới vào trong tua trực." />
             </Section>
-            {plan.noTime.length > 0 && (
-              <Section title="Chưa rõ giờ" hint="Y lệnh không ghi giờ, cần hỏi lại bác sĩ." count={`${plan.noTime.length} thuốc`} tone="amber">
-                <TimeList rows={plan.noTime} date={date} />
-              </Section>
-            )}
           </div>
           {tomorrowRest ? (
             <div style={{ display: 'grid', gap: 12, alignContent: 'start', minWidth: 0 }}>
@@ -309,4 +328,4 @@ function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState,
 }
 
 // Giữ để hiển thị thứ tự đúng khi cần tính phút tuyệt đối ở nơi khác.
-export { DutyReport, scheduleFlags, absMinutes };
+export { DutyReport, scheduleFlags, absMinutes, oralDoseText };

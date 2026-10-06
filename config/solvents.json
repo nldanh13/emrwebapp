@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "description": "Mã dung môi pha thuốc và tên hiển thị — MỘT nguồn cho worker (xử lý dữ liệu), máy chủ (kiểm dữ liệu Danh mục thuốc) và giao diện (Danh mục thuốc, Báo cáo ca trực). in_rule = được chọn trong Quy tắc pha thuốc.",
+  "solvents": [
+    { "code": "NACL_0.9", "label": "Natri clorid 0.9%", "in_rule": true },
+    { "code": "SODIUM_0.9", "label": "Sodium chloride 0.9%", "in_rule": false },
+    { "code": "GLUCOSE_5", "label": "Glucose 5%", "in_rule": true },
+    { "code": "NUOC_CAT", "label": "Nước cất pha tiêm", "in_rule": true },
+    { "code": "KHONG_PHA", "label": "Không pha (chai/túi pha sẵn)", "short": "Không pha", "in_rule": true }
+  ]
+}

@@ -6,10 +6,11 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { C, FS } from '../tokens.js';
-import { Btn, Spinner } from './shared.jsx';
+import { Btn } from './shared.jsx';
 import * as api from '../api.js';
 import { applyRouteTable, getBaseRouteTable, previewRouteModel } from '../config/routes.js';
 import { RouteBadge } from './report/ReportShared.jsx';
+import { SkeletonTable } from './Skeleton.jsx';
 
 export const REPORT_MODES = [
   ['dose', 'Làm theo cữ'],
@@ -231,7 +232,7 @@ export default function RouteDesigner({ onSaved }) {
   };
 
   if (error) return <div style={{ color: C.red, fontSize: FS.sm }}>Lỗi tải bảng đường dùng: {error}</div>;
-  if (!table) return <div style={{ color: C.text2, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Đang tải...</div>;
+  if (!table) return <div role="status" aria-busy="true" aria-label="Đang tải bảng đường dùng"><SkeletonTable rows={5} cols={4} /></div>;
 
   const categories = table.categories || [];
   const catLabel = Object.fromEntries(categories.map(c => [c.code, c.label]));

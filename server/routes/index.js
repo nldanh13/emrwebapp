@@ -7,6 +7,7 @@ const { heavyTaskLimiter, readWriteLimiter, researchReadLimiter, clientLogLimite
 const { requestAuditMiddleware } = require('../services/activity_logger');
 const { featureGate } = require('../middleware/feature_gate');
 const { resourceConcurrency } = require('../middleware/resource_concurrency');
+const { idempotencyMiddleware } = require('../middleware/idempotency');
 
 // Endpoint kích hoạt Python process — giới hạn 5 lần/phút/session
 const HEAVY_TASK_ROUTES = [
@@ -65,8 +66,15 @@ router.use('/client-log', clientLogLimiter);
 // Health/diagnostics nhẹ — vẫn yêu cầu token nếu EMR_APP_TOKEN được bật.
 router.use(['/health', '/diagnostics'], readWriteLimiter);
 
+// Cầu nối tab EMR: trang cầu nối hỏi việc liên tục (long-poll) — không ghi nhật ký từng lần hỏi.
+router.use(require('./emr_bridge'));
+
 // Ghi log mọi API sau khi qua giới hạn tần suất.
 router.use(requestAuditMiddleware);
+
+// Chặn chạy lặp lại các mutation nặng/nguy hiểm khi người dùng bấm đúp,
+// trình duyệt gửi lại request, hoặc hai thiết bị gửi cùng một hành động.
+router.use(idempotencyMiddleware);
 
 // Các resource chỉnh tay dùng chung giữa nhiều thiết bị phải kiểm tra version trước khi ghi.
 // Middleware này cũng phát resource_changed qua kênh realtime sau khi commit thành công.
@@ -105,5 +113,6 @@ router.use(require('./research'));
 router.use(require('./report'));
 router.use(require('./data_transfer'));
 router.use(require('./admin_users'));
+router.use(require('./devices'));
 
 module.exports = router;

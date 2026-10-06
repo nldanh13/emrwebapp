@@ -1,15 +1,15 @@
 'use strict';
 
 // Repair surgery rows collected from Hành chánh before normalized tables are built.
-// Older/raw payloads may store only a clock time in `Ngày phẫu thuật` even though
-// the list row (`item.thoi_gian`) still contains the calendar date. They also use
-// worker detail keys such as `chan_doan_truoc` / `chan_doan_sau` that were not
-// always propagated into hchanh_surgery.csv. This module repairs only explicit
-// values already present in Raw JSON; it never invents a surgery or clinical fact.
+// Chỉ dùng giá trị explicit đã có trong CSV/Raw JSON; tuyệt đối không suy diễn.
+// Mọi lần thay đổi raw đều tạo backup trước và ghi audit để có thể phục hồi/đối chiếu.
 
 const fs = require('fs');
 const path = require('path');
 const { readCsvTable, writeCsv } = require('./table_io');
+
+const BACKUP_FILE = 'hchanh_surgery.before_auto_repair.csv';
+const AUDIT_FILE = 'surgery_raw_repair_audit.jsonl';
 
 function clean(value) {
   return String(value ?? '').trim();
@@ -51,21 +51,17 @@ function timePart(value) {
 }
 
 function repairSurgeryTimestamp(currentValue, itemTime, detailStart) {
-  // Giá trị hiện có trong cột chuẩn là bằng chứng ưu tiên cao nhất khi đã có ngày.
-  // Không được ghi đè một ngày PT hoàn chỉnh bằng ngày ở dòng danh sách, vì
-  // item.thoi_gian có thể là thời điểm hiển thị/ghi nhận của danh sách chứ không
-  // phải ngày PT thực tế.
+  // Giá trị hiện có là bằng chứng ưu tiên cao nhất nếu đã có ngày đầy đủ.
   const currentDate = datePart(currentValue);
   const currentClock = timePart(currentValue);
   if (currentDate) return `${currentDate}${currentClock ? ` ${currentClock}` : ''}`;
 
-  // Nếu detail có ngày rõ ràng thì dùng trực tiếp.
+  // Nếu detail có ngày explicit thì dùng trực tiếp.
   const detailDate = datePart(detailStart);
   const detailClock = timePart(detailStart);
   if (detailDate) return `${detailDate}${detailClock ? ` ${detailClock}` : ''}`;
 
-  // Chỉ khi cột hiện tại thiếu ngày mới ghép ngày từ dòng danh sách với giờ PT
-  // trong detail. Đây là trường hợp legacy `Ngày phẫu thuật = 08:15`.
+  // Legacy: cột hiện tại chỉ có giờ, còn item.thoi_gian giữ ngày của dòng PT.
   const listDate = datePart(itemTime);
   const listClock = timePart(itemTime);
   if (listDate && detailClock) return `${listDate} ${detailClock}`;
@@ -96,13 +92,15 @@ function repairSurgeryRow(row) {
     detail?.pp_vo_cam, detail?.phuong_phap_vo_cam, detail?.ppvc,
   );
   out['Chẩn đoán trước mổ'] = first(
-    row?.['Chẩn đoán trước mổ'], detail?.chan_doan_truoc, detail?.chan_doan_truoc_mo,
+    row?.['Chẩn đoán trước mổ'], detail?.chan_doan_truoc_pt,
+    detail?.chan_doan_truoc, detail?.chan_doan_truoc_mo,
   );
   out['Chẩn đoán sau mổ'] = first(
-    row?.['Chẩn đoán sau mổ'], detail?.chan_doan_sau, detail?.chan_doan_sau_mo,
+    row?.['Chẩn đoán sau mổ'], detail?.chan_doan_sau_pt,
+    detail?.chan_doan_sau, detail?.chan_doan_sau_mo,
   );
 
-  // Preserve explicit detail fields for provenance/future normalized columns.
+  // Giữ lại các trường explicit để trace/provenance và normalize về sau.
   out['Bắt đầu phẫu thuật'] = first(row?.['Bắt đầu phẫu thuật'], detail?.bat_dau);
   out['Kết thúc phẫu thuật'] = first(row?.['Kết thúc phẫu thuật'], detail?.ket_thuc);
   out['Tai biến phẫu thuật'] = first(row?.['Tai biến phẫu thuật'], detail?.tai_bien);
@@ -112,23 +110,58 @@ function repairSurgeryRow(row) {
   return out;
 }
 
+function rowDiff(before, after) {
+  const diff = {};
+  const keys = new Set([...Object.keys(before || {}), ...Object.keys(after || {})]);
+  for (const key of keys) {
+    const a = clean(before?.[key]);
+    const b = clean(after?.[key]);
+    if (a !== b) diff[key] = { before: a, after: b };
+  }
+  return diff;
+}
+
+function ensureBackup(runDir, filePath) {
+  const backupPath = path.join(runDir, BACKUP_FILE);
+  if (!fs.existsSync(backupPath)) fs.copyFileSync(filePath, backupPath);
+  return backupPath;
+}
+
+function appendAudit(runDir, payload) {
+  const auditPath = path.join(runDir, AUDIT_FILE);
+  fs.appendFileSync(auditPath, `${JSON.stringify(payload)}\n`, 'utf-8');
+  return auditPath;
+}
+
 function repairRawSurgeryCsv(runDir) {
-  const filePath = path.join(path.resolve(runDir), 'hchanh_surgery.csv');
-  if (!fs.existsSync(filePath)) return { changed: 0, rows: 0, file: filePath };
+  const dir = path.resolve(runDir);
+  const filePath = path.join(dir, 'hchanh_surgery.csv');
+  if (!fs.existsSync(filePath)) return { changed: 0, rows: 0, file: filePath, backup: '', audit: '' };
 
   const table = readCsvTable(filePath, Number.MAX_SAFE_INTEGER);
   const sourceRows = table.rows || [];
-  if (!sourceRows.length) return { changed: 0, rows: 0, file: filePath };
+  if (!sourceRows.length) return { changed: 0, rows: 0, file: filePath, backup: '', audit: '' };
 
-  let changed = 0;
-  const rows = sourceRows.map(row => {
+  const changes = [];
+  const rows = sourceRows.map((row, index) => {
     const repaired = repairSurgeryRow(row);
-    const keys = new Set([...Object.keys(row), ...Object.keys(repaired)]);
-    if ([...keys].some(key => clean(row[key]) !== clean(repaired[key]))) changed += 1;
+    const diff = rowDiff(row, repaired);
+    if (Object.keys(diff).length) {
+      changes.push({
+        row_index: index + 2,
+        patient_code: first(row?.['Mã BN'], row?.patient_code),
+        research_key: first(row?.['Research key'], row?.research_key),
+        changes: diff,
+      });
+    }
     return repaired;
   });
 
-  if (changed) {
+  let backupPath = '';
+  let auditPath = '';
+  if (changes.length) {
+    // Backup phải có trước lần ghi đầu tiên; không bao giờ ghi đè backup này.
+    backupPath = ensureBackup(dir, filePath);
     const preferred = [
       ...table.columns,
       'Bắt đầu phẫu thuật', 'Kết thúc phẫu thuật', 'Tai biến phẫu thuật',
@@ -137,14 +170,25 @@ function repairRawSurgeryCsv(runDir) {
     const columns = [...new Set(preferred.filter(Boolean))];
     for (const row of rows) for (const key of Object.keys(row)) if (!columns.includes(key)) columns.push(key);
     writeCsv(filePath, columns, rows);
+    auditPath = appendAudit(dir, {
+      at: new Date().toISOString(),
+      operation: 'repair_raw_surgery_csv',
+      source_file: path.basename(filePath),
+      backup_file: path.basename(backupPath),
+      changed_rows: changes.length,
+      changes,
+    });
   }
-  return { changed, rows: rows.length, file: filePath };
+  return { changed: changes.length, rows: rows.length, file: filePath, backup: backupPath, audit: auditPath };
 }
 
 module.exports = {
+  BACKUP_FILE,
+  AUDIT_FILE,
   datePart,
   timePart,
   repairSurgeryTimestamp,
   repairSurgeryRow,
+  rowDiff,
   repairRawSurgeryCsv,
 };

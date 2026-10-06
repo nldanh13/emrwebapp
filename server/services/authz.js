@@ -91,6 +91,8 @@ function normalizeUser(raw, index) {
     // giờ gửi xuống trình duyệt.
     emrUsername: String(raw.emr_username || '').trim(),
     emrPassword: String(raw.emr_password || ''),
+    // Mật khẩu đăng nhập Data Hub (tùy chọn): chỉ lưu bản băm scrypt, không bao giờ lưu bản rõ.
+    passwordHash: String(raw.password_hash || ''),
   });
 }
 
@@ -110,6 +112,12 @@ function normalizeUsersList(payload) {
     seenTokenHashes.add(hash);
   }
   return users;
+}
+
+// Khai EMR_USERS_JSON / EMR_USERS_FILE = luôn bắt đăng nhập, kể cả khi danh sách đang trống.
+function loginExplicitlyRequired() {
+  const mode = resolveUsersFileInfo().mode;
+  return mode === 'inline' || mode === 'file';
 }
 
 function loadUsers() {
@@ -213,6 +221,7 @@ function writeUsersFile(users) {
     sessions: u.sessions == null ? '*' : u.sessions,
     enabled: u.enabled !== false,
     ...(u.emrUsername || u.emrPassword ? { emr_username: u.emrUsername || '', emr_password: u.emrPassword || '' } : {}),
+    ...(u.passwordHash ? { password_hash: u.passwordHash } : {}),
   }));
   normalizeUsersList(payload);
   fs.mkdirSync(path.dirname(info.path), { recursive: true });
@@ -220,7 +229,7 @@ function writeUsersFile(users) {
   reloadUsers();
 }
 
-function createUser({ name, role, sessions, enabled, emrUsername, emrPassword }) {
+function createUser({ name, role, sessions, enabled, emrUsername, emrPassword, password, id: wantedId }) {
   const { users } = listAllUsersRaw();
   const baseId = String(name || 'nhan_vien')
     .toLowerCase()
@@ -228,13 +237,16 @@ function createUser({ name, role, sessions, enabled, emrUsername, emrPassword })
     .replace(/đ/g, 'd')
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '') || 'nhan_vien';
-  let id = baseId;
+  let id = wantedId ? String(wantedId).trim().toLowerCase() : baseId;
+  if (wantedId && !/^[a-z0-9_.-]{2,40}$/.test(id)) throw new Error('Tên đăng nhập chỉ gồm chữ không dấu, số, dấu chấm, gạch dưới (2–40 ký tự).');
+  if (wantedId && users.some(u => u.id === id)) throw new Error(`Tên đăng nhập đã có: ${id}`);
   let n = 1;
   while (users.some(u => u.id === id)) { n += 1; id = `${baseId}_${n}`; }
   const created = {
     id, name: String(name || id).trim() || id, role: role || 'operator', token: generateToken(),
     sessions: sessions ?? '*', enabled: enabled !== false,
     emrUsername: String(emrUsername || '').trim(), emrPassword: String(emrPassword || ''),
+    passwordHash: password ? hashPassword(password) : '',
   };
   writeUsersFile([...users, created]);
   return created;
@@ -254,6 +266,8 @@ function updateUser(id, patch = {}) {
     emrUsername: patch.emrUsername !== undefined ? String(patch.emrUsername || '').trim() : current.emrUsername,
     emrPassword: patch.emrPassword !== undefined ? String(patch.emrPassword || '') : current.emrPassword,
     token: patch.regenerateToken ? generateToken() : current.token,
+    passwordHash: patch.password ? hashPassword(patch.password)
+      : (patch.clearPassword ? '' : current.passwordHash),
   };
   const updated = [...users];
   updated[idx] = next;
@@ -265,6 +279,63 @@ function deleteUser(id) {
   const { users } = listAllUsersRaw();
   if (!users.some(u => u.id === id)) throw new Error(`Không tìm thấy tài khoản: ${id}`);
   writeUsersFile(users.filter(u => u.id !== id));
+}
+
+// ── Đăng nhập bằng tên + mật khẩu ──────────────────────────────────────────
+// Dùng khi chạy trên máy chủ (VPS) và mọi máy trong bệnh viện mở cùng một link: nhớ tên +
+// mật khẩu dễ hơn mã truy cập dài. Đăng nhập đúng thì trả về mã truy cập sẵn có của người
+// đó (trình duyệt dùng như trước), nên mọi phân quyền/phiên giữ nguyên.
+
+const PASSWORD_MIN_LENGTH = 8;
+const LOGIN_MAX_FAILS = 5;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
+const loginFails = new Map(); // `${ip}|${username}` → { count, first, lockedUntil }
+const GENERIC_LOGIN_ERROR = 'Tên đăng nhập hoặc mật khẩu không đúng.';
+
+function hashPassword(password) {
+  const pw = String(password || '');
+  if (pw.length < PASSWORD_MIN_LENGTH) throw new Error(`Mật khẩu phải có ít nhất ${PASSWORD_MIN_LENGTH} ký tự.`);
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(pw, salt, 32, { N: 16384, r: 8, p: 1 });
+  return `scrypt$16384$8$1$${salt.toString('base64')}$${hash.toString('base64')}`;
+}
+
+function verifyPassword(password, stored) {
+  const parts = String(stored || '').split('$');
+  if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
+  const [, N, r, p, saltB64, hashB64] = parts;
+  try {
+    const expected = Buffer.from(hashB64, 'base64');
+    const actual = crypto.scryptSync(String(password || ''), Buffer.from(saltB64, 'base64'), expected.length, { N: Number(N), r: Number(r), p: Number(p) });
+    return expected.length > 0 && crypto.timingSafeEqual(actual, expected);
+  } catch (_) {
+    return false;
+  }
+}
+
+// Mật khẩu giả để tài khoản không tồn tại vẫn tốn cùng thời gian băm (không đoán được tên nào có).
+const DUMMY_HASH = `scrypt$16384$8$1$${Buffer.alloc(16).toString('base64')}$${Buffer.alloc(32).toString('base64')}`;
+
+function loginWithPassword({ username, password, ip = '', now = Date.now() } = {}) {
+  const name = String(username || '').trim().toLowerCase();
+  const key = `${ip}|${name}`;
+  const state = loginFails.get(key);
+  if (state?.lockedUntil && state.lockedUntil > now) {
+    const minutes = Math.ceil((state.lockedUntil - now) / 60000);
+    return { ok: false, locked: true, message: `Đăng nhập sai quá ${LOGIN_MAX_FAILS} lần. Hãy thử lại sau ${minutes} phút, hoặc nhờ quản trị đặt lại mật khẩu.` };
+  }
+  const user = USERS.find(u => u.id.toLowerCase() === name && u.enabled !== false);
+  const ok = verifyPassword(password, user?.passwordHash || DUMMY_HASH) && Boolean(user?.passwordHash);
+  if (!ok) {
+    const fresh = !state || now - state.first > LOGIN_LOCK_MS ? { count: 0, first: now, lockedUntil: 0 } : state;
+    fresh.count += 1;
+    if (fresh.count >= LOGIN_MAX_FAILS) fresh.lockedUntil = now + LOGIN_LOCK_MS;
+    loginFails.set(key, fresh);
+    if (loginFails.size > 5000) loginFails.delete(loginFails.keys().next().value);
+    return { ok: false, message: GENERIC_LOGIN_ERROR };
+  }
+  loginFails.delete(key);
+  return { ok: true, token: user.token, user: publicPrincipal(user) };
 }
 
 // Tài khoản EMR thật riêng của người đang đăng nhập Data Hub — dùng cho các
@@ -306,6 +377,52 @@ function isReportOttRequest(req) {
     && req.query.ott.trim();
 }
 
+// Gắn sau authenticateRequest: yêu cầu có chữ ký hợp lệ của thiết bị đã duyệt thì
+// req.deviceTrusted = true. Chạy một máy không đăng nhập (localhost) thì coi là tin cậy.
+function attachDeviceTrust(req, _res, next) {
+  const trusted = require('./trusted_devices');
+  req.device = null;
+  req.deviceTrusted = req.auth?.auth_type === 'local_only';
+  if (req.auth && !req.deviceTrusted) {
+    const device = trusted.verifyRequest({
+      deviceId: req.get('x-device-id'),
+      ts: req.get('x-device-ts'),
+      sig: req.get('x-device-sig'),
+      method: req.method,
+      url: req.originalUrl,
+      userId: req.auth.id,
+    });
+    if (device) { req.device = device; req.deviceTrusted = true; }
+  }
+  return next();
+}
+
+// EMR_REQUIRE_TRUSTED_DEVICE=1 (bật trên VPS): máy chưa tin cậy, dù đăng nhập đúng, KHÔNG nhận
+// dữ liệu nào — chỉ được xem trạng thái đăng nhập/thiết bị và đăng ký thiết bị. Chạy một máy
+// không đăng nhập (localhost) và link báo cáo dùng một lần không bị ảnh hưởng.
+// /emr-bridge: máy bệnh viện chỉ chuyển trang EMR LÊN máy chủ (không đọc được dữ liệu trong kho),
+// nên không bắt từng máy bệnh viện phải đăng ký thiết bị tin cậy; vẫn phải đăng nhập.
+const TRUSTED_DEVICE_OPEN_PATHS = ['/auth/me', '/health', '/devices', '/emr-bridge'];
+
+function trustedDeviceRequired() {
+  return isTruthy(process.env.EMR_REQUIRE_TRUSTED_DEVICE);
+}
+
+function requireTrustedDevice(req, res, next) {
+  if (!trustedDeviceRequired() || req.method === 'OPTIONS') return next();
+  if (req.deviceTrusted) return next();
+  const type = req.auth?.auth_type;
+  if (type === 'local_only' || type === 'one_time_token') return next();
+  const p = String(req.path || '');
+  if (TRUSTED_DEVICE_OPEN_PATHS.some(open => p === open || p.startsWith(`${open}/`))) return next();
+  res.set('x-device-required', '1');
+  return res.status(403).json({
+    status: 'error',
+    code: 'DEVICE_NOT_TRUSTED',
+    message: 'Thiết bị này chưa được tin cậy nên không xem được dữ liệu. Vào "Đăng ký thiết bị này", rồi nhập mã xác nhận hoặc nhờ quản trị duyệt.',
+  });
+}
+
 function authenticateRequest(req, res, next) {
   if (req.method === 'OPTIONS') return next();
   if (isReportOttRequest(req)) {
@@ -314,6 +431,15 @@ function authenticateRequest(req, res, next) {
   }
 
   if (!APP_TOKEN && USERS.length === 0) {
+    // Đã khai rõ file tài khoản (vd. trên VPS) nhưng chưa có ai: KHÔNG cho vào. Trước đây chỗ này
+    // coi như "chỉ một máy dùng" và cho mọi người quyền quản trị — sau HTTPS là ai cũng vào được.
+    if (loginExplicitlyRequired()) {
+      return res.status(401).json({
+        status: 'error',
+        code: 'NO_USERS_CONFIGURED',
+        message: 'Chưa có tài khoản nào. Trên máy chủ chạy: node scripts/users_cli.js tao-admin <tên> "<Họ tên>" rồi khởi động lại.',
+      });
+    }
     req.auth = localPrincipal();
     return next();
   }
@@ -335,6 +461,8 @@ function requiredRoleForRequest(req) {
   const routePath = String(req.path || '');
   if (method === 'OPTIONS') return 'viewer';
   if (routePath === '/auth/me' || routePath === '/health') return 'viewer';
+  // Thiết bị tin cậy: ai cũng đăng ký được máy của mình; quyền duyệt/thu hồi kiểm trong route.
+  if (routePath.startsWith('/devices')) return 'viewer';
   // Quản lý tài khoản (token, tài khoản EMR riêng) — chỉ admin, mọi method.
   if (routePath.startsWith('/admin/users')) return 'admin';
   // Tài khoản EMR theo điều dưỡng (ca làm/ca trực) — chứa mật khẩu thật, chỉ admin.
@@ -425,6 +553,9 @@ module.exports = {
   ROLE_LEVEL,
   assertAuthConfiguration,
   authenticateRequest,
+  attachDeviceTrust,
+  requireTrustedDevice,
+  trustedDeviceRequired,
   authorizeRequest,
   requireRole,
   hasRole,
@@ -439,4 +570,9 @@ module.exports = {
   createUser,
   updateUser,
   deleteUser,
+  reloadUsers,
+  loginWithPassword,
+  hashPassword,
+  verifyPassword,
+  PASSWORD_MIN_LENGTH,
 };

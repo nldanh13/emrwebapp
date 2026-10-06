@@ -189,9 +189,35 @@ gửi sự kiện `research` qua `/api/events` (Server-Sent Events). Giao diện
 `emr:research-changed` rồi `invalidate('research:<phạm vi>:')`. Hẹn giờ chỉ còn là dự phòng
 thưa khi mất kết nối kênh sự kiện (`useRealtimeConnected`). Sự kiện không chứa dữ liệu người bệnh.
 
-9.6 Tự kiểm (R4 trong `scripts/ux_rules_check.mjs`): khung hiển thị ở 9.2 không import `api.js`;
+9.6 **Áp dụng cho mọi tab.** Route trả số liệu cho một màn hình gọi
+`watchScreen({ sid, key, files, extra })` (`server/services/screen_watch.js`): máy chủ theo dõi
+file/thư mục nguồn (và trạng thái trong bộ nhớ qua `extra`), đổi thì gửi sự kiện `screen` cho
+đúng workspace. Giao diện: màn hình dùng kho chung đặt khóa `screen:<key>` (kênh sự kiện tự
+`invalidate`); màn hình chưa chuyển hẳn thì `useScreenChanged('<key>', () => tải lại im lặng)`.
+Tải lại do sự kiện luôn im lặng: không vòng chờ, không xóa màn hình, không báo lỗi bật lên.
+
+| Màn hình | Khóa | Máy chủ theo dõi |
+|---|---|---|
+| Lấy dữ liệu (Hành chánh) | `hchanh-dashboard` | thư mục hchanh, index, phiếu |
+| Kiểm HSBA | `records-check-dashboard` | thư mục records_check, index, tác vụ nền |
+| Ký tên ĐD HSBA | `discharge-bundles` | thư mục bộ in ra viện |
+| Phòng khám | `clinic-monitor` (kho chung) | file trạng thái theo dõi + tiến trình còn chạy |
+| Kho nghiên cứu | `research:<phạm vi>:…` | file tiến độ/sổ thu thập (`research_watch.js`) |
+
+Nguồn không theo dõi được (vd. công cụ BHYT chạy riêng ở cổng khác) giữ hẹn giờ khi có việc đang
+chạy, ghi rõ `ux-rules: no-realtime — <lý do>`.
+
+9.7 **Khung xám ở mọi tab.** Lần đầu mở tab (chưa có số liệu) dùng `SkeletonScreen` (thanh công
+cụ + ô số + bảng) hoặc `SkeletonTable`/`SkeletonBlock`/`SkeletonLines` đúng chỗ nội dung sẽ hiện.
+Đã có số liệu mà đang tải lại thì **giữ nguyên nội dung cũ** (chỉ nút "Tải lại" quay), không thay
+bảng bằng vòng xoay. Chưa biết số liệu thì không nói "Chưa có…/Chưa quét" (vd. các bước ở Lấy dữ
+liệu hiện khung xám tới khi tải xong). Vòng xoay chỉ dùng trên nút đang chạy thao tác.
+
+9.8 Tự kiểm (R4 trong `scripts/ux_rules_check.mjs`): khung hiển thị ở 9.2 không import `api.js`;
 file dùng `useServerData` không tự `setInterval` gọi máy chủ, trừ hẹn giờ dự phòng có theo
-`useRealtimeConnected` (kênh nối thì hỏi thưa, mất nối mới hỏi dày).
+`useRealtimeConnected` (kênh nối thì hỏi thưa, mất nối mới hỏi dày). R5: màn hình tab còn hẹn giờ
+hỏi máy chủ phải theo `useRealtimeConnected`, hoặc ghi `ux-rules: no-realtime — <lý do>`.
+R6: không còn chỗ hiện vòng xoay + "Đang tải…" thay cho nội dung (dùng khung xám, mục 9.7).
 
 ---
 
@@ -210,7 +236,7 @@ file dùng `useServerData` không tự `setInterval` gọi máy chủ, trừ h�
 | Nghỉ ốm | Có | Có | Theo từng thao tác |
 | Phòng khám | Có | Có; ẩn thì ngừng tự làm mới | Theo từng thao tác |
 | Người bệnh & tái khám | Có | Có | — |
-| Kho nghiên cứu | Có | Theo dõi máy chủ | Phiếu nhập tay: "Chưa lưu", tự lưu khi chuyển mẫu, hỏi khi đóng trang |
+| Kho nghiên cứu | Có | Theo dõi máy chủ | Thêm / bớt biến của nghiên cứu: "Chưa lưu" cho tới khi bấm Lưu; chuyển tab vẫn giữ (KeepAlive) |
 | Danh mục VTYT, Danh mục thuốc | Có | Có | Hộp thoại sửa, bấm Lưu |
 | Kiểm tra cấu trúc EMR | Có | Không tự tải | — |
 | Thiết lập tài khoản | Có | Có | Bấm Lưu |

@@ -42,7 +42,16 @@ function compactNumber(v) {
   return Number.isFinite(n) ? n.toLocaleString('vi-VN') : String(v || 0);
 }
 
+// Một định dạng ngày giờ cho mọi chỗ ở Kho nghiên cứu: "21:14 05/10/2026" (24 giờ).
+function formatWhen(value) {
+  const d = value instanceof Date ? value : new Date(value);
+  if (!value || Number.isNaN(d.getTime())) return '';
+  const p2 = n => String(n).padStart(2, '0');
+  return `${p2(d.getHours())}:${p2(d.getMinutes())} ${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
 export {
+  formatWhen,
   text,
   lower,
   pick,

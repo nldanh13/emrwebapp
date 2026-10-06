@@ -37,6 +37,56 @@ from emr_parsers import parse_noitru_page
 
 
 # -------------------------
+# Cầu nối tab EMR (Data Hub chạy trên cloud, EMR chỉ mở được trong bệnh viện)
+# -------------------------
+# Máy chủ Data Hub đặt EMR_BRIDGE_URL/EMR_BRIDGE_TOKEN khi bật chế độ cầu nối: mọi trang EMR được
+# xin qua máy chủ → tab EMR trên máy bệnh viện (dùng phiên đăng nhập sẵn có), không vào EMR trực
+# tiếp, không cần tài khoản/mật khẩu EMR trên máy chủ.
+class EmrBridgeError(RuntimeError):
+    def __init__(self, message: str, code: str = ""):
+        super().__init__(message)
+        self.code = code
+
+
+# Trình duyệt tự đặt các tiêu đề này (fetch không cho đặt), không gửi qua cầu nối.
+_BRIDGE_DROP_HEADERS = {"origin", "user-agent", "connection", "host", "cookie", "content-length", "accept-encoding"}
+
+
+def bridge_mode() -> bool:
+    return bool(str(os.environ.get("EMR_BRIDGE_URL", "") or "").strip())
+
+
+def _bridge_endpoint(name: str) -> str:
+    base = str(os.environ.get("EMR_BRIDGE_URL", "") or "").strip()
+    return base.rsplit("/", 1)[0] + "/" + name if name != "fetch" else base
+
+
+def _bridge_call(name: str, payload: Dict[str, Any], timeout: float = 120.0) -> Dict[str, Any]:
+    if requests is None:
+        raise RuntimeError("Thiếu requests. Hãy cài: pip install requests")
+    sess = requests.Session()
+    sess.trust_env = False  # gọi máy chủ trong máy, không đi qua proxy
+    r = sess.post(
+        _bridge_endpoint(name),
+        json=payload,
+        headers={"x-bridge-token": str(os.environ.get("EMR_BRIDGE_TOKEN", "") or "")},
+        timeout=timeout,
+    )
+    try:
+        data = r.json()
+    except Exception:
+        data = {}
+    if r.status_code != 200 or data.get("status") != "ok":
+        raise EmrBridgeError(str(data.get("message") or f"Cầu nối EMR lỗi HTTP {r.status_code}"), str(data.get("code") or ""))
+    return data
+
+
+def bridge_info() -> Dict[str, Any]:
+    """Địa chỉ trang EMR đang mở trên máy bệnh viện (để giữ usid/st của phiên)."""
+    return _bridge_call("info", {}, timeout=15.0)
+
+
+# -------------------------
 # URL helpers
 # -------------------------
 def _upsert_query(url: str, **params: str) -> str:
@@ -165,6 +215,7 @@ class EmrHttpSession:
         p = urlparse(cfg.url_login)
         self.base_origin = f"{p.scheme}://{p.netloc}"
         self._session_inpatient_url: str = ""
+        self._bridge = bridge_mode()
 
     @classmethod
     def from_config_dict(cls, config: Dict) -> "EmrHttpSession":
@@ -173,6 +224,10 @@ class EmrHttpSession:
         password = (config.get("password") or "").strip()
         url_inpatient_list = (config.get("url_inpatient_list") or "").strip()
 
+        if bridge_mode():
+            # Qua tab EMR: dùng phiên đăng nhập trên máy bệnh viện, không cần tài khoản ở đây.
+            username = username or "bridge"
+            password = password or "bridge"
         if not (url_login and username and password and url_inpatient_list):
             raise RuntimeError("Thiếu cấu hình HTTP. Cần: url_login, username, password, url_inpatient_list")
 
@@ -216,8 +271,63 @@ class EmrHttpSession:
         if wait > 0:
             time.sleep(wait)
 
+    def _bridge_request(self, method: str, u: str, data: Any = None, headers: Optional[Dict[str, str]] = None) -> Tuple[str, str]:
+        headers = dict(headers or {})
+        body = None
+        content_type = ""
+        referrer = ""
+        extra: Dict[str, str] = {}
+        for k, v in headers.items():
+            lk = str(k).lower()
+            if lk == "content-type":
+                content_type = str(v)
+            elif lk == "referer":
+                referrer = str(v)
+            elif lk not in _BRIDGE_DROP_HEADERS:
+                extra[str(k)] = str(v)
+        if isinstance(data, dict):
+            body = urlencode(data)
+            content_type = content_type or "application/x-www-form-urlencoded; charset=UTF-8"
+        elif isinstance(data, (bytes, bytearray)):
+            body = bytes(data).decode("utf-8", "replace")
+        elif data is not None:
+            body = str(data)
+        # Cùng nguồn với cấu hình → gửi đường dẫn tương đối; máy chủ ghép với địa chỉ EMR của tab.
+        target = u
+        p = urlparse(u)
+        if f"{p.scheme}://{p.netloc}" == self.base_origin:
+            target = urlunparse(("", "", p.path or "/", "", p.query, ""))
+        attempts = max(1, int(self.cfg.max_retries or 0) + 1)
+        last_exc: Optional[Exception] = None
+        for attempt in range(1, attempts + 1):
+            self._throttle()
+            try:
+                res = _bridge_call("fetch", {
+                    "method": method, "url": target, "body": body,
+                    "content_type": content_type, "referrer": referrer, "headers": extra,
+                })
+                self._last_request_at = time.perf_counter()
+                status = int(res.get("http_status") or 0)
+                if status >= 500 and attempt < attempts:
+                    time.sleep(min(0.8, 0.2 * attempt))
+                    continue
+                if status >= 400:
+                    raise RuntimeError(f"EMR trả lỗi HTTP {status} cho {p.path or '/'}")
+                return str(res.get("text") or ""), str(res.get("url") or u)
+            except EmrBridgeError as exc:
+                # Chưa nối / EMR đăng xuất / hết giờ: thử lại không có ích, báo ngay.
+                raise exc
+            except Exception as exc:
+                last_exc = exc
+                if attempt >= attempts:
+                    break
+                time.sleep(min(0.8, 0.2 * attempt))
+        raise last_exc  # type: ignore[misc]
+
     def _request_html(self, method: str, url: str, **kwargs) -> Tuple[str, str]:
         u = _abs(self.base_origin, url)
+        if self._bridge:
+            return self._bridge_request(method, u, data=kwargs.get("data"), headers=kwargs.get("headers"))
         attempts = max(1, int(self.cfg.max_retries or 0) + 1)
         last_exc = None
         for attempt in range(1, attempts + 1):
@@ -258,6 +368,8 @@ class EmrHttpSession:
 
     def load_cookies(self) -> bool:
         """Nạp cookie đã lấy từ Selenium trước đó. Không ghi log giá trị cookie."""
+        if getattr(self, "_bridge", False):
+            return False
         if not getattr(self.cfg, "use_cached_cookies", True) or not getattr(self.cfg, "cookie_file", ""):
             return False
         p = Path(getattr(self.cfg, "cookie_file", ""))
@@ -326,6 +438,8 @@ class EmrHttpSession:
 
     def save_cookies(self, *, inpatient_list_url: str = "") -> str:
         """Lưu cookie HTTP vào .runtime/auth. Không lưu username/password."""
+        if getattr(self, "_bridge", False):
+            return ""
         path = Path(getattr(self.cfg, "cookie_file", "") or _default_cookie_file())
         path.parent.mkdir(parents=True, exist_ok=True)
         cookies = []
@@ -601,6 +715,23 @@ class EmrHttpSession:
         protected URL returns a wrapper/form without username/password, we do not stop
         immediately; we retry with url_login so HTTP-only scan does not fail too early.
         """
+        if self._bridge:
+            # Không tự đăng nhập: dùng phiên EMR trên máy bệnh viện. Giữ usid/st của trang đang mở.
+            try:
+                info = bridge_info()
+                current = str(info.get("emr_url") or "")
+                if current and not self._session_inpatient_url:
+                    self._session_inpatient_url = current
+            except EmrBridgeError:
+                raise
+            if not self.verify_logged_in():
+                raise EmrBridgeError(
+                    "EMR trên máy bệnh viện chưa đăng nhập hoặc đã đăng xuất. Đăng nhập lại EMR trên máy đó, "
+                    "bấm lại nút \"Data Hub\" rồi chạy lại.",
+                    "BRIDGE_EMR_LOGGED_OUT",
+                )
+            return
+
         errors: List[str] = []
 
         # 0) Ưu tiên cookie đã lấy từ Chrome/Selenium trước đó.
