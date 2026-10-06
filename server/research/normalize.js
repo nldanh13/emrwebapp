@@ -24,6 +24,7 @@ const { normalizeSex, extractBirthYear, normalizeLabName, resultOperator, parseN
 const { dedupeRowsByHash, dedupeSurgeryRows, snapshotFinalDatasetIfUnsaved } = require('./dataset_store');
 const { firstSurgeryByEncounter, surgeryForMedicationContext } = require('./encounter_linkage');
 const { evaluateCustomFields } = require('./analysis_config');
+const { medicationRowsFromOrderRow, dedupeOrderFields, extractClinicalEvents } = require('./order_note_parser');
 const { hchanhEntryFileStatus } = require('./progress_snapshot');
 const { loadPatientLink, patientLinkPath, applyPatientKeys, savePatientLink } = require('./patient_link');
 const { buildSelectedAnalysisForRun, sanitizeVariableSelection, activeVariableSelectionFromStudy, loadRunTablesForSelection } = require('./selection_runtime');
@@ -57,6 +58,7 @@ const NORMALIZE_OUTPUT_FILES = [
   'medication_orders.csv',
   'medication_day_summary.csv',
   'clinical_notes.csv',
+  'clinical_events.csv',
   'patient_day.csv',
   'analysis_ready.csv',
   'extract_status.csv',
@@ -500,11 +502,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   const existingMedRows = readCsvTable(path.join(dir, 'medication_orders.csv'), Number.MAX_SAFE_INTEGER).rows;
   const medicationRowsFromHistory = [];
   for (const row of hchanhOrderTable.rows || []) {
-    const raw = [firstNonEmpty(row, ['Tên y lệnh', 'Ten y lenh']), firstNonEmpty(row, ['Y lệnh khác', 'Y lenh khac'])].filter(Boolean).join('\n');
-    if (!raw) continue;
-    for (const line of raw.split(/\n+/).map(x => x.trim()).filter(Boolean)) {
-      if (!/\(tt\)|thuoc|vien|ong|chai|uong|tiem|truyen|xịt|hit|bơm|boi/i.test(line)) continue;
-      medicationRowsFromHistory.push({ ...row, raw_line: line });
+    for (const parsed of medicationRowsFromOrderRow(row)) {
+      medicationRowsFromHistory.push({ ...parsed });
     }
   }
   const medSourceRows = [
@@ -535,10 +534,14 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       drug_name_norm: normalizeDrugName(drug),
       drug_group_guess: classifyDrugGroup(drug || rawLine),
       active_ingredient: firstNonEmpty(row, ['active_ingredient', 'Hoạt chất', 'Hoat chat']),
-      route_raw: firstNonEmpty(row, ['route_raw', 'Đường dùng', 'Duong dung']) || rawLine,
-      route_norm: normalizeRoute(firstNonEmpty(row, ['route_raw', 'Đường dùng', 'Duong dung']) || rawLine),
-      dose_raw: firstNonEmpty(row, ['dose_raw', 'Liều', 'Lieu']) || rawLine,
+      route_raw: firstNonEmpty(row, ['route_raw', 'Đường dùng', 'Duong dung']) || '',
+      route_norm: firstNonEmpty(row, ['route_norm']) || normalizeRoute(firstNonEmpty(row, ['route_raw', 'Đường dùng', 'Duong dung']) || rawLine),
+      dose_raw: firstNonEmpty(row, ['dose_raw', 'strength_raw', 'Liều', 'Lieu']) || '',
       times_per_day: firstNonEmpty(row, ['times_per_day', 'Số lần', 'So lan']),
+      schedule: firstNonEmpty(row, ['schedule']),
+      order_action: firstNonEmpty(row, ['order_action']),
+      parser_confidence: firstNonEmpty(row, ['parser_confidence']),
+      source_field: firstNonEmpty(row, ['source_field']),
       raw_line: rawLine,
       surgery_datetime_ref: surgeryRef ? (surgeryRef.surgery_datetime || '') : '',
       surgery_date_ref: surgeryDate,
@@ -616,6 +619,42 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     return base;
   }).filter(r => r.patient_code && (r.clinical_text || r.order_text));
   clinicalNotes = dedupeRowsByHash(clinicalNotes);
+
+  let clinicalEvents = [];
+  for (const row of hchanhOrderTable.rows || []) {
+    const code = patientCode(row);
+    if (!code) continue;
+    const ctx = contextForRow(ctxMap, row, code);
+    const rawTime = firstNonEmpty(row, ['TG y lệnh', 'TG y lenh', 'Thời gian', 'Ngày']);
+    const { clinical_text: clinicalText } = dedupeOrderFields(row);
+    for (const parsed of extractClinicalEvents(clinicalText)) {
+      const base = {
+        research_code: firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || ctx.research_code || '',
+        patient_code: code,
+        encounter_id: ctx.encounter_id || '',
+        encounter_match_status: encounterMatchStatus(ctx),
+        event_datetime: isoDateTime(rawTime),
+        event_date: isoDate(rawTime),
+        doctor_name: firstNonEmpty(row, ['Bác sĩ', 'Bac si', 'doctor_name']),
+        event_type: parsed.event_type || '',
+        event_subtype: parsed.event_subtype || '',
+        value_raw: parsed.value_raw || '',
+        value_norm: parsed.value_norm || '',
+        negated: parsed.negated || '0',
+        certainty: parsed.certainty || 'observed',
+        source_text: parsed.source_text || '',
+        parser_rule: parsed.parser_rule || '',
+        confidence: parsed.confidence || '',
+        ...eventTemporalFields(ctx, rawTime),
+        source: firstNonEmpty(row, ['Nguồn', 'source']) || 'hchanh_order_history',
+        source_run_id: runId,
+      };
+      base.row_hash = stableHash(base);
+      base.clinical_event_id = `ce_${base.row_hash}`;
+      clinicalEvents.push(base);
+    }
+  }
+  clinicalEvents = dedupeRowsByHash(clinicalEvents);
 
   const labByEncounter = byEncounterCount(labResults, 'lab_date');
   const imagingByEncounter = byEncounterCount(imagingResults, 'order_date');
@@ -901,7 +940,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   const patientLink = loadPatientLink(patientLinkPath(dir));
   const keyStamp = nowIso();
   for (const rows of [patients, finalEncounters, diagnoses, labResults, imagingResults, surgeryResults,
-    medicationOrders, medicationDaySummary, clinicalNotes, patientDay, analysisReady, extractStatus]) {
+    medicationOrders, medicationDaySummary, clinicalNotes, clinicalEvents, patientDay, analysisReady, extractStatus]) {
     applyPatientKeys(patientLink, rows, keyStamp);
   }
   savePatientLink(patientLink);
@@ -916,6 +955,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   writeCsv(path.join(dir, 'medication_orders.csv'), NORMALIZED_COLUMNS.medication_orders, medicationOrders);
   writeCsv(path.join(dir, 'medication_day_summary.csv'), NORMALIZED_COLUMNS.medication_day_summary, medicationDaySummary);
   writeCsv(path.join(dir, 'clinical_notes.csv'), NORMALIZED_COLUMNS.clinical_notes, clinicalNotes);
+  writeCsv(path.join(dir, 'clinical_events.csv'), NORMALIZED_COLUMNS.clinical_events, clinicalEvents);
   writeCsv(path.join(dir, 'patient_day.csv'), NORMALIZED_COLUMNS.patient_day, patientDay);
   // Cột analysis_ready = cột cố định + inference fields của preset + custom fields
   const analysisReadyBaseCols = [
@@ -946,6 +986,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     medication_orders: medicationOrders,
     medication_day_summary: medicationDaySummary,
     clinical_notes: clinicalNotes,
+    clinical_events: clinicalEvents,
     patient_day: patientDay,
   }, variableSelectionSpec);
   if (!selectedAnalysis) {
@@ -986,6 +1027,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     unmatched_medication_orders: medicationOrders.filter(row => row.encounter_match_status !== 'matched').length,
     medication_day_summary: medicationDaySummary.length,
     clinical_notes: clinicalNotes.length,
+    clinical_events: clinicalEvents.length,
     patient_day: patientDay.length,
     analysis_ready: analysisReady.length,
     analysis_selected: selectedAnalysis ? selectedAnalysis.rows : 0,
@@ -1024,7 +1066,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     tables: {
       patients, encounters: finalEncounters, diagnoses,
       lab_results: labResults, imaging_results: imagingResults, surgery_results: surgeryResults,
-      medication_orders: medicationOrders, clinical_notes: clinicalNotes, analysis_ready: analysisReady,
+      medication_orders: medicationOrders, clinical_notes: clinicalNotes, clinical_events: clinicalEvents, analysis_ready: analysisReady,
     },
     inputCounts: {
       initial_list: outputs.initial_list, research_source: outputs.research_source,
@@ -1034,7 +1076,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     },
     databaseManifest: databaseError ? null : databaseInfo(datasetDirFromRunDir(dir)),
     databaseError,
-    csvFilesInDatabase: ['patients.csv', 'encounters.csv', 'lab_results.csv', 'imaging_results.csv', 'surgery_results.csv', 'medication_orders.csv', 'analysis_ready.csv'],
+    csvFilesInDatabase: ['patients.csv', 'encounters.csv', 'lab_results.csv', 'imaging_results.csv', 'surgery_results.csv', 'medication_orders.csv', 'clinical_notes.csv', 'clinical_events.csv', 'analysis_ready.csv'],
     inferenceFields: preset.inference_fields || [],
   });
   writeJsonAtomic(path.join(dir, quality.QA_REPORT_FILE), { ...qaReport, review: undefined });
