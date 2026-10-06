@@ -51,6 +51,16 @@ def _extract_gio_dung_times(gio_dung):
         out.append({'hour': h, 'minute': mi, 'key': key, 'label': label})
     return out
 
+def _catalog_has_own_solvent(drug):
+    """Danh mục thuốc đánh dấu "có dung môi đi kèm" (cùng ý nghĩa danh sách sẵn có co_dung_moi_di_kem)."""
+    try:
+        from processing.medication_catalog import lookup_medication_with_meta
+        med, _meta = lookup_medication_with_meta(drug, allow_semantic=False)
+        return bool((med or {}).get("co_dung_moi_di_kem"))
+    except Exception:
+        return False
+
+
 def calculate_infusion_times(dich_truyen_list, ngay_mac_dinh=None):
     """Tính giờ truyền nối tiếp & Gộp Natri vào Nefopam"""
     ngay_lam_viec = _coerce_work_date(ngay_mac_dinh)
@@ -409,7 +419,8 @@ def clean_and_merge_injections(injection_list):
         likely_needs_water = ("pha" in route) or ("lọ" in dang) or ("lo" in dang) or ("bột" in dang) or ("bot" in dang) or (the_tich == 0)
 
         # Không gắn '+ Pha nước cất' với một số thuốc có dung môi đi kèm (ví dụ Methylprednisolon)
-        no_water_tag = any(k in _norm_upper(drug.get("ten_thuoc", "")) for k in NO_WATER_TAG_KEYWORDS)
+        no_water_tag = any(k in _norm_upper(drug.get("ten_thuoc", "")) for k in NO_WATER_TAG_KEYWORDS) \
+            or _catalog_has_own_solvent(drug)
 
         if has_water_entry and likely_needs_water and (not no_water_tag):
             drug["ten_hien_thi"] = f"{drug.get('ten_thuoc', '')} + Pha nước cất"

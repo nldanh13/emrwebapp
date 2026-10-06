@@ -9,6 +9,7 @@ except Exception:
     semantic_solvent_kind = None
 from xu_ly_config import (
     ALWAYS_INFUSION_DRUGS,
+    BRAND_ACTIVE_INGREDIENT,
     DEFAULT_NACL_VOLUME_BY_KEYWORD,
     _contains_any,
     _norm_upper,
@@ -37,6 +38,15 @@ def _catalog_rule_of(drug):
             if rule:
                 return rule
     return None
+
+
+def _catalog_single_ingredient(drug):
+    try:
+        from processing.medication_catalog import lookup_medication_with_meta, _single_ingredient
+        med, _meta = lookup_medication_with_meta(drug, allow_semantic=False)
+        return _norm_upper(_single_ingredient(med)) if med else ""
+    except Exception:
+        return ""
 
 
 def _catalog_says_no_dilution(drug):
@@ -398,14 +408,15 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
             str(drug.get("hoat_chat") or ""),
             str(drug.get("ten_hien_thi") or ""),
         ]))
-        # Một số tên thương mại không chứa hoạt chất trong ten_thuoc.
-        brand_alias = {
-            "VECMID": "VANCOMYCIN",
-            "VECMID 1GM": "VANCOMYCIN",
-        }
-        for brand, active in brand_alias.items():
+        # Một số tên thương mại không chứa hoạt chất — config/medication_builtin.json.
+        for brand, active in BRAND_ACTIVE_INGREDIENT.items():
             if brand in text and active not in text:
                 text = f"{text} {active}"
+        # Danh mục thuốc: tên thương mại khai báo MỘT hoạt chất → thêm hoạt chất (cùng cơ chế trên,
+        # nhưng do người dùng tự khai báo, không phải sửa code).
+        active = _catalog_single_ingredient(drug)
+        if active and active not in text:
+            text = f"{text} {active}"
         return text
 
     def choose_bag_volume_and_type(drug):

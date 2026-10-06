@@ -7,6 +7,7 @@
 // GET    /api/medication-catalog/archive-drug-names → tên thuốc trong kho + đã/chưa gắn hoạt chất
 // POST   /api/medication-catalog/assign-ingredient  → gắn một hoạt chất cho nhiều tên thuốc
 // POST   /api/medication-catalog/dilution-check  → quy tắc pha đang áp dụng + kiểm tra thử (chạy worker)
+// GET    /api/medication-catalog/builtin → kiến thức thuốc sẵn có (config/medication_builtin.json, chỉ đọc)
 // PATCH  /api/medication-catalog/:key     → sửa thuốc đã có (key = canonical)
 // DELETE /api/medication-catalog/:key     → xoá thuốc
 
@@ -224,6 +225,8 @@ router.post('/medication-catalog', (req, res) => {
       default_rate_text: String(body.default_rate_text || '').trim(),
       schedule_rule: String(body.schedule_rule || '').trim(),
       dilution: normalizeDilution(body.dilution),
+      ten_hien_thi: String(body.ten_hien_thi || '').trim().slice(0, 200),
+      co_dung_moi_di_kem: body.co_dung_moi_di_kem === true ? true : undefined,
       // Sửa/thêm tay → bước tự học từ dữ liệu (sync_catalog_from_processed_records) không ghi đè.
       sua_tay: true,
     });
@@ -270,6 +273,17 @@ async function runDilutionCheck(ctx, payload) {
     for (const f of [inFile, outFile]) { try { fs.unlinkSync(f); } catch (_) { /* đã xoá */ } }
   }
 }
+
+// Kiến thức thuốc sẵn có: hiện ở mục "Sẵn có" để người dùng thấy và chép vào Danh mục để sửa.
+// Ứng dụng không ghi file này (cập nhật theo phiên bản), nên sửa trong Danh mục thuốc.
+const BUILTIN_PATH = path.join(__dirname, '..', '..', 'config', 'medication_builtin.json');
+router.get('/medication-catalog/builtin', (req, res) => {
+  const data = readJsonSafe(BUILTIN_PATH, null);
+  if (!data || typeof data !== 'object') {
+    return res.status(500).json({ status: 'error', message: 'Không đọc được kiến thức thuốc sẵn có (config/medication_builtin.json). Cập nhật lại bản cài đặt.' });
+  }
+  return res.json({ status: 'ok', builtin: data });
+});
 
 router.post('/medication-catalog/dilution-check', async (req, res) => {
   try {
@@ -331,6 +345,10 @@ router.patch('/medication-catalog/:key', (req, res) => {
       if (dilution) med.dilution = dilution; else delete med.dilution;
     }
 
+    if (body.ten_hien_thi !== undefined) med.ten_hien_thi = String(body.ten_hien_thi || '').trim().slice(0, 200);
+    if (body.co_dung_moi_di_kem !== undefined) {
+      if (body.co_dung_moi_di_kem === true) med.co_dung_moi_di_kem = true; else delete med.co_dung_moi_di_kem;
+    }
     med.sua_tay = true;
     data.medications[idx] = pruneEmpty(med);
     saveCatalog(data);

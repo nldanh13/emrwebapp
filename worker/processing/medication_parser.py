@@ -67,7 +67,10 @@ def get_volume_from_config(brand_name, active_name, form):
             return 100.0
         return 0.0
 
-    # 1) Tra trong THE_TICH_AO (match trực tiếp, không core)
+    # Bước phân loại chỉ dùng kiến thức sẵn có (config/medication_builtin.json). Thể tích trong
+    # Danh mục thuốc được áp ở bước sau (complete_medication_from_catalog); đưa lên đây làm đổi
+    # kết quả phân loại (test mốc tests/test_medication_golden.py).
+    # 1) Thể tích theo cụm tên (match trực tiếp, không core)
     if isinstance(THE_TICH_AO, dict):
         for k, v in THE_TICH_AO.items():
             k_norm = str(k).upper().replace("_", " ")
@@ -78,7 +81,7 @@ def get_volume_from_config(brand_name, active_name, form):
                     LOG.debug("Handled xu_ly fallback exception", exc_info=True)
                     pass
 
-    # 2) Fallback mặc định (keyword đủ đặc trưng)
+    # 2) Thể tích theo từ khoá (đủ đặc trưng)
     for k, v in DEFAULT_VOLUMES.items():
         if k in full_name:
             return float(v)

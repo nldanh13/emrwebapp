@@ -18,6 +18,8 @@ import { useOnTabReturn } from '../hooks/useTabActivity.js';
 import { SkeletonBlock, SkeletonTable } from './Skeleton.jsx';
 import { DILUTION_APPLY, DILUTION_SOLVENTS, dilutionForm, dilutionFromForm, dilutionSummary } from '../utils/dilutionRule.js';
 import DilutionCheckPanel from './DilutionCheckPanel.jsx';
+import MedicationBuiltinPanel from './MedicationBuiltinPanel.jsx';
+import { fillEmptyFields } from '../utils/medicationBuiltin.js';
 
 function routeOptions(table) {
   const categories = table.categories || [];
@@ -52,6 +54,8 @@ function emptyForm() {
     default_route_text: '',
     default_rate_text: '',
     schedule_rule: '',
+    ten_hien_thi: '',
+    co_dung_moi_di_kem: false,
     ...dilutionForm(null),
   };
 }
@@ -70,6 +74,8 @@ function formFromMedication(med) {
     default_route_text: med.default_route_text || '',
     default_rate_text: med.default_rate_text || '',
     schedule_rule: med.schedule_rule || '',
+    ten_hien_thi: med.ten_hien_thi || '',
+    co_dung_moi_di_kem: Boolean(med.co_dung_moi_di_kem),
     ...dilutionForm(med.dilution),
   };
 }
@@ -143,6 +149,11 @@ function DilutionFields({ form, set, setForm, effective }) {
             placeholder="VD: truyền tối thiểu 60 phút; không pha chung với Ceftriaxon" style={INPUT_STYLE} />
         </Field>
       )}
+      <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: FS.sm, color: C.text2 }}>
+        <input type="checkbox" checked={Boolean(form.co_dung_moi_di_kem)}
+          onChange={e => setForm(prev => ({ ...prev, co_dung_moi_di_kem: e.target.checked }))} />
+        Có dung môi đi kèm (không ghi thêm "+ Pha nước cất")
+      </label>
       <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.45 }}>
         {!solvent && !builtin && 'Chưa đặt và không có luật sẵn có cho thuốc này: chỉ pha khi y lệnh ghi rõ dung môi hoặc có túi Natri clorid cùng giờ.'}
         {builtin && <>
@@ -206,6 +217,8 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
         default_rate_text: form.default_rate_text.trim(),
         schedule_rule: form.schedule_rule.trim(),
         dilution: dilution.value,
+        ten_hien_thi: form.ten_hien_thi.trim(),
+        co_dung_moi_di_kem: Boolean(form.co_dung_moi_di_kem),
       });
       onClose();
     } catch (e) {
@@ -238,6 +251,9 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
           <Field label="Tên khác / tên thương mại / cách viết khác">
             <textarea value={form.aliases} onChange={set('aliases')} rows={3}
               placeholder="Các tên có thể xuất hiện trong EMR, cách nhau bằng dấu phẩy hoặc xuống dòng" style={{ ...INPUT_STYLE, resize: 'vertical' }} />
+          </Field>
+          <Field label="Tên hiển thị chuẩn (tuỳ chọn — dùng ở bản xem trước Nhập dịch truyền)">
+            <input value={form.ten_hien_thi} onChange={set('ten_hien_thi')} placeholder="VD: Paracetamol" style={INPUT_STYLE} />
           </Field>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
@@ -374,6 +390,8 @@ export default function MedicationCatalogManager() {
   const [deleting, setDeleting] = useState('');
   const [toast, setToast] = useState('');
   const [dilutionInfo, setDilutionInfo] = useState(null);
+  const [builtin, setBuiltin] = useState(null);
+  const [builtinError, setBuiltinError] = useState('');
   const [ruleFilter, setRuleFilter] = useState('all');
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 6000); };
@@ -387,6 +405,9 @@ export default function MedicationCatalogManager() {
       api.checkMedicationDilution({ include_catalog: true })
         .then(info => setDilutionInfo({ catalog: info.catalog || {}, builtin: info.builtin || [] }))
         .catch(() => setDilutionInfo({ catalog: {}, builtin: [], failed: true }));
+      api.getMedicationBuiltin()
+        .then(r => { setBuiltin(r.builtin || {}); setBuiltinError(''); })
+        .catch(e => setBuiltinError('Không tải được kiến thức sẵn có: ' + String(e.message || e)));
     } catch (e) {
       showToast('Lỗi tải danh mục thuốc: ' + String(e.message || e));
     } finally {
@@ -438,16 +459,26 @@ export default function MedicationCatalogManager() {
           <div style={{ fontSize: FS.sm, color: C.text2, marginTop: 4 }}>
             {tab === 'drugs'
               ? 'Khai báo chế phẩm, hoạt chất và các tên thương mại/cách viết trong EMR. Nhiều chế phẩm có thể cùng một hoạt chất để nghiên cứu gom chung.'
+              : tab === 'builtin'
+              ? 'Kiến thức thuốc đi kèm phần mềm: luật pha, thể tích mặc định, hoạt chất của tên thương mại, tên hiển thị. Chép vào danh mục để sửa.'
               : tab === 'ingredients'
               ? 'Tên thuốc (tên thương mại) đang có trong y lệnh của kho: gắn hoạt chất để tạo nghiên cứu theo hoạt chất.'
               : 'Tự thiết kế đường dùng: tên, nhãn, chuyên mục, cách hiện trên báo cáo ca trực và từ khoá nhận diện.'}
           </div>
         </div>
         <Segmented label="Mục danh mục" value={tab} onChange={setTab}
-          options={[{ value: 'drugs', label: 'Thuốc' }, { value: 'ingredients', label: 'Gắn hoạt chất' }, { value: 'routes', label: 'Đường dùng' }]} />
+          options={[{ value: 'drugs', label: 'Thuốc' }, { value: 'builtin', label: 'Sẵn có' }, { value: 'ingredients', label: 'Gắn hoạt chất' }, { value: 'routes', label: 'Đường dùng' }]} />
       </div>
 
       {tab === 'routes' ? <RouteDesigner onSaved={showToast} />
+        : tab === 'builtin' ? <MedicationBuiltinPanel builtin={builtin} error={builtinError}
+            catalogNames={new Set(items.map(m => String(m.canonical || '').toLowerCase()))}
+            onCopy={prefill => {
+              const existing = items.find(m => String(m.canonical || '').toLowerCase() === String(prefill.canonical || '').toLowerCase());
+              setEditing(existing
+                ? { mode: 'edit', key: existing.key, form: fillEmptyFields(formFromMedication(existing), prefill) }
+                : { mode: 'create', key: '', form: { ...emptyForm(), ...prefill } });
+            }} />
         : tab === 'ingredients' ? <DrugNameIngredientPanel medications={items} onChanged={load} /> : <>
       <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
         <Btn variant="primary" onClick={() => setEditing({ mode: 'create', key: '', form: emptyForm() })}>+ Thêm thuốc</Btn>
