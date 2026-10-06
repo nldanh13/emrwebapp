@@ -24,7 +24,7 @@ const routeModel = require('../utils/routeModel');
 //   excluded           — mặc định bị che khi xem/xuất (server/research/export_utils.js).
 // Phân loại "use" là đề xuất kỹ thuật; bệnh viện/hội đồng đạo đức phải xác nhận.
 
-const DICTIONARY_VERSION = '2026-10-06.7';
+const DICTIONARY_VERSION = '2026-10-06.8';
 
 const CONVENTIONS = {
   dates: 'Ngày dạng YYYY-MM-DD; thời điểm dạng YYYY-MM-DD HH:mm (giờ địa phương, không có múi giờ). Cột "ngày giờ" có thể chỉ có phần ngày nếu nguồn không có giờ.',
