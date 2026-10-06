@@ -5,6 +5,11 @@ const { CONFIG_PATH } = require('../constants');
 const { getRuntimePaths } = require('../services/session');
 const { revisionForFiles, setRevisionHeaders, checkRevision } = require('../services/resource_revision');
 const { publishResourceEvent } = require('../services/realtime_bus');
+const routeModel = require('../utils/routeModel');
+
+const MEDICATION_CATALOG_PATH = path.join(__dirname, '..', '..', 'config', 'medication_catalog.json');
+const VTYT_DICTIONARY_PATH = path.join(__dirname, '..', '..', 'config', 'vtyt_dictionary.json');
+const VTYT_COMBOS_PATH = path.join(__dirname, '..', '..', 'config', 'vtyt_combos.json');
 
 // Một mutation đang chạy trên cùng resource thì mutation thứ hai bị từ chối ngay.
 // Cách này tránh race "hai request cùng đọc version cũ rồi cùng ghi".
@@ -45,6 +50,28 @@ function resourceSpec(req) {
       readPath: '/sick-leave-import',
     };
   }
+
+  // Danh mục dùng chung toàn server: không để điện thoại/laptop ghi chồng nhau.
+  if (p === '/medication-catalog'
+      || p === '/medication-catalog/assign-ingredient'
+      || (p.startsWith('/medication-catalog/') && ['PATCH', 'DELETE'].includes(String(req.method || '').toUpperCase()))) {
+    return { key: 'medication-catalog', files: [MEDICATION_CATALOG_PATH], readPath: '/medication-catalog' };
+  }
+
+  if (p === '/routes' || p === '/routes/custom') {
+    return { key: 'routes-custom', files: [routeModel.CUSTOM_FILE], readPath: '/routes' };
+  }
+
+  if (p === '/vtyt-catalog'
+      || p.startsWith('/vtyt-catalog/reset/')
+      || (p.startsWith('/vtyt-catalog/') && String(req.method || '').toUpperCase() === 'PATCH')) {
+    return { key: 'vtyt-catalog', files: [VTYT_DICTIONARY_PATH], readPath: '/vtyt-catalog' };
+  }
+
+  if (p === '/vtyt-combos' || p.startsWith('/vtyt-combos/')) {
+    return { key: 'vtyt-combos', files: [VTYT_COMBOS_PATH], readPath: '/vtyt-combos' };
+  }
+
   return null;
 }
 
