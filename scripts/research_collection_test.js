@@ -67,7 +67,19 @@ test('Phân loại kết quả hành chánh: có dữ liệu / EMR không có / 
   assert.deepStrictEqual(c.classifyFetchStatus('no_session', 0), { status: 'failed', reason: 'session' });
   assert.deepStrictEqual(c.classifyFetchStatus('no_url', 0), { status: 'failed', reason: 'not_found' });
   assert.deepStrictEqual(c.classifyFetchStatus('empty', 0), { status: 'failed', reason: 'no_content' });
-  assert.deepStrictEqual(c.classifyFetchStatus('no_table', 0), { status: 'blocked', reason: 'emr_ui_changed' });
+  assert.deepStrictEqual(c.classifyFetchStatus('no_table', 0), { status: 'blocked', reason: 'emr_ui_changed', detail: 'no_table' });
+});
+
+test('Chẩn đoán lỗi thu thập chỉ rõ bước tìm BN, mở lượt, mở dữ liệu và đọc dữ liệu', () => {
+  assert.deepStrictEqual(c.diagnosticFor('not_found'), {
+    diagnostic_stage: 'patient_search',
+    diagnostic_stage_label: '1. Tìm người bệnh',
+    diagnostic_message: 'Không tìm thấy người bệnh theo Mã BN trên EMR.',
+  });
+  assert.strictEqual(c.diagnosticFor('popup_error').diagnostic_stage, 'encounter_open');
+  assert.strictEqual(c.diagnosticFor('emr_ui_changed', 'no_table').diagnostic_stage, 'data_open');
+  assert.strictEqual(c.diagnosticFor('no_content').diagnostic_stage, 'data_read');
+  assert.strictEqual(c.diagnosticFor('session').diagnostic_stage, 'emr_session');
 });
 
 test('Phân loại tab XN/CĐHA: "0 dòng" bản cũ chưa được tin là EMR không có', () => {
@@ -170,6 +182,8 @@ test('Lỗi kỹ thuật thử lại có giới hạn, rồi vào danh sách ngo
   assert.strictEqual(ex.length, 1);
   assert.strictEqual(ex[0].category, 'retry_exhausted');
   assert.strictEqual(ex[0].auto_retry, 'no');
+  assert.strictEqual(ex[0].diagnostic_stage, 'technical');
+  assert.match(ex[0].diagnostic_message, /EMR không phản hồi kịp/);
   // Hết lỗi → đếm lại từ 0.
   hc.enc_a = hcEntry(OK_HC, '2026-01-20T00:00:00Z');
   ledger = c.buildLedger({ sourceRows: sources, xnProgress: xn, hchanhProgress: hc, orderProgress: oh, previous: ledger });
@@ -213,7 +227,7 @@ test('Không tìm thấy BN để cuối; không xác định chắc lượt th�
 test('Progress không ghép chắc về một dòng nguồn thì bỏ, không đoán', () => {
   const a = src('enc_a', 'NC0001', 'BN_A', { 'Mã nội trú': '' });
   const b = src('enc_b', 'NC0002', 'BN_A', { 'Mã nội trú': '' });
-  const entry = { 'Mã BN': 'BN_A', 'Ngày vào viện': '05/01/2026', xn: 'done', cdha: 'done', committed: true, counts: { xn: 3, cdha: 1 } };
+  const entry = { 'Mã BN': 'BN_A', 'Mã NC': 'NC0001', 'Ngày vào viện': '05/01/2026', xn: 'done', cdha: 'done', committed: true, counts: { xn: 3, cdha: 1 } };
   const { matches, unmatched } = c.matchXnEntriesToSources({ 'BN_A|2026-01-05|x': entry }, [a, b].map(r => ({
     key: r['Research key'], research_code: r['Mã NC'], patient_code: r['Mã BN'], noitru: '', treatment: '', admission_date: '2026-01-05',
   })));
@@ -447,7 +461,7 @@ test('Lựa chọn thủ công chỉ ghép được lượt cùng người bện
   }
 });
 
-test('Thiếu Mã nội trú: dùng Mã NC duy nhất để ghép đúng lượt, không đoán khi mã bị trùng', () => {
+test('Mã NC không được dùng để phân biệt hai lượt cùng Mã BN; thiếu bằng chứng thì để unmatched', () => {
   const rows = [
     src('k1', 'NC_A', 'BN_R', { 'Mã nội trú': '', 'T/G vào': '05/03/2026 09:00' }),
     src('k2', 'NC_B', 'BN_R', { 'Mã nội trú': '', 'T/G vào': '05/03/2026 10:00' }),
@@ -457,20 +471,21 @@ test('Thiếu Mã nội trú: dùng Mã NC duy nhất để ghép đúng lượt
     { encounter_id: 'e2', research_code: 'NC_B', patient_code: 'BN_R', admission_date: '2026-03-05', discharge_date: '2026-03-12' },
   ];
   const units = c.buildCollectionUnits({ sourceRows: rows, encounterRows });
-  assert.deepStrictEqual(units.map(u => [u.key, u.match_method]).sort(), [['e1', 'research_code'], ['e2', 'research_code']]);
+  assert.ok(units.every(u => !u.encounter_id));
+  assert.ok(units.every(u => u.unmatched_reason === 'ambiguous_date_range'));
   assert.deepStrictEqual(c.collectionUnitMatchSummary(units), {
-    total: 2, matched: 2, unmatched: 0, source_only: 0, by_method: { research_code: 2 }, by_reason: {},
+    total: 2, matched: 0, unmatched: 2, source_only: 0, by_method: {}, by_reason: { ambiguous_date_range: 2 },
   });
 
-  const duplicated = c.buildCollectionUnits({
+  const sameResearchCode = c.buildCollectionUnits({
     sourceRows: [src('k3', 'NC_DUP', 'BN_D', { 'Mã nội trú': '', 'T/G vào': '05/03/2026 09:00' })],
     encounterRows: [
       { encounter_id: 'd1', research_code: 'NC_DUP', patient_code: 'BN_D', admission_date: '2026-03-05', discharge_date: '2026-03-10' },
       { encounter_id: 'd2', research_code: 'NC_DUP', patient_code: 'BN_D', admission_date: '2026-03-05', discharge_date: '2026-03-12' },
     ],
   });
-  assert.strictEqual(duplicated[0].encounter_id, '');
-  assert.strictEqual(duplicated[0].unmatched_reason, 'ambiguous_research_code');
+  assert.strictEqual(sameResearchCode[0].encounter_id, '');
+  assert.strictEqual(sameResearchCode[0].unmatched_reason, 'ambiguous_date_range');
 });
 
 test('Progress hành chánh theo khóa dòng cũ (không còn trong nguồn) vẫn ghép được vào lượt theo Mã BN + ngày vào', () => {

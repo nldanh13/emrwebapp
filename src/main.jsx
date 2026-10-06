@@ -3,18 +3,23 @@ import { createRoot } from 'react-dom/client';
 import App from './App.jsx';
 import AppErrorBoundary from './components/AppErrorBoundary.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
+import DeviceGate from './components/DeviceGate.jsx';
 import WorkspaceRealtimeBridge from './components/WorkspaceRealtimeBridge.jsx';
+import EmrBridgePage from './components/EmrBridgePage.jsx';
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
 import { C, FONT_UI } from './tokens.js';
 import { Spinner } from './components/shared.jsx';
 import { loadRouteCustomizations } from './config/routes.js';
 import { getRouteTable } from './api.js';
 import { installResourceConcurrencyFetch } from './utils/resourceConcurrency.js';
+import { installDeviceSigningFetch } from './utils/deviceTrust.js';
 import './styles/app.css';
 
 // Cài lớp versioning trước khi React/API bắt đầu gọi fetch: mọi GET resource dùng chung
 // sẽ nhớ X-Resource-Version, còn mutation sẽ tự gửi If-Match để chống ghi đè đa thiết bị.
 installResourceConcurrencyFetch();
+// Thiết bị tin cậy: tự ký mọi yêu cầu /api (lớp ngoài cùng, sau lớp versioning).
+installDeviceSigningFetch();
 
 // Nạp phần đường dùng tự cài (tab Đường dùng) trước khi hiện app; tối đa 3 giây,
 // lỗi thì vẫn chạy với bảng chuẩn.
@@ -47,10 +52,15 @@ function AuthGate() {
     );
   }
   if (status === 'unauthenticated') return <LoginScreen />;
+  // Trang cầu nối EMR (máy bệnh viện, mở từ nút dấu trang trên tab EMR): chỉ chuyển trang EMR lên
+  // máy chủ, không xem dữ liệu kho → không cần thiết bị tin cậy, không mở các tab.
+  if (window.location.pathname === '/emr-bridge') return <EmrBridgePage />;
   return (
-    <WorkspaceRealtimeBridge>
-      <RouteModelGate><App /></RouteModelGate>
-    </WorkspaceRealtimeBridge>
+    <DeviceGate>
+      <WorkspaceRealtimeBridge>
+        <RouteModelGate><App /></RouteModelGate>
+      </WorkspaceRealtimeBridge>
+    </DeviceGate>
   );
 }
 

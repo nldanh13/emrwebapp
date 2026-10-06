@@ -69,6 +69,45 @@ test('tra đúng Mã BN không kéo Mã BN khác chỉ vì trước đó bị g�
   assert.ok(out.patients[0].encounters.every(e => e.patient_code === 'BN1'));
 });
 
+test('dữ liệu chưa xác định đợt vẫn hiển thị riêng theo đúng Mã BN và không tính thành một đợt thật', () => {
+  const payload = {
+    patients: [{
+      patient_code: 'BN1',
+      patient_codes: ['BN1'],
+      patient_name: 'NGUYEN VAN A',
+      encounter_count: 1,
+      encounters: [
+        {
+          patient_code: 'BN1', encounter_id: 'e1',
+          admission_date: '2026-04-21', discharge_date: '2026-04-23',
+          labs: [], imaging: [], medications: [{ patient_code: 'BN1', encounter_id: 'e1', order_datetime: '2026-04-22', drug_name_raw: 'Paracetamol' }], surgeries: [],
+        },
+        {
+          unmatched: true,
+          patient_code: 'BN1', encounter_id: '', admission_date: '', discharge_date: '',
+          match_reasons: ['encounter_match_outside_time'],
+          labs: [
+            { patient_code: 'BN1', encounter_match_status: 'missing', encounter_match_reason: 'encounter_match_outside_time', lab_datetime: '2026-05-01', test_name_raw: 'Hb', result_raw: '120' },
+            { patient_code: 'BN2', encounter_match_status: 'missing', lab_datetime: '2026-05-01', test_name_raw: 'CRP', result_raw: '5' },
+          ],
+          imaging: [{ patient_code: 'BN1', encounter_match_status: 'missing', ordered_at: '2026-05-01', service_name_raw: 'X-quang', conclusion_raw: 'Không gãy' }],
+          medications: [], surgeries: [],
+        },
+      ],
+    }],
+    total_matches: 1,
+    data_source: 'sqlite',
+  };
+  const out = sanitizePatientHistory(payload, 'BN1');
+  assert.strictEqual(out.patients[0].encounter_count, 1, 'nhóm chưa xác định không được tính thành đợt');
+  assert.strictEqual(out.patients[0].unassigned_count, 2);
+  assert.strictEqual(out.patients[0].encounters.length, 2);
+  assert.strictEqual(out.patients[0].encounters[1].unmatched, true);
+  assert.strictEqual(out.patients[0].encounters[1].labs.length, 1, 'giữ XN đúng Mã BN');
+  assert.strictEqual(out.patients[0].encounters[1].imaging.length, 1, 'giữ CĐHA đúng Mã BN');
+  assert.strictEqual(out.patients[0].encounters[1].labs[0].test_name_raw, 'Hb');
+});
+
 test('phẫu thuật ngoài khoảng nằm viện bị loại và ngày mổ tóm tắt sai bị xóa', () => {
   const enc = sanitizeEncounterEvents({
     patient_code: 'BN1', encounter_id: 'e1', admission_date: '2026-04-21 09:55', discharge_date: '2026-04-23 13:00', surgery_date: '2026-10-04 18:39',

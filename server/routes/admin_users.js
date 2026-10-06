@@ -22,6 +22,8 @@ function publicUser(u) {
     enabled: u.enabled !== false,
     emr_username: u.emrUsername || '',
     emr_password: u.emrPassword || '',
+    // Chỉ cho biết đã đặt mật khẩu đăng nhập hay chưa; bản băm không bao giờ gửi xuống trình duyệt.
+    has_password: Boolean(u.passwordHash),
   };
 }
 
@@ -47,6 +49,8 @@ router.post('/admin/users', (req, res) => {
       enabled: body.enabled,
       emrUsername: body.emr_username,
       emrPassword: body.emr_password,
+      id: body.id || undefined,
+      password: body.password || undefined,
     });
     appendActivity(ctx, { kind: 'admin.users.create', actor: req.auth, target_id: created.id });
     return res.json({ status: 'ok', user: publicUser(created) });
@@ -67,8 +71,10 @@ router.patch('/admin/users/:id', (req, res) => {
       emrUsername: body.emr_username,
       emrPassword: body.emr_password,
       regenerateToken: body.regenerate_token === true,
+      password: body.password || undefined,
+      clearPassword: body.clear_password === true,
     });
-    appendActivity(ctx, { kind: 'admin.users.update', actor: req.auth, target_id: updated.id, regenerated_token: body.regenerate_token === true });
+    appendActivity(ctx, { kind: 'admin.users.update', actor: req.auth, target_id: updated.id, regenerated_token: body.regenerate_token === true, password_changed: Boolean(body.password || body.clear_password) });
     return res.json({ status: 'ok', user: publicUser(updated) });
   } catch (e) {
     return res.status(400).json({ status: 'error', message: String(e.message || e) });

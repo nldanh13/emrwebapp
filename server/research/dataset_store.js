@@ -426,7 +426,7 @@ const ENCODED_DIRNAME = 'encoded';
 
 const RESEARCH_DERIVED_FILES = [
   'patients.csv', 'encounters.csv', 'diagnoses.csv', 'lab_results.csv', 'imaging_results.csv',
-  'surgery_results.csv', 'medication_orders.csv', 'medication_day_summary.csv', 'clinical_notes.csv',
+  'surgery_results.csv', 'medication_orders.csv', 'medication_day_summary.csv', 'clinical_notes.csv', 'clinical_events.csv',
   'patient_day.csv', 'analysis_ready.csv', 'analysis_selected.csv', 'analysis_final.csv', 'extract_status.csv',
 ];
 

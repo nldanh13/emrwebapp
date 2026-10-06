@@ -256,6 +256,37 @@ function sanitizeEncounterEvents(encounter) {
   const excluded = {};
   const integrity = { status: 'verified', critical: 0, ambiguous: 0, rejected: 0, deduplicated: 0, by_kind: {}, reasons: {} };
 
+  if (enc.unmatched) {
+    for (const kind of ['labs', 'imaging', 'medications', 'surgeries']) {
+      const patient = text(enc.patient_code);
+      const samePatient = (enc[kind] || []).filter(row => {
+        const rowPatient = eventPatientCode(row);
+        return !patient || !rowPatient || patient === rowPatient;
+      });
+      const deduped = [];
+      const seen = new Set();
+      for (const row of samePatient) {
+        let key = clinicalEventKey(kind, row);
+        if (!key.replace(/\|/g, '')) key = stableKey(row);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(row);
+      }
+      enc[kind] = deduped;
+      excluded[kind] = Math.max(0, Number((encounter?.[kind] || []).length) - deduped.length);
+    }
+    enc.counts = {
+      labs: enc.labs.length,
+      imaging: enc.imaging.length,
+      medications: enc.medications.length,
+      surgeries: enc.surgeries.length,
+    };
+    enc.excluded_counts = excluded;
+    // Dòng chưa gắn được lượt nào: không thuộc lượt để kiểm khoảng thời gian.
+    integrity.status = 'unassigned';
+    enc.integrity = integrity;
+    return enc;
+  }
   for (const kind of ['labs', 'imaging', 'medications', 'surgeries']) {
     const result = sanitizeEventRows(kind, enc[kind], enc);
     enc[kind] = result.rows;
@@ -307,7 +338,12 @@ function collapseDisplayEncounters(encounters = []) {
     if (idx < 0) out.push({ ...enc });
     else out[idx] = mergeDisplayStay(out[idx], enc);
   }
-  return out.map(sanitizeEncounterEvents).sort((a, b) => text(a.admission_date).localeCompare(text(b.admission_date)));
+  return out
+    .map(sanitizeEncounterEvents)
+    .sort((a, b) => {
+      if (Boolean(a.unmatched) !== Boolean(b.unmatched)) return a.unmatched ? 1 : -1;
+      return text(a.admission_date).localeCompare(text(b.admission_date));
+    });
 }
 
 function splitPatientByCode(patient, query) {
@@ -331,7 +367,10 @@ function splitPatientByCode(patient, query) {
       patient_code: code,
       patient_codes: [code],
       first_research_code: researchCodes[0] || (selectedCodes.length === 1 ? patient.first_research_code : ''),
-      encounter_count: codeEncounters.length,
+      encounter_count: codeEncounters.filter(enc => !enc.unmatched).length,
+      unassigned_count: codeEncounters.filter(enc => enc.unmatched).reduce((sum, enc) =>
+        sum + Number(enc.counts?.labs || 0) + Number(enc.counts?.imaging || 0)
+          + Number(enc.counts?.medications || 0) + Number(enc.counts?.surgeries || 0), 0),
       possible_same_patient_codes: false,
       merge_reason: '',
       integrity: { status: critical ? 'critical' : ambiguous ? 'ambiguous' : 'verified', critical, ambiguous },

@@ -61,6 +61,32 @@ function resultText(value) {
   return stripped && !/^[<>≤≥=\s.]+$/.test(stripped) ? String(value || '').trim() : '';
 }
 
+function normalizeUnitToken(value) {
+  return String(value || '').trim().toLowerCase().replace(/μ/g, 'µ').replace(/\s+/g, '');
+}
+
+function normalizeLabMeasurement(testNameNorm, resultNum, unitRaw) {
+  const n = Number(String(resultNum ?? '').replace(',', '.'));
+  const unitToken = normalizeUnitToken(unitRaw);
+  if (!Number.isFinite(n)) return { result_num_norm: '', unit_norm: '', unit_conversion_status: 'non_numeric' };
+  const same = unitNorm => ({ result_num_norm: String(Number(n.toFixed(6))), unit_norm: unitNorm, unit_conversion_status: 'same_unit' });
+  const converted = (value, unitNorm) => ({ result_num_norm: String(Number(value.toFixed(6))), unit_norm: unitNorm, unit_conversion_status: 'converted' });
+
+  if (testNameNorm === 'creatinine') {
+    if (unitToken === 'µmol/l' || unitToken === 'umol/l') return same('µmol/L');
+    if (unitToken === 'mg/dl') return converted(n * 88.4, 'µmol/L');
+  }
+  if (testNameNorm === 'glucose') {
+    if (unitToken === 'mmol/l') return same('mmol/L');
+    if (unitToken === 'mg/dl') return converted(n / 18, 'mmol/L');
+  }
+  if (testNameNorm === 'hemoglobin') {
+    if (unitToken === 'g/l') return same('g/L');
+    if (unitToken === 'g/dl') return converted(n * 10, 'g/L');
+  }
+  return { result_num_norm: '', unit_norm: '', unit_conversion_status: unitToken ? 'not_converted' : 'missing_unit' };
+}
+
 function normalizeFlag(value) {
   const s = normalizeSimple(value);
   if (!s) return '';
@@ -155,6 +181,7 @@ module.exports = {
   resultOperator,
   parseNumeric,
   resultText,
+  normalizeLabMeasurement,
   normalizeFlag,
   modalityFromService,
   bodyRegionFromService,

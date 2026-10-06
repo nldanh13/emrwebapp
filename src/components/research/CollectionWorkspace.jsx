@@ -1,7 +1,7 @@
 // Khu Thu thập dữ liệu (kho gốc và nghiên cứu riêng), xếp theo thứ tự làm việc:
 //   Bước 1  Quét danh sách người bệnh trên EMR (chỉ kho gốc)
 //   Bước 2  Thu thập dữ liệu chi tiết (Thu thập tự động: chỉ lấy phần mới/thiếu/lỗi/đã đổi)
-//   Bước 3  Theo dõi tiến độ từng phần
+//   Bước 3  Đánh giá dữ liệu (đủ / chính xác / việc cần làm)
 // Lần đầu của nghiên cứu (chưa có đợt chạy) dùng "Lấy dữ liệu lần đầu"; từ đó về sau chỉ một nút
 // chính là Thu thập tự động. Thao tác ít dùng (quét lại dữ liệu tạm thời, chạy hiện Chrome, log)
 // gom vào "Thao tác khác".
@@ -11,6 +11,7 @@ import { compactNumber } from './researchFormat.js';
 import { todayInputDate } from './researchScope.js';
 import { inp } from './researchUi.jsx';
 import { CollectionAutoPanel } from './CollectionAutoPanel.jsx';
+import EmrBridgeStatus from '../EmrBridgeStatus.jsx';
 import { ResearchOperationDashboard } from './ResearchMonitor.jsx';
 import * as api from '../../api.js';
 import { useServerData } from '../../hooks/useServerData.js';
@@ -157,6 +158,7 @@ export function CollectionWorkspace({
             ? 'Xét nghiệm, CĐHA, hồ sơ nền, ra viện, phẫu thuật, y lệnh. Chạy lại bao nhiêu lần cũng được: chỉ lấy phần còn thiếu.'
             : (isArchive ? 'Cần quét danh sách ở bước trên trước.' : 'Nghiên cứu chưa có danh sách mẫu.')}
         />
+        <EmrBridgeStatus />
         {firstCollect && (
           <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ flex: '1 1 300px', fontSize: FS.sm, color: C.text2 }}>
@@ -186,7 +188,7 @@ export function CollectionWorkspace({
 
       {hasRun && (
         <section>
-          <StepHeader number={++step} title="Theo dõi tiến độ" hint="Tự cập nhật khi đang chạy." />
+          <StepHeader number={++step} title="Đánh giá dữ liệu" hint="Đủ chưa, chính xác chưa và việc cần làm. Tự cập nhật khi số liệu đổi." />
           <ResearchOperationDashboard
             screen={screen}
             loading={screenQuery.refreshing}

@@ -1,30 +1,16 @@
 'use strict';
 
 // Tiến trình con chạy một lần Chuẩn hóa rồi thoát (xem normalize_runner.js).
+// Mọi đường archive/study/run đều đi qua normalize_safe để không có nhánh nào
+// quên repair raw PT hoặc bỏ qua kiểm tra integrity.
 process.on('message', (job) => {
   const finish = (payload) => process.send(payload, () => process.exit(0));
   try {
-    const normalize = require('./normalize');
-    const { repairRawSurgeryCsv } = require('./surgery_raw_repair');
+    const safe = require('./normalize_safe');
     let result;
-    if (job?.kind === 'archive') {
-      // Archive cũng phải repair raw surgery trước khi normalize; nếu không thì
-      // các run lịch sử có `Ngày phẫu thuật` chỉ chứa giờ sẽ tiếp tục bị rơi.
-      const archiveRunId = require('./run_registry').resolveArchiveRunId('latest');
-      if (!archiveRunId) throw new Error('Kho dữ liệu gốc chưa có run để chuẩn hóa.');
-      const runDir = require('path').join(require('./store_paths').archiveRunsDir(), archiveRunId);
-      const surgeryRepair = repairRawSurgeryCsv(runDir);
-      result = normalize.normalizeRunOutputs(runDir, { sourceRunId: archiveRunId });
-      if (result && typeof result === 'object') result.surgery_raw_repair = surgeryRepair;
-    } else if (job?.kind === 'study') result = normalize.normalizeStudyLatest(job.studyId);
-    else {
-      // Hành chánh đã lưu Raw JSON của màn hình phẫu thuật. Sửa các dòng legacy
-      // (đặc biệt trường hợp `bat_dau` chỉ có giờ, còn ngày nằm ở `thoi_gian`)
-      // trước khi normalize để không làm rơi ca phẫu thuật khỏi surgery_results.csv.
-      const surgeryRepair = repairRawSurgeryCsv(job.runDir);
-      result = normalize.normalizeRunOutputs(job.runDir, job.options || {});
-      if (result && typeof result === 'object') result.surgery_raw_repair = surgeryRepair;
-    }
+    if (job?.kind === 'archive') result = safe.normalizeArchiveLatestSafe();
+    else if (job?.kind === 'study') result = safe.normalizeStudyLatestSafe(job.studyId);
+    else result = safe.normalizeRunOutputsSafe(job.runDir, job.options || {});
     finish({ ok: true, result });
   } catch (err) {
     finish({ ok: false, error: String(err?.message || err), status: err?.status || 0 });

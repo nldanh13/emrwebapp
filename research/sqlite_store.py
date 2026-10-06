@@ -17,11 +17,31 @@ import os
 import re
 import sqlite3
 import sys
+import time
 import unicodedata
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 DB_SCHEMA_VERSION = 1
+
+
+def configure_csv_field_limit() -> int:
+    """Raise csv parser field limit to the largest value supported by this Python build.
+
+    Clinical notes/orders can legitimately contain very large cells. Never truncate
+    those values just to fit the csv module's small default (~128 KiB).
+    """
+    limit = sys.maxsize
+    while limit > 0:
+        try:
+            csv.field_size_limit(limit)
+            return limit
+        except OverflowError:
+            limit //= 10
+    raise RuntimeError("Không thể cấu hình giới hạn trường CSV.")
+
+
+CSV_FIELD_SIZE_LIMIT = configure_csv_field_limit()
 
 TEXT_HINTS = {
     "patient_code", "research_code", "encounter_id", "row_hash", "source_run_id",
@@ -310,13 +330,21 @@ def build_database(request: Dict[str, Any]) -> Dict[str, Any]:
         conn.commit()
         conn.execute("PRAGMA optimize")
         conn.close()
-        try:
-            os.replace(temp_path, database_path)
-        except PermissionError as exc:
+        replace_error = None
+        for attempt in range(6):
+            try:
+                os.replace(temp_path, database_path)
+                replace_error = None
+                break
+            except PermissionError as exc:
+                replace_error = exc
+                if attempt < 5:
+                    time.sleep(0.35 * (attempt + 1))
+        if replace_error is not None:
             raise RuntimeError(
-                "Không thể cập nhật research.sqlite3 vì file đang được chương trình khác mở. "
-                "Hãy đóng DB Browser/Excel/Python đang dùng file rồi chuẩn hóa lại."
-            ) from exc
+                "Không thể cập nhật research.sqlite3 sau 6 lần thử vì file đang bị khóa. "
+                "Hãy đóng DB Browser/Excel/Python hoặc tiến trình khác đang mở file rồi chuẩn hóa lại."
+            ) from replace_error
         try:
             os.chmod(database_path, 0o600)
             os.chmod(database_path.parent, 0o700)

@@ -1,0 +1,6 @@
+[Unit]
+Description=Sao lưu EMR Data Hub
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/emrwebapp/deploy/vps/backup.sh

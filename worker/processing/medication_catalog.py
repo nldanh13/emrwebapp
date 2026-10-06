@@ -55,6 +55,9 @@ def load_medication_catalog():
     return normalized
 
 
+_SOLVENT_TAIL = re.compile(r'\s*\+\s*(?:natri\s*cl?orid|natri\s*chlorid|sodium\s*chlorid|nacl|glucose|dextrose|pha\s*n[uư][oớ]c\s*c[aấ]t|n[uư][oớ]c\s*c[aấ]t).*$', re.IGNORECASE)
+
+
 def _drug_search_text(drug):
     """Chuỗi tìm thuốc trong catalog.
 
@@ -63,7 +66,10 @@ def _drug_search_text(drug):
     THERMODOL vì catalog có alias Paracetamol.
     """
     if isinstance(drug, dict):
-        parts = [drug.get('ten_thuoc'), drug.get('ten_hien_thi')]
+        # Tên hiển thị của thuốc pha truyền có đuôi "+ Natri clorid 0.9%" / "+ Pha nước cất" do bước
+        # xử lý thêm vào — không phải tên thuốc; để lại thì thuốc bị khớp nhầm mục Natri clorid.
+        display = _SOLVENT_TAIL.sub('', str(drug.get('ten_hien_thi') or ''))
+        parts = [drug.get('ten_thuoc'), display]
         return normalize_key(' '.join(str(x or '') for x in parts))
     return normalize_key(drug)
 
@@ -125,6 +131,196 @@ def lookup_medication_with_meta(drug_or_text, *, allow_semantic=True):
             'score': float(best.get('score') or 0),
         }
     return None, None
+
+
+from processing.solvents import rule_solvents as _rule_solvents
+
+# Dung môi chọn được trong Quy tắc pha — config/solvents.json (dùng chung máy chủ/giao diện).
+DILUTION_SOLVENT_TEXT = _rule_solvents()
+
+
+def _clean_variant(v):
+    if not isinstance(v, dict) or v.get('solvent') not in DILUTION_SOLVENT_TEXT:
+        return None
+    return {
+        'route': str(v.get('route') or '').strip().upper(),
+        'dose_min_mg': _valid_volume(v.get('dose_min_mg')),
+        'dose_max_mg': _valid_volume(v.get('dose_max_mg')),
+        'solvent': v.get('solvent'),
+        'volume_ml': _valid_volume(v.get('volume_ml')),
+        'rate': _valid_volume(v.get('rate')),
+        'note': str(v.get('note') or '').strip(),
+    }
+
+
+def _rule_from_med(med, matched_by):
+    rule = (med or {}).get('dilution')
+    if not isinstance(rule, dict) or rule.get('solvent') not in DILUTION_SOLVENT_TEXT:
+        return None
+    return {
+        'solvent': rule.get('solvent'),
+        'volume_ml': _valid_volume(rule.get('volume_ml')),
+        'apply': rule.get('apply') if rule.get('apply') in ('always', 'infusion_only') else 'always',
+        'rate': _valid_volume(rule.get('rate')),
+        'note': str(rule.get('note') or '').strip(),
+        'canonical': str(med.get('canonical') or ''),
+        'matched_by': matched_by,
+        'variants': [v for v in (_clean_variant(x) for x in (rule.get('variants') or [])) if v],
+    }
+
+
+def _variant_fit(variant, route, dose):
+    """'yes' (khớp chắc), 'maybe' (thiếu dữ kiện để biết), 'no' (trái điều kiện)."""
+    unknown = False
+    if variant['route']:
+        if not route:
+            unknown = True
+        elif route != variant['route']:
+            return 'no'
+    lo, hi = variant['dose_min_mg'], variant['dose_max_mg']
+    if lo is not None or hi is not None:
+        if dose is None:
+            unknown = True
+        elif (lo is not None and dose < lo) or (hi is not None and dose > hi):
+            return 'no'
+    return 'maybe' if unknown else 'yes'
+
+
+def _specificity(variant):
+    return int(bool(variant['route'])) + int(variant['dose_min_mg'] is not None or variant['dose_max_mg'] is not None)
+
+
+def resolve_dilution_for_drug(drug):
+    """Quy tắc pha cho MỘT dòng thuốc, xét các "cách pha" theo đường dùng/liều.
+
+    Trả về None (chưa có quy tắc) hoặc dict quy tắc đã chọn, thêm:
+      variant_label: cách pha được chọn ('' = cách mặc định),
+      can_xac_nhan: True khi không chắc (nhiều cách cùng khớp, hoặc y lệnh thiếu đường dùng/liều
+                    để chọn) — hệ thống KHÔNG đoán, dùng cách mặc định và đánh dấu để hỏi lại,
+      ly_do: câu tiếng Việt giải thích.
+    """
+    from processing.dose import dose_mg_per_administration
+    from processing.route_table import detect_route_code
+
+    rule = catalog_dilution_rule(drug)
+    if not rule:
+        return None
+    out = dict(rule)
+    out.update({'variant_label': '', 'can_xac_nhan': False, 'ly_do': ''})
+    variants = rule.get('variants') or []
+    if not variants:
+        return out
+    route = detect_route_code(str((drug or {}).get('duong_dung_goc') or '')) if isinstance(drug, dict) else ''
+    hours = len(re.findall(r'\d+\s*gi', str((drug or {}).get('gio_dung') or ''))) if isinstance(drug, dict) else 0
+    dose = None
+    if isinstance(drug, dict):
+        dose = drug.get('lieu_moi_lan_mg')
+        if dose is None:
+            dose = dose_mg_per_administration(drug, hours or None)
+    fits = [(v, _variant_fit(v, route, dose)) for v in variants]
+    sure = [v for v, f in fits if f == 'yes']
+    maybe = [v for v, f in fits if f == 'maybe']
+    if sure:
+        top = max(_specificity(v) for v in sure)
+        best = [v for v in sure if _specificity(v) == top]
+        chosen = best[0]
+        for key in ('solvent', 'volume_ml', 'rate', 'note'):
+            if chosen.get(key) not in (None, ''):
+                out[key] = chosen[key]
+        out['variant_label'] = variant_label(chosen)
+        if len({(v['solvent'], v['volume_ml']) for v in best}) > 1:
+            out['can_xac_nhan'] = True
+            out['ly_do'] = 'Có nhiều cách pha cùng khớp: ' + '; '.join(variant_label(v) for v in best) + '.'
+        return out
+    if maybe:
+        missing = []
+        if any(v['route'] for v in maybe) and not route:
+            missing.append('đường dùng')
+        if any(v['dose_min_mg'] is not None or v['dose_max_mg'] is not None for v in maybe) and dose is None:
+            missing.append('liều mỗi lần')
+        out['can_xac_nhan'] = True
+        out['ly_do'] = (f"Y lệnh không ghi rõ {' và '.join(missing) or 'điều kiện'} để chọn cách pha "
+                        f"({'; '.join(variant_label(v) for v in maybe)}); đang theo cách mặc định.")
+    return out
+
+
+def _fmt_num(n):
+    return str(int(n)) if float(n).is_integer() else str(n)
+
+
+def variant_label(v):
+    conds = []
+    if v.get('route'):
+        conds.append(v['route'])
+    lo, hi = v.get('dose_min_mg'), v.get('dose_max_mg')
+    if lo is not None and hi is not None:
+        conds.append(f"liều {_fmt_num(lo)}–{_fmt_num(hi)} mg")
+    elif lo is not None:
+        conds.append(f"liều ≥ {_fmt_num(lo)} mg")
+    elif hi is not None:
+        conds.append(f"liều ≤ {_fmt_num(hi)} mg")
+    what = DILUTION_SOLVENT_TEXT.get(v.get('solvent'), '')
+    if v.get('volume_ml'):
+        what += f" {_fmt_num(v['volume_ml'])} ml"
+    return f"{', '.join(conds) or 'mọi trường hợp'} → {what}".strip()
+
+
+def _single_ingredient(med):
+    items = [str(x or '').strip() for x in (med.get('active_ingredients') or []) if str(x or '').strip()]
+    if not items and med.get('active_ingredient'):
+        items = [str(med.get('active_ingredient')).strip()]
+    return items[0] if len(items) == 1 else ''
+
+
+def catalog_dilution_rule(drug_or_text):
+    """Quy tắc pha người dùng cài trong Danh mục thuốc (trường 'dilution').
+
+    Thứ tự khớp: tên chuẩn/tên khác (chính xác) → hoạt chất của thuốc chỉ có MỘT hoạt chất
+    (vd. quy tắc đặt cho VECMID, hoạt chất Vancomycin, cũng áp dụng cho "VANCOMYCIN KABI 1G").
+    Không đoán gần đúng: quy tắc pha quyết định thể tích dịch truyền, đoán sai tên thì hại hơn
+    không có. Trả về dict {solvent, volume_ml, apply, rate, note, canonical, matched_by} hoặc None.
+    """
+    try:
+        med, _meta = lookup_medication_with_meta(drug_or_text, allow_semantic=False)
+    except Exception:
+        return None
+    rule = _rule_from_med(med, 'ten')
+    if rule:
+        return rule
+    text = _drug_search_text(drug_or_text)
+    if isinstance(drug_or_text, dict):
+        text = normalize_key(f"{text} {drug_or_text.get('hoat_chat') or ''}")
+    if not text:
+        return None
+    for cand in load_medication_catalog():
+        if not isinstance(cand.get('dilution'), dict):
+            continue
+        ingredient = _single_ingredient(cand)
+        if ingredient and _catalog_alias_matches(text, ingredient, cand):
+            rule = _rule_from_med(cand, 'hoat_chat')
+            if rule:
+                return rule
+    return None
+
+
+def dilution_rule_text(rule):
+    """Câu ngắn cho báo cáo: "Pha Natri clorid 0.9% 100 ml (theo danh mục)"."""
+    if not rule:
+        return ''
+    solvent = rule.get('solvent')
+    if solvent == 'KHONG_PHA':
+        text = 'Không pha thêm'
+    else:
+        text = 'Pha ' + DILUTION_SOLVENT_TEXT.get(solvent, '')
+        vol = rule.get('volume_ml')
+        if vol:
+            text += f" {int(vol) if float(vol).is_integer() else vol} ml"
+        rate = rule.get('rate')
+        if rate:
+            text += f", {int(rate) if float(rate).is_integer() else rate} giọt/phút"
+    if rule.get('note'):
+        text += f" — {rule['note']}"
+    return text + ' (theo danh mục)'
 
 
 def lookup_medication(drug_or_text):
@@ -282,6 +478,28 @@ def _is_oral_solid_form(drug):
     return oral_form and not infusion_hint
 
 
+def presentations_of(med):
+    """Các quy cách (thể tích chai/túi + tốc độ) của một thuốc: quy cách mặc định + "quy_cach"."""
+    out = []
+    if _valid_volume((med or {}).get('default_volume_ml')):
+        out.append({'volume_ml': _valid_volume(med['default_volume_ml']), 'rate': str(med.get('default_rate') or '').strip()})
+    for p in (med or {}).get('quy_cach') or []:
+        vol = _valid_volume((p or {}).get('volume_ml'))
+        if vol and not any(x['volume_ml'] == vol for x in out):
+            out.append({'volume_ml': vol, 'rate': str((p or {}).get('rate') or '').strip()})
+    return out
+
+
+def presentation_rate(med, volume):
+    vol = _valid_volume(volume)
+    if not vol:
+        return ''
+    for p in presentations_of(med):
+        if p['volume_ml'] == vol and p['rate']:
+            return p['rate']
+    return ''
+
+
 def complete_medication_from_catalog(drug, *, only_if_missing_usage=True):
     """Điền các thông tin còn thiếu từ catalog nếu phù hợp.
 
@@ -319,11 +537,17 @@ def complete_medication_from_catalog(drug, *, only_if_missing_usage=True):
         out['duong_dung'] = out.get('duong_dung') or route
         out['duong_dung_goc'] = out.get('duong_dung_goc') or str(med.get('default_route_text') or route)
 
-    if med.get('default_rate') and not out.get('toc_do'):
-        out['toc_do'] = str(med.get('default_rate'))
     if med.get('default_volume_ml') and not out.get('the_tich'):
         out['the_tich'] = float(med.get('default_volume_ml'))
         out['tui_dich_truyen_ml'] = float(med.get('default_volume_ml'))
+        # Thể tích do Danh mục điền, KHÔNG phải y lệnh ghi (diluent_resolver ghi nguồn pha cho đúng).
+        out['the_tich_nguon'] = 'danh_muc'
+    if not out.get('toc_do'):
+        # Nhiều quy cách (vd. Natri clorid túi 100 ml / chai 500 ml): tốc độ theo đúng thể tích của dòng
+        # thuốc; không khớp quy cách nào thì tốc độ mặc định.
+        rate = presentation_rate(med, out.get('the_tich')) or med.get('default_rate')
+        if rate:
+            out['toc_do'] = str(rate)
     if med.get('default_diluent') and not out.get('dung_moi'):
         out['dung_moi'] = med.get('default_diluent')
     # Chỉ đổi tên hiển thị sang canonical khi chính tên thuốc gốc khớp canonical.
@@ -462,6 +686,12 @@ def sync_catalog_from_processed_records(records):
         for item in (thuoc.get('dich_truyen') or []):
             if not isinstance(item, dict):
                 continue
+            # Thuốc pha truyền (có dung môi): thể tích là thể tích PHA, thuộc về quy tắc pha chứ không
+            # phải "thể tích mặc định" của thuốc; tên hiển thị lại kèm "+ Natri clorid 0.9%" → trước
+            # đây sinh mục rác "X + Natri clorid 0.9%" trong danh mục. Thể tích tự suy (không từ EMR)
+            # cũng bỏ qua để không tự học lại chính giá trị mình đoán.
+            if item.get('dung_moi') or item.get('suy_luan_dung_moi') or item.get('nguon_pha'):
+                continue
             name = _extract_display_name(item)
             volume = _valid_volume(item.get('the_tich'))
             if not name or volume is None:
@@ -483,6 +713,12 @@ def sync_catalog_from_processed_records(records):
             medications.append(med)
             alias_index[key] = med
             added += 1
+            continue
+        # Người dùng đã sửa tay trên Danh mục thuốc → không tự đổi nữa.
+        if existing.get('sua_tay'):
+            continue
+        # Thể tích này là một quy cách đã khai báo (vd. Natri clorid chai 500 ml) → không đổi mặc định.
+        if any(p['volume_ml'] == volume for p in presentations_of(existing)):
             continue
         changed = False
         if existing.get('default_volume_ml') != volume:

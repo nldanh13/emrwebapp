@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "description": "KIẾN THỨC THUỐC SẴN CÓ (chỉ đọc; ứng dụng không ghi file này). Màn Danh mục thuốc hiện các mục này với nhãn \"Sẵn có\"; thuốc người dùng khai báo trong Danh mục thuốc (config/medication_catalog.json) luôn được ưu tiên hơn. Trước đây các danh sách này rải ở d_v2.json (mục 1, 3, 5, 6) và hằng số trong worker/xu_ly_config.py, diluent_resolver.py.",
+  "the_tich_mac_dinh": {
+    "__mo_ta": "Thể tích (ml) khi y lệnh không ghi. \"theo_ten\": khớp nguyên cụm trong tên thuốc (dấu _ = khoảng trắng), xét trước. \"theo_tu_khoa\": khớp từ khoá, xét sau.",
+    "theo_ten": {
+      "NATRI_CLORID_100": 100,
+      "SODIUM_CHLORIDE_500": 500,
+      "THERMODOL": 100,
+      "CIPROBID": 200,
+      "LINEZOLID": 300,
+      "AMINOPLASMAL": 500,
+      "NEPHROSTERIL": 250,
+      "ALBUNORM": 50,
+      "SODIUM CHLORIDE INJECTION": 500,
+      "NATRI CLORID 0,9%": 100
+    },
+    "theo_tu_khoa": {
+      "THERMODOL": 100,
+      "PARACETAMOL": 100,
+      "GLUCOSE": 500,
+      "RINGER": 500,
+      "CIPRO": 200,
+      "LEVO": 100,
+      "METRO": 100,
+      "AMINOLEBAN": 500
+    }
+  },
+  "luat_pha": {
+    "__mo_ta": "Thuốc phải pha dịch truyền khi y lệnh không ghi dung môi/thể tích (luật an toàn). TRAMADOL: ưu tiên tiêm bắp, chỉ pha khi y lệnh ghi truyền hoặc có túi Natri clorid rời cùng giờ.",
+    "theo_hoat_chat": [
+      {
+        "key": "NEFOPAM_AN_TOAN",
+        "hoat_chat": "NEFOPAM",
+        "dung_moi": "Natri Clorid 0.9%",
+        "the_tich_sau_pha_ml": 100
+      },
+      {
+        "key": "TRAMADOL_AN_TOAN",
+        "hoat_chat": "TRAMADOL",
+        "dung_moi": "Natri Clorid 0.9%",
+        "the_tich_sau_pha_ml": 100
+      },
+      {
+        "key": "VANCOMYCIN_AN_TOAN",
+        "hoat_chat": "VANCOMYCIN",
+        "dung_moi": "Natri Clorid 0.9%",
+        "the_tich_sau_pha_ml": 100,
+        "ghi_chu": "Vancomycin thường pha tiêm truyền; ưu tiên thể tích ghi trong y lệnh/dòng NaCl, mặc định 100ml nếu thiếu."
+      },
+      {
+        "key": "MEROVIA_AN_TOAN",
+        "hoat_chat": "MEROVIA",
+        "dung_moi": "Natri Clorid 0.9%",
+        "the_tich_sau_pha_ml": 100
+      },
+      {
+        "key": "PIPER_TAZO_AN_TOAN",
+        "hoat_chat": "PIPERACILLIN",
+        "dung_moi": "Natri Clorid 0.9%",
+        "the_tich_sau_pha_ml": 100
+      },
+      {
+        "key": "COLISTIMED_AN_TOAN",
+        "hoat_chat": "COLISTIMED",
+        "dung_moi": "Natri Clorid 0.9%",
+        "the_tich_sau_pha_ml": 50
+      }
+    ],
+    "the_tich_theo_tu_khoa": {
+      "MEROVIA": 100,
+      "PIPERACILLIN/TAZOBACTAM": 100,
+      "TAZOBACTAM": 100,
+      "VANCOMYCIN": 100,
+      "COLISTIMED": 50,
+      "COLISTIN": 50
+    }
+  },
+  "hoat_chat_theo_ten_thuong_mai": {
+    "__mo_ta": "Tên thương mại không chứa hoạt chất: thêm hoạt chất để nhận diện thuốc pha truyền (vd. VECMID là Vancomycin).",
+    "VECMID": "VANCOMYCIN",
+    "VECMID 1GM": "VANCOMYCIN"
+  },
+  "co_dung_moi_di_kem": {
+    "__mo_ta": "Thuốc có dung môi đi kèm: không ghi thêm \"+ Pha nước cất\".",
+    "tu_khoa": [
+      "METHYLPREDNISOLON",
+      "SOLU-MEDROL",
+      "SOLU MEDROL"
+    ]
+  },
+  "ten_hien_thi_chuan": {
+    "__mo_ta": "Tên hiển thị chuẩn ở bản xem trước Nhập dịch truyền. aliases: cách viết trong EMR, khớp NGUYÊN TỪ trên phần tên thuốc (trước dấu \"+\"); ham_luong_mac_dinh dùng khi tên không có hàm lượng. Danh mục thuốc có \"Tên hiển thị\" thì dùng tên đó trước.",
+    "nhom": [
+      {
+        "key": "NATRI_CLORID_100",
+        "ten": "Natri clorid 0,9%",
+        "ham_luong_mac_dinh": "100ml",
+        "aliases": [
+          "NATRI CLORID",
+          "NATRI CHLORID",
+          "NACL"
+        ]
+      },
+      {
+        "key": "SODIUM_CHLORIDE_500",
+        "ten": "Natri clorid 0,9%",
+        "ham_luong_mac_dinh": "500ml",
+        "aliases": [
+          "SODIUM CHLORIDE"
+        ]
+      },
+      {
+        "key": "NEFOPAM",
+        "ten": "Nefopam",
+        "ham_luong_mac_dinh": "",
+        "aliases": [
+          "NEFOPAM",
+          "NEFO",
+          "ACUPAN"
+        ]
+      },
+      {
+        "key": "TRAMADOL",
+        "ten": "Tramadol",
+        "ham_luong_mac_dinh": "",
+        "aliases": [
+          "TRAMADOL",
+          "TRAMA"
+        ]
+      },
+      {
+        "key": "PARACETAMOL",
+        "ten": "Paracetamol",
+        "ham_luong_mac_dinh": "10mg/ml",
+        "aliases": [
+          "PARACETAMOL",
+          "PHARBACOL",
+          "THERMODOL",
+          "EFFERALGAN",
+          "HAPACOL",
+          "KORIC"
+        ]
+      },
+      {
+        "key": "PARACETAMOL_TRAMADOL",
+        "ten": "Paracetamol + Tramadol",
+        "ham_luong_mac_dinh": "",
+        "aliases": [
+          "DEGEVIC",
+          "ULTRACET"
+        ]
+      },
+      {
+        "key": "METHYLPREDNISOLON",
+        "ten": "Methylprednisolon",
+        "ham_luong_mac_dinh": "",
+        "aliases": [
+          "METHYLPREDNISOLON",
+          "METHYLPREDNISOLONE",
+          "SOLU",
+          "MEDROL",
+          "MENISON"
+        ]
+      }
+    ]
+  }
+}

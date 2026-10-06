@@ -1,0 +1,163 @@
+# -*- coding: utf-8 -*-
+"""Quy tắc pha thuốc cài trong Danh mục thuốc (trường 'dilution') được bước xử lý dùng."""
+import json
+import os
+import sys
+
+import pytest
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+WORKER = os.path.join(ROOT, 'worker')
+if WORKER not in sys.path:
+    sys.path.insert(0, WORKER)
+
+
+@pytest.fixture
+def catalog(tmp_path, monkeypatch):
+    from processing import medication_catalog as mc
+
+    def use(meds):
+        path = tmp_path / 'medication_catalog.json'
+        path.write_text(json.dumps({'medications': meds}, ensure_ascii=False), encoding='utf-8')
+        monkeypatch.setattr(mc, 'MEDICATION_CATALOG_FILE', str(path))
+        mc.load_medication_catalog.cache_clear()
+
+    yield use
+    mc.load_medication_catalog.cache_clear()
+
+
+def _vial(name, active, route='Tiêm tĩnh mạch chậm (8 giờ)'):
+    return {
+        'ten_thuoc': name, 'hoat_chat': active, 'dang': 'Lọ', 'so_luong': '1',
+        'gio_dung': '8 giờ', 'duong_dung_goc': route,
+    }
+
+
+def test_rule_always_nacl_moves_vial_to_infusion_with_catalog_volume(catalog):
+    from processing.diluent_resolver import infer_and_reclassify_diluents
+    catalog([{'canonical': 'TAZOCIN', 'aliases': ['TAZOCIN 4.5G'],
+              'dilution': {'solvent': 'NACL_0.9', 'volume_ml': 250, 'apply': 'always'}}])
+
+    infusions, injections = infer_and_reclassify_diluents([], [_vial('TAZOCIN 4.5G', 'Abc')])
+    assert injections == []
+    assert len(infusions) == 1
+    out = infusions[0]
+    assert out['dung_moi'] == 'NACL_0.9'
+    assert float(out['the_tich']) == 250.0
+    assert 'Natri clorid 0.9% 250 ml' in out['quy_tac_pha']
+
+
+def test_rule_infusion_only_keeps_slow_iv_but_sets_volume_when_order_says_infusion(catalog):
+    from processing.diluent_resolver import infer_and_reclassify_diluents
+    catalog([{'canonical': 'THUOCX', 'dilution': {'solvent': 'NACL_0.9', 'volume_ml': 50, 'apply': 'infusion_only'}}])
+
+    infusions, injections = infer_and_reclassify_diluents([], [_vial('THUOCX 1G', 'Xyz')])
+    assert infusions == [] and len(injections) == 1
+
+    infusions, injections = infer_and_reclassify_diluents([], [_vial('THUOCX 1G', 'Xyz', 'Tiêm truyền TM (8 giờ)')])
+    assert injections == [] and float(infusions[0]['the_tich']) == 50.0
+
+
+def test_rule_khong_pha_overrides_built_in_vancomycin_rule(catalog):
+    from processing.diluent_resolver import infer_and_reclassify_diluents
+    from xu_ly_config import get_safety_nacl_volume
+    catalog([{'canonical': 'VANCOMYCIN', 'dilution': {'solvent': 'KHONG_PHA', 'apply': 'always'}}])
+
+    assert get_safety_nacl_volume('VANCOMYCIN 1G') is None
+    vanco = _vial('VANCOMYCIN 1G', 'Vancomycin', 'Tiêm truyền TM (8 giờ)')
+    infusions, injections = infer_and_reclassify_diluents([], [vanco])
+    out = (infusions + injections)[0]
+    assert not out.get('dung_moi')
+    assert 'Không pha thêm' in out['quy_tac_pha']
+
+
+def test_order_text_still_wins_over_catalog_rule(catalog):
+    from processing.diluent_resolver import infer_and_reclassify_diluents
+    catalog([{'canonical': 'TAZOCIN', 'dilution': {'solvent': 'NACL_0.9', 'volume_ml': 250, 'apply': 'always'}}])
+
+    drug = _vial('TAZOCIN 4.5G', 'Abc', 'Pha Natri clorid 0.9% lấy đủ 100ml truyền TM (8 giờ)')
+    drug['the_tich_lay_ml'] = 100
+    infusions, _ = infer_and_reclassify_diluents([], [drug])
+    assert float(infusions[0]['the_tich']) == 100.0
+
+
+def test_glucose_rule_is_note_only(catalog):
+    from processing.diluent_resolver import infer_and_reclassify_diluents
+    catalog([{'canonical': 'AMIODARON', 'dilution': {'solvent': 'GLUCOSE_5', 'volume_ml': 250, 'note': 'Không pha NaCl'}}])
+
+    infusions, injections = infer_and_reclassify_diluents([], [_vial('AMIODARON 150MG', 'Amiodaron')])
+    out = (infusions + injections)[0]
+    assert out.get('dung_moi') in (None, '')
+    assert out['quy_tac_pha'].startswith('Pha Glucose 5% 250 ml — Không pha NaCl')
+
+
+def test_no_rule_keeps_old_behavior(catalog):
+    from xu_ly_config import get_safety_nacl_volume
+    from processing.medication_catalog import catalog_dilution_rule
+    catalog([{'canonical': 'TAZOCIN'}])
+    assert catalog_dilution_rule('TAZOCIN 4.5G') is None
+    assert get_safety_nacl_volume('PARACETAMOL') is None
+
+
+def test_rule_matches_by_single_active_ingredient(catalog):
+    # Quy tắc đặt cho VECMID (hoạt chất Vancomycin) cũng áp dụng cho tên khác cùng hoạt chất.
+    from processing.medication_catalog import catalog_dilution_rule
+    catalog([{'canonical': 'VECMID', 'active_ingredients': ['Vancomycin'],
+              'dilution': {'solvent': 'NACL_0.9', 'volume_ml': 200, 'apply': 'always'}}])
+    rule = catalog_dilution_rule('VANCOMYCIN KABI 1G')
+    assert rule['volume_ml'] == 200 and rule['matched_by'] == 'hoat_chat' and rule['canonical'] == 'VECMID'
+
+
+def test_source_and_rate_are_recorded(catalog):
+    from processing.diluent_resolver import infer_and_reclassify_diluents
+    catalog([{'canonical': 'TAZOCIN', 'dilution': {'solvent': 'NACL_0.9', 'volume_ml': 250, 'rate': 40, 'apply': 'always'}}])
+    infusions, _ = infer_and_reclassify_diluents([], [_vial('TAZOCIN 4.5G', 'Abc')])
+    assert infusions[0]['nguon_pha'] == 'danh_muc'
+    assert infusions[0]['toc_do'] == '40' and infusions[0]['toc_do_nguon'] == 'danh_muc'
+
+    catalog([])
+    infusions, _ = infer_and_reclassify_diluents([], [_vial('MEROVIA 1G', 'Meropenem')])
+    assert infusions[0]['nguon_pha'] == 'luat_san_co'
+
+    drug = _vial('MEROVIA 1G', 'Meropenem', 'Pha Natri clorid 0.9% lấy đủ 50ml truyền TM (8 giờ)')
+    drug['the_tich_lay_ml'] = 50
+    infusions, _ = infer_and_reclassify_diluents([], [drug])
+    assert infusions[0]['nguon_pha'] == 'y_lenh'
+
+
+def test_check_script_uses_processing_functions(catalog, tmp_path):
+    import dilution_check
+    catalog([{'canonical': 'TAZOCIN', 'dilution': {'solvent': 'NACL_0.9', 'volume_ml': 250, 'apply': 'always'}}])
+    res = dilution_check.check_item({'ten_thuoc': 'TAZOCIN 4.5G', 'dang': 'Lọ', 'duong_dung_goc': 'Tiêm TMC'})
+    assert res['moved_to_infusion'] is True
+    assert res['the_tich'] == 250.0 and res['nguon_pha'] == 'danh_muc' and res['rule_source'] == 'danh_muc'
+    assert dilution_check.check_item({'ten_thuoc': ''})['error']
+
+    inp, out = tmp_path / 'in.json', tmp_path / 'out.json'
+    inp.write_text(json.dumps({'items': [], 'catalog_names': ['TAZOCIN', 'NEFOPAM 20MG']}), encoding='utf-8')
+    sys.argv = ['dilution_check.py', '--in', str(inp), '--out', str(out)]
+    assert dilution_check.main() == 0
+    data = json.loads(out.read_text(encoding='utf-8'))
+    assert data['catalog']['TAZOCIN']['source'] == 'danh_muc'
+    assert data['catalog']['NEFOPAM 20MG']['source'] == 'luat_san_co'
+    assert any(r['keyword'] == 'VANCOMYCIN' for r in data['builtin'])
+
+
+def test_solvent_suffix_in_display_name_does_not_match_nacl_entry(catalog):
+    # Lỗi thật: danh mục đặt NATRI CLORID 0,9% "Không pha" → Tazocin (tên hiển thị "… + Natri clorid 0.9%")
+    # bị ghi "Không pha thêm (theo danh mục)" vì phần tra cứu đọc cả đuôi dung môi.
+    from processing.diluent_resolver import infer_and_reclassify_diluents
+    catalog([{'canonical': 'NATRI CLORID 0,9%', 'aliases': ['NATRI CLORID 0,9%'], 'dilution': {'solvent': 'KHONG_PHA'}}])
+    infusions, _ = infer_and_reclassify_diluents([], [_vial('PIPERACILLIN/TAZOBACTAM 4,5G', 'Piperacillin + Tazobactam',
+                                                           'Tiêm truyền tĩnh mạch (8 giờ)')])
+    out = infusions[0]
+    assert out['dung_moi'] == 'NACL_0.9'
+    assert 'Không pha' not in str(out.get('quy_tac_pha') or '')
+
+
+def test_nacl_note_not_attached_to_drug_kept_as_injection(catalog):
+    from processing.diluent_resolver import infer_and_reclassify_diluents
+    catalog([{'canonical': 'NEFOPAM', 'dilution': {'solvent': 'NACL_0.9', 'volume_ml': 100, 'apply': 'always'}}])
+    _, injections = infer_and_reclassify_diluents([], [{'ten_thuoc': 'NEFOPAM 20MG/2ML', 'dang': 'Ống', 'so_luong': '1',
+                                                         'gio_dung': '8 giờ', 'duong_dung_goc': 'Tiêm bắp (8 giờ)'}])
+    assert injections and not injections[0].get('quy_tac_pha')

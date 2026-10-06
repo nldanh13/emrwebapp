@@ -161,6 +161,10 @@ async function handleCollectAccepted(req, res, studyIdParam = '') {
 
   try {
     const sc = scopeFromRequest(req, studyIdParam);
+    // Chế độ cầu nối (VPS): chưa nối tab EMR ở bệnh viện thì báo ngay, không chạy worker để rồi lỗi từng ca.
+    const bridgeBlocker = require('../services/emr_bridge').collectionBlocker();
+    if (bridgeBlocker) { res.status(409).json({ status: 'error', code: 'EMR_BRIDGE_OFFLINE', message: bridgeBlocker }); return true; }
+
     if (sc.error) return res.status(sc.status || 400).json({ status: 'error', message: sc.error });
     if (!sc.sourceRows.length) {
       return res.status(400).json({ status: 'error', message: 'Chưa có danh sách lượt điều trị (research_source.csv). Hãy quét danh sách hoặc nạp cohort trước.' });
