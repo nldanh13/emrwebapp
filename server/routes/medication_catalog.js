@@ -8,6 +8,10 @@
 // POST   /api/medication-catalog/assign-ingredient  → gắn một hoạt chất cho nhiều tên thuốc
 // POST   /api/medication-catalog/dilution-check  → quy tắc pha đang áp dụng + kiểm tra thử (chạy worker)
 // GET    /api/medication-catalog/dilution-stats → cách pha thực tế trong dữ liệu đã có (Kho nghiên cứu + phiên)
+// GET    /api/medication-catalog/cleanup   → xem trước việc dọn mục "X + Natri clorid 0.9%"
+// POST   /api/medication-catalog/cleanup   → dọn các mục được chọn (sao lưu danh mục trước)
+// GET    /api/medication-catalog/new-drugs    → thuốc có trong dữ liệu nhưng chưa có trong danh mục
+// POST   /api/medication-catalog/new-drugs/ignore → bỏ qua / hiện lại một thuốc trong danh sách đó
 // GET    /api/medication-catalog/builtin → kiến thức thuốc sẵn có (config/medication_builtin.json, chỉ đọc)
 // PATCH  /api/medication-catalog/:key     → sửa thuốc đã có (key = canonical)
 // DELETE /api/medication-catalog/:key     → xoá thuốc
@@ -25,6 +29,8 @@ const fs     = require('fs');
 const os     = require('os');
 const crypto = require('crypto');
 const { runScript, fmtPyError } = require('../services/python_runner');
+const { planCleanup, applyCleanup } = require('../services/catalog_cleanup');
+const { RUNTIME_ROOT } = require('../constants');
 const { resolveIngredientTargets } = require('../research/medication_ingredient_catalog');
 const { buildDrugNameInventory, assignIngredientToNames } = require('../research/drug_name_inventory');
 const { readCsvTable } = require('../research/table_io');
@@ -378,6 +384,104 @@ router.get('/medication-catalog/dilution-stats', async (req, res) => {
   }
 });
 
+// Thuốc mới chưa có trong danh mục: worker/catalog_gaps.py khớp bằng ĐÚNG hàm tra danh mục của bước xử
+// lý, trên dữ liệu phiên + y lệnh thuốc của Kho nghiên cứu. Lưu đệm theo thời điểm sửa của dữ liệu và
+// danh mục (thêm thuốc xong danh sách tự cập nhật). Danh sách "bỏ qua" lưu riêng, không đụng danh mục.
+const IGNORED_PATH = path.join(RUNTIME_ROOT, 'medication_new_ignored.json');
+const gapsInFlight = new Map();
+function ignoredKeys() {
+  const data = readJsonSafe(IGNORED_PATH, {}) || {};
+  return new Set(Array.isArray(data.keys) ? data.keys.map(String) : []);
+}
+
+async function computeNewDrugs(ctx) {
+  const runId = resolveArchiveRunId('latest');
+  const orders = runId ? path.join(archiveRunsDir(), runId, 'medication_orders.csv') : '';
+  const processed = ctx?.PROCESSED_PATH || '';
+  const key = [orders, fileSig(orders), processed, fileSig(processed), fileSig(CATALOG_PATH)].join('|');
+  const cacheFile = path.join(ctx.dir, 'new_drugs_cache.json');
+  const cached = readJsonSafe(cacheFile, null);
+  if (cached && cached.key === key) return cached.data;
+  if (gapsInFlight.has(key)) return gapsInFlight.get(key);
+  const job = (async () => {
+    const outFile = path.join(os.tmpdir(), `catalog_gaps_${crypto.randomBytes(6).toString('hex')}.json`);
+    try {
+      const args = ['--out', outFile];
+      if (processed && fs.existsSync(processed)) args.push('--processed', processed);
+      if (orders && fs.existsSync(orders)) args.push('--orders', orders);
+      const result = await runScript('catalog_gaps.py', args, { runtimeDir: ctx.dir });
+      if (result.code !== 0 || !fs.existsSync(outFile)) {
+        const err = new Error(fmtPyError('Không tìm được thuốc mới. Thử lại sau; nếu vẫn lỗi, khởi động lại máy chủ.', result));
+        err.status = 500;
+        throw err;
+      }
+      const data = { ...JSON.parse(fs.readFileSync(outFile, 'utf8')), computed_at: new Date().toISOString() };
+      try { writeJsonAtomic(cacheFile, { key, data }); } catch (_) { /* không ghi được đệm vẫn trả kết quả */ }
+      return data;
+    } finally {
+      try { fs.unlinkSync(outFile); } catch (_) { /* đã xoá */ }
+      gapsInFlight.delete(key);
+    }
+  })();
+  gapsInFlight.set(key, job);
+  return job;
+}
+
+router.get('/medication-catalog/new-drugs', async (req, res) => {
+  try {
+    const data = await computeNewDrugs(getRuntimePaths(req));
+    const ignored = ignoredKeys();
+    const drugs = (data.drugs || []).map(d => ({ ...d, ignored: ignored.has(d.key) }));
+    return res.json({ status: 'ok', drugs, pending: drugs.filter(d => !d.ignored).length, computed_at: data.computed_at });
+  } catch (e) {
+    return res.status(e.status || 500).json({ status: 'error', message: String(e.message) });
+  }
+});
+
+router.post('/medication-catalog/new-drugs/ignore', (req, res) => {
+  try {
+    const key = String(req.body?.key || '').trim().slice(0, 300);
+    if (!key) return res.status(400).json({ status: 'error', message: 'Thiếu tên thuốc cần bỏ qua.' });
+    const keys = ignoredKeys();
+    if (req.body?.ignore === false) keys.delete(key); else keys.add(key);
+    fs.mkdirSync(path.dirname(IGNORED_PATH), { recursive: true });
+    writeJsonAtomic(IGNORED_PATH, { keys: [...keys].sort() });
+    return res.json({ status: 'ok', ignored: req.body?.ignore !== false });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: `Không lưu được: ${String(e.message)}` });
+  }
+});
+
+router.get('/medication-catalog/cleanup', (req, res) => {
+  try {
+    return res.json({ status: 'ok', plan: planCleanup(loadCatalog().medications) });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: String(e.message) });
+  }
+});
+
+router.post('/medication-catalog/cleanup', (req, res) => {
+  try {
+    const ctx = getRuntimePaths(req);
+    const data = loadCatalog();
+    const plan = planCleanup(data.medications);
+    const keys = Array.isArray(req.body?.keys) ? req.body.keys.map(String) : plan.map(p => p.key);
+    if (!plan.length) return res.json({ status: 'ok', applied: [], backup: '' });
+    // Sao lưu nguyên danh mục trước khi sửa hàng loạt — dọn nhầm thì chép file này về.
+    const backupDir = path.join(RUNTIME_ROOT, 'backups');
+    fs.mkdirSync(backupDir, { recursive: true });
+    const backup = path.join(backupDir, `medication_catalog-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+    fs.copyFileSync(CATALOG_PATH, backup);
+    const { medications, applied } = applyCleanup(data.medications, plan, keys);
+    data.medications = medications;
+    saveCatalog(data);
+    appendActivity(ctx, { kind: 'medication_catalog.cleanup', applied: applied.length });
+    return res.json({ status: 'ok', applied, backup: path.relative(RUNTIME_ROOT, backup) });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: `Không dọn được danh mục: ${String(e.message)}` });
+  }
+});
+
 router.post('/medication-catalog/dilution-check', async (req, res) => {
   try {
     const ctx = getRuntimePaths(req);
@@ -438,6 +542,13 @@ router.patch('/medication-catalog/:key', (req, res) => {
       if (dilution) med.dilution = dilution; else delete med.dilution;
     }
 
+    if (body.dilution_suggestions !== undefined) {
+      const list = Array.isArray(body.dilution_suggestions) ? body.dilution_suggestions : [];
+      const kept = list.filter(x => x && typeof x === 'object' && DILUTION_SOLVENTS[x.solvent]).slice(0, 20)
+        .map(x => ({ solvent: x.solvent, ...(Number(x.volume_ml) > 0 ? { volume_ml: Number(x.volume_ml) } : {}),
+          ...(Number(x.rate) > 0 ? { rate: Number(x.rate) } : {}), ...(x.tu ? { tu: String(x.tu).slice(0, 200) } : {}) }));
+      if (kept.length) med.dilution_suggestions = kept; else delete med.dilution_suggestions;
+    }
     if (body.ten_hien_thi !== undefined) med.ten_hien_thi = String(body.ten_hien_thi || '').trim().slice(0, 200);
     if (body.co_dung_moi_di_kem !== undefined) {
       if (body.co_dung_moi_di_kem === true) med.co_dung_moi_di_kem = true; else delete med.co_dung_moi_di_kem;
@@ -474,4 +585,5 @@ module.exports.normalizeDilution = normalizeDilution;
 module.exports.cleanCheckItems = cleanCheckItems;
 module.exports.runDilutionCheck = runDilutionCheck;
 module.exports.computeDilutionStats = computeDilutionStats;
+module.exports.computeNewDrugs = computeNewDrugs;
 module.exports.DILUTION_SOLVENTS = DILUTION_SOLVENTS;
