@@ -228,9 +228,16 @@ function runWorker(cmd, args, opts = {}) {
 
 /** Chạy một script Python cụ thể trong worker/. */
 function runScript(scriptName, args = [], opts = {}) {
-  const scriptPath = path.join(WORKER_DIR, scriptName);
-  if (!fs.existsSync(scriptPath)) throw new Error(`Thiếu script: worker/${scriptName}`);
-  console.log(`>>> [NODE] Script: ${scriptName} ${argsForLog(args)}`);
+  // Mọi lời gọi hchanh_fetch đi qua entrypoint tương thích ngược. Entrypoint chỉ
+  // thay đổi hành vi trong Research hchanh_auto: không dùng marker y lệnh làm gate
+  // quyết định cho surgery. Các ngữ cảnh khác delegate nguyên trạng.
+  const researchSafeEntry = path.join(WORKER_DIR, 'hchanh_fetch_entry.py');
+  const effectiveScriptName = scriptName === 'hchanh_fetch.py' && fs.existsSync(researchSafeEntry)
+    ? 'hchanh_fetch_entry.py'
+    : scriptName;
+  const scriptPath = path.join(WORKER_DIR, effectiveScriptName);
+  if (!fs.existsSync(scriptPath)) throw new Error(`Thiếu script: worker/${effectiveScriptName}`);
+  console.log(`>>> [NODE] Script: ${effectiveScriptName} ${argsForLog(args)}`);
   return runPython(['-u', scriptPath, ...args], {
     timeoutMs: PY_TIMEOUT_MS,
     cwd:       opts.cwd,
