@@ -224,6 +224,34 @@ function buildQualityReport({
     });
   }
 
+  const imagingRowsForDuplicateReview = Array.isArray(tables.imaging_results) ? tables.imaging_results : [];
+  const imagingHashGroups = new Map();
+  for (const row of imagingRowsForDuplicateReview) {
+    const key = text(row.row_hash);
+    if (!key) continue;
+    if (!imagingHashGroups.has(key)) imagingHashGroups.set(key, []);
+    imagingHashGroups.get(key).push(row);
+  }
+  let possibleDuplicateImagingGroups = 0;
+  for (const group of imagingHashGroups.values()) {
+    if (group.length < 2) continue;
+    possibleDuplicateImagingGroups += 1;
+    const first = group[0];
+    addReview(
+      { encounter_id: first.encounter_id, research_code: first.research_code, patient_code: first.patient_code },
+      'possible_duplicate_imaging_rows',
+      `Có ${group.length} dòng CĐHA giống hệt sau chuẩn hóa. Hệ thống giữ tất cả để tránh mất lần khảo sát thật.`
+    );
+  }
+  if (possibleDuplicateImagingGroups) {
+    warnings.push({
+      code: 'possible_duplicate_imaging_rows',
+      message: `imaging_results: ${possibleDuplicateImagingGroups} nhóm dòng CĐHA giống hệt được giữ nguyên, không tự xóa.`,
+      table: 'imaging_results',
+      count: possibleDuplicateImagingGroups,
+    });
+  }
+
   // Cùng BN + cùng thời điểm + cùng chỉ số/dịch vụ phải là MỘT kết quả. Nếu các dòng
   // đó có kết quả khác nhau thì là dữ liệu mâu thuẫn: giữ tất cả, không tự chọn.
   const conflictSpecs = [
