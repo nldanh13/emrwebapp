@@ -35,3 +35,11 @@ def test_age_is_calculated_for_each_encounter_from_birth_and_admission_dates():
     src = (ROOT / "server" / "research" / "normalize.js").read_text(encoding="utf-8")
     assert "function ageAtEncounter" in src
     assert "ageAtEncounter(p.birth_date, enc.admission_date)" in src
+
+
+def test_patient_day_uses_only_in_encounter_rows_and_earliest_timed_lab():
+    src = (ROOT / "server" / "research" / "normalize.js").read_text(encoding="utf-8")
+    assert "row.encounter_match_status && row.encounter_match_status !== 'matched'" in src
+    assert "row.is_within_encounter === '0'" in src
+    assert "const timeKey = `_${col}_time`" in src
+    assert "newTime.localeCompare(oldTime) < 0" in src
