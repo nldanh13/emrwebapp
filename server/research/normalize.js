@@ -475,7 +475,15 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     base.imaging_id = `img_${base.row_hash || stableHash([idx, base.patient_code])}`;
     return base;
   });
-  const imagingResults = dedupeRowsByHash(imagingResultsAll);
+  // CĐHA cũng phải lossless như XN: hai lần chụp có thể có nội dung giống nhau.
+  // Không tự xóa chỉ vì nội dung chuẩn hóa trùng nhau; cấp ID riêng theo lần xuất hiện.
+  const imagingOccurrence = new Map();
+  const imagingResults = imagingResultsAll.map(row => {
+    const hash = String(row.row_hash || stableHash(row));
+    const occurrence = (imagingOccurrence.get(hash) || 0) + 1;
+    imagingOccurrence.set(hash, occurrence);
+    return { ...row, imaging_id: `img_${hash}_${occurrence}` };
+  });
 
   const diagnosisRows = [];
   for (const enc of finalEncounters) {
@@ -782,6 +790,58 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     return pd;
   }).sort((a, b) => `${a.patient_code}|${a.encounter_id}|${a.date}`.localeCompare(`${b.patient_code}|${b.encounter_id}|${b.date}`));
 
+  // Bản đầy đủ theo encounter để analysis_ready/final dataset không làm mất các lần kết quả.
+  const labResultsByEncounter = new Map();
+  for (const lab of labResults) {
+    if (!lab.encounter_id || lab.encounter_match_status !== 'matched' || lab.is_within_encounter === '0') continue;
+    const list = labResultsByEncounter.get(lab.encounter_id) || [];
+    list.push({
+      lab_datetime: lab.lab_datetime || '',
+      lab_date: lab.lab_date || '',
+      lab_order_id: lab.lab_order_id || '',
+      lab_group: lab.lab_group || '',
+      test_name_raw: lab.test_name_raw || '',
+      test_name_norm: lab.test_name_norm || '',
+      result_raw: lab.result_raw || '',
+      result_operator: lab.result_operator || '',
+      result_num: lab.result_num || '',
+      result_text: lab.result_text || '',
+      unit: lab.unit || '',
+      result_num_norm: lab.result_num_norm || '',
+      unit_norm: lab.unit_norm || '',
+      unit_conversion_status: lab.unit_conversion_status || '',
+      ref_range_raw: lab.ref_range_raw || '',
+      flag_raw: lab.flag_raw || '',
+      flag_norm: lab.flag_norm || '',
+    });
+    labResultsByEncounter.set(lab.encounter_id, list);
+  }
+
+  const imagingResultsByEncounter = new Map();
+  for (const img of imagingResults) {
+    if (!img.encounter_id || img.encounter_match_status !== 'matched' || img.is_within_encounter === '0') continue;
+    const list = imagingResultsByEncounter.get(img.encounter_id) || [];
+    list.push({
+      ordered_at: img.ordered_at || '',
+      order_date: img.order_date || '',
+      service_name_raw: img.service_name_raw || '',
+      modality: img.modality || '',
+      body_region: img.body_region || '',
+      result_text: img.result_text || '',
+      conclusion_text: img.conclusion_text || '',
+      status: img.status || '',
+    });
+    imagingResultsByEncounter.set(img.encounter_id, list);
+  }
+
+  const sortClinicalResults = rows => rows.sort((a, b) => {
+    const ta = String(a.lab_datetime || a.ordered_at || a.lab_date || a.order_date || '');
+    const tb = String(b.lab_datetime || b.ordered_at || b.lab_date || b.order_date || '');
+    return ta.localeCompare(tb);
+  });
+  for (const rows of labResultsByEncounter.values()) sortClinicalResults(rows);
+  for (const rows of imagingResultsByEncounter.values()) sortClinicalResults(rows);
+
   const firstLabByEncounter = new Map();
   for (const lab of labResults) {
     const col = pdLabMap[lab.test_name_norm];
@@ -864,7 +924,11 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       comorbidity_text: enc.comorbidity_text || '',
       complication_text: enc.complication_text || '',
       hb: labs.hb || '', hct: labs.hct || '', neutrophil: labs.neutrophil || '', lymphocyte: labs.lymphocyte || '', monocyte: labs.monocyte || '', rdw: labs.rdw || '', plt: labs.plt || '',
-      imaging_summary: (imagingTextByEncounter.get(enc.encounter_id) || '').slice(0, 1200),
+      lab_result_count: (labResultsByEncounter.get(enc.encounter_id) || []).length,
+      lab_results_json: JSON.stringify(labResultsByEncounter.get(enc.encounter_id) || []),
+      imaging_result_count: (imagingResultsByEncounter.get(enc.encounter_id) || []).length,
+      imaging_results_json: JSON.stringify(imagingResultsByEncounter.get(enc.encounter_id) || []),
+      imaging_summary: imagingTextByEncounter.get(enc.encounter_id) || '',
       needs_manual_review: reviewItems.join('; '),
       source_run_id: runId,
     };
