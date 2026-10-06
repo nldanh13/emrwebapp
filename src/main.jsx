@@ -5,6 +5,7 @@ import AppErrorBoundary from './components/AppErrorBoundary.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
 import DeviceGate from './components/DeviceGate.jsx';
 import WorkspaceRealtimeBridge from './components/WorkspaceRealtimeBridge.jsx';
+import EmrBridgePage from './components/EmrBridgePage.jsx';
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
 import { C, FONT_UI } from './tokens.js';
 import { Spinner } from './components/shared.jsx';
@@ -51,6 +52,9 @@ function AuthGate() {
     );
   }
   if (status === 'unauthenticated') return <LoginScreen />;
+  // Trang cầu nối EMR (máy bệnh viện, mở từ nút dấu trang trên tab EMR): chỉ chuyển trang EMR lên
+  // máy chủ, không xem dữ liệu kho → không cần thiết bị tin cậy, không mở các tab.
+  if (window.location.pathname === '/emr-bridge') return <EmrBridgePage />;
   return (
     <DeviceGate>
       <WorkspaceRealtimeBridge>

@@ -55,6 +55,8 @@ middleware.applySecurityHeaders(app);
 // payload lớn trong RAM.
 // Đăng nhập bằng tên + mật khẩu: trước bước kiểm tra mã truy cập (người dùng chưa có mã).
 app.use('/api', require('./server/routes/auth_login').router);
+// Cầu nối tab EMR: worker Python trong máy chủ xin trang EMR (tự kiểm tra nguồn + mã nội bộ).
+app.use('/api/emr-bridge/internal', require('./server/routes/emr_bridge').internalRouter);
 app.use('/api', middleware.requireAppToken);
 // Thiết bị tin cậy: kiểm chữ ký thiết bị (nếu có) → req.deviceTrusted.
 app.use('/api', require('./server/services/authz').attachDeviceTrust);
@@ -63,6 +65,7 @@ app.use('/api', require('./server/services/authz').requireTrustedDevice);
 // Chỉ các endpoint upload thực sự cần payload lớn. Các API khác bị giới hạn.
 app.use('/api/research/archive/source', express.json({ limit: process.env.EMR_RESEARCH_UPLOAD_LIMIT || '50mb' }));
 app.use('/api/hchanh/upload-discharge-pdf', express.json({ limit: process.env.EMR_DISCHARGE_PDF_UPLOAD_LIMIT || '45mb' }));
+app.use('/api/emr-bridge/result', express.json({ limit: process.env.EMR_BRIDGE_RESULT_LIMIT || '30mb' }));
 app.use('/api/clinic/preview', express.json({ limit: process.env.EMR_CLINIC_UPLOAD_LIMIT || '12mb' }));
 app.use('/api', express.json({ limit: process.env.EMR_JSON_BODY_LIMIT || '10mb' }));
 // Chuẩn hóa tên người bệnh ở một điểm chung trước khi mọi API trả JSON.

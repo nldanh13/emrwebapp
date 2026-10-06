@@ -95,6 +95,8 @@ function runPython(args, { cwd, timeoutMs, onSpawn, extraEnv = {}, runtimeDir } 
         D_V2_CONFIG_PATH:   dV2ConfigPath,
         WORKER_RUNTIME_DIR: runtimeDir || '',
         LOG_REDACT_SALT,
+        // Chế độ cầu nối tab EMR (VPS): worker xin trang EMR qua máy chủ thay vì vào EMR trực tiếp.
+        ...require('./emr_bridge').workerEnv(),
         ...extraEnv,
       },
     });

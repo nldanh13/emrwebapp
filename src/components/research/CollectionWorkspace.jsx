@@ -11,6 +11,7 @@ import { compactNumber } from './researchFormat.js';
 import { todayInputDate } from './researchScope.js';
 import { inp } from './researchUi.jsx';
 import { CollectionAutoPanel } from './CollectionAutoPanel.jsx';
+import EmrBridgeStatus from '../EmrBridgeStatus.jsx';
 import { ResearchOperationDashboard } from './ResearchMonitor.jsx';
 import * as api from '../../api.js';
 import { useServerData } from '../../hooks/useServerData.js';
@@ -157,6 +158,7 @@ export function CollectionWorkspace({
             ? 'Xét nghiệm, CĐHA, hồ sơ nền, ra viện, phẫu thuật, y lệnh. Chạy lại bao nhiêu lần cũng được: chỉ lấy phần còn thiếu.'
             : (isArchive ? 'Cần quét danh sách ở bước trên trước.' : 'Nghiên cứu chưa có danh sách mẫu.')}
         />
+        <EmrBridgeStatus />
         {firstCollect && (
           <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ flex: '1 1 300px', fontSize: FS.sm, color: C.text2 }}>
