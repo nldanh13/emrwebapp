@@ -34,6 +34,7 @@ const TABLES = {
   medication_orders: { label: 'Y lệnh thuốc', file: 'medication_orders.csv', root: 'run', normalized: true },
   medication_day_summary: { label: 'Thuốc theo ngày', file: 'medication_day_summary.csv', root: 'run', normalized: true },
   clinical_notes: { label: 'Diễn biến/Y lệnh', file: 'clinical_notes.csv', root: 'run', normalized: true },
+  clinical_events: { label: 'Sự kiện lâm sàng', file: 'clinical_events.csv', root: 'run', normalized: true },
   patient_day: { label: 'Patient-day', file: 'patient_day.csv', root: 'run', normalized: true },
   analysis_ready: { label: 'Bảng phân tích', file: 'analysis_ready.csv', root: 'run', normalized: true },
   analysis_selected: { label: 'Bảng biến đã chọn', file: 'analysis_selected.csv', root: 'run', normalized: true },
