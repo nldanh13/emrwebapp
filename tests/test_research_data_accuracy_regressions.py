@@ -43,3 +43,15 @@ def test_patient_day_uses_only_in_encounter_rows_and_earliest_timed_lab():
     assert "row.is_within_encounter === '0'" in src
     assert "const timeKey = `_${col}_time`" in src
     assert "newTime.localeCompare(oldTime) < 0" in src
+
+
+def test_variable_selection_excludes_explicitly_outside_or_unmatched_rows():
+    src = (ROOT / "server" / "research" / "variable_selection.js").read_text(encoding="utf-8")
+    assert "matchStatus && matchStatus !== 'matched'" in src
+    assert "is_within_encounter || '').trim() === '0'" in src
+
+
+def test_medication_day_summary_uses_only_matched_in_encounter_orders():
+    src = (ROOT / "server" / "research" / "normalize.js").read_text(encoding="utf-8")
+    assert "med.encounter_match_status !== 'matched'" in src
+    assert "med.is_within_encounter === '0'" in src
