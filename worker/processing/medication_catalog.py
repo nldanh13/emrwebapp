@@ -472,6 +472,28 @@ def _is_oral_solid_form(drug):
     return oral_form and not infusion_hint
 
 
+def presentations_of(med):
+    """Các quy cách (thể tích chai/túi + tốc độ) của một thuốc: quy cách mặc định + "quy_cach"."""
+    out = []
+    if _valid_volume((med or {}).get('default_volume_ml')):
+        out.append({'volume_ml': _valid_volume(med['default_volume_ml']), 'rate': str(med.get('default_rate') or '').strip()})
+    for p in (med or {}).get('quy_cach') or []:
+        vol = _valid_volume((p or {}).get('volume_ml'))
+        if vol and not any(x['volume_ml'] == vol for x in out):
+            out.append({'volume_ml': vol, 'rate': str((p or {}).get('rate') or '').strip()})
+    return out
+
+
+def presentation_rate(med, volume):
+    vol = _valid_volume(volume)
+    if not vol:
+        return ''
+    for p in presentations_of(med):
+        if p['volume_ml'] == vol and p['rate']:
+            return p['rate']
+    return ''
+
+
 def complete_medication_from_catalog(drug, *, only_if_missing_usage=True):
     """Điền các thông tin còn thiếu từ catalog nếu phù hợp.
 
@@ -509,13 +531,17 @@ def complete_medication_from_catalog(drug, *, only_if_missing_usage=True):
         out['duong_dung'] = out.get('duong_dung') or route
         out['duong_dung_goc'] = out.get('duong_dung_goc') or str(med.get('default_route_text') or route)
 
-    if med.get('default_rate') and not out.get('toc_do'):
-        out['toc_do'] = str(med.get('default_rate'))
     if med.get('default_volume_ml') and not out.get('the_tich'):
         out['the_tich'] = float(med.get('default_volume_ml'))
         out['tui_dich_truyen_ml'] = float(med.get('default_volume_ml'))
         # Thể tích do Danh mục điền, KHÔNG phải y lệnh ghi (diluent_resolver ghi nguồn pha cho đúng).
         out['the_tich_nguon'] = 'danh_muc'
+    if not out.get('toc_do'):
+        # Nhiều quy cách (vd. Natri clorid túi 100 ml / chai 500 ml): tốc độ theo đúng thể tích của dòng
+        # thuốc; không khớp quy cách nào thì tốc độ mặc định.
+        rate = presentation_rate(med, out.get('the_tich')) or med.get('default_rate')
+        if rate:
+            out['toc_do'] = str(rate)
     if med.get('default_diluent') and not out.get('dung_moi'):
         out['dung_moi'] = med.get('default_diluent')
     # Chỉ đổi tên hiển thị sang canonical khi chính tên thuốc gốc khớp canonical.
@@ -684,6 +710,9 @@ def sync_catalog_from_processed_records(records):
             continue
         # Người dùng đã sửa tay trên Danh mục thuốc → không tự đổi nữa.
         if existing.get('sua_tay'):
+            continue
+        # Thể tích này là một quy cách đã khai báo (vd. Natri clorid chai 500 ml) → không đổi mặc định.
+        if any(p['volume_ml'] == volume for p in presentations_of(existing)):
             continue
         changed = False
         if existing.get('default_volume_ml') != volume:

@@ -33,7 +33,7 @@ export function catalogIssues(item, all = []) {
   }
   const key = normKey(name);
   const twin = (all || []).find(o => o !== item && o?.canonical && normKey(o.canonical) === key);
-  if (twin) out.push(`Trùng với "${twin.canonical}" — gộp thành một thuốc (thêm tên vào "Tên khác").`);
+  if (twin) out.push(`Trùng với "${twin.canonical}" — gộp thành một thuốc: thêm tên vào "Tên khác", thể tích khác vào "Quy cách khác".`);
   return out;
 }
 

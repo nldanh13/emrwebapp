@@ -173,6 +173,37 @@ function normalizeVariant(v, n) {
   return out;
 }
 
+// Quy cách khác của cùng một thuốc (vd. Natri clorid túi 100 ml / chai 500 ml), mỗi quy cách một tốc độ.
+// Quy cách mặc định vẫn là default_volume_ml/default_rate. Bỏ dòng trống, bỏ trùng thể tích.
+function normalizePresentations(value, defaultVolume) {
+  if (value == null || value === '') return undefined;
+  if (!Array.isArray(value)) throw badRequest('Quy cách không hợp lệ.');
+  if (value.length > 10) throw badRequest('Tối đa 10 quy cách cho một thuốc.');
+  const seen = new Set(defaultVolume ? [Number(defaultVolume)] : []);
+  const out = [];
+  value.forEach((p, i) => {
+    const vol = Number(String(p?.volume_ml ?? '').replace(',', '.'));
+    if (!String(p?.volume_ml ?? '').trim()) return;
+    if (!Number.isFinite(vol) || vol <= 0 || vol > 5000) throw badRequest(`Quy cách ${i + 1}: thể tích phải là số ml từ 1 đến 5000.`);
+    if (seen.has(vol)) return;
+    seen.add(vol);
+    const row = { volume_ml: vol };
+    const rateRaw = String(p?.rate ?? '').trim();
+    if (rateRaw) {
+      const rate = Number(rateRaw.replace(',', '.'));
+      if (!Number.isFinite(rate) || rate <= 0 || rate > 300) throw badRequest(`Quy cách ${i + 1}: tốc độ phải là số giọt/phút từ 1 đến 300.`);
+      row.rate = String(rate);
+    }
+    out.push(row);
+  });
+  return out.length ? out : undefined;
+}
+
+function duplicateNameMessage(name) {
+  return `Đã có thuốc tên "${name}". Nếu chỉ khác thể tích (vd. Natri clorid 100 ml và 500 ml), mở thuốc đó và thêm `
+    + 'thể tích mới ở mục "Quy cách khác"; hoặc đặt tên kèm thể tích, vd. "' + name + ' 500ml".';
+}
+
 function pruneEmpty(med) {
   for (const k of Object.keys(med)) {
     const v = med[k];
@@ -254,7 +285,7 @@ router.post('/medication-catalog', (req, res) => {
 
     const data = loadCatalog();
     if (data.medications.some(m => keyOf(m).toLowerCase() === canonical.toLowerCase())) {
-      return res.status(409).json({ status: 'error', message: `Đã có thuốc với tên chuẩn "${canonical}".` });
+      return res.status(409).json({ status: 'error', message: duplicateNameMessage(canonical) });
     }
 
     const volumeRaw = body.default_volume_ml;
@@ -275,6 +306,7 @@ router.post('/medication-catalog', (req, res) => {
       dilution: normalizeDilution(body.dilution),
       ten_hien_thi: String(body.ten_hien_thi || '').trim().slice(0, 200),
       co_dung_moi_di_kem: body.co_dung_moi_di_kem === true ? true : undefined,
+      quy_cach: normalizePresentations(body.quy_cach, volumeNum),
       // Sửa/thêm tay → bước tự học từ dữ liệu (sync_catalog_from_processed_records) không ghi đè.
       sua_tay: true,
     });
@@ -513,7 +545,7 @@ router.patch('/medication-catalog/:key', (req, res) => {
       const nextCanonical = String(body.canonical || '').trim();
       if (!nextCanonical) return res.status(400).json({ status: 'error', message: 'Tên chuẩn không được để trống.' });
       const clashes = data.medications.some((m, i) => i !== idx && keyOf(m).toLowerCase() === nextCanonical.toLowerCase());
-      if (clashes) return res.status(409).json({ status: 'error', message: `Đã có thuốc với tên chuẩn "${nextCanonical}".` });
+      if (clashes) return res.status(409).json({ status: 'error', message: duplicateNameMessage(nextCanonical) });
       med.canonical = nextCanonical;
     }
     if (body.active_ingredients !== undefined || body.active_ingredient !== undefined) {
@@ -542,6 +574,10 @@ router.patch('/medication-catalog/:key', (req, res) => {
       if (dilution) med.dilution = dilution; else delete med.dilution;
     }
 
+    if (body.quy_cach !== undefined) {
+      const list = normalizePresentations(body.quy_cach, med.default_volume_ml);
+      if (list) med.quy_cach = list; else delete med.quy_cach;
+    }
     if (body.dilution_suggestions !== undefined) {
       const list = Array.isArray(body.dilution_suggestions) ? body.dilution_suggestions : [];
       const kept = list.filter(x => x && typeof x === 'object' && DILUTION_SOLVENTS[x.solvent]).slice(0, 20)
@@ -586,4 +622,5 @@ module.exports.cleanCheckItems = cleanCheckItems;
 module.exports.runDilutionCheck = runDilutionCheck;
 module.exports.computeDilutionStats = computeDilutionStats;
 module.exports.computeNewDrugs = computeNewDrugs;
+module.exports.normalizePresentations = normalizePresentations;
 module.exports.DILUTION_SOLVENTS = DILUTION_SOLVENTS;
