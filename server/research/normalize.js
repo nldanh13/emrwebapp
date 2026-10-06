@@ -31,6 +31,23 @@ const { buildSelectedAnalysisForRun, sanitizeVariableSelection, activeVariableSe
 const { ROOT_DIR } = require('../constants');
 const { resolveArchiveRunId, resolveRunId, readArchive, archiveTablePath, rowPassesDateFilter, updateStudy } = require('./run_registry');
 
+function provenanceFromRaw(row, sourceFile, { derived = false } = {}) {
+  const kho = firstNonEmpty(row, ['Nguồn kho', 'Nguon kho']);
+  const source = firstNonEmpty(row, ['Nguồn', 'source']);
+  const combined = `${kho} ${source}`.toLowerCase();
+  let sourceType = derived ? 'derived_parser' : 'emr_direct';
+  let sourceQuality = derived ? 'derived' : 'original';
+  if (kho) {
+    sourceType = 'patient_db';
+    sourceQuality = combined.includes('tam_thoi') ? 'provisional' : 'original';
+  }
+  return {
+    source_type: sourceType,
+    source_quality: sourceQuality,
+    source_file: sourceFile || '',
+  };
+}
+
 function ageAtEncounter(birthDate, admissionDate) {
   const birth = parseAnyDate(birthDate);
   const admission = parseAnyDate(admissionDate);
@@ -414,6 +431,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       flag_norm: normalizeFlag(firstNonEmpty(row, ['Bất thường', 'Bat thuong', 'flag'])),
       ...eventTemporalFields(ctx, rawTime),
       source_run_id: runId,
+      ...provenanceFromRaw(row, 'lich_su_xn.csv'),
     };
     base.row_hash = stableHash(base);
     base.lab_result_id = `lab_${base.row_hash || stableHash([idx, base.patient_code])}`;
@@ -451,6 +469,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       status: firstNonEmpty(row, ['Trạng thái', 'Trang thai']),
       ...eventTemporalFields(ctx, rawTime),
       source_run_id: runId,
+      ...provenanceFromRaw(row, 'lich_su_cdha.csv'),
     };
     base.row_hash = stableHash(base);
     base.imaging_id = `img_${base.row_hash || stableHash([idx, base.patient_code])}`;
@@ -514,6 +533,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       ...eventTemporalFields(ctx, dt),
       source: firstNonEmpty(row, ['Nguồn', 'source']) || 'surgery_raw',
       source_run_id: runId,
+      ...provenanceFromRaw(row, 'surgery_raw'),
     };
     base.row_hash = stableHash(base);
     base.surgery_id = `surg_${base.row_hash || stableHash([idx, base.patient_code])}`;
@@ -578,6 +598,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       ...eventTemporalFields(ctx, rawTime),
       source: firstNonEmpty(row, ['source', 'Nguồn']) || 'hchanh_order_history',
       source_run_id: runId,
+      ...provenanceFromRaw(row, 'hchanh_order_history.csv'),
     };
     base.row_hash = stableHash(base);
     base.med_order_id = `med_${base.row_hash || stableHash([idx, base.patient_code])}`;
@@ -640,6 +661,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       ...eventTemporalFields(ctx, rawTime),
       source: firstNonEmpty(row, ['Nguồn', 'source']) || 'hchanh_order_history',
       source_run_id: runId,
+      ...provenanceFromRaw(row, 'hchanh_order_history.csv'),
     };
     base.row_hash = stableHash(base);
     base.note_id = `note_${base.row_hash || stableHash([idx, base.patient_code])}`;
@@ -675,6 +697,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
         ...eventTemporalFields(ctx, rawTime),
         source: firstNonEmpty(row, ['Nguồn', 'source']) || 'hchanh_order_history',
         source_run_id: runId,
+        ...provenanceFromRaw(row, 'hchanh_order_history.csv', { derived: true }),
       };
       base.row_hash = stableHash(base);
       base.clinical_event_id = `ce_${base.row_hash}`;
