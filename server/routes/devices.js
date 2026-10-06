@@ -19,6 +19,7 @@ router.get('/devices/me', (req, res) => {
     local_only: req.auth?.auth_type === 'local_only',
     device: req.device || (req.get('x-device-id') ? td.getDevice(req.get('x-device-id')) : null),
     any_trusted: td.hasTrustedDevice(),
+    require_trusted: require('../services/authz').trustedDeviceRequired(),
   });
 });
 

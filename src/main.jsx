@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App.jsx';
 import AppErrorBoundary from './components/AppErrorBoundary.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
+import DeviceGate from './components/DeviceGate.jsx';
 import WorkspaceRealtimeBridge from './components/WorkspaceRealtimeBridge.jsx';
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
 import { C, FONT_UI } from './tokens.js';
@@ -51,9 +52,11 @@ function AuthGate() {
   }
   if (status === 'unauthenticated') return <LoginScreen />;
   return (
-    <WorkspaceRealtimeBridge>
-      <RouteModelGate><App /></RouteModelGate>
-    </WorkspaceRealtimeBridge>
+    <DeviceGate>
+      <WorkspaceRealtimeBridge>
+        <RouteModelGate><App /></RouteModelGate>
+      </WorkspaceRealtimeBridge>
+    </DeviceGate>
   );
 }
 

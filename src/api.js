@@ -230,6 +230,10 @@ async function fetchWithAuth(url, options = {}, retryAuth = true, details = null
     if (details) logActivity('api.auth.required', { ...details, status: res.status });
     reportAuthRequired();
   }
+  // Thiết bị bị thu hồi giữa phiên (hoặc chưa tin cậy): chuyển sang trang đăng ký thiết bị.
+  if (res.status === 403 && res.headers?.get?.('x-device-required') === '1' && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('emr:device-untrusted'));
+  }
   return res;
 }
 

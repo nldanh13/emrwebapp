@@ -28,7 +28,7 @@ function Badge({ status }) {
   return <span style={{ fontSize: FS.xs, fontWeight: 700, color, background: bg, borderRadius: 4, padding: '1px 7px' }}>{label}</span>;
 }
 
-export default function DeviceTrustPanel({ isAdmin = false, toast }) {
+export default function DeviceTrustPanel({ isAdmin = false, toast, onTrusted }) {
   const [me, setMe] = useState(null);
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -77,6 +77,7 @@ export default function DeviceTrustPanel({ isAdmin = false, toast }) {
     await api.approveDevice(me.localId, code.trim());
     api.rememberAuthOnTrustedDevice(true);
     setCode('');
+    onTrusted?.();
   }, 'Thiết bị này đã tin cậy. Lần sau mở lại không phải đăng nhập.');
 
   if (loading) return <div role="status" aria-busy="true" aria-label="Đang tải thiết bị tin cậy" style={{ padding: 12 }}><SkeletonLines lines={3} /></div>;
