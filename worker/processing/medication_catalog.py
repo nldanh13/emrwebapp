@@ -133,6 +133,20 @@ from processing.solvents import rule_solvents as _rule_solvents
 DILUTION_SOLVENT_TEXT = _rule_solvents()
 
 
+def _clean_variant(v):
+    if not isinstance(v, dict) or v.get('solvent') not in DILUTION_SOLVENT_TEXT:
+        return None
+    return {
+        'route': str(v.get('route') or '').strip().upper(),
+        'dose_min_mg': _valid_volume(v.get('dose_min_mg')),
+        'dose_max_mg': _valid_volume(v.get('dose_max_mg')),
+        'solvent': v.get('solvent'),
+        'volume_ml': _valid_volume(v.get('volume_ml')),
+        'rate': _valid_volume(v.get('rate')),
+        'note': str(v.get('note') or '').strip(),
+    }
+
+
 def _rule_from_med(med, matched_by):
     rule = (med or {}).get('dilution')
     if not isinstance(rule, dict) or rule.get('solvent') not in DILUTION_SOLVENT_TEXT:
@@ -145,7 +159,104 @@ def _rule_from_med(med, matched_by):
         'note': str(rule.get('note') or '').strip(),
         'canonical': str(med.get('canonical') or ''),
         'matched_by': matched_by,
+        'variants': [v for v in (_clean_variant(x) for x in (rule.get('variants') or [])) if v],
     }
+
+
+def _variant_fit(variant, route, dose):
+    """'yes' (khớp chắc), 'maybe' (thiếu dữ kiện để biết), 'no' (trái điều kiện)."""
+    unknown = False
+    if variant['route']:
+        if not route:
+            unknown = True
+        elif route != variant['route']:
+            return 'no'
+    lo, hi = variant['dose_min_mg'], variant['dose_max_mg']
+    if lo is not None or hi is not None:
+        if dose is None:
+            unknown = True
+        elif (lo is not None and dose < lo) or (hi is not None and dose > hi):
+            return 'no'
+    return 'maybe' if unknown else 'yes'
+
+
+def _specificity(variant):
+    return int(bool(variant['route'])) + int(variant['dose_min_mg'] is not None or variant['dose_max_mg'] is not None)
+
+
+def resolve_dilution_for_drug(drug):
+    """Quy tắc pha cho MỘT dòng thuốc, xét các "cách pha" theo đường dùng/liều.
+
+    Trả về None (chưa có quy tắc) hoặc dict quy tắc đã chọn, thêm:
+      variant_label: cách pha được chọn ('' = cách mặc định),
+      can_xac_nhan: True khi không chắc (nhiều cách cùng khớp, hoặc y lệnh thiếu đường dùng/liều
+                    để chọn) — hệ thống KHÔNG đoán, dùng cách mặc định và đánh dấu để hỏi lại,
+      ly_do: câu tiếng Việt giải thích.
+    """
+    from processing.dose import dose_mg_per_administration
+    from processing.route_table import detect_route_code
+
+    rule = catalog_dilution_rule(drug)
+    if not rule:
+        return None
+    out = dict(rule)
+    out.update({'variant_label': '', 'can_xac_nhan': False, 'ly_do': ''})
+    variants = rule.get('variants') or []
+    if not variants:
+        return out
+    route = detect_route_code(str((drug or {}).get('duong_dung_goc') or '')) if isinstance(drug, dict) else ''
+    hours = len(re.findall(r'\d+\s*gi', str((drug or {}).get('gio_dung') or ''))) if isinstance(drug, dict) else 0
+    dose = None
+    if isinstance(drug, dict):
+        dose = drug.get('lieu_moi_lan_mg')
+        if dose is None:
+            dose = dose_mg_per_administration(drug, hours or None)
+    fits = [(v, _variant_fit(v, route, dose)) for v in variants]
+    sure = [v for v, f in fits if f == 'yes']
+    maybe = [v for v, f in fits if f == 'maybe']
+    if sure:
+        top = max(_specificity(v) for v in sure)
+        best = [v for v in sure if _specificity(v) == top]
+        chosen = best[0]
+        for key in ('solvent', 'volume_ml', 'rate', 'note'):
+            if chosen.get(key) not in (None, ''):
+                out[key] = chosen[key]
+        out['variant_label'] = variant_label(chosen)
+        if len({(v['solvent'], v['volume_ml']) for v in best}) > 1:
+            out['can_xac_nhan'] = True
+            out['ly_do'] = 'Có nhiều cách pha cùng khớp: ' + '; '.join(variant_label(v) for v in best) + '.'
+        return out
+    if maybe:
+        missing = []
+        if any(v['route'] for v in maybe) and not route:
+            missing.append('đường dùng')
+        if any(v['dose_min_mg'] is not None or v['dose_max_mg'] is not None for v in maybe) and dose is None:
+            missing.append('liều mỗi lần')
+        out['can_xac_nhan'] = True
+        out['ly_do'] = (f"Y lệnh không ghi rõ {' và '.join(missing) or 'điều kiện'} để chọn cách pha "
+                        f"({'; '.join(variant_label(v) for v in maybe)}); đang theo cách mặc định.")
+    return out
+
+
+def _fmt_num(n):
+    return str(int(n)) if float(n).is_integer() else str(n)
+
+
+def variant_label(v):
+    conds = []
+    if v.get('route'):
+        conds.append(v['route'])
+    lo, hi = v.get('dose_min_mg'), v.get('dose_max_mg')
+    if lo is not None and hi is not None:
+        conds.append(f"liều {_fmt_num(lo)}–{_fmt_num(hi)} mg")
+    elif lo is not None:
+        conds.append(f"liều ≥ {_fmt_num(lo)} mg")
+    elif hi is not None:
+        conds.append(f"liều ≤ {_fmt_num(hi)} mg")
+    what = DILUTION_SOLVENT_TEXT.get(v.get('solvent'), '')
+    if v.get('volume_ml'):
+        what += f" {_fmt_num(v['volume_ml'])} ml"
+    return f"{', '.join(conds) or 'mọi trường hợp'} → {what}".strip()
 
 
 def _single_ingredient(med):
@@ -403,6 +514,8 @@ def complete_medication_from_catalog(drug, *, only_if_missing_usage=True):
     if med.get('default_volume_ml') and not out.get('the_tich'):
         out['the_tich'] = float(med.get('default_volume_ml'))
         out['tui_dich_truyen_ml'] = float(med.get('default_volume_ml'))
+        # Thể tích do Danh mục điền, KHÔNG phải y lệnh ghi (diluent_resolver ghi nguồn pha cho đúng).
+        out['the_tich_nguon'] = 'danh_muc'
     if med.get('default_diluent') and not out.get('dung_moi'):
         out['dung_moi'] = med.get('default_diluent')
     # Chỉ đổi tên hiển thị sang canonical khi chính tên thuốc gốc khớp canonical.

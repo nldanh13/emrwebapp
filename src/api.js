@@ -957,6 +957,7 @@ export const updateMedicationCatalog = (key, body)  => patch(`/api/medication-ca
 export const deleteMedicationCatalog = (key)         => del(`/api/medication-catalog/${encodeURIComponent(key)}`);
 export const checkMedicationDilution = (body)       => post('/api/medication-catalog/dilution-check', body);
 export const getMedicationBuiltin    = ()           => get('/api/medication-catalog/builtin');
+export const getDilutionStats       = (refresh = false) => get(`/api/medication-catalog/dilution-stats${refresh ? '?refresh=1' : ''}`);
 export const getArchiveDrugNames      = ()           => get('/api/medication-catalog/archive-drug-names');
 export const assignMedicationIngredient = (body)      => post('/api/medication-catalog/assign-ingredient', body);
 

@@ -70,3 +70,14 @@ def test_pdf_renders_long_names_and_shared_columns(tmp_path):
     render_pdf(cards, str(out), 0, 23, f"{DATE} 17:13", DATE)
     data = out.read_bytes()
     assert data.startswith(b"%PDF")
+
+
+def test_uncertain_mix_is_printed_as_flag():
+    cards = build_cards_from_rows([
+        row(drugName="VANCOMYCIN + Natri clorid 0.9%", route="TTM", unit="lọ", time="08:00",
+            confirmMix="Y lệnh không ghi rõ liều mỗi lần."),
+        row(drugName="MEROVIA 1G", route="TTM", unit="lọ", time="08:00"),
+    ], report_date=DATE)
+    flags = {r["name"]: r["flags"] for r in cards[0]["rows"]}
+    assert "xác nhận cách pha" in flags["VANCOMYCIN + Natri clorid 0.9%"]
+    assert "xác nhận cách pha" not in flags["MEROVIA 1G"]

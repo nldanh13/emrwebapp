@@ -78,6 +78,7 @@ function MedLine({ row }) {
         {row.timeGuess && <span style={{ color: C.amber, fontSize: FS.xs }}> · giờ theo chữ "{row.timeGuess}" trong y lệnh</span>}
         {row.duplicateOf && <span style={{ color: C.amber, fontSize: FS.xs, fontWeight: 600 }}> · đã có cữ {row.duplicateOf} — có thể trùng, hỏi lại</span>}
         {row.possibleDuplicate && <span style={{ color: C.red, fontSize: FS.xs, fontWeight: 600 }}> · cùng hoạt chất cùng giờ — kiểm tra trùng y lệnh</span>}
+        {row.confirmMix && <span title={row.confirmMix} style={{ color: C.amber, fontSize: FS.xs, fontWeight: 600 }}> · cần xác nhận cách pha</span>}
       </span>
       <span className="emr-med-line__route"><RouteBadge route={row.route} /></span>
     </div>

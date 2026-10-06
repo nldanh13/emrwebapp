@@ -16,8 +16,9 @@ import DrugNameIngredientPanel from './DrugNameIngredientPanel.jsx';
 import { RouteBadge } from './report/ReportShared.jsx';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
 import { SkeletonBlock, SkeletonTable } from './Skeleton.jsx';
-import { DILUTION_APPLY, DILUTION_SOLVENTS, dilutionForm, dilutionFromForm, dilutionSummary } from '../utils/dilutionRule.js';
+import { DILUTION_APPLY, DILUTION_SOLVENTS, dilutionForm, dilutionFromForm, dilutionSummary, emptyVariant } from '../utils/dilutionRule.js';
 import DilutionCheckPanel from './DilutionCheckPanel.jsx';
+import DilutionStatsPanel from './DilutionStatsPanel.jsx';
 import MedicationBuiltinPanel from './MedicationBuiltinPanel.jsx';
 import { fillEmptyFields } from '../utils/medicationBuiltin.js';
 
@@ -112,12 +113,53 @@ function RoutePicker({ routes, value, onChange }) {
 
 // Quy tắc pha: bước xử lý dữ liệu dựa vào khi y lệnh không ghi rõ dung môi/thể tích.
 // Y lệnh ghi rõ (vd. "pha NaCl 0.9% lấy đủ 50ml") vẫn thắng quy tắc này.
-function DilutionFields({ form, set, setForm, effective }) {
+// Nhiều cách pha theo điều kiện: đường dùng và/hoặc liều mỗi lần (mg). Worker chọn cách khớp y lệnh;
+// nhiều cách cùng khớp hoặc y lệnh thiếu dữ kiện → "cần xác nhận cách pha" trên báo cáo (không đoán).
+function VariantRows({ form, setForm, routes }) {
+  const rows = form.dilution_variants || [];
+  const update = (i, key, value) => setForm(prev => ({
+    ...prev, dilution_variants: prev.dilution_variants.map((r, j) => (j === i ? { ...r, [key]: value } : r)),
+  }));
+  const remove = i => setForm(prev => ({ ...prev, dilution_variants: prev.dilution_variants.filter((_, j) => j !== i) }));
+  const add = () => setForm(prev => ({ ...prev, dilution_variants: [...(prev.dilution_variants || []), emptyVariant()] }));
+  const small = { ...INPUT_STYLE, padding: '4px 6px', fontSize: FS.sm };
+  return (
+    <div style={{ display: 'grid', gap: 6 }}>
+      <div style={{ fontSize: FS.xs, color: C.text2 }}>
+        <b>Cách pha theo điều kiện</b> (tuỳ chọn) — vd. liều ≤ 500 mg → 100 ml; liều ≥ 501 mg → 200 ml; bơm tiêm điện → 50 ml.
+      </div>
+      {rows.map((r, i) => (
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(92px, 1fr))', gap: 6, alignItems: 'end',
+          padding: 8, border: `1px solid ${C.border2}`, borderRadius: 6, background: C.surface }}>
+          <Field label="Đường dùng">
+            <select value={r.route} onChange={e => update(i, 'route', e.target.value)} style={small}>
+              <option value="">Bất kỳ</option>
+              {routes.map(x => <option key={x.code} value={x.code}>{x.short}</option>)}
+            </select>
+          </Field>
+          <Field label="Liều từ (mg)"><input value={r.dose_min_mg} onChange={e => update(i, 'dose_min_mg', e.target.value)} inputMode="decimal" style={small} /></Field>
+          <Field label="Liều đến (mg)"><input value={r.dose_max_mg} onChange={e => update(i, 'dose_max_mg', e.target.value)} inputMode="decimal" style={small} /></Field>
+          <Field label="Dung môi">
+            <select value={r.solvent} onChange={e => update(i, 'solvent', e.target.value)} style={small}>
+              {DILUTION_SOLVENTS.filter(([v]) => v !== 'KHONG_PHA').map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select>
+          </Field>
+          <Field label="Thể tích (ml)"><input value={r.volume_ml} onChange={e => update(i, 'volume_ml', e.target.value)} inputMode="decimal" style={small} /></Field>
+          <Field label="Giọt/phút"><input value={r.rate} onChange={e => update(i, 'rate', e.target.value)} inputMode="decimal" style={small} /></Field>
+          <Btn variant="default" onClick={() => remove(i)} style={{ fontSize: FS.xs, padding: '2px 8px', color: C.red }}>Bỏ</Btn>
+        </div>
+      ))}
+      <div><Btn variant="secondary" onClick={add} style={{ fontSize: FS.xs, padding: '2px 10px' }}>+ Thêm cách pha</Btn></div>
+    </div>
+  );
+}
+
+function DilutionFields({ form, set, setForm, effective, routes = [] }) {
   const solvent = form.dilution_solvent;
   const builtin = !solvent && effective?.source === 'luat_san_co' ? effective.rule : null;
   return (
     <div style={{ display: 'grid', gap: 10, padding: 12, borderRadius: 6, border: `1px solid ${C.border2}`, background: C.surface2 }}>
-      <div style={{ fontSize: FS.sm, fontWeight: 600, color: C.text }}>Quy tắc pha thuốc</div>
+      <div style={{ fontSize: FS.sm, fontWeight: 600, color: C.text }}>Quy tắc pha thuốc{solvent && solvent !== 'KHONG_PHA' ? ' — cách mặc định' : ''}</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
         <Field label="Dung môi">
           <select value={solvent} onChange={set('dilution_solvent')} style={INPUT_STYLE}>
@@ -143,6 +185,8 @@ function DilutionFields({ form, set, setForm, effective }) {
           </Field>
         )}
       </div>
+      {solvent && solvent !== 'KHONG_PHA' && <VariantRows form={form} setForm={setForm} routes={routes} />}
+      <DilutionStatsPanel drugName={form.canonical} setForm={setForm} />
       {solvent && (
         <Field label="Ghi chú pha (tuỳ chọn)">
           <input value={form.dilution_note} onChange={set('dilution_note')} maxLength={300}
@@ -299,7 +343,8 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
             </div>
           )}
 
-          <DilutionFields form={form} set={set} setForm={setForm} effective={effective} />
+          <DilutionFields form={form} set={set} setForm={setForm} effective={effective}
+            routes={ROUTES.filter(r => ['dich_truyen', 'thuoc_tiem'].includes(routeCategory(r.code)))} />
 
           <button type="button" onClick={() => setShowAdvanced(v => !v)} aria-expanded={showAdvanced} style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,

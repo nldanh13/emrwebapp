@@ -34,3 +34,24 @@ trước một thuốc sẽ được xử lý thế nào.
   vẫn giữ một bản dự phòng, chỉ dùng khi file hỏng.
 - `tests/test_medication_golden.py` so kết quả xử lý của 62 y lệnh mẫu với file mốc. Sau khi gom,
   kết quả không đổi.
+
+## Nhiều cách pha, cần xác nhận, thống kê thực tế
+
+- **Nhiều cách pha cho một thuốc.** Trong "Quy tắc pha thuốc" có:
+  - một **cách mặc định**;
+  - các **cách pha theo điều kiện**: đường dùng (TTM, bơm tiêm điện…) và/hoặc khoảng liều mỗi lần
+    (mg). Ví dụ Vancomycin: liều ≤ 500 mg → 100 ml; liều ≥ 501 mg → 200 ml; bơm tiêm điện → 50 ml.
+
+  Liều mỗi lần = hàm lượng trong tên × số lọ/ống mỗi lần (`worker/processing/dose.py`). Nếu thiếu
+  dữ kiện thì không tính.
+- **Không đoán khi không chắc.** Dòng thuốc được ghi `can_xac_nhan_pha` kèm lý do khi:
+  - nhiều cách pha cùng khớp;
+  - y lệnh thiếu đường dùng hoặc liều để chọn;
+  - phải dùng 100 ml mặc định.
+
+  Báo cáo ca trực hiện "cần xác nhận cách pha"; phiếu in ghi "xác nhận cách pha".
+- **Thống kê cách pha thực tế.** Trong form sửa thuốc, mục "Thực tế trong dữ liệu":
+  - máy chủ chạy lại đúng bước xử lý trên y lệnh nguyên văn của Kho nghiên cứu (`clinical_notes.csv`)
+    và trên dữ liệu đã xử lý của phiên (`worker/dilution_stats.py`), không mở EMR;
+  - chỉ đếm những lần y lệnh ghi rõ dung môi/thể tích; phần hệ thống tự suy được đếm riêng;
+  - có nút "Đặt làm mặc định" và "Thêm thành cách pha".
