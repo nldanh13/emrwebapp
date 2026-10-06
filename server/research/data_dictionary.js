@@ -356,7 +356,7 @@ TABLES.clinical_notes = {
   primary_key: ['note_id'],
   foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id', when: 'encounter_match_status = matched' }],
   sources: ['hchanh_order_history.csv'],
-  processing: 'Giữ nguyên văn diễn biến và y lệnh; bỏ dòng không có nội dung.',
+  processing: 'Giữ nguyên văn diễn biến và y lệnh để truy nguyên; phần có cấu trúc được tách riêng sang medication_orders và clinical_events.',
   inferred: false,
   quality: { required: ['note_id', 'patient_code'], unique: ['note_id'], checks: ['Trùng note_id: lỗi chặn.', 'Ghép đợt ambiguous/missing: cảnh báo.'], manual_review: [] },
   columns: withCommon(['note_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'note_datetime', 'note_date', 'doctor_name', 'note_type', 'clinical_text', 'order_text', 'status', 'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'source', 'source_run_id', 'row_hash'], {
@@ -368,6 +368,32 @@ TABLES.clinical_notes = {
     clinical_text: col('text', 'Diễn biến bệnh (nguyên văn).', { identifier: 'free_text', use: 'approval_required' }),
     order_text: col('text', 'Nội dung y lệnh (nguyên văn).', { identifier: 'free_text', use: 'approval_required' }),
     status: col('string', 'Trạng thái y lệnh.'),
+  }),
+};
+
+TABLES.clinical_events = {
+  file: 'clinical_events.csv', tier: 'normalized',
+  grain: 'Một sự kiện lâm sàng được parser nhận diện từ một dòng Diễn biến.',
+  primary_key: ['clinical_event_id'],
+  foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id', when: 'encounter_match_status = matched' }],
+  sources: ['hchanh_order_history.csv → cột Diễn biến'],
+  processing: 'Parser rule-based chỉ sinh sự kiện khi có bằng chứng rõ; không biến việc không thấy nhắc thành phủ định. Luôn giữ source_text và parser_rule để truy nguyên.',
+  inferred: true,
+  quality: { required: ['clinical_event_id', 'patient_code', 'event_type'], unique: ['clinical_event_id'], checks: ['confidence thấp cần thận trọng khi dùng phân tích.'], manual_review: ['Sự kiện parser suy ra cần đối chiếu source_text nếu dùng làm biến kết cục/chính.'] },
+  columns: withCommon(['clinical_event_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'event_datetime', 'event_date', 'doctor_name', 'event_type', 'event_subtype', 'value_raw', 'value_norm', 'negated', 'certainty', 'source_text', 'parser_rule', 'confidence', 'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'source', 'source_run_id', 'row_hash'], {
+    clinical_event_id: col('string', 'Khóa sự kiện: ce_<row_hash>.'),
+    event_datetime: col('datetime', 'Thời điểm của dòng diễn biến.', { identifier: 'quasi', use: 'approval_required' }),
+    event_date: col('date', 'Ngày của dòng diễn biến.', { identifier: 'quasi', use: 'approval_required' }),
+    doctor_name: col('string', 'Bác sĩ ghi diễn biến/y lệnh.', { identifier: 'staff', use: 'approval_required' }),
+    event_type: col('string', 'Loại sự kiện chuẩn hóa, ví dụ pain_vas, wound_status, mobility, nausea_vomiting, consciousness.'),
+    event_subtype: col('string', 'Phân nhóm phụ nếu parser có.'),
+    value_raw: col('string', 'Giá trị đọc được trực tiếp từ câu nguồn.'),
+    value_norm: col('string', 'Giá trị chuẩn hóa của sự kiện.'),
+    negated: col('flag01', '1 khi câu nguồn xác nhận phủ định rõ; không dùng 1 chỉ vì không thấy nhắc.', { allowed: ['1', '0'] }),
+    certainty: col('string', 'Mức chắc chắn ngữ nghĩa, mặc định observed.'),
+    source_text: col('text', 'Câu Diễn biến gốc tạo ra sự kiện.', { identifier: 'free_text', use: 'approval_required' }),
+    parser_rule: col('string', 'Quy tắc parser đã kích hoạt.'),
+    confidence: col('enum', 'Độ tin cậy parser.', { allowed: ['high', 'medium', 'low'] }),
   }),
 };
 
