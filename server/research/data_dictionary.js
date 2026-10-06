@@ -59,17 +59,17 @@ const COMMON = {
   encounter_id: col('string', 'Khóa đợt điều trị (Research key), nối về encounters.encounter_id.', {
     format: 'enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép',
     identifier: 'pseudonymous',
-    derivation: 'Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra. Mã NC không tham gia quyết định matching.',
+    derivation: 'Băm (sha1 rút gọn) từ Mã BN + thời điểm vào. Mã NC và các mã điều trị/nội trú/vào viện không tham gia quyết định matching.',
     empty: 'Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing).',
   }),
   encounter_match_status: col('enum', 'Kết quả gắn dòng vào đợt điều trị.', {
     allowed: ['matched', 'ambiguous', 'missing'],
-    derivation: 'matched: đúng Mã BN và xác định duy nhất đợt bằng khóa EMR hoặc thời gian; ambiguous: khớp nhiều đợt; missing: không khớp đợt nào. Mã NC không tham gia quyết định matching.',
+    derivation: 'matched: đúng Mã BN và xác định duy nhất khoảng bằng thời gian; ambiguous: khớp nhiều khoảng; missing: không khớp khoảng nào. Mã NC không tham gia quyết định matching.',
   }),
   encounter_match_method: col('enum', 'Bằng chứng đã dùng để gắn dòng vào đợt điều trị.', {
-    allowed: ['encounter_id', 'emr_treatment_id', 'emr_noitru_id', 'emr_admission_id', 'emr_treatment_noitru_alias', 'emr_noitru_treatment_alias', 'visit_exact', 'admission_time', 'discharge_time', 'admission_date', 'discharge_date', 'event_date_range', 'patient_unique_encounter_no_event_time (legacy)'],
+    allowed: ['encounter_id', 'visit_exact', 'admission_time', 'discharge_time', 'admission_date', 'discharge_date', 'event_date_range', 'patient_unique_encounter_no_event_time (legacy)'],
     empty: 'Dòng chưa được ghép.',
-    derivation: 'Khóa EMR mạnh được ưu tiên. Mã điều trị và Mã nội trú được phép đối chiếu chéo khi cùng giá trị, cùng Mã BN và dẫn tới đúng một đợt; nếu mâu thuẫn/không tìm thấy thì dừng, không fallback theo thời gian.',
+    derivation: 'Chỉ dùng encounter_id nội bộ nếu đã có; còn lại ghép theo đúng Mã BN và các mốc thời gian có trong dữ liệu.',
   }),
   encounter_match_reason: col('string', 'Lý do dòng chưa được ghép chắc vào đợt.', {
     empty: 'Dòng đã matched.',
@@ -159,7 +159,7 @@ TABLES.encounters = {
   foreign_keys: [{ columns: ['patient_code'], references: 'patients.patient_code' }],
   referenced_by: ['diagnoses', 'lab_results', 'imaging_results', 'surgery_results', 'medication_orders', 'medication_day_summary', 'clinical_notes', 'clinical_events', 'patient_day', 'extract_status', 'analysis_ready'],
   sources: ['research_source.csv (từ du_lieu_ban_dau.csv)', 'du_lieu_goc.csv (script XN/CĐHA)', 'hchanh_profile.csv', 'hchanh_discharge.csv (mục Ra khoa)', 'hchanh_surgery.csv'],
-  processing: 'Ghép các nguồn theo khóa EMR (Research key, Mã điều trị/Mã nội trú, Mã vào viện) rồi mới theo thời gian. Khi gộp dòng cùng đợt, ngày vào là thời điểm vào sớm nhất. Không ghép theo họ tên.',
+  processing: 'Mã BN là khóa người bệnh duy nhất. Research key chỉ là khóa nội bộ; các dòng cùng BN được tách/ghép bằng mốc thời gian vào-ra, không dùng Mã điều trị/Mã nội trú/Mã vào viện và không ghép theo họ tên.',
   inferred: false,
   quality: {
     required: ['encounter_id', 'patient_code'],
@@ -169,9 +169,9 @@ TABLES.encounters = {
       'patient_code không có trong patients: lỗi chặn.',
       'Thiếu ngày vào viện, ngày ra trước ngày vào, ngày ở tương lai, nằm viện > 365 ngày: cảnh báo, đưa vào encounter_review.csv.',
     ],
-    manual_review: ['needs_manual_review khác trống', 'Cặp đợt cùng BN chồng lấn/cùng ngày ra viện nhưng không chung khóa EMR (possible_same_stay).'],
+    manual_review: ['needs_manual_review khác trống', 'Cặp khoảng cùng BN chồng lấn/cùng ngày ra viện nhưng không đủ mốc thời gian để xác định chắc chắn (possible_same_stay).'],
   },
-  columns: withCommon(['encounter_id', 'research_code', 'patient_code', 'patient_key', 'admission_date', 'discharge_date', 'treatment_duration', 'department', 'room_bed', 'admission_diagnosis', 'discharge_diagnosis', 'diagnosis_raw', 'comorbidity_text', 'complication_text', 'discharge_status', 'surgery_date', 'emr_admission_id', 'emr_treatment_id', 'emr_noitru_id', 'needs_manual_review', 'source_run_id', 'source_status', 'row_hash'], {
+  columns: withCommon(['encounter_id', 'research_code', 'patient_code', 'patient_key', 'admission_date', 'discharge_date', 'treatment_duration', 'department', 'room_bed', 'admission_diagnosis', 'discharge_diagnosis', 'diagnosis_raw', 'comorbidity_text', 'complication_text', 'discharge_status', 'surgery_date', 'needs_manual_review', 'source_run_id', 'source_status', 'row_hash'], {
     encounter_id: { ...COMMON.encounter_id, meaning: 'Khóa chính của đợt điều trị (Research key).', empty: 'Không được trống (bắt buộc).' },
     admission_date: col('datetime', 'Thời điểm vào viện (vào khoa đầu tiên của đợt).', {
       identifier: 'quasi', use: 'approval_required', source: 'Ngày vào viện (hồ sơ) hoặc T/G vào sớm nhất trên danh sách.', empty: 'Không đọc được ngày vào.',
@@ -187,9 +187,6 @@ TABLES.encounters = {
     complication_text: col('text', 'Biến chứng/tai biến (nguyên văn).', { identifier: 'free_text', use: 'approval_required' }),
     discharge_status: col('string', 'Tình trạng/kết quả khi ra viện như EMR ghi (ví dụ "Đỡ, giảm").', { note: 'Giá trị phụ thuộc danh mục EMR; chưa chuẩn hóa.' }),
     surgery_date: col('date', 'Ngày mổ (nếu có) theo nguồn đợt điều trị.', { identifier: 'quasi', use: 'approval_required', empty: 'Không mổ hoặc chưa có dữ liệu phẫu thuật.' }),
-    emr_admission_id: col('string', 'Mã vào viện trên EMR.', { identifier: 'direct', use: 'excluded' }),
-    emr_treatment_id: col('string', 'Mã điều trị trên EMR.', { identifier: 'direct', use: 'excluded' }),
-    emr_noitru_id: col('string', 'Mã nội trú (noitruid) trên EMR; các dòng chuyển khoa của cùng đợt dùng chung mã này.', { identifier: 'direct', use: 'excluded' }),
     needs_manual_review: col('string', 'Lý do cần người kiểm tra, nối bằng "; ". Trống = không có vấn đề đã biết.', {
       allowed: 'Ví dụ: encounter_match_ambiguous, encounter_match_missing.',
     }),
@@ -499,7 +496,7 @@ TABLES.analysis_ready = {
   primary_key: ['encounter_id'],
   foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id' }, { columns: ['patient_code'], references: 'patients.patient_code' }],
   sources: ['encounters', 'patients', 'lab_results', 'imaging_results', 'surgery_results'],
-  processing: 'Một dòng mỗi đợt. Chỉ dữ liệu matched và is_within_encounter = 1 mới được dùng cho snapshot/tóm tắt phân tích; dữ liệu chưa đủ bằng chứng vẫn giữ nguyên ở bảng chi tiết. Giữ toàn bộ XN và CĐHA hợp lệ của đúng đợt trong lab_results_json/imaging_results_json. imaging_summary không cắt ngắn. Phẫu thuật lấy ca sớm nhất đã xác minh trong đợt; biến suy luận chạy trên chẩn đoán + CĐHA hợp lệ.',
+  processing: 'Một dòng mỗi khoảng phân tích. Chỉ dữ liệu matched và is_within_encounter = 1 mới được dùng cho snapshot/tóm tắt; toàn bộ XN/CĐHA vẫn nằm ở các bảng chi tiết theo từng dòng, không nhét thành JSON trong một ô. imaging_summary giữ phần văn bản tổng hợp; phẫu thuật lấy ca sớm nhất đã xác minh.',
   inferred: true,
   quality: {
     required: ['encounter_id', 'research_code'],
@@ -511,7 +508,7 @@ TABLES.analysis_ready = {
     inferred: 'Cột suy luận theo preset (ví dụ injury_side_suggested, hip_fracture_suggested, spine_involved, joint_type_suggested, neuro_deficit, stroke_type): suy từ văn bản chẩn đoán + CĐHA bằng từ khóa; ô trống = không tìm thấy từ khóa, KHÔNG có nghĩa là "không". Cần người xác nhận.',
     custom: 'Cột tự định nghĩa của nghiên cứu (custom_fields): so mẫu trên văn bản chẩn đoán đã bỏ dấu; cột boolean luôn là 1/0.',
   },
-  columns: withCommon(['research_code', 'encounter_id', 'patient_code', 'patient_key', 'patient_name', 'sex', 'birth_year', 'age', 'admission_date', 'surgery_date', 'discharge_date', 'hospital_stay_days', 'time_to_surgery_hours', 'diagnosis_raw', 'surgery_name', 'surgery_method', 'anesthesia_method', 'comorbidity_text', 'complication_text', 'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt', 'lab_result_count', 'lab_results_json', 'imaging_result_count', 'imaging_results_json', 'imaging_summary', 'needs_manual_review', 'source_run_id', 'row_hash'], {
+  columns: withCommon(['research_code', 'encounter_id', 'patient_code', 'patient_key', 'patient_name', 'sex', 'birth_year', 'age', 'admission_date', 'surgery_date', 'discharge_date', 'hospital_stay_days', 'time_to_surgery_hours', 'diagnosis_raw', 'surgery_name', 'surgery_method', 'anesthesia_method', 'comorbidity_text', 'complication_text', 'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt', 'lab_result_count', 'imaging_result_count', 'imaging_summary', 'needs_manual_review', 'source_run_id', 'row_hash'], {
     patient_name: col('string', 'Họ tên.', { identifier: 'direct', use: 'excluded' }),
     sex: col('enum', 'Giới tính.', { allowed: ['Nam', 'Nữ'], identifier: 'quasi' }),
     birth_year: col('integer', 'Năm sinh.', { identifier: 'quasi', use: 'approval_required' }),
@@ -534,9 +531,7 @@ TABLES.analysis_ready = {
       .filter(([k]) => ['hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt'].includes(k))
       .map(([k, v]) => [k, { ...v, derivation: `${v.derivation} Kết quả có lab_datetime sớm nhất trong đợt.` }])),
     lab_result_count: col('integer', 'Tổng số dòng kết quả XN đã ghép chắc chắn và nằm trong đợt.'),
-    lab_results_json: col('json', 'Toàn bộ kết quả XN của đợt theo thứ tự thời gian, gồm thời điểm, Mã phiếu, tên chỉ số, kết quả raw/số/chữ, đơn vị raw/chuẩn, khoảng tham chiếu và cờ bất thường.', { use: 'approval_required' }),
     imaging_result_count: col('integer', 'Tổng số dòng CĐHA đã ghép chắc chắn và nằm trong đợt.'),
-    imaging_results_json: col('json', 'Toàn bộ CĐHA của đợt theo thứ tự thời gian, gồm dịch vụ, kỹ thuật, vùng cơ thể, mô tả kết quả, kết luận và trạng thái.', { identifier: 'free_text', use: 'approval_required' }),
     imaging_summary: col('text', 'Toàn bộ tên dịch vụ + mô tả + kết luận CĐHA của đợt, nối lại, không cắt ngắn.', { identifier: 'free_text', use: 'approval_required' }),
     needs_manual_review: col('string', 'Lý do cần người kiểm tra, nối "; ".', { allowed: 'Nhãn thiếu biến của preset (ví dụ "bên tổn thương", "ngày phẫu thuật") và cờ ghép đợt.' }),
   }),
