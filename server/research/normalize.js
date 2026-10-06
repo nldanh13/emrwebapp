@@ -528,7 +528,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     const ctx = contextForRow(ctxMap, row, code);
     const dt = firstNonEmpty(row, ['Ngày phẫu thuật', 'Ngay phau thuat', 'Thời gian', 'Thoi gian', 'bat_dau', 'surgery_datetime', 'surgery_date']);
     const base = {
-      research_code: firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || ctx.research_code || '',
+      research_code: ctx.research_code || firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || '',
       patient_code: code,
       encounter_id: ctx.encounter_id || '',
       encounter_match_status: encounterMatchStatus(ctx),
@@ -584,7 +584,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     const postopOffset = surgeryDate && orderDate ? dateOffsetDays(surgeryDate, orderDate) : '';
     const postopNumber = postopOffset === '' ? NaN : Number(postopOffset);
     const base = {
-      research_code: firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || ctx.research_code || '',
+      research_code: ctx.research_code || firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || '',
       patient_code: code,
       encounter_id: ctx.encounter_id || '',
       encounter_match_status: encounterMatchStatus(ctx),
@@ -663,7 +663,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     const ctx = contextForRow(ctxMap, row, code);
     const rawTime = firstNonEmpty(row, ['TG y lệnh', 'TG y lenh', 'Thời gian', 'Ngày']);
     const base = {
-      research_code: firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || ctx.research_code || '',
+      research_code: ctx.research_code || firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || '',
       patient_code: code,
       encounter_id: ctx.encounter_id || '',
       encounter_match_status: encounterMatchStatus(ctx),
@@ -696,7 +696,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     const { clinical_text: clinicalText } = dedupeOrderFields(row);
     for (const parsed of extractClinicalEvents(clinicalText)) {
       const base = {
-        research_code: firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || ctx.research_code || '',
+        research_code: ctx.research_code || firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || '',
         patient_code: code,
         encounter_id: ctx.encounter_id || '',
         encounter_match_status: encounterMatchStatus(ctx),
