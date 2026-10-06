@@ -12,7 +12,8 @@
 // v14: bảng chuẩn hóa không còn dấu ' trước số âm/"+" (lỗi ghi CSV cũ); chuẩn hóa lại toàn bộ.
 // v15: thêm patient_key (mã người bệnh giả danh, bảng liên kết patient_link.csv của kho);
 //      dataset chọn biến/dataset cuối/bảng mã hóa không còn Mã BN và họ tên.
-const NORMALIZED_SCHEMA_VERSION = 15;
+// v16: thêm sinh hiệu lúc vào viện từ Phiếu vào viện cho Kho nghiên cứu.
+const NORMALIZED_SCHEMA_VERSION = 16;
 
 const NORMALIZED_COLUMNS = {
   patients: [
@@ -23,8 +24,10 @@ const NORMALIZED_COLUMNS = {
   ],
   encounters: [
     'encounter_id', 'research_code', 'patient_code', 'patient_key', 'admission_date', 'discharge_date',
-    'treatment_duration', 'department', 'room_bed', 'admission_diagnosis', 'discharge_diagnosis',
-    'diagnosis_raw', 'comorbidity_text', 'complication_text', 'discharge_status',
+    'treatment_duration', 'department', 'room_bed',
+    'admission_pulse', 'admission_temperature', 'admission_bp_systolic', 'admission_bp_diastolic',
+    'admission_respiratory_rate', 'admission_weight_kg', 'admission_height_cm',
+    'admission_diagnosis', 'discharge_diagnosis', 'diagnosis_raw', 'comorbidity_text', 'complication_text', 'discharge_status',
     'surgery_date', 'emr_admission_id', 'emr_treatment_id', 'emr_noitru_id', 'needs_manual_review',
     'source_run_id', 'source_status', 'row_hash',
   ],
@@ -80,6 +83,8 @@ const NORMALIZED_COLUMNS = {
     'research_code', 'encounter_id', 'patient_code', 'patient_key', 'patient_name', 'sex', 'birth_year', 'age',
     'admission_date', 'surgery_date', 'discharge_date', 'hospital_stay_days', 'time_to_surgery_hours',
     'diagnosis_raw',
+    'admission_pulse', 'admission_temperature', 'admission_bp_systolic', 'admission_bp_diastolic',
+    'admission_respiratory_rate', 'admission_weight_kg', 'admission_height_cm',
     // inference fields (injury_side_suggested, hip_fracture_suggested, v.v.) được sinh động theo analysis_config
     // và được gộp vào đây bởi writeCsvDynamic — không hardcode ở đây để tránh cột rỗng với NC khác chuyên khoa
     'surgery_name', 'surgery_method', 'anesthesia_method', 'comorbidity_text', 'complication_text',
