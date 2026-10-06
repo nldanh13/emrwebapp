@@ -14,6 +14,9 @@
 //      dataset chọn biến/dataset cuối/bảng mã hóa không còn Mã BN và họ tên.
 // v16: bổ sung parser cấu trúc cho y lệnh và diễn biến lâm sàng.
 // v17: XN lossless — không tự xóa các lần xét nghiệm giống nhau; mỗi dòng có ID riêng.
+// v18: provenance + chuẩn hóa đơn vị XN bảo thủ; parser thuốc đầy đủ.
+// v19: giữ toàn bộ XN/CĐHA trong analysis_ready và CĐHA lossless.
+// v20: lưu bằng chứng/lý do matching từng dòng; Mã NC không tham gia quyết định matching.
 const NORMALIZED_SCHEMA_VERSION = 20;
 
 const NORMALIZED_COLUMNS = {
