@@ -36,7 +36,7 @@ const NORMALIZED_COLUMNS = {
   ],
   lab_results: [
     'lab_result_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'lab_datetime', 'lab_date',
-    'lab_group', 'test_name_raw', 'test_name_norm', 'result_raw', 'result_operator', 'result_num', 'result_text',
+    'lab_group', 'lab_order_id', 'test_name_raw', 'test_name_norm', 'result_raw', 'result_operator', 'result_num', 'result_text',
     'unit', 'ref_range_raw', 'flag_raw', 'flag_norm',
     'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter',
     'source_run_id', 'row_hash',
