@@ -379,8 +379,8 @@ function contextForRow(ctxMap, row, code) {
     if (!temporal.length) return unresolvedContext(code, candidates, 'encounter_match_outside_time');
     return unresolvedContext(code, temporal, 'encounter_match_ambiguous');
   }
-  // Chỉ fallback theo Mã BN khi BN chỉ có đúng một đợt và dòng nguồn hoàn toàn không có mốc thời gian.
-  if (candidates.length === 1) return matchedContext(candidates[0], 'patient_unique_encounter_no_event_time');
+  // Chỉ Mã BN không đủ để chứng minh một dòng lâm sàng thuộc đợt nào khi nguồn thiếu thời gian.
+  if (candidates.length === 1) return unresolvedContext(code, candidates, 'encounter_match_missing_event_time');
   return unresolvedContext(code, candidates);
 }
 
