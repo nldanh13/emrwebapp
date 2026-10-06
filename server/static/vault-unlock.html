@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mở kho dữ liệu</title>
+<style>
+  :root { --bg:#f5f7fa; --card:#fff; --text:#1f2937; --muted:#6b7280; --primary:#2563eb; --danger:#b91c1c; --ok:#047857; --border:#d1d5db; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f172a; --card:#1e293b; --text:#e5e7eb; --muted:#94a3b8; --border:#334155; --danger:#f87171; --ok:#34d399; } }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:16px; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { width:100%; max-width:420px; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:24px; }
+  h1 { margin:0 0 8px; font-size:22px; }
+  p { margin:0 0 16px; color:var(--muted); }
+  label { display:block; font-weight:600; margin-bottom:6px; }
+  input[type=password] { width:100%; padding:12px; font-size:16px; border:1px solid var(--border); border-radius:8px; background:transparent; color:var(--text); }
+  .row { display:flex; gap:8px; align-items:center; margin:12px 0 16px; color:var(--text); }
+  button { width:100%; padding:12px; font-size:16px; font-weight:600; border:0; border-radius:8px; background:var(--primary); color:#fff; cursor:pointer; }
+  button[disabled] { opacity:.6; cursor:default; }
+  .link { background:none; color:var(--primary); padding:8px 0 0; font-weight:500; }
+  .msg { margin-top:16px; min-height:1.5em; }
+  .err { color:var(--danger); } .ok { color:var(--ok); }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Mở kho dữ liệu</h1>
+  <p>Máy chủ vừa khởi động lại nên kho dữ liệu đang <b>khóa (mã hóa)</b>. Chỉ thiết bị tin cậy mới mở được.</p>
+
+  <div id="quick" hidden>
+    <button id="quickBtn" type="button">Mở kho</button>
+    <button id="forget" class="link" type="button">Nhập mật khẩu khác / quên mật khẩu đã nhớ</button>
+  </div>
+
+  <form id="form" hidden>
+    <label for="pass">Mật khẩu kho</label>
+    <input id="pass" type="password" autocomplete="current-password" required>
+    <div class="row"><input id="remember" type="checkbox" checked><label for="remember" style="margin:0;font-weight:400">Ghi nhớ trên thiết bị này (lần sau chỉ bấm một nút)</label></div>
+    <button id="submit" type="submit">Mở kho</button>
+  </form>
+
+  <div id="untrusted" hidden>
+    <p class="err">Thiết bị này chưa được tin cậy nên không mở được kho. Hãy mở trang này trên điện thoại/máy đã đăng ký.</p>
+  </div>
+
+  <div id="msg" class="msg" role="status" aria-live="polite"></div>
+</main>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var msg = $('msg');
+  function show(text, cls) { msg.textContent = text; msg.className = 'msg ' + (cls || ''); }
+
+  function openDb(name, store) {
+    return new Promise(function (resolve, reject) {
+      if (typeof indexedDB === 'undefined') { reject(new Error('no-idb')); return; }
+      var req = indexedDB.open(name, 1);
+      req.onupgradeneeded = function () { req.result.createObjectStore(store); };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    });
+  }
+  function idbGet(name, store, key) {
+    return openDb(name, store).then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var r = db.transaction(store, 'readonly').objectStore(store).get(key);
+        r.onsuccess = function () { resolve(r.result || null); };
+        r.onerror = function () { reject(r.error); };
+      });
+    }).catch(function () { return null; });
+  }
+  function idbPut(name, store, key, value) {
+    return openDb(name, store).then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(store, 'readwrite');
+        if (value === undefined) tx.objectStore(store).delete(key); else tx.objectStore(store).put(value, key);
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+
+  // Khóa thiết bị do ứng dụng chính tạo (src/utils/deviceTrust.js) — cùng tên CSDL, cùng chuỗi ký.
+  var DEVICE_DB = 'emr-device-trust', DEVICE_STORE = 'keys', DEVICE_KEY = 'device';
+  // Mật khẩu kho ghi nhớ: mã hóa bằng khóa AES "không xuất được" của riêng trình duyệt này.
+  var VAULT_DB = 'emr-vault-unlock', VAULT_STORE = 'secrets', VAULT_KEY = 'passphrase';
+
+  function toBase64(buf) {
+    var s = '', bytes = new Uint8Array(buf);
+    for (var i = 0; i < bytes.length; i += 1) s += String.fromCharCode(bytes[i]);
+    return btoa(s);
+  }
+
+  var device = null;
+  function signedHeaders(method, url) {
+    var ts = String(Date.now());
+    var text = ts + '\n' + method.toUpperCase() + '\n' + url;
+    return crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, device.keyPair.privateKey, new TextEncoder().encode(text))
+      .then(function (sig) { return { 'x-device-id': device.deviceId, 'x-device-ts': ts, 'x-device-sig': toBase64(sig) }; });
+  }
+
+  function rememberPassphrase(passphrase) {
+    return crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']).then(function (key) {
+      var iv = crypto.getRandomValues(new Uint8Array(12));
+      return crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, new TextEncoder().encode(passphrase)).then(function (data) {
+        return idbPut(VAULT_DB, VAULT_STORE, VAULT_KEY, { key: key, iv: iv, data: data });
+      });
+    });
+  }
+  function recallPassphrase() {
+    return idbGet(VAULT_DB, VAULT_STORE, VAULT_KEY).then(function (rec) {
+      if (!rec || !rec.key) return '';
+      return crypto.subtle.decrypt({ name: 'AES-GCM', iv: rec.iv }, rec.key, rec.data)
+        .then(function (buf) { return new TextDecoder().decode(buf); })
+        .catch(function () { return ''; });
+    });
+  }
+  function forgetPassphrase() { return idbPut(VAULT_DB, VAULT_STORE, VAULT_KEY, undefined).catch(function () {}); }
+
+  function waitForApp() {
+    show('Đã mở kho. Ứng dụng đang khởi động, trang sẽ tự chuyển…', 'ok');
+    var tries = 0;
+    (function poll() {
+      tries += 1;
+      fetch('/api/health', { cache: 'no-store' }).then(function (r) {
+        if (r.ok) { window.location.replace('/'); return; }
+        throw new Error('chưa');
+      }).catch(function () {
+        if (tries > 90) { show('Ứng dụng khởi động lâu hơn bình thường. Tải lại trang sau ít phút; nếu vẫn vậy, xem nhật ký trên VPS: sudo journalctl -u emrwebapp -n 80', 'err'); return; }
+        setTimeout(poll, 2000);
+      });
+    })();
+  }
+
+  function unlock(passphrase, remember) {
+    var buttons = document.querySelectorAll('button');
+    buttons.forEach(function (b) { b.disabled = true; });
+    show('Đang mở kho…');
+    var url = '/api/vault/unlock';
+    return signedHeaders('POST', url).then(function (h) {
+      h['content-type'] = 'application/json';
+      return fetch(url, { method: 'POST', headers: h, body: JSON.stringify({ passphrase: passphrase }) });
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, json: j }; });
+    }).then(function (res) {
+      if (res.status === 200) {
+        return (remember ? rememberPassphrase(passphrase).catch(function () {}) : Promise.resolve()).then(waitForApp);
+      }
+      if (res.status === 401) forgetPassphrase();
+      show((res.json && res.json.message) || 'Không mở được kho. Thử lại.', 'err');
+      if (res.status === 401) { $('quick').hidden = true; $('form').hidden = false; }
+      buttons.forEach(function (b) { b.disabled = false; });
+    }).catch(function () {
+      // Mất kết nối giữa chừng: có thể kho đã mở và máy chủ Mở kho vừa tắt.
+      fetch('/api/vault/status', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+        if (j && j.locked) { show('Không gửi được yêu cầu. Kiểm tra mạng rồi thử lại.', 'err'); buttons.forEach(function (b) { b.disabled = false; }); }
+        else waitForApp();
+      }).catch(waitForApp);
+    });
+  }
+
+  $('form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var p = $('pass').value;
+    if (!p) { show('Nhập mật khẩu kho.', 'err'); return; }
+    unlock(p, $('remember').checked);
+  });
+  $('forget').addEventListener('click', function () {
+    forgetPassphrase().then(function () { $('quick').hidden = true; $('form').hidden = false; show(''); });
+  });
+
+  if (!window.crypto || !crypto.subtle) { $('untrusted').hidden = false; show('Trình duyệt không hỗ trợ khóa bảo mật (cần mở bằng https://).', 'err'); return; }
+  idbGet(DEVICE_DB, DEVICE_STORE, DEVICE_KEY).then(function (rec) {
+    if (!rec || !rec.keyPair || !rec.deviceId) { $('untrusted').hidden = false; return; }
+    device = rec;
+    return recallPassphrase().then(function (p) {
+      if (p) {
+        $('quick').hidden = false;
+        $('quickBtn').addEventListener('click', function () { unlock(p, false); });
+      } else {
+        $('form').hidden = false;
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>

@@ -154,12 +154,13 @@ function signingMessage({ ts, method, url }) {
 }
 
 // Trả thiết bị nếu: đã duyệt, thuộc đúng người đăng nhập, chữ ký đúng, thời điểm trong ±2 phút.
-function verifyRequest({ deviceId, ts, sig, method, url, userId, now = Date.now() }) {
+// anyUser: chỉ cần thiết bị đã tin cậy (dùng ở trang Mở kho, lúc chưa đọc được danh sách tài khoản).
+function verifyRequest({ deviceId, ts, sig, method, url, userId, anyUser = false, now = Date.now() }) {
   if (!deviceId || !ts || !sig) return null;
   const t = Number(ts);
   if (!Number.isFinite(t) || Math.abs(now - t) > SIGNATURE_WINDOW_MS) return null;
   const d = readStore().devices.find(x => x.id === deviceId);
-  if (!d || d.status !== 'trusted' || d.user_id !== userId) return null;
+  if (!d || d.status !== 'trusted' || (!anyUser && d.user_id !== userId)) return null;
   try {
     const key = crypto.createPublicKey({ key: d.public_key, format: 'jwk' });
     const ok = crypto.verify('sha256', Buffer.from(signingMessage({ ts, method, url })), { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(String(sig), 'base64'));

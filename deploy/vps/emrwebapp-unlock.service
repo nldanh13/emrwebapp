@@ -1,0 +1,23 @@
+# /etc/systemd/system/emrwebapp-unlock.service — trang "Mở kho dữ liệu".
+# Chỉ chạy khi kho mã hóa ĐANG KHÓA (VPS vừa khởi động lại, hoặc vừa chạy lock.sh). Nhận mật khẩu
+# kho từ thiết bị tin cậy, gắn ổ mã hóa, khởi động emrwebapp rồi tự thoát.
+# Cần quyền root để gắn ổ (gocryptfs/FUSE). Không đọc dữ liệu nào trong kho.
+[Unit]
+Description=EMR Data Hub - trang Mo kho du lieu
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/opt/emrwebapp/vault.enc/gocryptfs.conf
+ConditionPathIsMountPoint=!/opt/emrwebapp/vault
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/emrwebapp
+EnvironmentFile=/etc/emrwebapp/emrwebapp.env
+ExecStart=/usr/bin/node /opt/emrwebapp/server/vault_unlock_server.js
+Restart=on-failure
+RestartSec=3
+# Giữ tiến trình gocryptfs (ổ đã mở) khi trang Mở kho tự thoát.
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

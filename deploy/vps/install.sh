@@ -31,6 +31,9 @@ die() { printf '\n\033[1;31mLỗi: %s\033[0m\n' "$*"; exit 1; }
 [[ $EUID -eq 0 ]] || die "Cần chạy bằng quyền root: sudo bash install.sh --domain ..."
 [[ -n "$DOMAIN" ]] || die "Thiếu tên miền. Ví dụ: sudo bash install.sh --domain emr.ten-mien.vn"
 . /etc/os-release
+if [[ -f "$APP_DIR/vault.enc/gocryptfs.conf" ]] && ! mountpoint -q "$APP_DIR/vault"; then
+  die "Kho dữ liệu đang khóa. Mở kho trên thiết bị tin cậy (trang web) rồi chạy lại."
+fi
 [[ "${ID:-}" == "ubuntu" ]] || die "Script này dành cho Ubuntu 22.04/24.04 (máy này: ${PRETTY_NAME:-không rõ})."
 
 say "Đặt múi giờ Việt Nam"

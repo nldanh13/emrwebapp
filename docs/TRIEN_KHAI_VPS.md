@@ -84,6 +84,29 @@ rồi `sudo systemctl restart emrwebapp` — không khuyên.)
 Thiết bị khác (máy khoa, máy nhà): đăng ký trên máy đó, rồi trên điện thoại bấm **Duyệt**.
 Mất điện thoại: dùng máy tin cậy khác bấm **Thu hồi**; hết máy tin cậy thì lấy mã mới trên VPS.
 
+### Mã hóa kho dữ liệu (nên làm, sau khi đã có thiết bị tin cậy)
+
+Dữ liệu người bệnh (`.runtime`) và bí mật (`secrets`: tài khoản, mật khẩu EMR) được cất trong một ổ
+**mã hóa** (gocryptfs, AES-256). Ai lấy được ổ đĩa VPS / bản chụp ổ đĩa của nhà cung cấp cũng chỉ thấy
+dữ liệu đã mã hóa.
+
+```bash
+sudo bash /opt/emrwebapp/deploy/vps/vault-init.sh
+```
+
+- Đặt **mật khẩu kho** (≥ 12 ký tự). Script in ra **master key** — chép ra giấy / trình quản lý mật
+  khẩu, không để trên VPS. Quên mật khẩu kho mà mất cả master key = **mất toàn bộ dữ liệu**.
+- Mỗi lần VPS khởi động lại, kho **khóa**; mở trang web sẽ thấy **Mở kho dữ liệu**. Mở trên
+  **điện thoại tin cậy**: lần đầu nhập mật khẩu kho và để chọn *Ghi nhớ trên thiết bị này* → lần sau
+  chỉ bấm **Mở kho**. Máy chưa tin cậy không gửi được mật khẩu; nhập sai 5 lần khóa 15 phút.
+- Khóa kho ngay (nghi bị xâm nhập, tạm ngưng dùng): `sudo bash /opt/emrwebapp/deploy/vps/lock.sh`.
+- Giới hạn cần biết: khi kho **đang mở**, máy chủ đọc được dữ liệu (nó cần để chạy EMR). Mã hóa bảo vệ
+  lúc VPS tắt/khởi động lại, ổ đĩa bị sao chép, bản sao lưu; người chiếm được quyền root lúc kho đang
+  mở vẫn đọc được — vì vậy vẫn cần SSH bằng khóa và tường lửa (mục 9).
+- Dữ liệu cũ trước khi mã hóa được xóa bằng `shred`, nhưng ổ SSD không bảo đảm xóa hẳn: VPS đã chạy dữ
+  liệu thật trước khi mã hóa thì an toàn nhất là cài lại VPS mới, chạy `vault-init.sh` trước rồi mới
+  chuyển dữ liệu vào.
+
 ## 4. Tài khoản EMR
 
 ```bash
@@ -120,6 +143,9 @@ chạy lại; thật cần thì thêm `--force`. Cập nhật lỗi thì script 
   `sudo systemctl start emrwebapp-backup`.
 - **Mật khẩu giải mã** ở `/etc/emrwebapp/backup.pass` — chép ra nơi an toàn (USB, trình quản lý mật
   khẩu). Mất file này là không mở được bản sao lưu.
+- Đã mã hóa kho: bản sao lưu chứa nguyên ổ mã hóa `vault.enc` — khôi phục cần **cả** `backup.pass`
+  **và** mật khẩu kho. Giải nén `vault.enc` về `/opt/emrwebapp/vault.enc` rồi mở kho như bình thường;
+  kho người bệnh sao lưu nhất quán nằm ở `.runtime/kho_benh_nhan/kho.backup.sqlite3`.
 - Nên tải bản sao lưu về máy khác định kỳ (WinSCP). VPS hỏng thì bản sao lưu nằm trên VPS cũng mất.
 - Khôi phục:
 
@@ -141,6 +167,8 @@ chạy lại; thật cần thì thêm `--force`. Cập nhật lỗi thì script 
 | Lỗi khi lấy/nhập EMR | `sudo journalctl -u emrwebapp -n 200`; thử `curl -sI https://<EMR>` trên VPS |
 | VPS hết RAM | Nâng lên 8–16 GB; mỗi tác vụ EMR mở một Chrome |
 | Quên mật khẩu quản trị | Mục 3, lệnh `dat-mat-khau` |
+| Trang hiện "Mở kho dữ liệu" | VPS vừa khởi động lại: mở kho trên thiết bị tin cậy. Không hiện trang: `sudo systemctl status emrwebapp-unlock` |
+| Quên mật khẩu kho | Mở bằng master key: `sudo gocryptfs -masterkey <key> -allow_other /opt/emrwebapp/vault.enc /opt/emrwebapp/vault` rồi đổi mật khẩu: `gocryptfs -passwd -masterkey <key> /opt/emrwebapp/vault.enc` |
 
 ## 9. An toàn — kiểm tra lại sau khi cài
 
@@ -150,3 +178,4 @@ chạy lại; thật cần thì thêm `--force`. Cập nhật lỗi thì script 
 - [ ] Mỗi người một tài khoản riêng, mật khẩu ≥ 8 ký tự; người nghỉ việc thì tắt tài khoản.
 - [ ] Đổi đăng nhập SSH sang khóa (SSH key) và tắt đăng nhập root bằng mật khẩu.
 - [ ] Đã chép `backup.pass` ra nơi an toàn và thử khôi phục một lần.
+- [ ] Đã chạy `vault-init.sh`, chép master key ra giấy; thử `sudo reboot` rồi mở kho bằng điện thoại.
