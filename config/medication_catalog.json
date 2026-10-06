@@ -3,51 +3,39 @@
   "description": "Bộ nhớ thuốc dùng để suy luận khi EMR chỉ ghi tên thuốc hoặc thiếu dòng đường dùng.",
   "medications": [
     {
-      "canonical": "THERMODOL",
-      "aliases": [
-        "THERMODOL",
-        "PARACETAMOL 1G",
-        "THERMODON",
-        "THERMO DON",
-        "THERMODOL 1G",
-        "PARACETAMON 1G",
-        "PARAXETAMOL 1G",
-        "PARA XETAMON 1G",
-        "PA RA XÊ TA MÔN 1G",
-        "PA RA XE TA MON 1G",
-        "PA RA CETAMOL 1G",
-        "EFFERALGAN 1G",
-        "HAPACOL 1G",
-        "PHARBACOL 1G",
-        "KORIC 1G"
-      ],
-      "category": "dich_truyen",
-      "default_route": "TTM",
-      "default_route_text": "TTM 100 giọt/phút (suy luận từ medication_catalog)",
-      "default_volume_ml": 100,
-      "default_rate": "100",
-      "default_rate_text": "100 giọt/phút",
-      "schedule_rule": "order_time_first_then_remaining_routine",
-      "semantic_aliases": [
-        "THERMODON",
-        "THERMO DON",
-        "PA RA XÊ TA MÔN 1G",
-        "PA RA XE TA MON 1G",
-        "PARA XETAMON 1G",
-        "PARACETAMON 1G"
-      ]
-    },
-    {
       "canonical": "VANCOMYCIN",
       "aliases": [
         "VANCOMYCIN",
-        "VANCOMYCIN 1G"
+        "VANCOMYCIN 1G",
+        "VANCOMYCIN 500mg",
+        "VANCOMYCIN 500mg"
       ],
       "category": "dich_truyen",
       "default_route": "TTM",
       "default_route_text": "TTM pha NaCl 0,9% 100ml",
       "default_volume_ml": 100,
-      "default_rate": "30"
+      "default_rate": "30",
+      "dilution_suggestions": [
+        {
+          "solvent": "NACL_0.9",
+          "volume_ml": 100,
+          "rate": 30,
+          "tu": "VANCOMYCIN + Natri clorid 0.9%"
+        },
+        {
+          "solvent": "NACL_0.9",
+          "volume_ml": 250,
+          "rate": 50,
+          "tu": "VANCOMYCIN + Sodium chloride 0.9%"
+        },
+        {
+          "solvent": "NACL_0.9",
+          "volume_ml": 300,
+          "rate": 30,
+          "tu": "VANCOMYCIN 500mg + Sodium chloride 0.9%"
+        }
+      ],
+      "sua_tay": true
     },
     {
       "canonical": "CIPAZY",
@@ -58,7 +46,11 @@
       "default_route": "TTM",
       "default_route_text": "TTM (chai pha sẵn)",
       "default_volume_ml": 100,
-      "default_rate": "30"
+      "default_rate": "30",
+      "dilution": {
+        "solvent": "KHONG_PHA"
+      },
+      "sua_tay": true
     },
     {
       "canonical": "BIRONEM 500",
@@ -70,49 +62,79 @@
       "default_route": "TTM",
       "default_route_text": "TTM pha NaCl 0,9% đủ 100ml",
       "default_volume_ml": 100,
-      "default_rate": "30"
-    },
-    {
-      "canonical": "BIRONEM 500 + Natri clorid 0.9%",
-      "category": "dich_truyen",
-      "default_volume_ml": 100,
-      "default_rate": "20"
-    },
-    {
-      "canonical": "VANCOMYCIN + Natri clorid 0.9%",
-      "category": "dich_truyen",
-      "default_volume_ml": 100,
-      "default_rate": "30"
+      "default_rate": "30",
+      "dilution_suggestions": [
+        {
+          "solvent": "NACL_0.9",
+          "volume_ml": 100,
+          "rate": 20,
+          "tu": "BIRONEM 500 + Natri clorid 0.9%"
+        }
+      ],
+      "sua_tay": true,
+      "dilution": {
+        "solvent": "NACL_0.9",
+        "volume_ml": 100,
+        "apply": "infusion_only",
+        "rate": 30
+      }
     },
     {
       "canonical": "PARACETAMOL 10MG/ML",
       "category": "dich_truyen",
       "default_volume_ml": 100,
-      "default_rate": "100"
+      "default_rate": "100",
+      "dilution": {
+        "solvent": "KHONG_PHA"
+      },
+      "sua_tay": true,
+      "aliases": [
+        "THERMODOL",
+        "PARACETAMOL 10MG/ML"
+      ]
     },
     {
-      "canonical": "BACQURE 500MG + Natri clorid 0.9%",
+      "canonical": "BACQURE 500MG",
       "category": "dich_truyen",
-      "default_volume_ml": 100,
-      "default_rate": "20"
+      "dilution": {
+        "solvent": "NACL_0.9",
+        "volume_ml": 100,
+        "apply": "infusion_only",
+        "rate": 20
+      },
+      "sua_tay": true
     },
     {
-      "canonical": "NEFOPAM MEDISOL 20MG/2ML + Natri clorid 0.9%",
+      "canonical": "NEFOPAM MEDISOL 20MG/2ML",
       "category": "dich_truyen",
-      "default_volume_ml": 100,
-      "default_rate": "30"
+      "dilution": {
+        "solvent": "NACL_0.9",
+        "volume_ml": 100,
+        "apply": "infusion_only",
+        "rate": 30
+      },
+      "sua_tay": true
     },
     {
       "canonical": "LACTATED RINGER'S",
       "category": "dich_truyen",
       "default_volume_ml": 500,
-      "default_rate": "30"
+      "default_rate": "30",
+      "dilution": {
+        "solvent": "KHONG_PHA"
+      },
+      "sua_tay": true
     },
     {
-      "canonical": "TRASOLU + Natri clorid 0.9%",
+      "canonical": "TRASOLU",
       "category": "dich_truyen",
-      "default_volume_ml": 100,
-      "default_rate": "30"
+      "dilution": {
+        "solvent": "NACL_0.9",
+        "volume_ml": 100,
+        "apply": "infusion_only",
+        "rate": 30
+      },
+      "sua_tay": true
     },
     {
       "canonical": "NATRI CLORID 0,9%",
@@ -120,24 +142,119 @@
       "default_volume_ml": 500,
       "default_rate": "30",
       "aliases": [
-        "SODIUM"
-      ]
+        "NATRI CLORID 0",
+        "9%",
+        "SODIUM CHLORIDE 0"
+      ],
+      "sua_tay": true,
+      "dilution": {
+        "solvent": "KHONG_PHA"
+      }
     },
     {
       "canonical": "CLASTIZOL",
       "aliases": [
-        "CLASTIZOL"
+        "CLASTIZOL",
+        "Aclasta",
+        "Zoruxa",
+        "Reclast"
       ],
       "category": "dich_truyen",
       "default_volume_ml": 100,
       "default_rate": "30",
-      "default_route": "TTM"
+      "default_route": "TTM",
+      "active_ingredients": [
+        "Acid Zoledronic"
+      ],
+      "dilution": {
+        "solvent": "KHONG_PHA"
+      },
+      "sua_tay": true
     },
     {
       "canonical": "GEMAPAXANE",
       "category": "thuoc_tiem",
       "default_route": "TDD"
+    },
+    {
+      "canonical": "VIBATAZOL 1G/0,5G",
+      "category": "dich_truyen",
+      "dilution": {
+        "solvent": "NACL_0.9",
+        "volume_ml": 100,
+        "apply": "infusion_only",
+        "rate": 30
+      },
+      "sua_tay": true
+    },
+    {
+      "canonical": "LEVOFLOXACIN 750MG/150ML",
+      "category": "dich_truyen",
+      "dilution": {
+        "solvent": "KHONG_PHA"
+      },
+      "sua_tay": true
+    },
+    {
+      "canonical": "METRONIDAZOL KABI",
+      "category": "dich_truyen",
+      "default_volume_ml": 100,
+      "default_rate": "30",
+      "dilution": {
+        "solvent": "KHONG_PHA"
+      },
+      "sua_tay": true
+    },
+    {
+      "canonical": "TAZOPELIN 4,5G",
+      "category": "dich_truyen",
+      "dilution": {
+        "solvent": "NACL_0.9",
+        "volume_ml": 100,
+        "apply": "infusion_only",
+        "rate": 30
+      },
+      "sua_tay": true,
+      "default_route": "TTM"
+    },
+    {
+      "canonical": "VINPHACINE 500mg/2ml",
+      "category": "thuoc_tiem",
+      "default_volume_ml": 2,
+      "default_rate": "30",
+      "sua_tay": true
+    },
+    {
+      "canonical": "AMIPAREN 10%",
+      "active_ingredients": [
+        "AMIPAREN 10%"
+      ],
+      "aliases": [
+        "AMIPAREN 10%"
+      ],
+      "category": "dich_truyen",
+      "default_route": "TTM",
+      "routes": [
+        "TTM"
+      ],
+      "default_volume_ml": 200,
+      "default_rate": "30",
+      "dilution": {
+        "solvent": "KHONG_PHA"
+      },
+      "sua_tay": true
+    },
+    {
+      "canonical": "Permethrine",
+      "active_ingredients": [
+        "Permethrine"
+      ],
+      "aliases": [
+        "Permethrine"
+      ],
+      "category": "thuoc_boi",
+      "default_route": "BOI"
     }
   ],
-  "_updated": "2026-09-26"
+  "_updated": "2026-10-06"
 }
