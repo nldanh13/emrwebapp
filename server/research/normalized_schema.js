@@ -12,8 +12,9 @@
 // v14: bảng chuẩn hóa không còn dấu ' trước số âm/"+" (lỗi ghi CSV cũ); chuẩn hóa lại toàn bộ.
 // v15: thêm patient_key (mã người bệnh giả danh, bảng liên kết patient_link.csv của kho);
 //      dataset chọn biến/dataset cuối/bảng mã hóa không còn Mã BN và họ tên.
-// Bổ sung parser cấu trúc cho y lệnh và diễn biến lâm sàng.
-const NORMALIZED_SCHEMA_VERSION = 16;
+// v16: bổ sung parser cấu trúc cho y lệnh và diễn biến lâm sàng.
+// v17: XN lossless — không tự xóa các lần xét nghiệm giống nhau; mỗi dòng có ID riêng.
+const NORMALIZED_SCHEMA_VERSION = 17;
 
 const NORMALIZED_COLUMNS = {
   patients: [
