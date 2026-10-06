@@ -167,3 +167,21 @@ def test_patient_lookup_falls_back_to_raw_xn_cdha_by_patient_code():
     assert "mergeLookupRows('labs'" in src
     assert "mergeLookupRows('imaging'" in src
     assert "canonicalLookupTime" in src
+
+
+def test_analysis_ready_uses_long_form_detail_tables_instead_of_large_json_cells():
+    norm = (ROOT / "server" / "research" / "normalize.js").read_text(encoding="utf-8")
+    schema = (ROOT / "server" / "research" / "normalized_schema.js").read_text(encoding="utf-8")
+    dictionary = (ROOT / "server" / "research" / "data_dictionary.js").read_text(encoding="utf-8")
+
+    assert "lab_results_json" not in norm
+    assert "imaging_results_json" not in norm
+    assert "imaging_summary:" not in norm
+    assert "'lab_results_json'" not in schema
+    assert "'imaging_results_json'" not in schema
+    assert "'imaging_summary'" not in schema
+    assert "const NORMALIZED_SCHEMA_VERSION = 21" in schema
+    assert "lab_result_count: labByEncounter.get(enc.encounter_id)?.total || 0" in norm
+    assert "imaging_result_count: imagingByEncounter.get(enc.encounter_id)?.total || 0" in norm
+    assert "Chi tiết từng kết quả nằm ở lab_results.csv" in dictionary
+    assert "Chi tiết từng kết quả nằm ở imaging_results.csv" in dictionary
