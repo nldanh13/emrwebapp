@@ -26,6 +26,7 @@ process.env.EMR_RUNTIME_ROOT = RUNTIME_ROOT;
 const research = require('../server/routes/research');
 const R = research._test;
 const { buildQualityReport } = require('../server/research/quality');
+const { buildEncounterId } = require('../server/research/encounter_context');
 const { redactCsvTable } = require('../server/research/export_utils');
 const { requiredRoleForRequest } = require('../server/services/authz');
 const variableSelection = require('../server/research/variable_selection');
@@ -82,7 +83,7 @@ test('Ghép lượt không dùng Mã NC; chỉ Mã BN chưa đủ khi người b
   assert.strictEqual(R.encounterMatchStatus(byResearchCodeOnly), 'ambiguous');
 
   const byPatientAndEventTime = R.contextForRow(map, { 'Mã BN': '111', 'Mã NC': 'NC0001', 'TG chỉ định': '26/02/2026' }, '111');
-  assert.strictEqual(byPatientAndEventTime.encounter_id, R.buildEncounterId(rows[1]));
+  assert.strictEqual(byPatientAndEventTime.encounter_id, buildEncounterId(rows[1]));
   assert.strictEqual(R.encounterMatchMethod(byPatientAndEventTime), 'event_date_range');
 });
 
@@ -107,7 +108,7 @@ test('Các trường mã điều trị/nội trú legacy không tham gia ghép; 
   const matched = R.contextForRow(map, {
     'Mã BN': '111', 'Mã điều trị': 'gia-tri-khong-dung', 'Mã nội trú': 'gia-tri-khong-dung', 'TG chỉ định': '21/02/2026',
   }, '111');
-  assert.strictEqual(matched.encounter_id, R.buildEncounterId(rows[0]));
+  assert.strictEqual(matched.encounter_id, buildEncounterId(rows[0]));
   assert.strictEqual(R.encounterMatchStatus(matched), 'matched');
   assert.strictEqual(R.encounterMatchMethod(matched), 'event_date_range');
 });
@@ -144,7 +145,7 @@ test('Ghép theo ngày vào duy nhất khi nguồn thiếu giờ/ngày ra; khôn
   const map = R.buildContextMap(rows, 'r');
   const matched = R.contextForRow(map, { 'Mã BN': '111', 'Ngày vào viện': '20/02/2026' }, '111');
   assert.ok(matched.encounter_id);
-  assert.strictEqual(matched.encounter_id, R.buildEncounterId(rows[0]));
+  assert.strictEqual(matched.encounter_id, buildEncounterId(rows[0]));
   assert.strictEqual(R.encounterMatchMethod(matched), 'admission_date');
 
   const ambiguousMap = R.buildContextMap([
@@ -163,7 +164,7 @@ test('Ghép theo ngày sự kiện chỉ khi nằm trong đúng một lượt, k
   ];
   const map = R.buildContextMap(rows, 'r');
   const matched = R.contextForRow(map, { 'Mã BN': '111', 'TG chỉ định': '21/02/2026' }, '111');
-  assert.strictEqual(matched.encounter_id, R.buildEncounterId(rows[0]));
+  assert.strictEqual(matched.encounter_id, buildEncounterId(rows[0]));
   assert.strictEqual(R.encounterMatchMethod(matched), 'event_date_range');
 
   const outside = R.contextForRow(map, { 'Mã BN': '111', 'TG chỉ định': '23/02/2026' }, '111');
@@ -187,7 +188,7 @@ test('Kết quả chỉ thuộc đợt khi thời gian nằm trong khoảng vào
   const duringStay = R.contextForRow(map, {
     'Mã BN': '555', 'TG chỉ định': '09:00 10/04/2026',
   }, '555');
-  assert.strictEqual(duringStay.encounter_id, R.buildEncounterId(rows[0]));
+  assert.strictEqual(duringStay.encounter_id, buildEncounterId(rows[0]));
   assert.strictEqual(R.encounterMatchStatus(duringStay), 'matched');
 
   const afterDischarge = R.contextForRow(map, {
@@ -199,7 +200,7 @@ test('Kết quả chỉ thuộc đợt khi thời gian nằm trong khoảng vào
   const dateOnlySameDay = R.contextForRow(map, {
     'Mã BN': '555', 'TG chỉ định': '10/04/2026',
   }, '555');
-  assert.strictEqual(dateOnlySameDay.encounter_id, R.buildEncounterId(rows[0]), 'khi nguồn chỉ có ngày thì chỉ có thể xác nhận theo ngày lịch');
+  assert.strictEqual(dateOnlySameDay.encounter_id, buildEncounterId(rows[0]), 'khi nguồn chỉ có ngày thì chỉ có thể xác nhận theo ngày lịch');
 });
 
 test('Đợt chưa có ngày ra viện nhận kết quả quá 60 ngày sau ngày vào (tính tới hôm nay)', () => {
@@ -209,7 +210,7 @@ test('Đợt chưa có ngày ra viện nhận kết quả quá 60 ngày sau ngà
   ];
   const map = R.buildContextMap(rows, 'r');
   const late = R.contextForRow(map, { 'Mã BN': '444', 'TG chỉ định': '15/03/2026' }, '444');
-  assert.strictEqual(late.encounter_id, R.buildEncounterId(rows[1]), 'kết quả 73 ngày sau ngày vào vẫn thuộc đợt đang nằm');
+  assert.strictEqual(late.encounter_id, buildEncounterId(rows[1]), 'kết quả 73 ngày sau ngày vào vẫn thuộc đợt đang nằm');
   assert.strictEqual(R.encounterMatchMethod(late), 'event_date_range');
 });
 
@@ -347,7 +348,7 @@ test('Chuyển khoa nghi cùng đợt: không tự gộp, có trong encounter_re
   assert.ok(!fs.readFileSync(path.join(runDir, 'qa_report.json'), 'utf-8').includes('GIA LAP'));
 });
 
-test('Dòng chuyển khoa được gộp khi Mã BN + khoảng vào-ra chứng minh cùng lần nằm viện', () => {
+test('Dòng nguồn vẫn tách; encounters chỉ gộp khi Mã BN + khoảng vào-ra chứng minh cùng lần nằm viện', () => {
   const runDir = newRunDir();
   // Dòng vào khoa sau đứng trước; dòng vào viện sớm hơn có ngày ra bao trùm mốc chuyển khoa.
   writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), [...INITIAL_COLS, 'Ngày ra viện'], [
@@ -358,8 +359,8 @@ test('Dòng chuyển khoa được gộp khi Mã BN + khoảng vào-ra chứng m
   const out = R.normalizeRunOutputs(runDir, { sourceRunId: 'r' });
   assert.strictEqual(out.encounters, 2);
   const source = readCsv(path.join(runDir, 'research_source.csv')).filter(r => r['Mã BN'] === '111');
-  assert.strictEqual(source.length, 1, 'research_source chỉ còn 1 dòng cho lần nằm viện đã chứng minh bằng thời gian');
-  assert.strictEqual(source[0].fetch_from_date, '2026-02-20', 'khoảng lấy dữ liệu bắt đầu từ ngày vào viện');
+  assert.strictEqual(source.length, 2, 'research_source giữ từng dòng nguồn, không ép gộp thành một ô/dòng lớn');
+  assert.deepStrictEqual(source.map(r => r.fetch_from_date).sort(), ['2026-02-20', '2026-03-04']);
   const enc = readCsv(path.join(runDir, 'encounters.csv')).find(r => r.patient_code === '111');
   assert.strictEqual(enc.admission_date, '2026-02-20 08:00');
 });
