@@ -411,10 +411,17 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     base.lab_result_id = `lab_${base.row_hash || stableHash([idx, base.patient_code])}`;
     return base;
   });
-  // Cùng BN + cùng thời điểm + cùng chỉ số là CÙNG một kết quả (bệnh viện xác nhận):
-  // dòng thô giống hệt nhau (do lấy lại, ghi nối) chỉ giữ một. Dòng cùng thời điểm/
-  // chỉ số nhưng kết quả khác nhau KHÔNG bị bỏ — QA báo mâu thuẫn để người kiểm tra.
-  const labResults = dedupeRowsByHash(labResultsAll);
+  // XN phải lossless: một người bệnh có thể được làm cùng xét nghiệm nhiều lần trong
+  // cùng đợt, thậm chí cùng thời điểm hiển thị và cùng kết quả. Không được tự xóa chỉ vì
+  // nội dung chuẩn hóa giống nhau. Giữ row_hash để QA nhận diện nhóm nghi trùng, nhưng
+  // cấp lab_result_id riêng theo lần xuất hiện để mọi dòng vẫn tồn tại trong lab_results.csv.
+  const labOccurrence = new Map();
+  const labResults = labResultsAll.map(row => {
+    const hash = String(row.row_hash || stableHash(row));
+    const occurrence = (labOccurrence.get(hash) || 0) + 1;
+    labOccurrence.set(hash, occurrence);
+    return { ...row, lab_result_id: `lab_${hash}_${occurrence}` };
+  });
 
   const imagingResultsAll = imagingRaw.map((row, idx) => {
     const code = patientCode(row);
@@ -1091,7 +1098,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     runId,
     runDir: dir,
     duplicatesRemoved: {
-      lab_results: labResultsAll.length - labResults.length,
+      lab_results: 0,
       imaging_results: imagingResultsAll.length - imagingResults.length,
     },
     tables: {
