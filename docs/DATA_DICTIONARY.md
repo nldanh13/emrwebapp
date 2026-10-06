@@ -1,6 +1,6 @@
 # Từ điển dữ liệu Kho nghiên cứu
 
-> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-09-23.3`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
+> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-06.1`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
 >
 > Mô tả được viết từ code chuẩn hóa hiện tại. Cột "Dùng" là đề xuất kỹ thuật; phạm vi dùng thực tế phải theo đề cương được hội đồng đạo đức/bệnh viện phê duyệt.
 
@@ -89,7 +89,7 @@
 
 **Khóa chính (duy nhất):** `encounter_id`
 
-**Khóa nối:** `patient_code` → `patients.patient_code` · Được nối từ: `diagnoses`, `lab_results`, `imaging_results`, `surgery_results`, `medication_orders`, `medication_day_summary`, `clinical_notes`, `patient_day`, `extract_status`, `analysis_ready`
+**Khóa nối:** `patient_code` → `patients.patient_code` · Được nối từ: `diagnoses`, `lab_results`, `imaging_results`, `surgery_results`, `medication_orders`, `medication_day_summary`, `clinical_notes`, `clinical_events`, `patient_day`, `extract_status`, `analysis_ready`
 
 **Nguồn:** research_source.csv (từ du_lieu_ban_dau.csv); du_lieu_goc.csv (script XN/CĐHA); hchanh_profile.csv; hchanh_discharge.csv (mục Ra khoa); hchanh_surgery.csv
 
@@ -225,7 +225,7 @@
 | `days_from_admission` | số nguyên | Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện). | Đơn vị: ngày; Có thể âm (trước ngày vào viện). | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `days_from_surgery` | số nguyên | Số ngày từ ngày mổ của đợt đến thời điểm của dòng (0 = ngày mổ). | Đơn vị: ngày; Có thể âm. | Đợt không có ngày mổ hoặc thiếu thời điểm. | — | Được dùng |
 | `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
-| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, dùng mốc ngày vào + 60 ngày làm giới hạn trên. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
 
@@ -276,7 +276,7 @@
 | `days_from_admission` | số nguyên | Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện). | Đơn vị: ngày; Có thể âm (trước ngày vào viện). | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `days_from_surgery` | số nguyên | Số ngày từ ngày mổ của đợt đến thời điểm của dòng (0 = ngày mổ). | Đơn vị: ngày; Có thể âm. | Đợt không có ngày mổ hoặc thiếu thời điểm. | — | Được dùng |
 | `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
-| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, dùng mốc ngày vào + 60 ngày làm giới hạn trên. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
 
@@ -325,7 +325,7 @@
 | `operating_room` | chuỗi | Phòng mổ. |  |  | Gián tiếp | Được dùng |
 | `days_from_admission` | số nguyên | Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện). | Đơn vị: ngày; Có thể âm (trước ngày vào viện). | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
-| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, dùng mốc ngày vào + 60 ngày làm giới hạn trên. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `source` | chuỗi | Nguồn của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
@@ -382,7 +382,7 @@
 | `is_postop_day_1_3` | cờ 1/0 | Y lệnh thuộc hậu phẫu ngày 1–3. | `1`, `0` | Không có ca mổ mốc. | — | Được dùng |
 | `days_from_admission` | số nguyên | Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện). | Đơn vị: ngày; Có thể âm (trước ngày vào viện). | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
-| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, dùng mốc ngày vào + 60 ngày làm giới hạn trên. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `source` | chuỗi | Nguồn của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
@@ -436,7 +436,7 @@
 
 **Nguồn:** hchanh_order_history.csv
 
-**Cách xử lý:** Giữ nguyên văn diễn biến và y lệnh; bỏ dòng không có nội dung.
+**Cách xử lý:** Giữ nguyên văn diễn biến và y lệnh để truy nguyên; phần có cấu trúc được tách riêng sang medication_orders và clinical_events.
 
 **Quy tắc chất lượng**
 
@@ -466,10 +466,62 @@
 | `status` | chuỗi | Trạng thái y lệnh. |  |  | — | Được dùng |
 | `days_from_admission` | số nguyên | Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện). | Đơn vị: ngày; Có thể âm (trước ngày vào viện). | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
-| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, dùng mốc ngày vào + 60 ngày làm giới hạn trên. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `source` | chuỗi | Nguồn của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
+
+## clinical_events
+
+**File:** `clinical_events.csv` · **Tầng:** chuẩn hóa · **Có biến suy luận:** có
+
+**Mỗi dòng là:** Một sự kiện lâm sàng được parser nhận diện từ một dòng Diễn biến.
+
+**Khóa chính (duy nhất):** `clinical_event_id`
+
+**Khóa nối:** `encounter_id` → `encounters.encounter_id` (khi encounter_match_status = matched)
+
+**Nguồn:** hchanh_order_history.csv → cột Diễn biến
+
+**Cách xử lý:** Parser rule-based chỉ sinh sự kiện khi có bằng chứng rõ; không biến việc không thấy nhắc thành phủ định. Luôn giữ source_text và parser_rule để truy nguyên.
+
+**Quy tắc chất lượng**
+
+- Bắt buộc: `clinical_event_id`, `patient_code`, `event_type`
+- Duy nhất: `clinical_event_id`
+- confidence thấp cần thận trọng khi dùng phân tích.
+
+**Cần người kiểm tra khi:**
+
+- Sự kiện parser suy ra cần đối chiếu source_text nếu dùng làm biến kết cục/chính.
+
+| Cột | Kiểu | Ý nghĩa | Giá trị / đơn vị | Ô trống nghĩa là | Định danh | Dùng |
+|---|---|---|---|---|---|---|
+| `clinical_event_id` | chuỗi | Khóa sự kiện: ce_<row_hash>. |  |  | — | Được dùng |
+| `research_code` | chuỗi | Mã NC: mã giả danh của đợt điều trị, dùng thay tên khi xuất ẩn danh. Nguồn: research_source.csv (cấp khi tạo nguồn chuẩn) hoặc mã script XN/CĐHA đã cấp cho cùng đợt. | Dạng: NC + 4 chữ số (ví dụ NC0012) | Chưa ghép được đợt (xem encounter_match_status). | Giả danh | Được dùng |
+| `patient_code` | chuỗi | Mã BN trên EMR. Nguồn: Cột Mã BN của danh sách nội trú / file thô. |  | Không được trống (bắt buộc). | Trực tiếp | Loại (bị che khi xuất) |
+| `patient_key` | chuỗi | Mã người bệnh giả danh: cùng một người bệnh luôn cùng mã trong một kho, dùng để nối các đợt của cùng người khi xuất ẩn danh. Cách tính: Cấp tuần tự khi gặp Mã BN lần đầu; giữ nguyên qua các lần Chuẩn hóa. Không suy ngược được ra Mã BN nếu không có patient_link.csv. Nguồn: patient_link.csv của kho (bảng liên kết Mã BN ↔ patient_key, lưu riêng, không nằm trong dataset). | Dạng: P + 6 chữ số (ví dụ P000123) | Dòng không có Mã BN. | Giả danh | Được dùng |
+| `encounter_id` | chuỗi | Khóa đợt điều trị (Research key), nối về encounters.encounter_id. Cách tính: Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra → Mã NC. | Dạng: enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép | Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing). | Giả danh | Được dùng |
+| `encounter_match_status` | danh mục | Kết quả gắn dòng vào đợt điều trị. Cách tính: matched: khớp khóa EMR/Mã NC/khoảng thời gian duy nhất; ambiguous: khớp nhiều đợt; missing: không khớp đợt nào. Không tự gắn dòng ambiguous/missing. | `matched`, `ambiguous`, `missing` |  | — | Được dùng |
+| `event_datetime` | ngày giờ | Thời điểm của dòng diễn biến. |  |  | Gián tiếp | Cần đề cương duyệt |
+| `event_date` | ngày | Ngày của dòng diễn biến. |  |  | Gián tiếp | Cần đề cương duyệt |
+| `doctor_name` | chuỗi | Bác sĩ ghi diễn biến/y lệnh. |  |  | Nhân viên | Cần đề cương duyệt |
+| `event_type` | chuỗi | Loại sự kiện chuẩn hóa, ví dụ pain_vas, wound_status, mobility, nausea_vomiting, consciousness. |  |  | — | Được dùng |
+| `event_subtype` | chuỗi | Phân nhóm phụ nếu parser có. |  |  | — | Được dùng |
+| `value_raw` | chuỗi | Giá trị đọc được trực tiếp từ câu nguồn. |  |  | — | Được dùng |
+| `value_norm` | chuỗi | Giá trị chuẩn hóa của sự kiện. |  |  | — | Được dùng |
+| `negated` | cờ 1/0 | 1 khi câu nguồn xác nhận phủ định rõ; không dùng 1 chỉ vì không thấy nhắc. | `1`, `0` |  | — | Được dùng |
+| `certainty` | chuỗi | Mức chắc chắn ngữ nghĩa, mặc định observed. |  |  | — | Được dùng |
+| `source_text` | văn bản | Câu Diễn biến gốc tạo ra sự kiện. |  |  | Văn bản tự do | Cần đề cương duyệt |
+| `parser_rule` | chuỗi | Quy tắc parser đã kích hoạt. |  |  | — | Được dùng |
+| `confidence` | danh mục | Độ tin cậy parser. | `high`, `medium`, `low` |  | — | Được dùng |
+| `days_from_admission` | số nguyên | Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện). | Đơn vị: ngày; Có thể âm (trước ngày vào viện). | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
+| `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `source` | chuỗi | Nguồn của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
+| `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
+| `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
+
 
 ## patient_day
 
@@ -510,17 +562,17 @@
 | `surgery_count` | số nguyên | Số ca mổ trong ngày. |  |  | — | Được dùng |
 | `has_medication` | cờ 1/0 | Có y lệnh thuốc trong ngày. | `1`, `0` |  | — | Được dùng |
 | `medication_count` | số nguyên | Số dòng thuốc trong ngày. |  |  | — | Được dùng |
-| `hb` | chuỗi | Kết quả hb trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (hemoglobin). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `hct` | chuỗi | Kết quả hct trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (hct). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `neutrophil` | chuỗi | Kết quả neutrophil trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (neutrophil). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `lymphocyte` | chuỗi | Kết quả lymphocyte trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (lymphocyte). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `monocyte` | chuỗi | Kết quả monocyte trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (monocyte). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `rdw` | chuỗi | Kết quả rdw trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (rdw). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `plt` | chuỗi | Kết quả plt trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (platelet). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `creatinine` | chuỗi | Kết quả creatinine trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (creatinine). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `egfr` | chuỗi | Kết quả egfr trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (egfr). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `wbc` | chuỗi | Kết quả wbc trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (wbc). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `crp` | chuỗi | Kết quả crp trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (crp). Nếu trong ngày có nhiều kết quả, lấy kết quả gặp đầu tiên theo thứ tự file (không phải theo giờ). | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `hb` | chuỗi | Kết quả hb trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (hemoglobin). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `hct` | chuỗi | Kết quả hct trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (hct). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `neutrophil` | chuỗi | Kết quả neutrophil trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (neutrophil). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `lymphocyte` | chuỗi | Kết quả lymphocyte trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (lymphocyte). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `monocyte` | chuỗi | Kết quả monocyte trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (monocyte). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `rdw` | chuỗi | Kết quả rdw trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (rdw). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `plt` | chuỗi | Kết quả plt trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (platelet). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `creatinine` | chuỗi | Kết quả creatinine trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (creatinine). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `egfr` | chuỗi | Kết quả egfr trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (egfr). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `wbc` | chuỗi | Kết quả wbc trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (wbc). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
+| `crp` | chuỗi | Kết quả crp trong ngày (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (crp). Nếu trong ngày có nhiều kết quả, ưu tiên kết quả có thời gian và lấy thời điểm sớm nhất trong ngày. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
 
@@ -614,7 +666,7 @@
 | `patient_name` | chuỗi | Họ tên. |  |  | Trực tiếp | Loại (bị che khi xuất) |
 | `sex` | danh mục | Giới tính. | `Nam`, `Nữ` |  | Gián tiếp | Được dùng |
 | `birth_year` | số nguyên | Năm sinh. |  |  | Gián tiếp | Cần đề cương duyệt |
-| `age` | chuỗi | Tuổi như EMR ghi. |  |  | Gián tiếp | Cần đề cương duyệt |
+| `age` | chuỗi | Tuổi tại thời điểm nhập viện. Cách tính: Tính từ ngày sinh và ngày nhập viện của chính đợt; nếu thiếu ngày sinh thì dùng tuổi EMR làm fallback. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `admission_date` | ngày giờ | Thời điểm vào viện. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `surgery_date` | ngày giờ | Thời điểm ca mổ sớm nhất của đợt. |  | Không có ca mổ đã ghép. | Gián tiếp | Cần đề cương duyệt |
 | `discharge_date` | ngày giờ | Thời điểm ra viện. |  |  | Gián tiếp | Cần đề cương duyệt |
