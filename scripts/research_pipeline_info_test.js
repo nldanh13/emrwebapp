@@ -37,7 +37,7 @@ test('đọc đủ 4 bước từ manifest, normalize_state, qa_report, collecti
   });
   write('normalize_state.json', { status: 'complete', started_at: '2026-05-30T01:04:55.000Z', finished_at: '2026-05-30T01:05:00.000Z' });
   write('qa_report.json', { status: 'warning', blocking_count: 0, warning_count: 2 });
-  write('collection_report.json', { finished_at: '2026-05-30T01:00:00Z', fetched_encounters: 120, skipped_unchanged: 2980, parts_backfilled: 14, selenium_errors_open: 3, unmatched_encounters: 2 });
+  write('collection_report.json', { finished_at: '2026-05-30T01:00:00Z', fetched_encounters: 120, skipped_unchanged: 2980, parts_backfilled: 14, selenium_errors_open: 3, unmatched_encounters: 2, diagnostics: [{ stage: 'patient_search', stage_label: '1. Tìm người bệnh', message: 'Không tìm thấy người bệnh theo Mã BN trên EMR.', rows: 2, encounters: 2 }] });
   write('collection_history.jsonl', '{"a":1}\n{"a":2}\n');
   write('normalize_history.jsonl', '{"at":"2026-05-29T10:00:00Z","counts":{"encounters":3000}}\nhỏng\n{"at":"2026-05-30T01:05:00Z","counts":{"encounters":3100,"lab_results":90000}}\n');
   write('encounters.csv', 'encounter_id\ne1\n');
@@ -47,6 +47,8 @@ test('đọc đủ 4 bước từ manifest, normalize_state, qa_report, collecti
   assert.strictEqual(p.scan.from_date, '2026-01-01');
   assert.strictEqual(p.collect.fetched_encounters, 120);
   assert.strictEqual(p.collect.selenium_errors_open, 3);
+  assert.strictEqual(p.collect.diagnostics[0].stage, 'patient_search');
+  assert.strictEqual(p.collect.diagnostics[0].encounters, 2);
   assert.strictEqual(p.collect_runs, 2);
   assert.deepStrictEqual(p.reused_from_patient_db, { cases: 5, provisional: 2, replaced_by_goc: 3 });
   assert.strictEqual(p.normalize.duration_ms, 5000);
