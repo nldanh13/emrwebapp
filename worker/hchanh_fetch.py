@@ -1949,6 +1949,151 @@ def _patient_page_url(link_map: Dict[str, str], ma_bn: str,
     return None
 
 
+
+def _read_research_admission_vitals_by_click(
+    sess: Optional["EmrHttpSession"],
+    ma_bn: str,
+    config: Dict[str, Any],
+    patient_row: Dict[str, Any],
+) -> Dict[str, str]:
+    """Đọc sinh hiệu lúc vào viện từ màn "Phiếu vào viện" (CHỈ ĐỌC).
+
+    Luồng theo recorder EMR:
+      - vào iframe đầu tiên nếu có, đóng panel-header.has-errors bằng nút thứ 3;
+      - quay về document gốc;
+      - bấm "Phiếu vào viện";
+      - đọc value các ô txtMach/txtNhietDo/txtHuyetApMax/txtHuyetApMin/
+        txtNhipTho/txtCanNang/txtChieuCao.
+
+    Chỉ dùng cho Kho nghiên cứu. Lỗi ở màn này không làm hỏng toàn bộ profile;
+    caller vẫn giữ các dữ liệu hành chánh đã lấy được.
+    """
+    out = {
+        "mach_vao_vien": "",
+        "nhiet_do_vao_vien": "",
+        "huyet_ap_tam_thu_vao_vien": "",
+        "huyet_ap_tam_truong_vao_vien": "",
+        "nhip_tho_vao_vien": "",
+        "can_nang_vao_vien": "",
+        "chieu_cao_vao_vien": "",
+        "_admission_vitals_status": "empty",
+    }
+    ctx = _ensure_hchanh_click_context(
+        sess,
+        ma_bn,
+        config,
+        date_to=_t(patient_row.get("date_to") or patient_row.get("Ngày ra viện") or patient_row.get("Ngày vào viện")),
+        date_from=_t(patient_row.get("date_from") or patient_row.get("Ngày vào viện")),
+        reason="research_admission_vitals",
+        inpatient_status=_t(config.get("hchanh_inpatient_status"), "Hoàn tất"),
+    )
+    if not ctx:
+        out["_admission_vitals_status"] = "no_context"
+        return out
+
+    driver = ctx.get("driver")
+    if driver is None:
+        out["_admission_vitals_status"] = "no_driver"
+        return out
+
+    try:
+        from selenium.webdriver.common.by import By  # type: ignore
+        from selenium.webdriver.support.ui import WebDriverWait  # type: ignore
+        from selenium.webdriver.support import expected_conditions as EC  # type: ignore
+
+        # Đảm bảo đang ở đúng hồ sơ điều dưỡng của BN hiện tại trước khi thao tác.
+        nursing_url = _t((ctx.get("links") or {}).get("nursing"))
+        if nursing_url:
+            try:
+                driver.switch_to.default_content()
+            except Exception:
+                pass
+            if "wpid=dieuduongdraw" not in str(getattr(driver, "current_url", "") or "").lower():
+                driver.get(nursing_url)
+                time.sleep(0.8)
+
+        # Bước iframe theo recorder: chỉ bấm khi đúng panel tồn tại.
+        try:
+            driver.switch_to.default_content()
+            frames = driver.find_elements(By.TAG_NAME, "iframe")
+            for frame in frames[:4]:
+                try:
+                    driver.switch_to.default_content()
+                    driver.switch_to.frame(frame)
+                    buttons = driver.find_elements(
+                        By.CSS_SELECTOR,
+                        ".panel-header.has-errors > div:nth-child(2) > button",
+                    )
+                    if len(buttons) >= 3:
+                        driver.execute_script("arguments[0].click();", buttons[2])
+                        time.sleep(0.35)
+                        break
+                except Exception:
+                    continue
+                finally:
+                    try:
+                        driver.switch_to.default_content()
+                    except Exception:
+                        pass
+        except Exception:
+            try:
+                driver.switch_to.default_content()
+            except Exception:
+                pass
+
+        # Mở Phiếu vào viện trên document gốc.
+        try:
+            driver.switch_to.default_content()
+        except Exception:
+            pass
+        link = WebDriverWait(driver, 8).until(
+            EC.element_to_be_clickable((By.LINK_TEXT, "Phiếu vào viện"))
+        )
+        try:
+            link.click()
+        except Exception:
+            driver.execute_script("arguments[0].click();", link)
+        time.sleep(0.7)
+
+        mapping = {
+            "mach_vao_vien": "txtMach",
+            "nhiet_do_vao_vien": "txtNhietDo",
+            "huyet_ap_tam_thu_vao_vien": "txtHuyetApMax",
+            "huyet_ap_tam_truong_vao_vien": "txtHuyetApMin",
+            "nhip_tho_vao_vien": "txtNhipTho",
+            "can_nang_vao_vien": "txtCanNang",
+            "chieu_cao_vao_vien": "txtChieuCao",
+        }
+        found = 0
+        for key, field_id in mapping.items():
+            try:
+                el = WebDriverWait(driver, 4).until(
+                    EC.presence_of_element_located((By.ID, field_id))
+                )
+                value = _t(el.get_attribute("value") or el.get_attribute("textContent") or "")
+                out[key] = value
+                if value:
+                    found += 1
+            except Exception:
+                out[key] = ""
+
+        out["_admission_vitals_status"] = "ok" if found else "empty"
+        print(
+            f"LOG [research-admission] {ma_bn}: "
+            f"sinh_hieu_vao_vien={found}/7"
+        )
+    except Exception as e:
+        out["_admission_vitals_status"] = "error"
+        out["_admission_vitals_error"] = str(e)
+        print(f"WARN [research-admission] {ma_bn}: không đọc được Phiếu vào viện: {e}", file=sys.stderr)
+        try:
+            driver.switch_to.default_content()
+        except Exception:
+            pass
+
+    return out
+
+
 # ── Fetcher: profile ──────────────────────────────────────────────────────────
 
 def fetch_profile(sess: Optional["EmrHttpSession"], ma_bn: str,
@@ -1982,6 +2127,14 @@ def fetch_profile(sess: Optional["EmrHttpSession"], ma_bn: str,
         "so_ngay_dieu_tri": "",
         "chan_doan_vao":    "",
         "chan_doan_ra":     "",
+        # Sinh hiệu lúc vào viện — chỉ được bổ sung trong chế độ nghiên cứu.
+        "mach_vao_vien": "",
+        "nhiet_do_vao_vien": "",
+        "huyet_ap_tam_thu_vao_vien": "",
+        "huyet_ap_tam_truong_vao_vien": "",
+        "nhip_tho_vao_vien": "",
+        "can_nang_vao_vien": "",
+        "chieu_cao_vao_vien": "",
         # Alias giữ tương thích với UI/data-contract cũ
         "ngay_vao":         "",
         "ngay_ra":          "",
@@ -2063,6 +2216,21 @@ def fetch_profile(sess: Optional["EmrHttpSession"], ma_bn: str,
                 base["chan_doan_vao"]    = bi2("lblChanDoanVaoVien") or base.get("chan_doan_vao", "")
                 base["chan_doan_ra"]     = bi2("lblChanDoanRaVien") or base.get("chan_doan_ra", "")
                 base["_source"]          = "emr_dieuduong_click"
+
+        # Kho nghiên cứu cần thêm sinh hiệu ngay lúc vào viện từ "Phiếu vào viện".
+        # Chỉ đọc, không ghi EMR; lỗi phần này không làm hỏng profile hành chánh.
+        if patient_row.get("research_mode") or patient_row.get("is_research") or patient_row.get("Research key"):
+            vitals = _read_research_admission_vitals_by_click(sess, ma_bn, config, patient_row)
+            for key in [
+                "mach_vao_vien", "nhiet_do_vao_vien",
+                "huyet_ap_tam_thu_vao_vien", "huyet_ap_tam_truong_vao_vien",
+                "nhip_tho_vao_vien", "can_nang_vao_vien", "chieu_cao_vao_vien",
+            ]:
+                if vitals.get(key) not in (None, ""):
+                    base[key] = vitals.get(key)
+            base["_admission_vitals_status"] = vitals.get("_admission_vitals_status", "")
+            if vitals.get("_admission_vitals_error"):
+                base["_admission_vitals_error"] = vitals.get("_admission_vitals_error")
 
         # Cập nhật chan_doan tổng nếu chưa có
         if not base["chan_doan"]:
