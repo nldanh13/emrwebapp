@@ -224,12 +224,27 @@ function hchanhPayloadHasUsefulData(payload, fields = []) {
 }
 
 function hchanhFetchOutputToRows(output, sourceRow, sourceRunId = '') {
-  const meta = researchHchanhMeta(sourceRow, sourceRunId);
+  const sourceMeta = researchHchanhMeta(sourceRow, sourceRunId);
   const profileRows = [];
   const dischargeRows = [];
   const surgeryRows = [];
   const orderRows = [];
   const payload = output && typeof output === 'object' ? output : {};
+
+  // Một BN có thể xuất hiện nhiều dòng nguồn (ví dụ chuyển khoa). Khi worker đã mở
+  // đúng hồ sơ và đọc được ngày vào/ra thực tế, mọi bảng con của lần fetch đó phải
+  // dùng cùng khoảng này; không được tiếp tục mang ngày của từng dòng nguồn.
+  const actualAdmission = firstNonEmpty(payload.profile || {}, ['ngay_vao_vien', 'ngay_vao', 'admission_date'])
+    || firstNonEmpty(payload.discharge || {}, ['ngay_vao_vien', 'ngay_vao', 'admission_date'])
+    || sourceMeta.admission_raw || '';
+  const actualDischarge = firstNonEmpty(payload.discharge || {}, ['raw_time', 'ngay_ra_vien', 'ngay_ra', 'discharge_date'])
+    || firstNonEmpty(payload.profile || {}, ['ngay_ra_vien', 'ngay_ra', 'discharge_date'])
+    || sourceMeta.discharge_raw || '';
+  const meta = {
+    ...sourceMeta,
+    admission_raw: actualAdmission,
+    discharge_raw: actualDischarge,
+  };
 
   if (hchanhPayloadHasUsefulData(payload.profile, [
     'bhyt_code', 'ngay_vao_vien', 'ngay_sinh', 'dia_chi', 'doi_tuong', 'chan_doan_vao',

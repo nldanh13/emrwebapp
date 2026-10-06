@@ -132,7 +132,7 @@ function copyFilteredRaw(archiveRunDir, runDir, index) {
 // Trạng thái từng phần theo kho (extract_status của kho, theo mã lượt): chỉ mang sang phần kho đã
 // lấy xong ('done'/'empty'); phần còn thiếu/lỗi để trống cho Thu thập tự động lấy từ EMR.
 // Ghi theo đúng định dạng worker ghi (để cả bảng chuẩn hóa lẫn sổ "Thu thập tự động" đều nhận):
-// XN/CĐHA có số dòng + dấu đã lưu từng tab; hành chánh có Mã BN + ngày vào viện để ghép lượt.
+// XN/CĐHA có số dòng + dấu đã lưu từng tab; hành chánh có Mã BN + ngày vào viện để ghép lượt (không dùng mã EMR).
 function buildProgressFromArchive(archiveRunDir, links, encounterRows = []) {
   const encById = new Map(encounterRows.map(e => [String(e.encounter_id || '').trim(), e]));
   const status = readCsvTable(path.join(archiveRunDir, 'extract_status.csv'), Number.MAX_SAFE_INTEGER).rows || [];
@@ -147,11 +147,9 @@ function buildProgressFromArchive(archiveRunDir, links, encounterRows = []) {
     if (!st || !link.encounter_id) continue;
     const enc = encById.get(String(link.encounter_id).trim()) || {};
     const admission = String(enc.admission_date || '').trim();
-    const noitru = String(enc.emr_noitru_id || '').trim();
     const base = {
       encounter_id: link.encounter_id, research_code: link.research_code, ma_bn: link.patient_code,
       'Mã BN': link.patient_code, 'Mã NC': link.research_code,
-      ...(noitru ? { 'Mã nội trú': noitru } : {}),
       ...(admission ? { admission_date: admission, 'Ngày vào viện': admission } : {}),
       source: 'archive', updated_at: at,
     };

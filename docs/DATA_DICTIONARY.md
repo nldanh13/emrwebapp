@@ -1,6 +1,6 @@
 # Từ điển dữ liệu Kho nghiên cứu
 
-> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-06.10`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
+> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-07.1`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
 >
 > Mô tả được viết từ code chuẩn hóa hiện tại. Cột "Dùng" là đề xuất kỹ thuật; phạm vi dùng thực tế phải theo đề cương được hội đồng đạo đức/bệnh viện phê duyệt.
 
@@ -676,7 +676,7 @@
 
 **Nguồn:** encounters; patients; lab_results; imaging_results; surgery_results
 
-**Cách xử lý:** Một dòng mỗi khoảng phân tích. Chỉ dữ liệu matched và is_within_encounter = 1 mới được dùng cho snapshot/tóm tắt; toàn bộ XN/CĐHA vẫn nằm ở các bảng chi tiết theo từng dòng, không nhét thành JSON trong một ô. imaging_summary giữ phần văn bản tổng hợp; phẫu thuật lấy ca sớm nhất đã xác minh.
+**Cách xử lý:** Một dòng mỗi đợt. Chỉ dữ liệu matched và is_within_encounter = 1 mới được dùng cho snapshot/tóm tắt phân tích; dữ liệu chưa đủ bằng chứng vẫn giữ nguyên ở bảng chi tiết. analysis_ready không chứa toàn bộ XN/CĐHA trong một ô: chi tiết đầy đủ nằm ở lab_results/imaging_results theo từng dòng; bảng rộng chỉ giữ số lượng và các snapshot/biến cần phân tích. Phẫu thuật lấy ca sớm nhất đã xác minh trong đợt; biến suy luận vẫn có thể dùng CĐHA hợp lệ trong bộ nhớ khi chuẩn hóa.
 
 **Quy tắc chất lượng**
 
@@ -722,9 +722,8 @@
 | `monocyte` | chuỗi | Kết quả monocyte đầu tiên của đợt (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (monocyte). Kết quả có lab_datetime sớm nhất trong đợt. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
 | `rdw` | chuỗi | Kết quả rdw đầu tiên của đợt (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (rdw). Kết quả có lab_datetime sớm nhất trong đợt. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
 | `plt` | chuỗi | Kết quả plt đầu tiên của đợt (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (platelet). Kết quả có lab_datetime sớm nhất trong đợt. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `lab_result_count` | số nguyên | Tổng số dòng kết quả XN đã ghép chắc chắn và nằm trong đợt. |  |  | — | Được dùng |
-| `imaging_result_count` | số nguyên | Tổng số dòng CĐHA đã ghép chắc chắn và nằm trong đợt. |  |  | — | Được dùng |
-| `imaging_summary` | văn bản | Toàn bộ tên dịch vụ + mô tả + kết luận CĐHA của đợt, nối lại, không cắt ngắn. |  |  | Văn bản tự do | Cần đề cương duyệt |
+| `lab_result_count` | số nguyên | Tổng số dòng kết quả XN đã ghép chắc chắn và nằm trong đợt. Lưu ý: Chi tiết từng kết quả nằm ở lab_results.csv, không nhét lại vào một ô JSON. |  |  | — | Được dùng |
+| `imaging_result_count` | số nguyên | Tổng số dòng CĐHA đã ghép chắc chắn và nằm trong đợt. Lưu ý: Chi tiết từng kết quả nằm ở imaging_results.csv, không nhét lại vào một ô JSON/text. |  |  | — | Được dùng |
 | `needs_manual_review` | chuỗi | Lý do cần người kiểm tra, nối "; ". | Nhãn thiếu biến của preset (ví dụ "bên tổn thương", "ngày phẫu thuật") và cờ ghép đợt. |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |

@@ -19,7 +19,7 @@ const { databaseInfo } = require('./sqlite_store');
 const { readCsvTable, patientCode, writeCsv, countCsvRows, getCell } = require('./table_io');
 const { overlayHchanhFromPatientDb, KHO_OVERLAY_FILE, overlayResultsFromPatientDb } = require('./patient_db_overlay');
 const { appendResearchRunLog } = require('./case_trace');
-const { combineEncounterSources, mergeRowsPreferFilled, dedupeByHash, byEncounterCount } = require('./source_merge');
+const { combineEncounterSources, mergeRowsPreferFilled, dedupeByHash, byEncounterCount, buildVerifiedStayIndex, canonicalizeRowToVerifiedStay } = require('./source_merge');
 const { normalizeSex, extractBirthYear, normalizeLabName, resultOperator, parseNumeric, resultText, normalizeLabMeasurement, normalizeFlag, modalityFromService, bodyRegionFromService, normalizeDrugName, classifyDrugGroup, normalizeRoute } = require('./value_normalizers');
 const { dedupeRowsByHash, dedupeSurgeryRows, snapshotFinalDatasetIfUnsaved } = require('./dataset_store');
 const { firstSurgeryByEncounter, surgeryForMedicationContext } = require('./encounter_linkage');
@@ -245,6 +245,13 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   } catch (err) {
     console.warn('[RESEARCH] Không đọc được Kho người bệnh khi chuẩn hoá:', err.message);
   }
+
+  // Dùng ngày vào/ra thực tế EMR đã lấy được để chuẩn hóa các bảng con trong bộ nhớ.
+  // Raw CSV trên đĩa không thay đổi; việc này chỉ loại sai lệch do cùng payload được reuse
+  // cho nhiều dòng nguồn/chuyển khoa của cùng Mã BN.
+  const verifiedStayIndex = buildVerifiedStayIndex(hchanhProfileTable.rows, hchanhDischargeTable.rows);
+  const hchanhOrderRowsCanonical = (hchanhOrderTable.rows || []).map(row => canonicalizeRowToVerifiedStay(row, verifiedStayIndex));
+  const hchanhSurgeryRowsCanonical = (hchanhSurgeryTable.rows || []).map(row => canonicalizeRowToVerifiedStay(row, verifiedStayIndex));
 
   markNormalizeStage(dir, 2, 'Ghép lượt điều trị');
   const encounterSourceRows = combineEncounterSources({
@@ -516,7 +523,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
 
   markNormalizeStage(dir, 4, 'Phẫu thuật, y lệnh, diễn biến');
   const surgeryRaw = [
-    ...hchanhSurgeryTable.rows,
+    ...hchanhSurgeryRowsCanonical,
     ...readCsvTable(path.join(dir, 'lich_su_phau_thuat.csv'), Number.MAX_SAFE_INTEGER).rows,
     ...readCsvTable(path.join(dir, 'phau_thuat.csv'), Number.MAX_SAFE_INTEGER).rows,
   ];
@@ -525,7 +532,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     const ctx = contextForRow(ctxMap, row, code);
     const dt = firstNonEmpty(row, ['Ngày phẫu thuật', 'Ngay phau thuat', 'Thời gian', 'Thoi gian', 'bat_dau', 'surgery_datetime', 'surgery_date']);
     const base = {
-      research_code: firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || ctx.research_code || '',
+      research_code: ctx.research_code || firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || '',
       patient_code: code,
       encounter_id: ctx.encounter_id || '',
       encounter_match_status: encounterMatchStatus(ctx),
@@ -558,7 +565,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
 
   const existingMedRows = readCsvTable(path.join(dir, 'medication_orders.csv'), Number.MAX_SAFE_INTEGER).rows;
   const medicationRowsFromHistory = [];
-  for (const row of hchanhOrderTable.rows || []) {
+  for (const row of hchanhOrderRowsCanonical) {
     for (const parsed of medicationRowsFromOrderRow(row)) {
       medicationRowsFromHistory.push({ ...parsed });
     }
@@ -581,7 +588,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     const postopOffset = surgeryDate && orderDate ? dateOffsetDays(surgeryDate, orderDate) : '';
     const postopNumber = postopOffset === '' ? NaN : Number(postopOffset);
     const base = {
-      research_code: firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || ctx.research_code || '',
+      research_code: ctx.research_code || firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || '',
       patient_code: code,
       encounter_id: ctx.encounter_id || '',
       encounter_match_status: encounterMatchStatus(ctx),
@@ -655,12 +662,12 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     return row;
   });
 
-  let clinicalNotes = (hchanhOrderTable.rows || []).map((row, idx) => {
+  let clinicalNotes = hchanhOrderRowsCanonical.map((row, idx) => {
     const code = patientCode(row);
     const ctx = contextForRow(ctxMap, row, code);
     const rawTime = firstNonEmpty(row, ['TG y lệnh', 'TG y lenh', 'Thời gian', 'Ngày']);
     const base = {
-      research_code: firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || ctx.research_code || '',
+      research_code: ctx.research_code || firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || '',
       patient_code: code,
       encounter_id: ctx.encounter_id || '',
       encounter_match_status: encounterMatchStatus(ctx),
@@ -685,7 +692,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   clinicalNotes = dedupeRowsByHash(clinicalNotes);
 
   let clinicalEvents = [];
-  for (const row of hchanhOrderTable.rows || []) {
+  for (const row of hchanhOrderRowsCanonical) {
     const code = patientCode(row);
     if (!code) continue;
     const ctx = contextForRow(ctxMap, row, code);
@@ -693,7 +700,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     const { clinical_text: clinicalText } = dedupeOrderFields(row);
     for (const parsed of extractClinicalEvents(clinicalText)) {
       const base = {
-        research_code: firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || ctx.research_code || '',
+        research_code: ctx.research_code || firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || '',
         patient_code: code,
         encounter_id: ctx.encounter_id || '',
         encounter_match_status: encounterMatchStatus(ctx),
@@ -801,58 +808,9 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     return pd;
   }).sort((a, b) => `${a.patient_code}|${a.encounter_id}|${a.date}`.localeCompare(`${b.patient_code}|${b.encounter_id}|${b.date}`));
 
-  // Bản đầy đủ theo encounter để analysis_ready/final dataset không làm mất các lần kết quả.
-  const labResultsByEncounter = new Map();
-  for (const lab of labResults) {
-    if (!lab.encounter_id || lab.encounter_match_status !== 'matched' || lab.is_within_encounter !== '1') continue;
-    const list = labResultsByEncounter.get(lab.encounter_id) || [];
-    list.push({
-      lab_datetime: lab.lab_datetime || '',
-      lab_date: lab.lab_date || '',
-      lab_order_id: lab.lab_order_id || '',
-      lab_group: lab.lab_group || '',
-      test_name_raw: lab.test_name_raw || '',
-      test_name_norm: lab.test_name_norm || '',
-      result_raw: lab.result_raw || '',
-      result_operator: lab.result_operator || '',
-      result_num: lab.result_num || '',
-      result_text: lab.result_text || '',
-      unit: lab.unit || '',
-      result_num_norm: lab.result_num_norm || '',
-      unit_norm: lab.unit_norm || '',
-      unit_conversion_status: lab.unit_conversion_status || '',
-      ref_range_raw: lab.ref_range_raw || '',
-      flag_raw: lab.flag_raw || '',
-      flag_norm: lab.flag_norm || '',
-    });
-    labResultsByEncounter.set(lab.encounter_id, list);
-  }
-
-  const imagingResultsByEncounter = new Map();
-  for (const img of imagingResults) {
-    if (!img.encounter_id || img.encounter_match_status !== 'matched' || img.is_within_encounter !== '1') continue;
-    const list = imagingResultsByEncounter.get(img.encounter_id) || [];
-    list.push({
-      ordered_at: img.ordered_at || '',
-      order_date: img.order_date || '',
-      service_name_raw: img.service_name_raw || '',
-      modality: img.modality || '',
-      body_region: img.body_region || '',
-      result_text: img.result_text || '',
-      conclusion_text: img.conclusion_text || '',
-      status: img.status || '',
-    });
-    imagingResultsByEncounter.set(img.encounter_id, list);
-  }
-
-  const sortClinicalResults = rows => rows.sort((a, b) => {
-    const ta = String(a.lab_datetime || a.ordered_at || a.lab_date || a.order_date || '');
-    const tb = String(b.lab_datetime || b.ordered_at || b.lab_date || b.order_date || '');
-    return ta.localeCompare(tb);
-  });
-  for (const rows of labResultsByEncounter.values()) sortClinicalResults(rows);
-  for (const rows of imagingResultsByEncounter.values()) sortClinicalResults(rows);
-
+  // Chi tiết XN/CĐHA giữ ở bảng dài (lab_results/imaging_results), không
+  // nhét toàn bộ một đợt vào một ô JSON của analysis_ready. Điều này tránh cell
+  // cực lớn ở BN nằm viện dài ngày và giữ đúng grain của dữ liệu phân tích.
   const firstLabByEncounter = new Map();
   for (const lab of labResults) {
     const col = pdLabMap[lab.test_name_norm];
@@ -935,9 +893,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       comorbidity_text: enc.comorbidity_text || '',
       complication_text: enc.complication_text || '',
       hb: labs.hb || '', hct: labs.hct || '', neutrophil: labs.neutrophil || '', lymphocyte: labs.lymphocyte || '', monocyte: labs.monocyte || '', rdw: labs.rdw || '', plt: labs.plt || '',
-      lab_result_count: (labResultsByEncounter.get(enc.encounter_id) || []).length,
-      imaging_result_count: (imagingResultsByEncounter.get(enc.encounter_id) || []).length,
-      imaging_summary: imagingTextByEncounter.get(enc.encounter_id) || '',
+      lab_result_count: labByEncounter.get(enc.encounter_id)?.total || 0,
+      imaging_result_count: imagingByEncounter.get(enc.encounter_id)?.total || 0,
       needs_manual_review: reviewItems.join('; '),
       source_run_id: runId,
     };
@@ -1108,7 +1065,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     'surgery_name', 'surgery_method', 'anesthesia_method', 'comorbidity_text', 'complication_text',
     'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt',
     'lab_result_count', 'imaging_result_count',
-    'imaging_summary', 'needs_manual_review', 'source_run_id', 'row_hash',
+    'needs_manual_review', 'source_run_id', 'row_hash',
   ];
   const analysisReadyCols = [...analysisReadyBaseCols, ...inferenceColKeys, ...customColKeys, ...analysisReadyTrailCols];
   writeCsv(path.join(dir, 'analysis_ready.csv'), analysisReadyCols, analysisReady);

@@ -348,6 +348,63 @@ test('Chuyển khoa nghi cùng đợt: không tự gộp, có trong encounter_re
   assert.ok(!fs.readFileSync(path.join(runDir, 'qa_report.json'), 'utf-8').includes('GIA LAP'));
 });
 
+test('Chỉ Mã BN: nhiều dòng nguồn trong cùng khoảng EMR gộp 1 đợt và không nhân bản y lệnh reuse', () => {
+  const runDir = newRunDir();
+  const cols = ['T/G vào', 'Mã BN', 'Họ tên'];
+  const initial = [
+    { 'T/G vào': '08:00 08/09/2026', 'Mã BN': '777', 'Họ tên': 'BN GIA LAP C' },
+    { 'T/G vào': '09:00 10/09/2026', 'Mã BN': '777', 'Họ tên': 'BN GIA LAP C' },
+    { 'T/G vào': '10:00 15/09/2026', 'Mã BN': '777', 'Họ tên': 'BN GIA LAP C' },
+  ];
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), cols, initial);
+  const sourceInfo = R.ensureResearchSourceRows(runDir, { sourceRunId: 'r', force: true });
+  const source = sourceInfo.rows.filter(r => r['Mã BN'] === '777');
+  assert.strictEqual(source.length, 3, 'raw/source vẫn giữ 3 dòng nguồn');
+
+  const actualAdmission = '08:00 08/09/2026';
+  const actualDischarge = '21/09/2026';
+  const profile = source.map(r => ({
+    'Mã NC': r['Mã NC'], 'Mã BN': '777', 'Research key': r['Research key'],
+    'Ngày vào viện': actualAdmission, 'Ngày ra viện': actualDischarge,
+    'Họ tên': 'BN GIA LAP C', 'Nguồn input': 'hchanh_auto_profile',
+  }));
+  const discharge = source.map(r => ({
+    'Mã NC': r['Mã NC'], 'Mã BN': '777', 'Research key': r['Research key'],
+    'Ngày vào viện': actualAdmission, 'Ngày ra viện': actualDischarge,
+    'Họ tên': 'BN GIA LAP C', 'Chẩn đoán ra viện': 'TB45 - giả lập',
+    'Nguồn input': 'hchanh_auto_discharge',
+  }));
+  const orders = source.map((r, idx) => ({
+    'Mã NC': r['Mã NC'], 'Mã BN': '777', 'Research key': r['Research key'],
+    // Mô phỏng file cũ: mỗi bản reuse vẫn mang ngày của dòng nguồn khác nhau.
+    'Ngày vào viện': initial[idx]['T/G vào'], 'Ngày ra viện': actualDischarge,
+    'TG y lệnh': '08:00 15/09/2026',
+    'Diễn biến': 'Bệnh nhân tỉnh',
+    'Tên y lệnh': '(TT) Eperison 50mg 01v x3 (u) 8h-14h-20h',
+    'Y lệnh khác': '',
+    'Nguồn': 'hchanh_auto_order_history',
+  }));
+  writeCsv(path.join(runDir, 'hchanh_profile.csv'), Object.keys(profile[0]), profile);
+  writeCsv(path.join(runDir, 'hchanh_discharge.csv'), Object.keys(discharge[0]), discharge);
+  writeCsv(path.join(runDir, 'hchanh_order_history.csv'), Object.keys(orders[0]), orders);
+
+  const out = R.normalizeRunOutputs(runDir, { sourceRunId: 'r', force: true });
+  assert.strictEqual(out.encounters, 1, 'các dòng nguồn cùng khoảng EMR phải thành một encounter');
+  assert.strictEqual(readCsv(path.join(runDir, 'hchanh_order_history.csv')).length, 3, 'raw vẫn giữ đủ 3 bản reuse để audit');
+
+  const encounters = readCsvTable(path.join(runDir, 'encounters.csv'), Number.MAX_SAFE_INTEGER).rows.filter(r => r.patient_code === '777');
+  assert.strictEqual(encounters.length, 1);
+  assert.ok(String(encounters[0].admission_date).startsWith('2026-09-08'));
+  assert.ok(String(encounters[0].discharge_date).startsWith('2026-09-21'));
+
+  const meds = readCsvTable(path.join(runDir, 'medication_orders.csv'), Number.MAX_SAFE_INTEGER).rows.filter(r => r.patient_code === '777');
+  assert.strictEqual(meds.length, 1, 'cùng một y lệnh reuse không được nhân theo số dòng nguồn');
+  assert.strictEqual(meds[0].encounter_match_status, 'matched');
+
+  const notes = readCsvTable(path.join(runDir, 'clinical_notes.csv'), Number.MAX_SAFE_INTEGER).rows.filter(r => r.patient_code === '777');
+  assert.strictEqual(notes.length, 1, 'clinical note reuse giống hệt cũng chỉ giữ một bản chuẩn hóa');
+});
+
 test('Dòng nguồn vẫn tách; encounters chỉ gộp khi Mã BN + khoảng vào-ra chứng minh cùng lần nằm viện', () => {
   const runDir = newRunDir();
   // Dòng vào khoa sau đứng trước; dòng vào viện sớm hơn có ngày ra bao trùm mốc chuyển khoa.
@@ -385,7 +442,7 @@ test('XN: giữ đủ mọi lần xét nghiệm; dòng giống hệt chỉ cản
   assert.strictEqual(review.filter(r => r.issue === 'conflicting_lab_result').length, 1);
 });
 
-test('CĐHA/XN giữ từng dòng chi tiết; analysis_ready chỉ giữ số đếm/tóm tắt, không nhét mảng JSON vào một ô', () => {
+test('CĐHA/XN giữ đầy đủ ở bảng dài; analysis_ready chỉ giữ count, không nhét cả đợt vào một ô', () => {
   const runDir = newRunDir();
   writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), INITIAL_COLS, INITIAL_ROWS);
   const xnCols = ['Mã BN', 'TG chỉ định', 'Mã phiếu', 'Chỉ số', 'Kết quả', 'Đơn vị', 'Khoảng tham chiếu'];
@@ -402,20 +459,21 @@ test('CĐHA/XN giữ từng dòng chi tiết; analysis_ready chỉ giữ số đ
   assert.strictEqual(out.lab_results, 2);
   assert.strictEqual(out.imaging_results, 2, 'hai lần CĐHA giống nội dung vẫn phải được giữ');
 
-  const readyTable = readCsvTable(path.join(runDir, 'analysis_ready.csv'), Number.MAX_SAFE_INTEGER);
-  const ready = (readyTable.rows || []).find(r => r.patient_code === '111');
+  const labs = readCsv(path.join(runDir, 'lab_results.csv'));
+  const images = readCsv(path.join(runDir, 'imaging_results.csv'));
+  assert.strictEqual(labs.length, 2, 'bảng dài XN phải giữ đủ hai lần Hb');
+  assert.deepStrictEqual(labs.map(x => x.lab_order_id), ['P1', 'P2']);
+  assert.strictEqual(images.length, 2, 'bảng dài CĐHA phải giữ đủ hai lần');
+  assert.ok(images.every(x => x.result_text.endsWith('ĐOẠN_CUỐI_KẾT_QUẢ')));
+  assert.ok(images.every(x => x.conclusion_text === 'KẾT_LUẬN_ĐẦY_ĐỦ'));
+
+  const ready = (readCsvTable(path.join(runDir, 'analysis_ready.csv'), Number.MAX_SAFE_INTEGER).rows || []).find(r => r.patient_code === '111');
   assert.ok(ready);
-  assert.strictEqual(ready.lab_result_count, '2');
-  assert.strictEqual(ready.imaging_result_count, '2');
-  assert.ok(!readyTable.columns.includes('lab_results_json'), 'analysis_ready không được chứa toàn bộ XN trong một ô JSON');
-  assert.ok(!readyTable.columns.includes('imaging_results_json'), 'analysis_ready không được chứa toàn bộ CĐHA trong một ô JSON');
-  const labs = readCsvTable(path.join(runDir, 'lab_results.csv'), Number.MAX_SAFE_INTEGER).rows || [];
-  const images = readCsvTable(path.join(runDir, 'imaging_results.csv'), Number.MAX_SAFE_INTEGER).rows || [];
-  assert.deepStrictEqual(labs.filter(x => x.patient_code === '111').map(x => x.lab_order_id), ['P1', 'P2']);
-  assert.strictEqual(images.filter(x => x.patient_code === '111').length, 2);
-  assert.ok(images.filter(x => x.patient_code === '111').every(x => x.result_text.endsWith('ĐOẠN_CUỐI_KẾT_QUẢ')));
-  assert.ok(ready.imaging_summary.includes('ĐOẠN_CUỐI_KẾT_QUẢ'), 'không được cắt imaging_summary ở 1200 ký tự');
-  assert.ok(ready.imaging_summary.includes('KẾT_LUẬN_ĐẦY_ĐỦ'));
+  assert.strictEqual(Number(ready.lab_result_count), 2);
+  assert.strictEqual(Number(ready.imaging_result_count), 2);
+  assert.ok(!Object.prototype.hasOwnProperty.call(ready, 'lab_results_json'));
+  assert.ok(!Object.prototype.hasOwnProperty.call(ready, 'imaging_results_json'));
+  assert.ok(!Object.prototype.hasOwnProperty.call(ready, 'imaging_summary'));
 
   const qa = JSON.parse(fs.readFileSync(path.join(runDir, 'qa_report.json'), 'utf-8'));
   assert.ok(qa.warnings.some(w => w.code === 'possible_duplicate_imaging_rows'));

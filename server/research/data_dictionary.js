@@ -24,7 +24,7 @@ const routeModel = require('../utils/routeModel');
 //   excluded           — mặc định bị che khi xem/xuất (server/research/export_utils.js).
 // Phân loại "use" là đề xuất kỹ thuật; bệnh viện/hội đồng đạo đức phải xác nhận.
 
-const DICTIONARY_VERSION = '2026-10-06.10';
+const DICTIONARY_VERSION = '2026-10-07.1';
 
 const CONVENTIONS = {
   dates: 'Ngày dạng YYYY-MM-DD; thời điểm dạng YYYY-MM-DD HH:mm (giờ địa phương, không có múi giờ). Cột "ngày giờ" có thể chỉ có phần ngày nếu nguồn không có giờ.',
@@ -496,7 +496,7 @@ TABLES.analysis_ready = {
   primary_key: ['encounter_id'],
   foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id' }, { columns: ['patient_code'], references: 'patients.patient_code' }],
   sources: ['encounters', 'patients', 'lab_results', 'imaging_results', 'surgery_results'],
-  processing: 'Một dòng mỗi khoảng phân tích. Chỉ dữ liệu matched và is_within_encounter = 1 mới được dùng cho snapshot/tóm tắt; toàn bộ XN/CĐHA vẫn nằm ở các bảng chi tiết theo từng dòng, không nhét thành JSON trong một ô. imaging_summary giữ phần văn bản tổng hợp; phẫu thuật lấy ca sớm nhất đã xác minh.',
+  processing: 'Một dòng mỗi đợt. Chỉ dữ liệu matched và is_within_encounter = 1 mới được dùng cho snapshot/tóm tắt phân tích; dữ liệu chưa đủ bằng chứng vẫn giữ nguyên ở bảng chi tiết. analysis_ready không chứa toàn bộ XN/CĐHA trong một ô: chi tiết đầy đủ nằm ở lab_results/imaging_results theo từng dòng; bảng rộng chỉ giữ số lượng và các snapshot/biến cần phân tích. Phẫu thuật lấy ca sớm nhất đã xác minh trong đợt; biến suy luận vẫn có thể dùng CĐHA hợp lệ trong bộ nhớ khi chuẩn hóa.',
   inferred: true,
   quality: {
     required: ['encounter_id', 'research_code'],
@@ -508,7 +508,7 @@ TABLES.analysis_ready = {
     inferred: 'Cột suy luận theo preset (ví dụ injury_side_suggested, hip_fracture_suggested, spine_involved, joint_type_suggested, neuro_deficit, stroke_type): suy từ văn bản chẩn đoán + CĐHA bằng từ khóa; ô trống = không tìm thấy từ khóa, KHÔNG có nghĩa là "không". Cần người xác nhận.',
     custom: 'Cột tự định nghĩa của nghiên cứu (custom_fields): so mẫu trên văn bản chẩn đoán đã bỏ dấu; cột boolean luôn là 1/0.',
   },
-  columns: withCommon(['research_code', 'encounter_id', 'patient_code', 'patient_key', 'patient_name', 'sex', 'birth_year', 'age', 'admission_date', 'surgery_date', 'discharge_date', 'hospital_stay_days', 'time_to_surgery_hours', 'diagnosis_raw', 'surgery_name', 'surgery_method', 'anesthesia_method', 'comorbidity_text', 'complication_text', 'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt', 'lab_result_count', 'imaging_result_count', 'imaging_summary', 'needs_manual_review', 'source_run_id', 'row_hash'], {
+  columns: withCommon(['research_code', 'encounter_id', 'patient_code', 'patient_key', 'patient_name', 'sex', 'birth_year', 'age', 'admission_date', 'surgery_date', 'discharge_date', 'hospital_stay_days', 'time_to_surgery_hours', 'diagnosis_raw', 'surgery_name', 'surgery_method', 'anesthesia_method', 'comorbidity_text', 'complication_text', 'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt', 'lab_result_count', 'imaging_result_count', 'needs_manual_review', 'source_run_id', 'row_hash'], {
     patient_name: col('string', 'Họ tên.', { identifier: 'direct', use: 'excluded' }),
     sex: col('enum', 'Giới tính.', { allowed: ['Nam', 'Nữ'], identifier: 'quasi' }),
     birth_year: col('integer', 'Năm sinh.', { identifier: 'quasi', use: 'approval_required' }),
@@ -530,9 +530,8 @@ TABLES.analysis_ready = {
     ...Object.fromEntries(Object.entries(labSnapshotColumns('đầu tiên của đợt'))
       .filter(([k]) => ['hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt'].includes(k))
       .map(([k, v]) => [k, { ...v, derivation: `${v.derivation} Kết quả có lab_datetime sớm nhất trong đợt.` }])),
-    lab_result_count: col('integer', 'Tổng số dòng kết quả XN đã ghép chắc chắn và nằm trong đợt.'),
-    imaging_result_count: col('integer', 'Tổng số dòng CĐHA đã ghép chắc chắn và nằm trong đợt.'),
-    imaging_summary: col('text', 'Toàn bộ tên dịch vụ + mô tả + kết luận CĐHA của đợt, nối lại, không cắt ngắn.', { identifier: 'free_text', use: 'approval_required' }),
+    lab_result_count: col('integer', 'Tổng số dòng kết quả XN đã ghép chắc chắn và nằm trong đợt.', { note: 'Chi tiết từng kết quả nằm ở lab_results.csv, không nhét lại vào một ô JSON.' }),
+    imaging_result_count: col('integer', 'Tổng số dòng CĐHA đã ghép chắc chắn và nằm trong đợt.', { note: 'Chi tiết từng kết quả nằm ở imaging_results.csv, không nhét lại vào một ô JSON/text.' }),
     needs_manual_review: col('string', 'Lý do cần người kiểm tra, nối "; ".', { allowed: 'Nhãn thiếu biến của preset (ví dụ "bên tổn thương", "ngày phẫu thuật") và cờ ghép đợt.' }),
   }),
 };
