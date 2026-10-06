@@ -476,7 +476,15 @@ function relatedRows(rows, identity) {
   } else {
     picked = pc ? [...(index.noEidNoRcByPc.get(pc) || [])] : [];
   }
-  return picked.sort((a, b) => a.i - b.i).map(entry => entry.row);
+  return picked
+    .sort((a, b) => a.i - b.i)
+    .map(entry => entry.row)
+    .filter(row => {
+      const matchStatus = String(row?.encounter_match_status || '').trim();
+      if (matchStatus && matchStatus !== 'matched') return false;
+      if (String(row?.is_within_encounter || '').trim() === '0') return false;
+      return true;
+    });
 }
 
 function conditionRowsForSource(sourceRow, condition, tableRowsByKey) {
