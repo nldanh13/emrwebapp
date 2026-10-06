@@ -88,7 +88,15 @@ function eventTemporalFields(ctx, eventDate) {
   let within = '';
   if (event && admissionDt) {
     const end = dischargeDt || openStayEnd(admissionDt);
-    within = event.getTime() >= admissionDt.getTime() && event.getTime() <= end.getTime() ? '1' : '0';
+    const hasPreciseAdmissionTime = /\b(?!00:00)\d{2}:\d{2}\b/.test(String(admission));
+    const hasPreciseDischargeTime = dischargeDt && /\b(?!00:00)\d{2}:\d{2}\b/.test(String(discharge));
+    const dayStart = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const dayEnd = d => dayStart(d) + 86400000 - 1;
+    const startMs = hasPreciseAdmissionTime ? admissionDt.getTime() : dayStart(admissionDt);
+    const endMs = dischargeDt
+      ? (hasPreciseDischargeTime ? dischargeDt.getTime() : dayEnd(dischargeDt))
+      : end.getTime();
+    within = event.getTime() >= startMs && event.getTime() <= endMs ? '1' : '0';
   }
   return {
     days_from_admission: dateOffsetDays(admission, eventDate),

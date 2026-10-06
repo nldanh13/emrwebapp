@@ -27,6 +27,7 @@ const CHILD_TABLES = [
   ['surgery_results', 'surgery_id'],
   ['medication_orders', 'med_order_id'],
   ['clinical_notes', 'note_id'],
+  ['clinical_events', 'clinical_event_id'],
 ];
 
 const DAY_MS = 86400000;
@@ -193,11 +194,48 @@ function buildQualityReport({
     if (removed > 0) warnings.push({ code: 'duplicate_raw_rows_removed', message: `${table}: bỏ ${removed} dòng thô giống hệt dòng khác (giữ một).`, table, count: removed });
   }
 
+  // XN lặp hoàn toàn: không tự xóa. Có thể là lấy trùng kỹ thuật, nhưng cũng có thể
+  // là hai mẫu/phiếu thật sự trùng thời điểm và kết quả. Chỉ cảnh báo để người duyệt quyết định.
+  const labRowsForDuplicateReview = Array.isArray(tables.lab_results) ? tables.lab_results : [];
+  const labHashGroups = new Map();
+  for (const row of labRowsForDuplicateReview) {
+    const key = text(row.row_hash);
+    if (!key) continue;
+    if (!labHashGroups.has(key)) labHashGroups.set(key, []);
+    labHashGroups.get(key).push(row);
+  }
+  let possibleDuplicateLabGroups = 0;
+  for (const group of labHashGroups.values()) {
+    if (group.length < 2) continue;
+    possibleDuplicateLabGroups += 1;
+    const first = group[0];
+    addReview(
+      { encounter_id: first.encounter_id, research_code: first.research_code, patient_code: first.patient_code },
+      'possible_duplicate_lab_rows',
+      `Có ${group.length} dòng XN giống hệt sau chuẩn hóa. Hệ thống giữ tất cả để tránh mất lần xét nghiệm thật; cần đối chiếu Mã phiếu/mẫu nếu có.`
+    );
+  }
+  if (possibleDuplicateLabGroups) {
+    warnings.push({
+      code: 'possible_duplicate_lab_rows',
+      message: `lab_results: ${possibleDuplicateLabGroups} nhóm dòng XN giống hệt được giữ nguyên, không tự xóa.`,
+      table: 'lab_results',
+      count: possibleDuplicateLabGroups,
+    });
+  }
+
   // Cùng BN + cùng thời điểm + cùng chỉ số/dịch vụ phải là MỘT kết quả. Nếu các dòng
   // đó có kết quả khác nhau thì là dữ liệu mâu thuẫn: giữ tất cả, không tự chọn.
   const conflictSpecs = [
-    ['lab_results', r => r.lab_datetime && [r.patient_code, r.lab_datetime, text(r.test_name_raw).toLowerCase()].join('|'),
-      r => [text(r.result_raw), text(r.unit)].join('|'), r => `Chỉ số "${text(r.test_name_raw)}" lúc ${text(r.lab_datetime)}`],
+    ['lab_results', r => r.lab_datetime && [
+      r.patient_code,
+      text(r.encounter_id),
+      r.lab_datetime,
+      text(r.lab_order_id) || '(không mã phiếu)',
+      text(r.test_name_raw).toLowerCase(),
+    ].join('|'),
+      r => [text(r.result_raw), text(r.unit)].join('|'),
+      r => `Chỉ số "${text(r.test_name_raw)}" lúc ${text(r.lab_datetime)}${text(r.lab_order_id) ? `, phiếu ${text(r.lab_order_id)}` : ''}`],
     ['imaging_results', r => r.ordered_at && [r.patient_code, r.ordered_at, text(r.service_name_raw).toLowerCase()].join('|'),
       r => [text(r.result_text), text(r.conclusion_text)].join('|'), r => `Dịch vụ "${text(r.service_name_raw)}" lúc ${text(r.ordered_at)}`],
   ];
