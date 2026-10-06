@@ -14,7 +14,7 @@
 //      dataset chọn biến/dataset cuối/bảng mã hóa không còn Mã BN và họ tên.
 // v16: bổ sung parser cấu trúc cho y lệnh và diễn biến lâm sàng.
 // v17: XN lossless — không tự xóa các lần xét nghiệm giống nhau; mỗi dòng có ID riêng.
-const NORMALIZED_SCHEMA_VERSION = 18;
+const NORMALIZED_SCHEMA_VERSION = 19;
 
 const NORMALIZED_COLUMNS = {
   patients: [
@@ -93,6 +93,7 @@ const NORMALIZED_COLUMNS = {
     // và được gộp vào đây bởi writeCsvDynamic — không hardcode ở đây để tránh cột rỗng với NC khác chuyên khoa
     'surgery_name', 'surgery_method', 'anesthesia_method', 'comorbidity_text', 'complication_text',
     'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt',
+    'lab_result_count', 'lab_results_json', 'imaging_result_count', 'imaging_results_json',
     'imaging_summary', 'needs_manual_review', 'source_run_id', 'row_hash',
   ],
   extract_status: [

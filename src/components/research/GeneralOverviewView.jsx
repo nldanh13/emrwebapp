@@ -112,6 +112,20 @@ function PipelineView({ pipeline, summary }) {
               {fetch.parts?.length ? <span style={{ color: C.text3 }}> ({fetch.parts.map(p => `${p.label}: ${when(p.updated_at)}`).join(' · ')})</span> : null}.
             </div>
           )}
+          {!!collect?.diagnostics?.length && (
+            <div style={{ marginTop: 8, border: `1px solid ${C.amberBorder}`, background: C.amberBg, borderRadius: 7, padding: '7px 9px' }}>
+              <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Lỗi đang nằm ở bước nào?</div>
+              <div style={{ marginTop: 5, display: 'grid', gap: 4 }}>
+                {collect.diagnostics.slice(0, 8).map((d, idx) => (
+                  <div key={`${d.stage || 'x'}_${idx}`} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: FS.xs, color: C.text2 }}>
+                    <b>{d.stage_label || 'Chưa phân loại'}:</b>
+                    <span>{d.message}</span>
+                    <span style={{ color: C.text3 }}>· {compactNumber(d.encounters || 0)} lượt / {compactNumber(d.rows || 0)} phần</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {!!reused.cases && <div>Dùng lại từ Kho người bệnh (tab Kiểm/Trả HSBA): <B>{compactNumber(reused.cases)}</B> ca, trong đó <B>{compactNumber(reused.provisional)}</B> ca còn dữ liệu tạm thời, <B>{compactNumber(reused.replaced_by_goc)}</B> ca đã thay bằng dữ liệu gốc.</div>}
           {!!modules.length && (
             <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', columnGap: 18, rowGap: 8 }}>

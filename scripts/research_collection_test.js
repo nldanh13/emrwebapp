@@ -67,7 +67,19 @@ test('Phân loại kết quả hành chánh: có dữ liệu / EMR không có / 
   assert.deepStrictEqual(c.classifyFetchStatus('no_session', 0), { status: 'failed', reason: 'session' });
   assert.deepStrictEqual(c.classifyFetchStatus('no_url', 0), { status: 'failed', reason: 'not_found' });
   assert.deepStrictEqual(c.classifyFetchStatus('empty', 0), { status: 'failed', reason: 'no_content' });
-  assert.deepStrictEqual(c.classifyFetchStatus('no_table', 0), { status: 'blocked', reason: 'emr_ui_changed' });
+  assert.deepStrictEqual(c.classifyFetchStatus('no_table', 0), { status: 'blocked', reason: 'emr_ui_changed', detail: 'no_table' });
+});
+
+test('Chẩn đoán lỗi thu thập chỉ rõ bước tìm BN, mở lượt, mở dữ liệu và đọc dữ liệu', () => {
+  assert.deepStrictEqual(c.diagnosticFor('not_found'), {
+    diagnostic_stage: 'patient_search',
+    diagnostic_stage_label: '1. Tìm người bệnh',
+    diagnostic_message: 'Không tìm thấy người bệnh theo Mã BN trên EMR.',
+  });
+  assert.strictEqual(c.diagnosticFor('popup_error').diagnostic_stage, 'encounter_open');
+  assert.strictEqual(c.diagnosticFor('emr_ui_changed', 'no_table').diagnostic_stage, 'data_open');
+  assert.strictEqual(c.diagnosticFor('no_content').diagnostic_stage, 'data_read');
+  assert.strictEqual(c.diagnosticFor('session').diagnostic_stage, 'emr_session');
 });
 
 test('Phân loại tab XN/CĐHA: "0 dòng" bản cũ chưa được tin là EMR không có', () => {
@@ -170,6 +182,8 @@ test('Lỗi kỹ thuật thử lại có giới hạn, rồi vào danh sách ngo
   assert.strictEqual(ex.length, 1);
   assert.strictEqual(ex[0].category, 'retry_exhausted');
   assert.strictEqual(ex[0].auto_retry, 'no');
+  assert.strictEqual(ex[0].diagnostic_stage, 'technical');
+  assert.match(ex[0].diagnostic_message, /EMR không phản hồi kịp/);
   // Hết lỗi → đếm lại từ 0.
   hc.enc_a = hcEntry(OK_HC, '2026-01-20T00:00:00Z');
   ledger = c.buildLedger({ sourceRows: sources, xnProgress: xn, hchanhProgress: hc, orderProgress: oh, previous: ledger });
