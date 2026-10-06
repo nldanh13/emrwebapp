@@ -317,17 +317,30 @@ function buildContextMap(patientRows, sourceRunId = '') {
   return map;
 }
 
-function resolveStrongEncounterKey(ctxMap, mapKey, row, code, method) {
-  const value = ctxMap.get(mapKey);
-  if (!value) return unresolvedContext(code, [], 'encounter_match_strong_key_not_found');
-  const candidates = Array.isArray(value) ? value : [value];
+function resolveStrongEncounterKey(ctxMap, keys, row, code, method, aliasMethod = '') {
+  const keyList = Array.isArray(keys) ? keys : [keys];
+  const candidates = [];
+  const seen = new Set();
+  let usedAlias = false;
+  for (let i = 0; i < keyList.length; i += 1) {
+    const value = ctxMap.get(keyList[i]);
+    if (!value) continue;
+    for (const ctx of (Array.isArray(value) ? value : [value])) {
+      const id = String(ctx?.encounter_id || '');
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      candidates.push(ctx);
+      if (i > 0) usedAlias = true;
+    }
+  }
+  if (!candidates.length) return unresolvedContext(code, [], 'encounter_match_strong_key_not_found');
   const samePatient = candidates.filter(ctx => normalizedIdentity(ctx.patient_code) === normalizedIdentity(code));
   if (samePatient.length !== 1) {
     return unresolvedContext(code, samePatient, samePatient.length > 1
       ? 'encounter_match_strong_key_ambiguous'
       : 'encounter_match_identity_conflict');
   }
-  return matchedContextForRow(samePatient[0], row, code, method);
+  return matchedContextForRow(samePatient[0], row, code, usedAlias && aliasMethod ? aliasMethod : method);
 }
 
 function contextForRow(ctxMap, row, code) {
@@ -338,11 +351,27 @@ function contextForRow(ctxMap, row, code) {
 
   const treatmentId = rowEmrTreatmentId(row);
   if (treatmentId) {
-    return resolveStrongEncounterKey(ctxMap, `treatment:${normalizedIdentity(treatmentId)}`, row, code, 'emr_treatment_id');
+    const id = normalizedIdentity(treatmentId);
+    return resolveStrongEncounterKey(
+      ctxMap,
+      [`treatment:${id}`, `noitru:${id}`],
+      row,
+      code,
+      'emr_treatment_id',
+      'emr_treatment_noitru_alias',
+    );
   }
   const noitruId = rowNoitruId(row);
   if (noitruId) {
-    return resolveStrongEncounterKey(ctxMap, `noitru:${normalizedIdentity(noitruId)}`, row, code, 'emr_noitru_id');
+    const id = normalizedIdentity(noitruId);
+    return resolveStrongEncounterKey(
+      ctxMap,
+      [`noitru:${id}`, `treatment:${id}`],
+      row,
+      code,
+      'emr_noitru_id',
+      'emr_noitru_treatment_alias',
+    );
   }
   const admissionId = rowEmrAdmissionId(row);
   if (admissionId) {
