@@ -637,8 +637,16 @@ function aggregateItems(variable, aggregation, items, identity) {
     return String(eligible[0].value);
   }
 
-  const distinct = [...new Set(items.map(item => String(item.value)))].slice(0, 8);
-  return distinct.join('; ');
+  // list phải giữ số lần xuất hiện. Hai lần XN cùng giá trị vẫn là hai quan sát,
+  // không được âm thầm rút thành một giá trị bằng Set.
+  const ordered = [...items].sort((a, b) => {
+    const aTimed = Number.isFinite(a.time);
+    const bTimed = Number.isFinite(b.time);
+    if (aTimed && bTimed) return a.time - b.time || a.index - b.index;
+    if (aTimed !== bTimed) return aTimed ? -1 : 1;
+    return a.index - b.index;
+  });
+  return ordered.map(item => String(item.value)).join('; ');
 }
 
 function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByKey = {}) {
