@@ -193,11 +193,26 @@ function argsForLog(args = []) {
  * Kèm theo tối đa MAX_LINES dòng stderr cuối (đã lọc nhạy cảm).
  * Không kèm nếu result không có stderrTail hoặc rỗng.
  */
-function fmtPyError(baseMsg, result, { maxLines = 15 } = {}) {
-  const tail = Array.isArray(result?.stderrTail) ? result.stderrTail : [];
+// Dòng thuộc traceback Python (đường dẫn file, số dòng, mã nguồn, dấu ^^^) — không đưa cho người dùng.
+const TRACEBACK_LINE = /^(Traceback \(most recent call last\):|\s+File "|\s+\.\.\.<\d+ lines?>\.\.\.|\s*[~^]+\s*$|\s{2,}\S)/;
+// Dòng cuối của traceback: "RuntimeError: ..." hoặc "selenium.common.exceptions.TimeoutException: ...".
+const EXCEPTION_LINE = /^(?:[A-Za-z_][\w]*\.)*[A-Za-z_]\w*(?:Error|Exception|Exit|Interrupt|Warning)\s*:\s*(.+)$/;
+
+// Câu lỗi cho người dùng: câu gốc + lý do (câu của ngoại lệ Python). Không kèm traceback trần;
+// toàn bộ log vẫn xem được ở nút "Xem log" (CLAUDE.md: lỗi tiếng Việt, không traceback trần).
+function fmtPyError(baseMsg, result, { maxLines = 3 } = {}) {
+  const tail = Array.isArray(result?.stderrTail) ? result.stderrTail.map(l => String(l ?? '')) : [];
   if (!tail.length) return baseMsg;
-  const snippet = tail.slice(-maxLines).join('\n');
-  return `${baseMsg}\n\nLog (${tail.length} dòng cuối):\n${snippet}`;
+  for (let i = tail.length - 1; i >= 0; i -= 1) {
+    const m = EXCEPTION_LINE.exec(tail[i].trim());
+    if (m) {
+      const reason = m[1].replace(/^Message:\s*/i, '').trim();
+      if (reason) return `${baseMsg}\nLý do: ${reason}`;
+    }
+  }
+  const meaningful = tail.filter(l => l.trim() && !TRACEBACK_LINE.test(l)).slice(-maxLines);
+  if (!meaningful.length) return `${baseMsg}\nXem chi tiết ở nút "Xem log".`;
+  return `${baseMsg}\nChi tiết: ${meaningful.map(l => l.trim()).join(' · ')}`;
 }
 
 /** Chạy main_worker.py với subcommand (scan / details). */

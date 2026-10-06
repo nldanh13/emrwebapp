@@ -46,3 +46,27 @@ describe('RunningBanner', () => {
     expect(alert.textContent).toContain('Dừng');
   });
 });
+
+// Ảnh người dùng 06/10/2026: lấy dữ liệu lỗi (EMR không đăng nhập được) nhưng dải đầu trang vẫn xanh
+// "✓ Đã kết thúc: Lấy dữ liệu" ngay trên khung đỏ báo lỗi — trông như chạy xong bình thường.
+describe('RunningBanner — tác vụ vừa kết thúc', () => {
+  const finished = { scope_key: 'archive', label: 'Lấy dữ liệu', since: iso(27), finished_at: iso(0), elapsed_ms: 27000 };
+  const renderFinished = (extra) => act(() => root.render(createElement(RunningBanner, {
+    running: [], lastFinished: finished, scopeName: () => 'Kho dữ liệu gốc', onOpen: () => {}, onCancel: () => {}, onDismissFinished: () => {}, ...extra,
+  })));
+
+  it('kết thúc có lỗi → báo "Đã dừng do lỗi", không dấu ✓ xanh', () => {
+    renderFinished({ finishedWithError: true });
+    const t = host.textContent;
+    expect(t).toContain('Đã dừng do lỗi: Lấy dữ liệu');
+    expect(t).not.toContain('✓');
+    expect(t).not.toContain('Đã kết thúc');
+    expect(host.querySelector('[role="alert"]')).not.toBeNull();
+  });
+
+  it('kết thúc bình thường → vẫn "✓ Đã kết thúc"', () => {
+    renderFinished({});
+    expect(host.textContent).toContain('✓');
+    expect(host.textContent).toContain('Đã kết thúc: Lấy dữ liệu');
+  });
+});

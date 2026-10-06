@@ -2270,7 +2270,14 @@ def load_config(script_dir):
     for p in candidates:
         if p.exists():
             with open(p, encoding="utf-8") as f:
-                return json.load(f)
+                cfg = json.load(f)
+            # Tài khoản EMR nằm ở secrets/secrets.json (hoặc biến môi trường) từ khi chuyển mật khẩu
+            # khỏi config.json — điền vào như mọi worker khác (worker/shared/secret_store.py).
+            try:
+                from shared.secret_store import apply_secrets_to_config
+            except Exception:  # pragma: no cover - thiếu module thì dùng config.json như cũ
+                return cfg
+            return apply_secrets_to_config(cfg)
     raise FileNotFoundError("Không tìm thấy config.json")
 
 
@@ -2298,6 +2305,11 @@ def init_driver(headless=False):
 
 def login(driver, wait, cfg):
     log_step("[1] Đăng nhập...")
+    if not str(cfg.get("username") or "").strip() or not str(cfg.get("password") or ""):
+        raise RuntimeError(
+            "Chưa có tài khoản EMR cho robot lấy dữ liệu. Điền tài khoản EMR chung vào "
+            "secrets/secrets.json (mục emr: username/password, xem docs/SECRETS.md) rồi chạy lại."
+        )
     log_click(f"Mở URL đăng nhập: {cfg.get('url_login','')}")
     driver.get(cfg["url_login"])
     log_find("txtLoginName — nhập username")
@@ -2318,6 +2330,49 @@ def _cho_roi_trang_dang_nhap(driver, timeout=20):
     return False
 
 
+_JS_THONG_BAO_DANG_NHAP = r"""
+var out = [];
+var els = document.querySelectorAll('[id],[class]');
+for (var i = 0; i < els.length && out.length < 5; i++) {
+  var el = els[i];
+  var key = ((el.id || '') + ' ' + (typeof el.className === 'string' ? el.className : '')).toLowerCase();
+  if (!/(err|msg|mess|loi|thongbao|alert|warn|valid)/.test(key)) continue;
+  if (el.offsetParent === null) continue;
+  var t = (el.innerText || '').replace(/\s+/g, ' ').trim();
+  if (t && t.length <= 200 && out.indexOf(t) < 0) out.push(t);
+}
+return out;
+"""
+
+
+def _thong_bao_trang_dang_nhap(driver) -> str:
+    """Câu EMR hiện trên trang đăng nhập khi không cho vào (sai mật khẩu, tài khoản bị khóa…).
+
+    Đọc hộp thoại alert nếu có, rồi các ô thông báo đang hiện (id/class kiểu lblMsg, error, alert).
+    Không đọc ô nhập liệu nên không bao giờ lấy mật khẩu."""
+    parts = []
+    try:
+        alert = driver.switch_to.alert
+        text = str(alert.text or "").strip()
+        if text:
+            parts.append(text)
+        try:
+            alert.accept()
+        except Exception:
+            pass
+    except Exception:
+        pass
+    try:
+        found = driver.execute_script(_JS_THONG_BAO_DANG_NHAP) or []
+        for t in found:
+            t = str(t or "").strip()
+            if t and t not in parts:
+                parts.append(t)
+    except Exception:
+        pass
+    return " · ".join(parts[:3])
+
+
 def vao_noi_tru(driver, wait):
     """Vào D/s Điều trị nội trú.
 
@@ -2327,9 +2382,12 @@ def vao_noi_tru(driver, wait):
     """
     log_step("[2] Vào Nội trú...")
     if not _cho_roi_trang_dang_nhap(driver):
+        emr_bao = _thong_bao_trang_dang_nhap(driver)
         raise RuntimeError(
             "Đăng nhập EMR chưa thành công: sau 20 giây vẫn ở trang đăng nhập. "
-            "Kiểm tra tài khoản/mật khẩu EMR, hoặc tài khoản đang bị khóa/đăng nhập ở nơi khác."
+            + (f'EMR báo: "{emr_bao}". ' if emr_bao else "")
+            + "Kiểm tra tài khoản EMR chung trong secrets/secrets.json (mục emr; mật khẩu EMR vừa đổi?), "
+            "hoặc tài khoản đang bị khóa/đăng nhập ở nơi khác."
         )
     cho_menu = WebDriverWait(driver, 12)
     try:
