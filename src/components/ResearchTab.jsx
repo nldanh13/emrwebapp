@@ -911,7 +911,11 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       const noCohort = activeStudy?.id && !Number(activeStudy.cohort_count || 0);
       return <><EmptyCohortNotice study={activeStudy} toast={t} onImported={loadSummary} />{noCohort ? null : view}</>;
     }
-    if (archiveMode === 'overview') return <GeneralOverviewView {...{ generalOverview, generalOverviewLoading, pipeline, setArchiveMode }} />;
+    if (archiveMode === 'overview') return <GeneralOverviewView
+      {...{ generalOverview, generalOverviewLoading, pipeline, setArchiveMode }}
+      onNormalize={runNormalizeArchive}
+      normalizeBusy={normalizeRequest.status === 'starting' || serverRunning.items.some(item => item.lane === 'normalize' && item.scope === 'archive')}
+    />;
     if (archiveMode === 'patient') return <PatientLookupView {...{
       identifiedAccess, identifiedLocked, loadPatientHistory, patientHistory,
       patientHistoryError, patientHistoryLoading, patientHistoryMeta, patientQuery, setPatientQuery,
