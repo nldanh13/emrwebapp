@@ -845,6 +845,11 @@ function buildCoverageSummary(runDir) {
   if (normalizeState?.status === 'failed') blockers.push('Lần Chuẩn hóa gần nhất bị lỗi. Bấm Chuẩn hóa lại sau khi xử lý lỗi.');
   const qaReport = quality.readQaReport(runDir);
   for (const item of qaReport?.blocking || []) blockers.push(`Kiểm tra chất lượng: ${item.message}`);
+  const manifest = readJsonSafe(path.join(runDir, 'manifest.json'), {}) || {};
+  const provisionalCount = Number(manifest?.normalized_outputs?.kho_nguoi_benh?.provisional || 0);
+  if (provisionalCount > 0) {
+    blockers.push(`Còn ${provisionalCount} phần dữ liệu tạm thời từ Kho người bệnh; cần quét/chốt bản gốc trước khi tạo dataset cuối.`);
+  }
   return {
     exists: true,
     run_id: path.basename(runDir),
