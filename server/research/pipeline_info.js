@@ -138,6 +138,7 @@ function buildPipelineInfo(scopeDir, runDir) {
         blocking: Number(qa.blocking_count ?? manifest.normalized_qa?.blocking_count ?? 0),
         warning: Number(qa.warning_count ?? manifest.normalized_qa?.warning_count ?? 0),
         review: Number(manifest.normalized_qa?.review_count ?? 0),
+        matching_quality: qa.matching_quality || manifest.normalized_qa?.matching_quality || null,
       },
       unmatched: UNMATCHED_KEYS.map(([key, label]) => ({ key, label, rows: Number(outputs[key] || 0) })).filter(x => x.rows > 0),
       history: tailJsonl(path.join(runDir, 'normalize_history.jsonl'), 5).map(h => ({
