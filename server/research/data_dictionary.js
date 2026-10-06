@@ -154,7 +154,7 @@ TABLES.patients = {
 
 TABLES.encounters = {
   file: 'encounters.csv', tier: 'normalized',
-  grain: 'Một đợt điều trị nội trú. Các dòng chuyển khoa của cùng đợt (chung Mã nội trú) được gộp làm một.',
+  grain: 'Một khoảng điều trị nội trú của một Mã BN; các dòng chuyển khoa được gộp khi mốc thời gian chứng minh thuộc cùng lần nằm viện.',
   primary_key: ['encounter_id'],
   foreign_keys: [{ columns: ['patient_code'], references: 'patients.patient_code' }],
   referenced_by: ['diagnoses', 'lab_results', 'imaging_results', 'surgery_results', 'medication_orders', 'medication_day_summary', 'clinical_notes', 'clinical_events', 'patient_day', 'extract_status', 'analysis_ready'],
@@ -539,10 +539,10 @@ TABLES.analysis_ready = {
 
 // ── Bảng thô (tóm tắt nguồn) ─────────────────────────────────────────────────
 const RAW_TABLES = {
-  du_lieu_ban_dau: { file: 'du_lieu_ban_dau.csv', grain: 'Một dòng trên danh sách nội trú EMR (mỗi khoa/lượt một dòng).', source: 'Nút "1. Quét danh sách" — màn D/s Điều trị nội trú.', identifiers: ['Mã BN', 'Họ tên', 'Mã nội trú', 'URL bác sĩ', 'URL điều dưỡng (chứa Mã BN)'] },
-  research_source: { file: 'research_source.csv', grain: 'Một đợt điều trị (đã gộp các dòng chung Mã nội trú).', source: 'Tạo từ du_lieu_ban_dau.csv; thêm Mã NC, Research key, fetch_from_date/fetch_to_date.', identifiers: ['Mã BN', 'Họ tên', 'Mã nội trú', 'URL'] },
-  lich_su_xn: { file: 'lich_su_xn.csv', grain: 'Một chỉ số xét nghiệm của một phiếu.', source: 'Script XN/CĐHA — popup lịch sử xét nghiệm.', identifiers: ['Mã BN', 'Mã vào viện', 'Mã điều trị', 'Người chỉ định (nhân viên)'] },
-  lich_su_cdha: { file: 'lich_su_cdha.csv', grain: 'Một dịch vụ CĐHA.', source: 'Script XN/CĐHA.', identifiers: ['Mã BN', 'Mã vào viện', 'Mã điều trị', 'Người chỉ định (nhân viên)'] },
+  du_lieu_ban_dau: { file: 'du_lieu_ban_dau.csv', grain: 'Một dòng trên danh sách nội trú EMR (mỗi khoa/lượt một dòng).', source: 'Nút "1. Quét danh sách" — màn D/s Điều trị nội trú.', identifiers: ['Mã BN', 'Họ tên', 'URL bác sĩ', 'URL điều dưỡng (chứa Mã BN)'] },
+  research_source: { file: 'research_source.csv', grain: 'Một khoảng dữ liệu của Mã BN, tách/gộp theo mốc thời gian.', source: 'Tạo từ du_lieu_ban_dau.csv; thêm Mã NC, Research key nội bộ, fetch_from_date/fetch_to_date.', identifiers: ['Mã BN', 'Họ tên', 'URL'] },
+  lich_su_xn: { file: 'lich_su_xn.csv', grain: 'Một chỉ số xét nghiệm của một phiếu.', source: 'Script XN/CĐHA — popup lịch sử xét nghiệm.', identifiers: ['Mã BN', 'Người chỉ định (nhân viên)'] },
+  lich_su_cdha: { file: 'lich_su_cdha.csv', grain: 'Một dịch vụ CĐHA.', source: 'Script XN/CĐHA.', identifiers: ['Mã BN', 'Người chỉ định (nhân viên)'] },
   hchanh_profile: { file: 'hchanh_profile.csv', grain: 'Một dòng nguồn (Research key).', source: 'Lấy hành chánh — màn điều dưỡng (con mắt).', identifiers: ['Mã BN', 'Họ tên', 'Ngày sinh', 'Địa chỉ', 'Điện thoại', 'Số CMND', 'Số thẻ BHYT'] },
   hchanh_discharge: { file: 'hchanh_discharge.csv', grain: 'Một dòng nguồn.', source: 'Lấy hành chánh — mục Ra khoa trên màn bác sĩ.', identifiers: ['Mã BN', 'Họ tên', 'Số lưu trữ'] },
   hchanh_surgery: { file: 'hchanh_surgery.csv', grain: 'Một ca PT/TT.', source: 'Lấy hành chánh — D/s phẫu thuật.', identifiers: ['Mã BN', 'Họ tên', 'Raw JSON'] },
