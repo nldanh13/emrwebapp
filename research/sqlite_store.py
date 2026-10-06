@@ -27,7 +27,7 @@ DB_SCHEMA_VERSION = 1
 TEXT_HINTS = {
     "patient_code", "research_code", "encounter_id", "row_hash", "source_run_id",
     "patient_name", "phone_number", "citizen_id", "insurance_card", "icd_code",
-    "emr_admission_id", "emr_treatment_id", "emr_noitru_id", "lab_result_id",
+    "lab_result_id",
     "imaging_id", "surgery_id", "med_order_id", "note_id", "diagnosis_id",
 }
 INTEGER_HINTS = {
