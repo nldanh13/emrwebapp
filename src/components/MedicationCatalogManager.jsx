@@ -16,6 +16,7 @@ import DrugNameIngredientPanel from './DrugNameIngredientPanel.jsx';
 import { RouteBadge } from './report/ReportShared.jsx';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
 import { SkeletonTable } from './Skeleton.jsx';
+import { DILUTION_APPLY, DILUTION_SOLVENTS, dilutionForm, dilutionFromForm, dilutionSummary } from '../utils/dilutionRule.js';
 
 function routeOptions(table) {
   const categories = table.categories || [];
@@ -50,6 +51,7 @@ function emptyForm() {
     default_route_text: '',
     default_rate_text: '',
     schedule_rule: '',
+    ...dilutionForm(null),
   };
 }
 
@@ -67,6 +69,7 @@ function formFromMedication(med) {
     default_route_text: med.default_route_text || '',
     default_rate_text: med.default_rate_text || '',
     schedule_rule: med.schedule_rule || '',
+    ...dilutionForm(med.dilution),
   };
 }
 
@@ -100,6 +103,52 @@ function RoutePicker({ routes, value, onChange }) {
   );
 }
 
+// Quy tắc pha: bước xử lý dữ liệu dựa vào khi y lệnh không ghi rõ dung môi/thể tích.
+// Y lệnh ghi rõ (vd. "pha NaCl 0.9% lấy đủ 50ml") vẫn thắng quy tắc này.
+function DilutionFields({ form, set }) {
+  const solvent = form.dilution_solvent;
+  return (
+    <div style={{ display: 'grid', gap: 10, padding: 12, borderRadius: 6, border: `1px solid ${C.border2}`, background: C.surface2 }}>
+      <div style={{ fontSize: FS.sm, fontWeight: 600, color: C.text }}>Quy tắc pha thuốc</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+        <Field label="Dung môi">
+          <select value={solvent} onChange={set('dilution_solvent')} style={INPUT_STYLE}>
+            <option value="">Chưa đặt (dùng luật sẵn có)</option>
+            {DILUTION_SOLVENTS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+          </select>
+        </Field>
+        {solvent && solvent !== 'KHONG_PHA' && (
+          <Field label="Thể tích pha (ml)">
+            <input value={form.dilution_volume_ml} onChange={set('dilution_volume_ml')} inputMode="decimal" placeholder="VD: 100" style={INPUT_STYLE} />
+          </Field>
+        )}
+        {solvent && solvent !== 'KHONG_PHA' && (
+          <Field label="Khi nào pha">
+            <select value={form.dilution_apply} onChange={set('dilution_apply')} style={INPUT_STYLE}>
+              {DILUTION_APPLY.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select>
+          </Field>
+        )}
+      </div>
+      {solvent && (
+        <Field label="Ghi chú pha (tuỳ chọn)">
+          <input value={form.dilution_note} onChange={set('dilution_note')} maxLength={300}
+            placeholder="VD: truyền tối thiểu 60 phút; không pha chung với Ceftriaxon" style={INPUT_STYLE} />
+        </Field>
+      )}
+      <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.45 }}>
+        {!solvent && 'Chưa đặt: hệ thống dùng luật sẵn có (vd. Vancomycin, Merovia, Nefopam pha Natri clorid 0.9% 100 ml).'}
+        {solvent === 'KHONG_PHA' && 'Không tự gắn túi Natri clorid cho thuốc này (chai/túi đã pha sẵn). Y lệnh ghi rõ dung môi vẫn được giữ.'}
+        {solvent === 'NACL_0.9' && (form.dilution_apply === 'infusion_only'
+          ? 'Chỉ khi y lệnh ghi truyền/TTM: chuyển sang dịch truyền với thể tích này. Y lệnh tiêm tĩnh mạch chậm giữ nguyên.'
+          : 'Luôn chuyển thuốc này sang dịch truyền pha Natri clorid 0.9% với thể tích này, kể cả khi y lệnh chỉ ghi "tiêm tĩnh mạch" (trừ tiêm bắp, tiêm dưới da).')}
+        {(solvent === 'GLUCOSE_5' || solvent === 'NUOC_CAT') && 'Ghi lên báo cáo ca trực để đối chiếu khi chuẩn bị thuốc; hệ thống không tự đổi dung môi.'}
+        {solvent && ' Y lệnh ghi rõ dung môi/thể tích luôn được ưu tiên hơn quy tắc này.'}
+      </div>
+    </div>
+  );
+}
+
 function EditModal({ mode, initial, onClose, onSave }) {
   const { routes: ROUTES, categories: CATEGORIES, categoryLabel: CATEGORY_LABEL, infusion: INFUSION_ROUTES } = routeOptions(useRouteTable());
   const CATEGORY_OPTIONS = CATEGORIES.map(c => [c.code, c.label]);
@@ -119,6 +168,11 @@ function EditModal({ mode, initial, onClose, onSave }) {
       setError('Thể tích mặc định phải là số.');
       return;
     }
+    const dilution = dilutionFromForm(form);
+    if (dilution.error) {
+      setError(dilution.error);
+      return;
+    }
     setSaving(true);
     try {
       await onSave({
@@ -135,6 +189,7 @@ function EditModal({ mode, initial, onClose, onSave }) {
         default_route_text: form.default_route_text.trim(),
         default_rate_text: form.default_rate_text.trim(),
         schedule_rule: form.schedule_rule.trim(),
+        dilution: dilution.value,
       });
       onClose();
     } catch (e) {
@@ -211,6 +266,8 @@ function EditModal({ mode, initial, onClose, onSave }) {
               </Field>
             </div>
           )}
+
+          <DilutionFields form={form} set={set} />
 
           <button type="button" onClick={() => setShowAdvanced(v => !v)} aria-expanded={showAdvanced} style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,
@@ -370,7 +427,7 @@ export default function MedicationCatalogManager() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: C.surface2 }}>
-                {['Tên chuẩn / chế phẩm', 'Hoạt chất', 'Tên khác / thương mại', 'Đường dùng', 'Chuyên mục', 'Thể tích (ml)', 'Tốc độ', 'Tác vụ'].map(h => (
+                {['Tên chuẩn / chế phẩm', 'Hoạt chất', 'Tên khác / thương mại', 'Đường dùng', 'Chuyên mục', 'Thể tích (ml)', 'Tốc độ', 'Quy tắc pha', 'Tác vụ'].map(h => (
                   <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: FS.xs,
                     fontWeight: 700, color: C.text2, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
@@ -392,6 +449,7 @@ export default function MedicationCatalogManager() {
                   <td style={{ padding: '10px 12px', fontSize: FS.sm, color: C.text2 }}>{txt(CATEGORY_LABEL[item.category] || item.category)}</td>
                   <td style={{ padding: '10px 12px', fontSize: FS.sm }}><code style={{ color: C.blue }}>{txt(item.default_volume_ml)}</code></td>
                   <td style={{ padding: '10px 12px', fontSize: FS.sm }}><code style={{ color: C.text2 }}>{txt(item.default_rate)}</code></td>
+                  <td style={{ padding: '10px 12px', fontSize: FS.xs, color: C.text2, maxWidth: 200 }} title={item.dilution?.note || ''}>{txt(dilutionSummary(item.dilution))}</td>
                   <td style={{ padding: '10px 12px' }}>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <Btn variant="secondary" onClick={() => setEditing({ mode: 'edit', key: item.key, form: formFromMedication(item) })}

@@ -239,7 +239,24 @@ def parse_hours_from_gio_dung(gio_dung: str):
                 _add_hour(h)
     return out
 
+def get_catalog_dilution(drug_name):
+    """Quy tắc pha trong Danh mục thuốc (người dùng tự cài), None nếu chưa cài."""
+    try:
+        from processing.medication_catalog import catalog_dilution_rule
+    except Exception:
+        return None
+    return catalog_dilution_rule(drug_name)
+
+
 def get_safety_nacl_volume(drug_name_upper: str):
+    # Quy tắc pha trong Danh mục thuốc thắng luật cài sẵn: "Không pha" tắt hẳn việc tự gắn NaCl;
+    # "Luôn pha NaCl X ml" coi như luật an toàn. "Chỉ khi y lệnh ghi truyền" không ép pha ở đây.
+    rule = get_catalog_dilution(drug_name_upper)
+    if rule:
+        if rule.get("solvent") == "KHONG_PHA":
+            return None
+        if rule.get("solvent") == "NACL_0.9" and rule.get("apply") == "always":
+            return float(rule.get("volume_ml") or 100)
     # Tra cứu luật an toàn: NEFOPAM/TRAMADOL có tong_the_tich_sau_pha=100
     for _, rule in (LUAT_AN_TOAN or {}).items():
         try:

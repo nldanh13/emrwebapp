@@ -123,6 +123,20 @@ function shouldHideFromDutyReport(item, category, route) {
   return route !== 'Ngưng/Trả' && routeReportMode(route) === 'hide';
 }
 
+const SOLVENT_CODE_TEXT = { 'NACL_0.9': 'Natri clorid 0.9%', 'SODIUM_0.9': 'Sodium chloride 0.9%' };
+
+// Chữ "pha …" hiện cạnh tên thuốc: mã dung môi của worker → tên đọc được; tên thuốc đã ghi
+// "+ Natri clorid 0.9%" thì không lặp. Không có dung môi từ y lệnh → quy tắc pha của Danh mục thuốc.
+function mixTextOf(item, drugName = '') {
+  const raw = String(item?.dung_moi || item?.pha_voi || item?.mix_with || '').trim();
+  if (raw) {
+    const text = SOLVENT_CODE_TEXT[raw] || raw;
+    return normDrug(drugName).includes(normDrug(text)) ? '' : text;
+  }
+  const rule = String(item?.quy_tac_pha || '').trim();
+  return /^pha\s/i.test(rule) ? rule.replace(/^pha\s+/i, '') : '';
+}
+
 function collectDrugRows(patients, selectedDate) {
   const rows = [];
   const pushList = (patient, bundle, category, list) => {
@@ -153,7 +167,7 @@ function collectDrugRows(patients, selectedDate) {
           quantity: quantityOf(item, category, tm.hour, doseCount),
           unit,
           note: String(item.duong_dung_goc || item.ghi_chu || item.note || '').trim(),
-          mixWith: String(item.dung_moi || item.pha_voi || item.mix_with || '').trim(),
+          mixWith: mixTextOf(item, displayDrugName(item)),
           tuTuc: Boolean(item.tu_tuc),
           category,
           dischargeCutoffMinutes: dischargeCutoff,
@@ -341,6 +355,7 @@ function countRowsByCategory(rows) {
 }
 
 export {
+  mixTextOf,
   normalizeDmyToken, clockMinutesFrom, dischargeCutoffMinutes, isMedicationMomentAllowed,
   shouldHideFromDutyReport, collectDrugRows, collectOralDispenseData, summarize, flagDuplicateRows,
   comparePrepRows, groupRowsByPatient, countRowsByCategory,

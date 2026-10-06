@@ -77,6 +77,44 @@ function normalizeDefaultRoute(value) {
   return routeModel.normalizeRouteCode(raw) || raw;
 }
 
+// Quy tắc pha thuốc (worker dựa vào khi y lệnh không ghi rõ dung môi/thể tích — xem
+// worker/processing/medication_catalog.py catalog_dilution_rule). Dung môi theo mã cố định.
+const DILUTION_SOLVENTS = {
+  'NACL_0.9': 'Natri clorid 0.9%',
+  GLUCOSE_5: 'Glucose 5%',
+  NUOC_CAT: 'Nước cất pha tiêm',
+  KHONG_PHA: 'Không pha (chai/túi pha sẵn)',
+};
+const DILUTION_APPLY = ['always', 'infusion_only'];
+
+function badRequest(message) {
+  const err = new Error(message);
+  err.status = 400;
+  return err;
+}
+
+// null/'' → bỏ quy tắc; sai dữ liệu → lỗi tiếng Việt.
+function normalizeDilution(value) {
+  if (value == null || value === '' || (typeof value === 'object' && !value.solvent)) return undefined;
+  if (typeof value !== 'object' || Array.isArray(value)) throw badRequest('Quy tắc pha không hợp lệ.');
+  const solvent = String(value.solvent || '').trim().toUpperCase();
+  if (!DILUTION_SOLVENTS[solvent]) throw badRequest('Dung môi pha không hợp lệ. Chọn Natri clorid 0.9%, Glucose 5%, Nước cất pha tiêm hoặc Không pha.');
+  const out = { solvent };
+  if (solvent !== 'KHONG_PHA') {
+    const raw = value.volume_ml;
+    if (raw !== '' && raw != null) {
+      const n = Number(String(raw).replace(',', '.'));
+      if (!Number.isFinite(n) || n <= 0 || n > 1000) throw badRequest('Thể tích pha phải là số ml từ 1 đến 1000.');
+      out.volume_ml = n;
+    }
+    const apply = String(value.apply || 'always').trim();
+    out.apply = DILUTION_APPLY.includes(apply) ? apply : 'always';
+  }
+  const note = String(value.note || '').trim().slice(0, 300);
+  if (note) out.note = note;
+  return out;
+}
+
 function pruneEmpty(med) {
   for (const k of Object.keys(med)) {
     const v = med[k];
@@ -176,6 +214,7 @@ router.post('/medication-catalog', (req, res) => {
       default_rate: String(body.default_rate ?? '').trim(),
       default_rate_text: String(body.default_rate_text || '').trim(),
       schedule_rule: String(body.schedule_rule || '').trim(),
+      dilution: normalizeDilution(body.dilution),
     });
 
     data.medications.push(med);
@@ -183,7 +222,7 @@ router.post('/medication-catalog', (req, res) => {
     appendActivity(ctx, { kind: 'medication_catalog.create', canonical });
     return res.json({ status: 'ok', medication: { ...med, key: canonical } });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: String(e.message) });
+    return res.status(e.status || 500).json({ status: 'error', message: String(e.message) });
   }
 });
 
@@ -227,13 +266,17 @@ router.patch('/medication-catalog/:key', (req, res) => {
     if (body.default_rate !== undefined) med.default_rate = String(body.default_rate ?? '').trim();
     if (body.default_rate_text !== undefined) med.default_rate_text = String(body.default_rate_text || '').trim();
     if (body.schedule_rule !== undefined) med.schedule_rule = String(body.schedule_rule || '').trim();
+    if (body.dilution !== undefined) {
+      const dilution = normalizeDilution(body.dilution);
+      if (dilution) med.dilution = dilution; else delete med.dilution;
+    }
 
     data.medications[idx] = pruneEmpty(med);
     saveCatalog(data);
     appendActivity(ctx, { kind: 'medication_catalog.update', key, canonical: med.canonical });
     return res.json({ status: 'ok', medication: { ...data.medications[idx], key: keyOf(data.medications[idx]) } });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: String(e.message) });
+    return res.status(e.status || 500).json({ status: 'error', message: String(e.message) });
   }
 });
 
@@ -255,3 +298,5 @@ router.delete('/medication-catalog/:key', (req, res) => {
 });
 
 module.exports = router;
+module.exports.normalizeDilution = normalizeDilution;
+module.exports.DILUTION_SOLVENTS = DILUTION_SOLVENTS;

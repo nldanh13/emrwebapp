@@ -12,12 +12,40 @@ from xu_ly_config import (
     DEFAULT_NACL_VOLUME_BY_KEYWORD,
     _contains_any,
     _norm_upper,
+    get_catalog_dilution,
     get_safety_nacl_volume,
     parse_hours_from_gio_dung,
     parse_quantity_int,
 )
 
 LOG = get_worker_logger('xu_ly.diluent')
+
+
+def _catalog_rule_of(drug):
+    """Quy tắc pha trong Danh mục thuốc cho một dòng thuốc (theo tên thuốc rồi hoạt chất)."""
+    if not isinstance(drug, dict):
+        return None
+    for key in ("ten_thuoc", "ten_hien_thi", "hoat_chat"):
+        text = str(drug.get(key) or "").strip()
+        if text:
+            rule = get_catalog_dilution(text)
+            if rule:
+                return rule
+    return None
+
+
+def _catalog_says_no_dilution(drug):
+    rule = _catalog_rule_of(drug)
+    return bool(rule and rule.get("solvent") == "KHONG_PHA")
+
+
+def _catalog_note_text(rule):
+    try:
+        from processing.medication_catalog import dilution_rule_text
+    except Exception:
+        return ""
+    return dilution_rule_text(rule)
+
 
 def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
     """Gắn dung môi NaCl theo gợi ý (cùng giờ) và chuẩn hoá thuốc cần pha truyền.
@@ -233,6 +261,10 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
             "giọt/phút", "giot/phut", "g/p", "ml/h", "ml/giờ", "ml/gio"
         ]):
             return True
+
+        # Danh mục thuốc ghi "Không pha" (chai/túi pha sẵn) → không giành túi NaCl.
+        if _catalog_says_no_dilution(drug):
+            return False
 
         # Thuốc trong nhóm thường phải pha truyền theo cấu hình.
         if get_safety_nacl_volume(name_u) is not None:
@@ -480,6 +512,13 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
         if safety_vol:
             return float(safety_vol), "NACL_0.9", False
 
+        # C2) Quy tắc pha NaCl trong Danh mục thuốc (kể cả loại "chỉ khi y lệnh ghi truyền":
+        # tới đây là đã xác định thuốc được pha truyền, chỉ còn chọn thể tích).
+        catalog_rule = _catalog_rule_of(drug)
+        if catalog_rule and catalog_rule.get("solvent") == "NACL_0.9" and catalog_rule.get("volume_ml"):
+            bag = float(catalog_rule["volume_ml"])
+            return bag, "NACL_0.9", False
+
         # D) Suy luận theo thể tích túi/chai NaCl (không có "lấy đủ")
         if candidates:
             vols = sorted({float(c["vol"]) for c in candidates if float(c.get("vol") or 0) > 0})
@@ -524,6 +563,10 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
         ])
         if has_explicit_nacl:
             return True
+
+        # Danh mục thuốc ghi "Không pha": không tự gắn NaCl (y lệnh ghi rõ NaCl đã xử lý ở trên).
+        if _catalog_says_no_dilution(drug):
+            return False
 
         # Chai/túi truyền sẵn có thể tích riêng (ví dụ CIPROFLOXACIN KABI 200mg/100ml)
         # KHÔNG được tự gắn thêm NaCl chỉ vì dạng thuốc có chuỗi tổng quát
@@ -730,5 +773,16 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
 
     if moved_to_truyen:
         enriched_dich_truyen.extend(moved_to_truyen)
+
+    # Ghi quy tắc pha của Danh mục thuốc lên dòng thuốc để người xem có chỗ đối chiếu
+    # (vd. Glucose 5%, nước cất: chỉ ghi nhận, không tự đổi dung môi).
+    for drug in list(enriched_dich_truyen) + list(kept_tiem):
+        if not isinstance(drug, dict) or drug.get("quy_tac_pha"):
+            continue
+        rule = _catalog_rule_of(drug)
+        if rule:
+            text = _catalog_note_text(rule)
+            if text:
+                drug["quy_tac_pha"] = text
 
     return enriched_dich_truyen, kept_tiem

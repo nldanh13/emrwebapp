@@ -127,6 +127,55 @@ def lookup_medication_with_meta(drug_or_text, *, allow_semantic=True):
     return None, None
 
 
+DILUTION_SOLVENT_TEXT = {
+    'NACL_0.9': 'Natri clorid 0.9%',
+    'GLUCOSE_5': 'Glucose 5%',
+    'NUOC_CAT': 'Nước cất pha tiêm',
+    'KHONG_PHA': 'Không pha (chai/túi pha sẵn)',
+}
+
+
+def catalog_dilution_rule(drug_or_text):
+    """Quy tắc pha người dùng cài trong Danh mục thuốc (trường 'dilution').
+
+    Chỉ khớp chính xác tên/tên khác (không đoán gần đúng): quy tắc pha quyết định
+    thể tích dịch truyền, đoán sai tên thì hại hơn không có. Trả về dict
+    {solvent, volume_ml, apply, note, canonical} hoặc None.
+    """
+    try:
+        med, _meta = lookup_medication_with_meta(drug_or_text, allow_semantic=False)
+    except Exception:
+        return None
+    rule = (med or {}).get('dilution')
+    if not isinstance(rule, dict) or rule.get('solvent') not in DILUTION_SOLVENT_TEXT:
+        return None
+    out = {
+        'solvent': rule.get('solvent'),
+        'volume_ml': _valid_volume(rule.get('volume_ml')),
+        'apply': rule.get('apply') if rule.get('apply') in ('always', 'infusion_only') else 'always',
+        'note': str(rule.get('note') or '').strip(),
+        'canonical': str(med.get('canonical') or ''),
+    }
+    return out
+
+
+def dilution_rule_text(rule):
+    """Câu ngắn cho báo cáo: "Pha Natri clorid 0.9% 100 ml (theo danh mục)"."""
+    if not rule:
+        return ''
+    solvent = rule.get('solvent')
+    if solvent == 'KHONG_PHA':
+        text = 'Không pha thêm'
+    else:
+        text = 'Pha ' + DILUTION_SOLVENT_TEXT.get(solvent, '')
+        vol = rule.get('volume_ml')
+        if vol:
+            text += f" {int(vol) if float(vol).is_integer() else vol} ml"
+    if rule.get('note'):
+        text += f" — {rule['note']}"
+    return text + ' (theo danh mục)'
+
+
 def lookup_medication(drug_or_text):
     med, _meta = lookup_medication_with_meta(drug_or_text)
     return med
