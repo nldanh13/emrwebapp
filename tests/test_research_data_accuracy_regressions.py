@@ -29,3 +29,9 @@ def test_date_only_discharge_uses_end_of_day_for_temporal_membership():
     src = (ROOT / "server" / "research" / "encounter_context.js").read_text(encoding="utf-8")
     assert "hasPreciseDischargeTime" in src
     assert "dayEnd(dischargeDt)" in src
+
+
+def test_age_is_calculated_for_each_encounter_from_birth_and_admission_dates():
+    src = (ROOT / "server" / "research" / "normalize.js").read_text(encoding="utf-8")
+    assert "function ageAtEncounter" in src
+    assert "ageAtEncounter(p.birth_date, enc.admission_date)" in src
