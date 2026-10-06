@@ -69,6 +69,17 @@ test('danh sách: lỗi lên đầu, kèm phần thiếu và lý do bằng lời
   assert.match(s.rows.find(r => r.key === 'f').reason, /Thời điểm vào viện khớp nhiều lượt/);
 });
 
+test('màn hình có thống kê chẩn đoán lỗi theo bước', () => {
+  const exceptions = c.exceptionRows(ledger, { maxAttempts: 3 });
+  const s = buildCollectionScreen({ ledger, sourceRows, maxAttempts: 3, exceptions });
+  assert.ok(Array.isArray(s.diagnostics));
+  assert.ok(s.diagnostics.some(x => x.stage === 'technical'));
+  assert.ok(s.diagnostics.some(x => x.stage === 'data_open'));
+  const row = s.rows.find(r => r.key === 'e');
+  assert.strictEqual(row.diagnostic_stage, 'data_open');
+  assert.match(row.diagnostic_message, /không mở được mục dữ liệu/);
+});
+
 test('lượt có phần đã thử hết lượt là "Chờ người xem" dù còn phần chưa lấy', () => {
   assert.strictEqual(encounterState(ledger.encounters.h, 3), 'waiting');
 });
