@@ -313,7 +313,7 @@ TABLES.medication_orders = {
   processing: 'Tách nội dung y lệnh thành từng dòng; chỉ giữ dòng có từ khóa thuốc (tt, viên, ống, chai, uống, tiêm, truyền…). Đường dùng và nhóm thuốc suy từ văn bản. Ngày hậu phẫu tính theo ca mổ đầu tiên CÙNG đợt.',
   inferred: true,
   quality: { required: ['med_order_id', 'patient_code', 'drug_name_raw'], unique: ['med_order_id'], checks: ['Trùng med_order_id: lỗi chặn.', 'Ghép đợt ambiguous/missing: cảnh báo.'], manual_review: ['route_norm không thuộc danh sách chuẩn', 'drug_group_guess trống với thuốc cần phân tích'] },
-  columns: withCommon(['med_order_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'order_datetime', 'order_date', 'drug_name_raw', 'drug_name_norm', 'drug_group_guess', 'active_ingredient', 'route_raw', 'route_norm', 'dose_raw', 'times_per_day', 'raw_line', 'surgery_datetime_ref', 'surgery_date_ref', 'postop_day_index', 'postop_day_label', 'is_postop_day_1_3', 'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
+  columns: withCommon(['med_order_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'order_datetime', 'order_date', 'drug_name_raw', 'drug_name_norm', 'drug_group_guess', 'active_ingredient', 'route_raw', 'route_norm', 'dose_raw', 'times_per_day', 'schedule', 'order_action', 'parser_confidence', 'source_field', 'raw_line', 'surgery_datetime_ref', 'surgery_date_ref', 'postop_day_index', 'postop_day_label', 'is_postop_day_1_3', 'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
     med_order_id: col('string', 'Khóa dòng: med_<row_hash>.'),
     order_datetime: col('datetime', 'Thời điểm y lệnh.', { identifier: 'quasi', use: 'approval_required' }),
     order_date: col('date', 'Ngày y lệnh.', { identifier: 'quasi', use: 'approval_required' }),
@@ -330,7 +330,11 @@ TABLES.medication_orders = {
       allowed: [...routeModel.ROUTES.map(r => r.research_value), '(token văn bản gốc nếu không khớp)'], inferred: true,
     }),
     dose_raw: col('string', 'Liều (nếu không có cột riêng thì là cả dòng y lệnh).'),
-    times_per_day: col('string', 'Số lần/ngày (nếu nguồn có).'),
+    times_per_day: col('string', 'Số lần/ngày parser đọc được từ y lệnh.'),
+    schedule: col('string', 'Các giờ dùng thuốc chuẩn hóa từ y lệnh, nếu parser đọc được.', { inferred: true }),
+    order_action: col('string', 'Hành động y lệnh thuốc do parser nhận diện, ví dụ bắt đầu/tiếp tục/ngưng.', { inferred: true }),
+    parser_confidence: col('enum', 'Độ tin cậy của parser khi tách dòng thuốc.', { allowed: ['high', 'medium', 'low'], empty: 'Nguồn cũ chưa qua parser mới.' }),
+    source_field: col('string', 'Trường nguồn đã sinh dòng thuốc, ví dụ Tên y lệnh hoặc Y lệnh khác.'),
     raw_line: col('text', 'Dòng y lệnh gốc.', { identifier: 'free_text', use: 'approval_required' }),
     surgery_datetime_ref: col('datetime', 'Thời điểm ca mổ đầu tiên của cùng đợt, dùng làm mốc hậu phẫu.', { identifier: 'quasi', use: 'approval_required' }),
     surgery_date_ref: col('date', 'Ngày ca mổ mốc.', { identifier: 'quasi', use: 'approval_required' }),
