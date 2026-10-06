@@ -5,7 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { stableHash, buildContextMap, contextForRow, firstNonEmpty, buildEncounterId, isoDateTime, isoDate, rowEmrAdmissionId, rowEmrTreatmentId, rowNoitruId, encounterMatchStatus, eventTemporalFields, dateOffsetDays, daysBetween, normalizeSimple } = require('./encounter_context');
+const { stableHash, buildContextMap, contextForRow, firstNonEmpty, buildEncounterId, isoDateTime, isoDate, parseAnyDate, rowEmrAdmissionId, rowEmrTreatmentId, rowNoitruId, encounterMatchStatus, eventTemporalFields, dateOffsetDays, daysBetween, normalizeSimple } = require('./encounter_context');
 const { loadAnalysisConfig, ANALYSIS_PRESETS, _runInference, hoursBetween } = require('./analysis_presets');
 const patientDb = require('../services/patient_db');
 const variableSelection = require('./variable_selection');
@@ -30,6 +30,17 @@ const { loadPatientLink, patientLinkPath, applyPatientKeys, savePatientLink } = 
 const { buildSelectedAnalysisForRun, sanitizeVariableSelection, activeVariableSelectionFromStudy, loadRunTablesForSelection } = require('./selection_runtime');
 const { ROOT_DIR } = require('../constants');
 const { resolveArchiveRunId, resolveRunId, readArchive, archiveTablePath, rowPassesDateFilter, updateStudy } = require('./run_registry');
+
+function ageAtEncounter(birthDate, admissionDate) {
+  const birth = parseAnyDate(birthDate);
+  const admission = parseAnyDate(admissionDate);
+  if (!birth || !admission || admission < birth) return '';
+  let age = admission.getFullYear() - birth.getFullYear();
+  const beforeBirthday = admission.getMonth() < birth.getMonth()
+    || (admission.getMonth() === birth.getMonth() && admission.getDate() < birth.getDate());
+  if (beforeBirthday) age -= 1;
+  return age >= 0 && age <= 130 ? String(age) : '';
+}
 
 const NORMALIZE_INPUT_FILES = [
   'research_source.csv',
@@ -785,7 +796,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       patient_name: p.patient_name || '',
       sex: p.sex || '',
       birth_year: p.birth_year || '',
-      age: p.age || '',
+      age: ageAtEncounter(p.birth_date, enc.admission_date) || p.age || '',
       admission_date: enc.admission_date,
       surgery_date: sDate,
       discharge_date: enc.discharge_date,
