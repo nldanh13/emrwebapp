@@ -295,10 +295,11 @@ def _set_values_after_drug(driver, vals):
 
 def _nhap_moi_1_dich_truyen(driver, wait, med, config_names):
     """Thứ tự form dịch truyền mới của EMR:
-    1) Y lệnh (đúng giờ/ngày y lệnh lúc lấy dữ liệu) → EMR tự điền Bác sĩ.
-    2) Y tá (Đd) theo lịch ca.
-    3) Chọn thuốc: thuốc + dung dịch pha (nếu pha truyền).
-    4) Tên thuốc/dịch truyền, thể tích, tốc độ, thời gian → Thêm.
+    1) Chọn Y lệnh đúng giờ/ngày.
+    2) Chọn lại Bác sĩ theo y lệnh (EMR chỉ lưu BS khi Select2 được commit lại).
+    3) Chọn Y tá (Đd) theo lịch ca.
+    4) Chọn thuốc: thuốc + dung dịch pha (nếu pha truyền).
+    5) Tên thuốc/dịch truyền, thể tích, tốc độ, thời gian → Thêm.
     """
     str_start = (med.get('Time_Start_Str') or '').strip()
     ten_y_ta_chuan = get_nurse_by_shift(str_start, config_names)
@@ -313,6 +314,22 @@ def _nhap_moi_1_dich_truyen(driver, wait, med, config_names):
                 _log(f"      [!] BỎ QUA: '{med.get('Full_Name','')}' — {yl_desc}")
                 return False
             _log(f"      [i] Chọn y lệnh: {yl_desc}")
+
+            # EMR hiện chỉ lưu Bác sĩ ổn định khi chọn lại Select2 sau khi chọn Y lệnh.
+            # Không dựa vào giá trị tự điền của Y lệnh vì UI có thể hiển thị đúng nhưng
+            # value nội bộ chưa được commit khi bấm Thêm.
+            if med.get('Bac_Si'):
+                try:
+                    WebDriverWait(driver, 8).until(
+                        EC.presence_of_element_located((By.ID, "select2-cbbBacSi-container"))
+                    )
+                    time.sleep(0.2)
+                except Exception:
+                    pass
+                bs_ok = chon_select2_bac_si_y_ta(driver, "cbbBacSi", med['Bac_Si'])
+                if not bs_ok:
+                    raise Exception(f"Không chọn lại được bác sĩ đúng tên: {med.get('Bac_Si')}")
+                _log(f"      [i] Đã chọn lại bác sĩ: {med.get('Bac_Si')}")
 
             try:
                 WebDriverWait(driver, 8).until(
