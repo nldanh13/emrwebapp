@@ -27,8 +27,8 @@ def test_final_dataset_blocked_when_patient_db_data_is_provisional():
 
 def test_date_only_discharge_uses_end_of_day_for_temporal_membership():
     src = (ROOT / "server" / "research" / "encounter_context.js").read_text(encoding="utf-8")
-    assert "hasPreciseDischargeTime" in src
-    assert "dayEnd(dischargeDt)" in src
+    assert "function hasPreciseClock" in src
+    assert "dischargeHasTime ? discharge.getTime() : dayEnd(discharge)" in src
 
 
 def test_age_is_calculated_for_each_encounter_from_birth_and_admission_dates():
