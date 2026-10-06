@@ -47,7 +47,8 @@ const STORED_TABLES = [
   ['imaging_results', 'CĐHA', 'imaging_results.csv'],
   ['surgery_results', 'Phẫu thuật/thủ thuật', 'surgery_results.csv'],
   ['medication_orders', 'Y lệnh thuốc', 'medication_orders.csv'],
-  ['clinical_notes', 'Diễn biến', 'clinical_notes.csv'],
+  ['clinical_notes', 'Diễn biến & y lệnh gốc', 'clinical_notes.csv'],
+  ['clinical_events', 'Sự kiện lâm sàng đã xử lý', 'clinical_events.csv'],
   ['analysis_ready', 'Bảng phân tích', 'analysis_ready.csv'],
 ];
 
@@ -62,7 +63,7 @@ const UNMATCHED_KEYS = [
 const RAW_PROGRESS_FILES = [
   ['progress.json', 'XN & CĐHA'],
   ['hchanh_auto_progress.json', 'Hồ sơ nền, ra viện, phẫu thuật'],
-  ['order_history_auto_progress.json', 'Y lệnh'],
+  ['order_history_auto_progress.json', 'Y lệnh & diễn biến'],
   ['collection_report.json', 'Thu thập tự động'],
 ];
 
