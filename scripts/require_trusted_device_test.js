@@ -24,6 +24,7 @@ const td = require('../server/services/trusted_devices');
   const app = express();
   app.use('/api', authz.authenticateRequest, authz.attachDeviceTrust, authz.requireTrustedDevice, express.json());
   app.use('/api', authz.authorizeRequest, require('../server/routes/devices'));
+  app.use('/api', authz.authorizeRequest, require('../server/routes/emr_bridge'));
   app.get('/api/data', (_req, res) => res.json({ status: 'ok', patients: ['NGUYỄN VĂN A'] }));
   app.get('/api/auth/me', (req, res) => res.json({ status: 'ok', user: req.auth }));
   const server = app.listen(0, '127.0.0.1');
@@ -56,6 +57,12 @@ const td = require('../server/services/trusted_devices');
     assert.ok(!JSON.stringify(r.json).includes('NGUYỄN'));
   });
 
+  await test('máy bệnh viện (chưa tin cậy) vẫn mở được cầu nối EMR — chỉ chuyển trang lên, không đọc kho', async () => {
+    const r = await call('GET', '/api/emr-bridge/status');
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(typeof r.json.bridge.connected, 'boolean');
+  });
+
   await test('máy lạ vẫn xem được trạng thái và đăng ký thiết bị', async () => {
     assert.strictEqual((await call('GET', '/api/auth/me')).status, 200);
     const me = await call('GET', '/api/devices/me');
@@ -77,5 +84,5 @@ const td = require('../server/services/trusted_devices');
   server.close();
   fs.rmSync(dir, { recursive: true, force: true });
   if (failed) process.exit(1);
-  console.log('3 test(s) passed.');
+  console.log('4 test(s) passed.');
 })();

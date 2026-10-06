@@ -986,3 +986,23 @@ export const signDischargeBundle  = (fileName)     => post('/api/hchanh/sign-dis
 export const deleteDischargeBundle = (fileName)    => del(`/api/hchanh/discharge-bundle/${encodeURIComponent(fileName)}`);
 export const cleanupDischargeBundles = (olderThanDays) => post('/api/hchanh/discharge-bundles/cleanup', { older_than_days: olderThanDays });
 export const uploadDischargePdf   = (fileName, pdfDataUrl) => post('/api/hchanh/upload-discharge-pdf', { file_name: fileName, pdf_data_url: pdfDataUrl });
+
+// ── Cầu nối tab EMR (Data Hub trên cloud, EMR chỉ mở được trong bệnh viện) ───────────────────────
+// Gọi thẳng, không ghi nhật ký hoạt động: trang cầu nối hỏi việc liên tục, và kết quả chứa nội dung
+// trang EMR.
+async function bridgeCall(path, body) {
+  const res = await fetchWithAuth(path, { method: 'POST', headers: headers(), body: JSON.stringify(body || {}) }, true, null);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data?.message || (res.status === 404 ? STALE_SERVER_MESSAGE : `Lỗi máy chủ ${res.status}`));
+    err.status = res.status;
+    err.code = data?.code || '';
+    throw err;
+  }
+  return data;
+}
+export const getEmrBridgeStatus   = ()     => get('/api/emr-bridge/status');
+export const emrBridgeHello       = (body) => bridgeCall('/api/emr-bridge/hello', body);
+export const emrBridgePoll        = (id)   => bridgeCall('/api/emr-bridge/poll', { bridge_id: id });
+export const emrBridgeResult      = (body) => bridgeCall('/api/emr-bridge/result', body);
+export const emrBridgeDisconnect  = (id)   => bridgeCall('/api/emr-bridge/disconnect', { bridge_id: id });

@@ -65,6 +65,9 @@ router.use('/client-log', clientLogLimiter);
 // Health/diagnostics nhẹ — vẫn yêu cầu token nếu EMR_APP_TOKEN được bật.
 router.use(['/health', '/diagnostics'], readWriteLimiter);
 
+// Cầu nối tab EMR: trang cầu nối hỏi việc liên tục (long-poll) — không ghi nhật ký từng lần hỏi.
+router.use(require('./emr_bridge'));
+
 // Ghi log mọi API sau khi qua giới hạn tần suất.
 router.use(requestAuditMiddleware);
 

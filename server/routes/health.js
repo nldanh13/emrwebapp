@@ -13,6 +13,7 @@ const { listDurableTasks, getDurableTask } = require('../services/task_queue');
 const { subscribeTaskEvents, subscribeResourceEvents } = require('../services/realtime_bus');
 const { subscribeResearchEvents } = require('../services/research_watch');
 const { subscribeScreenEvents } = require('../services/screen_watch');
+const { subscribeBridgeEvents } = require('../services/emr_bridge');
 
 router.get('/auth/me', (req, res) => {
   const status = authStatus();
@@ -69,6 +70,8 @@ router.get('/events', (req, res) => {
   // Kho nghiên cứu dùng chung cho mọi workspace: báo số liệu/tác vụ đổi (không kèm dữ liệu người bệnh).
   const unsubscribeResearch = subscribeResearchEvents((event) => send('research', event));
   // Màn hình các tab: số liệu của workspace này đổi (file nguồn đổi) → giao diện tải lại đúng gói.
+  // Trạng thái cầu nối tab EMR (Máy BV: đang nối / mất nối) — không chứa dữ liệu người bệnh.
+  const unsubscribeBridge = subscribeBridgeEvents((event) => send('bridge', event));
   const unsubscribeScreens = subscribeScreenEvents((event) => {
     if (event.sid !== sid) return;
     send('screen', event);
@@ -82,6 +85,7 @@ router.get('/events', (req, res) => {
     unsubscribeResources();
     unsubscribeResearch();
     unsubscribeScreens();
+    unsubscribeBridge();
   };
   req.on('close', close);
   req.on('aborted', close);

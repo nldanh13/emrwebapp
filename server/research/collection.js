@@ -50,6 +50,7 @@ const REASON_LABELS = {
   unknown: 'Trạng thái không xác định',
   not_found: 'Không tìm thấy người bệnh trên EMR',
   emr_ui_changed: 'Giao diện EMR khác mẫu đang biết',
+  bridge_unsupported: 'Phần này chưa lấy được qua tab EMR (còn cần Chrome trên máy vào được EMR)',
   encounter_not_identified: 'Không xác định chắc lượt điều trị',
   emr_now_empty_previously_had_data: 'EMR nay trống nhưng lần trước có dữ liệu',
   not_completed: 'Hồ sơ chưa ở trạng thái Hoàn tất',
@@ -190,6 +191,7 @@ function classifyFetchStatus(fetchStatus, rows = 0, extraReason = '') {
   if (st === 'empty') return part('failed', 'no_content');
   if (st === 'partial') return part('failed', 'partial');
   if (st === 'timeout' || st === 'cdha_timeout') return part('failed', 'timeout');
+  if (st === 'bridge_unsupported') return part('blocked', 'bridge_unsupported');
   if (['no_session', 'no_driver', 'no_selenium'].includes(st)) return part('failed', 'session');
   if (st === 'error') return part('failed', 'error');
   if (st === 'no_url' || st === 'no_patient_link') return part('failed', 'not_found');

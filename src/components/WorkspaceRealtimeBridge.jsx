@@ -93,6 +93,11 @@ export default function WorkspaceRealtimeBridge({ children }) {
               window.dispatchEvent(new CustomEvent('emr:screen-changed', { detail: payload }));
               return;
             }
+            if (eventName === 'bridge') {
+              // Cầu nối tab EMR (máy bệnh viện) nối/mất nối/EMR đăng xuất.
+              window.dispatchEvent(new CustomEvent('emr:bridge-status', { detail: payload }));
+              return;
+            }
             if (eventName === 'research') {
               // Số liệu Kho nghiên cứu đổi (máy chủ tự theo dõi file tiến độ) hoặc danh sách tác vụ
               // đang chạy đổi: màn hình nghiên cứu tải lại đúng gói đó, không cần hẹn giờ hỏi lại.

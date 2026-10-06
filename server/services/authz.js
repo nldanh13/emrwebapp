@@ -400,7 +400,9 @@ function attachDeviceTrust(req, _res, next) {
 // EMR_REQUIRE_TRUSTED_DEVICE=1 (bật trên VPS): máy chưa tin cậy, dù đăng nhập đúng, KHÔNG nhận
 // dữ liệu nào — chỉ được xem trạng thái đăng nhập/thiết bị và đăng ký thiết bị. Chạy một máy
 // không đăng nhập (localhost) và link báo cáo dùng một lần không bị ảnh hưởng.
-const TRUSTED_DEVICE_OPEN_PATHS = ['/auth/me', '/health', '/devices'];
+// /emr-bridge: máy bệnh viện chỉ chuyển trang EMR LÊN máy chủ (không đọc được dữ liệu trong kho),
+// nên không bắt từng máy bệnh viện phải đăng ký thiết bị tin cậy; vẫn phải đăng nhập.
+const TRUSTED_DEVICE_OPEN_PATHS = ['/auth/me', '/health', '/devices', '/emr-bridge'];
 
 function trustedDeviceRequired() {
   return isTruthy(process.env.EMR_REQUIRE_TRUSTED_DEVICE);
