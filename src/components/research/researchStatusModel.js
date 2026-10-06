@@ -234,12 +234,17 @@ function statusIsMissing(v) {
 }
 
 function patientStatusKey(row, idx = 0) {
-  return pick(row, ['research_code', 'Mã NC', 'Ma NC'])
-    || `${pick(row, ['patient_code', 'Mã BN', 'Ma BN', 'MABN']) || 'row'}_${idx}`;
+  const encounter = pick(row, ['encounter_id', 'Encounter ID']);
+  if (encounter) return encounter;
+  const patient = pick(row, ['patient_code', 'Mã BN', 'Ma BN', 'MABN']);
+  const admission = pick(row, ['admission_date', 'Ngày vào viện', 'T/G vào']);
+  return patient ? `${patient}|${admission || idx}` : `row_${idx}`;
 }
 
 function patientStatusLabel(row) {
-  return pick(row, ['research_code', 'Mã NC', 'Ma NC']) || pick(row, ['patient_code', 'Mã BN', 'Ma BN', 'MABN']) || '—';
+  return pick(row, ['patient_code', 'Mã BN', 'Ma BN', 'MABN'])
+    || pick(row, ['encounter_id'])
+    || '—';
 }
 
 function patientStatusName(row) {
