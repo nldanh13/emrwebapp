@@ -27,6 +27,7 @@ const CHILD_TABLES = [
   ['surgery_results', 'surgery_id'],
   ['medication_orders', 'med_order_id'],
   ['clinical_notes', 'note_id'],
+  ['clinical_events', 'clinical_event_id'],
 ];
 
 const DAY_MS = 86400000;
