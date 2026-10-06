@@ -77,7 +77,7 @@ const COMMON = {
   }),
   is_within_encounter: col('flag01', 'Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt.', {
     allowed: ['1', '0'],
-    derivation: 'Nếu chưa có ngày ra viện, dùng mốc ngày vào + 60 ngày làm giới hạn trên.',
+    derivation: 'Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày.',
     empty: 'Thiếu ngày vào viện hoặc thời điểm của dòng.',
   }),
   source: col('string', 'Nguồn của dòng.', { allowed: 'Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw.' }),
