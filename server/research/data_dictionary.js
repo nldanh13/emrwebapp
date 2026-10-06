@@ -24,7 +24,7 @@ const routeModel = require('../utils/routeModel');
 //   excluded           — mặc định bị che khi xem/xuất (server/research/export_utils.js).
 // Phân loại "use" là đề xuất kỹ thuật; bệnh viện/hội đồng đạo đức phải xác nhận.
 
-const DICTIONARY_VERSION = '2026-10-06.2';
+const DICTIONARY_VERSION = '2026-10-06.3';
 
 const CONVENTIONS = {
   dates: 'Ngày dạng YYYY-MM-DD; thời điểm dạng YYYY-MM-DD HH:mm (giờ địa phương, không có múi giờ). Cột "ngày giờ" có thể chỉ có phần ngày nếu nguồn không có giờ.',
@@ -220,17 +220,18 @@ TABLES.lab_results = {
       'encounter_match_status = ambiguous/missing: cảnh báo.',
     ],
     manual_review: [
-      'Các dòng XN giống hệt nhau (possible_duplicate_lab_rows): giữ tất cả, đối chiếu Mã phiếu/mẫu nếu nguồn có.',
+      'Các dòng XN giống hệt nhau (possible_duplicate_lab_rows): giữ tất cả. Khác Mã phiếu = các lần xét nghiệm riêng; cùng Mã phiếu vẫn cần đối chiếu nguồn nếu nghi lấy trùng kỹ thuật.',
       'Cùng BN + cùng thời điểm + cùng chỉ số nhưng kết quả khác nhau (conflicting_lab_result): giữ tất cả, không tự chọn.',
       'result_num trống nhưng result_raw có số',
       'Đơn vị khác nhau cho cùng test_name_norm trong một nghiên cứu.',
     ],
   },
-  columns: withCommon(['lab_result_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'lab_datetime', 'lab_date', 'lab_group', 'test_name_raw', 'test_name_norm', 'result_raw', 'result_operator', 'result_num', 'result_text', 'unit', 'ref_range_raw', 'flag_raw', 'flag_norm', 'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter', 'source_run_id', 'row_hash'], {
+  columns: withCommon(['lab_result_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'lab_datetime', 'lab_date', 'lab_group', 'lab_order_id', 'test_name_raw', 'test_name_norm', 'result_raw', 'result_operator', 'result_num', 'result_text', 'unit', 'ref_range_raw', 'flag_raw', 'flag_norm', 'days_from_admission', 'days_from_surgery', 'days_from_discharge', 'is_within_encounter', 'source_run_id', 'row_hash'], {
     lab_result_id: col('string', 'Khóa dòng: lab_<row_hash>_<lần xuất hiện>. Hai dòng có nội dung giống nhau vẫn có ID riêng để không mất lần xét nghiệm thật.'),
     lab_datetime: col('datetime', 'Thời điểm chỉ định/xét nghiệm.', { identifier: 'quasi', use: 'approval_required' }),
     lab_date: col('date', 'Ngày xét nghiệm.', { identifier: 'quasi', use: 'approval_required' }),
     lab_group: col('string', 'Nhóm xét nghiệm như EMR ghi (huyết học, sinh hóa…).'),
+    lab_order_id: col('string', 'Mã phiếu xét nghiệm trên EMR. Dùng để phân biệt các lần xét nghiệm có thể cùng thời điểm/cùng chỉ số/cùng kết quả.', { identifier: 'quasi', use: 'approval_required', empty: 'Nguồn cũ hoặc nguồn ngoài EMR không có Mã phiếu.' }),
     test_name_raw: col('string', 'Tên chỉ số như EMR ghi.'),
     test_name_norm: col('string', 'Tên chỉ số chuẩn hóa.', {
       allowed: ['creatinine', 'egfr', 'wbc', 'crp', 'hemoglobin', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'platelet', 'urea', 'ast', 'alt', 'glucose', '(tên gốc dạng token nếu không khớp)'],
