@@ -127,12 +127,10 @@ def lookup_medication_with_meta(drug_or_text, *, allow_semantic=True):
     return None, None
 
 
-DILUTION_SOLVENT_TEXT = {
-    'NACL_0.9': 'Natri clorid 0.9%',
-    'GLUCOSE_5': 'Glucose 5%',
-    'NUOC_CAT': 'Nước cất pha tiêm',
-    'KHONG_PHA': 'Không pha (chai/túi pha sẵn)',
-}
+from processing.solvents import rule_solvents as _rule_solvents
+
+# Dung môi chọn được trong Quy tắc pha — config/solvents.json (dùng chung máy chủ/giao diện).
+DILUTION_SOLVENT_TEXT = _rule_solvents()
 
 
 def _rule_from_med(med, matched_by):

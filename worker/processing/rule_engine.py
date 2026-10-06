@@ -34,6 +34,8 @@ _DEFAULT_RULES_PATH = os.path.join(_PROJECT_DIR, "config", "order_rules.json")
 
 
 def _default_rules() -> dict[str, Any]:
+    # CHỈ là lưới an toàn khi config/order_rules.json hỏng/không đọc được (để không mất nhận diện
+    # dịch truyền). Khi file đọc được, danh sách trong file THAY HẲN các danh sách này.
     return {
         "solvents": {
             "nacl_keywords": [
@@ -75,6 +77,12 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
         else:
             out[key] = value
     return out
+
+
+def nacl_text_keywords() -> tuple[str, ...]:
+    """Từ nhận diện Natri clorid trong chữ y lệnh (chữ thường) — MỘT nguồn: config/order_rules.json
+    solvents.nacl_keywords. Trước đây diluent_resolver/medication_parser chép tay 6 bản riêng."""
+    return tuple(_solvent_keywords(load_order_rules(), "nacl_keywords"))
 
 
 def clear_order_rules_cache() -> None:
