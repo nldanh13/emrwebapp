@@ -24,14 +24,14 @@ const routeModel = require('../utils/routeModel');
 //   excluded           — mặc định bị che khi xem/xuất (server/research/export_utils.js).
 // Phân loại "use" là đề xuất kỹ thuật; bệnh viện/hội đồng đạo đức phải xác nhận.
 
-const DICTIONARY_VERSION = '2026-10-06.4';
+const DICTIONARY_VERSION = '2026-10-06.5';
 
 const CONVENTIONS = {
   dates: 'Ngày dạng YYYY-MM-DD; thời điểm dạng YYYY-MM-DD HH:mm (giờ địa phương, không có múi giờ). Cột "ngày giờ" có thể chỉ có phần ngày nếu nguồn không có giờ.',
   flags: 'Cột cờ 1/0: "1" = có, "0" = không. Ô trống = không xác định được (khác với "0").',
   empty: 'Ô trống nghĩa là nguồn không có hoặc hệ thống không đọc được giá trị. Hệ thống không tự điền giá trị thay thế.',
   raw_vs_norm: 'Cột *_raw giữ nguyên văn bản EMR; cột *_norm/*_num là giá trị đã chuẩn hóa. Khi nghi ngờ, đối chiếu cột *_raw.',
-  numbers: 'Số thập phân dùng dấu chấm. Kết quả xét nghiệm KHÔNG được quy đổi đơn vị; đơn vị nằm ở cột unit của cùng dòng.',
+  numbers: 'Số thập phân dùng dấu chấm. result_raw/result_num/unit luôn giữ nguyên dữ liệu EMR; result_num_norm/unit_norm chỉ được sinh khi có quy tắc quy đổi đơn vị chắc chắn trong whitelist.',
   csv: 'File CSV UTF-8 có BOM, phân tách bằng dấu phẩy.',
 };
 
