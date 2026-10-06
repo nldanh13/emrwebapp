@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -180,7 +181,8 @@ def test_analysis_ready_uses_long_form_detail_tables_instead_of_large_json_cells
     assert "'lab_results_json'" not in schema
     assert "'imaging_results_json'" not in schema
     assert "'imaging_summary'" not in schema
-    assert "const NORMALIZED_SCHEMA_VERSION = 21" in schema
+    version = re.search(r"const NORMALIZED_SCHEMA_VERSION = (\d+)", schema)
+    assert version and int(version.group(1)) >= 21
     assert "lab_result_count: labByEncounter.get(enc.encounter_id)?.total || 0" in norm
     assert "imaging_result_count: imagingByEncounter.get(enc.encounter_id)?.total || 0" in norm
     assert "Chi tiết từng kết quả nằm ở lab_results.csv" in dictionary

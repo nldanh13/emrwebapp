@@ -59,17 +59,17 @@ const COMMON = {
   encounter_id: col('string', 'Khóa đợt điều trị (Research key), nối về encounters.encounter_id.', {
     format: 'enc_<16 ký tự hex>; enc_unresolved_… nếu không đủ căn cứ ghép',
     identifier: 'pseudonymous',
-    derivation: 'Băm (sha1 rút gọn) theo thứ tự ưu tiên: Mã điều trị/Mã nội trú → Mã vào viện → Mã BN + thời điểm vào/ra. Mã NC không tham gia quyết định matching.',
+    derivation: 'Băm (sha1 rút gọn) từ Mã BN + thời điểm vào. Mã NC và các mã điều trị/nội trú/vào viện không tham gia quyết định matching.',
     empty: 'Dòng chưa gắn được vào đợt nào (encounter_match_status = ambiguous/missing).',
   }),
   encounter_match_status: col('enum', 'Kết quả gắn dòng vào đợt điều trị.', {
     allowed: ['matched', 'ambiguous', 'missing'],
-    derivation: 'matched: đúng Mã BN và xác định duy nhất đợt bằng khóa EMR hoặc thời gian; ambiguous: khớp nhiều đợt; missing: không khớp đợt nào. Mã NC không tham gia quyết định matching.',
+    derivation: 'matched: đúng Mã BN và xác định duy nhất khoảng bằng thời gian; ambiguous: khớp nhiều khoảng; missing: không khớp khoảng nào. Mã NC không tham gia quyết định matching.',
   }),
   encounter_match_method: col('enum', 'Bằng chứng đã dùng để gắn dòng vào đợt điều trị.', {
-    allowed: ['encounter_id', 'emr_treatment_id', 'emr_noitru_id', 'emr_admission_id', 'emr_treatment_noitru_alias', 'emr_noitru_treatment_alias', 'visit_exact', 'admission_time', 'discharge_time', 'admission_date', 'discharge_date', 'event_date_range', 'patient_unique_encounter_no_event_time (legacy)'],
+    allowed: ['encounter_id', 'visit_exact', 'admission_time', 'discharge_time', 'admission_date', 'discharge_date', 'event_date_range', 'patient_unique_encounter_no_event_time (legacy)'],
     empty: 'Dòng chưa được ghép.',
-    derivation: 'Khóa EMR mạnh được ưu tiên. Mã điều trị và Mã nội trú được phép đối chiếu chéo khi cùng giá trị, cùng Mã BN và dẫn tới đúng một đợt; nếu mâu thuẫn/không tìm thấy thì dừng, không fallback theo thời gian.',
+    derivation: 'Chỉ dùng encounter_id nội bộ nếu đã có; còn lại ghép theo đúng Mã BN và các mốc thời gian có trong dữ liệu.',
   }),
   encounter_match_reason: col('string', 'Lý do dòng chưa được ghép chắc vào đợt.', {
     empty: 'Dòng đã matched.',
@@ -154,12 +154,12 @@ TABLES.patients = {
 
 TABLES.encounters = {
   file: 'encounters.csv', tier: 'normalized',
-  grain: 'Một đợt điều trị nội trú. Các dòng chuyển khoa của cùng đợt (chung Mã nội trú) được gộp làm một.',
+  grain: 'Một khoảng điều trị nội trú của một Mã BN; các dòng chuyển khoa được gộp khi mốc thời gian chứng minh thuộc cùng lần nằm viện.',
   primary_key: ['encounter_id'],
   foreign_keys: [{ columns: ['patient_code'], references: 'patients.patient_code' }],
   referenced_by: ['diagnoses', 'lab_results', 'imaging_results', 'surgery_results', 'medication_orders', 'medication_day_summary', 'clinical_notes', 'clinical_events', 'patient_day', 'extract_status', 'analysis_ready'],
   sources: ['research_source.csv (từ du_lieu_ban_dau.csv)', 'du_lieu_goc.csv (script XN/CĐHA)', 'hchanh_profile.csv', 'hchanh_discharge.csv (mục Ra khoa)', 'hchanh_surgery.csv'],
-  processing: 'Ghép các nguồn theo khóa EMR (Research key, Mã điều trị/Mã nội trú, Mã vào viện) rồi mới theo thời gian. Khi gộp dòng cùng đợt, ngày vào là thời điểm vào sớm nhất. Không ghép theo họ tên.',
+  processing: 'Mã BN là khóa người bệnh duy nhất. Research key chỉ là khóa nội bộ; các dòng cùng BN được tách/ghép bằng mốc thời gian vào-ra, không dùng Mã điều trị/Mã nội trú/Mã vào viện và không ghép theo họ tên.',
   inferred: false,
   quality: {
     required: ['encounter_id', 'patient_code'],
@@ -169,9 +169,9 @@ TABLES.encounters = {
       'patient_code không có trong patients: lỗi chặn.',
       'Thiếu ngày vào viện, ngày ra trước ngày vào, ngày ở tương lai, nằm viện > 365 ngày: cảnh báo, đưa vào encounter_review.csv.',
     ],
-    manual_review: ['needs_manual_review khác trống', 'Cặp đợt cùng BN chồng lấn/cùng ngày ra viện nhưng không chung khóa EMR (possible_same_stay).'],
+    manual_review: ['needs_manual_review khác trống', 'Cặp khoảng cùng BN chồng lấn/cùng ngày ra viện nhưng không đủ mốc thời gian để xác định chắc chắn (possible_same_stay).'],
   },
-  columns: withCommon(['encounter_id', 'research_code', 'patient_code', 'patient_key', 'admission_date', 'discharge_date', 'treatment_duration', 'department', 'room_bed', 'admission_diagnosis', 'discharge_diagnosis', 'diagnosis_raw', 'comorbidity_text', 'complication_text', 'discharge_status', 'surgery_date', 'emr_admission_id', 'emr_treatment_id', 'emr_noitru_id', 'needs_manual_review', 'source_run_id', 'source_status', 'row_hash'], {
+  columns: withCommon(['encounter_id', 'research_code', 'patient_code', 'patient_key', 'admission_date', 'discharge_date', 'treatment_duration', 'department', 'room_bed', 'admission_diagnosis', 'discharge_diagnosis', 'diagnosis_raw', 'comorbidity_text', 'complication_text', 'discharge_status', 'surgery_date', 'needs_manual_review', 'source_run_id', 'source_status', 'row_hash'], {
     encounter_id: { ...COMMON.encounter_id, meaning: 'Khóa chính của đợt điều trị (Research key).', empty: 'Không được trống (bắt buộc).' },
     admission_date: col('datetime', 'Thời điểm vào viện (vào khoa đầu tiên của đợt).', {
       identifier: 'quasi', use: 'approval_required', source: 'Ngày vào viện (hồ sơ) hoặc T/G vào sớm nhất trên danh sách.', empty: 'Không đọc được ngày vào.',
@@ -187,9 +187,6 @@ TABLES.encounters = {
     complication_text: col('text', 'Biến chứng/tai biến (nguyên văn).', { identifier: 'free_text', use: 'approval_required' }),
     discharge_status: col('string', 'Tình trạng/kết quả khi ra viện như EMR ghi (ví dụ "Đỡ, giảm").', { note: 'Giá trị phụ thuộc danh mục EMR; chưa chuẩn hóa.' }),
     surgery_date: col('date', 'Ngày mổ (nếu có) theo nguồn đợt điều trị.', { identifier: 'quasi', use: 'approval_required', empty: 'Không mổ hoặc chưa có dữ liệu phẫu thuật.' }),
-    emr_admission_id: col('string', 'Mã vào viện trên EMR.', { identifier: 'direct', use: 'excluded' }),
-    emr_treatment_id: col('string', 'Mã điều trị trên EMR.', { identifier: 'direct', use: 'excluded' }),
-    emr_noitru_id: col('string', 'Mã nội trú (noitruid) trên EMR; các dòng chuyển khoa của cùng đợt dùng chung mã này.', { identifier: 'direct', use: 'excluded' }),
     needs_manual_review: col('string', 'Lý do cần người kiểm tra, nối bằng "; ". Trống = không có vấn đề đã biết.', {
       allowed: 'Ví dụ: encounter_match_ambiguous, encounter_match_missing.',
     }),
@@ -541,10 +538,10 @@ TABLES.analysis_ready = {
 
 // ── Bảng thô (tóm tắt nguồn) ─────────────────────────────────────────────────
 const RAW_TABLES = {
-  du_lieu_ban_dau: { file: 'du_lieu_ban_dau.csv', grain: 'Một dòng trên danh sách nội trú EMR (mỗi khoa/lượt một dòng).', source: 'Nút "1. Quét danh sách" — màn D/s Điều trị nội trú.', identifiers: ['Mã BN', 'Họ tên', 'Mã nội trú', 'URL bác sĩ', 'URL điều dưỡng (chứa Mã BN)'] },
-  research_source: { file: 'research_source.csv', grain: 'Một đợt điều trị (đã gộp các dòng chung Mã nội trú).', source: 'Tạo từ du_lieu_ban_dau.csv; thêm Mã NC, Research key, fetch_from_date/fetch_to_date.', identifiers: ['Mã BN', 'Họ tên', 'Mã nội trú', 'URL'] },
-  lich_su_xn: { file: 'lich_su_xn.csv', grain: 'Một chỉ số xét nghiệm của một phiếu.', source: 'Script XN/CĐHA — popup lịch sử xét nghiệm.', identifiers: ['Mã BN', 'Mã vào viện', 'Mã điều trị', 'Người chỉ định (nhân viên)'] },
-  lich_su_cdha: { file: 'lich_su_cdha.csv', grain: 'Một dịch vụ CĐHA.', source: 'Script XN/CĐHA.', identifiers: ['Mã BN', 'Mã vào viện', 'Mã điều trị', 'Người chỉ định (nhân viên)'] },
+  du_lieu_ban_dau: { file: 'du_lieu_ban_dau.csv', grain: 'Một dòng trên danh sách nội trú EMR (mỗi khoa/lượt một dòng).', source: 'Nút "1. Quét danh sách" — màn D/s Điều trị nội trú.', identifiers: ['Mã BN', 'Họ tên', 'URL bác sĩ', 'URL điều dưỡng (chứa Mã BN)'] },
+  research_source: { file: 'research_source.csv', grain: 'Một khoảng dữ liệu của Mã BN, tách/gộp theo mốc thời gian.', source: 'Tạo từ du_lieu_ban_dau.csv; thêm Mã NC, Research key nội bộ, fetch_from_date/fetch_to_date.', identifiers: ['Mã BN', 'Họ tên', 'URL'] },
+  lich_su_xn: { file: 'lich_su_xn.csv', grain: 'Một chỉ số xét nghiệm của một phiếu.', source: 'Script XN/CĐHA — popup lịch sử xét nghiệm.', identifiers: ['Mã BN', 'Người chỉ định (nhân viên)'] },
+  lich_su_cdha: { file: 'lich_su_cdha.csv', grain: 'Một dịch vụ CĐHA.', source: 'Script XN/CĐHA.', identifiers: ['Mã BN', 'Người chỉ định (nhân viên)'] },
   hchanh_profile: { file: 'hchanh_profile.csv', grain: 'Một dòng nguồn (Research key).', source: 'Lấy hành chánh — màn điều dưỡng (con mắt).', identifiers: ['Mã BN', 'Họ tên', 'Ngày sinh', 'Địa chỉ', 'Điện thoại', 'Số CMND', 'Số thẻ BHYT'] },
   hchanh_discharge: { file: 'hchanh_discharge.csv', grain: 'Một dòng nguồn.', source: 'Lấy hành chánh — mục Ra khoa trên màn bác sĩ.', identifiers: ['Mã BN', 'Họ tên', 'Số lưu trữ'] },
   hchanh_surgery: { file: 'hchanh_surgery.csv', grain: 'Một ca PT/TT.', source: 'Lấy hành chánh — D/s phẫu thuật.', identifiers: ['Mã BN', 'Họ tên', 'Raw JSON'] },

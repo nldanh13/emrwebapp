@@ -19,7 +19,8 @@
 // v20: lưu bằng chứng/lý do matching từng dòng; Mã NC không tham gia quyết định matching.
 // v21: analysis_ready chỉ giữ biến/tóm tắt theo encounter; chi tiết XN/CĐHA ở bảng dài,
 //      không nhét toàn bộ kết quả của một đợt vào các ô JSON/text cực lớn.
-const NORMALIZED_SCHEMA_VERSION = 21;
+// v22: Mã BN là khóa nguồn duy nhất; bỏ các cột mã EMR không thu thập (emr_admission_id, emr_treatment_id, emr_noitru_id).
+const NORMALIZED_SCHEMA_VERSION = 22;
 
 const NORMALIZED_COLUMNS = {
   patients: [
@@ -32,7 +33,7 @@ const NORMALIZED_COLUMNS = {
     'encounter_id', 'research_code', 'patient_code', 'patient_key', 'admission_date', 'discharge_date',
     'treatment_duration', 'department', 'room_bed', 'admission_diagnosis', 'discharge_diagnosis',
     'diagnosis_raw', 'comorbidity_text', 'complication_text', 'discharge_status',
-    'surgery_date', 'emr_admission_id', 'emr_treatment_id', 'emr_noitru_id', 'needs_manual_review',
+    'surgery_date', 'needs_manual_review',
     'source_run_id', 'source_status', 'row_hash',
   ],
   diagnoses: [

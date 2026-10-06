@@ -29,7 +29,7 @@ describe('research encounter linkage safety', () => {
     expect(buildEncounterId(a)).not.toBe(buildEncounterId(b));
   });
 
-  it('scopes research-code matching to the same patient code', () => {
+  it('does not use research code as linkage evidence', () => {
     const ctxMap = buildContextMap([
       { 'Mã BN': 'BN001', 'Mã NC': 'NC0001', 'T/G vào': '08:00 01/09/2026' },
       { 'Mã BN': 'BN002', 'Mã NC': 'NC0001', 'T/G vào': '09:00 02/09/2026' },
@@ -37,7 +37,9 @@ describe('research encounter linkage safety', () => {
 
     const matched = contextForRow(ctxMap, { 'Mã BN': 'BN002', 'Mã NC': 'NC0001' }, 'BN002');
     expect(matched.patient_code).toBe('BN002');
-    expect(matched._encounter_match_method).toBe('research_code_patient_scoped');
+    expect(matched.encounter_id).toBe('');
+    expect(matched.needs_manual_review).toBe('encounter_match_missing_event_time');
+    expect(matched._encounter_match_method).toBeUndefined();
   });
 
   it('rejects a foreign encounter id even if it is otherwise unique', () => {

@@ -4,14 +4,14 @@
 // Kiểm thử an toàn dữ liệu Kho nghiên cứu (chỉ dùng dữ liệu giả lập, không có BN thật):
 //  1. Mã NC duy nhất và ổn định qua các lần quét lại; file cũ bị trùng mã được sửa.
 //  2. Dữ liệu hành chánh gắn đúng đợt khi 1 BN có nhiều đợt (lỗi NC0001 cũ).
-//  3. Dòng chuyển khoa chung Mã nội trú gộp thành 1 đợt với ngày vào sớm nhất; ca nghi
-//     cùng đợt nhưng KHÔNG chung khóa EMR thì chỉ đưa vào danh sách duyệt, không tự gộp.
-//  4. Ghép bảng con vào đúng lượt bằng khóa chuẩn hóa/ngày duy nhất, không đoán ca mơ hồ.
+//  3. Dòng chuyển khoa chỉ được gộp khi Mã BN + khoảng thời gian chứng minh cùng lần nằm;
+//     nếu chỉ nghi cùng đợt thì đưa vào danh sách duyệt, không tự gộp.
+//  4. Ghép bảng con vào đúng lượt bằng Mã BN + thời gian/ngày duy nhất, không đoán ca mơ hồ.
 //  5. Thống kê danh mục biến có giới hạn bộ nhớ với cột nhiều giá trị khác nhau.
 //  6. Báo cáo chất lượng: lỗi chặn (trùng khóa, mồ côi khóa ngoại) và cảnh báo.
 //  7. Chuẩn hóa dở dang/lỗi bị phát hiện, chặn tạo dataset cuối, chạy lại không dùng cache.
 //  8. Dataset cuối không bị mất khi Chuẩn hóa lại (được lưu phiên bản).
-//  9. Xuất ẩn danh che cả Mã nội trú và URL EMR (chứa Mã BN).
+//  9. Xuất ẩn danh vẫn che các trường legacy nhạy cảm nếu gặp và URL EMR (chứa Mã BN).
 // 10. Xóa nghiên cứu chỉ dành cho admin.
 // Chạy: node scripts/research_data_safety_test.js
 
@@ -26,6 +26,7 @@ process.env.EMR_RUNTIME_ROOT = RUNTIME_ROOT;
 const research = require('../server/routes/research');
 const R = research._test;
 const { buildQualityReport } = require('../server/research/quality');
+const { buildEncounterId } = require('../server/research/encounter_context');
 const { redactCsvTable } = require('../server/research/export_utils');
 const { requiredRoleForRequest } = require('../server/services/authz');
 const variableSelection = require('../server/research/variable_selection');
@@ -63,17 +64,17 @@ function newRunDir() {
   return dir;
 }
 
-const INITIAL_COLS = ['T/G vào', 'Mã BN', 'Mã nội trú', 'Họ tên', 'GT', 'Trạng thái'];
+const INITIAL_COLS = ['T/G vào', 'Mã BN', 'Họ tên', 'GT', 'Trạng thái'];
 const INITIAL_ROWS = [
-  { 'T/G vào': '08:00 20/02/2026', 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'Họ tên': 'BN GIA LAP A' },
-  { 'T/G vào': '09:00 25/02/2026', 'Mã BN': '111', 'Mã nội trú': 'nt-b', 'Họ tên': 'BN GIA LAP A' },
-  { 'T/G vào': '10:00 01/03/2026', 'Mã BN': '222', 'Mã nội trú': 'nt-c', 'Họ tên': 'BN GIA LAP B' },
+  { 'T/G vào': '08:00 20/02/2026', 'Mã BN': '111', 'Họ tên': 'BN GIA LAP A' },
+  { 'T/G vào': '09:00 25/02/2026', 'Mã BN': '111', 'Họ tên': 'BN GIA LAP A' },
+  { 'T/G vào': '10:00 01/03/2026', 'Mã BN': '222', 'Họ tên': 'BN GIA LAP B' },
 ];
 
 test('Ghép lượt không dùng Mã NC; chỉ Mã BN chưa đủ khi người bệnh có nhiều đợt', () => {
   const rows = [
-    { 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'Mã NC': 'NC0001', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
-    { 'Mã BN': '111', 'Mã nội trú': 'nt-b', 'Mã NC': 'NC0002', 'T/G vào': '09:00 25/02/2026', 'Ngày ra viện': '28/02/2026' },
+    { 'Mã BN': '111', 'Mã NC': 'NC0001', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
+    { 'Mã BN': '111', 'Mã NC': 'NC0002', 'T/G vào': '09:00 25/02/2026', 'Ngày ra viện': '28/02/2026' },
   ];
   const map = R.buildContextMap(rows, 'r');
 
@@ -82,13 +83,13 @@ test('Ghép lượt không dùng Mã NC; chỉ Mã BN chưa đủ khi người b
   assert.strictEqual(R.encounterMatchStatus(byResearchCodeOnly), 'ambiguous');
 
   const byPatientAndEventTime = R.contextForRow(map, { 'Mã BN': '111', 'Mã NC': 'NC0001', 'TG chỉ định': '26/02/2026' }, '111');
-  assert.strictEqual(byPatientAndEventTime.emr_noitru_id, 'nt-b');
+  assert.strictEqual(byPatientAndEventTime.encounter_id, buildEncounterId(rows[1]));
   assert.strictEqual(R.encounterMatchMethod(byPatientAndEventTime), 'event_date_range');
 });
 
 test('Chỉ có Mã BN và thiếu thời gian thì không được tự gán vào đợt duy nhất', () => {
   const rows = [
-    { 'Mã BN': '777', 'Mã nội trú': 'nt-only', 'T/G vào': '08:00 10/04/2026', 'Ngày ra viện': '12/04/2026' },
+    { 'Mã BN': '777', 'T/G vào': '08:00 10/04/2026', 'Ngày ra viện': '12/04/2026' },
   ];
   const map = R.buildContextMap(rows, 'r');
   const unresolved = R.contextForRow(map, { 'Mã BN': '777' }, '777');
@@ -97,37 +98,19 @@ test('Chỉ có Mã BN và thiếu thời gian thì không được tự gán v�
   assert.strictEqual(R.encounterMatchStatus(unresolved), 'missing');
 });
 
-test('Mã điều trị và Mã nội trú cùng giá trị được coi là alias khóa mạnh khi đúng BN và đúng thời gian', () => {
+test('Các trường mã điều trị/nội trú legacy không tham gia ghép; Mã BN + thời gian mới quyết định', () => {
   const rows = [
-    { 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
+    { 'Mã BN': '111', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
+    { 'Mã BN': '222', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
   ];
   const map = R.buildContextMap(rows, 'r');
+
   const matched = R.contextForRow(map, {
-    'Mã BN': '111', 'Mã điều trị': 'nt-a', 'TG chỉ định': '21/02/2026',
+    'Mã BN': '111', 'Mã điều trị': 'gia-tri-khong-dung', 'Mã nội trú': 'gia-tri-khong-dung', 'TG chỉ định': '21/02/2026',
   }, '111');
-  assert.strictEqual(matched.emr_noitru_id, 'nt-a');
+  assert.strictEqual(matched.encounter_id, buildEncounterId(rows[0]));
   assert.strictEqual(R.encounterMatchStatus(matched), 'matched');
-  assert.strictEqual(R.encounterMatchMethod(matched), 'emr_treatment_noitru_alias');
-});
-
-test('Khóa đợt mạnh mâu thuẫn hoặc không tồn tại thì dừng, không fallback theo thời gian', () => {
-  const rows = [
-    { 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
-    { 'Mã BN': '222', 'Mã nội trú': 'nt-b', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
-  ];
-  const map = R.buildContextMap(rows, 'r');
-
-  const conflict = R.contextForRow(map, {
-    'Mã BN': '111', 'Mã nội trú': 'nt-b', 'TG chỉ định': '21/02/2026',
-  }, '111');
-  assert.strictEqual(conflict.encounter_id, '');
-  assert.strictEqual(conflict.needs_manual_review, 'encounter_match_identity_conflict');
-
-  const missingStrongKey = R.contextForRow(map, {
-    'Mã BN': '111', 'Mã nội trú': 'nt-khong-ton-tai', 'TG chỉ định': '21/02/2026',
-  }, '111');
-  assert.strictEqual(missingStrongKey.encounter_id, '');
-  assert.strictEqual(missingStrongKey.needs_manual_review, 'encounter_match_strong_key_not_found');
+  assert.strictEqual(R.encounterMatchMethod(matched), 'event_date_range');
 });
 
 test('QA matching quality phân biệt khóa mạnh, thời gian, mơ hồ và ngoài đợt; Mã NC trùng không BLOCK', () => {
@@ -137,7 +120,7 @@ test('QA matching quality phân biệt khóa mạnh, thời gian, mơ hồ và n
     { encounter_id: 'e2', research_code: 'NCX', patient_code: 'p2', admission_date: '2026-02-01', discharge_date: '2026-02-05' },
   ];
   const labs = [
-    { lab_result_id: 'l1', patient_code: 'p1', encounter_id: 'e1', encounter_match_status: 'matched', encounter_match_method: 'emr_noitru_id', encounter_match_reason: '', is_within_encounter: '1' },
+    { lab_result_id: 'l1', patient_code: 'p1', encounter_id: 'e1', encounter_match_status: 'matched', encounter_match_method: 'encounter_id', encounter_match_reason: '', is_within_encounter: '1' },
     { lab_result_id: 'l2', patient_code: 'p1', encounter_id: 'e1', encounter_match_status: 'matched', encounter_match_method: 'event_date_range', encounter_match_reason: '', is_within_encounter: '1' },
     { lab_result_id: 'l3', patient_code: 'p1', encounter_id: '', encounter_match_status: 'missing', encounter_match_method: '', encounter_match_reason: 'encounter_match_outside_time', is_within_encounter: '' },
     { lab_result_id: 'l4', patient_code: 'p1', encounter_id: '', encounter_match_status: 'missing', encounter_match_method: '', encounter_match_reason: 'encounter_match_identity_conflict', is_within_encounter: '' },
@@ -156,18 +139,18 @@ test('QA matching quality phân biệt khóa mạnh, thời gian, mơ hồ và n
 
 test('Ghép theo ngày vào duy nhất khi nguồn thiếu giờ/ngày ra; không ghép nếu ngày đó có nhiều lượt', () => {
   const rows = [
-    { 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'T/G vào': '08:00 20/02/2026' },
-    { 'Mã BN': '111', 'Mã nội trú': 'nt-b', 'T/G vào': '09:00 25/02/2026' },
+    { 'Mã BN': '111', 'T/G vào': '08:00 20/02/2026' },
+    { 'Mã BN': '111', 'T/G vào': '09:00 25/02/2026' },
   ];
   const map = R.buildContextMap(rows, 'r');
   const matched = R.contextForRow(map, { 'Mã BN': '111', 'Ngày vào viện': '20/02/2026' }, '111');
   assert.ok(matched.encounter_id);
-  assert.strictEqual(matched.emr_noitru_id, 'nt-a');
+  assert.strictEqual(matched.encounter_id, buildEncounterId(rows[0]));
   assert.strictEqual(R.encounterMatchMethod(matched), 'admission_date');
 
   const ambiguousMap = R.buildContextMap([
     ...rows,
-    { 'Mã BN': '111', 'Mã nội trú': 'nt-c', 'T/G vào': '18:00 20/02/2026' },
+    { 'Mã BN': '111', 'T/G vào': '18:00 20/02/2026' },
   ], 'r');
   const ambiguous = R.contextForRow(ambiguousMap, { 'Mã BN': '111', 'Ngày vào viện': '20/02/2026' }, '111');
   assert.strictEqual(ambiguous.encounter_id, '');
@@ -176,12 +159,12 @@ test('Ghép theo ngày vào duy nhất khi nguồn thiếu giờ/ngày ra; khôn
 
 test('Ghép theo ngày sự kiện chỉ khi nằm trong đúng một lượt, không nới sang ngày ngoài viện', () => {
   const rows = [
-    { 'Mã BN': '111', 'Mã nội trú': 'nt-a', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
-    { 'Mã BN': '111', 'Mã nội trú': 'nt-b', 'T/G vào': '09:00 25/02/2026', 'Ngày ra viện': '28/02/2026' },
+    { 'Mã BN': '111', 'T/G vào': '08:00 20/02/2026', 'Ngày ra viện': '22/02/2026' },
+    { 'Mã BN': '111', 'T/G vào': '09:00 25/02/2026', 'Ngày ra viện': '28/02/2026' },
   ];
   const map = R.buildContextMap(rows, 'r');
   const matched = R.contextForRow(map, { 'Mã BN': '111', 'TG chỉ định': '21/02/2026' }, '111');
-  assert.strictEqual(matched.emr_noitru_id, 'nt-a');
+  assert.strictEqual(matched.encounter_id, buildEncounterId(rows[0]));
   assert.strictEqual(R.encounterMatchMethod(matched), 'event_date_range');
 
   const outside = R.contextForRow(map, { 'Mã BN': '111', 'TG chỉ định': '23/02/2026' }, '111');
@@ -192,42 +175,42 @@ test('Ghép theo ngày sự kiện chỉ khi nằm trong đúng một lượt, k
 
 test('Kết quả chỉ thuộc đợt khi thời gian nằm trong khoảng vào-ra viện; có giờ thì so chính xác theo giờ', () => {
   const rows = [
-    { 'Mã BN': '555', 'Mã nội trú': 'nt-time', 'T/G vào': '08:00 10/04/2026', 'Ngày ra viện': '17:00 12/04/2026' },
+    { 'Mã BN': '555', 'T/G vào': '08:00 10/04/2026', 'Ngày ra viện': '17:00 12/04/2026' },
   ];
   const map = R.buildContextMap(rows, 'r');
 
   const beforeAdmission = R.contextForRow(map, {
-    'Mã BN': '555', 'Mã nội trú': 'nt-time', 'TG chỉ định': '07:30 10/04/2026',
+    'Mã BN': '555', 'TG chỉ định': '07:30 10/04/2026',
   }, '555');
-  assert.strictEqual(beforeAdmission.encounter_id, '', 'trước giờ nhập viện không được thuộc đợt dù Mã nội trú khớp');
+  assert.strictEqual(beforeAdmission.encounter_id, '', 'trước giờ nhập viện không được thuộc khoảng nằm viện');
   assert.strictEqual(beforeAdmission.needs_manual_review, 'encounter_match_outside_time');
 
   const duringStay = R.contextForRow(map, {
-    'Mã BN': '555', 'Mã nội trú': 'nt-time', 'TG chỉ định': '09:00 10/04/2026',
+    'Mã BN': '555', 'TG chỉ định': '09:00 10/04/2026',
   }, '555');
-  assert.strictEqual(duringStay.emr_noitru_id, 'nt-time');
+  assert.strictEqual(duringStay.encounter_id, buildEncounterId(rows[0]));
   assert.strictEqual(R.encounterMatchStatus(duringStay), 'matched');
 
   const afterDischarge = R.contextForRow(map, {
-    'Mã BN': '555', 'Mã nội trú': 'nt-time', 'TG chỉ định': '17:30 12/04/2026',
+    'Mã BN': '555', 'TG chỉ định': '17:30 12/04/2026',
   }, '555');
-  assert.strictEqual(afterDischarge.encounter_id, '', 'sau giờ ra viện không được thuộc đợt dù Mã nội trú khớp');
+  assert.strictEqual(afterDischarge.encounter_id, '', 'sau giờ ra viện không được thuộc khoảng nằm viện');
   assert.strictEqual(afterDischarge.needs_manual_review, 'encounter_match_outside_time');
 
   const dateOnlySameDay = R.contextForRow(map, {
     'Mã BN': '555', 'TG chỉ định': '10/04/2026',
   }, '555');
-  assert.strictEqual(dateOnlySameDay.emr_noitru_id, 'nt-time', 'khi nguồn chỉ có ngày thì chỉ có thể xác nhận theo ngày lịch');
+  assert.strictEqual(dateOnlySameDay.encounter_id, buildEncounterId(rows[0]), 'khi nguồn chỉ có ngày thì chỉ có thể xác nhận theo ngày lịch');
 });
 
 test('Đợt chưa có ngày ra viện nhận kết quả quá 60 ngày sau ngày vào (tính tới hôm nay)', () => {
   const rows = [
-    { 'Mã BN': '444', 'Mã nội trú': 'nt-cu', 'T/G vào': '08:00 01/01/2025', 'Ngày ra viện': '10/01/2025' },
-    { 'Mã BN': '444', 'Mã nội trú': 'nt-dang-nam', 'T/G vào': '08:00 01/01/2026' },
+    { 'Mã BN': '444', 'T/G vào': '08:00 01/01/2025', 'Ngày ra viện': '10/01/2025' },
+    { 'Mã BN': '444', 'T/G vào': '08:00 01/01/2026' },
   ];
   const map = R.buildContextMap(rows, 'r');
   const late = R.contextForRow(map, { 'Mã BN': '444', 'TG chỉ định': '15/03/2026' }, '444');
-  assert.strictEqual(late.emr_noitru_id, 'nt-dang-nam', 'kết quả 73 ngày sau ngày vào vẫn thuộc đợt đang nằm');
+  assert.strictEqual(late.encounter_id, buildEncounterId(rows[1]), 'kết quả 73 ngày sau ngày vào vẫn thuộc đợt đang nằm');
   assert.strictEqual(R.encounterMatchMethod(late), 'event_date_range');
 });
 
@@ -298,7 +281,7 @@ test('Mã NC duy nhất, giữ nguyên khi quét lại đổi thứ tự, dòng 
   assert.strictEqual(new Set(codes).size, 3, `Mã NC phải khác nhau: ${codes}`);
 
   const prev = new Map(first.map(r => [r['Research key'], r['Mã NC']]));
-  const extra = { 'T/G vào': '07:00 05/03/2026', 'Mã BN': '333', 'Mã nội trú': 'nt-d', 'Họ tên': 'BN GIA LAP C' };
+  const extra = { 'T/G vào': '07:00 05/03/2026', 'Mã BN': '333', 'Họ tên': 'BN GIA LAP C' };
   const second = R.normalizeResearchSourceRows([extra, ...INITIAL_ROWS].reverse(), { sourceRunId: 'r', previousCodes: prev });
   for (const row of second) {
     if (prev.has(row['Research key'])) assert.strictEqual(row['Mã NC'], prev.get(row['Research key']));
@@ -316,18 +299,18 @@ test('research_source.csv cũ bị trùng Mã NC (NC0001 cho mọi dòng) đư�
   assert.strictEqual(new Set(info.rows.map(r => r['Mã NC'])).size, 3);
 });
 
-test('Mã NC dùng lại mã script XN/CĐHA đã cấp cho cùng đợt, không cấp trùng mã đó cho đợt khác', () => {
+test('Mã NC dùng lại mã script XN/CĐHA khi cùng Mã BN + thời điểm vào, không cần mã điều trị', () => {
   const runDir = newRunDir();
   writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), INITIAL_COLS, INITIAL_ROWS);
-  writeCsv(path.join(runDir, 'du_lieu_goc.csv'), ['Mã NC', 'Mã BN', 'Mã điều trị'], [
-    { 'Mã NC': 'NC0002', 'Mã BN': '111', 'Mã điều trị': 'nt-b' },
-    { 'Mã NC': 'NC0001', 'Mã BN': '999', 'Mã điều trị': 'nt-khac' },
+  writeCsv(path.join(runDir, 'du_lieu_goc.csv'), ['Mã NC', 'Mã BN', 'T/G vào'], [
+    { 'Mã NC': 'NC0002', 'Mã BN': '111', 'T/G vào': '09:00 25/02/2026' },
+    { 'Mã NC': 'NC0001', 'Mã BN': '999', 'T/G vào': '08:00 01/01/2026' },
   ]);
   const info = R.ensureResearchSourceRows(runDir, { sourceRunId: 'r', force: true });
-  const byNoitru = Object.fromEntries(info.rows.map(r => [r['Mã nội trú'], r['Mã NC']]));
-  assert.strictEqual(byNoitru['nt-b'], 'NC0002');
-  assert.notStrictEqual(byNoitru['nt-a'], 'NC0001', 'NC0001 đã thuộc đợt khác trong du_lieu_goc.csv');
-  assert.strictEqual(new Set(Object.values(byNoitru)).size, 3);
+  const byVisit = Object.fromEntries(info.rows.map(r => [`${r['Mã BN']}|${r['T/G vào']}`, r['Mã NC']]));
+  assert.strictEqual(byVisit['111|09:00 25/02/2026'], 'NC0002');
+  assert.notStrictEqual(byVisit['111|08:00 20/02/2026'], 'NC0001', 'NC0001 đã thuộc BN/khung thời gian khác trong du_lieu_goc.csv');
+  assert.strictEqual(new Set(Object.values(byVisit)).size, 3);
 });
 
 test('Dữ liệu hành chánh của đợt 2 gắn đúng đợt 2 (không ghép theo Mã NC trùng)', () => {
@@ -337,7 +320,7 @@ test('Dữ liệu hành chánh của đợt 2 gắn đúng đợt 2 (không ghé
   const merged = R.combineEncounterSources({ initialRows: src, hchanhProfileRows: hchanh, sourceRunId: 'r' });
   const withCard = merged.filter(r => r['Số thẻ'] === 'THE-GIA-LAP');
   assert.strictEqual(withCard.length, 1);
-  assert.strictEqual(withCard[0]['Mã nội trú'], 'nt-b');
+  assert.strictEqual(withCard[0]['Research key'], stay2['Research key']);
   assert.strictEqual(withCard[0]['Mã NC'], stay2['Mã NC'], 'Mã NC của dòng nguồn không bị mã cũ trong file hchanh đè');
 });
 
@@ -347,7 +330,7 @@ test('Chuyển khoa nghi cùng đợt: không tự gộp, có trong encounter_re
   R.normalizeRunOutputs(runDir, { sourceRunId: 'r' });
   const source = readCsv(path.join(runDir, 'research_source.csv'));
   const discharge = source.filter(r => r['Mã BN'] === '111').map(r => ({
-    'Mã NC': r['Mã NC'], 'Mã BN': '111', 'Mã nội trú': r['Mã nội trú'], 'Research key': r['Research key'],
+    'Mã NC': r['Mã NC'], 'Mã BN': '111', 'Research key': r['Research key'],
     'Ngày vào viện': r['T/G vào'], 'Ngày ra viện': '10/03/2026',
   }));
   writeCsv(path.join(runDir, 'hchanh_discharge.csv'), Object.keys(discharge[0]), discharge);
@@ -422,19 +405,19 @@ test('Chỉ Mã BN: nhiều dòng nguồn trong cùng khoảng EMR gộp 1 đợ
   assert.strictEqual(notes.length, 1, 'clinical note reuse giống hệt cũng chỉ giữ một bản chuẩn hóa');
 });
 
-test('Dòng chuyển khoa chung Mã nội trú gộp thành 1 đợt, ngày vào = thời điểm vào sớm nhất', () => {
+test('Dòng nguồn vẫn tách; encounters chỉ gộp khi Mã BN + khoảng vào-ra chứng minh cùng lần nằm viện', () => {
   const runDir = newRunDir();
-  // Danh sách xếp khoa sau lên trước: không được lấy ngày vào khoa sau làm ngày vào viện.
-  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), INITIAL_COLS, [
-    { 'T/G vào': '09:00 04/03/2026', 'Mã BN': '111', 'Mã nội trú': 'nt-chung', 'Họ tên': 'BN GIA LAP A' },
-    { 'T/G vào': '08:00 20/02/2026', 'Mã BN': '111', 'Mã nội trú': 'nt-chung', 'Họ tên': 'BN GIA LAP A' },
-    { 'T/G vào': '10:00 01/03/2026', 'Mã BN': '222', 'Mã nội trú': 'nt-khac', 'Họ tên': 'BN GIA LAP B' },
+  // Dòng vào khoa sau đứng trước; dòng vào viện sớm hơn có ngày ra bao trùm mốc chuyển khoa.
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), [...INITIAL_COLS, 'Ngày ra viện'], [
+    { 'T/G vào': '09:00 04/03/2026', 'Mã BN': '111', 'Họ tên': 'BN GIA LAP A', 'Ngày ra viện': '' },
+    { 'T/G vào': '08:00 20/02/2026', 'Mã BN': '111', 'Họ tên': 'BN GIA LAP A', 'Ngày ra viện': '10/03/2026' },
+    { 'T/G vào': '10:00 01/03/2026', 'Mã BN': '222', 'Họ tên': 'BN GIA LAP B', 'Ngày ra viện': '05/03/2026' },
   ]);
   const out = R.normalizeRunOutputs(runDir, { sourceRunId: 'r' });
   assert.strictEqual(out.encounters, 2);
   const source = readCsv(path.join(runDir, 'research_source.csv')).filter(r => r['Mã BN'] === '111');
-  assert.strictEqual(source.length, 1, 'research_source chỉ còn 1 dòng cho đợt này');
-  assert.strictEqual(source[0].fetch_from_date, '2026-02-20', 'khoảng lấy dữ liệu bắt đầu từ ngày vào viện');
+  assert.strictEqual(source.length, 2, 'research_source giữ từng dòng nguồn, không ép gộp thành một ô/dòng lớn');
+  assert.deepStrictEqual(source.map(r => r.fetch_from_date).sort(), ['2026-02-20', '2026-03-04']);
   const enc = readCsv(path.join(runDir, 'encounters.csv')).find(r => r.patient_code === '111');
   assert.strictEqual(enc.admission_date, '2026-02-20 08:00');
 });
@@ -442,9 +425,9 @@ test('Dòng chuyển khoa chung Mã nội trú gộp thành 1 đợt, ngày vào
 test('XN: giữ đủ mọi lần xét nghiệm; dòng giống hệt chỉ cảnh báo nghi trùng, kết quả mâu thuẫn vẫn giữ cả hai', () => {
   const runDir = newRunDir();
   writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), INITIAL_COLS, INITIAL_ROWS);
-  const xnCols = ['Mã BN', 'Mã điều trị', 'TG chỉ định', 'Chỉ số', 'Kết quả', 'Đơn vị'];
-  const hb = { 'Mã BN': '111', 'Mã điều trị': 'nt-a', 'TG chỉ định': '07:30 21/02/2026', 'Chỉ số': 'Hb', 'Kết quả': '125', 'Đơn vị': 'g/L' };
-  const crp = { 'Mã BN': '111', 'Mã điều trị': 'nt-a', 'TG chỉ định': '07:30 21/02/2026', 'Chỉ số': 'CRP', 'Kết quả': '5', 'Đơn vị': 'mg/L' };
+  const xnCols = ['Mã BN', 'TG chỉ định', 'Chỉ số', 'Kết quả', 'Đơn vị'];
+  const hb = { 'Mã BN': '111', 'TG chỉ định': '07:30 21/02/2026', 'Chỉ số': 'Hb', 'Kết quả': '125', 'Đơn vị': 'g/L' };
+  const crp = { 'Mã BN': '111', 'TG chỉ định': '07:30 21/02/2026', 'Chỉ số': 'CRP', 'Kết quả': '5', 'Đơn vị': 'mg/L' };
   writeCsv(path.join(runDir, 'lich_su_xn.csv'), xnCols, [hb, { ...hb }, crp, { ...crp, 'Kết quả': '50' }]);
   const out = R.normalizeRunOutputs(runDir, { sourceRunId: 'r' });
   assert.strictEqual(out.lab_results, 4, 'không xóa Hb giống hệt vì có thể là hai lần xét nghiệm thật');
@@ -462,14 +445,14 @@ test('XN: giữ đủ mọi lần xét nghiệm; dòng giống hệt chỉ cản
 test('CĐHA/XN giữ đầy đủ ở bảng dài; analysis_ready chỉ giữ count, không nhét cả đợt vào một ô', () => {
   const runDir = newRunDir();
   writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), INITIAL_COLS, INITIAL_ROWS);
-  const xnCols = ['Mã BN', 'Mã điều trị', 'TG chỉ định', 'Mã phiếu', 'Chỉ số', 'Kết quả', 'Đơn vị', 'Khoảng tham chiếu'];
+  const xnCols = ['Mã BN', 'TG chỉ định', 'Mã phiếu', 'Chỉ số', 'Kết quả', 'Đơn vị', 'Khoảng tham chiếu'];
   writeCsv(path.join(runDir, 'lich_su_xn.csv'), xnCols, [
-    { 'Mã BN': '111', 'Mã điều trị': 'nt-a', 'TG chỉ định': '07:30 21/02/2026', 'Mã phiếu': 'P1', 'Chỉ số': 'Hb', 'Kết quả': '125', 'Đơn vị': 'g/L', 'Khoảng tham chiếu': '120-160' },
-    { 'Mã BN': '111', 'Mã điều trị': 'nt-a', 'TG chỉ định': '12:30 21/02/2026', 'Mã phiếu': 'P2', 'Chỉ số': 'Hb', 'Kết quả': '120', 'Đơn vị': 'g/L', 'Khoảng tham chiếu': '120-160' },
+    { 'Mã BN': '111', 'TG chỉ định': '07:30 21/02/2026', 'Mã phiếu': 'P1', 'Chỉ số': 'Hb', 'Kết quả': '125', 'Đơn vị': 'g/L', 'Khoảng tham chiếu': '120-160' },
+    { 'Mã BN': '111', 'TG chỉ định': '12:30 21/02/2026', 'Mã phiếu': 'P2', 'Chỉ số': 'Hb', 'Kết quả': '120', 'Đơn vị': 'g/L', 'Khoảng tham chiếu': '120-160' },
   ]);
   const longResult = 'Mô tả '.repeat(250) + 'ĐOẠN_CUỐI_KẾT_QUẢ';
-  const imagingCols = ['Mã BN', 'Mã điều trị', 'TG chỉ định', 'Tên dịch vụ', 'Mô tả/Kết quả', 'Kết luận', 'Trạng thái'];
-  const img = { 'Mã BN': '111', 'Mã điều trị': 'nt-a', 'TG chỉ định': '09:00 21/02/2026', 'Tên dịch vụ': 'CT ngực', 'Mô tả/Kết quả': longResult, 'Kết luận': 'KẾT_LUẬN_ĐẦY_ĐỦ', 'Trạng thái': 'Hoàn tất' };
+  const imagingCols = ['Mã BN', 'TG chỉ định', 'Tên dịch vụ', 'Mô tả/Kết quả', 'Kết luận', 'Trạng thái'];
+  const img = { 'Mã BN': '111', 'TG chỉ định': '09:00 21/02/2026', 'Tên dịch vụ': 'CT ngực', 'Mô tả/Kết quả': longResult, 'Kết luận': 'KẾT_LUẬN_ĐẦY_ĐỦ', 'Trạng thái': 'Hoàn tất' };
   writeCsv(path.join(runDir, 'lich_su_cdha.csv'), imagingCols, [img, { ...img }]);
 
   const out = R.normalizeRunOutputs(runDir, { sourceRunId: 'r' });
@@ -582,8 +565,8 @@ test('Số lượt theo dõi = số lượt trong danh sách; mục tiến độ
 
 test('Chuẩn hóa giữ nguyên số âm và kết quả "+" trong lab_results.csv (không chèn dấu \')', () => {
   const runDir = newRunDir();
-  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), ['T/G vào', 'Mã BN', 'Mã nội trú', 'Họ tên', 'Ngày ra viện'], [
-    { 'T/G vào': '08:00 20/02/2026', 'Mã BN': '333', 'Mã nội trú': 'nt-neg', 'Họ tên': 'BN GIA LAP C', 'Ngày ra viện': '28/02/2026' },
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), ['T/G vào', 'Mã BN', 'Họ tên', 'Ngày ra viện'], [
+    { 'T/G vào': '08:00 20/02/2026', 'Mã BN': '333', 'Họ tên': 'BN GIA LAP C', 'Ngày ra viện': '28/02/2026' },
   ]);
   R.normalizeRunOutputs(runDir, { sourceRunId: 'r' });
   const nc = readCsv(path.join(runDir, 'research_source.csv'))[0]['Mã NC'];
