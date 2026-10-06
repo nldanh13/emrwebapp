@@ -1,14 +1,20 @@
 // "Chưa rõ giờ" là việc phải làm trước (hỏi lại bác sĩ) nên đứng ĐẦU cột, ở cả hai vai trò.
 // Lỗi cũ: mục này nằm cuối trang, phải cuộn qua mọi mục mới thấy.
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createElement, act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DutyReport } from './DutyReport.jsx';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let host; let root;
-beforeEach(() => { host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host); });
-afterEach(() => { act(() => root.unmount()); host.remove(); localStorage.clear(); });
+// Cố định đồng hồ 07:00 ngày DATE: test không được đổi kết quả theo giờ chạy (sau 12:00 dòng "trưa"
+// rơi vào mục "Đã qua giờ" đang thu gọn → test cũ đỏ vào buổi chiều).
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(2026, 9, 6, 7, 0, 0));
+  host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host);
+});
+afterEach(() => { act(() => root.unmount()); host.remove(); localStorage.clear(); vi.useRealTimers(); });
 
 const DATE = '06/10/2026'; // Thứ 3, ngày làm
 const rows = [

@@ -12,6 +12,7 @@ from xu_ly_config import (
     DEFAULT_NACL_VOLUME_BY_KEYWORD,
     _contains_any,
     _norm_upper,
+    effective_dilution,
     get_catalog_dilution,
     get_safety_nacl_volume,
     parse_hours_from_gio_dung,
@@ -629,6 +630,25 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
 
         return False
 
+    def _dilution_source(drug, bag, from_order, catalog_rule):
+        """Vì sao có dung môi/thể tích này — ghi lên dòng thuốc để người xem đối chiếu:
+        y_lenh (y lệnh/dòng dung môi ghi rõ) > danh_muc > luat_san_co > tui_cung_gio > mac_dinh.
+        Suy ra theo đúng thứ tự choose_bag_volume_and_type đi qua."""
+        if from_order:
+            return "y_lenh"
+        if catalog_rule and catalog_rule.get("solvent") == "NACL_0.9":
+            vol = catalog_rule.get("volume_ml")
+            if (vol and float(vol) == float(bag)) or (not vol and catalog_rule.get("apply") == "always"):
+                return "danh_muc"
+        name_u = _drug_name_text_u(drug)
+        rule, source = effective_dilution(name_u)
+        if source == "luat_san_co" and rule.get("volume_ml") and float(rule["volume_ml"]) == float(bag):
+            return "luat_san_co"
+        hours = parse_hours_from_gio_dung(drug.get("gio_dung", ""))
+        if any(diluent_by_hour.get(h) for h in hours) or diluent_all:
+            return "tui_cung_gio"
+        return "mac_dinh"
+
     def enrich_with_diluent(drug):
         route_l = (drug.get("duong_dung_goc") or "").lower()
 
@@ -640,6 +660,13 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
         ]) or bool(drug.get("dung_moi"))
 
         bag, dm, explicit_from_choose = choose_bag_volume_and_type(drug)
+        catalog_rule = _catalog_rule_of(drug)
+        drug["nguon_pha"] = _dilution_source(drug, bag, explicit or explicit_from_choose, catalog_rule)
+        # Tốc độ theo quy tắc danh mục khi y lệnh không ghi.
+        if catalog_rule and catalog_rule.get("rate") and not str(drug.get("toc_do") or "").strip():
+            rate = catalog_rule["rate"]
+            drug["toc_do"] = str(int(rate) if float(rate).is_integer() else rate)
+            drug["toc_do_nguon"] = "danh_muc"
 
         if not (explicit or explicit_from_choose):
             drug["suy_luan_dung_moi"] = True

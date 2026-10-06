@@ -97,3 +97,47 @@ def test_no_rule_keeps_old_behavior(catalog):
     catalog([{'canonical': 'TAZOCIN'}])
     assert catalog_dilution_rule('TAZOCIN 4.5G') is None
     assert get_safety_nacl_volume('PARACETAMOL') is None
+
+
+def test_rule_matches_by_single_active_ingredient(catalog):
+    # Quy tắc đặt cho VECMID (hoạt chất Vancomycin) cũng áp dụng cho tên khác cùng hoạt chất.
+    from processing.medication_catalog import catalog_dilution_rule
+    catalog([{'canonical': 'VECMID', 'active_ingredients': ['Vancomycin'],
+              'dilution': {'solvent': 'NACL_0.9', 'volume_ml': 200, 'apply': 'always'}}])
+    rule = catalog_dilution_rule('VANCOMYCIN KABI 1G')
+    assert rule['volume_ml'] == 200 and rule['matched_by'] == 'hoat_chat' and rule['canonical'] == 'VECMID'
+
+
+def test_source_and_rate_are_recorded(catalog):
+    from processing.diluent_resolver import infer_and_reclassify_diluents
+    catalog([{'canonical': 'TAZOCIN', 'dilution': {'solvent': 'NACL_0.9', 'volume_ml': 250, 'rate': 40, 'apply': 'always'}}])
+    infusions, _ = infer_and_reclassify_diluents([], [_vial('TAZOCIN 4.5G', 'Abc')])
+    assert infusions[0]['nguon_pha'] == 'danh_muc'
+    assert infusions[0]['toc_do'] == '40' and infusions[0]['toc_do_nguon'] == 'danh_muc'
+
+    catalog([])
+    infusions, _ = infer_and_reclassify_diluents([], [_vial('MEROVIA 1G', 'Meropenem')])
+    assert infusions[0]['nguon_pha'] == 'luat_san_co'
+
+    drug = _vial('MEROVIA 1G', 'Meropenem', 'Pha Natri clorid 0.9% lấy đủ 50ml truyền TM (8 giờ)')
+    drug['the_tich_lay_ml'] = 50
+    infusions, _ = infer_and_reclassify_diluents([], [drug])
+    assert infusions[0]['nguon_pha'] == 'y_lenh'
+
+
+def test_check_script_uses_processing_functions(catalog, tmp_path):
+    import dilution_check
+    catalog([{'canonical': 'TAZOCIN', 'dilution': {'solvent': 'NACL_0.9', 'volume_ml': 250, 'apply': 'always'}}])
+    res = dilution_check.check_item({'ten_thuoc': 'TAZOCIN 4.5G', 'dang': 'Lọ', 'duong_dung_goc': 'Tiêm TMC'})
+    assert res['moved_to_infusion'] is True
+    assert res['the_tich'] == 250.0 and res['nguon_pha'] == 'danh_muc' and res['rule_source'] == 'danh_muc'
+    assert dilution_check.check_item({'ten_thuoc': ''})['error']
+
+    inp, out = tmp_path / 'in.json', tmp_path / 'out.json'
+    inp.write_text(json.dumps({'items': [], 'catalog_names': ['TAZOCIN', 'NEFOPAM 20MG']}), encoding='utf-8')
+    sys.argv = ['dilution_check.py', '--in', str(inp), '--out', str(out)]
+    assert dilution_check.main() == 0
+    data = json.loads(out.read_text(encoding='utf-8'))
+    assert data['catalog']['TAZOCIN']['source'] == 'danh_muc'
+    assert data['catalog']['NEFOPAM 20MG']['source'] == 'luat_san_co'
+    assert any(r['keyword'] == 'VANCOMYCIN' for r in data['builtin'])

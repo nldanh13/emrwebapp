@@ -125,13 +125,21 @@ function shouldHideFromDutyReport(item, category, route) {
 
 const SOLVENT_CODE_TEXT = { 'NACL_0.9': 'Natri clorid 0.9%', 'SODIUM_0.9': 'Sodium chloride 0.9%' };
 
-// Chữ "pha …" hiện cạnh tên thuốc: mã dung môi của worker → tên đọc được; tên thuốc đã ghi
-// "+ Natri clorid 0.9%" thì không lặp. Không có dung môi từ y lệnh → quy tắc pha của Danh mục thuốc.
+// Chữ "pha …" hiện cạnh tên thuốc (màn hình và phiếu in dùng chung): mã dung môi của worker → tên
+// đọc được, kèm thể tích pha; tên thuốc đã ghi "+ Natri clorid 0.9%" thì chỉ ghi thể tích. Thể tích
+// không do y lệnh ghi (nguon_pha của worker) thì nói rõ nguồn để người chuẩn bị thuốc đối chiếu.
+// Không có dung môi từ y lệnh → quy tắc pha của Danh mục thuốc.
+const SOURCE_NOTE = { danh_muc: 'theo danh mục', luat_san_co: 'theo luật sẵn có', mac_dinh: 'mặc định, hỏi lại y lệnh' };
+
 function mixTextOf(item, drugName = '') {
   const raw = String(item?.dung_moi || item?.pha_voi || item?.mix_with || '').trim();
   if (raw) {
-    const text = SOLVENT_CODE_TEXT[raw] || raw;
-    return normDrug(drugName).includes(normDrug(text)) ? '' : text;
+    const solvent = SOLVENT_CODE_TEXT[raw] || raw;
+    const vol = SOLVENT_CODE_TEXT[raw] ? Number(item?.tui_dich_truyen_ml || item?.the_tich || 0) : 0;
+    const volText = vol > 0 ? `${vol} ml` : '';
+    const base = normDrug(drugName).includes(normDrug(solvent)) ? volText : [solvent, volText].filter(Boolean).join(' ');
+    const note = SOURCE_NOTE[item?.nguon_pha];
+    return base && note ? `${base} (${note})` : base;
   }
   const rule = String(item?.quy_tac_pha || '').trim();
   return /^pha\s/i.test(rule) ? rule.replace(/^pha\s+/i, '') : '';

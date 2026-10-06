@@ -34,7 +34,7 @@ from xu_ly_config import (
     NO_WATER_TAG_KEYWORDS,
     THE_TICH_AO, LUAT_AN_TOAN, CONFIG,
     get_route_label, _norm_upper, _contains_any,
-    parse_hours_from_gio_dung, get_safety_nacl_volume,
+    parse_hours_from_gio_dung, get_safety_nacl_volume, effective_dilution,
 )
 from xu_ly_merge import (
     _dedup_preserve_order, _dedup_dicts, _merge_multiline,
@@ -503,10 +503,17 @@ def _normalize_final_infusion_operational_volumes(record: dict) -> dict:
             if v >= 50:
                 bag = v
                 break
+        source = "y_lenh" if bag >= 50 else ""
         if bag < 50:
-            # Trong dữ liệu khoa, TRASOLU/Tramadol pha NaCl dùng túi 100ml.
-            # Đây cũng là giá trị mà pipeline hiện đã tạo đúng ở các record tương tự.
-            bag = 100.0
+            # Y lệnh không ghi thể tích túi: theo quy tắc pha (Danh mục thuốc > luật sẵn có), cùng
+            # nguồn với diluent_resolver; không có thì 100ml (túi pha Tramadol/Trasolu thường dùng).
+            rule, rule_source = effective_dilution(name_blob)
+            if rule and rule.get("solvent") == "NACL_0.9" and rule.get("volume_ml"):
+                bag, source = float(rule["volume_ml"]), rule_source
+            else:
+                bag, source = 100.0, "mac_dinh"
+        if not med.get("nguon_pha"):
+            med["nguon_pha"] = source
 
         if current_vol > 0:
             med["the_tich_thuoc_goc_ml"] = current_vol

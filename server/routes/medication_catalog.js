@@ -6,6 +6,7 @@
 // POST   /api/medication-catalog/resolve-active-ingredients → đổi hoạt chất thành các tên có thể gặp trong EMR
 // GET    /api/medication-catalog/archive-drug-names → tên thuốc trong kho + đã/chưa gắn hoạt chất
 // POST   /api/medication-catalog/assign-ingredient  → gắn một hoạt chất cho nhiều tên thuốc
+// POST   /api/medication-catalog/dilution-check  → quy tắc pha đang áp dụng + kiểm tra thử (chạy worker)
 // PATCH  /api/medication-catalog/:key     → sửa thuốc đã có (key = canonical)
 // DELETE /api/medication-catalog/:key     → xoá thuốc
 
@@ -19,6 +20,9 @@ const { getRuntimePaths } = require('../services/session');
 const { appendActivity } = require('../services/activity_logger');
 const routeModel = require('../utils/routeModel');
 const fs     = require('fs');
+const os     = require('os');
+const crypto = require('crypto');
+const { runScript, fmtPyError } = require('../services/python_runner');
 const { resolveIngredientTargets } = require('../research/medication_ingredient_catalog');
 const { buildDrugNameInventory, assignIngredientToNames } = require('../research/drug_name_inventory');
 const { readCsvTable } = require('../research/table_io');
@@ -109,6 +113,12 @@ function normalizeDilution(value) {
     }
     const apply = String(value.apply || 'always').trim();
     out.apply = DILUTION_APPLY.includes(apply) ? apply : 'always';
+    const rawRate = value.rate;
+    if (rawRate !== '' && rawRate != null) {
+      const r = Number(String(rawRate).replace(',', '.'));
+      if (!Number.isFinite(r) || r <= 0 || r > 300) throw badRequest('Tốc độ truyền phải là số giọt/phút từ 1 đến 300.');
+      out.rate = r;
+    }
   }
   const note = String(value.note || '').trim().slice(0, 300);
   if (note) out.note = note;
@@ -215,12 +225,63 @@ router.post('/medication-catalog', (req, res) => {
       default_rate_text: String(body.default_rate_text || '').trim(),
       schedule_rule: String(body.schedule_rule || '').trim(),
       dilution: normalizeDilution(body.dilution),
+      // Sửa/thêm tay → bước tự học từ dữ liệu (sync_catalog_from_processed_records) không ghi đè.
+      sua_tay: true,
     });
 
     data.medications.push(med);
     saveCatalog(data);
     appendActivity(ctx, { kind: 'medication_catalog.create', canonical });
     return res.json({ status: 'ok', medication: { ...med, key: canonical } });
+  } catch (e) {
+    return res.status(e.status || 500).json({ status: 'error', message: String(e.message) });
+  }
+});
+
+// Kiểm tra quy tắc pha: chạy worker/dilution_check.py — ĐÚNG hàm bước xử lý dữ liệu dùng, nên
+// điều màn hình nói khớp điều xử lý làm. Không mở EMR, không ghi gì.
+function cleanCheckItems(items) {
+  if (!Array.isArray(items)) return [];
+  return items.slice(0, 20).filter(x => x && typeof x === 'object').map(x => {
+    const out = {};
+    for (const k of ['ten_thuoc', 'hoat_chat', 'dang', 'duong_dung_goc', 'gio_dung', 'toc_do']) {
+      const v = String(x[k] ?? '').trim().slice(0, 300);
+      if (v) out[k] = v;
+    }
+    return out;
+  });
+}
+
+async function runDilutionCheck(ctx, payload) {
+  const tag = crypto.randomBytes(6).toString('hex');
+  const inFile = path.join(os.tmpdir(), `dilution_check_${tag}_in.json`);
+  const outFile = path.join(os.tmpdir(), `dilution_check_${tag}_out.json`);
+  try {
+    fs.writeFileSync(inFile, JSON.stringify(payload), 'utf8');
+    const result = await runScript('dilution_check.py', ['--in', inFile, '--out', outFile], {
+      runtimeDir: ctx?.dir, extraEnv: {},
+    });
+    if (result.code !== 0 || !fs.existsSync(outFile)) {
+      const err = new Error(fmtPyError('Không kiểm tra được quy tắc pha. Thử lại; nếu vẫn lỗi, khởi động lại máy chủ.', result));
+      err.status = 500;
+      throw err;
+    }
+    return JSON.parse(fs.readFileSync(outFile, 'utf8'));
+  } finally {
+    for (const f of [inFile, outFile]) { try { fs.unlinkSync(f); } catch (_) { /* đã xoá */ } }
+  }
+}
+
+router.post('/medication-catalog/dilution-check', async (req, res) => {
+  try {
+    const ctx = getRuntimePaths(req);
+    const body = req.body || {};
+    const items = cleanCheckItems(body.items);
+    const catalogNames = body.include_catalog
+      ? loadCatalog().medications.map(m => String(m?.canonical || '').trim()).filter(Boolean)
+      : [];
+    const data = await runDilutionCheck(ctx, { items, catalog_names: catalogNames });
+    return res.json({ status: 'ok', ...data });
   } catch (e) {
     return res.status(e.status || 500).json({ status: 'error', message: String(e.message) });
   }
@@ -271,6 +332,7 @@ router.patch('/medication-catalog/:key', (req, res) => {
       if (dilution) med.dilution = dilution; else delete med.dilution;
     }
 
+    med.sua_tay = true;
     data.medications[idx] = pruneEmpty(med);
     saveCatalog(data);
     appendActivity(ctx, { kind: 'medication_catalog.update', key, canonical: med.canonical });
@@ -299,4 +361,6 @@ router.delete('/medication-catalog/:key', (req, res) => {
 
 module.exports = router;
 module.exports.normalizeDilution = normalizeDilution;
+module.exports.cleanCheckItems = cleanCheckItems;
+module.exports.runDilutionCheck = runDilutionCheck;
 module.exports.DILUTION_SOLVENTS = DILUTION_SOLVENTS;
