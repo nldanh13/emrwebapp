@@ -17,6 +17,9 @@ import sys
 from typing import Any, Dict, List, Optional, Tuple
 
 import hchanh_fetch as core
+# Nạp lớp an toàn Lịch sử y lệnh ("Tất cả" = 1000, chờ AJAX) — nó vá trực tiếp module hchanh_fetch,
+# nên mọi caller đi qua entrypoint này đều có cả hai lớp bảo vệ.
+import hchanh_fetch_safe  # noqa: F401,E402
 
 
 def _arg_value(name: str) -> str:
