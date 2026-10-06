@@ -365,6 +365,63 @@ test('Chuyển khoa nghi cùng đợt: không tự gộp, có trong encounter_re
   assert.ok(!fs.readFileSync(path.join(runDir, 'qa_report.json'), 'utf-8').includes('GIA LAP'));
 });
 
+test('Chỉ Mã BN: nhiều dòng nguồn trong cùng khoảng EMR gộp 1 đợt và không nhân bản y lệnh reuse', () => {
+  const runDir = newRunDir();
+  const cols = ['T/G vào', 'Mã BN', 'Họ tên'];
+  const initial = [
+    { 'T/G vào': '08:00 08/09/2026', 'Mã BN': '777', 'Họ tên': 'BN GIA LAP C' },
+    { 'T/G vào': '09:00 10/09/2026', 'Mã BN': '777', 'Họ tên': 'BN GIA LAP C' },
+    { 'T/G vào': '10:00 15/09/2026', 'Mã BN': '777', 'Họ tên': 'BN GIA LAP C' },
+  ];
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), cols, initial);
+  const sourceInfo = R.ensureResearchSourceRows(runDir, { sourceRunId: 'r', force: true });
+  const source = sourceInfo.rows.filter(r => r['Mã BN'] === '777');
+  assert.strictEqual(source.length, 3, 'raw/source vẫn giữ 3 dòng nguồn');
+
+  const actualAdmission = '08:00 08/09/2026';
+  const actualDischarge = '21/09/2026';
+  const profile = source.map(r => ({
+    'Mã NC': r['Mã NC'], 'Mã BN': '777', 'Research key': r['Research key'],
+    'Ngày vào viện': actualAdmission, 'Ngày ra viện': actualDischarge,
+    'Họ tên': 'BN GIA LAP C', 'Nguồn input': 'hchanh_auto_profile',
+  }));
+  const discharge = source.map(r => ({
+    'Mã NC': r['Mã NC'], 'Mã BN': '777', 'Research key': r['Research key'],
+    'Ngày vào viện': actualAdmission, 'Ngày ra viện': actualDischarge,
+    'Họ tên': 'BN GIA LAP C', 'Chẩn đoán ra viện': 'TB45 - giả lập',
+    'Nguồn input': 'hchanh_auto_discharge',
+  }));
+  const orders = source.map((r, idx) => ({
+    'Mã NC': r['Mã NC'], 'Mã BN': '777', 'Research key': r['Research key'],
+    // Mô phỏng file cũ: mỗi bản reuse vẫn mang ngày của dòng nguồn khác nhau.
+    'Ngày vào viện': initial[idx]['T/G vào'], 'Ngày ra viện': actualDischarge,
+    'TG y lệnh': '08:00 15/09/2026',
+    'Diễn biến': 'Bệnh nhân tỉnh',
+    'Tên y lệnh': '(TT) Eperison 50mg 01v x3 (u) 8h-14h-20h',
+    'Y lệnh khác': '',
+    'Nguồn': 'hchanh_auto_order_history',
+  }));
+  writeCsv(path.join(runDir, 'hchanh_profile.csv'), Object.keys(profile[0]), profile);
+  writeCsv(path.join(runDir, 'hchanh_discharge.csv'), Object.keys(discharge[0]), discharge);
+  writeCsv(path.join(runDir, 'hchanh_order_history.csv'), Object.keys(orders[0]), orders);
+
+  const out = R.normalizeRunOutputs(runDir, { sourceRunId: 'r', force: true });
+  assert.strictEqual(out.encounters, 1, 'các dòng nguồn cùng khoảng EMR phải thành một encounter');
+  assert.strictEqual(readCsv(path.join(runDir, 'hchanh_order_history.csv')).length, 3, 'raw vẫn giữ đủ 3 bản reuse để audit');
+
+  const encounters = readCsvTable(path.join(runDir, 'encounters.csv'), Number.MAX_SAFE_INTEGER).rows.filter(r => r.patient_code === '777');
+  assert.strictEqual(encounters.length, 1);
+  assert.ok(String(encounters[0].admission_date).startsWith('2026-09-08'));
+  assert.ok(String(encounters[0].discharge_date).startsWith('2026-09-21'));
+
+  const meds = readCsvTable(path.join(runDir, 'medication_orders.csv'), Number.MAX_SAFE_INTEGER).rows.filter(r => r.patient_code === '777');
+  assert.strictEqual(meds.length, 1, 'cùng một y lệnh reuse không được nhân theo số dòng nguồn');
+  assert.strictEqual(meds[0].encounter_match_status, 'matched');
+
+  const notes = readCsvTable(path.join(runDir, 'clinical_notes.csv'), Number.MAX_SAFE_INTEGER).rows.filter(r => r.patient_code === '777');
+  assert.strictEqual(notes.length, 1, 'clinical note reuse giống hệt cũng chỉ giữ một bản chuẩn hóa');
+});
+
 test('Dòng chuyển khoa chung Mã nội trú gộp thành 1 đợt, ngày vào = thời điểm vào sớm nhất', () => {
   const runDir = newRunDir();
   // Danh sách xếp khoa sau lên trước: không được lấy ngày vào khoa sau làm ngày vào viện.
