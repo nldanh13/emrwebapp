@@ -1,0 +1,29 @@
+# /etc/systemd/system/emrwebapp.service — chạy Data Hub như một dịch vụ:
+# tự bật khi VPS khởi động, tự chạy lại nếu bị lỗi. Chrome chạy trong màn hình ảo (Xvfb)
+# nên các bước cần cửa sổ trình duyệt vẫn chạy được trên máy chủ không có màn hình.
+[Unit]
+Description=EMR Data Hub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=emr
+Group=emr
+WorkingDirectory=/opt/emrwebapp
+EnvironmentFile=/etc/emrwebapp/emrwebapp.env
+ExecStart=/usr/bin/xvfb-run -a --server-args="-screen 0 1920x1080x24" /usr/bin/node server.js
+Restart=always
+RestartSec=5
+# Dừng cả Chrome/Python con khi dừng dịch vụ.
+KillMode=control-group
+TimeoutStopSec=30
+# Giới hạn quyền: chỉ ghi được trong thư mục ứng dụng và /tmp.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/emrwebapp
+
+[Install]
+WantedBy=multi-user.target

@@ -20,12 +20,13 @@ const { readLiveProgress } = require('./case_trace');
 const STATE_ORDER = { error: 0, waiting: 1, unmatched: 2, missing: 3, running: 4, done: 5 };
 const MAX_ROWS_PER_STATE = 300;
 
-// Tình trạng một lượt, chia rời nhau (mỗi lượt đúng một nhóm):
+// Tình trạng một lượt, chia rời nhau (mỗi lượt đúng một nhóm), theo thứ tự ưu tiên:
 //   unmatched  chưa ghép chắc lượt trên EMR → không tự lấy
-//   done       mọi phần đã lấy và còn mới
+//   waiting    có phần đã hết lượt thử / bị chặn → máy KHÔNG BAO GIỜ tự lấy phần đó, cần người
+//              xem (kể cả khi phần khác còn đang lấy; trước đây xếp vào "Còn thiếu" nên bị giấu)
 //   error      có phần lỗi kỹ thuật, máy SẼ tự thử lại
 //   missing    còn phần chưa lấy (máy sẽ lấy)
-//   waiting    chỉ còn phần đã hết lượt thử / cần người xem → máy không tự lấy nữa
+//   done       mọi phần đã lấy và còn mới
 function encounterState(enc, maxAttempts) {
   if (enc.match_status === 'unmatched') return 'unmatched';
   let pending = false;
@@ -43,9 +44,9 @@ function encounterState(enc, maxAttempts) {
       pending = true; // pending, hoặc đã lấy nhưng EMR đổi (stale) → sẽ lấy lại
     }
   }
+  if (stuck) return 'waiting';
   if (retryable) return 'error';
   if (pending) return 'missing';
-  if (stuck) return 'waiting';
   return 'done';
 }
 
@@ -103,7 +104,7 @@ function screenVersion(runDir, extra = '') {
 // ledger: sổ đã đồng bộ; keys: các lượt của danh sách thu thập (collectionUnitsForRun).
 function buildCollectionScreen({
   ledger, keys, sourceRows = [], runDir = '', runId = '', scope = '', maxAttempts = collection.DEFAULT_MAX_ATTEMPTS,
-  refreshPolicy, qa = null, taskStatus = null, lastReport = null, exceptionsTotal = 0, pipeline = null, now = new Date(),
+  refreshPolicy, qa = null, taskStatus = null, lastReport = null, exceptionsTotal = 0, exceptions = null, pipeline = null, now = new Date(),
 } = {}) {
   const scopeKeys = (keys || Object.keys(ledger?.encounters || {})).filter(k => ledger?.encounters?.[k]);
   const plan = collection.planCollection(ledger, { keys: scopeKeys, maxAttempts, refreshPolicy });
@@ -166,7 +167,9 @@ function buildCollectionScreen({
     qa,
     task: taskStatus,
     last_report: lastReport,
-    exceptions_total: exceptionsTotal,
+    exceptions_total: exceptions ? exceptions.length : exceptionsTotal,
+    // Số LƯỢT trong danh sách cần xử lý (danh sách có thể nhiều dòng/lượt: mỗi phần lỗi một dòng).
+    exceptions_encounters: exceptions ? new Set(exceptions.map(e => e.key)).size : 0,
     pipeline,
   };
 }

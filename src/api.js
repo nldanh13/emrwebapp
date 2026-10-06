@@ -286,6 +286,22 @@ export async function getAuthMe() {
   }
 }
 
+// Tên + mật khẩu → mã truy cập (máy chủ trả mã sẵn có của người đó). Lỗi trả về câu tiếng Việt.
+export async function loginWithPassword(username, password) {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json().catch(() => null);
+    if (res.ok && data?.token) return { ok: true, token: data.token };
+    return { ok: false, message: data?.message || 'Không đăng nhập được. Kiểm tra mạng rồi thử lại.' };
+  } catch (_) {
+    return { ok: false, message: 'Không kết nối được máy chủ. Kiểm tra wifi/mạng rồi thử lại.' };
+  }
+}
+
 export function setAuthToken(token) { setStoredAppToken(String(token || '').trim()); }
 export function clearAuthToken() { setStoredAppToken(''); }
 

@@ -152,6 +152,11 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   // tính xong mới thay một lần — không hiện từng ô một, không trộn số của hai thời điểm. Gói nằm
   // trong kho dùng chung (useServerData): quay lại tab hiện ngay bản cũ rồi cập nhật ngầm; máy chủ
   // báo số liệu đổi (kênh sự kiện) thì tải lại đúng gói này.
+  const archiveScreenQuery = useServerData(
+    archive?.latest_run ? 'research:archive:collection-screen' : '',
+    () => api.getResearchCollectionScreen(''),
+    { enabled: Boolean(archive?.latest_run) },
+  );
   const archiveRef = useRef(archive);
   archiveRef.current = archive;
   const overviewKey = isArchive && archiveMode === 'overview' && archive ? `research:archive:overview-screen:${archive?.latest_run?.id || 'latest'}` : '';
@@ -870,7 +875,12 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const creatingStudy = isArchive && archiveMode === 'create';
 
   const archivePatients = datasetCount(archive, 'patient_master', true);
-  const archiveEncounters = datasetCount(archive, 'encounters', true) || datasetCount(archive, 'initial_list', true);
+  // Số lượt và số cần xử lý lấy từ CÙNG gói số liệu với màn Thu thập (kho dùng chung, cùng khóa):
+  // trước đây menu/tiêu đề đếm bảng đã chuẩn hóa (2.711) còn màn hình đếm sổ thu thập (2.739).
+  const archiveScreen = archiveScreenQuery.data?.screen || null;
+  const archiveEncounters = archiveScreen?.total
+    || datasetCount(archive, 'encounters', true) || datasetCount(archive, 'initial_list', true);
+  const archiveNeedsAction = Number(archiveScreen?.exceptions_encounters || 0);
   const archiveSummaryText = archive?.latest_run
     ? [archivePatients ? `${compactNumber(archivePatients)} người bệnh` : '', `${compactNumber(archiveEncounters)} lượt điều trị`].filter(Boolean).join(' · ')
     : 'Chưa quét dữ liệu';
@@ -1018,9 +1028,9 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
               onClick={() => selectArchive(creatingStudy ? 'overview' : archiveMode)}
               badge={dot(Boolean(archive?.latest_run), runningScopes.has('archive'))}
             >
-              {isArchive && !!operationSnapshot?.counts?.error && (
+              {archiveNeedsAction > 0 && (
                 <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                  <StatBadge label="Lấy lỗi" value={operationSnapshot.counts.error} tone="danger" />
+                  <StatBadge label="Cần xử lý" value={archiveNeedsAction} tone="danger" />
                 </div>
               )}
             </SideItem>
