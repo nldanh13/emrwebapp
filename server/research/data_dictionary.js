@@ -490,7 +490,7 @@ TABLES.analysis_ready = {
   primary_key: ['encounter_id'],
   foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id' }, { columns: ['patient_code'], references: 'patients.patient_code' }],
   sources: ['encounters', 'patients', 'lab_results', 'imaging_results', 'surgery_results'],
-  processing: 'Một dòng mỗi đợt. Giữ toàn bộ XN và CĐHA của đúng đợt trong lab_results_json/imaging_results_json; các cột XN đơn lẻ chỉ là snapshot kết quả sớm nhất để tiện phân tích. imaging_summary giữ toàn bộ tên dịch vụ + mô tả + kết luận, không cắt ngắn. Phẫu thuật lấy ca sớm nhất của đợt; biến suy luận chạy trên chẩn đoán + toàn bộ văn bản CĐHA.'
+  processing: 'Một dòng mỗi đợt. Giữ toàn bộ XN và CĐHA của đúng đợt trong lab_results_json/imaging_results_json; các cột XN đơn lẻ chỉ là snapshot kết quả sớm nhất để tiện phân tích. imaging_summary giữ toàn bộ tên dịch vụ + mô tả + kết luận, không cắt ngắn. Phẫu thuật lấy ca sớm nhất của đợt; biến suy luận chạy trên chẩn đoán + toàn bộ văn bản CĐHA.',
   inferred: true,
   quality: {
     required: ['encounter_id', 'research_code'],
