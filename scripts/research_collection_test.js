@@ -404,6 +404,29 @@ test('Kho cũ: các dòng chuyển khoa (không Mã nội trú) gom về 1 lư�
   assert.deepStrictEqual(plan.tasks.map(t => [t.key, t.parts.length]), [['enc_stay2', 6]]);
 });
 
+test('Lượt chưa có ngày ra (đang nằm/chưa lấy ra viện): dòng chuyển khoa ngày sau vẫn ghép, không lấn sang lượt sau', () => {
+  // Nguồn không còn Mã nội trú để ghép (chỉ Mã BN + thời gian): trước đây khoảng của lượt chưa ra
+  // viện chỉ gồm đúng ngày vào, nên mọi dòng chuyển khoa ngày sau thành "chưa ghép chắc".
+  const row = (key, code, tg) => src(key, '', code, { 'Mã nội trú': '', 'T/G vào': tg, 'Ngày vào viện': '' });
+  const rows = [
+    row('o1', 'BN_OPEN', '02/03/2026 08:00'), row('o2', 'BN_OPEN', '05/03/2026 09:00'),
+    row('p1', 'BN_PREV', '01/02/2026 08:00'), row('p2', 'BN_PREV', '03/02/2026 10:00'), row('p3', 'BN_PREV', '12/02/2026 07:00'),
+  ];
+  const encounterRows = [
+    { encounter_id: 'e_open', patient_code: 'BN_OPEN', admission_date: '2026-03-02 08:00', discharge_date: '' },
+    // Lượt cũ thiếu ngày ra + lượt mới: khoảng của lượt cũ dừng trước lượt mới.
+    { encounter_id: 'e_prev_old', patient_code: 'BN_PREV', admission_date: '2026-02-01 08:00', discharge_date: '' },
+    { encounter_id: 'e_prev_new', patient_code: 'BN_PREV', admission_date: '2026-02-12 07:00', discharge_date: '' },
+  ];
+  const units = c.buildCollectionUnits({ sourceRows: rows, encounterRows });
+  const byKey = Object.fromEntries(units.map(u => [u.key, u]));
+  assert.deepStrictEqual(Object.keys(byKey).sort(), ['e_open', 'e_prev_new', 'e_prev_old']);
+  assert.deepStrictEqual(byKey.e_open.members.sort(), ['o1', 'o2']);
+  assert.deepStrictEqual(byKey.e_prev_old.members.sort(), ['p1', 'p2']);
+  assert.deepStrictEqual(byKey.e_prev_new.members, ['p3']);
+  assert.ok(units.every(u => u.match_status === 'matched'));
+});
+
 test('Dòng không ghép chắc về đúng 1 lượt (2 lượt chồng ngày, hoặc khác Mã nội trú) thì đứng riêng', () => {
   const rows = [
     src('k1', '', 'BN_Y', { 'Mã nội trú': '', 'T/G vào': '05/03/2026 09:00' }),

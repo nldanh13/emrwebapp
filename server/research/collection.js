@@ -380,6 +380,13 @@ function sourceUnitFromRow(row) {
   };
 }
 
+function dayBefore(isoDay) {
+  const d = new Date(`${isoDay}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return isoDay;
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 function rowAdmissionSortKey(row) {
   const raw = cell(row, ['T/G vào', 'Ngày vào viện', 'admission_date']);
   const d = isoDateOnly(raw);
@@ -404,6 +411,16 @@ function buildCollectionUnits({ sourceRows = [], encounterRows = [], encounterOv
     if (!byCode.has(e.patient_code)) byCode.set(e.patient_code, []);
     byCode.get(e.patient_code).push(e);
   }
+  // Lượt chưa có ngày ra (đang nằm hoặc chưa lấy ra viện): khoảng kéo đến trước ngày vào của
+  // lượt kế tiếp cùng Mã BN, không còn chỉ đúng ngày vào — nguồn không có Mã nội trú để ghép
+  // các dòng chuyển khoa những ngày sau.
+  for (const list of byCode.values()) {
+    list.sort((a, b) => String(a.from).localeCompare(String(b.from)));
+    list.forEach((e, i) => {
+      const next = list.slice(i + 1).find(n => n.from && n.from > e.from);
+      e.until = e.to || (next ? dayBefore(next.from) : '9999-12-31');
+    });
+  }
   const units = new Map();
   const seen = new Set();
   for (const row of sourceRows || []) {
@@ -419,7 +436,7 @@ function buildCollectionUnits({ sourceRows = [], encounterRows = [], encounterOv
       ['noitru', () => (id.noitru ? cands.filter(e => e.noitru === id.noitru || e.treatment === id.noitru) : [])],
       ['treatment', () => (id.treatment ? cands.filter(e => e.treatment === id.treatment || e.noitru === id.treatment) : [])],
       ['admission_time', () => (id.admission_time ? cands.filter(e => e.admission_time === id.admission_time && noConflict(e)) : [])],
-      ['date_range', () => (rowDate ? cands.filter(e => noConflict(e) && e.from && rowDate >= e.from && rowDate <= (e.to || e.from)) : [])],
+      ['date_range', () => (rowDate ? cands.filter(e => noConflict(e) && e.from && rowDate >= e.from && rowDate <= e.until) : [])],
     ];
     // Đã có quyết định thủ công thì không âm thầm rơi về luật tự động khi lượt
     // được chọn biến mất/đổi Mã BN; phải báo lại để người dùng xem.
