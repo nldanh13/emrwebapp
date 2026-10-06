@@ -142,6 +142,30 @@ function PipelineView({ pipeline, summary }) {
           {!!normalize.unmatched.length && (
             <div style={{ color: C.amber }}>Không ghép được vào lượt điều trị: {normalize.unmatched.map(u => `${u.label} ${compactNumber(u.rows)} dòng`).join(' · ')} (giữ riêng, không đưa vào phân tích).</div>
           )}
+          {qa.matching_quality && (() => {
+            const mq = qa.matching_quality;
+            const matched = Number(mq.matched_rows || 0);
+            const total = Number(mq.total_rows || 0);
+            const pct = total ? Math.round((matched / total) * 1000) / 10 : 0;
+            return (
+              <div style={{ marginTop: 8, border: `1px solid ${C.border2}`, borderRadius: 7, padding: '8px 9px', background: C.surface2 }}>
+                <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Chất lượng ghép dữ liệu</div>
+                <div style={{ marginTop: 5, display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: FS.xs, color: C.text2 }}>
+                  <span><B>{compactNumber(matched)}</B> / {compactNumber(total)} dòng matched ({pct}%)</span>
+                  <span>Khóa đợt mạnh: <B>{compactNumber(mq.strong_key || 0)}</B></span>
+                  <span>Khớp mốc vào/ra chính xác: <B>{compactNumber(mq.exact_visit_time || 0)}</B></span>
+                  <span>Ghép theo khoảng thời gian: <B>{compactNumber(mq.event_time_range || 0)}</B></span>
+                  <span style={{ color: Number(mq.patient_only_no_event_time || 0) ? C.amber : C.text2 }}>Chỉ Mã BN, thiếu thời gian: <B>{compactNumber(mq.patient_only_no_event_time || 0)}</B></span>
+                  <span style={{ color: Number(mq.ambiguous || 0) ? C.amber : C.text2 }}>Mơ hồ: <B>{compactNumber(mq.ambiguous || 0)}</B></span>
+                  <span style={{ color: Number(mq.missing || 0) ? C.red : C.text2 }}>Không ghép: <B>{compactNumber(mq.missing || 0)}</B></span>
+                  <span style={{ color: Number(mq.outside_treatment_time || 0) ? C.red : C.text2 }}>Ngoài thời gian điều trị: <B>{compactNumber(mq.outside_treatment_time || 0)}</B></span>
+                </div>
+                <div style={{ marginTop: 4, fontSize: FS.xs, color: C.text3 }}>
+                  Chỉ dòng matched và đúng khoảng điều trị mới được dùng cho bảng phân tích. Mã NC không tham gia quyết định matching.
+                </div>
+              </div>
+            );
+          })()}
           {normalize.history.length > 1 && (
             <div style={{ fontSize: FS.xs, color: C.text3 }}>
               Các lần chuẩn hóa gần nhất: {normalize.history.map(h => `${when(h.at)} (${compactNumber(h.encounters)} lượt, ${compactNumber(h.lab_results)} XN)`).join(' · ')}
