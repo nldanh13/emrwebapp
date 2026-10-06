@@ -29,6 +29,7 @@ const { buildQualityReport } = require('../server/research/quality');
 const { redactCsvTable } = require('../server/research/export_utils');
 const { requiredRoleForRequest } = require('../server/services/authz');
 const variableSelection = require('../server/research/variable_selection');
+const { readCsvTable } = require('../server/research/table_io');
 
 let passed = 0;
 function test(name, fn) {
@@ -316,7 +317,7 @@ test('CĐHA và analysis_ready giữ đầy đủ mọi phần kết quả, khô
   assert.strictEqual(out.lab_results, 2);
   assert.strictEqual(out.imaging_results, 2, 'hai lần CĐHA giống nội dung vẫn phải được giữ');
 
-  const ready = readCsv(path.join(runDir, 'analysis_ready.csv')).find(r => r.patient_code === '111');
+  const ready = (readCsvTable(path.join(runDir, 'analysis_ready.csv'), Number.MAX_SAFE_INTEGER).rows || []).find(r => r.patient_code === '111');
   assert.ok(ready);
   const labs = JSON.parse(ready.lab_results_json);
   const images = JSON.parse(ready.imaging_results_json);
