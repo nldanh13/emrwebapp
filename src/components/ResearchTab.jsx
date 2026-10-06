@@ -1006,7 +1006,8 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
 
       {/* Chuẩn hóa hiện ở khung riêng trong Kho dữ liệu gốc (NormalizeStatus), không lặp lại ở đây. */}
       <RunningBanner running={serverRunning.items.filter(item => item.lane !== 'normalize')} checkedAt={serverRunning.checkedAt} clockOffset={serverRunning.clockOffset}
-        lastFinished={lastFinished?.lane === 'normalize' ? null : lastFinished} scopeName={scopeName} onOpen={openRunning} onCancel={cancelRunning}
+        lastFinished={lastFinished?.lane === 'normalize' ? null : lastFinished}
+        finishedWithError={Boolean(researchError) || automationRun.status === 'error'} scopeName={scopeName} onOpen={openRunning} onCancel={cancelRunning}
         onDismissFinished={() => setLastFinished(null)} />
 
       {researchError && (
