@@ -1,6 +1,6 @@
 # Từ điển dữ liệu Kho nghiên cứu
 
-> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-06.5`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
+> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-06.6`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
 >
 > Mô tả được viết từ code chuẩn hóa hiện tại. Cột "Dùng" là đề xuất kỹ thuật; phạm vi dùng thực tế phải theo đề cương được hội đồng đạo đức/bệnh viện phê duyệt.
 
@@ -250,25 +250,26 @@
 
 **Nguồn:** lich_su_cdha.csv (script XN/CĐHA)
 
-**Cách xử lý:** Loại máy lấy từ Nhóm dịch vụ, nếu trống thì suy từ tên dịch vụ; vùng cơ thể suy từ tên dịch vụ. Dòng thô giống hệt nhau chỉ giữ một.
+**Cách xử lý:** Loại máy lấy từ Nhóm dịch vụ, nếu trống thì suy từ tên dịch vụ; vùng cơ thể suy từ tên dịch vụ. Giữ mọi lần CĐHA, kể cả khi nội dung giống hệt; QA chỉ đánh dấu nghi trùng, không tự xóa.
 
 **Quy tắc chất lượng**
 
 - Bắt buộc: `imaging_id`, `patient_code`
 - Duy nhất: `imaging_id`
-- Dòng thô giống hệt nhau: giữ một, cảnh báo số dòng đã bỏ.
+- Dòng CĐHA giống hệt sau chuẩn hóa: giữ tất cả và cảnh báo possible_duplicate_imaging_rows.
 - Trùng imaging_id: lỗi chặn.
 - Ghép đợt ambiguous/missing: cảnh báo.
 
 **Cần người kiểm tra khi:**
 
+- Dòng CĐHA giống hệt (possible_duplicate_imaging_rows): giữ tất cả để tránh mất lần khảo sát thật.
 - Cùng BN + cùng thời điểm + cùng dịch vụ nhưng kết quả khác nhau (conflicting_imaging_result).
 - modality = Khác
 - body_region trống
 
 | Cột | Kiểu | Ý nghĩa | Giá trị / đơn vị | Ô trống nghĩa là | Định danh | Dùng |
 |---|---|---|---|---|---|---|
-| `imaging_id` | chuỗi | Khóa dòng: img_<row_hash>. |  |  | — | Được dùng |
+| `imaging_id` | chuỗi | Khóa dòng: img_<row_hash>_<lần xuất hiện>. Các dòng giống nhau vẫn có ID riêng để không mất lần CĐHA thật. |  |  | — | Được dùng |
 | `research_code` | chuỗi | Mã NC: mã giả danh của đợt điều trị, dùng thay tên khi xuất ẩn danh. Nguồn: research_source.csv (cấp khi tạo nguồn chuẩn) hoặc mã script XN/CĐHA đã cấp cho cùng đợt. | Dạng: NC + 4 chữ số (ví dụ NC0012) | Chưa ghép được đợt (xem encounter_match_status). | Giả danh | Được dùng |
 | `patient_code` | chuỗi | Mã BN trên EMR. Nguồn: Cột Mã BN của danh sách nội trú / file thô. |  | Không được trống (bắt buộc). | Trực tiếp | Loại (bị che khi xuất) |
 | `patient_key` | chuỗi | Mã người bệnh giả danh: cùng một người bệnh luôn cùng mã trong một kho, dùng để nối các đợt của cùng người khi xuất ẩn danh. Cách tính: Cấp tuần tự khi gặp Mã BN lần đầu; giữ nguyên qua các lần Chuẩn hóa. Không suy ngược được ra Mã BN nếu không có patient_link.csv. Nguồn: patient_link.csv của kho (bảng liên kết Mã BN ↔ patient_key, lưu riêng, không nằm trong dataset). | Dạng: P + 6 chữ số (ví dụ P000123) | Dòng không có Mã BN. | Giả danh | Được dùng |
@@ -666,7 +667,7 @@
 
 **Nguồn:** encounters; patients; lab_results; imaging_results; surgery_results
 
-**Cách xử lý:** Một dòng mỗi đợt. XN lấy kết quả SỚM NHẤT của đợt; phẫu thuật lấy ca SỚM NHẤT của đợt; biến suy luận chạy trên chẩn đoán + văn bản CĐHA theo preset của nghiên cứu.
+**Cách xử lý:** Một dòng mỗi đợt. Giữ toàn bộ XN và CĐHA của đúng đợt trong lab_results_json/imaging_results_json; các cột XN đơn lẻ chỉ là snapshot kết quả sớm nhất để tiện phân tích. imaging_summary giữ toàn bộ tên dịch vụ + mô tả + kết luận, không cắt ngắn. Phẫu thuật lấy ca sớm nhất của đợt; biến suy luận chạy trên chẩn đoán + toàn bộ văn bản CĐHA.
 
 **Quy tắc chất lượng**
 
@@ -712,7 +713,11 @@
 | `monocyte` | chuỗi | Kết quả monocyte đầu tiên của đợt (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (monocyte). Kết quả có lab_datetime sớm nhất trong đợt. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
 | `rdw` | chuỗi | Kết quả rdw đầu tiên của đợt (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (rdw). Kết quả có lab_datetime sớm nhất trong đợt. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
 | `plt` | chuỗi | Kết quả plt đầu tiên của đợt (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (platelet). Kết quả có lab_datetime sớm nhất trong đợt. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
-| `imaging_summary` | văn bản | Tên dịch vụ + mô tả + kết luận CĐHA của đợt, nối lại, tối đa 1200 ký tự. |  |  | Văn bản tự do | Cần đề cương duyệt |
+| `lab_result_count` | số nguyên | Tổng số dòng kết quả XN đã ghép chắc chắn và nằm trong đợt. |  |  | — | Được dùng |
+| `lab_results_json` | JSON | Toàn bộ kết quả XN của đợt theo thứ tự thời gian, gồm thời điểm, Mã phiếu, tên chỉ số, kết quả raw/số/chữ, đơn vị raw/chuẩn, khoảng tham chiếu và cờ bất thường. |  |  | — | Cần đề cương duyệt |
+| `imaging_result_count` | số nguyên | Tổng số dòng CĐHA đã ghép chắc chắn và nằm trong đợt. |  |  | — | Được dùng |
+| `imaging_results_json` | JSON | Toàn bộ CĐHA của đợt theo thứ tự thời gian, gồm dịch vụ, kỹ thuật, vùng cơ thể, mô tả kết quả, kết luận và trạng thái. |  |  | Văn bản tự do | Cần đề cương duyệt |
+| `imaging_summary` | văn bản | Toàn bộ tên dịch vụ + mô tả + kết luận CĐHA của đợt, nối lại, không cắt ngắn. |  |  | Văn bản tự do | Cần đề cương duyệt |
 | `needs_manual_review` | chuỗi | Lý do cần người kiểm tra, nối "; ". | Nhãn thiếu biến của preset (ví dụ "bên tổn thương", "ngày phẫu thuật") và cờ ghép đợt. |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
