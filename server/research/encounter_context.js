@@ -178,14 +178,16 @@ function matchedContext(ctx, method) {
 }
 
 function rowEventDate(row) {
-  return isoDateTime(firstNonEmpty(row, [
+  const raw = firstNonEmpty(row, [
     'lab_datetime', 'ordered_at', 'surgery_datetime', 'order_datetime', 'note_datetime',
     'TG xét nghiệm', 'Thời gian xét nghiệm', 'TG chỉ định', 'TG y lệnh',
     'Ngày chỉ định', 'Ngày xét nghiệm', 'Ngày phẫu thuật', 'Thời gian', 'Ngày',
-  ])) || isoDate(firstNonEmpty(row, [
     'lab_date', 'order_date', 'surgery_date', 'note_date',
-    'Ngày chỉ định', 'Ngày xét nghiệm', 'Ngày phẫu thuật', 'Ngày',
-  ]));
+  ]);
+  if (!raw) return '';
+  // Giữ nguyên độ chính xác của nguồn: chỉ khi nguồn thật sự có giờ mới chuẩn hóa thành datetime.
+  // Dòng chỉ có ngày không được tự biến thành 00:00 vì sẽ gây loại nhầm sự kiện cùng ngày nhập viện.
+  return hasPreciseClock(raw) ? isoDateTime(raw) : isoDate(raw);
 }
 
 function hasPreciseClock(value) {
