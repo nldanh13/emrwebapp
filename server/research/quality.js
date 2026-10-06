@@ -30,6 +30,14 @@ const CHILD_TABLES = [
   ['clinical_events', 'clinical_event_id'],
 ];
 
+const MATCHING_QUALITY_TABLES = new Set([
+  'lab_results',
+  'imaging_results',
+  'surgery_results',
+  'medication_orders',
+  'clinical_notes',
+]);
+
 const DAY_MS = 86400000;
 
 function text(value) {
@@ -203,28 +211,30 @@ function buildQualityReport({
     const patientOnly = matched.filter(r => text(r.encounter_match_method) === 'patient_unique_encounter_no_event_time').length;
     const matchedUnknown = Math.max(0, matched.length - strongKey - exactVisitTime - eventTimeRange - patientOnly);
     unmatchedByTable[name] = { ambiguous, missing, outside_time: outsideTime };
-    matchingQuality.total_rows += rows.length;
-    matchingQuality.matched_rows += matched.length;
-    matchingQuality.strong_key += strongKey;
-    matchingQuality.exact_visit_time += exactVisitTime;
-    matchingQuality.event_time_range += eventTimeRange;
-    matchingQuality.patient_only_no_event_time += patientOnly;
-    matchingQuality.matched_unknown_method += matchedUnknown;
-    matchingQuality.ambiguous += ambiguous;
-    matchingQuality.missing += missing;
-    matchingQuality.outside_treatment_time += outsideTime;
-    matchingQuality.by_table[name] = {
-      total: rows.length,
-      matched: matched.length,
-      strong_key: strongKey,
-      exact_visit_time: exactVisitTime,
-      event_time_range: eventTimeRange,
-      patient_only_no_event_time: patientOnly,
-      matched_unknown_method: matchedUnknown,
-      ambiguous,
-      missing,
-      outside_treatment_time: outsideTime,
-    };
+    if (MATCHING_QUALITY_TABLES.has(name)) {
+      matchingQuality.total_rows += rows.length;
+      matchingQuality.matched_rows += matched.length;
+      matchingQuality.strong_key += strongKey;
+      matchingQuality.exact_visit_time += exactVisitTime;
+      matchingQuality.event_time_range += eventTimeRange;
+      matchingQuality.patient_only_no_event_time += patientOnly;
+      matchingQuality.matched_unknown_method += matchedUnknown;
+      matchingQuality.ambiguous += ambiguous;
+      matchingQuality.missing += missing;
+      matchingQuality.outside_treatment_time += outsideTime;
+      matchingQuality.by_table[name] = {
+        total: rows.length,
+        matched: matched.length,
+        strong_key: strongKey,
+        exact_visit_time: exactVisitTime,
+        event_time_range: eventTimeRange,
+        patient_only_no_event_time: patientOnly,
+        matched_unknown_method: matchedUnknown,
+        ambiguous,
+        missing,
+        outside_treatment_time: outsideTime,
+      };
+    }
     if (ambiguous) warnings.push({ code: 'child_match_ambiguous', message: `${name}: ${ambiguous} dòng khớp nhiều đợt, chưa gắn vào đợt nào.`, table: name, count: ambiguous });
     if (missing) warnings.push({ code: 'child_match_missing', message: `${name}: ${missing} dòng không khớp đợt nào.`, table: name, count: missing });
     // Đã gắn vào đợt nhưng thời điểm nằm ngoài khoảng nằm viện (vd. người bệnh chỉ có một
