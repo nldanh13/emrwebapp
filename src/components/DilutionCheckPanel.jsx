@@ -16,7 +16,7 @@ const FORMS = ['Lọ', 'Ống', 'Chai', 'Túi', 'Bột pha tiêm'];
 
 export default function DilutionCheckPanel({ builtin = [] }) {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ ten_thuoc: '', dang: 'Lọ', duong_dung_goc: '' });
+  const [form, setForm] = useState({ ten_thuoc: '', dang: 'Lọ', duong_dung_goc: '', so_luong: '', gio_dung: '' });
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
@@ -62,6 +62,12 @@ export default function DilutionCheckPanel({ builtin = [] }) {
             <label style={{ fontSize: FS.xs, color: C.text2 }}>Cách dùng trong y lệnh (tuỳ chọn)
               <input value={form.duong_dung_goc} onChange={set('duong_dung_goc')} onKeyDown={e => e.key === 'Enter' && run()}
                 placeholder="VD: Tiêm truyền TM 30 giọt/phút" style={{ ...INPUT, marginTop: 3 }} />
+            </label>
+            <label style={{ fontSize: FS.xs, color: C.text2 }}>Số lọ/ống cả ngày (để tính liều mỗi lần)
+              <input value={form.so_luong} onChange={set('so_luong')} inputMode="decimal" placeholder="VD: 2" style={{ ...INPUT, marginTop: 3 }} />
+            </label>
+            <label style={{ fontSize: FS.xs, color: C.text2 }}>Giờ dùng
+              <input value={form.gio_dung} onChange={set('gio_dung')} placeholder="VD: 8 giờ, 20 giờ" style={{ ...INPUT, marginTop: 3 }} />
             </label>
           </div>
           <div><Btn variant="primary" disabled={checking} onClick={run}>Kiểm tra</Btn></div>

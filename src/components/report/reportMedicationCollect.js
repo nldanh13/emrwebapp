@@ -178,6 +178,8 @@ function collectDrugRows(patients, selectedDate) {
           unit,
           note: String(item.duong_dung_goc || item.ghi_chu || item.note || '').trim(),
           mixWith: mixTextOf(item, displayDrugName(item)),
+          // Worker không chắc cách pha (nhiều cách cùng khớp / y lệnh thiếu dữ kiện / thể tích mặc định).
+          confirmMix: item.can_xac_nhan_pha ? String(item.ly_do_xac_nhan_pha || 'Không chắc cách pha.').trim() : '',
           tuTuc: Boolean(item.tu_tuc),
           category,
           dischargeCutoffMinutes: dischargeCutoff,

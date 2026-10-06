@@ -7,6 +7,7 @@
 // GET    /api/medication-catalog/archive-drug-names → tên thuốc trong kho + đã/chưa gắn hoạt chất
 // POST   /api/medication-catalog/assign-ingredient  → gắn một hoạt chất cho nhiều tên thuốc
 // POST   /api/medication-catalog/dilution-check  → quy tắc pha đang áp dụng + kiểm tra thử (chạy worker)
+// GET    /api/medication-catalog/dilution-stats → cách pha thực tế trong dữ liệu đã có (Kho nghiên cứu + phiên)
 // GET    /api/medication-catalog/builtin → kiến thức thuốc sẵn có (config/medication_builtin.json, chỉ đọc)
 // PATCH  /api/medication-catalog/:key     → sửa thuốc đã có (key = canonical)
 // DELETE /api/medication-catalog/:key     → xoá thuốc
@@ -121,6 +122,47 @@ function normalizeDilution(value) {
     }
   }
   const note = String(value.note || '').trim().slice(0, 300);
+  if (note) out.note = note;
+  if (solvent !== 'KHONG_PHA' && Array.isArray(value.variants) && value.variants.length) {
+    if (value.variants.length > 10) throw badRequest('Tối đa 10 cách pha cho một thuốc.');
+    const variants = value.variants.map((v, i) => normalizeVariant(v, i + 1)).filter(Boolean);
+    if (variants.length) out.variants = variants;
+  }
+  return out;
+}
+
+const ROUTE_CODE = /^[A-Z_]{1,20}$/;
+
+// Một "cách pha" có điều kiện (đường dùng và/hoặc khoảng liều mỗi lần, mg). Worker chọn cách khớp
+// với y lệnh; không chắc thì đánh dấu "cần xác nhận cách pha" (medication_catalog.resolve_dilution_for_drug).
+function normalizeVariant(v, n) {
+  if (!v || typeof v !== 'object') return null;
+  const solvent = String(v.solvent || '').trim().toUpperCase();
+  if (!solvent) return null;
+  if (!DILUTION_SOLVENTS[solvent] || solvent === 'KHONG_PHA') throw badRequest(`Cách pha ${n}: dung môi không hợp lệ.`);
+  const out = { solvent };
+  const route = String(v.route || '').trim().toUpperCase();
+  if (route) {
+    if (!ROUTE_CODE.test(route)) throw badRequest(`Cách pha ${n}: đường dùng không hợp lệ.`);
+    out.route = route;
+  }
+  const num = (raw, label, max) => {
+    if (raw === '' || raw == null) return undefined;
+    const x = Number(String(raw).replace(',', '.'));
+    if (!Number.isFinite(x) || x <= 0 || x > max) throw badRequest(`Cách pha ${n}: ${label} không hợp lệ.`);
+    return x;
+  };
+  const lo = num(v.dose_min_mg, 'liều từ (mg)', 1e6);
+  const hi = num(v.dose_max_mg, 'liều đến (mg)', 1e6);
+  if (lo !== undefined && hi !== undefined && lo > hi) throw badRequest(`Cách pha ${n}: "liều từ" lớn hơn "liều đến".`);
+  if (lo !== undefined) out.dose_min_mg = lo;
+  if (hi !== undefined) out.dose_max_mg = hi;
+  if (!out.route && lo === undefined && hi === undefined) throw badRequest(`Cách pha ${n}: cần ít nhất một điều kiện (đường dùng hoặc liều).`);
+  const vol = num(v.volume_ml, 'thể tích (ml)', 1000);
+  if (vol !== undefined) out.volume_ml = vol;
+  const rate = num(v.rate, 'tốc độ (giọt/phút)', 300);
+  if (rate !== undefined) out.rate = rate;
+  const note = String(v.note || '').trim().slice(0, 200);
   if (note) out.note = note;
   return out;
 }
@@ -246,7 +288,7 @@ function cleanCheckItems(items) {
   if (!Array.isArray(items)) return [];
   return items.slice(0, 20).filter(x => x && typeof x === 'object').map(x => {
     const out = {};
-    for (const k of ['ten_thuoc', 'hoat_chat', 'dang', 'duong_dung_goc', 'gio_dung', 'toc_do']) {
+    for (const k of ['ten_thuoc', 'hoat_chat', 'dang', 'duong_dung_goc', 'gio_dung', 'toc_do', 'so_luong']) {
       const v = String(x[k] ?? '').trim().slice(0, 300);
       if (v) out[k] = v;
     }
@@ -283,6 +325,57 @@ router.get('/medication-catalog/builtin', (req, res) => {
     return res.status(500).json({ status: 'error', message: 'Không đọc được kiến thức thuốc sẵn có (config/medication_builtin.json). Cập nhật lại bản cài đặt.' });
   }
   return res.json({ status: 'ok', builtin: data });
+});
+
+// Cách pha thực tế: worker/dilution_stats.py chạy lại ĐÚNG bước xử lý thuốc trên y lệnh nguyên văn của
+// Kho nghiên cứu (clinical_notes.csv) + dữ liệu đã xử lý của phiên. Không mở EMR. Kết quả lưu đệm theo
+// thời điểm sửa của dữ liệu/danh mục, nên chỉ tính lại khi có gì đổi.
+const statsInFlight = new Map();
+function fileSig(file) {
+  try { const st = fs.statSync(file); return `${st.size}:${Math.round(st.mtimeMs)}`; } catch (_) { return '-'; }
+}
+
+async function computeDilutionStats(ctx, { refresh = false } = {}) {
+  const runId = resolveArchiveRunId('latest');
+  const notes = runId ? path.join(archiveRunsDir(), runId, 'clinical_notes.csv') : '';
+  const processed = ctx?.PROCESSED_PATH || '';
+  const key = [notes, fileSig(notes), processed, fileSig(processed), fileSig(CATALOG_PATH), fileSig(BUILTIN_PATH)].join('|');
+  const cacheFile = path.join(ctx.dir, 'dilution_stats_cache.json');
+  const cached = readJsonSafe(cacheFile, null);
+  if (!refresh && cached && cached.key === key) return cached.data;
+  if (statsInFlight.has(key)) return statsInFlight.get(key);
+  const job = (async () => {
+    const outFile = path.join(os.tmpdir(), `dilution_stats_${crypto.randomBytes(6).toString('hex')}.json`);
+    try {
+      const args = ['--out', outFile];
+      if (notes && fs.existsSync(notes)) args.push('--notes', notes);
+      if (processed && fs.existsSync(processed)) args.push('--processed', processed);
+      const result = await runScript('dilution_stats.py', args, { runtimeDir: ctx.dir });
+      if (result.code !== 0 || !fs.existsSync(outFile)) {
+        const err = new Error(fmtPyError('Không thống kê được cách pha thực tế. Thử lại sau; nếu vẫn lỗi, khởi động lại máy chủ.', result));
+        err.status = 500;
+        throw err;
+      }
+      const data = { ...JSON.parse(fs.readFileSync(outFile, 'utf8')), run_id: runId || '', computed_at: new Date().toISOString() };
+      try { writeJsonAtomic(cacheFile, { key, data }); } catch (_) { /* đệm không ghi được vẫn trả kết quả */ }
+      return data;
+    } finally {
+      try { fs.unlinkSync(outFile); } catch (_) { /* đã xoá */ }
+      statsInFlight.delete(key);
+    }
+  })();
+  statsInFlight.set(key, job);
+  return job;
+}
+
+router.get('/medication-catalog/dilution-stats', async (req, res) => {
+  try {
+    const ctx = getRuntimePaths(req);
+    const data = await computeDilutionStats(ctx, { refresh: String(req.query.refresh || '') === '1' });
+    return res.json({ status: 'ok', ...data });
+  } catch (e) {
+    return res.status(e.status || 500).json({ status: 'error', message: String(e.message) });
+  }
 });
 
 router.post('/medication-catalog/dilution-check', async (req, res) => {
@@ -380,4 +473,5 @@ module.exports = router;
 module.exports.normalizeDilution = normalizeDilution;
 module.exports.cleanCheckItems = cleanCheckItems;
 module.exports.runDilutionCheck = runDilutionCheck;
+module.exports.computeDilutionStats = computeDilutionStats;
 module.exports.DILUTION_SOLVENTS = DILUTION_SOLVENTS;

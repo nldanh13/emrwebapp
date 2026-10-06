@@ -61,6 +61,7 @@ function sanitizeReportSnapshot(input) {
       // Cờ thuốc có thể trùng (reportMedicationCollect.flagDuplicateRows) — in lên phiếu để hỏi lại.
       duplicateOf: cleanSnapshotText(row?.duplicateOf, 60),
       possibleDuplicate: Boolean(row?.possibleDuplicate),
+      confirmMix: cleanSnapshotText(row?.confirmMix, 300),
     })).filter(row => row.drugName && (!row.date || isValidDmy(row.date))),
   };
 }

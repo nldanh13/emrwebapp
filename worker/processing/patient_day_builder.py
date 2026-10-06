@@ -514,6 +514,9 @@ def _normalize_final_infusion_operational_volumes(record: dict) -> dict:
                 bag, source = 100.0, "mac_dinh"
         if not med.get("nguon_pha"):
             med["nguon_pha"] = source
+        if med.get("nguon_pha") == "mac_dinh" and not med.get("can_xac_nhan_pha"):
+            med["can_xac_nhan_pha"] = True
+            med["ly_do_xac_nhan_pha"] = "Y lệnh không ghi thể tích túi pha; đang tạm tính 100 ml."
 
         if current_vol > 0:
             med["the_tich_thuoc_goc_ml"] = current_vol

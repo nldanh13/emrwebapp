@@ -20,13 +20,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from processing.diluent_resolver import infer_and_reclassify_diluents  # noqa: E402
 from xu_ly_config import builtin_dilution_rules, effective_dilution  # noqa: E402
 
-FIELDS = ("ten_thuoc", "hoat_chat", "dang", "duong_dung_goc", "gio_dung", "toc_do")
+FIELDS = ("ten_thuoc", "hoat_chat", "dang", "duong_dung_goc", "gio_dung", "toc_do", "so_luong")
 
 
 def _clean_rule(rule):
     if not rule:
         return None
-    return {k: rule.get(k) for k in ("solvent", "volume_ml", "apply", "rate", "note", "canonical", "matched_by", "keyword") if rule.get(k) not in (None, "")}
+    return {k: rule.get(k) for k in ("solvent", "volume_ml", "apply", "rate", "note", "canonical", "matched_by", "keyword", "variants") if rule.get(k) not in (None, "", [])}
 
 
 def check_item(raw):
@@ -51,6 +51,9 @@ def check_item(raw):
         "ten_hien_thi": out.get("ten_hien_thi") or drug.get("ten_thuoc"),
         "quy_tac_pha": out.get("quy_tac_pha") or "",
         "duong_dung": out.get("duong_dung") or "",
+        "cach_pha": out.get("cach_pha") or "",
+        "can_xac_nhan_pha": bool(out.get("can_xac_nhan_pha")),
+        "ly_do_xac_nhan_pha": out.get("ly_do_xac_nhan_pha") or "",
     }
 
 

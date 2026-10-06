@@ -43,3 +43,43 @@ describe('kiểm tra thử', () => {
     expect(dilutionSummary({ solvent: 'NACL_0.9', volume_ml: 100, rate: 40 })).toBe('Natri clorid 0.9% 100 ml, 40 giọt/phút');
   });
 });
+
+describe('nhiều cách pha trong form', () => {
+  it('khứ hồi và kiểm điều kiện', () => {
+    const rule = { solvent: 'NACL_0.9', volume_ml: 100, apply: 'always', variants: [
+      { route: 'SE', solvent: 'NACL_0.9', volume_ml: 50 },
+      { dose_min_mg: 501, solvent: 'NACL_0.9', volume_ml: 200 },
+    ] };
+    expect(dilutionFromForm(dilutionForm(rule))).toEqual({ value: rule });
+    expect(dilutionSummary(rule)).toBe('Natri clorid 0.9% 100 ml · +2 cách pha');
+    const bad = dilutionForm(rule);
+    bad.dilution_variants.push({ route: '', dose_min_mg: '', dose_max_mg: '', solvent: 'NACL_0.9', volume_ml: '50' });
+    expect(dilutionFromForm(bad).error).toMatch(/Cách pha 3: chọn đường dùng hoặc nhập khoảng liều/);
+  });
+  it('kiểm tra thử ghi cách pha và lý do cần xác nhận', () => {
+    const lines = describeCheck({ moved_to_infusion: true, dung_moi: 'NACL_0.9', the_tich: 100, nguon_pha: 'danh_muc',
+      cach_pha: 'liều ≥ 501 mg → Natri clorid 0.9% 200 ml', can_xac_nhan_pha: true, ly_do_xac_nhan_pha: 'Y lệnh không ghi rõ liều mỗi lần.',
+      rule: { solvent: 'NACL_0.9', canonical: 'VANCOMYCIN' }, rule_source: 'danh_muc' });
+    expect(lines).toContain('Cách pha được chọn: liều ≥ 501 mg → Natri clorid 0.9% 200 ml.');
+    expect(lines).toContain('⚠ Cần xác nhận cách pha: Y lệnh không ghi rõ liều mỗi lần.');
+  });
+});
+
+import { observedLabel, statsForDrug, variantFromObserved } from './dilutionRule.js';
+
+describe('cách pha thực tế', () => {
+  const stats = { drugs: [{ drug: 'VANCOMYCIN', total: 40, observed: [
+    { solvent: 'NACL_0.9', volume_ml: 200, route: 'TTM', dose_mg: 1000, count: 34 },
+    { solvent: 'NACL_0.9', volume_ml: 100, route: 'TMC', dose_mg: null, count: 5 },
+  ] }] };
+  it('tìm theo tên chuẩn, nhãn đọc được', () => {
+    const s = statsForDrug(stats, 'vancomycin');
+    expect(s.total).toBe(40);
+    expect(observedLabel(s.observed[0])).toBe('Natri clorid 0.9% 200 ml · TTM · liều 1000 mg/lần');
+    expect(statsForDrug(stats, 'X')).toBeNull();
+  });
+  it('thành cách pha theo điều kiện', () => {
+    expect(variantFromObserved(stats.drugs[0].observed[0])).toMatchObject({ route: 'TTM', dose_min_mg: '1000', dose_max_mg: '1000', volume_ml: '200' });
+    expect(variantFromObserved(stats.drugs[0].observed[1])).toMatchObject({ route: '', dose_min_mg: '', volume_ml: '100' });
+  });
+});

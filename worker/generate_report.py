@@ -445,6 +445,8 @@ def build_cards_from_rows(rows, start=0, end=23, include0=True, report_date=""):
         dup_of = str(raw.get("duplicateOf") or "").strip()
         if dup_of:
             flags.append(f"đã có cữ {dup_of}, có thể trùng")
+        if str(raw.get("confirmMix") or "").strip():
+            flags.append("xác nhận cách pha")
         if raw.get("possibleDuplicate"):
             flags.append("kiểm tra trùng y lệnh")
         mix = norm(raw.get("mixWith") or "")

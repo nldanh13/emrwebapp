@@ -49,6 +49,21 @@ def _catalog_single_ingredient(drug):
         return ""
 
 
+def _catalog_resolved(drug):
+    """Quy tắc Danh mục đã chọn cách pha theo y lệnh (medication_catalog.resolve_dilution_for_drug)."""
+    if not isinstance(drug, dict):
+        return None
+    try:
+        from processing.medication_catalog import resolve_dilution_for_drug
+    except Exception:
+        return None
+    rule = resolve_dilution_for_drug(drug)
+    if rule is None and str(drug.get("hoat_chat") or "").strip():
+        # Như _catalog_rule_of: hoạt chất trùng tên chuẩn/tên khác trong danh mục.
+        rule = resolve_dilution_for_drug({**drug, "ten_thuoc": drug.get("hoat_chat"), "ten_hien_thi": ""})
+    return rule
+
+
 def _catalog_says_no_dilution(drug):
     rule = _catalog_rule_of(drug)
     return bool(rule and rule.get("solvent") == "KHONG_PHA")
@@ -438,7 +453,10 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
                 pass
         if take_self:
             dm = "SODIUM_0.9" if (take_self > 100 or "sodium" in route_l) else "NACL_0.9"
-            return float(take_self), dm, True
+            # Thể tích túi do Danh mục điền sẵn (không phải y lệnh ghi) → không coi là dữ kiện y lệnh.
+            from_catalog = drug.get("the_tich_nguon") == "danh_muc" and not (
+                drug.get("the_tich_lay_ml") or drug.get("the_tich_pha_du_ml"))
+            return float(take_self), dm, not from_catalog
 
         # TRAMADOL: ưu tiên tiêm bắp. Chỉ pha NaCl khi y lệnh ghi rõ truyền/NaCl
         # hoặc có một túi/chai NaCl rời cùng giờ không gắn với thuốc khác.
@@ -519,17 +537,17 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
                     return bag, dm, True
 
 
-        # C) Luật an toàn: chỉ áp dụng khi KHÔNG có dữ kiện thể tích từ y lệnh (A/B)
-        safety_vol = get_safety_nacl_volume(name_u)
-        if safety_vol:
-            return float(safety_vol), "NACL_0.9", False
-
-        # C2) Quy tắc pha NaCl trong Danh mục thuốc (kể cả loại "chỉ khi y lệnh ghi truyền":
-        # tới đây là đã xác định thuốc được pha truyền, chỉ còn chọn thể tích).
-        catalog_rule = _catalog_rule_of(drug)
+        # C) Quy tắc pha NaCl trong Danh mục thuốc — chọn "cách pha" theo đường dùng/liều của y lệnh
+        # (kể cả loại "chỉ khi y lệnh ghi truyền": tới đây đã xác định thuốc được pha truyền).
+        catalog_rule = _catalog_resolved(drug)
         if catalog_rule and catalog_rule.get("solvent") == "NACL_0.9" and catalog_rule.get("volume_ml"):
             bag = float(catalog_rule["volume_ml"])
             return bag, "NACL_0.9", False
+
+        # C2) Luật an toàn (Danh mục "luôn pha" không ghi thể tích → 100 ml; luật sẵn có).
+        safety_vol = get_safety_nacl_volume(name_u)
+        if safety_vol:
+            return float(safety_vol), "NACL_0.9", False
 
         # D) Suy luận theo thể tích túi/chai NaCl (không có "lấy đủ")
         if candidates:
@@ -645,6 +663,8 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
         Suy ra theo đúng thứ tự choose_bag_volume_and_type đi qua."""
         if from_order:
             return "y_lenh"
+        if drug.get("the_tich_nguon") == "danh_muc" and drug.get("tui_dich_truyen_ml"):
+            return "danh_muc"
         if catalog_rule and catalog_rule.get("solvent") == "NACL_0.9":
             vol = catalog_rule.get("volume_ml")
             if (vol and float(vol) == float(bag)) or (not vol and catalog_rule.get("apply") == "always"):
@@ -667,8 +687,26 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
         ]) or bool(drug.get("dung_moi"))
 
         bag, dm, explicit_from_choose = choose_bag_volume_and_type(drug)
-        catalog_rule = _catalog_rule_of(drug)
+        # Liều mỗi lần tính lúc còn đủ lịch giờ (bước sau tách mỗi cữ một dòng, so_luong vẫn là tổng ngày).
+        try:
+            from processing.dose import dose_mg_per_administration
+            dose = dose_mg_per_administration(drug, len(parse_hours_from_gio_dung(drug.get("gio_dung", ""))) or None)
+        except Exception:
+            dose = None
+        if dose is not None:
+            drug["lieu_moi_lan_mg"] = dose
+        catalog_rule = _catalog_resolved(drug)
         drug["nguon_pha"] = _dilution_source(drug, bag, explicit or explicit_from_choose, catalog_rule)
+        from_catalog = drug["nguon_pha"] == "danh_muc" and bool(catalog_rule)
+        if from_catalog and catalog_rule.get("variant_label"):
+            drug["cach_pha"] = catalog_rule["variant_label"]
+        # Không chắc thì KHÔNG đoán im lặng: đánh dấu để người chuẩn bị thuốc hỏi lại.
+        if from_catalog and catalog_rule.get("can_xac_nhan"):
+            drug["can_xac_nhan_pha"] = True
+            drug["ly_do_xac_nhan_pha"] = catalog_rule.get("ly_do") or ""
+        elif drug["nguon_pha"] == "mac_dinh":
+            drug["can_xac_nhan_pha"] = True
+            drug["ly_do_xac_nhan_pha"] = "Y lệnh không ghi thể tích pha và chưa có quy tắc pha cho thuốc này; đang tạm tính 100 ml."
         # Tốc độ theo quy tắc danh mục khi y lệnh không ghi.
         if catalog_rule and catalog_rule.get("rate") and not str(drug.get("toc_do") or "").strip():
             rate = catalog_rule["rate"]
