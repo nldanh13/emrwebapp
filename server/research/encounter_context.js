@@ -152,13 +152,6 @@ function buildEncounterId(row, sourceRunId = '') {
     return `enc_${stableHash(['visit', normalizedIdentity(maBn), admission])}`;
   }
 
-  const researchCode = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
-  if (researchCode && maBn) {
-    // Mã NC có thể bị tái dùng/cấp trùng; luôn khóa kèm Mã BN để không thể nối hai
-    // người bệnh khác nhau chỉ vì cùng research_code.
-    return `enc_${stableHash(['research', normalizedIdentity(maBn), normalizedIdentity(researchCode)])}`;
-  }
-
   // Khóa cuối cùng chỉ để không làm hỏng schema. Dòng này phải được đánh dấu
   // manual review vì không đủ bằng chứng để ghép lượt tự động.
   return `enc_unresolved_${stableHash([
@@ -288,15 +281,6 @@ function buildContextMap(patientRows, sourceRunId = '') {
     byPatient.set(code, patientList);
 
     addContextMapKey(map, `encounter:${normalizedIdentity(ctx.encounter_id)}`, ctx);
-    // Research code là alias yếu và có thể tái dùng. Chỉ lập chỉ mục theo cặp
-    // Mã BN + Mã NC để không bao giờ gán một dòng của BN A sang BN B.
-    if (ctx.research_code) {
-      addContextMapKey(
-        map,
-        `research_patient:${normalizedIdentity(code)}|${normalizedIdentity(ctx.research_code)}`,
-        ctx,
-      );
-    }
     if (ctx.emr_treatment_id) addContextMapKey(map, `treatment:${normalizedIdentity(ctx.emr_treatment_id)}`, ctx);
     if (ctx.emr_noitru_id) addContextMapKey(map, `noitru:${normalizedIdentity(ctx.emr_noitru_id)}`, ctx);
     if (ctx.emr_admission_id) addContextMapKey(map, `admission:${normalizedIdentity(ctx.emr_admission_id)}`, ctx);
@@ -345,14 +329,6 @@ function contextForRow(ctxMap, row, code) {
     }
   }
 
-  const researchCode = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
-  if (researchCode) {
-    const exact = uniqueContext(ctxMap.get(
-      `research_patient:${normalizedIdentity(code)}|${normalizedIdentity(researchCode)}`,
-    ));
-    if (exact) return matchedContext(exact, 'research_code');
-  }
-
   const admission = isoDateTime(firstNonEmpty(row, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'admission_date']))
     || isoDate(firstNonEmpty(row, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'admission_date']));
   const discharge = isoDateTime(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'discharge_date']))
@@ -375,12 +351,15 @@ function contextForRow(ctxMap, row, code) {
   }
 
   const candidates = ctxMap.get(`patient:${code}`) || [];
-  if (candidates.length === 1) return matchedContext(candidates[0], 'patient_unique_encounter');
   const eventDate = rowEventDate(row);
-  if (eventDate && candidates.length > 1) {
+  if (eventDate) {
     const temporal = candidates.filter(ctx => eventInsideContext(eventDate, ctx));
     if (temporal.length === 1) return matchedContext(temporal[0], 'event_date_range');
+    // Có thời gian sự kiện nhưng không nằm duy nhất trong một đợt: không ép ghép chỉ vì cùng Mã BN.
+    return unresolvedContext(code, candidates);
   }
+  // Chỉ fallback theo Mã BN khi BN chỉ có đúng một đợt và dòng nguồn hoàn toàn không có mốc thời gian.
+  if (candidates.length === 1) return matchedContext(candidates[0], 'patient_unique_encounter_no_event_time');
   return unresolvedContext(code, candidates);
 }
 
