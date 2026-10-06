@@ -227,8 +227,15 @@ function buildQualityReport({
   // Cùng BN + cùng thời điểm + cùng chỉ số/dịch vụ phải là MỘT kết quả. Nếu các dòng
   // đó có kết quả khác nhau thì là dữ liệu mâu thuẫn: giữ tất cả, không tự chọn.
   const conflictSpecs = [
-    ['lab_results', r => r.lab_datetime && [r.patient_code, r.lab_datetime, text(r.test_name_raw).toLowerCase()].join('|'),
-      r => [text(r.result_raw), text(r.unit)].join('|'), r => `Chỉ số "${text(r.test_name_raw)}" lúc ${text(r.lab_datetime)}`],
+    ['lab_results', r => r.lab_datetime && [
+      r.patient_code,
+      text(r.encounter_id),
+      r.lab_datetime,
+      text(r.lab_order_id) || '(không mã phiếu)',
+      text(r.test_name_raw).toLowerCase(),
+    ].join('|'),
+      r => [text(r.result_raw), text(r.unit)].join('|'),
+      r => `Chỉ số "${text(r.test_name_raw)}" lúc ${text(r.lab_datetime)}${text(r.lab_order_id) ? `, phiếu ${text(r.lab_order_id)}` : ''}`],
     ['imaging_results', r => r.ordered_at && [r.patient_code, r.ordered_at, text(r.service_name_raw).toLowerCase()].join('|'),
       r => [text(r.result_text), text(r.conclusion_text)].join('|'), r => `Dịch vụ "${text(r.service_name_raw)}" lúc ${text(r.ordered_at)}`],
   ];
