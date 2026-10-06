@@ -55,3 +55,25 @@ def test_medication_day_summary_uses_only_matched_in_encounter_orders():
     src = (ROOT / "server" / "research" / "normalize.js").read_text(encoding="utf-8")
     assert "med.encounter_match_status !== 'matched'" in src
     assert "med.is_within_encounter === '0'" in src
+
+
+def test_repeated_lab_results_are_preserved_losslessly():
+    normalize = (ROOT / "server" / "research" / "normalize.js").read_text(encoding="utf-8")
+    schema = (ROOT / "server" / "research" / "normalized_schema.js").read_text(encoding="utf-8")
+    quality = (ROOT / "server" / "research" / "quality.js").read_text(encoding="utf-8")
+    assert "const labResults = labResultsAll.map" in normalize
+    assert "labOccurrence" in normalize
+    assert "lab_order_id" in normalize
+    assert "'lab_order_id'" in schema
+    assert "possible_duplicate_lab_rows" in quality
+
+
+def test_list_aggregation_keeps_repeated_values_instead_of_using_set():
+    src = (ROOT / "server" / "research" / "variable_selection.js").read_text(encoding="utf-8")
+    assert "new Set(items.map" not in src
+    assert "ordered.map(item => String(item.value)).join('; ')" in src
+
+
+def test_lab_conflict_key_uses_order_id():
+    src = (ROOT / "server" / "research" / "quality.js").read_text(encoding="utf-8")
+    assert "text(r.lab_order_id) || '(không mã phiếu)'" in src
