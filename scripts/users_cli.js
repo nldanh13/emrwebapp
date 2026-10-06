@@ -7,6 +7,8 @@
 //   node scripts/users_cli.js tao-admin <ten_dang_nhap> "<Họ tên>"
 //   node scripts/users_cli.js dat-mat-khau <ten_dang_nhap>
 //   node scripts/users_cli.js danh-sach
+//   node scripts/users_cli.js ma-tin-cay       (mã 8 số, dùng một lần trong 10 phút, để xác nhận
+//                                              thiết bị tin cậy đầu tiên, vd. điện thoại của bạn)
 //
 // Đọc/ghi đúng file máy chủ dùng: EMR_USERS_FILE nếu có, không thì secrets/users.json.
 
@@ -39,6 +41,11 @@ async function main() {
     for (const u of users) console.log(`- ${u.id}\t${u.role}\t${u.enabled ? 'đang dùng' : 'đã tắt'}\t${u.passwordHash ? 'có mật khẩu' : 'chưa đặt mật khẩu'}\t${u.name}`);
     return;
   }
+  if (cmd === 'ma-tin-cay') {
+    const code = require('../server/services/trusted_devices').createSetupCode();
+    console.log(`Mã xác nhận thiết bị tin cậy: ${code}\nDùng một lần, hết hạn sau 10 phút. Trên điện thoại: Thiết lập tài khoản → Thiết bị tin cậy → nhập mã.`);
+    return;
+  }
   if (cmd === 'tao-admin') {
     if (!id) throw new Error('Thiếu tên đăng nhập. Ví dụ: node scripts/users_cli.js tao-admin quantri "Quản trị"');
     const password = await askNewPassword();
@@ -53,7 +60,7 @@ async function main() {
     console.log(`Đã đặt mật khẩu mới cho "${id}". Máy chủ đang chạy sẽ nhận ngay khi khởi động lại.`);
     return;
   }
-  console.log('Cách dùng:\n  node scripts/users_cli.js tao-admin <ten_dang_nhap> "<Họ tên>"\n  node scripts/users_cli.js dat-mat-khau <ten_dang_nhap>\n  node scripts/users_cli.js danh-sach');
+  console.log('Cách dùng:\n  node scripts/users_cli.js tao-admin <ten_dang_nhap> "<Họ tên>"\n  node scripts/users_cli.js dat-mat-khau <ten_dang_nhap>\n  node scripts/users_cli.js danh-sach\n  node scripts/users_cli.js ma-tin-cay');
   process.exitCode = 1;
 }
 

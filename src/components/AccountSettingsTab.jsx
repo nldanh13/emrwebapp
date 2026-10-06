@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { C, FS } from '../tokens.js';
 import { Btn, Spinner, Badge } from './shared.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
+import DeviceTrustPanel from './DeviceTrustPanel.jsx';
 import * as api from '../api.js';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
 import { SkeletonTable } from './Skeleton.jsx';
@@ -281,18 +282,22 @@ export default function AccountSettingsTab() {
 
   if (user && user.role !== 'admin') {
     return (
-      <div style={{ padding: 20, maxWidth: 560, margin: '40px auto', textAlign: 'center', color: C.text2 }}>
+      <div style={{ padding: 12, maxWidth: 720, margin: '0 auto', display: 'grid', gap: 12 }}>
+      <DeviceTrustPanel isAdmin={false} toast={showToast} />
+      <div style={{ padding: 20, maxWidth: 560, margin: '20px auto', textAlign: 'center', color: C.text2 }}>
         <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text, marginBottom: 8 }}>Cần quyền quản trị</div>
         <div style={{ fontSize: FS.md, lineHeight: 1.6 }}>
           Chỉ tài khoản vai trò <b>Quản trị</b> mới thiết lập được tài khoản đăng nhập. Bạn đang đăng nhập với vai trò
           <b> {ROLE_LABELS[user.role] || user.role}</b> — liên hệ quản trị hệ thống nếu cần thêm/sửa tài khoản.
         </div>
       </div>
+      </div>
     );
   }
 
   return (
     <div style={{ padding: 12, maxWidth: 1080, margin: '0 auto' }}>
+      <div style={{ marginBottom: 12 }}><DeviceTrustPanel isAdmin toast={showToast} /></div>
       <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
         <div>
           <div style={{ fontSize: FS.xl, fontWeight: 700, color: C.text }}>Thiết lập tài khoản</div>

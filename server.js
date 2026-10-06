@@ -56,6 +56,8 @@ middleware.applySecurityHeaders(app);
 // Đăng nhập bằng tên + mật khẩu: trước bước kiểm tra mã truy cập (người dùng chưa có mã).
 app.use('/api', require('./server/routes/auth_login').router);
 app.use('/api', middleware.requireAppToken);
+// Thiết bị tin cậy: kiểm chữ ký thiết bị (nếu có) → req.deviceTrusted.
+app.use('/api', require('./server/services/authz').attachDeviceTrust);
 // Chỉ các endpoint upload thực sự cần payload lớn. Các API khác bị giới hạn.
 app.use('/api/research/archive/source', express.json({ limit: process.env.EMR_RESEARCH_UPLOAD_LIMIT || '50mb' }));
 app.use('/api/hchanh/upload-discharge-pdf', express.json({ limit: process.env.EMR_DISCHARGE_PDF_UPLOAD_LIMIT || '45mb' }));

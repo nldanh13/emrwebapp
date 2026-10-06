@@ -10,11 +10,14 @@ import { Spinner } from './components/shared.jsx';
 import { loadRouteCustomizations } from './config/routes.js';
 import { getRouteTable } from './api.js';
 import { installResourceConcurrencyFetch } from './utils/resourceConcurrency.js';
+import { installDeviceSigningFetch } from './utils/deviceTrust.js';
 import './styles/app.css';
 
 // Cài lớp versioning trước khi React/API bắt đầu gọi fetch: mọi GET resource dùng chung
 // sẽ nhớ X-Resource-Version, còn mutation sẽ tự gửi If-Match để chống ghi đè đa thiết bị.
 installResourceConcurrencyFetch();
+// Thiết bị tin cậy: tự ký mọi yêu cầu /api (lớp ngoài cùng, sau lớp versioning).
+installDeviceSigningFetch();
 
 // Nạp phần đường dùng tự cài (tab Đường dùng) trước khi hiện app; tối đa 3 giây,
 // lỗi thì vẫn chạy với bảng chuẩn.
