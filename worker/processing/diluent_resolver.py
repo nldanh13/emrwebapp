@@ -31,8 +31,10 @@ def _catalog_rule_of(drug):
     """Quy tắc pha trong Danh mục thuốc cho một dòng thuốc (theo tên thuốc rồi hoạt chất)."""
     if not isinstance(drug, dict):
         return None
+    from processing.medication_catalog import _SOLVENT_TAIL
     for key in ("ten_thuoc", "ten_hien_thi", "hoat_chat"):
-        text = str(drug.get(key) or "").strip()
+        # Bỏ đuôi "+ Natri clorid 0.9%" của tên hiển thị (không phải tên thuốc).
+        text = _SOLVENT_TAIL.sub("", str(drug.get(key) or "")).strip()
         if text:
             rule = get_catalog_dilution(text)
             if rule:
@@ -848,10 +850,15 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
 
     # Ghi quy tắc pha của Danh mục thuốc lên dòng thuốc để người xem có chỗ đối chiếu
     # (vd. Glucose 5%, nước cất: chỉ ghi nhận, không tự đổi dung môi).
+    kept_ids = {id(d) for d in kept_tiem}
     for drug in list(enriched_dich_truyen) + list(kept_tiem):
         if not isinstance(drug, dict) or drug.get("quy_tac_pha"):
             continue
         rule = _catalog_rule_of(drug)
+        # Thuốc vẫn ở dạng tiêm (vd. Nefopam tiêm bắp): ghi chú "Pha Natri clorid…" gây hiểu nhầm là
+        # phải pha truyền. Giữ ghi chú "Không pha thêm" và dung môi tự pha (Glucose, nước cất).
+        if rule and id(drug) in kept_ids and rule.get("solvent") == "NACL_0.9":
+            continue
         if rule:
             text = _catalog_note_text(rule)
             if text:

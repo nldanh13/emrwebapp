@@ -59,6 +59,13 @@ test('quy cách khác: Natri clorid 100 ml + 500 ml trong cùng một thuốc', 
   assert.strictEqual(normalizePresentations([], 100), undefined);
 });
 
+test('tên khác giữ dấu phẩy thập phân, bỏ mục không có chữ', () => {
+  // Lỗi thật: "NATRI CLORID 0,9%" bị lưu thành "NATRI CLORID 0" và "9%".
+  const { normalizeStringList } = require('../server/routes/medication_catalog');
+  assert.deepStrictEqual(normalizeStringList('NATRI CLORID 0,9%, SODIUM CHLORIDE 0,9%'), ['NATRI CLORID 0,9%', 'SODIUM CHLORIDE 0,9%']);
+  assert.deepStrictEqual(normalizeStringList(['NATRI CLORID 0', '9%', 'Aclasta']), ['NATRI CLORID 0', 'Aclasta']);
+});
+
 test('không có gì để dọn', () => {
   assert.deepStrictEqual(planCleanup([{ canonical: 'THERMODOL' }]), []);
 });

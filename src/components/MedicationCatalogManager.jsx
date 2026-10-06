@@ -23,6 +23,7 @@ import CatalogCleanupPanel from './CatalogCleanupPanel.jsx';
 import NewDrugsPanel from './NewDrugsPanel.jsx';
 import { catalogIssues, filterCatalog } from '../utils/catalogIssues.js';
 import { presentationsForm, presentationsFromForm, volumesText } from '../utils/presentations.js';
+import { parseList as parseListText } from '../utils/listText.js';
 import MedicationBuiltinPanel from './MedicationBuiltinPanel.jsx';
 import { fillEmptyFields } from '../utils/medicationBuiltin.js';
 
@@ -38,12 +39,8 @@ function routeOptions(table) {
 
 function txt(v, fb = '—') { return String(v ?? '').trim() || fb; }
 function joinList(list) { return (Array.isArray(list) ? list : []).join(', '); }
-function parseList(text) {
-  return String(text || '')
-    .split(/[,;\n]/)
-    .map(x => x.trim())
-    .filter(Boolean);
-}
+// Tách tên khác/hoạt chất: dấu phẩy thập phân ("0,9%") không phải dấu tách — src/utils/listText.js.
+const parseList = parseListText;
 
 function emptyForm() {
   return {
