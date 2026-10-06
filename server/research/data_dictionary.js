@@ -359,7 +359,7 @@ TABLES.medication_day_summary = {
   primary_key: ['encounter_id', 'order_date'],
   foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id' }],
   sources: ['medication_orders.csv (chỉ dòng đã gắn đợt và có ngày)'],
-  processing: 'Nhóm theo đợt + ngày y lệnh.',
+  processing: 'Chỉ dùng medication_orders đã matched và is_within_encounter = 1; sau đó nhóm theo đợt + ngày y lệnh. Dòng chưa chứng minh được thời gian vẫn giữ ở medication_orders nhưng không vào bảng tóm tắt.',
   inferred: false,
   quality: { required: ['encounter_id', 'order_date'], unique: ['encounter_id + order_date'], checks: [], manual_review: [] },
   columns: withCommon(['research_code', 'patient_code', 'patient_key', 'encounter_id', 'order_date', 'drug_count', 'route_set', 'drugs_display', 'drugs_json', 'source_run_id', 'row_hash'], {
@@ -437,7 +437,7 @@ TABLES.patient_day = {
   primary_key: ['encounter_id', 'date'],
   foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id' }],
   sources: ['lab_results', 'imaging_results', 'surgery_results', 'medication_orders (chỉ dòng đã gắn đợt)'],
-  processing: 'Nhóm theo đợt + ngày. Ngày không có hoạt động nào thì không có dòng.',
+  processing: 'Chỉ dùng XN/CĐHA/PT/y lệnh đã matched và is_within_encounter = 1; sau đó nhóm theo đợt + ngày. Dòng thiếu bằng chứng thời gian vẫn giữ ở bảng chi tiết nhưng không vào patient_day.',
   inferred: false,
   quality: { required: ['encounter_id', 'date'], unique: ['encounter_id + date'], checks: [], manual_review: ['hospital_day ≤ 0 (hoạt động trước ngày vào viện).'] },
   columns: withCommon(['research_code', 'patient_code', 'patient_key', 'encounter_id', 'date', 'hospital_day', 'has_lab', 'lab_count', 'has_imaging', 'imaging_count', 'has_surgery', 'surgery_count', 'has_medication', 'medication_count', 'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt', 'creatinine', 'egfr', 'wbc', 'crp', 'source_run_id', 'row_hash'], {
@@ -463,7 +463,7 @@ TABLES.extract_status = {
   primary_key: ['encounter_id'],
   foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id' }],
   sources: ['progress.json (XN/CĐHA)', 'hchanh_auto_progress.json', 'order_history_auto_progress.json'],
-  processing: 'Chọn bản ghi tiến độ khớp nhất với đợt (khóa đợt → Mã NC → Mã BN + ngày vào/ra; chỉ dùng Mã BN khi BN có đúng 1 đợt). Hành chánh dùng trạng thái riêng từng file khi có. Trạng thái chi tiết hơn (lý do lỗi, số lần thử, đã đổi trên EMR) nằm ở collection_ledger.json / collection_exceptions.csv.',
+  processing: 'Chọn bản ghi tiến độ khớp nhất với đợt theo khóa đợt → Mã BN + ngày/giờ vào-ra; chỉ fallback Mã BN khi người bệnh có đúng 1 đợt. Mã NC không tham gia quyết định matching. Hành chánh dùng trạng thái riêng từng file khi có. Trạng thái chi tiết hơn nằm ở collection_ledger.json / collection_exceptions.csv.',
   inferred: false,
   quality: { required: ['encounter_id'], unique: ['encounter_id'], checks: ['"empty" = đã lấy xong, EMR xác nhận không có; không phải lỗi'], manual_review: ['overall_status = error', 'một phần = blocked (cần người xem)', 'missing_required chứa encounter_match'] },
   columns: withCommon(['research_code', 'encounter_id', 'patient_code', 'patient_key', 'patient_name', 'popup_status', 'xn_status', 'cdha_status', 'profile_status', 'discharge_status', 'surgery_status', 'order_history_status', 'overall_status', 'completion_level', 'ready_for_analysis', 'missing_required', 'lab_count', 'imaging_count', 'surgery_count', 'medication_count', 'last_error', 'source_run_id'], {
@@ -499,7 +499,7 @@ TABLES.analysis_ready = {
   primary_key: ['encounter_id'],
   foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id' }, { columns: ['patient_code'], references: 'patients.patient_code' }],
   sources: ['encounters', 'patients', 'lab_results', 'imaging_results', 'surgery_results'],
-  processing: 'Một dòng mỗi đợt. Giữ toàn bộ XN và CĐHA của đúng đợt trong lab_results_json/imaging_results_json; các cột XN đơn lẻ chỉ là snapshot kết quả sớm nhất để tiện phân tích. imaging_summary giữ toàn bộ tên dịch vụ + mô tả + kết luận, không cắt ngắn. Phẫu thuật lấy ca sớm nhất của đợt; biến suy luận chạy trên chẩn đoán + toàn bộ văn bản CĐHA.',
+  processing: 'Một dòng mỗi đợt. Chỉ dữ liệu matched và is_within_encounter = 1 mới được dùng cho snapshot/tóm tắt phân tích; dữ liệu chưa đủ bằng chứng vẫn giữ nguyên ở bảng chi tiết. Giữ toàn bộ XN và CĐHA hợp lệ của đúng đợt trong lab_results_json/imaging_results_json. imaging_summary không cắt ngắn. Phẫu thuật lấy ca sớm nhất đã xác minh trong đợt; biến suy luận chạy trên chẩn đoán + CĐHA hợp lệ.',
   inferred: true,
   quality: {
     required: ['encounter_id', 'research_code'],
