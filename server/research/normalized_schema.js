@@ -17,7 +17,9 @@
 // v18: provenance + chuẩn hóa đơn vị XN bảo thủ; parser thuốc đầy đủ.
 // v19: giữ toàn bộ XN/CĐHA trong analysis_ready và CĐHA lossless.
 // v20: lưu bằng chứng/lý do matching từng dòng; Mã NC không tham gia quyết định matching.
-const NORMALIZED_SCHEMA_VERSION = 20;
+// v21: analysis_ready chỉ giữ biến/tóm tắt theo encounter; chi tiết XN/CĐHA ở bảng dài,
+//      không nhét toàn bộ kết quả của một đợt vào các ô JSON/text cực lớn.
+const NORMALIZED_SCHEMA_VERSION = 21;
 
 const NORMALIZED_COLUMNS = {
   patients: [
@@ -96,8 +98,8 @@ const NORMALIZED_COLUMNS = {
     // và được gộp vào đây bởi writeCsvDynamic — không hardcode ở đây để tránh cột rỗng với NC khác chuyên khoa
     'surgery_name', 'surgery_method', 'anesthesia_method', 'comorbidity_text', 'complication_text',
     'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt',
-    'lab_result_count', 'lab_results_json', 'imaging_result_count', 'imaging_results_json',
-    'imaging_summary', 'needs_manual_review', 'source_run_id', 'row_hash',
+    'lab_result_count', 'imaging_result_count',
+    'needs_manual_review', 'source_run_id', 'row_hash',
   ],
   extract_status: [
     'research_code', 'encounter_id', 'patient_code', 'patient_key', 'patient_name', 'popup_status', 'xn_status', 'cdha_status',
