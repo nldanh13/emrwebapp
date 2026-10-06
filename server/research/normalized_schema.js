@@ -17,7 +17,8 @@
 // v18: provenance + chuẩn hóa đơn vị XN bảo thủ; parser thuốc đầy đủ.
 // v19: giữ toàn bộ XN/CĐHA trong analysis_ready và CĐHA lossless.
 // v20: lưu bằng chứng/lý do matching từng dòng; Mã NC không tham gia quyết định matching.
-const NORMALIZED_SCHEMA_VERSION = 20;
+// v21: Mã BN là khóa nguồn duy nhất; bỏ các mã EMR không thu thập và không nhét toàn bộ XN/CĐHA vào một ô analysis_ready.
+const NORMALIZED_SCHEMA_VERSION = 21;
 
 const NORMALIZED_COLUMNS = {
   patients: [
@@ -30,7 +31,7 @@ const NORMALIZED_COLUMNS = {
     'encounter_id', 'research_code', 'patient_code', 'patient_key', 'admission_date', 'discharge_date',
     'treatment_duration', 'department', 'room_bed', 'admission_diagnosis', 'discharge_diagnosis',
     'diagnosis_raw', 'comorbidity_text', 'complication_text', 'discharge_status',
-    'surgery_date', 'emr_admission_id', 'emr_treatment_id', 'emr_noitru_id', 'needs_manual_review',
+    'surgery_date', 'needs_manual_review',
     'source_run_id', 'source_status', 'row_hash',
   ],
   diagnoses: [
@@ -96,7 +97,7 @@ const NORMALIZED_COLUMNS = {
     // và được gộp vào đây bởi writeCsvDynamic — không hardcode ở đây để tránh cột rỗng với NC khác chuyên khoa
     'surgery_name', 'surgery_method', 'anesthesia_method', 'comorbidity_text', 'complication_text',
     'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt',
-    'lab_result_count', 'lab_results_json', 'imaging_result_count', 'imaging_results_json',
+    'lab_result_count', 'imaging_result_count',
     'imaging_summary', 'needs_manual_review', 'source_run_id', 'row_hash',
   ],
   extract_status: [
