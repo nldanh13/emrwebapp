@@ -74,6 +74,157 @@ def merge_scan_rows(rows_by_query: Dict[str, List[str]]) -> List[Dict[str, Any]]
     return sorted(out.values(), key=lambda r: (r["name"].lower(), r["code"]))
 
 
+
+def _prepare_recorder_frame_step(driver: Any) -> None:
+    """Lặp lại bước iframe mà recorder ghi nhận, nhưng chỉ khi đúng panel lỗi xuất hiện.
+
+    Luồng EMR hiện tại đôi khi mở một iframe trung gian sau khi bấm "Nhập thuốc, VTYT".
+    Recorder vào frame index=0, bấm nút thứ 3 của panel-header.has-errors rồi quay về
+    document gốc. Đây là bước chuẩn bị giao diện; nếu phiên bản EMR không có iframe
+    hoặc selector này không tồn tại thì bỏ qua để giữ tương thích.
+    """
+    try:
+        driver.switch_to.default_content()
+    except Exception:
+        pass
+
+    frames = driver.find_elements(By.TAG_NAME, "iframe")
+    if not frames:
+        _log("   [DÒ VTYT] Không có iframe trung gian — dùng luồng cũ.")
+        return
+
+    for index, frame in enumerate(frames[:4]):
+        try:
+            driver.switch_to.default_content()
+            driver.switch_to.frame(frame)
+            buttons = driver.find_elements(
+                By.CSS_SELECTOR,
+                ".panel-header.has-errors > div:nth-child(2) > button"
+            )
+            if len(buttons) >= 3:
+                safe_js_click(driver, buttons[2])
+                wait_after_action(driver, 0.45, ready_timeout=5)
+                _log(f"   [DÒ VTYT] Đã xử lý panel trung gian trong iframe {index}.")
+                return
+
+            # Fallback sát selector recorder nếu cấu trúc button khác đôi chút.
+            icon = driver.find_elements(
+                By.CSS_SELECTOR,
+                ".panel-header.has-errors > div:nth-child(2) > button:nth-child(3) > svg"
+            )
+            if icon:
+                button = icon[0].find_element(By.XPATH, "./ancestor::button[1]")
+                safe_js_click(driver, button)
+                wait_after_action(driver, 0.45, ready_timeout=5)
+                _log(f"   [DÒ VTYT] Đã xử lý panel trung gian trong iframe {index}.")
+                return
+        except Exception as e:
+            _log(f"   [DÒ VTYT][DEBUG] iframe {index}: {e}")
+        finally:
+            try:
+                driver.switch_to.default_content()
+            except Exception:
+                pass
+
+    _log("   [DÒ VTYT] Có iframe nhưng không thấy panel-header.has-errors — tiếp tục.")
+
+
+def _select_popup_patient_context(driver: Any, ma_bn: str) -> None:
+    """Chọn dòng/ngữ cảnh người bệnh trong #tbodydivDS mà không hard-code UUID.
+
+    Recorder từng ghi thao tác fill/click một input có UUID. UUID đó thuộc phiên/đợt
+    điều trị cụ thể nên không được ghi cứng. Worker ưu tiên dòng chứa mã BN; nếu DOM
+    không hiện mã BN thì dùng dòng đầu tiên. Chỉ click input có thể tương tác; hidden
+    input chỉ được dùng để nhận diện chứ không bị sửa value.
+    """
+    try:
+        driver.switch_to.default_content()
+    except Exception:
+        pass
+
+    try:
+        tbody = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, "tbodydivDS"))
+        )
+    except Exception:
+        _log("   [DÒ VTYT] Không thấy #tbodydivDS — popup có thể đã tự chọn ngữ cảnh.")
+        return
+
+    rows = tbody.find_elements(By.CSS_SELECTOR, "tr")
+    if not rows:
+        _log("   [DÒ VTYT] #tbodydivDS chưa có dòng — tiếp tục theo trạng thái hiện tại.")
+        return
+
+    target = None
+    needle = str(ma_bn or "").strip()
+    for row in rows:
+        try:
+            if needle and needle in (row.text or ""):
+                target = row
+                break
+        except Exception:
+            continue
+    target = target or rows[0]
+
+    inputs = target.find_elements(By.CSS_SELECTOR, "input")
+    actionable = []
+    for el in inputs:
+        try:
+            typ = str(el.get_attribute("type") or "text").lower()
+            if typ != "hidden" and el.is_enabled():
+                actionable.append((0 if typ in ("checkbox", "radio") else 1, el))
+        except Exception:
+            continue
+
+    if actionable:
+        actionable.sort(key=lambda x: x[0])
+        try:
+            safe_js_click(driver, actionable[0][1])
+            wait_after_action(driver, 0.35, ready_timeout=5)
+            _log("   [DÒ VTYT] Đã chọn ngữ cảnh người bệnh trong #tbodydivDS.")
+            return
+        except Exception as e:
+            _log(f"   [DÒ VTYT][WARN] Không click được input #tbodydivDS: {e}")
+
+    # Một số bản EMR gắn handler ở cả dòng thay vì input hiển thị.
+    try:
+        safe_js_click(driver, target)
+        wait_after_action(driver, 0.35, ready_timeout=5)
+        _log("   [DÒ VTYT] Đã chọn dòng người bệnh trong #tbodydivDS.")
+    except Exception:
+        _log("   [DÒ VTYT] Không cần/không thể chọn thêm dòng #tbodydivDS.")
+
+
+def _prepare_vtyt_tab(driver: Any) -> None:
+    """Đưa popup về trạng thái VTYT theo selector recorder trước khi mở #txtHang."""
+    try:
+        driver.switch_to.default_content()
+    except Exception:
+        pass
+
+    # Selector tương đương:
+    # //*[@id="tabVTYT"]/div/div/div[2]/div/div/div/div[3]/div/ins
+    selectors = [
+        "#tabVTYT > div > div > div:nth-child(2) > div > div > div > div:nth-child(3) > div > ins",
+        "#tabVTYT .icheckbox_square-green ins",
+        "#tabVTYT .iradio_square-green ins",
+    ]
+    for sel in selectors:
+        try:
+            matches = driver.find_elements(By.CSS_SELECTOR, sel)
+            visible = [el for el in matches if el.is_displayed()]
+            if not visible:
+                continue
+            safe_js_click(driver, visible[0])
+            wait_after_action(driver, 0.35, ready_timeout=5)
+            _log("   [DÒ VTYT] Đã bật lựa chọn VTYT theo giao diện hiện tại.")
+            return
+        except Exception:
+            continue
+    _log("   [DÒ VTYT] Không thấy control iCheck trong #tabVTYT — tiếp tục.")
+
+
+
 def _read_options_for_query(driver: Any, query: str) -> List[str]:
     box = None
     for sel in ["#select2-txtHang-container", "#txtHang + .select2 .select2-selection"]:
@@ -93,7 +244,10 @@ def _read_options_for_query(driver: Any, query: str) -> List[str]:
         search.send_keys(query)
     wait_after_action(driver, 1.2, ready_timeout=6)
     texts = []
-    for opt in driver.find_elements(By.CSS_SELECTOR, "#select2-txtHang-results .select2-results__option"):
+    for opt in driver.find_elements(
+        By.CSS_SELECTOR,
+        "#select2-txtHang-results .select2-results__option, .select2-container--open .select2-results__option"
+    ):
         t = (opt.text or "").replace("\n", " ").strip()
         if t:
             texts.append(t)
@@ -120,7 +274,18 @@ def main(argv: List[str]) -> int:
             search_patient_on_ward_or_raise(driver, wait, dict(config), ma_bn, login_func=login_emr, log_func=_log, allow_completed=True)
             _open_nursing_view_from_list(driver, wait, ma_bn)
             _open_vtyt_menu(driver, wait)
+
+            # Recorder EMR hiện tại có một frame trung gian trước popup chính.
+            # Chỉ xử lý khi đúng panel được nhận diện; không có thì giữ luồng cũ.
+            _prepare_recorder_frame_step(driver)
+            try:
+                driver.switch_to.default_content()
+            except Exception:
+                pass
+
             _open_vtyt_popup(driver, wait)
+            _select_popup_patient_context(driver, ma_bn)
+            _prepare_vtyt_tab(driver)
             _select_loai_ke_du_tru(driver)
             rows_by_query: Dict[str, List[str]] = {}
             for q in queries:
