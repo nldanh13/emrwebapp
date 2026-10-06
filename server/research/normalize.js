@@ -5,7 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { stableHash, buildContextMap, contextForRow, firstNonEmpty, buildEncounterId, isoDateTime, isoDate, parseAnyDate, rowEmrAdmissionId, rowEmrTreatmentId, rowNoitruId, encounterMatchStatus, encounterMatchMethod, eventTemporalFields, dateOffsetDays, daysBetween, normalizeSimple } = require('./encounter_context');
+const { stableHash, buildContextMap, contextForRow, firstNonEmpty, buildEncounterId, isoDateTime, isoDate, parseAnyDate, encounterMatchStatus, encounterMatchMethod, eventTemporalFields, dateOffsetDays, daysBetween, normalizeSimple } = require('./encounter_context');
 const { loadAnalysisConfig, ANALYSIS_PRESETS, _runInference, hoursBetween } = require('./analysis_presets');
 const patientDb = require('../services/patient_db');
 const variableSelection = require('./variable_selection');
@@ -312,9 +312,6 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       complication_text: firstNonEmpty(row, ['Biến chứng', 'Bien chung', 'Tai biến', 'Tai bien']) || firstNonEmpty(extra, ['Biến chứng', 'Bien chung', 'Tai biến', 'Tai bien']) || '',
       discharge_status: firstNonEmpty(row, ['Tình trạng ra', 'Tinh trang ra', 'Kết quả', 'Ket qua']) || firstNonEmpty(extra, ['Tình trạng ra', 'Tinh trang ra', 'Kết quả', 'Ket qua']) || '',
       surgery_date: ctx.surgery_date || isoDate(firstNonEmpty(row, ['Ngày mổ', 'Ngay mo', 'Ngày phẫu thuật', 'Ngay phau thuat'])) || '',
-      emr_admission_id: ctx.emr_admission_id || rowEmrAdmissionId(row) || '',
-      emr_treatment_id: ctx.emr_treatment_id || rowEmrTreatmentId(row) || '',
-      emr_noitru_id: ctx.emr_noitru_id || rowNoitruId(row) || '',
       needs_manual_review: [ctx.needs_manual_review, firstNonEmpty(row, ['__needs_manual_review', 'needs_manual_review'])]
         .filter(Boolean).join('; '),
       source_run_id: runId,
@@ -939,9 +936,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       complication_text: enc.complication_text || '',
       hb: labs.hb || '', hct: labs.hct || '', neutrophil: labs.neutrophil || '', lymphocyte: labs.lymphocyte || '', monocyte: labs.monocyte || '', rdw: labs.rdw || '', plt: labs.plt || '',
       lab_result_count: (labResultsByEncounter.get(enc.encounter_id) || []).length,
-      lab_results_json: JSON.stringify(labResultsByEncounter.get(enc.encounter_id) || []),
       imaging_result_count: (imagingResultsByEncounter.get(enc.encounter_id) || []).length,
-      imaging_results_json: JSON.stringify(imagingResultsByEncounter.get(enc.encounter_id) || []),
       imaging_summary: imagingTextByEncounter.get(enc.encounter_id) || '',
       needs_manual_review: reviewItems.join('; '),
       source_run_id: runId,
@@ -1112,7 +1107,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   const analysisReadyTrailCols = [
     'surgery_name', 'surgery_method', 'anesthesia_method', 'comorbidity_text', 'complication_text',
     'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt',
-    'lab_result_count', 'lab_results_json', 'imaging_result_count', 'imaging_results_json',
+    'lab_result_count', 'imaging_result_count',
     'imaging_summary', 'needs_manual_review', 'source_run_id', 'row_hash',
   ];
   const analysisReadyCols = [...analysisReadyBaseCols, ...inferenceColKeys, ...customColKeys, ...analysisReadyTrailCols];
