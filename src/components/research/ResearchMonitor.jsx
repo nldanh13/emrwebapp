@@ -96,7 +96,7 @@ function ResearchMonitorTable({ rows = [], max = 80, filter = 'need', query = ''
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.xs }}>
           <thead style={{ position: 'sticky', top: 0, background: C.surface2, zIndex: 1 }}>
             <tr>
-              {['Người bệnh / mẫu','Còn thiếu phần','Lý do lỗi','Cập nhật'].map(label => (
+              {['Người bệnh / lượt','Tình trạng từng phần','Lỗi cần xem','Cập nhật'].map(label => (
                 <th key={label} style={{ textAlign: 'left', padding: '8px 10px', color: C.text3, whiteSpace: 'nowrap', fontWeight: 700, borderBottom: `1px solid ${C.border2}` }}>{label}</th>
               ))}
             </tr>
@@ -106,12 +106,37 @@ function ResearchMonitorTable({ rows = [], max = 80, filter = 'need', query = ''
               <tr key={row.key || `${row.sample}_${idx}`} style={{ borderBottom: `1px solid ${C.border2}` }}>
                 <td style={{ padding: '8px 10px', minWidth: 210 }}>
                   <div style={{ color: C.text, fontWeight: 700, fontSize: FS.xs }}>{text(row.patient_name) || '—'}</div>
-                  <div style={{ marginTop: 2, color: C.text3, fontSize: FS.xs }}>
-                    BN {text(row.patient_code) || '—'} · NC {text(row.sample) || '—'}
+                  <div style={{ marginTop: 2, color: C.text2, fontSize: FS.xs }}>
+                    <b>Mã BN:</b> {text(row.patient_code) || '—'}
                   </div>
+                  {text(row.research_code || row.sample) && (
+                    <div style={{ marginTop: 2, color: C.text3, fontSize: FS.xs }}>
+                      <b>Mã NC (mã lượt):</b> {text(row.research_code || row.sample)}
+                    </div>
+                  )}
                 </td>
-                <td style={{ padding: '8px 10px', minWidth: 200, color: row.missing ? C.amber : C.green, fontWeight: 600 }}>
-                  {text(row.missing) || 'Đủ'}
+                <td style={{ padding: '7px 10px', minWidth: 340 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(90px, 1fr))', gap: 5 }}>
+                    {[
+                      ['XN & CĐHA', row.xn_cdha],
+                      ['Hồ sơ nền', row.profile],
+                      ['Ra viện', row.discharge],
+                      ['Phẫu thuật', row.surgery],
+                      ['Y lệnh', row.order_history],
+                    ].map(([label, value]) => {
+                      const status = text(value) || 'Chưa lấy';
+                      const tone = status === 'Đã lấy' || status === 'EMR không có' ? 'ok'
+                        : status === 'Đang lấy' || status === 'Một phần' || status === 'Cần xem' ? 'warn'
+                          : status === 'Lỗi' ? 'danger' : 'neutral';
+                      const color = tone === 'ok' ? C.green : tone === 'danger' ? C.red : tone === 'warn' ? C.amber : C.text3;
+                      const bg = tone === 'ok' ? C.greenBg : tone === 'danger' ? C.redBg : tone === 'warn' ? C.amberBg : C.surface2;
+                      return <span key={label} style={{ display: 'grid', gap: 2, padding: '4px 6px', border: `1px solid ${C.border2}`, borderRadius: 5, background: bg, minWidth: 0 }}>
+                        <b style={{ fontSize: FS.xs, color: C.text2 }}>{label}</b>
+                        <span style={{ fontSize: FS.xs, color, fontWeight: 700 }}>{status}</span>
+                      </span>;
+                    })}
+                  </div>
+                  {text(row.missing) && <div style={{ marginTop: 5, fontSize: FS.xs, color: C.amber }}><b>Còn thiếu:</b> {text(row.missing)}</div>}
                 </td>
                 <td title={text(row.last_error)} style={{ padding: '8px 10px', minWidth: 190, maxWidth: 360 }}>
                   <div style={{ color: row.last_error ? C.red : C.text3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -125,7 +150,8 @@ function ResearchMonitorTable({ rows = [], max = 80, filter = 'need', query = ''
         </table>
       </div>
       <div style={{ padding: '7px 10px', fontSize: FS.xs, color: C.text3, borderTop: `1px solid ${C.border2}` }}>
-        {compactNumber(shown.length)}/{compactNumber(filtered.length)} dòng
+        Mỗi dòng là một lượt/mẫu thu thập. Mã BN nhận diện người bệnh; Mã NC chỉ là mã lượt trong nghiên cứu.
+        {' · '}{compactNumber(shown.length)}/{compactNumber(filtered.length)} lượt
       </div>
     </div>
   );
