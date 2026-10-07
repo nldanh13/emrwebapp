@@ -306,11 +306,16 @@ function dropSharedResearchCodes(rows = []) {
 // cùng Mã BN không thể chồng thời gian: các dòng khoa (Cấp cứu → CTCH → PHCN…) mang giờ vào khoa
 // riêng nhưng cùng ngày ra viện là cùng một đợt. Gộp các dòng có khoảng vào–ra chồng nhau; lấy giờ
 // vào sớm nhất và ngày ra muộn nhất. Dòng chưa có ngày ra không tự nuốt dòng sau (không đủ bằng chứng).
+const STAY_GAP_MS = 86400000;
 const DISCHARGE_FIELDS = ['Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien', 'discharge_date'];
 
+// Cùng thứ tự cột với bước ghép (buildContextMap): "Ngày vào viện" trước "T/G vào". Khác thứ tự thì
+// bước gộp thấy hai đợt rời nhau trong khi bước ghép thấy chúng chồng nhau → kết quả "mơ hồ".
+const STAY_ADMISSION_FIELDS = ['Ngày vào viện', 'Ngay vao vien', 'Ngày nhập viện', 'Ngay nhap vien', 'T/G vào', 'TG vao', 'admission_date'];
+
 function stayBounds(row) {
-  const startRaw = rowAdmissionTime(row);
-  const endRaw = rowDischargeTime(row);
+  const startRaw = firstNonEmpty(row, STAY_ADMISSION_FIELDS);
+  const endRaw = firstNonEmpty(row, DISCHARGE_FIELDS);
   const start = parseAnyDate(startRaw);
   if (!start) return null;
   const end = parseAnyDate(endRaw);
@@ -389,8 +394,16 @@ function extendStaysWithEvidence(rows, evidenceRows = []) {
     const hits = (byCode.get(w.code) || []).filter(item => {
       const end = item.bounds.end == null ? item.bounds.start : item.bounds.end;
       return item.bounds.start <= w.end && w.start <= end;
-    });
-    if (hits.length !== 1) continue;
+    }).sort((a, b) => a.bounds.start - b.bounds.start);
+    if (!hits.length) continue;
+    if (hits.length > 1) {
+      // Khoảng của cả lần nằm viện phủ nhiều đợt liền nhau (cách nhau ≤ 1 ngày: chuyển khoa): là một lần
+      // nằm viện → nối các đợt đó (đợt đầu kéo tới cuối khoảng; mergeOverlappingStays gộp phần còn lại).
+      // Các đợt cách nhau xa hơn thì không đoán.
+      const contiguous = hits.every((item, i) => i === 0
+        || (hits[i - 1].bounds.end != null && item.bounds.start - hits[i - 1].bounds.end <= STAY_GAP_MS));
+      if (!contiguous) continue;
+    }
     const item = hits[0];
     if (item.bounds.end != null && item.bounds.end >= w.end) continue;
     const next = { ...item.row };

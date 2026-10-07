@@ -30,7 +30,9 @@
 // v27: kết quả trước nhập viện / sau ra viện (≤ 30 ngày) gắn kèm đợt gần nhất, đánh dấu
 //      encounter_match_method = pre_admission / post_discharge, is_within_encounter = 0.
 // v28: chỉ gắn kết quả trước nhập viện tối đa 3 ngày; sau ra viện không gắn vào đợt.
-const NORMALIZED_SCHEMA_VERSION = 28;
+// v29: gộp đợt đọc mốc vào giống bước ghép ("Ngày vào viện" trước "T/G vào"); khoảng nằm viện trên
+//      dòng y lệnh phủ các đợt liền nhau (cách ≤ 1 ngày) thì nối thành một lần nằm viện.
+const NORMALIZED_SCHEMA_VERSION = 29;
 
 const NORMALIZED_COLUMNS = {
   patients: [
