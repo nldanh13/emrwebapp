@@ -1,6 +1,6 @@
 # Từ điển dữ liệu Kho nghiên cứu
 
-> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-07.1`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
+> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-07.2`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
 >
 > Mô tả được viết từ code chuẩn hóa hiện tại. Cột "Dùng" là đề xuất kỹ thuật; phạm vi dùng thực tế phải theo đề cương được hội đồng đạo đức/bệnh viện phê duyệt.
 
@@ -338,13 +338,30 @@
 | `encounter_match_reason` | chuỗi | Lý do dòng chưa được ghép chắc vào đợt. | Ví dụ encounter_match_outside_time, encounter_match_missing_event_time, encounter_match_identity_conflict, encounter_match_strong_key_not_found, encounter_match_strong_key_ambiguous, encounter_match_ambiguous, encounter_match_missing. | Dòng đã matched. | — | Được dùng |
 | `surgery_datetime` | ngày giờ | Thời điểm bắt đầu mổ. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `surgery_date` | ngày | Ngày mổ. |  |  | Gián tiếp | Cần đề cương duyệt |
+| `surgery_end_datetime` | ngày giờ | Thời điểm kết thúc mổ; nếu EMR chỉ có giờ thì ghép với ngày bắt đầu của chính ca mổ. |  |  | Gián tiếp | Cần đề cương duyệt |
 | `surgery_name` | chuỗi | Tên phẫu thuật/dịch vụ. |  |  | — | Được dùng |
+| `service_object` | chuỗi | Đối tượng dịch vụ của ca phẫu thuật như EMR ghi. |  |  | — | Được dùng |
 | `surgery_method` | văn bản | Phương pháp phẫu thuật (nguyên văn). |  |  | Văn bản tự do | Cần đề cương duyệt |
 | `anesthesia_method` | chuỗi | Phương pháp vô cảm. |  |  | — | Được dùng |
 | `surgery_class` | chuỗi | Phân loại phẫu thuật như EMR ghi (đặc biệt, loại 1…). |  |  | — | Được dùng |
 | `status` | chuỗi | Trạng thái ca mổ. |  |  | — | Được dùng |
+| `icd9_code` | chuỗi | Mã ICD-9/thủ thuật được chọn trên form phẫu thuật. |  |  | — | Cần đề cương duyệt |
 | `preop_diagnosis` | văn bản | Chẩn đoán trước mổ. |  |  | Văn bản tự do | Cần đề cương duyệt |
+| `preop_icd10` | chuỗi | Mã/chẩn đoán ICD-10 trước mổ được chọn trên EMR. |  |  | — | Cần đề cương duyệt |
 | `postop_diagnosis` | văn bản | Chẩn đoán sau mổ. |  |  | Văn bản tự do | Cần đề cương duyệt |
+| `postop_icd10` | chuỗi | Mã/chẩn đoán ICD-10 sau mổ được chọn trên EMR. |  |  | — | Cần đề cương duyệt |
+| `procedure_description` | văn bản | Mô tả phương pháp phẫu thuật trên form. |  |  | Văn bản tự do | Cần đề cương duyệt |
+| `surgery_sequence` | văn bản | Trình tự phẫu thuật ghi trong trinhTuPhauThuatInput. |  |  | Văn bản tự do | Cần đề cương duyệt |
+| `primary_surgeon` | chuỗi | Phẫu thuật viên chính. |  |  | Nhân viên | Cần đề cương duyệt |
+| `primary_anesthesiologist` | chuỗi | Bác sĩ gây mê chính. |  |  | Nhân viên | Cần đề cương duyệt |
+| `assistant_surgeon_1` | chuỗi | Phụ mổ 1. |  |  | Nhân viên | Cần đề cương duyệt |
+| `assistant_surgeon_2` | chuỗi | Phụ mổ 2. |  |  | Nhân viên | Cần đề cương duyệt |
+| `scrub_nurse` | chuỗi | Điều dưỡng dụng cụ. |  |  | Nhân viên | Cần đề cương duyệt |
+| `anesthesia_technician` | chuỗi | Kỹ thuật viên phụ mê. |  |  | Nhân viên | Cần đề cương duyệt |
+| `disease_course` | văn bản | Diễn biến bệnh ghi trên form phẫu thuật. |  |  | Văn bản tự do | Cần đề cương duyệt |
+| `postop_instructions` | văn bản | Dặn dò sau phẫu thuật. |  |  | Văn bản tự do | Cần đề cương duyệt |
+| `postop_comorbidities` | văn bản | Bệnh kèm theo sau phẫu thuật; nhiều mục nối bằng dấu phân cách. |  |  | Văn bản tự do | Cần đề cương duyệt |
+| `completed_by` | chuỗi | Thông tin người hoàn tất hồ sơ phẫu thuật như EMR hiển thị. |  |  | Nhân viên | Cần đề cương duyệt |
 | `operating_room` | chuỗi | Phòng mổ. |  |  | Gián tiếp | Được dùng |
 | `days_from_admission` | số nguyên | Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện). | Đơn vị: ngày; Có thể âm (trước ngày vào viện). | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
