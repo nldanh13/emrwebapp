@@ -223,7 +223,7 @@ function buildVirtualVariablesForTable(def, rows, extra = {}) {
           operators: ['=', '!=', '>', '>=', '<', '<=', 'between', 'not_empty'],
           virtual_kind: 'imaging_t_score',
           source_filter: { modality: b.modality },
-          source_note: 'Tách số đứng sau nhãn T-score trong mô tả/kết luận DXA/DEXA; Z-score không được dùng. Nếu một lượt có nhiều dòng DXA, giá trị mặc định là trung bình các T-score trong lượt.',
+          source_note: 'Tách số đầu tiên sau nhãn T-score trong mỗi report DXA/DEXA; bỏ Z-score. Nếu một lượt có nhiều report, mặc định lấy trung bình các T-score đã tách. Cột kết quả CĐHA giữ nguyên report để đối chiếu.',
         });
       }
     }
