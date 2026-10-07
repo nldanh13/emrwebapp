@@ -14,6 +14,7 @@ const { writeCsv, readCsvTable } = require('../server/research/table_io');
 const { archiveRunsDir, ensureArchiveStore, cohortPath, studyMetaPath, runsDir } = require('../server/research/store_paths');
 const { importArchiveToStudy, normalizeRunOutputs } = require('../server/research/normalize');
 const { seedStudyRunFromArchive } = require('../server/research/study_from_archive');
+const { normalizeResearchSourceRows } = require('../server/research/research_source');
 const { readStudy } = require('../server/research/run_registry');
 
 let passed = 0;
@@ -67,6 +68,18 @@ const selection = {
 fs.writeFileSync(studyMetaPath(STUDY), JSON.stringify({ id: STUDY, name: 'Zol', variable_selection: selection, analysis_config: { variable_selection: selection } }));
 
 (async () => {
+  await test('kho thu thập không tự cấp Mã NC; cohort nghiên cứu mới giữ mã được cấp riêng', async () => {
+    const sourceRows = normalizeResearchSourceRows([
+      { 'Mã BN': '1001', 'Ngày vào viện': '2026-01-01', 'Ngày ra viện': '2026-01-05' },
+    ], { sourceRunId: 'archive_run' });
+    assert.strictEqual(sourceRows.length, 1);
+    assert.strictEqual(sourceRows[0]['Mã NC'], '', 'dữ liệu nguồn chỉ có Mã BN/Research key');
+    const studyRows = normalizeResearchSourceRows([
+      { 'Mã BN': '1001', 'Mã NC': 'NC0001', 'Ngày vào viện': '2026-01-01' },
+    ], { sourceRunId: 'study_run' });
+    assert.strictEqual(studyRows[0]['Mã NC'], 'NC0001', 'giữ mã đã được cấp cho cohort nghiên cứu');
+  });
+
   await test('lưu nghiên cứu rồi lấy dữ liệu từ kho: chỉ lượt đã chọn, Mã NC theo nghiên cứu', async () => {
     const imp = importArchiveToStudy(readStudy(STUDY), { variable_selection: selection });
     assert.strictEqual(imp.count, 1);
