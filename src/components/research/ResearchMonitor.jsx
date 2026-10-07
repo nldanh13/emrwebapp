@@ -6,7 +6,7 @@ import { statusIsDone } from './researchStatusModel.js';
 import { StatBadge, SmallRowsTable, inp } from './researchUi.jsx';
 import { useState } from 'react';
 import { buildDataHealth, issueLabel } from './dataHealth.js';
-import { encounterPeriod, countOutsideStay } from './encounterPeriod.js';
+import { encounterPeriod, countOutsideStay, medicationRouteLabel } from './encounterPeriod.js';
 import { SkeletonBlock, SkeletonLines } from '../Skeleton.jsx';
 import { Spinner, Btn } from '../shared.jsx';
 
@@ -181,7 +181,7 @@ function EncounterHistoryCard({ enc, index }) {
           </div>
           <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Xét nghiệm ({enc.counts?.labs || 0})</summary><SmallRowsTable max={120} rows={enc.labs || []} columns={[{key:'encounter_match_method',label:'Giai đoạn',render:periodCell}, {key:'lab_datetime',label:'Thời gian'}, {key:'test_name_raw',label:'Tên XN'}, {key:'result_raw',label:'KQ'}, {key:'unit',label:'Đơn vị'}]} /></details>
           <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>CĐHA ({enc.counts?.imaging || 0})</summary><SmallRowsTable max={80} rows={enc.imaging || []} columns={[{key:'encounter_match_method',label:'Giai đoạn',render:periodCell}, {key:'ordered_at',label:'Thời gian'}, {key:'service_name_raw',label:'Dịch vụ'}, {key:'conclusion_text',label:'Kết luận', long:true}]} /></details>
-          <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Thuốc / y lệnh ({enc.counts?.medications || 0})</summary><SmallRowsTable max={120} rows={enc.medications || []} columns={[{key:'encounter_match_method',label:'Giai đoạn',render:periodCell}, {key:'order_datetime',label:'Thời gian'}, {key:'drug_name_raw',label:'Thuốc'}, {key:'dose_raw',label:'Liều'}, {key:'route_raw',label:'Đường'}]} /></details>
+          <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Thuốc / y lệnh ({enc.counts?.medications || 0})</summary><SmallRowsTable max={120} rows={enc.medications || []} columns={[{key:'encounter_match_method',label:'Giai đoạn',render:periodCell}, {key:'order_datetime',label:'Thời gian'}, {key:'drug_name_raw',label:'Thuốc'}, {key:'dose_raw',label:'Liều'}, {key:'route_norm',label:'Đường',render:row => medicationRouteLabel(row) || '—'}]} /></details>
           <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Phẫu thuật / thủ thuật ({enc.counts?.surgeries || 0})</summary><SmallRowsTable max={60} rows={enc.surgeries || []} columns={[{key:'encounter_match_method',label:'Giai đoạn',render:periodCell}, {key:'surgery_datetime',label:'Thời gian'}, {key:'surgery_name',label:'Tên PT/TT'}, {key:'surgery_method',label:'Phương pháp'}, {key:'anesthesia_method',label:'Vô cảm'}]} /></details>
         </div>
       )}

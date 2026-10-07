@@ -505,6 +505,20 @@ test('Ngày cuối khoảng quét không được dùng làm ngày ra viện (ca
   assert.ok(surg.every(r => r.encounter_id !== enc[0].encounter_id || r.is_within_encounter !== '1'), 'ca mổ 24/09 không được tính là trong đợt 09/07');
 });
 
+test('Dòng phẫu thuật chỉ có ngày, không tên/phương pháp (ca thật: "15/07 00:00 · —") không vào bảng phẫu thuật', () => {
+  const runDir = newRunDir();
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), ['T/G vào', 'Mã BN', 'Họ tên', 'Ngày ra viện'], [
+    { 'T/G vào': '09:19 09/07/2026', 'Mã BN': '905', 'Họ tên': 'BN GIA LAP Q', 'Ngày ra viện': '18/07/2026' },
+  ]);
+  writeCsv(path.join(runDir, 'hchanh_surgery.csv'), ['Mã BN', 'Ngày phẫu thuật', 'Tên phẫu thuật', 'Phương pháp phẫu thuật', 'Nguồn'], [
+    { 'Mã BN': '905', 'Ngày phẫu thuật': '15/07/2026', 'Tên phẫu thuật': '', 'Phương pháp phẫu thuật': '', 'Nguồn': 'hchanh_surgery' },
+    { 'Mã BN': '905', 'Ngày phẫu thuật': '15/07/2026', 'Tên phẫu thuật': 'Cắt u lành phần mềm', 'Phương pháp phẫu thuật': '', 'Nguồn': 'hchanh_surgery' },
+  ]);
+  R.normalizeRunOutputs(runDir, { sourceRunId: 'r', force: true });
+  const surg = readCsvTable(path.join(runDir, 'surgery_results.csv'), 100).rows.filter(r => r.patient_code === '905');
+  assert.deepStrictEqual(surg.map(r => r.surgery_name), ['Cắt u lành phần mềm']);
+});
+
 test('Chỉ Mã BN: nhiều dòng nguồn trong cùng khoảng EMR gộp 1 đợt và không nhân bản y lệnh reuse', () => {
   const runDir = newRunDir();
   const cols = ['T/G vào', 'Mã BN', 'Họ tên'];

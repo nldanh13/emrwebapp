@@ -92,8 +92,9 @@ function classifyOrderLine(line) {
 }
 
 function parseStrength(text) {
-  const m = cleanText(text).match(/\b(\d+(?:[.,]\d+)?)\s*(mg|mcg|g|ml|iu|ui|đv|dv)\b/i);
-  return m ? `${m[1].replace(',', '.')} ${m[2]}` : '';
+  // Thuốc phối hợp ghi "25/5 mg" (hai hoạt chất): giữ cả hai số, không chỉ lấy "5 mg".
+  const m = cleanText(text).match(/(?<![\d.,/])(\d+(?:[.,]\d+)?(?:\s*\/\s*\d+(?:[.,]\d+)?)*)\s*(mg|mcg|g|ml|iu|ui|đv|dv)(?![\p{L}\d])/iu);
+  return m ? `${m[1].replace(/\s+/g, '').replace(/,/g, '.')} ${m[2]}` : '';
 }
 
 function parseTimesPerDay(text) {
@@ -126,7 +127,8 @@ function stripMedicationPrefix(line, action) {
 function parseDrugName(line, action = 'order') {
   const text = stripMedicationPrefix(line, action);
   // Cắt trước thông tin liều/số lượng/tần suất/đường dùng. Không cố đoán nếu chỉ là câu tham chiếu.
-  const cut = text.search(/\s+(?=\d+(?:[.,]\d+)?\s*(?:mg|mcg|g|ml|iu|ui|đv|dv)\b|\d+\s*(?:v|vien|ong|chai|lo|goi)\b|x\s*\d+\b|\((?:u|t|ttm|tdt|tdd)\)|\b(?:uong|tiem|truyen|ttm|tdt|tdd)\b)/i);
+  // Nhận cả chữ có dấu (viên, ống, uống, tiêm, truyền) và hàm lượng phối hợp "25/5 mg".
+  const cut = text.search(/\s+(?=\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)*\s*(?:mg|mcg|g|ml|iu|ui|đv|dv)(?![\p{L}\d])|\d+\s*(?:v|viên|vien|ống|ong|chai|lọ|lo|gói|goi)(?![\p{L}\d])|x\s*\d+(?!\d)|\((?:u|t|ttm|tdt|tdd)\)|(?:uống|uong|tiêm|tiem|truyền|truyen|ttm|tdt|tdd)(?![\p{L}\d]))/iu);
   const candidate = (cut >= 0 ? text.slice(0, cut) : text).replace(/[,:;\-]+$/g, '').trim();
   if (!candidate || /^(?:y lenh|thuoc|khang sinh)$/i.test(comparableText(candidate))) return '';
   return candidate.slice(0, 180);

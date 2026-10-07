@@ -14,3 +14,10 @@ export function countOutsideStay(enc) {
   return ['labs', 'imaging', 'medications', 'surgeries']
     .reduce((sum, kind) => sum + (enc?.[kind] || []).filter(r => encounterPeriod(r).outside).length, 0);
 }
+
+// Đường dùng hiển thị: dùng giá trị đã chuẩn hóa ("uống", "truyền tĩnh mạch") thay vì mã gốc "(u)".
+export function medicationRouteLabel(row) {
+  const norm = String(row?.route_norm || '').trim();
+  if (norm) return norm.replace(/_/g, ' ');
+  return String(row?.route_raw || '').trim();
+}

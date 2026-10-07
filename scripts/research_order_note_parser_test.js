@@ -23,6 +23,17 @@ function test(name, fn) {
   }
 }
 
+test('thuốc phối hợp "25/5 mg": giữ đủ hàm lượng, tên thuốc không dính "01 viên uống 8h" (chữ có dấu)', () => {
+  // Ca thật (kiểm tra ngẫu nhiên): "Mactapro 25/5 mg 01 viên uống 8h" ra liều "5 mg" và tên thuốc dính cả câu.
+  const med = parser.parseMedicationLine('Mactapro 25/5 mg 01 viên uống 8h');
+  assert.strictEqual(med.strength_raw, '25/5 mg');
+  assert.strictEqual(med.drug_name_raw, 'Mactapro');
+  assert.strictEqual(med.route_norm, 'uống');
+  const single = parser.parseMedicationLine('(TT) Eperison 50mg 01 viên x3 (u) 8h-14h-20h');
+  assert.strictEqual(single.strength_raw, '50 mg');
+  assert.strictEqual(single.drug_name_raw, 'Eperison');
+});
+
 test('dedupe: diễn biến copy sang Tên y lệnh không còn là order độc lập', () => {
   const text = 'Bệnh nhân tỉnh\nTiếp xúc tốt\nVết mổ khô';
   const result = parser.dedupeOrderFields({

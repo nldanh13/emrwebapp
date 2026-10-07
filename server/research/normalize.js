@@ -597,7 +597,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     base.row_hash = stableHash(base);
     base.surgery_id = `surg_${base.row_hash || stableHash([idx, base.patient_code])}`;
     return base;
-  }).filter(r => r.patient_code && (r.surgery_date || r.surgery_name || r.surgery_method));
+    // Dòng chỉ có ngày, không tên/phương pháp (dấu mốc trống từ EMR) không phải một ca phẫu thuật.
+  }).filter(r => r.patient_code && (r.surgery_name || r.surgery_method));
   surgeryResults = dedupeSurgeryRows(surgeryResults);
 
   // Chỉ index theo encounter đã ghép chắc chắn. Không dùng patient_code làm fallback:
