@@ -176,7 +176,11 @@ function buildVirtualVariablesForTable(def, rows, extra = {}) {
         virtual_kind: 'lab_test',
         source_filter: { test_name_norm: b.norm, unit: b.unit || '' },
         source_note: 'Biến dẫn xuất từ lab_results: lọc theo tên xét nghiệm rồi dùng result_num/result_raw.',
-        if (def.key === 'imaging_results') {
+      });
+    }
+  }
+
+  if (def.key === 'imaging_results') {
     const byModality = new Map();
     for (const row of rows) {
       const modality = getCell(row, ['modality', 'Loại']) || 'Khác';
