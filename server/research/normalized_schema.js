@@ -23,7 +23,9 @@
 // v23: thêm sinh hiệu lúc vào viện từ Phiếu vào viện cho Kho nghiên cứu.
 // v24: một đợt tính từ lúc nhận Cấp cứu (24 giờ trước giờ vào khoa khi chưa có giờ vào viện)
 //      đến hết ngày ra viện (ngày ra chỉ có ngày không còn bị hiểu là 00:00).
-const NORMALIZED_SCHEMA_VERSION = 24;
+// v25: các dòng khoa có khoảng vào–ra chồng nhau là một đợt; Mã NC cũ dùng chung cho nhiều Mã BN
+//      trong file hành chánh bị bỏ; 24 giờ trước giờ vào áp cho mọi đợt.
+const NORMALIZED_SCHEMA_VERSION = 25;
 
 const NORMALIZED_COLUMNS = {
   patients: [

@@ -142,3 +142,47 @@ bad.slice(0, 10).forEach(([rc, patients], i) => {
     if (pcs.size) console.log(`    ${file}: mã này có ở ${pcs.size} Mã BN`);
   }
 });
+
+// ── Kiểm tra giả thuyết (chỉ đếm) ───────────────────────────────────────────
+const mask = v => text(v).replace(/\d/g, 'd').slice(0, 24) || '(trống)';
+function insideOwn(pc, ms) { return (stays.get(pc) || []).some(s => ms >= s.start && ms <= s.end); }
+
+console.log('\n== Phẫu thuật: định dạng ngày thô và thử đảo ngày/tháng ==');
+const surgeryRaw = rows(dir, 'hchanh_surgery.csv') || [];
+const masks = {}; const sources = {};
+let swapFits = 0; let asIsFits = 0; let checked = 0;
+for (const r of surgeryRaw) {
+  const raw = pick(r, ['Ngày phẫu thuật', 'Ngay phau thuat', 'Thời gian']);
+  bump(masks, mask(raw));
+  bump(sources, pick(r, ['Nguồn', 'source']) || '(không ghi)');
+  const m = raw.match(/(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  const pc = pick(r, ['Mã BN', 'patient_code']);
+  if (!m || !pc) continue;
+  checked += 1;
+  const asIs = parseAnyDate(`${m[1]}/${m[2]}/${m[3]}`);
+  const swapped = Number(m[2]) <= 12 && Number(m[1]) <= 12 ? parseAnyDate(`${m[2]}/${m[1]}/${m[3]}`) : null;
+  if (asIs && insideOwn(pc, asIs.getTime() + 12 * 3600000)) asIsFits += 1;
+  else if (swapped && insideOwn(pc, swapped.getTime() + 12 * 3600000)) swapFits += 1;
+}
+print('định dạng (d = chữ số)', masks);
+print('nguồn dòng', sources);
+console.log(`  có ngày: ${checked} · đọc ngày/tháng rơi vào đợt: ${asIsFits} · chỉ khi đảo tháng/ngày mới rơi vào đợt: ${swapFits}`);
+
+console.log('\n== Y lệnh: so với khoảng vào–ra ghi trên chính dòng y lệnh ==');
+const orderRaw = rows(dir, 'hchanh_order_history.csv') || [];
+const orderCheck = {};
+for (const r of orderRaw) {
+  const at = parseAnyDate(pick(r, ['TG y lệnh', 'Thời gian', 'Ngày']));
+  const pc = pick(r, ['Mã BN', 'patient_code']);
+  if (!at || !pc) continue;
+  const t = at.getTime();
+  if (insideOwn(pc, t)) { bump(orderCheck, 'trong một đợt của kho'); continue; }
+  const from = parseAnyDate(pick(r, ['Ngày vào viện']));
+  const toRaw = pick(r, ['Ngày ra viện']);
+  const to = parseAnyDate(toRaw);
+  const toMs = to ? to.getTime() + (/\d{1,2}:\d{2}/.test(toRaw) ? 0 : DAY - 1) : null;
+  if (from && toMs != null && t >= from.getTime() - DAY && t <= toMs) bump(orderCheck, 'ngoài đợt của kho nhưng trong khoảng vào–ra ghi trên dòng (đợt của kho bị ngắn)');
+  else if (from && toMs == null && t >= from.getTime()) bump(orderCheck, 'ngoài đợt của kho, dòng không ghi ngày ra');
+  else bump(orderCheck, 'ngoài cả khoảng ghi trên dòng');
+}
+print('dòng y lệnh thô', orderCheck);
