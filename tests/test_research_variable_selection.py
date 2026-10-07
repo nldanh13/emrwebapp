@@ -75,13 +75,13 @@ def test_normalize_projection_builds_selected_analysis_dataset():
           ],
         });
         assert.strictEqual(built.rows.length, 2);
-        assert(built.columns.includes('var_analysis_ready_age'));
-        assert(built.columns.includes('var_lab_results_hb'));
+        assert(built.columns.includes('tuoi'));
+        assert(built.columns.includes('hb'));
         assert(!built.columns.includes('surgery_date'));
         assert(!built.columns.includes('time_to_surgery_hours'));
-        assert.strictEqual(built.rows[0].var_analysis_ready_age, '68');
-        assert.strictEqual(built.rows[0].var_lab_results_hb, '12.1; 11.8');
-        assert.strictEqual(built.rows[1].var_lab_results_hb, '');
+        assert.strictEqual(built.rows[0].tuoi, '68');
+        assert.strictEqual(built.rows[0].hb, '12.1; 11.8');
+        assert.strictEqual(built.rows[1].hb, '');
         console.log(JSON.stringify({ ok: true, columns: built.columns.length }));
         """
     )
@@ -143,7 +143,7 @@ def test_last_aggregation_ignores_undated_rows_when_dated_rows_exist():
             { patient_code: 'P1', research_code: 'NC1', lab_datetime: '2026-06-02 08:00', result_num: '12.0' },
           ],
         });
-        assert.strictEqual(built.rows[0].var_lab_results_hb, '12.0');
+        assert.strictEqual(built.rows[0].hb_cuoi, '12.0');
         console.log(JSON.stringify({ ok: true }));
         """
     )
