@@ -26,22 +26,39 @@ function relatedRowsOld(list, identity) {
   const pc = String(identity.patient_code || '').trim(); const rc = String(identity.research_code || '').trim(); const eid = String(identity.encounter_id || '').trim();
   return list.filter(row => {
     const rowEid = vs.getCell(row, ['encounter_id', 'visit_id']); const rowRc = vs.researchCode(row); const rowPc = vs.patientCode(row);
-    if (eid) {
-      if (rowEid) return rowEid === eid;
-      if (rc && rowRc) return rowRc === rc;
+    if (eid && rowEid) return rowEid === eid;
+    if (rowEid) return false;
+    if (pc) {
       if (rowPc !== pc) return false;
       const ev = eventTime(row); return Boolean(ev && timeInsideEncounter(ev, identity.admission_date, identity.discharge_date));
     }
-    if (rc) {
-      if (rowRc) return rowRc === rc;
-      if (rowEid) return false;
-      if (rowPc !== pc) return false;
+    if (rc && rowRc === rc) {
+      const candidates = list.filter(item => vs.researchCode(item) === rc);
+      const patientCodes = new Set(candidates.map(vs.patientCode).filter(Boolean));
+      if (patientCodes.size > 1) return false;
       const ev = eventTime(row); return Boolean(ev && timeInsideEncounter(ev, identity.admission_date, identity.discharge_date));
     }
-    return Boolean(pc && rowPc === pc && !rowEid && !rowRc);
+    return false;
+  }).filter(row => {
+    const status = String(row?.encounter_match_status || '').trim();
+    if (status && status !== 'matched') return false;
+    return !Object.prototype.hasOwnProperty.call(row || {}, 'is_within_encounter') || String(row.is_within_encounter || '').trim() === '1';
   });
 }
 
+test('Mã BN và khoảng ngày được ưu tiên; Mã NC trùng không kéo dữ liệu từ người bệnh khác', () => {
+  const rows = [
+    { patient_code: 'BN1', research_code: 'NC-SHARED', encounter_id: 'e1', lab_datetime: '2026-03-03', test_name_norm: 'wbc' },
+    { patient_code: 'BN2', research_code: 'NC-SHARED', encounter_id: '', lab_datetime: '2026-03-03', test_name_norm: 'hb' },
+    { patient_code: 'BN1', research_code: 'NC-OLD', encounter_id: '', lab_datetime: '2025-01-03', test_name_norm: 'crp' },
+    { patient_code: 'BN1', research_code: '', encounter_id: '', lab_datetime: '2026-03-04', test_name_norm: 'plt' },
+  ];
+  const identity = { patient_code: 'BN1', research_code: 'NC-SHARED', encounter_id: 'e1', admission_date: '2026-03-01', discharge_date: '2026-03-10' };
+  assert.deepStrictEqual(vs.relatedRows(rows, identity), [rows[0], rows[3]]);
+  const noEncounter = { ...identity, encounter_id: '' };
+  assert.deepStrictEqual(vs.relatedRows(rows, noEncounter), [rows[2], rows[3]], 'không ghép lượt khác chỉ vì trùng Mã NC');
+});
+ 
 let seed = 42;
 const rand = n => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
 const pick = arr => arr[rand(arr.length)];
