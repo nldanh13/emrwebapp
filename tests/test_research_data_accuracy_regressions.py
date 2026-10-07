@@ -191,7 +191,12 @@ def test_analysis_ready_uses_long_form_detail_tables_instead_of_large_json_cells
 
 def test_order_history_parser_or_window_change_forces_one_time_refetch_of_old_progress():
     src = (ROOT / "server" / "research" / "hchanh_fetch.js").read_text(encoding="utf-8")
-    assert "const VERIFIED_FETCH_WINDOW_VERSION = 4" in src
+    assert "const VERIFIED_FETCH_WINDOW_VERSION = ORDER_HISTORY_FETCH_WINDOW_VERSION" in src
+    versions = _read("server/research/fetch_versions.js")
+    assert "const ORDER_HISTORY_FETCH_WINDOW_VERSION = 4" in versions
+    collection = _read("server/research/collection.js")
+    assert "ORDER_HISTORY_FETCH_WINDOW_VERSION" in collection
+    assert "parser_migration" in collection
     assert "const windowFilterMigrationNeeded" in src
     assert "previousWindowVersion < VERIFIED_FETCH_WINDOW_VERSION" in src
     assert re.search(r"windowFilterMigrationNeeded\s*\|\|", src)
