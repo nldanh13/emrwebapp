@@ -79,14 +79,17 @@ function buildVerifiedStayIndex(profileRows = [], dischargeRows = []) {
     return bucket;
   };
 
-  // Profile là nguồn đáng tin cậy cho ngày vào thực tế mà worker đọc từ EMR.
+  // Profile có ngày vào và ngày ra đọc từ hồ sơ hành chánh gốc. Dùng ngày ra ở đây làm fallback
+  // khi trang ra viện chưa có ngày; dữ liệu ngày ra từ discharge vẫn được ưu tiên bên dưới.
   for (const row of profileRows || []) {
     const bucket = touch(row);
     if (!bucket) continue;
     const admission = rowAdmissionTime(row);
     if (admission) bucket.admission = admission;
+    const profileDischarge = rowDischargeTime(row);
+    if (profileDischarge && !bucket.discharge) bucket.discharge = profileDischarge;
   }
-  // Discharge là nguồn đáng tin cậy cho ngày ra thực tế mà worker đọc từ EMR.
+  // Discharge là nguồn ưu tiên cho ngày ra thực tế nếu worker đã đọc được.
   for (const row of dischargeRows || []) {
     const bucket = touch(row);
     if (!bucket) continue;
