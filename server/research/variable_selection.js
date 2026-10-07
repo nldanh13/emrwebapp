@@ -1,6 +1,6 @@
 'use strict';
 
-const { extractTScore } = require('./value_normalizers');
+const { extractTScoresBySite } = require('./value_normalizers');
 
 function stripMarks(value) {
   return String(value ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
@@ -362,8 +362,9 @@ function virtualVariableMatches(row, variable) {
     const hay = normalizeForFilter([getCell(row, ['test_name_norm', 'Tên XN chuẩn']), getCell(row, ['test_name_raw', 'Tên XN', 'Tên xét nghiệm'])].join(' '));
     return !needle || hay.includes(needle) || sourceFilterMatches(row, variable.source_filter || {});
   }
-  if (kind === 'imaging_t_score' || name === 'imaging_t_score') {
-    return Boolean(extractTScore(imagingReportValue(row)));
+  if (kind === 'imaging_t_score_site' || name.startsWith('imaging_t_score:')) {
+    const site = name.split(':').slice(1).join(':');
+    return extractTScoresBySite(imagingReportValue(row)).some(score => !site || score.site === site);
   }
   if (kind === 'imaging_modality' || name.startsWith('imaging_modality:') || name.startsWith('imaging:')) {
     const hay = normalizeForFilter(getCell(row, ['modality', 'Loại']));
@@ -603,7 +604,10 @@ function imagingReportValue(row) {
 
 function variableValue(variable, row) {
   const kind = String(variable?.virtual_kind || '');
-  if (kind === 'imaging_t_score' || variable?.name === 'imaging_t_score') return extractTScore(imagingReportValue(row));
+  if (kind === 'imaging_t_score_site' || String(variable?.name || '').startsWith('imaging_t_score:')) {
+    const site = String(variable?.name || '').split(':').slice(1).join(':');
+    return extractTScoresBySite(imagingReportValue(row)).find(score => score.site === site)?.value || '';
+  }
   if (kind === 'imaging_modality' || String(variable?.name || '').startsWith('imaging:')) return imagingReportValue(row);
   return getCell(row, variable.name)
     || getCell(row, ['result_num', 'result_raw', 'result_text', 'conclusion_text', 'drug_name_raw', 'surgery_method', 'surgery_name', 'modality', 'diagnosis_text']);
