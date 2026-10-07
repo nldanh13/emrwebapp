@@ -304,7 +304,7 @@ TABLES.surgery_results = {
   primary_key: ['surgery_id'],
   foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id', when: 'encounter_match_status = matched' }],
   sources: ['hchanh_surgery.csv (D/s phẫu thuật, tìm theo mốc PT trong lịch sử y lệnh)', 'lich_su_phau_thuat.csv / phau_thuat.csv (nếu có)'],
-  processing: 'Bỏ dòng không có ngày, tên và phương pháp; gộp các dòng trùng ca mổ.',
+  processing: 'Bỏ dòng không có cả tên phẫu thuật lẫn phương pháp; gộp các dòng trùng ca mổ.',
   inferred: false,
   quality: { required: ['surgery_id', 'patient_code'], unique: ['surgery_id'], checks: ['Trùng surgery_id: lỗi chặn.', 'Ghép đợt ambiguous/missing: cảnh báo.'], manual_review: ['surgery_date nằm ngoài khoảng đợt (is_within_encounter = 0).'] },
   columns: withCommon(['surgery_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'surgery_datetime', 'surgery_date', 'surgery_end_datetime', 'surgery_name', 'service_object', 'surgery_method', 'anesthesia_method', 'surgery_class', 'status', 'icd9_code', 'preop_diagnosis', 'preop_icd10', 'postop_diagnosis', 'postop_icd10', 'procedure_description', 'surgery_sequence', 'primary_surgeon', 'primary_anesthesiologist', 'assistant_surgeon_1', 'assistant_surgeon_2', 'scrub_nurse', 'anesthesia_technician', 'disease_course', 'postop_instructions', 'postop_comorbidities', 'completed_by', 'operating_room', 'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'surgery_time_source', 'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
