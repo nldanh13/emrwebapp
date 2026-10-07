@@ -192,6 +192,7 @@ module.exports = {
   parseNumeric,
   resultText,
   normalizeLabMeasurement,
+  extractTScore,
   normalizeFlag,
   modalityFromService,
   bodyRegionFromService,
