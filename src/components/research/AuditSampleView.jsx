@@ -8,6 +8,7 @@ import { Btn } from '../shared.jsx';
 import { SkeletonLines } from '../Skeleton.jsx';
 import { inp } from './researchUi.jsx';
 import { auditVerdictLabel, formatAccuracy, groupAuditItems, auditProgress } from './auditSampleModel.js';
+import { LiveAuditPanel } from './LiveAuditPanel.jsx';
 
 const VERDICT_STYLE = {
   dung: { color: C.green, bg: C.greenBg, border: C.greenBorder },
@@ -175,8 +176,9 @@ export function AuditSampleView() {
   const progress = audit ? auditProgress(audit) : null;
   return (
     <div style={{ padding: '10px 12px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div>
-        <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Kiểm tra ngẫu nhiên</div>
+      <LiveAuditPanel />
+      <div style={{ borderTop: `1px solid ${C.border2}`, paddingTop: 12 }}>
+        <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Kiểm tra bằng tay</div>
         <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 3 }}>
           Máy chọn ngẫu nhiên một đợt điều trị (ca đã kiểm không bị chọn lại). Mở EMR của người bệnh, đối chiếu từng mục rồi bấm
           {' '}<b>Đúng</b> / <b>Sai</b> / <b>Không chắc</b>. Mỗi lần bấm được lưu ngay; tỉ lệ đạt cộng dồn ở bảng bên dưới.

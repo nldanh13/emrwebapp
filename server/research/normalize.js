@@ -205,7 +205,7 @@ function resolveDayMonthOrder(raw, candidates = []) {
   return asSwapped && !asIs ? swapped : value;
 }
 
-function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, previousState = null } = {}) {
+function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, previousState = null, skipPatientDbOverlay = false } = {}) {
   const dir = path.resolve(runDir);
   ensureDir(dir);
   const runId = sourceRunId || path.basename(dir);
@@ -255,7 +255,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
 
   // Đợt 5 kho người bệnh: bổ sung / thay dữ liệu hành chánh từ kho chung (không sửa CSV thô).
   let khoOverlay = null;
-  try {
+  // skipPatientDbOverlay: bản lấy lại để đối chiếu phải là đúng EMR hôm nay, không lấy bù từ kho chung.
+  if (!skipPatientDbOverlay) try {
     const overlaid = overlayHchanhFromPatientDb(dir, sourceTable.rows.length ? sourceTable.rows : initialTable.rows, runId, {
       profile: hchanhProfileTable.rows || [], discharge: hchanhDischargeTable.rows || [],
       surgery: hchanhSurgeryTable.rows || [], order_history: hchanhOrderTable.rows || [],
@@ -437,7 +438,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   markNormalizeStage(dir, 3, 'Xét nghiệm và CĐHA');
   let labRaw = readCsvTable(path.join(dir, 'lich_su_xn.csv'), Number.MAX_SAFE_INTEGER).rows;
   let imagingRaw = readCsvTable(path.join(dir, 'lich_su_cdha.csv'), Number.MAX_SAFE_INTEGER).rows;
-  try {
+  if (!skipPatientDbOverlay) try {
     const results = overlayResultsFromPatientDb(dir, sourceTable.rows.length ? sourceTable.rows : initialTable.rows, runId, labRaw, imagingRaw);
     labRaw = results.labRaw;
     imagingRaw = results.imagingRaw;

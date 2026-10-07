@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { auditVerdictLabel, groupAuditItems, auditProgress, formatAccuracy } from './auditSampleModel.js';
+import { auditVerdictLabel, groupAuditItems, auditProgress, formatAccuracy, liveStatusLabel, liveIsActive, formatRate, liveDiffText } from './auditSampleModel.js';
 
 describe('auditSampleModel', () => {
   it('nhãn tiếng Việt cho kết quả kiểm', () => {
@@ -21,5 +21,15 @@ describe('auditSampleModel', () => {
   it('tỉ lệ đạt kèm khoảng tin cậy, chưa kiểm thì hiện gạch', () => {
     expect(formatAccuracy({ accuracy: 0.95, ci95: { low: 0.751, high: 0.999 } })).toBe('95,0% (75,1%–99,9%)');
     expect(formatAccuracy({ accuracy: null })).toBe('—');
+  });
+
+  it('đối chiếu EMR: nhãn trạng thái, đang chạy, tỉ lệ khớp, tóm tắt khác biệt', () => {
+    expect(liveStatusLabel('fetch_error')).toBe('Lấy lại từ EMR chưa trọn — không tính');
+    expect(liveIsActive({ status: 'running' })).toBe(true);
+    expect(liveIsActive({ status: 'done' })).toBe(false);
+    expect(formatRate(0.875)).toBe('87,5%');
+    expect(formatRate(null)).toBe('—');
+    expect(liveDiffText({ mismatched: 2, emr_only: 1, archive_only: 0 })).toBe('2 lệch · 1 kho thiếu');
+    expect(liveDiffText({})).toBe('Khớp hết');
   });
 });
