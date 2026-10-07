@@ -29,7 +29,8 @@
 //      kiểu tháng/ngày được đọc đúng.
 // v27: kết quả trước nhập viện / sau ra viện (≤ 30 ngày) gắn kèm đợt gần nhất, đánh dấu
 //      encounter_match_method = pre_admission / post_discharge, is_within_encounter = 0.
-const NORMALIZED_SCHEMA_VERSION = 27;
+// v28: chỉ gắn kết quả trước nhập viện tối đa 3 ngày; sau ra viện không gắn vào đợt.
+const NORMALIZED_SCHEMA_VERSION = 28;
 
 const NORMALIZED_COLUMNS = {
   patients: [

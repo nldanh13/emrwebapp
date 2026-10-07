@@ -125,9 +125,9 @@ function classifyEvent(kind, row, encounter) {
   // Kết quả làm ở Cấp cứu trước lúc vào khoa đã được ghép vào đợt (tối đa 24 giờ trước, có thể là
   // ngày hôm trước): không coi là "trước khi vào viện".
   const method = text(row?.encounter_match_method);
-  // Kết quả trước nhập viện / sau ra viện (≤ 30 ngày) chuẩn hóa đã gắn kèm đợt có chủ đích: hiện kèm
-  // nhãn giai đoạn, không loại.
-  if (method === 'pre_admission' || method === 'post_discharge') {
+  // Kết quả trước nhập viện (≤ 3 ngày) chuẩn hóa đã gắn kèm đợt có chủ đích: hiện kèm nhãn giai đoạn.
+  // Sau ra viện là hết đợt: không có ngoại lệ.
+  if (method === 'pre_admission') {
     return { status: 'verified', reasons: [method] };
   }
   const emergency = method === 'emergency_before_ward' && event && start && event === previousDayKey(start);

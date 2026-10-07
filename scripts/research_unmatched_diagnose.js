@@ -94,7 +94,7 @@ for (const [label, spec] of Object.entries(TABLES)) {
     bump(status, st);
     if (st === 'matched') {
       const m = text(r.encounter_match_method);
-      bump(period, m === 'pre_admission' ? 'trước nhập viện (≤ 30 ngày)' : m === 'post_discharge' ? 'sau ra viện (≤ 30 ngày)' : m === 'emergency_before_ward' ? 'Cấp cứu, trước vào khoa (≤ 24 giờ)' : 'trong đợt');
+      bump(period, m === 'pre_admission' ? 'trước nhập viện (≤ 3 ngày)' : m === 'emergency_before_ward' ? 'Cấp cứu, trước vào khoa (≤ 24 giờ)' : 'trong đợt');
     }
     if (st === 'matched') continue;
     const why = text(r.encounter_match_reason) || '(không ghi lý do)';

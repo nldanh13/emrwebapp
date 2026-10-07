@@ -197,27 +197,26 @@ function isoDateOrTime(value) {
 const HOSPITAL_ADMISSION_FIELDS = ['Ngày vào viện', 'Ngay vao vien', 'Ngày nhập viện', 'Ngay nhap vien'];
 const EMERGENCY_LOOKBACK_MS = 24 * 3600 * 1000;
 
-// Kết quả trước nhập viện / sau ra viện trong vòng 30 ngày (khám, XN ngoại trú trước mổ, tái khám) cũng
-// là quá trình điều trị của người bệnh: gắn vào đợt gần nhất nhưng đánh dấu riêng (encounter_match_method
-// = pre_admission / post_discharge) và is_within_encounter = 0, để không lẫn với dữ liệu trong đợt.
-const PERI_ENCOUNTER_MS = 30 * 86400000;
-const PERI_METHODS = new Set(['pre_admission', 'post_discharge']);
+// Kết quả làm ngay trước khi nhập viện (khám, XN trước nhập viện; tối đa 3 ngày trước giờ vào, sau
+// 24 giờ Cấp cứu) là một phần quá trình điều trị: gắn kèm đợt sau nó nhưng đánh dấu riêng
+// (encounter_match_method = pre_admission) và is_within_encounter = 0. Ra viện là kết thúc đợt: kết quả
+// sau ra viện không gắn vào đợt.
+const PRE_ADMISSION_MS = 3 * 86400000;
+const PERI_METHODS = new Set(['pre_admission']);
 
 function periEncounterGap(eventDate, ctx) {
   const event = parseAnyDate(eventDate);
   const admission = parseAnyDate(ctx?.admission_date);
   if (!event || !admission) return null;
   const t = event.getTime();
-  const start = admission.getTime() - EMERGENCY_LOOKBACK_MS;
-  if (t < start) return start - t <= PERI_ENCOUNTER_MS ? { method: 'pre_admission', gap: start - t } : null;
-  const discharge = parseAnyDate(ctx?.discharge_date);
-  if (!discharge) return null;
-  const end = discharge.getTime() + (hasPreciseClock(ctx.discharge_date) ? 0 : 86400000 - 1);
-  if (t > end) return t - end <= PERI_ENCOUNTER_MS ? { method: 'post_discharge', gap: t - end } : null;
+  const admittedAt = admission.getTime();
+  if (t < admittedAt - EMERGENCY_LOOKBACK_MS && admittedAt - t <= PRE_ADMISSION_MS) {
+    return { method: 'pre_admission', gap: admittedAt - t };
+  }
   return null;
 }
 
-// Đợt gần nhất (trước/sau) của kết quả nằm ngoài mọi đợt; hai đợt cách đều thì không đoán.
+// Đợt ngay sau kết quả nằm ngoài mọi đợt (trước nhập viện); hai đợt cách đều thì không đoán.
 function nearestPeriEncounter(eventDate, candidates = []) {
   if (candidates.some(ctx => eventInsideContext(eventDate, ctx, { emergency: true }))) return null;
   const options = candidates.map(ctx => ({ ctx, peri: periEncounterGap(eventDate, ctx) })).filter(x => x.peri)
