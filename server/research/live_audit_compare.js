@@ -32,6 +32,20 @@ function firstOf(row, keys) {
   for (const k of keys) if (text(row?.[k])) return text(row[k]);
   return '';
 }
+function sameOptional(a, b) {
+  const x = norm(a);
+  const y = norm(b);
+  return !x || !y || x === y;
+}
+function canonicalSurgeryName(value) {
+  return norm(value)
+    .replace(/^\s*\((?:pt|tt)\.?\s*\d+\)\s*/i, '')
+    .replace(/^\s*(?:pt|tt)\.?\s*\d+\s*[-:.]?\s*/i, '')
+    .trim();
+}
+function hasMinute(value) {
+  return /\d{1,2}:\d{2}/.test(text(value));
+}
 
 const SPECS = {
   labs: {
@@ -46,12 +60,22 @@ const SPECS = {
   },
   medications: {
     key: r => [at(firstOf(r, ['order_datetime', 'order_date'])), norm(r.drug_name_raw || r.drug_name_norm)],
-    value: r => [norm(r.dose_raw), norm(r.route_norm || r.route_raw)].filter(Boolean).join(' · '),
+    value: r => [norm(r.dose_raw), norm(r.route_norm || r.route_raw), norm(r.order_action)].filter(Boolean).join(' · '),
+    equalRows: (a, b) => sameOptional(a.dose_raw, b.dose_raw)
+      && sameOptional(a.route_norm || a.route_raw, b.route_norm || b.route_raw)
+      && sameOptional(a.order_action, b.order_action),
     label: r => `${firstOf(r, ['order_datetime', 'order_date']) || '—'} · ${text(r.drug_name_raw) || text(r.drug_name_norm) || '—'}`,
   },
   surgeries: {
-    key: r => [at(firstOf(r, ['surgery_date', 'surgery_datetime'])), norm(r.surgery_name)],
+    key: r => [isoDate(firstOf(r, ['surgery_date', 'surgery_datetime'])) || at(firstOf(r, ['surgery_date', 'surgery_datetime'])), canonicalSurgeryName(r.surgery_name)],
     value: r => [at(r.surgery_datetime), norm(r.surgery_method)].filter(Boolean).join(' · '),
+    equalRows: (a, b) => {
+      if (!sameOptional(canonicalSurgeryName(a.surgery_method), canonicalSurgeryName(b.surgery_method))) return false;
+      // Nếu một phía chỉ có ngày thì giờ là unknown, không phải khác biệt.
+      if (hasMinute(a.surgery_datetime) && hasMinute(b.surgery_datetime)
+        && at(a.surgery_datetime) !== at(b.surgery_datetime)) return false;
+      return true;
+    },
     label: r => `${firstOf(r, ['surgery_datetime', 'surgery_date']) || '—'} · ${text(r.surgery_name) || '—'}`,
   },
 };
@@ -73,24 +97,38 @@ function groupByKey(rows, spec) {
   for (const row of rows || []) {
     const key = JSON.stringify(spec.key(row));
     if (!map.has(key)) map.set(key, []);
-    map.get(key).push({ value: spec.value(row), label: spec.label(row) });
+    const item = { row, value: spec.value(row), label: spec.label(row) };
+    // Audit đo "sự thật lâm sàng" chứ không đo số bản sao do cùng một nguồn được
+    // nhập lặp. Hai dòng cùng key + cùng value chỉ tính một lần; raw_count vẫn giữ
+    // để truy lỗi nếu cần.
+    const bucket = map.get(key);
+    if (!bucket.some(x => x.value === item.value)) bucket.push(item);
   }
   return map;
+}
+function logicalCount(map) {
+  let n = 0;
+  for (const rows of map.values()) n += rows.length;
+  return n;
 }
 
 function compareRows(kind, archiveRows = [], emrRows = []) {
   const spec = SPECS[kind];
   const out = emptyResult(kind);
-  out.archive_count = archiveRows.length;
-  out.emr_count = emrRows.length;
+  out.archive_raw_count = archiveRows.length;
+  out.emr_raw_count = emrRows.length;
   const a = groupByKey(archiveRows, spec);
   const e = groupByKey(emrRows, spec);
+  out.archive_count = logicalCount(a);
+  out.emr_count = logicalCount(e);
   for (const key of new Set([...a.keys(), ...e.keys()])) {
     const left = (a.get(key) || []).slice();
     const right = (e.get(key) || []).slice();
-    // Cùng khóa, cùng giá trị: khớp (đếm theo số lần, dòng trùng thật trên EMR vẫn được tính đúng).
+    // Cùng khóa: với XN/CĐHA dùng exact value; thuốc/PT dùng so ngữ nghĩa bảo thủ.
     for (let i = left.length - 1; i >= 0; i -= 1) {
-      const j = right.findIndex(x => x.value === left[i].value);
+      const j = right.findIndex(x => spec.equalRows
+        ? spec.equalRows(left[i].row, x.row)
+        : x.value === left[i].value);
       if (j >= 0) {
         out.matched += 1;
         left.splice(i, 1);
