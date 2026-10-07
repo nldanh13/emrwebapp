@@ -615,7 +615,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       encounter_match_status: encounterMatchStatus(ctx),
       encounter_match_method: encounterMatchMethod(ctx),
       encounter_match_reason: ctx.needs_manual_review || '',
-      surgery_datetime: isoDateTime(dt),
+      // Ngày lấy từ danh sách phẫu thuật không có giờ thật: để trống giờ, không ghi 00:00.
+      surgery_datetime: surgeryTimeSource === 'surgery_list_date' ? '' : isoDateTime(dt),
       surgery_date: isoDate(dt),
       surgery_end_datetime: surgeryEndDatetime,
       surgery_name: firstNonEmpty(row, ['Tên phẫu thuật', 'Ten phau thuat', 'Dịch vụ phẫu thuật', 'Dich vu phau thuat', 'dich_vu_phau_thuat', 'noi_dung_phau_thuat']),
