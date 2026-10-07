@@ -76,7 +76,7 @@ export function CollectionWorkspace({
   archiveOptions, setArchiveOptions, studyOptions, setStudyOptions,
   runSimpleListScan, runSimpleDataCollection, runRefreshProvisional,
   operationSnapshot, lastUpdateSummary, statusLoading, loadProgressSnapshot, loadSummary,
-  openLog, toast, scopeRunning = null,
+  openLog, toast, scopeRunning = null, initialFilter = null,
 }) {
   const latestRun = archive?.latest_run || null;
   const listCount = Number(latestRun?.outputs?.initial_list || archive?.source_count || 0);
@@ -191,6 +191,7 @@ export function CollectionWorkspace({
           <StepHeader number={++step} title="Đánh giá dữ liệu" hint="Đủ chưa, chính xác chưa và việc cần làm. Tự cập nhật khi số liệu đổi." />
           <ResearchOperationDashboard
             screen={screen}
+            initialFilter={initialFilter}
             loading={screenQuery.refreshing}
             error={screenQuery.error}
             autoRunning={Boolean(scopeRunning)}

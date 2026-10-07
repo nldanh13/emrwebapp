@@ -135,6 +135,11 @@ function diagnosticFor(reason = '', detail = '') {
 
 function summarizeDiagnostics(exceptions = []) {
   const groups = new Map();
+  const stateFor = row => {
+    if (row.category === 'unmatched') return 'unmatched';
+    if (row.category === 'needs_review' || row.category === 'retry_exhausted') return 'waiting';
+    return 'error';
+  };
   for (const row of exceptions || []) {
     const diag = row.diagnostic_stage ? row : { ...row, ...diagnosticFor(row.reason, row.detail) };
     const key = `${diag.diagnostic_stage}|${diag.diagnostic_message}`;
@@ -144,13 +149,46 @@ function summarizeDiagnostics(exceptions = []) {
       message: diag.diagnostic_message,
       rows: 0,
       encounters: new Set(),
+      parts: new Map(),
+      states: new Set(),
+      samples: new Map(),
     });
     const g = groups.get(key);
     g.rows += 1;
     if (diag.key) g.encounters.add(diag.key);
+    g.states.add(stateFor(diag));
+    const part = String(diag.part || '').trim();
+    const partLabel = String(diag.part_label || PARTS.find(p => p.key === part)?.label || part || 'Khác');
+    if (part) {
+      if (!g.parts.has(part)) g.parts.set(part, { part, label: partLabel, rows: 0, encounters: new Set() });
+      const p = g.parts.get(part);
+      p.rows += 1;
+      if (diag.key) p.encounters.add(diag.key);
+    }
+    const sampleKey = String(diag.key || diag.research_code || '').trim();
+    if (sampleKey && g.samples.size < 8 && !g.samples.has(sampleKey)) {
+      g.samples.set(sampleKey, {
+        key: String(diag.key || ''),
+        research_code: String(diag.research_code || ''),
+        part,
+        part_label: partLabel,
+        state: stateFor(diag),
+      });
+    }
   }
   return [...groups.values()]
-    .map(g => ({ stage: g.stage, stage_label: g.stage_label, message: g.message, rows: g.rows, encounters: g.encounters.size }))
+    .map(g => ({
+      stage: g.stage,
+      stage_label: g.stage_label,
+      message: g.message,
+      rows: g.rows,
+      encounters: g.encounters.size,
+      by_part: [...g.parts.values()]
+        .map(p => ({ part: p.part, label: p.label, rows: p.rows, encounters: p.encounters.size }))
+        .sort((a, b) => b.rows - a.rows || String(a.label).localeCompare(String(b.label))),
+      states: [...g.states],
+      samples: [...g.samples.values()],
+    }))
     .sort((a, b) => b.encounters - a.encounters || b.rows - a.rows || String(a.stage_label).localeCompare(String(b.stage_label)));
 }
 

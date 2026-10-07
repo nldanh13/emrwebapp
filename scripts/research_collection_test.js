@@ -82,6 +82,24 @@ test('Chẩn đoán lỗi thu thập chỉ rõ bước tìm BN, mở lượt, m�
   assert.strictEqual(c.diagnosticFor('session').diagnostic_stage, 'emr_session');
 });
 
+test('Tóm tắt chẩn đoán cho biết phần nào lỗi và ví dụ lượt để truy ngược', () => {
+  const rows = [
+    { key: 'enc_a', research_code: 'NC0001', category: 'selenium_error', part: 'xn', part_label: 'Xét nghiệm', reason: 'no_result' },
+    { key: 'enc_a', research_code: 'NC0001', category: 'selenium_error', part: 'cdha', part_label: 'CĐHA', reason: 'no_result' },
+    { key: 'enc_b', research_code: 'NC0002', category: 'retry_exhausted', part: 'xn', part_label: 'Xét nghiệm', reason: 'no_result' },
+  ].map(r => ({ ...r, ...c.diagnosticFor(r.reason) }));
+  const summary = c.summarizeDiagnostics(rows);
+  assert.strictEqual(summary.length, 1);
+  assert.strictEqual(summary[0].encounters, 2);
+  assert.strictEqual(summary[0].rows, 3);
+  assert.deepStrictEqual(summary[0].by_part.map(x => [x.part, x.rows, x.encounters]), [
+    ['xn', 2, 2],
+    ['cdha', 1, 1],
+  ]);
+  assert.deepStrictEqual(summary[0].states, ['error', 'waiting']);
+  assert.deepStrictEqual(summary[0].samples.map(x => x.research_code), ['NC0001', 'NC0002']);
+});
+
 test('Phân loại tab XN/CĐHA: "0 dòng" bản cũ chưa được tin là EMR không có', () => {
   const legacy = { xn: 'done', cdha: 'done', committed: true, counts: { xn: 0, cdha: 4 }, updated_at: 't1' };
   assert.strictEqual(c.classifyXnTab(legacy, 'xn').reason, 'legacy_empty_unverified');
