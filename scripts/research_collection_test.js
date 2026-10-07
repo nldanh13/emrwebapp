@@ -40,10 +40,10 @@ function xnEntry(key, rc, code, tabs, at = '2026-01-10T00:00:00Z') {
   };
 }
 
-function hcEntry(files, at = '2026-01-10T00:00:00Z') {
+function hcEntry(files, at = '2026-01-10T00:00:00Z', extra = {}) {
   const file_status = {};
   for (const [f, v] of Object.entries(files)) file_status[f] = { ...v, at };
-  return { status: 'done', files: Object.keys(files), file_status, finished_at: at };
+  return { status: 'done', files: Object.keys(files), file_status, finished_at: at, ...extra };
 }
 
 const OK_HC = { profile: { fetch_status: 'ok', rows: 1 }, discharge: { fetch_status: 'ok', rows: 1 }, surgery: { fetch_status: 'ok', rows: 0 } };
@@ -55,7 +55,7 @@ function fullyCollected(sources) {
   for (const s of sources) {
     xn[`${s['Mã BN']}|treatment:x${s['Research key']}`] = xnEntry(s['Research key'], s['Mã NC'], s['Mã BN'], XN_OK);
     hc[s['Research key']] = hcEntry(OK_HC);
-    oh[s['Research key']] = hcEntry(OK_OH);
+    oh[s['Research key']] = hcEntry(OK_OH, '2026-01-10T00:00:00Z', { fetch_window_version: 4 });
   }
   return { xn, hc, oh };
 }
@@ -130,6 +130,37 @@ test('Chỉ lấy lại đúng phần lỗi; ca đủ và không đổi thì b�
   assert.strictEqual(groups.xn_cdha.length, 1);
   assert.strictEqual(groups.hchanh.size, 0);
   assert.strictEqual(groups.order_history.length, 0);
+});
+
+test('Y lệnh v3 đã ok vẫn phải tự lấy lại một lần bằng parser/cửa sổ v4', () => {
+  const sources = [src('enc_a', 'NC0001', 'BN_A')];
+  const { xn, hc, oh } = fullyCollected(sources);
+  oh.enc_a = hcEntry(OK_OH, '2026-01-10T00:00:00Z', { fetch_window_version: 3 });
+
+  const legacy = c.buildLedger({ sourceRows: sources, xnProgress: xn, hchanhProgress: hc, orderProgress: oh });
+  assert.strictEqual(legacy.encounters.enc_a.parts.order_history.fetch_window_version, 3);
+  assert.strictEqual(c.isStale(legacy.encounters.enc_a, 'order_history'), true);
+
+  const plan = c.planCollection(legacy);
+  assert.strictEqual(plan.tasks.length, 1);
+  assert.deepStrictEqual(plan.tasks[0].parts, ['order_history']);
+  assert.strictEqual(plan.tasks[0].reasons.order_history, 'parser_migration');
+
+  // Worker v4 trả progress mới → phần trở lại current và không bị quét lặp.
+  const ohV4 = {
+    ...oh,
+    enc_a: hcEntry(OK_OH, '2026-01-11T00:00:00Z', { fetch_window_version: 4 }),
+  };
+  const fresh = c.buildLedger({
+    sourceRows: sources,
+    xnProgress: xn,
+    hchanhProgress: hc,
+    orderProgress: ohV4,
+    previous: legacy,
+  });
+  assert.strictEqual(fresh.encounters.enc_a.parts.order_history.fetch_window_version, 4);
+  assert.strictEqual(c.isStale(fresh.encounters.enc_a, 'order_history'), false);
+  assert.strictEqual(c.planCollection(fresh).tasks.length, 0);
 });
 
 test('Ca mới lấy đủ 6 phần; ca đã có mà thiếu một phần hành chánh chỉ lấy phần đó', () => {
