@@ -306,9 +306,12 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
           continue;
         }
         if (windowNeedsRepair) {
+          const repairReason = windowFilterMigrationNeeded
+            ? 'bản cũ chưa có bộ lọc lịch sử y lệnh theo đợt (v3)'
+            : 'bản cũ dùng mốc chuyển khoa thay vì ngày vào viện thật';
           appendResearchRunLog(
             runPath,
-            `[${logPrefix}] LẤY LẠI ${display}: bản cũ dùng cửa sổ trước sửa lỗi chuyển khoa; ${sourceDateFrom || '—'} → ${sourceDateTo || '—'} sẽ đổi thành ${dateFrom} → ${dateTo}.`,
+            `[${logPrefix}] LẤY LẠI ${display}: ${repairReason}; cửa sổ ${sourceDateFrom || '—'} → ${sourceDateTo || '—'}; dùng ${dateFrom} → ${dateTo}.`,
           );
         }
 
