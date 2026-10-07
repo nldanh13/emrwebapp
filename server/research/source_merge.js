@@ -335,6 +335,53 @@ function placeholderDischargeDays(sourceRows = []) {
   return days;
 }
 
+
+function repairSharedPlaceholderDischargeDates(profileRows = [], dischargeRows = [], { minPatients = 20, minMismatchRatio = 0.8 } = {}) {
+  const profileByKey = new Map();
+  for (const row of profileRows || []) {
+    const code = normalizedIdentity(patientCode(row));
+    const researchKey = normalizedIdentity(firstNonEmpty(row, ['Research key', 'research_key']));
+    if (!code || !researchKey) continue;
+    const key = `${code}|${researchKey}`;
+    const bucket = profileByKey.get(key) || new Set();
+    const discharge = rowDischargeTime(row);
+    if (discharge) bucket.add(discharge);
+    profileByKey.set(key, bucket);
+  }
+  const candidateStats = new Map();
+  for (const row of dischargeRows || []) {
+    const raw = String(firstNonEmpty(row, DISCHARGE_FIELDS) || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) continue;
+    const code = normalizedIdentity(patientCode(row));
+    if (!code) continue;
+    const bucket = candidateStats.get(raw) || { patients: new Set(), rows: 0, mismatches: 0 };
+    bucket.patients.add(code); bucket.rows += 1;
+    const researchKey = normalizedIdentity(firstNonEmpty(row, ['Research key', 'research_key']));
+    const dates = researchKey ? profileByKey.get(`${code}|${researchKey}`) : null;
+    if (dates?.size === 1 && !dates.has(raw)) bucket.mismatches += 1;
+    candidateStats.set(raw, bucket);
+  }
+  const suspiciousDates = new Set([...candidateStats].filter(([, s]) =>
+    s.patients.size >= minPatients && s.rows > 0 && s.mismatches / s.rows >= minMismatchRatio
+  ).map(([date]) => date));
+  const explicitIdFields = ['Mã nội trú', 'Ma noi tru', 'Mã điều trị', 'Ma dieu tri', 'Mã vào viện', 'Ma vao vien', 'encounter_id', 'visit_id'];
+  return (dischargeRows || []).map(row => {
+    const raw = String(firstNonEmpty(row, DISCHARGE_FIELDS) || '').trim();
+    if (!suspiciousDates.has(raw) || explicitIdFields.some(field => String(row?.[field] ?? '').trim())) return row;
+    const code = normalizedIdentity(patientCode(row));
+    const researchKey = normalizedIdentity(firstNonEmpty(row, ['Research key', 'research_key']));
+    const dates = code && researchKey ? profileByKey.get(`${code}|${researchKey}`) : null;
+    const out = { ...row };
+    if (dates?.size === 1) {
+      const actual = [...dates][0];
+      for (const field of DISCHARGE_FIELDS) if (String(out[field] ?? '').trim() === raw) out[field] = actual;
+      return out;
+    }
+    for (const field of DISCHARGE_FIELDS) if (String(out[field] ?? '').trim() === raw) out[field] = '';
+    return appendManualReview(out, 'Ngày ra viện là mốc dùng chung bất thường; không có hồ sơ khớp duy nhất theo Mã BN + Research key');
+  });
+}
+
 // Một lần nằm viện là MỘT đợt, tính từ lúc vào viện (kể cả Cấp cứu) đến lúc ra viện. Hai đợt của
 // cùng Mã BN không thể chồng thời gian: các dòng khoa (Cấp cứu → CTCH → PHCN…) mang giờ vào khoa
 // riêng nhưng cùng ngày ra viện là cùng một đợt. Gộp các dòng có khoảng vào–ra chồng nhau; lấy giờ
@@ -620,6 +667,7 @@ function dedupeByHash(rows) {
 
 module.exports = {
   dropPlaceholderDischarge,
+  repairSharedPlaceholderDischargeDates,
   placeholderDischargeDays,
   dropSharedResearchCodes,
   mergeOverlappingStays,

@@ -6,6 +6,7 @@ const {
   aliasesIntersect,
   encounterIdentityAliases,
   combineEncounterSources,
+  repairSharedPlaceholderDischargeDates,
 } = require('./source_merge.js');
 
 describe('research encounter anti-duplicate aliases', () => {
@@ -197,5 +198,34 @@ describe('research encounter anti-duplicate aliases', () => {
     expect(bn3).toHaveLength(1);
     expect(['12/03/2026', '2026-03-12']).toContain(bn3[0]['Ngày ra viện']);
   });
+
+describe('repair shared placeholder discharge dates', () => {
+  it('reconciles a shared date-only placeholder using exact patient and Research key', () => {
+    const profiles = Array.from({ length: 20 }, (_, i) => ({
+      'Mã BN': `BN${i}`, 'Research key': `RK${i}`, 'Ngày ra viện': `2026-06-${String(i + 1).padStart(2, '0')}`,
+    }));
+    const rows = profiles.map(row => ({ 'Mã BN': row['Mã BN'], 'Research key': row['Research key'], 'Ngày ra viện': '2026-06-08' }));
+    expect(repairSharedPlaceholderDischargeDates(profiles, rows).map(row => row['Ngày ra viện']))
+      .toEqual(profiles.map(row => row['Ngày ra viện']));
+  });
+  it('leaves an unshared ordinary date unchanged', () => {
+    const rows = [{ 'Mã BN': 'BN1', 'Research key': 'RK1', 'Ngày ra viện': '2026-06-08' }];
+    expect(repairSharedPlaceholderDischargeDates([], rows)).toEqual(rows);
+  });
+  it('keeps rows with explicit encounter identifiers unchanged', () => {
+    const profiles = Array.from({ length: 20 }, (_, i) => ({ 'Mã BN': `BN${i}`, 'Research key': `RK${i}`, 'Ngày ra viện': `2026-06-${String(i + 1).padStart(2, '0')}` }));
+    const rows = profiles.map(row => ({ ...row, 'Ngày ra viện': '2026-06-08', 'Mã nội trú': 'IP-1' }));
+    expect(repairSharedPlaceholderDischargeDates(profiles, rows)).toEqual(rows);
+  });
+  it('clears an unresolved suspicious date and marks it for review', () => {
+    const profiles = Array.from({ length: 20 }, (_, i) => ({ 'Mã BN': `BN${i}`, 'Research key': `RK${i}`, 'Ngày ra viện': `2026-06-${String(i + 1).padStart(2, '0')}` }));
+    const rows = profiles.map(row => ({ 'Mã BN': row['Mã BN'], 'Research key': row['Research key'], 'Ngày ra viện': '2026-06-08' }));
+    rows[19]['Research key'] = 'MISSING';
+    const repaired = repairSharedPlaceholderDischargeDates(profiles, rows);
+    expect(repaired[19]['Ngày ra viện']).toBe('');
+    expect(repaired[19].__needs_manual_review).toContain('mốc dùng chung bất thường');
+  });
+});
+
 });
 
