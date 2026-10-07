@@ -138,6 +138,11 @@ function PipelineView({ pipeline, summary, collectionScreen = null, onInspectCol
                           Phần lỗi: {d.by_part.map(p => `${p.label || p.part}: ${compactNumber(p.rows)}`).join(' · ')}
                         </div>
                       )}
+                      {!!d.details?.length && (
+                        <div style={{ marginTop: 2, color: C.red }}>
+                          Chi tiết worker: {d.details.join(' · ')}
+                        </div>
+                      )}
                       {!!d.samples?.length && (
                         <div style={{ marginTop: 2, color: C.text3 }}>
                           Ví dụ: {d.samples.map(x => x.research_code || x.key).filter(Boolean).slice(0, 5).join(', ')}
