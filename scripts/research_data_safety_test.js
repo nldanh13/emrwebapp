@@ -174,8 +174,9 @@ test('Ghép theo ngày sự kiện chỉ khi nằm trong đúng một lượt, k
 });
 
 test('Kết quả chỉ thuộc đợt khi thời gian nằm trong khoảng vào-ra viện; có giờ thì so chính xác theo giờ', () => {
+  // Có "Ngày vào viện" (hồ sơ hành chánh: lúc nhận vào viện, kể cả Cấp cứu) → so đúng giờ đó.
   const rows = [
-    { 'Mã BN': '555', 'T/G vào': '08:00 10/04/2026', 'Ngày ra viện': '17:00 12/04/2026' },
+    { 'Mã BN': '555', 'T/G vào': '09:30 10/04/2026', 'Ngày vào viện': '08:00 10/04/2026', 'Ngày ra viện': '17:00 12/04/2026' },
   ];
   const map = R.buildContextMap(rows, 'r');
 
@@ -201,6 +202,34 @@ test('Kết quả chỉ thuộc đợt khi thời gian nằm trong khoảng vào
     'Mã BN': '555', 'TG chỉ định': '10/04/2026',
   }, '555');
   assert.strictEqual(dateOnlySameDay.encounter_id, buildEncounterId(rows[0]), 'khi nguồn chỉ có ngày thì chỉ có thể xác nhận theo ngày lịch');
+});
+
+test('Một đợt tính từ lúc nhận Cấp cứu đến hết ngày ra viện, không chỉ từ lúc vào khoa', () => {
+  // Chỉ có giờ vào khoa (danh sách nội trú), chưa có giờ nhận vào viện: kết quả làm ở Cấp cứu
+  // trong 24 giờ trước khi vào khoa vẫn thuộc đợt, ghi cách ghép riêng để lọc được.
+  const rows = [
+    { 'Mã BN': '556', 'T/G vào': '08:00 10/04/2026', 'Ngày ra viện': '12/04/2026' },
+    { 'Mã BN': '557', 'T/G vào': '08:00 01/03/2026', 'Ngày ra viện': '05/03/2026' },
+    { 'Mã BN': '557', 'T/G vào': '09:00 05/03/2026', 'Ngày ra viện': '20/03/2026' },
+  ];
+  const map = R.buildContextMap(rows, 'r');
+  const at = (code, t) => R.contextForRow(map, { 'Mã BN': code, 'TG chỉ định': t }, code);
+
+  for (const t of ['06:30 10/04/2026', '22:00 09/04/2026']) {
+    const ed = at('556', t);
+    assert.strictEqual(ed.encounter_id, buildEncounterId(rows[0]), `${t}: XN cấp cứu trước giờ vào khoa thuộc đợt`);
+    assert.strictEqual(R.encounterMatchMethod(ed), 'emergency_before_ward');
+  }
+  assert.strictEqual(at('556', '07:00 09/04/2026').encounter_id, '', 'quá 24 giờ trước khi vào khoa thì không tự gắn');
+
+  // Ngày ra viện chỉ có ngày: cả ngày ra viện thuộc đợt (trước đây bị hiểu là 00:00 nên XN sáng ngày ra bị loại).
+  const dischargeDay = at('556', '07:00 12/04/2026');
+  assert.strictEqual(dischargeDay.encounter_id, buildEncounterId(rows[0]), 'XN sáng ngày ra viện thuộc đợt');
+  assert.strictEqual(at('556', '07:00 13/04/2026').encounter_id, '', 'sau ngày ra viện thì không');
+
+  // Không lấn sang đợt trước: 06:00 05/03 vẫn trong đợt 01/03–05/03, chỉ thuộc đợt đó.
+  const prev = at('557', '06:00 05/03/2026');
+  assert.strictEqual(prev.encounter_id, buildEncounterId(rows[1]), 'trong đợt trước thì thuộc đợt trước');
 });
 
 test('Đợt chưa có ngày ra viện nhận kết quả quá 60 ngày sau ngày vào (tính tới hôm nay)', () => {
