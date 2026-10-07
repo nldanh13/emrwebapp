@@ -20,6 +20,7 @@ process.env.EMR_RUNTIME_ROOT = RUNTIME_ROOT;
 
 const research = require('../server/routes/research');
 const R = research._test;
+const { redactCollectionRows } = require('../server/research/collection_runtime');
 const { ORDER_HISTORY_FETCH_WINDOW_VERSION } = require('../server/research/fetch_versions');
 
 let passed = 0;
@@ -34,6 +35,18 @@ async function test(name, fn) {
     process.exitCode = 1;
   }
 }
+
+test('màn vận hành có thể giữ Mã BN nhưng vẫn che định danh khác', async () => {
+  const rows = [{ patient_code: '26051766', patient_name: 'NGƯỜI BỆNH GIẢ', detail: 'timeout' }];
+  assert.deepStrictEqual(
+    redactCollectionRows(rows, true, { keepPatientCode: true }),
+    [{ patient_code: '26051766', patient_name: 'NGƯỜI BỆNH GIẢ', detail: 'timeout' }],
+  );
+  assert.deepStrictEqual(
+    redactCollectionRows(rows, true),
+    [{ patient_code: '[đã che]', patient_name: 'NGƯỜI BỆNH GIẢ', detail: 'timeout' }],
+  );
+});
 
 function writeCsv(file, cols, rows) {
   const esc = v => (/[",\n]/.test(String(v ?? '')) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? ''));

@@ -483,9 +483,12 @@ function writeCollectionOutputs(runDir, report) {
   } catch (_) {}
 }
 
-function redactCollectionRows(rows, redact) {
+function redactCollectionRows(rows, redact, { keepPatientCode = false } = {}) {
   if (!redact) return rows;
-  return (rows || []).map(r => ({ ...r, patient_code: r.patient_code ? '[đã che]' : '' }));
+  return (rows || []).map(r => ({
+    ...r,
+    patient_code: keepPatientCode ? String(r.patient_code || '') : (r.patient_code ? '[đã che]' : ''),
+  }));
 }
 
 async function runXnCdhaSubsetForCollection(ctx, { runDir, runId, scope, isArchive, rows, fromDate, toDate, headless }) {

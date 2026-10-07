@@ -45,3 +45,31 @@ def test_build_variable_catalog_strips_sensitive_columns_when_redacting(research
 
     assert "redact = true" in block
     assert "isSensitiveColumn(col)" in block
+
+
+def test_collection_operational_screen_keeps_patient_code_but_export_policy_stays_redacted():
+    source = (ROOT / "server" / "routes" / "research_collection.js").read_text(encoding="utf-8")
+    start = source.index("function handleCollectionScreen")
+    end = source.index("function handleCollectionExceptionsExport", start)
+    screen = source[start:end]
+
+    # Màn vận hành phải giữ Mã BN/Mã NB để tra ngược EMR khi xử lý ngoại lệ.
+    assert "patient_code: r.patient_code ? '[đã che]'" not in screen
+    assert "ma_bn: ''" not in screen
+    # Họ tên vẫn được che ở chế độ mặc định.
+    assert "patient_name: ''" in screen
+    assert "ho_ten: ''" in screen
+
+    # File export nghiên cứu vẫn phải đi qua gate/redaction cũ.
+    export = source[end:source.index("lockedResearchRoute", end)]
+    assert "researchResponseShouldRedact(req)" in export
+    assert "sendCsvFile" in export
+    assert "{ redact: researchResponseShouldRedact(req) }" in export
+
+
+def test_collection_operational_status_preserves_patient_code_only_for_on_screen_rows():
+    source = (ROOT / "server" / "routes" / "research_collection.js").read_text(encoding="utf-8")
+    start = source.index("function handleCollectionStatus")
+    end = source.index("function handleCollectionScreen", start)
+    block = source[start:end]
+    assert "keepPatientCode: true" in block
