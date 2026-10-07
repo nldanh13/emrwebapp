@@ -499,10 +499,14 @@ function ensureResearchSourceRows(runDir, { fallbackPath = '', sourceRunId = '',
   const existingRows = fs.existsSync(sourcePath)
     ? (readCsvTable(sourcePath, Number.MAX_SAFE_INTEGER).rows || []).filter(r => patientCode(r))
     : [];
-  // File cũ có Mã NC trùng giữa các dòng khác nhau (lỗi cấp mã trước đây) phải được
-  // tạo lại; mã hợp lệ của từng Research key vẫn được giữ nguyên.
-  const codesBroken = researchCodesConflict(existingRows);
-  if (!force && !sourceStale && !codesBroken && existingRows.length) {
+  // Bỏ mã cũ phát sinh ở tầng thu thập khi mã đó không có trên file cohort nguồn.
+  // Mã đã được cấp cho cohort nghiên cứu được giữ cache để các lần chạy không ghi lại liên tục.
+  const seedForCodeCheck = preferredResearchSourceSeedPath(runPath, fallbackPath);
+  const seedHasCodes = seedForCodeCheck
+    ? (readCsvTable(seedForCodeCheck, Number.MAX_SAFE_INTEGER).rows || []).some(row => rowResearchCode(row))
+    : false;
+  const hasPrematureCodes = existingRows.some(row => rowResearchCode(row)) && !seedHasCodes;
+  if (!force && !sourceStale && !hasPrematureCodes && existingRows.length) {
     const rows = existingRows;
     if (rows.length) {
       return { rows, file: sourcePath, base_file: firstNonEmpty(rows[0], ['source_file']) || path.basename(sourcePath), candidates: researchSourceCandidatePaths(runPath, fallbackPath), date_context: dateCtx };
