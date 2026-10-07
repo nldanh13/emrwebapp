@@ -97,6 +97,25 @@ Không gọi `normalize.normalizeRunOutputs(...)` trực tiếp trong thao tác 
 
 Chỉ chốt sau khi xem cả QA chuẩn hóa và `collection_integrity.json`. `ready_for_analysis` phải là `true`; mọi unresolved còn lại phải có lý do rõ ràng và được giữ trong audit/unresolved output.
 
+## Kiểm tra ngẫu nhiên độ chính xác (Kho dữ liệu gốc → Kiểm tra ngẫu nhiên)
+
+Dùng để đánh giá dữ liệu đã ghép đúng tới đâu, bằng cách đối chiếu trực tiếp với EMR:
+
+1. Bấm **Chọn ca ngẫu nhiên**. Máy chọn một đợt điều trị chưa kiểm (ca đã kiểm không bị chọn lại).
+2. Mở EMR của người bệnh (Mã BN hiện ở đầu thẻ), đối chiếu từng mục:
+   - **Mốc đợt**: ngày giờ vào viện (tính cả Cấp cứu), ngày giờ ra viện, chẩn đoán.
+   - **Tối đa 5 dòng ngẫu nhiên** mỗi loại: XN, CĐHA, thuốc/y lệnh, phẫu thuật. Kiểm cả nội dung lẫn việc thuộc đúng đợt.
+     Dòng có nhãn cam là "Trước nhập viện" / "Cấp cứu, trước vào khoa".
+   - **Dòng không gắn vào đợt**: tối đa 3 dòng của cùng người bệnh, trong vòng 7 ngày quanh đợt nhưng không được gắn.
+     Kiểm xem đúng là không thuộc đợt này không.
+3. Bấm **Đúng**, **Sai** hoặc **Không chắc**. Mỗi lần bấm được lưu ngay; khi chọn Sai, ghi chú EMR ghi gì (tự lưu khi rời ô).
+4. Bảng **Tỉ lệ đạt cộng dồn** cho từng loại dữ liệu: tỉ lệ = Đúng / (Đúng + Sai), kèm khoảng tin cậy 95% (Wilson).
+   Khoảng tin cậy còn rộng nghĩa là cần kiểm thêm ca. "Không chắc" không tính vào tỉ lệ.
+5. **Các mục sai** liệt kê kèm ghi chú để sửa quy tắc ghép; bấm vào để mở lại ca đó.
+
+Kết quả lưu ở `audit/reviews.json` trong thư mục đợt kho. Cần cùng quyền với Tra cứu người bệnh (supervisor/admin và
+`EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT=1`), vì màn này hiện Mã BN và họ tên để đối chiếu.
+
 ## Lệnh normalize an toàn cho một run cụ thể
 
 ```powershell

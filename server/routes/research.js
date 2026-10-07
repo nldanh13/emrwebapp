@@ -34,6 +34,7 @@ const { enqueueHeavy, registerCancel, unregisterCancel, isCancelRequested } = re
 const variableSelection = require('../research/variable_selection');
 const { redactCsvTable, isSensitiveColumn } = require('../research/export_utils');
 const dataDictionary = require('../research/data_dictionary');
+const auditSample = require('../research/audit_sample');
 const { ARCHIVE_ID, EXPORT_SENSITIVE_COLUMNS, MAX_TABLE_ROWS, TABLES, archiveDir, archiveRunsDir, archiveSourcePath, cohortPath, ensureArchiveStore, nowIso, runsDir, todayDateInput } = require('../research/store_paths');
 const { patientCode, readCsvTable, writeCsv, writeCsvUnion } = require('../research/table_io');
 const { appendSecurityAudit } = require('../services/security_audit');
@@ -97,6 +98,59 @@ lockedResearchRoute(router, 'post', '/research/archive/source', 'Nạp danh sác
 
 router.get('/research/identified-access', (req, res) => {
   res.json({ status: 'ok', ...identifiedAccessStatus(req) });
+});
+
+// ── Kiểm tra ngẫu nhiên độ chính xác của kho (có định danh: cùng quyền với Tra cứu người bệnh) ──
+function auditRunDir(req) {
+  if (researchResponseShouldRedact(req)) {
+    const err = new Error('Kiểm tra ngẫu nhiên hiện dữ liệu có định danh (Mã BN, họ tên) để đối chiếu EMR. Cần vai trò supervisor/admin và bật EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT=1.');
+    err.status = 403;
+    throw err;
+  }
+  const runId = resolveArchiveRunId(String(req.query.runId || 'latest'));
+  if (!runId) {
+    const err = new Error('Kho dữ liệu gốc chưa có đợt dữ liệu nào. Hãy quét và chuẩn hóa trước.');
+    err.status = 400;
+    throw err;
+  }
+  return { runId, runDir: path.join(archiveRunsDir(), runId) };
+}
+
+function auditError(res, err) {
+  if (!err.status) console.error('[RESEARCH][AUDIT][ERROR]', err.message);
+  return res.status(err.status || 500).json({ status: 'error', message: err.status ? String(err.message) : 'Không xử lý được lượt kiểm tra. Hãy thử lại; nếu vẫn lỗi, xem nhật ký máy chủ.' });
+}
+
+router.get('/research/archive/audit', (req, res) => {
+  try {
+    const { runId, runDir } = auditRunDir(req);
+    return res.json({ status: 'ok', run_id: runId, ...auditSample.summarize(runDir) });
+  } catch (err) { return auditError(res, err); }
+});
+
+router.post('/research/archive/audit/sample', (req, res) => {
+  try {
+    const { runId, runDir } = auditRunDir(req);
+    return res.json({ status: 'ok', audit: auditSample.createAudit(runDir, { runId }) });
+  } catch (err) { return auditError(res, err); }
+});
+
+router.get('/research/archive/audit/:id', (req, res) => {
+  try {
+    const { runDir } = auditRunDir(req);
+    return res.json({ status: 'ok', audit: auditSample.getAudit(runDir, String(req.params.id)) });
+  } catch (err) { return auditError(res, err); }
+});
+
+router.put('/research/archive/audit/:id/items/:itemId', (req, res) => {
+  try {
+    const { runDir } = auditRunDir(req);
+    const reviewer = String(req.auth?.name || req.auth?.id || '');
+    const audit = auditSample.saveVerdict(runDir, String(req.params.id), String(req.params.itemId), {
+      verdict: String(req.body?.verdict ?? ''), note: String(req.body?.note ?? ''), reviewer,
+    });
+    return res.json({ status: 'ok', audit });
+  } catch (err) { return auditError(res, err); }
 });
 
 router.get('/research/archive/patient-history', (req, res) => {

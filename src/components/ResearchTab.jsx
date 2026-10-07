@@ -21,6 +21,7 @@ import { buildGeneralOverviewModel, diffProgressSnapshots, summarizeStatusRows }
 import { ModeButton, SectionHead, SideItem, StatBadge, actionBtn, inp } from './research/researchUi.jsx';
 import { CollectionWorkspace } from './research/CollectionWorkspace.jsx';
 import { PatientLookupView } from './research/PatientLookupView.jsx';
+import { AuditSampleView } from './research/AuditSampleView.jsx';
 import { GeneralOverviewView } from './research/GeneralOverviewView.jsx';
 import { CreateStudyView } from './research/CreateStudyView.jsx';
 import { StudyStatsView } from './research/StudyStatsView.jsx';
@@ -44,7 +45,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const [deleteConfirm, setDeleteConfirm] = useState(null); // studyId cần xác nhận xóa
   const [archiveOptions, setArchiveOptions] = useState(() => ({ headless: true, fromDate: '2026-01-01', toDate: todayInputDate() }));
   const [studyOptions, setStudyOptions]     = useState({ headless: true });
-  const [archiveMode, setArchiveMode] = useState('overview'); // overview | update | patient | create
+  const [archiveMode, setArchiveMode] = useState('overview'); // overview | update | patient | audit | create
   const [studyMode, setStudyMode]     = useState('stats');    // nghiên cứu riêng chỉ có Thống kê & xuất
   const [showLog, setShowLog]         = useState(false);
   const [logLines, setLogLines]       = useState([]);
@@ -887,6 +888,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     ['overview', 'Dữ liệu tổng quát', 'Số liệu kho và quy trình quét, thu thập, chuẩn hóa, lưu trữ'],
     ['update', 'Thu thập dữ liệu', 'Quét danh sách, lấy dữ liệu và theo dõi tiến độ'],
     ['patient', 'Tra cứu người bệnh', 'Xem toàn bộ các lần điều trị của một người bệnh'],
+    ['audit', 'Kiểm tra ngẫu nhiên', 'Chọn ngẫu nhiên một đợt, đối chiếu EMR, ghi Đúng/Sai và xem tỉ lệ đạt'],
   ];
   // Nghiên cứu riêng chỉ thêm/bớt biến trên dữ liệu lấy từ kho: không thu thập, không phiếu nhập tay
   // (tránh ảnh hưởng kho dùng chung).
@@ -920,6 +922,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       identifiedAccess, identifiedLocked, loadPatientHistory, patientHistory,
       patientHistoryError, patientHistoryLoading, patientHistoryMeta, patientQuery, setPatientQuery,
     }} />;
+    if (archiveMode === 'audit') return <AuditSampleView />;
     if (archiveMode === 'create') return <CreateStudyView {...{
       variableCatalog, variableCatalogLoading, variableCatalogError,
       catalogGroupOptions, filteredCatalogVariables, allCatalogVariables, browseCatalogVariables,
