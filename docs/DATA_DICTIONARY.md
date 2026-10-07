@@ -349,6 +349,7 @@
 | `days_from_admission` | số nguyên | Số ngày từ ngày vào viện đến thời điểm của dòng (tính theo ngày lịch, 0 = cùng ngày vào viện). | Đơn vị: ngày; Có thể âm (trước ngày vào viện). | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
 | `days_from_discharge` | số nguyên | Số ngày từ ngày ra viện đến thời điểm của dòng (âm = trước ngày ra viện). | Đơn vị: ngày | Chưa có ngày ra viện hoặc thiếu thời điểm. | — | Được dùng |
 | `is_within_encounter` | cờ 1/0 | Thời điểm của dòng nằm trong khoảng vào viện → ra viện của đợt. Cách tính: Nếu chưa có ngày ra viện, khoảng mở kéo tới ngày hiện tại. Nếu ngày vào/ra chỉ có ngày mà không có giờ, dùng đầu ngày/cuối ngày để tránh loại nhầm sự kiện cùng ngày. | `1`, `0` | Thiếu ngày vào viện hoặc thời điểm của dòng. | — | Được dùng |
+| `surgery_time_source` | chuỗi | Rỗng: giờ bắt đầu mổ trên EMR. surgery_list_date: EMR để trống giờ mổ (hiện giờ lúc lấy dữ liệu), dùng ngày trên danh sách phẫu thuật, không có giờ. |  |  | — | Được dùng |
 | `source` | chuỗi | Nguồn nghiệp vụ của dòng. | Ví dụ: encounter, hchanh_auto_surgery, hchanh_order_history, surgery_raw. |  | — | Được dùng |
 | `source_type` | danh mục | Loại nguồn dữ liệu chuẩn hóa. | `emr_direct`, `patient_db`, `derived_parser` |  | — | Được dùng |
 | `source_quality` | danh mục | Mức chất lượng/độ trực tiếp của nguồn. | `original`, `provisional`, `derived` |  | — | Được dùng |

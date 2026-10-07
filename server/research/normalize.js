@@ -179,6 +179,18 @@ function normalizeRunOutputs(runDir, options = {}) {
 // Giờ bắt đầu phẫu thuật trên EMR có lúc ghi kiểu tháng/ngày (MM/dd/yyyy). Số thứ hai > 12 thì chắc
 // chắn là tháng/ngày; số thứ nhất > 12 thì là ngày/tháng; cả hai ≤ 12 thì chọn cách đọc rơi vào một
 // đợt của chính người bệnh (chỉ một cách đọc khớp), không khớp hoặc khớp cả hai thì giữ ngày/tháng.
+// Ngày của dòng trên danh sách phẫu thuật EMR (Raw JSON thoi_gian), không lấy từ trang chi tiết.
+function surgeryListDate(row) {
+  const raw = String(row?.['Raw JSON'] ?? '').trim();
+  if (!raw) return '';
+  try {
+    const item = JSON.parse(raw);
+    return String(item?.thoi_gian ?? '').trim();
+  } catch (_) {
+    return '';
+  }
+}
+
 function resolveDayMonthOrder(raw, candidates = []) {
   const value = String(raw || '').trim();
   const m = value.match(/(\d{1,2})([/-])(\d{1,2})\2(\d{4})/);
@@ -569,9 +581,26 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   let surgeryResults = surgeryRaw.map((rawRow, idx) => {
     const code = patientCode(rawRow);
     const SURGERY_TIME = ['Ngày phẫu thuật', 'Ngay phau thuat', 'Thời gian', 'Thoi gian', 'bat_dau', 'surgery_datetime', 'surgery_date'];
-    const dt = resolveDayMonthOrder(firstNonEmpty(rawRow, SURGERY_TIME), ctxMap.get(`patient:${code}`) || []);
-    const row = dt ? { ...rawRow, 'Ngày phẫu thuật': dt, surgery_datetime: '', surgery_date: '' } : rawRow;
-    const ctx = contextForRow(ctxMap, row, code);
+    let dt = resolveDayMonthOrder(firstNonEmpty(rawRow, SURGERY_TIME), ctxMap.get(`patient:${code}`) || []);
+    let row = dt ? { ...rawRow, 'Ngày phẫu thuật': dt, surgery_datetime: '', surgery_date: '' } : rawRow;
+    let ctx = contextForRow(ctxMap, row, code);
+    let surgeryTimeSource = '';
+    if (!ctx.encounter_id) {
+      // EMR để trống giờ bắt đầu mổ thì trang chi tiết hiện giờ lúc mở (ca thật: 14:11 ngày lấy dữ liệu,
+      // sau ra viện cả tháng). Khi đó ngày trên danh sách phẫu thuật (thoi_gian) là mốc thật duy nhất:
+      // chỉ dùng nếu nó nằm trong một đợt; giữ ngày, bỏ giờ vì không biết giờ thật.
+      const listDate = isoDate(surgeryListDate(rawRow));
+      if (listDate && listDate !== isoDate(dt)) {
+        const altRow = { ...rawRow, 'Ngày phẫu thuật': listDate, surgery_datetime: '', surgery_date: '' };
+        const altCtx = contextForRow(ctxMap, altRow, code);
+        if (altCtx.encounter_id) {
+          dt = listDate;
+          row = altRow;
+          ctx = altCtx;
+          surgeryTimeSource = 'surgery_list_date';
+        }
+      }
+    }
     const base = {
       research_code: ctx.research_code || firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || '',
       patient_code: code,
@@ -590,6 +619,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       postop_diagnosis: firstNonEmpty(row, ['Chẩn đoán sau mổ', 'Chan doan sau mo', 'chan_doan_sau_mo']),
       operating_room: firstNonEmpty(row, ['Phòng mổ', 'Phong mo', 'phong_mo']),
       ...eventTemporalFields(ctx, dt),
+      surgery_time_source: surgeryTimeSource,
       source: firstNonEmpty(row, ['Nguồn', 'source']) || 'surgery_raw',
       source_run_id: runId,
       ...provenanceFromRaw(row, 'surgery_raw'),
