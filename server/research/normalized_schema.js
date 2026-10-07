@@ -43,7 +43,9 @@
 // v35: ngày mổ EMR chỉ ghi ngày (không giờ) cũng để trống giờ, không ghi 00:00.
 // v36: parser y lệnh không tạo route giả khi nguồn không ghi đường dùng và không biến
 //      chỉ định chăm sóc/xuất viện thành thuốc chỉ vì có từ "uống/tiêm".
-const NORMALIZED_SCHEMA_VERSION = 36;
+// v37: đối chiếu ngày ra viện dùng chung bất thường với đúng hồ sơ theo Mã BN + Research key;
+//      buộc các run đã chuẩn hóa bằng logic cũ chạy lại thay vì trả cache cũ.
+const NORMALIZED_SCHEMA_VERSION = 37;
 
 const NORMALIZED_COLUMNS = {
   patients: [
