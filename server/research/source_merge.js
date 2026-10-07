@@ -302,6 +302,39 @@ function dropSharedResearchCodes(rows = []) {
   });
 }
 
+// File hchanh_* cũ đã lỡ ghi ngày cuối khoảng lấy dữ liệu (dạng YYYY-MM-DD) vào "Ngày ra viện" khi chưa
+// có ngày ra thật. EMR không ghi ngày ra dạng đó, nên ngày ra dạng YYYY-MM-DD trùng ngày cuối khoảng quét
+// / khoảng lấy dữ liệu của danh sách được coi là chưa có ngày ra (bản làm việc; file thô không đổi).
+function dropPlaceholderDischarge(rows = [], placeholderDays = new Set()) {
+  if (!placeholderDays.size) return rows;
+  return rows.map(row => {
+    let out = row;
+    for (const f of DISCHARGE_FIELDS) {
+      const v = String(row?.[f] ?? '').trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(v) && placeholderDays.has(v)) {
+        if (out === row) out = { ...row };
+        out[f] = '';
+      }
+    }
+    return out;
+  });
+}
+
+function placeholderDischargeDays(sourceRows = []) {
+  const days = new Set();
+  for (const row of sourceRows) {
+    for (const f of ['source_scan_to_date', 'fetch_to_date']) {
+      const v = String(row?.[f] ?? '').trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(v)) days.add(v);
+    }
+    // Ngày ra thật của dòng danh sách (nếu có) thì không phải ngày giả.
+    const real = String(firstNonEmpty(row, DISCHARGE_FIELDS) || '').trim();
+    const m = real.match(/(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+    if (m) days.delete(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`);
+  }
+  return days;
+}
+
 // Một lần nằm viện là MỘT đợt, tính từ lúc vào viện (kể cả Cấp cứu) đến lúc ra viện. Hai đợt của
 // cùng Mã BN không thể chồng thời gian: các dòng khoa (Cấp cứu → CTCH → PHCN…) mang giờ vào khoa
 // riêng nhưng cùng ngày ra viện là cùng một đợt. Gộp các dòng có khoảng vào–ra chồng nhau; lấy giờ
@@ -568,6 +601,8 @@ function dedupeByHash(rows) {
 }
 
 module.exports = {
+  dropPlaceholderDischarge,
+  placeholderDischargeDays,
   dropSharedResearchCodes,
   mergeOverlappingStays,
   byEncounterCount,

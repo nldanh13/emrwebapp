@@ -187,6 +187,14 @@ function hasPreciseClock(value) {
 
 // Ngày chỉ có ngày thì giữ là ngày (không tự thành 00:00): ngày ra viện "12/04/2026" phải
 // gồm cả ngày 12/04, không phải kết thúc lúc 00:00.
+function estimatedDischarge(admission, durationRaw) {
+  const days = Number(String(durationRaw || '').replace(',', '.').match(/\d+(?:\.\d+)?/)?.[0]);
+  const start = parseAnyDate(admission);
+  if (!start || !Number.isFinite(days) || days <= 0 || days > 365) return '';
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + Math.ceil(days));
+  return `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+}
+
 function isoDateOrTime(value) {
   return hasPreciseClock(value) ? isoDateTime(value) : isoDate(value);
 }
@@ -233,14 +241,15 @@ function eventInsideContext(eventDate, ctx, { emergency = false } = {}) {
   const admission = emergency && wardAdmission
     ? new Date(wardAdmission.getTime() - EMERGENCY_LOOKBACK_MS)
     : wardAdmission;
-  const discharge = parseAnyDate(ctx.discharge_date);
+  const dischargeValue = ctx.discharge_date || ctx.estimated_discharge_date || '';
+  const discharge = parseAnyDate(dischargeValue);
   if (!event || !admission) return false;
 
   const dayStart = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const dayEnd = d => dayStart(d) + 86400000 - 1;
   const eventHasTime = hasPreciseClock(eventDate);
   const admissionHasTime = hasPreciseClock(ctx.admission_date);
-  const dischargeHasTime = discharge && hasPreciseClock(ctx.discharge_date);
+  const dischargeHasTime = discharge && hasPreciseClock(dischargeValue);
 
   // Nếu kết quả có giờ, so chính xác theo giờ vào/ra nếu EMR có giờ.
   // Nếu mốc vào/ra chỉ có ngày, dùng đầu/cuối ngày tương ứng.
@@ -321,6 +330,9 @@ function buildContextMap(patientRows, sourceRunId = '') {
       insurance_valid_to: isoDate(firstNonEmpty(row, ['Giá trị đến', 'Gia tri den', 'Đến ngày', 'Den ngay', 'valid_to'])),
       source_input: firstNonEmpty(row, ['Nguồn input', 'Nguon input', 'source_input']),
       admission_date: admission,
+      // Chưa có ngày ra thật nhưng EMR ghi số ngày điều trị: dùng làm mốc kết thúc khi ghép (không ghi
+      // vào discharge_date). Tránh đợt "chưa ra viện" nuốt dữ liệu của các lần nằm viện sau.
+      estimated_discharge_date: !discharge ? estimatedDischarge(admission, firstNonEmpty(row, ['Thời gian điều trị', 'Thoi gian dieu tri', 'treatment_duration'])) : '',
       // Chỉ biết lúc vào khoa (T/G vào), chưa biết lúc nhận vào viện/Cấp cứu.
       admission_is_ward_entry: Boolean(admission) && !firstNonEmpty(row, HOSPITAL_ADMISSION_FIELDS),
       discharge_date: discharge,

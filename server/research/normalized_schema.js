@@ -32,7 +32,10 @@
 // v28: chỉ gắn kết quả trước nhập viện tối đa 3 ngày; sau ra viện không gắn vào đợt.
 // v29: gộp đợt đọc mốc vào giống bước ghép ("Ngày vào viện" trước "T/G vào"); khoảng nằm viện trên
 //      dòng y lệnh phủ các đợt liền nhau (cách ≤ 1 ngày) thì nối thành một lần nằm viện.
-const NORMALIZED_SCHEMA_VERSION = 29;
+// v30: ngày cuối khoảng lấy dữ liệu không còn bị dùng làm ngày ra viện; đợt chưa có ngày ra dùng số
+//      ngày điều trị của EMR làm mốc kết thúc khi ghép.
+// v31: liều thuốc phối hợp "25/5 mg" và tên thuốc cắt đúng ở chữ có dấu; bỏ dòng phẫu thuật chỉ có ngày.
+const NORMALIZED_SCHEMA_VERSION = 31;
 
 const NORMALIZED_COLUMNS = {
   patients: [

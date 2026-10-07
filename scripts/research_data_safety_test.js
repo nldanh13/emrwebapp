@@ -476,6 +476,49 @@ test('Y lệnh sau ngày ra khoa nhưng trong khoảng vào–ra cả lần nằ
   assert.ok(meds.every(m => m.encounter_match_status === 'matched'), JSON.stringify(meds.map(m => m.encounter_match_reason)));
 });
 
+test('Ngày cuối khoảng quét không được dùng làm ngày ra viện (ca thật: đợt 09/07 kéo nhầm tới 06/10)', () => {
+  // Dữ liệu thật: đợt 09/07/2026 (9 ngày điều trị) hiện "→ 06/10/2026" = ngày cuối khoảng quét; ca mổ
+  // 24/09 của lần sau bị tính vào đợt.
+  assert.strictEqual(R.researchHchanhMeta({ 'Mã BN': '904', 'T/G vào': '09:19 09/07/2026', fetch_from_date: '2026-07-09', fetch_to_date: '2026-10-06' }, 'r').discharge_raw, '',
+    'thiếu ngày ra thật thì để trống, không lấy ngày cuối khoảng lấy dữ liệu');
+
+  const runDir = newRunDir();
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), ['T/G vào', 'Mã BN', 'Họ tên'], [
+    { 'T/G vào': '09:19 09/07/2026', 'Mã BN': '904', 'Họ tên': 'BN GIA LAP P' },
+  ]);
+  R.ensureResearchSourceRows(runDir, { sourceRunId: 'r', force: true, dateDefaults: { from_date: '2026-01-01', to_date: '2026-10-06' } });
+  // File cũ đã lỡ ghi ngày giả (định dạng YYYY-MM-DD = ngày cuối khoảng quét) vào dòng y lệnh/hồ sơ.
+  writeCsv(path.join(runDir, 'hchanh_discharge.csv'), ['Mã BN', 'Ngày vào viện', 'Ngày ra viện', 'Chẩn đoán ra viện', 'Thời gian điều trị'], [
+    { 'Mã BN': '904', 'Ngày vào viện': '09:19 09/07/2026', 'Ngày ra viện': '2026-10-06', 'Chẩn đoán ra viện': 'G56.0', 'Thời gian điều trị': '9' },
+  ]);
+  writeCsv(path.join(runDir, 'hchanh_order_history.csv'), ['Mã BN', 'Ngày vào viện', 'Ngày ra viện', 'TG y lệnh', 'Tên y lệnh', 'Nguồn'], [
+    { 'Mã BN': '904', 'Ngày vào viện': '09:19 09/07/2026', 'Ngày ra viện': '2026-10-06', 'TG y lệnh': '07:00 17/07/2026', 'Tên y lệnh': '(u) Cefuroxime 0,5g', 'Nguồn': 'hchanh_auto_order_history' },
+  ]);
+  writeCsv(path.join(runDir, 'hchanh_surgery.csv'), ['Mã BN', 'Ngày phẫu thuật', 'Tên phẫu thuật', 'Nguồn'], [
+    { 'Mã BN': '904', 'Ngày phẫu thuật': '13:26 24/09/2026', 'Tên phẫu thuật': 'PT lần sau', 'Nguồn': 'hchanh_surgery' },
+  ]);
+  R.normalizeRunOutputs(runDir, { sourceRunId: 'r', force: true });
+  const enc = readCsvTable(path.join(runDir, 'encounters.csv'), 100).rows.filter(r => r.patient_code === '904');
+  assert.strictEqual(enc.length, 1);
+  assert.ok(!String(enc[0].discharge_date).startsWith('2026-10-06'), `ngày ra không được là ngày cuối khoảng quét: ${enc[0].discharge_date}`);
+  const surg = readCsvTable(path.join(runDir, 'surgery_results.csv'), 100).rows.filter(r => r.patient_code === '904');
+  assert.ok(surg.every(r => r.encounter_id !== enc[0].encounter_id || r.is_within_encounter !== '1'), 'ca mổ 24/09 không được tính là trong đợt 09/07');
+});
+
+test('Dòng phẫu thuật chỉ có ngày, không tên/phương pháp (ca thật: "15/07 00:00 · —") không vào bảng phẫu thuật', () => {
+  const runDir = newRunDir();
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), ['T/G vào', 'Mã BN', 'Họ tên', 'Ngày ra viện'], [
+    { 'T/G vào': '09:19 09/07/2026', 'Mã BN': '905', 'Họ tên': 'BN GIA LAP Q', 'Ngày ra viện': '18/07/2026' },
+  ]);
+  writeCsv(path.join(runDir, 'hchanh_surgery.csv'), ['Mã BN', 'Ngày phẫu thuật', 'Tên phẫu thuật', 'Phương pháp phẫu thuật', 'Nguồn'], [
+    { 'Mã BN': '905', 'Ngày phẫu thuật': '15/07/2026', 'Tên phẫu thuật': '', 'Phương pháp phẫu thuật': '', 'Nguồn': 'hchanh_surgery' },
+    { 'Mã BN': '905', 'Ngày phẫu thuật': '15/07/2026', 'Tên phẫu thuật': 'Cắt u lành phần mềm', 'Phương pháp phẫu thuật': '', 'Nguồn': 'hchanh_surgery' },
+  ]);
+  R.normalizeRunOutputs(runDir, { sourceRunId: 'r', force: true });
+  const surg = readCsvTable(path.join(runDir, 'surgery_results.csv'), 100).rows.filter(r => r.patient_code === '905');
+  assert.deepStrictEqual(surg.map(r => r.surgery_name), ['Cắt u lành phần mềm']);
+});
+
 test('Chỉ Mã BN: nhiều dòng nguồn trong cùng khoảng EMR gộp 1 đợt và không nhân bản y lệnh reuse', () => {
   const runDir = newRunDir();
   const cols = ['T/G vào', 'Mã BN', 'Họ tên'];

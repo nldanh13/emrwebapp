@@ -69,7 +69,7 @@ function describeRow(kind, row) {
   const at = eventTime(kind, row);
   if (kind === 'labs') return { label: `${at} · ${text(row.test_name_raw) || '—'}`, detail: [text(row.result_raw), text(row.unit)].filter(Boolean).join(' ') };
   if (kind === 'imaging') return { label: `${at} · ${text(row.service_name_raw) || '—'}`, detail: text(row.conclusion_text) };
-  if (kind === 'medications') return { label: `${at} · ${text(row.drug_name_raw) || '—'}`, detail: [text(row.dose_raw), text(row.route_raw)].filter(Boolean).join(' · ') };
+  if (kind === 'medications') return { label: `${at} · ${text(row.drug_name_raw) || '—'}`, detail: [text(row.dose_raw), text(row.route_norm).replace(/_/g, ' ') || text(row.route_raw)].filter(Boolean).join(' · ') };
   return { label: `${at} · ${text(row.surgery_name) || '—'}`, detail: text(row.surgery_method) };
 }
 

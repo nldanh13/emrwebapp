@@ -196,7 +196,9 @@ function researchHchanhMeta(row, sourceRunId = '') {
     date_from: isoDate(admissionRaw) || admissionRaw || '',
     date_to: isoDate(dischargeRaw) || dischargeRaw || '',
     admission_raw: actualAdmission || admissionRaw || '',
-    discharge_raw: actualDischarge || dischargeRaw || '',
+    // Chỉ ngày ra viện thật. Không lấy fetch_to_date (ngày cuối khoảng lấy dữ liệu, thường là ngày cuối
+    // khoảng quét): ghi nó vào "Ngày ra viện" làm đợt kéo dài tới ngày đó (ca thật: 09/07 → 06/10).
+    discharge_raw: actualDischarge || '',
     doctor_url: firstNonEmpty(row, ['URL bác sĩ', 'URL bac si', 'record_doctor_url', 'doctor_url']),
     nursing_url: firstNonEmpty(row, ['URL điều dưỡng', 'URL dieu duong', 'record_nursing_url', 'nursing_url']),
   };

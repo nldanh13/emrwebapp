@@ -19,7 +19,7 @@ const { databaseInfo } = require('./sqlite_store');
 const { readCsvTable, patientCode, writeCsv, countCsvRows, getCell } = require('./table_io');
 const { overlayHchanhFromPatientDb, KHO_OVERLAY_FILE, overlayResultsFromPatientDb } = require('./patient_db_overlay');
 const { appendResearchRunLog } = require('./case_trace');
-const { combineEncounterSources, mergeRowsPreferFilled, dedupeByHash, byEncounterCount, buildVerifiedStayIndex, canonicalizeRowToVerifiedStay, dropSharedResearchCodes } = require('./source_merge');
+const { combineEncounterSources, mergeRowsPreferFilled, dedupeByHash, byEncounterCount, buildVerifiedStayIndex, canonicalizeRowToVerifiedStay, dropSharedResearchCodes, dropPlaceholderDischarge, placeholderDischargeDays } = require('./source_merge');
 const { normalizeSex, extractBirthYear, normalizeLabName, resultOperator, parseNumeric, resultText, normalizeLabMeasurement, normalizeFlag, modalityFromService, bodyRegionFromService, normalizeDrugName, classifyDrugGroup, normalizeRoute } = require('./value_normalizers');
 const { dedupeRowsByHash, dedupeSurgeryRows, snapshotFinalDatasetIfUnsaved } = require('./dataset_store');
 const { firstSurgeryByEncounter, surgeryForMedicationContext } = require('./encounter_linkage');
@@ -262,6 +262,13 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   } catch (err) {
     console.warn('[RESEARCH] Không đọc được Kho người bệnh khi chuẩn hoá:', err.message);
   }
+
+  // Ngày cuối khoảng lấy dữ liệu đã lỡ ghi làm "Ngày ra viện" trong file hành chánh cũ: coi là chưa có.
+  const fakeDischargeDays = placeholderDischargeDays(sourceTable.rows.length ? sourceTable.rows : initialTable.rows);
+  hchanhProfileTable.rows = dropPlaceholderDischarge(hchanhProfileTable.rows || [], fakeDischargeDays);
+  hchanhDischargeTable.rows = dropPlaceholderDischarge(hchanhDischargeTable.rows || [], fakeDischargeDays);
+  hchanhSurgeryTable.rows = dropPlaceholderDischarge(hchanhSurgeryTable.rows || [], fakeDischargeDays);
+  hchanhOrderTable.rows = dropPlaceholderDischarge(hchanhOrderTable.rows || [], fakeDischargeDays);
 
   // Mã NC cũ dùng chung cho nhiều Mã BN trong file hành chánh không được gắn vào đợt/dòng con.
   hchanhProfileTable.rows = dropSharedResearchCodes(hchanhProfileTable.rows || []);
@@ -590,7 +597,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     base.row_hash = stableHash(base);
     base.surgery_id = `surg_${base.row_hash || stableHash([idx, base.patient_code])}`;
     return base;
-  }).filter(r => r.patient_code && (r.surgery_date || r.surgery_name || r.surgery_method));
+    // Dòng chỉ có ngày, không tên/phương pháp (dấu mốc trống từ EMR) không phải một ca phẫu thuật.
+  }).filter(r => r.patient_code && (r.surgery_name || r.surgery_method));
   surgeryResults = dedupeSurgeryRows(surgeryResults);
 
   // Chỉ index theo encounter đã ghép chắc chắn. Không dùng patient_code làm fallback:
