@@ -83,6 +83,20 @@ test('thuốc: Sismyodin trong Y lệnh khác được parse như thuốc thật
   assert.strictEqual(p.source_field, 'order_other');
 });
 
+test('thuốc: không có đường dùng thì route phải trống, không biến cả câu thành token giả', () => {
+  const p = parser.parseMedicationLine('(TT) AT Paracetamol 1g');
+  assert.ok(p);
+  assert.strictEqual(p.drug_name_raw, 'AT Paracetamol');
+  assert.strictEqual(p.strength_raw, '1 g');
+  assert.strictEqual(p.route_raw, '');
+  assert.strictEqual(p.route_norm, '');
+});
+
+test('chăm sóc: Xuất viện: uống không được biến thành thuốc', () => {
+  assert.strictEqual(parser.classifyOrderLine('Xuất viện: uống').kind, 'care_order');
+  assert.strictEqual(parser.parseMedicationLine('Xuất viện: uống'), null);
+});
+
 test('thuốc: B12 trong tên không bị nhầm thành giờ dùng', () => {
   const p = parser.parseMedicationLine('(TT) B12 Ankermann 01v x2(u) 8h-20h');
   assert.ok(p);

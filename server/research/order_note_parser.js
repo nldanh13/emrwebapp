@@ -73,6 +73,7 @@ const STOP_RE = /^(?:ngung|dung)\s+(?:y lenh\s+)?(?:thuoc\s+)?/i;
 const CONTINUE_RE = /^(?:duy tri|tiep tuc)\s+(?:y lenh\s+)?/i;
 const CARE_RE = /\b(?:rut dan luu|thay bang|cat chi|tap van dong|cham soc|theo doi|xuat vien|tai kham)\b/i;
 const MED_HINT_RE = /(?:^|\s)(?:tt|cs)(?:\s|$)|\b\d+(?:[.,]\d+)?\s*(?:mg|mcg|g|ml|iu|ui|dv)\b|\b\d+\s*(?:v|vien|ong|chai|lo|goi)\b|\bx\s*\d+\b|\b(?:u|t|uong|tiem|truyen|ttm|tdt|tdd|xit|hit|bom|boi)\b/i;
+const MED_STRONG_RE = /(?:^|\s)(?:tt|cs)(?:\s|$)|\b\d+(?:[.,]\d+)?\s*(?:mg|mcg|g|ml|iu|ui|dv)\b|\b\d+\s*(?:v|vien|ong|chai|lo|goi)\b|\bx\s*\d+\b/i;
 
 function classifyOrderLine(line) {
   const raw = cleanText(line);
@@ -85,7 +86,10 @@ function classifyOrderLine(line) {
       ? { kind: 'medication', action: 'continue', confidence: 'medium' }
       : { kind: 'medication_reference', action: 'continue', confidence: 'medium' };
   }
-  if (CARE_RE.test(norm) && !MED_HINT_RE.test(norm)) return { kind: 'care_order', action: '', confidence: 'high' };
+  // Từ chỉ đường dùng đơn lẻ ("uống", "tiêm"...) không đủ để biến một chỉ định
+  // chăm sóc như "Xuất viện: uống" thành thuốc. Chỉ cho medication thắng CARE khi
+  // có bằng chứng thuốc mạnh hơn: TT/CS, hàm lượng, số lượng hoặc xN.
+  if (CARE_RE.test(norm) && !MED_STRONG_RE.test(norm)) return { kind: 'care_order', action: '', confidence: 'high' };
   if (MED_HINT_RE.test(norm)) return { kind: 'medication', action: 'order', confidence: 'high' };
   if (/\bthuoc\b/i.test(norm)) return { kind: 'medication_reference', action: 'reference', confidence: 'low' };
   return { kind: 'other', action: '', confidence: 'low' };
@@ -151,7 +155,9 @@ function parseMedicationLine(line, sourceField = 'order') {
     drug_name_norm: normalizeDrugName(drugName),
     strength_raw: parseStrength(line),
     route_raw: routeRaw,
-    route_norm: normalizeRoute(routeRaw || line),
+    // Không có route explicit thì để unknown. Trước đây normalize cả câu y lệnh
+    // tạo token giả kiểu "tt_at_paracetamol_1g_1" rồi audit hiểu nhầm là đường dùng.
+    route_norm: routeRaw ? normalizeRoute(routeRaw) : '',
     times_per_day: parseTimesPerDay(line),
     schedule: schedule.join(';'),
   };

@@ -22,13 +22,47 @@ function test(name, fn) { tests.push({ name, fn }); }
 
 const put = (dir, file, rows) => writeCsv(path.join(dir, file), [...new Set(rows.flatMap(Object.keys))], rows);
 
-test('so sánh: khớp, lệch giá trị, kho thiếu, kho thừa; dòng trùng thật đếm theo số lần', () => {
+test('so sánh: khớp, lệch giá trị, kho thiếu, kho thừa; dòng logic trùng chỉ tính một lần', () => {
   const lab = (t, name, v) => ({ lab_datetime: t, test_name_raw: name, result_raw: v, unit: 'G/L' });
   const r = compareRows('labs',
     [lab('2026-03-02 06:30', 'WBC', '9'), lab('2026-03-02 06:30', 'WBC', '9'), lab('2026-03-02 06:30', 'HGB', '120'), lab('2026-03-03 06:30', 'PLT', '200')],
     [lab('02/03/2026 06:30', 'wbc', '9'), lab('2026-03-02 06:30', 'WBC', '9'), lab('2026-03-02 06:30', 'HGB', '118'), lab('2026-03-04 06:30', 'CRP', '5')]);
-  assert.deepStrictEqual([r.matched, r.mismatched, r.archive_only, r.emr_only], [2, 1, 1, 1]);
+  assert.deepStrictEqual([r.matched, r.mismatched, r.archive_only, r.emr_only], [1, 1, 1, 1]);
+  assert.strictEqual(r.archive_count, 3);
+  assert.strictEqual(r.emr_count, 3);
+  assert.strictEqual(r.archive_raw_count, 4);
+  assert.strictEqual(r.emr_raw_count, 4);
   assert.deepStrictEqual(r.examples.mismatched[0], { label: '2026-03-02 06:30 · HGB', archive: '120 g/l', emr: '118 g/l' });
+});
+
+test('so thuốc: thiếu route ở một phía không phải lệch; hai route thật khác nhau mới lệch', () => {
+  const base = { order_datetime: '2026-05-16 05:00', drug_name_raw: 'AT Paracetamol', dose_raw: '1 g' };
+  let r = compareRows('medications',
+    [{ ...base, route_norm: 'truyền_tĩnh_mạch' }],
+    [{ ...base, route_norm: '' }]);
+  assert.deepStrictEqual([r.matched, r.mismatched, r.archive_only, r.emr_only], [1, 0, 0, 0]);
+
+  r = compareRows('medications',
+    [{ ...base, route_norm: 'truyền_tĩnh_mạch' }],
+    [{ ...base, route_norm: 'uống' }]);
+  assert.deepStrictEqual([r.matched, r.mismatched, r.archive_only, r.emr_only], [0, 1, 0, 0]);
+});
+
+test('so phẫu thuật: bỏ mã PT đầu tên và không coi thiếu giờ một phía là lệch', () => {
+  const archive = [{
+    surgery_date: '2026-05-15',
+    surgery_datetime: '',
+    surgery_name: '(PT.208)Phẫu thuật nội soi khâu sụn chêm',
+    surgery_method: 'Phẫu thuật nội soi khâu sụn chêm',
+  }];
+  const emr = [{
+    surgery_date: '2026-05-15',
+    surgery_datetime: '2026-05-15 08:55',
+    surgery_name: 'Phẫu thuật nội soi khâu sụn chêm',
+    surgery_method: 'Phẫu thuật nội soi khâu sụn chêm',
+  }];
+  const r = compareRows('surgeries', archive, emr);
+  assert.deepStrictEqual([r.matched, r.mismatched, r.archive_only, r.emr_only], [1, 0, 0, 0]);
 });
 
 test('so sánh mốc đợt: ngày ra khác thì lệch, đủ cả hai bên mới tính khớp', () => {

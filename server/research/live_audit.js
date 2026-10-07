@@ -21,8 +21,9 @@ const { wilson } = require('./audit_sample');
 const LIVE_PROJECT = 'kiem_tra_ngau_nhien';
 const STORE_FILE = path.join('audit', 'live.json');
 // v2: worker Lịch sử y lệnh đọc độc lập Thuốc/T-VT và Y lệnh khác.
-// Kết quả v1 có thể báo "kho thừa" giả (ca Sismyodin) nên không được cộng vào tỉ lệ mới.
-const LIVE_AUDIT_VERSION = 2;
+// v3: audit dedupe sự thật lâm sàng và so optional field bảo thủ; route unknown/giờ mổ
+// thiếu một phía không còn bị tính sai. Kết quả v1-v2 không cộng vào tỉ lệ mới.
+const LIVE_AUDIT_VERSION = 3;
 const HCHANH_FILES = ['profile', 'discharge', 'surgery', 'order_history'];
 const DAY_MS = 86400000;
 const TABLES = {
