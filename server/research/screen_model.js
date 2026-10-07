@@ -65,10 +65,22 @@ function reasonOf(enc) {
   if (enc.match_status === 'unmatched') {
     return collection.REASON_LABELS?.[enc.unmatched_reason] || 'Chưa ghép chắc lượt điều trị';
   }
+  // Ưu tiên lý do cần người xử lý/lỗi kỹ thuật.
   for (const k of collection.PART_KEYS) {
     const p = enc.parts?.[k];
     if (p && ['failed', 'blocked'].includes(p.status) && !collection.partIsCurrent(enc, k)) {
       const label = collection.REASON_LABELS?.[p.reason] || p.reason || 'Lỗi';
+      return `${partLabel(k)}: ${label}`;
+    }
+  }
+  // Nếu máy tự xử lý, vẫn nói vì sao: chưa lấy, dữ liệu đổi, parser cũ...
+  for (const k of collection.PART_KEYS) {
+    if (collection.partIsCurrent(enc, k)) continue;
+    const p = enc.parts?.[k];
+    const stale = collection.staleReason?.(enc, k) || '';
+    const reason = stale || p?.reason || (p?.status === 'pending' || !p ? 'missing' : '');
+    if (reason) {
+      const label = collection.REASON_LABELS?.[reason] || reason;
       return `${partLabel(k)}: ${label}`;
     }
   }
