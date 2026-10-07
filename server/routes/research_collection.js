@@ -140,7 +140,7 @@ async function handleCollectAuto(req, res, studyIdParam = '') {
         const redact = researchResponseShouldRedact(req);
         return res.json({
           status: 'ok', message, run_id: sc.runId, cancelled: report.cancelled,
-          report: { ...report, exceptions: redactCollectionRows(report.exceptions.slice(0, 500), redact) },
+          report: { ...report, exceptions: redactCollectionRows(report.exceptions.slice(0, 500), redact, { keepPatientCode: true }) },
           normalized,
         });
       } catch (err) {
@@ -176,7 +176,7 @@ function handleCollectionStatus(req, res, studyIdParam = '') {
       next_plan: plan.summary,
       last_report: lastReport ? { ...lastReport, exceptions: undefined } : null,
       exceptions_total: exceptions.length,
-      exceptions: redactCollectionRows(exceptions.slice(0, 500), redact),
+      exceptions: redactCollectionRows(exceptions.slice(0, 500), redact, { keepPatientCode: true }),
     });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
@@ -204,8 +204,11 @@ function handleCollectionScreen(req, res, studyIdParam = '') {
       pipeline: buildPipelineInfo(sc.isArchive ? archiveDir() : studyDir(sc.scope), sc.runDir),
     });
     if (researchResponseShouldRedact(req)) {
-      screen.rows = screen.rows.map(r => ({ ...r, patient_code: r.patient_code ? '[đã che]' : '', patient_name: '' }));
-      if (screen.live) screen.live = { ...screen.live, ma_bn: '', ho_ten: '' };
+      // Màn vận hành cần Mã BN để người dùng tra ngược EMR khi có ngoại lệ.
+      // Chỉ giữ mã tra cứu; họ tên vẫn che ở chế độ mặc định. Export nghiên cứu
+      // vẫn đi qua sendCsvFile(..., { redact: true }) và không thay đổi chính sách ẩn danh.
+      screen.rows = screen.rows.map(r => ({ ...r, patient_name: '' }));
+      if (screen.live) screen.live = { ...screen.live, ho_ten: '' };
     }
     return res.json({ status: 'ok', screen, refresh_policy: sc.refreshPolicy });
   } catch (err) {
