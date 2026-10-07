@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { RUNTIME_ROOT } = require('../constants');
 const { readJsonSafe } = require('../utils/file');
+const { NORMALIZED_SCHEMA_VERSION } = require('./normalized_schema');
 
 function relPath(p) {
   const rel = path.relative(RUNTIME_ROOT, p);
@@ -135,6 +136,11 @@ function buildPipelineInfo(scopeDir, runDir) {
       at: manifest.normalized_at || normalizeState.finished_at || '',
       duration_ms: Number.isFinite(startedAt) && Number.isFinite(finishedAt) ? finishedAt - startedAt : null,
       schema_version: manifest.normalized_schema_version || normalizeState.schema_version || null,
+      expected_schema_version: NORMALIZED_SCHEMA_VERSION,
+      schema_outdated: Boolean(
+        Number(manifest.normalized_schema_version || normalizeState.schema_version || 0) > 0
+        && Number(manifest.normalized_schema_version || normalizeState.schema_version || 0) < NORMALIZED_SCHEMA_VERSION
+      ),
       app_version: manifest.normalized_code_version?.app_version || '',
       qa: {
         status: qa.status || manifest.normalized_qa?.status || '',
