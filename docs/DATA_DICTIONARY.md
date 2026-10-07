@@ -313,7 +313,7 @@
 
 **Nguồn:** hchanh_surgery.csv (D/s phẫu thuật, tìm theo mốc PT trong lịch sử y lệnh); lich_su_phau_thuat.csv / phau_thuat.csv (nếu có)
 
-**Cách xử lý:** Bỏ dòng không có ngày, tên và phương pháp; gộp các dòng trùng ca mổ.
+**Cách xử lý:** Bỏ dòng không có cả tên phẫu thuật lẫn phương pháp; gộp các dòng trùng ca mổ.
 
 **Quy tắc chất lượng**
 
