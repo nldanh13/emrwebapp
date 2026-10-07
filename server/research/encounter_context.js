@@ -197,6 +197,36 @@ function isoDateOrTime(value) {
 const HOSPITAL_ADMISSION_FIELDS = ['Ngày vào viện', 'Ngay vao vien', 'Ngày nhập viện', 'Ngay nhap vien'];
 const EMERGENCY_LOOKBACK_MS = 24 * 3600 * 1000;
 
+// Kết quả trước nhập viện / sau ra viện trong vòng 30 ngày (khám, XN ngoại trú trước mổ, tái khám) cũng
+// là quá trình điều trị của người bệnh: gắn vào đợt gần nhất nhưng đánh dấu riêng (encounter_match_method
+// = pre_admission / post_discharge) và is_within_encounter = 0, để không lẫn với dữ liệu trong đợt.
+const PERI_ENCOUNTER_MS = 30 * 86400000;
+const PERI_METHODS = new Set(['pre_admission', 'post_discharge']);
+
+function periEncounterGap(eventDate, ctx) {
+  const event = parseAnyDate(eventDate);
+  const admission = parseAnyDate(ctx?.admission_date);
+  if (!event || !admission) return null;
+  const t = event.getTime();
+  const start = admission.getTime() - EMERGENCY_LOOKBACK_MS;
+  if (t < start) return start - t <= PERI_ENCOUNTER_MS ? { method: 'pre_admission', gap: start - t } : null;
+  const discharge = parseAnyDate(ctx?.discharge_date);
+  if (!discharge) return null;
+  const end = discharge.getTime() + (hasPreciseClock(ctx.discharge_date) ? 0 : 86400000 - 1);
+  if (t > end) return t - end <= PERI_ENCOUNTER_MS ? { method: 'post_discharge', gap: t - end } : null;
+  return null;
+}
+
+// Đợt gần nhất (trước/sau) của kết quả nằm ngoài mọi đợt; hai đợt cách đều thì không đoán.
+function nearestPeriEncounter(eventDate, candidates = []) {
+  if (candidates.some(ctx => eventInsideContext(eventDate, ctx, { emergency: true }))) return null;
+  const options = candidates.map(ctx => ({ ctx, peri: periEncounterGap(eventDate, ctx) })).filter(x => x.peri)
+    .sort((a, b) => a.peri.gap - b.peri.gap);
+  if (!options.length) return null;
+  if (options.length > 1 && options[1].peri.gap === options[0].peri.gap) return null;
+  return matchedContext(options[0].ctx, options[0].peri.method);
+}
+
 function eventInsideContext(eventDate, ctx, { emergency = false } = {}) {
   if (!eventDate || !ctx?.admission_date) return false;
   const event = parseAnyDate(eventDate);
@@ -247,6 +277,8 @@ function matchedContextForRow(ctx, row, code, method, ctxMap = null) {
     if (eventInsideContext(eventDate, ctx, { emergency: true }) && !others.some(other => eventInsideContext(eventDate, other))) {
       return matchedContext(ctx, 'emergency_before_ward');
     }
+    const peri = nearestPeriEncounter(eventDate, ctxMap?.get(`patient:${code}`) || [ctx]);
+    if (peri) return peri;
     return unresolvedContext(code, [ctx], 'encounter_match_outside_time');
   }
   return matchedContext(ctx, method);
@@ -383,6 +415,10 @@ function contextForRow(ctxMap, row, code) {
     if (!temporal.length) {
       const emergency = candidates.filter(ctx => eventInsideContext(eventDate, ctx, { emergency: true }));
       if (emergency.length === 1) return matchedContext(emergency[0], 'emergency_before_ward');
+      if (!emergency.length) {
+        const peri = nearestPeriEncounter(eventDate, candidates);
+        if (peri) return peri;
+      }
     }
     if (!temporal.length) return unresolvedContext(code, candidates, 'encounter_match_outside_time');
     return unresolvedContext(code, temporal, 'encounter_match_ambiguous');
@@ -404,6 +440,7 @@ function rowDischargeTime(row) {
 
 
 module.exports = {
+  PERI_METHODS,
   stableHash,
   normalizeSimple,
   normalizeToken,

@@ -27,7 +27,9 @@
 //      trong file hành chánh bị bỏ; 24 giờ trước giờ vào áp cho mọi đợt.
 // v26: đợt kéo dài theo khoảng vào–ra cả lần nằm viện ghi trên dòng y lệnh; ngày phẫu thuật ghi
 //      kiểu tháng/ngày được đọc đúng.
-const NORMALIZED_SCHEMA_VERSION = 26;
+// v27: kết quả trước nhập viện / sau ra viện (≤ 30 ngày) gắn kèm đợt gần nhất, đánh dấu
+//      encounter_match_method = pre_admission / post_discharge, is_within_encounter = 0.
+const NORMALIZED_SCHEMA_VERSION = 27;
 
 const NORMALIZED_COLUMNS = {
   patients: [

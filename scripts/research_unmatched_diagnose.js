@@ -88,10 +88,14 @@ console.log('\n== Dòng không ghép được, theo bảng ==');
 for (const [label, spec] of Object.entries(TABLES)) {
   const list = rows(dir, spec.file);
   if (!list || !list.length) continue;
-  const status = {}; const reason = {}; const outside = {}; const ambiguous = {};
+  const status = {}; const reason = {}; const outside = {}; const ambiguous = {}; const period = {};
   for (const r of list) {
     const st = text(r.encounter_match_status) || '(trống)';
     bump(status, st);
+    if (st === 'matched') {
+      const m = text(r.encounter_match_method);
+      bump(period, m === 'pre_admission' ? 'trước nhập viện (≤ 30 ngày)' : m === 'post_discharge' ? 'sau ra viện (≤ 30 ngày)' : m === 'emergency_before_ward' ? 'Cấp cứu, trước vào khoa (≤ 24 giờ)' : 'trong đợt');
+    }
     if (st === 'matched') continue;
     const why = text(r.encounter_match_reason) || '(không ghi lý do)';
     bump(reason, why);
@@ -118,6 +122,7 @@ for (const [label, spec] of Object.entries(TABLES)) {
   }
   console.log(`\n${label} (${spec.file}): ${list.length} dòng`);
   print('trạng thái', status);
+  print('đã ghép, theo giai đoạn', period);
   print('lý do chưa ghép', reason);
   print('"ngoài thời gian": lệch bao xa so với lượt của chính người bệnh', outside);
   print('"mơ hồ"', ambiguous);
