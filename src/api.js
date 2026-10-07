@@ -514,6 +514,13 @@ export const getResearchArchivePatientHistory = ({ q = '', runId = 'latest' } = 
   params.set('identified', '1');
   return get(`/api/research/archive/patient-history?${params}`);
 };
+// Kiểm tra ngẫu nhiên: luôn có định danh (Mã BN, họ tên) để đối chiếu EMR; máy chủ tự chặn khi chưa đủ quyền.
+const auditQuery = () => new URLSearchParams({ runId: 'latest', identified: '1' }).toString();
+export const getResearchAuditSummary = () => get(`/api/research/archive/audit?${auditQuery()}`);
+export const createResearchAuditSample = () => post(`/api/research/archive/audit/sample?${auditQuery()}`, {});
+export const getResearchAudit = (id) => get(`/api/research/archive/audit/${encodeURIComponent(id)}?${auditQuery()}`);
+export const saveResearchAuditItem = (id, itemId, { verdict, note = '' }) =>
+  put(`/api/research/archive/audit/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}?${auditQuery()}`, { verdict, note });
 export const getResearchArchiveVariableCatalog = ({ runId = 'latest' } = {}) => {
   const params = new URLSearchParams();
   if (runId) params.set('runId', runId);
