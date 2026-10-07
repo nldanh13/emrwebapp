@@ -1,5 +1,5 @@
-// Bảng "Đánh giá dữ liệu" chỉ hiển thị mô hình màn hình từ máy chủ: hai phần Đủ / Chính xác,
-// mỗi con số có "Cần làm"; bấm "Xem danh sách" mới hiện lượt; lần đầu chưa có số thì hiện khung
+// Bảng "Đánh giá dữ liệu" chỉ hiển thị mô hình màn hình từ máy chủ: ba trạng thái hành động
+// Sẵn sàng / Máy xử lý / Cần bạn kiểm tra + một phần QA riêng; bấm "Xem danh sách" mới hiện lượt; lần đầu chưa có số thì hiện khung
 // xám (skeleton) thay vì hiện từng ô một (UX_RULES mục 9).
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createElement, act } from 'react';
@@ -15,12 +15,13 @@ const screen = {
   generated_at: '2026-10-05T10:00:00Z',
   total: 5,
   counts: { done: 1, missing: 1, error: 1, waiting: 1, unmatched: 1 },
+  user_counts: { ready: 1, automatic: 2, manual: 2 },
   parts: [{ key: 'xn', label: 'Xét nghiệm', total: 4, done: 1, failed: 1 }],
   plan: { max_attempts: 3 },
   rows: [
-    { key: 'a', research_code: 'NC3', patient_name: 'LỖI', state: 'error', missing: 'Xét nghiệm', reason: 'Xét nghiệm: Hết thời gian chờ EMR' },
-    { key: 'b', research_code: 'NC2', patient_name: 'THIẾU', state: 'missing', missing: 'Y lệnh', reason: '' },
-    { key: 'c', research_code: 'NC4', patient_name: 'GHÉP', state: 'unmatched', missing: '', reason: 'Thời điểm vào viện khớp nhiều lượt' },
+    { key: 'a', research_code: 'NC3', patient_name: 'LỖI', state: 'error', user_state: 'automatic', missing: 'Xét nghiệm', reason: 'Xét nghiệm: Hết thời gian chờ EMR' },
+    { key: 'b', research_code: 'NC2', patient_name: 'THIẾU', state: 'missing', user_state: 'automatic', missing: 'Y lệnh', reason: 'Y lệnh: Chưa lấy' },
+    { key: 'c', research_code: 'NC4', patient_name: 'GHÉP', state: 'unmatched', user_state: 'manual', missing: '', reason: 'Thời điểm vào viện khớp nhiều lượt' },
   ],
   qa: { blocking: [], warnings: [], review_count: 1, review_by_issue: { future_date: 1 }, review: [{ research_code: 'NC9', issue: 'future_date', detail: 'Ngày ở tương lai' }] },
   task: { stopped: null, last_task: null },
@@ -33,26 +34,29 @@ describe('ResearchOperationDashboard', () => {
     expect(host.textContent).not.toMatch(/\d/);
   });
 
-  it('hai phần Đủ / Chính xác; các nhóm cộng lại đúng tổng; mỗi con số cần xử lý có "Cần làm"', () => {
+  it('màn chính chỉ hiện ba trạng thái thống nhất + kiểm tra chất lượng', () => {
     act(() => root.render(createElement(ResearchOperationDashboard, { screen })));
     const t = host.textContent;
-    expect(t).toContain('1. Đủ dữ liệu: 1/5 lượt (20%)');
-    expect(t).toContain('2. Chính xác');
-    for (const label of ['Còn thiếu', 'Lỗi, sẽ tự thử lại', 'Chờ người xem', 'Chưa ghép chắc']) expect(t).toContain(label);
+    expect(t).toContain('1. Trạng thái dữ liệu · 1/5 lượt sẵn sàng (20%)');
+    expect(t).toContain('2. Kiểm tra chất lượng');
+    for (const label of ['Sẵn sàng', 'Chờ máy xử lý', 'Cần bạn kiểm tra']) expect(t).toContain(label);
     expect(t).toContain('Cần làm:');
     expect(t).toContain('Ngày vào/ra viện ở tương lai: 1');
     expect(t).toContain('số liệu lúc');
     expect(t).not.toContain('Hết thời gian chờ EMR');
   });
 
-  it('bấm "Xem danh sách" ở "Lỗi, sẽ tự thử lại" thì chỉ hiện lượt lỗi kèm lý do', () => {
+  it('bấm "Xem danh sách" ở "Máy xử lý" thì gom phần thiếu và lỗi tự thử, không trộn nhóm cần người', () => {
     act(() => root.render(createElement(ResearchOperationDashboard, { screen })));
-    const errorBtn = [...host.querySelectorAll('button')]
+    const automaticBtn = [...host.querySelectorAll('button')]
       .filter(b => b.textContent === 'Xem danh sách')
-      .find(b => b.closest('div').parentElement.textContent.includes('Lỗi, sẽ tự thử lại'));
-    act(() => errorBtn.click());
+      .find(b => b.closest('div').parentElement.textContent.includes('Chờ máy xử lý'));
+    act(() => automaticBtn.click());
     expect(host.textContent).toContain('Xét nghiệm: Hết thời gian chờ EMR');
-    expect(host.textContent).not.toContain('THIẾU');
+    expect(host.textContent).toContain('Y lệnh: Chưa lấy');
+    expect(host.textContent).toContain('LỖI');
+    expect(host.textContent).toContain('THIẾU');
+    expect(host.textContent).not.toContain('GHÉP');
   });
 
   it('nút làm mới có chữ; ghi chú chuẩn hóa bằng tiếng Việt; ngày giờ một định dạng', () => {
