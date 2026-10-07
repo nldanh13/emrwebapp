@@ -76,13 +76,14 @@ function Stage({ n, title, state, tone = 'neutral', what, children }) {
 
 const B = ({ children }) => <b style={{ color: C.text, fontVariantNumeric: 'tabular-nums' }}>{children}</b>;
 
-function PipelineView({ pipeline, summary, onNormalize, normalizeBusy = false }) {
+function PipelineView({ pipeline, summary, collectionScreen = null, onInspectCollection, onNormalize, normalizeBusy = false }) {
   if (!pipeline?.exists) return null;
   const { scan, collect, normalize, storage, reused_from_patient_db: reused } = pipeline;
   const fetch = pipeline.fetch || {};
   const modules = summary.modules || [];
   const anyCollected = modules.some(m => Number(m.done || 0) > 0);
   const qa = normalize.qa || {};
+  const diagnostics = collectionScreen?.diagnostics?.length ? collectionScreen.diagnostics : (collect?.diagnostics || []);
   const qaTone = qa.blocking ? 'danger' : qa.warning ? 'warn' : qa.status ? 'ok' : 'neutral';
   return (
     <section style={card}>
@@ -112,24 +113,46 @@ function PipelineView({ pipeline, summary, onNormalize, normalizeBusy = false })
               {fetch.parts?.length ? <span style={{ color: C.text3 }}> ({fetch.parts.map(p => `${p.label}: ${when(p.updated_at)}`).join(' · ')})</span> : null}.
             </div>
           )}
-          {!!collect?.diagnostics?.length && (
+          {!!diagnostics.length && (
             <div style={{ marginTop: 8, border: `1px solid ${C.amberBorder}`, background: C.amberBg, borderRadius: 7, padding: '7px 9px' }}>
               <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Lỗi đang nằm ở bước nào?</div>
-              <div style={{ marginTop: 5, display: 'grid', gap: 4 }}>
-                {collect.diagnostics.slice(0, 8).map((d, idx) => (
-                  <div key={`${d.stage || 'x'}_${idx}`} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: FS.xs, color: C.text2 }}>
-                    <b>{d.stage_label || 'Chưa phân loại'}:</b>
-                    <span>{d.message}</span>
-                    <span style={{ color: C.text3 }}>· {compactNumber(d.encounters || 0)} lượt / {compactNumber(d.rows || 0)} phần</span>
-                  </div>
-                ))}
+              <div style={{ marginTop: 5, display: 'grid', gap: 7 }}>
+                {diagnostics.slice(0, 8).map((d, idx) => {
+                  const states = Array.isArray(d.states) ? d.states : [];
+                  const focus = states.includes('waiting') ? 'waiting' : states.includes('unmatched') ? 'unmatched' : 'error';
+                  return (
+                    <div key={`${d.stage || 'x'}_${idx}`} style={{ fontSize: FS.xs, color: C.text2 }}>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <b>{d.stage_label || 'Chưa phân loại'}:</b>
+                        <span>{d.message}</span>
+                        <span style={{ color: C.text3 }}>· {compactNumber(d.encounters || 0)} lượt / {compactNumber(d.rows || 0)} phần</span>
+                        {onInspectCollection && (
+                          <button type="button" onClick={() => onInspectCollection(focus)} style={{
+                            border: `1px solid ${C.border2}`, background: C.surface, color: C.text2,
+                            borderRadius: 5, height: 22, padding: '0 8px', fontSize: FS.xs, cursor: 'pointer',
+                          }}>Xem danh sách</button>
+                        )}
+                      </div>
+                      {!!d.by_part?.length && (
+                        <div style={{ marginTop: 2, color: C.text3 }}>
+                          Phần lỗi: {d.by_part.map(p => `${p.label || p.part}: ${compactNumber(p.rows)}`).join(' · ')}
+                        </div>
+                      )}
+                      {!!d.samples?.length && (
+                        <div style={{ marginTop: 2, color: C.text3 }}>
+                          Ví dụ: {d.samples.map(x => x.research_code || x.key).filter(Boolean).slice(0, 5).join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
           {!!reused.cases && <div>Dùng lại từ Kho người bệnh (tab Kiểm/Trả HSBA): <B>{compactNumber(reused.cases)}</B> ca, trong đó <B>{compactNumber(reused.provisional)}</B> ca còn dữ liệu tạm thời, <B>{compactNumber(reused.replaced_by_goc)}</B> ca đã thay bằng dữ liệu gốc.</div>}
           {!!modules.length && (
             <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', columnGap: 18, rowGap: 8 }}>
-              {modules.map(part => <ModuleBar key={part.label} label={part.label} done={part.done} total={summary.total} />)}
+              {modules.map(part => <ModuleBar key={part.label} label={part.label} done={part.done} total={part.total ?? summary.total} />)}
             </div>
           )}
         </Stage>
@@ -157,7 +180,9 @@ function PipelineView({ pipeline, summary, onNormalize, normalizeBusy = false })
           )}
           {!!qa.blocking_items?.length && (
             <div style={{ marginTop: 8, border: `1px solid ${C.redBorder || C.border}`, background: C.redBg || C.surface2, borderRadius: 7, padding: '8px 9px' }}>
-              <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.red }}>Lỗi chặn phải xử lý trước khi tạo dataset</div>
+              <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.red }}>
+                {normalizeBusy ? 'Lỗi của lần chuẩn hóa trước · lần mới đang chạy để cập nhật' : 'Lỗi chặn phải xử lý trước khi tạo dataset'}
+              </div>
               <div style={{ marginTop: 5, display: 'grid', gap: 5 }}>
                 {qa.blocking_items.map((item, idx) => (
                   <div key={`${item.code || 'block'}_${idx}`} style={{ fontSize: FS.xs, color: C.text2 }}>
@@ -165,6 +190,7 @@ function PipelineView({ pipeline, summary, onNormalize, normalizeBusy = false })
                     <span>{item.message || 'Lỗi chất lượng dữ liệu.'}</span>
                     {item.table ? <span style={{ color: C.text3 }}> · bảng {item.table}</span> : null}
                     {Number(item.count || 0) > 0 ? <span style={{ color: C.text3 }}> · {compactNumber(item.count)} dòng/nhóm</span> : null}
+                    {Array.isArray(item.files) && item.files.length ? <span style={{ color: C.text3 }}> · file đổi: {item.files.slice(0, 5).join(', ')}</span> : null}
                   </div>
                 ))}
               </div>
@@ -258,9 +284,17 @@ function PipelineView({ pipeline, summary, onNormalize, normalizeBusy = false })
   );
 }
 
-export function GeneralOverviewView({ generalOverview, generalOverviewLoading, pipeline, setArchiveMode, onNormalize, normalizeBusy = false }) {
+export function GeneralOverviewView({ generalOverview, generalOverviewLoading, pipeline, collectionScreen = null, setArchiveMode, onInspectCollection, onNormalize, normalizeBusy = false }) {
   const ov = generalOverview;
-  const summary = ov?.statusSummary || { total: 0, ready: 0, missingCount: 0, manualReview: 0, modules: [] };
+  const legacySummary = ov?.statusSummary || { total: 0, ready: 0, missingCount: 0, manualReview: 0, modules: [] };
+  const collectionCounts = collectionScreen?.counts || null;
+  const summary = collectionScreen ? {
+    total: Number(collectionScreen.total || 0),
+    ready: Number(collectionCounts?.done || 0),
+    missingCount: Number(collectionCounts?.missing || 0),
+    counts: collectionCounts,
+    modules: (collectionScreen.parts || []).map(p => ({ ...p, label: p.label, total: Number(p.total || 0), done: Number(p.done || 0) })),
+  } : legacySummary;
   const counts = ov?.counts || {};
   // Gợi ý việc nên làm tiếp, để người mới không phải đoán bắt đầu từ đâu.
   const anyCollected = (summary.modules || []).some(part => Number(part.done || 0) > 0);
@@ -312,15 +346,22 @@ export function GeneralOverviewView({ generalOverview, generalOverviewLoading, p
           <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Theo lượt điều trị:</span>
             <StatBadge label="Đủ dữ liệu" value={summary.counts?.done || summary.ready || 0} tone="ok" />
-            <StatBadge label="Còn thiếu" value={summary.missingCount || 0} tone={summary.missingCount ? 'warn' : 'neutral'} />
-            <StatBadge label="Lỗi" value={summary.counts?.error || 0} tone={summary.counts?.error ? 'danger' : 'neutral'} />
-            <StatBadge label="Cần xem tay" value={summary.manualReview || 0} tone={summary.manualReview ? 'danger' : 'neutral'} />
+            <StatBadge label="Còn thiếu" value={summary.counts?.missing ?? summary.missingCount ?? 0} tone={Number(summary.counts?.missing ?? summary.missingCount || 0) ? 'warn' : 'neutral'} />
+            <StatBadge label="Lỗi · sẽ tự thử" value={summary.counts?.error || 0} tone={summary.counts?.error ? 'warn' : 'neutral'} />
+            <StatBadge label="Chờ người xem" value={summary.counts?.waiting || 0} tone={summary.counts?.waiting ? 'danger' : 'neutral'} />
+            <StatBadge label="Chưa ghép chắc" value={summary.counts?.unmatched || 0} tone={summary.counts?.unmatched ? 'danger' : 'neutral'} />
             {ov.limited && <span style={{ fontSize: FS.xs, color: C.amber }}>Kho lớn: một số số đếm lấy từ metadata.</span>}
           </div>
+          {collectionScreen && Number(counts.encounters || 0) !== Number(collectionScreen.total || 0) && (
+            <div style={{ marginTop: 5, fontSize: FS.xs, color: C.text3 }}>
+              Bảng chuẩn hiện có {compactNumber(counts.encounters || 0)} lượt; sổ Thu thập đang theo dõi {compactNumber(collectionScreen.total || 0)} lượt.
+              Chênh lệch này được giữ riêng để không trộn lượt chưa ghép/chưa đồng bộ vào số đã thu thập.
+            </div>
+          )}
         </section>
       )}
 
-      <PipelineView pipeline={pipeline} summary={summary} onNormalize={onNormalize} normalizeBusy={normalizeBusy} />
+      <PipelineView pipeline={pipeline} summary={summary} collectionScreen={collectionScreen} onInspectCollection={onInspectCollection} onNormalize={onNormalize} normalizeBusy={normalizeBusy} />
     </div>
   );
 }
