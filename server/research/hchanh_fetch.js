@@ -15,8 +15,9 @@ const { nowIso } = require('./store_paths');
 const { dedupeRowsByStableKey } = require('./dataset_store');
 const { runScript, fmtPyError } = require('../services/python_runner');
 const fs = require('fs');
+const { ORDER_HISTORY_FETCH_WINDOW_VERSION } = require('./fetch_versions');
 
-const VERIFIED_FETCH_WINDOW_VERSION = 4;
+const VERIFIED_FETCH_WINDOW_VERSION = ORDER_HISTORY_FETCH_WINDOW_VERSION;
 
 function hchanhDefaultFiles(files) {
   const allowed = new Set(['profile', 'discharge', 'surgery', 'order_history']);
@@ -128,7 +129,12 @@ function hchanhFileStatusPatch(output, rowCounts, wantedFiles, previousCounts, a
     const payload = output && typeof output === 'object' ? output[f] : null;
     const rows = Number(rowCounts?.[f]) || 0;
     const fetchStatus = payload && typeof payload === 'object' ? String(payload._fetch_status || '') : '';
-    const entry = { fetch_status: fetchStatus || fallbackStatus || 'pending', rows, at };
+    const entry = {
+      fetch_status: fetchStatus || fallbackStatus || 'pending',
+      rows,
+      at,
+      ...(f === 'order_history' ? { fetch_window_version: VERIFIED_FETCH_WINDOW_VERSION } : {}),
+    };
     if (payload?._reason) entry.reason = String(payload._reason).slice(0, 120);
     if (payload?._error) entry.detail = String(payload._error).split('\n')[0].slice(0, 300);
     if (entry.fetch_status === 'ok' && rows === 0 && (Number(previousCounts?.[f]) || 0) > 0) {

@@ -17,6 +17,7 @@ process.env.EMR_RUNTIME_ROOT = RUNTIME_ROOT;
 
 const research = require('../server/routes/research');
 const R = research._test;
+const { ORDER_HISTORY_FETCH_WINDOW_VERSION } = require('../server/research/fetch_versions');
 
 let passed = 0;
 async function test(name, fn) {
@@ -71,9 +72,19 @@ function makeEnv(name, { xnWritesProgress = true } = {}) {
       for (const row of opts.sourceRows) {
         const at = tick();
         const fs0 = {};
-        for (const f of opts.files) fs0[f] = { fetch_status: 'ok', rows: 0, at };
+        for (const f of opts.files) {
+          fs0[f] = { fetch_status: 'ok', rows: 0, at };
+          if (f === 'order_history') fs0[f].fetch_window_version = ORDER_HISTORY_FETCH_WINDOW_VERSION;
+        }
         const key = row['Research key'];
-        progress[key] = { ...(progress[key] || {}), status: 'done', files: [...new Set([...(progress[key]?.files || []), ...opts.files])], finished_at: at, file_status: { ...(progress[key]?.file_status || {}), ...fs0 } };
+        progress[key] = {
+          ...(progress[key] || {}),
+          status: 'done',
+          files: [...new Set([...(progress[key]?.files || []), ...opts.files])],
+          finished_at: at,
+          file_status: { ...(progress[key]?.file_status || {}), ...fs0 },
+          ...(opts.mode === 'order_history_auto' ? { fetch_window_version: ORDER_HISTORY_FETCH_WINDOW_VERSION } : {}),
+        };
       }
       fs.writeFileSync(path.join(runDir, file), JSON.stringify(progress), 'utf-8');
       return {};

@@ -20,6 +20,7 @@ process.env.EMR_RUNTIME_ROOT = RUNTIME_ROOT;
 
 const research = require('../server/routes/research');
 const R = research._test;
+const { ORDER_HISTORY_FETCH_WINDOW_VERSION } = require('../server/research/fetch_versions');
 
 let passed = 0;
 async function test(name, fn) {
@@ -82,10 +83,12 @@ function fakeRunners(runDir, behavior) {
           for (const f of opts.files) {
             const b = next(row['Mã BN'], f);
             fileStatus[f] = b === 'ok' ? { fetch_status: 'ok', rows: 2, at } : b === 'empty' ? { fetch_status: 'ok', rows: 0, at } : { fetch_status: 'timeout', rows: 0, at };
+            if (f === 'order_history') fileStatus[f].fetch_window_version = ORDER_HISTORY_FETCH_WINDOW_VERSION;
           }
           progress[key] = {
             ...(progress[key] || {}), status: 'done', files: [...new Set([...(progress[key]?.files || []), ...opts.files])],
             finished_at: at, file_status: { ...(progress[key]?.file_status || {}), ...fileStatus },
+            ...(opts.mode === 'order_history_auto' ? { fetch_window_version: ORDER_HISTORY_FETCH_WINDOW_VERSION } : {}),
           };
         }
         fs.writeFileSync(progressPath, JSON.stringify(progress), 'utf-8');
@@ -255,11 +258,23 @@ const opts = rows => ({ runDir, runId: 'collect_run', scope: 'du_lieu_goc', isAr
           const others = [];
           for (const [k, rs] of existing.entries()) if (k !== key) others.push(...rs);
           const value = f === 'discharge' ? emr[code].discharge : 'x';
-          if (value === null) { fileStatus[f] = { fetch_status: 'timeout', rows: 0, at }; continue; }
+          if (value === null) {
+            fileStatus[f] = { fetch_status: 'timeout', rows: 0, at };
+            if (f === 'order_history') fileStatus[f].fetch_window_version = ORDER_HISTORY_FETCH_WINDOW_VERSION;
+            continue;
+          }
           writeCsv(csv, ['Research key', 'Mã BN', 'Giá trị'], [...others, { 'Research key': key, 'Mã BN': code, 'Giá trị': value }]);
           fileStatus[f] = { fetch_status: 'ok', rows: 1, at };
+          if (f === 'order_history') fileStatus[f].fetch_window_version = ORDER_HISTORY_FETCH_WINDOW_VERSION;
         }
-        progress[key] = { ...(progress[key] || {}), status: 'done', files: [...new Set([...(progress[key]?.files || []), ...opts.files])], finished_at: at, file_status: { ...(progress[key]?.file_status || {}), ...fileStatus } };
+        progress[key] = {
+          ...(progress[key] || {}),
+          status: 'done',
+          files: [...new Set([...(progress[key]?.files || []), ...opts.files])],
+          finished_at: at,
+          file_status: { ...(progress[key]?.file_status || {}), ...fileStatus },
+          ...(opts.mode === 'order_history_auto' ? { fetch_window_version: ORDER_HISTORY_FETCH_WINDOW_VERSION } : {}),
+        };
       }
       fs.writeFileSync(path.join(run2, file), JSON.stringify(progress), 'utf-8');
       return {};
@@ -391,13 +406,17 @@ const opts = rows => ({ runDir, runId: 'collect_run', scope: 'du_lieu_goc', isAr
           const key = row['Research key'];
           const at = tick();
           const fileStatus = {};
-          for (const part of opts.files) fileStatus[part] = { fetch_status: 'ok', rows: 1, at };
+          for (const part of opts.files) {
+            fileStatus[part] = { fetch_status: 'ok', rows: 1, at };
+            if (part === 'order_history') fileStatus[part].fetch_window_version = ORDER_HISTORY_FETCH_WINDOW_VERSION;
+          }
           progress[key] = {
             ...(progress[key] || {}),
             status: 'done',
             files: [...new Set([...(progress[key]?.files || []), ...opts.files])],
             finished_at: at,
             file_status: { ...(progress[key]?.file_status || {}), ...fileStatus },
+            ...(opts.mode === 'order_history_auto' ? { fetch_window_version: ORDER_HISTORY_FETCH_WINDOW_VERSION } : {}),
           };
         }
         fs.writeFileSync(progressPath, JSON.stringify(progress), 'utf-8');

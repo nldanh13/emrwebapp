@@ -40,10 +40,10 @@ function xnEntry(key, rc, code, tabs, at = '2026-01-10T00:00:00Z') {
   };
 }
 
-function hcEntry(files, at = '2026-01-10T00:00:00Z') {
+function hcEntry(files, at = '2026-01-10T00:00:00Z', extra = {}) {
   const file_status = {};
   for (const [f, v] of Object.entries(files)) file_status[f] = { ...v, at };
-  return { status: 'done', files: Object.keys(files), file_status, finished_at: at };
+  return { status: 'done', files: Object.keys(files), file_status, finished_at: at, ...extra };
 }
 
 const OK_HC = { profile: { fetch_status: 'ok', rows: 1 }, discharge: { fetch_status: 'ok', rows: 1 }, surgery: { fetch_status: 'ok', rows: 0 } };
@@ -55,7 +55,7 @@ function fullyCollected(sources) {
   for (const s of sources) {
     xn[`${s['Mã BN']}|treatment:x${s['Research key']}`] = xnEntry(s['Research key'], s['Mã NC'], s['Mã BN'], XN_OK);
     hc[s['Research key']] = hcEntry(OK_HC);
-    oh[s['Research key']] = hcEntry(OK_OH);
+    oh[s['Research key']] = hcEntry(OK_OH, '2026-01-10T00:00:00Z', { fetch_window_version: 4 });
   }
   return { xn, hc, oh };
 }
@@ -132,6 +132,37 @@ test('Chỉ lấy lại đúng phần lỗi; ca đủ và không đổi thì b�
   assert.strictEqual(groups.order_history.length, 0);
 });
 
+test('Y lệnh v3 đã ok vẫn phải tự lấy lại một lần bằng parser/cửa sổ v4', () => {
+  const sources = [src('enc_a', 'NC0001', 'BN_A')];
+  const { xn, hc, oh } = fullyCollected(sources);
+  oh.enc_a = hcEntry(OK_OH, '2026-01-10T00:00:00Z', { fetch_window_version: 3 });
+
+  const legacy = c.buildLedger({ sourceRows: sources, xnProgress: xn, hchanhProgress: hc, orderProgress: oh });
+  assert.strictEqual(legacy.encounters.enc_a.parts.order_history.fetch_window_version, 3);
+  assert.strictEqual(c.isStale(legacy.encounters.enc_a, 'order_history'), true);
+
+  const plan = c.planCollection(legacy);
+  assert.strictEqual(plan.tasks.length, 1);
+  assert.deepStrictEqual(plan.tasks[0].parts, ['order_history']);
+  assert.strictEqual(plan.tasks[0].reasons.order_history, 'parser_migration');
+
+  // Worker v4 trả progress mới → phần trở lại current và không bị quét lặp.
+  const ohV4 = {
+    ...oh,
+    enc_a: hcEntry(OK_OH, '2026-01-11T00:00:00Z', { fetch_window_version: 4 }),
+  };
+  const fresh = c.buildLedger({
+    sourceRows: sources,
+    xnProgress: xn,
+    hchanhProgress: hc,
+    orderProgress: ohV4,
+    previous: legacy,
+  });
+  assert.strictEqual(fresh.encounters.enc_a.parts.order_history.fetch_window_version, 4);
+  assert.strictEqual(c.isStale(fresh.encounters.enc_a, 'order_history'), false);
+  assert.strictEqual(c.planCollection(fresh).tasks.length, 0);
+});
+
 test('Ca mới lấy đủ 6 phần; ca đã có mà thiếu một phần hành chánh chỉ lấy phần đó', () => {
   const sources = [src('enc_a', 'NC0001', 'BN_A'), src('enc_new', 'NC0003', 'BN_N')];
   const { xn, hc, oh } = fullyCollected([sources[0]]);
@@ -164,7 +195,7 @@ test('Danh sách EMR thay đổi → lấy lại; chỉ đổi họ tên/tuổi 
   const later = '2026-02-01T00:00:00Z';
   const xn2 = { ...xn, 'BN_A|treatment:xenc_a': xnEntry('enc_a', 'NC0001', 'BN_A', XN_OK, later) };
   const hc2 = { ...hc, enc_a: hcEntry(OK_HC, later), enc_b: hcEntry(OK_HC, later) };
-  const oh2 = { ...oh, enc_a: hcEntry(OK_OH, later) };
+  const oh2 = { ...oh, enc_a: hcEntry(OK_OH, later, { fetch_window_version: 4 }) };
   const third = c.buildLedger({ sourceRows: changed, xnProgress: xn2, hchanhProgress: hc2, orderProgress: oh2, previous: second });
   assert.strictEqual(c.planCollection(third).tasks.length, 0);
 });
@@ -297,7 +328,7 @@ test('Báo cáo vận hành: số ca lấy, bỏ qua vì không đổi, phần l
   const later = '2026-02-01T00:00:00Z';
   const xn2 = { ...xn, 'BN_N|treatment:xenc_new': xnEntry('enc_new', 'NC0003', 'BN_N', XN_OK, later) };
   const hc2 = { ...hc, enc_b: hcEntry(OK_HC, later), enc_new: hcEntry({ ...OK_HC, discharge: { fetch_status: 'no_session', rows: 0 } }, later) };
-  const oh2 = { ...oh, enc_new: hcEntry(OK_OH, later) };
+  const oh2 = { ...oh, enc_new: hcEntry(OK_OH, later, { fetch_window_version: 4 }) };
   const after = c.buildLedger({ sourceRows: sources, xnProgress: xn2, hchanhProgress: hc2, orderProgress: oh2, previous: before });
   const report = c.buildRunReport({ before, after, plan });
   assert.strictEqual(report.skipped_unchanged, 1);
@@ -445,7 +476,7 @@ test('Kho cũ: các dòng chuyển khoa (không Mã nội trú) gom về 1 lư�
   // XN (bản cũ, không Research key) ghi ngày vào của lượt; hành chánh nằm ở dòng k2 (dòng giữa).
   const xn = { 'BN_X|treatment:abc': { 'Mã BN': 'BN_X', 'Mã NC': 'NC0007', 'Ngày vào viện': '02/03/2026 08:00', xn: 'done', cdha: 'done', committed: true, counts: { xn: 12, cdha: 2 }, updated_at: 't1' } };
   const hc = { k2: hcEntry(OK_HC) };
-  const oh = { k3: hcEntry(OK_OH) };
+  const oh = { k3: hcEntry(OK_OH, '2026-01-10T00:00:00Z', { fetch_window_version: 4 }) };
   const ledger = c.buildLedger({ units, xnProgress: xn, hchanhProgress: hc, orderProgress: oh });
   const stay1 = ledger.encounters.enc_stay1;
   assert.ok(c.PART_KEYS.every(k => c.partIsCurrent(stay1, k)), 'lượt đủ 6 phần dù tiến độ nằm ở các dòng khác nhau');

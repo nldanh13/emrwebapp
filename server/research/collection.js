@@ -16,6 +16,7 @@
 
 const crypto = require('crypto');
 const variableSelection = require('./variable_selection');
+const { ORDER_HISTORY_FETCH_WINDOW_VERSION } = require('./fetch_versions');
 
 const LEDGER_VERSION = 2;
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -35,6 +36,7 @@ const REASON_LABELS = {
   new: 'Ca mới',
   missing: 'Chưa lấy',
   changed: 'Dữ liệu trên EMR đã thay đổi',
+  parser_migration: 'Y lệnh cần lấy lại bằng parser/cửa sổ mới',
   retry: 'Thử lại sau lỗi kỹ thuật',
   interrupted: 'Lần trước dừng giữa chừng',
   legacy_empty_unverified: 'Bản cũ ghi 0 dòng, chưa chắc EMR không có',
@@ -364,27 +366,37 @@ function classifyXnTab(entry, tab) {
 }
 
 // Một file trong progress hành chánh (hchanh_auto_progress / order_history_auto_progress).
-function classifyHchanhFile(entry, file) {
+function classifyHchanhFile(entry, file, { trustEntryFetchWindowVersion = true } = {}) {
   if (!entry || typeof entry !== 'object') return part('pending', 'missing');
   const fs = entry.file_status?.[file];
+  // order_history_auto_progress là progress chuyên dụng nên version top-level đáng tin.
+  // hchanh_auto_progress có thể được cập nhật profile/discharge sau đó; khi đọc Y lệnh
+  // từ file này chỉ tin version nằm ngay trên file_status.order_history, tránh một lần
+  // lấy hồ sơ mới vô tình "nâng version" cho dữ liệu Y lệnh cũ.
+  const fetchWindowVersion = file === 'order_history'
+    ? Number(fs?.fetch_window_version || (trustEntryFetchWindowVersion ? entry.fetch_window_version : 0) || 0)
+    : 0;
+  const withVersion = value => file === 'order_history'
+    ? { ...value, fetch_window_version: fetchWindowVersion }
+    : value;
   if (fs && typeof fs === 'object') {
     const res = classifyFetchStatus(fs.fetch_status, fs.rows, fs.reason);
     if (fs.override_status) {
-      return part(fs.override_status, fs.override_reason || res.reason, { rows: Number(fs.rows) || 0, result_at: String(fs.at || ''), detail: scrubDetail(fs.detail) });
+      return withVersion(part(fs.override_status, fs.override_reason || res.reason, { rows: Number(fs.rows) || 0, result_at: String(fs.at || ''), detail: scrubDetail(fs.detail) }));
     }
-    return { ...res, rows: Number(fs.rows) || 0, result_at: String(fs.at || entry.finished_at || ''), ...(fs.detail ? { detail: scrubDetail(fs.detail) } : {}) };
+    return withVersion({ ...res, rows: Number(fs.rows) || 0, result_at: String(fs.at || entry.finished_at || ''), ...(fs.detail ? { detail: scrubDetail(fs.detail) } : {}) });
   }
   const files = Array.isArray(entry.files) ? entry.files : [];
-  if (!files.includes(file)) return part('pending', 'missing');
+  if (!files.includes(file)) return withVersion(part('pending', 'missing'));
   const st = String(entry.status || '').trim().toLowerCase();
   const rows = Number(entry.rows?.[file]) || 0;
   const at = String(entry.finished_at || entry.skipped_at || entry.updated_at || '');
-  if (st === 'done') return part(rows > 0 ? 'ok' : 'empty', '', { rows, result_at: at });
-  if (st === 'partial') return rows > 0 ? part('ok', '', { rows, result_at: at }) : part('failed', 'partial', { result_at: at });
-  if (st === 'error') return rows > 0 ? part('ok', '', { rows, result_at: at }) : part('failed', 'error', { detail: scrubDetail(String(entry.error || '').split('\n')[0]), result_at: at });
-  if (st === 'skipped_recent_failure') return part('failed', 'not_found', { result_at: at });
-  if (['queued', 'running', 'pending_refetch'].includes(st)) return part('pending', 'interrupted', { result_at: at });
-  return part('pending', 'missing', { result_at: at });
+  if (st === 'done') return withVersion(part(rows > 0 ? 'ok' : 'empty', '', { rows, result_at: at }));
+  if (st === 'partial') return withVersion(rows > 0 ? part('ok', '', { rows, result_at: at }) : part('failed', 'partial', { result_at: at }));
+  if (st === 'error') return withVersion(rows > 0 ? part('ok', '', { rows, result_at: at }) : part('failed', 'error', { detail: scrubDetail(String(entry.error || '').split('\n')[0]), result_at: at }));
+  if (st === 'skipped_recent_failure') return withVersion(part('failed', 'not_found', { result_at: at }));
+  if (['queued', 'running', 'pending_refetch'].includes(st)) return withVersion(part('pending', 'interrupted', { result_at: at }));
+  return withVersion(part('pending', 'missing', { result_at: at }));
 }
 
 // ── Ghép progress XN/CĐHA với dòng nguồn ─────────────────────────────────────
@@ -682,13 +694,16 @@ function derivePartResults(source, xnMatches, hchanhProgress, orderProgress, orp
   const hcs = members.map(m => hchanhProgress?.[m]).filter(Boolean).concat(orphanHc.get(source.key) || []);
   const ohs = members.map(m => orderProgress?.[m]).filter(Boolean).concat(orphanOh.get(source.key) || []);
   const hcFile = file => latestPreferDone(hcs.map(e => classifyHchanhFile(e, file)));
+  const orderHistory = ohs.length
+    ? latestPreferDone(ohs.map(e => classifyHchanhFile(e, 'order_history')))
+    : latestPreferDone(hcs.map(e => classifyHchanhFile(e, 'order_history', { trustEntryFetchWindowVersion: false })));
   return {
     xn: latestPreferDone(xnEntries.map(e => classifyXnTab(e, 'xn'))),
     cdha: latestPreferDone(xnEntries.map(e => classifyXnTab(e, 'cdha'))),
     profile: hcFile('profile'),
     discharge: hcFile('discharge'),
     surgery: hcFile('surgery'),
-    order_history: latestPreferDone([...ohs, ...hcs].map(e => classifyHchanhFile(e, 'order_history'))),
+    order_history: orderHistory,
   };
 }
 
@@ -757,13 +772,17 @@ function buildLedger({ sourceRows = [], units = null, xnProgress = {}, hchanhPro
           status: d.status, reason: d.reason || '', detail: d.detail || '', rows: d.rows ?? null,
           result_at: d.result_at || '', attempts: d.status === 'failed' ? 1 : 0,
           seen_seq: changeSeq, seen_demo_seq: demoSeq,
+          ...(key === 'order_history' ? { fetch_window_version: Number(d.fetch_window_version || 0) } : {}),
         };
         continue;
       }
       const isNewResult = Boolean(d.result_at) && d.result_at !== p.result_at;
       if (!isNewResult) {
         // Progress không có gì mới → giữ trạng thái đã biết.
-        parts[key] = { ...p };
+        parts[key] = {
+          ...p,
+          ...(key === 'order_history' ? { fetch_window_version: Number(d.fetch_window_version || p.fetch_window_version || 0) } : {}),
+        };
         if (
           reopenLegacyXnCdhaNoResult
           && (key === 'xn' || key === 'cdha')
@@ -791,6 +810,7 @@ function buildLedger({ sourceRows = [], units = null, xnProgress = {}, hchanhPro
         attempts: d.status === 'failed' ? (Number(p.attempts) || 0) + 1 : (done ? 0 : Number(p.attempts) || 0),
         seen_seq: done ? changeSeq : (Number(p.seen_seq) || 0),
         seen_demo_seq: done ? demoSeq : (Number(p.seen_demo_seq) || 0),
+        ...(key === 'order_history' ? { fetch_window_version: Number(d.fetch_window_version || 0) } : {}),
       };
     }
 
@@ -829,12 +849,19 @@ function buildLedger({ sourceRows = [], units = null, xnProgress = {}, hchanhPro
   };
 }
 
-function isStale(enc, key) {
+function staleReason(enc, key) {
   const p = enc?.parts?.[key];
-  if (!p || !DONE_STATUSES.has(p.status)) return false;
-  if ((Number(p.seen_seq) || 0) < (Number(enc.change_seq) || 0)) return true;
-  if (key === 'profile' && (Number(p.seen_demo_seq) || 0) < (Number(enc.demo_seq) || 0)) return true;
-  return false;
+  if (!p || !DONE_STATUSES.has(p.status)) return '';
+  if (key === 'order_history' && Number(p.fetch_window_version || 0) < ORDER_HISTORY_FETCH_WINDOW_VERSION) {
+    return 'parser_migration';
+  }
+  if ((Number(p.seen_seq) || 0) < (Number(enc.change_seq) || 0)) return 'changed';
+  if (key === 'profile' && (Number(p.seen_demo_seq) || 0) < (Number(enc.demo_seq) || 0)) return 'changed';
+  return '';
+}
+
+function isStale(enc, key) {
+  return Boolean(staleReason(enc, key));
 }
 
 function partIsCurrent(enc, key) {
@@ -1071,7 +1098,8 @@ function planCollection(ledger, {
       const p = enc.parts?.[k] || { status: 'pending', reason: 'missing' };
       if (DONE_STATUSES.has(p.status)) {
         if (force) { needs[k] = 'forced'; deferredOnly = false; allCurrent = false; continue; }
-        if (isStale(enc, k)) { needs[k] = 'changed'; deferredOnly = false; allCurrent = false; continue; }
+        const stale = staleReason(enc, k);
+        if (stale) { needs[k] = stale; deferredOnly = false; allCurrent = false; continue; }
         if (manual.has(k) && (!manualKeys || manualKeys.has(key))) {
           needs[k] = 'manual_refresh'; deferredOnly = false; summary.refresh_parts += 1; continue;
         }
@@ -1446,6 +1474,7 @@ function evaluateStudyReadiness({ ledger, keys = null, requirements, tables = {}
 module.exports = {
   LEDGER_VERSION,
   DEFAULT_MAX_ATTEMPTS,
+  ORDER_HISTORY_FETCH_WINDOW_VERSION,
   PARTS,
   PART_KEYS,
   REASON_LABELS,
@@ -1465,6 +1494,7 @@ module.exports = {
   buildLedger,
   applyDispatchOutcome,
   applyDispatchFailures,
+  staleReason,
   isStale,
   partIsCurrent,
   sanitizeRefreshPolicy,
