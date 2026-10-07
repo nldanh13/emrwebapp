@@ -18,6 +18,7 @@ const { RESEARCH_STORE_DIR, ROOT_DIR } = require('../constants');
 const { runPython, fmtPyError } = require('../services/python_runner');
 const { registerCancel, unregisterCancel, isCancelRequested } = require('../services/task_queue');
 const { fetchHchanhForResearchRun } = require('./hchanh_fetch');
+const { researchHchanhSourceKey } = require('./research_source');
 const { augmentMedicationRowsForResearch } = require('./medication_ingredient_catalog');
 
 // ── Điều phối thu thập tự động ───────────────────────────────────────────────
@@ -575,6 +576,13 @@ async function runCollectionOrchestration(ctx, {
     const beforeRows = partRowsMap(readCollectionPartRows(runDir), before, targets);
     const groups = collection.groupTasksByFetcher(tasks);
     const rowsFor = list => list.map(t => rowByKey.get(t.key)).filter(Boolean);
+    // Sổ thu thập dùng encounter_id chuẩn hóa làm task key sau khi gộp các dòng
+    // chuyển khoa, nhưng worker Hành chánh/Y lệnh ghi progress theo Research key
+    // của dòng nguồn. forceKeys phải cùng hệ khóa với worker, nếu không ca đã "done"
+    // cũ sẽ bị worker bỏ qua dù điều phối vừa yêu cầu lấy lại.
+    const forceKeysFor = list => new Set(
+      rowsFor(list).map(row => researchHchanhSourceKey(row, runId)).filter(Boolean),
+    );
     const cancelNow = () => { if (isCancelRequested(ctx.sid)) cancelled = true; return cancelled; };
     // Ghi nhận "chuẩn bị làm mới" + ảnh chụp dữ liệu cũ TRƯỚC khi worker thay dữ liệu.
     const passReasons = {};
@@ -589,7 +597,7 @@ async function runCollectionOrchestration(ctx, {
         try {
           const r = await runners.hchanh(ctx, {
             runDir, sourceRows: rowsFor(list), sourceRunId: runId, files, headless,
-            forceKeys: new Set(list.map(t => t.key)), fallbackDateFrom: fromDate, fallbackDateTo: toDate, mode: 'hchanh_auto',
+            forceKeys: forceKeysFor(list), fallbackDateFrom: fromDate, fallbackDateTo: toDate, mode: 'hchanh_auto',
           });
           if (r?.cancelled) cancelled = true;
         } catch (err) {
@@ -601,7 +609,7 @@ async function runCollectionOrchestration(ctx, {
         try {
           const r = await runners.hchanh(ctx, {
             runDir, sourceRows: rowsFor(groups.order_history), sourceRunId: runId, files: ['order_history'], headless,
-            forceKeys: new Set(groups.order_history.map(t => t.key)), fallbackDateFrom: fromDate, fallbackDateTo: toDate, mode: 'order_history_auto',
+            forceKeys: forceKeysFor(groups.order_history), fallbackDateFrom: fromDate, fallbackDateTo: toDate, mode: 'order_history_auto',
           });
           if (r?.cancelled) cancelled = true;
         } catch (err) {
