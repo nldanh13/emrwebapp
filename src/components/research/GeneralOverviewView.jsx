@@ -96,7 +96,7 @@ function PipelineView({ pipeline, summary, collectionScreen = null, onInspectCol
     <section style={card}>
       <details>
         <summary style={{ cursor: 'pointer', fontSize: FS.sm, fontWeight: 700, color: C.text2 }}>
-          Chi tiết quy trình dữ liệu
+          Quy trình dữ liệu · chi tiết kỹ thuật
         </summary>
         <div style={{ marginTop: 6, marginBottom: 12, fontSize: FS.xs, color: C.text3 }}>
           EMR → file thô → chuẩn hóa/QA → SQLite. Phần này chỉ dùng khi cần kiểm tra kỹ thuật.
