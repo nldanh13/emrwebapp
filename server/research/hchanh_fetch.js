@@ -15,8 +15,9 @@ const { nowIso } = require('./store_paths');
 const { dedupeRowsByStableKey } = require('./dataset_store');
 const { runScript, fmtPyError } = require('../services/python_runner');
 const fs = require('fs');
+const { ORDER_HISTORY_FETCH_WINDOW_VERSION } = require('./fetch_versions');
 
-const VERIFIED_FETCH_WINDOW_VERSION = 4;
+const VERIFIED_FETCH_WINDOW_VERSION = ORDER_HISTORY_FETCH_WINDOW_VERSION;
 
 function hchanhDefaultFiles(files) {
   const allowed = new Set(['profile', 'discharge', 'surgery', 'order_history']);
