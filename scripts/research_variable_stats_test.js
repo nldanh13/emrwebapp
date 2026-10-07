@@ -96,7 +96,7 @@ test('CĐHA xuất báo cáo; T-score DXA tách thành biến số theo từng v
   const reportCol = built.manifest.variables.find(v => v.name === 'imaging:DEXA').output_column;
   assert.strictEqual(built.rows[0][scoreCol], '-1.8');
   assert.strictEqual(built.rows[0][l1Col], '-2.8');
-  assert.match(built.rows[0][reportCol], /Neck Left:-1.8[\\s\\S]*L4:-2.7/);
+  assert.match(built.rows[0][reportCol], /Neck Left:-1.8[\s\S]*L4:-2.7/);
   assert.ok(!built.rows[0][reportCol].includes('Không thấy tổn thương cấp'), 'không lấy kết quả CT vào biến DXA');
 });
 
