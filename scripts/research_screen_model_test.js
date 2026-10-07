@@ -15,9 +15,14 @@ function test(name, fn) {
   try { fn(); passed += 1; console.log(`  ok - ${name}`); } catch (err) { console.error(`  FAIL - ${name}`); console.error(err); process.exitCode = 1; }
 }
 
-const ok = () => ({ status: 'ok', seen_seq: 0, seen_demo_seq: 0 });
+const ok = (part = '') => ({
+  status: 'ok',
+  seen_seq: 0,
+  seen_demo_seq: 0,
+  ...(part === 'order_history' ? { fetch_window_version: c.ORDER_HISTORY_FETCH_WINDOW_VERSION } : {}),
+});
 function enc(key, overrides = {}, extra = {}) {
-  const parts = Object.fromEntries(c.PART_KEYS.map(k => [k, ok()]));
+  const parts = Object.fromEntries(c.PART_KEYS.map(k => [k, ok(k)]));
   Object.assign(parts, overrides);
   return { key, research_code: `NC_${key}`, patient_code: `BN_${key}`, match_status: 'matched', change_seq: 0, demo_seq: 0, parts, ...extra };
 }
