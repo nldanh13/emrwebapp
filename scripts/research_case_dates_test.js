@@ -51,6 +51,8 @@ function buildRun() {
   put(dir, 'hchanh_surgery.csv', [
     { 'Mã BN': code, 'Ngày vào viện': '13:33 18/08/2026', 'Ngày ra viện': '2026-09-23', 'Ngày phẫu thuật': '06/10/2026 14:11', 'Tên phẫu thuật': 'Phẫu thuật kết hợp xương', 'Nguồn': 'hchanh_auto_surgery', 'Research key': 'enc_k1', 'Raw JSON': raw },
     { 'Mã BN': code, 'Ngày vào viện': '13:58 17-08-2026', 'Ngày ra viện': '13:00 22/08/2026', 'Ngày phẫu thuật': '06/10/2026 14:11', 'Tên phẫu thuật': 'Phẫu thuật kết hợp xương', 'Nguồn': 'hchanh_auto_surgery', 'Research key': 'enc_k2', 'Raw JSON': raw },
+    // Ca thật BN 26082002: EMR chỉ ghi ngày mổ, không có giờ → từng hiện "2026-09-15 00:00".
+    { 'Mã BN': code, 'Ngày vào viện': '13:58 17-08-2026', 'Ngày ra viện': '13:00 22/08/2026', 'Ngày phẫu thuật': '20/08/2026', 'Tên phẫu thuật': 'Cắt lọc hoại tử', 'Nguồn': 'hchanh_auto_surgery', 'Research key': 'enc_k2' },
   ]);
   put(dir, 'hchanh_order_history.csv', [
     { 'Mã BN': code, 'Ngày vào viện': '13:33 18/08/2026', 'Ngày ra viện': '2026-09-23', 'TG y lệnh': '05:00 19/08/2026', 'Tên y lệnh': 'Ibuprofen 400mg uống', 'Research key': 'enc_k1' },
@@ -72,7 +74,8 @@ test('ngày ra viện lấy theo trang ra viện EMR (22/08), không theo khoả
 
 test('giờ mổ bằng giờ lấy dữ liệu (sau ra viện) thì dùng ngày trong danh sách phẫu thuật và ghép vào đợt', () => {
   const surg = rows('surgery_results.csv');
-  assert.strictEqual(surg.length, 1);
+  assert.strictEqual(surg.length, 2);
+  surg.sort((a, b) => a.surgery_date.localeCompare(b.surgery_date));
   assert.strictEqual(surg[0].surgery_date, '2026-08-18');
   assert.ok(!surg[0].surgery_datetime.includes('14:11'), surg[0].surgery_datetime);
   // Dữ liệu thật: hiện "2026-08-18 00:00" — EMR không có giờ mổ thật, không được bịa giờ 00:00.
@@ -80,6 +83,10 @@ test('giờ mổ bằng giờ lấy dữ liệu (sau ra viện) thì dùng ngày
   assert.strictEqual(surg[0].encounter_match_status, 'matched');
   assert.strictEqual(surg[0].is_within_encounter, '1');
   assert.strictEqual(surg[0].surgery_time_source, 'surgery_list_date');
+  // EMR chỉ ghi ngày, không giờ: giữ ngày, giờ để trống, không bịa 00:00.
+  assert.strictEqual(surg[1].surgery_date, '2026-08-20');
+  assert.strictEqual(surg[1].surgery_datetime, '', surg[1].surgery_datetime);
+  assert.strictEqual(surg[1].encounter_match_status, 'matched');
 });
 
 fs.rmSync(ROOT, { recursive: true, force: true });
