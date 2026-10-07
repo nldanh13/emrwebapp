@@ -82,13 +82,14 @@ function buildStudyCodebook(study) {
     const n = filled(col);
     if (!v) {
       const [label, kind, unit] = BASE_COLUMN_TEXT[col] || [col, ''];
-      return { cot: col, nhan: label, kieu: kind, don_vi: unit || '', cach_lay: 'Thông tin chung của lượt', ma_hoa: col === 'needs_manual_review' ? '1 = cần xem lại' : '', co_du_lieu: n, thieu: rows.length - n };
+      return { cot: col, ma_bien_nguon: col, nhan: label, kieu: kind, don_vi: unit || '', cach_lay: 'Thông tin chung của lượt', ma_hoa: col === 'needs_manual_review' ? '1 = cần xem lại' : '', co_du_lieu: n, thieu: rows.length - n };
     }
     const presence = String(v.aggregation || '') === 'any';
     const windowText = v.window_from_days != null || v.window_to_days != null
       ? ` (từ ngày ${v.window_from_days ?? '…'} đến ngày ${v.window_to_days ?? '…'} so với mốc)` : '';
     return {
       cot: col,
+      ma_bien_nguon: v.id || v.name,
       nhan: v.survey_label || v.label || v.name,
       kieu: presence ? 'Phân loại (0/1)' : (TYPE_TEXT[String(v.type || '')] || ''),
       don_vi: unitFromLabel(v.label),
@@ -98,7 +99,7 @@ function buildStudyCodebook(study) {
       thieu: rows.length - n,
     };
   });
-  return { rows: out, columns: ['cot', 'nhan', 'kieu', 'don_vi', 'cach_lay', 'ma_hoa', 'co_du_lieu', 'thieu'], encounters: rows.length };
+  return { rows: out, columns: ['cot', 'ma_bien_nguon', 'nhan', 'kieu', 'don_vi', 'cach_lay', 'ma_hoa', 'co_du_lieu', 'thieu'], encounters: rows.length };
 }
 
 function updateStudyVariables(studyId, selectedVariables) {

@@ -642,15 +642,34 @@ function filterCohortRowsByVariableSelection(rows, selectionInput, tableRowsByKe
   return { rows: out, matched: out.length, conditions };
 }
 
+function variableColumnSlug(value, fallback = 'bien') {
+  return stripMarks(value)
+    .toLowerCase()
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 72) || fallback;
+}
+
+// Tên cột dùng nhãn dễ đọc; ID kỹ thuật vẫn được giữ trong manifest và từ điển.
 function selectedColumnName(variable, used = new Set()) {
-  const base = safeSegment(`var_${variable.id || variable.table + '_' + variable.name}`, 'var_selected').replace(/[.:]+/g, '_').slice(0, 80);
+  const name = String(variable?.name || '');
+  const kind = String(variable?.virtual_kind || '');
+  let base;
+  if (kind === 'imaging_t_score_site' || name.startsWith('imaging_t_score:')) {
+    base = variableColumnSlug(`tscore_${name.split(':').slice(1).join(':')}`, 'tscore');
+  } else if (kind === 'imaging_modality' || name.startsWith('imaging:')) {
+    const modality = name.split(':').slice(1).join(':') || variable.label || 'ket_qua';
+    base = `cdha_${variableColumnSlug(modality)}_ket_qua`;
+  } else {
+    base = variableColumnSlug(variable?.label || name);
+  }
   let col = base;
   let i = 2;
   while (used.has(col)) col = `${base}_${i++}`.slice(0, 90);
   used.add(col);
   return col;
 }
-
 function imagingReportValue(row) {
   const parts = [
     getCell(row, ['result_text', 'Mô tả/Kết quả', 'Kết quả']),
