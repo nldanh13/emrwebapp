@@ -91,3 +91,50 @@ def test_force_show_all_rejects_dom_that_never_stabilizes():
 
     assert ok is False
     assert state["reason"] == "show_all_not_stable_before_timeout"
+
+
+def test_research_order_history_filters_unrelated_old_and_post_discharge_rows(monkeypatch):
+    rows = [
+        {"tg_ylenh": "08:00 01/01/2026", "ten_y_lenh": "quá cũ"},
+        {"tg_ylenh": "23:00 28/02/2026", "ten_y_lenh": "trước nhập viện nhưng trong cửa sổ tiền nhập viện"},
+        {"tg_ylenh": "10:00 05/03/2026", "ten_y_lenh": "trong đợt"},
+        {"tg_ylenh": "08:00 11/03/2026", "ten_y_lenh": "sau ra viện"},
+        {"tg_ylenh": "không rõ giờ", "ten_y_lenh": "không parse được, giữ để QA xử lý"},
+    ]
+
+    def fake_fetch(*_args, **_kwargs):
+        safe._LAST_ORDER_HISTORY_SHOW_ALL_OK = True
+        safe._LAST_ORDER_HISTORY_SHOW_ALL_STATE = {"reason": "verified", "value": "1000", "status_value": "99"}
+        return {
+            "_fetch_status": "ok",
+            "rows": list(rows),
+            "total": len(rows),
+            "completed": len(rows),
+            "incomplete": 0,
+            "no_service": 0,
+            "after_discharge": 1,
+            "incomplete_rows": [],
+            "after_discharge_rows": [rows[3]],
+        }
+
+    monkeypatch.setattr(safe, "_original_fetch_order_history", fake_fetch)
+    result = safe._fetch_order_history_verified(
+        object(),
+        "BN_TEST",
+        "02/03/2026",
+        "10/03/2026",
+        {},
+        {"hchanh_order_history_selenium_first": True},
+    )
+
+    assert [r["ten_y_lenh"] for r in result["rows"]] == [
+        "trước nhập viện nhưng trong cửa sổ tiền nhập viện",
+        "trong đợt",
+        "không parse được, giữ để QA xử lý",
+    ]
+    assert result["total"] == 3
+    assert result["window_filter"]["input_rows"] == 5
+    assert result["window_filter"]["dropped_before"] == 1
+    assert result["window_filter"]["dropped_after"] == 1
+    assert result["window_filter"]["unparsed_kept"] == 1
+    assert result["window_filter"]["lookback_days"] == 3
