@@ -274,15 +274,18 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
         const verifiedStay = verifiedStayWindowForSource(meta, profileRows, dischargeRows);
         const dateFrom = verifiedStay?.from || sourceDateFrom;
         const dateTo = verifiedStay?.to || sourceDateTo;
+        const startCorrected = Boolean(verifiedStay && dateFrom !== sourceDateFrom);
         const windowCorrected = Boolean(
-          verifiedStay && (dateFrom !== sourceDateFrom || dateTo !== sourceDateTo)
+          verifiedStay && (startCorrected || dateTo !== sourceDateTo)
         );
         const windowSensitive = wantedFiles.some(f => f === 'order_history' || f === 'surgery');
         const previousWindowVersion = Number(progress[key]?.fetch_window_version || 0);
-        const windowNeedsRepair = windowSensitive && windowCorrected && (
+        // Chỉ migrate tự động khi mốc BẮT ĐẦU từng bị cắt bởi ngày chuyển khoa.
+        // Ngày ra có thể chỉ được biết sau lần fetch đầu tiên; nếu chỉ date_to đổi
+        // thì không được ép mở EMR lại một ca vừa lấy xong.
+        const windowNeedsRepair = windowSensitive && startCorrected && (
           previousWindowVersion < VERIFIED_FETCH_WINDOW_VERSION
           || String(progress[key]?.fetch_date_from || '') !== dateFrom
-          || String(progress[key]?.fetch_date_to || '') !== dateTo
         );
 
         // forceKeys: điều phối tự động yêu cầu lấy lại đúng ca này (thiếu/lỗi/đã đổi)
