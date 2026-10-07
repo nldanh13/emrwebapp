@@ -83,7 +83,7 @@ assert.strictEqual(repaired['Trình tự phẫu thuật'], 'Rạch da · bộc l
 assert.strictEqual(repaired['Phẫu thuật viên chính'], 'BS A');
 assert.strictEqual(repaired['Bệnh kèm sau PT'], 'Tăng huyết áp · Đái tháo đường');
 
-assert.strictEqual(NORMALIZED_SCHEMA_VERSION, 33);
+assert.ok(NORMALIZED_SCHEMA_VERSION >= 33, `schema version phải ≥ 33, đang là ${NORMALIZED_SCHEMA_VERSION}`);
 for (const key of [
   'surgery_end_datetime', 'icd9_code', 'preop_icd10', 'postop_icd10',
   'procedure_description', 'surgery_sequence', 'primary_surgeon',

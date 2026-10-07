@@ -39,7 +39,8 @@
 //      (hiện giờ lúc lấy dữ liệu) dùng ngày trên danh sách phẫu thuật (surgery_time_source).
 // v33: giữ đầy đủ chi tiết form phẫu thuật: giờ kết thúc, ICD, ekip, mô tả/trình tự,
 //      diễn biến, dặn dò và người hoàn tất; Select2 được đọc từ live DOM ở worker.
-const NORMALIZED_SCHEMA_VERSION = 33;
+// v34: ngày mổ lấy từ danh sách phẫu thuật (EMR trống giờ) không còn mang giờ 00:00 bịa ra.
+const NORMALIZED_SCHEMA_VERSION = 34;
 
 const NORMALIZED_COLUMNS = {
   patients: [

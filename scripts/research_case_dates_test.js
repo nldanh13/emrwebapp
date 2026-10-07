@@ -75,6 +75,8 @@ test('giờ mổ bằng giờ lấy dữ liệu (sau ra viện) thì dùng ngày
   assert.strictEqual(surg.length, 1);
   assert.strictEqual(surg[0].surgery_date, '2026-08-18');
   assert.ok(!surg[0].surgery_datetime.includes('14:11'), surg[0].surgery_datetime);
+  // Dữ liệu thật: hiện "2026-08-18 00:00" — EMR không có giờ mổ thật, không được bịa giờ 00:00.
+  assert.strictEqual(surg[0].surgery_datetime, '', surg[0].surgery_datetime);
   assert.strictEqual(surg[0].encounter_match_status, 'matched');
   assert.strictEqual(surg[0].is_within_encounter, '1');
   assert.strictEqual(surg[0].surgery_time_source, 'surgery_list_date');
