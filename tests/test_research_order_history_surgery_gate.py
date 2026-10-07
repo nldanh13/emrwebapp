@@ -166,3 +166,19 @@ def test_verified_fetch_window_keeps_input_when_emr_has_no_verified_stay():
     assert hchanh_fetch._verified_fetch_window_from_output(
         {}, "18/09/2026", "06/10/2026"
     ) == ("18/09/2026", "06/10/2026")
+
+
+def test_history_range_does_not_replace_verified_window_with_patient_url(monkeypatch):
+    monkeypatch.setattr(
+        hchanh_fetch,
+        "_patient_page_url",
+        lambda *_args, **_kwargs: (
+            "https://emr.local/home.aspx?wpid=bacsidraw"
+            "&tungay=18/09/2026&denngay=06/10/2026"
+        ),
+    )
+    date_from, date_to = hchanh_fetch._history_range_from_patient_url(
+        {}, "26082002", {}, "https://emr.local", "05/09/2026", "21/09/2026"
+    )
+    assert date_from == "05/09/2026"
+    assert date_to == "21/09/2026"
