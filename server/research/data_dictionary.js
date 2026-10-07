@@ -24,7 +24,7 @@ const routeModel = require('../utils/routeModel');
 //   excluded           — mặc định bị che khi xem/xuất (server/research/export_utils.js).
 // Phân loại "use" là đề xuất kỹ thuật; bệnh viện/hội đồng đạo đức phải xác nhận.
 
-const DICTIONARY_VERSION = '2026-10-07.1';
+const DICTIONARY_VERSION = '2026-10-07.2';
 
 const CONVENTIONS = {
   dates: 'Ngày dạng YYYY-MM-DD; thời điểm dạng YYYY-MM-DD HH:mm (giờ địa phương, không có múi giờ). Cột "ngày giờ" có thể chỉ có phần ngày nếu nguồn không có giờ.',
@@ -304,21 +304,38 @@ TABLES.surgery_results = {
   primary_key: ['surgery_id'],
   foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id', when: 'encounter_match_status = matched' }],
   sources: ['hchanh_surgery.csv (D/s phẫu thuật, tìm theo mốc PT trong lịch sử y lệnh)', 'lich_su_phau_thuat.csv / phau_thuat.csv (nếu có)'],
-  processing: 'Bỏ dòng không có ngày, tên và phương pháp; gộp các dòng trùng ca mổ.',
+  processing: 'Bỏ dòng không có cả tên phẫu thuật lẫn phương pháp; gộp các dòng trùng ca mổ.',
   inferred: false,
   quality: { required: ['surgery_id', 'patient_code'], unique: ['surgery_id'], checks: ['Trùng surgery_id: lỗi chặn.', 'Ghép đợt ambiguous/missing: cảnh báo.'], manual_review: ['surgery_date nằm ngoài khoảng đợt (is_within_encounter = 0).'] },
-  columns: withCommon(['surgery_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'surgery_datetime', 'surgery_date', 'surgery_name', 'surgery_method', 'anesthesia_method', 'surgery_class', 'status', 'preop_diagnosis', 'postop_diagnosis', 'operating_room', 'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'surgery_time_source', 'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
+  columns: withCommon(['surgery_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'surgery_datetime', 'surgery_date', 'surgery_end_datetime', 'surgery_name', 'service_object', 'surgery_method', 'anesthesia_method', 'surgery_class', 'status', 'icd9_code', 'preop_diagnosis', 'preop_icd10', 'postop_diagnosis', 'postop_icd10', 'procedure_description', 'surgery_sequence', 'primary_surgeon', 'primary_anesthesiologist', 'assistant_surgeon_1', 'assistant_surgeon_2', 'scrub_nurse', 'anesthesia_technician', 'disease_course', 'postop_instructions', 'postop_comorbidities', 'completed_by', 'operating_room', 'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'surgery_time_source', 'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
     surgery_id: col('string', 'Khóa dòng: surg_<row_hash>.'),
     surgery_datetime: col('datetime', 'Thời điểm bắt đầu mổ.', { identifier: 'quasi', use: 'approval_required' }),
     surgery_date: col('date', 'Ngày mổ.', { identifier: 'quasi', use: 'approval_required' }),
+    surgery_end_datetime: col('datetime', 'Thời điểm kết thúc mổ; nếu EMR chỉ có giờ thì ghép với ngày bắt đầu của chính ca mổ.', { identifier: 'quasi', use: 'approval_required' }),
     surgery_time_source: col('string', 'Rỗng: giờ bắt đầu mổ trên EMR. surgery_list_date: EMR để trống giờ mổ (hiện giờ lúc lấy dữ liệu), dùng ngày trên danh sách phẫu thuật, không có giờ.'),
     surgery_name: col('string', 'Tên phẫu thuật/dịch vụ.'),
+    service_object: col('string', 'Đối tượng dịch vụ của ca phẫu thuật như EMR ghi.'),
     surgery_method: col('text', 'Phương pháp phẫu thuật (nguyên văn).', { identifier: 'free_text', use: 'approval_required' }),
     anesthesia_method: col('string', 'Phương pháp vô cảm.'),
     surgery_class: col('string', 'Phân loại phẫu thuật như EMR ghi (đặc biệt, loại 1…).'),
     status: col('string', 'Trạng thái ca mổ.'),
+    icd9_code: col('string', 'Mã ICD-9/thủ thuật được chọn trên form phẫu thuật.', { use: 'approval_required' }),
     preop_diagnosis: col('text', 'Chẩn đoán trước mổ.', { identifier: 'free_text', use: 'approval_required' }),
+    preop_icd10: col('string', 'Mã/chẩn đoán ICD-10 trước mổ được chọn trên EMR.', { use: 'approval_required' }),
     postop_diagnosis: col('text', 'Chẩn đoán sau mổ.', { identifier: 'free_text', use: 'approval_required' }),
+    postop_icd10: col('string', 'Mã/chẩn đoán ICD-10 sau mổ được chọn trên EMR.', { use: 'approval_required' }),
+    procedure_description: col('text', 'Mô tả phương pháp phẫu thuật trên form.', { identifier: 'free_text', use: 'approval_required' }),
+    surgery_sequence: col('text', 'Trình tự phẫu thuật ghi trong trinhTuPhauThuatInput.', { identifier: 'free_text', use: 'approval_required' }),
+    primary_surgeon: col('string', 'Phẫu thuật viên chính.', { identifier: 'staff', use: 'approval_required' }),
+    primary_anesthesiologist: col('string', 'Bác sĩ gây mê chính.', { identifier: 'staff', use: 'approval_required' }),
+    assistant_surgeon_1: col('string', 'Phụ mổ 1.', { identifier: 'staff', use: 'approval_required' }),
+    assistant_surgeon_2: col('string', 'Phụ mổ 2.', { identifier: 'staff', use: 'approval_required' }),
+    scrub_nurse: col('string', 'Điều dưỡng dụng cụ.', { identifier: 'staff', use: 'approval_required' }),
+    anesthesia_technician: col('string', 'Kỹ thuật viên phụ mê.', { identifier: 'staff', use: 'approval_required' }),
+    disease_course: col('text', 'Diễn biến bệnh ghi trên form phẫu thuật.', { identifier: 'free_text', use: 'approval_required' }),
+    postop_instructions: col('text', 'Dặn dò sau phẫu thuật.', { identifier: 'free_text', use: 'approval_required' }),
+    postop_comorbidities: col('text', 'Bệnh kèm theo sau phẫu thuật; nhiều mục nối bằng dấu phân cách.', { identifier: 'free_text', use: 'approval_required' }),
+    completed_by: col('string', 'Thông tin người hoàn tất hồ sơ phẫu thuật như EMR hiển thị.', { identifier: 'staff', use: 'approval_required' }),
     operating_room: col('string', 'Phòng mổ.', { identifier: 'quasi' }),
   }),
 };
