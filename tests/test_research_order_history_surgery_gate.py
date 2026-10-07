@@ -140,3 +140,29 @@ def test_surgery_live_dom_overrides_stale_select2_and_reads_sequence():
     assert detail["chan_doan_sau_mo"] == "Sau kết hợp xương"
     assert detail["bs_mo_chinh"] == "BS Phẫu thuật A"
     assert detail["phan_loai_pt"] == "Loại 1"
+
+
+def test_verified_fetch_window_widens_transfer_date_to_true_admission():
+    output = {
+        "profile": {
+            "_fetch_status": "ok",
+            "ngay_vao_vien": "03:42 05-09-2026",
+            "ngay_ra_vien": "17:40 21-09-2026",
+        },
+        "discharge": {
+            "_fetch_status": "ok",
+            "ngay_vao": "03:42 05-09-2026",
+            "raw_time": "17:40 21/09/2026",
+        },
+    }
+    date_from, date_to = hchanh_fetch._verified_fetch_window_from_output(
+        output, "18/09/2026", "06/10/2026"
+    )
+    assert date_from == "05/09/2026"
+    assert date_to == "21/09/2026"
+
+
+def test_verified_fetch_window_keeps_input_when_emr_has_no_verified_stay():
+    assert hchanh_fetch._verified_fetch_window_from_output(
+        {}, "18/09/2026", "06/10/2026"
+    ) == ("18/09/2026", "06/10/2026")
