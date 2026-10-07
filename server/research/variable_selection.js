@@ -461,20 +461,22 @@ function relatedRows(rows, identity) {
     const event = eventTime(entry.row);
     return Boolean(event && timeInsideEncounter(event, admission, discharge));
   };
-  let picked;
+  let picked = [];
   if (eid) {
-    // Dòng có mã đợt: đúng mã đợt. Không mã đợt: theo Mã NC nếu cả hai có, còn lại Mã BN + thời gian.
-    picked = [...(index.byEid.get(eid) || [])];
-    if (rc) {
-      picked.push(...(index.noEidByRc.get(rc) || []));
-      picked.push(...(index.noEidNoRcByPc.get(pc) || []).filter(inside));
-    } else {
-      picked.push(...(index.noEidByPc.get(pc) || []).filter(inside));
-    }
+    // encounter_id là khóa lượt. Nếu có Mã BN ở cả hai phía, phải trùng Mã BN;
+    // dòng thiếu encounter_id chỉ ghép theo đúng Mã BN và thời gian của lượt.
+    picked = (index.byEid.get(eid) || []).filter(entry => !pc || !entry.pc || entry.pc === pc);
+    if (pc) picked.push(...(index.noEidByPc.get(pc) || []).filter(inside));
+  } else if (pc) {
+    // Mã BN + thời gian xác định đúng lượt. Mã NC không được kéo kết quả từ
+    // lượt khác hoặc người bệnh khác chỉ vì trùng/mã cũ.
+    picked = (index.noEidByPc.get(pc) || []).filter(inside);
   } else if (rc) {
-    picked = [...(index.byRc.get(rc) || []), ...(index.noEidNoRcByPc.get(pc) || []).filter(inside)];
-  } else {
-    picked = pc ? [...(index.noEidNoRcByPc.get(pc) || [])] : [];
+    // Chỉ dùng Mã NC khi Mã BN thực sự không có và mã này không bị dùng chung
+    // cho nhiều người bệnh. Mã NC tự nó không đủ để nối một lượt khi có Mã BN.
+    const candidates = [...(index.byRc.get(rc) || []), ...(index.noEidByRc.get(rc) || [])];
+    const patientCodes = new Set(candidates.map(entry => entry.pc).filter(Boolean));
+    if (patientCodes.size <= 1) picked = candidates.filter(entry => entry.eid ? !eid : inside(entry));
   }
   return picked
     .sort((a, b) => a.i - b.i)
