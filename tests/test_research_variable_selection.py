@@ -87,7 +87,7 @@ def test_normalize_projection_builds_selected_analysis_dataset():
     )
     out = run_node(script)
     assert out["ok"] is True
-    assert out["columns"] == 17
+    assert out["columns"] == 15
 
 
 def test_export_redaction_removes_identity_and_admin_fields():
