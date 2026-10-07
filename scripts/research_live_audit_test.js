@@ -124,6 +124,22 @@ test('chạy trọn một lượt với EMR giả: lấy vào thư mục riêng,
   assert.strictEqual(summary.kinds.find(k => k.kind === 'labs').compared, 3);
 });
 
+test('kết quả đối chiếu logic cũ không được cộng vào tỉ lệ sau khi parser thay đổi', () => {
+  const dir = path.join(RESEARCH_STORE_DIR, 'du_lieu_goc', 'runs', 'r1');
+  const storePath = path.join(dir, live.STORE_FILE);
+  const store = JSON.parse(fs.readFileSync(storePath, 'utf8'));
+  const done = Object.values(store.audits).find(a => a.status === 'done' && a.result);
+  assert.ok(done);
+  const originalVersion = done.audit_version;
+  done.audit_version = 0;
+  fs.writeFileSync(storePath, JSON.stringify(store), 'utf8');
+  const stale = live.summarizeLive(dir);
+  assert.strictEqual(stale.case_count, 0);
+  assert.ok(stale.recent.some(a => a.id === done.id && a.outdated === true));
+  done.audit_version = originalVersion;
+  fs.writeFileSync(storePath, JSON.stringify(store), 'utf8');
+});
+
 test('lấy lại từ EMR lỗi: không so (tránh "kho thừa" giả), không tính vào tỉ lệ', async () => {
   const archiveDir = path.join(RESEARCH_STORE_DIR, 'du_lieu_goc', 'runs', 'r1');
   const enc = readCsvTable(path.join(archiveDir, 'encounters.csv')).rows.find(e => e.patient_code === '888');

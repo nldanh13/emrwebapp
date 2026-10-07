@@ -1,4 +1,5 @@
 import hchanh_fetch_safe as safe
+import hchanh_fetch as core
 
 
 class FakeOrderHistoryDriver:
@@ -138,3 +139,28 @@ def test_research_order_history_filters_unrelated_old_and_post_discharge_rows(mo
     assert result["window_filter"]["dropped_after"] == 1
     assert result["window_filter"]["unparsed_kept"] == 1
     assert result["window_filter"]["lookback_days"] == 3
+
+
+def test_order_history_reads_main_medications_and_other_orders_as_two_sources():
+    html = """
+    <table><tbody><tr>
+      <td>phiếu</td>
+      <td>05:00 12/05/2026</td>
+      <td>BS</td>
+      <td><a data-content="Dự trù thuốc">DB</a></td>
+      <td>KQ</td>
+      <td><a data-content="(TT) Sismyodin 50mg 01v x 3 uống mỗi 8h">Y lệnh khác</a></td>
+      <td>CĐCS</td>
+      <td>CĐDD</td>
+      <td>
+        <a data-content="ANTIVIC 75 (Pregabalin) x 3 (Viên)&lt;br&gt;MAGNESI-B6 5mg+470mg x 2 (Viên)">Thuốc</a>
+      </td>
+      <td>DV</td>
+    </tr></tbody></table>
+    """
+    tds = core._soup(html).find_all("td")
+    fields = core._order_history_order_fields(tds, 1)
+    assert "Sismyodin" in fields["y_lenh_khac"]
+    assert "ANTIVIC" in fields["ten_y_lenh"]
+    assert "MAGNESI-B6" in fields["ten_y_lenh"]
+    assert fields["ten_y_lenh"] != fields["y_lenh_khac"]

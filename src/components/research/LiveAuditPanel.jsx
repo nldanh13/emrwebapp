@@ -62,9 +62,10 @@ function DiffList({ title, color, items, render }) {
   );
 }
 
-function LiveAuditDetail({ audit }) {
+function LiveAuditDetail({ audit, currentVersion = 0 }) {
   if (!audit) return null;
   const kinds = audit.result?.kinds || [];
+  const outdated = Number(audit.audit_version || 0) !== Number(currentVersion || 0);
   return (
     <div style={{ border: `1px solid ${C.border2}`, borderRadius: 8, padding: 10, background: C.bg }}>
       <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text }}>
@@ -72,8 +73,13 @@ function LiveAuditDetail({ audit }) {
       </div>
       <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 2 }}>
         {liveStatusLabel(audit.status)}{audit.step ? ` — ${audit.step}` : ''}
-        {audit.result ? ` · khớp ${formatRate(audit.result.overall?.match_rate)}` : ''}
+        {audit.result && !outdated ? ` · khớp ${formatRate(audit.result.overall?.match_rate)}` : ''}
       </div>
+      {outdated && audit.status === 'done' && (
+        <div style={{ fontSize: FS.xs, color: C.amber, marginTop: 4, fontWeight: 700 }}>
+          Kết quả này dùng logic đối chiếu cũ trước khi sửa cách đọc Thuốc/T-VT và Y lệnh khác; không còn được tính vào tỉ lệ. Hãy chạy một lượt đối chiếu mới.
+        </div>
+      )}
       {audit.message && <div role="alert" style={{ fontSize: FS.xs, color: audit.status === 'done' ? C.amber : C.red, marginTop: 4 }}>{audit.message}</div>}
       {kinds.map(k => (
         <div key={k.kind} style={{ marginTop: 8, paddingTop: 6, borderTop: `1px solid ${C.border2}` }}>
@@ -168,7 +174,8 @@ export function LiveAuditPanel() {
           </Btn>
           {summary && (
             <span style={{ fontSize: FS.xs, color: C.text3 }}>
-              Đã so {summary.case_count} ca, {summary.all_match_count} ca khớp hoàn toàn.
+              Đã so {summary.case_count} ca theo logic hiện tại, {summary.all_match_count} ca khớp hoàn toàn.
+              {summary.outdated_count ? ` ${summary.outdated_count} lượt cũ không tính.` : ''}
             </span>
           )}
         </div>
@@ -182,7 +189,7 @@ export function LiveAuditPanel() {
 
       {!summary && !error && <SkeletonLines lines={4} />}
       {summary && <LiveSummaryTable summary={summary} />}
-      {detail && <LiveAuditDetail audit={detail} />}
+      {detail && <LiveAuditDetail audit={detail} currentVersion={summary?.audit_version || 0} />}
 
       {!!summary?.recent?.length && (
         <div>
@@ -192,8 +199,11 @@ export function LiveAuditPanel() {
               <button key={a.id} type="button" onClick={() => open(a.id)}
                 style={{ textAlign: 'left', border: `1px solid ${C.border2}`, background: detail?.id === a.id ? C.blueBg : C.surface, borderRadius: 6, padding: '6px 8px', cursor: 'pointer', fontSize: FS.xs, color: C.text2 }}>
                 Mã BN {a.patient_code} · {a.admission_date || '—'} → {a.discharge_date || '—'} · {liveStatusLabel(a.status)}
-                {a.status === 'done' && (
+                {a.status === 'done' && !a.outdated && (
                   <b style={{ color: a.all_match ? C.green : C.red }}> · khớp {formatRate(a.match_rate)}</b>
+                )}
+                {a.status === 'done' && a.outdated && (
+                  <b style={{ color: C.amber }}> · kết quả cũ, không tính</b>
                 )}
                 {liveIsActive(a) && a.step ? ` · ${a.step}` : ''}
               </button>

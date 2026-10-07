@@ -73,6 +73,16 @@ test('thuốc: tách Eperison, hàm lượng, số lần, đường uống và g
   assert.strictEqual(p.schedule, '08:00;14:00;20:00');
 });
 
+test('thuốc: Sismyodin trong Y lệnh khác được parse như thuốc thật', () => {
+  const p = parser.parseMedicationLine('(TT) Sismyodin 50mg 01v x 3 uống mỗi 8h', 'order_other');
+  assert.ok(p);
+  assert.strictEqual(p.drug_name_raw, 'Sismyodin');
+  assert.strictEqual(p.strength_raw, '50 mg');
+  assert.strictEqual(p.times_per_day, '3');
+  assert.strictEqual(p.route_norm, 'uống');
+  assert.strictEqual(p.source_field, 'order_other');
+});
+
 test('thuốc: B12 trong tên không bị nhầm thành giờ dùng', () => {
   const p = parser.parseMedicationLine('(TT) B12 Ankermann 01v x2(u) 8h-20h');
   assert.ok(p);
