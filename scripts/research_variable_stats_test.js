@@ -13,7 +13,7 @@ const path = require('path');
 // Thư mục runtime tạm, đặt trước khi nạp module server (constants đọc biến này lúc nạp).
 process.env.EMR_RUNTIME_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'research_variable_stats_test_'));
 const { describeValues, summarizeSelectedDataset, buildSelectedAnalysisDataset } = require('../server/research/variable_selection');
-const { extractTScore } = require('../server/research/value_normalizers');
+const { extractTScoresBySite } = require('../server/research/value_normalizers');
 const { buildVariableCatalog } = require('../server/research/variable_catalog');
 const { writeCsv } = require('../server/research/table_io');
 const { summarizeSelectionForRun } = require('../server/research/selection_runtime');
@@ -63,38 +63,43 @@ test('ngày: khoảng từ–đến; văn bản tự do: không trả giá trị
   assert.ok(!JSON.stringify(t).includes('GIA LAP'), 'không lộ nội dung văn bản');
 });
 
-test('CĐHA xuất nội dung kết quả; DXA tách T-score thành biến số', () => {
-  assert.strictEqual(extractTScore('L1-L4 T-score: -2,7; Z-score: -1,1'), '-2.7');
-  assert.strictEqual(extractTScore('Z-score: -1.1'), '');
-  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'imaging_catalog_'));
-  writeCsv(path.join(runDir, 'imaging_results.csv'), [
-    'imaging_id', 'research_code', 'encounter_id', 'patient_code', 'encounter_match_status',
-    'is_within_encounter', 'modality', 'result_text', 'conclusion_text'
-  ], [
-    { imaging_id: 'i1', research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', encounter_match_status: 'matched', is_within_encounter: '1', modality: 'DEXA', result_text: 'T-score: -2.7', conclusion_text: 'Loãng xương' },
-    { imaging_id: 'i2', research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', encounter_match_status: 'matched', is_within_encounter: '1', modality: 'CT', result_text: 'Không thấy tổn thương cấp', conclusion_text: '' },
+test('CĐHA xuất báo cáo; T-score DXA tách thành biến số theo từng vị trí', () => {
+  const report = 'T - SCORE:\n\\+ Neck Left:-1.8\n\\+ Neck Right:-1.2\n\\+ Total Left:-0.5\n\\+ Total Right:0.0\n\\+ L1:-2.8\n\\+ L2:-3.1\n\\+ L3:-2.3\n\\+ L4:-2.7\nZ-SCORE:\n\\+ Neck Left:-1.0';
+  const parsed = extractTScoresBySite(report);
+  assert.deepStrictEqual(parsed.map(x => [x.site, x.value]), [
+    ['neck_left', '-1.8'], ['neck_right', '-1.2'], ['total_left', '-0.5'],
+    ['total_right', '0'], ['l1', '-2.8'], ['l2', '-3.1'], ['l3', '-2.3'], ['l4', '-2.7'],
   ]);
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'imaging_catalog_'));
+  const imagingRows = [
+    { imaging_id: 'i1', research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', encounter_match_status: 'matched', is_within_encounter: '1', modality: 'DEXA', result_text: report, conclusion_text: 'Loãng xương L1-4' },
+    { imaging_id: 'i2', research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', encounter_match_status: 'matched', is_within_encounter: '1', modality: 'CT', result_text: 'Không thấy tổn thương cấp', conclusion_text: '' },
+  ];
+  writeCsv(path.join(runDir, 'imaging_results.csv'), Object.keys(imagingRows[0]), imagingRows);
   const catalog = buildVariableCatalog(runDir);
   const variables = catalog.groups.find(g => g.key === 'imaging_results').variables;
   const dexaResult = variables.find(v => v.name === 'imaging:DEXA');
-  const tScore = variables.find(v => v.virtual_kind === 'imaging_t_score');
+  const scores = variables.filter(v => v.virtual_kind === 'imaging_t_score_site');
   assert.strictEqual(dexaResult.type, 'text');
   assert.match(dexaResult.label, /Kết quả/);
-  assert.strictEqual(tScore.type, 'number');
-  assert.strictEqual(tScore.aggregation, 'mean');
+  assert.strictEqual(scores.length, 8);
+  const neckLeft = scores.find(v => v.name === 'imaging_t_score:neck_left');
+  const l1 = scores.find(v => v.name === 'imaging_t_score:l1');
+  assert.strictEqual(neckLeft.type, 'number');
+  assert.strictEqual(neckLeft.aggregation, 'last');
 
   const built = buildSelectedAnalysisDataset([
     { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1' },
-  ], { selected_variables: [dexaResult, tScore] }, { imaging_results: [
-    { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', encounter_match_status: 'matched', is_within_encounter: '1', modality: 'DEXA', result_text: 'T-score: -2.7', conclusion_text: 'Loãng xương' },
-    { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', encounter_match_status: 'matched', is_within_encounter: '1', modality: 'CT', result_text: 'Không thấy tổn thương cấp', conclusion_text: '' },
-  ] });
-  const scoreCol = built.manifest.variables.find(v => v.virtual_kind === 'imaging_t_score').output_column;
-  const reportCol = built.manifest.variables.find(v => v.virtual_kind === 'imaging_modality').output_column;
-  assert.strictEqual(built.rows[0][scoreCol], '-2.7');
-  assert.match(built.rows[0][reportCol], /T-score: -2.7.*Loãng xương/);
+  ], { selected_variables: [dexaResult, neckLeft, l1] }, { imaging_results: imagingRows });
+  const scoreCol = built.manifest.variables.find(v => v.name === 'imaging_t_score:neck_left').output_column;
+  const l1Col = built.manifest.variables.find(v => v.name === 'imaging_t_score:l1').output_column;
+  const reportCol = built.manifest.variables.find(v => v.name === 'imaging:DEXA').output_column;
+  assert.strictEqual(built.rows[0][scoreCol], '-1.8');
+  assert.strictEqual(built.rows[0][l1Col], '-2.8');
+  assert.match(built.rows[0][reportCol], /Neck Left:-1.8.*L4:-2.7/);
   assert.ok(!built.rows[0][reportCol].includes('Không thấy tổn thương cấp'), 'không lấy kết quả CT vào biến DXA');
 });
+
 
 test('summary có thống kê từng biến và tóm tắt mẫu (tuổi, giới, số người bệnh)', () => {
   const dataset = {
