@@ -361,6 +361,12 @@ export function GeneralOverviewView({ generalOverview, generalOverviewLoading, p
     modules: (collectionScreen.parts || []).map(p => ({ ...p, label: p.label, total: Number(p.total || 0), done: Number(p.done || 0) })),
   } : legacySummary;
   const counts = ov?.counts || {};
+  const rawSummaryCounts = summary.counts || {};
+  const summaryUserCounts = summary.user_counts || {
+    ready: Number(rawSummaryCounts.done ?? summary.ready ?? 0),
+    automatic: Number(rawSummaryCounts.missing || 0) + Number(rawSummaryCounts.error || 0) || Number(summary.missingCount || 0),
+    manual: Number(rawSummaryCounts.waiting || 0) + Number(rawSummaryCounts.unmatched || 0),
+  };
   // Gợi ý việc nên làm tiếp, để người mới không phải đoán bắt đầu từ đâu.
   const anyCollected = (summary.modules || []).some(part => Number(part.done || 0) > 0);
   const nextStep = !ov && !generalOverviewLoading
@@ -410,9 +416,9 @@ export function GeneralOverviewView({ generalOverview, generalOverviewLoading, p
           </div>
           <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Theo lượt điều trị:</span>
-            <StatBadge label="Sẵn sàng" value={summary.user_counts?.ready ?? summary.ready ?? 0} tone="ok" />
-            <StatBadge label="Máy xử lý" value={summary.user_counts?.automatic ?? summary.missingCount ?? 0} tone={Number((summary.user_counts?.automatic ?? summary.missingCount) || 0) ? 'info' : 'neutral'} />
-            <StatBadge label="Cần bạn kiểm tra" value={summary.user_counts?.manual ?? 0} tone={Number(summary.user_counts?.manual || 0) ? 'danger' : 'neutral'} />
+            <StatBadge label="Sẵn sàng" value={summaryUserCounts.ready} tone="ok" />
+            <StatBadge label="Máy xử lý" value={summaryUserCounts.automatic} tone={Number(summaryUserCounts.automatic || 0) ? 'info' : 'neutral'} />
+            <StatBadge label="Cần bạn kiểm tra" value={summaryUserCounts.manual} tone={Number(summaryUserCounts.manual || 0) ? 'danger' : 'neutral'} />
             {ov.limited && <span style={{ fontSize: FS.xs, color: C.amber }}>Kho lớn: một số số đếm lấy từ metadata.</span>}
           </div>
           {collectionScreen && Number(counts.encounters || 0) !== Number(collectionScreen.total || 0) && (
