@@ -31,6 +31,25 @@ const CHILD_SPECS = {
 };
 
 function text(v) { return String(v ?? '').trim(); }
+
+const STRONG_OUTSIDE_MATCH_METHODS = new Set([
+  'encounter_id',
+  'emr_treatment_id',
+  'emr_treatment_noitru_alias',
+  'emr_noitru_id',
+  'emr_noitru_treatment_alias',
+  'emr_admission_id',
+  'emr_admission_noitru_alias',
+]);
+
+function outsideEncounterMatchType(row) {
+  if (!text(row?.encounter_id) || text(row?.is_within_encounter) !== '0') return '';
+  const method = text(row?.encounter_match_method);
+  // Kết quả trước nhập viện ≤ 3 ngày được gắn kèm theo thiết kế riêng.
+  if (method === 'pre_admission') return '';
+  return STRONG_OUTSIDE_MATCH_METHODS.has(method) ? 'strong_key' : 'unverified';
+}
+
 function fileSha256(file) { const h = crypto.createHash('sha256'); h.update(fs.readFileSync(file)); return h.digest('hex'); }
 
 function resolveJobRunDir(job = {}) {
@@ -88,12 +107,15 @@ function researchCodeIntegrity(encounters, critical) {
 function childIntegrity(runDir, critical, warnings, byTable) {
   for (const [name, spec] of Object.entries(CHILD_SPECS)) {
     const rows = loadTable(runDir, spec.file);
-    const summary = { rows: rows.length, outside_encounter: 0, missing_time: 0, unmatched: 0, duplicate_clinical_key: 0 };
+    const summary = { rows: rows.length, outside_encounter: 0, outside_encounter_strong_key: 0, outside_encounter_unverified: 0, missing_time: 0, unmatched: 0, duplicate_clinical_key: 0 };
     const seen = new Map();
     for (const row of rows) {
-      // Kết quả trước nhập viện (≤ 3 ngày) được gắn kèm đợt có chủ đích, đã đánh dấu riêng.
-      const peri = text(row.encounter_match_method) === 'pre_admission';
-      if (text(row.encounter_id) && text(row.is_within_encounter) === '0' && !peri) summary.outside_encounter += 1;
+      const outsideType = outsideEncounterMatchType(row);
+      if (outsideType) {
+        summary.outside_encounter += 1;
+        if (outsideType === 'strong_key') summary.outside_encounter_strong_key += 1;
+        else summary.outside_encounter_unverified += 1;
+      }
       const at = spec.time.map(k => text(row[k])).find(Boolean) || '';
       if (!at) summary.missing_time += 1;
       const match = text(row.encounter_match_status);
@@ -103,7 +125,8 @@ function childIntegrity(runDir, critical, warnings, byTable) {
     }
     summary.duplicate_clinical_key = [...seen.values()].filter(n => n > 1).reduce((s, n) => s + n - 1, 0);
     byTable[name] = summary;
-    if (summary.outside_encounter) addIssue(critical, 'event_outside_encounter', `${name}: ${summary.outside_encounter} dòng đã gắn encounter nhưng nằm ngoài khoảng vào-ra viện.`, { table: name, count: summary.outside_encounter });
+    if (summary.outside_encounter_unverified) addIssue(critical, 'event_outside_encounter', `${name}: ${summary.outside_encounter_unverified} dòng đã gắn encounter theo ghép không dùng khóa đợt chắc chắn nhưng nằm ngoài khoảng vào-ra viện.`, { table: name, count: summary.outside_encounter_unverified });
+    if (summary.outside_encounter_strong_key) addIssue(warnings, 'event_outside_encounter_strong_key', `${name}: ${summary.outside_encounter_strong_key} dòng có mã EMR xác định đợt nhưng thời điểm nằm ngoài khoảng vào-ra; vẫn giữ is_within_encounter = 0 để loại khỏi phân tích trong đợt.`, { table: name, count: summary.outside_encounter_strong_key });
     if (summary.missing_time) addIssue(warnings, 'event_missing_timestamp', `${name}: ${summary.missing_time} dòng không có timestamp đủ để xác minh cửa sổ điều trị.`, { table: name, count: summary.missing_time });
     if (summary.unmatched) addIssue(warnings, 'event_not_verified_to_encounter', `${name}: ${summary.unmatched} dòng chưa được ghép chắc chắn vào một encounter.`, { table: name, count: summary.unmatched });
     if (summary.duplicate_clinical_key) addIssue(warnings, 'duplicate_clinical_event', `${name}: ${summary.duplicate_clinical_key} dòng trùng cùng timestamp và nội dung lâm sàng. Dữ liệu được giữ để audit, không tự xóa tại integrity gate.`, { table: name, count: summary.duplicate_clinical_key });
@@ -128,6 +151,12 @@ function evaluateNormalizationIntegrity(runDir, { beforeSnapshot = null, afterSn
   if (changedInputs.length) addIssue(critical, 'input_changed_during_normalize', `Nguồn thu thập thay đổi trong lúc Chuẩn hóa (${changedInputs.length} file). Kết quả lần này không được coi là snapshot nhất quán.`, { count: changedInputs.length, files: changedInputs });
 
   const existingQa = readJsonSafe(path.join(dir, quality.QA_REPORT_FILE), {}) || {};
+  // Integrity issues are recomputed on every check; discard the previous classification
+  // so a row reclassified from blocking to warning does not leave a stale blocker behind.
+  existingQa.blocking = (Array.isArray(existingQa.blocking) ? existingQa.blocking : [])
+    .filter(issue => issue.code !== 'event_outside_encounter');
+  existingQa.warnings = (Array.isArray(existingQa.warnings) ? existingQa.warnings : [])
+    .filter(issue => issue.code !== 'event_outside_encounter_strong_key');
   for (const issue of critical) mergeQaIssue(existingQa, 'blocking', issue);
   for (const issue of warnings) mergeQaIssue(existingQa, 'warnings', issue);
   existingQa.blocking_count = (existingQa.blocking || []).length;
@@ -171,4 +200,4 @@ function evaluateNormalizationIntegrity(runDir, { beforeSnapshot = null, afterSn
   return report;
 }
 
-module.exports = { INTEGRITY_REPORT_FILE, INPUT_SNAPSHOT_FILE, VOLATILE_NORMALIZE_INPUTS, resolveJobRunDir, captureNormalizeInputs, changedNormalizeInputs, evaluateNormalizationIntegrity };
+module.exports = { INTEGRITY_REPORT_FILE, INPUT_SNAPSHOT_FILE, VOLATILE_NORMALIZE_INPUTS, outsideEncounterMatchType, resolveJobRunDir, captureNormalizeInputs, changedNormalizeInputs, evaluateNormalizationIntegrity };
