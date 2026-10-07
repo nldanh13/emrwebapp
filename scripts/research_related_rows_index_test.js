@@ -33,11 +33,11 @@ function relatedRowsOld(list, identity) {
     const rowEid = vs.getCell(row, ['encounter_id', 'visit_id']); const rowRc = vs.researchCode(row); const rowPc = vs.patientCode(row);
     if (eid) {
       if (rowEid) return rowEid === eid && (!pc || !rowPc || rowPc === pc);
-      if (pc && rowPc === pc) return Boolean((rc && rowRc === rc) || inside(row));
+      if (pc && rowPc === pc) return Boolean((rc && rowRc === rc && (!hasWindow || !eventTime(row) || inside(row))) || inside(row));
       return false;
     }
     if (pc && rowPc === pc && !rowEid) {
-      if (rowRc && rc) return rowRc === rc || inside(row);
+      if (rowRc && rc) return (rowRc === rc && (!hasWindow || !eventTime(row) || inside(row))) || inside(row);
       if (rowRc && !rc) return inside(row);
       return !hasWindow || inside(row) || (!rowRc && !eventTime(row));
     }
@@ -58,7 +58,7 @@ test('Mã BN và khoảng ngày được ưu tiên; Mã NC trùng không kéo d�
   const rows = [
     { patient_code: 'BN1', research_code: 'NC-SHARED', encounter_id: 'e1', lab_datetime: '2026-03-03', test_name_norm: 'wbc' },
     { patient_code: 'BN2', research_code: 'NC-SHARED', encounter_id: '', lab_datetime: '2026-03-03', test_name_norm: 'hb' },
-    { patient_code: 'BN1', research_code: 'NC-OLD', encounter_id: '', lab_datetime: '2025-01-03', test_name_norm: 'crp' },
+    { patient_code: 'BN1', research_code: 'NC-SHARED', encounter_id: '', lab_datetime: '2025-01-03', test_name_norm: 'crp' },
     { patient_code: 'BN1', research_code: '', encounter_id: '', lab_datetime: '2026-03-04', test_name_norm: 'plt' },
   ];
   const identity = { patient_code: 'BN1', research_code: 'NC-SHARED', encounter_id: 'e1', admission_date: '2026-03-01', discharge_date: '2026-03-10' };
