@@ -3690,6 +3690,68 @@ def _format_emr_date(dt: Any) -> str:
         return ""
 
 
+def _order_history_cell_rich_text(td: Any) -> str:
+    """Đọc đầy đủ nội dung một ô lịch sử y lệnh.
+
+    EMR thường chỉ hiện nhãn ngắn trong ô, còn thuốc/y lệnh thật nằm trong một hoặc
+    nhiều thuộc tính data-content của các thẻ <a>. Giữ tất cả data-content và text
+    hiển thị, chuyển HTML <br> thành xuống dòng, bỏ bản trùng.
+    """
+    if td is None:
+        return ""
+    parts: List[str] = []
+    seen = set()
+
+    def _add(value: Any, *, html_fragment: bool = False) -> None:
+        raw = str(value or "").strip()
+        if not raw:
+            return
+        text = raw
+        if html_fragment or "<" in raw or "&lt;" in raw:
+            try:
+                from html import unescape
+                decoded = unescape(raw)
+                text = _soup(decoded).get_text("\n", strip=True)
+            except Exception:
+                text = raw
+        for piece in re.split(r"[\r\n]+", str(text or "")):
+            clean = _t(piece)
+            key = clean.casefold()
+            if clean and key not in seen:
+                seen.add(key)
+                parts.append(clean)
+
+    try:
+        for node in td.find_all(attrs={"data-content": True}):
+            _add(node.get("data-content"), html_fragment=True)
+    except Exception:
+        pass
+    try:
+        _add(td.get_text("\n", strip=True))
+    except Exception:
+        pass
+    return "\n".join(parts)
+
+
+def _order_history_order_fields(tds: List[Any], tg_idx: int) -> Dict[str, str]:
+    """Tách hai nguồn order độc lập trong bảng Lịch sử y lệnh.
+
+    Theo layout EMR hiện tại:
+      TG + 4 = Y lệnh khác
+      TG + 7 = T/VT (Thuốc/VTYT, chứa danh sách thuốc chính)
+
+    Trước đây T/VT chỉ được đọc màu trạng thái và bị bỏ nội dung; đồng thời
+    ten_y_lenh bị gán lại từ y_lenh_khac. Điều đó làm đối chiếu có thể báo
+    "kho thừa" dù thuốc/y lệnh vẫn có trên EMR.
+    """
+    yk_idx = tg_idx + 4
+    tvt_idx = tg_idx + 7
+    return {
+        "ten_y_lenh": _order_history_cell_rich_text(tds[tvt_idx]) if tvt_idx < len(tds) else "",
+        "y_lenh_khac": _order_history_cell_rich_text(tds[yk_idx]) if yk_idx < len(tds) else "",
+    }
+
+
 def _parse_order_history_khoa_list_from_html(html: str) -> List[Dict[str, Any]]:
     """Lấy các mốc 'Khoa điều trị thứ ... (Ngày vào: ...)' trong Lịch sử y lệnh.
 
@@ -5289,8 +5351,9 @@ def fetch_order_history(sess: Optional["EmrHttpSession"], ma_bn: str,
                     for name, svc in services.items() if svc.get("pending", 0) > 0
                 ]
 
-                a_yl = tds[yk_idx].find("a", attrs={"data-content": True}) if yk_idx < len(tds) else None
-                y_lenh_khac = _t(a_yl["data-content"]) if a_yl else (tds[yk_idx].get_text(" ", strip=True) if yk_idx < len(tds) else "")
+                order_fields = _order_history_order_fields(tds, tg_idx)
+                ten_y_lenh = order_fields["ten_y_lenh"]
+                y_lenh_khac = order_fields["y_lenh_khac"]
                 cd_cs = tds[cdcs_idx].get_text(" ", strip=True) if cdcs_idx < len(tds) else ""
                 a_dd = tds[cddd_idx].find("a", attrs={"data-content": True}) if cddd_idx < len(tds) else None
                 cd_dd = _t(a_dd["data-content"]) if a_dd else (tds[cddd_idx].get_text(" ", strip=True) if cddd_idx < len(tds) else "")
@@ -5322,8 +5385,10 @@ def fetch_order_history(sess: Optional["EmrHttpSession"], ma_bn: str,
                     "tg_ylenh":   tg_ylenh,
                     "bac_si":     bac_si,
                     "dien_bien":  dien_bien[:500],
-                    "ten_y_lenh": (y_lenh_khac or dien_bien)[:500],
-                    "y_lenh_khac": y_lenh_khac[:1000],
+                    # Hai nguồn độc lập: thuốc/T-VT chính và Y lệnh khác.
+                    # Không dùng Diễn biến làm fallback cho Tên y lệnh.
+                    "ten_y_lenh": ten_y_lenh[:3000],
+                    "y_lenh_khac": y_lenh_khac[:3000],
                     "cd_cs":      cd_cs,
                     "cd_dd":      cd_dd,
                     "services":   services,
