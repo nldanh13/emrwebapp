@@ -12,6 +12,7 @@ const path = require('path');
 
 process.env.EMR_RUNTIME_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'research_pipeline_info_test_'));
 const { buildPipelineInfo } = require('../server/research/pipeline_info');
+const { NORMALIZED_SCHEMA_VERSION } = require('../server/research/normalized_schema');
 
 let passed = 0;
 function test(name, fn) {
@@ -52,8 +53,8 @@ test('đọc đủ 4 bước từ manifest, normalize_state, qa_report, collecti
   assert.strictEqual(p.collect_runs, 2);
   assert.deepStrictEqual(p.reused_from_patient_db, { cases: 5, provisional: 2, replaced_by_goc: 3 });
   assert.strictEqual(p.normalize.duration_ms, 5000);
-  assert.strictEqual(p.normalize.expected_schema_version, 36);
-  assert.strictEqual(p.normalize.schema_outdated, true, 'snapshot v15 phải được báo cũ hơn schema server v36');
+  assert.strictEqual(p.normalize.expected_schema_version, NORMALIZED_SCHEMA_VERSION);
+  assert.strictEqual(p.normalize.schema_outdated, true, 'snapshot cũ phải được báo cũ hơn schema server hiện tại');
   assert.strictEqual(p.normalize.qa.status, 'blocked');
   assert.strictEqual(p.normalize.qa.blocking, 1);
   assert.strictEqual(p.normalize.qa.warning, 2);
