@@ -214,11 +214,10 @@ function buildVirtualVariablesForTable(def, rows, extra = {}) {
       });
       if (normalizeToken(b.modality) === 'dexa' || normalizeToken(b.modality) === 'dxa') {
         for (const [site, values] of b.tScores) {
-          const label = values.length ? site : site;
           const canonicalLabel = ({
             neck_left: 'Neck Left', neck_right: 'Neck Right', total_left: 'Total Left', total_right: 'Total Right',
             l1: 'L1', l2: 'L2', l3: 'L3', l4: 'L4', overall: 'T-score tổng',
-          })[site] || label;
+          })[site] || site;
           add({
             id: makeVirtualVariableId('imaging_t_score', `${b.modality}|${site}`),
             name: `imaging_t_score:${site}`,
