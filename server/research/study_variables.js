@@ -92,7 +92,7 @@ function buildStudyCodebook(study) {
       nhan: v.survey_label || v.label || v.name,
       kieu: presence ? 'Phân loại (0/1)' : (TYPE_TEXT[String(v.type || '')] || ''),
       don_vi: unitFromLabel(v.label),
-      cach_lay: `${AGGREGATION_TEXT[String(v.aggregation || 'list')] || v.aggregation}${windowText}`,
+      cach_lay: `${AGGREGATION_TEXT[String(v.aggregation || 'list')] || v.aggregation}${windowText}${v.source_note ? `; ${v.source_note}` : ''}`,
       ma_hoa: presence ? '1 = Có, 0 = Không' : '',
       co_du_lieu: n,
       thieu: rows.length - n,

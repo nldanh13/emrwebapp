@@ -1,5 +1,7 @@
 'use strict';
 
+const { extractTScoresBySite } = require('./value_normalizers');
+
 function stripMarks(value) {
   return String(value ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
 }
@@ -177,6 +179,7 @@ function sanitizeVariableSelection(input) {
       type: String(v?.type || '').slice(0, 40),
       role: VARIABLE_ROLES.has(String(v?.role || '')) ? String(v.role) : '',
       virtual_kind: String(v?.virtual_kind || '').slice(0, 80),
+      source_note: String(v?.source_note || '').slice(0, 500),
       aggregation: String(v?.aggregation || 'list').slice(0, 40),
     };
     // Cửa sổ ngày so với mốc thời gian của nghiên cứu (vd. -14 → 0: trong 14 ngày trước mốc).
@@ -359,7 +362,11 @@ function virtualVariableMatches(row, variable) {
     const hay = normalizeForFilter([getCell(row, ['test_name_norm', 'Tên XN chuẩn']), getCell(row, ['test_name_raw', 'Tên XN', 'Tên xét nghiệm'])].join(' '));
     return !needle || hay.includes(needle) || sourceFilterMatches(row, variable.source_filter || {});
   }
-  if (kind === 'imaging_modality' || name.startsWith('imaging_modality:')) {
+  if (kind === 'imaging_t_score_site' || name.startsWith('imaging_t_score:')) {
+    const site = name.split(':').slice(1).join(':');
+    return extractTScoresBySite(imagingReportValue(row)).some(score => !site || score.site === site);
+  }
+  if (kind === 'imaging_modality' || name.startsWith('imaging_modality:') || name.startsWith('imaging:')) {
     const hay = normalizeForFilter(getCell(row, ['modality', 'Loại']));
     return !needle || hay.includes(needle);
   }
@@ -398,7 +405,7 @@ function conditionMatchesRows(condition, rows) {
     if (!matched.length) return op === 'empty';
     if (!op || op === 'not_empty' || op === '=') return true;
     if (op === 'empty') return false;
-    const values = matched.map(row => getCell(row, condition.name) || getCell(row, ['result_num', 'result_raw', 'drug_name_raw', 'surgery_method', 'modality']));
+    const values = matched.map(row => variableValue(condition, row));
     return values.some(v => compareScalar(v, op, condition.value, condition.value2, condition.type));
   }
   if (op === 'empty') return candidates.every(row => !getCell(row, condition.name));
@@ -587,9 +594,23 @@ function selectedColumnName(variable, used = new Set()) {
   return col;
 }
 
+function imagingReportValue(row) {
+  const parts = [
+    getCell(row, ['result_text', 'Mô tả/Kết quả', 'Kết quả']),
+    getCell(row, ['conclusion_text', 'Kết luận']),
+  ].map(value => String(value || '').trim()).filter(Boolean);
+  return [...new Set(parts)].join(' — ');
+}
+
 function variableValue(variable, row) {
+  const kind = String(variable?.virtual_kind || '');
+  if (kind === 'imaging_t_score_site' || String(variable?.name || '').startsWith('imaging_t_score:')) {
+    const site = String(variable?.name || '').split(':').slice(1).join(':');
+    return extractTScoresBySite(imagingReportValue(row)).find(score => score.site === site)?.value || '';
+  }
+  if (kind === 'imaging_modality' || String(variable?.name || '').startsWith('imaging:')) return imagingReportValue(row);
   return getCell(row, variable.name)
-    || getCell(row, ['result_num', 'result_raw', 'drug_name_raw', 'surgery_method', 'surgery_name', 'modality', 'diagnosis_text']);
+    || getCell(row, ['result_num', 'result_raw', 'result_text', 'conclusion_text', 'drug_name_raw', 'surgery_method', 'surgery_name', 'modality', 'diagnosis_text']);
 }
 
 function summarizeVariableValue(variable, rows, identity = {}) {
@@ -724,6 +745,7 @@ function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByK
         type: v.type,
         role: v.role,
         virtual_kind: v.virtual_kind,
+        source_note: v.source_note,
         source_filter: v.source_filter,
         aggregation: v.aggregation || 'list',
         ...(v.window_from_days != null || v.window_to_days != null ? { window_from_days: v.window_from_days, window_to_days: v.window_to_days } : {}),
