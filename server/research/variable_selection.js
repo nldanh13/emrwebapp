@@ -476,7 +476,7 @@ function relatedRows(rows, identity) {
     // cho nhiều người bệnh. Mã NC tự nó không đủ để nối một lượt khi có Mã BN.
     const candidates = [...(index.byRc.get(rc) || []), ...(index.noEidByRc.get(rc) || [])];
     const patientCodes = new Set(candidates.map(entry => entry.pc).filter(Boolean));
-    if (patientCodes.size <= 1) picked = candidates.filter(entry => entry.eid ? !eid : inside(entry));
+    if (patientCodes.size <= 1) picked = candidates.filter(inside);
   }
   return picked
     .sort((a, b) => a.i - b.i)
