@@ -64,28 +64,41 @@ function resultText(value) {
 // T-score from a DXA/DEXA report. Return a plain decimal string so it can be
 // summarized as a numeric variable; leave Z-scores and unrelated measurements untouched.
 const TSCORE_SITES = [
-  { key: 'neck_left', label: 'Neck Left', pattern: 'Neck\s+Left' },
-  { key: 'neck_right', label: 'Neck Right', pattern: 'Neck\s+Right' },
-  { key: 'total_left', label: 'Total Left', pattern: 'Total\s+Left' },
-  { key: 'total_right', label: 'Total Right', pattern: 'Total\s+Right' },
-  { key: 'l1', label: 'L1', pattern: 'L\s*1' },
-  { key: 'l2', label: 'L2', pattern: 'L\s*2' },
-  { key: 'l3', label: 'L3', pattern: 'L\s*3' },
-  { key: 'l4', label: 'L4', pattern: 'L\s*4' },
+  { key: 'neck_left', label: 'Neck Left' },
+  { key: 'neck_right', label: 'Neck Right' },
+  { key: 'total_left', label: 'Total Left' },
+  { key: 'total_right', label: 'Total Right' },
+  { key: 'l1', label: 'L1' },
+  { key: 'l2', label: 'L2' },
+  { key: 'l3', label: 'L3' },
+  { key: 'l4', label: 'L4' },
 ];
 
 function extractTScoresBySite(value) {
   const raw = String(value || '');
   const match = raw.match(/\bT\s*[-–—]?\s*score\b\s*[:=]?\s*([\s\S]*?)(?=\bZ\s*[-–—]?\s*score\b|$)/i);
   if (!match) return [];
-  const section = match[1];
+  const labels = new Map(TSCORE_SITES.map(site => [site.label.toLowerCase(), site]));
   const out = [];
-  for (const site of TSCORE_SITES) {
-    const re = new RegExp('(?:^|[\r\n;,])\\s*[\\\\+*•\\-]*\\s*(' + site.pattern + ')\\s*[:=]\\s*([-+]?\\d+(?:[.,]\\d+)?)', 'i');
-    const found = section.match(re);
+  for (const part of match[1].split(/[\r\n;]+/)) {
+    const line = part.trim().replace(/^[\\+*•\-\s]+/, '');
+    const found = line.match(/^(Neck\s+Left|Neck\s+Right|Total\s+Left|Total\s+Right|L\s*[1-4])\s*[:=]\s*([-+]?\d+(?:[.,]\d+)?)/i);
     if (!found) continue;
-    const n = Number(found[2].replace(',', '.'));
-    if (Number.isFinite(n)) out.push({ site: site.key, label: site.label, value: String(n) });
+    const label = found[1].replace(/\s+/g, ' ').toLowerCase();
+    const site = labels.get(label) || labels.get(label.replace(/\s+/g, ''));
+    if (!site) continue;
+    const number = Number(found[2].replace(',', '.'));
+    if (Number.isFinite(number) && !out.some(item => item.site === site.key)) {
+      out.push({ site: site.key, label: site.label, value: String(number) });
+    }
+  }
+  // Also accept an unlabelled scalar immediately after the T-score heading.
+  if (!out.length) {
+    const scalar = match[1].match(/^\s*([-+]?\d+(?:[.,]\d+)?)/);
+    if (scalar) {
+      const number = Number(scalar[1].replace(',', '.'));
+      if (Number.isFinite(number)) out.push({ site: 'overall', label: 'T-score tổng', value: String(number) });
+    }
   }
   return out;
 }
