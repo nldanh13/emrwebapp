@@ -80,7 +80,7 @@ function SmallRowsTable({ columns = [], rows = [], max = 8 }) {
         <tbody>
           {shown.map((row, idx) => (
             <tr key={idx} style={{ borderTop: `1px solid ${C.border2}` }}>
-              {columns.map(c => <td key={c.key} style={{ padding: '6px 8px', color: C.text2, verticalAlign: 'top', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: c.long ? 'pre-wrap' : 'nowrap' }}>{text(row?.[c.key]) || '—'}</td>)}
+              {columns.map(c => <td key={c.key} style={{ padding: '6px 8px', color: C.text2, verticalAlign: 'top', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: c.long ? 'pre-wrap' : 'nowrap' }}>{c.render ? c.render(row) : (text(row?.[c.key]) || '—')}</td>)}
             </tr>
           ))}
         </tbody>
