@@ -1415,13 +1415,16 @@ function importArchiveToStudy(study, filters) {
     : 'Không có bệnh nhân phù hợp điều kiện lọc.');
 
   ensureDir(studyDir(study.id));
-  const usedCodes = new Set();
+  const codeByEncounter = new Map();
   const cohortRows = selectedVisits.map((row, index) => {
     const next = { ...row };
-    let code = getCell(next, ['Mã NC', 'Ma NC', 'research_code']);
-    if (!code || usedCodes.has(code)) code = `NC${String(index + 1).padStart(4, '0')}`;
-    usedCodes.add(code);
+    const patient = patientCode(next);
+    const encounter = getCell(next, ['encounter_id', 'visit_id', 'Mã điều trị', 'Ma dieu tri', 'Mã nội trú', 'Ma noi tru', 'Ngày vào viện', 'admission_date', 'Research key', 'research_key']);
+    const sampleKey = patient && encounter ? `${patient}::${encounter}` : `row::${index}`;
+    if (!codeByEncounter.has(sampleKey)) codeByEncounter.set(sampleKey, `NC${String(codeByEncounter.size + 1).padStart(4, '0')}`);
+    const code = codeByEncounter.get(sampleKey);
     next['Mã NC'] = code;
+    next.research_code = code;
     return next;
   });
   const cohortColumns = [...patientData.columns];
