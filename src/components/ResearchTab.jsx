@@ -46,6 +46,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const [archiveOptions, setArchiveOptions] = useState(() => ({ headless: true, fromDate: '2026-01-01', toDate: todayInputDate() }));
   const [studyOptions, setStudyOptions]     = useState({ headless: true });
   const [archiveMode, setArchiveMode] = useState('overview'); // overview | update | patient | audit | create
+  const [collectionFocus, setCollectionFocus] = useState(null); // error | waiting | unmatched | missing
   const [studyMode, setStudyMode]     = useState('stats');    // nghiên cứu riêng chỉ có Thống kê & xuất
   const [showLog, setShowLog]         = useState(false);
   const [logLines, setLogLines]       = useState([]);
@@ -864,6 +865,10 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
 
   // ── điều hướng ────────────────────────────────────────────────────────────
   const selectArchive = (mode = 'overview') => { setSelectedId(ARCHIVE_SCOPE); setArchiveMode(mode); };
+  const openCollectionDetail = useCallback((filter = null) => {
+    setCollectionFocus(filter || null);
+    setArchiveMode('update');
+  }, []);
   const selectStudy = (item) => {
     if (!item) return;
     setSelectedId(item.id);
@@ -902,7 +907,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       archiveOptions, setArchiveOptions, studyOptions, setStudyOptions,
       runSimpleListScan, runSimpleDataCollection, runRefreshProvisional,
       operationSnapshot: monitorSnapshot, lastUpdateSummary, statusLoading, loadProgressSnapshot, loadSummary,
-      openLog, toast,
+      openLog, toast, initialFilter: collectionFocus,
     }} />
   );
 
@@ -915,6 +920,8 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     }
     if (archiveMode === 'overview') return <GeneralOverviewView
       {...{ generalOverview, generalOverviewLoading, pipeline, setArchiveMode }}
+      collectionScreen={archiveScreen}
+      onInspectCollection={openCollectionDetail}
       onNormalize={runNormalizeArchive}
       normalizeBusy={normalizeRequest.status === 'starting' || serverRunning.items.some(item => item.lane === 'normalize' && item.scope === 'archive')}
     />;
