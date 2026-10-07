@@ -671,7 +671,7 @@ function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByK
   // (mã giả danh, bảng liên kết patient_link.csv nằm riêng ở thư mục kho).
   const baseColumns = [
     'research_code', 'encounter_id', 'patient_key', 'sex', 'birth_year', 'age',
-    'admission_date', 'surgery_date', 'discharge_date', 'hospital_stay_days', 'time_to_surgery_hours',
+    'admission_date', 'discharge_date', 'hospital_stay_days',
     'diagnosis_raw', 'needs_manual_review', 'source_run_id', 'row_hash',
   ];
   const anchor = selection.anchor || null;
