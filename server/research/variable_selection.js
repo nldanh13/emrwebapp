@@ -169,18 +169,27 @@ function sanitizeFilterObject(value, depth = 0) {
 function sanitizeVariableSelection(input) {
   const src = input && typeof input === 'object' ? input : {};
   const sanitizeVar = v => {
+    const name = String(v?.name || '');
+    const virtualKind = String(v?.virtual_kind || '');
+    const originalLabel = String(v?.label || name);
+    const isImagingResult = virtualKind === 'imaging_modality' || name.startsWith('imaging:');
+    const modality = name.split(':').slice(1).join(':') || originalLabel.replace(/^Có\s+/i, '');
+    const canonicalImagingLabel = `Kết quả CĐHA: ${modality}`;
+    const label = isImagingResult && /^Có\s+/i.test(originalLabel) ? canonicalImagingLabel : originalLabel;
+    const surveyLabel = String(v?.survey_label || originalLabel);
     const out = {
       id: String(v?.id || '').slice(0, 200),
       table: safeSegment(String(v?.table || '').slice(0, 80)),
       table_label: String(v?.table_label || '').slice(0, 120),
-      name: String(v?.name || '').slice(0, 180),
-      label: String(v?.label || v?.name || '').slice(0, 220),
-      survey_label: String(v?.survey_label || v?.label || v?.name || '').slice(0, 220),
-      type: String(v?.type || '').slice(0, 40),
+      name: name.slice(0, 180),
+      label: label.slice(0, 220),
+      survey_label: (isImagingResult && /^Có\s+/i.test(surveyLabel) ? canonicalImagingLabel : surveyLabel).slice(0, 220),
+      // CĐHA được chọn để xuất phải mang báo cáo; lọc có/không vẫn dùng condition riêng.
+      type: isImagingResult ? 'text' : String(v?.type || '').slice(0, 40),
       role: VARIABLE_ROLES.has(String(v?.role || '')) ? String(v.role) : '',
-      virtual_kind: String(v?.virtual_kind || '').slice(0, 80),
+      virtual_kind: virtualKind.slice(0, 80),
       source_note: String(v?.source_note || '').slice(0, 500),
-      aggregation: String(v?.aggregation || 'list').slice(0, 40),
+      aggregation: isImagingResult ? 'list' : String(v?.aggregation || 'list').slice(0, 40),
     };
     // Cửa sổ ngày so với mốc thời gian của nghiên cứu (vd. -14 → 0: trong 14 ngày trước mốc).
     const windowFrom = sanitizeWindowDays(v?.window_from_days);

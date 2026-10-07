@@ -90,10 +90,14 @@ test('CĐHA xuất báo cáo; T-score DXA tách thành biến số theo từng v
 
   const built = buildSelectedAnalysisDataset([
     { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1' },
-  ], { selected_variables: [dexaResult, neckLeft, l1] }, { imaging_results: imagingRows });
+  ], { selected_variables: [{ ...dexaResult, type: 'category', aggregation: 'any', label: 'Có DEXA', survey_label: 'Có DEXA' }, neckLeft, l1] }, { imaging_results: imagingRows });
   const scoreCol = built.manifest.variables.find(v => v.name === 'imaging_t_score:neck_left').output_column;
   const l1Col = built.manifest.variables.find(v => v.name === 'imaging_t_score:l1').output_column;
-  const reportCol = built.manifest.variables.find(v => v.name === 'imaging:DEXA').output_column;
+  const reportVariable = built.manifest.variables.find(v => v.name === 'imaging:DEXA');
+  const reportCol = reportVariable.output_column;
+  assert.strictEqual(reportVariable.type, 'text');
+  assert.strictEqual(reportVariable.aggregation, 'list');
+  assert.strictEqual(reportVariable.survey_label, 'Kết quả CĐHA: DEXA');
   assert.strictEqual(built.rows[0][scoreCol], '-1.8');
   assert.strictEqual(built.rows[0][l1Col], '-2.8');
   assert.match(built.rows[0][reportCol], /Neck Left:-1.8[\s\S]*L4:-2.7/);
