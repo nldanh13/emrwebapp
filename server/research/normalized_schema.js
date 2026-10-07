@@ -37,7 +37,9 @@
 // v31: liều thuốc phối hợp "25/5 mg" và tên thuốc cắt đúng ở chữ có dấu; bỏ dòng phẫu thuật chỉ có ngày.
 // v32: ngày ra viện trên trang ra viện EMR thắng ngày ra cũ chép trên dòng y lệnh; giờ mổ trống trên EMR
 //      (hiện giờ lúc lấy dữ liệu) dùng ngày trên danh sách phẫu thuật (surgery_time_source).
-const NORMALIZED_SCHEMA_VERSION = 32;
+// v33: giữ đầy đủ chi tiết form phẫu thuật: giờ kết thúc, ICD, ekip, mô tả/trình tự,
+//      diễn biến, dặn dò và người hoàn tất; Select2 được đọc từ live DOM ở worker.
+const NORMALIZED_SCHEMA_VERSION = 33;
 
 const NORMALIZED_COLUMNS = {
   patients: [
@@ -74,9 +76,12 @@ const NORMALIZED_COLUMNS = {
     'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash',
   ],
   surgery_results: [
-    'surgery_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'surgery_datetime', 'surgery_date',
-    'surgery_name', 'surgery_method', 'anesthesia_method', 'surgery_class', 'status',
-    'preop_diagnosis', 'postop_diagnosis', 'operating_room',
+    'surgery_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'surgery_datetime', 'surgery_date', 'surgery_end_datetime',
+    'surgery_name', 'service_object', 'surgery_method', 'anesthesia_method', 'surgery_class', 'status', 'icd9_code',
+    'preop_diagnosis', 'preop_icd10', 'postop_diagnosis', 'postop_icd10',
+    'procedure_description', 'surgery_sequence',
+    'primary_surgeon', 'primary_anesthesiologist', 'assistant_surgeon_1', 'assistant_surgeon_2', 'scrub_nurse', 'anesthesia_technician',
+    'disease_course', 'postop_instructions', 'postop_comorbidities', 'completed_by', 'operating_room',
     'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'surgery_time_source',
     'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash',
   ],
