@@ -16,6 +16,8 @@ const { dedupeRowsByStableKey } = require('./dataset_store');
 const { runScript, fmtPyError } = require('../services/python_runner');
 const fs = require('fs');
 
+const VERIFIED_FETCH_WINDOW_VERSION = 2;
+
 function hchanhDefaultFiles(files) {
   const allowed = new Set(['profile', 'discharge', 'surgery', 'order_history']);
   const requested = Array.isArray(files) ? files.map(x => String(x || '').trim()).filter(Boolean) : [];
@@ -226,13 +228,14 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
     list.push({ from, to, output, sourceKey: key });
     fetchedStays.set(meta.ma_bn, list);
   };
-  const findFetchedStay = (meta) => {
+  const findFetchedStay = (meta, { allowStored = true } = {}) => {
     const admission = isoDate(meta.admission_raw || '');
     if (!admission) return null;
-    return (fetchedStays.get(meta.ma_bn) || []).find(st => st.from <= admission && admission <= st.to)
-      // Đợt đã lấy ở tab Hành chánh / Kiểm hồ sơ (kho dùng chung) — dùng lại, không mở EMR.
-      || findStoredStay(meta.ma_bn, admission, wantedFiles, { onlyGoc: refreshProvisional })
-      || null;
+    const fresh = (fetchedStays.get(meta.ma_bn) || []).find(st => st.from <= admission && admission <= st.to);
+    if (fresh) return fresh;
+    if (!allowStored) return null;
+    // Đợt đã lấy ở tab Hành chánh / Kiểm hồ sơ (kho dùng chung) — dùng lại, không mở EMR.
+    return findStoredStay(meta.ma_bn, admission, wantedFiles, { onlyGoc: refreshProvisional }) || null;
   };
   const writeHchanhCsvs = () => {
     writeCsvUnion(path.join(runPath, 'hchanh_profile.csv'), profileRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Giới', 'Ngày sinh', 'Tuổi', 'Địa chỉ', 'Điện thoại', 'Số CMND', 'Đối tượng', 'Số thẻ', 'Ngày vào viện', 'Ngày ra viện', 'Chẩn đoán', 'Mạch vào viện', 'Nhiệt độ vào viện', 'HA tâm thu vào viện', 'HA tâm trương vào viện', 'Nhịp thở vào viện', 'Cân nặng vào viện', 'Chiều cao vào viện', 'Research key']);
@@ -266,14 +269,38 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
         const key = meta.source_key;
         // Không đưa họ tên vào log/trace (action_log.txt hay bị gửi ra ngoài để xem lỗi).
         const display = `${idx + 1}/${selectedRows.length} ${meta.ma_bn}${meta.research_code ? ` (${meta.research_code})` : ''}`;
+        const sourceDateFrom = meta.date_from || fallbackDateFrom || '';
+        const sourceDateTo = meta.date_to || fallbackDateTo || sourceDateFrom || '';
+        const verifiedStay = verifiedStayWindowForSource(meta, profileRows, dischargeRows);
+        const dateFrom = verifiedStay?.from || sourceDateFrom;
+        const dateTo = verifiedStay?.to || sourceDateTo;
+        const windowCorrected = Boolean(
+          verifiedStay && (dateFrom !== sourceDateFrom || dateTo !== sourceDateTo)
+        );
+        const windowSensitive = wantedFiles.some(f => f === 'order_history' || f === 'surgery');
+        const previousWindowVersion = Number(progress[key]?.fetch_window_version || 0);
+        const windowNeedsRepair = windowSensitive && windowCorrected && (
+          previousWindowVersion < VERIFIED_FETCH_WINDOW_VERSION
+          || String(progress[key]?.fetch_date_from || '') !== dateFrom
+          || String(progress[key]?.fetch_date_to || '') !== dateTo
+        );
+
         // forceKeys: điều phối tự động yêu cầu lấy lại đúng ca này (thiếu/lỗi/đã đổi)
         // dù progress cũ ghi done.
         // refreshProvisional: ca đang dùng dữ liệu tạm thời (Hành chánh / Kiểm hồ sơ) được quét lại để lấy dữ liệu gốc.
+        // windowNeedsRepair: bản cũ đã lấy theo ngày chuyển khoa; tự lấy lại một lần bằng lượt thật.
         const forcedCase = force || Boolean(forceKeys?.has(key))
+          || windowNeedsRepair
           || (refreshProvisional && (progress[key]?.provisional_files || []).length > 0);
         if (!forcedCase && progress[key]?.status === 'done') {
           stats.skipped += 1;
           continue;
+        }
+        if (windowNeedsRepair) {
+          appendResearchRunLog(
+            runPath,
+            `[${logPrefix}] LẤY LẠI ${display}: bản cũ dùng cửa sổ trước sửa lỗi chuyển khoa; ${sourceDateFrom || '—'} → ${sourceDateTo || '—'} sẽ đổi thành ${dateFrom} → ${dateTo}.`,
+          );
         }
 
         const failKey = hchanhFailureCacheKey(meta, wantedFiles, 'Hoàn tất');
@@ -304,7 +331,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
           continue;
         }
 
-        const reuse = force ? null : findFetchedStay(meta);
+        const reuse = force ? null : findFetchedStay(meta, { allowStored: !windowNeedsRepair });
         if (reuse) {
           const flat = hchanhFetchOutputToRows(reuse.output, row, sourceRunId);
           if (flat.profileRows.length) profileRows = dedupeRowsByStableKey(removeResearchSourceKey(profileRows, key).concat(flat.profileRows), ['Research key', 'Mã BN', 'Ngày vào viện', 'Ngày ra viện']);
@@ -324,6 +351,9 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
             status: sc.attention ? 'partial' : 'done', finished_at: nowIso(), files: [...new Set([...(progress[key]?.files || []), ...wantedFiles])], counts: sc,
             file_status: { ...(progress[key]?.file_status || {}), ...hchanhFileStatusPatch(reuse.output, reuseCounts, wantedFiles, {}, nowIso()) },
             reused_from: reuse.sourceKey,
+            fetch_window_version: VERIFIED_FETCH_WINDOW_VERSION,
+            fetch_date_from: dateFrom,
+            fetch_date_to: dateTo,
             // Dùng lại từ tab Hành chánh / Kiểm hồ sơ → dữ liệu tạm thời; lần quét lại của Kho nghiên cứu sẽ thay.
             provisional_files: reuse.provisional_files || [],
             rows: { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length },
@@ -338,12 +368,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
           continue;
         }
 
-        const sourceDateFrom = meta.date_from || fallbackDateFrom || '';
-        const sourceDateTo = meta.date_to || fallbackDateTo || sourceDateFrom || '';
-        const verifiedStay = verifiedStayWindowForSource(meta, profileRows, dischargeRows);
-        const dateFrom = verifiedStay?.from || sourceDateFrom;
-        const dateTo = verifiedStay?.to || sourceDateTo;
-        if (verifiedStay && (dateFrom !== sourceDateFrom || dateTo !== sourceDateTo)) {
+        if (windowCorrected) {
           appendResearchRunLog(
             runPath,
             `[${logPrefix}] SỬA KHOẢNG ${display}: dòng nguồn ${sourceDateFrom || '—'} → ${sourceDateTo || '—'} là mốc khoa/quét; hồ sơ EMR xác minh lượt thật ${dateFrom} → ${dateTo}. Dùng lượt thật để không mất y lệnh trước chuyển khoa.`,
@@ -353,7 +378,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
         let storedFiles = null;
         let storedTiers = null;
         let filesOverride = null;
-        const storedPart = force ? null : findStoredStay(meta.ma_bn, isoDate(meta.admission_raw || ''), [], { onlyGoc: refreshProvisional });
+        const storedPart = (force || windowNeedsRepair) ? null : findStoredStay(meta.ma_bn, isoDate(meta.admission_raw || ''), [], { onlyGoc: refreshProvisional });
         if (storedPart) {
           const have = wantedFiles.filter(k => storedPart.output?.[k]);
           if (have.length) {
@@ -393,7 +418,15 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
       appendResearchRunLog(runPath, `[${logPrefix}] Lô ${batchNo}: ${batchItems.length} ca (${batchItems[0].display} … ${batchItems[batchItems.length - 1].display}) | ${wantedFiles.join(',')} | 1 Chrome dùng chung cho cả lô`);
 
       for (const item of batchItems) {
-        progress[item.key] = { ...(progress[item.key] || {}), ma_bn: item.meta.ma_bn, ho_ten: item.meta.ho_ten, research_code: item.meta.research_code, encounter_id: item.key, admission_date: item.meta.admission_raw || '', discharge_date: item.meta.discharge_raw || '', status: 'queued', files: [...new Set([...(progress[item.key]?.files || []), ...wantedFiles])] };
+        progress[item.key] = {
+          ...(progress[item.key] || {}),
+          ma_bn: item.meta.ma_bn, ho_ten: item.meta.ho_ten, research_code: item.meta.research_code,
+          encounter_id: item.key, admission_date: item.meta.admission_raw || '', discharge_date: item.meta.discharge_raw || '',
+          status: 'queued', files: [...new Set([...(progress[item.key]?.files || []), ...wantedFiles])],
+          fetch_window_version: VERIFIED_FETCH_WINDOW_VERSION,
+          fetch_date_from: item.dateFrom,
+          fetch_date_to: item.dateTo,
+        };
       }
       writeJsonAtomic(progressPath, progress);
 
@@ -513,6 +546,9 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
           ...progress[key], status: sc.error ? 'error' : (sc.attention ? 'partial' : 'done'),
           finished_at: nowIso(), output: path.basename(batchOutputPath), counts: sc,
           files: [...new Set([...(progress[key]?.files || []), ...wantedFiles])],
+          fetch_window_version: VERIFIED_FETCH_WINDOW_VERSION,
+          fetch_date_from: dateFrom,
+          fetch_date_to: dateTo,
           rows: { ...(progress[key]?.rows || {}), ...Object.fromEntries(wantedFiles.map(f => [f, rowCounts[f] || 0])) },
           file_status: { ...(progress[key]?.file_status || {}), ...hchanhFileStatusPatch(output, rowCounts, wantedFiles, previousCounts, nowIso()) },
           provisional_files: provisionalFromStore,
