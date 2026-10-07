@@ -29,7 +29,7 @@ test('so sánh: khớp, lệch giá trị, kho thiếu, kho thừa; dòng logic 
     [lab('02/03/2026 06:30', 'wbc', '9'), lab('2026-03-02 06:30', 'WBC', '9'), lab('2026-03-02 06:30', 'HGB', '118'), lab('2026-03-04 06:30', 'CRP', '5')]);
   assert.deepStrictEqual([r.matched, r.mismatched, r.archive_only, r.emr_only], [1, 1, 1, 1]);
   assert.strictEqual(r.archive_count, 3);
-  assert.strictEqual(r.emr_count, 4);
+  assert.strictEqual(r.emr_count, 3);
   assert.strictEqual(r.archive_raw_count, 4);
   assert.strictEqual(r.emr_raw_count, 4);
   assert.deepStrictEqual(r.examples.mismatched[0], { label: '2026-03-02 06:30 · HGB', archive: '120 g/l', emr: '118 g/l' });
