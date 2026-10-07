@@ -230,29 +230,38 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
 
       {planView && (
         <div style={{ fontSize: FS.xs, color: C.text2 }}>
-          {planView.title} máy lấy <b>{compactNumber(planView.groups[0].value)}</b> lượt
-          {planView.groups[0].extra ? ` (${planView.groups[0].extra})` : ''} trong <b>{compactNumber(planView.total)}</b> lượt.
-          {' '}Lượt chờ người xem / chưa ghép chắc và việc cần làm: xem <b>Đánh giá dữ liệu</b> bên dưới.
+          {planView.title} máy xử lý <b>{compactNumber(planView.groups[0].value)}</b> lượt trong <b>{compactNumber(planView.total)}</b> lượt.
+          {' '}Việc nào cần người quyết định được gom riêng ở <b>Đánh giá dữ liệu</b>.
+        </div>
+      )}
+
+      {screen?.user_counts && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: FS.xs, color: C.text3 }}>Trạng thái hiện tại:</span>
+          <StatBadge label="Sẵn sàng" value={screen.user_counts.ready || 0} tone="ok" />
+          <StatBadge label={collecting ? "Máy đang xử lý" : "Chờ máy xử lý"} value={screen.user_counts.automatic || 0} tone={screen.user_counts.automatic ? 'info' : 'neutral'} />
+          <StatBadge label="Cần bạn kiểm tra" value={screen.user_counts.manual || 0} tone={screen.user_counts.manual ? 'danger' : 'neutral'} />
         </div>
       )}
 
       {report ? (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: FS.xs, color: C.text3 }}>Lần gần nhất{reportAt ? ` (${reportAt})` : ''}{report.cancelled ? ' — đã dừng giữa chừng' : ''}:</span>
-          <StatBadge label="ca đã lấy" value={report.fetched_encounters || 0} tone="ok" />
-          <StatBadge label="bỏ qua vì không đổi" value={report.skipped_unchanged || 0} tone="neutral" />
-          <StatBadge label="phần đã tự lấy bù" value={report.parts_backfilled || 0} tone="ok" />
-          <StatBadge label="lỗi Selenium còn tồn" value={report.selenium_errors_open || 0} tone={report.selenium_errors_open ? 'danger' : 'neutral'} />
-          <StatBadge label="ca không ghép chắc" value={report.unmatched_encounters || 0} tone={report.unmatched_encounters ? 'warn' : 'neutral'} />
-          {!!report.parts_rechecked && <StatBadge label="phần kiểm tra lại" value={report.parts_rechecked} tone="info" />}
-          {!!report.parts_rechecked && <StatBadge label="có thay đổi" value={report.parts_changed || 0} tone={report.parts_changed ? 'warn' : 'neutral'} />}
-          {!!(report.readiness_changes || []).length && <StatBadge label="đổi mức đủ dùng" value={report.readiness_changes.length} tone="info" />}
-        </div>
+        <details>
+          <summary style={{ cursor: 'pointer', fontSize: FS.xs, color: C.text3 }}>
+            Lần thu thập gần nhất{reportAt ? ` (${reportAt})` : ''}{report.cancelled ? ' — đã dừng giữa chừng' : ''}
+          </summary>
+          <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            <StatBadge label="ca đã lấy" value={report.fetched_encounters || 0} tone="ok" />
+            <StatBadge label="bỏ qua vì không đổi" value={report.skipped_unchanged || 0} tone="neutral" />
+            <StatBadge label="phần lấy bù" value={report.parts_backfilled || 0} tone="ok" />
+            <StatBadge label="lỗi kỹ thuật còn tồn" value={report.selenium_errors_open || 0} tone={report.selenium_errors_open ? 'danger' : 'neutral'} />
+            <StatBadge label="chưa ghép chắc" value={report.unmatched_encounters || 0} tone={report.unmatched_encounters ? 'warn' : 'neutral'} />
+          </div>
+        </details>
       ) : (
         <div style={{ fontSize: FS.xs, color: C.text3 }}>
           {collecting || serverRunning
-            ? 'Báo cáo của lần chạy này sẽ hiện ở đây khi xong.'
-            : hasRunBefore ? 'Lần chạy gần nhất chưa xong: xem ghi chú ở Đánh giá dữ liệu bên dưới.' : 'Chưa chạy thu thập tự động lần nào.'}
+            ? 'Báo cáo lượt này sẽ cập nhật khi chạy xong.'
+            : hasRunBefore ? 'Lần chạy gần nhất chưa xong; trạng thái hiện tại nằm ở Đánh giá dữ liệu.' : 'Chưa chạy thu thập tự động lần nào.'}
         </div>
       )}
 
@@ -350,18 +359,22 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
       )}
 
       {!!diagnostics.length && (
-        <div style={{ border: `1px solid ${C.amberBorder}`, background: C.amberBg, borderRadius: 7, padding: '7px 9px' }}>
-          <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Chẩn đoán lỗi thu thập</div>
-          <div style={{ marginTop: 5, display: 'grid', gap: 3 }}>
-            {diagnostics.slice(0, 8).map((d, idx) => (
-              <div key={`${d.stage || 'x'}_${idx}`} style={{ fontSize: FS.xs, color: C.text2, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <b>{d.stage_label || 'Chưa phân loại'}:</b>
-                <span>{d.message}</span>
-                <span style={{ color: C.text3 }}>· {compactNumber(d.encounters || 0)} lượt</span>
-              </div>
-            ))}
+        <details>
+          <summary style={{ cursor: 'pointer', fontSize: FS.xs, color: C.text2, fontWeight: 600 }}>
+            Chi tiết lỗi kỹ thuật ({compactNumber(diagnostics.reduce((sum, d) => sum + Number(d.encounters || 0), 0))} lượt)
+          </summary>
+          <div style={{ marginTop: 6, border: `1px solid ${C.amberBorder}`, background: C.amberBg, borderRadius: 7, padding: '7px 9px' }}>
+            <div style={{ display: 'grid', gap: 3 }}>
+              {diagnostics.slice(0, 8).map((d, idx) => (
+                <div key={`${d.stage || 'x'}_${idx}`} style={{ fontSize: FS.xs, color: C.text2, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <b>{d.stage_label || 'Chưa phân loại'}:</b>
+                  <span>{d.message}</span>
+                  <span style={{ color: C.text3 }}>· {compactNumber(d.encounters || 0)} lượt</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        </details>
       )}
 
       {status && (
