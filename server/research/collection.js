@@ -44,6 +44,7 @@ const REASON_LABELS = {
   partial: 'Chỉ đọc được một phần',
   no_content: 'Trang mở được nhưng không đọc được nội dung',
   no_result: 'Worker không trả kết quả',
+  worker_error: 'Worker dừng/lỗi trước khi trả kết quả',
   search_error: 'Lỗi khi tìm người bệnh',
   popup_error: 'Không mở được lượt điều trị',
   error: 'Lỗi kỹ thuật',
@@ -113,11 +114,13 @@ function diagnosticFor(reason = '', detail = '') {
   } else if (r === 'timeout') {
     stage = 'technical';
     message = 'EMR không phản hồi kịp trong lúc lấy dữ liệu.';
-  } else if (['no_result', 'interrupted'].includes(r)) {
+  } else if (['no_result', 'worker_error', 'interrupted'].includes(r)) {
     stage = 'result_commit';
     message = r === 'interrupted'
       ? 'Tiến trình dừng trước khi xác nhận/lưu xong kết quả.'
-      : 'Worker chạy nhưng không trả kết quả để ghi nhận.';
+      : r === 'worker_error'
+        ? 'Worker dừng/lỗi trước khi trả kết quả cho phần dữ liệu này.'
+        : 'Worker chạy nhưng không trả kết quả để ghi nhận.';
   } else if (r === 'bridge_unsupported') {
     stage = 'data_open';
     message = 'Cần Chrome trên máy có phiên EMR để mở phần dữ liệu này.';
@@ -151,12 +154,15 @@ function summarizeDiagnostics(exceptions = []) {
       encounters: new Set(),
       parts: new Map(),
       states: new Set(),
+      details: new Set(),
       samples: new Map(),
     });
     const g = groups.get(key);
     g.rows += 1;
     if (diag.key) g.encounters.add(diag.key);
     g.states.add(stateFor(diag));
+    const detail = scrubDetail(diag.detail || '');
+    if (detail && g.details.size < 3) g.details.add(detail);
     const part = String(diag.part || '').trim();
     const partLabel = String(diag.part_label || PARTS.find(p => p.key === part)?.label || part || 'Khác');
     if (part) {
@@ -187,6 +193,7 @@ function summarizeDiagnostics(exceptions = []) {
         .map(p => ({ part: p.part, label: p.label, rows: p.rows, encounters: p.encounters.size }))
         .sort((a, b) => b.rows - a.rows || String(a.label).localeCompare(String(b.label))),
       states: [...g.states],
+      details: [...g.details],
       samples: [...g.samples.values()],
     }))
     .sort((a, b) => b.encounters - a.encounters || b.rows - a.rows || String(a.stage_label).localeCompare(String(b.stage_label)));
@@ -202,7 +209,7 @@ function pickContentFields(p) {
   return out;
 }
 
-const TECHNICAL_REASONS = new Set(['timeout', 'session', 'tab_load', 'partial', 'no_content', 'no_result', 'search_error', 'popup_error', 'error', 'unknown']);
+const TECHNICAL_REASONS = new Set(['timeout', 'session', 'tab_load', 'partial', 'no_content', 'no_result', 'worker_error', 'search_error', 'popup_error', 'error', 'unknown']);
 const IDENTITY_REASONS = new Set(['encounter_not_identified']);
 
 function nowIso() {
@@ -843,6 +850,31 @@ function applyDispatchOutcome(before, after, dispatched = [], now = nowIso()) {
   return after;
 }
 
+// Lỗi cấp worker/lô khác với lỗi của một ca. Không được biến hàng trăm ca thành
+// no_result và không được tiêu hao retry riêng của từng BN chỉ vì Python/Chrome
+// không khởi động hoặc tiến trình dừng trước khi xử lý lô. Ca vẫn ở failed để lần
+// kế tiếp được thử lại, nhưng attempts giữ nguyên. Dữ liệu hiện tại đã đủ và không
+// stale vẫn được giữ nguyên khi một lần refresh thất bại.
+function applyDispatchFailures(after, failures = [], now = nowIso()) {
+  for (const failure of failures || []) {
+    const key = String(failure?.key || '');
+    const partKey = String(failure?.part || '');
+    const enc = after?.encounters?.[key];
+    const cur = enc?.parts?.[partKey];
+    if (!enc || !cur) continue;
+    if (DONE_STATUSES.has(cur.status) && !isStale(enc, partKey)) continue;
+    enc.parts[partKey] = {
+      ...cur,
+      status: 'failed',
+      reason: String(failure?.reason || 'worker_error'),
+      detail: scrubDetail(failure?.detail || 'Worker dừng/lỗi trước khi trả kết quả.'),
+      attempts: Number(cur.attempts) || 0,
+      worker_error_at: failure?.at || now,
+    };
+  }
+  return after;
+}
+
 // ── So sánh nội dung & phiên bản ─────────────────────────────────────────────
 // Khi lấy lại một phần đã có, so dữ liệu mới với bản trước: giống thì chỉ ghi nhận
 // "đã kiểm tra, không đổi"; khác thì tăng số phiên bản và trả về các dòng lịch sử
@@ -1415,6 +1447,7 @@ module.exports = {
   matchXnEntriesToSources,
   buildLedger,
   applyDispatchOutcome,
+  applyDispatchFailures,
   isStale,
   partIsCurrent,
   sanitizeRefreshPolicy,

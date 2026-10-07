@@ -187,3 +187,11 @@ def test_analysis_ready_uses_long_form_detail_tables_instead_of_large_json_cells
     assert "imaging_result_count: imagingByEncounter.get(enc.encounter_id)?.total || 0" in norm
     assert "Chi tiết từng kết quả nằm ở lab_results.csv" in dictionary
     assert "Chi tiết từng kết quả nằm ở imaging_results.csv" in dictionary
+
+
+def test_order_history_window_filter_change_forces_one_time_refetch_of_old_progress():
+    src = (ROOT / "server" / "research" / "hchanh_fetch.js").read_text(encoding="utf-8")
+    assert "const VERIFIED_FETCH_WINDOW_VERSION = 3" in src
+    assert "const windowFilterMigrationNeeded" in src
+    assert "previousWindowVersion < VERIFIED_FETCH_WINDOW_VERSION" in src
+    assert re.search(r"windowFilterMigrationNeeded\s*\|\|", src)

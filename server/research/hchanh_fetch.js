@@ -16,7 +16,7 @@ const { dedupeRowsByStableKey } = require('./dataset_store');
 const { runScript, fmtPyError } = require('../services/python_runner');
 const fs = require('fs');
 
-const VERIFIED_FETCH_WINDOW_VERSION = 2;
+const VERIFIED_FETCH_WINDOW_VERSION = 3;
 
 function hchanhDefaultFiles(files) {
   const allowed = new Set(['profile', 'discharge', 'surgery', 'order_history']);
@@ -283,12 +283,15 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
         // không ép quét lại các phần đã có/tạm thời.
         const windowSensitive = normalizedMode === 'order_history_auto' && wantedFiles.includes('order_history');
         const previousWindowVersion = Number(progress[key]?.fetch_window_version || 0);
-        // Chỉ migrate tự động khi mốc BẮT ĐẦU từng bị cắt bởi ngày chuyển khoa.
-        // Ngày ra có thể chỉ được biết sau lần fetch đầu tiên; nếu chỉ date_to đổi
-        // thì không được ép mở EMR lại một ca vừa lấy xong.
-        const windowNeedsRepair = windowSensitive && startCorrected && (
-          previousWindowVersion < VERIFIED_FETCH_WINDOW_VERSION
-          || String(progress[key]?.fetch_date_from || '') !== dateFrom
+        // v3 thêm lọc sau-parse theo cửa sổ đợt điều trị. Dữ liệu v1/v2 có thể đã
+        // chứa lịch sử y lệnh của các đợt cũ dù from/to đúng, nên phải lấy lại đúng
+        // một lần để thay file thô bằng bản đã lọc. Sau v3, chỉ sửa lại khi mốc bắt
+        // đầu từng bị cắt bởi dòng chuyển khoa; date_to đổi đơn thuần không ép quét.
+        const windowFilterMigrationNeeded = windowSensitive
+          && previousWindowVersion < VERIFIED_FETCH_WINDOW_VERSION;
+        const windowNeedsRepair = windowSensitive && (
+          windowFilterMigrationNeeded
+          || (startCorrected && String(progress[key]?.fetch_date_from || '') !== dateFrom)
         );
 
         // forceKeys: điều phối tự động yêu cầu lấy lại đúng ca này (thiếu/lỗi/đã đổi)
@@ -303,9 +306,12 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
           continue;
         }
         if (windowNeedsRepair) {
+          const repairReason = windowFilterMigrationNeeded
+            ? 'bản cũ chưa có bộ lọc lịch sử y lệnh theo đợt (v3)'
+            : 'bản cũ dùng mốc chuyển khoa thay vì ngày vào viện thật';
           appendResearchRunLog(
             runPath,
-            `[${logPrefix}] LẤY LẠI ${display}: bản cũ dùng cửa sổ trước sửa lỗi chuyển khoa; ${sourceDateFrom || '—'} → ${sourceDateTo || '—'} sẽ đổi thành ${dateFrom} → ${dateTo}.`,
+            `[${logPrefix}] LẤY LẠI ${display}: ${repairReason}; cửa sổ ${sourceDateFrom || '—'} → ${sourceDateTo || '—'}; dùng ${dateFrom} → ${dateTo}.`,
           );
         }
 

@@ -425,5 +425,37 @@ const opts = rows => ({ runDir, runId: 'collect_run', scope: 'du_lieu_goc', isAr
     }
   });
 
+  await test('Worker XN/CĐHA lỗi cả lô không được biến từng BN thành no_result hay đốt lượt retry', async () => {
+    const run4 = path.join(RUNTIME_ROOT, 'fixture', 'xn_batch_worker_error');
+    fs.mkdirSync(run4, { recursive: true });
+    writeCsv(path.join(run4, 'du_lieu_ban_dau.csv'), INITIAL_COLS, initialRows().slice(0, 2));
+    const rows4 = R.ensureResearchSourceRows(run4, {
+      sourceRunId: 'xn_batch_worker_error',
+      dateDefaults: { from_date: '2026-03-01', to_date: '2026-03-31' },
+      force: true,
+    }).rows;
+    const batchFail = {
+      xnCdha: async () => ({ error: 'Python XN/CĐHA dừng trước khi xử lý lô: lỗi khởi tạo Chrome' }),
+    };
+    const { report, ledger } = await R.runCollectionOrchestration(CTX, {
+      runDir: run4,
+      runId: 'xn_batch_worker_error',
+      scope: 'du_lieu_goc',
+      isArchive: true,
+      sourceRows: rows4,
+      parts: ['xn', 'cdha'],
+      maxAttempts: 3,
+      maxPasses: 1,
+    }, batchFail);
+
+    assert.ok(report.errors.some(e => e.includes('XN/CĐHA')));
+    const parts = Object.values(ledger.encounters).flatMap(enc => [enc.parts.xn, enc.parts.cdha]);
+    assert.strictEqual(parts.length, 4);
+    assert.ok(parts.every(p => p.status === 'failed' && p.reason === 'worker_error'));
+    assert.ok(parts.every(p => Number(p.attempts || 0) === 0), 'lỗi cả worker không được tiêu hao retry của từng BN');
+    assert.ok(!report.exceptions.some(e => e.reason === 'no_result'), 'không được biến lỗi worker cấp lô thành no_result theo từng BN');
+    assert.ok(report.exceptions.every(e => e.detail.includes('lỗi khởi tạo Chrome')));
+  });
+
   console.log(`\n${passed} kịch bản pass.`);
 })();
