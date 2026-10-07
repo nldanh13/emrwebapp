@@ -14,7 +14,7 @@ function test(name, fn) {
   try { fn(); passed += 1; console.log(`  ok - ${name}`); } catch (err) { console.error(`  FAIL - ${name}`); console.error(err); process.exitCode = 1; }
 }
 
-// Bản cũ (quét toàn bảng), giữ nguyên để đối chiếu.
+// Bản tham chiếu quét toàn bảng theo quy tắc Mã BN + lượt + thời gian.
 function eventTime(row) { return vs.getCell(row, ['lab_datetime', 'order_datetime', 'lab_date', 'order_date', 'date']); }
 function timeInsideEncounter(value, admission, discharge) {
   const t = vs.coerceComparable(value).time; const a = vs.coerceComparable(admission).time; const d = vs.coerceComparable(discharge).time;
