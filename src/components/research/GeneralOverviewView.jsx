@@ -242,6 +242,21 @@ function PipelineView({ pipeline, summary, collectionScreen = null, onInspectCol
                   <span style={{ color: Number(mq.ambiguous || 0) ? C.amber : C.text2 }}>Mơ hồ: <B>{compactNumber(mq.ambiguous || 0)}</B></span>
                   <span style={{ color: Number(mq.missing || 0) ? C.red : C.text2 }}>Không ghép: <B>{compactNumber(mq.missing || 0)}</B></span>
                 </div>
+                {!!mq.by_table && (
+                  <div style={{ marginTop: 6, display: 'grid', gap: 2, fontSize: FS.xs, color: C.text3 }}>
+                    <b style={{ color: C.text2 }}>Theo từng bảng:</b>
+                    {Object.entries(mq.by_table)
+                      .filter(([, v]) => Number(v?.outside_treatment_time || 0) || Number(v?.missing || 0) || Number(v?.ambiguous || 0) || Number(v?.missing_event_time || 0))
+                      .map(([name, v]) => (
+                        <div key={name}>
+                          <code>{name}</code>: ngoài đợt {compactNumber(v.outside_treatment_time || 0)}
+                          {' · '}không ghép {compactNumber(v.missing || 0)}
+                          {' · '}mơ hồ {compactNumber(v.ambiguous || 0)}
+                          {' · '}thiếu thời gian {compactNumber(v.missing_event_time || 0)}
+                        </div>
+                      ))}
+                  </div>
+                )}
                 <div style={{ marginTop: 4, fontSize: FS.xs, color: C.text3 }}>
                   Chỉ dòng matched và đúng khoảng điều trị mới được dùng cho bảng phân tích. Mã NC không tham gia quyết định matching.
                 </div>
@@ -346,7 +361,7 @@ export function GeneralOverviewView({ generalOverview, generalOverviewLoading, p
           <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Theo lượt điều trị:</span>
             <StatBadge label="Đủ dữ liệu" value={summary.counts?.done || summary.ready || 0} tone="ok" />
-            <StatBadge label="Còn thiếu" value={summary.counts?.missing ?? summary.missingCount ?? 0} tone={Number(summary.counts?.missing ?? summary.missingCount || 0) ? 'warn' : 'neutral'} />
+            <StatBadge label="Còn thiếu" value={summary.counts?.missing ?? summary.missingCount ?? 0} tone={Number((summary.counts?.missing ?? summary.missingCount) || 0) ? 'warn' : 'neutral'} />
             <StatBadge label="Lỗi · sẽ tự thử" value={summary.counts?.error || 0} tone={summary.counts?.error ? 'warn' : 'neutral'} />
             <StatBadge label="Chờ người xem" value={summary.counts?.waiting || 0} tone={summary.counts?.waiting ? 'danger' : 'neutral'} />
             <StatBadge label="Chưa ghép chắc" value={summary.counts?.unmatched || 0} tone={summary.counts?.unmatched ? 'danger' : 'neutral'} />
