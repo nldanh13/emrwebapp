@@ -278,7 +278,10 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
         const windowCorrected = Boolean(
           verifiedStay && (startCorrected || dateTo !== sourceDateTo)
         );
-        const windowSensitive = wantedFiles.some(f => f === 'order_history' || f === 'surgery');
+        // Migration dữ liệu CŨ chỉ áp dụng cho tác vụ Lịch sử y lệnh. Với hành chánh/
+        // phẫu thuật, worker đã sửa cửa sổ ngay trong lần lấy MỚI sau khi đọc profile,
+        // không ép quét lại các phần đã có/tạm thời.
+        const windowSensitive = normalizedMode === 'order_history_auto' && wantedFiles.includes('order_history');
         const previousWindowVersion = Number(progress[key]?.fetch_window_version || 0);
         // Chỉ migrate tự động khi mốc BẮT ĐẦU từng bị cắt bởi ngày chuyển khoa.
         // Ngày ra có thể chỉ được biết sau lần fetch đầu tiên; nếu chỉ date_to đổi
