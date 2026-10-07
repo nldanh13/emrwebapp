@@ -59,6 +59,20 @@ export function NormalizeStatus({ pipeline, running = null, request = {}, clockO
     );
   }
 
+  // Trong lúc Thu thập đang chạy, dữ liệu nguồn chưa ổn định. Không trình bày
+  // kết quả Chuẩn hóa cũ như một lỗi/nghiệp vụ phải xử lý; khi Thu thập xong máy sẽ
+  // tự Chuẩn hóa lại và màn hình đổi đồng thời sang snapshot mới.
+  if (collecting) {
+    return (
+      <div role="status" style={{ ...box(C.border2, C.surface), padding: '7px 12px' }}>
+        <div style={{ flex: '1 1 300px', fontSize: FS.xs, color: C.text2 }}>
+          Đang thu thập dữ liệu. Kết quả Chuẩn hóa hiện tại chỉ là bản trước đó; khi Thu thập xong máy <b>tự chuẩn hóa</b> và kiểm tra lại.
+          {' '}Không cần xử lý các cảnh báo Chuẩn hóa cũ lúc này.
+        </div>
+      </div>
+    );
+  }
+
   if (request.status !== 'error' && normalize.integrity_status === 'failed_integrity') {
     // Chuẩn hóa đã chạy xong và đã ghi bảng mới; chỉ bước kiểm tra toàn vẹn có lỗi chặn.
     const blocking = Number(normalize.qa?.blocking || 0);
@@ -80,18 +94,6 @@ export function NormalizeStatus({ pipeline, running = null, request = {}, clockO
           {' '}Số liệu vẫn là bản chuẩn hóa thành công trước đó.
         </div>
         {onNormalize && <Btn variant="solidPrimary" onClick={onNormalize} style={{ height: 30 }}>Chuẩn hóa lại</Btn>}
-      </div>
-    );
-  }
-
-  if (pipeline?.fetch?.pending_normalize && collecting) {
-    // Đang thu thập: chuẩn hóa bây giờ thì vài phút sau lại cũ; thu thập xong máy tự chuẩn hóa.
-    return (
-      <div role="status" style={{ ...box(C.border2, C.surface), padding: '7px 12px' }}>
-        <div style={{ flex: '1 1 300px', fontSize: FS.xs, color: C.text2 }}>
-          Đang thu thập dữ liệu: khi xong, máy <b>tự chuẩn hóa</b> phần mới. Không cần bấm gì.
-          {normalize.at ? ` Chuẩn hóa gần nhất lúc ${when(normalize.at)}.` : ''}
-        </div>
       </div>
     );
   }

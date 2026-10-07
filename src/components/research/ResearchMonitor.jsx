@@ -280,16 +280,24 @@ function ReviewTable({ rows = [] }) {
 }
 
 const SCREEN_STATE_LABEL = {
+  automatic: 'Máy xử lý',
+  manual: 'Cần bạn kiểm tra',
   error: 'Lỗi, sẽ tự thử lại',
   waiting: 'Chờ người xem',
   unmatched: 'Chưa ghép chắc',
   missing: 'Còn thiếu',
 };
 
-// Danh sách lượt của một nhóm (từ mô hình màn hình): phần còn thiếu và lý do bằng lời.
+function rowMatchesScreenState(row, state) {
+  if (state === 'automatic') return row.user_state === 'automatic' || ['missing', 'error'].includes(row.state);
+  if (state === 'manual') return row.user_state === 'manual' || ['waiting', 'unmatched'].includes(row.state);
+  return row.state === state;
+}
+
+// Danh sách lượt của một nhóm (từ mô hình màn hình): chỉ gom theo trạng thái hành động ở màn chính.
 function ScreenRowsTable({ rows = [], state, query = '' }) {
   const q = text(query).toLowerCase();
-  const filtered = rows.filter(r => r.state === state && (!q || [r.research_code, r.patient_code, r.patient_name, r.reason].map(text).join(' ').toLowerCase().includes(q)));
+  const filtered = rows.filter(r => rowMatchesScreenState(r, state) && (!q || [r.research_code, r.patient_code, r.patient_name, r.reason].map(text).join(' ').toLowerCase().includes(q)));
   if (!filtered.length) {
     return <div style={{ padding: 14, fontSize: FS.xs, color: C.text3, textAlign: 'center', border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface }}>Không có lượt phù hợp.</div>;
   }
@@ -297,7 +305,7 @@ function ScreenRowsTable({ rows = [], state, query = '' }) {
     <SmallRowsTable max={300} rows={filtered.map(r => ({ ...r, who: [r.patient_name, r.patient_code ? `BN ${r.patient_code}` : ''].filter(Boolean).join(' · ') }))} columns={[
       { key: 'research_code', label: 'Mã NC' },
       { key: 'who', label: 'Người bệnh' },
-      { key: 'missing', label: 'Còn thiếu phần' },
+      { key: 'missing', label: 'Phần cần xử lý' },
       { key: 'reason', label: 'Lý do', long: true },
     ]} />
   );
@@ -338,9 +346,9 @@ function ResearchOperationDashboard({ screen, loading = false, error = null, aut
   const total = health.total;
   const counts = screen.counts || {};
   const bar = [
-    [health.done, C.green, 'đủ'],
-    [Number(counts.error || 0), C.blue, 'lỗi, sẽ thử lại'],
-    [Number(counts.waiting || 0) + Number(counts.unmatched || 0), C.red, 'cần người'],
+    [health.ready, C.green, 'sẵn sàng'],
+    [health.automatic, C.blue, autoRunning ? 'máy đang xử lý' : 'chờ máy xử lý'],
+    [health.manual, C.red, 'cần bạn kiểm tra'],
   ].filter(([n]) => n > 0);
   const qaWarnings = Array.isArray(screen.qa?.warnings) ? screen.qa.warnings : [];
   const openItem = [...health.complete, ...health.accurate].find(i => i.filter && i.filter === filter);
@@ -367,7 +375,7 @@ function ResearchOperationDashboard({ screen, loading = false, error = null, aut
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18, marginTop: 10 }}>
           <div>
             <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text }}>
-              1. Đủ dữ liệu: {compactNumber(health.done)}/{compactNumber(total)} lượt ({health.pct}%)
+              1. Trạng thái dữ liệu · {compactNumber(health.ready)}/{compactNumber(total)} lượt sẵn sàng ({health.pct}%)
             </div>
             <div
               title={bar.map(([n, , label]) => `${compactNumber(n)} ${label}`).join(', ') + ` / ${compactNumber(total)} lượt`}
@@ -381,7 +389,7 @@ function ResearchOperationDashboard({ screen, loading = false, error = null, aut
           </div>
           <div>
             <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text }}>
-              2. Chính xác{screen.qa?.generated_at ? <span style={{ fontWeight: 400, color: C.text3, fontSize: FS.xs }}> · kiểm tra lúc {formatWhen(screen.qa.generated_at)}</span> : null}
+              2. Kiểm tra chất lượng{screen.qa?.generated_at && !autoRunning ? <span style={{ fontWeight: 400, color: C.text3, fontSize: FS.xs }}> · kiểm tra lúc {formatWhen(screen.qa.generated_at)}</span> : null}
             </div>
             <div style={{ height: 10 }} />
             {health.accurate.map(item => <HealthItem key={item.key} item={item} active={filter === item.filter} onOpen={setFilter} />)}
