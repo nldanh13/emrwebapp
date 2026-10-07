@@ -67,13 +67,22 @@ const fetchRun = router._fetchHchanhForResearchRun;
     'Research key': 'enc_transfer',
   }];
 
+  // Mô phỏng dữ liệu cũ: progress đã "done" nhưng chưa có version cửa sổ mới.
+  fs.writeFileSync(path.join(runDir, 'order_history_auto_progress.json'), JSON.stringify({
+    enc_transfer: {
+      ma_bn: '26082002',
+      status: 'done',
+      files: ['order_history'],
+      rows: { order_history: 87 },
+    },
+  }), 'utf-8');
+
   const ctx = { sid: 'test_order_true_admission', dir: runDir, LOGS_DIR: path.join(runDir, 'logs') };
   const stats = await fetchRun(ctx, runDir, {
     sourceRows,
     sourceRunId: 'r1',
     mode: 'order_history_auto',
     files: ['order_history'],
-    force: true,
   });
 
   assert.strictEqual(stats.error, 0);
@@ -85,6 +94,21 @@ const fetchRun = router._fetchHchanhForResearchRun;
 
   const orders = fs.readFileSync(path.join(runDir, 'hchanh_order_history.csv'), 'utf-8');
   assert.ok(orders.includes('05/09/2026'), 'phải giữ được y lệnh từ ngày vào viện thật');
+
+  const progress = JSON.parse(fs.readFileSync(path.join(runDir, 'order_history_auto_progress.json'), 'utf-8'));
+  assert.strictEqual(progress.enc_transfer.fetch_window_version, 2);
+  assert.strictEqual(progress.enc_transfer.fetch_date_from, '2026-09-05');
+  assert.strictEqual(progress.enc_transfer.fetch_date_to, '2026-09-21');
+
+  // Sau khi đã sửa bằng version mới, chạy lại không được mở EMR lần nữa.
+  spawned.length = 0;
+  await fetchRun(ctx, runDir, {
+    sourceRows,
+    sourceRunId: 'r1',
+    mode: 'order_history_auto',
+    files: ['order_history'],
+  });
+  assert.strictEqual(spawned.length, 0, 'cửa sổ đã sửa rồi thì không được refetch lặp lại');
 
   fs.rmSync(RUNTIME_ROOT, { recursive: true, force: true });
   console.log('research_order_history_true_admission_test: OK');
