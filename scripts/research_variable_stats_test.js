@@ -90,7 +90,10 @@ test('CĐHA xuất báo cáo; T-score DXA tách thành biến số theo từng v
 
   const built = buildSelectedAnalysisDataset([
     { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1' },
-  ], { selected_variables: [{ ...dexaResult, type: 'category', aggregation: 'any', label: 'Có DEXA', survey_label: 'Có DEXA' }, neckLeft, l1] }, { imaging_results: imagingRows });
+  ], { selected_variables: [l1, { ...dexaResult, type: 'category', aggregation: 'any', label: 'Có DEXA', survey_label: 'Có DEXA' }, neckLeft] }, { imaging_results: imagingRows });
+  assert.deepStrictEqual(built.manifest.variables.map(v => v.name), [
+    'imaging:DEXA', 'imaging_t_score:neck_left', 'imaging_t_score:l1',
+  ]);
   const scoreCol = built.manifest.variables.find(v => v.name === 'imaging_t_score:neck_left').output_column;
   const l1Col = built.manifest.variables.find(v => v.name === 'imaging_t_score:l1').output_column;
   const reportVariable = built.manifest.variables.find(v => v.name === 'imaging:DEXA');
