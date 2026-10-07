@@ -3557,8 +3557,13 @@ def _selected_text_from_soup(soup_obj: Any, element_id: str) -> str:
         selected = [o.get_text(" ", strip=True) for o in el.find_all("option") if o.has_attr("selected")]
         if selected:
             return " · ".join(_t(x) for x in selected if _t(x))
-        opt = el.find("option")
-        return _get_text(opt) if opt else ""
+        # Không được lấy option đầu tiên làm fallback: với Select2, page_source thường
+        # không serialize property selected hiện tại và option đầu có thể là dữ liệu sai.
+        raw_value = _t(el.get("value"))
+        if raw_value:
+            opt = el.find("option", attrs={"value": raw_value})
+            return _get_text(opt) if opt else raw_value
+        return ""
     return _get_text(el)
 
 
