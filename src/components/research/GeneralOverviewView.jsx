@@ -6,6 +6,7 @@ import { compactNumber } from './researchFormat.js';
 import { EmptyState, StatBadge } from './researchUi.jsx';
 import { Btn } from '../shared.jsx';
 import { SkeletonBlock, SkeletonLines } from '../Skeleton.jsx';
+import { normalizeSchemaOutdated, normalizeStagePresentation } from './normalizePresentation.js';
 
 function when(iso) {
   if (!iso) return '—';
@@ -85,6 +86,12 @@ function PipelineView({ pipeline, summary, collectionScreen = null, onInspectCol
   const qa = normalize.qa || {};
   const diagnostics = collectionScreen?.diagnostics?.length ? collectionScreen.diagnostics : (collect?.diagnostics || []);
   const qaTone = qa.blocking ? 'danger' : qa.warning ? 'warn' : qa.status ? 'ok' : 'neutral';
+  const normalizeView = normalizeStagePresentation({ normalize, qa });
+  const schemaOutdated = Boolean(
+    normalize.schema_outdated
+    || normalizeSchemaOutdated(normalize.schema_version, normalize.expected_schema_version)
+  );
+  const showNormalizeMetrics = !normalizeView.transientInputChange && !schemaOutdated;
   return (
     <section style={card}>
       <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Quy trình dữ liệu</div>
@@ -162,11 +169,18 @@ function PipelineView({ pipeline, summary, collectionScreen = null, onInspectCol
           )}
         </Stage>
 
-        <Stage n={3} title="Chuẩn hóa và kiểm tra chất lượng" tone={normalize.status === 'complete' ? qaTone : 'neutral'}
-          state={normalize.status === 'complete' ? (qa.blocking ? `${qa.blocking} lỗi chặn` : qa.warning ? `${qa.warning} cảnh báo` : 'đạt') : 'chưa chạy'}
+        <Stage n={3} title="Chuẩn hóa và kiểm tra chất lượng" tone={normalizeView.tone === 'ok' ? qaTone : normalizeView.tone}
+          state={normalizeView.state}
           what="Ghép file thô thành bảng chuẩn theo lượt điều trị (người bệnh, đợt, XN, CĐHA, PT/TT, y lệnh...), tách Mã BN sang mã giả danh, rồi kiểm tra chất lượng (QA). Chạy tự động sau mỗi lần quét/thu thập.">
           Lúc <B>{when(normalize.at)}</B>{normalize.duration_ms != null ? <> · chạy <B>{(normalize.duration_ms / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}</B> giây</> : null}
           {normalize.schema_version ? <> · cấu trúc bảng phiên bản <B>{normalize.schema_version}</B></> : null}.
+          {schemaOutdated && (
+            <div style={{ marginTop: 7, border: `1px solid ${C.amberBorder}`, background: C.amberBg, borderRadius: 7, padding: '7px 9px', color: C.text2, fontSize: FS.xs }}>
+              <b style={{ color: C.amber }}>Bản chuẩn hóa đang cũ:</b>{' '}
+              dữ liệu hiện là schema <B>{normalize.schema_version}</B>, trong khi máy chủ đang dùng schema <B>{normalize.expected_schema_version}</B>.
+              {' '}Chạy lại Chuẩn hóa để dựng lại bảng từ dữ liệu đã có; không cần mở EMR.
+            </div>
+          )}
           {onNormalize && (
             <div style={{ marginTop: 9, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <Btn
@@ -184,14 +198,29 @@ function PipelineView({ pipeline, summary, collectionScreen = null, onInspectCol
             </div>
           )}
           {!!qa.blocking_items?.length && (
-            <div style={{ marginTop: 8, border: `1px solid ${C.redBorder || C.border}`, background: C.redBg || C.surface2, borderRadius: 7, padding: '8px 9px' }}>
-              <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.red }}>
-                {normalizeBusy ? 'Lỗi của lần chuẩn hóa trước · lần mới đang chạy để cập nhật' : 'Lỗi chặn phải xử lý trước khi tạo dataset'}
+            <div style={{
+              marginTop: 8,
+              border: `1px solid ${normalizeView.transientInputChange ? C.amberBorder : (C.redBorder || C.border)}`,
+              background: normalizeView.transientInputChange ? C.amberBg : (C.redBg || C.surface2),
+              borderRadius: 7, padding: '8px 9px',
+            }}>
+              <div style={{ fontSize: FS.xs, fontWeight: 700, color: normalizeView.transientInputChange ? C.amber : C.red }}>
+                {normalizeBusy
+                  ? 'Kết quả lần trước chưa nhất quán · lần mới đang chạy để cập nhật'
+                  : normalizeView.transientInputChange
+                    ? 'Nguồn thay đổi trong lúc Chuẩn hóa — không cần sửa dữ liệu bằng tay'
+                    : 'Lỗi chặn phải xử lý trước khi tạo dataset'}
               </div>
+              {normalizeView.transientInputChange && (
+                <div style={{ marginTop: 4, fontSize: FS.xs, color: C.text2 }}>
+                  Thu thập đã ghi thêm file trong lúc Chuẩn hóa đang đọc, nên hệ thống chủ động không dùng snapshot này.
+                  {' '}Sau khi Thu thập kết thúc máy sẽ tự xếp lượt Chuẩn hóa mới; nếu hiện không còn tác vụ nào chạy, có thể bấm <b>Chạy lại chuẩn hóa</b>.
+                </div>
+              )}
               <div style={{ marginTop: 5, display: 'grid', gap: 5 }}>
                 {qa.blocking_items.map((item, idx) => (
                   <div key={`${item.code || 'block'}_${idx}`} style={{ fontSize: FS.xs, color: C.text2 }}>
-                    <b style={{ color: C.red }}>{item.code || 'blocking'}:</b>{' '}
+                    <b style={{ color: normalizeView.transientInputChange ? C.amber : C.red }}>{item.code || 'blocking'}:</b>{' '}
                     <span>{item.message || 'Lỗi chất lượng dữ liệu.'}</span>
                     {item.table ? <span style={{ color: C.text3 }}> · bảng {item.table}</span> : null}
                     {Number(item.count || 0) > 0 ? <span style={{ color: C.text3 }}> · {compactNumber(item.count)} dòng/nhóm</span> : null}
@@ -201,10 +230,16 @@ function PipelineView({ pipeline, summary, collectionScreen = null, onInspectCol
               </div>
             </div>
           )}
-          {!!normalize.unmatched.length && (
+          {!showNormalizeMetrics && (normalizeView.transientInputChange || schemaOutdated) && (
+            <div style={{ marginTop: 7, fontSize: FS.xs, color: C.text3 }}>
+              Số “không ghép/ngoài đợt” của snapshot này tạm không dùng để đánh giá vì {schemaOutdated ? 'bảng chuẩn đang ở schema cũ' : 'nguồn đã đổi trong lúc Chuẩn hóa'}.
+              {' '}Đợi một lượt Chuẩn hóa sạch rồi mới xem các số này.
+            </div>
+          )}
+          {showNormalizeMetrics && !!normalize.unmatched.length && (
             <div style={{ color: C.amber }}>Không ghép được vào lượt điều trị: {normalize.unmatched.map(u => `${u.label} ${compactNumber(u.rows)} dòng`).join(' · ')} (giữ riêng, không đưa vào phân tích).</div>
           )}
-          {qa.matching_quality && (() => {
+          {showNormalizeMetrics && qa.matching_quality && (() => {
             const mq = qa.matching_quality;
             const reasons = [
               ['Ngoài thời gian điều trị', mq.outside_treatment_time, 'danger'],
@@ -226,7 +261,7 @@ function PipelineView({ pipeline, summary, collectionScreen = null, onInspectCol
               </div>
             ) : null;
           })()}
-          {qa.matching_quality && (() => {
+          {showNormalizeMetrics && qa.matching_quality && (() => {
             const mq = qa.matching_quality;
             const matched = Number(mq.matched_rows || 0);
             const total = Number(mq.total_rows || 0);
