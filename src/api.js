@@ -521,6 +521,10 @@ export const createResearchAuditSample = () => post(`/api/research/archive/audit
 export const getResearchAudit = (id) => get(`/api/research/archive/audit/${encodeURIComponent(id)}?${auditQuery()}`);
 export const saveResearchAuditItem = (id, itemId, { verdict, note = '' }) =>
   put(`/api/research/archive/audit/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}?${auditQuery()}`, { verdict, note });
+// Đối chiếu tự động với EMR: máy chọn một đợt đã lấy đủ, lấy lại từ EMR vào thư mục riêng rồi so với kho.
+export const getResearchLiveAuditSummary = () => get(`/api/research/archive/audit/live?${auditQuery()}`);
+export const startResearchLiveAudit = () => post(`/api/research/archive/audit/live?${auditQuery()}`, {});
+export const getResearchLiveAudit = (id) => get(`/api/research/archive/audit/live/${encodeURIComponent(id)}?${auditQuery()}`);
 export const getResearchArchiveVariableCatalog = ({ runId = 'latest' } = {}) => {
   const params = new URLSearchParams();
   if (runId) params.set('runId', runId);

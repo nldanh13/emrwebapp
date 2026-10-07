@@ -109,6 +109,8 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
   sourceRows = [], sourceRunId = '', files = null, headless = true, force = false,
   fallbackDateFrom = '', fallbackDateTo = '', limit = 0,
   mode = 'hchanh_auto', saveRaw = false, forceKeys = null, refreshProvisional = false,
+  // false: không ghi vào kho dùng chung (đối chiếu với EMR lấy vào thư mục riêng, không đè dữ liệu gốc).
+  recordStore = true,
 } = {}) {
   const normalizedMode = String(mode || '').trim() === 'order_history_auto' ? 'order_history_auto' : 'hchanh_auto';
   const wantedFiles = normalizedMode === 'order_history_auto' ? orderHistoryDefaultFiles(files) : hchanhDefaultFiles(files);
@@ -456,7 +458,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
         if (!sc.error) rememberFetchedStay(meta, key, output);
         // Phần Kho nghiên cứu vừa tự quét là dữ liệu gốc: ghi vào kho dùng chung, thay dữ liệu tạm thời.
         try {
-          if (fetchedOutput && !sc.error) recordHchanhFetch(meta.ma_bn, fetchedOutput, { admission: meta.admission_raw || dateFrom || '', source: 'kho_nghien_cuu' });
+          if (recordStore && fetchedOutput && !sc.error) recordHchanhFetch(meta.ma_bn, fetchedOutput, { admission: meta.admission_raw || dateFrom || '', source: 'kho_nghien_cuu' });
         } catch (err) {
           appendResearchRunLog(runPath, `[${logPrefix}] CẢNH BÁO ${display}: không ghi được vào kho dùng chung: ${String(err.message || err)}`);
         }

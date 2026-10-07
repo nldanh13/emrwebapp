@@ -35,6 +35,7 @@ const variableSelection = require('../research/variable_selection');
 const { redactCsvTable, isSensitiveColumn } = require('../research/export_utils');
 const dataDictionary = require('../research/data_dictionary');
 const auditSample = require('../research/audit_sample');
+const liveAudit = require('../research/live_audit');
 const { ARCHIVE_ID, EXPORT_SENSITIVE_COLUMNS, MAX_TABLE_ROWS, TABLES, archiveDir, archiveRunsDir, archiveSourcePath, cohortPath, ensureArchiveStore, nowIso, runsDir, todayDateInput } = require('../research/store_paths');
 const { patientCode, readCsvTable, writeCsv, writeCsvUnion } = require('../research/table_io');
 const { appendSecurityAudit } = require('../services/security_audit');
@@ -58,7 +59,7 @@ const { buildStudySuggestions } = require('../research/study_suggestions');
 const { normalizeInputSignature, normalizeRunOutputs } = require('../research/normalize');
 const { runNormalizeJob, normalizeRunning } = require('../research/normalize_runner');
 const { SCRIPT_PATH } = require('../research/worker_paths');
-const { appendCollectionVersions, readCollectionPartRows, readCollectionVersionIds, recoverCollectionTransactions, recoverPythonPatientCommits, runCollectionOrchestration, studyReadinessForRun, syncCollectionLedger } = require('../research/collection_runtime');
+const { appendCollectionVersions, runXnCdhaSubsetForCollection, readCollectionPartRows, readCollectionVersionIds, recoverCollectionTransactions, recoverPythonPatientCommits, runCollectionOrchestration, studyReadinessForRun, syncCollectionLedger } = require('../research/collection_runtime');
 const { watchResearchScope, setRunningSignature } = require('../services/research_watch');
 const { RESEARCH_SCOPE_LOCKS, datasetVerifyResponse, listRunningResearch, withScopeRunning, identifiedAccessStatus, lockedResearchRoute, researchResponseShouldRedact, researchScopeKey, sendCsvFile } = require('../research/research_http');
 
@@ -120,6 +121,86 @@ function auditError(res, err) {
   if (!err.status) console.error('[RESEARCH][AUDIT][ERROR]', err.message);
   return res.status(err.status || 500).json({ status: 'error', message: err.status ? String(err.message) : 'Không xử lý được lượt kiểm tra. Hãy thử lại; nếu vẫn lỗi, xem nhật ký máy chủ.' });
 }
+
+// ── Đối chiếu tự động với EMR: chọn một đợt đã lấy đủ, lấy lại từ EMR vào thư mục riêng, so với kho ──
+// Mỗi lần chỉ một lượt; giữ khóa của kho gốc như Thu thập (cùng mở EMR, cùng ô "đang chạy" đầu trang).
+const LIVE_AUDIT_ACTIVE = new Set();
+
+router.get('/research/archive/audit/live', (req, res) => {
+  try {
+    const { runId, runDir } = auditRunDir(req);
+    liveAudit.markInterruptedLiveAudits(runDir, LIVE_AUDIT_ACTIVE);
+    return res.json({ status: 'ok', run_id: runId, ...liveAudit.summarizeLive(runDir) });
+  } catch (err) { return auditError(res, err); }
+});
+
+router.get('/research/archive/audit/live/:id', (req, res) => {
+  try {
+    const { runDir } = auditRunDir(req);
+    return res.json({ status: 'ok', audit: liveAudit.getLiveAudit(runDir, String(req.params.id)) });
+  } catch (err) { return auditError(res, err); }
+});
+
+router.post('/research/archive/audit/live', (req, res) => {
+  let token = null;
+  try {
+    const { runId, runDir } = auditRunDir(req);
+    const bridgeBlocker = require('../services/emr_bridge').collectionBlocker();
+    if (bridgeBlocker) return res.status(409).json({ status: 'error', code: 'EMR_BRIDGE_OFFLINE', message: bridgeBlocker });
+    const holder = RESEARCH_SCOPE_LOCKS.get('archive');
+    if (holder) {
+      return res.status(409).json({
+        status: 'error', code: 'RESEARCH_SCOPE_BUSY',
+        message: `Kho gốc đang chạy "${holder.label}" (từ ${holder.since}). Đối chiếu cần mở EMR nên phải chờ tác vụ đó xong rồi bấm lại.`,
+      });
+    }
+    const ctx = getRuntimePaths(req);
+    const audit = liveAudit.startLiveAudit(runDir, { runId, encounterId: String(req.body?.encounterId || '') });
+    const label = `Đối chiếu với EMR (Mã BN ${audit.patient_code})`;
+    token = { label, since: nowIso(), sid: ctx.sid };
+    RESEARCH_SCOPE_LOCKS.set('archive', token);
+    LIVE_AUDIT_ACTIVE.add(audit.id);
+    const archive = readArchive();
+    const fromDate = String(archive.scan_from_date || '').trim();
+    const toDate = String(archive.scan_to_date || todayDateInput()).trim();
+    const headless = researchHeadlessFromBody(req.body || {});
+    const task = beginResearchTask(runDir, { type: 'live_audit', label, status: 'queued', scope: ARCHIVE_ID, run_id: runId, message: 'Đang chờ tới lượt mở EMR.' });
+    const runners = {
+      hchanh: (c, opts) => fetchHchanhForResearchRun(c, opts.runDir, opts),
+      xnCdha: (c, opts) => runXnCdhaSubsetForCollection(c, opts),
+      // Một người bệnh: chuẩn hóa nhanh, chạy luôn trong tác vụ này qua cùng cửa an toàn với Chuẩn hóa chính thức.
+      normalize: async (dir, opts) => require('../research/normalize_safe').normalizeRunOutputsSafe(dir, opts),
+    };
+    const queued = enqueueHeavy(ctx.sid, async () => {
+      try {
+        const done = await liveAudit.runLiveAudit(ctx, {
+          runDir, id: audit.id, storeRoot: RESEARCH_STORE_DIR, fromDate, toDate, headless, runners,
+          onStep: (step) => updateResearchTask(runDir, task.id, { status: 'running', message: step }),
+        });
+        const finalStatus = done.status === 'done' ? 'done' : (done.status === 'cancelled' ? 'cancelled' : 'error');
+        const rate = done.result?.overall?.match_rate;
+        finishResearchTask(runDir, task.id, finalStatus, {
+          message: done.status === 'done'
+            ? `Đối chiếu xong Mã BN ${audit.patient_code}: khớp ${rate == null ? '—' : `${(rate * 100).toFixed(1).replace('.', ',')}%`}. Xem chi tiết ở Kiểm tra ngẫu nhiên.`
+            : done.message,
+        });
+        return done;
+      } catch (err) {
+        finishResearchTask(runDir, task.id, isCancelRequested(ctx.sid) ? 'cancelled' : 'error', { message: String(err?.message || err).split('\n')[0] });
+        throw err;
+      }
+    }, { taskType: 'research_live_audit', metadata: { scope_key: 'archive', run_id: runId } });
+    token.queue_task_id = queued.taskId || '';
+    void queued.catch(err => console.error('[RESEARCH][LIVE_AUDIT]', err?.message || err)).finally(() => {
+      LIVE_AUDIT_ACTIVE.delete(audit.id);
+      if (RESEARCH_SCOPE_LOCKS.get('archive') === token) RESEARCH_SCOPE_LOCKS.delete('archive');
+    });
+    return res.status(202).json({ status: 'accepted', audit, message: `Đã chọn Mã BN ${audit.patient_code}. Máy chủ sẽ lấy lại ca này từ EMR rồi so với kho.` });
+  } catch (err) {
+    if (token && RESEARCH_SCOPE_LOCKS.get('archive') === token) RESEARCH_SCOPE_LOCKS.delete('archive');
+    return auditError(res, err);
+  }
+});
 
 router.get('/research/archive/audit', (req, res) => {
   try {

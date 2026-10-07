@@ -35,3 +35,34 @@ export function formatAccuracy(g) {
   const ci = g.ci95 ? ` (${pct(g.ci95.low)}–${pct(g.ci95.high)})` : '';
   return `${pct(g.accuracy)}${ci}`;
 }
+
+// ── Đối chiếu tự động với EMR ──
+const LIVE_STATUS = {
+  queued: 'Đang chờ tới lượt mở EMR',
+  running: 'Đang chạy',
+  done: 'Đã so xong',
+  fetch_error: 'Lấy lại từ EMR chưa trọn — không tính',
+  cancelled: 'Đã dừng — không tính',
+  error: 'Lỗi — không tính',
+};
+
+export function liveStatusLabel(status) {
+  return LIVE_STATUS[status] || status || '';
+}
+
+export function liveIsActive(audit) {
+  return audit?.status === 'queued' || audit?.status === 'running';
+}
+
+export function formatRate(rate) {
+  return rate == null ? '—' : pct(rate);
+}
+
+// Một dòng tóm tắt khác biệt của một loại dữ liệu: "2 lệch · 1 kho thiếu".
+export function liveDiffText(k) {
+  const parts = [];
+  if (k?.mismatched) parts.push(`${k.mismatched} lệch`);
+  if (k?.emr_only) parts.push(`${k.emr_only} kho thiếu`);
+  if (k?.archive_only) parts.push(`${k.archive_only} kho thừa`);
+  return parts.length ? parts.join(' · ') : 'Khớp hết';
+}
