@@ -307,10 +307,11 @@ TABLES.surgery_results = {
   processing: 'Bỏ dòng không có ngày, tên và phương pháp; gộp các dòng trùng ca mổ.',
   inferred: false,
   quality: { required: ['surgery_id', 'patient_code'], unique: ['surgery_id'], checks: ['Trùng surgery_id: lỗi chặn.', 'Ghép đợt ambiguous/missing: cảnh báo.'], manual_review: ['surgery_date nằm ngoài khoảng đợt (is_within_encounter = 0).'] },
-  columns: withCommon(['surgery_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'surgery_datetime', 'surgery_date', 'surgery_name', 'surgery_method', 'anesthesia_method', 'surgery_class', 'status', 'preop_diagnosis', 'postop_diagnosis', 'operating_room', 'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
+  columns: withCommon(['surgery_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'surgery_datetime', 'surgery_date', 'surgery_name', 'surgery_method', 'anesthesia_method', 'surgery_class', 'status', 'preop_diagnosis', 'postop_diagnosis', 'operating_room', 'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'surgery_time_source', 'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash'], {
     surgery_id: col('string', 'Khóa dòng: surg_<row_hash>.'),
     surgery_datetime: col('datetime', 'Thời điểm bắt đầu mổ.', { identifier: 'quasi', use: 'approval_required' }),
     surgery_date: col('date', 'Ngày mổ.', { identifier: 'quasi', use: 'approval_required' }),
+    surgery_time_source: col('string', 'Rỗng: giờ bắt đầu mổ trên EMR. surgery_list_date: EMR để trống giờ mổ (hiện giờ lúc lấy dữ liệu), dùng ngày trên danh sách phẫu thuật, không có giờ.'),
     surgery_name: col('string', 'Tên phẫu thuật/dịch vụ.'),
     surgery_method: col('text', 'Phương pháp phẫu thuật (nguyên văn).', { identifier: 'free_text', use: 'approval_required' }),
     anesthesia_method: col('string', 'Phương pháp vô cảm.'),

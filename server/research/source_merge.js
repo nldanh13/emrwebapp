@@ -578,7 +578,19 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
   for (const row of deepRows) add(row, 'deep');
   for (const row of hchanhProfileRows) add(row, 'hchanh_profile');
   for (const row of hchanhDischargeRows) add(row, 'hchanh_discharge');
-  return mergeOverlappingStays(extendStaysWithEvidence(mergeOverlappingStays(Array.from(map.values())), stayEvidenceRows)).sort((a, b) => {
+  // Ngày ra thật trên trang ra viện/hồ sơ EMR (cùng Research key) thắng ngày ra chép trên dòng y lệnh:
+  // dòng y lệnh có thể còn mang mốc của lần lấy trước (ca thật: ra=2026-09-23 trong khi ra viện 22/08).
+  const evidence = (stayEvidenceRows || []).map(row => {
+    const code = normalizedIdentity(patientCode(row));
+    const researchKey = normalizedIdentity(firstNonEmpty(row, ['Research key', 'research_key']));
+    const stay = code && researchKey ? verifiedIndex.direct.get(`${code}|${researchKey}`) : null;
+    if (!stay) return row;
+    const out = { ...row };
+    for (const f of DISCHARGE_FIELDS) if (String(out[f] ?? '').trim()) out[f] = stay.discharge;
+    if (!firstNonEmpty(out, DISCHARGE_FIELDS)) out['Ngày ra viện'] = stay.discharge;
+    return out;
+  });
+  return mergeOverlappingStays(extendStaysWithEvidence(mergeOverlappingStays(Array.from(map.values())), evidence)).sort((a, b) => {
     const da = parseDateTimeCell(firstNonEmpty(a, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'ngay_vao_vien', 'ngay_vao']));
     const db = parseDateTimeCell(firstNonEmpty(b, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'ngay_vao_vien', 'ngay_vao']));
     const ta = da ? da.getTime() : 0;

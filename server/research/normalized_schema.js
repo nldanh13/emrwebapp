@@ -35,7 +35,9 @@
 // v30: ngày cuối khoảng lấy dữ liệu không còn bị dùng làm ngày ra viện; đợt chưa có ngày ra dùng số
 //      ngày điều trị của EMR làm mốc kết thúc khi ghép.
 // v31: liều thuốc phối hợp "25/5 mg" và tên thuốc cắt đúng ở chữ có dấu; bỏ dòng phẫu thuật chỉ có ngày.
-const NORMALIZED_SCHEMA_VERSION = 31;
+// v32: ngày ra viện trên trang ra viện EMR thắng ngày ra cũ chép trên dòng y lệnh; giờ mổ trống trên EMR
+//      (hiện giờ lúc lấy dữ liệu) dùng ngày trên danh sách phẫu thuật (surgery_time_source).
+const NORMALIZED_SCHEMA_VERSION = 32;
 
 const NORMALIZED_COLUMNS = {
   patients: [
@@ -75,7 +77,7 @@ const NORMALIZED_COLUMNS = {
     'surgery_id', 'research_code', 'patient_code', 'patient_key', 'encounter_id', 'encounter_match_status', 'encounter_match_method', 'encounter_match_reason', 'surgery_datetime', 'surgery_date',
     'surgery_name', 'surgery_method', 'anesthesia_method', 'surgery_class', 'status',
     'preop_diagnosis', 'postop_diagnosis', 'operating_room',
-    'days_from_admission', 'days_from_discharge', 'is_within_encounter',
+    'days_from_admission', 'days_from_discharge', 'is_within_encounter', 'surgery_time_source',
     'source', 'source_type', 'source_quality', 'source_file', 'source_run_id', 'row_hash',
   ],
   medication_orders: [
