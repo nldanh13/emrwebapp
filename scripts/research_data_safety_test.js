@@ -180,10 +180,14 @@ test('Kết quả chỉ thuộc đợt khi thời gian nằm trong khoảng vào
   ];
   const map = R.buildContextMap(rows, 'r');
 
+  // Trong 24 giờ trước giờ vào: Cấp cứu/khám trước nhập khoa → thuộc đợt, ghi cách ghép riêng.
+  const emergency = R.contextForRow(map, { 'Mã BN': '555', 'TG chỉ định': '07:30 10/04/2026' }, '555');
+  assert.strictEqual(emergency.encounter_id, buildEncounterId(rows[0]));
+  assert.strictEqual(R.encounterMatchMethod(emergency), 'emergency_before_ward');
   const beforeAdmission = R.contextForRow(map, {
-    'Mã BN': '555', 'TG chỉ định': '07:30 10/04/2026',
+    'Mã BN': '555', 'TG chỉ định': '07:30 09/04/2026',
   }, '555');
-  assert.strictEqual(beforeAdmission.encounter_id, '', 'trước giờ nhập viện không được thuộc khoảng nằm viện');
+  assert.strictEqual(beforeAdmission.encounter_id, '', 'quá 24 giờ trước giờ vào không được thuộc khoảng nằm viện');
   assert.strictEqual(beforeAdmission.needs_manual_review, 'encounter_match_outside_time');
 
   const duringStay = R.contextForRow(map, {
@@ -353,7 +357,9 @@ test('Dữ liệu hành chánh của đợt 2 gắn đúng đợt 2 (không ghé
   assert.strictEqual(withCard[0]['Mã NC'], stay2['Mã NC'], 'Mã NC của dòng nguồn không bị mã cũ trong file hchanh đè');
 });
 
-test('Chuyển khoa nghi cùng đợt: không tự gộp, có trong encounter_review.csv, QA cảnh báo', () => {
+test('Chuyển khoa cùng đợt (khoảng vào–ra chồng nhau): gộp thành một đợt, không còn phải duyệt tay', () => {
+  // Quy tắc: một lần nằm viện là một đợt, từ lúc vào viện đến lúc ra viện; hai đợt của cùng Mã BN
+  // không thể chồng thời gian. Trước đây trường hợp này bị tách 2 đợt và đưa vào danh sách duyệt tay.
   const runDir = newRunDir();
   writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), INITIAL_COLS, INITIAL_ROWS);
   R.normalizeRunOutputs(runDir, { sourceRunId: 'r' });
@@ -364,17 +370,46 @@ test('Chuyển khoa nghi cùng đợt: không tự gộp, có trong encounter_re
   }));
   writeCsv(path.join(runDir, 'hchanh_discharge.csv'), Object.keys(discharge[0]), discharge);
   const out = R.normalizeRunOutputs(runDir, { sourceRunId: 'r', force: true });
-  assert.strictEqual(out.encounters, 3, 'không được tự gộp 2 dòng của BN 111');
+  assert.strictEqual(out.encounters, 2, '2 dòng khoa của BN 111 (20/02 và 25/02, cùng ra viện 10/03) là một đợt');
+  const enc111 = readCsvTable(path.join(runDir, 'encounters.csv'), 100).rows.filter(r => r.patient_code === '111');
+  assert.strictEqual(enc111.length, 1);
+  assert.ok(String(enc111[0].admission_date).startsWith('2026-02-20'), 'vào viện = mốc vào sớm nhất');
+  assert.ok(String(enc111[0].discharge_date).startsWith('2026-03-10'));
   const qa = JSON.parse(fs.readFileSync(path.join(runDir, 'qa_report.json'), 'utf-8'));
-  assert.ok(qa.warnings.some(w => w.code === 'possible_same_stay'), JSON.stringify(qa.warnings));
   assert.strictEqual(qa.blocking_count, 0, JSON.stringify(qa.blocking));
-  const review = readCsv(path.join(runDir, 'encounter_review.csv')).filter(r => r.issue === 'possible_same_stay');
-  assert.strictEqual(review.length, 2);
+  const review = fs.existsSync(path.join(runDir, 'encounter_review.csv'))
+    ? readCsv(path.join(runDir, 'encounter_review.csv')).filter(r => r.issue === 'possible_same_stay') : [];
+  assert.strictEqual(review.length, 0);
   const history = fs.readFileSync(path.join(runDir, 'normalize_history.jsonl'), 'utf-8').trim().split('\n');
   assert.strictEqual(history.length, 2, 'mỗi lần chuẩn hóa thêm đúng 1 dòng lịch sử');
   assert.ok(JSON.parse(history[1]).input_signature);
   // Báo cáo QA không chứa họ tên.
   assert.ok(!fs.readFileSync(path.join(runDir, 'qa_report.json'), 'utf-8').includes('GIA LAP'));
+});
+
+test('Mã NC cũ bị cấp trùng còn trong file hồ sơ/ra viện (một mã cho nhiều Mã BN) không được gắn vào đợt', () => {
+  // Dữ liệu thật: một Mã NC cũ có ở hchanh_profile/discharge của 513 Mã BN → 66 đợt khác người bệnh
+  // cùng một Mã NC, chặn tạo dataset (research_code_cross_patient).
+  const runDir = newRunDir();
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), INITIAL_COLS, INITIAL_ROWS);
+  R.normalizeRunOutputs(runDir, { sourceRunId: 'r' });
+  const source = readCsv(path.join(runDir, 'research_source.csv'));
+  // Hồ sơ của các đợt cũ (không có trong danh sách hiện tại) vẫn mang mã cũ dùng chung.
+  const stale = source.map((r, i) => ({
+    'Mã NC': 'NC9999', 'Mã BN': r['Mã BN'], 'Research key': `cu_${r['Research key']}`,
+    'Ngày vào viện': `08:00 0${i + 1}/01/2026`, 'Ngày ra viện': `1${i}/01/2026`, 'Số thẻ': 'THE-GIA-LAP',
+  }));
+  writeCsv(path.join(runDir, 'hchanh_profile.csv'), Object.keys(stale[0]), stale);
+  R.normalizeRunOutputs(runDir, { sourceRunId: 'r', force: true });
+  const encounters = readCsvTable(path.join(runDir, 'encounters.csv'), 100).rows;
+  const byCode = new Map();
+  for (const e of encounters) {
+    if (!e.research_code) continue;
+    if (!byCode.has(e.research_code)) byCode.set(e.research_code, new Set());
+    byCode.get(e.research_code).add(e.patient_code);
+  }
+  assert.ok([...byCode.values()].every(set => set.size === 1), 'mỗi Mã NC chỉ thuộc một Mã BN');
+  assert.ok(!byCode.has('NC9999'), 'mã cũ dùng chung cho nhiều Mã BN không được dùng');
 });
 
 test('Chỉ Mã BN: nhiều dòng nguồn trong cùng khoảng EMR gộp 1 đợt và không nhân bản y lệnh reuse', () => {

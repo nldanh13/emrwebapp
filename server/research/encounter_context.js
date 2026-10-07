@@ -191,9 +191,9 @@ function isoDateOrTime(value) {
   return hasPreciseClock(value) ? isoDateTime(value) : isoDate(value);
 }
 
-// Một đợt tính từ lúc nhận vào viện (kể cả Cấp cứu). "Ngày vào viện" của hồ sơ hành chánh là
-// mốc đó; nếu chỉ có "T/G vào" của danh sách nội trú thì đó là lúc vào khoa, nên kết quả làm ở
-// Cấp cứu trong 24 giờ trước đó vẫn thuộc đợt (khi không thuộc đợt nào khác).
+// Một đợt tính từ lúc nhận vào viện (kể cả Cấp cứu). Mốc vào của đợt thường là giờ vào khoa (cả
+// "Ngày vào viện" của hồ sơ cũng thường ghi giờ vào khoa), nên kết quả làm ở Cấp cứu/khám trong
+// 24 giờ trước đó vẫn thuộc đợt, khi không thuộc đợt nào khác (cách ghép: emergency_before_ward).
 const HOSPITAL_ADMISSION_FIELDS = ['Ngày vào viện', 'Ngay vao vien', 'Ngày nhập viện', 'Ngay nhap vien'];
 const EMERGENCY_LOOKBACK_MS = 24 * 3600 * 1000;
 
@@ -201,7 +201,7 @@ function eventInsideContext(eventDate, ctx, { emergency = false } = {}) {
   if (!eventDate || !ctx?.admission_date) return false;
   const event = parseAnyDate(eventDate);
   const wardAdmission = parseAnyDate(ctx.admission_date);
-  const admission = emergency && ctx.admission_is_ward_entry && wardAdmission
+  const admission = emergency && wardAdmission
     ? new Date(wardAdmission.getTime() - EMERGENCY_LOOKBACK_MS)
     : wardAdmission;
   const discharge = parseAnyDate(ctx.discharge_date);
@@ -398,8 +398,8 @@ function rowAdmissionTime(row) {
 }
 
 function rowDischargeTime(row) {
-  return isoDateTime(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien', 'ngay_ra_vien', 'ngay_ra', 'discharge_date']))
-    || isoDate(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien', 'ngay_ra_vien', 'ngay_ra', 'discharge_date']));
+  // Ngày ra chỉ có ngày giữ là ngày (không thành 00:00), để đợt gồm trọn ngày ra viện.
+  return isoDateOrTime(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien', 'ngay_ra_vien', 'ngay_ra', 'discharge_date']));
 }
 
 

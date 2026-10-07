@@ -122,4 +122,32 @@ describe('research encounter anti-duplicate aliases', () => {
     const second = encounterIdentityAliases({ 'Mã BN': 'BN001', 'T/G vào': '01/10/2026' });
     expect(aliasesIntersect(first, second)).toBe(false);
   });
+
+  it('một lần nằm viện là một đợt: các dòng khoa (Cấp cứu → CTCH → PHCN) có khoảng vào–ra chồng nhau gộp thành một', () => {
+    // Dữ liệu thật: mỗi dòng khoa mang "Ngày vào viện" = giờ vào khoa và cùng ngày ra viện, nên trước đây
+    // thành 3 đợt chồng nhau và XN rơi vào 2–5 đợt cùng lúc ("mơ hồ").
+    const list = [['08:00 01/03/2026', 'k1'], ['10:00 01/03/2026', 'k2'], ['09:00 06/03/2026', 'k3']];
+    const rows = combineEncounterSources({
+      initialRows: list.map(([t, key]) => ({ 'Mã BN': 'BN9', 'T/G vào': t, 'Research key': key })),
+      hchanhProfileRows: list.map(([t, key]) => ({ 'Mã BN': 'BN9', 'Research key': key, 'Ngày vào viện': t, 'Ngày ra viện': '10/03/2026' })),
+      hchanhDischargeRows: list.map(([t, key]) => ({ 'Mã BN': 'BN9', 'Research key': key, 'Ngày vào viện': t, 'Ngày ra viện': '10/03/2026' })),
+    });
+    expect(rows).toHaveLength(1);
+    expect(['08:00 01/03/2026', '2026-03-01 08:00']).toContain(rows[0]['Ngày vào viện']);
+    expect(['10/03/2026', '2026-03-10']).toContain(rows[0]['Ngày ra viện']);
+  });
+
+  it('hai lần nằm viện không chồng thời gian vẫn là hai đợt; đợt chưa có ngày ra không nuốt đợt sau', () => {
+    const rows = combineEncounterSources({
+      initialRows: [
+        { 'Mã BN': 'BN8', 'T/G vào': '08:00 01/03/2026', 'Ngày ra viện': '10/03/2026' },
+        { 'Mã BN': 'BN8', 'T/G vào': '08:00 20/03/2026', 'Ngày ra viện': '25/03/2026' },
+        { 'Mã BN': 'BN7', 'T/G vào': '08:00 01/03/2026' },
+        { 'Mã BN': 'BN7', 'T/G vào': '08:00 20/04/2026', 'Ngày ra viện': '25/04/2026' },
+      ],
+    });
+    expect(rows.filter(r => r['Mã BN'] === 'BN8')).toHaveLength(2);
+    expect(rows.filter(r => r['Mã BN'] === 'BN7')).toHaveLength(2);
+  });
 });
+

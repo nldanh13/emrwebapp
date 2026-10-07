@@ -122,7 +122,8 @@ function canonicalizeRowToVerifiedStay(row, verifiedIndex) {
       const matches = (verifiedIndex.byPatient.get(code) || []).filter(item => {
         const from = parseAnyDate(item.admission);
         const to = parseAnyDate(item.discharge);
-        return from && to && admission.getTime() >= from.getTime() && admission.getTime() <= to.getTime();
+        const toMs = to ? to.getTime() + (/\d{1,2}:\d{2}/.test(item.discharge) ? 0 : 86400000 - 1) : 0;
+        return from && to && admission.getTime() >= from.getTime() && admission.getTime() <= toMs;
       });
       if (matches.length === 1) stay = matches[0];
     }
@@ -276,6 +277,92 @@ function isTimeInsideVisit(timeValue, admissionValue, dischargeValue) {
   return t.getTime() >= a.getTime() - 86400000 && t.getTime() <= end.getTime() + 86400000;
 }
 
+// File hchanh_* mang Mã NC tại lúc lấy dữ liệu; mã cũ từng bị cấp trùng (một mã cho hàng trăm Mã BN)
+// vẫn còn trong các file đó. Mã NC chỉ hợp lệ khi thuộc đúng một Mã BN trong file: mã dùng chung
+// bị bỏ khỏi bản làm việc (file thô không đổi), đợt sẽ nhận Mã NC từ nguồn chuẩn (research_source).
+const RESEARCH_CODE_FIELDS = ['Mã NC', 'Ma NC', 'research_code'];
+
+function dropSharedResearchCodes(rows = []) {
+  const patientsByCode = new Map();
+  for (const row of rows) {
+    const code = firstNonEmpty(row, RESEARCH_CODE_FIELDS);
+    const pc = normalizedIdentity(patientCode(row));
+    if (!code || !pc) continue;
+    if (!patientsByCode.has(code)) patientsByCode.set(code, new Set());
+    patientsByCode.get(code).add(pc);
+  }
+  const shared = new Set([...patientsByCode].filter(([, set]) => set.size > 1).map(([code]) => code));
+  if (!shared.size) return rows;
+  return rows.map(row => {
+    const code = firstNonEmpty(row, RESEARCH_CODE_FIELDS);
+    if (!shared.has(code)) return row;
+    const out = { ...row };
+    for (const field of RESEARCH_CODE_FIELDS) if (field in out) out[field] = '';
+    return out;
+  });
+}
+
+// Một lần nằm viện là MỘT đợt, tính từ lúc vào viện (kể cả Cấp cứu) đến lúc ra viện. Hai đợt của
+// cùng Mã BN không thể chồng thời gian: các dòng khoa (Cấp cứu → CTCH → PHCN…) mang giờ vào khoa
+// riêng nhưng cùng ngày ra viện là cùng một đợt. Gộp các dòng có khoảng vào–ra chồng nhau; lấy giờ
+// vào sớm nhất và ngày ra muộn nhất. Dòng chưa có ngày ra không tự nuốt dòng sau (không đủ bằng chứng).
+const DISCHARGE_FIELDS = ['Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien', 'discharge_date'];
+
+function stayBounds(row) {
+  const startRaw = rowAdmissionTime(row);
+  const endRaw = rowDischargeTime(row);
+  const start = parseAnyDate(startRaw);
+  if (!start) return null;
+  const end = parseAnyDate(endRaw);
+  const endHasClock = /\d{1,2}:\d{2}/.test(firstNonEmpty(row, DISCHARGE_FIELDS));
+  // Ngày ra chỉ có ngày: tính hết ngày đó.
+  const endMs = end ? end.getTime() + (endHasClock ? 0 : 86400000 - 1) : null;
+  return { start: start.getTime(), end: endMs };
+}
+
+function laterDischarge(a, b) {
+  const da = firstNonEmpty(a, DISCHARGE_FIELDS);
+  const db = firstNonEmpty(b, DISCHARGE_FIELDS);
+  if (!da) return db;
+  if (!db) return da;
+  const pa = parseAnyDate(da); const pb = parseAnyDate(db);
+  if (!pa || !pb) return da;
+  return pb.getTime() > pa.getTime() ? db : da;
+}
+
+function mergeOverlappingStays(rows) {
+  const byPatient = new Map();
+  const others = [];
+  for (const row of rows) {
+    const code = normalizedIdentity(patientCode(row));
+    const bounds = code ? stayBounds(row) : null;
+    if (!bounds) { others.push(row); continue; }
+    if (!byPatient.has(code)) byPatient.set(code, []);
+    byPatient.get(code).push({ row, ...bounds });
+  }
+  const out = [...others];
+  for (const list of byPatient.values()) {
+    list.sort((a, b) => a.start - b.start);
+    let cur = null;
+    for (const item of list) {
+      if (cur && cur.end != null && item.start <= cur.end) {
+        const discharge = laterDischarge(cur.row, item.row);
+        const merged = mergeSameStayRows(cur.row, item.row);
+        if (discharge) for (const f of DISCHARGE_FIELDS) if (String(merged[f] ?? '').trim()) merged[f] = discharge;
+        if (discharge && !DISCHARGE_FIELDS.some(f => String(merged[f] ?? '').trim())) merged['Ngày ra viện'] = discharge;
+        merged.__source_status = [...new Set([cur.row.__source_status, item.row.__source_status]
+          .filter(Boolean).join('+').split('+').filter(Boolean))].join('+');
+        cur = { row: merged, start: cur.start, end: item.end == null ? cur.end : Math.max(cur.end, item.end) };
+        continue;
+      }
+      if (cur) out.push(cur.row);
+      cur = item;
+    }
+    if (cur) out.push(cur.row);
+  }
+  return out;
+}
+
 function combineEncounterSources({ initialRows = [], deepRows = [], patientRows = [], hchanhProfileRows = [], hchanhDischargeRows = [], sourceRunId = '' } = {}) {
   const map = new Map();
   const verifiedIndex = buildVerifiedStayIndex(hchanhProfileRows, hchanhDischargeRows);
@@ -404,7 +491,7 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
   for (const row of deepRows) add(row, 'deep');
   for (const row of hchanhProfileRows) add(row, 'hchanh_profile');
   for (const row of hchanhDischargeRows) add(row, 'hchanh_discharge');
-  return Array.from(map.values()).sort((a, b) => {
+  return mergeOverlappingStays(Array.from(map.values())).sort((a, b) => {
     const da = parseDateTimeCell(firstNonEmpty(a, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'ngay_vao_vien', 'ngay_vao']));
     const db = parseDateTimeCell(firstNonEmpty(b, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'ngay_vao_vien', 'ngay_vao']));
     const ta = da ? da.getTime() : 0;
@@ -427,6 +514,8 @@ function dedupeByHash(rows) {
 }
 
 module.exports = {
+  dropSharedResearchCodes,
+  mergeOverlappingStays,
   byEncounterCount,
   normalizeAliases,
   aliasesIntersect,

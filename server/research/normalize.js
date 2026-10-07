@@ -19,7 +19,7 @@ const { databaseInfo } = require('./sqlite_store');
 const { readCsvTable, patientCode, writeCsv, countCsvRows, getCell } = require('./table_io');
 const { overlayHchanhFromPatientDb, KHO_OVERLAY_FILE, overlayResultsFromPatientDb } = require('./patient_db_overlay');
 const { appendResearchRunLog } = require('./case_trace');
-const { combineEncounterSources, mergeRowsPreferFilled, dedupeByHash, byEncounterCount, buildVerifiedStayIndex, canonicalizeRowToVerifiedStay } = require('./source_merge');
+const { combineEncounterSources, mergeRowsPreferFilled, dedupeByHash, byEncounterCount, buildVerifiedStayIndex, canonicalizeRowToVerifiedStay, dropSharedResearchCodes } = require('./source_merge');
 const { normalizeSex, extractBirthYear, normalizeLabName, resultOperator, parseNumeric, resultText, normalizeLabMeasurement, normalizeFlag, modalityFromService, bodyRegionFromService, normalizeDrugName, classifyDrugGroup, normalizeRoute } = require('./value_normalizers');
 const { dedupeRowsByHash, dedupeSurgeryRows, snapshotFinalDatasetIfUnsaved } = require('./dataset_store');
 const { firstSurgeryByEncounter, surgeryForMedicationContext } = require('./encounter_linkage');
@@ -245,6 +245,12 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   } catch (err) {
     console.warn('[RESEARCH] Không đọc được Kho người bệnh khi chuẩn hoá:', err.message);
   }
+
+  // Mã NC cũ dùng chung cho nhiều Mã BN trong file hành chánh không được gắn vào đợt/dòng con.
+  hchanhProfileTable.rows = dropSharedResearchCodes(hchanhProfileTable.rows || []);
+  hchanhDischargeTable.rows = dropSharedResearchCodes(hchanhDischargeTable.rows || []);
+  hchanhSurgeryTable.rows = dropSharedResearchCodes(hchanhSurgeryTable.rows || []);
+  hchanhOrderTable.rows = dropSharedResearchCodes(hchanhOrderTable.rows || []);
 
   // Dùng ngày vào/ra thực tế EMR đã lấy được để chuẩn hóa các bảng con trong bộ nhớ.
   // Raw CSV trên đĩa không thay đổi; việc này chỉ loại sai lệch do cùng payload được reuse
