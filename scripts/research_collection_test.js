@@ -222,6 +222,40 @@ test('Giao việc mà worker không trả kết quả → ghi lỗi no_result m�
   assert.strictEqual(rebuilt.encounters.enc_a.parts.order_history.attempts, 1);
 });
 
+test('Ledger cũ: XN/CĐHA no_result đã hết retry được mở lại đúng một lần sau sửa lỗi worker cấp lô', () => {
+  const sources = [src('enc_a', 'NC0001', 'BN_A')];
+  const legacy = c.buildLedger({ sourceRows: sources });
+  legacy.version = 1;
+  for (const part of ['xn', 'cdha']) {
+    legacy.encounters.enc_a.parts[part] = {
+      ...legacy.encounters.enc_a.parts[part],
+      status: 'failed',
+      reason: 'no_result',
+      detail: 'Đã giao cho worker nhưng không nhận được kết quả mới cho phần này',
+      attempts: 3,
+      no_result_at: '2026-10-07T00:00:00Z',
+    };
+  }
+
+  const migrated = c.buildLedger({ sourceRows: sources, previous: legacy });
+  assert.strictEqual(migrated.version, 2);
+  assert.deepStrictEqual(
+    ['xn', 'cdha'].map(part => [migrated.encounters.enc_a.parts[part].status, migrated.encounters.enc_a.parts[part].reason, migrated.encounters.enc_a.parts[part].attempts]),
+    [['failed', 'no_result', 0], ['failed', 'no_result', 0]],
+  );
+  const retry = c.planCollection(migrated, { parts: ['xn', 'cdha'], maxAttempts: 3 });
+  assert.deepStrictEqual(retry.tasks.map(t => [t.key, t.parts]), [['enc_a', ['xn', 'cdha']]]);
+
+  // Migration chỉ chạy từ ledger v1 → v2. Sau v2, nếu một ca thật sự lại hết 3
+  // lần thử thì không được reset vô hạn ở mỗi lần dựng sổ.
+  const exhausted = JSON.parse(JSON.stringify(migrated));
+  exhausted.encounters.enc_a.parts.xn.attempts = 3;
+  exhausted.encounters.enc_a.parts.cdha.attempts = 3;
+  const rebuilt = c.buildLedger({ sourceRows: sources, previous: exhausted });
+  assert.deepStrictEqual(['xn', 'cdha'].map(part => rebuilt.encounters.enc_a.parts[part].attempts), [3, 3]);
+  assert.strictEqual(c.planCollection(rebuilt, { parts: ['xn', 'cdha'], maxAttempts: 3 }).tasks.length, 0);
+});
+
 test('Không tìm thấy BN để cuối; không xác định chắc lượt thì dừng, không tự thử lại', () => {
   const sources = [src('enc_a', 'NC0001', 'BN_A'), src('enc_b', 'NC0002', 'BN_B'), src('enc_c', 'NC0003', 'BN_C')];
   const { xn, hc, oh } = fullyCollected(sources);
