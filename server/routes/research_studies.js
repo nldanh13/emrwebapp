@@ -334,8 +334,10 @@ lockedResearchRoute(router, 'post', '/research/studies/:studyId/cohort-from-filt
       if (code && !next['Mã BN']) next['Mã BN'] = code;
       const name = firstNonEmpty(next, ['Họ tên', 'Ho ten', 'patient_name']);
       if (name && !next['Họ tên']) next['Họ tên'] = name;
-      const researchCode = firstNonEmpty(next, ['Mã NC', 'Ma NC', 'research_code']) || `NC${String(idx + 1).padStart(4, '0')}`;
-      if (!next['Mã NC']) next['Mã NC'] = researchCode;
+      // Mã NC chỉ thuộc nghiên cứu hiện tại. Không kế thừa mã từ kho/danh sách tuyển.
+      const researchCode = `NC${String(idx + 1).padStart(4, '0')}`;
+      next['Mã NC'] = researchCode;
+      next.research_code = researchCode;
       if (!next['Ngày vào viện'] && next.admission_date) next['Ngày vào viện'] = next.admission_date;
       if (!next['Ngày ra viện'] && next.discharge_date) next['Ngày ra viện'] = next.discharge_date;
       if (!next['Chẩn đoán'] && next.diagnosis_raw) next['Chẩn đoán'] = next.diagnosis_raw;
