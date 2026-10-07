@@ -41,7 +41,9 @@
 //      diễn biến, dặn dò và người hoàn tất; Select2 được đọc từ live DOM ở worker.
 // v34: ngày mổ lấy từ danh sách phẫu thuật (EMR trống giờ) không còn mang giờ 00:00 bịa ra.
 // v35: ngày mổ EMR chỉ ghi ngày (không giờ) cũng để trống giờ, không ghi 00:00.
-const NORMALIZED_SCHEMA_VERSION = 35;
+// v36: parser y lệnh không tạo route giả khi nguồn không ghi đường dùng và không biến
+//      chỉ định chăm sóc/xuất viện thành thuốc chỉ vì có từ "uống/tiêm".
+const NORMALIZED_SCHEMA_VERSION = 36;
 
 const NORMALIZED_COLUMNS = {
   patients: [
