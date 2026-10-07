@@ -98,6 +98,9 @@ test('CĐHA xuất báo cáo; T-score DXA tách thành biến số theo từng v
   const l1Col = built.manifest.variables.find(v => v.name === 'imaging_t_score:l1').output_column;
   const reportVariable = built.manifest.variables.find(v => v.name === 'imaging:DEXA');
   const reportCol = reportVariable.output_column;
+  assert.strictEqual(scoreCol, 'tscore_neck_left');
+  assert.strictEqual(l1Col, 'tscore_l1');
+  assert.strictEqual(reportCol, 'cdha_dexa_ket_qua');
   assert.strictEqual(reportVariable.type, 'text');
   assert.strictEqual(reportVariable.aggregation, 'list');
   assert.strictEqual(reportVariable.survey_label, 'Kết quả CĐHA: DEXA');
