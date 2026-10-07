@@ -350,5 +350,80 @@ const opts = rows => ({ runDir, runId: 'collect_run', scope: 'du_lieu_goc', isAr
     assert.deepStrictEqual([r2.report.parts_changed, r2.report.changes[0].trigger, r2.report.changes[0].part], [1, 'manual_refresh', 'discharge']);
   });
 
+  await test('Lượt đã chuẩn hóa vẫn force worker bằng Research key nguồn, không dùng encounter_id', async () => {
+    const run3 = path.join(RUNTIME_ROOT, 'fixture', 'normalized_force_keys');
+    fs.mkdirSync(run3, { recursive: true });
+    writeCsv(path.join(run3, 'du_lieu_ban_dau.csv'), INITIAL_COLS, [initialRows()[0]]);
+    const sourceRows3 = R.ensureResearchSourceRows(run3, {
+      sourceRunId: 'normalized_force_keys',
+      dateDefaults: { from_date: '2026-03-01', to_date: '2026-03-31' },
+      force: true,
+    }).rows;
+    assert.strictEqual(sourceRows3.length, 1);
+    const sourceKey = sourceRows3[0]['Research key'];
+    const researchCode = sourceRows3[0]['Mã NC'];
+    writeCsv(path.join(run3, 'encounters.csv'), [
+      'encounter_id', 'research_code', 'patient_code', 'admission_date', 'discharge_date',
+      'emr_noitru_id', 'emr_treatment_id',
+    ], [{
+      encounter_id: 'enc_normalized_visit',
+      research_code: researchCode,
+      patient_code: 'BNA',
+      admission_date: '2026-03-01 08:00',
+      discharge_date: '2026-03-10 10:00',
+      emr_noitru_id: 'NTA',
+      emr_treatment_id: '',
+    }]);
+
+    const forced = [];
+    const hchanhOnly = {
+      hchanh: async (_ctx, opts) => {
+        forced.push({
+          mode: opts.mode,
+          keys: [...(opts.forceKeys || [])].sort(),
+        });
+        const file = opts.mode === 'order_history_auto'
+          ? 'order_history_auto_progress.json'
+          : 'hchanh_auto_progress.json';
+        const progressPath = path.join(run3, file);
+        const progress = readJson(progressPath);
+        for (const row of opts.sourceRows) {
+          const key = row['Research key'];
+          const at = tick();
+          const fileStatus = {};
+          for (const part of opts.files) fileStatus[part] = { fetch_status: 'ok', rows: 1, at };
+          progress[key] = {
+            ...(progress[key] || {}),
+            status: 'done',
+            files: [...new Set([...(progress[key]?.files || []), ...opts.files])],
+            finished_at: at,
+            file_status: { ...(progress[key]?.file_status || {}), ...fileStatus },
+          };
+        }
+        fs.writeFileSync(progressPath, JSON.stringify(progress), 'utf-8');
+        return { cancelled: false };
+      },
+    };
+
+    const result = await R.runCollectionOrchestration(CTX, {
+      runDir: run3,
+      runId: 'normalized_force_keys',
+      scope: 'du_lieu_goc',
+      isArchive: true,
+      sourceRows: sourceRows3,
+      parts: ['profile', 'order_history'],
+      maxPasses: 1,
+    }, hchanhOnly);
+
+    assert.strictEqual(result.report.selenium_errors_open, 0);
+    assert.strictEqual(forced.length, 2);
+    for (const call of forced) {
+      assert.deepStrictEqual(call.keys, [sourceKey],
+        `forceKeys phải dùng Research key nguồn ${sourceKey}, thực tế: ${call.keys.join(',')}`);
+      assert.ok(!call.keys.includes('enc_normalized_visit'),
+        'encounter_id chuẩn hóa không phải progress key của worker hành chánh/y lệnh');
+    }
+  });
+
   console.log(`\n${passed} kịch bản pass.`);
 })();
