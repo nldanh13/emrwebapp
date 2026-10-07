@@ -16,7 +16,7 @@ const { dedupeRowsByStableKey } = require('./dataset_store');
 const { runScript, fmtPyError } = require('../services/python_runner');
 const fs = require('fs');
 
-const VERIFIED_FETCH_WINDOW_VERSION = 3;
+const VERIFIED_FETCH_WINDOW_VERSION = 4;
 
 function hchanhDefaultFiles(files) {
   const allowed = new Set(['profile', 'discharge', 'surgery', 'order_history']);
@@ -283,10 +283,11 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
         // không ép quét lại các phần đã có/tạm thời.
         const windowSensitive = normalizedMode === 'order_history_auto' && wantedFiles.includes('order_history');
         const previousWindowVersion = Number(progress[key]?.fetch_window_version || 0);
-        // v3 thêm lọc sau-parse theo cửa sổ đợt điều trị. Dữ liệu v1/v2 có thể đã
-        // chứa lịch sử y lệnh của các đợt cũ dù from/to đúng, nên phải lấy lại đúng
-        // một lần để thay file thô bằng bản đã lọc. Sau v3, chỉ sửa lại khi mốc bắt
-        // đầu từng bị cắt bởi dòng chuyển khoa; date_to đổi đơn thuần không ép quét.
+        // v3 thêm lọc sau-parse theo cửa sổ đợt điều trị.
+        // v4 sửa parser Thuốc/T-VT + Y lệnh khác: dữ liệu v1-v3 có thể thiếu toàn bộ
+        // thuốc chính dù progress đã done, nên phải lấy lại đúng MỘT lần bằng parser
+        // mới. Migration cũng cố ý không reuse shared-store cũ (xem allowStored bên
+        // dưới), nếu không dữ liệu thiếu từ cache lại được chép ngược vào run.
         const windowFilterMigrationNeeded = windowSensitive
           && previousWindowVersion < VERIFIED_FETCH_WINDOW_VERSION;
         const windowNeedsRepair = windowSensitive && (
@@ -307,7 +308,9 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
         }
         if (windowNeedsRepair) {
           const repairReason = windowFilterMigrationNeeded
-            ? 'bản cũ chưa có bộ lọc lịch sử y lệnh theo đợt (v3)'
+            ? (previousWindowVersion < 4
+              ? 'bản cũ chưa có parser Thuốc/T-VT + Y lệnh khác (v4)'
+              : 'bản cũ chưa có bộ lọc lịch sử y lệnh theo đợt')
             : 'bản cũ dùng mốc chuyển khoa thay vì ngày vào viện thật';
           appendResearchRunLog(
             runPath,

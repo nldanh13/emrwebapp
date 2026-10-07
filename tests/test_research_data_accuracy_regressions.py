@@ -189,9 +189,10 @@ def test_analysis_ready_uses_long_form_detail_tables_instead_of_large_json_cells
     assert "Chi tiết từng kết quả nằm ở imaging_results.csv" in dictionary
 
 
-def test_order_history_window_filter_change_forces_one_time_refetch_of_old_progress():
+def test_order_history_parser_or_window_change_forces_one_time_refetch_of_old_progress():
     src = (ROOT / "server" / "research" / "hchanh_fetch.js").read_text(encoding="utf-8")
-    assert "const VERIFIED_FETCH_WINDOW_VERSION = 3" in src
+    assert "const VERIFIED_FETCH_WINDOW_VERSION = 4" in src
     assert "const windowFilterMigrationNeeded" in src
     assert "previousWindowVersion < VERIFIED_FETCH_WINDOW_VERSION" in src
     assert re.search(r"windowFilterMigrationNeeded\s*\|\|", src)
+    assert "parser Thuốc/T-VT + Y lệnh khác (v4)" in src
