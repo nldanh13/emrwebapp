@@ -195,7 +195,7 @@ test('Danh sách EMR thay đổi → lấy lại; chỉ đổi họ tên/tuổi 
   const later = '2026-02-01T00:00:00Z';
   const xn2 = { ...xn, 'BN_A|treatment:xenc_a': xnEntry('enc_a', 'NC0001', 'BN_A', XN_OK, later) };
   const hc2 = { ...hc, enc_a: hcEntry(OK_HC, later), enc_b: hcEntry(OK_HC, later) };
-  const oh2 = { ...oh, enc_a: hcEntry(OK_OH, later) };
+  const oh2 = { ...oh, enc_a: hcEntry(OK_OH, later, { fetch_window_version: 4 }) };
   const third = c.buildLedger({ sourceRows: changed, xnProgress: xn2, hchanhProgress: hc2, orderProgress: oh2, previous: second });
   assert.strictEqual(c.planCollection(third).tasks.length, 0);
 });
@@ -328,7 +328,7 @@ test('Báo cáo vận hành: số ca lấy, bỏ qua vì không đổi, phần l
   const later = '2026-02-01T00:00:00Z';
   const xn2 = { ...xn, 'BN_N|treatment:xenc_new': xnEntry('enc_new', 'NC0003', 'BN_N', XN_OK, later) };
   const hc2 = { ...hc, enc_b: hcEntry(OK_HC, later), enc_new: hcEntry({ ...OK_HC, discharge: { fetch_status: 'no_session', rows: 0 } }, later) };
-  const oh2 = { ...oh, enc_new: hcEntry(OK_OH, later) };
+  const oh2 = { ...oh, enc_new: hcEntry(OK_OH, later, { fetch_window_version: 4 }) };
   const after = c.buildLedger({ sourceRows: sources, xnProgress: xn2, hchanhProgress: hc2, orderProgress: oh2, previous: before });
   const report = c.buildRunReport({ before, after, plan });
   assert.strictEqual(report.skipped_unchanged, 1);
@@ -476,7 +476,7 @@ test('Kho cũ: các dòng chuyển khoa (không Mã nội trú) gom về 1 lư�
   // XN (bản cũ, không Research key) ghi ngày vào của lượt; hành chánh nằm ở dòng k2 (dòng giữa).
   const xn = { 'BN_X|treatment:abc': { 'Mã BN': 'BN_X', 'Mã NC': 'NC0007', 'Ngày vào viện': '02/03/2026 08:00', xn: 'done', cdha: 'done', committed: true, counts: { xn: 12, cdha: 2 }, updated_at: 't1' } };
   const hc = { k2: hcEntry(OK_HC) };
-  const oh = { k3: hcEntry(OK_OH) };
+  const oh = { k3: hcEntry(OK_OH, '2026-01-10T00:00:00Z', { fetch_window_version: 4 }) };
   const ledger = c.buildLedger({ units, xnProgress: xn, hchanhProgress: hc, orderProgress: oh });
   const stay1 = ledger.encounters.enc_stay1;
   assert.ok(c.PART_KEYS.every(k => c.partIsCurrent(stay1, k)), 'lượt đủ 6 phần dù tiến độ nằm ở các dòng khác nhau');
