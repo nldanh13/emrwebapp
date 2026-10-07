@@ -59,6 +59,19 @@ export function NormalizeStatus({ pipeline, running = null, request = {}, clockO
     );
   }
 
+  if (request.status !== 'error' && normalize.integrity_status === 'failed_integrity') {
+    // Chuẩn hóa đã chạy xong và đã ghi bảng mới; chỉ bước kiểm tra toàn vẹn có lỗi chặn.
+    const blocking = Number(normalize.qa?.blocking || 0);
+    return (
+      <div role="alert" style={box(C.amberBorder, C.amberBg)}>
+        <div style={{ flex: '1 1 300px', fontSize: FS.sm, color: C.text2 }}>
+          <b style={{ color: C.text }}>Chuẩn hóa xong nhưng có {blocking || ''} lỗi chặn</b>{normalize.at ? ` (lúc ${when(normalize.at)})` : ''}.
+          {' '}Bảng chuẩn và số liệu bên dưới đã cập nhật theo lần này; chỉ chưa tạo được dataset cho tới khi xử lý mục <b>Lỗi chặn</b> ở bước Chuẩn hóa.
+        </div>
+      </div>
+    );
+  }
+
   if (request.status === 'error' || normalize.status === 'failed') {
     return (
       <div role="alert" style={box(C.redBorder, C.redBg)}>

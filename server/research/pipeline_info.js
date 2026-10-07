@@ -130,6 +130,8 @@ function buildPipelineInfo(scopeDir, runDir) {
     },
     normalize: {
       status: normalizeState.status || (manifest.normalized_at ? 'complete' : 'not_run'),
+      // failed_integrity: chuẩn hóa đã chạy xong và đã ghi bảng, nhưng kiểm tra toàn vẹn có lỗi chặn.
+      integrity_status: normalizeState.integrity_status || '',
       at: manifest.normalized_at || normalizeState.finished_at || '',
       duration_ms: Number.isFinite(startedAt) && Number.isFinite(finishedAt) ? finishedAt - startedAt : null,
       schema_version: manifest.normalized_schema_version || normalizeState.schema_version || null,
