@@ -45,7 +45,9 @@
 //      chỉ định chăm sóc/xuất viện thành thuốc chỉ vì có từ "uống/tiêm".
 // v37: đối chiếu ngày ra viện dùng chung bất thường với đúng hồ sơ theo Mã BN + Research key;
 //      buộc các run đã chuẩn hóa bằng logic cũ chạy lại thay vì trả cache cũ.
-const NORMALIZED_SCHEMA_VERSION = 37;
+// v38: lấy ngày ra từ profile làm fallback để hoàn chỉnh khoảng nằm viện khi discharge thiếu ngày;
+//      ưu tiên ngày ra từ discharge nếu có.
+const NORMALIZED_SCHEMA_VERSION = 38;
 
 const NORMALIZED_COLUMNS = {
   patients: [
