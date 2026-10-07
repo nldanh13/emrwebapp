@@ -21,7 +21,9 @@
 //      không nhét toàn bộ kết quả của một đợt vào các ô JSON/text cực lớn.
 // v22: Mã BN là khóa nguồn duy nhất; bỏ các cột mã EMR không thu thập (emr_admission_id, emr_treatment_id, emr_noitru_id).
 // v23: thêm sinh hiệu lúc vào viện từ Phiếu vào viện cho Kho nghiên cứu.
-const NORMALIZED_SCHEMA_VERSION = 23;
+// v24: một đợt tính từ lúc nhận Cấp cứu (24 giờ trước giờ vào khoa khi chưa có giờ vào viện)
+//      đến hết ngày ra viện (ngày ra chỉ có ngày không còn bị hiểu là 00:00).
+const NORMALIZED_SCHEMA_VERSION = 24;
 
 const NORMALIZED_COLUMNS = {
   patients: [

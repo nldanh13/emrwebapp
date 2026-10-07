@@ -44,6 +44,13 @@ function dayKey(value) {
   return p ? `${p.y}-${p.mo}-${p.d}` : '';
 }
 
+function previousDayKey(day) {
+  const d = new Date(`${day}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return '';
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 function timeKey(value) {
   const p = parseDateParts(value);
   if (!p) return '';
@@ -115,7 +122,10 @@ function classifyEvent(kind, row, encounter) {
   const start = dayKey(encounter?.admission_date);
   const end = dayKey(encounter?.discharge_date);
   const event = eventDay(kind, row);
-  if (event && start && event < start) return { status: 'rejected', reasons: ['before_admission'] };
+  // Kết quả làm ở Cấp cứu trước lúc vào khoa đã được ghép vào đợt (tối đa 24 giờ trước, có thể là
+  // ngày hôm trước): không coi là "trước khi vào viện".
+  const emergency = text(row?.encounter_match_method) === 'emergency_before_ward' && event && start && event === previousDayKey(start);
+  if (event && start && event < start && !emergency) return { status: 'rejected', reasons: ['before_admission'] };
   if (event && end && event > end) return { status: 'rejected', reasons: ['after_discharge'] };
 
   if (!event) reasons.push('missing_event_time');

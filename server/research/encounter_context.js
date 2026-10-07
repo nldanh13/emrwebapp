@@ -86,7 +86,11 @@ function eventTemporalFields(ctx, eventDate) {
   const admissionDt = parseAnyDate(admission);
   const dischargeDt = parseAnyDate(discharge);
   let within = '';
-  if (event && admissionDt) within = eventInsideContext(eventDate, ctx) ? '1' : '0';
+  if (event && admissionDt) {
+    const inside = eventInsideContext(eventDate, ctx)
+      || (ctx?._encounter_match_method === 'emergency_before_ward' && eventInsideContext(eventDate, ctx, { emergency: true }));
+    within = inside ? '1' : '0';
+  }
   return {
     days_from_admission: dateOffsetDays(admission, eventDate),
     days_from_surgery: dateOffsetDays(surgery, eventDate),
@@ -181,10 +185,25 @@ function hasPreciseClock(value) {
   return /\b\d{1,2}:\d{2}\b/.test(String(value || ''));
 }
 
-function eventInsideContext(eventDate, ctx) {
+// Ngày chỉ có ngày thì giữ là ngày (không tự thành 00:00): ngày ra viện "12/04/2026" phải
+// gồm cả ngày 12/04, không phải kết thúc lúc 00:00.
+function isoDateOrTime(value) {
+  return hasPreciseClock(value) ? isoDateTime(value) : isoDate(value);
+}
+
+// Một đợt tính từ lúc nhận vào viện (kể cả Cấp cứu). "Ngày vào viện" của hồ sơ hành chánh là
+// mốc đó; nếu chỉ có "T/G vào" của danh sách nội trú thì đó là lúc vào khoa, nên kết quả làm ở
+// Cấp cứu trong 24 giờ trước đó vẫn thuộc đợt (khi không thuộc đợt nào khác).
+const HOSPITAL_ADMISSION_FIELDS = ['Ngày vào viện', 'Ngay vao vien', 'Ngày nhập viện', 'Ngay nhap vien'];
+const EMERGENCY_LOOKBACK_MS = 24 * 3600 * 1000;
+
+function eventInsideContext(eventDate, ctx, { emergency = false } = {}) {
   if (!eventDate || !ctx?.admission_date) return false;
   const event = parseAnyDate(eventDate);
-  const admission = parseAnyDate(ctx.admission_date);
+  const wardAdmission = parseAnyDate(ctx.admission_date);
+  const admission = emergency && ctx.admission_is_ward_entry && wardAdmission
+    ? new Date(wardAdmission.getTime() - EMERGENCY_LOOKBACK_MS)
+    : wardAdmission;
   const discharge = parseAnyDate(ctx.discharge_date);
   if (!event || !admission) return false;
 
@@ -220,10 +239,14 @@ function unresolvedContext(code, candidates = [], reason = '') {
   };
 }
 
-function matchedContextForRow(ctx, row, code, method) {
+function matchedContextForRow(ctx, row, code, method, ctxMap = null) {
   if (!ctx || normalizedIdentity(ctx.patient_code) !== normalizedIdentity(code)) return null;
   const eventDate = rowEventDate(row);
   if (eventDate && !eventInsideContext(eventDate, ctx)) {
+    const others = (ctxMap?.get(`patient:${code}`) || []).filter(other => other.encounter_id !== ctx.encounter_id);
+    if (eventInsideContext(eventDate, ctx, { emergency: true }) && !others.some(other => eventInsideContext(eventDate, other))) {
+      return matchedContext(ctx, 'emergency_before_ward');
+    }
     return unresolvedContext(code, [ctx], 'encounter_match_outside_time');
   }
   return matchedContext(ctx, method);
@@ -248,8 +271,7 @@ function buildContextMap(patientRows, sourceRunId = '') {
     if (!code) continue;
     const admission = isoDateTime(firstNonEmpty(row, ['Ngày vào viện', 'Ngay vao vien', 'Ngày nhập viện', 'Ngay nhap vien', 'T/G vào', 'TG vao', 'admission_date']))
       || isoDate(firstNonEmpty(row, ['Ngày vào viện', 'Ngay vao vien', 'Ngày nhập viện', 'Ngay nhap vien', 'T/G vào', 'TG vao', 'admission_date']));
-    const discharge = isoDateTime(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien', 'discharge_date']))
-      || isoDate(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien', 'discharge_date']));
+    const discharge = isoDateOrTime(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien', 'discharge_date']));
     const admissionDiagnosis = firstNonEmpty(row, ['Chẩn đoán vào viện', 'Chan doan vao vien', 'Chẩn đoán', 'Chan doan', 'diagnosis_raw']);
     const ctx = {
       research_code: firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']),
@@ -268,6 +290,8 @@ function buildContextMap(patientRows, sourceRunId = '') {
       insurance_valid_to: isoDate(firstNonEmpty(row, ['Giá trị đến', 'Gia tri den', 'Đến ngày', 'Den ngay', 'valid_to'])),
       source_input: firstNonEmpty(row, ['Nguồn input', 'Nguon input', 'source_input']),
       admission_date: admission,
+      // Chỉ biết lúc vào khoa (T/G vào), chưa biết lúc nhận vào viện/Cấp cứu.
+      admission_is_ward_entry: Boolean(admission) && !firstNonEmpty(row, HOSPITAL_ADMISSION_FIELDS),
       discharge_date: discharge,
       treatment_duration: firstNonEmpty(row, ['Thời gian điều trị', 'Thoi gian dieu tri', 'treatment_duration']),
       department: firstNonEmpty(row, ['Khoa', 'department', 'Khoa chuyển đến', 'Khoa dieu tri']),
@@ -321,7 +345,7 @@ function resolveStrongEncounterKey(ctxMap, keys, row, code, method, aliasMethod 
       ? 'encounter_match_strong_key_ambiguous'
       : 'encounter_match_identity_conflict');
   }
-  return matchedContextForRow(samePatient[0], row, code, usedAlias && aliasMethod ? aliasMethod : method);
+  return matchedContextForRow(samePatient[0], row, code, usedAlias && aliasMethod ? aliasMethod : method, ctxMap);
 }
 
 function contextForRow(ctxMap, row, code) {
@@ -332,23 +356,22 @@ function contextForRow(ctxMap, row, code) {
 
   const admission = isoDateTime(firstNonEmpty(row, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'admission_date']))
     || isoDate(firstNonEmpty(row, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'admission_date']));
-  const discharge = isoDateTime(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'discharge_date']))
-    || isoDate(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'discharge_date']));
+  const discharge = isoDateOrTime(firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'discharge_date']));
   if (admission || discharge) {
     const exact = uniqueContext(ctxMap.get(`visit:${contextVisitKey(code, admission, discharge)}`));
-    if (exact) return matchedContextForRow(exact, row, code, 'visit_exact');
+    if (exact) return matchedContextForRow(exact, row, code, 'visit_exact', ctxMap);
   }
   if (admission) {
     const exactTime = uniqueContext(ctxMap.get(`admission_time:${contextVisitKey(code, admission, '')}`));
-    if (exactTime) return matchedContextForRow(exactTime, row, code, 'admission_time');
+    if (exactTime) return matchedContextForRow(exactTime, row, code, 'admission_time', ctxMap);
     const exactDay = uniqueContext(ctxMap.get(`admission_day:${contextVisitKey(code, isoDate(admission), '')}`));
-    if (exactDay) return matchedContextForRow(exactDay, row, code, 'admission_date');
+    if (exactDay) return matchedContextForRow(exactDay, row, code, 'admission_date', ctxMap);
   }
   if (discharge) {
     const exactTime = uniqueContext(ctxMap.get(`discharge_time:${contextVisitKey(code, discharge, '')}`));
-    if (exactTime) return matchedContextForRow(exactTime, row, code, 'discharge_time');
+    if (exactTime) return matchedContextForRow(exactTime, row, code, 'discharge_time', ctxMap);
     const exactDay = uniqueContext(ctxMap.get(`discharge_day:${contextVisitKey(code, isoDate(discharge), '')}`));
-    if (exactDay) return matchedContextForRow(exactDay, row, code, 'discharge_date');
+    if (exactDay) return matchedContextForRow(exactDay, row, code, 'discharge_date', ctxMap);
   }
 
   const candidates = ctxMap.get(`patient:${code}`) || [];
@@ -357,6 +380,10 @@ function contextForRow(ctxMap, row, code) {
     const temporal = candidates.filter(ctx => eventInsideContext(eventDate, ctx));
     if (temporal.length === 1) return matchedContext(temporal[0], 'event_date_range');
     if (!candidates.length) return unresolvedContext(code, [], 'encounter_match_missing');
+    if (!temporal.length) {
+      const emergency = candidates.filter(ctx => eventInsideContext(eventDate, ctx, { emergency: true }));
+      if (emergency.length === 1) return matchedContext(emergency[0], 'emergency_before_ward');
+    }
     if (!temporal.length) return unresolvedContext(code, candidates, 'encounter_match_outside_time');
     return unresolvedContext(code, temporal, 'encounter_match_ambiguous');
   }
