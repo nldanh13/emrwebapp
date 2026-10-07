@@ -456,6 +456,7 @@ function relatedRows(rows, identity) {
   const eid = String(identity.encounter_id || '').trim();
   const admission = String(identity.admission_date || '').trim();
   const discharge = String(identity.discharge_date || '').trim();
+  const hasWindow = Boolean(admission || discharge);
   const index = rowIndex(list);
   const inside = entry => {
     const event = eventTime(entry.row);
@@ -466,17 +467,27 @@ function relatedRows(rows, identity) {
     // encounter_id là khóa lượt. Nếu có Mã BN ở cả hai phía, phải trùng Mã BN;
     // dòng thiếu encounter_id chỉ ghép theo đúng Mã BN và thời gian của lượt.
     picked = (index.byEid.get(eid) || []).filter(entry => !pc || !entry.pc || entry.pc === pc);
-    if (pc) picked.push(...(index.noEidByPc.get(pc) || []).filter(inside));
+    if (pc) {
+      picked.push(...(index.noEidByPc.get(pc) || []).filter(entry => {
+        if (entry.rc && rc && entry.rc === rc) return true;
+        return inside(entry);
+      }));
+    }
   } else if (pc) {
-    // Mã BN + thời gian xác định đúng lượt. Mã NC không được kéo kết quả từ
-    // lượt khác hoặc người bệnh khác chỉ vì trùng/mã cũ.
-    picked = (index.noEidByPc.get(pc) || []).filter(inside);
+    // Mã BN là định danh người bệnh. Với dòng thiếu encounter_id, ưu tiên Mã NC
+    // khớp trong cùng Mã BN; nếu mã khác thì cần bằng chứng ngày nằm trong lượt.
+    // Dữ liệu legacy không có mã lượt lẫn ngày chỉ nối ở mức người bệnh.
+    picked = (index.noEidByPc.get(pc) || []).filter(entry => {
+      if (entry.rc && rc) return entry.rc === rc || inside(entry);
+      if (entry.rc && !rc) return inside(entry);
+      return !hasWindow || inside(entry) || (!entry.rc && !eventTime(entry.row));
+    });
   } else if (rc) {
     // Chỉ dùng Mã NC khi Mã BN thực sự không có và mã này không bị dùng chung
-    // cho nhiều người bệnh. Mã NC tự nó không đủ để nối một lượt khi có Mã BN.
+    // cho nhiều người bệnh. Khi có ngày, ngày vẫn phải nằm trong lượt.
     const candidates = [...(index.byRc.get(rc) || []), ...(index.noEidByRc.get(rc) || [])];
     const patientCodes = new Set(candidates.map(entry => entry.pc).filter(Boolean));
-    if (patientCodes.size <= 1) picked = candidates.filter(inside);
+    if (patientCodes.size <= 1) picked = candidates.filter(entry => !hasWindow || inside(entry));
   }
   return picked
     .sort((a, b) => a.i - b.i)
