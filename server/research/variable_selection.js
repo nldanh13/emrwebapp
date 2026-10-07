@@ -166,6 +166,53 @@ function sanitizeFilterObject(value, depth = 0) {
   return Object.keys(out).length ? out : undefined;
 }
 
+function isImagingCatalogVariable(variable) {
+  return String(variable?.table || '') === 'imaging_results'
+    || String(variable?.virtual_kind || '').startsWith('imaging_')
+    || String(variable?.name || '').startsWith('imaging:');
+}
+
+const TSCORE_SITE_ORDER = ['neck_left', 'neck_right', 'total_left', 'total_right', 'l1', 'l2', 'l3', 'l4', 'overall'];
+
+function imagingVariableSortKey(variable) {
+  const name = String(variable?.name || '');
+  const kind = String(variable?.virtual_kind || '');
+  const modality = String(variable?.source_filter?.modality || name.split(':')[1] || '').toLowerCase();
+  if (kind === 'imaging_modality' || name.startsWith('imaging:')) return [modality, 0, 0];
+  if (kind === 'imaging_t_score_site' || name.startsWith('imaging_t_score:')) {
+    const site = name.split(':').slice(1).join(':');
+    const rank = TSCORE_SITE_ORDER.indexOf(site);
+    return [modality, 1, rank < 0 ? TSCORE_SITE_ORDER.length : rank];
+  }
+  return [modality, 2, 0];
+}
+
+// Giữ nguyên vị trí của các biến không phải CĐHA; gom riêng nhóm CĐHA tại vị trí xuất hiện đầu tiên.
+function arrangeSelectedVariables(variables) {
+  const imaging = variables.filter(isImagingCatalogVariable);
+  if (imaging.length < 2) return variables;
+  const originalIndex = new Map(imaging.map((variable, index) => [variable, index]));
+  imaging.sort((a, b) => {
+    const ka = imagingVariableSortKey(a);
+    const kb = imagingVariableSortKey(b);
+    return ka[0].localeCompare(kb[0]) || ka[1] - kb[1] || ka[2] - kb[2]
+      || originalIndex.get(a) - originalIndex.get(b);
+  });
+  const out = [];
+  let inserted = false;
+  for (const variable of variables) {
+    if (isImagingCatalogVariable(variable)) {
+      if (!inserted) {
+        out.push(...imaging);
+        inserted = true;
+      }
+    } else {
+      out.push(variable);
+    }
+  }
+  return out;
+}
+
 function sanitizeVariableSelection(input) {
   const src = input && typeof input === 'object' ? input : {};
   const sanitizeVar = v => {
@@ -202,9 +249,10 @@ function sanitizeVariableSelection(input) {
     if (sourceFilter) out.source_filter = sourceFilter;
     return out;
   };
-  const selected = Array.isArray(src.selected_variables)
+  const selectedRaw = Array.isArray(src.selected_variables)
     ? src.selected_variables.slice(0, 500).map(sanitizeVar).filter(v => v.id && v.name)
     : [];
+  const selected = arrangeSelectedVariables(selectedRaw);
   const byId = new Map(selected.map(v => [v.id, v]));
   const conditions = Array.isArray(src.conditions) ? src.conditions.slice(0, 300).map(c => {
     const base = byId.get(String(c?.variable_id || '')) || {};
