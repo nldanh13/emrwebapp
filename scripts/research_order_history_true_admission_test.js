@@ -67,7 +67,7 @@ const fetchRun = router._fetchHchanhForResearchRun;
     'Research key': 'enc_transfer',
   }];
 
-  // Mô phỏng dữ liệu cũ: progress đã "done" nhưng chưa có version cửa sổ v3.
+  // Mô phỏng dữ liệu cũ: progress đã "done" nhưng chưa có version parser/cửa sổ v4.
   fs.writeFileSync(path.join(runDir, 'order_history_auto_progress.json'), JSON.stringify({
     enc_transfer: {
       ma_bn: '26082002',
@@ -96,7 +96,7 @@ const fetchRun = router._fetchHchanhForResearchRun;
   assert.ok(orders.includes('05/09/2026'), 'phải giữ được y lệnh từ ngày vào viện thật');
 
   const progress = JSON.parse(fs.readFileSync(path.join(runDir, 'order_history_auto_progress.json'), 'utf-8'));
-  assert.strictEqual(progress.enc_transfer.fetch_window_version, 3);
+  assert.strictEqual(progress.enc_transfer.fetch_window_version, 4);
   assert.strictEqual(progress.enc_transfer.fetch_date_from, '2026-09-05');
   assert.strictEqual(progress.enc_transfer.fetch_date_to, '2026-09-21');
 
