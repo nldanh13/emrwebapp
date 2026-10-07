@@ -185,7 +185,7 @@ function beginCollectionTxn(runDir, { before, targets, reasons, beforeRows }) {
   writePrivateJson(path.join(dir, 'before_ledger.json'), before);
   const journal = {
     txn_id: id, phase: 'prepared', created_at: nowIso(), process_instance_id: RESEARCH_PROCESS_INSTANCE_ID,
-    targets, reasons, dispatched: [], steps: {},
+    targets, reasons, dispatched: [], dispatch_failures: [], steps: {},
   };
   writePrivateJson(path.join(dir, 'journal.json'), journal);
   ACTIVE_COLLECTION_TXNS.set(id, path.resolve(runDir));
@@ -240,7 +240,10 @@ function finalizeCollectionTxn(runDir, txn, { sourceRows, applyOutcome = false, 
   const beforeRows = new Map(Object.entries(readJsonSafe(path.join(txn.dir, 'before_rows.json'), {}) || {}));
   const now = j.fetched_at || j.created_at || nowIso();
   const after = buildCollectionLedgerForRun(runDir, sourceRows, before);
-  if (applyOutcome) collection.applyDispatchOutcome(before, after, j.dispatched || [], now);
+  if (applyOutcome) {
+    collection.applyDispatchOutcome(before, after, j.dispatched || [], now);
+    collection.applyDispatchFailures(after, j.dispatch_failures || [], now);
+  }
   const targets = (j.dispatched && j.dispatched.length) ? j.dispatched : (j.targets || []);
   const afterRows = partRowsMap(readCollectionPartRows(runDir), after, targets);
   const cv = collection.applyContentVersions({ before, after, targets, beforeRows, afterRows, reasons: j.reasons || {}, now });
@@ -572,6 +575,7 @@ async function runCollectionOrchestration(ctx, {
     if (!tasks.length) break;
     const before = current;
     const dispatched = [];
+    const dispatchFailures = [];
     const targets = tasks.flatMap(t => t.parts.map(pk => ({ key: t.key, part: pk })));
     const beforeRows = partRowsMap(readCollectionPartRows(runDir), before, targets);
     const groups = collection.groupTasksByFetcher(tasks);
@@ -594,28 +598,46 @@ async function runCollectionOrchestration(ctx, {
       for (const [sig, list] of groups.hchanh.entries()) {
         if (cancelNow()) break;
         const files = sig.split(',');
+        let workerError = '';
         try {
           const r = await runners.hchanh(ctx, {
             runDir, sourceRows: rowsFor(list), sourceRunId: runId, files, headless,
             forceKeys: forceKeysFor(list), fallbackDateFrom: fromDate, fallbackDateTo: toDate, mode: 'hchanh_auto',
           });
           if (r?.cancelled) cancelled = true;
+          if (r?.error) workerError = String(r.error);
         } catch (err) {
-          errors.push(`Hành chánh (${files.join(',')}): ${err.message || err}`);
+          workerError = String(err?.message || err);
         }
-        for (const t of list) for (const pk of files) dispatched.push({ key: t.key, part: pk });
+        if (workerError) {
+          errors.push(`Hành chánh (${files.join(',')}): ${workerError}`);
+          for (const t of list) for (const pk of files) dispatchFailures.push({
+            key: t.key, part: pk, reason: 'worker_error', detail: workerError, at: nowIso(),
+          });
+        } else {
+          for (const t of list) for (const pk of files) dispatched.push({ key: t.key, part: pk });
+        }
       }
       if (!cancelNow() && groups.order_history.length) {
+        let workerError = '';
         try {
           const r = await runners.hchanh(ctx, {
             runDir, sourceRows: rowsFor(groups.order_history), sourceRunId: runId, files: ['order_history'], headless,
             forceKeys: forceKeysFor(groups.order_history), fallbackDateFrom: fromDate, fallbackDateTo: toDate, mode: 'order_history_auto',
           });
           if (r?.cancelled) cancelled = true;
+          if (r?.error) workerError = String(r.error);
         } catch (err) {
-          errors.push(`Y lệnh: ${err.message || err}`);
+          workerError = String(err?.message || err);
         }
-        for (const t of groups.order_history) dispatched.push({ key: t.key, part: 'order_history' });
+        if (workerError) {
+          errors.push(`Y lệnh: ${workerError}`);
+          for (const t of groups.order_history) dispatchFailures.push({
+            key: t.key, part: 'order_history', reason: 'worker_error', detail: workerError, at: nowIso(),
+          });
+        } else {
+          for (const t of groups.order_history) dispatched.push({ key: t.key, part: 'order_history' });
+        }
       }
       if (!cancelNow() && groups.xn_cdha.length && require('../services/emr_bridge').bridgeModeEnabled() && runners === DEFAULT_COLLECTION_RUNNERS) {
         // Script XN/CĐHA còn bấm trên Chrome; qua tab EMR (chế độ cầu nối) chưa làm được — để nguyên
@@ -628,14 +650,27 @@ async function runCollectionOrchestration(ctx, {
             return row ? { ...row, refetch_parts: t.parts.join(';') } : null;
           })
           .filter(Boolean);
-        const r = await runners.xnCdha(ctx, { runDir, runId, scope, isArchive, rows, fromDate, toDate, headless });
-        if (r?.error) errors.push(`XN/CĐHA: ${String(r.error).split('\n')[0]}`);
-        if (r?.stopped) cancelled = true;
-        for (const t of groups.xn_cdha) for (const pk of t.parts) dispatched.push({ key: t.key, part: pk });
+        let r;
+        let workerError = '';
+        try {
+          r = await runners.xnCdha(ctx, { runDir, runId, scope, isArchive, rows, fromDate, toDate, headless });
+          if (r?.error) workerError = String(r.error);
+        } catch (err) {
+          workerError = String(err?.message || err);
+        }
+        if (workerError) {
+          errors.push(`XN/CĐHA: ${workerError.split('\n')[0]}`);
+          for (const t of groups.xn_cdha) for (const pk of t.parts) dispatchFailures.push({
+            key: t.key, part: pk, reason: 'worker_error', detail: workerError, at: nowIso(),
+          });
+        } else {
+          if (r?.stopped) cancelled = true;
+          for (const t of groups.xn_cdha) for (const pk of t.parts) dispatched.push({ key: t.key, part: pk });
+        }
       }
       if (isCancelRequested(ctx.sid)) cancelled = true;
       crash('after_csv');
-      updateCollectionTxn(txn, { phase: 'fetched', fetched_at: nowIso(), dispatched, cancelled });
+      updateCollectionTxn(txn, { phase: 'fetched', fetched_at: nowIso(), dispatched, dispatch_failures: dispatchFailures, cancelled });
 
       // So dữ liệu mới với bản trước: giống → chỉ ghi "đã kiểm tra"; khác → phiên bản mới,
       // bản cũ và bản mới đều được lưu vào lịch sử (chỉ thêm). Dừng giữa chừng: phần chưa tới
