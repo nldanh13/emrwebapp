@@ -94,11 +94,14 @@ function PipelineView({ pipeline, summary, collectionScreen = null, onInspectCol
   const showNormalizeMetrics = !normalizeView.transientInputChange && !schemaOutdated;
   return (
     <section style={card}>
-      <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Quy trình dữ liệu</div>
-      <div style={{ marginTop: 2, marginBottom: 12, fontSize: FS.xs, color: C.text3 }}>
-        EMR → file CSV thô của từng đợt → chuẩn hóa và kiểm tra → bảng chuẩn + cơ sở dữ liệu SQLite. Mỗi bước ghi lại thời điểm và kết quả bên dưới.
-      </div>
-      <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 12 }}>
+      <details>
+        <summary style={{ cursor: 'pointer', fontSize: FS.sm, fontWeight: 700, color: C.text2 }}>
+          Chi tiết quy trình dữ liệu
+        </summary>
+        <div style={{ marginTop: 6, marginBottom: 12, fontSize: FS.xs, color: C.text3 }}>
+          EMR → file thô → chuẩn hóa/QA → SQLite. Phần này chỉ dùng khi cần kiểm tra kỹ thuật.
+        </div>
+        <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 12 }}>
         <Stage n={1} title="Quét danh sách từ EMR" tone={scan.rows ? 'ok' : 'neutral'} state={scan.rows ? 'đã quét' : 'chưa quét'}
           what="Selenium mở EMR, lấy danh sách người bệnh đã hoàn tất hồ sơ trong khoảng ngày, ghi thành file danh sách của đợt.">
           Lúc <B>{when(scan.at)}</B>{scan.first_at && scan.first_at !== scan.at && when(scan.first_at) !== when(scan.at) ? <span style={{ color: C.text3 }}> (đợt tạo lúc {when(scan.first_at)})</span> : null} · khoảng <B>{ymd(scan.from_date)}</B> → <B>{ymd(scan.to_date)}</B> · <B>{compactNumber(scan.rows)}</B> lượt
@@ -334,7 +337,8 @@ function PipelineView({ pipeline, summary, collectionScreen = null, onInspectCol
             </table>
           </div>
         </Stage>
-      </ol>
+        </ol>
+      </details>
     </section>
   );
 }
@@ -343,11 +347,17 @@ export function GeneralOverviewView({ generalOverview, generalOverviewLoading, p
   const ov = generalOverview;
   const legacySummary = ov?.statusSummary || { total: 0, ready: 0, missingCount: 0, manualReview: 0, modules: [] };
   const collectionCounts = collectionScreen?.counts || null;
+  const collectionUserCounts = collectionScreen?.user_counts || null;
   const summary = collectionScreen ? {
     total: Number(collectionScreen.total || 0),
-    ready: Number(collectionCounts?.done || 0),
-    missingCount: Number(collectionCounts?.missing || 0),
+    ready: Number(collectionUserCounts?.ready ?? collectionCounts?.done ?? 0),
+    missingCount: Number(collectionUserCounts?.automatic ?? ((collectionCounts?.missing || 0) + (collectionCounts?.error || 0))),
     counts: collectionCounts,
+    user_counts: collectionUserCounts || {
+      ready: Number(collectionCounts?.done || 0),
+      automatic: Number(collectionCounts?.missing || 0) + Number(collectionCounts?.error || 0),
+      manual: Number(collectionCounts?.waiting || 0) + Number(collectionCounts?.unmatched || 0),
+    },
     modules: (collectionScreen.parts || []).map(p => ({ ...p, label: p.label, total: Number(p.total || 0), done: Number(p.done || 0) })),
   } : legacySummary;
   const counts = ov?.counts || {};
@@ -400,11 +410,9 @@ export function GeneralOverviewView({ generalOverview, generalOverviewLoading, p
           </div>
           <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Theo lượt điều trị:</span>
-            <StatBadge label="Đủ dữ liệu" value={summary.counts?.done || summary.ready || 0} tone="ok" />
-            <StatBadge label="Còn thiếu" value={summary.counts?.missing ?? summary.missingCount ?? 0} tone={Number((summary.counts?.missing ?? summary.missingCount) || 0) ? 'warn' : 'neutral'} />
-            <StatBadge label="Lỗi · sẽ tự thử" value={summary.counts?.error || 0} tone={summary.counts?.error ? 'warn' : 'neutral'} />
-            <StatBadge label="Chờ người xem" value={summary.counts?.waiting || 0} tone={summary.counts?.waiting ? 'danger' : 'neutral'} />
-            <StatBadge label="Chưa ghép chắc" value={summary.counts?.unmatched || 0} tone={summary.counts?.unmatched ? 'danger' : 'neutral'} />
+            <StatBadge label="Sẵn sàng" value={summary.user_counts?.ready ?? summary.ready ?? 0} tone="ok" />
+            <StatBadge label="Máy xử lý" value={summary.user_counts?.automatic ?? summary.missingCount ?? 0} tone={Number((summary.user_counts?.automatic ?? summary.missingCount) || 0) ? 'info' : 'neutral'} />
+            <StatBadge label="Cần bạn kiểm tra" value={summary.user_counts?.manual ?? 0} tone={Number(summary.user_counts?.manual || 0) ? 'danger' : 'neutral'} />
             {ov.limited && <span style={{ fontSize: FS.xs, color: C.amber }}>Kho lớn: một số số đếm lấy từ metadata.</span>}
           </div>
           {collectionScreen && Number(counts.encounters || 0) !== Number(collectionScreen.total || 0) && (
