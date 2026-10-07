@@ -65,7 +65,7 @@ function resultText(value) {
 // summarized as a numeric variable; leave Z-scores and unrelated measurements untouched.
 function extractTScore(value) {
   const raw = String(value || '');
-  const match = raw.match(/\\bT\\s*[-–—]?\\s*score\\b(?:\\s*\\([^)]{0,40}\\))?\\s*[:=]?\\s*([-+]?\\d+(?:[.,]\\d+)?)/i);
+  const match = raw.match(/\bT\s*[-–—]?\s*score\b(?:\s*\([^)]{0,40}\))?\s*[:=]?\s*([-+]?\d+(?:[.,]\d+)?)/i);
   if (!match) return '';
   const number = Number(match[1].replace(',', '.'));
   return Number.isFinite(number) ? String(number) : '';
