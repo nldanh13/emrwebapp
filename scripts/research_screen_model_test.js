@@ -51,6 +51,15 @@ test('mỗi lượt đúng một nhóm; các nhóm cộng lại đúng bằng t�
   assert.strictEqual(sum, s.total);
 });
 
+test('màn chính chỉ có 3 trạng thái người dùng và vẫn cộng đúng tổng', () => {
+  const s = buildCollectionScreen({ ledger, sourceRows, maxAttempts: 3 });
+  assert.deepStrictEqual(s.user_counts, { ready: 1, automatic: 3, manual: 4 });
+  assert.strictEqual(Object.values(s.user_counts).reduce((a, b) => a + b, 0), s.total);
+  assert.strictEqual(s.rows.find(r => r.key === 'c').user_state, 'automatic');
+  assert.strictEqual(s.rows.find(r => r.key === 'd').user_state, 'manual');
+  assert.strictEqual(s.rows.find(r => r.key === 'f').user_state, 'manual');
+});
+
 test('kế hoạch thu thập tính từ cùng sổ, cùng tổng', () => {
   const p = buildCollectionScreen({ ledger, maxAttempts: 3 }).plan;
   assert.strictEqual(p.encounters, 8);
