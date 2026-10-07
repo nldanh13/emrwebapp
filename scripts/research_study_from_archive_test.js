@@ -105,7 +105,7 @@ fs.writeFileSync(studyMetaPath(STUDY), JSON.stringify({ id: STUDY, name: 'Zol', 
     assert.ok(fs.existsSync(path.join(sRun, 'analysis_selected.csv')), 'có bảng phân tích theo biến đã chọn');
   });
 
-  await test('"Thu thập tự động" chỉ định lấy phần kho còn thiếu, không mở EMR lấy lại phần đã có', async () => {
+  await test('"Thu thập tự động" chỉ lấy phần thiếu hoặc phần Y lệnh cần migration parser', async () => {
     const sRun = path.join(runsDir(STUDY), '20260301_000000');
     const { syncCollectionLedger } = require('../server/research/collection_runtime');
     const { readResearchHchanhSourceRows } = require('../server/research/research_source');
@@ -113,8 +113,11 @@ fs.writeFileSync(studyMetaPath(STUDY), JSON.stringify({ id: STUDY, name: 'Zol', 
     const ledger = syncCollectionLedger(sRun, readResearchHchanhSourceRows(sRun).rows);
     const plan = collection.planCollection(ledger, {});
     assert.strictEqual(plan.tasks.length, 1);
-    // Kho: XN có, CĐHA không có dòng, hồ sơ xong, y lệnh có; ra viện lỗi; lượt không có phẫu thuật.
-    assert.deepStrictEqual(plan.tasks[0].parts.filter(p => p !== 'surgery').sort(), ['discharge']);
+    // Kho: XN có, CĐHA không có dòng, hồ sơ xong, ra viện lỗi. Fixture archive legacy
+    // chưa có fetch_window_version cho Y lệnh nên phải lấy lại order_history một lần;
+    // không được coi "có thuốc" đồng nghĩa parser/cửa sổ đã hiện hành.
+    assert.deepStrictEqual(plan.tasks[0].parts.filter(p => p !== 'surgery').sort(), ['discharge', 'order_history']);
+    assert.strictEqual(plan.tasks[0].reasons.order_history, 'parser_migration');
   });
 
   await test('nghiên cứu không chọn mẫu từ kho: báo rõ, không tạo đợt chạy', async () => {
