@@ -24,19 +24,27 @@ function timeInsideEncounter(value, admission, discharge) {
 }
 function relatedRowsOld(list, identity) {
   const pc = String(identity.patient_code || '').trim(); const rc = String(identity.research_code || '').trim(); const eid = String(identity.encounter_id || '').trim();
+  const admission = String(identity.admission_date || '').trim(); const discharge = String(identity.discharge_date || '').trim();
+  const hasWindow = Boolean(admission || discharge);
+  const inside = row => {
+    const ev = eventTime(row); return Boolean(ev && timeInsideEncounter(ev, admission, discharge));
+  };
   return list.filter(row => {
     const rowEid = vs.getCell(row, ['encounter_id', 'visit_id']); const rowRc = vs.researchCode(row); const rowPc = vs.patientCode(row);
-    if (eid && rowEid) return rowEid === eid;
-    if (rowEid) return false;
-    if (pc) {
-      if (rowPc !== pc) return false;
-      const ev = eventTime(row); return Boolean(ev && timeInsideEncounter(ev, identity.admission_date, identity.discharge_date));
+    if (eid) {
+      if (rowEid) return rowEid === eid && (!pc || !rowPc || rowPc === pc);
+      if (pc && rowPc === pc) return Boolean((rc && rowRc === rc) || inside(row));
+      return false;
     }
-    if (rc && rowRc === rc) {
+    if (pc && rowPc === pc && !rowEid) {
+      if (rowRc && rc) return rowRc === rc || inside(row);
+      if (rowRc && !rc) return inside(row);
+      return !hasWindow || inside(row) || (!rowRc && !eventTime(row));
+    }
+    if (!pc && rc && rowRc === rc) {
       const candidates = list.filter(item => vs.researchCode(item) === rc);
       const patientCodes = new Set(candidates.map(vs.patientCode).filter(Boolean));
-      if (patientCodes.size > 1) return false;
-      const ev = eventTime(row); return Boolean(ev && timeInsideEncounter(ev, identity.admission_date, identity.discharge_date));
+      return patientCodes.size <= 1 && (!hasWindow || inside(row));
     }
     return false;
   }).filter(row => {
