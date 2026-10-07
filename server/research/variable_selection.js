@@ -179,6 +179,7 @@ function sanitizeVariableSelection(input) {
       type: String(v?.type || '').slice(0, 40),
       role: VARIABLE_ROLES.has(String(v?.role || '')) ? String(v.role) : '',
       virtual_kind: String(v?.virtual_kind || '').slice(0, 80),
+      source_note: String(v?.source_note || '').slice(0, 500),
       aggregation: String(v?.aggregation || 'list').slice(0, 40),
     };
     // Cửa sổ ngày so với mốc thời gian của nghiên cứu (vd. -14 → 0: trong 14 ngày trước mốc).
@@ -740,6 +741,7 @@ function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByK
         type: v.type,
         role: v.role,
         virtual_kind: v.virtual_kind,
+        source_note: v.source_note,
         source_filter: v.source_filter,
         aggregation: v.aggregation || 'list',
         ...(v.window_from_days != null || v.window_to_days != null ? { window_from_days: v.window_from_days, window_to_days: v.window_to_days } : {}),
