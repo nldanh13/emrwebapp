@@ -56,7 +56,7 @@ test('Mã BN và khoảng ngày được ưu tiên; Mã NC trùng không kéo d�
   const identity = { patient_code: 'BN1', research_code: 'NC-SHARED', encounter_id: 'e1', admission_date: '2026-03-01', discharge_date: '2026-03-10' };
   assert.deepStrictEqual(vs.relatedRows(rows, identity), [rows[0], rows[3]]);
   const noEncounter = { ...identity, encounter_id: '' };
-  assert.deepStrictEqual(vs.relatedRows(rows, noEncounter), [rows[2], rows[3]], 'không ghép lượt khác chỉ vì trùng Mã NC');
+  assert.deepStrictEqual(vs.relatedRows(rows, noEncounter), [rows[3]], 'dùng Mã BN và khoảng ngày, bỏ Mã NC ngoài đợt');
 });
  
 let seed = 42;
