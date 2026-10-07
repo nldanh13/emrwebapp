@@ -94,3 +94,49 @@ def test_surgery_marker_search_range_uses_day_buffer():
 def test_surgery_marker_search_range_merges_close_dates():
     ranges = hchanh_fetch._surgery_marker_search_ranges(["03/02/2026", "04/02/2026"], window_days=1)
     assert ranges == [("02/02/2026", "05/02/2026")]
+
+
+def test_surgery_html_fallback_does_not_invent_first_select_option():
+    html = """
+    <select id="cbbPPGayMePT">
+      <option value="">-- Chọn --</option>
+      <option value="1">Tê tủy sống</option>
+    </select>
+    """
+    detail = hchanh_fetch._parse_surgery_detail_html(html)
+    assert detail["pp_vo_cam"] == ""
+
+
+def test_surgery_live_dom_overrides_stale_select2_and_reads_sequence():
+    class FakeDriver:
+        page_source = """
+        <select id="cbbPPGayMePT">
+          <option value="">-- Chọn --</option>
+          <option value="1">Giá trị HTML cũ</option>
+        </select>
+        <textarea id="txtChuanDoanTruocMoPT">Chẩn đoán HTML cũ</textarea>
+        """
+
+        def execute_script(self, _script, _spec):
+            return {
+                "pp_vo_cam": "Tê tủy sống",
+                "phuong_phap_pt": "Kết hợp xương bằng nẹp vít",
+                "chan_doan_truoc_pt": "Gãy xương cẳng chân",
+                "chan_doan_sau_pt": "Sau kết hợp xương",
+                "icd9": "79.36",
+                "icd10_truoc_pt": "S82.2",
+                "icd10_sau_pt": "S82.2",
+                "trinh_tu_phau_thuat": "Rạch da · bộc lộ ổ gãy · đặt nẹp vít · đóng vết mổ",
+                "bs_mo_chinh": "BS Phẫu thuật A",
+                "gay_me_chinh": "BS Gây mê B",
+                "phan_loai_pt_id": "f964cad8-2587-4811-8a25-b3270107416d",
+            }
+
+    detail = hchanh_fetch._read_surgery_detail_live(FakeDriver())
+    assert detail["pp_vo_cam"] == "Tê tủy sống"
+    assert detail["phuong_phap_pt"] == "Kết hợp xương bằng nẹp vít"
+    assert detail["trinh_tu_phau_thuat"].startswith("Rạch da")
+    assert detail["chan_doan_truoc_mo"] == "Gãy xương cẳng chân"
+    assert detail["chan_doan_sau_mo"] == "Sau kết hợp xương"
+    assert detail["bs_mo_chinh"] == "BS Phẫu thuật A"
+    assert detail["phan_loai_pt"] == "Loại 1"
