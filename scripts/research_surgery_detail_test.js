@@ -2,6 +2,8 @@
 
 const assert = require('assert');
 const { hchanhFetchOutputToRows } = require('../server/research/research_source');
+const { repairSurgeryRow } = require('../server/research/surgery_raw_repair');
+const { NORMALIZED_COLUMNS, NORMALIZED_SCHEMA_VERSION } = require('../server/research/normalized_schema');
 
 const output = {
   surgery: {
@@ -71,5 +73,25 @@ assert.strictEqual(row['Diễn biến bệnh'], 'Ổn định');
 assert.strictEqual(row['Dặn dò sau PT'], 'Theo dõi sau mổ');
 assert.strictEqual(row['Bệnh kèm sau PT'], 'Tăng huyết áp · Đái tháo đường');
 assert.strictEqual(row['Người hoàn tất'], 'BS A hoàn tất');
+
+const repaired = repairSurgeryRow({
+  'Mã BN': 'BN0001',
+  'Raw JSON': JSON.stringify(output.surgery.surgeries[0]),
+});
+assert.strictEqual(repaired['Chẩn đoán trước mổ'], 'Gãy xương cẳng chân');
+assert.strictEqual(repaired['Trình tự phẫu thuật'], 'Rạch da · bộc lộ · đặt nẹp vít · đóng vết mổ');
+assert.strictEqual(repaired['Phẫu thuật viên chính'], 'BS A');
+assert.strictEqual(repaired['Bệnh kèm sau PT'], 'Tăng huyết áp · Đái tháo đường');
+
+assert.strictEqual(NORMALIZED_SCHEMA_VERSION, 33);
+for (const key of [
+  'surgery_end_datetime', 'icd9_code', 'preop_icd10', 'postop_icd10',
+  'procedure_description', 'surgery_sequence', 'primary_surgeon',
+  'primary_anesthesiologist', 'assistant_surgeon_1', 'assistant_surgeon_2',
+  'scrub_nurse', 'anesthesia_technician', 'disease_course',
+  'postop_instructions', 'postop_comorbidities', 'completed_by',
+]) {
+  assert.ok(NORMALIZED_COLUMNS.surgery_results.includes(key), `Thiếu cột surgery_results: ${key}`);
+}
 
 console.log('research_surgery_detail_test: ok');
