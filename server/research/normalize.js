@@ -5,7 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { stableHash, buildContextMap, contextForRow, firstNonEmpty, buildEncounterId, isoDateTime, isoDate, parseAnyDate, encounterMatchStatus, encounterMatchMethod, eventTemporalFields, dateOffsetDays, daysBetween, normalizeSimple } = require('./encounter_context');
+const { stableHash, buildContextMap, contextForRow, eventInsideContext, firstNonEmpty, buildEncounterId, isoDateTime, isoDate, parseAnyDate, encounterMatchStatus, encounterMatchMethod, eventTemporalFields, dateOffsetDays, daysBetween, normalizeSimple } = require('./encounter_context');
 const { loadAnalysisConfig, ANALYSIS_PRESETS, _runInference, hoursBetween } = require('./analysis_presets');
 const patientDb = require('../services/patient_db');
 const variableSelection = require('./variable_selection');
@@ -176,6 +176,23 @@ function normalizeRunOutputs(runDir, options = {}) {
   }
 }
 
+// Giờ bắt đầu phẫu thuật trên EMR có lúc ghi kiểu tháng/ngày (MM/dd/yyyy). Số thứ hai > 12 thì chắc
+// chắn là tháng/ngày; số thứ nhất > 12 thì là ngày/tháng; cả hai ≤ 12 thì chọn cách đọc rơi vào một
+// đợt của chính người bệnh (chỉ một cách đọc khớp), không khớp hoặc khớp cả hai thì giữ ngày/tháng.
+function resolveDayMonthOrder(raw, candidates = []) {
+  const value = String(raw || '').trim();
+  const m = value.match(/(\d{1,2})([/-])(\d{1,2})\2(\d{4})/);
+  if (!m) return value;
+  const a = Number(m[1]); const b = Number(m[3]);
+  const swapped = value.replace(m[0], `${m[3]}${m[2]}${m[1]}${m[2]}${m[4]}`);
+  if (b > 12 && a <= 12) return swapped;
+  if (a > 12 || a === b) return value;
+  const fits = v => candidates.some(ctx => eventInsideContext(v, ctx, { emergency: true }));
+  const asIs = fits(value);
+  const asSwapped = fits(swapped);
+  return asSwapped && !asIs ? swapped : value;
+}
+
 function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, previousState = null } = {}) {
   const dir = path.resolve(runDir);
   ensureDir(dir);
@@ -266,6 +283,8 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     deepRows: deepTable.rows,
     hchanhProfileRows: hchanhProfileTable.rows,
     hchanhDischargeRows: hchanhDischargeTable.rows,
+    // Khoảng vào–ra cả lần nằm viện ghi trên dòng y lệnh (bản thô, chưa canonical hóa).
+    stayEvidenceRows: hchanhOrderTable.rows || [],
     sourceRunId: runId,
   });
   const patientsRaw = encounterSourceRows.length ? encounterSourceRows : (patientTable.rows.length ? patientTable.rows : initialTable.rows);
@@ -540,10 +559,12 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     ...readCsvTable(path.join(dir, 'lich_su_phau_thuat.csv'), Number.MAX_SAFE_INTEGER).rows,
     ...readCsvTable(path.join(dir, 'phau_thuat.csv'), Number.MAX_SAFE_INTEGER).rows,
   ];
-  let surgeryResults = surgeryRaw.map((row, idx) => {
-    const code = patientCode(row);
+  let surgeryResults = surgeryRaw.map((rawRow, idx) => {
+    const code = patientCode(rawRow);
+    const SURGERY_TIME = ['Ngày phẫu thuật', 'Ngay phau thuat', 'Thời gian', 'Thoi gian', 'bat_dau', 'surgery_datetime', 'surgery_date'];
+    const dt = resolveDayMonthOrder(firstNonEmpty(rawRow, SURGERY_TIME), ctxMap.get(`patient:${code}`) || []);
+    const row = dt ? { ...rawRow, 'Ngày phẫu thuật': dt, surgery_datetime: '', surgery_date: '' } : rawRow;
     const ctx = contextForRow(ctxMap, row, code);
-    const dt = firstNonEmpty(row, ['Ngày phẫu thuật', 'Ngay phau thuat', 'Thời gian', 'Thoi gian', 'bat_dau', 'surgery_datetime', 'surgery_date']);
     const base = {
       research_code: ctx.research_code || firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || '',
       patient_code: code,

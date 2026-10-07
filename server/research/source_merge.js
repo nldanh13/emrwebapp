@@ -363,7 +363,48 @@ function mergeOverlappingStays(rows) {
   return out;
 }
 
-function combineEncounterSources({ initialRows = [], deepRows = [], patientRows = [], hchanhProfileRows = [], hchanhDischargeRows = [], sourceRunId = '' } = {}) {
+// Dòng y lệnh/diễn biến mang khoảng vào–ra của cả lần nằm viện (EMR trả khi lấy). Đợt của kho có thể
+// dừng sớm (lúc ra khoa CTCH) trong khi y lệnh tiếp tục ở khoa sau tới ngày ra viện. Khoảng đó chồng
+// lên đúng MỘT đợt của người bệnh thì kéo dài ngày ra của đợt đó; chồng nhiều đợt thì không đoán.
+// Không tạo đợt mới từ các khoảng này.
+function extendStaysWithEvidence(rows, evidenceRows = []) {
+  if (!evidenceRows || !evidenceRows.length) return rows;
+  const windows = new Map();
+  for (const ev of evidenceRows) {
+    const code = normalizedIdentity(patientCode(ev));
+    const bounds = code ? stayBounds(ev) : null;
+    if (!bounds || bounds.end == null) continue;
+    const raw = firstNonEmpty(ev, DISCHARGE_FIELDS);
+    windows.set(`${code}|${bounds.start}|${bounds.end}`, { code, ...bounds, raw });
+  }
+  if (!windows.size) return rows;
+  const out = rows.map(row => ({ row, code: normalizedIdentity(patientCode(row)), bounds: stayBounds(row) }));
+  const byCode = new Map();
+  for (const item of out) {
+    if (!item.code || !item.bounds) continue;
+    if (!byCode.has(item.code)) byCode.set(item.code, []);
+    byCode.get(item.code).push(item);
+  }
+  for (const w of windows.values()) {
+    const hits = (byCode.get(w.code) || []).filter(item => {
+      const end = item.bounds.end == null ? item.bounds.start : item.bounds.end;
+      return item.bounds.start <= w.end && w.start <= end;
+    });
+    if (hits.length !== 1) continue;
+    const item = hits[0];
+    if (item.bounds.end != null && item.bounds.end >= w.end) continue;
+    const next = { ...item.row };
+    let set = false;
+    for (const f of DISCHARGE_FIELDS) if (String(next[f] ?? '').trim()) { next[f] = w.raw; set = true; }
+    if (!set) next['Ngày ra viện'] = w.raw;
+    next.__stay_extended_by = 'order_history_window';
+    item.row = next;
+    item.bounds = { ...item.bounds, end: w.end };
+  }
+  return out.map(item => item.row);
+}
+
+function combineEncounterSources({ initialRows = [], deepRows = [], patientRows = [], hchanhProfileRows = [], hchanhDischargeRows = [], stayEvidenceRows = [], sourceRunId = '' } = {}) {
   const map = new Map();
   const verifiedIndex = buildVerifiedStayIndex(hchanhProfileRows, hchanhDischargeRows);
   // Chỉ dò các bản ghi của cùng một người bệnh. Trước đây mỗi dòng mới đều quét
@@ -491,7 +532,7 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
   for (const row of deepRows) add(row, 'deep');
   for (const row of hchanhProfileRows) add(row, 'hchanh_profile');
   for (const row of hchanhDischargeRows) add(row, 'hchanh_discharge');
-  return mergeOverlappingStays(Array.from(map.values())).sort((a, b) => {
+  return mergeOverlappingStays(extendStaysWithEvidence(mergeOverlappingStays(Array.from(map.values())), stayEvidenceRows)).sort((a, b) => {
     const da = parseDateTimeCell(firstNonEmpty(a, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'ngay_vao_vien', 'ngay_vao']));
     const db = parseDateTimeCell(firstNonEmpty(b, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'ngay_vao_vien', 'ngay_vao']));
     const ta = da ? da.getTime() : 0;
