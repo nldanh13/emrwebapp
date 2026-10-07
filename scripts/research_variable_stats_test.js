@@ -12,7 +12,10 @@ const path = require('path');
 
 // Thư mục runtime tạm, đặt trước khi nạp module server (constants đọc biến này lúc nạp).
 process.env.EMR_RUNTIME_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'research_variable_stats_test_'));
-const { describeValues, summarizeSelectedDataset } = require('../server/research/variable_selection');
+const { describeValues, summarizeSelectedDataset, buildSelectedAnalysisDataset } = require('../server/research/variable_selection');
+const { extractTScore } = require('../server/research/value_normalizers');
+const { buildVariableCatalog } = require('../server/research/variable_catalog');
+const { writeCsv } = require('../server/research/table_io');
 const { summarizeSelectionForRun } = require('../server/research/selection_runtime');
 
 let passed = 0;
@@ -58,6 +61,39 @@ test('ngày: khoảng từ–đến; văn bản tự do: không trả giá trị
   assert.strictEqual(t.distinct, 25);
   assert.ok(!('top' in t), 'không có danh sách giá trị');
   assert.ok(!JSON.stringify(t).includes('GIA LAP'), 'không lộ nội dung văn bản');
+});
+
+test('CĐHA xuất nội dung kết quả; DXA tách T-score thành biến số', () => {
+  assert.strictEqual(extractTScore('L1-L4 T-score: -2,7; Z-score: -1,1'), '-2.7');
+  assert.strictEqual(extractTScore('Z-score: -1.1'), '');
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'imaging_catalog_'));
+  writeCsv(path.join(runDir, 'imaging_results.csv'), [
+    'imaging_id', 'research_code', 'encounter_id', 'patient_code', 'encounter_match_status',
+    'is_within_encounter', 'modality', 'result_text', 'conclusion_text'
+  ], [
+    { imaging_id: 'i1', research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', encounter_match_status: 'matched', is_within_encounter: '1', modality: 'DEXA', result_text: 'T-score: -2.7', conclusion_text: 'Loãng xương' },
+    { imaging_id: 'i2', research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', encounter_match_status: 'matched', is_within_encounter: '1', modality: 'CT', result_text: 'Không thấy tổn thương cấp', conclusion_text: '' },
+  ]);
+  const catalog = buildVariableCatalog(runDir);
+  const variables = catalog.groups.find(g => g.key === 'imaging_results').variables;
+  const dexaResult = variables.find(v => v.name === 'imaging:DEXA');
+  const tScore = variables.find(v => v.virtual_kind === 'imaging_t_score');
+  assert.strictEqual(dexaResult.type, 'text');
+  assert.match(dexaResult.label, /Kết quả/);
+  assert.strictEqual(tScore.type, 'number');
+  assert.strictEqual(tScore.aggregation, 'mean');
+
+  const built = buildSelectedAnalysisDataset([
+    { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1' },
+  ], { selected_variables: [dexaResult, tScore] }, { imaging_results: [
+    { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', encounter_match_status: 'matched', is_within_encounter: '1', modality: 'DEXA', result_text: 'T-score: -2.7', conclusion_text: 'Loãng xương' },
+    { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', encounter_match_status: 'matched', is_within_encounter: '1', modality: 'CT', result_text: 'Không thấy tổn thương cấp', conclusion_text: '' },
+  ] });
+  const scoreCol = built.manifest.variables.find(v => v.virtual_kind === 'imaging_t_score').output_column;
+  const reportCol = built.manifest.variables.find(v => v.virtual_kind === 'imaging_modality').output_column;
+  assert.strictEqual(built.rows[0][scoreCol], '-2.7');
+  assert.match(built.rows[0][reportCol], /T-score: -2.7.*Loãng xương/);
+  assert.ok(!built.rows[0][reportCol].includes('Không thấy tổn thương cấp'), 'không lấy kết quả CT vào biến DXA');
 });
 
 test('summary có thống kê từng biến và tóm tắt mẫu (tuổi, giới, số người bệnh)', () => {
