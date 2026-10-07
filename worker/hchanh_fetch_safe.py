@@ -9,9 +9,11 @@ Module này bọc worker hiện có để sửa đúng hành vi đó mà không 
 from __future__ import annotations
 
 import os
+import re
 import sys
 import time
-from typing import Any, Dict, Optional, Tuple
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
 
 import hchanh_fetch as core
 
@@ -210,6 +212,101 @@ def _fetch_hchanh_html_by_click_safe(
     return result
 
 
+def _parse_order_history_datetime(value: Any) -> Optional[datetime]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    patterns = [
+        (r"(\d{1,2}:\d{2})\s+(\d{1,2}/\d{1,2}/\d{4})", "%H:%M %d/%m/%Y", (1, 2)),
+        (r"(\d{1,2}/\d{1,2}/\d{4})\s+(\d{1,2}:\d{2})", "%d/%m/%Y %H:%M", (1, 2)),
+        (r"\b(\d{1,2}/\d{1,2}/\d{4})\b", "%d/%m/%Y", (1,)),
+        (r"\b(\d{4}-\d{1,2}-\d{1,2})\b", "%Y-%m-%d", (1,)),
+    ]
+    for pattern, fmt, groups in patterns:
+        m = re.search(pattern, raw)
+        if not m:
+            continue
+        try:
+            text = " ".join(m.group(i) for i in groups)
+            return datetime.strptime(text, fmt)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _parse_order_history_bound(value: Any) -> Optional[datetime]:
+    raw = str(value or "").strip()
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(raw, fmt)
+        except (TypeError, ValueError):
+            continue
+    parsed = _parse_order_history_datetime(raw)
+    return parsed.replace(hour=0, minute=0, second=0, microsecond=0) if parsed else None
+
+
+def _filter_research_order_rows_by_stay(
+    rows: List[Dict[str, Any]],
+    date_from: str,
+    date_to: str,
+    *,
+    lookback_days: int = 3,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Giữ y lệnh thuộc đợt + cửa sổ tiền nhập viện mà normalize đang cho phép.
+
+    EMR ở chế độ Selenium có thể render lịch sử của nhiều đợt dù URL/input đã mang
+    khoảng ngày. Nếu đưa toàn bộ vào kho, các y lệnh cũ trở thành hàng nghìn dòng
+    encounter_match_outside_time. Dòng không parse được thời gian vẫn được giữ để QA
+    xử lý, không xóa dữ liệu chỉ vì parser ngày giờ chưa nhận dạng.
+    """
+    src = list(rows or [])
+    start = _parse_order_history_bound(date_from)
+    end = _parse_order_history_bound(date_to)
+    if not start or not end or end < start:
+        return src, {
+            "applied": False,
+            "input_rows": len(src),
+            "kept_rows": len(src),
+            "dropped_before": 0,
+            "dropped_after": 0,
+            "unparsed_kept": 0,
+            "lookback_days": int(lookback_days),
+        }
+
+    lower = start - timedelta(days=max(0, int(lookback_days)))
+    upper = end + timedelta(days=1) - timedelta(microseconds=1)
+    kept: List[Dict[str, Any]] = []
+    dropped_before = 0
+    dropped_after = 0
+    unparsed_kept = 0
+
+    for row in src:
+        event_at = _parse_order_history_datetime(
+            (row or {}).get("tg_ylenh") or (row or {}).get("ngay")
+        )
+        if not event_at:
+            kept.append(row)
+            unparsed_kept += 1
+        elif event_at < lower:
+            dropped_before += 1
+        elif event_at > upper:
+            dropped_after += 1
+        else:
+            kept.append(row)
+
+    return kept, {
+        "applied": True,
+        "input_rows": len(src),
+        "kept_rows": len(kept),
+        "dropped_before": dropped_before,
+        "dropped_after": dropped_after,
+        "unparsed_kept": unparsed_kept,
+        "lookback_days": int(lookback_days),
+        "from": date_from,
+        "to": date_to,
+    }
+
+
 def _fetch_order_history_verified(
     sess: Any,
     ma_bn: str,
@@ -251,6 +348,37 @@ def _fetch_order_history_verified(
         result["show_all_verified"] = _LAST_ORDER_HISTORY_SHOW_ALL_OK is True
         if _LAST_ORDER_HISTORY_SHOW_ALL_STATE:
             result["show_all_check"] = dict(_LAST_ORDER_HISTORY_SHOW_ALL_STATE)
+
+        if requires_verified_all and isinstance(result.get("rows"), list):
+            filtered_rows, window_filter = _filter_research_order_rows_by_stay(
+                result.get("rows") or [], date_from, date_to, lookback_days=3,
+            )
+            result["rows"] = filtered_rows
+            result["total"] = len(filtered_rows)
+            result["completed"] = sum(1 for row in filtered_rows if row.get("status") == "completed")
+            result["incomplete_rows"] = [row for row in filtered_rows if row.get("status") == "incomplete"]
+            result["incomplete"] = len(result["incomplete_rows"])
+            result["no_service"] = sum(1 for row in filtered_rows if row.get("status") == "no_service")
+            result["after_discharge_rows"] = [row for row in filtered_rows if row.get("after_discharge")]
+            result["after_discharge"] = len(result["after_discharge_rows"])
+            result["window_filter"] = window_filter
+            try:
+                core.trace_event(
+                    "ORDER_HISTORY.WINDOW_FILTER",
+                    "Lọc lịch sử y lệnh theo đợt điều trị trước khi ghi kho nghiên cứu",
+                    screen="Lịch sử y lệnh / rows đã parse",
+                    sees=(
+                        f"input={window_filter.get('input_rows', 0)}; kept={window_filter.get('kept_rows', 0)}; "
+                        f"drop_before={window_filter.get('dropped_before', 0)}; "
+                        f"drop_after={window_filter.get('dropped_after', 0)}; "
+                        f"unparsed={window_filter.get('unparsed_kept', 0)}"
+                    ),
+                    takes=f"{date_from or '—'} → {date_to or '—'}; lookback=3 ngày",
+                    writes="output.order_history.rows đã giới hạn theo cửa sổ nghiên cứu",
+                    target="hchanh_order_history.csv",
+                )
+            except Exception:
+                pass
     return result
 
 
