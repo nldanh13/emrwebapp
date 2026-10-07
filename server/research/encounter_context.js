@@ -360,12 +360,19 @@ function buildContextMap(patientRows, sourceRunId = '') {
       addContextMapKey(map, `discharge_time:${contextVisitKey(code, discharge, '')}`, ctx);
       addContextMapKey(map, `discharge_day:${contextVisitKey(code, isoDate(discharge), '')}`, ctx);
     }
+
+    const treatmentId = firstNonEmpty(row, ['Mã điều trị', 'Ma dieu tri', 'emr_treatment_id']);
+    const inpatientId = firstNonEmpty(row, ['Mã nội trú', 'Ma noi tru', 'emr_noitru_id']);
+    const admissionId = firstNonEmpty(row, ['Mã vào viện', 'Ma vao vien', 'emr_admission_id']);
+    if (treatmentId) addContextMapKey(map, `emr_treatment_id:${normalizedIdentity(treatmentId)}`, ctx);
+    if (inpatientId) addContextMapKey(map, `emr_noitru_id:${normalizedIdentity(inpatientId)}`, ctx);
+    if (admissionId) addContextMapKey(map, `emr_admission_id:${normalizedIdentity(admissionId)}`, ctx);
   }
   for (const [code, list] of byPatient.entries()) map.set(`patient:${code}`, list);
   return map;
 }
 
-function resolveStrongEncounterKey(ctxMap, keys, row, code, method, aliasMethod = '') {
+function resolveStrongEncounterKey(ctxMap, keys, row, code, method, aliasMethod = '', allowOutsideTime = false) {
   const keyList = Array.isArray(keys) ? keys : [keys];
   const candidates = [];
   const seen = new Set();
@@ -388,13 +395,46 @@ function resolveStrongEncounterKey(ctxMap, keys, row, code, method, aliasMethod 
       ? 'encounter_match_strong_key_ambiguous'
       : 'encounter_match_identity_conflict');
   }
-  return matchedContextForRow(samePatient[0], row, code, usedAlias && aliasMethod ? aliasMethod : method, ctxMap);
+  const resolvedMethod = usedAlias && aliasMethod ? aliasMethod : method;
+  // EMR treatment/admission identifiers directly identify a stay. Keep the exact link even when
+  // the event timestamp falls outside the recorded stay; eventTemporalFields still flags it as outside.
+  return allowOutsideTime
+    ? matchedContext(samePatient[0], resolvedMethod)
+    : matchedContextForRow(samePatient[0], row, code, resolvedMethod, ctxMap);
 }
 
 function contextForRow(ctxMap, row, code) {
   const explicitEncounter = rowExistingEncounterId(row);
   if (explicitEncounter) {
     return resolveStrongEncounterKey(ctxMap, `encounter:${normalizedIdentity(explicitEncounter)}`, row, code, 'encounter_id');
+  }
+
+  const treatmentId = firstNonEmpty(row, ['Mã điều trị', 'Ma dieu tri', 'emr_treatment_id']);
+  if (treatmentId) {
+    const keys = [
+      `emr_treatment_id:${normalizedIdentity(treatmentId)}`,
+      `emr_noitru_id:${normalizedIdentity(treatmentId)}`,
+    ];
+    if (keys.some(key => ctxMap.has(key))) {
+      return resolveStrongEncounterKey(ctxMap, keys, row, code, 'emr_treatment_id', 'emr_treatment_noitru_alias', true);
+    }
+  }
+
+  const inpatientId = firstNonEmpty(row, ['Mã nội trú', 'Ma noi tru', 'emr_noitru_id']);
+  if (inpatientId) {
+    const keys = [
+      `emr_noitru_id:${normalizedIdentity(inpatientId)}`,
+      `emr_treatment_id:${normalizedIdentity(inpatientId)}`,
+    ];
+    if (keys.some(key => ctxMap.has(key))) {
+      return resolveStrongEncounterKey(ctxMap, keys, row, code, 'emr_noitru_id', 'emr_noitru_treatment_alias', true);
+    }
+  }
+
+  const admissionId = firstNonEmpty(row, ['Mã vào viện', 'Ma vao vien', 'emr_admission_id']);
+  if (admissionId) {
+    const key = `emr_admission_id:${normalizedIdentity(admissionId)}`;
+    if (ctxMap.has(key)) return resolveStrongEncounterKey(ctxMap, key, row, code, 'emr_admission_id', '', true);
   }
 
   const admission = isoDateTime(firstNonEmpty(row, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'admission_date']))
