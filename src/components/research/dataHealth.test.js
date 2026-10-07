@@ -31,7 +31,7 @@ describe('buildDataHealth', () => {
     const h = buildDataHealth(SCREEN);
     for (const item of [...h.complete, ...h.accurate]) {
       expect(item.meaning).toBeTruthy();
-      if (item.key !== 'done' && item.key !== 'clean') expect(item.action).toBeTruthy();
+      if (!['ready', 'clean'].includes(item.key)) expect(item.action).toBeTruthy();
     }
   });
 
@@ -73,15 +73,21 @@ describe('buildDataHealth', () => {
     expect(h.accurate[0].value).toBeNull();
   });
 
-  it('có báo cáo kiểm tra: tóm tắt loại sai lệch bằng lời', () => {
-    const h = buildDataHealth({
+  it('QA hiện hành: tóm tắt loại sai lệch bằng lời; QA cũ thì chỉ báo cần kiểm tra lại', () => {
+    const current = buildDataHealth({
       ...SCREEN,
-      qa: { blocking: [], review_count: 15, review_by_issue: { possible_same_stay: 12, discharge_before_admission: 3 }, stale: true },
+      qa: { blocking: [], review_count: 15, review_by_issue: { possible_same_stay: 12, discharge_before_admission: 3 }, stale: false },
     });
-    const review = h.accurate.find(i => i.key === 'review');
+    const review = current.accurate.find(i => i.key === 'review');
     expect(review.value).toBe(15);
     expect(review.meaning).toContain('Có thể cùng một đợt nằm viện (chuyển khoa): 12');
-    expect(h.accurate.some(i => i.key === 'stale')).toBe(true);
+
+    const stale = buildDataHealth({
+      ...SCREEN,
+      qa: { blocking: [], review_count: 15, review_by_issue: { possible_same_stay: 12 }, stale: true },
+    });
+    expect(stale.accurate).toHaveLength(1);
+    expect(stale.accurate[0].key).toBe('quality_pending');
   });
 
   it('đủ hết và không sai lệch: kết luận sẵn sàng phân tích', () => {
