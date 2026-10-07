@@ -3551,8 +3551,10 @@ def _selected_text_from_soup(soup_obj: Any, element_id: str) -> str:
     if el is None:
         return ""
     name = (getattr(el, "name", "") or "").lower()
-    if name in {"input", "textarea"}:
+    if name == "input":
         return _t(el.get("value"))
+    if name == "textarea":
+        return _t(el.get("value")) or _get_text(el)
     if name == "select":
         selected = [o.get_text(" ", strip=True) for o in el.find_all("option") if o.has_attr("selected")]
         if selected:
