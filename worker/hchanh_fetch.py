@@ -3898,9 +3898,12 @@ def _history_range_from_patient_url(link_map: Dict[str, str], ma_bn: str,
         q = dict(parse_qsl(urlparse(view_url or "").query, keep_blank_values=True))
         q_tu = _date_to_dmy(q.get("tungay") or "") or q.get("tungay") or ""
         q_den = _date_to_dmy(q.get("denngay") or "") or q.get("denngay") or ""
-        if q_tu:
+        # date_from/date_to truyền vào có thể đã được profile/discharge EMR xác minh.
+        # URL hồ sơ thường còn giữ tungay của lần chuyển khoa/danh sách trước đó;
+        # chỉ dùng query URL khi caller chưa có mốc, tuyệt đối không ghi đè lượt thật.
+        if not tu and q_tu:
             tu = q_tu
-        if q_den:
+        if not den and q_den:
             den = q_den
     except Exception:
         pass
