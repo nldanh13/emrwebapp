@@ -18,6 +18,13 @@ const { getCell, patientCode } = require('./table_io');
 const { readLiveProgress } = require('./case_trace');
 
 const STATE_ORDER = { error: 0, waiting: 1, unmatched: 2, missing: 3, running: 4, done: 5 };
+const USER_STATE = {
+  done: 'ready',
+  missing: 'automatic',
+  error: 'automatic',
+  waiting: 'manual',
+  unmatched: 'manual',
+};
 const MAX_ROWS_PER_STATE = 300;
 
 // Tình trạng một lượt, chia rời nhau (mỗi lượt đúng một nhóm), theo thứ tự ưu tiên:
@@ -125,6 +132,9 @@ function buildCollectionScreen({
   const liveCode = String(live?.ma_bn || '').trim();
 
   const counts = { done: 0, missing: 0, error: 0, waiting: 0, unmatched: 0 };
+  // Màn chính chỉ dùng ba trạng thái có ý nghĩa hành động. Các trạng thái kỹ thuật
+  // vẫn giữ trong `counts` để chẩn đoán nhưng không bắt người dùng phải hiểu.
+  const userCounts = { ready: 0, automatic: 0, manual: 0 };
   const parts = Object.fromEntries(collection.PARTS.map(p => [p.key, { key: p.key, label: p.label, done: 0, total: 0, failed: 0 }]));
   const rowsByState = { error: [], waiting: [], unmatched: [], missing: [], running: [] };
   let runningKey = '';
@@ -132,7 +142,9 @@ function buildCollectionScreen({
   for (const key of scopeKeys) {
     const enc = ledger.encounters[key];
     const state = encounterState(enc, maxAttempts);
+    const userState = USER_STATE[state] || 'automatic';
     counts[state] += 1;
+    userCounts[userState] += 1;
     if (state !== 'unmatched') {
       for (const k of collection.PART_KEYS) {
         parts[k].total += 1;
@@ -155,6 +167,7 @@ function buildCollectionScreen({
       patient_code: enc.patient_code || '',
       patient_name: names.get(enc.patient_code) || '',
       state,
+      user_state: userState,
       missing: collection.PART_KEYS.filter(k => !collection.partIsCurrent(enc, k)).map(partLabel).join(', '),
       reason: reasonOf(enc),
       ...diagnostic,
@@ -172,6 +185,7 @@ function buildCollectionScreen({
     run_id: runId,
     total,
     counts,
+    user_counts: userCounts,
     parts: Object.values(parts),
     plan: { ...plan.summary, max_attempts: maxAttempts },
     rows,
@@ -188,4 +202,4 @@ function buildCollectionScreen({
   };
 }
 
-module.exports = { buildCollectionScreen, encounterState, screenVersion, VERSION_FILES };
+module.exports = { buildCollectionScreen, encounterState, screenVersion, VERSION_FILES, USER_STATE };
