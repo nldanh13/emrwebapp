@@ -171,5 +171,31 @@ describe('research encounter anti-duplicate aliases', () => {
     expect(['12/03/2026', '2026-03-12']).toContain(bn6[0]['Ngày ra viện']);
     expect(rows.filter(r => r['Mã BN'] === 'BN5')).toHaveLength(2);
   });
+
+  it('gộp đợt dùng cùng mốc vào như bước ghép ("Ngày vào viện" trước "T/G vào"): không để lại đợt chồng nhau', () => {
+    // Dữ liệu thật: 1.401 XN "mơ hồ" rơi vào 2–4 đợt chồng nhau sau khi đã gộp, vì bước gộp đọc "T/G vào"
+    // (giờ vào khoa) còn bước ghép đọc "Ngày vào viện" trước.
+    const rows = combineEncounterSources({
+      initialRows: [
+        { 'Mã BN': 'BN4', 'T/G vào': '08:00 07/03/2026', 'Ngày vào viện': '08:00 01/03/2026', 'Ngày ra viện': '10/03/2026' },
+        { 'Mã BN': 'BN4', 'T/G vào': '08:00 02/03/2026', 'Ngày ra viện': '05/03/2026' },
+      ],
+    });
+    expect(rows.filter(r => r['Mã BN'] === 'BN4')).toHaveLength(1);
+  });
+
+  it('khoảng vào–ra trên dòng y lệnh phủ hai đợt liền nhau (cách ≤ 1 ngày, chuyển khoa): một lần nằm viện', () => {
+    // Dữ liệu thật: y lệnh/diễn biến nằm giữa hai đợt, cách đợt gần nhất ≤ 1 ngày (4.129 dòng).
+    const rows = combineEncounterSources({
+      initialRows: [
+        { 'Mã BN': 'BN3', 'T/G vào': '08:00 01/03/2026', 'Ngày ra viện': '05/03/2026' },
+        { 'Mã BN': 'BN3', 'T/G vào': '09:00 06/03/2026', 'Ngày ra viện': '12/03/2026' },
+      ],
+      stayEvidenceRows: [{ 'Mã BN': 'BN3', 'Ngày vào viện': '08:00 01/03/2026', 'Ngày ra viện': '12/03/2026' }],
+    });
+    const bn3 = rows.filter(r => r['Mã BN'] === 'BN3');
+    expect(bn3).toHaveLength(1);
+    expect(['12/03/2026', '2026-03-12']).toContain(bn3[0]['Ngày ra viện']);
+  });
 });
 
