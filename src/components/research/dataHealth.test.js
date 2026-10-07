@@ -19,10 +19,11 @@ const SCREEN = {
 };
 
 describe('buildDataHealth', () => {
-  it('các nhóm cộng lại đúng bằng tổng lượt (một mẫu số)', () => {
+  it('màn chính chỉ có 3 nhóm Sẵn sàng / Máy xử lý / Cần bạn kiểm tra và cộng đúng tổng', () => {
     const h = buildDataHealth(SCREEN);
-    const sum = h.complete.reduce((s, i) => s + (i.value || 0), 0);
-    expect(sum).toBe(3041);
+    expect(h.complete.map(i => i.key)).toEqual(['ready', 'automatic', 'manual']);
+    expect(h.complete.map(i => i.value)).toEqual([309, 2670, 62]);
+    expect(h.complete.reduce((sum, i) => sum + (i.value || 0), 0)).toBe(3041);
     expect(h.total).toBe(3041);
   });
 
@@ -34,31 +35,42 @@ describe('buildDataHealth', () => {
     }
   });
 
-  it('nói rõ thiếu phần nào nhiều nhất', () => {
-    const missing = buildDataHealth(SCREEN).complete.find(i => i.key === 'missing');
-    expect(missing.meaning).toContain('Xét nghiệm (2.195)');
-    expect(missing.meaning).toContain('Y lệnh (1.574)');
+  it('nhóm máy xử lý nói rõ phần nào còn phải hoàn thiện', () => {
+    const automatic = buildDataHealth(SCREEN).complete.find(i => i.key === 'automatic');
+    expect(automatic.meaning).toContain('Xét nghiệm (2.195)');
+    expect(automatic.meaning).toContain('Y lệnh (1.574)');
   });
 
-  it('đang chạy tự động thì không bảo người dùng bấm gì cho phần thiếu/lỗi', () => {
+  it('đang chạy tự động thì nhóm Máy xử lý không yêu cầu người dùng thao tác', () => {
     const running = buildDataHealth(SCREEN, { autoRunning: true });
-    expect(running.complete.find(i => i.key === 'missing').action).toMatch(/không cần làm gì/);
-    expect(running.complete.find(i => i.key === 'error').action).toMatch(/Không cần làm gì/);
-    const idle = buildDataHealth(SCREEN).complete.find(i => i.key === 'missing');
+    expect(running.complete.find(i => i.key === 'automatic').action).toMatch(/không cần làm gì/i);
+    const idle = buildDataHealth(SCREEN).complete.find(i => i.key === 'automatic');
     expect(idle.action).toMatch(/Thu thập tự động/);
   });
 
-  it('"Chờ người xem" và "Chưa ghép chắc" là việc của người, có việc cụ thể', () => {
+  it('hết lượt thử và chưa ghép chắc gộp thành một nhóm Cần bạn kiểm tra', () => {
     const h = buildDataHealth(SCREEN);
-    expect(h.complete.find(i => i.key === 'waiting').action).toMatch(/Làm mới/);
-    expect(h.complete.find(i => i.key === 'unmatched').action).toMatch(/Rà soát ghép lượt/);
-    expect(h.verdict.text).toMatch(/Có việc cần bạn xử lý/);
+    const manual = h.complete.find(i => i.key === 'manual');
+    expect(manual.value).toBe(62);
+    expect(manual.action).toMatch(/danh sách/i);
+    expect(h.verdict.text).toMatch(/cần bạn/i);
   });
 
   it('chưa chuẩn hóa: báo chưa kiểm tra độ chính xác và chỉ cách làm', () => {
     const h = buildDataHealth(SCREEN);
     expect(h.accuracyChecked).toBe(false);
     expect(h.accurate[0].action).toMatch(/Chuẩn hóa/);
+  });
+
+  it('đang thu thập thì không trình bày số QA cũ như kết quả hiện hành', () => {
+    const h = buildDataHealth({
+      ...SCREEN,
+      qa: { blocking: [{ code: 'input_changed_during_normalize', message: 'Nguồn thay đổi' }], review_count: 668, stale: true },
+    }, { autoRunning: true });
+    expect(h.accurate).toHaveLength(1);
+    expect(h.accurate[0].key).toBe('quality_pending');
+    expect(h.accurate[0].meaning).toMatch(/thu thập/i);
+    expect(h.accurate[0].value).toBeNull();
   });
 
   it('có báo cáo kiểm tra: tóm tắt loại sai lệch bằng lời', () => {
