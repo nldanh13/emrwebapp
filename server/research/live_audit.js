@@ -20,6 +20,9 @@ const { wilson } = require('./audit_sample');
 
 const LIVE_PROJECT = 'kiem_tra_ngau_nhien';
 const STORE_FILE = path.join('audit', 'live.json');
+// v2: worker Lịch sử y lệnh đọc độc lập Thuốc/T-VT và Y lệnh khác.
+// Kết quả v1 có thể báo "kho thừa" giả (ca Sismyodin) nên không được cộng vào tỉ lệ mới.
+const LIVE_AUDIT_VERSION = 2;
 const HCHANH_FILES = ['profile', 'discharge', 'surgery', 'order_history'];
 const DAY_MS = 86400000;
 const TABLES = {
@@ -143,7 +146,7 @@ function startLiveAudit(runDir, { runId = '', encounterId = '', random = Math.ra
   const enc = pickCandidate(runDir, { random, encounterId });
   const id = newId();
   return patchAudit(runDir, id, {
-    id, run_id: runId, created_at: nowIso(), status: 'queued', step: 'Đang chờ tới lượt mở EMR',
+    id, run_id: runId, audit_version: LIVE_AUDIT_VERSION, created_at: nowIso(), status: 'queued', step: 'Đang chờ tới lượt mở EMR',
     encounter_id: text(enc.encounter_id), patient_code: text(enc.patient_code),
     research_code: text(enc.research_code), admission_date: text(enc.admission_date), discharge_date: text(enc.discharge_date),
   });
@@ -214,7 +217,8 @@ function getLiveAudit(runDir, id) {
 
 function summarizeLive(runDir) {
   const audits = Object.values(readStore(runDir).audits).sort((a, b) => text(b.created_at).localeCompare(text(a.created_at)));
-  const done = audits.filter(a => a.status === 'done' && a.result);
+  const currentAudits = audits.filter(a => Number(a.audit_version || 0) === LIVE_AUDIT_VERSION);
+  const done = currentAudits.filter(a => a.status === 'done' && a.result);
   const kinds = Object.keys(KIND_LABELS).map(kind => {
     const sum = { kind, label: KIND_LABELS[kind], matched: 0, mismatched: 0, archive_only: 0, emr_only: 0 };
     for (const a of done) {
@@ -230,12 +234,14 @@ function summarizeLive(runDir) {
   return {
     case_count: done.length,
     all_match_count: done.filter(a => a.result.all_match).length,
-    running: audits.find(a => a.status === 'queued' || a.status === 'running') || null,
+    running: currentAudits.find(a => a.status === 'queued' || a.status === 'running') || null,
     kinds,
     overall: { matched, compared, accuracy: compared ? matched / compared : null, ci95: wilson(matched, compared) },
     recent: audits.slice(0, 20).map(a => ({
       id: a.id, created_at: a.created_at, status: a.status, step: a.step || '', message: a.message || '',
       patient_code: a.patient_code, admission_date: a.admission_date, discharge_date: a.discharge_date,
+      audit_version: Number(a.audit_version || 0),
+      outdated: Number(a.audit_version || 0) !== LIVE_AUDIT_VERSION,
       match_rate: a.result?.overall?.match_rate ?? null, all_match: Boolean(a.result?.all_match),
     })),
   };
@@ -257,7 +263,7 @@ function markInterruptedLiveAudits(runDir, activeIds = new Set()) {
 }
 
 module.exports = {
-  LIVE_PROJECT, STORE_FILE, HCHANH_FILES,
+  LIVE_PROJECT, STORE_FILE, HCHANH_FILES, LIVE_AUDIT_VERSION,
   pickCandidate, sourceRowsFor, sliceFor, matchingEncounter, liveRunDir,
   startLiveAudit, runLiveAudit, getLiveAudit, summarizeLive, markInterruptedLiveAudits,
 };
