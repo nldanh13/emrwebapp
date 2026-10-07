@@ -4,7 +4,7 @@ import { compactNumber, formatWhen, lower, text } from './researchFormat.js';
 import { describeQaWarnings } from './qaNotes.js';
 import { statusIsDone } from './researchStatusModel.js';
 import { StatBadge, SmallRowsTable, inp } from './researchUi.jsx';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { buildDataHealth, issueLabel } from './dataHealth.js';
 import { encounterPeriod, countOutsideStay, medicationRouteLabel } from './encounterPeriod.js';
 import { SkeletonBlock, SkeletonLines } from '../Skeleton.jsx';
@@ -296,8 +296,9 @@ function DashboardSkeleton() {
 
 // screen: mô hình màn hình từ máy chủ (useServerData). Khung này CHỈ hiển thị, không tự gọi API,
 // không tự tính lại số liệu (UX_RULES mục 9).
-function ResearchOperationDashboard({ screen, loading = false, error = null, autoRunning = false, onRefresh }) {
-  const [filter, setFilter] = useState(null);
+function ResearchOperationDashboard({ screen, loading = false, error = null, autoRunning = false, onRefresh, initialFilter = null }) {
+  const [filter, setFilter] = useState(initialFilter);
+  useEffect(() => { if (initialFilter) setFilter(initialFilter); }, [initialFilter]);
   const [query, setQuery] = useState('');
   if (!screen) {
     if (error) {
