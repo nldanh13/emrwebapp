@@ -396,10 +396,12 @@ function normalizeResearchSourceRows(rows, { sourceFile = '', sourceRunId = '', 
     if (!code) continue;
     const win = rowFetchDateWindow(row, dateCtx);
     const key = researchHchanhSourceKey({ ...row, fetch_from_date: win.from, fetch_to_date: win.to }, sourceRunId);
+    // Chỉ giữ mã đã có sẵn trên cohort của nghiên cứu; không tự sinh ở kho thu thập.
+    const researchCode = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
     const normalized = {
       ...row,
-      'Mã NC': '',
-      research_code: '',
+      'Mã NC': researchCode,
+      research_code: researchCode,
       'Mã BN': code,
       'Họ tên': firstNonEmpty(row, ['Họ tên', 'Ho ten', 'Tên BN', 'Ten BN', 'patient_name']),
       fetch_from_date: win.from,
@@ -416,8 +418,8 @@ function normalizeResearchSourceRows(rows, { sourceFile = '', sourceRunId = '', 
       const prev = seen.get(key);
       seen.set(key, {
         ...mergeSameStayRows(prev, normalized),
-        'Mã NC': '',
-        research_code: '',
+        'Mã NC': prev['Mã NC'] || normalized['Mã NC'] || '',
+        research_code: prev.research_code || normalized.research_code || '',
         list_row_signatures: collection.mergeSignatures(prev.list_row_signatures, normalized.list_row_signatures),
       });
     }
