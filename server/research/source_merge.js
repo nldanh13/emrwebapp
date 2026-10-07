@@ -351,7 +351,7 @@ function repairSharedPlaceholderDischargeDates(profileRows = [], dischargeRows =
   const candidateStats = new Map();
   for (const row of dischargeRows || []) {
     const raw = String(firstNonEmpty(row, DISCHARGE_FIELDS) || '').trim();
-    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(raw)) continue;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) continue;
     const code = normalizedIdentity(patientCode(row));
     if (!code) continue;
     const bucket = candidateStats.get(raw) || { patients: new Set(), rows: 0, mismatches: 0 };
