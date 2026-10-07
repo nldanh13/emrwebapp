@@ -539,6 +539,48 @@ def _date_to_dmy(value: Any) -> str:
     return normalized or raw
 
 
+def _verified_fetch_window_from_output(output: Dict[str, Any], date_from: str, date_to: str) -> Tuple[str, str]:
+    """Mở rộng/cắt cửa sổ fetch theo mốc vào-ra thật worker đã đọc từ EMR.
+
+    Dòng danh sách có thể dùng T/G vào của lần chuyển khoa. Nếu profile/discharge
+    đã cho ngày vào viện đầu tiên và ngày ra thật, các fetch tiếp theo trong cùng
+    case (đặc biệt order_history/surgery) phải dùng toàn bộ lượt nằm viện đó.
+    """
+    payload = output if isinstance(output, dict) else {}
+    profile = payload.get("profile") if isinstance(payload.get("profile"), dict) else {}
+    discharge = payload.get("discharge") if isinstance(payload.get("discharge"), dict) else {}
+
+    admission_value = (
+        _t(profile.get("ngay_vao_vien") or profile.get("ngay_vao") or profile.get("admission_date"))
+        or _t(discharge.get("ngay_vao_vien") or discharge.get("ngay_vao") or discharge.get("admission_date"))
+    )
+    discharge_value = (
+        _t(discharge.get("raw_time") or discharge.get("ngay_ra_vien") or discharge.get("ngay_ra") or discharge.get("discharge_date"))
+        or _t(profile.get("ngay_ra_vien") or profile.get("ngay_ra") or profile.get("discharge_date"))
+    )
+
+    verified_from = _parse_emr_datetime(admission_value)
+    verified_to = _parse_emr_datetime(discharge_value)
+    current_from = _parse_emr_datetime(date_from)
+    current_to = _parse_emr_datetime(date_to)
+
+    next_from = date_from
+    next_to = date_to
+
+    if verified_from and (current_from is None or verified_from < current_from):
+        next_from = _format_emr_date(verified_from)
+
+    # Ngày ra viện thật là mốc kết thúc lượt. Chỉ dùng khi không đứng trước ngày vào
+    # đã xác minh; tránh một giá trị EMR lỗi làm cửa sổ âm.
+    effective_from = verified_from or _parse_emr_datetime(next_from)
+    if verified_to and (effective_from is None or verified_to >= effective_from):
+        next_to = _format_emr_date(verified_to)
+    elif current_to is None and next_from:
+        next_to = next_from
+
+    return next_from, next_to
+
+
 def _xpath_literal(text: str) -> str:
     """Escape chuỗi dùng trong XPath."""
     if "'" not in text:
@@ -6033,6 +6075,28 @@ def _run_hchanh_fetch_core(patient_row: Dict[str, Any], scope: str, files: List[
                     result.setdefault("status_fallback_used", True)
             output[file_key] = result
             status = result.get("_fetch_status", "?") if isinstance(result, dict) else "?"
+
+            # Sau khi đọc profile/discharge, sửa ngay cửa sổ cho các fetch phía sau.
+            # Đây là lớp bảo vệ cho ca chuyển khoa trong CHÍNH lượt hiện tại; lần lấy
+            # order_history riêng sau đó còn được server sửa từ hchanh_profile/discharge.
+            if file_key in {"profile", "discharge"} and isinstance(result, dict):
+                old_from, old_to = date_from, date_to
+                date_from, date_to = _verified_fetch_window_from_output(output, date_from, date_to)
+                if date_from != old_from or date_to != old_to:
+                    print(
+                        f"LOG [fetch-window] Dùng lượt thật EMR: {old_from or '—'} → {old_to or '—'} "
+                        f"=> {date_from or '—'} → {date_to or '—'}"
+                    )
+                    trace_event(
+                        "FETCH.WINDOW_VERIFIED_STAY",
+                        "Sửa khoảng lấy dữ liệu theo ngày vào-ra viện thật",
+                        screen="Hồ sơ/Ra viện → các bước lấy tiếp",
+                        sees=f"nguồn={old_from or '—'} → {old_to or '—'}",
+                        takes=f"EMR xác minh={date_from or '—'} → {date_to or '—'}",
+                        writes="date_from/date_to cho order_history, surgery và các fetch sau",
+                        target="worker current case",
+                    )
+
             print(f"LOG:   {_fetch_status_symbol(status)} {file_key} → {status}")
             if isinstance(result, dict) and str(status).lower() == "no_url":
                 trace_event(
