@@ -58,7 +58,7 @@ test('thêm biến → lưu vào nghiên cứu, "Biến đã chọn" dựng lạ
   assert.deepStrictEqual(study.variable_selection.selected_variables.map(v => v.id), ['analysis_ready.sex', 'analysis_ready.age']);
   assert.deepStrictEqual(study.analysis_config.variable_selection.selected_variables.map(v => v.id), ['analysis_ready.sex', 'analysis_ready.age']);
   const selected = readCsvTable(path.join(runDir, 'analysis_selected.csv'), 100);
-  assert.ok(selected.columns.some(c => /age|Tuổi/i.test(c)), `có cột tuổi: ${selected.columns}`);
+  assert.ok(selected.columns.some(c => /age|tuoi/i.test(c)), `có cột tuổi: ${selected.columns}`);
   assert.strictEqual(selected.rows.length, 2);
 });
 
@@ -94,9 +94,10 @@ test('từ điển biến: mỗi cột của file xuất một dòng, nhãn/ki�
   assert.strictEqual(book.encounters, 2);
   const cols = book.rows.map(r => r.cot);
   assert.ok(cols.includes('research_code'));
-  const age = book.rows.find(r => r.nhan === 'Tuổi' && r.cot.startsWith('var_'));
+  const age = book.rows.find(r => r.nhan === 'Tuổi' && r.cot === 'tuoi');
   assert.ok(age, `có dòng cho biến Tuổi: ${JSON.stringify(book.rows)}`);
   assert.strictEqual(age.kieu, 'Số');
+  assert.strictEqual(age.ma_bien_nguon, 'analysis_ready.age');
   assert.strictEqual(age.co_du_lieu + age.thieu, 2);
   assert.match(age.cach_lay, /đợt|mốc/);
   assert.ok(!book.rows.some(r => /ho_ten|ma_bn|patient_code/i.test(r.cot)), 'không có cột định danh');
