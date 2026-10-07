@@ -602,6 +602,12 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
         }
       }
     }
+    const endRaw = firstNonEmpty(row, ['Kết thúc phẫu thuật', 'Ket thuc phau thuat', 'ket_thuc']);
+    let surgeryEndDatetime = isoDateTime(endRaw);
+    if (!surgeryEndDatetime && endRaw && isoDate(dt)) {
+      const mEnd = String(endRaw).match(/\b([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b/);
+      if (mEnd) surgeryEndDatetime = `${isoDate(dt)} ${mEnd[1].padStart(2, '0')}:${mEnd[2]}`;
+    }
     const base = {
       research_code: ctx.research_code || firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || '',
       patient_code: code,
@@ -611,13 +617,30 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       encounter_match_reason: ctx.needs_manual_review || '',
       surgery_datetime: isoDateTime(dt),
       surgery_date: isoDate(dt),
+      surgery_end_datetime: surgeryEndDatetime,
       surgery_name: firstNonEmpty(row, ['Tên phẫu thuật', 'Ten phau thuat', 'Dịch vụ phẫu thuật', 'Dich vu phau thuat', 'dich_vu_phau_thuat', 'noi_dung_phau_thuat']),
+      service_object: firstNonEmpty(row, ['Đối tượng DV', 'Doi tuong DV', 'doi_tuong_dv']),
       surgery_method: firstNonEmpty(row, ['Phương pháp phẫu thuật', 'Phuong phap phau thuat', 'phuong_phap_pt', 'PPPT']),
       anesthesia_method: firstNonEmpty(row, ['PPVC', 'Phương pháp vô cảm', 'Phuong phap vo cam', 'pp_vo_cam']),
       surgery_class: firstNonEmpty(row, ['Phân loại PT', 'Phan loai PT', 'phan_loai_pt']),
       status: firstNonEmpty(row, ['Trạng thái', 'Trang thai', 'status']),
-      preop_diagnosis: firstNonEmpty(row, ['Chẩn đoán trước mổ', 'Chan doan truoc mo', 'chan_doan_truoc_mo']),
-      postop_diagnosis: firstNonEmpty(row, ['Chẩn đoán sau mổ', 'Chan doan sau mo', 'chan_doan_sau_mo']),
+      icd9_code: firstNonEmpty(row, ['ICD9', 'icd9']),
+      preop_diagnosis: firstNonEmpty(row, ['Chẩn đoán trước mổ', 'Chan doan truoc mo', 'chan_doan_truoc_pt', 'chan_doan_truoc_mo']),
+      preop_icd10: firstNonEmpty(row, ['ICD10 trước mổ', 'ICD10 truoc mo', 'icd10_truoc_pt']),
+      postop_diagnosis: firstNonEmpty(row, ['Chẩn đoán sau mổ', 'Chan doan sau mo', 'chan_doan_sau_pt', 'chan_doan_sau_mo']),
+      postop_icd10: firstNonEmpty(row, ['ICD10 sau mổ', 'ICD10 sau mo', 'icd10_sau_pt']),
+      procedure_description: firstNonEmpty(row, ['Mô tả PPPT', 'Mo ta PPPT', 'mo_ta_pppt']),
+      surgery_sequence: firstNonEmpty(row, ['Trình tự phẫu thuật', 'Trinh tu phau thuat', 'trinh_tu_phau_thuat']),
+      primary_surgeon: firstNonEmpty(row, ['Phẫu thuật viên chính', 'Phau thuat vien chinh', 'bs_mo_chinh', 'ptv_chinh']),
+      primary_anesthesiologist: firstNonEmpty(row, ['Bác sĩ gây mê chính', 'Bac si gay me chinh', 'gay_me_chinh']),
+      assistant_surgeon_1: firstNonEmpty(row, ['Phụ mổ 1', 'Phu mo 1', 'ptv_phu_1']),
+      assistant_surgeon_2: firstNonEmpty(row, ['Phụ mổ 2', 'Phu mo 2', 'ptv_phu_2']),
+      scrub_nurse: firstNonEmpty(row, ['Điều dưỡng dụng cụ', 'Dieu duong dung cu', 'dd_dung_cu']),
+      anesthesia_technician: firstNonEmpty(row, ['KTV phụ mê', 'KTV phu me', 'ktv_phu_me']),
+      disease_course: firstNonEmpty(row, ['Diễn biến bệnh', 'Dien bien benh', 'dien_bien_benh']),
+      postop_instructions: firstNonEmpty(row, ['Dặn dò sau PT', 'Dan do sau PT', 'dan_do_sau_pt']),
+      postop_comorbidities: firstNonEmpty(row, ['Bệnh kèm sau PT', 'Benh kem sau PT', 'benh_kem_theo_sau_pt']),
+      completed_by: firstNonEmpty(row, ['Người hoàn tất', 'Nguoi hoan tat', 'hoan_tat_text']),
       operating_room: firstNonEmpty(row, ['Phòng mổ', 'Phong mo', 'phong_mo']),
       ...eventTemporalFields(ctx, dt),
       surgery_time_source: surgeryTimeSource,

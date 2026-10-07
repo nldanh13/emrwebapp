@@ -3551,14 +3551,21 @@ def _selected_text_from_soup(soup_obj: Any, element_id: str) -> str:
     if el is None:
         return ""
     name = (getattr(el, "name", "") or "").lower()
-    if name in {"input", "textarea"}:
+    if name == "input":
         return _t(el.get("value"))
+    if name == "textarea":
+        return _t(el.get("value")) or _get_text(el)
     if name == "select":
         selected = [o.get_text(" ", strip=True) for o in el.find_all("option") if o.has_attr("selected")]
         if selected:
             return " · ".join(_t(x) for x in selected if _t(x))
-        opt = el.find("option")
-        return _get_text(opt) if opt else ""
+        # Không được lấy option đầu tiên làm fallback: với Select2, page_source thường
+        # không serialize property selected hiện tại và option đầu có thể là dữ liệu sai.
+        raw_value = _t(el.get("value"))
+        if raw_value:
+            opt = el.find("option", attrs={"value": raw_value})
+            return _get_text(opt) if opt else raw_value
+        return ""
     return _get_text(el)
 
 
@@ -4168,6 +4175,11 @@ def _parse_surgery_list_rows(html: str, ma_bn: str) -> List[Dict[str, Any]]:
 
 
 def _parse_surgery_detail_html(html: str) -> Dict[str, Any]:
+    """Parse fallback từ HTML đã serialize.
+
+    Với Select2, HTML page_source có thể không phản ánh option đang chọn ở live DOM;
+    fetch_surgery() luôn gọi _read_surgery_detail_live() sau hàm này để lấy giá trị thật.
+    """
     soup = _soup(html)
     phan_loai_pt, phan_loai_pt_id = _surgery_class_from_soup(soup)
     fields = {
@@ -4185,6 +4197,7 @@ def _parse_surgery_detail_html(html: str) -> Dict[str, Any]:
         "icd10_truoc_pt": _selected_text_from_soup(soup, "cbbIcdChanDoanTruocPT"),
         "icd10_sau_pt": _selected_text_from_soup(soup, "cbbChuanDoanSauPT"),
         "mo_ta_pppt": _selected_text_from_soup(soup, "txtMoTaPPPT"),
+        "trinh_tu_phau_thuat": _selected_text_from_soup(soup, "trinhTuPhauThuatInput"),
         "bs_mo_chinh": _selected_text_from_soup(soup, "cbbBacSiPT"),
         "gay_me_chinh": _selected_text_from_soup(soup, "cbbBacSiGayMeChinh"),
         "ptv_phu_1": _selected_text_from_soup(soup, "cbbBacSiPhuMo1"),
@@ -4194,6 +4207,9 @@ def _parse_surgery_detail_html(html: str) -> Dict[str, Any]:
         "dien_bien_benh": _selected_text_from_soup(soup, "txtDienBienBenh"),
         "dan_do_sau_pt": _selected_text_from_soup(soup, "txtDanDoSauPT"),
     }
+    # Alias giữ tương thích với các lớp research cũ từng dùng tên *_mo.
+    fields["chan_doan_truoc_mo"] = fields.get("chan_doan_truoc_pt", "")
+    fields["chan_doan_sau_mo"] = fields.get("chan_doan_sau_pt", "")
     # Bệnh kèm theo sau PT: select2 multiple.
     benh_kem = _selected_text_from_soup(soup, "cboBenhKemTheoSauPT")
     if benh_kem:
@@ -4202,6 +4218,106 @@ def _parse_surgery_detail_html(html: str) -> Dict[str, Any]:
     el_done = soup.find(id="txtTTHoanTat")
     if el_done:
         fields["hoan_tat_text"] = _get_text(el_done)
+    return fields
+
+
+_SURGERY_DETAIL_LIVE_IDS = {
+    "bat_dau": ["txtBatDauPT"],
+    "ket_thuc": ["txtKetThucPT"],
+    "dich_vu_phau_thuat": ["cbbChiDinhMoPT"],
+    "doi_tuong_dv": ["cbbDoiTuongPT"],
+    "phan_loai_pt": ["txtPhanLoaiPTTT"],
+    "pp_vo_cam": ["cbbPPGayMePT"],
+    "phuong_phap_pt": ["cbbPhuongPhapPT"],
+    "icd9": ["cbbICD9"],
+    "chan_doan_truoc_pt": ["txtChuanDoanTruocMoPT", "txtChanDoanTruocMoPT"],
+    "chan_doan_sau_pt": ["txtChuanDoanSauMoPT", "txtChanDoanSauMoPT"],
+    "icd10_truoc_pt": ["cbbIcdChanDoanTruocPT"],
+    "icd10_sau_pt": ["cbbChuanDoanSauPT"],
+    "mo_ta_pppt": ["txtMoTaPPPT"],
+    "trinh_tu_phau_thuat": ["trinhTuPhauThuatInput"],
+    "bs_mo_chinh": ["cbbBacSiPT"],
+    "gay_me_chinh": ["cbbBacSiGayMeChinh"],
+    "ptv_phu_1": ["cbbBacSiPhuMo1"],
+    "ptv_phu_2": ["cbbBacSiPhuMo2"],
+    "dd_dung_cu": ["cbbDieuDuongDungCu"],
+    "ktv_phu_me": ["cbbKtvPhuMe"],
+    "dien_bien_benh": ["txtDienBienBenh"],
+    "dan_do_sau_pt": ["txtDanDoSauPT"],
+    "benh_kem_theo_sau_pt_text": ["cboBenhKemTheoSauPT"],
+    "hoan_tat_text": ["txtTTHoanTat"],
+}
+
+
+def _read_surgery_detail_live(driver: Any, html: str = "") -> Dict[str, Any]:
+    """Đọc form PT từ live DOM; Select2 phải lấy selectedOptions/select2('data') thật.
+
+    Không dựa riêng vào page_source vì Selenium serialize <select> có thể giữ option
+    cũ và làm parser vô tình lấy option đầu tiên. HTML chỉ là fallback khi JS lỗi.
+    """
+    fields = _parse_surgery_detail_html(html or (getattr(driver, "page_source", "") or ""))
+    if driver is None:
+        return fields
+    try:
+        live = driver.execute_script(
+            r"""
+            const spec = arguments[0] || {};
+            const clean = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+            const readOne = id => {
+              const el = document.getElementById(id);
+              if (!el) return '';
+              if (String(el.tagName || '').toUpperCase() === 'SELECT') {
+                try {
+                  if (window.jQuery) {
+                    const data = window.jQuery(el).select2('data');
+                    if (Array.isArray(data) && data.length) {
+                      const txt = data.map(x => clean(x && (x.text || x.id))).filter(Boolean);
+                      if (txt.length) return txt.join(' · ');
+                    }
+                  }
+                } catch (e) {}
+                const selected = Array.from(el.selectedOptions || [])
+                  .map(o => clean(o.textContent || o.innerText || o.value)).filter(Boolean);
+                if (selected.length) return selected.join(' · ');
+                const container = document.getElementById('select2-' + id + '-container');
+                if (container && clean(container.textContent)) return clean(container.textContent);
+                return '';
+              }
+              if ('value' in el && clean(el.value)) return clean(el.value);
+              if (el.isContentEditable && clean(el.innerText || el.textContent)) return clean(el.innerText || el.textContent);
+              return clean(el.innerText || el.textContent);
+            };
+            const out = {};
+            for (const [key, ids] of Object.entries(spec)) {
+              for (const id of ids || []) {
+                const value = readOne(id);
+                if (value) { out[key] = value; break; }
+              }
+            }
+            const cls = document.getElementById('txtPhanLoaiPTTT');
+            if (cls) out.phan_loai_pt_id = clean(cls.getAttribute('data-id') || cls.dataset?.id || '');
+            return out;
+            """,
+            _SURGERY_DETAIL_LIVE_IDS,
+        ) or {}
+        if isinstance(live, dict):
+            for key, value in live.items():
+                val = _t(value)
+                if val:
+                    fields[key] = val
+    except Exception as e:
+        first = (str(e).strip().splitlines() or [type(e).__name__])[0]
+        print(f"WARN [surgery] Không đọc được live DOM chi tiết PT ({first}); dùng HTML fallback.", file=sys.stderr)
+
+    # Chuẩn hóa các field đặc biệt sau khi merge live DOM.
+    data_id = _t(fields.get("phan_loai_pt_id"))
+    if not _t(fields.get("phan_loai_pt")) and data_id:
+        fields["phan_loai_pt"] = _surgery_class_from_data_id(data_id)
+    fields["chan_doan_truoc_mo"] = _t(fields.get("chan_doan_truoc_pt") or fields.get("chan_doan_truoc_mo"))
+    fields["chan_doan_sau_mo"] = _t(fields.get("chan_doan_sau_pt") or fields.get("chan_doan_sau_mo"))
+    benh_kem = fields.pop("benh_kem_theo_sau_pt_text", "")
+    if benh_kem:
+        fields["benh_kem_theo_sau_pt"] = [x.strip() for x in re.split(r"\s*·\s*", _t(benh_kem)) if x.strip()]
     return fields
 
 
@@ -4458,7 +4574,7 @@ def fetch_surgery(sess: Optional["EmrHttpSession"], ma_bn: str,
                         if "txtPhanLoaiPTTT" in html or "Thông tin phẫu thuật" in html:
                             break
                         time.sleep(0.3)
-                    detail = _parse_surgery_detail_html(getattr(driver, "page_source", "") or "")
+                    detail = _read_surgery_detail_live(driver, getattr(driver, "page_source", "") or "")
                     detail["url"] = getattr(driver, "current_url", "") or detail_url
                 except Exception as e:
                     detail = {"_error": str(e)}
@@ -4467,9 +4583,11 @@ def fetch_surgery(sess: Optional["EmrHttpSession"], ma_bn: str,
             # (gay_me_chinh/ptv_phu_1/ptv_phu_2/dd_dung_cu/ktv_phu_me) để BHYT pre-audit
             # đối chiếu cùng/khác ekip khi có nhiều lần PT/TT trong cùng đợt điều trị.
             for k in [
-                "phan_loai_pt", "bat_dau", "ket_thuc", "dich_vu_phau_thuat", "phuong_phap_pt",
-                "pp_vo_cam", "icd9", "bs_mo_chinh", "gay_me_chinh", "ptv_phu_1", "ptv_phu_2",
-                "dd_dung_cu", "ktv_phu_me",
+                "phan_loai_pt", "bat_dau", "ket_thuc", "dich_vu_phau_thuat", "doi_tuong_dv",
+                "phuong_phap_pt", "pp_vo_cam", "icd9", "icd10_truoc_pt", "icd10_sau_pt",
+                "chan_doan_truoc_pt", "chan_doan_sau_pt", "mo_ta_pppt", "trinh_tu_phau_thuat",
+                "bs_mo_chinh", "gay_me_chinh", "ptv_phu_1", "ptv_phu_2", "dd_dung_cu", "ktv_phu_me",
+                "dien_bien_benh", "dan_do_sau_pt", "hoan_tat_text",
             ]:
                 if detail.get(k):
                     merged[k] = detail.get(k)

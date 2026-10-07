@@ -38,8 +38,20 @@ describe('research surgery raw repair', () => {
         ket_thuc: '09:45',
         phuong_phap_pt: 'Kết hợp xương bằng nẹp vít',
         pp_vo_cam: 'Tê tủy sống',
+        icd9: '79.36',
         chan_doan_truoc_pt: 'Gãy xương cẳng chân',
+        icd10_truoc_pt: 'S82.2',
         chan_doan_sau_pt: 'Gãy xương cẳng chân đã kết hợp xương',
+        icd10_sau_pt: 'S82.2',
+        trinh_tu_phau_thuat: 'Rạch da · bộc lộ · kết hợp xương · đóng vết mổ',
+        bs_mo_chinh: 'BS A',
+        gay_me_chinh: 'BS B',
+        ptv_phu_1: 'BS C',
+        dd_dung_cu: 'ĐD D',
+        dien_bien_benh: 'Ổn định',
+        dan_do_sau_pt: 'Theo dõi mạch, nhiệt, HA',
+        benh_kem_theo_sau_pt: ['Tăng huyết áp'],
+        hoan_tat_text: 'BS A hoàn tất',
         bien_chung: 'Không ghi nhận',
       },
     };
@@ -59,6 +71,18 @@ describe('research surgery raw repair', () => {
     expect(row.PPVC).toBe('Tê tủy sống');
     expect(row['Chẩn đoán trước mổ']).toBe('Gãy xương cẳng chân');
     expect(row['Chẩn đoán sau mổ']).toBe('Gãy xương cẳng chân đã kết hợp xương');
+    expect(row.ICD9).toBe('79.36');
+    expect(row['ICD10 trước mổ']).toBe('S82.2');
+    expect(row['ICD10 sau mổ']).toBe('S82.2');
+    expect(row['Trình tự phẫu thuật']).toContain('kết hợp xương');
+    expect(row['Phẫu thuật viên chính']).toBe('BS A');
+    expect(row['Bác sĩ gây mê chính']).toBe('BS B');
+    expect(row['Phụ mổ 1']).toBe('BS C');
+    expect(row['Điều dưỡng dụng cụ']).toBe('ĐD D');
+    expect(row['Diễn biến bệnh']).toBe('Ổn định');
+    expect(row['Dặn dò sau PT']).toContain('Theo dõi');
+    expect(row['Bệnh kèm sau PT']).toBe('Tăng huyết áp');
+    expect(row['Người hoàn tất']).toBe('BS A hoàn tất');
     expect(row['Kết thúc phẫu thuật']).toBe('09:45');
     expect(row['Biến chứng phẫu thuật']).toBe('Không ghi nhận');
   });

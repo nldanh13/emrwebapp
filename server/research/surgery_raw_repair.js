@@ -103,10 +103,28 @@ function repairSurgeryRow(row) {
   // Giữ lại các trường explicit để trace/provenance và normalize về sau.
   out['Bắt đầu phẫu thuật'] = first(row?.['Bắt đầu phẫu thuật'], detail?.bat_dau);
   out['Kết thúc phẫu thuật'] = first(row?.['Kết thúc phẫu thuật'], detail?.ket_thuc);
+  out['Đối tượng DV'] = first(row?.['Đối tượng DV'], detail?.doi_tuong_dv);
+  out.ICD9 = first(row?.ICD9, detail?.icd9);
+  out['ICD10 trước mổ'] = first(row?.['ICD10 trước mổ'], detail?.icd10_truoc_pt);
+  out['ICD10 sau mổ'] = first(row?.['ICD10 sau mổ'], detail?.icd10_sau_pt);
+  out['Mô tả PPPT'] = first(row?.['Mô tả PPPT'], detail?.mo_ta_pppt);
+  out['Trình tự phẫu thuật'] = first(row?.['Trình tự phẫu thuật'], detail?.trinh_tu_phau_thuat);
+  out['Phẫu thuật viên chính'] = first(row?.['Phẫu thuật viên chính'], detail?.bs_mo_chinh, detail?.ptv_chinh);
+  out['Bác sĩ gây mê chính'] = first(row?.['Bác sĩ gây mê chính'], detail?.gay_me_chinh);
+  out['Phụ mổ 1'] = first(row?.['Phụ mổ 1'], detail?.ptv_phu_1);
+  out['Phụ mổ 2'] = first(row?.['Phụ mổ 2'], detail?.ptv_phu_2);
+  out['Điều dưỡng dụng cụ'] = first(row?.['Điều dưỡng dụng cụ'], detail?.dd_dung_cu);
+  out['KTV phụ mê'] = first(row?.['KTV phụ mê'], detail?.ktv_phu_me);
+  out['Diễn biến bệnh'] = first(row?.['Diễn biến bệnh'], detail?.dien_bien_benh);
+  out['Dặn dò sau PT'] = first(row?.['Dặn dò sau PT'], detail?.dan_do_sau_pt);
+  out['Bệnh kèm sau PT'] = first(
+    row?.['Bệnh kèm sau PT'],
+    Array.isArray(detail?.benh_kem_theo_sau_pt) ? detail.benh_kem_theo_sau_pt.join(' · ') : detail?.benh_kem_theo_sau_pt,
+  );
+  out['Người hoàn tất'] = first(row?.['Người hoàn tất'], detail?.hoan_tat_text);
   out['Tai biến phẫu thuật'] = first(row?.['Tai biến phẫu thuật'], detail?.tai_bien);
   out['Biến chứng phẫu thuật'] = first(row?.['Biến chứng phẫu thuật'], detail?.bien_chung);
   out['Tình hình phẫu thuật'] = first(row?.['Tình hình phẫu thuật'], detail?.tinh_hinh);
-  out['Phẫu thuật viên chính'] = first(row?.['Phẫu thuật viên chính'], detail?.ptv_chinh);
   return out;
 }
 
@@ -164,8 +182,12 @@ function repairRawSurgeryCsv(runDir) {
     backupPath = ensureBackup(dir, filePath);
     const preferred = [
       ...table.columns,
-      'Bắt đầu phẫu thuật', 'Kết thúc phẫu thuật', 'Tai biến phẫu thuật',
-      'Biến chứng phẫu thuật', 'Tình hình phẫu thuật', 'Phẫu thuật viên chính',
+      'Bắt đầu phẫu thuật', 'Kết thúc phẫu thuật', 'Đối tượng DV', 'ICD9',
+      'ICD10 trước mổ', 'ICD10 sau mổ', 'Mô tả PPPT', 'Trình tự phẫu thuật',
+      'Phẫu thuật viên chính', 'Bác sĩ gây mê chính', 'Phụ mổ 1', 'Phụ mổ 2',
+      'Điều dưỡng dụng cụ', 'KTV phụ mê', 'Diễn biến bệnh', 'Dặn dò sau PT',
+      'Bệnh kèm sau PT', 'Người hoàn tất', 'Tai biến phẫu thuật',
+      'Biến chứng phẫu thuật', 'Tình hình phẫu thuật',
     ];
     const columns = [...new Set(preferred.filter(Boolean))];
     for (const row of rows) for (const key of Object.keys(row)) if (!columns.includes(key)) columns.push(key);
