@@ -250,7 +250,9 @@ const opts = rows => ({ runDir, runId: 'collect_run', scope: 'du_lieu_goc', isAr
   // ── Làm mới theo chính sách, so sánh phiên bản, đánh giá lại đủ dùng ──────────
   const run2 = path.join(RUNTIME_ROOT, 'fixture', 'refresh_run');
   fs.mkdirSync(run2, { recursive: true });
-  writeCsv(path.join(run2, 'du_lieu_ban_dau.csv'), INITIAL_COLS, initialRows());
+  // Đây là run của một nghiên cứu đã tạo: cohort đã có Mã NC theo từng mẫu.
+  const studyCohortRows = initialRows().map((row, index) => ({ ...row, 'Mã NC': `NC${String(index + 1).padStart(4, '0')}` }));
+  writeCsv(path.join(run2, 'du_lieu_ban_dau.csv'), [...INITIAL_COLS, 'Mã NC'], studyCohortRows);
   const rows2 = () => R.ensureResearchSourceRows(run2, { sourceRunId: 'refresh_run', dateDefaults: { from_date: '2026-03-01', to_date: '2026-03-31' } }).rows;
   // Nội dung do "EMR" giả trả về, đổi được giữa các lần.
   const emr = { BNA: { xn: '120', discharge: 'Đỡ' }, BNB: { xn: '110', discharge: 'Đỡ' }, BNC: { xn: '5', discharge: null } };
