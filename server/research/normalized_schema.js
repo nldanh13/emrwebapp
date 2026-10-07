@@ -25,7 +25,9 @@
 //      đến hết ngày ra viện (ngày ra chỉ có ngày không còn bị hiểu là 00:00).
 // v25: các dòng khoa có khoảng vào–ra chồng nhau là một đợt; Mã NC cũ dùng chung cho nhiều Mã BN
 //      trong file hành chánh bị bỏ; 24 giờ trước giờ vào áp cho mọi đợt.
-const NORMALIZED_SCHEMA_VERSION = 25;
+// v26: đợt kéo dài theo khoảng vào–ra cả lần nằm viện ghi trên dòng y lệnh; ngày phẫu thuật ghi
+//      kiểu tháng/ngày được đọc đúng.
+const NORMALIZED_SCHEMA_VERSION = 26;
 
 const NORMALIZED_COLUMNS = {
   patients: [

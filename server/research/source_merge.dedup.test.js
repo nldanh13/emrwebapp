@@ -149,5 +149,27 @@ describe('research encounter anti-duplicate aliases', () => {
     expect(rows.filter(r => r['Mã BN'] === 'BN8')).toHaveLength(2);
     expect(rows.filter(r => r['Mã BN'] === 'BN7')).toHaveLength(2);
   });
+
+  it('khoảng vào–ra ghi trên dòng y lệnh (cả lần nằm viện) kéo dài đợt bị ngắn; không tạo đợt mới, không nối hai đợt', () => {
+    // Dữ liệu thật: 6.500 dòng y lệnh nằm ngoài đợt của kho nhưng trong khoảng vào–ra ghi trên chính dòng
+    // (đợt kho dừng lúc ra khoa CTCH, y lệnh tiếp tục ở khoa sau tới ngày ra viện).
+    const rows = combineEncounterSources({
+      initialRows: [
+        { 'Mã BN': 'BN6', 'T/G vào': '08:00 01/03/2026', 'Ngày ra viện': '05/03/2026' },
+        { 'Mã BN': 'BN5', 'T/G vào': '08:00 01/03/2026', 'Ngày ra viện': '05/03/2026' },
+        { 'Mã BN': 'BN5', 'T/G vào': '08:00 08/03/2026', 'Ngày ra viện': '12/03/2026' },
+      ],
+      stayEvidenceRows: [
+        { 'Mã BN': 'BN6', 'Ngày vào viện': '08:00 01/03/2026', 'Ngày ra viện': '12/03/2026', 'TG y lệnh': '08:00 10/03/2026' },
+        { 'Mã BN': 'BN6', 'Ngày vào viện': '08:00 01/06/2026', 'Ngày ra viện': '10/06/2026' },
+        // Khoảng phủ 2 đợt của BN5: không đủ chắc để nối.
+        { 'Mã BN': 'BN5', 'Ngày vào viện': '08:00 01/03/2026', 'Ngày ra viện': '12/03/2026' },
+      ],
+    });
+    const bn6 = rows.filter(r => r['Mã BN'] === 'BN6');
+    expect(bn6).toHaveLength(1);
+    expect(['12/03/2026', '2026-03-12']).toContain(bn6[0]['Ngày ra viện']);
+    expect(rows.filter(r => r['Mã BN'] === 'BN5')).toHaveLength(2);
+  });
 });
 

@@ -412,6 +412,46 @@ test('Mã NC cũ bị cấp trùng còn trong file hồ sơ/ra viện (một mã
   assert.ok(!byCode.has('NC9999'), 'mã cũ dùng chung cho nhiều Mã BN không được dùng');
 });
 
+test('Ngày phẫu thuật EMR ghi kiểu tháng/ngày vẫn ghép đúng đợt; kiểu ngày/tháng không bị đảo nhầm', () => {
+  // Dữ liệu thật: đọc ngày/tháng chỉ 154 ca rơi vào đợt, đảo tháng/ngày thì 608 ca.
+  const runDir = newRunDir();
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), ['T/G vào', 'Mã BN', 'Họ tên', 'Ngày ra viện'], [
+    { 'T/G vào': '08:00 01/03/2026', 'Mã BN': '901', 'Họ tên': 'BN GIA LAP S', 'Ngày ra viện': '30/03/2026' },
+    { 'T/G vào': '08:00 01/05/2026', 'Mã BN': '902', 'Họ tên': 'BN GIA LAP T', 'Ngày ra viện': '10/05/2026' },
+  ]);
+  writeCsv(path.join(runDir, 'hchanh_surgery.csv'), ['Mã BN', 'Ngày phẫu thuật', 'Tên phẫu thuật', 'Nguồn'], [
+    { 'Mã BN': '901', 'Ngày phẫu thuật': '03/05/2026 09:00', 'Tên phẫu thuật': 'PT A', 'Nguồn': 'hchanh_surgery' },
+    { 'Mã BN': '901', 'Ngày phẫu thuật': '03/25/2026 09:00', 'Tên phẫu thuật': 'PT B', 'Nguồn': 'hchanh_surgery' },
+    { 'Mã BN': '902', 'Ngày phẫu thuật': '03/05/2026 09:00', 'Tên phẫu thuật': 'PT C', 'Nguồn': 'hchanh_surgery' },
+  ]);
+  R.normalizeRunOutputs(runDir, { sourceRunId: 'r', force: true });
+  const surg = readCsvTable(path.join(runDir, 'surgery_results.csv'), 100).rows;
+  const by = Object.fromEntries(surg.map(r => [r.surgery_name, r]));
+  assert.strictEqual(by['PT A'].surgery_date, '2026-03-05', '03/05 trong đợt 01/03–30/03 → 5/3 (tháng/ngày)');
+  assert.strictEqual(by['PT B'].surgery_date, '2026-03-25', '03/25 chỉ có thể là tháng/ngày');
+  assert.strictEqual(by['PT C'].surgery_date, '2026-05-03', '03/05 trong đợt 01/05–10/05 → 3/5 (ngày/tháng)');
+  assert.ok(surg.every(r => r.encounter_match_status === 'matched'), JSON.stringify(surg.map(r => r.encounter_match_reason)));
+});
+
+test('Y lệnh sau ngày ra khoa nhưng trong khoảng vào–ra cả lần nằm viện ghi trên dòng y lệnh: thuộc đợt', () => {
+  // Dữ liệu thật: 6.500 dòng y lệnh ngoài đợt kho nhưng trong khoảng ghi trên chính dòng (đợt kho bị ngắn).
+  const runDir = newRunDir();
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), ['T/G vào', 'Mã BN', 'Họ tên', 'Ngày ra viện'], [
+    { 'T/G vào': '08:00 01/03/2026', 'Mã BN': '903', 'Họ tên': 'BN GIA LAP Y', 'Ngày ra viện': '05/03/2026' },
+  ]);
+  writeCsv(path.join(runDir, 'hchanh_order_history.csv'), ['Mã BN', 'Ngày vào viện', 'Ngày ra viện', 'TG y lệnh', 'Diễn biến', 'Tên y lệnh', 'Nguồn'], [
+    { 'Mã BN': '903', 'Ngày vào viện': '08:00 01/03/2026', 'Ngày ra viện': '12/03/2026', 'TG y lệnh': '08:00 03/03/2026', 'Diễn biến': 'Ổn', 'Tên y lệnh': '(TT) Paracetamol 500mg 01v x2 (u)', 'Nguồn': 'hchanh_auto_order_history' },
+    { 'Mã BN': '903', 'Ngày vào viện': '08:00 01/03/2026', 'Ngày ra viện': '12/03/2026', 'TG y lệnh': '08:00 10/03/2026', 'Diễn biến': 'Tập PHCN', 'Tên y lệnh': '(TT) Eperison 50mg 01v x3 (u)', 'Nguồn': 'hchanh_auto_order_history' },
+  ]);
+  R.normalizeRunOutputs(runDir, { sourceRunId: 'r', force: true });
+  const enc = readCsvTable(path.join(runDir, 'encounters.csv'), 100).rows.filter(r => r.patient_code === '903');
+  assert.strictEqual(enc.length, 1);
+  assert.ok(String(enc[0].discharge_date).startsWith('2026-03-12'), `ra viện theo khoảng trên y lệnh: ${enc[0].discharge_date}`);
+  const meds = readCsvTable(path.join(runDir, 'medication_orders.csv'), 100).rows.filter(r => r.patient_code === '903');
+  assert.ok(meds.length >= 2);
+  assert.ok(meds.every(m => m.encounter_match_status === 'matched'), JSON.stringify(meds.map(m => m.encounter_match_reason)));
+});
+
 test('Chỉ Mã BN: nhiều dòng nguồn trong cùng khoảng EMR gộp 1 đợt và không nhân bản y lệnh reuse', () => {
   const runDir = newRunDir();
   const cols = ['T/G vào', 'Mã BN', 'Họ tên'];
