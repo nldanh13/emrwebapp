@@ -99,9 +99,13 @@ async function main() {
 
   await test('Tác vụ trên máy không giành nút Dừng của tác vụ EMR đang chạy', async () => {
     const killed = [];
+    // Tác vụ EMR chỉ kết thúc khi bị Dừng (không dùng hẹn giờ cố định: máy CI chậm có thể để nó
+    // xong trước khi bấm Dừng, làm test đỏ dù hàng đợi đúng).
+    let release;
+    const stopped = new Promise(resolve => { release = resolve; });
     const long = enqueueHeavy('sid-cancel', async () => {
-      registerCancel('sid-cancel', () => killed.push('EMR'));
-      await delay(60);
+      registerCancel('sid-cancel', () => { killed.push('EMR'); release(); });
+      await Promise.race([stopped, delay(5000)]);
     });
     await delay(10);
     await enqueueLocal('sid-cancel', async () => { await delay(5); });
