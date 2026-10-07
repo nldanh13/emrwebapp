@@ -110,6 +110,56 @@ const fetchRun = router._fetchHchanhForResearchRun;
   });
   assert.strictEqual(spawned.length, 0, 'cửa sổ đã sửa rồi thì không được refetch lặp lại');
 
+  // Regression parser v4: ca KHÔNG chuyển khoa vẫn phải refetch nếu progress cũ là v3.
+  // Đây là đúng kiểu ca thực tế 26051766: kho cũ chỉ có Sismyodin, còn Thuốc/T-VT
+  // chính chỉ xuất hiện sau khi parser mới đọc đủ hai nguồn.
+  const runDirV4 = fs.mkdtempSync(path.join(RUNTIME_ROOT, 'run_parser_v4_'));
+  const sourceRowsV4 = [{
+    'Mã NC': 'NCV4001',
+    'Mã BN': '26051766',
+    'Họ tên': 'BN TEST V4',
+    'T/G vào': '13:32 05/05/2026',
+    'Ngày ra viện': '13:00 12/05/2026',
+    fetch_from_date: '2026-05-05',
+    fetch_to_date: '2026-05-12',
+    'Research key': 'enc_parser_v4',
+  }];
+  fs.writeFileSync(path.join(runDirV4, 'hchanh_order_history.csv'),
+    '\ufeffMã NC,Mã BN,TG y lệnh,Tên y lệnh,Y lệnh khác,Research key\n' +
+    'NCV4001,26051766,05:00 12/05/2026,,(TT) Sismyodin 50mg 01v x3 uống mỗi 8h,enc_parser_v4\n', 'utf-8');
+  fs.writeFileSync(path.join(runDirV4, 'order_history_auto_progress.json'), JSON.stringify({
+    enc_parser_v4: {
+      ma_bn: '26051766',
+      status: 'done',
+      files: ['order_history'],
+      rows: { order_history: 7 },
+      fetch_window_version: 3,
+      fetch_date_from: '2026-05-05',
+      fetch_date_to: '2026-05-12',
+    },
+  }), 'utf-8');
+
+  spawned.length = 0;
+  const ctxV4 = { sid: 'test_order_parser_v4', dir: runDirV4, LOGS_DIR: path.join(runDirV4, 'logs') };
+  await fetchRun(ctxV4, runDirV4, {
+    sourceRows: sourceRowsV4,
+    sourceRunId: 'r1',
+    mode: 'order_history_auto',
+    files: ['order_history'],
+  });
+  assert.strictEqual(spawned.length, 1, 'progress v3 phải refetch dù ngày vào-ra không đổi');
+  const progressV4 = JSON.parse(fs.readFileSync(path.join(runDirV4, 'order_history_auto_progress.json'), 'utf-8'));
+  assert.strictEqual(progressV4.enc_parser_v4.fetch_window_version, 4);
+
+  spawned.length = 0;
+  await fetchRun(ctxV4, runDirV4, {
+    sourceRows: sourceRowsV4,
+    sourceRunId: 'r1',
+    mode: 'order_history_auto',
+    files: ['order_history'],
+  });
+  assert.strictEqual(spawned.length, 0, 'sau migration v4 không được refetch lặp lại');
+
   fs.rmSync(RUNTIME_ROOT, { recursive: true, force: true });
   console.log('research_order_history_true_admission_test: OK');
 })().catch(err => {
