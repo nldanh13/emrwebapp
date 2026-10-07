@@ -23,4 +23,16 @@ describe('NormalizeStatus', () => {
     act(() => root.render(createElement(NormalizeStatus, { pipeline, collecting: false, onNormalize: () => {} })));
     expect(host.textContent).toContain('Chuẩn hóa ngay');
   });
+
+  it('lỗi chặn ở kiểm tra toàn vẹn: không nói "vẫn là bản cũ" vì bảng đã cập nhật', () => {
+    const failed = { normalize: { status: 'failed', integrity_status: 'failed_integrity', at: '2026-10-07T00:17:00Z', qa: { blocking: 1 } } };
+    act(() => root.render(createElement(NormalizeStatus, { pipeline: failed, onNormalize: () => {} })));
+    expect(host.textContent).toContain('Chuẩn hóa xong nhưng có 1 lỗi chặn');
+    expect(host.textContent).not.toContain('vẫn là bản chuẩn hóa thành công trước đó');
+  });
+
+  it('chuẩn hóa thật sự lỗi: vẫn báo lỗi và giữ bản cũ', () => {
+    act(() => root.render(createElement(NormalizeStatus, { pipeline: { normalize: { status: 'failed' } }, onNormalize: () => {} })));
+    expect(host.textContent).toContain('Chuẩn hóa lỗi');
+  });
 });
