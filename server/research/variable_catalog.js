@@ -4,7 +4,7 @@
 
 const { stableHash, normalizeToken } = require('./encounter_context');
 const { getCell, readCsvTable } = require('./table_io');
-const { normalizeLabName } = require('./value_normalizers');
+const { normalizeLabName, extractTScore } = require('./value_normalizers');
 const fs = require('fs');
 const path = require('path');
 const { isSensitiveColumn } = require('./export_utils');
@@ -176,33 +176,52 @@ function buildVirtualVariablesForTable(def, rows, extra = {}) {
         virtual_kind: 'lab_test',
         source_filter: { test_name_norm: b.norm, unit: b.unit || '' },
         source_note: 'Biến dẫn xuất từ lab_results: lọc theo tên xét nghiệm rồi dùng result_num/result_raw.',
-      });
-    }
-  }
-
-  if (def.key === 'imaging_results') {
+        if (def.key === 'imaging_results') {
     const byModality = new Map();
     for (const row of rows) {
       const modality = getCell(row, ['modality', 'Loại']) || 'Khác';
-      const bucket = byModality.get(modality) || { modality, count: 0, samples: [] };
+      const bucket = byModality.get(modality) || { modality, count: 0, resultCount: 0, samples: [], tScores: [] };
       bucket.count += 1;
-      pushCatalogSample(bucket.samples, getCell(row, ['service_name_raw', 'Dịch vụ']) || getCell(row, ['conclusion_text', 'Kết luận']));
+      const report = [getCell(row, ['result_text', 'Mô tả/Kết quả', 'Kết quả']), getCell(row, ['conclusion_text', 'Kết luận'])]
+        .map(value => String(value || '').trim()).filter(Boolean);
+      if (report.length) {
+        bucket.resultCount += 1;
+        pushCatalogSample(bucket.samples, report.join(' — '));
+      }
+      const score = extractTScore(report.join(' '));
+      if (score) bucket.tScores.push(score);
       byModality.set(modality, bucket);
     }
     for (const b of [...byModality.values()].sort((a, b) => b.count - a.count)) {
       add({
-        id: makeVirtualVariableId('imaging_modality', b.modality),
+        id: makeVirtualVariableId('imaging_result', b.modality),
         name: `imaging:${b.modality}`,
-        label: `Có ${b.modality}`,
-        type: 'category',
-        nonempty: b.count,
-        distinct_count: 2,
-        sample_values: shortSamples(b.samples),
-        operators: ['=', 'not_empty'],
+        label: `Kết quả CĐHA: ${b.modality}`,
+        type: 'text',
+        nonempty: b.resultCount,
+        distinct_count: 0,
+        sample_values: [],
+        operators: ['not_empty'],
         virtual_kind: 'imaging_modality',
         source_filter: { modality: b.modality },
-        source_note: 'Biến dẫn xuất từ imaging_results: có/không có loại CĐHA này trong đợt điều trị.',
+        source_note: 'Biến lấy nguyên văn mô tả kết quả và kết luận từ các lượt CĐHA khớp loại máy; không mã hóa thành có/không.',
       });
+      if (normalizeToken(b.modality) === 'dexa' || normalizeToken(b.modality) === 'dxa') {
+        add({
+          id: makeVirtualVariableId('imaging_t_score', b.modality),
+          name: 'imaging_t_score',
+          label: 'T-score mật độ xương (DXA/DEXA)',
+          type: 'number',
+          aggregation: 'mean',
+          nonempty: b.tScores.length,
+          distinct_count: new Set(b.tScores).size,
+          sample_values: shortSamples(b.tScores),
+          operators: ['=', '!=', '>', '>=', '<', '<=', 'between', 'not_empty'],
+          virtual_kind: 'imaging_t_score',
+          source_filter: { modality: b.modality },
+          source_note: 'Tách số đứng sau nhãn T-score trong mô tả/kết luận DXA/DEXA; Z-score không được dùng. Nếu một lượt có nhiều dòng DXA, giá trị mặc định là trung bình các T-score trong lượt.',
+        });
+      }
     }
   }
 
