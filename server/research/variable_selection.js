@@ -469,7 +469,7 @@ function relatedRows(rows, identity) {
     picked = (index.byEid.get(eid) || []).filter(entry => !pc || !entry.pc || entry.pc === pc);
     if (pc) {
       picked.push(...(index.noEidByPc.get(pc) || []).filter(entry => {
-        if (entry.rc && rc && entry.rc === rc) return true;
+        if (entry.rc && rc && entry.rc === rc) return !hasWindow || !eventTime(entry.row) || inside(entry);
         return inside(entry);
       }));
     }
@@ -478,7 +478,7 @@ function relatedRows(rows, identity) {
     // khớp trong cùng Mã BN; nếu mã khác thì cần bằng chứng ngày nằm trong lượt.
     // Dữ liệu legacy không có mã lượt lẫn ngày chỉ nối ở mức người bệnh.
     picked = (index.noEidByPc.get(pc) || []).filter(entry => {
-      if (entry.rc && rc) return entry.rc === rc || inside(entry);
+      if (entry.rc && rc) return (entry.rc === rc && (!hasWindow || !eventTime(entry.row) || inside(entry))) || inside(entry);
       if (entry.rc && !rc) return inside(entry);
       return !hasWindow || inside(entry) || (!entry.rc && !eventTime(entry.row));
     });
