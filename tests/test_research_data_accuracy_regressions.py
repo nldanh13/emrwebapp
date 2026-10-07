@@ -194,4 +194,4 @@ def test_order_history_window_filter_change_forces_one_time_refetch_of_old_progr
     assert "const VERIFIED_FETCH_WINDOW_VERSION = 3" in src
     assert "const windowFilterMigrationNeeded" in src
     assert "previousWindowVersion < VERIFIED_FETCH_WINDOW_VERSION" in src
-    assert "windowFilterMigrationNeeded ||" in src
+    assert re.search(r"windowFilterMigrationNeeded\s*\|\|", src)
