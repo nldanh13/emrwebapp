@@ -40,53 +40,77 @@ export function buildDataHealth(screen, { autoRunning = false } = {}) {
     .filter(g => g.count > 0)
     .sort((a, b) => b.count - a.count);
 
-  const complete = [];
-  complete.push({
-    key: 'done', label: 'Đủ dữ liệu', value: done, tone: 'ok',
-    meaning: `Lượt đã có đủ ${partLabels.length || 6} phần${partLabels.length ? ` (${partLabels.join(', ')})` : ''}, dùng được ngay.`,
+  // Màn chính chỉ có ba trạng thái hành động, tất cả lấy từ cùng collection ledger.
+  // Các trạng thái kỹ thuật missing/error/waiting/unmatched vẫn nằm trong screen.counts
+  // và danh sách chi tiết, nhưng không đứng thành các "trạng thái" riêng trên màn chính.
+  const userCounts = snap.user_counts || {};
+  const ready = userCounts.ready != null ? num(userCounts.ready) : done;
+  const automatic = userCounts.automatic != null ? num(userCounts.automatic) : missing + errors;
+  const manual = userCounts.manual != null ? num(userCounts.manual) : waiting + unmatched;
+
+  const complete = [{
+    key: 'ready', label: 'Sẵn sàng', value: ready, tone: 'ok',
+    meaning: `Lượt đã có đủ ${partLabels.length || 6} phần hiện hành${partLabels.length ? ` (${partLabels.join(', ')})` : ''}, có thể dùng tiếp.`,
     action: '',
-  });
-  if (missing > 0) {
+  }];
+
+  if (automatic > 0) {
     complete.push({
-      key: 'missing', label: 'Còn thiếu', value: missing, tone: 'warn', filter: 'missing',
+      key: 'automatic',
+      label: autoRunning ? 'Máy đang xử lý' : 'Chờ máy xử lý',
+      value: automatic,
+      tone: 'info',
+      filter: 'automatic',
       meaning: gaps.length
-        ? `Chưa lấy đủ. Thiếu nhiều nhất: ${gaps.slice(0, 3).map(g => `${g.label} (${fmt(g.count)})`).join(', ')}.`
-        : 'Chưa lấy đủ các phần.',
+        ? `Gồm phần chưa lấy, dữ liệu cần cập nhật parser/cửa sổ mới hoặc lỗi kỹ thuật còn tự thử được. Các phần chưa hiện hành nhiều nhất: ${gaps.slice(0, 3).map(g => `${g.label} (${fmt(g.count)})`).join(', ')}.`
+        : 'Gồm phần chưa lấy, dữ liệu cần cập nhật hoặc lỗi kỹ thuật còn tự thử được.',
       action: autoRunning
-        ? 'Đang thu thập tự động — không cần làm gì, chờ chạy xong.'
-        : 'Bấm "Thu thập tự động" ở bước 2: chỉ lấy phần còn thiếu, không lấy lại phần đã có.',
+        ? 'Máy đang xử lý — không cần làm gì, chờ lượt Thu thập kết thúc.'
+        : 'Bấm "Thu thập tự động". Máy chỉ xử lý phần cần thiết, không lấy lại phần đã hiện hành.',
     });
   }
-  if (errors > 0) {
+
+  if (manual > 0) {
+    const details = [];
+    if (waiting) details.push(`${fmt(waiting)} lượt máy đã dừng tự thử`);
+    if (unmatched) details.push(`${fmt(unmatched)} lượt chưa ghép chắc`);
     complete.push({
-      key: 'error', label: 'Lỗi, sẽ tự thử lại', value: errors, tone: 'info', filter: 'error',
-      meaning: `Lỗi kỹ thuật khi lấy (EMR chậm, mất phiên…). Máy tự thử lại, tối đa ${maxAttempts} lần mỗi phần.`,
+      key: 'manual',
+      label: 'Cần bạn kiểm tra',
+      value: manual,
+      tone: 'danger',
+      filter: 'manual',
+      meaning: details.length
+        ? `${details.join('; ')}. Máy không tự quyết để tránh lấy/sửa nhầm dữ liệu.`
+        : 'Có lượt cần quyết định của người dùng trước khi tiếp tục.',
       action: autoRunning
-        ? 'Không cần làm gì: lần thu thập này đang thử lại.'
-        : 'Bấm "Thu thập tự động" để thử lại.',
-    });
-  }
-  if (waiting > 0) {
-    complete.push({
-      key: 'waiting', label: 'Chờ người xem', value: waiting, tone: 'danger', filter: 'waiting',
-      meaning: `Có phần đã thử ${maxAttempts} lần vẫn lỗi, hoặc giao diện EMR khác mẫu: máy không tự lấy phần đó nữa (các phần khác của lượt vẫn tự lấy).`,
-      action: 'Mở danh sách xem lý do từng lượt, kiểm tra trên EMR; muốn thử lại thì bấm "Làm mới…" ở bước 2 và chọn phần đó.',
-    });
-  }
-  if (unmatched > 0) {
-    complete.push({
-      key: 'unmatched', label: 'Chưa ghép chắc', value: unmatched, tone: 'danger', filter: 'unmatched',
-      meaning: 'Dòng danh sách không chắc ứng với lượt điều trị nào trên EMR (vd. cùng ngày có hai lượt), nên không tự lấy để tránh lấy nhầm.',
-      action: autoRunning
-        ? 'Đợi lượt thu thập này xong, rồi bấm "Rà soát ghép lượt" ở bước 2 để chọn đúng lượt.'
-        : 'Bấm "Rà soát ghép lượt" ở bước 2 để chọn đúng lượt; lần thu thập sau sẽ tự lấy.',
+        ? 'Không cần dừng lượt đang chạy. Khi Thu thập xong, mở danh sách này để xử lý từng lượt.'
+        : 'Mở danh sách này để xem lý do. Ca chưa ghép thì chọn đúng lượt; ca đã dừng tự thử thì kiểm tra EMR rồi cho chạy lại phần cần thiết.',
     });
   }
 
   const qa = snap.qa || null;
   const accurate = [];
   let accuracyChecked = false;
-  if (!qa) {
+  const qaBlocking = Array.isArray(qa?.blocking) ? qa.blocking : [];
+  const transientInputChange = qaBlocking.some(item => String(item?.code || '').toLowerCase() === 'input_changed_during_normalize');
+
+  // Khi nguồn đang tiếp tục thay đổi, QA cũ không còn là "kết quả hiện tại".
+  // Chỉ hiển thị một trạng thái chờ; không vừa hiện "668 cần xem" vừa báo Thu thập đang chạy.
+  if (autoRunning || qa?.stale || transientInputChange) {
+    accurate.push({
+      key: 'quality_pending',
+      label: autoRunning ? 'Sẽ kiểm tra sau khi Thu thập xong' : 'Có dữ liệu mới cần kiểm tra lại',
+      value: null,
+      tone: 'info',
+      meaning: autoRunning
+        ? 'Thu thập đang thay đổi dữ liệu nguồn. Kết quả kiểm tra cũ không được dùng để đánh giá lần hiện tại.'
+        : 'Dữ liệu nguồn đã đổi sau lần kiểm tra gần nhất nên kết quả cũ không còn đại diện cho trạng thái hiện tại.',
+      action: autoRunning
+        ? 'Không cần làm gì. Thu thập xong máy sẽ tự Chuẩn hóa và kiểm tra lại.'
+        : 'Chạy lại Chuẩn hóa từ dữ liệu đã có; không cần mở EMR.',
+    });
+  } else if (!qa) {
     accurate.push({
       key: 'unchecked', label: 'Chưa kiểm tra', value: null, tone: 'warn',
       meaning: 'Chưa chuẩn hóa nên chưa kiểm tra trùng lặp, ngày tháng vô lý, kết quả mâu thuẫn.',
@@ -94,11 +118,10 @@ export function buildDataHealth(screen, { autoRunning = false } = {}) {
     });
   } else {
     accuracyChecked = true;
-    const blocking = Array.isArray(qa.blocking) ? qa.blocking : [];
-    if (blocking.length) {
+    if (qaBlocking.length) {
       accurate.push({
-        key: 'blocking', label: 'Lỗi phải sửa trước khi dùng', value: blocking.length, tone: 'danger',
-        meaning: blocking.slice(0, 3).map(b => b.message).filter(Boolean).join(' '),
+        key: 'blocking', label: 'Lỗi phải sửa trước khi dùng', value: qaBlocking.length, tone: 'danger',
+        meaning: qaBlocking.slice(0, 3).map(b => b.message).filter(Boolean).join(' '),
         action: 'Bấm "Chuẩn hóa lại". Nếu vẫn còn, báo người quản trị: đây là lỗi cấu trúc dữ liệu, không sửa tay được.',
       });
     }
@@ -111,30 +134,28 @@ export function buildDataHealth(screen, { autoRunning = false } = {}) {
         action: 'Mở danh sách, đối chiếu với EMR. Đúng thì giữ; sai thì sửa ở phiếu nhập tay hoặc loại lượt đó khỏi nghiên cứu.',
       });
     }
-    if (!blocking.length && !reviewCount) {
+    if (!qaBlocking.length && !reviewCount) {
       accurate.push({
         key: 'clean', label: 'Không phát hiện sai lệch', value: null, tone: 'ok',
         meaning: 'Đã kiểm tra trùng lặp, ngày tháng, kết quả mâu thuẫn: không có vấn đề.',
         action: '',
       });
     }
-    if (qa.stale) {
-      accurate.push({
-        key: 'stale', label: 'Có dữ liệu mới chưa kiểm tra', value: null, tone: 'warn',
-        meaning: 'Đã lấy thêm dữ liệu sau lần kiểm tra gần nhất.',
-        action: 'Bấm "Chuẩn hóa ngay" ở đầu trang để kiểm tra cả phần mới.',
-      });
-    }
   }
 
-  // Một câu kết luận cho cả kho.
-  const needsYou = waiting > 0 || unmatched > 0 || accurate.some(i => ['blocking', 'review'].includes(i.key));
+  // Một câu kết luận cho cả kho, dùng đúng ba trạng thái trên.
+  const needsYou = manual > 0 || accurate.some(i => ['blocking', 'review'].includes(i.key));
   let verdict;
   if (!total) verdict = { tone: 'info', text: 'Chưa có lượt nào. Quét danh sách người bệnh ở bước 1.' };
-  else if (needsYou) verdict = { tone: 'warn', text: `Đủ ${pct}%. Có việc cần bạn xử lý bên dưới.` };
-  else if (missing || errors) verdict = { tone: 'info', text: autoRunning ? `Đủ ${pct}%. Đang tự lấy phần còn thiếu.` : `Đủ ${pct}%. Còn thiếu dữ liệu: chạy Thu thập tự động.` };
-  else if (!accuracyChecked || qa?.stale) verdict = { tone: 'info', text: 'Đã lấy đủ. Còn bước kiểm tra độ chính xác (Chuẩn hóa).' };
-  else verdict = { tone: 'ok', text: 'Đủ và đã kiểm tra: sẵn sàng phân tích.' };
+  else if (needsYou) verdict = { tone: 'warn', text: `Sẵn sàng ${fmt(ready)}/${fmt(total)} lượt · cần bạn kiểm tra ${fmt(manual)} lượt.` };
+  else if (automatic > 0) verdict = {
+    tone: 'info',
+    text: autoRunning
+      ? `Sẵn sàng ${fmt(ready)}/${fmt(total)} lượt · máy đang xử lý ${fmt(automatic)} lượt.`
+      : `Sẵn sàng ${fmt(ready)}/${fmt(total)} lượt · ${fmt(automatic)} lượt chờ máy xử lý.`,
+  };
+  else if (!accuracyChecked) verdict = { tone: 'info', text: 'Đã lấy đủ dữ liệu hiện hành · đang chờ kiểm tra chất lượng.' };
+  else verdict = { tone: 'ok', text: 'Dữ liệu hiện hành đã đủ và đã kiểm tra.' };
 
-  return { total, done, pct, autoRunning, complete, accurate, accuracyChecked, verdict, gaps };
+  return { total, done: ready, ready, automatic, manual, pct: total ? Math.round((ready * 100) / total) : 0, autoRunning, complete, accurate, accuracyChecked, verdict, gaps };
 }
