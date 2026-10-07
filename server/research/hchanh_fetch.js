@@ -5,10 +5,10 @@
 const path = require('path');
 const { ensureDir, readJsonSafe, writeJsonAtomic } = require('../utils/file');
 const { uniqueResearchHchanhRows, researchHchanhMeta, hchanhFetchOutputToRows, removeResearchSourceKey } = require('./research_source');
-const { readCsvTable, writeCsvUnion } = require('./table_io');
+const { readCsvTable, writeCsvUnion, patientCode } = require('./table_io');
 const { appendResearchRunLog, appendResearchCaseTrace, CASE_TRACE_RECENT_JSON } = require('./case_trace');
 const { appendActivity } = require('../services/activity_logger');
-const { isoDate } = require('./encounter_context');
+const { isoDate, firstNonEmpty } = require('./encounter_context');
 const { findStoredStay, recordHchanhFetch } = require('../services/hchanh_stay_store');
 const { isCancelRequested, registerCancel, unregisterCancel } = require('../services/task_queue');
 const { nowIso } = require('./store_paths');
@@ -61,6 +61,40 @@ function statusCountsFromHchanhOutput(output) {
     else if (['error', 'no_url', 'no_session', 'timeout'].includes(st)) counts.error += 1;
   }
   return counts;
+}
+
+// Dòng danh sách nội trú có thể mang T/G vào của lần CHUYỂN KHOA, không phải
+// ngày vào viện đầu tiên. Khi profile/discharge EMR đã xác minh một khoảng nằm
+// viện bao trùm mốc đó, mọi lần lấy tiếp (đặc biệt Lịch sử y lệnh) phải dùng
+// toàn bộ khoảng thật, nếu không sẽ mất y lệnh trước ngày chuyển khoa.
+function verifiedStayWindowForSource(meta, profileRows = [], dischargeRows = []) {
+  const code = String(meta?.ma_bn || '').trim();
+  const anchor = isoDate(meta?.admission_raw || meta?.date_from || '');
+  if (!code || !anchor) return null;
+
+  const byAdmission = new Map();
+  const touch = row => {
+    if (String(patientCode(row) || '').trim() !== code) return;
+    const from = isoDate(firstNonEmpty(row, [
+      'Ngày vào viện', 'Ngay vao vien', 'Ngày nhập viện', 'Ngay nhap vien',
+      'T/G vào', 'TG vao', 'admission_date', 'ngay_vao_vien', 'ngay_vao',
+    ]));
+    const to = isoDate(firstNonEmpty(row, [
+      'Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien',
+      'T/G ra', 'TG ra', 'discharge_date', 'ngay_ra_vien', 'ngay_ra',
+    ]));
+    if (!from) return;
+    const current = byAdmission.get(from) || { from, to: '' };
+    if (to && (!current.to || to > current.to)) current.to = to;
+    byAdmission.set(from, current);
+  };
+  for (const row of profileRows || []) touch(row);
+  for (const row of dischargeRows || []) touch(row);
+
+  const matches = [...byAdmission.values()]
+    .filter(stay => stay.to && stay.from <= anchor && anchor <= stay.to);
+  const unique = [...new Map(matches.map(stay => [`${stay.from}|${stay.to}`, stay])).values()];
+  return unique.length === 1 ? unique[0] : null;
 }
 
 function hchanhFailureCacheKey(meta, wantedFiles, status = 'Hoàn tất') {
@@ -304,8 +338,17 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
           continue;
         }
 
-        const dateFrom = meta.date_from || fallbackDateFrom || '';
-        const dateTo = meta.date_to || fallbackDateTo || dateFrom || '';
+        const sourceDateFrom = meta.date_from || fallbackDateFrom || '';
+        const sourceDateTo = meta.date_to || fallbackDateTo || sourceDateFrom || '';
+        const verifiedStay = verifiedStayWindowForSource(meta, profileRows, dischargeRows);
+        const dateFrom = verifiedStay?.from || sourceDateFrom;
+        const dateTo = verifiedStay?.to || sourceDateTo;
+        if (verifiedStay && (dateFrom !== sourceDateFrom || dateTo !== sourceDateTo)) {
+          appendResearchRunLog(
+            runPath,
+            `[${logPrefix}] SỬA KHOẢNG ${display}: dòng nguồn ${sourceDateFrom || '—'} → ${sourceDateTo || '—'} là mốc khoa/quét; hồ sơ EMR xác minh lượt thật ${dateFrom} → ${dateTo}. Dùng lượt thật để không mất y lệnh trước chuyển khoa.`,
+          );
+        }
         // Kho dùng chung có sẵn một phần (vd ra viện từ Kiểm hồ sơ): dùng phần đó, chỉ mở EMR lấy file còn thiếu.
         let storedFiles = null;
         let storedTiers = null;
@@ -569,5 +612,6 @@ module.exports = {
   hchanhFailureCacheKey,
   hchanhFailureSignatureFromTrace,
   hchanhFileStatusPatch,
+  verifiedStayWindowForSource,
   fetchHchanhForResearchRun,
 };
