@@ -111,7 +111,7 @@ function ResearchMonitorTable({ rows = [], max = 80, filter = 'need', query = ''
                   </div>
                   {text(row.research_code || row.sample) && (
                     <div style={{ marginTop: 2, color: C.text3, fontSize: FS.xs }}>
-                      <b>Mã NC (mã lượt):</b> {text(row.research_code || row.sample)}
+                      <b>Mã NC (nghiên cứu):</b> {text(row.research_code || row.sample)}
                     </div>
                   )}
                 </td>
