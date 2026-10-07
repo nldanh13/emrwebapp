@@ -485,7 +485,7 @@ function relatedRows(rows, identity) {
   } else if (rc) {
     // Chỉ dùng Mã NC khi Mã BN thực sự không có và mã này không bị dùng chung
     // cho nhiều người bệnh. Khi có ngày, ngày vẫn phải nằm trong lượt.
-    const candidates = [...(index.byRc.get(rc) || []), ...(index.noEidByRc.get(rc) || [])];
+    const candidates = [...new Map([...(index.byRc.get(rc) || []), ...(index.noEidByRc.get(rc) || [])].map(entry => [entry.i, entry])).values()];
     const patientCodes = new Set(candidates.map(entry => entry.pc).filter(Boolean));
     if (patientCodes.size <= 1) picked = candidates.filter(entry => !hasWindow || inside(entry));
   }
