@@ -232,6 +232,8 @@ function summarizeLive(runDir) {
   const matched = kinds.reduce((s, k) => s + k.matched, 0);
   const compared = kinds.reduce((s, k) => s + k.compared, 0);
   return {
+    audit_version: LIVE_AUDIT_VERSION,
+    outdated_count: audits.filter(a => a.status === 'done' && a.result && Number(a.audit_version || 0) !== LIVE_AUDIT_VERSION).length,
     case_count: done.length,
     all_match_count: done.filter(a => a.result.all_match).length,
     running: currentAudits.find(a => a.status === 'queued' || a.status === 'running') || null,
