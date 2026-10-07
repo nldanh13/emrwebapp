@@ -3,7 +3,6 @@
 const PERIODS = {
   pre_admission: { label: 'Trước nhập viện', outside: true },
   emergency_before_ward: { label: 'Cấp cứu, trước vào khoa', outside: false },
-  post_discharge: { label: 'Sau ra viện', outside: true },
 };
 
 export function encounterPeriod(row) {

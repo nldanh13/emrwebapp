@@ -91,8 +91,8 @@ function childIntegrity(runDir, critical, warnings, byTable) {
     const summary = { rows: rows.length, outside_encounter: 0, missing_time: 0, unmatched: 0, duplicate_clinical_key: 0 };
     const seen = new Map();
     for (const row of rows) {
-      // Kết quả trước nhập viện / sau ra viện (≤ 30 ngày) được gắn kèm đợt có chủ đích, đã đánh dấu riêng.
-      const peri = ['pre_admission', 'post_discharge'].includes(text(row.encounter_match_method));
+      // Kết quả trước nhập viện (≤ 3 ngày) được gắn kèm đợt có chủ đích, đã đánh dấu riêng.
+      const peri = text(row.encounter_match_method) === 'pre_admission';
       if (text(row.encounter_id) && text(row.is_within_encounter) === '0' && !peri) summary.outside_encounter += 1;
       const at = spec.time.map(k => text(row[k])).find(Boolean) || '';
       if (!at) summary.missing_time += 1;

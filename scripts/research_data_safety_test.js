@@ -167,10 +167,11 @@ test('Ghép theo ngày sự kiện chỉ khi nằm trong đúng một lượt, k
   assert.strictEqual(matched.encounter_id, buildEncounterId(rows[0]));
   assert.strictEqual(R.encounterMatchMethod(matched), 'event_date_range');
 
-  // Ngoài cả hai lượt: không nới lượt, chỉ gắn kèm đợt gần nhất với dấu "sau ra viện", không tính trong đợt.
+  // Ngoài cả hai lượt: sau ra viện lượt 1 thì không thuộc lượt 1 (ra viện là kết thúc đợt); cách giờ vào
+  // lượt 2 dưới 3 ngày nên chỉ gắn kèm lượt 2 với dấu "trước nhập viện", không tính trong đợt.
   const outside = R.contextForRow(map, { 'Mã BN': '111', 'TG chỉ định': '23/02/2026' }, '111');
-  assert.strictEqual(outside.encounter_id, buildEncounterId(rows[0]));
-  assert.strictEqual(R.encounterMatchMethod(outside), 'post_discharge');
+  assert.strictEqual(outside.encounter_id, buildEncounterId(rows[1]));
+  assert.strictEqual(R.encounterMatchMethod(outside), 'pre_admission');
   assert.strictEqual(eventTemporalFields(outside, '23/02/2026').is_within_encounter, '0');
 });
 
@@ -200,8 +201,8 @@ test('Kết quả chỉ thuộc đợt khi thời gian nằm trong khoảng vào
   const afterDischarge = R.contextForRow(map, {
     'Mã BN': '555', 'TG chỉ định': '17:30 12/04/2026',
   }, '555');
-  assert.strictEqual(R.encounterMatchMethod(afterDischarge), 'post_discharge', 'sau giờ ra viện: chỉ gắn kèm với dấu "sau ra viện"');
-  assert.strictEqual(eventTemporalFields(afterDischarge, '17:30 12/04/2026').is_within_encounter, '0', 'không thuộc khoảng nằm viện');
+  assert.strictEqual(afterDischarge.encounter_id, '', 'sau giờ ra viện: đợt đã kết thúc, không gắn');
+  assert.strictEqual(afterDischarge.needs_manual_review, 'encounter_match_outside_time');
 
   const dateOnlySameDay = R.contextForRow(map, {
     'Mã BN': '555', 'TG chỉ định': '10/04/2026',
@@ -230,15 +231,15 @@ test('Một đợt tính từ lúc nhận Cấp cứu đến hết ngày ra vi�
   // Ngày ra viện chỉ có ngày: cả ngày ra viện thuộc đợt (trước đây bị hiểu là 00:00 nên XN sáng ngày ra bị loại).
   const dischargeDay = at('556', '07:00 12/04/2026');
   assert.strictEqual(dischargeDay.encounter_id, buildEncounterId(rows[0]), 'XN sáng ngày ra viện thuộc đợt');
-  assert.strictEqual(R.encounterMatchMethod(at('556', '07:00 13/04/2026')), 'post_discharge', 'sau ngày ra viện: chỉ gắn kèm "sau ra viện"');
+  assert.strictEqual(at('556', '07:00 13/04/2026').encounter_id, '', 'sau ngày ra viện: đợt đã kết thúc, không gắn');
 
   // Không lấn sang đợt trước: 06:00 05/03 vẫn trong đợt 01/03–05/03, chỉ thuộc đợt đó.
   const prev = at('557', '06:00 05/03/2026');
   assert.strictEqual(prev.encounter_id, buildEncounterId(rows[1]), 'trong đợt trước thì thuộc đợt trước');
 });
 
-test('Kết quả trước nhập viện / sau ra viện (≤ 30 ngày) gắn vào đợt gần nhất, đánh dấu riêng, không tính là trong đợt', () => {
-  // Người dùng: đó cũng là quá trình điều trị của người bệnh — gắn vào đợt nhưng phải đánh dấu rõ ràng.
+test('Kết quả trước nhập viện (≤ 3 ngày trước giờ vào) gắn kèm đợt, đánh dấu riêng; sau ra viện không gắn', () => {
+  // Người dùng: chỉ trước khi nhập viện một khoảng ngắn (không thể 4–5 ngày); ra viện là kết thúc đợt.
   const rows = [
     { 'Mã BN': '558', 'T/G vào': '08:00 10/04/2026', 'Ngày ra viện': '20/04/2026' },
     { 'Mã BN': '558', 'T/G vào': '08:00 01/07/2026', 'Ngày ra viện': '10/07/2026' },
@@ -246,20 +247,17 @@ test('Kết quả trước nhập viện / sau ra viện (≤ 30 ngày) gắn v�
   const map = R.buildContextMap(rows, 'r');
   const at = t => R.contextForRow(map, { 'Mã BN': '558', 'TG chỉ định': t }, '558');
 
-  const pre = at('08:00 01/04/2026');
-  assert.strictEqual(pre.encounter_id, buildEncounterId(rows[0]), 'XN 9 ngày trước nhập viện gắn vào đợt sau nó');
+  const pre = at('09:00 07/04/2026');
+  assert.strictEqual(pre.encounter_id, buildEncounterId(rows[0]), 'XN gần 3 ngày trước giờ vào gắn kèm đợt sau nó');
   assert.strictEqual(R.encounterMatchMethod(pre), 'pre_admission');
-  assert.strictEqual(eventTemporalFields(pre, '08:00 01/04/2026').is_within_encounter, '0', 'không tính là trong đợt');
+  assert.strictEqual(eventTemporalFields(pre, '09:00 07/04/2026').is_within_encounter, '0', 'không tính là trong đợt');
 
-  const post = at('08:00 27/04/2026');
-  assert.strictEqual(post.encounter_id, buildEncounterId(rows[0]), 'tái khám 7 ngày sau ra viện gắn vào đợt trước nó');
-  assert.strictEqual(R.encounterMatchMethod(post), 'post_discharge');
-
-  // Giữa hai đợt: gắn vào đợt gần hơn (25/06 cách đợt sau 6 ngày, cách đợt trước > 2 tháng).
-  assert.strictEqual(R.encounterMatchMethod(at('08:00 25/06/2026')), 'pre_admission');
-  assert.strictEqual(at('08:00 25/06/2026').encounter_id, buildEncounterId(rows[1]));
-  // Quá 30 ngày thì không gắn.
-  assert.strictEqual(at('08:00 01/03/2026').encounter_id, '');
+  assert.strictEqual(at('08:00 06/04/2026').encounter_id, '', '4 ngày trước nhập viện: không gắn');
+  assert.strictEqual(at('08:00 05/04/2026').encounter_id, '', '5 ngày trước nhập viện: không gắn');
+  assert.strictEqual(at('08:00 21/04/2026').encounter_id, '', 'sau ra viện: không gắn');
+  assert.strictEqual(at('08:00 27/04/2026').encounter_id, '', 'tái khám sau ra viện: không gắn');
+  assert.strictEqual(R.encounterMatchMethod(at('08:00 29/06/2026')), 'pre_admission');
+  assert.strictEqual(at('08:00 29/06/2026').encounter_id, buildEncounterId(rows[1]));
 });
 
 test('Đợt chưa có ngày ra viện nhận kết quả quá 60 ngày sau ngày vào (tính tới hôm nay)', () => {

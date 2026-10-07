@@ -193,17 +193,17 @@ test('XN Cấp cứu tối hôm trước (đã ghép vào đợt khi chuẩn hó
   assert.strictEqual(enc.integrity.rejected, 1);
 });
 
-test('XN trước nhập viện / sau ra viện đã gắn kèm đợt vẫn hiển thị (có nhãn), dòng ngoài đợt khác vẫn bị loại', () => {
+test('XN trước nhập viện đã gắn kèm đợt vẫn hiển thị (có nhãn); dòng sau ra viện và dòng ngoài đợt khác bị loại', () => {
   const enc = sanitizeEncounterEvents({
     patient_code: 'BN1', encounter_id: 'e1', admission_date: '2026-04-21 08:00', discharge_date: '2026-04-23',
     labs: [
-      { patient_code: 'BN1', lab_datetime: '2026-04-10 07:00', test_name_raw: 'Hb', result_raw: '120', unit_raw: 'g/L', encounter_match_method: 'pre_admission' },
+      { patient_code: 'BN1', lab_datetime: '2026-04-19 07:00', test_name_raw: 'Hb', result_raw: '120', unit_raw: 'g/L', encounter_match_method: 'pre_admission' },
       { patient_code: 'BN1', lab_datetime: '2026-04-30 07:00', test_name_raw: 'CRP', result_raw: '5', unit_raw: 'mg/L', encounter_match_method: 'post_discharge' },
       { patient_code: 'BN1', lab_datetime: '2026-04-10 07:00', test_name_raw: 'PLT', result_raw: '200', unit_raw: 'G/L' },
     ], imaging: [], medications: [], surgeries: [],
   });
-  assert.deepStrictEqual(enc.labs.map(l => l.test_name_raw), ['Hb', 'CRP']);
-  assert.strictEqual(enc.integrity.rejected, 1);
+  assert.deepStrictEqual(enc.labs.map(l => l.test_name_raw), ['Hb']);
+  assert.strictEqual(enc.integrity.rejected, 2);
 });
 
 test('CĐHA và thuốc ngoài đợt hoặc sai strong id không được hiển thị', () => {

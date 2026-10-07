@@ -67,9 +67,9 @@ const COMMON = {
     derivation: 'matched: đúng Mã BN và xác định duy nhất khoảng bằng thời gian; ambiguous: khớp nhiều khoảng; missing: không khớp khoảng nào. Mã NC không tham gia quyết định matching.',
   }),
   encounter_match_method: col('enum', 'Bằng chứng đã dùng để gắn dòng vào đợt điều trị.', {
-    allowed: ['encounter_id', 'visit_exact', 'admission_time', 'discharge_time', 'admission_date', 'discharge_date', 'event_date_range', 'emergency_before_ward', 'pre_admission', 'post_discharge', 'patient_unique_encounter_no_event_time (legacy)'],
+    allowed: ['encounter_id', 'visit_exact', 'admission_time', 'discharge_time', 'admission_date', 'discharge_date', 'event_date_range', 'emergency_before_ward', 'pre_admission', 'patient_unique_encounter_no_event_time (legacy)'],
     empty: 'Dòng chưa được ghép.',
-    derivation: 'Chỉ dùng encounter_id nội bộ nếu đã có; còn lại ghép theo đúng Mã BN và các mốc thời gian có trong dữ liệu. emergency_before_ward: trong 24 giờ trước giờ vào (Cấp cứu/khám trước vào khoa), tính là trong đợt. pre_admission / post_discharge: trước nhập viện / sau ra viện tối đa 30 ngày, gắn kèm đợt gần nhất nhưng is_within_encounter = 0 (không dùng cho biến tóm tắt trong đợt).',
+    derivation: 'Chỉ dùng encounter_id nội bộ nếu đã có; còn lại ghép theo đúng Mã BN và các mốc thời gian có trong dữ liệu. emergency_before_ward: trong 24 giờ trước giờ vào (Cấp cứu/khám trước vào khoa), tính là trong đợt. pre_admission: trước giờ vào tối đa 3 ngày (sau 24 giờ Cấp cứu), gắn kèm đợt sau nó nhưng is_within_encounter = 0 (không dùng cho biến tóm tắt trong đợt). Kết quả sau ra viện không gắn vào đợt (ra viện là kết thúc đợt).',
   }),
   encounter_match_reason: col('string', 'Lý do dòng chưa được ghép chắc vào đợt.', {
     empty: 'Dòng đã matched.',
