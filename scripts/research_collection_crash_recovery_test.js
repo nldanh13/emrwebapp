@@ -47,10 +47,10 @@ function tick() {
   return new Date(clock).toISOString();
 }
 
-const INITIAL_COLS = ['T/G vào', 'Mã BN', 'Mã nội trú', 'Họ tên', 'Tuổi', 'GT', 'Trạng thái', 'Khoa chuyển đến', 'Xử trí'];
+const INITIAL_COLS = ['T/G vào', 'Mã BN', 'Mã nội trú', 'Họ tên', 'Tuổi', 'GT', 'Trạng thái', 'Khoa chuyển đến', 'Xử trí', 'Mã NC'];
 const INITIAL = [
-  { 'T/G vào': '02/03/2026 08:00', 'Mã BN': 'BNA', 'Mã nội trú': 'NTA', 'Họ tên': 'Gia A', 'Tuổi': '60', 'GT': 'Nam', 'Trạng thái': 'Hoàn tất', 'Xử trí': 'Ra viện' },
-  { 'T/G vào': '04/03/2026 10:00', 'Mã BN': 'BNC', 'Mã nội trú': 'NTC', 'Họ tên': 'Gia C', 'Tuổi': '80', 'GT': 'Nữ', 'Trạng thái': 'Hoàn tất', 'Xử trí': 'Ra viện' },
+  { 'T/G vào': '02/03/2026 08:00', 'Mã BN': 'BNA', 'Mã nội trú': 'NTA', 'Họ tên': 'Gia A', 'Tuổi': '60', 'GT': 'Nam', 'Trạng thái': 'Hoàn tất', 'Xử trí': 'Ra viện', 'Mã NC': 'NC0001' },
+  { 'T/G vào': '04/03/2026 10:00', 'Mã BN': 'BNC', 'Mã nội trú': 'NTC', 'Họ tên': 'Gia C', 'Tuổi': '80', 'GT': 'Nữ', 'Trạng thái': 'Hoàn tất', 'Xử trí': 'Ra viện', 'Mã NC': 'NC0002' },
 ];
 const CTX = { sid: 'crash-test' };
 const SIMULATED = err => err && err.code === 'SIMULATED_CRASH';

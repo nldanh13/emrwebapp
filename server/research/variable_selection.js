@@ -456,25 +456,38 @@ function relatedRows(rows, identity) {
   const eid = String(identity.encounter_id || '').trim();
   const admission = String(identity.admission_date || '').trim();
   const discharge = String(identity.discharge_date || '').trim();
+  const hasWindow = Boolean(admission || discharge);
   const index = rowIndex(list);
   const inside = entry => {
     const event = eventTime(entry.row);
     return Boolean(event && timeInsideEncounter(event, admission, discharge));
   };
-  let picked;
+  let picked = [];
   if (eid) {
-    // Dòng có mã đợt: đúng mã đợt. Không mã đợt: theo Mã NC nếu cả hai có, còn lại Mã BN + thời gian.
-    picked = [...(index.byEid.get(eid) || [])];
-    if (rc) {
-      picked.push(...(index.noEidByRc.get(rc) || []));
-      picked.push(...(index.noEidNoRcByPc.get(pc) || []).filter(inside));
-    } else {
-      picked.push(...(index.noEidByPc.get(pc) || []).filter(inside));
+    // encounter_id là khóa lượt. Nếu có Mã BN ở cả hai phía, phải trùng Mã BN;
+    // dòng thiếu encounter_id chỉ ghép theo đúng Mã BN và thời gian của lượt.
+    picked = (index.byEid.get(eid) || []).filter(entry => !pc || !entry.pc || entry.pc === pc);
+    if (pc) {
+      picked.push(...(index.noEidByPc.get(pc) || []).filter(entry => {
+        if (entry.rc && rc && entry.rc === rc) return !hasWindow || !eventTime(entry.row) || inside(entry);
+        return inside(entry);
+      }));
     }
+  } else if (pc) {
+    // Mã BN là định danh người bệnh. Với dòng thiếu encounter_id, ưu tiên Mã NC
+    // khớp trong cùng Mã BN; nếu mã khác thì cần bằng chứng ngày nằm trong lượt.
+    // Dữ liệu legacy không có mã lượt lẫn ngày chỉ nối ở mức người bệnh.
+    picked = (index.noEidByPc.get(pc) || []).filter(entry => {
+      if (entry.rc && rc) return (entry.rc === rc && (!hasWindow || !eventTime(entry.row) || inside(entry))) || inside(entry);
+      if (entry.rc && !rc) return inside(entry);
+      return !hasWindow || inside(entry) || (!entry.rc && !eventTime(entry.row));
+    });
   } else if (rc) {
-    picked = [...(index.byRc.get(rc) || []), ...(index.noEidNoRcByPc.get(pc) || []).filter(inside)];
-  } else {
-    picked = pc ? [...(index.noEidNoRcByPc.get(pc) || [])] : [];
+    // Chỉ dùng Mã NC khi Mã BN thực sự không có và mã này không bị dùng chung
+    // cho nhiều người bệnh. Khi có ngày, ngày vẫn phải nằm trong lượt.
+    const candidates = [...new Map([...(index.byRc.get(rc) || []), ...(index.noEidByRc.get(rc) || [])].map(entry => [entry.i, entry])).values()];
+    const patientCodes = new Set(candidates.map(entry => entry.pc).filter(Boolean));
+    if (patientCodes.size <= 1) picked = candidates.filter(entry => !hasWindow || inside(entry));
   }
   return picked
     .sort((a, b) => a.i - b.i)

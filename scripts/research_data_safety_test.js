@@ -332,31 +332,26 @@ test('Xem trước biến báo đúng lượt đủ, thiếu, trống và cần 
   assert.strictEqual(summary.variables.find(v => v.id === 'hb').missing, 2);
 });
 
-test('Mã NC duy nhất, giữ nguyên khi quét lại đổi thứ tự, dòng mới nhận số kế tiếp', () => {
+test('dữ liệu thu thập chỉ giữ định danh nguồn, không tự cấp Mã NC', () => {
   const first = R.normalizeResearchSourceRows(INITIAL_ROWS, { sourceRunId: 'r' });
-  const codes = first.map(r => r['Mã NC']);
-  assert.strictEqual(new Set(codes).size, 3, `Mã NC phải khác nhau: ${codes}`);
-
-  const prev = new Map(first.map(r => [r['Research key'], r['Mã NC']]));
-  const extra = { 'T/G vào': '07:00 05/03/2026', 'Mã BN': '333', 'Họ tên': 'BN GIA LAP C' };
-  const second = R.normalizeResearchSourceRows([extra, ...INITIAL_ROWS].reverse(), { sourceRunId: 'r', previousCodes: prev });
-  for (const row of second) {
-    if (prev.has(row['Research key'])) assert.strictEqual(row['Mã NC'], prev.get(row['Research key']));
-  }
-  assert.strictEqual(second.find(r => r['Mã BN'] === '333')['Mã NC'], 'NC0004');
+  assert.ok(first.length > 1);
+  assert.ok(first.every(r => !r['Mã NC']), 'mẫu chưa vào nghiên cứu chưa có Mã NC');
+  assert.ok(first.every(r => r['Research key']), 'Research key vẫn định danh được dòng nguồn');
+  const second = R.normalizeResearchSourceRows([...INITIAL_ROWS].reverse(), { sourceRunId: 'r' });
+  assert.deepStrictEqual(second.map(r => r['Research key']).sort(), first.map(r => r['Research key']).sort());
 });
 
-test('research_source.csv cũ bị trùng Mã NC (NC0001 cho mọi dòng) được tạo lại với mã duy nhất', () => {
+test('research_source.csv cũ có mã cấp nhầm được tạo lại không kèm Mã NC', () => {
   const runDir = newRunDir();
   writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), INITIAL_COLS, INITIAL_ROWS);
   const broken = R.normalizeResearchSourceRows(INITIAL_ROWS, { sourceRunId: 'r' }).map(r => ({ ...r, 'Mã NC': 'NC0001' }));
   // research_source mới hơn du_lieu_ban_dau: trước đây sẽ được dùng lại nguyên trạng.
   writeCsv(path.join(runDir, 'research_source.csv'), Object.keys(broken[0]), broken);
   const info = R.ensureResearchSourceRows(runDir, { sourceRunId: 'r' });
-  assert.strictEqual(new Set(info.rows.map(r => r['Mã NC'])).size, 3);
+  assert.ok(info.rows.every(r => !r['Mã NC']), 'kho thu thập không mang Mã NC cấp trước nghiên cứu');
 });
 
-test('Mã NC dùng lại mã script XN/CĐHA khi cùng Mã BN + thời điểm vào, không cần mã điều trị', () => {
+test('mã NC trong dữ liệu XN/CĐHA không chảy ngược vào nguồn thu thập', () => {
   const runDir = newRunDir();
   writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), INITIAL_COLS, INITIAL_ROWS);
   writeCsv(path.join(runDir, 'du_lieu_goc.csv'), ['Mã NC', 'Mã BN', 'T/G vào'], [
@@ -365,9 +360,7 @@ test('Mã NC dùng lại mã script XN/CĐHA khi cùng Mã BN + thời điểm v
   ]);
   const info = R.ensureResearchSourceRows(runDir, { sourceRunId: 'r', force: true });
   const byVisit = Object.fromEntries(info.rows.map(r => [`${r['Mã BN']}|${r['T/G vào']}`, r['Mã NC']]));
-  assert.strictEqual(byVisit['111|09:00 25/02/2026'], 'NC0002');
-  assert.notStrictEqual(byVisit['111|08:00 20/02/2026'], 'NC0001', 'NC0001 đã thuộc BN/khung thời gian khác trong du_lieu_goc.csv');
-  assert.strictEqual(new Set(Object.values(byVisit)).size, 3);
+  assert.ok(Object.values(byVisit).every(code => !code), 'du_lieu_goc không cấp mã cho research_source');
 });
 
 test('Dữ liệu hành chánh của đợt 2 gắn đúng đợt 2 (không ghép theo Mã NC trùng)', () => {
@@ -378,7 +371,7 @@ test('Dữ liệu hành chánh của đợt 2 gắn đúng đợt 2 (không ghé
   const withCard = merged.filter(r => r['Số thẻ'] === 'THE-GIA-LAP');
   assert.strictEqual(withCard.length, 1);
   assert.strictEqual(withCard[0]['Research key'], stay2['Research key']);
-  assert.strictEqual(withCard[0]['Mã NC'], stay2['Mã NC'], 'Mã NC của dòng nguồn không bị mã cũ trong file hchanh đè');
+  assert.strictEqual(withCard[0]['Mã NC'], '', 'Mã NC cũ trong hành chánh không được đẩy vào dữ liệu thu thập');
 });
 
 test('Chuyển khoa cùng đợt (khoảng vào–ra chồng nhau): gộp thành một đợt, không còn phải duyệt tay', () => {

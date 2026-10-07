@@ -328,14 +328,20 @@ lockedResearchRoute(router, 'post', '/research/studies/:studyId/cohort-from-filt
     if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
     const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
     if (!rows.length) return res.status(400).json({ status: 'error', message: 'Danh sách rỗng.' });
+    const codeByEncounter = new Map();
     const normalizedRows = rows.map((row, idx) => {
       const next = { ...(row || {}) };
       const code = firstNonEmpty(next, ['Mã BN', 'Ma BN', 'MABN', 'patient_code']);
       if (code && !next['Mã BN']) next['Mã BN'] = code;
       const name = firstNonEmpty(next, ['Họ tên', 'Ho ten', 'patient_name']);
       if (name && !next['Họ tên']) next['Họ tên'] = name;
-      const researchCode = firstNonEmpty(next, ['Mã NC', 'Ma NC', 'research_code']) || `NC${String(idx + 1).padStart(4, '0')}`;
-      if (!next['Mã NC']) next['Mã NC'] = researchCode;
+      // Mã NC chỉ thuộc nghiên cứu hiện tại: mỗi Mã BN + đợt điều trị nhận một mã.
+      const encounter = firstNonEmpty(next, ['encounter_id', 'visit_id', 'Mã điều trị', 'Ma dieu tri', 'Mã nội trú', 'Ma noi tru', 'Ngày vào viện', 'admission_date', 'Research key', 'research_key']);
+      const sampleKey = code && encounter ? `${code}::${encounter}` : `row::${idx}`;
+      if (!codeByEncounter.has(sampleKey)) codeByEncounter.set(sampleKey, `NC${String(codeByEncounter.size + 1).padStart(4, '0')}`);
+      const researchCode = codeByEncounter.get(sampleKey);
+      next['Mã NC'] = researchCode;
+      next.research_code = researchCode;
       if (!next['Ngày vào viện'] && next.admission_date) next['Ngày vào viện'] = next.admission_date;
       if (!next['Ngày ra viện'] && next.discharge_date) next['Ngày ra viện'] = next.discharge_date;
       if (!next['Chẩn đoán'] && next.diagnosis_raw) next['Chẩn đoán'] = next.diagnosis_raw;

@@ -386,52 +386,24 @@ function rowFetchDateWindow(row, dateCtx = {}) {
   return { from, to, admissionRaw, dischargeRaw };
 }
 
-// Mã NC phải DUY NHẤT theo từng dòng nguồn (Research key) và ỔN ĐỊNH qua các lần
-// quét lại. du_lieu_ban_dau.csv không có cột Mã NC, nên mã được cấp ở đây: giữ mã cũ
-// của cùng Research key (previousCodes, đọc từ research_source.csv trước đó), dòng mới
-// nhận số kế tiếp sau mã lớn nhất đã dùng. Trước đây biểu thức `out.length + 1` luôn
-// ra NC0001 (mảng out không bao giờ được thêm phần tử), khiến mọi dòng trùng Mã NC và
-// bước chuẩn hóa ghép nhầm dữ liệu giữa các đợt của cùng người bệnh.
-function normalizeResearchSourceRows(rows, { sourceFile = '', sourceRunId = '', dateCtx = {}, previousCodes = new Map(), reservedCodes = [] } = {}) {
+// Kho thu thập trước nghiên cứu chỉ định danh mẫu bằng Mã BN + Research key.
+// Mã NC thuộc về nghiên cứu cụ thể, vì vậy tuyệt đối không cấp hoặc kế thừa mã ở đây.
+function normalizeResearchSourceRows(rows, { sourceFile = '', sourceRunId = '', dateCtx = {} } = {}) {
   const seen = new Map();
   const baseName = sourceFile ? path.basename(sourceFile) : '';
-  const used = new Set();
-  let nextNumber = 1;
-  const reserve = (code) => {
-    used.add(code);
-    const m = /^NC(\d+)$/i.exec(String(code || '').trim());
-    if (m) nextNumber = Math.max(nextNumber, Number(m[1]) + 1);
-  };
-  const allocate = () => {
-    let code = '';
-    do { code = `NC${String(nextNumber).padStart(4, '0')}`; nextNumber += 1; } while (used.has(code));
-    used.add(code);
-    return code;
-  };
-  for (const code of previousCodes.values()) reserve(code);
-  for (const code of reservedCodes) reserve(code);
-  for (const row of rows || []) {
-    const explicit = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
-    if (explicit) reserve(explicit);
-  }
-
   for (const row of rows || []) {
     const code = patientCode(row);
     if (!code) continue;
     const win = rowFetchDateWindow(row, dateCtx);
-    const explicit = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
-    // Khóa không phụ thuộc Mã NC cấp mới (chỉ dùng Mã NC nếu nguồn đã có sẵn).
     const key = researchHchanhSourceKey({ ...row, fetch_from_date: win.from, fetch_to_date: win.to }, sourceRunId);
-    const researchCode = explicit
-      || seen.get(key)?.['Mã NC']
-      || previousCodes.get(key)
-      || allocate();
+    // Chỉ giữ mã đã có sẵn trên cohort của nghiên cứu; không tự sinh ở kho thu thập.
+    const researchCode = firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']);
     const normalized = {
       ...row,
       'Mã NC': researchCode,
+      research_code: researchCode,
       'Mã BN': code,
       'Họ tên': firstNonEmpty(row, ['Họ tên', 'Ho ten', 'Tên BN', 'Ten BN', 'patient_name']),
-      // Không ghi đè ngày vào/ra viện thật; fetch_* chỉ dùng cho các worker tự động.
       fetch_from_date: win.from,
       fetch_to_date: win.to,
       source_scan_from_date: dateCtx.from_date || '',
@@ -439,8 +411,6 @@ function normalizeResearchSourceRows(rows, { sourceFile = '', sourceRunId = '', 
       source_file: baseName,
       source_run_id: sourceRunId || '',
       'Research key': key,
-      // Chữ ký (hash) từng dòng danh sách của đợt: dùng để biết dữ liệu EMR có thay đổi
-      // giữa các lần quét, chỉ lấy lại ca thay đổi (xem server/research/collection.js).
       list_row_signatures: collection.mergeSignatures(collection.listRowSignature(row)),
     };
     if (!seen.has(key)) seen.set(key, normalized);
@@ -448,7 +418,8 @@ function normalizeResearchSourceRows(rows, { sourceFile = '', sourceRunId = '', 
       const prev = seen.get(key);
       seen.set(key, {
         ...mergeSameStayRows(prev, normalized),
-        'Mã NC': prev['Mã NC'],
+        'Mã NC': prev['Mã NC'] || normalized['Mã NC'] || '',
+        research_code: prev.research_code || normalized.research_code || '',
         list_row_signatures: collection.mergeSignatures(prev.list_row_signatures, normalized.list_row_signatures),
       });
     }
@@ -528,10 +499,14 @@ function ensureResearchSourceRows(runDir, { fallbackPath = '', sourceRunId = '',
   const existingRows = fs.existsSync(sourcePath)
     ? (readCsvTable(sourcePath, Number.MAX_SAFE_INTEGER).rows || []).filter(r => patientCode(r))
     : [];
-  // File cũ có Mã NC trùng giữa các dòng khác nhau (lỗi cấp mã trước đây) phải được
-  // tạo lại; mã hợp lệ của từng Research key vẫn được giữ nguyên.
-  const codesBroken = researchCodesConflict(existingRows);
-  if (!force && !sourceStale && !codesBroken && existingRows.length) {
+  // Bỏ mã cũ phát sinh ở tầng thu thập khi mã đó không có trên file cohort nguồn.
+  // Mã đã được cấp cho cohort nghiên cứu được giữ cache để các lần chạy không ghi lại liên tục.
+  const seedForCodeCheck = preferredResearchSourceSeedPath(runPath, fallbackPath);
+  const seedHasCodes = seedForCodeCheck
+    ? (readCsvTable(seedForCodeCheck, Number.MAX_SAFE_INTEGER).rows || []).some(row => rowResearchCode(row))
+    : false;
+  const hasPrematureCodes = existingRows.some(row => rowResearchCode(row)) && !seedHasCodes;
+  if (!force && !sourceStale && !hasPrematureCodes && existingRows.length) {
     const rows = existingRows;
     if (rows.length) {
       return { rows, file: sourcePath, base_file: firstNonEmpty(rows[0], ['source_file']) || path.basename(sourcePath), candidates: researchSourceCandidatePaths(runPath, fallbackPath), date_context: dateCtx };
@@ -553,25 +528,8 @@ function ensureResearchSourceRows(runDir, { fallbackPath = '', sourceRunId = '',
   }
   if (!pickedRows.length) return { rows: [], file: '', base_file: '', candidates, date_context: dateCtx };
 
-  // Ưu tiên giữ mã của research_source.csv cũ; sau đó dùng mã mà script XN/CĐHA đã
-  // cấp cho cùng Mã BN + khoảng thời gian trong du_lieu_goc.csv (cùng Research key nội bộ),
-  // để hai nơi cấp mã không cho cùng một khoảng hai Mã NC khác nhau.
-  const previousCodes = previousResearchCodes(existingRows);
-  const reservedCodes = [];
-  const deepPath = path.join(runPath, 'du_lieu_goc.csv');
-  if (fs.existsSync(deepPath)) {
-    const deepRows = (readCsvTable(deepPath, Number.MAX_SAFE_INTEGER).rows || [])
-      .filter(r => patientCode(r))
-      .map(r => ({ ...r, 'Research key': researchHchanhSourceKey(r, sourceRunId) }));
-    const usedCodes = new Set(previousCodes.values());
-    // Mọi mã script XN/CĐHA đã dùng đều được giữ chỗ để không cấp trùng cho đợt khác.
-    for (const r of deepRows) { const c = rowResearchCode(r); if (c) reservedCodes.push(c); }
-    for (const [key, code] of previousResearchCodes(deepRows).entries()) {
-      if (!previousCodes.has(key) && !usedCodes.has(code)) { previousCodes.set(key, code); usedCodes.add(code); }
-    }
-  }
   const normalized = normalizeResearchSourceRows(pickedRows, {
-    sourceFile: pickedFile, sourceRunId, dateCtx, previousCodes, reservedCodes,
+    sourceFile: pickedFile, sourceRunId, dateCtx,
   });
   writeCsvUnion(sourcePath, normalized, [
     'Mã NC', 'Mã BN', 'Họ tên', 'Ngày vào viện', 'Ngày ra viện',

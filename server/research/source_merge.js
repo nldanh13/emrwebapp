@@ -567,8 +567,14 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
     // File hchanh_* mang Mã NC của research_source.csv tại lúc lấy dữ liệu, có thể là
     // mã cũ bị cấp trùng (NC0001): không để mã đó đè lên mã của dòng đã có. Các nguồn
     // khác (XN/CĐHA) giữ cách gộp cũ để không đổi Mã NC của dữ liệu hiện có.
-    if (String(sourceStatus || '').startsWith('hchanh') && rowResearchCode(existing)) {
+    if (rowResearchCode(existing)) {
+      // Giữ mã của cohort nếu đã tạo nghiên cứu; nếu nguồn chưa có mã thì không
+      // nhận Mã NC cũ từ XN/CĐHA hay hành chánh.
       merged['Mã NC'] = rowResearchCode(existing);
+      merged.research_code = rowResearchCode(existing);
+    } else {
+      merged['Mã NC'] = '';
+      merged.research_code = '';
     }
     merged.__needs_manual_review = [...new Set([existing.__needs_manual_review, withStatus.__needs_manual_review].filter(Boolean).join('; ').split(';').map(x => x.trim()).filter(Boolean))].join('; ');
     map.set(sig, merged);
