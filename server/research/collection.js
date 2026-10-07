@@ -17,7 +17,7 @@
 const crypto = require('crypto');
 const variableSelection = require('./variable_selection');
 
-const LEDGER_VERSION = 1;
+const LEDGER_VERSION = 2;
 const DEFAULT_MAX_ATTEMPTS = 3;
 
 const PARTS = [
@@ -694,6 +694,11 @@ function derivePartResults(source, xnMatches, hchanhProgress, orderProgress, orp
 
 function buildLedger({ sourceRows = [], units = null, xnProgress = {}, hchanhProgress = {}, orderProgress = {}, previous = null, now = nowIso() } = {}) {
   const prevEncounters = previous?.encounters || {};
+  // Ledger v1 từng có thể ghi hàng loạt XN/CĐHA thành no_result khi chính worker
+  // Python/Chrome lỗi cả lô. Khi lên v2, mở lại quota tự thử đúng MỘT lần cho
+  // hai phần này; các lỗi/phần khác và mọi ledger v2 về sau giữ nguyên attempts.
+  const reopenLegacyXnCdhaNoResult = Boolean(previous)
+    && Number(previous?.version || 1) < LEDGER_VERSION;
   const sources = [];
   const seen = new Set();
   // Không truyền units (không có encounters.csv): mỗi dòng nguồn là một đơn vị như trước.
@@ -757,8 +762,20 @@ function buildLedger({ sourceRows = [], units = null, xnProgress = {}, hchanhPro
       }
       const isNewResult = Boolean(d.result_at) && d.result_at !== p.result_at;
       if (!isNewResult) {
-        // Progress không có gì mới → giữ trạng thái đã biết (kể cả no_result do điều phối ghi).
+        // Progress không có gì mới → giữ trạng thái đã biết.
         parts[key] = { ...p };
+        if (
+          reopenLegacyXnCdhaNoResult
+          && (key === 'xn' || key === 'cdha')
+          && p.status === 'failed'
+          && reasonKind(p.reason) === 'no_result'
+        ) {
+          parts[key] = {
+            ...p,
+            attempts: 0,
+            legacy_no_result_reopened_at: now,
+          };
+        }
         if (p.status === 'pending' && d.status !== 'pending' && !d.result_at) {
           parts[key] = { ...p, status: d.status, reason: d.reason || '', detail: d.detail || '', rows: d.rows ?? p.rows ?? null };
         }
