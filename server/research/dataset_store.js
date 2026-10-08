@@ -15,7 +15,7 @@ const dataDictionary = require('./data_dictionary');
 const { loadAnalysisConfig } = require('./analysis_presets');
 const { ROOT_DIR } = require('../constants');
 const { stableHash, normalizeSimple } = require('./encounter_context');
-const { isSensitiveColumn } = require('./export_utils');
+const { isSensitiveColumn, analysisDatasetColumns } = require('./export_utils');
 const { forceSyncDatabaseAfterDerivedOutput } = require('./research_db');
 const { mergeRowsPreferFilled } = require('./source_merge');
 
@@ -280,10 +280,9 @@ function finalizeAnalysisDataset(runDir) {
   const dst = path.join(runDir, 'analysis_final.csv');
   const table = readCsvTable(src, Number.MAX_SAFE_INTEGER);
   const rows = (table.rows || []).filter(row => !String(row.needs_manual_review || '').trim());
-  // Dataset cuối là dữ liệu phân tích: không mang định danh trực tiếp (Mã BN, họ tên, địa
-  // chỉ, thẻ BHYT...), kể cả khi lấy từ analysis_ready hay biến định danh được chọn nhầm.
-  // Người bệnh được nối qua patient_key.
-  const finalColumns = (table.columns || []).filter(col => !isSensitiveColumn(col));
+  // Giữ Mã BN để đối chiếu hồ sơ theo yêu cầu; các định danh trực tiếp khác vẫn bị loại.
+  // patient_key vẫn đi kèm để nối dữ liệu qua các bảng đã ẩn danh.
+  const finalColumns = analysisDatasetColumns(table.columns || []);
   writeCsv(dst, finalColumns, rows);
   const manifestPath = path.join(runDir, 'manifest.json');
   const manifest = readJsonSafe(manifestPath, {});
@@ -295,7 +294,7 @@ function finalizeAnalysisDataset(runDir) {
       source_file: path.basename(src),
       source_sha256: quality.fileSha256(src),
       excluded_manual_review_rows: (table.rows || []).length - rows.length,
-      rule: 'Lấy từ analysis_selected.csv (nếu có) hoặc analysis_ready.csv, bỏ các dòng needs_manual_review.',
+      rule: 'Lấy từ analysis_selected.csv (nếu có) hoặc analysis_ready.csv, bỏ các dòng needs_manual_review; giữ patient_code để đối chiếu hồ sơ, loại các định danh trực tiếp khác.',
     },
   });
   writeJsonAtomic(manifestPath, {
