@@ -764,10 +764,10 @@ function aggregateItems(variable, aggregation, items, identity) {
 function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByKey = {}) {
   const selection = sanitizeVariableSelection(selectionInput);
   const selected = selection.selected_variables || [];
-  // Dataset phân tích không mang Mã BN/họ tên: người bệnh được nhận diện bằng patient_key
-  // (mã giả danh, bảng liên kết patient_link.csv nằm riêng ở thư mục kho).
+  // Dataset nghiên cứu cần Mã BN để đối chiếu hồ sơ; patient_key vẫn giữ để nối ẩn danh.
+  // Họ tên và các định danh trực tiếp khác không được thêm vào đây.
   const baseColumns = [
-    'research_code', 'encounter_id', 'patient_key', 'sex', 'birth_year', 'age',
+    'research_code', 'encounter_id', 'patient_code', 'patient_key', 'sex', 'birth_year', 'age',
     'admission_date', 'discharge_date', 'hospital_stay_days',
     'diagnosis_raw', 'needs_manual_review', 'source_run_id', 'row_hash',
   ];
@@ -791,6 +791,8 @@ function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByK
     identity.anchor_time = anchorAt.time;
     const out = {};
     for (const col of baseColumns) out[col] = row?.[col] ?? getCell(row, col) ?? '';
+    // Lấy mã qua bộ đọc chuẩn để vẫn xuất được khi nguồn dùng alias của Mã BN.
+    out.patient_code = identity.patient_code || out.patient_code || '';
     if (anchor) out.anchor_datetime = anchorAt.raw;
     for (const variable of variableColumns) {
       const table = variable.table || 'analysis_ready';

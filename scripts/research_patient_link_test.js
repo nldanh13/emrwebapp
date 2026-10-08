@@ -82,7 +82,7 @@ test('patient_key giữ nguyên khi chuẩn hóa lại và ở run mới; ngư�
   assert.strictEqual(b2.patient_key, before['1000222'], 'run mới dùng lại mã cũ');
 });
 
-test('Dataset cuối, bản lưu trong datasets/ và bảng mã hóa không có Mã BN/họ tên, chỉ có patient_key', () => {
+test('Dataset cuối có Mã BN để đối chiếu; bảng mã hóa vẫn ẩn danh bằng patient_key', () => {
   // Giả lập mọi lượt đã lấy đủ dữ liệu để được phép tạo dataset cuối.
   const status = read(path.join(run1, 'extract_status.csv'));
   writeCsv(path.join(run1, 'extract_status.csv'), status.columns, status.rows.map(r => ({ ...r, ready_for_analysis: '1', overall_status: 'done' })));
@@ -90,14 +90,17 @@ test('Dataset cuối, bản lưu trong datasets/ và bảng mã hóa không có 
   const final = read(path.join(run1, 'analysis_final.csv'));
   assert.ok(final.rows.length > 0);
   assert.ok(final.columns.includes('patient_key'));
-  for (const col of ['patient_code', 'patient_name']) assert.ok(!final.columns.includes(col), `analysis_final không có ${col}`);
+  assert.ok(final.columns.includes('patient_code'), 'analysis_final có Mã BN gốc');
+  assert.ok(!final.columns.includes('patient_name'), 'analysis_final vẫn loại họ tên');
   const text = fs.readFileSync(path.join(run1, 'analysis_final.csv'), 'utf8');
-  assert.ok(!text.includes('1000111') && !text.includes('BN GIA LAP'), 'không lọt Mã BN/họ tên');
+  assert.ok(text.includes('1000111'), 'analysis_final giữ Mã BN để đối chiếu');
+  assert.ok(!text.includes('BN GIA LAP'), 'analysis_final không có họ tên');
   const snaps = fs.readdirSync(path.join(run1, 'datasets')).filter(n => !n.startsWith('.'));
   assert.ok(snaps.length >= 1);
   for (const snap of snaps) {
     const snapText = fs.readFileSync(path.join(run1, 'datasets', snap, 'analysis_final.csv'), 'utf8');
-    assert.ok(!snapText.includes('1000111') && !snapText.includes('BN GIA LAP'), `datasets/${snap} không lọt Mã BN/họ tên`);
+    assert.ok(snapText.includes('1000111'), `datasets/${snap} giữ Mã BN để đối chiếu`);
+    assert.ok(!snapText.includes('BN GIA LAP'), `datasets/${snap} không có họ tên`);
   }
   R.buildEncodedDataset(run1);
   const encodedDir = path.join(run1, 'encoded');

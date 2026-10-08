@@ -45,9 +45,10 @@ const AGGREGATION_TEXT = {
   closest_before_anchor: 'Gần trước mốc nhất', closest_after_anchor: 'Gần sau mốc nhất',
 };
 
-// Cột nền của file "Biến đã chọn" (không định danh).
+// Nhãn các cột nền của file "Biến đã chọn".
 const BASE_COLUMN_TEXT = {
   research_code: ['Mã nghiên cứu của lượt', 'Văn bản'],
+  patient_code: ['Mã BN gốc trên EMR (đối chiếu hồ sơ)', 'Văn bản'],
   encounter_id: ['Mã lượt điều trị trong kho (giả danh)', 'Văn bản'],
   patient_key: ['Mã người bệnh giả danh (cùng người = cùng mã)', 'Văn bản'],
   sex: ['Giới tính', 'Phân loại'],
