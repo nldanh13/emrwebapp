@@ -16,6 +16,8 @@ describe('direct patient Research Store collection', () => {
     expect(ui).toContain('Lấy trực tiếp từ EMR theo Mã BN');
     expect(ui).toContain('<textarea');
     expect(ui).toContain('patientCodes: codes');
+    expect(ui).toContain('Đích lưu dữ liệu');
+    expect(ui).toContain('api.collectResearchAuto(directStudyId');
     expect(ui).toContain('Lấy ${parsedDirectCodes.length} ca này');
     expect(ui).toContain('Ctrl+Enter để gửi');
   });
