@@ -79,6 +79,8 @@ def test_normalize_projection_builds_selected_analysis_dataset():
         assert(built.columns.includes('hb'));
         assert(!built.columns.includes('surgery_date'));
         assert(!built.columns.includes('time_to_surgery_hours'));
+        assert(built.columns.includes('patient_code'));
+        assert.strictEqual(built.rows[0].patient_code, 'P001');
         assert.strictEqual(built.rows[0].tuoi, '68');
         assert.strictEqual(built.rows[0].hb, '12.1; 11.8');
         assert.strictEqual(built.rows[1].hb, '');
@@ -87,7 +89,7 @@ def test_normalize_projection_builds_selected_analysis_dataset():
     )
     out = run_node(script)
     assert out["ok"] is True
-    assert out["columns"] == 15
+    assert out["columns"] == 16
 
 
 def test_export_redaction_removes_identity_and_admin_fields():
