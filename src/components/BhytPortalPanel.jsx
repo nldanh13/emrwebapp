@@ -76,7 +76,7 @@ function StepCard({ n, title, hint, children, actions }) {
   );
 }
 
-export default function BhytPortalPanel({ toast, sessionId }) {
+export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = false }) {
   const [available, setAvailable] = useState(null); // null=đang kiểm tra, true/false
   const [launching, setLaunching] = useState(false);
 
@@ -91,6 +91,7 @@ export default function BhytPortalPanel({ toast, sessionId }) {
   const [fillingLogin, setFillingLogin] = useState(false);
 
   const fileInputRef = useRef(null);
+  const autoOpenStarted = useRef(false);
   const [importing, setImporting] = useState(false);
   const [importingFromWebapp, setImportingFromWebapp] = useState(false);
 
@@ -165,6 +166,12 @@ export default function BhytPortalPanel({ toast, sessionId }) {
       setLaunching(false);
     }
   }, [checkAvailable, checkBrowser, toast]);
+
+  useEffect(() => {
+    if (!autoOpenPortal || autoOpenStarted.current) return;
+    autoOpenStarted.current = true;
+    handleOpenPortal();
+  }, [autoOpenPortal, handleOpenPortal]);
 
   const loadLogs = useCallback(async () => {
     try {
