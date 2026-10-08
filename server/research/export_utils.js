@@ -32,6 +32,12 @@ function isSensitiveColumn(column, sensitiveKeys = DEFAULT_SENSITIVE_KEYS) {
     || /url$/.test(key);
 }
 
+// Dataset nghiên cứu được phép giữ Mã BN để người dùng đối chiếu hồ sơ,
+ // nhưng vẫn loại họ tên, địa chỉ, số điện thoại và các định danh trực tiếp khác.
+function analysisDatasetColumns(columns) {
+  return (columns || []).filter(col => normalizeHeader(col) === 'patientcode' || !isSensitiveColumn(col));
+}
+
 function redactCsvTable(columns, rows, sensitiveColumns = DEFAULT_SENSITIVE_COLUMNS) {
   const sensitiveKeys = new Set([...sensitiveColumns].map(normalizeHeader));
   const keptColumns = (columns || []).filter(col => !isSensitiveColumn(col, sensitiveKeys));
@@ -43,4 +49,4 @@ function redactCsvTable(columns, rows, sensitiveColumns = DEFAULT_SENSITIVE_COLU
   return { columns: keptColumns, rows: keptRows, removed_columns: (columns || []).filter(col => !keptColumns.includes(col)) };
 }
 
-module.exports = { DEFAULT_SENSITIVE_COLUMNS, redactCsvTable, isSensitiveColumn };
+module.exports = { DEFAULT_SENSITIVE_COLUMNS, redactCsvTable, isSensitiveColumn, analysisDatasetColumns };
