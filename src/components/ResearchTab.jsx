@@ -927,7 +927,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     />;
     if (archiveMode === 'patient') return <PatientLookupView {...{
       identifiedAccess, identifiedLocked, loadPatientHistory, patientHistory,
-      patientHistoryError, patientHistoryLoading, patientHistoryMeta, patientQuery, setPatientQuery,
+      patientHistoryError, patientHistoryLoading, patientHistoryMeta, patientQuery, setPatientQuery, studies,
     }} />;
     if (archiveMode === 'audit') return <AuditSampleView />;
     if (archiveMode === 'create') return <CreateStudyView {...{
