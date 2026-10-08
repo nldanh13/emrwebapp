@@ -25,10 +25,12 @@ function parsePatientCodes(raw) {
 
 export function PatientLookupView({
   identifiedAccess, identifiedLocked, loadPatientHistory, patientHistory, patientHistoryError,
-  patientHistoryLoading, patientHistoryMeta, patientQuery, setPatientQuery,
+  patientHistoryLoading, patientHistoryMeta, patientQuery, setPatientQuery, studies = [],
 }) {
   const [directPatientCodes, setDirectPatientCodes] = useState('');
+  const [directStudyId, setDirectStudyId] = useState('');
   const [directState, setDirectState] = useState({ loading: false, message: '', error: '' });
+  const directStudy = studies.find(study => study.id === directStudyId) || null;
   const parsedDirectCodes = parsePatientCodes(directPatientCodes);
 
   const collectDirectPatients = async () => {
@@ -48,13 +50,19 @@ export function PatientLookupView({
 
     setDirectState({ loading: true, message: '', error: '' });
     try {
-      const r = await api.collectResearchAuto('', { patientCodes: codes, headless: true });
+      const r = await api.collectResearchAuto(directStudyId, { patientCodes: codes, headless: true });
       if (codes.length === 1) setPatientQuery(codes[0]);
       const missing = Number(r?.missing_count || 0);
       const base = r?.message || `Đã nhận ${codes.length} Mã BN. Máy chủ sẽ lấy lần lượt từng ca.`;
+      const destination = directStudy
+        ? `Nghiên cứu "${directStudy.name || directStudy.id}": `
+        : 'Kho dữ liệu gốc: ';
+      const updateNote = directStudy
+        ? ' Sau khi lấy xong, hệ thống sẽ chuẩn hóa run của nghiên cứu và dựng lại dữ liệu theo các biến đã thiết lập.'
+        : ' Dữ liệu chỉ được cập nhật vào Kho dữ liệu gốc.';
       setDirectState({
         loading: false,
-        message: missing ? `${base} Có ${missing} mã chưa có trong danh sách đã quét.` : base,
+        message: `${destination}${base}${missing ? ` Có ${missing} mã chưa có trong danh sách đã quét.` : ''}${updateNote}`,
         error: '',
       });
     } catch (e) {
@@ -83,6 +91,22 @@ export function PatientLookupView({
         <div style={{ fontSize: FS.xs, color: C.text2 }}>
           <b>Lấy trực tiếp từ EMR theo Mã BN</b> · có thể dán một hoặc nhiều Mã BN, mỗi dòng một mã. Hệ thống lấy Hồ sơ nền, Ra viện, Phẫu thuật, Y lệnh, XN và CĐHA theo đúng thứ tự đã dán.
         </div>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: FS.xs, color: C.text2 }}>
+          <span><b>Đích lưu dữ liệu:</b></span>
+          <select
+            aria-label="Đích lưu dữ liệu"
+            value={directStudyId}
+            disabled={identifiedLocked || directState.loading}
+            onChange={e => setDirectStudyId(e.target.value)}
+            style={{ ...inp, minWidth: 240, maxWidth: '100%' }}
+          >
+            <option value="">Kho dữ liệu gốc</option>
+            {studies.map(study => <option key={study.id} value={study.id}>{study.name || study.id}</option>)}
+          </select>
+          <span>{directStudy
+            ? 'Mã BN phải thuộc danh sách nguồn của nghiên cứu; lấy xong sẽ tự chuẩn hóa và cập nhật các biến đã chọn.'
+            : 'Đang chọn Kho dữ liệu gốc; lựa chọn này không cập nhật run của nghiên cứu.'}</span>
+        </label>
         <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <textarea
             value={directPatientCodes}
