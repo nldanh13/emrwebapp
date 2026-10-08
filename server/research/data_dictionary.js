@@ -46,8 +46,8 @@ const COMMON = {
     source: 'research_source.csv (cấp khi tạo nguồn chuẩn) hoặc mã script XN/CĐHA đã cấp cho cùng đợt.',
     empty: 'Chưa ghép được đợt (xem encounter_match_status).',
   }),
-  patient_code: col('string', 'Mã BN trên EMR; được đưa vào file analysis_selected.csv và analysis_final.csv để đối chiếu hồ sơ theo yêu cầu.', {
-    identifier: 'direct', use: 'included_in_research_export', source: 'Cột Mã BN của danh sách nội trú / file thô.',
+  patient_code: col('string', 'Mã BN trên EMR.', {
+    identifier: 'direct', use: 'excluded', source: 'Cột Mã BN của danh sách nội trú / file thô.',
     empty: 'Không được trống (bắt buộc).',
   }),
   patient_key: col('string', 'Mã người bệnh giả danh: cùng một người bệnh luôn cùng mã trong một kho, dùng để nối các đợt của cùng người khi xuất ẩn danh.', {
