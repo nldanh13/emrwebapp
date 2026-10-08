@@ -664,13 +664,13 @@ export default function SickLeaveTab({ toast, workDateRange }) {
           <span style={{ flex: 1, minWidth: 0 }}>
             <span style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Nhập/sửa lên Cổng BHXH</span>
             <span style={{ display: 'block', fontSize: FS.xs, color: C.text3, marginTop: 1 }}>
-              Đăng nhập, lấy dữ liệu đã rà soát, điền thử rồi nhập thật — ngay tại đây, không cần mở tab riêng.
+              Bấm mở để khởi chạy Chrome tới Cổng BHYT; CAPTCHA/OTP trên Chrome, còn hồ sơ và trạng thái vẫn ở Data Hub.
             </span>
           </span>
         </button>
         {bhytPanelOpen && (
           <div style={{ border: `1px solid ${C.blueBorder || C.border}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: 12 }}>
-            <BhytPortalPanel toast={toast} sessionId={sessionId} />
+            <BhytPortalPanel toast={toast} sessionId={sessionId} autoOpenPortal={bhytPanelOpen} />
           </div>
         )}
       </div>
