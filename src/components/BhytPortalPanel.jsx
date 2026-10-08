@@ -118,24 +118,28 @@ export default function BhytPortalPanel({ toast, sessionId }) {
     }
   }, []);
 
-  const handleLaunch = useCallback(async () => {
-    setLaunching(true);
+  const loadAll = useCallback(async () => {
     try {
-      const result = await api.launchBhytTool();
-      if (result?.status !== 'ok') throw new Error(result?.message || 'Không khởi động được công cụ.');
-      // Chờ tối đa vài giây rồi kiểm tra lại — Node đã tự chờ ready trước khi
-      // trả về, nhưng thử thêm vài lần cho chắc trước khi báo thất bại.
-      for (let i = 0; i < 6; i += 1) {
-        if (await checkAvailable()) return;
-        await new Promise(r => setTimeout(r, 500));
-      }
-      toast?.('Đã yêu cầu khởi động nhưng chưa thấy sẵn sàng — thử bấm lại sau vài giây.', 'info');
+      const query = new URLSearchParams({ doc_type: typeFilter, status: statusFilter, search: search.trim() });
+      const [recordsRes, summaryRes] = await Promise.all([
+        bhytFetch(`/api/records?${query}`),
+        bhytFetch('/api/summary'),
+      ]);
+      setRecords(Array.isArray(recordsRes.records) ? recordsRes.records : []);
+      setSummary(summaryRes.summary || { total: 0, not_ready: 0, by_type: {} });
+      setWorkerStatus(summaryRes.worker || { running: false, current_id: null, message: '' });
     } catch (e) {
-      toast?.(String(e?.message || 'Không khởi động được công cụ — mở tay bằng start.bat trong tools/bhyt_selenium_app rồi thử lại.'), 'error');
-    } finally {
-      setLaunching(false);
+      toast?.(String(e?.message || 'Không tải được danh sách hồ sơ BHYT'), 'error');
     }
-  }, [checkAvailable, toast]);
+  }, [typeFilter, statusFilter, search, toast]);
+
+  const checkBrowser = useCallback(async () => {
+    try {
+      setBrowserStatus(await bhytFetch('/api/browser/status'));
+    } catch (e) {
+      setBrowserStatus({ logged_in: false, error: e.message });
+    }
+  }, []);
 
   // Mở cổng BHXH trên Chrome riêng như luồng mở EMR. Nếu công cụ chưa chạy,
   // tự khởi động trước; CAPTCHA/OTP vẫn do người dùng nhập trực tiếp trên Chrome.
@@ -161,29 +165,6 @@ export default function BhytPortalPanel({ toast, sessionId }) {
       setLaunching(false);
     }
   }, [checkAvailable, checkBrowser, toast]);
-
-  const loadAll = useCallback(async () => {
-    try {
-      const query = new URLSearchParams({ doc_type: typeFilter, status: statusFilter, search: search.trim() });
-      const [recordsRes, summaryRes] = await Promise.all([
-        bhytFetch(`/api/records?${query}`),
-        bhytFetch('/api/summary'),
-      ]);
-      setRecords(Array.isArray(recordsRes.records) ? recordsRes.records : []);
-      setSummary(summaryRes.summary || { total: 0, not_ready: 0, by_type: {} });
-      setWorkerStatus(summaryRes.worker || { running: false, current_id: null, message: '' });
-    } catch (e) {
-      toast?.(String(e?.message || 'Không tải được danh sách hồ sơ BHYT'), 'error');
-    }
-  }, [typeFilter, statusFilter, search, toast]);
-
-  const checkBrowser = useCallback(async () => {
-    try {
-      setBrowserStatus(await bhytFetch('/api/browser/status'));
-    } catch (e) {
-      setBrowserStatus({ logged_in: false, error: e.message });
-    }
-  }, []);
 
   const loadLogs = useCallback(async () => {
     try {
