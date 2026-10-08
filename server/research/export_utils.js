@@ -33,7 +33,7 @@ function isSensitiveColumn(column, sensitiveKeys = DEFAULT_SENSITIVE_KEYS) {
 }
 
 // Dataset nghiên cứu được phép giữ Mã BN để người dùng đối chiếu hồ sơ,
- // nhưng vẫn loại họ tên, địa chỉ, số điện thoại và các định danh trực tiếp khác.
+// nhưng vẫn loại họ tên, địa chỉ, số điện thoại và các định danh trực tiếp khác.
 function analysisDatasetColumns(columns) {
   return (columns || []).filter(col => normalizeHeader(col) === 'patientcode' || !isSensitiveColumn(col));
 }
