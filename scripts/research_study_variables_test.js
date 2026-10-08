@@ -40,11 +40,11 @@ fs.writeFileSync(studyMetaPath(STUDY), JSON.stringify({ id: STUDY, name: 'NC th�
 const runDir = path.join(runsDir(STUDY), '20260102_000000');
 fs.mkdirSync(runDir, { recursive: true });
 fs.writeFileSync(path.join(runDir, 'manifest.json'), JSON.stringify({ run_id: '20260102_000000' }));
-writeCsv(path.join(runDir, 'analysis_ready.csv'), ['research_code', 'encounter_id', 'patient_key', 'sex', 'age'], [
-  { research_code: 'NC1', encounter_id: 'e1', patient_key: 'p1', sex: 'Nữ', age: '70' },
-  { research_code: 'NC2', encounter_id: 'e2', patient_key: 'p2', sex: 'Nam', age: '65' },
+writeCsv(path.join(runDir, 'analysis_ready.csv'), ['research_code', 'encounter_id', 'patient_code', 'patient_key', 'sex', 'age'], [
+  { research_code: 'NC1', encounter_id: 'e1', patient_code: '1001', patient_key: 'p1', sex: 'Nữ', age: '70' },
+  { research_code: 'NC2', encounter_id: 'e2', patient_code: '1002', patient_key: 'p2', sex: 'Nam', age: '65' },
   // Không đạt tiêu chuẩn chọn mẫu (tuổi < 50): có trong dữ liệu nhưng không thuộc mẫu phân tích.
-  { research_code: 'NC3', encounter_id: 'e3', patient_key: 'p3', sex: 'Nam', age: '40' },
+  { research_code: 'NC3', encounter_id: 'e3', patient_code: '1003', patient_key: 'p3', sex: 'Nam', age: '40' },
 ]);
 writeCsv(path.join(runDir, 'analysis_final.csv'), ['research_code', 'sex'], [{ research_code: 'NC1', sex: 'Nữ' }]);
 
@@ -100,7 +100,8 @@ test('từ điển biến: mỗi cột của file xuất một dòng, nhãn/ki�
   assert.strictEqual(age.ma_bien_nguon, 'analysis_ready.age');
   assert.strictEqual(age.co_du_lieu + age.thieu, 2);
   assert.match(age.cach_lay, /đợt|mốc/);
-  assert.ok(!book.rows.some(r => /ho_ten|ma_bn|patient_code/i.test(r.cot)), 'không có cột định danh');
+  assert.ok(book.rows.some(r => r.cot === 'patient_code' && /Mã BN gốc/.test(r.nhan)), 'từ điển mô tả cột Mã BN');
+  assert.ok(!book.rows.some(r => /ho_ten|patient_name/i.test(r.cot)), 'không có họ tên');
 });
 
 test('không còn biến nào → báo lỗi tiếng Việt, không ghi', () => {
