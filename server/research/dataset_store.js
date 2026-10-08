@@ -15,7 +15,7 @@ const dataDictionary = require('./data_dictionary');
 const { loadAnalysisConfig } = require('./analysis_presets');
 const { ROOT_DIR } = require('../constants');
 const { stableHash, normalizeSimple } = require('./encounter_context');
-const { isSensitiveColumn, analysisDatasetColumns } = require('./export_utils');
+const { analysisDatasetColumns } = require('./export_utils');
 const { forceSyncDatabaseAfterDerivedOutput } = require('./research_db');
 const { mergeRowsPreferFilled } = require('./source_merge');
 
