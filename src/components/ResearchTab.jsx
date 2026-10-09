@@ -824,23 +824,39 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       if (!studyId) throw new Error('Không lấy được ID nghiên cứu.');
       let imported = 0;
       let fromArchive = null;
+      let importError = '';
       try {
-        const imp = await api.importResearchFromArchive(studyId, {});
+        const expectedCount = Number(variablePreview.summary.total);
+        const imp = await api.importResearchFromArchive(studyId, {
+          expected_count: expectedCount,
+          runId: spec.run_id,
+        });
         imported = Number(imp?.count || 0);
-      } catch (importErr) {
-        t(`Đã tạo nghiên cứu, nhưng chưa nạp được danh sách mẫu: ${String(importErr.message || importErr)}`, 'error');
+        if (!Number.isInteger(expectedCount) || imported !== expectedCount) {
+          throw new Error(`Bước xem trước có ${compactNumber(expectedCount)} lượt nhưng danh sách vừa lưu có ${compactNumber(imported)} lượt.`);
+        }
+      } catch (error) {
+        importError = String(error.message || error);
       }
       // Mẫu chọn từ kho thì dữ liệu cũng đã có trong kho: lấy luôn từ kho, không mở EMR.
-      if (imported) {
+      if (!importError && imported) {
         try {
           fromArchive = await api.fetchResearchStudyFromArchive(studyId);
+          const seededCount = Number(fromArchive?.seeded?.samples);
+          if (Number.isInteger(seededCount) && seededCount !== imported) {
+            importError = `Danh sách đã lưu có ${compactNumber(imported)} lượt nhưng dữ liệu nạp từ kho báo ${compactNumber(seededCount)} lượt. Hãy dừng phân tích và báo quản trị kiểm tra.`;
+          }
         } catch (seedErr) {
-          t(`Đã nạp mẫu, nhưng chưa lấy được dữ liệu từ kho: ${String(seedErr.message || seedErr)}. Bấm "Lấy dữ liệu từ kho" để thử lại.`, 'error');
+          importError = `Chưa lấy được dữ liệu có sẵn từ kho: ${String(seedErr.message || seedErr)}. Hãy mở nghiên cứu và bấm "Lấy dữ liệu từ kho" để thử lại.`;
         }
       }
       await loadSummary();
       setSelectedId(studyId);
       setStudyMode('stats');
+      if (importError) {
+        t(`Đã tạo nghiên cứu "${name}" nhưng chưa nạp được cohort đúng với bước xem trước. Nghiên cứu này chưa được dùng để phân tích: ${importError}`, 'error');
+        return;
+      }
       setVariableStudyDraft({ name: '', description: '' });
       setSelectedVariableIds(new Set());
       setVariableConditions([]);

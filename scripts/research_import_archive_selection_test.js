@@ -61,7 +61,7 @@ test('lưu thành nghiên cứu lấy đúng các lượt dùng hoạt chất nh
   assert.strictEqual(r.count, 2);
   const cohort = readCsvTable(cohortPath(studyId), 100).rows;
   assert.deepStrictEqual(cohort.map(x => x['Mã nội trú']), ['NT2', 'NT4']);
-  assert.ok(!cohort[0].encounter_id, 'file danh sách mẫu giữ cột gốc, không thêm mã lượt');
+  assert.strictEqual(cohort[0].encounter_id, 'enc_a2', 'lưu khóa lượt để các bước sau không ghép nhầm');
 });
 
 test('mỗi người bệnh một lượt và thời gian nghiên cứu cũng áp đúng khi lưu', () => {
@@ -69,6 +69,44 @@ test('mỗi người bệnh một lượt và thời gian nghiên cứu cũng á
   const cohort = readCsvTable(cohortPath('all'), 100).rows;
   assert.deepStrictEqual(cohort.map(x => x['Mã nội trú']), ['NT2', 'NT3', 'NT4']);
   assert.strictEqual(r.count, 3);
+});
+
+
+test('lưu dùng đúng lượt xem trước khi danh sách ban đầu thiếu mốc giờ và BN có nhiều lượt', () => {
+  initial.push({ 'Mã BN': '1004', 'Mã nội trú': '', 'Họ tên': 'D' });
+  analysis.push(
+    { research_code: 'NC5', encounter_id: 'enc_d1', patient_code: '1004', patient_key: 'P4', admission_date: '2025-12-01 08:00', discharge_date: '2025-12-03' },
+    { research_code: 'NC6', encounter_id: 'enc_d2', patient_code: '1004', patient_key: 'P4', admission_date: '2025-12-10 08:00', discharge_date: '2025-12-12' },
+  );
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), Object.keys(initial[0]), initial);
+  writeCsv(path.join(runDir, 'analysis_ready.csv'), Object.keys(analysis[0]), analysis);
+  const labs = [{ encounter_id: 'enc_d2', patient_code: '1004', result_num: '1.2', test_name_norm: 'Ca++ máu ion hóa' }];
+  writeCsv(path.join(runDir, 'lab_results.csv'), Object.keys(labs[0]), labs);
+  const labSelection = {
+    run_id: '20260101_000000',
+    selected_variables: [{ id: 'analysis_ready.patient_key', table: 'analysis_ready', name: 'patient_key', type: 'text' }],
+    conditions: [{ id: 'ca', variable_id: 'ca', table: 'lab_results', name: 'result_num', operator: 'not_empty' }],
+  };
+  const preview = summarizeSelectionForRun(runDir, labSelection);
+  assert.strictEqual(preview.summary.total, 1);
+  const imported = importArchiveToStudy({ id: 'lab-match' }, { variable_selection: labSelection });
+  assert.strictEqual(imported.count, preview.summary.total);
+  const cohort = readCsvTable(cohortPath('lab-match'), 100).rows;
+  assert.strictEqual(cohort.length, preview.summary.total);
+  assert.strictEqual(cohort[0].encounter_id, 'enc_d2', 'giữ đúng lượt mà bước xem trước đã ghép XN');
+});
+
+test('không ghi cohort nếu số lượt khác kết quả xem trước', () => {
+  const selection = {
+    run_id: '20260101_000000',
+    selected_variables: [{ id: 'analysis_ready.patient_key', table: 'analysis_ready', name: 'patient_key', type: 'text' }],
+    conditions: [{ id: 'ca', variable_id: 'ca', table: 'lab_results', name: 'result_num', operator: 'not_empty' }],
+  };
+  assert.throws(
+    () => importArchiveToStudy({ id: 'wrong-count' }, { variable_selection: selection, expected_count: 2 }),
+    err => err?.code === 'COHORT_PREVIEW_MISMATCH' && /xem trước có 2 lượt/.test(err.message),
+  );
+  assert.strictEqual(fs.existsSync(cohortPath('wrong-count')), false, 'không để lại cohort sai số mẫu');
 });
 
 console.log(`research_import_archive_selection_test: ${passed} passed`);

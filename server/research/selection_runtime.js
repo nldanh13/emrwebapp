@@ -105,31 +105,56 @@ function stepLabel(step, selection) {
   return `${step.condition.exclude ? 'Loại trừ: ' : ''}${conditionLabel(step.condition)}`;
 }
 
-// Thống kê mô tả các biến đã chọn trên một run (dùng cho bước Kiểm tra của Tạo nghiên cứu và
-// phần Thống kê của nghiên cứu). Chỉ trả số liệu tổng hợp, không trả dữ liệu từng lượt.
-function summarizeSelectionForRun(runDir, selectionInput, { maxEncounters = Number.MAX_SAFE_INTEGER, maxSourceRows = Number.MAX_SAFE_INTEGER } = {}) {
+// Lọc cohort từ cùng nguồn analysis_ready cho cả xem trước, lưu cohort và xuất dữ liệu.
+// Nhờ vậy một condition luôn được áp vào cùng lượt điều trị, kể cả khi danh sách ban đầu thiếu mã lượt.
+function selectCohortForRun(runDir, selectionInput, {
+  maxEncounters = Number.MAX_SAFE_INTEGER,
+  maxSourceRows = Number.MAX_SAFE_INTEGER,
+  onStep = null,
+  filterSourceRow = null,
+} = {}) {
   const selection = sanitizeVariableSelection(selectionInput);
   const analysisTable = readCsvTable(path.join(runDir, TABLES.analysis_ready.file), maxEncounters);
   const tableRows = loadRunTablesForSelection(runDir, selection, [], maxSourceRows);
-  // Sàng lọc từng bước: thời gian nghiên cứu → từng tiêu chuẩn chọn/loại trừ → mỗi người một lượt,
-  // để biết mỗi bước loại bao nhiêu lượt. Kết quả cuối giống áp tất cả cùng lúc (nối bằng VÀ).
+  const allSourceRows = analysisTable.rows || [];
+  const sourceRows = typeof filterSourceRow === 'function' ? allSourceRows.filter(filterSourceRow) : allSourceRows;
+  const rows = variableSelection.selectCohortRows(sourceRows, selection, tableRows, onStep);
+  return {
+    selection,
+    rows,
+    sourceRows,
+    tableRows,
+    source_total: (analysisTable.rows || []).length,
+    source_limited: Boolean(analysisTable.limited) || Object.values(tableRows).some(items => items.length >= maxSourceRows),
+  };
+}
+
+// Thống kê mô tả các biến đã chọn trên một run (dùng cho bước Kiểm tra của Tạo nghiên cứu và
+// phần Thống kê của nghiên cứu). Chỉ trả số liệu tổng hợp, không trả dữ liệu từng lượt.
+function summarizeSelectionForRun(runDir, selectionInput, { maxEncounters = Number.MAX_SAFE_INTEGER, maxSourceRows = Number.MAX_SAFE_INTEGER } = {}) {
   const countPatients = list => new Set(list.map(r => String(r?.patient_key || r?.patient_code || '').trim()).filter(Boolean)).size;
-  const sourceRows = analysisTable.rows || [];
-  const funnel = [{ label: 'Toàn bộ kho', encounters: sourceRows.length, patients: countPatients(sourceRows) }];
-  const rows = variableSelection.selectCohortRows(sourceRows, selection, tableRows, (step, list) => {
-    funnel.push({ label: stepLabel(step, selection), kind: step.kind, exclude: Boolean(step.condition?.exclude), encounters: list.length, patients: countPatients(list) });
+  const funnel = [];
+  const selection = sanitizeVariableSelection(selectionInput);
+  const selected = selectCohortForRun(runDir, selection, {
+    maxEncounters,
+    maxSourceRows,
+    onStep: (step, list) => {
+      funnel.push({ label: stepLabel(step, selection), kind: step.kind, exclude: Boolean(step.condition?.exclude), encounters: list.length, patients: countPatients(list) });
+    },
   });
-  const dataset = variableSelection.buildSelectedAnalysisDataset(rows, selection, tableRows);
+  funnel.unshift({ label: 'Toàn bộ kho', encounters: selected.sourceRows.length, patients: countPatients(selected.sourceRows) });
+  const dataset = variableSelection.buildSelectedAnalysisDataset(selected.rows, selected.selection, selected.tableRows);
   return {
     dataset,
     summary: { ...variableSelection.summarizeSelectedDataset(dataset), funnel },
-    source_total: (analysisTable.rows || []).length,
-    source_limited: Boolean(analysisTable.limited) || Object.values(tableRows).some(rows => rows.length >= maxSourceRows),
+    source_total: selected.source_total,
+    source_limited: selected.source_limited,
   };
 }
 
 module.exports = {
   summarizeSelectionForRun,
+  selectCohortForRun,
   sanitizeVariableSelection,
   activeVariableSelectionFromStudy,
   readRunRowsForSelection,
