@@ -61,7 +61,7 @@ test('lưu thành nghiên cứu lấy đúng các lượt dùng hoạt chất nh
   assert.strictEqual(r.count, 2);
   const cohort = readCsvTable(cohortPath(studyId), 100).rows;
   assert.deepStrictEqual(cohort.map(x => x['Mã nội trú']), ['NT2', 'NT4']);
-  assert.ok(!cohort[0].encounter_id, 'file danh sách mẫu giữ cột gốc, không thêm mã lượt');
+  assert.strictEqual(cohort[0].encounter_id, 'enc_a2', 'lưu khóa lượt để các bước sau không ghép nhầm');
 });
 
 test('mỗi người bệnh một lượt và thời gian nghiên cứu cũng áp đúng khi lưu', () => {
@@ -94,6 +94,14 @@ test('lưu dùng đúng lượt xem trước khi danh sách ban đầu thiếu m
   const cohort = readCsvTable(cohortPath('lab-match'), 100).rows;
   assert.strictEqual(cohort.length, preview.summary.total);
   assert.strictEqual(cohort[0].encounter_id, 'enc_d2', 'giữ đúng lượt mà bước xem trước đã ghép XN');
+});
+
+test('không ghi cohort nếu số lượt khác kết quả xem trước', () => {
+  assert.throws(
+    () => importArchiveToStudy({ id: 'wrong-count' }, { variable_selection: labSelection, expected_count: 2 }),
+    err => err?.code === 'COHORT_PREVIEW_MISMATCH' && /xem trước có 2 lượt/.test(err.message),
+  );
+  assert.strictEqual(fs.existsSync(cohortPath('wrong-count')), false, 'không để lại cohort sai số mẫu');
 });
 
 console.log(`research_import_archive_selection_test: ${passed} passed`);
