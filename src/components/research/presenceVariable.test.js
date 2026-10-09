@@ -71,7 +71,7 @@ describe('danh mục xét nghiệm', () => {
     name: 'lab:lymphocyte',
     label: 'LYM',
     virtual_kind: 'lab_test',
-    source_filter: { test_name_norm: 'lymphocyte', unit: '10^9/L' },
+    source_filter: { test_name_norm: 'lymphocyte', unit: '10^9/L', lab_measurement_kind: 'absolute' },
     lab_group: 'Huyết học',
   }, { key: 'lab_results', label: 'Xét nghiệm' });
 
