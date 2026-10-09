@@ -174,12 +174,13 @@ function syncAllToPatientDb() {
  * Tìm đợt nằm viện đã có đủ các file cần (Kho nghiên cứu dùng lại thay vì mở EMR).
  * Chỉ trả đợt đã có ngày ra (đã kết thúc) và ngày vào nghiên cứu nằm trong đợt.
  */
-function findStoredStay(maBn, admissionIso, wantedFiles = [], { onlyGoc = false } = {}) {
+// scanCache (tùy chọn, Map): bộ nhớ tạm cho MỘT lần dựng màn hình, xem patient_db.bestScans.
+function findStoredStay(maBn, admissionIso, wantedFiles = [], { onlyGoc = false, scanCache = null } = {}) {
   // Kho người bệnh (SQLite) là nguồn đọc chính; file JSON này là dự phòng khi kho tắt
   // (Node cũ) hoặc chưa có đợt đó (vd kho mới tạo, chưa góp dữ liệu cũ).
   if (patientDb.available()) {
     try {
-      const hit = patientDb.findStay(maBn, admissionIso, wantedFiles, { onlyGoc });
+      const hit = patientDb.findStay(maBn, admissionIso, wantedFiles, { onlyGoc, scanCache });
       if (hit) return hit;
     } catch (err) {
       console.warn(`[patient_db] Không đọc được kho người bệnh, dùng kho đợt nằm viện: ${err.message}`);

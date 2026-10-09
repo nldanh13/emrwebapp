@@ -221,15 +221,6 @@ router.get('/data-info', (req, res) => {
     } catch (_) { return null; }
   }
 
-  function recordCount(filePath) {
-    try {
-      const data = readJsonSafe(filePath, null);
-      if (Array.isArray(data)) return data.length;
-      if (data && typeof data === 'object') return Object.keys(data).length;
-      return 0;
-    } catch (_) { return 0; }
-  }
-
   const rawInfo       = fileInfo(ctx.RAW_PATH);
   const sortedInfo    = fileInfo(ctx.SORTED_PATH);
   const finalInfo     = fileInfo(ctx.FINAL_PATH);
@@ -263,12 +254,21 @@ function fileInfo(filePath) {
   } catch (_) { return null; }
 }
 
+// Số dòng của file dữ liệu, nhớ theo (giờ sửa, kích thước): /api/data-info được gọi mỗi lần mở
+// Lấy dữ liệu / Bệnh phòng, trước đây đọc và giải mã cả file y lệnh lớn chỉ để đếm .length.
+const RECORD_COUNT_CACHE_MAX = 500;
+const recordCountCache = new Map(); // filePath → { mtimeMs, size, count }
+
 function recordCount(filePath) {
   try {
+    const stat = fs.statSync(filePath);
+    const cached = recordCountCache.get(filePath);
+    if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.count;
     const data = readJsonSafe(filePath, null);
-    if (Array.isArray(data)) return data.length;
-    if (data && typeof data === 'object') return Object.keys(data).length;
-    return 0;
+    const count = Array.isArray(data) ? data.length : (data && typeof data === 'object' ? Object.keys(data).length : 0);
+    if (recordCountCache.size >= RECORD_COUNT_CACHE_MAX) recordCountCache.delete(recordCountCache.keys().next().value);
+    recordCountCache.set(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, count });
+    return count;
   } catch (_) { return 0; }
 }
 

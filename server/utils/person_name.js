@@ -48,7 +48,20 @@ const PATIENT_ID_KEYS = new Set([
   'noitruid',
 ]);
 
+// Tên khóa lặp lại rất nhiều (mỗi dòng y lệnh/bảng kê cùng một bộ khóa) nên nhớ kết quả chuẩn hóa:
+// lọc tên chạy trên mọi phản hồi JSON, chuẩn hóa lại từng khóa làm gói lớn chậm gấp nhiều lần.
+const FIELD_KEY_CACHE_MAX = 5000;
+const fieldKeyCache = new Map();
+
 function normalizeFieldKey(key) {
+  const cached = fieldKeyCache.get(key);
+  if (cached !== undefined) return cached;
+  const normalized = normalizeFieldKeyUncached(key);
+  if (fieldKeyCache.size < FIELD_KEY_CACHE_MAX) fieldKeyCache.set(key, normalized);
+  return normalized;
+}
+
+function normalizeFieldKeyUncached(key) {
   return String(key || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -80,10 +93,11 @@ function sanitizePatientNameFields(value, seen = new WeakSet(), depth = 0) {
   const keys = Object.keys(value);
   const patientContext = keys.some(key => PATIENT_ID_KEYS.has(normalizeFieldKey(key)));
 
-  for (const [key, child] of Object.entries(value)) {
+  for (const key of keys) {
+    const child = value[key];
     const normalizedKey = normalizeFieldKey(key);
     const isContextName = patientContext && (normalizedKey === 'ten' || normalizedKey === 'name');
-    if ((isPatientNameField(key) || isContextName) && typeof child === 'string') {
+    if ((PATIENT_NAME_KEYS.has(normalizedKey) || isContextName) && typeof child === 'string') {
       try { value[key] = cleanPersonName(child); } catch (_) {}
       continue;
     }

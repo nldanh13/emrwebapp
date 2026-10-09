@@ -332,16 +332,24 @@ function insertScan(conn, { maBn, luotId, loai, nguon, muc, now, data }) {
 }
 
 // Bản tốt nhất của 1 loại dữ liệu trong 1 lượt: gốc trước, rồi bản mới nhất.
-function bestScans(conn, luotId, { onlyGoc = false } = {}) {
-  const rows = conn.prepare(`SELECT id, loai, nguon, muc, lay_luc, du_lieu FROM lan_quet WHERE luot_id = ? ${onlyGoc ? "AND muc = 'goc'" : ''}
+// scanCache (tùy chọn, Map): dùng chung trong MỘT lần dựng màn hình để cùng một đợt không bị đọc và
+// giải mã lại nhiều lần (mỗi loại file gọi findStay riêng). Không giữ qua các yêu cầu.
+function bestScans(conn, luotId, { onlyGoc = false, scanCache = null } = {}) {
+  const cacheKey = `${luotId}|${onlyGoc ? 'goc' : 'all'}`;
+  if (scanCache?.has(cacheKey)) return scanCache.get(cacheKey);
+  // Chọn lần quét tốt nhất của mỗi loại trước (không đọc du_lieu), rồi chỉ đọc và giải mã dữ liệu
+  // của đúng các lần đã chọn — trước đây đọc cả du_lieu của mọi lần quét cũ đã bị thay.
+  const rows = conn.prepare(`SELECT id, loai, nguon, muc, lay_luc FROM lan_quet WHERE luot_id = ? ${onlyGoc ? "AND muc = 'goc'" : ''}
     ORDER BY CASE muc WHEN 'goc' THEN 0 ELSE 1 END, lay_luc DESC, id DESC`).all(luotId);
+  const readData = conn.prepare('SELECT du_lieu FROM lan_quet WHERE id = ?');
   const out = {};
   for (const r of rows) {
     if (out[r.loai]) continue;
     let data = null;
-    try { data = JSON.parse(r.du_lieu); } catch (_) {}
+    try { data = JSON.parse(readData.get(r.id)?.du_lieu); } catch (_) {}
     out[r.loai] = { id: r.id, nguon: r.nguon, muc: r.muc, lay_luc: r.lay_luc, data };
   }
+  scanCache?.set(cacheKey, out);
   return out;
 }
 
@@ -741,7 +749,7 @@ function resultRows(maBn, fromDay, toDay, kind = 'xn') {
  * Mỗi file lấy bản tốt nhất: gốc trước, cùng mức thì mới hơn. onlyGoc: chỉ tính dữ liệu gốc.
  * Trả cùng dạng với hchanh_stay_store.findStoredStay để Kho nghiên cứu / Kiểm hồ sơ dùng thẳng.
  */
-function findStay(maBn, admissionIso, wantedFiles = [], { onlyGoc = false } = {}) {
+function findStay(maBn, admissionIso, wantedFiles = [], { onlyGoc = false, scanCache = null } = {}) {
   const code = txt(maBn);
   const day = dayOf(admissionIso);
   if (!code || !day) return null;
@@ -752,7 +760,7 @@ function findStay(maBn, admissionIso, wantedFiles = [], { onlyGoc = false } = {}
     const from = dayOf(stay.gio_vao);
     const to = dayOf(stay.gio_ra);
     if (!from || !to || day < from || day > to) continue;
-    const best = bestScans(conn, stay.id, { onlyGoc });
+    const best = bestScans(conn, stay.id, { onlyGoc, scanCache });
     const files = Object.fromEntries(INPATIENT_FILES.filter(k => best[k]?.data).map(k => [k, best[k]]));
     if (!Object.keys(files).length || !wantedFiles.every(k => files[k])) continue;
     const used = wantedFiles.length ? wantedFiles : Object.keys(files);

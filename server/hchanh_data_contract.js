@@ -390,8 +390,22 @@ function row_encounter_key(row, ma_bn, admissionTime, department) {
 // Gọi khi mở tab Hành chánh hoặc sau khi scan xong.
 // Bệnh nhân mới → thêm vào index với fetched rỗng.
 // Bệnh nhân cũ → giữ nguyên fetched, chỉ cập nhật tên/phòng/tags.
+// Dấu nội dung index, bỏ qua các mốc giờ đổi theo mỗi lần đồng bộ: dùng để không ghi lại file khi
+// danh sách không đổi. Ghi lại vô ích làm màn hình Hành chánh nhận tin "đã đổi" và dựng lại cả bảng.
+function index_content_signature(index) {
+  const patients = {};
+  for (const [key, meta] of Object.entries(index?.patients || {})) {
+    if (!meta || typeof meta !== 'object') { patients[key] = meta; continue; }
+    const { last_seen_at: _at, last_seen_session_id: _sid, ...rest } = meta;
+    patients[key] = rest;
+  }
+  const { at: _syncAt, ...lastSync } = index?.lastSync || {};
+  return JSON.stringify({ patients, lastSync });
+}
+
 function sync_index_from_patients(ctx, patient_rows) {
   const index = read_index(ctx);
+  const before = index_content_signature(index);
   const now = new Date().toISOString();
   const scanRows = Array.isArray(patient_rows) ? patient_rows : [];
   const seen = new Set();
@@ -456,6 +470,7 @@ function sync_index_from_patients(ctx, patient_rows) {
     active_count: seen.size,
     stale_count: Object.values(index.patients || {}).filter(p => p && p.active === false).length,
   };
+  if (index.updatedAt && index_content_signature(index) === before) return index;
   return write_index(ctx, index);
 }
 
