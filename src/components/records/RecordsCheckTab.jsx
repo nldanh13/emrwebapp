@@ -806,24 +806,24 @@ function MobileRecordCard({ row, checked, locked, saving, selected, onChecked, o
   const sheetStorage = row.paperRecord?.record?.storage_raw || '';
   const Info = ({ label, children }) => (
     <div style={{ minWidth: 0, padding: '7px 8px', borderRadius: 7, background: C.surface2 }}>
-      <div style={{ fontSize: 11, color: C.text3, fontWeight: 700, marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 13, color: C.text, lineHeight: 1.4, overflowWrap: 'anywhere' }}>{children || '—'}</div>
+      <div style={{ fontSize: FS.xs, color: C.text3, fontWeight: 700, marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: FS.md, color: C.text, lineHeight: 1.4, overflowWrap: 'anywhere' }}>{children || '—'}</div>
     </div>
   );
   return (
     <article style={{ border: '1px solid ' + C.border, borderRadius: 10, padding: 11, background: selected ? C.blueBg : C.surface, display: 'grid', gap: 9 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <label style={{ display: 'grid', justifyItems: 'center', gap: 3, minWidth: 48, fontSize: 10, color: C.text2 }}>
+        <label style={{ display: 'grid', justifyItems: 'center', gap: 3, minWidth: 48, fontSize: FS.xs, color: C.text2 }}>
           <input type="checkbox" checked={selected} onChange={e => onSelected(e.target.checked)} aria-label={'Chọn ' + row.displayName + ' để cập nhật'} style={{ width: 22, height: 22, accentColor: C.blue }} />
           Cập nhật
         </label>
-        <label style={{ display: 'grid', justifyItems: 'center', gap: 3, minWidth: 48, fontSize: 10, color: checked ? C.green : C.text2, fontWeight: 700 }}>
+        <label style={{ display: 'grid', justifyItems: 'center', gap: 3, minWidth: 48, fontSize: FS.xs, color: checked ? C.green : C.text2, fontWeight: 700 }}>
           <input type="checkbox" checked={checked || locked} disabled={saving || locked} onChange={e => onChecked(e.target.checked)} aria-label={'Đánh dấu đã kiểm: ' + row.displayName} style={{ width: 24, height: 24, accentColor: C.green }} />
           {locked ? 'Đã nộp' : saving ? 'Đang lưu' : 'Đã kiểm'}
         </label>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: C.text, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{row.displayName}</div>
-          <div style={{ fontSize: 12, color: C.text2, marginTop: 3 }}>Mã BN {row.ma_bn || '—'}{row.department ? ' · ' + row.department : ''}</div>
+          <div style={{ fontSize: FS.xl, fontWeight: 700, color: C.text, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{row.displayName}</div>
+          <div style={{ fontSize: FS.sm, color: C.text2, marginTop: 3 }}>Mã BN {row.ma_bn || '—'}{row.department ? ' · ' + row.department : ''}</div>
           {Number(row?.card?.duplicate_storage_count || 0) > 1 ? <div style={{ marginTop: 4 }}><Chip tone="blue">Đã gộp {Number(row.card.duplicate_storage_count)} dòng EMR</Chip></div> : null}
         </div>
       </div>
@@ -845,10 +845,10 @@ function MobileRecordCard({ row, checked, locked, saving, selected, onChecked, o
       </div>
       {sheetName || sheetStorage || row.paperRecord?.issue_detail ? (
         <div style={{ padding: '8px 9px', borderRadius: 7, border: '1px solid ' + (row.paperRecord?.tone === 'red' ? C.redBorder : C.border), background: row.paperRecord?.tone === 'red' ? C.redBg : C.surface }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: C.text2 }}>Google Sheet</div>
-          <div style={{ fontSize: 13, color: C.text, lineHeight: 1.4, overflowWrap: 'anywhere' }}>{sheetName || 'Chưa ghi tên'} · {sheetStorage || 'Chưa ghi Số LT'}</div>
-          {row.paperRecord?.record?.timestamp ? <div style={{ fontSize: 11, color: C.text3, marginTop: 2 }}>{row.paperRecord.record.timestamp}</div> : null}
-          {row.paperRecord?.issue_detail ? <div style={{ fontSize: 12, color: row.paperRecord.tone === 'red' ? C.red : C.amber, marginTop: 4 }}>{row.paperRecord.issue_detail}</div> : null}
+          <div style={{ fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Google Sheet</div>
+          <div style={{ fontSize: FS.md, color: C.text, lineHeight: 1.4, overflowWrap: 'anywhere' }}>{sheetName || 'Chưa ghi tên'} · {sheetStorage || 'Chưa ghi Số LT'}</div>
+          {row.paperRecord?.record?.timestamp ? <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 2 }}>{row.paperRecord.record.timestamp}</div> : null}
+          {row.paperRecord?.issue_detail ? <div style={{ fontSize: FS.sm, color: row.paperRecord.tone === 'red' ? C.red : C.amber, marginTop: 4 }}>{row.paperRecord.issue_detail}</div> : null}
           {row.paperRecord?.record && onEditSheet ? <button type="button" onClick={onEditSheet} style={{ marginTop: 7, minHeight: 36, padding: '6px 10px', borderRadius: 6, border: '1px solid ' + C.border, background: C.surface, color: C.blue, fontWeight: 700 }}>Xem / sửa dòng Sheet</button> : null}
         </div>
       ) : null}
@@ -884,7 +884,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
   const [checklistSaving, setChecklistSaving] = useState(false);
   const [actorName, setActorName] = useState(() => readActorName());
   const [openMenu, setOpenMenu] = useState('');
-  const isMobile = useIsMobile();
+  const isMobile = useIsMobile(1280);
   const [mobileLimit, setMobileLimit] = useState(40);
 
   async function setChecked(row, checked) {
@@ -1720,7 +1720,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
 
       <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
         <div style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: '12px 14px' }}>
-          <div style={{ border: `1px solid ${C.border}`, borderRadius: 7, overflow: 'hidden', background: C.surface, boxShadow: C.shadow }}>
+          <div style={{ border: `1px solid ${C.border}`, borderRadius: 7, overflowX: isMobile ? 'hidden' : 'auto', overflowY: 'hidden', background: C.surface, boxShadow: C.shadow }}>
             {isMobile ? (
               <div style={{ display: 'grid', gap: 9, padding: 9 }}>
                 {filteredRows.slice(0, mobileLimit).map(row => {
@@ -1749,7 +1749,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                 ) : null}
               </div>
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+              <table style={{ width: '100%', minWidth: isMobile ? 0 : 1600, borderCollapse: 'separate', borderSpacing: 0 }}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 3 }}>
                 <tr style={{ background: C.surface2 }}>
                   {[

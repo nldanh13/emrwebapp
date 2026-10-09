@@ -3,6 +3,7 @@ import { IconCalendarPlus, IconRefresh, IconX } from '@tabler/icons-react';
 import DateField from '../DateField.jsx';
 import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
+import useIsMobile from '../../hooks/useIsMobile.js';
 import {
   getRecordsCheckSubmissions,
   addRecordsCheckSubmission,
@@ -118,6 +119,7 @@ function ksdGpbLabel(status) {
 }
 
 export default function RecordsSubmissionTab({ records = [], toast, onClearChecked }) {
+  const isMobile = useIsMobile();
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -488,11 +490,11 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
             Ngày {formatDate(selectedDate)} đã được chốt nộp. Hãy chọn ngày khác để xếp các hồ sơ mới.
           </div>
         ) : null}
-        <div style={{ marginTop: 8, maxHeight: 190, overflow: 'auto', border: `1px solid ${C.border}`, borderRadius: 6 }}>
+        <div style={{ marginTop: 8, maxHeight: 190, overflow: 'auto', overscrollBehavior: 'contain', border: `1px solid ${C.border}`, borderRadius: 6 }}>
           {eligibleRecords.length === 0 ? (
             <div style={{ padding: 14, color: C.text2, fontSize: FS.sm }}>Không có hồ sơ đã "Sẵn sàng nộp" đang chờ xếp ngày nộp.</div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', minWidth: isMobile ? 620 : 0, borderCollapse: 'collapse' }}>
               <thead style={{ position: 'sticky', top: 0, background: C.surface2, zIndex: 2 }}>
                 <tr>
                   <th style={headStyle}><input type="checkbox" checked={allRecordsSelected} onChange={event => toggleAllRecords(event.target.checked)} title="Chọn tất cả hồ sơ đang hiển thị" /></th>
@@ -521,8 +523,8 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
         </div>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
-        <aside style={{ width: 250, flexShrink: 0, overflow: 'auto', borderRight: `1px solid ${C.border}`, background: C.surface }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: isMobile ? 'column' : 'row', overflow: isMobile ? 'auto' : 'hidden' }}>
+        <aside style={{ width: isMobile ? '100%' : 250, maxHeight: isMobile ? 176 : 'none', flexShrink: 0, overflow: 'auto', borderRight: isMobile ? 'none' : `1px solid ${C.border}`, borderBottom: isMobile ? `1px solid ${C.border}` : 'none', background: C.surface }}>
           <div style={{ padding: '10px 12px', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Ngày nộp</div>
           {(dashboard?.batches || []).length === 0 ? (
             <div style={{ padding: 14, color: C.text2, fontSize: FS.sm }}>Chưa có đợt nộp hồ sơ.</div>
@@ -548,7 +550,7 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
           ))}
         </aside>
 
-        <main style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: 12 }}>
+        <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', padding: isMobile ? 8 : 12 }}>
           {!selectedBatch ? (
             <div style={{ padding: 22, color: C.text2, fontSize: FS.md }}>Chọn hoặc tạo một ngày nộp hồ sơ để xem chi tiết.</div>
           ) : (
@@ -595,8 +597,8 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
                 </div>
               ) : null}
 
-              <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, overflow: 'hidden', background: C.surface }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', background: C.surface }}>
+                <table style={{ width: '100%', minWidth: isMobile ? 900 : 0, borderCollapse: 'collapse' }}>
                   <thead style={{ background: C.surface2 }}>
                     <tr>
                       <th style={headStyle}><input type="checkbox" checked={allItemsSelected} onChange={event => toggleAllItems(event.target.checked)} disabled={!selectableBatchItems.length} title="Chọn tất cả hồ sơ đang hiển thị" /></th>
