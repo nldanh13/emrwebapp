@@ -8,9 +8,8 @@ import { getSessionId } from '../hooks/useSession.js';
 import BhytPortalPanel from './BhytPortalPanel.jsx';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
 import { SkeletonTable } from './Skeleton.jsx';
+import { loadClinicConfig, saveClinicConfig } from '../utils/clinicLogin.js';
 
-const DEFAULT_CLINIC_LOGIN_URL = import.meta.env.VITE_EMR_LOGIN_URL || '';
-const DEFAULT_CLINIC_LIST_URL = import.meta.env.VITE_EMR_CLINIC_LIST_URL || '';
 
 // Lần đầu chưa có danh sách: khung xám thay cho chữ "Đang tải..." (UX_RULES mục 9).
 const LOADING_ROWS = (
@@ -485,13 +484,16 @@ export default function SickLeaveTab({ toast, workDateRange }) {
   const sessionId = useMemo(() => getSessionId(), []);
   const [bhytPanelOpen, setBhytPanelOpen] = useState(false);
 
-  // Quét trực tiếp EMR (ngoại trú) theo khoảng ngày — không dùng chung ô tài
-  // khoản với tab Phòng khám để tránh phụ thuộc trạng thái tab khác; chỉ lưu
-  // trong phiên làm việc này, không lưu mật khẩu vào server/localStorage.
-  const [clinicUsername, setClinicUsername] = useState('');
+  // Quét trực tiếp EMR (ngoại trú) theo khoảng ngày. Tên đăng nhập và URL dùng chung với tab
+  // Phòng khám (src/utils/clinicLogin.js, chỉ lưu trên trình duyệt này) nên không phải gõ lại;
+  // mật khẩu chỉ giữ trong phiên làm việc này, không lưu vào máy chủ/localStorage.
+  const [clinicUsername, setClinicUsernameState] = useState(() => loadClinicConfig().username);
   const [clinicPassword, setClinicPassword] = useState('');
-  const [clinicLoginUrl, setClinicLoginUrl] = useState(DEFAULT_CLINIC_LOGIN_URL);
-  const [clinicListUrl, setClinicListUrl] = useState(DEFAULT_CLINIC_LIST_URL);
+  const [clinicLoginUrl, setClinicLoginUrlState] = useState(() => loadClinicConfig().loginUrl);
+  const [clinicListUrl, setClinicListUrlState] = useState(() => loadClinicConfig().listUrl);
+  const setClinicUsername = (v) => { setClinicUsernameState(v); saveClinicConfig({ username: v }); };
+  const setClinicLoginUrl = (v) => { setClinicLoginUrlState(v); saveClinicConfig({ loginUrl: v }); };
+  const setClinicListUrl = (v) => { setClinicListUrlState(v); saveClinicConfig({ listUrl: v }); };
   const [scanning, setScanning] = useState(false);
   const [scannedOutpatientRows, setScannedOutpatientRows] = useState([]);
   const [scanMessage, setScanMessage] = useState('');
@@ -519,7 +521,14 @@ export default function SickLeaveTab({ toast, workDateRange }) {
   }, [toast]);
 
   useEffect(() => { load(); }, [load]);
-  useOnTabReturn(() => load());
+  useOnTabReturn(() => {
+    load();
+    // Vừa nhập tên đăng nhập/URL ở tab Phòng khám thì điền sẵn ở đây.
+    const saved = loadClinicConfig();
+    setClinicUsernameState(saved.username);
+    setClinicLoginUrlState(saved.loginUrl);
+    setClinicListUrlState(saved.listUrl);
+  });
 
   const handleImportFile = useCallback(async (file) => {
     if (!file) return;

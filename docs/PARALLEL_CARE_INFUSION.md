@@ -4,7 +4,7 @@
 
 - **Một lượt nhập = một lần đăng nhập.** Chăm sóc, dịch truyền, thủ thuật, VTYT đăng nhập EMR **một
   lần** bằng tài khoản của **điều dưỡng ca làm theo Lịch điều dưỡng của ngày đầu tiên** trong lượt,
-  rồi nhập hết cả lượt (mọi người bệnh, mọi ngày) bằng phiên đó. Tài khoản lấy từ Thiết lập tài khoản
+  rồi nhập hết cả lượt (mọi người bệnh, mọi ngày) bằng phiên đó. Tài khoản lấy từ Thiết lập tài khoản → Tài khoản EMR
   (`secrets/nurse_emr_accounts.json`, xem `SECRETS.md`). Phiên được đánh dấu `single_login`:
   `WorkerSession.switch_account` từ chối đổi tài khoản giữa chừng.
   - Chăm sóc: phiếu đứng tên người khác (ca trực, ca làm của ngày khác) được tạo và Hoàn tất,

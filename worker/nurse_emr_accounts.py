@@ -194,7 +194,7 @@ def resolve_entry_account(
             'warning': '',
         }
     if nurse:
-        warning = (f"Ngày {dmy}: điều dưỡng ca làm {nurse} chưa có tài khoản EMR trong Thiết lập tài khoản "
+        warning = (f"Ngày {dmy}: điều dưỡng ca làm {nurse} chưa có tài khoản EMR trong Thiết lập tài khoản → Tài khoản EMR "
                    f"→ nhập bằng tài khoản mặc định. Thêm tài khoản EMR cho {nurse} để lần sau nhập đúng tên.")
     else:
         warning = (f"Ngày {dmy}: chưa có người ca làm trong Lịch điều dưỡng → nhập bằng tài khoản mặc định. "

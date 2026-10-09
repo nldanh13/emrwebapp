@@ -77,7 +77,7 @@ Bước **Lấy chi tiết** chia danh sách người bệnh thành từng lô n
    "Thêm máy góp sức"). Máy đó đọc hồ sơ bằng phiên EMR của chính người đó, qua cầu nối tab EMR
    (`server/services/emr_bridge.js`, phần `helpers`), và gửi về máy chủ. App không giữ mật khẩu của họ.
 2. **Tài khoản trên máy chủ**: tài khoản chung, cộng các tài khoản đọc mà quản trị khai ở **Thiết lập tài khoản →
-   Tài khoản EMR để lấy dữ liệu song song** (mặc định 2, tối đa 4 cùng lúc, kể cả tài khoản chung).
+   Tài khoản EMR → Tài khoản EMR để lấy dữ liệu song song** (mặc định 2, tối đa 4 cùng lúc, kể cả tài khoản chung).
    Máy chủ mở Chrome bằng các tài khoản này.
 
 Bảo đảm:

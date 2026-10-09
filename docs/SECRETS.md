@@ -5,11 +5,16 @@ Mọi bí mật của hệ thống nằm ở **một thư mục duy nhất: `sec
 ```text
 secrets/
 ├── secrets.json              ← mật khẩu EMR (chung / hành chánh / dịch truyền), token app, salt, API key
-├── users.json                ← tài khoản đăng nhập app (token từng người + tài khoản EMR riêng)
-├── nurse_emr_accounts.json   ← tài khoản EMR theo tên điều dưỡng trong lịch trực
-├── emr_read_accounts.json    ← tài khoản EMR thêm, chỉ dùng để lấy dữ liệu song song (tab Thiết lập tài khoản)
+├── users.json                ← tài khoản đăng nhập app (token từng người + tài khoản EMR dự phòng khi nhập)
+├── nurse_emr_accounts.json   ← tài khoản EMR theo tên điều dưỡng trong lịch trực (+ tên file ảnh chữ ký)
+├── emr_read_accounts.json    ← tài khoản EMR thêm, chỉ dùng để lấy dữ liệu song song
 └── backup/<thời điểm>/       ← bản sao file cũ do `secrets:migrate` tạo (vẫn chứa mật khẩu)
 ```
+
+Mọi tài khoản trên (trừ `secrets.json`) sửa ở **một chỗ trong app: tab Thiết lập tài khoản** (chỉ quản trị).
+Mục **Tài khoản EMR** còn có bảng tổng hợp: mỗi tài khoản EMR dùng vào việc gì và đang khai ở mấy chỗ, để
+đổi mật khẩu EMR không bỏ sót chỗ nào. Tài khoản chung trong `secrets.json` hiện ở đó dạng chỉ xem (tên đăng
+nhập và nơi lấy, không có mật khẩu).
 
 Các phần còn lại trong `config/` (URL, lịch điều dưỡng, quy tắc nghiệp vụ...) **không chứa mật khẩu**, nên có thể chia sẻ khi cần hỗ trợ.
 

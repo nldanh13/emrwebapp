@@ -10,21 +10,13 @@ import { Btn, Segmented } from './shared.jsx';
 import * as api from '../api.js';
 import ClinicAdmissionCare from './ClinicAdmissionCare.jsx';
 import ClinicBbhc from './ClinicBbhc.jsx';
-import { useTabActive } from '../hooks/useTabActivity.js';
+import { useOnTabReturn, useTabActive } from '../hooks/useTabActivity.js';
 import { revalidate, useServerData } from '../hooks/useServerData.js';
 import { useRealtimeConnected } from '../hooks/useRealtimeStatus.js';
 import { SkeletonTable } from './Skeleton.jsx';
+import { loadClinicConfig as loadConfig, saveClinicConfig as saveConfig } from '../utils/clinicLogin.js';
 
 const CLINIC_MONITOR_KEY = 'screen:clinic-monitor';
-
-const CONFIG_KEY = 'emr_clinic_monitor_cfg_v1';
-const DEFAULT_CONFIG = {
-  username: '',
-  loginUrl: import.meta.env.VITE_EMR_LOGIN_URL || '',
-  listUrl: import.meta.env.VITE_EMR_CLINIC_LIST_URL || '',
-  intervalMinutes: 3,
-  headless: true,
-};
 
 const CASE_LABELS = {
   cho_ve: 'Cho về',
@@ -36,22 +28,6 @@ const CASE_LABELS = {
   khac: 'Khác',
 };
 const ACTIONABLE_CASES = new Set(['cho_ve', 'nhap_vien', 'chuyen_vien']);
-
-function loadConfig() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}');
-    return { ...DEFAULT_CONFIG, ...(saved && typeof saved === 'object' ? saved : {}) };
-  } catch {
-    return { ...DEFAULT_CONFIG };
-  }
-}
-
-function saveConfig(cfg) {
-  try {
-    const { username, loginUrl, listUrl, intervalMinutes, headless } = cfg;
-    localStorage.setItem(CONFIG_KEY, JSON.stringify({ username, loginUrl, listUrl, intervalMinutes, headless }));
-  } catch {}
-}
 
 function hhmm(iso, withSeconds = false) {
   if (!iso) return '—';
@@ -181,6 +157,12 @@ export default function ClinicTab({ toast }) {
   const loadState = useCallback(() => revalidate(CLINIC_MONITOR_KEY), []);
 
   const running = Boolean(monitor?.running);
+  // Tên đăng nhập/URL dùng chung với Nghỉ ốm: quay lại tab thì lấy bản mới nhất (trừ khi đang theo dõi).
+  useOnTabReturn(() => {
+    if (running) return;
+    const { username, loginUrl, listUrl } = loadConfig();
+    setCfg(prev => ({ ...prev, username, loginUrl, listUrl }));
+  });
   const tabActive = useTabActive();
   const realtimeConnected = useRealtimeConnected();
   // ux-rules: polling-ok — chỉ là dự phòng khi mất kênh sự kiện; tab ẩn mà không chạy thì không hỏi.

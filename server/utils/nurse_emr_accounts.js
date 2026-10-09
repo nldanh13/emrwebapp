@@ -56,9 +56,35 @@ function writeNurseEmrAccounts(list) {
   return result;
 }
 
+// Sửa tài khoản EMR của MỘT người, giữ nguyên chữ ký và các dòng khác. Hai màn hình cùng sửa
+// file này (Thiết lập tài khoản: tài khoản EMR; Lịch điều dưỡng: chữ ký), nên không gửi cả danh
+// sách: bản cũ đang giữ ở màn hình kia sẽ ghi đè mất phần vừa sửa.
+function updateNurseEmrAccount(name, { emr_username, emr_password } = {}) {
+  const nameTrim = String(name || '').trim();
+  if (!nameTrim) throw new Error('Thiếu tên điều dưỡng.');
+  const rows = readNurseEmrAccounts();
+  const patch = {};
+  if (emr_username !== undefined) patch.emr_username = String(emr_username || '').trim();
+  if (emr_password !== undefined) patch.emr_password = String(emr_password || '');
+  const exists = rows.some(r => r.name === nameTrim);
+  const next = exists
+    ? rows.map(r => (r.name === nameTrim ? { ...r, ...patch } : r))
+    : [...rows, { name: nameTrim, emr_username: '', emr_password: '', ...patch }];
+  return writeNurseEmrAccounts(next);
+}
+
+// Bỏ hẳn dòng của MỘT người (tài khoản EMR và chữ ký), dùng khi xoá điều dưỡng khỏi danh sách.
+function removeNurseEmrAccount(name) {
+  const nameTrim = String(name || '').trim();
+  const rows = readNurseEmrAccounts();
+  return writeNurseEmrAccounts(rows.filter(r => r.name !== nameTrim));
+}
+
 module.exports = {
   nurseEmrAccountsFilePath,
   normalizeAccountRow,
   readNurseEmrAccounts,
   writeNurseEmrAccounts,
+  updateNurseEmrAccount,
+  removeNurseEmrAccount,
 };

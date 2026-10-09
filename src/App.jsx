@@ -291,7 +291,7 @@ export default function App() {
             ['sick-leave', () => <SickLeaveTab toast={toast} workDateRange={workDateRange} />],
             ['vtyt-catalog', () => <VtytCatalogManager />],
             ['medication-catalog', () => <MedicationCatalogManager />],
-            ['account-settings', () => <AccountSettingsTab />],
+            ['account-settings', () => <AccountSettingsTab toast={toast} />],
             ['emr-structure-scan', () => <EmrStructureScanTab />],
             ['clinic', () => <ClinicTab toast={toast} />],
             ['nurse', () => <NurseTab toast={toast} />],

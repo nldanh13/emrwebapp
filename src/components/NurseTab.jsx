@@ -24,9 +24,10 @@ import { SkeletonScreen } from './Skeleton.jsx';
 export default function NurseTab({ toast }) {
   const isMobile = useIsMobile();
   const { user } = useAuth();
-  // Không đăng nhập (chế độ local_only) vẫn cho sửa như trước; chỉ chặn khi
-  // có đăng nhập mà vai trò không phải admin — tài khoản EMR chứa mật khẩu thật.
-  const canEditEmrAccounts = !user || user.role === 'admin';
+  // Ảnh chữ ký nằm chung file với tài khoản EMR theo điều dưỡng (chứa mật khẩu thật) nên chỉ
+  // quản trị sửa. Không đăng nhập (chế độ local_only) vẫn cho sửa như trước.
+  // Tài khoản EMR của từng điều dưỡng sửa ở Thiết lập tài khoản → Tài khoản EMR.
+  const canEditSignatures = !user || user.role === 'admin';
   const [showNursePanel, setShowNursePanel] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
@@ -63,7 +64,7 @@ export default function NurseTab({ toast }) {
   }, []);
 
   useEffect(() => {
-    if (!canEditEmrAccounts) return;
+    if (!canEditSignatures) return;
     api.getNurseEmrAccounts()
       .then(d => {
         const byName = {};
@@ -71,32 +72,9 @@ export default function NurseTab({ toast }) {
         setEmrAccounts(byName);
       })
       .catch(() => {});
-  }, [canEditEmrAccounts]);
+  }, [canEditSignatures]);
 
   const saveTimer = useRef(null);
-  const saveEmrAccountsTimer = useRef(null);
-
-  const saveEmrAccounts = useCallback((nextByName) => {
-    if (saveEmrAccountsTimer.current) clearTimeout(saveEmrAccountsTimer.current);
-    saveEmrAccountsTimer.current = setTimeout(async () => {
-      try {
-        const accounts = Object.values(nextByName);
-        const r = await api.saveNurseEmrAccounts({ accounts });
-        if (r.status !== 'ok') toast?.(r.message, 'error');
-      } catch (e) {
-        toast?.(String(e.message), 'error');
-      }
-    }, 500);
-  }, [toast]);
-
-  const changeEmrAccount = useCallback((name, field, value) => {
-    setEmrAccounts(prev => {
-      const next = { ...prev, [name]: { ...(prev[name] || { name }), name, [field]: value } };
-      saveEmrAccounts(next);
-      return next;
-    });
-  }, [saveEmrAccounts]);
-
   const applyAccountsResponse = useCallback((accounts) => {
     const byName = {};
     for (const row of accounts || []) byName[row.name] = row;
@@ -171,15 +149,14 @@ export default function NurseTab({ toast }) {
     setSchedule(nextSched);
     save(next, nextSched, clinicSchedule);
 
+    // Bỏ luôn tài khoản EMR và chữ ký của người này — chỉ dòng của họ, không gửi cả danh sách
+    // (bản đang giữ ở đây có thể cũ hơn phần vừa sửa ở Thiết lập tài khoản).
     if (Object.prototype.hasOwnProperty.call(emrAccounts, name)) {
-      setEmrAccounts(prev => {
-        const nextAccounts = { ...prev };
-        delete nextAccounts[name];
-        saveEmrAccounts(nextAccounts);
-        return nextAccounts;
-      });
+      api.removeNurseEmrAccount(name)
+        .then(r => { if (r?.status === 'ok') applyAccountsResponse(r.accounts); else toast?.(r?.message, 'error'); })
+        .catch(e => toast?.(`Chưa bỏ được tài khoản EMR của ${name}: ${String(e.message || e)}`, 'error'));
     }
-  }, [roster, schedule, clinicSchedule, save, emrAccounts, saveEmrAccounts]);
+  }, [roster, schedule, clinicSchedule, save, emrAccounts, applyAccountsResponse, toast]);
 
   const updateScheduleForKey = useCallback((key, value) => {
     let nextSched;
@@ -324,10 +301,9 @@ export default function NurseTab({ toast }) {
           onAddNurse={addNurse}
           onRemoveNurse={removeNurse}
           emrAccounts={emrAccounts}
-          onChangeEmrAccount={changeEmrAccount}
           onUploadSignature={uploadSignature}
           onRemoveSignature={removeSignature}
-          canEditEmrAccounts={canEditEmrAccounts}
+          canEditSignatures={canEditSignatures}
         />
       </div>
     </div>

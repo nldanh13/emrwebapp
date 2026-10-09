@@ -166,7 +166,7 @@
       "label": "Thiết lập tài khoản",
       "icon": "⚙",
       "group": "Cài đặt",
-      "hint": "Tạo/sửa tài khoản đăng nhập Data Hub và tài khoản EMR riêng",
+      "hint": "Mọi tài khoản ở một chỗ: người dùng Data Hub, tài khoản EMR, thiết bị tin cậy",
       "order": 145,
       "compact": true,
       "usesDateRange": false

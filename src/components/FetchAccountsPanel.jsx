@@ -1,5 +1,5 @@
 // src/components/FetchAccountsPanel.jsx — Tài khoản EMR thêm để "Lấy chi tiết" chạy song song.
-// Máy chủ: server/services/fetch_accounts.js. Chỉ quản trị thấy (AccountSettingsTab).
+// Máy chủ: server/services/fetch_accounts.js. Chỉ quản trị thấy (Thiết lập tài khoản → Tài khoản EMR).
 // Mật khẩu không bao giờ được gửi về đây; để trống ô mật khẩu là giữ mật khẩu đã lưu.
 
 import { useCallback, useEffect, useState } from 'react';
@@ -18,7 +18,7 @@ function rowsFromServer(data) {
   return (data?.accounts || []).map(a => ({ ...a, emr_password: '' }));
 }
 
-export default function FetchAccountsPanel({ toast }) {
+export default function FetchAccountsPanel({ toast, onSaved }) {
   const [data, setData] = useState(null);
   const [rows, setRows] = useState([]);
   const [maxParallel, setMaxParallel] = useState(2);
@@ -63,6 +63,7 @@ export default function FetchAccountsPanel({ toast }) {
       });
       apply(next);
       toast?.('Đã lưu tài khoản lấy dữ liệu.', 'ok');
+      onSaved?.();
     } catch (e) {
       toast?.(`Chưa lưu được: ${String(e.message || e)}`, 'error');
     } finally {
@@ -76,7 +77,7 @@ export default function FetchAccountsPanel({ toast }) {
   const effective = Math.min(maxParallel, 1 + usableCount);
 
   return (
-    <div style={{ marginTop: 18, padding: 12, background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 8 }}>
+    <div style={{ padding: 12, background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 8 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 420px' }}>
           <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Tài khoản EMR để lấy dữ liệu song song</div>
