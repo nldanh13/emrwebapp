@@ -24,6 +24,8 @@ function QualityNotice({ pipeline, onNormalize, normalizeBusy = false, setArchiv
   const blocking = Number(qa.blocking || 0);
   const warning = Number(qa.warning || 0);
   const review = Number(qa.review || 0);
+  const blockingItems = Array.isArray(qa.blocking_items) ? qa.blocking_items.slice(0, 4) : [];
+  const matchQuality = qa.matching_quality || null;
   const schemaOutdated = Boolean(
     normalize.schema_outdated
     || normalizeSchemaOutdated(normalize.schema_version, normalize.expected_schema_version)
@@ -45,6 +47,25 @@ function QualityNotice({ pipeline, onNormalize, normalizeBusy = false, setArchiv
           {warning ? ` Có ${compactNumber(warning)} cảnh báo.` : ''}
           {review ? ` Có ${compactNumber(review)} mục cần xem lại.` : ''}
         </div>
+        {blockingItems.length > 0 && (
+          <div style={{ marginTop: 7, fontSize: FS.xs, color: C.text2 }}>
+            <b style={{ color: C.text }}>Lỗi chặn phải xử lý trước khi tạo dataset</b>
+            <ul style={{ margin: '4px 0 0 18px', padding: 0 }}>
+              {blockingItems.map((item, index) => (
+                <li key={item.code || index}>
+                  {item.code && <code>{item.code}</code>}{item.code && item.message ? ' · ' : ''}{item.message || ''}
+                  {item.count != null ? ` · ${compactNumber(item.count)} dòng` : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {matchQuality && (
+          <div style={{ marginTop: 5, fontSize: FS.xs, color: C.text2 }}>
+            <b style={{ color: C.text }}>Vì sao chưa ghép được:</b>{' '}
+            {compactNumber(matchQuality.identity_conflict || 0)} xung đột định danh, {compactNumber(matchQuality.missing || 0)} dòng chưa khớp.
+          </div>
+        )}
       </div>
       <Btn onClick={() => setArchiveMode('update')} style={{ height: 30 }}>Đi tới đánh giá dữ liệu</Btn>
       {schemaOutdated && <Btn variant="solidPrimary" onClick={onNormalize} disabled={normalizeBusy} loading={normalizeBusy} style={{ height: 30 }}>Chạy lại chuẩn hóa</Btn>}
