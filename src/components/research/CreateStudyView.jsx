@@ -316,7 +316,7 @@ function StepVariables(props) {
         </div>
         {labCatalogGroup && (
           <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.45 }}>
-            Danh mục tên xét nghiệm đã quét đủ {compactNumber(labCatalogGroup.rows || 0)} dòng; thống kê độ đầy của cột gốc dùng {compactNumber(labCatalogGroup.sampled_rows || 0)} dòng{labCatalogGroup.sampled ? ' đầu' : ''}.
+            Danh mục xét nghiệm đã quét đủ {compactNumber(labCatalogGroup.rows || 0)} dòng; tỉ lệ từng xét nghiệm là số đợt có kết quả trên tổng số đợt trong kho. CBC tham chiếu chưa thấy sẽ hiện riêng ở 0; thống kê cột gốc dùng {compactNumber(labCatalogGroup.sampled_rows || 0)} dòng{labCatalogGroup.sampled ? ' đầu' : ''}.
           </div>
         )}
         {!filteredCatalogVariables.length
@@ -335,10 +335,14 @@ function StepVariables(props) {
                     <span style={{ minWidth: 0 }}>
                       <span style={{ display: 'block', fontSize: FS.sm, fontWeight: 700, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.display_label}</span>
                       <span style={{ display: 'block', fontSize: FS.xs, color: C.text3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {variableTypeLabel(v.type)} · {v.clinical_group_label} · {compactNumber(v.distinct_count)} giá trị khác nhau
+                        {v.expected_catalog_entry && !v.nonempty
+                          ? 'CBC tham chiếu · chưa thấy kết quả trong kho'
+                          : `${variableTypeLabel(v.type)} · ${v.clinical_group_label} · ${compactNumber(v.distinct_count)} giá trị khác nhau`}
                       </span>
                     </span>
-                    <span title="Tỉ lệ lượt có dữ liệu cho biến này"><FillBar rate={v.fill_rate} /></span>
+                    <span title={v.virtual_kind === 'lab_test'
+                      ? `Có kết quả ở ${compactNumber(v.nonempty)} / ${compactNumber(v.rows)} đợt trong kho`
+                      : 'Tỉ lệ lượt có dữ liệu cho biến này'}><FillBar rate={v.fill_rate} /></span>
                   </label>
                 );
               })}

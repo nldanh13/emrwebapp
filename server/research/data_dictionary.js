@@ -255,7 +255,7 @@ TABLES.lab_results = {
     lab_order_id: col('string', 'Mã phiếu xét nghiệm trên EMR. Dùng để phân biệt các lần xét nghiệm có thể cùng thời điểm/cùng chỉ số/cùng kết quả.', { identifier: 'quasi', use: 'approval_required', empty: 'Nguồn cũ hoặc nguồn ngoài EMR không có Mã phiếu.' }),
     test_name_raw: col('string', 'Tên chỉ số như EMR ghi.'),
     test_name_norm: col('string', 'Tên chỉ số chuẩn hóa.', {
-      allowed: ['creatinine', 'egfr', 'wbc', 'crp', 'hemoglobin', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'platelet', 'urea', 'ast', 'alt', 'glucose', '(tên gốc dạng token nếu không khớp)'],
+      allowed: ['creatinine', 'egfr', 'wbc', 'crp', 'hs_crp', 'hemoglobin', 'hba1c', 'hct', 'rbc', 'mcv', 'mch', 'mchc', 'neutrophil', 'lymphocyte', 'monocyte', 'eosinophil', 'basophil', 'rdw', 'platelet', 'mpv', 'pdw', 'urea', 'ast', 'alt', 'ggt', 'alp', 'bilirubin_direct', 'bilirubin_total', 'albumin', 'total_protein', 'sodium', 'potassium', 'chloride', 'calcium_ionized', 'calcium_total', 'calcium', 'magnesium', 'phosphate', 'uric_acid', 'total_cholesterol', 'triglyceride', 'hdl', 'ldl', 'procalcitonin', 'ferritin', 'esr', 'd_dimer', 'aptt', 'pt', 'inr', 'fibrinogen', 'glucose', '(tên gốc dạng token nếu không khớp)'],
       derivation: 'So khớp từ khóa (không dấu) theo thứ tự; khớp đầu tiên thắng.',
     }),
     result_raw: col('string', 'Kết quả nguyên văn.'),
@@ -452,7 +452,9 @@ function labSnapshotColumns(scope) {
     out[key] = col('string', `Kết quả ${key} ${scope} (result_raw nguyên văn).`, {
       unit: 'theo lab_results.unit (không quy đổi)',
       empty: 'Không có kết quả chỉ số này.',
-      derivation: `Lấy từ lab_results có test_name_norm tương ứng (${key === 'hb' ? 'hemoglobin' : key === 'plt' ? 'platelet' : key}).`,
+      derivation: ['neutrophil', 'lymphocyte', 'monocyte'].includes(key)
+        ? `Chỉ lấy result_raw của dòng có tỷ lệ phần trăm (%) được nhận diện cho test_name_norm tương ứng (${key}); kết quả tuyệt đối giữ riêng ở lab_results.`
+        : `Lấy từ lab_results có test_name_norm tương ứng (${key === 'hb' ? 'hemoglobin' : key === 'plt' ? 'platelet' : key}).`,
     });
   }
   return out;

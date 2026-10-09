@@ -19,26 +19,95 @@ function extractBirthYear(value) {
 }
 
 function normalizeLabName(value) {
-  const s = normalizeSimple(value);
+  const raw = String(value || '');
+  const s = normalizeSimple(raw);
+  if (/\bca\s*\+{1,2}/i.test(raw)) return 'calcium_ionized';
   const rules = [
+    [/hba1c|hemoglobin a1c|glycated hemoglobin/, 'hba1c'],
     [/creatinin|creatinine/, 'creatinine'],
     [/egfr|muc loc cau than|loc cau than/, 'egfr'],
-    [/bach cau|wbc|white blood/, 'wbc'],
-    [/crp|c reactive/, 'crp'],
-    [/hemoglobin|hgb|hb\b/, 'hemoglobin'],
+    [/high sensitivity c reactive protein|hs crp|hscrp/, 'hs_crp'],
+    [/c reactive protein|crp/, 'crp'],
+    // Phân loại bạch cầu cụ thể phải đứng trước quy tắc tổng quát "bạch cầu".
+    [/neutrophil|bach cau trung tinh|\bneu\b|\bneut\b/, 'neutrophil'],
+    [/lymphocyte|lympho|bach cau lympho|\blym\b/, 'lymphocyte'],
+    [/monocyte|bach cau mono|\bmono\b|\bmon\b/, 'monocyte'],
+    [/eosinophil|\beos\b/, 'eosinophil'],
+    [/basophil|\bbaso\b/, 'basophil'],
+    [/bach cau|wbc|white blood|leukocyte/, 'wbc'],
+    [/mean corpuscular hemoglobin concentration|\bmchc\b/, 'mchc'],
+    [/mean corpuscular hemoglobin|\bmch\b/, 'mch'],
+    [/mean corpuscular volume|\bmcv\b/, 'mcv'],
+    [/hemoglobin|hgb|\bhb\b/, 'hemoglobin'],
     [/hematocrit|hct|dung tich hong cau/, 'hct'],
-    [/neutrophil|bach cau trung tinh|neu\b|neut\b/, 'neutrophil'],
-    [/lymphocyte|lympho|lym\b/, 'lymphocyte'],
-    [/monocyte|mono\b/, 'monocyte'],
+    [/red blood cell|erythrocyte|hong cau|\brbc\b/, 'rbc'],
+    [/mean platelet volume|\bmpv\b/, 'mpv'],
+    [/platelet distribution width|\bpdw\b/, 'pdw'],
     [/rdw/, 'rdw'],
     [/tieu cau|plt|platelet/, 'platelet'],
-    [/ure|urea/, 'urea'],
-    [/ast|got/, 'ast'],
-    [/alt|gpt/, 'alt'],
-    [/duong mau|glucose/, 'glucose'],
+    [/urea|ure\b/, 'urea'],
+    [/ast\b|got\b|aspartate aminotransferase/, 'ast'],
+    [/alt\b|gpt\b|alanine aminotransferase/, 'alt'],
+    [/gamma glutamyl transferase|gamma gt|\bggt\b/, 'ggt'],
+    [/alkaline phosphatase|\balp\b/, 'alp'],
+    [/direct bilirubin|bilirubin direct|bilirubin truc tiep|bili truc tiep/, 'bilirubin_direct'],
+    [/total bilirubin|bilirubin total|bilirubin toan phan|bili toan phan/, 'bilirubin_total'],
+    [/calcium ionized|ionized calcium|ion calcium|ca ion hoa|calci ion hoa|canxi ion hoa|\bion ca\b/, 'calcium_ionized'],
+    [/total calcium|calcium total|ca toan phan|calci toan phan|canxi toan phan/, 'calcium_total'],
+    [/calcium|calci|canxi|\bca\b/, 'calcium'],
+    [/sodium|natri|\bna\b/, 'sodium'],
+    [/potassium|kali|\bk\b/, 'potassium'],
+    [/chloride|clorid|\bcl\b/, 'chloride'],
+    [/magnesium|magnesi|magi|\bmg\b/, 'magnesium'],
+    [/phosphate|phosphat|phosphorus/, 'phosphate'],
+    [/albumin/, 'albumin'],
+    [/total protein|protein total|protein toan phan/, 'total_protein'],
+    [/uric acid|acid uric/, 'uric_acid'],
+    [/total cholesterol|cholesterol total|cholesterol toan phan/, 'total_cholesterol'],
+    [/triglyceride|triglycerid|\btg\b/, 'triglyceride'],
+    [/hdl cholesterol|high density lipoprotein|\bhdl\b/, 'hdl'],
+    [/ldl cholesterol|low density lipoprotein|\bldl\b/, 'ldl'],
+    [/procalcitonin/, 'procalcitonin'],
+    [/ferritin/, 'ferritin'],
+    [/erythrocyte sedimentation rate|toc do mau lang|\besr\b/, 'esr'],
+    [/d dimer|ddimer/, 'd_dimer'],
+    [/activated partial thromboplastin time|\baptt\b/, 'aptt'],
+    [/prothrombin time|\bpt\b/, 'pt'],
+    [/\binr\b/, 'inr'],
+    [/fibrinogen/, 'fibrinogen'],
+    [/glucose|duong mau/, 'glucose'],
   ];
   for (const [re, key] of rules) if (re.test(s)) return key;
   return normalizeToken(value);
+}
+
+const DIFFERENTIAL_TEST_FAMILIES = new Set(['neutrophil', 'lymphocyte', 'monocyte', 'eosinophil', 'basophil']);
+
+function differentialLabFamily(testNameNorm, testNameRaw) {
+  const text = normalizeSimple([testNameNorm, testNameRaw].filter(Boolean).join(' '));
+  if (/neutrophil|\bneu\b|\bneut\b|bach cau trung tinh/.test(text)) return 'neutrophil';
+  if (/lymphocyte|lympho|\blym\b|bach cau lympho/.test(text)) return 'lymphocyte';
+  if (/monocyte|\bmono\b|\bmon\b|bach cau mono/.test(text)) return 'monocyte';
+  if (/eosinophil|\beos\b/.test(text)) return 'eosinophil';
+  if (/basophil|\bbaso\b/.test(text)) return 'basophil';
+  return '';
+}
+
+function classifyLabMeasurement(testNameNorm, testNameRaw, unitRaw) {
+  const family = differentialLabFamily(testNameNorm, testNameRaw);
+  if (!DIFFERENTIAL_TEST_FAMILIES.has(family)) return '';
+  const name = String(testNameRaw || '');
+  const unit = String(unitRaw || '').normalize('NFKC').toLowerCase().replace(/μ/g, 'µ').replace(/\s+/g, '');
+  const simpleName = normalizeSimple(name);
+  const unitSimple = normalizeSimple(unitRaw);
+  const namePercent = name.includes('%') || /percent|percentage|phan tram|ty le/.test(simpleName);
+  const unitPercent = unit === '%' || /percent|percentage|phan tram/.test(unitSimple);
+  const nameAbsolute = name.includes('#') || /\b(?:absolute|abs|count|so luong)\b/.test(simpleName);
+  const unitAbsolute = /(?:10\^?[39]\/(?:l|[uµ]l)|(?:k|g)\/(?:l|[uµ]l)|cells?\/[uµ]l|cells?\/mm3|\/[uµ]l|\/mm3|x?10\^?[39]\/(?:l|[uµ]l))/.test(unit);
+  if ((namePercent && unitAbsolute) || (nameAbsolute && unitPercent)) return 'conflict';
+  if (namePercent || unitPercent) return 'percent';
+  if (nameAbsolute || unitAbsolute) return 'absolute';
+  return '';
 }
 
 function resultOperator(value) {
@@ -225,6 +294,8 @@ module.exports = {
   normalizeSex,
   extractBirthYear,
   normalizeLabName,
+  differentialLabFamily,
+  classifyLabMeasurement,
   resultOperator,
   parseNumeric,
   resultText,

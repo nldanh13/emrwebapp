@@ -1,6 +1,6 @@
 'use strict';
 
-const { extractTScoresBySite } = require('./value_normalizers');
+const { extractTScoresBySite, classifyLabMeasurement } = require('./value_normalizers');
 
 function stripMarks(value) {
   return String(value ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
@@ -397,6 +397,15 @@ function sourceFilterMatches(row, sourceFilter = {}) {
     if (expectedRaw == null) continue;
     if (expectedRaw && typeof expectedRaw === 'object' && !Array.isArray(expectedRaw)) continue;
     const normalizedField = normalizedKey(key);
+    if (normalizedField === 'labmeasurementkind') {
+      const actualKind = classifyLabMeasurement(
+        getCell(row, ['test_name_norm', 'Tên XN chuẩn']),
+        getCell(row, ['test_name_raw', 'Tên XN', 'Tên xét nghiệm']),
+        getCell(row, ['unit', 'Đơn vị']),
+      );
+      if (actualKind !== String(expectedRaw)) return false;
+      continue;
+    }
     const actualRaw = getCell(row, key);
     // Unit phải so khớp chính xác và giữ ký hiệu: '%' không được biến thành chuỗi rỗng,
     // 'mg/L' cũng không được khớp nhầm với 'g/L'; unit trống cũng chỉ khớp unit trống.

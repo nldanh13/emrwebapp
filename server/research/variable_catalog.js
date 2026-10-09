@@ -5,7 +5,7 @@
 const { stableHash, normalizeToken } = require('./encounter_context');
 const { getCell, readCsvTable } = require('./table_io');
 const { readCsvFileRows } = require('./csv_reader');
-const { normalizeLabName, extractTScoresBySite } = require('./value_normalizers');
+const { normalizeLabName, classifyLabMeasurement, extractTScoresBySite } = require('./value_normalizers');
 const fs = require('fs');
 const path = require('path');
 const { isSensitiveColumn } = require('./export_utils');
@@ -123,7 +123,31 @@ function addActiveIngredientVariables(add, rows, medications = medicationCatalog
   }
 }
 
-function createLabTestAccumulator() {
+const CBC_REFERENCE_VARIABLES = [
+  { norm: 'wbc', raw: 'WBC' },
+  { norm: 'rbc', raw: 'RBC' },
+  { norm: 'hemoglobin', raw: 'Hemoglobin' },
+  { norm: 'hct', raw: 'HCT' },
+  { norm: 'mcv', raw: 'MCV' },
+  { norm: 'mch', raw: 'MCH' },
+  { norm: 'mchc', raw: 'MCHC' },
+  { norm: 'rdw', raw: 'RDW' },
+  { norm: 'platelet', raw: 'PLT' },
+  { norm: 'mpv', raw: 'MPV' },
+  { norm: 'pdw', raw: 'PDW' },
+  { norm: 'neutrophil', raw: 'NEU', measurementKind: 'percent' },
+  { norm: 'neutrophil', raw: 'NEU', measurementKind: 'absolute' },
+  { norm: 'lymphocyte', raw: 'LYM', measurementKind: 'percent' },
+  { norm: 'lymphocyte', raw: 'LYM', measurementKind: 'absolute' },
+  { norm: 'monocyte', raw: 'MONO', measurementKind: 'percent' },
+  { norm: 'monocyte', raw: 'MONO', measurementKind: 'absolute' },
+  { norm: 'eosinophil', raw: 'EOS', measurementKind: 'percent' },
+  { norm: 'eosinophil', raw: 'EOS', measurementKind: 'absolute' },
+  { norm: 'basophil', raw: 'BASO', measurementKind: 'percent' },
+  { norm: 'basophil', raw: 'BASO', measurementKind: 'absolute' },
+];
+
+function createLabTestAccumulator({ includeExpectedCbc = false } = {}) {
   const byTest = new Map();
   const addRow = (row) => {
     const norm = getCell(row, ['test_name_norm', 'Tên XN chuẩn', 'Tên xét nghiệm chuẩn hóa'])
@@ -132,15 +156,22 @@ function createLabTestAccumulator() {
     if (!norm && !raw) return;
     const normalizedName = norm || normalizeToken(raw);
     const unit = getCell(row, ['unit', 'Đơn vị']);
-    // Giữ nguyên ký hiệu và hoa/thường vì % / mmol/L / mL có ý nghĩa đo lường.
+    const measurementKind = classifyLabMeasurement(normalizedName, raw, unit);
+    // Giữ nguyên đơn vị EMR: % / mmol/L / mL không bị nhập làm một.
     const unitKey = unit.normalize('NFKC').replace(/\s+/g, ' ').trim();
-    const key = normalizeToken(normalizedName) + '|' + unitKey;
+    const key = [normalizeToken(normalizedName), measurementKind, unitKey].join('|');
     const bucket = byTest.get(key) || {
-      raw, norm: normalizedName, group: getCell(row, ['lab_group', 'Nhóm xét nghiệm']),
-      unit, count: 0, values: [], distinctValues: new Set(), distinctTruncated: false,
+      raw, norm: normalizedName, measurementKind, group: getCell(row, ['lab_group', 'Nhóm xét nghiệm']),
+      unit, count: 0, encounters: new Set(), values: [], distinctValues: new Set(), distinctTruncated: false,
     };
     bucket.count += 1;
+    const matchStatus = getCell(row, ['encounter_match_status']);
+    const withinEncounter = getCell(row, ['is_within_encounter']);
+    const encounter = getCell(row, ['encounter_id']);
     const val = getCell(row, ['result_num', 'Kết quả số']) || getCell(row, ['result_raw', 'Kết quả']);
+    if (encounter && val && (!matchStatus || matchStatus === 'matched') && (!withinEncounter || withinEncounter === '1')) {
+      bucket.encounters.add(encounter);
+    }
     if (val) {
       const displayValue = val + (bucket.unit ? ' ' + bucket.unit : '');
       pushCatalogSample(bucket.values, displayValue);
@@ -155,21 +186,47 @@ function createLabTestAccumulator() {
     byTest.set(key, bucket);
   };
   const addVariables = (add) => {
-    for (const b of [...byTest.values()].sort((a, b) => b.count - a.count)) {
+    if (includeExpectedCbc) {
+      for (const expected of CBC_REFERENCE_VARIABLES) {
+        const observed = [...byTest.values()].some(bucket => bucket.norm === expected.norm
+          && (expected.measurementKind ? bucket.measurementKind === expected.measurementKind : !bucket.measurementKind));
+        if (observed) continue;
+        const key = [expected.norm, expected.measurementKind || '', ''].join('|');
+        if (byTest.has(key)) continue;
+        byTest.set(key, {
+          raw: expected.raw, norm: expected.norm, measurementKind: expected.measurementKind || '',
+          group: 'Huyết học', unit: '', count: 0, encounters: new Set(), values: [],
+          distinctValues: new Set(), distinctTruncated: false, expectedCatalogEntry: true,
+        });
+      }
+    }
+    for (const b of [...byTest.values()].sort((a, b) => b.count - a.count || a.norm.localeCompare(b.norm) || a.measurementKind.localeCompare(b.measurementKind))) {
+      const sourceFilter = { test_name_norm: b.norm };
+      if (!b.expectedCatalogEntry) sourceFilter.unit = b.unit || '';
+      if (b.measurementKind) sourceFilter.lab_measurement_kind = b.measurementKind;
+      const measurementKey = b.measurementKind || 'unspecified';
       add({
-        id: makeVirtualVariableId('lab_item', b.norm + '|' + b.unit),
+        id: makeVirtualVariableId('lab_item', [b.norm, measurementKey, b.unit].join('|')),
         name: 'lab:' + b.norm,
         label: (b.raw || b.norm) + (b.unit ? ' (' + b.unit + ')' : ''),
         type: 'number',
-        nonempty: b.count,
+        nonempty: b.encounters.size,
+        encounters: b.encounters.size,
+        source_result_rows: b.count,
         distinct_count: b.distinctValues.size,
         distinct_truncated: b.distinctTruncated,
         sample_values: shortSamples(b.values),
         operators: ['=', '!=', '>', '>=', '<', '<=', 'between', 'not_empty'],
         virtual_kind: 'lab_test',
-        lab_group: b.group || '',
-        source_filter: { test_name_norm: b.norm, unit: b.unit || '' },
-        source_note: 'Biến dẫn xuất từ lab_results: mỗi kết quả xét nghiệm gốc được giữ riêng; chọn cách gộp ở bước chọn biến.',
+        lab_group: b.group || 'Huyết học',
+        expected_catalog_entry: Boolean(b.expectedCatalogEntry),
+        measurement_kind: b.measurementKind || '',
+        source_filter: sourceFilter,
+        source_note: b.expectedCatalogEntry
+          ? 'Chỉ số công thức máu tham khảo. Chưa có kết quả tương ứng trong kho; không tạo hoặc suy diễn giá trị.'
+          : b.measurementKind === 'conflict'
+            ? 'Tên phép đo và đơn vị không thống nhất; giữ riêng để rà soát, không gộp vào tỷ lệ phần trăm hoặc số lượng tuyệt đối.'
+            : 'Biến dẫn xuất từ lab_results: mỗi kết quả xét nghiệm gốc được giữ riêng; tỷ lệ hiện diện tính theo đợt điều trị có kết quả.',
       });
     }
   };
@@ -180,11 +237,15 @@ function createLabTestAccumulator() {
 // extra.medications: Danh mục thuốc (mặc định đọc config/medication_catalog.json).
 function buildVirtualVariablesForTable(def, rows, extra = {}) {
   const variables = [];
-  const total = Number.isFinite(Number(extra.totalRows)) ? Number(extra.totalRows) : (rows.length || 0);
+  const total = Number.isFinite(Number(extra.coverageDenominator))
+    ? Number(extra.coverageDenominator)
+    : (Number.isFinite(Number(extra.totalRows)) ? Number(extra.totalRows) : (rows.length || 0));
   const add = (item) => variables.push({
-    rows: total,
+    rows: Number.isFinite(Number(item.rows)) ? Number(item.rows) : total,
     nonempty: item.nonempty || 0,
-    fill_rate: total ? Math.round(((item.nonempty || 0) / total) * 100) : 0,
+    fill_rate: Number.isFinite(Number(item.fill_rate))
+      ? Number(item.fill_rate)
+      : (total ? Math.min(100, Math.round(((item.nonempty || 0) / total) * 100)) : 0),
     distinct_count: item.distinct_count || 0,
     sample_values: item.sample_values || [],
     table: def.key,
@@ -194,7 +255,7 @@ function buildVirtualVariablesForTable(def, rows, extra = {}) {
   });
 
   if (def.key === 'lab_results') {
-    const accumulator = extra.labAccumulator || createLabTestAccumulator();
+    const accumulator = extra.labAccumulator || createLabTestAccumulator({ includeExpectedCbc: Boolean(extra.includeExpectedCbc) });
     if (!extra.labAccumulator) for (const row of rows) accumulator.addRow(row);
     accumulator.addVariables(add);
   }
@@ -323,6 +384,7 @@ function buildVariableCatalog(runDir, { redact = true } = {}) {
     { key: 'surgery_results', label: 'Phẫu thuật/thủ thuật', file: 'surgery_results.csv', purpose: 'Tên phẫu thuật, ngày mổ, vô cảm.' },
   ];
   const groups = [];
+  let analysisEncounterCount = 0;
   for (const def of defs) {
     // Thống kê mô tả cột rộng vẫn dùng mẫu có giới hạn. Riêng danh mục xét nghiệm
     // quét hết dòng bằng callback chiếu vài cột, để không làm rơi xét nghiệm hiếm hoặc vượt RAM.
@@ -330,7 +392,7 @@ function buildVariableCatalog(runDir, { redact = true } = {}) {
     let labAccumulator = null;
     let table;
     if (def.key === 'lab_results' && fs.existsSync(filePath)) {
-      labAccumulator = createLabTestAccumulator();
+      labAccumulator = createLabTestAccumulator({ includeExpectedCbc: true });
       const sampleRows = [];
       table = readCsvFileRows(filePath, VARIABLE_CATALOG_MAX_ROWS, {
         overflowColumns: [
@@ -338,6 +400,7 @@ function buildVariableCatalog(runDir, { redact = true } = {}) {
           'test_name_raw', 'Tên XN', 'Tên xét nghiệm',
           'unit', 'Đơn vị', 'lab_group', 'Nhóm xét nghiệm',
           'result_num', 'Kết quả số', 'result_raw', 'Kết quả',
+          'encounter_id', 'encounter_match_status', 'is_within_encounter',
         ],
         onRow: row => { sampleRows.push(row); labAccumulator.addRow(row); },
         onOverflowRow: row => labAccumulator.addRow(row),
@@ -347,6 +410,7 @@ function buildVariableCatalog(runDir, { redact = true } = {}) {
       table = readCsvTable(filePath, VARIABLE_CATALOG_MAX_ROWS);
     }
     const rows = table.rows || [];
+    if (def.key === 'analysis_ready') analysisEncounterCount = Number(table.count) || rows.length;
     const visibleColumns = (table.columns || []).filter(col => !redact || !isSensitiveColumn(col));
     const columnStats = summarizeVariableColumns(visibleColumns, rows);
     const variables = visibleColumns.map(col => {
@@ -374,7 +438,11 @@ function buildVariableCatalog(runDir, { redact = true } = {}) {
       };
     });
     let extra = def.key === 'lab_results'
-      ? { labAccumulator, totalRows: table.count || rows.length }
+      ? {
+        labAccumulator,
+        totalRows: table.count || rows.length,
+        coverageDenominator: analysisEncounterCount,
+      }
       : {};
     if (def.key === 'medication_orders') {
       // Tên thương mại -> hoạt chất theo Danh mục thuốc, gồm cả "Y lệnh khác" trong Diễn biến (chỉ trong bộ nhớ).

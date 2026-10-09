@@ -20,7 +20,7 @@ const { readCsvTable, patientCode, writeCsv, countCsvRows, getCell } = require('
 const { overlayHchanhFromPatientDb, KHO_OVERLAY_FILE, overlayResultsFromPatientDb } = require('./patient_db_overlay');
 const { appendResearchRunLog } = require('./case_trace');
 const { combineEncounterSources, mergeRowsPreferFilled, dedupeByHash, byEncounterCount, buildVerifiedStayIndex, canonicalizeRowToVerifiedStay, dropSharedResearchCodes, dropPlaceholderDischarge, repairSharedPlaceholderDischargeDates, placeholderDischargeDays } = require('./source_merge');
-const { normalizeSex, extractBirthYear, normalizeLabName, resultOperator, parseNumeric, resultText, normalizeLabMeasurement, normalizeFlag, modalityFromService, bodyRegionFromService, normalizeDrugName, classifyDrugGroup, normalizeRoute } = require('./value_normalizers');
+const { normalizeSex, extractBirthYear, normalizeLabName, resultOperator, parseNumeric, resultText, normalizeLabMeasurement, classifyLabMeasurement, normalizeFlag, modalityFromService, bodyRegionFromService, normalizeDrugName, classifyDrugGroup, normalizeRoute } = require('./value_normalizers');
 const { dedupeRowsByHash, dedupeSurgeryRows, snapshotFinalDatasetIfUnsaved } = require('./dataset_store');
 const { firstSurgeryByEncounter, surgeryForMedicationContext } = require('./encounter_linkage');
 const { evaluateCustomFields } = require('./analysis_config');
@@ -863,12 +863,21 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     hemoglobin: 'hb', hct: 'hct', neutrophil: 'neutrophil', lymphocyte: 'lymphocyte', monocyte: 'monocyte', rdw: 'rdw', platelet: 'plt',
     creatinine: 'creatinine', egfr: 'egfr', wbc: 'wbc', crp: 'crp',
   };
+  const differentialSnapshotColumns = new Set(['neutrophil', 'lymphocyte', 'monocyte']);
+  const snapshotColumnForLab = lab => {
+    const col = pdLabMap[lab.test_name_norm];
+    if (!col) return '';
+    if (differentialSnapshotColumns.has(col)
+        && classifyLabMeasurement(lab.test_name_norm, lab.test_name_raw, lab.unit) !== 'percent') return '';
+    return col;
+  };
   for (const lab of labResults) {
+    if (lab.encounter_match_status !== 'matched' || lab.is_within_encounter !== '1') continue;
     const pd = ensurePatientDay(lab, lab.lab_date);
     if (!pd) continue;
     pd.has_lab = '1';
     pd.lab_count += 1;
-    const col = pdLabMap[lab.test_name_norm];
+    const col = snapshotColumnForLab(lab);
     if (col) {
       const timeKey = `_${col}_time`;
       const oldTime = pd[timeKey] || '';
@@ -911,7 +920,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   // cực lớn ở BN nằm viện dài ngày và giữ đúng grain của dữ liệu phân tích.
   const firstLabByEncounter = new Map();
   for (const lab of labResults) {
-    const col = pdLabMap[lab.test_name_norm];
+    const col = snapshotColumnForLab(lab);
     if (!col) continue;
     const key = lab.encounter_id;
     if (!key || lab.encounter_match_status !== 'matched' || lab.is_within_encounter !== '1') continue;

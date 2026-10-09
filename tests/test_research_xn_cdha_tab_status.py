@@ -201,3 +201,32 @@ def test_refetch_parts_and_source_outcome():
     entry = progress[key]
     assert entry["xn"] == "blocked" and entry["cdha"] == "blocked" and entry["Research key"] == "enc_1"
     assert mod.mark_source_outcome(progress, {"Mã BN": "BN1"}, "blocked", "x") is None
+
+
+def test_lab_parser_keeps_mono_percent_across_short_and_full_rows():
+    html = """
+    <div id="divDsChiSoContent"><table>
+      <tr><td>1</td><td>MONO%</td><td>5.3</td><td>%</td></tr>
+      <tr><td>2</td><td>NEU%</td><td>56.4</td><td>3.0 - 75.0</td></tr>
+      <tr><td></td><td>LYM%</td><td>36.8</td><td>%</td></tr>
+      <tr><td>3</td><td>Hb</td><td>128</td><td>120 - 160</td><td>g/L</td></tr>
+      <tr><td>Monocyte %</td><td>4.8</td><td>3.0 - 10.0</td><td>%</td></tr>
+    </table></div>
+    """
+    rows = mod.parse_chi_tiet_xn_html(
+        html,
+        {**CTX, "Mã vào viện": "VV1", "Mã điều trị": "DT1"},
+        {"tg_chi_dinh": "09/10/2026 08:00", "ma_phieu": "XN1"},
+    )
+    by_name = {row["Chỉ số"]: row for row in rows}
+    assert set(by_name) == {"MONO%", "NEU%", "LYM%", "Hb", "Monocyte %"}
+    assert by_name["MONO%"]["Kết quả"] == "5.3"
+    assert by_name["MONO%"]["Đơn vị"] == "%"
+    assert by_name["NEU%"]["Khoảng tham chiếu"] == "3.0 - 75.0"
+    assert by_name["LYM%"]["Kết quả"] == "36.8"
+    assert by_name["LYM%"]["Đơn vị"] == "%"
+    assert by_name["NEU%"]["Đơn vị"] == ""
+    assert by_name["Hb"]["Khoảng tham chiếu"] == "120 - 160"
+    assert by_name["Hb"]["Đơn vị"] == "g/L"
+    assert by_name["Monocyte %"]["Đơn vị"] == "%"
+    assert by_name["MONO%"]["Mã điều trị"] == "DT1"

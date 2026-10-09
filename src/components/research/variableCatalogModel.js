@@ -46,9 +46,9 @@ const VARIABLE_FRIENDLY_LABELS = {
   icd10_code: 'Mã ICD-10',
   hb: 'Hemoglobin (Hb)',
   hct: 'Hematocrit (Hct)',
-  neutrophil: 'Bạch cầu trung tính',
-  lymphocyte: 'Lymphocyte',
-  monocyte: 'Monocyte',
+  neutrophil: 'Bạch cầu trung tính (%)',
+  lymphocyte: 'Lymphocyte (%)',
+  monocyte: 'Monocyte (%)',
   rdw: 'RDW',
   plt: 'Tiểu cầu (PLT)',
   wbc: 'Bạch cầu (WBC)',
@@ -120,7 +120,7 @@ const LAB_FRIENDLY_LABELS = {
   mpv: 'Thể tích trung bình tiểu cầu (MPV)', pdw: 'Độ phân bố kích thước tiểu cầu (PDW)',
   creatinine: 'Creatinin', creatinin: 'Creatinin', egfr: 'Mức lọc cầu thận (eGFR)',
   urea: 'Ure', ure: 'Ure', bun: 'Nitơ urê máu (BUN)',
-  glucose: 'Glucose', crp: 'CRP', hs_crp: 'CRP độ nhạy cao (hs-CRP)',
+  glucose: 'Glucose', hba1c: 'HbA1c', crp: 'CRP', hs_crp: 'CRP độ nhạy cao (hs-CRP)',
   ast: 'AST (GOT)', got: 'AST (GOT)', alt: 'ALT (GPT)', gpt: 'ALT (GPT)', ggt: 'GGT',
   alp: 'Phosphatase kiềm (ALP)', bilirubin_total: 'Bilirubin toàn phần',
   total_bilirubin: 'Bilirubin toàn phần', bilirubin_direct: 'Bilirubin trực tiếp',
@@ -171,6 +171,22 @@ function labVariableDisplayLabel(variable) {
   const canonical = LAB_FRIENDLY_LABELS[key];
   if (!canonical) return humanizeVariableName(variable?.label || variable?.name || '');
   const unit = text(variable?.source_filter?.unit || '');
+  const measurementKind = String(variable?.source_filter?.lab_measurement_kind || '');
+  const differentialCodes = {
+    neutrophil: ['Bạch cầu trung tính', 'NEU'],
+    lymphocyte: ['Lymphocyte', 'LYM'],
+    monocyte: ['Monocyte', 'MONO'],
+    eosinophil: ['Bạch cầu ái toan', 'EOS'],
+    basophil: ['Bạch cầu ái kiềm', 'BASO'],
+  };
+  const differential = differentialCodes[key];
+  if (differential && measurementKind === 'percent') return `${differential[0]} (${differential[1]}%)`;
+  if (differential && measurementKind === 'conflict') {
+    return `${differential[0]} (${differential[1]}) · tên/đơn vị không khớp${unit ? ` (${unit})` : ''}`;
+  }
+  if (differential && measurementKind === 'absolute') {
+    return `${differential[0]} tuyệt đối (${differential[1]})${unit ? ` (${unit})` : ''}`;
+  }
   return `${canonical}${unit ? ` (${unit})` : ''}`;
 }
 
