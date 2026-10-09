@@ -1,7 +1,6 @@
 // Bảng theo dõi tiến độ lấy dữ liệu của Kho nghiên cứu: thẻ từng phần, bảng lượt, lịch sử đợt, dashboard vận hành.
 import { C, FS } from '../../tokens.js';
 import { compactNumber, formatWhen, lower, text } from './researchFormat.js';
-import { describeQaWarnings } from './qaNotes.js';
 import { statusIsDone } from './researchStatusModel.js';
 import { StatBadge, SmallRowsTable, inp } from './researchUi.jsx';
 import { useEffect, useState } from 'react';
@@ -368,7 +367,6 @@ function ResearchOperationDashboard({ screen, loading = false, error = null, aut
   }
   const health = buildDataHealth(screen, { autoRunning });
   const [verdictColor, verdictBg] = TONE[health.verdict.tone] || TONE.info;
-  const generatedAt = formatWhen(screen.generated_at);
   const total = health.total;
   const counts = screen.counts || {};
   const bar = [
@@ -376,7 +374,6 @@ function ResearchOperationDashboard({ screen, loading = false, error = null, aut
     [health.automatic, C.blue, autoRunning ? 'máy đang xử lý' : 'chờ máy xử lý'],
     [health.manual, C.red, 'cần bạn kiểm tra'],
   ].filter(([n]) => n > 0);
-  const qaWarnings = Array.isArray(screen.qa?.warnings) ? screen.qa.warnings : [];
   const openItem = [...health.complete, ...health.accurate].find(i => i.filter && i.filter === filter);
   const task = screen.task || {};
 
@@ -437,29 +434,6 @@ function ResearchOperationDashboard({ screen, loading = false, error = null, aut
         </section>
       )}
 
-      <details style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, padding: '8px 10px' }}>
-        <summary style={{ cursor: 'pointer', color: C.text2, fontSize: FS.xs, fontWeight: 700 }}>
-          Chi tiết kỹ thuật (không cần xử lý)
-        </summary>
-        <div style={{ display: 'grid', gap: 10, marginTop: 8 }}>
-          <div style={{ fontSize: FS.xs, color: C.text3 }}>
-            Tiến độ từng phần trên {compactNumber(total - Number(counts.unmatched || 0))} lượt đã ghép chắc
-            {Number(counts.unmatched || 0) ? ` (${compactNumber(total)} lượt trừ ${compactNumber(counts.unmatched)} lượt chưa ghép chắc)` : ''}:
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', columnGap: 18, rowGap: 2 }}>
-            {(screen.parts || []).map(part => <ModuleProgressCard key={part.key} part={{ ...part, error: part.failed || 0, missing: Math.max(0, part.total - part.done - (part.failed || 0)) }} />)}
-          </div>
-          {!!qaWarnings.length && (
-            <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.6 }}>
-              <b style={{ color: C.text2 }}>Ghi chú khi chuẩn hóa (đã tự xử lý, chỉ để biết):</b>
-              <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
-                {describeQaWarnings(qaWarnings).map(line => <li key={line}>{line}</li>)}
-              </ul>
-            </div>
-          )}
-          {generatedAt && <div style={{ fontSize: FS.xs, color: C.text3 }}>Mọi số trên màn hình này tính cùng lúc từ sổ thu thập, lúc {generatedAt}.</div>}
-        </div>
-      </details>
     </div>
   );
 }
