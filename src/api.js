@@ -987,6 +987,8 @@ export const revokeDevice     = (id)         => post(`/api/devices/${encodeURICo
 export const createAdminUser  = (body)        => post('/api/admin/users', body);
 export const updateAdminUser  = (id, body)   => patch(`/api/admin/users/${encodeURIComponent(id)}`, body);
 export const deleteAdminUser  = (id)          => del(`/api/admin/users/${encodeURIComponent(id)}`);
+export const getFetchAccounts  = ()          => get('/api/fetch-accounts');
+export const saveFetchAccounts = (body)      => put('/api/fetch-accounts', body);
 
 // ── Tài khoản EMR theo điều dưỡng (ca làm/ca trực — admin) ──────────────────
 export const getNurseEmrAccounts  = ()      => get('/api/nurse-emr-accounts');

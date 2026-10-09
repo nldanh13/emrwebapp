@@ -467,6 +467,8 @@ function requiredRoleForRequest(req) {
   if (routePath.startsWith('/admin/users')) return 'admin';
   // Tài khoản EMR theo điều dưỡng (ca làm/ca trực) — chứa mật khẩu thật, chỉ admin.
   if (routePath.startsWith('/nurse-emr-accounts')) return 'admin';
+  // Tài khoản EMR thêm để lấy dữ liệu song song — chứa mật khẩu thật, chỉ admin.
+  if (routePath.startsWith('/fetch-accounts')) return 'admin';
   // Kho chung đổi dữ liệu mặc định của mọi máy: đặt/bỏ cần giám sát; xem thì ai cũng được.
   if (routePath === '/workspace/shared' && method !== 'GET' && method !== 'HEAD') return 'supervisor';
   if (routePath.startsWith('/audit') || routePath.startsWith('/tasks') || routePath === '/diagnostics' || routePath === '/session-logs') return 'supervisor';

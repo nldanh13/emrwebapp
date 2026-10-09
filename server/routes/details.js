@@ -9,7 +9,7 @@ const crypto = require('crypto');
 
 const { getRuntimePaths, ensureSessionAssets } = require('../services/session');
 const { runWorker, fmtPyError }                = require('../services/python_runner');
-const { enqueueHeavy, registerCancel, unregisterCancel, cancelSession } = require('../services/task_queue');
+const { enqueueHeavy, registerCancel, unregisterCancel, cancelSession, runExclusiveByAccount, isCancelRequested } = require('../services/task_queue');
 const { isValidDmy, normalizeDmy, dmyToIso }       = require('../utils/validation');
 const { readJsonSafe, safeFilePart, writeJsonAtomic } = require('../utils/file');
 const { ROOT_DIR }                             = require('../constants');
@@ -17,6 +17,9 @@ const { appendActivity }                       = require('../services/activity_l
 const { refreshRuntimeV2 }                      = require('../services/runtime_v2');
 const { postprocessOrders }                      = require('../services/order_pipeline');
 const { getFeature }                             = require('../services/feature_registry');
+const { fetchAccountPool }                       = require('../services/fetch_accounts');
+const { runDetailsInParts }                      = require('../services/details_parallel');
+const { bridgeModeEnabled }                      = require('../services/emr_bridge');
 
 function normalizePatientIdForOne(v) { return String(v || '').trim(); }
 function dmyToDateForOne(s) {
@@ -187,6 +190,53 @@ function mergeRecordsForOnePatient(oldRecords, newRecords, patientId, dateFrom, 
   return mergeRecordsForPatients(oldRecords, newRecords, new Set([pid].filter(Boolean)), dateFrom, dateTo);
 }
 
+// Chia "Lấy chi tiết" cho các tài khoản EMR đã khai thêm. Trả null khi chỉ có một tài khoản hoặc ít
+// người bệnh (chạy một worker như cũ). Mỗi phần chạy trong thư mục tạm riêng và không tự dựng dữ liệu v2
+// (DETAILS_SKIP_V2), để các phần không ghi đè file của nhau; route gộp kết quả rồi dựng v2 một lần.
+async function runDetailsInPartsForRequest(ctx, sortedData, dateArgs) {
+  const pool = fetchAccountPool();
+  if (pool.length <= 1) return null;
+  const runId = `${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`;
+  const partsDir = path.join(ctx.dir, 'details_parts', runId);
+  const kills = new Set();
+  registerCancel(ctx.sid, () => { for (const kill of kills) { try { kill(); } catch (_) {} } });
+  let seq = 0;
+  try {
+    fs.mkdirSync(partsDir, { recursive: true });
+    return await runDetailsInParts({
+      rows: sortedData,
+      pool,
+      laneRunner: runExclusiveByAccount,
+      isCancelled: () => isCancelRequested(ctx.sid),
+      getId: getRowPatientId,
+      runPart: async ({ rows, account, label }) => {
+        if (isCancelRequested(ctx.sid)) return { ok: false, message: 'Đã dừng.' };
+        seq += 1;
+        const inputPath = path.join(partsDir, `input_${seq}.json`);
+        const outPath = path.join(partsDir, `out_${seq}.json`);
+        writeJsonAtomic(inputPath, rows);
+        console.log(`>>> [${ctx.sid}] Lấy chi tiết phần ${seq}: ${rows.length} BN bằng "${label}".`);
+        let killFn = null;
+        const result = await runWorker('details', ['--input', inputPath, '--out', outPath, ...dateArgs], {
+          onSpawn: (kill) => { killFn = kill; kills.add(kill); },
+          runtimeDir: ctx.dir,
+          extraEnv: { ...account.env, DETAILS_SKIP_V2: '1' },
+        });
+        if (killFn) kills.delete(killFn);
+        if (result.spawnError) return { ok: false, message: `Không khởi động được Python: ${result.spawnError}` };
+        if (result.killedByTimeout) return { ok: false, message: 'Quá thời gian chờ.' };
+        if (result.code !== 0) return { ok: false, message: fmtPyError('Python lỗi khi lấy y lệnh.', result) };
+        const records = readJsonSafe(outPath, null);
+        if (!Array.isArray(records)) return { ok: false, message: 'Worker không ghi được kết quả.' };
+        return { ok: true, records };
+      },
+    });
+  } finally {
+    unregisterCancel(ctx.sid);
+    try { fs.rmSync(partsDir, { recursive: true, force: true }); } catch (_) {}
+  }
+}
+
 // POST /api/run-details — Lấy Y lệnh từng BN từ EMR
 router.post('/run-details', async (req, res) => {
   const ctx        = getRuntimePaths(req);
@@ -215,26 +265,47 @@ router.post('/run-details', async (req, res) => {
       writeJsonAtomic(detailsInputPath, sortedData);
       if (!partialMode) writeJsonAtomic(ctx.SORTED_PATH, sortedData);
 
-      const args = ['--input', detailsInputPath, '--out', detailsOutPath];
-      if (dateFrom) args.push('--from', dateFrom);
-      if (dateTo)   args.push('--to', dateTo);
-      if (rooms)    args.push('--rooms', rooms.replace(/[\r\n\t]/g, ' ').slice(0, 500));
+      const dateArgs = [];
+      if (dateFrom) dateArgs.push('--from', dateFrom);
+      if (dateTo)   dateArgs.push('--to', dateTo);
+      if (rooms)    dateArgs.push('--rooms', rooms.replace(/[\r\n\t]/g, ' ').slice(0, 500));
 
-      let result;
-      try {
-        result = await runWorker('details', args, {
-          onSpawn: killFn => registerCancel(ctx.sid, killFn),
-          runtimeDir: ctx.dir,
-        });
-      } finally {
-        unregisterCancel(ctx.sid);
+      // Có khai thêm tài khoản EMR để lấy dữ liệu: chia danh sách, mỗi tài khoản chạy một phần
+      // song song (server/services/details_parallel.js). Chế độ cầu nối tab EMR chỉ có một phiên
+      // trình duyệt nên luôn chạy một worker như cũ.
+      let parallel = null;
+      if (!bridgeModeEnabled()) {
+        parallel = await runDetailsInPartsForRequest(ctx, sortedData, dateArgs);
+        if (parallel?.cancelled) {
+          return res.status(409).json({ status: 'error', message: 'Đã dừng lấy chi tiết. Dữ liệu cũ vẫn giữ nguyên.' });
+        }
+        if (parallel && !parallel.okIds.size) {
+          const reasons = parallel.parts.filter(p => !p.ok).map(p => `${p.label}: ${p.message}`).join('; ');
+          return res.status(500).json({
+            status: 'error',
+            message: `Không lấy được y lệnh ở phần nào. ${reasons}`.slice(0, 900),
+          });
+        }
+      }
+
+      let result = { code: 0 };
+      if (!parallel) {
+        const args = ['--input', detailsInputPath, '--out', detailsOutPath, ...dateArgs];
+        try {
+          result = await runWorker('details', args, {
+            onSpawn: killFn => registerCancel(ctx.sid, killFn),
+            runtimeDir: ctx.dir,
+          });
+        } finally {
+          unregisterCancel(ctx.sid);
+        }
       }
 
       if (result.spawnError)      return res.status(500).json({ status: 'error', message: `Không khởi động được Python: ${result.spawnError}` });
       if (result.killedByTimeout) return res.status(504).json({ status: 'error', message: 'Timeout khi lấy chi tiết' });
 
       if (result.code === 0) {
-        const newRecords = readJsonSafe(detailsOutPath, []);
+        const newRecords = parallel ? parallel.records : readJsonSafe(detailsOutPath, []);
         if (!Array.isArray(newRecords) || newRecords.length === 0) {
           return res.status(500).json({
             status: 'error',
@@ -249,13 +320,15 @@ router.post('/run-details', async (req, res) => {
           });
         }
 
+        // Chạy song song mà còn phần lỗi: chỉ thay dữ liệu của người bệnh đã lấy được, người bệnh lỗi giữ bản cũ.
+        const failedRows = parallel?.failedRows || [];
         let finalRecords = mergeOrderRowsNoDuplicate(newRecords);
-        if (!partialMode) {
+        if (!partialMode && !failedRows.length) {
           writeJsonAtomic(ctx.FINAL_PATH, finalRecords);
-        }
-        if (partialMode) {
-          const selectedIds = new Set(sortedData.map(getRowPatientId).filter(Boolean));
-          const oldRecords = readJsonSafe(ctx.FINAL_PATH, []);
+        } else {
+          const selectedIds = parallel ? parallel.okIds : new Set(sortedData.map(getRowPatientId).filter(Boolean));
+          let oldRecords = readJsonSafe(ctx.FINAL_PATH, []);
+          if (!partialMode) oldRecords = filterRowsToCurrentScan(oldRecords, sortedData);
           finalRecords = mergeRecordsForPatients(oldRecords, newRecords, selectedIds, dateFrom, dateTo);
           writeJsonAtomic(ctx.FINAL_PATH, finalRecords);
         }
@@ -269,14 +342,26 @@ router.post('/run-details', async (req, res) => {
           total_count: finalRecords.length,
           non_empty_count: finalNonEmpty,
           v2: v2Sync?.indexes || null,
+          parallel: parallel ? {
+            parts: parallel.parts.map(p => ({ account: p.label, count: p.count, ok: p.ok })),
+            retry: parallel.retry ? { account: parallel.retry.label, count: parallel.retry.count, ok: parallel.retry.ok } : null,
+            failed_patient_ids: failedRows.map(getRowPatientId).filter(Boolean),
+          } : null,
         });
         const msgPrefix = partialMode ? 'Thành công! Đã cập nhật phạm vi đã chọn' : 'Thành công! Đã lấy';
+        const parallelNote = parallel ? ` Chạy song song bằng ${parallel.parts.length} tài khoản.` : '';
+        const warning = failedRows.length
+          ? `Còn ${failedRows.length} người bệnh chưa lấy được (${failedRows.slice(0, 5).map(r => r?.ho_ten || r?.['Họ tên'] || getRowPatientId(r)).join(', ')}${failedRows.length > 5 ? '…' : ''}); dữ liệu cũ của họ vẫn giữ. Lỗi: ${parallel.retry?.message || ''}. Bấm Lấy chi tiết lại để lấy phần còn thiếu.`.slice(0, 900)
+          : '';
         return res.json({
           status: 'ok',
-          message: `${msgPrefix} ${newRecords.length} dòng, ${nonEmptyNew} dòng có nội dung. Tổng hiện có ${finalRecords.length} dòng.`,
+          message: `${msgPrefix} ${newRecords.length} dòng, ${nonEmptyNew} dòng có nội dung. Tổng hiện có ${finalRecords.length} dòng.${parallelNote}`,
+          warning,
           count: finalRecords.length,
           fetched_count: newRecords.length,
           non_empty_count: finalNonEmpty,
+          parallel_accounts: parallel ? parallel.parts.length : 1,
+          failed_patient_ids: failedRows.map(getRowPatientId).filter(Boolean),
           v2: v2Sync?.indexes || null,
         });
       }

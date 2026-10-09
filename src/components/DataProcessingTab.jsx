@@ -207,7 +207,12 @@ export default function DataProcessingTab({ toast, workDateRange }) {
         partial: detailsScope !== 'all',
         scope: detailsScope,
       });
-      toast?.(r.status === 'ok' ? `Đã lấy y lệnh ${targetRowsForDetails.length} BN theo khoảng ${rangeLabel}` : r.message, r.status === 'ok' ? 'ok' : 'error');
+      if (r.status === 'ok' && r.warning) {
+        toast?.(r.warning, 'warn');
+      } else {
+        const parallelNote = r.parallel_accounts > 1 ? ` (chạy song song ${r.parallel_accounts} tài khoản)` : '';
+        toast?.(r.status === 'ok' ? `Đã lấy y lệnh ${targetRowsForDetails.length} BN theo khoảng ${rangeLabel}${parallelNote}` : r.message, r.status === 'ok' ? 'ok' : 'error');
+      }
       await load();
     } catch (e) {
       toast?.(String(e.message || e), 'error');

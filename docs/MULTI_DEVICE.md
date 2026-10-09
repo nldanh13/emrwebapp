@@ -67,6 +67,25 @@ Khi đã mở link, browser lưu workspace đó và các lần mở tiếp theo 
 - Tác vụ nặng dùng cùng tài khoản EMR vẫn phải chờ nhau nhờ account lane toàn server.
 - Các tác vụ không dùng cùng tài nguyên có thể chạy song song nếu server cho phép.
 
+## Lấy chi tiết nhanh hơn bằng nhiều tài khoản EMR
+
+Quản trị vào **Thiết lập tài khoản → Tài khoản EMR để lấy dữ liệu song song**, khai thêm tài khoản EMR
+chỉ dùng để đọc và chọn số tài khoản chạy cùng lúc (mặc định 2, tối đa 4, kể cả tài khoản chung).
+Bước **Lấy chi tiết** sẽ chia danh sách người bệnh thành nhiều phần, mỗi phần chạy bằng một tài khoản
+(`server/services/fetch_accounts.js`, `server/services/details_parallel.js`).
+
+- Mỗi người bệnh nằm đúng một phần: không lấy trùng, không sót. Dưới 8 người bệnh thì chạy một phần như cũ.
+- Một tài khoản chỉ chạy một phần tại một thời điểm, có file cookie riêng.
+- Không dùng tài khoản trùng tài khoản chung hoặc đang dùng để nhập liệu (tài khoản EMR riêng của người dùng
+  app, tài khoản theo tên điều dưỡng, tài khoản hành chánh): hai bên có thể đăng xuất lẫn nhau.
+- Phần lỗi được chạy lại một lần bằng tài khoản chung. Vẫn lỗi thì người bệnh đó giữ dữ liệu cũ và màn hình
+  báo rõ còn ai chưa lấy được.
+- Chế độ cầu nối tab EMR (VPS) luôn chạy một phần.
+- Ca không đọc được qua HTTP (vd. vừa ra viện) chỉ riêng ca đó mở bằng Chrome; trước đây một ca như vậy
+  làm cả lô chạy lại bằng Chrome.
+
+Đây vẫn là một máy chủ chạy mọi phần. Nhiều **máy** cùng nhận việc lấy dữ liệu là bước sau.
+
 ## Quy tắc an toàn
 
 - Không dùng cùng một mã truy cập như một cơ chế chọn dữ liệu. Mã truy cập xác thực người dùng; workspace xác định bộ dữ liệu đang thao tác.
