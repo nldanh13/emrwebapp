@@ -631,7 +631,7 @@ export function CreateStudyView(props) {
   const {
     variableStudyDraft, setVariableStudyDraft, questionnaireVariables, setQuestionnaireVariables,
     selectedVariables, variablePreview, variablePreviewLoading, loadVariablePreview,
-    createStudyFromVariableSelection, busy,
+    createStudyFromVariableSelection, busy, variableStudySaveStage, variablePreviewReady,
   } = props;
   const [step, setStep] = useState(1);
   // Dòng của phiếu (giữ nguyên chữ để làm tên cột) và biến ghép cho từng dòng.
@@ -684,17 +684,19 @@ export function CreateStudyView(props) {
           {step === 1 && !hasName && (anchorReady ? 'Nhập tên nghiên cứu để tiếp tục.' : 'Nhập tên thuốc làm mốc (ít nhất 3 ký tự).')}
           {step === 2 && !hasVariables && 'Chọn ít nhất 1 biến để tiếp tục.'}
           {step === 3 && !conditionsReady && 'Nhập giá trị cho mọi điều kiện, hoặc xóa điều kiện không dùng.'}
-          {step === 4 && 'Xuất ngay từ dữ liệu đã có trong kho, đã ẩn định danh. "Lưu thành nghiên cứu" khi cần theo dõi tiếp hoặc lấy bổ sung từ EMR.'}
+          {step === 4 && (busy
+            ? (variableStudySaveStage || 'Đang lưu nghiên cứu…')
+            : 'Xuất ngay từ dữ liệu đã có trong kho, đã ẩn định danh. "Lưu thành nghiên cứu" khi cần theo dõi tiếp hoặc lấy bổ sung từ EMR.')}
         </span>
         {step < 4
           ? <Btn variant="solidPrimary" onClick={() => setStep(step + 1)} disabled={!canNext} style={{ height: 34, padding: '0 18px' }}>Tiếp tục →</Btn>
           : <>
               <Btn onClick={createStudyFromVariableSelection}
-                disabled={busy || !variablePreview?.summary || !hasName || !hasVariables} loading={busy} style={{ height: 34 }}>
+                disabled={busy || !variablePreviewReady || !variablePreview?.summary || !hasName || !hasVariables} loading={busy} style={{ height: 34 }}>
                 Lưu thành nghiên cứu
               </Btn>
               <Btn variant="solidSuccess" onClick={props.exportVariableDataset}
-                disabled={props.variableExporting || !variablePreview?.summary || !hasName || !hasVariables} loading={props.variableExporting} style={{ height: 34, padding: '0 18px' }}>
+                disabled={props.variableExporting || !variablePreviewReady || !variablePreview?.summary || !hasName || !hasVariables} loading={props.variableExporting} style={{ height: 34, padding: '0 18px' }}>
                 Xuất dữ liệu (CSV) · {compactNumber(variablePreview?.summary?.total || 0)} lượt
               </Btn>
             </>}

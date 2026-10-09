@@ -33,6 +33,21 @@ import { invalidate, revalidate, useServerData } from '../hooks/useServerData.js
 
 const CORE_VARIABLE_NAME = /^(sex|birth_year|age|admission_date|discharge_date|hospital_stay_days|diagnosis_raw|surgery_date|surgery_name)$/i;
 
+function variableSelectionFingerprint(spec) {
+  if (!spec || typeof spec !== 'object') return '';
+  const stableSpec = { ...spec };
+  delete stableSpec.created_at;
+  delete stableSpec.sample_size;
+  if (Array.isArray(stableSpec.selected_variables)) {
+    stableSpec.selected_variables = stableSpec.selected_variables.map(variable => {
+      const stableVariable = { ...variable };
+      delete stableVariable.role;
+      return stableVariable;
+    });
+  }
+  return JSON.stringify(stableSpec);
+}
+
 export default function ResearchTab({ toast, active: tabActive = true, onRunningChange }) {
   const isMobile = useIsMobile();
   const [archive, setArchive]         = useState(null);
@@ -85,7 +100,10 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const [variableSampleSize, setVariableSampleSize] = useState({ design: '' }); // thông số tính cỡ mẫu
   const [variableStudyDraft, setVariableStudyDraft] = useState({ name: '', description: '' });
   const [variablePreview, setVariablePreview] = useState(null);
+  const [variablePreviewSelectionKey, setVariablePreviewSelectionKey] = useState('');
+  const [variableStudySaveStage, setVariableStudySaveStage] = useState('');
   const [variablePreviewLoading, setVariablePreviewLoading] = useState(false);
+  const [variablePreviewLoadingKey, setVariablePreviewLoadingKey] = useState('');
   const [variablePreviewError, setVariablePreviewError] = useState('');
 
   // Dùng ref cho toast để tránh callback recreation mỗi khi parent re-render
@@ -93,6 +111,8 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const summaryPollRef = useRef(0);
   const errorToastRef = useRef({ message: '', at: 0 });
   const variableCatalogAutoKeyRef = useRef('');
+  const variablePreviewRequestRef = useRef(0);
+  const currentVariableSpecFingerprintRef = useRef('');
   useEffect(() => { toastRef.current = toast; }, [toast]);
   const t = useCallback((msg, type) => toastRef.current?.(msg, type), []);
   const showErrorOnce = useCallback((err, cooldownMs = 8000) => {
@@ -696,24 +716,41 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     }),
   }), [selectedVariables, variableAggregations, variableSurveyLabels, variableConditions, variableAnchor, variableWindows, variableRoles, variablePeriod, variableOnePerPatient, variableSampleSize, variableCatalog, archive?.latest_run?.id, allCatalogVariables]);
 
-  // Lựa chọn đổi thì thống kê cũ không còn đúng.
+  const currentVariableSpecFingerprint = variableSelectionFingerprint(buildVariableSpec());
+  currentVariableSpecFingerprintRef.current = currentVariableSpecFingerprint;
+
+  // Bản xem trước chỉ còn hợp lệ nếu khớp chính xác cấu hình biến hiện tại.
   useEffect(() => {
     setVariablePreview(null);
+    setVariablePreviewSelectionKey('');
     setVariablePreviewError('');
-  }, [selectedVariableIds, variableAggregations, variableSurveyLabels, variableConditions, variableAnchor, variableWindows, variablePeriod, variableOnePerPatient]);
+  }, [currentVariableSpecFingerprint]);
 
   const loadVariablePreview = useCallback(async () => {
     if (!selectedVariables.length) { t('Chọn ít nhất 1 biến.', 'error'); return; }
+    const spec = buildVariableSpec();
+    const fingerprint = variableSelectionFingerprint(spec);
+    const requestId = ++variablePreviewRequestRef.current;
+    setVariablePreview(null);
+    setVariablePreviewSelectionKey('');
     setVariablePreviewLoading(true);
+    setVariablePreviewLoadingKey(fingerprint);
     setVariablePreviewError('');
     try {
-      setVariablePreview(await api.previewResearchArchiveVariables({ variable_selection: buildVariableSpec() }));
+      const preview = await api.previewResearchArchiveVariables({ variable_selection: spec });
+      if (requestId !== variablePreviewRequestRef.current || fingerprint !== currentVariableSpecFingerprintRef.current) return;
+      setVariablePreview(preview);
+      setVariablePreviewSelectionKey(fingerprint);
     } catch (error) {
+      if (requestId !== variablePreviewRequestRef.current || fingerprint !== currentVariableSpecFingerprintRef.current) return;
       const message = String(error?.message || error || 'Không tính được thống kê.');
       setVariablePreviewError(message);
       t(message, 'error');
     } finally {
-      setVariablePreviewLoading(false);
+      if (requestId === variablePreviewRequestRef.current) {
+        setVariablePreviewLoading(false);
+        setVariablePreviewLoadingKey('');
+      }
     }
   }, [selectedVariables.length, buildVariableSpec, t]);
 
@@ -767,10 +804,15 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     const name = text(variableStudyDraft.name);
     if (!name) { t('Nhập tên nghiên cứu trước khi tạo.', 'error'); return; }
     if (!selectedVariables.length) { t('Chọn ít nhất 1 biến cần lấy.', 'error'); return; }
-    if (!variablePreview?.summary) { t('Cần tính thống kê kiểm tra trước khi tạo.', 'error'); return; }
+    const spec = buildVariableSpec();
+    const fingerprint = variableSelectionFingerprint(spec);
+    if (!variablePreview?.summary || variablePreviewSelectionKey !== fingerprint) {
+      t('Cấu hình biến đã thay đổi sau lần kiểm tra. Hãy tính lại thống kê trước khi lưu.', 'error');
+      return;
+    }
     setBusy(true);
+    setVariableStudySaveStage('Đang tạo thông tin nghiên cứu…');
     try {
-      const spec = buildVariableSpec();
       const r = await api.createResearchStudy({
         name,
         description: variableStudyDraft.description,
@@ -782,6 +824,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       let imported = 0;
       let fromArchive = null;
       let importError = '';
+      setVariableStudySaveStage('Đang lọc và lưu danh sách mẫu…');
       try {
         const expectedCount = Number(variablePreview.summary.total);
         const imp = await api.importResearchFromArchive(studyId, {
@@ -797,6 +840,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       }
       // Mẫu chọn từ kho thì dữ liệu cũng đã có trong kho: lấy luôn từ kho, không mở EMR.
       if (!importError && imported) {
+        setVariableStudySaveStage('Đang nạp dữ liệu từ kho và chuẩn hóa… Có thể mất vài phút.');
         try {
           fromArchive = await api.fetchResearchStudyFromArchive(studyId);
           const seededCount = Number(fromArchive?.seeded?.samples);
@@ -807,6 +851,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
           importError = `Chưa lấy được dữ liệu có sẵn từ kho: ${String(seedErr.message || seedErr)}. Hãy mở nghiên cứu và bấm "Lấy dữ liệu từ kho" để thử lại.`;
         }
       }
+      setVariableStudySaveStage('Đang cập nhật danh sách nghiên cứu…');
       await loadSummary();
       setSelectedId(studyId);
       setStudyMode('stats');
@@ -831,8 +876,8 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
           ? `Đã tạo nghiên cứu "${name}" và nạp ${compactNumber(imported)} lượt từ kho.`
           : `Đã tạo nghiên cứu "${name}".`, 'ok');
     } catch (e) { t(String(e.message || e), 'error'); }
-    finally { setBusy(false); }
-  }, [variableStudyDraft, selectedVariables.length, variablePreview, buildVariableSpec, loadSummary, t]);
+    finally { setVariableStudySaveStage(''); setBusy(false); }
+  }, [variableStudyDraft, selectedVariables.length, variablePreview, variablePreviewSelectionKey, buildVariableSpec, loadSummary, t]);
 
   const identifiedLocked = Boolean(identifiedAccess && !identifiedAccess.allowed);
 
@@ -907,8 +952,11 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       variableRoles, setVariableRoles, variablePeriod, setVariablePeriod, variableOnePerPatient, setVariableOnePerPatient,
       variableSampleSize, setVariableSampleSize,
       variableStudyDraft, setVariableStudyDraft,
-      variablePreview, variablePreviewLoading, variablePreviewError, loadVariablePreview,
-      createStudyFromVariableSelection, exportVariableDataset, variableExporting, applySuggestion, busy,
+      variablePreview: variablePreviewSelectionKey === currentVariableSpecFingerprint ? variablePreview : null,
+      variablePreviewReady: Boolean(variablePreview?.summary && variablePreviewSelectionKey === currentVariableSpecFingerprint),
+      variablePreviewLoading: variablePreviewLoading && variablePreviewLoadingKey === currentVariableSpecFingerprint,
+      variablePreviewError, loadVariablePreview,
+      createStudyFromVariableSelection, exportVariableDataset, variableExporting, applySuggestion, busy, variableStudySaveStage,
     }} />;
     return collectionWorkspace;
   };
