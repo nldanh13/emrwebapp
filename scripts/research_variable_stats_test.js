@@ -93,6 +93,19 @@ test('CBC giữ riêng tỷ lệ phần trăm và số lượng tuyệt đối c
   assert.notStrictEqual(monoPercent.id, monoAbsolute.id);
 });
 
+
+test('danh mục xét nghiệm giữ cả biến ít gặp sau mục thứ 240', () => {
+  const rows = Array.from({ length: 241 }, (_, index) => ({
+    test_name_norm: \`test_\${index + 1}\`,
+    test_name_raw: \`Xét nghiệm \${index + 1}\`,
+    unit: 'mg/L',
+    result_num: String(index + 1),
+  }));
+  const variables = buildVirtualVariablesForTable({ key: 'lab_results', label: 'Xét nghiệm' }, rows);
+  assert.strictEqual(variables.length, 241, 'không cắt danh mục ở 240 biến');
+  assert.ok(variables.some(v => v.source_filter.test_name_norm === 'test_241'), 'giữ cả biến có tần suất thấp');
+});
+
 test('CĐHA xuất báo cáo; T-score DXA tách thành biến số theo từng vị trí', () => {
   const report = 'T - SCORE:\n\\+ Neck Left:-1.8\n\\+ Neck Right:-1.2\n\\+ Total Left:-0.5\n\\+ Total Right:0.0\n\\+ L1:-2.8\n\\+ L2:-3.1\n\\+ L3:-2.3\n\\+ L4:-2.7\nZ-SCORE:\n\\+ Neck Left:-1.0';
   const parsed = extractTScoresBySite(report);
