@@ -27,7 +27,7 @@ const { evaluateCustomFields } = require('./analysis_config');
 const { medicationRowsFromOrderRow, dedupeOrderFields, extractClinicalEvents } = require('./order_note_parser');
 const { hchanhEntryFileStatus } = require('./progress_snapshot');
 const { loadPatientLink, patientLinkPath, applyPatientKeys, savePatientLink } = require('./patient_link');
-const { buildSelectedAnalysisForRun, sanitizeVariableSelection, activeVariableSelectionFromStudy, loadRunTablesForSelection } = require('./selection_runtime');
+const { buildSelectedAnalysisForRun, sanitizeVariableSelection, activeVariableSelectionFromStudy, loadRunTablesForSelection, selectCohortForRun } = require('./selection_runtime');
 const { ROOT_DIR } = require('../constants');
 const { resolveArchiveRunId, resolveRunId, readArchive, archiveTablePath, rowPassesDateFilter, updateStudy } = require('./run_registry');
 
@@ -1374,10 +1374,16 @@ function archiveEncounterLinker(runDir) {
   };
 }
 
-function importArchiveToStudy(study, filters) {
+function importArchiveToStudy(study, filters = {}) {
   const archive = readArchive();
-  if (!archive.latest_run?.id) throw new Error('Kho dữ liệu gốc chưa có lần quét dữ liệu.');
-  const archiveRunId = archive.latest_run.id;
+  const selection = sanitizeVariableSelection(filters?.variable_selection || activeVariableSelectionFromStudy(study));
+  // Ghim nghiên cứu vào đúng snapshot đã dùng khi xem trước; không tự chuyển sang run mới nhất giữa chừng.
+  const requestedRunId = String(selection.run_id || filters?.runId || archive.latest_run?.id || '').trim();
+  if (!requestedRunId) throw new Error('Kho dữ liệu gốc chưa có lần quét dữ liệu.');
+  const archiveRunId = resolveArchiveRunId(requestedRunId);
+  if (!archiveRunId) throw new Error('Không còn đợt dữ liệu kho đã dùng để xem trước. Hãy tải lại kho và tính lại thống kê.');
+  const archiveRunDir = path.join(archiveRunsDir(), archiveRunId);
+
   let patientFile = archiveTablePath('initial_list', archiveRunId);
   let patientData = readCsvTable(patientFile, Number.MAX_SAFE_INTEGER);
   if (!patientData.rows.length) {
@@ -1387,33 +1393,65 @@ function importArchiveToStudy(study, filters) {
   if (!patientData.rows.length) throw new Error('Kho dữ liệu gốc chưa có bảng dữ liệu ban đầu để lọc người bệnh.');
 
   const dateFilteredPatients = patientData.rows.filter(row => rowPassesDateFilter(row, filters));
-  const selection = sanitizeVariableSelection(filters?.variable_selection || activeVariableSelectionFromStudy(study));
-  const archiveRunDir = path.join(archiveRunsDir(), archiveRunId);
-  const tableRowsByKey = loadRunTablesForSelection(archiveRunDir, selection, dateFilteredPatients);
-  // Danh sách ban đầu chỉ có Mã BN + giờ vào viện, không có mã lượt/Mã NC: điều kiện trên y lệnh thuốc,
-  // XN... (ghép theo mã lượt) sẽ không khớp lượt nào. Gắn mã lượt từ bảng lượt điều trị của kho (bản sao
-  // chỉ dùng để lọc) để kết quả giống hệt bước "Kiểm tra & xuất dữ liệu"; file danh sách mẫu giữ dòng gốc.
+  const hasSelection = variableSelection.hasActiveSelection(selection);
+  let selectedAnalysisRows = [];
+  let sourceCount = dateFilteredPatients.length;
+
+  if (hasSelection) {
+    const analysisFile = path.join(archiveRunDir, 'analysis_ready.csv');
+    if (!fs.existsSync(analysisFile)) throw new Error('Thiếu bảng đã chuẩn hóa của đợt kho đã xem trước. Hãy chuẩn hóa lại kho rồi tính lại thống kê.');
+    const selected = selectCohortForRun(archiveRunDir, selection, {
+      // Các bộ lọc ngày cũ được chuẩn hóa vào cùng nguồn analysis_ready trước khi áp condition.
+      filterSourceRow: row => rowPassesDateFilter({
+        ...row,
+        'Ngày vào viện': getCell(row, ['admission_date', 'Ngày vào viện']),
+        'Ngày ra viện': getCell(row, ['discharge_date', 'Ngày ra viện']),
+      }, filters),
+    });
+    selectedAnalysisRows = selected.rows;
+    sourceCount = selected.source_total;
+
+    const expectedCount = filters?.expected_count;
+    if (expectedCount !== undefined && expectedCount !== null && String(expectedCount).trim() !== '') {
+      const expected = Number(expectedCount);
+      if (Number.isInteger(expected) && expected >= 0 && expected !== selectedAnalysisRows.length) {
+        const err = new Error(`Chưa lưu danh sách mẫu: bước xem trước có ${expected} lượt nhưng đối chiếu với cùng đợt dữ liệu chỉ chọn được ${selectedAnalysisRows.length} lượt. Hãy tải lại kho, tính lại thống kê rồi lưu lại.`);
+        err.status = 409;
+        err.code = 'COHORT_PREVIEW_MISMATCH';
+        throw err;
+      }
+    }
+  }
+
+  // Ghép kết quả xem trước với dòng gốc để giữ họ tên, Mã nội trú và các cột đang có.
+  // Nếu dòng gốc thiếu giờ vào hoặc không xác định duy nhất được lượt, dùng luôn dòng analysis_ready
+  // đã được lọc (có encounter_id), thay vì bỏ mẫu hoặc gán nhầm lượt.
   const linkEncounter = archiveEncounterLinker(archiveRunDir);
-  const probes = dateFilteredPatients.map(row => ({ row, probe: { ...row, ...linkEncounter(row) } }));
-  const selectionResult = variableSelection.filterCohortRowsByVariableSelection(probes.map(p => p.probe), selection, tableRowsByKey);
-  const keptProbes = new Set(selectionResult.rows);
-  // Danh sách ban đầu có thể có nhiều dòng cho cùng một lượt (vd. chuyển khoa, dòng lặp): giữ một dòng
-  // mỗi lượt để số mẫu khớp số lượt ở bước xem trước và không thu thập trùng.
-  const seenEncounters = new Set();
-  const selectedPatients = variableSelection.hasActiveSelection(selection)
-    ? probes.filter(p => {
-      if (!keptProbes.has(p.probe)) return false;
-      const eid = p.probe.encounter_id;
-      if (!eid) return true;
-      if (seenEncounters.has(eid)) return false;
-      seenEncounters.add(eid);
-      return true;
-    }).map(p => p.row)
+  const originalByEncounter = new Map();
+  for (const row of dateFilteredPatients) {
+    const encounterId = String(linkEncounter(row).encounter_id || getCell(row, ['encounter_id', 'visit_id']) || '').trim();
+    if (encounterId && !originalByEncounter.has(encounterId)) originalByEncounter.set(encounterId, row);
+  }
+  const selectedPatients = hasSelection
+    ? selectedAnalysisRows.map(row => {
+      const encounterId = String(getCell(row, ['encounter_id', 'visit_id']) || '').trim();
+      return (encounterId && originalByEncounter.get(encounterId)) || row;
+    })
     : dateFilteredPatients;
   const selectedVisits = selectedPatients.filter(row => patientCode(row));
-  if (!selectedVisits.length) throw new Error(variableSelection.hasActiveSelection(selection)
-    ? 'Không có bệnh nhân phù hợp điều kiện lọc và variable selection.'
+  if (!selectedVisits.length) throw new Error(hasSelection
+    ? 'Không có lượt điều trị phù hợp điều kiện lọc trong đợt kho đã xem trước.'
     : 'Không có bệnh nhân phù hợp điều kiện lọc.');
+
+  const expectedCount = filters?.expected_count;
+  if (expectedCount !== undefined && expectedCount !== null && String(expectedCount).trim() !== ''
+      && Number.isInteger(Number(expectedCount)) && Number(expectedCount) >= 0
+      && Number(expectedCount) !== selectedVisits.length) {
+    const err = new Error(`Chưa lưu danh sách mẫu: bước xem trước có ${Number(expectedCount)} lượt nhưng danh sách ghép được ${selectedVisits.length} lượt. Hãy tải lại kho, tính lại thống kê rồi lưu lại.`);
+    err.status = 409;
+    err.code = 'COHORT_PREVIEW_MISMATCH';
+    throw err;
+  }
 
   ensureDir(studyDir(study.id));
   const codeByEncounter = new Map();
@@ -1429,39 +1467,41 @@ function importArchiveToStudy(study, filters) {
     return next;
   });
   const cohortColumns = [...patientData.columns];
-  if (!cohortColumns.includes('Mã NC')) cohortColumns.unshift('Mã NC');
+  for (const row of cohortRows) {
+    for (const column of Object.keys(row)) if (!cohortColumns.includes(column)) cohortColumns.push(column);
+  }
   writeCsv(cohortPath(study.id), cohortColumns, cohortRows);
 
-  // Không copy dữ liệu XN/CĐHA/Thuốc từ kho gốc sang nghiên cứu.
-  // Nghiên cứu chỉ nhận danh sách Mã BN đã lọc; bước "Lấy thêm dữ liệu EMR"
-  // sẽ dùng chính các Mã BN này để mở EMR và ghi run riêng cho nghiên cứu.
   const updated = updateStudy(study.id, {
     cohort_source: 'archive',
     cohort_source_run_id: archiveRunId,
     cohort_filter: filters || {},
-    variable_selection: variableSelection.hasActiveSelection(selection) ? selection : study.variable_selection,
-    analysis_config: variableSelection.hasActiveSelection(selection)
+    variable_selection: hasSelection ? selection : study.variable_selection,
+    analysis_config: hasSelection
       ? { ...(study.analysis_config || {}), variable_selection: selection }
       : study.analysis_config,
-    variable_selection_import: variableSelection.hasActiveSelection(selection) ? {
+    variable_selection_import: hasSelection ? {
       applied: true,
-      input_count: patientData.rows.length,
-      date_filtered_count: dateFilteredPatients.length,
+      input_count: sourceCount,
+      date_filtered_count: selectedAnalysisRows.length,
       matched_count: cohortRows.length,
       condition_count: selection.conditions.length,
+      expected_count: Number.isInteger(Number(filters?.expected_count)) ? Number(filters.expected_count) : null,
+      source_run_id: archiveRunId,
       applied_at: nowIso(),
-    } : { applied: false, input_count: patientData.rows.length, date_filtered_count: dateFilteredPatients.length, matched_count: cohortRows.length, applied_at: nowIso() },
+    } : { applied: false, input_count: patientData.rows.length, date_filtered_count: dateFilteredPatients.length, matched_count: cohortRows.length, source_run_id: archiveRunId, applied_at: nowIso() },
     last_import_at: nowIso(),
   });
   return {
     study: updated,
     source_run_id: archiveRunId,
     count: cohortRows.length,
-    variable_selection: variableSelection.hasActiveSelection(selection) ? {
+    variable_selection: hasSelection ? {
       applied: true,
       condition_count: selection.conditions.length,
       selected_variable_count: selection.selected_variables.length,
-      date_filtered_count: dateFilteredPatients.length,
+      source_count: sourceCount,
+      matched_count: cohortRows.length,
     } : { applied: false },
   };
 }
