@@ -1369,7 +1369,9 @@ function archiveEncounterLinker(runDir) {
       || (pc && admission ? only(byVisit.get(`${pc}|${admission}`)) : null)
       || (pc && !admission ? only(byPatient.get(pc)) : null);
     if (!hit) return {};
-    const out = {};
+    // Trả lại khóa lượt đã xác thực kể cả khi dòng cohort đã có encounter_id.
+    // Các caller dùng giá trị này để lấy trạng thái/dữ liệu của đúng lượt.
+    const out = explicitEncounterId ? { encounter_id: explicitEncounterId } : {};
     for (const key of ['encounter_id', 'research_code', 'patient_key', 'admission_date', 'discharge_date', 'surgery_date']) {
       const value = getCell(hit, [key]);
       if (value && !getCell(row, [key])) out[key] = value;
