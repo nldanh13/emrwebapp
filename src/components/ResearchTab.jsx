@@ -103,6 +103,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const [variablePreviewSelectionKey, setVariablePreviewSelectionKey] = useState('');
   const [variableStudySaveStage, setVariableStudySaveStage] = useState('');
   const [variablePreviewLoading, setVariablePreviewLoading] = useState(false);
+  const [variablePreviewLoadingKey, setVariablePreviewLoadingKey] = useState('');
   const [variablePreviewError, setVariablePreviewError] = useState('');
 
   // Dùng ref cho toast để tránh callback recreation mỗi khi parent re-render
@@ -720,11 +721,9 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
 
   // Bản xem trước chỉ còn hợp lệ nếu khớp chính xác cấu hình biến hiện tại.
   useEffect(() => {
-    variablePreviewRequestRef.current += 1;
     setVariablePreview(null);
     setVariablePreviewSelectionKey('');
     setVariablePreviewError('');
-    setVariablePreviewLoading(false);
   }, [currentVariableSpecFingerprint]);
 
   const loadVariablePreview = useCallback(async () => {
@@ -735,6 +734,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     setVariablePreview(null);
     setVariablePreviewSelectionKey('');
     setVariablePreviewLoading(true);
+    setVariablePreviewLoadingKey(fingerprint);
     setVariablePreviewError('');
     try {
       const preview = await api.previewResearchArchiveVariables({ variable_selection: spec });
@@ -747,7 +747,10 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       setVariablePreviewError(message);
       t(message, 'error');
     } finally {
-      if (requestId === variablePreviewRequestRef.current) setVariablePreviewLoading(false);
+      if (requestId === variablePreviewRequestRef.current) {
+        setVariablePreviewLoading(false);
+        setVariablePreviewLoadingKey('');
+      }
     }
   }, [selectedVariables.length, buildVariableSpec, t]);
 
@@ -951,7 +954,8 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       variableStudyDraft, setVariableStudyDraft,
       variablePreview: variablePreviewSelectionKey === currentVariableSpecFingerprint ? variablePreview : null,
       variablePreviewReady: Boolean(variablePreview?.summary && variablePreviewSelectionKey === currentVariableSpecFingerprint),
-      variablePreviewLoading, variablePreviewError, loadVariablePreview,
+      variablePreviewLoading: variablePreviewLoading && variablePreviewLoadingKey === currentVariableSpecFingerprint,
+      variablePreviewError, loadVariablePreview,
       createStudyFromVariableSelection, exportVariableDataset, variableExporting, applySuggestion, busy, variableStudySaveStage,
     }} />;
     return collectionWorkspace;
