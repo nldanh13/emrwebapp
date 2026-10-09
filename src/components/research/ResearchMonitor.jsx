@@ -367,6 +367,7 @@ function ResearchOperationDashboard({ screen, loading = false, error = null, aut
   }
   const health = buildDataHealth(screen, { autoRunning });
   const [verdictColor, verdictBg] = TONE[health.verdict.tone] || TONE.info;
+  const generatedAt = formatWhen(screen.generated_at);
   const total = health.total;
   const counts = screen.counts || {};
   const bar = [
