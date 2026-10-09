@@ -8,16 +8,16 @@
 //   CreateStudyView                            Tạo nghiên cứu: thông tin → biến → điều kiện → kiểm tra
 //   StudyStatsView                             nghiên cứu: thống kê và xuất dữ liệu
 // Bố cục: cột trái chọn Kho gốc / từng nghiên cứu (+ Tạo nghiên cứu mới); bên phải là tiêu đề,
-// các chế độ (kho: Tổng quát · Thu thập · Tra cứu; nghiên cứu: Thống kê & xuất · Thu thập) và nội dung.
+// các chế độ (kho: Thu thập · Tổng quát · Tra cứu; nghiên cứu: Thống kê & xuất) và nội dung.
 // Màn hình chỉ hiện thống kê; dữ liệu chi tiết chỉ lấy ra bằng Xuất CSV khi cần xử lý số liệu.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { C, FONT_MONO, FS } from '../tokens.js';
+import { C, FS } from '../tokens.js';
 import { Btn, Spinner } from './shared.jsx';
 import * as api from '../api.js';
 import { compactNumber, lower, saveBlob, text } from './research/researchFormat.js';
 import { ARCHIVE_API_SCOPE, ARCHIVE_SCOPE, datasetCount, todayInputDate } from './research/researchScope.js';
 import { ANCHOR_AGGREGATIONS, defaultAggregationFor, VARIABLE_CLINICAL_GROUPS, dedupeWideTableVariables, enhanceCatalogVariable, groupVariablesBySection, matchesCatalogQuery } from './research/variableCatalogModel.js';
-import { buildGeneralOverviewModel, diffProgressSnapshots, summarizeStatusRows } from './research/researchStatusModel.js';
+import { buildGeneralOverviewModel, summarizeStatusRows } from './research/researchStatusModel.js';
 import { ModeButton, SectionHead, SideItem, StatBadge, actionBtn, inp } from './research/researchUi.jsx';
 import { CollectionWorkspace } from './research/CollectionWorkspace.jsx';
 import { PatientLookupView } from './research/PatientLookupView.jsx';
@@ -45,12 +45,9 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const [archiveOptions, setArchiveOptions] = useState(() => ({ headless: true, fromDate: '2026-01-01', toDate: todayInputDate() }));
   const [studyOptions, setStudyOptions]     = useState({ headless: true });
   const [archiveMode, setArchiveMode] = useState('update'); // update | overview | patient | create
-  const [collectionFocus, setCollectionFocus] = useState(null); // error | waiting | unmatched | missing
   const [studyMode, setStudyMode]     = useState('stats');    // nghiên cứu riêng chỉ có Thống kê & xuất
   const [coverage, setCoverage]       = useState(null);
   const [progressSnapshot, setProgressSnapshot] = useState(null);
-  const [statusLoading, setStatusLoading] = useState(false);
-  const [lastUpdateSummary, setLastUpdateSummary] = useState(null);
   const [pipeline, setPipeline] = useState(null);
   const [researchError, setResearchError] = useState('');
   const [automationRun, setAutomationRun] = useState({ kind: '', status: 'idle', current: '', steps: [], error: '', warning: '' });
@@ -199,7 +196,6 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const loadGeneralOverview = useCallback(() => (overviewKey ? revalidate(overviewKey) : Promise.resolve()), [overviewKey]);
 
   const loadProgressSnapshot = useCallback(async (scopeId = selectedId, { silent = false } = {}) => {
-    if (!silent) setStatusLoading(true);
     try {
       const r = scopeId === ARCHIVE_SCOPE
         ? await api.getResearchArchiveProgress({ runId: 'latest' })
@@ -211,8 +207,6 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       setProgressSnapshot(null);
       if (!silent) showErrorOnce(e);
       return null;
-    } finally {
-      if (!silent) setStatusLoading(false);
     }
   }, [selectedId, showErrorOnce]);
 
@@ -387,15 +381,6 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const scopeRunningItem = serverRunning.items.find(item => item.scope_key === currentScopeKey) || null;
   const scopeRunning = Boolean(scopeRunningItem);
   // Máy chủ báo đang chạy thì khung tiến độ không được hiện "đã dừng giữa chừng" (snapshot có thể cũ hơn).
-  const monitorSnapshot = useMemo(() => {
-    if (!scopeRunningItem || !operationSnapshot || operationSnapshot.scope_running || operationSnapshot.active_task) return operationSnapshot;
-    return {
-      ...operationSnapshot,
-      scope_running: { label: scopeRunningItem.label, since: scopeRunningItem.since },
-      stopped: null,
-      current_case: operationSnapshot.current_case ? { ...operationSnapshot.current_case, stale: false } : operationSnapshot.current_case,
-    };
-  }, [operationSnapshot, scopeRunningItem]);
   const uiBusy = busy || remoteTaskActive || scopeRunning;
   const scopeName = useCallback((item) => (item.kind === 'study'
     ? `nghiên cứu "${item.study_name || studies.find(s => s.id === item.study_id)?.name || item.study_id}"`
@@ -606,8 +591,6 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
         ? 'Đã bổ sung phần còn thiếu và cập nhật SQLite.'
         : hasProgress ? 'Dữ liệu đã đủ; chỉ cập nhật SQLite và dataset.' : 'Đã lấy dữ liệu và cập nhật SQLite.',
     });
-    const afterProgress = await loadProgressSnapshot(selectedId, { silent: true });
-    setLastUpdateSummary(diffProgressSnapshots(beforeProgress, afterProgress, 'Lấy dữ liệu'));
   }, [
     activeStudy?.has_cohort, activeStudy?.cohort_source, archive?.latest_run?.id, archiveOptions, isArchive,
     loadProgressSnapshot, runAutomaticWorkflow, selectedId, showErrorOnce, studyOptions,
@@ -856,10 +839,6 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
 
   // ── điều hướng ────────────────────────────────────────────────────────────
   const selectArchive = (mode = 'overview') => { setSelectedId(ARCHIVE_SCOPE); setArchiveMode(mode); };
-  const openCollectionDetail = useCallback((filter = null) => {
-    setCollectionFocus(filter || null);
-    setArchiveMode('update');
-  }, []);
   const selectStudy = (item) => {
     if (!item) return;
     setSelectedId(item.id);
@@ -882,7 +861,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
 
   const archiveModes = [
     ['update', 'Thu thập dữ liệu', 'Quét danh sách, lấy dữ liệu và theo dõi tiến độ'],
-    ['overview', 'Tổng quan kho', 'Số liệu tổng hợp và chất lượng dữ liệu'],
+    ['overview', 'Dữ liệu tổng quát', 'Số liệu tổng hợp và chất lượng dữ liệu'],
     ['patient', 'Tra cứu người bệnh', 'Xem toàn bộ các lần điều trị của một người bệnh'],
   ];
   // Nghiên cứu riêng chỉ thêm/bớt biến trên dữ liệu lấy từ kho: không thu thập, không phiếu nhập tay
@@ -896,7 +875,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       isArchive, archive, study: activeStudy, selectedId, uiBusy, automationRun, scopeRunning: scopeRunningItem,
       archiveOptions, setArchiveOptions, studyOptions, setStudyOptions,
       runSimpleListScan, runSimpleDataCollection, runRefreshProvisional,
-      loadProgressSnapshot, loadSummary, toast, initialFilter: collectionFocus,
+      loadProgressSnapshot, loadSummary, toast,
     }} />
   );
 
@@ -910,7 +889,6 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     if (archiveMode === 'overview') return <GeneralOverviewView
       {...{ generalOverview, generalOverviewLoading, pipeline, setArchiveMode }}
       collectionScreen={archiveScreen}
-      onInspectCollection={openCollectionDetail}
       onNormalize={runNormalizeArchive}
       normalizeBusy={normalizeRequest.status === 'starting' || serverRunning.items.some(item => item.lane === 'normalize' && item.scope === 'archive')}
     />;
