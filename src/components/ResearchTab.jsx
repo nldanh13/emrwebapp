@@ -16,7 +16,7 @@ import { Btn, Spinner } from './shared.jsx';
 import * as api from '../api.js';
 import { compactNumber, lower, saveBlob, text } from './research/researchFormat.js';
 import { ARCHIVE_API_SCOPE, ARCHIVE_SCOPE, datasetCount, todayInputDate } from './research/researchScope.js';
-import { ANCHOR_AGGREGATIONS, defaultAggregationFor, VARIABLE_CLINICAL_GROUPS, dedupeWideTableVariables, enhanceCatalogVariable, groupVariablesBySection } from './research/variableCatalogModel.js';
+import { ANCHOR_AGGREGATIONS, defaultAggregationFor, VARIABLE_CLINICAL_GROUPS, dedupeWideTableVariables, enhanceCatalogVariable, groupVariablesBySection, matchesCatalogQuery } from './research/variableCatalogModel.js';
 import { buildGeneralOverviewModel, diffProgressSnapshots, summarizeStatusRows } from './research/researchStatusModel.js';
 import { ModeButton, SectionHead, SideItem, StatBadge, actionBtn, inp } from './research/researchUi.jsx';
 import { CollectionWorkspace } from './research/CollectionWorkspace.jsx';
@@ -658,15 +658,14 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       .filter(g => g.count > 0 && g.key !== 'technical');
   }, [browseCatalogVariables]);
   const filteredCatalogVariables = useMemo(() => {
-    const q = lower(variableQuery);
+    const q = text(variableQuery);
     const filtered = browseCatalogVariables.filter(v => {
       if (variableGroupFilter !== 'all' && v.clinical_group_key !== variableGroupFilter) return false;
       const rate = Number(v.fill_rate || 0);
       if (variableFillFilter === 'high' && rate < 80) return false;
       if (variableFillFilter === 'medium' && (rate < 30 || rate >= 80)) return false;
       if (variableFillFilter === 'low' && rate >= 30) return false;
-      const haystack = lower(`${v.clinical_group_label} ${v.clinical_section} ${v.source_group_label} ${v.display_label} ${v.raw_name} ${v.description}`);
-      return !q || haystack.includes(q);
+      return !q || matchesCatalogQuery(v, q);
     });
     // Theo nhóm lâm sàng; trong nhóm, biến nên dùng và đầy đủ hơn lên trước.
     return groupVariablesBySection(filtered).flatMap(section => section.variables);
