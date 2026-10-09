@@ -884,7 +884,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
   const [checklistSaving, setChecklistSaving] = useState(false);
   const [actorName, setActorName] = useState(() => readActorName());
   const [openMenu, setOpenMenu] = useState('');
-  const isMobile = useIsMobile();
+  const isMobile = useIsMobile(1280);
   const [mobileLimit, setMobileLimit] = useState(40);
 
   async function setChecked(row, checked) {
@@ -1720,7 +1720,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
 
       <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
         <div style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: '12px 14px' }}>
-          <div style={{ border: `1px solid ${C.border}`, borderRadius: 7, overflow: 'hidden', background: C.surface, boxShadow: C.shadow }}>
+          <div style={{ border: `1px solid ${C.border}`, borderRadius: 7, overflowX: isMobile ? 'hidden' : 'auto', overflowY: 'hidden', background: C.surface, boxShadow: C.shadow }}>
             {isMobile ? (
               <div style={{ display: 'grid', gap: 9, padding: 9 }}>
                 {filteredRows.slice(0, mobileLimit).map(row => {
@@ -1749,7 +1749,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
                 ) : null}
               </div>
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+              <table style={{ width: '100%', minWidth: isMobile ? 0 : 1600, borderCollapse: 'separate', borderSpacing: 0 }}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 3 }}>
                 <tr style={{ background: C.surface2 }}>
                   {[
