@@ -71,4 +71,29 @@ test('mỗi người bệnh một lượt và thời gian nghiên cứu cũng á
   assert.strictEqual(r.count, 3);
 });
 
+
+test('lưu dùng đúng lượt xem trước khi danh sách ban đầu thiếu mốc giờ và BN có nhiều lượt', () => {
+  initial.push({ 'Mã BN': '1004', 'Mã nội trú': '', 'Họ tên': 'D' });
+  analysis.push(
+    { research_code: 'NC5', encounter_id: 'enc_d1', patient_code: '1004', patient_key: 'P4', admission_date: '2025-12-01 08:00', discharge_date: '2025-12-03' },
+    { research_code: 'NC6', encounter_id: 'enc_d2', patient_code: '1004', patient_key: 'P4', admission_date: '2025-12-10 08:00', discharge_date: '2025-12-12' },
+  );
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), Object.keys(initial[0]), initial);
+  writeCsv(path.join(runDir, 'analysis_ready.csv'), Object.keys(analysis[0]), analysis);
+  const labs = [{ encounter_id: 'enc_d2', patient_code: '1004', result_num: '1.2', test_name_norm: 'Ca++ máu ion hóa' }];
+  writeCsv(path.join(runDir, 'lab_results.csv'), Object.keys(labs[0]), labs);
+  const labSelection = {
+    run_id: '20260101_000000',
+    selected_variables: [{ id: 'analysis_ready.patient_key', table: 'analysis_ready', name: 'patient_key', type: 'text' }],
+    conditions: [{ id: 'ca', variable_id: 'ca', table: 'lab_results', name: 'result_num', operator: 'not_empty' }],
+  };
+  const preview = summarizeSelectionForRun(runDir, labSelection);
+  assert.strictEqual(preview.summary.total, 1);
+  const imported = importArchiveToStudy({ id: 'lab-match' }, { variable_selection: labSelection });
+  assert.strictEqual(imported.count, preview.summary.total);
+  const cohort = readCsvTable(cohortPath('lab-match'), 100).rows;
+  assert.strictEqual(cohort.length, preview.summary.total);
+  assert.strictEqual(cohort[0].encounter_id, 'enc_d2', 'giữ đúng lượt mà bước xem trước đã ghép XN');
+});
+
 console.log(`research_import_archive_selection_test: ${passed} passed`);
