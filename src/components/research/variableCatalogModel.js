@@ -14,6 +14,13 @@ const VARIABLE_FRIENDLY_LABELS = {
   age_group: 'Nhóm tuổi',
   encounter_key: 'Khóa đợt điều trị',
   admission_date: 'Ngày vào viện',
+  admission_pulse: 'Mạch vào viện',
+  admission_temperature: 'Nhiệt độ vào viện (°C)',
+  admission_bp_systolic: 'Huyết áp tâm thu vào viện (mmHg)',
+  admission_bp_diastolic: 'Huyết áp tâm trương vào viện (mmHg)',
+  admission_respiratory_rate: 'Nhịp thở vào viện (lần/phút)',
+  admission_weight_kg: 'Cân nặng vào viện (kg)',
+  admission_height_cm: 'Chiều cao vào viện (cm)',
   admission_datetime: 'Thời gian vào viện',
   discharge_date: 'Ngày ra viện',
   discharge_datetime: 'Thời gian ra viện',
@@ -162,7 +169,7 @@ function variableRole(variable) {
   if (/diagnosis|icd|chẩn đoán/.test(name) || table === 'diagnoses') return 'diagnosis';
   if (/surgery|procedure|anesthesia|phẫu thuật|thủ thuật/.test(name) || table === 'surgery_results') return 'procedure';
   if (/imaging|modality|cdha|xray|ct|mri|siêu âm/.test(name) || table === 'imaging_results') return 'imaging';
-  if (/age|sex|birth|department|hospital|stay|ward|bed/.test(name)) return 'baseline';
+  if (/age|sex|birth|department|hospital|stay|ward|bed|weight|height|bmi|can_nang|chieu_cao/.test(name)) return 'baseline';
   return 'other';
 }
 
