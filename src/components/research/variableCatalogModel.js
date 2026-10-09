@@ -406,8 +406,33 @@ function matchSurveyLines(lines, variables) {
   });
 }
 
+function catalogSearchTokens(value) {
+  return String(value ?? '')
+    .normalize('NFKD')
+    .replace(/[\\u0300-\\u036f]/g, '')
+    .toLowerCase()
+    .replace(/đ/g, 'd')
+    .match(/[a-z0-9]+/g) || [];
+}
+
+function matchesCatalogQuery(variable, query) {
+  const terms = catalogSearchTokens(query);
+  if (!terms.length) return true;
+  const searchable = [
+    variable?.clinical_group_label,
+    variable?.clinical_section,
+    variable?.source_group_label,
+    variable?.display_label,
+    variable?.raw_name,
+    variable?.description,
+  ].filter(Boolean).join(' ');
+  const words = new Set(catalogSearchTokens(searchable));
+  return terms.every(term => [...words].some(word => word.startsWith(term)));
+}
+
 export {
   matchSurveyLines,
+  matchesCatalogQuery,
   surveyKey,
   ANCHOR_AGGREGATIONS,
   VARIABLE_FRIENDLY_LABELS,
