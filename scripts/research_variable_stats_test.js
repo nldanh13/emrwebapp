@@ -14,7 +14,7 @@ const path = require('path');
 process.env.EMR_RUNTIME_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'research_variable_stats_test_'));
 const { describeValues, summarizeSelectedDataset, buildSelectedAnalysisDataset } = require('../server/research/variable_selection');
 const { extractTScoresBySite } = require('../server/research/value_normalizers');
-const { buildVariableCatalog } = require('../server/research/variable_catalog');
+const { buildVariableCatalog, buildVirtualVariablesForTable } = require('../server/research/variable_catalog');
 const { writeCsv } = require('../server/research/table_io');
 const { summarizeSelectionForRun } = require('../server/research/selection_runtime');
 
@@ -61,6 +61,36 @@ test('ngày: khoảng từ–đến; văn bản tự do: không trả giá trị
   assert.strictEqual(t.distinct, 25);
   assert.ok(!('top' in t), 'không có danh sách giá trị');
   assert.ok(!JSON.stringify(t).includes('GIA LAP'), 'không lộ nội dung văn bản');
+});
+
+test('CBC giữ riêng tỷ lệ phần trăm và số lượng tuyệt đối của cùng loại bạch cầu', () => {
+  const measurements = [
+    ['wbc', 'WBC', '10^9/L', '10.51'],
+    ['neutrophil', 'NEU%', '%', '56.4'],
+    ['lymphocyte', 'LYM%', '%', '36.8'],
+    ['monocyte', 'MONO%', '%', '5.3'],
+    ['eos', 'EOS%', '%', '1.1'],
+    ['baso', 'BASO%', '%', '0.4'],
+    ['neutrophil', 'NEU', '10^9/L', '5.93'],
+    ['lymphocyte', 'LYM', '10^9/L', '3.86'],
+    ['monocyte', 'MONO', '10^9/L', '0.56'],
+    ['eos', 'EOS', '10^9/L', '0.11'],
+    ['baso', 'BASO', '10^9/L', '0.05'],
+  ];
+  const rows = measurements.map(([test_name_norm, test_name_raw, unit, result_num], index) => ({
+    encounter_id: `e${index + 1}`, patient_code: `P${index + 1}`,
+    test_name_norm, test_name_raw, unit, result_num,
+  }));
+  const variables = buildVirtualVariablesForTable({ key: 'lab_results', label: 'Xét nghiệm' }, rows);
+  assert.strictEqual(variables.length, 11, 'không gộp CBC phần trăm với số lượng tuyệt đối');
+  assert.strictEqual(new Set(variables.map(v => v.id)).size, 11, 'mỗi phép đo có khóa biến riêng');
+  for (const [, raw, unit] of measurements) {
+    assert.ok(variables.some(v => v.label === `${raw} (${unit})`), `có biến ${raw} (${unit})`);
+  }
+  const monoPercent = variables.find(v => v.source_filter.test_name_norm === 'monocyte' && v.source_filter.unit === '%');
+  const monoAbsolute = variables.find(v => v.source_filter.test_name_norm === 'monocyte' && v.source_filter.unit === '10^9/L');
+  assert.ok(monoPercent && monoAbsolute);
+  assert.notStrictEqual(monoPercent.id, monoAbsolute.id);
 });
 
 test('CĐHA xuất báo cáo; T-score DXA tách thành biến số theo từng vị trí', () => {
