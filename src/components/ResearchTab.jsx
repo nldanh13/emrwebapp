@@ -380,7 +380,6 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const currentScopeKey = isArchive ? 'archive' : `study:${selectedId}`;
   const scopeRunningItem = serverRunning.items.find(item => item.scope_key === currentScopeKey) || null;
   const scopeRunning = Boolean(scopeRunningItem);
-  // Máy chủ báo đang chạy thì khung tiến độ không được hiện "đã dừng giữa chừng" (snapshot có thể cũ hơn).
   const uiBusy = busy || remoteTaskActive || scopeRunning;
   const scopeName = useCallback((item) => (item.kind === 'study'
     ? `nghiên cứu "${item.study_name || studies.find(s => s.id === item.study_id)?.name || item.study_id}"`
@@ -838,7 +837,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const identifiedLocked = Boolean(identifiedAccess && !identifiedAccess.allowed);
 
   // ── điều hướng ────────────────────────────────────────────────────────────
-  const selectArchive = (mode = 'overview') => { setSelectedId(ARCHIVE_SCOPE); setArchiveMode(mode); };
+  const selectArchive = (mode = 'update') => { setSelectedId(ARCHIVE_SCOPE); setArchiveMode(mode); };
   const selectStudy = (item) => {
     if (!item) return;
     setSelectedId(item.id);
@@ -873,7 +872,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const collectionWorkspace = (
     <CollectionWorkspace {...{
       isArchive, archive, study: activeStudy, selectedId, uiBusy, automationRun, scopeRunning: scopeRunningItem,
-      archiveOptions, setArchiveOptions, studyOptions, setStudyOptions,
+      archiveOptions, setArchiveOptions, studyOptions,
       runSimpleListScan, runSimpleDataCollection, runRefreshProvisional,
       loadProgressSnapshot, loadSummary, toast,
     }} />
@@ -994,7 +993,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
                 onChange={e => {
                   const v = e.target.value;
                   if (v === '__create__') openCreateStudy();
-                  else if (v === ARCHIVE_SCOPE) selectArchive('overview');
+                  else if (v === ARCHIVE_SCOPE) selectArchive('update');
                   else selectStudy(studies.find(s => s.id === v));
                 }}
                 style={{ ...inp, width: '100%', height: 40 }}
