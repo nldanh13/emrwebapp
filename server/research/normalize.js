@@ -1435,7 +1435,10 @@ function importArchiveToStudy(study, filters = {}) {
   const selectedPatients = hasSelection
     ? selectedAnalysisRows.map(row => {
       const encounterId = String(getCell(row, ['encounter_id', 'visit_id']) || '').trim();
-      return (encounterId && originalByEncounter.get(encounterId)) || row;
+      const original = encounterId && originalByEncounter.get(encounterId);
+      // Giữ dòng nguồn dễ đọc, đồng thời mang theo khóa lượt đã xác thực để các bước nạp sau
+      // không phải đoán lại lượt theo Mã BN/ngày (đặc biệt khi một BN có nhiều lượt).
+      return original ? { ...original, encounter_id: encounterId } : row;
     })
     : dateFilteredPatients;
   const selectedVisits = selectedPatients.filter(row => patientCode(row));
