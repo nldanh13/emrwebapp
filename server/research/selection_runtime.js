@@ -134,11 +134,12 @@ function selectCohortForRun(runDir, selectionInput, {
 function summarizeSelectionForRun(runDir, selectionInput, { maxEncounters = Number.MAX_SAFE_INTEGER, maxSourceRows = Number.MAX_SAFE_INTEGER } = {}) {
   const countPatients = list => new Set(list.map(r => String(r?.patient_key || r?.patient_code || '').trim()).filter(Boolean)).size;
   const funnel = [];
-  const selected = selectCohortForRun(runDir, selectionInput, {
+  const selection = sanitizeVariableSelection(selectionInput);
+  const selected = selectCohortForRun(runDir, selection, {
     maxEncounters,
     maxSourceRows,
     onStep: (step, list) => {
-      funnel.push({ label: stepLabel(step, selected.selection), kind: step.kind, exclude: Boolean(step.condition?.exclude), encounters: list.length, patients: countPatients(list) });
+      funnel.push({ label: stepLabel(step, selection), kind: step.kind, exclude: Boolean(step.condition?.exclude), encounters: list.length, patients: countPatients(list) });
     },
   });
   funnel.unshift({ label: 'Toàn bộ kho', encounters: selected.sourceRows.length, patients: countPatients(selected.sourceRows) });
