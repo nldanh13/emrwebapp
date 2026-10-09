@@ -17,7 +17,7 @@ const PHASE = {
 // Máy góp sức (nút "Góp sức lấy dữ liệu"): cùng trang, khác lời hướng dẫn.
 const HELPER_PHASE = {
   waiting: { title: 'Đang chờ tab EMR…', hint: 'Trang này phải được mở bằng nút "Góp sức lấy dữ liệu" trên tab EMR (sau khi đăng nhập EMR).' },
-  connected: { title: 'Đang góp sức lấy dữ liệu ✓', hint: 'Để yên tab EMR và trang này. Khi có người bấm Lấy chi tiết, máy này tự nhận một phần người bệnh. Đóng tab là ngừng góp sức; phần đang làm tự chuyển cho máy khác.' },
+  connected: { title: 'Đang góp sức lấy dữ liệu ✓', hint: 'Để yên tab EMR và trang này, không nhập liệu EMR trong cửa sổ này (máy chủ đang mở hồ sơ khác qua phiên này). Khi có người bấm Lấy chi tiết, máy này tự nhận một phần người bệnh. Đóng tab là ngừng góp sức; phần đang làm tự chuyển cho máy khác.' },
   emr_logged_out: { hint: 'Sang tab EMR, đăng nhập lại rồi bấm lại nút "Góp sức lấy dữ liệu".' },
   emr_lost: { hint: 'Tab EMR đã đóng, tải lại hoặc chuyển trang. Mở lại EMR rồi bấm lại nút "Góp sức lấy dữ liệu".' },
   stopped: { title: 'Đã ngừng góp sức', hint: 'Bấm lại nút "Góp sức lấy dữ liệu" trên tab EMR để góp sức tiếp.' },

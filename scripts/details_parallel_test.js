@@ -212,6 +212,23 @@ const test = async (name, fn) => { try { await fn(); console.log(`  ok - ${name}
     assert.ok(started <= 2, `đã chạy ${started} lần sau khi dừng`);
   });
 
+  await test('hàng đợi: không quá số người làm tối đa cùng lúc', async () => {
+    let active = 0; let peak = 0;
+    const result = await runDetailsQueue({
+      rows: patients(40),
+      runners: [acct('default', true), helper('h1'), helper('h2'), helper('h3'), helper('h4')],
+      maxRunners: 3,
+      laneRunner: runExclusiveByAccount,
+      getId: r => r['Mã BN'],
+      pollMs: 5,
+      batchSize: 4,
+      runBatch: async (_r, rows) => { active += 1; peak = Math.max(peak, active); await sleep(5); active -= 1; return { ok: true, records: rows.map(r => ({ 'Mã BN': r['Mã BN'] })) }; },
+    });
+    assert.strictEqual(result.okIds.size, 40);
+    assert.ok(peak <= 3, `cùng lúc ${peak} người làm`);
+    assert.strictEqual(result.runners.length, 3);
+  });
+
   await test('hàng đợi: chỉ một người làm hoặc ít ca thì không chia', async () => {
     const opts = { laneRunner: runExclusiveByAccount, getId: r => r['Mã BN'], runBatch: async () => ({ ok: true, records: [] }) };
     assert.strictEqual(await runDetailsQueue({ ...opts, rows: patients(30), runners: [acct('default', true)] }), null);
@@ -287,6 +304,16 @@ const test = async (name, fn) => { try { await fn(); console.log(`  ok - ${name}
     } finally {
       bridge.disconnect('tab-cua-an');
     }
+  });
+
+  await test('route: hai người cùng bấm Lấy chi tiết ở một kho thì lượt sau được báo đang có người lấy', async () => {
+    runs.length = 0;
+    const [a, b] = await Promise.all([runDetails(patients(12)), new Promise(r => setTimeout(r, 5)).then(() => runDetails(patients(12)))]);
+    assert.strictEqual(a.status, 'ok', a.message);
+    assert.strictEqual(b.code, 'DETAILS_ALREADY_RUNNING');
+    assert.match(b.message, /Đang có lượt Lấy chi tiết/);
+    const again = await runDetails(patients(12));
+    assert.strictEqual(again.status, 'ok', 'xong lượt trước thì bấm lại được');
   });
 
   await test('route: chỉ có tài khoản chung thì chạy một worker như cũ', async () => {

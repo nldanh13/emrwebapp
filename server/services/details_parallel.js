@@ -19,6 +19,8 @@
 const MAX_ATTEMPTS = 3;
 const MAX_CONSECUTIVE_FAILURES = 2;
 const MAX_ACCOUNT_BATCHES = 3;
+const parsedMaxRunners = Number.parseInt(process.env.MAX_FETCH_RUNNERS || '6', 10);
+const DEFAULT_MAX_RUNNERS = Number.isFinite(parsedMaxRunners) && parsedMaxRunners > 0 ? Math.min(parsedMaxRunners, 20) : 6;
 
 function chunk(list, size) {
   const out = [];
@@ -58,12 +60,15 @@ async function runDetailsQueue({
   batchSize,
   pollMs = 2000,
   minPatients = 8,
+  maxRunners = DEFAULT_MAX_RUNNERS,
 }) {
   const list = Array.isArray(rows) ? rows : [];
   const runners = [];
   const known = new Set();
+  // Trần tổng số người làm cùng lúc: mỗi người làm là một phiên EMR + một tiến trình đọc trên máy chủ.
   const addRunner = (r) => {
     if (!r || known.has(r.key)) return null;
+    if (runners.filter(x => !x.retired).length >= maxRunners) return null;
     known.add(r.key);
     const runner = { ...r, retired: false, consecutiveFailures: 0, patients: 0, batches: 0, failures: 0 };
     runners.push(runner);

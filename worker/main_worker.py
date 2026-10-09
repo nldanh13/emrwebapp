@@ -370,6 +370,18 @@ TIME_RE = re.compile(r"\b(\d{1,2}:\d{2})\b")
 DOC_RE = re.compile(r"Bác sĩ:\s*([^\n\r]+)")
 
 
+def _is_bridge_error(exc: Exception) -> bool:
+    try:
+        from emr_http_reader import EmrBridgeError  # local import
+    except Exception:
+        return False
+    return isinstance(exc, EmrBridgeError)
+
+
+class _HelperLost(RuntimeError):
+    """Máy góp sức không còn đọc được EMR: dừng cả lô để máy chủ giao cho máy khác."""
+
+
 class _HttpPatientFallback(Exception):
     """Ca này không đọc được qua HTTP; chỉ riêng ca này cần mở bằng Chrome."""
 
@@ -1817,6 +1829,11 @@ class AutoWorker:
                     except Exception as e:
                         if not allow_selenium_fallback and not helper_mode:
                             raise
+                        if helper_mode and _is_bridge_error(e):
+                            # Máy góp sức mất nối / EMR đăng xuất / tab không trả lời: lỗi của cả máy, không
+                            # phải của ca này. Dừng cả lô để máy chủ giao lô cho máy khác ngay, thay vì chờ hết
+                            # giờ từng ca rồi đẩy hết sang Chrome của máy chủ.
+                            raise _HelperLost(f"Máy góp sức không còn đọc được EMR: {e}")
                         print(f"LOG(HTTP): Lỗi đọc BN {ma_bn} qua HTTP: {e} -> chỉ ca này chuyển sang Chrome")
                         selenium_rows.append(bn)
                         continue
@@ -1853,6 +1870,8 @@ class AutoWorker:
                 data = selenium_rows
 
             except Exception as e:
+                if isinstance(e, _HelperLost):
+                    raise
                 if helper_mode:
                     raise RuntimeError(f"Máy góp sức không đọc được EMR: {e}")
                 if not allow_selenium_fallback:

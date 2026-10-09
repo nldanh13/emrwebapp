@@ -257,6 +257,11 @@ async function runDetailsInPartsForRequest(ctx, sortedData, dateArgs) {
   }
 }
 
+// Lượt "Lấy chi tiết" đang chạy/đang chờ theo workspace. Ở kho chung, hai người cùng bấm thì lượt sau
+// trước đây xếp hàng rồi lấy lại toàn bộ lần nữa (gấp đôi tải EMR, ghi đè kết quả lượt trước bằng bản
+// chụp danh sách cũ). Giờ lượt sau được báo ngay là đang có người lấy.
+const runningDetails = new Map(); // sid → { at, by }
+
 // POST /api/run-details — Lấy Y lệnh từng BN từ EMR
 router.post('/run-details', async (req, res) => {
   const ctx        = getRuntimePaths(req);
@@ -274,6 +279,17 @@ router.post('/run-details', async (req, res) => {
   if (requestedRows.length > 0 && sortedData.length === 0 && currentScanIdSet(rawData).size > 0) {
     return res.status(400).json({ status: 'error', message: 'Không còn BN nào trong danh sách scan mới để lấy y lệnh. Hãy quét lại hoặc kiểm tra danh sách phòng.' });
   }
+
+  const already = runningDetails.get(ctx.sid);
+  if (already) {
+    const at = new Date(already.at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
+    return res.status(409).json({
+      status: 'error',
+      code: 'DETAILS_ALREADY_RUNNING',
+      message: `Đang có lượt Lấy chi tiết cho dữ liệu này${already.by ? ` do ${already.by} bấm` : ''} lúc ${at}. Chờ lượt đó xong rồi bấm lại nếu còn thiếu.`,
+    });
+  }
+  runningDetails.set(ctx.sid, { at: Date.now(), by: String(req.auth?.name || '') });
 
   try {
     ensureSessionAssets(ctx.dir, ROOT_DIR);
@@ -396,6 +412,8 @@ router.post('/run-details', async (req, res) => {
   } catch (err) {
     console.error(err);
     if (!res.headersSent) res.status(500).json({ status: 'error', message: String(err.message || err) });
+  } finally {
+    runningDetails.delete(ctx.sid);
   }
 });
 

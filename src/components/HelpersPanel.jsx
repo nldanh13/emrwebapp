@@ -59,10 +59,12 @@ export default function HelpersPanel() {
       </div>
       {showHow && (
         <div style={{ lineHeight: 1.6, padding: '8px 10px', borderRadius: 7, background: C.surface2, border: `1px solid ${C.border2}` }}>
-          Trên mỗi máy trong bệnh viện: mở EMR, đăng nhập bằng tài khoản của người dùng máy đó, rồi bấm nút
-          <b> Góp sức lấy dữ liệu</b> trên thanh dấu trang và để yên hai tab. Khi bấm <b>Lấy chi tiết</b>, mỗi máy tự nhận
-          một phần người bệnh; máy nào tắt giữa chừng thì phần đó chuyển cho máy khác. EMR ghi nhận tài khoản của từng
-          người đã xem hồ sơ nào.
+          Trên mỗi máy trong bệnh viện: mở một <b>cửa sổ trình duyệt riêng chỉ để góp sức</b> (cửa sổ ẩn danh, hoặc
+          hồ sơ Chrome khác), mở EMR, đăng nhập bằng tài khoản của người dùng máy đó, rồi bấm nút
+          <b> Góp sức lấy dữ liệu</b> trên thanh dấu trang và để yên hai tab. Không nhập liệu EMR trong cửa sổ đó: máy chủ
+          đang mở hồ sơ người bệnh khác qua phiên này. Mỗi máy dùng một tài khoản EMR khác nhau. Khi bấm
+          <b> Lấy chi tiết</b>, mỗi máy tự nhận một phần người bệnh; máy nào tắt giữa chừng thì phần đó chuyển cho máy khác.
+          EMR ghi nhận tài khoản của từng người đã xem hồ sơ nào.
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 6 }}>
             <a
               ref={linkRef}

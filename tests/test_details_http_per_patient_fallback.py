@@ -127,3 +127,28 @@ def _run_helper(tmp_path, monkeypatch):
     # Giống _run nhưng không ép bật HTTP: máy góp sức tự bật đường đọc qua cầu nối.
     sess, opened, records, v2 = _run(tmp_path, monkeypatch, force_http=False)
     return sess, opened, records, v2
+
+
+def test_may_gop_suc_mat_noi_thi_dung_ca_lo(tmp_path, monkeypatch):
+    # Tab EMR của máy góp sức đóng/đăng xuất giữa chừng: dừng cả lô (máy chủ giao lô cho máy khác),
+    # không đánh dấu từng ca là "không đọc được" rồi đẩy hết sang Chrome của máy chủ.
+    from emr_http_reader import EmrBridgeError
+
+    monkeypatch.setenv("DETAILS_SKIP_UNREADABLE", "1")
+    monkeypatch.setattr(main_worker, "_http_read_enabled", lambda _cfg: False)
+
+    def lost(self, view_url, denngay=None):
+        raise EmrBridgeError("Máy góp sức đã ngừng (đóng tab hoặc mất mạng).", "BRIDGE_OFFLINE")
+
+    monkeypatch.setattr(FakeSess, "fetch_patient_page", lost)
+    import pytest
+    with pytest.raises(RuntimeError, match="không còn đọc được EMR"):
+        rows = [{"Mã BN": "BN1", "Họ tên": "A", "Vi_Tri": "P01"}]
+        inp = tmp_path / "in.json"
+        inp.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+        monkeypatch.setattr(main_worker, "_get_http_session", lambda _cfg: FakeSess())
+        monkeypatch.setattr(main_worker, "WorkerSession", FakeWorkerSession)
+        worker = main_worker.AutoWorker.__new__(main_worker.AutoWorker)
+        worker.config, worker.driver, worker.wait = {}, None, None
+        worker.task_details(str(inp), str(tmp_path / "out.json"), "01/10/2026", "01/10/2026")
+    assert not (tmp_path / "out.json.skipped.json").exists()
