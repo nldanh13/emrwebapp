@@ -38,13 +38,11 @@ def test_research_case_trace_recent_endpoint_and_limit_exist(research_backend_sr
     assert "appendResearchCaseTrace" in src
 
 
-def test_research_ui_displays_case_trace_tags(research_ui_src):
+def test_research_log_panel_is_removed_from_ui(research_ui_src):
     src = research_ui_src
-    assert "getResearchArchiveCaseTrace" in (ROOT / "src" / "api.js").read_text(encoding="utf-8")
-    assert "[CASE_TRACE] 10 ca gần nhất" in src
-    assert "ev.tag" in src
-    assert "thấy=" in src
-    assert "ghi=" in src
+    assert "[CASE_TRACE] 10 ca gần nhất" not in src
+    assert "caseTraceRedact" not in src
+    assert "Xem log chạy" not in src
 
 
 def test_research_trace_has_new_diagnostic_tags():
@@ -74,6 +72,7 @@ def test_research_case_trace_redaction_api_exists(research_backend_src, research
     api = (ROOT / "src" / "api.js").read_text(encoding="utf-8")
     assert "redactCaseTracePayload" in src
     assert "req.query.redact" in src
-    assert "caseTraceRedact" in ui
-    assert "Ẩn thông tin nhạy cảm" in ui
+    assert "caseTraceRedact" not in ui
+    assert "Ẩn thông tin nhạy cảm" not in ui
+    assert "Xem log chạy" not in ui
     assert "redact: redact ? '1' : '0'" in api
