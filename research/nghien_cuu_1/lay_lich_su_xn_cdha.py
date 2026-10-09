@@ -4987,25 +4987,70 @@ def _bat_thuong(td):
     return ""
 
 
-def parse_chi_tiet_xn(driver, ctx, item):
-    rows = []
-    div = driver.find_element(By.ID, "divLSCT")
-    soup = BeautifulSoup(div.get_attribute("innerHTML"), "html.parser")
+def _lab_unit_cell(value):
+    value = normalize_text(value or "").strip().lower().replace("μ", "µ")
+    if not value:
+        return False
+    if value in {"%", "fl", "pl", "pg", "g", "mg", "s", "sec", "u/l", "iu/l"}:
+        return True
+    # Đơn vị xét nghiệm thường có dấu chia; khoảng tham chiếu số có dạng 3–10
+    # nên không bị nhận nhầm thành đơn vị.
+    return "/" in value and not re.fullmatch(r"[-+]?\d+(?:[.,]\d+)?\s*/\s*[-+]?\d+(?:[.,]\d+)?", value)
 
+
+def _lab_row_values(tr):
+    """Đọc dòng XN theo cấu trúc 2–5+ ô, giữ nguyên ô kết quả và không đoán mất tên."""
+    tds = tr.find_all("td")
+    cells = [normalize_text(td.get_text(" ", strip=True)) for td in tds]
+    if len(cells) < 2:
+        return None
+    has_index = bool(
+        (cells[0] and re.fullmatch(r"\d+[.)]?", cells[0].strip()))
+        or (not cells[0] and len(cells) >= 3)
+    )
+    if has_index:
+        if len(cells) < 3:
+            return None
+        name, result, trailing = cells[1], cells[2], cells[3:]
+        result_td = tds[2]
+    else:
+        name, result, trailing = cells[0], cells[1], cells[2:]
+        result_td = tds[1]
+
+    if not name or not result:
+        return None
+    if name.strip().lower() in {
+        "chỉ số", "chi so", "xét nghiệm", "xet nghiem", "tên xét nghiệm",
+        "ten xet nghiem", "kết quả", "ket qua", "đơn vị", "don vi",
+    }:
+        return None
+
+    reference = ""
+    unit = ""
+    if len(trailing) >= 2:
+        reference, unit = trailing[0], trailing[1]
+    elif len(trailing) == 1:
+        if _lab_unit_cell(trailing[0]):
+            unit = trailing[0]
+        else:
+            reference = trailing[0]
+    return name, result, reference, unit, result_td
+
+
+def parse_chi_tiet_xn_html(html, ctx, item):
+    rows = []
+    soup = BeautifulSoup(html or "", "html.parser")
     table = soup.find("div", id="divDsChiSoContent")
     if not table:
         return rows
 
     ngay, gio = split_vn_datetime(item.get("tg_chi_dinh", ""))
     for tr in table.find_all("tr"):
-        tds = tr.find_all("td")
-        if len(tds) < 5:
+        parsed = _lab_row_values(tr)
+        if not parsed:
             continue
-        chi_so = normalize_text(tds[1].get_text(strip=True))
-        ket_qua = normalize_text(tds[2].get_text(strip=True))
-        tham_chieu = normalize_text(tds[3].get_text(strip=True))
-        don_vi = normalize_text(tds[4].get_text(strip=True))
-        if not chi_so and not ket_qua:
+        chi_so, ket_qua, tham_chieu, don_vi, result_td = parsed
+        if ket_qua.strip().lower() in {"kết quả", "ket qua", "tham chiếu", "tham chieu"}:
             continue
         rows.append({
             "Mã NC": ctx.get("Mã NC", ""),
@@ -5024,9 +5069,14 @@ def parse_chi_tiet_xn(driver, ctx, item):
             "Kết quả": ket_qua,
             "Khoảng tham chiếu": tham_chieu,
             "Đơn vị": don_vi,
-            "Bất thường": _bat_thuong(tds[2]),
+            "Bất thường": _bat_thuong(result_td),
         })
     return rows
+
+
+def parse_chi_tiet_xn(driver, ctx, item):
+    div = driver.find_element(By.ID, "divLSCT")
+    return parse_chi_tiet_xn_html(div.get_attribute("innerHTML"), ctx, item)
 
 
 # ── Kết quả một tab: phân biệt rõ 3 trường hợp ───────────────────────────────

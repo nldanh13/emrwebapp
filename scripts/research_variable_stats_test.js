@@ -14,7 +14,7 @@ const path = require('path');
 process.env.EMR_RUNTIME_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'research_variable_stats_test_'));
 process.env.EMR_VARIABLE_CATALOG_MAX_ROWS = '1000';
 const { describeValues, summarizeSelectedDataset, buildSelectedAnalysisDataset, sanitizeVariableSelection } = require('../server/research/variable_selection');
-const { extractTScoresBySite } = require('../server/research/value_normalizers');
+const { extractTScoresBySite, normalizeLabName, classifyLabMeasurement } = require('../server/research/value_normalizers');
 const { buildVariableCatalog, buildVirtualVariablesForTable } = require('../server/research/variable_catalog');
 const { writeCsv } = require('../server/research/table_io');
 const { readCsvFileRows } = require('../server/research/csv_reader');
@@ -71,13 +71,13 @@ test('CBC giữ riêng tỷ lệ phần trăm và số lượng tuyệt đối c
     ['neutrophil', 'NEU%', '%', '56.4'],
     ['lymphocyte', 'LYM%', '%', '36.8'],
     ['monocyte', 'MONO%', '%', '5.3'],
-    ['eos', 'EOS%', '%', '1.1'],
-    ['baso', 'BASO%', '%', '0.4'],
+    ['eosinophil', 'EOS%', '%', '1.1'],
+    ['basophil', 'BASO%', '%', '0.4'],
     ['neutrophil', 'NEU', '10^9/L', '5.93'],
     ['lymphocyte', 'LYM', '10^9/L', '3.86'],
     ['monocyte', 'MONO', '10^9/L', '0.56'],
-    ['eos', 'EOS', '10^9/L', '0.11'],
-    ['baso', 'BASO', '10^9/L', '0.05'],
+    ['eosinophil', 'EOS', '10^9/L', '0.11'],
+    ['basophil', 'BASO', '10^9/L', '0.05'],
   ];
   const rows = measurements.map(([test_name_norm, test_name_raw, unit, result_num], index) => ({
     encounter_id: `e${index + 1}`, patient_code: `P${index + 1}`,
@@ -93,7 +93,60 @@ test('CBC giữ riêng tỷ lệ phần trăm và số lượng tuyệt đối c
   const monoPercent = variables.find(v => v.source_filter.test_name_norm === 'monocyte' && v.source_filter.unit === '%');
   const monoAbsolute = variables.find(v => v.source_filter.test_name_norm === 'monocyte' && v.source_filter.unit === '10^9/L');
   assert.ok(monoPercent && monoAbsolute);
+  assert.strictEqual(monoPercent.source_filter.lab_measurement_kind, 'percent');
+  assert.strictEqual(monoAbsolute.source_filter.lab_measurement_kind, 'absolute');
   assert.notStrictEqual(monoPercent.id, monoAbsolute.id);
+});
+
+test('chuẩn hóa CBC nhận alias huyết học và phân loại MONO% khi thiếu đơn vị', () => {
+  assert.strictEqual(normalizeLabName('Bạch cầu trung tính'), 'neutrophil');
+  assert.strictEqual(normalizeLabName('MONO%'), 'monocyte');
+  assert.strictEqual(normalizeLabName('EOS%'), 'eosinophil');
+  assert.strictEqual(normalizeLabName('BASO#'), 'basophil');
+  assert.strictEqual(normalizeLabName('Mean corpuscular hemoglobin concentration'), 'mchc');
+  assert.strictEqual(normalizeLabName('Na'), 'sodium');
+  assert.strictEqual(normalizeLabName('Ionized calcium'), 'calcium_ionized');
+  assert.strictEqual(normalizeLabName('Ca ion hóa'), 'calcium_ionized');
+  assert.strictEqual(normalizeLabName('Ca toàn phần'), 'calcium_total');
+  assert.strictEqual(normalizeLabName('Total bilirubin'), 'bilirubin_total');
+  assert.strictEqual(normalizeLabName('Fasting glucose'), 'glucose');
+  assert.strictEqual(normalizeLabName('AST'), 'ast');
+  assert.strictEqual(normalizeLabName('HbA1c'), 'hba1c');
+  assert.strictEqual(classifyLabMeasurement('monocyte', 'MONO%', ''), 'percent');
+  assert.strictEqual(classifyLabMeasurement('monocyte', 'MONO%', '10^9/L'), 'conflict');
+  assert.strictEqual(classifyLabMeasurement('monocyte', 'Monocyte', '%'), 'percent');
+  assert.strictEqual(classifyLabMeasurement('monocyte', 'MONO', '10^9/L'), 'absolute');
+  assert.strictEqual(classifyLabMeasurement('monocyte', 'MONO', 'G/L'), 'absolute');
+  assert.strictEqual(classifyLabMeasurement('monocyte', 'MONO#', ''), 'absolute');
+  assert.strictEqual(classifyLabMeasurement('monocyte', 'Monocyte', ''), '');
+});
+
+test('danh mục báo đủ CBC tham chiếu nhưng không bịa kết quả; độ phủ đếm theo đợt', () => {
+  const def = { key: 'lab_results', label: 'Xét nghiệm' };
+  const empty = buildVirtualVariablesForTable(def, [], { includeExpectedCbc: true, coverageDenominator: 4 });
+  assert.strictEqual(empty.length, 21, 'hiện 11 chỉ số chính và 10 dòng NEU/LYM/MONO/EOS/BASO %/tuyệt đối');
+  const missingMonoPercent = empty.find(v => v.source_filter.test_name_norm === 'monocyte'
+    && v.source_filter.lab_measurement_kind === 'percent');
+  assert.ok(missingMonoPercent);
+  assert.strictEqual(missingMonoPercent.nonempty, 0);
+  assert.strictEqual(missingMonoPercent.fill_rate, 0);
+  assert.strictEqual(missingMonoPercent.rows, 4);
+  assert.strictEqual(missingMonoPercent.expected_catalog_entry, true);
+  assert.ok(!missingMonoPercent.source_filter.unit, 'mục tham chiếu không khóa cứng đơn vị chưa biết');
+  assert.match(missingMonoPercent.source_note, /không tạo hoặc suy diễn giá trị/);
+
+  const observed = buildVirtualVariablesForTable(def, [
+    { encounter_id: 'e1', test_name_norm: 'monocyte', test_name_raw: 'MONO%', unit: '%', result_num: '5.3' },
+    { encounter_id: 'e1', test_name_norm: 'monocyte', test_name_raw: 'MONO%', unit: '%', result_num: '4.8' },
+    { encounter_id: 'e1', test_name_norm: 'monocyte', test_name_raw: 'MONO', unit: '10^9/L', result_num: '0.56' },
+  ], { includeExpectedCbc: true, coverageDenominator: 4 });
+  const monoPercent = observed.find(v => v.source_filter.test_name_norm === 'monocyte'
+    && v.source_filter.unit === '%' && v.source_filter.lab_measurement_kind === 'percent');
+  assert.strictEqual(monoPercent.nonempty, 1, 'hai kết quả trong một đợt chỉ tính một đợt có dữ liệu');
+  assert.strictEqual(monoPercent.source_result_rows, 2, 'số dòng xét nghiệm lặp vẫn được giữ riêng');
+  assert.strictEqual(monoPercent.fill_rate, 25, 'độ phủ tính trên 4 đợt điều trị');
+  assert.ok(observed.some(v => v.source_filter.test_name_norm === 'monocyte'
+    && v.source_filter.unit === '10^9/L' && v.source_filter.lab_measurement_kind === 'absolute'));
 });
 
 
@@ -125,8 +178,11 @@ test('danh mục quét đủ tên xét nghiệm vượt giới hạn mẫu 1.000
   assert.strictEqual(group.rows, 1005, 'bảng báo tổng số dòng');
   assert.strictEqual(group.sampled_rows, 1000, 'thống kê cột rộng ghi rõ cỡ mẫu');
   assert.strictEqual(group.sampled, true, 'đánh dấu thống kê cột đã lấy mẫu');
-  assert.strictEqual(tests.length, 1005, 'danh mục biến xét nghiệm vẫn quét toàn bộ bảng');
+  assert.strictEqual(tests.length, 1026, 'quét đủ 1005 tên gốc và thêm 21 mục CBC tham chiếu');
   assert.ok(tests.some(item => item.source_filter.test_name_norm === 'test_1005'), 'có xét nghiệm chỉ xuất hiện sau mẫu');
+  assert.ok(tests.some(item => item.source_filter.test_name_norm === 'monocyte'
+    && item.source_filter.lab_measurement_kind === 'percent' && item.expected_catalog_entry),
+  'MONO% hiện rõ cả khi kho chưa có dòng kết quả');
 });
 
 test('CSV stream giữ mẫu đầu và đọc đủ cột chọn lọc ở các dòng vượt mẫu', () => {
@@ -163,14 +219,14 @@ test('lần xét nghiệm lặp được giữ; lọc đơn vị chính xác, k�
     { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', test_name_norm: 'ionized_calcium', test_name_raw: 'Calci ion hóa', unit: 'mmol/L', lab_datetime: '2026-10-01 10:00', result_num: '1.21' },
     { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', test_name_norm: 'ionized_calcium', test_name_raw: 'Calci ion hóa', unit: 'g/L', lab_datetime: '2026-10-01 11:00', result_num: '9.99' },
     { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', test_name_norm: 'ionized_calcium', test_name_raw: 'Calci ion hóa', unit: '', lab_datetime: '2026-10-01 11:30', result_num: '7.77' },
-    { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', test_name_norm: 'neutrophil', test_name_raw: 'NEU%', unit: '10^9/L', lab_datetime: '2026-10-01 12:00', result_num: '5.93' },
+    { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', test_name_norm: 'neutrophil', test_name_raw: 'NEU', unit: '10^9/L', lab_datetime: '2026-10-01 12:00', result_num: '5.93' },
     { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', test_name_norm: 'neutrophil', test_name_raw: 'NEU%', unit: '%', lab_datetime: '2026-10-01 13:00', result_num: '56.4' },
   ];
-  const select = (label, norm, unit, aggregation) => ({
-    id: 'lab_item.' + norm + '.' + unit,
+  const select = (label, norm, unit, aggregation, measurementKind = '') => ({
+    id: 'lab_item.' + norm + '.' + measurementKind + '.' + unit,
     table: 'lab_results', table_label: 'Xét nghiệm', name: 'lab:' + norm,
     label, type: 'number', virtual_kind: 'lab_test',
-    source_filter: { test_name_norm: norm, unit }, aggregation,
+    source_filter: { test_name_norm: norm, unit, ...(measurementKind ? { lab_measurement_kind: measurementKind } : {}) }, aggregation,
   });
   const valueFor = variable => {
     const dataset = buildSelectedAnalysisDataset(analysis, { selected_variables: [variable] }, { lab_results: labRows });
@@ -180,8 +236,8 @@ test('lần xét nghiệm lặp được giữ; lọc đơn vị chính xác, k�
   assert.strictEqual(valueFor(calcium), '1.42; 1.42; 1.21', 'không gộp trùng giá trị thành một quan sát');
   assert.strictEqual(valueFor({ ...calcium, aggregation: 'mean' }), '1.35', 'cách lấy trung bình trả về một số');
   assert.strictEqual(valueFor({ ...calcium, aggregation: 'last' }), '1.21', 'giá trị cuối theo thời điểm trả về một số');
-  const neuPercent = select('NEU (%)', 'neutrophil', '%', 'list');
-  const neuAbsolute = select('NEU (10^9/L)', 'neutrophil', '10^9/L', 'list');
+  const neuPercent = select('NEU (%)', 'neutrophil', '%', 'list', 'percent');
+  const neuAbsolute = select('NEU (10^9/L)', 'neutrophil', '10^9/L', 'list', 'absolute');
   assert.strictEqual(valueFor(neuPercent), '56.4', 'ký hiệu % phải được so đúng');
   assert.strictEqual(valueFor(neuAbsolute), '5.93', '10^9/L không được lẫn với %');
   assert.strictEqual(valueFor(select('Calci ion hóa (không ghi đơn vị)', 'ionized_calcium', '', 'list')), '7.77', 'đơn vị trống không được khớp các hàng có đơn vị');

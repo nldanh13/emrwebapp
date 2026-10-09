@@ -48,7 +48,9 @@
 // v38: lấy ngày ra từ profile làm fallback để hoàn chỉnh khoảng nằm viện khi discharge thiếu ngày;
 //      ưu tiên ngày ra từ discharge nếu có.
 // v39: ghép kết quả bằng khóa EMR treatment/admission/noitru khi khóa ánh xạ duy nhất tới encounter.
-const NORMALIZED_SCHEMA_VERSION = 39;
+// v40: chuẩn hóa alias CBC; snapshot NEU/LYM/MONO chỉ lấy tỷ lệ %, số lượng tuyệt đối
+//      luôn nằm riêng ở lab_results, không trộn vào các cột snapshot không có đơn vị.
+const NORMALIZED_SCHEMA_VERSION = 40;
 
 const NORMALIZED_COLUMNS = {
   patients: [

@@ -76,9 +76,34 @@ describe('danh mục xét nghiệm', () => {
   }, { key: 'lab_results', label: 'Xét nghiệm' });
 
   it('dùng nhãn chuẩn có đơn vị nhưng vẫn giữ nguyên khóa và nguồn lọc', () => {
-    expect(lymphocyte.display_label).toBe('Lymphocyte (LYM) (10^9/L)');
+    expect(lymphocyte.display_label).toBe('Lymphocyte tuyệt đối (LYM) (10^9/L)');
     expect(lymphocyte.source_filter.test_name_norm).toBe('lymphocyte');
     expect(lymphocyte.source_filter.unit).toBe('10^9/L');
+  });
+
+  it('ghi rõ MONO% và phân biệt kết quả tuyệt đối', () => {
+    const monoPercent = enhanceCatalogVariable({
+      id: 'lab_results.virtual.mono.percent',
+      table: 'lab_results',
+      table_label: 'Xét nghiệm',
+      name: 'lab:monocyte',
+      label: 'MONO%',
+      virtual_kind: 'lab_test',
+      source_filter: { test_name_norm: 'monocyte', unit: '%', lab_measurement_kind: 'percent' },
+      lab_group: 'Huyết học',
+    }, { key: 'lab_results', label: 'Xét nghiệm' });
+    const monoAbsolute = enhanceCatalogVariable({
+      id: 'lab_results.virtual.mono.absolute',
+      table: 'lab_results',
+      table_label: 'Xét nghiệm',
+      name: 'lab:monocyte',
+      label: 'MONO',
+      virtual_kind: 'lab_test',
+      source_filter: { test_name_norm: 'monocyte', unit: '10^9/L', lab_measurement_kind: 'absolute' },
+      lab_group: 'Huyết học',
+    }, { key: 'lab_results', label: 'Xét nghiệm' });
+    expect(monoPercent.display_label).toBe('Monocyte (MONO%)');
+    expect(monoAbsolute.display_label).toBe('Monocyte tuyệt đối (MONO) (10^9/L)');
   });
 
   it('xếp theo nhóm xét nghiệm lấy từ EMR, kể cả tên có dấu tiếng Việt', () => {
