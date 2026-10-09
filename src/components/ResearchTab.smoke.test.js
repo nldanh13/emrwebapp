@@ -51,7 +51,7 @@ const PIPELINE = {
   scan: { at: '2026-05-29T09:26:15Z', from_date: '2026-01-01', to_date: '2026-05-29', rows: 3127, file: 'du_lieu_ban_dau.csv' },
   collect: { at: '2026-05-30T01:00:00Z', cancelled: false, fetched_encounters: 120, skipped_unchanged: 2980, parts_backfilled: 14, selenium_errors_open: 3, unmatched_encounters: 2 },
   collect_runs: 4, versions_written: 260, reused_from_patient_db: { cases: 0, provisional: 0, replaced_by_goc: 0 },
-  normalize: { status: 'complete', at: '2026-05-30T01:05:00Z', duration_ms: 4200, schema_version: 15, qa: { status: 'ok', blocking: 0, warning: 1, review: 0 }, unmatched: [], history: [] },
+  normalize: { status: 'complete', at: '2026-05-30T01:05:00Z', duration_ms: 4200, schema_version: 15, expected_schema_version: 16, qa: { status: 'ok', blocking: 0, warning: 1, review: 0 }, unmatched: [], history: [] },
   storage: {
     run_dir: 'research/research_store/du_lieu_goc/runs/20260529_162615',
     tables: [{ key: 'encounters', label: 'Đợt điều trị', file: 'encounters.csv', rows: 3100, exists: true, size_bytes: 2048000, updated_at: '2026-05-30T01:05:00Z' }],
@@ -180,24 +180,25 @@ describe('ResearchTab (khói)', () => {
     expect(matchesCatalogQuery({ display_label: 'Monocyte (10^9/L)' }, 'mono 10^9/L')).toBe(true);
     expect(matchesCatalogQuery({ display_label: 'Huyết học' }, 'huyet')).toBe(true);
   });
-  it('hiện kho gốc, 3 mục làm việc và nút Tạo nghiên cứu mới ở danh sách nghiên cứu', () => {
+  it('hiện các mục theo thứ tự công việc và nút Tạo nghiên cứu mới', () => {
     const text = container.textContent;
     expect(text).toContain('Kho dữ liệu gốc');
     expect(text).toContain('Dữ liệu tổng quát');
     expect(text).toContain('Thu thập dữ liệu');
     expect(text).toContain('Tra cứu người bệnh');
     expect(text).toContain('Tạo nghiên cứu mới');
+    expect(text.indexOf('Thu thập dữ liệu')).toBeLessThan(text.indexOf('Dữ liệu tổng quát'));
   });
 
-  it('Tổng quát chỉ hiện số liệu và quy trình quét → thu thập → chuẩn hóa → lưu, không có danh sách từng lượt', () => {
+  it('Tổng quát chỉ giữ số liệu chính, bỏ quy trình kỹ thuật và đường dẫn lưu trữ', async () => {
+    await clickText('Dữ liệu tổng quát');
     const text = container.textContent;
     expect(text).toContain('Số liệu kho');
-    expect(text).toContain('Quy trình dữ liệu');
-    for (const stage of ['Quét danh sách từ EMR', 'Thu thập dữ liệu chi tiết', 'Chuẩn hóa và kiểm tra chất lượng', 'Lưu trữ']) expect(text).toContain(stage);
-    expect(text).toContain('research.sqlite3');
-    expect(text).toContain('3 phần lỗi còn tồn');
-    expect(text).toContain('Chạy lại chuẩn hóa');
-    expect(text).toContain('không cần chạy Thu thập dữ liệu');
+    expect(text).toContain('Người bệnh');
+    expect(text).toContain('Đợt điều trị');
+    expect(text).not.toContain('Quy trình dữ liệu');
+    expect(text).not.toContain('research.sqlite3');
+    expect(text).not.toContain('Selenium');
     expect(text).not.toContain('NC0001');
     expect(container.querySelector('input[placeholder^="Tìm mã NC"]')).toBeNull();
   });
@@ -215,6 +216,7 @@ describe('ResearchTab (khói)', () => {
     root = createRoot(container);
     await act(async () => { root.render(createElement(ResearchTab, { toast: () => {} })); });
     await flush();
+    await clickText('Dữ liệu tổng quát');
     const text = container.textContent;
     expect(text).toContain('Lỗi chặn phải xử lý trước khi tạo dataset');
     expect(text).toContain('encounter_match_identity_conflict');
@@ -223,8 +225,9 @@ describe('ResearchTab (khói)', () => {
     PIPELINE.normalize.qa = oldQa;
   });
 
-  it('Tổng quát có nút Chạy lại chuẩn hóa cố định và gọi API trực tiếp, không cần Thu thập dữ liệu', async () => {
+  it('Kho tổng quát cho chạy chuẩn hóa lại khi cấu trúc đã cũ', async () => {
     api.normalizeResearchArchive.mockClear();
+    await clickText('Dữ liệu tổng quát');
     await clickText('Chạy lại chuẩn hóa');
     expect(api.normalizeResearchArchive).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain('Đã chuẩn hóa xong');
