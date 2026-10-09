@@ -161,6 +161,7 @@ test('lần xét nghiệm lặp được giữ; lọc đơn vị chính xác, k�
     { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', test_name_norm: 'ionized_calcium', test_name_raw: 'Calci ion hóa', unit: 'mmol/L', lab_datetime: '2026-10-01 09:00', result_num: '1.42' },
     { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', test_name_norm: 'ionized_calcium', test_name_raw: 'Calci ion hóa', unit: 'mmol/L', lab_datetime: '2026-10-01 10:00', result_num: '1.21' },
     { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', test_name_norm: 'ionized_calcium', test_name_raw: 'Calci ion hóa', unit: 'g/L', lab_datetime: '2026-10-01 11:00', result_num: '9.99' },
+    { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', test_name_norm: 'ionized_calcium', test_name_raw: 'Calci ion hóa', unit: '', lab_datetime: '2026-10-01 11:30', result_num: '7.77' },
     { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', test_name_norm: 'neutrophil', test_name_raw: 'NEU%', unit: '10^9/L', lab_datetime: '2026-10-01 12:00', result_num: '5.93' },
     { research_code: 'NC1', encounter_id: 'e1', patient_code: 'P1', test_name_norm: 'neutrophil', test_name_raw: 'NEU%', unit: '%', lab_datetime: '2026-10-01 13:00', result_num: '56.4' },
   ];
@@ -182,6 +183,7 @@ test('lần xét nghiệm lặp được giữ; lọc đơn vị chính xác, k�
   const neuAbsolute = select('NEU (10^9/L)', 'neutrophil', '10^9/L', 'list');
   assert.strictEqual(valueFor(neuPercent), '56.4', 'ký hiệu % phải được so đúng');
   assert.strictEqual(valueFor(neuAbsolute), '5.93', '10^9/L không được lẫn với %');
+  assert.strictEqual(valueFor(select('Calci ion hóa (không ghi đơn vị)', 'ionized_calcium', '', 'list')), '7.77', 'đơn vị trống không được khớp các hàng có đơn vị');
 });
 
 test('CĐHA xuất báo cáo; T-score DXA tách thành biến số theo từng vị trí', () => {
