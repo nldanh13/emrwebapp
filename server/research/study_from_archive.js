@@ -14,6 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const { ensureDir, writeJsonAtomic } = require('../utils/file');
 const { readCsvTable, writeCsv, patientCode, getCell } = require('./table_io');
+const { readCsvFileRows } = require('./csv_reader');
 const { nowIso, runsDir, cohortPath, archiveRunsDir } = require('./store_paths');
 const { normalizedIdentity, isoDate, isoDateTime } = require('./encounter_context');
 
@@ -115,15 +116,23 @@ function copyFilteredRaw(archiveRunDir, runDir, index) {
   for (const file of RAW_FILES) {
     const src = path.join(archiveRunDir, file);
     if (!fs.existsSync(src)) continue;
-    const table = readCsvTable(src, Number.MAX_SAFE_INTEGER);
-    const codeColumn = (table.columns || []).find(c => RESEARCH_CODE_COLUMNS.includes(c));
+    let columns = [];
+    let codeColumn = '';
     const rows = [];
-    for (const row of table.rows || []) {
-      const code = index.codeFor(row);
-      if (code === null) continue;
-      rows.push(codeColumn ? { ...row, [codeColumn]: code } : row);
-    }
-    writeCsv(path.join(runDir, file), table.columns || [], rows);
+    // Đọc từng dòng; chỉ giữ các dòng thuộc cohort nghiên cứu trong RAM, tránh tạo mảng
+    // object cho toàn bộ kho (đặc biệt nặng với lịch sử xét nghiệm/CĐHA).
+    readCsvFileRows(src, Number.MAX_SAFE_INTEGER, {
+      onHeader(header) {
+        columns = header;
+        codeColumn = header.find(c => RESEARCH_CODE_COLUMNS.includes(c)) || '';
+      },
+      onRow(row) {
+        const code = index.codeFor(row);
+        if (code === null) return;
+        rows.push(codeColumn ? { ...row, [codeColumn]: code } : row);
+      },
+    });
+    writeCsv(path.join(runDir, file), columns, rows);
     counts[file] = rows.length;
   }
   return counts;
