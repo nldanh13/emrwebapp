@@ -323,7 +323,7 @@ function StepVariables(props) {
           ? <EmptyState title="Không có biến phù hợp" hint="Thử từ khóa khác, chọn nhóm Tất cả hoặc bỏ lọc mức đầy đủ." />
           : (
             <div role="list" style={{ maxHeight: 'calc(100vh - 380px)', minHeight: 240, overflow: 'auto', border: `1px solid ${C.border2}`, borderRadius: 7 }}>
-              {filteredCatalogVariables.slice(0, 400).map(v => {
+              {filteredCatalogVariables.map(v => {
                 const selected = selectedVariableIds.has(v.id);
                 return (
                   <label key={v.id} role="listitem" style={{
@@ -342,7 +342,6 @@ function StepVariables(props) {
                   </label>
                 );
               })}
-              {filteredCatalogVariables.length > 400 && <div style={{ padding: 8, fontSize: FS.xs, color: C.text3 }}>Hiện 400 biến đầu. Dùng ô tìm kiếm để thu hẹp.</div>}
             </div>
           )}
       </div>

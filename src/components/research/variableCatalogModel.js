@@ -104,6 +104,44 @@ const VARIABLE_FRIENDLY_LABELS = {
   row_hash: 'Mã kiểm tra dòng',
 };
 
+const LAB_FRIENDLY_LABELS = {
+  hemoglobin: 'Hemoglobin (Hb)', hb: 'Hemoglobin (Hb)', hgb: 'Hemoglobin (Hb)',
+  hct: 'Hematocrit (Hct)',
+  wbc: 'Bạch cầu (WBC)', leukocyte: 'Bạch cầu (WBC)', white_blood_cell: 'Bạch cầu (WBC)',
+  rbc: 'Hồng cầu (RBC)', erythrocyte: 'Hồng cầu (RBC)', red_blood_cell: 'Hồng cầu (RBC)',
+  neutrophil: 'Bạch cầu trung tính (NEU)', neu: 'Bạch cầu trung tính (NEU)', neut: 'Bạch cầu trung tính (NEU)',
+  lymphocyte: 'Lymphocyte (LYM)', lympho: 'Lymphocyte (LYM)', lym: 'Lymphocyte (LYM)',
+  monocyte: 'Monocyte (MONO)', mono: 'Monocyte (MONO)',
+  eosinophil: 'Bạch cầu ái toan (EOS)', eos: 'Bạch cầu ái toan (EOS)',
+  basophil: 'Bạch cầu ái kiềm (BASO)', baso: 'Bạch cầu ái kiềm (BASO)',
+  platelet: 'Tiểu cầu (PLT)', platelets: 'Tiểu cầu (PLT)', plt: 'Tiểu cầu (PLT)',
+  mcv: 'Thể tích trung bình hồng cầu (MCV)', mch: 'Lượng Hb trung bình hồng cầu (MCH)',
+  mchc: 'Nồng độ Hb trung bình hồng cầu (MCHC)', rdw: 'Độ phân bố kích thước hồng cầu (RDW)',
+  mpv: 'Thể tích trung bình tiểu cầu (MPV)', pdw: 'Độ phân bố kích thước tiểu cầu (PDW)',
+  creatinine: 'Creatinin', creatinin: 'Creatinin', egfr: 'Mức lọc cầu thận (eGFR)',
+  urea: 'Ure', ure: 'Ure', bun: 'Nitơ urê máu (BUN)',
+  glucose: 'Glucose', crp: 'CRP', hs_crp: 'CRP độ nhạy cao (hs-CRP)',
+  ast: 'AST (GOT)', got: 'AST (GOT)', alt: 'ALT (GPT)', gpt: 'ALT (GPT)', ggt: 'GGT',
+  alp: 'Phosphatase kiềm (ALP)', bilirubin_total: 'Bilirubin toàn phần',
+  total_bilirubin: 'Bilirubin toàn phần', bilirubin_direct: 'Bilirubin trực tiếp',
+  direct_bilirubin: 'Bilirubin trực tiếp', albumin: 'Albumin', total_protein: 'Protein toàn phần',
+  sodium: 'Natri (Na)', natri: 'Natri (Na)', na: 'Natri (Na)',
+  potassium: 'Kali (K)', kali: 'Kali (K)', k: 'Kali (K)',
+  chloride: 'Clorid (Cl)', clorid: 'Clorid (Cl)', chloride_ion: 'Clorid (Cl)', cl: 'Clorid (Cl)',
+  calcium_ionized: 'Calci ion hóa', ionized_calcium: 'Calci ion hóa',
+  calci_ion_hoa: 'Calci ion hóa', canxi_ion_hoa: 'Calci ion hóa',
+  calcium_total: 'Calci toàn phần', total_calcium: 'Calci toàn phần',
+  calcium: 'Calci', calci: 'Calci', canxi: 'Calci',
+  magnesium: 'Magnesi (Mg)', magi: 'Magnesi (Mg)', mg: 'Magnesi (Mg)',
+  phosphate: 'Phosphat', phosphat: 'Phosphat', uric_acid: 'Acid uric', acid_uric: 'Acid uric',
+  total_cholesterol: 'Cholesterol toàn phần', cholesterol: 'Cholesterol toàn phần',
+  triglyceride: 'Triglycerid', triglycerides: 'Triglycerid', hdl: 'HDL-C', hdl_cholesterol: 'HDL-C',
+  ldl: 'LDL-C', ldl_cholesterol: 'LDL-C',
+  procalcitonin: 'Procalcitonin (PCT)', ferritin: 'Ferritin', esr: 'Tốc độ máu lắng (ESR)',
+  d_dimer: 'D-dimer', ddimer: 'D-dimer', pt: 'Thời gian prothrombin (PT)',
+  aptt: 'Thời gian thromboplastin từng phần hoạt hóa (APTT)', inr: 'INR', fibrinogen: 'Fibrinogen',
+};
+
 const VARIABLE_TECHNICAL_RE = /(^row_|_hash$|hash|source_|raw_row|debug|internal|session|cookie|token|password|secret|(^|_)id$|patient_key|encounter_id|lab_result_id|imaging_id|med_order_id|diagnosis_id|surgery_id)/i;
 
 const VARIABLE_IDENTITY_RE = /(patient_name|patient_code|patient_codes|phone|citizen|cccd|cmnd|address|dia_chi|bhyt|insurance|research_code|emr_admission_id|emr_treatment_id|so_benh_an|medical_record)/i;
@@ -124,6 +162,16 @@ function humanizeVariableName(name) {
     .replace(/\bBn\b/g, 'BN')
     .replace(/\bCdha\b/g, 'CĐHA')
     .replace(/\bXn\b/g, 'XN');
+}
+
+function labVariableDisplayLabel(variable) {
+  const rawName = String(variable?.source_filter?.test_name_norm || String(variable?.name || '').replace(/^lab:/, ''));
+  const key = rawName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const canonical = LAB_FRIENDLY_LABELS[key];
+  if (!canonical) return humanizeVariableName(variable?.label || variable?.name || '');
+  const unit = text(variable?.source_filter?.unit || '');
+  return `${canonical}${unit ? ` (${unit})` : ''}`;
 }
 
 function variableTypeLabel(type) {
@@ -189,13 +237,13 @@ const VARIABLE_CLINICAL_GROUPS = [
 const CLINICAL_GROUP_BY_KEY = new Map(VARIABLE_CLINICAL_GROUPS.map(g => [g.key, g]));
 
 function labSubgroupFromName(name) {
-  const n = lower(name);
-  if (/hb\b|hemoglobin|hct|wbc|rbc|plt|platelet|rdw|neutrophil|lymphocyte|monocyte|eosinophil|basophil|mcv|mch|mchc/.test(n)) return 'Xét nghiệm · Huyết học';
-  if (/creatin|egfr|ure|urea|ast|alt|got|gpt|bilirubin|albumin|protein|glucose|na\b|k\b|cl\b|calci|canxi|mg\b|phosph|cholesterol|triglycerid|ldl|hdl/.test(n)) return 'Xét nghiệm · Sinh hóa';
-  if (/pt\b|aptt|inr|fibrinogen|d.?dimer|dong mau|đông máu/.test(n)) return 'Xét nghiệm · Đông máu';
-  if (/crp|pct|procalcitonin|esr|vs\b|ferritin|miễn dịch|mien dich/.test(n)) return 'Xét nghiệm · Viêm/miễn dịch';
-  if (/urine|nước tiểu|nuoc tieu|protein niệu|hồng cầu niệu|bach cau nieu/.test(n)) return 'Xét nghiệm · Nước tiểu';
-  if (/culture|cấy|vi sinh|kháng sinh đồ|khang sinh do/.test(n)) return 'Xét nghiệm · Vi sinh';
+  const n = lower(name).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+  if (/nuoc tieu|urine|urinalysis|protein nieu|hong cau nieu|bach cau nieu/.test(n)) return 'Xét nghiệm · Nước tiểu';
+  if (/culture|cay|vi sinh|khang sinh do|microbiology/.test(n)) return 'Xét nghiệm · Vi sinh';
+  if (/dong mau|coagulation|coag\b|aptt|inr|fibrinogen|d.?dimer|prothrombin|\bpt\b/.test(n)) return 'Xét nghiệm · Đông máu';
+  if (/huyet hoc|hematolog|cong thuc mau|bach cau|hong cau|tieu cau|huyet sac to|dung tich hong cau|neutrophil|lymphocyte|monocyte|eosinophil|basophil|platelet|\bwbc\b|\brbc\b|\bplt\b|\bmcv\b|\bmchc?\b|\brdw\b/.test(n)) return 'Xét nghiệm · Huyết học';
+  if (/viem|inflammation|immune|immuno|mien dich|crp|pct|procalcitonin|esr|ferritin/.test(n)) return 'Xét nghiệm · Viêm/miễn dịch';
+  if (/sinh hoa|hoa sinh|biochem|creatinin|egfr|urea?|bun|ast|got|alt|gpt|ggt|bilirubin|albumin|protein|glucose|sodium|natri|potassium|kali|chloride|clorid|calci|canxi|magnesium|magi|phosph|cholesterol|triglycerid|\bhdl\b|\bldl\b|uric acid/.test(n)) return 'Xét nghiệm · Sinh hóa';
   return 'Xét nghiệm · Khác';
 }
 
@@ -214,7 +262,7 @@ function clinicalInfoForVariable(variable) {
   const id = lower(variable?.id || '');
   const table = lower(variable?.table || '');
   const label = lower(variable?.label || variable?.name || '');
-  const textAll = `${name} ${id} ${table} ${label}`;
+  const textAll = `${name} ${id} ${table} ${label} ${variable?.lab_group || ''}`;
   const role = variableRole(variable);
   if (role === 'technical' || role === 'identity') return { key: 'technical', section: 'Kỹ thuật/định danh', order: 900 };
   if (/ready_for_analysis|needs_manual_review|overall_status|source_status|encounter_match_ambiguous/.test(textAll)) return { key: 'quality', section: 'Kiểm tra dữ liệu', order: 800 };
@@ -278,7 +326,7 @@ function enhanceCatalogVariable(variable, group) {
     clinical_group_hint: groupMeta?.hint || '',
     clinical_section: clinical.section || groupMeta?.label || 'Khác',
     clinical_order: clinical.order || groupMeta?.order || 999,
-    display_label: humanizeVariableName(variable?.label || variable?.name || ''),
+    display_label: variable?.virtual_kind === 'lab_test' ? labVariableDisplayLabel(variable) : humanizeVariableName(variable?.label || variable?.name || ''),
     raw_name: variable?.name || '',
     description: variableDescription(variable),
     role,

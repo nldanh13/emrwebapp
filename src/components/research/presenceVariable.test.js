@@ -1,6 +1,6 @@
 // "Dùng hoạt chất: X" chọn làm biến: mặc định xuất Có/Không, và bước 4 gợi ý dùng làm tiêu chuẩn chọn vào.
 import { describe, it, expect } from 'vitest';
-import { defaultAggregationFor, enhanceCatalogVariable, isPresenceVariable, matchesCatalogQuery } from './variableCatalogModel.js';
+import { clinicalInfoForVariable, defaultAggregationFor, enhanceCatalogVariable, isPresenceVariable, matchesCatalogQuery } from './variableCatalogModel.js';
 import { readinessItems } from './studyReadiness.jsx';
 import { describeStats } from './researchStats.jsx';
 
@@ -59,5 +59,40 @@ describe('biến sinh hiệu lúc vào viện', () => {
   it('xếp cân nặng và chiều cao vào nhóm biến nền', () => {
     expect(weight.role).toBe('baseline');
     expect(height.role).toBe('baseline');
+  });
+});
+
+
+describe('danh mục xét nghiệm', () => {
+  const lymphocyte = enhanceCatalogVariable({
+    id: 'lab_results.virtual.lym',
+    table: 'lab_results',
+    table_label: 'Xét nghiệm',
+    name: 'lab:lymphocyte',
+    label: 'LYM',
+    virtual_kind: 'lab_test',
+    source_filter: { test_name_norm: 'lymphocyte', unit: '10^9/L' },
+    lab_group: 'Huyết học',
+  }, { key: 'lab_results', label: 'Xét nghiệm' });
+
+  it('dùng nhãn chuẩn có đơn vị nhưng vẫn giữ nguyên khóa và nguồn lọc', () => {
+    expect(lymphocyte.display_label).toBe('Lymphocyte (LYM) (10^9/L)');
+    expect(lymphocyte.source_filter.test_name_norm).toBe('lymphocyte');
+    expect(lymphocyte.source_filter.unit).toBe('10^9/L');
+  });
+
+  it('xếp theo nhóm xét nghiệm lấy từ EMR, kể cả tên có dấu tiếng Việt', () => {
+    expect(clinicalInfoForVariable(lymphocyte).section).toBe('Xét nghiệm · Huyết học');
+    const chemistry = enhanceCatalogVariable({
+      id: 'lab_results.virtual.chem',
+      table: 'lab_results',
+      table_label: 'Xét nghiệm',
+      name: 'lab:unmapped_test',
+      label: 'Tên xét nghiệm lạ',
+      virtual_kind: 'lab_test',
+      source_filter: { test_name_norm: 'unmapped_test', unit: 'mmol/L' },
+      lab_group: 'Sinh hóa',
+    }, { key: 'lab_results', label: 'Xét nghiệm' });
+    expect(clinicalInfoForVariable(chemistry).section).toBe('Xét nghiệm · Sinh hóa');
   });
 });

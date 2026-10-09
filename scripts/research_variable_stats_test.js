@@ -13,7 +13,7 @@ const path = require('path');
 // Thư mục runtime tạm, đặt trước khi nạp module server (constants đọc biến này lúc nạp).
 process.env.EMR_RUNTIME_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'research_variable_stats_test_'));
 process.env.EMR_VARIABLE_CATALOG_MAX_ROWS = '1000';
-const { describeValues, summarizeSelectedDataset, buildSelectedAnalysisDataset } = require('../server/research/variable_selection');
+const { describeValues, summarizeSelectedDataset, buildSelectedAnalysisDataset, sanitizeVariableSelection } = require('../server/research/variable_selection');
 const { extractTScoresBySite } = require('../server/research/value_normalizers');
 const { buildVariableCatalog, buildVirtualVariablesForTable } = require('../server/research/variable_catalog');
 const { writeCsv } = require('../server/research/table_io');
@@ -81,11 +81,12 @@ test('CBC giữ riêng tỷ lệ phần trăm và số lượng tuyệt đối c
   ];
   const rows = measurements.map(([test_name_norm, test_name_raw, unit, result_num], index) => ({
     encounter_id: `e${index + 1}`, patient_code: `P${index + 1}`,
-    test_name_norm, test_name_raw, unit, result_num,
+    test_name_norm, test_name_raw, unit, result_num, lab_group: 'Huyết học',
   }));
   const variables = buildVirtualVariablesForTable({ key: 'lab_results', label: 'Xét nghiệm' }, rows);
   assert.strictEqual(variables.length, 11, 'không gộp CBC phần trăm với số lượng tuyệt đối');
   assert.strictEqual(new Set(variables.map(v => v.id)).size, 11, 'mỗi phép đo có khóa biến riêng');
+  assert.ok(variables.every(v => v.lab_group === 'Huyết học'), 'giữ nhóm xét nghiệm gốc trên biến ảo');
   for (const [, raw, unit] of measurements) {
     assert.ok(variables.some(v => v.label === `${raw} (${unit})`), `có biến ${raw} (${unit})`);
   }
@@ -316,6 +317,22 @@ test('route xuất theo biến: tên cột theo phiếu, có Mã NC, không có 
   } finally {
     server.close();
   }
+});
+
+test('lựa chọn nghiên cứu giữ hơn 500 biến trong danh mục', () => {
+  const selected = Array.from({ length: 600 }, (_, index) => ({
+    id: `lab_results.virtual.test_${index}`,
+    table: 'lab_results',
+    table_label: 'Xét nghiệm',
+    name: `lab:test_${index}`,
+    label: `Xét nghiệm ${index}`,
+    type: 'number',
+    virtual_kind: 'lab_test',
+    source_filter: { test_name_norm: `test_${index}`, unit: 'mmol/L' },
+  }));
+  const normalized = sanitizeVariableSelection({ selected_variables: selected });
+  assert.strictEqual(normalized.selected_variables.length, 600, 'không cắt danh sách ở 500 biến');
+  assert.strictEqual(normalized.selected_variables[599].id, 'lab_results.virtual.test_599');
 });
 
 Promise.all(pending).then(() => console.log(`${passed} test(s) passed`));
