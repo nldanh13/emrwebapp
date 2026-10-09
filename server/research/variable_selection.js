@@ -390,19 +390,33 @@ function hasActiveSelection(selection) {
 }
 
 const normalizeForFilter = memoizeText(value => normalizeText(value).replace(/[^a-z0-9]+/g, ' ').trim());
+const normalizeUnitForFilter = value => String(value ?? '').normalize('NFKC').replace(/\s+/g, ' ').trim();
 
 function sourceFilterMatches(row, sourceFilter = {}) {
   for (const [key, expectedRaw] of Object.entries(sourceFilter || {})) {
-    if (expectedRaw == null || expectedRaw === '') continue;
+    if (expectedRaw == null) continue;
+    if (expectedRaw && typeof expectedRaw === 'object' && !Array.isArray(expectedRaw)) continue;
+    const normalizedField = normalizedKey(key);
+    const actualRaw = getCell(row, key);
+    // Unit phải so khớp chính xác và giữ ký hiệu: '%' không được biến thành chuỗi rỗng,
+    // 'mg/L' cũng không được khớp nhầm với 'g/L'; unit trống cũng chỉ khớp unit trống.
+    if (normalizedField === 'unit' || normalizedField === 'donvi') {
+      if (normalizeUnitForFilter(actualRaw) !== normalizeUnitForFilter(expectedRaw)) return false;
+      continue;
+    }
+    if (expectedRaw === '') continue;
+    if (normalizedField === 'testnamenorm') {
+      if (normalizeForFilter(actualRaw) !== normalizeForFilter(expectedRaw)) return false;
+      continue;
+    }
     if (Array.isArray(expectedRaw)) {
-      const actual = normalizeForFilter(getCell(row, key));
+      const actual = normalizeForFilter(actualRaw);
       if (!expectedRaw.map(normalizeForFilter).some(x => x && actual.includes(x))) return false;
       continue;
     }
-    if (expectedRaw && typeof expectedRaw === 'object') continue;
     const expected = normalizeForFilter(expectedRaw);
     if (!expected) continue;
-    const actual = normalizeForFilter(getCell(row, key));
+    const actual = normalizeForFilter(actualRaw);
     if (!actual.includes(expected) && expected !== actual) return false;
   }
   return true;

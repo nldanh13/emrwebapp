@@ -51,7 +51,10 @@ function repairFormulaGuard(value) {
 // xử lý bảng lớn (xuất file) mà RAM không tăng theo số dòng.
 function readCsvFileRows(filePath, maxRows, options = {}) {
   const onRow = typeof options.onRow === 'function' ? options.onRow : null;
+  const onOverflowRow = typeof options.onOverflowRow === 'function' ? options.onOverflowRow : null;
   const onHeader = typeof options.onHeader === 'function' ? options.onHeader : null;
+  const overflowColumns = Array.isArray(options.overflowColumns) ? new Set(options.overflowColumns.map(String)) : null;
+  let overflowColumnIndexes = null;
   let delivered = 0;
   const limit = Number.isFinite(Number(maxRows)) ? Math.max(0, Number(maxRows)) : Number.MAX_SAFE_INTEGER;
   const intern = new Map();
@@ -86,9 +89,14 @@ function readCsvFileRows(filePath, maxRows, options = {}) {
       let cells = [];
 
       const endCell = (end) => {
-        if (collecting || !columns) {
+        const cellIndex = cells.length;
+        const decodeCell = !columns || collecting
+          || (onOverflowRow && (!overflowColumnIndexes || overflowColumnIndexes.has(cellIndex)));
+        if (decodeCell) {
           const text = buf.toString('utf8', cellStart, end);
           cells.push(quotedCell ? unquoteCell(text) : text.replace(/\r/g, ''));
+        } else {
+          cells.push('');
         }
         cellStart = end + 1;
         quotedCell = false;
@@ -99,6 +107,11 @@ function readCsvFileRows(filePath, maxRows, options = {}) {
             const v = (idx === 0 ? value.replace(/^\ufeff/, '') : value).trim();
             return v || `Cột ${idx + 1}`;
           });
+          if (overflowColumns) {
+            overflowColumnIndexes = new Set(columns
+              .map((name, index) => overflowColumns.has(name) ? index : -1)
+              .filter(index => index >= 0));
+          }
           if (onHeader) onHeader(columns);
         } else if (collecting) {
           const values = cells.map(v => repairFormulaGuard(v.trim()));
@@ -118,6 +131,13 @@ function readCsvFileRows(filePath, maxRows, options = {}) {
           }
         } else if (visible) {
           count += 1;
+          if (onOverflowRow) {
+            const values = cells.map(v => repairFormulaGuard(v.trim()));
+            const indices = overflowColumnIndexes || columns.map((_, index) => index);
+            const obj = {};
+            for (const index of indices) obj[columns[index]] = values[index] ?? '';
+            onOverflowRow(obj);
+          }
         }
         cells = [];
         visible = false;

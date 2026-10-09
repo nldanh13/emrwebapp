@@ -4,6 +4,7 @@
 
 const { stableHash, normalizeToken } = require('./encounter_context');
 const { getCell, readCsvTable } = require('./table_io');
+const { readCsvFileRows } = require('./csv_reader');
 const { normalizeLabName, extractTScoresBySite } = require('./value_normalizers');
 const fs = require('fs');
 const path = require('path');
@@ -122,11 +123,63 @@ function addActiveIngredientVariables(add, rows, medications = medicationCatalog
   }
 }
 
+function createLabTestAccumulator() {
+  const byTest = new Map();
+  const addRow = (row) => {
+    const norm = getCell(row, ['test_name_norm', 'Tên XN chuẩn', 'Tên xét nghiệm chuẩn hóa'])
+      || normalizeLabName(getCell(row, ['test_name_raw', 'Tên XN', 'Tên xét nghiệm']));
+    const raw = getCell(row, ['test_name_raw', 'Tên XN', 'Tên xét nghiệm']) || norm;
+    if (!norm && !raw) return;
+    const normalizedName = norm || normalizeToken(raw);
+    const unit = getCell(row, ['unit', 'Đơn vị']);
+    // Giữ nguyên ký hiệu và hoa/thường vì % / mmol/L / mL có ý nghĩa đo lường.
+    const unitKey = unit.normalize('NFKC').replace(/\s+/g, ' ').trim();
+    const key = normalizeToken(normalizedName) + '|' + unitKey;
+    const bucket = byTest.get(key) || {
+      raw, norm: normalizedName, group: getCell(row, ['lab_group', 'Nhóm xét nghiệm']),
+      unit, count: 0, values: [], distinctValues: new Set(), distinctTruncated: false,
+    };
+    bucket.count += 1;
+    const val = getCell(row, ['result_num', 'Kết quả số']) || getCell(row, ['result_raw', 'Kết quả']);
+    if (val) {
+      const displayValue = val + (bucket.unit ? ' ' + bucket.unit : '');
+      pushCatalogSample(bucket.values, displayValue);
+      if (!bucket.distinctTruncated) {
+        bucket.distinctValues.add(displayValue.toLowerCase());
+        if (bucket.distinctValues.size >= VARIABLE_CATALOG_DISTINCT_LIMIT) bucket.distinctTruncated = true;
+      }
+    }
+    if (!bucket.raw && raw) bucket.raw = raw;
+    if (!bucket.group) bucket.group = getCell(row, ['lab_group', 'Nhóm xét nghiệm']);
+    if (!bucket.unit) bucket.unit = getCell(row, ['unit', 'Đơn vị']);
+    byTest.set(key, bucket);
+  };
+  const addVariables = (add) => {
+    for (const b of [...byTest.values()].sort((a, b) => b.count - a.count)) {
+      add({
+        id: makeVirtualVariableId('lab_item', b.norm + '|' + b.unit),
+        name: 'lab:' + b.norm,
+        label: (b.raw || b.norm) + (b.unit ? ' (' + b.unit + ')' : ''),
+        type: 'number',
+        nonempty: b.count,
+        distinct_count: b.distinctValues.size,
+        distinct_truncated: b.distinctTruncated,
+        sample_values: shortSamples(b.values),
+        operators: ['=', '!=', '>', '>=', '<', '<=', 'between', 'not_empty'],
+        virtual_kind: 'lab_test',
+        source_filter: { test_name_norm: b.norm, unit: b.unit || '' },
+        source_note: 'Biến dẫn xuất từ lab_results: mỗi kết quả xét nghiệm gốc được giữ riêng; chọn cách gộp ở bước chọn biến.',
+      });
+    }
+  };
+  return { addRow, addVariables };
+}
+
 // extra.ingredientRows: y lệnh đã gắn hoạt chất theo Danh mục thuốc (augmentMedicationRowsForResearch);
 // extra.medications: Danh mục thuốc (mặc định đọc config/medication_catalog.json).
 function buildVirtualVariablesForTable(def, rows, extra = {}) {
   const variables = [];
-  const total = rows.length || 0;
+  const total = Number.isFinite(Number(extra.totalRows)) ? Number(extra.totalRows) : (rows.length || 0);
   const add = (item) => variables.push({
     rows: total,
     nonempty: item.nonempty || 0,
@@ -140,44 +193,9 @@ function buildVirtualVariablesForTable(def, rows, extra = {}) {
   });
 
   if (def.key === 'lab_results') {
-    const byTest = new Map();
-    for (const row of rows) {
-      const norm = getCell(row, ['test_name_norm', 'Tên XN chuẩn', 'Tên xét nghiệm chuẩn hóa']) || normalizeLabName(getCell(row, ['test_name_raw', 'Tên XN', 'Tên xét nghiệm']));
-      const raw = getCell(row, ['test_name_raw', 'Tên XN', 'Tên xét nghiệm']) || norm;
-      if (!norm && !raw) continue;
-      const key = norm || normalizeToken(raw);
-      const bucket = byTest.get(key) || { raw, norm: key, group: getCell(row, ['lab_group', 'Nhóm xét nghiệm']), unit: getCell(row, ['unit', 'Đơn vị']), count: 0, values: [], distinctValues: new Set(), distinctTruncated: false };
-      bucket.count += 1;
-      const val = getCell(row, ['result_num', 'Kết quả số']) || getCell(row, ['result_raw', 'Kết quả']);
-      if (val) {
-        const displayValue = `${val}${bucket.unit ? ` ${bucket.unit}` : ''}`;
-        pushCatalogSample(bucket.values, displayValue);
-        if (!bucket.distinctTruncated) {
-          bucket.distinctValues.add(displayValue.toLowerCase());
-          if (bucket.distinctValues.size >= VARIABLE_CATALOG_DISTINCT_LIMIT) bucket.distinctTruncated = true;
-        }
-      }
-      if (!bucket.raw && raw) bucket.raw = raw;
-      if (!bucket.group) bucket.group = getCell(row, ['lab_group', 'Nhóm xét nghiệm']);
-      if (!bucket.unit) bucket.unit = getCell(row, ['unit', 'Đơn vị']);
-      byTest.set(key, bucket);
-    }
-    for (const b of [...byTest.values()].sort((a, b) => b.count - a.count).slice(0, 240)) {
-      add({
-        id: makeVirtualVariableId('lab_item', `${b.norm}|${b.unit}`),
-        name: `lab:${b.norm}`,
-        label: `${b.raw || b.norm}${b.unit ? ` (${b.unit})` : ''}`,
-        type: 'number',
-        nonempty: b.count,
-        distinct_count: b.distinctValues.size,
-        distinct_truncated: b.distinctTruncated,
-        sample_values: shortSamples(b.values),
-        operators: ['=', '!=', '>', '>=', '<', '<=', 'between', 'not_empty'],
-        virtual_kind: 'lab_test',
-        source_filter: { test_name_norm: b.norm, unit: b.unit || '' },
-        source_note: 'Biến dẫn xuất từ lab_results: lọc theo tên xét nghiệm rồi dùng result_num/result_raw.',
-      });
-    }
+    const accumulator = extra.labAccumulator || createLabTestAccumulator();
+    if (!extra.labAccumulator) for (const row of rows) accumulator.addRow(row);
+    accumulator.addVariables(add);
   }
 
   if (def.key === 'imaging_results') {
@@ -305,9 +323,28 @@ function buildVariableCatalog(runDir, { redact = true } = {}) {
   ];
   const groups = [];
   for (const def of defs) {
-    // Danh mục biến chỉ cần thống kê đại diện để hướng dẫn chọn biến. Không đọc vô
-    // hạn vì một run thực tế có thể có hàng trăm nghìn dòng XN/y lệnh.
-    const table = readCsvTable(path.join(runDir, def.file), VARIABLE_CATALOG_MAX_ROWS);
+    // Thống kê mô tả cột rộng vẫn dùng mẫu có giới hạn. Riêng danh mục xét nghiệm
+    // quét hết dòng bằng callback chiếu vài cột, để không làm rơi xét nghiệm hiếm hoặc vượt RAM.
+    const filePath = path.join(runDir, def.file);
+    let labAccumulator = null;
+    let table;
+    if (def.key === 'lab_results' && fs.existsSync(filePath)) {
+      labAccumulator = createLabTestAccumulator();
+      const sampleRows = [];
+      table = readCsvFileRows(filePath, VARIABLE_CATALOG_MAX_ROWS, {
+        overflowColumns: [
+          'test_name_norm', 'Tên XN chuẩn', 'Tên xét nghiệm chuẩn hóa',
+          'test_name_raw', 'Tên XN', 'Tên xét nghiệm',
+          'unit', 'Đơn vị', 'lab_group', 'Nhóm xét nghiệm',
+          'result_num', 'Kết quả số', 'result_raw', 'Kết quả',
+        ],
+        onRow: row => { sampleRows.push(row); labAccumulator.addRow(row); },
+        onOverflowRow: row => labAccumulator.addRow(row),
+      });
+      table.rows = sampleRows;
+    } else {
+      table = readCsvTable(filePath, VARIABLE_CATALOG_MAX_ROWS);
+    }
     const rows = table.rows || [];
     const visibleColumns = (table.columns || []).filter(col => !redact || !isSensitiveColumn(col));
     const columnStats = summarizeVariableColumns(visibleColumns, rows);
@@ -325,6 +362,8 @@ function buildVariableCatalog(runDir, { redact = true } = {}) {
         label: col,
         type,
         rows: rows.length,
+        sampled: Boolean(table.limited),
+        sample_size: rows.length,
         nonempty: stat.nonempty,
         fill_rate: rows.length ? Math.round((stat.nonempty / rows.length) * 100) : 0,
         distinct_count: stat.distinct.size,
@@ -333,14 +372,23 @@ function buildVariableCatalog(runDir, { redact = true } = {}) {
         operators,
       };
     });
-    let extra = {};
+    let extra = def.key === 'lab_results'
+      ? { labAccumulator, totalRows: table.count || rows.length }
+      : {};
     if (def.key === 'medication_orders') {
       // Tên thương mại -> hoạt chất theo Danh mục thuốc, gồm cả "Y lệnh khác" trong Diễn biến (chỉ trong bộ nhớ).
       const notes = readCsvTable(path.join(runDir, 'clinical_notes.csv'), VARIABLE_CATALOG_MAX_ROWS).rows || [];
       extra = { ingredientRows: medicationCatalog.augmentMedicationRowsForResearch(rows, notes) };
     }
     const virtualVariables = buildVirtualVariablesForTable(def, rows, extra);
-    groups.push({ ...def, rows: rows.length, sampled: Boolean(table.limited), sample_limit: VARIABLE_CATALOG_MAX_ROWS, variables: [...variables, ...virtualVariables] });
+    groups.push({
+      ...def,
+      rows: Number.isFinite(Number(table.count)) ? Number(table.count) : rows.length,
+      sampled_rows: rows.length,
+      sampled: Boolean(table.limited),
+      sample_limit: VARIABLE_CATALOG_MAX_ROWS,
+      variables: [...variables, ...virtualVariables],
+    });
   }
   return { run_id: path.basename(runDir), groups, sample_limit: VARIABLE_CATALOG_MAX_ROWS, generated_at: nowIso() };
 }

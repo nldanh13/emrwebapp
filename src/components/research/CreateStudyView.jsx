@@ -282,6 +282,7 @@ function StepVariables(props) {
       hint={variableCatalogError ? `${variableCatalogError}. Bấm Tải lại ở trên sau vài giây.` : 'Cần quét danh sách và thu thập dữ liệu ở Kho dữ liệu gốc trước.'}
     /></div>;
   }
+  const labCatalogGroup = variableCatalog.groups?.find(group => group.key === 'lab_results');
   const chip = (active) => ({
     height: 30, padding: '0 10px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
     border: `1px solid ${active ? C.blue : C.border2}`, background: active ? C.blueBg : C.surface,
@@ -313,6 +314,11 @@ function StepVariables(props) {
           <span>{compactNumber(filteredCatalogVariables.length)} biến</span>
           <Btn onClick={addCoreVariables} style={{ height: 28, fontSize: FS.xs, marginLeft: 'auto' }}>+ Biến nền (tuổi, giới, ngày vào/ra, chẩn đoán)</Btn>
         </div>
+        {labCatalogGroup && (
+          <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.45 }}>
+            Danh mục tên xét nghiệm đã quét đủ {compactNumber(labCatalogGroup.rows || 0)} dòng; thống kê độ đầy của cột gốc dùng {compactNumber(labCatalogGroup.sampled_rows || 0)} dòng{labCatalogGroup.sampled ? ' đầu' : ''}.
+          </div>
+        )}
         {!filteredCatalogVariables.length
           ? <EmptyState title="Không có biến phù hợp" hint="Thử từ khóa khác, chọn nhóm Tất cả hoặc bỏ lọc mức đầy đủ." />
           : (
@@ -383,6 +389,11 @@ function StepVariables(props) {
                     style={{ ...inp, height: 28, fontSize: FS.xs }}>
                     {aggregationOptions.map(([key, l]) => <option key={key} value={key}>{l}</option>)}
                   </select>
+                )}
+                {v.virtual_kind === 'lab_test' && (
+                  <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.45 }}>
+                    Một lượt có thể có nhiều lần đo. “Liệt kê giá trị” giữ mọi lần trong một ô như 1.42; 1.42, ô đó là chữ chứ không còn là một số. Chọn trung bình/nhỏ nhất/lớn nhất/giá trị gần mốc để tạo một số; bảng Xét nghiệm vẫn giữ từng lần riêng.
+                  </div>
                 )}
                 {repeated && variableAnchor && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: FS.xs, color: C.text2, flexWrap: 'wrap' }}
