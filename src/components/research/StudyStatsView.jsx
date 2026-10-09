@@ -161,6 +161,9 @@ export function StudyStatsView({ study, toast, onStudyChanged }) {
           <Btn variant="solidSuccess" onClick={() => exportTable('analysis_selected')} disabled={!analyzed || Boolean(exporting)} loading={exporting === 'analysis_selected'} style={{ height: 30 }}>Xuất CSV</Btn>
           <Btn variant="success" onClick={exportCodebook} disabled={!analyzed || Boolean(exporting)} loading={exporting === '__codebook__'} style={{ height: 30 }}>Từ điển biến</Btn>
         </div>
+        <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.5 }}>
+          Xét nghiệm lặp: “Biến đã chọn” gộp theo Cách lấy ở cấu hình; “Liệt kê giá trị” giữ nhiều kết quả trong một ô dạng chữ. Chọn bảng “Xét nghiệm” bên dưới để xem từng kết quả riêng theo từng dòng.
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', borderTop: `1px solid ${C.border2}`, paddingTop: 9 }}>
           <select value={otherTable} onChange={e => setOtherTable(e.target.value)} aria-label="Bảng khác" style={{ height: 30, borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text, padding: '0 8px', fontSize: FS.sm, fontFamily: 'inherit', flex: '0 1 320px' }}>
             <option value="">Bảng khác (danh sách mẫu, bảng phân tích, xét nghiệm, y lệnh…)</option>
