@@ -289,3 +289,53 @@ a { color: var(--emr-accent); text-underline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
 }
+
+/* Bố cục tablet: giữ menu đầy đủ nhưng dành thêm chiều ngang cho vùng làm việc. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .emr-sidebar { width: 196px; }
+  .emr-sidebar__brand { padding-inline: 10px; gap: 8px; }
+  .emr-sidebar__nav { padding-inline: 6px; }
+  .emr-nav-item { gap: 8px; padding-inline: 8px; }
+  .emr-topbar { padding-inline: 10px; gap: 6px; }
+  .emr-content__inner { padding: 8px; }
+}
+
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .emr-sidebar { width: 216px; }
+  .emr-topbar { padding-inline: 12px; }
+}
+
+/* Điện thoại: vùng chạm đủ lớn, trường nhập không làm iOS phóng to trang,
+   và thanh tiêu đề ưu tiên tên màn hình thay vì phần mô tả phụ. */
+@media (max-width: 767px) {
+  .emr-btn { min-height: 40px; }
+  .emr-content :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]), select, textarea) {
+    min-height: 40px;
+    font-size: 16px;
+  }
+  .emr-content :is(input[type="checkbox"], input[type="radio"]) {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+  }
+  .emr-topbar__title p { display: none; }
+  .emr-topbar__actions { min-width: 0; gap: 2px; }
+  .emr-topbar__running { max-width: 42vw; overflow: hidden; text-overflow: ellipsis; }
+  .emr-user__meta { display: none; }
+  .emr-content { overscroll-behavior-x: contain; }
+}
+
+@media (max-width: 359px) {
+  .emr-topbar { padding-left: 8px; padding-right: 5px; }
+  .emr-topbar__title h1 { font-size: var(--emr-fs-lg); }
+  .emr-icon-btn { width: 36px; height: 40px; }
+  .emr-bottomnav { padding-inline: 2px; }
+  .emr-bottomnav__item { padding-inline: 1px; }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .emr-btn { min-height: 40px; }
+  .emr-nav-item { min-height: 44px; }
+  .emr-icon-btn { min-width: 40px; min-height: 40px; }
+  .emr-datefield__button { min-height: 40px; }
+}
