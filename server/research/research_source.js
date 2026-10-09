@@ -274,6 +274,9 @@ function hchanhFetchOutputToRows(output, sourceRow, sourceRunId = '') {
 
   if (hchanhPayloadHasUsefulData(payload.profile, [
     'bhyt_code', 'ngay_vao_vien', 'ngay_sinh', 'dia_chi', 'doi_tuong', 'chan_doan_vao',
+    'mach_vao_vien', 'nhiet_do_vao_vien', 'huyet_ap_tam_thu_vao_vien',
+    'huyet_ap_tam_truong_vao_vien', 'nhip_tho_vao_vien',
+    'can_nang_vao_vien', 'chieu_cao_vao_vien',
   ])) {
     profileRows.push(withResearchHchanhMeta(hchanhProfileRow(payload.profile, meta), meta, sourceRunId));
   }
