@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
+import { matchesCatalogQuery } from './research/variableCatalogModel.js';
 
 const ARCHIVE = {
   id: 'du_lieu_goc',
@@ -173,6 +174,12 @@ afterEach(async () => {
 });
 
 describe('ResearchTab (khói)', () => {
+  it('tìm CBC theo đầu từ, bỏ thuốc silymarin khi gõ lym', () => {
+    expect(matchesCatalogQuery({ display_label: 'Lymphocyte (%)' }, 'lym')).toBe(true);
+    expect(matchesCatalogQuery({ display_label: 'Dùng thuốc: silymarin' }, 'lym')).toBe(false);
+    expect(matchesCatalogQuery({ display_label: 'Monocyte (10^9/L)' }, 'mono 10^9/L')).toBe(true);
+    expect(matchesCatalogQuery({ display_label: 'Huyết học' }, 'huyet')).toBe(true);
+  });
   it('hiện kho gốc, 3 mục làm việc và nút Tạo nghiên cứu mới ở danh sách nghiên cứu', () => {
     const text = container.textContent;
     expect(text).toContain('Kho dữ liệu gốc');
