@@ -230,12 +230,16 @@ describe('ResearchTab (khói)', () => {
     expect(container.textContent).toContain('Đã chuẩn hóa xong');
   });
 
-  it('Thu thập dữ liệu xếp theo bước: quét danh sách rồi thu thập chi tiết, thao tác phụ gom lại', async () => {
+  it('Thu thập dữ liệu xếp theo bước và bỏ các thao tác kỹ thuật khỏi giao diện', async () => {
     await clickText('Thu thập dữ liệu');
     const text = container.textContent;
     expect(text).toContain('Quét danh sách người bệnh');
     expect(text).toContain('Thu thập dữ liệu chi tiết');
-    expect(text).toContain('Thao tác khác');
+    expect(text).toContain('Cập nhật ca dùng dữ liệu tạm');
+    expect(text).not.toContain('Thao tác khác');
+    expect(text).not.toContain('Kiểm tra ngẫu nhiên');
+    expect(text).not.toContain('Xem log chạy');
+    expect(text).not.toContain('Chạy ẩn, không mở cửa sổ Chrome');
     expect(text.indexOf('Quét danh sách người bệnh')).toBeLessThan(text.indexOf('Thu thập dữ liệu chi tiết'));
   });
 
