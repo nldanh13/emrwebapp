@@ -1396,6 +1396,7 @@ function importArchiveToStudy(study, filters = {}) {
   const hasSelection = variableSelection.hasActiveSelection(selection);
   let selectedAnalysisRows = [];
   let sourceCount = dateFilteredPatients.length;
+  let dateFilteredCount = dateFilteredPatients.length;
 
   if (hasSelection) {
     const analysisFile = path.join(archiveRunDir, 'analysis_ready.csv');
@@ -1410,6 +1411,7 @@ function importArchiveToStudy(study, filters = {}) {
     });
     selectedAnalysisRows = selected.rows;
     sourceCount = selected.source_total;
+    dateFilteredCount = selected.sourceRows.length;
 
     const expectedCount = filters?.expected_count;
     if (expectedCount !== undefined && expectedCount !== null && String(expectedCount).trim() !== '') {
@@ -1486,7 +1488,7 @@ function importArchiveToStudy(study, filters = {}) {
     variable_selection_import: hasSelection ? {
       applied: true,
       input_count: sourceCount,
-      date_filtered_count: selectedAnalysisRows.length,
+      date_filtered_count: dateFilteredCount,
       matched_count: cohortRows.length,
       condition_count: selection.conditions.length,
       expected_count: Number.isInteger(Number(filters?.expected_count)) ? Number(filters.expected_count) : null,
