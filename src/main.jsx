@@ -5,6 +5,7 @@ import AppErrorBoundary from './components/AppErrorBoundary.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
 import DeviceGate from './components/DeviceGate.jsx';
 import WorkspaceRealtimeBridge from './components/WorkspaceRealtimeBridge.jsx';
+import WorkspaceGate from './components/shell/WorkspaceGate.jsx';
 import EmrBridgePage from './components/EmrBridgePage.jsx';
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
 import { C, FONT_UI } from './tokens.js';
@@ -57,9 +58,11 @@ function AuthGate() {
   if (window.location.pathname === '/emr-bridge') return <EmrBridgePage />;
   return (
     <DeviceGate>
-      <WorkspaceRealtimeBridge>
-        <RouteModelGate><App /></RouteModelGate>
-      </WorkspaceRealtimeBridge>
+      <WorkspaceGate>
+        <WorkspaceRealtimeBridge>
+          <RouteModelGate><App /></RouteModelGate>
+        </WorkspaceRealtimeBridge>
+      </WorkspaceGate>
     </DeviceGate>
   );
 }

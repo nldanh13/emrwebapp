@@ -742,6 +742,11 @@ export const getSessionLogs = () => get('/api/session-logs');
 export const getDataSessions = () => get('/api/data-sessions');
 export const deleteDataSession = (sid) => del('/api/data-sessions/' + encodeURIComponent(sid));
 
+// ── Kho chung (workspace mọi máy mở mặc định) ────────────────────────────────
+export const getWorkspace = () => get('/api/workspace');
+export const setSharedWorkspace = (sid) => put('/api/workspace/shared', sid ? { sid } : {});
+export const clearSharedWorkspace = () => del('/api/workspace/shared');
+
 // ── Cancel running task ───────────────────────────────────────────────────────
 export const cancelTask = () => post('/api/cancel', {});
 

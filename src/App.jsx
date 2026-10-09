@@ -13,6 +13,7 @@ import { defaultWorkDateRange, loadWorkDateRange, saveWorkDateRange, sanitizeWor
 import { installGlobalClickLogger, logActivity, setActivityTab, flushActivityLogs } from './utils/activityLogger.js';
 import { NAV_ENTRIES, getNavigationEntry, resolveContextDefinition } from './features/registry.js';
 import KeepAliveTab from './components/shell/KeepAliveTab.jsx';
+import { SharedWorkspaceNotice } from './components/shell/WorkspaceGate.jsx';
 
 // Các màn hình nghiệp vụ lớn chỉ được tải khi người dùng mở tab tương ứng.
 // Điều này giảm đáng kể gói JS ban đầu trên máy trạm và điện thoại.
@@ -271,6 +272,7 @@ export default function App() {
       <div className="emr-shell__main">
         <TopBar tab={currentTab(tab)} now={now}
           running={researchRunning && tab !== 'research' ? { label: 'Kho nghiên cứu đang chạy', title: `${researchRunning.title}\nBấm để mở Kho nghiên cứu`, onOpen: () => handleTabChange('research') } : null} onCancel={handleCancel} onViewLog={handleViewLog} onDiagnostics={handleDiagnostics} onOpenFunctions={handleOpenFunctionHub} mobile={isMobile} onMenuClick={() => setSidebarOpen(o => !o)} user={user} authMode={authMode} onLogout={logout} />
+        <SharedWorkspaceNotice />
         <FeatureContextBanner context={featureContext} definition={selectedContextDefinition} onBack={handleOpenFunctionHub} onClose={() => setFeatureContext(null)} />
         {shouldShowDateBar(tab) && <WorkDateRangeBar value={workDateRange} onChange={setWorkDateRange} />}
         <ContentFrame compact={Boolean(currentTab(tab)?.compact)}>

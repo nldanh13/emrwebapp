@@ -6,7 +6,7 @@ import SessionPicker from './shift/SessionPicker.jsx';
 import * as api from '../api.js';
 import { workDateRangeLabel, workDateRangeToDmy } from '../utils/workDateRange.js';
 import { filterPatientsByWorkflow, getUniqueRooms, patientRoom } from '../utils/patientScope.js';
-import { getSessionId, setSessionId } from '../hooks/useSession.js';
+import { getSessionId, isCurrentWorkspaceShared, setSessionId } from '../hooks/useSession.js';
 import { SkeletonBlock } from './Skeleton.jsx';
 
 function pickPatientId(row) {
@@ -91,7 +91,8 @@ export default function DataProcessingTab({ toast, workDateRange }) {
         !dataInfo?.raw?.exists && !dataInfo?.sorted?.exists && !dataInfo?.processed?.exists &&
         !dataInfo?.v2?.patients && !dataInfo?.v2?.board_state && !dataInfo?.v2?.classified_days;
 
-      if (currentLooksEmpty && !recoveryAttemptedRef.current) {
+      // Kho chung còn trống là bình thường (chưa ai quét): không tự nhảy sang dữ liệu riêng cũ.
+      if (currentLooksEmpty && !recoveryAttemptedRef.current && !isCurrentWorkspaceShared()) {
         recoveryAttemptedRef.current = true;
         const currentSid = getSessionId();
         const saved = await api.getDataSessions().catch(() => null);

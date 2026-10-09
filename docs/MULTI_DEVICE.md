@@ -10,7 +10,30 @@ Có 3 lớp khác nhau:
 
 Điện thoại không chạy một bản Python/Selenium riêng. Bấm trên điện thoại vẫn làm server trên máy chính chạy worker.
 
-## Mở đúng cùng dữ liệu trên máy khác
+## Kho chung (cách khuyên dùng)
+
+Kho chung là một workspace mà **mọi máy mở mặc định**, để cả khoa thấy cùng một bộ dữ liệu mà không
+phải gửi link cho từng máy.
+
+1. Người có vai trò **giám sát** trở lên mở đúng dữ liệu cần dùng chung, bấm nút **Chưa có kho chung**
+   (hoặc **Dữ liệu riêng**) trên thanh trên cùng → **Đặt dữ liệu này làm kho chung**.
+2. Từ đó:
+   - máy mới hoặc máy chưa có dữ liệu gì: tự mở kho chung, không hỏi;
+   - máy đang có dữ liệu riêng: hiện dải vàng hỏi **Chuyển sang kho chung** / **Giữ dữ liệu riêng**.
+     Không tự chuyển, vì người dùng sẽ tưởng mất dữ liệu. Dữ liệu riêng vẫn còn, mở lại ở
+     Lấy dữ liệu → **Đổi dữ liệu**;
+   - máy đã chọn giữ dữ liệu riêng, hoặc mở bằng link workspace, thì không bị hỏi lại.
+3. Thanh trên cùng luôn ghi máy đang ở **Kho chung** hay **Dữ liệu riêng**.
+4. **Bỏ kho chung** (giám sát) không xoá dữ liệu nào. Kho chung đang dùng thì không xoá được ở Đổi dữ liệu.
+
+Người dùng bị giới hạn danh sách session (`sessions` trong `users.json`) chỉ thấy kho chung nếu được
+phép vào session đó.
+
+Mã nguồn: `server/services/shared_workspace.js`, `server/routes/workspace.js` (`/api/workspace`),
+`src/components/shell/WorkspaceGate.jsx`, `decideWorkspace` trong `src/hooks/useSession.js`.
+Test: `scripts/shared_workspace_test.js`, `src/hooks/useSession.sharedWorkspace.test.js`.
+
+## Mở đúng cùng dữ liệu trên máy khác (bằng link)
 
 Đăng nhập cùng mã truy cập **không có nghĩa** tự động dùng cùng workspace. Mỗi trình duyệt mới có thể đã có session riêng.
 
