@@ -1,6 +1,6 @@
 // "Dùng hoạt chất: X" chọn làm biến: mặc định xuất Có/Không, và bước 4 gợi ý dùng làm tiêu chuẩn chọn vào.
 import { describe, it, expect } from 'vitest';
-import { defaultAggregationFor, isPresenceVariable } from './variableCatalogModel.js';
+import { defaultAggregationFor, enhanceCatalogVariable, isPresenceVariable, matchesCatalogQuery } from './variableCatalogModel.js';
 import { readinessItems } from './studyReadiness.jsx';
 import { describeStats } from './researchStats.jsx';
 
@@ -29,5 +29,35 @@ describe('biến có/không', () => {
     const stats = { n: 3016, kind: 'category', top: [{ value: '0', count: 2936, pct: 97.3 }, { value: '1', count: 80, pct: 2.7 }] };
     const text = describeStats(stats, { aggregation: 'any' });
     expect(text).toMatch(/^Có \(1\): 80 lượt, 2,7% · Không \(0\): 2\.936 lượt, 97,3%$/);
+  });
+});
+
+
+describe('biến sinh hiệu lúc vào viện', () => {
+  const weight = enhanceCatalogVariable({
+    id: 'analysis_ready.admission_weight_kg',
+    table: 'analysis_ready',
+    table_label: 'Bảng tổng quát',
+    name: 'admission_weight_kg',
+    label: 'admission_weight_kg',
+  }, { key: 'analysis_ready', label: 'Bảng tổng quát' });
+  const height = enhanceCatalogVariable({
+    id: 'analysis_ready.admission_height_cm',
+    table: 'analysis_ready',
+    table_label: 'Bảng tổng quát',
+    name: 'admission_height_cm',
+    label: 'admission_height_cm',
+  }, { key: 'analysis_ready', label: 'Bảng tổng quát' });
+
+  it('hiển thị tên tiếng Việt và tìm được bằng từ khóa có dấu hoặc không dấu', () => {
+    expect(weight.display_label).toBe('Cân nặng vào viện (kg)');
+    expect(height.display_label).toBe('Chiều cao vào viện (cm)');
+    expect(matchesCatalogQuery(weight, 'cân nặng')).toBe(true);
+    expect(matchesCatalogQuery(height, 'chieu cao')).toBe(true);
+  });
+
+  it('xếp cân nặng và chiều cao vào nhóm biến nền', () => {
+    expect(weight.role).toBe('baseline');
+    expect(height.role).toBe('baseline');
   });
 });
