@@ -76,7 +76,7 @@ function StepCard({ n, title, hint, children, actions }) {
   );
 }
 
-export default function BhytPortalPanel({ toast, sessionId }) {
+export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = false }) {
   const [available, setAvailable] = useState(null); // null=đang kiểm tra, true/false
   const [launching, setLaunching] = useState(false);
 
@@ -91,6 +91,7 @@ export default function BhytPortalPanel({ toast, sessionId }) {
   const [fillingLogin, setFillingLogin] = useState(false);
 
   const fileInputRef = useRef(null);
+  const autoOpenStarted = useRef(false);
   const [importing, setImporting] = useState(false);
   const [importingFromWebapp, setImportingFromWebapp] = useState(false);
 
@@ -118,25 +119,6 @@ export default function BhytPortalPanel({ toast, sessionId }) {
     }
   }, []);
 
-  const handleLaunch = useCallback(async () => {
-    setLaunching(true);
-    try {
-      const result = await api.launchBhytTool();
-      if (result?.status !== 'ok') throw new Error(result?.message || 'Không khởi động được công cụ.');
-      // Chờ tối đa vài giây rồi kiểm tra lại — Node đã tự chờ ready trước khi
-      // trả về, nhưng thử thêm vài lần cho chắc trước khi báo thất bại.
-      for (let i = 0; i < 6; i += 1) {
-        if (await checkAvailable()) return;
-        await new Promise(r => setTimeout(r, 500));
-      }
-      toast?.('Đã yêu cầu khởi động nhưng chưa thấy sẵn sàng — thử bấm lại sau vài giây.', 'info');
-    } catch (e) {
-      toast?.(String(e?.message || 'Không khởi động được công cụ — mở tay bằng start.bat trong tools/bhyt_selenium_app rồi thử lại.'), 'error');
-    } finally {
-      setLaunching(false);
-    }
-  }, [checkAvailable, toast]);
-
   const loadAll = useCallback(async () => {
     try {
       const query = new URLSearchParams({ doc_type: typeFilter, status: statusFilter, search: search.trim() });
@@ -159,6 +141,37 @@ export default function BhytPortalPanel({ toast, sessionId }) {
       setBrowserStatus({ logged_in: false, error: e.message });
     }
   }, []);
+
+  // Mở cổng BHXH trên Chrome riêng như luồng mở EMR. Nếu công cụ chưa chạy,
+  // tự khởi động trước; CAPTCHA/OTP vẫn do người dùng nhập trực tiếp trên Chrome.
+  const handleOpenPortal = useCallback(async () => {
+    setLaunching(true);
+    try {
+      let ready = await checkAvailable();
+      if (!ready) {
+        const result = await api.launchBhytTool();
+        if (result?.status !== 'ok') throw new Error(result?.message || 'Không khởi động được công cụ nhập BHXH.');
+        for (let i = 0; i < 8; i += 1) {
+          if (await checkAvailable()) { ready = true; break; }
+          await new Promise(r => setTimeout(r, 500));
+        }
+      }
+      if (!ready) throw new Error('Công cụ BHXH chưa sẵn sàng. Hãy thử lại hoặc kiểm tra start.bat.');
+      const opened = await bhytFetch('/api/browser/start', { method: 'POST' });
+      await checkBrowser();
+      toast?.(opened.message || 'Đã mở Chrome tới Cổng BHYT. Hoàn tất đăng nhập, CAPTCHA/OTP trên Chrome rồi quay lại Data Hub.', 'ok');
+    } catch (e) {
+      toast?.(String(e?.message || 'Không mở được Cổng BHXH trên Chrome.'), 'error');
+    } finally {
+      setLaunching(false);
+    }
+  }, [checkAvailable, checkBrowser, toast]);
+
+  useEffect(() => {
+    if (!autoOpenPortal || autoOpenStarted.current) return;
+    autoOpenStarted.current = true;
+    handleOpenPortal();
+  }, [autoOpenPortal, handleOpenPortal]);
 
   const loadLogs = useCallback(async () => {
     try {
@@ -343,8 +356,8 @@ export default function BhytPortalPanel({ toast, sessionId }) {
         <div style={{ fontSize: FS.sm, color: C.text3, marginBottom: 10, lineHeight: 1.6 }}>
           Công cụ nhập cổng BHYT (<code>tools/bhyt_selenium_app</code>) chưa chạy trên máy này.
         </div>
-        <Btn variant="primary" onClick={handleLaunch} disabled={launching}>
-          {launching ? <><Spinner size={11} /> Đang khởi động...</> : '⟳ Tự khởi động công cụ'}
+        <Btn variant="primary" onClick={handleOpenPortal} disabled={launching}>
+          {launching ? <><Spinner size={11} /> Đang mở Chrome...</> : 'Mở Cổng BHXH trên Chrome'}
         </Btn>
         <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 10 }}>
           Nếu vẫn không được, lần đầu trên máy này cần tự chạy <code>start.bat</code> trong <code>tools/bhyt_selenium_app</code> 1 lần để cài thư viện.
@@ -362,6 +375,9 @@ export default function BhytPortalPanel({ toast, sessionId }) {
           color={browserStatus.logged_in ? C.green : C.red}
           size={FS.xs}
         />
+        <Btn variant="primary" onClick={handleOpenPortal} disabled={launching} style={{ padding: '5px 10px', fontSize: FS.xs }}>
+          {launching ? <><Spinner size={10} /> Đang mở Chrome...</> : 'Mở Cổng BHXH trên Chrome'}
+        </Btn>
         <Btn variant="default" onClick={loadAll} style={{ padding: '4px 10px', fontSize: FS.xs, marginLeft: 'auto' }}>⟳ Làm mới</Btn>
       </div>
 
@@ -371,7 +387,7 @@ export default function BhytPortalPanel({ toast, sessionId }) {
         hint="Selenium điền tài khoản vào Chrome; CAPTCHA và OTP thực hiện trực tiếp trên Chrome. Không tự vượt CAPTCHA và không lưu mật khẩu."
         actions={<>
           <Btn variant="primary" onClick={handleFillLogin} disabled={fillingLogin} style={{ padding: '6px 10px', fontSize: FS.xs }}>
-            {fillingLogin ? <><Spinner size={10} /> Đang mở...</> : 'Mở Chrome & điền đăng nhập'}
+            {fillingLogin ? <><Spinner size={10} /> Đang mở...</> : 'Điền đăng nhập trên Chrome'}
           </Btn>
           <Btn variant="default" onClick={checkBrowser} style={{ padding: '6px 10px', fontSize: FS.xs }}>Kiểm tra đăng nhập</Btn>
         </>}
