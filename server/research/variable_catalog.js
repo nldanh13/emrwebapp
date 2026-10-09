@@ -145,8 +145,13 @@ function buildVirtualVariablesForTable(def, rows, extra = {}) {
       const norm = getCell(row, ['test_name_norm', 'Tên XN chuẩn', 'Tên xét nghiệm chuẩn hóa']) || normalizeLabName(getCell(row, ['test_name_raw', 'Tên XN', 'Tên xét nghiệm']));
       const raw = getCell(row, ['test_name_raw', 'Tên XN', 'Tên xét nghiệm']) || norm;
       if (!norm && !raw) continue;
-      const key = norm || normalizeToken(raw);
-      const bucket = byTest.get(key) || { raw, norm: key, group: getCell(row, ['lab_group', 'Nhóm xét nghiệm']), unit: getCell(row, ['unit', 'Đơn vị']), count: 0, values: [], distinctValues: new Set(), distinctTruncated: false };
+      const normalizedName = norm || normalizeToken(raw);
+      const unit = getCell(row, ['unit', 'Đơn vị']);
+      // Một tên chuẩn hóa có thể gồm nhiều phép đo (NEU% và NEU, LYM% và LYM).
+      // Tách biến theo đơn vị để không làm rơi một phép đo khi cả hai cùng xuất hiện.
+      const unitKey = unit.normalize('NFKC').toLowerCase().replace(/\\s+/g, ' ').trim();
+      const key = `${normalizeToken(normalizedName)}|${unitKey}`;
+      const bucket = byTest.get(key) || { raw, norm: normalizedName, group: getCell(row, ['lab_group', 'Nhóm xét nghiệm']), unit, count: 0, values: [], distinctValues: new Set(), distinctTruncated: false };
       bucket.count += 1;
       const val = getCell(row, ['result_num', 'Kết quả số']) || getCell(row, ['result_raw', 'Kết quả']);
       if (val) {
