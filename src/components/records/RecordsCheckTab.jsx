@@ -906,7 +906,8 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
       return next;
     });
     try {
-      await setRecordsCheckChecked(rowCheckedKeys(row), checked);
+      const saveKeys = rowCheckedKeys(row);
+      await setRecordsCheckChecked(saveKeys.length ? saveKeys : [key], checked);
     } catch (err) {
       setCheckedMap(prev => {
         const next = { ...(prev || {}) };
