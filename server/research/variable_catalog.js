@@ -167,6 +167,7 @@ function createLabTestAccumulator() {
         sample_values: shortSamples(b.values),
         operators: ['=', '!=', '>', '>=', '<', '<=', 'between', 'not_empty'],
         virtual_kind: 'lab_test',
+        lab_group: b.group || '',
         source_filter: { test_name_norm: b.norm, unit: b.unit || '' },
         source_note: 'Biến dẫn xuất từ lab_results: mỗi kết quả xét nghiệm gốc được giữ riêng; chọn cách gộp ở bước chọn biến.',
       });
