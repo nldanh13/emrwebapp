@@ -37,6 +37,14 @@ function variableSelectionFingerprint(spec) {
   if (!spec || typeof spec !== 'object') return '';
   const stableSpec = { ...spec };
   delete stableSpec.created_at;
+  delete stableSpec.sample_size;
+  if (Array.isArray(stableSpec.selected_variables)) {
+    stableSpec.selected_variables = stableSpec.selected_variables.map(variable => {
+      const stableVariable = { ...variable };
+      delete stableVariable.role;
+      return stableVariable;
+    });
+  }
   return JSON.stringify(stableSpec);
 }
 
