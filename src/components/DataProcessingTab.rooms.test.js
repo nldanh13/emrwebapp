@@ -10,6 +10,7 @@ vi.mock('../api.js', () => ({
   getBoardData: vi.fn(async () => BOARD),
   getDataInfo: vi.fn(async () => ({ raw: { exists: true } })),
   getDataSessions: vi.fn(async () => ({ sessions: [] })),
+  getEmrBridgeStatus: vi.fn(async () => ({ bridge: { enabled: false, helpers: [] } })),
 }));
 const api = await import('../api.js');
 const { default: DataProcessingTab } = await import('./DataProcessingTab.jsx');

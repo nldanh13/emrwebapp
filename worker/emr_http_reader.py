@@ -66,6 +66,10 @@ def _bridge_call(name: str, payload: Dict[str, Any], timeout: float = 120.0) -> 
         raise RuntimeError("Thiếu requests. Hãy cài: pip install requests")
     sess = requests.Session()
     sess.trust_env = False  # gọi máy chủ trong máy, không đi qua proxy
+    helper_id = str(os.environ.get("EMR_BRIDGE_ID", "") or "").strip()
+    if helper_id:
+        # Đọc qua một máy góp sức cụ thể (phiên EMR của người đó), không qua cầu nối chính.
+        payload = {**payload, "bridge_id": helper_id}
     r = sess.post(
         _bridge_endpoint(name),
         json=payload,

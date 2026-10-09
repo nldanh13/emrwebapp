@@ -1768,8 +1768,11 @@ class AutoWorker:
         # Ca đã đọc xong qua HTTP; nếu vài ca phải chuyển sang Chrome thì giữ phần này và chỉ mở
         # Chrome cho đúng các ca đó (trước đây một ca lạ làm cả lô chạy lại bằng Chrome).
         prefetched_records: List[Dict[str, Any]] = []
+        # Máy góp sức: worker đọc EMR qua tab của một người (cầu nối), không mở được Chrome. Ca nào
+        # không đọc được qua tab thì ghi vào <out>.skipped.json để máy chủ giao cho máy mở được Chrome.
+        helper_mode = (os.environ.get("DETAILS_SKIP_UNREADABLE") or "").strip() == "1"
 
-        if _http_read_enabled(self.config):
+        if _http_read_enabled(self.config) or helper_mode:
             try:
                 sess = _get_http_session(self.config)
                 if sess is None:
@@ -1806,19 +1809,33 @@ class AutoWorker:
                             bridge_end_date=bridge_end_date, skip_empty=skip_empty,
                         )
                     except _HttpPatientFallback as fb:
-                        if not allow_selenium_fallback:
+                        if not allow_selenium_fallback and not helper_mode:
                             raise RuntimeError(str(fb))
                         print(f"LOG(HTTP): {fb} -> chỉ ca này chuyển sang Chrome")
                         selenium_rows.append(bn)
                         continue
                     except Exception as e:
-                        if not allow_selenium_fallback:
+                        if not allow_selenium_fallback and not helper_mode:
                             raise
                         print(f"LOG(HTTP): Lỗi đọc BN {ma_bn} qua HTTP: {e} -> chỉ ca này chuyển sang Chrome")
                         selenium_rows.append(bn)
                         continue
                     http_ok_count += 1
                     records_http.extend(patient_records)
+
+                if helper_mode:
+                    records_http = merge_order_records(records_http, skip_empty=skip_empty)
+                    records_http = _canonicalize_rows_for_runtime(records_http, include_order_text=True)
+                    write_json_compact(out_path, records_http)
+                    skipped_ids = [
+                        str(r.get("Mã BN") or r.get("Mã YT") or r.get("ma_bn") or "").strip() for r in selenium_rows
+                    ]
+                    write_json_compact(out_path + ".skipped.json", [x for x in skipped_ids if x])
+                    print(
+                        f"SUCCESS(HTTP): Máy góp sức đọc được {http_ok_count} BN; "
+                        f"{len(selenium_rows)} BN trả lại cho máy chủ -> {out_path}"
+                    )
+                    return
 
                 if not selenium_rows:
                     records_http = merge_order_records(records_http, skip_empty=skip_empty)
@@ -1836,6 +1853,8 @@ class AutoWorker:
                 data = selenium_rows
 
             except Exception as e:
+                if helper_mode:
+                    raise RuntimeError(f"Máy góp sức không đọc được EMR: {e}")
                 if not allow_selenium_fallback:
                     _raise_http_only_failure("Lấy chi tiết/Y lệnh", e)
                 print(f"[HTTP READ] Details lỗi: {e} -> fallback Selenium vì data_read_mode={read_mode}")

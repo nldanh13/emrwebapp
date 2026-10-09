@@ -67,24 +67,35 @@ Khi đã mở link, browser lưu workspace đó và các lần mở tiếp theo 
 - Tác vụ nặng dùng cùng tài khoản EMR vẫn phải chờ nhau nhờ account lane toàn server.
 - Các tác vụ không dùng cùng tài nguyên có thể chạy song song nếu server cho phép.
 
-## Lấy chi tiết nhanh hơn bằng nhiều tài khoản EMR
+## Nhiều người, nhiều máy cùng lấy chi tiết
 
-Quản trị vào **Thiết lập tài khoản → Tài khoản EMR để lấy dữ liệu song song**, khai thêm tài khoản EMR
-chỉ dùng để đọc và chọn số tài khoản chạy cùng lúc (mặc định 2, tối đa 4, kể cả tài khoản chung).
-Bước **Lấy chi tiết** sẽ chia danh sách người bệnh thành nhiều phần, mỗi phần chạy bằng một tài khoản
-(`server/services/fetch_accounts.js`, `server/services/details_parallel.js`).
+Bước **Lấy chi tiết** chia danh sách người bệnh thành từng lô nhỏ trong một hàng đợi
+(`server/services/details_parallel.js`). Người làm nào rảnh thì nhận lô kế tiếp. Có hai loại người làm:
 
-- Mỗi người bệnh nằm đúng một phần: không lấy trùng, không sót. Dưới 8 người bệnh thì chạy một phần như cũ.
-- Một tài khoản chỉ chạy một phần tại một thời điểm, có file cookie riêng.
-- Không dùng tài khoản trùng tài khoản chung hoặc đang dùng để nhập liệu (tài khoản EMR riêng của người dùng
-  app, tài khoản theo tên điều dưỡng, tài khoản hành chánh): hai bên có thể đăng xuất lẫn nhau.
-- Phần lỗi được chạy lại một lần bằng tài khoản chung. Vẫn lỗi thì người bệnh đó giữ dữ liệu cũ và màn hình
-  báo rõ còn ai chưa lấy được.
-- Chế độ cầu nối tab EMR (VPS) luôn chạy một phần.
-- Ca không đọc được qua HTTP (vd. vừa ra viện) chỉ riêng ca đó mở bằng Chrome; trước đây một ca như vậy
-  làm cả lô chạy lại bằng Chrome.
+1. **Máy góp sức** (không cần cài gì): trên mỗi máy trong bệnh viện, mở EMR, đăng nhập bằng tài khoản của
+   người dùng máy đó, rồi bấm nút dấu trang **Góp sức lấy dữ liệu** (lấy nút ở Lấy dữ liệu → Lấy chi tiết →
+   "Thêm máy góp sức"). Máy đó đọc hồ sơ bằng phiên EMR của chính người đó, qua cầu nối tab EMR
+   (`server/services/emr_bridge.js`, phần `helpers`), và gửi về máy chủ. App không giữ mật khẩu của họ.
+2. **Tài khoản trên máy chủ**: tài khoản chung, cộng các tài khoản đọc mà quản trị khai ở **Thiết lập tài khoản →
+   Tài khoản EMR để lấy dữ liệu song song** (mặc định 2, tối đa 4 cùng lúc, kể cả tài khoản chung).
+   Máy chủ mở Chrome bằng các tài khoản này.
 
-Đây vẫn là một máy chủ chạy mọi phần. Nhiều **máy** cùng nhận việc lấy dữ liệu là bước sau.
+Bảo đảm:
+
+- **Không trùng**: mỗi lô chỉ ở một chỗ. Máy chủ chỉ nhận kết quả của đúng các ca trong lô và gộp theo mã người bệnh.
+- **Không mất**: máy tắt, đóng tab, rớt mạng hoặc bị đăng xuất thì lô đang làm quay lại hàng đợi cho người khác.
+  Lô không giao lại cho người vừa làm lỗi. Người làm lỗi 2 lô liền thì nghỉ. Một lô lỗi 3 lần thì thôi, người bệnh
+  trong lô giữ dữ liệu cũ, màn hình báo rõ ai chưa lấy được.
+- **Không đoán**: ca máy góp sức không đọc được qua tab (vd. vừa ra viện, phải tìm ở "Hoàn tất") được trả lại để
+  tài khoản trên máy chủ mở bằng Chrome.
+- Máy góp sức nối giữa chừng cũng được nhận việc. Lấy dữ liệu → Lấy chi tiết hiện ai đang góp sức và mỗi
+  người đã làm bao nhiêu ca.
+- Một tài khoản trên máy chủ chỉ chạy một lô tại một thời điểm, có file cookie riêng. Tài khoản đọc trùng tài khoản
+  chung hoặc đang dùng để nhập liệu thì không được dùng, vì hai bên có thể đăng xuất lẫn nhau.
+- Dưới 8 người bệnh, hoặc chỉ có một người làm, thì chạy một worker như trước.
+- Chế độ cầu nối tab EMR (Data Hub trên cloud) chưa chia việc, luôn chạy một worker.
+- EMR ghi nhận tài khoản của từng người đã xem hồ sơ nào. Nhật ký hoạt động của app ghi người/máy nào lấy
+  bao nhiêu ca.
 
 ## Quy tắc an toàn
 

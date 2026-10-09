@@ -18,8 +18,9 @@ const { refreshRuntimeV2 }                      = require('../services/runtime_v
 const { postprocessOrders }                      = require('../services/order_pipeline');
 const { getFeature }                             = require('../services/feature_registry');
 const { fetchAccountPool }                       = require('../services/fetch_accounts');
-const { runDetailsInParts }                      = require('../services/details_parallel');
-const { bridgeModeEnabled }                      = require('../services/emr_bridge');
+const { runDetailsQueue }                        = require('../services/details_parallel');
+const emrBridge                                  = require('../services/emr_bridge');
+const { bridgeModeEnabled }                      = emrBridge;
 
 function normalizePatientIdForOne(v) { return String(v || '').trim(); }
 function dmyToDateForOne(s) {
@@ -190,12 +191,19 @@ function mergeRecordsForOnePatient(oldRecords, newRecords, patientId, dateFrom, 
   return mergeRecordsForPatients(oldRecords, newRecords, new Set([pid].filter(Boolean)), dateFrom, dateTo);
 }
 
-// Chia "Lấy chi tiết" cho các tài khoản EMR đã khai thêm. Trả null khi chỉ có một tài khoản hoặc ít
-// người bệnh (chạy một worker như cũ). Mỗi phần chạy trong thư mục tạm riêng và không tự dựng dữ liệu v2
-// (DETAILS_SKIP_V2), để các phần không ghi đè file của nhau; route gộp kết quả rồi dựng v2 một lần.
+// Chia "Lấy chi tiết" cho nhiều người làm cùng lúc: các tài khoản EMR trên máy chủ (tài khoản chung +
+// tài khoản đọc thêm) và các máy góp sức (tab EMR của từng người trong bệnh viện). Trả null khi chỉ có
+// một người làm hoặc ít người bệnh (chạy một worker như cũ). Mỗi lô chạy trong thư mục tạm riêng và không
+// tự dựng dữ liệu v2 (DETAILS_SKIP_V2), để các lô không ghi đè file của nhau; route gộp rồi dựng v2 một lần.
+function helperRunner(h) {
+  return { key: `helper:${h.key}`, label: h.userName, kind: 'helper', direct: false, main: false, helperId: h.id };
+}
+
 async function runDetailsInPartsForRequest(ctx, sortedData, dateArgs) {
-  const pool = fetchAccountPool();
-  if (pool.length <= 1) return null;
+  const runners = [
+    ...fetchAccountPool().map(a => ({ ...a, kind: 'account', direct: true })),
+    ...emrBridge.onlineHelpers().map(helperRunner),
+  ];
   const runId = `${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`;
   const partsDir = path.join(ctx.dir, 'details_parts', runId);
   const kills = new Set();
@@ -203,24 +211,35 @@ async function runDetailsInPartsForRequest(ctx, sortedData, dateArgs) {
   let seq = 0;
   try {
     fs.mkdirSync(partsDir, { recursive: true });
-    return await runDetailsInParts({
+    return await runDetailsQueue({
       rows: sortedData,
-      pool,
+      runners,
+      discoverRunners: () => emrBridge.onlineHelpers().map(helperRunner),
+      isAlive: (r) => r.kind !== 'helper' || emrBridge.helperAlive(r.helperId),
       laneRunner: runExclusiveByAccount,
       isCancelled: () => isCancelRequested(ctx.sid),
       getId: getRowPatientId,
-      runPart: async ({ rows, account, label }) => {
+      onProgress: (ev) => {
+        if (ev.runner.kind !== 'helper') return;
+        if (ev.type === 'start') emrBridge.noteHelperWork(ev.runner.helperId, { busy: true });
+        if (ev.type === 'done') emrBridge.noteHelperWork(ev.runner.helperId, { busy: false, patientsDone: ev.patients });
+        if (ev.type === 'retired') emrBridge.noteHelperWork(ev.runner.helperId, { busy: false });
+      },
+      runBatch: async (runner, rows) => {
         if (isCancelRequested(ctx.sid)) return { ok: false, message: 'Đã dừng.' };
         seq += 1;
         const inputPath = path.join(partsDir, `input_${seq}.json`);
         const outPath = path.join(partsDir, `out_${seq}.json`);
         writeJsonAtomic(inputPath, rows);
-        console.log(`>>> [${ctx.sid}] Lấy chi tiết phần ${seq}: ${rows.length} BN bằng "${label}".`);
+        console.log(`>>> [${ctx.sid}] Lấy chi tiết lô ${seq}: ${rows.length} BN — ${runner.kind === 'helper' ? 'máy góp sức' : 'tài khoản'} "${runner.label}".`);
+        const extraEnv = runner.kind === 'helper'
+          ? { ...emrBridge.helperWorkerEnv(runner.helperId), DETAILS_SKIP_UNREADABLE: '1', DETAILS_SKIP_V2: '1' }
+          : { ...runner.env, DETAILS_SKIP_V2: '1' };
         let killFn = null;
         const result = await runWorker('details', ['--input', inputPath, '--out', outPath, ...dateArgs], {
           onSpawn: (kill) => { killFn = kill; kills.add(kill); },
           runtimeDir: ctx.dir,
-          extraEnv: { ...account.env, DETAILS_SKIP_V2: '1' },
+          extraEnv,
         });
         if (killFn) kills.delete(killFn);
         if (result.spawnError) return { ok: false, message: `Không khởi động được Python: ${result.spawnError}` };
@@ -228,7 +247,8 @@ async function runDetailsInPartsForRequest(ctx, sortedData, dateArgs) {
         if (result.code !== 0) return { ok: false, message: fmtPyError('Python lỗi khi lấy y lệnh.', result) };
         const records = readJsonSafe(outPath, null);
         if (!Array.isArray(records)) return { ok: false, message: 'Worker không ghi được kết quả.' };
-        return { ok: true, records };
+        const skipped = runner.kind === 'helper' ? readJsonSafe(`${outPath}.skipped.json`, []) : [];
+        return { ok: true, records, skippedIds: Array.isArray(skipped) ? skipped : [] };
       },
     });
   } finally {
@@ -280,7 +300,7 @@ router.post('/run-details', async (req, res) => {
           return res.status(409).json({ status: 'error', message: 'Đã dừng lấy chi tiết. Dữ liệu cũ vẫn giữ nguyên.' });
         }
         if (parallel && !parallel.okIds.size) {
-          const reasons = parallel.parts.filter(p => !p.ok).map(p => `${p.label}: ${p.message}`).join('; ');
+          const reasons = parallel.failureMessages.slice(-3).join('; ');
           return res.status(500).json({
             status: 'error',
             message: `Không lấy được y lệnh ở phần nào. ${reasons}`.slice(0, 900),
@@ -342,16 +362,20 @@ router.post('/run-details', async (req, res) => {
           total_count: finalRecords.length,
           non_empty_count: finalNonEmpty,
           v2: v2Sync?.indexes || null,
+          // Ai đã lấy ca nào (nhật ký: tài khoản/máy góp sức nào đã đọc hồ sơ).
           parallel: parallel ? {
-            parts: parallel.parts.map(p => ({ account: p.label, count: p.count, ok: p.ok })),
-            retry: parallel.retry ? { account: parallel.retry.label, count: parallel.retry.count, ok: parallel.retry.ok } : null,
+            runners: parallel.runners.map(r => ({ who: r.label, kind: r.kind, patients: r.patients, failures: r.failures })),
             failed_patient_ids: failedRows.map(getRowPatientId).filter(Boolean),
           } : null,
         });
         const msgPrefix = partialMode ? 'Thành công! Đã cập nhật phạm vi đã chọn' : 'Thành công! Đã lấy';
-        const parallelNote = parallel ? ` Chạy song song bằng ${parallel.parts.length} tài khoản.` : '';
+        const workers = parallel ? parallel.runners.filter(r => r.patients > 0) : [];
+        const parallelNote = parallel
+          ? ` Chia cho ${workers.length} người/máy: ${workers.map(r => `${r.label} ${r.patients} ca`).join(', ')}.`
+          : '';
+        const lastError = parallel?.failureMessages?.slice(-1)[0] || '';
         const warning = failedRows.length
-          ? `Còn ${failedRows.length} người bệnh chưa lấy được (${failedRows.slice(0, 5).map(r => r?.ho_ten || r?.['Họ tên'] || getRowPatientId(r)).join(', ')}${failedRows.length > 5 ? '…' : ''}); dữ liệu cũ của họ vẫn giữ. Lỗi: ${parallel.retry?.message || ''}. Bấm Lấy chi tiết lại để lấy phần còn thiếu.`.slice(0, 900)
+          ? `Còn ${failedRows.length} người bệnh chưa lấy được (${failedRows.slice(0, 5).map(r => r?.ho_ten || r?.['Họ tên'] || getRowPatientId(r)).join(', ')}${failedRows.length > 5 ? '…' : ''}); dữ liệu cũ của họ vẫn giữ.${lastError ? ` Lỗi gần nhất: ${lastError}.` : ''} Bấm Lấy chi tiết lại để lấy phần còn thiếu.`.slice(0, 900)
           : '';
         return res.json({
           status: 'ok',
@@ -360,7 +384,8 @@ router.post('/run-details', async (req, res) => {
           count: finalRecords.length,
           fetched_count: newRecords.length,
           non_empty_count: finalNonEmpty,
-          parallel_accounts: parallel ? parallel.parts.length : 1,
+          parallel_accounts: parallel ? Math.max(1, workers.length) : 1,
+          workers: workers.map(r => ({ who: r.label, kind: r.kind, patients: r.patients })),
           failed_patient_ids: failedRows.map(getRowPatientId).filter(Boolean),
           v2: v2Sync?.indexes || null,
         });

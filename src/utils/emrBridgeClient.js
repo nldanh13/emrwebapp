@@ -17,6 +17,7 @@ const randomId = () => {
 export function createBridgeClient({
   api,
   getOpener,
+  role = '', // 'helper': máy góp sức (nhiều máy cùng nối), '' : cầu nối chính
   onState = () => {},
   keepaliveMs = 10 * 60 * 1000,
   helloEveryMs = 20 * 1000,
@@ -62,6 +63,7 @@ export function createBridgeClient({
       await api.emrBridgeHello({
         bridge_id: bridgeId, emr_origin: state.emrOrigin, emr_url: state.emrUrl,
         emr_logged_in: state.emrLoggedIn,
+        ...(role ? { role } : {}),
       });
       state.lastServerHelloAt = now();
       state.lastError = '';

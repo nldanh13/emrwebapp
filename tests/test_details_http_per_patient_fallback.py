@@ -51,7 +51,7 @@ def _fake_timeline(_html, bridge_end_date=None, start_boundary_date=None):
     return {"01/10/2026": {"Y lệnh": "Y lệnh test", "Diễn biến": "", "Bác sĩ": "BS A"}}, "BS A"
 
 
-def _run(tmp_path, monkeypatch, *, skip_v2=True):
+def _run(tmp_path, monkeypatch, *, skip_v2=True, force_http=True):
     rows = [
         {"Mã BN": "BN1", "Họ tên": "A", "Vi_Tri": "P01"},
         {"Mã BN": "BN2", "Họ tên": "B", "Vi_Tri": "P01"},  # không có link HTTP → Chrome
@@ -65,7 +65,8 @@ def _run(tmp_path, monkeypatch, *, skip_v2=True):
     monkeypatch.setattr(main_worker, "_get_http_session", lambda _cfg: sess)
     monkeypatch.setattr(main_worker, "WorkerSession", FakeWorkerSession)
     monkeypatch.setattr(main_worker, "extract_timeline_map_from_html", _fake_timeline)
-    monkeypatch.setattr(main_worker, "_http_read_enabled", lambda _cfg: True)
+    if force_http:
+        monkeypatch.setattr(main_worker, "_http_read_enabled", lambda _cfg: True)
     monkeypatch.setattr(main_worker, "_allow_selenium_read_fallback", lambda _cfg: True)
     v2_calls = []
     monkeypatch.setattr(main_worker, "generate_runtime_v2_files", lambda *a, **k: v2_calls.append(a))
@@ -106,3 +107,23 @@ def test_khong_dung_v2_khi_may_chu_bao_bo_qua(tmp_path, monkeypatch):
     assert v2_calls == []
     _, _, _, v2_calls = _run(tmp_path, monkeypatch, skip_v2=False)
     assert len(v2_calls) == 1
+
+
+def test_may_gop_suc_khong_mo_chrome_va_tra_lai_ca_khong_doc_duoc(tmp_path, monkeypatch):
+    # Máy góp sức đọc qua tab EMR của người dùng: không có Chrome. Ca không đọc được phải trả về
+    # máy chủ (file .skipped.json), không đoán, không làm hỏng cả lô.
+    monkeypatch.setenv("DETAILS_SKIP_UNREADABLE", "1")
+    monkeypatch.setattr(main_worker, "_http_read_enabled", lambda _cfg: False)
+    sess, opened, records, _ = _run_helper(tmp_path, monkeypatch)
+    assert opened == []
+    assert sess.fetched == ["/view/1", "/view/3"]
+    ids = sorted({r.get("ma_bn") or r.get("Mã BN") for r in records})
+    assert ids == ["BN1", "BN3"]
+    skipped = json.loads((tmp_path / "out.json.skipped.json").read_text(encoding="utf-8"))
+    assert skipped == ["BN2"]
+
+
+def _run_helper(tmp_path, monkeypatch):
+    # Giống _run nhưng không ép bật HTTP: máy góp sức tự bật đường đọc qua cầu nối.
+    sess, opened, records, v2 = _run(tmp_path, monkeypatch, force_http=False)
+    return sess, opened, records, v2

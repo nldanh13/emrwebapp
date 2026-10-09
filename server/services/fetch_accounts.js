@@ -24,8 +24,6 @@ const { readJsonSafe, writeJsonAtomic } = require('../utils/file');
 const MAX_PARALLEL_LIMIT = 4;
 const DEFAULT_MAX_PARALLEL = 2;
 const MAX_ACCOUNTS = 12;
-// Ít người bệnh thì chia nhỏ không đáng: mỗi phần còn phải đăng nhập và đọc danh sách nội trú.
-const MIN_PATIENTS_PER_PART = 4;
 
 function fetchAccountsFilePath() {
   return resolveSecretFile('emr_read_accounts.json').path;
@@ -195,33 +193,11 @@ function fetchAccountPool() {
   return pool;
 }
 
-/**
- * Chia danh sách thành tối đa `slots` phần liền nhau, lệch nhau nhiều nhất 1 người bệnh.
- * Mỗi người bệnh nằm đúng một phần.
- */
-function planParts(rows, slots, minPerPart = MIN_PATIENTS_PER_PART) {
-  const list = Array.isArray(rows) ? rows : [];
-  const n = Math.max(1, Math.min(Number(slots) || 1, Math.floor(list.length / Math.max(1, minPerPart)) || 1));
-  const parts = [];
-  const base = Math.floor(list.length / n);
-  let extra = list.length % n;
-  let start = 0;
-  for (let i = 0; i < n; i++) {
-    const size = base + (extra > 0 ? 1 : 0);
-    if (extra > 0) extra--;
-    parts.push(list.slice(start, start + size));
-    start += size;
-  }
-  return parts.filter(p => p.length);
-}
-
 module.exports = {
   fetchAccountsFilePath,
   publicFetchAccounts,
   saveFetchAccounts,
   fetchAccountPool,
-  planParts,
   cookieFileFor,
-  MIN_PATIENTS_PER_PART,
   MAX_PARALLEL_LIMIT,
 };

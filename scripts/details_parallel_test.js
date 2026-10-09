@@ -25,8 +25,7 @@ const runs = [];
 let active = new Map();
 let maxActive = 0;
 let failUser = '';
-let callNo = 0;
-let failOnCall = 0;
+let poisonId = '';
 const pythonRunnerPath = require.resolve('../server/services/python_runner');
 require.cache[pythonRunnerPath] = {
   id: pythonRunnerPath, filename: pythonRunnerPath, loaded: true,
@@ -36,9 +35,9 @@ require.cache[pythonRunnerPath] = {
     runWorker: async (cmd, args, opts = {}) => {
       const input = args[args.indexOf('--input') + 1];
       const out = args[args.indexOf('--out') + 1];
-      const user = opts.extraEnv?.EMR_USERNAME || 'tk.chung';
-      callNo += 1;
-      const thisCall = callNo;
+      const helperId = opts.extraEnv?.EMR_BRIDGE_ID || '';
+      const user = helperId ? `helper:${helperId}` : (opts.extraEnv?.EMR_USERNAME || 'tk.chung');
+      if (helperId) assert.strictEqual(opts.extraEnv.DETAILS_SKIP_UNREADABLE, '1', 'máy góp sức phải trả lại ca không đọc được');
       if (opts.extraEnv) assert.strictEqual(opts.extraEnv.DETAILS_SKIP_V2, '1', 'phần song song không tự dựng v2');
       active.set(user, (active.get(user) || 0) + 1);
       assert.ok(active.get(user) <= 1, `tài khoản ${user} chạy hai phần cùng lúc`);
@@ -48,8 +47,11 @@ require.cache[pythonRunnerPath] = {
       const rows = JSON.parse(fs.readFileSync(input, 'utf8'));
       runs.push({ user, ids: rows.map(r => r['Mã BN']) });
       active.set(user, active.get(user) - 1);
-      if (user === failUser || thisCall === failOnCall) return { code: 1 };
-      fs.writeFileSync(out, JSON.stringify(rows.map(r => ({ 'Mã BN': r['Mã BN'], ngay_lam: '01/10/2026', 'Y lệnh': `y lệnh mới ${r['Mã BN']}`, 'Diễn biến': '' }))));
+      if (user === failUser || rows.some(r => r['Mã BN'] === poisonId)) return { code: 1 };
+      // Máy góp sức không đọc được BN2 (vd. vừa ra viện): trả lại cho máy chủ.
+      const skipped = helperId ? rows.map(r => r['Mã BN']).filter(id => id === 'BN2') : [];
+      if (helperId) fs.writeFileSync(`${out}.skipped.json`, JSON.stringify(skipped));
+      fs.writeFileSync(out, JSON.stringify(rows.filter(r => !skipped.includes(r['Mã BN'])).map(r => ({ 'Mã BN': r['Mã BN'], ngay_lam: '01/10/2026', 'Y lệnh': `y lệnh mới ${r['Mã BN']}`, 'Diễn biến': '' }))));
       return { code: 0 };
     },
   },
@@ -57,7 +59,7 @@ require.cache[pythonRunnerPath] = {
 
 const express = require('express');
 const fa = require('../server/services/fetch_accounts');
-const { runDetailsInParts } = require('../server/services/details_parallel');
+const { runDetailsQueue } = require('../server/services/details_parallel');
 const { runExclusiveByAccount } = require('../server/services/task_queue');
 
 const SID = 'song-song-test';
@@ -68,16 +70,6 @@ const test = async (name, fn) => { try { await fn(); console.log(`  ok - ${name}
 
 (async () => {
   console.log('details_parallel_test');
-
-  await test('chia phần: mỗi người bệnh nằm đúng một phần, các phần lệch nhau tối đa 1', async () => {
-    const rows = patients(13);
-    const parts = fa.planParts(rows, 3);
-    assert.deepStrictEqual(parts.map(p => p.length), [5, 4, 4]);
-    assert.strictEqual(fa.planParts(patients(10), 3).length, 2, 'mỗi phần ít nhất 4 người bệnh');
-    assert.deepStrictEqual(parts.flat().map(r => r['Mã BN']), rows.map(r => r['Mã BN']));
-    assert.strictEqual(fa.planParts(patients(7), 3).length, 1, 'ít người bệnh thì không chia');
-    assert.strictEqual(fa.planParts(patients(20), 1).length, 1);
-  });
 
   await test('sổ tài khoản: bỏ tài khoản chung, tài khoản nhập liệu, thiếu mật khẩu, đang tắt', async () => {
     fs.writeFileSync(process.env.EMR_READ_ACCOUNTS_FILE, JSON.stringify({
@@ -127,25 +119,103 @@ const test = async (name, fn) => { try { await fn(); console.log(`  ok - ${name}
     accounts: [{ name: 'Đọc 1', emr_username: 'doc1', emr_password: 'pw1' }, { name: 'Đọc 2', emr_username: 'doc2', emr_password: 'pw2' }],
   }));
 
-  await test('chạy song song, phần lỗi chạy lại bằng tài khoản chung', async () => {
-    const calls = [];
-    const pool = fa.fetchAccountPool();
-    const result = await runDetailsInParts({
-      rows: patients(12),
-      pool,
+  const acct = (key, main = false) => ({ key, label: key, kind: 'account', direct: true, main });
+  const helper = (key) => ({ key, label: key, kind: 'helper', direct: false, main: false });
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  await test('hàng đợi: mỗi ca có đúng một kết quả; máy góp sức lỗi thì nghỉ, lô chuyển người khác; ca không đọc được về máy chủ', async () => {
+    const busy = new Map();
+    const takenBy = new Map(); // mã ca → người làm đã nộp kết quả
+    const triedBy = [];
+    const result = await runDetailsQueue({
+      rows: patients(30),
+      runners: [acct('default', true), acct('read:doc1'), helper('h1'), helper('h2')],
       laneRunner: runExclusiveByAccount,
       getId: r => r['Mã BN'],
-      runPart: async ({ rows, account }) => {
-        calls.push({ key: account.key, n: rows.length });
-        if (account.key === 'read:doc2') return { ok: false, message: 'bị đăng xuất' };
+      pollMs: 5,
+      runBatch: async (runner, rows) => {
+        busy.set(runner.key, (busy.get(runner.key) || 0) + 1);
+        assert.ok(busy.get(runner.key) <= 1, `${runner.key} nhận hai lô cùng lúc`);
+        triedBy.push({ key: runner.key, ids: rows.map(r => r['Mã BN']) });
+        await sleep(runner.kind === 'helper' ? 3 : 10);
+        busy.set(runner.key, busy.get(runner.key) - 1);
+        if (runner.key === 'h2') return { ok: false, message: 'EMR đã đăng xuất' };
+        const skippedIds = runner.kind === 'helper' ? rows.map(r => r['Mã BN']).filter(id => id === 'BN5') : [];
+        for (const r of rows) if (!skippedIds.includes(r['Mã BN'])) takenBy.set(r['Mã BN'], runner.key);
+        // Thêm một dòng lạ ngoài lô: phải bị bỏ.
+        return { ok: true, skippedIds, records: [...rows.map(r => ({ 'Mã BN': r['Mã BN'] })), { 'Mã BN': 'BN-LA' }] };
+      },
+    });
+    const ids = result.records.map(r => r['Mã BN']).sort();
+    assert.deepStrictEqual(ids, patients(30).map(r => r['Mã BN']).sort(), 'đủ 30 ca, không trùng, không có ca lạ');
+    assert.strictEqual(result.okIds.size, 30);
+    assert.strictEqual(result.failedRows.length, 0);
+    assert.ok(['default', 'read:doc1'].includes(takenBy.get('BN5')), 'ca máy góp sức không đọc được do tài khoản máy chủ làm');
+    const h2 = result.runners.find(r => r.key === 'h2');
+    assert.strictEqual(h2.retired, true);
+    assert.strictEqual(h2.patients, 0);
+    assert.ok(result.runners.find(r => r.key === 'h1').patients > 0, 'máy góp sức tốt có làm');
+    // Lô đã lỗi ở h2 không quay lại h2.
+    const h2Ids = triedBy.filter(t => t.key === 'h2').map(t => t.ids.join(','));
+    assert.strictEqual(new Set(h2Ids).size, h2Ids.length);
+  });
+
+  await test('hàng đợi: máy góp sức nối giữa chừng cũng được nhận việc', async () => {
+    let joined = false;
+    setTimeout(() => { joined = true; }, 10);
+    const result = await runDetailsQueue({
+      rows: patients(40),
+      runners: [acct('default', true), acct('read:doc1')],
+      discoverRunners: () => (joined ? [helper('h-moi')] : []),
+      laneRunner: runExclusiveByAccount,
+      getId: r => r['Mã BN'],
+      pollMs: 5,
+      batchSize: 3,
+      runBatch: async (runner, rows) => { await sleep(runner.kind === 'account' ? 40 : 5); return { ok: true, records: rows.map(r => ({ 'Mã BN': r['Mã BN'] })) }; },
+    });
+    assert.strictEqual(result.okIds.size, 40);
+    assert.ok(result.runners.find(r => r.key === 'h-moi')?.patients > 0);
+  });
+
+  await test('hàng đợi: một ca làm hỏng lô thì chỉ lô đó thất bại sau 3 lần, các lô khác vẫn xong', async () => {
+    const result = await runDetailsQueue({
+      rows: patients(24),
+      runners: [acct('default', true), acct('read:doc1'), acct('read:doc2')],
+      laneRunner: runExclusiveByAccount,
+      getId: r => r['Mã BN'],
+      pollMs: 5,
+      batchSize: 3,
+      runBatch: async (_runner, rows) => {
+        await sleep(2);
+        if (rows.some(r => r['Mã BN'] === 'BN7')) return { ok: false, message: 'worker lỗi' };
         return { ok: true, records: rows.map(r => ({ 'Mã BN': r['Mã BN'] })) };
       },
     });
-    assert.deepStrictEqual(calls.map(c => c.key), ['default', 'read:doc1', 'read:doc2', 'default']);
-    assert.strictEqual(result.okIds.size, 12);
-    assert.strictEqual(result.failedRows.length, 0);
-    assert.strictEqual(result.records.length, 12);
-    assert.strictEqual(result.retry.ok, true);
+    assert.deepStrictEqual(result.failedRows.map(r => r['Mã BN']), ['BN7', 'BN8', 'BN9']);
+    assert.strictEqual(result.okIds.size, 21);
+  });
+
+  await test('hàng đợi: bấm Dừng thì không nhận lô mới', async () => {
+    let cancelled = false;
+    let started = 0;
+    const result = await runDetailsQueue({
+      rows: patients(30),
+      runners: [acct('default', true), acct('read:doc1')],
+      laneRunner: runExclusiveByAccount,
+      isCancelled: () => cancelled,
+      getId: r => r['Mã BN'],
+      pollMs: 5,
+      batchSize: 3,
+      runBatch: async (_runner, rows) => { started += 1; cancelled = true; await sleep(5); return { ok: true, records: rows.map(r => ({ 'Mã BN': r['Mã BN'] })) }; },
+    });
+    assert.strictEqual(result.cancelled, true);
+    assert.ok(started <= 2, `đã chạy ${started} lần sau khi dừng`);
+  });
+
+  await test('hàng đợi: chỉ một người làm hoặc ít ca thì không chia', async () => {
+    const opts = { laneRunner: runExclusiveByAccount, getId: r => r['Mã BN'], runBatch: async () => ({ ok: true, records: [] }) };
+    assert.strictEqual(await runDetailsQueue({ ...opts, rows: patients(30), runners: [acct('default', true)] }), null);
+    assert.strictEqual(await runDetailsQueue({ ...opts, rows: patients(5), runners: [acct('default', true), helper('h')] }), null);
   });
 
   const app = express();
@@ -167,7 +237,7 @@ const test = async (name, fn) => { try { await fn(); console.log(`  ok - ${name}
     assert.strictEqual(body.status, 'ok', body.message);
     assert.strictEqual(body.parallel_accounts, 3);
     assert.ok(maxActive >= 2, 'các phần phải chạy cùng lúc');
-    assert.deepStrictEqual(runs.map(r => r.user).sort(), ['doc1', 'doc2', 'tk.chung']);
+    assert.deepStrictEqual([...new Set(runs.map(r => r.user))].sort(), ['doc1', 'doc2', 'tk.chung']);
     const ids = runs.flatMap(r => r.ids).sort();
     assert.deepStrictEqual(ids, patients(12).map(r => r['Mã BN']).sort());
     const final = JSON.parse(fs.readFileSync(ctx.FINAL_PATH, 'utf8'));
@@ -175,16 +245,14 @@ const test = async (name, fn) => { try { await fn(); console.log(`  ok - ${name}
     assert.ok(!fs.existsSync(path.join(ctx.dir, 'details_parts')) || !fs.readdirSync(path.join(ctx.dir, 'details_parts')).length, 'dọn thư mục tạm');
   });
 
-  await test('route: một tài khoản lỗi cả khi chạy lại thì giữ dữ liệu cũ của người bệnh đó và báo rõ', async () => {
-    runs.length = 0; failUser = 'doc2';
+  await test('route: lô lỗi ở mọi tài khoản thì giữ dữ liệu cũ của người bệnh đó và báo rõ; tài khoản lỗi không làm mất lô', async () => {
+    runs.length = 0; failUser = 'doc2'; poisonId = 'BN12';
     const old = JSON.parse(fs.readFileSync(ctx.FINAL_PATH, 'utf8')).map(r => ({ ...r, 'Y lệnh': `y lệnh cũ ${r['Mã BN']}` }));
     fs.writeFileSync(ctx.FINAL_PATH, JSON.stringify(old));
-    // Lần chạy lại bằng tài khoản chung (lần gọi thứ 4) cũng lỗi.
-    callNo = 0; failOnCall = 4;
     try {
       const body = await runDetails(patients(12));
       assert.strictEqual(body.status, 'ok', body.message);
-      assert.strictEqual(body.failed_patient_ids.length, 4);
+      assert.deepStrictEqual(body.failed_patient_ids, ['BN10', 'BN11', 'BN12']);
       assert.match(body.warning, /chưa lấy được/);
       const final = JSON.parse(fs.readFileSync(ctx.FINAL_PATH, 'utf8'));
       const byId = Object.fromEntries(final.map(r => [r['Mã BN'], r['Y lệnh']]));
@@ -192,7 +260,32 @@ const test = async (name, fn) => { try { await fn(); console.log(`  ok - ${name}
       assert.strictEqual(byId.BN1, 'y lệnh mới BN1');
       assert.strictEqual(final.length, 12);
     } finally {
-      failUser = ''; failOnCall = 0;
+      failUser = ''; poisonId = '';
+    }
+  });
+
+  await test('route: máy góp sức nhận lô qua tab EMR, ca nó không đọc được do máy chủ lấy', async () => {
+    const bridge = require('../server/services/emr_bridge');
+    bridge.hello({ bridgeId: 'tab-cua-an', role: 'helper', userId: 'an', userName: 'Điều dưỡng An', emrOrigin: 'http://emr.benhvien.local' });
+    fs.writeFileSync(process.env.EMR_READ_ACCOUNTS_FILE, JSON.stringify({ max_parallel: 3, accounts: [] }));
+    runs.length = 0;
+    try {
+      const body = await runDetails(patients(16));
+      assert.strictEqual(body.status, 'ok', body.message);
+      const helperRuns = runs.filter(r => r.user === 'helper:tab-cua-an');
+      assert.ok(helperRuns.length > 0, 'máy góp sức có nhận việc');
+      const final = JSON.parse(fs.readFileSync(ctx.FINAL_PATH, 'utf8'));
+      assert.deepStrictEqual(final.map(r => r['Mã BN']).sort(), patients(16).map(r => r['Mã BN']).sort());
+      const bn2Runs = runs.filter(r => r.ids.includes('BN2'));
+      if (helperRuns.some(r => r.ids.includes('BN2'))) {
+        assert.ok(bn2Runs.some(r => r.user === 'tk.chung'), 'BN2 bị máy góp sức trả lại phải do tài khoản máy chủ lấy');
+      }
+      assert.ok(body.workers.some(w => w.who === 'Điều dưỡng An' && w.kind === 'helper'));
+      assert.match(body.message, /Điều dưỡng An/);
+      assert.ok(bridge.status().helpers[0].patients_done > 0, 'màn hình thấy số ca máy góp sức đã làm');
+      assert.ok(!JSON.stringify(bridge.status()).includes('tab-cua-an'), 'không lộ mã cầu nối ra trạng thái công khai');
+    } finally {
+      bridge.disconnect('tab-cua-an');
     }
   });
 

@@ -31,6 +31,12 @@ emitter.setMaxListeners(200);
 const INTERNAL_TOKEN = crypto.randomBytes(24).toString('base64url');
 
 let bridge = null; // { id, userId, userName, emrOrigin, emrUrl, connectedAt, lastSeen, emrLoggedIn, queue, waiters }
+// Máy góp sức: mỗi người mở EMR trên máy mình (đăng nhập bằng tài khoản của họ) rồi bấm nút
+// "Góp sức lấy dữ liệu". Khác cầu nối chính ở trên (chỉ một, dùng khi Data Hub chạy trên cloud):
+// có thể nối nhiều máy cùng lúc, không thay nhau; "Lấy chi tiết" giao từng lô cho từng máy
+// (server/services/details_parallel.js). Cùng cách chuyển trang và cùng các lớp bảo vệ.
+const helpers = new Map(); // id → bridge object (thêm role: 'helper', served, failed)
+const MAX_HELPERS = 20;
 const pending = new Map(); // requestId → { resolve, reject, timer, bridgeId }
 let sweepTimer = null;
 let lastPublished = '';
@@ -54,12 +60,64 @@ function status(now = Date.now()) {
     connected_at: bridge?.connectedAt ? new Date(bridge.connectedAt).toISOString() : '',
     last_seen_at: bridge?.lastSeen ? new Date(bridge.lastSeen).toISOString() : '',
     pending: bridge ? bridge.queue.length + [...pending.values()].filter(p => p.bridgeId === bridge.id).length : 0,
+    helpers: listHelpers(now),
   };
 }
 
-function publish() {
+// Mã hiển thị của máy góp sức (không phải mã cầu nối: mã cầu nối dùng được để hỏi việc).
+function publicHelperKey(id) {
+  return crypto.createHash('sha256').update(`helper:${id}`).digest('hex').slice(0, 10);
+}
+
+function helperView(h, now = Date.now()) {
+  return {
+    key: publicHelperKey(h.id),
+    user: { id: h.userId, name: h.userName },
+    connected: isOnline(h, now),
+    emr_logged_in: h.emrLoggedIn !== false,
+    busy: Boolean(h.busy),
+    patients_done: h.patientsDone || 0,
+    connected_at: new Date(h.connectedAt).toISOString(),
+    last_seen_at: new Date(h.lastSeen).toISOString(),
+  };
+}
+
+function listHelpers(now = Date.now()) {
+  return [...helpers.values()].filter(h => isOnline(h, now)).map(h => helperView(h, now));
+}
+
+/** Máy góp sức đang nối và còn đăng nhập EMR — cho bộ chia việc (có mã cầu nối, không trả ra ngoài). */
+function onlineHelpers(now = Date.now()) {
+  return [...helpers.values()]
+    .filter(h => isOnline(h, now) && h.emrLoggedIn !== false)
+    .map(h => ({ id: h.id, key: publicHelperKey(h.id), userName: h.userName || h.userId || 'Máy góp sức' }));
+}
+
+function helperAlive(id, now = Date.now()) {
+  const h = helpers.get(id);
+  return Boolean(h && isOnline(h, now) && h.emrLoggedIn !== false);
+}
+
+/** Bộ chia việc ghi nhận máy góp sức đang làm / đã xong bao nhiêu ca (để hiện cho người dùng). */
+function noteHelperWork(id, { busy, patientsDone = 0 } = {}) {
+  const h = helpers.get(id);
+  if (!h) return;
+  if (typeof busy === 'boolean') h.busy = busy;
+  if (patientsDone) h.patientsDone = (h.patientsDone || 0) + patientsDone;
+  publish(true);
+}
+
+function findBridge(id) {
+  const key = String(id || '');
+  if (!key) return null;
+  if (bridge && bridge.id === key) return bridge;
+  return helpers.get(key) || null;
+}
+
+function publish(force = false) {
   const s = status();
-  const sig = JSON.stringify([s.connected, s.emr_logged_in, s.emr_origin, s.user?.id || '']);
+  const sig = JSON.stringify([s.connected, s.emr_logged_in, s.emr_origin, s.user?.id || '', s.helpers.map(h => [h.key, h.emr_logged_in, h.busy, h.patients_done])]);
+  if (force) lastPublished = '';
   if (sig === lastPublished) return;
   lastPublished = sig;
   emitter.emit('bridge', { event: 'bridge_status', at: new Date().toISOString(), ...s });
@@ -74,15 +132,20 @@ function ensureSweep() {
   if (sweepTimer) return;
   sweepTimer = setInterval(() => {
     if (bridge && !isOnline(bridge)) failBridgeRequests(bridge.id, 'Mất nối với tab EMR trên máy bệnh viện.');
+    for (const h of [...helpers.values()]) {
+      if (isOnline(h)) continue;
+      failBridgeRequests(h.id, 'Máy góp sức đã ngừng (đóng tab hoặc mất mạng).');
+      for (const w of h.waiters) w([]);
+      helpers.delete(h.id);
+    }
     publish();
   }, 15 * 1000);
   sweepTimer.unref?.();
 }
 
 function failBridgeRequests(bridgeId, message) {
-  if (bridge && bridge.id === bridgeId) {
-    bridge.queue.splice(0);
-  }
+  const b = findBridge(bridgeId);
+  if (b) b.queue.splice(0);
   for (const [id, p] of pending) {
     if (p.bridgeId !== bridgeId) continue;
     clearTimeout(p.timer);
@@ -102,11 +165,13 @@ function normalizeOrigin(value) {
 }
 
 // Tab cầu nối báo "tôi đang nối với tab EMR ở <origin>".
-function hello({ bridgeId, userId = '', userName = '', emrOrigin, emrUrl = '', emrLoggedIn = true, now = Date.now() } = {}) {
+function hello({ bridgeId, userId = '', userName = '', emrOrigin, emrUrl = '', emrLoggedIn = true, role = '', now = Date.now() } = {}) {
   const origin = normalizeOrigin(emrOrigin);
   if (!origin) throw new Error('Không nhận ra địa chỉ EMR. Mở trang EMR rồi bấm lại nút Data Hub.');
   const id = String(bridgeId || '').slice(0, 64);
   if (!id) throw new Error('Thiếu mã cầu nối. Tải lại trang cầu nối.');
+  if (role === 'helper') return helperHello({ id, userId, userName, origin, emrUrl, emrLoggedIn, now });
+  if (helpers.has(id)) throw new Error('Mã cầu nối đang dùng cho máy góp sức. Tải lại trang cầu nối.');
   if (bridge && bridge.id !== id) {
     // Cầu nối mới thay cầu nối cũ (vd. bấm nút trên máy khác): yêu cầu đang chờ ở cầu cũ báo lỗi để chạy lại.
     failBridgeRequests(bridge.id, 'Cầu nối EMR vừa được mở ở tab/máy khác.');
@@ -129,7 +194,36 @@ function hello({ bridgeId, userId = '', userName = '', emrOrigin, emrUrl = '', e
   return status(now);
 }
 
+function helperHello({ id, userId, userName, origin, emrUrl, emrLoggedIn, now }) {
+  if (bridge && bridge.id === id) throw new Error('Mã cầu nối đang dùng cho cầu nối chính. Tải lại trang cầu nối.');
+  let h = helpers.get(id);
+  if (!h) {
+    if (helpers.size >= MAX_HELPERS) throw new Error(`Đã có ${MAX_HELPERS} máy góp sức. Đóng bớt rồi thử lại.`);
+    h = { id, role: 'helper', connectedAt: now, queue: [], waiters: [], patientsDone: 0, busy: false };
+    helpers.set(id, h);
+  }
+  Object.assign(h, {
+    userId: String(userId || ''),
+    userName: String(userName || ''),
+    emrOrigin: origin,
+    emrUrl: String(emrUrl || '').slice(0, 2000),
+    lastSeen: now,
+    emrLoggedIn: emrLoggedIn !== false,
+  });
+  ensureSweep();
+  publish();
+  return { ...status(now), helper: helperView(h, now) };
+}
+
 function disconnect(bridgeId) {
+  const h = helpers.get(String(bridgeId || ''));
+  if (h) {
+    failBridgeRequests(h.id, 'Máy góp sức đã đóng trang góp sức.');
+    for (const w of h.waiters) w([]);
+    helpers.delete(h.id);
+    publish();
+    return;
+  }
   if (!bridge || bridge.id !== bridgeId) return;
   failBridgeRequests(bridge.id, 'Tab EMR trên máy bệnh viện đã đóng.');
   for (const w of bridge.waiters) w([]);
@@ -144,13 +238,13 @@ function takeQueue(b) {
 // Trang cầu nối hỏi việc. Có việc thì trả ngay, không thì chờ tối đa waitMs.
 // signal.cancel được gán để route hủy lượt chờ khi kết nối đóng (không lấy mất việc của lượt sau).
 function poll(bridgeId, { waitMs = POLL_WAIT_MS, now = Date.now(), signal = null } = {}) {
-  if (!bridge || bridge.id !== bridgeId) {
+  const b = findBridge(bridgeId);
+  if (!b) {
     return Promise.reject(Object.assign(new Error('Cầu nối chưa đăng ký hoặc đã bị thay. Bấm lại nút Data Hub trên tab EMR.'), { code: 'BRIDGE_UNKNOWN' }));
   }
-  bridge.lastSeen = now;
+  b.lastSeen = now;
   publish();
-  if (bridge.queue.length) return Promise.resolve(takeQueue(bridge));
-  const b = bridge;
+  if (b.queue.length) return Promise.resolve(takeQueue(b));
   return new Promise((resolve) => {
     let done = false;
     const finish = (items) => {
@@ -171,16 +265,18 @@ function poll(bridgeId, { waitMs = POLL_WAIT_MS, now = Date.now(), signal = null
 
 // Kết nối hỏi việc đóng trước khi kịp gửi việc đi: trả việc về đầu hàng đợi.
 function requeue(bridgeId, items = []) {
-  if (!bridge || bridge.id !== bridgeId || !items.length) return;
-  bridge.queue.unshift(...items.filter(it => pending.has(it.id)));
-  const w = bridge.waiters.shift();
+  const b = findBridge(bridgeId);
+  if (!b || !items.length) return;
+  b.queue.unshift(...items.filter(it => pending.has(it.id)));
+  const w = b.waiters.shift();
   if (w) w();
 }
 
 function submitResult(bridgeId, result = {}) {
-  if (bridge && bridge.id === bridgeId) {
-    bridge.lastSeen = Date.now();
-    if (typeof result.emr_logged_in === 'boolean') bridge.emrLoggedIn = result.emr_logged_in;
+  const b = findBridge(bridgeId);
+  if (b) {
+    b.lastSeen = Date.now();
+    if (typeof result.emr_logged_in === 'boolean') b.emrLoggedIn = result.emr_logged_in;
   }
   const p = pending.get(String(result.id || ''));
   if (!p || p.bridgeId !== bridgeId) return false;
@@ -220,7 +316,17 @@ function cleanHeaders(headers) {
   return out;
 }
 
-function request({ method = 'GET', url, body = null, contentType = '', referrer = '', headers = null, timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
+function request({ method = 'GET', url, body = null, contentType = '', referrer = '', headers = null, timeoutMs = REQUEST_TIMEOUT_MS, bridgeId = '' } = {}) {
+  if (bridgeId) {
+    const h = helpers.get(String(bridgeId));
+    if (!h || !isOnline(h)) {
+      return Promise.reject(Object.assign(new Error('Máy góp sức đã ngừng (đóng tab hoặc mất mạng).'), { code: 'BRIDGE_OFFLINE' }));
+    }
+    if (h.emrLoggedIn === false) {
+      return Promise.reject(Object.assign(new Error('EMR trên máy góp sức đã đăng xuất.'), { code: 'BRIDGE_EMR_LOGGED_OUT' }));
+    }
+    return enqueueRequest(h, { method, url, body, contentType, referrer, headers, timeoutMs });
+  }
   if (!isOnline()) {
     return Promise.reject(Object.assign(new Error(
       'Chưa nối tab EMR. Trên một máy trong bệnh viện: mở EMR, đăng nhập, bấm nút "Data Hub" trên thanh dấu trang rồi chạy lại.'
@@ -231,19 +337,22 @@ function request({ method = 'GET', url, body = null, contentType = '', referrer 
       'EMR trên máy bệnh viện đã đăng xuất. Đăng nhập lại EMR trên máy đó, bấm lại nút "Data Hub" rồi chạy lại.'
     ), { code: 'BRIDGE_EMR_LOGGED_OUT' }));
   }
+  return enqueueRequest(bridge, { method, url, body, contentType, referrer, headers, timeoutMs });
+}
+
+function enqueueRequest(b, { method, url, body, contentType, referrer, headers, timeoutMs }) {
   const m = String(method || 'GET').toUpperCase();
   if (!['GET', 'POST'].includes(m)) return Promise.reject(new Error('Cầu nối chỉ hỗ trợ GET/POST.'));
   let path;
   let ref = '';
   try {
-    path = toEmrPath(url, bridge.emrOrigin);
-    if (referrer) ref = toEmrPath(referrer, bridge.emrOrigin);
+    path = toEmrPath(url, b.emrOrigin);
+    if (referrer) ref = toEmrPath(referrer, b.emrOrigin);
   } catch (e) {
     return Promise.reject(e);
   }
-  if (bridge.queue.length >= MAX_QUEUE) return Promise.reject(new Error('Hàng đợi cầu nối EMR đang đầy. Thử lại sau ít phút.'));
+  if (b.queue.length >= MAX_QUEUE) return Promise.reject(new Error('Hàng đợi cầu nối EMR đang đầy. Thử lại sau ít phút.'));
   const id = crypto.randomBytes(9).toString('base64url');
-  const b = bridge;
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(id);
@@ -278,6 +387,13 @@ function currentEmrUrl() {
   return isOnline() ? String(bridge.emrUrl || '') : '';
 }
 
+/** Địa chỉ EMR đang mở ở máy góp sức (để worker giữ usid/st của phiên); null nếu máy đã ngừng. */
+function helperEmrInfo(id) {
+  const h = helpers.get(String(id || ''));
+  if (!h || !isOnline(h)) return null;
+  return { emr_origin: h.emrOrigin, emr_url: h.emrUrl, emr_logged_in: h.emrLoggedIn !== false };
+}
+
 function internalToken() {
   return INTERNAL_TOKEN;
 }
@@ -289,19 +405,27 @@ function checkInternalToken(value) {
 }
 
 // Biến môi trường cho worker Python (chỉ khi bật chế độ cầu nối).
-function workerEnv() {
-  if (!bridgeModeEnabled()) return {};
+function internalFetchUrl() {
   const { PORT, HOST } = require('../constants');
   const host = !HOST || ['0.0.0.0', '::', '[::]'].includes(HOST) ? '127.0.0.1' : HOST;
-  return {
-    EMR_BRIDGE_URL: `http://${host.includes(':') && !host.startsWith('[') ? `[${host}]` : host}:${PORT}/api/emr-bridge/internal/fetch`,
-    EMR_BRIDGE_TOKEN: INTERNAL_TOKEN,
-  };
+  return `http://${host.includes(':') && !host.startsWith('[') ? `[${host}]` : host}:${PORT}/api/emr-bridge/internal/fetch`;
+}
+
+function workerEnv() {
+  if (!bridgeModeEnabled()) return {};
+  return { EMR_BRIDGE_URL: internalFetchUrl(), EMR_BRIDGE_TOKEN: INTERNAL_TOKEN };
+}
+
+/** Biến môi trường cho worker đọc EMR qua MỘT máy góp sức (dùng phiên EMR của người đó). */
+function helperWorkerEnv(id) {
+  return { EMR_BRIDGE_URL: internalFetchUrl(), EMR_BRIDGE_TOKEN: INTERNAL_TOKEN, EMR_BRIDGE_ID: String(id || '') };
 }
 
 // Chỉ dùng trong test.
 function __resetEmrBridge() {
   if (bridge) for (const w of bridge.waiters) w([]);
+  for (const h of helpers.values()) for (const w of h.waiters) w([]);
+  helpers.clear();
   for (const p of pending.values()) clearTimeout(p.timer);
   pending.clear();
   bridge = null;
@@ -314,5 +438,6 @@ function __resetEmrBridge() {
 module.exports = {
   bridgeModeEnabled, status, collectionBlocker, currentEmrUrl, hello, disconnect, poll, requeue, submitResult, request, toEmrPath,
   subscribeBridgeEvents, cleanHeaders, internalToken, checkInternalToken, workerEnv, __resetEmrBridge,
+  onlineHelpers, helperAlive, helperEmrInfo, helperWorkerEnv, noteHelperWork, listHelpers,
   POLL_WAIT_MS, OFFLINE_AFTER_MS,
 };

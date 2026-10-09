@@ -8,7 +8,7 @@ const HUB = 'https://emr.ten-mien.vn';
 const EMR = 'http://192.168.2.26:2026';
 const flush = () => new Promise(r => setTimeout(r, 0));
 
-function runBookmarklet({ origin = EMR, fetchImpl } = {}) {
+function runBookmarklet({ origin = EMR, fetchImpl, helper = false } = {}) {
   const hub = { closed: false, postMessage: vi.fn(), focus: vi.fn() };
   let onMessage = null;
   const win = {
@@ -19,7 +19,7 @@ function runBookmarklet({ origin = EMR, fetchImpl } = {}) {
   const alert = vi.fn();
   const fetch = fetchImpl || vi.fn(async (url) => ({ status: 200, url, text: async () => '<html>trang</html>' }));
   // eslint-disable-next-line no-new-func
-  new Function('location', 'window', 'alert', 'fetch', 'setInterval', 'setTimeout', 'URL', bridgeBookmarkletSource(HUB))(
+  new Function('location', 'window', 'alert', 'fetch', 'setInterval', 'setTimeout', 'URL', bridgeBookmarkletSource(HUB, { helper }))(
     location, win, alert, fetch, () => 0, () => 0, URL,
   );
   return { hub, win, alert, fetch, send: (e) => onMessage(e) };
@@ -39,6 +39,19 @@ describe('nút dấu trang Data Hub', () => {
     const { hub, win } = runBookmarklet();
     expect(win.open).toHaveBeenCalledWith(`${HUB}/emr-bridge`, 'emr_bridge');
     expect(hub.postMessage).toHaveBeenCalledWith({ type: 'emr-hello', origin: EMR, url: `${EMR}/home.aspx?usid=1&st=2` }, HUB);
+  });
+
+  it('nút "Góp sức lấy dữ liệu" mở trang cầu nối ở vai máy góp sức, cửa sổ riêng, vẫn chuyển trang EMR', async () => {
+    const url = bridgeBookmarkletUrl(HUB, { helper: true });
+    expect(url).not.toMatch(/%/);
+    const { hub, win, fetch, send } = runBookmarklet({ helper: true });
+    expect(win.open).toHaveBeenCalledWith(`${HUB}/emr-bridge?vai=gop-suc`, 'emr_helper');
+    expect(win.__emrHelperWin).toBe(hub);
+    expect(win.__emrBridgeWin).toBeUndefined();
+    send({ origin: HUB, source: hub, data: { type: 'emr-fetch', id: 'g1', method: 'GET', path: '/home.aspx' } });
+    await flush(); await flush(); await flush();
+    expect(fetch).toHaveBeenCalled();
+    expect(hub.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'emr-result', id: 'g1', ok: true }), HUB);
   });
 
   it('bấm nhầm trên Data Hub → nhắc, không mở gì', () => {
@@ -75,7 +88,7 @@ describe('nút dấu trang Data Hub', () => {
 });
 
 describe('trang cầu nối', () => {
-  function setup() {
+  function setup({ role = '' } = {}) {
     let pollResolve = null;
     const api = {
       emrBridgeHello: vi.fn(async () => ({ status: 'ok' })),
@@ -85,7 +98,7 @@ describe('trang cầu nối', () => {
     };
     const opener = { postMessage: vi.fn() };
     const states = [];
-    const client = createBridgeClient({ api, getOpener: () => opener, onState: s => states.push(s), sleep: () => new Promise(r => setTimeout(r, 5)) });
+    const client = createBridgeClient({ api, getOpener: () => opener, role, onState: s => states.push(s), sleep: () => new Promise(r => setTimeout(r, 5)) });
     return { api, opener, client, states, resolvePoll: (v) => pollResolve && pollResolve(v) };
   }
 
@@ -104,6 +117,18 @@ describe('trang cầu nối', () => {
     expect(api.emrBridgeResult).toHaveBeenCalledWith(expect.objectContaining({ id: 'q1', ok: true, text: '<table id="tblNoiTru"></table>', emr_logged_in: true }));
     expect(client.getState()).toMatchObject({ phase: 'connected', served: 1 });
     await client.stop();
+  });
+
+  it('máy góp sức chào máy chủ với vai "helper"; cầu nối chính không gửi vai', async () => {
+    for (const role of ['helper', '']) {
+      const { api, opener, client } = setup({ role });
+      client.start();
+      client.onMessage({ source: opener, origin: EMR, data: { type: 'emr-hello', origin: EMR, url: `${EMR}/home.aspx` } });
+      await flush();
+      const body = api.emrBridgeHello.mock.calls[0][0];
+      expect(body.role).toBe(role || undefined);
+      client.stop();
+    }
   });
 
   it('bỏ qua tin không đến từ tab EMR đã mở trang này', async () => {

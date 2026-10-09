@@ -8,6 +8,7 @@ import { workDateRangeLabel, workDateRangeToDmy } from '../utils/workDateRange.j
 import { filterPatientsByWorkflow, getUniqueRooms, patientRoom } from '../utils/patientScope.js';
 import { getSessionId, isCurrentWorkspaceShared, setSessionId } from '../hooks/useSession.js';
 import { SkeletonBlock } from './Skeleton.jsx';
+import HelpersPanel from './HelpersPanel.jsx';
 
 function pickPatientId(row) {
   return String(row?.ma_bn || row?.MaBN || row?.['Mã BN'] || row?.ma_yt || row?.['Mã YT'] || '').trim();
@@ -210,7 +211,9 @@ export default function DataProcessingTab({ toast, workDateRange }) {
       if (r.status === 'ok' && r.warning) {
         toast?.(r.warning, 'warn');
       } else {
-        const parallelNote = r.parallel_accounts > 1 ? ` (chạy song song ${r.parallel_accounts} tài khoản)` : '';
+        const parallelNote = Array.isArray(r.workers) && r.workers.length > 1
+          ? ` (chia cho ${r.workers.map(w => `${w.who} ${w.patients} ca`).join(', ')})`
+          : '';
         toast?.(r.status === 'ok' ? `Đã lấy y lệnh ${targetRowsForDetails.length} BN theo khoảng ${rangeLabel}${parallelNote}` : r.message, r.status === 'ok' ? 'ok' : 'error');
       }
       await load();
@@ -321,6 +324,7 @@ export default function DataProcessingTab({ toast, workDateRange }) {
                 {selectedRooms.length > 0 && <Btn onClick={clearRooms} style={{ height: 32 }}>Bỏ hết</Btn>}
               </div>
             )}
+            <HelpersPanel />
           </Step>
           <Step
             index={3}

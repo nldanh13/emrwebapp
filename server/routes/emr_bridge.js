@@ -20,6 +20,7 @@ router.post('/emr-bridge/hello', (req, res) => {
       emrOrigin: req.body?.emr_origin,
       emrUrl: req.body?.emr_url,
       emrLoggedIn: req.body?.emr_logged_in !== false,
+      role: req.body?.role === 'helper' ? 'helper' : '',
     });
     return res.json({ status: 'ok', bridge: s });
   } catch (e) {
@@ -63,7 +64,14 @@ function internalOnly(req, res, next) {
   return next();
 }
 
-internalRouter.post('/info', internalOnly, (_req, res) => {
+internalRouter.post('/info', internalOnly, express.json({ limit: '50kb' }), (req, res) => {
+  const helperId = String(req.body?.bridge_id || '');
+  if (helperId) {
+    const info = bridge.helperEmrInfo(helperId);
+    if (!info) return fail(res, 502, 'Máy góp sức đã ngừng (đóng tab hoặc mất mạng).', 'BRIDGE_OFFLINE');
+    if (!info.emr_logged_in) return fail(res, 502, 'EMR trên máy góp sức đã đăng xuất.', 'BRIDGE_EMR_LOGGED_OUT');
+    return res.json({ status: 'ok', emr_origin: info.emr_origin, emr_url: info.emr_url });
+  }
   const blocker = bridge.collectionBlocker();
   if (blocker) return fail(res, 502, blocker, 'BRIDGE_OFFLINE');
   return res.json({ status: 'ok', emr_origin: bridge.status().emr_origin, emr_url: bridge.currentEmrUrl() });
@@ -78,6 +86,7 @@ internalRouter.post('/fetch', internalOnly, express.json({ limit: '5mb' }), asyn
       contentType: req.body?.content_type || '',
       referrer: req.body?.referrer || '',
       headers: req.body?.headers || null,
+      bridgeId: String(req.body?.bridge_id || ''),
     });
     return res.json({ status: 'ok', http_status: r.status, url: r.url, text: r.text });
   } catch (e) {
