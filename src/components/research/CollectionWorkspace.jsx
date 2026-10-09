@@ -3,8 +3,7 @@
 //   Bước 2  Thu thập dữ liệu chi tiết (Thu thập tự động: chỉ lấy phần mới/thiếu/lỗi/đã đổi)
 //   Bước 3  Đánh giá dữ liệu (đủ / chính xác / việc cần làm)
 // Lần đầu của nghiên cứu (chưa có đợt chạy) dùng "Lấy dữ liệu lần đầu"; từ đó về sau chỉ một nút
-// chính là Thu thập tự động. Thao tác ít dùng (quét lại dữ liệu tạm thời, chạy hiện Chrome, log)
-// gom vào "Thao tác khác".
+// chính là Thu thập tự động. Ca dùng dữ liệu tạm có thể được cập nhật ngay trong luồng thu thập.
 import { C, FS } from '../../tokens.js';
 import { Btn, Spinner } from '../shared.jsx';
 import { compactNumber } from './researchFormat.js';
@@ -75,8 +74,7 @@ export function CollectionWorkspace({
   isArchive, archive, study, selectedId, uiBusy, automationRun,
   archiveOptions, setArchiveOptions, studyOptions, setStudyOptions,
   runSimpleListScan, runSimpleDataCollection, runRefreshProvisional,
-  operationSnapshot, lastUpdateSummary, statusLoading, loadProgressSnapshot, loadSummary,
-  openLog, toast, scopeRunning = null, initialFilter = null,
+  loadProgressSnapshot, loadSummary, toast, scopeRunning = null, initialFilter = null,
 }) {
   const latestRun = archive?.latest_run || null;
   const listCount = Number(latestRun?.outputs?.initial_list || archive?.source_count || 0);
@@ -86,10 +84,6 @@ export function CollectionWorkspace({
   const hasRun = isArchive ? Boolean(latestRun?.id) : Boolean(study?.latest_run);
   const firstCollect = hasList && !hasRun;
   const fromArchive = !isArchive && study?.cohort_source === 'archive';
-  const headless = isArchive ? archiveOptions.headless : studyOptions.headless;
-  const setHeadless = (value) => (isArchive
-    ? setArchiveOptions(p => ({ ...p, headless: value }))
-    : setStudyOptions(p => ({ ...p, headless: value })));
   const collectOptions = isArchive
     ? archiveOptions
     : { ...studyOptions, fromDate: studyOptions.fromDate || archiveOptions.fromDate, toDate: studyOptions.toDate || archiveOptions.toDate };
@@ -200,24 +194,14 @@ export function CollectionWorkspace({
         </section>
       )}
 
-      <details style={{ ...card, padding: '8px 12px' }}>
-        <summary style={{ cursor: 'pointer', fontSize: FS.sm, fontWeight: 600, color: C.text2 }}>Thao tác khác</summary>
-        <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <Btn onClick={runRefreshProvisional} disabled={uiBusy || !hasList} style={{ height: 30 }}>Quét lại dữ liệu tạm thời</Btn>
-            <span style={{ fontSize: FS.xs, color: C.text3, flex: '1 1 260px' }}>
-              Ca đã dùng tạm dữ liệu từ tab Kiểm HSBA / Trả HSBA sẽ được quét lại trên EMR để có dữ liệu gốc.
-            </span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: FS.sm, color: C.text2 }}>
-              <input type="checkbox" checked={headless} onChange={e => setHeadless(e.target.checked)} disabled={uiBusy} />
-              Chạy ẩn, không mở cửa sổ Chrome
-            </label>
-            <Btn onClick={openLog} style={{ height: 28, fontSize: FS.xs }}>Xem log chạy</Btn>
-          </div>
+      {hasList && (
+        <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <Btn onClick={runRefreshProvisional} disabled={uiBusy} style={{ height: 30 }}>Cập nhật ca dùng dữ liệu tạm</Btn>
+          <span style={{ fontSize: FS.xs, color: C.text3, flex: '1 1 260px' }}>
+            Làm mới trên EMR các ca đang dùng dữ liệu tạm từ Kiểm HSBA / Trả HSBA.
+          </span>
         </div>
-      </details>
+      )}
     </div>
   );
 }
