@@ -85,12 +85,9 @@ function normalizeUser(raw, index) {
     token,
     sessions: normalizeSessions(raw.sessions ?? raw.session_ids ?? null),
     enabled: raw.enabled !== false,
-    // Tài khoản EMR THẬT riêng của người này — chỉ dùng khi ghi/nhập dữ liệu
-    // (chăm sóc, dịch truyền, thủ thuật, VTYT) để thao tác hiện đúng tên người
-    // làm trên EMR của bệnh viện. Không đưa vào publicPrincipal() — không bao
-    // giờ gửi xuống trình duyệt.
-    emrUsername: String(raw.emr_username || '').trim(),
-    emrPassword: String(raw.emr_password || ''),
+    // emr_username/emr_password cũ (tài khoản EMR dự phòng theo người dùng) đã bỏ: tài khoản EMR
+    // nhập liệu chỉ còn theo tên điều dưỡng (Thiết lập tài khoản → Tài khoản EMR). Không đọc nữa;
+    // lần ghi users.json kế tiếp tự xoá khỏi file.
     // Mật khẩu đăng nhập Data Hub (tùy chọn): chỉ lưu bản băm scrypt, không bao giờ lưu bản rõ.
     passwordHash: String(raw.password_hash || ''),
   });
@@ -220,7 +217,6 @@ function writeUsersFile(users) {
     token: u.token,
     sessions: u.sessions == null ? '*' : u.sessions,
     enabled: u.enabled !== false,
-    ...(u.emrUsername || u.emrPassword ? { emr_username: u.emrUsername || '', emr_password: u.emrPassword || '' } : {}),
     ...(u.passwordHash ? { password_hash: u.passwordHash } : {}),
   }));
   normalizeUsersList(payload);
@@ -229,7 +225,7 @@ function writeUsersFile(users) {
   reloadUsers();
 }
 
-function createUser({ name, role, sessions, enabled, emrUsername, emrPassword, password, id: wantedId }) {
+function createUser({ name, role, sessions, enabled, password, id: wantedId }) {
   const { users } = listAllUsersRaw();
   const baseId = String(name || 'nhan_vien')
     .toLowerCase()
@@ -245,7 +241,6 @@ function createUser({ name, role, sessions, enabled, emrUsername, emrPassword, p
   const created = {
     id, name: String(name || id).trim() || id, role: role || 'operator', token: generateToken(),
     sessions: sessions ?? '*', enabled: enabled !== false,
-    emrUsername: String(emrUsername || '').trim(), emrPassword: String(emrPassword || ''),
     passwordHash: password ? hashPassword(password) : '',
   };
   writeUsersFile([...users, created]);
@@ -263,8 +258,6 @@ function updateUser(id, patch = {}) {
     role: patch.role !== undefined ? patch.role : current.role,
     sessions: patch.sessions !== undefined ? patch.sessions : current.sessions,
     enabled: patch.enabled !== undefined ? Boolean(patch.enabled) : current.enabled,
-    emrUsername: patch.emrUsername !== undefined ? String(patch.emrUsername || '').trim() : current.emrUsername,
-    emrPassword: patch.emrPassword !== undefined ? String(patch.emrPassword || '') : current.emrPassword,
     token: patch.regenerateToken ? generateToken() : current.token,
     passwordHash: patch.password ? hashPassword(patch.password)
       : (patch.clearPassword ? '' : current.passwordHash),
@@ -336,18 +329,6 @@ function loginWithPassword({ username, password, ip = '', now = Date.now() } = {
   }
   loginFails.delete(key);
   return { ok: true, token: user.token, user: publicPrincipal(user) };
-}
-
-// Tài khoản EMR thật riêng của người đang đăng nhập Data Hub — dùng cho các
-// thao tác GHI vào EMR (nhập chăm sóc/dịch truyền/thủ thuật/VTYT) để hiện
-// đúng tên người làm trên EMR của bệnh viện. Trả về null nếu người này chưa
-// được cấp tài khoản riêng — nơi gọi tự rơi về tài khoản chung trong config.json.
-function getEmrCredentials(userId) {
-  const id = String(userId || '').trim();
-  if (!id) return null;
-  const user = USERS.find(u => u.id === id);
-  if (!user || !user.emrUsername || !user.emrPassword) return null;
-  return { username: user.emrUsername, password: user.emrPassword };
 }
 
 function localPrincipal() {
@@ -568,7 +549,6 @@ module.exports = {
   canAccessSession,
   sessionFromRequest,
   authStatus,
-  getEmrCredentials,
   isTruthy,
   requiredRoleForRequest,
   getUsersFileInfo,

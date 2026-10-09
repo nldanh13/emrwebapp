@@ -5,7 +5,7 @@ Mọi bí mật của hệ thống nằm ở **một thư mục duy nhất: `sec
 ```text
 secrets/
 ├── secrets.json              ← mật khẩu EMR (chung / hành chánh / dịch truyền), token app, salt, API key
-├── users.json                ← tài khoản đăng nhập app (token từng người + tài khoản EMR dự phòng khi nhập)
+├── users.json                ← tài khoản đăng nhập app (token, mật khẩu, vai trò từng người)
 ├── nurse_emr_accounts.json   ← tài khoản EMR theo tên điều dưỡng trong lịch trực (+ tên file ảnh chữ ký)
 ├── emr_read_accounts.json    ← tài khoản EMR thêm, chỉ dùng để lấy dữ liệu song song
 └── backup/<thời điểm>/       ← bản sao file cũ do `secrets:migrate` tạo (vẫn chứa mật khẩu)
@@ -30,7 +30,7 @@ Các phần còn lại trong `config/` (URL, lịch điều dưỡng, quy tắc 
 
 Mỗi bí mật được tìm theo thứ tự (cao → thấp):
 
-1. **Biến môi trường**, ví dụ `EMR_PASSWORD`. Server dùng cách này để truyền tài khoản EMR riêng của người đang thao tác xuống worker, nên biến môi trường luôn được ưu tiên.
+1. **Biến môi trường**, ví dụ `EMR_PASSWORD`. Server dùng cách này để truyền tài khoản EMR cho từng worker (vd. tài khoản đọc song song), nên biến môi trường luôn được ưu tiên.
 2. **File chứa giá trị** qua `<TÊN_BIẾN>_FILE`, ví dụ `EMR_PASSWORD_FILE=/run/secrets/emr_pw`. Cách này hợp với Docker/secret store của hệ điều hành.
 3. **`secrets/secrets.json`**: cách khuyến nghị cho máy chạy tại khoa.
 4. *(Chỉ tài khoản EMR)* `config/config.json`, vị trí cũ. Vẫn đọc được để máy đang chạy không bị gãy, nhưng `secrets:check` sẽ cảnh báo. Đặt `EMR_REQUIRE_SECRET_ENV=1` thì vị trí cũ bị chặn hẳn.

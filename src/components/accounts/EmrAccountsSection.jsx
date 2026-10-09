@@ -6,8 +6,6 @@
 //   3. Tài khoản theo điều dưỡng (nhập liệu theo lịch) — trước đây ở Lịch điều dưỡng.
 //   4. Tài khoản đọc song song (Lấy chi tiết).
 //   5. Máy góp sức: không có tài khoản nào để khai, chỉ chỉ chỗ xem.
-// Tài khoản EMR dự phòng của từng người dùng Data Hub sửa ở mục Người dùng Data Hub (cùng hộp sửa
-// người dùng), bảng tổng hợp vẫn liệt kê để thấy trùng.
 
 import { useCallback, useEffect, useState } from 'react';
 import { C, FS } from '../../tokens.js';
@@ -22,7 +20,6 @@ const USE_TONE = {
   shared: [C.blue, C.blueBg],
   hchanh: [C.blue, C.blueBg],
   nurse: [C.green, C.greenBg],
-  user_fallback: [C.text2, C.surface2],
   read: [C.amber, C.amberBg],
 };
 
@@ -32,7 +29,7 @@ function Card({ children }) {
 
 export function SharedAccountCard({ overview }) {
   const rows = [
-    ['Tài khoản chung', overview?.shared, 'Quét danh sách, lấy dữ liệu, xem trước; dự phòng khi nhập liệu. Bắt buộc.'],
+    ['Tài khoản chung', overview?.shared, 'Quét danh sách, lấy dữ liệu, xem trước; nhập liệu khi người ca làm chưa có tài khoản riêng. Bắt buộc.'],
     ['Tài khoản Hành chánh', overview?.hchanh, 'Module Hành chánh / Kiểm hồ sơ. Chỉ cần nếu dùng module này.'],
   ];
   return (
@@ -109,7 +106,7 @@ export function EmrAccountsOverviewTable({ overview }) {
       {missing.length > 0 && (
         <div style={{ marginTop: 10, fontSize: FS.sm, color: C.amber, lineHeight: 1.5 }}>
           {missing.length} điều dưỡng trong lịch chưa có tài khoản EMR ({missing.join(', ')}): ca của họ sẽ nhập bằng tài khoản
-          dự phòng. Khai ở bảng "Tài khoản EMR của từng điều dưỡng" bên dưới.
+          chung. Khai ở bảng "Tài khoản EMR của từng điều dưỡng" bên dưới.
         </div>
       )}
     </Card>
@@ -129,7 +126,7 @@ function HelperMachinesNote() {
   );
 }
 
-export default function EmrAccountsSection({ toast, refreshKey = 0 }) {
+export default function EmrAccountsSection({ toast }) {
   const [overview, setOverview] = useState(null);
   const [error, setError] = useState('');
 
@@ -143,8 +140,7 @@ export default function EmrAccountsSection({ toast, refreshKey = 0 }) {
     }
   }, []);
 
-  // refreshKey đổi khi mục Người dùng Data Hub vừa sửa tài khoản EMR dự phòng.
-  useEffect(() => { load(); }, [load, refreshKey]);
+  useEffect(() => { load(); }, [load]);
   useOnTabReturn(() => load());
 
   return (

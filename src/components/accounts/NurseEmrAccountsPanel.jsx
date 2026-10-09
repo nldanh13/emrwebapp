@@ -127,7 +127,7 @@ export default function NurseEmrAccountsPanel({ onSaved }) {
       <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Tài khoản EMR của từng điều dưỡng (nhập liệu)</div>
       <div style={{ fontSize: FS.sm, color: C.text2, marginTop: 4, lineHeight: 1.5 }}>
         Khi nhập chăm sóc, dịch truyền, thủ thuật, VTYT, app đăng nhập EMR bằng tài khoản của <b>người ca làm theo
-        Lịch điều dưỡng</b>, để EMR ghi đúng người thực hiện. Người chưa có tài khoản thì nhập bằng tài khoản dự phòng
+        Lịch điều dưỡng</b>, để EMR ghi đúng người thực hiện. Người chưa có tài khoản thì nhập bằng tài khoản chung
         và có cảnh báo. Danh sách tên lấy từ Lịch điều dưỡng; thêm/bớt người ở đó.
       </div>
       {error && <div role="alert" style={{ marginTop: 8, color: C.red, fontSize: FS.sm }}>Không tải được danh sách điều dưỡng: {error}. Tải lại trang để thử lại.</div>}
@@ -161,7 +161,7 @@ export default function NurseEmrAccountsPanel({ onSaved }) {
                   </td>
                   <td style={{ padding: '6px 8px', fontSize: FS.xs, minWidth: 140 }}>
                     {statusText(row.name) || (!row.emr_username || !row.emr_password
-                      ? <span style={{ color: C.text3 }}>Chưa có, nhập bằng tài khoản dự phòng</span>
+                      ? <span style={{ color: C.text3 }}>Chưa có, nhập bằng tài khoản chung</span>
                       : null)}
                   </td>
                 </tr>

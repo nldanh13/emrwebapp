@@ -1,6 +1,6 @@
 // src/components/accounts/DataHubUsersPanel.jsx — Thiết lập tài khoản → Người dùng Data Hub.
 // Tài khoản đăng nhập Data Hub (secrets/users.json):
-//   - Xem danh sách tài khoản, vai trò, mã truy cập, tài khoản EMR dự phòng
+//   - Xem danh sách tài khoản, vai trò, mã truy cập
 //   - Thêm / sửa / tắt-bật / tạo mã mới / xoá tài khoản
 // Chỉ role admin — server (server/routes/admin_users.js) đã chặn; AccountSettingsTab chỉ hiện mục
 // này cho quản trị.
@@ -38,7 +38,7 @@ function Field({ label, children }) {
 }
 
 function emptyForm() {
-  return { name: '', role: 'operator', sessionsMode: 'all', sessionsList: '', enabled: true, emr_username: '', emr_password: '', id: '', password: '' };
+  return { name: '', role: 'operator', sessionsMode: 'all', sessionsList: '', enabled: true, id: '', password: '' };
 }
 
 function formFromUser(u) {
@@ -48,7 +48,6 @@ function formFromUser(u) {
     sessionsMode: restricted ? 'restricted' : 'all',
     sessionsList: restricted ? u.sessions.join(', ') : '',
     enabled: u.enabled !== false,
-    emr_username: u.emr_username || '', emr_password: u.emr_password || '',
     id: u.id || '', password: '', has_password: Boolean(u.has_password),
   };
 }
@@ -102,8 +101,6 @@ function EditModal({ mode, initial, onClose, onSave, toast }) {
         role: form.role,
         sessions,
         enabled: form.enabled,
-        emr_username: form.emr_username.trim(),
-        emr_password: form.emr_password,
         ...(mode === 'create' && form.id.trim() ? { id: form.id.trim() } : {}),
         ...(form.password ? { password: form.password } : {}),
         ...(mode === 'edit' && regenerateToken ? { regenerate_token: true } : {}),
@@ -180,20 +177,9 @@ function EditModal({ mode, initial, onClose, onSave, toast }) {
             </div>
           )}
 
-          <div style={{ borderTop: `1px solid ${C.border2}`, paddingTop: 10, display: 'grid', gap: 10 }}>
-            <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.5 }}>
-              Tài khoản EMR dự phòng: chỉ dùng khi người này bấm nhập liệu mà <b>người ca làm theo lịch chưa có tài khoản
-              EMR</b>. Bỏ trống thì dự phòng bằng tài khoản chung. Tài khoản của điều dưỡng trong lịch khai ở mục
-              <b> Tài khoản EMR</b>, không cần khai lại ở đây.
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <Field label="Tài khoản EMR dự phòng">
-                <input value={form.emr_username} onChange={set('emr_username')} placeholder="Tên đăng nhập EMR" style={INPUT_STYLE} />
-              </Field>
-              <Field label="Mật khẩu EMR">
-                <input type="password" value={form.emr_password} onChange={set('emr_password')} placeholder="Mật khẩu EMR" style={INPUT_STYLE} />
-              </Field>
-            </div>
+          <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.5 }}>
+            Tài khoản EMR không gắn theo người dùng Data Hub: tài khoản EMR để nhập liệu khai theo tên điều dưỡng ở mục
+            <b> Tài khoản EMR</b>.
           </div>
         </div>
 
@@ -215,7 +201,7 @@ function EditModal({ mode, initial, onClose, onSave, toast }) {
   );
 }
 
-export default function DataHubUsersPanel({ toast: showToast, onChanged }) {
+export default function DataHubUsersPanel({ toast: showToast }) {
   const [items, setItems] = useState([]);
   const [fileInfo, setFileInfo] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -248,7 +234,6 @@ export default function DataHubUsersPanel({ toast: showToast, onChanged }) {
     const r = await api.createAdminUser(payload);
     showToast('Đã tạo tài khoản.', 'ok');
     setNewTokenNotice(r.user);
-    onChanged?.();
     await load();
   };
 
@@ -256,7 +241,6 @@ export default function DataHubUsersPanel({ toast: showToast, onChanged }) {
     const r = await api.updateAdminUser(id, payload);
     showToast(payload.regenerate_token ? 'Đã lưu và tạo mã mới.' : 'Đã lưu.', 'ok');
     if (payload.regenerate_token) setNewTokenNotice(r.user);
-    onChanged?.();
     await load();
   };
 
@@ -266,8 +250,7 @@ export default function DataHubUsersPanel({ toast: showToast, onChanged }) {
     try {
       await api.deleteAdminUser(item.id);
       showToast('Đã xoá.', 'ok');
-      onChanged?.();
-      await load();
+        await load();
     } catch (e) {
       showToast('Lỗi: ' + String(e.message || e), 'error');
     } finally {
@@ -281,7 +264,7 @@ export default function DataHubUsersPanel({ toast: showToast, onChanged }) {
         <div>
           <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Người dùng Data Hub</div>
           <div style={{ fontSize: FS.sm, color: C.text2, marginTop: 4 }}>
-            Ai được đăng nhập app, với vai trò gì. Mỗi người có thể có một tài khoản EMR dự phòng khi nhập liệu.
+            Ai được đăng nhập app, với vai trò gì.
           </div>
         </div>
         <Btn variant="primary" disabled={fileInfo?.mode === 'inline'} onClick={() => setEditing({ mode: 'create', form: emptyForm() })}>
@@ -342,7 +325,7 @@ export default function DataHubUsersPanel({ toast: showToast, onChanged }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: C.surface2 }}>
-                {['Tên', 'Vai trò', 'Mã truy cập', 'Phạm vi', 'TK EMR dự phòng', 'Trạng thái', 'Tác vụ'].map(h => (
+                {['Tên', 'Vai trò', 'Mã truy cập', 'Phạm vi', 'Trạng thái', 'Tác vụ'].map(h => (
                   <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: FS.xs,
                     fontWeight: 700, color: C.text2, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
@@ -356,11 +339,6 @@ export default function DataHubUsersPanel({ toast: showToast, onChanged }) {
                   <td style={{ padding: '10px 12px', fontSize: FS.sm }}><TokenCell token={item.token} toast={showToast} /></td>
                   <td style={{ padding: '10px 12px', fontSize: FS.xs, color: C.text2 }}>
                     {item.sessions === '*' ? 'Tất cả' : (Array.isArray(item.sessions) ? item.sessions.join(', ') : '—')}
-                  </td>
-                  <td style={{ padding: '10px 12px', fontSize: FS.sm }}>
-                    {item.emr_username
-                      ? <Badge text="Có" bg={C.blueBg} color={C.blue} />
-                      : <span style={{ color: C.text3 }}>—</span>}
                   </td>
                   <td style={{ padding: '10px 12px', fontSize: FS.sm }}>
                     {item.enabled

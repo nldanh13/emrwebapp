@@ -1,5 +1,5 @@
 // src/components/AccountSettingsTab.jsx — Thiết lập tài khoản: MỘT chỗ cho mọi thứ về tài khoản.
-//   - Người dùng Data Hub: ai được đăng nhập app, vai trò, mã truy cập, tài khoản EMR dự phòng.
+//   - Người dùng Data Hub: ai được đăng nhập app, vai trò, mã truy cập.
 //   - Tài khoản EMR: tổng hợp mọi tài khoản EMR app giữ (chỉ ra chỗ khai trùng), tài khoản chung,
 //     tài khoản theo điều dưỡng (trước ở Lịch điều dưỡng), tài khoản đọc song song, máy góp sức.
 //   - Thiết bị tin cậy: máy/điện thoại mở lại không phải đăng nhập.
@@ -42,7 +42,6 @@ export default function AccountSettingsTab({ toast }) {
   const allowed = sectionsFor(isAdmin);
   const [section, setSectionState] = useState(() => loadSection(allowed));
   const [visited, setVisited] = useState(() => new Set([section]));
-  const [emrRefreshKey, setEmrRefreshKey] = useState(0);
   const current = allowed.some(s => s.value === section) ? section : allowed[0].value;
 
   const setSection = useCallback((next) => {
@@ -56,8 +55,8 @@ export default function AccountSettingsTab({ toast }) {
     : `Bạn đang đăng nhập: ${user.name} · ${ROLE_LABELS[user.role] || user.role}.`;
 
   const render = (id) => {
-    if (id === 'users') return <DataHubUsersPanel toast={toast} onChanged={() => setEmrRefreshKey(k => k + 1)} />;
-    if (id === 'emr') return <EmrAccountsSection toast={toast} refreshKey={emrRefreshKey} />;
+    if (id === 'users') return <DataHubUsersPanel toast={toast} />;
+    if (id === 'emr') return <EmrAccountsSection toast={toast} />;
     return (
       <div style={{ display: 'grid', gap: 12 }}>
         <DeviceTrustPanel isAdmin={isAdmin} toast={toast} />

@@ -1,6 +1,6 @@
 // server/routes/admin_users.js — /api/admin/users
-// Quản lý tài khoản đăng nhập Data Hub (token) và tài khoản EMR thật riêng
-// (emr_username/emr_password dùng khi ghi/nhập dữ liệu). Chỉ role admin —
+// Quản lý tài khoản đăng nhập Data Hub (token, mật khẩu, vai trò). Tài khoản EMR không còn
+// gắn theo người dùng (xem /api/nurse-emr-accounts). Chỉ role admin —
 // xem authz.requiredRoleForRequest(). Ghi trực tiếp vào secrets/users.json
 // (hoặc EMR_USERS_FILE nếu có cấu hình) và nạp lại ngay, không cần khởi động
 // lại server.
@@ -20,8 +20,6 @@ function publicUser(u) {
     token: u.token,
     sessions: u.sessions == null ? '*' : u.sessions,
     enabled: u.enabled !== false,
-    emr_username: u.emrUsername || '',
-    emr_password: u.emrPassword || '',
     // Chỉ cho biết đã đặt mật khẩu đăng nhập hay chưa; bản băm không bao giờ gửi xuống trình duyệt.
     has_password: Boolean(u.passwordHash),
   };
@@ -47,8 +45,6 @@ router.post('/admin/users', (req, res) => {
       role: body.role,
       sessions: body.sessions,
       enabled: body.enabled,
-      emrUsername: body.emr_username,
-      emrPassword: body.emr_password,
       id: body.id || undefined,
       password: body.password || undefined,
     });
@@ -68,8 +64,6 @@ router.patch('/admin/users/:id', (req, res) => {
       role: body.role,
       sessions: body.sessions,
       enabled: body.enabled,
-      emrUsername: body.emr_username,
-      emrPassword: body.emr_password,
       regenerateToken: body.regenerate_token === true,
       password: body.password || undefined,
       clearPassword: body.clear_password === true,

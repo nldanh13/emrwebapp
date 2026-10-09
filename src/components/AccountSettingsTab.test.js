@@ -18,7 +18,7 @@ const api = {
     hchanh: { configured: false, username: '', source: '' },
     accounts: [{ username: 'lan.nt', duplicate: true, notes: ['Đang khai ở 2 chỗ.'], uses: [
       { use: 'nurse', label: 'Nhập liệu theo lịch', owner: 'Nguyễn Thị Lan' },
-      { use: 'user_fallback', label: 'Dự phòng khi nhập', owner: 'QT' },
+      { use: 'read', label: 'Đọc song song', owner: 'Đọc 1' },
     ] }],
     duplicate_count: 1,
     nurses_missing: ['Trần Văn Bình'],
@@ -70,7 +70,7 @@ describe('AccountSettingsTab', () => {
     const text = visible();
     expect(text).toContain('1 tài khoản khai ở nhiều chỗ');
     expect(text).toContain('Nhập liệu theo lịch: Nguyễn Thị Lan');
-    expect(text).toContain('Dự phòng khi nhập: QT');
+    expect(text).toContain('Đọc song song: Đọc 1');
     expect(text).toContain('Trần Văn Bình');
     expect(host.querySelector('input[aria-label="Tài khoản EMR của Trần Văn Bình"]')).toBeTruthy();
   });

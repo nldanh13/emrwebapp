@@ -43,22 +43,30 @@ const test = async (name, fn) => { try { await fn(); console.log(`  ok - ${name}
   await test('gộp theo tên đăng nhập EMR, đánh dấu tài khoản khai ở nhiều chỗ', () => {
     const o = buildEmrAccountOverview({
       roster: ['Nguyễn Thị Lan', 'Trần Văn Bình', 'Lê Thị Chưa Có'],
-      users: authz.listAllUsersRaw().users,
       nurseAccounts: nurseAccounts.readNurseEmrAccounts(),
       readAccounts: [{ name: 'Đọc 1', emr_username: 'CHUNG', has_password: true }],
       shared: { username: 'chung', source: 'env', has_password: true },
       hchanh: { username: '', source: '', has_password: false },
     });
     const lan = o.accounts.find(a => a.username === 'lan.nt');
-    assert.ok(lan.duplicate);
-    assert.deepStrictEqual(lan.uses.map(u => u.use).sort(), ['nurse', 'user_fallback']);
+    assert.ok(!lan.duplicate);
+    assert.deepStrictEqual(lan.uses.map(u => u.use), ['nurse'], 'tài khoản EMR cũ trong users.json không còn được tính');
     const chung = o.accounts.find(a => a.username.toLowerCase() === 'chung');
     assert.ok(chung.duplicate, 'tài khoản đọc trùng tài khoản chung (khác hoa/thường) phải bị đánh dấu');
     assert.ok(chung.notes.some(n => /đọc song song/.test(n)));
     assert.strictEqual(o.accounts.find(a => a.username === 'binh.tv').duplicate, false);
-    assert.strictEqual(o.duplicate_count, 2);
+    assert.strictEqual(o.duplicate_count, 1);
     assert.deepStrictEqual(o.nurses_missing, ['Lê Thị Chưa Có']);
     assert.ok(!JSON.stringify(o).includes('pw-'), 'không được trả mật khẩu');
+  });
+
+  await test('tài khoản EMR cũ trong users.json không còn được đọc, lần lưu kế tiếp xoá khỏi file', () => {
+    const u = authz.listAllUsersRaw().users.find(x => x.id === 'quantri');
+    assert.strictEqual(u.emrUsername, undefined);
+    assert.strictEqual(u.emrPassword, undefined);
+    authz.updateUser('xem', { name: 'Người xem 2' });
+    const raw = fs.readFileSync(process.env.EMR_USERS_FILE, 'utf8');
+    assert.ok(!raw.includes('emr_username') && !raw.includes('pw-lan-2'));
   });
 
   await test('sửa tài khoản EMR một người giữ nguyên chữ ký và người khác', () => {

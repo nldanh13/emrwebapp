@@ -1,10 +1,8 @@
 // server/services/emr_account_overview.js — Mọi tài khoản EMR app đang giữ, gom về một bảng.
 //
-// Tài khoản EMR nằm ở bốn nơi, mỗi nơi một việc:
+// Tài khoản EMR nằm ở ba nơi, mỗi nơi một việc:
 //   - secrets/secrets.json (hoặc biến môi trường): tài khoản chung, tài khoản Hành chánh;
 //   - secrets/nurse_emr_accounts.json: tài khoản theo tên điều dưỡng, dùng khi NHẬP liệu theo lịch;
-//   - secrets/users.json: tài khoản EMR riêng của người dùng Data Hub, chỉ là dự phòng khi nhập
-//     mà người ca làm chưa có tài khoản;
 //   - secrets/emr_read_accounts.json: tài khoản chỉ đọc để Lấy chi tiết song song.
 // Màn Thiết lập tài khoản → Tài khoản EMR hiện bảng này để thấy một tài khoản EMR đang khai ở
 // mấy chỗ (trùng) và người nào trong lịch chưa có tài khoản. Không bao giờ trả mật khẩu.
@@ -25,7 +23,6 @@ const USE_LABELS = {
   shared: 'Tài khoản chung',
   hchanh: 'Tài khoản Hành chánh',
   nurse: 'Nhập liệu theo lịch',
-  user_fallback: 'Dự phòng khi nhập',
   read: 'Đọc song song',
 };
 
@@ -42,14 +39,13 @@ function secretPair(userKey, passKey) {
 /**
  * @param {object} input
  * @param {string[]} [input.roster]  Tên điều dưỡng trong Lịch điều dưỡng.
- * @param {Array}    [input.users]   authz.listAllUsersRaw().users (đã chuẩn hoá).
  * @param {Array}    [input.nurseAccounts]  readNurseEmrAccounts().
  * @param {Array}    [input.readAccounts]   publicFetchAccounts().accounts.
  * @param {object}   [input.shared]  { username, source, has_password } — mặc định đọc secret_store.
  * @param {object}   [input.hchanh]  như shared.
  */
 function buildEmrAccountOverview({
-  roster = [], users = [], nurseAccounts = [], readAccounts = [], shared, hchanh,
+  roster = [], nurseAccounts = [], readAccounts = [], shared, hchanh,
 } = {}) {
   const sharedInfo = shared || secretPair('emr_username', 'emr_password');
   const hchanhInfo = hchanh || secretPair('hchanh_username', 'hchanh_password');
@@ -60,9 +56,6 @@ function buildEmrAccountOverview({
   add({ use: 'hchanh', owner: '', username: hchanhInfo.username, has_password: hchanhInfo.has_password });
   for (const row of nurseAccounts) {
     add({ use: 'nurse', owner: row.name, username: row.emr_username, has_password: Boolean(row.emr_password) });
-  }
-  for (const u of users) {
-    add({ use: 'user_fallback', owner: u.name || u.id, username: u.emrUsername, has_password: Boolean(u.emrPassword), enabled: u.enabled !== false });
   }
   for (const acc of readAccounts) {
     add({ use: 'read', owner: acc.name, username: acc.emr_username, has_password: Boolean(acc.has_password), enabled: acc.enabled !== false });
@@ -108,15 +101,12 @@ function buildEmrAccountOverview({
 }
 
 function emrAccountOverview({ roster } = {}) {
-  const { listAllUsersRaw } = require('./authz');
   const { publicFetchAccounts } = require('./fetch_accounts');
-  let users = [];
-  try { users = listAllUsersRaw().users || []; } catch (_) { /* users.json lỗi: màn Người dùng báo riêng */ }
   let nurseAccounts = [];
   try { nurseAccounts = readNurseEmrAccounts(); } catch (_) { /* chưa có file */ }
   let readAccounts = [];
   try { readAccounts = publicFetchAccounts().accounts || []; } catch (_) { /* chưa có file */ }
-  return buildEmrAccountOverview({ roster, users, nurseAccounts, readAccounts });
+  return buildEmrAccountOverview({ roster, nurseAccounts, readAccounts });
 }
 
 module.exports = { buildEmrAccountOverview, emrAccountOverview, USE_LABELS };
