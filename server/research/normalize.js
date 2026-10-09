@@ -1361,7 +1361,11 @@ function archiveEncounterLinker(runDir) {
   return (row) => {
     const pc = patientCode(row);
     const admission = isoDate(firstNonEmpty(row, ADMISSION));
-    const hit = only(byEid.get(buildEncounterId(row)))
+    // Cohort đã lưu encounter_id đã được xác thực khi xem trước; giữ nguyên khóa đó.
+    // Chỉ suy mã lượt từ dòng gốc khi cohort chưa có khóa lượt tường minh.
+    const explicitEncounterId = getCell(row, ['encounter_id', 'visit_id']);
+    const hit = only(byEid.get(explicitEncounterId))
+      || only(byEid.get(buildEncounterId(row)))
       || (pc && admission ? only(byVisit.get(`${pc}|${admission}`)) : null)
       || (pc && !admission ? only(byPatient.get(pc)) : null);
     if (!hit) return {};
