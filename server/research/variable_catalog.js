@@ -149,7 +149,7 @@ function buildVirtualVariablesForTable(def, rows, extra = {}) {
       const unit = getCell(row, ['unit', 'Đơn vị']);
       // Một tên chuẩn hóa có thể gồm nhiều phép đo (NEU% và NEU, LYM% và LYM).
       // Tách biến theo đơn vị để không làm rơi một phép đo khi cả hai cùng xuất hiện.
-      const unitKey = unit.normalize('NFKC').toLowerCase().replace(/\\s+/g, ' ').trim();
+      const unitKey = unit.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
       const key = `${normalizeToken(normalizedName)}|${unitKey}`;
       const bucket = byTest.get(key) || { raw, norm: normalizedName, group: getCell(row, ['lab_group', 'Nhóm xét nghiệm']), unit, count: 0, values: [], distinctValues: new Set(), distinctTruncated: false };
       bucket.count += 1;
@@ -167,7 +167,7 @@ function buildVirtualVariablesForTable(def, rows, extra = {}) {
       if (!bucket.unit) bucket.unit = getCell(row, ['unit', 'Đơn vị']);
       byTest.set(key, bucket);
     }
-    for (const b of [...byTest.values()].sort((a, b) => b.count - a.count).slice(0, 240)) {
+    for (const b of [...byTest.values()].sort((a, b) => b.count - a.count)) {
       add({
         id: makeVirtualVariableId('lab_item', `${b.norm}|${b.unit}`),
         name: `lab:${b.norm}`,
