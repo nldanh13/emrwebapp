@@ -394,16 +394,17 @@ const normalizeUnitForFilter = value => String(value ?? '').normalize('NFKC').re
 
 function sourceFilterMatches(row, sourceFilter = {}) {
   for (const [key, expectedRaw] of Object.entries(sourceFilter || {})) {
-    if (expectedRaw == null || expectedRaw === '') continue;
+    if (expectedRaw == null) continue;
     if (expectedRaw && typeof expectedRaw === 'object' && !Array.isArray(expectedRaw)) continue;
     const normalizedField = normalizedKey(key);
     const actualRaw = getCell(row, key);
     // Unit phải so khớp chính xác và giữ ký hiệu: '%' không được biến thành chuỗi rỗng,
-    // 'mg/L' cũng không được khớp nhầm với 'g/L' do kiểm tra chuỗi con.
+    // 'mg/L' cũng không được khớp nhầm với 'g/L'; unit trống cũng chỉ khớp unit trống.
     if (normalizedField === 'unit' || normalizedField === 'donvi') {
       if (normalizeUnitForFilter(actualRaw) !== normalizeUnitForFilter(expectedRaw)) return false;
       continue;
     }
+    if (expectedRaw === '') continue;
     if (normalizedField === 'testnamenorm') {
       if (normalizeForFilter(actualRaw) !== normalizeForFilter(expectedRaw)) return false;
       continue;
