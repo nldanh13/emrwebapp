@@ -72,7 +72,7 @@ const card = { border: `1px solid ${C.border2}`, borderRadius: 8, background: C.
 
 export function CollectionWorkspace({
   isArchive, archive, study, selectedId, uiBusy, automationRun,
-  archiveOptions, setArchiveOptions, studyOptions, setStudyOptions,
+  archiveOptions, setArchiveOptions, studyOptions,
   runSimpleListScan, runSimpleDataCollection, runRefreshProvisional,
   loadProgressSnapshot, loadSummary, toast, scopeRunning = null, initialFilter = null,
 }) {
@@ -178,6 +178,14 @@ export function CollectionWorkspace({
               screen={screen}
             />
           : !hasList && <div style={{ ...card, fontSize: FS.xs, color: C.text3 }}>Chưa thể thu thập.</div>}
+      {hasList && (
+        <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <Btn onClick={runRefreshProvisional} disabled={uiBusy} style={{ height: 30 }}>Cập nhật ca dùng dữ liệu tạm</Btn>
+          <span style={{ fontSize: FS.xs, color: C.text3, flex: '1 1 260px' }}>
+            Làm mới trên EMR các ca đang dùng dữ liệu tạm từ Kiểm HSBA / Trả HSBA.
+          </span>
+        </div>
+      )}
       </section>
 
       {hasRun && (
@@ -194,14 +202,6 @@ export function CollectionWorkspace({
         </section>
       )}
 
-      {hasList && (
-        <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <Btn onClick={runRefreshProvisional} disabled={uiBusy} style={{ height: 30 }}>Cập nhật ca dùng dữ liệu tạm</Btn>
-          <span style={{ fontSize: FS.xs, color: C.text3, flex: '1 1 260px' }}>
-            Làm mới trên EMR các ca đang dùng dữ liệu tạm từ Kiểm HSBA / Trả HSBA.
-          </span>
-        </div>
-      )}
     </div>
   );
 }
