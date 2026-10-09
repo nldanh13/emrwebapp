@@ -257,9 +257,19 @@ function isCancelRequested(sid) {
   return taskJournal.getTask(taskId)?.status === 'cancel_requested';
 }
 
+/**
+ * Chạy fn trong làn của một tài khoản EMR (chờ tác vụ khác đang dùng cùng tài khoản). Dùng khi một
+ * tác vụ nặng tự chạy thêm worker bằng tài khoản KHÁC tài khoản của chính nó (vd. "Lấy chi tiết"
+ * chia phần cho nhiều tài khoản). Không gọi với làn tác vụ đang giữ: sẽ tự chờ chính mình mãi.
+ */
+function runExclusiveByAccount(accountKey, fn) {
+  return _runExclusiveByAccount(accountKey, fn);
+}
+
 module.exports = {
   enqueue,
   enqueueHeavy,
+  runExclusiveByAccount,
   enqueueLocal,
   registerCancel,
   unregisterCancel,

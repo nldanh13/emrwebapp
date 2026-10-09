@@ -798,6 +798,12 @@ function ResourceListPanel({ type = 'vtyt', onClose }) {
 
 // ── Detail panel ──────────────────────────────────────────────────────────────
 
+function reviewedByLabel(row) {
+  const d = new Date(row?.updated_at || '');
+  const when = Number.isNaN(d.getTime()) ? '' : d.toLocaleString('vi-VN', { hour:'2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', hour12:false });
+  return `Kiểm bởi ${row.updated_by}${when ? ` · ${when}` : ''}`;
+}
+
 function DetailPanel({ isMobile = false, card, navigation, onNavigate, onClose, onFetch, onFetchDischargeFull, onOpenBedEdit, onPrintBilling, onCreateTicket, onRescan, onSaveManualReview, fetchingKey, bedEditKey, printBillingKey, ticketKey, manualReviewKey }) {
   const [tab, setTab] = useState('fetch');
   const [tabTouched, setTabTouched] = useState(false);
@@ -988,15 +994,16 @@ function DetailPanel({ isMobile = false, card, navigation, onNavigate, onClose, 
                   <b style={{ flex:'1 1 240px', fontSize:FS.sm, color:C.text }}>{row.label}</b>
                   <select value={row.stale ? 'stale' : (row.status || 'pending')} disabled={isSavingReview}
                     aria-label={`Kết quả kiểm ${row.label}`}
-                    onChange={e => onSaveManualReview?.(card, { items: { [row.key]: { status:e.target.value, note:row.note || '' } } })}
+                    onChange={e => onSaveManualReview?.(card, { items: { [row.key]: { status:e.target.value, note:row.note || '', base_updated_at:row.updated_at || '' } } })}
                     style={{ ...SELECT_STYLE, minWidth:130, color:row.status === 'issue' ? C.red : row.status === 'pass' ? C.green : C.text2 }}>
                     {MANUAL_REVIEW_STATUS.map(([value, label]) => <option key={value} value={value} disabled={value === 'stale'}>{label}</option>)}
                   </select>
                 </div>
                 {row.stale && <div style={{ marginTop:5, fontSize:FS.xs, color:C.amber }}>Dữ liệu EMR được cập nhật sau lần kiểm trước. Vui lòng đối chiếu lại mục này.</div>}
-                <input type="text" defaultValue={row.note || ''} disabled={isSavingReview}
+                {row.updated_by && row.status !== 'pending' && <div style={{ marginTop:4, fontSize:FS.xs, color:C.text3 }}>{reviewedByLabel(row)}</div>}
+                <input key={`${row.key}:${row.updated_at || ''}`} type="text" defaultValue={row.note || ''} disabled={isSavingReview}
                   placeholder="Ghi chú nội dung thiếu hoặc cần sửa..."
-                  onBlur={e => { if (e.target.value !== (row.note || '')) onSaveManualReview?.(card, { items: { [row.key]: { status:row.status || 'pending', note:e.target.value } } }); }}
+                  onBlur={e => { if (e.target.value !== (row.note || '')) onSaveManualReview?.(card, { items: { [row.key]: { status:row.status || 'pending', note:e.target.value, base_updated_at:row.updated_at || '' } } }); }}
                   style={{ width:'100%', marginTop:7, height:32, padding:'0 9px', borderRadius:5, border:`1px solid ${C.border}`, background:C.surface, color:C.text, fontSize:FS.sm, fontFamily:'inherit', boxSizing:'border-box' }} />
               </div>
             ))}

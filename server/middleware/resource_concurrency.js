@@ -5,6 +5,8 @@ const { CONFIG_PATH } = require('../constants');
 const { getRuntimePaths } = require('../services/session');
 const { revisionForFiles, setRevisionHeaders, checkRevision } = require('../services/resource_revision');
 const { publishResourceEvent } = require('../services/realtime_bus');
+const { recordWriter, getWriter, describeWriter } = require('../services/resource_writers');
+const { hchanh_dir } = require('../hchanh_data_contract');
 const routeModel = require('../utils/routeModel');
 
 const MEDICATION_CATALOG_PATH = path.join(__dirname, '..', '..', 'config', 'medication_catalog.json');
@@ -72,6 +74,11 @@ function resourceSpec(req) {
     return { key: 'vtyt-combos', files: [VTYT_COMBOS_PATH], readPath: '/vtyt-combos' };
   }
 
+  // Bản nháp Nhập VTYT: tự lưu sau mỗi thay đổi, hai người cùng làm ở kho chung dễ ghi đè nhau.
+  if (p === '/hchanh/vtyt-draft') {
+    return { key: 'vtyt-draft', files: [path.join(hchanh_dir(ctx), 'vtyt_batch_draft.json')], readPath: '/hchanh/vtyt-draft' };
+  }
+
   return null;
 }
 
@@ -91,6 +98,7 @@ function resourceConcurrency(req, res, next) {
 
   if (!isMutation(req)) return next();
 
+  const lastWriter = getWriter(ctx.sid, spec.key);
   if (ACTIVE_WRITES.has(lockKey)) {
     return res.status(409).json({
       status: 'conflict',
@@ -100,7 +108,12 @@ function resourceConcurrency(req, res, next) {
     });
   }
 
-  if (!checkRevision(req, res, current, { resource: spec.key, requireForModernClient: true })) return undefined;
+  if (!checkRevision(req, res, current, {
+    resource: spec.key,
+    requireForModernClient: true,
+    lastWriter,
+    lastWriterText: describeWriter(lastWriter),
+  })) return undefined;
 
   const token = Symbol(lockKey);
   ACTIVE_WRITES.set(lockKey, token);
@@ -120,11 +133,13 @@ function resourceConcurrency(req, res, next) {
     if (res.statusCode >= 200 && res.statusCode < 400) {
       const version = revisionForFiles(spec.files);
       setRevisionHeaders(res, version);
+      const writer = recordWriter(ctx.sid, spec.key, req.auth);
       publishResourceEvent({
         sid: ctx.sid,
         resource: spec.key,
         version,
         actor_id: req.auth?.id || '',
+        actor_name: writer.name,
       });
       if (body && typeof body === 'object' && !Array.isArray(body)) {
         body = { ...body, resource_version: version };

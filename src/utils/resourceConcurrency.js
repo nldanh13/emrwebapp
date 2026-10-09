@@ -8,6 +8,7 @@ const PROTECTED = new Set([
   '/api/routes',
   '/api/vtyt-catalog',
   '/api/vtyt-combos',
+  '/api/hchanh/vtyt-draft',
 ]);
 
 const MUTATION_ALIAS = new Map([
@@ -99,13 +100,14 @@ export function installResourceConcurrencyFetch() {
       : name === 'routes-custom' ? '/api/routes'
       : name === 'vtyt-catalog' ? '/api/vtyt-catalog'
       : name === 'vtyt-combos' ? '/api/vtyt-combos'
+      : name === 'vtyt-draft' ? '/api/hchanh/vtyt-draft'
       : '';
     if (!key) return;
     const current = versions.get(key) || '';
     const incoming = String(event?.detail?.version || '');
     if (current && incoming && current !== incoming) {
       window.dispatchEvent(new CustomEvent('emr:resource-stale', {
-        detail: { resource: key, current_version: current, server_version: incoming },
+        detail: { resource: key, current_version: current, server_version: incoming, actor_name: String(event?.detail?.actor_name || '') },
       }));
     }
   });

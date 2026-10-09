@@ -66,6 +66,10 @@ def _bridge_call(name: str, payload: Dict[str, Any], timeout: float = 120.0) -> 
         raise RuntimeError("Thiếu requests. Hãy cài: pip install requests")
     sess = requests.Session()
     sess.trust_env = False  # gọi máy chủ trong máy, không đi qua proxy
+    helper_id = str(os.environ.get("EMR_BRIDGE_ID", "") or "").strip()
+    if helper_id:
+        # Đọc qua một máy góp sức cụ thể (phiên EMR của người đó), không qua cầu nối chính.
+        payload = {**payload, "bridge_id": helper_id}
     r = sess.post(
         _bridge_endpoint(name),
         json=payload,
@@ -244,7 +248,9 @@ class EmrHttpSession:
             timeout_sec=int(config.get("http_timeout_sec") or 30),
             request_delay_ms=int(config.get("http_read_request_delay_ms") or config.get("http_request_delay_ms") or 80),
             max_retries=max(0, int(config.get("http_read_max_retries") or config.get("http_max_retries") or 2)),
-            cookie_file=(config.get("http_cookie_file") or os.environ.get("EMR_HTTP_COOKIE_FILE") or _default_cookie_file()),
+            # Biến môi trường đứng trước: máy chủ đặt file cookie riêng cho từng tài khoản khi chạy
+            # song song, cấu hình chung không được làm các tài khoản dùng chung một file cookie.
+            cookie_file=(os.environ.get("EMR_HTTP_COOKIE_FILE") or config.get("http_cookie_file") or _default_cookie_file()),
             use_cached_cookies=_cfg_bool_value(config.get("http_use_cached_cookies"), True),
             ajaxpro_inpatient_endpoint=(config.get("ajaxpro_inpatient_endpoint") or "").strip(),
             ajaxpro_inpatient_method=(config.get("ajaxpro_inpatient_method") or "ServerSideDrawSearchResult_VDUH").strip(),

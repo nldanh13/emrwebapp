@@ -4,6 +4,10 @@ const SESSION_KEY = 'emr_session_id_v1';
 const TAB_ID_KEY  = 'emr_tab_id_v1';
 const LOCK_KEY    = 'emr_session_lock_v1'; // { tabId, ts } — tab nào đang giữ session
 const WORKSPACE_QUERY_KEY = 'workspace';
+// Máy này đã tự chọn dữ liệu nào: 'shared' (kho chung), 'private' (giữ dữ liệu riêng), 'link' (mở
+// bằng link workspace). Chưa chọn thì máy chủ có kho chung sẽ đưa máy vào kho chung (decideWorkspace).
+const CHOICE_KEY = 'emr_workspace_choice_v1';
+let knownSharedSid = '';
 
 // Heartbeat chỉ dùng để ghi nhận tab đang mở, KHÔNG dùng để tự tạo session mới.
 // Trước đây nếu mở lại Chrome trong vài giây sau khi tắt đột ngột, lock cũ còn "tươi"
@@ -101,6 +105,7 @@ export function getSessionId() {
     if (fromUrl) {
       localStorage.setItem(SESSION_KEY, fromUrl);
       sessionStorage.setItem(SESSION_KEY, fromUrl);
+      if (fromUrl !== knownSharedSid) localStorage.setItem(CHOICE_KEY, 'link');
       writeLock(tabId);
       return fromUrl;
     }
@@ -139,6 +144,72 @@ export function getWorkspaceShareUrl() {
 
 export function getWorkspaceId() {
   return getSessionId();
+}
+
+// ── Kho chung ────────────────────────────────────────────────────────────────
+
+/** Ghi nhớ kho chung máy chủ vừa báo (để biết workspace đang mở có phải kho chung). */
+export function setKnownSharedWorkspace(sid) {
+  knownSharedSid = isValidSid(sid) ? sid : '';
+}
+
+export function isCurrentWorkspaceShared() {
+  return Boolean(knownSharedSid) && peekSessionId() === knownSharedSid;
+}
+
+export function getWorkspaceChoice() {
+  try {
+    const v = localStorage.getItem(CHOICE_KEY) || '';
+    return ['shared', 'private', 'link'].includes(v) ? v : '';
+  } catch {
+    return '';
+  }
+}
+
+export function setWorkspaceChoice(choice) {
+  try {
+    if (choice) localStorage.setItem(CHOICE_KEY, choice);
+    else localStorage.removeItem(CHOICE_KEY);
+  } catch { /* ignore */ }
+}
+
+/** Người dùng tự chọn một bộ dữ liệu (Đổi dữ liệu): ghi nhớ là kho chung hay dữ liệu riêng. */
+export function chooseWorkspace(sid) {
+  setSessionId(sid);
+  setWorkspaceChoice(sid === knownSharedSid ? 'shared' : 'private');
+  return sid;
+}
+
+/** Chuyển máy này sang kho chung. Trả true nếu workspace đã đổi (cần tải lại trang). */
+export function joinSharedWorkspace(sid) {
+  if (!isValidSid(sid)) return false;
+  const before = peekSessionId();
+  setSessionId(sid);
+  setWorkspaceChoice('shared');
+  // Link ?workspace=<riêng> còn trên thanh địa chỉ sẽ kéo máy về lại workspace cũ khi tải lại.
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has(WORKSPACE_QUERY_KEY) || url.searchParams.has('sid')) {
+      url.searchParams.delete(WORKSPACE_QUERY_KEY);
+      url.searchParams.delete('sid');
+      window.history.replaceState(null, '', url.toString());
+    }
+  } catch { /* ignore */ }
+  return before !== sid;
+}
+
+/**
+ * Máy này nên làm gì với kho chung (hàm thuần, có test):
+ * - 'none': không có kho chung, đang ở kho chung, hoặc người dùng đã tự chọn dữ liệu riêng / mở bằng link.
+ * - 'switch': máy chưa có dữ liệu gì → vào thẳng kho chung, không hỏi.
+ * - 'ask': máy đang có dữ liệu riêng → hỏi, không tự chuyển (tránh tưởng mất dữ liệu).
+ */
+export function decideWorkspace({ shared, current, choice } = {}) {
+  if (!shared?.sid || !current) return 'none';
+  if (current.is_shared || current.sid === shared.sid) return 'none';
+  if (choice === 'private' || choice === 'link') return 'none';
+  if (!current.has_data) return 'switch';
+  return 'ask';
 }
 
 // ── Heartbeat ─────────────────────────────────────────────────────────────────

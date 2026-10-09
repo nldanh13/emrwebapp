@@ -12,6 +12,8 @@ import { mergeVtytDraftEdits } from '../../engine/hchanhVtytDraftMerge.js';
 import { buildVtytReviewWindows } from '../../engine/hchanhVtytScope.js';
 import { useOnTabReturn } from '../../hooks/useTabActivity.js';
 import { useScreenChanged } from '../../hooks/useRealtimeStatus.js';
+import { createSerialSaver } from '../../utils/serialSaver.js';
+import { getKnownResourceVersion } from '../../utils/resourceConcurrency.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -173,13 +175,47 @@ export function useHchanh({ toast, workDateRange, manualReviewFilterEnabled = tr
     api.syncHchanh().catch(() => {}).then(() => load({ silent: true }));
   });
 
-  // Khôi phục bản nháp VTYT đã lưu trong runtime của session.
+  // Bản nháp VTYT nằm trên máy chủ, dùng chung cho mọi máy ở cùng dữ liệu (kho chung).
+  // - Tự lưu lần lượt sau ~0,8 giây ngừng sửa, kèm phiên bản đang cầm (If-Match).
+  // - Máy khác vừa lưu: tải bản mới về ngay (sự kiện emr:resource-stale), không lưu đè lại.
+  // - Lưu bị chặn vì đang cầm bản cũ: tải bản mới và báo rõ ai vừa sửa; thay đổi vừa rồi chưa lưu.
+  const vtytFromServerRef = useRef(false);
+  const vtytSaveErrorRef = useRef(() => {});
+  const vtytSaverRef = useRef(null);
+  if (!vtytSaverRef.current) {
+    vtytSaverRef.current = createSerialSaver(draft => api.saveHchanh_VtytDraft(draft), {
+      delay: 800,
+      onError: err => vtytSaveErrorRef.current(err),
+    });
+  }
+
+  const reloadVtytDraftFromServer = useCallback(async () => {
+    vtytSaverRef.current.cancel();
+    const result = await api.getHchanh_VtytDraft();
+    vtytFromServerRef.current = true;
+    setVtytBatchDraft(result?.draft || null);
+    vtytDraftLoadedRef.current = true;
+  }, []);
+
+  vtytSaveErrorRef.current = (e) => {
+    if (e?.status === 409 || e?.status === 428) {
+      reloadVtytDraftFromServer().catch(() => {});
+      toast?.(`${String(e.message || e)} Đã tải bản nháp mới nhất; thay đổi vừa rồi trên máy này chưa được lưu, hãy làm lại.`, 'warn');
+      return;
+    }
+    toast?.(`Không lưu được bản nháp VTYT: ${String(e.message || e)}`, 'error');
+  };
+
+  // Khôi phục bản nháp VTYT đã lưu trên máy chủ.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const result = await api.getHchanh_VtytDraft();
-        if (!cancelled && result?.draft) setVtytBatchDraft(result.draft);
+        if (!cancelled && result?.draft) {
+          vtytFromServerRef.current = true;
+          setVtytBatchDraft(result.draft);
+        }
       } catch (e) {
         if (!cancelled) toast?.(`Không tải được bản nháp VTYT: ${String(e.message || e)}`, 'error');
       } finally {
@@ -189,20 +225,30 @@ export function useHchanh({ toast, workDateRange, manualReviewFilterEnabled = tr
     return () => { cancelled = true; };
   }, [toast]);
 
-  // Lưu ngay sau mỗi thay đổi. Backend dùng updated_at để chặn request cũ
-  // hoàn tất muộn ghi đè lên bản nháp mới hơn.
+  // Máy khác vừa lưu bản nháp VTYT: tải bản mới về trước khi người dùng sửa tiếp.
   useEffect(() => {
-    if (!vtytDraftLoadedRef.current || !vtytBatchDraft) return undefined;
-    let cancelled = false;
-    (async () => {
-      try {
-        await api.saveHchanh_VtytDraft(vtytBatchDraft);
-      } catch (e) {
-        if (!cancelled) toast?.(`Không lưu được bản nháp VTYT: ${String(e.message || e)}`, 'error');
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [toast, vtytBatchDraft]);
+    const onStale = async (event) => {
+      if (event?.detail?.resource !== '/api/hchanh/vtyt-draft') return;
+      // Còn thay đổi chưa gửi: để lần lưu đó tự bị chặn và báo rõ, không âm thầm bỏ thay đổi.
+      if (vtytSaverRef.current.hasPending()) return;
+      await vtytSaverRef.current.idle();
+      // Sự kiện của chính lần lưu vừa rồi trên máy này (đến trước phản hồi): không cần tải lại.
+      if (getKnownResourceVersion('/api/hchanh/vtyt-draft') === event.detail.server_version) return;
+      reloadVtytDraftFromServer().catch(() => {});
+    };
+    window.addEventListener('emr:resource-stale', onStale);
+    return () => window.removeEventListener('emr:resource-stale', onStale);
+  }, [reloadVtytDraftFromServer]);
+
+  // Mỗi thay đổi do người dùng → xếp lịch lưu. Bản vừa nạp từ máy chủ thì không lưu lại.
+  useEffect(() => {
+    if (!vtytDraftLoadedRef.current || !vtytBatchDraft) return;
+    if (vtytFromServerRef.current) { vtytFromServerRef.current = false; return; }
+    vtytSaverRef.current.schedule(vtytBatchDraft);
+  }, [vtytBatchDraft]);
+
+  // Rời màn hình: lưu ngay bản đang chờ.
+  useEffect(() => () => { vtytSaverRef.current.flush(); }, []);
 
   // ── Fetch dữ liệu 1 BN theo scope ─────────────────────────────────────────
 
@@ -332,13 +378,17 @@ export function useHchanh({ toast, workDateRange, manualReviewFilterEnabled = tr
     const ok = typeof window === 'undefined' ? true : window.confirm('Xóa toàn bộ bản nháp VTYT đang lưu?');
     if (!ok) return;
     try {
+      vtytSaverRef.current.cancel();
+      await vtytSaverRef.current.idle();
       await api.clearHchanh_VtytDraft();
+      vtytFromServerRef.current = true;
       setVtytBatchDraft(null);
       toast?.('Đã xóa bản nháp VTYT.', 'ok');
     } catch (e) {
+      if (e?.status === 409 || e?.status === 428) reloadVtytDraftFromServer().catch(() => {});
       toast?.(`Không xóa được bản nháp VTYT: ${String(e.message || e)}`, 'error');
     }
-  }, [toast]);
+  }, [reloadVtytDraftFromServer, toast]);
 
   const inputBatchVTYT = useCallback(async () => {
     const draft = vtytBatchDraft;
@@ -674,7 +724,13 @@ export function useHchanh({ toast, workDateRange, manualReviewFilterEnabled = tr
       });
       await load();
     } catch (e) {
-      toast?.(`Không lưu được checklist: ${String(e.message || e)}`, 'error');
+      // Người khác vừa sửa mục này: tải lại để thấy bản của họ (máy chủ đã nói ai, lúc nào).
+      if (e?.status === 409) {
+        toast?.(String(e.message || e), 'warn');
+        load({ silent: true });
+      } else {
+        toast?.(`Không lưu được checklist: ${String(e.message || e)}`, 'error');
+      }
     } finally {
       setManualReviewKey('');
     }

@@ -283,7 +283,9 @@ async function request(url, options = {}, retryAuth = true) {
     duration_ms: Date.now() - started,
     message: msg,
   });
-  throw new Error(msg);
+  const error = new Error(msg);
+  error.status = res.status;
+  throw error;
 }
 
 // ── Đăng nhập ────────────────────────────────────────────────────────────────
@@ -742,6 +744,11 @@ export const getSessionLogs = () => get('/api/session-logs');
 export const getDataSessions = () => get('/api/data-sessions');
 export const deleteDataSession = (sid) => del('/api/data-sessions/' + encodeURIComponent(sid));
 
+// ── Kho chung (workspace mọi máy mở mặc định) ────────────────────────────────
+export const getWorkspace = () => get('/api/workspace');
+export const setSharedWorkspace = (sid) => put('/api/workspace/shared', sid ? { sid } : {});
+export const clearSharedWorkspace = () => del('/api/workspace/shared');
+
 // ── Cancel running task ───────────────────────────────────────────────────────
 export const cancelTask = () => post('/api/cancel', {});
 
@@ -980,6 +987,8 @@ export const revokeDevice     = (id)         => post(`/api/devices/${encodeURICo
 export const createAdminUser  = (body)        => post('/api/admin/users', body);
 export const updateAdminUser  = (id, body)   => patch(`/api/admin/users/${encodeURIComponent(id)}`, body);
 export const deleteAdminUser  = (id)          => del(`/api/admin/users/${encodeURIComponent(id)}`);
+export const getFetchAccounts  = ()          => get('/api/fetch-accounts');
+export const saveFetchAccounts = (body)      => put('/api/fetch-accounts', body);
 
 // ── Tài khoản EMR theo điều dưỡng (ca làm/ca trực — admin) ──────────────────
 export const getNurseEmrAccounts  = ()      => get('/api/nurse-emr-accounts');

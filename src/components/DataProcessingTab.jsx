@@ -6,8 +6,9 @@ import SessionPicker from './shift/SessionPicker.jsx';
 import * as api from '../api.js';
 import { workDateRangeLabel, workDateRangeToDmy } from '../utils/workDateRange.js';
 import { filterPatientsByWorkflow, getUniqueRooms, patientRoom } from '../utils/patientScope.js';
-import { getSessionId, setSessionId } from '../hooks/useSession.js';
+import { getSessionId, isCurrentWorkspaceShared, setSessionId } from '../hooks/useSession.js';
 import { SkeletonBlock } from './Skeleton.jsx';
+import HelpersPanel from './HelpersPanel.jsx';
 
 function pickPatientId(row) {
   return String(row?.ma_bn || row?.MaBN || row?.['Mã BN'] || row?.ma_yt || row?.['Mã YT'] || '').trim();
@@ -91,7 +92,8 @@ export default function DataProcessingTab({ toast, workDateRange }) {
         !dataInfo?.raw?.exists && !dataInfo?.sorted?.exists && !dataInfo?.processed?.exists &&
         !dataInfo?.v2?.patients && !dataInfo?.v2?.board_state && !dataInfo?.v2?.classified_days;
 
-      if (currentLooksEmpty && !recoveryAttemptedRef.current) {
+      // Kho chung còn trống là bình thường (chưa ai quét): không tự nhảy sang dữ liệu riêng cũ.
+      if (currentLooksEmpty && !recoveryAttemptedRef.current && !isCurrentWorkspaceShared()) {
         recoveryAttemptedRef.current = true;
         const currentSid = getSessionId();
         const saved = await api.getDataSessions().catch(() => null);
@@ -206,7 +208,14 @@ export default function DataProcessingTab({ toast, workDateRange }) {
         partial: detailsScope !== 'all',
         scope: detailsScope,
       });
-      toast?.(r.status === 'ok' ? `Đã lấy y lệnh ${targetRowsForDetails.length} BN theo khoảng ${rangeLabel}` : r.message, r.status === 'ok' ? 'ok' : 'error');
+      if (r.status === 'ok' && r.warning) {
+        toast?.(r.warning, 'warn');
+      } else {
+        const parallelNote = Array.isArray(r.workers) && r.workers.length > 1
+          ? ` (chia cho ${r.workers.map(w => `${w.who} ${w.patients} ca`).join(', ')})`
+          : '';
+        toast?.(r.status === 'ok' ? `Đã lấy y lệnh ${targetRowsForDetails.length} BN theo khoảng ${rangeLabel}${parallelNote}` : r.message, r.status === 'ok' ? 'ok' : 'error');
+      }
       await load();
     } catch (e) {
       toast?.(String(e.message || e), 'error');
@@ -315,6 +324,7 @@ export default function DataProcessingTab({ toast, workDateRange }) {
                 {selectedRooms.length > 0 && <Btn onClick={clearRooms} style={{ height: 32 }}>Bỏ hết</Btn>}
               </div>
             )}
+            <HelpersPanel />
           </Step>
           <Step
             index={3}

@@ -10,6 +10,7 @@ import { C, FS } from '../tokens.js';
 import { Btn, Spinner, Badge } from './shared.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import DeviceTrustPanel from './DeviceTrustPanel.jsx';
+import FetchAccountsPanel from './FetchAccountsPanel.jsx';
 import * as api from '../api.js';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
 import { SkeletonTable } from './Skeleton.jsx';
@@ -407,6 +408,8 @@ export default function AccountSettingsTab() {
           </table>
         </div>
       )}
+
+      <FetchAccountsPanel toast={showToast} />
 
       {toast && (
         <div style={{ position: 'fixed', bottom: 24, right: 24, maxWidth: 380, padding: '10px 18px',

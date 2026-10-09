@@ -158,7 +158,38 @@ print(json.dumps({"bridge": bridge_mode(), "info_url": info.get("emr_url"), "htm
     process.env.EMR_BRIDGE_MODE = '1';
   });
 
+  await test('máy góp sức: nhiều máy cùng nối, không thay cầu nối chính; yêu cầu đi đúng máy; máy ngừng thì báo lỗi', async () => {
+    // Hẹn giờ của cầu nối đều unref: giữ tiến trình sống tới khi test xong.
+    const keepAlive = setInterval(() => {}, 1000);
+    try {
+    bridge.hello({ bridgeId: 'chinh', userId: 'quantri', emrOrigin: ORIGIN });
+    bridge.hello({ bridgeId: 'may-an', role: 'helper', userId: 'an', userName: 'An', emrOrigin: ORIGIN, emrUrl: `${ORIGIN}/home.aspx?usid=9` });
+    bridge.hello({ bridgeId: 'may-binh', role: 'helper', userId: 'binh', userName: 'Bình', emrOrigin: ORIGIN });
+    const s = bridge.status();
+    assert.strictEqual(s.connected, true, 'cầu nối chính vẫn còn');
+    assert.deepStrictEqual(s.helpers.map(h => h.user.name).sort(), ['An', 'Bình']);
+    assert.ok(!JSON.stringify(s).includes('may-an'), 'không lộ mã cầu nối');
+    assert.deepStrictEqual(bridge.onlineHelpers().map(h => h.id).sort(), ['may-an', 'may-binh']);
+    assert.strictEqual(bridge.helperEmrInfo('may-an').emr_url, `${ORIGIN}/home.aspx?usid=9`);
+    assert.strictEqual(bridge.helperWorkerEnv('may-an').EMR_BRIDGE_ID, 'may-an');
+
+    const p = bridge.request({ url: `${ORIGIN}/a.aspx`, bridgeId: 'may-binh' });
+    assert.deepStrictEqual(await bridge.poll('may-an', { waitMs: 10 }), [], 'máy An không nhận việc của máy Bình');
+    const reqs = await fakeBridgeOnce('may-binh', () => ({ ok: true, status: 200, text: 'của Bình' }));
+    assert.strictEqual(reqs.length, 1);
+    assert.strictEqual((await p).text, 'của Bình');
+
+    assert.throws(() => bridge.hello({ bridgeId: 'may-an', emrOrigin: ORIGIN }), /máy góp sức/);
+    bridge.disconnect('may-binh');
+    await assert.rejects(bridge.request({ url: '/a.aspx', bridgeId: 'may-binh' }), e => e.code === 'BRIDGE_OFFLINE');
+    assert.strictEqual(bridge.helperAlive('may-binh'), false);
+    assert.strictEqual(bridge.status().connected, true);
+    } finally {
+      clearInterval(keepAlive);
+    }
+  });
+
   bridge.__resetEmrBridge();
   if (failed) process.exit(1);
-  console.log('8 test(s) passed.');
+  console.log('9 test(s) passed.');
 })();

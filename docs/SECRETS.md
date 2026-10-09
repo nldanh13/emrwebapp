@@ -7,6 +7,7 @@ secrets/
 ├── secrets.json              ← mật khẩu EMR (chung / hành chánh / dịch truyền), token app, salt, API key
 ├── users.json                ← tài khoản đăng nhập app (token từng người + tài khoản EMR riêng)
 ├── nurse_emr_accounts.json   ← tài khoản EMR theo tên điều dưỡng trong lịch trực
+├── emr_read_accounts.json    ← tài khoản EMR thêm, chỉ dùng để lấy dữ liệu song song (tab Thiết lập tài khoản)
 └── backup/<thời điểm>/       ← bản sao file cũ do `secrets:migrate` tạo (vẫn chứa mật khẩu)
 ```
 
@@ -29,7 +30,7 @@ Mỗi bí mật được tìm theo thứ tự (cao → thấp):
 3. **`secrets/secrets.json`**: cách khuyến nghị cho máy chạy tại khoa.
 4. *(Chỉ tài khoản EMR)* `config/config.json`, vị trí cũ. Vẫn đọc được để máy đang chạy không bị gãy, nhưng `secrets:check` sẽ cảnh báo. Đặt `EMR_REQUIRE_SECRET_ENV=1` thì vị trí cũ bị chặn hẳn.
 
-Với `users.json` và `nurse_emr_accounts.json`: dùng `EMR_USERS_FILE` / `EMR_NURSE_ACCOUNTS_FILE` nếu có đặt. Nếu không, app dùng `secrets/<tên file>`. Máy chưa chuyển thì app vẫn đọc `config/<tên file>` cũ.
+Với `users.json`, `nurse_emr_accounts.json` và `emr_read_accounts.json`: dùng `EMR_USERS_FILE` / `EMR_NURSE_ACCOUNTS_FILE` / `EMR_READ_ACCOUNTS_FILE` nếu có đặt. Nếu không, app dùng `secrets/<tên file>`. Máy chưa chuyển thì app vẫn đọc `config/<tên file>` cũ.
 
 ## Danh mục bí mật
 

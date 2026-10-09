@@ -13,6 +13,7 @@ const {
   listKnownSessionIds,
   deleteSessionData,
 } = require('../services/session');
+const { getSharedWorkspace } = require('../services/shared_workspace');
 const { readJsonSafe, writeJsonAtomic } = require('../utils/file');
 const { parseDmy, sanitizeSessionId } = require('../utils/validation');
 const { appendActivity } = require('../services/activity_logger');
@@ -299,6 +300,7 @@ function patientCountFromRows(rows) {
 
 function sessionSummary(sid, currentSid) {
   const ctx = buildRuntimePathsForSid(sid);
+  const sharedSid = getSharedWorkspace()?.sid || '';
   const rawInfo = fileInfo(ctx.RAW_PATH);
   const processedInfo = fileInfo(ctx.PROCESSED_PATH);
   const sortedInfo = fileInfo(ctx.SORTED_PATH);
@@ -326,7 +328,8 @@ function sessionSummary(sid, currentSid) {
   return {
     sid,
     is_current: sid === currentSid,
-    label: sid === 'default' ? 'Dữ liệu mặc định' : 'Session ' + sid.slice(0, 8),
+    is_shared: sharedSid === sid,
+    label: sharedSid === sid ? 'Kho chung' : sid === 'default' ? 'Dữ liệu mặc định' : 'Session ' + sid.slice(0, 8),
     primary,
     count,
     modified,
@@ -370,6 +373,9 @@ router.delete('/data-sessions/:sid', (req, res) => {
 
   try {
     if (!canAccessSession(req.auth, sid)) return res.status(403).json({ status: 'error', message: 'Không có quyền với session này.' });
+    if (getSharedWorkspace()?.sid === sid) {
+      return res.status(409).json({ status: 'error', message: 'Đây là kho chung mọi máy đang dùng nên không xoá được. Muốn xoá thì giám sát bỏ kho chung trước (nút Kho chung trên thanh trên cùng).' });
+    }
     const permanent = String(req.query.permanent || '') === '1';
     const result = deleteSessionData(sid, { permanent, reason: `manual_by_${req.auth?.id || 'unknown'}` });
     appendActivity(getRuntimePaths(req), {

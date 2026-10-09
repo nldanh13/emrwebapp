@@ -370,6 +370,33 @@ TIME_RE = re.compile(r"\b(\d{1,2}:\d{2})\b")
 DOC_RE = re.compile(r"Bác sĩ:\s*([^\n\r]+)")
 
 
+def _is_bridge_error(exc: Exception) -> bool:
+    try:
+        from emr_http_reader import EmrBridgeError  # local import
+    except Exception:
+        return False
+    return isinstance(exc, EmrBridgeError)
+
+
+class _HelperLost(RuntimeError):
+    """Máy góp sức không còn đọc được EMR: dừng cả lô để máy chủ giao cho máy khác."""
+
+
+class _HttpPatientFallback(Exception):
+    """Ca này không đọc được qua HTTP; chỉ riêng ca này cần mở bằng Chrome."""
+
+
+def _generate_v2_after_details(out_path: str, input_path: str, label: str) -> None:
+    # Khi máy chủ chia danh sách cho nhiều tài khoản chạy song song, mỗi worker chỉ ghi phần
+    # của mình; máy chủ gộp các phần rồi dựng dữ liệu v2 một lần (DETAILS_SKIP_V2=1).
+    if (os.environ.get("DETAILS_SKIP_V2") or "").strip() == "1":
+        return
+    try:
+        generate_runtime_v2_files(os.environ.get("WORKER_RUNTIME_DIR") or os.path.dirname(os.path.dirname(os.path.abspath(out_path))), selected_path=input_path, orders_path=out_path)
+    except Exception as _v2_exc:
+        print(f"[DATA V2] Cảnh báo: chưa sinh được data v2 sau details {label}: {_v2_exc}")
+
+
 def clean_name(name: Any) -> str:
     s = "" if name is None else str(name)
     s = s.strip()
@@ -1614,6 +1641,54 @@ class AutoWorker:
             start_boundary_date=start_boundary_date,
         )
 
+    def _details_http_one_patient(
+        self, sess: Any, bn: Dict[str, Any], link_map: Dict[str, str], list_row_by_ma: Dict[str, Dict[str, Any]], *,
+        ma_bn: str, ho_ten: str, vitri: str, fetch_until_date_full: str, date_to_full: str,
+        default_year: str, timeline_dates: List[str], bridge_end_date: Optional[str], skip_empty: bool,
+    ) -> List[Dict[str, Any]]:
+        """Đọc y lệnh của MỘT người bệnh qua HTTP. Ca không đọc được qua HTTP thì ném
+        _HttpPatientFallback để nơi gọi chỉ mở Chrome cho riêng ca này."""
+        _list_row = list_row_by_ma.get(str(ma_bn).strip())
+        if _list_row:
+            _merge_admin_from_list_row(bn, _list_row)
+
+        view_url = link_map.get(str(ma_bn).strip())
+        if not view_url:
+            # HTTP scan chỉ thấy trạng thái mặc định. Ca không có ở đây phải mở bằng Chrome
+            # để kiểm tra thêm "Hoàn tất" (ra viện) và "Đi mổ".
+            raise _HttpPatientFallback(f"Không thấy BN {ma_bn} trong link_map HTTP của danh sách hiện tại")
+
+        patient_html, patient_url = sess.fetch_patient_page(view_url, denngay=fetch_until_date_full)
+        _merge_patient_admin_info(bn, patient_html, overwrite=True)
+        if _has_discharge_disposition(bn):
+            _attach_discharge_info(bn, patient_html, date_to_full, default_year=default_year)
+        ylenh_pair = sess.try_get_ylenh_html(patient_html, patient_url)
+        if not ylenh_pair:
+            raise _HttpPatientFallback(f"Không tìm thấy HTML tab Y lệnh qua HTTP cho BN {ma_bn}")
+
+        y_html, _y_url = ylenh_pair
+        _attach_ward_admission_history(bn, y_html)
+        _clear_stale_discharge_for_current_visit(bn)
+        if "vertical-timeline-block" not in (y_html or ""):
+            raise _HttpPatientFallback(f"HTML Y lệnh qua HTTP không có vertical-timeline-block cho BN {ma_bn}")
+
+        timeline_map, doctor_from_page = extract_timeline_map_from_html(y_html, bridge_end_date=bridge_end_date, start_boundary_date=None)
+        out: List[Dict[str, Any]] = []
+        for d in timeline_dates:
+            item = timeline_map.get(d, {"Y lệnh": "", "Diễn biến": "", "Bác sĩ": ""})
+            yl = item.get("Y lệnh", "") or ""
+            db = item.get("Diễn biến", "") or ""
+            if skip_empty and (not yl) and (not db):
+                continue
+            out.append(_build_record(
+                bn, d, item,
+                ho_ten=ho_ten,
+                vitri=vitri,
+                doctor_from_page=doctor_from_page or "",
+                bridge_end_date=bridge_end_date,
+            ))
+        return out
+
     # --- TASK 2: DETAILS (Standard B: 1 record / BN / day) ---
     def task_details(
         self,
@@ -1702,8 +1777,14 @@ class AutoWorker:
         # --- READ MODE: mặc định HTTP-only để lấy chi tiết không mở Chrome ---
         read_mode = _read_mode(self.config)
         allow_selenium_fallback = _allow_selenium_read_fallback(self.config)
+        # Ca đã đọc xong qua HTTP; nếu vài ca phải chuyển sang Chrome thì giữ phần này và chỉ mở
+        # Chrome cho đúng các ca đó (trước đây một ca lạ làm cả lô chạy lại bằng Chrome).
+        prefetched_records: List[Dict[str, Any]] = []
+        # Máy góp sức: worker đọc EMR qua tab của một người (cầu nối), không mở được Chrome. Ca nào
+        # không đọc được qua tab thì ghi vào <out>.skipped.json để máy chủ giao cho máy mở được Chrome.
+        helper_mode = (os.environ.get("DETAILS_SKIP_UNREADABLE") or "").strip() == "1"
 
-        if _http_read_enabled(self.config):
+        if _http_read_enabled(self.config) or helper_mode:
             try:
                 sess = _get_http_session(self.config)
                 if sess is None:
@@ -1719,10 +1800,9 @@ class AutoWorker:
                     if _ma:
                         list_row_by_ma[_ma] = _r
 
-                # Heuristic: if we can't retrieve timeline HTML (vertical-timeline-block), switch to Selenium
-                can_http_timeline = None
-
                 records_http: List[Dict[str, Any]] = []
+                selenium_rows: List[Dict[str, Any]] = []
+                http_ok_count = 0
                 for i, bn in enumerate(data):
                     ma_bn = bn.get("Mã BN") or bn.get("Mã YT") or bn.get("ma_bn") or ""
                     ho_ten = clean_name(bn.get("Họ tên") or bn.get("ho_ten") or "")
@@ -1732,90 +1812,75 @@ class AutoWorker:
                         continue
 
                     print(f"LOG(HTTP): [{i+1}/{len(data)}] Xử lý: {ho_ten} ({ma_bn})")
-
-                    _list_row = list_row_by_ma.get(str(ma_bn).strip())
-                    if _list_row:
-                        _merge_admin_from_list_row(bn, _list_row)
-
-                    view_url = link_map.get(str(ma_bn).strip())
-                    if not view_url:
-                        # HTTP scan chỉ thấy trạng thái mặc định. Nếu BN không có ở đây, fallback Selenium
-                        # để kiểm tra thêm “Hoàn tất” (ra viện) và “Đi mổ”.
-                        msg = f"Không thấy BN {ma_bn} trong link_map HTTP của danh sách hiện tại"
-                        if not allow_selenium_fallback:
-                            raise RuntimeError(msg)
-                        print(f"LOG(HTTP): {msg} -> fallback Selenium kiểm tra Đang thực hiện/Hoàn tất/Đi mổ")
-                        can_http_timeline = False
-                        break
-
-                    patient_html, patient_url = sess.fetch_patient_page(view_url, denngay=fetch_until_date_full)
-                    _merge_patient_admin_info(bn, patient_html, overwrite=True)
-                    if _has_discharge_disposition(bn):
-                        _attach_discharge_info(bn, patient_html, date_to_full, default_year=default_year)
-                    ylenh_pair = sess.try_get_ylenh_html(patient_html, patient_url)
-
-                    if not ylenh_pair:
-                        msg = f"Không tìm thấy HTML tab Y lệnh qua HTTP cho BN {ma_bn}"
-                        if not allow_selenium_fallback:
-                            raise RuntimeError(msg)
-                        can_http_timeline = False
-                        break
-
-                    y_html, _y_url = ylenh_pair
-                    _attach_ward_admission_history(bn, y_html)
-                    _clear_stale_discharge_for_current_visit(bn)
-                    if "vertical-timeline-block" not in (y_html or ""):
-                        msg = f"HTML Y lệnh qua HTTP không có vertical-timeline-block cho BN {ma_bn}"
-                        if not allow_selenium_fallback:
-                            raise RuntimeError(msg)
-                        can_http_timeline = False
-                        break
-
-                    timeline_map, doctor_from_page = extract_timeline_map_from_html(y_html, bridge_end_date=bridge_end_date, start_boundary_date=None)
-                    can_http_timeline = True
-
-                    for d in timeline_dates:
-                        item = timeline_map.get(d, {"Y lệnh": "", "Diễn biến": "", "Bác sĩ": ""})
-                        yl = item.get("Y lệnh", "") or ""
-                        db = item.get("Diễn biến", "") or ""
-
-                        doc_day = item.get("Bác sĩ", "") or ""
-                        if skip_empty and (not yl) and (not db):
-                            continue
-
-                        rec = _build_record(
-                            bn, d, item,
-                            ho_ten=ho_ten,
-                            vitri=vitri,
-                            doctor_from_page=doctor_from_page or "",
-                            bridge_end_date=bridge_end_date,
+                    try:
+                        patient_records = self._details_http_one_patient(
+                            sess, bn, link_map, list_row_by_ma,
+                            ma_bn=ma_bn, ho_ten=ho_ten, vitri=vitri,
+                            fetch_until_date_full=fetch_until_date_full, date_to_full=date_to_full,
+                            default_year=default_year, timeline_dates=timeline_dates,
+                            bridge_end_date=bridge_end_date, skip_empty=skip_empty,
                         )
-                        records_http.append(rec)
+                    except _HttpPatientFallback as fb:
+                        if not allow_selenium_fallback and not helper_mode:
+                            raise RuntimeError(str(fb))
+                        print(f"LOG(HTTP): {fb} -> chỉ ca này chuyển sang Chrome")
+                        selenium_rows.append(bn)
+                        continue
+                    except Exception as e:
+                        if not allow_selenium_fallback and not helper_mode:
+                            raise
+                        if helper_mode and _is_bridge_error(e):
+                            # Máy góp sức mất nối / EMR đăng xuất / tab không trả lời: lỗi của cả máy, không
+                            # phải của ca này. Dừng cả lô để máy chủ giao lô cho máy khác ngay, thay vì chờ hết
+                            # giờ từng ca rồi đẩy hết sang Chrome của máy chủ.
+                            raise _HelperLost(f"Máy góp sức không còn đọc được EMR: {e}")
+                        print(f"LOG(HTTP): Lỗi đọc BN {ma_bn} qua HTTP: {e} -> chỉ ca này chuyển sang Chrome")
+                        selenium_rows.append(bn)
+                        continue
+                    http_ok_count += 1
+                    records_http.extend(patient_records)
 
-                if can_http_timeline is True:
+                if helper_mode:
                     records_http = merge_order_records(records_http, skip_empty=skip_empty)
                     records_http = _canonicalize_rows_for_runtime(records_http, include_order_text=True)
                     write_json_compact(out_path, records_http)
-                    try:
-                        generate_runtime_v2_files(os.environ.get("WORKER_RUNTIME_DIR") or os.path.dirname(os.path.dirname(os.path.abspath(out_path))), selected_path=input_path, orders_path=out_path)
-                    except Exception as _v2_exc:
-                        print(f"[DATA V2] Cảnh báo: chưa sinh được data v2 sau details HTTP: {_v2_exc}")
+                    skipped_ids = [
+                        str(r.get("Mã BN") or r.get("Mã YT") or r.get("ma_bn") or "").strip() for r in selenium_rows
+                    ]
+                    write_json_compact(out_path + ".skipped.json", [x for x in skipped_ids if x])
+                    print(
+                        f"SUCCESS(HTTP): Máy góp sức đọc được {http_ok_count} BN; "
+                        f"{len(selenium_rows)} BN trả lại cho máy chủ -> {out_path}"
+                    )
+                    return
+
+                if not selenium_rows:
+                    records_http = merge_order_records(records_http, skip_empty=skip_empty)
+                    records_http = _canonicalize_rows_for_runtime(records_http, include_order_text=True)
+                    write_json_compact(out_path, records_http)
+                    _generate_v2_after_details(out_path, input_path, "HTTP")
 
                     print(f"SUCCESS(HTTP): Hoàn tất! Xuất {len(records_http)} record đã gộp/khử trùng -> {out_path}")
                     return
 
-                if not allow_selenium_fallback:
-                    _raise_http_only_failure("Lấy chi tiết/Y lệnh", "Không lấy được timeline qua HTTP")
-                print("[HTTP READ] Không lấy được timeline (Y lệnh) qua HTTP -> fallback Selenium")
+                print(
+                    f"[HTTP READ] Đọc qua HTTP được {http_ok_count} BN; {len(selenium_rows)} BN cần mở bằng Chrome"
+                )
+                prefetched_records = records_http
+                data = selenium_rows
 
             except Exception as e:
+                if isinstance(e, _HelperLost):
+                    raise
+                if helper_mode:
+                    raise RuntimeError(f"Máy góp sức không đọc được EMR: {e}")
                 if not allow_selenium_fallback:
                     _raise_http_only_failure("Lấy chi tiết/Y lệnh", e)
                 print(f"[HTTP READ] Details lỗi: {e} -> fallback Selenium vì data_read_mode={read_mode}")
         elif not allow_selenium_fallback:
             _raise_http_only_failure("Lấy chi tiết/Y lệnh", "HTTP reader đang tắt")
 
-        records: List[Dict[str, Any]] = []
+        records: List[Dict[str, Any]] = list(prefetched_records)
 
         is_headless = _read_selenium_headless(self.config)
         print(f"[READ] Lấy chi tiết/Y lệnh bằng Chrome headless (không hiện cửa sổ): headless={is_headless}")
@@ -1913,10 +1978,7 @@ class AutoWorker:
             records = merge_order_records(records, skip_empty=skip_empty)
             records = _canonicalize_rows_for_runtime(records, include_order_text=True)
             write_json_compact(out_path, records)
-            try:
-                generate_runtime_v2_files(os.environ.get("WORKER_RUNTIME_DIR") or os.path.dirname(os.path.dirname(os.path.abspath(out_path))), selected_path=input_path, orders_path=out_path)
-            except Exception as _v2_exc:
-                print(f"[DATA V2] Cảnh báo: chưa sinh được data v2 sau details Selenium: {_v2_exc}")
+            _generate_v2_after_details(out_path, input_path, "Selenium")
 
             if not records:
                 raise RuntimeError("Không lấy được record y lệnh nào. Xem file debug trong thư mục logs của session.")

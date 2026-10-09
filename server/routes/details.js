@@ -9,7 +9,7 @@ const crypto = require('crypto');
 
 const { getRuntimePaths, ensureSessionAssets } = require('../services/session');
 const { runWorker, fmtPyError }                = require('../services/python_runner');
-const { enqueueHeavy, registerCancel, unregisterCancel, cancelSession } = require('../services/task_queue');
+const { enqueueHeavy, registerCancel, unregisterCancel, cancelSession, runExclusiveByAccount, isCancelRequested } = require('../services/task_queue');
 const { isValidDmy, normalizeDmy, dmyToIso }       = require('../utils/validation');
 const { readJsonSafe, safeFilePart, writeJsonAtomic } = require('../utils/file');
 const { ROOT_DIR }                             = require('../constants');
@@ -17,6 +17,10 @@ const { appendActivity }                       = require('../services/activity_l
 const { refreshRuntimeV2 }                      = require('../services/runtime_v2');
 const { postprocessOrders }                      = require('../services/order_pipeline');
 const { getFeature }                             = require('../services/feature_registry');
+const { fetchAccountPool }                       = require('../services/fetch_accounts');
+const { runDetailsQueue }                        = require('../services/details_parallel');
+const emrBridge                                  = require('../services/emr_bridge');
+const { bridgeModeEnabled }                      = emrBridge;
 
 function normalizePatientIdForOne(v) { return String(v || '').trim(); }
 function dmyToDateForOne(s) {
@@ -187,6 +191,77 @@ function mergeRecordsForOnePatient(oldRecords, newRecords, patientId, dateFrom, 
   return mergeRecordsForPatients(oldRecords, newRecords, new Set([pid].filter(Boolean)), dateFrom, dateTo);
 }
 
+// Chia "Lấy chi tiết" cho nhiều người làm cùng lúc: các tài khoản EMR trên máy chủ (tài khoản chung +
+// tài khoản đọc thêm) và các máy góp sức (tab EMR của từng người trong bệnh viện). Trả null khi chỉ có
+// một người làm hoặc ít người bệnh (chạy một worker như cũ). Mỗi lô chạy trong thư mục tạm riêng và không
+// tự dựng dữ liệu v2 (DETAILS_SKIP_V2), để các lô không ghi đè file của nhau; route gộp rồi dựng v2 một lần.
+function helperRunner(h) {
+  return { key: `helper:${h.key}`, label: h.userName, kind: 'helper', direct: false, main: false, helperId: h.id };
+}
+
+async function runDetailsInPartsForRequest(ctx, sortedData, dateArgs) {
+  const runners = [
+    ...fetchAccountPool().map(a => ({ ...a, kind: 'account', direct: true })),
+    ...emrBridge.onlineHelpers().map(helperRunner),
+  ];
+  const runId = `${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`;
+  const partsDir = path.join(ctx.dir, 'details_parts', runId);
+  const kills = new Set();
+  registerCancel(ctx.sid, () => { for (const kill of kills) { try { kill(); } catch (_) {} } });
+  let seq = 0;
+  try {
+    fs.mkdirSync(partsDir, { recursive: true });
+    return await runDetailsQueue({
+      rows: sortedData,
+      runners,
+      discoverRunners: () => emrBridge.onlineHelpers().map(helperRunner),
+      isAlive: (r) => r.kind !== 'helper' || emrBridge.helperAlive(r.helperId),
+      laneRunner: runExclusiveByAccount,
+      isCancelled: () => isCancelRequested(ctx.sid),
+      getId: getRowPatientId,
+      onProgress: (ev) => {
+        if (ev.runner.kind !== 'helper') return;
+        if (ev.type === 'start') emrBridge.noteHelperWork(ev.runner.helperId, { busy: true });
+        if (ev.type === 'done') emrBridge.noteHelperWork(ev.runner.helperId, { busy: false, patientsDone: ev.patients });
+        if (ev.type === 'retired') emrBridge.noteHelperWork(ev.runner.helperId, { busy: false });
+      },
+      runBatch: async (runner, rows) => {
+        if (isCancelRequested(ctx.sid)) return { ok: false, message: 'Đã dừng.' };
+        seq += 1;
+        const inputPath = path.join(partsDir, `input_${seq}.json`);
+        const outPath = path.join(partsDir, `out_${seq}.json`);
+        writeJsonAtomic(inputPath, rows);
+        console.log(`>>> [${ctx.sid}] Lấy chi tiết lô ${seq}: ${rows.length} BN — ${runner.kind === 'helper' ? 'máy góp sức' : 'tài khoản'} "${runner.label}".`);
+        const extraEnv = runner.kind === 'helper'
+          ? { ...emrBridge.helperWorkerEnv(runner.helperId), DETAILS_SKIP_UNREADABLE: '1', DETAILS_SKIP_V2: '1' }
+          : { ...runner.env, DETAILS_SKIP_V2: '1' };
+        let killFn = null;
+        const result = await runWorker('details', ['--input', inputPath, '--out', outPath, ...dateArgs], {
+          onSpawn: (kill) => { killFn = kill; kills.add(kill); },
+          runtimeDir: ctx.dir,
+          extraEnv,
+        });
+        if (killFn) kills.delete(killFn);
+        if (result.spawnError) return { ok: false, message: `Không khởi động được Python: ${result.spawnError}` };
+        if (result.killedByTimeout) return { ok: false, message: 'Quá thời gian chờ.' };
+        if (result.code !== 0) return { ok: false, message: fmtPyError('Python lỗi khi lấy y lệnh.', result) };
+        const records = readJsonSafe(outPath, null);
+        if (!Array.isArray(records)) return { ok: false, message: 'Worker không ghi được kết quả.' };
+        const skipped = runner.kind === 'helper' ? readJsonSafe(`${outPath}.skipped.json`, []) : [];
+        return { ok: true, records, skippedIds: Array.isArray(skipped) ? skipped : [] };
+      },
+    });
+  } finally {
+    unregisterCancel(ctx.sid);
+    try { fs.rmSync(partsDir, { recursive: true, force: true }); } catch (_) {}
+  }
+}
+
+// Lượt "Lấy chi tiết" đang chạy/đang chờ theo workspace. Ở kho chung, hai người cùng bấm thì lượt sau
+// trước đây xếp hàng rồi lấy lại toàn bộ lần nữa (gấp đôi tải EMR, ghi đè kết quả lượt trước bằng bản
+// chụp danh sách cũ). Giờ lượt sau được báo ngay là đang có người lấy.
+const runningDetails = new Map(); // sid → { at, by }
+
 // POST /api/run-details — Lấy Y lệnh từng BN từ EMR
 router.post('/run-details', async (req, res) => {
   const ctx        = getRuntimePaths(req);
@@ -205,6 +280,17 @@ router.post('/run-details', async (req, res) => {
     return res.status(400).json({ status: 'error', message: 'Không còn BN nào trong danh sách scan mới để lấy y lệnh. Hãy quét lại hoặc kiểm tra danh sách phòng.' });
   }
 
+  const already = runningDetails.get(ctx.sid);
+  if (already) {
+    const at = new Date(already.at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
+    return res.status(409).json({
+      status: 'error',
+      code: 'DETAILS_ALREADY_RUNNING',
+      message: `Đang có lượt Lấy chi tiết cho dữ liệu này${already.by ? ` do ${already.by} bấm` : ''} lúc ${at}. Chờ lượt đó xong rồi bấm lại nếu còn thiếu.`,
+    });
+  }
+  runningDetails.set(ctx.sid, { at: Date.now(), by: String(req.auth?.name || '') });
+
   try {
     ensureSessionAssets(ctx.dir, ROOT_DIR);
     await enqueueHeavy(ctx.sid, async () => {
@@ -215,26 +301,47 @@ router.post('/run-details', async (req, res) => {
       writeJsonAtomic(detailsInputPath, sortedData);
       if (!partialMode) writeJsonAtomic(ctx.SORTED_PATH, sortedData);
 
-      const args = ['--input', detailsInputPath, '--out', detailsOutPath];
-      if (dateFrom) args.push('--from', dateFrom);
-      if (dateTo)   args.push('--to', dateTo);
-      if (rooms)    args.push('--rooms', rooms.replace(/[\r\n\t]/g, ' ').slice(0, 500));
+      const dateArgs = [];
+      if (dateFrom) dateArgs.push('--from', dateFrom);
+      if (dateTo)   dateArgs.push('--to', dateTo);
+      if (rooms)    dateArgs.push('--rooms', rooms.replace(/[\r\n\t]/g, ' ').slice(0, 500));
 
-      let result;
-      try {
-        result = await runWorker('details', args, {
-          onSpawn: killFn => registerCancel(ctx.sid, killFn),
-          runtimeDir: ctx.dir,
-        });
-      } finally {
-        unregisterCancel(ctx.sid);
+      // Có khai thêm tài khoản EMR để lấy dữ liệu: chia danh sách, mỗi tài khoản chạy một phần
+      // song song (server/services/details_parallel.js). Chế độ cầu nối tab EMR chỉ có một phiên
+      // trình duyệt nên luôn chạy một worker như cũ.
+      let parallel = null;
+      if (!bridgeModeEnabled()) {
+        parallel = await runDetailsInPartsForRequest(ctx, sortedData, dateArgs);
+        if (parallel?.cancelled) {
+          return res.status(409).json({ status: 'error', message: 'Đã dừng lấy chi tiết. Dữ liệu cũ vẫn giữ nguyên.' });
+        }
+        if (parallel && !parallel.okIds.size) {
+          const reasons = parallel.failureMessages.slice(-3).join('; ');
+          return res.status(500).json({
+            status: 'error',
+            message: `Không lấy được y lệnh ở phần nào. ${reasons}`.slice(0, 900),
+          });
+        }
+      }
+
+      let result = { code: 0 };
+      if (!parallel) {
+        const args = ['--input', detailsInputPath, '--out', detailsOutPath, ...dateArgs];
+        try {
+          result = await runWorker('details', args, {
+            onSpawn: killFn => registerCancel(ctx.sid, killFn),
+            runtimeDir: ctx.dir,
+          });
+        } finally {
+          unregisterCancel(ctx.sid);
+        }
       }
 
       if (result.spawnError)      return res.status(500).json({ status: 'error', message: `Không khởi động được Python: ${result.spawnError}` });
       if (result.killedByTimeout) return res.status(504).json({ status: 'error', message: 'Timeout khi lấy chi tiết' });
 
       if (result.code === 0) {
-        const newRecords = readJsonSafe(detailsOutPath, []);
+        const newRecords = parallel ? parallel.records : readJsonSafe(detailsOutPath, []);
         if (!Array.isArray(newRecords) || newRecords.length === 0) {
           return res.status(500).json({
             status: 'error',
@@ -249,13 +356,15 @@ router.post('/run-details', async (req, res) => {
           });
         }
 
+        // Chạy song song mà còn phần lỗi: chỉ thay dữ liệu của người bệnh đã lấy được, người bệnh lỗi giữ bản cũ.
+        const failedRows = parallel?.failedRows || [];
         let finalRecords = mergeOrderRowsNoDuplicate(newRecords);
-        if (!partialMode) {
+        if (!partialMode && !failedRows.length) {
           writeJsonAtomic(ctx.FINAL_PATH, finalRecords);
-        }
-        if (partialMode) {
-          const selectedIds = new Set(sortedData.map(getRowPatientId).filter(Boolean));
-          const oldRecords = readJsonSafe(ctx.FINAL_PATH, []);
+        } else {
+          const selectedIds = parallel ? parallel.okIds : new Set(sortedData.map(getRowPatientId).filter(Boolean));
+          let oldRecords = readJsonSafe(ctx.FINAL_PATH, []);
+          if (!partialMode) oldRecords = filterRowsToCurrentScan(oldRecords, sortedData);
           finalRecords = mergeRecordsForPatients(oldRecords, newRecords, selectedIds, dateFrom, dateTo);
           writeJsonAtomic(ctx.FINAL_PATH, finalRecords);
         }
@@ -269,14 +378,31 @@ router.post('/run-details', async (req, res) => {
           total_count: finalRecords.length,
           non_empty_count: finalNonEmpty,
           v2: v2Sync?.indexes || null,
+          // Ai đã lấy ca nào (nhật ký: tài khoản/máy góp sức nào đã đọc hồ sơ).
+          parallel: parallel ? {
+            runners: parallel.runners.map(r => ({ who: r.label, kind: r.kind, patients: r.patients, failures: r.failures })),
+            failed_patient_ids: failedRows.map(getRowPatientId).filter(Boolean),
+          } : null,
         });
         const msgPrefix = partialMode ? 'Thành công! Đã cập nhật phạm vi đã chọn' : 'Thành công! Đã lấy';
+        const workers = parallel ? parallel.runners.filter(r => r.patients > 0) : [];
+        const parallelNote = parallel
+          ? ` Chia cho ${workers.length} người/máy: ${workers.map(r => `${r.label} ${r.patients} ca`).join(', ')}.`
+          : '';
+        const lastError = parallel?.failureMessages?.slice(-1)[0] || '';
+        const warning = failedRows.length
+          ? `Còn ${failedRows.length} người bệnh chưa lấy được (${failedRows.slice(0, 5).map(r => r?.ho_ten || r?.['Họ tên'] || getRowPatientId(r)).join(', ')}${failedRows.length > 5 ? '…' : ''}); dữ liệu cũ của họ vẫn giữ.${lastError ? ` Lỗi gần nhất: ${lastError}.` : ''} Bấm Lấy chi tiết lại để lấy phần còn thiếu.`.slice(0, 900)
+          : '';
         return res.json({
           status: 'ok',
-          message: `${msgPrefix} ${newRecords.length} dòng, ${nonEmptyNew} dòng có nội dung. Tổng hiện có ${finalRecords.length} dòng.`,
+          message: `${msgPrefix} ${newRecords.length} dòng, ${nonEmptyNew} dòng có nội dung. Tổng hiện có ${finalRecords.length} dòng.${parallelNote}`,
+          warning,
           count: finalRecords.length,
           fetched_count: newRecords.length,
           non_empty_count: finalNonEmpty,
+          parallel_accounts: parallel ? Math.max(1, workers.length) : 1,
+          workers: workers.map(r => ({ who: r.label, kind: r.kind, patients: r.patients })),
+          failed_patient_ids: failedRows.map(getRowPatientId).filter(Boolean),
           v2: v2Sync?.indexes || null,
         });
       }
@@ -286,6 +412,8 @@ router.post('/run-details', async (req, res) => {
   } catch (err) {
     console.error(err);
     if (!res.headersSent) res.status(500).json({ status: 'error', message: String(err.message || err) });
+  } finally {
+    runningDetails.delete(ctx.sid);
   }
 });
 

@@ -25,6 +25,7 @@ function normalizeItem(value) {
     status,
     note: cleanText(source.note),
     updated_at: cleanText(source.updated_at, 80),
+    updated_by: cleanText(source.updated_by, 80),
   };
 }
 
@@ -43,7 +44,34 @@ function normalizeManualReview(raw) {
   };
 }
 
-function applyManualReviewPatch(current, patch, now = new Date().toISOString()) {
+function viTime(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const opts = { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', hour12: false };
+  try { return d.toLocaleString('vi-VN', { ...opts, timeZone: 'Asia/Ho_Chi_Minh' }); } catch (_) { return d.toLocaleString('vi-VN', opts); }
+}
+
+/**
+ * Hai người cùng kiểm một hồ sơ: giao diện gửi kèm `base_updated_at` (thời điểm mục đó lúc họ mở).
+ * Mục đã được người khác sửa sau thời điểm đó thì trả về mục bị trùng để báo, không ghi đè.
+ * Giao diện cũ không gửi `base_updated_at` thì không kiểm (giữ hành vi cũ).
+ */
+function manualReviewConflict(current, patch) {
+  const review = normalizeManualReview(current);
+  const patchItems = patch?.items && typeof patch.items === 'object' && !Array.isArray(patch.items) ? patch.items : {};
+  for (const definition of REVIEW_ITEMS) {
+    const incoming = patchItems[definition.key];
+    if (!incoming || typeof incoming !== 'object' || !Object.prototype.hasOwnProperty.call(incoming, 'base_updated_at')) continue;
+    const base = cleanText(incoming.base_updated_at, 80);
+    const previous = review.items[definition.key];
+    if (previous.updated_at && previous.updated_at !== base) {
+      return { key: definition.key, label: definition.label, by: previous.updated_by, at: viTime(previous.updated_at) };
+    }
+  }
+  return null;
+}
+
+function applyManualReviewPatch(current, patch, now = new Date().toISOString(), actor = '') {
   const review = normalizeManualReview(current);
   const source = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {};
   const patchItems = source.items && typeof source.items === 'object' && !Array.isArray(source.items)
@@ -60,6 +88,7 @@ function applyManualReviewPatch(current, patch, now = new Date().toISOString()) 
       status: REVIEW_STATUSES.has(incoming.status) ? incoming.status : previous.status,
       note: incoming.note === undefined ? previous.note : cleanText(incoming.note),
       updated_at: now,
+      updated_by: cleanText(actor, 80),
     };
   }
   if (source.note !== undefined) review.note = cleanText(source.note, 2000);
@@ -124,6 +153,7 @@ module.exports = {
   REVIEW_ITEMS,
   normalizeManualReview,
   applyManualReviewPatch,
+  manualReviewConflict,
   manualReviewSummary,
   manualReviewIssues,
 };

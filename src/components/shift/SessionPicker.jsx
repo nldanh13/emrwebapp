@@ -3,7 +3,7 @@ import { IconCheck, IconPlayerPlay, IconTrash, IconX } from '@tabler/icons-react
 import { C, FS } from '../../tokens.js';
 import { Badge, Btn, SectionLabel, Spinner } from '../shared.jsx';
 import * as api from '../../api.js';
-import { setSessionId } from '../../hooks/useSession.js';
+import { chooseWorkspace } from '../../hooks/useSession.js';
 import { dateRangeLabel, fmtAge, fmtTime, primaryLabel } from './shiftUtils.js';
 
 export default function SessionPicker({ onUseSession, onFetchNew, onClose, toast }) {
@@ -83,6 +83,7 @@ export default function SessionPicker({ onUseSession, onFetchNew, onClose, toast
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4 }}>
                     <span style={{ fontSize: FS.md, fontWeight: 600, color: C.text }}>{dateRangeLabel(item)}</span>
                     <Badge text={primaryLabel(item.primary)} bg={color + '22'} color={color} />
+                    {item.is_shared && <Badge text="Kho chung" bg={C.greenBg} color={C.green} />}
                     {item.is_current && <Badge text="Đang dùng" bg={C.blueBg} color={C.blue} />}
                   </div>
                   <div style={{ fontSize: FS.xs, color: C.text3, marginBottom: 10 }}>
@@ -92,7 +93,7 @@ export default function SessionPicker({ onUseSession, onFetchNew, onClose, toast
                     <Btn
                       icon={item.primary === 'processed' ? IconCheck : IconPlayerPlay}
                       variant={item.primary === 'processed' ? 'success' : 'default'}
-                      onClick={() => { setSessionId(item.sid); onUseSession(item); }}
+                      onClick={() => { chooseWorkspace(item.sid); onUseSession(item); }}
                       style={{ flex: 1, justifyContent: 'center' }}
                     >
                       {item.primary === 'processed' ? 'Dùng dữ liệu này' : 'Tiếp tục'}
