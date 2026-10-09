@@ -377,8 +377,10 @@ lockedResearchRoute(router, 'post', '/research/studies/:studyId/import-from-arch
       admitTo: String(req.body?.admitTo || ''),
       dischargeFrom: String(req.body?.dischargeFrom || ''),
       dischargeTo: String(req.body?.dischargeTo || ''),
+      runId: String(req.body?.runId || ''),
+      expected_count: req.body?.expected_count,
     });
-    return res.json({ status: 'ok', message: `Đã tạo danh sách ${result.count} Mã BN từ kho gốc. Bấm Lấy thêm dữ liệu EMR để quét dữ liệu riêng cho nghiên cứu.`, ...result });
+    return res.json({ status: 'ok', message: `Đã lưu danh sách ${result.count} lượt điều trị từ kho gốc. Bấm Lấy dữ liệu từ kho để nạp dữ liệu sẵn có cho nghiên cứu.`, ...result });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }
