@@ -97,8 +97,13 @@ test('lưu dùng đúng lượt xem trước khi danh sách ban đầu thiếu m
 });
 
 test('không ghi cohort nếu số lượt khác kết quả xem trước', () => {
+  const selection = {
+    run_id: '20260101_000000',
+    selected_variables: [{ id: 'analysis_ready.patient_key', table: 'analysis_ready', name: 'patient_key', type: 'text' }],
+    conditions: [{ id: 'ca', variable_id: 'ca', table: 'lab_results', name: 'result_num', operator: 'not_empty' }],
+  };
   assert.throws(
-    () => importArchiveToStudy({ id: 'wrong-count' }, { variable_selection: labSelection, expected_count: 2 }),
+    () => importArchiveToStudy({ id: 'wrong-count' }, { variable_selection: selection, expected_count: 2 }),
     err => err?.code === 'COHORT_PREVIEW_MISMATCH' && /xem trước có 2 lượt/.test(err.message),
   );
   assert.strictEqual(fs.existsSync(cohortPath('wrong-count')), false, 'không để lại cohort sai số mẫu');
