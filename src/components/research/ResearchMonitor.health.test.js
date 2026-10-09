@@ -59,7 +59,7 @@ describe('ResearchOperationDashboard', () => {
     expect(host.textContent).not.toContain('GHÉP');
   });
 
-  it('nút làm mới có chữ; ghi chú chuẩn hóa bằng tiếng Việt; ngày giờ một định dạng', () => {
+  it('nút làm mới và thời điểm cập nhật rõ; không còn phụ lục kỹ thuật', () => {
     const withNotes = {
       ...screen,
       generated_at: '2026-10-05T14:14:00',
@@ -71,7 +71,7 @@ describe('ResearchOperationDashboard', () => {
     const t = host.textContent;
     expect(t).toContain('Làm mới số liệu');
     expect(t).not.toContain('↻');
-    expect(t).toContain('Xét nghiệm 5.296');
+    expect(t).not.toContain('Chi tiết kỹ thuật');
     expect(t).not.toMatch(/lab_results|is_within_encounter/);
     expect(t).toContain('số liệu lúc 14:14 05/10/2026');
     expect(t).toContain('kiểm tra lúc 14:16 05/10/2026');
