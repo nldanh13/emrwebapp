@@ -35,6 +35,9 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements-dev.txt
 
+      - name: Build production UI
+        run: npm run build
+
       - name: Run test suite
         run: npm run test:ci
         env:
