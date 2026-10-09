@@ -96,8 +96,8 @@ test('CBC giữ riêng tỷ lệ phần trăm và số lượng tuyệt đối c
 
 test('danh mục xét nghiệm giữ cả biến ít gặp sau mục thứ 240', () => {
   const rows = Array.from({ length: 241 }, (_, index) => ({
-    test_name_norm: \`test_\${index + 1}\`,
-    test_name_raw: \`Xét nghiệm \${index + 1}\`,
+    test_name_norm: 'test_' + (index + 1),
+    test_name_raw: 'Xét nghiệm ' + (index + 1),
     unit: 'mg/L',
     result_num: String(index + 1),
   }));
