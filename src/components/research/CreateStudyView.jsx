@@ -384,6 +384,11 @@ function StepVariables(props) {
                     {aggregationOptions.map(([key, l]) => <option key={key} value={key}>{l}</option>)}
                   </select>
                 )}
+                {v.virtual_kind === 'lab_test' && (
+                  <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.45 }}>
+                    Một lượt có thể có nhiều lần đo. “Liệt kê giá trị” giữ mọi lần trong một ô như 1.42; 1.42, ô đó là chữ chứ không còn là một số. Chọn trung bình/nhỏ nhất/lớn nhất/giá trị gần mốc để tạo một số; bảng Xét nghiệm vẫn giữ từng lần riêng.
+                  </div>
+                )}
                 {repeated && variableAnchor && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: FS.xs, color: C.text2, flexWrap: 'wrap' }}
                     title="Để trống = không giới hạn. Số âm là trước mốc, 0 là ngày mốc, số dương là sau mốc.">
