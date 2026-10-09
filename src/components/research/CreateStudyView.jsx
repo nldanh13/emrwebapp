@@ -282,6 +282,7 @@ function StepVariables(props) {
       hint={variableCatalogError ? `${variableCatalogError}. Bấm Tải lại ở trên sau vài giây.` : 'Cần quét danh sách và thu thập dữ liệu ở Kho dữ liệu gốc trước.'}
     /></div>;
   }
+  const labCatalogGroup = variableCatalog.groups?.find(group => group.key === 'lab_results');
   const chip = (active) => ({
     height: 30, padding: '0 10px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
     border: `1px solid ${active ? C.blue : C.border2}`, background: active ? C.blueBg : C.surface,
@@ -313,6 +314,11 @@ function StepVariables(props) {
           <span>{compactNumber(filteredCatalogVariables.length)} biến</span>
           <Btn onClick={addCoreVariables} style={{ height: 28, fontSize: FS.xs, marginLeft: 'auto' }}>+ Biến nền (tuổi, giới, ngày vào/ra, chẩn đoán)</Btn>
         </div>
+        {labCatalogGroup && (
+          <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.45 }}>
+            Danh mục tên xét nghiệm đã quét đủ {compactNumber(labCatalogGroup.rows || 0)} dòng; thống kê độ đầy của cột gốc dùng {compactNumber(labCatalogGroup.sampled_rows || 0)} dòng{labCatalogGroup.sampled ? ' đầu' : ''}.
+          </div>
+        )}
         {!filteredCatalogVariables.length
           ? <EmptyState title="Không có biến phù hợp" hint="Thử từ khóa khác, chọn nhóm Tất cả hoặc bỏ lọc mức đầy đủ." />
           : (
