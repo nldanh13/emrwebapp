@@ -63,7 +63,7 @@ function requestRevision(req) {
   );
 }
 
-function checkRevision(req, res, currentRevision, { resource = 'resource', requireForModernClient = false } = {}) {
+function checkRevision(req, res, currentRevision, { resource = 'resource', requireForModernClient = false, lastWriter = null, lastWriterText = '' } = {}) {
   const expected = requestRevision(req);
   const current = normalizeRevision(currentRevision) || EMPTY_REVISION;
   setRevisionHeaders(res, current);
@@ -90,7 +90,10 @@ function checkRevision(req, res, currentRevision, { resource = 'resource', requi
     resource,
     expected_version: expected,
     current_version: current,
-    message: 'Dữ liệu đã được thay đổi trên thiết bị khác. Hãy tải lại dữ liệu mới nhất trước khi lưu để tránh ghi đè.',
+    last_writer: lastWriter || undefined,
+    message: lastWriterText
+      ? `Dữ liệu này vừa được ${lastWriterText} trên máy khác. Hãy tải lại bản mới nhất rồi sửa tiếp, để không ghi đè thay đổi của họ.`
+      : 'Dữ liệu đã được thay đổi trên thiết bị khác. Hãy tải lại dữ liệu mới nhất trước khi lưu để tránh ghi đè.',
   });
   return false;
 }

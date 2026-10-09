@@ -71,7 +71,7 @@ const {
 const { buildHchanh_Dashboard, buildPatientCard }        = require('../services/hchanh/dashboard');
 const { upsertTicket, updateTicket, readTicketStore } = require('../services/hchanh/ticket_store');
 const { createSnapshot, readSnapshot }            = require('../services/hchanh/snapshot_store');
-const { applyManualReviewPatch, manualReviewSummary } = require('../services/hchanh/manual_review');
+const { applyManualReviewPatch, manualReviewConflict, manualReviewSummary } = require('../services/hchanh/manual_review');
 const {
   buildDashboard: buildRecordsSubmissionDashboard,
   addRecords: addRecordsSubmission,
@@ -2620,7 +2620,11 @@ router.post('/hchanh/vtyt-draft', handleRoute((req, res, ctx) => {
   const current = readJsonSafe(target, null);
   const incomingUpdated = Date.parse(String(rawDraft?.updated_at || '')) || 0;
   const currentUpdated = Date.parse(String(current?.updated_at || '')) || 0;
-  if (current && currentUpdated > incomingUpdated) {
+  // Giao diện mới đã qua kiểm tra phiên bản (If-Match, resource_concurrency.js): không so giờ máy
+  // khách nữa — đồng hồ hai máy lệch nhau sẽ làm bỏ qua im lặng một bản sửa mới hơn. So giờ chỉ
+  // còn cho giao diện cũ.
+  const versionChecked = String(req.get('x-client-concurrency') || '') === '1';
+  if (!versionChecked && current && currentUpdated > incomingUpdated) {
     return res.json({ status: 'ok', message: 'Bỏ qua bản nháp cũ hơn.', draft: current, ignored_stale: true });
   }
   const draft = sanitizeHchanhVtytDraft(rawDraft);
@@ -3828,9 +3832,18 @@ router.patch('/hchanh/manual-review/:ma_bn', handleRoute((req, res, ctx) => {
     return res.status(409).json({ status: 'error', message: 'Lượt điều trị đã thay đổi. Hãy tải lại danh sách trước khi lưu checklist.' });
   }
 
-  meta.manual_review = applyManualReviewPatch(meta.manual_review, req.body || {});
+  const conflict = manualReviewConflict(meta.manual_review, req.body || {});
+  if (conflict) {
+    return res.status(409).json({
+      status: 'conflict',
+      code: 'MANUAL_REVIEW_CHANGED',
+      item: conflict.key,
+      message: `Mục “${conflict.label}” vừa được ${conflict.by || 'người khác'} sửa${conflict.at ? ` lúc ${conflict.at}` : ''}. Đã tải lại checklist; xem rồi sửa tiếp nếu cần.`,
+    });
+  }
+  meta.manual_review = applyManualReviewPatch(meta.manual_review, req.body || {}, new Date().toISOString(), req.auth?.name || req.auth?.id || '');
   write_index(ctx, index);
-  appendActivity(ctx, { kind: 'hchanh.manual_review.update', ma_bn, encounter_key: meta.encounter_key || '' });
+  appendActivity(ctx, { kind: 'hchanh.manual_review.update', actor: req.auth, ma_bn, encounter_key: meta.encounter_key || '' });
   return res.json({ status: 'ok', review: manualReviewSummary(meta.manual_review, { fetched: meta.fetched }) });
 }));
 

@@ -55,6 +55,11 @@ Khi đã mở link, browser lưu workspace đó và các lần mở tiếp theo 
 - Các tác vụ nặng dùng cùng tài khoản EMR còn được khóa thêm theo `accountKey`, vì vậy cùng một tài khoản EMR không bị hai Selenium/HTTP worker sử dụng song song.
 - Kho nghiên cứu có khóa theo archive/study; hai thao tác ghi cùng một phạm vi nghiên cứu không được chạy chồng.
 - Hai màn hình có thể đọc/poll cùng trạng thái. Dữ liệu thực tế nằm trên server, không nằm riêng trên điện thoại.
+- Hai người cùng sửa một dữ liệu nhập tay (bảng, cài đặt, danh mục, bản nháp VTYT): người lưu sau đang cầm bản cũ
+  bị chặn, thấy thông báo "Dữ liệu này vừa được <tên> lưu lúc <giờ> trên máy khác", rồi app tải bản mới nhất.
+  Không có chuyện ghi đè im lặng. Tên lấy từ người đăng nhập (`server/services/resource_writers.js`).
+- Checklist kiểm tay ở Hành chánh so từng mục: mục đã được người khác sửa sau khi mình mở thì không bị ghi đè;
+  mỗi mục hiện "Kiểm bởi <tên> · <giờ>".
 
 ### Khác workspace
 

@@ -30,6 +30,7 @@ function safeResourceEvent(event = {}) {
     resource: String(event.resource || '').slice(0, 120),
     version: String(event.version || '').slice(0, 100),
     actor_id: String(event.actor_id || '').slice(0, 120),
+    actor_name: String(event.actor_name || '').slice(0, 80),
   };
 }
 

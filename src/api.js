@@ -283,7 +283,9 @@ async function request(url, options = {}, retryAuth = true) {
     duration_ms: Date.now() - started,
     message: msg,
   });
-  throw new Error(msg);
+  const error = new Error(msg);
+  error.status = res.status;
+  throw error;
 }
 
 // ── Đăng nhập ────────────────────────────────────────────────────────────────
