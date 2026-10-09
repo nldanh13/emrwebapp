@@ -250,7 +250,7 @@ function sanitizeVariableSelection(input) {
     return out;
   };
   const selectedRaw = Array.isArray(src.selected_variables)
-    ? src.selected_variables.slice(0, 500).map(sanitizeVar).filter(v => v.id && v.name)
+    ? src.selected_variables.slice(0, 2000).map(sanitizeVar).filter(v => v.id && v.name)
     : [];
   const selected = arrangeSelectedVariables(selectedRaw);
   const byId = new Map(selected.map(v => [v.id, v]));
