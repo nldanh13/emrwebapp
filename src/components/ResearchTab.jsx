@@ -21,7 +21,6 @@ import { buildGeneralOverviewModel, diffProgressSnapshots, summarizeStatusRows }
 import { ModeButton, SectionHead, SideItem, StatBadge, actionBtn, inp } from './research/researchUi.jsx';
 import { CollectionWorkspace } from './research/CollectionWorkspace.jsx';
 import { PatientLookupView } from './research/PatientLookupView.jsx';
-import { AuditSampleView } from './research/AuditSampleView.jsx';
 import { GeneralOverviewView } from './research/GeneralOverviewView.jsx';
 import { CreateStudyView } from './research/CreateStudyView.jsx';
 import { StudyStatsView } from './research/StudyStatsView.jsx';
@@ -45,14 +44,9 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const [deleteConfirm, setDeleteConfirm] = useState(null); // studyId cần xác nhận xóa
   const [archiveOptions, setArchiveOptions] = useState(() => ({ headless: true, fromDate: '2026-01-01', toDate: todayInputDate() }));
   const [studyOptions, setStudyOptions]     = useState({ headless: true });
-  const [archiveMode, setArchiveMode] = useState('overview'); // overview | update | patient | audit | create
+  const [archiveMode, setArchiveMode] = useState('update'); // update | overview | patient | create
   const [collectionFocus, setCollectionFocus] = useState(null); // error | waiting | unmatched | missing
   const [studyMode, setStudyMode]     = useState('stats');    // nghiên cứu riêng chỉ có Thống kê & xuất
-  const [showLog, setShowLog]         = useState(false);
-  const [logLines, setLogLines]       = useState([]);
-  const [caseTraces, setCaseTraces]   = useState([]);
-  const [caseTraceRedact, setCaseTraceRedact] = useState(true);
-  const [logLoading, setLogLoading]   = useState(false);
   const [coverage, setCoverage]       = useState(null);
   const [progressSnapshot, setProgressSnapshot] = useState(null);
   const [statusLoading, setStatusLoading] = useState(false);
@@ -619,24 +613,6 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     loadProgressSnapshot, runAutomaticWorkflow, selectedId, showErrorOnce, studyOptions,
   ]);
 
-  const loadLog = useCallback(async () => {
-    setLogLoading(true);
-    try {
-      const [r, trace] = await Promise.all([
-        isArchive ? api.getResearchArchiveLog({ runId: 'latest', lines: 800 }) : api.getResearchStudyLog(selectedId, { runId: 'latest', lines: 800 }),
-        isArchive
-          ? api.getResearchArchiveCaseTrace({ runId: 'latest', limit: 10, redact: caseTraceRedact })
-          : api.getResearchStudyCaseTrace(selectedId, { runId: 'latest', limit: 10, redact: caseTraceRedact }),
-      ]);
-      setLogLines(Array.isArray(r.lines) ? r.lines : []);
-      setCaseTraces(Array.isArray(trace.cases) ? trace.cases : []);
-    } catch (e) {
-      setLogLines([`Lỗi: ${e.message}`]);
-      setCaseTraces([]);
-    } finally { setLogLoading(false); }
-  }, [isArchive, selectedId, caseTraceRedact]);
-  const openLog = () => { setShowLog(true); loadLog(); };
-
   // ── Tạo nghiên cứu: danh mục biến, chọn biến, điều kiện ───────────────────
   const allCatalogVariables = useMemo(() => (
     variableCatalog?.groups || []
@@ -905,10 +881,9 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const studyCountLabel = (item) => `${compactNumber(item?.cohort_count || 0)} mẫu · ${item?.latest_run ? 'đã lấy dữ liệu' : 'chưa lấy dữ liệu'}`;
 
   const archiveModes = [
-    ['overview', 'Dữ liệu tổng quát', 'Số liệu kho và quy trình quét, thu thập, chuẩn hóa, lưu trữ'],
     ['update', 'Thu thập dữ liệu', 'Quét danh sách, lấy dữ liệu và theo dõi tiến độ'],
+    ['overview', 'Tổng quan kho', 'Số liệu tổng hợp và chất lượng dữ liệu'],
     ['patient', 'Tra cứu người bệnh', 'Xem toàn bộ các lần điều trị của một người bệnh'],
-    ['audit', 'Kiểm tra ngẫu nhiên', 'Chọn ngẫu nhiên một đợt, đối chiếu EMR, ghi Đúng/Sai và xem tỉ lệ đạt'],
   ];
   // Nghiên cứu riêng chỉ thêm/bớt biến trên dữ liệu lấy từ kho: không thu thập, không phiếu nhập tay
   // (tránh ảnh hưởng kho dùng chung).
@@ -921,8 +896,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       isArchive, archive, study: activeStudy, selectedId, uiBusy, automationRun, scopeRunning: scopeRunningItem,
       archiveOptions, setArchiveOptions, studyOptions, setStudyOptions,
       runSimpleListScan, runSimpleDataCollection, runRefreshProvisional,
-      operationSnapshot: monitorSnapshot, lastUpdateSummary, statusLoading, loadProgressSnapshot, loadSummary,
-      openLog, toast, initialFilter: collectionFocus,
+      loadProgressSnapshot, loadSummary, toast, initialFilter: collectionFocus,
     }} />
   );
 
@@ -944,7 +918,6 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       identifiedAccess, identifiedLocked, loadPatientHistory, patientHistory,
       patientHistoryError, patientHistoryLoading, patientHistoryMeta, patientQuery, setPatientQuery, studies,
     }} />;
-    if (archiveMode === 'audit') return <AuditSampleView />;
     if (archiveMode === 'create') return <CreateStudyView {...{
       variableCatalog, variableCatalogLoading, variableCatalogError,
       catalogGroupOptions, filteredCatalogVariables, allCatalogVariables, browseCatalogVariables,
@@ -987,46 +960,6 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
         </div>
       )}
 
-      {showLog && (
-        <div style={{ borderBottom: `1px solid ${C.border}`, background: '#0a0f14', display: 'flex', flexDirection: 'column', flexShrink: 0, height: 220 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 12px', borderBottom: `1px solid ${C.border2}`, background: C.surface }}>
-            <span style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>Log chạy</span>
-            <span style={{ fontSize: FS.xs, color: C.text3 }}>{caseTraces.length ? `${caseTraces.length} ca gần nhất · ` : ''}{logLines.length} dòng cuối</span>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: FS.xs, color: C.text3 }}>
-              <input type="checkbox" checked={caseTraceRedact} onChange={e => setCaseTraceRedact(e.target.checked)} />
-              Ẩn thông tin nhạy cảm
-            </label>
-            <Btn onClick={loadLog} disabled={logLoading} style={{ height: 24, padding: '0 8px', fontSize: FS.xs, marginLeft: 'auto' }}>{logLoading ? <Spinner size={8} /> : 'Tải lại'}</Btn>
-            <Btn onClick={() => setShowLog(false)} aria-label="Đóng log" style={{ height: 24, padding: '0 8px', fontSize: FS.xs }}>Đóng</Btn>
-          </div>
-          <div style={{ flex: 1, overflow: 'auto', padding: '6px 12px', fontFamily: FONT_MONO, fontSize: FS.xs }}>
-            {logLoading && <div style={{ color: '#8b949e' }}>Đang tải log...</div>}
-            {!logLoading && !logLines.length && !caseTraces.length && (
-              <div style={{ color: '#8b949e' }}>Chưa có log. Log xuất hiện sau khi chạy Quét danh sách hoặc Thu thập dữ liệu.</div>
-            )}
-            {!logLoading && !!caseTraces.length && <div style={{ color: '#58a6ff', fontWeight: 700, marginBottom: 6 }}>[CASE_TRACE] 10 ca gần nhất — tag ở đầu mỗi bước</div>}
-            {!logLoading && caseTraces.map((c, ci) => (
-              <details key={c.case_id || ci} open={ci === 0} style={{ border: '1px solid #263442', borderRadius: 8, padding: '6px 8px', background: '#0d141b', marginBottom: 6 }}>
-                <summary style={{ cursor: 'pointer', color: '#d1d7e0', fontWeight: 700 }}>
-                  [{c.status || '—'}] {c.index || '?'} / {c.total || '?'} · BN {c.ma_bn || '—'} · NC {c.research_code || '—'} · {c.date_from || '—'} → {c.date_to || '—'}
-                </summary>
-                <div style={{ marginTop: 6, display: 'grid', gap: 3 }}>
-                  {(c.events || []).map((ev, ei) => (
-                    <div key={ei} style={{ color: ev.tag?.startsWith('ERROR') ? '#f85149' : ev.tag === 'WARN' ? '#d29922' : ev.tag?.startsWith('OUTPUT') ? '#3fb950' : '#8b949e', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
-                      [{ev.tag || 'TAG'}] {ev.step || ''}{ev.screen ? ` | vào=${ev.screen}` : ''}{ev.sees ? ` | thấy=${ev.sees}` : ''}{ev.takes ? ` | lấy=${ev.takes}` : ''}{ev.writes ? ` | ghi=${ev.writes}` : ''}{ev.target ? ` | đích=${ev.target}` : ''}
-                    </div>
-                  ))}
-                </div>
-              </details>
-            ))}
-            {logLines.map((line, i) => {
-              const color = /ERROR|❌|lỗi/i.test(line) ? '#f85149' : /WARN|⚠/i.test(line) ? '#d29922' : /OK   |✅|Commit xong|Tab.*xong/i.test(line) ? '#3fb950' : /CLICK/.test(line) ? '#58a6ff' : /STEP /.test(line) ? '#bc8cff' : '#8b949e';
-              return <div key={i} style={{ color, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line}</div>;
-            })}
-          </div>
-        </div>
-      )}
-
       {/* Chuẩn hóa hiện ở khung riêng trong Kho dữ liệu gốc (NormalizeStatus), không lặp lại ở đây. */}
       <RunningBanner running={serverRunning.items.filter(item => item.lane !== 'normalize')} checkedAt={serverRunning.checkedAt} clockOffset={serverRunning.clockOffset}
         lastFinished={lastFinished?.lane === 'normalize' ? null : lastFinished}
@@ -1036,7 +969,6 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       {researchError && (
         <div role="alert" style={{ padding: '7px 12px', background: C.redBg, borderBottom: `1px solid ${C.redBorder}`, color: C.red, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: FS.sm }}>
           <b>Lỗi:</b><span style={{ flex: 1 }}>{researchError}</span>
-          <Btn onClick={openLog} style={{ height: 26, fontSize: FS.xs }}>Xem log</Btn>
           <Btn onClick={() => setResearchError('')} style={{ height: 26, fontSize: FS.xs }}>Đóng</Btn>
         </div>
       )}
