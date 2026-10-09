@@ -19,6 +19,9 @@ function safeArray(v) { return Array.isArray(v) ? v : []; }
 
 const getMaBn = getHchanhPatientKey;
 
+// Lấy hàng loạt: tải lại bảng không dày hơn mức này (mili giây).
+const BATCH_REFRESH_MS = 5000;
+
 function inputDateToDmy(value) {
   const m = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return '';
@@ -101,23 +104,44 @@ export function useHchanh({ toast, workDateRange, manualReviewFilterEnabled = tr
 
   // ── Load dashboard ─────────────────────────────────────────────────────────
 
+  // Dựng bảng ở máy chủ tốn kém (đọc lại hồ sơ, chạy QA cho mọi người bệnh), nên các lần gọi tải
+  // trùng lúc (sự kiện máy chủ + nút bấm + vòng lấy hàng loạt) gộp lại: đang tải thì chỉ hẹn thêm
+  // ĐÚNG MỘT lần tải sau khi lần này xong, không bắn song song nhiều yêu cầu.
+  const loadInFlightRef = useRef(null);
+  const loadAgainRef = useRef(false);
+  const selectedCardRef = useRef(selectedCard);
+  selectedCardRef.current = selectedCard;
+
   const load = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) setLoading(true);
-    try {
-      const data = await api.getHchanh_Dashboard();
-      setDashboard(data);
-      // Cập nhật selectedCard nếu đang chọn
-      if (selectedCard) {
-        const ma_bn = getMaBn(selectedCard);
-        const updated = safeArray(data?.patients).find(p => getMaBn(p) === ma_bn);
-        if (updated) setSelectedCard(updated);
-      }
-    } catch (e) {
-      if (!silent) toast?.(String(e.message || e), 'error');
-    } finally {
-      if (!silent) setLoading(false);
+    if (loadInFlightRef.current) {
+      loadAgainRef.current = true;
+      return loadInFlightRef.current;
     }
-  }, [selectedCard, toast]);
+    const run = async () => {
+      if (!silent) setLoading(true);
+      try {
+        do {
+          loadAgainRef.current = false;
+          const data = await api.getHchanh_Dashboard();
+          setDashboard(data);
+          // Cập nhật selectedCard nếu đang chọn
+          const current = selectedCardRef.current;
+          if (current) {
+            const ma_bn = getMaBn(current);
+            const updated = safeArray(data?.patients).find(p => getMaBn(p) === ma_bn);
+            if (updated) setSelectedCard(updated);
+          }
+        } while (loadAgainRef.current);
+      } catch (e) {
+        if (!silent) toast?.(String(e.message || e), 'error');
+      } finally {
+        loadInFlightRef.current = null;
+        if (!silent) setLoading(false);
+      }
+    };
+    loadInFlightRef.current = run();
+    return loadInFlightRef.current;
+  }, [toast]);
 
   // Hồ sơ vừa lấy xong / phiếu đổi (kể cả do tác vụ nền hay thiết bị khác): máy chủ báo qua kênh
   // sự kiện, tải lại im lặng — không xóa màn hình, không hiện vòng chờ (UX_RULES mục 9).
@@ -146,7 +170,7 @@ export function useHchanh({ toast, workDateRange, manualReviewFilterEnabled = tr
 
   // Quay lại tab: đồng bộ lại (danh sách có thể vừa quét ở Lấy dữ liệu), không xoá màn hình đang xem.
   useOnTabReturn(() => {
-    api.syncHchanh().catch(() => {}).then(() => load());
+    api.syncHchanh().catch(() => {}).then(() => load({ silent: true }));
   });
 
   // Khôi phục bản nháp VTYT đã lưu trong runtime của session.
@@ -756,6 +780,7 @@ export function useHchanh({ toast, workDateRange, manualReviewFilterEnabled = tr
 
     setBatchProgress({ running: true, done: 0, total: targets.length, errors: 0 });
     let done = 0, errors = 0;
+    let lastRefreshAt = Date.now();
     for (const card of targets) {
       const ma_bn = getMaBn(card);
       const scope = card.scope || card.scope_default || 'daily';
@@ -770,11 +795,15 @@ export function useHchanh({ toast, workDateRange, manualReviewFilterEnabled = tr
         setFetchingKey('');
       }
       setBatchProgress({ running: true, done, total: targets.length, errors });
-      // Cập nhật bảng ngay sau mỗi người bệnh — không đợi hết cả lượt mới thấy
-      // dòng vừa quét đổi trạng thái. dashboard.js chỉ đọc snapshot đã lưu
-      // (không gọi lại EMR) nên gọi lại mỗi vòng lặp không tốn kém.
-      await load();
+      // Bảng tự cập nhật khi máy chủ báo hồ sơ đổi (useScreenChanged). Ở đây chỉ tải lại im lặng,
+      // thưa (mỗi BATCH_REFRESH_MS) để vẫn thấy tiến triển khi mất kênh sự kiện: tải lại sau MỖI
+      // người bệnh bắt máy chủ dựng lại cả bảng N lần, càng đông người bệnh càng chậm.
+      if (Date.now() - lastRefreshAt >= BATCH_REFRESH_MS) {
+        lastRefreshAt = Date.now();
+        await load({ silent: true });
+      }
     }
+    await load({ silent: true });
     setBatchProgress({ running: false, done, total: targets.length, errors });
     toast?.(`Batch fetch xong: ${done}/${targets.length} OK, ${errors} lỗi.`, errors ? 'error' : 'ok');
   }, [patients, load, toast, workDateRange]);

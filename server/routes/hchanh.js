@@ -444,6 +444,28 @@ function records_check_patient_file(ctx, case_key, fileKey) {
 // Trước đây hai nơi gọi hàm này (đọc lẻ và reuseSharedHchanhDataForRecordsCheck)
 // mỗi nơi tự viết một bản kiểm tra riêng chỉ có chiều (1) — sửa một chỗ dễ quên
 // chỗ còn lại, nên gộp về đây dùng chung.
+// Bộ nhớ tạm cho MỘT lần dựng bảng Kiểm hồ sơ (buildRecordsCheckDashboard chạy đồng bộ từ đầu đến
+// cuối nên không lẫn với yêu cầu khác). Mỗi người bệnh đọc 2 loại file, mỗi loại có thể tra kho 2
+// lần; không có bộ nhớ này thì cùng một đợt bị đọc và giải mã lại tới 4 lần, và index Hành chánh
+// bị đọc lại cho từng người bệnh. Ngoài lúc dựng bảng thì null: mọi lần đọc khác luôn lấy bản mới.
+let recordsReadCache = null;
+
+function withRecordsReadCache(fn) {
+  if (recordsReadCache) return fn();
+  recordsReadCache = { scans: new Map(), hchanhIndex: undefined };
+  try {
+    return fn();
+  } finally {
+    recordsReadCache = null;
+  }
+}
+
+function read_hchanh_index_cached(ctx) {
+  if (!recordsReadCache) return read_index(ctx);
+  if (recordsReadCache.hchanhIndex === undefined) recordsReadCache.hchanhIndex = read_index(ctx);
+  return recordsReadCache.hchanhIndex;
+}
+
 function sharedHchanhDataMatchesEncounter(ctx, shared, ma_bn, dischargeTimeHint, admissionTimeHint) {
   const ownAdmissionAtMs = Date.parse(admissionTimeHint || '') || 0;
   const stampedAdmissionAtMs = Date.parse(shared?._meta?.admission_time || '') || 0;
@@ -458,7 +480,7 @@ function sharedHchanhDataMatchesEncounter(ctx, shared, ma_bn, dischargeTimeHint,
   const fetchedAtMs = Date.parse(shared?._meta?.fetched_at || '') || 0;
   if (dischargeAtMs && fetchedAtMs && fetchedAtMs < dischargeAtMs) return false;
   if (ownAdmissionAtMs) {
-    const hchanhIndex = read_index(ctx);
+    const hchanhIndex = read_hchanh_index_cached(ctx);
     const hchanhAdmissionAtMs = Date.parse(hchanhIndex?.patients?.[ma_bn]?.admission_time || '') || 0;
     if (hchanhAdmissionAtMs && hchanhAdmissionAtMs > ownAdmissionAtMs) return false;
   }
@@ -471,7 +493,7 @@ function records_stay_from_store(case_key, fileKey, dischargeTimeHint, admission
   const day = stayIsoDay(admissionTimeHint) || stayIsoDay(dischargeTimeHint);
   if (!ma_bn || !day) return null;
   try {
-    const stay = findStoredStay(ma_bn, day, [fileKey], { onlyGoc });
+    const stay = findStoredStay(ma_bn, day, [fileKey], { onlyGoc, scanCache: recordsReadCache?.scans || null });
     if (!stay?.output?.[fileKey]) return null;
     const data = stay.output[fileKey];
     return { ...data, _meta: { ...(data._meta || {}), stay_store_tier: stay.tiers?.[fileKey] || '', stay_store_source: stay.sourceKey } };
@@ -2435,6 +2457,10 @@ function enrichRecordsCheckCard(card, submittedAtIndex) {
 }
 
 function buildRecordsCheckDashboard(ctx) {
+  return withRecordsReadCache(() => buildRecordsCheckDashboardUncached(ctx));
+}
+
+function buildRecordsCheckDashboardUncached(ctx) {
   const index = read_records_check_index(ctx);
   ensureRecordsCheckedAliases(index);
   const recoveredFromPdf = recoverRecordsCheckedFromLatestPdf(ctx, index);
