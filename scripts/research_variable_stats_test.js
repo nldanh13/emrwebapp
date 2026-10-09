@@ -81,11 +81,12 @@ test('CBC giữ riêng tỷ lệ phần trăm và số lượng tuyệt đối c
   ];
   const rows = measurements.map(([test_name_norm, test_name_raw, unit, result_num], index) => ({
     encounter_id: `e${index + 1}`, patient_code: `P${index + 1}`,
-    test_name_norm, test_name_raw, unit, result_num,
+    test_name_norm, test_name_raw, unit, result_num, lab_group: 'Huyết học',
   }));
   const variables = buildVirtualVariablesForTable({ key: 'lab_results', label: 'Xét nghiệm' }, rows);
   assert.strictEqual(variables.length, 11, 'không gộp CBC phần trăm với số lượng tuyệt đối');
   assert.strictEqual(new Set(variables.map(v => v.id)).size, 11, 'mỗi phép đo có khóa biến riêng');
+  assert.ok(variables.every(v => v.lab_group === 'Huyết học'), 'giữ nhóm xét nghiệm gốc trên biến ảo');
   for (const [, raw, unit] of measurements) {
     assert.ok(variables.some(v => v.label === `${raw} (${unit})`), `có biến ${raw} (${unit})`);
   }
