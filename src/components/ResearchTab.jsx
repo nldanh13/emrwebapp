@@ -41,7 +41,6 @@ function variableSelectionFingerprint(spec) {
   if (Array.isArray(stableSpec.selected_variables)) {
     stableSpec.selected_variables = stableSpec.selected_variables.map(variable => {
       const stableVariable = { ...variable };
-      delete stableVariable.role;
       return stableVariable;
     });
   }
@@ -94,7 +93,6 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   const [variableConditions, setVariableConditions] = useState([]);
   const [variableAnchor, setVariableAnchor] = useState(null);       // { kind, drug } — mốc thời gian
   const [variableWindows, setVariableWindows] = useState({});       // { [variableId]: { from, to } } ngày so với mốc
-  const [variableRoles, setVariableRoles] = useState({});           // { [key]: 'primary_outcome' | ... } vai trò biến
   const [variablePeriod, setVariablePeriod] = useState({ from: '', to: '' }); // thời gian nghiên cứu (ngày nhập viện)
   const [variableOnePerPatient, setVariableOnePerPatient] = useState(false);  // mỗi người bệnh một lượt
   const [variableSampleSize, setVariableSampleSize] = useState({ design: '' }); // thông số tính cỡ mẫu
@@ -689,7 +687,6 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       label: v.display_label || v.name,
       survey_label: variableSurveyLabels[v.key] || v.display_label || v.name,
       type: v.type,
-      role: variableRoles[v.key] || '',
       virtual_kind: v.virtual_kind || '',
       source_filter: v.source_filter || null,
       // Bỏ mốc thì cách lấy theo mốc không còn nghĩa: quay về liệt kê giá trị.
@@ -714,7 +711,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
         source_filter: variable?.source_filter || cond.source_filter || null,
       };
     }),
-  }), [selectedVariables, variableAggregations, variableSurveyLabels, variableConditions, variableAnchor, variableWindows, variableRoles, variablePeriod, variableOnePerPatient, variableSampleSize, variableCatalog, archive?.latest_run?.id, allCatalogVariables]);
+  }), [selectedVariables, variableAggregations, variableSurveyLabels, variableConditions, variableAnchor, variableWindows, variablePeriod, variableOnePerPatient, variableSampleSize, variableCatalog, archive?.latest_run?.id, allCatalogVariables]);
 
   const currentVariableSpecFingerprint = variableSelectionFingerprint(buildVariableSpec());
   currentVariableSpecFingerprintRef.current = currentVariableSpecFingerprint;
@@ -758,7 +755,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   // cửa sổ ngày, tên cột và điều kiện chọn mẫu. Người dùng vẫn sửa được ở các bước.
   const applySuggestion = useCallback((s) => {
     const keys = [];
-    const aggregations = {}; const windows = {}; const labels = {}; const roles = {};
+    const aggregations = {}; const windows = {}; const labels = {};
     s.variables.forEach((v, i) => {
       if (!catalogById.has(v.id)) return;
       const key = keys.some(k => k.split('@@')[0] === v.id) ? `${v.id}@@s${i}` : v.id;
@@ -766,13 +763,11 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       if (v.aggregation) aggregations[key] = v.aggregation;
       if (v.window_from_days != null || v.window_to_days != null) windows[key] = { from: v.window_from_days ?? '', to: v.window_to_days ?? '' };
       if (v.survey_label) labels[key] = v.survey_label;
-      if (v.role) roles[key] = v.role;
     });
     setSelectedVariableIds(new Set(keys));
     setVariableAggregations(aggregations);
     setVariableWindows(windows);
     setVariableSurveyLabels(labels);
-    setVariableRoles(roles);
     setVariableSampleSize({ design: s.sample_size_design || '' });
     setVariablePeriod({ from: '', to: '' });
     setVariableOnePerPatient(false);
@@ -866,7 +861,6 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       setVariableSurveyLabels({});
       setVariableAnchor(null);
       setVariableWindows({});
-      setVariableRoles({});
       setVariablePeriod({ from: '', to: '' });
       setVariableOnePerPatient(false);
       setVariableSampleSize({ design: '' });
@@ -949,7 +943,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       variableAggregations, setVariableAggregations, variableSurveyLabels, setVariableSurveyLabels,
       variableConditions, setVariableConditions, addConditionForVariable,
       variableAnchor, setVariableAnchor, variableWindows, setVariableWindows,
-      variableRoles, setVariableRoles, variablePeriod, setVariablePeriod, variableOnePerPatient, setVariableOnePerPatient,
+      variablePeriod, setVariablePeriod, variableOnePerPatient, setVariableOnePerPatient,
       variableSampleSize, setVariableSampleSize,
       variableStudyDraft, setVariableStudyDraft,
       variablePreview: variablePreviewSelectionKey === currentVariableSpecFingerprint ? variablePreview : null,
