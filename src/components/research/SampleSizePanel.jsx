@@ -1,4 +1,4 @@
-// Tính cỡ mẫu tối thiểu và so với số lượt hiện có trong kho (sau chọn mẫu, có dữ liệu biến chính).
+// Tính cỡ mẫu tối thiểu và so sánh với số lượt đạt điều kiện trong mẫu hiện tại.
 import { C, FS } from '../../tokens.js';
 import { Btn } from '../shared.jsx';
 import { compactNumber } from './researchFormat.js';
@@ -10,50 +10,24 @@ const hint = { fontSize: FS.xs, color: C.text3, marginTop: 3, lineHeight: 1.45 }
 const fmt = (n, digits = 2) => Number(n).toLocaleString('vi-VN', { maximumFractionDigits: digits });
 
 // Số liệu hiện có để so với cỡ mẫu cần: tổng lượt, lượt có dữ liệu kết cục chính, các nhóm của biến độc lập.
-export function availableForSampleSize(summary, roleOf) {
-  const variables = summary?.variables || [];
-  const primary = variables.filter(v => roleOf(v) === 'primary_outcome');
-  const exposure = variables.find(v => roleOf(v) === 'exposure' && v.stats?.kind === 'category' && (v.stats.top || []).length >= 2);
-  const usable = primary.length ? Math.min(...primary.map(v => Number(v.filled || 0))) : Number(summary?.total || 0);
-  return {
-    total: Number(summary?.total || 0),
-    usable,
-    primary,
-    groups: exposure ? { label: exposure.survey_label, items: exposure.stats.top.slice(0, 2) } : null,
-  };
+export function availableForSampleSize(summary) {
+  const total = Number(summary?.total || 0);
+  return { total, usable: total };
 }
 
-export function SampleSizePanel({ sampleSize, setSampleSize, summary, roleOf }) {
+export function SampleSizePanel({ sampleSize, setSampleSize, summary }) {
   const params = { ...SAMPLE_SIZE_DEFAULTS, ...sampleSize };
   const design = SAMPLE_SIZE_DESIGNS.find(d => d.key === params.design) || null;
   const result = design ? computeSampleSize(params) : null;
-  const available = availableForSampleSize(summary, roleOf);
-  const primaryStats = available.primary[0]?.stats || null;
+  const available = availableForSampleSize(summary);
   const set = (patch) => setSampleSize(prev => ({ ...SAMPLE_SIZE_DEFAULTS, ...prev, ...patch }));
 
-  // Gợi ý thông số từ chính dữ liệu kho (SD hoặc tỉ lệ của biến kết cục chính).
-  const fromArchive = (field) => {
-    if (!primaryStats) return null;
-    if (['sd', 'sd_diff'].includes(field) && primaryStats.kind === 'number' && Number.isFinite(Number(primaryStats.sd))) {
-      return { value: Number(Number(primaryStats.sd).toFixed(3)), text: `SD của "${available.primary[0].survey_label}" trong kho` };
-    }
-    if (field === 'p' && primaryStats.kind === 'category' && primaryStats.top?.[0]) {
-      const top = primaryStats.top[0];
-      return { value: Number((Number(top.pct) / 100).toFixed(3)), text: `tỉ lệ "${top.value}" trong kho` };
-    }
-    return null;
-  };
-
   const enough = result?.n ? available.usable >= result.n : null;
-  const groupsShort = result?.groups && available.groups
-    ? available.groups.items.map((g, i) => ({ ...g, need: result.groups[i], ok: Number(g.count || 0) >= result.groups[i] }))
-    : null;
-
   return (
     <section style={{ ...card, display: 'grid', gap: 10 }}>
       <div>
         <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Cỡ mẫu</div>
-        <div style={hint}>Chọn thiết kế, nhập thông số từ y văn (hoặc lấy từ kho), app tính cỡ mẫu tối thiểu và so với số lượt hiện có.</div>
+        <div style={hint}>Chọn thiết kế, nhập thông số theo đề cương hoặc y văn; app tính cỡ mẫu tối thiểu và so với số lượt đạt điều kiện.</div>
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <label style={{ flex: '1 1 280px', fontSize: FS.xs, color: C.text2, fontWeight: 600 }}>
@@ -90,18 +64,12 @@ export function SampleSizePanel({ sampleSize, setSampleSize, summary, roleOf }) 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 10 }}>
           {design.fields.map(field => {
             const meta = SAMPLE_SIZE_FIELDS[field];
-            const suggestion = fromArchive(field);
             return (
               <label key={field} style={{ fontSize: FS.xs, color: C.text2, fontWeight: 600 }}>
                 {meta.label}
                 <input type="number" step={meta.step} min={meta.min} max={meta.max} value={params[field] ?? ''} aria-label={meta.label}
                   onChange={e => set({ [field]: e.target.value })} style={{ ...inp, display: 'block', width: '100%', height: 32, marginTop: 3 }} />
                 <span style={{ display: 'block', ...hint, fontWeight: 400 }}>{meta.hint}</span>
-                {suggestion && (
-                  <Btn onClick={() => set({ [field]: suggestion.value })} style={{ height: 24, fontSize: FS.xs, marginTop: 3 }}>
-                    Lấy từ kho: {fmt(suggestion.value, 3)} ({suggestion.text})
-                  </Btn>
-                )}
               </label>
             );
           })}
@@ -120,9 +88,9 @@ export function SampleSizePanel({ sampleSize, setSampleSize, summary, roleOf }) 
               </div>
             </div>
             <div>
-              <div style={{ fontSize: FS.xs, color: C.text3, fontWeight: 600 }}>Hiện có trong kho</div>
+              <div style={{ fontSize: FS.xs, color: C.text3, fontWeight: 600 }}>Số lượt trong mẫu</div>
               <div style={{ fontSize: FS.stat, fontWeight: 700, color: enough ? C.green : C.red, fontVariantNumeric: 'tabular-nums' }}>{compactNumber(available.usable)}</div>
-              <div style={hint}>{available.primary.length ? 'lượt đạt điều kiện và có dữ liệu kết cục chính' : 'lượt đạt điều kiện (chưa chọn biến kết cục chính)'}</div>
+              <div style={hint}>lượt đạt điều kiện chọn mẫu</div>
             </div>
             <div style={{ flex: '1 1 220px', fontSize: FS.sm, fontWeight: 700, color: enough ? C.green : C.red }}>
               {enough
@@ -130,16 +98,6 @@ export function SampleSizePanel({ sampleSize, setSampleSize, summary, roleOf }) 
                 : `✗ Thiếu ${compactNumber(result.n - available.usable)} lượt: mở rộng thời gian nghiên cứu, nới tiêu chuẩn, hoặc thu thập thêm từ EMR.`}
             </div>
           </div>
-          {groupsShort && (
-            <div style={{ fontSize: FS.xs, color: C.text2 }}>
-              Theo biến độc lập "{available.groups.label}":{' '}
-              {groupsShort.map((g, i) => (
-                <span key={g.value} style={{ color: g.ok ? C.green : C.red, fontWeight: 700 }}>
-                  {i ? ' · ' : ''}{g.value}: {compactNumber(g.count)}/{compactNumber(g.need)}
-                </span>
-              ))}
-            </div>
-          )}
           <div style={{ ...hint, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{result.formula}</div>
         </div>
       )}
