@@ -266,9 +266,10 @@ describe('ResearchTab (khói)', () => {
     await clickText('Tiếp tục');
     const text = container.textContent;
     expect(text).toContain('Đo lường từng biến');
-    // Danh sách "Còn thiếu gì?" nhắc chọn kết cục chính, tiêu chuẩn chọn vào và cỡ mẫu.
+    // Checklist kiểm tra mẫu và dữ liệu mà không bắt buộc xếp vai trò cho biến.
     expect(text).toContain('Còn thiếu gì?');
-    expect(text).toContain('Chưa có biến kết cục chính');
+    expect(text).not.toContain('Chưa có biến kết cục chính');
+    expect(container.querySelector('select[aria-label^="Vai trò của"]')).toBeNull();
     expect(text).toContain('Chưa có tiêu chuẩn chọn vào');
     expect(text).toContain('Chưa tính cỡ mẫu');
     expect(text).toContain('61,2 ± 12,4');
@@ -392,19 +393,20 @@ describe('ResearchTab (khói)', () => {
     ]);
     expect(spec.selected_variables[1]).toMatchObject({ window_from_days: -14, window_to_days: 0 });
     expect(spec.conditions).toEqual([expect.objectContaining({ variable_id: 'analysis_ready.age', operator: '>=', value: '50' })]);
-    expect(spec.selected_variables.map(v => v.role)).toEqual(['descriptive', 'primary_outcome', 'primary_outcome']);
+    expect(spec.selected_variables.every(v => !Object.hasOwn(v, 'role'))).toBe(true);
+    expect(container.querySelector('select[aria-label^="Vai trò của"]')).toBeNull();
     expect(spec.sample_size).toEqual({ design: 'paired_means' });
     expect(container.textContent).toContain('So sánh trước – sau (cặp)');
   });
 
-  it('Đề cương: vai trò biến, thời gian, tiêu chuẩn loại trừ, một lượt/người và cỡ mẫu được gửi kèm; báo đủ/thiếu cỡ mẫu', async () => {
+  it('Đề cương: thời gian, tiêu chuẩn loại trừ, một lượt/người và cỡ mẫu hoạt động không cần phân vai biến', async () => {
     await clickText('Tạo nghiên cứu mới');
     await setInput(container.querySelector('#study-name'), 'APR Zoledronic');
     await clickText('Tiếp tục');
     const item = [...container.querySelectorAll('[role="listitem"]')][0];
     await act(async () => { item.querySelector('input[type="checkbox"]').click(); });
     await flush();
-    await setSelect(container.querySelector('select[aria-label^="Vai trò của"]'), 'primary_outcome');
+    expect(container.querySelector('select[aria-label^="Vai trò của"]')).toBeNull();
     await clickText('Tiếp tục');
     await setInput(container.querySelector('input[aria-label="Từ ngày"]'), '2026-01-01');
     await setSelect(container.querySelector('select[aria-label="Thêm tiêu chuẩn loại trừ"]'), 'analysis_ready.age');
@@ -413,21 +415,21 @@ describe('ResearchTab (khói)', () => {
     await flush();
     await clickText('Tiếp tục');
     const spec = api.previewResearchArchiveVariables.mock.calls.at(-1)[0].variable_selection;
-    expect(spec.selected_variables[0].role).toBe('primary_outcome');
     expect(spec.period).toEqual({ from: '2026-01-01', to: '' });
     expect(spec.one_per_patient).toBe(true);
     expect(spec.conditions[0]).toMatchObject({ variable_id: 'analysis_ready.age', exclude: true, value: '90' });
-    // Kết cục chính "Tuổi" có SD 12,4 trong kho: tính cỡ mẫu ước lượng trung bình với sai số ±2.
+    // Tính cỡ mẫu từ thông số nhập thủ công, không lấy biến kết cục theo vai trò.
     await setSelect(container.querySelector('select[aria-label="Thiết kế tính cỡ mẫu"]'), 'mean_one');
-    await clickText('Lấy từ kho: 12,4');
+    await setInput(container.querySelector('input[aria-label="Độ lệch chuẩn σ"]'), '12.4');
     await setInput(container.querySelector('input[aria-label="Sai số tuyệt đối (cùng đơn vị)"]'), '2');
     let text = container.textContent;
     // n = 1,96² × 12,4² / 2² = 147,7 → 148, +10% hao hụt → 165; kho có 30 → thiếu 135.
-    expect(text).toContain('Thiếu 135 lượt');
-    expect(text).toContain('Chưa đủ cỡ mẫu: cần 165, hiện có 30');
+    expect(text).toContain('Tổng số lượt còn thiếu 135 lượt');
+    expect(text).toContain('Theo tổng số lượt, còn thiếu: cần 165, mẫu có 30');
+    expect(text).toContain('chưa kiểm tra đủ dữ liệu biến/nhóm');
     await setInput(container.querySelector('input[aria-label="Sai số tuyệt đối (cùng đơn vị)"]'), '10');
     text = container.textContent;
-    expect(text).toContain('Đủ cỡ mẫu');
+    expect(text).toContain('Tổng số lượt đạt ngưỡng');
   });
 
   it('tác vụ đang chạy: dải trạng thái luôn hiện, báo lên menu, nút bị khóa; xong thì báo đã kết thúc', async () => {
