@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { IconClipboardPlus, IconSearch } from '@tabler/icons-react';
 import { C, FS } from '../tokens.js';
 import { Btn } from './shared.jsx';
+import { clinicLoginPayload, hasClinicLogin } from './ClinicAccountPicker.jsx';
 import * as api from '../api.js';
 
 const DEFAULT_CARE_CONTENT = 'Hoàn tất hồ sơ nhập viện + Kính chuyển Khoa Ngoại Chấn Thương Chỉnh Hình và Thần Kinh + Hồ sơ';
@@ -46,8 +47,7 @@ export default function ClinicAdmissionCare({ creds, toast }) {
   const [result, setResult] = useState(null);
 
   const base = () => ({
-    username: creds.username,
-    password: creds.password,
+    ...clinicLoginPayload(creds),
     loginUrl: creds.loginUrl,
     headless: creds.headless,
     careDate,
@@ -110,7 +110,7 @@ export default function ClinicAdmissionCare({ creds, toast }) {
   };
 
   const setDienBien = (key, value) => setRows(prev => prev.map(r => (rowKey(r) === key ? { ...r, dien_bien: value } : r)));
-  const hasCreds = Boolean(creds.username && creds.password && creds.loginUrl);
+  const hasCreds = Boolean(hasClinicLogin(creds) && creds.loginUrl);
 
   return (
     <section style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -134,7 +134,7 @@ export default function ClinicAdmissionCare({ creds, toast }) {
           {`Nhập chăm sóc ${inputRows.length} người bệnh`}
         </Btn>
       </div>
-      {!hasCreds && <div style={{ fontSize: FS.sm, color: C.amber }}>Nhập tài khoản, mật khẩu và URL đăng nhập ở phía trên trước.</div>}
+      {!hasCreds && <div style={{ fontSize: FS.sm, color: C.amber }}>Chọn bác sĩ (hoặc nhập tài khoản, mật khẩu) và URL đăng nhập ở phía trên trước.</div>}
 
       {preview && (
         <div style={{ overflow: 'auto', border: `1px solid ${C.border2}`, borderRadius: 6 }}>

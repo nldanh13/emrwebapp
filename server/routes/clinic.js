@@ -20,6 +20,25 @@ const { appendActivity } = require('../services/activity_logger');
 const { writeJsonAtomic, readJsonSafe, safeUnlink, safeFilePart } = require('../utils/file');
 const { issueInputPrecheckToken, validateAndConsumeInputPrecheckToken } = require('../services/input_precheck_tokens');
 const { syncClinicState, attachHistory } = require('../services/clinic_patient_sync');
+const { readNurseEmrAccounts, findDoctorAccount } = require('../utils/nurse_emr_accounts');
+
+// Chọn bác sĩ đã khai ở Thiết lập tài khoản → Tài khoản EMR thay cho gõ tài khoản/mật khẩu:
+// giao diện gửi account_name, máy chủ điền tài khoản và mật khẩu (mật khẩu không về trình duyệt).
+function withDoctorAccount(body = {}) {
+  const accountName = String(body.account_name || body.accountName || '').trim();
+  if (!accountName) return body;
+  const acc = findDoctorAccount(accountName);
+  if (!acc) throw new Error(`Bác sĩ "${accountName}" chưa có đủ tài khoản và mật khẩu EMR. Khai ở Thiết lập tài khoản → Tài khoản EMR → Bác sĩ phòng khám.`);
+  return { ...body, username: acc.username, password: acc.password };
+}
+
+// Danh sách bác sĩ để chọn khi đăng nhập phòng khám: chỉ tên và tên đăng nhập, không có mật khẩu.
+router.get('/clinic/doctor-accounts', (req, res) => {
+  const doctors = readNurseEmrAccounts()
+    .filter(r => r.kind === 'doctor')
+    .map(r => ({ name: r.name, emr_username: r.emr_username, ready: Boolean(r.emr_username && r.emr_password) }));
+  return res.json({ status: 'ok', doctors });
+});
 
 function sanitizeClinicSchedule(raw = {}) {
   const obj = raw && typeof raw === 'object' ? raw : {};
@@ -42,7 +61,8 @@ function sanitizeClinicSchedule(raw = {}) {
 
 const CLINIC_PREVIEW_MODES = new Set(['today', 'missed', 'date_range']);
 
-function sanitizeClinicRequest(body = {}) {
+function sanitizeClinicRequest(rawBody = {}) {
+  const body = withDoctorAccount(rawBody);
   const rawMode = String(body.mode || 'missed').trim();
   const mode = CLINIC_PREVIEW_MODES.has(rawMode) ? rawMode : 'missed';
   const username = String(body.username || '').trim();
@@ -177,7 +197,8 @@ function monitorPaths(ctx) {
   };
 }
 
-function sanitizeMonitorRequest(body = {}) {
+function sanitizeMonitorRequest(rawBody = {}) {
+  const body = withDoctorAccount(rawBody);
   const username = String(body.username || '').trim().slice(0, 120);
   const password = String(body.password || '');
   const loginUrl = String(body.loginUrl || '').trim().slice(0, 500);
@@ -453,7 +474,8 @@ function clinicCarePrecheckTargets(payload = {}, rows = []) {
   };
 }
 
-function sanitizeClinicCareRequest(body = {}, { requireRows = false } = {}) {
+function sanitizeClinicCareRequest(rawBody = {}, { requireRows = false } = {}) {
+  const body = withDoctorAccount(rawBody);
   const username         = String(body.username || '').trim();
   const password         = String(body.password || '');
   const loginUrl         = String(body.loginUrl || '').trim();
@@ -723,3 +745,4 @@ router.post('/clinic/input-care', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.withDoctorAccount = withDoctorAccount;

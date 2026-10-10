@@ -4,8 +4,9 @@
 //      GET /api/emr-accounts/overview, không có mật khẩu).
 //   2. Tài khoản chung (chỉ xem; sửa trong secrets/secrets.json, xem docs/SECRETS.md).
 //   3. Tài khoản theo điều dưỡng (nhập liệu theo lịch) — trước đây ở Lịch điều dưỡng.
-//   4. Tài khoản đọc song song (Lấy chi tiết).
-//   5. Máy góp sức: không có tài khoản nào để khai, chỉ chỉ chỗ xem.
+//   4. Bác sĩ phòng khám (đăng nhập Phòng khám, Nghỉ ốm).
+//   5. Tài khoản đọc song song (Lấy chi tiết).
+//   6. Máy góp sức: không có tài khoản nào để khai, chỉ chỉ chỗ xem.
 
 import { useCallback, useEffect, useState } from 'react';
 import { C, FS } from '../../tokens.js';
@@ -14,12 +15,14 @@ import * as api from '../../api.js';
 import { useOnTabReturn } from '../../hooks/useTabActivity.js';
 import { SkeletonLines, SkeletonTable } from '../Skeleton.jsx';
 import NurseEmrAccountsPanel from './NurseEmrAccountsPanel.jsx';
+import DoctorAccountsPanel from './DoctorAccountsPanel.jsx';
 import FetchAccountsPanel from '../FetchAccountsPanel.jsx';
 
 const USE_TONE = {
   shared: [C.blue, C.blueBg],
   hchanh: [C.blue, C.blueBg],
   nurse: [C.green, C.greenBg],
+  doctor: [C.green, C.greenBg],
   read: [C.amber, C.amberBg],
 };
 
@@ -153,6 +156,7 @@ export default function EmrAccountsSection({ toast }) {
       <EmrAccountsOverviewTable overview={overview} />
       <SharedAccountCard overview={overview} />
       <NurseEmrAccountsPanel onSaved={load} />
+      <DoctorAccountsPanel toast={toast} onSaved={load} />
       <FetchAccountsPanel toast={toast} onSaved={load} />
       <HelperMachinesNote />
     </div>

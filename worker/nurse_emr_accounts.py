@@ -64,6 +64,9 @@ def load_nurse_emr_accounts() -> Dict[str, Dict[str, str]]:
     for row in raw:
         if not isinstance(row, dict):
             continue
+        # Tài khoản bác sĩ phòng khám (kind="doctor") không dùng khi nhập liệu theo lịch điều dưỡng.
+        if row.get('kind') == 'doctor':
+            continue
         name = str(row.get('name') or '').strip()
         username = str(row.get('emr_username') or '').strip()
         password = str(row.get('emr_password') or '')

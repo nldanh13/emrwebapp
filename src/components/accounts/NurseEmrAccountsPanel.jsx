@@ -24,7 +24,9 @@ function hhmm(date) {
 }
 
 /** Danh sách hiển thị: mọi tên trong lịch, cộng người đã có tài khoản mà không còn trong lịch. */
-export function buildNurseAccountRows(roster = [], accounts = []) {
+export function buildNurseAccountRows(roster = [], allAccounts = []) {
+  // Tài khoản bác sĩ phòng khám nằm chung file nhưng hiện ở bảng riêng (DoctorAccountsPanel).
+  const accounts = (allAccounts || []).filter(a => a.kind !== 'doctor');
   const byName = new Map((accounts || []).map(a => [a.name, a]));
   const names = [...(roster || [])];
   for (const a of accounts || []) {

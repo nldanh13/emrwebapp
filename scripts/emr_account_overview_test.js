@@ -88,7 +88,7 @@ const test = async (name, fn) => { try { await fn(); console.log(`  ok - ${name}
 
   const app = express();
   app.use('/api', authz.authenticateRequest, express.json());
-  app.use('/api', authz.authorizeRequest, require('../server/routes/nurse_emr_accounts'), require('../server/routes/emr_accounts'));
+  app.use('/api', authz.authorizeRequest, require('../server/routes/nurse_emr_accounts'), require('../server/routes/emr_accounts'), require('../server/routes/clinic'));
   const server = app.listen(0, '127.0.0.1');
   await new Promise(r => server.once('listening', r));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -122,6 +122,54 @@ const test = async (name, fn) => { try { await fn(); console.log(`  ok - ${name}
     assert.ok(del.json.accounts.some(a => a.name === 'Trần Văn Bình'));
     const viewer = await call('PUT', `/api/nurse-emr-accounts/account/x`, { token: VIEWER, body: { emr_username: 'y' } });
     assert.strictEqual(viewer.status, 403);
+  });
+
+  await test('tên đăng nhập bác sĩ tự tạo: chữ đầu họ + tên đệm + tên, không dấu', () => {
+    const want = {
+      'Hồ Điền': 'hdien', 'Nguyễn Lê Hoàn': 'nlhoan', 'Phan Văn Tuấn': 'pvtuan', 'Hoàng Minh Tú': 'hmtu',
+      'Nguyễn Tư Thái Bảo': 'nttbao', 'Trần Nguyễn Anh Duy': 'tnaduy', 'Trần Quang Sơn': 'tqson',
+      'Trần Quốc Toản': 'tqtoan', 'Nguyễn Chí Nguyện': 'ncnguyen', 'Phạm Việt Tân': 'pvtan',
+    };
+    for (const [name, user] of Object.entries(want)) assert.strictEqual(nurseAccounts.emrUsernameFromName(name), user, name);
+  });
+
+  await test('thêm nhiều bác sĩ một lần: cùng mật khẩu, trùng tên đăng nhập thì thêm số, giữ điều dưỡng', () => {
+    nurseAccounts.addDoctorAccounts(['Hoàng Minh Tú', 'Hà Minh Tú', 'Hồ Điền'], 'mk-bs');
+    const rows = nurseAccounts.readNurseEmrAccounts();
+    const doctors = rows.filter(r => r.kind === 'doctor');
+    assert.deepStrictEqual(doctors.map(r => r.emr_username), ['hmtu', 'hmtu2', 'hdien']);
+    assert.ok(doctors.every(r => r.emr_password === 'mk-bs'));
+    assert.ok(rows.some(r => r.name === 'Trần Văn Bình' && !r.kind));
+    // Thêm lại: giữ tên đăng nhập đã sửa, chỉ đổi mật khẩu.
+    nurseAccounts.updateNurseEmrAccount('Hồ Điền', { emr_username: 'dien.ho' });
+    nurseAccounts.addDoctorAccounts(['Hồ Điền'], 'mk-moi');
+    const dien = nurseAccounts.readNurseEmrAccounts().find(r => r.name === 'Hồ Điền');
+    assert.strictEqual(dien.emr_username, 'dien.ho');
+    assert.strictEqual(dien.emr_password, 'mk-moi');
+    assert.strictEqual(dien.kind, 'doctor');
+    assert.deepStrictEqual(nurseAccounts.findDoctorAccount('Hồ Điền'), { username: 'dien.ho', password: 'mk-moi' });
+    assert.strictEqual(nurseAccounts.findDoctorAccount('Trần Văn Bình'), null, 'điều dưỡng không phải tài khoản phòng khám');
+  });
+
+  await test('phòng khám chọn bác sĩ: máy chủ tự điền tài khoản, báo rõ khi chưa khai', () => {
+    const { withDoctorAccount } = require('../server/routes/clinic');
+    const body = withDoctorAccount({ account_name: 'Hồ Điền', username: '', password: '', loginUrl: 'http://x' });
+    assert.strictEqual(body.username, 'dien.ho');
+    assert.strictEqual(body.password, 'mk-moi');
+    assert.throws(() => withDoctorAccount({ account_name: 'Không Có' }), /chưa có đủ tài khoản/);
+    assert.deepStrictEqual(withDoctorAccount({ username: 'tay', password: 'p' }), { username: 'tay', password: 'p' });
+  });
+
+  await test('POST /api/nurse-emr-accounts/doctors và GET /api/clinic/doctor-accounts (không có mật khẩu)', async () => {
+    const add = await call('POST', '/api/nurse-emr-accounts/doctors', { body: { names: ['Phạm Việt Tân'], password: 'mk-tan' } });
+    assert.strictEqual(add.status, 200);
+    assert.ok(add.json.accounts.some(a => a.name === 'Phạm Việt Tân' && a.emr_username === 'pvtan' && a.kind === 'doctor'));
+    const list = await call('GET', '/api/clinic/doctor-accounts', { token: VIEWER });
+    assert.strictEqual(list.status, 200);
+    assert.ok(list.json.doctors.some(d => d.name === 'Phạm Việt Tân' && d.ready));
+    assert.ok(!JSON.stringify(list.json).includes('mk-'));
+    const viewerAdd = await call('POST', '/api/nurse-emr-accounts/doctors', { token: VIEWER, body: { names: ['X'] } });
+    assert.strictEqual(viewerAdd.status, 403);
   });
 
   server.close();

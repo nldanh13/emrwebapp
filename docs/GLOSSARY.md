@@ -56,7 +56,7 @@ Nhóm **Nghiên cứu / Cài đặt**
 | **Danh mục VTYT** | Từ điển vật tư y tế — mã thay thế, bật/tắt vật tư được phép tự nhập |
 | **Danh mục thuốc** | Tên chuẩn hoá thuốc/dịch truyền, alias, thể tích/tốc độ mặc định — worker dùng để tự suy luận khi EMR chỉ ghi tên thuốc |
 | **Kiểm tra cấu trúc EMR** | Đăng nhập EMR (chỉ đọc), so sánh trang/selector đang dùng với danh mục đã biết để phát hiện **EMR đổi giao diện** (đúng loại lỗi vừa sửa ở phiếu truyền dịch) |
-| **Thiết lập tài khoản** | Một chỗ cho mọi tài khoản. Ba mục: **Người dùng Data Hub** (đăng nhập app, vai trò, mã truy cập; chỉ admin), **Tài khoản EMR** (tổng hợp và chỗ khai trùng, tài khoản chung, tài khoản theo điều dưỡng, tài khoản đọc song song; chỉ admin), **Thiết bị tin cậy** (mọi người) |
+| **Thiết lập tài khoản** | Một chỗ cho mọi tài khoản. Ba mục: **Người dùng Data Hub** (đăng nhập app, vai trò, mã truy cập; chỉ admin), **Tài khoản EMR** (tổng hợp và chỗ khai trùng, tài khoản chung, tài khoản theo điều dưỡng, bác sĩ phòng khám, tài khoản đọc song song; chỉ admin), **Thiết bị tin cậy** (mọi người) |
 
 ## 4. Thuật ngữ nghiệp vụ/lâm sàng hay gặp
 

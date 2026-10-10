@@ -997,6 +997,9 @@ export const saveNurseEmrAccounts = (body)  => post('/api/nurse-emr-accounts', b
 export const updateNurseEmrAccount = (name, body) => put(`/api/nurse-emr-accounts/account/${encodeURIComponent(name)}`, body);
 export const removeNurseEmrAccount = (name)  => del(`/api/nurse-emr-accounts/account/${encodeURIComponent(name)}`);
 export const getEmrAccountOverview = ()      => get('/api/emr-accounts/overview');
+// Bác sĩ phòng khám: thêm nhiều người một lần (tên đăng nhập tự tạo); danh sách để chọn khi đăng nhập.
+export const addDoctorAccounts    = (body)  => post('/api/nurse-emr-accounts/doctors', body);
+export const getClinicDoctorAccounts = ()   => get('/api/clinic/doctor-accounts');
 export const saveNurseSignature   = (name, imageDataUrl) => post('/api/nurse-emr-accounts/signature', { name, imageDataUrl });
 export const removeNurseSignature = (name)   => del(`/api/nurse-emr-accounts/signature/${encodeURIComponent(name)}`);
 

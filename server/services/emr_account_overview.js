@@ -23,6 +23,7 @@ const USE_LABELS = {
   shared: 'Tài khoản chung',
   hchanh: 'Tài khoản Hành chánh',
   nurse: 'Nhập liệu theo lịch',
+  doctor: 'Bác sĩ phòng khám',
   read: 'Đọc song song',
 };
 
@@ -55,7 +56,7 @@ function buildEmrAccountOverview({
   add({ use: 'shared', owner: '', username: sharedInfo.username, has_password: sharedInfo.has_password });
   add({ use: 'hchanh', owner: '', username: hchanhInfo.username, has_password: hchanhInfo.has_password });
   for (const row of nurseAccounts) {
-    add({ use: 'nurse', owner: row.name, username: row.emr_username, has_password: Boolean(row.emr_password) });
+    add({ use: row.kind === 'doctor' ? 'doctor' : 'nurse', owner: row.name, username: row.emr_username, has_password: Boolean(row.emr_password) });
   }
   for (const acc of readAccounts) {
     add({ use: 'read', owner: acc.name, username: acc.emr_username, has_password: Boolean(acc.has_password), enabled: acc.enabled !== false });
@@ -79,7 +80,7 @@ function buildEmrAccountOverview({
   });
   accounts.sort((a, b) => Number(b.duplicate) - Number(a.duplicate) || a.username.localeCompare(b.username, 'vi'));
 
-  const withAccount = new Set(nurseAccounts.filter(r => r.emr_username && r.emr_password).map(r => r.name));
+  const withAccount = new Set(nurseAccounts.filter(r => r.kind !== 'doctor' && r.emr_username && r.emr_password).map(r => r.name));
   const nursesMissing = (Array.isArray(roster) ? roster : []).filter(name => !withAccount.has(name));
 
   return {

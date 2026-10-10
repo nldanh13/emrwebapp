@@ -35,7 +35,69 @@ function normalizeAccountRow(row) {
   // tùy chọn, không bắt buộc phải có emr_username/emr_password đi kèm.
   const signatureFile = String(row.signature_file || '').trim();
   if (signatureFile) out.signature_file = signatureFile;
+  // kind 'doctor': tài khoản EMR bác sĩ, dùng để đăng nhập ở Phòng khám / Nghỉ ốm (không dùng khi
+  // nhập liệu theo Lịch điều dưỡng). Dòng không có kind là điều dưỡng như trước.
+  if (row.kind === 'doctor') out.kind = 'doctor';
   return out;
+}
+
+function stripVietnamese(text) {
+  return String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
+}
+
+// Tên đăng nhập EMR theo quy ước của viện: chữ cái đầu của họ + tên đệm, cộng nguyên tên, không dấu,
+// chữ thường. Vd. "Hoàng Minh Tú" → "hmtu", "Hồ Điền" → "hdien".
+function emrUsernameFromName(name) {
+  const words = stripVietnamese(name).toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+  if (!words.length) return '';
+  return words.slice(0, -1).map(w => w[0]).join('') + words[words.length - 1];
+}
+
+/**
+ * Thêm nhiều bác sĩ một lần: tự tạo tên đăng nhập (emrUsernameFromName), cùng một mật khẩu.
+ * Người đã có thì giữ tên đăng nhập đang có, chỉ đổi mật khẩu nếu có nhập. Tên đăng nhập trùng
+ * người khác thì thêm số (hmtu2) để không hai người chung một tài khoản.
+ */
+function addDoctorAccounts(names, password = '') {
+  const list = [...new Set((Array.isArray(names) ? names : []).map(n => String(n || '').trim()).filter(Boolean))];
+  if (!list.length) throw new Error('Chưa có tên bác sĩ nào.');
+  if (list.length > 100) throw new Error('Tối đa 100 bác sĩ mỗi lần.');
+  const rows = readNurseEmrAccounts();
+  const taken = new Set(rows.map(r => r.emr_username.toLowerCase()).filter(Boolean));
+  const next = [...rows];
+  for (const name of list) {
+    const idx = next.findIndex(r => r.name === name);
+    if (idx >= 0) {
+      const cur = next[idx];
+      let username = cur.emr_username;
+      if (!username) {
+        username = uniqueUsername(emrUsernameFromName(name), taken);
+        taken.add(username);
+      }
+      next[idx] = { ...cur, kind: 'doctor', emr_username: username, ...(password ? { emr_password: String(password) } : {}) };
+    } else {
+      const username = uniqueUsername(emrUsernameFromName(name), taken);
+      if (!username) throw new Error(`Không tạo được tên đăng nhập cho "${name}".`);
+      taken.add(username);
+      next.push({ name, kind: 'doctor', emr_username: username, emr_password: String(password || '') });
+    }
+  }
+  return writeNurseEmrAccounts(next);
+}
+
+function uniqueUsername(base, taken) {
+  if (!base || !taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(`${base}${n}`)) n += 1;
+  return `${base}${n}`;
+}
+
+/** Tài khoản bác sĩ để đăng nhập phòng khám theo tên (null nếu chưa khai đủ). */
+function findDoctorAccount(name) {
+  const nameTrim = String(name || '').trim();
+  const row = readNurseEmrAccounts().find(r => r.kind === 'doctor' && r.name === nameTrim);
+  if (!row || !row.emr_username || !row.emr_password) return null;
+  return { username: row.emr_username, password: row.emr_password };
 }
 
 function readNurseEmrAccounts() {
@@ -59,7 +121,7 @@ function writeNurseEmrAccounts(list) {
 // Sửa tài khoản EMR của MỘT người, giữ nguyên chữ ký và các dòng khác. Hai màn hình cùng sửa
 // file này (Thiết lập tài khoản: tài khoản EMR; Lịch điều dưỡng: chữ ký), nên không gửi cả danh
 // sách: bản cũ đang giữ ở màn hình kia sẽ ghi đè mất phần vừa sửa.
-function updateNurseEmrAccount(name, { emr_username, emr_password } = {}) {
+function updateNurseEmrAccount(name, { emr_username, emr_password, kind } = {}) {
   const nameTrim = String(name || '').trim();
   if (!nameTrim) throw new Error('Thiếu tên điều dưỡng.');
   const rows = readNurseEmrAccounts();
@@ -69,7 +131,7 @@ function updateNurseEmrAccount(name, { emr_username, emr_password } = {}) {
   const exists = rows.some(r => r.name === nameTrim);
   const next = exists
     ? rows.map(r => (r.name === nameTrim ? { ...r, ...patch } : r))
-    : [...rows, { name: nameTrim, emr_username: '', emr_password: '', ...patch }];
+    : [...rows, { name: nameTrim, emr_username: '', emr_password: '', ...(kind === 'doctor' ? { kind } : {}), ...patch }];
   return writeNurseEmrAccounts(next);
 }
 
@@ -87,4 +149,7 @@ module.exports = {
   writeNurseEmrAccounts,
   updateNurseEmrAccount,
   removeNurseEmrAccount,
+  emrUsernameFromName,
+  addDoctorAccounts,
+  findDoctorAccount,
 };

@@ -9,7 +9,7 @@
 'use strict';
 
 const router = require('express').Router();
-const { readNurseEmrAccounts, writeNurseEmrAccounts, updateNurseEmrAccount, removeNurseEmrAccount } = require('../utils/nurse_emr_accounts');
+const { readNurseEmrAccounts, writeNurseEmrAccounts, updateNurseEmrAccount, removeNurseEmrAccount, addDoctorAccounts } = require('../utils/nurse_emr_accounts');
 const { saveSignatureImage, removeSignatureImage, withSignatureDataUrls } = require('../utils/nurse_signatures');
 const { appendActivity } = require('../services/activity_logger');
 const { getRuntimePaths } = require('../services/session');
@@ -39,8 +39,20 @@ router.put('/nurse-emr-accounts/account/:name', (req, res) => {
   if (!name) return res.status(400).json({ status: 'error', message: 'Thiếu tên điều dưỡng.' });
   try {
     const body = req.body || {};
-    const accounts = updateNurseEmrAccount(name, { emr_username: body.emr_username, emr_password: body.emr_password });
+    const accounts = updateNurseEmrAccount(name, { emr_username: body.emr_username, emr_password: body.emr_password, kind: body.kind });
     appendActivity(getRuntimePaths(req), { kind: 'nurse_emr_accounts.update', actor: req.auth, count: accounts.length });
+    return res.json({ status: 'ok', accounts: withSignatureDataUrls(accounts) });
+  } catch (e) {
+    return res.status(400).json({ status: 'error', message: String(e.message || e) });
+  }
+});
+
+// Thêm nhiều bác sĩ phòng khám một lần: { names: [...], password } — tên đăng nhập tự tạo (hmtu).
+router.post('/nurse-emr-accounts/doctors', (req, res) => {
+  try {
+    const body = req.body || {};
+    const accounts = addDoctorAccounts(body.names, body.password);
+    appendActivity(getRuntimePaths(req), { kind: 'nurse_emr_accounts.doctors_add', actor: req.auth, count: Array.isArray(body.names) ? body.names.length : 0 });
     return res.json({ status: 'ok', accounts: withSignatureDataUrls(accounts) });
   } catch (e) {
     return res.status(400).json({ status: 'error', message: String(e.message || e) });

@@ -139,3 +139,16 @@ def test_get_nurse_name_for_username_reverse_lookup(monkeypatch, tmp_path):
     assert nurse_emr_accounts.get_nurse_name_for_username(' DIEU.emr ') == 'Lê Ngọc Diệu'
     assert nurse_emr_accounts.get_nurse_name_for_username('khac.emr') == ''
     assert nurse_emr_accounts.get_nurse_name_for_username('') == ''
+
+
+def test_doctor_accounts_are_not_used_for_nurse_entry(monkeypatch, tmp_path):
+    """Tài khoản bác sĩ phòng khám (kind=doctor) nằm chung file nhưng không dùng khi nhập liệu theo lịch."""
+    path = _patch_accounts_path(monkeypatch, tmp_path)
+    _write_accounts(path, [
+        {'name': 'Hoàng Minh Tú', 'emr_username': 'hmtu', 'emr_password': 'x', 'kind': 'doctor'},
+        {'name': 'Lê Ngọc Diệu', 'emr_username': 'dieu.emr', 'emr_password': 'secret1'},
+    ])
+
+    assert nurse_emr_accounts.get_emr_account_for_nurse('Hoàng Minh Tú') is None
+    assert nurse_emr_accounts.get_nurse_name_for_username('hmtu') == ''
+    assert nurse_emr_accounts.get_emr_account_for_nurse('Lê Ngọc Diệu') == {'username': 'dieu.emr', 'password': 'secret1'}
