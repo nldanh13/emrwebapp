@@ -6,6 +6,7 @@ import { getPatientDischargeDates } from '../utils/dischargePrint.js';
 import { sanitizeWorkDateRange, dmyToInputDate, workDateRangeToDmy, workDateRangeLabel } from '../utils/workDateRange.js';
 import { getSessionId } from '../hooks/useSession.js';
 import BhytPortalPanel from './BhytPortalPanel.jsx';
+import BhytPortalLinkPanel from './BhytPortalLinkPanel.jsx';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
 import { SkeletonTable } from './Skeleton.jsx';
 import { loadClinicConfig, saveClinicConfig } from '../utils/clinicLogin.js';
@@ -638,6 +639,16 @@ export default function SickLeaveTab({ toast, workDateRange }) {
     });
   }, [persist]);
 
+  // Cập nhật một hồ sơ (kết quả nhập Cổng BHYT, số liệu bổ sung) rồi lưu ngay lên máy chủ.
+  const updateEntry = useCallback((key, update) => {
+    setStateEntries(prev => {
+      const current = prev[key] || { submitted: false, note: '' };
+      const next = { ...prev, [key]: { ...update(current), updated_at: new Date().toISOString() } };
+      persist(next);
+      return next;
+    });
+  }, [persist]);
+
   const setNote = useCallback((key, note) => {
     setStateEntries(prev => {
       const current = prev[key] || { submitted: false, note: '' };
@@ -664,29 +675,29 @@ export default function SickLeaveTab({ toast, workDateRange }) {
       </div>
       <div style={{ fontSize: FS.xs, color: C.text3, marginBottom: 10, lineHeight: 1.5 }}>
         Danh sách người bệnh cần chuẩn bị Giấy chứng nhận nghỉ việc hưởng BHXH, lọc từ dữ liệu đã có trong app
-        cho khoảng ngày <b style={{ color: C.text2 }}>{workDateRangeLabel(workDateRange)}</b>. Chưa tự động nộp lên
-        Cổng Dịch vụ công BHXH (khác hệ thống/tài khoản đăng nhập) — tick "Đã nộp" sau khi làm thủ công.
+        cho khoảng ngày <b style={{ color: C.text2 }}>{workDateRangeLabel(workDateRange)}</b>. Hồ sơ nhập lên Cổng BHYT
+        bằng khung bên dưới được tự tick "Đã nộp"; làm thủ công thì tự tick sau khi nộp.
       </div>
       <div style={{ marginBottom: 14 }}>
-        <button type="button" onClick={() => setBhytPanelOpen(o => !o)} style={{
-          width: '100%', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
-          padding: '10px 12px', border: `1px solid ${C.blueBorder || C.border}`,
-          background: C.blueBg || C.surface2, cursor: 'pointer', fontFamily: 'inherit',
-          borderRadius: bhytPanelOpen ? '8px 8px 0 0' : 8,
-        }}>
-          <span style={{ fontSize: FS.xs, color: C.text3, transition: 'transform 0.12s ease', transform: bhytPanelOpen ? 'rotate(90deg)' : 'none', flexShrink: 0 }}>▶</span>
-          <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Nhập/sửa lên Cổng BHXH</span>
-            <span style={{ display: 'block', fontSize: FS.xs, color: C.text3, marginTop: 1 }}>
-              Bấm mở để khởi chạy Chrome tới Cổng BHYT; CAPTCHA/OTP trên Chrome, còn hồ sơ và trạng thái vẫn ở Data Hub.
-            </span>
-          </span>
-        </button>
-        {bhytPanelOpen && (
-          <div style={{ border: `1px solid ${C.blueBorder || C.border}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: 12 }}>
-            <BhytPortalPanel toast={toast} sessionId={sessionId} autoOpenPortal={bhytPanelOpen} />
-          </div>
-        )}
+        <div style={{ border: `1px solid ${C.blueBorder || C.border}`, background: C.blueBg || C.surface2, borderRadius: 8, padding: 12 }}>
+          <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text, marginBottom: 6 }}>Nhập lên Cổng BHYT</div>
+          <BhytPortalLinkPanel
+            toast={toast}
+            outpatient={bhxhOutpatientList}
+            inpatient={bhxhInpatientList}
+            entries={stateEntries}
+            hasIssue={reviewHasIssue}
+            onUpdateEntry={updateEntry}
+          />
+          <button type="button" onClick={() => setBhytPanelOpen(o => !o)} style={{
+            marginTop: 10, border: 'none', background: 'none', color: C.text3, cursor: 'pointer', fontSize: FS.xs, padding: 0,
+          }}>{bhytPanelOpen ? '▼' : '▶'} Công cụ cũ (Chrome riêng, cần start.bat)</button>
+          {bhytPanelOpen && (
+            <div style={{ borderTop: `1px solid ${C.border2}`, marginTop: 8, paddingTop: 10 }}>
+              <BhytPortalPanel toast={toast} sessionId={sessionId} autoOpenPortal={bhytPanelOpen} />
+            </div>
+          )}
+        </div>
       </div>
 
       <div style={{

@@ -35,13 +35,36 @@ function cleanKey(key) {
   return String(key || '').trim().slice(0, 260);
 }
 
+const BHYT_STATUSES = new Set(['previewed', 'success', 'error']);
+
+// Số liệu bổ sung tay trước khi nhập Cổng BHYT (vd. Số KCB): chỉ chuỗi ngắn, khoá dạng tên field.
+function normalizeBhytFields(value) {
+  const out = {};
+  if (!value || typeof value !== 'object') return out;
+  for (const [k, v] of Object.entries(value).slice(0, 40)) {
+    if (!/^[a-z_]{1,40}$/.test(k)) continue;
+    const text = String(v ?? '').trim().slice(0, 300);
+    if (text) out[k] = text;
+  }
+  return out;
+}
+
 function normalizeEntryState(value) {
   const v = value && typeof value === 'object' ? value : {};
-  return {
+  const out = {
     submitted: Boolean(v.submitted),
     note: String(v.note || '').slice(0, 600),
     updated_at: String(v.updated_at || '').slice(0, 40),
   };
+  // Kết quả nhập Cổng BHYT từ tab Nghỉ ốm (src/components/BhytPortalLinkPanel.jsx).
+  const fields = normalizeBhytFields(v.bhyt_fields);
+  if (Object.keys(fields).length) out.bhyt_fields = fields;
+  if (BHYT_STATUSES.has(v.bhyt_status)) {
+    out.bhyt_status = v.bhyt_status;
+    out.bhyt_message = String(v.bhyt_message || '').slice(0, 600);
+    out.bhyt_at = String(v.bhyt_at || '').slice(0, 40);
+  }
+  return out;
 }
 
 function normalizeState(body) {
@@ -228,3 +251,4 @@ router.post('/sick-leave-launch-bhyt-tool', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.normalizeState = normalizeState;
