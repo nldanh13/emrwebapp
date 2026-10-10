@@ -40,6 +40,8 @@ DEFAULT_EMR_SELECTORS = {
     "clear_error_button": "#root > div > div.panel-header.has-errors > div:nth-child(2) > button:nth-child(3)",
     "cert_link": "Giấy chứng nhận nghỉ việc hưởng BHXH",
     "modal": "divModalContentX",
+    # Nút/link "Xem phiếu" (phòng khám) — bấm sẽ ra file PDF phiếu nghỉ.
+    "phieu_link": "Xem phiếu",
     # Các ô trong form giấy nghỉ (để ĐỌC giá trị)
     "so_ngay_nghi": "txtSoNgayNghi",
     "don_vi_lam_viec": "txtDonViLamViec",
@@ -71,13 +73,18 @@ class EmrError(RuntimeError):
 class EmrPortal:
     def __init__(self, base_url: str, profile_dir: str | Path, timeout: int = 40,
                  headless: bool = True, selectors: dict[str, str] | None = None,
-                 debug_dir: str | Path | None = None):
+                 debug_dir: str | Path | None = None,
+                 download_dir: str | Path | None = None):
         self.base_url = (base_url or "").rstrip("/")
         self.profile_dir = Path(profile_dir).resolve()
         self.timeout = timeout
         self.headless = headless
         self.selectors = {**DEFAULT_EMR_SELECTORS, **(selectors or {})}
         self.debug_dir = Path(debug_dir).resolve() if debug_dir else None
+        self.download_dir = (
+            Path(download_dir).resolve() if download_dir
+            else self.profile_dir.parent / "emr_downloads"
+        )
         self.driver: webdriver.Chrome | None = None
         self._lock = threading.RLock()
 
@@ -96,10 +103,18 @@ class EmrPortal:
                 except WebDriverException:
                     self.driver = None
             self.profile_dir.mkdir(parents=True, exist_ok=True)
+            self.download_dir.mkdir(parents=True, exist_ok=True)
             options = webdriver.ChromeOptions()
             options.add_argument(f"--user-data-dir={self.profile_dir}")
             options.add_argument("--disable-notifications")
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            # Bắt Chrome TẢI file PDF về thay vì mở trong trình xem — để tự đọc được file.
+            options.add_experimental_option("prefs", {
+                "download.default_directory": str(self.download_dir),
+                "download.prompt_for_download": False,
+                "plugins.always_open_pdf_externally": True,
+                "profile.default_content_setting_values.automatic_downloads": 1,
+            })
             if self.headless:
                 options.add_argument("--headless=new")
                 options.add_argument("--window-size=1366,900")
@@ -107,6 +122,13 @@ class EmrPortal:
             else:
                 options.add_argument("--start-maximized")
             self.driver = webdriver.Chrome(options=options)
+            # Headless cũng cho phép tải file về thư mục trên.
+            try:
+                self.driver.execute_cdp_cmd("Page.setDownloadBehavior", {
+                    "behavior": "allow", "downloadPath": str(self.download_dir),
+                })
+            except WebDriverException:
+                pass
             self.driver.get(f"{self.base_url}/login.aspx")
             return "Đã mở trình duyệt EMR."
 
@@ -177,6 +199,27 @@ class EmrPortal:
             self.dump_page(f"loi-{what}")
             raise EmrError(f"Không mở được: {what} (không thấy {value}). EMR có thể đổi giao diện.") from exc
 
+    def _go_to_patient_record(self, name: str):
+        """Điều hướng: menu trái → Danh sách Khám bệnh → tìm người bệnh → mở hồ sơ.
+        Dùng chung cho cả mở form giấy nghỉ lẫn bấm "Xem phiếu"."""
+        self._click(By.XPATH, self.sel("menu_group"), "nhóm menu bên trái")
+        self._click(By.LINK_TEXT, self.sel("menu_exam_link"), "Danh sách Khám bệnh")
+
+        search = self._wait_el(By.ID, self.sel("search_input"))
+        search.clear(); search.send_keys(name)
+        self._click(By.ID, self.sel("search_button"), "nút Tìm kiếm")
+        time.sleep(1.0)
+
+        link = name.upper()
+        try:
+            self._click(By.LINK_TEXT, link, f"người bệnh {link}")
+        except EmrError:
+            self._click(By.PARTIAL_LINK_TEXT, link, f"người bệnh {link}")
+        time.sleep(1.0)
+
+        self._click(By.XPATH, self.sel("patient_record_menu"), "mục hồ sơ người bệnh")
+        self._dismiss_error_panel_best_effort()
+
     def open_cert_for_patient(self, patient_name: str) -> dict[str, Any]:
         """Mở form "Giấy chứng nhận nghỉ việc hưởng BHXH" của một người bệnh để ĐỌC dữ liệu.
         Dừng lại khi form đã hiện, không điền/sửa gì."""
@@ -187,29 +230,143 @@ class EmrPortal:
             if not name:
                 raise EmrError("Thiếu tên người bệnh để tìm trong EMR.")
             driver = self._driver()
-
-            self._click(By.XPATH, self.sel("menu_group"), "nhóm menu bên trái")
-            self._click(By.LINK_TEXT, self.sel("menu_exam_link"), "Danh sách Khám bệnh")
-
-            search = self._wait_el(By.ID, self.sel("search_input"))
-            search.clear(); search.send_keys(name)
-            self._click(By.ID, self.sel("search_button"), "nút Tìm kiếm")
-            time.sleep(1.0)
-
-            link = name.upper()
-            try:
-                self._click(By.LINK_TEXT, link, f"người bệnh {link}")
-            except EmrError:
-                self._click(By.PARTIAL_LINK_TEXT, link, f"người bệnh {link}")
-            time.sleep(1.0)
-
-            self._click(By.XPATH, self.sel("patient_record_menu"), "mục hồ sơ người bệnh")
-            self._dismiss_error_panel_best_effort()
+            self._go_to_patient_record(name)
             self._click(By.LINK_TEXT, self.sel("cert_link"), "Giấy chứng nhận nghỉ việc hưởng BHXH")
             WebDriverWait(driver, self.timeout).until(
                 lambda d: d.find_elements(By.ID, self.sel("modal"))
             )
             return {"opened": True, "patient": name, "message": f"Đã mở form giấy nghỉ của {name}."}
+
+    # ── Bấm "Xem phiếu" → tải PDF phiếu phòng khám → đọc ────────────────────────
+    def read_phieu_pdf(self, patient_name: str) -> dict[str, Any]:
+        """Điều hướng tới hồ sơ người bệnh, bấm "Xem phiếu", tải file PDF về rồi đọc
+        bằng pdf_phieu.parse_phieu_pdf. Trả về {pdf_path, doc_type, fields}.
+
+        Lấy file PDF theo 2 cách (ưu tiên cách 1): (1) Chrome tải file về thư mục
+        download_dir (đã bật always_open_pdf_externally); (2) nếu không thấy file tải về,
+        tìm URL file PDF (tab mới / embed / link) rồi tải bằng requests + cookie phiên EMR.
+        Nếu đều không được thì chụp trang để kỹ thuật khớp lại selector.
+        """
+        from .pdf_phieu import PhieuPdfError, parse_phieu_pdf
+
+        with self._lock:
+            if self._is_login_page():
+                raise EmrError("Phiên EMR chưa đăng nhập hoặc đã hết hạn. Hãy đăng nhập lại.")
+            name = (patient_name or "").strip()
+            if not name:
+                raise EmrError("Thiếu tên người bệnh để tìm trong EMR.")
+            driver = self._driver()
+            self.download_dir.mkdir(parents=True, exist_ok=True)
+
+            before_files = self._list_downloads()
+            before_handles = set(driver.window_handles)
+
+            self._go_to_patient_record(name)
+            try:
+                self._click(By.LINK_TEXT, self.sel("phieu_link"), 'nút "Xem phiếu"')
+            except EmrError:
+                self._click(By.PARTIAL_LINK_TEXT, self.sel("phieu_link"), 'nút "Xem phiếu"')
+
+            pdf_path = self._wait_for_download(before_files)
+            if pdf_path is None:
+                pdf_path = self._download_pdf_from_page(before_handles, name)
+
+            if pdf_path is None:
+                self.dump_page("xem-phieu")
+                raise EmrError(
+                    'Bấm "Xem phiếu" xong nhưng không lấy được file PDF. Đã chụp trang — '
+                    "gửi em bản chụp để khớp lại, hoặc kiểm tra EMR có bật tải PDF không."
+                )
+            try:
+                parsed = parse_phieu_pdf(pdf_path)
+            except PhieuPdfError as exc:
+                raise EmrError(f"Tải được PDF nhưng đọc không ra: {exc}") from exc
+            return {
+                "pdf_path": str(pdf_path),
+                "doc_type": parsed["doc_type"],
+                "fields": parsed["fields"],
+            }
+
+    def _list_downloads(self) -> set[str]:
+        try:
+            return {p.name for p in self.download_dir.glob("*.pdf")}
+        except OSError:
+            return set()
+
+    def _wait_for_download(self, before_files: set[str]) -> Path | None:
+        """Chờ file .pdf mới xuất hiện trong download_dir (bỏ qua .crdownload đang tải)."""
+        deadline = time.time() + self.timeout
+        while time.time() < deadline:
+            time.sleep(0.5)
+            if any(self.download_dir.glob("*.crdownload")):
+                continue  # còn đang tải
+            new = self._list_downloads() - before_files
+            if new:
+                newest = max((self.download_dir / n for n in new), key=lambda p: p.stat().st_mtime)
+                if newest.stat().st_size > 0:
+                    return newest
+        return None
+
+    def _resolve_url(self, url: str) -> str:
+        url = (url or "").strip()
+        if not url or url.startswith(("http://", "https://")):
+            return url
+        if url.startswith("//"):
+            return "https:" + url
+        return f"{self.base_url}/{url.lstrip('/')}"
+
+    def _find_pdf_url_in_page(self, before_handles: set[str]) -> str:
+        """Tìm URL file PDF sau khi bấm "Xem phiếu": tab mới → embed/iframe/object → link .pdf."""
+        driver = self._driver()
+        for handle in driver.window_handles:
+            if handle not in before_handles:
+                driver.switch_to.window(handle)
+                url = (driver.current_url or "")
+                if url and not url.startswith(("about:", "chrome:")):
+                    return url
+        for tag, attr in (("embed", "src"), ("iframe", "src"), ("object", "data")):
+            for el in driver.find_elements(By.TAG_NAME, tag):
+                src = el.get_attribute(attr) or ""
+                if src and not src.startswith(("about:", "chrome:")):
+                    return src
+        for a in driver.find_elements(By.TAG_NAME, "a"):
+            href = a.get_attribute("href") or ""
+            if ".pdf" in href.lower():
+                return href
+        return ""
+
+    def _download_pdf_from_page(self, before_handles: set[str], name: str) -> Path | None:
+        """Cách 2: tìm URL file PDF rồi tải bằng requests, mang theo cookie phiên EMR."""
+        url = self._resolve_url(self._find_pdf_url_in_page(before_handles))
+        if not url or url.startswith("blob:"):
+            return None  # blob: không tải bằng requests được — để cách 1/chụp trang lo
+        try:
+            import requests
+        except ImportError:
+            return None
+        driver = self._driver()
+        session = requests.Session()
+        for c in driver.get_cookies():
+            try:
+                session.cookies.set(c.get("name"), c.get("value"), domain=c.get("domain"))
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            resp = session.get(url, timeout=self.timeout, stream=True)
+            resp.raise_for_status()
+            data = resp.content
+        except Exception:  # noqa: BLE001
+            return None
+        ctype = resp.headers.get("Content-Type", "").lower()
+        if not (data[:5].startswith(b"%PDF") or "pdf" in ctype):
+            return None
+        safe = "".join(c for c in name if c.isalnum() or c in "-_ ").strip().replace(" ", "_") or "phieu"
+        path = self.download_dir / f"{safe}_{int(time.time())}.pdf"
+        try:
+            path.write_bytes(data)
+        except OSError:
+            return None
+        return path
 
     def _dismiss_error_panel_best_effort(self):
         """Theo bản ghi: vào iframe index 0, bấm nút đóng panel 'has-errors' rồi ra top.

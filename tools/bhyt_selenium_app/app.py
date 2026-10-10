@@ -64,6 +64,7 @@ emr = EmrPortal(
     headless=bool(config.get("headless", True)),
     selectors=_emr_cfg.get("selectors") or {},
     debug_dir=RUNTIME / "debug",
+    download_dir=RUNTIME / "emr_downloads",
 )
 
 app = Flask(__name__)
@@ -432,6 +433,38 @@ def api_emr_read_cert():
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": f"Lỗi khi đọc form giấy nghỉ: {exc}"}), 500
+
+
+@app.post("/api/emr/read-phieu-pdf")
+def api_emr_read_phieu_pdf():
+    """Tự bấm "Xem phiếu" trên EMR cho một người bệnh, tải file PDF về và đọc.
+    Nếu có record_id thì bù các field (đủ cả Số KCB, Số seri, CCCD) vào hồ sơ."""
+    payload = request.get_json(force=True) or {}
+    patient_name = str(payload.get("patient_name", "")).strip()
+    record_id = payload.get("record_id")
+    if not patient_name and record_id is not None:
+        try:
+            rec = store.get_record(int(record_id))
+            patient_name = (rec or {}).get("patient_name", "")
+        except (KeyError, ValueError):
+            patient_name = ""
+    if not patient_name:
+        return jsonify({"error": "Thiếu tên người bệnh (chọn 1 hồ sơ hoặc gõ tên)."}), 400
+    try:
+        result = emr.read_phieu_pdf(patient_name)
+        mergeable = {k: v for k, v in result.get("fields", {}).items() if k in _UPDATE_FIELDS}
+        updated = False
+        if record_id is not None and mergeable:
+            try:
+                store.update_fields(int(record_id), mergeable)
+                updated = True
+            except (KeyError, ValueError):
+                return jsonify({"error": "Không tìm thấy hồ sơ để cập nhật"}), 404
+        return jsonify({**result, "merged": mergeable, "updated": updated})
+    except EmrError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Lỗi khi đọc phiếu từ EMR: {exc}"}), 500
 
 
 @app.post("/api/emr/close")

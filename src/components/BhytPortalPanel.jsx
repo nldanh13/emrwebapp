@@ -423,6 +423,34 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
     }
   }, [firstSelected, loadAll, toast]);
 
+  // Tự bấm "Xem phiếu" trên EMR cho người bệnh đang chọn, tải PDF về và đọc (có đủ KCB/seri/CCCD).
+  const emrReadPhieuPdf = useCallback(async () => {
+    const targetId = firstSelected ? firstSelected.id : undefined;
+    const name = emrPatient.trim() || firstSelected?.patient_name || '';
+    if (!name) {
+      toast?.('Hãy chọn 1 hồ sơ ở danh sách hoặc gõ tên người bệnh.', 'error');
+      return;
+    }
+    setEmrBusy('phieu');
+    try {
+      const d = await bhytFetch('/api/emr/read-phieu-pdf', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patient_name: name, record_id: targetId }),
+      });
+      const n = Object.keys(d.fields || {}).length;
+      if (d.updated) {
+        toast?.(`Đã tải phiếu PDF từ EMR và đọc ${n} trường (có cả Số KCB, Số seri, CCCD), bù vào hồ sơ.`, 'ok');
+        await loadAll();
+      } else {
+        toast?.(`Đã đọc ${n} trường từ phiếu PDF. Chọn 1 hồ sơ ở danh sách để bù vào hồ sơ.`, 'ok');
+      }
+    } catch (e) {
+      toast?.(String(e?.message || 'Không tự đọc được phiếu từ EMR.'), 'error');
+    } finally {
+      setEmrBusy('');
+    }
+  }, [emrPatient, firstSelected, loadAll, toast]);
+
   const handleImportFiles = useCallback(async (fileList) => {
     if (!fileList || !fileList.length) return;
     setImporting(true);
@@ -838,6 +866,13 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
           <Btn variant="primary" onClick={emrReadCert} disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
             {emrBusy === 'read' ? <><Spinner size={10} /> Đang đọc...</> : 'Đọc dữ liệu từ EMR'}
           </Btn>
+          <Btn variant="primary" onClick={emrReadPhieuPdf} disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
+            {emrBusy === 'phieu' ? <><Spinner size={10} /> Đang lấy phiếu...</> : 'Tự đọc phiếu phòng khám (PDF)'}
+          </Btn>
+        </div>
+        <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 8, lineHeight: 1.5 }}>
+          <b>Phòng khám:</b> nút "Tự đọc phiếu phòng khám (PDF)" sẽ tự bấm <b>Xem phiếu</b> trên EMR,
+          tải file PDF về và đọc — bản PDF có đủ Số KCB, Số seri, CCCD nên bù được chỗ file Excel thiếu.
         </div>
         {emrTargetName && (
           <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 8 }}>Đang thao tác với: <b>{emrTargetName}</b></div>
