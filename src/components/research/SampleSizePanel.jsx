@@ -1,6 +1,5 @@
 // Tính cỡ mẫu tối thiểu và so sánh với số lượt đạt điều kiện trong mẫu hiện tại.
 import { C, FS } from '../../tokens.js';
-import { Btn } from '../shared.jsx';
 import { compactNumber } from './researchFormat.js';
 import { inp } from './researchUi.jsx';
 import { SAMPLE_SIZE_DEFAULTS, SAMPLE_SIZE_DESIGNS, SAMPLE_SIZE_FIELDS, computeSampleSize } from './sampleSize.js';
