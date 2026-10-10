@@ -10,6 +10,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
+from bhyt.emr import EmrError, EmrPortal, build_cert_fields
 from bhyt.emrwebapp_client import WebAppError, fetch_records_from_webapp
 from bhyt.mapping import DEFAULT_DOCTORS, load_records
 from bhyt.portal import BhytPortal, PortalError, Worker
@@ -42,6 +43,17 @@ portal = BhytPortal(
     debug_dir=RUNTIME / "debug",
 )
 worker = Worker(portal, store)
+
+# EMR nội bộ — nhập "Giấy chứng nhận nghỉ việc hưởng BHXH" (mục tiêu 2), khác cổng BHYT.
+_emr_cfg = config.get("emr") or {}
+emr = EmrPortal(
+    base_url=_emr_cfg.get("base_url", ""),
+    profile_dir=RUNTIME / "emr_chrome_profile",
+    timeout=int(config.get("timeout_seconds", 40)),
+    headless=bool(config.get("headless", True)),
+    selectors=_emr_cfg.get("selectors") or {},
+    debug_dir=RUNTIME / "debug",
+)
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
@@ -280,6 +292,96 @@ def api_browser_status():
 def api_browser_close():
     portal.close()
     return jsonify({"message": "Đã đóng Chrome"})
+
+
+# ── EMR nội bộ: nhập giấy nghỉ (mục tiêu 2) ───────────────────────────────────
+@app.get("/api/emr/status")
+def api_emr_status():
+    try:
+        return jsonify(emr.session_status())
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"logged_in": False, "error": str(exc)})
+
+
+@app.post("/api/emr/login")
+def api_emr_login():
+    payload = request.get_json(force=True) or {}
+    username = str(payload.get("username", "")).strip()
+    password = str(payload.get("password", ""))
+    if not username or not password:
+        return jsonify({"error": "Cần nhập tên đăng nhập và mật khẩu EMR"}), 400
+    try:
+        return jsonify(emr.login(username, password))
+    except EmrError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Lỗi khi đăng nhập EMR: {exc}"}), 500
+
+
+@app.post("/api/emr/open-cert")
+def api_emr_open_cert():
+    """Mở form giấy nghỉ cho một người bệnh (theo tên), CHƯA điền gì."""
+    payload = request.get_json(force=True) or {}
+    patient = str(payload.get("patient_name", "")).strip()
+    record_id = payload.get("record_id")
+    if not patient and record_id is not None:
+        record = store.get_record(int(record_id))
+        if record:
+            patient = str(record.get("patient_name", "")).strip()
+    if not patient:
+        return jsonify({"error": "Thiếu tên người bệnh để mở form giấy nghỉ"}), 400
+    try:
+        return jsonify(emr.open_cert_for_patient(patient))
+    except EmrError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Lỗi khi mở form giấy nghỉ: {exc}"}), 500
+
+
+@app.post("/api/emr/capture")
+def api_emr_capture():
+    """Lưu HTML + ảnh form giấy nghỉ đang mở để gửi kỹ thuật khớp id."""
+    payload = request.get_json(force=True) or {}
+    name = str(payload.get("name", "form-giay-nghi")).strip() or "form-giay-nghi"
+    try:
+        return jsonify(emr.capture_cert(name))
+    except EmrError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Không lưu được form: {exc}"}), 500
+
+
+@app.post("/api/emr/fill")
+def api_emr_fill():
+    """Điền form giấy nghỉ. dry_run=True (mặc định) KHÔNG bấm Chấp nhận."""
+    payload = request.get_json(force=True) or {}
+    dry_run = bool(payload.get("dry_run", True))
+    confirmation = str(payload.get("confirmation", "")).strip()
+    record_id = payload.get("record_id")
+    fields = payload.get("fields")
+    if fields is None and record_id is not None:
+        record = store.get_record(int(record_id))
+        if not record:
+            return jsonify({"error": "Không tìm thấy hồ sơ"}), 404
+        fields = record.get("fields") or {}
+    if not isinstance(fields, dict):
+        return jsonify({"error": "Thiếu dữ liệu để điền form giấy nghỉ"}), 400
+    if not dry_run and confirmation != "NHẬP THẬT":
+        return jsonify({"error": 'Nhập thật cần gõ chính xác "NHẬP THẬT" để xác nhận.'}), 400
+    try:
+        cert = build_cert_fields(fields)
+        message = emr.fill_cert(cert, dry_run=dry_run)
+        return jsonify({"message": message, "fields": cert, "dry_run": dry_run})
+    except EmrError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Lỗi khi điền form giấy nghỉ: {exc}"}), 500
+
+
+@app.post("/api/emr/close")
+def api_emr_close():
+    emr.close()
+    return jsonify({"message": "Đã đóng trình duyệt EMR"})
 
 
 @app.post("/api/run")
