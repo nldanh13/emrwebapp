@@ -110,9 +110,11 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
   const [emrBusy, setEmrBusy] = useState('');
 
   const fileInputRef = useRef(null);
+  const phieuInputRef = useRef(null);
   const autoOpenStarted = useRef(false);
   const [importing, setImporting] = useState(false);
   const [importingFromWebapp, setImportingFromWebapp] = useState(false);
+  const [phieuBusy, setPhieuBusy] = useState(false);
 
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -438,6 +440,31 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
     }
   }, [loadAll, toast]);
 
+  // Nhập "Giấy chứng nhận nghỉ việc" (ngoại trú/phòng khám, mẫu 07) từ file PDF EMR xuất
+  // khi bấm "Xem phiếu" — bản PDF có đủ Số KCB, Số seri, CCCD nên bù được chỗ file Excel thiếu.
+  const handleImportPhieuPdf = useCallback(async (fileList) => {
+    if (!fileList || !fileList.length) return;
+    setPhieuBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', fileList[0]);
+      if (firstSelected) fd.append('record_id', String(firstSelected.id));
+      const d = await bhytFetch('/api/phieu/parse-pdf', { method: 'POST', body: fd });
+      const n = Object.keys(d.fields || {}).length;
+      if (d.updated) {
+        toast?.(`Đã đọc ${n} trường từ phiếu PDF (có cả Số KCB, Số seri, CCCD) và bù vào hồ sơ đang chọn.`, 'ok');
+        await loadAll();
+      } else {
+        toast?.(`Đã đọc ${n} trường từ phiếu PDF. Hãy chọn 1 hồ sơ ở danh sách rồi nhập lại để gắn vào hồ sơ.`, 'ok');
+      }
+    } catch (e) {
+      toast?.(String(e?.message || 'Không đọc được phiếu PDF.'), 'error');
+    } finally {
+      setPhieuBusy(false);
+      if (phieuInputRef.current) phieuInputRef.current.value = '';
+    }
+  }, [firstSelected, loadAll, toast]);
+
   // Lấy thẳng từ web app hiện tại — không cần form URL/mã phiên vì đang cùng
   // trang, dùng luôn window.location.origin + sessionId đã có sẵn.
   const handleImportFromWebapp = useCallback(async () => {
@@ -666,6 +693,14 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
           <input ref={fileInputRef} type="file" multiple accept=".xlsx,.xlsm" disabled={importing}
             onChange={e => handleImportFiles(e.target.files)} style={{ fontSize: FS.xs }} />
           {importing && <Spinner size={11} />}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: FS.xs, color: C.text3 }}>
+            Hoặc nhập <b>phiếu phòng khám (PDF)</b> từ EMR (nút "Xem phiếu") — có đủ Số KCB, Số seri, CCCD. Chọn 1 hồ sơ trước để bù vào hồ sơ đó:
+          </span>
+          <input ref={phieuInputRef} type="file" accept=".pdf" disabled={phieuBusy}
+            onChange={e => handleImportPhieuPdf(e.target.files)} style={{ fontSize: FS.xs }} />
+          {phieuBusy && <Spinner size={11} />}
         </div>
       </StepCard>
 

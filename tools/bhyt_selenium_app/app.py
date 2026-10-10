@@ -13,6 +13,7 @@ from werkzeug.utils import secure_filename
 from bhyt.emr import EmrError, EmrPortal
 from bhyt.emrwebapp_client import WebAppError, fetch_records_from_webapp
 from bhyt.mapping import DEFAULT_DOCTORS, load_records
+from bhyt.pdf_phieu import PhieuPdfError, parse_phieu_pdf
 from bhyt.portal import BhytPortal, PortalError, Worker
 from bhyt.store import Store
 
@@ -43,6 +44,16 @@ portal = BhytPortal(
     debug_dir=RUNTIME / "debug",
 )
 worker = Worker(portal, store)
+
+# Các field hồ sơ cho phép cập nhật (sửa tay hoặc bù từ EMR/PDF phiếu).
+_UPDATE_FIELDS = {
+    "so_kcb", "ma_ct", "so_seri", "ma_bhxh", "ma_the", "ho_ten",
+    "ngay_sinh", "gioi_tinh", "ten_dv", "ngay_kcb", "chan_doan",
+    "tu_ngay", "den_ngay", "ho_ten_cha", "ho_ten_me", "nguoi_dai_dien",
+    "doctor_text", "ngay_ct", "ma_khoa", "dan_toc", "dia_chi",
+    "pp_dieutri", "ghi_chu", "nghe_nghiep", "loai_giay_to", "so_cccd",
+    "ngaycap_cccd", "noicap_cccd", "ngoaitru_tungay", "ngoaitru_denngay",
+}
 
 # EMR nội bộ — nhập "Giấy chứng nhận nghỉ việc hưởng BHXH" (mục tiêu 2), khác cổng BHYT.
 _emr_cfg = config.get("emr") or {}
@@ -126,6 +137,47 @@ def api_import():
         return jsonify({"error": f"Không đọc được dữ liệu: {exc}"}), 400
 
 
+@app.post("/api/phieu/parse-pdf")
+def api_phieu_parse_pdf():
+    """Đọc file PDF "Giấy chứng nhận nghỉ việc" (ngoại trú/phòng khám, mẫu 07) mà EMR
+    xuất ra khi bấm "Xem phiếu". Bản PDF này có đủ cả Số KCB, Số seri, CCCD nên dùng
+    làm nguồn điền lên cổng BHXH. Nếu có record_id thì bù các field vào hồ sơ."""
+    uploaded = request.files.get("file")
+    if uploaded is None or not (uploaded.filename or "").strip():
+        return jsonify({"error": "Chưa chọn file PDF phiếu"}), 400
+    if not uploaded.filename.lower().endswith(".pdf"):
+        return jsonify({"error": f"Chỉ nhận file PDF: {uploaded.filename}"}), 400
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    name = secure_filename(uploaded.filename) or "phieu.pdf"
+    path = UPLOADS / f"{stamp}_{name}"
+    uploaded.save(path)
+    try:
+        result = parse_phieu_pdf(path)
+    except PhieuPdfError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Không đọc được phiếu PDF: {exc}"}), 500
+
+    # Chỉ bù các field dùng được cho hồ sơ (bỏ mau_so/so_ngay_nghi — không phải field lưu).
+    mergeable = {k: v for k, v in result["fields"].items() if k in _UPDATE_FIELDS}
+    record_id = (request.form.get("record_id") or "").strip()
+    updated = False
+    if record_id and mergeable:
+        try:
+            store.update_fields(int(record_id), mergeable)
+            updated = True
+        except (KeyError, ValueError):
+            return jsonify({"error": "Không tìm thấy hồ sơ để cập nhật"}), 404
+    return jsonify({
+        "doc_type": result["doc_type"],
+        "mau_so": result.get("mau_so", "07"),
+        "fields": result["fields"],
+        "merged": mergeable,
+        "updated": updated,
+    })
+
+
 @app.post("/api/import-from-webapp")
 def api_import_from_webapp():
     """Lấy hồ sơ trực tiếp từ tab "Nghỉ ốm" của web app (bảng đã rà soát) thay
@@ -167,15 +219,7 @@ def api_import_from_webapp():
 def api_update_fields(record_id: int):
     payload = request.get_json(force=True) or {}
     updates = payload.get("fields", {})
-    allowed = {
-        "so_kcb", "ma_ct", "so_seri", "ma_bhxh", "ma_the", "ho_ten",
-        "ngay_sinh", "gioi_tinh", "ten_dv", "ngay_kcb", "chan_doan",
-        "tu_ngay", "den_ngay", "ho_ten_cha", "ho_ten_me", "nguoi_dai_dien",
-        "doctor_text", "ngay_ct", "ma_khoa", "dan_toc", "dia_chi",
-        "pp_dieutri", "ghi_chu", "nghe_nghiep", "loai_giay_to", "so_cccd",
-        "ngaycap_cccd", "noicap_cccd", "ngoaitru_tungay", "ngoaitru_denngay",
-    }
-    clean = {key: value for key, value in updates.items() if key in allowed}
+    clean = {key: value for key, value in updates.items() if key in _UPDATE_FIELDS}
     try:
         store.update_fields(record_id, clean)
         return jsonify({"record": store.get_record(record_id)})
