@@ -28,6 +28,14 @@ DEFAULT_SELECTORS = {
     "captcha_refresh": "Captcha_RB",
     # Nút đăng nhập: thử lần lượt các id/CSS này; không thấy thì submit form hoặc Enter.
     "login_button": "#btnDangNhap,#btnLogin,#btndangnhap,button[type=submit],input[type=submit]",
+    # Trang tra cứu thông tuyến / lịch sử KCB. Id THẬT cần lấy từ bản chụp trang sau khi
+    # đăng nhập (nút "Lưu trang cho kỹ thuật"); mặc định dưới đây là phỏng đoán, chỉnh
+    # trong config.json → "portal_selectors". Nhập: mã thẻ BHYT, họ tên, năm sinh.
+    "lookup_path": "/ThongTuyenLSKCB/Index",
+    "lookup_card": "MaThe,ma_the,txtMaThe,maThe",
+    "lookup_name": "HoTen,hoten,txtHoTen,hoTen",
+    "lookup_birth": "NamSinh,namsinh,txtNamSinh,namSinh",
+    "lookup_button": "#btnTraCuu,#btnSearch,#btnTimKiem,button[type=submit],input[type=submit]",
 }
 
 
@@ -273,6 +281,74 @@ class BhytPortal:
             except TimeoutException:
                 pass
             return self.dump_page(name)
+
+    def _find_one(self, spec: str):
+        """Tìm 1 phần tử theo danh sách id/CSS ngăn cách bằng dấu phẩy (thử lần lượt).
+        Trả về (element, selector_dùng) hoặc (None, '')."""
+        driver = self._require_driver()
+        for part in spec.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if part[0] in ".#[":
+                by, target = By.CSS_SELECTOR, part
+            else:
+                by, target = By.ID, part
+            try:
+                els = driver.find_elements(by, target)
+            except WebDriverException:
+                els = []
+            for el in els:
+                try:
+                    if el.is_displayed():
+                        return el, part
+                except WebDriverException:
+                    continue
+        return None, ""
+
+    def lookup_thong_tuyen(self, ma_the: str, ho_ten: str, nam_sinh: str) -> dict[str, Any]:
+        """Tra cứu thông tuyến / lịch sử KCB: nhập mã thẻ BHYT, họ tên, năm sinh rồi tra.
+        Id các ô trên trang này chưa chốt (cần bản chụp trang thật), nên hàm điền
+        best-effort rồi LUÔN chụp trang kết quả để đọc/khớp id. Báo rõ ô nào không thấy."""
+        with self._lock:
+            driver = self._require_driver()
+            if not self.session_status().get("logged_in"):
+                raise PortalError("Chưa đăng nhập cổng — đăng nhập xong mới tra cứu được.")
+            driver.get(BASE_URL + self.sel("lookup_path"))
+            try:
+                self._wait_ready()
+            except TimeoutException:
+                pass
+            filled, missing = [], []
+            for key, value in (("lookup_card", ma_the), ("lookup_name", ho_ten),
+                               ("lookup_birth", nam_sinh)):
+                if not str(value or "").strip():
+                    continue
+                el, used = self._find_one(self.sel(key))
+                if el is None:
+                    missing.append(key)
+                    continue
+                try:
+                    el.clear()
+                except WebDriverException:
+                    pass
+                el.send_keys(str(value))
+                filled.append(f"{key}={used}")
+            btn, _ = self._find_one(self.sel("lookup_button"))
+            clicked = False
+            if btn is not None:
+                try:
+                    driver.execute_script("arguments[0].click();", btn)
+                    clicked = True
+                    self._wait_ready()
+                except (WebDriverException, TimeoutException):
+                    pass
+            captured = self.dump_page("tra-cuu-thong-tuyen")
+            note = "Đã tra cứu." if (clicked and not missing) else (
+                "Chưa chốt được id các ô trên trang tra cứu — xem/gửi bản chụp để khớp lại."
+            )
+            return {"filled": filled, "missing": missing, "clicked": clicked,
+                    "note": note, "capture": captured}
 
     def close(self):
         with self._lock:

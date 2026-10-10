@@ -96,6 +96,12 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
   const [loggingIn, setLoggingIn] = useState(false);
   const [capturing, setCapturing] = useState(false);
 
+  // Luồng 1 — Kiểm tra HSBA: tra cứu thông tuyến (nhập mã thẻ, họ tên, năm sinh).
+  const [ttCard, setTtCard] = useState('');
+  const [ttName, setTtName] = useState('');
+  const [ttBirth, setTtBirth] = useState('');
+  const [ttBusy, setTtBusy] = useState(false);
+
   // Mục tiêu 2 — nhập "Giấy chứng nhận nghỉ việc hưởng BHXH" vào EMR nội bộ.
   const [emrUser, setEmrUser] = useState('');
   const [emrPass, setEmrPass] = useState('');
@@ -302,6 +308,32 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
       setCapturing(false);
     }
   }, [toast]);
+
+  // Tra cứu thông tuyến trên cổng (Luồng 1). Id ô trên trang tra cứu chưa chốt nên
+  // công cụ điền best-effort rồi luôn chụp trang kết quả để khớp lại.
+  const doLookupThongTuyen = useCallback(async () => {
+    if (!ttCard.trim() && !ttName.trim()) {
+      toast?.('Nhập ít nhất mã thẻ BHYT hoặc họ tên để tra cứu.', 'error');
+      return;
+    }
+    setTtBusy(true);
+    try {
+      const d = await bhytFetch('/api/browser/lookup-thong-tuyen', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ma_the: ttCard.trim(), ho_ten: ttName.trim(), nam_sinh: ttBirth.trim() }),
+      });
+      const miss = (d.missing || []).length;
+      if (miss) {
+        toast?.(`Đã mở trang tra cứu nhưng chưa khớp ${miss} ô (id trang chưa chốt). Đã chụp trang — gửi file để em khớp lại.`, 'error');
+      } else {
+        toast?.(d.note || 'Đã tra cứu. Đã chụp trang kết quả.', 'ok');
+      }
+    } catch (e) {
+      toast?.(String(e?.message || 'Không tra cứu được thông tuyến.'), 'error');
+    } finally {
+      setTtBusy(false);
+    }
+  }, [ttCard, ttName, ttBirth, toast]);
 
   // ── EMR nội bộ: nhập giấy nghỉ (mục tiêu 2) ────────────────────────────────
   const checkEmr = useCallback(async () => {
@@ -591,6 +623,34 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
           </Btn>
         </div>
       </StepCard>
+
+      <div style={{
+        border: `1px solid ${C.border2}`, borderRadius: 8, padding: '12px 14px', background: C.surface, marginBottom: 10,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Tra cứu thông tuyến BHYT</div>
+          <Badge text="Luồng 1 · HSBA · thử nghiệm" bg={C.amberBg} color={C.amber} size={FS.xs} />
+        </div>
+        <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.5, marginBottom: 10 }}>
+          Nhập mã thẻ BHYT, họ tên, năm sinh để tra cứu trên cổng (cần đăng nhập cổng ở trên trước).
+          Id các ô trên trang tra cứu chưa chốt — công cụ điền rồi <b>tự chụp trang</b>; nếu chưa khớp ô nào,
+          gửi em bản chụp để khớp lại.
+        </div>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 160px', minWidth: 140 }}>
+            <Field label="Mã thẻ BHYT"><input value={ttCard} onChange={e => setTtCard(e.target.value)} style={INPUT_STYLE} autoComplete="off" /></Field>
+          </div>
+          <div style={{ flex: '1 1 160px', minWidth: 140 }}>
+            <Field label="Họ tên"><input value={ttName} onChange={e => setTtName(e.target.value)} style={INPUT_STYLE} autoComplete="off" /></Field>
+          </div>
+          <div style={{ flex: '0 1 110px', minWidth: 90 }}>
+            <Field label="Năm sinh"><input value={ttBirth} onChange={e => setTtBirth(e.target.value)} style={INPUT_STYLE} autoComplete="off" placeholder="vd 1985" /></Field>
+          </div>
+          <Btn variant="primary" onClick={doLookupThongTuyen} disabled={ttBusy} style={{ padding: '7px 14px', fontSize: FS.xs }}>
+            {ttBusy ? <><Spinner size={10} /> Đang tra...</> : 'Tra cứu thông tuyến'}
+          </Btn>
+        </div>
+      </div>
 
       <StepCard
         n={2}

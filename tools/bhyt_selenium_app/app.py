@@ -268,6 +268,23 @@ def api_browser_capture():
         return jsonify({"error": f"Không lấy được trang: {exc}", "captured": out}), 500
 
 
+@app.post("/api/browser/lookup-thong-tuyen")
+def api_browser_lookup_thong_tuyen():
+    """Tra cứu thông tuyến: nhập mã thẻ BHYT, họ tên, năm sinh. Luôn chụp trang kết quả."""
+    payload = request.get_json(force=True) or {}
+    ma_the = str(payload.get("ma_the", "")).strip()
+    ho_ten = str(payload.get("ho_ten", "")).strip()
+    nam_sinh = str(payload.get("nam_sinh", "")).strip()
+    if not ma_the and not ho_ten:
+        return jsonify({"error": "Cần ít nhất mã thẻ BHYT hoặc họ tên để tra cứu."}), 400
+    try:
+        return jsonify(portal.lookup_thong_tuyen(ma_the, ho_ten, nam_sinh))
+    except PortalError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Lỗi khi tra cứu thông tuyến: {exc}"}), 500
+
+
 @app.post("/api/browser/dump")
 def api_browser_dump():
     payload = request.get_json(force=True) or {}
