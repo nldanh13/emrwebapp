@@ -1,13 +1,11 @@
-"""Nhập "Giấy chứng nhận nghỉ việc hưởng BHXH" vào EMR/HIS nội bộ của bệnh viện.
+"""Đọc dữ liệu "Giấy chứng nhận nghỉ việc hưởng BHXH" từ EMR/HIS nội bộ của bệnh viện.
 
-KHÁC với bhyt/portal.py (cổng BHYT quốc gia — dùng để TRA CỨU thẻ): module này vào
-thẳng EMR nội bộ (vd http://192.168.2.26:2026) ở phần Khám bệnh, mở form giấy nghỉ của
-một người bệnh rồi điền và (khi nhập thật) bấm Chấp nhận. Luồng và id phần tử theo đúng
-bản ghi thao tác người dùng gửi; nếu EMR đổi id, chỉnh trong config.json → "emr" →
-"selectors" thay vì sửa code.
+Hướng dữ liệu: ĐỌC từ EMR nội bộ (vd http://192.168.2.26:2026, phần Khám bệnh) →
+để điền lên cổng BHXH (gdbhyt.baohiemxahoi.gov.vn) bằng bhyt/portal.py. Module này
+CHỈ ĐỌC, không bấm Lưu/Chấp nhận gì trên EMR. Luồng và id phần tử theo đúng bản ghi
+thao tác người dùng gửi; nếu EMR đổi id, chỉnh trong config.json → "emr" → "selectors".
 
-An toàn: "Điền thử" KHÔNG bấm Chấp nhận. Không lưu mật khẩu/CAPTCHA ra đĩa — chỉ giữ
-trong RAM của tiến trình này. Chỉ chạy được trong mạng bệnh viện (EMR là địa chỉ nội bộ).
+Không lưu mật khẩu ra đĩa — chỉ giữ trong RAM. Chỉ chạy được trong mạng bệnh viện.
 """
 
 from __future__ import annotations
@@ -42,7 +40,7 @@ DEFAULT_EMR_SELECTORS = {
     "clear_error_button": "#root > div > div.panel-header.has-errors > div:nth-child(2) > button:nth-child(3)",
     "cert_link": "Giấy chứng nhận nghỉ việc hưởng BHXH",
     "modal": "divModalContentX",
-    # Các ô trong form giấy nghỉ
+    # Các ô trong form giấy nghỉ (để ĐỌC giá trị)
     "so_ngay_nghi": "txtSoNgayNghi",
     "don_vi_lam_viec": "txtDonViLamViec",
     "ma_so_bhxh": "txtMaSoBHXH",
@@ -50,68 +48,24 @@ DEFAULT_EMR_SELECTORS = {
     "ngay_cap_giay": "txtNgayCapGiay",
     "nghi_tu_ngay": "txtNghiTuNgay",
     "nghi_den_ngay": "txtNghiDenNgay",
-    "accept_button": "btnChapNhanGiay",
+}
+
+# Ánh xạ ô trên EMR → tên field nội bộ mà bhyt/portal.py dùng để điền cổng BHXH (mẫu 07).
+# Lưu ý: EMR không có số seri / số KCB / mẫu số trên form này nên các field đó vẫn lấy
+# từ file BHXH / bổ sung tay như cũ — đọc EMR chỉ bù các field dưới đây.
+EMR_TO_RECORD = {
+    "don_vi_lam_viec": "ten_dv",
+    "ma_so_bhxh": "ma_bhxh",
+    "so_the_bhyt": "ma_the",
+    "ngay_cap_giay": "ngay_ct",
+    "nghi_tu_ngay": "tu_ngay",
+    "nghi_den_ngay": "den_ngay",
+    "so_ngay_nghi": "so_ngay_nghi",  # tham khảo; cổng tự tính theo tu_ngay/den_ngay
 }
 
 
 class EmrError(RuntimeError):
     pass
-
-
-def build_cert_fields(record_fields: dict[str, Any]) -> dict[str, str]:
-    """Ghép dữ liệu một hồ sơ (từ tab Nghỉ ốm / store) thành đúng các ô của form EMR.
-
-    Pure function — test được mà không cần trình duyệt. Thiếu thì để rỗng, lúc điền
-    sẽ báo ô nào còn trống.
-    """
-    f = record_fields or {}
-
-    def pick(*keys: str) -> str:
-        for key in keys:
-            value = f.get(key)
-            if value is not None and str(value).strip():
-                return str(value).strip()
-        return ""
-
-    so_ngay = pick("so_ngay_nghi", "so_ngay")
-    if not so_ngay:
-        so_ngay = _days_between(pick("tu_ngay", "nghi_tu_ngay"), pick("den_ngay", "nghi_den_ngay"))
-
-    return {
-        "so_ngay_nghi": so_ngay,
-        "don_vi_lam_viec": pick("ten_dv", "don_vi", "don_vi_lam_viec"),
-        "ma_so_bhxh": pick("ma_bhxh", "ma_sobhxh", "ma_so_bhxh"),
-        "so_the_bhyt": pick("ma_the", "so_the", "so_the_bhyt"),
-        "ngay_cap_giay": pick("ngay_ct", "ngay_cap", "ngay_cap_giay"),
-        "nghi_tu_ngay": pick("tu_ngay", "nghi_tu_ngay"),
-        "nghi_den_ngay": pick("den_ngay", "nghi_den_ngay"),
-    }
-
-
-def _days_between(tu_ngay: str, den_ngay: str) -> str:
-    """Số ngày nghỉ (bao gồm cả hai đầu) từ 2 ngày dd/mm/yyyy. Không tính được thì rỗng."""
-    from datetime import datetime
-
-    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
-        try:
-            d1 = datetime.strptime(tu_ngay.strip(), fmt)
-            break
-        except (ValueError, AttributeError):
-            d1 = None
-    else:
-        d1 = None
-    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
-        try:
-            d2 = datetime.strptime(den_ngay.strip(), fmt)
-            break
-        except (ValueError, AttributeError):
-            d2 = None
-    else:
-        d2 = None
-    if not d1 or not d2:
-        return ""
-    delta = (d2 - d1).days + 1
-    return str(delta) if delta > 0 else ""
 
 
 class EmrPortal:
@@ -207,7 +161,7 @@ class EmrPortal:
                     "message": "Chưa vào được EMR. Kiểm tra tài khoản/mật khẩu rồi thử lại."}
 
     # ── Điều hướng tới form giấy nghỉ của một người bệnh ────────────────────────
-    def _wait_clickable(self, by: str, value: str):
+    def _wait_el(self, by: str, value: str):
         driver = self._driver()
         WebDriverWait(driver, self.timeout).until(lambda d: d.find_elements(by, value))
         els = driver.find_elements(by, value)
@@ -217,18 +171,15 @@ class EmrPortal:
 
     def _click(self, by: str, value: str, what: str):
         try:
-            el = self._wait_clickable(by, value)
+            el = self._wait_el(by, value)
             self._driver().execute_script("arguments[0].click();", el)
         except TimeoutException as exc:
             self.dump_page(f"loi-{what}")
             raise EmrError(f"Không mở được: {what} (không thấy {value}). EMR có thể đổi giao diện.") from exc
 
     def open_cert_for_patient(self, patient_name: str) -> dict[str, Any]:
-        """Mở đúng form "Giấy chứng nhận nghỉ việc hưởng BHXH" của một người bệnh.
-
-        Dừng lại khi modal form đã hiện, CHƯA điền gì. Trả về trạng thái để kiểm tra
-        trước khi điền.
-        """
+        """Mở form "Giấy chứng nhận nghỉ việc hưởng BHXH" của một người bệnh để ĐỌC dữ liệu.
+        Dừng lại khi form đã hiện, không điền/sửa gì."""
         with self._lock:
             if self._is_login_page():
                 raise EmrError("Phiên EMR chưa đăng nhập hoặc đã hết hạn. Hãy đăng nhập lại.")
@@ -237,17 +188,14 @@ class EmrPortal:
                 raise EmrError("Thiếu tên người bệnh để tìm trong EMR.")
             driver = self._driver()
 
-            # 1) Mở nhóm menu → Danh sách Khám bệnh
             self._click(By.XPATH, self.sel("menu_group"), "nhóm menu bên trái")
             self._click(By.LINK_TEXT, self.sel("menu_exam_link"), "Danh sách Khám bệnh")
 
-            # 2) Tìm người bệnh theo tên
-            search = self._wait_clickable(By.ID, self.sel("search_input"))
+            search = self._wait_el(By.ID, self.sel("search_input"))
             search.clear(); search.send_keys(name)
             self._click(By.ID, self.sel("search_button"), "nút Tìm kiếm")
             time.sleep(1.0)
 
-            # 3) Chọn người bệnh theo tên (EMR hiển thị tên IN HOA)
             link = name.upper()
             try:
                 self._click(By.LINK_TEXT, link, f"người bệnh {link}")
@@ -255,23 +203,17 @@ class EmrPortal:
                 self._click(By.PARTIAL_LINK_TEXT, link, f"người bệnh {link}")
             time.sleep(1.0)
 
-            # 4) Mở phần hồ sơ chứa giấy tờ
             self._click(By.XPATH, self.sel("patient_record_menu"), "mục hồ sơ người bệnh")
-
-            # 5) Một số hồ sơ hiện panel lỗi trong iframe — bấm bỏ nếu có (không bắt buộc).
             self._dismiss_error_panel_best_effort()
-
-            # 6) Mở form giấy nghỉ
             self._click(By.LINK_TEXT, self.sel("cert_link"), "Giấy chứng nhận nghỉ việc hưởng BHXH")
             WebDriverWait(driver, self.timeout).until(
                 lambda d: d.find_elements(By.ID, self.sel("modal"))
             )
-            return {"opened": True, "patient": name,
-                    "message": f"Đã mở form giấy nghỉ cho {name}."}
+            return {"opened": True, "patient": name, "message": f"Đã mở form giấy nghỉ của {name}."}
 
     def _dismiss_error_panel_best_effort(self):
         """Theo bản ghi: vào iframe index 0, bấm nút đóng panel 'has-errors' rồi ra top.
-        Không phải hồ sơ nào cũng có — nên bỏ qua êm nếu không thấy."""
+        Không phải hồ sơ nào cũng có — bỏ qua êm nếu không thấy."""
         driver = self._driver()
         try:
             frames = driver.find_elements(By.TAG_NAME, "iframe")
@@ -290,54 +232,44 @@ class EmrPortal:
             except WebDriverException:
                 pass
 
-    # ── Điền & chấp nhận ────────────────────────────────────────────────────────
-    def _fill_input(self, key: str, value: str):
-        if value is None or str(value).strip() == "":
-            return
+    # ── Đọc dữ liệu từ form giấy nghỉ ───────────────────────────────────────────
+    def _read_value(self, key: str) -> str:
         driver = self._driver()
         els = driver.find_elements(By.ID, self.sel(key))
         if not els:
-            raise EmrError(f"Không thấy ô {self.sel(key)} trong form giấy nghỉ.")
+            return ""
         el = els[0]
         try:
-            el.clear()
+            val = el.get_attribute("value")
         except WebDriverException:
-            pass
-        el.click()
-        el.send_keys(str(value))
-        # Một số ô ngày dùng datepicker đọc value qua JS — set value + bắn event cho chắc.
-        driver.execute_script(
-            "arguments[0].value = arguments[1];"
-            "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));"
-            "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));",
-            el, str(value),
-        )
+            val = None
+        if val is None:
+            try:
+                val = driver.execute_script("return arguments[0].value;", el)
+            except WebDriverException:
+                val = ""
+        return str(val or "").strip()
 
-    def fill_cert(self, cert_fields: dict[str, str], dry_run: bool = True) -> str:
-        """Điền 7 ô của form giấy nghỉ. dry_run=True thì KHÔNG bấm Chấp nhận."""
+    def read_cert(self) -> dict[str, Any]:
+        """Đọc các ô trên form giấy nghỉ (form phải đang mở). Trả về:
+        - fields: theo tên field nội bộ (dùng để bù vào hồ sơ điền cổng BHXH)
+        - raw: theo tên ô EMR, để đối chiếu
+        """
         with self._lock:
             driver = self._driver()
             if not driver.find_elements(By.ID, self.sel("modal")):
                 raise EmrError("Form giấy nghỉ chưa mở. Hãy mở form cho người bệnh trước.")
-            for key in ("so_ngay_nghi", "don_vi_lam_viec", "ma_so_bhxh", "so_the_bhyt",
-                        "ngay_cap_giay", "nghi_tu_ngay", "nghi_den_ngay"):
-                self._fill_input(key, cert_fields.get(key, ""))
-            if dry_run:
-                return "Đã điền thử form giấy nghỉ, chưa bấm Chấp nhận."
-            return self._accept()
-
-    def _accept(self) -> str:
-        driver = self._driver()
-        els = driver.find_elements(By.ID, self.sel("accept_button"))
-        if not els:
-            raise EmrError(f"Không thấy nút Chấp nhận ({self.sel('accept_button')}).")
-        driver.execute_script("arguments[0].click();", els[0])
-        time.sleep(1.5)
-        return "Đã bấm Chấp nhận giấy nghỉ trên EMR."
+            raw: dict[str, str] = {}
+            fields: dict[str, str] = {}
+            for emr_key, record_key in EMR_TO_RECORD.items():
+                value = self._read_value(emr_key)
+                raw[emr_key] = value
+                if value:
+                    fields[record_key] = value
+            return {"fields": fields, "raw": raw}
 
     # ── Chụp lại trang/form để gửi kỹ thuật dựng tiếp ───────────────────────────
     def capture_cert(self, name: str = "form-giay-nghi") -> dict[str, Any]:
-        """Lưu HTML + ảnh form giấy nghỉ (sau khi mở) để kỹ thuật khớp id/điền chính xác."""
         with self._lock:
             return self.dump_page(name)
 
