@@ -8,56 +8,44 @@ from bhyt.emr import EmrError, EmrPortal
 from selenium.webdriver.common.by import By
 
 
-class Cell:
-    def __init__(self, text):
-        self.text = text
-
-
-class Row:
-    def __init__(self, cells):
-        self._cells = [Cell(c) for c in cells]
-
-    def find_elements(self, by, value):
-        if value == "td":
-            return self._cells
-        return []
+CLINIC_HTML = """
+<table>
+  <tr><th>Mã BN</th><th>Họ tên</th><th>Năm sinh</th><th>Giới tính</th>
+      <th>Trạng thái</th><th>Nơi thực hiện</th></tr>
+  <tr><td>BN001</td><td>NGUYỄN VĂN A</td><td>1990</td><td>Nam</td><td>Hoàn tất</td><td>PK</td></tr>
+  <tr><td>BN002</td><td>TRẦN THỊ B</td><td>2015</td><td>Nữ</td><td>Hoàn tất</td><td>PK</td></tr>
+</table>
+"""
 
 
 class FakeDriver:
-    def __init__(self, rows, logged_in=True):
+    def __init__(self, html="", logged_in=True):
         base = "http://192.168.2.26:2026"
         self.current_url = f"{base}/home.aspx" if logged_in else f"{base}/login.aspx"
-        self._rows = [Row(r) for r in rows]
+        self._html = html
 
     def find_elements(self, by, value):
-        if by == By.CSS_SELECTOR and "tr" in value:
-            return self._rows
         return []
 
     @property
     def page_source(self):
-        return "<html>ds</html>"
+        return self._html
 
     def get_screenshot_as_png(self):
         return b"PNG"
 
 
 def make_emr(tmp, **sel):
-    selectors = {"clinic_col_name": "0", "clinic_col_birth": "1", "clinic_col_gender": "2", "clinic_col_age": "3"}
-    selectors.update(sel)
     return EmrPortal("http://192.168.2.26:2026", Path(tmp) / "p",
                      debug_dir=Path(tmp) / "debug", download_dir=Path(tmp) / "dl",
-                     selectors=selectors)
+                     selectors=sel or {})
 
 
 class ListClinicPatientsTests(unittest.TestCase):
-    def test_reads_rows_by_configured_columns(self):
+    def test_reads_rows_by_header_name(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = make_emr(tmp)
-            p.driver = FakeDriver(rows=[
-                ["NGUYỄN VĂN A", "1990", "Nam", "36"],
-                ["TRẦN THỊ B", "2015", "Nữ", "11"],
-            ])
+            p.driver = FakeDriver(html=CLINIC_HTML)
             p._click = lambda *a, **k: None  # bỏ qua điều hướng
             out = p.list_clinic_patients()
         self.assertEqual(len(out), 2)
@@ -65,18 +53,10 @@ class ListClinicPatientsTests(unittest.TestCase):
         self.assertEqual(out[0]["nam_sinh"], "1990")
         self.assertEqual(out[1]["gioi_tinh"], "Nữ")
 
-    def test_raises_when_name_col_unset(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            p = make_emr(tmp, clinic_col_name="")
-            p.driver = FakeDriver(rows=[["A", "1990"]])
-            p._click = lambda *a, **k: None
-            with self.assertRaises(EmrError):
-                p.list_clinic_patients()
-
-    def test_raises_when_no_rows(self):
+    def test_raises_when_no_table(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = make_emr(tmp)
-            p.driver = FakeDriver(rows=[])
+            p.driver = FakeDriver(html="<html>không có bảng khám</html>")
             p._click = lambda *a, **k: None
             with self.assertRaises(EmrError):
                 p.list_clinic_patients()

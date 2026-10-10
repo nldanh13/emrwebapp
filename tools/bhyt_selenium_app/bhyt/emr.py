@@ -43,14 +43,6 @@ DEFAULT_EMR_SELECTORS = {
     "modal": "divModalContentX",
     # Nút/link "Xem phiếu" (phòng khám) — bấm sẽ ra file PDF phiếu nghỉ.
     "phieu_link": "Xem phiếu",
-    # Danh sách Khám bệnh (để quét cuối ngày). CSS chọn các DÒNG người bệnh và chỉ số
-    # cột (0-based) cho tên/năm sinh/giới tính/tuổi. Chưa biết DOM thật → chỉnh ở
-    # config.json → emr.selectors sau khi chụp trang "Danh sách Khám bệnh".
-    "clinic_rows": "table tbody tr",
-    "clinic_col_name": "",
-    "clinic_col_birth": "",
-    "clinic_col_gender": "",
-    "clinic_col_age": "",
     # Các ô trong form giấy nghỉ (để ĐỌC giá trị)
     "so_ngay_nghi": "txtSoNgayNghi",
     "don_vi_lam_viec": "txtDonViLamViec",
@@ -297,18 +289,12 @@ class EmrPortal:
             }
 
     # ── Quét danh sách phòng khám cuối ngày → ca còn tuổi lao động → ai có phiếu ──
-    @staticmethod
-    def _col(texts: list[str], idx) -> str:
-        try:
-            i = int(idx)
-        except (TypeError, ValueError):
-            return ""
-        return texts[i].strip() if 0 <= i < len(texts) else ""
-
     def list_clinic_patients(self) -> list[dict[str, Any]]:
-        """Mở "Danh sách Khám bệnh" và đọc các dòng người bệnh. Trả về list
-        {ho_ten, nam_sinh, gioi_tinh, tuoi, raw}. Cột lấy theo chỉ số cấu hình;
-        chưa cấu hình cột tên thì chụp trang để khớp lại."""
+        """Mở "Danh sách Khám bệnh" rồi đọc bảng theo TÊN CỘT (tự dò cột họ tên/năm
+        sinh… nên EMR đổi thứ tự cột vẫn đúng, không cần cấu hình chỉ số). Trả về
+        list {ho_ten, nam_sinh, gioi_tinh, tuoi, ma_bn, raw}."""
+        from .clinic_list import parse_clinic_patients
+
         with self._lock:
             if self._is_login_page():
                 raise EmrError("Phiên EMR chưa đăng nhập hoặc đã hết hạn. Hãy đăng nhập lại.")
@@ -317,38 +303,17 @@ class EmrPortal:
             self._click(By.LINK_TEXT, self.sel("menu_exam_link"), "Danh sách Khám bệnh")
             time.sleep(1.0)
 
-            rows = driver.find_elements(By.CSS_SELECTOR, self.sel("clinic_rows"))
-            if not rows:
+            try:
+                patients = parse_clinic_patients(driver.page_source or "")
+            except RuntimeError as exc:
+                raise EmrError(str(exc)) from exc
+            if not patients:
                 self.dump_page("danh-sach-kham")
                 raise EmrError(
-                    "Không đọc được dòng nào trong Danh sách Khám bệnh. Đã chụp trang — "
-                    "gửi em bản chụp để khớp đúng bảng/dòng."
+                    "Không đọc được bảng Danh sách Khám bệnh (không thấy cột quen thuộc). "
+                    "Đã chụp trang — gửi em bản chụp để khớp lại."
                 )
-            name_idx = self.sel("clinic_col_name")
-            if str(name_idx).strip() == "":
-                self.dump_page("danh-sach-kham")
-                raise EmrError(
-                    "Chưa cấu hình cột 'Họ tên' của Danh sách Khám bệnh. Đã chụp trang — "
-                    "gửi em bản chụp để em đặt đúng chỉ số cột (tên/năm sinh/giới tính/tuổi)."
-                )
-            out: list[dict[str, Any]] = []
-            for row in rows:
-                try:
-                    cells = row.find_elements(By.CSS_SELECTOR, "td")
-                    texts = [(c.text or "").strip() for c in cells]
-                except WebDriverException:
-                    continue
-                name = self._col(texts, name_idx)
-                if not name:
-                    continue
-                out.append({
-                    "ho_ten": name,
-                    "nam_sinh": self._col(texts, self.sel("clinic_col_birth")),
-                    "gioi_tinh": self._col(texts, self.sel("clinic_col_gender")),
-                    "tuoi": self._col(texts, self.sel("clinic_col_age")),
-                    "raw": texts,
-                })
-            return out
+            return patients
 
     def harvest_sick_leave(self, ref_year: int | None = None, limit: int | None = None,
                            progress=None) -> dict[str, Any]:
