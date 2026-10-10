@@ -109,11 +109,6 @@ function hasOwnValue(obj, keys = []) {
   if (!obj || typeof obj !== 'object') return false;
   return keys.some(k => Object.prototype.hasOwnProperty.call(obj, k) && String(obj[k] ?? '').trim() !== '');
 }
-function moneyValueOrNull(obj, keys = []) {
-  if (!hasOwnValue(obj, keys)) return null;
-  const key = keys.find(k => Object.prototype.hasOwnProperty.call(obj, k) && String(obj[k] ?? '').trim() !== '');
-  return money(obj[key]);
-}
 function pctText(part, total) {
   const p = money(part), t = money(total);
   if (!t || !p) return '0%';
@@ -127,48 +122,6 @@ function sourceKey(value) {
   if (n.includes('trong goi') || n.includes('goi')) return 'package';
   if (n.includes('mien')) return 'exempt';
   return n || 'other';
-}
-function sourceLabel(key, fallback) {
-  return ({ insurance:'Bảo hiểm', self_pay:'Viện phí / tự trả', package:'Trong gói', exempt:'Miễn giảm', other:'Khác' })[key] || txt(fallback, 'Khác');
-}
-function classifyBilling(row) {
-  const amount = money(row?.thanh_tien ?? row?.amount ?? row?.tong_tien);
-  const pg = norm(row?.payment_group || row?.doi_tuong || '');
-  const sk = sourceKey(row?.doi_tuong || row?.payment_group || 'other');
-  const out = { total: amount, bhyt: 0, patient: 0, self_pay: 0, package: 0, exempt: 0, other: 0 };
-  if (pg.includes('bhyt') || pg.includes('bao hiem')) out.bhyt = amount;
-  else if (pg.includes('self') || pg.includes('tu tra') || pg.includes('tu tuc') || pg.includes('vien phi')) { out.patient = amount; out.self_pay = amount; }
-  else if (sk === 'package') out.package = amount;
-  else if (sk === 'exempt') out.exempt = amount;
-  else if (!pg.includes('zero')) out.other = amount;
-  return out;
-}
-function addMoney(dst, src) { ['total','bhyt','patient','self_pay','package','exempt','other'].forEach(k => { dst[k] = money(dst[k]) + money(src?.[k]); }); }
-function sortByMoney(list, key='total') { return safeArr(list).slice().sort((a,b) => money(b?.[key]) - money(a?.[key]) || txt(a?.label || a?.name).localeCompare(txt(b?.label || b?.name), 'vi')); }
-function buildClientBillingOverview(billing, issues = []) {
-  if (!billing || typeof billing !== 'object') return null;
-  const rows = safeArr(billing.rows);
-  const sources = new Map();
-  const groups = new Map();
-  const tops = [];
-  rows.forEach(row => {
-    const m = classifyBilling(row);
-    const sk = sourceKey(row?.doi_tuong || row?.payment_group || 'other');
-    const src = sources.get(sk) || { key:sk, label:sourceLabel(sk, row?.doi_tuong), total:0, bhyt:0, patient:0, self_pay:0, package:0, exempt:0, other:0, lines:0 };
-    addMoney(src, m); src.lines += 1; sources.set(sk, src);
-    const gl = cleanBillingGroup(row?.loai_yc || row?.group || row?.nhom || 'Khác');
-    const gk = norm(gl) || 'other';
-    const g = groups.get(gk) || { key:gk, label:gl, total:0, bhyt:0, patient:0, self_pay:0, package:0, exempt:0, other:0, lines:0 };
-    addMoney(g, m); g.lines += 1; groups.set(gk, g);
-    if (m.total || m.patient || m.package) tops.push({ name:txt(row?.name || row?.ten || row?.ma_dv, 'Khoản mục'), group:gl, source:sourceLabel(sk, row?.doi_tuong), department:txt(row?.khoa,''), quantity:row?.sl, unit_price:money(row?.don_gia), total:m.total, bhyt:m.bhyt, patient:m.patient, package:m.package, payment_group:row?.payment_group || '' });
-  });
-  const advanceValue = moneyValueOrNull(billing, ['tam_ung', 'tien_tam_ung', 'advance']);
-  const summary = { total: money(billing.tong_cong) || rows.reduce((sum,r)=>sum+money(r?.thanh_tien),0), bhyt: money(billing.tong_bhyt), patient: money(billing.tong_tu_tuc), exempt: money(billing.tong_mien), package: money(Array.from(sources.values()).find(x => x.key === 'package')?.total), advance: advanceValue, advance_known: advanceValue !== null, rowsCount: rows.length };
-  summary.remaining = summary.advance_known ? Math.max(0, summary.patient - money(summary.advance)) : null;
-  summary.remaining_estimated = summary.advance_known ? summary.remaining : Math.max(0, summary.patient);
-  const attention = safeArr(issues).filter(i => i?.severity !== 'info' && /bảng kê|chi phí|viện phí|ngày giường|y lệnh|sau ra viện|tự trả/i.test(txt([i.title, i.detail, i.action].join(' '), ''))).map(i => ({ severity:i.severity || 'warn', title:txt(i.title || 'Cần kiểm tra'), detail:txt(i.detail || i.action || ''), owner:txt(i.owner || '') }));
-  const topPatient = sortByMoney(tops.filter(r => money(r.patient) > 0), 'patient').slice(0, 8);
-  return { summary, sources:sortByMoney(Array.from(sources.values())), groups:sortByMoney(Array.from(groups.values())), top_total:sortByMoney(tops).slice(0,10), top_patient_pay:topPatient, attention };
 }
 
 // ── Chip nhỏ ─────────────────────────────────────────────────────────────────
@@ -825,7 +778,7 @@ function DetailPanel({ isMobile = false, card, navigation, onNavigate, onClose, 
   const profile  = card?.profile   || {};
   const disch    = card?.discharge || {};
   const billing  = card?.billing   || {};
-  const billingOverview = billing?.overview || card?.billing_overview || buildClientBillingOverview(billing, issues);
+  const billingOverview = billing?.overview || card?.billing_overview || null;
   const bed      = card?.bed_days  || {};
   const surgery  = card?.surgery   || {};
   const orderHistory = card?.order_history || {};
@@ -1162,7 +1115,7 @@ function DetailPanel({ isMobile = false, card, navigation, onNavigate, onClose, 
               ? <div style={{ color:C.amber, fontSize:FS.sm }}>Chưa lấy bảng kê.</div>
               : <>
                   {(() => {
-                    const overview = billingOverview || buildClientBillingOverview(billing, issues) || {};
+                    const overview = billingOverview || {};
                     const summary = overview.summary || {};
                     const patientPay = money(summary.patient ?? billing.tong_tu_tuc);
                     const totalPay = money(summary.total ?? billing.tong_cong);
