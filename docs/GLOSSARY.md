@@ -38,7 +38,7 @@ Nhóm **Điều dưỡng**
 | Tab | Việc chính |
 | --- | --- |
 | **Nhập bệnh phòng** | Nhập **chăm sóc, dịch truyền, thủ thuật** cho mọi người bệnh nội trú, gồm cả ca trực (mới nhận, chuyển khoa, về từ GMHS) — tab nhập chính, worker `input_care.py`/`input_infusions.py` chạy từ đây. Tab "Nhập trực" cũ đã gộp vào đây. |
-| **Lịch điều dưỡng** | Quản lý danh sách điều dưỡng (roster), xếp lịch **ca làm/ca trực** theo ngày, ảnh chữ ký. Tài khoản EMR của từng điều dưỡng sửa ở **Thiết lập tài khoản → Tài khoản EMR** |
+| **Lịch làm việc** | Một màn cho lịch điều dưỡng khoa (**hành chánh, ca làm, ca trực**) và lịch phòng khám (điều dưỡng, bác sĩ). Trên là bảng tổng quan một tuần (mở lên là tuần này, chọn sẵn hôm nay), dưới sửa ngày đang chọn; cột phải là danh sách điều dưỡng, ảnh chữ ký. Bác sĩ phòng khám số 1 có tài khoản EMR là tài khoản Phòng khám / Nghỉ ốm đăng nhập khi chọn "Bác sĩ theo lịch". Tài khoản EMR sửa ở **Thiết lập tài khoản → Tài khoản EMR** |
 | **Báo cáo ca trực** | In phiếu bàn giao ca, bảng thuốc, danh sách tiêm truyền |
 
 Nhóm **Hành chánh**
@@ -48,7 +48,6 @@ Nhóm **Hành chánh**
 | **Kiểm hồ sơ** | Kiểm/đối chiếu số lưu trữ, tên, phát hiện hồ sơ trùng/sai lệch, nộp hồ sơ |
 | **Nghỉ ốm** | Chuẩn bị hồ sơ **Giấy chứng nhận nghỉ việc hưởng BHXH** (nội trú + ngoại trú), nối sang công cụ nhập cổng BHXH thật |
 | **Phòng khám** | Chăm sóc và thủ thuật cho bệnh nhân **ngoại trú** (khác nội trú) |
-| **Lịch phòng khám** | Xếp bác sĩ và điều dưỡng phòng khám theo ngày. Bác sĩ số 1 có tài khoản EMR là tài khoản Phòng khám / Nghỉ ốm đăng nhập khi chọn "Bác sĩ theo Lịch phòng khám" (mặc định) |
 
 Nhóm **Nghiên cứu / Cài đặt**
 | Tab | Việc chính |

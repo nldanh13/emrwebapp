@@ -7,7 +7,7 @@ secrets/
 ├── secrets.json              ← mật khẩu EMR (chung / hành chánh / dịch truyền), token app, salt, API key
 ├── users.json                ← tài khoản đăng nhập app (token, mật khẩu, vai trò từng người)
 ├── nurse_emr_accounts.json   ← tài khoản EMR theo tên điều dưỡng (nhập liệu) và bác sĩ phòng khám ("kind": "doctor") + tên file ảnh chữ ký
-├── emr_read_accounts.json    ← tài khoản EMR thêm, chỉ dùng để lấy dữ liệu song song
+├── emr_read_accounts.json    ← tài khoản đọc song song: tên điều dưỡng/bác sĩ đã lưu ("source": "saved", không chép mật khẩu) hoặc tài khoản gõ tay
 └── backup/<thời điểm>/       ← bản sao file cũ do `secrets:migrate` tạo (vẫn chứa mật khẩu)
 ```
 

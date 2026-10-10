@@ -91,7 +91,7 @@ const test = async (name, fn) => { try { await fn(); console.log(`  ok - ${name}
     const text = JSON.stringify(pub);
     assert.ok(!text.includes('pw1') && !text.includes('pw2') && !text.includes('emr_password'), 'không lộ mật khẩu');
     const byUser = Object.fromEntries(pub.accounts.map(a => [a.emr_username, a]));
-    assert.match(byUser['dd.a'].note, /nhập liệu/);
+    assert.match(byUser['dd.a'].note, /Trùng tài khoản đã lưu của ĐD A/);
     assert.match(byUser['TK.CHUNG'].note, /Trùng tài khoản chung/);
     assert.strictEqual(byUser.doc1.usable, true);
   });
@@ -111,6 +111,52 @@ const test = async (name, fn) => { try { await fn(); console.log(`  ok - ${name}
     assert.strictEqual(saved.accounts.find(a => a.emr_username === 'doc1').emr_password, 'pw1');
     assert.strictEqual(saved.accounts.find(a => a.emr_username === 'doc9').emr_password, '');
     assert.throws(() => fa.saveFetchAccounts({ accounts: [{ emr_username: 'a' }, { emr_username: 'A' }] }), /hai lần/);
+  });
+
+  await test('chọn người đã lưu: lấy tài khoản, mật khẩu của người đó lúc chạy; bác sĩ đang theo dõi phòng khám thì bỏ qua', async () => {
+    const nurseFile = process.env.EMR_NURSE_ACCOUNTS_FILE;
+    const oldNurses = fs.readFileSync(nurseFile, 'utf8');
+    try {
+      fs.writeFileSync(nurseFile, JSON.stringify([
+        { name: 'ĐD A', emr_username: 'dd.a', emr_password: 'pw-dda' },
+        { name: 'BS Tú', kind: 'doctor', emr_username: 'hmtu', emr_password: 'pw-tu' },
+        { name: 'ĐD Chưa Có', emr_username: '', emr_password: '' },
+      ]));
+      const out = fa.saveFetchAccounts({ max_parallel: 4, accounts: [
+        { source: 'saved', name: 'ĐD A', emr_username: 'gia', emr_password: 'gia' },
+        { source: 'saved', name: 'BS Tú' },
+        { source: 'saved', name: 'ĐD Chưa Có' },
+      ] });
+      const saved = JSON.parse(fs.readFileSync(process.env.EMR_READ_ACCOUNTS_FILE, 'utf8'));
+      assert.ok(!JSON.stringify(saved).includes('pw-') && !JSON.stringify(saved).includes('gia'), 'không chép mật khẩu, không nhận tài khoản gõ kèm');
+      const byName = Object.fromEntries(out.accounts.map(a => [a.name, a]));
+      assert.strictEqual(byName['ĐD A'].usable, true);
+      assert.strictEqual(byName['ĐD A'].emr_username, 'dd.a');
+      assert.strictEqual(byName['BS Tú'].kind, 'doctor');
+      assert.match(byName['ĐD Chưa Có'].note, /chưa có tên đăng nhập EMR/);
+      assert.ok(!JSON.stringify(out).includes('pw-'));
+      let pool = fa.fetchAccountPool();
+      assert.deepStrictEqual(pool.map(a => a.key), ['default', 'read:dd.a', 'read:hmtu']);
+      assert.strictEqual(pool[1].env.EMR_PASSWORD, 'pw-dda');
+
+      const inUse = require('../server/services/emr_logins_in_use');
+      inUse.markEmrLoginInUse('clinic-monitor:x', 'HMTU', 'Đang dùng ở Phòng khám.');
+      pool = fa.fetchAccountPool();
+      assert.deepStrictEqual(pool.map(a => a.key), ['default', 'read:dd.a']);
+      assert.match(fa.publicFetchAccounts().accounts.find(a => a.name === 'BS Tú').note, /Phòng khám/);
+      inUse.releaseEmrLogin('clinic-monitor:x');
+      assert.strictEqual(fa.fetchAccountPool().length, 3);
+
+      const { buildEmrAccountOverview } = require('../server/services/emr_account_overview');
+      const o = buildEmrAccountOverview({
+        nurseAccounts: JSON.parse(fs.readFileSync(nurseFile, 'utf8')), readAccounts: out.accounts,
+        shared: { username: 'tk.chung', has_password: true }, hchanh: { username: '', has_password: false },
+      });
+      assert.strictEqual(o.accounts.find(a => a.username === 'dd.a').duplicate, false, 'chọn người đã lưu không tính là khai trùng');
+      assert.throws(() => fa.saveFetchAccounts({ accounts: [{ source: 'saved', name: 'ĐD A' }, { source: 'saved', name: 'ĐD A' }] }), /hai lần/);
+    } finally {
+      fs.writeFileSync(nurseFile, oldNurses);
+    }
   });
 
   // Sổ cho các test còn lại: tài khoản chung + 2 tài khoản đọc.

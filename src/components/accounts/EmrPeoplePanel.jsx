@@ -34,7 +34,7 @@ const KIND_TEXT = {
   doctor: {
     one: 'bác sĩ',
     title: 'Bác sĩ phòng khám',
-    intro: 'Phòng khám và Nghỉ ốm đăng nhập EMR bằng bác sĩ xếp ở tab Lịch phòng khám (hoặc bác sĩ chọn tay). Mật khẩu không gửi về trình duyệt người dùng.',
+    intro: 'Phòng khám và Nghỉ ốm đăng nhập EMR bằng bác sĩ xếp ở tab Lịch làm việc (hoặc bác sĩ chọn tay). Mật khẩu không gửi về trình duyệt người dùng.',
     empty: 'Chưa có bác sĩ nào. Bấm "Thêm bác sĩ".',
     removeConfirm: (n) => `Xoá bác sĩ ${n}? Phòng khám sẽ không đăng nhập bằng bác sĩ này nữa.`,
   },

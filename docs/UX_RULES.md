@@ -228,14 +228,13 @@ R6: không còn chỗ hiện vòng xoay + "Đang tải…" thay cho nội dung (
 | Lấy dữ liệu | Có | Có, và khi Xếp phòng vừa lưu | — |
 | Xếp phòng | Có | Có (trừ khi đang chờ lưu) | Tự lưu ~0,8 giây; rời tab thì lưu ngay |
 | Nhập bệnh phòng | Có | Có (danh sách người bệnh) | Ghi EMR qua tiền kiểm |
-| Lịch điều dưỡng | Có | Không cần (chỉ tab này sửa) | Tự lưu |
+| Lịch làm việc (điều dưỡng khoa + phòng khám) | Có | Có (trừ khi đang chờ lưu); mở lên là tuần này, chọn sẵn hôm nay | Tự lưu ~0,4 giây |
 | Báo cáo ca trực | Có | Có | — |
 | Kiểm HSBA, Nhập VTYT | Có | Có (đồng bộ lại danh sách) | Theo từng thao tác |
 | Ký tên ĐD HSBA | Có | Có | — |
 | Trả HSBA | Có | Có | Theo từng thao tác |
 | Nghỉ ốm | Có | Có | Theo từng thao tác |
 | Phòng khám | Có | Có; ẩn thì ngừng tự làm mới | Theo từng thao tác |
-| Lịch phòng khám | Có | Có (trừ khi đang chờ lưu) | Tự lưu ~0,4 giây; chỉ gửi lịch phòng khám, không đụng Lịch điều dưỡng |
 | Người bệnh & tái khám | Có | Có | — |
 | Kho nghiên cứu | Có | Theo dõi máy chủ | Thêm / bớt biến của nghiên cứu: "Chưa lưu" cho tới khi bấm Lưu; chuyển tab vẫn giữ (KeepAlive) |
 | Danh mục VTYT, Danh mục thuốc | Có | Có | Hộp thoại sửa, bấm Lưu |
