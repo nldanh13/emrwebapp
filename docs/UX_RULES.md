@@ -235,6 +235,7 @@ R6: không còn chỗ hiện vòng xoay + "Đang tải…" thay cho nội dung (
 | Trả HSBA | Có | Có | Theo từng thao tác |
 | Nghỉ ốm | Có | Có | Theo từng thao tác |
 | Phòng khám | Có | Có; ẩn thì ngừng tự làm mới | Theo từng thao tác |
+| Lịch phòng khám | Có | Có (trừ khi đang chờ lưu) | Tự lưu ~0,4 giây; chỉ gửi lịch phòng khám, không đụng Lịch điều dưỡng |
 | Người bệnh & tái khám | Có | Có | — |
 | Kho nghiên cứu | Có | Theo dõi máy chủ | Thêm / bớt biến của nghiên cứu: "Chưa lưu" cho tới khi bấm Lưu; chuyển tab vẫn giữ (KeepAlive) |
 | Danh mục VTYT, Danh mục thuốc | Có | Có | Hộp thoại sửa, bấm Lưu |

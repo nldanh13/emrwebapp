@@ -48,6 +48,7 @@ Nhóm **Hành chánh**
 | **Kiểm hồ sơ** | Kiểm/đối chiếu số lưu trữ, tên, phát hiện hồ sơ trùng/sai lệch, nộp hồ sơ |
 | **Nghỉ ốm** | Chuẩn bị hồ sơ **Giấy chứng nhận nghỉ việc hưởng BHXH** (nội trú + ngoại trú), nối sang công cụ nhập cổng BHXH thật |
 | **Phòng khám** | Chăm sóc và thủ thuật cho bệnh nhân **ngoại trú** (khác nội trú) |
+| **Lịch phòng khám** | Xếp bác sĩ và điều dưỡng phòng khám theo ngày. Bác sĩ số 1 có tài khoản EMR là tài khoản Phòng khám / Nghỉ ốm đăng nhập khi chọn "Bác sĩ theo Lịch phòng khám" (mặc định) |
 
 Nhóm **Nghiên cứu / Cài đặt**
 | Tab | Việc chính |

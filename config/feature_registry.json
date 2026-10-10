@@ -112,6 +112,16 @@
       "usesDateRange": false
     },
     {
+      "id": "clinic-schedule",
+      "label": "Lịch phòng khám",
+      "icon": "▦",
+      "group": "Phòng khám",
+      "hint": "Xếp bác sĩ, điều dưỡng phòng khám theo ngày; bác sĩ theo lịch đăng nhập EMR",
+      "order": 101,
+      "compact": true,
+      "usesDateRange": false
+    },
+    {
       "id": "patient-journey",
       "label": "Người bệnh & tái khám",
       "icon": "◷",

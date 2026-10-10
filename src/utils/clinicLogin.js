@@ -8,7 +8,8 @@ const CONFIG_KEY = 'emr_clinic_monitor_cfg_v1';
 
 export const DEFAULT_CLINIC_CONFIG = Object.freeze({
   username: '',
-  accountName: '',
+  // Mặc định đăng nhập bằng bác sĩ theo Lịch phòng khám ('@lich', xem ClinicAccountPicker.jsx).
+  accountName: '@lich',
   loginUrl: import.meta.env?.VITE_EMR_LOGIN_URL || '',
   listUrl: import.meta.env?.VITE_EMR_CLINIC_LIST_URL || '',
   intervalMinutes: 3,
@@ -20,6 +21,8 @@ export function loadClinicConfig() {
     const saved = JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}');
     const clean = saved && typeof saved === 'object' ? saved : {};
     delete clean.password;
+    // Bản lưu từ trước khi có chọn bác sĩ mà đã gõ tên đăng nhập: giữ cách gõ tay như cũ.
+    if (!Object.prototype.hasOwnProperty.call(clean, 'accountName') && clean.username) clean.accountName = '';
     return { ...DEFAULT_CLINIC_CONFIG, ...clean };
   } catch {
     return { ...DEFAULT_CLINIC_CONFIG };

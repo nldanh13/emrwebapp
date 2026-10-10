@@ -16,6 +16,10 @@ Mục **Tài khoản EMR** còn có bảng tổng hợp: mỗi tài khoản EMR 
 đổi mật khẩu EMR không bỏ sót chỗ nào. Tài khoản chung trong `secrets.json` hiện ở đó dạng chỉ xem (tên đăng
 nhập và nơi lấy, không có mật khẩu).
 
+Tài khoản bác sĩ phòng khám không gửi mật khẩu về trình duyệt: Phòng khám / Nghỉ ốm chỉ gửi tên bác sĩ, hoặc
+`@lich` nghĩa là bác sĩ xếp trong tab **Lịch phòng khám** của ngày làm việc (người đầu tiên có tài khoản); máy
+chủ tự điền tài khoản và mật khẩu từ `nurse_emr_accounts.json`.
+
 Các phần còn lại trong `config/` (URL, lịch điều dưỡng, quy tắc nghiệp vụ...) **không chứa mật khẩu**, nên có thể chia sẻ khi cần hỗ trợ.
 
 ## Thiết kế

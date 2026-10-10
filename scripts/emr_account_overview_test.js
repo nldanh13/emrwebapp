@@ -88,7 +88,7 @@ const test = async (name, fn) => { try { await fn(); console.log(`  ok - ${name}
 
   const app = express();
   app.use('/api', authz.authenticateRequest, express.json());
-  app.use('/api', authz.authorizeRequest, require('../server/routes/nurse_emr_accounts'), require('../server/routes/emr_accounts'), require('../server/routes/clinic'));
+  app.use('/api', authz.authorizeRequest, require('../server/routes/nurse_emr_accounts'), require('../server/routes/emr_accounts'), require('../server/routes/clinic'), require('../server/routes/nurse'));
   const server = app.listen(0, '127.0.0.1');
   await new Promise(r => server.once('listening', r));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -170,6 +170,44 @@ const test = async (name, fn) => { try { await fn(); console.log(`  ok - ${name}
     assert.ok(!JSON.stringify(list.json).includes('mk-'));
     const viewerAdd = await call('POST', '/api/nurse-emr-accounts/doctors', { token: VIEWER, body: { names: ['X'] } });
     assert.strictEqual(viewerAdd.status, 403);
+  });
+
+  await test('Lịch phòng khám: bác sĩ tra riêng theo đúng ngày → theo thứ → mẫu mặc định', () => {
+    const { clinicNamesForDate } = require('../server/utils/nurse_config');
+    const sched = {
+      days: { '2026-10-10': { work: ['ĐD ngày'], doctor: [] }, '2026-10-12': { doctor: ['BS ngày'] } },
+      Saturday: { doctor: ['BS thứ 7'] },
+      Default: { doctor: ['BS mẫu'], work: ['ĐD mẫu'] },
+    };
+    assert.deepStrictEqual(clinicNamesForDate(sched, '2026-10-10'), ['BS thứ 7'], 'ngày chỉ xếp điều dưỡng thì bác sĩ lấy theo thứ');
+    assert.deepStrictEqual(clinicNamesForDate(sched, '10/10/2026', 'work'), ['ĐD ngày']);
+    assert.deepStrictEqual(clinicNamesForDate(sched, '2026-10-12'), ['BS ngày']);
+    assert.deepStrictEqual(clinicNamesForDate(sched, '2026-10-13'), ['BS mẫu']);
+    assert.deepStrictEqual(clinicNamesForDate(sched, '2026-10-12', 'work'), ['ĐD mẫu']);
+  });
+
+  await test('phòng khám đăng nhập "theo lịch": bác sĩ đầu tiên có tài khoản của ngày làm việc', () => {
+    const { withDoctorAccount } = require('../server/routes/clinic');
+    const cfgPath = path.join(dir, 'config_lich.json');
+    fs.writeFileSync(cfgPath, JSON.stringify({ clinic_nurse_schedule: {
+      days: { '2026-10-12': { doctor: ['Chưa Khai', 'Hồ Điền'] }, '2026-10-13': { doctor: ['Chưa Khai'] } },
+    } }));
+    const body = withDoctorAccount({ account_name: '@lich', careDate: '12/10/2026' }, cfgPath);
+    assert.strictEqual(body.username, 'dien.ho');
+    assert.strictEqual(body.password, 'mk-moi');
+    assert.strictEqual(body.account_doctor, 'Hồ Điền');
+    assert.throws(() => withDoctorAccount({ account_name: '@lich' }, cfgPath, '2026-10-13'), /Chưa Khai\) chưa có tài khoản EMR/);
+    assert.throws(() => withDoctorAccount({ account_name: '@lich' }, cfgPath, '2026-10-14'), /14\/10\/2026 chưa xếp bác sĩ/);
+  });
+
+  await test('lưu Lịch phòng khám rồi GET /api/clinic/doctor-accounts trả bác sĩ theo lịch hôm nay', async () => {
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const saved = await call('POST', '/api/nurse-settings', { body: { clinicSchedule: { days: { [today]: { doctor: ['Chưa Khai', 'Phạm Việt Tân'] } } } } });
+    assert.strictEqual(saved.status, 200, JSON.stringify(saved.json));
+    assert.deepStrictEqual(saved.json.clinicSchedule.days[today].doctor, ['Chưa Khai', 'Phạm Việt Tân']);
+    const list = await call('GET', '/api/clinic/doctor-accounts', { token: VIEWER });
+    assert.deepStrictEqual(list.json.scheduled_today, { date: today, names: ['Chưa Khai', 'Phạm Việt Tân'], account_name: 'Phạm Việt Tân' });
   });
 
   server.close();
