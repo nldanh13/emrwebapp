@@ -172,7 +172,7 @@ export default function DischargeSignTab({ toast }) {
     <div style={{ padding: 12, maxWidth: 1080, margin: '0 auto' }}>
       <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
         <p style={{ margin: 0, flex: '1 1 320px', fontSize: FS.sm, color: C.text2, lineHeight: 1.5 }}>
-          Chèn ảnh chữ ký đã cấu hình (ở Lịch điều dưỡng) vào bộ phiếu "In ra viện" đã in sẵn, hoặc vào file PDF
+          Chèn ảnh chữ ký đã cấu hình (ở Lịch làm việc) vào bộ phiếu "In ra viện" đã in sẵn, hoặc vào file PDF
           anh/chị tự tải lên. Chỉ chèn cho người đã có ảnh chữ ký, người khác giữ nguyên. Luôn tạo file mới, không
           đụng file gốc chưa ký.
         </p>

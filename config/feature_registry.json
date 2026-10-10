@@ -33,10 +33,10 @@
     },
     {
       "id": "nurse",
-      "label": "Lịch điều dưỡng",
+      "label": "Lịch làm việc",
       "icon": "☷",
       "group": "Điều dưỡng",
-      "hint": "Nhân sự và lịch làm việc",
+      "hint": "Lịch điều dưỡng khoa và phòng khám (điều dưỡng, bác sĩ) theo tuần",
       "order": 60,
       "compact": true,
       "usesDateRange": false
@@ -108,16 +108,6 @@
       "group": "Phòng khám",
       "hint": "Theo dõi danh sách khám bệnh",
       "order": 100,
-      "compact": true,
-      "usesDateRange": false
-    },
-    {
-      "id": "clinic-schedule",
-      "label": "Lịch phòng khám",
-      "icon": "▦",
-      "group": "Phòng khám",
-      "hint": "Xếp bác sĩ, điều dưỡng phòng khám theo ngày; bác sĩ theo lịch đăng nhập EMR",
-      "order": 101,
       "compact": true,
       "usesDateRange": false
     },

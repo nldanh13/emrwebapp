@@ -338,7 +338,7 @@ class NgoaiTruFlow:
             end = parse_dt(self.js(VALUE_JS, "txtKetThucPT"))
             return {"result": "already", "message": "Ca mổ đã hoàn tất", "end": end}
         if not doctor:
-            raise RuntimeError("Chưa có bác sĩ phòng khám trong Lịch Phòng khám (Lịch điều dưỡng) để làm BS mổ chính")
+            raise RuntimeError("Chưa có bác sĩ phòng khám trong Lịch phòng khám (tab Lịch làm việc) để làm BS mổ chính")
         rule = surgery_window(admitted, now)
         if rule["result"] != "ok":
             return rule

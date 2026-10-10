@@ -51,7 +51,7 @@ function withDoctorAccount(body = {}, req = null, dateValue = '') {
   if (accountName === SCHEDULED_DOCTOR) {
     const sched = scheduledClinicDoctor(req, dateValue || body.careDate || body.care_date);
     const [y, m, d] = sched.date.split('-');
-    if (!sched.names.length) throw new Error(`Lịch phòng khám ngày ${d}/${m}/${y} chưa xếp bác sĩ. Xếp ở tab Lịch phòng khám, hoặc chọn một bác sĩ cụ thể.`);
+    if (!sched.names.length) throw new Error(`Lịch phòng khám ngày ${d}/${m}/${y} chưa xếp bác sĩ. Xếp ở tab Lịch làm việc, hoặc chọn một bác sĩ cụ thể.`);
     if (!sched.account_name) throw new Error(`Bác sĩ theo lịch ngày ${d}/${m}/${y} (${sched.names.join(', ')}) chưa có tài khoản EMR. Khai ở Thiết lập tài khoản → Tài khoản EMR → Bác sĩ phòng khám.`);
     accountName = sched.account_name;
   }

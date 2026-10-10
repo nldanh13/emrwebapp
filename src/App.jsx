@@ -29,7 +29,6 @@ const MedicationCatalogManager = lazy(() => import('./components/MedicationCatal
 const AccountSettingsTab = lazy(() => import('./components/AccountSettingsTab.jsx'));
 const EmrStructureScanTab = lazy(() => import('./components/EmrStructureScanTab.jsx'));
 const ClinicTab = lazy(() => import('./components/ClinicTab.jsx'));
-const ClinicScheduleTab = lazy(() => import('./components/ClinicScheduleTab.jsx'));
 const ResearchTab = lazy(() => import('./components/ResearchTab.jsx'));
 const PatientJourneyTab = lazy(() => import('./components/PatientJourneyTab.jsx'));
 const ReportTab = lazy(() => import('./components/ReportTab.jsx'));
@@ -295,7 +294,6 @@ export default function App() {
             ['account-settings', () => <AccountSettingsTab toast={toast} />],
             ['emr-structure-scan', () => <EmrStructureScanTab />],
             ['clinic', () => <ClinicTab toast={toast} />],
-            ['clinic-schedule', () => <ClinicScheduleTab toast={toast} />],
             ['nurse', () => <NurseTab toast={toast} />],
             ['report', () => <ReportTab toast={toast} workDateRange={workDateRange} />],
           ].map(([id, render]) => (visitedTabs.has(id) ? (

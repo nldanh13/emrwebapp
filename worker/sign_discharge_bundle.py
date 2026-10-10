@@ -230,7 +230,7 @@ def sign_bundle(in_pdf: str, out_pdf: str) -> Dict[str, Any]:
 
     sig_rows = load_nurse_signature_rows()
     if not sig_rows:
-        return {"status": "error", "message": "Chưa cấu hình ảnh chữ ký cho điều dưỡng/bác sĩ nào (tab Lịch điều dưỡng)."}
+        return {"status": "error", "message": "Chưa cấu hình ảnh chữ ký cho điều dưỡng/bác sĩ nào (tab Lịch làm việc)."}
     sig_rows = sorted(sig_rows, key=lambda r: -len(r["name"]))
 
     prepared: Dict[str, Tuple[bytes, float]] = {}
