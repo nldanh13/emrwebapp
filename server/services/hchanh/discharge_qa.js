@@ -4,7 +4,7 @@
 
 'use strict';
 
-const { loadQaRules, extractClsFromBilling } = require('./qa_shared');
+const { loadQaRules, extractClsFromBilling, isSelfPay } = require('./qa_shared');
 const {
   parseVNDateTime,
   dateOnlyUTC,
@@ -53,7 +53,7 @@ function checkProfile(profile) {
   if (!text(profile.ho_ten))
     issues.push(makeIssue({ group:'Thông tin nền', severity:'warn', code:'PROFILE_NAME_MISSING',
       title:'Thiếu họ tên người bệnh' }));
-  if (!text(profile.bhyt_code) && !profile.tu_tuc)
+  if (!text(profile.bhyt_code) && !isSelfPay(profile))
     issues.push(makeIssue({ group:'BHYT', severity:'warn', code:'BHYT_CODE_MISSING',
       title:'Chưa thấy mã thẻ BHYT / đối tượng thanh toán',
       action:'Kiểm tra thẻ BHYT trên EMR.', owner:'Điều dưỡng hành chánh/viện phí' }));

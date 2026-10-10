@@ -36,7 +36,7 @@ const {
   isBeforeDate,
   dateFromSurgeryRow,
 } = require('./vn_datetime');
-const { loadQaRules, extractClsFromBilling } = require('./qa_shared');
+const { loadQaRules, extractClsFromBilling, isSelfPay } = require('./qa_shared');
 
 function safeArray(v)   { return Array.isArray(v) ? v : []; }
 function text(v, fb='') { return String(v ?? '').replace(/\s+/g, ' ').trim() || fb; }
@@ -144,7 +144,7 @@ function checkDischargeBeforeAdmission({ admitAt, dischargeAt }) {
 
 function checkCardValidity({ profile, admissionDate, dischargeDate }) {
   if (!profile) return [];
-  if (profile.tu_tuc) return []; // tự túc viện phí, không claim BHYT
+  if (isSelfPay(profile)) return []; // tự túc viện phí, không claim BHYT
 
   const findings = [];
   const bhytCode = text(profile.bhyt_code);

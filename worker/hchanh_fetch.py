@@ -2138,6 +2138,16 @@ def _read_research_admission_vitals_by_click(
 
 # ── Fetcher: profile ──────────────────────────────────────────────────────────
 
+def _is_self_pay(doi_tuong: Any) -> bool:
+    """Người bệnh tự túc viện phí (không thanh toán BHYT)?
+
+    So trên chuỗi đã bỏ dấu, cùng từ khoá với cột Đối tượng của bảng kê. Chưa đọc được
+    đối tượng thì không coi là tự túc, để tiền giám định vẫn kiểm mã thẻ/hạn thẻ.
+    """
+    n = _norm(doi_tuong)
+    return bool(n) and not any(k in n for k in ("bao hiem", "bhyt"))
+
+
 def fetch_profile(sess: Optional["EmrHttpSession"], ma_bn: str,
                   patient_row: Dict[str, Any], link_map: Dict[str, str],
                   config: Dict[str, Any]) -> Dict[str, Any]:
@@ -2215,7 +2225,7 @@ def fetch_profile(sess: Optional["EmrHttpSession"], ma_bn: str,
         base["tuoi"]             = bi("lblTuoi")
         base["dia_chi"]          = bi("lblDiaChi")
         base["doi_tuong"]        = bi("lblDoiTuong")
-        base["tu_tuc"]           = "bảo hiểm" not in _norm(bi("lblDoiTuong"))
+        base["tu_tuc"]           = _is_self_pay(base["doi_tuong"])
 
         # BHYT
         base["bhyt_code"]        = bi("lblSoThe")
@@ -2247,7 +2257,7 @@ def fetch_profile(sess: Optional["EmrHttpSession"], ma_bn: str,
                 base["dia_chi"]          = bi2("lblDiaChi") or base.get("dia_chi", "")
                 base["doi_tuong"]        = bi2("lblDoiTuong") or base.get("doi_tuong", "")
                 if base.get("doi_tuong"):
-                    base["tu_tuc"] = "bảo hiểm" not in _norm(base.get("doi_tuong"))
+                    base["tu_tuc"] = _is_self_pay(base.get("doi_tuong"))
                 base["bhyt_code"]        = bi2("lblSoThe") or base.get("bhyt_code", "")
                 base["bhyt_loai"]        = bi2("lblLoai") or base.get("bhyt_loai", "")
                 base["bhyt_tu_ngay"]     = bi2("lblTuNgay") or base.get("bhyt_tu_ngay", "")
@@ -2296,71 +2306,6 @@ def fetch_profile(sess: Optional["EmrHttpSession"], ma_bn: str,
         print(f"ERROR [profile] {ma_bn}: {e}", file=sys.stderr)
         base["_fetch_status"] = "error"
         base["_error"] = str(e)
-
-    return base
-
-
-    base = {
-        "ma_bn":         _t(patient_row.get("ma_bn") or patient_row.get("Mã BN") or ma_bn),
-        "ho_ten":        _t(patient_row.get("ho_ten") or patient_row.get("Họ tên")),
-        "phong":         _t(patient_row.get("Vi_Tri") or patient_row.get("so_phong")),
-        "bac_si":        _t(patient_row.get("bac_si_dieu_tri") or patient_row.get("bac_si") or patient_row.get("Bác sĩ")),
-        "chan_doan":      _t(patient_row.get("chan_doan") or patient_row.get("Chẩn đoán")),
-        "bhyt_code":     _t(patient_row.get("bhyt") or patient_row.get("BHYT") or patient_row.get("ma_bhyt") or patient_row.get("so_the_bhyt")),
-        "doi_tuong":     _t(patient_row.get("doi_tuong") or patient_row.get("Đối tượng")),
-        "tu_tuc":        "tu tuc" in _norm(patient_row.get("doi_tuong") or ""),
-        "ngay_vao":      _t(patient_row.get("thoi_gian_vao_khoa") or patient_row.get("tg_vao") or patient_row.get("ngay_vao_vien")),
-        "khoa":          _t(patient_row.get("ten_khoa_dieu_tri") or patient_row.get("khoa_dieu_tri")),
-        "gioi_tinh":     _t(patient_row.get("gioi_tinh") or patient_row.get("Giới tính")),
-        "tuoi":          _t(patient_row.get("tuoi") or patient_row.get("Tuổi")),
-        "_source":       "patient_row",
-        "_fetch_status": "ok",
-    }
-
-    # Cố gắng bổ sung từ trang dieuduongdraw
-    if sess is None:
-        return base
-
-    try:
-        base_origin = sess.base_origin
-        view_url = _patient_page_url(link_map, ma_bn, config, base_origin, kind="nursing")
-        if not view_url:
-            print(f"WARN [profile] Không tìm thấy URL con mắt điều dưỡng BN {ma_bn} trong link_map", file=sys.stderr)
-            return base
-
-        html, _ = sess.get_html(view_url)
-        soup = _soup(html)
-
-        # Lấy bổ sung từ trang: tìm các label/value pattern phổ biến của EMR ASP.NET
-        def _label_val(lbl_text: str) -> str:
-            el = soup.find(lambda t: t.name and _norm(t.get_text()) == _norm(lbl_text))
-            if el:
-                nxt = el.find_next_sibling()
-                if nxt:
-                    return _get_text(nxt)
-            # Tìm span/td theo id pattern
-            for pattern in [lbl_text.lower().replace(" ", ""), lbl_text]:
-                for tag in soup.find_all(["span", "label", "td"], string=re.compile(re.escape(pattern), re.IGNORECASE)):
-                    nxt = tag.find_next_sibling()
-                    if nxt:
-                        v = _get_text(nxt)
-                        if v:
-                            return v
-            return ""
-
-        # Bổ sung nếu chưa có
-        if not base["bac_si"]:
-            base["bac_si"] = _label_val("Bác sĩ điều trị") or _label_val("Bác sĩ")
-        if not base["chan_doan"]:
-            base["chan_doan"] = _label_val("Chẩn đoán") or _label_val("Chẩn đoán chính")
-        if not base["bhyt_code"]:
-            base["bhyt_code"] = _label_val("Số thẻ BHYT") or _label_val("BHYT") or _label_val("Mã thẻ")
-        if not base["ngay_vao"]:
-            base["ngay_vao"] = _label_val("Ngày vào viện") or _label_val("Giờ vào")
-
-        base["_source"] = "patient_row+emr_page"
-    except Exception as e:
-        print(f"WARN [profile] Không bổ sung được từ trang EMR: {e}", file=sys.stderr)
 
     return base
 
