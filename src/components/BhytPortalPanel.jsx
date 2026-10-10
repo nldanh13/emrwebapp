@@ -96,14 +96,18 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
   const [loggingIn, setLoggingIn] = useState(false);
   const [capturing, setCapturing] = useState(false);
 
+  // Luồng 1 — Kiểm tra HSBA: tra cứu thông tuyến (nhập mã thẻ, họ tên, năm sinh).
+  const [ttCard, setTtCard] = useState('');
+  const [ttName, setTtName] = useState('');
+  const [ttBirth, setTtBirth] = useState('');
+  const [ttBusy, setTtBusy] = useState(false);
+
   // Mục tiêu 2 — nhập "Giấy chứng nhận nghỉ việc hưởng BHXH" vào EMR nội bộ.
   const [emrUser, setEmrUser] = useState('');
   const [emrPass, setEmrPass] = useState('');
   const [emrStatus, setEmrStatus] = useState({ logged_in: false });
   const [emrPatient, setEmrPatient] = useState('');
   const [emrBusy, setEmrBusy] = useState('');
-  const [emrConfirmOpen, setEmrConfirmOpen] = useState(false);
-  const [emrConfirmText, setEmrConfirmText] = useState('');
 
   const fileInputRef = useRef(null);
   const autoOpenStarted = useRef(false);
@@ -305,6 +309,32 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
     }
   }, [toast]);
 
+  // Tra cứu thông tuyến trên cổng (Luồng 1). Id ô trên trang tra cứu chưa chốt nên
+  // công cụ điền best-effort rồi luôn chụp trang kết quả để khớp lại.
+  const doLookupThongTuyen = useCallback(async () => {
+    if (!ttCard.trim() && !ttName.trim()) {
+      toast?.('Nhập ít nhất mã thẻ BHYT hoặc họ tên để tra cứu.', 'error');
+      return;
+    }
+    setTtBusy(true);
+    try {
+      const d = await bhytFetch('/api/browser/lookup-thong-tuyen', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ma_the: ttCard.trim(), ho_ten: ttName.trim(), nam_sinh: ttBirth.trim() }),
+      });
+      const miss = (d.missing || []).length;
+      if (miss) {
+        toast?.(`Đã mở trang tra cứu nhưng chưa khớp ${miss} ô (id trang chưa chốt). Đã chụp trang — gửi file để em khớp lại.`, 'error');
+      } else {
+        toast?.(d.note || 'Đã tra cứu. Đã chụp trang kết quả.', 'ok');
+      }
+    } catch (e) {
+      toast?.(String(e?.message || 'Không tra cứu được thông tuyến.'), 'error');
+    } finally {
+      setTtBusy(false);
+    }
+  }, [ttCard, ttName, ttBirth, toast]);
+
   // ── EMR nội bộ: nhập giấy nghỉ (mục tiêu 2) ────────────────────────────────
   const checkEmr = useCallback(async () => {
     try {
@@ -367,21 +397,29 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
     }
   }, [toast]);
 
-  const emrFill = useCallback(async (dryRun, confirmation = '') => {
-    if (!firstSelected) { toast?.('Chọn một hồ sơ trong danh sách để lấy dữ liệu điền.', 'error'); return; }
-    setEmrBusy(dryRun ? 'fill' : 'fillreal');
+  // Đọc dữ liệu từ form giấy nghỉ trên EMR rồi bù vào hồ sơ đang chọn (để điền lên cổng BHXH).
+  const emrReadCert = useCallback(async () => {
+    setEmrBusy('read');
     try {
-      const d = await bhytFetch('/api/emr/fill', {
+      const d = await bhytFetch('/api/emr/read-cert', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ record_id: firstSelected.id, dry_run: dryRun, confirmation }),
+        body: JSON.stringify({ record_id: firstSelected ? firstSelected.id : undefined }),
       });
-      toast?.(d.message || (dryRun ? 'Đã điền thử.' : 'Đã nhập thật.'), 'ok');
+      const n = Object.keys(d.fields || {}).length;
+      if (!n) {
+        toast?.('Không đọc được ô nào từ form. Bấm "Chụp form cho kỹ thuật" để em khớp lại.', 'error');
+      } else if (d.updated) {
+        toast?.(`Đã đọc ${n} trường từ EMR và bù vào hồ sơ. Giờ có thể điền lên cổng BHXH ở bước 3.`, 'ok');
+        await loadAll();
+      } else {
+        toast?.(`Đã đọc ${n} trường từ EMR (chưa gắn vào hồ sơ nào — hãy chọn 1 hồ sơ ở danh sách).`, 'ok');
+      }
     } catch (e) {
-      toast?.(String(e?.message || 'Không điền được form.'), 'error');
+      toast?.(String(e?.message || 'Không đọc được form giấy nghỉ.'), 'error');
     } finally {
       setEmrBusy('');
     }
-  }, [firstSelected, toast]);
+  }, [firstSelected, loadAll, toast]);
 
   const handleImportFiles = useCallback(async (fileList) => {
     if (!fileList || !fileList.length) return;
@@ -586,6 +624,34 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
         </div>
       </StepCard>
 
+      <div style={{
+        border: `1px solid ${C.border2}`, borderRadius: 8, padding: '12px 14px', background: C.surface, marginBottom: 10,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Tra cứu thông tuyến BHYT</div>
+          <Badge text="Luồng 1 · HSBA · thử nghiệm" bg={C.amberBg} color={C.amber} size={FS.xs} />
+        </div>
+        <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.5, marginBottom: 10 }}>
+          Nhập mã thẻ BHYT, họ tên, năm sinh để tra cứu trên cổng (cần đăng nhập cổng ở trên trước).
+          Id các ô trên trang tra cứu chưa chốt — công cụ điền rồi <b>tự chụp trang</b>; nếu chưa khớp ô nào,
+          gửi em bản chụp để khớp lại.
+        </div>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 160px', minWidth: 140 }}>
+            <Field label="Mã thẻ BHYT"><input value={ttCard} onChange={e => setTtCard(e.target.value)} style={INPUT_STYLE} autoComplete="off" /></Field>
+          </div>
+          <div style={{ flex: '1 1 160px', minWidth: 140 }}>
+            <Field label="Họ tên"><input value={ttName} onChange={e => setTtName(e.target.value)} style={INPUT_STYLE} autoComplete="off" /></Field>
+          </div>
+          <div style={{ flex: '0 1 110px', minWidth: 90 }}>
+            <Field label="Năm sinh"><input value={ttBirth} onChange={e => setTtBirth(e.target.value)} style={INPUT_STYLE} autoComplete="off" placeholder="vd 1985" /></Field>
+          </div>
+          <Btn variant="primary" onClick={doLookupThongTuyen} disabled={ttBusy} style={{ padding: '7px 14px', fontSize: FS.xs }}>
+            {ttBusy ? <><Spinner size={10} /> Đang tra...</> : 'Tra cứu thông tuyến'}
+          </Btn>
+        </div>
+      </div>
+
       <StepCard
         n={2}
         title="Nhập dữ liệu"
@@ -694,7 +760,7 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
         marginTop: 16, border: `1px solid ${C.border2}`, borderRadius: 8, padding: '12px 14px', background: C.surface,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-          <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Nhập giấy nghỉ vào EMR nội bộ</div>
+          <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Đọc giấy nghỉ từ EMR nội bộ</div>
           <Badge text="Mục tiêu 2 · thử nghiệm" bg={C.amberBg} color={C.amber} size={FS.xs} />
           <Badge
             text={emrStatus.logged_in ? 'EMR: đã đăng nhập' : (emrStatus.error ? 'EMR: chưa chạy' : 'EMR: chưa đăng nhập')}
@@ -705,9 +771,10 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
           <Btn variant="default" onClick={checkEmr} style={{ padding: '4px 10px', fontSize: FS.xs, marginLeft: 'auto' }}>Kiểm tra</Btn>
         </div>
         <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.5, marginBottom: 10 }}>
-          Đây là nhập "Giấy chứng nhận nghỉ việc hưởng BHXH" vào <b>EMR nội bộ</b> (không phải cổng BHYT).
-          Đăng nhập EMR, chọn 1 hồ sơ ở danh sách trên (hoặc gõ tên), <b>Mở form</b> rồi <b>Điền thử</b> (không bấm Chấp nhận).
-          Nếu nav sai hoặc thiếu ô, bấm <b>Chụp form</b> và gửi file để khớp lại.
+          <b>Đọc</b> dữ liệu "Giấy chứng nhận nghỉ việc hưởng BHXH" từ <b>EMR nội bộ</b> để bù vào hồ sơ,
+          rồi điền lên <b>cổng BHXH</b> ở bước 3. Module này chỉ đọc, không sửa gì trên EMR.
+          Đăng nhập EMR, chọn 1 hồ sơ ở danh sách trên (hoặc gõ tên) → <b>Mở form</b> → <b>Đọc dữ liệu</b>.
+          Nếu nav sai hoặc không đọc được ô, bấm <b>Chụp form</b> và gửi file để khớp lại.
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 10 }}>
@@ -733,12 +800,8 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
           <Btn variant="default" onClick={emrCapture} disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
             {emrBusy === 'capture' ? <><Spinner size={10} /> Đang lưu...</> : 'Chụp form cho kỹ thuật'}
           </Btn>
-          <Btn variant="default" onClick={() => emrFill(true)} disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
-            {emrBusy === 'fill' ? <><Spinner size={10} /> Đang điền...</> : 'Điền thử'}
-          </Btn>
-          <Btn variant="danger" onClick={() => { if (!firstSelected) { toast?.('Chọn một hồ sơ trong danh sách.', 'error'); return; } setEmrConfirmText(''); setEmrConfirmOpen(true); }}
-            disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
-            Nhập thật (bấm Chấp nhận)
+          <Btn variant="primary" onClick={emrReadCert} disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
+            {emrBusy === 'read' ? <><Spinner size={10} /> Đang đọc...</> : 'Đọc dữ liệu từ EMR'}
           </Btn>
         </div>
         {emrTargetName && (
@@ -820,28 +883,6 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
               <Btn variant="default" onClick={() => setConfirmOpen(false)} style={{ padding: '6px 14px', fontSize: FS.sm }}>Hủy</Btn>
               <Btn variant="danger" type="submit" style={{ padding: '6px 14px', fontSize: FS.sm }}>Bắt đầu nhập thật</Btn>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {emrConfirmOpen && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(23,32,51,0.42)', zIndex: 200,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-        }} onClick={() => setEmrConfirmOpen(false)}>
-          <form onSubmit={e => { e.preventDefault(); const v = emrConfirmText; setEmrConfirmOpen(false); emrFill(false, v); }}
-            onClick={e => e.stopPropagation()} style={{
-              background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 18, width: 440, maxWidth: '95vw',
-            }}>
-            <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text, marginBottom: 8 }}>Xác nhận nhập thật vào EMR</div>
-            <div style={{ fontSize: FS.xs, color: C.text2, lineHeight: 1.6, marginBottom: 10 }}>
-              Sẽ điền form giấy nghỉ của <b>{emrTargetName || firstSelected?.patient_name || '—'}</b> rồi bấm <b>Chấp nhận</b> trên EMR. Form phải đang mở. Gõ chính xác <code>NHẬP THẬT</code> để tiếp tục.
-            </div>
-            <input value={emrConfirmText} onChange={e => setEmrConfirmText(e.target.value)} placeholder="NHẬP THẬT" autoComplete="off" style={INPUT_STYLE} />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
-              <Btn variant="default" onClick={() => setEmrConfirmOpen(false)} style={{ padding: '6px 14px', fontSize: FS.sm }}>Hủy</Btn>
-              <Btn variant="danger" type="submit" style={{ padding: '6px 14px', fontSize: FS.sm }}>Bấm Chấp nhận</Btn>
             </div>
           </form>
         </div>

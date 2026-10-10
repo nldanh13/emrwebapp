@@ -4,15 +4,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bhyt.emr import EmrError, EmrPortal, build_cert_fields, _days_between
+from bhyt.emr import EmrError, EmrPortal, EMR_TO_RECORD
 from selenium.webdriver.common.by import By
 
 
 class El:
-    def __init__(self, text=""):
-        self.value = ""
+    def __init__(self, value=""):
+        self.value = value
         self.clicked = False
-        self.text = text
 
     def clear(self):
         self.value = ""
@@ -22,6 +21,9 @@ class El:
 
     def click(self):
         self.clicked = True
+
+    def get_attribute(self, name):
+        return self.value if name == "value" else None
 
 
 class SwitchTo:
@@ -36,9 +38,9 @@ class SwitchTo:
 
 
 class FakeDriver:
-    """Giả lập EMR: đăng nhập xong thì rời login.aspx; có sẵn modal + 7 ô form giấy nghỉ."""
+    """Giả lập EMR: đăng nhập xong rời login.aspx; có sẵn modal + 7 ô form giấy nghỉ có giá trị."""
 
-    def __init__(self, base="http://192.168.2.26:2026", logged_in=False, has_modal=False):
+    def __init__(self, base="http://192.168.2.26:2026", logged_in=False, has_modal=False, values=None):
         self.base = base
         self.current_url = f"{base}/home.aspx" if logged_in else f"{base}/login.aspx"
         self.title = "EMR"
@@ -50,10 +52,11 @@ class FakeDriver:
             "txtTimKiem": El(), "btnTimKiem": El(),
         }
         if has_modal:
-            for fid in ("divModalContentX", "txtSoNgayNghi", "txtDonViLamViec",
-                        "txtMaSoBHXH", "txtSoTheBHYT", "txtNgayCapGiay",
-                        "txtNghiTuNgay", "txtNghiDenNgay", "btnChapNhanGiay"):
-                self.by_id[fid] = El()
+            v = values or {}
+            self.by_id["divModalContentX"] = El()
+            for fid in ("txtSoNgayNghi", "txtDonViLamViec", "txtMaSoBHXH", "txtSoTheBHYT",
+                        "txtNgayCapGiay", "txtNghiTuNgay", "txtNghiDenNgay"):
+                self.by_id[fid] = El(v.get(fid, ""))
 
     def find_elements(self, by, value):
         if by == By.ID:
@@ -68,16 +71,15 @@ class FakeDriver:
         self.current_url = url
 
     def execute_script(self, script, *args):
-        # _click và _fill_input dùng execute_script('arguments[0].click()' / set value...)
         if args and isinstance(args[0], El):
             el = args[0]
             if "click" in script:
                 el.clicked = True
                 if el is self.by_id.get("btnLogin"):
                     self.login_clicked = True
-                    self.current_url = f"{self.base}/home.aspx"  # đăng nhập xong
-            elif "value" in script and len(args) > 1:
-                el.value = str(args[1])
+                    self.current_url = f"{self.base}/home.aspx"
+            elif "return arguments[0].value" in script:
+                return el.value
         return None
 
     def get_screenshot_as_png(self):
@@ -90,34 +92,6 @@ class FakeDriver:
 
 def make_emr(tmp, **kw):
     return EmrPortal("http://192.168.2.26:2026", Path(tmp) / "p", **kw)
-
-
-class BuildCertFieldsTests(unittest.TestCase):
-    def test_maps_fields_and_computes_days(self):
-        out = build_cert_fields({
-            "ten_dv": "Cty A", "ma_bhxh": "0123456789", "ma_the": "DN4790112345",
-            "tu_ngay": "01/10/2026", "den_ngay": "05/10/2026", "ngay_ct": "05/10/2026",
-        })
-        self.assertEqual(out["so_ngay_nghi"], "5")  # tính cả hai đầu
-        self.assertEqual(out["don_vi_lam_viec"], "Cty A")
-        self.assertEqual(out["ma_so_bhxh"], "0123456789")
-        self.assertEqual(out["so_the_bhyt"], "DN4790112345")
-        self.assertEqual(out["nghi_tu_ngay"], "01/10/2026")
-        self.assertEqual(out["nghi_den_ngay"], "05/10/2026")
-
-    def test_explicit_so_ngay_nghi_wins_over_computed(self):
-        out = build_cert_fields({"so_ngay_nghi": "3", "tu_ngay": "01/10/2026", "den_ngay": "05/10/2026"})
-        self.assertEqual(out["so_ngay_nghi"], "3")
-
-    def test_days_between_invalid_returns_empty(self):
-        self.assertEqual(_days_between("", ""), "")
-        self.assertEqual(_days_between("05/10/2026", "01/10/2026"), "")  # ngược thứ tự
-        self.assertEqual(_days_between("x", "y"), "")
-
-    def test_missing_fields_left_empty(self):
-        out = build_cert_fields({})
-        self.assertEqual(out["don_vi_lam_viec"], "")
-        self.assertEqual(out["so_the_bhyt"], "")
 
 
 class EmrPortalTests(unittest.TestCase):
@@ -140,40 +114,57 @@ class EmrPortalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             p = make_emr(tmp, timeout=1)
             d = FakeDriver()
-            # btnLogin không có → gửi Enter, vẫn ở login.aspx
-            del d.by_id["btnLogin"]
+            del d.by_id["btnLogin"]  # không có nút → Enter, vẫn ở login.aspx
             p.driver = d
             res = p.login("hdien", "sai")
         self.assertFalse(res["logged_in"])
 
-    def test_fill_cert_dry_run_fills_but_does_not_accept(self):
+    def test_read_cert_maps_emr_fields_to_record_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = make_emr(tmp)
-            p.driver = FakeDriver(logged_in=True, has_modal=True)
-            cert = build_cert_fields({
-                "ten_dv": "Cty A", "ma_bhxh": "0123", "ma_the": "DN41234567890",
-                "tu_ngay": "01/10/2026", "den_ngay": "03/10/2026", "ngay_ct": "03/10/2026",
+            p.driver = FakeDriver(logged_in=True, has_modal=True, values={
+                "txtSoNgayNghi": "3",
+                "txtDonViLamViec": "Cty A",
+                "txtMaSoBHXH": "0123456789",
+                "txtSoTheBHYT": "DN4790112345",
+                "txtNgayCapGiay": "05/10/2026",
+                "txtNghiTuNgay": "01/10/2026",
+                "txtNghiDenNgay": "03/10/2026",
             })
-            msg = p.fill_cert(cert, dry_run=True)
-        self.assertIn("chưa bấm", msg.lower())
-        self.assertEqual(p.driver.by_id["txtDonViLamViec"].value, "Cty A")
-        self.assertEqual(p.driver.by_id["txtSoNgayNghi"].value, "3")
-        self.assertFalse(p.driver.by_id["btnChapNhanGiay"].clicked)
+            out = p.read_cert()
+        f = out["fields"]
+        self.assertEqual(f["ten_dv"], "Cty A")
+        self.assertEqual(f["ma_bhxh"], "0123456789")
+        self.assertEqual(f["ma_the"], "DN4790112345")
+        self.assertEqual(f["ngay_ct"], "05/10/2026")
+        self.assertEqual(f["tu_ngay"], "01/10/2026")
+        self.assertEqual(f["den_ngay"], "03/10/2026")
+        self.assertEqual(f["so_ngay_nghi"], "3")
+        # raw giữ theo khóa ô EMR để đối chiếu
+        self.assertEqual(out["raw"]["don_vi_lam_viec"], "Cty A")
 
-    def test_fill_cert_real_clicks_accept(self):
+    def test_read_cert_skips_empty_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = make_emr(tmp)
-            p.driver = FakeDriver(logged_in=True, has_modal=True)
-            msg = p.fill_cert({"so_ngay_nghi": "2"}, dry_run=False)
-        self.assertIn("Chấp nhận", msg)
-        self.assertTrue(p.driver.by_id["btnChapNhanGiay"].clicked)
+            p.driver = FakeDriver(logged_in=True, has_modal=True, values={
+                "txtMaSoBHXH": "0123456789",  # chỉ ô này có giá trị
+            })
+            out = p.read_cert()
+        self.assertEqual(out["fields"], {"ma_bhxh": "0123456789"})
+        self.assertNotIn("ten_dv", out["fields"])
 
-    def test_fill_cert_without_modal_raises(self):
+    def test_read_cert_without_modal_raises(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = make_emr(tmp)
             p.driver = FakeDriver(logged_in=True, has_modal=False)
             with self.assertRaises(EmrError):
-                p.fill_cert({"so_ngay_nghi": "2"}, dry_run=True)
+                p.read_cert()
+
+    def test_emr_to_record_is_read_only_mapping(self):
+        # Không có ô nào ánh xạ tới số seri / số KCB (các field đó lấy từ file BHXH).
+        self.assertNotIn("so_seri", EMR_TO_RECORD.values())
+        self.assertNotIn("so_kcb", EMR_TO_RECORD.values())
+        self.assertIn("ma_the", EMR_TO_RECORD.values())
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
-from bhyt.emr import EmrError, EmrPortal, build_cert_fields
+from bhyt.emr import EmrError, EmrPortal
 from bhyt.emrwebapp_client import WebAppError, fetch_records_from_webapp
 from bhyt.mapping import DEFAULT_DOCTORS, load_records
 from bhyt.portal import BhytPortal, PortalError, Worker
@@ -268,6 +268,23 @@ def api_browser_capture():
         return jsonify({"error": f"Không lấy được trang: {exc}", "captured": out}), 500
 
 
+@app.post("/api/browser/lookup-thong-tuyen")
+def api_browser_lookup_thong_tuyen():
+    """Tra cứu thông tuyến: nhập mã thẻ BHYT, họ tên, năm sinh. Luôn chụp trang kết quả."""
+    payload = request.get_json(force=True) or {}
+    ma_the = str(payload.get("ma_the", "")).strip()
+    ho_ten = str(payload.get("ho_ten", "")).strip()
+    nam_sinh = str(payload.get("nam_sinh", "")).strip()
+    if not ma_the and not ho_ten:
+        return jsonify({"error": "Cần ít nhất mã thẻ BHYT hoặc họ tên để tra cứu."}), 400
+    try:
+        return jsonify(portal.lookup_thong_tuyen(ma_the, ho_ten, nam_sinh))
+    except PortalError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Lỗi khi tra cứu thông tuyến: {exc}"}), 500
+
+
 @app.post("/api/browser/dump")
 def api_browser_dump():
     payload = request.get_json(force=True) or {}
@@ -351,31 +368,26 @@ def api_emr_capture():
         return jsonify({"error": f"Không lưu được form: {exc}"}), 500
 
 
-@app.post("/api/emr/fill")
-def api_emr_fill():
-    """Điền form giấy nghỉ. dry_run=True (mặc định) KHÔNG bấm Chấp nhận."""
+@app.post("/api/emr/read-cert")
+def api_emr_read_cert():
+    """ĐỌC dữ liệu form giấy nghỉ đang mở (không sửa gì trên EMR). Nếu có record_id thì
+    bù các field đọc được vào hồ sơ để điền lên cổng BHXH."""
     payload = request.get_json(force=True) or {}
-    dry_run = bool(payload.get("dry_run", True))
-    confirmation = str(payload.get("confirmation", "")).strip()
     record_id = payload.get("record_id")
-    fields = payload.get("fields")
-    if fields is None and record_id is not None:
-        record = store.get_record(int(record_id))
-        if not record:
-            return jsonify({"error": "Không tìm thấy hồ sơ"}), 404
-        fields = record.get("fields") or {}
-    if not isinstance(fields, dict):
-        return jsonify({"error": "Thiếu dữ liệu để điền form giấy nghỉ"}), 400
-    if not dry_run and confirmation != "NHẬP THẬT":
-        return jsonify({"error": 'Nhập thật cần gõ chính xác "NHẬP THẬT" để xác nhận.'}), 400
     try:
-        cert = build_cert_fields(fields)
-        message = emr.fill_cert(cert, dry_run=dry_run)
-        return jsonify({"message": message, "fields": cert, "dry_run": dry_run})
+        result = emr.read_cert()
+        updated = False
+        if record_id is not None and result.get("fields"):
+            try:
+                store.update_fields(int(record_id), result["fields"])
+                updated = True
+            except KeyError:
+                return jsonify({"error": "Không tìm thấy hồ sơ để cập nhật"}), 404
+        return jsonify({**result, "updated": updated})
     except EmrError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:  # noqa: BLE001
-        return jsonify({"error": f"Lỗi khi điền form giấy nghỉ: {exc}"}), 500
+        return jsonify({"error": f"Lỗi khi đọc form giấy nghỉ: {exc}"}), 500
 
 
 @app.post("/api/emr/close")
