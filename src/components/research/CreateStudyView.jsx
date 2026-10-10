@@ -13,7 +13,6 @@ import { compactNumber, text } from './researchFormat.js';
 import { inp, EmptyState } from './researchUi.jsx';
 import { ANCHOR_AGGREGATIONS, defaultAggregationFor, isPresenceVariable, VARIABLE_AGGREGATIONS, matchSurveyLines, operatorLabel, variableTypeLabel } from './variableCatalogModel.js';
 import { CohortSummary, FillBar, VariableStatsTable } from './researchStats.jsx';
-import { VARIABLE_ROLE_OPTIONS, roleTone } from './studyRoles.js';
 import { SampleSizePanel } from './SampleSizePanel.jsx';
 import { ReadinessChecklist, downloadCodebook, readinessItems } from './studyReadiness.jsx';
 
@@ -269,9 +268,8 @@ function StepVariables(props) {
     variableQuery, setVariableQuery, variableGroupFilter, setVariableGroupFilter, variableFillFilter, setVariableFillFilter,
     selectedVariableIds, selectedVariables, toggleVariable, addVariables, addCoreVariables,
     variableAggregations, setVariableAggregations, variableSurveyLabels, setVariableSurveyLabels,
-    variableAnchor, variableWindows, setVariableWindows, variableRoles, setVariableRoles,
+    variableAnchor, variableWindows, setVariableWindows,
   } = props;
-  const primaryCount = selectedVariables.filter(v => variableRoles[v.key] === 'primary_outcome').length;
   const aggregationOptions = VARIABLE_AGGREGATIONS.filter(([key]) => variableAnchor || !ANCHOR_AGGREGATIONS.has(key));
   const setWindow = (id, patch) => setVariableWindows(prev => ({ ...prev, [id]: { ...(prev[id] || {}), ...patch } }));
   const addVariant = (v) => props.setSelectedVariableIds(prev => new Set([...prev, `${v.id}@@${Date.now()}`]));
@@ -354,10 +352,8 @@ function StepVariables(props) {
         <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Biến đã chọn ({selectedVariables.length})</div>
         {!selectedVariables.length && <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.5 }}>Chưa chọn biến nào. Đánh dấu biến ở danh sách bên trái.</div>}
         {!!selectedVariables.length && (
-          <div style={{ fontSize: FS.xs, lineHeight: 1.45, color: primaryCount ? C.text3 : C.amber }}>
-            {primaryCount
-              ? 'Vai trò biến dùng để kiểm tra đủ dữ liệu và tính cỡ mẫu ở bước 4.'
-              : 'Chọn vai trò cho từng biến, ít nhất một biến "Kết cục chính", là biến trả lời câu hỏi nghiên cứu (vd. có phản ứng pha cấp).'}
+          <div style={{ fontSize: FS.xs, lineHeight: 1.45, color: C.text3 }}>
+            Tên cột khi xuất theo phiếu khảo sát. Với biến có nhiều lần đo, chọn cách lấy ở bên dưới.
           </div>
         )}
         <div style={{ display: 'grid', gap: 6, maxHeight: 'calc(100vh - 330px)', overflow: 'auto' }}>
@@ -376,11 +372,6 @@ function StepVariables(props) {
                     + Lấy thêm một lần (cách lấy khác)
                   </button>
                 )}
-                <select value={variableRoles[v.key] || ''} aria-label={`Vai trò của ${v.display_label}`}
-                  onChange={e => setVariableRoles(prev => ({ ...prev, [v.key]: e.target.value }))}
-                  style={{ ...inp, height: 28, fontSize: FS.xs, fontWeight: 600, color: variableRoles[v.key] ? roleTone(variableRoles[v.key])[0] : C.text3 }}>
-                  {VARIABLE_ROLE_OPTIONS.map(([value, l]) => <option key={value || 'none'} value={value}>{l}</option>)}
-                </select>
                 <input value={variableSurveyLabels[v.key] ?? v.display_label ?? v.name}
                   onChange={e => setVariableSurveyLabels(prev => ({ ...prev, [v.key]: e.target.value }))}
                   aria-label="Tên cột khi xuất" title="Tên cột khi xuất dữ liệu (theo phiếu khảo sát)"
@@ -522,7 +513,7 @@ function ElapsedTimer() {
 function StepReview(props) {
   const {
     draft, selectedVariables, variableConditions, variablePreview, variablePreviewLoading, variablePreviewError, loadVariablePreview,
-    variableRoles, variablePeriod, variableOnePerPatient, variableSampleSize, setVariableSampleSize, variableAnchor, variableWindows, onGoStep,
+    variablePeriod, variableOnePerPatient, variableSampleSize, setVariableSampleSize, variableAnchor, variableWindows, onGoStep,
     addConditionForVariable,
   } = props;
   // Sửa ngay tại bước 4 (vd. đưa "Dùng hoạt chất: X" thành tiêu chuẩn chọn vào) rồi tự tính lại thống kê.
@@ -540,19 +531,13 @@ function StepReview(props) {
   const usedAsInclude = new Set(variableConditions.filter(c => !c.exclude).map(c => c.variable_id));
   const presenceVariables = selectedVariables.filter(v => isPresenceVariable(v) && !usedAsInclude.has(v.id));
   const summary = variablePreview?.summary || null;
-  // Thống kê giữ thứ tự biến đã chọn: vai trò lấy theo lựa chọn hiện tại (đổi vai trò không cần tính lại).
-  const keyByColumn = new Map((summary?.variables || []).map((v, i) => [v.output_column || v.id, selectedVariables[i]?.key]));
-  const roleOf = (v) => {
-    const key = keyByColumn.get(v.output_column || v.id);
-    return key !== undefined ? (variableRoles[key] || '') : (v.role || '');
-  };
   const windowText = (key) => {
     const w = variableWindows?.[key];
     if (!w || (w.from === '' && w.to === '') || (w.from === undefined && w.to === undefined)) return '';
     return `${w.from === '' || w.from === undefined ? '…' : w.from} → ${w.to === '' || w.to === undefined ? '…' : w.to} ngày`;
   };
   const items = summary ? readinessItems({
-    summary, roleOf, conditions: variableConditions, period: variablePeriod, onePerPatient: variableOnePerPatient,
+    summary, conditions: variableConditions, period: variablePeriod, onePerPatient: variableOnePerPatient,
     sampleSize: variableSampleSize, anchor: variableAnchor, presenceVariables,
   }) : [];
   const codebookName = `tu_dien_bien_${String(draft.name || 'nghien_cuu').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 60)}.csv`;
@@ -563,8 +548,8 @@ function StepReview(props) {
           <b style={{ color: C.text }}>{draft.name}</b> · {selectedVariables.length} biến · {variableConditions.length ? `${variableConditions.filter(c => !c.exclude).length} tiêu chuẩn chọn vào, ${variableConditions.filter(c => c.exclude).length} loại trừ` : 'không có tiêu chuẩn chọn mẫu (toàn bộ kho)'}
         </div>
         {summary && (
-          <Btn onClick={() => downloadCodebook(codebookName, summary, roleOf, (v, i) => ({ window: windowText(selectedVariables[i]?.key) }))}
-            title="Bảng mô tả từng cột của file dữ liệu: vai trò, nguồn, cách lấy, độ đầy đủ" style={{ height: 30 }}>
+          <Btn onClick={() => downloadCodebook(codebookName, summary, (v, i) => ({ window: windowText(selectedVariables[i]?.key) }))}
+            title="Bảng mô tả tên cột, nguồn, cách lấy và độ đầy đủ" style={{ height: 30 }}>
             Tải từ điển biến
           </Btn>
         )}
@@ -616,10 +601,10 @@ function StepReview(props) {
               <div style={{ ...hint, color: C.text3 }}>Tính xong trong {(variablePreview.elapsed_ms / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} giây.</div>
             )}
           </section>
-          <SampleSizePanel sampleSize={variableSampleSize} setSampleSize={setVariableSampleSize} summary={summary} roleOf={roleOf} />
+          <SampleSizePanel sampleSize={variableSampleSize} setSampleSize={setVariableSampleSize} summary={summary} />
           <section>
             <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text, margin: '2px 0 8px' }}>Đo lường từng biến</div>
-            <VariableStatsTable variables={summary.variables || []} roleOf={roleOf} />
+            <VariableStatsTable variables={summary.variables || []} />
           </section>
         </>
       )}
