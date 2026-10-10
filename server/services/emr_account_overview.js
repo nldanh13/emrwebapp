@@ -59,7 +59,10 @@ function buildEmrAccountOverview({
     add({ use: row.kind === 'doctor' ? 'doctor' : 'nurse', owner: row.name, username: row.emr_username, has_password: Boolean(row.emr_password) });
   }
   for (const acc of readAccounts) {
-    add({ use: 'read', owner: acc.name, username: acc.emr_username, has_password: Boolean(acc.has_password), enabled: acc.enabled !== false });
+    // Dòng "chọn người đã lưu" dùng chính tài khoản của người đó (không giữ bản mật khẩu thứ hai):
+    // hiện thêm việc "Đọc song song" nhưng không tính là khai trùng.
+    const linked = acc.source === 'saved';
+    add({ use: 'read', owner: linked ? '' : acc.name, username: acc.emr_username, has_password: Boolean(acc.has_password), enabled: acc.enabled !== false, linked });
   }
 
   // Gộp theo tên đăng nhập EMR: một dòng = một tài khoản EMR, kèm mọi chỗ đang khai nó.
@@ -67,16 +70,17 @@ function buildEmrAccountOverview({
   for (const row of uses) {
     const k = key(row.username);
     if (!byUser.has(k)) byUser.set(k, { username: row.username.trim(), uses: [] });
-    byUser.get(k).uses.push({ use: row.use, label: USE_LABELS[row.use], owner: row.owner, has_password: row.has_password, ...(row.enabled === false ? { enabled: false } : {}) });
+    byUser.get(k).uses.push({ use: row.use, label: USE_LABELS[row.use], owner: row.owner, has_password: row.has_password, ...(row.enabled === false ? { enabled: false } : {}), ...(row.linked ? { linked: true } : {}) });
   }
   const accounts = [...byUser.values()].map((acc) => {
-    const kinds = new Set(acc.uses.map(u => u.use));
+    const own = acc.uses.filter(u => !u.linked); // chỗ giữ một bản mật khẩu riêng
     const notes = [];
     // Một tài khoản khai ở nhiều chỗ thì mỗi chỗ giữ một bản mật khẩu: đổi một chỗ là chỗ kia sai.
-    if (acc.uses.length > 1) notes.push(`Đang khai ở ${acc.uses.length} chỗ. Đổi mật khẩu EMR thì phải sửa đủ cả ${acc.uses.length} chỗ.`);
-    if (kinds.has('read') && acc.uses.length > 1) notes.push('Tài khoản đọc song song trùng tài khoản khác nên không được dùng để đọc song song (hai bên đăng xuất lẫn nhau).');
-    if (acc.uses.some(u => !u.has_password)) notes.push('Thiếu mật khẩu ở ít nhất một chỗ.');
-    return { ...acc, duplicate: acc.uses.length > 1, notes };
+    if (own.length > 1) notes.push(`Đang khai ở ${own.length} chỗ. Đổi mật khẩu EMR thì phải sửa đủ cả ${own.length} chỗ.`);
+    if (own.some(u => u.use === 'read') && own.length > 1) notes.push('Tài khoản đọc song song gõ tay trùng tài khoản khác nên không được dùng để đọc song song.');
+    if (acc.uses.some(u => u.linked)) notes.push('Cũng dùng để đọc song song (lấy mật khẩu từ tài khoản đã lưu).');
+    if (own.some(u => !u.has_password)) notes.push('Thiếu mật khẩu ở ít nhất một chỗ.');
+    return { ...acc, duplicate: own.length > 1, notes };
   });
   accounts.sort((a, b) => Number(b.duplicate) - Number(a.duplicate) || a.username.localeCompare(b.username, 'vi'));
 

@@ -22,6 +22,7 @@ const { issueInputPrecheckToken, validateAndConsumeInputPrecheckToken } = requir
 const { syncClinicState, attachHistory } = require('../services/clinic_patient_sync');
 const { readNurseEmrAccounts, findDoctorAccount } = require('../utils/nurse_emr_accounts');
 const { readConfig, clinicNamesForDate, toIsoDate } = require('../utils/nurse_config');
+const { markEmrLoginInUse, releaseEmrLogin } = require('../services/emr_logins_in_use');
 
 // Đăng nhập EMR ở phòng khám bằng tài khoản bác sĩ (Thiết lập tài khoản → Tài khoản EMR → Bác sĩ
 // phòng khám) thay cho gõ tài khoản/mật khẩu. Giao diện gửi account_name:
@@ -297,6 +298,7 @@ router.post('/clinic/monitor/start', async (req, res) => {
 
   const entry = { running: true, kill: null, exitMessage: '' };
   monitors.set(ctx.sid, entry);
+  markEmrLoginInUse(`clinic-monitor:${ctx.sid}`, payload.username, 'Đang dùng ở Phòng khám (đang theo dõi Danh sách Khám bệnh).');
   // Không cần mở màn hình Phòng khám: máy chủ tự chép lịch sử khám mỗi phút.
   entry.syncTimer = setInterval(() => syncMonitorToPatientDb(ctx), PATIENT_DB_SYNC_MS);
   if (typeof entry.syncTimer.unref === 'function') entry.syncTimer.unref();
@@ -308,6 +310,7 @@ router.post('/clinic/monitor/start', async (req, res) => {
     onSpawn: (killFn) => { entry.kill = killFn; },
   }).then((result) => {
     entry.running = false;
+    releaseEmrLogin(`clinic-monitor:${ctx.sid}`);
     if (entry.stopTimer) clearTimeout(entry.stopTimer);
     if (entry.syncTimer) clearInterval(entry.syncTimer);
     syncMonitorToPatientDb(ctx);
