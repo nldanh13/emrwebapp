@@ -240,4 +240,4 @@ R6: không còn chỗ hiện vòng xoay + "Đang tải…" thay cho nội dung (
 | Kho nghiên cứu | Có | Theo dõi máy chủ | Thêm / bớt biến của nghiên cứu: "Chưa lưu" cho tới khi bấm Lưu; chuyển tab vẫn giữ (KeepAlive) |
 | Danh mục VTYT, Danh mục thuốc | Có | Có | Hộp thoại sửa, bấm Lưu |
 | Kiểm tra cấu trúc EMR | Có | Không tự tải | — |
-| Thiết lập tài khoản | Có (mục đã mở cũng giữ) | Có | Người dùng, tài khoản đọc: bấm Lưu. Tài khoản EMR theo điều dưỡng: tự lưu ~0,8 giây, từng người |
+| Thiết lập tài khoản | Có (mục đã mở cũng giữ) | Có | Người dùng, tài khoản đọc: bấm Lưu. Tài khoản EMR điều dưỡng/bác sĩ: tự lưu ~0,8 giây, từng người; Thêm/Xoá lưu ngay (xoá hỏi lại) |

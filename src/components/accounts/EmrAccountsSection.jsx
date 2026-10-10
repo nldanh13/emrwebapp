@@ -1,21 +1,19 @@
 // src/components/accounts/EmrAccountsSection.jsx — Thiết lập tài khoản → Tài khoản EMR.
-// Một chỗ cho mọi tài khoản EMR app giữ:
-//   1. Tổng hợp: mỗi tài khoản EMR dùng vào việc gì, khai ở mấy chỗ (máy chủ tính sẵn,
-//      GET /api/emr-accounts/overview, không có mật khẩu).
-//   2. Tài khoản chung (chỉ xem; sửa trong secrets/secrets.json, xem docs/SECRETS.md).
-//   3. Tài khoản theo điều dưỡng (nhập liệu theo lịch) — trước đây ở Lịch điều dưỡng.
-//   4. Bác sĩ phòng khám (đăng nhập Phòng khám, Nghỉ ốm).
-//   5. Tài khoản đọc song song (Lấy chi tiết).
-//   6. Máy góp sức: không có tài khoản nào để khai, chỉ chỉ chỗ xem.
+// Bố cục:
+//   - "Cần chú ý": chỉ hiện khi có tài khoản khai ở nhiều chỗ hoặc điều dưỡng chưa có tài khoản
+//     (máy chủ tính sẵn, GET /api/emr-accounts/overview, không có mật khẩu).
+//   - Bốn mục con, mỗi lúc một mục: Điều dưỡng, Bác sĩ phòng khám (cùng một kiểu bảng có Thêm/Xoá,
+//     EmrPeoplePanel), Đọc song song, Tài khoản chung & tổng hợp (tài khoản trong secrets.json, bảng
+//     mọi tài khoản EMR, ghi chú máy góp sức).
+// Mục đã mở được giữ lại khi đổi mục để không mất phần đang gõ dở.
 
 import { useCallback, useEffect, useState } from 'react';
 import { C, FS } from '../../tokens.js';
-import { Badge } from '../shared.jsx';
+import { Badge, Segmented } from '../shared.jsx';
 import * as api from '../../api.js';
 import { useOnTabReturn } from '../../hooks/useTabActivity.js';
 import { SkeletonLines, SkeletonTable } from '../Skeleton.jsx';
-import NurseEmrAccountsPanel from './NurseEmrAccountsPanel.jsx';
-import DoctorAccountsPanel from './DoctorAccountsPanel.jsx';
+import EmrPeoplePanel from './EmrPeoplePanel.jsx';
 import FetchAccountsPanel from '../FetchAccountsPanel.jsx';
 
 const USE_TONE = {
@@ -60,11 +58,10 @@ export function SharedAccountCard({ overview }) {
 
 export function EmrAccountsOverviewTable({ overview }) {
   const accounts = overview?.accounts || [];
-  const missing = overview?.nurses_missing || [];
   return (
     <Card>
       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-        <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Tổng hợp tài khoản EMR</div>
+        <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Tất cả tài khoản EMR</div>
         {overview && (overview.duplicate_count
           ? <Badge text={`${overview.duplicate_count} tài khoản khai ở nhiều chỗ`} bg={C.amberBg} color={C.amber} />
           : <Badge text="Không có tài khoản khai trùng" bg={C.greenBg} color={C.green} />)}
@@ -106,12 +103,6 @@ export function EmrAccountsOverviewTable({ overview }) {
           </table>
         </div>
       )}
-      {missing.length > 0 && (
-        <div style={{ marginTop: 10, fontSize: FS.sm, color: C.amber, lineHeight: 1.5 }}>
-          {missing.length} điều dưỡng trong lịch chưa có tài khoản EMR ({missing.join(', ')}): ca của họ sẽ nhập bằng tài khoản
-          chung. Khai ở bảng "Tài khoản EMR của từng điều dưỡng" bên dưới.
-        </div>
-      )}
     </Card>
   );
 }
@@ -129,9 +120,56 @@ function HelperMachinesNote() {
   );
 }
 
+/** Những việc cần sửa: tài khoản khai ở nhiều chỗ, điều dưỡng trong lịch chưa có tài khoản. */
+export function AttentionCard({ overview, onOpen }) {
+  if (!overview) return null;
+  const dups = (overview.accounts || []).filter(a => a.duplicate);
+  const missing = overview.nurses_missing || [];
+  if (!dups.length && !missing.length) {
+    return <div style={{ fontSize: FS.sm, color: C.green }}>Không có tài khoản khai trùng; mọi điều dưỡng trong lịch đã có tài khoản EMR.</div>;
+  }
+  return (
+    <section aria-label="Cần chú ý" style={{ padding: '10px 12px', background: C.amberBg, border: `1px solid ${C.amberBorder}`, borderRadius: 8, fontSize: FS.sm, color: C.text, lineHeight: 1.6 }}>
+      <b>Cần chú ý</b>
+      <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+        {dups.map(a => (
+          <li key={a.username}>
+            <code>{a.username}</code> đang khai ở {a.uses.length} chỗ ({a.uses.map(u => `${u.label}${u.owner ? `: ${u.owner}` : ''}`).join('; ')}).
+            Đổi mật khẩu EMR thì phải sửa đủ các chỗ.
+          </li>
+        ))}
+        {missing.length > 0 && (
+          <li>
+            {missing.length} điều dưỡng chưa có tài khoản EMR ({missing.join(', ')}): ca của họ nhập bằng tài khoản chung.{' '}
+            <button type="button" onClick={() => onOpen?.('nurse')} style={{ border: 0, padding: 0, background: 'none', color: C.blue, cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>Khai ngay</button>
+          </li>
+        )}
+      </ul>
+    </section>
+  );
+}
+
+const SUB_KEY = 'emr_account_subsection_v1';
+const SUBSECTIONS = [
+  { value: 'nurse', label: 'Điều dưỡng' },
+  { value: 'doctor', label: 'Bác sĩ phòng khám' },
+  { value: 'read', label: 'Đọc song song' },
+  { value: 'shared', label: 'Tài khoản chung & tổng hợp' },
+];
+
+function loadSub() {
+  try {
+    const saved = localStorage.getItem(SUB_KEY);
+    if (SUBSECTIONS.some(s => s.value === saved)) return saved;
+  } catch { /* trình duyệt chặn lưu trữ */ }
+  return 'nurse';
+}
+
 export default function EmrAccountsSection({ toast }) {
   const [overview, setOverview] = useState(null);
   const [error, setError] = useState('');
+  const [sub, setSubState] = useState(loadSub);
+  const [visited, setVisited] = useState(() => new Set([sub]));
 
   const load = useCallback(async () => {
     try {
@@ -146,6 +184,25 @@ export default function EmrAccountsSection({ toast }) {
   useEffect(() => { load(); }, [load]);
   useOnTabReturn(() => load());
 
+  const setSub = useCallback((next) => {
+    setSubState(next);
+    setVisited(prev => (prev.has(next) ? prev : new Set([...prev, next])));
+    try { localStorage.setItem(SUB_KEY, next); } catch { /* bỏ qua */ }
+  }, []);
+
+  const render = (id) => {
+    if (id === 'nurse') return <EmrPeoplePanel kind="nurse" toast={toast} onSaved={load} />;
+    if (id === 'doctor') return <EmrPeoplePanel kind="doctor" toast={toast} onSaved={load} />;
+    if (id === 'read') return <FetchAccountsPanel toast={toast} onSaved={load} />;
+    return (
+      <div style={{ display: 'grid', gap: 12 }}>
+        <SharedAccountCard overview={overview} />
+        <EmrAccountsOverviewTable overview={overview} />
+        <HelperMachinesNote />
+      </div>
+    );
+  };
+
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       {error && (
@@ -153,12 +210,11 @@ export default function EmrAccountsSection({ toast }) {
           Không tải được tổng hợp tài khoản EMR: {error}
         </div>
       )}
-      <EmrAccountsOverviewTable overview={overview} />
-      <SharedAccountCard overview={overview} />
-      <NurseEmrAccountsPanel onSaved={load} />
-      <DoctorAccountsPanel toast={toast} onSaved={load} />
-      <FetchAccountsPanel toast={toast} onSaved={load} />
-      <HelperMachinesNote />
+      <AttentionCard overview={overview} onOpen={setSub} />
+      <div><Segmented label="Loại tài khoản EMR" value={sub} onChange={setSub} options={SUBSECTIONS} /></div>
+      {SUBSECTIONS.map(({ value }) => (visited.has(value) || value === sub ? (
+        <div key={value} hidden={value !== sub}>{render(value)}</div>
+      ) : null))}
     </div>
   );
 }

@@ -12,6 +12,8 @@ const api = {
   saveFetchAccounts: vi.fn(),
   getNurseSettings: vi.fn(async () => ({ roster: ['Nguyễn Thị Lan', 'Trần Văn Bình'] })),
   getNurseEmrAccounts: vi.fn(async () => ({ accounts: [{ name: 'Nguyễn Thị Lan', emr_username: 'lan.nt', emr_password: 'x', signature_file: 'lan.png' }] })),
+  saveNurseSettings: vi.fn(async () => ({ status: 'ok' })),
+  removeNurseEmrAccount: vi.fn(async () => ({ status: 'ok', accounts: [] })),
   updateNurseEmrAccount: vi.fn(async () => ({ status: 'ok', accounts: [] })),
   getEmrAccountOverview: vi.fn(async () => ({
     shared: { configured: true, username: 'chung', source: 'secrets/secrets.json' },
@@ -32,7 +34,7 @@ let auth = { user: null, authMode: 'local_only' };
 vi.mock('../hooks/useAuth.jsx', () => ({ useAuth: () => auth }));
 
 const { default: AccountSettingsTab } = await import('./AccountSettingsTab.jsx');
-const { buildNurseAccountRows } = await import('./accounts/NurseEmrAccountsPanel.jsx');
+const { buildNurseAccountRows } = await import('./accounts/EmrPeoplePanel.jsx');
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let host; let root;
@@ -68,10 +70,10 @@ describe('AccountSettingsTab', () => {
     await act(async () => { radio('Tài khoản EMR').click(); });
     await flush();
     const text = visible();
-    expect(text).toContain('1 tài khoản khai ở nhiều chỗ');
-    expect(text).toContain('Nhập liệu theo lịch: Nguyễn Thị Lan');
-    expect(text).toContain('Đọc song song: Đọc 1');
-    expect(text).toContain('Trần Văn Bình');
+    expect(text).toContain('Cần chú ý');
+    expect(text).toContain('lan.nt đang khai ở 2 chỗ (Nhập liệu theo lịch: Nguyễn Thị Lan; Đọc song song: Đọc 1)');
+    expect(text).toContain('1 điều dưỡng chưa có tài khoản EMR (Trần Văn Bình)');
+    expect(api.getFetchAccounts).not.toHaveBeenCalled();
     expect(host.querySelector('input[aria-label="Tài khoản EMR của Trần Văn Bình"]')).toBeTruthy();
   });
 
@@ -87,12 +89,12 @@ describe('AccountSettingsTab', () => {
         Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, 'binh.tv');
         input.dispatchEvent(new Event('input', { bubbles: true }));
       });
-      expect(host.textContent).toContain('đang chờ tự lưu');
+      expect(host.textContent).toContain('Chưa lưu');
       await act(async () => { vi.advanceTimersByTime(900); });
       await flush();
       expect(api.updateNurseEmrAccount).toHaveBeenCalledTimes(1);
       expect(api.updateNurseEmrAccount).toHaveBeenCalledWith('Trần Văn Bình', { emr_username: 'binh.tv' });
-      expect(host.textContent).toContain('Đã tự lưu lúc');
+      expect(host.textContent).toContain('Đã lưu');
     } finally {
       vi.useRealTimers();
     }
