@@ -10,6 +10,7 @@ Không lưu mật khẩu ra đĩa — chỉ giữ trong RAM. Chỉ chạy đư�
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 import base64
 import threading
@@ -42,6 +43,14 @@ DEFAULT_EMR_SELECTORS = {
     "modal": "divModalContentX",
     # Nút/link "Xem phiếu" (phòng khám) — bấm sẽ ra file PDF phiếu nghỉ.
     "phieu_link": "Xem phiếu",
+    # Danh sách Khám bệnh (để quét cuối ngày). CSS chọn các DÒNG người bệnh và chỉ số
+    # cột (0-based) cho tên/năm sinh/giới tính/tuổi. Chưa biết DOM thật → chỉnh ở
+    # config.json → emr.selectors sau khi chụp trang "Danh sách Khám bệnh".
+    "clinic_rows": "table tbody tr",
+    "clinic_col_name": "",
+    "clinic_col_birth": "",
+    "clinic_col_gender": "",
+    "clinic_col_age": "",
     # Các ô trong form giấy nghỉ (để ĐỌC giá trị)
     "so_ngay_nghi": "txtSoNgayNghi",
     "don_vi_lam_viec": "txtDonViLamViec",
@@ -286,6 +295,96 @@ class EmrPortal:
                 "doc_type": parsed["doc_type"],
                 "fields": parsed["fields"],
             }
+
+    # ── Quét danh sách phòng khám cuối ngày → ca còn tuổi lao động → ai có phiếu ──
+    @staticmethod
+    def _col(texts: list[str], idx) -> str:
+        try:
+            i = int(idx)
+        except (TypeError, ValueError):
+            return ""
+        return texts[i].strip() if 0 <= i < len(texts) else ""
+
+    def list_clinic_patients(self) -> list[dict[str, Any]]:
+        """Mở "Danh sách Khám bệnh" và đọc các dòng người bệnh. Trả về list
+        {ho_ten, nam_sinh, gioi_tinh, tuoi, raw}. Cột lấy theo chỉ số cấu hình;
+        chưa cấu hình cột tên thì chụp trang để khớp lại."""
+        with self._lock:
+            if self._is_login_page():
+                raise EmrError("Phiên EMR chưa đăng nhập hoặc đã hết hạn. Hãy đăng nhập lại.")
+            driver = self._driver()
+            self._click(By.XPATH, self.sel("menu_group"), "nhóm menu bên trái")
+            self._click(By.LINK_TEXT, self.sel("menu_exam_link"), "Danh sách Khám bệnh")
+            time.sleep(1.0)
+
+            rows = driver.find_elements(By.CSS_SELECTOR, self.sel("clinic_rows"))
+            if not rows:
+                self.dump_page("danh-sach-kham")
+                raise EmrError(
+                    "Không đọc được dòng nào trong Danh sách Khám bệnh. Đã chụp trang — "
+                    "gửi em bản chụp để khớp đúng bảng/dòng."
+                )
+            name_idx = self.sel("clinic_col_name")
+            if str(name_idx).strip() == "":
+                self.dump_page("danh-sach-kham")
+                raise EmrError(
+                    "Chưa cấu hình cột 'Họ tên' của Danh sách Khám bệnh. Đã chụp trang — "
+                    "gửi em bản chụp để em đặt đúng chỉ số cột (tên/năm sinh/giới tính/tuổi)."
+                )
+            out: list[dict[str, Any]] = []
+            for row in rows:
+                try:
+                    cells = row.find_elements(By.CSS_SELECTOR, "td")
+                    texts = [(c.text or "").strip() for c in cells]
+                except WebDriverException:
+                    continue
+                name = self._col(texts, name_idx)
+                if not name:
+                    continue
+                out.append({
+                    "ho_ten": name,
+                    "nam_sinh": self._col(texts, self.sel("clinic_col_birth")),
+                    "gioi_tinh": self._col(texts, self.sel("clinic_col_gender")),
+                    "tuoi": self._col(texts, self.sel("clinic_col_age")),
+                    "raw": texts,
+                })
+            return out
+
+    def harvest_sick_leave(self, ref_year: int | None = None, limit: int | None = None,
+                           progress=None) -> dict[str, Any]:
+        """Quét danh sách khám → lọc còn tuổi lao động → với mỗi ca thử đọc phiếu
+        nghỉ (Xem phiếu); ca nào có phiếu hợp lệ thì gom lại để nhập lên cổng.
+        Trả về {scanned, working_age, found: [{ho_ten, doc_type, fields, pdf_path}]}."""
+        from .working_age import is_likely_working_age, is_likely_working_age_by_age
+
+        with self._lock:
+            year = int(ref_year) if ref_year else datetime.now().year
+            patients = self.list_clinic_patients()
+
+            def working(p: dict[str, Any]) -> bool:
+                if str(p.get("tuoi") or "").strip():
+                    return is_likely_working_age_by_age(p.get("tuoi"), p.get("gioi_tinh"), year)
+                return is_likely_working_age(p.get("nam_sinh"), p.get("gioi_tinh"), year)
+
+            candidates = [p for p in patients if working(p)]
+            if limit:
+                candidates = candidates[: int(limit)]
+
+            found: list[dict[str, Any]] = []
+            for i, cand in enumerate(candidates):
+                if callable(progress):
+                    progress(i + 1, len(candidates), cand["ho_ten"])
+                try:
+                    res = self.read_phieu_pdf(cand["ho_ten"])
+                except EmrError:
+                    continue  # không có phiếu / không mở được → coi như không cần nhập
+                found.append({
+                    "ho_ten": cand["ho_ten"],
+                    "doc_type": res.get("doc_type"),
+                    "fields": res.get("fields", {}),
+                    "pdf_path": res.get("pdf_path"),
+                })
+            return {"scanned": len(patients), "working_age": len(candidates), "found": found}
 
     def _list_downloads(self) -> set[str]:
         try:

@@ -468,6 +468,40 @@ def api_emr_read_phieu_pdf():
         return jsonify({"error": f"Lỗi khi đọc phiếu từ EMR: {exc}"}), 500
 
 
+@app.post("/api/emr/harvest-sick-leave")
+def api_emr_harvest_sick_leave():
+    """Cuối ngày: quét Danh sách Khám bệnh trên EMR → lọc ca còn tuổi lao động →
+    ca nào có phiếu nghỉ (Xem phiếu) thì gom lại và nạp vào danh sách hồ sơ để
+    nhập lên cổng. Người dùng không phải bấm vào từng người."""
+    from bhyt.mapping import Record, validate_fields
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        out = emr.harvest_sick_leave(ref_year=payload.get("ref_year"), limit=payload.get("limit"))
+    except EmrError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Lỗi khi quét danh sách khám: {exc}"}), 500
+
+    records = []
+    for item in out.get("found", []):
+        fields = item.get("fields") or {}
+        if not fields:
+            continue
+        rec = Record(doc_type=item.get("doc_type") or "BHXH07", source_file="EMR-phieu",
+                     source_sheet="danh-sach-kham", source_row=0, fields=fields, raw={})
+        rec.issues = validate_fields(rec.doc_type, fields)
+        records.append(rec)
+    imported = store.import_records(records) if records else {"added": 0, "updated": 0}
+    return jsonify({
+        "scanned": out.get("scanned", 0),
+        "working_age": out.get("working_age", 0),
+        "found": len(out.get("found", [])),
+        **imported,
+        "summary": store.summary(),
+    })
+
+
 @app.post("/api/emr/close")
 def api_emr_close():
     emr.close()

@@ -115,6 +115,7 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
   const [importing, setImporting] = useState(false);
   const [importingFromWebapp, setImportingFromWebapp] = useState(false);
   const [phieuBusy, setPhieuBusy] = useState(false);
+  const [harvesting, setHarvesting] = useState(false);
 
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -454,6 +455,22 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
     }
   }, [emrPatient, firstSelected, loadAll, toast]);
 
+  // Cuối ngày: quét danh sách khám trên EMR, lọc tuổi lao động, gom ca có phiếu nghỉ.
+  const harvestSickLeave = useCallback(async () => {
+    setHarvesting(true);
+    try {
+      const d = await bhytFetch('/api/emr/harvest-sick-leave', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      });
+      toast?.(`Quét ${d.scanned} ca khám · ${d.working_age} ca tuổi lao động · tìm thấy ${d.found} phiếu nghỉ (thêm ${d.added}, cập nhật ${d.updated}).`, 'ok');
+      await loadAll();
+    } catch (e) {
+      toast?.(String(e?.message || 'Không quét được danh sách khám.'), 'error');
+    } finally {
+      setHarvesting(false);
+    }
+  }, [loadAll, toast]);
+
   const handleImportFiles = useCallback(async (fileList) => {
     if (!fileList || !fileList.length) return;
     setImporting(true);
@@ -728,10 +745,28 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
         </div>
       </div>
 
+      <div style={{
+        border: `1px solid ${C.blue}`, borderRadius: 8, padding: '12px 14px', background: C.blueBg || C.surface2, marginBottom: 12,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Quét danh sách phòng khám cuối ngày</div>
+          <Badge text="Khuyến nghị" bg={C.greenBg} color={C.green} size={FS.xs} />
+        </div>
+        <div style={{ fontSize: FS.xs, color: C.text2, lineHeight: 1.6, marginBottom: 10 }}>
+          Công cụ tự quét danh sách khám trên EMR, lọc người <b>còn tuổi lao động</b>, rồi với mỗi ca tự
+          bấm <b>Xem phiếu</b> để biết ai <b>đã có giấy nghỉ ốm</b> — bạn không phải bấm vào từng người.
+          Các ca có phiếu được gom vào danh sách bên dưới; sau đó bấm <b>"Tự động nhập lên cổng"</b> ở bước 3.
+          <br />Cần <b>đăng nhập EMR</b> trước (thẻ "Đăng nhập EMR nội bộ" bên dưới).
+        </div>
+        <Btn variant="primary" onClick={harvestSickLeave} disabled={harvesting} style={{ padding: '7px 14px', fontSize: FS.xs }}>
+          {harvesting ? <><Spinner size={10} /> Đang quét danh sách...</> : 'Quét & gom ca nghỉ ốm từ EMR'}
+        </Btn>
+      </div>
+
       <StepCard
         n={2}
-        title="Nhập dữ liệu"
-        hint="Lấy thẳng bảng đã rà soát từ tab Nghỉ ốm (khuyến nghị — tự bỏ qua ca đang cần sửa/đã nộp), hoặc đọc file Excel BHXH gửi trực tiếp."
+        title="Cách lấy dữ liệu khác (khi cần)"
+        hint="Nếu không quét từ EMR: lấy bảng đã rà soát từ tab Nghỉ ốm, hoặc đọc file Excel BHXH / phiếu PDF."
         actions={<>
           <Btn variant="primary" onClick={handleImportFromWebapp} disabled={importingFromWebapp} style={{ padding: '6px 10px', fontSize: FS.xs }}>
             {importingFromWebapp ? <><Spinner size={10} /> Đang lấy...</> : '⟳ Lấy từ tab Nghỉ ốm'}
