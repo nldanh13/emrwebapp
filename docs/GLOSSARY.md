@@ -38,7 +38,7 @@ Nhóm **Điều dưỡng**
 | Tab | Việc chính |
 | --- | --- |
 | **Nhập bệnh phòng** | Nhập **chăm sóc, dịch truyền, thủ thuật** cho mọi người bệnh nội trú, gồm cả ca trực (mới nhận, chuyển khoa, về từ GMHS) — tab nhập chính, worker `input_care.py`/`input_infusions.py` chạy từ đây. Tab "Nhập trực" cũ đã gộp vào đây. |
-| **Lịch điều dưỡng** | Quản lý danh sách điều dưỡng (roster), xếp lịch **ca làm/ca trực** theo ngày, và (mới thêm) thiết lập **tài khoản EMR riêng** cho từng điều dưỡng |
+| **Lịch điều dưỡng** | Quản lý danh sách điều dưỡng (roster), xếp lịch **ca làm/ca trực** theo ngày, ảnh chữ ký. Tài khoản EMR của từng điều dưỡng sửa ở **Thiết lập tài khoản → Tài khoản EMR** |
 | **Báo cáo ca trực** | In phiếu bàn giao ca, bảng thuốc, danh sách tiêm truyền |
 
 Nhóm **Hành chánh**
@@ -48,6 +48,7 @@ Nhóm **Hành chánh**
 | **Kiểm hồ sơ** | Kiểm/đối chiếu số lưu trữ, tên, phát hiện hồ sơ trùng/sai lệch, nộp hồ sơ |
 | **Nghỉ ốm** | Chuẩn bị hồ sơ **Giấy chứng nhận nghỉ việc hưởng BHXH** (nội trú + ngoại trú), nối sang công cụ nhập cổng BHXH thật |
 | **Phòng khám** | Chăm sóc và thủ thuật cho bệnh nhân **ngoại trú** (khác nội trú) |
+| **Lịch phòng khám** | Xếp bác sĩ và điều dưỡng phòng khám theo ngày. Bác sĩ số 1 có tài khoản EMR là tài khoản Phòng khám / Nghỉ ốm đăng nhập khi chọn "Bác sĩ theo Lịch phòng khám" (mặc định) |
 
 Nhóm **Nghiên cứu / Cài đặt**
 | Tab | Việc chính |
@@ -56,7 +57,7 @@ Nhóm **Nghiên cứu / Cài đặt**
 | **Danh mục VTYT** | Từ điển vật tư y tế — mã thay thế, bật/tắt vật tư được phép tự nhập |
 | **Danh mục thuốc** | Tên chuẩn hoá thuốc/dịch truyền, alias, thể tích/tốc độ mặc định — worker dùng để tự suy luận khi EMR chỉ ghi tên thuốc |
 | **Kiểm tra cấu trúc EMR** | Đăng nhập EMR (chỉ đọc), so sánh trang/selector đang dùng với danh mục đã biết để phát hiện **EMR đổi giao diện** (đúng loại lỗi vừa sửa ở phiếu truyền dịch) |
-| **Thiết lập tài khoản** | Quản lý tài khoản Data Hub + tài khoản EMR riêng (chỉ admin) |
+| **Thiết lập tài khoản** | Một chỗ cho mọi tài khoản. Ba mục: **Người dùng Data Hub** (đăng nhập app, vai trò, mã truy cập; chỉ admin), **Tài khoản EMR** (tổng hợp và chỗ khai trùng, tài khoản chung, tài khoản theo điều dưỡng, bác sĩ phòng khám, tài khoản đọc song song; chỉ admin), **Thiết bị tin cậy** (mọi người) |
 
 ## 4. Thuật ngữ nghiệp vụ/lâm sàng hay gặp
 

@@ -6,8 +6,7 @@
 //
 // Quy tắc an toàn:
 // - Một tài khoản chỉ chạy một phần tại một thời điểm (khóa theo làn tài khoản trong task_queue).
-// - Tài khoản trùng tài khoản chung, hoặc đang dùng để NHẬP liệu (tài khoản EMR riêng của người dùng
-//   app, tài khoản theo tên điều dưỡng) thì không dùng: tác vụ nhập liệu không khóa theo làn đó nên
+// - Tài khoản trùng tài khoản chung, hoặc đang dùng để NHẬP liệu (tài khoản theo tên điều dưỡng) thì không dùng: tác vụ nhập liệu không khóa theo làn đó nên
 //   có thể đăng nhập cùng lúc và hai bên đá phiên nhau.
 // - Mỗi tài khoản có file cookie riêng, không ghi đè cookie của nhau.
 // - Mật khẩu không bao giờ trả về giao diện hay ghi log.
@@ -78,12 +77,6 @@ function readStore() {
 /** Tài khoản đang dùng để NHẬP liệu — không được dùng để lấy dữ liệu song song. */
 function inputAccountUsernames() {
   const out = new Set();
-  try {
-    const { listAllUsersRaw } = require('./authz');
-    for (const u of listAllUsersRaw().users || []) {
-      if (u?.emrUsername) out.add(userKey(u.emrUsername));
-    }
-  } catch (_) { /* users.json lỗi: bỏ qua, không chặn */ }
   try {
     const { readNurseEmrAccounts } = require('../utils/nurse_emr_accounts');
     for (const row of readNurseEmrAccounts()) {

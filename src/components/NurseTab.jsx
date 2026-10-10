@@ -24,16 +24,16 @@ import { SkeletonScreen } from './Skeleton.jsx';
 export default function NurseTab({ toast }) {
   const isMobile = useIsMobile();
   const { user } = useAuth();
-  // Không đăng nhập (chế độ local_only) vẫn cho sửa như trước; chỉ chặn khi
-  // có đăng nhập mà vai trò không phải admin — tài khoản EMR chứa mật khẩu thật.
-  const canEditEmrAccounts = !user || user.role === 'admin';
+  // Ảnh chữ ký nằm chung file với tài khoản EMR theo điều dưỡng (chứa mật khẩu thật) nên chỉ
+  // quản trị sửa. Không đăng nhập (chế độ local_only) vẫn cho sửa như trước.
+  // Tài khoản EMR của từng điều dưỡng sửa ở Thiết lập tài khoản → Tài khoản EMR.
+  const canEditSignatures = !user || user.role === 'admin';
   const [showNursePanel, setShowNursePanel] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const [roster, setRoster] = useState([]);
   const [emrAccounts, setEmrAccounts] = useState({});
   const [schedule, setSchedule] = useState(() => normalizeScheduleShape({}));
-  const [clinicSchedule, setClinicSchedule] = useState(() => normalizeScheduleShape({}));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [newName, setNewName] = useState('');
@@ -46,14 +46,12 @@ export default function NurseTab({ toast }) {
       .then(d => {
         const nextRoster = d.roster || [];
         const nextSchedule = normalizeScheduleShape(d.schedule || {});
-        const nextClinicSchedule = normalizeScheduleShape(d.clinicSchedule || {});
         const apiDates = Array.isArray(d.available_dates) ? d.available_dates.map(toIsoDate).filter(Boolean) : [];
         const savedDates = Object.keys(nextSchedule.days || {}).map(toIsoDate).filter(Boolean);
         const uniqueDates = [...new Set(apiDates.length ? apiDates : savedDates)].sort();
         const dates = uniqueDates.length ? uniqueDates : buildDateRange(todayIso(), addDaysIso(todayIso(), 6));
         setRoster(nextRoster);
         setSchedule(nextSchedule);
-        setClinicSchedule(nextClinicSchedule);
         setVisibleDates(dates);
         setDateRange({ from: dates[0], to: dates[dates.length - 1] });
         setSelKey(dates[0] || todayIso());
@@ -63,7 +61,7 @@ export default function NurseTab({ toast }) {
   }, []);
 
   useEffect(() => {
-    if (!canEditEmrAccounts) return;
+    if (!canEditSignatures) return;
     api.getNurseEmrAccounts()
       .then(d => {
         const byName = {};
@@ -71,32 +69,9 @@ export default function NurseTab({ toast }) {
         setEmrAccounts(byName);
       })
       .catch(() => {});
-  }, [canEditEmrAccounts]);
+  }, [canEditSignatures]);
 
   const saveTimer = useRef(null);
-  const saveEmrAccountsTimer = useRef(null);
-
-  const saveEmrAccounts = useCallback((nextByName) => {
-    if (saveEmrAccountsTimer.current) clearTimeout(saveEmrAccountsTimer.current);
-    saveEmrAccountsTimer.current = setTimeout(async () => {
-      try {
-        const accounts = Object.values(nextByName);
-        const r = await api.saveNurseEmrAccounts({ accounts });
-        if (r.status !== 'ok') toast?.(r.message, 'error');
-      } catch (e) {
-        toast?.(String(e.message), 'error');
-      }
-    }, 500);
-  }, [toast]);
-
-  const changeEmrAccount = useCallback((name, field, value) => {
-    setEmrAccounts(prev => {
-      const next = { ...prev, [name]: { ...(prev[name] || { name }), name, [field]: value } };
-      saveEmrAccounts(next);
-      return next;
-    });
-  }, [saveEmrAccounts]);
-
   const applyAccountsResponse = useCallback((accounts) => {
     const byName = {};
     for (const row of accounts || []) byName[row.name] = row;
@@ -124,7 +99,8 @@ export default function NurseTab({ toast }) {
     }
   }, [toast, applyAccountsResponse]);
 
-  const save = useCallback((nextRoster, nextSchedule, nextClinicSchedule) => {
+  // Lịch phòng khám sửa ở tab Lịch phòng khám: ở đây không gửi clinicSchedule để không ghi đè.
+  const save = useCallback((nextRoster, nextSchedule) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       setSaving(true);
@@ -132,7 +108,6 @@ export default function NurseTab({ toast }) {
         const r = await api.saveNurseSettings({
           roster: nextRoster,
           schedule: normalizeScheduleShape(nextSchedule),
-          clinicSchedule: normalizeScheduleShape(nextClinicSchedule),
         });
         if (r.status === 'ok') toast?.('Đã lưu lịch điều dưỡng', 'ok');
         else toast?.(r.message, 'error');
@@ -156,8 +131,8 @@ export default function NurseTab({ toast }) {
     const next = [...roster, name].sort((a, b) => a.localeCompare(b, 'vi'));
     setRoster(next);
     setNewName('');
-    save(next, schedule, clinicSchedule);
-  }, [newName, roster, schedule, clinicSchedule, save]);
+    save(next, schedule);
+  }, [newName, roster, schedule, save]);
 
   const removeNurse = useCallback((name) => {
     const next = roster.filter(n => n !== name);
@@ -169,17 +144,16 @@ export default function NurseTab({ toast }) {
     }
     setRoster(next);
     setSchedule(nextSched);
-    save(next, nextSched, clinicSchedule);
+    save(next, nextSched);
 
+    // Bỏ luôn tài khoản EMR và chữ ký của người này — chỉ dòng của họ, không gửi cả danh sách
+    // (bản đang giữ ở đây có thể cũ hơn phần vừa sửa ở Thiết lập tài khoản).
     if (Object.prototype.hasOwnProperty.call(emrAccounts, name)) {
-      setEmrAccounts(prev => {
-        const nextAccounts = { ...prev };
-        delete nextAccounts[name];
-        saveEmrAccounts(nextAccounts);
-        return nextAccounts;
-      });
+      api.removeNurseEmrAccount(name)
+        .then(r => { if (r?.status === 'ok') applyAccountsResponse(r.accounts); else toast?.(r?.message, 'error'); })
+        .catch(e => toast?.(`Chưa bỏ được tài khoản EMR của ${name}: ${String(e.message || e)}`, 'error'));
     }
-  }, [roster, schedule, clinicSchedule, save, emrAccounts, saveEmrAccounts]);
+  }, [roster, schedule, save, emrAccounts, applyAccountsResponse, toast]);
 
   const updateScheduleForKey = useCallback((key, value) => {
     let nextSched;
@@ -189,34 +163,8 @@ export default function NurseTab({ toast }) {
       nextSched = setDateSchedule(schedule, key, value);
     }
     setSchedule(nextSched);
-    save(roster, nextSched, clinicSchedule);
-  }, [schedule, roster, clinicSchedule, save]);
-
-  // ── Clinic schedule ──────────────────────────────────────────────────────────
-  const updateClinicScheduleForKey = useCallback((key, value) => {
-    let nextSched;
-    if (key === 'Default') {
-      nextSched = { ...normalizeScheduleShape(clinicSchedule), Default: cloneShift(value) };
-    } else {
-      nextSched = setDateSchedule(clinicSchedule, key, value);
-    }
-    setClinicSchedule(nextSched);
-    save(roster, schedule, nextSched);
-  }, [clinicSchedule, roster, schedule, save]);
-
-  const toggleClinicShift = useCallback((shift, name) => {
-    const current = getDaySchedule(clinicSchedule, selKey);
-    const prev = current[shift] || [];
-    const nextBucket = prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name];
-    updateClinicScheduleForKey(selKey, { ...current, [shift]: nextBucket });
-  }, [clinicSchedule, selKey, updateClinicScheduleForKey]);
-
-  const setClinicDoctors = useCallback((names) => {
-    const current = getDaySchedule(clinicSchedule, selKey);
-    const next = { ...current };
-    if (names.length) next.doctor = names; else delete next.doctor;
-    updateClinicScheduleForKey(selKey, next);
-  }, [clinicSchedule, selKey, updateClinicScheduleForKey]);
+    save(roster, nextSched);
+  }, [schedule, roster, save]);
 
   const toggleShiftForKey = useCallback((key, shift, name) => {
     const current = getDaySchedule(schedule, key);
@@ -248,11 +196,10 @@ export default function NurseTab({ toast }) {
       nextSched.days[iso] = cloneShift(def);
     }
     setSchedule(nextSched);
-    save(roster, nextSched, clinicSchedule);
-  }, [schedule, visibleDates, roster, clinicSchedule, save]);
+    save(roster, nextSched);
+  }, [schedule, visibleDates, roster, save]);
 
   const daySched = useMemo(() => getDaySchedule(schedule, selKey), [schedule, selKey]);
-  const clinicDaySched = useMemo(() => getDaySchedule(clinicSchedule, selKey), [clinicSchedule, selKey]);
   const selectedIsDate = Boolean(selKey) && selKey !== 'Default';
   const prevDate = selectedIsDate ? addDaysIso(selKey, -1) : '';
   const prevWeekDate = selectedIsDate ? addDaysIso(selKey, -7) : '';
@@ -311,9 +258,6 @@ export default function NurseTab({ toast }) {
           onToggleShift={toggleShift}
           onCopyFrom={copyFrom}
           onApplyDefaultToEmptyVisibleDays={applyDefaultToEmptyVisibleDays}
-          clinicDaySchedule={clinicDaySched}
-          onToggleClinicShift={toggleClinicShift}
-          onSetClinicDoctors={setClinicDoctors}
         />
       </div>
       <div style={{ width: 280, borderLeft: `1px solid ${C.border}`, overflow: 'auto', flexShrink: 0, background: C.surface }}>
@@ -324,10 +268,9 @@ export default function NurseTab({ toast }) {
           onAddNurse={addNurse}
           onRemoveNurse={removeNurse}
           emrAccounts={emrAccounts}
-          onChangeEmrAccount={changeEmrAccount}
           onUploadSignature={uploadSignature}
           onRemoveSignature={removeSignature}
-          canEditEmrAccounts={canEditEmrAccounts}
+          canEditSignatures={canEditSignatures}
         />
       </div>
     </div>

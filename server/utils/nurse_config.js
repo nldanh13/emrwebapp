@@ -359,7 +359,28 @@ function getNurseByShift(timeStr, schedule, opts = {}) {
          })();
 }
 
+/**
+ * Tên trong Lịch phòng khám cho một ngày: đúng ngày → theo thứ → mẫu mặc định, từng loại riêng
+ * (key 'doctor' = bác sĩ, 'work' = điều dưỡng). Cùng quy tắc với worker/clinic_input_care.py
+ * (_clinic_nurses_for_date).
+ */
+function clinicNamesForDate(clinicSchedule, dateValue, key = 'doctor') {
+  const sched = clinicSchedule && typeof clinicSchedule === 'object' ? clinicSchedule : {};
+  const pick = (day) => (Array.isArray(day?.[key]) ? day[key].map(n => String(n || '').trim()).filter(Boolean) : []);
+  const iso = toIsoDate(dateValue);
+  if (iso) {
+    const exact = pick((sched.days || {})[iso]);
+    if (exact.length) return exact;
+    const [y, m, d] = iso.split('-').map(Number);
+    const weekday = DAY_KEYS[(new Date(y, m - 1, d).getDay() + 6) % 7];
+    const byWeekday = pick(sched[weekday]);
+    if (byWeekday.length) return byWeekday;
+  }
+  return pick(sched.Default);
+}
+
 module.exports = {
+  clinicNamesForDate,
   normalizeName, normalizeNurseList,
   normalizeSchedule, filterScheduleByNurseList,
   readConfig, writeConfig, getNurseState,

@@ -9,7 +9,7 @@
 'use strict';
 
 const router = require('express').Router();
-const { readNurseEmrAccounts, writeNurseEmrAccounts } = require('../utils/nurse_emr_accounts');
+const { readNurseEmrAccounts, writeNurseEmrAccounts, updateNurseEmrAccount, removeNurseEmrAccount, addDoctorAccounts } = require('../utils/nurse_emr_accounts');
 const { saveSignatureImage, removeSignatureImage, withSignatureDataUrls } = require('../utils/nurse_signatures');
 const { appendActivity } = require('../services/activity_logger');
 const { getRuntimePaths } = require('../services/session');
@@ -27,6 +27,45 @@ router.post('/nurse-emr-accounts', (req, res) => {
     const accounts = writeNurseEmrAccounts(body.accounts);
     const ctx = getRuntimePaths(req);
     appendActivity(ctx, { kind: 'nurse_emr_accounts.update', actor: req.auth, count: accounts.length });
+    return res.json({ status: 'ok', accounts: withSignatureDataUrls(accounts) });
+  } catch (e) {
+    return res.status(400).json({ status: 'error', message: String(e.message || e) });
+  }
+});
+
+// Sửa tài khoản EMR của một điều dưỡng (Thiết lập tài khoản → Tài khoản EMR), giữ nguyên chữ ký.
+router.put('/nurse-emr-accounts/account/:name', (req, res) => {
+  const name = String(req.params.name || '').trim();
+  if (!name) return res.status(400).json({ status: 'error', message: 'Thiếu tên điều dưỡng.' });
+  try {
+    const body = req.body || {};
+    const accounts = updateNurseEmrAccount(name, { emr_username: body.emr_username, emr_password: body.emr_password, kind: body.kind });
+    appendActivity(getRuntimePaths(req), { kind: 'nurse_emr_accounts.update', actor: req.auth, count: accounts.length });
+    return res.json({ status: 'ok', accounts: withSignatureDataUrls(accounts) });
+  } catch (e) {
+    return res.status(400).json({ status: 'error', message: String(e.message || e) });
+  }
+});
+
+// Thêm nhiều bác sĩ phòng khám một lần: { names: [...], password } — tên đăng nhập tự tạo (hmtu).
+router.post('/nurse-emr-accounts/doctors', (req, res) => {
+  try {
+    const body = req.body || {};
+    const accounts = addDoctorAccounts(body.names, body.password);
+    appendActivity(getRuntimePaths(req), { kind: 'nurse_emr_accounts.doctors_add', actor: req.auth, count: Array.isArray(body.names) ? body.names.length : 0 });
+    return res.json({ status: 'ok', accounts: withSignatureDataUrls(accounts) });
+  } catch (e) {
+    return res.status(400).json({ status: 'error', message: String(e.message || e) });
+  }
+});
+
+// Xoá điều dưỡng khỏi danh sách (Lịch điều dưỡng): bỏ dòng của người đó, không đụng người khác.
+router.delete('/nurse-emr-accounts/account/:name', (req, res) => {
+  const name = String(req.params.name || '').trim();
+  if (!name) return res.status(400).json({ status: 'error', message: 'Thiếu tên điều dưỡng.' });
+  try {
+    const accounts = removeNurseEmrAccount(name);
+    appendActivity(getRuntimePaths(req), { kind: 'nurse_emr_accounts.update', actor: req.auth, count: accounts.length });
     return res.json({ status: 'ok', accounts: withSignatureDataUrls(accounts) });
   } catch (e) {
     return res.status(400).json({ status: 'error', message: String(e.message || e) });

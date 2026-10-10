@@ -14,7 +14,7 @@ const { readDoneState, markDoneKeys, fingerprintRecords, baseDoneKey, hashValue 
 const { parseDmy, normalizeDmy }                           = require('../utils/validation');
 const { readConfig }                                       = require('../utils/nurse_config');
 const { ROOT_DIR, ALLOW_INPUT_WITHOUT_PRECHECK }             = require('../constants');
-const { hasRole, getEmrCredentials }                          = require('../services/authz');
+const { hasRole }                                             = require('../services/authz');
 const {
   buildPatientDayBundle,
   normalizeInputTargets,
@@ -1231,13 +1231,7 @@ async function runInputTask(req, res, ctx, { scriptName, taskName, targetsFilePr
     // người ca làm theo lịch nên dùng chung một làn, chạy lần lượt — không mở hai
     // phiên cùng một tài khoản. Xem docs/PARALLEL_CARE_INFUSION.md.
     const accountKey = 'default';
-    // Tài khoản DỰ PHÒNG khi người ca làm chưa có tài khoản EMR: người đang đăng
-    // nhập Data Hub nếu có tài khoản EMR riêng (secrets/users.json), không thì
-    // tài khoản chung trong config.json (worker/utils.py đã xử lý fallback).
-    const personalEmrCreds = getEmrCredentials(req.auth?.id);
-    const inputExtraEnv = personalEmrCreds
-      ? { EMR_USERNAME: personalEmrCreds.username, EMR_PASSWORD: personalEmrCreds.password }
-      : {};
+    // Người ca làm chưa có tài khoản EMR thì worker dự phòng bằng tài khoản chung (secrets.json).
     await enqueueHeavy(ctx.sid, async () => {
       let result;
       try {
@@ -1249,7 +1243,6 @@ async function runInputTask(req, res, ctx, { scriptName, taskName, targetsFilePr
         result = await runScript(scriptName, [processedPathForWorker, targetsPath], {
           onSpawn: killFn => registerCancel(ctx.sid, killFn),
           runtimeDir: ctx.dir,
-          extraEnv: inputExtraEnv,
         });
       } finally {
         unregisterCancel(ctx.sid);

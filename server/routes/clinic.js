@@ -20,6 +20,53 @@ const { appendActivity } = require('../services/activity_logger');
 const { writeJsonAtomic, readJsonSafe, safeUnlink, safeFilePart } = require('../utils/file');
 const { issueInputPrecheckToken, validateAndConsumeInputPrecheckToken } = require('../services/input_precheck_tokens');
 const { syncClinicState, attachHistory } = require('../services/clinic_patient_sync');
+const { readNurseEmrAccounts, findDoctorAccount } = require('../utils/nurse_emr_accounts');
+const { readConfig, clinicNamesForDate, toIsoDate } = require('../utils/nurse_config');
+
+// Đăng nhập EMR ở phòng khám bằng tài khoản bác sĩ (Thiết lập tài khoản → Tài khoản EMR → Bác sĩ
+// phòng khám) thay cho gõ tài khoản/mật khẩu. Giao diện gửi account_name:
+//   - '@lich': bác sĩ xếp trong Lịch phòng khám của ngày làm việc (người đầu tiên có tài khoản);
+//   - tên một bác sĩ: đúng người đó.
+// Máy chủ điền tài khoản và mật khẩu; mật khẩu không về trình duyệt.
+const SCHEDULED_DOCTOR = '@lich';
+
+function localTodayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Bác sĩ theo lịch của ngày: { date, names, account_name } (account_name '' nếu chưa ai có tài khoản). */
+function scheduledClinicDoctor(req, dateValue) {
+  const date = toIsoDate(dateValue) || localTodayIso();
+  let names = [];
+  try { names = clinicNamesForDate(readConfig(req).clinic_nurse_schedule || {}, date, 'doctor'); } catch (_) { /* chưa có lịch */ }
+  const accountName = names.find(n => findDoctorAccount(n)) || '';
+  return { date, names, account_name: accountName };
+}
+
+function withDoctorAccount(body = {}, req = null, dateValue = '') {
+  let accountName = String(body.account_name || body.accountName || '').trim();
+  if (!accountName) return body;
+  if (accountName === SCHEDULED_DOCTOR) {
+    const sched = scheduledClinicDoctor(req, dateValue || body.careDate || body.care_date);
+    const [y, m, d] = sched.date.split('-');
+    if (!sched.names.length) throw new Error(`Lịch phòng khám ngày ${d}/${m}/${y} chưa xếp bác sĩ. Xếp ở tab Lịch phòng khám, hoặc chọn một bác sĩ cụ thể.`);
+    if (!sched.account_name) throw new Error(`Bác sĩ theo lịch ngày ${d}/${m}/${y} (${sched.names.join(', ')}) chưa có tài khoản EMR. Khai ở Thiết lập tài khoản → Tài khoản EMR → Bác sĩ phòng khám.`);
+    accountName = sched.account_name;
+  }
+  const acc = findDoctorAccount(accountName);
+  if (!acc) throw new Error(`Bác sĩ "${accountName}" chưa có đủ tài khoản và mật khẩu EMR. Khai ở Thiết lập tài khoản → Tài khoản EMR → Bác sĩ phòng khám.`);
+  return { ...body, username: acc.username, password: acc.password, account_doctor: accountName };
+}
+
+// Danh sách bác sĩ để chọn khi đăng nhập phòng khám (tên, tên đăng nhập, không có mật khẩu), kèm bác
+// sĩ theo lịch hôm nay để giao diện ghi rõ "theo lịch" là ai.
+router.get('/clinic/doctor-accounts', (req, res) => {
+  const doctors = readNurseEmrAccounts()
+    .filter(r => r.kind === 'doctor')
+    .map(r => ({ name: r.name, emr_username: r.emr_username, ready: Boolean(r.emr_username && r.emr_password) }));
+  return res.json({ status: 'ok', doctors, scheduled_today: scheduledClinicDoctor(req) });
+});
 
 function sanitizeClinicSchedule(raw = {}) {
   const obj = raw && typeof raw === 'object' ? raw : {};
@@ -98,7 +145,7 @@ router.post('/clinic/preview', async (req, res) => {
   let reqPath = '';
   let outPath = '';
   try {
-    const payload = sanitizeClinicRequest(req.body || {});
+    const payload = sanitizeClinicRequest(withDoctorAccount(req.body || {}, req));
     const stamp = `${Date.now()}_${safeFilePart(payload.mode)}`;
     reqPath = path.join(ctx.dir, `clinic_request_${stamp}.json`);
     outPath = path.join(ctx.dir, `clinic_preview_${stamp}.json`);
@@ -233,7 +280,7 @@ router.post('/clinic/monitor/start', async (req, res) => {
   const ctx = getRuntimePaths(req);
   let payload;
   try {
-    payload = sanitizeMonitorRequest(req.body || {});
+    payload = sanitizeMonitorRequest(withDoctorAccount(req.body || {}, req));
   } catch (err) {
     return res.status(400).json({ status: 'error', message: String(err.message || err) });
   }
@@ -516,7 +563,7 @@ router.post('/clinic/care-preview', async (req, res) => {
   let reqPath = '';
   let outPath = '';
   try {
-    const payload = sanitizeClinicCareRequest(req.body || {});
+    const payload = sanitizeClinicCareRequest(withDoctorAccount(req.body || {}, req));
     const stamp = `${Date.now()}_clinic_care_preview`;
     reqPath = path.join(ctx.dir, `clinic_care_request_${stamp}.json`);
     outPath = path.join(ctx.dir, `clinic_care_preview_${stamp}.json`);
@@ -600,7 +647,7 @@ router.post('/clinic/care-order-seeds', async (req, res) => {
   let reqPath = '';
   let outPath = '';
   try {
-    const payload = sanitizeClinicCareOrderSeedsRequest(req.body || {});
+    const payload = sanitizeClinicCareOrderSeedsRequest(withDoctorAccount(req.body || {}, req));
     const stamp = `${Date.now()}_clinic_care_order_seeds`;
     reqPath = path.join(ctx.dir, `clinic_care_order_seeds_${stamp}.json`);
     outPath = path.join(ctx.dir, `clinic_care_order_seeds_${stamp}.out.json`);
@@ -651,7 +698,7 @@ router.post('/clinic/input-care', async (req, res) => {
   let reqPath = '';
   const resultPath = path.join(ctx.dir, 'clinic_input_care_result.json');
   try {
-    const payload = sanitizeClinicCareRequest(req.body || {}, { requireRows: true });
+    const payload = sanitizeClinicCareRequest(withDoctorAccount(req.body || {}, req), { requireRows: true });
     const tokenCheck = validateAndConsumeInputPrecheckToken(
       ctx,
       'clinic_input_care',
@@ -723,3 +770,5 @@ router.post('/clinic/input-care', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.withDoctorAccount = withDoctorAccount;
+module.exports.scheduledClinicDoctor = scheduledClinicDoctor;

@@ -993,6 +993,13 @@ export const saveFetchAccounts = (body)      => put('/api/fetch-accounts', body)
 // ── Tài khoản EMR theo điều dưỡng (ca làm/ca trực — admin) ──────────────────
 export const getNurseEmrAccounts  = ()      => get('/api/nurse-emr-accounts');
 export const saveNurseEmrAccounts = (body)  => post('/api/nurse-emr-accounts', body);
+// Sửa / bỏ tài khoản EMR của MỘT điều dưỡng (giữ nguyên chữ ký và người khác).
+export const updateNurseEmrAccount = (name, body) => put(`/api/nurse-emr-accounts/account/${encodeURIComponent(name)}`, body);
+export const removeNurseEmrAccount = (name)  => del(`/api/nurse-emr-accounts/account/${encodeURIComponent(name)}`);
+export const getEmrAccountOverview = ()      => get('/api/emr-accounts/overview');
+// Bác sĩ phòng khám: thêm nhiều người một lần (tên đăng nhập tự tạo); danh sách để chọn khi đăng nhập.
+export const addDoctorAccounts    = (body)  => post('/api/nurse-emr-accounts/doctors', body);
+export const getClinicDoctorAccounts = ()   => get('/api/clinic/doctor-accounts');
 export const saveNurseSignature   = (name, imageDataUrl) => post('/api/nurse-emr-accounts/signature', { name, imageDataUrl });
 export const removeNurseSignature = (name)   => del(`/api/nurse-emr-accounts/signature/${encodeURIComponent(name)}`);
 

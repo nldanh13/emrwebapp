@@ -1,21 +1,7 @@
 import { useRef, useState } from 'react';
-import { IconEye, IconEyeOff, IconPlus, IconTrash, IconUpload, IconX } from '@tabler/icons-react';
+import { IconPlus, IconTrash, IconUpload, IconX } from '@tabler/icons-react';
 import { C, FS } from '../../tokens.js';
 import { Btn, SectionLabel } from '../shared.jsx';
-
-const EMR_INPUT_STYLE = {
-  width: '100%',
-  background: C.surface,
-  border: `1px solid ${C.border}`,
-  borderRadius: 5,
-  height: 30,
-  padding: '0 8px',
-  color: C.text,
-  fontSize: FS.sm,
-  fontFamily: 'inherit',
-  outline: 'none',
-  boxSizing: 'border-box',
-};
 
 const MAX_SIGNATURE_BYTES = 2 * 1024 * 1024;
 
@@ -106,43 +92,6 @@ function NurseSignatureField({ name, account, onUploadSignature, onRemoveSignatu
   );
 }
 
-function NurseEmrAccountFields({ name, account, onChangeEmrAccount }) {
-  const [revealed, setRevealed] = useState(false);
-  const username = account?.emr_username || '';
-  const password = account?.emr_password || '';
-  return (
-    <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <input
-        value={username}
-        onChange={e => onChangeEmrAccount(name, 'emr_username', e.target.value)}
-        placeholder="Tài khoản EMR"
-        aria-label={`Tài khoản EMR của ${name}`}
-        autoComplete="off"
-        style={EMR_INPUT_STYLE}
-      />
-      <div style={{ position: 'relative' }}>
-        <input
-          type={revealed ? 'text' : 'password'}
-          value={password}
-          onChange={e => onChangeEmrAccount(name, 'emr_password', e.target.value)}
-          placeholder="Mật khẩu EMR"
-          aria-label={`Mật khẩu EMR của ${name}`}
-          autoComplete="new-password"
-          style={{ ...EMR_INPUT_STYLE, paddingRight: 32 }}
-        />
-        <button
-          type="button"
-          onClick={() => setRevealed(v => !v)}
-          aria-label={revealed ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-          title={revealed ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-          className="emr-icon-btn"
-          style={{ position: 'absolute', right: 1, top: 1, width: 28, height: 28 }}
-        >{revealed ? <IconEyeOff size={15} stroke={1.75} /> : <IconEye size={15} stroke={1.75} />}</button>
-      </div>
-    </div>
-  );
-}
-
 export default function NurseRosterPanel({
   roster = [],
   newName = '',
@@ -150,10 +99,9 @@ export default function NurseRosterPanel({
   onAddNurse,
   onRemoveNurse,
   emrAccounts = {},
-  onChangeEmrAccount,
   onUploadSignature,
   onRemoveSignature,
-  canEditEmrAccounts = false,
+  canEditSignatures = false,
 }) {
   const removeNurse = (name) => {
     if (window.confirm(`Xoá ${name} khỏi danh sách? Tên cũng bị gỡ khỏi mọi ca đã phân công.`)) onRemoveNurse(name);
@@ -171,10 +119,10 @@ export default function NurseRosterPanel({
         />
         <Btn type="submit" variant="primary" icon={IconPlus} disabled={!newName.trim()}>Thêm</Btn>
       </form>
-      {canEditEmrAccounts && roster.length > 0 && (
+      {roster.length > 0 && (
         <div style={{ padding: '8px 12px 0', fontSize: FS.xs, color: C.text2, lineHeight: 1.5 }}>
-          Tài khoản EMR riêng giúp ca làm/ca trực đăng nhập đúng người khi nhập chăm sóc; bỏ trống thì dùng tài khoản mặc định.
-          {' '}Ảnh chữ ký dùng để chèn vào bộ phiếu "In ra viện" (màn Ký tên ĐD HSBA).
+          Tài khoản EMR của từng điều dưỡng (để nhập liệu đúng người ca làm) sửa ở <b>Thiết lập tài khoản → Tài khoản EMR</b>.
+          {canEditSignatures && ' Ảnh chữ ký dùng để chèn vào bộ phiếu "In ra viện" (màn Ký tên ĐD HSBA).'}
         </div>
       )}
       {roster.map(name => (
@@ -185,14 +133,7 @@ export default function NurseRosterPanel({
               <IconTrash size={16} stroke={1.75} />
             </button>
           </div>
-          {canEditEmrAccounts && (
-            <NurseEmrAccountFields
-              name={name}
-              account={emrAccounts[name]}
-              onChangeEmrAccount={onChangeEmrAccount}
-            />
-          )}
-          {canEditEmrAccounts && (
+          {canEditSignatures && (
             <NurseSignatureField
               name={name}
               account={emrAccounts[name]}

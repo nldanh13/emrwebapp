@@ -1,435 +1,86 @@
-// src/components/AccountSettingsTab.jsx
-// Giao diện quản lý tài khoản đăng nhập Data Hub (secrets/users.json):
-//   - Xem danh sách tài khoản, vai trò, mã truy cập, tài khoản EMR riêng
-//   - Thêm / sửa / tắt-bật / tạo mã mới / xoá tài khoản
-// Chỉ role admin dùng được — server (server/routes/admin_users.js) đã chặn,
-// trang này chỉ hiện thông báo phù hợp khi không đủ quyền hoặc chưa đăng nhập.
+// src/components/AccountSettingsTab.jsx — Thiết lập tài khoản: MỘT chỗ cho mọi thứ về tài khoản.
+//   - Người dùng Data Hub: ai được đăng nhập app, vai trò, mã truy cập.
+//   - Tài khoản EMR: tổng hợp mọi tài khoản EMR app giữ (chỉ ra chỗ khai trùng), tài khoản chung,
+//     tài khoản theo điều dưỡng (trước ở Lịch điều dưỡng), tài khoản đọc song song, máy góp sức.
+//   - Thiết bị tin cậy: máy/điện thoại mở lại không phải đăng nhập.
+// Người dùng Data Hub và Tài khoản EMR chỉ quản trị thấy (máy chủ cũng chặn); Thiết bị tin cậy thì
+// ai cũng dùng được cho máy của mình.
+// Các mục đã mở được giữ lại khi đổi mục (như KeepAliveTab), để không mất phần đang sửa dở.
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { C, FS } from '../tokens.js';
-import { Btn, Spinner, Badge } from './shared.jsx';
+import { Segmented } from './shared.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import DeviceTrustPanel from './DeviceTrustPanel.jsx';
-import FetchAccountsPanel from './FetchAccountsPanel.jsx';
-import * as api from '../api.js';
-import { useOnTabReturn } from '../hooks/useTabActivity.js';
-import { SkeletonTable } from './Skeleton.jsx';
+import DataHubUsersPanel, { ROLE_LABELS } from './accounts/DataHubUsersPanel.jsx';
+import EmrAccountsSection from './accounts/EmrAccountsSection.jsx';
 
-const ROLE_OPTIONS = [
-  { value: 'viewer', label: 'Người xem — chỉ xem' },
-  { value: 'researcher', label: 'Nghiên cứu — xem + xuất dữ liệu nghiên cứu' },
-  { value: 'operator', label: 'Vận hành — nhập/xử lý dữ liệu (đa số nhân viên)' },
-  { value: 'supervisor', label: 'Giám sát — thêm export, xoá dữ liệu' },
-  { value: 'admin', label: 'Quản trị — toàn quyền, kể cả thiết lập tài khoản' },
+const SECTION_KEY = 'emr_account_section_v1';
+
+export const ACCOUNT_SECTIONS = [
+  { value: 'users', label: 'Người dùng Data Hub', adminOnly: true },
+  { value: 'emr', label: 'Tài khoản EMR', adminOnly: true },
+  { value: 'devices', label: 'Thiết bị tin cậy', adminOnly: false },
 ];
-const ROLE_LABELS = Object.fromEntries(ROLE_OPTIONS.map(r => [r.value, r.label.split(' — ')[0]]));
 
-const FIELD_LABEL_STYLE = { fontSize: FS.xs, color: C.text2, marginBottom: 3 };
-const INPUT_STYLE = {
-  width: '100%', padding: '6px 10px', borderRadius: 6,
-  background: C.surface, border: `1px solid ${C.border}`,
-  color: C.text, fontSize: FS.md, boxSizing: 'border-box', fontFamily: 'inherit',
-};
-
-function Field({ label, children }) {
-  return (
-    <div>
-      <div style={FIELD_LABEL_STYLE}>{label}</div>
-      {children}
-    </div>
-  );
+export function sectionsFor(isAdmin) {
+  return ACCOUNT_SECTIONS.filter(s => isAdmin || !s.adminOnly);
 }
 
-function emptyForm() {
-  return { name: '', role: 'operator', sessionsMode: 'all', sessionsList: '', enabled: true, emr_username: '', emr_password: '', id: '', password: '' };
+function loadSection(allowed) {
+  try {
+    const saved = localStorage.getItem(SECTION_KEY);
+    if (allowed.some(s => s.value === saved)) return saved;
+  } catch { /* trình duyệt chặn lưu trữ: dùng mặc định */ }
+  return allowed[0].value;
 }
 
-function formFromUser(u) {
-  const restricted = Array.isArray(u.sessions);
-  return {
-    name: u.name || '', role: u.role || 'operator',
-    sessionsMode: restricted ? 'restricted' : 'all',
-    sessionsList: restricted ? u.sessions.join(', ') : '',
-    enabled: u.enabled !== false,
-    emr_username: u.emr_username || '', emr_password: u.emr_password || '',
-    id: u.id || '', password: '', has_password: Boolean(u.has_password),
-  };
-}
+export default function AccountSettingsTab({ toast }) {
+  const { user, authMode } = useAuth();
+  // Không đăng nhập (chạy riêng trên máy này) thì coi như quản trị, như trước.
+  const isAdmin = !user || user.role === 'admin';
+  const allowed = sectionsFor(isAdmin);
+  const [section, setSectionState] = useState(() => loadSection(allowed));
+  const [visited, setVisited] = useState(() => new Set([section]));
+  const current = allowed.some(s => s.value === section) ? section : allowed[0].value;
 
-function copyToClipboard(text, toast) {
-  navigator.clipboard?.writeText(text)
-    .then(() => toast?.('Đã sao chép.', 'ok'))
-    .catch(() => toast?.('Không sao chép được — hãy copy thủ công.', 'error'));
-}
+  const setSection = useCallback((next) => {
+    setSectionState(next);
+    setVisited(prev => (prev.has(next) ? prev : new Set([...prev, next])));
+    try { localStorage.setItem(SECTION_KEY, next); } catch { /* bỏ qua */ }
+  }, []);
 
-function TokenCell({ token, toast }) {
-  const [revealed, setRevealed] = useState(false);
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <code style={{ fontSize: FS.xs, color: C.text2 }}>
-        {revealed ? token : `${token.slice(0, 4)}${'•'.repeat(10)}`}
-      </code>
-      <button type="button" onClick={() => setRevealed(v => !v)} title={revealed ? 'Ẩn' : 'Hiện'} style={{
-        border: 'none', background: 'none', cursor: 'pointer', color: C.text3, fontSize: FS.sm, padding: 2,
-      }}>{revealed ? '🙈' : '👁'}</button>
-      <button type="button" onClick={() => copyToClipboard(token, toast)} title="Sao chép" style={{
-        border: 'none', background: 'none', cursor: 'pointer', color: C.blue, fontSize: FS.xs, padding: 2, fontWeight: 700,
-      }}>Copy</button>
-    </div>
-  );
-}
+  const who = authMode === 'local_only' || !user
+    ? 'Chưa bật đăng nhập: ai mở app trên máy này cũng có quyền quản trị.'
+    : `Bạn đang đăng nhập: ${user.name} · ${ROLE_LABELS[user.role] || user.role}.`;
 
-function EditModal({ mode, initial, onClose, onSave, toast }) {
-  const [form, setForm] = useState(initial);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [regenerateToken, setRegenerateToken] = useState(false);
-
-  const set = (key) => (e) => setForm(prev => ({ ...prev, [key]: e.target.value }));
-
-  const handleSave = async () => {
-    setError('');
-    if (!form.name.trim()) { setError('Cần nhập tên.'); return; }
-    if (form.password && form.password.length < 8) { setError('Mật khẩu đăng nhập phải có ít nhất 8 ký tự.'); return; }
-    if (form.sessionsMode === 'restricted' && !form.sessionsList.trim()) {
-      setError('Đã chọn "Giới hạn" thì cần nhập ít nhất 1 mã phiên, hoặc đổi lại "Tất cả".');
-      return;
-    }
-    setSaving(true);
-    try {
-      const sessions = form.sessionsMode === 'all'
-        ? '*'
-        : form.sessionsList.split(',').map(x => x.trim()).filter(Boolean);
-      await onSave({
-        name: form.name.trim(),
-        role: form.role,
-        sessions,
-        enabled: form.enabled,
-        emr_username: form.emr_username.trim(),
-        emr_password: form.emr_password,
-        ...(mode === 'create' && form.id.trim() ? { id: form.id.trim() } : {}),
-        ...(form.password ? { password: form.password } : {}),
-        ...(mode === 'edit' && regenerateToken ? { regenerate_token: true } : {}),
-      });
-      onClose();
-    } catch (e) {
-      setError(String(e.message || e));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(23,32,51,0.42)', zIndex: 50,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
-      onClick={onClose}>
-      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 6,
-        padding: 18, width: 520, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }}
-        onClick={e => e.stopPropagation()}>
-
-        <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text, marginBottom: 14 }}>
-          {mode === 'create' ? 'Thêm tài khoản' : `Sửa tài khoản: ${initial.name}`}
-        </div>
-
-        <div style={{ display: 'grid', gap: 10 }}>
-          <Field label="Tên *">
-            <input value={form.name} onChange={set('name')} placeholder="VD: Nguyễn Thị A" style={INPUT_STYLE} />
-          </Field>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <Field label="Tên đăng nhập">
-              {mode === 'create'
-                ? <input value={form.id} onChange={set('id')} placeholder="VD: nthia (bỏ trống: tự tạo)" autoComplete="off" style={INPUT_STYLE} />
-                : <input value={form.id} disabled style={{ ...INPUT_STYLE, color: C.text3 }} />}
-            </Field>
-            <Field label={mode === 'edit' && form.has_password ? 'Mật khẩu đăng nhập (bỏ trống: giữ nguyên)' : 'Mật khẩu đăng nhập'}>
-              <input type="password" value={form.password} onChange={set('password')} placeholder="Ít nhất 8 ký tự" autoComplete="new-password" style={INPUT_STYLE} />
-            </Field>
-          </div>
-          <Field label="Vai trò">
-            <select value={form.role} onChange={set('role')} style={INPUT_STYLE}>
-              {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-            </select>
-          </Field>
-
-          <Field label="Phạm vi phiên dữ liệu">
-            <div style={{ display: 'flex', gap: 14, fontSize: FS.md, color: C.text2 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
-                <input type="radio" checked={form.sessionsMode === 'all'} onChange={() => setForm(p => ({ ...p, sessionsMode: 'all' }))} />
-                Tất cả
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
-                <input type="radio" checked={form.sessionsMode === 'restricted'} onChange={() => setForm(p => ({ ...p, sessionsMode: 'restricted' }))} />
-                Giới hạn danh sách
-              </label>
-            </div>
-            {form.sessionsMode === 'restricted' && (
-              <input value={form.sessionsList} onChange={set('sessionsList')} placeholder="VD: default, khoa-noi"
-                style={{ ...INPUT_STYLE, marginTop: 6 }} />
-            )}
-          </Field>
-
-          <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: FS.md, color: C.text2, cursor: 'pointer' }}>
-            <input type="checkbox" checked={form.enabled} onChange={e => setForm(p => ({ ...p, enabled: e.target.checked }))} />
-            Đang hoạt động (bỏ tick để tạm khoá tài khoản, không xoá)
-          </label>
-
-          {mode === 'edit' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4 }}>
-              <TokenCell token={initial.token} toast={toast} />
-              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: FS.xs, color: C.amber, cursor: 'pointer', marginLeft: 'auto' }}>
-                <input type="checkbox" checked={regenerateToken} onChange={e => setRegenerateToken(e.target.checked)} />
-                Tạo mã mới (mã cũ sẽ mất hiệu lực ngay)
-              </label>
-            </div>
-          )}
-
-          <div style={{ borderTop: `1px solid ${C.border2}`, paddingTop: 10, display: 'grid', gap: 10 }}>
-            <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.5 }}>
-              Tài khoản EMR thật riêng — chỉ dùng khi ghi/nhập dữ liệu (chăm sóc, dịch truyền, thủ thuật, VTYT) để
-              thao tác hiện đúng tên người làm trên EMR bệnh viện. Bỏ trống thì tự dùng tài khoản chung.
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <Field label="Tài khoản EMR">
-                <input value={form.emr_username} onChange={set('emr_username')} placeholder="Tên đăng nhập EMR" style={INPUT_STYLE} />
-              </Field>
-              <Field label="Mật khẩu EMR">
-                <input type="password" value={form.emr_password} onChange={set('emr_password')} placeholder="Mật khẩu EMR" style={INPUT_STYLE} />
-              </Field>
-            </div>
-          </div>
-        </div>
-
-        {error && (
-          <div style={{ padding: '6px 10px', borderRadius: 6, background: C.redBg,
-            border: `1px solid ${C.redBorder}`, color: C.red, fontSize: FS.sm, marginTop: 12 }}>
-            {error}
+  const render = (id) => {
+    if (id === 'users') return <DataHubUsersPanel toast={toast} />;
+    if (id === 'emr') return <EmrAccountsSection toast={toast} />;
+    return (
+      <div style={{ display: 'grid', gap: 12 }}>
+        <DeviceTrustPanel isAdmin={isAdmin} toast={toast} />
+        {!isAdmin && (
+          <div style={{ fontSize: FS.sm, color: C.text2, lineHeight: 1.6 }}>
+            Người dùng Data Hub và tài khoản EMR chỉ tài khoản vai trò <b>Quản trị</b> sửa được. Cần thêm/sửa tài khoản
+            thì nhờ quản trị hệ thống.
           </div>
         )}
-
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-          <Btn variant="default" onClick={onClose}>Hủy</Btn>
-          <Btn variant="primary" disabled={saving} onClick={handleSave}>
-            {saving ? <><Spinner size={12} /> Đang lưu...</> : 'Lưu'}
-          </Btn>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default function AccountSettingsTab() {
-  const { user } = useAuth();
-  const [items, setItems] = useState([]);
-  const [fileInfo, setFileInfo] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-  const [editing, setEditing] = useState(null); // { mode: 'create'|'edit', form }
-  const [deleting, setDeleting] = useState('');
-  const [toast, setToast] = useState(null);
-  const [newTokenNotice, setNewTokenNotice] = useState(null);
-  const [bypassedCount, setBypassedCount] = useState(0);
-
-  const showToast = useCallback((msg, type = 'info') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 4000);
-  }, []);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setLoadError('');
-    try {
-      const data = await api.getAdminUsers();
-      setItems(data.users || []);
-      setFileInfo(data.file || null);
-      setBypassedCount(data.local_only_bypassed_users_count || 0);
-      if (data.parse_error) setLoadError(`File users.json hiện có lỗi: ${data.parse_error}`);
-    } catch (e) {
-      setLoadError(String(e.message || e));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-  useOnTabReturn(() => load());
-
-  const handleCreate = async (payload) => {
-    const r = await api.createAdminUser(payload);
-    showToast('Đã tạo tài khoản.', 'ok');
-    setNewTokenNotice(r.user);
-    await load();
-  };
-
-  const handleUpdate = async (id, payload) => {
-    const r = await api.updateAdminUser(id, payload);
-    showToast(payload.regenerate_token ? 'Đã lưu và tạo mã mới.' : 'Đã lưu.', 'ok');
-    if (payload.regenerate_token) setNewTokenNotice(r.user);
-    await load();
-  };
-
-  const handleDelete = async (item) => {
-    if (!window.confirm(`Xoá tài khoản "${item.name}"? Người này sẽ không đăng nhập được nữa ngay lập tức.`)) return;
-    setDeleting(item.id);
-    try {
-      await api.deleteAdminUser(item.id);
-      showToast('Đã xoá.', 'ok');
-      await load();
-    } catch (e) {
-      showToast('Lỗi: ' + String(e.message || e), 'error');
-    } finally {
-      setDeleting('');
-    }
-  };
-
-  if (user && user.role !== 'admin') {
-    return (
-      <div style={{ padding: 12, maxWidth: 720, margin: '0 auto', display: 'grid', gap: 12 }}>
-      <DeviceTrustPanel isAdmin={false} toast={showToast} />
-      <div style={{ padding: 20, maxWidth: 560, margin: '20px auto', textAlign: 'center', color: C.text2 }}>
-        <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text, marginBottom: 8 }}>Cần quyền quản trị</div>
-        <div style={{ fontSize: FS.md, lineHeight: 1.6 }}>
-          Chỉ tài khoản vai trò <b>Quản trị</b> mới thiết lập được tài khoản đăng nhập. Bạn đang đăng nhập với vai trò
-          <b> {ROLE_LABELS[user.role] || user.role}</b> — liên hệ quản trị hệ thống nếu cần thêm/sửa tài khoản.
-        </div>
-      </div>
       </div>
     );
-  }
+  };
 
   return (
-    <div style={{ padding: 12, maxWidth: 1080, margin: '0 auto' }}>
-      <div style={{ marginBottom: 12 }}><DeviceTrustPanel isAdmin toast={showToast} /></div>
-      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
-        <div>
-          <div style={{ fontSize: FS.xl, fontWeight: 700, color: C.text }}>Thiết lập tài khoản</div>
-          <div style={{ fontSize: FS.sm, color: C.text2, marginTop: 4 }}>
-            Tài khoản đăng nhập Data Hub và tài khoản EMR riêng cho từng người.
-          </div>
-        </div>
-        <Btn variant="primary" disabled={fileInfo?.mode === 'inline'} onClick={() => setEditing({ mode: 'create', form: emptyForm() })}>
-          + Thêm tài khoản
-        </Btn>
+    <div style={{ padding: 12, maxWidth: 1080, margin: '0 auto', display: 'grid', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ fontSize: FS.sm, color: C.text2 }}>{who}</div>
+        {allowed.length > 1 && (
+          <Segmented label="Mục tài khoản" value={current} onChange={setSection} options={allowed.map(({ value, label }) => ({ value, label }))} />
+        )}
       </div>
-
-      {fileInfo?.mode === 'inline' && (
-        <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 7, background: C.amberBg,
-          border: `1px solid ${C.amberBorder}`, fontSize: FS.sm, color: C.amber, lineHeight: 1.5 }}>
-          Server đang lấy danh sách tài khoản từ biến môi trường <code>EMR_USERS_JSON</code> — không sửa được từ giao diện
-          này. Hãy sửa trực tiếp biến môi trường đó rồi khởi động lại server.
-        </div>
-      )}
-      {bypassedCount > 0 && (
-        <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 7, background: C.blueBg,
-          border: `1px solid ${C.blueBorder}`, fontSize: FS.sm, color: C.text2, lineHeight: 1.5 }}>
-          Đã có {bypassedCount} tài khoản trong danh sách, nhưng server hiện chỉ mở cho máy này (chưa đặt
-          <code> HOST=0.0.0.0</code>) nên <b>đang tạm bỏ qua đăng nhập</b> — ai mở app trên máy này cũng vào thẳng
-          với quyền quản trị. Tài khoản vẫn sửa được bình thường ở đây; đăng nhập sẽ tự bật lại ngay khi bạn mở
-          server ra mạng LAN.
-        </div>
-      )}
-      {loadError && (
-        <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 7, background: C.redBg,
-          border: `1px solid ${C.redBorder}`, fontSize: FS.sm, color: C.red, lineHeight: 1.5 }}>
-          {loadError}
-        </div>
-      )}
-      {newTokenNotice && (
-        <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 7, background: C.greenBg,
-          border: `1px solid ${C.greenBorder}`, fontSize: FS.md, color: C.text, lineHeight: 1.6 }}>
-          <div style={{ fontWeight: 700, color: C.green, marginBottom: 4 }}>
-            Mã truy cập cho "{newTokenNotice.name}" — gửi riêng cho người này, không gửi chung:
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <code style={{ fontSize: FS.md, background: C.surface, padding: '4px 8px', borderRadius: 4, border: `1px solid ${C.border}` }}>
-              {newTokenNotice.token}
-            </code>
-            <button type="button" onClick={() => copyToClipboard(newTokenNotice.token, showToast)} style={{
-              border: 'none', background: 'none', cursor: 'pointer', color: C.blue, fontSize: FS.sm, fontWeight: 700,
-            }}>Sao chép</button>
-            <button type="button" onClick={() => setNewTokenNotice(null)} style={{
-              border: 'none', background: 'none', cursor: 'pointer', color: C.text3, fontSize: FS.sm, marginLeft: 'auto',
-            }}>Đóng</button>
-          </div>
-        </div>
-      )}
-
-      {loading && !items.length ? (
-        <div role="status" aria-busy="true" aria-label="Đang tải danh sách tài khoản" style={{ padding: 14 }}><SkeletonTable rows={4} cols={4} /></div>
-      ) : !items.length ? (
-        <div style={{ color: C.text3, padding: 20, textAlign: 'center' }}>
-          Chưa có tài khoản nào — bấm "+ Thêm tài khoản" để tạo tài khoản đầu tiên.
-        </div>
-      ) : (
-        <div style={{ background: C.surface, borderTop: `1px solid ${C.border2}`, overflow: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: C.surface2 }}>
-                {['Tên', 'Vai trò', 'Mã truy cập', 'Phạm vi', 'TK EMR riêng', 'Trạng thái', 'Tác vụ'].map(h => (
-                  <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: FS.xs,
-                    fontWeight: 700, color: C.text2, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item, i) => (
-                <tr key={item.id} style={{ borderBottom: i < items.length - 1 ? `1px solid ${C.border2}` : 'none' }}>
-                  <td style={{ padding: '10px 12px', fontSize: FS.md, color: C.text, fontWeight: 500 }}>{item.name}</td>
-                  <td style={{ padding: '10px 12px', fontSize: FS.sm, color: C.text2 }}>{ROLE_LABELS[item.role] || item.role}</td>
-                  <td style={{ padding: '10px 12px', fontSize: FS.sm }}><TokenCell token={item.token} toast={showToast} /></td>
-                  <td style={{ padding: '10px 12px', fontSize: FS.xs, color: C.text2 }}>
-                    {item.sessions === '*' ? 'Tất cả' : (Array.isArray(item.sessions) ? item.sessions.join(', ') : '—')}
-                  </td>
-                  <td style={{ padding: '10px 12px', fontSize: FS.sm }}>
-                    {item.emr_username
-                      ? <Badge text="Có" bg={C.blueBg} color={C.blue} />
-                      : <span style={{ color: C.text3 }}>—</span>}
-                  </td>
-                  <td style={{ padding: '10px 12px', fontSize: FS.sm }}>
-                    {item.enabled
-                      ? <Badge text="Hoạt động" bg={C.greenBg} color={C.green} />
-                      : <Badge text="Đã khoá" bg={C.surface2} color={C.text3} />}
-                  </td>
-                  <td style={{ padding: '10px 12px' }}>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <Btn variant="secondary" disabled={fileInfo?.mode === 'inline'}
-                        onClick={() => setEditing({ mode: 'edit', form: formFromUser(item), id: item.id, token: item.token, name: item.name })}
-                        style={{ fontSize: FS.xs, padding: '2px 10px' }}>
-                        Sửa
-                      </Btn>
-                      <Btn variant="default" disabled={fileInfo?.mode === 'inline' || deleting === item.id} onClick={() => handleDelete(item)}
-                        style={{ fontSize: FS.xs, padding: '2px 10px', color: C.red }}>
-                        {deleting === item.id ? <Spinner size={10} /> : 'Xoá'}
-                      </Btn>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <FetchAccountsPanel toast={showToast} />
-
-      {toast && (
-        <div style={{ position: 'fixed', bottom: 24, right: 24, maxWidth: 380, padding: '10px 18px',
-          borderRadius: 8, background: toast.type === 'error' ? C.redBg : toast.type === 'ok' ? C.greenBg : C.surface,
-          border: `1px solid ${toast.type === 'error' ? C.redBorder : toast.type === 'ok' ? C.greenBorder : C.border}`,
-          color: toast.type === 'error' ? C.red : toast.type === 'ok' ? C.green : C.text,
-          fontSize: FS.md, lineHeight: 1.5, boxShadow: C.shadow2, zIndex: 100 }}>
-          {toast.msg}
-        </div>
-      )}
-
-      {editing && (
-        <EditModal
-          mode={editing.mode}
-          initial={editing.mode === 'create' ? editing.form : { ...editing.form, name: editing.name, token: editing.token }}
-          onClose={() => setEditing(null)}
-          onSave={(payload) => editing.mode === 'create' ? handleCreate(payload) : handleUpdate(editing.id, payload)}
-          toast={showToast}
-        />
-      )}
+      {allowed.map(({ value }) => (visited.has(value) || value === current ? (
+        <div key={value} hidden={value !== current}>{render(value)}</div>
+      ) : null))}
     </div>
   );
 }

@@ -112,6 +112,16 @@
       "usesDateRange": false
     },
     {
+      "id": "clinic-schedule",
+      "label": "Lịch phòng khám",
+      "icon": "▦",
+      "group": "Phòng khám",
+      "hint": "Xếp bác sĩ, điều dưỡng phòng khám theo ngày; bác sĩ theo lịch đăng nhập EMR",
+      "order": 101,
+      "compact": true,
+      "usesDateRange": false
+    },
+    {
       "id": "patient-journey",
       "label": "Người bệnh & tái khám",
       "icon": "◷",
@@ -166,7 +176,7 @@
       "label": "Thiết lập tài khoản",
       "icon": "⚙",
       "group": "Cài đặt",
-      "hint": "Tạo/sửa tài khoản đăng nhập Data Hub và tài khoản EMR riêng",
+      "hint": "Mọi tài khoản ở một chỗ: người dùng Data Hub, tài khoản EMR, thiết bị tin cậy",
       "order": 145,
       "compact": true,
       "usesDateRange": false

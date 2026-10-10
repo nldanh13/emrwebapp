@@ -35,7 +35,7 @@ function MobileNursePanel({ roster, newName, setNewName, onAddNurse, onRemoveNur
           ))}
         </ul>
       ) : <div style={{ padding: '0 12px 12px', fontSize: FS.sm, color: C.text2 }}>Chưa có điều dưỡng.</div>}
-      <div style={{ padding: '0 12px 12px', fontSize: FS.xs, color: C.text2 }}>Tài khoản EMR và chữ ký chỉnh trên máy tính.</div>
+      <div style={{ padding: '0 12px 12px', fontSize: FS.xs, color: C.text2 }}>Tài khoản EMR của điều dưỡng sửa ở Thiết lập tài khoản → Tài khoản EMR. Ảnh chữ ký chỉnh trên máy tính.</div>
     </div>
   );
 }

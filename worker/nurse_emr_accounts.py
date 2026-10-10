@@ -64,6 +64,9 @@ def load_nurse_emr_accounts() -> Dict[str, Dict[str, str]]:
     for row in raw:
         if not isinstance(row, dict):
             continue
+        # Tài khoản bác sĩ phòng khám (kind="doctor") không dùng khi nhập liệu theo lịch điều dưỡng.
+        if row.get('kind') == 'doctor':
+            continue
         name = str(row.get('name') or '').strip()
         username = str(row.get('emr_username') or '').strip()
         password = str(row.get('emr_password') or '')
@@ -194,7 +197,7 @@ def resolve_entry_account(
             'warning': '',
         }
     if nurse:
-        warning = (f"Ngày {dmy}: điều dưỡng ca làm {nurse} chưa có tài khoản EMR trong Thiết lập tài khoản "
+        warning = (f"Ngày {dmy}: điều dưỡng ca làm {nurse} chưa có tài khoản EMR trong Thiết lập tài khoản → Tài khoản EMR "
                    f"→ nhập bằng tài khoản mặc định. Thêm tài khoản EMR cho {nurse} để lần sau nhập đúng tên.")
     else:
         warning = (f"Ngày {dmy}: chưa có người ca làm trong Lịch điều dưỡng → nhập bằng tài khoản mặc định. "

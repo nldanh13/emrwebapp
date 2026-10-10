@@ -4,7 +4,7 @@
 
 - **Một lượt nhập = một lần đăng nhập.** Chăm sóc, dịch truyền, thủ thuật, VTYT đăng nhập EMR **một
   lần** bằng tài khoản của **điều dưỡng ca làm theo Lịch điều dưỡng của ngày đầu tiên** trong lượt,
-  rồi nhập hết cả lượt (mọi người bệnh, mọi ngày) bằng phiên đó. Tài khoản lấy từ Thiết lập tài khoản
+  rồi nhập hết cả lượt (mọi người bệnh, mọi ngày) bằng phiên đó. Tài khoản lấy từ Thiết lập tài khoản → Tài khoản EMR
   (`secrets/nurse_emr_accounts.json`, xem `SECRETS.md`). Phiên được đánh dấu `single_login`:
   `WorkerSession.switch_account` từ chối đổi tài khoản giữa chừng.
   - Chăm sóc: phiếu đứng tên người khác (ca trực, ca làm của ngày khác) được tạo và Hoàn tất,
@@ -20,9 +20,9 @@
   - **Việc khác** (thủ thuật, dịch truyền, dọn phiếu): EMR không cho thì ghi lỗi và cảnh báo
     "Giữ nguyên một phiên đăng nhập… cần xử lý tay".
 - Người ca làm **chưa có tài khoản EMR** hoặc ngày đó **chưa xếp lịch**: dùng tài khoản mặc định
-  và ghi cảnh báo `[WARN] Ngày dd/mm/yyyy: …` trong log tác vụ.
-  - Tài khoản mặc định là tài khoản EMR riêng của người đang đăng nhập Data Hub, nếu có.
-  - Không có thì dùng tài khoản chung `emr.*`.
+  (tài khoản chung `emr.*`) và ghi cảnh báo `[WARN] Ngày dd/mm/yyyy: …` trong log tác vụ.
+  Tài khoản EMR riêng theo người dùng Data Hub đã bỏ (10/2026): tài khoản EMR nhập liệu chỉ khai
+  theo tên điều dưỡng.
 - **Quét, lấy dữ liệu, xem trước** (không ghi vào EMR) vẫn dùng tài khoản mặc định.
 
 Mã nguồn chính:

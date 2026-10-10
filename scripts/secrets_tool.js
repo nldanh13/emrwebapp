@@ -160,6 +160,10 @@ function check() {
         .filter(row => row && isWeakPassword(row.emr_password))
         .map(row => String(row.name || row.id || '?'));
       if (weak.length) warnings.push(`${spec.name}: ${weak.length} tài khoản EMR có mật khẩu quá yếu (${weak.join(', ')}).`);
+      if (spec.name === 'users.json') {
+        const stale = readJsonArray(info.path).filter(row => row && (row.emr_username || row.emr_password)).length;
+        if (stale) warnings.push(`users.json: ${stale} người dùng còn tài khoản EMR cũ (không dùng nữa). Lưu lại một người dùng bất kỳ ở Thiết lập tài khoản là tự xoá.`);
+      }
     }
   }
   checkPermissions(store.secretsDir(), warnings);

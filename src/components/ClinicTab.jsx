@@ -9,22 +9,15 @@ import { C, FS } from '../tokens.js';
 import { Btn, Segmented } from './shared.jsx';
 import * as api from '../api.js';
 import ClinicAdmissionCare from './ClinicAdmissionCare.jsx';
+import ClinicAccountPicker, { clinicLoginPayload, hasClinicLogin } from './ClinicAccountPicker.jsx';
 import ClinicBbhc from './ClinicBbhc.jsx';
-import { useTabActive } from '../hooks/useTabActivity.js';
+import { useOnTabReturn, useTabActive } from '../hooks/useTabActivity.js';
 import { revalidate, useServerData } from '../hooks/useServerData.js';
 import { useRealtimeConnected } from '../hooks/useRealtimeStatus.js';
 import { SkeletonTable } from './Skeleton.jsx';
+import { loadClinicConfig as loadConfig, saveClinicConfig as saveConfig } from '../utils/clinicLogin.js';
 
 const CLINIC_MONITOR_KEY = 'screen:clinic-monitor';
-
-const CONFIG_KEY = 'emr_clinic_monitor_cfg_v1';
-const DEFAULT_CONFIG = {
-  username: '',
-  loginUrl: import.meta.env.VITE_EMR_LOGIN_URL || '',
-  listUrl: import.meta.env.VITE_EMR_CLINIC_LIST_URL || '',
-  intervalMinutes: 3,
-  headless: true,
-};
 
 const CASE_LABELS = {
   cho_ve: 'Cho về',
@@ -36,22 +29,6 @@ const CASE_LABELS = {
   khac: 'Khác',
 };
 const ACTIONABLE_CASES = new Set(['cho_ve', 'nhap_vien', 'chuyen_vien']);
-
-function loadConfig() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}');
-    return { ...DEFAULT_CONFIG, ...(saved && typeof saved === 'object' ? saved : {}) };
-  } catch {
-    return { ...DEFAULT_CONFIG };
-  }
-}
-
-function saveConfig(cfg) {
-  try {
-    const { username, loginUrl, listUrl, intervalMinutes, headless } = cfg;
-    localStorage.setItem(CONFIG_KEY, JSON.stringify({ username, loginUrl, listUrl, intervalMinutes, headless }));
-  } catch {}
-}
 
 function hhmm(iso, withSeconds = false) {
   if (!iso) return '—';
@@ -181,6 +158,12 @@ export default function ClinicTab({ toast }) {
   const loadState = useCallback(() => revalidate(CLINIC_MONITOR_KEY), []);
 
   const running = Boolean(monitor?.running);
+  // Tên đăng nhập/URL dùng chung với Nghỉ ốm: quay lại tab thì lấy bản mới nhất (trừ khi đang theo dõi).
+  useOnTabReturn(() => {
+    if (running) return;
+    const { username, accountName, loginUrl, listUrl } = loadConfig();
+    setCfg(prev => ({ ...prev, username, accountName, loginUrl, listUrl }));
+  });
   const tabActive = useTabActive();
   const realtimeConnected = useRealtimeConnected();
   // ux-rules: polling-ok — chỉ là dự phòng khi mất kênh sự kiện; tab ẩn mà không chạy thì không hỏi.
@@ -193,7 +176,7 @@ export default function ClinicTab({ toast }) {
   const start = async () => {
     setBusy('start');
     try {
-      const r = await api.startClinicMonitor({ ...cfg, password, intervalMinutes: Number(cfg.intervalMinutes) || 3 });
+      const r = await api.startClinicMonitor({ ...cfg, ...clinicLoginPayload({ ...cfg, password }), intervalMinutes: Number(cfg.intervalMinutes) || 3 });
       if (r.status !== 'ok') throw new Error(r.message);
       toast?.(r.message, 'ok');
       await loadState();
@@ -319,12 +302,20 @@ export default function ClinicTab({ toast }) {
     <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <section style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, padding: 12 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, alignItems: 'end' }}>
-          <Field label="Tài khoản EMR">
-            <input value={cfg.username} onChange={setField('username')} disabled={running} autoComplete="username" style={inputStyle} />
+          <Field label="Đăng nhập bằng">
+            <ClinicAccountPicker value={cfg.accountName} disabled={running} style={inputStyle}
+              onChange={v => setCfg(prev => { const next = { ...prev, accountName: v }; saveConfig(next); return next; })} />
           </Field>
-          <Field label="Mật khẩu">
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} disabled={running} autoComplete="current-password" style={inputStyle} />
-          </Field>
+          {!cfg.accountName && (
+            <>
+              <Field label="Tài khoản EMR">
+                <input value={cfg.username} onChange={setField('username')} disabled={running} autoComplete="username" style={inputStyle} />
+              </Field>
+              <Field label="Mật khẩu">
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} disabled={running} autoComplete="current-password" style={inputStyle} />
+              </Field>
+            </>
+          )}
           <Field label="URL đăng nhập">
             <input value={cfg.loginUrl} onChange={setField('loginUrl')} disabled={running} style={inputStyle} />
           </Field>
@@ -343,7 +334,7 @@ export default function ClinicTab({ toast }) {
             </>
           ) : (
             <Btn variant="primary" icon={IconPlayerPlay} loading={busy === 'start'} onClick={start}
-              disabled={!cfg.username || !password || !cfg.loginUrl || !cfg.listUrl}>Bắt đầu theo dõi</Btn>
+              disabled={!hasClinicLogin({ ...cfg, password }) || !cfg.loginUrl || !cfg.listUrl}>Bắt đầu theo dõi</Btn>
           )}
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: FS.sm, color: C.text2 }}>
             <input type="checkbox" checked={cfg.headless} onChange={setField('headless')} disabled={running} />

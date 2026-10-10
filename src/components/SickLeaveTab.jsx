@@ -8,9 +8,9 @@ import { getSessionId } from '../hooks/useSession.js';
 import BhytPortalPanel from './BhytPortalPanel.jsx';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
 import { SkeletonTable } from './Skeleton.jsx';
+import { loadClinicConfig, saveClinicConfig } from '../utils/clinicLogin.js';
+import ClinicAccountPicker, { clinicLoginPayload, hasClinicLogin } from './ClinicAccountPicker.jsx';
 
-const DEFAULT_CLINIC_LOGIN_URL = import.meta.env.VITE_EMR_LOGIN_URL || '';
-const DEFAULT_CLINIC_LIST_URL = import.meta.env.VITE_EMR_CLINIC_LIST_URL || '';
 
 // Lần đầu chưa có danh sách: khung xám thay cho chữ "Đang tải..." (UX_RULES mục 9).
 const LOADING_ROWS = (
@@ -485,13 +485,18 @@ export default function SickLeaveTab({ toast, workDateRange }) {
   const sessionId = useMemo(() => getSessionId(), []);
   const [bhytPanelOpen, setBhytPanelOpen] = useState(false);
 
-  // Quét trực tiếp EMR (ngoại trú) theo khoảng ngày — không dùng chung ô tài
-  // khoản với tab Phòng khám để tránh phụ thuộc trạng thái tab khác; chỉ lưu
-  // trong phiên làm việc này, không lưu mật khẩu vào server/localStorage.
-  const [clinicUsername, setClinicUsername] = useState('');
+  // Quét trực tiếp EMR (ngoại trú) theo khoảng ngày. Tên đăng nhập và URL dùng chung với tab
+  // Phòng khám (src/utils/clinicLogin.js, chỉ lưu trên trình duyệt này) nên không phải gõ lại;
+  // mật khẩu chỉ giữ trong phiên làm việc này, không lưu vào máy chủ/localStorage.
+  const [clinicUsername, setClinicUsernameState] = useState(() => loadClinicConfig().username);
   const [clinicPassword, setClinicPassword] = useState('');
-  const [clinicLoginUrl, setClinicLoginUrl] = useState(DEFAULT_CLINIC_LOGIN_URL);
-  const [clinicListUrl, setClinicListUrl] = useState(DEFAULT_CLINIC_LIST_URL);
+  const [clinicLoginUrl, setClinicLoginUrlState] = useState(() => loadClinicConfig().loginUrl);
+  const [clinicListUrl, setClinicListUrlState] = useState(() => loadClinicConfig().listUrl);
+  const [clinicAccountName, setClinicAccountNameState] = useState(() => loadClinicConfig().accountName);
+  const setClinicAccountName = (v) => { setClinicAccountNameState(v); saveClinicConfig({ accountName: v }); };
+  const setClinicUsername = (v) => { setClinicUsernameState(v); saveClinicConfig({ username: v }); };
+  const setClinicLoginUrl = (v) => { setClinicLoginUrlState(v); saveClinicConfig({ loginUrl: v }); };
+  const setClinicListUrl = (v) => { setClinicListUrlState(v); saveClinicConfig({ listUrl: v }); };
   const [scanning, setScanning] = useState(false);
   const [scannedOutpatientRows, setScannedOutpatientRows] = useState([]);
   const [scanMessage, setScanMessage] = useState('');
@@ -519,7 +524,15 @@ export default function SickLeaveTab({ toast, workDateRange }) {
   }, [toast]);
 
   useEffect(() => { load(); }, [load]);
-  useOnTabReturn(() => load());
+  useOnTabReturn(() => {
+    load();
+    // Vừa nhập tên đăng nhập/URL ở tab Phòng khám thì điền sẵn ở đây.
+    const saved = loadClinicConfig();
+    setClinicUsernameState(saved.username);
+    setClinicAccountNameState(saved.accountName);
+    setClinicLoginUrlState(saved.loginUrl);
+    setClinicListUrlState(saved.listUrl);
+  });
 
   const handleImportFile = useCallback(async (file) => {
     if (!file) return;
@@ -549,8 +562,9 @@ export default function SickLeaveTab({ toast, workDateRange }) {
   }, [toast]);
 
   const handleScanOutpatient = useCallback(async () => {
-    if (!clinicUsername.trim() || !clinicPassword || !clinicLoginUrl.trim() || !clinicListUrl.trim()) {
-      toast?.('Thiếu tài khoản, mật khẩu hoặc URL phòng khám để quét EMR.', 'error');
+    const login = { accountName: clinicAccountName, username: clinicUsername, password: clinicPassword };
+    if (!hasClinicLogin(login) || !clinicLoginUrl.trim() || !clinicListUrl.trim()) {
+      toast?.('Chưa chọn bác sĩ (hoặc chưa nhập tài khoản, mật khẩu), hoặc thiếu URL phòng khám để quét EMR.', 'error');
       return;
     }
     const { dateFrom, dateTo } = workDateRangeToDmy(workDateRange);
@@ -559,7 +573,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
     try {
       const result = await api.runClinicPreview({
         mode: 'date_range', dateFrom, dateTo,
-        username: clinicUsername.trim(), password: clinicPassword,
+        ...clinicLoginPayload(login),
         loginUrl: clinicLoginUrl.trim(), listUrl: clinicListUrl.trim(),
         headless: true, clinicSchedule: {},
       });
@@ -572,7 +586,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
     } finally {
       setScanning(false);
     }
-  }, [toast, workDateRange, clinicUsername, clinicPassword, clinicLoginUrl, clinicListUrl]);
+  }, [toast, workDateRange, clinicAccountName, clinicUsername, clinicPassword, clinicLoginUrl, clinicListUrl]);
 
   const range = useMemo(() => sanitizeWorkDateRange(workDateRange), [workDateRange?.from, workDateRange?.to]);
   const scannedOutpatientList = useMemo(() => buildScannedOutpatientCandidates(scannedOutpatientRows), [scannedOutpatientRows]);
@@ -793,10 +807,12 @@ export default function SickLeaveTab({ toast, workDateRange }) {
                   EMR thật — nếu bộ lọc khoảng ngày không áp dụng đúng, kết quả sẽ ghi rõ "partial" và cần kiểm tra lại thủ công.
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginBottom: 8 }}>
-                  <input placeholder="Tài khoản phòng khám" value={clinicUsername} onChange={e => setClinicUsername(e.target.value)}
+                  <ClinicAccountPicker value={clinicAccountName} onChange={setClinicAccountName}
                     style={{ padding: '6px 8px', fontSize: FS.sm, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
-                  <input placeholder="Mật khẩu" type="password" value={clinicPassword} onChange={e => setClinicPassword(e.target.value)}
-                    style={{ padding: '6px 8px', fontSize: FS.sm, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
+                  {!clinicAccountName && <input placeholder="Tài khoản phòng khám" value={clinicUsername} onChange={e => setClinicUsername(e.target.value)}
+                    style={{ padding: '6px 8px', fontSize: FS.sm, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />}
+                  {!clinicAccountName && <input placeholder="Mật khẩu" type="password" value={clinicPassword} onChange={e => setClinicPassword(e.target.value)}
+                    style={{ padding: '6px 8px', fontSize: FS.sm, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />}
                   <input placeholder="URL đăng nhập" value={clinicLoginUrl} onChange={e => setClinicLoginUrl(e.target.value)}
                     style={{ padding: '6px 8px', fontSize: FS.sm, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
                   <input placeholder="URL Danh sách Khám bệnh" value={clinicListUrl} onChange={e => setClinicListUrl(e.target.value)}

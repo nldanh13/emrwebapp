@@ -18,7 +18,7 @@ Không lưu cookie, mật khẩu hoặc token vào database nghiệp vụ.
 
 Mỗi tài khoản có một vai trò và có thể giới hạn danh sách session. Không chia sẻ token. Khi nhân sự thay đổi, thu hồi token ngay và kiểm tra audit.
 
-Mỗi tài khoản trong `secrets/users.json` (hoặc `EMR_USERS_FILE`) có thể khai thêm `emr_username`/`emr_password` — tài khoản EMR THẬT riêng của người đó. Các thao tác GHI vào EMR (nhập chăm sóc, dịch truyền, thủ thuật, VTYT — `/api/run-input-*`) sẽ tự dùng tài khoản riêng này để thao tác hiện đúng tên người làm trên EMR của bệnh viện, thay vì tài khoản chung. Nếu một tài khoản chưa khai `emr_username`/`emr_password`, các thao tác đó tự rơi về tài khoản chung (`emr.*` trong `secrets/secrets.json`) như trước — không ai bị chặn dùng app vì thiếu tài khoản riêng. Lấy dữ liệu (quét, lấy chi tiết) luôn dùng tài khoản chung, không cần tài khoản riêng.
+Tài khoản đăng nhập Data Hub (`secrets/users.json`) không còn gắn tài khoản EMR. Các thao tác GHI vào EMR (nhập chăm sóc, dịch truyền, thủ thuật, VTYT — `/api/run-input-*`) đăng nhập bằng tài khoản EMR của **điều dưỡng ca làm theo lịch** (`secrets/nurse_emr_accounts.json`, sửa ở Thiết lập tài khoản → Tài khoản EMR); người ca làm chưa có tài khoản thì dùng tài khoản chung (`emr.*` trong `secrets/secrets.json`) và có cảnh báo. Lấy dữ liệu (quét, lấy chi tiết) dùng tài khoản chung và tài khoản đọc song song. Dòng `emr_username`/`emr_password` cũ trong `users.json` (nếu còn) không được đọc nữa và tự bị xoá ở lần lưu tài khoản kế tiếp.
 
 ## 4. Export nghiên cứu
 
