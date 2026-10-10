@@ -43,8 +43,6 @@ portal = BhytPortal(
     selectors=config.get("portal_selectors") or {},
     debug_dir=RUNTIME / "debug",
 )
-worker = Worker(portal, store)
-
 # Các field hồ sơ cho phép cập nhật (sửa tay hoặc bù từ EMR/PDF phiếu).
 _UPDATE_FIELDS = {
     "so_kcb", "ma_ct", "so_seri", "ma_bhxh", "ma_the", "ho_ten",
@@ -66,6 +64,9 @@ emr = EmrPortal(
     debug_dir=RUNTIME / "debug",
     download_dir=RUNTIME / "emr_downloads",
 )
+
+# Worker tự lấy dữ liệu phiếu từ EMR (emr) khi hồ sơ còn thiếu, rồi nhập lên cổng.
+worker = Worker(portal, store, emr)
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
@@ -478,31 +479,41 @@ def api_run():
     payload = request.get_json(force=True) or {}
     ids = [int(value) for value in payload.get("record_ids", [])]
     dry_run = bool(payload.get("dry_run", True))
+    # Tự lấy dữ liệu phiếu từ EMR cho hồ sơ còn thiếu (người dùng không phải điền tay).
+    auto_enrich = bool(payload.get("auto_enrich", False))
     if not ids:
         records = store.list_records(doc_type=payload.get("doc_type", ""))
-        ids = [item["id"] for item in records if item["status"] != "success" and item["ready"]]
+        # Khi tự bù từ EMR thì lấy cả hồ sơ còn thiếu (worker sẽ bù trước khi nhập).
+        ids = [item["id"] for item in records
+               if item["status"] != "success" and (auto_enrich or item["ready"])]
     else:
         ids = list(dict.fromkeys(ids))
         selected = [store.get_record(record_id) for record_id in ids]
         selected = [record for record in selected if record]
-        not_ready = [record for record in selected if not record["ready"]]
-        if not_ready:
-            names = ", ".join(record["patient_name"] for record in not_ready[:3])
-            extra = "…" if len(not_ready) > 3 else ""
-            return jsonify({
-                "error": f"Có {len(not_ready)} hồ sơ thiếu dữ liệu: {names}{extra}. Hãy bấm Bổ sung trước."
-            }), 400
+        if not auto_enrich:
+            not_ready = [record for record in selected if not record["ready"]]
+            if not_ready:
+                names = ", ".join(record["patient_name"] for record in not_ready[:3])
+                extra = "…" if len(not_ready) > 3 else ""
+                return jsonify({
+                    "error": f"Có {len(not_ready)} hồ sơ thiếu dữ liệu: {names}{extra}. "
+                             "Bật 'Tự lấy dữ liệu từ EMR' hoặc bấm Bổ sung trước."
+                }), 400
         ids = [record["id"] for record in selected if record["status"] != "success"]
     if not ids:
         return jsonify({"error": "Không có hồ sơ sẵn sàng để chạy"}), 400
+    if auto_enrich and not emr.session_status().get("logged_in"):
+        return jsonify({"error": "Chưa đăng nhập EMR nội bộ để tự lấy dữ liệu phiếu."}), 400
     if not dry_run and payload.get("confirmation") != "NHẬP THẬT":
         return jsonify({"error": "Cần nhập đúng cụm từ NHẬP THẬT để xác nhận"}), 400
     try:
         status = portal.session_status()
         if not status.get("logged_in"):
             return jsonify({"error": "Chưa đăng nhập Cổng BHYT trên Chrome"}), 400
-        worker.start(ids, dry_run=dry_run, delay_seconds=float(config.get("delay_seconds", 1.0)))
-        return jsonify({"message": "Đã bắt đầu", "count": len(ids), "dry_run": dry_run})
+        worker.start(ids, dry_run=dry_run, delay_seconds=float(config.get("delay_seconds", 1.0)),
+                     auto_enrich=auto_enrich)
+        return jsonify({"message": "Đã bắt đầu", "count": len(ids), "dry_run": dry_run,
+                        "auto_enrich": auto_enrich})
     except PortalError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:

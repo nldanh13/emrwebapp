@@ -125,6 +125,9 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
   const [editForm, setEditForm] = useState({});
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmText, setConfirmText] = useState('');
+  const [confirmAll, setConfirmAll] = useState(false);
+  const [autoEnrich, setAutoEnrich] = useState(true); // tự lấy dữ liệu thiếu từ EMR
+  const [emrManualOpen, setEmrManualOpen] = useState(false); // công cụ đọc tay EMR (khi cần)
 
   const [logs, setLogs] = useState([]);
   const [logsOpen, setLogsOpen] = useState(false);
@@ -537,20 +540,22 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
     }
   }, [editing, editForm, loadAll, toast]);
 
-  const runSelected = useCallback(async (dryRun, confirmation = '') => {
-    const ids = [...selected];
-    if (!ids.length) { toast?.('Hãy chọn ít nhất một hồ sơ sẵn sàng.', 'error'); return; }
+  const runSelected = useCallback(async (dryRun, confirmation = '', opts = {}) => {
+    const all = !!opts.all;
+    const ids = all ? [] : [...selected]; // [] -> máy chủ tự lấy mọi hồ sơ chưa nhập
+    if (!all && !ids.length) { toast?.('Hãy chọn ít nhất một hồ sơ.', 'error'); return; }
     try {
       const d = await bhytFetch('/api/run', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ record_ids: ids, dry_run: dryRun, confirmation }),
+        body: JSON.stringify({ record_ids: ids, dry_run: dryRun, confirmation, auto_enrich: autoEnrich }),
       });
-      toast?.(`${d.message}: ${d.count} hồ sơ`, 'ok');
+      const extra = d.auto_enrich ? ' (tự lấy dữ liệu từ EMR)' : '';
+      toast?.(`${d.message}: ${d.count} hồ sơ${extra}`, 'ok');
       await loadAll();
     } catch (e) {
       toast?.(String(e?.message || 'Không chạy được.'), 'error');
     }
-  }, [selected, loadAll, toast]);
+  }, [selected, autoEnrich, loadAll, toast]);
 
   const handleStop = useCallback(async () => {
     try {
@@ -632,6 +637,22 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
           </Btn>
         )}
         <Btn variant="default" onClick={loadAll} style={{ padding: '4px 10px', fontSize: FS.xs, marginLeft: 'auto' }}>⟳ Làm mới</Btn>
+      </div>
+
+      <div style={{
+        border: `1px solid ${C.blue}`, borderRadius: 8, padding: '10px 14px',
+        background: C.blueBg || C.surface2, marginBottom: 12,
+      }}>
+        <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text, marginBottom: 4 }}>
+          Nhập tự động — bạn không phải điền thông tin gì
+        </div>
+        <div style={{ fontSize: FS.xs, color: C.text2, lineHeight: 1.6 }}>
+          <b>1.</b> Đăng nhập cổng BHYT và EMR nội bộ (hai thẻ đăng nhập bên dưới).
+          &nbsp;<b>2.</b> Lấy danh sách hồ sơ từ tab Nghỉ ốm.
+          &nbsp;<b>3.</b> Bấm <b>"Tự động nhập lên cổng"</b> — công cụ tự đọc phiếu phòng khám trên EMR
+          để lấy đủ Số KCB, Số seri, CCCD cho từng hồ sơ còn thiếu, rồi nhập lên cổng.
+          Phần sửa tay bên dưới chỉ dùng khi một ca nào đó EMR không lấy được.
+        </div>
       </div>
 
       <StepCard
@@ -734,22 +755,35 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
 
       <StepCard
         n={3}
-        title="Kiểm tra và chạy Selenium"
-        hint='Luôn dùng "Điền thử" trước — chế độ này không bấm Lưu.'
+        title="Tự động nhập lên cổng BHYT"
+        hint='Chạy thử trước (không bấm Lưu) để xem 1 hồ sơ, rồi mới "Nhập thật".'
         actions={<>
-          <Btn variant="default" onClick={() => runSelected(true)} style={{ padding: '6px 10px', fontSize: FS.xs }}>Điền thử 1 hồ sơ</Btn>
-          <Btn variant="danger" onClick={() => { if (!selected.size) { toast?.('Hãy chọn hồ sơ cần nhập.', 'error'); return; } setConfirmText(''); setConfirmOpen(true); }} style={{ padding: '6px 10px', fontSize: FS.xs }}>
-            Nhập thật hồ sơ đã chọn
+          <Btn variant="default" onClick={() => runSelected(true, '', { all: true })} disabled={workerStatus.running} style={{ padding: '6px 10px', fontSize: FS.xs }}>
+            Chạy thử tự động
+          </Btn>
+          <Btn variant="primary" onClick={() => { setConfirmAll(true); setConfirmText(''); setConfirmOpen(true); }} disabled={workerStatus.running} style={{ padding: '6px 12px', fontSize: FS.xs }}>
+            Tự động nhập lên cổng
           </Btn>
           <Btn variant="default" onClick={handleStop} disabled={!workerStatus.running} style={{ padding: '6px 10px', fontSize: FS.xs }}>Dừng</Btn>
         </>}
       >
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: FS.xs, color: C.text2, marginBottom: 8, cursor: 'pointer' }}>
+          <input type="checkbox" checked={autoEnrich} onChange={e => setAutoEnrich(e.target.checked)} />
+          Tự lấy dữ liệu còn thiếu từ EMR (Số KCB, Số seri, CCCD) — nên bật để khỏi điền tay
+        </label>
         <div style={{ display: 'flex', gap: 12, fontSize: FS.xs, color: C.text3, flexWrap: 'wrap' }}>
           <span>Tổng {summary.total || 0} hồ sơ</span>
           <span>· Thiếu dữ liệu {summary.not_ready || 0}</span>
           <span>· Giấy nghỉ 07: {Object.values(summary.by_type?.BHXH07 || {}).reduce((a, b) => a + b, 0)}</span>
           <span>· Giấy ra viện 03: {Object.values(summary.by_type?.GRV03 || {}).reduce((a, b) => a + b, 0)}</span>
           {workerStatus.running && <span style={{ color: C.blue, fontWeight: 700 }}><Spinner size={9} /> {workerStatus.message || 'Đang chạy...'}</span>}
+        </div>
+        <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 6 }}>
+          Muốn nhập một vài hồ sơ nhất định thì tích chọn ở danh sách dưới rồi bấm "Nhập hồ sơ đã chọn".
+          <button type="button" onClick={() => { if (!selected.size) { toast?.('Hãy tích chọn hồ sơ ở danh sách.', 'error'); return; } setConfirmAll(false); setConfirmText(''); setConfirmOpen(true); }}
+            style={{ marginLeft: 6, fontSize: FS.xs, color: C.blue, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0, fontFamily: 'inherit' }}>
+            Nhập hồ sơ đã chọn ({selected.size})
+          </button>
         </div>
       </StepCard>
 
@@ -823,8 +857,8 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
         marginTop: 16, border: `1px solid ${C.border2}`, borderRadius: 8, padding: '12px 14px', background: C.surface,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-          <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Đọc giấy nghỉ từ EMR nội bộ</div>
-          <Badge text="Mục tiêu 2 · thử nghiệm" bg={C.amberBg} color={C.amber} size={FS.xs} />
+          <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Đăng nhập EMR nội bộ</div>
+          <Badge text="Để tự lấy phiếu" bg={C.blueBg || C.surface2} color={C.blue} size={FS.xs} />
           <Badge
             text={emrStatus.logged_in ? 'EMR: đã đăng nhập' : (emrStatus.error ? 'EMR: chưa chạy' : 'EMR: chưa đăng nhập')}
             bg={emrStatus.logged_in ? C.greenBg : C.redBg}
@@ -834,13 +868,11 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
           <Btn variant="default" onClick={checkEmr} style={{ padding: '4px 10px', fontSize: FS.xs, marginLeft: 'auto' }}>Kiểm tra</Btn>
         </div>
         <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.5, marginBottom: 10 }}>
-          <b>Đọc</b> dữ liệu "Giấy chứng nhận nghỉ việc hưởng BHXH" từ <b>EMR nội bộ</b> để bù vào hồ sơ,
-          rồi điền lên <b>cổng BHXH</b> ở bước 3. Module này chỉ đọc, không sửa gì trên EMR.
-          Đăng nhập EMR, chọn 1 hồ sơ ở danh sách trên (hoặc gõ tên) → <b>Mở form</b> → <b>Đọc dữ liệu</b>.
-          Nếu nav sai hoặc không đọc được ô, bấm <b>Chụp form</b> và gửi file để khớp lại.
+          Đăng nhập EMR một lần — sau đó bước 3 (<b>Tự động nhập lên cổng</b>) sẽ tự đọc phiếu phòng khám
+          cho từng hồ sơ, bạn không phải thao tác gì ở đây. Module chỉ đọc, không sửa gì trên EMR.
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
           <Field label="Tài khoản EMR"><input value={emrUser} onChange={e => setEmrUser(e.target.value)} style={INPUT_STYLE} autoComplete="off" /></Field>
           <Field label="Mật khẩu EMR"><input type="password" value={emrPass} onChange={e => setEmrPass(e.target.value)} style={INPUT_STYLE} autoComplete="new-password" /></Field>
           <div style={{ display: 'flex', alignItems: 'flex-end' }}>
@@ -850,33 +882,42 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+        <button type="button" onClick={() => setEmrManualOpen(o => !o)} style={{
+          marginTop: 10, fontSize: FS.xs, color: C.blue, background: 'none', border: 'none',
+          cursor: 'pointer', padding: 0, textDecoration: 'underline', fontFamily: 'inherit',
+        }}>
+          {emrManualOpen ? '▾' : '▸'} Công cụ đọc tay EMR (chỉ khi một ca không tự lấy được)
+        </button>
+
+        {emrManualOpen && <>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
           <div style={{ flex: '1 1 200px', minWidth: 160 }}>
             <Field label="Người bệnh (để trống thì lấy hồ sơ đang chọn ở trên)">
               <input value={emrPatient} onChange={e => setEmrPatient(e.target.value)} style={INPUT_STYLE}
                 autoComplete="off" placeholder={firstSelected?.patient_name || 'Gõ tên người bệnh'} />
             </Field>
           </div>
+          <Btn variant="default" onClick={emrReadPhieuPdf} disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
+            {emrBusy === 'phieu' ? <><Spinner size={10} /> Đang lấy phiếu...</> : 'Tự đọc phiếu phòng khám (PDF)'}
+          </Btn>
           <Btn variant="default" onClick={emrOpenCert} disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
             {emrBusy === 'open' ? <><Spinner size={10} /> Đang mở...</> : 'Mở form giấy nghỉ'}
+          </Btn>
+          <Btn variant="default" onClick={emrReadCert} disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
+            {emrBusy === 'read' ? <><Spinner size={10} /> Đang đọc...</> : 'Đọc form giấy nghỉ'}
           </Btn>
           <Btn variant="default" onClick={emrCapture} disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
             {emrBusy === 'capture' ? <><Spinner size={10} /> Đang lưu...</> : 'Chụp form cho kỹ thuật'}
           </Btn>
-          <Btn variant="primary" onClick={emrReadCert} disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
-            {emrBusy === 'read' ? <><Spinner size={10} /> Đang đọc...</> : 'Đọc dữ liệu từ EMR'}
-          </Btn>
-          <Btn variant="primary" onClick={emrReadPhieuPdf} disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
-            {emrBusy === 'phieu' ? <><Spinner size={10} /> Đang lấy phiếu...</> : 'Tự đọc phiếu phòng khám (PDF)'}
-          </Btn>
         </div>
         <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 8, lineHeight: 1.5 }}>
-          <b>Phòng khám:</b> nút "Tự đọc phiếu phòng khám (PDF)" sẽ tự bấm <b>Xem phiếu</b> trên EMR,
-          tải file PDF về và đọc — bản PDF có đủ Số KCB, Số seri, CCCD nên bù được chỗ file Excel thiếu.
+          "Tự đọc phiếu phòng khám (PDF)" tự bấm <b>Xem phiếu</b> trên EMR, tải PDF về và đọc (đủ Số KCB, Số seri, CCCD).
+          Nếu nav sai hoặc không đọc được, bấm <b>Chụp form cho kỹ thuật</b> và gửi file để khớp lại.
         </div>
         {emrTargetName && (
           <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 8 }}>Đang thao tác với: <b>{emrTargetName}</b></div>
         )}
+        </>}
       </div>
 
       <div style={{ marginTop: 16 }}>
@@ -941,13 +982,14 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
           position: 'fixed', inset: 0, background: 'rgba(23,32,51,0.42)', zIndex: 200,
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
         }} onClick={() => setConfirmOpen(false)}>
-          <form onSubmit={e => { e.preventDefault(); const v = confirmText; setConfirmOpen(false); runSelected(false, v); }}
+          <form onSubmit={e => { e.preventDefault(); const v = confirmText; setConfirmOpen(false); runSelected(false, v, { all: confirmAll }); }}
             onClick={e => e.stopPropagation()} style={{
               background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 18, width: 420, maxWidth: '95vw',
             }}>
             <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text, marginBottom: 8 }}>Xác nhận nhập thật</div>
             <div style={{ fontSize: FS.xs, color: C.text2, lineHeight: 1.6, marginBottom: 10 }}>
-              Selenium sẽ bấm <b>Lưu</b> trên cổng BHYT cho {selected.size} hồ sơ đã chọn. Gõ chính xác <code>NHẬP THẬT</code> để tiếp tục.
+              Công cụ sẽ bấm <b>Lưu</b> trên cổng BHYT cho {confirmAll ? 'TẤT CẢ hồ sơ chưa nhập' : `${selected.size} hồ sơ đã chọn`}
+              {autoEnrich ? ', tự lấy dữ liệu còn thiếu từ EMR trước khi nhập' : ''}. Gõ chính xác <code>NHẬP THẬT</code> để tiếp tục.
             </div>
             <input value={confirmText} onChange={e => setConfirmText(e.target.value)} placeholder="NHẬP THẬT" autoComplete="off" style={INPUT_STYLE} />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
