@@ -56,8 +56,8 @@ export function readinessItems({ summary, conditions = [], period = {}, onePerPa
     if (r.n) {
       const { usable } = availableForSampleSize(summary);
       items.push(usable >= r.n
-        ? { status: 'ok', text: `Đủ cỡ mẫu: cần ${compactNumber(r.n)}, hiện có ${compactNumber(usable)}.` }
-        : { status: 'bad', text: `Chưa đủ cỡ mẫu: cần ${compactNumber(r.n)}, hiện có ${compactNumber(usable)}.` });
+        ? { status: 'ok', text: `Theo tổng số lượt, đạt ngưỡng: cần ${compactNumber(r.n)}, mẫu có ${compactNumber(usable)} (chưa kiểm tra đủ dữ liệu biến/nhóm).` }
+        : { status: 'bad', text: `Theo tổng số lượt, còn thiếu: cần ${compactNumber(r.n)}, mẫu có ${compactNumber(usable)} (chưa kiểm tra đủ dữ liệu biến/nhóm).` });
     } else items.push({ status: 'warn', text: `Cỡ mẫu: ${r.error}` });
   }
   if (summary?.review) items.push({ status: 'info', text: `${compactNumber(summary.review)} lượt được đánh dấu cần rà soát (giá trị bất thường hoặc thiếu mã lượt). Vẫn xuất, nên kiểm tra trước khi phân tích.` });
