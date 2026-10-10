@@ -2,6 +2,12 @@
 
 Ứng dụng chạy **trên máy Windows của bạn**, đọc Excel, lọc hồ sơ theo 16 bác sĩ đã cấu hình và nhập dữ liệu vào `gdbhyt.baohiemxahoi.gov.vn` bằng Chrome/Selenium.
 
+> **Cách khuyến nghị bây giờ không cần công cụ này:** ở tab "Nghỉ ốm", khung **Nhập lên Cổng BHYT** →
+> bấm **Mở cổng BHYT**, đăng nhập trên tab cổng (CAPTCHA/OTP như thường), rồi bấm nút dấu trang **Nhập BHYT**
+> trên tab cổng (cùng cách nút "Data Hub" trên tab EMR). Data Hub điền form ngay trên tab cổng đó, điền thử
+> không bấm Lưu, nhập thật tự tick "Đã nộp". Không cần Python, Chrome riêng hay `start.bat`
+> (`src/utils/bhytPortal.js`, `src/components/BhytPortalLinkPanel.jsx`). Công cụ dưới đây giữ làm dự phòng.
+
 ## Liên hệ với tab "Nghỉ ốm" trong app chính
 
 Đây là công cụ **độc lập** (Python/Flask riêng, không chạy chung process với server Express của `emrwebapp`) — vì cổng BHYT cần người dùng tự nhập CAPTCHA/OTP trên Chrome thật, không thể chạy headless trên server.

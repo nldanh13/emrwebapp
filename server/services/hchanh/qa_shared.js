@@ -14,6 +14,15 @@ function normText(v) {
     .replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+// ── Người bệnh tự túc viện phí? ───────────────────────────────────────────────
+// Suy từ "Đối tượng" (cùng từ khoá với bảng kê), không tin cờ tu_tuc đã lưu: hồ sơ lấy
+// trước bản sửa worker lưu tu_tuc=true cho mọi người bệnh, kể cả đối tượng Bảo hiểm.
+// Chưa đọc được đối tượng thì không coi là tự túc, để vẫn kiểm mã thẻ/hạn thẻ.
+function isSelfPay(profile) {
+  const n = normText(profile?.doi_tuong);
+  return Boolean(n) && !n.includes('bao hiem') && !n.includes('bhyt');
+}
+
 // ── Load config/hchanh/qa_rules.json ──────────────────────────────────────────
 
 let _cache = null, _cacheTime = 0;
@@ -45,4 +54,4 @@ function extractClsFromBilling(billing) {
   }));
 }
 
-module.exports = { loadQaRules, extractClsFromBilling };
+module.exports = { loadQaRules, extractClsFromBilling, isSelfPay };

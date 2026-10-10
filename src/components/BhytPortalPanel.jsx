@@ -88,7 +88,22 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
   const [facilityCode, setFacilityCode] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [fillingLogin, setFillingLogin] = useState(false);
+
+  // Đăng nhập headless: CAPTCHA lấy từ cổng về hiện ngay ở Data Hub, người dùng gõ ở đây.
+  const [captchaImg, setCaptchaImg] = useState('');
+  const [captchaText, setCaptchaText] = useState('');
+  const [loadingCaptcha, setLoadingCaptcha] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+
+  // Mục tiêu 2 — nhập "Giấy chứng nhận nghỉ việc hưởng BHXH" vào EMR nội bộ.
+  const [emrUser, setEmrUser] = useState('');
+  const [emrPass, setEmrPass] = useState('');
+  const [emrStatus, setEmrStatus] = useState({ logged_in: false });
+  const [emrPatient, setEmrPatient] = useState('');
+  const [emrBusy, setEmrBusy] = useState('');
+  const [emrConfirmOpen, setEmrConfirmOpen] = useState(false);
+  const [emrConfirmText, setEmrConfirmText] = useState('');
 
   const fileInputRef = useRef(null);
   const autoOpenStarted = useRef(false);
@@ -142,8 +157,8 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
     }
   }, []);
 
-  // Mở cổng BHXH trên Chrome riêng như luồng mở EMR. Nếu công cụ chưa chạy,
-  // tự khởi động trước; CAPTCHA/OTP vẫn do người dùng nhập trực tiếp trên Chrome.
+  // Khởi động công cụ nhập BHXH (Flask + trình duyệt ngầm) như luồng mở EMR, không cần start.bat.
+  // Sau khi sẵn sàng thì lấy luôn mã CAPTCHA về để đăng nhập.
   const handleOpenPortal = useCallback(async () => {
     setLaunching(true);
     try {
@@ -157,11 +172,10 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
         }
       }
       if (!ready) throw new Error('Công cụ BHXH chưa sẵn sàng. Hãy thử lại hoặc kiểm tra start.bat.');
-      const opened = await bhytFetch('/api/browser/start', { method: 'POST' });
       await checkBrowser();
-      toast?.(opened.message || 'Đã mở Chrome tới Cổng BHYT. Hoàn tất đăng nhập, CAPTCHA/OTP trên Chrome rồi quay lại Data Hub.', 'ok');
+      toast?.('Công cụ đã sẵn sàng. Bấm "Lấy mã CAPTCHA" ở bước 1 để đăng nhập.', 'ok');
     } catch (e) {
-      toast?.(String(e?.message || 'Không mở được Cổng BHXH trên Chrome.'), 'error');
+      toast?.(String(e?.message || 'Không khởi động được công cụ nhập BHXH.'), 'error');
     } finally {
       setLaunching(false);
     }
@@ -188,6 +202,7 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
       if (cancelled || !ok) return;
       loadAll();
       checkBrowser();
+      checkEmr();
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,27 +221,167 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
     return () => clearInterval(id);
   }, [available, workerStatus.running, logsOpen, loadAll, loadLogs]);
 
-  const handleFillLogin = useCallback(async () => {
-    if (!facilityCode.trim() || !username.trim() || !password) {
-      toast?.('Cần nhập đủ Mã cơ sở KCB, tên đăng nhập và mật khẩu.', 'error');
+  // Lấy ảnh CAPTCHA từ cổng (trình duyệt chạy ngầm trên máy chủ) về hiện ở Data Hub.
+  const loadCaptcha = useCallback(async () => {
+    setLoadingCaptcha(true);
+    try {
+      let ready = available;
+      if (!ready) ready = await checkAvailable();
+      if (!ready) {
+        const result = await api.launchBhytTool();
+        if (result?.status !== 'ok') throw new Error(result?.message || 'Không khởi động được công cụ nhập BHXH.');
+        for (let i = 0; i < 8; i += 1) {
+          if (await checkAvailable()) { ready = true; break; }
+          await new Promise(r => setTimeout(r, 500));
+        }
+      }
+      if (!ready) throw new Error('Công cụ BHXH chưa sẵn sàng. Hãy thử lại sau giây lát.');
+      const d = await bhytFetch('/api/browser/captcha');
+      setCaptchaImg(d.image || '');
+      setCaptchaText('');
+    } catch (e) {
+      toast?.(String(e?.message || 'Không lấy được mã CAPTCHA.'), 'error');
+      setCaptchaImg('');
+    } finally {
+      setLoadingCaptcha(false);
+    }
+  }, [available, checkAvailable, toast]);
+
+  const refreshCaptcha = useCallback(async () => {
+    setLoadingCaptcha(true);
+    try {
+      const d = await bhytFetch('/api/browser/refresh-captcha', { method: 'POST' });
+      setCaptchaImg(d.image || '');
+      setCaptchaText('');
+    } catch (e) {
+      toast?.(String(e?.message || 'Không đổi được mã CAPTCHA.'), 'error');
+    } finally {
+      setLoadingCaptcha(false);
+    }
+  }, [toast]);
+
+  // Gửi tài khoản + CAPTCHA (người dùng gõ ở Data Hub) lên cổng, đăng nhập, giữ phiên.
+  const doHeadlessLogin = useCallback(async () => {
+    if (!facilityCode.trim() || !username.trim() || !password || !captchaText.trim()) {
+      toast?.('Cần nhập đủ Mã cơ sở KCB, tên đăng nhập, mật khẩu và mã CAPTCHA.', 'error');
       return;
     }
-    setFillingLogin(true);
+    setLoggingIn(true);
     try {
-      const d = await bhytFetch('/api/browser/fill-login', {
+      const d = await bhytFetch('/api/browser/login', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ facility_code: facilityCode.trim(), username: username.trim(), password }),
+        body: JSON.stringify({
+          facility_code: facilityCode.trim(), username: username.trim(), password, captcha: captchaText.trim(),
+        }),
       });
       setPassword('');
-      toast?.(d.message || 'Đã điền đăng nhập.', 'ok');
-      setBrowserStatus(d.status || { logged_in: false });
+      setCaptchaText('');
+      if (d.logged_in) {
+        setCaptchaImg('');
+        toast?.(d.message || 'Đăng nhập thành công, đã giữ phiên.', 'ok');
+        await checkBrowser();
+      } else {
+        toast?.(d.message || 'Chưa đăng nhập được. Lấy lại mã CAPTCHA và thử lại.', 'error');
+        await loadCaptcha(); // mã cũ đã dùng, lấy mã mới
+      }
     } catch (e) {
-      toast?.(String(e?.message || 'Không mở/điền được Chrome.'), 'error');
-      setBrowserStatus({ logged_in: false, error: e.message });
+      toast?.(String(e?.message || 'Không đăng nhập được.'), 'error');
     } finally {
-      setFillingLogin(false);
+      setLoggingIn(false);
     }
-  }, [facilityCode, username, password, toast]);
+  }, [facilityCode, username, password, captchaText, checkBrowser, loadCaptcha, toast]);
+
+  // Lưu HTML các trang sau khi đăng nhập để kỹ thuật dựng tiếp phần tra cứu/nhập.
+  const capturePages = useCallback(async () => {
+    setCapturing(true);
+    try {
+      const d = await bhytFetch('/api/browser/capture', { method: 'POST' });
+      const n = Array.isArray(d.captured) ? d.captured.length : 0;
+      toast?.(`Đã lưu ${n} trang vào thư mục debug của công cụ. Gửi các file này cho kỹ thuật.`, 'ok');
+    } catch (e) {
+      toast?.(String(e?.message || 'Không lưu được trang.'), 'error');
+    } finally {
+      setCapturing(false);
+    }
+  }, [toast]);
+
+  // ── EMR nội bộ: nhập giấy nghỉ (mục tiêu 2) ────────────────────────────────
+  const checkEmr = useCallback(async () => {
+    try {
+      setEmrStatus(await bhytFetch('/api/emr/status'));
+    } catch (e) {
+      setEmrStatus({ logged_in: false, error: e.message });
+    }
+  }, []);
+
+  const emrLogin = useCallback(async () => {
+    if (!emrUser.trim() || !emrPass) { toast?.('Cần nhập tài khoản và mật khẩu EMR.', 'error'); return; }
+    setEmrBusy('login');
+    try {
+      const d = await bhytFetch('/api/emr/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: emrUser.trim(), password: emrPass }),
+      });
+      setEmrPass('');
+      if (d.logged_in) { setEmrStatus({ logged_in: true }); toast?.(d.message || 'Đã đăng nhập EMR.', 'ok'); }
+      else toast?.(d.message || 'Chưa đăng nhập được EMR.', 'error');
+    } catch (e) {
+      toast?.(String(e?.message || 'Không đăng nhập được EMR.'), 'error');
+    } finally {
+      setEmrBusy('');
+    }
+  }, [emrUser, emrPass, toast]);
+
+  // Người bệnh để thao tác: tên gõ tay, hoặc hồ sơ đầu tiên đang chọn trong danh sách.
+  const firstSelected = records.find(r => selected.has(r.id));
+  const emrTargetName = emrPatient.trim() || firstSelected?.patient_name || '';
+
+  const emrOpenCert = useCallback(async () => {
+    if (!emrTargetName) { toast?.('Nhập tên người bệnh hoặc chọn một hồ sơ trong danh sách.', 'error'); return; }
+    setEmrBusy('open');
+    try {
+      const d = await bhytFetch('/api/emr/open-cert', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patient_name: emrTargetName }),
+      });
+      toast?.(d.message || 'Đã mở form giấy nghỉ.', 'ok');
+    } catch (e) {
+      toast?.(String(e?.message || 'Không mở được form giấy nghỉ.'), 'error');
+    } finally {
+      setEmrBusy('');
+    }
+  }, [emrTargetName, toast]);
+
+  const emrCapture = useCallback(async () => {
+    setEmrBusy('capture');
+    try {
+      const d = await bhytFetch('/api/emr/capture', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'form-giay-nghi' }),
+      });
+      toast?.(d.saved ? 'Đã lưu form vào thư mục debug. Gửi file cho kỹ thuật.' : 'Chưa có gì để lưu.', d.saved ? 'ok' : 'error');
+    } catch (e) {
+      toast?.(String(e?.message || 'Không lưu được form.'), 'error');
+    } finally {
+      setEmrBusy('');
+    }
+  }, [toast]);
+
+  const emrFill = useCallback(async (dryRun, confirmation = '') => {
+    if (!firstSelected) { toast?.('Chọn một hồ sơ trong danh sách để lấy dữ liệu điền.', 'error'); return; }
+    setEmrBusy(dryRun ? 'fill' : 'fillreal');
+    try {
+      const d = await bhytFetch('/api/emr/fill', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ record_id: firstSelected.id, dry_run: dryRun, confirmation }),
+      });
+      toast?.(d.message || (dryRun ? 'Đã điền thử.' : 'Đã nhập thật.'), 'ok');
+    } catch (e) {
+      toast?.(String(e?.message || 'Không điền được form.'), 'error');
+    } finally {
+      setEmrBusy('');
+    }
+  }, [firstSelected, toast]);
 
   const handleImportFiles = useCallback(async (fileList) => {
     if (!fileList || !fileList.length) return;
@@ -357,7 +512,7 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
           Công cụ nhập cổng BHYT (<code>tools/bhyt_selenium_app</code>) chưa chạy trên máy này.
         </div>
         <Btn variant="primary" onClick={handleOpenPortal} disabled={launching}>
-          {launching ? <><Spinner size={11} /> Đang mở Chrome...</> : 'Mở Cổng BHXH trên Chrome'}
+          {launching ? <><Spinner size={11} /> Đang khởi động...</> : 'Khởi động công cụ nhập BHXH'}
         </Btn>
         <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 10 }}>
           Nếu vẫn không được, lần đầu trên máy này cần tự chạy <code>start.bat</code> trong <code>tools/bhyt_selenium_app</code> 1 lần để cài thư viện.
@@ -370,25 +525,27 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <Badge
-          text={browserStatus.logged_in ? 'Chrome: đã đăng nhập' : (browserStatus.error ? 'Chrome: không kết nối' : 'Chrome: chưa đăng nhập')}
+          text={browserStatus.logged_in ? 'Cổng: đã đăng nhập' : (browserStatus.error ? 'Cổng: chưa chạy' : 'Cổng: chưa đăng nhập')}
           bg={browserStatus.logged_in ? C.greenBg : C.redBg}
           color={browserStatus.logged_in ? C.green : C.red}
           size={FS.xs}
         />
-        <Btn variant="primary" onClick={handleOpenPortal} disabled={launching} style={{ padding: '5px 10px', fontSize: FS.xs }}>
-          {launching ? <><Spinner size={10} /> Đang mở Chrome...</> : 'Mở Cổng BHXH trên Chrome'}
+        <Btn variant="default" onClick={handleOpenPortal} disabled={launching} style={{ padding: '5px 10px', fontSize: FS.xs }}>
+          {launching ? <><Spinner size={10} /> Đang khởi động...</> : 'Khởi động công cụ'}
         </Btn>
+        {browserStatus.logged_in && (
+          <Btn variant="default" onClick={capturePages} disabled={capturing} style={{ padding: '5px 10px', fontSize: FS.xs }}>
+            {capturing ? <><Spinner size={10} /> Đang lưu...</> : 'Lưu trang cho kỹ thuật'}
+          </Btn>
+        )}
         <Btn variant="default" onClick={loadAll} style={{ padding: '4px 10px', fontSize: FS.xs, marginLeft: 'auto' }}>⟳ Làm mới</Btn>
       </div>
 
       <StepCard
         n={1}
         title="Đăng nhập cổng BHYT"
-        hint="Selenium điền tài khoản vào Chrome; CAPTCHA và OTP thực hiện trực tiếp trên Chrome. Không tự vượt CAPTCHA và không lưu mật khẩu."
+        hint="Trình duyệt chạy ngầm trên máy chủ. Bấm 'Lấy mã CAPTCHA' để cổng gửi mã về đây, gõ mã rồi 'Đăng nhập' — phiên được giữ để tra cứu thẻ và nhập giấy nghỉ. Không tự vượt CAPTCHA, không lưu mật khẩu."
         actions={<>
-          <Btn variant="primary" onClick={handleFillLogin} disabled={fillingLogin} style={{ padding: '6px 10px', fontSize: FS.xs }}>
-            {fillingLogin ? <><Spinner size={10} /> Đang mở...</> : 'Điền đăng nhập trên Chrome'}
-          </Btn>
           <Btn variant="default" onClick={checkBrowser} style={{ padding: '6px 10px', fontSize: FS.xs }}>Kiểm tra đăng nhập</Btn>
         </>}
       >
@@ -396,6 +553,36 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
           <Field label="Mã cơ sở KCB"><input value={facilityCode} onChange={e => setFacilityCode(e.target.value)} style={INPUT_STYLE} autoComplete="off" /></Field>
           <Field label="Tên đăng nhập"><input value={username} onChange={e => setUsername(e.target.value)} style={INPUT_STYLE} autoComplete="off" /></Field>
           <Field label="Mật khẩu"><input type="password" value={password} onChange={e => setPassword(e.target.value)} style={INPUT_STYLE} autoComplete="new-password" /></Field>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
+          <div style={{ flexShrink: 0 }}>
+            <span style={LABEL_STYLE}>Mã CAPTCHA từ cổng</span>
+            <div style={{
+              width: 180, height: 56, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface2,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+            }}>
+              {loadingCaptcha
+                ? <Spinner size={14} />
+                : captchaImg
+                  ? <img src={captchaImg} alt="Mã CAPTCHA" style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                  : <span style={{ fontSize: FS.xs, color: C.text3, padding: 6, textAlign: 'center' }}>Bấm "Lấy mã CAPTCHA"</span>}
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <Btn variant="default" onClick={loadCaptcha} disabled={loadingCaptcha} style={{ padding: '5px 10px', fontSize: FS.xs }}>Lấy mã CAPTCHA</Btn>
+            <Btn variant="default" onClick={refreshCaptcha} disabled={loadingCaptcha || !captchaImg} style={{ padding: '5px 10px', fontSize: FS.xs }}>Đổi mã khác</Btn>
+          </div>
+          <div style={{ flex: '1 1 140px', minWidth: 140 }}>
+            <Field label="Nhập mã CAPTCHA">
+              <input value={captchaText} onChange={e => setCaptchaText(e.target.value)} disabled={!captchaImg}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); doHeadlessLogin(); } }}
+                style={INPUT_STYLE} autoComplete="off" placeholder="Gõ mã nhìn thấy ở trên" />
+            </Field>
+          </div>
+          <Btn variant="primary" onClick={doHeadlessLogin} disabled={loggingIn || !captchaImg} style={{ padding: '7px 14px', fontSize: FS.xs }}>
+            {loggingIn ? <><Spinner size={10} /> Đang đăng nhập...</> : 'Đăng nhập'}
+          </Btn>
         </div>
       </StepCard>
 
@@ -503,6 +690,62 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
         </div>
       </div>
 
+      <div style={{
+        marginTop: 16, border: `1px solid ${C.border2}`, borderRadius: 8, padding: '12px 14px', background: C.surface,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Nhập giấy nghỉ vào EMR nội bộ</div>
+          <Badge text="Mục tiêu 2 · thử nghiệm" bg={C.amberBg} color={C.amber} size={FS.xs} />
+          <Badge
+            text={emrStatus.logged_in ? 'EMR: đã đăng nhập' : (emrStatus.error ? 'EMR: chưa chạy' : 'EMR: chưa đăng nhập')}
+            bg={emrStatus.logged_in ? C.greenBg : C.redBg}
+            color={emrStatus.logged_in ? C.green : C.red}
+            size={FS.xs}
+          />
+          <Btn variant="default" onClick={checkEmr} style={{ padding: '4px 10px', fontSize: FS.xs, marginLeft: 'auto' }}>Kiểm tra</Btn>
+        </div>
+        <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.5, marginBottom: 10 }}>
+          Đây là nhập "Giấy chứng nhận nghỉ việc hưởng BHXH" vào <b>EMR nội bộ</b> (không phải cổng BHYT).
+          Đăng nhập EMR, chọn 1 hồ sơ ở danh sách trên (hoặc gõ tên), <b>Mở form</b> rồi <b>Điền thử</b> (không bấm Chấp nhận).
+          Nếu nav sai hoặc thiếu ô, bấm <b>Chụp form</b> và gửi file để khớp lại.
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 10 }}>
+          <Field label="Tài khoản EMR"><input value={emrUser} onChange={e => setEmrUser(e.target.value)} style={INPUT_STYLE} autoComplete="off" /></Field>
+          <Field label="Mật khẩu EMR"><input type="password" value={emrPass} onChange={e => setEmrPass(e.target.value)} style={INPUT_STYLE} autoComplete="new-password" /></Field>
+          <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+            <Btn variant="primary" onClick={emrLogin} disabled={emrBusy === 'login'} style={{ padding: '7px 12px', fontSize: FS.xs }}>
+              {emrBusy === 'login' ? <><Spinner size={10} /> Đang đăng nhập...</> : 'Đăng nhập EMR'}
+            </Btn>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 200px', minWidth: 160 }}>
+            <Field label="Người bệnh (để trống thì lấy hồ sơ đang chọn ở trên)">
+              <input value={emrPatient} onChange={e => setEmrPatient(e.target.value)} style={INPUT_STYLE}
+                autoComplete="off" placeholder={firstSelected?.patient_name || 'Gõ tên người bệnh'} />
+            </Field>
+          </div>
+          <Btn variant="default" onClick={emrOpenCert} disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
+            {emrBusy === 'open' ? <><Spinner size={10} /> Đang mở...</> : 'Mở form giấy nghỉ'}
+          </Btn>
+          <Btn variant="default" onClick={emrCapture} disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
+            {emrBusy === 'capture' ? <><Spinner size={10} /> Đang lưu...</> : 'Chụp form cho kỹ thuật'}
+          </Btn>
+          <Btn variant="default" onClick={() => emrFill(true)} disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
+            {emrBusy === 'fill' ? <><Spinner size={10} /> Đang điền...</> : 'Điền thử'}
+          </Btn>
+          <Btn variant="danger" onClick={() => { if (!firstSelected) { toast?.('Chọn một hồ sơ trong danh sách.', 'error'); return; } setEmrConfirmText(''); setEmrConfirmOpen(true); }}
+            disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
+            Nhập thật (bấm Chấp nhận)
+          </Btn>
+        </div>
+        {emrTargetName && (
+          <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 8 }}>Đang thao tác với: <b>{emrTargetName}</b></div>
+        )}
+      </div>
+
       <div style={{ marginTop: 16 }}>
         <button type="button" onClick={() => { setLogsOpen(o => !o); if (!logsOpen) loadLogs(); }} style={{
           fontSize: FS.xs, color: C.blue, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline',
@@ -577,6 +820,28 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
               <Btn variant="default" onClick={() => setConfirmOpen(false)} style={{ padding: '6px 14px', fontSize: FS.sm }}>Hủy</Btn>
               <Btn variant="danger" type="submit" style={{ padding: '6px 14px', fontSize: FS.sm }}>Bắt đầu nhập thật</Btn>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {emrConfirmOpen && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(23,32,51,0.42)', zIndex: 200,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+        }} onClick={() => setEmrConfirmOpen(false)}>
+          <form onSubmit={e => { e.preventDefault(); const v = emrConfirmText; setEmrConfirmOpen(false); emrFill(false, v); }}
+            onClick={e => e.stopPropagation()} style={{
+              background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 18, width: 440, maxWidth: '95vw',
+            }}>
+            <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text, marginBottom: 8 }}>Xác nhận nhập thật vào EMR</div>
+            <div style={{ fontSize: FS.xs, color: C.text2, lineHeight: 1.6, marginBottom: 10 }}>
+              Sẽ điền form giấy nghỉ của <b>{emrTargetName || firstSelected?.patient_name || '—'}</b> rồi bấm <b>Chấp nhận</b> trên EMR. Form phải đang mở. Gõ chính xác <code>NHẬP THẬT</code> để tiếp tục.
+            </div>
+            <input value={emrConfirmText} onChange={e => setEmrConfirmText(e.target.value)} placeholder="NHẬP THẬT" autoComplete="off" style={INPUT_STYLE} />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+              <Btn variant="default" onClick={() => setEmrConfirmOpen(false)} style={{ padding: '6px 14px', fontSize: FS.sm }}>Hủy</Btn>
+              <Btn variant="danger" type="submit" style={{ padding: '6px 14px', fontSize: FS.sm }}>Bấm Chấp nhận</Btn>
             </div>
           </form>
         </div>

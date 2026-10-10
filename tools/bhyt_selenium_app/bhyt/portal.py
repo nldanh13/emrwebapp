@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import base64
 import threading
 import time
 from typing import Any, Callable
@@ -15,17 +16,39 @@ from .mapping import DOC_BHXH, DOC_GRV, normalize_text
 
 BASE_URL = "https://gdbhyt.baohiemxahoi.gov.vn"
 
+# id các phần tử trên trang đăng nhập cổng (DevExpress). Nếu cổng đổi id, chỉnh trong
+# config.json → "portal_selectors"; không phải sửa code. Mặc định theo quy ước DevExpress
+# CaptchaControl: ảnh <id>_IMG, ô nhập <id>_TB_I, nút đổi mã <id>_RB.
+DEFAULT_SELECTORS = {
+    "facility_code": "macskcb",
+    "username": "username",
+    "password": "password",
+    "captcha_input": "Captcha_TB_I",
+    "captcha_image": "Captcha_IMG",
+    "captcha_refresh": "Captcha_RB",
+    # Nút đăng nhập: thử lần lượt các id/CSS này; không thấy thì submit form hoặc Enter.
+    "login_button": "#btnDangNhap,#btnLogin,#btndangnhap,button[type=submit],input[type=submit]",
+}
+
 
 class PortalError(RuntimeError):
     pass
 
 
 class BhytPortal:
-    def __init__(self, profile_dir: str | Path, timeout: int = 40):
+    def __init__(self, profile_dir: str | Path, timeout: int = 40,
+                 headless: bool = True, selectors: dict[str, str] | None = None,
+                 debug_dir: str | Path | None = None):
         self.profile_dir = Path(profile_dir).resolve()
         self.timeout = timeout
+        self.headless = headless
+        self.selectors = {**DEFAULT_SELECTORS, **(selectors or {})}
+        self.debug_dir = Path(debug_dir).resolve() if debug_dir else None
         self.driver: webdriver.Chrome | None = None
         self._lock = threading.RLock()
+
+    def sel(self, key: str) -> str:
+        return self.selectors.get(key, DEFAULT_SELECTORS.get(key, key))
 
     def start(self) -> str:
         with self._lock:
@@ -38,16 +61,24 @@ class BhytPortal:
             self.profile_dir.mkdir(parents=True, exist_ok=True)
             options = webdriver.ChromeOptions()
             options.add_argument(f"--user-data-dir={self.profile_dir}")
-            options.add_argument("--start-maximized")
             options.add_argument("--disable-notifications")
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
             options.add_experimental_option("prefs", {
                 "download.prompt_for_download": False,
                 "profile.default_content_setting_values.notifications": 2,
             })
+            if self.headless:
+                # Headless "new" bám sát Chrome thật hơn bản cũ. Cửa sổ 1280x900 để trang
+                # render đủ (một số control DevExpress ẩn khi khung quá nhỏ). Nếu cổng chặn
+                # headless (anti-bot), đặt "headless": false trong config.json để chạy có cửa sổ.
+                options.add_argument("--headless=new")
+                options.add_argument("--window-size=1280,900")
+                options.add_argument("--disable-gpu")
+            else:
+                options.add_argument("--start-maximized")
             self.driver = webdriver.Chrome(options=options)
             self.driver.get(f"{BASE_URL}/Home")
-            return "Đã mở Chrome. Hãy đăng nhập thủ công nếu hệ thống yêu cầu."
+            return "Đã mở trình duyệt cổng BHYT." if self.headless else "Đã mở Chrome."
 
     def fill_login(self, facility_code: str, username: str, password: str) -> str:
         """Fill portal credentials; CAPTCHA/OTP remain manual and nothing is persisted."""
@@ -87,6 +118,161 @@ class BhytPortal:
                 "Đã điền Mã cơ sở KCB, tên đăng nhập và mật khẩu. "
                 "Hãy nhập CAPTCHA trên Chrome, bấm Đăng nhập và hoàn tất OTP nếu được yêu cầu."
             )
+
+    # ── Đăng nhập headless với CAPTCHA đưa về Data Hub ─────────────────────────
+    # Luồng: ensure_login_page → get_captcha_image (ảnh về Data Hub, người dùng gõ) →
+    # submit_login(facility, user, pass, captcha). Không lưu mật khẩu/CAPTCHA ra đĩa.
+
+    def _ensure_login_page(self):
+        driver = self._require_driver()
+
+        def has_fields(drv):
+            return all(drv.find_elements(By.ID, self.sel(k))
+                       for k in ("facility_code", "username", "password"))
+
+        if has_fields(driver):
+            return
+        driver.get(BASE_URL + "/Account/Index")
+        try:
+            WebDriverWait(driver, self.timeout).until(has_fields)
+        except TimeoutException:
+            driver.get(BASE_URL)
+            WebDriverWait(driver, self.timeout).until(has_fields)
+
+    def get_captcha_image(self) -> dict[str, Any]:
+        """Trả ảnh CAPTCHA dạng data URL (PNG base64) để hiện trong Data Hub."""
+        with self._lock:
+            if self.driver is None:
+                self.start()
+            self._ensure_login_page()
+            driver = self._require_driver()
+            els = driver.find_elements(By.ID, self.sel("captcha_image"))
+            if not els:
+                raise PortalError(
+                    f"Không thấy ảnh CAPTCHA (id {self.sel('captcha_image')}). "
+                    "Cổng có thể đã đổi giao diện — bấm 'Lưu trang để gửi kỹ thuật' rồi gửi file."
+                )
+            png = els[0].screenshot_as_png
+            return {"image": "data:image/png;base64," + base64.b64encode(png).decode("ascii"),
+                    "logged_in": False}
+
+    def refresh_captcha(self) -> dict[str, Any]:
+        with self._lock:
+            driver = self._require_driver()
+            els = driver.find_elements(By.ID, self.sel("captcha_refresh"))
+            if els:
+                try:
+                    els[0].click()
+                    time.sleep(0.6)
+                except WebDriverException:
+                    pass
+            return self.get_captcha_image()
+
+    def _click_login(self, driver) -> bool:
+        for part in self.sel("login_button").split(","):
+            part = part.strip()
+            if not part:
+                continue
+            by = By.ID if part[0] not in ".#[" else By.CSS_SELECTOR
+            target = part[1:] if (by == By.ID and part[0] == "#") else part
+            try:
+                els = driver.find_elements(by, target)
+            except WebDriverException:
+                els = []
+            for el in els:
+                if el.is_displayed() and el.is_enabled():
+                    el.click()
+                    return True
+        # Không thấy nút: thử submit form chứa ô mật khẩu, hoặc Enter.
+        try:
+            from selenium.webdriver.common.keys import Keys
+            pw = driver.find_element(By.ID, self.sel("password"))
+            pw.send_keys(Keys.RETURN)
+            return True
+        except WebDriverException:
+            return False
+
+    def submit_login(self, facility_code: str, username: str, password: str,
+                     captcha: str) -> dict[str, Any]:
+        """Điền tài khoản + CAPTCHA (do người dùng gõ ở Data Hub) rồi bấm Đăng nhập.
+        Mật khẩu và CAPTCHA chỉ ở trong RAM, không ghi ra đĩa."""
+        with self._lock:
+            if self.driver is None:
+                self.start()
+            self._ensure_login_page()
+            driver = self._require_driver()
+            for key, value in (("facility_code", facility_code), ("username", username),
+                               ("password", password), ("captcha_input", captcha)):
+                els = driver.find_elements(By.ID, self.sel(key))
+                if not els:
+                    raise PortalError(f"Không thấy ô {key} (id {self.sel(key)}) trên trang đăng nhập.")
+                els[0].clear()
+                els[0].send_keys(value)
+            if not self._click_login(driver):
+                raise PortalError("Không bấm được nút Đăng nhập — cổng có thể đã đổi giao diện.")
+            # Chờ hoặc là rời trang đăng nhập (đăng nhập được) hoặc hiện thông báo lỗi.
+            deadline = time.time() + self.timeout
+            while time.time() < deadline:
+                time.sleep(0.5)
+                try:
+                    st = self.session_status()
+                except PortalError:
+                    continue
+                if st.get("logged_in"):
+                    return {"logged_in": True, "message": "Đăng nhập thành công.", "url": st.get("url", "")}
+                msg = self._read_login_message(driver)
+                if msg:
+                    return {"logged_in": False, "message": msg, "need_captcha": True}
+            return {"logged_in": False,
+                    "message": "Chưa xác nhận được đăng nhập. Kiểm tra CAPTCHA/OTP rồi thử lại.",
+                    "need_captcha": True}
+
+    def _read_login_message(self, driver) -> str:
+        for ident in ("MessAlert", "lblMessage", "divMessage", "spanThongBao"):
+            els = driver.find_elements(By.ID, ident)
+            for el in els:
+                try:
+                    txt = (el.text or "").strip()
+                except WebDriverException:
+                    txt = ""
+                if txt:
+                    return txt
+        return ""
+
+    def dump_page(self, name: str = "page") -> dict[str, Any]:
+        """Lưu HTML + ảnh màn hình trang hiện tại vào debug_dir để gửi cho kỹ thuật
+        khi id phần tử không khớp. KHÔNG lưu cookie/mật khẩu."""
+        with self._lock:
+            driver = self._require_driver()
+            out = self.debug_dir or (self.profile_dir.parent / "debug")
+            out.mkdir(parents=True, exist_ok=True)
+            safe = "".join(ch for ch in name if ch.isalnum() or ch in "-_") or "page"
+            html_path = out / f"{safe}.html"
+            png_path = out / f"{safe}.png"
+            try:
+                html_path.write_text(driver.page_source, encoding="utf-8")
+            except Exception as exc:
+                raise PortalError(f"Không lưu được HTML: {exc}") from exc
+            try:
+                driver.save_screenshot(str(png_path))
+            except WebDriverException:
+                png_path = None
+            return {"html": str(html_path), "image": str(png_path) if png_path else "",
+                    "url": driver.current_url}
+
+    def capture(self, path: str, name: str) -> dict[str, Any]:
+        """Mở một trang (sau khi đã đăng nhập) rồi lưu HTML + ảnh. Dùng để lấy đúng
+        id các phần tử trang tra cứu thẻ và trang nhập hồ sơ, xây tiếp phần tự động."""
+        with self._lock:
+            driver = self._require_driver()
+            if not self.session_status().get("logged_in"):
+                raise PortalError("Chưa đăng nhập — đăng nhập xong mới lấy được trang này.")
+            driver.get(BASE_URL + path)
+            try:
+                self._wait_ready()
+            except TimeoutException:
+                pass
+            return self.dump_page(name)
 
     def close(self):
         with self._lock:

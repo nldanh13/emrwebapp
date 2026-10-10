@@ -1,12 +1,6 @@
 {
-  "timeout_seconds": 40,
-  "delay_seconds": 1.5,
-  "headless": true,
-  "emr": {
-    "base_url": "http://192.168.2.26:2026",
-    "selectors": {}
-  },
-  "allowed_doctors": [
+  "_ghi_chu": "Bác sĩ của khoa được nhập chứng từ lên Cổng BHYT (tab Nghỉ ốm). Hồ sơ của người hành nghề/trưởng khoa khác bị bỏ qua. Tên so khớp không dấu, bỏ tiền tố BS/ThS/CKI...",
+  "doctors": [
     "Nguyễn Lê Hoan",
     "Nguyễn Chí Nguyện",
     "Phạm Việt Tân",
@@ -25,4 +19,3 @@
     "Nguyễn Giang Tử"
   ]
 }
-

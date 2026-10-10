@@ -160,9 +160,29 @@ test('10. Thiếu mã thẻ BHYT (không tự túc) -> cần kiểm tra', () => 
 });
 
 test('11. Tự túc viện phí -> không kiểm thẻ BHYT', () => {
-  const data = baseData({ profile: { bhyt_code: '', tu_tuc: true } });
+  const data = baseData({ profile: { bhyt_code: '', doi_tuong: 'Viện phí', tu_tuc: true } });
   const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
   assert.strictEqual(result.assessment.code, ASSESSMENT.SAFE.code);
+});
+
+// Hồ sơ lấy trước bản sửa: worker so "bảo hiểm" (có dấu) với chuỗi đã bỏ dấu nên
+// lưu tu_tuc=true cho MỌI người bệnh, kể cả đối tượng Bảo hiểm — kiểm thẻ bị bỏ qua.
+test('11b. Đối tượng Bảo hiểm nhưng hồ sơ cũ lưu tu_tuc=true -> vẫn kiểm thẻ hết hạn', () => {
+  const data = baseData({ profile: { doi_tuong: 'Bảo hiểm', tu_tuc: true, bhyt_den_ngay: '05/09/2026' } });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(result.tier1_findings.some(f => f.rule_id === 'BHYT_T1_CARD_EXPIRED_BEFORE_DISCHARGE'));
+});
+
+test('11c. Đối tượng Bảo hiểm, thiếu mã thẻ, hồ sơ cũ lưu tu_tuc=true -> báo thiếu mã thẻ', () => {
+  const data = baseData({ profile: { doi_tuong: 'Bảo hiểm y tế', tu_tuc: true, bhyt_code: '' } });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(result.tier1_findings.some(f => f.rule_id === 'BHYT_T1_BHYT_CODE_MISSING'));
+});
+
+test('11d. Chưa đọc được đối tượng, hồ sơ cũ lưu tu_tuc=true -> không coi là tự túc', () => {
+  const data = baseData({ profile: { doi_tuong: '', tu_tuc: true, bhyt_code: '' } });
+  const result = runBhytPreAudit({ meta: { scope_default: 'discharge' }, data });
+  assert.ok(result.tier1_findings.some(f => f.rule_id === 'BHYT_T1_BHYT_CODE_MISSING'));
 });
 
 // ── Tầng 2: ngày giường ──────────────────────────────────────────────────────
