@@ -93,10 +93,11 @@ export function SampleSizePanel({ sampleSize, setSampleSize, summary }) {
             </div>
             <div style={{ flex: '1 1 220px', fontSize: FS.sm, fontWeight: 700, color: enough ? C.green : C.red }}>
               {enough
-                ? `✓ Đủ cỡ mẫu (dư ${compactNumber(available.usable - result.n)})`
-                : `✗ Thiếu ${compactNumber(result.n - available.usable)} lượt: mở rộng thời gian nghiên cứu, nới tiêu chuẩn, hoặc thu thập thêm từ EMR.`}
+                ? `✓ Tổng số lượt đạt ngưỡng (dư ${compactNumber(available.usable - result.n)})`
+                : `✗ Tổng số lượt còn thiếu ${compactNumber(result.n - available.usable)} lượt: mở rộng thời gian nghiên cứu, nới tiêu chuẩn, hoặc thu thập thêm từ EMR.`}
             </div>
           </div>
+          <div style={hint}>Đối chiếu theo tổng lượt; chưa kiểm tra dữ liệu đủ cho từng biến hoặc số lượng từng nhóm.</div>
           <div style={{ ...hint, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{result.formula}</div>
         </div>
       )}
