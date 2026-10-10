@@ -34,7 +34,13 @@ def load_config():
 
 config = load_config()
 store = Store(RUNTIME / "bhyt_automation.sqlite3")
-portal = BhytPortal(RUNTIME / "chrome_profile", timeout=int(config.get("timeout_seconds", 40)))
+portal = BhytPortal(
+    RUNTIME / "chrome_profile",
+    timeout=int(config.get("timeout_seconds", 40)),
+    headless=bool(config.get("headless", True)),
+    selectors=config.get("portal_selectors") or {},
+    debug_dir=RUNTIME / "debug",
+)
 worker = Worker(portal, store)
 
 app = Flask(__name__)
@@ -188,6 +194,78 @@ def api_browser_fill_login():
         return jsonify({"message": message, "status": portal.session_status()})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/browser/captcha")
+def api_browser_captcha():
+    """Ảnh CAPTCHA (PNG base64) để hiện trong Data Hub; người dùng gõ ở Data Hub."""
+    try:
+        return jsonify(portal.get_captcha_image())
+    except PortalError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Không lấy được CAPTCHA: {exc}"}), 500
+
+
+@app.post("/api/browser/refresh-captcha")
+def api_browser_refresh_captcha():
+    try:
+        return jsonify(portal.refresh_captcha())
+    except PortalError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Không đổi được CAPTCHA: {exc}"}), 500
+
+
+@app.post("/api/browser/login")
+def api_browser_login():
+    """Đăng nhập cổng từ máy chủ, CAPTCHA do người dùng gõ ở Data Hub."""
+    payload = request.get_json(force=True) or {}
+    facility_code = str(payload.get("facility_code", "")).strip()
+    username = str(payload.get("username", "")).strip()
+    password = str(payload.get("password", ""))
+    captcha = str(payload.get("captcha", "")).strip()
+    if not facility_code or not username or not password or not captcha:
+        return jsonify({"error": "Cần nhập đủ Mã cơ sở KCB, tên đăng nhập, mật khẩu và CAPTCHA"}), 400
+    try:
+        return jsonify(portal.submit_login(facility_code, username, password, captcha))
+    except PortalError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Lỗi khi đăng nhập: {exc}"}), 500
+
+
+@app.post("/api/browser/capture")
+def api_browser_capture():
+    """Lưu HTML + ảnh một trang của cổng (sau khi đăng nhập) để gửi cho kỹ thuật dựng
+    tiếp phần tra cứu/nhập. Mặc định lấy các trang cần thiết."""
+    payload = request.get_json(force=True) or {}
+    pages = payload.get("pages") or [
+        ["/ThongTuyenLSKCB/Index", "tra-cuu-the"],
+        ["/PhuLuc3/CreateNew", "giay-ra-vien-03"],
+        ["/PhuLuc07/CreateNew", "giay-nghi-07"],
+    ]
+    out = []
+    try:
+        for path, name in pages:
+            out.append(portal.capture(str(path), str(name)))
+        return jsonify({"captured": out, "dir": str(RUNTIME / "debug")})
+    except PortalError as exc:
+        return jsonify({"error": str(exc), "captured": out}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Không lấy được trang: {exc}", "captured": out}), 500
+
+
+@app.post("/api/browser/dump")
+def api_browser_dump():
+    payload = request.get_json(force=True) or {}
+    name = str(payload.get("name", "trang-hien-tai")).strip() or "trang-hien-tai"
+    try:
+        return jsonify(portal.dump_page(name))
+    except PortalError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Không lưu được trang: {exc}"}), 500
 
 
 @app.get("/api/browser/status")

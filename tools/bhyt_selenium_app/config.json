@@ -1,6 +1,7 @@
 {
   "timeout_seconds": 40,
   "delay_seconds": 1.5,
+  "headless": true,
   "allowed_doctors": [
     "Nguyễn Lê Hoan",
     "Nguyễn Chí Nguyện",
