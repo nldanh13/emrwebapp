@@ -2,7 +2,6 @@
 // từng biến. Số liệu lấy từ summary của server (variable_selection.summarizeSelectedDataset).
 import { C, FS } from '../../tokens.js';
 import { compactNumber } from './researchFormat.js';
-import { VARIABLE_ROLE_SHORT, roleTone, sortByRole } from './studyRoles.js';
 
 const KIND_LABEL = { number: 'Số', date: 'Ngày', category: 'Phân loại', text: 'Văn bản' };
 
@@ -90,16 +89,8 @@ function CohortSummary({ summary }) {
   );
 }
 
-function RoleBadge({ role }) {
-  if (!VARIABLE_ROLE_SHORT[role]) return null;
-  const [color, bg] = roleTone(role);
-  return <span style={{ display: 'inline-block', marginTop: 3, fontSize: FS.xs, fontWeight: 700, color, background: bg, borderRadius: 999, padding: '0 7px' }}>{VARIABLE_ROLE_SHORT[role]}</span>;
-}
-
-// roleOf: lấy vai trò hiện tại của biến (mặc định theo v.role từ server); biến xếp theo vai trò.
-function VariableStatsTable({ variables = [], roleOf = v => v.role }) {
+function VariableStatsTable({ variables = [] }) {
   if (!variables.length) return null;
-  const sorted = sortByRole(variables, roleOf);
   return (
     <div style={{ border: `1px solid ${C.border2}`, borderRadius: 8, overflow: 'auto', background: C.surface }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.sm, minWidth: 640 }}>
@@ -111,12 +102,11 @@ function VariableStatsTable({ variables = [], roleOf = v => v.role }) {
           </tr>
         </thead>
         <tbody>
-          {sorted.map(v => (
+          {variables.map(v => (
             <tr key={v.output_column || v.id} style={{ borderBottom: `1px solid ${C.border2}`, verticalAlign: 'top' }}>
               <td style={{ padding: '8px 10px' }}>
                 <div style={{ fontWeight: 700, color: C.text }}>{v.survey_label}</div>
                 {v.source_label && v.source_label !== v.survey_label && <div style={{ fontSize: FS.xs, color: C.text3 }}>{v.source_label}</div>}
-                <RoleBadge role={roleOf(v)} />
               </td>
               <td style={{ padding: '8px 10px', color: C.text2 }}>{KIND_LABEL[v.stats?.kind] || '—'}</td>
               <td style={{ padding: '8px 10px' }}>
@@ -132,4 +122,4 @@ function VariableStatsTable({ variables = [], roleOf = v => v.role }) {
   );
 }
 
-export { CohortSummary, VariableStatsTable, FillBar, RoleBadge, describeStats };
+export { CohortSummary, VariableStatsTable, FillBar, describeStats };

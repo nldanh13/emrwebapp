@@ -3,7 +3,6 @@ import { C, FS } from '../../tokens.js';
 import { Btn } from '../shared.jsx';
 import { compactNumber, saveBlob } from './researchFormat.js';
 import { describeStats } from './researchStats.jsx';
-import { VARIABLE_ROLE_OPTIONS, sortByRole } from './studyRoles.js';
 import { VARIABLE_AGGREGATIONS } from './variableCatalogModel.js';
 import { computeSampleSize } from './sampleSize.js';
 import { availableForSampleSize } from './SampleSizePanel.jsx';
@@ -17,27 +16,12 @@ const TONE = {
 
 // Danh sách kiểm tra theo thứ tự quan trọng. Mỗi mục: { status, text, step? } (step: bước để sửa).
 // presenceVariables: biến "có/không" đã chọn ở bước 2 (vd. Dùng hoạt chất: X), để gợi ý dùng làm tiêu chuẩn chọn vào.
-export function readinessItems({ summary, roleOf, conditions = [], period = {}, onePerPatient = false, sampleSize = {}, anchor = null, presenceVariables = [] }) {
+export function readinessItems({ summary, conditions = [], period = {}, onePerPatient = false, sampleSize = {}, anchor = null, presenceVariables = [] }) {
   const items = [];
   const variables = summary?.variables || [];
-  const primary = variables.filter(v => roleOf(v) === 'primary_outcome');
-  const exposure = variables.filter(v => roleOf(v) === 'exposure');
-  const unassigned = variables.filter(v => !roleOf(v));
   const include = conditions.filter(c => !c.exclude);
   const exclude = conditions.filter(c => c.exclude);
   const total = Number(summary?.total || 0);
-
-  if (!primary.length) items.push({ status: 'bad', step: 2, text: 'Chưa có biến kết cục chính. Ở bước 2, chọn vai trò "Kết cục chính" cho biến trả lời câu hỏi nghiên cứu.' });
-  else {
-    for (const v of primary) {
-      const rate = Number(v.fill_rate || 0);
-      items.push(rate >= 80
-        ? { status: 'ok', text: `Kết cục chính "${v.survey_label}" có dữ liệu ở ${rate}% lượt.` }
-        : { status: rate >= 50 ? 'warn' : 'bad', step: 2, text: `Kết cục chính "${v.survey_label}" chỉ có dữ liệu ở ${rate}% lượt (thiếu ${compactNumber(v.missing)}). Kiểm tra cách lấy/cửa sổ ngày, thêm tiêu chuẩn "có dữ liệu" cho biến này, hoặc nhập bổ sung qua phiếu nhập tay.` });
-    }
-  }
-  const comparative = ['two_props', 'two_means', 'correlation'].includes(sampleSize.design);
-  if (comparative && !exposure.length) items.push({ status: 'warn', step: 2, text: 'Thiết kế so sánh cần ít nhất một "Biến độc lập / yếu tố nguy cơ" để chia nhóm.' });
 
   if (!include.length && !period.from && !period.to) {
     items.push({ status: 'bad', step: 3, text: `Chưa có tiêu chuẩn chọn vào: đang lấy toàn bộ ${compactNumber(total)} lượt trong kho.` });
@@ -63,18 +47,17 @@ export function readinessItems({ summary, roleOf, conditions = [], period = {}, 
     items.push({ status: 'warn', step: 3, text: `Không tìm thấy mốc thời gian ở ${compactNumber(summary.anchor.missing)} lượt: biến theo mốc của các lượt này sẽ trống. Có thể thêm tiêu chuẩn chọn vào "dùng thuốc" tương ứng.` });
   }
 
-  const sparse = variables.filter(v => Number(v.fill_rate || 0) < 10 && roleOf(v) !== 'primary_outcome');
+  const sparse = variables.filter(v => Number(v.fill_rate || 0) < 10);
   if (sparse.length) items.push({ status: 'warn', step: 2, text: `${sparse.length} biến có dữ liệu dưới 10%: ${sparse.slice(0, 6).map(v => v.survey_label).join(', ')}${sparse.length > 6 ? '…' : ''}.` });
-  if (unassigned.length) items.push({ status: 'info', step: 2, text: `${unassigned.length} biến chưa xếp vai trò.` });
 
   if (!sampleSize.design) items.push({ status: 'warn', text: 'Chưa tính cỡ mẫu (mục "Cỡ mẫu" bên dưới).' });
   else {
     const r = computeSampleSize(sampleSize);
     if (r.n) {
-      const { usable } = availableForSampleSize(summary, roleOf);
+      const { usable } = availableForSampleSize(summary);
       items.push(usable >= r.n
-        ? { status: 'ok', text: `Đủ cỡ mẫu: cần ${compactNumber(r.n)}, hiện có ${compactNumber(usable)}.` }
-        : { status: 'bad', text: `Chưa đủ cỡ mẫu: cần ${compactNumber(r.n)}, hiện có ${compactNumber(usable)}.` });
+        ? { status: 'ok', text: `Theo tổng số lượt, đạt ngưỡng: cần ${compactNumber(r.n)}, mẫu có ${compactNumber(usable)} (chưa kiểm tra đủ dữ liệu biến/nhóm).` }
+        : { status: 'bad', text: `Theo tổng số lượt, còn thiếu: cần ${compactNumber(r.n)}, mẫu có ${compactNumber(usable)} (chưa kiểm tra đủ dữ liệu biến/nhóm).` });
     } else items.push({ status: 'warn', text: `Cỡ mẫu: ${r.error}` });
   }
   if (summary?.review) items.push({ status: 'info', text: `${compactNumber(summary.review)} lượt được đánh dấu cần rà soát (giá trị bất thường hoặc thiếu mã lượt). Vẫn xuất, nên kiểm tra trước khi phân tích.` });
@@ -112,32 +95,32 @@ export function ReadinessChecklist({ items, onGoStep, onFix }) {
   );
 }
 
-const ROLE_TEXT = Object.fromEntries(VARIABLE_ROLE_OPTIONS);
 const AGG_TEXT = Object.fromEntries(VARIABLE_AGGREGATIONS);
 const csvCell = (v) => {
   const s = String(v ?? '');
   return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
-// Từ điển biến: mỗi cột của file dữ liệu một dòng (tên cột, vai trò, nguồn, cách lấy, độ đầy đủ, mô tả).
+// Từ điển biến: mỗi cột dữ liệu một dòng (tên cột, nguồn, cách lấy, độ đầy đủ, mô tả).
 // extra(v, i) trả thêm thông tin của biến theo thứ tự đã chọn (vd. cửa sổ ngày quanh mốc).
-export function buildCodebookCsv(summary, roleOf, extra = () => ({})) {
-  const header = ['STT', 'Tên cột trong file dữ liệu', 'Vai trò', 'Biến nguồn trong kho', 'Cách lấy', 'Cửa sổ ngày so với mốc', 'Có dữ liệu (%)', 'Thiếu (lượt)', 'Mô tả thống kê'];
-  const indexed = (summary?.variables || []).map((v, i) => ({ ...v, _extra: extra(v, i) }));
-  const rows = sortByRole(indexed, roleOf).map((v, i) => [
-    i + 1,
-    v.survey_label,
-    ROLE_TEXT[roleOf(v) || ''] || '',
-    v.source_label,
-    AGG_TEXT[v.aggregation] || v.aggregation || '',
-    v._extra.window || '',
-    v.fill_rate,
-    v.missing,
-    describeStats(v.stats, v),
-  ]);
+export function buildCodebookCsv(summary, extra = () => ({})) {
+  const header = ['STT', 'Tên cột trong file dữ liệu', 'Biến nguồn trong kho', 'Cách lấy', 'Cửa sổ ngày so với mốc', 'Có dữ liệu (%)', 'Thiếu (lượt)', 'Mô tả thống kê'];
+  const rows = (summary?.variables || []).map((v, i) => {
+    const extraInfo = extra(v, i) || {};
+    return [
+      i + 1,
+      v.survey_label,
+      v.source_label,
+      AGG_TEXT[v.aggregation] || v.aggregation || '',
+      extraInfo.window || '',
+      v.fill_rate,
+      v.missing,
+      describeStats(v.stats, v),
+    ];
+  });
   return '﻿' + [header, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
 
-export function downloadCodebook(filename, summary, roleOf, extra) {
-  saveBlob(filename, new Blob([buildCodebookCsv(summary, roleOf, extra)], { type: 'text/csv;charset=utf-8' }));
+export function downloadCodebook(filename, summary, extra) {
+  saveBlob(filename, new Blob([buildCodebookCsv(summary, extra)], { type: 'text/csv;charset=utf-8' }));
 }
