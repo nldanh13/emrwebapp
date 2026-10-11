@@ -1081,7 +1081,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
     }
   }
 
-  function applyDashboardData(data, requestRevision = checkedRevisionRef.current) {
+  function applyDashboardData(data, requestRevision = checkedRevisionRef.current, syncChecked = false) {
     setDashboard(data);
     const backendChecked = {};
     Object.entries(data?.checked_map || {}).forEach(([key, value]) => {
@@ -1093,8 +1093,9 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
     });
     // Backend là nguồn chính xác. Ghi đè để checkbox đã bỏ chọn không bị
     // localStorage cũ tự bật lại sau khi tải trang.
+    // CĐHA/worker polling must never change review checkmarks. Only initial/explicit load syncs them.
     // Ignore stale responses started before the latest checkbox action.
-    if (requestRevision === checkedRevisionRef.current) {
+    if (syncChecked && requestRevision === checkedRevisionRef.current) {
       for (const [alias, checked] of pendingCheckedRef.current) {
         if (checked) backendChecked[alias] = true;
         else delete backendChecked[alias];
@@ -1128,7 +1129,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
     try {
       if (doScan) await scanRecordsCheckCompleted({ date_from: workDateRange?.from || '', date_to: workDateRange?.to || workDateRange?.from || '', headless });
       const data = await getRecordsCheckDashboard();
-      applyDashboardData(data, requestRevision);
+      applyDashboardData(data, requestRevision, true);
     } catch (err) {
       toast?.(String(err.message || err), 'error');
     } finally {
@@ -1143,7 +1144,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
     (async () => {
       try {
         const data = await getRecordsCheckDashboard();
-        if (!cancelled) applyDashboardData(data, requestRevision);
+        if (!cancelled) applyDashboardData(data, requestRevision, true);
       } catch (err) {
         if (!cancelled) toast?.(String(err.message || err), 'error');
       } finally {
