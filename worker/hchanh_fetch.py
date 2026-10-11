@@ -483,6 +483,28 @@ def _try_selenium_login_for_http(sess: "EmrHttpSession", hchanh_config: Dict[str
         except Exception:
             pass
 
+# Reuse one read-only HTTP session per account during an explicit multi-patient
+# batch. Single-patient runs and browser/helper sessions retain their old behavior.
+_HCHANH_BATCH_HTTP_ACTIVE = False
+_HCHANH_BATCH_HTTP_CACHE: Dict[Any, Any] = {}
+
+
+def _hchanh_batch_session_key(config: Dict[str, Any]) -> Any:
+    # Password is kept out of the key and logs; digest is only used in RAM.
+    import hashlib
+    password_digest = hashlib.sha256(str(config.get("password") or "").encode("utf-8")).digest()
+    return (
+        _t(config.get("url_login")), _t(config.get("url_inpatient_list")),
+        _t(config.get("username")), password_digest,
+        _t(config.get("http_cookie_file")), _t(config.get("hchanh_inpatient_status")),
+    )
+
+
+def _remember_hchanh_batch_http_session(key: Any, session: Any) -> None:
+    if key is not None and _HCHANH_BATCH_HTTP_ACTIVE:
+        _HCHANH_BATCH_HTTP_CACHE[key] = (session, time.monotonic())
+
+
 def _init_session(config: Dict[str, Any]) -> Optional["EmrHttpSession"]:
     """Đăng nhập EMR bằng tài khoản hành chánh riêng, có fallback Chrome khi HTTP không qua được login."""
     if not _HAS_HTTP:
@@ -494,6 +516,24 @@ def _init_session(config: Dict[str, Any]) -> Optional["EmrHttpSession"]:
     except RuntimeError as e:
         print(f"ERROR [hchanh-session] {e}")
         return None
+    cache_key = _hchanh_batch_session_key(hchanh_config) if _HCHANH_BATCH_HTTP_ACTIVE and not _bridge_mode() else None
+    if cache_key is not None:
+        cached = _HCHANH_BATCH_HTTP_CACHE.get(cache_key)
+        if cached is not None:
+            cached_session, verified_at = cached
+            if time.monotonic() - verified_at < 120:
+                return cached_session
+            # Only revalidate on long batches, not on each patient.
+            try:
+                if cached_session.verify_logged_in():
+                    _remember_hchanh_batch_http_session(cache_key, cached_session)
+                    return cached_session
+            except EmrAccessProtectionError:
+                raise  # Do not open Chrome on an overloaded EMR.
+            except Exception:
+                pass
+            _HCHANH_BATCH_HTTP_CACHE.pop(cache_key, None)
+
     try:
         sess = EmrHttpSession.from_config_dict(hchanh_config)
     except Exception as e:
@@ -516,6 +556,7 @@ def _init_session(config: Dict[str, Any]) -> Optional["EmrHttpSession"]:
 
     try:
         sess.login()
+        _remember_hchanh_batch_http_session(cache_key, sess)
         print("LOG [hchanh-session] Đã đăng nhập EMR bằng HTTP.")
         return sess
     except EmrAccessProtectionError:
@@ -524,6 +565,7 @@ def _init_session(config: Dict[str, Any]) -> Optional["EmrHttpSession"]:
         print(f"WARN [hchanh-session] HTTP login thất bại: {type(e).__name__}. Thử đăng nhập bằng Chrome...")
 
     if _try_selenium_login_for_http(sess, hchanh_config):
+        _remember_hchanh_batch_http_session(cache_key, sess)
         return sess
 
     print("ERROR [hchanh-session] Không đăng nhập được EMR. Các mục cần trang chi tiết sẽ trả về no_session.")
@@ -1386,8 +1428,10 @@ _HCHANH_CLICK_CACHE: Dict[str, Any] = {}
 
 def _is_driver_alive(driver: Any) -> bool:
     try:
-        _ = driver.current_url
-        return True
+        url = str(driver.current_url or "").lower()
+        # An expired session can still have a healthy ChromeDriver process.
+        # Never reuse it when EMR redirected to the login page.
+        return bool(url and "login.aspx" not in url)
     except Exception:
         return False
 
@@ -1485,7 +1529,12 @@ def _switch_hchanh_click_context_on_open_driver(
         nav_url = getattr(driver, "current_url", "") or _HCHANH_CLICK_CACHE.get("nav_url") or ""
     except Exception:
         nav_url = _HCHANH_CLICK_CACHE.get("nav_url") or ""
-    served = int(_HCHANH_CLICK_CACHE.get("patients_served") or 0) + 1
+    # A new filter on the same encounter is not a new patient/Chrome quota.
+    previous_code = str(_HCHANH_CLICK_CACHE.get("ma_bn") or "").strip()
+    previous_case = _t(_HCHANH_CLICK_CACHE.get("direct_case_key"))
+    served = int(_HCHANH_CLICK_CACHE.get("patients_served") or 0) + (
+        1 if code != previous_code or direct_case_key != previous_case else 0
+    )
 
     if direct_links_cfg:
         links = {
@@ -1605,20 +1654,33 @@ def _ensure_hchanh_click_context(sess: Optional["EmrHttpSession"], ma_bn: str,
         _t(_HCHANH_CLICK_CACHE.get("direct_noitruid")) == direct_noitruid
         and _t(_HCHANH_CLICK_CACHE.get("direct_case_key")) == direct_case_key
     )
+    hchanh_config_for_switch = _build_hchanh_config(config)
+    cached_config = _HCHANH_CLICK_CACHE.get("config") or {}
+    # Never reuse a Chrome session if the configured EMR account changed.
+    same_account = (
+        _t(cached_config.get("username")) == _t(hchanh_config_for_switch.get("username"))
+        and str(cached_config.get("password") or "") == str(hchanh_config_for_switch.get("password") or "")
+    )
     if (existing is not None and _HCHANH_CLICK_CACHE.get("ma_bn") == code
             and _HCHANH_CLICK_CACHE.get("inpatient_status") == wanted_status
             and _HCHANH_CLICK_CACHE.get("date_from") == wanted_from
             and _HCHANH_CLICK_CACHE.get("date_to") == wanted_to
             and (not direct_links_cfg or cache_same_direct)
+            and same_account
             and _is_driver_alive(existing)):
         print(f"LOG [hchanh-click] Dùng lại Chrome đang mở cho BN {code} | trạng thái={wanted_status}.")
         return _HCHANH_CLICK_CACHE
 
-    hchanh_config_for_switch = _build_hchanh_config(config)
     batch_size = max(1, int(config.get("hchanh_batch_size") or 1))
     served_so_far = int(_HCHANH_CLICK_CACHE.get("patients_served") or 0)
-    if (existing is not None and _HCHANH_CLICK_CACHE.get("ma_bn") != code
-            and served_so_far < batch_size and _is_driver_alive(existing)):
+    same_encounter = (
+        _HCHANH_CLICK_CACHE.get("ma_bn") == code and cache_same_direct
+    )
+    # Same patient with a different date/status should reuse the valid logged-in
+    # Chrome too. Only count a new encounter toward the per-batch quota.
+    if (existing is not None and same_account
+            and (same_encounter or served_so_far < batch_size)
+            and _is_driver_alive(existing)):
         switched = _switch_hchanh_click_context_on_open_driver(
             existing, _HCHANH_CLICK_CACHE.get("wait"), code, hchanh_config_for_switch,
             date_to, date_from, wanted_status, wanted_from, wanted_to,
@@ -6236,7 +6298,7 @@ def _hchanh_batch_progress_mark_running(progress_path: str, key: str, ma_bn: str
         print(f"WARN [hchanh-batch] Không ghi được progress running cho {key}: {e}", file=sys.stderr)
 
 
-def run_hchanh_fetch_batch(input_path: str, out_path: str, scope: str, files: List[str],
+def _run_hchanh_fetch_batch_impl(input_path: str, out_path: str, scope: str, files: List[str],
                            date_from: str, date_to: str, inpatient_status: str = "",
                            headless: bool = False, batch_size: int = 10,
                            progress_path: str = "") -> int:
@@ -6321,6 +6383,26 @@ def run_hchanh_fetch_batch(input_path: str, out_path: str, scope: str, files: Li
         print(f"LOG: Chrome cuối của lô đã phục vụ {served} ca trước khi tiến trình kết thúc.")
     _shutdown_hchanh_click_driver()
     return 0
+
+
+def run_hchanh_fetch_batch(input_path: str, out_path: str, scope: str, files: List[str],
+                           date_from: str, date_to: str, inpatient_status: str = "",
+                           headless: bool = False, batch_size: int = 10,
+                           progress_path: str = "") -> int:
+    """Reuse HTTP/Chrome sessions only inside this batch, always release afterward."""
+    global _HCHANH_BATCH_HTTP_ACTIVE
+    if _HCHANH_BATCH_HTTP_ACTIVE:
+        raise RuntimeError("Không chạy lồng nhiều lô EMR trong một tiến trình.")
+    _HCHANH_BATCH_HTTP_ACTIVE = True
+    try:
+        return _run_hchanh_fetch_batch_impl(
+            input_path, out_path, scope, files, date_from, date_to,
+            inpatient_status, headless, batch_size, progress_path,
+        )
+    finally:
+        _HCHANH_BATCH_HTTP_ACTIVE = False
+        _HCHANH_BATCH_HTTP_CACHE.clear()
+        _shutdown_hchanh_click_driver()
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
