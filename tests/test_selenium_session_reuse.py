@@ -168,3 +168,69 @@ def test_expired_chrome_is_not_reused():
     assert not hf._is_driver_alive(SimpleNamespace(current_url="http://emr.example/login.aspx"))
     assert hf._is_driver_alive(SimpleNamespace(current_url="http://emr.example/home.aspx?usid=x"))
     assert not hf._is_driver_alive(SimpleNamespace(current_url=""))
+
+
+def test_same_patient_new_date_reuses_existing_chrome(monkeypatch):
+    """Changing range on an already open encounter must not log in again."""
+    driver = SimpleNamespace(current_url="http://emr.example/home.aspx?usid=one")
+    hf._HCHANH_CLICK_CACHE.clear()
+    hf._HCHANH_CLICK_CACHE.update({
+        "driver": driver, "wait": object(), "ma_bn": "26090048",
+        "inpatient_status": "Hoàn tất", "date_from": "01/09/2026",
+        "date_to": "30/09/2026", "patients_served": 10,
+        "config": {"username": "user.one", "password": "dummy"},
+        "direct_case_key": "enc1",
+    })
+    monkeypatch.setattr(hf, "_bridge_mode", lambda: False)
+    monkeypatch.setattr(hf, "_HAS_SELENIUM_LOGIN", True)
+    monkeypatch.setattr(hf, "_HAS_SELENIUM_SEARCH", True)
+    monkeypatch.setattr(hf, "_is_driver_alive", lambda drv: True)
+    monkeypatch.setattr(hf, "_build_hchanh_config",
+                        lambda config: {"username": config["hchanh_username"], "password": "dummy"})
+    switched = []
+    sentinel = {"driver": driver, "ma_bn": "26090048"}
+    monkeypatch.setattr(hf, "_switch_hchanh_click_context_on_open_driver",
+                        lambda *args: switched.append(args) or sentinel)
+    try:
+        result = hf._ensure_hchanh_click_context(
+            None, "26090048", {"hchanh_username": "user.one", "hchanh_batch_size": 10,
+                                "hchanh_target_case_key": "enc1"},
+            date_from="01/09/2026", date_to="02/10/2026", inpatient_status="Hoàn tất",
+        )
+        assert result is sentinel
+        assert len(switched) == 1
+        assert switched[0][0] is driver
+    finally:
+        hf._HCHANH_CLICK_CACHE.clear()
+
+
+def test_chrome_session_is_not_shared_with_another_account(monkeypatch):
+    driver = SimpleNamespace(current_url="http://emr.example/home.aspx?usid=one")
+    hf._HCHANH_CLICK_CACHE.clear()
+    hf._HCHANH_CLICK_CACHE.update({
+        "driver": driver, "wait": object(), "ma_bn": "26090048",
+        "inpatient_status": "Hoàn tất", "date_from": "01/09/2026",
+        "date_to": "30/09/2026", "patients_served": 1,
+        "config": {"username": "user.one", "password": "dummy"},
+    })
+    monkeypatch.setattr(hf, "_bridge_mode", lambda: False)
+    monkeypatch.setattr(hf, "_HAS_SELENIUM_LOGIN", True)
+    monkeypatch.setattr(hf, "_HAS_SELENIUM_SEARCH", True)
+    monkeypatch.setattr(hf, "_is_driver_alive", lambda drv: True)
+    monkeypatch.setattr(hf, "_build_hchanh_config",
+                        lambda config: {"username": config["hchanh_username"], "password": "dummy"})
+    monkeypatch.setattr(hf, "_WorkerSession", None)
+    closed = []
+    def close():
+        closed.append(True)
+        hf._HCHANH_CLICK_CACHE.clear()
+    monkeypatch.setattr(hf, "_shutdown_hchanh_click_driver", close)
+    try:
+        with pytest.raises(RuntimeError, match="WorkerSession"):
+            hf._ensure_hchanh_click_context(
+                None, "26090048", {"hchanh_username": "user.two"},
+                date_from="01/09/2026", date_to="30/09/2026", inpatient_status="Hoàn tất",
+            )
+        assert closed
+    finally:
+        hf._HCHANH_CLICK_CACHE.clear()
