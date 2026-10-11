@@ -269,6 +269,7 @@ def set_time_range_filter(
             }
             function nativeSet(el, val) {
               if (!el) return false;
+              if (String(el.value || '').trim() === val) return false;
               try {
                 const proto = Object.getPrototypeOf(el);
                 const desc = proto && Object.getOwnPropertyDescriptor(proto, 'value');
@@ -295,6 +296,7 @@ def set_time_range_filter(
               }
               if (!target && opts.length) target = opts.find(o => String(o.value || '').trim() === '7') || null;
               if (!target) return false;
+              if (String(sel.value) === String(target.value)) return false;
               sel.value = target.value;
               target.selected = true;
               try { sel.dispatchEvent(new Event('change', { bubbles: true })); } catch(e) {}
@@ -307,6 +309,18 @@ def set_time_range_filter(
                 c.textContent = label;
               }
               return true;
+            }
+            // Check live DOM, never trust old filter state after navigation.
+            const curMode = document.getElementById('cbbLoai');
+            const activeOpt = curMode && curMode.options && curMode.options[curMode.selectedIndex];
+            const activeText = activeOpt ? norm(activeOpt.textContent || activeOpt.innerText || '') : '';
+            const fromBefore = document.getElementById('dtTuNgay');
+            const toBefore = document.getElementById('dtDenNgay');
+            if (curMode && (String(curMode.value) === '7' || activeText.includes('khoang'))
+                && fromBefore && toBefore
+                && String(fromBefore.value || '').trim() === '00:00 ' + tu
+                && String(toBefore.value || '').trim() === '23:59 ' + den) {
+              return { unchanged: true, chose: false, okF: false, okT: false };
             }
             const chose = chooseRangeSelect();
             const box = document.getElementById('data_5');
@@ -323,7 +337,10 @@ def set_time_range_filter(
             tu,
             den,
         ) or {}
-        wait_after_action(driver, 0.35, ready_timeout=6)
+        if ok.get('unchanged'):
+            return True  # No onchange or Ajax when EMR already has these dates.
+        if ok.get('okF') or ok.get('okT') or ok.get('chose'):
+            wait_after_action(driver, 0.35, ready_timeout=6)
         if ok.get('okF') or ok.get('okT') or ok.get('chose'):
             mode = str(ok.get('mode') or '').strip()
             log(f"[DATE_RANGE] Đã đặt Khoảng: {tu} → {den}" + (f" | mode={mode}" if mode else ""))
@@ -528,11 +545,16 @@ def search_patient(
     for _ in range(max(1, attempts)):
         try:
             search = wait.until(EC.element_to_be_clickable((By.ID, "txtTimKiem")))
-            try:
-                search.clear()
-            except Exception:
-                driver.execute_script("arguments[0].value='';", search)
-            search.send_keys(str(ma_bn or ""))
+            code = str(ma_bn or "")
+            # Still send Enter after changing a status/date filter, so the result
+            # table refreshes. Skip only the redundant clear and text entry.
+            current = str(search.get_attribute("value") or "").strip()
+            if current != code:
+                try:
+                    search.clear()
+                except Exception:
+                    driver.execute_script("arguments[0].value='';", search)
+                search.send_keys(code)
             wait_after_action(driver, 0.25, ready_timeout=4)
             search.send_keys(Keys.ENTER)
             wait_after_action(driver, after_enter_seconds, ready_timeout=8)
