@@ -80,7 +80,7 @@ class FakeFlow:
         self.calls.append(('admit', row['ma_bn']))
         return self.admit_result
 
-    def finish_surgery(self, row, admitted, doctor, now):
+    def finish_surgery(self, row, admitted, doctor, now, nurse=''):
         self.calls.append(('pt', row['ma_bn'], admitted, doctor))
         return self.pt_result
 
@@ -156,3 +156,68 @@ def test_extra_emr_box_is_described_for_the_user():
                              'text': 'Thời gian thực hiện ngắn hơn định mức. Nhập lý do.', 'fields': ['Lý do *']})
     assert msg == '«Lý do hoàn tất» — nội dung: Thời gian thực hiện ngắn hơn định mức. Nhập lý do. — ô cần điền: Lý do *'
     assert nt.describe_modal({'id': 'x'}) == '«x»'
+
+
+class SurgeryForm(nt.NgoaiTruFlow):
+    """Phiếu phẫu thuật giả: ghi lại ô nào được điền / chọn gì."""
+
+    def __init__(self, templates, chi_dinh='Cắt u bã đậu vùng lưng'):
+        super().__init__(None, {}, None, pause=lambda _s: None, templates=templates)
+        self.values = {'txtBatDauPT': '', 'txtKetThucPT': ''}
+        self.selected = {'cbbChiDinhMoPT': chi_dinh, 'cbbPhuongPhapPT': 'Cắt u', 'cbbICD9': '86.3',
+                         'cbbIcdChanDoanTruocPT': 'L72.1 - U bã đậu', 'cbbChuanDoanSauPT': ''}
+        self.clicked = []
+
+    def open(self, href): pass
+    def wait_for(self, element_id, seconds=12.0): return True
+    def visible(self, element_id): return True
+
+    def js(self, script, *args):
+        if script == nt.SELECTED_TEXT_JS:
+            return self.selected.get(args[0], '')
+        if script == nt.VALUE_JS:
+            return self.values.get(args[0], '')
+        raise AssertionError(script)
+
+    def set_value(self, element_id, value): self.values[element_id] = value
+
+    def pick(self, field_id, text):
+        self.selected[field_id] = text
+        return True
+
+    def click(self, element_id, what, pause=2.0):
+        self.clicked.append(element_id)
+        return []
+
+
+def _pt_tpl(**kw):
+    base = {'id': 'pt', 'kind': 'phau_thuat', 'name': 'Cắt u bã đậu', 'keywords': ['u bã đậu'], 'performer': 'bac_si',
+            'minutes': 20, 'anesthesia': 'Gây Tê Tại Chỗ', 'position': 'Nằm sấp', 'mo_ta': 'Rạch da, bóc u',
+            'report': 'Sát khuẩn\nRạch da\nBóc trọn u', 'dan_do': 'Thay băng mỗi ngày', 'applies_to': 'all',
+            'auto': True, 'enabled': True}
+    return {**base, **kw}
+
+
+def test_finish_surgery_fills_form_from_matching_template():
+    flow = SurgeryForm([_pt_tpl()])
+    res = flow.finish_surgery({'href': 'x', 'noi_dung': ''}, DT(2026, 9, 28, 10, 5), 'BS Hồ Điền', NOW, 'ĐD Lan')
+    assert res['result'] == 'done' and res['end'] == DT(2026, 9, 28, 10, 26)
+    assert flow.values['txtBatDauPT'] == '10:06 28/09/2026' and flow.values['txtKetThucPT'] == '10:26 28/09/2026'
+    assert flow.values['txtTuTheMoPT'] == 'Nằm sấp'
+    assert flow.values['txtMoTaPPPT'] == 'Rạch da, bóc u'
+    assert flow.values['trinhTuPhauThuatInput'] == 'Sát khuẩn\nRạch da\nBóc trọn u'
+    assert flow.values['txtDanDoSauPT'] == 'Thay băng mỗi ngày'
+    assert flow.selected['cbbBacSiPT'] == flow.selected['cbbBacSiGayMeChinh'] == 'BS Hồ Điền'
+    assert flow.clicked == ['btnHOANTAT']
+
+    # Mẫu giao cho điều dưỡng → người mổ chính là điều dưỡng trong lịch.
+    flow = SurgeryForm([_pt_tpl(performer='dieu_duong', report='')])
+    flow.finish_surgery({'href': 'x'}, DT(2026, 9, 28, 10, 5), 'BS Hồ Điền', NOW, 'ĐD Lan')
+    assert flow.selected['cbbBacSiPT'] == 'ĐD Lan' and 'trinhTuPhauThuatInput' not in flow.values
+
+
+def test_finish_surgery_without_template_does_not_touch_form():
+    flow = SurgeryForm([_pt_tpl()], chi_dinh='Nối gân gấp')
+    res = flow.finish_surgery({'href': 'x', 'noi_dung': 'Nối gân gấp'}, DT(2026, 9, 28, 10, 5), 'BS Hồ Điền', NOW)
+    assert res['result'] == 'incomplete' and 'Chưa có mẫu phẫu thuật' in res['message']
+    assert flow.values == {'txtBatDauPT': '', 'txtKetThucPT': ''} and flow.clicked == []

@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "tt-thay-bang-cat-chi",
+      "kind": "thu_thuat",
+      "name": "Thay băng, cắt chỉ",
+      "keywords": ["thay băng", "cắt chỉ"],
+      "performer": "dieu_duong",
+      "minutes": 10,
+      "anesthesia": "Không",
+      "position": "",
+      "emr_template": "CTCH-thay băng",
+      "phuong_phap": "",
+      "mo_ta": "",
+      "report": "",
+      "dan_do": "",
+      "applies_to": "all",
+      "auto": true,
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "id": "pt-mac-dinh",
+      "kind": "phau_thuat",
+      "name": "Phẫu thuật phòng khám (mặc định)",
+      "keywords": [],
+      "performer": "bac_si",
+      "minutes": 15,
+      "anesthesia": "Gây Tê Tại Chỗ",
+      "position": "Nằm ngửa",
+      "emr_template": "",
+      "phuong_phap": "",
+      "mo_ta": "",
+      "report": "",
+      "dan_do": "",
+      "applies_to": "all",
+      "auto": true,
+      "enabled": true,
+      "note": "Không có từ khoá: dùng cho mọi ca mổ chưa có mẫu riêng."
+    }
+  ]
+}

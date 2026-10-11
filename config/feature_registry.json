@@ -112,6 +112,16 @@
       "usesDateRange": false
     },
     {
+      "id": "procedure-templates",
+      "label": "Mẫu thủ thuật – PT",
+      "icon": "▤",
+      "group": "Phòng khám",
+      "hint": "Mẫu nhập thủ thuật, phẫu thuật theo từng DVKT",
+      "order": 101,
+      "compact": true,
+      "usesDateRange": false
+    },
+    {
       "id": "patient-journey",
       "label": "Người bệnh & tái khám",
       "icon": "◷",
