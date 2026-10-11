@@ -45,7 +45,7 @@ describe('clinicBoard', () => {
     expect(items.map(i => i.key)).toEqual(['a:tt', 'b:tt', 'c:pt', 'd:sbbhc']);
     expect(items[1]).toMatchObject({ status: 'Chờ tới 09:10', tone: 'muted' });
     expect(items[3].status).toBe('Đã soạn nháp, chờ duyệt');
-    expect(todoCounts(items)).toEqual({ tt: 2, pt: 1, sbbhc: 1 });
+    expect(todoCounts(items)).toEqual({ tt: 2, pt: 1, sbbhc: 1, cs: 0 });
   });
 
   it('gợi ý nghỉ ốm: đã vào khám, còn tuổi lao động, chưa đánh dấu', () => {
@@ -83,5 +83,14 @@ describe('ngày theo dõi', () => {
     expect(monitorDay({ started_at: new Date(2026, 9, 12, 6, 0).toISOString() }, now).label).toBe('Thứ hai, 12/10/2026');
     expect(monitorDay(null, now)).toEqual({ label: 'Chủ nhật, 11/10/2026', short: '11/10/2026', iso: '2026-10-11', today: true });
     expect(monitorDay({ updated_at: 'không phải ngày' }, now).today).toBe(true);
+  });
+});
+
+describe('Nhập viện trong Việc cần làm', () => {
+  it('người bệnh nhập viện còn đang khám → nhắc nhập chăm sóc', () => {
+    const items = todoItems([{ khambenhid: 'n', ma_bn: '1', case: 'nhap_vien', stage: 'dang_kham' },
+      { khambenhid: 'x', ma_bn: '2', case: 'nhap_vien', stage: 'xong' }]);
+    expect(items.map(i => i.kind)).toEqual(['cs']);
+    expect(todoCounts(items).cs).toBe(1);
   });
 });

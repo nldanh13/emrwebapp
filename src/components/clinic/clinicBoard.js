@@ -56,9 +56,13 @@ export function todoItems(rows = []) {
       if (t?.status === 'waiting') { status = t.message || 'Chờ đủ giờ'; tone = 'muted'; }
       else if (t?.status === 'error' || t?.status === 'session') { status = t.message || 'Lỗi'; tone = 'error'; }
       else if (t?.status && t.status !== 'done') { status = t.message || t.status; tone = 'warn'; }
-      if (!r.procedure_task && r.case === 'nhap_vien') status = 'Nhập viện: làm ở luồng nhập viện';
+      if (!r.procedure_task && r.case === 'nhap_vien') status = 'Nhập viện: làm cùng phiếu chăm sóc nhập viện';
       if (!r.procedure_task && r.case === 'ngoai_tru') status = 'Làm cùng điều trị ngoại trú';
       items.push({ key: `${id}:tt`, kind: 'tt', row: r, label: `Thủ thuật (${r.pending_tt})`, status, tone });
+    }
+    if (r.case === 'nhap_vien' && r.stage !== 'xong') {
+      items.push({ key: `${id}:cs`, kind: 'cs', row: r, label: 'Nhập chăm sóc nhập viện',
+        status: 'Khung "Nhập viện · nhập chăm sóc" cuối trang', tone: 'warn' });
     }
     if (r.pending_pt > 0) {
       const nt = r.ngoaitru_state;
@@ -80,7 +84,7 @@ export function todoItems(rows = []) {
 }
 
 export function todoCounts(items = []) {
-  const out = { tt: 0, pt: 0, sbbhc: 0 };
+  const out = { tt: 0, pt: 0, sbbhc: 0, cs: 0 };
   for (const it of items) out[it.kind] += 1;
   return out;
 }

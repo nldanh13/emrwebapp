@@ -85,6 +85,17 @@ describe('Phòng khám: 3 khung', () => {
     expect(sessionStorage.getItem('emr:sick-leave-view')).toBe('ngoaitru');
   });
 
+  it('Hoàn tất cuối ngày gửi lệnh hoàn tất cả người chưa có thuốc; khung nhập chăm sóc nhập viện luôn có', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    __resetServerData();
+    await act(async () => { root.render(createElement(ClinicTab, { toast: () => {} })); });
+    await flush();
+    await act(async () => { button('Hoàn tất cuối ngày').click(); });
+    await flush();
+    expect(api.completeReadyClinicPatients).toHaveBeenLastCalledWith(true);
+    expect(button('Tìm người nhập viện')).toBeTruthy();
+  });
+
   it('không hỏi URL khi máy chủ đã khai địa chỉ EMR; chưa khai thì chỉ hỏi địa chỉ đăng nhập', async () => {
     const labels = () => [...host.querySelectorAll('label')].map(l => l.textContent);
     await act(async () => { root.render(createElement(ClinicTab, { toast: () => {} })); });

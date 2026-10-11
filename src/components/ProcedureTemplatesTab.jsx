@@ -12,7 +12,7 @@ import { useOnTabReturn, useUnsavedChangesGuard } from '../hooks/useTabActivity.
 import useIsMobile from '../hooks/useIsMobile.js';
 import {
   KIND_OPTIONS, PERFORMER_OPTIONS, SCOPE_OPTIONS,
-  cleanKeywords, defaultTemplates, keywordConflicts, newTemplate, summary,
+  cleanKeywords, defaultTemplates, keywordConflicts, newTemplate, summary, templateFromMissing, uncoveredMissing,
 } from './procedureTemplates/templateModel.js';
 
 const TAB_ID = 'procedure-templates';
@@ -82,6 +82,28 @@ function TemplateList({ items, selectedId, onSelect }) {
         );
       })}
     </ul>
+  );
+}
+
+function MissingList({ items, onCreate }) {
+  if (!items.length) return null;
+  return (
+    <section aria-label="DVKT chưa có mẫu" style={{ background: C.amberBg, border: `1px solid ${C.amberBorder}`, borderRadius: R.md, padding: 10 }}>
+      <div style={{ fontSize: FS.sm, fontWeight: 600, color: C.amber, marginBottom: 6 }}>
+        DVKT chưa có mẫu, Phòng khám đã bỏ qua ({items.length})
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {items.map(m => (
+          <div key={`${m.kind}:${m.name}`} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: FS.sm, color: C.text }}>
+            <span style={{ flex: '1 1 220px' }}>
+              <b>{m.name}</b>
+              <span style={{ color: C.text3 }}> · {m.count || 1} lần{m.ho_ten ? ` · gần nhất ${m.ho_ten}` : ''}</span>
+            </span>
+            <Btn icon={IconPlus} onClick={() => onCreate(m)}>Tạo mẫu</Btn>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -188,8 +210,8 @@ function TemplateEditor({ template, templates, onChange, onDuplicate, onDelete }
             <textarea style={{ ...fieldStyle, minHeight: 140, resize: 'vertical' }} value={template.report} onChange={set('report')} />
           </Field>
           <Note>
-            Nội dung này được lưu sẵn trong mẫu nhưng chưa ghi lên EMR: cần dò ô nội dung trên phiếu thủ thuật trước
-            (Cài đặt → Kiểm tra cấu trúc EMR → Dò 1 trang cụ thể). Hiện EMR tự điền nội dung theo "Mẫu tường trình EMR".
+            Khi nhập, app chọn "Mẫu tường trình EMR" rồi ghi nội dung này vào ô EMR vừa tự điền.
+            Để trống thì giữ nguyên nội dung EMR tự điền.
           </Note>
         </>
       )}
@@ -214,8 +236,20 @@ export default function ProcedureTemplatesTab({ toast }) {
   const [selectedId, setSelectedId] = useState('');
   const [save, setSave] = useState({ state: '', at: '', message: '' });
   const [editVersion, setEditVersion] = useState(0);
+  const [missing, setMissing] = useState([]);
   const templatesRef = useRef(null);
   const pendingRef = useRef(false);
+
+  // DVKT Phòng khám bỏ qua vì chưa có mẫu (đọc từ màn theo dõi, không mở EMR).
+  const loadMissing = useCallback(async () => {
+    try {
+      const res = await api.getClinicMonitorState();
+      const list = res?.monitor?.missing_templates;
+      setMissing(Array.isArray(list) ? list : []);
+    } catch {
+      setMissing([]);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -229,9 +263,9 @@ export default function ProcedureTemplatesTab({ toast }) {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); loadMissing(); }, [load, loadMissing]);
   // Quay lại tab: tải lại (máy khác có thể đã sửa), trừ khi còn thay đổi chưa lưu.
-  useOnTabReturn(() => { if (!pendingRef.current) load(); });
+  useOnTabReturn(() => { if (!pendingRef.current) load(); loadMissing(); });
   useUnsavedChangesGuard(save.state === 'pending' || save.state === 'error');
 
   const saveNow = useCallback(async () => {
@@ -283,6 +317,12 @@ export default function ProcedureTemplatesTab({ toast }) {
     commit(templatesRef.current.map(t => (t.id === selected.id ? { ...t, ...patch } : t)));
     if (patch.kind && patch.kind !== kind) setKind(patch.kind);
   };
+  const createFromMissing = (m) => {
+    const tpl = templateFromMissing(m, `tpl-${Date.now().toString(36)}`);
+    commit([...(templatesRef.current || []), tpl]);
+    setKind(tpl.kind);
+    setSelectedId(tpl.id);
+  };
   const add = () => {
     const tpl = newTemplate(kind);
     commit([...(templatesRef.current || []), tpl]);
@@ -326,8 +366,9 @@ export default function ProcedureTemplatesTab({ toast }) {
         </span>
         {save.state === 'error' ? <Btn icon={IconRefresh} onClick={saveNow}>Lưu lại</Btn> : null}
       </div>
+      <MissingList items={uncoveredMissing(missing, templates)} onCreate={createFromMissing} />
       <div style={{ fontSize: FS.sm, color: C.text3 }}>
-        Phòng khám chọn mẫu theo tên DVKT lúc nhập {kind === 'phau_thuat' ? 'kết thúc mổ' : 'thủ thuật'}. DVKT không khớp mẫu nào thì không tự nhập và báo "Chưa có mẫu".
+        Phòng khám chọn mẫu theo tên DVKT lúc nhập {kind === 'phau_thuat' ? 'kết thúc mổ' : 'thủ thuật'}. DVKT không khớp mẫu nào thì bỏ qua (nhập các thủ thuật khác) và hiện ở khung "DVKT chưa có mẫu" phía trên.
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(220px, 300px) 1fr', gap: 16, alignItems: 'start' }}>
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: R.md, padding: 8 }}>

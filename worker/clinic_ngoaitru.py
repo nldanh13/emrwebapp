@@ -337,7 +337,7 @@ class NgoaiTruFlow:
 
     # 2. Kết thúc mổ
     def finish_surgery(self, row: Dict[str, Any], admitted: datetime, doctor: str, now: datetime,
-                       nurse: str = "") -> Dict[str, Any]:
+                       nurse: str = "", has_bhyt: Optional[bool] = None) -> Dict[str, Any]:
         """Điền ca mổ theo mẫu khớp tên DVKT (Nội dung phẫu thuật / Chỉ định mổ); người thực hiện theo
         vai trò của mẫu, tên lấy theo Lịch Phòng khám."""
         self.open(row["href"])
@@ -348,9 +348,11 @@ class NgoaiTruFlow:
             return {"result": "already", "message": "Ca mổ đã hoàn tất", "end": end}
         templates = procedure_templates.load_templates() if self.templates is None else self.templates
         service = " ".join(x for x in (row.get("noi_dung") or "", self.js(SELECTED_TEXT_JS, "cbbChiDinhMoPT") or "") if x)
-        tpl = procedure_templates.match_template(templates, "phau_thuat", service, True)
+        tpl = procedure_templates.match_template(templates, "phau_thuat", service, has_bhyt)
         if tpl is None:
-            return {"result": "incomplete", "message": procedure_templates.missing_message("phau_thuat", service)}
+            name = compact(self.js(SELECTED_TEXT_JS, "cbbChiDinhMoPT") or "") or compact(row.get("noi_dung")) or service
+            return {"result": "incomplete", "message": procedure_templates.missing_message("phau_thuat", name),
+                    "missing_templates": [{"kind": "phau_thuat", "name": name}]}
         if tpl.get("auto") is False:
             return {"result": "incomplete", "message": procedure_templates.manual_message(tpl)}
         by_nurse = tpl.get("performer") == "dieu_duong"
@@ -501,10 +503,16 @@ def run_all(flow: "NgoaiTruFlow", patients: List[Dict[str, Any]], doctor: str,
             results[code].update({"result": "error", "message": "Không đọc được thời gian vào khoa"})
             continue
         lower = start
+        mine = [r for r in surgeries if r["ma_bn"] == code]
+        if by_code[code].get("pending_pt") and not mine:
+            # Có chỉ định mổ mà chưa thấy trên D/s Phẫu thuật (vd. viện phí chưa đóng tiền): chưa kết thúc điều trị.
+            results[code].update({"result": "waiting", "message": "Chưa thấy ca mổ trên D/s Phẫu thuật"
+                                  + ("" if by_code[code].get("has_bhyt", True) else ": chờ người bệnh viện phí đóng tiền")})
+            continue
         try:
             stop = None
-            for pt in [r for r in surgeries if r["ma_bn"] == code and not is_done(r.get("trang_thai"))]:
-                res = flow.finish_surgery(pt, start, doctor, now_fn(), nurse)
+            for pt in [r for r in mine if not is_done(r.get("trang_thai"))]:
+                res = flow.finish_surgery(pt, start, doctor, now_fn(), nurse, by_code[code].get("has_bhyt"))
                 results[code]["steps"] += res.get("steps") or []
                 if res["result"] not in {"done", "already"}:
                     stop = res
@@ -512,7 +520,8 @@ def run_all(flow: "NgoaiTruFlow", patients: List[Dict[str, Any]], doctor: str,
                 if res.get("end"):
                     lower = max(lower, res["end"])
             if stop:
-                results[code].update({"result": stop["result"], "message": stop.get("message", "")})
+                results[code].update({"result": stop["result"], "message": stop.get("message", ""),
+                                      "missing_templates": stop.get("missing_templates") or []})
                 continue
             res = flow.discharge(nt, lower, now_fn(), by_code[code].get("texts") or {})
         except Exception as exc:

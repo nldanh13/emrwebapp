@@ -61,3 +61,13 @@ export function summary(template) {
   const keys = cleanKeywords(template);
   return keys.length ? keys.join(', ') : 'Mặc định: mọi DVKT chưa có mẫu riêng';
 }
+
+// DVKT Phòng khám đã bỏ qua vì chưa có mẫu, trừ những DVKT nay đã khớp một mẫu (có từ khoá) đang dùng.
+export function uncoveredMissing(missing = [], templates = []) {
+  return missing.filter(m => !templates.some(t => t.kind === m.kind && t.enabled !== false
+    && cleanKeywords(t).some(k => foldText(m.name).includes(foldText(k)))));
+}
+
+export function templateFromMissing(missing, id) {
+  return { ...newTemplate(missing.kind, id), name: missing.name, keywords: [missing.name] };
+}

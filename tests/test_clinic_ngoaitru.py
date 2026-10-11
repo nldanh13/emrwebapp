@@ -80,7 +80,7 @@ class FakeFlow:
         self.calls.append(('admit', row['ma_bn']))
         return self.admit_result
 
-    def finish_surgery(self, row, admitted, doctor, now, nurse=''):
+    def finish_surgery(self, row, admitted, doctor, now, nurse='', has_bhyt=None):
         self.calls.append(('pt', row['ma_bn'], admitted, doctor))
         return self.pt_result
 
@@ -134,7 +134,7 @@ def test_clinic_doctor_from_schedule_and_candidates():
     assert cm.clinic_doctor({'clinic_nurse_schedule': sched}, NOW) == 'Hồ Điền'
     assert cm.clinic_doctor({}, NOW) == ''
     assert cm.ngoaitru_candidate({'has_bhyt': True, 'case': 'ngoai_tru', 'stage': 'ngoai_tru'}) is True
-    assert cm.ngoaitru_candidate({'has_bhyt': False, 'case': 'ngoai_tru', 'stage': 'ngoai_tru'}) is False
+    assert cm.ngoaitru_candidate({'has_bhyt': False, 'case': 'ngoai_tru', 'stage': 'ngoai_tru'}) is True  # viện phí như BHYT
     assert cm.ngoaitru_candidate({'has_bhyt': True, 'case': 'cho_ve', 'stage': 'dang_kham'}) is False
 
 
@@ -221,3 +221,20 @@ def test_finish_surgery_without_template_does_not_touch_form():
     res = flow.finish_surgery({'href': 'x', 'noi_dung': 'Nối gân gấp'}, DT(2026, 9, 28, 10, 5), 'BS Hồ Điền', NOW)
     assert res['result'] == 'incomplete' and 'Chưa có mẫu phẫu thuật' in res['message']
     assert flow.values == {'txtBatDauPT': '', 'txtKetThucPT': ''} and flow.clicked == []
+
+
+def test_run_all_waits_when_ordered_surgery_is_not_on_list_yet():
+    lists = _lists()
+    lists[nt.WPID_PHAUTHUAT] = '<table><thead><tr><th>Mã BN</th></tr></thead><tbody></tbody></table>'
+    flow = FakeFlow(lists)
+    flow.driver = type('D', (), {'page_source': ''})()
+    flow.wait = None
+    import input_procedures as ip
+    original = ip._try_search_on_list
+    ip._try_search_on_list = lambda *a, **k: None
+    try:
+        res = nt.run_all(flow, [{'ma_bn': '26059292', 'has_bhyt': False, 'pending_pt': 1}], 'Hồ Điền', lambda: NOW)
+    finally:
+        ip._try_search_on_list = original
+    assert res['26059292']['result'] == 'waiting' and 'đóng tiền' in res['26059292']['message']
+    assert not any(c[0] in {'pt', 'ra'} for c in flow.calls)   # không kết thúc điều trị khi chưa mổ

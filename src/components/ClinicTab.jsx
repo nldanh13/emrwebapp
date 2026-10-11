@@ -249,9 +249,24 @@ export default function ClinicTab({ toast }) {
     }
   };
 
+  const completeEndOfDay = async (n) => {
+    if (!window.confirm(`Hoàn tất cuối ngày ${n} lượt khám còn đang thực hiện?\n\nHoàn tất cả người Cho về chưa có thuốc và người chuyển khám chuyên khoa (thủ thuật nhập trước nếu có mẫu). Người chưa có xử trí, còn dịch vụ chưa xong, nhập viện hoặc điều trị ngoại trú thì giữ lại và ghi vào Nhật ký thao tác để bạn xem.`)) return;
+    setBusy('end-of-day');
+    try {
+      const r = await api.completeReadyClinicPatients(true);
+      if (r.status !== 'ok') throw new Error(r.message);
+      toast?.(r.message, 'info');
+      await loadState();
+    } catch (e) {
+      toast?.(String(e.message || e), 'error');
+    } finally {
+      setBusy('');
+    }
+  };
+
   const runNgoaiTru = async () => {
     const n = ngoaitruRows.length;
-    if (!window.confirm(`Làm điều trị ngoại trú cho ${n} người bệnh (BHYT) trên EMR?\n\nLần lượt: nhập khoa (D/s tiếp nhận ngoại trú) → kết thúc mổ nếu có (D/s Phẫu thuật) → Tổng kết ra khoa và Kết thúc điều trị. Dừng ở người nào EMR báo lỗi, hỏi xác nhận hoặc hồ sơ còn thiếu.`)) return;
+    if (!window.confirm(`Làm điều trị ngoại trú cho ${n} người bệnh trên EMR?\n\nLần lượt: nhập khoa (D/s tiếp nhận ngoại trú) → kết thúc mổ nếu có (D/s Phẫu thuật) → Tổng kết ra khoa và Kết thúc điều trị. Dừng ở người nào EMR báo lỗi, hỏi xác nhận hoặc hồ sơ còn thiếu.`)) return;
     setBusy('ngoaitru');
     try {
       const r = await api.runClinicNgoaiTru();
@@ -440,7 +455,7 @@ export default function ClinicTab({ toast }) {
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12, alignItems: 'start' }}>
             <VisitPanel rows={allRows} running={canAct} busy={busy} dayText={dayText} actionRunning={Boolean(monitor?.action_running)}
-              onComplete={completeReady} renderCompletion={r => <CompletionCell row={r} toast={toast} onSaved={loadState} />} />
+              onComplete={completeReady} onEndOfDay={completeEndOfDay} renderCompletion={r => <CompletionCell row={r} toast={toast} onSaved={loadState} />} />
             <TodoPanel rows={allRows} running={canAct} busy={busy} actionRunning={Boolean(monitor?.action_running)}
               autoTasks={autoTasks} onRunTasks={runTasks} onToggleAuto={toggleAuto}
               ngoaitruCount={ngoaitruRows.length} onRunNgoaiTru={runNgoaiTru}>
@@ -449,7 +464,6 @@ export default function ClinicTab({ toast }) {
             <SickLeavePanel rows={allRows} day={day.iso} dayText={dayText} entries={sickLeave} onEntries={setSickLeave} onOpenSickLeave={openSickLeave} toast={toast} />
           </div>
 
-          <ClinicAdmissionCare creds={{ ...cfg, password, loginUrl, hasEmrUrl: Boolean(emrUrlDefault || loginUrl) }} toast={toast} />
 
           <Panel title={`Danh sách khám bệnh ngày ${day.short}`}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -532,6 +546,9 @@ export default function ClinicTab({ toast }) {
           {running ? 'Đang đọc Danh sách Khám bệnh lần đầu…' : 'Nhập tài khoản EMR rồi bấm "Bắt đầu theo dõi" để hệ thống tự đọc Danh sách Khám bệnh theo chu kỳ.'}
         </div>
       )}
+
+      {/* Nhập chăm sóc người nhập viện: luôn hiện, không cần đang theo dõi danh sách. */}
+      <ClinicAdmissionCare creds={{ ...cfg, password, loginUrl, hasEmrUrl: Boolean(emrUrlDefault || loginUrl) }} toast={toast} />
     </div>
   );
 }
