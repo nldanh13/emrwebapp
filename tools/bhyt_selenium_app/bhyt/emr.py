@@ -10,7 +10,7 @@ Không lưu mật khẩu ra đĩa — chỉ giữ trong RAM. Chỉ chạy đư�
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 import base64
 import threading
@@ -44,14 +44,17 @@ DEFAULT_EMR_SELECTORS = {
     # Nút/link "Xem phiếu" (phòng khám) — bấm sẽ ra file PDF phiếu nghỉ.
     "phieu_link": "Xem phiếu",
     # Giấy ra viện (nội trú): Danh sách Điều trị nội trú → hồ sơ → in "Giấy ra viện" (PDF).
-    # wpid và bảng tblNoiTru theo worker/hchanh_fetch.py; ô tìm kiếm, ô trạng thái và tên
-    # phiếu in chưa xác nhận trên máy bệnh viện — EMR khác thì chỉnh trong config.json.
+    # wpid, bảng tblNoiTru, ô tìm kiếm, ô trạng thái và bộ lọc ngày theo DOM đã dùng ở
+    # worker/selenium_emr_helpers.py. Tên phiếu in chưa xác nhận trên máy bệnh viện.
     "inpatient_wpid": "danhsachdieutrinoitrudraw",
     "inpatient_table": "NoiTru",
     "inpatient_search_input": "txtTimKiem",
-    "inpatient_search_button": "btnTimKiem",
-    "inpatient_status_select": "",
+    "inpatient_search_button": "",  # trống = gõ Enter trong ô tìm kiếm
+    "inpatient_status_select": "drpSelectTrangThai",
     "inpatient_status_value": "Hoàn tất",
+    "inpatient_range_select": "cbbLoai",
+    "inpatient_date_from": "dtTuNgay",
+    "inpatient_date_to": "dtDenNgay",
     "grv_report_link": "Giấy ra viện",
     "grv_report_id": "",
     # Các ô trong form giấy nghỉ (để ĐỌC giá trị)
@@ -90,6 +93,74 @@ class EmrError(RuntimeError):
     pass
 
 
+# Khoảng ngày mở trên EMR khi tìm ca ra viện của một ngày: lùi chừng này ngày.
+DISCHARGE_LOOKBACK_DAYS = 60
+
+
+def parse_day(value: Any) -> date:
+    """'05/10/2026' / '2026-10-05' / date → date. Trống = hôm nay."""
+    if isinstance(value, date):
+        return value
+    raw = str(value or "").strip()
+    if not raw:
+        return date.today()
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    raise EmrError(f"Không hiểu ngày '{raw}'. Chọn ngày theo dạng ngày/tháng/năm.")
+
+
+def _same_day(text: Any, target: date) -> bool:
+    import re
+    m = re.search(r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})", str(text or ""))
+    if not m:
+        return False
+    try:
+        return date(int(m.group(3)), int(m.group(2)), int(m.group(1))) == target
+    except ValueError:
+        return False
+
+
+# Chọn trạng thái + đặt "Khoảng" ngày trên danh sách nội trú. Port gọn từ
+# set_inpatient_status_filter / set_time_range_filter (worker/selenium_emr_helpers.py).
+_INPATIENT_FILTER_JS = r"""
+const a = arguments[0];
+function norm(s) {
+  try { return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          .replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().replace(/\s+/g, ' ').trim(); }
+  catch (e) { return String(s || '').toLowerCase(); }
+}
+function fire(el, val) {
+  try { el.dispatchEvent(new Event('input', {bubbles: true})); } catch (e) {}
+  try { el.dispatchEvent(new Event('change', {bubbles: true})); } catch (e) {}
+  try { if (window.jQuery) window.jQuery(el).val(val).trigger('change').trigger('dp.change'); } catch (e) {}
+}
+function pick(sel, test) {
+  if (!sel) return false;
+  const opt = Array.from(sel.options || []).find(test);
+  if (!opt) return false;
+  sel.value = opt.value; fire(sel, opt.value); return true;
+}
+const out = {};
+if (a.status_id) {
+  const want = norm(a.status);
+  out.status = pick(document.getElementById(a.status_id), o => norm(o.text).includes(want));
+}
+if (a.date_from) {
+  out.range = pick(document.getElementById(a.range_id),
+                   o => norm(o.text).includes('khoang') || String(o.value).trim() === '7');
+  try { if (typeof FilterChange === 'function') FilterChange(); } catch (e) {}
+  const f = document.getElementById(a.from_id), t = document.getElementById(a.to_id);
+  if (f) { f.value = '00:00 ' + a.date_from; f.setAttribute('value', f.value); fire(f, f.value); }
+  if (t) { t.value = '23:59 ' + a.date_to; t.setAttribute('value', t.value); fire(t, t.value); }
+  out.dates = !!(f && t);
+}
+return out;
+"""
+
+
 class EmrPortal:
     def __init__(self, base_url: str, profile_dir: str | Path, timeout: int = 40,
                  headless: bool = True, selectors: dict[str, str] | None = None,
@@ -106,6 +177,7 @@ class EmrPortal:
             Path(download_dir).resolve() if download_dir
             else self.profile_dir.parent / "emr_downloads"
         )
+        self._inpatient_range: tuple[str, str] = ("", "")  # khoảng ngày lần quét ra viện gần nhất
         self.doctors = list(doctors) if doctors else None  # để nhận tên trưởng khoa trên giấy ra viện
         self.driver: webdriver.Chrome | None = None
         self._lock = threading.RLock()
@@ -260,35 +332,42 @@ class EmrPortal:
         clean["wpid"] = self.sel("inpatient_wpid")
         return urlunparse((p.scheme, p.netloc, p.path or "/home.aspx", "", urlencode(clean), ""))
 
-    def _open_inpatient_list(self, keyword: str = ""):
-        """Mở Danh sách Điều trị nội trú, chọn trạng thái (mặc định "Hoàn tất" = đã ra
-        viện) nếu đã cấu hình ô trạng thái, gõ từ khoá nếu có rồi bấm Tìm."""
+    def _open_inpatient_list(self, keyword: str = "", date_from: str = "", date_to: str = ""):
+        """Mở Danh sách Điều trị nội trú, chọn trạng thái "Hoàn tất" (= đã ra viện), đặt
+        khoảng ngày (dd/mm/yyyy) nếu có, gõ từ khoá rồi tìm. Cách chọn trạng thái và
+        khoảng ngày giống set_inpatient_status_filter / set_time_range_filter ở
+        worker/selenium_emr_helpers.py (EMR mặc định lọc "3 tháng", phải đổi sang "Khoảng")."""
         driver = self._driver()
         driver.get(self._inpatient_list_url())
         time.sleep(1.0)
-        status_id = self.sel("inpatient_status_select")
-        if status_id:
-            driver.execute_script(
-                """
-                const el = document.getElementById(arguments[0]);
-                if (!el) return;
-                const opt = [...el.options].find(o => o.text.trim() === arguments[1]);
-                if (opt) { el.value = opt.value; el.dispatchEvent(new Event('change', {bubbles: true})); }
-                """,
-                status_id, self.sel("inpatient_status_value"),
-            )
+        driver.execute_script(_INPATIENT_FILTER_JS, {
+            "status_id": self.sel("inpatient_status_select"),
+            "status": self.sel("inpatient_status_value"),
+            "range_id": self.sel("inpatient_range_select"),
+            "from_id": self.sel("inpatient_date_from"),
+            "to_id": self.sel("inpatient_date_to"),
+            "date_from": date_from or date_to,
+            "date_to": date_to or date_from,
+        })
+        time.sleep(0.5)
         inputs = driver.find_elements(By.ID, self.sel("inpatient_search_input"))
-        if keyword and inputs:
-            inputs[0].clear(); inputs[0].send_keys(keyword)
-        buttons = driver.find_elements(By.ID, self.sel("inpatient_search_button"))
-        if buttons and (keyword or status_id):
+        buttons = driver.find_elements(By.ID, self.sel("inpatient_search_button")) \
+            if self.sel("inpatient_search_button") else []
+        if inputs:
+            inputs[0].clear()
+            if keyword:
+                inputs[0].send_keys(keyword)
+        if buttons:
             driver.execute_script("arguments[0].click();", buttons[0])
-        time.sleep(1.0)
+        elif inputs:
+            inputs[0].send_keys(Keys.ENTER)
+        time.sleep(1.5)
 
     def _go_to_inpatient_record(self, name: str):
-        """Mở hồ sơ nội trú của người bệnh: tìm theo tên trong danh sách nội trú, bấm
-        link trên đúng dòng của bảng tblNoiTru."""
-        self._open_inpatient_list(name)
+        """Mở hồ sơ nội trú của người bệnh: tìm theo tên trong danh sách nội trú (cùng
+        khoảng ngày vừa quét, nếu có), bấm link trên đúng dòng của bảng tblNoiTru."""
+        date_from, date_to = self._inpatient_range
+        self._open_inpatient_list(name, date_from, date_to)
         lit = _xpath_literal(name.upper())
         table = _xpath_literal(self.sel("inpatient_table"))
         row_link = (f"//table[contains(@id, {table})]//tr"
@@ -495,16 +574,24 @@ class EmrPortal:
             return self._harvest(self.list_clinic_patients(), self.read_phieu_pdf,
                                  ref_year, limit, progress)
 
-    def list_inpatient_discharges(self) -> list[dict[str, Any]]:
-        """Mở Danh sách Điều trị nội trú (trạng thái đã ra viện) và đọc bảng theo TÊN
-        CỘT như danh sách khám. Trả về list {ho_ten, nam_sinh, gioi_tinh, tuoi, ma_bn,
-        trang_thai, ngay_ra, raw}."""
+    def list_inpatient_discharges(self, day: Any = None,
+                                  lookback_days: int = DISCHARGE_LOOKBACK_DAYS) -> list[dict[str, Any]]:
+        """Người bệnh RA VIỆN trong ngày ``day`` (mặc định hôm nay; nhận dd/mm/yyyy hoặc
+        yyyy-mm-dd). Mở Danh sách Điều trị nội trú trạng thái "Hoàn tất" với khoảng ngày
+        lùi ``lookback_days`` ngày (khoảng ngày của EMR có thể tính theo ngày vào viện, nên
+        mở rộng để không sót ca nằm lâu), rồi chỉ giữ dòng có Ngày ra viện đúng ngày đó.
+        Bảng không có cột ngày ra thì giữ hết. Trả về list {ho_ten, nam_sinh, gioi_tinh,
+        tuoi, ma_bn, trang_thai, ngay_ra, raw}; ngày đó không có ai ra viện thì list rỗng."""
         from .clinic_list import INPATIENT_TOKENS, parse_clinic_patients
 
+        target = parse_day(day)
+        date_to = target.strftime("%d/%m/%Y")
+        date_from = (target - timedelta(days=int(lookback_days))).strftime("%d/%m/%Y")
         with self._lock:
             if self._is_login_page():
                 raise EmrError("Phiên EMR chưa đăng nhập hoặc đã hết hạn. Hãy đăng nhập lại.")
-            self._open_inpatient_list()
+            self._inpatient_range = (date_from, date_to)
+            self._open_inpatient_list("", date_from, date_to)
             try:
                 patients = parse_clinic_patients(self._driver().page_source or "",
                                                  INPATIENT_TOKENS)
@@ -513,17 +600,21 @@ class EmrPortal:
             if not patients:
                 self.dump_page("danh-sach-noi-tru")
                 raise EmrError(
-                    "Không đọc được bảng Danh sách Điều trị nội trú (không thấy cột quen thuộc). "
-                    "Đã chụp trang — gửi em bản chụp để khớp lại."
+                    "Không đọc được bảng Danh sách Điều trị nội trú (không thấy cột quen thuộc "
+                    "hoặc EMR không có ca nào trong khoảng ngày). Đã chụp trang — gửi em bản chụp "
+                    "để khớp lại."
                 )
-            return patients
+            if not any(p.get("ngay_ra") for p in patients):
+                return patients
+            return [p for p in patients if _same_day(p.get("ngay_ra"), target)]
 
     def harvest_discharges(self, ref_year: int | None = None, limit: int | None = None,
-                           progress=None) -> dict[str, Any]:
-        """Quét danh sách người bệnh đã ra viện → lọc còn tuổi lao động → với mỗi ca in
-        Giấy ra viện (PDF) và đọc; ca nào đọc được thì gom lại để nhập cổng (mẫu 03)."""
+                           progress=None, day: Any = None) -> dict[str, Any]:
+        """Quét người bệnh ra viện trong ngày ``day`` (mặc định hôm nay) → lọc còn tuổi
+        lao động → với mỗi ca in Giấy ra viện (PDF) và đọc; ca nào đọc được thì gom lại
+        để nhập cổng (mẫu 03)."""
         with self._lock:
-            return self._harvest(self.list_inpatient_discharges(), self.read_giay_ra_vien_pdf,
+            return self._harvest(self.list_inpatient_discharges(day), self.read_giay_ra_vien_pdf,
                                  ref_year, limit, progress)
 
     def _harvest(self, patients: list[dict[str, Any]], reader, ref_year, limit,
