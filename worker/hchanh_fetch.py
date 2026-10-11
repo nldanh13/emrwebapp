@@ -26,6 +26,7 @@ from urllib.parse import urljoin, urlparse, urlencode, parse_qsl, urlunparse
 
 # ── Deps ──────────────────────────────────────────────────────────────────────
 from utils import load_config, normalize_date
+from emr_access_budget import EmrAccessProtectionError
 
 try:
     from utils import login_emr
@@ -517,6 +518,8 @@ def _init_session(config: Dict[str, Any]) -> Optional["EmrHttpSession"]:
         sess.login()
         print("LOG [hchanh-session] Đã đăng nhập EMR bằng HTTP.")
         return sess
+    except EmrAccessProtectionError:
+        raise  # Không thử Selenium khi EMR yêu cầu giảm tải.
     except Exception as e:
         print(f"WARN [hchanh-session] HTTP login thất bại: {type(e).__name__}. Thử đăng nhập bằng Chrome...")
 
