@@ -468,6 +468,29 @@ def api_emr_read_phieu_pdf():
         return jsonify({"error": f"Lỗi khi đọc phiếu từ EMR: {exc}"}), 500
 
 
+@app.post("/api/emr/list-clinic")
+def api_emr_list_clinic():
+    """Chỉ QUÉT và trả về danh sách khám đã đọc được (tên/năm sinh/giới tính/tuổi)
+    kèm cờ còn tuổi lao động — KHÔNG đọc phiếu, KHÔNG nhập gì. Dùng để đối chiếu
+    với màn hình EMR xem quét có đúng không trước khi chạy thật."""
+    from datetime import datetime as _dt
+    from bhyt.working_age import flag_working_age
+
+    try:
+        patients = emr.list_clinic_patients()
+    except EmrError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Lỗi khi quét danh sách khám: {exc}"}), 500
+
+    items = flag_working_age(patients, _dt.now().year)
+    return jsonify({
+        "scanned": len(items),
+        "working_age": sum(1 for x in items if x["working_age"]),
+        "patients": items,
+    })
+
+
 @app.post("/api/emr/harvest-sick-leave")
 def api_emr_harvest_sick_leave():
     """Cuối ngày: quét Danh sách Khám bệnh trên EMR → lọc ca còn tuổi lao động →

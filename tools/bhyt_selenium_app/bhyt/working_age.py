@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from typing import Any
 
 
 def _norm(text: str) -> str:
@@ -64,3 +65,25 @@ def is_likely_working_age_by_age(tuoi, gioi_tinh, ref_year: int) -> bool:
         return True
     retire = labor_retirement_age_years(ref_year, _is_female(gioi_tinh))
     return 14 <= age <= retire
+
+
+def flag_working_age(patients: list[dict[str, Any]], ref_year: int) -> list[dict[str, Any]]:
+    """Gắn cờ `working_age` cho từng ca đã quét (dùng cho bước "xem thử": chỉ đọc,
+    không nhập). Có cột "tuổi" thì lọc theo tuổi (chính xác hơn), không thì lọc
+    theo năm sinh. Trả về list mới {ho_ten, nam_sinh, gioi_tinh, tuoi, ma_bn,
+    working_age}."""
+    out: list[dict[str, Any]] = []
+    for p in patients:
+        if str(p.get("tuoi") or "").strip():
+            wa = is_likely_working_age_by_age(p.get("tuoi"), p.get("gioi_tinh"), ref_year)
+        else:
+            wa = is_likely_working_age(p.get("nam_sinh"), p.get("gioi_tinh"), ref_year)
+        out.append({
+            "ho_ten": p.get("ho_ten", ""),
+            "nam_sinh": p.get("nam_sinh", ""),
+            "gioi_tinh": p.get("gioi_tinh", ""),
+            "tuoi": p.get("tuoi", ""),
+            "ma_bn": p.get("ma_bn", ""),
+            "working_age": wa,
+        })
+    return out

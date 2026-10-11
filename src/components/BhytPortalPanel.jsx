@@ -116,6 +116,8 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
   const [importingFromWebapp, setImportingFromWebapp] = useState(false);
   const [phieuBusy, setPhieuBusy] = useState(false);
   const [harvesting, setHarvesting] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [clinicPreview, setClinicPreview] = useState(null); // {scanned, working_age, patients}
 
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -471,6 +473,23 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
     }
   }, [loadAll, toast]);
 
+  // Xem thử: chỉ QUÉT danh sách khám và lọc tuổi lao động, KHÔNG đọc phiếu, KHÔNG nhập.
+  // Dùng để đối chiếu với màn hình EMR xem công cụ quét có đúng chưa.
+  const previewClinicList = useCallback(async () => {
+    setPreviewing(true);
+    try {
+      const d = await bhytFetch('/api/emr/list-clinic', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      });
+      setClinicPreview(d);
+      toast?.(`Quét được ${d.scanned} ca khám · ${d.working_age} ca còn tuổi lao động. Đối chiếu danh sách bên dưới với màn hình EMR.`, 'ok');
+    } catch (e) {
+      toast?.(String(e?.message || 'Không quét được danh sách khám.'), 'error');
+    } finally {
+      setPreviewing(false);
+    }
+  }, [toast]);
+
   const handleImportFiles = useCallback(async (fileList) => {
     if (!fileList || !fileList.length) return;
     setImporting(true);
@@ -758,9 +777,66 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
           Các ca có phiếu được gom vào danh sách bên dưới; sau đó bấm <b>"Tự động nhập lên cổng"</b> ở bước 3.
           <br />Cần <b>đăng nhập EMR</b> trước (thẻ "Đăng nhập EMR nội bộ" bên dưới).
         </div>
-        <Btn variant="primary" onClick={harvestSickLeave} disabled={harvesting} style={{ padding: '7px 14px', fontSize: FS.xs }}>
-          {harvesting ? <><Spinner size={10} /> Đang quét danh sách...</> : 'Quét & gom ca nghỉ ốm từ EMR'}
-        </Btn>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <Btn variant="primary" onClick={harvestSickLeave} disabled={harvesting || previewing} style={{ padding: '7px 14px', fontSize: FS.xs }}>
+            {harvesting ? <><Spinner size={10} /> Đang quét danh sách...</> : 'Quét & gom ca nghỉ ốm từ EMR'}
+          </Btn>
+          <Btn variant="secondary" onClick={previewClinicList} disabled={harvesting || previewing} style={{ padding: '7px 14px', fontSize: FS.xs }}>
+            {previewing ? <><Spinner size={10} /> Đang xem thử...</> : 'Xem thử danh sách quét'}
+          </Btn>
+        </div>
+        <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 6 }}>
+          Chưa chắc công cụ quét đúng? Bấm <b>"Xem thử danh sách quét"</b> để xem danh sách ca khám đọc được
+          (chỉ đọc, không nhập gì) rồi đối chiếu với màn hình EMR.
+        </div>
+
+        {clinicPreview && (
+          <div style={{
+            marginTop: 10, border: `1px solid ${C.border}`, borderRadius: 6,
+            background: C.surface, padding: '8px 10px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>
+                Quét được {clinicPreview.scanned} ca · {clinicPreview.working_age} ca còn tuổi lao động
+              </span>
+              <Btn variant="default" onClick={() => setClinicPreview(null)} style={{ padding: '2px 8px', fontSize: FS.xs }}>
+                Ẩn
+              </Btn>
+            </div>
+            {clinicPreview.scanned === 0 ? (
+              <div style={{ fontSize: FS.xs, color: C.text3 }}>
+                Không đọc được ca khám nào. Kiểm tra đã mở đúng màn hình "Danh sách Khám bệnh" trên EMR chưa.
+              </div>
+            ) : (
+              <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.xs }}>
+                  <thead>
+                    <tr style={{ textAlign: 'left', color: C.text3 }}>
+                      <th style={{ padding: '2px 6px' }}>Họ tên</th>
+                      <th style={{ padding: '2px 6px' }}>Năm sinh</th>
+                      <th style={{ padding: '2px 6px' }}>Giới tính</th>
+                      <th style={{ padding: '2px 6px' }}>Tuổi LĐ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(clinicPreview.patients || []).map((p, i) => (
+                      <tr key={p.ma_bn || i} style={{ borderTop: `1px solid ${C.border}` }}>
+                        <td style={{ padding: '2px 6px', color: C.text }}>{p.ho_ten}</td>
+                        <td style={{ padding: '2px 6px', color: C.text2 }}>{p.nam_sinh || '—'}</td>
+                        <td style={{ padding: '2px 6px', color: C.text2 }}>{p.gioi_tinh || '—'}</td>
+                        <td style={{ padding: '2px 6px' }}>
+                          {p.working_age
+                            ? <span style={{ color: C.green }}>Có</span>
+                            : <span style={{ color: C.text3 }}>Không</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <StepCard

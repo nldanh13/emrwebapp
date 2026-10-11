@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from bhyt.working_age import (
+    flag_working_age,
     is_likely_working_age,
     is_likely_working_age_by_age,
     labor_retirement_age_years,
@@ -40,6 +41,28 @@ class WorkingAgeTests(unittest.TestCase):
     def test_by_age_missing_not_excluded(self):
         self.assertTrue(is_likely_working_age_by_age("", "Nam", 2026))
         self.assertTrue(is_likely_working_age_by_age(0, "Nữ", 2026))
+
+
+class FlagWorkingAgeTests(unittest.TestCase):
+    def test_flags_each_patient_and_keeps_fields(self):
+        patients = [
+            {"ho_ten": "A", "nam_sinh": "1990", "gioi_tinh": "Nam", "tuoi": "36", "ma_bn": "BN1"},
+            {"ho_ten": "B", "nam_sinh": "2015", "gioi_tinh": "Nữ", "tuoi": "11", "ma_bn": "BN2"},
+        ]
+        out = flag_working_age(patients, 2026)
+        self.assertEqual(len(out), 2)
+        self.assertTrue(out[0]["working_age"])   # 36 tuổi → còn lao động
+        self.assertFalse(out[1]["working_age"])  # 11 tuổi → trẻ em, loại
+        # Giữ nguyên các field hiển thị để đối chiếu với EMR.
+        self.assertEqual(out[0]["ho_ten"], "A")
+        self.assertEqual(out[0]["ma_bn"], "BN1")
+        self.assertEqual(out[1]["nam_sinh"], "2015")
+
+    def test_falls_back_to_birth_year_without_age_column(self):
+        # Không có cột tuổi → lọc theo năm sinh.
+        out = flag_working_age([{"ho_ten": "C", "nam_sinh": "1950", "gioi_tinh": "Nam"}], 2026)
+        self.assertFalse(out[0]["working_age"])  # 76 tuổi
+        self.assertEqual(out[0]["tuoi"], "")
 
 
 if __name__ == "__main__":
