@@ -92,8 +92,7 @@ function bounded(fn, label) {
   return Promise.race([
     fn(),
     new Promise((_, reject) => {
-      const timer = setTimeout(() => reject(new Error('Timed out: ' + label)), 5000);
-      timer.unref?.();
+      setTimeout(() => reject(new Error('Timed out: ' + label)), 5000);
     }),
   ]);
 }
