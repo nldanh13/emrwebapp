@@ -97,3 +97,19 @@ Chọn ngày ra viện (mặc định hôm nay): danh sách nội trú lọc tr�
 
 Chỗ chưa xác nhận trên máy bệnh viện (chỉnh trong `config.json` → `emr.selectors`):
 `grv_report_link` (chữ trên link phiếu in) hoặc `grv_report_id` (mã phiếu cho `OnReportPdf`).
+
+### Bù từ "Thông tin bệnh nhân, chi phí" (`EmrPortal.read_patient_info`)
+
+Luồng theo bản ghi của người dùng: Quản lý Bệnh nhân → Chuyển đối tượng bệnh nhân sang bảo hiểm →
+D/s Bệnh nhân → tìm mã BN (`txtTimKiem`, `btnTimKiem`) → nút trên dòng trong
+`divBenhNhanDanhSachContent` → "Thông tin bệnh nhân, chi phí". Chỉ đọc, không bấm Lưu.
+
+| Ô EMR | Key nội bộ |
+| --- | --- |
+| `cbbDanToc` | `dan_toc` |
+| `cbbLoaiGiayTo` | `loai_giay_to` (chỉ dùng khi có số CCCD; không thì giữ "Không có giấy tờ") |
+| `txtSoCMND` | `so_cccd` |
+| `txtNgayCap` | `ngaycap_cccd` |
+| `cbbGioiTinh` | `gioi_tinh` |
+
+Giấy ra viện là nguồn chính; các ô này chỉ bù chỗ giấy ra viện để trống.

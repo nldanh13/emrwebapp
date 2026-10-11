@@ -57,6 +57,21 @@ DEFAULT_EMR_SELECTORS = {
     "inpatient_date_to": "dtDenNgay",
     "grv_report_link": "Giấy ra viện",
     "grv_report_id": "",
+    # Thông tin bệnh nhân (dân tộc, giấy tờ, CCCD, giới tính) theo bản ghi uiv người dùng gửi:
+    # Quản lý Bệnh nhân → Chuyển đối tượng bệnh nhân sang bảo hiểm → D/s Bệnh nhân → tìm
+    # → nút trên dòng → "Thông tin bệnh nhân, chi phí". CHỈ ĐỌC, không bấm Lưu.
+    "patient_menu": "Quản lý Bệnh nhân",
+    "patient_submenu": "Chuyển đối tượng bệnh nhân sang bảo hiểm",
+    "patient_list_link": "D/s Bệnh nhân",
+    "patient_list_search": "txtTimKiem",
+    "patient_list_button": "btnTimKiem",
+    "patient_list_content": "divBenhNhanDanhSachContent",
+    "patient_info_link": "Thông tin bệnh nhân, chi phí",
+    "info_dan_toc": "cbbDanToc",
+    "info_loai_giay_to": "cbbLoaiGiayTo",
+    "info_so_cccd": "txtSoCMND",
+    "info_ngay_cap": "txtNgayCap",
+    "info_gioi_tinh": "cbbGioiTinh",
     # Các ô trong form giấy nghỉ (để ĐỌC giá trị)
     "so_ngay_nghi": "txtSoNgayNghi",
     "don_vi_lam_viec": "txtDonViLamViec",
@@ -121,6 +136,34 @@ def _same_day(text: Any, target: date) -> bool:
         return date(int(m.group(3)), int(m.group(2)), int(m.group(1))) == target
     except ValueError:
         return False
+
+
+def _is_placeholder(text: str) -> bool:
+    """'-- Chọn --', 'Chọn dân tộc'… là ô chưa chọn, không phải giá trị."""
+    import unicodedata
+    t = unicodedata.normalize("NFD", text)
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn").lower().strip(" -")
+    return t.startswith("chon") or t in {"", "--"}
+
+
+# Đọc giá trị các ô theo id: <select> lấy chữ của lựa chọn (hoặc ô select2), <input> lấy value.
+_READ_FIELDS_JS = r"""
+const ids = arguments[0], out = {};
+for (const [key, id] of Object.entries(ids)) {
+  const el = document.getElementById(id);
+  let v = '';
+  if (el && el.tagName === 'SELECT') {
+    const opt = el.options[el.selectedIndex];
+    v = opt ? (opt.text || '') : '';
+    const c = document.getElementById('select2-' + id + '-container');
+    if (!v && c) v = c.getAttribute('title') || c.textContent || '';
+  } else if (el) {
+    v = el.value || '';
+  }
+  out[key] = String(v).trim();
+}
+return out;
+"""
 
 
 # Chọn trạng thái + đặt "Khoảng" ngày trên danh sách nội trú. Port gọn từ
@@ -459,12 +502,87 @@ class EmrPortal:
                          "Đã chụp trang — gửi em bản chụp để khớp lại.",
         )
 
+    # ── Thông tin bệnh nhân, chi phí (bù dân tộc / CCCD / giới tính cho giấy ra viện) ──
+    def _type_search(self, keyword: str):
+        search = self._wait_el(By.ID, self.sel("patient_list_search"))
+        search.clear(); search.send_keys(keyword)
+        self._click(By.ID, self.sel("patient_list_button"), "nút Tìm kiếm")
+        time.sleep(1.0)
+
+    def read_patient_info(self, keyword: str) -> dict[str, Any]:
+        """Đọc các ô trên "Thông tin bệnh nhân, chi phí" của một người bệnh (tìm theo mã
+        BN hoặc tên). Trả về {fields: {dan_toc, loai_giay_to, so_cccd, ngaycap_cccd,
+        gioi_tinh}, raw}. Chỉ đọc, không sửa/lưu gì trên EMR."""
+        with self._lock:
+            if self._is_login_page():
+                raise EmrError("Phiên EMR chưa đăng nhập hoặc đã hết hạn. Hãy đăng nhập lại.")
+            key = (keyword or "").strip()
+            if not key:
+                raise EmrError("Thiếu mã BN hoặc tên người bệnh để tìm trong EMR.")
+            driver = self._driver()
+            self._click(By.LINK_TEXT, self.sel("patient_menu"), "Quản lý Bệnh nhân")
+            self._click(By.LINK_TEXT, self.sel("patient_submenu"), "Chuyển đối tượng bệnh nhân sang bảo hiểm")
+            self._click(By.LINK_TEXT, self.sel("patient_list_link"), "D/s Bệnh nhân")
+            self._type_search(key)
+
+            content = _xpath_literal(self.sel("patient_list_content"))
+            lit = _xpath_literal(key.upper())
+            row_button = (f"//*[@id={content}]//table/tbody/tr"
+                          f"[contains(translate(normalize-space(.), 'abcdefghijklmnopqrstuvwxyz', "
+                          f"'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), {lit})]//button")
+            self._click(By.XPATH, row_button, f"nút trên dòng người bệnh {key}")
+            time.sleep(0.5)
+            self._click(By.LINK_TEXT, self.sel("patient_info_link"), "Thông tin bệnh nhân, chi phí")
+
+            ids = {
+                "dan_toc": self.sel("info_dan_toc"),
+                "loai_giay_to": self.sel("info_loai_giay_to"),
+                "so_cccd": self.sel("info_so_cccd"),
+                "ngaycap_cccd": self.sel("info_ngay_cap"),
+                "gioi_tinh": self.sel("info_gioi_tinh"),
+            }
+            try:
+                WebDriverWait(driver, self.timeout).until(
+                    lambda d: d.find_elements(By.ID, ids["so_cccd"])
+                )
+            except TimeoutException as exc:
+                self.dump_page("thong-tin-benh-nhan")
+                raise EmrError(
+                    'Đã bấm "Thông tin bệnh nhân, chi phí" nhưng không thấy ô CCCD. '
+                    "Đã chụp trang — gửi em bản chụp để khớp lại."
+                ) from exc
+            raw = driver.execute_script(_READ_FIELDS_JS, ids) or {}
+            fields = {}
+            for key_, value in raw.items():
+                text = str(value or "").strip()
+                if text and not _is_placeholder(text):
+                    fields[key_] = text
+            return {"fields": fields, "raw": raw}
+
+    def read_discharge_record(self, patient_name: str, ma_bn: str = "") -> dict[str, Any]:
+        """Giấy ra viện (PDF) + thông tin bệnh nhân. Giấy ra viện là nguồn chính; thông
+        tin bệnh nhân chỉ bù chỗ giấy không có (CCCD, ngày cấp, dân tộc…). Có CCCD thì
+        dùng luôn loại giấy tờ của EMR thay cho "Không có giấy tờ". Không đọc được thông
+        tin bệnh nhân thì vẫn trả giấy ra viện, kèm info_error để báo."""
+        result = self.read_giay_ra_vien_pdf(patient_name)
+        fields = dict(result.get("fields") or {})
+        try:
+            info = (self.read_patient_info(ma_bn or patient_name) or {}).get("fields") or {}
+        except Exception as exc:  # noqa: BLE001 - thiếu thông tin BN không làm mất giấy ra viện
+            return {**result, "fields": fields, "info_error": str(exc)}
+        for key, value in info.items():
+            if not fields.get(key):
+                fields[key] = value
+        if info.get("so_cccd") and info.get("loai_giay_to"):
+            fields["loai_giay_to"] = info["loai_giay_to"]
+        return {**result, "fields": fields}
+
     def read_sick_leave_pdf(self, patient_name: str, doc_type: str = "") -> dict[str, Any]:
         """Đọc đúng loại giấy theo loại hồ sơ: giấy ra viện (nội trú) hoặc phiếu phòng khám."""
         from .mapping import DOC_GRV
 
         if doc_type == DOC_GRV:
-            return self.read_giay_ra_vien_pdf(patient_name)
+            return self.read_discharge_record(patient_name)
         return self.read_phieu_pdf(patient_name)
 
     def _read_pdf(self, patient_name: str, navigate, click, parse, fail_name: str,
@@ -571,7 +689,8 @@ class EmrPortal:
         nghỉ (Xem phiếu); ca nào có phiếu hợp lệ thì gom lại để nhập lên cổng.
         Trả về {scanned, working_age, found: [{ho_ten, doc_type, fields, pdf_path}]}."""
         with self._lock:
-            return self._harvest(self.list_clinic_patients(), self.read_phieu_pdf,
+            return self._harvest(self.list_clinic_patients(),
+                                 lambda c: self.read_phieu_pdf(c["ho_ten"]),
                                  ref_year, limit, progress)
 
     def list_inpatient_discharges(self, day: Any = None,
@@ -614,7 +733,8 @@ class EmrPortal:
         lao động → với mỗi ca in Giấy ra viện (PDF) và đọc; ca nào đọc được thì gom lại
         để nhập cổng (mẫu 03)."""
         with self._lock:
-            return self._harvest(self.list_inpatient_discharges(day), self.read_giay_ra_vien_pdf,
+            return self._harvest(self.list_inpatient_discharges(day),
+                                 lambda c: self.read_discharge_record(c["ho_ten"], c.get("ma_bn", "")),
                                  ref_year, limit, progress)
 
     def _harvest(self, patients: list[dict[str, Any]], reader, ref_year, limit,
@@ -637,7 +757,7 @@ class EmrPortal:
             if callable(progress):
                 progress(i + 1, len(candidates), cand["ho_ten"])
             try:
-                res = reader(cand["ho_ten"])
+                res = reader(cand)
             except EmrError:
                 continue  # không có giấy / không mở được → coi như không cần nhập
             found.append({

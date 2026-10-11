@@ -177,12 +177,14 @@ class HarvestDischargesTests(unittest.TestCase):
                 calls.append(name)
                 return {"doc_type": "GRV03", "fields": {"ho_ten": name}, "pdf_path": "x"}
             p.read_giay_ra_vien_pdf = fake_read
+            p.read_patient_info = lambda keyword: {"fields": {"so_cccd": "086300000786"}}
             p.read_phieu_pdf = lambda name: self.fail("nội trú không đọc phiếu phòng khám")
             out = p.harvest_discharges(ref_year=2026, day="2026-10-05")
         self.assertEqual(out["scanned"], 2)
         self.assertEqual(out["working_age"], 1)  # bà Cúc 76 tuổi bị loại
         self.assertEqual(calls, ["NGUYỄN VĂN AN"])
         self.assertEqual(out["found"][0]["doc_type"], "GRV03")
+        self.assertEqual(out["found"][0]["fields"]["so_cccd"], "086300000786")  # bù từ thông tin BN
 
 
 class DischargeDayTests(unittest.TestCase):

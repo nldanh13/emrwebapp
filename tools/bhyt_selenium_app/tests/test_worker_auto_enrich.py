@@ -50,7 +50,7 @@ class FakeEmr:
         self.calls.append(name)
         return {"fields": self.by_name.get(name, {})}
 
-    def read_giay_ra_vien_pdf(self, name):
+    def read_discharge_record(self, name):
         self.calls.append(("grv", name))
         return {"fields": self.by_name.get(name, {})}
 

@@ -911,7 +911,7 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
         </div>
         <div style={{ fontSize: FS.xs, color: C.text2, lineHeight: 1.6, marginBottom: 10 }}>
           Với người bệnh <b>nội trú ra viện trong ngày đã chọn</b> (mặc định hôm nay): công cụ quét Danh sách Điều trị nội trú trên EMR, lọc người
-          <b> còn tuổi lao động</b>, rồi với mỗi ca tự in <b>Giấy ra viện</b> (PDF) và đọc. Các ca đọc được gom vào
+          <b> còn tuổi lao động</b>, rồi với mỗi ca tự in <b>Giấy ra viện</b> (PDF) và đọc, kèm <b>Thông tin bệnh nhân</b> (CCCD, ngày cấp, dân tộc). Các ca đọc được gom vào
           danh sách bên dưới (loại giấy ra viện, mẫu 03); sau đó bấm <b>"Tự động nhập lên cổng"</b> ở bước 3.
           <br />Cần <b>đăng nhập EMR</b> trước (thẻ "Đăng nhập EMR nội bộ" bên dưới).
         </div>
