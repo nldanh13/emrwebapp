@@ -10,7 +10,7 @@ const path = require('path');
 
 const { ROOT_DIR, WORKER_DIR, PY_TIMEOUT_MS } = require('../constants');
 const { PYTHON_BIN, runScript, terminateProcessTree } = require('./python_runner');
-const { redactLogLine, isDriverStackNoise, LOG_REDACT_SALT } = require('../utils/log_redact');
+const { isDriverStackNoise, LOG_REDACT_SALT } = require('../utils/log_redact');
 const { resolveDv2Path } = require('../utils/dv2_path');
 const emrBridge = require('./emr_bridge');
 
@@ -104,9 +104,9 @@ function safeLine(line) {
   // The read-only fetcher can print patient names and fragments of EMR HTML.
   // Existing URL / patient-code redaction is insufficient for free-form names.
   // Only preserve a technical exception *type*, never the original message.
-  const match = String(line || '').match(/\\b([A-Za-z_][\\w.]*(?:Error|Exception))\\b/);
+  const match = String(line || '').match(/\b([A-Za-z_][\w.]*(?:Error|Exception))\b/);
   if (match) return '[Chrome Worker] ' + match[1];
-  if (/\\b(WARN|WARNING)\\b/i.test(String(line))) return '[Chrome Worker] Cảnh báo (đã ẩn dữ liệu)';
+  if (/\b(WARN|WARNING)\b/i.test(String(line))) return '[Chrome Worker] Cảnh báo (đã ẩn dữ liệu)';
   return '[Chrome Worker] Nhật ký đã ẩn dữ liệu';
 }
 
