@@ -28,7 +28,15 @@ _HEADER_ALIASES = {
     "trang thai": "trang_thai",
     "noi thuc hien": "noi_thuc_hien",
     "xu tri": "xu_tri",
+    "ngay ra vien": "ngay_ra",
+    "ngay ra": "ngay_ra",
+    "khoa": "khoa",
 }
+
+# Cột đặc trưng để nhận ra đúng bảng.
+CLINIC_TOKENS = ("ma bn", "ho ten", "trang thai", "noi thuc hien")
+# Danh sách Điều trị nội trú (bảng tblNoiTru): có Mã BN, Họ tên, Trạng thái, Ngày vào/ra viện.
+INPATIENT_TOKENS = ("ma bn", "ho ten", "trang thai", "ngay vao", "ngay ra")
 
 
 def _header_key(text: str) -> str:
@@ -43,9 +51,11 @@ def _year_from(value: str) -> str:
     return m.group(1) if m else ""
 
 
-def parse_clinic_patients(html_text: str) -> list[dict[str, Any]]:
-    """Trả về list {ho_ten, nam_sinh, gioi_tinh, tuoi, ma_bn, raw}. Rỗng nếu không
-    tìm được bảng danh sách khám."""
+def parse_clinic_patients(html_text: str,
+                          tokens: tuple[str, ...] = CLINIC_TOKENS) -> list[dict[str, Any]]:
+    """Trả về list {ho_ten, nam_sinh, gioi_tinh, tuoi, ma_bn, trang_thai, ngay_ra, raw}.
+    Rỗng nếu không tìm được bảng. ``tokens`` là các cột đặc trưng để chọn đúng bảng
+    (mặc định bảng Danh sách Khám bệnh; INPATIENT_TOKENS cho danh sách nội trú)."""
     try:
         from bs4 import BeautifulSoup
     except ImportError as exc:  # pragma: no cover - phụ thuộc môi trường
@@ -58,8 +68,7 @@ def parse_clinic_patients(html_text: str) -> list[dict[str, Any]]:
     for table in soup.find_all("table"):
         headers = [th.get_text(" ", strip=True) for th in table.find_all("th")]
         header_norm = " | ".join(_norm(h) for h in headers)
-        score = sum(1 for token in ("ma bn", "ho ten", "trang thai", "noi thuc hien")
-                    if token in header_norm)
+        score = sum(1 for token in tokens if token in header_norm)
         if score > best_score:
             best, best_score = (table, headers), score
     if not best:
@@ -89,6 +98,8 @@ def parse_clinic_patients(html_text: str) -> list[dict[str, Any]]:
             "gioi_tinh": (row.get("gioi_tinh") or "").strip(),
             "tuoi": (row.get("tuoi") or "").strip(),
             "ma_bn": (row.get("ma_bn") or "").strip(),
+            "trang_thai": (row.get("trang_thai") or "").strip(),
+            "ngay_ra": (row.get("ngay_ra") or "").strip(),
             "raw": texts,
         })
     return out

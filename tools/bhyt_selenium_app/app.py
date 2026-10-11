@@ -13,7 +13,8 @@ from werkzeug.utils import secure_filename
 from bhyt.emr import EmrError, EmrPortal
 from bhyt.emrwebapp_client import WebAppError, fetch_records_from_webapp
 from bhyt.mapping import DEFAULT_DOCTORS, load_records
-from bhyt.pdf_phieu import PhieuPdfError, parse_phieu_pdf
+from bhyt.pdf_giay_ra_vien import parse_sick_leave_pdf
+from bhyt.pdf_phieu import PhieuPdfError
 from bhyt.portal import BhytPortal, PortalError, Worker
 from bhyt.store import Store
 
@@ -63,6 +64,7 @@ emr = EmrPortal(
     selectors=_emr_cfg.get("selectors") or {},
     debug_dir=RUNTIME / "debug",
     download_dir=RUNTIME / "emr_downloads",
+    doctors=config.get("allowed_doctors", DEFAULT_DOCTORS),
 )
 
 # Worker tự lấy dữ liệu phiếu từ EMR (emr) khi hồ sơ còn thiếu, rồi nhập lên cổng.
@@ -141,9 +143,9 @@ def api_import():
 
 @app.post("/api/phieu/parse-pdf")
 def api_phieu_parse_pdf():
-    """Đọc file PDF "Giấy chứng nhận nghỉ việc" (ngoại trú/phòng khám, mẫu 07) mà EMR
-    xuất ra khi bấm "Xem phiếu". Bản PDF này có đủ cả Số KCB, Số seri, CCCD nên dùng
-    làm nguồn điền lên cổng BHXH. Nếu có record_id thì bù các field vào hồ sơ."""
+    """Đọc file PDF EMR in ra: "Giấy chứng nhận nghỉ việc" (phòng khám, mẫu 07 — có đủ
+    Số KCB, Số seri, CCCD) hoặc "Giấy ra viện" (nội trú, mẫu 03). Tự nhận loại theo
+    tiêu đề. Nếu có record_id thì bù các field vào hồ sơ."""
     uploaded = request.files.get("file")
     if uploaded is None or not (uploaded.filename or "").strip():
         return jsonify({"error": "Chưa chọn file PDF phiếu"}), 400
@@ -155,7 +157,7 @@ def api_phieu_parse_pdf():
     path = UPLOADS / f"{stamp}_{name}"
     uploaded.save(path)
     try:
-        result = parse_phieu_pdf(path)
+        result = parse_sick_leave_pdf(path, config.get("allowed_doctors", DEFAULT_DOCTORS))
     except PhieuPdfError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:  # noqa: BLE001
@@ -173,7 +175,7 @@ def api_phieu_parse_pdf():
             return jsonify({"error": "Không tìm thấy hồ sơ để cập nhật"}), 404
     return jsonify({
         "doc_type": result["doc_type"],
-        "mau_so": result.get("mau_so", "07"),
+        "mau_so": result.get("mau_so", ""),
         "fields": result["fields"],
         "merged": mergeable,
         "updated": updated,
@@ -438,21 +440,24 @@ def api_emr_read_cert():
 
 @app.post("/api/emr/read-phieu-pdf")
 def api_emr_read_phieu_pdf():
-    """Tự bấm "Xem phiếu" trên EMR cho một người bệnh, tải file PDF về và đọc.
-    Nếu có record_id thì bù các field (đủ cả Số KCB, Số seri, CCCD) vào hồ sơ."""
+    """Tự lấy giấy PDF trên EMR cho một người bệnh rồi đọc: phiếu phòng khám (bấm
+    "Xem phiếu") hoặc giấy ra viện (doc_type GRV03, hoặc hồ sơ đang chọn là giấy ra
+    viện). Nếu có record_id thì bù các field vào hồ sơ."""
     payload = request.get_json(force=True) or {}
     patient_name = str(payload.get("patient_name", "")).strip()
     record_id = payload.get("record_id")
-    if not patient_name and record_id is not None:
+    doc_type = str(payload.get("doc_type", "")).strip()
+    if record_id is not None:
         try:
-            rec = store.get_record(int(record_id))
-            patient_name = (rec or {}).get("patient_name", "")
+            rec = store.get_record(int(record_id)) or {}
         except (KeyError, ValueError):
-            patient_name = ""
+            rec = {}
+        patient_name = patient_name or rec.get("patient_name", "")
+        doc_type = doc_type or rec.get("doc_type", "")
     if not patient_name:
         return jsonify({"error": "Thiếu tên người bệnh (chọn 1 hồ sơ hoặc gõ tên)."}), 400
     try:
-        result = emr.read_phieu_pdf(patient_name)
+        result = emr.read_sick_leave_pdf(patient_name, doc_type)
         mergeable = {k: v for k, v in result.get("fields", {}).items() if k in _UPDATE_FIELDS}
         updated = False
         if record_id is not None and mergeable:
@@ -491,28 +496,17 @@ def api_emr_list_clinic():
     })
 
 
-@app.post("/api/emr/harvest-sick-leave")
-def api_emr_harvest_sick_leave():
-    """Cuối ngày: quét Danh sách Khám bệnh trên EMR → lọc ca còn tuổi lao động →
-    ca nào có phiếu nghỉ (Xem phiếu) thì gom lại và nạp vào danh sách hồ sơ để
-    nhập lên cổng. Người dùng không phải bấm vào từng người."""
-    from bhyt.mapping import Record, validate_fields
-
-    payload = request.get_json(silent=True) or {}
-    try:
-        out = emr.harvest_sick_leave(ref_year=payload.get("ref_year"), limit=payload.get("limit"))
-    except EmrError as exc:
-        return jsonify({"error": str(exc)}), 400
-    except Exception as exc:  # noqa: BLE001
-        return jsonify({"error": f"Lỗi khi quét danh sách khám: {exc}"}), 500
+def _import_harvest(out: dict, sheet: str):
+    """Nạp các ca gom được (có giấy đọc được) vào danh sách hồ sơ để nhập lên cổng."""
+    from bhyt.mapping import DOC_BHXH, Record, validate_fields
 
     records = []
     for item in out.get("found", []):
         fields = item.get("fields") or {}
         if not fields:
             continue
-        rec = Record(doc_type=item.get("doc_type") or "BHXH07", source_file="EMR-phieu",
-                     source_sheet="danh-sach-kham", source_row=0, fields=fields, raw={})
+        rec = Record(doc_type=item.get("doc_type") or DOC_BHXH, source_file="EMR-phieu",
+                     source_sheet=sheet, source_row=0, fields=fields, raw={})
         rec.issues = validate_fields(rec.doc_type, fields)
         records.append(rec)
     imported = store.import_records(records) if records else {"added": 0, "updated": 0}
@@ -523,6 +517,57 @@ def api_emr_harvest_sick_leave():
         **imported,
         "summary": store.summary(),
     })
+
+
+@app.post("/api/emr/harvest-sick-leave")
+def api_emr_harvest_sick_leave():
+    """Cuối ngày: quét Danh sách Khám bệnh trên EMR → lọc ca còn tuổi lao động →
+    ca nào có phiếu nghỉ (Xem phiếu) thì gom lại và nạp vào danh sách hồ sơ để
+    nhập lên cổng. Người dùng không phải bấm vào từng người."""
+    payload = request.get_json(silent=True) or {}
+    try:
+        out = emr.harvest_sick_leave(ref_year=payload.get("ref_year"), limit=payload.get("limit"))
+    except EmrError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Lỗi khi quét danh sách khám: {exc}"}), 500
+    return _import_harvest(out, "danh-sach-kham")
+
+
+@app.post("/api/emr/list-inpatient")
+def api_emr_list_inpatient():
+    """Chỉ QUÉT danh sách người bệnh đã ra viện (Danh sách Điều trị nội trú) kèm cờ
+    còn tuổi lao động — KHÔNG in giấy ra viện, KHÔNG nhập gì. Để đối chiếu với EMR."""
+    from datetime import datetime as _dt
+    from bhyt.working_age import flag_working_age
+
+    try:
+        patients = emr.list_inpatient_discharges()
+    except EmrError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Lỗi khi quét danh sách ra viện: {exc}"}), 500
+
+    items = flag_working_age(patients, _dt.now().year)
+    return jsonify({
+        "scanned": len(items),
+        "working_age": sum(1 for x in items if x["working_age"]),
+        "patients": items,
+    })
+
+
+@app.post("/api/emr/harvest-discharges")
+def api_emr_harvest_discharges():
+    """Quét danh sách người bệnh đã ra viện → lọc còn tuổi lao động → in Giấy ra viện
+    từng ca và đọc → nạp vào danh sách hồ sơ (mẫu 03) để nhập lên cổng BHXH."""
+    payload = request.get_json(silent=True) or {}
+    try:
+        out = emr.harvest_discharges(ref_year=payload.get("ref_year"), limit=payload.get("limit"))
+    except EmrError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Lỗi khi quét danh sách ra viện: {exc}"}), 500
+    return _import_harvest(out, "danh-sach-ra-vien")
 
 
 @app.post("/api/emr/close")

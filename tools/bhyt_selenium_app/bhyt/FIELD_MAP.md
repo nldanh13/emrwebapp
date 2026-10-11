@@ -67,3 +67,30 @@ gửi rà soát, chỉ cần sửa `COLUMN_KEY_MAP` ở `worker/parse_bhxh_sick_
 
 - **Bỏ qua ca đang bị flag "cần sửa"** — `review_has_issue()` đọc `so_loi_ra_soat` / `ra_soat_ghi_chu_bo_sung` / `ghi_chu_bo_sung`, y hệt `reviewHasIssue()` trong `src/components/SickLeaveTab.jsx`.
 - **Bỏ qua ca đã tick "Đã nộp"** — tra theo key trong `GET /api/sick-leave-state`, dựng lại đúng công thức key mà `SickLeaveTab.jsx` dùng (`_bhxh_state_key`/`_grv_state_key` ↔ `bhxhOutpatientList`/`bhxhInpatientList` trong file đó). Nếu sửa công thức key ở 1 bên, phải sửa bên kia theo.
+
+## Giấy ra viện đọc từ PDF EMR (`bhyt/pdf_giay_ra_vien.py`)
+
+Luồng nội trú, giống luồng phiếu phòng khám: mở Danh sách Điều trị nội trú → hồ sơ người bệnh →
+in "Giấy ra viện" (PDF) → `parse_grv_text` tách theo nhãn in trên giấy → điền mẫu 03.
+
+| Nhãn trên giấy ra viện | Key nội bộ | Ghi chú |
+| --- | --- | --- |
+| Khoa | `ma_khoa` | Ô chọn trên cổng, chọn theo tên khoa |
+| Mã y tế | `so_seri` | |
+| Số lưu trữ | `ma_ct` | |
+| Họ tên người bệnh | `ho_ten` | |
+| Ngày/tháng/năm sinh | `ngay_sinh` | |
+| Nam/Nữ (Giới tính) | `gioi_tinh` | |
+| Dân tộc, Nghề nghiệp, Địa chỉ | `dan_toc`, `nghe_nghiep`, `dia_chi` | |
+| Mã số BHXH/Thẻ BHYT số | `ma_the`, `ma_bhxh` | Chỉ có thẻ 15 ký tự thì mã BHXH = 10 số cuối |
+| Vào viện lúc / Ra viện lúc | `tu_ngay`, `den_ngay` | Dạng `dd/mm/yyyy HH:MM` như file Excel |
+| Chẩn đoán, Phương pháp điều trị, Ghi chú | `chan_doan`, `pp_dieutri`, `ghi_chu` | |
+| "… ngoại trú từ ngày … đến (hết) ngày …" | `ngoaitru_tungay`, `ngoaitru_denngay` | |
+| Họ tên cha / mẹ, Tuổi thai, Đình chỉ thai nghén | `ho_ten_cha`, `ho_ten_me`, `tuoi_thai`, `dc_thainghen` | |
+| Dòng "…, ngày .. tháng .. năm .." chỗ ký | `ngay_ct` | |
+| Tên dưới chữ "Trưởng khoa" | `doctor_text` | Chỉ nhận bác sĩ có trong `allowed_doctors` |
+
+Chỗ chưa xác nhận trên máy bệnh viện (chỉnh trong `config.json` → `emr.selectors`):
+`inpatient_search_input`, `inpatient_search_button`, `inpatient_status_select` (ô trạng thái
+"Hoàn tất"), `grv_report_link` (chữ trên link phiếu in) hoặc `grv_report_id` (mã phiếu cho
+`OnReportPdf`).

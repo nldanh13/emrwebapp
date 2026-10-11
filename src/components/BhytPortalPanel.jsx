@@ -76,6 +76,60 @@ function StepCard({ n, title, hint, children, actions }) {
   );
 }
 
+// Bảng "xem thử" kết quả quét danh sách trên EMR (chỉ đọc, không nhập gì) — dùng chung cho
+// danh sách khám và danh sách ra viện.
+function ScanPreview({ data, onHide, unit, emptyText, showDischarge = false }) {
+  if (!data) return null;
+  const cell = { padding: '2px 6px' };
+  return (
+    <div style={{
+      marginTop: 10, border: `1px solid ${C.border}`, borderRadius: 6,
+      background: C.surface, padding: '8px 10px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>
+          Quét được {data.scanned} {unit} · {data.working_age} ca còn tuổi lao động
+        </span>
+        <Btn variant="default" onClick={onHide} style={{ padding: '2px 8px', fontSize: FS.xs }}>
+          Ẩn
+        </Btn>
+      </div>
+      {data.scanned === 0 ? (
+        <div style={{ fontSize: FS.xs, color: C.text3 }}>{emptyText}</div>
+      ) : (
+        <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.xs }}>
+            <thead>
+              <tr style={{ textAlign: 'left', color: C.text3 }}>
+                <th style={cell}>Họ tên</th>
+                <th style={cell}>Năm sinh</th>
+                <th style={cell}>Giới tính</th>
+                {showDischarge && <th style={cell}>Ngày ra viện</th>}
+                <th style={cell}>Tuổi LĐ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data.patients || []).map((p, i) => (
+                <tr key={p.ma_bn || i} style={{ borderTop: `1px solid ${C.border}` }}>
+                  <td style={{ ...cell, color: C.text }}>{p.ho_ten}</td>
+                  <td style={{ ...cell, color: C.text2 }}>{p.nam_sinh || '—'}</td>
+                  <td style={{ ...cell, color: C.text2 }}>{p.gioi_tinh || '—'}</td>
+                  {showDischarge && <td style={{ ...cell, color: C.text2 }}>{p.ngay_ra || '—'}</td>}
+                  <td style={cell}>
+                    {p.working_age
+                      ? <span style={{ color: C.green }}>Có</span>
+                      : <span style={{ color: C.text3 }}>Không</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = false }) {
   const [available, setAvailable] = useState(null); // null=đang kiểm tra, true/false
   const [launching, setLaunching] = useState(false);
@@ -118,6 +172,9 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
   const [harvesting, setHarvesting] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [clinicPreview, setClinicPreview] = useState(null); // {scanned, working_age, patients}
+  const [harvestingGrv, setHarvestingGrv] = useState(false);
+  const [previewingGrv, setPreviewingGrv] = useState(false);
+  const [grvPreview, setGrvPreview] = useState(null); // danh sách ra viện đã quét (xem thử)
 
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -429,29 +486,32 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
     }
   }, [firstSelected, loadAll, toast]);
 
-  // Tự bấm "Xem phiếu" trên EMR cho người bệnh đang chọn, tải PDF về và đọc (có đủ KCB/seri/CCCD).
-  const emrReadPhieuPdf = useCallback(async () => {
+  // Tự lấy giấy PDF trên EMR cho người bệnh đang chọn rồi đọc: phiếu phòng khám (bấm "Xem phiếu",
+  // có đủ KCB/seri/CCCD) hoặc giấy ra viện (nội trú, mẫu 03).
+  const emrReadPdf = useCallback(async (docType) => {
+    const isGrv = docType === 'GRV03';
     const targetId = firstSelected ? firstSelected.id : undefined;
     const name = emrPatient.trim() || firstSelected?.patient_name || '';
     if (!name) {
       toast?.('Hãy chọn 1 hồ sơ ở danh sách hoặc gõ tên người bệnh.', 'error');
       return;
     }
-    setEmrBusy('phieu');
+    setEmrBusy(isGrv ? 'grv' : 'phieu');
+    const what = isGrv ? 'giấy ra viện' : 'phiếu';
     try {
       const d = await bhytFetch('/api/emr/read-phieu-pdf', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ patient_name: name, record_id: targetId }),
+        body: JSON.stringify({ patient_name: name, record_id: targetId, doc_type: docType }),
       });
       const n = Object.keys(d.fields || {}).length;
       if (d.updated) {
-        toast?.(`Đã tải phiếu PDF từ EMR và đọc ${n} trường (có cả Số KCB, Số seri, CCCD), bù vào hồ sơ.`, 'ok');
+        toast?.(`Đã tải ${what} PDF từ EMR và đọc ${n} trường, bù vào hồ sơ.`, 'ok');
         await loadAll();
       } else {
-        toast?.(`Đã đọc ${n} trường từ phiếu PDF. Chọn 1 hồ sơ ở danh sách để bù vào hồ sơ.`, 'ok');
+        toast?.(`Đã đọc ${n} trường từ ${what} PDF. Chọn 1 hồ sơ ở danh sách để bù vào hồ sơ.`, 'ok');
       }
     } catch (e) {
-      toast?.(String(e?.message || 'Không tự đọc được phiếu từ EMR.'), 'error');
+      toast?.(String(e?.message || `Không tự đọc được ${what} từ EMR.`), 'error');
     } finally {
       setEmrBusy('');
     }
@@ -487,6 +547,38 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
       toast?.(String(e?.message || 'Không quét được danh sách khám.'), 'error');
     } finally {
       setPreviewing(false);
+    }
+  }, [toast]);
+
+  // Nội trú: quét danh sách người bệnh đã ra viện, lọc tuổi lao động, in giấy ra viện từng ca
+  // và đọc, gom vào danh sách hồ sơ (mẫu 03).
+  const harvestDischarges = useCallback(async () => {
+    setHarvestingGrv(true);
+    try {
+      const d = await bhytFetch('/api/emr/harvest-discharges', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      });
+      toast?.(`Quét ${d.scanned} ca ra viện · ${d.working_age} ca tuổi lao động · đọc được ${d.found} giấy ra viện (thêm ${d.added}, cập nhật ${d.updated}).`, 'ok');
+      await loadAll();
+    } catch (e) {
+      toast?.(String(e?.message || 'Không quét được danh sách ra viện.'), 'error');
+    } finally {
+      setHarvestingGrv(false);
+    }
+  }, [loadAll, toast]);
+
+  const previewDischargeList = useCallback(async () => {
+    setPreviewingGrv(true);
+    try {
+      const d = await bhytFetch('/api/emr/list-inpatient', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      });
+      setGrvPreview(d);
+      toast?.(`Quét được ${d.scanned} ca ra viện · ${d.working_age} ca còn tuổi lao động. Đối chiếu danh sách bên dưới với màn hình EMR.`, 'ok');
+    } catch (e) {
+      toast?.(String(e?.message || 'Không quét được danh sách ra viện.'), 'error');
+    } finally {
+      setPreviewingGrv(false);
     }
   }, [toast]);
 
@@ -790,53 +882,46 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
           (chỉ đọc, không nhập gì) rồi đối chiếu với màn hình EMR.
         </div>
 
-        {clinicPreview && (
-          <div style={{
-            marginTop: 10, border: `1px solid ${C.border}`, borderRadius: 6,
-            background: C.surface, padding: '8px 10px',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: FS.xs, fontWeight: 700, color: C.text }}>
-                Quét được {clinicPreview.scanned} ca · {clinicPreview.working_age} ca còn tuổi lao động
-              </span>
-              <Btn variant="default" onClick={() => setClinicPreview(null)} style={{ padding: '2px 8px', fontSize: FS.xs }}>
-                Ẩn
-              </Btn>
-            </div>
-            {clinicPreview.scanned === 0 ? (
-              <div style={{ fontSize: FS.xs, color: C.text3 }}>
-                Không đọc được ca khám nào. Kiểm tra đã mở đúng màn hình "Danh sách Khám bệnh" trên EMR chưa.
-              </div>
-            ) : (
-              <div style={{ maxHeight: 220, overflowY: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.xs }}>
-                  <thead>
-                    <tr style={{ textAlign: 'left', color: C.text3 }}>
-                      <th style={{ padding: '2px 6px' }}>Họ tên</th>
-                      <th style={{ padding: '2px 6px' }}>Năm sinh</th>
-                      <th style={{ padding: '2px 6px' }}>Giới tính</th>
-                      <th style={{ padding: '2px 6px' }}>Tuổi LĐ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(clinicPreview.patients || []).map((p, i) => (
-                      <tr key={p.ma_bn || i} style={{ borderTop: `1px solid ${C.border}` }}>
-                        <td style={{ padding: '2px 6px', color: C.text }}>{p.ho_ten}</td>
-                        <td style={{ padding: '2px 6px', color: C.text2 }}>{p.nam_sinh || '—'}</td>
-                        <td style={{ padding: '2px 6px', color: C.text2 }}>{p.gioi_tinh || '—'}</td>
-                        <td style={{ padding: '2px 6px' }}>
-                          {p.working_age
-                            ? <span style={{ color: C.green }}>Có</span>
-                            : <span style={{ color: C.text3 }}>Không</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
+        <ScanPreview
+          data={clinicPreview}
+          onHide={() => setClinicPreview(null)}
+          unit="ca khám"
+          emptyText='Không đọc được ca khám nào. Kiểm tra đã mở đúng màn hình "Danh sách Khám bệnh" trên EMR chưa.'
+        />
+      </div>
+
+      <div style={{
+        border: `1px solid ${C.blue}`, borderRadius: 8, padding: '12px 14px', background: C.blueBg || C.surface2, marginBottom: 12,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Quét người bệnh ra viện (giấy ra viện)</div>
+          <Badge text="Mới" bg={C.blueBg || C.surface2} color={C.blue} size={FS.xs} />
+        </div>
+        <div style={{ fontSize: FS.xs, color: C.text2, lineHeight: 1.6, marginBottom: 10 }}>
+          Với người bệnh <b>nội trú đã ra viện</b>: công cụ quét Danh sách Điều trị nội trú trên EMR, lọc người
+          <b> còn tuổi lao động</b>, rồi với mỗi ca tự in <b>Giấy ra viện</b> (PDF) và đọc. Các ca đọc được gom vào
+          danh sách bên dưới (loại giấy ra viện, mẫu 03); sau đó bấm <b>"Tự động nhập lên cổng"</b> ở bước 3.
+          <br />Cần <b>đăng nhập EMR</b> trước (thẻ "Đăng nhập EMR nội bộ" bên dưới).
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <Btn variant="primary" onClick={harvestDischarges} disabled={harvestingGrv || previewingGrv} style={{ padding: '7px 14px', fontSize: FS.xs }}>
+            {harvestingGrv ? <><Spinner size={10} /> Đang quét danh sách ra viện...</> : 'Quét & gom giấy ra viện từ EMR'}
+          </Btn>
+          <Btn variant="secondary" onClick={previewDischargeList} disabled={harvestingGrv || previewingGrv} style={{ padding: '7px 14px', fontSize: FS.xs }}>
+            {previewingGrv ? <><Spinner size={10} /> Đang xem thử...</> : 'Xem thử danh sách ra viện'}
+          </Btn>
+        </div>
+        <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 6 }}>
+          Lần đầu dùng, bấm <b>"Xem thử danh sách ra viện"</b> (chỉ đọc, không nhập gì) để đối chiếu với màn hình EMR.
+          Nếu báo không đọc được, công cụ đã chụp lại trang EMR — gửi bản chụp cho kỹ thuật để khớp.
+        </div>
+        <ScanPreview
+          data={grvPreview}
+          onHide={() => setGrvPreview(null)}
+          unit="ca ra viện"
+          showDischarge
+          emptyText='Không đọc được ca ra viện nào. Kiểm tra danh sách "Điều trị nội trú" trên EMR có người bệnh đã ra viện không.'
+        />
       </div>
 
       <StepCard
@@ -856,7 +941,7 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
           <span style={{ fontSize: FS.xs, color: C.text3 }}>
-            Hoặc nhập <b>phiếu phòng khám (PDF)</b> từ EMR (nút "Xem phiếu") — có đủ Số KCB, Số seri, CCCD. Chọn 1 hồ sơ trước để bù vào hồ sơ đó:
+            Hoặc nhập file PDF từ EMR: <b>phiếu phòng khám</b> (nút "Xem phiếu") hoặc <b>giấy ra viện</b> — công cụ tự nhận loại. Chọn 1 hồ sơ trước để bù vào hồ sơ đó:
           </span>
           <input ref={phieuInputRef} type="file" accept=".pdf" disabled={phieuBusy}
             onChange={e => handleImportPhieuPdf(e.target.files)} style={{ fontSize: FS.xs }} />
@@ -1008,8 +1093,11 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
                 autoComplete="off" placeholder={firstSelected?.patient_name || 'Gõ tên người bệnh'} />
             </Field>
           </div>
-          <Btn variant="default" onClick={emrReadPhieuPdf} disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
+          <Btn variant="default" onClick={() => emrReadPdf('BHXH07')} disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
             {emrBusy === 'phieu' ? <><Spinner size={10} /> Đang lấy phiếu...</> : 'Tự đọc phiếu phòng khám (PDF)'}
+          </Btn>
+          <Btn variant="default" onClick={() => emrReadPdf('GRV03')} disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
+            {emrBusy === 'grv' ? <><Spinner size={10} /> Đang lấy giấy ra viện...</> : 'Tự đọc giấy ra viện (PDF)'}
           </Btn>
           <Btn variant="default" onClick={emrOpenCert} disabled={!!emrBusy} style={{ padding: '6px 10px', fontSize: FS.xs }}>
             {emrBusy === 'open' ? <><Spinner size={10} /> Đang mở...</> : 'Mở form giấy nghỉ'}
@@ -1023,6 +1111,7 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
         </div>
         <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 8, lineHeight: 1.5 }}>
           "Tự đọc phiếu phòng khám (PDF)" tự bấm <b>Xem phiếu</b> trên EMR, tải PDF về và đọc (đủ Số KCB, Số seri, CCCD).
+          "Tự đọc giấy ra viện (PDF)" mở hồ sơ nội trú, in <b>Giấy ra viện</b> và đọc.
           Nếu nav sai hoặc không đọc được, bấm <b>Chụp form cho kỹ thuật</b> và gửi file để khớp lại.
         </div>
         {emrTargetName && (
