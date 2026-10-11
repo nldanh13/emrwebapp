@@ -15,9 +15,11 @@ const ROWS = [
   { khambenhid: 'e', ma_bn: '5', ho_ten: 'NGUOI XONG', nam_sinh: '1970', stage: 'xong', case: 'cho_ve', services: [], has_bhyt: true },
 ];
 let SICK = [];
+let HAS_URL = true;
 vi.mock('../api.js', () => ({
   getClinicMonitorState: vi.fn(async () => ({ status: 'ok', monitor: { running: true, status: 'running', rows: ROWS, auto_tasks: false } })),
   getClinicSickLeave: vi.fn(async () => ({ status: 'ok', entries: SICK })),
+  getClinicEmrDefaults: vi.fn(async () => ({ status: 'ok', has_login_url: HAS_URL })),
   addClinicSickLeave: vi.fn(async (patient) => {
     SICK = [...SICK, { ...patient, key: patient.khambenhid, ngay: new Date().toISOString().slice(0, 10) }];
     return { status: 'ok', entries: SICK };
@@ -72,5 +74,22 @@ describe('Phòng khám: 3 khung', () => {
     window.removeEventListener('emr:open-tab', opened);
     expect(opened.mock.calls[0][0].detail).toEqual({ tab: 'sick-leave', view: 'ngoaitru' });
     expect(sessionStorage.getItem('emr:sick-leave-view')).toBe('ngoaitru');
+  });
+
+  it('không hỏi URL khi máy chủ đã khai địa chỉ EMR; chưa khai thì chỉ hỏi địa chỉ đăng nhập', async () => {
+    const labels = () => [...host.querySelectorAll('label')].map(l => l.textContent);
+    await act(async () => { root.render(createElement(ClinicTab, { toast: () => {} })); });
+    await flush();
+    await act(async () => { button('Thiết lập').click(); });
+    expect(labels().some(t => /URL|Địa chỉ đăng nhập/.test(t))).toBe(false);
+
+    act(() => root.unmount());
+    root = createRoot(host);
+    HAS_URL = false;
+    await act(async () => { root.render(createElement(ClinicTab, { toast: () => {} })); });
+    await flush();
+    await act(async () => { button('Thiết lập').click(); });
+    expect(labels().filter(t => /URL|Địa chỉ đăng nhập/.test(t))).toEqual(['Địa chỉ đăng nhập EMR']);
+    HAS_URL = true;
   });
 });

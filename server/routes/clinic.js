@@ -17,7 +17,7 @@ const { getRuntimePaths } = require('../services/session');
 const { watchScreen } = require('../services/screen_watch');
 const { enqueueHeavy, registerCancel, unregisterCancel } = require('../services/task_queue');
 const { runPython, runScript, fmtPyError } = require('../services/python_runner');
-const { WORKER_DIR } = require('../constants');
+const { WORKER_DIR, CONFIG_PATH } = require('../constants');
 const { appendActivity } = require('../services/activity_logger');
 const { writeJsonAtomic, readJsonSafe, safeUnlink, safeFilePart } = require('../utils/file');
 const { issueInputPrecheckToken, validateAndConsumeInputPrecheckToken } = require('../services/input_precheck_tokens');
@@ -90,6 +90,31 @@ function sanitizeClinicSchedule(raw = {}) {
   };
 }
 
+// Địa chỉ EMR: đã khai sẵn trong config/config.json (url_login, dùng chung với các màn bệnh phòng),
+// nên giao diện không phải hỏi. URL Danh sách Khám bệnh không cần: worker tự dựng từ trang sau đăng
+// nhập (wpid=khambenhdanhsachdraw, giữ mã phiên). Người dùng vẫn có thể gửi URL riêng để thay.
+const HTTP_URL_RE = /^https?:\/\//i;
+
+function emrUrlDefaults(cfg = readJsonSafe(CONFIG_PATH, {}) || {}) {
+  const loginUrl = String(cfg.clinic_login_url || cfg.url_login || '').trim();
+  const listUrl = String(cfg.clinic_list_url || process.env.EMR_CLINIC_LIST_URL || '').trim();
+  return { loginUrl: HTTP_URL_RE.test(loginUrl) ? loginUrl : '', listUrl: HTTP_URL_RE.test(listUrl) ? listUrl : '' };
+}
+
+function resolveEmrUrls(body = {}, defaults = emrUrlDefaults()) {
+  const loginUrl = String(body.loginUrl || '').trim().slice(0, 500) || defaults.loginUrl;
+  const listUrl = String(body.listUrl || '').trim().slice(0, 1000) || defaults.listUrl;
+  if (!loginUrl) throw new Error('Chưa biết địa chỉ đăng nhập EMR. Khai "url_login" trong config/config.json (như các màn bệnh phòng) rồi khởi động lại máy chủ, hoặc nhập ở Thiết lập.');
+  if (!HTTP_URL_RE.test(loginUrl)) throw new Error('Địa chỉ đăng nhập EMR không hợp lệ (phải bắt đầu bằng http:// hoặc https://).');
+  if (listUrl && !HTTP_URL_RE.test(listUrl)) throw new Error('URL Danh sách Khám bệnh không hợp lệ (phải bắt đầu bằng http:// hoặc https://).');
+  return { loginUrl, listUrl };
+}
+
+router.get('/clinic/emr-defaults', (req, res) => {
+  const d = emrUrlDefaults();
+  return res.json({ status: 'ok', has_login_url: Boolean(d.loginUrl) });
+});
+
 const CLINIC_PREVIEW_MODES = new Set(['today', 'missed', 'date_range']);
 
 function sanitizeClinicRequest(body = {}) {
@@ -97,8 +122,6 @@ function sanitizeClinicRequest(body = {}) {
   const mode = CLINIC_PREVIEW_MODES.has(rawMode) ? rawMode : 'missed';
   const username = String(body.username || '').trim();
   const password = String(body.password || '');
-  const loginUrl = String(body.loginUrl || '').trim();
-  const listUrl = String(body.listUrl || '').trim();
   const manualCodes = String(body.manualCodes || '').trim();
   // "date_range" = tìm mù ngoại trú theo khoảng ngày (giống cơ chế đã có cho nội trú);
   // để Python tự phân tích định dạng ngày (iso hoặc dd/mm/yyyy), ở đây chỉ chặn chuỗi rác.
@@ -113,8 +136,7 @@ function sanitizeClinicRequest(body = {}) {
 
   if (!username) throw new Error('Thiếu tài khoản phòng khám.');
   if (!password) throw new Error('Thiếu mật khẩu phòng khám.');
-  if (!loginUrl) throw new Error('Thiếu URL đăng nhập phòng khám.');
-  if (!listUrl) throw new Error('Thiếu URL Danh sách Khám bệnh.');
+  const { loginUrl, listUrl } = resolveEmrUrls(body);
   if (excel?.base64 && excel.base64.length > 8 * 1024 * 1024) throw new Error('File Excel quá lớn.');
   if (mode === 'date_range' && !dateFrom) throw new Error('Thiếu khoảng ngày để tìm (dateFrom).');
 
@@ -230,13 +252,10 @@ function monitorPaths(ctx) {
 function sanitizeMonitorRequest(body = {}) {
   const username = String(body.username || '').trim().slice(0, 120);
   const password = String(body.password || '');
-  const loginUrl = String(body.loginUrl || '').trim().slice(0, 500);
-  const listUrl = String(body.listUrl || '').trim().slice(0, 1000);
   const interval = Number.parseInt(body.intervalMinutes, 10);
   if (!username) throw new Error('Thiếu tài khoản EMR.');
   if (!password) throw new Error('Thiếu mật khẩu EMR.');
-  if (!/^https?:\/\//i.test(loginUrl)) throw new Error('URL đăng nhập EMR không hợp lệ.');
-  if (!/^https?:\/\//i.test(listUrl)) throw new Error('URL Danh sách Khám bệnh không hợp lệ.');
+  const { loginUrl, listUrl } = resolveEmrUrls(body);
   return {
     username, password, loginUrl, listUrl,
     intervalMinutes: Number.isFinite(interval) ? Math.min(Math.max(interval, 1), 60) : 3,
@@ -867,3 +886,5 @@ module.exports.withDoctorAccount = withDoctorAccount;
 module.exports.scheduledClinicDoctor = scheduledClinicDoctor;
 module.exports.sanitizeSickLeavePatient = sanitizeSickLeavePatient;
 module.exports.pruneSickLeave = pruneSickLeave;
+module.exports.resolveEmrUrls = resolveEmrUrls;
+module.exports.emrUrlDefaults = emrUrlDefaults;

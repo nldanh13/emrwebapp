@@ -110,7 +110,7 @@ export default function ClinicAdmissionCare({ creds, toast }) {
   };
 
   const setDienBien = (key, value) => setRows(prev => prev.map(r => (rowKey(r) === key ? { ...r, dien_bien: value } : r)));
-  const hasCreds = Boolean(hasClinicLogin(creds) && creds.loginUrl);
+  const hasCreds = Boolean(hasClinicLogin(creds) && creds.hasEmrUrl);
 
   return (
     <section style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -134,7 +134,7 @@ export default function ClinicAdmissionCare({ creds, toast }) {
           {`Nhập chăm sóc ${inputRows.length} người bệnh`}
         </Btn>
       </div>
-      {!hasCreds && <div style={{ fontSize: FS.sm, color: C.amber }}>Chọn bác sĩ (hoặc nhập tài khoản, mật khẩu) và URL đăng nhập ở phía trên trước.</div>}
+      {!hasCreds && <div style={{ fontSize: FS.sm, color: C.amber }}>Chọn bác sĩ (hoặc nhập tài khoản, mật khẩu) ở phía trên trước.</div>}
 
       {preview && (
         <div style={{ overflow: 'auto', border: `1px solid ${C.border2}`, borderRadius: 6 }}>

@@ -15,6 +15,7 @@ import ClinicBbhc from './ClinicBbhc.jsx';
 import { useOnTabReturn, useTabActive } from '../hooks/useTabActivity.js';
 import { revalidate, useServerData } from '../hooks/useServerData.js';
 import { useRealtimeConnected } from '../hooks/useRealtimeStatus.js';
+import { useEmrUrlDefault } from '../hooks/useEmrUrlDefault.js';
 import { SkeletonTable } from './Skeleton.jsx';
 import { loadClinicConfig as loadConfig, saveClinicConfig as saveConfig } from '../utils/clinicLogin.js';
 import { Panel, SickLeavePanel, TodoPanel, VisitPanel } from './clinic/ClinicPanels.jsx';
@@ -153,8 +154,8 @@ export default function ClinicTab({ toast }) {
   // Tên đăng nhập/URL dùng chung với Nghỉ ốm: quay lại tab thì lấy bản mới nhất (trừ khi đang theo dõi).
   useOnTabReturn(() => {
     if (running) return;
-    const { username, accountName, loginUrl, listUrl } = loadConfig();
-    setCfg(prev => ({ ...prev, username, accountName, loginUrl, listUrl }));
+    const { username, accountName, loginUrl } = loadConfig();
+    setCfg(prev => ({ ...prev, username, accountName, loginUrl }));
   });
   const tabActive = useTabActive();
   const realtimeConnected = useRealtimeConnected();
@@ -174,12 +175,16 @@ export default function ClinicTab({ toast }) {
   useOnTabReturn(loadSickLeave);
 
   const [showSettings, setShowSettings] = useState(false);
+  // Địa chỉ EMR đã khai ở máy chủ thì không hỏi; chưa khai mới hiện ô nhập địa chỉ đăng nhập.
+  const emrUrlDefault = useEmrUrlDefault();
+  const loginUrl = emrUrlDefault ? '' : String(cfg.loginUrl || '').trim();
+  const canStart = hasClinicLogin({ ...cfg, password }) && (emrUrlDefault || Boolean(loginUrl));
   const autoTasks = running && typeof monitor?.auto_tasks === 'boolean' ? monitor.auto_tasks : Boolean(cfg.autoTasks);
 
   const start = async () => {
     setBusy('start');
     try {
-      const r = await api.startClinicMonitor({ ...cfg, ...clinicLoginPayload({ ...cfg, password }), intervalMinutes: Number(cfg.intervalMinutes) || 3 });
+      const r = await api.startClinicMonitor({ ...cfg, ...clinicLoginPayload({ ...cfg, password }), loginUrl, intervalMinutes: Number(cfg.intervalMinutes) || 3 });
       if (r.status !== 'ok') throw new Error(r.message);
       toast?.(r.message, 'ok');
       await loadState();
@@ -348,7 +353,7 @@ export default function ClinicTab({ toast }) {
             </>
           ) : (
             <Btn variant="primary" icon={IconPlayerPlay} loading={busy === 'start'} onClick={start}
-              disabled={!hasClinicLogin({ ...cfg, password }) || !cfg.loginUrl || !cfg.listUrl}>Bắt đầu theo dõi</Btn>
+              disabled={!canStart}>Bắt đầu theo dõi</Btn>
           )}
           <span role="status" style={{ fontSize: FS.sm, color: statusTone, flex: '1 1 320px' }}>{statusText}</span>
         </div>
@@ -368,12 +373,11 @@ export default function ClinicTab({ toast }) {
                 </Field>
               </>
             )}
-            <Field label="URL đăng nhập">
-              <input value={cfg.loginUrl} onChange={setField('loginUrl')} disabled={running} style={inputStyle} />
-            </Field>
-            <Field label="URL Danh sách Khám bệnh">
-              <input value={cfg.listUrl} onChange={setField('listUrl')} disabled={running} style={inputStyle} />
-            </Field>
+            {emrUrlDefault === false && (
+              <Field label="Địa chỉ đăng nhập EMR">
+                <input value={cfg.loginUrl} onChange={setField('loginUrl')} disabled={running} placeholder="http://…/login.aspx" style={inputStyle} />
+              </Field>
+            )}
             <Field label="Đọc lại danh sách mỗi (phút)">
               <input type="number" min={1} max={60} value={cfg.intervalMinutes} onChange={setField('intervalMinutes')} disabled={running} style={inputStyle} />
             </Field>
@@ -398,7 +402,7 @@ export default function ClinicTab({ toast }) {
             <SickLeavePanel rows={allRows} entries={sickLeave} onEntries={setSickLeave} onOpenSickLeave={openSickLeave} toast={toast} />
           </div>
 
-          <ClinicAdmissionCare creds={{ ...cfg, password }} toast={toast} />
+          <ClinicAdmissionCare creds={{ ...cfg, password, loginUrl, hasEmrUrl: Boolean(emrUrlDefault || loginUrl) }} toast={toast} />
 
           <Panel title="Danh sách khám bệnh">
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
