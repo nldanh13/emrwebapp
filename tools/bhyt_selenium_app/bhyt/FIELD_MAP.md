@@ -100,8 +100,10 @@ in "Giấy ra viện" (PDF) → `parse_grv_text` tách theo nhãn in trên giấ
 - "Số CCCD/CMND/…: …. Ngày cấp: …" → `so_cccd`, `ngaycap_cccd`; có CCCD thì không đặt
   "Không có giấy tờ".
 - "Nghỉ ốm từ ngày … đến (hết) ngày …" trong Ghi chú → `nghi_tu_ngay`, `nghi_den_ngay`.
-- Giấy này **không in** Khoa, Mã y tế, Số lưu trữ và tên bác sĩ: `ma_khoa` và `doctor_text`
-  lấy từ cột "Khoa"/"Bác sĩ" của danh sách nội trú nếu có; chưa xác nhận trên máy bệnh viện.
+- Giấy này **không in** Khoa, Mã y tế, Số lưu trữ và tên bác sĩ. `ma_khoa` và `doctor_text`
+  lấy theo thứ tự: khoa/bác sĩ chọn trên giao diện khi quét (mặc định "Ngoại Chấn thương chỉnh
+  hình - Thần kinh (K24)" và BS Nguyễn Lê Hoan, lưu vào `config.json` → `grv_defaults`), rồi tới
+  cột "Khoa"/"Bác sĩ" của danh sách nội trú nếu có.
 
 Chọn ngày ra viện (mặc định hôm nay): danh sách nội trú lọc trạng thái "Hoàn tất"
 (`drpSelectTrangThai`), đặt "Khoảng" (`cbbLoai`, `dtTuNgay`/`dtDenNgay`) lùi 60 ngày tới ngày

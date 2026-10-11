@@ -121,5 +121,21 @@ class ReadDischargeRecordTests(unittest.TestCase):
         self.assertEqual(out["fields"]["doctor_text"], "Phạm Việt Tân")
 
 
+    def test_default_khoa_and_doctor(self):
+        # Mặc định khoa K24, bác sĩ Nguyễn Lê Hoan; người dùng đổi được khi quét.
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_emr(tmp, grv_defaults={
+                "ma_khoa": "Ngoại Chấn thương chỉnh hình - Thần kinh (K24)",
+                "doctor_text": "Nguyễn Lê Hoan"})
+            p.read_giay_ra_vien_pdf = lambda name: {"doc_type": "GRV03", "fields": {"ho_ten": name}}
+            p.read_patient_info = lambda keyword: {"fields": {}}
+            row = {"khoa": "Khoa khác", "bac_si": "Phạm Việt Tân"}
+            out = p.read_discharge_record("A", "BN01", row)
+            self.assertEqual(out["fields"]["ma_khoa"], "Ngoại Chấn thương chỉnh hình - Thần kinh (K24)")
+            self.assertEqual(out["fields"]["doctor_text"], "Nguyễn Lê Hoan")
+            changed = p.read_discharge_record("A", "BN01", row, defaults={"doctor_text": "Phạm Việt Tân"})
+        self.assertEqual(changed["fields"]["doctor_text"], "Phạm Việt Tân")
+        self.assertEqual(changed["fields"]["ma_khoa"], "Ngoại Chấn thương chỉnh hình - Thần kinh (K24)")
+
 if __name__ == "__main__":
     unittest.main()

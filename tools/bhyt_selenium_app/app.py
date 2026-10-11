@@ -12,7 +12,7 @@ from werkzeug.utils import secure_filename
 
 from bhyt.emr import EmrError, EmrPortal, parse_day
 from bhyt.emrwebapp_client import WebAppError, fetch_records_from_webapp
-from bhyt.mapping import DEFAULT_DOCTORS, load_records
+from bhyt.mapping import DEFAULT_DOCTORS, DEFAULT_GRV_DEFAULTS, load_records
 from bhyt.pdf_giay_ra_vien import parse_sick_leave_pdf
 from bhyt.pdf_phieu import PhieuPdfError
 from bhyt.portal import BhytPortal, PortalError, Worker
@@ -65,6 +65,7 @@ emr = EmrPortal(
     debug_dir=RUNTIME / "debug",
     download_dir=RUNTIME / "emr_downloads",
     doctors=config.get("allowed_doctors", DEFAULT_DOCTORS),
+    grv_defaults={**DEFAULT_GRV_DEFAULTS, **(config.get("grv_defaults") or {})},
 )
 
 # Worker tự lấy dữ liệu phiếu từ EMR (emr) khi hồ sơ còn thiếu, rồi nhập lên cổng.
@@ -559,6 +560,30 @@ def api_emr_list_inpatient():
     })
 
 
+def _clean_grv_defaults(payload: dict) -> dict[str, str]:
+    return {key: str(payload.get(key) or "").strip() for key in ("ma_khoa", "doctor_text")}
+
+
+@app.get("/api/emr/grv-defaults")
+def api_emr_grv_defaults():
+    """Khoa và bác sĩ mặc định cho giấy ra viện (giấy thật không in hai mục này)."""
+    return jsonify({**emr.grv_defaults, "doctors": config.get("allowed_doctors", DEFAULT_DOCTORS)})
+
+
+@app.post("/api/emr/grv-defaults")
+def api_emr_save_grv_defaults():
+    values = _clean_grv_defaults(request.get_json(silent=True) or {})
+    if not values["ma_khoa"] or not values["doctor_text"]:
+        return jsonify({"error": "Cần chọn cả khoa và bác sĩ cho giấy ra viện."}), 400
+    emr.grv_defaults = values
+    config["grv_defaults"] = values
+    try:
+        (ROOT / "config.json").write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Đã dùng khoa/bác sĩ mới cho lần quét này nhưng không lưu được vào config.json: {exc}"}), 500
+    return jsonify(values)
+
+
 @app.post("/api/emr/harvest-discharges")
 def api_emr_harvest_discharges():
     """Quét danh sách người bệnh đã ra viện → lọc còn tuổi lao động → in Giấy ra viện
@@ -566,7 +591,8 @@ def api_emr_harvest_discharges():
     payload = request.get_json(silent=True) or {}
     try:
         out = emr.harvest_discharges(ref_year=payload.get("ref_year"), limit=payload.get("limit"),
-                                     day=payload.get("date"))
+                                     day=payload.get("date"),
+                                     defaults=_clean_grv_defaults(payload))
     except EmrError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:  # noqa: BLE001

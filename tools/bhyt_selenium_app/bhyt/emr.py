@@ -209,7 +209,8 @@ class EmrPortal:
                  headless: bool = True, selectors: dict[str, str] | None = None,
                  debug_dir: str | Path | None = None,
                  download_dir: str | Path | None = None,
-                 doctors: list[str] | None = None):
+                 doctors: list[str] | None = None,
+                 grv_defaults: dict[str, str] | None = None):
         self.base_url = (base_url or "").rstrip("/")
         self.profile_dir = Path(profile_dir).resolve()
         self.timeout = timeout
@@ -222,6 +223,8 @@ class EmrPortal:
         )
         self._inpatient_range: tuple[str, str] = ("", "")  # khoảng ngày lần quét ra viện gần nhất
         self.doctors = list(doctors) if doctors else None  # để nhận tên trưởng khoa trên giấy ra viện
+        # Khoa và bác sĩ mặc định cho giấy ra viện (giấy thật không in hai mục này).
+        self.grv_defaults = dict(grv_defaults or {})
         self.driver: webdriver.Chrome | None = None
         self._lock = threading.RLock()
 
@@ -560,14 +563,20 @@ class EmrPortal:
             return {"fields": fields, "raw": raw}
 
     def read_discharge_record(self, patient_name: str, ma_bn: str = "",
-                              row: dict[str, Any] | None = None) -> dict[str, Any]:
+                              row: dict[str, Any] | None = None,
+                              defaults: dict[str, str] | None = None) -> dict[str, Any]:
         """Giấy ra viện (PDF) + thông tin bệnh nhân. Giấy ra viện là nguồn chính; thông
         tin bệnh nhân chỉ bù chỗ giấy không có (CCCD, ngày cấp, dân tộc…). Có CCCD thì
         dùng luôn loại giấy tờ của EMR thay cho "Không có giấy tờ". Không đọc được thông
         tin bệnh nhân thì vẫn trả giấy ra viện, kèm info_error để báo."""
         result = self.read_giay_ra_vien_pdf(patient_name)
         fields = dict(result.get("fields") or {})
-        # Giấy ra viện không in khoa và tên bác sĩ: lấy từ dòng danh sách nội trú nếu có cột.
+        # Giấy ra viện không in khoa và tên bác sĩ: dùng giá trị người dùng chọn khi quét
+        # (mặc định trong config), rồi mới tới cột của danh sách nội trú nếu có.
+        chosen = {**self.grv_defaults, **{k: v for k, v in (defaults or {}).items() if v}}
+        for key in ("ma_khoa", "doctor_text"):
+            if chosen.get(key) and not fields.get(key):
+                fields[key] = chosen[key]
         row = row or {}
         if row.get("khoa") and not fields.get("ma_khoa"):
             fields["ma_khoa"] = row["khoa"]
@@ -735,13 +744,15 @@ class EmrPortal:
             return [p for p in patients if _same_day(p.get("ngay_ra"), target)]
 
     def harvest_discharges(self, ref_year: int | None = None, limit: int | None = None,
-                           progress=None, day: Any = None) -> dict[str, Any]:
+                           progress=None, day: Any = None,
+                           defaults: dict[str, str] | None = None) -> dict[str, Any]:
         """Quét người bệnh ra viện trong ngày ``day`` (mặc định hôm nay) → lọc còn tuổi
         lao động → với mỗi ca in Giấy ra viện (PDF) và đọc; ca nào đọc được thì gom lại
         để nhập cổng (mẫu 03)."""
         with self._lock:
             return self._harvest(self.list_inpatient_discharges(day),
-                                 lambda c: self.read_discharge_record(c["ho_ten"], c.get("ma_bn", ""), c),
+                                 lambda c: self.read_discharge_record(c["ho_ten"], c.get("ma_bn", ""), c,
+                                                                     defaults),
                                  ref_year, limit, progress)
 
     def _harvest(self, patients: list[dict[str, Any]], reader, ref_year, limit,

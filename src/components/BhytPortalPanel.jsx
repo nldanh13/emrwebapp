@@ -187,6 +187,11 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
   const [previewingGrv, setPreviewingGrv] = useState(false);
   const [grvPreview, setGrvPreview] = useState(null); // danh sách ra viện đã quét (xem thử)
   const [grvDate, setGrvDate] = useState(todayIso); // ngày ra viện cần kiểm tra, mặc định hôm nay
+  // Giấy ra viện không in khoa và bác sĩ: mặc định K24 / BS Nguyễn Lê Hoan, đổi được và tự lưu.
+  const [grvKhoa, setGrvKhoa] = useState('');
+  const [grvDoctor, setGrvDoctor] = useState('');
+  const [grvDoctors, setGrvDoctors] = useState([]);
+  const [grvDefaultsSaved, setGrvDefaultsSaved] = useState(true);
 
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -268,6 +273,31 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
     handleOpenPortal();
   }, [autoOpenPortal, handleOpenPortal]);
 
+  const loadGrvDefaults = useCallback(async () => {
+    try {
+      const d = await bhytFetch('/api/emr/grv-defaults');
+      setGrvKhoa(d.ma_khoa || '');
+      setGrvDoctor(d.doctor_text || '');
+      setGrvDoctors(Array.isArray(d.doctors) ? d.doctors : []);
+      setGrvDefaultsSaved(true);
+    } catch {
+      // Máy chủ công cụ bản cũ: vẫn quét được, máy chủ dùng khoa/bác sĩ mặc định của nó.
+    }
+  }, []);
+
+  const saveGrvDefaults = useCallback(async (khoa, doctor) => {
+    if (!khoa.trim() || !doctor.trim()) return;
+    try {
+      await bhytFetch('/api/emr/grv-defaults', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ma_khoa: khoa, doctor_text: doctor }),
+      });
+      setGrvDefaultsSaved(true);
+    } catch (e) {
+      toast?.(String(e?.message || 'Không lưu được khoa/bác sĩ mặc định. Lần quét này vẫn dùng giá trị đang chọn.'), 'error');
+    }
+  }, [toast]);
+
   const loadLogs = useCallback(async () => {
     try {
       const d = await bhytFetch('/api/logs');
@@ -284,6 +314,7 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
       loadAll();
       checkBrowser();
       checkEmr();
+      loadGrvDefaults();
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -568,7 +599,7 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
     setHarvestingGrv(true);
     try {
       const d = await bhytFetch('/api/emr/harvest-discharges', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: grvDate }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: grvDate, ma_khoa: grvKhoa, doctor_text: grvDoctor }),
       });
       toast?.(`Ngày ${isoToVi(grvDate)}: ${d.scanned} ca ra viện · ${d.working_age} ca tuổi lao động · đọc được ${d.found} giấy ra viện (thêm ${d.added}, cập nhật ${d.updated}).`, 'ok');
       await loadAll();
@@ -577,7 +608,7 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
     } finally {
       setHarvestingGrv(false);
     }
-  }, [grvDate, loadAll, toast]);
+  }, [grvDate, grvKhoa, grvDoctor, loadAll, toast]);
 
   const previewDischargeList = useCallback(async () => {
     setPreviewingGrv(true);
@@ -936,8 +967,30 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
             {previewingGrv ? <><Spinner size={10} /> Đang xem thử...</> : 'Xem thử danh sách ra viện'}
           </Btn>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: FS.xs, color: C.text2 }}>
+            Khoa
+            <input value={grvKhoa} placeholder="Ngoại Chấn thương chỉnh hình - Thần kinh (K24)"
+              onChange={e => { setGrvKhoa(e.target.value); setGrvDefaultsSaved(false); }}
+              onBlur={() => { if (!grvDefaultsSaved) saveGrvDefaults(grvKhoa, grvDoctor); }}
+              disabled={harvestingGrv}
+              style={{ ...INPUT_STYLE, width: 320, maxWidth: '100%', padding: '5px 6px', fontSize: FS.xs }} />
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: FS.xs, color: C.text2 }}>
+            Bác sĩ
+            <select value={grvDoctor} disabled={harvestingGrv}
+              onChange={e => { setGrvDoctor(e.target.value); saveGrvDefaults(grvKhoa, e.target.value); }}
+              style={{ ...INPUT_STYLE, width: 'auto', padding: '5px 6px', fontSize: FS.xs }}>
+              {[...new Set([grvDoctor, ...grvDoctors].filter(Boolean))].map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+          {!grvDefaultsSaved && <span style={{ fontSize: FS.xs, color: C.text3 }}>Chưa lưu</span>}
+        </div>
         <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 6 }}>
-          Lần đầu dùng, bấm <b>"Xem thử danh sách ra viện"</b> (chỉ đọc, không nhập gì) để đối chiếu với màn hình EMR.
+          Giấy ra viện không in khoa và tên bác sĩ, nên mọi ca gom được dùng khoa và bác sĩ chọn ở trên.
+          <br />Lần đầu dùng, bấm <b>"Xem thử danh sách ra viện"</b> (chỉ đọc, không nhập gì) để đối chiếu với màn hình EMR.
           Nếu báo không đọc được, công cụ đã chụp lại trang EMR — gửi bản chụp cho kỹ thuật để khớp.
         </div>
         <ScanPreview
