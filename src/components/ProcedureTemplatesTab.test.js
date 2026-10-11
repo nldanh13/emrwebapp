@@ -16,6 +16,10 @@ const TEMPLATES = [
 vi.mock('../api.js', () => ({
   getProcedureTemplates: vi.fn(async () => ({ status: 'ok', templates: TEMPLATES })),
   saveProcedureTemplates: vi.fn(async (templates) => ({ status: 'ok', templates })),
+  getClinicMonitorState: vi.fn(async () => ({ status: 'ok', monitor: { missing_templates: [
+    { kind: 'thu_thuat', name: 'Khâu vết thương phần mềm', count: 2, ho_ten: 'NGUOI A', at: '2026-10-11T08:00:00' },
+    { kind: 'thu_thuat', name: 'Thay băng vết mổ', count: 1, ho_ten: 'NGUOI B', at: '2026-10-11T07:00:00' },
+  ] } })),
 }));
 const api = await import('../api.js');
 const { default: ProcedureTemplatesTab } = await import('./ProcedureTemplatesTab.jsx');
@@ -66,6 +70,19 @@ describe('Mẫu thủ thuật – PT', () => {
     await flush();
     expect(api.saveProcedureTemplates).toHaveBeenCalledTimes(1);
     expect(api.saveProcedureTemplates.mock.calls[0][0]).toHaveLength(3);
+  });
+
+  it('DVKT Phòng khám bỏ qua vì chưa có mẫu: liệt kê, bấm Tạo mẫu thì thêm mẫu theo tên DVKT và tự lưu', async () => {
+    await open();
+    expect(host.textContent).toContain('Khâu vết thương phần mềm');
+    expect(host.textContent).not.toContain('Thay băng vết mổ');
+    const create = [...host.querySelectorAll('button')].find(b => b.textContent.includes('Tạo mẫu'));
+    await act(async () => { create.click(); });
+    await act(async () => { vi.advanceTimersByTime(900); });
+    await flush();
+    const saved = api.saveProcedureTemplates.mock.calls.at(-1)[0];
+    expect(saved).toHaveLength(3);
+    expect(saved[2]).toMatchObject({ kind: 'thu_thuat', name: 'Khâu vết thương phần mềm', keywords: ['Khâu vết thương phần mềm'] });
   });
 
   it('báo từ khoá trùng giữa hai mẫu cùng loại (không phân biệt dấu)', () => {

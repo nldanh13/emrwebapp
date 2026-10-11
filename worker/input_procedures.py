@@ -66,6 +66,10 @@ class ProcedureAlreadyCompleted(RuntimeError):
     """Dòng thủ thuật đã có trạng thái Hoàn tất trên D/s Thủ thuật."""
 
 
+class NoProcedureRowChosen(RuntimeError):
+    """before_open bỏ qua mọi dòng thủ thuật chưa hoàn tất (vd. chưa có mẫu cho DVKT)."""
+
+
 def _log(msg: str) -> None:
     print(msg, flush=True)
 
@@ -837,7 +841,7 @@ def _open_procedure_row(
     clinic_mode: bool = False,
     allow_completed_update: bool = False,
     return_meta: bool = False,
-    before_open: Optional[Callable[[str], None]] = None,
+    before_open: Optional[Callable[[str, List[str]], Any]] = None,
 ):
     rows = _find_matching_rows(driver, ma_bn, wanted_date, service_name, clinic_mode=clinic_mode)
     for _ in range(4):
@@ -882,6 +886,17 @@ def _open_procedure_row(
 
     row_is_completed = not bool(pending_rows)
     row = pending_rows[0] if pending_rows else rows[0]
+    if before_open is not None:
+        # vd. chọn mẫu theo tên DVKT: trả False = bỏ qua dòng này, xét dòng chưa hoàn tất kế tiếp.
+        chosen = None
+        for candidate in (pending_rows or rows[:1]):
+            cells = [(td.text or "").strip() for td in candidate.find_elements(By.TAG_NAME, "td")]
+            if before_open(candidate.text or "", cells) is not False:
+                chosen = candidate
+                break
+        if chosen is None:
+            raise NoProcedureRowChosen("Đã bỏ qua mọi dòng thủ thuật chưa hoàn tất")
+        row = chosen
     tds = row.find_elements(By.TAG_NAME, "td")
     row_text = row.text or ""
     start_dt = None
@@ -908,8 +923,6 @@ def _open_procedure_row(
         raise RuntimeError("Tìm thấy dòng thủ thuật nhưng không có link để mở")
 
     status_text = _row_status_text(row)
-    if before_open is not None:
-        before_open(row_text)  # vd. chọn mẫu theo tên DVKT; báo lỗi thì không mở dòng
     _log(
         f"[OPEN] Mở thủ thuật BN {ma_bn} | {service_name or 'DVKT thay băng/cắt chỉ'} "
         f"| trạng thái: {status_text or 'không rõ'} | giờ dự kiến: {_fmt_hhmm_dmy(start_dt)}"

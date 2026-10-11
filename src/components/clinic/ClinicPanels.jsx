@@ -52,10 +52,11 @@ function Empty({ children }) {
   return <div style={{ fontSize: FS.sm, color: C.text2, padding: '8px 0' }}>{children}</div>;
 }
 
-export function VisitPanel({ rows, running, busy, actionRunning, onComplete, renderCompletion, dayText = 'hôm nay' }) {
+export function VisitPanel({ rows, running, busy, actionRunning, onComplete, onEndOfDay, renderCompletion, dayText = 'hôm nay' }) {
   const counts = useMemo(() => stageCounts(rows), [rows]);
   const groups = useMemo(() => completionGroups(rows), [rows]);
   const waitingList = [...groups.noDrug, ...groups.pending];
+  const openCount = counts.dang;
   return (
     <Panel title={`Lượt khám ${dayText}`}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -72,11 +73,17 @@ export function VisitPanel({ rows, running, busy, actionRunning, onComplete, ren
         {groups.ready.length ? groups.ready.map(r => (
           <PatientLine key={r.khambenhid} row={r} right={<span style={{ color: C.green, fontWeight: 600, fontSize: FS.sm }}>{drugLabel(r) || 'Sẵn sàng'}</span>} />
         )) : <Empty>Chưa có người bệnh nào đủ điều kiện hoàn tất.</Empty>}
-        <div style={{ marginTop: 8 }}>
+        <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Btn variant="primary" icon={IconChecks} loading={busy === 'complete' || actionRunning}
             disabled={!running || !groups.ready.length || busy === 'complete' || actionRunning} onClick={() => onComplete(groups.ready.length)}>
             {actionRunning ? 'Đang thao tác trên EMR…' : `Hoàn tất khám ${groups.ready.length} người bệnh`}
           </Btn>
+          {onEndOfDay ? (
+            <Btn icon={IconChecks} loading={busy === 'end-of-day'}
+              disabled={!running || !openCount || Boolean(busy) || actionRunning} onClick={() => onEndOfDay(openCount)}>
+              Hoàn tất cuối ngày
+            </Btn>
+          ) : null}
         </div>
       </div>
 
@@ -87,7 +94,8 @@ export function VisitPanel({ rows, running, busy, actionRunning, onComplete, ren
         </div>
       )}
       <div style={{ fontSize: FS.xs, color: C.text2 }}>
-        Người bệnh BHYT xử trí Cho về hoặc Chuyển viện, dịch vụ đã xong. Cho về phải có thuốc trong đơn; hệ thống kiểm tra lại
+        Người bệnh BHYT và viện phí xử trí Cho về hoặc Chuyển viện, dịch vụ đã xong. Cho về phải có thuốc trong đơn; cuối ngày
+        bấm "Hoàn tất cuối ngày" để hoàn tất cả người chưa có thuốc và người chuyển khám chuyên khoa. Hệ thống kiểm tra lại
         từng người ngay trước khi bấm Hoàn tất và dừng ở người nào EMR báo lỗi hoặc hỏi xác nhận.
       </div>
     </Panel>
@@ -100,7 +108,7 @@ export function TodoPanel({ rows, running, busy, actionRunning, autoTasks, onRun
   const ttRunnable = rows.filter(r => r.procedure_task).length;
   return (
     <Panel title="Việc cần làm" aside={<span style={{ fontSize: FS.xs, color: C.text2 }}>
-      TT {counts.tt} · PT {counts.pt} · SBBHC {counts.sbbhc}</span>}>
+      TT {counts.tt} · PT {counts.pt} · SBBHC {counts.sbbhc} · Nhập viện {counts.cs}</span>}>
       {items.length ? (
         <div>
           {items.map(it => (

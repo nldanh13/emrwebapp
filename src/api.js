@@ -810,7 +810,7 @@ export const startClinicMonitor = (payload) => post('/api/clinic/monitor/start',
 export const stopClinicMonitor = () => post('/api/clinic/monitor/stop', {});
 export const refreshClinicMonitor = () => post('/api/clinic/monitor/refresh', {});
 export const getClinicMonitorState = () => get('/api/clinic/monitor/state');
-export const completeReadyClinicPatients = () => post('/api/clinic/monitor/complete', {});
+export const completeReadyClinicPatients = (endOfDay = false) => post('/api/clinic/monitor/complete', { endOfDay });
 export const setClinicPatientWeight = (khambenhid, kg) => post('/api/clinic/monitor/weight', { khambenhid, kg });
 export const runClinicTasks = () => post('/api/clinic/monitor/tasks', {});
 export const setClinicAutoTasks = (enabled) => post('/api/clinic/monitor/auto-tasks', { enabled });

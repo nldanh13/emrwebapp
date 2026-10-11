@@ -396,9 +396,14 @@ router.post('/clinic/monitor/complete', (req, res) => {
     return res.status(409).json({ status: 'error', message: 'Chưa bắt đầu theo dõi.' });
   }
   if (rejectIfPastDay(ctx, res)) return undefined;
-  writeControl(ctx, { completeNow: Date.now() });
-  appendActivity(ctx, { kind: 'workflow.clinic.monitor.complete_requested' });
-  return res.json({ status: 'ok', message: 'Đang hoàn tất các người bệnh đã sẵn sàng.' });
+  // Cuối ngày: hoàn tất cả người chưa có thuốc và chuyển khám chuyên khoa (worker liệt kê ai còn treo).
+  const endOfDay = (req.body || {}).endOfDay === true;
+  writeControl(ctx, { completeNow: Date.now(), endOfDay });
+  appendActivity(ctx, { kind: 'workflow.clinic.monitor.complete_requested', end_of_day: endOfDay });
+  return res.json({
+    status: 'ok',
+    message: endOfDay ? 'Đang hoàn tất cuối ngày mọi lượt khám còn lại.' : 'Đang hoàn tất các người bệnh đã sẵn sàng.',
+  });
 });
 
 // Cân nặng thật do người dùng nhập cho 1 người bệnh (điều dưỡng cân xong gõ vào).

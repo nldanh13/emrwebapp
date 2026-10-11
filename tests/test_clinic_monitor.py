@@ -397,7 +397,7 @@ def test_pending_procedure_is_still_eligible_but_other_blockers_are_not():
     assert cm.pending_procedures(_tt_row(0, 2)) == 2
     assert cm.eligible_for_completion(_tt_row(0, 1)) is True
     assert cm.eligible_for_completion(_tt_row(0, 1, ['XN chưa xong (0/1)'])) is False
-    assert cm.eligible_for_completion({**_tt_row(0, 1), 'has_bhyt': False}) is False
+    assert cm.eligible_for_completion({**_tt_row(0, 1), 'has_bhyt': False}) is True   # viện phí cũng tự hoàn tất
     # Chuyển viện hoàn tất khám như Cho về (rồi bổ sung SBBHC); nhập viện thì không.
     assert cm.eligible_for_completion({**_tt_row(1, 1), 'case': 'chuyen_vien'}) is True
     assert cm.eligible_for_completion({**_tt_row(1, 1), 'case': 'nhap_vien'}) is False
@@ -417,19 +417,27 @@ DEFAULT_TEMPLATES = procedure_templates.load_templates(procedure_templates.DEFAU
 
 
 class FakeProcedurePage:
-    def __init__(self, order, row_text='99000001 NGUYỄN VĂN A Thay băng vết thương Chờ thực hiện'):
-        self.order, self.row_text, self.writes = order, row_text, []
+    """D/s Thủ thuật giả: `rows` = các dòng chưa hoàn tất (chữ trên dòng, các ô)."""
+
+    def __init__(self, order, row_text='99000001 NGUYỄN VĂN A Thay băng vết thương Chờ thực hiện', rows=None):
+        self.order, self.writes = order, []
+        self.rows = rows or [(row_text, ['1', '09:00 28/09/2026', '99000001', 'NGUYỄN VĂN A', row_text.split(' A ')[-1].replace(' Chờ thực hiện', ''), 'Chờ thực hiện'])]
+        self.opened = None
 
     def open_pending(self, ma_bn, day, choose=None):
         self.writes.append(('open', ma_bn, day))
-        if choose and self.order is not None:
-            choose(self.row_text)
-        return self.order
+        if self.order is None:
+            return None
+        for text, cells in self.rows:
+            if not choose or choose(text, cells) is not False:
+                self.opened = text
+                return self.order
+        raise cm.NoProcedureTemplate('bỏ qua hết')
 
     def enter(self): self.writes.append('vao_thuc_hien')
-    def fill(self, start, end, staff, template, anesthesia='Không'):
+    def fill(self, start, end, staff, template, anesthesia='Không', report=''):
         self.writes.append(('fill', cm.fmt_emr_dt(start), cm.fmt_emr_dt(end), staff, template)
-                           + (() if anesthesia == 'Không' else (anesthesia,)))
+                           + (() if anesthesia == 'Không' else (anesthesia,)) + ((report,) if report else ()))
     def save_and_finish(self): self.writes.append('luu_hoan_tat'); return []
 
 
@@ -493,17 +501,43 @@ def test_procedure_uses_template_matching_dvkt_name(monkeypatch):
     assert page.writes[2] == ('fill', '09:00 28/09/2026', '09:20 28/09/2026', 'BS Phòng khám', 'CTCH-khâu vết thương', 'Gây tê tại chỗ')
 
 
-def test_procedure_without_template_is_not_entered():
-    page = FakeProcedurePage(DT(2026, 9, 28, 9, 0), 'Nắn bó bột cẳng tay')
+def test_procedure_without_template_is_skipped_and_recorded():
+    nan = ('99000001 NGUYỄN VĂN A Nắn bó bột cẳng tay Chờ thực hiện',
+           ['1', '09:00 28/09/2026', '99000001', 'NGUYỄN VĂN A', 'Nắn bó bột cẳng tay', 'Chờ thực hiện'])
+    page = FakeProcedurePage(DT(2026, 9, 28, 9, 0), rows=[nan])
     res = cm.enter_procedure(page, _tt_row(0, 1), SCHEDULE, NOW, [_tpl(keywords=['thay băng'])])
     assert res['result'] == 'incomplete' and 'Chưa có mẫu thủ thuật' in res['message'] and 'Nắn bó bột' in res['message']
+    assert res['missing_templates'][0]['name'] == 'Nắn bó bột cẳng tay'   # tên DVKT, không lẫn họ tên / mã BN
     assert page.writes == [('open', '99000001', '28/09/2026')]  # không Vào thực hiện
-    # Mẫu đặt nhập tay → không tự nhập.
+
+    # Dòng đầu chưa có mẫu → bỏ qua, nhập dòng sau; vẫn ghi lại DVKT thiếu mẫu.
+    thay = ('99000001 NGUYỄN VĂN A Thay băng vết thương Chờ thực hiện',
+            ['2', '09:00 28/09/2026', '99000001', 'NGUYỄN VĂN A', 'Thay băng vết thương', 'Chờ thực hiện'])
+    page = FakeProcedurePage(DT(2026, 9, 28, 9, 0), rows=[nan, thay])
+    res = cm.enter_procedure(page, _tt_row(0, 2), SCHEDULE, NOW, [_tpl(keywords=['thay băng'])])
+    assert res['result'] == 'done' and page.opened == thay[0]
+    assert [m['name'] for m in res['missing_templates']] == ['Nắn bó bột cẳng tay']
+
+    # Mẫu đặt nhập tay → không tự nhập, không coi là thiếu mẫu.
     page = FakeProcedurePage(DT(2026, 9, 28, 9, 0))
     res = cm.enter_procedure(page, _tt_row(0, 1), SCHEDULE, NOW, [_tpl(keywords=['thay băng'], auto=False)])
-    assert res['result'] == 'incomplete' and 'nhập tay' in res['message']
+    assert res['result'] == 'incomplete' and 'nhập tay' in res['message'] and res['missing_templates'] == []
     # Chế độ tự động không thử lại khi chỉ định chưa đổi.
     assert cm._auto_should_run({'status': 'incomplete', 'pending': 1}, 1, NOW) is False
+
+    missing = {}
+    cm.note_missing_templates(missing, {'ma_bn': '99000001', 'ho_ten': 'A'}, {'missing_templates': [{'kind': 'thu_thuat', 'name': 'Nắn bó bột'}]})
+    cm.note_missing_templates(missing, {'ma_bn': '99000002', 'ho_ten': 'B'}, {'missing_templates': [{'kind': 'thu_thuat', 'name': 'NẮN BÓ BỘT'}]})
+    assert len(missing) == 1 and list(missing.values())[0]['count'] == 2
+
+
+def test_procedure_report_goes_into_box_emr_filled_from_template():
+    assert cm.report_box({'ta:a': '', 'ta:b': 'x'}, {'ta:a': 'Mẫu EMR dài', 'ta:b': 'x'}) == 'ta:a'
+    assert cm.report_box({'ta:a': ''}, {'ta:a': ''}) == 'ta:a'                       # chỉ có một ô
+    assert cm.report_box({'ta:a': '', 'ta:b': ''}, {'ta:a': '', 'ta:b': ''}) == ''    # không đoán
+    page = FakeProcedurePage(DT(2026, 9, 28, 9, 0))
+    cm.enter_procedure(page, _tt_row(0, 1), SCHEDULE, NOW, [_tpl(keywords=['thay băng'], report='Sát khuẩn\nThay băng')])
+    assert page.writes[2][-1] == 'Sát khuẩn\nThay băng'
 
 
 def test_match_template_rules():
@@ -793,3 +827,37 @@ def test_after_procedure_completes_exam_when_patient_has_drugs():
     mon = ChainMonitor([dict(tt)], drugs=2)
     cm.run_tasks(mon, [{**_task_row(), 'blockers': ['TT chưa xong (0/1)']}], {}, [], auto=True, now=NOW, checks={})
     assert mon.calls == [('exam', []), 'procedures']
+
+
+def test_end_of_day_completes_without_drugs_and_lists_what_is_left():
+    cho_ve = {**_tt_row(0, 0), 'case': 'cho_ve'}
+    assert cm.drug_gate(cho_ve, False, 0)['status'] == 'no_drug'
+    assert cm.drug_gate(cho_ve, False, 0, end_of_day=True) is None
+    ck = {**_tt_row(0, 0), 'case': 'chuyen_kham_ck'}
+    assert cm.eligible_for_completion(ck) is False
+    assert cm.eligible_for_completion(ck, end_of_day=True) is True
+    rows = [
+        {**cho_ve, 'khambenhid': 'a', 'ma_bn': '1', 'ho_ten': 'A'},
+        {**_tt_row(0, 0), 'khambenhid': 'b', 'ma_bn': '2', 'ho_ten': 'B', 'case': 'chua_xu_tri'},
+        {**_tt_row(0, 0), 'khambenhid': 'c', 'ma_bn': '3', 'ho_ten': 'C', 'case': 'cho_ve', 'blockers': ['XN chưa xong (0/1)']},
+        {**_tt_row(0, 0), 'khambenhid': 'd', 'ma_bn': '4', 'ho_ten': 'D', 'stage': 'xong'},
+    ]
+    left = cm.still_open(rows, {'a': {'status': 'done'}})
+    assert [(r['ma_bn'], why) for r, why in left] == [('2', 'Chưa có xử trí'), ('3', 'XN chưa xong (0/1)')]
+
+
+def test_vien_phi_does_not_press_thuc_hien_before_procedures():
+    class Page:
+        pressed = False
+        def drug_count(self): return 1
+        def needs_enter(self): return False
+        def missing_required(self): return []
+        def exam_start(self): return DT(2026, 9, 28, 8, 0)
+        def new_procedures(self): return 1
+        def send_to_services(self):
+            Page.pressed = True
+            return []
+    row = {**_tt_row(0, 1), 'has_bhyt': False}
+    assert cm.ready_for_procedures(Page(), row, None, NOW)['status'] == 'ready' and Page.pressed is False
+    cm.ready_for_procedures(Page(), {**row, 'has_bhyt': True}, None, NOW)
+    assert Page.pressed is True

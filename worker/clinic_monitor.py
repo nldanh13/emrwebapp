@@ -301,8 +301,10 @@ def fmt_emr_dt(dt: datetime) -> str:
     return dt.strftime("%H:%M %d/%m/%Y")
 
 
-# Cho về (TH1) và Chuyển viện (TH4: hoàn tất như cho về, rồi bổ sung SBBHC).
+# Cho về (TH1) và Chuyển viện (TH4: hoàn tất như cho về, rồi bổ sung SBBHC), BHYT và viện phí.
 COMPLETION_CASES = {"cho_ve", "chuyen_vien"}
+# Hoàn tất cuối ngày: mọi lượt đã có xử trí kết thúc ở phòng khám, kể cả chưa có thuốc.
+END_OF_DAY_CASES = COMPLETION_CASES | {"chuyen_kham_ck"}
 
 
 def pending_procedures(row: Dict[str, Any]) -> int:
@@ -311,11 +313,12 @@ def pending_procedures(row: Dict[str, Any]) -> int:
     return max(int(tt["total"]) - int(tt["done"]), 0) if tt else 0
 
 
-def eligible_for_completion(row: Dict[str, Any]) -> bool:
-    """Người bệnh có BHYT, xử trí Cho về, đang khám / làm dịch vụ và mọi dịch vụ đã xong —
-    trừ thủ thuật: TT chưa xong thì hệ thống tự nhập thủ thuật trước khi hoàn tất (TH2)."""
+def eligible_for_completion(row: Dict[str, Any], end_of_day: bool = False) -> bool:
+    """Người bệnh (BHYT hoặc viện phí) xử trí Cho về / Chuyển viện, đang khám / làm dịch vụ và mọi dịch vụ
+    đã xong — trừ thủ thuật: TT chưa xong thì hệ thống tự nhập thủ thuật trước khi hoàn tất (TH2).
+    Cuối ngày thêm Chuyển khám chuyên khoa."""
     blockers = [b for b in row.get("blockers") or [] if not (pending_procedures(row) and b.startswith("TT "))]
-    return bool(row.get("has_bhyt")) and row.get("case") in COMPLETION_CASES \
+    return row.get("case") in (END_OF_DAY_CASES if end_of_day else COMPLETION_CASES) \
         and row.get("stage") in ACTIVE_STAGES and not blockers
 
 
@@ -592,9 +595,10 @@ class ExamPage:
         return self.check_dialogs("Hoàn tất khám")
 
 
-def drug_gate(row: Dict[str, Any], must_enter: bool, drugs: int) -> Optional[Dict[str, Any]]:
-    """Cho về chỉ hoàn tất khi bác sĩ đã kê thuốc; chờ đọc KQ chưa vào khám cũng vậy. None = qua."""
-    if drugs > 0:
+def drug_gate(row: Dict[str, Any], must_enter: bool, drugs: int, end_of_day: bool = False) -> Optional[Dict[str, Any]]:
+    """Cho về chỉ hoàn tất khi bác sĩ đã kê thuốc; chờ đọc KQ chưa vào khám cũng vậy. None = qua.
+    Cuối ngày thì hoàn tất cả người chưa có thuốc."""
+    if drugs > 0 or end_of_day:
         return None
     if row.get("case") == "cho_ve":
         return {"status": "no_drug", "message": "Chưa có thuốc — chờ bác sĩ kê đơn rồi mới hoàn tất"}
@@ -603,10 +607,11 @@ def drug_gate(row: Dict[str, Any], must_enter: bool, drugs: int) -> Optional[Dic
     return None
 
 
-def check_patient(page: ExamPage, row: Dict[str, Any], services_done: Optional[datetime], now: datetime) -> Dict[str, Any]:
+def check_patient(page: ExamPage, row: Dict[str, Any], services_done: Optional[datetime], now: datetime,
+                  end_of_day: bool = False) -> Dict[str, Any]:
     """Kiểm tra (chỉ đọc) người bệnh có hoàn tất được lúc này không. Không bấm gì trên EMR."""
     drugs = page.drug_count()
-    gate = drug_gate(row, page.needs_enter(), drugs)
+    gate = drug_gate(row, page.needs_enter(), drugs, end_of_day)
     if gate:
         return {**gate, "drugs": drugs}
     missing = page.missing_required()
@@ -621,13 +626,15 @@ def check_patient(page: ExamPage, row: Dict[str, Any], services_done: Optional[d
     return {**base, "status": "ready", "message": "Sẵn sàng hoàn tất"}
 
 
-def ready_for_procedures(page: ExamPage, row: Dict[str, Any], services_done: Optional[datetime], now: datetime) -> Dict[str, Any]:
-    """Trước khi vào D/s Thủ thuật: kiểm tra màn khám (chỉ đọc); thủ thuật còn "Mới" thì bấm Thực hiện."""
-    res = check_patient(page, row, services_done, now)
+def ready_for_procedures(page: ExamPage, row: Dict[str, Any], services_done: Optional[datetime], now: datetime,
+                         end_of_day: bool = False) -> Dict[str, Any]:
+    """Trước khi vào D/s Thủ thuật: kiểm tra màn khám (chỉ đọc); BHYT có thủ thuật còn "Mới" thì bấm Thực hiện
+    (viện phí không bấm: thủ thuật tự hiện trên D/s Thủ thuật khi đã đóng tiền)."""
+    res = check_patient(page, row, services_done, now, end_of_day)
     if res.get("status") != "ready":
         return res
     steps: List[str] = []
-    if page.new_procedures():
+    if row.get("has_bhyt") and page.new_procedures():
         toasts = page.send_to_services()
         steps.append("Bấm Thực hiện (thủ thuật mới)" + (f" ({toasts[-1]})" if toasts else ""))
     return {**res, "steps": steps}
@@ -638,12 +645,12 @@ def is_weight_warning(message: str) -> bool:
 
 
 def complete_patient(page: ExamPage, row: Dict[str, Any], services_done: Optional[datetime], now: datetime,
-                     weight_kg: Optional[float]) -> Dict[str, Any]:
+                     weight_kg: Optional[float], end_of_day: bool = False) -> Dict[str, Any]:
     """Hoàn tất khám 1 người bệnh — chỉ chạy khi người dùng bấm nút trên màn Phòng khám."""
     steps: List[str] = []
     # Kiểm tra hết điều kiện đọc được TRƯỚC khi bấm gì, để không thao tác dở dang trên EMR.
     must_enter = page.needs_enter()
-    gate = drug_gate(row, must_enter, page.drug_count())
+    gate = drug_gate(row, must_enter, page.drug_count(), end_of_day)
     if gate:
         return {"result": gate["status"], "message": gate["message"], "steps": steps}
     missing = page.missing_required()
@@ -698,6 +705,46 @@ def procedure_staff(config: Dict[str, Any], start: datetime) -> str:
     return compact(get_nurse_by_shift(fmt_emr_dt(start), config.get("ten_dieu_duong") or {}))
 
 
+# Các ô chữ đang hiện trên phiếu thủ thuật (textarea, CKEditor): khoá → nội dung.
+REPORT_BOXES_JS = r"""
+var out = {};
+var areas = document.querySelectorAll('textarea');
+for (var i = 0; i < areas.length; i++) {
+  var a = areas[i], st = getComputedStyle(a);
+  var ck = window.CKEDITOR && a.id && CKEDITOR.instances[a.id];
+  if (!ck && (st.display === 'none' || st.visibility === 'hidden' || a.offsetParent === null || a.disabled || a.readOnly)) continue;
+  out[(ck ? 'ck:' : 'ta:') + (a.id || a.name || ('#' + i))] = ck ? String(ck.getData() || '') : String(a.value || '');
+}
+return out;
+"""
+SET_REPORT_JS = r"""
+var key = arguments[0], text = arguments[1], name = key.slice(3);
+if (key.indexOf('ck:') === 0) {
+  var ck = window.CKEDITOR && CKEDITOR.instances[name];
+  if (!ck) return false;
+  ck.setData(text.split('\n').map(function (l) { return '<p>' + l.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</p>'; }).join(''));
+  ck.updateElement();
+  return true;
+}
+var e = document.getElementById(name) || document.getElementsByName(name)[0];
+if (!e && name.charAt(0) === '#') e = document.querySelectorAll('textarea')[parseInt(name.slice(1), 10)];
+if (!e) return false;
+e.value = text;
+['input', 'change', 'blur'].forEach(function (t) { e.dispatchEvent(new Event(t, { bubbles: true })); });
+if (window.jQuery) { try { jQuery(e).trigger('change'); } catch (x) {} }
+return e.value === text;
+"""
+
+
+def report_box(before: Dict[str, str], after: Dict[str, str]) -> str:
+    """Ô nội dung tường trình: ô đổi nội dung sau khi chọn mẫu tường trình (nhiều ô đổi thì lấy ô dài nhất);
+    không ô nào đổi mà chỉ có một ô thì lấy ô đó; còn lại rỗng (không đoán)."""
+    changed = [k for k, v in after.items() if v != before.get(k, "")]
+    if changed:
+        return max(changed, key=lambda k: len(after[k]))
+    return next(iter(after)) if len(after) == 1 else ""
+
+
 class ProcedurePage:
     """Nhập 1 thủ thuật trên D/s Thủ thuật. Dùng lại cách tìm dòng / điền form của
     input_procedures.py nhưng tự bấm Lưu / Hoàn tất để không tự đồng ý hộp xác nhận."""
@@ -711,9 +758,10 @@ class ProcedurePage:
         self.pause = pause
 
     def open_pending(self, ma_bn: str, day: str,
-                     choose: Optional[Callable[[str], None]] = None) -> Optional[datetime]:
+                     choose: Optional[Callable[[str, List[str]], Any]] = None) -> Optional[datetime]:
         """Mở dòng thủ thuật chưa hoàn tất; trả giờ chỉ định, None nếu đã hoàn tất hết.
-        `choose(chữ trên dòng)` chạy trước khi mở (chọn mẫu theo tên DVKT; báo lỗi thì không mở)."""
+        `choose(chữ trên dòng, các ô)` chạy trước khi mở từng dòng chưa hoàn tất: trả False = bỏ qua dòng
+        đó (vd. chưa có mẫu cho DVKT); bỏ qua hết thì báo NoProcedureTemplate."""
         ip = self.ip
         # Bộ lọc D/s Thủ thuật của input_procedures tự đóng popup bằng handle_popups (bấm đồng ý);
         # ở đây thay bằng cách đóng không đồng ý như màn khám.
@@ -728,6 +776,8 @@ class ProcedurePage:
                 allow_completed_update=False, return_meta=True, before_open=choose)
         except ip.ProcedureAlreadyCompleted:
             return None
+        except ip.NoProcedureRowChosen as e:
+            raise NoProcedureTemplate(str(e)) from e
         except RuntimeError as e:
             if "Không tìm thấy dòng thủ thuật" in str(e):
                 raise ProcedureNotListed(str(e)) from e
@@ -741,7 +791,7 @@ class ProcedurePage:
         self.dialogs.check_dialogs("Vào thực hiện thủ thuật")
 
     def fill(self, start: datetime, end: datetime, staff: str, template: str,
-             anesthesia: str = DEFAULT_ANESTHESIA) -> None:
+             anesthesia: str = DEFAULT_ANESTHESIA, report: str = "") -> None:
         ip = self.ip
         ip._set_input_value(self.driver, "txtTgBatDau", fmt_emr_dt(start))
         ip._set_input_value(self.driver, "txtTgKetThuc", fmt_emr_dt(end))
@@ -750,14 +800,28 @@ class ProcedurePage:
         ok = bool(ip.chon_select2_bac_si_y_ta and ip.chon_select2_bac_si_y_ta(self.driver, "cbbTTChinh", staff, timeout=15))
         if not ok and not ip._pick_select2_text(self.driver, self.wait, "cbbTTChinh", staff, allow_first=False):
             raise ExamStepError(f"Không chọn được thủ thuật viên: {staff}")
+        before = self.dialogs.js(REPORT_BOXES_JS) or {}
         if not ip._pick_select2_text(self.driver, self.wait, "cbbMauTuongTrinh", template, allow_first=True):
             raise ExamStepError(f"Không chọn được mẫu tường trình: {template}")
+        if report:
+            self.pause(1.0)
+            self.write_report(before, report)
         errors = ip._compare_procedure_form(self.driver, {
             "start_dt": start, "end_dt": end, "start_text": fmt_emr_dt(start), "end_text": fmt_emr_dt(end),
             "anesthesia": anesthesia, "staff_name": staff, "template_name": template,
         })
         if errors:
             raise ExamStepError("Điền phiếu thủ thuật chưa đúng: " + "; ".join(errors))
+
+    def write_report(self, before: Dict[str, str], report: str) -> None:
+        """Ghi nội dung tường trình của mẫu vào ô EMR vừa tự điền khi chọn mẫu tường trình (ô đổi nội dung
+        sau khi chọn). Không ô nào đổi mà phiếu chỉ có một ô chữ thì dùng ô đó; còn lại thì báo, không đoán."""
+        key = report_box(before, self.dialogs.js(REPORT_BOXES_JS) or {})
+        if not key:
+            raise ExamStepError("Không xác định được ô nội dung tường trình trên phiếu thủ thuật; "
+                                "để trống Nội dung tường trình trong mẫu thì EMR tự điền theo mẫu tường trình")
+        if not self.dialogs.js(SET_REPORT_JS, key, report):
+            raise ExamStepError("Không ghi được nội dung tường trình vào phiếu thủ thuật")
 
     def _click_first(self, ids: List[str]) -> bool:
         return bool(self.dialogs.js(
@@ -786,24 +850,49 @@ def performer_name(template: Dict[str, Any], config: Dict[str, Any], start: date
     return procedure_staff(config, start)
 
 
+STATUS_WORDS = {"hoan tat", "cho thuc hien", "dang thuc hien", "chua thuc hien", "moi"}
+DMY_RE = re.compile(r"\d{1,2}/\d{1,2}/\d{4}")
+
+
+def dvkt_name(cells: List[str], row: Dict[str, Any], row_text: str = "") -> str:
+    """Tên DVKT trên 1 dòng D/s Thủ thuật: ô chữ dài nhất không phải mã BN, họ tên, ngày giờ, trạng thái."""
+    ma_bn, ho_ten = compact(row.get("ma_bn")), norm(row.get("ho_ten"))
+    names = []
+    for cell in cells or []:
+        text = compact(cell)
+        n = norm(text)
+        if len(text) < 4 or (ma_bn and ma_bn in text) or DMY_RE.search(text) or n in STATUS_WORDS \
+                or (ho_ten and (n == ho_ten or ho_ten in n)) or not re.search(r"[A-Za-zÀ-ỹ]", text):
+            continue
+        names.append(text)
+    return max(names, key=len) if names else compact(row_text)[:120]
+
+
 def enter_procedure(page: ProcedurePage, row: Dict[str, Any], config: Dict[str, Any], now: datetime,
                     templates: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-    """Nhập 1 thủ thuật chưa hoàn tất của người bệnh theo mẫu khớp tên DVKT (tab Mẫu thủ thuật – PT)."""
+    """Nhập 1 thủ thuật chưa hoàn tất của người bệnh theo mẫu khớp tên DVKT (tab Mẫu thủ thuật – PT).
+    Dòng chưa có mẫu (hoặc mẫu đặt nhập tay) thì bỏ qua, ghi lại tên DVKT để người dùng tạo mẫu."""
     templates = procedure_templates.load_templates() if templates is None else templates
     chosen: Dict[str, Any] = {}
+    skipped: List[Dict[str, str]] = []
 
-    def choose(row_text: str) -> None:
+    def choose(row_text: str, cells: Optional[List[str]] = None) -> bool:
         tpl = procedure_templates.match_template(templates, "thu_thuat", row_text, bool(row.get("has_bhyt")))
-        if tpl is None:
-            raise NoProcedureTemplate(procedure_templates.missing_message("thu_thuat", row_text))
-        if tpl.get("auto") is False:
-            raise NoProcedureTemplate(procedure_templates.manual_message(tpl))
+        if tpl is None or tpl.get("auto") is False:
+            name = dvkt_name(cells or [], row, row_text)
+            skipped.append({"kind": "thu_thuat", "name": name, "manual": tpl is not None,
+                            "message": procedure_templates.manual_message(tpl) if tpl else
+                            procedure_templates.missing_message("thu_thuat", name)})
+            return False
         chosen.update(tpl)
+        return True
 
     try:
         order_time = page.open_pending(compact(row.get("ma_bn")), now.strftime("%d/%m/%Y"), choose)
-    except NoProcedureTemplate as e:
-        return {"result": "incomplete", "message": str(e)}
+    except NoProcedureTemplate:
+        message = "; ".join(x["message"] for x in skipped) or "Không có thủ thuật nào nhập theo mẫu được"
+        return {"result": "incomplete", "message": message,
+                "missing_templates": [x for x in skipped if not x["manual"]]}
     except ProcedureNotListed:
         if row.get("has_bhyt"):
             raise
@@ -812,21 +901,24 @@ def enter_procedure(page: ProcedurePage, row: Dict[str, Any], config: Dict[str, 
                 "message": "Chưa có trên D/s Thủ thuật: chờ người bệnh viện phí đóng tiền"}
     if order_time is None:
         return {"result": "already", "message": "Thủ thuật đã hoàn tất trên D/s Thủ thuật"}
+    missing = [x for x in skipped if not x["manual"]]
     minutes = procedure_templates.minutes_of(chosen, int(config.get("procedure_duration_minutes") or PROCEDURE_MINUTES))
     window = procedure_window(order_time, parse_emr_dt(row.get("thoi_gian")), now, minutes)
     if window["result"] != "ok":
-        return window
+        return {**window, "missing_templates": missing}
     start, end = window["start"], window["end"]
     staff = performer_name(chosen, config, start)
     role = procedure_templates.PERFORMER_LABEL.get(chosen.get("performer") or "dieu_duong", "điều dưỡng")
     if not staff:
-        return {"result": "error", "message": f"Chưa có {role} trong Lịch Phòng khám để làm thủ thuật viên"}
+        return {"result": "error", "message": f"Chưa có {role} trong Lịch Phòng khám để làm thủ thuật viên",
+                "missing_templates": missing}
     emr_template = procedure_templates.text_of(chosen, "emr_template") \
         or compact(config.get("procedure_template_name")) or DEFAULT_PROCEDURE_TEMPLATE
     page.enter()
-    page.fill(start, end, staff, emr_template, procedure_templates.text_of(chosen, "anesthesia", DEFAULT_ANESTHESIA))
+    page.fill(start, end, staff, emr_template, procedure_templates.text_of(chosen, "anesthesia", DEFAULT_ANESTHESIA),
+              procedure_templates.block_of(chosen, "report"))
     page.save_and_finish()
-    return {"result": "done", "end": end,
+    return {"result": "done", "end": end, "missing_templates": missing,
             "message": f"Đã nhập thủ thuật theo mẫu \"{chosen.get('name') or ''}\" {start:%H:%M}–{end:%H:%M}, thủ thuật viên {staff}"}
 
 
@@ -957,9 +1049,11 @@ class Monitor:
         steps: List[str] = []
         last_end: Optional[datetime] = None
         result: Dict[str, Any] = {"result": "done"}
+        missing: List[Dict[str, Any]] = []
         try:
             for _ in range(min(pending_procedures(row), 3)):
                 res = enter_procedure(ProcedurePage(self.driver, self.wait, self.config), row, self.config, _now())
+                missing += [m for m in res.get("missing_templates") or [] if m not in missing]
                 if res["result"] == "already":
                     break
                 if res["result"] != "done":
@@ -980,7 +1074,7 @@ class Monitor:
             self.close()
             if result["result"] == "done":
                 result = {"result": "session", "message": "Không mở lại được Danh sách Khám bệnh sau khi nhập thủ thuật"}
-        return {**result, "steps": steps, "procedure_end": last_end}
+        return {**result, "steps": steps, "procedure_end": last_end, "missing_templates": missing}
 
     def imaging(self, row: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Đọc popup lịch sử dịch vụ (đang ở trang danh sách): các chỉ định chụp CT / MRI."""
@@ -1310,7 +1404,8 @@ def _prepare_procedures(page: ExamPage) -> Dict[str, Any]:
 
 def run_tasks(monitor: "Monitor", rows: List[Dict[str, Any]], state: Dict[str, Dict[str, Any]],
               log: List[Dict[str, Any]], auto: bool, now: Optional[datetime] = None,
-              checks: Optional[Dict[str, Dict[str, Any]]] = None, weights: Optional[Dict[str, Any]] = None) -> int:
+              checks: Optional[Dict[str, Dict[str, Any]]] = None, weights: Optional[Dict[str, Any]] = None,
+              missing: Optional[Dict[str, Dict[str, Any]]] = None) -> int:
     """Nhập thủ thuật cho người bệnh có chỉ định. Nhập xong mà người bệnh đủ điều kiện hoàn tất khám
     (Cho về / Chuyển viện, dịch vụ khác đã xong) thì mở màn khám xem trước: có thuốc thì Vào khám và
     Hoàn tất luôn, chưa có thuốc thì quay lại. Trả số người đã thao tác."""
@@ -1331,6 +1426,7 @@ def run_tasks(monitor: "Monitor", rows: List[Dict[str, Any]], state: Dict[str, D
         if pre.get("status") == "ready":
             res = monitor.run_procedures(row)
             res = {**res, "steps": (pre.get("steps") or []) + (res.get("steps") or [])}
+            note_missing_templates(missing, row, res)
         else:
             res = {**pre, "result": pre.get("status")}
         result = res.get("result") or res.get("status")
@@ -1356,8 +1452,8 @@ def run_tasks(monitor: "Monitor", rows: List[Dict[str, Any]], state: Dict[str, D
 # ── TH6: điều trị ngoại trú ──────────────────────────────────────────────────
 
 def ngoaitru_candidate(row: Dict[str, Any]) -> bool:
-    """Người bệnh có BHYT, xử trí / trạng thái Điều trị ngoại trú."""
-    return bool(row.get("has_bhyt")) and (row.get("case") == "ngoai_tru" or row.get("stage") == "ngoai_tru")
+    """Người bệnh (BHYT hoặc viện phí) xử trí / trạng thái Điều trị ngoại trú."""
+    return row.get("case") == "ngoai_tru" or row.get("stage") == "ngoai_tru"
 
 
 def clinic_doctor(config: Dict[str, Any], now: datetime) -> str:
@@ -1368,10 +1464,11 @@ def clinic_doctor(config: Dict[str, Any], now: datetime) -> str:
 
 
 def run_ngoaitru(monitor: "Monitor", rows: List[Dict[str, Any]], state: Dict[str, Dict[str, Any]],
-                 log: List[Dict[str, Any]]) -> int:
+                 log: List[Dict[str, Any]], missing: Optional[Dict[str, Dict[str, Any]]] = None) -> int:
     """TH6 cho mọi người bệnh đủ điều kiện — chỉ gọi khi người dùng bấm nút."""
     patients = [{"ma_bn": compact(r.get("ma_bn")), "ho_ten": r.get("ho_ten"), "exam_time": parse_emr_dt(r.get("thoi_gian")),
-                 "khambenhid": r.get("khambenhid") or ""}
+                 "khambenhid": r.get("khambenhid") or "", "has_bhyt": bool(r.get("has_bhyt")),
+                 "pending_pt": pending_surgeries(r)}
                 for r in rows if ngoaitru_candidate(r) and compact(r.get("ma_bn"))]
     if not patients:
         return 0
@@ -1391,6 +1488,7 @@ def run_ngoaitru(monitor: "Monitor", rows: List[Dict[str, Any]], state: Dict[str
             monitor.close()
     for p in patients:
         res = results.get(p["ma_bn"]) or {}
+        note_missing_templates(missing, p, res)
         state[p["ma_bn"]] = {"status": res.get("result"), "message": res.get("message") or "", "at": _now().isoformat()}
         log.append({"at": _now().isoformat(), "kind": "dieu_tri_ngoai_tru", "khambenhid": p["khambenhid"], "ma_bn": p["ma_bn"],
                     "ho_ten": p["ho_ten"], "result": res.get("result"),
@@ -1400,14 +1498,14 @@ def run_ngoaitru(monitor: "Monitor", rows: List[Dict[str, Any]], state: Dict[str
 
 
 def complete_on_exam_page(monitor: "Monitor", row: Dict[str, Any], procedure_end: Optional[datetime],
-                          weight_kg: Optional[float]) -> Dict[str, Any]:
+                          weight_kg: Optional[float], end_of_day: bool = False) -> Dict[str, Any]:
     """Mở màn khám, xem đơn thuốc trước; đủ điều kiện thì Vào khám và Hoàn tất, không thì quay lại danh sách
     mà không bấm gì (complete_patient kiểm tra hết trước khi bấm)."""
 
     def complete(page: ExamPage, done_at: Optional[datetime], now: datetime) -> Dict[str, Any]:
         # Hoàn tất khám phải sau khi thủ thuật kết thúc (+1 phút), thời gian ra sửa theo đó.
         latest = max(d for d in (done_at, procedure_end) if d) if (done_at or procedure_end) else None
-        return complete_patient(page, row, latest, now, weight_kg)
+        return complete_patient(page, row, latest, now, weight_kg, end_of_day)
 
     return monitor.on_exam_page(row, complete)
 
@@ -1424,25 +1522,28 @@ def record_completion(row: Dict[str, Any], res: Dict[str, Any], checks: Dict[str
 
 
 def run_completions(monitor: "Monitor", rows: List[Dict[str, Any]], checks: Dict[str, Dict[str, Any]],
-                    weights: Dict[str, Any], log: List[Dict[str, Any]]) -> int:
-    """Hoàn tất khám mọi người bệnh đủ điều kiện — chỉ gọi khi người dùng bấm nút."""
+                    weights: Dict[str, Any], log: List[Dict[str, Any]], end_of_day: bool = False,
+                    missing: Optional[Dict[str, Dict[str, Any]]] = None) -> int:
+    """Hoàn tất khám mọi người bệnh đủ điều kiện — chỉ gọi khi người dùng bấm nút. Cuối ngày: hoàn tất cả
+    người chưa có thuốc và người chuyển khám chuyên khoa, rồi ghi lại những ai còn treo và vì sao."""
     acted = 0
     for row in rows:
         key = row.get("khambenhid") or ""
-        if not key or not row.get("href") or not eligible_for_completion(row):
+        if not key or not row.get("href") or not eligible_for_completion(row, end_of_day):
             continue
         kg = parse_weight(weights.get(key))
         tt: Dict[str, Any] = {"result": "done", "steps": [], "procedure_end": None}
         if pending_procedures(row):
             # Kiểm tra (chỉ đọc) màn khám trước: chờ đọc KQ chưa có thuốc / chưa đủ giờ thì chưa nhập thủ thuật.
-            pre = monitor.on_exam_page(row, lambda page, done_at, now: ready_for_procedures(page, row, done_at, now))
+            pre = monitor.on_exam_page(row, lambda page, done_at, now: ready_for_procedures(page, row, done_at, now, end_of_day))
             if pre.get("status") == "ready":
                 tt = monitor.run_procedures(row)
                 tt["steps"] = (pre.get("steps") or []) + (tt.get("steps") or [])
+                note_missing_templates(missing, row, tt)
             else:
                 tt = {**pre, "result": pre.get("status")}
         if tt["result"] == "done":
-            res = complete_on_exam_page(monitor, row, tt.get("procedure_end"), kg or None)
+            res = complete_on_exam_page(monitor, row, tt.get("procedure_end"), kg or None, end_of_day)
         else:
             res = tt
         res = {**res, "steps": (tt.get("steps") or []) + ([] if res is tt else (res.get("steps") or []))}
@@ -1450,7 +1551,42 @@ def run_completions(monitor: "Monitor", rows: List[Dict[str, Any]], checks: Dict
         acted += 1
         if result == "session":
             break
+    if end_of_day:
+        left = still_open(rows, checks)
+        log.append({"at": _now().isoformat(), "kind": "cuoi_ngay", "result": "done" if not left else "incomplete",
+                    "message": f"Cuối ngày còn {len(left)} lượt chưa hoàn tất" if left else "Cuối ngày: đã hoàn tất hết",
+                    "steps": [f"{r.get('ho_ten')} ({r.get('ma_bn')}): {reason}" for r, reason in left]})
     return acted
+
+
+def still_open(rows: List[Dict[str, Any]], checks: Dict[str, Dict[str, Any]]) -> List[Any]:
+    """Lượt còn đang khám sau khi hoàn tất cuối ngày, kèm lý do."""
+    out = []
+    for r in rows:
+        if r.get("stage") not in ACTIVE_STAGES or (checks.get(r.get("khambenhid") or "") or {}).get("status") == "done":
+            continue
+        check = checks.get(r.get("khambenhid") or "") or {}
+        if r.get("case") in {"nhap_vien", "ngoai_tru"}:
+            reason = NEXT_ACTION[r["case"]]
+        elif r.get("case") == "chua_xu_tri":
+            reason = "Chưa có xử trí"
+        elif r.get("blockers"):
+            reason = "; ".join(r["blockers"])
+        else:
+            reason = check.get("message") or "Chưa hoàn tất được"
+        out.append((r, reason))
+    return out
+
+
+def note_missing_templates(missing: Optional[Dict[str, Dict[str, Any]]], row: Dict[str, Any], res: Dict[str, Any]) -> None:
+    """Ghi lại DVKT chưa có mẫu (tab Mẫu thủ thuật – PT hiện danh sách này để tạo mẫu)."""
+    if missing is None:
+        return
+    for m in res.get("missing_templates") or []:
+        key = f"{m.get('kind')}:{norm(m.get('name'))}"
+        entry = missing.setdefault(key, {"kind": m.get("kind"), "name": m.get("name"), "count": 0})
+        entry.update({"ma_bn": row.get("ma_bn"), "ho_ten": row.get("ho_ten"), "at": _now().isoformat()})
+        entry["count"] += 1
 
 
 def public_rows(rows: List[Dict[str, Any]], checks: Dict[str, Dict[str, Any]], weights: Dict[str, Any],
@@ -1522,6 +1658,7 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
     visit_details: Dict[str, Dict[str, Any]] = {}
     state_dir = os.path.dirname(os.path.abspath(state_path))
     action_log: List[Dict[str, Any]] = []
+    missing_templates: Dict[str, Dict[str, Any]] = {}
 
     def _list_date(ctrl: Dict[str, Any]) -> str:
         return past_list_date(ctrl["listDate"] if "listDate" in ctrl else req.get("listDate"), _now().date())
@@ -1545,7 +1682,8 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                         handled_complete = ctrl.get("completeNow")
                         state["action_running"] = True
                         write_json(state_path, state)
-                        if run_completions(monitor, rows, checks, weights, action_log):
+                        if run_completions(monitor, rows, checks, weights, action_log,
+                                           end_of_day=bool(ctrl.get("endOfDay")), missing=missing_templates):
                             rows = monitor.read()
                         state["action_running"] = False
                         state["last_action_at"] = _now().isoformat()
@@ -1557,7 +1695,8 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                             handled_tasks = ctrl.get("tasksNow")
                         state["action_running"] = True
                         write_json(state_path, state)
-                        if run_tasks(monitor, rows, task_state, action_log, auto=not tasks_now, checks=checks, weights=weights):
+                        if run_tasks(monitor, rows, task_state, action_log, auto=not tasks_now, checks=checks, weights=weights,
+                                     missing=missing_templates):
                             rows = monitor.read()
                         state["action_running"] = False
                         state["last_action_at"] = _now().isoformat()
@@ -1576,7 +1715,7 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                         handled_ngoaitru = ctrl.get("ngoaitruNow")
                         state["action_running"] = True
                         write_json(state_path, state)
-                        if run_ngoaitru(monitor, rows, ngoaitru_state, action_log):
+                        if run_ngoaitru(monitor, rows, ngoaitru_state, action_log, missing_templates):
                             rows = monitor.read()
                         state["action_running"] = False
                         state["last_action_at"] = _now().isoformat()
@@ -1599,6 +1738,7 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                     "status": "running",
                     "rows": public_rows(rows, checks, weights, imaging, bbhc, ngoaitru_state, visit_details, task_state),
                     "action_log": action_log[-50:],
+                    "missing_templates": sorted(missing_templates.values(), key=lambda m: m["at"], reverse=True),
                     "summary": summarize(rows),
                     "updated_at": _now().isoformat(),
                     "list_date": list_date,
