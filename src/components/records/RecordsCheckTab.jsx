@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { C, FS } from '../../tokens.js';
 import {
   IconChevronDown, IconCloudDownload, IconDownload, IconExternalLink, IconListSearch, IconPlayerStop,
@@ -863,6 +863,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
   const [fetchingKey, setFetchingKey] = useState('');
   const [batch, setBatch] = useState({ running: false, done: 0, total: 0 });
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
   const [showOnlyCompleted, setShowOnlyCompleted] = useState(true);
   const [showOnlyStorage, setShowOnlyStorage] = useState(false);
   const [dataFilter, setDataFilter] = useState('all');
@@ -902,7 +903,6 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
     setCheckedMap(prev => {
       const next = { ...(prev || {}) };
       aliases.forEach(alias => { if (checked) next[alias] = true; else delete next[alias]; });
-      writeCheckedMap(next);
       return next;
     });
     try {
@@ -912,7 +912,6 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
       setCheckedMap(prev => {
         const next = { ...(prev || {}) };
         aliases.forEach(alias => { if (previous[alias]) next[alias] = true; else delete next[alias]; });
-        writeCheckedMap(next);
         return next;
       });
       toast?.(`Không lưu được dấu đã kiểm: ${String(err.message || err)}`, 'error');
@@ -924,6 +923,9 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
       });
     }
   }
+
+  // Persist after state commit, not synchronously inside the React updater.
+  useEffect(() => { writeCheckedMap(checkedMap); }, [checkedMap]);
 
   async function updatePaperChecklist(row, patch) {
     const submissionLock = submittedLockForRow(row, submittedLockMap);
@@ -1296,8 +1298,15 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
     return [...months].sort((a, b) => b.localeCompare(a));
   }, [displayRows, dischargeMonth]);
 
+  // Index once when records change; typing no longer normalizes every field per row.
+  const searchIndex = useMemo(() => new Map(displayRows.map(row => [row, norm([
+    row.displayName, row.ma_bn, row.department, row.storage, row.admissionDate, row.dischargeDate,
+    row.paperRecord?.record?.patient_name, row.paperRecord?.record?.storage_raw,
+    row.paperRecord?.record?.timestamp, row.paperRecord?.issue_detail,
+  ].join(' '))])), [displayRows]);
+
   const filteredRows = useMemo(() => {
-    const q = norm(search);
+    const q = norm(deferredSearch);
     const rows = displayRows
       .filter(row => !showOnlyCompleted || row.completed)
       .filter(row => !showOnlyStorage || row.storage)
@@ -1307,10 +1316,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
       .filter(row => !dischargeMonth || dischargeMonthKey(row.dischargeDate) === dischargeMonth)
       .filter(row => {
         if (!q) return true;
-        return norm([
-          row.displayName, row.ma_bn, row.department, row.storage, row.admissionDate, row.dischargeDate,
-          row.paperRecord?.record?.patient_name, row.paperRecord?.record?.storage_raw, row.paperRecord?.record?.timestamp, row.paperRecord?.issue_detail,
-        ].join(' ')).includes(q);
+        return (searchIndex.get(row) || '').includes(q);
       });
     // "Cần xử lý hôm nay": ưu tiên hồ sơ quá hạn/gần hết hạn lên đầu (spec mục 9).
     if (taskFilter !== 'none') {
@@ -1318,7 +1324,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
       return rows.sort((a, b) => urgencyRank(a.handover?.state) - urgencyRank(b.handover?.state) || compareRowsByAdmissionNewest(a, b));
     }
     return rows.sort(compareRowsByAdmissionNewest);
-  }, [displayRows, search, showOnlyCompleted, showOnlyStorage, dataFilter, paperFilter, taskFilter, dischargeMonth]);
+  }, [displayRows, deferredSearch, searchIndex, showOnlyCompleted, showOnlyStorage, dataFilter, paperFilter, taskFilter, dischargeMonth]);
 
   function toggleUpdateSelect(row, nextValue = null) {
     const key = getRowKey(row);
