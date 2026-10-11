@@ -138,6 +138,14 @@ def _same_day(text: Any, target: date) -> bool:
         return False
 
 
+def _flag_sick_leave_question(fields: dict[str, Any]) -> None:
+    """Thẻ DN mà giấy ra viện không ghi nghỉ ốm: đánh dấu để hỏi người bệnh trước khi nhập."""
+    from .mapping import needs_sick_leave_question
+
+    if needs_sick_leave_question(fields):
+        fields["hoi_nghi_om"] = "Có"
+
+
 def _is_placeholder(text: str) -> bool:
     """'-- Chọn --', 'Chọn dân tộc'… là ô chưa chọn, không phải giá trị."""
     import unicodedata
@@ -585,12 +593,14 @@ class EmrPortal:
         try:
             info = (self.read_patient_info(ma_bn or patient_name) or {}).get("fields") or {}
         except Exception as exc:  # noqa: BLE001 - thiếu thông tin BN không làm mất giấy ra viện
+            _flag_sick_leave_question(fields)
             return {**result, "fields": fields, "info_error": str(exc)}
         for key, value in info.items():
             if not fields.get(key):
                 fields[key] = value
         if info.get("so_cccd") and info.get("loai_giay_to"):
             fields["loai_giay_to"] = info["loai_giay_to"]
+        _flag_sick_leave_question(fields)
         return {**result, "fields": fields}
 
     def read_sick_leave_pdf(self, patient_name: str, doc_type: str = "") -> dict[str, Any]:

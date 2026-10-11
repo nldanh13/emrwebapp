@@ -104,6 +104,9 @@ in "Giấy ra viện" (PDF) → `parse_grv_text` tách theo nhãn in trên giấ
   lấy theo thứ tự: khoa/bác sĩ chọn trên giao diện khi quét (mặc định "Ngoại Chấn thương chỉnh
   hình - Thần kinh (K24)" và BS Nguyễn Lê Hoan, lưu vào `config.json` → `grv_defaults`), rồi tới
   cột "Khoa"/"Bác sĩ" của danh sách nội trú nếu có.
+- Thẻ BHYT bắt đầu bằng **DN** mà Ghi chú không có "Nghỉ ốm": đặt `hoi_nghi_om = "Có"`, hồ sơ
+  bị giữ ở "Chưa" với nhắc "hỏi người bệnh có nghỉ ốm không". Người dùng ghi "Nghỉ ốm từ ngày …
+  đến hết ngày …" vào Ghi chú thì hết vướng; không nghỉ thì không nhập hồ sơ đó.
 
 Chọn ngày ra viện (mặc định hôm nay): danh sách nội trú lọc trạng thái "Hoàn tất"
 (`drpSelectTrangThai`), đặt "Khoảng" (`cbbLoai`, `dtTuNgay`/`dtDenNgay`) lùi 60 ngày tới ngày
