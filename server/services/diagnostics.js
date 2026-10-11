@@ -10,6 +10,7 @@ const { spawnSync } = require('child_process');
 const { CONFIG_PATH, RUNTIME_ROOT, APP_TOKEN, HOST, PY_TIMEOUT_MS } = require('../constants');
 const { getRuntimePaths } = require('./session');
 const { getQueueStatus } = require('./task_queue');
+const { residentStatus } = require('./hchanh_resident_worker');
 const { writeFileAtomic, safeUnlink, readJsonSafe } = require('../utils/file');
 const { describeSecrets, SOURCE } = require('./secret_store');
 
@@ -172,6 +173,7 @@ function buildDiagnostics(req, { detailed = false } = {}) {
     session: ctx.sid,
     checks,
     queue: getQueueStatus(),
+    resident_chrome: residentStatus(),
     runtime: detailed ? runtimeDataStatus(ctx) : undefined,
     limits: detailed ? { py_timeout_ms: PY_TIMEOUT_MS, memory_mb: Math.round(os.totalmem() / 1024 / 1024) } : undefined,
   };
