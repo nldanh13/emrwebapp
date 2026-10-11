@@ -3,7 +3,7 @@
 // Opt-in via EMR_PERSISTENT_HCHANH_WORKER=1; other routes keep existing behavior.
 'use strict';
 
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -19,6 +19,56 @@ let globalChromeLane = Promise.resolve(); // no overlapping resident sessions ac
 const IDLE_MS = 2 * 60 * 1000;
 const MAX_PENDING = 2;
 const MAX_LINE = 256 * 1024;
+const stats = { launches: 0, completed: 0, failures: 0, timeouts: 0, cancelled: 0, reused: 0 };
+
+function enabled() {
+  // Read-only local Chrome only; EMR bridge and writing use unchanged runners.
+  // Opt out immediately with EMR_PERSISTENT_HCHANH_WORKER=0.
+  return !/^(0|false|no|off)$/i.test(String(process.env.EMR_PERSISTENT_HCHANH_WORKER ?? '').trim());
+}
+
+function killResidentTree(child) {
+  if (!child || !child.pid) return;
+  if (process.platform !== 'win32' && child.__residentGroup) {
+    try { process.kill(-child.pid, 'SIGTERM'); } catch (_) {}
+    const killTimer = setTimeout(() => {
+      try { process.kill(-child.pid, 'SIGKILL'); } catch (_) {}
+    }, 3000);
+    killTimer.unref?.();
+  } else {
+    terminateProcessTree(child);
+  }
+}
+
+function residentStatus() {
+  const all = [...workers.values()];
+  return {
+    enabled: enabled(),
+    mode: 'read_only_records_check',
+    running_workers: all.filter(w => !!w.child).length,
+    active_jobs: all.filter(w => !!w.active).length,
+    queued_jobs: all.reduce((sum, w) => sum + Math.max(0, w.pending - (w.active ? 1 : 0)), 0),
+    ...stats,
+  };
+}
+
+// A hard stop on Node exit: Windows requires synchronous taskkill; on POSIX
+// the detached process group also contains chromedriver and Chrome.
+process.once('exit', () => {
+  for (const worker of workers.values()) {
+    const child = worker.child;
+    if (!child?.pid) continue;
+    if (process.platform === 'win32') {
+      try {
+        spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+          shell: false, windowsHide: true, stdio: 'ignore', timeout: 5000,
+        });
+      } catch (_) {}
+    } else if (child.__residentGroup) {
+      try { process.kill(-child.pid, 'SIGKILL'); } catch (_) {}
+    }
+  }
+});
 
 function readOnlyJob(args) {
   if (!Array.isArray(args)) return null;
@@ -88,6 +138,7 @@ class ResidentWorker {
     this.idleTimer = null;
     this.retiring = null;
     this.retiringDone = null;
+    this.lastStartedAt = 0;
   }
 
   _idleClear() {
@@ -100,10 +151,14 @@ class ResidentWorker {
       '-X', 'utf8', '-u', path.join(WORKER_DIR, 'hchanh_read_daemon.py'),
     ], {
       cwd: ROOT_DIR, shell: false, windowsHide: true,
+      detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
       env: makeEnv(this.runtimeDir),
     });
+    child.__residentGroup = process.platform !== 'win32';
     this.child = child;
+    this.lastStartedAt = Date.now();
+    stats.launches += 1;
     this.stdoutBuffer = '';
     this.stderrBuffer = '';
     this.stderrTail = [];
@@ -153,6 +208,8 @@ class ResidentWorker {
       }
       const response = { code: message.code, killedByTimeout: false,
         stderrTail: this.stderrTail.slice(-20) };
+      stats.completed += 1;
+      if (message.code !== 0) stats.failures += 1;
       this._complete(response);
       if (message.code !== 0) {
         // Do not reuse a browser whose previous task ended unexpectedly.
@@ -190,7 +247,7 @@ class ResidentWorker {
     if (child && !this.retiring) {
       this.retiring = new Promise(resolve => { this.retiringDone = resolve; });
     }
-    if (child) terminateProcessTree(child);
+    if (child) killResidentTree(child);
     // Never start another Chrome until this one has actually exited.
     // No automatic replay: the last EMR request may have already completed.
     this._complete({ code: -1, killedByTimeout: Boolean(this.active?.timedOut),
@@ -210,9 +267,9 @@ class ResidentWorker {
       // Otherwise a request arriving during idle shutdown could open two
       // simultaneous EMR sessions under the same account.
       this.retiring = new Promise(resolve => { this.retiringDone = resolve; });
-      try { child.stdin.end(); } catch (_) { terminateProcessTree(child); }
+      try { child.stdin.end(); } catch (_) { killResidentTree(child); }
       const force = setTimeout(() => {
-        if (this.child === child) terminateProcessTree(child);
+        if (this.child === child) killResidentTree(child);
       }, 5000);
       force.unref?.();
     }, IDLE_MS);
@@ -228,9 +285,9 @@ class ResidentWorker {
     if (!this.retiring) {
       this.retiring = new Promise(resolve => { this.retiringDone = resolve; });
       const child = this.child;
-      try { child.stdin.end(); } catch (_) { terminateProcessTree(child); }
+      try { child.stdin.end(); } catch (_) { killResidentTree(child); }
       const force = setTimeout(() => {
-        if (this.child === child) terminateProcessTree(child);
+        if (this.child === child) killResidentTree(child);
       }, 5000);
       force.unref?.();
     }
@@ -245,19 +302,24 @@ class ResidentWorker {
     this._idleClear();
     const execute = async () => {
       if (this.retiring) await this.retiring;
+      if (this.child) stats.reused += 1;
       const child = this.child || this._spawn();
       const id = crypto.randomUUID();
       return new Promise(resolve => {
         const timer = setTimeout(() => {
           if (this.active?.id === id) {
             this.active.timedOut = true;
+            stats.timeouts += 1;
             this._invalidate('Chrome Worker quá thời gian xử lý.');
           }
         }, Math.max(5000, timeoutMs || PY_TIMEOUT_MS));
         this.active = { id, resolve, timer, timedOut: false };
         try {
           if (typeof onSpawn === 'function') {
-            onSpawn(() => this._invalidate('Đã dừng Chrome Worker theo yêu cầu.'));
+            onSpawn(() => {
+              stats.cancelled += 1;
+              this._invalidate('Đã dừng Chrome Worker theo yêu cầu.');
+            });
           }
           // registerCancel can synchronously invoke kill when cancellation was
           // requested while queued. Never dispatch that cancelled job to EMR.
@@ -281,7 +343,7 @@ function runRecordsCheckBatch(args, opts = {}) {
   const bridgeEnv = emrBridge.workerEnv();
   const command = readOnlyJob(args);
   const runtimeDir = opts.runtimeDir ? path.resolve(opts.runtimeDir) : '';
-  if (process.env.EMR_PERSISTENT_HCHANH_WORKER !== '1' || !command ||
+  if (!enabled() || !command ||
       !runtimeDir || bridgeEnv.EMR_BRIDGE_URL || process.env.EMR_BRIDGE_URL) {
     return runScript('hchanh_fetch.py', args, opts);
   }
@@ -302,4 +364,4 @@ function runRecordsCheckBatch(args, opts = {}) {
   return task;
 }
 
-module.exports = { runRecordsCheckBatch, readOnlyJob, ResidentWorker };
+module.exports = { runRecordsCheckBatch, readOnlyJob, ResidentWorker, residentStatus };
