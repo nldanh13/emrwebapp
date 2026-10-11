@@ -310,7 +310,7 @@ class ResidentWorker {
       if (this.retiring) await this.retiring;
       // Rotate long-lived sessions even when the patient quota was not reached.
       // Do not keep EMR authenticated indefinitely to avoid memory growth.
-      if (this.child && Date.now() - this.lastStartedAt >= MAX_BROWSER_AGE_MS) {
+      if (this.child && this.lastStartedAt > 0 && Date.now() - this.lastStartedAt >= MAX_BROWSER_AGE_MS) {
         const old = this.child;
         this.retiring = new Promise(resolve => { this.retiringDone = resolve; });
         try { old.stdin.end(); } catch (_) { killResidentTree(old); }
