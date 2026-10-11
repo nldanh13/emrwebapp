@@ -111,3 +111,15 @@ export function sickLeavePayload(row) {
     chan_doan: row.details?.cd_chinh || row.details?.so_bo || '',
   };
 }
+
+// Ngày đang theo dõi: ngày của lần đọc danh sách gần nhất (chưa đọc thì lúc bắt đầu, chưa có gì thì
+// hôm nay). today=false khi danh sách còn là của ngày khác (ví dụ để máy chạy qua đêm).
+const WEEKDAYS = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
+const pad2 = n => String(n).padStart(2, '0');
+const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+export function monitorDay(monitor, now = new Date()) {
+  let day = new Date(monitor?.updated_at || monitor?.started_at || now);
+  if (Number.isNaN(day.getTime())) day = now;
+  const short = `${pad2(day.getDate())}/${pad2(day.getMonth() + 1)}/${day.getFullYear()}`;
+  return { label: `${WEEKDAYS[day.getDay()]}, ${short}`, short, today: sameDay(day, now) };
+}

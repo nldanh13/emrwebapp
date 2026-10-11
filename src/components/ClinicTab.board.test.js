@@ -53,6 +53,12 @@ describe('Phòng khám: 3 khung', () => {
     expect(button('Hoàn tất khám 1 người bệnh').disabled).toBe(false);
     expect(text).toContain('Chưa có thuốc');
     expect(text).toContain('Thủ thuật (1)');
+    const d = new Date();
+    const today = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+    expect(text).toContain(`Ngày theo dõi: `);
+    expect(text).toContain(today);
+    expect(text).toContain(`Danh sách khám bệnh ngày ${today}`);
+    expect(text).not.toContain('không phải hôm nay');
 
     await act(async () => { button('Hoàn thành thủ thuật ngay (1)').click(); });
     expect(api.runClinicTasks).toHaveBeenCalledTimes(1);
