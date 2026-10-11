@@ -81,7 +81,7 @@ async function testStatusAndNoPatientLogs() {
   }
   const worker = new ResidentWorker('/tmp/fake-privacy-test');
   const patientText = 'Nguyễn Văn B';
-  worker._onStderr(Buffer.from('WARN [EMR] ' + patientText + ' mã 12345678\\n'));
+  worker._onStderr(Buffer.from('WARN [EMR] ' + patientText + ' mã 12345678\n'));
   assert.equal(worker.stderrTail.length, 1);
   assert(!JSON.stringify(worker.stderrTail).includes(patientText), 'patient names must not reach logs');
   assert(!JSON.stringify(residentStatus()).includes('/tmp'), 'status must not reveal workspace paths');
