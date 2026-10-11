@@ -276,7 +276,11 @@ class EmrHttpSession:
             login_post_url=(config.get("login_post_url") or None),
             timeout_sec=int(config.get("http_timeout_sec") or 30),
             request_delay_ms=int(config.get("http_read_request_delay_ms") or config.get("http_request_delay_ms") or 80),
-            max_retries=max(0, min(1, int(\n                config.get("http_read_max_retries")\n                if config.get("http_read_max_retries") is not None\n                else (config.get("http_max_retries") if config.get("http_max_retries") is not None else 1)\n            ))),
+            max_retries=max(0, min(1, int(
+                config.get("http_read_max_retries")
+                if config.get("http_read_max_retries") is not None
+                else (config.get("http_max_retries") if config.get("http_max_retries") is not None else 1)
+            ))),
             # Biến môi trường đứng trước: máy chủ đặt file cookie riêng cho từng tài khoản khi chạy
             # song song, cấu hình chung không được làm các tài khoản dùng chung một file cookie.
             cookie_file=(os.environ.get("EMR_HTTP_COOKIE_FILE") or config.get("http_cookie_file") or _default_cookie_file()),
