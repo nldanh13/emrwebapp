@@ -240,6 +240,9 @@ class ResidentWorker {
           if (typeof onSpawn === 'function') {
             onSpawn(() => this._invalidate('Đã dừng Chrome Worker theo yêu cầu.'));
           }
+          // registerCancel can synchronously invoke kill when cancellation was
+          // requested while queued. Never dispatch that cancelled job to EMR.
+          if (this.active?.id !== id) return;
           child.stdin.write(JSON.stringify({ ...command, id }) + '\n');
         } catch (err) {
           this._invalidate('Không gửi được yêu cầu tới Chrome Worker.');
