@@ -130,6 +130,17 @@ function ScanPreview({ data, onHide, unit, emptyText, showDischarge = false }) {
   );
 }
 
+// Ngày hôm nay theo giờ máy (yyyy-mm-dd, đúng định dạng ô <input type="date">).
+function todayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function isoToVi(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : (iso || '');
+}
+
 export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = false }) {
   const [available, setAvailable] = useState(null); // null=đang kiểm tra, true/false
   const [launching, setLaunching] = useState(false);
@@ -175,6 +186,7 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
   const [harvestingGrv, setHarvestingGrv] = useState(false);
   const [previewingGrv, setPreviewingGrv] = useState(false);
   const [grvPreview, setGrvPreview] = useState(null); // danh sách ra viện đã quét (xem thử)
+  const [grvDate, setGrvDate] = useState(todayIso); // ngày ra viện cần kiểm tra, mặc định hôm nay
 
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -556,31 +568,31 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
     setHarvestingGrv(true);
     try {
       const d = await bhytFetch('/api/emr/harvest-discharges', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: grvDate }),
       });
-      toast?.(`Quét ${d.scanned} ca ra viện · ${d.working_age} ca tuổi lao động · đọc được ${d.found} giấy ra viện (thêm ${d.added}, cập nhật ${d.updated}).`, 'ok');
+      toast?.(`Ngày ${isoToVi(grvDate)}: ${d.scanned} ca ra viện · ${d.working_age} ca tuổi lao động · đọc được ${d.found} giấy ra viện (thêm ${d.added}, cập nhật ${d.updated}).`, 'ok');
       await loadAll();
     } catch (e) {
       toast?.(String(e?.message || 'Không quét được danh sách ra viện.'), 'error');
     } finally {
       setHarvestingGrv(false);
     }
-  }, [loadAll, toast]);
+  }, [grvDate, loadAll, toast]);
 
   const previewDischargeList = useCallback(async () => {
     setPreviewingGrv(true);
     try {
       const d = await bhytFetch('/api/emr/list-inpatient', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: grvDate }),
       });
       setGrvPreview(d);
-      toast?.(`Quét được ${d.scanned} ca ra viện · ${d.working_age} ca còn tuổi lao động. Đối chiếu danh sách bên dưới với màn hình EMR.`, 'ok');
+      toast?.(`Ngày ${d.date || isoToVi(grvDate)}: ${d.scanned} ca ra viện · ${d.working_age} ca còn tuổi lao động. Đối chiếu danh sách bên dưới với màn hình EMR.`, 'ok');
     } catch (e) {
       toast?.(String(e?.message || 'Không quét được danh sách ra viện.'), 'error');
     } finally {
       setPreviewingGrv(false);
     }
-  }, [toast]);
+  }, [grvDate, toast]);
 
   const handleImportFiles = useCallback(async (fileList) => {
     if (!fileList || !fileList.length) return;
@@ -898,12 +910,25 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
           <Badge text="Mới" bg={C.blueBg || C.surface2} color={C.blue} size={FS.xs} />
         </div>
         <div style={{ fontSize: FS.xs, color: C.text2, lineHeight: 1.6, marginBottom: 10 }}>
-          Với người bệnh <b>nội trú đã ra viện</b>: công cụ quét Danh sách Điều trị nội trú trên EMR, lọc người
+          Với người bệnh <b>nội trú ra viện trong ngày đã chọn</b> (mặc định hôm nay): công cụ quét Danh sách Điều trị nội trú trên EMR, lọc người
           <b> còn tuổi lao động</b>, rồi với mỗi ca tự in <b>Giấy ra viện</b> (PDF) và đọc. Các ca đọc được gom vào
           danh sách bên dưới (loại giấy ra viện, mẫu 03); sau đó bấm <b>"Tự động nhập lên cổng"</b> ở bước 3.
           <br />Cần <b>đăng nhập EMR</b> trước (thẻ "Đăng nhập EMR nội bộ" bên dưới).
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: FS.xs, color: C.text2 }}>
+            Ngày ra viện
+            <input type="date" value={grvDate} max={todayIso()}
+              onChange={e => { setGrvDate(e.target.value || todayIso()); setGrvPreview(null); }}
+              disabled={harvestingGrv || previewingGrv}
+              style={{ ...INPUT_STYLE, width: 'auto', padding: '5px 6px', fontSize: FS.xs }} />
+          </label>
+          {grvDate !== todayIso() && (
+            <Btn variant="default" onClick={() => { setGrvDate(todayIso()); setGrvPreview(null); }}
+              disabled={harvestingGrv || previewingGrv} style={{ padding: '4px 8px', fontSize: FS.xs }}>
+              Về hôm nay
+            </Btn>
+          )}
           <Btn variant="primary" onClick={harvestDischarges} disabled={harvestingGrv || previewingGrv} style={{ padding: '7px 14px', fontSize: FS.xs }}>
             {harvestingGrv ? <><Spinner size={10} /> Đang quét danh sách ra viện...</> : 'Quét & gom giấy ra viện từ EMR'}
           </Btn>
@@ -918,9 +943,9 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
         <ScanPreview
           data={grvPreview}
           onHide={() => setGrvPreview(null)}
-          unit="ca ra viện"
+          unit={`ca ra viện ngày ${grvPreview?.date || isoToVi(grvDate)}`}
           showDischarge
-          emptyText='Không đọc được ca ra viện nào. Kiểm tra danh sách "Điều trị nội trú" trên EMR có người bệnh đã ra viện không.'
+          emptyText="Ngày này không có người bệnh nào ra viện trên EMR. Chọn ngày khác để kiểm tra."
         />
       </div>
 

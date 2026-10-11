@@ -90,7 +90,10 @@ in "Giấy ra viện" (PDF) → `parse_grv_text` tách theo nhãn in trên giấ
 | Dòng "…, ngày .. tháng .. năm .." chỗ ký | `ngay_ct` | |
 | Tên dưới chữ "Trưởng khoa" | `doctor_text` | Chỉ nhận bác sĩ có trong `allowed_doctors` |
 
+Chọn ngày ra viện (mặc định hôm nay): danh sách nội trú lọc trạng thái "Hoàn tất"
+(`drpSelectTrangThai`), đặt "Khoảng" (`cbbLoai`, `dtTuNgay`/`dtDenNgay`) lùi 60 ngày tới ngày
+đã chọn, rồi chỉ giữ dòng có cột Ngày ra viện đúng ngày đó. Các id này lấy từ
+`worker/selenium_emr_helpers.py`.
+
 Chỗ chưa xác nhận trên máy bệnh viện (chỉnh trong `config.json` → `emr.selectors`):
-`inpatient_search_input`, `inpatient_search_button`, `inpatient_status_select` (ô trạng thái
-"Hoàn tất"), `grv_report_link` (chữ trên link phiếu in) hoặc `grv_report_id` (mã phiếu cho
-`OnReportPdf`).
+`grv_report_link` (chữ trên link phiếu in) hoặc `grv_report_id` (mã phiếu cho `OnReportPdf`).

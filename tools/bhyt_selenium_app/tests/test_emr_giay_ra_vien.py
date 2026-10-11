@@ -152,9 +152,9 @@ class HarvestDischargesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             p = make_emr(tmp)
             p.driver = FakeDriver(html=INPATIENT_HTML)
-            p._open_inpatient_list = lambda keyword="": None
-            out = p.list_inpatient_discharges()
-        self.assertEqual([x["ho_ten"] for x in out], ["NGUYỄN VĂN AN", "LÊ THỊ CÚC"])
+            p._open_inpatient_list = lambda *a, **k: None
+            out = p.list_inpatient_discharges(day="05/10/2026")
+        self.assertEqual([x["ho_ten"] for x in out], ["NGUYỄN VĂN AN"])  # chỉ ca ra viện ngày 05/10
         self.assertEqual(out[0]["ngay_ra"], "05/10/2026")
         self.assertEqual(out[0]["trang_thai"], "Hoàn tất")
 
@@ -162,15 +162,15 @@ class HarvestDischargesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             p = make_emr(tmp)
             p.driver = FakeDriver(html="<html>trống</html>")
-            p._open_inpatient_list = lambda keyword="": None
+            p._open_inpatient_list = lambda *a, **k: None
             with self.assertRaises(EmrError):
                 p.list_inpatient_discharges()
 
     def test_working_age_only_and_reads_giay_ra_vien(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = make_emr(tmp)
-            p.driver = FakeDriver(html=INPATIENT_HTML)
-            p._open_inpatient_list = lambda keyword="": None
+            p.driver = FakeDriver(html=INPATIENT_HTML.replace("06/10/2026", "05/10/2026"))
+            p._open_inpatient_list = lambda *a, **k: None
             calls = []
 
             def fake_read(name):
@@ -178,11 +178,70 @@ class HarvestDischargesTests(unittest.TestCase):
                 return {"doc_type": "GRV03", "fields": {"ho_ten": name}, "pdf_path": "x"}
             p.read_giay_ra_vien_pdf = fake_read
             p.read_phieu_pdf = lambda name: self.fail("nội trú không đọc phiếu phòng khám")
-            out = p.harvest_discharges(ref_year=2026)
+            out = p.harvest_discharges(ref_year=2026, day="2026-10-05")
         self.assertEqual(out["scanned"], 2)
         self.assertEqual(out["working_age"], 1)  # bà Cúc 76 tuổi bị loại
         self.assertEqual(calls, ["NGUYỄN VĂN AN"])
         self.assertEqual(out["found"][0]["doc_type"], "GRV03")
+
+
+class DischargeDayTests(unittest.TestCase):
+    def test_default_day_is_today(self):
+        from datetime import date
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_emr(tmp)
+            p.driver = FakeDriver(html=INPATIENT_HTML)
+            seen = {}
+            p._open_inpatient_list = lambda keyword="", date_from="", date_to="": seen.update(
+                date_from=date_from, date_to=date_to)
+            try:
+                p.list_inpatient_discharges()
+            except EmrError:
+                pass  # bảng mẫu không có ca nào ra viện hôm nay
+        self.assertEqual(seen["date_to"], date.today().strftime("%d/%m/%Y"))
+
+    def test_other_day_filters_rows_and_opens_emr_range(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_emr(tmp)
+            p.driver = FakeDriver(html=INPATIENT_HTML)
+            seen = {}
+            p._open_inpatient_list = lambda keyword="", date_from="", date_to="": seen.update(
+                date_from=date_from, date_to=date_to)
+            out = p.list_inpatient_discharges(day="2026-10-06")
+        self.assertEqual([x["ho_ten"] for x in out], ["LÊ THỊ CÚC"])
+        self.assertEqual(seen["date_to"], "06/10/2026")
+        # Mở EMR lùi xa hơn để không sót ca vào viện từ trước, rồi lọc theo ngày ra.
+        self.assertEqual(seen["date_from"], "07/08/2026")
+
+    def test_no_case_that_day_is_not_an_error(self):
+        # Ngày không có ai ra viện: trả rỗng (để giao diện báo "không có ca"), không phải lỗi.
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_emr(tmp)
+            p.driver = FakeDriver(html=INPATIENT_HTML)
+            p._open_inpatient_list = lambda *a, **k: None
+            self.assertEqual(p.list_inpatient_discharges(day="01/01/2026"), [])
+
+    def test_bad_day_explains(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_emr(tmp)
+            p.driver = FakeDriver(html=INPATIENT_HTML)
+            with self.assertRaises(EmrError) as ctx:
+                p.list_inpatient_discharges(day="hôm qua")
+            self.assertIn("ngày", str(ctx.exception))
+
+    def test_patient_opened_with_same_range(self):
+        # Mở hồ sơ từng ca phải dùng cùng trạng thái/khoảng ngày vừa quét, kẻo EMR không hiện ca đã ra viện.
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_emr(tmp)
+            p.driver = FakeDriver(html=INPATIENT_HTML)
+            calls = []
+            p._open_inpatient_list = lambda keyword="", date_from="", date_to="": calls.append(
+                (keyword, date_from, date_to))
+            p._click = lambda *a, **k: None
+            p._dismiss_error_panel_best_effort = lambda: None
+            p.list_inpatient_discharges(day="05/10/2026")
+            p._go_to_inpatient_record("Nguyễn Văn An")
+        self.assertEqual(calls[1], ("Nguyễn Văn An", calls[0][1], "05/10/2026"))
 
 
 if __name__ == "__main__":

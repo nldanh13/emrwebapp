@@ -10,7 +10,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
-from bhyt.emr import EmrError, EmrPortal
+from bhyt.emr import EmrError, EmrPortal, parse_day
 from bhyt.emrwebapp_client import WebAppError, fetch_records_from_webapp
 from bhyt.mapping import DEFAULT_DOCTORS, load_records
 from bhyt.pdf_giay_ra_vien import parse_sick_leave_pdf
@@ -541,8 +541,10 @@ def api_emr_list_inpatient():
     from datetime import datetime as _dt
     from bhyt.working_age import flag_working_age
 
+    payload = request.get_json(silent=True) or {}
     try:
-        patients = emr.list_inpatient_discharges()
+        day = parse_day(payload.get("date"))
+        patients = emr.list_inpatient_discharges(day)
     except EmrError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:  # noqa: BLE001
@@ -550,6 +552,7 @@ def api_emr_list_inpatient():
 
     items = flag_working_age(patients, _dt.now().year)
     return jsonify({
+        "date": day.strftime("%d/%m/%Y"),
         "scanned": len(items),
         "working_age": sum(1 for x in items if x["working_age"]),
         "patients": items,
@@ -562,7 +565,8 @@ def api_emr_harvest_discharges():
     từng ca và đọc → nạp vào danh sách hồ sơ (mẫu 03) để nhập lên cổng BHXH."""
     payload = request.get_json(silent=True) or {}
     try:
-        out = emr.harvest_discharges(ref_year=payload.get("ref_year"), limit=payload.get("limit"))
+        out = emr.harvest_discharges(ref_year=payload.get("ref_year"), limit=payload.get("limit"),
+                                     day=payload.get("date"))
     except EmrError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:  # noqa: BLE001
