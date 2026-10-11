@@ -656,7 +656,7 @@ class Worker:
             return record
         try:
             if record.get("doc_type") == DOC_GRV:
-                result = self.emr.read_giay_ra_vien_pdf(name)
+                result = self.emr.read_discharge_record(name)
             else:
                 result = self.emr.read_phieu_pdf(name)
         except Exception:  # noqa: BLE001 - EMR lỗi thì giữ nguyên, issues sẽ báo

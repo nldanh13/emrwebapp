@@ -35,6 +35,13 @@ DEFAULT_DOCTORS = [
     "Nguyễn Giang Tử",
 ]
 
+# Giấy ra viện của bệnh viện không in khoa và tên bác sĩ: mặc định theo người dùng,
+# đổi được trên giao diện khi quét ra viện (lưu vào config.json → grv_defaults).
+DEFAULT_GRV_DEFAULTS = {
+    "ma_khoa": "Ngoại Chấn thương chỉnh hình - Thần kinh (K24)",
+    "doctor_text": "Nguyễn Lê Hoan",
+}
+
 
 def normalize_text(value: Any) -> str:
     text = "" if value is None else str(value)

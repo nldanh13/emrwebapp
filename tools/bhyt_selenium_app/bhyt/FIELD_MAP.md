@@ -90,6 +90,21 @@ in "Giấy ra viện" (PDF) → `parse_grv_text` tách theo nhãn in trên giấ
 | Dòng "…, ngày .. tháng .. năm .." chỗ ký | `ngay_ct` | |
 | Tên dưới chữ "Trưởng khoa" | `doctor_text` | Chỉ nhận bác sĩ có trong `allowed_doctors` |
 
+### Giấy ra viện thật của bệnh viện (MS: 01/BV-01)
+
+Đối chiếu với mẫu PDF người dùng gửi: pdfminer bố cục mặc định làm lộn thứ tự dòng, nên
+`extract_grv_text` đọc với `LAParams(line_margin=0.2, boxes_flow=None, char_margin=20)`.
+
+- "Số hồ sơ/Số BA: NNN/2026/GRV" → `ma_ct` (khi không có "Số lưu trữ").
+- Thẻ in tách ô ("DN 4 92 92 01234567 Giá trị từ …") → ghép lại `ma_the`, bỏ phần hạn thẻ.
+- "Số CCCD/CMND/…: …. Ngày cấp: …" → `so_cccd`, `ngaycap_cccd`; có CCCD thì không đặt
+  "Không có giấy tờ".
+- "Nghỉ ốm từ ngày … đến (hết) ngày …" trong Ghi chú → `nghi_tu_ngay`, `nghi_den_ngay`.
+- Giấy này **không in** Khoa, Mã y tế, Số lưu trữ và tên bác sĩ. `ma_khoa` và `doctor_text`
+  lấy theo thứ tự: khoa/bác sĩ chọn trên giao diện khi quét (mặc định "Ngoại Chấn thương chỉnh
+  hình - Thần kinh (K24)" và BS Nguyễn Lê Hoan, lưu vào `config.json` → `grv_defaults`), rồi tới
+  cột "Khoa"/"Bác sĩ" của danh sách nội trú nếu có.
+
 Chọn ngày ra viện (mặc định hôm nay): danh sách nội trú lọc trạng thái "Hoàn tất"
 (`drpSelectTrangThai`), đặt "Khoảng" (`cbbLoai`, `dtTuNgay`/`dtDenNgay`) lùi 60 ngày tới ngày
 đã chọn, rồi chỉ giữ dòng có cột Ngày ra viện đúng ngày đó. Các id này lấy từ
@@ -97,3 +112,19 @@ Chọn ngày ra viện (mặc định hôm nay): danh sách nội trú lọc tr�
 
 Chỗ chưa xác nhận trên máy bệnh viện (chỉnh trong `config.json` → `emr.selectors`):
 `grv_report_link` (chữ trên link phiếu in) hoặc `grv_report_id` (mã phiếu cho `OnReportPdf`).
+
+### Bù từ "Thông tin bệnh nhân, chi phí" (`EmrPortal.read_patient_info`)
+
+Luồng theo bản ghi của người dùng: Quản lý Bệnh nhân → Chuyển đối tượng bệnh nhân sang bảo hiểm →
+D/s Bệnh nhân → tìm mã BN (`txtTimKiem`, `btnTimKiem`) → nút trên dòng trong
+`divBenhNhanDanhSachContent` → "Thông tin bệnh nhân, chi phí". Chỉ đọc, không bấm Lưu.
+
+| Ô EMR | Key nội bộ |
+| --- | --- |
+| `cbbDanToc` | `dan_toc` |
+| `cbbLoaiGiayTo` | `loai_giay_to` (chỉ dùng khi có số CCCD; không thì giữ "Không có giấy tờ") |
+| `txtSoCMND` | `so_cccd` |
+| `txtNgayCap` | `ngaycap_cccd` |
+| `cbbGioiTinh` | `gioi_tinh` |
+
+Giấy ra viện là nguồn chính; các ô này chỉ bù chỗ giấy ra viện để trống.

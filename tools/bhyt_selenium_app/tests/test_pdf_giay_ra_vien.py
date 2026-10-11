@@ -99,5 +99,83 @@ class ParseGrvTextTests(unittest.TestCase):
         self.assertNotEqual(DOC_GRV, DOC_BHXH)
 
 
+# Đúng bố cục giấy ra viện thật của bệnh viện (MS: 01/BV-01) như pdfminer trích theo dòng
+# (extract_grv_text), dữ liệu người bệnh đã thay bằng dữ liệu giả.
+REAL_LAYOUT = """TRƯỜNG ĐẠI HỌC Y DƯỢC CẦN THƠ CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM MS: 01/BV-01
+
+BỆNH VIỆN Độc lập - Tự do - Hạnh phúc Số hồ sơ/Số BA:
+
+Số:
+
+100001/2026/GRV
+
+      GIẤY RA VIỆN
+
+- Họ tên người bệnh: TRẦN THỊ MẪU
+
+- Ngày/tháng/năm sinh: 02/03/1985 (Tuổi: 41 tuổi) Nam/nữ: Nữ
+- Dân tộc: Kinh Nghề nghiệp: Không xác định
+
+- Số CCCD/CMND/Định Danh công dân/Hộ chiếu: 092000000001. Ngày cấp: 07/02/2025
+
+- Mã số BHXH/Thẻ BHYT: DN 4 92 92 01234567 Giá trị từ:  01/10/2026  đến:  31/12/2026
+
+- Địa chỉ:  Kv 1 ,Phường Ô Môn, Thành phố Cần Thơ
+
+- Vào viện lúc:  01 giờ 56 phút, ngày 01 tháng 10 năm 2026
+
+- Ra viện lúc :  13 giờ 00 phút, ngày 08 tháng 10 năm 2026
+
+- Chẩn đoán: S42.20-Gãy phần trên xương cánh tay, gãy kín; S40.0-Chấn động vai và cánh tay,
+I25.5-Bệnh cơ tim do thiếu máu cục bộ
+
+- Phương pháp điều trị: Kết hợp xương đầu trên xương cánh tay trái
+
+- Ghi chú: Uống thuốc theo toa, tái khám thứ  3 ngày 
+20/10/2026. Nghỉ ốm từ ngày 09/10/2026 đến hết ngày 19/10/2026. 
+
+Ngày 08 tháng 10 năm 2026
+
+Đại diện đơn vị
+
+ Người hành nghề khám bệnh, chữa bệnh
+
+(Ký, ghi rõ họ tên, đóng dấu)
+
+(Ký, ghi rõ họ tên)
+"""
+
+
+class RealLayoutTests(unittest.TestCase):
+    def test_hospital_discharge_paper(self):
+        f = parse_grv_text(REAL_LAYOUT)["fields"]
+        self.assertEqual(f["ma_ct"], "100001/2026/GRV")
+        self.assertEqual(f["ho_ten"], "TRẦN THỊ MẪU")
+        self.assertEqual(f["ngay_sinh"], "02/03/1985")
+        self.assertEqual(f["gioi_tinh"], "Nữ")
+        self.assertEqual(f["dan_toc"], "Kinh")
+        self.assertEqual(f["nghe_nghiep"], "Không xác định")
+        self.assertEqual(f["so_cccd"], "092000000001")
+        self.assertEqual(f["ngaycap_cccd"], "07/02/2025")
+        # Thẻ in tách ô, sau đó là hạn thẻ: ghép lại 15 ký tự, mã BHXH = 10 số cuối.
+        self.assertEqual(f["ma_the"], "DN4929201234567")
+        self.assertEqual(f["ma_bhxh"], "9201234567")
+        self.assertEqual(f["dia_chi"], "Kv 1 ,Phường Ô Môn, Thành phố Cần Thơ")
+        self.assertEqual(f["tu_ngay"], "01/10/2026 01:56")
+        self.assertEqual(f["den_ngay"], "08/10/2026 13:00")
+        self.assertTrue(f["chan_doan"].startswith("S42.20-Gãy phần trên"))
+        self.assertTrue(f["chan_doan"].endswith("thiếu máu cục bộ"))
+        self.assertEqual(f["pp_dieutri"], "Kết hợp xương đầu trên xương cánh tay trái")
+        self.assertIn("Nghỉ ốm từ ngày 09/10/2026", f["ghi_chu"])
+        self.assertEqual(f["nghi_tu_ngay"], "09/10/2026")
+        self.assertEqual(f["nghi_den_ngay"], "19/10/2026")
+        self.assertEqual(f["ngay_ct"], "08/10/2026")
+        # Có CCCD thì không đặt "Không có giấy tờ" (lấy loại giấy tờ từ EMR).
+        self.assertNotIn("loai_giay_to", f)
+        # Giấy không in khoa và tên bác sĩ: phải lấy từ nơi khác.
+        self.assertNotIn("ma_khoa", f)
+        self.assertNotIn("doctor_text", f)
+
+
 if __name__ == "__main__":
     unittest.main()

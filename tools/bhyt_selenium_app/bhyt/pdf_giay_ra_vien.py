@@ -37,6 +37,8 @@ _LABELS = {
     "dan_toc": r"Dân tộc",
     "nghe_nghiep": r"Nghề nghiệp",
     "the": r"Mã số BHXH\s*/\s*(?:Số\s*)?thẻ BHYT(?: số)?",
+    "cccd": r"Số CCCD[^:\n]*",
+    "ngay_cap": r"Ngày cấp",
     "dia_chi": r"Địa chỉ",
     "vao_vien": r"Vào viện(?: lúc)?",
     "ra_vien": r"Ra viện(?: lúc)?",
@@ -53,7 +55,7 @@ _LABELS = {
 # Những dòng/nhãn chắc chắn kết thúc một khối nhiều dòng (chẩn đoán, địa chỉ…).
 _BLOCK_END = (
     r"Thủ trưởng|Trưởng khoa|Người hành nghề"
-    r"|^[^\n,:]*,?\s*ngày\s+\d{1,2}\s+tháng\s+\d{1,2}\s+năm"
+    r"|^[^\n,:]*,?[ \t]*ngày[ \t]+\d{1,2}[ \t]+tháng[ \t]+\d{1,2}[ \t]+năm"
 )
 
 # Nhãn ở đầu dòng: "- Họ tên người bệnh:" hoặc giữa dòng "... Dân tộc: Kinh".
@@ -105,7 +107,7 @@ def _to_date(value: str) -> str:
 def _split_card(value: str) -> tuple[str, str]:
     """'HS4797935123456' → (mã BHXH 10 số cuối, mã thẻ 15 ký tự).
     '7935123456 / HS4797935123456' → tách hai phần. Chỉ mã BHXH 10 số → ('…', '')."""
-    parts = [re.sub(r"\s+", "", p) for p in re.split(r"[/;,]", value or "") if p.strip()]
+    parts = [re.sub(r"[\s|]+", "", p) for p in re.split(r"[/;,]", value or "") if p.strip()]
     ma_bhxh = ma_the = ""
     for part in parts:
         token = re.sub(r"[^0-9A-Za-z]", "", part).upper()
@@ -153,7 +155,21 @@ def parse_grv_text(text: str, doctors: Iterable[str] | None = None) -> dict:
     if MARKER_GRV not in normalize_text(text):
         raise PhieuPdfError("File không phải Giấy ra viện (không thấy tiêu đề GIẤY RA VIỆN).")
 
-    ma_bhxh, ma_the = _split_card(_field(text, "the"))
+    # Thẻ in tách ô "DN | 4 | 92 | 92 | 01234567", sau đó là "Giá trị từ: .. đến: ..".
+    card = re.split(r"Giá trị", _field(text, "the"), flags=re.IGNORECASE)[0]
+    ma_bhxh, ma_the = _split_card(card)
+
+    # Số hồ sơ/Số BA: "100001/2026/GRV" (bản in có khi để số ở dòng dưới nhãn).
+    m = re.search(r"\b(\d+/\d{4}/GRV)\b", text, re.IGNORECASE)
+    so_ho_so = m.group(1) if m else ""
+
+    # Bệnh viện ghi số ngày nghỉ ốm trong Ghi chú: "Nghỉ ốm từ ngày .. đến hết ngày ..".
+    nghi_tu = nghi_den = ""
+    m = re.search(
+        r"Nghỉ ốm\s*từ ngày\s*([0-9/\-]+)\s*đến (?:hết )?ngày\s*([0-9/\-]+)", text, re.IGNORECASE,
+    )
+    if m:
+        nghi_tu, nghi_den = _to_date(m.group(1)), _to_date(m.group(2))
 
     # "Điều trị ngoại trú từ ngày 06/10/2026 đến hết ngày 12/10/2026" (có hoặc không có ":").
     nt_tu = nt_den = ""
@@ -176,7 +192,7 @@ def parse_grv_text(text: str, doctors: Iterable[str] | None = None) -> dict:
 
     fields = {
         "mau_so": "03",
-        "ma_ct": _field(text, "ma_ct"),
+        "ma_ct": _field(text, "ma_ct") or so_ho_so,
         "so_seri": _field(text, "so_seri"),
         "ma_bhxh": ma_bhxh,
         "ma_the": ma_the,
@@ -198,16 +214,34 @@ def parse_grv_text(text: str, doctors: Iterable[str] | None = None) -> dict:
         "dc_thainghen": "True" if dc.startswith("co") else "",
         "ngoaitru_tungay": nt_tu,
         "ngoaitru_denngay": nt_den,
+        "so_cccd": re.sub(r"\D", "", _field(text, "cccd")),
+        "ngaycap_cccd": _to_date(_field(text, "ngay_cap")),
+        "nghi_tu_ngay": nghi_tu,
+        "nghi_den_ngay": nghi_den,
         "ngay_ct": _signature_date(text),
         "doctor_text": _find_doctor(text, doctors or DEFAULT_DOCTORS),
-        "loai_giay_to": "Không có giấy tờ",
     }
+    # Không có số CCCD thì cổng cần chọn "Không có giấy tờ"; có CCCD thì để loại giấy tờ
+    # lấy từ "Thông tin bệnh nhân" trên EMR (read_discharge_record bù vào).
+    if not fields["so_cccd"]:
+        fields["loai_giay_to"] = "Không có giấy tờ"
     fields = {k: v for k, v in fields.items() if v}
     return {"doc_type": DOC_GRV, "mau_so": "03", "fields": fields, "raw": {"text": text}}
 
 
+def extract_grv_text(path: str | Path) -> str:
+    """Trích text giấy ra viện giữ đúng thứ tự dòng. Mặc định pdfminer tách nhãn và giá
+    trị in cùng dòng (vd "Vào viện lúc:" và giờ, ô thẻ BHYT) thành các khối khác nhau;
+    gộp theo dòng (boxes_flow=None, char_margin lớn) thì mỗi dòng in ra là một dòng text."""
+    try:
+        from pdfminer.layout import LAParams
+    except ImportError:  # pragma: no cover - phụ thuộc môi trường
+        return extract_pdf_text(path)
+    return extract_pdf_text(path, laparams=LAParams(line_margin=0.2, boxes_flow=None, char_margin=20))
+
+
 def parse_grv_pdf(path: str | Path, doctors: Iterable[str] | None = None) -> dict:
-    return parse_grv_text(extract_pdf_text(path), doctors)
+    return parse_grv_text(extract_grv_text(path), doctors)
 
 
 def is_grv_text(text: str) -> bool:
@@ -221,5 +255,5 @@ def parse_sick_leave_pdf(path: str | Path, doctors: Iterable[str] | None = None)
 
     text = extract_pdf_text(path)
     if is_grv_text(text):
-        return parse_grv_text(text, doctors)
+        return parse_grv_pdf(path, doctors)
     return parse_phieu_text(text)

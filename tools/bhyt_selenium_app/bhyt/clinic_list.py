@@ -31,6 +31,9 @@ _HEADER_ALIASES = {
     "ngay ra vien": "ngay_ra",
     "ngay ra": "ngay_ra",
     "khoa": "khoa",
+    "khoa dieu tri": "khoa",
+    "bac si": "bac_si",
+    "bac si dieu tri": "bac_si",
 }
 
 # Cột đặc trưng để nhận ra đúng bảng.
@@ -100,6 +103,8 @@ def parse_clinic_patients(html_text: str,
             "ma_bn": (row.get("ma_bn") or "").strip(),
             "trang_thai": (row.get("trang_thai") or "").strip(),
             "ngay_ra": (row.get("ngay_ra") or "").strip(),
+            "khoa": (row.get("khoa") or "").strip(),
+            "bac_si": (row.get("bac_si") or "").strip(),
             "raw": texts,
         })
     return out
