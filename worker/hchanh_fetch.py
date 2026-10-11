@@ -1529,7 +1529,12 @@ def _switch_hchanh_click_context_on_open_driver(
         nav_url = getattr(driver, "current_url", "") or _HCHANH_CLICK_CACHE.get("nav_url") or ""
     except Exception:
         nav_url = _HCHANH_CLICK_CACHE.get("nav_url") or ""
-    served = int(_HCHANH_CLICK_CACHE.get("patients_served") or 0) + 1
+    # A new filter on the same encounter is not a new patient/Chrome quota.
+    previous_code = str(_HCHANH_CLICK_CACHE.get("ma_bn") or "").strip()
+    previous_case = _t(_HCHANH_CLICK_CACHE.get("direct_case_key"))
+    served = int(_HCHANH_CLICK_CACHE.get("patients_served") or 0) + (
+        1 if code != previous_code or direct_case_key != previous_case else 0
+    )
 
     if direct_links_cfg:
         links = {
@@ -1649,20 +1654,33 @@ def _ensure_hchanh_click_context(sess: Optional["EmrHttpSession"], ma_bn: str,
         _t(_HCHANH_CLICK_CACHE.get("direct_noitruid")) == direct_noitruid
         and _t(_HCHANH_CLICK_CACHE.get("direct_case_key")) == direct_case_key
     )
+    hchanh_config_for_switch = _build_hchanh_config(config)
+    cached_config = _HCHANH_CLICK_CACHE.get("config") or {}
+    # Never reuse a Chrome session if the configured EMR account changed.
+    same_account = (
+        _t(cached_config.get("username")) == _t(hchanh_config_for_switch.get("username"))
+        and str(cached_config.get("password") or "") == str(hchanh_config_for_switch.get("password") or "")
+    )
     if (existing is not None and _HCHANH_CLICK_CACHE.get("ma_bn") == code
             and _HCHANH_CLICK_CACHE.get("inpatient_status") == wanted_status
             and _HCHANH_CLICK_CACHE.get("date_from") == wanted_from
             and _HCHANH_CLICK_CACHE.get("date_to") == wanted_to
             and (not direct_links_cfg or cache_same_direct)
+            and same_account
             and _is_driver_alive(existing)):
         print(f"LOG [hchanh-click] Dùng lại Chrome đang mở cho BN {code} | trạng thái={wanted_status}.")
         return _HCHANH_CLICK_CACHE
 
-    hchanh_config_for_switch = _build_hchanh_config(config)
     batch_size = max(1, int(config.get("hchanh_batch_size") or 1))
     served_so_far = int(_HCHANH_CLICK_CACHE.get("patients_served") or 0)
-    if (existing is not None and _HCHANH_CLICK_CACHE.get("ma_bn") != code
-            and served_so_far < batch_size and _is_driver_alive(existing)):
+    same_encounter = (
+        _HCHANH_CLICK_CACHE.get("ma_bn") == code and cache_same_direct
+    )
+    # Same patient with a different date/status should reuse the valid logged-in
+    # Chrome too. Only count a new encounter toward the per-batch quota.
+    if (existing is not None and same_account
+            and (same_encounter or served_so_far < batch_size)
+            and _is_driver_alive(existing)):
         switched = _switch_hchanh_click_context_on_open_driver(
             existing, _HCHANH_CLICK_CACHE.get("wait"), code, hchanh_config_for_switch,
             date_to, date_from, wanted_status, wanted_from, wanted_to,
