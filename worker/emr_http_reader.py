@@ -34,6 +34,7 @@ except ModuleNotFoundError:  # pragma: no cover
     BeautifulSoup = None  # type: ignore
 
 from emr_parsers import parse_noitru_page
+from emr_access_budget import EmrAccessProtectionError, reserve_slot, pause_origin
 
 
 # -------------------------
@@ -132,6 +133,34 @@ def _default_cookie_file() -> str:
         return str(Path.cwd() / ".runtime" / "auth" / "emr_http_cookies.json")
 
 
+def _global_gap_ms() -> int:
+    """Conservative shared read rate across workers on one Data Hub server."""
+    try:
+        return min(10000, max(0, int(os.environ.get("EMR_HTTP_GLOBAL_GAP_MS", "500"))))
+    except (TypeError, ValueError):
+        return 500
+
+
+def _retry_after_seconds(headers: Any, default: float) -> float:
+    value = str((headers or {}).get("Retry-After", "") or "").strip()
+    if not value:
+        return default
+    try:
+        return min(300.0, max(1.0, float(value)))
+    except ValueError:
+        from email.utils import parsedate_to_datetime
+        try:
+            stamp = parsedate_to_datetime(value).timestamp()
+            return min(300.0, max(1.0, stamp - time.time()))
+        except (ValueError, TypeError, OverflowError):
+            return default
+
+
+def _retry_delay(attempt: int) -> None:
+    # Minimum 1 second (instead of the old 0.2s burst).
+    time.sleep(min(4.0, max(1.0, 2 ** (attempt - 1))))
+
+
 def _cfg_bool_value(value: object, default: bool = False) -> bool:
     if isinstance(value, bool):
         return value
@@ -167,7 +196,7 @@ class EmrHttpConfig:
     login_post_url: Optional[str] = None
     timeout_sec: int = 30
     request_delay_ms: int = 80
-    max_retries: int = 2
+    max_retries: int = 1
     cookie_file: str = ""
     use_cached_cookies: bool = True
 
@@ -247,7 +276,7 @@ class EmrHttpSession:
             login_post_url=(config.get("login_post_url") or None),
             timeout_sec=int(config.get("http_timeout_sec") or 30),
             request_delay_ms=int(config.get("http_read_request_delay_ms") or config.get("http_request_delay_ms") or 80),
-            max_retries=max(0, int(config.get("http_read_max_retries") or config.get("http_max_retries") or 2)),
+            max_retries=max(0, min(1, int(config.get("http_read_max_retries", config.get("http_max_retries", 1))))),
             # Biến môi trường đứng trước: máy chủ đặt file cookie riêng cho từng tài khoản khi chạy
             # song song, cấu hình chung không được làm các tài khoản dùng chung một file cookie.
             cookie_file=(os.environ.get("EMR_HTTP_COOKIE_FILE") or config.get("http_cookie_file") or _default_cookie_file()),
@@ -264,20 +293,33 @@ class EmrHttpSession:
     # -------------------------
     # Low-level HTTP
     # -------------------------
+    def _budget_directory(self) -> str:
+        # Shared by all workspaces on this server, not per session or account.
+        return os.environ.get("EMR_HTTP_BUDGET_DIR") or str(Path(_default_cookie_file()).parent)
+
     def _throttle(self) -> None:
-        """
-        Giữ nhịp request tối thiểu để không bắn dồn vào EMR.
-        Mặc định 80ms: đủ nhẹ cho web nội bộ nhưng vẫn nhanh hơn mở Chrome nhiều lần.
-        """
+        """Local spacing plus a single cross-process read budget per EMR origin."""
         delay = max(0, int(self.cfg.request_delay_ms or 0)) / 1000.0
-        if delay <= 0:
-            return
-        now = time.perf_counter()
-        wait = delay - (now - self._last_request_at)
+        wait = delay - (time.perf_counter() - self._last_request_at)
         if wait > 0:
             time.sleep(wait)
+        reserve_slot(self.base_origin, self._budget_directory(), _global_gap_ms())
 
-    def _bridge_request(self, method: str, u: str, data: Any = None, headers: Optional[Dict[str, str]] = None) -> Tuple[str, str]:
+    def _overloaded(self, status: int, headers: Any = None) -> None:
+        if status not in (429, 503):
+            return
+        delay = _retry_after_seconds(headers, 60 if status == 429 else 30)
+        pause_origin(self.base_origin, self._budget_directory(), delay)
+        raise EmrAccessProtectionError(
+            f"EMR trả HTTP {status} (đang giới hạn/quá tải). Tạm dừng truy cập ít nhất {int(delay)} giây."
+        )
+
+    def _attempts(self, method: str) -> int:
+        # POST may change session/server state even on read-only pages. Never replay it.
+        return 1 + min(1, max(0, int(self.cfg.max_retries or 0))) if method.upper() == "GET" else 1
+
+    def _bridge_request(self, method: str, u: str, data: Any = None,
+                        headers: Optional[Dict[str, str]] = None) -> Tuple[str, str]:
         headers = dict(headers or {})
         body = None
         content_type = ""
@@ -298,14 +340,9 @@ class EmrHttpSession:
             body = bytes(data).decode("utf-8", "replace")
         elif data is not None:
             body = str(data)
-        # Cùng nguồn với cấu hình → gửi đường dẫn tương đối; máy chủ ghép với địa chỉ EMR của tab.
-        target = u
         p = urlparse(u)
-        if f"{p.scheme}://{p.netloc}" == self.base_origin:
-            target = urlunparse(("", "", p.path or "/", "", p.query, ""))
-        attempts = max(1, int(self.cfg.max_retries or 0) + 1)
-        last_exc: Optional[Exception] = None
-        for attempt in range(1, attempts + 1):
+        target = urlunparse(("", "", p.path or "/", "", p.query, "")) if f"{p.scheme}://{p.netloc}" == self.base_origin else u
+        for attempt in range(1, self._attempts(method) + 1):
             self._throttle()
             try:
                 res = _bridge_call("fetch", {
@@ -314,45 +351,51 @@ class EmrHttpSession:
                 })
                 self._last_request_at = time.perf_counter()
                 status = int(res.get("http_status") or 0)
-                if status >= 500 and attempt < attempts:
-                    time.sleep(min(0.8, 0.2 * attempt))
-                    continue
+                self._overloaded(status)
                 if status >= 400:
+                    if status >= 500 and attempt < self._attempts(method):
+                        _retry_delay(attempt)
+                        continue
                     raise RuntimeError(f"EMR trả lỗi HTTP {status} cho {p.path or '/'}")
                 return str(res.get("text") or ""), str(res.get("url") or u)
-            except EmrBridgeError as exc:
-                # Chưa nối / EMR đăng xuất / hết giờ: thử lại không có ích, báo ngay.
-                raise exc
+            except (EmrBridgeError, EmrAccessProtectionError):
+                # Do not retry when helper is offline, session is lost, or EMR is overloaded.
+                raise
             except Exception as exc:
-                last_exc = exc
-                if attempt >= attempts:
-                    break
-                time.sleep(min(0.8, 0.2 * attempt))
-        raise last_exc  # type: ignore[misc]
+                if not (requests is not None and isinstance(exc, (requests.Timeout, requests.ConnectionError))):
+                    raise
+                if attempt >= self._attempts(method):
+                    raise
+                _retry_delay(attempt)
+        raise RuntimeError("Không đọc được dữ liệu EMR qua cầu nối.")
 
     def _request_html(self, method: str, url: str, **kwargs) -> Tuple[str, str]:
         u = _abs(self.base_origin, url)
         if self._bridge:
             return self._bridge_request(method, u, data=kwargs.get("data"), headers=kwargs.get("headers"))
-        attempts = max(1, int(self.cfg.max_retries or 0) + 1)
-        last_exc = None
-        for attempt in range(1, attempts + 1):
+        for attempt in range(1, self._attempts(method) + 1):
             self._throttle()
             try:
                 r = self.s.request(method, u, allow_redirects=True, timeout=self.cfg.timeout_sec, **kwargs)
                 self._last_request_at = time.perf_counter()
-                # Retry nhẹ với lỗi server tạm thời. Không retry 401/403 để tránh gây tải vô ích.
-                if r.status_code >= 500 and attempt < attempts:
-                    time.sleep(min(0.8, 0.2 * attempt))
+                self._overloaded(r.status_code, r.headers)
+                if r.status_code >= 500 and attempt < self._attempts(method):
+                    _retry_delay(attempt)
                     continue
+                # 401/403 and all other HTTP errors are returned immediately.
                 r.raise_for_status()
                 return r.text, r.url
+            except EmrAccessProtectionError:
+                raise
             except Exception as exc:
-                last_exc = exc
-                if attempt >= attempts:
-                    break
-                time.sleep(min(0.8, 0.2 * attempt))
-        raise last_exc  # type: ignore[misc]
+                # Retry only transient network failures for GET. Never resend POST.
+                if (requests is None
+                        or not isinstance(exc, (requests.Timeout, requests.ConnectionError))
+                        or isinstance(exc, requests.exceptions.SSLError)
+                        or attempt >= self._attempts(method)):
+                    raise
+                _retry_delay(attempt)
+        raise RuntimeError("Không đọc được trang EMR.")
 
     def get_html(self, url: str) -> Tuple[str, str]:
         return self._request_html("GET", url)
@@ -746,6 +789,8 @@ class EmrHttpSession:
                 if self.verify_logged_in():
                     return
                 errors.append("cached_cookie: hết hạn hoặc vẫn bị trả về login")
+            except EmrAccessProtectionError:
+                raise
             except Exception as exc:
                 errors.append(f"cached_cookie: {type(exc).__name__}")
 
@@ -762,6 +807,8 @@ class EmrHttpSession:
             if ok:
                 return
             errors.append(f"target_page: {err}")
+        except EmrAccessProtectionError:
+            raise
         except Exception as exc:
             errors.append(f"target_page: {type(exc).__name__}")
 
@@ -773,6 +820,8 @@ class EmrHttpSession:
             if ok:
                 return
             errors.append(f"url_login: {err}")
+        except EmrAccessProtectionError:
+            raise
         except Exception as exc:
             errors.append(f"url_login: {type(exc).__name__}")
 
