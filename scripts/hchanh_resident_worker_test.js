@@ -72,7 +72,8 @@ async function testStatusAndNoPatientLogs() {
   const original = process.env.EMR_PERSISTENT_HCHANH_WORKER;
   try {
     delete process.env.EMR_PERSISTENT_HCHANH_WORKER;
-    assert.equal(residentStatus().enabled, true, 'read-only worker is enabled by default');
+    const isTest = /^(1|true|yes)$/i.test(process.env.CI || '') || process.env.NODE_ENV === 'test';
+    assert.equal(residentStatus().enabled, !isTest, 'read-only Chrome must never start in CI/test');
     process.env.EMR_PERSISTENT_HCHANH_WORKER = '0';
     assert.equal(residentStatus().enabled, false, 'rollback must disable resident Chrome');
   } finally {
