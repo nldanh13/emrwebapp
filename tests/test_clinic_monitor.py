@@ -156,6 +156,64 @@ def test_run_monitor_writes_state_deletes_request_and_stops(monkeypatch, tmp_pat
     assert 'password' not in data and data['account'] == 'u'
 
 
+
+def test_list_filter_today_or_chosen_day():
+    from datetime import date
+    today = date(2026, 10, 11)
+    assert cm.list_filter('', today) == {'loai': '0'}
+    assert cm.list_filter('2026-10-11', today) == {'loai': '0'}
+    assert cm.list_filter('2026-10-12', today) == {'loai': '0'}  # ngày tới: chưa có gì để đọc
+    assert cm.list_filter('không phải ngày', today) == {'loai': '0'}
+    assert cm.list_filter('2026-10-09', today) == {
+        'loai': '7', 'tuNgay': '00:00 09/10/2026', 'denNgay': '23:59 09/10/2026'}
+    assert cm.past_list_date('2026-10-09', today) == '2026-10-09'
+    assert cm.past_list_date('2026-10-11', today) == ''
+
+
+def test_fetch_chosen_day_sends_range_filter():
+    html = _table(_row('a', 1, '<a>A</a>', BHYT, 'Hoàn tất', '', 'Cho về'))
+    driver = FakeDriver([{'ok': True, 'html': html}])
+    cm.fetch_today_rows(driver, {'loai': '7', 'tuNgay': '00:00 09/10/2026', 'denNgay': '23:59 09/10/2026'})
+    assert driver.calls[0]['loai'] == '7'
+    assert driver.calls[0]['tuNgay'] == '00:00 09/10/2026' and driver.calls[0]['denNgay'] == '23:59 09/10/2026'
+
+
+def test_run_monitor_past_day_is_read_only(monkeypatch, tmp_path):
+    req = tmp_path / 'req.json'
+    state = tmp_path / 'state.json'
+    control = tmp_path / 'control.json'
+    req.write_text(json.dumps({'username': 'u', 'password': 'p', 'loginUrl': 'https://emr/login.aspx',
+                               'intervalMinutes': 5, 'autoTasks': True}), encoding='utf-8')
+    monkeypatch.setattr(cm, 'load_config', lambda: {})
+    html = _table(_row('a', 1, '<a>A</a>', BHYT, 'Đang thực hiện', '', 'Cho về'))
+    seen = {'dates': [], 'exam_pages': 0}
+
+    class FakeMonitor(cm.Monitor):
+        def read(self):
+            seen['dates'].append(self.list_date)
+            # Người dùng bấm "Hoàn tất khám" khi đang xem ngày cũ, rồi dừng.
+            control.write_text(json.dumps({'listDate': '2020-01-03', 'completeNow': 1, 'tasksNow': 1, 'stop': True}),
+                               encoding='utf-8')
+            return cm.rows_from_html(html)
+
+        def on_exam_page(self, row, action, need_services=True):
+            seen['exam_pages'] += 1
+            return {'status': 'ready', 'message': 'Sẵn sàng hoàn tất'}
+
+    control.write_text(json.dumps({'listDate': '2020-01-03'}), encoding='utf-8')
+    monkeypatch.setattr(cm, 'Monitor', FakeMonitor)
+    monkeypatch.setattr(cm, 'run_completions', lambda *a, **k: (_ for _ in ()).throw(AssertionError('không được hoàn tất')))
+    monkeypatch.setattr(cm, 'run_tasks', lambda *a, **k: (_ for _ in ()).throw(AssertionError('không được nhập thủ thuật')))
+    monkeypatch.setattr(cm, 'scan_visit_details', lambda *a, **k: None)
+    cm.run_monitor(str(req), str(state), str(control))
+
+    data = json.loads(state.read_text(encoding='utf-8'))
+    assert seen['dates'] == ['2020-01-03']
+    assert seen['exam_pages'] == 0
+    assert data['list_date'] == '2020-01-03' and data['read_only'] is True
+    assert [r['khambenhid'] for r in data['rows']] == ['a']
+
+
 # ── Điều kiện và thao tác hoàn tất khám ──────────────────────────────────────
 from datetime import datetime as DT  # noqa: E402
 

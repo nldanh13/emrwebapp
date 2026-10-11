@@ -112,14 +112,18 @@ export function sickLeavePayload(row) {
   };
 }
 
-// Ngày đang theo dõi: ngày của lần đọc danh sách gần nhất (chưa đọc thì lúc bắt đầu, chưa có gì thì
-// hôm nay). today=false khi danh sách còn là của ngày khác (ví dụ để máy chạy qua đêm).
+// Ngày của danh sách đang hiện: ngày người dùng chọn xem lại (list_date), không thì ngày của lần đọc
+// gần nhất (chưa đọc thì lúc bắt đầu, chưa có gì thì hôm nay). today=false khi không phải hôm nay
+// (chọn xem lại ngày cũ, hoặc để máy chạy qua đêm).
 const WEEKDAYS = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
 const pad2 = n => String(n).padStart(2, '0');
+export const isoDay = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 export function monitorDay(monitor, now = new Date()) {
-  let day = new Date(monitor?.updated_at || monitor?.started_at || now);
+  const picked = String(monitor?.list_date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  let day = picked ? new Date(Number(picked[1]), Number(picked[2]) - 1, Number(picked[3]))
+    : new Date(monitor?.updated_at || monitor?.started_at || now);
   if (Number.isNaN(day.getTime())) day = now;
   const short = `${pad2(day.getDate())}/${pad2(day.getMonth() + 1)}/${day.getFullYear()}`;
-  return { label: `${WEEKDAYS[day.getDay()]}, ${short}`, short, today: sameDay(day, now) };
+  return { label: `${WEEKDAYS[day.getDay()]}, ${short}`, short, iso: isoDay(day), today: sameDay(day, now) };
 }

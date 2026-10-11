@@ -54,12 +54,12 @@ function Empty({ children }) {
   return <div style={{ fontSize: FS.sm, color: C.text2, padding: '8px 0' }}>{children}</div>;
 }
 
-export function VisitPanel({ rows, running, busy, actionRunning, onComplete, renderCompletion }) {
+export function VisitPanel({ rows, running, busy, actionRunning, onComplete, renderCompletion, dayText = 'hôm nay' }) {
   const counts = useMemo(() => stageCounts(rows), [rows]);
   const groups = useMemo(() => completionGroups(rows), [rows]);
   const waitingList = [...groups.noDrug, ...groups.pending];
   return (
-    <Panel title="Lượt khám hôm nay">
+    <Panel title={`Lượt khám ${dayText}`}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <Stat label="Chờ khám" value={counts.cho_kham} tone="amber" />
         <Stat label="Đang thực hiện" value={counts.dang} tone="blue" />
@@ -150,10 +150,10 @@ function todayIso() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export function SickLeavePanel({ rows, entries, onEntries, onOpenSickLeave, toast }) {
+export function SickLeavePanel({ rows, entries, onEntries, onOpenSickLeave, toast, day = '', dayText = 'hôm nay' }) {
   const [pick, setPick] = useState('');
   const [busy, setBusy] = useState('');
-  const today = todayIso();
+  const today = day || todayIso();
   const todayEntries = useMemo(() => (entries || []).filter(e => e.ngay === today)
     .sort((a, b) => String(a.thoi_gian).localeCompare(String(b.thoi_gian))), [entries, today]);
   const markedKeys = useMemo(() => new Set((entries || []).map(e => e.key)), [entries]);
@@ -175,7 +175,7 @@ export function SickLeavePanel({ rows, entries, onEntries, onOpenSickLeave, toas
 
   const picked = suggestions.find(r => sickLeaveKey(r) === pick);
   return (
-    <Panel title="Xin nghỉ ốm" aside={<span style={{ fontSize: FS.xs, color: C.text2 }}>{todayEntries.length} người hôm nay</span>}>
+    <Panel title="Xin nghỉ ốm" aside={<span style={{ fontSize: FS.xs, color: C.text2 }}>{todayEntries.length} người {dayText}</span>}>
       {todayEntries.length ? todayEntries.map(e => (
         <PatientLine key={e.key} row={e}
           sub={e.chan_doan ? <div style={{ fontSize: FS.xs, color: C.text2 }}>{e.chan_doan}</div> : null}
@@ -183,7 +183,7 @@ export function SickLeavePanel({ rows, entries, onEntries, onOpenSickLeave, toas
             <Btn icon={IconX} aria-label={`Bỏ ${e.ho_ten} khỏi danh sách nghỉ ốm`} loading={busy === `remove:${e.ma_bn}`}
               onClick={() => change('remove', e)} style={{ minHeight: 28, padding: '2px 8px' }}>Bỏ</Btn>
           )} />
-      )) : <Empty>Chưa có người bệnh nào xin nghỉ ốm hôm nay.</Empty>}
+      )) : <Empty>{`Chưa có người bệnh nào xin nghỉ ốm ${dayText}.`}</Empty>}
 
       <form onSubmit={ev => { ev.preventDefault(); if (picked) change('add', sickLeavePayload(picked)); }}
         style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>

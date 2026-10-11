@@ -20,7 +20,7 @@ import os
 import re
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urljoin
 
@@ -68,7 +68,8 @@ try {
     CreateRenderInfo(), parseInt(v('drpSelectQuocGia'), 10), v('drpSelectUuTien'), v('drpSelectQuocTich'),
     v('drpSelectDoiTuong'), v('drpSelectHangDoi'), parseInt(args.trangThai, 10),
     parseInt(v('drpSelectTrangThaiHK'), 10), parseInt(v('drpSelectTrangThaiHenTraKQ'), 10), parseInt(args.xuTri, 10),
-    parseInt(args.loai, 10), v('dtTuNgay'), v('dtDenNgay'), '', args.page,
+    parseInt(args.loai, 10), (args.tuNgay != null ? args.tuNgay : v('dtTuNgay')),
+    (args.denNgay != null ? args.denNgay : v('dtDenNgay')), '', args.page,
     (typeof SortBy !== 'undefined' ? SortBy : ''), (typeof OrderBy !== 'undefined' ? OrderBy : ''), String(args.pageSize));
   var o = out && out.value;
   if (!o) return { ok: false, reason: 'no_response', message: out && out.error ? String(out.error.Message || out.error) : '' };
@@ -743,18 +744,38 @@ def enter_procedure(page: ProcedurePage, row: Dict[str, Any], config: Dict[str, 
 
 # ── Đọc danh sách trên EMR ───────────────────────────────────────────────────
 
-def _fetch_page(driver: Any, page: int) -> str:
-    res = driver.execute_script(FETCH_JS, {"trangThai": "", "xuTri": "", "loai": "0", "page": page, "pageSize": PAGE_SIZE}) or {}
+def past_list_date(value: Any, today: date) -> str:
+    """Ngày người dùng chọn (yyyy-mm-dd) nếu là ngày đã qua; rỗng = theo dõi danh sách hôm nay."""
+    try:
+        day = date.fromisoformat(compact(value))
+    except ValueError:
+        return ""
+    return day.isoformat() if day < today else ""
+
+
+def list_filter(value: Any, today: date) -> Dict[str, str]:
+    """Bộ lọc thời gian của Danh sách Khám bệnh: hôm nay → loại 0 ("Trong ngày", như EMR mặc định);
+    ngày đã qua → loại 7 ("Khoảng") từ 00:00 đến 23:59 ngày đó (ô ngày giờ EMR dạng HH:mm dd/mm/yyyy)."""
+    day = past_list_date(value, today)
+    if not day:
+        return {"loai": "0"}
+    dmy = date.fromisoformat(day).strftime("%d/%m/%Y")
+    return {"loai": "7", "tuNgay": f"00:00 {dmy}", "denNgay": f"23:59 {dmy}"}
+
+
+def _fetch_page(driver: Any, page: int, day_filter: Optional[Dict[str, str]] = None) -> str:
+    args = {"trangThai": "", "xuTri": "", "loai": "0", **(day_filter or {}), "page": page, "pageSize": PAGE_SIZE}
+    res = driver.execute_script(FETCH_JS, args) or {}
     if not res.get("ok"):
         raise ListUnavailable(f"{res.get('reason') or 'unknown'}: {compact(res.get('message'))}".strip(": "))
     return str(res.get("html") or "")
 
 
-def fetch_today_rows(driver: Any) -> List[Dict[str, Any]]:
-    first = _fetch_page(driver, 0)
+def fetch_today_rows(driver: Any, day_filter: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
+    first = _fetch_page(driver, 0, day_filter)
     rows = rows_from_html(first)
     for page in range(1, min(page_count(first), MAX_PAGES)):
-        rows.extend(rows_from_html(_fetch_page(driver, page)))
+        rows.extend(rows_from_html(_fetch_page(driver, page, day_filter)))
     seen, out = set(), []
     for r in rows:
         key = r["khambenhid"] or (r["ma_bn"], r["thoi_gian"])
@@ -773,6 +794,7 @@ class Monitor:
         self.driver: Any = None
         self.wait: Any = None
         self.login_count = 0
+        self.list_date = ""  # rỗng = hôm nay; yyyy-mm-dd = ngày đã qua người dùng chọn để xem lại
 
     def _open_list(self) -> None:
         self.driver.get(_build_clinic_url(self.driver.current_url, self.list_url))
@@ -800,7 +822,7 @@ class Monitor:
         last: Optional[Exception] = None
         for attempt in range(MAX_RELOGIN_ATTEMPTS + 1):
             try:
-                return fetch_today_rows(self.driver)
+                return fetch_today_rows(self.driver, list_filter(self.list_date, _now().date()))
             except ListUnavailable as e:
                 last = e
                 print(f"[CLINIC-MONITOR] Không đọc được danh sách ({e}); mở lại trang / đăng nhập lại (lần {attempt + 1}).")
@@ -1383,66 +1405,78 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
     visit_details: Dict[str, Dict[str, Any]] = {}
     state_dir = os.path.dirname(os.path.abspath(state_path))
     action_log: List[Dict[str, Any]] = []
+
+    def _list_date(ctrl: Dict[str, Any]) -> str:
+        return past_list_date(ctrl["listDate"] if "listDate" in ctrl else req.get("listDate"), _now().date())
+
     try:
         while True:
             state["last_attempt_at"] = _now().isoformat()
             ctrl = _read_control(control_path)
             weights = ctrl.get("weights") if isinstance(ctrl.get("weights"), dict) else {}
             try:
+                monitor.list_date = list_date = _list_date(ctrl)
                 rows = monitor.read()
-                if ctrl.get("completeNow") and ctrl.get("completeNow") != handled_complete:
-                    handled_complete = ctrl.get("completeNow")
-                    state["action_running"] = True
-                    write_json(state_path, state)
-                    if run_completions(monitor, rows, checks, weights, action_log):
+                if list_date:
+                    # Xem lại ngày đã qua: chỉ đọc danh sách (và chẩn đoán cho nghỉ ốm), không mở màn khám
+                    # kiểm tra, không nhập/hoàn tất gì trên EMR. Lệnh bấm lúc đang xem ngày cũ bị bỏ qua.
+                    handled_complete, handled_tasks = ctrl.get("completeNow"), ctrl.get("tasksNow")
+                    handled_prepare, handled_ngoaitru, handled_bbhc = ctrl.get("bbhcPrepare"), ctrl.get("ngoaitruNow"), ctrl.get("bbhcRun")
+                    state["auto_tasks"] = bool(ctrl["autoTasks"]) if "autoTasks" in ctrl else bool(req.get("autoTasks"))
+                else:
+                    if ctrl.get("completeNow") and ctrl.get("completeNow") != handled_complete:
+                        handled_complete = ctrl.get("completeNow")
+                        state["action_running"] = True
+                        write_json(state_path, state)
+                        if run_completions(monitor, rows, checks, weights, action_log):
+                            rows = monitor.read()
+                        state["action_running"] = False
+                        state["last_action_at"] = _now().isoformat()
+                    auto_tasks = bool(ctrl["autoTasks"]) if "autoTasks" in ctrl else bool(req.get("autoTasks"))
+                    state["auto_tasks"] = auto_tasks
+                    tasks_now = ctrl.get("tasksNow") and ctrl.get("tasksNow") != handled_tasks
+                    if tasks_now or auto_tasks:
+                        if tasks_now:
+                            handled_tasks = ctrl.get("tasksNow")
+                        state["action_running"] = True
+                        write_json(state_path, state)
+                        if run_tasks(monitor, rows, task_state, action_log, auto=not tasks_now, checks=checks, weights=weights):
+                            rows = monitor.read()
+                        state["action_running"] = False
+                        state["last_action_at"] = _now().isoformat()
+                    run_checks(monitor, rows, checks)
+                    scan_imaging(monitor, rows, imaging)
+                    if auto_tasks:
+                        # Soạn sẵn nháp SBBHC (chỉ đọc màn khám) ngay khi có chỉ định; lập trên EMR vẫn chờ người dùng duyệt.
+                        run_bbhc_prepare(monitor, [r for r in rows if (r.get("khambenhid") or "") not in bbhc], imaging, bbhc)
+                    if ctrl.get("bbhcPrepare") and ctrl.get("bbhcPrepare") != handled_prepare:
+                        handled_prepare = ctrl.get("bbhcPrepare")
+                        state["action_running"] = True
+                        write_json(state_path, state)
+                        run_bbhc_prepare(monitor, rows, imaging, bbhc)
+                        state["action_running"] = False
+                    if ctrl.get("ngoaitruNow") and ctrl.get("ngoaitruNow") != handled_ngoaitru:
+                        handled_ngoaitru = ctrl.get("ngoaitruNow")
+                        state["action_running"] = True
+                        write_json(state_path, state)
+                        if run_ngoaitru(monitor, rows, ngoaitru_state, action_log):
+                            rows = monitor.read()
+                        state["action_running"] = False
+                        state["last_action_at"] = _now().isoformat()
+                    if ctrl.get("bbhcRun") and ctrl.get("bbhcRun") != handled_bbhc:
+                        handled_bbhc = ctrl.get("bbhcRun")
+                        state["action_running"] = True
+                        write_json(state_path, state)
+                        approved = ctrl.get("bbhcDrafts") if isinstance(ctrl.get("bbhcDrafts"), dict) else {}
+                        new_pdfs = run_bbhc_create(monitor, rows, approved, bbhc, state_dir, action_log)
+                        if new_pdfs:
+                            bbhc_pdfs += new_pdfs
+                            merged = os.path.join(state_dir, f"clinic_bbhc_{_now():%Y%m%d}.pdf")
+                            clinic_bbhc.merge_pdfs([p for p in bbhc_pdfs if os.path.exists(p)], merged)
+                            state["bbhc_pdf"] = {"file": os.path.basename(merged), "count": len(bbhc_pdfs), "at": _now().isoformat()}
+                        state["action_running"] = False
+                        state["last_action_at"] = _now().isoformat()
                         rows = monitor.read()
-                    state["action_running"] = False
-                    state["last_action_at"] = _now().isoformat()
-                auto_tasks = bool(ctrl["autoTasks"]) if "autoTasks" in ctrl else bool(req.get("autoTasks"))
-                state["auto_tasks"] = auto_tasks
-                tasks_now = ctrl.get("tasksNow") and ctrl.get("tasksNow") != handled_tasks
-                if tasks_now or auto_tasks:
-                    if tasks_now:
-                        handled_tasks = ctrl.get("tasksNow")
-                    state["action_running"] = True
-                    write_json(state_path, state)
-                    if run_tasks(monitor, rows, task_state, action_log, auto=not tasks_now, checks=checks, weights=weights):
-                        rows = monitor.read()
-                    state["action_running"] = False
-                    state["last_action_at"] = _now().isoformat()
-                run_checks(monitor, rows, checks)
-                scan_imaging(monitor, rows, imaging)
-                if auto_tasks:
-                    # Soạn sẵn nháp SBBHC (chỉ đọc màn khám) ngay khi có chỉ định; lập trên EMR vẫn chờ người dùng duyệt.
-                    run_bbhc_prepare(monitor, [r for r in rows if (r.get("khambenhid") or "") not in bbhc], imaging, bbhc)
-                if ctrl.get("bbhcPrepare") and ctrl.get("bbhcPrepare") != handled_prepare:
-                    handled_prepare = ctrl.get("bbhcPrepare")
-                    state["action_running"] = True
-                    write_json(state_path, state)
-                    run_bbhc_prepare(monitor, rows, imaging, bbhc)
-                    state["action_running"] = False
-                if ctrl.get("ngoaitruNow") and ctrl.get("ngoaitruNow") != handled_ngoaitru:
-                    handled_ngoaitru = ctrl.get("ngoaitruNow")
-                    state["action_running"] = True
-                    write_json(state_path, state)
-                    if run_ngoaitru(monitor, rows, ngoaitru_state, action_log):
-                        rows = monitor.read()
-                    state["action_running"] = False
-                    state["last_action_at"] = _now().isoformat()
-                if ctrl.get("bbhcRun") and ctrl.get("bbhcRun") != handled_bbhc:
-                    handled_bbhc = ctrl.get("bbhcRun")
-                    state["action_running"] = True
-                    write_json(state_path, state)
-                    approved = ctrl.get("bbhcDrafts") if isinstance(ctrl.get("bbhcDrafts"), dict) else {}
-                    new_pdfs = run_bbhc_create(monitor, rows, approved, bbhc, state_dir, action_log)
-                    if new_pdfs:
-                        bbhc_pdfs += new_pdfs
-                        merged = os.path.join(state_dir, f"clinic_bbhc_{_now():%Y%m%d}.pdf")
-                        clinic_bbhc.merge_pdfs([p for p in bbhc_pdfs if os.path.exists(p)], merged)
-                        state["bbhc_pdf"] = {"file": os.path.basename(merged), "count": len(bbhc_pdfs), "at": _now().isoformat()}
-                    state["action_running"] = False
-                    state["last_action_at"] = _now().isoformat()
-                    rows = monitor.read()
                 scan_visit_details(monitor, rows, visit_details)
                 state.update({
                     "status": "running",
@@ -1450,6 +1484,8 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                     "action_log": action_log[-50:],
                     "summary": summarize(rows),
                     "updated_at": _now().isoformat(),
+                    "list_date": list_date,
+                    "read_only": bool(list_date),
                     "last_error": "",
                     "consecutive_failures": 0,
                 })
@@ -1472,6 +1508,8 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                     return
                 if ctrl.get("refresh") and ctrl.get("refresh") != handled_refresh:
                     handled_refresh = ctrl.get("refresh")
+                    break
+                if _list_date(ctrl) != monitor.list_date:
                     break
                 if ctrl.get("completeNow") and ctrl.get("completeNow") != handled_complete:
                     break

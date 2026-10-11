@@ -16,8 +16,10 @@ const ROWS = [
 ];
 let SICK = [];
 let HAS_URL = true;
+let EXTRA = {};
 vi.mock('../api.js', () => ({
-  getClinicMonitorState: vi.fn(async () => ({ status: 'ok', monitor: { running: true, status: 'running', rows: ROWS, auto_tasks: false } })),
+  getClinicMonitorState: vi.fn(async () => ({ status: 'ok', monitor: { running: true, status: 'running', rows: ROWS, auto_tasks: false, ...EXTRA } })),
+  setClinicListDate: vi.fn(async (date) => ({ status: 'ok', list_date: date, message: 'ok' })),
   getClinicSickLeave: vi.fn(async () => ({ status: 'ok', entries: SICK })),
   getClinicEmrDefaults: vi.fn(async () => ({ status: 'ok', has_login_url: HAS_URL })),
   addClinicSickLeave: vi.fn(async (patient) => {
@@ -32,6 +34,7 @@ vi.mock('../api.js', () => ({
 }));
 const api = await import('../api.js');
 const { default: ClinicTab } = await import('./ClinicTab.jsx');
+const { __resetServerData } = await import('../hooks/useServerData.js');
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let host; let root;
@@ -97,5 +100,30 @@ describe('Phòng khám: 3 khung', () => {
     await act(async () => { button('Thiết lập').click(); });
     expect(labels().filter(t => /URL|Địa chỉ đăng nhập/.test(t))).toEqual(['Địa chỉ đăng nhập EMR']);
     HAS_URL = true;
+  });
+
+  it('chọn ngày đã qua thì xem lại, chỉ đọc; bấm Hôm nay để quay lại', async () => {
+    EXTRA = { list_date: '2020-01-03', read_only: true };
+    __resetServerData();
+    await act(async () => { root.render(createElement(ClinicTab, { toast: () => {} })); });
+    await flush();
+    const text = host.textContent;
+    expect(text).toContain('Ngày theo dõi: Thứ sáu, 03/01/2020 (xem lại, chỉ đọc)');
+    expect(text).toContain('Lượt khám ngày 03/01/2020');
+    expect(text).toContain('Đang xem lại danh sách ngày 03/01/2020');
+    expect(host.querySelector('input[type="date"]').value).toBe('2020-01-03');
+    expect(button('Hoàn tất khám 1 người bệnh').disabled).toBe(true);
+    expect(button('Hoàn thành thủ thuật ngay').disabled).toBe(true);
+
+    const input = host.querySelector('input[type="date"]');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '2020-01-02');
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(api.setClinicListDate).toHaveBeenLastCalledWith('2020-01-02');
+    await act(async () => { button('Hôm nay').click(); });
+    expect(api.setClinicListDate).toHaveBeenLastCalledWith('');
+    EXTRA = {};
   });
 });
