@@ -23,6 +23,10 @@ const MAX_LINE = 256 * 1024;
 const stats = { launches: 0, completed: 0, failures: 0, timeouts: 0, cancelled: 0, reused: 0 };
 
 function enabled() {
+  // Never launch a real hospital Chrome/EMR worker from CI or unit tests,
+  // even if deployment environment variables were accidentally inherited.
+  if (/^(1|true|yes)$/i.test(String(process.env.CI || '')) ||
+      String(process.env.NODE_ENV || '').toLowerCase() === 'test') return false;
   // Read-only local Chrome only; EMR bridge and writing use unchanged runners.
   // Opt out immediately with EMR_PERSISTENT_HCHANH_WORKER=0.
   return !/^(0|false|no|off)$/i.test(String(process.env.EMR_PERSISTENT_HCHANH_WORKER ?? '').trim());
