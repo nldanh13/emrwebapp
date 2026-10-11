@@ -1,7 +1,7 @@
 // Smoke test: only the intended read-only records-check calls enter resident Chrome.
 'use strict';
 const assert = require('node:assert/strict');
-const { readOnlyJob, ResidentWorker } = require('../server/services/hchanh_resident_worker');
+const { readOnlyJob, ResidentWorker, residentStatus } = require('../server/services/hchanh_resident_worker');
 
 const valid = [
   '--input', '/runtime/sessions/one/hchanh/fetch_batch_input.json',
@@ -68,6 +68,25 @@ async function testCancelBeforeDispatch() {
   assert.equal(sent, 0, 'cancelled tasks must not reach Chrome');
 }
 
-Promise.resolve().then(testSerialQueue).then(testCancelBeforeDispatch).then(() => {
+async function testStatusAndNoPatientLogs() {
+  const original = process.env.EMR_PERSISTENT_HCHANH_WORKER;
+  try {
+    delete process.env.EMR_PERSISTENT_HCHANH_WORKER;
+    assert.equal(residentStatus().enabled, true, 'read-only worker is enabled by default');
+    process.env.EMR_PERSISTENT_HCHANH_WORKER = '0';
+    assert.equal(residentStatus().enabled, false, 'rollback must disable resident Chrome');
+  } finally {
+    if (original === undefined) delete process.env.EMR_PERSISTENT_HCHANH_WORKER;
+    else process.env.EMR_PERSISTENT_HCHANH_WORKER = original;
+  }
+  const worker = new ResidentWorker('/tmp/fake-privacy-test');
+  const patientText = 'Nguyễn Văn B';
+  worker._onStderr(Buffer.from('WARN [EMR] ' + patientText + ' mã 12345678\\n'));
+  assert.equal(worker.stderrTail.length, 1);
+  assert(!JSON.stringify(worker.stderrTail).includes(patientText), 'patient names must not reach logs');
+  assert(!JSON.stringify(residentStatus()).includes('/tmp'), 'status must not reveal workspace paths');
+}
+
+Promise.resolve().then(testSerialQueue).then(testCancelBeforeDispatch).then(testStatusAndNoPatientLogs).then(() => {
   console.log('hchanh resident worker read-only dispatch, queue and cancel: OK');
 }).catch(err => { console.error(err); process.exitCode = 1; });
