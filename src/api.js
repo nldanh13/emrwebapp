@@ -128,6 +128,10 @@ function apiActionLabel(method, url) {
     'GET /api/clinic/monitor/state': 'đọc danh sách phòng khám',
     'POST /api/clinic/monitor/complete': 'hoàn tất khám các người bệnh đã sẵn sàng',
     'POST /api/clinic/monitor/weight': 'ghi cân nặng người bệnh',
+    'POST /api/clinic/monitor/tasks': 'nhập thủ thuật đã có chỉ định',
+    'POST /api/clinic/monitor/auto-tasks': 'bật/tắt tự hoàn thành khi có chỉ định',
+    'GET /api/clinic/sick-leave': 'tải danh sách người bệnh xin nghỉ ốm',
+    'POST /api/clinic/sick-leave': 'cập nhật danh sách người bệnh xin nghỉ ốm',
     'GET /api/data-sessions': 'tải danh sách phiên dữ liệu',
     'DELETE /api/data-sessions': 'xoá phiên dữ liệu',
     'POST /api/cancel': 'huỷ tác vụ đang chạy',
@@ -798,6 +802,11 @@ export const refreshClinicMonitor = () => post('/api/clinic/monitor/refresh', {}
 export const getClinicMonitorState = () => get('/api/clinic/monitor/state');
 export const completeReadyClinicPatients = () => post('/api/clinic/monitor/complete', {});
 export const setClinicPatientWeight = (khambenhid, kg) => post('/api/clinic/monitor/weight', { khambenhid, kg });
+export const runClinicTasks = () => post('/api/clinic/monitor/tasks', {});
+export const setClinicAutoTasks = (enabled) => post('/api/clinic/monitor/auto-tasks', { enabled });
+export const getClinicSickLeave = () => get('/api/clinic/sick-leave');
+export const addClinicSickLeave = (patient) => post('/api/clinic/sick-leave', { action: 'add', patient });
+export const removeClinicSickLeave = (patient) => post('/api/clinic/sick-leave', { action: 'remove', patient });
 
 // ── Export / Import session data ──────────────────────────────────────────────
 
