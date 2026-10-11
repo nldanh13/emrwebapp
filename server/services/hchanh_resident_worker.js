@@ -85,6 +85,8 @@ class ResidentWorker {
     this.stderrBuffer = '';
     this.stderrTail = [];
     this.idleTimer = null;
+    this.retiring = null;
+    this.retiringDone = null;
   }
 
   _idleClear() {
@@ -170,6 +172,12 @@ class ResidentWorker {
     if (this.child !== child) return;
     this.child = null;
     this._idleClear();
+    if (this.retiringDone) {
+      const done = this.retiringDone;
+      this.retiringDone = null;
+      this.retiring = null;
+      done();
+    }
     if (workers.get(this.runtimeDir) === this && this.pending === 0) workers.delete(this.runtimeDir);
     this._complete({ code: -1, killedByTimeout: Boolean(this.active?.timedOut),
       spawnError: detail || undefined, stderrTail: [...this.stderrTail, safeLine(reason)] });
@@ -183,6 +191,12 @@ class ResidentWorker {
     this._complete({ code: -1, killedByTimeout: Boolean(this.active?.timedOut),
       stderrTail: [...this.stderrTail, safeLine(reason)] });
     if (this.child === child) this.child = null;
+    if (this.retiringDone) {
+      const done = this.retiringDone;
+      this.retiringDone = null;
+      this.retiring = null;
+      done();
+    }
     if (workers.get(this.runtimeDir) === this && this.pending === 0) workers.delete(this.runtimeDir);
   }
 
@@ -192,8 +206,11 @@ class ResidentWorker {
     const child = this.child;
     this.idleTimer = setTimeout(() => {
       if (this.child !== child || this.active || this.pending) return;
-      // Ending stdin triggers Python's finally block to quit Chrome cleanly.
-      try { child.stdin.end(); } catch (_) {}
+      // Wait for this Chrome to fully exit before spawning a replacement.
+      // Otherwise a request arriving during idle shutdown could open two
+      // simultaneous EMR sessions under the same account.
+      this.retiring = new Promise(resolve => { this.retiringDone = resolve; });
+      try { child.stdin.end(); } catch (_) { terminateProcessTree(child); }
       const force = setTimeout(() => {
         if (this.child === child) terminateProcessTree(child);
       }, 5000);
@@ -209,6 +226,7 @@ class ResidentWorker {
     this.pending += 1;
     this._idleClear();
     const execute = async () => {
+      if (this.retiring) await this.retiring;
       const child = this.child || this._spawn();
       const id = crypto.randomUUID();
       return new Promise(resolve => {
