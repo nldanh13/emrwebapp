@@ -87,6 +87,21 @@ async function testStatusAndNoPatientLogs() {
   assert(!JSON.stringify(residentStatus()).includes('/tmp'), 'status must not reveal workspace paths');
 }
 
-Promise.resolve().then(testSerialQueue).then(testCancelBeforeDispatch).then(testStatusAndNoPatientLogs).then(() => {
-  console.log('hchanh resident worker read-only dispatch, queue and cancel: OK');
-}).catch(err => { console.error(err); process.exitCode = 1; });
+// Protect CI from an indefinitely pending Chrome-queue Promise.
+function bounded(fn, label) {
+  return Promise.race([
+    fn(),
+    new Promise((_, reject) => {
+      const timer = setTimeout(() => reject(new Error('Timed out: ' + label)), 5000);
+      timer.unref?.();
+    }),
+  ]);
+}
+
+bounded(testSerialQueue, 'serial Chrome queue')
+  .then(() => bounded(testCancelBeforeDispatch, 'cancel before dispatch'))
+  .then(() => bounded(testStatusAndNoPatientLogs, 'status and redaction'))
+  .then(() => {
+    console.log('hchanh resident worker read-only dispatch, queue and cancel: OK');
+  })
+  .catch(err => { console.error(err); process.exitCode = 1; });
