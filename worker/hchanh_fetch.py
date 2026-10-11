@@ -6301,7 +6301,7 @@ def _hchanh_batch_progress_mark_running(progress_path: str, key: str, ma_bn: str
 def _run_hchanh_fetch_batch_impl(input_path: str, out_path: str, scope: str, files: List[str],
                            date_from: str, date_to: str, inpatient_status: str = "",
                            headless: bool = False, batch_size: int = 10,
-                           progress_path: str = "") -> int:
+                           progress_path: str = "", keep_alive: bool = False) -> int:
     """Lấy dữ liệu hành chánh/y lệnh cho NHIỀU BN trong 1 tiến trình, gộp tối đa
     `batch_size` BN liên tiếp vào 1 phiên Chrome/đăng nhập (xem
     _ensure_hchanh_click_context) thay vì mở Chrome + đăng nhập lại cho từng BN.
@@ -6381,15 +6381,20 @@ def _run_hchanh_fetch_batch_impl(input_path: str, out_path: str, scope: str, fil
     print(f"LOG: Xong lô. {total} ca | ok_files={ok_total}, cần_xử_lý={attention_total}, lỗi={error_total} → {out_path}")
     if served:
         print(f"LOG: Chrome cuối của lô đã phục vụ {served} ca trước khi tiến trình kết thúc.")
-    _shutdown_hchanh_click_driver()
+    if not keep_alive:
+        _shutdown_hchanh_click_driver()
     return 0
 
 
 def run_hchanh_fetch_batch(input_path: str, out_path: str, scope: str, files: List[str],
                            date_from: str, date_to: str, inpatient_status: str = "",
                            headless: bool = False, batch_size: int = 10,
-                           progress_path: str = "") -> int:
-    """Reuse HTTP/Chrome sessions only inside this batch, always release afterward."""
+                           progress_path: str = "", keep_alive: bool = False) -> int:
+    """Keep read-only sessions across batches only when a single owner daemon requests it.
+
+    The normal CLI retains its old per-batch cleanup. Resident Chrome is never
+    shared across processes and the daemon enforces one task at a time.
+    """
     global _HCHANH_BATCH_HTTP_ACTIVE
     if _HCHANH_BATCH_HTTP_ACTIVE:
         raise RuntimeError("Không chạy lồng nhiều lô EMR trong một tiến trình.")
@@ -6397,12 +6402,13 @@ def run_hchanh_fetch_batch(input_path: str, out_path: str, scope: str, files: Li
     try:
         return _run_hchanh_fetch_batch_impl(
             input_path, out_path, scope, files, date_from, date_to,
-            inpatient_status, headless, batch_size, progress_path,
+            inpatient_status, headless, batch_size, progress_path, keep_alive,
         )
     finally:
         _HCHANH_BATCH_HTTP_ACTIVE = False
-        _HCHANH_BATCH_HTTP_CACHE.clear()
-        _shutdown_hchanh_click_driver()
+        if not keep_alive:
+            _HCHANH_BATCH_HTTP_CACHE.clear()
+            _shutdown_hchanh_click_driver()
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

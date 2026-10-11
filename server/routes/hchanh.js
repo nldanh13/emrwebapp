@@ -27,6 +27,7 @@ const { spawn, spawnSync } = require('child_process');
 
 const { getRuntimePaths, ensureSessionAssets }           = require('../services/session');
 const { runScript, runWorker, fmtPyError, PYTHON_BIN }   = require('../services/python_runner');
+const { runRecordsCheckBatch } = require('../services/hchanh_resident_worker');
 const { enqueueHeavy, enqueueLocal, registerCancel, unregisterCancel, cancelSession } = require('../services/task_queue');
 const { readJsonSafe, writeJsonAtomic, safeFilePart } = require('../utils/file');
 const { appendActivity }                          = require('../services/activity_logger');
@@ -4510,7 +4511,7 @@ router.post('/hchanh/records-check/fetch-batch', async (req, res) => {
 
           let result;
           try {
-            result = await runScript('hchanh_fetch.py', args, {
+            result = await runRecordsCheckBatch(args, {
               onSpawn: killFn => registerCancel(ctx.sid, killFn),
               runtimeDir: ctx.dir,
             });
