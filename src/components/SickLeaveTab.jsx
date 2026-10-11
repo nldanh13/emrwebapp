@@ -10,6 +10,7 @@ import BhytPortalLinkPanel from './BhytPortalLinkPanel.jsx';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
 import { SkeletonTable } from './Skeleton.jsx';
 import { loadClinicConfig, saveClinicConfig } from '../utils/clinicLogin.js';
+import { isLikelyWorkingAge, isLikelyWorkingAgeByAge } from '../utils/workingAge.js';
 import ClinicAccountPicker, { clinicLoginPayload, hasClinicLogin } from './ClinicAccountPicker.jsx';
 
 
@@ -44,40 +45,6 @@ function ageFromDob(dobDmy) {
   const m = String(dobDmy || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (!m) return null;
   return new Date().getFullYear() - Number(m[3]);
-}
-
-// Tuổi nghỉ hưu theo Bộ luật Lao động 2019 (Nghị định 135/2020/NĐ-CP): tăng dần
-// mỗi năm cho đến khi đạt mốc cuối — Nam 60y3m (2021) +3 tháng/năm → 62 (từ 2028);
-// Nữ 55y4m (2021) +4 tháng/năm → 60 (từ 2035). Dùng làm ngưỡng lọc "còn tuổi lao
-// động" khi quét EMR (chỉ có năm sinh, không có ngày/tháng) — không phải căn cứ
-// pháp lý chính xác tuyệt đối, chỉ để loại bớt người rõ ràng ngoài tuổi lao động.
-function laborRetirementAgeYears(year, isFemale) {
-  const y = Math.max(2021, Math.min(Number(year) || 2021, isFemale ? 2035 : 2028));
-  const months = isFemale ? (55 * 12 + 4 + (y - 2021) * 4) : (60 * 12 + 3 + (y - 2021) * 3);
-  return months / 12;
-}
-
-// Chỉ có năm sinh trên danh sách quét EMR (không có ngày/tháng sinh) nên tuổi tính
-// được có thể lệch tới 1 năm — nới biên 1 tuổi hai đầu để tránh loại nhầm ca sát
-// ngưỡng. Thiếu năm sinh/giới tính thì không loại (để người dùng tự xem, tránh bỏ sót).
-function isLikelyWorkingAge(namSinh, gioiTinh, refYear) {
-  const birthYear = Number(String(namSinh || '').trim());
-  if (!birthYear || birthYear < 1900 || birthYear > refYear) return true;
-  const age = refYear - birthYear;
-  const isFemale = /^n[uữ]/.test(normalizeText(gioiTinh || ''));
-  const retireAge = laborRetirementAgeYears(refYear, isFemale);
-  return age >= 14 && age <= retireAge + 1;
-}
-
-// Giống isLikelyWorkingAge() nhưng dùng tuổi trực tiếp (cột "Tuổi" trong bảng
-// tblNoiTru của tab Phòng khám) thay vì ước tính từ năm sinh — chính xác hơn nên
-// không cần nới biên như bản kia.
-function isLikelyWorkingAgeByAge(tuoi, gioiTinh, refYear) {
-  const age = Number(String(tuoi || '').trim());
-  if (!Number.isFinite(age) || age <= 0) return true;
-  const isFemale = /^n[uữ]/.test(normalizeText(gioiTinh || ''));
-  const retireAge = laborRetirementAgeYears(refYear, isFemale);
-  return age >= 14 && age <= retireAge;
 }
 
 function dateOnly(value) {
@@ -261,6 +228,22 @@ function reviewHasIssue(item) {
   if (Number(item?.so_loi_ra_soat || 0) > 0) return true;
   return /thieu/.test(normalizeText(reviewNoteOf(item)));
 }
+
+// Người bệnh xin nghỉ ốm do điều dưỡng đánh dấu ở tab Phòng khám (khung "Xin nghỉ ốm").
+function buildClinicSickLeaveList(entries, range) {
+  return (entries || [])
+    .filter(e => e && e.ngay && e.ngay >= range.from && e.ngay <= range.to)
+    .map(e => ({ ...e, key: `pk-nghi-om::${e.key}` }))
+    .sort((a, b) => String(a.ngay).localeCompare(String(b.ngay)) || String(a.thoi_gian).localeCompare(String(b.thoi_gian)));
+}
+
+const CLINIC_SICK_LEAVE_FIELDS = [
+  { label: 'Mã BN', value: it => it.ma_bn },
+  { label: 'Họ tên', value: it => it.ho_ten },
+  { label: 'Năm sinh', value: it => it.nam_sinh },
+  { label: 'Giờ khám', value: it => it.thoi_gian },
+  { label: 'Chẩn đoán', value: it => it.chan_doan },
+];
 
 const BHXH_OUTPATIENT_FIELDS = [
   { label: 'Họ tên', value: it => it.ho_ten },
@@ -473,11 +456,26 @@ function AutoDetectLabel({ children }) {
   );
 }
 
+// Tab khác yêu cầu mở sẵn mục nào (Phòng khám → Ngoại trú). Ghi vào sessionStorage vì lần đầu mở
+// tab thì màn này chưa dựng nên chưa nghe được sự kiện emr:open-tab.
+export const SICK_LEAVE_VIEW_KEY = 'emr:sick-leave-view';
+
+function takeRequestedView() {
+  try {
+    const view = sessionStorage.getItem(SICK_LEAVE_VIEW_KEY);
+    sessionStorage.removeItem(SICK_LEAVE_VIEW_KEY);
+    return view === 'noitru' || view === 'ngoaitru' ? view : '';
+  } catch {
+    return '';
+  }
+}
+
 export default function SickLeaveTab({ toast, workDateRange }) {
   const [patients, setPatients] = useState([]);
   const [clinicDraft, setClinicDraft] = useState(null);
   const [stateEntries, setStateEntries] = useState({});
   const [bhxhImport, setBhxhImport] = useState(null);
+  const [clinicSickLeave, setClinicSickLeave] = useState([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
 
@@ -505,8 +503,17 @@ export default function SickLeaveTab({ toast, workDateRange }) {
   // Tab Nội trú/Ngoại trú tách riêng để không phải cuộn qua dữ liệu không liên
   // quan; khối "Quét trực tiếp EMR" gấp lại mặc định vì cần nhập tài khoản/URL,
   // không phải bước ai cũng cần mỗi lần mở tab.
-  const [recordType, setRecordType] = useState('noitru');
+  const [recordType, setRecordType] = useState(() => takeRequestedView() || 'noitru');
   const [scanPanelOpen, setScanPanelOpen] = useState(false);
+
+  // Phòng khám bấm "Nhập lên cổng BHXH": mở thẳng mục Ngoại trú (danh sách xin nghỉ ốm ở đầu).
+  useEffect(() => {
+    const handler = (event) => {
+      if (event.detail?.tab === 'sick-leave' && event.detail?.view) setRecordType(takeRequestedView() || event.detail.view);
+    };
+    window.addEventListener('emr:open-tab', handler);
+    return () => window.removeEventListener('emr:open-tab', handler);
+  }, []);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -515,11 +522,13 @@ export default function SickLeaveTab({ toast, workDateRange }) {
       api.getClinicCareDraft().catch(() => ({ draft: null })),
       api.getSickLeaveState().catch(() => ({ entries: {} })),
       api.getSickLeaveImport().catch(() => ({ import: null })),
-    ]).then(([patientsRes, draftRes, stateRes, importRes]) => {
+      api.getClinicSickLeave().catch(() => ({ entries: [] })),
+    ]).then(([patientsRes, draftRes, stateRes, importRes, clinicSickLeaveRes]) => {
       setPatients(Array.isArray(patientsRes) ? patientsRes : []);
       setClinicDraft(draftRes?.draft || null);
       setStateEntries(stateRes?.entries || {});
       setBhxhImport(importRes?.import || null);
+      setClinicSickLeave(Array.isArray(clinicSickLeaveRes?.entries) ? clinicSickLeaveRes.entries : []);
     }).catch(e => toast?.(String(e?.message || 'Không tải được dữ liệu nghỉ ốm'), 'error'))
       .finally(() => setLoading(false));
   }, [toast]);
@@ -593,6 +602,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
   const scannedOutpatientList = useMemo(() => buildScannedOutpatientCandidates(scannedOutpatientRows), [scannedOutpatientRows]);
   const inpatientList = useMemo(() => buildInpatientCandidates(patients, range), [patients, range.from, range.to]);
   const outpatientList = useMemo(() => buildOutpatientCandidates(clinicDraft, range), [clinicDraft, range.from, range.to]);
+  const clinicSickLeaveList = useMemo(() => buildClinicSickLeaveList(clinicSickLeave, range), [clinicSickLeave, range.from, range.to]);
 
   const bhxhOutpatientList = useMemo(() => {
     const rows = Array.isArray(bhxhImport?.outpatient) ? bhxhImport.outpatient : [];
@@ -663,7 +673,11 @@ export default function SickLeaveTab({ toast, workDateRange }) {
   const ngoaitruPending = bhxhOutpatientList.filter(it => !stateEntries[it.key]?.submitted).length;
   const tabs = [
     { id: 'noitru', label: 'Nội trú', total: bhxhInpatientList.length, pending: noitruPending },
-    { id: 'ngoaitru', label: 'Ngoại trú', total: bhxhOutpatientList.length, pending: ngoaitruPending },
+    {
+      id: 'ngoaitru', label: 'Ngoại trú',
+      total: bhxhOutpatientList.length + clinicSickLeaveList.length,
+      pending: ngoaitruPending + clinicSickLeaveList.filter(it => !stateEntries[it.key]?.submitted).length,
+    },
   ];
 
   return (
@@ -771,6 +785,17 @@ export default function SickLeaveTab({ toast, workDateRange }) {
 
       {recordType === 'ngoaitru' && (
         <>
+          <Section
+            title="Xin nghỉ ốm (đánh dấu ở Phòng khám)"
+            hint='Người bệnh điều dưỡng đánh dấu "xin nghỉ ốm" ở khung Xin nghỉ ốm của tab Phòng khám, trong khoảng ngày đã chọn. Nhập lên cổng bằng khung "Nhập lên Cổng BHYT" ở trên rồi tick "Đã nộp".'
+            list={clinicSickLeaveList}
+            fields={CLINIC_SICK_LEAVE_FIELDS}
+            stateEntries={stateEntries}
+            onToggle={toggle}
+            onNoteChange={setNote}
+            emptyMessage={loading ? LOADING_ROWS : 'Chưa có người bệnh nào được đánh dấu xin nghỉ ốm ở tab Phòng khám trong khoảng ngày đã chọn.'}
+          />
+
           <BhxhSection
             title="BHXH — Ngoại trú (Giấy nghỉ hưởng BHXH)"
             list={bhxhOutpatientList}

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Theo dõi Danh sách Khám bệnh (tab Phòng khám); chỉ ghi EMR khi người dùng bấm Hoàn tất
-(nhập thủ thuật chưa xong — TH2 — rồi hoàn tất khám Cho về — TH1).
+(nhập thủ thuật chưa xong — TH2 — rồi hoàn tất khám Cho về — TH1), bấm "Hoàn thành thủ thuật
+ngay", hoặc khi người dùng bật "Tự hoàn thành khi có chỉ định" (nhập thủ thuật mỗi chu kỳ).
 
 Giữ một Chrome đã đăng nhập, cứ mỗi chu kỳ gọi thẳng hàm AjaxPro mà trang dùng
 khi bấm Tìm kiếm (ServerSideDrawSearchResult) với cỡ trang lớn, nên đọc được
@@ -544,15 +545,28 @@ class ExamPage:
         return self.check_dialogs("Hoàn tất khám")
 
 
+def drug_gate(row: Dict[str, Any], must_enter: bool, drugs: int) -> Optional[Dict[str, Any]]:
+    """Cho về chỉ hoàn tất khi bác sĩ đã kê thuốc; chờ đọc KQ chưa vào khám cũng vậy. None = qua."""
+    if drugs > 0:
+        return None
+    if row.get("case") == "cho_ve":
+        return {"status": "no_drug", "message": "Chưa có thuốc — chờ bác sĩ kê đơn rồi mới hoàn tất"}
+    if must_enter and row.get("cho_doc_kq"):
+        return {"status": "no_drug", "message": "Chờ đọc KQ, chưa có thuốc — để bác sĩ xử lý"}
+    return None
+
+
 def check_patient(page: ExamPage, row: Dict[str, Any], services_done: Optional[datetime], now: datetime) -> Dict[str, Any]:
     """Kiểm tra (chỉ đọc) người bệnh có hoàn tất được lúc này không. Không bấm gì trên EMR."""
-    if page.needs_enter() and row.get("cho_doc_kq") and page.drug_count() == 0:
-        return {"status": "no_drug", "message": "Chờ đọc KQ, chưa có thuốc — để bác sĩ xử lý"}
+    drugs = page.drug_count()
+    gate = drug_gate(row, page.needs_enter(), drugs)
+    if gate:
+        return {**gate, "drugs": drugs}
     missing = page.missing_required()
     if missing:
-        return {"status": "incomplete", "message": f"Bác sĩ chưa nhập: {', '.join(missing)}"}
+        return {"status": "incomplete", "message": f"Bác sĩ chưa nhập: {', '.join(missing)}", "drugs": drugs}
     earliest = earliest_completion(page.exam_start(), services_done)
-    base = {"earliest": earliest.isoformat()}
+    base = {"earliest": earliest.isoformat(), "drugs": drugs}
     if now < earliest:
         return {**base, "status": "waiting", "message": f"Chờ tới {earliest:%H:%M} mới hoàn tất được"}
     if pending_procedures(row):
@@ -582,8 +596,9 @@ def complete_patient(page: ExamPage, row: Dict[str, Any], services_done: Optiona
     steps: List[str] = []
     # Kiểm tra hết điều kiện đọc được TRƯỚC khi bấm gì, để không thao tác dở dang trên EMR.
     must_enter = page.needs_enter()
-    if must_enter and row.get("cho_doc_kq") and page.drug_count() == 0:
-        return {"result": "no_drug", "message": "Chờ đọc KQ, chưa có thuốc — để bác sĩ xử lý", "steps": steps}
+    gate = drug_gate(row, must_enter, page.drug_count())
+    if gate:
+        return {"result": gate["status"], "message": gate["message"], "steps": steps}
     missing = page.missing_required()
     if missing:
         return {"result": "incomplete", "message": f"Bác sĩ chưa nhập: {', '.join(missing)}", "steps": steps}
@@ -1117,6 +1132,80 @@ def run_bbhc_create(monitor: "Monitor", rows: List[Dict[str, Any]], approved: Di
     return pdfs
 
 
+# ── Việc cần làm: thủ thuật làm ngay khi có chỉ định ─────────────────────────
+# Không chờ tới lúc hoàn tất khám: có chỉ định thủ thuật (TT) là nhập luôn (giờ chỉ định → +10 phút,
+# thủ thuật viên theo Lịch Phòng khám). Chạy khi người dùng bấm "Hoàn thành thủ thuật ngay", hoặc
+# mỗi chu kỳ khi người dùng bật "Tự hoàn thành khi có chỉ định".
+
+TASK_CASES_EXCLUDED = {"nhap_vien", "ngoai_tru"}  # nhập viện / ngoại trú làm ở luồng riêng
+MAX_TASKS_PER_CYCLE = 4
+
+
+def pending_surgeries(row: Dict[str, Any]) -> int:
+    pt = next((s for s in row.get("services") or [] if s.get("code") == "PT"), None)
+    return max(int(pt["total"]) - int(pt["done"]), 0) if pt else 0
+
+
+def procedure_task_candidate(row: Dict[str, Any]) -> bool:
+    """Người bệnh có BHYT đang khám, có thủ thuật chưa xong, không thuộc luồng nhập viện / ngoại trú."""
+    return bool(row.get("has_bhyt")) and row.get("stage") in ACTIVE_STAGES \
+        and row.get("case") not in TASK_CASES_EXCLUDED and pending_procedures(row) > 0
+
+
+def _auto_should_run(prev: Optional[Dict[str, Any]], pending: int, now: datetime) -> bool:
+    """Chế độ tự động: lỗi / thiếu dữ liệu thì không tự thử lại khi chỉ định chưa đổi; đang chờ đủ giờ
+    thì chỉ thử khi tới giờ. Bấm tay luôn thử lại."""
+    if not prev or int(prev.get("pending") or 0) != pending:
+        return True
+    status = prev.get("status")
+    if status == "waiting":
+        earliest = prev.get("earliest")
+        return not earliest or now >= datetime.fromisoformat(earliest)
+    return status not in {"error", "incomplete", "no_drug", "done"}
+
+
+def _prepare_procedures(page: ExamPage) -> Dict[str, Any]:
+    """Màn khám: thủ thuật còn "Mới" thì bấm Thực hiện để chuyển sang D/s Thủ thuật."""
+    steps: List[str] = []
+    if page.new_procedures():
+        toasts = page.send_to_services()
+        steps.append("Bấm Thực hiện (thủ thuật mới)" + (f" ({toasts[-1]})" if toasts else ""))
+    return {"status": "ready", "steps": steps}
+
+
+def run_tasks(monitor: "Monitor", rows: List[Dict[str, Any]], state: Dict[str, Dict[str, Any]],
+              log: List[Dict[str, Any]], auto: bool, now: Optional[datetime] = None) -> int:
+    """Nhập thủ thuật cho người bệnh có chỉ định. Trả số người đã thao tác."""
+    now = now or _now()
+    acted = 0
+    for row in rows:
+        key = row.get("khambenhid") or ""
+        if acted >= MAX_TASKS_PER_CYCLE or not key or not row.get("href") or not procedure_task_candidate(row):
+            continue
+        pending = pending_procedures(row)
+        if auto and not _auto_should_run(state.get(key), pending, now):
+            continue
+        pre = monitor.on_exam_page(row, lambda page, _done, _now_: _prepare_procedures(page), need_services=False)
+        if pre.get("status") == "ready":
+            res = monitor.run_procedures(row)
+            res = {**res, "steps": (pre.get("steps") or []) + (res.get("steps") or [])}
+        else:
+            res = {**pre, "result": pre.get("status")}
+        result = res.get("result") or res.get("status")
+        entry = {"status": result, "message": res.get("message") or ("Đã nhập thủ thuật" if result == "done" else ""),
+                 "pending": pending, "at": _now().isoformat()}
+        if isinstance(res.get("earliest"), datetime):
+            entry["earliest"] = res["earliest"].isoformat()
+        state[key] = entry
+        log.append({"at": _now().isoformat(), "kind": "thu_thuat", "khambenhid": key, "ma_bn": row.get("ma_bn"),
+                    "ho_ten": row.get("ho_ten"), "result": result, "message": entry["message"], "steps": res.get("steps") or []})
+        acted += 1
+        print(f"[CLINIC-MONITOR] Thủ thuật STT {row.get('stt')}: {result}")
+        if result == "session":
+            break
+    return acted
+
+
 # ── TH6: điều trị ngoại trú ──────────────────────────────────────────────────
 
 def ngoaitru_candidate(row: Dict[str, Any]) -> bool:
@@ -1207,7 +1296,8 @@ def public_rows(rows: List[Dict[str, Any]], checks: Dict[str, Dict[str, Any]], w
                 imaging: Optional[Dict[str, Dict[str, Any]]] = None,
                 bbhc_state: Optional[Dict[str, Dict[str, Any]]] = None,
                 ngoaitru_state: Optional[Dict[str, Dict[str, Any]]] = None,
-                details: Optional[Dict[str, Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+                details: Optional[Dict[str, Dict[str, Any]]] = None,
+                task_state: Optional[Dict[str, Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     out = []
     for r in rows:
         item = {k: v for k, v in r.items() if k != "href"}  # href mang mã phiên EMR
@@ -1221,6 +1311,11 @@ def public_rows(rows: List[Dict[str, Any]], checks: Dict[str, Dict[str, Any]], w
         item["weight_entered"] = parse_weight(weights.get(key)) or None
         item["imaging_orders"] = ((imaging or {}).get(key) or {}).get("orders") or []
         item["details"] = (details or {}).get(key)
+        item["pending_tt"] = pending_procedures(r)
+        item["pending_pt"] = pending_surgeries(r)
+        item["procedure_task"] = procedure_task_candidate(r)
+        task = (task_state or {}).get(key)
+        item["tt_task"] = {k: v for k, v in task.items() if k in {"status", "message", "at", "earliest"}} if task else None
         out.append(item)
     return out
 
@@ -1260,6 +1355,8 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
     handled_prepare = initial.get("bbhcPrepare")
     handled_bbhc = initial.get("bbhcRun")
     handled_ngoaitru = initial.get("ngoaitruNow")
+    handled_tasks = initial.get("tasksNow")
+    task_state: Dict[str, Dict[str, Any]] = {}
     ngoaitru_state: Dict[str, Dict[str, Any]] = {}
     visit_details: Dict[str, Dict[str, Any]] = {}
     state_dir = os.path.dirname(os.path.abspath(state_path))
@@ -1279,8 +1376,23 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                         rows = monitor.read()
                     state["action_running"] = False
                     state["last_action_at"] = _now().isoformat()
+                auto_tasks = bool(ctrl["autoTasks"]) if "autoTasks" in ctrl else bool(req.get("autoTasks"))
+                state["auto_tasks"] = auto_tasks
+                tasks_now = ctrl.get("tasksNow") and ctrl.get("tasksNow") != handled_tasks
+                if tasks_now or auto_tasks:
+                    if tasks_now:
+                        handled_tasks = ctrl.get("tasksNow")
+                    state["action_running"] = True
+                    write_json(state_path, state)
+                    if run_tasks(monitor, rows, task_state, action_log, auto=not tasks_now):
+                        rows = monitor.read()
+                    state["action_running"] = False
+                    state["last_action_at"] = _now().isoformat()
                 run_checks(monitor, rows, checks)
                 scan_imaging(monitor, rows, imaging)
+                if auto_tasks:
+                    # Soạn sẵn nháp SBBHC (chỉ đọc màn khám) ngay khi có chỉ định; lập trên EMR vẫn chờ người dùng duyệt.
+                    run_bbhc_prepare(monitor, [r for r in rows if (r.get("khambenhid") or "") not in bbhc], imaging, bbhc)
                 if ctrl.get("bbhcPrepare") and ctrl.get("bbhcPrepare") != handled_prepare:
                     handled_prepare = ctrl.get("bbhcPrepare")
                     state["action_running"] = True
@@ -1312,7 +1424,7 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                 scan_visit_details(monitor, rows, visit_details)
                 state.update({
                     "status": "running",
-                    "rows": public_rows(rows, checks, weights, imaging, bbhc, ngoaitru_state, visit_details),
+                    "rows": public_rows(rows, checks, weights, imaging, bbhc, ngoaitru_state, visit_details, task_state),
                     "action_log": action_log[-50:],
                     "summary": summarize(rows),
                     "updated_at": _now().isoformat(),
@@ -1342,6 +1454,8 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                 if ctrl.get("completeNow") and ctrl.get("completeNow") != handled_complete:
                     break
                 if ctrl.get("ngoaitruNow") and ctrl.get("ngoaitruNow") != handled_ngoaitru:
+                    break
+                if ctrl.get("tasksNow") and ctrl.get("tasksNow") != handled_tasks:
                     break
                 if (ctrl.get("bbhcPrepare") and ctrl.get("bbhcPrepare") != handled_prepare) or \
                         (ctrl.get("bbhcRun") and ctrl.get("bbhcRun") != handled_bbhc):

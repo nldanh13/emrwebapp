@@ -14,6 +14,8 @@ export const DEFAULT_CLINIC_CONFIG = Object.freeze({
   listUrl: import.meta.env?.VITE_EMR_CLINIC_LIST_URL || '',
   intervalMinutes: 3,
   headless: true,
+  // Tự nhập thủ thuật (và soạn nháp SBBHC) ngay khi có chỉ định; mặc định tắt, bấm tay mới làm.
+  autoTasks: false,
 });
 
 export function loadClinicConfig() {
@@ -33,7 +35,7 @@ export function loadClinicConfig() {
 export function saveClinicConfig(patch) {
   try {
     const next = { ...loadClinicConfig(), ...(patch || {}) };
-    const { username, accountName, loginUrl, listUrl, intervalMinutes, headless } = next;
-    localStorage.setItem(CONFIG_KEY, JSON.stringify({ username, accountName, loginUrl, listUrl, intervalMinutes, headless }));
+    const { username, accountName, loginUrl, listUrl, intervalMinutes, headless, autoTasks } = next;
+    localStorage.setItem(CONFIG_KEY, JSON.stringify({ username, accountName, loginUrl, listUrl, intervalMinutes, headless, autoTasks }));
   } catch { /* trình duyệt chặn lưu trữ: lần sau nhập lại */ }
 }

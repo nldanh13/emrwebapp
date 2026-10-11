@@ -1,10 +1,11 @@
-// src/components/ClinicTab.jsx — Phòng khám: theo dõi Danh sách Khám bệnh, hoàn tất khám Cho về
-// và nhập chăm sóc người bệnh nhập viện (ClinicAdmissionCare).
+// src/components/ClinicTab.jsx — Phòng khám: theo dõi Danh sách Khám bệnh liên tục, 3 khung chính
+// (lượt khám + hoàn tất khám theo đơn thuốc, việc cần làm theo chỉ định, người bệnh xin nghỉ ốm —
+// src/components/clinic/ClinicPanels.jsx) và nhập chăm sóc người bệnh nhập viện (ClinicAdmissionCare).
 // Máy chủ chạy nền worker clinic_monitor.py giữ Chrome đăng nhập sẵn, tự đọc lại danh
 // sách theo chu kỳ và tự đăng nhập lại khi EMR hết phiên; màn này chỉ hiển thị trạng thái.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import HistoryNote from './patient/HistoryNote.jsx';
-import { IconChecks, IconPlayerPlay, IconPlayerStop, IconRefresh } from '@tabler/icons-react';
+import { IconPlayerPlay, IconPlayerStop, IconRefresh, IconSettings } from '@tabler/icons-react';
 import { C, FS } from '../tokens.js';
 import { Btn, Segmented } from './shared.jsx';
 import * as api from '../api.js';
@@ -16,6 +17,7 @@ import { revalidate, useServerData } from '../hooks/useServerData.js';
 import { useRealtimeConnected } from '../hooks/useRealtimeStatus.js';
 import { SkeletonTable } from './Skeleton.jsx';
 import { loadClinicConfig as loadConfig, saveClinicConfig as saveConfig } from '../utils/clinicLogin.js';
+import { Panel, SickLeavePanel, TodoPanel, VisitPanel } from './clinic/ClinicPanels.jsx';
 
 const CLINIC_MONITOR_KEY = 'screen:clinic-monitor';
 
@@ -128,16 +130,6 @@ function CompletionCell({ row, toast, onSaved }) {
   );
 }
 
-function Stat({ label, value, tone }) {
-  const color = tone === 'green' ? C.green : tone === 'amber' ? C.amber : C.text;
-  return (
-    <div style={{ padding: '8px 12px', border: `1px solid ${C.border2}`, borderRadius: 7, background: C.surface, minWidth: 120 }}>
-      <div style={{ fontSize: FS.xs, color: C.text2 }}>{label}</div>
-      <div style={{ fontSize: FS.stat, fontWeight: 700, color }}>{value}</div>
-    </div>
-  );
-}
-
 export default function ClinicTab({ toast }) {
   const [cfg, setCfg] = useState(loadConfig);
   const [password, setPassword] = useState('');
@@ -173,6 +165,17 @@ export default function ClinicTab({ toast }) {
     return () => clearInterval(id);
   }, [loadState, running, tabActive, realtimeConnected]);
 
+  // Người bệnh xin nghỉ ốm (máy chủ giữ, không phụ thuộc theo dõi đang chạy).
+  const [sickLeave, setSickLeave] = useState([]);
+  const loadSickLeave = useCallback(() => {
+    api.getClinicSickLeave().then(r => setSickLeave(r.entries || [])).catch(() => { /* giữ danh sách đang hiện */ });
+  }, []);
+  useEffect(() => { loadSickLeave(); }, [loadSickLeave]);
+  useOnTabReturn(loadSickLeave);
+
+  const [showSettings, setShowSettings] = useState(false);
+  const autoTasks = running && typeof monitor?.auto_tasks === 'boolean' ? monitor.auto_tasks : Boolean(cfg.autoTasks);
+
   const start = async () => {
     setBusy('start');
     try {
@@ -200,9 +203,8 @@ export default function ClinicTab({ toast }) {
     }
   };
 
-  const completeReady = async () => {
-    const n = readyToComplete.length;
-    if (!window.confirm(`Hoàn tất khám ${n} người bệnh đã sẵn sàng trên EMR?\n\nHệ thống sẽ kiểm tra lại từng người ngay trước khi thao tác (thủ thuật, đủ giờ, cân nặng, thời gian ra) và dừng lại ở người nào EMR báo lỗi hoặc hỏi xác nhận.`)) return;
+  const completeReady = async (n) => {
+    if (!window.confirm(`Hoàn tất khám ${n} người bệnh đã có thuốc trên EMR?\n\nHệ thống sẽ kiểm tra lại từng người ngay trước khi thao tác (đơn thuốc, thủ thuật, đủ giờ, cân nặng, thời gian ra) và dừng lại ở người nào EMR báo lỗi hoặc hỏi xác nhận.`)) return;
     setBusy('complete');
     try {
       const r = await api.completeReadyClinicPatients();
@@ -232,6 +234,43 @@ export default function ClinicTab({ toast }) {
     }
   };
 
+  const runTasks = async (n) => {
+    if (!window.confirm(`Nhập ${n} người bệnh có thủ thuật chưa xong lên EMR ngay?\n\nThủ thuật còn "Mới" thì bấm Thực hiện; giờ thực hiện = giờ chỉ định → +10 phút, thủ thuật viên theo Lịch Phòng khám. Chưa đủ 10 phút thì chờ, EMR báo lỗi hoặc hỏi xác nhận thì dừng ở người đó.`)) return;
+    setBusy('tasks');
+    try {
+      const r = await api.runClinicTasks();
+      if (r.status !== 'ok') throw new Error(r.message);
+      toast?.(r.message, 'info');
+      await loadState();
+    } catch (e) {
+      toast?.(String(e.message || e), 'error');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const toggleAuto = async (enabled) => {
+    if (enabled && !window.confirm('Bật tự hoàn thành khi có chỉ định?\n\nMỗi lần đọc danh sách, hệ thống tự nhập thủ thuật mới có chỉ định lên EMR (không hỏi lại từng lần) và soạn sẵn nháp SBBHC. Có thể tắt bất cứ lúc nào.')) return;
+    setCfg(prev => { const next = { ...prev, autoTasks: enabled }; saveConfig(next); return next; });
+    if (!running) return; // gửi kèm khi bắt đầu theo dõi
+    setBusy('auto');
+    try {
+      const r = await api.setClinicAutoTasks(enabled);
+      if (r.status !== 'ok') throw new Error(r.message);
+      toast?.(r.message, 'ok');
+      await loadState();
+    } catch (e) {
+      toast?.(String(e.message || e), 'error');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const openSickLeave = () => {
+    try { sessionStorage.setItem('emr:sick-leave-view', 'ngoaitru'); } catch { /* chặn lưu trữ: mở mục mặc định */ }
+    window.dispatchEvent(new CustomEvent('emr:open-tab', { detail: { tab: 'sick-leave', view: 'ngoaitru' } }));
+  };
+
   const refresh = async () => {
     setBusy('refresh');
     try {
@@ -244,7 +283,9 @@ export default function ClinicTab({ toast }) {
     }
   };
 
-  const rows = useMemo(() => (monitor?.rows || []).filter(r => !onlyBhyt || r.has_bhyt), [monitor?.rows, onlyBhyt]);
+  // 3 khung đếm mọi lượt khám (điều kiện BHYT của từng việc do worker xét); "Chỉ người có BHYT" chỉ lọc bảng đầy đủ.
+  const allRows = useMemo(() => monitor?.rows || [], [monitor?.rows]);
+  const rows = useMemo(() => allRows.filter(r => !onlyBhyt || r.has_bhyt), [allRows, onlyBhyt]);
   const counts = useMemo(() => {
     const c = { can_lam: 0, all: rows.length, bbhc: 0 };
     for (const r of rows) {
@@ -273,12 +314,8 @@ export default function ClinicTab({ toast }) {
     { value: 'all', label: `Tất cả (${counts.all})` },
   ];
 
-  const readyCount = rows.filter(r => r.ready).length;
-  const ngoaitruRows = rows.filter(r => r.ngoaitru && r.ngoaitru_state?.status !== 'done');
-  const readyToComplete = rows.filter(r => r.eligible && (r.check?.status === 'ready' || (r.check?.status === 'need_weight' && r.weight_entered)));
+  const ngoaitruRows = allRows.filter(r => r.ngoaitru && r.ngoaitru_state?.status !== 'done');
   const actionLog = [...(monitor?.action_log || [])].reverse();
-  const blockedCount = rows.filter(r => r.stage !== 'xong' && r.blockers?.length).length;
-  const choDocKq = rows.filter(r => r.stage !== 'xong' && r.cho_doc_kq).length;
 
   let statusText = 'Chưa theo dõi.';
   let statusTone = C.text2;
@@ -298,149 +335,133 @@ export default function ClinicTab({ toast }) {
     statusText = `Đã dừng lúc ${hhmm(monitor.stopped_at)}. Danh sách bên dưới là lần đọc cuối (${hhmm(monitor.updated_at)}).`;
   }
 
+  const settingsOpen = showSettings || !running;
   return (
     <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <section style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, padding: 12 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, alignItems: 'end' }}>
-          <Field label="Đăng nhập bằng">
-            <ClinicAccountPicker value={cfg.accountName} disabled={running} style={inputStyle}
-              onChange={v => setCfg(prev => { const next = { ...prev, accountName: v }; saveConfig(next); return next; })} />
-          </Field>
-          {!cfg.accountName && (
-            <>
-              <Field label="Tài khoản EMR">
-                <input value={cfg.username} onChange={setField('username')} disabled={running} autoComplete="username" style={inputStyle} />
-              </Field>
-              <Field label="Mật khẩu">
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} disabled={running} autoComplete="current-password" style={inputStyle} />
-              </Field>
-            </>
-          )}
-          <Field label="URL đăng nhập">
-            <input value={cfg.loginUrl} onChange={setField('loginUrl')} disabled={running} style={inputStyle} />
-          </Field>
-          <Field label="URL Danh sách Khám bệnh">
-            <input value={cfg.listUrl} onChange={setField('listUrl')} disabled={running} style={inputStyle} />
-          </Field>
-          <Field label="Làm mới mỗi (phút)">
-            <input type="number" min={1} max={60} value={cfg.intervalMinutes} onChange={setField('intervalMinutes')} disabled={running} style={inputStyle} />
-          </Field>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
+      <section style={{ border: `1px solid ${C.border2}`, borderRadius: 7, background: C.surface, padding: 12 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {running ? (
             <>
               <Btn variant="danger" icon={IconPlayerStop} loading={busy === 'stop'} onClick={stop}>Dừng theo dõi</Btn>
               <Btn icon={IconRefresh} loading={busy === 'refresh'} onClick={refresh}>Làm mới ngay</Btn>
+              <Btn icon={IconSettings} onClick={() => setShowSettings(v => !v)} aria-expanded={settingsOpen}>Thiết lập</Btn>
             </>
           ) : (
             <Btn variant="primary" icon={IconPlayerPlay} loading={busy === 'start'} onClick={start}
               disabled={!hasClinicLogin({ ...cfg, password }) || !cfg.loginUrl || !cfg.listUrl}>Bắt đầu theo dõi</Btn>
           )}
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: FS.sm, color: C.text2 }}>
-            <input type="checkbox" checked={cfg.headless} onChange={setField('headless')} disabled={running} />
-            Chạy Chrome ẩn
-          </label>
           <span role="status" style={{ fontSize: FS.sm, color: statusTone, flex: '1 1 320px' }}>{statusText}</span>
         </div>
+        {settingsOpen && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, alignItems: 'end', marginTop: 10 }}>
+            <Field label="Đăng nhập bằng">
+              <ClinicAccountPicker value={cfg.accountName} disabled={running} style={inputStyle}
+                onChange={v => setCfg(prev => { const next = { ...prev, accountName: v }; saveConfig(next); return next; })} />
+            </Field>
+            {!cfg.accountName && (
+              <>
+                <Field label="Tài khoản EMR">
+                  <input value={cfg.username} onChange={setField('username')} disabled={running} autoComplete="username" style={inputStyle} />
+                </Field>
+                <Field label="Mật khẩu">
+                  <input type="password" value={password} onChange={e => setPassword(e.target.value)} disabled={running} autoComplete="current-password" style={inputStyle} />
+                </Field>
+              </>
+            )}
+            <Field label="URL đăng nhập">
+              <input value={cfg.loginUrl} onChange={setField('loginUrl')} disabled={running} style={inputStyle} />
+            </Field>
+            <Field label="URL Danh sách Khám bệnh">
+              <input value={cfg.listUrl} onChange={setField('listUrl')} disabled={running} style={inputStyle} />
+            </Field>
+            <Field label="Đọc lại danh sách mỗi (phút)">
+              <input type="number" min={1} max={60} value={cfg.intervalMinutes} onChange={setField('intervalMinutes')} disabled={running} style={inputStyle} />
+            </Field>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: FS.sm, color: C.text2, minHeight: 32 }}>
+              <input type="checkbox" checked={cfg.headless} onChange={setField('headless')} disabled={running} />
+              Chạy Chrome ẩn
+            </label>
+          </div>
+        )}
       </section>
-
-      <ClinicAdmissionCare creds={{ ...cfg, password }} toast={toast} />
 
       {monitor?.rows?.length ? (
         <>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <Stat label="Người bệnh hôm nay" value={rows.length} />
-            <Stat label="Sẵn sàng xử lý" value={readyCount} tone="green" />
-            <Stat label="Còn vướng" value={blockedCount} tone="amber" />
-            <Stat label="Chờ đọc kết quả" value={choDocKq} tone="amber" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12, alignItems: 'start' }}>
+            <VisitPanel rows={allRows} running={running} busy={busy} actionRunning={Boolean(monitor?.action_running)}
+              onComplete={completeReady} renderCompletion={r => <CompletionCell row={r} toast={toast} onSaved={loadState} />} />
+            <TodoPanel rows={allRows} running={running} busy={busy} actionRunning={Boolean(monitor?.action_running)}
+              autoTasks={autoTasks} onRunTasks={runTasks} onToggleAuto={toggleAuto}
+              ngoaitruCount={ngoaitruRows.length} onRunNgoaiTru={runNgoaiTru}>
+              <ClinicBbhc monitor={monitor} toast={toast} onChanged={loadState} />
+            </TodoPanel>
+            <SickLeavePanel rows={allRows} entries={sickLeave} onEntries={setSickLeave} onOpenSickLeave={openSickLeave} toast={toast} />
           </div>
 
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: 10, border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface }}>
-            <Btn variant="primary" icon={IconChecks} loading={busy === 'complete' || monitor?.action_running}
-              disabled={!running || !readyToComplete.length || busy === 'complete' || monitor?.action_running} onClick={completeReady}>
-              {monitor?.action_running ? 'Đang hoàn tất…' : `Hoàn tất ${readyToComplete.length} người bệnh đã sẵn sàng`}
-            </Btn>
-            <span style={{ fontSize: FS.sm, color: C.text2, flex: '1 1 320px' }}>
-              Chỉ người có BHYT, xử trí Cho về hoặc Chuyển viện, dịch vụ đã xong. Thủ thuật chưa xong thì nhập trước (còn "Mới" thì bấm Thực hiện; giờ chỉ định → +10 phút, thủ thuật viên theo Lịch Phòng khám).
-              Thời gian ra được giữ nếu hợp lệ, không thì đặt bằng giờ hiện tại của máy. Người chờ đọc KQ chưa có thuốc và người thiếu cân nặng sẽ không được hoàn tất.
-            </span>
-          </div>
+          <ClinicAdmissionCare creds={{ ...cfg, password }} toast={toast} />
 
-          {ngoaitruRows.length > 0 && (
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: 10, border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface }}>
-              <Btn variant="primary" icon={IconChecks} loading={busy === 'ngoaitru'}
-                disabled={!running || busy === 'ngoaitru' || monitor?.action_running} onClick={runNgoaiTru}>
-                {`Điều trị ngoại trú ${ngoaitruRows.length} người bệnh`}
-              </Btn>
-              <span style={{ fontSize: FS.sm, color: C.text2, flex: '1 1 320px' }}>
-                Người có BHYT xử trí Điều trị ngoại trú: nhập khoa (giữ giờ vào khoa nếu hợp lệ, Người nhận = Bác sĩ nhận bệnh), kết thúc mổ
-                (bắt đầu = vào khoa + 1 phút, +15 phút, Gây Tê Tại Chỗ, Nằm ngửa, BS mổ chính = Gây mê chính = bác sĩ trong Lịch Phòng khám), Tổng kết ra khoa lấy từ hồ sơ (không có KQ XN, CLS thì ghi "."), rồi Kết thúc điều trị.
-              </span>
+          <Panel title="Danh sách khám bệnh">
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Segmented value={group} options={groupOptions} onChange={setGroup} label="Nhóm người bệnh" />
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: FS.sm, color: C.text2 }}>
+                <input type="checkbox" checked={onlyBhyt} onChange={e => setOnlyBhyt(e.target.checked)} />
+                Chỉ người có BHYT
+              </label>
             </div>
-          )}
 
-          <ClinicBbhc monitor={monitor} toast={toast} onChanged={loadState} />
-
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <Segmented value={group} options={groupOptions} onChange={setGroup} label="Nhóm người bệnh" />
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: FS.sm, color: C.text2 }}>
-              <input type="checkbox" checked={onlyBhyt} onChange={e => setOnlyBhyt(e.target.checked)} />
-              Chỉ người có BHYT
-            </label>
-          </div>
-
-          <div style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, overflow: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.md }}>
-              <thead>
-                <tr style={{ background: C.surface2 }}>
-                  {['STT', 'Mã BN', 'Họ tên', 'Thời gian', 'Trạng thái', 'Xử trí', 'Dịch vụ', 'Việc tiếp theo', 'Còn vướng', 'Hoàn tất khám'].map(h => (
-                    <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: FS.xs, color: C.text2, fontWeight: 700, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map(r => (
-                  <tr key={r.khambenhid || `${r.ma_bn}-${r.thoi_gian}`} style={{
-                    borderBottom: `1px solid ${C.border2}`,
-                    boxShadow: r.ready ? `inset 3px 0 0 ${C.green}` : (r.blockers?.length && r.stage !== 'xong' ? `inset 3px 0 0 ${C.amber}` : 'none'),
-                  }}>
-                    <td style={{ padding: '8px 10px', color: C.text2 }}>{r.stt}</td>
-                    <td style={{ padding: '8px 10px', fontVariantNumeric: 'tabular-nums' }}>{r.ma_bn}</td>
-                    <td style={{ padding: '8px 10px' }}>
-                      <div style={{ fontWeight: 600 }}>{r.ho_ten}</div>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: FS.xs, color: C.text2 }}>
-                        <span>{r.doi_tuong}{r.nam_sinh ? ` · ${r.nam_sinh}` : ''}{r.uu_tien ? ` · ${r.uu_tien}` : ''}</span>
-                        {r.cho_doc_kq && <span style={{ color: C.red, fontWeight: 600 }}>Chờ đọc KQ</span>}
-                        {r.bbhc?.length > 0 && <span style={{ color: C.amber, fontWeight: 600 }} title="Cần lập Sổ biên bản hội chẩn">SBBHC: {r.bbhc.join(', ')}</span>}
-                      </div>
-                      {r.lich_su && <HistoryNote lichSu={r.lich_su} mode="clinic" />}
-                    </td>
-                    <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', color: C.text2 }}>{r.thoi_gian}</td>
-                    <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{r.trang_thai}</td>
-                    <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{r.xu_tri || '—'}</td>
-                    <td style={{ padding: '8px 10px' }}>
-                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        {(r.services || []).filter(s => s.code !== 'KB').map(s => <ServiceChip key={s.code} s={s} />)}
-                      </div>
-                    </td>
-                    <td style={{ padding: '8px 10px', fontWeight: 600, color: r.ready ? C.green : C.text }}>{r.next_action}</td>
-                    <td style={{ padding: '8px 10px', color: C.amber, fontSize: FS.sm }}>
-                      {r.stage === 'xong' ? '' : (r.blockers || []).join(' · ')}
-                    </td>
-                    <td style={{ padding: '8px 10px', minWidth: 150 }}>
-                      <CompletionCell row={r} toast={toast} onSaved={loadState} />
-                    </td>
+            <div style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, overflow: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.md }}>
+                <thead>
+                  <tr style={{ background: C.surface2 }}>
+                    {['STT', 'Mã BN', 'Họ tên', 'Thời gian', 'Trạng thái', 'Xử trí', 'Dịch vụ', 'Việc tiếp theo', 'Còn vướng', 'Hoàn tất khám'].map(h => (
+                      <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: FS.xs, color: C.text2, fontWeight: 700, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
                   </tr>
-                ))}
-                {!visible.length && (
-                  <tr><td colSpan={10} style={{ padding: 16, textAlign: 'center', color: C.text2 }}>Không có người bệnh trong nhóm này.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {visible.map(r => (
+                    <tr key={r.khambenhid || `${r.ma_bn}-${r.thoi_gian}`} style={{
+                      borderBottom: `1px solid ${C.border2}`,
+                      boxShadow: r.ready ? `inset 3px 0 0 ${C.green}` : (r.blockers?.length && r.stage !== 'xong' ? `inset 3px 0 0 ${C.amber}` : 'none'),
+                    }}>
+                      <td style={{ padding: '8px 10px', color: C.text2 }}>{r.stt}</td>
+                      <td style={{ padding: '8px 10px', fontVariantNumeric: 'tabular-nums' }}>{r.ma_bn}</td>
+                      <td style={{ padding: '8px 10px' }}>
+                        <div style={{ fontWeight: 600 }}>{r.ho_ten}</div>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: FS.xs, color: C.text2 }}>
+                          <span>{r.doi_tuong}{r.nam_sinh ? ` · ${r.nam_sinh}` : ''}{r.uu_tien ? ` · ${r.uu_tien}` : ''}</span>
+                          {r.cho_doc_kq && <span style={{ color: C.red, fontWeight: 600 }}>Chờ đọc KQ</span>}
+                          {r.bbhc?.length > 0 && <span style={{ color: C.amber, fontWeight: 600 }} title="Cần lập Sổ biên bản hội chẩn">SBBHC: {r.bbhc.join(', ')}</span>}
+                        </div>
+                        {r.lich_su && <HistoryNote lichSu={r.lich_su} mode="clinic" />}
+                      </td>
+                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', color: C.text2 }}>{r.thoi_gian}</td>
+                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{r.trang_thai}</td>
+                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{r.xu_tri || '—'}</td>
+                      <td style={{ padding: '8px 10px' }}>
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                          {(r.services || []).filter(s => s.code !== 'KB').map(s => <ServiceChip key={s.code} s={s} />)}
+                        </div>
+                      </td>
+                      <td style={{ padding: '8px 10px', fontWeight: 600, color: r.ready ? C.green : C.text }}>{r.next_action}</td>
+                      <td style={{ padding: '8px 10px', color: C.amber, fontSize: FS.sm }}>
+                        {r.stage === 'xong' ? '' : (r.blockers || []).join(' · ')}
+                      </td>
+                      <td style={{ padding: '8px 10px', minWidth: 150 }}>
+                        <CompletionCell row={r} toast={toast} onSaved={loadState} />
+                      </td>
+                    </tr>
+                  ))}
+                  {!visible.length && (
+                    <tr><td colSpan={10} style={{ padding: 16, textAlign: 'center', color: C.text2 }}>Không có người bệnh trong nhóm này.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
           {actionLog.length > 0 && (
             <section style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, padding: 12 }}>
-              <div style={{ fontSize: FS.md, fontWeight: 700, marginBottom: 6 }}>Nhật ký hoàn tất khám</div>
+              <div style={{ fontSize: FS.md, fontWeight: 700, marginBottom: 6 }}>Nhật ký thao tác trên EMR</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: FS.sm }}>
                 {actionLog.map((e, i) => (
                   <div key={`${e.at}-${i}`} style={{ color: e.result === 'done' ? C.green : e.result === 'error' ? C.red : C.text2 }}>

@@ -492,3 +492,92 @@ def test_new_procedure_is_sent_with_thuc_hien_before_procedure_list():
     page.new_tt, page.missing = 1, ['chẩn đoán sơ bộ']
     assert cm.ready_for_procedures(page, _tt_row(0, 1), None, NOW)['status'] == 'incomplete' and page.writes == []
 
+
+
+# ── Màn Phòng khám mới: kiểm tra thuốc, việc cần làm ─────────────────────────
+
+def test_cho_ve_needs_drugs_before_completion():
+    # Cho về chưa có thuốc → chưa hoàn tất (chờ bác sĩ kê đơn), không bấm gì trên EMR.
+    page = FakePage(drugs=0)
+    res = cm.check_patient(page, {'case': 'cho_ve'}, None, NOW)
+    assert res['status'] == 'no_drug' and 'kê đơn' in res['message'] and res['drugs'] == 0
+    assert cm.complete_patient(page, {'case': 'cho_ve'}, None, NOW, None)['result'] == 'no_drug'
+    assert page.writes == []
+
+    # Có thuốc → sẵn sàng, ghi số thuốc để giao diện hiện.
+    page = FakePage(drugs=2, exit_time=cm.parse_emr_dt('09:40 28/09/2026'))
+    res = cm.check_patient(page, {'case': 'cho_ve'}, None, NOW)
+    assert res['status'] == 'ready' and res['drugs'] == 2
+    assert cm.complete_patient(page, {'case': 'cho_ve'}, None, NOW, None)['result'] == 'done'
+
+    # Chuyển viện không cần đơn thuốc.
+    page = FakePage(drugs=0)
+    assert cm.check_patient(page, {'case': 'chuyen_vien'}, None, NOW)['status'] == 'ready'
+
+
+def _task_row(kbid='k1', case='chua_xu_tri', done=0, total=1, stage='dang_lam_dv', bhyt=True):
+    return {'khambenhid': kbid, 'href': 'x', 'stt': '1', 'ma_bn': '99000001', 'ho_ten': 'A', 'has_bhyt': bhyt,
+            'case': case, 'stage': stage, 'thoi_gian': '08:00 28/09/2026',
+            'services': [{'code': 'TT', 'label': 'TT', 'done': done, 'total': total}]}
+
+
+def test_procedure_task_candidates():
+    assert cm.procedure_task_candidate(_task_row()) is True  # chưa xử trí vẫn làm thủ thuật ngay
+    assert cm.procedure_task_candidate(_task_row(case='cho_ve')) is True
+    assert cm.procedure_task_candidate(_task_row(done=1)) is False
+    assert cm.procedure_task_candidate(_task_row(stage='xong')) is False
+    assert cm.procedure_task_candidate(_task_row(stage='cho_kham')) is False
+    assert cm.procedure_task_candidate(_task_row(case='nhap_vien')) is False
+    assert cm.procedure_task_candidate(_task_row(bhyt=False)) is False
+
+
+class TaskMonitor:
+    def __init__(self, results, new_tt=0):
+        self.results, self.new_tt, self.calls = list(results), new_tt, []
+
+    def on_exam_page(self, row, action, need_services=True):
+        page = FakePage()
+        page.new_tt = self.new_tt
+        res = action(page, None, NOW)
+        self.calls.append(('exam', list(page.writes)))
+        return res
+
+    def run_procedures(self, row):
+        self.calls.append('procedures')
+        return self.results.pop(0)
+
+
+def test_run_tasks_sends_new_procedure_then_enters_it():
+    mon = TaskMonitor([{'result': 'done', 'steps': ['Đã nhập thủ thuật 09:00–09:10'], 'procedure_end': DT(2026, 9, 28, 9, 10)}], new_tt=1)
+    state, log = {}, []
+    assert cm.run_tasks(mon, [_task_row()], state, log, auto=False) == 1
+    assert mon.calls == [('exam', ['thuc_hien']), 'procedures']
+    assert state['k1']['status'] == 'done' and log[0]['kind'] == 'thu_thuat' and log[0]['result'] == 'done'
+
+
+def test_auto_tasks_do_not_retry_failures_or_wait_early():
+    # Lỗi lần trước, chỉ định không đổi → tự động không thử lại (bấm tay thì thử lại).
+    state = {'k1': {'status': 'error', 'pending': 1, 'at': '2026-09-28T09:00:00'}}
+    mon = TaskMonitor([{'result': 'done', 'steps': [], 'procedure_end': None}])
+    assert cm.run_tasks(mon, [_task_row()], state, [], auto=True) == 0
+    assert cm.run_tasks(mon, [_task_row()], state, [], auto=False) == 1
+
+    # Đang chờ đủ giờ → tự động chỉ thử lại khi tới giờ.
+    state = {'k1': {'status': 'waiting', 'pending': 1, 'earliest': '2026-09-28T10:05:00', 'at': '2026-09-28T09:55:00'}}
+    mon = TaskMonitor([])
+    assert cm.run_tasks(mon, [_task_row()], state, [], auto=True, now=NOW) == 0
+
+    # Kết quả chờ có giờ → lưu lại để lần sau biết khi nào thử.
+    state = {}
+    mon = TaskMonitor([{'result': 'waiting', 'earliest': DT(2026, 9, 28, 10, 5), 'message': 'chờ', 'steps': [], 'procedure_end': None}])
+    cm.run_tasks(mon, [_task_row()], state, [], auto=True, now=NOW)
+    assert state['k1']['status'] == 'waiting' and state['k1']['earliest'] == '2026-09-28T10:05:00'
+
+
+def test_public_rows_expose_tasks():
+    row = {**_task_row(), 'services': [{'code': 'TT', 'label': 'TT', 'done': 0, 'total': 1},
+                                       {'code': 'PT', 'label': 'PT', 'done': 0, 'total': 1}]}
+    out = cm.public_rows([row], {}, {}, task_state={'k1': {'status': 'waiting', 'message': 'chờ'}})[0]
+    assert out['pending_tt'] == 1 and out['pending_pt'] == 1 and out['procedure_task'] is True
+    assert out['tt_task'] == {'status': 'waiting', 'message': 'chờ'}
+    assert 'href' not in out

@@ -1,7 +1,9 @@
 // server/routes/clinic.js — phần Phòng khám còn giữ lại (tab Phòng khám đang được làm lại).
 //   POST /api/clinic/preview    đọc danh sách Khám bệnh (worker clinic_outpatient.py) — tab Nghỉ ốm dùng.
 //   GET  /api/clinic/care-draft đọc bản nháp chăm sóc phòng khám cũ — tab Nghỉ ốm lấy danh sách ngoại trú.
-//   /api/clinic/monitor/*       theo dõi Danh sách Khám bệnh liên tục và hoàn tất khám Cho về (worker clinic_monitor.py).
+//   /api/clinic/monitor/*       theo dõi Danh sách Khám bệnh liên tục, hoàn tất khám Cho về và làm thủ thuật
+//                               ngay khi có chỉ định (worker clinic_monitor.py).
+//   GET/POST /api/clinic/sick-leave  người bệnh xin nghỉ ốm (đánh dấu ở Phòng khám, nhập cổng ở tab Nghỉ ốm).
 //   POST /api/clinic/care-preview, /care-order-seeds, /input-care
 //                               TH3 Nhập viện: tìm, gợi ý diễn biến và nhập chăm sóc (worker clinic_input_care.py).
 
@@ -239,6 +241,7 @@ function sanitizeMonitorRequest(body = {}) {
     username, password, loginUrl, listUrl,
     intervalMinutes: Number.isFinite(interval) ? Math.min(Math.max(interval, 1), 60) : 3,
     headless: body.headless !== false,
+    autoTasks: body.autoTasks === true,
   };
 }
 
@@ -390,6 +393,32 @@ router.post('/clinic/monitor/ngoaitru', (req, res) => {
   return res.json({ status: 'ok', message: 'Đang làm điều trị ngoại trú cho các người bệnh.' });
 });
 
+// Việc cần làm: nhập ngay các thủ thuật đã có chỉ định (không chờ hoàn tất khám).
+router.post('/clinic/monitor/tasks', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  if (!monitors.get(ctx.sid)?.running) {
+    return res.status(409).json({ status: 'error', message: 'Chưa bắt đầu theo dõi.' });
+  }
+  writeControl(ctx, { tasksNow: Date.now() });
+  appendActivity(ctx, { kind: 'workflow.clinic.monitor.tasks_requested' });
+  return res.json({ status: 'ok', message: 'Đang nhập các thủ thuật đã có chỉ định.' });
+});
+
+// Bật/tắt "Tự hoàn thành khi có chỉ định": worker nhập thủ thuật và soạn nháp SBBHC mỗi chu kỳ.
+router.post('/clinic/monitor/auto-tasks', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  if (!monitors.get(ctx.sid)?.running) {
+    return res.status(409).json({ status: 'error', message: 'Chưa bắt đầu theo dõi.' });
+  }
+  const enabled = req.body?.enabled === true;
+  writeControl(ctx, { autoTasks: enabled, refresh: Date.now() });
+  appendActivity(ctx, { kind: 'workflow.clinic.monitor.auto_tasks', enabled });
+  return res.json({
+    status: 'ok',
+    message: enabled ? 'Đã bật tự hoàn thành thủ thuật khi có chỉ định.' : 'Đã tắt tự hoàn thành, chỉ làm khi bấm nút.',
+  });
+});
+
 // TH4 Sổ biên bản hội chẩn: bước 1 soạn nháp (worker chỉ đọc màn khám), bước 2 lập theo nháp đã duyệt.
 const BBHC_FIELDS = ['ThoiGianHoiChan', 'HopTai', 'ThuKy', 'YeuCau', 'TomTat', 'TinhTrang', 'ChanDoanTuyenDuoi',
   'TomTatBenhAn', 'NguyenNhan', 'HuongDieuTri', 'ChamSoc', 'KetLuan'];
@@ -455,6 +484,67 @@ router.get('/clinic/monitor/state', (req, res) => {
     extra: () => { const e = monitors.get(ctx.sid); return `${e?.running ? 1 : 0}|${e?.exitMessage || ''}`; },
   });
   return res.json({ status: 'ok', monitor: monitorStatePayload(ctx) });
+});
+
+// ── Người bệnh xin nghỉ ốm (đánh dấu ở Phòng khám, cuối buổi nhập lên cổng BHXH ở tab Nghỉ ốm) ──
+// Giấy chứng nhận nghỉ việc là form riêng trên EMR, danh sách khám không cho biết ai xin nghỉ,
+// nên điều dưỡng đánh dấu tay. Thêm/bỏ từng người (không ghi đè cả danh sách) để hai máy cùng
+// đánh dấu không mất của nhau.
+const CLINIC_SICK_LEAVE_FILE = 'clinic_sick_leave.json';
+const SICK_LEAVE_KEEP_DAYS = 45;
+
+function clinicSickLeavePath(ctx) {
+  return path.join(ctx.dir, CLINIC_SICK_LEAVE_FILE);
+}
+
+function readClinicSickLeave(ctx) {
+  const data = readJsonSafe(clinicSickLeavePath(ctx), null);
+  return data && typeof data.entries === 'object' && data.entries ? data.entries : {};
+}
+
+function sanitizeSickLeavePatient(raw = {}) {
+  const text = (v, n) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
+  const patient = {
+    khambenhid: text(raw.khambenhid, 64),
+    ma_bn: text(raw.ma_bn, 32),
+    ho_ten: text(raw.ho_ten, 120),
+    nam_sinh: text(raw.nam_sinh, 10),
+    thoi_gian: text(raw.thoi_gian, 32),
+    chan_doan: text(raw.chan_doan, 300),
+  };
+  if (!patient.ma_bn || !patient.ho_ten) throw new Error('Thiếu mã hoặc họ tên người bệnh.');
+  if (patient.khambenhid && !/^[A-Za-z0-9-]{1,64}$/.test(patient.khambenhid)) throw new Error('Mã khám bệnh không hợp lệ.');
+  const day = patient.thoi_gian.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  patient.ngay = day ? `${day[3]}-${day[2].padStart(2, '0')}-${day[1].padStart(2, '0')}` : localTodayIso();
+  patient.key = patient.khambenhid || `${patient.ma_bn}:${patient.ngay}`;
+  return patient;
+}
+
+function pruneSickLeave(entries) {
+  const cutoff = new Date(Date.now() - SICK_LEAVE_KEEP_DAYS * 86_400_000).toISOString().slice(0, 10);
+  return Object.fromEntries(Object.entries(entries).filter(([, e]) => String(e?.ngay || '') >= cutoff));
+}
+
+router.get('/clinic/sick-leave', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  return res.json({ status: 'ok', entries: Object.values(readClinicSickLeave(ctx)) });
+});
+
+router.post('/clinic/sick-leave', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  const action = req.body?.action === 'remove' ? 'remove' : 'add';
+  let patient;
+  try {
+    patient = sanitizeSickLeavePatient(req.body?.patient);
+  } catch (err) {
+    return res.status(400).json({ status: 'error', message: String(err.message || err) });
+  }
+  const entries = readClinicSickLeave(ctx);
+  if (action === 'remove') delete entries[patient.key];
+  else entries[patient.key] = { ...(entries[patient.key] || {}), ...patient, added_at: entries[patient.key]?.added_at || new Date().toISOString() };
+  writeJsonAtomic(clinicSickLeavePath(ctx), { entries: pruneSickLeave(entries), updated_at: new Date().toISOString() });
+  appendActivity(ctx, { kind: `workflow.clinic.sick_leave.${action}` });
+  return res.json({ status: 'ok', entries: Object.values(readClinicSickLeave(ctx)) });
 });
 
 // ── TH3 Nhập viện: nhập chăm sóc cho người bệnh từ Khoa Khám Bệnh (worker clinic_input_care.py) ──
@@ -775,3 +865,5 @@ router.post('/clinic/input-care', async (req, res) => {
 module.exports = router;
 module.exports.withDoctorAccount = withDoctorAccount;
 module.exports.scheduledClinicDoctor = scheduledClinicDoctor;
+module.exports.sanitizeSickLeavePatient = sanitizeSickLeavePatient;
+module.exports.pruneSickLeave = pruneSickLeave;
