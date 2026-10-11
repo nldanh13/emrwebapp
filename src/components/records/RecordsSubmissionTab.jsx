@@ -166,7 +166,7 @@ export default function RecordsSubmissionTab({ records = [], toast, onClearCheck
   const eligibleRecords = useMemo(() => {
     const q = norm(candidateSearch);
     return (records || [])
-      .filter(record => record?.submission_ready)
+      .filter(record => record?.checked)
       .filter(record => !(record?.aliases || []).some(alias => activeAliases.has(alias)))
       .filter(record => {
         if (!q) return true;
@@ -311,7 +311,7 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
       setSelectedBatchId(selectedDate);
       setSelectedRecordIds(new Set());
       const skipped = Array.isArray(out?.skipped) ? out.skipped.length : 0;
-      toast?.(`${out?.message || 'Đã xếp ngày nộp hồ sơ.'}${skipped ? ` Có ${skipped} hồ sơ không thêm được vì đã nằm trong đợt nộp khác hoặc chưa đủ điều kiện Sẵn sàng nộp.` : ''}`, skipped ? 'warn' : 'ok');
+      toast?.(`${out?.message || 'Đã xếp ngày nộp hồ sơ.'}${skipped ? ` Có ${skipped} hồ sơ không thêm được vì đã nằm trong đợt nộp khác hoặc chưa có dấu Đã kiểm.` : ''}`, skipped ? 'warn' : 'ok');
     } catch (err) {
       toast?.(`Không xếp được ngày nộp: ${String(err.message || err)}`, 'error');
     } finally {
@@ -467,7 +467,7 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ minWidth: 190 }}>
             <div style={{ color: C.text, fontSize: FS.md, fontWeight: 700 }}>Xếp ngày nộp hồ sơ</div>
-            <div style={{ color: C.text3, fontSize: FS.xs, marginTop: 2 }}>Chỉ hiển thị hồ sơ đã "Sẵn sàng nộp" (đủ checklist hồ sơ giấy) và chưa chốt nộp.</div>
+            <div style={{ color: C.text3, fontSize: FS.xs, marginTop: 2 }}>Hồ sơ tích “Đã kiểm” sẽ xuất hiện ở đây ngay. Các mục còn thiếu có thể bổ sung trước khi chốt nộp.</div>
           </div>
           <DateField label="Ngày nộp" value={selectedDate} onChange={setSelectedDate} />
           <Btn variant="solidPrimary" icon={IconCalendarPlus} disabled={busy || !selectedRecordIds.size || selectedDateLocked} onClick={addSelected}>
