@@ -601,7 +601,10 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
       const d = await bhytFetch('/api/emr/harvest-discharges', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: grvDate, ma_khoa: grvKhoa, doctor_text: grvDoctor }),
       });
-      toast?.(`Ngày ${isoToVi(grvDate)}: ${d.scanned} ca ra viện · ${d.working_age} ca tuổi lao động · đọc được ${d.found} giấy ra viện (thêm ${d.added}, cập nhật ${d.updated}).`, 'ok');
+      const ask = d.ask_sick_leave
+        ? ` ${d.ask_sick_leave} ca thẻ DN chưa ghi nghỉ ốm: hỏi người bệnh có nghỉ ốm không (xem cột "Chưa" bên dưới).`
+        : '';
+      toast?.(`Ngày ${isoToVi(grvDate)}: ${d.scanned} ca ra viện · ${d.working_age} ca tuổi lao động · đọc được ${d.found} giấy ra viện (thêm ${d.added}, cập nhật ${d.updated}).${ask}`, d.ask_sick_leave ? 'warn' : 'ok');
       await loadAll();
     } catch (e) {
       toast?.(String(e?.message || 'Không quét được danh sách ra viện.'), 'error');
@@ -990,6 +993,8 @@ export default function BhytPortalPanel({ toast, sessionId, autoOpenPortal = fal
         </div>
         <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 6 }}>
           Giấy ra viện không in khoa và tên bác sĩ, nên mọi ca gom được dùng khoa và bác sĩ chọn ở trên.
+          <br />Ca có thẻ BHYT <b>DN</b> mà giấy ra viện chưa ghi nghỉ ốm sẽ để ở trạng thái "Chưa": hỏi người bệnh có nghỉ ốm không.
+          Có thì sửa hồ sơ, ghi "Nghỉ ốm từ ngày … đến hết ngày …" vào Ghi chú; không thì bỏ qua hồ sơ đó.
           <br />Lần đầu dùng, bấm <b>"Xem thử danh sách ra viện"</b> (chỉ đọc, không nhập gì) để đối chiếu với màn hình EMR.
           Nếu báo không đọc được, công cụ đã chụp lại trang EMR — gửi bản chụp cho kỹ thuật để khớp.
         </div>

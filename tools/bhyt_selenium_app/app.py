@@ -499,7 +499,7 @@ def api_emr_list_clinic():
 
 def _import_harvest(out: dict, sheet: str):
     """Nạp các ca gom được (có giấy đọc được) vào danh sách hồ sơ để nhập lên cổng."""
-    from bhyt.mapping import DOC_BHXH, Record, validate_fields
+    from bhyt.mapping import DOC_BHXH, SICK_LEAVE_QUESTION, Record, validate_fields
 
     records = []
     for item in out.get("found", []):
@@ -515,6 +515,8 @@ def _import_harvest(out: dict, sheet: str):
         "scanned": out.get("scanned", 0),
         "working_age": out.get("working_age", 0),
         "found": len(out.get("found", [])),
+        # Ca thẻ DN chưa ghi nghỉ ốm: người dùng phải hỏi người bệnh trước khi nhập.
+        "ask_sick_leave": sum(1 for rec in records if SICK_LEAVE_QUESTION in rec.issues),
         **imported,
         "summary": store.summary(),
     })
