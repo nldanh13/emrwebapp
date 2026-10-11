@@ -109,6 +109,17 @@ class ReadDischargeRecordTests(unittest.TestCase):
         self.assertEqual(out["fields"], {"ho_ten": "A"})
         self.assertIn("không mở được", out["info_error"])
 
+    def test_khoa_and_doctor_from_list_row(self):
+        # Giấy ra viện thật không in khoa và tên bác sĩ: lấy từ cột của danh sách nội trú.
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_emr(tmp)
+            p.read_giay_ra_vien_pdf = lambda name: {"doc_type": "GRV03", "fields": {"ho_ten": name}}
+            p.read_patient_info = lambda keyword: {"fields": {}}
+            out = p.read_discharge_record("A", "BN01", {"khoa": "Chấn thương chỉnh hình",
+                                                         "bac_si": "Phạm Việt Tân"})
+        self.assertEqual(out["fields"]["ma_khoa"], "Chấn thương chỉnh hình")
+        self.assertEqual(out["fields"]["doctor_text"], "Phạm Việt Tân")
+
 
 if __name__ == "__main__":
     unittest.main()

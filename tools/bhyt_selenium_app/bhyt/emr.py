@@ -559,13 +559,20 @@ class EmrPortal:
                     fields[key_] = text
             return {"fields": fields, "raw": raw}
 
-    def read_discharge_record(self, patient_name: str, ma_bn: str = "") -> dict[str, Any]:
+    def read_discharge_record(self, patient_name: str, ma_bn: str = "",
+                              row: dict[str, Any] | None = None) -> dict[str, Any]:
         """Giấy ra viện (PDF) + thông tin bệnh nhân. Giấy ra viện là nguồn chính; thông
         tin bệnh nhân chỉ bù chỗ giấy không có (CCCD, ngày cấp, dân tộc…). Có CCCD thì
         dùng luôn loại giấy tờ của EMR thay cho "Không có giấy tờ". Không đọc được thông
         tin bệnh nhân thì vẫn trả giấy ra viện, kèm info_error để báo."""
         result = self.read_giay_ra_vien_pdf(patient_name)
         fields = dict(result.get("fields") or {})
+        # Giấy ra viện không in khoa và tên bác sĩ: lấy từ dòng danh sách nội trú nếu có cột.
+        row = row or {}
+        if row.get("khoa") and not fields.get("ma_khoa"):
+            fields["ma_khoa"] = row["khoa"]
+        if row.get("bac_si") and not fields.get("doctor_text"):
+            fields["doctor_text"] = row["bac_si"]
         try:
             info = (self.read_patient_info(ma_bn or patient_name) or {}).get("fields") or {}
         except Exception as exc:  # noqa: BLE001 - thiếu thông tin BN không làm mất giấy ra viện
@@ -734,7 +741,7 @@ class EmrPortal:
         để nhập cổng (mẫu 03)."""
         with self._lock:
             return self._harvest(self.list_inpatient_discharges(day),
-                                 lambda c: self.read_discharge_record(c["ho_ten"], c.get("ma_bn", "")),
+                                 lambda c: self.read_discharge_record(c["ho_ten"], c.get("ma_bn", ""), c),
                                  ref_year, limit, progress)
 
     def _harvest(self, patients: list[dict[str, Any]], reader, ref_year, limit,

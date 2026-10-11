@@ -138,7 +138,7 @@ def parse_phieu_text(text: str) -> dict:
     return {"doc_type": DOC_BHXH, "mau_so": "07", "fields": fields, "raw": {"text": text}}
 
 
-def extract_pdf_text(path: str | Path) -> str:
+def extract_pdf_text(path: str | Path, laparams=None) -> str:
     """Trích text từ PDF. Cần thư viện pdfminer.six."""
     try:
         from pdfminer.high_level import extract_text
@@ -147,7 +147,7 @@ def extract_pdf_text(path: str | Path) -> str:
             "Thiếu thư viện đọc PDF. Cài bằng: pip install pdfminer.six"
         ) from exc
     try:
-        return extract_text(str(path)) or ""
+        return extract_text(str(path), laparams=laparams) or ""
     except Exception as exc:  # pragma: no cover - lỗi file
         raise PhieuPdfError(f"Không mở được file PDF: {exc}") from exc
 

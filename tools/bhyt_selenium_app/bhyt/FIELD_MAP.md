@@ -90,6 +90,19 @@ in "Giấy ra viện" (PDF) → `parse_grv_text` tách theo nhãn in trên giấ
 | Dòng "…, ngày .. tháng .. năm .." chỗ ký | `ngay_ct` | |
 | Tên dưới chữ "Trưởng khoa" | `doctor_text` | Chỉ nhận bác sĩ có trong `allowed_doctors` |
 
+### Giấy ra viện thật của bệnh viện (MS: 01/BV-01)
+
+Đối chiếu với mẫu PDF người dùng gửi: pdfminer bố cục mặc định làm lộn thứ tự dòng, nên
+`extract_grv_text` đọc với `LAParams(line_margin=0.2, boxes_flow=None, char_margin=20)`.
+
+- "Số hồ sơ/Số BA: NNN/2026/GRV" → `ma_ct` (khi không có "Số lưu trữ").
+- Thẻ in tách ô ("DN 4 92 92 01234567 Giá trị từ …") → ghép lại `ma_the`, bỏ phần hạn thẻ.
+- "Số CCCD/CMND/…: …. Ngày cấp: …" → `so_cccd`, `ngaycap_cccd`; có CCCD thì không đặt
+  "Không có giấy tờ".
+- "Nghỉ ốm từ ngày … đến (hết) ngày …" trong Ghi chú → `nghi_tu_ngay`, `nghi_den_ngay`.
+- Giấy này **không in** Khoa, Mã y tế, Số lưu trữ và tên bác sĩ: `ma_khoa` và `doctor_text`
+  lấy từ cột "Khoa"/"Bác sĩ" của danh sách nội trú nếu có; chưa xác nhận trên máy bệnh viện.
+
 Chọn ngày ra viện (mặc định hôm nay): danh sách nội trú lọc trạng thái "Hoàn tất"
 (`drpSelectTrangThai`), đặt "Khoảng" (`cbbLoai`, `dtTuNgay`/`dtDenNgay`) lùi 60 ngày tới ngày
 đã chọn, rồi chỉ giữ dòng có cột Ngày ra viện đúng ngày đó. Các id này lấy từ

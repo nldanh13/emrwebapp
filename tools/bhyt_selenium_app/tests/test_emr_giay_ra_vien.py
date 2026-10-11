@@ -91,7 +91,7 @@ class ReadGiayRaVienTests(unittest.TestCase):
             p._acquire_phieu_pdf = lambda before_files, before_handles, name: pdf_file
 
             orig = grv.extract_pdf_text
-            grv.extract_pdf_text = lambda path: SAMPLE
+            grv.extract_pdf_text = lambda path, **kw: SAMPLE
             try:
                 out = p.read_giay_ra_vien_pdf("Nguyễn Văn An")
             finally:
