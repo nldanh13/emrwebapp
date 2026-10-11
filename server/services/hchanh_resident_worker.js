@@ -186,18 +186,17 @@ class ResidentWorker {
   _invalidate(reason) {
     const child = this.child;
     this._idleClear();
+    if (child && !this.retiring) {
+      this.retiring = new Promise(resolve => { this.retiringDone = resolve; });
+    }
     if (child) terminateProcessTree(child);
-    // If process does not exit immediately, fail active task without replaying it.
+    // Never start another Chrome until this one has actually exited.
+    // No automatic replay: the last EMR request may have already completed.
     this._complete({ code: -1, killedByTimeout: Boolean(this.active?.timedOut),
       stderrTail: [...this.stderrTail, safeLine(reason)] });
-    if (this.child === child) this.child = null;
-    if (this.retiringDone) {
-      const done = this.retiringDone;
-      this.retiringDone = null;
-      this.retiring = null;
-      done();
+    if (!child && workers.get(this.runtimeDir) === this && this.pending === 0) {
+      workers.delete(this.runtimeDir);
     }
-    if (workers.get(this.runtimeDir) === this && this.pending === 0) workers.delete(this.runtimeDir);
   }
 
   _scheduleIdle() {
