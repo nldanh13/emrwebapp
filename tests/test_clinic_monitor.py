@@ -178,6 +178,25 @@ def test_fetch_chosen_day_sends_range_filter():
     assert driver.calls[0]['tuNgay'] == '00:00 09/10/2026' and driver.calls[0]['denNgay'] == '23:59 09/10/2026'
 
 
+
+def test_monitor_sets_chosen_day_on_emr_list_once(monkeypatch):
+    """Chọn ngày cũ: đặt bộ lọc Khoảng ngay trên trang EMR và bấm Tìm kiếm (một lần), quay về hôm nay thì đặt lại."""
+    html = _table(_row('a', 1, '<a>A</a>', BHYT, 'Hoàn tất', '', 'Cho về'))
+    driver = FakeDriver([{'ok': True}, {'ok': True, 'html': html}, {'ok': True, 'html': html},
+                         {'ok': True}, {'ok': True, 'html': html}])
+    monkeypatch.setattr(cm, 'wait_page', lambda *a, **k: None)
+    mon = cm.Monitor({}, 'https://emr/list', True)
+    mon.driver = driver
+    mon.list_date = '2020-01-03'
+    mon.read()
+    mon.read()
+    assert driver.calls[0] == {'loai': '7', 'tuNgay': '00:00 03/01/2020', 'denNgay': '23:59 03/01/2020'}
+    assert 'page' in driver.calls[1] and 'page' in driver.calls[2]  # lần đọc sau không đặt lại
+    mon.list_date = ''
+    mon.read()
+    assert driver.calls[3] == {'loai': '0'}
+
+
 def test_run_monitor_past_day_is_read_only(monkeypatch, tmp_path):
     req = tmp_path / 'req.json'
     state = tmp_path / 'state.json'

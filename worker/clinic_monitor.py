@@ -81,6 +81,51 @@ try {
 """
 
 
+# Đặt bộ lọc thời gian ngay trên trang Danh sách Khám bệnh (để EMR cũng hiện đúng ngày đang xem) rồi bấm
+# Tìm kiếm: loại 7 = "Khoảng" với 2 ô ngày giờ HH:mm dd/mm/yyyy, loại 0 = "Trong ngày". Cách đặt giống bộ lọc
+# D/s Thủ thuật đang dùng (input_procedures._apply_procedure_date_range_filter).
+SET_DAY_JS = r"""
+var f = arguments[0];
+function fire(el, name) { try { el.dispatchEvent(new Event(name, { bubbles: true })); } catch (e) {} }
+function setDate(id, value) {
+  var el = document.getElementById(id);
+  if (!el) return false;
+  if (window.jQuery) {
+    try { var p = window.jQuery(el).data('DateTimePicker'); if (p) { try { p.minDate(false); } catch (e) {} try { p.maxDate(false); } catch (e) {} } } catch (e) {}
+  }
+  el.value = value; fire(el, 'input'); fire(el, 'change'); fire(el, 'blur');
+  if (window.jQuery) {
+    try {
+      var $el = window.jQuery(el), picker = $el.data('DateTimePicker');
+      if (picker && typeof picker.date === 'function') { try { picker.date(value); } catch (e) {} }
+      $el.val(value).trigger('dp.change').trigger('change');
+    } catch (e) {}
+  }
+  return true;
+}
+try {
+  var sel = document.getElementById('cbbLoai');
+  if (!sel) return { ok: false, reason: 'no_filter' };
+  sel.value = f.loai;
+  try { Array.prototype.forEach.call(sel.options || [], function (o) { o.selected = (o.value === f.loai); }); } catch (e) {}
+  if (typeof ThoiGianValueChange === 'function') { try { ThoiGianValueChange(sel); } catch (e) {} }
+  fire(sel, 'change');
+  if (window.jQuery) { try { window.jQuery(sel).val(f.loai).trigger('change'); } catch (e) {} }
+  if (f.tuNgay) {
+    var box = document.getElementById('data_5');
+    if (box) box.style.display = 'block';
+    if (!setDate('dtTuNgay', f.tuNgay) || !setDate('dtDenNgay', f.denNgay)) return { ok: false, reason: 'no_date_inputs' };
+  }
+  var btn = document.getElementById('btnTimKiem');
+  if (btn && btn.offsetParent !== null) btn.click();
+  else if (typeof FilterChange === 'function') FilterChange();
+  return { ok: true };
+} catch (e) {
+  return { ok: false, reason: 'exception', message: String((e && e.message) || e) };
+}
+"""
+
+
 class ListUnavailable(RuntimeError):
     """Không đọc được danh sách (hết phiên, trang lỗi…) — cần mở lại trang / đăng nhập lại."""
 
@@ -795,10 +840,27 @@ class Monitor:
         self.wait: Any = None
         self.login_count = 0
         self.list_date = ""  # rỗng = hôm nay; yyyy-mm-dd = ngày đã qua người dùng chọn để xem lại
+        self.shown_filter: Dict[str, str] = {"loai": "0"}  # bộ lọc đang hiện trên trang EMR (mở trang = "Trong ngày")
 
     def _open_list(self) -> None:
         self.driver.get(_build_clinic_url(self.driver.current_url, self.list_url))
         wait_page(self.driver, 1.0)
+        self.shown_filter = {"loai": "0"}
+
+    def _show_day(self, day_filter: Dict[str, str]) -> None:
+        """Đặt ngày đang xem lên bộ lọc của trang EMR (chỉ khi đổi ngày). Lỗi thì vẫn đọc được vì lệnh đọc
+        tự mang theo khoảng ngày; chỉ là trang EMR không hiện đúng ngày."""
+        if day_filter == self.shown_filter:
+            return
+        try:
+            res = self.driver.execute_script(SET_DAY_JS, day_filter) or {}
+        except Exception as e:  # trang đang tải lại… → lần đọc sau đặt lại
+            res = {"ok": False, "reason": compact(str(e))[:120]}
+        if res.get("ok"):
+            wait_page(self.driver, 1.0)
+            self.shown_filter = dict(day_filter)
+        else:
+            print(f"[CLINIC-MONITOR] [WARN] Không đặt được ngày trên trang EMR ({res.get('reason') or 'unknown'}); vẫn đọc theo ngày đã chọn.")
 
     def _login(self) -> None:
         if self.driver is None:
@@ -822,7 +884,9 @@ class Monitor:
         last: Optional[Exception] = None
         for attempt in range(MAX_RELOGIN_ATTEMPTS + 1):
             try:
-                return fetch_today_rows(self.driver, list_filter(self.list_date, _now().date()))
+                day_filter = list_filter(self.list_date, _now().date())
+                self._show_day(day_filter)
+                return fetch_today_rows(self.driver, day_filter)
             except ListUnavailable as e:
                 last = e
                 print(f"[CLINIC-MONITOR] Không đọc được danh sách ({e}); mở lại trang / đăng nhập lại (lần {attempt + 1}).")
