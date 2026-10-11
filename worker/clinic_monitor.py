@@ -725,6 +725,10 @@ class ProcedurePage:
                 allow_completed_update=False, return_meta=True)
         except ip.ProcedureAlreadyCompleted:
             return None
+        except RuntimeError as e:
+            if "Không tìm thấy dòng thủ thuật" in str(e):
+                raise ProcedureNotListed(str(e)) from e
+            raise
         finally:
             ip.handle_popups = original
         return order_time
@@ -769,7 +773,14 @@ class ProcedurePage:
 
 def enter_procedure(page: ProcedurePage, row: Dict[str, Any], config: Dict[str, Any], now: datetime) -> Dict[str, Any]:
     """Nhập 1 thủ thuật chưa hoàn tất của người bệnh (chỉ chạy khi người dùng bấm nút)."""
-    order_time = page.open_pending(compact(row.get("ma_bn")), now.strftime("%d/%m/%Y"))
+    try:
+        order_time = page.open_pending(compact(row.get("ma_bn")), now.strftime("%d/%m/%Y"))
+    except ProcedureNotListed:
+        if row.get("has_bhyt"):
+            raise
+        # Viện phí: thủ thuật chỉ hiện trên D/s Thủ thuật sau khi người bệnh đóng tiền → chờ, thử lại sau.
+        return {"result": "waiting", "earliest": now + PAYMENT_RETRY,
+                "message": "Chưa có trên D/s Thủ thuật: chờ người bệnh viện phí đóng tiền"}
     if order_time is None:
         return {"result": "already", "message": "Thủ thuật đã hoàn tất trên D/s Thủ thuật"}
     window = procedure_window(order_time, parse_emr_dt(row.get("thoi_gian")), now,
@@ -1225,6 +1236,11 @@ def run_bbhc_create(monitor: "Monitor", rows: List[Dict[str, Any]], approved: Di
 
 TASK_CASES_EXCLUDED = {"nhap_vien", "ngoai_tru"}  # nhập viện / ngoại trú làm ở luồng riêng
 MAX_TASKS_PER_CYCLE = 4
+PAYMENT_RETRY = timedelta(minutes=5)  # viện phí chưa đóng tiền: xem lại D/s Thủ thuật sau mỗi 5 phút
+
+
+class ProcedureNotListed(RuntimeError):
+    """Người bệnh chưa có dòng trên D/s Thủ thuật (viện phí chưa đóng tiền)."""
 
 
 def pending_surgeries(row: Dict[str, Any]) -> int:
@@ -1233,8 +1249,9 @@ def pending_surgeries(row: Dict[str, Any]) -> int:
 
 
 def procedure_task_candidate(row: Dict[str, Any]) -> bool:
-    """Người bệnh có BHYT đang khám, có thủ thuật chưa xong, không thuộc luồng nhập viện / ngoại trú."""
-    return bool(row.get("has_bhyt")) and row.get("stage") in ACTIVE_STAGES \
+    """Người bệnh đang khám, có thủ thuật chưa xong, không thuộc luồng nhập viện / ngoại trú.
+    BHYT làm được ngay; viện phí chỉ làm được sau khi đóng tiền (run_tasks xếp BHYT trước)."""
+    return row.get("stage") in ACTIVE_STAGES \
         and row.get("case") not in TASK_CASES_EXCLUDED and pending_procedures(row) > 0
 
 
@@ -1268,14 +1285,17 @@ def run_tasks(monitor: "Monitor", rows: List[Dict[str, Any]], state: Dict[str, D
     checks = checks if checks is not None else {}
     now = now or _now()
     acted = 0
-    for row in rows:
+    # BHYT trước (làm được ngay), viện phí sau; trong mỗi nhóm giữ thứ tự danh sách (đã đọc hết các trang).
+    for row in sorted(rows, key=lambda r: not r.get("has_bhyt")):
         key = row.get("khambenhid") or ""
         if acted >= MAX_TASKS_PER_CYCLE or not key or not row.get("href") or not procedure_task_candidate(row):
             continue
         pending = pending_procedures(row)
         if auto and not _auto_should_run(state.get(key), pending, now):
             continue
-        pre = monitor.on_exam_page(row, lambda page, _done, _now_: _prepare_procedures(page), need_services=False)
+        # Viện phí không bấm Thực hiện trên màn khám: thủ thuật tự hiện trên D/s Thủ thuật khi đã đóng tiền.
+        pre = monitor.on_exam_page(row, lambda page, _done, _now_: _prepare_procedures(page), need_services=False) \
+            if row.get("has_bhyt") else {"status": "ready", "steps": []}
         if pre.get("status") == "ready":
             res = monitor.run_procedures(row)
             res = {**res, "steps": (pre.get("steps") or []) + (res.get("steps") or [])}

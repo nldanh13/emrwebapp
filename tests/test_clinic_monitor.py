@@ -425,6 +425,27 @@ class FakeProcedurePage:
     def save_and_finish(self): self.writes.append('luu_hoan_tat'); return []
 
 
+class UnlistedProcedurePage(FakeProcedurePage):
+    def open_pending(self, ma_bn, day):
+        self.writes.append(('open', ma_bn, day))
+        raise cm.ProcedureNotListed('Không tìm thấy dòng thủ thuật')
+
+
+def test_unpaid_vien_phi_procedure_waits_for_payment():
+    config = {'clinic_nurse_schedule': {'days': {'2026-09-28': {'work': ['ĐD Phòng khám']}}}}
+    page = UnlistedProcedurePage(None)
+    res = cm.enter_procedure(page, {**_tt_row(0, 1), 'has_bhyt': False}, config, NOW)
+    assert res['result'] == 'waiting' and res['earliest'] == NOW + cm.PAYMENT_RETRY
+    assert 'đóng tiền' in res['message']
+    assert page.writes == [('open', '99000001', '28/09/2026')]  # không bấm gì thêm
+    # BHYT mà không thấy trên D/s Thủ thuật là bất thường → báo lỗi như cũ.
+    try:
+        cm.enter_procedure(UnlistedProcedurePage(None), _tt_row(0, 1), config, NOW)
+        assert False, 'phải báo lỗi'
+    except cm.ProcedureNotListed:
+        pass
+
+
 def test_enter_procedure_uses_order_time_and_clinic_schedule():
     config = {'clinic_nurse_schedule': {'days': {'2026-09-28': {'work': ['ĐD Phòng khám']}}}}
     page = FakeProcedurePage(DT(2026, 9, 28, 9, 0))
@@ -605,7 +626,7 @@ def test_procedure_task_candidates():
     assert cm.procedure_task_candidate(_task_row(stage='xong')) is False
     assert cm.procedure_task_candidate(_task_row(stage='cho_kham')) is False
     assert cm.procedure_task_candidate(_task_row(case='nhap_vien')) is False
-    assert cm.procedure_task_candidate(_task_row(bhyt=False)) is False
+    assert cm.procedure_task_candidate(_task_row(bhyt=False)) is True  # viện phí: làm sau khi đã đóng tiền
 
 
 class TaskMonitor:
@@ -630,6 +651,18 @@ def test_run_tasks_sends_new_procedure_then_enters_it():
     assert cm.run_tasks(mon, [_task_row()], state, log, auto=False) == 1
     assert mon.calls == [('exam', ['thuc_hien']), 'procedures']
     assert state['k1']['status'] == 'done' and log[0]['kind'] == 'thu_thuat' and log[0]['result'] == 'done'
+
+
+def test_run_tasks_bhyt_first_then_vien_phi_without_exam_page():
+    rows = [_task_row('vp', bhyt=False), _task_row('bh')]
+    mon = TaskMonitor([{'result': 'done', 'steps': [], 'procedure_end': None},
+                       {'result': 'waiting', 'earliest': DT(2026, 9, 28, 10, 5), 'message': 'chờ đóng tiền', 'steps': [], 'procedure_end': None}])
+    state, log = {}, []
+    assert cm.run_tasks(mon, rows, state, log, auto=True, now=NOW) == 2
+    assert [e['khambenhid'] for e in log] == ['bh', 'vp']  # BHYT trước dù đứng sau trong danh sách
+    # Viện phí: không mở màn khám bấm Thực hiện, vào thẳng D/s Thủ thuật.
+    assert mon.calls == [('exam', []), 'procedures', 'procedures']
+    assert state['vp']['status'] == 'waiting' and state['vp']['earliest'] == '2026-09-28T10:05:00'
 
 
 def test_auto_tasks_do_not_retry_failures_or_wait_early():
