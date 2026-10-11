@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 from utils import load_config, normalize_date, login_emr
 from shared.worker_session import WorkerSession
+from emr_access_budget import EmrAccessProtectionError
 from urllib.parse import urlparse, urlencode, parse_qsl, urlunparse, urljoin
 
 # Lazy import for HTTP reader (so a broken file won't crash the whole worker)
@@ -1253,6 +1254,8 @@ class AutoWorker:
                 print(f"SUCCESS(HTTP/no-Chrome): Quét xong! Đã lưu {len(all_data)} dòng vào {out_path}")
                 return
             except Exception as e:
+                if isinstance(e, EmrAccessProtectionError):
+                    raise  # EMR báo quá tải: không mở Chrome để thử đường khác.
                 if not allow_selenium_fallback:
                     _raise_http_only_failure("Scan danh sách BN", e)
                 print(f"[HTTP READ] Scan lỗi: {e} -> fallback Selenium vì data_read_mode={read_mode}")
@@ -1827,6 +1830,8 @@ class AutoWorker:
                         selenium_rows.append(bn)
                         continue
                     except Exception as e:
+                        if isinstance(e, EmrAccessProtectionError):
+                            raise  # Mọi ca cùng dừng, không mở Chrome sau khi EMR quá tải.
                         if not allow_selenium_fallback and not helper_mode:
                             raise
                         if helper_mode and _is_bridge_error(e):
@@ -1870,6 +1875,8 @@ class AutoWorker:
                 data = selenium_rows
 
             except Exception as e:
+                if isinstance(e, EmrAccessProtectionError):
+                    raise  # Không chuyển sang Chrome khi HTTP bị giới hạn.
                 if isinstance(e, _HelperLost):
                     raise
                 if helper_mode:

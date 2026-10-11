@@ -40,5 +40,6 @@ def test_http_reader_config_still_has_safe_defaults_for_legacy_helper():
         "url_inpatient_list": "http://emr/home.aspx?wpid=danhsachdieutrinoitrudraw",
     })
     assert sess.cfg.request_delay_ms == 80
-    assert sess.cfg.max_retries == 2
+    # Giới hạn mới: tối đa một lần thử lại GET; POST không tự gửi lại.
+    assert sess.cfg.max_retries == 1
     assert sess.cfg.timeout_sec == 30
