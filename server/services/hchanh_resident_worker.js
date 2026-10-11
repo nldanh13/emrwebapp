@@ -17,6 +17,7 @@ const emrBridge = require('./emr_bridge');
 const workers = new Map();
 let globalChromeLane = Promise.resolve(); // no overlapping resident sessions across workspaces
 const IDLE_MS = 2 * 60 * 1000;
+const MAX_BROWSER_AGE_MS = 15 * 60 * 1000;
 const MAX_PENDING = 2;
 const MAX_LINE = 256 * 1024;
 const stats = { launches: 0, completed: 0, failures: 0, timeouts: 0, cancelled: 0, reused: 0 };
@@ -100,11 +101,13 @@ function readOnlyJob(args) {
 }
 
 function safeLine(line) {
-  const low = String(line || '').toLowerCase();
-  if (/(password|mat_khau|token|secret|username|authorization|cookie|set-cookie)/.test(low)) {
-    return '[redacted sensitive Python log line]';
-  }
-  return redactLogLine(line);
+  // The read-only fetcher can print patient names and fragments of EMR HTML.
+  // Existing URL / patient-code redaction is insufficient for free-form names.
+  // Only preserve a technical exception *type*, never the original message.
+  const match = String(line || '').match(/\\b([A-Za-z_][\\w.]*(?:Error|Exception))\\b/);
+  if (match) return '[Chrome Worker] ' + match[1];
+  if (/\\b(WARN|WARNING)\\b/i.test(String(line))) return '[Chrome Worker] Cảnh báo (đã ẩn dữ liệu)';
+  return '[Chrome Worker] Nhật ký đã ẩn dữ liệu';
 }
 
 function makeEnv(runtimeDir) {
@@ -179,10 +182,13 @@ class ResidentWorker {
       const line = this.stderrBuffer.slice(0, end).trimEnd();
       this.stderrBuffer = this.stderrBuffer.slice(end + 1);
       if (!line || isDriverStackNoise(line)) continue;
+      if (!/(ERROR|WARN|EXCEPTION|TRACEBACK|LỖI)/i.test(line)) continue;
       const safe = safeLine(line);
+      // Suppress thousands of identical warnings from patient-by-patient fetch.
+      if (this.stderrTail[this.stderrTail.length - 1] === safe) continue;
       this.stderrTail.push(safe);
       if (this.stderrTail.length > 20) this.stderrTail.shift();
-      console.log('[HCHANH WORKER] ' + safe);
+      console.warn(safe);
     }
   }
 
@@ -238,7 +244,7 @@ class ResidentWorker {
     }
     if (workers.get(this.runtimeDir) === this && this.pending === 0) workers.delete(this.runtimeDir);
     this._complete({ code: -1, killedByTimeout: Boolean(this.active?.timedOut),
-      spawnError: detail || undefined, stderrTail: [...this.stderrTail, safeLine(reason)] });
+      spawnError: detail ? 'Không khởi động được Python.' : undefined, stderrTail: [...this.stderrTail, reason] });
   }
 
   _invalidate(reason) {
@@ -251,7 +257,7 @@ class ResidentWorker {
     // Never start another Chrome until this one has actually exited.
     // No automatic replay: the last EMR request may have already completed.
     this._complete({ code: -1, killedByTimeout: Boolean(this.active?.timedOut),
-      stderrTail: [...this.stderrTail, safeLine(reason)] });
+      stderrTail: [...this.stderrTail, reason] });
     if (!child && workers.get(this.runtimeDir) === this && this.pending === 0) {
       workers.delete(this.runtimeDir);
     }
@@ -302,6 +308,18 @@ class ResidentWorker {
     this._idleClear();
     const execute = async () => {
       if (this.retiring) await this.retiring;
+      // Rotate long-lived sessions even when the patient quota was not reached.
+      // Do not keep EMR authenticated indefinitely to avoid memory growth.
+      if (this.child && Date.now() - this.lastStartedAt >= MAX_BROWSER_AGE_MS) {
+        const old = this.child;
+        this.retiring = new Promise(resolve => { this.retiringDone = resolve; });
+        try { old.stdin.end(); } catch (_) { killResidentTree(old); }
+        const force = setTimeout(() => {
+          if (this.child === old) killResidentTree(old);
+        }, 5000);
+        force.unref?.();
+        await this.retiring;
+      }
       if (this.child) stats.reused += 1;
       const child = this.child || this._spawn();
       const id = crypto.randomUUID();
