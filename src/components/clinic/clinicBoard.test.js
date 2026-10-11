@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  completionGroups, drugLabel, sickLeaveKey, sickLeavePayload, sickLeaveSuggestions, stageCounts, todoCounts, todoItems,
+  completionGroups, drugLabel, monitorDay, sickLeaveKey, sickLeavePayload, sickLeaveSuggestions, stageCounts, todoCounts, todoItems,
 } from './clinicBoard.js';
 
 const row = (over = {}) => ({
@@ -63,5 +63,20 @@ describe('clinicBoard', () => {
     expect(sickLeaveKey(row())).toBe('k1');
     expect(sickLeaveKey(row({ khambenhid: '' }))).toBe('99000001:2026-10-11');
     expect(sickLeavePayload(row({ details: { cd_chinh: 'S52 Gãy xương' } }))).toMatchObject({ ma_bn: '99000001', chan_doan: 'S52 Gãy xương' });
+  });
+});
+
+describe('ngày theo dõi', () => {
+  const now = new Date(2026, 9, 11, 14, 30);
+  it('lấy ngày của lần đọc danh sách, ghi thứ và ngày tháng', () => {
+    expect(monitorDay({ updated_at: new Date(2026, 9, 11, 7, 5).toISOString() }, now))
+      .toEqual({ label: 'Chủ nhật, 11/10/2026', short: '11/10/2026', today: true });
+    expect(monitorDay({ updated_at: new Date(2026, 9, 9, 16, 0).toISOString() }, now))
+      .toEqual({ label: 'Thứ sáu, 09/10/2026', short: '09/10/2026', today: false });
+  });
+  it('chưa đọc lần nào thì dùng lúc bắt đầu, không có gì thì là hôm nay', () => {
+    expect(monitorDay({ started_at: new Date(2026, 9, 12, 6, 0).toISOString() }, now).label).toBe('Thứ hai, 12/10/2026');
+    expect(monitorDay(null, now)).toEqual({ label: 'Chủ nhật, 11/10/2026', short: '11/10/2026', today: true });
+    expect(monitorDay({ updated_at: 'không phải ngày' }, now).today).toBe(true);
   });
 });

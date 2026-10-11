@@ -19,6 +19,7 @@ import { useEmrUrlDefault } from '../hooks/useEmrUrlDefault.js';
 import { SkeletonTable } from './Skeleton.jsx';
 import { loadClinicConfig as loadConfig, saveClinicConfig as saveConfig } from '../utils/clinicLogin.js';
 import { Panel, SickLeavePanel, TodoPanel, VisitPanel } from './clinic/ClinicPanels.jsx';
+import { monitorDay } from './clinic/clinicBoard.js';
 
 const CLINIC_MONITOR_KEY = 'screen:clinic-monitor';
 
@@ -340,6 +341,7 @@ export default function ClinicTab({ toast }) {
     statusText = `Đã dừng lúc ${hhmm(monitor.stopped_at)}. Danh sách bên dưới là lần đọc cuối (${hhmm(monitor.updated_at)}).`;
   }
 
+  const day = monitorDay(monitor);
   const settingsOpen = showSettings || !running;
   return (
     <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -355,6 +357,12 @@ export default function ClinicTab({ toast }) {
             <Btn variant="primary" icon={IconPlayerPlay} loading={busy === 'start'} onClick={start}
               disabled={!canStart}>Bắt đầu theo dõi</Btn>
           )}
+          <span title={day.today ? 'Danh sách khám bệnh của hôm nay' : 'Danh sách đang hiện là của ngày khác, không phải hôm nay'}
+            style={{ fontSize: FS.sm, fontWeight: 700, padding: '3px 8px', borderRadius: 6, whiteSpace: 'nowrap',
+              color: day.today ? C.blue : C.amber, background: day.today ? C.blueBg : C.amberBg,
+              border: `1px solid ${day.today ? C.blueBorder : C.amberBorder}` }}>
+            Ngày theo dõi: {day.label}{day.today ? '' : ' (không phải hôm nay)'}
+          </span>
           <span role="status" style={{ fontSize: FS.sm, color: statusTone, flex: '1 1 320px' }}>{statusText}</span>
         </div>
         {settingsOpen && (
@@ -404,7 +412,7 @@ export default function ClinicTab({ toast }) {
 
           <ClinicAdmissionCare creds={{ ...cfg, password, loginUrl, hasEmrUrl: Boolean(emrUrlDefault || loginUrl) }} toast={toast} />
 
-          <Panel title="Danh sách khám bệnh">
+          <Panel title={`Danh sách khám bệnh ngày ${day.short}`}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <Segmented value={group} options={groupOptions} onChange={setGroup} label="Nhóm người bệnh" />
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: FS.sm, color: C.text2 }}>
