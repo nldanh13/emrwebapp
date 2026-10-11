@@ -19,7 +19,7 @@ import { useEmrUrlDefault } from '../hooks/useEmrUrlDefault.js';
 import { SkeletonTable } from './Skeleton.jsx';
 import { loadClinicConfig as loadConfig, saveClinicConfig as saveConfig } from '../utils/clinicLogin.js';
 import { Panel, SickLeavePanel, TodoPanel, VisitPanel } from './clinic/ClinicPanels.jsx';
-import { monitorDay } from './clinic/clinicBoard.js';
+import { isoDay, monitorDay } from './clinic/clinicBoard.js';
 
 const CLINIC_MONITOR_KEY = 'screen:clinic-monitor';
 
@@ -182,10 +182,35 @@ export default function ClinicTab({ toast }) {
   const canStart = hasClinicLogin({ ...cfg, password }) && (emrUrlDefault || Boolean(loginUrl));
   const autoTasks = running && typeof monitor?.auto_tasks === 'boolean' ? monitor.auto_tasks : Boolean(cfg.autoTasks);
 
+  // Ngày danh sách: rỗng = hôm nay (mặc định, không lưu sang lần mở sau); ngày đã qua = xem lại, chỉ đọc.
+  const [listDate, setListDate] = useState('');
+  const monitorListDate = running ? String(monitor?.list_date || '') : null;
+  useEffect(() => { if (monitorListDate !== null) setListDate(monitorListDate); }, [monitorListDate]);
+  const viewingPast = running && Boolean(monitor?.read_only && monitor?.list_date);
+  const canAct = running && !viewingPast;
+  const changeListDate = async (value) => {
+    const todayIso = isoDay(new Date());
+    if (value > todayIso) { toast?.('Chưa tới ngày này nên chưa có danh sách. Chọn hôm nay hoặc một ngày đã qua.', 'error'); return; }
+    const next = !value || value === todayIso ? '' : value;
+    setListDate(next);
+    if (!running) return; // gửi kèm khi bắt đầu theo dõi
+    setBusy('date');
+    try {
+      const r = await api.setClinicListDate(next);
+      if (r.status !== 'ok') throw new Error(r.message);
+      toast?.(r.message, 'ok');
+      await loadState();
+    } catch (e) {
+      toast?.(String(e.message || e), 'error');
+    } finally {
+      setBusy('');
+    }
+  };
+
   const start = async () => {
     setBusy('start');
     try {
-      const r = await api.startClinicMonitor({ ...cfg, ...clinicLoginPayload({ ...cfg, password }), loginUrl, intervalMinutes: Number(cfg.intervalMinutes) || 3 });
+      const r = await api.startClinicMonitor({ ...cfg, ...clinicLoginPayload({ ...cfg, password }), loginUrl, listDate, intervalMinutes: Number(cfg.intervalMinutes) || 3 });
       if (r.status !== 'ok') throw new Error(r.message);
       toast?.(r.message, 'ok');
       await loadState();
@@ -341,7 +366,8 @@ export default function ClinicTab({ toast }) {
     statusText = `Đã dừng lúc ${hhmm(monitor.stopped_at)}. Danh sách bên dưới là lần đọc cuối (${hhmm(monitor.updated_at)}).`;
   }
 
-  const day = monitorDay(monitor);
+  const day = monitorDay(running || monitor?.rows?.length ? monitor : { list_date: listDate });
+  const dayText = day.today ? 'hôm nay' : `ngày ${day.short}`;
   const settingsOpen = showSettings || !running;
   return (
     <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -361,10 +387,23 @@ export default function ClinicTab({ toast }) {
             style={{ fontSize: FS.sm, fontWeight: 700, padding: '3px 8px', borderRadius: 6, whiteSpace: 'nowrap',
               color: day.today ? C.blue : C.amber, background: day.today ? C.blueBg : C.amberBg,
               border: `1px solid ${day.today ? C.blueBorder : C.amberBorder}` }}>
-            Ngày theo dõi: {day.label}{day.today ? '' : ' (không phải hôm nay)'}
+            Ngày theo dõi: {day.label}{viewingPast ? ' (xem lại, chỉ đọc)' : day.today ? '' : ' (không phải hôm nay)'}
           </span>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: FS.sm, color: C.text2 }}>
+            Ngày danh sách
+            <input type="date" value={listDate || isoDay(new Date())} max={isoDay(new Date())} disabled={busy === 'date'}
+              onChange={e => changeListDate(e.target.value)} style={{ ...inputStyle, width: 'auto' }} />
+          </label>
+          {listDate && (
+            <Btn onClick={() => changeListDate('')} loading={busy === 'date'}>Hôm nay</Btn>
+          )}
           <span role="status" style={{ fontSize: FS.sm, color: statusTone, flex: '1 1 320px' }}>{statusText}</span>
         </div>
+        {viewingPast && (
+          <div role="note" style={{ marginTop: 8, fontSize: FS.sm, color: C.amber }}>
+            Đang xem lại danh sách {dayText}: chỉ đọc, không tự nhập thủ thuật hay hoàn tất khám trên EMR. Bấm "Hôm nay" để quay lại theo dõi.
+          </div>
+        )}
         {settingsOpen && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, alignItems: 'end', marginTop: 10 }}>
             <Field label="Đăng nhập bằng">
@@ -400,14 +439,14 @@ export default function ClinicTab({ toast }) {
       {monitor?.rows?.length ? (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12, alignItems: 'start' }}>
-            <VisitPanel rows={allRows} running={running} busy={busy} actionRunning={Boolean(monitor?.action_running)}
+            <VisitPanel rows={allRows} running={canAct} busy={busy} dayText={dayText} actionRunning={Boolean(monitor?.action_running)}
               onComplete={completeReady} renderCompletion={r => <CompletionCell row={r} toast={toast} onSaved={loadState} />} />
-            <TodoPanel rows={allRows} running={running} busy={busy} actionRunning={Boolean(monitor?.action_running)}
+            <TodoPanel rows={allRows} running={canAct} busy={busy} actionRunning={Boolean(monitor?.action_running)}
               autoTasks={autoTasks} onRunTasks={runTasks} onToggleAuto={toggleAuto}
               ngoaitruCount={ngoaitruRows.length} onRunNgoaiTru={runNgoaiTru}>
-              <ClinicBbhc monitor={monitor} toast={toast} onChanged={loadState} />
+              <ClinicBbhc monitor={canAct ? monitor : { ...monitor, running: false }} toast={toast} onChanged={loadState} />
             </TodoPanel>
-            <SickLeavePanel rows={allRows} entries={sickLeave} onEntries={setSickLeave} onOpenSickLeave={openSickLeave} toast={toast} />
+            <SickLeavePanel rows={allRows} day={day.iso} dayText={dayText} entries={sickLeave} onEntries={setSickLeave} onOpenSickLeave={openSickLeave} toast={toast} />
           </div>
 
           <ClinicAdmissionCare creds={{ ...cfg, password, loginUrl, hasEmrUrl: Boolean(emrUrlDefault || loginUrl) }} toast={toast} />

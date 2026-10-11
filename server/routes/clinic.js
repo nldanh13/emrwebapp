@@ -249,6 +249,14 @@ function monitorPaths(ctx) {
   };
 }
 
+const ISO_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+// Ngày đã qua người dùng chọn để xem lại Danh sách Khám bệnh (yyyy-mm-dd); rỗng = theo dõi hôm nay.
+function pastListDate(value, today = localTodayIso()) {
+  const day = String(value || '').trim();
+  if (!ISO_DAY_RE.test(day) || Number.isNaN(Date.parse(day))) return '';
+  return day < today ? day : '';
+}
+
 function sanitizeMonitorRequest(body = {}) {
   const username = String(body.username || '').trim().slice(0, 120);
   const password = String(body.password || '');
@@ -261,6 +269,7 @@ function sanitizeMonitorRequest(body = {}) {
     intervalMinutes: Number.isFinite(interval) ? Math.min(Math.max(interval, 1), 60) : 3,
     headless: body.headless !== false,
     autoTasks: body.autoTasks === true,
+    listDate: pastListDate(body.listDate),
   };
 }
 
@@ -269,6 +278,18 @@ function writeControl(ctx, data) {
   const file = monitorPaths(ctx).control;
   const current = readJsonSafe(file, {}) || {};
   writeJsonAtomic(file, { ...current, ...data, at: Date.now() });
+}
+
+// Đang xem lại ngày cũ thì chỉ đọc: chặn các lệnh thao tác trên EMR (worker cũng bỏ qua).
+function rejectIfPastDay(ctx, res) {
+  const day = pastListDate((readJsonSafe(monitorPaths(ctx).control, {}) || {}).listDate);
+  if (!day) return false;
+  const [y, m, d] = day.split('-');
+  res.status(409).json({
+    status: 'error',
+    message: `Đang xem lại danh sách ngày ${d}/${m}/${y} nên chỉ đọc, không thao tác trên EMR. Chọn "Hôm nay" ở ô Ngày danh sách để làm việc.`,
+  });
+  return true;
 }
 
 // Chép từng lượt khám vào Kho người bệnh (bỏ qua nếu trạng thái chưa đổi từ lần chép trước).
@@ -314,7 +335,7 @@ router.post('/clinic/monitor/start', async (req, res) => {
   const paths = monitorPaths(ctx);
   writeJsonAtomic(paths.request, payload);
   try { fs.chmodSync(paths.request, 0o600); } catch (_) {}
-  writeJsonAtomic(paths.control, { at: Date.now() });
+  writeJsonAtomic(paths.control, { at: Date.now(), listDate: payload.listDate });
   syncMonitorToPatientDb(ctx); // lần theo dõi trước: chép nốt trước khi xoá file trạng thái
   safeUnlink(paths.state);
 
@@ -374,6 +395,7 @@ router.post('/clinic/monitor/complete', (req, res) => {
   if (!monitors.get(ctx.sid)?.running) {
     return res.status(409).json({ status: 'error', message: 'Chưa bắt đầu theo dõi.' });
   }
+  if (rejectIfPastDay(ctx, res)) return undefined;
   writeControl(ctx, { completeNow: Date.now() });
   appendActivity(ctx, { kind: 'workflow.clinic.monitor.complete_requested' });
   return res.json({ status: 'ok', message: 'Đang hoàn tất các người bệnh đã sẵn sàng.' });
@@ -407,6 +429,7 @@ router.post('/clinic/monitor/ngoaitru', (req, res) => {
   if (!monitors.get(ctx.sid)?.running) {
     return res.status(409).json({ status: 'error', message: 'Chưa bắt đầu theo dõi.' });
   }
+  if (rejectIfPastDay(ctx, res)) return undefined;
   writeControl(ctx, { ngoaitruNow: Date.now() });
   appendActivity(ctx, { kind: 'workflow.clinic.monitor.ngoaitru_requested' });
   return res.json({ status: 'ok', message: 'Đang làm điều trị ngoại trú cho các người bệnh.' });
@@ -418,6 +441,7 @@ router.post('/clinic/monitor/tasks', (req, res) => {
   if (!monitors.get(ctx.sid)?.running) {
     return res.status(409).json({ status: 'error', message: 'Chưa bắt đầu theo dõi.' });
   }
+  if (rejectIfPastDay(ctx, res)) return undefined;
   writeControl(ctx, { tasksNow: Date.now() });
   appendActivity(ctx, { kind: 'workflow.clinic.monitor.tasks_requested' });
   return res.json({ status: 'ok', message: 'Đang nhập các thủ thuật đã có chỉ định.' });
@@ -435,6 +459,30 @@ router.post('/clinic/monitor/auto-tasks', (req, res) => {
   return res.json({
     status: 'ok',
     message: enabled ? 'Đã bật tự hoàn thành thủ thuật khi có chỉ định.' : 'Đã tắt tự hoàn thành, chỉ làm khi bấm nút.',
+  });
+});
+
+// Đổi ngày của Danh sách Khám bệnh đang theo dõi: rỗng/hôm nay = theo dõi hôm nay; ngày đã qua = xem lại (chỉ đọc).
+router.post('/clinic/monitor/list-date', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  if (!monitors.get(ctx.sid)?.running) {
+    return res.status(409).json({ status: 'error', message: 'Chưa bắt đầu theo dõi.' });
+  }
+  const raw = String(req.body?.date || '').trim();
+  if (raw && !ISO_DAY_RE.test(raw)) {
+    return res.status(400).json({ status: 'error', message: 'Ngày không hợp lệ. Chọn lại ngày trong ô Ngày danh sách.' });
+  }
+  if (raw > localTodayIso()) {
+    return res.status(400).json({ status: 'error', message: 'Chưa tới ngày này nên chưa có danh sách. Chọn hôm nay hoặc một ngày đã qua.' });
+  }
+  const listDate = pastListDate(raw);
+  writeControl(ctx, { listDate, refresh: Date.now() });
+  appendActivity(ctx, { kind: 'workflow.clinic.monitor.list_date', list_date: listDate || 'today' });
+  const [y, m, d] = listDate.split('-');
+  return res.json({
+    status: 'ok',
+    list_date: listDate,
+    message: listDate ? `Đang đọc danh sách ngày ${d}/${m}/${y} (chỉ xem, không thao tác trên EMR).` : 'Đang đọc danh sách hôm nay.',
   });
 });
 
@@ -464,6 +512,7 @@ router.post('/clinic/monitor/bbhc/prepare', (req, res) => {
   if (!monitors.get(ctx.sid)?.running) {
     return res.status(409).json({ status: 'error', message: 'Chưa bắt đầu theo dõi.' });
   }
+  if (rejectIfPastDay(ctx, res)) return undefined;
   writeControl(ctx, { bbhcPrepare: Date.now() });
   appendActivity(ctx, { kind: 'workflow.clinic.monitor.bbhc_prepare' });
   return res.json({ status: 'ok', message: 'Đang soạn nháp Sổ biên bản hội chẩn.' });
@@ -474,6 +523,7 @@ router.post('/clinic/monitor/bbhc/run', (req, res) => {
   if (!monitors.get(ctx.sid)?.running) {
     return res.status(409).json({ status: 'error', message: 'Chưa bắt đầu theo dõi.' });
   }
+  if (rejectIfPastDay(ctx, res)) return undefined;
   let drafts;
   try {
     drafts = sanitizeBbhcDrafts(req.body?.drafts);
@@ -888,3 +938,5 @@ module.exports.sanitizeSickLeavePatient = sanitizeSickLeavePatient;
 module.exports.pruneSickLeave = pruneSickLeave;
 module.exports.resolveEmrUrls = resolveEmrUrls;
 module.exports.emrUrlDefaults = emrUrlDefaults;
+module.exports.pastListDate = pastListDate;
+module.exports.sanitizeMonitorRequest = sanitizeMonitorRequest;
