@@ -1,4 +1,4 @@
-import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { C, FS } from '../../tokens.js';
 import {
   IconChevronDown, IconCloudDownload, IconDownload, IconExternalLink, IconListSearch, IconPlayerStop,
@@ -224,6 +224,17 @@ function StatBox({ label, value, tone = 'gray' }) {
 }
 
 const FIELD_STYLE = { height: 32, padding: '0 8px', borderRadius: 5, background: C.surface, border: `1px solid ${C.border}`, color: C.text, fontSize: FS.sm, fontFamily: 'inherit' };
+
+// Keep keystrokes inside this small component; the large records table only rerenders
+// after typing pauses, rather than on every key press.
+const RecordsSearchInput = React.memo(function RecordsSearchInput({ onSearch }) {
+  const [value, setValue] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => onSearch(value), 180);
+    return () => clearTimeout(timer);
+  }, [value, onSearch]);
+  return <input type="search" value={value} onChange={e => setValue(e.target.value)} placeholder="Tìm tên, mã người bệnh, khoa, số lưu trữ" aria-label="Tìm hồ sơ" style={{ ...FIELD_STYLE, width: '100%', padding: '0 9px 0 32px' }} />;
+});
 
 function MenuButton({ icon, label, open, setOpen, children, align = 'left' }) {
   return (
@@ -863,7 +874,6 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
   const [fetchingKey, setFetchingKey] = useState('');
   const [batch, setBatch] = useState({ running: false, done: 0, total: 0 });
   const [search, setSearch] = useState('');
-  const deferredSearch = useDeferredValue(search);
   const [showOnlyCompleted, setShowOnlyCompleted] = useState(true);
   const [showOnlyStorage, setShowOnlyStorage] = useState(false);
   const [dataFilter, setDataFilter] = useState('all');
@@ -1306,7 +1316,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
   ].join(' '))])), [displayRows]);
 
   const filteredRows = useMemo(() => {
-    const q = norm(deferredSearch);
+    const q = norm(search);
     const rows = displayRows
       .filter(row => !showOnlyCompleted || row.completed)
       .filter(row => !showOnlyStorage || row.storage)
@@ -1324,7 +1334,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
       return rows.sort((a, b) => urgencyRank(a.handover?.state) - urgencyRank(b.handover?.state) || compareRowsByAdmissionNewest(a, b));
     }
     return rows.sort(compareRowsByAdmissionNewest);
-  }, [displayRows, deferredSearch, searchIndex, showOnlyCompleted, showOnlyStorage, dataFilter, paperFilter, taskFilter, dischargeMonth]);
+  }, [displayRows, search, searchIndex, showOnlyCompleted, showOnlyStorage, dataFilter, paperFilter, taskFilter, dischargeMonth]);
 
   function toggleUpdateSelect(row, nextValue = null) {
     const key = getRowKey(row);
@@ -1583,7 +1593,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <label style={{ position: 'relative', flex: '1 1 240px', maxWidth: 360 }}>
             <IconSearch size={16} stroke={1.75} color={C.text3} aria-hidden="true" style={{ position: 'absolute', left: 9, top: 8 }} />
-            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Tìm tên, mã người bệnh, khoa, số lưu trữ" aria-label="Tìm hồ sơ" style={{ ...FIELD_STYLE, width: '100%', padding: '0 9px 0 32px' }} />
+            <RecordsSearchInput onSearch={setSearch} />
           </label>
           <select
             aria-label="Tháng ra viện"
