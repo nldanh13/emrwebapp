@@ -44,13 +44,28 @@ def validate_command(command: Any, runtime_dir: str) -> Dict[str, Any]:
         raise ValueError("Đầu ra không được trùng đầu vào.")
     if not os.path.isfile(input_path):
         raise ValueError("Không tìm thấy danh sách hồ sơ đầu vào.")
+    if os.path.getsize(input_path) > 8 * 1024 * 1024:
+        raise ValueError("Danh sách hồ sơ quá lớn cho một yêu cầu.")
     with open(input_path, encoding="utf-8") as file:
         rows = json.load(file)
     if not isinstance(rows, list) or not 1 <= len(rows) <= _MAX_RECORDS_PER_REQUEST:
         raise ValueError("Một yêu cầu chỉ nhận từ 1 đến 10 hồ sơ.")
     files = command.get("files")
-    if not isinstance(files, list) or not files or set(files) - _ALLOWED_FILES:
+    if (not isinstance(files, list) or not files
+            or any(not isinstance(item, str) or item not in _ALLOWED_FILES for item in files)):
         raise ValueError("Không hỗ trợ loại dữ liệu yêu cầu.")
+    # Each row may override the batch file list. Prevent any accidental
+    # surgery/billing/write operation hidden in a per-patient override.
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("Dòng hồ sơ không hợp lệ.")
+        override = row.get("_files_override")
+        if override is not None and (
+            not isinstance(override, list)
+            or not override
+            or any(not isinstance(item, str) or item not in _ALLOWED_FILES for item in override)
+        ):
+            raise ValueError("Hồ sơ chỉ được yêu cầu đọc Ra Khoa và CLS.")
     # Only the read-only records-check workflow may use a resident browser.
     if command.get("headless") is not True:
         raise ValueError("Chrome Worker thử nghiệm chỉ chạy ở chế độ headless.")
@@ -89,6 +104,7 @@ def serve(runtime_dir: str) -> None:
     try:
         for line in sys.stdin:
             try:
+                request_id = None
                 cmd = json.loads(line)
                 request_id = cmd.get("id") if isinstance(cmd, dict) else None
                 if not isinstance(request_id, str) or len(request_id) > 80:
@@ -98,7 +114,7 @@ def serve(runtime_dir: str) -> None:
                 code = run_command(cmd, str(root))
                 response = {"id": request_id, "code": code}
             except Exception as exc:
-                response = {"id": locals().get("request_id"), "code": 1,
+                response = {"id": request_id, "code": 1,
                             "error": type(exc).__name__}
                 # Do not log raw exception messages: they can contain patient data.
             sys.stdout.write(json.dumps(response, ensure_ascii=True) + "\n")

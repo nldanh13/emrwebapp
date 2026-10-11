@@ -3,22 +3,77 @@
 // Opt-in via EMR_PERSISTENT_HCHANH_WORKER=1; other routes keep existing behavior.
 'use strict';
 
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
 const { ROOT_DIR, WORKER_DIR, PY_TIMEOUT_MS } = require('../constants');
 const { PYTHON_BIN, runScript, terminateProcessTree } = require('./python_runner');
-const { redactLogLine, isDriverStackNoise, LOG_REDACT_SALT } = require('../utils/log_redact');
+const { isDriverStackNoise, LOG_REDACT_SALT } = require('../utils/log_redact');
 const { resolveDv2Path } = require('../utils/dv2_path');
 const emrBridge = require('./emr_bridge');
 
 const workers = new Map();
 let globalChromeLane = Promise.resolve(); // no overlapping resident sessions across workspaces
 const IDLE_MS = 2 * 60 * 1000;
+const MAX_BROWSER_AGE_MS = 15 * 60 * 1000;
 const MAX_PENDING = 2;
 const MAX_LINE = 256 * 1024;
+const stats = { launches: 0, completed: 0, failures: 0, timeouts: 0, cancelled: 0, reused: 0 };
+
+function enabled() {
+  // Never launch a real hospital Chrome/EMR worker from CI or unit tests,
+  // even if deployment environment variables were accidentally inherited.
+  if (/^(1|true|yes)$/i.test(String(process.env.CI || '')) ||
+      String(process.env.NODE_ENV || '').toLowerCase() === 'test') return false;
+  // Read-only local Chrome only; EMR bridge and writing use unchanged runners.
+  // Opt out immediately with EMR_PERSISTENT_HCHANH_WORKER=0.
+  return !/^(0|false|no|off)$/i.test(String(process.env.EMR_PERSISTENT_HCHANH_WORKER ?? '').trim());
+}
+
+function killResidentTree(child) {
+  if (!child || !child.pid) return;
+  if (process.platform !== 'win32' && child.__residentGroup) {
+    try { process.kill(-child.pid, 'SIGTERM'); } catch (_) {}
+    const killTimer = setTimeout(() => {
+      try { process.kill(-child.pid, 'SIGKILL'); } catch (_) {}
+    }, 3000);
+    killTimer.unref?.();
+  } else {
+    terminateProcessTree(child);
+  }
+}
+
+function residentStatus() {
+  const all = [...workers.values()];
+  return {
+    enabled: enabled(),
+    mode: 'read_only_records_check',
+    running_workers: all.filter(w => !!w.child).length,
+    active_jobs: all.filter(w => !!w.active).length,
+    queued_jobs: all.reduce((sum, w) => sum + Math.max(0, w.pending - (w.active ? 1 : 0)), 0),
+    ...stats,
+  };
+}
+
+// A hard stop on Node exit: Windows requires synchronous taskkill; on POSIX
+// the detached process group also contains chromedriver and Chrome.
+process.once('exit', () => {
+  for (const worker of workers.values()) {
+    const child = worker.child;
+    if (!child?.pid) continue;
+    if (process.platform === 'win32') {
+      try {
+        spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+          shell: false, windowsHide: true, stdio: 'ignore', timeout: 5000,
+        });
+      } catch (_) {}
+    } else if (child.__residentGroup) {
+      try { process.kill(-child.pid, 'SIGKILL'); } catch (_) {}
+    }
+  }
+});
 
 function readOnlyJob(args) {
   if (!Array.isArray(args)) return null;
@@ -50,11 +105,13 @@ function readOnlyJob(args) {
 }
 
 function safeLine(line) {
-  const low = String(line || '').toLowerCase();
-  if (/(password|mat_khau|token|secret|username|authorization|cookie|set-cookie)/.test(low)) {
-    return '[redacted sensitive Python log line]';
-  }
-  return redactLogLine(line);
+  // The read-only fetcher can print patient names and fragments of EMR HTML.
+  // Existing URL / patient-code redaction is insufficient for free-form names.
+  // Only preserve a technical exception *type*, never the original message.
+  const match = String(line || '').match(/\b([A-Za-z_][\w.]*(?:Error|Exception))\b/);
+  if (match) return '[Chrome Worker] ' + match[1];
+  if (/\b(WARN|WARNING)\b/i.test(String(line))) return '[Chrome Worker] Cảnh báo (đã ẩn dữ liệu)';
+  return '[Chrome Worker] Nhật ký đã ẩn dữ liệu';
 }
 
 function makeEnv(runtimeDir) {
@@ -88,6 +145,7 @@ class ResidentWorker {
     this.idleTimer = null;
     this.retiring = null;
     this.retiringDone = null;
+    this.lastStartedAt = 0;
   }
 
   _idleClear() {
@@ -100,10 +158,14 @@ class ResidentWorker {
       '-X', 'utf8', '-u', path.join(WORKER_DIR, 'hchanh_read_daemon.py'),
     ], {
       cwd: ROOT_DIR, shell: false, windowsHide: true,
+      detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
       env: makeEnv(this.runtimeDir),
     });
+    child.__residentGroup = process.platform !== 'win32';
     this.child = child;
+    this.lastStartedAt = Date.now();
+    stats.launches += 1;
     this.stdoutBuffer = '';
     this.stderrBuffer = '';
     this.stderrTail = [];
@@ -124,10 +186,13 @@ class ResidentWorker {
       const line = this.stderrBuffer.slice(0, end).trimEnd();
       this.stderrBuffer = this.stderrBuffer.slice(end + 1);
       if (!line || isDriverStackNoise(line)) continue;
+      if (!/(ERROR|WARN|EXCEPTION|TRACEBACK|LỖI)/i.test(line)) continue;
       const safe = safeLine(line);
+      // Suppress thousands of identical warnings from patient-by-patient fetch.
+      if (this.stderrTail[this.stderrTail.length - 1] === safe) continue;
       this.stderrTail.push(safe);
       if (this.stderrTail.length > 20) this.stderrTail.shift();
-      console.log('[HCHANH WORKER] ' + safe);
+      console.warn(safe);
     }
   }
 
@@ -153,6 +218,8 @@ class ResidentWorker {
       }
       const response = { code: message.code, killedByTimeout: false,
         stderrTail: this.stderrTail.slice(-20) };
+      stats.completed += 1;
+      if (message.code !== 0) stats.failures += 1;
       this._complete(response);
       if (message.code !== 0) {
         // Do not reuse a browser whose previous task ended unexpectedly.
@@ -181,7 +248,7 @@ class ResidentWorker {
     }
     if (workers.get(this.runtimeDir) === this && this.pending === 0) workers.delete(this.runtimeDir);
     this._complete({ code: -1, killedByTimeout: Boolean(this.active?.timedOut),
-      spawnError: detail || undefined, stderrTail: [...this.stderrTail, safeLine(reason)] });
+      spawnError: detail ? 'Không khởi động được Python.' : undefined, stderrTail: [...this.stderrTail, reason] });
   }
 
   _invalidate(reason) {
@@ -190,11 +257,11 @@ class ResidentWorker {
     if (child && !this.retiring) {
       this.retiring = new Promise(resolve => { this.retiringDone = resolve; });
     }
-    if (child) terminateProcessTree(child);
+    if (child) killResidentTree(child);
     // Never start another Chrome until this one has actually exited.
     // No automatic replay: the last EMR request may have already completed.
     this._complete({ code: -1, killedByTimeout: Boolean(this.active?.timedOut),
-      stderrTail: [...this.stderrTail, safeLine(reason)] });
+      stderrTail: [...this.stderrTail, reason] });
     if (!child && workers.get(this.runtimeDir) === this && this.pending === 0) {
       workers.delete(this.runtimeDir);
     }
@@ -210,9 +277,9 @@ class ResidentWorker {
       // Otherwise a request arriving during idle shutdown could open two
       // simultaneous EMR sessions under the same account.
       this.retiring = new Promise(resolve => { this.retiringDone = resolve; });
-      try { child.stdin.end(); } catch (_) { terminateProcessTree(child); }
+      try { child.stdin.end(); } catch (_) { killResidentTree(child); }
       const force = setTimeout(() => {
-        if (this.child === child) terminateProcessTree(child);
+        if (this.child === child) killResidentTree(child);
       }, 5000);
       force.unref?.();
     }, IDLE_MS);
@@ -228,9 +295,9 @@ class ResidentWorker {
     if (!this.retiring) {
       this.retiring = new Promise(resolve => { this.retiringDone = resolve; });
       const child = this.child;
-      try { child.stdin.end(); } catch (_) { terminateProcessTree(child); }
+      try { child.stdin.end(); } catch (_) { killResidentTree(child); }
       const force = setTimeout(() => {
-        if (this.child === child) terminateProcessTree(child);
+        if (this.child === child) killResidentTree(child);
       }, 5000);
       force.unref?.();
     }
@@ -245,19 +312,36 @@ class ResidentWorker {
     this._idleClear();
     const execute = async () => {
       if (this.retiring) await this.retiring;
+      // Rotate long-lived sessions even when the patient quota was not reached.
+      // Do not keep EMR authenticated indefinitely to avoid memory growth.
+      if (this.child && this.lastStartedAt > 0 && Date.now() - this.lastStartedAt >= MAX_BROWSER_AGE_MS) {
+        const old = this.child;
+        this.retiring = new Promise(resolve => { this.retiringDone = resolve; });
+        try { old.stdin.end(); } catch (_) { killResidentTree(old); }
+        const force = setTimeout(() => {
+          if (this.child === old) killResidentTree(old);
+        }, 5000);
+        force.unref?.();
+        await this.retiring;
+      }
+      if (this.child) stats.reused += 1;
       const child = this.child || this._spawn();
       const id = crypto.randomUUID();
       return new Promise(resolve => {
         const timer = setTimeout(() => {
           if (this.active?.id === id) {
             this.active.timedOut = true;
+            stats.timeouts += 1;
             this._invalidate('Chrome Worker quá thời gian xử lý.');
           }
         }, Math.max(5000, timeoutMs || PY_TIMEOUT_MS));
         this.active = { id, resolve, timer, timedOut: false };
         try {
           if (typeof onSpawn === 'function') {
-            onSpawn(() => this._invalidate('Đã dừng Chrome Worker theo yêu cầu.'));
+            onSpawn(() => {
+              stats.cancelled += 1;
+              this._invalidate('Đã dừng Chrome Worker theo yêu cầu.');
+            });
           }
           // registerCancel can synchronously invoke kill when cancellation was
           // requested while queued. Never dispatch that cancelled job to EMR.
@@ -281,7 +365,7 @@ function runRecordsCheckBatch(args, opts = {}) {
   const bridgeEnv = emrBridge.workerEnv();
   const command = readOnlyJob(args);
   const runtimeDir = opts.runtimeDir ? path.resolve(opts.runtimeDir) : '';
-  if (process.env.EMR_PERSISTENT_HCHANH_WORKER !== '1' || !command ||
+  if (!enabled() || !command ||
       !runtimeDir || bridgeEnv.EMR_BRIDGE_URL || process.env.EMR_BRIDGE_URL) {
     return runScript('hchanh_fetch.py', args, opts);
   }
@@ -302,4 +386,4 @@ function runRecordsCheckBatch(args, opts = {}) {
   return task;
 }
 
-module.exports = { runRecordsCheckBatch, readOnlyJob, ResidentWorker };
+module.exports = { runRecordsCheckBatch, readOnlyJob, ResidentWorker, residentStatus };

@@ -90,3 +90,41 @@ def test_resident_batch_wrapper_does_not_close_until_owner_exits(monkeypatch):
     monkeypatch.setattr(core, "_shutdown_hchanh_click_driver", lambda: calls.append("closed"))
     core.run_hchanh_fetch_batch("in", "out", "discharge", [], "", "", keep_alive=True)
     assert calls == []
+
+
+def test_rejects_unsafe_per_patient_file_override(tmp_path):
+    cmd = make_command(tmp_path)
+    with open(cmd["input"], "w", encoding="utf-8") as f:
+        json.dump([{"ma_bn": "fake", "_files_override": ["discharge", "surgery"]}], f)
+    with pytest.raises(ValueError, match="Ra Khoa và CLS"):
+        daemon.validate_command(cmd, str(tmp_path))
+
+
+def test_accepts_only_read_only_per_patient_subset(tmp_path):
+    cmd = make_command(tmp_path)
+    with open(cmd["input"], "w", encoding="utf-8") as f:
+        json.dump([{"ma_bn": "fake", "_files_override": ["cls"]}], f)
+    assert daemon.validate_command(cmd, str(tmp_path))["files"] == ["discharge", "cls"]
+
+
+def test_rejects_malformed_row_and_files(tmp_path):
+    cmd = make_command(tmp_path)
+    with open(cmd["input"], "w", encoding="utf-8") as f:
+        json.dump(["not a patient object"], f)
+    with pytest.raises(ValueError):
+        daemon.validate_command(cmd, str(tmp_path))
+    cmd["files"] = ["discharge", {"file": "cls"}]
+    with pytest.raises(ValueError):
+        daemon.validate_command(cmd, str(tmp_path))
+
+
+def test_reused_chrome_does_not_trust_embedded_login_page():
+    from types import SimpleNamespace
+    assert not core._is_driver_alive(SimpleNamespace(
+        current_url="http://hospital.test/home.aspx?usid=a",
+        execute_script=lambda script: True,
+    ))
+    assert core._is_driver_alive(SimpleNamespace(
+        current_url="http://hospital.test/home.aspx?usid=a",
+        execute_script=lambda script: False,
+    ))
