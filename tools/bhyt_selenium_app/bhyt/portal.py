@@ -618,22 +618,24 @@ def recompact(value: Any) -> str:
 
 
 class Worker:
-    def __init__(self, portal: BhytPortal, store: Any):
+    def __init__(self, portal: BhytPortal, store: Any, emr: Any = None):
         self.portal = portal
         self.store = store
+        self.emr = emr  # EmrPortal — để tự lấy dữ liệu phiếu từ EMR khi hồ sơ còn thiếu
         self.thread: threading.Thread | None = None
         self.stop_event = threading.Event()
         self.state: dict[str, Any] = {"running": False, "current_id": None, "message": ""}
         self._lock = threading.Lock()
 
-    def start(self, record_ids: list[int], dry_run: bool = True, delay_seconds: float = 1.0):
+    def start(self, record_ids: list[int], dry_run: bool = True, delay_seconds: float = 1.0,
+              auto_enrich: bool = False):
         with self._lock:
             if self.thread and self.thread.is_alive():
                 raise PortalError("Tiến trình nhập liệu đang chạy")
             self.stop_event.clear()
             self.thread = threading.Thread(
                 target=self._run,
-                args=(record_ids, dry_run, delay_seconds),
+                args=(record_ids, dry_run, delay_seconds, auto_enrich),
                 daemon=True,
             )
             self.thread.start()
@@ -642,7 +644,32 @@ class Worker:
         self.stop_event.set()
         self.state["message"] = "Đang dừng sau hồ sơ hiện tại"
 
-    def _run(self, record_ids: list[int], dry_run: bool, delay_seconds: float):
+    def _enrich_from_emr(self, record: dict[str, Any]) -> dict[str, Any]:
+        """Tự đọc phiếu phòng khám (PDF) trên EMR để bù các field còn thiếu (Số KCB,
+        CCCD, Số seri…). Trả về bản ghi đã cập nhật. Lỗi EMR coi như không bù được,
+        để bước kiểm tra 'issues' bên dưới báo rõ."""
+        if not self.emr:
+            return record
+        name = record.get("patient_name") or ""
+        if not name:
+            return record
+        try:
+            result = self.emr.read_phieu_pdf(name)
+        except Exception:  # noqa: BLE001 - EMR lỗi thì giữ nguyên, issues sẽ báo
+            return record
+        fields = result.get("fields") or {}
+        if fields:
+            try:
+                self.store.update_fields(record["id"], fields)
+            except Exception:  # noqa: BLE001
+                return record
+            updated = self.store.get_record(record["id"])
+            if updated:
+                return updated
+        return record
+
+    def _run(self, record_ids: list[int], dry_run: bool, delay_seconds: float,
+             auto_enrich: bool = False):
         self.state = {"running": True, "current_id": None, "message": "Bắt đầu"}
         try:
             for record_id in record_ids:
@@ -653,6 +680,10 @@ class Worker:
                     continue
                 if record["status"] == "success":
                     continue
+                if auto_enrich and record["issues"]:
+                    self.state.update(current_id=record_id,
+                                      message=f"Đang lấy phiếu từ EMR: {record['patient_name']}")
+                    record = self._enrich_from_emr(record)
                 if record["issues"]:
                     self.store.mark(record_id, "error", "; ".join(record["issues"]))
                     continue
