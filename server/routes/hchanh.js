@@ -4202,11 +4202,12 @@ router.get('/hchanh/records-check/submissions', handleRoute((_req, res, ctx) => 
 // ngày ra viện, số lưu trữ, chữ ký bác sĩ/điều dưỡng/trưởng khoa, và note bìa
 // nếu đang nợ KSĐ/GPB. Trả về đúng dạng khóa thô (không prefix) để khớp
 // record.aliases/source_case_keys mà frontend đã gửi lên.
-function recordsSubmissionReadyAliases(ctx) {
+function recordsSubmissionCheckedAliases(ctx) {
   const dashboard = buildRecordsCheckDashboard(ctx);
   const out = new Set();
   for (const card of dashboard.patients || []) {
-    if (!card?.submission_ready) continue;
+    // Chờ xếp ngày nộp chỉ yêu cầu Đã kiểm; checklist thiếu có thể bổ sung sau.
+    if (!card?.checked) continue;
     const keys = [card.case_key, card.merged_key, card.storage_key, ...(Array.isArray(card.source_case_keys) ? card.source_case_keys : [])];
     for (const key of keys) {
       const safe = records_storage_key(key);
@@ -4223,7 +4224,7 @@ router.post('/hchanh/records-check/submissions/add', handleRoute((req, res, ctx)
     records_check_persistent_dir(ctx),
     submissionDate,
     records,
-    recordsSubmissionReadyAliases(ctx)
+    recordsSubmissionCheckedAliases(ctx)
   );
   appendActivity(ctx, {
     kind: 'records_check.submission.add',
