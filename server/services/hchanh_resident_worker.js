@@ -15,6 +15,7 @@ const { resolveDv2Path } = require('../utils/dv2_path');
 const emrBridge = require('./emr_bridge');
 
 const workers = new Map();
+let globalChromeLane = Promise.resolve(); // no overlapping resident sessions across workspaces
 const IDLE_MS = 2 * 60 * 1000;
 const MAX_PENDING = 2;
 const MAX_LINE = 256 * 1024;
@@ -218,6 +219,24 @@ class ResidentWorker {
     this.idleTimer.unref?.();
   }
 
+  async shutdown() {
+    this._idleClear();
+    // No more commands may be enqueued after a workspace handoff starts:
+    // globalChromeLane serializes the entire handoff and dispatch.
+    await this.chain;
+    if (!this.child) return;
+    if (!this.retiring) {
+      this.retiring = new Promise(resolve => { this.retiringDone = resolve; });
+      const child = this.child;
+      try { child.stdin.end(); } catch (_) { terminateProcessTree(child); }
+      const force = setTimeout(() => {
+        if (this.child === child) terminateProcessTree(child);
+      }, 5000);
+      force.unref?.();
+    }
+    await this.retiring;
+  }
+
   run(command, { onSpawn, timeoutMs } = {}) {
     if (this.pending >= MAX_PENDING) {
       return Promise.resolve({ code: -1, stderrTail: ['Hàng đợi Chrome Worker đã đầy.'] });
@@ -266,9 +285,21 @@ function runRecordsCheckBatch(args, opts = {}) {
       !runtimeDir || bridgeEnv.EMR_BRIDGE_URL || process.env.EMR_BRIDGE_URL) {
     return runScript('hchanh_fetch.py', args, opts);
   }
-  const worker = workers.get(runtimeDir) || new ResidentWorker(runtimeDir);
-  workers.set(runtimeDir, worker);
-  return worker.run(command, opts);
+  // Only one resident Chrome on the Node host. Even separate workspaces can
+  // use the same EMR account, so close the previous browser before handoff.
+  const task = globalChromeLane.then(async () => {
+    for (const [otherRuntime, otherWorker] of [...workers]) {
+      if (otherRuntime !== runtimeDir) {
+        await otherWorker.shutdown();
+        if (workers.get(otherRuntime) === otherWorker) workers.delete(otherRuntime);
+      }
+    }
+    const worker = workers.get(runtimeDir) || new ResidentWorker(runtimeDir);
+    workers.set(runtimeDir, worker);
+    return worker.run(command, opts);
+  });
+  globalChromeLane = task.catch(() => {});
+  return task;
 }
 
 module.exports = { runRecordsCheckBatch, readOnlyJob, ResidentWorker };
