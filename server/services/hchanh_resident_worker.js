@@ -107,6 +107,7 @@ class ResidentWorker {
 
     child.stdout.on('data', data => this._onStdout(child, data));
     child.stderr.on('data', data => this._onStderr(data));
+    child.stdin.on('error', () => this._invalidate('Mất kết nối với Chrome Worker.'));
     child.on('error', err => this._lost(child, 'Không mở được Chrome Worker.', err.message));
     child.on('close', () => this._lost(child, 'Chrome Worker đã dừng trước khi trả kết quả.'));
     return child;
@@ -193,7 +194,9 @@ class ResidentWorker {
       if (this.child !== child || this.active || this.pending) return;
       // Ending stdin triggers Python's finally block to quit Chrome cleanly.
       try { child.stdin.end(); } catch (_) {}
-      const force = setTimeout(() => terminateProcessTree(child), 5000);
+      const force = setTimeout(() => {
+        if (this.child === child) terminateProcessTree(child);
+      }, 5000);
       force.unref?.();
     }, IDLE_MS);
     this.idleTimer.unref?.();
