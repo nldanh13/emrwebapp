@@ -268,4 +268,4 @@ function runRecordsCheckBatch(args, opts = {}) {
   return worker.run(command, opts);
 }
 
-module.exports = { runRecordsCheckBatch, readOnlyJob };
+module.exports = { runRecordsCheckBatch, readOnlyJob, ResidentWorker };
