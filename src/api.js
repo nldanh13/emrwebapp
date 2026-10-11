@@ -100,6 +100,8 @@ function apiActionLabel(method, url) {
     'POST /api/vtyt-catalog/scan-emr': 'dò danh mục VTYT trên EMR',
     'GET /api/vtyt-combos': 'tải danh sách combo VTYT',
     'POST /api/vtyt-combos': 'tạo combo VTYT',
+    'GET /api/procedure-templates': 'tải mẫu thủ thuật – phẫu thuật',
+    'PUT /api/procedure-templates': 'lưu mẫu thủ thuật – phẫu thuật',
     'POST /api/report-token': 'lấy quyền mở phiếu in',
     'GET /api/run-report-infusion': 'mở phiếu PDF',
     'GET /api/data-info': 'kiểm tra trạng thái dữ liệu',
@@ -969,6 +971,10 @@ export const getVtytCombos          = ()            => get('/api/vtyt-combos');
 export const createVtytCombo        = (body)        => post('/api/vtyt-combos', body);
 export const updateVtytCombo        = (id, body)    => patch(`/api/vtyt-combos/${encodeURIComponent(id)}`, body);
 export const deleteVtytCombo        = (id)          => del(`/api/vtyt-combos/${encodeURIComponent(id)}`);
+
+// ── Mẫu thủ thuật – phẫu thuật theo DVKT ─────────────────────────────────────
+export const getProcedureTemplates  = ()            => get('/api/procedure-templates');
+export const saveProcedureTemplates = (templates)   => put('/api/procedure-templates', { templates });
 
 // ── Danh mục thuốc ────────────────────────────────────────────────────────────
 export const getMedicationCatalog    = ()           => get('/api/medication-catalog');

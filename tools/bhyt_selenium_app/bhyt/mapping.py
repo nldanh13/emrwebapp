@@ -234,6 +234,20 @@ def _map_grv(row: dict[str, str]) -> dict[str, str]:
     }
 
 
+def has_sick_leave_note(fields: dict[str, str]) -> bool:
+    return "nghi om" in normalize_text(fields.get("ghi_chu"))
+
+
+def needs_sick_leave_question(fields: dict[str, str]) -> bool:
+    """Thẻ DN (lao động doanh nghiệp) mà giấy ra viện chưa ghi nghỉ ốm: phải hỏi người bệnh."""
+    card = re.sub(r"\s+", "", str(fields.get("ma_the") or "")).upper()
+    return card.startswith("DN") and not has_sick_leave_note(fields)
+
+
+SICK_LEAVE_QUESTION = ('Thẻ DN: hỏi người bệnh có nghỉ ốm không. Có thì ghi "Nghỉ ốm từ ngày … '
+                       'đến hết ngày …" vào Ghi chú; không thì bỏ qua, không nhập hồ sơ này.')
+
+
 def validate_fields(doc_type: str, fields: dict[str, str]) -> list[str]:
     if doc_type == DOC_BHXH:
         required = {
@@ -263,7 +277,11 @@ def validate_fields(doc_type: str, fields: dict[str, str]) -> list[str]:
             "doctor_text": "Thiếu người hành nghề/trưởng khoa",
             "ngay_ct": "Thiếu ngày chứng từ",
         }
-    return [message for key, message in required.items() if not fields.get(key, "").strip()]
+    issues = [message for key, message in required.items() if not fields.get(key, "").strip()]
+    # Ca đọc từ giấy ra viện EMR có thẻ DN: chờ người dùng hỏi người bệnh có nghỉ ốm không.
+    if doc_type != DOC_BHXH and fields.get("hoi_nghi_om") and not has_sick_leave_note(fields):
+        issues.append(SICK_LEAVE_QUESTION)
+    return issues
 
 
 def load_records(paths: Iterable[str | Path], allowed_doctors: Iterable[str] | None = None) -> list[Record]:

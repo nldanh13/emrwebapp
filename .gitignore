@@ -87,3 +87,6 @@ config/nurse_emr_accounts.json/
 /vault/
 /vault.enc/
 /device_trust/
+
+# Mẫu thủ thuật – phẫu thuật người dùng tự sửa (mặc định: procedure_templates.default.json)
+config/procedure_templates.json

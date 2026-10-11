@@ -4,9 +4,10 @@
 Làm theo từng màn một lượt (đỡ tốn thời gian hơn đi từng người qua mọi màn):
   1. D/s tiếp nhận ngoại trú: nhập khoa người "Chờ nhập khoa" (giờ vào khoa giữ nếu hợp lệ,
      Người nhận = Bác sĩ nhận bệnh, chọn mã bệnh án khi chỉ có 1).
-  2. D/s Phẫu thuật: ca mổ chưa hoàn tất → điền và Kết thúc mổ (Gây Tê Tại Chỗ, Nằm ngửa,
-     chẩn đoán trước = sau, BS mổ chính = Gây mê chính = bác sĩ trong Lịch Phòng khám,
-     bắt đầu = vào khoa + 1 phút, kết thúc = bắt đầu + 15 phút).
+  2. D/s Phẫu thuật: ca mổ chưa hoàn tất → điền và Kết thúc mổ theo mẫu khớp tên DVKT (tab Mẫu
+     thủ thuật – PT: số phút, vô cảm, tư thế, mô tả / trình tự / dặn dò, người mổ chính là bác sĩ
+     hoặc điều dưỡng trong Lịch Phòng khám); chẩn đoán trước = sau, bắt đầu = vào khoa + 1 phút.
+     Không có mẫu khớp thì không kết thúc mổ, báo lại.
   3. Ds điều trị ngoại trú: Tổng kết ra khoa (Dấu hiệu LS, KQ XN-CLS, PP điều trị lấy từ hồ sơ)
      rồi Kết thúc điều trị (không có KQ XN-CLS thì ghi ".").
 Không tự đồng ý hộp xác nhận; thiếu dữ liệu thì dừng ở người đó và báo lại.
@@ -20,6 +21,7 @@ from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 
 from clinic_outpatient import compact, norm, wait_page
+import procedure_templates
 
 try:
     from bs4 import BeautifulSoup
@@ -35,6 +37,8 @@ PT_MINUTES = 15
 ANESTHESIA = "Gây Tê Tại Chỗ"
 POSITION = "Nằm ngửa"
 NO_RESULT = "."  # người bệnh không có kết quả XN, CLS nào
+# Ô chữ trên phiếu phẫu thuật ← nội dung trong mẫu (để trống trong mẫu thì giữ nguyên trên EMR).
+SURGERY_TEXT_FIELDS = (("txtMoTaPPPT", "mo_ta"), ("trinhTuPhauThuatInput", "report"), ("txtDanDoSauPT", "dan_do"))
 
 
 def parse_dt(value: Any) -> Optional[datetime]:
@@ -221,8 +225,10 @@ def describe_modal(modal: Dict[str, Any]) -> str:
 class NgoaiTruFlow:
     """Các bước TH6 trên EMR, dùng chung Chrome đã đăng nhập của màn theo dõi. `dialogs` là ExamPage."""
 
-    def __init__(self, driver: Any, config: Dict[str, Any], dialogs: Any, pause: Callable[[float], None] = time.sleep) -> None:
+    def __init__(self, driver: Any, config: Dict[str, Any], dialogs: Any, pause: Callable[[float], None] = time.sleep,
+                 templates: Optional[List[Dict[str, Any]]] = None) -> None:
         self.driver = driver
+        self.templates = templates  # None = đọc mẫu thủ thuật – PT lúc cần
         self.config = config
         self.dialogs = dialogs
         self.pause = pause
@@ -330,24 +336,41 @@ class NgoaiTruFlow:
         return {"result": "done", "value": rule["value"], "steps": steps}
 
     # 2. Kết thúc mổ
-    def finish_surgery(self, row: Dict[str, Any], admitted: datetime, doctor: str, now: datetime) -> Dict[str, Any]:
+    def finish_surgery(self, row: Dict[str, Any], admitted: datetime, doctor: str, now: datetime,
+                       nurse: str = "") -> Dict[str, Any]:
+        """Điền ca mổ theo mẫu khớp tên DVKT (Nội dung phẫu thuật / Chỉ định mổ); người thực hiện theo
+        vai trò của mẫu, tên lấy theo Lịch Phòng khám."""
         self.open(row["href"])
         if not self.wait_for("txtBatDauPT"):
             raise RuntimeError("Không mở được màn phẫu thuật")
         if not self.visible("btnHOANTAT"):
             end = parse_dt(self.js(VALUE_JS, "txtKetThucPT"))
             return {"result": "already", "message": "Ca mổ đã hoàn tất", "end": end}
-        if not doctor:
-            raise RuntimeError("Chưa có bác sĩ phòng khám trong Lịch phòng khám (tab Lịch làm việc) để làm BS mổ chính")
-        rule = surgery_window(admitted, now)
+        templates = procedure_templates.load_templates() if self.templates is None else self.templates
+        service = " ".join(x for x in (row.get("noi_dung") or "", self.js(SELECTED_TEXT_JS, "cbbChiDinhMoPT") or "") if x)
+        tpl = procedure_templates.match_template(templates, "phau_thuat", service, True)
+        if tpl is None:
+            return {"result": "incomplete", "message": procedure_templates.missing_message("phau_thuat", service)}
+        if tpl.get("auto") is False:
+            return {"result": "incomplete", "message": procedure_templates.manual_message(tpl)}
+        by_nurse = tpl.get("performer") == "dieu_duong"
+        surgeon = nurse if by_nurse else doctor
+        if not surgeon:
+            raise RuntimeError(f"Chưa có {'điều dưỡng' if by_nurse else 'bác sĩ'} phòng khám trong Lịch phòng khám "
+                               "(tab Lịch làm việc) để làm người mổ chính")
+        rule = surgery_window(admitted, now, procedure_templates.minutes_of(tpl, PT_MINUTES))
         if rule["result"] != "ok":
             return rule
         start, end = rule["start"], rule["end"]
         self.set_value("txtBatDauPT", fmt_dt(start))
         self.set_value("txtKetThucPT", fmt_dt(end))
-        if not self.pick("cbbPPGayMePT", ANESTHESIA):
-            raise RuntimeError(f"Không chọn được phương pháp vô cảm: {ANESTHESIA}")
-        self.set_value("txtTuTheMoPT", POSITION)
+        anesthesia = procedure_templates.text_of(tpl, "anesthesia", ANESTHESIA)
+        if not self.pick("cbbPPGayMePT", anesthesia):
+            raise RuntimeError(f"Không chọn được phương pháp vô cảm: {anesthesia}")
+        self.set_value("txtTuTheMoPT", procedure_templates.text_of(tpl, "position", POSITION))
+        method = procedure_templates.text_of(tpl, "phuong_phap")
+        if method and not self.pick("cbbPhuongPhapPT", method):
+            raise RuntimeError(f"Không chọn được phương pháp phẫu thuật: {method}")
         for field, label in (("cbbPhuongPhapPT", "phương pháp phẫu thuật"), ("cbbICD9", "ICD 9"), ("cbbIcdChanDoanTruocPT", "chẩn đoán trước PT (ICD)")):
             if not self.js(SELECTED_TEXT_JS, field):
                 raise RuntimeError(f"Chưa có {label} — cần chọn tay")
@@ -357,12 +380,17 @@ class NgoaiTruFlow:
         diag = same_diagnosis_text(before)
         self.set_value("txtChuanDoanTruocMoPT", diag)
         self.set_value("txtChuanDoanSauMoPT", diag)
-        for field, label in (("cbbBacSiPT", "BS mổ chính"), ("cbbBacSiGayMeChinh", "Gây mê chính")):
-            if not self.pick(field, doctor):
-                raise RuntimeError(f"Không chọn được {label}: {doctor}")
+        for field, key in SURGERY_TEXT_FIELDS:
+            text = procedure_templates.block_of(tpl, key)
+            if text:
+                self.set_value(field, text)
+        for field, label in (("cbbBacSiPT", "người mổ chính"), ("cbbBacSiGayMeChinh", "Gây mê chính")):
+            if not self.pick(field, surgeon):
+                raise RuntimeError(f"Không chọn được {label}: {surgeon}")
         self.click("btnHOANTAT", "Kết thúc mổ", 2.5)
         return {"result": "done", "end": end,
-                "steps": [f"Kết thúc mổ {start:%H:%M}–{end:%H:%M}, BS mổ chính / gây mê chính {doctor}"]}
+                "steps": [f"Kết thúc mổ theo mẫu \"{tpl.get('name') or ''}\" {start:%H:%M}–{end:%H:%M}, "
+                          f"mổ chính / gây mê chính {surgeon}"]}
 
     # 3. Tổng kết ra khoa + Kết thúc điều trị
     def discharge(self, row: Dict[str, Any], lower: datetime, now: datetime, texts: Dict[str, str]) -> Dict[str, Any]:
@@ -433,7 +461,7 @@ def _find_surgeries(flow: "NgoaiTruFlow", codes: List[str]) -> List[Dict[str, An
 
 
 def run_all(flow: "NgoaiTruFlow", patients: List[Dict[str, Any]], doctor: str,
-            now_fn: Callable[[], datetime]) -> Dict[str, Dict[str, Any]]:
+            now_fn: Callable[[], datetime], nurse: str = "") -> Dict[str, Dict[str, Any]]:
     """Làm TH6 cho nhiều người bệnh, theo từng màn một lượt. Trả kết quả theo mã BN."""
     results: Dict[str, Dict[str, Any]] = {p["ma_bn"]: {"result": "waiting", "message": "", "steps": []} for p in patients}
     by_code = {p["ma_bn"]: p for p in patients}
@@ -476,7 +504,7 @@ def run_all(flow: "NgoaiTruFlow", patients: List[Dict[str, Any]], doctor: str,
         try:
             stop = None
             for pt in [r for r in surgeries if r["ma_bn"] == code and not is_done(r.get("trang_thai"))]:
-                res = flow.finish_surgery(pt, start, doctor, now_fn())
+                res = flow.finish_surgery(pt, start, doctor, now_fn(), nurse)
                 results[code]["steps"] += res.get("steps") or []
                 if res["result"] not in {"done", "already"}:
                     stop = res

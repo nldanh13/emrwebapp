@@ -137,5 +137,32 @@ class ReadDischargeRecordTests(unittest.TestCase):
         self.assertEqual(changed["fields"]["doctor_text"], "Phạm Việt Tân")
         self.assertEqual(changed["fields"]["ma_khoa"], "Ngoại Chấn thương chỉnh hình - Thần kinh (K24)")
 
+class DnCardSickLeaveTests(unittest.TestCase):
+    # Thẻ DN (người lao động doanh nghiệp): phải hỏi người bệnh có nghỉ ốm không.
+    def read(self, fields):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_emr(tmp)
+            p.read_giay_ra_vien_pdf = lambda name: {"doc_type": "GRV03", "fields": dict(fields)}
+            p.read_patient_info = lambda keyword: {"fields": {}}
+            return p.read_discharge_record("A")["fields"]
+
+    def test_dn_without_sick_leave_note_must_ask(self):
+        from bhyt.mapping import DOC_GRV, validate_fields
+        f = self.read({"ma_the": "DN4929201234567", "ghi_chu": "Uống thuốc theo toa"})
+        self.assertEqual(f["hoi_nghi_om"], "Có")
+        issues = validate_fields(DOC_GRV, f)
+        self.assertTrue(any("hỏi người bệnh có nghỉ ốm" in x for x in issues))
+        # Người bệnh xin nghỉ: ghi vào Ghi chú thì hết vướng.
+        f["ghi_chu"] = "Nghỉ ốm từ ngày 09/10/2026 đến hết ngày 19/10/2026"
+        self.assertFalse(any("nghỉ ốm" in x for x in validate_fields(DOC_GRV, f)))
+
+    def test_dn_with_sick_leave_note_no_question(self):
+        f = self.read({"ma_the": "DN4929201234567", "ghi_chu": "Nghỉ ốm từ ngày 09/10/2026"})
+        self.assertNotIn("hoi_nghi_om", f)
+
+    def test_other_cards_not_asked(self):
+        f = self.read({"ma_the": "HC4797912345678", "ghi_chu": ""})
+        self.assertNotIn("hoi_nghi_om", f)
+
 if __name__ == "__main__":
     unittest.main()

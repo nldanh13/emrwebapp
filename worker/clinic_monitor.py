@@ -38,6 +38,7 @@ from clinic_outpatient import (
 from utils import init_driver, load_config, login_emr
 import clinic_bbhc
 import clinic_ngoaitru
+import procedure_templates
 
 try:
     from bs4 import BeautifulSoup
@@ -709,8 +710,10 @@ class ProcedurePage:
         self.dialogs = ExamPage(driver, pause)
         self.pause = pause
 
-    def open_pending(self, ma_bn: str, day: str) -> Optional[datetime]:
-        """Mở dòng thủ thuật chưa hoàn tất; trả giờ chỉ định, None nếu đã hoàn tất hết."""
+    def open_pending(self, ma_bn: str, day: str,
+                     choose: Optional[Callable[[str], None]] = None) -> Optional[datetime]:
+        """Mở dòng thủ thuật chưa hoàn tất; trả giờ chỉ định, None nếu đã hoàn tất hết.
+        `choose(chữ trên dòng)` chạy trước khi mở (chọn mẫu theo tên DVKT; báo lỗi thì không mở)."""
         ip = self.ip
         # Bộ lọc D/s Thủ thuật của input_procedures tự đóng popup bằng handle_popups (bấm đồng ý);
         # ở đây thay bằng cách đóng không đồng ý như màn khám.
@@ -722,9 +725,13 @@ class ProcedurePage:
             ip._try_search_on_list(self.driver, self.wait, ma_bn)
             order_time, _completed, _status = ip._open_procedure_row(
                 self.driver, self.wait, ma_bn, day, "", clinic_mode=True,
-                allow_completed_update=False, return_meta=True)
+                allow_completed_update=False, return_meta=True, before_open=choose)
         except ip.ProcedureAlreadyCompleted:
             return None
+        except RuntimeError as e:
+            if "Không tìm thấy dòng thủ thuật" in str(e):
+                raise ProcedureNotListed(str(e)) from e
+            raise
         finally:
             ip.handle_popups = original
         return order_time
@@ -733,12 +740,13 @@ class ProcedurePage:
         self.ip._enter_execution_form_for_check(self.driver, self.wait)
         self.dialogs.check_dialogs("Vào thực hiện thủ thuật")
 
-    def fill(self, start: datetime, end: datetime, staff: str, template: str) -> None:
+    def fill(self, start: datetime, end: datetime, staff: str, template: str,
+             anesthesia: str = DEFAULT_ANESTHESIA) -> None:
         ip = self.ip
         ip._set_input_value(self.driver, "txtTgBatDau", fmt_emr_dt(start))
         ip._set_input_value(self.driver, "txtTgKetThuc", fmt_emr_dt(end))
-        if not ip._pick_select2_text(self.driver, self.wait, "cbbPhuongPhapVoCam", DEFAULT_ANESTHESIA, allow_first=False):
-            raise ExamStepError(f"Không chọn được phương pháp vô cảm: {DEFAULT_ANESTHESIA}")
+        if not ip._pick_select2_text(self.driver, self.wait, "cbbPhuongPhapVoCam", anesthesia, allow_first=False):
+            raise ExamStepError(f"Không chọn được phương pháp vô cảm: {anesthesia}")
         ok = bool(ip.chon_select2_bac_si_y_ta and ip.chon_select2_bac_si_y_ta(self.driver, "cbbTTChinh", staff, timeout=15))
         if not ok and not ip._pick_select2_text(self.driver, self.wait, "cbbTTChinh", staff, allow_first=False):
             raise ExamStepError(f"Không chọn được thủ thuật viên: {staff}")
@@ -746,7 +754,7 @@ class ProcedurePage:
             raise ExamStepError(f"Không chọn được mẫu tường trình: {template}")
         errors = ip._compare_procedure_form(self.driver, {
             "start_dt": start, "end_dt": end, "start_text": fmt_emr_dt(start), "end_text": fmt_emr_dt(end),
-            "anesthesia": DEFAULT_ANESTHESIA, "staff_name": staff, "template_name": template,
+            "anesthesia": anesthesia, "staff_name": staff, "template_name": template,
         })
         if errors:
             raise ExamStepError("Điền phiếu thủ thuật chưa đúng: " + "; ".join(errors))
@@ -767,24 +775,59 @@ class ProcedurePage:
         return toasts
 
 
-def enter_procedure(page: ProcedurePage, row: Dict[str, Any], config: Dict[str, Any], now: datetime) -> Dict[str, Any]:
-    """Nhập 1 thủ thuật chưa hoàn tất của người bệnh (chỉ chạy khi người dùng bấm nút)."""
-    order_time = page.open_pending(compact(row.get("ma_bn")), now.strftime("%d/%m/%Y"))
+class NoProcedureTemplate(RuntimeError):
+    """Dòng thủ thuật chưa có mẫu khớp tên DVKT (hoặc mẫu đặt nhập tay): không mở, không nhập."""
+
+
+def performer_name(template: Dict[str, Any], config: Dict[str, Any], start: datetime) -> str:
+    """Người thực hiện theo vai trò của mẫu, tên lấy theo Lịch Phòng khám lúc nhập."""
+    if template.get("performer") == "bac_si":
+        return clinic_doctor(config, start)
+    return procedure_staff(config, start)
+
+
+def enter_procedure(page: ProcedurePage, row: Dict[str, Any], config: Dict[str, Any], now: datetime,
+                    templates: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """Nhập 1 thủ thuật chưa hoàn tất của người bệnh theo mẫu khớp tên DVKT (tab Mẫu thủ thuật – PT)."""
+    templates = procedure_templates.load_templates() if templates is None else templates
+    chosen: Dict[str, Any] = {}
+
+    def choose(row_text: str) -> None:
+        tpl = procedure_templates.match_template(templates, "thu_thuat", row_text, bool(row.get("has_bhyt")))
+        if tpl is None:
+            raise NoProcedureTemplate(procedure_templates.missing_message("thu_thuat", row_text))
+        if tpl.get("auto") is False:
+            raise NoProcedureTemplate(procedure_templates.manual_message(tpl))
+        chosen.update(tpl)
+
+    try:
+        order_time = page.open_pending(compact(row.get("ma_bn")), now.strftime("%d/%m/%Y"), choose)
+    except NoProcedureTemplate as e:
+        return {"result": "incomplete", "message": str(e)}
+    except ProcedureNotListed:
+        if row.get("has_bhyt"):
+            raise
+        # Viện phí: thủ thuật chỉ hiện trên D/s Thủ thuật sau khi người bệnh đóng tiền → chờ, thử lại sau.
+        return {"result": "waiting", "earliest": now + PAYMENT_RETRY,
+                "message": "Chưa có trên D/s Thủ thuật: chờ người bệnh viện phí đóng tiền"}
     if order_time is None:
         return {"result": "already", "message": "Thủ thuật đã hoàn tất trên D/s Thủ thuật"}
-    window = procedure_window(order_time, parse_emr_dt(row.get("thoi_gian")), now,
-                              int(config.get("procedure_duration_minutes") or PROCEDURE_MINUTES))
+    minutes = procedure_templates.minutes_of(chosen, int(config.get("procedure_duration_minutes") or PROCEDURE_MINUTES))
+    window = procedure_window(order_time, parse_emr_dt(row.get("thoi_gian")), now, minutes)
     if window["result"] != "ok":
         return window
     start, end = window["start"], window["end"]
-    staff = procedure_staff(config, start)
+    staff = performer_name(chosen, config, start)
+    role = procedure_templates.PERFORMER_LABEL.get(chosen.get("performer") or "dieu_duong", "điều dưỡng")
     if not staff:
-        return {"result": "error", "message": "Chưa có lịch Phòng khám / lịch ca để chọn thủ thuật viên"}
+        return {"result": "error", "message": f"Chưa có {role} trong Lịch Phòng khám để làm thủ thuật viên"}
+    emr_template = procedure_templates.text_of(chosen, "emr_template") \
+        or compact(config.get("procedure_template_name")) or DEFAULT_PROCEDURE_TEMPLATE
     page.enter()
-    page.fill(start, end, staff, compact(config.get("procedure_template_name")) or DEFAULT_PROCEDURE_TEMPLATE)
+    page.fill(start, end, staff, emr_template, procedure_templates.text_of(chosen, "anesthesia", DEFAULT_ANESTHESIA))
     page.save_and_finish()
     return {"result": "done", "end": end,
-            "message": f"Đã nhập thủ thuật {start:%H:%M}–{end:%H:%M}, thủ thuật viên {staff}"}
+            "message": f"Đã nhập thủ thuật theo mẫu \"{chosen.get('name') or ''}\" {start:%H:%M}–{end:%H:%M}, thủ thuật viên {staff}"}
 
 
 # ── Đọc danh sách trên EMR ───────────────────────────────────────────────────
@@ -1225,6 +1268,11 @@ def run_bbhc_create(monitor: "Monitor", rows: List[Dict[str, Any]], approved: Di
 
 TASK_CASES_EXCLUDED = {"nhap_vien", "ngoai_tru"}  # nhập viện / ngoại trú làm ở luồng riêng
 MAX_TASKS_PER_CYCLE = 4
+PAYMENT_RETRY = timedelta(minutes=5)  # viện phí chưa đóng tiền: xem lại D/s Thủ thuật sau mỗi 5 phút
+
+
+class ProcedureNotListed(RuntimeError):
+    """Người bệnh chưa có dòng trên D/s Thủ thuật (viện phí chưa đóng tiền)."""
 
 
 def pending_surgeries(row: Dict[str, Any]) -> int:
@@ -1233,8 +1281,9 @@ def pending_surgeries(row: Dict[str, Any]) -> int:
 
 
 def procedure_task_candidate(row: Dict[str, Any]) -> bool:
-    """Người bệnh có BHYT đang khám, có thủ thuật chưa xong, không thuộc luồng nhập viện / ngoại trú."""
-    return bool(row.get("has_bhyt")) and row.get("stage") in ACTIVE_STAGES \
+    """Người bệnh đang khám, có thủ thuật chưa xong, không thuộc luồng nhập viện / ngoại trú.
+    BHYT làm được ngay; viện phí chỉ làm được sau khi đóng tiền (run_tasks xếp BHYT trước)."""
+    return row.get("stage") in ACTIVE_STAGES \
         and row.get("case") not in TASK_CASES_EXCLUDED and pending_procedures(row) > 0
 
 
@@ -1268,14 +1317,17 @@ def run_tasks(monitor: "Monitor", rows: List[Dict[str, Any]], state: Dict[str, D
     checks = checks if checks is not None else {}
     now = now or _now()
     acted = 0
-    for row in rows:
+    # BHYT trước (làm được ngay), viện phí sau; trong mỗi nhóm giữ thứ tự danh sách (đã đọc hết các trang).
+    for row in sorted(rows, key=lambda r: not r.get("has_bhyt")):
         key = row.get("khambenhid") or ""
         if acted >= MAX_TASKS_PER_CYCLE or not key or not row.get("href") or not procedure_task_candidate(row):
             continue
         pending = pending_procedures(row)
         if auto and not _auto_should_run(state.get(key), pending, now):
             continue
-        pre = monitor.on_exam_page(row, lambda page, _done, _now_: _prepare_procedures(page), need_services=False)
+        # Viện phí không bấm Thực hiện trên màn khám: thủ thuật tự hiện trên D/s Thủ thuật khi đã đóng tiền.
+        pre = monitor.on_exam_page(row, lambda page, _done, _now_: _prepare_procedures(page), need_services=False) \
+            if row.get("has_bhyt") else {"status": "ready", "steps": []}
         if pre.get("status") == "ready":
             res = monitor.run_procedures(row)
             res = {**res, "steps": (pre.get("steps") or []) + (res.get("steps") or [])}
@@ -1325,7 +1377,8 @@ def run_ngoaitru(monitor: "Monitor", rows: List[Dict[str, Any]], state: Dict[str
         return 0
     flow = clinic_ngoaitru.NgoaiTruFlow(monitor.driver, monitor.config, ExamPage(monitor.driver))
     try:
-        results = clinic_ngoaitru.run_all(flow, patients, clinic_doctor(monitor.config, _now()), _now)
+        results = clinic_ngoaitru.run_all(flow, patients, clinic_doctor(monitor.config, _now()), _now,
+                                         procedure_staff(monitor.config, _now()))
     except Exception as e:  # lỗi đọc danh sách: báo chung cho mọi người
         results = {p["ma_bn"]: {"result": "error", "message": f"Lỗi đọc danh sách ngoại trú: {compact(str(e))[:300]}", "steps": []}
                    for p in patients}
