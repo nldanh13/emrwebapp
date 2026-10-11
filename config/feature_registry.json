@@ -96,10 +96,10 @@
       "label": "Nghỉ ốm",
       "icon": "▥",
       "group": "Công việc",
-      "hint": "Chuẩn bị hồ sơ nghỉ ốm nội trú/ngoại trú",
+      "hint": "Nhập nghỉ ốm ra viện và phòng khám lên cổng BHXH",
       "order": 95,
       "compact": true,
-      "usesDateRange": true
+      "usesDateRange": false
     },
     {
       "id": "clinic",

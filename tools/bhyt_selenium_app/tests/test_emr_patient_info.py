@@ -149,7 +149,7 @@ class DnCardSickLeaveTests(unittest.TestCase):
     def test_dn_without_sick_leave_note_must_ask(self):
         from bhyt.mapping import DOC_GRV, validate_fields
         f = self.read({"ma_the": "DN4929201234567", "ghi_chu": "Uống thuốc theo toa"})
-        self.assertEqual(f["hoi_nghi_om"], "Có")
+        self.assertEqual(f["hoi_nghi_om"], "can_hoi")
         issues = validate_fields(DOC_GRV, f)
         self.assertTrue(any("hỏi người bệnh có nghỉ ốm" in x for x in issues))
         # Người bệnh xin nghỉ: ghi vào Ghi chú thì hết vướng.

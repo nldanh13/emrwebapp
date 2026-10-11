@@ -143,7 +143,7 @@ def _flag_sick_leave_question(fields: dict[str, Any]) -> None:
     from .mapping import needs_sick_leave_question
 
     if needs_sick_leave_question(fields):
-        fields["hoi_nghi_om"] = "Có"
+        fields["hoi_nghi_om"] = "can_hoi"
 
 
 def _is_placeholder(text: str) -> bool:

@@ -244,8 +244,10 @@ def needs_sick_leave_question(fields: dict[str, str]) -> bool:
     return card.startswith("DN") and not has_sick_leave_note(fields)
 
 
-SICK_LEAVE_QUESTION = ('Thẻ DN: hỏi người bệnh có nghỉ ốm không. Có thì ghi "Nghỉ ốm từ ngày … '
-                       'đến hết ngày …" vào Ghi chú; không thì bỏ qua, không nhập hồ sơ này.')
+SICK_LEAVE_QUESTION = 'Thẻ DN: hỏi người bệnh có nghỉ ốm không, rồi bấm "Có nghỉ" hoặc "Không nghỉ".'
+SICK_LEAVE_NO = "Người bệnh không nghỉ ốm: không nhập hồ sơ này."
+# hoi_nghi_om: "can_hoi" (chờ hỏi) → người dùng trả lời "co" (có nghỉ) hoặc "khong" (không nghỉ).
+SICK_LEAVE_ANSWERED = {"co", "khong"}
 
 
 def validate_fields(doc_type: str, fields: dict[str, str]) -> list[str]:
@@ -279,7 +281,10 @@ def validate_fields(doc_type: str, fields: dict[str, str]) -> list[str]:
         }
     issues = [message for key, message in required.items() if not fields.get(key, "").strip()]
     # Ca đọc từ giấy ra viện EMR có thẻ DN: chờ người dùng hỏi người bệnh có nghỉ ốm không.
-    if doc_type != DOC_BHXH and fields.get("hoi_nghi_om") and not has_sick_leave_note(fields):
+    answer = fields.get("hoi_nghi_om")
+    if answer == "khong":
+        issues.append(SICK_LEAVE_NO)
+    elif answer == "can_hoi" and not has_sick_leave_note(fields):
         issues.append(SICK_LEAVE_QUESTION)
     return issues
 

@@ -250,5 +250,50 @@ router.post('/sick-leave-launch-bhyt-tool', async (req, res) => {
   return res.json({ status: 'ok', already_running: false });
 });
 
+// ── Tài khoản cổng BHXH + đăng nhập chỉ bằng CAPTCHA ─────────────────────────
+// Lưu một lần (secrets/bhyt_portal_account.json); mỗi lần nhập người dùng chỉ gõ CAPTCHA.
+const { publicBhytPortalAccount, readBhytPortalAccount, saveBhytPortalAccount } = require('../utils/bhyt_portal_account');
+const { loginWithCaptcha } = require('../services/bhyt_portal_login');
+const { getSecret } = require('../services/secret_store');
+
+/** Tài khoản EMR cho công cụ đọc giấy: bác sĩ đã chọn, hoặc tài khoản EMR chung. */
+function bhytToolEmrAccount(req, accountName) {
+  if (accountName) {
+    const { withDoctorAccount } = require('./clinic');
+    const acc = withDoctorAccount({ account_name: accountName }, req);
+    return { username: acc.username, password: acc.password, label: acc.account_doctor || accountName };
+  }
+  const username = getSecret('emr_username');
+  const password = getSecret('emr_password');
+  if (!username || !password) throw new Error('Chưa có tài khoản EMR chung. Khai ở Thiết lập tài khoản, hoặc chọn bác sĩ ở "Tài khoản cổng BHXH".');
+  return { username, password, label: 'tài khoản EMR chung' };
+}
+
+router.get('/sick-leave-bhyt-account', (_req, res) => {
+  res.json({ status: 'ok', account: publicBhytPortalAccount() });
+});
+
+router.post('/sick-leave-bhyt-account', (req, res) => {
+  try {
+    return res.json({ status: 'ok', account: saveBhytPortalAccount(req.body || {}) });
+  } catch (err) {
+    return res.status(400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+router.post('/sick-leave-bhyt-login', async (req, res) => {
+  try {
+    const account = readBhytPortalAccount();
+    const out = await loginWithCaptcha({
+      captcha: req.body?.captcha,
+      account,
+      resolveEmr: () => bhytToolEmrAccount(req, account.emr_account_name),
+    });
+    return res.json({ status: 'ok', ...out });
+  } catch (err) {
+    return res.status(400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
 module.exports = router;
 module.exports.normalizeState = normalizeState;

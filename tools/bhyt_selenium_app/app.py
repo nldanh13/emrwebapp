@@ -10,6 +10,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
+from bhyt.auto_run import AutoRunError, AutoRunner
 from bhyt.emr import EmrError, EmrPortal, parse_day
 from bhyt.emrwebapp_client import WebAppError, fetch_records_from_webapp
 from bhyt.mapping import DEFAULT_DOCTORS, DEFAULT_GRV_DEFAULTS, load_records
@@ -70,6 +71,8 @@ emr = EmrPortal(
 
 # Worker tự lấy dữ liệu phiếu từ EMR (emr) khi hồ sơ còn thiếu, rồi nhập lên cổng.
 worker = Worker(portal, store, emr)
+# Lượt nhập tự động (tab Nghỉ ốm): quét phòng khám + ra viện trên EMR rồi nhập thật lên cổng.
+auto_runner = AutoRunner(emr, portal, worker, store, delay_seconds=float(config.get("delay_seconds", 1.0)))
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
@@ -107,7 +110,7 @@ def index():
 
 @app.get("/api/summary")
 def api_summary():
-    return jsonify({"summary": store.summary(), "worker": worker.status()})
+    return jsonify({"summary": store.summary(), "worker": worker.status(), "auto": auto_runner.status()})
 
 
 @app.get("/api/records")
@@ -230,6 +233,38 @@ def api_update_fields(record_id: int):
         return jsonify({"record": store.get_record(record_id)})
     except KeyError:
         return jsonify({"error": "Không tìm thấy hồ sơ"}), 404
+
+
+@app.post("/api/records/<int:record_id>/sick-leave")
+def api_answer_sick_leave(record_id: int):
+    """Trả lời câu hỏi thẻ DN: người bệnh có nghỉ ốm không (có thì kèm từ ngày, đến ngày)."""
+    payload = request.get_json(force=True) or {}
+    answer = str(payload.get("answer", "")).strip()
+    if answer not in {"co", "khong"}:
+        return jsonify({"error": "Chọn Có nghỉ hoặc Không nghỉ."}), 400
+    try:
+        store.answer_sick_leave(record_id, answer == "co", payload.get("tu_ngay", ""), payload.get("den_ngay", ""))
+    except KeyError:
+        return jsonify({"error": "Không tìm thấy hồ sơ (danh sách vừa đổi?). Tải lại danh sách."}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"record": store.get_record(record_id)})
+
+
+@app.get("/api/auto-run")
+def api_auto_run_status():
+    return jsonify(auto_runner.status())
+
+
+@app.post("/api/auto-run")
+def api_auto_run():
+    """Bắt đầu lượt nhập tự động cho ngày đã chọn (mặc định hôm nay)."""
+    payload = request.get_json(silent=True) or {}
+    try:
+        auto_runner.start(payload.get("date"), defaults=_clean_grv_defaults(payload))
+    except (AutoRunError, EmrError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(auto_runner.status())
 
 
 @app.post("/api/browser/start")
@@ -499,27 +534,9 @@ def api_emr_list_clinic():
 
 def _import_harvest(out: dict, sheet: str):
     """Nạp các ca gom được (có giấy đọc được) vào danh sách hồ sơ để nhập lên cổng."""
-    from bhyt.mapping import DOC_BHXH, SICK_LEAVE_QUESTION, Record, validate_fields
+    from bhyt.harvest_import import import_harvest
 
-    records = []
-    for item in out.get("found", []):
-        fields = item.get("fields") or {}
-        if not fields:
-            continue
-        rec = Record(doc_type=item.get("doc_type") or DOC_BHXH, source_file="EMR-phieu",
-                     source_sheet=sheet, source_row=0, fields=fields, raw={})
-        rec.issues = validate_fields(rec.doc_type, fields)
-        records.append(rec)
-    imported = store.import_records(records) if records else {"added": 0, "updated": 0}
-    return jsonify({
-        "scanned": out.get("scanned", 0),
-        "working_age": out.get("working_age", 0),
-        "found": len(out.get("found", [])),
-        # Ca thẻ DN chưa ghi nghỉ ốm: người dùng phải hỏi người bệnh trước khi nhập.
-        "ask_sick_leave": sum(1 for rec in records if SICK_LEAVE_QUESTION in rec.issues),
-        **imported,
-        "summary": store.summary(),
-    })
+    return jsonify({**import_harvest(store, out, sheet), "summary": store.summary()})
 
 
 @app.post("/api/emr/harvest-sick-leave")

@@ -1,6 +1,6 @@
-// src/components/ClinicTab.jsx — Phòng khám: theo dõi Danh sách Khám bệnh liên tục, 3 khung chính
-// (lượt khám + hoàn tất khám theo đơn thuốc, việc cần làm theo chỉ định, người bệnh xin nghỉ ốm —
-// src/components/clinic/ClinicPanels.jsx) và nhập chăm sóc người bệnh nhập viện (ClinicAdmissionCare).
+// src/components/ClinicTab.jsx — Phòng khám: theo dõi Danh sách Khám bệnh liên tục, 2 khung chính
+// (lượt khám + hoàn tất khám theo đơn thuốc, việc cần làm theo chỉ định — src/components/clinic/ClinicPanels.jsx;
+// nghỉ ốm tự quét ở tab Nghỉ ốm) và nhập chăm sóc người bệnh nhập viện (ClinicAdmissionCare).
 // Máy chủ chạy nền worker clinic_monitor.py giữ Chrome đăng nhập sẵn, tự đọc lại danh
 // sách theo chu kỳ và tự đăng nhập lại khi EMR hết phiên; màn này chỉ hiển thị trạng thái.
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -18,7 +18,7 @@ import { useRealtimeConnected } from '../hooks/useRealtimeStatus.js';
 import { useEmrUrlDefault } from '../hooks/useEmrUrlDefault.js';
 import { SkeletonTable } from './Skeleton.jsx';
 import { loadClinicConfig as loadConfig, saveClinicConfig as saveConfig } from '../utils/clinicLogin.js';
-import { Panel, SickLeavePanel, TodoPanel, VisitPanel } from './clinic/ClinicPanels.jsx';
+import { Panel, TodoPanel, VisitPanel } from './clinic/ClinicPanels.jsx';
 import { isoDay, monitorDay } from './clinic/clinicBoard.js';
 
 const CLINIC_MONITOR_KEY = 'screen:clinic-monitor';
@@ -167,14 +167,6 @@ export default function ClinicTab({ toast }) {
     return () => clearInterval(id);
   }, [loadState, running, tabActive, realtimeConnected]);
 
-  // Người bệnh xin nghỉ ốm (máy chủ giữ, không phụ thuộc theo dõi đang chạy).
-  const [sickLeave, setSickLeave] = useState([]);
-  const loadSickLeave = useCallback(() => {
-    api.getClinicSickLeave().then(r => setSickLeave(r.entries || [])).catch(() => { /* giữ danh sách đang hiện */ });
-  }, []);
-  useEffect(() => { loadSickLeave(); }, [loadSickLeave]);
-  useOnTabReturn(loadSickLeave);
-
   const [showSettings, setShowSettings] = useState(false);
   // Địa chỉ EMR đã khai ở máy chủ thì không hỏi; chưa khai mới hiện ô nhập địa chỉ đăng nhập.
   const emrUrlDefault = useEmrUrlDefault();
@@ -295,11 +287,6 @@ export default function ClinicTab({ toast }) {
     } finally {
       setBusy('');
     }
-  };
-
-  const openSickLeave = () => {
-    try { sessionStorage.setItem('emr:sick-leave-view', 'ngoaitru'); } catch { /* chặn lưu trữ: mở mục mặc định */ }
-    window.dispatchEvent(new CustomEvent('emr:open-tab', { detail: { tab: 'sick-leave', view: 'ngoaitru' } }));
   };
 
   const refresh = async () => {
@@ -446,7 +433,6 @@ export default function ClinicTab({ toast }) {
               ngoaitruCount={ngoaitruRows.length} onRunNgoaiTru={runNgoaiTru}>
               <ClinicBbhc monitor={canAct ? monitor : { ...monitor, running: false }} toast={toast} onChanged={loadState} />
             </TodoPanel>
-            <SickLeavePanel rows={allRows} day={day.iso} dayText={dayText} entries={sickLeave} onEntries={setSickLeave} onOpenSickLeave={openSickLeave} toast={toast} />
           </div>
 
           <ClinicAdmissionCare creds={{ ...cfg, password, loginUrl, hasEmrUrl: Boolean(emrUrlDefault || loginUrl) }} toast={toast} />
