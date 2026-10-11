@@ -1,4 +1,4 @@
-import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { C, FS } from '../../tokens.js';
 import {
   IconChevronDown, IconCloudDownload, IconDownload, IconExternalLink, IconListSearch, IconPlayerStop,
@@ -876,6 +876,8 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
   const [batchLimit, setBatchLimit] = useState(() => readBatchLimitPref());
   const [checkedMap, setCheckedMap] = useState(() => readCheckedMap());
   const [savingCheckedKeys, setSavingCheckedKeys] = useState(() => new Set());
+  const pendingCheckedRef = useRef(new Map());
+  const checkedRevisionRef = useRef(0);
   const [updateSelectedKeys, setUpdateSelectedKeys] = useState(() => new Set());
   const [lastRefreshAt, setLastRefreshAt] = useState('');
   const [viewMode, setViewMode] = useState('check');
@@ -899,6 +901,8 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
     }
     const aliases = [...new Set([key, ...rowCheckedKeys(row)].filter(Boolean))];
     const previous = Object.fromEntries(aliases.map(alias => [alias, Boolean(checkedMap?.[alias])]));
+    checkedRevisionRef.current += 1;
+    aliases.forEach(alias => pendingCheckedRef.current.set(alias, checked));
     setSavingCheckedKeys(prev => new Set(prev).add(key));
     setCheckedMap(prev => {
       const next = { ...(prev || {}) };
@@ -908,6 +912,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
     try {
       const saveKeys = rowCheckedKeys(row);
       await setRecordsCheckChecked(saveKeys.length ? saveKeys : [key], checked);
+      await refreshDashboard({ silent: true });
     } catch (err) {
       setCheckedMap(prev => {
         const next = { ...(prev || {}) };
@@ -916,6 +921,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
       });
       toast?.(`Không lưu được dấu đã kiểm: ${String(err.message || err)}`, 'error');
     } finally {
+      aliases.forEach(alias => pendingCheckedRef.current.delete(alias));
       setSavingCheckedKeys(prev => {
         const next = new Set(prev);
         next.delete(key);
@@ -1075,7 +1081,7 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
     }
   }
 
-  function applyDashboardData(data) {
+  function applyDashboardData(data, requestRevision = checkedRevisionRef.current, syncChecked = false) {
     setDashboard(data);
     const backendChecked = {};
     Object.entries(data?.checked_map || {}).forEach(([key, value]) => {
@@ -1087,8 +1093,15 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
     });
     // Backend là nguồn chính xác. Ghi đè để checkbox đã bỏ chọn không bị
     // localStorage cũ tự bật lại sau khi tải trang.
-    setCheckedMap(backendChecked);
-    writeCheckedMap(backendChecked);
+    // CĐHA/worker polling must never change review checkmarks. Only initial/explicit load syncs them.
+    // Ignore stale responses started before the latest checkbox action.
+    if (syncChecked && requestRevision === checkedRevisionRef.current) {
+      for (const [alias, checked] of pendingCheckedRef.current) {
+        if (checked) backendChecked[alias] = true;
+        else delete backendChecked[alias];
+      }
+      setCheckedMap(backendChecked);
+    }
     setLastRefreshAt(new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     const job = data?.job;
     if (job?.running) setBatch({ running: true, done: Number(job.done || 0), total: Number(job.total || 0) });
@@ -1096,10 +1109,11 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
   }
 
   async function refreshDashboard({ silent = true } = {}) {
+    const requestRevision = checkedRevisionRef.current;
     if (!silent) setLoading(true);
     try {
       const data = await getRecordsCheckDashboard();
-      applyDashboardData(data);
+      applyDashboardData(data, requestRevision);
       return data;
     } catch (err) {
       toast?.(String(err.message || err), 'error');
@@ -1110,11 +1124,12 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
   }
 
   async function load({ doScan = false } = {}) {
+    const requestRevision = checkedRevisionRef.current;
     setLoading(true);
     try {
       if (doScan) await scanRecordsCheckCompleted({ date_from: workDateRange?.from || '', date_to: workDateRange?.to || workDateRange?.from || '', headless });
       const data = await getRecordsCheckDashboard();
-      applyDashboardData(data);
+      applyDashboardData(data, requestRevision, true);
     } catch (err) {
       toast?.(String(err.message || err), 'error');
     } finally {
@@ -1124,11 +1139,12 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
 
   useEffect(() => {
     let cancelled = false;
+    const requestRevision = checkedRevisionRef.current;
     setLoading(true);
     (async () => {
       try {
         const data = await getRecordsCheckDashboard();
-        if (!cancelled) applyDashboardData(data);
+        if (!cancelled) applyDashboardData(data, requestRevision, true);
       } catch (err) {
         if (!cancelled) toast?.(String(err.message || err), 'error');
       } finally {
