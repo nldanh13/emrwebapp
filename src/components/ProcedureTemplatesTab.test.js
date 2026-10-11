@@ -1,0 +1,77 @@
+// Tab Mẫu thủ thuật – PT: sửa mẫu tự lưu sau giây lát; rời tab khi còn thay đổi thì lưu ngay;
+// từ khoá trùng giữa hai mẫu thì báo.
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createElement, act } from 'react';
+import { createRoot } from 'react-dom/client';
+
+const TEMPLATES = [
+  { id: 'tb', kind: 'thu_thuat', name: 'Thay băng', keywords: ['thay băng'], performer: 'dieu_duong', minutes: 10,
+    anesthesia: 'Không', position: '', emr_template: 'CTCH-thay băng', phuong_phap: '', mo_ta: '', report: '', dan_do: '',
+    applies_to: 'all', auto: true, enabled: true, note: '' },
+  { id: 'pt', kind: 'phau_thuat', name: 'PT mặc định', keywords: [], performer: 'bac_si', minutes: 15,
+    anesthesia: 'Gây Tê Tại Chỗ', position: 'Nằm ngửa', emr_template: '', phuong_phap: '', mo_ta: '', report: '', dan_do: '',
+    applies_to: 'all', auto: true, enabled: true, note: '' },
+];
+
+vi.mock('../api.js', () => ({
+  getProcedureTemplates: vi.fn(async () => ({ status: 'ok', templates: TEMPLATES })),
+  saveProcedureTemplates: vi.fn(async (templates) => ({ status: 'ok', templates })),
+}));
+const api = await import('../api.js');
+const { default: ProcedureTemplatesTab } = await import('./ProcedureTemplatesTab.jsx');
+const { keywordConflicts, foldText } = await import('./procedureTemplates/templateModel.js');
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+let host; let root;
+beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host);
+  api.saveProcedureTemplates.mockClear();
+});
+afterEach(() => { act(() => root.unmount()); host.remove(); vi.useRealTimers(); });
+const flush = async () => { for (let i = 0; i < 5; i += 1) await act(async () => { await Promise.resolve(); }); };
+
+function typeInto(el, value) {
+  const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+  Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+async function open() {
+  await act(async () => { root.render(createElement(ProcedureTemplatesTab, { toast: () => {} })); });
+  await flush();
+}
+
+describe('Mẫu thủ thuật – PT', () => {
+  it('sửa nội dung tường trình → tự lưu cả danh sách, không cần bấm Lưu', async () => {
+    await open();
+    expect(host.textContent).toContain('Thay băng');
+    const report = [...host.querySelectorAll('label')].find(l => l.textContent.startsWith('Nội dung tường trình')).querySelector('textarea');
+    await act(async () => { typeInto(report, 'Sát khuẩn\nThay băng vô khuẩn'); });
+    expect(host.textContent).toContain('đang chờ tự lưu');
+    await act(async () => { vi.advanceTimersByTime(900); });
+    await flush();
+    expect(api.saveProcedureTemplates).toHaveBeenCalledTimes(1);
+    const saved = api.saveProcedureTemplates.mock.calls[0][0];
+    expect(saved).toHaveLength(2);
+    expect(saved.find(t => t.id === 'tb').report).toBe('Sát khuẩn\nThay băng vô khuẩn');
+    expect(host.textContent).toContain('Đã tự lưu lúc');
+  });
+
+  it('thêm mẫu rồi chuyển tab ngay → lưu luôn', async () => {
+    await open();
+    const add = [...host.querySelectorAll('button')].find(b => b.textContent.includes('Thêm mẫu'));
+    await act(async () => { add.click(); });
+    await act(async () => { window.dispatchEvent(new CustomEvent('emr:tab-active', { detail: 'clinic' })); });
+    await flush();
+    expect(api.saveProcedureTemplates).toHaveBeenCalledTimes(1);
+    expect(api.saveProcedureTemplates.mock.calls[0][0]).toHaveLength(3);
+  });
+
+  it('báo từ khoá trùng giữa hai mẫu cùng loại (không phân biệt dấu)', () => {
+    const other = { ...TEMPLATES[0], id: 'x', name: 'Thay băng lớn', keywords: ['THAY BANG'] };
+    expect(keywordConflicts([TEMPLATES[0], other], TEMPLATES[0])).toEqual([{ keyword: 'thay băng', other: 'Thay băng lớn' }]);
+    expect(keywordConflicts([TEMPLATES[0], { ...other, enabled: false }], TEMPLATES[0])).toEqual([]);
+    expect(foldText('  Đặt  Nẹp ')).toBe('dat nep');
+  });
+});

@@ -106,6 +106,7 @@ router.use(require('./emr_accounts'));
 router.use(require('./admin_nurse'));
 router.use(require('./sick_leave'));
 router.use(require('./clinic'));
+router.use(require('./procedure_templates'));
 router.use(require('./hchanh'));
 router.use(require('./patient_db'));
 router.use(require('./vtyt_catalog'));

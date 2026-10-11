@@ -20,7 +20,7 @@ import re
 import sys
 import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 try:
@@ -837,6 +837,7 @@ def _open_procedure_row(
     clinic_mode: bool = False,
     allow_completed_update: bool = False,
     return_meta: bool = False,
+    before_open: Optional[Callable[[str], None]] = None,
 ):
     rows = _find_matching_rows(driver, ma_bn, wanted_date, service_name, clinic_mode=clinic_mode)
     for _ in range(4):
@@ -907,6 +908,8 @@ def _open_procedure_row(
         raise RuntimeError("Tìm thấy dòng thủ thuật nhưng không có link để mở")
 
     status_text = _row_status_text(row)
+    if before_open is not None:
+        before_open(row_text)  # vd. chọn mẫu theo tên DVKT; báo lỗi thì không mở dòng
     _log(
         f"[OPEN] Mở thủ thuật BN {ma_bn} | {service_name or 'DVKT thay băng/cắt chỉ'} "
         f"| trạng thái: {status_text or 'không rõ'} | giờ dự kiến: {_fmt_hhmm_dmy(start_dt)}"

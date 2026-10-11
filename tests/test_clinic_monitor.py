@@ -11,6 +11,7 @@ if WORKER not in sys.path:
     sys.path.insert(0, WORKER)
 
 import clinic_monitor as cm  # noqa: E402
+import procedure_templates  # noqa: E402
 
 HEAD = ('<table class="table"><thead><tr><th></th><th>STT</th><th>SĐK</th><th>Mã BN</th><th>Họ tên</th>'
         '<th>Năm sinh</th><th>Đối tượng</th><th>Thời gian</th><th>Lý do đến khám</th><th>Trạng thái</th>'
@@ -412,23 +413,51 @@ def test_procedure_window():
     assert bad['result'] == 'error'
 
 
-class FakeProcedurePage:
-    def __init__(self, order):
-        self.order, self.writes = order, []
+DEFAULT_TEMPLATES = procedure_templates.load_templates(procedure_templates.DEFAULT_PATH)
 
-    def open_pending(self, ma_bn, day):
+
+class FakeProcedurePage:
+    def __init__(self, order, row_text='99000001 NGUYỄN VĂN A Thay băng vết thương Chờ thực hiện'):
+        self.order, self.row_text, self.writes = order, row_text, []
+
+    def open_pending(self, ma_bn, day, choose=None):
         self.writes.append(('open', ma_bn, day))
+        if choose and self.order is not None:
+            choose(self.row_text)
         return self.order
 
     def enter(self): self.writes.append('vao_thuc_hien')
-    def fill(self, start, end, staff, template): self.writes.append(('fill', cm.fmt_emr_dt(start), cm.fmt_emr_dt(end), staff, template))
+    def fill(self, start, end, staff, template, anesthesia='Không'):
+        self.writes.append(('fill', cm.fmt_emr_dt(start), cm.fmt_emr_dt(end), staff, template)
+                           + (() if anesthesia == 'Không' else (anesthesia,)))
     def save_and_finish(self): self.writes.append('luu_hoan_tat'); return []
+
+
+class UnlistedProcedurePage(FakeProcedurePage):
+    def open_pending(self, ma_bn, day, choose=None):
+        self.writes.append(('open', ma_bn, day))
+        raise cm.ProcedureNotListed('Không tìm thấy dòng thủ thuật')
+
+
+def test_unpaid_vien_phi_procedure_waits_for_payment():
+    config = {'clinic_nurse_schedule': {'days': {'2026-09-28': {'work': ['ĐD Phòng khám']}}}}
+    page = UnlistedProcedurePage(None)
+    res = cm.enter_procedure(page, {**_tt_row(0, 1), 'has_bhyt': False}, config, NOW, DEFAULT_TEMPLATES)
+    assert res['result'] == 'waiting' and res['earliest'] == NOW + cm.PAYMENT_RETRY
+    assert 'đóng tiền' in res['message']
+    assert page.writes == [('open', '99000001', '28/09/2026')]  # không bấm gì thêm
+    # BHYT mà không thấy trên D/s Thủ thuật là bất thường → báo lỗi như cũ.
+    try:
+        cm.enter_procedure(UnlistedProcedurePage(None), _tt_row(0, 1), config, NOW, DEFAULT_TEMPLATES)
+        assert False, 'phải báo lỗi'
+    except cm.ProcedureNotListed:
+        pass
 
 
 def test_enter_procedure_uses_order_time_and_clinic_schedule():
     config = {'clinic_nurse_schedule': {'days': {'2026-09-28': {'work': ['ĐD Phòng khám']}}}}
     page = FakeProcedurePage(DT(2026, 9, 28, 9, 0))
-    res = cm.enter_procedure(page, _tt_row(0, 1), config, NOW)
+    res = cm.enter_procedure(page, _tt_row(0, 1), config, NOW, DEFAULT_TEMPLATES)
     assert res['result'] == 'done' and res['end'] == DT(2026, 9, 28, 9, 10)
     assert page.writes == [('open', '99000001', '28/09/2026'), 'vao_thuc_hien',
                            ('fill', '09:00 28/09/2026', '09:10 28/09/2026', 'ĐD Phòng khám', 'CTCH-thay băng'),
@@ -436,12 +465,70 @@ def test_enter_procedure_uses_order_time_and_clinic_schedule():
 
     # Chưa đủ 10 phút → không bấm Vào thực hiện.
     page = FakeProcedurePage(DT(2026, 9, 28, 9, 55))
-    assert cm.enter_procedure(page, _tt_row(0, 1), config, NOW)['result'] == 'waiting'
+    assert cm.enter_procedure(page, _tt_row(0, 1), config, NOW, DEFAULT_TEMPLATES)['result'] == 'waiting'
     assert page.writes == [('open', '99000001', '28/09/2026')]
 
     # Đã hoàn tất trên D/s Thủ thuật (danh sách khám chưa kịp cập nhật).
     page = FakeProcedurePage(None)
-    assert cm.enter_procedure(page, _tt_row(0, 1), config, NOW)['result'] == 'already'
+    assert cm.enter_procedure(page, _tt_row(0, 1), config, NOW, DEFAULT_TEMPLATES)['result'] == 'already'
+
+
+def _tpl(**kw):
+    base = {'id': 'x', 'kind': 'thu_thuat', 'name': 'Mẫu', 'keywords': [], 'performer': 'dieu_duong', 'minutes': 10,
+            'anesthesia': 'Không', 'emr_template': 'CTCH-thay băng', 'applies_to': 'all', 'auto': True, 'enabled': True}
+    return {**base, **kw}
+
+
+SCHEDULE = {'clinic_nurse_schedule': {'days': {'2026-09-28': {'work': ['ĐD Phòng khám']}}}}
+
+
+def test_procedure_uses_template_matching_dvkt_name(monkeypatch):
+    templates = [_tpl(id='tb', keywords=['thay băng']),
+                 _tpl(id='kd', name='Khâu vết thương', keywords=['khâu vết thương'], performer='bac_si', minutes=20,
+                      anesthesia='Gây tê tại chỗ', emr_template='CTCH-khâu vết thương')]
+    monkeypatch.setattr(cm, 'clinic_doctor', lambda config, when: 'BS Phòng khám')
+    page = FakeProcedurePage(DT(2026, 9, 28, 9, 0), 'Khâu vết thương phần mềm dưới 10cm')
+    res = cm.enter_procedure(page, _tt_row(0, 1), SCHEDULE, NOW, templates)
+    assert res['result'] == 'done' and 'Khâu vết thương' in res['message']
+    assert page.writes[2] == ('fill', '09:00 28/09/2026', '09:20 28/09/2026', 'BS Phòng khám', 'CTCH-khâu vết thương', 'Gây tê tại chỗ')
+
+
+def test_procedure_without_template_is_not_entered():
+    page = FakeProcedurePage(DT(2026, 9, 28, 9, 0), 'Nắn bó bột cẳng tay')
+    res = cm.enter_procedure(page, _tt_row(0, 1), SCHEDULE, NOW, [_tpl(keywords=['thay băng'])])
+    assert res['result'] == 'incomplete' and 'Chưa có mẫu thủ thuật' in res['message'] and 'Nắn bó bột' in res['message']
+    assert page.writes == [('open', '99000001', '28/09/2026')]  # không Vào thực hiện
+    # Mẫu đặt nhập tay → không tự nhập.
+    page = FakeProcedurePage(DT(2026, 9, 28, 9, 0))
+    res = cm.enter_procedure(page, _tt_row(0, 1), SCHEDULE, NOW, [_tpl(keywords=['thay băng'], auto=False)])
+    assert res['result'] == 'incomplete' and 'nhập tay' in res['message']
+    # Chế độ tự động không thử lại khi chỉ định chưa đổi.
+    assert cm._auto_should_run({'status': 'incomplete', 'pending': 1}, 1, NOW) is False
+
+
+def test_match_template_rules():
+    m = procedure_templates.match_template
+    generic = _tpl(id='g')
+    short = _tpl(id='s', keywords=['thay băng'])
+    long_ = _tpl(id='l', keywords=['thay băng vết thương dài'])
+    vp = _tpl(id='vp', keywords=['cắt chỉ'], applies_to='vien_phi')
+    off = _tpl(id='off', keywords=['nắn'], enabled=False)
+    pt = _tpl(id='pt', kind='phau_thuat', keywords=['cắt chỉ'])
+    templates = [generic, short, long_, vp, off, pt]
+    assert m(templates, 'thu_thuat', 'THAY BANG VET THUONG DAI 15CM')['id'] == 'l'   # không dấu, dài nhất thắng
+    assert m(templates, 'thu_thuat', 'Thay băng vết thương')['id'] == 's'
+    assert m(templates, 'thu_thuat', 'Cắt chỉ', has_bhyt=False)['id'] == 'vp'
+    assert m(templates, 'thu_thuat', 'Cắt chỉ', has_bhyt=True)['id'] == 'g'          # mẫu viện phí bỏ qua → mặc định
+    assert m(templates, 'thu_thuat', 'Nắn trật khớp')['id'] == 'g'                   # mẫu tắt bỏ qua
+    assert m([short], 'thu_thuat', 'Nắn trật khớp') is None
+    assert m(templates, 'phau_thuat', 'cắt chỉ')['id'] == 'pt'
+
+
+def test_default_templates_file_is_valid():
+    rows = DEFAULT_TEMPLATES
+    assert {r['kind'] for r in rows} == {'thu_thuat', 'phau_thuat'}
+    assert procedure_templates.match_template(rows, 'thu_thuat', 'Thay băng vết thương')['emr_template'] == 'CTCH-thay băng'
+    assert procedure_templates.match_template(rows, 'phau_thuat', 'Cắt u phần mềm')['minutes'] == 15
 
 
 def test_completion_after_procedure_moves_exit_time_after_procedure_end():
@@ -605,7 +692,7 @@ def test_procedure_task_candidates():
     assert cm.procedure_task_candidate(_task_row(stage='xong')) is False
     assert cm.procedure_task_candidate(_task_row(stage='cho_kham')) is False
     assert cm.procedure_task_candidate(_task_row(case='nhap_vien')) is False
-    assert cm.procedure_task_candidate(_task_row(bhyt=False)) is False
+    assert cm.procedure_task_candidate(_task_row(bhyt=False)) is True  # viện phí: làm sau khi đã đóng tiền
 
 
 class TaskMonitor:
@@ -630,6 +717,18 @@ def test_run_tasks_sends_new_procedure_then_enters_it():
     assert cm.run_tasks(mon, [_task_row()], state, log, auto=False) == 1
     assert mon.calls == [('exam', ['thuc_hien']), 'procedures']
     assert state['k1']['status'] == 'done' and log[0]['kind'] == 'thu_thuat' and log[0]['result'] == 'done'
+
+
+def test_run_tasks_bhyt_first_then_vien_phi_without_exam_page():
+    rows = [_task_row('vp', bhyt=False), _task_row('bh')]
+    mon = TaskMonitor([{'result': 'done', 'steps': [], 'procedure_end': None},
+                       {'result': 'waiting', 'earliest': DT(2026, 9, 28, 10, 5), 'message': 'chờ đóng tiền', 'steps': [], 'procedure_end': None}])
+    state, log = {}, []
+    assert cm.run_tasks(mon, rows, state, log, auto=True, now=NOW) == 2
+    assert [e['khambenhid'] for e in log] == ['bh', 'vp']  # BHYT trước dù đứng sau trong danh sách
+    # Viện phí: không mở màn khám bấm Thực hiện, vào thẳng D/s Thủ thuật.
+    assert mon.calls == [('exam', []), 'procedures', 'procedures']
+    assert state['vp']['status'] == 'waiting' and state['vp']['earliest'] == '2026-09-28T10:05:00'
 
 
 def test_auto_tasks_do_not_retry_failures_or_wait_early():
