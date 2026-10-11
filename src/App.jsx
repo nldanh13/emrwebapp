@@ -296,7 +296,7 @@ export default function App() {
             ['hchanh-vtyt', () => <HchahnTab toast={toast} workDateRange={workDateRange} view="vtyt" />],
             ['discharge-sign', () => <DischargeSignTab toast={toast} />],
             ['records-check', () => <RecordsCheckTab toast={toast} workDateRange={workDateRange} />],
-            ['sick-leave', () => <SickLeaveTab toast={toast} workDateRange={workDateRange} />],
+            ['sick-leave', () => <SickLeaveTab toast={toast} />],
             ['vtyt-catalog', () => <VtytCatalogManager />],
             ['medication-catalog', () => <MedicationCatalogManager />],
             ['account-settings', () => <AccountSettingsTab toast={toast} />],

@@ -1,6 +1,5 @@
 // src/components/clinic/clinicBoard.js — gom dữ liệu Danh sách Khám bệnh (worker clinic_monitor.py)
-// thành 3 khung của màn Phòng khám: lượt khám, việc cần làm, xin nghỉ ốm. Hàm thuần, có test.
-import { isLikelyWorkingAge } from '../../utils/workingAge.js';
+// thành các khung của màn Phòng khám: lượt khám, việc cần làm. Hàm thuần, có test.
 
 // Trạng thái EMR → 3 nhóm người dùng nhìn: Chờ khám / Đang thực hiện / Hoàn tất khám.
 export function stageBucket(row) {
@@ -83,33 +82,6 @@ export function todoCounts(items = []) {
   const out = { tt: 0, pt: 0, sbbhc: 0 };
   for (const it of items) out[it.kind] += 1;
   return out;
-}
-
-// Cùng cách máy chủ đặt khóa (server/routes/clinic.js, sanitizeSickLeavePatient).
-export function sickLeaveKey(row) {
-  if (row?.khambenhid) return row.khambenhid;
-  const m = String(row?.thoi_gian || '').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  const d = new Date();
-  const day = m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`
-    : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  return `${row?.ma_bn}:${day}`;
-}
-
-// Gợi ý để đánh dấu xin nghỉ ốm: đã vào khám, còn tuổi lao động, chưa đánh dấu.
-export function sickLeaveSuggestions(rows = [], markedKeys = new Set(), refYear = new Date().getFullYear()) {
-  return rows.filter(r => r && r.stage !== 'cho_kham' && !markedKeys.has(sickLeaveKey(r))
-    && isLikelyWorkingAge(r.nam_sinh, '', refYear));
-}
-
-export function sickLeavePayload(row) {
-  return {
-    khambenhid: row.khambenhid || '',
-    ma_bn: row.ma_bn || '',
-    ho_ten: row.ho_ten || '',
-    nam_sinh: row.nam_sinh || '',
-    thoi_gian: row.thoi_gian || '',
-    chan_doan: row.details?.cd_chinh || row.details?.so_bo || '',
-  };
 }
 
 // Ngày của danh sách đang hiện: ngày người dùng chọn xem lại (list_date), không thì ngày của lần đọc

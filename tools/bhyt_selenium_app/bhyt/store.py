@@ -8,7 +8,10 @@ import sqlite3
 import threading
 from typing import Any, Iterable
 
-from .mapping import Record, validate_fields
+from .mapping import SICK_LEAVE_ANSWERED, Record, validate_fields
+
+# Câu trả lời "có/không nghỉ ốm" của người dùng: quét lại cùng giấy không được ghi đè.
+_ANSWER_KEYS = ("hoi_nghi_om", "ghi_chu", "nghi_tu_ngay", "nghi_den_ngay")
 
 
 class Store:
@@ -80,6 +83,10 @@ class Store:
                     for key, value in old_fields.items():
                         if value and not new_fields.get(key):
                             new_fields[key] = value
+                    if old_fields.get("hoi_nghi_om") in SICK_LEAVE_ANSWERED:
+                        for key in _ANSWER_KEYS:
+                            if key in old_fields:
+                                new_fields[key] = old_fields[key]
                     data["fields_json"] = json.dumps(new_fields, ensure_ascii=False)
                     data["issues_json"] = json.dumps(
                         validate_fields(old["doc_type"], new_fields), ensure_ascii=False
@@ -148,6 +155,24 @@ class Store:
         with self.connect() as con:
             row = con.execute("SELECT * FROM records WHERE id=?", (record_id,)).fetchone()
             return self._decode(row) if row else None
+
+    def answer_sick_leave(self, record_id: int, yes: bool, tu_ngay: str = "", den_ngay: str = ""):
+        """Ghi câu trả lời của người bệnh thẻ DN. Có nghỉ thì cần ngày, thêm vào Ghi chú."""
+        record = self.get_record(record_id)
+        if not record:
+            raise KeyError(record_id)
+        if not yes:
+            self.update_fields(record_id, {"hoi_nghi_om": "khong"})
+            return
+        tu_ngay, den_ngay = str(tu_ngay or "").strip(), str(den_ngay or "").strip()
+        if not tu_ngay or not den_ngay:
+            raise ValueError("Cần nhập nghỉ ốm từ ngày nào đến ngày nào.")
+        note = f"Nghỉ ốm từ ngày {tu_ngay} đến hết ngày {den_ngay}."
+        old_note = str(record["fields"].get("ghi_chu") or "").strip()
+        self.update_fields(record_id, {
+            "hoi_nghi_om": "co", "nghi_tu_ngay": tu_ngay, "nghi_den_ngay": den_ngay,
+            "ghi_chu": f"{old_note} {note}".strip() if old_note else note,
+        })
 
     def update_fields(self, record_id: int, updates: dict[str, str]):
         with self._lock, self.connect() as con:

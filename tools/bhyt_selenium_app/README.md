@@ -2,23 +2,15 @@
 
 Ứng dụng chạy **trên máy Windows của bạn**, đọc Excel, lọc hồ sơ theo 16 bác sĩ đã cấu hình và nhập dữ liệu vào `gdbhyt.baohiemxahoi.gov.vn` bằng Chrome/Selenium.
 
-> **Cách khuyến nghị bây giờ không cần công cụ này:** ở tab "Nghỉ ốm", khung **Nhập lên Cổng BHYT** →
-> bấm **Mở cổng BHYT**, đăng nhập trên tab cổng (CAPTCHA/OTP như thường), rồi bấm nút dấu trang **Nhập BHYT**
-> trên tab cổng (cùng cách nút "Data Hub" trên tab EMR). Data Hub điền form ngay trên tab cổng đó, điền thử
-> không bấm Lưu, nhập thật tự tick "Đã nộp". Không cần Python, Chrome riêng hay `start.bat`
-> (`src/utils/bhytPortal.js`, `src/components/BhytPortalLinkPanel.jsx`). Công cụ dưới đây giữ làm dự phòng.
-
-## Liên hệ với tab "Nghỉ ốm" trong app chính
-
-Đây là công cụ **độc lập** (Python/Flask riêng, không chạy chung process với server Express của `emrwebapp`) — vì cổng BHYT cần người dùng tự nhập CAPTCHA/OTP trên Chrome thật, không thể chạy headless trên server.
-
-**Cách dùng khuyến nghị — 1 nút từ app chính:** ở tab "Nghỉ ốm" (`src/components/SickLeaveTab.jsx`), sau khi đã import file BHXH và rà soát xong (cột "Rà soát BHXH" hết báo thiếu), bấm nút **"↗ Mở công cụ nhập cổng BHXH"** — tự mở trang này kèm sẵn URL server + Mã phiên (không cần copy/paste tay) và tự mở Chrome tới trang chủ cổng BHYT. Bấm **"Lấy dữ liệu"** ở bước 2b để lấy thẳng bảng đã rà soát qua API (`bhyt/emrwebapp_client.py`), tự bỏ qua ca đang "cần sửa" và ca đã tick "Đã nộp" — không cần đọc lại Excel.
-
-Cách cũ (đọc trực tiếp file .xlsx BHXH gửi, bước 2) vẫn dùng được song song, cho trường hợp không có sẵn `emrwebapp` đang chạy hoặc muốn nhập file đã chỉnh tay riêng.
-
-Sau khi nhập xong, xuất `trang_thai_nhap_bhyt.csv` (nút xuất CSV trạng thái) và tự tick "Đã nộp" cho các ca `success` ở tab "Nghỉ ốm" trên app chính.
-
-**Bật cùng lúc cả 2 trên 1 máy Windows:** nhấp đúp `start-all.bat` ở gốc repo (`emrwebapp/`) — mở song song `npm start` (cổng 3001) và `start.bat` của tool này (cổng 5005) trong 2 cửa sổ console riêng.
+> **Cách dùng bây giờ: tab "Nghỉ ốm" của app chính, chỉ giải CAPTCHA.** Lưu tài khoản cổng BHXH một lần
+> (Mã cơ sở KCB, tên đăng nhập, mật khẩu, lưu ở `secrets/bhyt_portal_account.json` trên máy chủ). Mỗi lần
+> nhập: bấm **Lấy mã CAPTCHA** (app tự khởi động công cụ này nếu chưa chạy), gõ mã, bấm **Đăng nhập và nhập
+> tự động**. Máy chủ app điền tài khoản, đăng nhập EMR cho công cụ, rồi công cụ tự chạy một lượt
+> (`bhyt/auto_run.py`): quét Danh sách Khám bệnh hôm nay (đọc phiếu nghỉ), quét người bệnh ra viện ngày đã chọn
+> (đọc giấy ra viện), nhập thật lên cổng các hồ sơ đủ dữ liệu, giữ phiên để nhập hết danh sách. Ca thẻ DN chưa
+> ghi nghỉ ốm chờ người dùng bấm **Có nghỉ** (kèm ngày) hoặc **Không nghỉ** trên tab.
+>
+> Lần đầu trên máy mới vẫn cần nhấp đúp `start.bat` một lần để cài thư viện Python.
 
 ## Chức năng
 

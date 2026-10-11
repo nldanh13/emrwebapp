@@ -149,6 +149,9 @@ function apiActionLabel(method, url) {
     'POST /api/sick-leave-import': 'nhập danh sách BHXH (.xlsx) để rà soát nghỉ ốm/ra viện',
     'POST /api/sick-leave-import/delete-row': 'xoá dòng đã nhập trong danh sách BHXH',
     'POST /api/sick-leave-launch-bhyt-tool': 'tự khởi động công cụ nhập cổng BHXH',
+    'GET /api/sick-leave-bhyt-account': 'tải tài khoản cổng BHXH đã lưu',
+    'POST /api/sick-leave-bhyt-account': 'lưu tài khoản cổng BHXH',
+    'POST /api/sick-leave-bhyt-login': 'đăng nhập cổng BHXH bằng mã CAPTCHA',
     'POST /api/check-current-bed': 'kiểm buồng giường hiện tại',
 
     'POST /api/hchanh/sync': 'đồng bộ danh sách kiểm hồ sơ',
@@ -798,6 +801,9 @@ export const getSickLeaveImport = () => get('/api/sick-leave-import');
 export const importSickLeaveList = (payload) => post('/api/sick-leave-import', payload);
 export const deleteSickLeaveImportRow = (payload) => post('/api/sick-leave-import/delete-row', payload);
 export const launchBhytTool = () => post('/api/sick-leave-launch-bhyt-tool', {});
+export const getBhytPortalAccount = () => get('/api/sick-leave-bhyt-account');
+export const saveBhytPortalAccount = (account) => post('/api/sick-leave-bhyt-account', account);
+export const loginBhytPortal = (captcha) => post('/api/sick-leave-bhyt-login', { captcha });
 
 export const getClinicCareDraft = () => get('/api/clinic/care-draft');
 export const startClinicMonitor = (payload) => post('/api/clinic/monitor/start', payload);

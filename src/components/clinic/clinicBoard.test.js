@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  completionGroups, drugLabel, isoDay, monitorDay, sickLeaveKey, sickLeavePayload, sickLeaveSuggestions, stageCounts, todoCounts, todoItems,
+  completionGroups, drugLabel, isoDay, monitorDay, stageCounts, todoCounts, todoItems,
 } from './clinicBoard.js';
 
 const row = (over = {}) => ({
@@ -46,23 +46,6 @@ describe('clinicBoard', () => {
     expect(items[1]).toMatchObject({ status: 'Chờ tới 09:10', tone: 'muted' });
     expect(items[3].status).toBe('Đã soạn nháp, chờ duyệt');
     expect(todoCounts(items)).toEqual({ tt: 2, pt: 1, sbbhc: 1 });
-  });
-
-  it('gợi ý nghỉ ốm: đã vào khám, còn tuổi lao động, chưa đánh dấu', () => {
-    const rows = [
-      row({ khambenhid: 'a' }),
-      row({ khambenhid: 'b', nam_sinh: '1940' }),
-      row({ khambenhid: 'c', stage: 'cho_kham' }),
-      row({ khambenhid: 'd' }),
-    ];
-    const out = sickLeaveSuggestions(rows, new Set(['d']), 2026);
-    expect(out.map(r => r.khambenhid)).toEqual(['a']);
-  });
-
-  it('khóa nghỉ ốm khớp cách máy chủ đặt', () => {
-    expect(sickLeaveKey(row())).toBe('k1');
-    expect(sickLeaveKey(row({ khambenhid: '' }))).toBe('99000001:2026-10-11');
-    expect(sickLeavePayload(row({ details: { cd_chinh: 'S52 Gãy xương' } }))).toMatchObject({ ma_bn: '99000001', chan_doan: 'S52 Gãy xương' });
   });
 });
 

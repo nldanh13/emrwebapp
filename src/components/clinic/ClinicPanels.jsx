@@ -1,14 +1,12 @@
-// src/components/clinic/ClinicPanels.jsx — 3 khung của màn Phòng khám:
+// src/components/clinic/ClinicPanels.jsx — 2 khung của màn Phòng khám:
 //   VisitPanel     lượt khám (chờ khám / đang thực hiện / hoàn tất) và người chờ hoàn tất khám theo đơn thuốc
 //   TodoPanel      việc cần làm theo chỉ định: thủ thuật, phẫu thuật, SBBHC
-//   SickLeavePanel người bệnh xin nghỉ ốm, cuối buổi chuyển sang tab Nghỉ ốm để nhập lên cổng BHXH
-import { useMemo, useState } from 'react';
-import { IconChecks, IconFileExport, IconPlus, IconX } from '@tabler/icons-react';
+import { useMemo } from 'react';
+import { IconChecks } from '@tabler/icons-react';
 import { C, FS } from '../../tokens.js';
 import { Btn } from '../shared.jsx';
-import * as api from '../../api.js';
 import {
-  completionGroups, drugLabel, sickLeaveKey, sickLeavePayload, sickLeaveSuggestions, stageCounts, todoCounts, todoItems,
+  completionGroups, drugLabel, stageCounts, todoCounts, todoItems,
 } from './clinicBoard.js';
 
 const TONE_COLOR = { ok: C.green, warn: C.amber, error: C.red, muted: C.text2 };
@@ -149,64 +147,4 @@ export function TodoPanel({ rows, running, busy, actionRunning, autoTasks, onRun
 function todayIso() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-export function SickLeavePanel({ rows, entries, onEntries, onOpenSickLeave, toast, day = '', dayText = 'hôm nay' }) {
-  const [pick, setPick] = useState('');
-  const [busy, setBusy] = useState('');
-  const today = day || todayIso();
-  const todayEntries = useMemo(() => (entries || []).filter(e => e.ngay === today)
-    .sort((a, b) => String(a.thoi_gian).localeCompare(String(b.thoi_gian))), [entries, today]);
-  const markedKeys = useMemo(() => new Set((entries || []).map(e => e.key)), [entries]);
-  const suggestions = useMemo(() => sickLeaveSuggestions(rows, markedKeys), [rows, markedKeys]);
-
-  const change = async (action, patient) => {
-    setBusy(`${action}:${patient.ma_bn}`);
-    try {
-      const r = action === 'add' ? await api.addClinicSickLeave(patient) : await api.removeClinicSickLeave(patient);
-      if (r.status !== 'ok') throw new Error(r.message);
-      onEntries(r.entries || []);
-      if (action === 'add') setPick('');
-    } catch (e) {
-      toast?.(String(e.message || e), 'error');
-    } finally {
-      setBusy('');
-    }
-  };
-
-  const picked = suggestions.find(r => sickLeaveKey(r) === pick);
-  return (
-    <Panel title="Xin nghỉ ốm" aside={<span style={{ fontSize: FS.xs, color: C.text2 }}>{todayEntries.length} người {dayText}</span>}>
-      {todayEntries.length ? todayEntries.map(e => (
-        <PatientLine key={e.key} row={e}
-          sub={e.chan_doan ? <div style={{ fontSize: FS.xs, color: C.text2 }}>{e.chan_doan}</div> : null}
-          right={(
-            <Btn icon={IconX} aria-label={`Bỏ ${e.ho_ten} khỏi danh sách nghỉ ốm`} loading={busy === `remove:${e.ma_bn}`}
-              onClick={() => change('remove', e)} style={{ minHeight: 28, padding: '2px 8px' }}>Bỏ</Btn>
-          )} />
-      )) : <Empty>{`Chưa có người bệnh nào xin nghỉ ốm ${dayText}.`}</Empty>}
-
-      <form onSubmit={ev => { ev.preventDefault(); if (picked) change('add', sickLeavePayload(picked)); }}
-        style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        <select value={pick} onChange={e => setPick(e.target.value)} aria-label="Chọn người bệnh xin nghỉ ốm"
-          style={{ flex: '1 1 200px', minWidth: 0, height: 32, padding: '0 8px', border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontSize: FS.md, fontFamily: 'inherit' }}>
-          <option value="">{suggestions.length ? `Chọn người bệnh (${suggestions.length} người còn tuổi lao động)` : 'Không còn người bệnh để chọn'}</option>
-          {suggestions.map(r => (
-            <option key={sickLeaveKey(r)} value={sickLeaveKey(r)}>{r.ho_ten} · {r.ma_bn}{r.nam_sinh ? ` · ${r.nam_sinh}` : ''}</option>
-          ))}
-        </select>
-        <Btn type="submit" icon={IconPlus} disabled={!picked} loading={busy.startsWith('add:')}>Thêm</Btn>
-      </form>
-
-      <div>
-        <Btn variant="primary" icon={IconFileExport} disabled={!todayEntries.length} onClick={onOpenSickLeave}>
-          Nhập lên cổng BHXH
-        </Btn>
-      </div>
-      <div style={{ fontSize: FS.xs, color: C.text2 }}>
-        Danh sách khám không cho biết ai xin giấy nghỉ, nên đánh dấu ở đây khi người bệnh xin. Cuối buổi bấm "Nhập lên cổng BHXH":
-        danh sách được chuyển sang tab Nghỉ ốm (mục Ngoại trú) để nhập lên cổng và đánh dấu đã nộp.
-      </div>
-    </Panel>
-  );
 }
