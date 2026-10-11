@@ -131,6 +131,7 @@ function apiActionLabel(method, url) {
     'POST /api/clinic/monitor/tasks': 'nhập thủ thuật đã có chỉ định',
     'POST /api/clinic/monitor/auto-tasks': 'bật/tắt tự hoàn thành khi có chỉ định',
     'GET /api/clinic/sick-leave': 'tải danh sách người bệnh xin nghỉ ốm',
+    'GET /api/clinic/emr-defaults': 'đọc địa chỉ EMR đã khai',
     'POST /api/clinic/sick-leave': 'cập nhật danh sách người bệnh xin nghỉ ốm',
     'GET /api/data-sessions': 'tải danh sách phiên dữ liệu',
     'DELETE /api/data-sessions': 'xoá phiên dữ liệu',
@@ -805,6 +806,7 @@ export const setClinicPatientWeight = (khambenhid, kg) => post('/api/clinic/moni
 export const runClinicTasks = () => post('/api/clinic/monitor/tasks', {});
 export const setClinicAutoTasks = (enabled) => post('/api/clinic/monitor/auto-tasks', { enabled });
 export const getClinicSickLeave = () => get('/api/clinic/sick-leave');
+export const getClinicEmrDefaults = () => get('/api/clinic/emr-defaults');
 export const addClinicSickLeave = (patient) => post('/api/clinic/sick-leave', { action: 'add', patient });
 export const removeClinicSickLeave = (patient) => post('/api/clinic/sick-leave', { action: 'remove', patient });
 

@@ -97,3 +97,12 @@ def test_parse_tt_history_modal_and_shift_classification():
     nurse = classify_procedure_performer({"procedure_service_name": "Thay băng vết thương", "procedure_order_time": "15:20 20/05/2026"}, sched)
     assert nurse["procedure_performer_role"] == "nurse"
     assert nurse["procedure_performer_name"] == "ĐD Một"
+
+
+def test_clinic_list_url_built_from_page_after_login_when_not_configured(monkeypatch):
+    # Không khai URL Danh sách Khám bệnh: dựng từ trang sau đăng nhập, giữ mã phiên (usid/st).
+    import clinic_outpatient as co
+    monkeypatch.setattr(co, "DEFAULT_CLINIC_LIST_URL", "")
+    url = co._build_clinic_url("http://192.168.2.26:2026/home.aspx?scope=sys&lang=vi&usid=abc&st=1&wpid=trangchu", "")
+    assert url.startswith("http://192.168.2.26:2026/home.aspx?")
+    assert "usid=abc" in url and "st=1" in url and "wpid=khambenhdanhsachdraw" in url

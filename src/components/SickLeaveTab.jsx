@@ -11,6 +11,7 @@ import { useOnTabReturn } from '../hooks/useTabActivity.js';
 import { SkeletonTable } from './Skeleton.jsx';
 import { loadClinicConfig, saveClinicConfig } from '../utils/clinicLogin.js';
 import { isLikelyWorkingAge, isLikelyWorkingAgeByAge } from '../utils/workingAge.js';
+import { useEmrUrlDefault } from '../hooks/useEmrUrlDefault.js';
 import ClinicAccountPicker, { clinicLoginPayload, hasClinicLogin } from './ClinicAccountPicker.jsx';
 
 
@@ -490,12 +491,11 @@ export default function SickLeaveTab({ toast, workDateRange }) {
   const [clinicUsername, setClinicUsernameState] = useState(() => loadClinicConfig().username);
   const [clinicPassword, setClinicPassword] = useState('');
   const [clinicLoginUrl, setClinicLoginUrlState] = useState(() => loadClinicConfig().loginUrl);
-  const [clinicListUrl, setClinicListUrlState] = useState(() => loadClinicConfig().listUrl);
+  const emrUrlDefault = useEmrUrlDefault();
   const [clinicAccountName, setClinicAccountNameState] = useState(() => loadClinicConfig().accountName);
   const setClinicAccountName = (v) => { setClinicAccountNameState(v); saveClinicConfig({ accountName: v }); };
   const setClinicUsername = (v) => { setClinicUsernameState(v); saveClinicConfig({ username: v }); };
   const setClinicLoginUrl = (v) => { setClinicLoginUrlState(v); saveClinicConfig({ loginUrl: v }); };
-  const setClinicListUrl = (v) => { setClinicListUrlState(v); saveClinicConfig({ listUrl: v }); };
   const [scanning, setScanning] = useState(false);
   const [scannedOutpatientRows, setScannedOutpatientRows] = useState([]);
   const [scanMessage, setScanMessage] = useState('');
@@ -541,7 +541,6 @@ export default function SickLeaveTab({ toast, workDateRange }) {
     setClinicUsernameState(saved.username);
     setClinicAccountNameState(saved.accountName);
     setClinicLoginUrlState(saved.loginUrl);
-    setClinicListUrlState(saved.listUrl);
   });
 
   const handleImportFile = useCallback(async (file) => {
@@ -573,8 +572,9 @@ export default function SickLeaveTab({ toast, workDateRange }) {
 
   const handleScanOutpatient = useCallback(async () => {
     const login = { accountName: clinicAccountName, username: clinicUsername, password: clinicPassword };
-    if (!hasClinicLogin(login) || !clinicLoginUrl.trim() || !clinicListUrl.trim()) {
-      toast?.('Chưa chọn bác sĩ (hoặc chưa nhập tài khoản, mật khẩu), hoặc thiếu URL phòng khám để quét EMR.', 'error');
+    const loginUrl = emrUrlDefault ? '' : clinicLoginUrl.trim();
+    if (!hasClinicLogin(login) || (!emrUrlDefault && !loginUrl)) {
+      toast?.('Chưa chọn bác sĩ (hoặc chưa nhập tài khoản, mật khẩu), hoặc chưa có địa chỉ đăng nhập EMR để quét.', 'error');
       return;
     }
     const { dateFrom, dateTo } = workDateRangeToDmy(workDateRange);
@@ -584,7 +584,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
       const result = await api.runClinicPreview({
         mode: 'date_range', dateFrom, dateTo,
         ...clinicLoginPayload(login),
-        loginUrl: clinicLoginUrl.trim(), listUrl: clinicListUrl.trim(),
+        loginUrl,
         headless: true, clinicSchedule: {},
       });
       if (result?.status !== 'ok' && result?.status !== 'partial') throw new Error(result?.message || 'Không quét được EMR.');
@@ -596,7 +596,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
     } finally {
       setScanning(false);
     }
-  }, [toast, workDateRange, clinicAccountName, clinicUsername, clinicPassword, clinicLoginUrl, clinicListUrl]);
+  }, [toast, workDateRange, clinicAccountName, clinicUsername, clinicPassword, clinicLoginUrl, emrUrlDefault]);
 
   const range = useMemo(() => sanitizeWorkDateRange(workDateRange), [workDateRange?.from, workDateRange?.to]);
   const scannedOutpatientList = useMemo(() => buildScannedOutpatientCandidates(scannedOutpatientRows), [scannedOutpatientRows]);
@@ -829,7 +829,7 @@ export default function SickLeaveTab({ toast, workDateRange }) {
           <div style={{ marginTop: 20 }}>
             <Collapsible
               title="Quét trực tiếp EMR theo khoảng ngày"
-              subtitle={scannedOutpatientRows.length ? `Đã quét ${scannedOutpatientRows.length} dòng · ${scannedOutpatientList.length} ca còn tuổi lao động` : 'Cần tài khoản/URL phòng khám — chưa quét'}
+              subtitle={scannedOutpatientRows.length ? `Đã quét ${scannedOutpatientRows.length} dòng · ${scannedOutpatientList.length} ca còn tuổi lao động` : 'Cần tài khoản phòng khám — chưa quét'}
               open={scanPanelOpen}
               onToggle={() => setScanPanelOpen(o => !o)}
               badge={scanning ? <Spinner size={12} /> : null}
@@ -849,10 +849,8 @@ export default function SickLeaveTab({ toast, workDateRange }) {
                     style={{ padding: '6px 8px', fontSize: FS.sm, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />}
                   {!clinicAccountName && <input placeholder="Mật khẩu" type="password" value={clinicPassword} onChange={e => setClinicPassword(e.target.value)}
                     style={{ padding: '6px 8px', fontSize: FS.sm, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />}
-                  <input placeholder="URL đăng nhập" value={clinicLoginUrl} onChange={e => setClinicLoginUrl(e.target.value)}
-                    style={{ padding: '6px 8px', fontSize: FS.sm, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
-                  <input placeholder="URL Danh sách Khám bệnh" value={clinicListUrl} onChange={e => setClinicListUrl(e.target.value)}
-                    style={{ padding: '6px 8px', fontSize: FS.sm, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />
+                  {emrUrlDefault === false && <input placeholder="Địa chỉ đăng nhập EMR" value={clinicLoginUrl} onChange={e => setClinicLoginUrl(e.target.value)}
+                    style={{ padding: '6px 8px', fontSize: FS.sm, border: `1px solid ${C.border}`, borderRadius: 5, background: C.surface, color: C.text, fontFamily: 'inherit' }} />}
                 </div>
                 <Btn variant="primary" onClick={handleScanOutpatient} disabled={scanning} style={{ padding: '6px 12px', fontSize: FS.sm }}>
                   {scanning ? <><Spinner size={11} /> Đang quét...</> : '⟳ Quét EMR theo khoảng ngày'}
