@@ -1830,6 +1830,8 @@ class AutoWorker:
                         selenium_rows.append(bn)
                         continue
                     except Exception as e:
+                        if isinstance(e, EmrAccessProtectionError):
+                            raise  # Mọi ca cùng dừng, không mở Chrome sau khi EMR quá tải.
                         if not allow_selenium_fallback and not helper_mode:
                             raise
                         if helper_mode and _is_bridge_error(e):
