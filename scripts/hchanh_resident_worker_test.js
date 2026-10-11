@@ -38,7 +38,7 @@ async function testSerialQueue() {
         observed.push(message.id);
         setTimeout(() => {
           inflight -= 1;
-          worker._onStdout(child, Buffer.from(JSON.stringify({ id: message.id, code: 0 }) + '\\n'));
+          worker._onStdout(child, Buffer.from(JSON.stringify({ id: message.id, code: 0 }) + '\n'));
         }, 8);
       }},
     };
