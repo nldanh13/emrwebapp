@@ -124,3 +124,29 @@ def test_shared_cooldown_blocks_without_network(tmp_path):
     pause_origin(origin, str(tmp_path), 30)
     with pytest.raises(EmrAccessProtectionError, match="giảm tải"):
         reserve_slot(origin, str(tmp_path), gap_ms=500)
+
+
+def test_login_stops_after_overload_without_second_probe(monkeypatch):
+    s = session(monkeypatch)
+    monkeypatch.setattr(s, "load_cookies", lambda: False)
+    calls = []
+    def fail(url):
+        calls.append(url)
+        raise EmrAccessProtectionError("EMR đang quá tải")
+    monkeypatch.setattr(s, "get_html", fail)
+    with pytest.raises(EmrAccessProtectionError):
+        s.login()
+    assert calls == [s.cfg.url_inpatient_list]
+
+
+def test_explicit_zero_retries_and_no_shared_gap_config(monkeypatch):
+    monkeypatch.setenv("EMR_HTTP_GLOBAL_GAP_MS", "0")
+    s = reader.EmrHttpSession.from_config_dict({
+        "url_login": "http://hospital.test/login.aspx",
+        "username": "test",
+        "password": "dummy",
+        "url_inpatient_list": "http://hospital.test/home.aspx",
+        "http_read_max_retries": 0,
+    })
+    assert s._attempts("GET") == 1
+    assert reader._global_gap_ms() == 0
