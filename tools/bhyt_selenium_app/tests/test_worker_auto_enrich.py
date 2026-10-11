@@ -50,6 +50,10 @@ class FakeEmr:
         self.calls.append(name)
         return {"fields": self.by_name.get(name, {})}
 
+    def read_giay_ra_vien_pdf(self, name):
+        self.calls.append(("grv", name))
+        return {"fields": self.by_name.get(name, {})}
+
 
 def rec(rid, name, fields):
     return {"id": rid, "patient_name": name, "status": "pending",
@@ -94,6 +98,18 @@ class WorkerAutoEnrichTests(unittest.TestCase):
         w._run([1], dry_run=False, delay_seconds=0, auto_enrich=True)
         self.assertEqual(portal.filled, [])
         self.assertEqual(store.records[1]["status"], "error")
+
+    def test_discharge_record_reads_giay_ra_vien(self):
+        # Hồ sơ giấy ra viện (mẫu 03) phải đọc giấy ra viện, không bấm "Xem phiếu" phòng khám.
+        r = rec(1, "TRAN VAN B", {})
+        r["doc_type"] = "GRV03"
+        store = FakeStore([r])
+        portal = FakePortal()
+        emr = FakeEmr({"TRAN VAN B": {"so_kcb": "x"}})
+        w = Worker(portal, store, emr)
+        w._run([1], dry_run=False, delay_seconds=0, auto_enrich=True)
+        self.assertEqual(emr.calls, [("grv", "TRAN VAN B")])
+        self.assertEqual(portal.filled, [(1, False)])
 
 
 if __name__ == "__main__":

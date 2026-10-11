@@ -43,6 +43,17 @@ DEFAULT_EMR_SELECTORS = {
     "modal": "divModalContentX",
     # Nút/link "Xem phiếu" (phòng khám) — bấm sẽ ra file PDF phiếu nghỉ.
     "phieu_link": "Xem phiếu",
+    # Giấy ra viện (nội trú): Danh sách Điều trị nội trú → hồ sơ → in "Giấy ra viện" (PDF).
+    # wpid và bảng tblNoiTru theo worker/hchanh_fetch.py; ô tìm kiếm, ô trạng thái và tên
+    # phiếu in chưa xác nhận trên máy bệnh viện — EMR khác thì chỉnh trong config.json.
+    "inpatient_wpid": "danhsachdieutrinoitrudraw",
+    "inpatient_table": "NoiTru",
+    "inpatient_search_input": "txtTimKiem",
+    "inpatient_search_button": "btnTimKiem",
+    "inpatient_status_select": "",
+    "inpatient_status_value": "Hoàn tất",
+    "grv_report_link": "Giấy ra viện",
+    "grv_report_id": "",
     # Các ô trong form giấy nghỉ (để ĐỌC giá trị)
     "so_ngay_nghi": "txtSoNgayNghi",
     "don_vi_lam_viec": "txtDonViLamViec",
@@ -83,7 +94,8 @@ class EmrPortal:
     def __init__(self, base_url: str, profile_dir: str | Path, timeout: int = 40,
                  headless: bool = True, selectors: dict[str, str] | None = None,
                  debug_dir: str | Path | None = None,
-                 download_dir: str | Path | None = None):
+                 download_dir: str | Path | None = None,
+                 doctors: list[str] | None = None):
         self.base_url = (base_url or "").rstrip("/")
         self.profile_dir = Path(profile_dir).resolve()
         self.timeout = timeout
@@ -94,6 +106,7 @@ class EmrPortal:
             Path(download_dir).resolve() if download_dir
             else self.profile_dir.parent / "emr_downloads"
         )
+        self.doctors = list(doctors) if doctors else None  # để nhận tên trưởng khoa trên giấy ra viện
         self.driver: webdriver.Chrome | None = None
         self._lock = threading.RLock()
 
@@ -147,6 +160,8 @@ class EmrPortal:
         return self.driver
 
     def _is_login_page(self) -> bool:
+        if self.driver is None:
+            return True  # chưa mở trình duyệt EMR = chưa đăng nhập
         try:
             return "login.aspx" in (self.driver.current_url or "").lower()
         except WebDriverException:
@@ -229,6 +244,87 @@ class EmrPortal:
         self._click(By.XPATH, self.sel("patient_record_menu"), "mục hồ sơ người bệnh")
         self._dismiss_error_panel_best_effort()
 
+    # ── Nội trú: Danh sách Điều trị nội trú → hồ sơ → in Giấy ra viện ───────────
+    def _inpatient_list_url(self) -> str:
+        """URL danh sách nội trú, giữ tham số phiên (scope/lang/role/usid/st) của trang
+        đang mở — giống _clean_inpatient_list_url ở worker/hchanh_fetch.py."""
+        from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+        p = urlparse(self._driver().current_url or "")
+        q = dict(parse_qsl(p.query, keep_blank_values=True))
+        if "usid" not in {k.lower() for k in q}:
+            raise EmrError(
+                "Không thấy phiên EMR trên trang đang mở (thiếu usid). Hãy đăng nhập EMR lại."
+            )
+        clean = {k: v for k, v in q.items() if k.lower() in {"scope", "lang", "role", "usid", "st"}}
+        clean["wpid"] = self.sel("inpatient_wpid")
+        return urlunparse((p.scheme, p.netloc, p.path or "/home.aspx", "", urlencode(clean), ""))
+
+    def _open_inpatient_list(self, keyword: str = ""):
+        """Mở Danh sách Điều trị nội trú, chọn trạng thái (mặc định "Hoàn tất" = đã ra
+        viện) nếu đã cấu hình ô trạng thái, gõ từ khoá nếu có rồi bấm Tìm."""
+        driver = self._driver()
+        driver.get(self._inpatient_list_url())
+        time.sleep(1.0)
+        status_id = self.sel("inpatient_status_select")
+        if status_id:
+            driver.execute_script(
+                """
+                const el = document.getElementById(arguments[0]);
+                if (!el) return;
+                const opt = [...el.options].find(o => o.text.trim() === arguments[1]);
+                if (opt) { el.value = opt.value; el.dispatchEvent(new Event('change', {bubbles: true})); }
+                """,
+                status_id, self.sel("inpatient_status_value"),
+            )
+        inputs = driver.find_elements(By.ID, self.sel("inpatient_search_input"))
+        if keyword and inputs:
+            inputs[0].clear(); inputs[0].send_keys(keyword)
+        buttons = driver.find_elements(By.ID, self.sel("inpatient_search_button"))
+        if buttons and (keyword or status_id):
+            driver.execute_script("arguments[0].click();", buttons[0])
+        time.sleep(1.0)
+
+    def _go_to_inpatient_record(self, name: str):
+        """Mở hồ sơ nội trú của người bệnh: tìm theo tên trong danh sách nội trú, bấm
+        link trên đúng dòng của bảng tblNoiTru."""
+        self._open_inpatient_list(name)
+        lit = _xpath_literal(name.upper())
+        table = _xpath_literal(self.sel("inpatient_table"))
+        row_link = (f"//table[contains(@id, {table})]//tr"
+                    f"[contains(translate(normalize-space(.), 'abcdefghijklmnopqrstuvwxyz', "
+                    f"'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), {lit})]//a")
+        try:
+            self._click(By.XPATH, row_link, f"hồ sơ nội trú {name.upper()}")
+        except EmrError:
+            self._click(By.PARTIAL_LINK_TEXT, name.upper(), f"hồ sơ nội trú {name.upper()}")
+        time.sleep(1.0)
+        self._dismiss_error_panel_best_effort()
+
+    def _click_grv_report(self):
+        """In "Giấy ra viện". Đã biết mã phiếu (grv_report_id) thì gọi thẳng
+        OnReportPdf(mã) như worker/ward_print_discharge_bundle.py; chưa biết thì bấm
+        link phiếu in có chữ "Giấy ra viện" (ưu tiên link gọi OnReportPdf)."""
+        driver = self._driver()
+        report_id = self.sel("grv_report_id")
+        if report_id:
+            ok = driver.execute_script(
+                "if (typeof OnReportPdf === 'function') { OnReportPdf(arguments[0]); return true; }"
+                " return false;",
+                report_id,
+            )
+            if ok:
+                return
+        label = _xpath_literal(self.sel("grv_report_link"))
+        try:
+            self._click(By.XPATH,
+                        f"//a[contains(@href, 'OnReportPdf')][contains(normalize-space(.), {label})]",
+                        "phiếu in Giấy ra viện")
+        except EmrError:
+            self._click(By.XPATH,
+                        f"//*[self::a or self::button][contains(normalize-space(.), {label})]",
+                        "phiếu in Giấy ra viện")
+
     def open_cert_for_patient(self, patient_name: str) -> dict[str, Any]:
         """Mở form "Giấy chứng nhận nghỉ việc hưởng BHXH" của một người bệnh để ĐỌC dữ liệu.
         Dừng lại khi form đã hiện, không điền/sửa gì."""
@@ -256,7 +352,46 @@ class EmrPortal:
         tìm URL file PDF (tab mới / embed / link) rồi tải bằng requests + cookie phiên EMR.
         Nếu đều không được thì chụp trang để kỹ thuật khớp lại selector.
         """
-        from .pdf_phieu import PhieuPdfError, parse_phieu_pdf
+        from .pdf_phieu import parse_phieu_pdf
+
+        return self._read_pdf(
+            patient_name,
+            navigate=self._go_to_patient_record,
+            click=self._click_phieu_button,
+            parse=parse_phieu_pdf,
+            fail_name="xem-phieu",
+            fail_message='Bấm "Xem phiếu" xong nhưng không lấy được file PDF. Đã chụp trang — '
+                         "gửi em bản chụp để khớp lại, hoặc kiểm tra EMR có bật tải PDF không.",
+        )
+
+    def read_giay_ra_vien_pdf(self, patient_name: str) -> dict[str, Any]:
+        """Giấy ra viện (nội trú, mẫu 03): mở Danh sách Điều trị nội trú → hồ sơ người
+        bệnh → in "Giấy ra viện" ra PDF → đọc bằng pdf_giay_ra_vien. Lấy file PDF giống
+        hệt phiếu phòng khám (iframe trong modal hoặc file tải về)."""
+        from .pdf_giay_ra_vien import parse_grv_pdf
+
+        return self._read_pdf(
+            patient_name,
+            navigate=self._go_to_inpatient_record,
+            click=self._click_grv_report,
+            parse=lambda path: parse_grv_pdf(path, self.doctors),
+            fail_name="giay-ra-vien",
+            fail_message='Đã mở hồ sơ nội trú nhưng không lấy được file PDF "Giấy ra viện". '
+                         "Đã chụp trang — gửi em bản chụp để khớp lại.",
+        )
+
+    def read_sick_leave_pdf(self, patient_name: str, doc_type: str = "") -> dict[str, Any]:
+        """Đọc đúng loại giấy theo loại hồ sơ: giấy ra viện (nội trú) hoặc phiếu phòng khám."""
+        from .mapping import DOC_GRV
+
+        if doc_type == DOC_GRV:
+            return self.read_giay_ra_vien_pdf(patient_name)
+        return self.read_phieu_pdf(patient_name)
+
+    def _read_pdf(self, patient_name: str, navigate, click, parse, fail_name: str,
+                  fail_message: str) -> dict[str, Any]:
+        """Mạch chung: điều hướng tới hồ sơ → bấm nút in → lấy PDF → đọc."""
+        from .pdf_phieu import PhieuPdfError
 
         with self._lock:
             if self._is_login_page():
@@ -270,19 +405,16 @@ class EmrPortal:
             before_files = self._list_downloads()
             before_handles = set(driver.window_handles)
 
-            self._go_to_patient_record(name)
-            self._click_phieu_button()
+            navigate(name)
+            click()
 
             pdf_path = self._acquire_phieu_pdf(before_files, before_handles, name)
 
             if pdf_path is None:
-                self.dump_page("xem-phieu")
-                raise EmrError(
-                    'Bấm "Xem phiếu" xong nhưng không lấy được file PDF. Đã chụp trang — '
-                    "gửi em bản chụp để khớp lại, hoặc kiểm tra EMR có bật tải PDF không."
-                )
+                self.dump_page(fail_name)
+                raise EmrError(fail_message)
             try:
-                parsed = parse_phieu_pdf(pdf_path)
+                parsed = parse(pdf_path)
             except PhieuPdfError as exc:
                 raise EmrError(f"Tải được PDF nhưng đọc không ra: {exc}") from exc
             return {
@@ -359,36 +491,71 @@ class EmrPortal:
         """Quét danh sách khám → lọc còn tuổi lao động → với mỗi ca thử đọc phiếu
         nghỉ (Xem phiếu); ca nào có phiếu hợp lệ thì gom lại để nhập lên cổng.
         Trả về {scanned, working_age, found: [{ho_ten, doc_type, fields, pdf_path}]}."""
-        from .working_age import is_likely_working_age, is_likely_working_age_by_age
+        with self._lock:
+            return self._harvest(self.list_clinic_patients(), self.read_phieu_pdf,
+                                 ref_year, limit, progress)
+
+    def list_inpatient_discharges(self) -> list[dict[str, Any]]:
+        """Mở Danh sách Điều trị nội trú (trạng thái đã ra viện) và đọc bảng theo TÊN
+        CỘT như danh sách khám. Trả về list {ho_ten, nam_sinh, gioi_tinh, tuoi, ma_bn,
+        trang_thai, ngay_ra, raw}."""
+        from .clinic_list import INPATIENT_TOKENS, parse_clinic_patients
 
         with self._lock:
-            year = int(ref_year) if ref_year else datetime.now().year
-            patients = self.list_clinic_patients()
+            if self._is_login_page():
+                raise EmrError("Phiên EMR chưa đăng nhập hoặc đã hết hạn. Hãy đăng nhập lại.")
+            self._open_inpatient_list()
+            try:
+                patients = parse_clinic_patients(self._driver().page_source or "",
+                                                 INPATIENT_TOKENS)
+            except RuntimeError as exc:
+                raise EmrError(str(exc)) from exc
+            if not patients:
+                self.dump_page("danh-sach-noi-tru")
+                raise EmrError(
+                    "Không đọc được bảng Danh sách Điều trị nội trú (không thấy cột quen thuộc). "
+                    "Đã chụp trang — gửi em bản chụp để khớp lại."
+                )
+            return patients
 
-            def working(p: dict[str, Any]) -> bool:
-                if str(p.get("tuoi") or "").strip():
-                    return is_likely_working_age_by_age(p.get("tuoi"), p.get("gioi_tinh"), year)
-                return is_likely_working_age(p.get("nam_sinh"), p.get("gioi_tinh"), year)
+    def harvest_discharges(self, ref_year: int | None = None, limit: int | None = None,
+                           progress=None) -> dict[str, Any]:
+        """Quét danh sách người bệnh đã ra viện → lọc còn tuổi lao động → với mỗi ca in
+        Giấy ra viện (PDF) và đọc; ca nào đọc được thì gom lại để nhập cổng (mẫu 03)."""
+        with self._lock:
+            return self._harvest(self.list_inpatient_discharges(), self.read_giay_ra_vien_pdf,
+                                 ref_year, limit, progress)
 
-            candidates = [p for p in patients if working(p)]
-            if limit:
-                candidates = candidates[: int(limit)]
+    def _harvest(self, patients: list[dict[str, Any]], reader, ref_year, limit,
+                 progress) -> dict[str, Any]:
+        from .working_age import is_likely_working_age, is_likely_working_age_by_age
 
-            found: list[dict[str, Any]] = []
-            for i, cand in enumerate(candidates):
-                if callable(progress):
-                    progress(i + 1, len(candidates), cand["ho_ten"])
-                try:
-                    res = self.read_phieu_pdf(cand["ho_ten"])
-                except EmrError:
-                    continue  # không có phiếu / không mở được → coi như không cần nhập
-                found.append({
-                    "ho_ten": cand["ho_ten"],
-                    "doc_type": res.get("doc_type"),
-                    "fields": res.get("fields", {}),
-                    "pdf_path": res.get("pdf_path"),
-                })
-            return {"scanned": len(patients), "working_age": len(candidates), "found": found}
+        year = int(ref_year) if ref_year else datetime.now().year
+
+        def working(p: dict[str, Any]) -> bool:
+            if str(p.get("tuoi") or "").strip():
+                return is_likely_working_age_by_age(p.get("tuoi"), p.get("gioi_tinh"), year)
+            return is_likely_working_age(p.get("nam_sinh"), p.get("gioi_tinh"), year)
+
+        candidates = [p for p in patients if working(p)]
+        if limit:
+            candidates = candidates[: int(limit)]
+
+        found: list[dict[str, Any]] = []
+        for i, cand in enumerate(candidates):
+            if callable(progress):
+                progress(i + 1, len(candidates), cand["ho_ten"])
+            try:
+                res = reader(cand["ho_ten"])
+            except EmrError:
+                continue  # không có giấy / không mở được → coi như không cần nhập
+            found.append({
+                "ho_ten": cand["ho_ten"],
+                "doc_type": res.get("doc_type"),
+                "fields": res.get("fields", {}),
+                "pdf_path": res.get("pdf_path"),
+            })
+        return {"scanned": len(patients), "working_age": len(candidates), "found": found}
 
     def _list_downloads(self) -> set[str]:
         try:

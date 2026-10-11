@@ -84,6 +84,7 @@ def flag_working_age(patients: list[dict[str, Any]], ref_year: int) -> list[dict
             "gioi_tinh": p.get("gioi_tinh", ""),
             "tuoi": p.get("tuoi", ""),
             "ma_bn": p.get("ma_bn", ""),
+            "ngay_ra": p.get("ngay_ra", ""),
             "working_age": wa,
         })
     return out

@@ -645,16 +645,20 @@ class Worker:
         self.state["message"] = "Đang dừng sau hồ sơ hiện tại"
 
     def _enrich_from_emr(self, record: dict[str, Any]) -> dict[str, Any]:
-        """Tự đọc phiếu phòng khám (PDF) trên EMR để bù các field còn thiếu (Số KCB,
-        CCCD, Số seri…). Trả về bản ghi đã cập nhật. Lỗi EMR coi như không bù được,
-        để bước kiểm tra 'issues' bên dưới báo rõ."""
+        """Tự đọc giấy trên EMR để bù các field còn thiếu: phiếu phòng khám (mẫu 07: Số
+        KCB, CCCD, Số seri…) hoặc giấy ra viện (mẫu 03: khoa, dân tộc, địa chỉ…). Trả về
+        bản ghi đã cập nhật. Lỗi EMR coi như không bù được, để bước kiểm tra 'issues'
+        bên dưới báo rõ."""
         if not self.emr:
             return record
         name = record.get("patient_name") or ""
         if not name:
             return record
         try:
-            result = self.emr.read_phieu_pdf(name)
+            if record.get("doc_type") == DOC_GRV:
+                result = self.emr.read_giay_ra_vien_pdf(name)
+            else:
+                result = self.emr.read_phieu_pdf(name)
         except Exception:  # noqa: BLE001 - EMR lỗi thì giữ nguyên, issues sẽ báo
             return record
         fields = result.get("fields") or {}
@@ -681,8 +685,9 @@ class Worker:
                 if record["status"] == "success":
                     continue
                 if auto_enrich and record["issues"]:
+                    what = "giấy ra viện" if record.get("doc_type") == DOC_GRV else "phiếu"
                     self.state.update(current_id=record_id,
-                                      message=f"Đang lấy phiếu từ EMR: {record['patient_name']}")
+                                      message=f"Đang lấy {what} từ EMR: {record['patient_name']}")
                     record = self._enrich_from_emr(record)
                 if record["issues"]:
                     self.store.mark(record_id, "error", "; ".join(record["issues"]))
