@@ -1,6 +1,8 @@
 # Hướng dẫn cho người sửa code (người và AI)
 
-Trước khi thay đổi bất cứ thứ gì, đọc:
+Trước khi thay đổi bất cứ thứ gì, **bắt buộc đọc [`AGENTS.md`](AGENTS.md) và [`docs/CHANGE_RULES.md`](docs/CHANGE_RULES.md)**. Đây là bộ quy tắc an toàn chung cho mọi người và AI, kèm điều kiện kiểm thử/merge.
+
+Sau đó đọc:
 
 1. [PRODUCT.md](PRODUCT.md) — người dùng, mục đích, nguyên tắc sản phẩm.
 2. [DESIGN.md](DESIGN.md) — màu, chữ, nút, bố cục.
@@ -20,6 +22,8 @@ Tóm tắt những điều không được làm (chi tiết và lý do trong doc
 Mỗi lần sửa:
 
 - Sửa lỗi thì viết test tái hiện lỗi trước.
-- `npm run test:ci` phải xanh (gồm `node scripts/ux_rules_check.mjs`).
+- `npm run build` và `npm run test:ci` phải xanh (gồm `node scripts/ux_rules_check.mjs`).
 - Có thay đổi phía máy chủ thì nhắc người dùng khởi động lại máy chủ lúc không có tác vụ đang chạy.
 - Giao diện, thông báo, tài liệu cho người dùng viết bằng tiếng Việt có dấu.
+
+**Nguyên tắc bổ sung:** không tái gửi thao tác ghi EMR sau timeout nếu chưa xác minh kết quả; không bypass precheck/quyền, không sử dụng chung WebDriver giữa các tiến trình, không làm quá tải EMR. PR phải điền `.github/pull_request_template.md`, CI `Test` ở commit cuối cùng thành công mới được merge. Chi tiết ở `docs/CHANGE_RULES.md`.
