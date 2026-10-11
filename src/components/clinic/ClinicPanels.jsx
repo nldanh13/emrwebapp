@@ -136,6 +136,7 @@ export function TodoPanel({ rows, running, busy, actionRunning, autoTasks, onRun
           <span style={{ display: 'block', fontSize: FS.xs, color: C.text2 }}>
             Mỗi lần đọc danh sách, thủ thuật mới có chỉ định được nhập ngay (giờ chỉ định → +10 phút, thủ thuật viên theo Lịch Phòng khám)
             và SBBHC được soạn nháp sẵn. Lập SBBHC và kết thúc mổ vẫn chờ bấm nút. Người nào EMR báo lỗi thì dừng, không tự thử lại.
+            Nhập thủ thuật xong mà người bệnh Cho về / Chuyển viện đã có thuốc thì Vào khám và Hoàn tất luôn; chưa có thuốc thì quay lại, không bấm gì.
           </span>
         </span>
       </label>

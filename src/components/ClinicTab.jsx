@@ -235,7 +235,7 @@ export default function ClinicTab({ toast }) {
   };
 
   const runTasks = async (n) => {
-    if (!window.confirm(`Nhập ${n} người bệnh có thủ thuật chưa xong lên EMR ngay?\n\nThủ thuật còn "Mới" thì bấm Thực hiện; giờ thực hiện = giờ chỉ định → +10 phút, thủ thuật viên theo Lịch Phòng khám. Chưa đủ 10 phút thì chờ, EMR báo lỗi hoặc hỏi xác nhận thì dừng ở người đó.`)) return;
+    if (!window.confirm(`Nhập ${n} người bệnh có thủ thuật chưa xong lên EMR ngay?\n\nThủ thuật còn "Mới" thì bấm Thực hiện; giờ thực hiện = giờ chỉ định → +10 phút, thủ thuật viên theo Lịch Phòng khám. Chưa đủ 10 phút thì chờ, EMR báo lỗi hoặc hỏi xác nhận thì dừng ở người đó.\n\nNhập xong, người bệnh Cho về / Chuyển viện nào đã có thuốc thì Vào khám và Hoàn tất khám luôn; chưa có thuốc thì quay lại, không bấm gì.`)) return;
     setBusy('tasks');
     try {
       const r = await api.runClinicTasks();

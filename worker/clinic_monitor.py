@@ -1174,8 +1174,12 @@ def _prepare_procedures(page: ExamPage) -> Dict[str, Any]:
 
 
 def run_tasks(monitor: "Monitor", rows: List[Dict[str, Any]], state: Dict[str, Dict[str, Any]],
-              log: List[Dict[str, Any]], auto: bool, now: Optional[datetime] = None) -> int:
-    """Nhập thủ thuật cho người bệnh có chỉ định. Trả số người đã thao tác."""
+              log: List[Dict[str, Any]], auto: bool, now: Optional[datetime] = None,
+              checks: Optional[Dict[str, Dict[str, Any]]] = None, weights: Optional[Dict[str, Any]] = None) -> int:
+    """Nhập thủ thuật cho người bệnh có chỉ định. Nhập xong mà người bệnh đủ điều kiện hoàn tất khám
+    (Cho về / Chuyển viện, dịch vụ khác đã xong) thì mở màn khám xem trước: có thuốc thì Vào khám và
+    Hoàn tất luôn, chưa có thuốc thì quay lại. Trả số người đã thao tác."""
+    checks = checks if checks is not None else {}
     now = now or _now()
     acted = 0
     for row in rows:
@@ -1203,6 +1207,11 @@ def run_tasks(monitor: "Monitor", rows: List[Dict[str, Any]], state: Dict[str, D
         print(f"[CLINIC-MONITOR] Thủ thuật STT {row.get('stt')}: {result}")
         if result == "session":
             break
+        if result == "done" and eligible_for_completion(row):
+            kg = parse_weight((weights or {}).get(key)) or None
+            done = complete_on_exam_page(monitor, row, res.get("procedure_end"), kg)
+            if record_completion(row, done, checks, log) == "session":
+                break
     return acted
 
 
@@ -1251,6 +1260,30 @@ def run_ngoaitru(monitor: "Monitor", rows: List[Dict[str, Any]], state: Dict[str
     return len(patients)
 
 
+def complete_on_exam_page(monitor: "Monitor", row: Dict[str, Any], procedure_end: Optional[datetime],
+                          weight_kg: Optional[float]) -> Dict[str, Any]:
+    """Mở màn khám, xem đơn thuốc trước; đủ điều kiện thì Vào khám và Hoàn tất, không thì quay lại danh sách
+    mà không bấm gì (complete_patient kiểm tra hết trước khi bấm)."""
+
+    def complete(page: ExamPage, done_at: Optional[datetime], now: datetime) -> Dict[str, Any]:
+        # Hoàn tất khám phải sau khi thủ thuật kết thúc (+1 phút), thời gian ra sửa theo đó.
+        latest = max(d for d in (done_at, procedure_end) if d) if (done_at or procedure_end) else None
+        return complete_patient(page, row, latest, now, weight_kg)
+
+    return monitor.on_exam_page(row, complete)
+
+
+def record_completion(row: Dict[str, Any], res: Dict[str, Any], checks: Dict[str, Dict[str, Any]],
+                      log: List[Dict[str, Any]]) -> str:
+    key = row.get("khambenhid") or ""
+    result = res.get("result") or res.get("status")
+    checks[key] = {"status": "done" if result == "done" else result, "message": res.get("message"), "at": _now().isoformat()}
+    log.append({"at": _now().isoformat(), "kind": "hoan_tat_kham", "khambenhid": key, "ma_bn": row.get("ma_bn"), "ho_ten": row.get("ho_ten"),
+                "result": result, "message": res.get("message"), "steps": res.get("steps") or []})
+    print(f"[CLINIC-MONITOR] Hoàn tất khám STT {row.get('stt')}: {result}")
+    return result
+
+
 def run_completions(monitor: "Monitor", rows: List[Dict[str, Any]], checks: Dict[str, Dict[str, Any]],
                     weights: Dict[str, Any], log: List[Dict[str, Any]]) -> int:
     """Hoàn tất khám mọi người bệnh đủ điều kiện — chỉ gọi khi người dùng bấm nút."""
@@ -1270,23 +1303,12 @@ def run_completions(monitor: "Monitor", rows: List[Dict[str, Any]], checks: Dict
             else:
                 tt = {**pre, "result": pre.get("status")}
         if tt["result"] == "done":
-            tt_end = tt.get("procedure_end")
-
-            def complete(page: ExamPage, done_at: Optional[datetime], now: datetime) -> Dict[str, Any]:
-                # Hoàn tất khám phải sau khi thủ thuật kết thúc (+1 phút), thời gian ra sửa theo đó.
-                latest = max(d for d in (done_at, tt_end) if d) if (done_at or tt_end) else None
-                return complete_patient(page, row, latest, now, kg or None)
-
-            res = monitor.on_exam_page(row, complete)
+            res = complete_on_exam_page(monitor, row, tt.get("procedure_end"), kg or None)
         else:
             res = tt
         res = {**res, "steps": (tt.get("steps") or []) + ([] if res is tt else (res.get("steps") or []))}
-        result = res.get("result") or res.get("status")
-        checks[key] = {"status": "done" if result == "done" else result, "message": res.get("message"), "at": _now().isoformat()}
-        log.append({"at": _now().isoformat(), "kind": "hoan_tat_kham", "khambenhid": key, "ma_bn": row.get("ma_bn"), "ho_ten": row.get("ho_ten"),
-                    "result": result, "message": res.get("message"), "steps": res.get("steps") or []})
+        result = record_completion(row, res, checks, log)
         acted += 1
-        print(f"[CLINIC-MONITOR] Hoàn tất khám STT {row.get('stt')}: {result}")
         if result == "session":
             break
     return acted
@@ -1384,7 +1406,7 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                         handled_tasks = ctrl.get("tasksNow")
                     state["action_running"] = True
                     write_json(state_path, state)
-                    if run_tasks(monitor, rows, task_state, action_log, auto=not tasks_now):
+                    if run_tasks(monitor, rows, task_state, action_log, auto=not tasks_now, checks=checks, weights=weights):
                         rows = monitor.read()
                     state["action_running"] = False
                     state["last_action_at"] = _now().isoformat()

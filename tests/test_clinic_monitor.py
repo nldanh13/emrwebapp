@@ -581,3 +581,39 @@ def test_public_rows_expose_tasks():
     assert out['pending_tt'] == 1 and out['pending_pt'] == 1 and out['procedure_task'] is True
     assert out['tt_task'] == {'status': 'waiting', 'message': 'chờ'}
     assert 'href' not in out
+
+
+class ChainMonitor(TaskMonitor):
+    """Màn khám giả dùng chung giữa các lần mở: ghi lại thao tác của từng lần."""
+
+    def __init__(self, results, drugs):
+        super().__init__(results)
+        self.drugs = drugs
+
+    def on_exam_page(self, row, action, need_services=True):
+        page = FakePage(drugs=self.drugs, exit_time=cm.parse_emr_dt('09:05 28/09/2026'))
+        res = action(page, None, NOW)
+        self.calls.append(('exam', list(page.writes)))
+        return res
+
+
+def test_after_procedure_completes_exam_when_patient_has_drugs():
+    row = {**_task_row(case='cho_ve'), 'blockers': ['TT chưa xong (0/1)']}
+    tt = {'result': 'done', 'steps': ['Đã nhập thủ thuật 09:00–09:10'], 'procedure_end': DT(2026, 9, 28, 9, 10)}
+    mon, state, checks, log = ChainMonitor([dict(tt)], drugs=2), {}, {}, []
+    cm.run_tasks(mon, [row], state, log, auto=True, now=NOW, checks=checks)
+    # Mở màn khám (Thực hiện nếu cần) → nhập thủ thuật → mở lại, có thuốc → sửa thời gian ra sau thủ thuật → hoàn tất.
+    assert mon.calls == [('exam', []), 'procedures', ('exam', [('thoi_gian_ra', '10:00 28/09/2026'), 'hoan_tat'])]
+    assert checks['k1']['status'] == 'done'
+    assert [e['kind'] for e in log] == ['thu_thuat', 'hoan_tat_kham'] and log[1]['result'] == 'done'
+
+    # Chưa có thuốc → chỉ xem rồi quay lại danh sách, không bấm gì.
+    mon, checks, log = ChainMonitor([dict(tt)], drugs=0), {}, []
+    cm.run_tasks(mon, [row], {}, log, auto=True, now=NOW, checks=checks)
+    assert mon.calls[-1] == ('exam', [])
+    assert checks['k1']['status'] == 'no_drug' and log[1]['result'] == 'no_drug'
+
+    # Chưa có xử trí → chưa hoàn tất (bác sĩ chưa quyết), chỉ nhập thủ thuật.
+    mon = ChainMonitor([dict(tt)], drugs=2)
+    cm.run_tasks(mon, [{**_task_row(), 'blockers': ['TT chưa xong (0/1)']}], {}, [], auto=True, now=NOW, checks={})
+    assert mon.calls == [('exam', []), 'procedures']
