@@ -17,6 +17,7 @@ const PROTECTED_PREFIXES = [
   '/clinic/input-',
   '/clinic/monitor/complete',
   '/clinic/monitor/ngoaitru',
+  '/clinic/monitor/tasks',
   '/research/archive/run',
   '/research/archive/collect-auto',
   '/research/archive/fetch-',

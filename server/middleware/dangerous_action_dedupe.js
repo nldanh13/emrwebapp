@@ -13,6 +13,7 @@ const PROTECTED_ACTIONS = new Set([
   '/clinic/input-care',
   '/clinic/monitor/complete',
   '/clinic/monitor/ngoaitru',
+  '/clinic/monitor/tasks',
   '/clinic/monitor/bbhc/run',
   '/hchanh/sign-discharge-bundle',
 ]);

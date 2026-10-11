@@ -244,6 +244,13 @@ export default function App() {
     saveActiveTab(nextTab); setTab(nextTab);
   }, [tab]);
 
+  // Màn hình con mở tab khác (vd. Phòng khám → Nghỉ ốm): window.dispatchEvent('emr:open-tab', { tab }).
+  useEffect(() => {
+    const handler = (event) => handleTabChange(String(event.detail?.tab || ''));
+    window.addEventListener('emr:open-tab', handler);
+    return () => window.removeEventListener('emr:open-tab', handler);
+  }, [handleTabChange]);
+
   const handleOpenContext = useCallback((context) => {
     const definition = resolveContextDefinition(context);
     if (!definition || !VALID_TAB_IDS.has(definition.entryTab)) {
