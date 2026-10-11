@@ -1429,9 +1429,20 @@ _HCHANH_CLICK_CACHE: Dict[str, Any] = {}
 def _is_driver_alive(driver: Any) -> bool:
     try:
         url = str(driver.current_url or "").lower()
-        # An expired session can still have a healthy ChromeDriver process.
-        # Never reuse it when EMR redirected to the login page.
-        return bool(url and "login.aspx" not in url)
+        if not url or "login.aspx" in url:
+            return False
+        # Login can be rendered within home.aspx without a redirect. Checking
+        # this is a local browser DOM read: it sends NO request to EMR.
+        script = getattr(driver, "execute_script", None)
+        if callable(script):
+            has_login_form = script(
+                """return !!document.querySelector(
+                  'form input[type="password"], input[name*="assword"], input[id*="assword"]'
+                );"""
+            )
+            if has_login_form:
+                return False
+        return True
     except Exception:
         return False
 
