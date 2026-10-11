@@ -53,6 +53,21 @@ async function testSerialQueue() {
   assert.equal(observed.length, 2);
 }
 
-testSerialQueue().then(() => {
-  console.log('hchanh resident worker read-only dispatch and queue: OK');
+async function testCancelBeforeDispatch() {
+  const worker = new ResidentWorker('/tmp/fake-cancelled-records-check');
+  let sent = 0;
+  worker._spawn = function fakeSpawn() {
+    const child = { stdin: { write: () => { sent += 1; } } };
+    worker.child = child;
+    return child;
+  };
+  const result = await worker.run({ op: 'records_check' }, {
+    onSpawn: cancel => cancel(),
+  });
+  assert.equal(result.code, -1);
+  assert.equal(sent, 0, 'cancelled tasks must not reach Chrome');
+}
+
+Promise.resolve().then(testSerialQueue).then(testCancelBeforeDispatch).then(() => {
+  console.log('hchanh resident worker read-only dispatch, queue and cancel: OK');
 }).catch(err => { console.error(err); process.exitCode = 1; });
