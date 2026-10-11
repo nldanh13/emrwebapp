@@ -67,6 +67,14 @@ EMR_TO_RECORD = {
 }
 
 
+def _xpath_literal(text: str) -> str:
+    """Bọc chuỗi an toàn cho XPath (xử lý cả dấu nháy đơn trong text)."""
+    if "'" not in text:
+        return f"'{text}'"
+    parts = text.split("'")
+    return "concat(" + ", \"'\", ".join(f"'{p}'" for p in parts) + ")"
+
+
 class EmrError(RuntimeError):
     pass
 
@@ -263,14 +271,9 @@ class EmrPortal:
             before_handles = set(driver.window_handles)
 
             self._go_to_patient_record(name)
-            try:
-                self._click(By.LINK_TEXT, self.sel("phieu_link"), 'nút "Xem phiếu"')
-            except EmrError:
-                self._click(By.PARTIAL_LINK_TEXT, self.sel("phieu_link"), 'nút "Xem phiếu"')
+            self._click_phieu_button()
 
-            pdf_path = self._wait_for_download(before_files)
-            if pdf_path is None:
-                pdf_path = self._download_pdf_from_page(before_handles, name)
+            pdf_path = self._acquire_phieu_pdf(before_files, before_handles, name)
 
             if pdf_path is None:
                 self.dump_page("xem-phieu")
@@ -287,6 +290,42 @@ class EmrPortal:
                 "doc_type": parsed["doc_type"],
                 "fields": parsed["fields"],
             }
+
+    def _click_phieu_button(self):
+        """Bấm nút "Xem phiếu". Trên EMR đây là <button><strong>Xem phiếu</strong></button>
+        (không phải link <a>), nên dò theo text cho cả button lẫn a. Giữ fallback link."""
+        label = self.sel("phieu_link")
+        xpath = (f"//*[self::button or self::a]"
+                 f"[contains(normalize-space(.), {_xpath_literal(label)})]")
+        try:
+            self._click(By.XPATH, xpath, 'nút "Xem phiếu"')
+        except EmrError:
+            # Dự phòng: EMR cũ có thể dựng "Xem phiếu" bằng link.
+            try:
+                self._click(By.LINK_TEXT, label, 'nút "Xem phiếu"')
+            except EmrError:
+                self._click(By.PARTIAL_LINK_TEXT, label, 'nút "Xem phiếu"')
+
+    def _acquire_phieu_pdf(self, before_files: set[str], before_handles: set[str],
+                           name: str) -> Path | None:
+        """Lấy file PDF sau khi bấm "Xem phiếu". EMR mở modal có <iframe src=...pdf>
+        (không tải file, không mở tab mới), nên vừa chờ iframe/embed trỏ tới PDF để
+        tải bằng cookie phiên, vừa chờ Chrome tải file về — cái nào xong trước lấy
+        cái đó. Không đợi hết timeout cho một cách rồi mới thử cách kia."""
+        deadline = time.time() + self.timeout
+        while time.time() < deadline:
+            if not any(self.download_dir.glob("*.crdownload")):
+                new = self._list_downloads() - before_files
+                if new:
+                    newest = max((self.download_dir / n for n in new),
+                                 key=lambda p: p.stat().st_mtime)
+                    if newest.stat().st_size > 0:
+                        return newest
+            pdf_path = self._download_pdf_from_page(before_handles, name)
+            if pdf_path is not None:
+                return pdf_path
+            time.sleep(0.5)
+        return None
 
     # ── Quét danh sách phòng khám cuối ngày → ca còn tuổi lao động → ai có phiếu ──
     def list_clinic_patients(self) -> list[dict[str, Any]]:
@@ -380,23 +419,39 @@ class EmrPortal:
         return f"{self.base_url}/{url.lstrip('/')}"
 
     def _find_pdf_url_in_page(self, before_handles: set[str]) -> str:
-        """Tìm URL file PDF sau khi bấm "Xem phiếu": tab mới → embed/iframe/object → link .pdf."""
+        """Tìm URL file PDF sau khi bấm "Xem phiếu".
+
+        Ưu tiên nguồn chắc chắn là PDF (src/href chứa .pdf) để không bắt nhầm iframe
+        khác trên trang (ví dụ iframe panel báo lỗi). Thứ tự: embed/iframe/object hoặc
+        link có .pdf → tab mới → embed/iframe/object bất kỳ."""
         driver = self._driver()
+        embeds = (("embed", "src"), ("iframe", "src"), ("object", "data"))
+
+        # 1) Nguồn có đuôi .pdf — chắc chắn là file phiếu.
+        for tag, attr in embeds:
+            for el in driver.find_elements(By.TAG_NAME, tag):
+                src = el.get_attribute(attr) or ""
+                if ".pdf" in src.lower():
+                    return src
+        for a in driver.find_elements(By.TAG_NAME, "a"):
+            href = a.get_attribute("href") or ""
+            if ".pdf" in href.lower():
+                return href
+
+        # 2) Tab mới (EMR cũ có thể mở PDF ở tab khác).
         for handle in driver.window_handles:
             if handle not in before_handles:
                 driver.switch_to.window(handle)
                 url = (driver.current_url or "")
                 if url and not url.startswith(("about:", "chrome:")):
                     return url
-        for tag, attr in (("embed", "src"), ("iframe", "src"), ("object", "data")):
+
+        # 3) Embed/iframe/object bất kỳ (dự phòng).
+        for tag, attr in embeds:
             for el in driver.find_elements(By.TAG_NAME, tag):
                 src = el.get_attribute(attr) or ""
                 if src and not src.startswith(("about:", "chrome:")):
                     return src
-        for a in driver.find_elements(By.TAG_NAME, "a"):
-            href = a.get_attribute("href") or ""
-            if ".pdf" in href.lower():
-                return href
         return ""
 
     def _download_pdf_from_page(self, before_handles: set[str], name: str) -> Path | None:

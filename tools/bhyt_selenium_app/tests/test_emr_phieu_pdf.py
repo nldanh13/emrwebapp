@@ -108,6 +108,23 @@ class FindPdfUrlTests(unittest.TestCase):
             )
             self.assertEqual(p._find_pdf_url_in_page({"h0"}), "http://x/Phieu.PDF")
 
+    def test_prefers_pdf_iframe_over_other_iframe(self):
+        # EMR: modal có iframe PDF (iframe_main) + có thể còn iframe khác (panel lỗi).
+        # Phải chọn iframe trỏ tới .pdf, không bắt nhầm iframe đầu tiên.
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_emr(tmp)
+            p.driver = FakeDriver(
+                handles=["h0"],
+                tags={"iframe": [
+                    El({"src": "http://192.168.2.26:2026/panel/error.html"}),
+                    El({"src": "temp/10.2026/hmtu/PDF/KB_GiayHuongBHXHNghiViec_2026.pdf"}),
+                ]},
+            )
+            self.assertEqual(
+                p._find_pdf_url_in_page({"h0"}),
+                "temp/10.2026/hmtu/PDF/KB_GiayHuongBHXHNghiViec_2026.pdf",
+            )
+
     def test_nothing_found(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = make_emr(tmp)
@@ -146,8 +163,8 @@ class ReadPhieuPdfIntegrationTests(unittest.TestCase):
             pdf_file.write_bytes(b"%PDF-1.4 fake")
 
             p._go_to_patient_record = lambda name: None
-            p._click = lambda *a, **k: None
-            p._wait_for_download = lambda before: pdf_file
+            p._click_phieu_button = lambda: None
+            p._acquire_phieu_pdf = lambda before_files, before_handles, name: pdf_file
 
             seen = {}
             orig = pp.parse_phieu_pdf
@@ -171,11 +188,45 @@ class ReadPhieuPdfIntegrationTests(unittest.TestCase):
             p = make_emr(tmp)
             p.driver = FakeDriver(logged_in=True)
             p._go_to_patient_record = lambda name: None
-            p._click = lambda *a, **k: None
-            p._wait_for_download = lambda before: None
-            p._download_pdf_from_page = lambda before, name: None
+            p._click_phieu_button = lambda: None
+            p._acquire_phieu_pdf = lambda before_files, before_handles, name: None
             with self.assertRaises(EmrError):
                 p.read_phieu_pdf("NGUYEN VAN A")
+
+
+class ClickPhieuButtonTests(unittest.TestCase):
+    def test_clicks_button_by_text_xpath(self):
+        # "Xem phiếu" là <button>, không phải link — phải dò bằng XPath button/a theo text.
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_emr(tmp)
+            calls = []
+            p._click = lambda by, value, what: calls.append((by, value))
+            p._click_phieu_button()
+        self.assertEqual(len(calls), 1)
+        by, value = calls[0]
+        self.assertEqual(by, By.XPATH)
+        self.assertIn("button", value)
+        self.assertIn("Xem phiếu", value)
+
+
+class AcquirePhieuPdfTests(unittest.TestCase):
+    def test_returns_pdf_from_page_download(self):
+        # Trường hợp EMR nhúng PDF trong iframe (không tải file): lấy qua _download_pdf_from_page.
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_emr(tmp, timeout=2)
+            p.download_dir.mkdir(parents=True, exist_ok=True)
+            got_file = p.download_dir / "from_page.pdf"
+            got_file.write_bytes(b"%PDF-1.4 x")
+            p._download_pdf_from_page = lambda before_handles, name: got_file
+            out = p._acquire_phieu_pdf(set(), set(), "A")
+        self.assertEqual(out, got_file)
+
+    def test_none_when_neither_download_nor_page(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_emr(tmp, timeout=1)
+            p.download_dir.mkdir(parents=True, exist_ok=True)
+            p._download_pdf_from_page = lambda before_handles, name: None
+            self.assertIsNone(p._acquire_phieu_pdf(set(), set(), "A"))
 
 
 if __name__ == "__main__":
