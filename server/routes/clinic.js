@@ -6,6 +6,7 @@
 //   GET/POST /api/clinic/sick-leave  người bệnh xin nghỉ ốm (đánh dấu ở Phòng khám, nhập cổng ở tab Nghỉ ốm).
 //   POST /api/clinic/care-preview, /care-order-seeds, /input-care
 //                               TH3 Nhập viện: tìm, gợi ý diễn biến và nhập chăm sóc (worker clinic_input_care.py).
+//   GET/POST /api/clinic/admission-care  lưu danh sách đã tìm và nội dung 2 phiếu đã sửa, theo ngày T/G vào.
 
 'use strict';
 
@@ -664,6 +665,74 @@ router.post('/clinic/sick-leave', (req, res) => {
 
 // ── TH3 Nhập viện: nhập chăm sóc cho người bệnh từ Khoa Khám Bệnh (worker clinic_input_care.py) ──
 
+// Danh sách đã tìm và nội dung 2 phiếu người dùng đã sửa, lưu theo ngày T/G vào để lần sau mở lại
+// (chuyển tab, tải lại trang, khởi động lại máy chủ) không phải quét và sửa lại từ đầu.
+const CLINIC_ADMISSION_CARE_FILE = 'clinic_admission_care.json';
+const ADMISSION_CARE_KEEP_DAYS = 14;
+
+function clinicAdmissionCarePath(ctx) {
+  return path.join(ctx.dir, CLINIC_ADMISSION_CARE_FILE);
+}
+
+function readAdmissionCare(ctx) {
+  const data = readJsonSafe(clinicAdmissionCarePath(ctx), null);
+  return data && data.days && typeof data.days === 'object' ? data.days : {};
+}
+
+function sanitizeAdmissionCareRows(rows) {
+  const text = (v, n) => String(v ?? '').trim().slice(0, n);
+  return (Array.isArray(rows) ? rows : [])
+    .filter(r => r && typeof r === 'object' && text(r.ma_bn, 32).replace(/\D+/g, ''))
+    .slice(0, 120)
+    .map(r => ({
+      ma_bn: text(r.ma_bn, 32).replace(/\D+/g, ''),
+      ho_ten: text(r.ho_ten, 160),
+      care_time_str: text(r.care_time_str, 40),
+      tg_vao: text(r.tg_vao, 60),
+      noitruid: text(r.noitruid, 120),
+      khoa_chuyen_den: text(r.khoa_chuyen_den, 200),
+      dieu_duong: text(r.dieu_duong, 120),
+      nguoi_nhan: text(r.nguoi_nhan, 120),
+      thieu_tai_khoan: (Array.isArray(r.thieu_tai_khoan) ? r.thieu_tai_khoan : []).slice(0, 4).map(n => text(n, 120)),
+      can_input: r.can_input === true,
+      has_nursing_link: r.has_nursing_link === true,
+      dien_bien: text(r.dien_bien, 1500),
+      cham_soc: text(r.cham_soc, 1000),
+      dien_bien_khoa: text(r.dien_bien_khoa, 1500),
+      cham_soc_khoa: text(r.cham_soc_khoa, 1000),
+      khoa_time_str: text(r.khoa_time_str, 40),
+      vitals: Object.fromEntries(['mach', 'nhiet_do', 'huyet_ap', 'nhip_tho'].map(k => [k, text(r.vitals?.[k], 12)])),
+      sheets_done: r.sheets_done && typeof r.sheets_done === 'object'
+        ? { kham: r.sheets_done.kham === true, khoa: r.sheets_done.khoa === true } : null,
+      skip: r.skip === true,
+      pain_note: text(r.pain_note, 300),
+    }));
+}
+
+function pruneAdmissionCare(days) {
+  const cutoff = new Date(Date.now() - ADMISSION_CARE_KEEP_DAYS * 86_400_000).toISOString().slice(0, 10);
+  return Object.fromEntries(Object.entries(days || {}).filter(([day]) => ISO_DAY_RE.test(day) && day >= cutoff));
+}
+
+router.get('/clinic/admission-care', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  const day = String(req.query?.day || '').trim();
+  if (!ISO_DAY_RE.test(day)) return res.status(400).json({ status: 'error', message: 'Ngày T/G vào không hợp lệ.' });
+  const saved = readAdmissionCare(ctx)[day] || null;
+  return res.json({ status: 'ok', saved });
+});
+
+router.post('/clinic/admission-care', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  const day = String(req.body?.day || '').trim();
+  if (!ISO_DAY_RE.test(day)) return res.status(400).json({ status: 'error', message: 'Ngày T/G vào không hợp lệ.' });
+  const days = readAdmissionCare(ctx);
+  const savedAt = new Date().toISOString();
+  days[day] = { rows: sanitizeAdmissionCareRows(req.body?.rows), saved_at: savedAt };
+  writeJsonAtomic(clinicAdmissionCarePath(ctx), { days: pruneAdmissionCare(days), updated_at: savedAt });
+  return res.json({ status: 'ok', saved_at: savedAt });
+});
+
 function normalizeClinicCareDate(value = '') {
   const text = String(value || '').trim();
   let m = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
@@ -858,6 +927,8 @@ function sanitizeClinicCareOrderSeedsRequest(body = {}) {
       noitruid: String(row.noitruid || '').trim().slice(0, 120),
       khoa_chuyen_den: String(row.khoa_chuyen_den || payload.targetDepartment || '').trim().slice(0, 200),
       client_key: String(row.client_key || '').trim().slice(0, 240),
+      // Đã đọc y lệnh đầu ở lần tìm trước (nội dung đã lưu): chỉ đọc lại phiếu đã có, không mở lịch sử y lệnh.
+      skip_seed: row.skip_seed === true,
     }))
     .filter(row => row.ma_bn);
   if (!rows.length) throw new Error('Không có người bệnh để lấy y lệnh đầu tiên.');
@@ -996,6 +1067,8 @@ module.exports.withDoctorAccount = withDoctorAccount;
 module.exports.scheduledClinicDoctor = scheduledClinicDoctor;
 module.exports.sanitizeSickLeavePatient = sanitizeSickLeavePatient;
 module.exports.pruneSickLeave = pruneSickLeave;
+module.exports.sanitizeAdmissionCareRows = sanitizeAdmissionCareRows;
+module.exports.pruneAdmissionCare = pruneAdmissionCare;
 module.exports.clinicTraceFile = clinicTraceFile;
 module.exports.resolveEmrUrls = resolveEmrUrls;
 module.exports.emrUrlDefaults = emrUrlDefaults;

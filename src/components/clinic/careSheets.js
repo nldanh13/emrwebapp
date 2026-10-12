@@ -113,3 +113,20 @@ export function inputPayloadRows(rows = []) {
   const chosen = new Set(rowsToInput(rows));
   return rows.filter(r => r.can_input).map(r => ({ ...r, nhap: chosen.has(r), saved_for_input: true }));
 }
+
+export const rowKey = r => `${r.ma_bn}::${r.care_time_str}`;
+
+// Nội dung người dùng đã sửa (được lưu theo ngày, giữ lại khi tìm lại).
+const EDIT_FIELDS = ['dien_bien', 'cham_soc', 'dien_bien_khoa', 'cham_soc_khoa', 'khoa_time_str', 'vitals', 'skip', 'pain_note'];
+
+// Tìm lại: thông tin người bệnh, người lập, phiếu đã có lấy theo lần quét mới (đúng EMR hiện tại);
+// nội dung 2 phiếu đã sửa lấy theo bản đã lưu. restored=true: không đọc lại y lệnh đầu, không ghi đè.
+export function mergeSaved(freshRows = [], savedRows = []) {
+  const saved = new Map(savedRows.map(r => [rowKey(r), r]));
+  return freshRows.map(row => {
+    const old = saved.get(rowKey(row));
+    if (!old) return row;
+    const kept = Object.fromEntries(EDIT_FIELDS.filter(k => old[k] !== undefined).map(k => [k, old[k]]));
+    return { ...row, ...kept, vitals: { ...row.vitals, ...(old.vitals || {}) }, restored: true };
+  });
+}
