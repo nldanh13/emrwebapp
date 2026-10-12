@@ -127,6 +127,9 @@ class _FakeWS:
             return False
         return True
 
+    def switch_account_to(self, username, password, ma_bn, allow_completed=False, reopen=None):
+        return self._switch_account_to(username, password, ma_bn, reopen)
+
     def switch_to_creator_account(self, creator, ma_bn, reopen=None):
         account = self.accounts.get((creator or "").strip().lower())
         if not account:
@@ -174,8 +177,10 @@ def test_input_one_switches_to_old_creator_account_to_delete_then_restores(monke
     open_calls = []
     monkeypatch.setattr(cic, "open_cham_soc_by_id", lambda driver, cid: open_calls.append(cid))
     delete_calls = []
-    monkeypatch.setattr(cic, "click_thu_hoi_va_xoa", lambda driver: delete_calls.append(True))
+    # EMR chỉ cho tài khoản người lập phiếu cũ xóa phiếu đó.
+    monkeypatch.setattr(cic, "click_thu_hoi_va_xoa", lambda driver: delete_calls.append(ws.config["username"]) or ws.config["username"] == "acct.cu")
     monkeypatch.setattr(cic, "click_thu_hoi_cham_soc", lambda driver: None)
+    monkeypatch.setattr(cic, "_click_add_care", lambda driver, wait: None)
     monkeypatch.setattr(cic, "_open_care_page", lambda driver, wait, row: None)
     monkeypatch.setattr(cic, "set_thoi_gian_lap", lambda driver, time_str, max_retry=2: True)
     monkeypatch.setattr(cic, "dien_thong_tin", lambda *a, **k: True)
@@ -183,14 +188,15 @@ def test_input_one_switches_to_old_creator_account_to_delete_then_restores(monke
     monkeypatch.setattr(cic, "handle_popups", lambda driver: None)
 
     accounts = {"nguoi lap cu": {"username": "acct.cu", "password": "pw_cu"}}
+    monkeypatch.setattr(cic, "get_emr_account_for_nurse", lambda name: accounts.get((name or "").strip().lower()))
     ws = _FakeWS(username="acct.goc", accounts=accounts)
     row = {"ma_bn": "BN001", "ho_ten": "Nguyễn Văn A", "care_time_str": "10:30 15/09/2026", "khoa_chuyen_den": "Khoa Khám Bệnh"}
 
     result = cic._input_one(ws, row, ["Điều Dưỡng Hiện Tại"], "Nội dung chăm sóc", "Người bệnh tỉnh", False)
 
     assert result["success"] is True
-    assert open_calls == ["CARE_1"]
-    assert delete_calls == [True]
+    assert open_calls == ["CARE_1", "CARE_1"]
+    assert delete_calls == ["acct.goc", "acct.cu"]  # thử tài khoản đang dùng trước
     # Đổi sang đúng tài khoản người lập cũ để xóa, rồi đổi lại tài khoản gốc.
     assert ws.switch_calls == [("acct.cu", "pw_cu"), ("acct.goc", "pw_goc")]
     assert ws.config["username"] == "acct.goc"
@@ -206,7 +212,9 @@ def test_input_one_blocks_edit_when_old_creator_has_no_emr_account(monkeypatch):
     monkeypatch.setattr(cic, "_open_care_page", lambda driver, wait, row: None)
 
     deleted = []
-    monkeypatch.setattr(cic, "click_thu_hoi_va_xoa", lambda driver: deleted.append(True))
+    monkeypatch.setattr(cic, "open_cham_soc_by_id", lambda driver, cid: None)
+    monkeypatch.setattr(cic, "click_thu_hoi_va_xoa", lambda driver: deleted.append(True) and False)
+    monkeypatch.setattr(cic, "get_emr_account_for_nurse", lambda name: None)
 
     ws = _FakeWS(username="acct.goc")
     row = {"ma_bn": "BN001", "ho_ten": "Nguyễn Văn A", "care_time_str": "10:30 15/09/2026", "khoa_chuyen_den": "Khoa Khám Bệnh"}
@@ -214,8 +222,8 @@ def test_input_one_blocks_edit_when_old_creator_has_no_emr_account(monkeypatch):
     result = cic._input_one(ws, row, ["Điều Dưỡng Hiện Tại"], "Nội dung chăm sóc", "Người bệnh tỉnh", False)
 
     assert result["success"] is False
-    assert "Nguoi Khong Co Tai Khoan" in result["error"]
-    assert deleted == []
+    assert "Nguoi Khong Co Tai Khoan" in result["error"] and "Xóa tay" in result["error"]
+    assert deleted == [True]  # chỉ thử bằng tài khoản đang dùng, EMR không cho
     assert ws.switch_calls == []
 
 
@@ -530,3 +538,80 @@ def test_add_care_button_is_clicked_even_when_emr_chat_widget_covers_it(monkeypa
     cic._click_add_care(d, Wait())
     assert any("oneiss-widget" in s for s in d.scripts)  # ẩn khung chat
     assert any("arguments[0].click()" in s for s in d.scripts)  # bấm bằng JS, không bị che
+
+
+def test_input_logs_failure_reason_and_hides_raw_selenium_text(monkeypatch, capsys):
+    """Log tác vụ phải ghi người bệnh nào lỗi ở bước nào; giao diện không hiện nguyên traceback Selenium."""
+    import contextlib
+    import clinic_input_care as cic
+
+    ws = _FakeWS()
+    ws.results = {}
+    ws.mark_failed = lambda key, err: ws.results.__setitem__(key, {"success": False, "error": str(err)})
+    ws.mark_skipped = lambda key, reason: ws.results.__setitem__(key, {"success": True, "skipped": True})
+    monkeypatch.setattr(cic, "_build_config", lambda req: {})
+    monkeypatch.setattr(cic, "_validate_request", lambda req: ("12/10/2026", "Khoa Khám Bệnh"))
+    monkeypatch.setattr(cic, "open_session", lambda *a, **k: contextlib.nullcontext(ws))
+    row = {"ma_bn": "26100091", "care_time_str": "09:22 12/10/2026", "dieu_duong": "ĐD A"}
+    monkeypatch.setattr(cic, "scan_matching_rows", lambda *a, **k: [dict(row)])
+    monkeypatch.setattr(cic, "ward_oncall_nurse", lambda config, t: "ĐD Trực")
+
+    def boom(*a, **k):
+        raise RuntimeError("Message: no such element\nStacktrace: chromedriver!GetHandleVerifier")
+
+    monkeypatch.setattr(cic, "_input_patient", boom)
+    assert cic._input({"rows": [row]}, "out.json") == 2
+    err = list(ws.results.values())[0]["error"]
+    assert err.startswith("Lỗi khi thao tác trên EMR") and "Stacktrace" not in err
+    assert "LỖI: Lỗi khi thao tác trên EMR" in capsys.readouterr().out
+
+
+def test_old_sheet_made_with_doctor_login_is_deleted_with_that_login_then_entered_by_nurse(monkeypatch):
+    """Lần nhập trước tạo phiếu bằng tài khoản bác sĩ (trước khi chuyển sang tài khoản điều dưỡng).
+    Điều dưỡng không xóa được phiếu đó: xóa bằng tài khoản đăng nhập (bác sĩ), rồi lập lại bằng tài khoản điều dưỡng."""
+    import clinic_input_care as cic
+
+    monkeypatch.setattr(cic, "scan_cham_soc_cache", lambda driver, ngay, hours_needed=None: ({}, []))
+    monkeypatch.setattr(cic, "kiem_tra_bang_cached", lambda *a, **k: ("UPDATE", "CARE_9", "BS Trần Sơn"))
+    monkeypatch.setattr(cic, "open_cham_soc_by_id", lambda driver, cid: None)
+    monkeypatch.setattr(cic, "_open_care_page", lambda driver, wait, row: None)
+    monkeypatch.setattr(cic, "get_emr_account_for_nurse", lambda name: None)  # bác sĩ không có tài khoản điều dưỡng
+    ws = _FakeWS(username="lndieu")
+    ws.clinic_login = {"username": "tqson", "password": "pw_bs"}
+    deleted_by = []
+    monkeypatch.setattr(cic, "click_thu_hoi_va_xoa", lambda driver: ws.config["username"] == "tqson" and not deleted_by.append("tqson"))
+    created_by = []
+    monkeypatch.setattr(cic, "_click_add_care", lambda driver, wait: created_by.append(ws.config["username"]))
+    monkeypatch.setattr(cic, "set_thoi_gian_lap", lambda driver, time_str, max_retry=2: True)
+    monkeypatch.setattr(cic, "dien_thong_tin", lambda *a, **k: True)
+    monkeypatch.setattr(cic, "check_trang_thai_badge", lambda driver: "Hoàn tất")
+    monkeypatch.setattr(cic, "handle_popups", lambda driver: None)
+    monkeypatch.setattr(cic.time, "sleep", lambda *_a: None)
+
+    row = {"ma_bn": "26100091", "care_time_str": "09:22 12/10/2026"}
+    res = cic._input_one(ws, row, ["Lê Ngọc Diệu"], "Kính chuyển", "Phòng khám nhận", False)
+    assert res["success"] is True
+    assert deleted_by == ["tqson"]
+    assert created_by == ["lndieu"]  # phiếu mới lập bằng tài khoản điều dưỡng
+    assert ws.switch_calls == [("tqson", "pw_bs"), ("lndieu", "pw_goc")]
+
+
+def test_update_own_old_sheet_edits_in_place_without_adding_new(monkeypatch):
+    """Phiếu cũ cùng giờ của chính người lập (vd còn 'Mới'): Thu hồi rồi sửa tại chỗ, không bấm Thêm (tránh trùng)."""
+    import clinic_input_care as cic
+
+    monkeypatch.setattr(cic, "scan_cham_soc_cache", lambda driver, ngay, hours_needed=None: ({}, []))
+    monkeypatch.setattr(cic, "kiem_tra_bang_cached", lambda *a, **k: ("UPDATE", "CARE_2", "Lê Ngọc Diệu"))
+    monkeypatch.setattr(cic, "open_cham_soc_by_id", lambda driver, cid: None)
+    monkeypatch.setattr(cic, "click_thu_hoi_cham_soc", lambda driver: True)
+    monkeypatch.setattr(cic, "_open_care_page", lambda driver, wait, row: None)
+    added = []
+    monkeypatch.setattr(cic, "_click_add_care", lambda driver, wait: added.append(True))
+    monkeypatch.setattr(cic, "set_thoi_gian_lap", lambda driver, time_str, max_retry=2: True)
+    monkeypatch.setattr(cic, "dien_thong_tin", lambda *a, **k: True)
+    monkeypatch.setattr(cic, "check_trang_thai_badge", lambda driver: "Hoàn tất")
+    monkeypatch.setattr(cic, "handle_popups", lambda driver: None)
+    monkeypatch.setattr(cic.time, "sleep", lambda *_a: None)
+    ws = _FakeWS(username="lndieu", accounts={"lê ngọc diệu": {"username": "lndieu", "password": "pw"}})
+    res = cic._input_one(ws, {"ma_bn": "1", "care_time_str": "09:22 12/10/2026"}, ["Lê Ngọc Diệu"], "Kính chuyển", "PK nhận", False)
+    assert res["success"] is True and added == [] and ws.switch_calls == []

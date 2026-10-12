@@ -63,7 +63,7 @@ try:
         open_cham_soc_by_id,
     )
     from care_form_actions import (
-        set_thoi_gian_lap, dien_thong_tin,
+        set_thoi_gian_lap, dien_thong_tin, cung_nguoi_lap,
     )
     from care_web_actions import (
         check_trang_thai_badge,
@@ -72,7 +72,7 @@ try:
     )
 except Exception:  # pragma: no cover - chỉ xảy ra ở môi trường test thiếu Selenium
     scan_cham_soc_cache = kiem_tra_bang_cached = None  # type: ignore
-    open_cham_soc_by_id = set_thoi_gian_lap = dien_thong_tin = None  # type: ignore
+    open_cham_soc_by_id = set_thoi_gian_lap = dien_thong_tin = cung_nguoi_lap = None  # type: ignore
     check_trang_thai_badge = click_thu_hoi_va_xoa = click_thu_hoi_cham_soc = None  # type: ignore
 
 
@@ -1187,6 +1187,47 @@ def _row_dien_bien(row: Dict[str, Any], fallback: str = DEFAULT_DIEN_BIEN) -> st
     return value or str(fallback or DEFAULT_DIEN_BIEN).strip()
 
 
+def _delete_old_sheet(ws: Any, row: Dict[str, Any], care_id: str, creator: str) -> bool:
+    """Xóa phiếu cũ: thử tài khoản đang dùng, rồi tài khoản điều dưỡng của người lập phiếu cũ, rồi
+    tài khoản đăng nhập của lượt nhập (bác sĩ, nếu phiếu cũ do lần nhập trước tạo bằng tài khoản đó).
+    Xong luôn trở về tài khoản đang dùng."""
+    ma_bn = row.get("ma_bn")
+
+    def reopen(w, _ma_bn):
+        _open_care_page(w.driver, w.wait, row)
+
+    def delete() -> bool:
+        try:
+            open_cham_soc_by_id(ws.driver, care_id)
+            ws.wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
+            return bool(click_thu_hoi_va_xoa(ws.driver))
+        except Exception as exc:
+            print(f"[WARN] Không xóa được phiếu cũ: {_first_line(exc)}")
+            return False
+
+    if delete():
+        return True
+    current_user = str(ws.config.get("username") or "").strip()
+    current_pass = str(ws.config.get("password") or "")
+    login = getattr(ws, "clinic_login", None) or {}
+    tries = []
+    account = get_emr_account_for_nurse(creator)
+    if account:
+        tries.append((account["username"], account["password"]))
+    if login.get("username"):
+        tries.append((login["username"], login.get("password") or ""))
+    for username, password in tries:
+        if not username or username == current_user:
+            continue
+        print(f"[INFO] Xóa phiếu cũ của {creator} bằng tài khoản {username}.")
+        try:
+            if ws.switch_account_to(username, password, ma_bn, reopen=reopen) and delete():
+                return True
+        finally:
+            ws.restore_account(current_user, current_pass, ma_bn, reopen=reopen)
+    return False
+
+
 def _input_one(
     ws: Any,
     row: Dict[str, Any],
@@ -1239,6 +1280,17 @@ def _input_one(
         return {"success": True, "error": None, "time_str": time_str, "nurse": nurses, "already_correct": True}
     if status == "SKIP":
         return {"success": True, "skipped": True, "reason": "Phiếu đã có", "error": None, "time_str": time_str}
+    if status in ("UPDATE", "EDIT") and care_id and existing_creator and cung_nguoi_lap \
+            and not cung_nguoi_lap(existing_creator, expected_creator):
+        # Phiếu cũ cùng giờ đứng tên người khác (vd lần nhập trước bằng tài khoản bác sĩ). EMR không
+        # cho đổi Người lập nữa: xóa phiếu cũ rồi lập lại bằng tài khoản của người lập đúng.
+        if not _delete_old_sheet(ws, row, care_id, existing_creator):
+            return {"success": False, "time_str": time_str, "error": (
+                f"{time_str}: đã có phiếu cũ cùng giờ do {existing_creator} lập, không xóa được bằng tài khoản "
+                f"đang dùng, tài khoản của {existing_creator} hay tài khoản đăng nhập. Xóa tay phiếu đó rồi nhập lại.")}
+        driver, wait = ws.driver, ws.wait
+        _open_care_page(driver, wait, row)
+        status, care_id, existing_creator = "MISSING", None, None
 
     # EMR hiện chỉ cho đúng tài khoản người tạo phiếu tự sửa/xóa phiếu của họ
     # (worker/shared/worker_session.py là nơi tập trung xử lý đổi/khôi phục
@@ -1289,7 +1341,8 @@ def _input_one(
                 switched_away = False
 
         try:
-            _click_add_care(driver, wait)
+            if status != "UPDATE":  # UPDATE: đang mở chính phiếu cũ (đã Thu hồi), sửa tại chỗ như nhập bệnh phòng
+                _click_add_care(driver, wait)
             wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
         except Exception as exc:
             print(f"[WARN] Không mở được form phiếu chăm sóc: {str(exc).splitlines()[0][:200]}")
@@ -1395,6 +1448,11 @@ def _after(later: str, earlier: str) -> bool:
         return False
 
 
+def _first_line(value: Any, limit: int = 300) -> str:
+    text = str(value or "").strip()
+    return (text.splitlines()[0] if text else "")[:limit]
+
+
 def _input(req: Dict[str, Any], result_path: str) -> int:
     config = _build_config(req)
     care_date, target_department = _validate_request(req)
@@ -1409,6 +1467,8 @@ def _input(req: Dict[str, Any], result_path: str) -> int:
     fallback_nurses = _configured_fallback_nurses(config)
 
     with open_session(result_path, config=config, result_kwargs={"mode": "clinic_inpatient_care"}) as ws:
+        # Tài khoản đăng nhập của lượt nhập (bác sĩ): dùng để xóa phiếu cũ do lần nhập trước tạo bằng tài khoản này.
+        ws.clinic_login = {"username": str(ws.config.get("username") or "").strip(), "password": str(ws.config.get("password") or "")}
         fresh_rows = scan_matching_rows(ws.driver, ws.wait, config, care_date, target_department)
         fresh_map: Dict[str, Dict[str, Any]] = {}
         for fresh in fresh_rows:
@@ -1448,7 +1508,11 @@ def _input(req: Dict[str, Any], result_path: str) -> int:
             try:
                 ws.results[result_key] = _input_patient(ws, fresh, nurses, sheets, needs_vitals)
             except Exception as exc:
-                ws.mark_failed(result_key, exc)
+                ws.mark_failed(result_key, f"Lỗi khi thao tác trên EMR: {_first_line(exc)}")
+            res = ws.results.get(result_key) or {}
+            if not res.get("success"):
+                # Ghi lý do vào log tác vụ để biết dừng ở bước nào (mã BN được che khi in log).
+                print(f"[CLINIC_CARE] {code} | LỖI: {_first_line(res.get('error'))}")
 
     failed = sum(1 for value in ws.results.values() if not value.get("success"))
     return 2 if failed else 0
