@@ -481,6 +481,31 @@ def test_open_care_page_uses_current_login_session_after_switching_account(monke
     assert q["wpid"] == "dieuduongdraw" and q["noitruid"] == "42"
 
 
+def test_order_seeds_skips_first_order_for_saved_rows_but_rechecks_sheets(monkeypatch):
+    """Nội dung đã lưu từ lần tìm trước: không mở lại lịch sử y lệnh, vẫn đọc lại phiếu đã có."""
+    import contextlib
+    import clinic_input_care as cic
+
+    out = {}
+    opened = []
+    monkeypatch.setattr(cic, "_build_config", lambda req: {"url_login": "u", "username": "a", "password": "b"})
+    monkeypatch.setattr(cic, "_validate_request", lambda req: ("12/10/2026", "Khoa Khám Bệnh"))
+    monkeypatch.setattr(cic, "open_session", lambda *a, **k: contextlib.nullcontext(_FakeWS()))
+    monkeypatch.setattr(cic, "scan_matching_rows", lambda *a, **k: [])
+    monkeypatch.setattr(cic, "_resolve_doctor_history_url", lambda req, rows: opened.append(req["ma_bn"]) or "http://emr/h")
+    monkeypatch.setattr(cic, "_read_first_order_seed", lambda driver, url: {"seed_dien_bien": "Đau gối phải"})
+    monkeypatch.setattr(cic, "_pain_suggestion_from_first_order", lambda t, raw: ("gối phải", "Đau gối phải"))
+    monkeypatch.setattr(cic, "_read_sheets_done", lambda ws, req, rows: {"sheets_done": {"kham": True, "khoa": False}})
+    monkeypatch.setattr(cic, "_write_json", lambda path, data: out.update(data))
+    req = {"rows": [{"ma_bn": "1", "client_key": "1::a"}, {"ma_bn": "2", "client_key": "2::b", "skip_seed": True}]}
+    assert cic._fetch_order_seeds(req, "out.json") == 0
+    assert opened == ["1"]
+    by = {r["ma_bn"]: r for r in out["results"]}
+    assert by["2"]["seed_skipped"] and by["2"]["sheets_done"] == {"kham": True, "khoa": False}
+    assert by["1"]["suggestion_available"] and out["status"] == "ok"
+    assert "Giữ nội dung đã lưu của 1 người bệnh" in out["message"]
+
+
 def test_add_care_button_is_clicked_even_when_emr_chat_widget_covers_it(monkeypatch):
     """Tài khoản điều dưỡng có khung chat oneiss (iframe cố định góc phải) che nút Thêm chăm sóc:
     bấm thường bị 'element click intercepted'."""

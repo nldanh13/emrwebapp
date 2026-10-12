@@ -3,15 +3,22 @@
 // Khám Bệnh, T/G vào đúng ngày chọn), gợi ý vị trí đau từ y lệnh đầu tiên, xem phiếu đã có.
 // Mỗi người 2 phiếu (Khoa Khám Bệnh chuyển, Khoa nhận có sinh hiệu); ca đã đủ 2 phiếu thì bỏ ra.
 // Người lập lấy theo Lịch Phòng khám ở Lịch điều dưỡng.
-import { useState } from 'react';
+// Danh sách đã tìm và nội dung đã sửa tự lưu theo ngày (máy chủ); tìm lại thì giữ nội dung đã sửa,
+// không đọc lại y lệnh đầu của người đã có.
+import { useEffect, useRef, useState } from 'react';
 import { IconClipboardPlus, IconSearch } from '@tabler/icons-react';
 import { C, FS } from '../tokens.js';
 import { Btn } from './shared.jsx';
 import { clinicLoginPayload, hasClinicLogin } from './ClinicAccountPicker.jsx';
 import * as api from '../api.js';
+import { useOnTabReturn } from '../hooks/useTabActivity.js';
 import {
-  bothDone, CLINIC_CARE, inputPayloadRows, rowProblems, rowsToInput, setClinicDienBien, VITAL_FIELDS, WARD_NAME, withSheetDefaults,
+  bothDone, CLINIC_CARE, inputPayloadRows, mergeSaved, rowKey, rowProblems, rowsToInput, setClinicDienBien, VITAL_FIELDS, WARD_NAME, withSheetDefaults,
 } from './clinic/careSheets.js';
+
+export { rowKey };
+const SAVE_DELAY_MS = 800;
+const hhmm = iso => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 const DEFAULT_DIEN_BIEN = [
   'Phòng khám Chấn thương chỉnh hình - Thần kinh nhận',
   'Người bệnh tỉnh',
@@ -26,10 +33,6 @@ const DEFAULT_DIEN_BIEN = [
 function todayIso() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-export function rowKey(r) {
-  return `${r.ma_bn}::${r.care_time_str}`;
 }
 
 function resultFor(result, r) {
@@ -47,6 +50,65 @@ export default function ClinicAdmissionCare({ creds, toast }) {
   const [preview, setPreview] = useState(null);
   const [rows, setRows] = useState([]);
   const [result, setResult] = useState(null);
+  const [save, setSave] = useState({ state: '', at: '' }); // '' | 'pending' | 'saved' | 'error'
+  const pending = useRef(null); // { day, rows } chờ tự lưu
+  const timer = useRef(null);
+
+  const flush = async () => {
+    clearTimeout(timer.current);
+    const job = pending.current;
+    pending.current = null;
+    if (!job) return;
+    try {
+      const r = await api.saveClinicAdmissionCare(job.day, job.rows);
+      setSave({ state: 'saved', at: r.saved_at || new Date().toISOString() });
+    } catch (e) {
+      setSave({ state: 'error', at: '' });
+      toast?.(`Chưa lưu được nội dung nhập chăm sóc: ${e.message || e}. Sửa tiếp sẽ thử lưu lại.`, 'error');
+    }
+  };
+
+  // Mọi thay đổi danh sách/nội dung: lưu sau ~0,8 giây kể từ lần sửa cuối.
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  const changeRows = (fn) => {
+    const next = typeof fn === 'function' ? fn(rowsRef.current) : fn;
+    rowsRef.current = next;
+    setRows(next);
+    pending.current = { day: careDate, rows: next };
+    clearTimeout(timer.current);
+    timer.current = setTimeout(flush, SAVE_DELAY_MS);
+    setSave(s => ({ ...s, state: 'pending' }));
+  };
+
+  const loadSaved = async (day) => {
+    try {
+      const r = await api.getClinicAdmissionCare(day);
+      const saved = r.saved?.rows || [];
+      rowsRef.current = saved;
+      setRows(saved);
+      setPreview(null);
+      setResult(null);
+      setSave({ state: saved.length ? 'saved' : '', at: r.saved?.saved_at || '' });
+    } catch (e) {
+      toast?.(`Không tải được nội dung đã lưu: ${e.message || e}`, 'error');
+    }
+  };
+
+  // Đổi ngày: lưu ngay phần đang chờ của ngày cũ rồi mở bản đã lưu của ngày mới.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await flush();
+      if (!cancelled) await loadSaved(careDate);
+    })();
+    return () => { cancelled = true; };
+  }, [careDate]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { flush(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Quay lại tab: lấy bản mới nhất (máy khác có thể đã sửa), trừ khi đang chạy hoặc đang chờ lưu/nhập.
+  useOnTabReturn(() => {
+    if (!busy && !pending.current && !preview?.precheck_token) loadSaved(careDate);
+  });
 
   const base = () => ({
     ...clinicLoginPayload(creds),
@@ -64,20 +126,23 @@ export default function ClinicAdmissionCare({ creds, toast }) {
     try {
       const r = await api.runClinicCarePreview(base());
       if (r.status !== 'ok') throw new Error(r.message);
-      const found = (r.rows || []).map(row => ({ ...withSheetDefaults(row, DEFAULT_DIEN_BIEN), pain_note: '' }));
+      // Người đã có nội dung lưu: giữ nội dung đã sửa; thông tin EMR lấy theo lần quét này.
+      const found = mergeSaved((r.rows || []).map(row => ({ ...withSheetDefaults(row, DEFAULT_DIEN_BIEN), pain_note: '' })), rows);
       setPreview(r);
-      setRows(found);
+      changeRows(found);
       toast?.(r.message, 'ok');
       const withHistory = found.filter(row => row.can_input);
       if (withHistory.length) {
         setBusy('seeds');
-        const s = await api.runClinicCareOrderSeeds({ ...base(), rows: withHistory.map(row => ({ ...row, client_key: rowKey(row) })) });
+        const s = await api.runClinicCareOrderSeeds({ ...base(), rows: withHistory.map(row => ({ ...row, client_key: rowKey(row), skip_seed: Boolean(row.restored) })) });
         const byKey = new Map((s.results || []).map(item => [item.row_key, item]));
-        setRows(prev => prev.map(row => {
+        changeRows(prev => prev.map(row => {
           const item = byKey.get(rowKey(row));
           if (!item) return row;
           let next = { ...row, sheets_done: item.sheets_done || null, sheets_error: item.sheets_error || '' };
-          if (item.suggestion_available) {
+          if (row.restored || item.seed_skipped) {
+            // nội dung đã lưu: không ghi đè
+          } else if (item.suggestion_available) {
             next = { ...setClinicDienBien(next, item.suggested_dien_bien), pain_note: `Vị trí đau từ y lệnh đầu: ${item.pain_location}` };
           } else {
             next.pain_note = item.error || 'Chưa nhận diện được vị trí đau, đang dùng mẫu chung.';
@@ -118,7 +183,7 @@ export default function ClinicAdmissionCare({ creds, toast }) {
     }
   };
 
-  const update = (key, fn) => setRows(prev => prev.map(r => (rowKey(r) === key ? fn(r) : r)));
+  const update = (key, fn) => changeRows(prev => prev.map(r => (rowKey(r) === key ? fn(r) : r)));
   const hasCreds = Boolean(hasClinicLogin(creds) && creds.hasEmrUrl);
 
   return (
@@ -144,16 +209,24 @@ export default function ClinicAdmissionCare({ creds, toast }) {
           {`Nhập chăm sóc ${inputRows.length} người bệnh`}
         </Btn>
       </div>
+      {rows.length > 0 && (
+        <div style={{ fontSize: FS.sm, color: save.state === 'error' ? C.red : C.text2 }}>
+          {save.state === 'pending' ? 'Có thay đổi, đang chờ tự lưu…'
+            : save.state === 'error' ? 'Chưa lưu được, sửa tiếp sẽ thử lưu lại.'
+              : save.at ? `Đã tự lưu lúc ${hhmm(save.at)}.` : ''}
+          {!preview?.precheck_token && ' Bấm "Tìm người nhập viện" để kiểm tra lại EMR trước khi nhập; nội dung đã sửa được giữ, không đọc lại y lệnh đầu.'}
+        </div>
+      )}
       {!hasCreds && <div style={{ fontSize: FS.sm, color: C.amber }}>Chọn bác sĩ (hoặc nhập tài khoản, mật khẩu) ở phía trên trước.</div>}
 
-      {preview && (
+      {(preview || rows.length > 0) && (
         // Khung cuộn riêng: nhiều người nhập viện không kéo dài cả trang.
         <div style={{ overflow: 'auto', maxHeight: '70vh', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {shownRows.map(r => (
             <PatientCard key={rowKey(r)} row={r} res={resultFor(result, r)} disabled={Boolean(busy)}
               onChange={fn => update(rowKey(r), fn)} />
           ))}
-          {!rows.length && <div style={{ padding: 16, textAlign: 'center', color: C.text2 }}>Không có người bệnh nhập viện từ Khoa Khám Bệnh trong ngày này.</div>}
+          {preview && !rows.length && <div style={{ padding: 16, textAlign: 'center', color: C.text2 }}>Không có người bệnh nhập viện từ Khoa Khám Bệnh trong ngày này.</div>}
           {doneRows.length > 0 && (
             <details style={{ fontSize: FS.sm, color: C.text2 }}>
               <summary style={{ cursor: 'pointer' }}>Đã đủ 2 phiếu Hoàn tất, không cần nhập ({doneRows.length})</summary>

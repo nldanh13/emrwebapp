@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  bothDone, CLINIC_CARE, inputPayloadRows, rowProblems, rowsToInput, setClinicDienBien, vitalsErrors, WARD_CARE, wardDienBien, wardTime, withSheetDefaults,
+  bothDone, CLINIC_CARE, inputPayloadRows, mergeSaved, rowProblems, rowsToInput, setClinicDienBien, vitalsErrors, WARD_CARE, wardDienBien, wardTime, withSheetDefaults,
 } from './careSheets.js';
 
 const DB = 'Phòng khám Chấn thương chỉnh hình - Thần kinh nhận\nNgười bệnh tỉnh';
@@ -59,5 +59,18 @@ describe('careSheets', () => {
     const sent = inputPayloadRows([done, skipped, ready, noLink]);
     expect(sent.map(r => [r.ma_bn, r.nhap])).toEqual([['1', false], ['2', false], ['3', true]]);
     expect(sent.every(r => r.saved_for_input)).toBe(true);
+  });
+
+  it('tìm lại giữ nội dung đã sửa, thông tin EMR lấy theo lần quét mới', () => {
+    const saved = [{ ...base({ ma_bn: '1', dieu_duong: 'ĐD cũ', sheets_done: null }), dien_bien: 'Đau gối phải', skip: true, vitals: { ...VITALS, mach: '92' } }];
+    const fresh = [base({ ma_bn: '1', dieu_duong: 'ĐD mới', sheets_done: { kham: true, khoa: false } }), base({ ma_bn: '2' })];
+    const [one, two] = mergeSaved(fresh, saved);
+    expect(one.dien_bien).toBe('Đau gối phải');
+    expect(one.skip).toBe(true);
+    expect(one.vitals.mach).toBe('92');
+    expect(one.dieu_duong).toBe('ĐD mới');
+    expect(one.sheets_done).toEqual({ kham: true, khoa: false });
+    expect(one.restored).toBe(true);
+    expect(two.restored).toBeUndefined();
   });
 });

@@ -906,6 +906,13 @@ def _fetch_order_seeds(req: Dict[str, Any], output_path: str) -> int:
                 "success": False,
             }
             try:
+                if requested.get("skip_seed"):
+                    # Lần tìm trước đã đọc y lệnh đầu và người dùng đã sửa nội dung (đã lưu): không mở lại
+                    # lịch sử y lệnh, chỉ đọc lại phiếu chăm sóc đã có bên dưới.
+                    item.update({"success": True, "seed_skipped": True, "suggestion_available": False})
+                    item.update(_read_sheets_done(ws, requested, fresh_rows))
+                    results.append(item)
+                    continue
                 history_url = _resolve_doctor_history_url(requested, fresh_rows)
                 if not history_url:
                     raise RuntimeError("Không tìm được liên kết lịch sử y lệnh.")
@@ -928,17 +935,22 @@ def _fetch_order_seeds(req: Dict[str, Any], output_path: str) -> int:
             item.update(_read_sheets_done(ws, requested, fresh_rows))
             results.append(item)
 
+    reused = sum(1 for item in results if item.get("seed_skipped"))
     succeeded = sum(1 for item in results if item.get("success"))
     suggested = sum(1 for item in results if item.get("suggestion_available"))
-    unmatched = sum(1 for item in results if item.get("success") and not item.get("suggestion_available"))
+    unmatched = sum(1 for item in results if item.get("success") and not item.get("suggestion_available") and not item.get("seed_skipped"))
     failed = len(results) - succeeded
     status = "ok" if not failed and not unmatched else ("partial" if succeeded else "error")
+    read = len(results) - reused
+    message = (
+        f"Đã đọc y lệnh đầu tiên cho {succeeded - reused}/{read} người bệnh; "
+        f"gợi ý được vị trí đau cho {suggested}, chưa nhận diện được {unmatched}, lỗi {failed}."
+    ) if read else ""
+    if reused:
+        message = (message + " " if message else "") + f"Giữ nội dung đã lưu của {reused} người bệnh, chỉ kiểm tra lại phiếu đã có."
     result = {
         "status": status,
-        "message": (
-            f"Đã đọc y lệnh đầu tiên cho {succeeded}/{len(results)} người bệnh; "
-            f"gợi ý được vị trí đau cho {suggested}, chưa nhận diện được {unmatched}, lỗi {failed}."
-        ),
+        "message": message,
         "results": results,
         "succeeded": succeeded,
         "suggested": suggested,

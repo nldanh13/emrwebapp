@@ -138,6 +138,8 @@ function apiActionLabel(method, url) {
     'GET /api/clinic/sick-leave': 'tải danh sách người bệnh xin nghỉ ốm',
     'GET /api/clinic/emr-defaults': 'đọc địa chỉ EMR đã khai',
     'POST /api/clinic/sick-leave': 'cập nhật danh sách người bệnh xin nghỉ ốm',
+    'GET /api/clinic/admission-care': 'tải nội dung nhập chăm sóc người nhập viện đã lưu',
+    'POST /api/clinic/admission-care': 'lưu nội dung nhập chăm sóc người nhập viện',
     'GET /api/data-sessions': 'tải danh sách phiên dữ liệu',
     'DELETE /api/data-sessions': 'xoá phiên dữ liệu',
     'POST /api/cancel': 'huỷ tác vụ đang chạy',
@@ -799,6 +801,8 @@ export const downloadClinicReportsPdf = () => downloadBlob('/api/clinic/monitor/
 export const downloadClinicTrace = () => downloadBlob('/api/clinic/monitor/trace', 'nhat_ky_quet_phong_kham.jsonl');
 export const runClinicCarePreview = (payload) => post('/api/clinic/care-preview', payload);
 export const runClinicCareOrderSeeds = (payload) => post('/api/clinic/care-order-seeds', payload);
+export const getClinicAdmissionCare = (day) => get(`/api/clinic/admission-care?day=${encodeURIComponent(day)}`);
+export const saveClinicAdmissionCare = (day, rows) => post('/api/clinic/admission-care', { day, rows });
 export const runClinicInputCare = (payload) => post('/api/clinic/input-care', payload);
 export const getSickLeaveState = () => get('/api/sick-leave-state');
 export const saveSickLeaveState = (payload) => post('/api/sick-leave-state', payload);
