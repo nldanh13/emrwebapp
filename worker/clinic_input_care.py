@@ -1091,6 +1091,27 @@ def _with_current_session(saved_url: str, current_url: str) -> str:
     return urlunparse((p.scheme, p.netloc, p.path, p.params, urlencode(query + list(fresh.items())), p.fragment))
 
 
+# Khung chat "oneiss" của EMR (iframe cố định góc phải, chỉ hiện ở một số tài khoản) che nút Thêm
+# chăm sóc và các ô trong form: ẩn đi và bấm bằng JS.
+_HIDE_WIDGETS_JS = (
+    "document.querySelectorAll('iframe#oneiss-widget, iframe[src*=\"oneiss\"]')"
+    ".forEach(function (el) { el.style.display = 'none'; });"
+)
+
+
+def _hide_emr_widgets(driver: Any) -> None:
+    try:
+        driver.execute_script(_HIDE_WIDGETS_JS)
+    except Exception:
+        pass
+
+
+def _click_add_care(driver: Any, wait: Any) -> None:
+    _hide_emr_widgets(driver)
+    btn = wait.until(EC.presence_of_element_located((By.ID, "btnThemCS")))
+    driver.execute_script("arguments[0].click();", btn)
+
+
 def _open_care_page(driver: Any, wait: Any, row: Dict[str, Any]) -> None:
     url = _compact(row.get("nursing_url") or "")
     if not url:
@@ -1099,6 +1120,7 @@ def _open_care_page(driver: Any, wait: Any, row: Dict[str, Any]) -> None:
     wait_after_action(driver, 0.8, ready_timeout=12)
     if not _verify_opened_patient(driver, row):
         raise RuntimeError("Không xác nhận được đúng mã/tên người bệnh sau khi mở hồ sơ điều dưỡng.")
+    _hide_emr_widgets(driver)
 
     # Nếu chưa ở tab Tình trạng chăm sóc thì bấm đúng nút tab.
     try:
@@ -1255,10 +1277,11 @@ def _input_one(
                 switched_away = False
 
         try:
-            wait.until(EC.element_to_be_clickable((By.ID, "btnThemCS"))).click()
+            _click_add_care(driver, wait)
             wait.until(EC.visibility_of_element_located((By.ID, "txtThoiGianLap")))
         except Exception as exc:
-            return {"success": False, "error": f"Không mở được form phiếu chăm sóc: {exc}"}
+            print(f"[WARN] Không mở được form phiếu chăm sóc: {str(exc).splitlines()[0][:200]}")
+            return {"success": False, "error": f"{time_str}: Không mở được form phiếu chăm sóc trên EMR (nút Thêm chưa hiện hoặc bị che). Chưa ghi gì, bấm Nhập chăm sóc lại."}
 
         config_name = {"Default": {"work": nurses, "oncall": [], "admin": []}}
         for attempt in range(1, 4):

@@ -479,3 +479,29 @@ def test_open_care_page_uses_current_login_session_after_switching_account(monke
     q = dict(cic.parse_qsl(cic.urlparse(d.opened[0]).query))
     assert q["usid"] == "NEW_SID" and q["st"] == "NEW_ST"
     assert q["wpid"] == "dieuduongdraw" and q["noitruid"] == "42"
+
+
+def test_add_care_button_is_clicked_even_when_emr_chat_widget_covers_it(monkeypatch):
+    """Tài khoản điều dưỡng có khung chat oneiss (iframe cố định góc phải) che nút Thêm chăm sóc:
+    bấm thường bị 'element click intercepted'."""
+    import clinic_input_care as cic
+
+    class Btn:
+        def click(self):
+            raise RuntimeError("element click intercepted: Other element would receive the click: <iframe id=\"oneiss-widget\">")
+
+    class Driver:
+        def __init__(self):
+            self.scripts = []
+
+        def execute_script(self, script, *args):
+            self.scripts.append(script)
+
+    class Wait:
+        def until(self, cond):
+            return Btn()
+
+    d = Driver()
+    cic._click_add_care(d, Wait())
+    assert any("oneiss-widget" in s for s in d.scripts)  # ẩn khung chat
+    assert any("arguments[0].click()" in s for s in d.scripts)  # bấm bằng JS, không bị che
