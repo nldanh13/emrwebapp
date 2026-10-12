@@ -24,12 +24,12 @@ describe('clinicBoard', () => {
       row({ khambenhid: 'e', eligible: true, check: { status: 'done' } }),
       row({ khambenhid: 'f', eligible: false }),
     ]);
-    expect(g.ready.map(r => r.khambenhid)).toEqual(['a', 'd']);
+    expect(g.ready.map(r => r.khambenhid)).toEqual(['a', 'c', 'd']);  // c: chưa mở màn khám, kiểm tra khi bấm Hoàn tất
     expect(g.noDrug.map(r => r.khambenhid)).toEqual(['b']);
-    expect(g.pending.map(r => r.khambenhid)).toEqual(['c']);
+    expect(g.pending.map(r => r.khambenhid)).toEqual([]);
     expect(drugLabel(g.ready[0])).toBe('Có 2 thuốc');
     expect(drugLabel(g.noDrug[0])).toBe('Chưa có thuốc');
-    expect(drugLabel(g.pending[0])).toBe('Đang kiểm tra thuốc…');
+    expect(drugLabel(g.ready[1])).toBe('Kiểm tra thuốc khi bấm Hoàn tất');
   });
 
   it('liệt kê thủ thuật, phẫu thuật, SBBHC cần làm', () => {

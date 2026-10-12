@@ -68,7 +68,7 @@ export function VisitPanel({ rows, running, busy, actionRunning, onComplete, onE
 
       <div>
         <div style={{ fontSize: FS.sm, fontWeight: 600, color: C.text, marginBottom: 4 }}>
-          Đã có thuốc, hoàn tất được ({groups.ready.length})
+          Đủ điều kiện hoàn tất ({groups.ready.length})
         </div>
         {groups.ready.length ? groups.ready.map(r => (
           <PatientLine key={r.khambenhid} row={r} right={<span style={{ color: C.green, fontWeight: 600, fontSize: FS.sm }}>{drugLabel(r) || 'Sẵn sàng'}</span>} />
@@ -94,9 +94,10 @@ export function VisitPanel({ rows, running, busy, actionRunning, onComplete, onE
         </div>
       )}
       <div style={{ fontSize: FS.xs, color: C.text2 }}>
-        Người bệnh BHYT và viện phí xử trí Cho về hoặc Chuyển viện, dịch vụ đã xong. Cho về phải có thuốc trong đơn; cuối ngày
-        bấm "Hoàn tất cuối ngày" để hoàn tất cả người chưa có thuốc và người chuyển khám chuyên khoa. Hệ thống kiểm tra lại
-        từng người ngay trước khi bấm Hoàn tất và dừng ở người nào EMR báo lỗi hoặc hỏi xác nhận.
+        Xét theo cột Trạng thái, Kết quả dịch vụ, Xử trí của Danh sách Khám bệnh: người bệnh BHYT và viện phí xử trí Cho về
+        hoặc Chuyển viện, dịch vụ đã xong. Hệ thống chỉ mở màn khám khi bấm Hoàn tất: kiểm tra thuốc (Cho về phải có thuốc),
+        giờ, cân nặng ngay trước khi bấm và dừng ở người nào EMR báo lỗi hoặc hỏi xác nhận. Cuối ngày bấm "Hoàn tất cuối ngày"
+        để hoàn tất cả người chưa có thuốc và người chuyển khám chuyên khoa.
       </div>
     </Panel>
   );

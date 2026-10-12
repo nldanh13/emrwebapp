@@ -34,9 +34,9 @@ def test_trace_records_pages_and_exam_opens_without_names(tmp_path):
         mon.driver = FakeDriver([])
         mon._on_exam_page = lambda row, action, need, now: {'status': 'no_drug', 'message': 'Chưa có thuốc'}
 
-        def run_checks():
+        def run_completions():
             return mon.on_exam_page(rows[0], lambda *a: {})
-        run_checks()
+        run_completions()
         lines = _lines(str(tmp_path))
     finally:
         cm.set_trace_dir(None)
@@ -45,7 +45,7 @@ def test_trace_records_pages_and_exam_opens_without_names(tmp_path):
     assert read['su_kien'] == 'doc_danh_sach' and read['tong_so_emr'] == 2 and read['doc_duoc'] == 2
     assert [(t['page'], t['so_dong'], t['moi']) for t in read['trang']] == [(0, 1, 1), (1, 1, 0), (2, 1, 1)]
     opened = lines[1]
-    assert opened['su_kien'] == 'mo_man_kham' and opened['ly_do'] == 'kiểm tra hoàn tất'
+    assert opened['su_kien'] == 'mo_man_kham' and opened['ly_do'] == 'chuẩn bị hoàn tất'
     assert opened['stt'] == '1' and opened['ket_qua'] == 'no_drug' and len(opened['ref']) == 8
     text = json.dumps(lines, ensure_ascii=False)
     assert 'NGUYEN' not in text and 'TRAN' not in text and '99000001' not in text

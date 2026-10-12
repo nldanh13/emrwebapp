@@ -14,17 +14,18 @@ export function stageCounts(rows = []) {
   return out;
 }
 
-// Người bệnh chờ hoàn tất khám, chia theo kết quả kiểm tra đơn thuốc trên màn khám.
-//   ready:   đã có thuốc (hoặc chuyển viện), đủ điều kiện → bấm Hoàn tất
-//   noDrug:  Cho về nhưng bác sĩ chưa kê thuốc
-//   pending: còn chờ (đang kiểm tra, chưa đủ giờ, thiếu cân nặng, bác sĩ chưa nhập đủ, lỗi)
+// Người bệnh chờ hoàn tất khám. Đủ điều kiện xét theo cột Trạng thái, Kết quả dịch vụ, Xử trí của
+// Danh sách Khám bệnh; màn khám chỉ được mở (kiểm tra thuốc, giờ, cân nặng) khi bấm Hoàn tất.
+//   ready:   đủ điều kiện theo danh sách (chưa mở màn khám) hoặc lần bấm trước đã sẵn sàng → bấm Hoàn tất
+//   noDrug:  lần bấm trước thấy Cho về nhưng bác sĩ chưa kê thuốc
+//   pending: lần bấm trước còn chờ (chưa đủ giờ, thiếu cân nặng, bác sĩ chưa nhập đủ, lỗi)
 export function completionGroups(rows = []) {
   const out = { ready: [], noDrug: [], pending: [] };
   for (const r of rows) {
     if (!r?.eligible) continue;
     const status = r.check?.status;
     if (status === 'done') continue;
-    if (status === 'ready' || (status === 'need_weight' && r.weight_entered)) out.ready.push(r);
+    if (!status || status === 'ready' || (status === 'need_weight' && r.weight_entered)) out.ready.push(r);
     else if (status === 'no_drug') out.noDrug.push(r);
     else out.pending.push(r);
   }
@@ -33,7 +34,7 @@ export function completionGroups(rows = []) {
 
 export function drugLabel(row) {
   const check = row?.check;
-  if (!check) return 'Đang kiểm tra thuốc…';
+  if (!check) return 'Kiểm tra thuốc khi bấm Hoàn tất';
   if (check.status === 'no_drug') return 'Chưa có thuốc';
   if (typeof check.drugs === 'number') return check.drugs > 0 ? `Có ${check.drugs} thuốc` : 'Không cần thuốc';
   return '';

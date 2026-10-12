@@ -179,7 +179,7 @@ def test_run_monitor_writes_state_deletes_request_and_stops(monkeypatch, tmp_pat
     assert data['interval_minutes'] == 5
     assert [r['khambenhid'] for r in data['rows']] == ['a']
     assert data['summary']['ready'] == 1
-    assert data['rows'][0]['eligible'] is True and data['rows'][0]['check']['status'] == 'ready'
+    assert data['rows'][0]['eligible'] is True and data['rows'][0]['check'] is None  # không mở màn khám để kiểm tra trước
     assert 'href' not in data['rows'][0]
     assert 'password' not in data and data['account'] == 'u'
 
@@ -261,7 +261,8 @@ def test_run_monitor_past_day_is_read_only(monkeypatch, tmp_path):
 
 
 def test_run_monitor_does_not_open_completed_or_waiting_patients(monkeypatch, tmp_path):
-    """Trạng thái đã có ở Danh sách Khám bệnh: người đã Hoàn tất / chờ khám / chưa xử trí không cần mở màn khám."""
+    """Trạng thái đã có ở Danh sách Khám bệnh (cột Trạng thái, Kết quả dịch vụ, Xử trí): vòng theo dõi không mở màn khám
+    ai cả, kể cả người Cho về đủ điều kiện hoàn tất — chỉ mở khi người dùng bấm Hoàn tất."""
     req = tmp_path / 'req.json'
     state = tmp_path / 'state.json'
     control = tmp_path / 'control.json'
@@ -271,7 +272,8 @@ def test_run_monitor_does_not_open_completed_or_waiting_patients(monkeypatch, tm
     html = _table(_row('a', 1, '<a>A</a>', BHYT, 'Đã tất toán', '', 'Cho về'),
                   _row('b', 2, '<a>B</a>', BHYT, 'Hoàn tất', '', 'Chuyển khám chuyên khoa'),
                   _row('c', 3, '<a>C</a>', BHYT, 'Đang thực hiện', '', ''),
-                  _row('d', 4, '<a>D</a>', BHYT, 'Chờ thực hiện', '', ''))
+                  _row('d', 4, '<a>D</a>', BHYT, 'Chờ thực hiện', '', ''),
+                  _row('e', 5, '<a>E</a>', BHYT, 'Đang thực hiện', '', 'Cho về'))
     opened = []
 
     class FakeMonitor(cm.Monitor):
@@ -287,7 +289,7 @@ def test_run_monitor_does_not_open_completed_or_waiting_patients(monkeypatch, tm
     monkeypatch.setattr(cm, 'Monitor', FakeMonitor)
     cm.run_monitor(str(req), str(state), str(control))
     assert opened == []
-    assert len(json.loads(state.read_text(encoding='utf-8'))['rows']) == 4
+    assert len(json.loads(state.read_text(encoding='utf-8'))['rows']) == 5
 
 
 # ── Điều kiện và thao tác hoàn tất khám ──────────────────────────────────────
@@ -406,11 +408,6 @@ def test_complete_patient_stops_before_any_click():
     page = FakePage(start='09:58 28/09/2026')
     assert cm.complete_patient(page, {}, None, NOW, None)['result'] == 'waiting'
     assert page.writes == []
-
-
-def test_need_weight_status_is_kept_until_user_acts():
-    assert cm._need_check({'status': 'need_weight', 'at': '2026-09-28T08:00:00'}, NOW) is False
-    assert cm._need_check({'status': 'ready', 'at': '2026-09-28T09:50:00'}, NOW) is True
 
 
 class DialogDriver:
