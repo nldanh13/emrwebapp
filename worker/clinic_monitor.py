@@ -295,7 +295,6 @@ TRACE_KEEP_DAYS = 7
 TRACE_FILE_RE = re.compile(r"^clinic_trace_(\d{8})\.jsonl$")
 _trace_dir: Optional[str] = None
 WHY_LABELS = {
-    "run_checks": "kiểm tra hoàn tất",
     "run_tasks": "chuẩn bị thủ thuật",
     "run_completions": "chuẩn bị hoàn tất",
     "complete_on_exam_page": "hoàn tất khám",
@@ -1232,37 +1231,6 @@ def _now() -> datetime:
     return datetime.now().replace(microsecond=0)
 
 
-CHECK_EVERY = timedelta(minutes=5)
-MAX_CHECKS_PER_CYCLE = 8
-
-
-def _need_check(check: Optional[Dict[str, Any]], now: datetime) -> bool:
-    if not check:
-        return True
-    if check.get("status") in {"need_weight", "done"}:
-        return False  # chờ người dùng nhập cân nặng / đã xong — không kiểm tra lại
-    if check.get("status") == "waiting" and check.get("earliest"):
-        return now >= datetime.fromisoformat(check["earliest"])
-    return now - datetime.fromisoformat(check["at"]) >= CHECK_EVERY
-
-
-def run_checks(monitor: "Monitor", rows: List[Dict[str, Any]], checks: Dict[str, Dict[str, Any]]) -> None:
-    """Kiểm tra (chỉ đọc) các người bệnh có thể hoàn tất, giới hạn số người mỗi chu kỳ."""
-    done = 0
-    for row in rows:
-        key = row.get("khambenhid") or ""
-        if done >= MAX_CHECKS_PER_CYCLE or not key or not row.get("href") or not eligible_for_completion(row):
-            continue
-        if not _need_check(checks.get(key), _now()):
-            continue
-        res = monitor.on_exam_page(row, lambda page, done_at, now: check_patient(page, row, done_at, now))
-        checks[key] = {k: v for k, v in res.items() if k != "result"}
-        checks[key]["at"] = _now().isoformat()
-        done += 1
-        if res.get("status") == "session":
-            break
-
-
 def scan_imaging(monitor: "Monitor", rows: List[Dict[str, Any]], cache: Dict[str, Dict[str, Any]]) -> None:
     """Người bệnh có BHYT có chỉ định CĐHA: đọc (1 lần cho mỗi số chỉ định) xem có CT / MRI không."""
     for row in rows:
@@ -1774,7 +1742,6 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                             rows = monitor.read()
                         state["action_running"] = False
                         state["last_action_at"] = _now().isoformat()
-                    run_checks(monitor, rows, checks)
                     scan_imaging(monitor, rows, imaging)
                     if auto_tasks:
                         # Soạn sẵn nháp SBBHC (chỉ đọc màn khám) ngay khi có chỉ định; lập trên EMR vẫn chờ người dùng duyệt.

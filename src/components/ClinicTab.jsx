@@ -120,7 +120,7 @@ function CompletionCell({ row, toast, onSaved }) {
   }
   if (!row.eligible) return <span style={{ color: C.text3 }}>—</span>;
   const check = row.check;
-  if (!check) return <span style={{ color: C.text3, fontSize: FS.sm }}>Đang kiểm tra…</span>;
+  if (!check) return <span style={{ color: C.text3, fontSize: FS.sm }}>Kiểm tra khi bấm Hoàn tất</span>;
   const view = CHECK_VIEW[check.status] || { color: C.text2 };
   return (
     <div style={{ fontSize: FS.sm }}>
@@ -245,7 +245,7 @@ export default function ClinicTab({ toast }) {
   };
 
   const completeReady = async (n) => {
-    if (!window.confirm(`Hoàn tất khám ${n} người bệnh đã có thuốc trên EMR?\n\nHệ thống sẽ kiểm tra lại từng người ngay trước khi thao tác (đơn thuốc, thủ thuật, đủ giờ, cân nặng, thời gian ra) và dừng lại ở người nào EMR báo lỗi hoặc hỏi xác nhận.`)) return;
+    if (!window.confirm(`Hoàn tất khám ${n} người bệnh trên EMR?\n\nHệ thống mở màn khám từng người và kiểm tra ngay trước khi thao tác (đơn thuốc, thủ thuật, đủ giờ, cân nặng, thời gian ra) và dừng lại ở người nào EMR báo lỗi hoặc hỏi xác nhận.`)) return;
     setBusy('complete');
     try {
       const r = await api.completeReadyClinicPatients();
