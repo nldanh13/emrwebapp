@@ -204,7 +204,8 @@ def test_fetch_turns_emr_pages_like_the_user_when_direct_read_stalls():
     driver = EmrListDriver(pages)
     rows = cm.fetch_today_rows(driver, ui_pager=True)
     assert len(rows) == 79
-    assert [a for a in driver.calls if isinstance(a, int)] == [1, 2, 3, 4]
+    assert [a for a in driver.calls if isinstance(a, int)] == [1, 2, 3, 4, 0]  # đọc xong quay về trang 1
+    assert driver.shown == 0
     assert not any(isinstance(a, dict) and a.get('page', 0) > 0 for a in driver.calls)
 
     # Trang EMR không có nút lật trang: quay về đọc thẳng như cũ, không lỗi.
@@ -1080,3 +1081,25 @@ def test_missing_emr_template_reports_available_names_instead_of_picking_first()
         assert 'CTCH-thay băng' in str(e) and 'Mẫu A, Mẫu B' in str(e)
     assert _proc_page(['CTCH - Thay băng']).emr_template_name('CTCH-thay băng') == 'CTCH - Thay băng'
     assert _proc_page([]).emr_template_name('CTCH-thay băng') == 'CTCH-thay băng'
+
+
+def test_xu_tri_is_done_only_when_status_is_hoan_tat():
+    """Người dùng 12/10: có xử trí + Trạng thái Hoàn tất mới là xong; có xử trí mà chưa Hoàn tất
+    (kể cả "Đã tất toán", "Chờ thực hiện") thì cần hoàn tất."""
+    rows = _classified(_table(
+        _row('a', 1, '<a>A</a>', BHYT, 'Hoàn tất', '', 'Cho về'),
+        _row('b', 2, '<a>B</a>', BHYT, 'Đã tất toán', '', 'Cho về'),
+        _row('c', 3, '<a>C</a>', BHYT, 'Chờ thực hiện', '', 'Cho về'),
+        _row('d', 4, '<a>D</a>', BHYT, 'Đã tất toán', '', 'Chuyển khám chuyên khoa'),
+        _row('e', 5, '<a>E</a>', BHYT, 'Chờ thực hiện', '', ''),
+        _row('f', 6, '<a>F</a>', BHYT, 'Hoàn tất', '', 'Nhập viện'),
+    ))
+    assert rows['a']['stage'] == 'xong' and rows['a']['next_action'] == 'Đã xong'
+    for k in ('b', 'c'):
+        assert rows[k]['stage'] != 'xong' and rows[k]['ready'] is True, k
+        assert rows[k]['next_action'] == 'Hoàn tất khám', k
+        assert cm.eligible_for_completion(rows[k]), k
+    assert rows['d']['stage'] != 'xong' and rows['d']['next_action'] == 'Hoàn tất cuối ngày'
+    assert cm.eligible_for_completion(rows['d'], end_of_day=True)
+    assert rows['e']['stage'] == 'cho_kham'  # chưa có xử trí: vẫn chờ khám
+    assert rows['f']['stage'] == 'xong'
