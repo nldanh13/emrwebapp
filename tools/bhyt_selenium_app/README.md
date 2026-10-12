@@ -36,9 +36,7 @@ Yêu cầu:
 2. Google Chrome bản hiện hành.
 3. Python 3.11 trở lên, khi cài nhớ chọn **Add Python to PATH**.
 
-Giải nén toàn bộ thư mục, sau đó nhấp đúp **`start.bat`**. Lần đầu chương trình sẽ tạo môi trường Python và cài thư viện; các lần sau sẽ nhanh hơn. Giao diện mở tại:
-
-`http://127.0.0.1:5005`
+Giải nén toàn bộ thư mục, sau đó nhấp đúp **`start.bat`** một lần. Lần đầu chương trình sẽ tạo môi trường Python và cài thư viện. Sau đó không cần mở trang riêng: thao tác ở tab **Nghỉ ốm** của web app, web app tự khởi động công cụ khi bấm **Lấy mã CAPTCHA**. Trang riêng `http://127.0.0.1:5005` vẫn mở được khi cần xem nhật ký hoặc nhập từ file Excel.
 
 Nếu Windows Firewall hỏi, chỉ cần cho phép mạng riêng; ứng dụng chỉ lắng nghe trên máy cục bộ (`127.0.0.1`).
 

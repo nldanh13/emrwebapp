@@ -615,3 +615,22 @@ def test_update_own_old_sheet_edits_in_place_without_adding_new(monkeypatch):
     ws = _FakeWS(username="lndieu", accounts={"lê ngọc diệu": {"username": "lndieu", "password": "pw"}})
     res = cic._input_one(ws, {"ma_bn": "1", "care_time_str": "09:22 12/10/2026"}, ["Lê Ngọc Diệu"], "Kính chuyển", "PK nhận", False)
     assert res["success"] is True and added == [] and ws.switch_calls == []
+
+
+def test_ward_sheet_written_by_ward_nurse_by_hand_counts_as_done():
+    """Khoa tự lập phiếu nhận bệnh giờ khác, chăm sóc 'Nhận hồ sơ + 1XQ; …', diễn biến 'Người bệnh tỉnh; …':
+    không lập thêm phiếu 2. Phiếu 1 'Kính chuyển … nhận / Hồ sơ' không được tính là phiếu nhận."""
+    import clinic_input_care as cic
+
+    khoa = cic.care_sheets({"care_time_str": "10:31 12/10/2026"})[1]
+    clinic = {"time_full": "10:31 12/10/2026", "date": "12/10/2026", "status": "Hoàn tất",
+              "dien_bien": "Phòng khám Chấn thương chỉnh hình - Thần kinh nhận Người bệnh tỉnh",
+              "cham_soc": "Kính chuyển Khoa Chấn Thương chỉnh hình - Thần kinh nhận Hồ sơ"}
+    assert not cic.sheet_done([clinic], khoa)
+    by_hand = {"time_full": "10:40 12/10/2026", "date": "12/10/2026", "status": "Hoàn tất",
+               "dien_bien": "Người bệnh tỉnh; Tiếp xúc tốt; Da niêm hồng",
+               "cham_soc": "Nhận hồ sơ + 1XQ; Lấy dấu hiệu sinh tồn; Trình bác sĩ trực"}
+    assert cic.sheet_done([clinic, by_hand], khoa)
+    later_routine = {"time_full": "16:00 12/10/2026", "date": "12/10/2026", "status": "Hoàn tất",
+                     "dien_bien": "Người bệnh tỉnh", "cham_soc": "Lấy dấu hiệu sinh tồn"}
+    assert not cic.sheet_done([clinic, later_routine], khoa)

@@ -15,8 +15,7 @@ if not exist ".venv\Scripts\python.exe" (
 call ".venv\Scripts\activate.bat"
 python -m pip install --disable-pip-version-check -r requirements.txt
 if errorlevel 1 goto :error
-start "" powershell -NoProfile -Command "Start-Sleep -Seconds 2; Start-Process 'http://127.0.0.1:5005'"
-echo Ung dung dang chay tai http://127.0.0.1:5005
+echo Cong cu nhap cong BHXH dang chay. Thao tac o tab Nghi om cua web app (khong can mo trang rieng).
 echo Khong dong cua so nay trong khi nhap lieu. Nhan Ctrl+C de dung.
 python app.py
 exit /b %errorlevel%

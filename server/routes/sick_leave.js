@@ -16,6 +16,7 @@ const { getRuntimePaths } = require('../services/session');
 const { runScript, fmtPyError } = require('../services/python_runner');
 const { readJsonSafe, writeJsonAtomic, safeUnlink } = require('../utils/file');
 const { ROOT_DIR } = require('../constants');
+const { waitForLaunch } = require('../services/bhyt_tool_launch');
 // GET/POST /sick-leave-import dùng chung 1 path — áp riêng heavyTaskLimiter (spawn Python)
 // chỉ cho POST ở đây, thay vì đăng ký cả path vào HEAVY_TASK_ROUTES trong index.js
 // (sẽ giới hạn nhầm cả GET đọc lại, vốn chỉ đọc file JSON đã lưu).
@@ -209,10 +210,6 @@ async function isBhytToolRunning() {
   }
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 router.post('/sick-leave-launch-bhyt-tool', async (req, res) => {
   if (await isBhytToolRunning()) {
     return res.json({ status: 'ok', already_running: true });
@@ -226,27 +223,35 @@ router.post('/sick-leave-launch-bhyt-tool', async (req, res) => {
     });
   }
 
+  const logFile = path.join(BHYT_TOOL_DIR, 'runtime', 'launch.log');
+  let logStart = 0;
+  let child;
   try {
-    const logPath = path.join(BHYT_TOOL_DIR, 'runtime');
-    fs.mkdirSync(logPath, { recursive: true });
-    const logFd = fs.openSync(path.join(logPath, 'launch.log'), 'a');
-    const child = spawn(pythonBin, ['app.py'], {
+    fs.mkdirSync(path.dirname(logFile), { recursive: true });
+    try { logStart = fs.statSync(logFile).size; } catch (_) { logStart = 0; }
+    const logFd = fs.openSync(logFile, 'a');
+    child = spawn(pythonBin, ['app.py'], {
       cwd: BHYT_TOOL_DIR,
       detached: true,
       stdio: ['ignore', logFd, logFd],
       windowsHide: true,
+      env: { ...process.env, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8' },
     });
+    fs.closeSync(logFd);
     child.unref();
   } catch (err) {
-    return res.status(500).json({ status: 'error', message: `Không khởi động được: ${err.message || err}` });
+    return res.status(500).json({ status: 'error', message: `Không khởi động được công cụ nhập cổng BHXH: ${err.message || err}` });
   }
 
-  // Chờ tối đa ~3s để tool kịp lắng nghe trước khi trả về, để tab mở ngay
-  // sau đó (window.open ở frontend) không rơi vào "connection refused".
-  for (let i = 0; i < 6; i += 1) {
-    await sleep(500);
-    if (await isBhytToolRunning()) break;
-  }
+  // Chờ công cụ lắng nghe; tắt ngay thì báo lý do đọc từ phần log của lần khởi động này.
+  const result = await waitForLaunch({
+    child,
+    isRunning: isBhytToolRunning,
+    readLog: () => {
+      try { return fs.readFileSync(logFile).subarray(logStart).toString('utf8'); } catch (_) { return ''; }
+    },
+  });
+  if (!result.ok) return res.status(503).json({ status: 'error', message: result.message });
   return res.json({ status: 'ok', already_running: false });
 });
 
