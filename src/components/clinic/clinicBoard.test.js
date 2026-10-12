@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  completionGroups, drugLabel, isoDay, monitorDay, SHORT_LIST_LIMIT, shortList, stageCounts, todoCounts, todoItems,
+  completionGroups, dayTotals, drugLabel, isoDay, monitorDay, reportPatients, rowInGroup, SHORT_LIST_LIMIT, shortList, stageCounts, todoCounts, todoItems,
 } from './clinicBoard.js';
 
 const row = (over = {}) => ({
@@ -9,6 +9,17 @@ const row = (over = {}) => ({
 });
 
 describe('clinicBoard', () => {
+  it('in tường trình: chỉ người BHYT có thủ thuật / phẫu thuật đã xong', () => {
+    const sv = (code, total, done) => ({ code, total, done });
+    const rows = [
+      row({ khambenhid: 'a', has_bhyt: true, services: [sv('TT', 2, 1)] }),
+      row({ khambenhid: 'b', has_bhyt: true, services: [sv('PT', 1, 1)] }),
+      row({ khambenhid: 'c', has_bhyt: false, services: [sv('TT', 1, 1)] }),
+      row({ khambenhid: 'd', has_bhyt: true, services: [sv('TT', 1, 0), sv('KB', 1, 1)] }),
+    ];
+    expect(reportPatients(rows).map(r => r.khambenhid)).toEqual(['a', 'b']);
+  });
+
   it('đếm lượt khám theo 3 nhóm và cộng lại khớp tổng', () => {
     const c = stageCounts([row({ stage: 'cho_kham' }), row({ stage: 'dang_lam_dv' }), row({ stage: 'chua_hoan_tat' }), row({ stage: 'xong' })]);
     expect(c).toEqual({ cho_kham: 1, dang: 2, xong: 1, total: 4 });
@@ -92,5 +103,26 @@ describe('shortList', () => {
   });
   it('danh sách ngắn thì hiện hết, không có nút', () => {
     expect(shortList(rows.slice(0, 3), false)).toEqual({ shown: rows.slice(0, 3), hidden: 0 });
+  });
+});
+
+describe('dayTotals', () => {
+  it('tổng cả ngày: thủ thuật, phẫu thuật (số chỉ định và đã xong), chuyển viện, nhập viện', () => {
+    const rows = [
+      row({ khambenhid: 'a', services: [{ code: 'TT', done: 1, total: 2 }, { code: 'CDHA', done: 1, total: 1 }], case: 'cho_ve', stage: 'xong' }),
+      row({ khambenhid: 'b', services: [{ code: 'TT', done: 1, total: 1 }, { code: 'PT', done: 0, total: 1 }], case: 'chuyen_vien' }),
+      row({ khambenhid: 'c', services: [], case: 'nhap_vien' }),
+      row({ khambenhid: 'd', services: [], case: 'chuyen_vien', stage: 'xong' }),
+    ];
+    expect(dayTotals(rows)).toEqual({ tt: { total: 3, done: 2 }, pt: { total: 1, done: 0 }, chuyen_vien: 2, nhap_vien: 1 });
+  });
+});
+
+describe('rowInGroup', () => {
+  it('mặc định "Chưa hoàn tất": bỏ người đã Hoàn tất / Đã tất toán', () => {
+    expect(rowInGroup(row({ stage: 'xong' }), 'chua_xong')).toBe(false);
+    expect(rowInGroup(row({ stage: 'dang_kham', case: 'cho_ve' }), 'chua_xong')).toBe(true);
+    expect(rowInGroup(row({ stage: 'cho_kham' }), 'chua_xong')).toBe(true);
+    expect(rowInGroup(row({ stage: 'xong' }), 'all')).toBe(true);
   });
 });

@@ -41,6 +41,7 @@ from clinic_outpatient import (
 from utils import init_driver, load_config, login_emr
 import clinic_bbhc
 import clinic_ngoaitru
+import clinic_reports
 import procedure_templates
 
 try:
@@ -1531,6 +1532,47 @@ def run_bbhc_create(monitor: "Monitor", rows: List[Dict[str, Any]], approved: Di
     return pdfs
 
 
+def run_print_reports(monitor: "Monitor", rows: List[Dict[str, Any]], state_dir: str, day: date,
+                      printer: Any = None) -> Dict[str, Any]:
+    """In tường trình thủ thuật / phẫu thuật của người bệnh BHYT trong ngày, gộp 1 file. Chỉ đọc EMR."""
+    patients = clinic_reports.report_patients(rows)
+    info: Dict[str, Any] = {"file": "", "count": 0, "patients": len(patients), "at": _now().isoformat(),
+                            "day": day.isoformat(), "problems": []}
+    if not patients:
+        info["message"] = "Không có người bệnh BHYT nào có thủ thuật / phẫu thuật đã xong."
+        return info
+    pdf_dir = os.path.join(state_dir, "clinic_tuongtrinh")
+    os.makedirs(pdf_dir, exist_ok=True)
+    if printer is None:
+        dialogs = ExamPage(monitor.driver)
+        printer = clinic_reports.ReportPrinter(monitor.driver, monitor.wait, monitor.config, pdf_dir,
+                                               lambda: dialogs.js(CLOSE_DIALOGS_JS), time.sleep)
+
+    def session_lost() -> bool:
+        return "login.aspx" in (monitor.driver.current_url or "").lower()
+
+    started = time.time()
+    files, results = clinic_reports.collect_reports(printer, patients, day, session_lost)
+    if session_lost():
+        monitor.close()
+    else:
+        try:
+            monitor._open_list()
+        except Exception:
+            monitor.close()
+    for res in results:
+        if res["errors"]:
+            info["problems"].append({"ma_bn": res["ma_bn"], "ho_ten": res["ho_ten"], "message": "; ".join(res["errors"])})
+    trace("in_tuong_trinh", so_nguoi=len(patients), so_phieu=len(files), loi=len(info["problems"]), ms=_ms(started))
+    if files:
+        merged = os.path.join(state_dir, f"clinic_tuongtrinh_{day:%Y%m%d}.pdf")
+        clinic_bbhc.merge_pdfs(files, merged)
+        info.update({"file": os.path.basename(merged), "count": len(files)})
+    info["message"] = f"Đã gộp {len(files)} phiếu của {sum(1 for r in results if r['files'])} người bệnh." \
+        + (f" {len(info['problems'])} người bệnh chưa lấy đủ phiếu." if info["problems"] else "")
+    return info
+
+
 # ── Việc cần làm: thủ thuật làm ngay khi có chỉ định ─────────────────────────
 # Không chờ tới lúc hoàn tất khám: có chỉ định thủ thuật (TT) là nhập luôn (giờ chỉ định → +10 phút,
 # thủ thuật viên theo Lịch Phòng khám). Chạy khi người dùng bấm "Hoàn thành thủ thuật ngay", hoặc
@@ -1829,6 +1871,7 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
     handled_bbhc = initial.get("bbhcRun")
     handled_ngoaitru = initial.get("ngoaitruNow")
     handled_tasks = initial.get("tasksNow")
+    handled_print = initial.get("printReportsNow")
     task_state: Dict[str, Dict[str, Any]] = {}
     ngoaitru_state: Dict[str, Dict[str, Any]] = {}
     visit_details: Dict[str, Dict[str, Any]] = {}
@@ -1911,6 +1954,19 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                         state["action_running"] = False
                         state["last_action_at"] = _now().isoformat()
                         rows = monitor.read()
+                if ctrl.get("printReportsNow") and ctrl.get("printReportsNow") != handled_print:
+                    # Chỉ đọc EMR nên làm được cả khi đang xem lại ngày đã qua.
+                    handled_print = ctrl.get("printReportsNow")
+                    state["action_running"] = True
+                    write_json(state_path, state)
+                    try:
+                        state["tuongtrinh_pdf"] = run_print_reports(
+                            monitor, rows, state_dir, date.fromisoformat(list_date) if list_date else _now().date())
+                    finally:
+                        state["action_running"] = False
+                    state["last_action_at"] = _now().isoformat()
+                    if monitor.driver is None:
+                        rows = monitor.read()
                 state.update({
                     "status": "running",
                     "rows": public_rows(rows, checks, weights, imaging, bbhc, ngoaitru_state, visit_details, task_state),
@@ -1954,6 +2010,8 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                 if ctrl.get("ngoaitruNow") and ctrl.get("ngoaitruNow") != handled_ngoaitru:
                     break
                 if ctrl.get("tasksNow") and ctrl.get("tasksNow") != handled_tasks:
+                    break
+                if ctrl.get("printReportsNow") and ctrl.get("printReportsNow") != handled_print:
                     break
                 if (ctrl.get("bbhcPrepare") and ctrl.get("bbhcPrepare") != handled_prepare) or \
                         (ctrl.get("bbhcRun") and ctrl.get("bbhcRun") != handled_bbhc):

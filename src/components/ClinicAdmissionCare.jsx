@@ -137,9 +137,10 @@ export default function ClinicAdmissionCare({ creds, toast }) {
       {!hasCreds && <div style={{ fontSize: FS.sm, color: C.amber }}>Chọn bác sĩ (hoặc nhập tài khoản, mật khẩu) ở phía trên trước.</div>}
 
       {preview && (
-        <div style={{ overflow: 'auto', border: `1px solid ${C.border2}`, borderRadius: 6 }}>
+        // Khung cuộn riêng, tiêu đề cột đứng yên: nhiều người nhập viện không kéo dài cả trang.
+        <div style={{ overflow: 'auto', border: `1px solid ${C.border2}`, borderRadius: 6, maxHeight: '60vh' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.md }}>
-            <thead>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
               <tr style={{ background: C.surface2 }}>
                 {['Mã BN', 'Họ tên', 'T/G vào', 'Người lập', 'Diễn biến', 'Kết quả'].map(h => (
                   <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: FS.xs, color: C.text2, fontWeight: 700, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>
@@ -159,9 +160,9 @@ export default function ClinicAdmissionCare({ creds, toast }) {
                     <td style={{ padding: '8px 10px', minWidth: 280 }}>
                       {r.can_input ? (
                         <>
-                          <textarea value={r.dien_bien} onChange={e => setDienBien(key, e.target.value)} rows={8} disabled={Boolean(busy)}
+                          <textarea value={r.dien_bien} onChange={e => setDienBien(key, e.target.value)} rows={4} disabled={Boolean(busy)}
                             aria-label={`Diễn biến của ${r.ho_ten}`}
-                            style={{ width: '100%', boxSizing: 'border-box', padding: 6, border: `1px solid ${C.border}`, borderRadius: 5, fontFamily: 'inherit', fontSize: FS.sm }} />
+                            style={{ width: '100%', boxSizing: 'border-box', padding: 6, border: `1px solid ${C.border}`, borderRadius: 5, fontFamily: 'inherit', fontSize: FS.sm, resize: 'vertical' }} />
                           {r.pain_note && <div style={{ fontSize: FS.xs, color: C.text2 }}>{r.pain_note}</div>}
                         </>
                       ) : (

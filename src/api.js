@@ -115,6 +115,7 @@ function apiActionLabel(method, url) {
     'POST /api/clinic/monitor/bbhc/prepare': 'soạn nháp Sổ biên bản hội chẩn',
     'POST /api/clinic/monitor/ngoaitru': 'làm điều trị ngoại trú',
     'POST /api/clinic/monitor/bbhc/run': 'lập Sổ biên bản hội chẩn',
+    'POST /api/clinic/monitor/tuongtrinh/run': 'in tường trình thủ thuật, phẫu thuật',
     'GET /api/clinic/care-draft': 'tải bản nháp chăm sóc phòng khám',
     'POST /api/hchanh/stay-store/import': 'góp dữ liệu hành chánh vào kho nghiên cứu',
     'GET /api/kho/tong-quan': 'đọc tổng quan kho người bệnh',
@@ -793,6 +794,8 @@ export const prepareClinicBbhc = () => post('/api/clinic/monitor/bbhc/prepare', 
 export const runClinicNgoaiTru = () => post('/api/clinic/monitor/ngoaitru', {});
 export const runClinicBbhc = (drafts) => post('/api/clinic/monitor/bbhc/run', { drafts });
 export const downloadClinicBbhcPdf = () => downloadBlob('/api/clinic/monitor/bbhc/pdf', 'so_bien_ban_hoi_chan.pdf');
+export const printClinicReports = () => post('/api/clinic/monitor/tuongtrinh/run', {});
+export const downloadClinicReportsPdf = () => downloadBlob('/api/clinic/monitor/tuongtrinh/pdf', 'tuong_trinh_bhyt.pdf');
 export const downloadClinicTrace = () => downloadBlob('/api/clinic/monitor/trace', 'nhat_ky_quet_phong_kham.jsonl');
 export const runClinicCarePreview = (payload) => post('/api/clinic/care-preview', payload);
 export const runClinicCareOrderSeeds = (payload) => post('/api/clinic/care-order-seeds', payload);
