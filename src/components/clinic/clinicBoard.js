@@ -104,3 +104,12 @@ export function monitorDay(monitor, now = new Date()) {
   const short = `${pad2(day.getDate())}/${pad2(day.getMonth() + 1)}/${day.getFullYear()}`;
   return { label: `${WEEKDAYS[day.getDay()]}, ${short}`, short, iso: isoDay(day), today: sameDay(day, now) };
 }
+
+// Danh sách trong khung tóm tắt (đủ điều kiện hoàn tất, chưa hoàn tất được) chỉ hiện vài người đầu;
+// bấm "Xem tất cả" mới hiện đủ, để khung không kéo dài cả trang khi có hàng chục người.
+export const SHORT_LIST_LIMIT = 5;
+
+export function shortList(rows = [], expanded = false, limit = SHORT_LIST_LIMIT) {
+  if (expanded || rows.length <= limit) return { shown: rows, hidden: 0 };
+  return { shown: rows.slice(0, limit), hidden: rows.length - limit };
+}

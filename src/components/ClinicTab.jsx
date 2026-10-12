@@ -480,9 +480,10 @@ export default function ClinicTab({ toast }) {
               </label>
             </div>
 
-            <div style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, overflow: 'auto' }}>
+            {/* Bảng cuộn trong khung cao tối đa ~70% màn hình, tiêu đề cột đứng yên: 100+ lượt không kéo dài cả trang. */}
+            <div style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, overflow: 'auto', maxHeight: '70vh' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: FS.md }}>
-                <thead>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                   <tr style={{ background: C.surface2 }}>
                     {['STT', 'Mã BN', 'Họ tên', 'Thời gian', 'Trạng thái', 'Xử trí', 'Dịch vụ', 'Việc tiếp theo', 'Còn vướng', 'Hoàn tất khám'].map(h => (
                       <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: FS.xs, color: C.text2, fontWeight: 700, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>

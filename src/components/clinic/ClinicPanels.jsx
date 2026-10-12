@@ -1,12 +1,12 @@
 // src/components/clinic/ClinicPanels.jsx — 2 khung của màn Phòng khám:
 //   VisitPanel     lượt khám (chờ khám / đang thực hiện / hoàn tất) và người chờ hoàn tất khám theo đơn thuốc
 //   TodoPanel      việc cần làm theo chỉ định: thủ thuật, phẫu thuật, SBBHC
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { IconChecks } from '@tabler/icons-react';
 import { C, FS } from '../../tokens.js';
 import { Btn } from '../shared.jsx';
 import {
-  completionGroups, drugLabel, stageCounts, todoCounts, todoItems,
+  completionGroups, drugLabel, SHORT_LIST_LIMIT, shortList, stageCounts, todoCounts, todoItems,
 } from './clinicBoard.js';
 
 const TONE_COLOR = { ok: C.green, warn: C.amber, error: C.red, muted: C.text2 };
@@ -30,6 +30,22 @@ function Stat({ label, value, tone }) {
       <div style={{ fontSize: FS.xs, color: C.text2 }}>{label}</div>
       <div style={{ fontSize: FS.stat, fontWeight: 700, color, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
     </div>
+  );
+}
+
+// Vài người đầu + nút "Xem tất cả" để khung tóm tắt không dài cả trang.
+function ShortList({ rows, render }) {
+  const [expanded, setExpanded] = useState(false);
+  const { shown, hidden } = shortList(rows, expanded);
+  const linkStyle = { border: 'none', background: 'none', padding: '4px 0', color: C.blue, fontSize: FS.sm, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
+  return (
+    <>
+      {shown.map(render)}
+      {hidden > 0 && <button type="button" style={linkStyle} onClick={() => setExpanded(true)}>Xem tất cả ({hidden} người nữa)</button>}
+      {expanded && rows.length > SHORT_LIST_LIMIT && (
+        <button type="button" style={linkStyle} onClick={() => setExpanded(false)}>Thu gọn</button>
+      )}
+    </>
   );
 }
 
@@ -70,9 +86,11 @@ export function VisitPanel({ rows, running, busy, actionRunning, onComplete, onE
         <div style={{ fontSize: FS.sm, fontWeight: 600, color: C.text, marginBottom: 4 }}>
           Đủ điều kiện hoàn tất ({groups.ready.length})
         </div>
-        {groups.ready.length ? groups.ready.map(r => (
-          <PatientLine key={r.khambenhid} row={r} right={<span style={{ color: C.green, fontWeight: 600, fontSize: FS.sm }}>{drugLabel(r) || 'Sẵn sàng'}</span>} />
-        )) : <Empty>Chưa có người bệnh nào đủ điều kiện hoàn tất.</Empty>}
+        {groups.ready.length ? (
+          <ShortList rows={groups.ready} render={r => (
+            <PatientLine key={r.khambenhid} row={r} right={<span style={{ color: C.green, fontWeight: 600, fontSize: FS.sm }}>{drugLabel(r) || 'Sẵn sàng'}</span>} />
+          )} />
+        ) : <Empty>Chưa có người bệnh nào đủ điều kiện hoàn tất.</Empty>}
         <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Btn variant="primary" icon={IconChecks} loading={busy === 'complete' || actionRunning}
             disabled={!running || !groups.ready.length || busy === 'complete' || actionRunning} onClick={() => onComplete(groups.ready.length)}>
@@ -90,7 +108,7 @@ export function VisitPanel({ rows, running, busy, actionRunning, onComplete, onE
       {waitingList.length > 0 && (
         <div>
           <div style={{ fontSize: FS.sm, fontWeight: 600, color: C.text, marginBottom: 4 }}>Chưa hoàn tất được ({waitingList.length})</div>
-          {waitingList.map(r => <PatientLine key={r.khambenhid} row={r} right={renderCompletion(r)} />)}
+          <ShortList rows={waitingList} render={r => <PatientLine key={r.khambenhid} row={r} right={renderCompletion(r)} />} />
         </div>
       )}
       <div style={{ fontSize: FS.xs, color: C.text2 }}>

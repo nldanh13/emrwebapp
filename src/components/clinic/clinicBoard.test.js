@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  completionGroups, drugLabel, isoDay, monitorDay, stageCounts, todoCounts, todoItems,
+  completionGroups, drugLabel, isoDay, monitorDay, SHORT_LIST_LIMIT, shortList, stageCounts, todoCounts, todoItems,
 } from './clinicBoard.js';
 
 const row = (over = {}) => ({
@@ -75,5 +75,22 @@ describe('Nhập viện trong Việc cần làm', () => {
       { khambenhid: 'x', ma_bn: '2', case: 'nhap_vien', stage: 'xong' }]);
     expect(items.map(i => i.kind)).toEqual(['cs']);
     expect(todoCounts(items).cs).toBe(1);
+  });
+});
+
+describe('shortList', () => {
+  const rows = Array.from({ length: 74 }, (_, i) => ({ khambenhid: String(i) }));
+  it('chỉ hiện vài người đầu, còn lại thu gọn (danh sách dài 74 người kéo dài cả trang)', () => {
+    const s = shortList(rows, false);
+    expect(s.shown).toHaveLength(SHORT_LIST_LIMIT);
+    expect(s.hidden).toBe(74 - SHORT_LIST_LIMIT);
+  });
+  it('bấm Xem tất cả thì hiện đủ', () => {
+    const s = shortList(rows, true);
+    expect(s.shown).toHaveLength(74);
+    expect(s.hidden).toBe(0);
+  });
+  it('danh sách ngắn thì hiện hết, không có nút', () => {
+    expect(shortList(rows.slice(0, 3), false)).toEqual({ shown: rows.slice(0, 3), hidden: 0 });
   });
 });
