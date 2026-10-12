@@ -23,7 +23,7 @@ import re
 import sys
 import time
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 
@@ -74,10 +74,21 @@ except Exception:  # pragma: no cover - chỉ xảy ra ở môi trường test t
 
 
 DEFAULT_TARGET_DEPARTMENT = "Khoa Khám Bệnh"
-DEFAULT_CARE_CONTENT = (
-    "Hoàn tất hồ sơ nhập viện + "
-    "Kính chuyển Khoa Ngoại Chấn Thương Chỉnh Hình và Thần Kinh + Hồ sơ"
-)
+# Mỗi người bệnh nhập viện có 2 phiếu chăm sóc:
+#   1. Khoa Khám Bệnh chuyển — lập đúng T/G vào, diễn biến "Phòng khám … nhận", chăm sóc "Kính chuyển … / Hồ sơ".
+#   2. Khoa nhận — sau T/G vào WARD_MINUTES phút, diễn biến "Khoa … nhận", chăm sóc nhận người bệnh, có sinh hiệu
+#      người dùng nhập (không tự đặt số).
+WARD_NAME = "Khoa Chấn Thương chỉnh hình - Thần kinh"
+DEFAULT_CARE_CONTENT = "\n".join([f"Kính chuyển {WARD_NAME} nhận", "Hồ sơ"])
+DEFAULT_WARD_CARE = "\n".join([
+    "Nhận HS",
+    "Lấy dấu hiệu sinh tồn",
+    "Trình Bs trực",
+    "Hướng dẫn nội quy khoa phòng",
+    "Thực hiện CLS",
+])
+WARD_MINUTES = 15
+VITAL_FIELDS = (("mach", "Mạch"), ("nhiet_do", "Nhiệt độ"), ("huyet_ap", "Huyết áp"), ("nhip_tho", "Nhịp thở"))
 DEFAULT_DIEN_BIEN = "\n".join([
     "Phòng khám Chấn thương chỉnh hình - Thần kinh nhận",
     "Người bệnh tỉnh",
@@ -850,6 +861,21 @@ def _fetch_order_seed(req: Dict[str, Any], output_path: str) -> int:
     return 0
 
 
+def _read_sheets_done(ws: Any, requested: Dict[str, Any], fresh_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Xem tab Tình trạng chăm sóc (chỉ đọc): 2 phiếu đã Hoàn tất chưa, để bỏ ca không cần nhập."""
+    fresh = next((f for f in fresh_rows if _row_identity(f) == _row_identity(requested)), None)
+    if not fresh or not fresh.get("nursing_url") or scan_cham_soc_cache is None:
+        return {"sheets_error": "Không mở được hồ sơ điều dưỡng để xem phiếu chăm sóc."}
+    sheets = care_sheets(requested)
+    _, day, _ = _parse_admission_time(sheets[0]["time_str"])
+    try:
+        _open_care_page(ws.driver, ws.wait, fresh)
+        _, entries = scan_cham_soc_cache(ws.driver, day)
+    except Exception as exc:
+        return {"sheets_error": f"Không đọc được phiếu chăm sóc: {_compact(str(exc))[:200]}"}
+    return {"sheets_done": {sh["key"]: sheet_done(entries or [], sh) for sh in sheets}}
+
+
 def _fetch_order_seeds(req: Dict[str, Any], output_path: str) -> int:
     """Lấy y lệnh đầu tiên cho toàn bộ danh sách trong một phiên đăng nhập."""
     config = _build_config(req)
@@ -896,6 +922,7 @@ def _fetch_order_seeds(req: Dict[str, Any], output_path: str) -> int:
                     item["error"] = "Đã đọc y lệnh đầu tiên nhưng không nhận diện được vị trí đau trong diễn biến."
             except Exception as exc:
                 item["error"] = str(exc)
+            item.update(_read_sheets_done(ws, requested, fresh_rows))
             results.append(item)
 
     succeeded = sum(1 for item in results if item.get("success"))
@@ -917,6 +944,78 @@ def _fetch_order_seeds(req: Dict[str, Any], output_path: str) -> int:
     }
     _write_json(output_path, result)
     return 0 if succeeded else 2
+
+
+# ── 2 phiếu chăm sóc của 1 người bệnh nhập viện ─────────────────────────────
+
+def ward_time(care_time: Any, minutes: int = WARD_MINUTES) -> str:
+    """Giờ phiếu Khoa nhận mặc định: T/G vào + `minutes` phút. Rỗng nếu T/G vào không hợp lệ."""
+    time_str, _, _ = _parse_admission_time(care_time)
+    if not time_str:
+        return ""
+    return (datetime.strptime(time_str, "%H:%M %d/%m/%Y") + timedelta(minutes=minutes)).strftime("%H:%M %d/%m/%Y")
+
+
+def ward_dien_bien(dien_bien: Any) -> str:
+    """Diễn biến phiếu Khoa nhận: như phiếu Khám bệnh nhưng dòng đầu là "<Khoa> nhận"."""
+    lines = [line for line in str(dien_bien or "").splitlines() if line.strip()]
+    if lines and "nhan" in _norm(lines[0]):
+        lines = lines[1:]
+    return "\n".join([f"{WARD_NAME} nhận", *lines])
+
+
+def vitals_errors(vitals: Any) -> List[str]:
+    """Sinh hiệu phiếu Khoa nhận do người dùng nhập; thiếu hoặc sai dạng thì báo, không tự điền."""
+    v = vitals if isinstance(vitals, dict) else {}
+    out: List[str] = []
+    checks = {
+        "mach": lambda x: re.fullmatch(r"\d{2,3}", x) and 30 <= int(x) <= 220,
+        "nhiet_do": lambda x: re.fullmatch(r"\d{2}([.,]\d)?", x) and 34 <= float(x.replace(",", ".")) <= 43,
+        "huyet_ap": lambda x: re.fullmatch(r"\d{2,3}/\d{2,3}", x),
+        "nhip_tho": lambda x: re.fullmatch(r"\d{1,2}", x) and 6 <= int(x) <= 60,
+    }
+    for key, label in VITAL_FIELDS:
+        value = _compact(v.get(key))
+        if not value:
+            out.append(f"thiếu {label}")
+        elif not checks[key](value):
+            out.append(f"{label} \"{value}\" không hợp lệ")
+    return out
+
+
+def care_sheets(row: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """2 phiếu cần có của người bệnh, theo nội dung người dùng đã sửa (thiếu thì theo mẫu)."""
+    time_str, _, hour = _parse_admission_time(row.get("care_time_str") or row.get("tg_vao"))
+    dien_bien = str(row.get("dien_bien") or DEFAULT_DIEN_BIEN).strip()
+    ward_at, _, ward_hour = _parse_admission_time(row.get("khoa_time_str") or ward_time(time_str))
+    vitals = {k: _compact((row.get("vitals") or {}).get(k)) for k, _ in VITAL_FIELDS}
+    done = row.get("sheets_done") if isinstance(row.get("sheets_done"), dict) else {}
+    return [
+        {"key": "kham", "label": "Khoa Khám Bệnh chuyển", "time_str": time_str, "hour": hour,
+         "dien_bien": dien_bien, "cham_soc": str(row.get("cham_soc") or DEFAULT_CARE_CONTENT).strip(), "vitals": None,
+         "expect_done": done.get("kham") is True},
+        {"key": "khoa", "label": f"{WARD_NAME} nhận", "time_str": ward_at, "hour": ward_hour,
+         "dien_bien": str(row.get("dien_bien_khoa") or ward_dien_bien(dien_bien)).strip(),
+         "cham_soc": str(row.get("cham_soc_khoa") or DEFAULT_WARD_CARE).strip(), "vitals": vitals,
+         "expect_done": done.get("khoa") is True},
+    ]
+
+
+def sheet_done(entries: Iterable[Dict[str, Any]], sheet: Dict[str, Any]) -> bool:
+    """Phiếu đã Hoàn tất trên EMR thì không cần nhập (không sửa phiếu đã hoàn tất).
+    Phiếu Khám bệnh: có phiếu Hoàn tất đúng T/G vào. Phiếu Khoa nhận: có phiếu Hoàn tất cùng ngày ở giờ đã chọn,
+    hoặc nội dung là phiếu nhận ("Nhận HS" / diễn biến bắt đầu "Khoa … nhận") — khoa có thể đã tự lập giờ khác."""
+    _, day, _ = _parse_admission_time(sheet.get("time_str"))
+    for e in entries or []:
+        if "hoan tat" not in _norm(e.get("status")):
+            continue
+        if _compact(e.get("time_full")) == sheet.get("time_str"):
+            return True
+        if sheet.get("key") == "khoa" and _compact(e.get("date")) == day:
+            first = _norm((str(e.get("dien_bien") or "").splitlines() or [""])[0])
+            if "nhan hs" in _norm(e.get("cham_soc")) or (first.startswith("khoa") and "nhan" in first):
+                return True
+    return False
 
 
 def _preview(req: Dict[str, Any], output_path: str) -> int:
@@ -1034,6 +1133,9 @@ def _input_one(
     care_content: str,
     dien_bien: str,
     needs_vitals: bool,
+    vitals: Optional[Dict[str, str]] = None,
+    done_check: Optional[Any] = None,
+    require_done: bool = False,
 ) -> Dict[str, Any]:
     required_actions = (
         scan_cham_soc_cache, kiem_tra_bang_cached,
@@ -1053,7 +1155,12 @@ def _input_one(
     _open_care_page(driver, wait, row)
 
     scan_targets = [time_str]
-    cs_cache, _ = scan_cham_soc_cache(driver, ngay_lam, hours_needed=scan_targets)
+    cs_cache, cs_entries = scan_cham_soc_cache(driver, ngay_lam, hours_needed=scan_targets)
+    if done_check is not None and done_check(cs_entries or []):
+        # Phiếu đã Hoàn tất (người khác lập hoặc lập tay): giữ nguyên, không sửa.
+        return {"success": True, "skipped": True, "reason": "Đã có phiếu Hoàn tất", "error": None, "time_str": time_str}
+    if require_done:
+        return {"success": False, "error": "Lúc tìm đã có phiếu Hoàn tất nhưng nay không thấy; nhập đủ nội dung rồi tìm lại."}
     # Luồng này chỉ bổ sung phiếu tại đúng T/G vào. Không chạy dọn cache vì có thể
     # xóa nhầm phiếu chăm sóc khác do điều dưỡng đang lập cho cùng người bệnh.
     expected_creator = nurses[0]
@@ -1064,7 +1171,7 @@ def _input_one(
         care_content,
         nurses,
         dien_bien,
-        needs_vitals=needs_vitals,
+        needs_vitals=needs_vitals or bool(vitals),
         expected_creator=expected_creator,
     )
     if status == "PERFECT":
@@ -1141,6 +1248,7 @@ def _input_one(
                 dien_bien,
                 needs_vitals=needs_vitals,
                 config_ten_goc=config_name,
+                vitals=vitals,
             )
             if not form_ok:
                 print(f"[WARN] Không chọn/verify được Người lập ở lần {attempt}")
@@ -1169,6 +1277,47 @@ def _input_one(
             # UPDATE: toàn bộ sửa+lưu vừa chạy dưới tài khoản người lập cũ (bắt
             # buộc) — đổi lại đúng tài khoản gốc dù thành công hay lỗi.
             _restore_original_account()
+
+
+def _input_patient(ws: Any, fresh: Dict[str, Any], nurses: List[str], sheets: List[Dict[str, Any]],
+                   needs_vitals: bool) -> Dict[str, Any]:
+    """Nhập lần lượt 2 phiếu (Khám bệnh chuyển, Khoa nhận). Phiếu đã Hoàn tất thì bỏ qua;
+    phiếu đầu lỗi thì không lập phiếu sau."""
+    # Kiểm tra cả 2 phiếu trước khi ghi gì lên EMR.
+    for sheet in sheets:
+        if not sheet.get("time_str"):
+            return {"success": False, "error": f"{sheet['label']}: giờ lập phiếu không hợp lệ."}
+        if sheet["key"] == "khoa" and not _after(sheet["time_str"], sheets[0]["time_str"]):
+            return {"success": False, "error": f"{sheet['label']}: giờ phiếu phải sau T/G vào {sheets[0]['time_str']}."}
+        if sheet.get("vitals") is not None and not sheet.get("expect_done"):
+            bad = vitals_errors(sheet["vitals"])
+            if bad:
+                return {"success": False, "error": f"{sheet['label']}: sinh hiệu {', '.join(bad)}."}
+    notes: List[str] = []
+    all_skipped = True
+    for sheet in sheets:
+        res = _input_one(
+            ws, {**fresh, "care_time_str": sheet["time_str"]}, nurses, sheet["cham_soc"], sheet["dien_bien"],
+            needs_vitals, vitals=None if sheet.get("expect_done") else sheet.get("vitals"),
+            done_check=lambda entries, sh=sheet: sheet_done(entries, sh), require_done=bool(sheet.get("expect_done")),
+        )
+        if not res.get("success"):
+            return {"success": False, "error": f"{sheet['label']}: {res.get('error') or 'không nhập được'}",
+                    "time_str": sheets[0]["time_str"]}
+        all_skipped = all_skipped and bool(res.get("skipped"))
+        notes.append(f"{sheet['label']} {sheet['time_str']}: "
+                     + ("đã có" if res.get("skipped") else ("đã đúng" if res.get("already_correct") else "đã nhập")))
+    out: Dict[str, Any] = {"success": True, "error": None, "time_str": sheets[0]["time_str"], "nurse": nurses, "sheets": notes}
+    if all_skipped:
+        out.update({"skipped": True, "reason": "Đã có đủ 2 phiếu Hoàn tất"})
+    return out
+
+
+def _after(later: str, earlier: str) -> bool:
+    try:
+        return datetime.strptime(later, "%H:%M %d/%m/%Y") > datetime.strptime(earlier, "%H:%M %d/%m/%Y")
+    except ValueError:
+        return False
 
 
 def _input(req: Dict[str, Any], result_path: str) -> int:
@@ -1210,16 +1359,14 @@ def _input(req: Dict[str, Any], result_path: str) -> int:
                 continue
             saved_nurse = _compact(requested.get("dieu_duong") or "")
             nurses = [saved_nurse] if saved_nurse else _effective_nurses(req, config, requested_time or fresh.get("care_time_str") or care_date, fallback_nurses)
-            patient_dien_bien = _row_dien_bien(requested, dien_bien)
+            sheets = care_sheets({
+                **requested,
+                "care_time_str": requested_time,
+                "dien_bien": _row_dien_bien(requested, dien_bien),
+                "cham_soc": requested.get("cham_soc") or care_content,
+            })
             try:
-                ws.results[result_key] = _input_one(
-                    ws,
-                    fresh,
-                    nurses,
-                    care_content,
-                    patient_dien_bien,
-                    needs_vitals,
-                )
+                ws.results[result_key] = _input_patient(ws, fresh, nurses, sheets, needs_vitals)
             except Exception as exc:
                 ws.mark_failed(result_key, exc)
 

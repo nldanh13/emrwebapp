@@ -226,3 +226,95 @@ def test_pain_location_from_first_order_replaces_only_pain_line():
     assert len(lines) == len(cic.DEFAULT_DIEN_BIEN.split("\n"))
     assert "Đau vùng tổn thương" not in lines
     assert lines[0] == "Phòng khám Chấn thương chỉnh hình - Thần kinh nhận"
+
+
+# ── 2 phiếu chăm sóc: Khoa Khám Bệnh chuyển + Khoa nhận ─────────────────────
+
+def test_care_sheets_builds_clinic_and_ward_sheet_with_user_vitals():
+    import clinic_input_care as cic
+
+    row = {"care_time_str": "08:49 12/10/2026", "dien_bien": "Phòng khám Chấn thương chỉnh hình - Thần kinh nhận\nNgười bệnh tỉnh",
+           "vitals": {"mach": "80", "nhiet_do": "37", "huyet_ap": "120/80", "nhip_tho": "20"}}
+    kham, khoa = cic.care_sheets(row)
+    assert kham["time_str"] == "08:49 12/10/2026" and kham["vitals"] is None
+    assert kham["cham_soc"] == "Kính chuyển Khoa Chấn Thương chỉnh hình - Thần kinh nhận\nHồ sơ"
+    assert khoa["time_str"] == "09:04 12/10/2026"
+    assert khoa["dien_bien"] == "Khoa Chấn Thương chỉnh hình - Thần kinh nhận\nNgười bệnh tỉnh"
+    assert khoa["cham_soc"].splitlines() == ["Nhận HS", "Lấy dấu hiệu sinh tồn", "Trình Bs trực",
+                                            "Hướng dẫn nội quy khoa phòng", "Thực hiện CLS"]
+    assert khoa["vitals"]["huyet_ap"] == "120/80"
+
+
+def test_vitals_are_required_and_never_invented():
+    import clinic_input_care as cic
+
+    assert cic.vitals_errors({"mach": "80", "nhiet_do": "37,5", "huyet_ap": "120/80", "nhip_tho": "20"}) == []
+    errors = cic.vitals_errors({"mach": "8", "nhiet_do": "", "huyet_ap": "120", "nhip_tho": "20"})
+    assert "thiếu Nhiệt độ" in errors and any("Mạch" in e for e in errors) and any("Huyết áp" in e for e in errors)
+
+
+def test_sheet_done_only_for_completed_sheets():
+    import clinic_input_care as cic
+
+    kham, khoa = cic.care_sheets({"care_time_str": "08:49 12/10/2026"})
+    draft = {"time_full": "08:49 12/10/2026", "date": "12/10/2026", "status": "Mới", "dien_bien": "", "cham_soc": ""}
+    assert not cic.sheet_done([draft], kham)
+    assert cic.sheet_done([{**draft, "status": "Hoàn tất"}], kham)
+    # Khoa tự lập phiếu nhận ở giờ khác vẫn tính là đã có.
+    ward = {"time_full": "10:30 12/10/2026", "date": "12/10/2026", "status": "Hoàn tất",
+            "dien_bien": "Khoa Chấn Thương chỉnh hình - Thần kinh nhận\nNgười bệnh tỉnh", "cham_soc": "Nhận HS"}
+    assert cic.sheet_done([ward], khoa)
+    assert not cic.sheet_done([{**ward, "date": "11/10/2026"}], khoa)
+    assert not cic.sheet_done([{**draft, "status": "Hoàn tất"}], khoa)
+
+
+def test_input_patient_enters_both_sheets_and_skips_completed_one(monkeypatch):
+    import clinic_input_care as cic
+
+    calls = []
+
+    def fake_input_one(ws, row, nurses, care, dien_bien, needs_vitals, vitals=None, done_check=None, require_done=False):
+        calls.append((row["care_time_str"], care.splitlines()[0], vitals))
+        if row["care_time_str"] == "08:49 12/10/2026":
+            return {"success": True, "skipped": True}
+        return {"success": True}
+
+    monkeypatch.setattr(cic, "_input_one", fake_input_one)
+    vitals = {"mach": "80", "nhiet_do": "37", "huyet_ap": "120/80", "nhip_tho": "20"}
+    sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026", "vitals": vitals})
+    res = cic._input_patient(object(), {"ma_bn": "1"}, ["ĐD A"], sheets, False)
+    assert res["success"] is True and not res.get("skipped")
+    assert [c[0] for c in calls] == ["08:49 12/10/2026", "09:04 12/10/2026"]
+    assert calls[0][2] is None and calls[1][2] == vitals
+    assert res["sheets"][0].endswith("đã có") and res["sheets"][1].endswith("đã nhập")
+
+
+def test_input_patient_stops_before_emr_when_ward_vitals_missing_or_time_before_admission(monkeypatch):
+    import clinic_input_care as cic
+
+    calls = []
+    monkeypatch.setattr(cic, "_input_one", lambda *a, **k: calls.append(a) or {"success": True})
+    sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026"})
+    res = cic._input_patient(object(), {}, ["ĐD A"], sheets, False)
+    assert res["success"] is False and "thiếu Mạch" in res["error"] and calls == []  # không ghi phiếu nào
+    calls.clear()
+    sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026", "khoa_time_str": "08:30 12/10/2026",
+                              "vitals": {"mach": "80", "nhiet_do": "37", "huyet_ap": "120/80", "nhip_tho": "20"}})
+    res = cic._input_patient(object(), {}, ["ĐD A"], sheets, False)
+    assert res["success"] is False and "phải sau T/G vào" in res["error"] and calls == []
+
+
+def test_ward_sheet_seen_done_at_search_needs_no_vitals_but_is_never_written_blind(monkeypatch):
+    import clinic_input_care as cic
+
+    calls = []
+
+    def fake_input_one(ws, row, nurses, care, dien_bien, needs_vitals, vitals=None, done_check=None, require_done=False):
+        calls.append((row["care_time_str"], vitals, require_done))
+        return {"success": True, "skipped": True}
+
+    monkeypatch.setattr(cic, "_input_one", fake_input_one)
+    sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026", "sheets_done": {"kham": False, "khoa": True}})
+    res = cic._input_patient(object(), {}, ["ĐD A"], sheets, False)
+    assert res["success"] is True
+    assert calls[1] == ("09:04 12/10/2026", None, True)

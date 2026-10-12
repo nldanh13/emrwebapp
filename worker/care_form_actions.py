@@ -162,7 +162,8 @@ def _chon_nguoi_lap_select2(driver, target_text: str, timeout: int = 12) -> bool
     LOG.warning(_ctx_prefix() + f"[NguoiLap] Không chọn/verify được '{target_text}' sau 3 lần")
     return False
 
-def dien_thong_tin(driver, gio, time_str, content, list_ten_dieu_duong, dien_bien_text="", needs_vitals=False, config_ten_goc=None):
+def dien_thong_tin(driver, gio, time_str, content, list_ten_dieu_duong, dien_bien_text="", needs_vitals=False, config_ten_goc=None,
+                   vitals=None):
     """Điền form chăm sóc (sinh hiệu, diễn biến, chăm sóc, xử trí).
 
     KHÔNG chọn ô Người lập: EMR tự điền theo tài khoản đang đăng nhập, đổi tên
@@ -173,10 +174,14 @@ def dien_thong_tin(driver, gio, time_str, content, list_ten_dieu_duong, dien_bie
     hàm này. Không set/change lần hai vì HIS có thể refresh modal và làm stale
     các Select2 vừa sau đó.
     """
-    if needs_vitals or gio in [5, 16]:
+    if vitals or needs_vitals or gio in [5, 16]:
         try:
             nhip_tho = "20"; nhiet_do = "37"; mach = str(random.randint(75, 85))
             huyet_ap = random.choice(["120/80", "110/70", "130/80"])
+            if vitals:
+                # Sinh hiệu người dùng đã đo (phiếu Khoa nhận của Phòng khám): dùng đúng số đó.
+                nhip_tho, nhiet_do = str(vitals["nhip_tho"]), str(vitals["nhiet_do"])
+                mach, huyet_ap = str(vitals["mach"]), str(vitals["huyet_ap"])
             cac_truong = [("txtNhipTho", nhip_tho), ("txtNhietDo", nhiet_do), 
                           ("txtMachTrenlan", mach), ("txtHuyetAp", huyet_ap), ("txtHuyetApk", huyet_ap)]
             for id_o, gia_tri in cac_truong:

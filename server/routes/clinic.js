@@ -699,7 +699,7 @@ function clinicCarePrecheckTargets(payload = {}, rows = []) {
     String(payload.targetDepartment || '').trim().toLowerCase(),
     String(schedule.nurseName || '').trim(),
     String(payload.careContent || '').trim(),
-    'per-patient-dien-bien:v1',
+    'two-sheets:v2',
     payload.needsVitals ? 'vitals:1' : 'vitals:0',
   ].join('|'));
   return {
@@ -718,7 +718,7 @@ function sanitizeClinicCareRequest(body = {}, { requireRows = false } = {}) {
   const targetDepartment = 'Khoa Khám Bệnh';
   const clinicSchedule   = sanitizeClinicSchedule(body.clinicSchedule || body.clinic_schedule || {});
   const careContent      = String(body.careContent || '').trim().slice(0, 1000)
-    || 'Hoàn tất hồ sơ nhập viện + Kính chuyển Khoa Ngoại Chấn Thương Chỉnh Hình và Thần Kinh + Hồ sơ';
+    || 'Kính chuyển Khoa Chấn Thương chỉnh hình - Thần kinh nhận\nHồ sơ';
   const dienBien         = String(body.dienBien || '').trim().slice(0, 1500)
     || 'Phòng khám Chấn thương chỉnh hình - Thần kinh nhận\nNgười bệnh tỉnh\nTiếp xúc tốt\nDa niêm hồng\nMạch rõ, chi ấm\nĐau vùng tổn thương\nVận động hạn chế\nTiền sử dị ứng thuốc chưa ghi nhận';
   const needsVitals      = Boolean(body.needsVitals);
@@ -742,6 +742,14 @@ function sanitizeClinicCareRequest(body = {}, { requireRows = false } = {}) {
       noitruid:            String(r.noitruid || '').trim().slice(0, 120),
       dieu_duong:          String(r.dieu_duong || '').trim().slice(0, 120),
       dien_bien:           String(r.dien_bien || r.dienBien || '').trim().slice(0, 1500),
+      // Phiếu 1 (Khoa Khám Bệnh chuyển) và phiếu 2 (Khoa nhận, có sinh hiệu người dùng nhập).
+      cham_soc:            String(r.cham_soc || '').trim().slice(0, 1000),
+      dien_bien_khoa:      String(r.dien_bien_khoa || '').trim().slice(0, 1500),
+      cham_soc_khoa:       String(r.cham_soc_khoa || '').trim().slice(0, 1000),
+      khoa_time_str:       String(r.khoa_time_str || '').trim().slice(0, 40),
+      vitals:              Object.fromEntries(['mach', 'nhiet_do', 'huyet_ap', 'nhip_tho']
+        .map(k => [k, String(r.vitals?.[k] || '').trim().slice(0, 12)])),
+      sheets_done:         { kham: r.sheets_done?.kham === true, khoa: r.sheets_done?.khoa === true },
       saved_for_input:     r.saved_for_input === true || r.savedForInput === true,
       source:              'inpatient_list_clinic_care',
     }));
@@ -757,6 +765,9 @@ function sanitizeClinicCareRequest(body = {}, { requireRows = false } = {}) {
   }
   if (requireRows && rows.some(r => !r.dien_bien)) {
     throw new Error('Diễn biến của từng người bệnh không được để trống.');
+  }
+  if (requireRows && rows.some(r => (!r.sheets_done.kham && !r.cham_soc) || (!r.sheets_done.khoa && (!r.dien_bien_khoa || !r.cham_soc_khoa)))) {
+    throw new Error('Diễn biến và chăm sóc của cả 2 phiếu không được để trống.');
   }
 
   return {
