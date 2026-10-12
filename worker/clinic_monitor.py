@@ -15,6 +15,7 @@ chủ Node trả cho giao diện; điều khiển (dừng / làm mới ngay) qua
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -283,6 +284,68 @@ def total_count(html_text: str) -> Optional[int]:
     """Tổng số lượt khám EMR ghi dưới bảng ("Tổng số: 18/ 32" → 32); không có thì None."""
     m = TOTAL_RE.search(html_text or "")
     return int(m.group(2)) if m else None
+
+
+# ── Nhật ký quét (clinic_trace_YYYYMMDD.jsonl cạnh file trạng thái) ───────────
+# Mỗi dòng 1 sự kiện: đọc danh sách (từng trang), mở màn khám (vì sao, kết quả, bao lâu), đọc lịch sử
+# dịch vụ, thao tác đã làm, đầu/cuối chu kỳ. Không ghi họ tên / mã BN: người bệnh ghi bằng STT và mã
+# rút gọn (8 ký tự băm từ mã lượt khám). Giữ TRACE_KEEP_DAYS ngày. Người dùng tải ở tab Phòng khám.
+
+TRACE_KEEP_DAYS = 7
+TRACE_FILE_RE = re.compile(r"^clinic_trace_(\d{8})\.jsonl$")
+_trace_dir: Optional[str] = None
+WHY_LABELS = {
+    "run_checks": "kiểm tra hoàn tất",
+    "run_tasks": "chuẩn bị thủ thuật",
+    "run_completions": "chuẩn bị hoàn tất",
+    "complete_on_exam_page": "hoàn tất khám",
+    "run_bbhc_prepare": "soạn SBBHC",
+    "run_bbhc_create": "lập SBBHC",
+}
+
+
+def trace_ref(key: Any) -> str:
+    key = compact(key)
+    return hashlib.sha1(key.encode("utf-8")).hexdigest()[:8] if key else ""
+
+
+def set_trace_dir(path: Optional[str], today: Optional[date] = None) -> None:
+    """Bật ghi nhật ký vào thư mục `path` (None = tắt) và xoá file cũ hơn TRACE_KEEP_DAYS ngày."""
+    global _trace_dir
+    _trace_dir = path
+    if not path:
+        return
+    cutoff = ((today or _now().date()) - timedelta(days=TRACE_KEEP_DAYS - 1)).strftime("%Y%m%d")
+    try:
+        for name in os.listdir(path):
+            m = TRACE_FILE_RE.match(name)
+            if m and m.group(1) < cutoff:
+                os.remove(os.path.join(path, name))
+    except OSError:
+        pass
+
+
+def trace(event: str, **data: Any) -> None:
+    if not _trace_dir:
+        return
+    now = _now()
+    line = {"at": now.isoformat(timespec="seconds"), "su_kien": event, **data}
+    try:
+        with open(os.path.join(_trace_dir, f"clinic_trace_{now:%Y%m%d}.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps(line, ensure_ascii=False, default=str) + "\n")
+    except OSError:
+        pass
+
+
+def _ms(start: float) -> int:
+    return int((time.time() - start) * 1000)
+
+
+def _trace_actions(entries: List[Dict[str, Any]]) -> None:
+    """Thao tác trên EMR trong chu kỳ (bản ghi action_log), bỏ họ tên / mã BN."""
+    for e in entries:
+        trace("thao_tac", loai=e.get("kind"), ref=trace_ref(e.get("khambenhid")), ket_qua=e.get("result"),
+              thong_bao=compact(e.get("message"))[:200], buoc=e.get("steps") or [])
 
 
 # ── Điều kiện hoàn tất khám (tính thuần, không đụng EMR) ─────────────────────
@@ -961,29 +1024,36 @@ def _fetch_page(driver: Any, page: int, day_filter: Optional[Dict[str, str]] = N
 def fetch_today_rows(driver: Any, day_filter: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
     """Đọc mọi trang. EMR có thể bỏ qua cỡ trang lớn và đánh số trang từ 1 (page=0 và page=1 cùng là
     trang 1), nên khi biết tổng số ("Tổng số: x/ y") thì đọc tiếp tới khi đủ, thử tới page=số trang."""
-    first = _fetch_page(driver, 0, day_filter)
+    started = time.time()
     seen: set = set()
     out: List[Dict[str, Any]] = []
+    fetched: List[Dict[str, int]] = []
 
-    def add(html_text: str) -> None:
-        for r in rows_from_html(html_text):
+    def add(page_no: int) -> str:
+        html_text = _fetch_page(driver, page_no, day_filter)
+        rows, before = rows_from_html(html_text), len(out)
+        for r in rows:
             key = r["khambenhid"] or (r["ma_bn"], r["thoi_gian"])
             if key not in seen:
                 seen.add(key)
                 out.append(r)
+        fetched.append({"page": page_no, "so_dong": len(rows), "moi": len(out) - before})
+        return html_text
 
-    add(first)
+    first = add(0)
     pages, total = page_count(first), total_count(first)
     if total is None:
         for page in range(1, min(pages, MAX_PAGES)):
-            add(_fetch_page(driver, page, day_filter))
-        return out
-    page = 1
-    while len(out) < total and page <= min(pages, MAX_PAGES):
-        add(_fetch_page(driver, page, day_filter))
-        page += 1
-    if len(out) < total:
-        print(f"[CLINIC-MONITOR] [WARN] Danh sách EMR ghi tổng số {total} lượt, mới đọc được {len(out)}.")
+            add(page)
+    else:
+        page = 1
+        while len(out) < total and page <= min(pages, MAX_PAGES):
+            add(page)
+            page += 1
+        if len(out) < total:
+            print(f"[CLINIC-MONITOR] [WARN] Danh sách EMR ghi tổng số {total} lượt, mới đọc được {len(out)}.")
+    trace("doc_danh_sach", loc=(day_filter or {}).get("loai", "0"), so_trang_emr=pages, tong_so_emr=total,
+          trang=fetched, doc_duoc=len(out), ms=_ms(started))
     return out
 
 
@@ -1024,6 +1094,7 @@ class Monitor:
             self.driver, self.wait = init_driver(headless=self.headless)
         login_emr(self.driver, self.wait, self.config)
         self.login_count += 1
+        trace("dang_nhap", lan=self.login_count)
         self._open_list()
 
     def close(self) -> None:
@@ -1073,7 +1144,10 @@ class Monitor:
         missing: List[Dict[str, Any]] = []
         try:
             for _ in range(min(pending_procedures(row), 3)):
+                started = time.time()
                 res = enter_procedure(ProcedurePage(self.driver, self.wait, self.config), row, self.config, _now())
+                trace("nhap_thu_thuat", stt=row.get("stt"), ref=trace_ref(row.get("khambenhid")), ket_qua=res.get("result"),
+                      thong_bao=compact(res.get("message"))[:200], ms=_ms(started))
                 missing += [m for m in res.get("missing_templates") or [] if m not in missing]
                 if res["result"] == "already":
                     break
@@ -1099,7 +1173,10 @@ class Monitor:
 
     def imaging(self, row: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Đọc popup lịch sử dịch vụ (đang ở trang danh sách): các chỉ định chụp CT / MRI."""
+        started = time.time()
         res = self.driver.execute_script(HISTORY_JS, row.get("khambenhid")) or {}
+        trace("doc_lich_su_dv", stt=row.get("stt"), ref=trace_ref(row.get("khambenhid")), ly_do="chỉ định CĐHA",
+              ok=bool(res.get("ok")), ms=_ms(started))
         if not res.get("ok"):
             raise ExamStepError(f"Không đọc được lịch sử dịch vụ: {compact(res.get('message'))}")
         return clinic_bbhc.imaging_orders(res.get("html") or "")
@@ -1108,6 +1185,17 @@ class Monitor:
                      need_services: bool = True) -> Dict[str, Any]:
         """Mở màn khám của người bệnh, chạy `action`, rồi quay về danh sách."""
         now = _now()
+        caller = sys._getframe(1).f_code.co_name
+        started = time.time()
+        result = self._on_exam_page(row, action, need_services, now)
+        trace("mo_man_kham", stt=row.get("stt"), ref=trace_ref(row.get("khambenhid")), ly_do=WHY_LABELS.get(caller, caller),
+              trang_thai=row.get("trang_thai"), xu_tri=row.get("xu_tri"),
+              ket_qua=result.get("status") or result.get("result"), thong_bao=compact(result.get("message"))[:200],
+              ms=_ms(started))
+        return result
+
+    def _on_exam_page(self, row: Dict[str, Any], action: Callable[[ExamPage, Optional[datetime], datetime], Dict[str, Any]],
+                      need_services: bool, now: datetime) -> Dict[str, Any]:
         try:
             done_at = self.services_done(row, now) if need_services else None
             base_url = self.driver.current_url
@@ -1640,6 +1728,7 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
     ngoaitru_state: Dict[str, Dict[str, Any]] = {}
     visit_details: Dict[str, Dict[str, Any]] = {}
     state_dir = os.path.dirname(os.path.abspath(state_path))
+    set_trace_dir(state_dir)
     action_log: List[Dict[str, Any]] = []
     missing_templates: Dict[str, Dict[str, Any]] = {}
 
@@ -1651,6 +1740,8 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
             state["last_attempt_at"] = _now().isoformat()
             ctrl = _read_control(control_path)
             weights = ctrl.get("weights") if isinstance(ctrl.get("weights"), dict) else {}
+            cycle_started, logged = time.time(), len(action_log)
+            trace("bat_dau_chu_ky", ngay=_list_date(ctrl) or "hôm nay")
             try:
                 monitor.list_date = list_date = _list_date(ctrl)
                 rows = monitor.read()
@@ -1729,9 +1820,13 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                     "consecutive_failures": 0,
                 })
                 print(f"[CLINIC-MONITOR] Đã đọc {len(rows)} người bệnh.")
+                _trace_actions(action_log[logged:])
+                trace("ket_thuc_chu_ky", so_nguoi=len(rows), theo_trang_thai=summarize(rows)["by_stage"], ms=_ms(cycle_started))
             except Exception as e:
                 state["consecutive_failures"] = int(state.get("consecutive_failures") or 0) + 1
                 state["last_error"] = compact(str(e))[:500]
+                _trace_actions(action_log[logged:])
+                trace("loi_chu_ky", thong_bao=state["last_error"][:300], ms=_ms(cycle_started))
                 state["status"] = "error" if state["consecutive_failures"] >= 3 else "running"
                 print(f"[CLINIC-MONITOR] [WARN] Lỗi lần đọc: {e}")
                 state["action_running"] = False

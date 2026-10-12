@@ -5,7 +5,7 @@
 // sách theo chu kỳ và tự đăng nhập lại khi EMR hết phiên; màn này chỉ hiển thị trạng thái.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import HistoryNote from './patient/HistoryNote.jsx';
-import { IconPlayerPlay, IconPlayerStop, IconRefresh, IconSettings } from '@tabler/icons-react';
+import { IconDownload, IconPlayerPlay, IconPlayerStop, IconRefresh, IconSettings } from '@tabler/icons-react';
 import { C, FS } from '../tokens.js';
 import { Btn, Segmented } from './shared.jsx';
 import * as api from '../api.js';
@@ -213,6 +213,24 @@ export default function ClinicTab({ toast }) {
     }
   };
 
+  // Nhật ký quét (từng lần đọc trang, mở màn khám vì sao, thao tác) để gửi khi cần dò lỗi.
+  const downloadTrace = async () => {
+    setBusy('trace');
+    try {
+      const { blob, filename } = await api.downloadClinicTrace();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (e) {
+      toast?.(String(e.message || e), 'error');
+    } finally {
+      setBusy('');
+    }
+  };
+
   const stop = async () => {
     setBusy('stop');
     try {
@@ -385,6 +403,8 @@ export default function ClinicTab({ toast }) {
             <Btn variant="primary" icon={IconPlayerPlay} loading={busy === 'start'} onClick={start}
               disabled={!canStart}>Bắt đầu theo dõi</Btn>
           )}
+          <Btn icon={IconDownload} loading={busy === 'trace'} onClick={downloadTrace}
+            title="Tải nhật ký từng bước quét (không có họ tên, mã người bệnh) để gửi khi cần dò lỗi">Tải nhật ký quét</Btn>
           <span title={day.today ? 'Danh sách khám bệnh của hôm nay' : 'Danh sách đang hiện là của ngày khác, không phải hôm nay'}
             style={{ fontSize: FS.sm, fontWeight: 700, padding: '3px 8px', borderRadius: 6, whiteSpace: 'nowrap',
               color: day.today ? C.blue : C.amber, background: day.today ? C.blueBg : C.amberBg,
