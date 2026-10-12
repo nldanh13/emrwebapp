@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import sys
@@ -52,7 +53,7 @@ except Exception:
     pass
 
 PAGE_SIZE = 500
-MAX_PAGES = 10
+MAX_PAGES = 30
 MAX_RELOGIN_ATTEMPTS = 2
 
 BHYT_CODE_RE = re.compile(r"\b[A-Z]{2}\d{10,}\b")
@@ -83,6 +84,24 @@ try {
 }
 """
 
+
+# Lật trang đúng như người dùng bấm số trang dưới bảng: gọi NextPage(n) của trang (n tính từ 0) rồi đọc
+# lại khung danh sách. Lệnh đọc thẳng (FETCH_JS) với page >= 2 không trả thêm người nên dùng cách này.
+UI_PAGE_JS = r"""
+var n = arguments[0];
+try {
+  if (typeof NextPage !== 'function' || !document.getElementById('divKhamBenhDanhSachContent')) return { ok: false, reason: 'no_pager' };
+  NextPage(n);
+  return { ok: true };
+} catch (e) {
+  return { ok: false, reason: 'exception', message: String((e && e.message) || e) };
+}
+"""
+READ_LIST_BOX_JS = r"""
+var box = document.getElementById('divKhamBenhDanhSachContent');
+return box ? String(box.innerHTML || '') : '';
+"""
+UI_PAGE_WAIT_S = 15.0
 
 # Đặt bộ lọc thời gian ngay trên trang Danh sách Khám bệnh (để EMR cũng hiện đúng ngày đang xem) rồi bấm
 # Tìm kiếm: loại 7 = "Khoảng" với 2 ô ngày giờ HH:mm dd/mm/yyyy, loại 0 = "Trong ngày". Cách đặt giống bộ lọc
@@ -1020,34 +1039,80 @@ def _fetch_page(driver: Any, page: int, day_filter: Optional[Dict[str, str]] = N
     return str(res.get("html") or "")
 
 
-def fetch_today_rows(driver: Any, day_filter: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
-    """Đọc mọi trang. EMR có thể bỏ qua cỡ trang lớn và đánh số trang từ 1 (page=0 và page=1 cùng là
-    trang 1), nên khi biết tổng số ("Tổng số: x/ y") thì đọc tiếp tới khi đủ, thử tới page=số trang."""
+def _ui_page(driver: Any, page_idx: int) -> Optional[str]:
+    """Bấm sang trang page_idx (từ 0) trên trang EMR, chờ khung danh sách ghi "Trang page_idx+1/…".
+    Không lật được (không có NextPage, quá thời gian chờ) thì None để đọc cách khác."""
+    try:
+        res = driver.execute_script(UI_PAGE_JS, page_idx) or {}
+    except Exception:
+        return None
+    if not res.get("ok"):
+        return None
+    deadline = time.time() + UI_PAGE_WAIT_S
+    while True:
+        try:
+            html_text = str(driver.execute_script(READ_LIST_BOX_JS, None) or "")
+        except Exception:
+            html_text = ""
+        m = PAGE_INFO_RE.search(html_text)
+        if m and int(m.group(1)) == page_idx + 1:
+            return html_text
+        if time.time() > deadline:
+            return None
+        time.sleep(0.3)
+
+
+def fetch_today_rows(driver: Any, day_filter: Optional[Dict[str, str]] = None,
+                     ui_pager: bool = False) -> List[Dict[str, Any]]:
+    """Đọc mọi trang. EMR bỏ qua cỡ trang lớn (18 dòng/trang), ô "Trang x/y" có thể ghi sai số trang và
+    lệnh đọc thẳng với page >= 2 không trả thêm người. Nên khi trang EMR đang hiện đúng ngày (ui_pager)
+    thì lật từng trang bằng NextPage như người dùng bấm; thiếu thì đọc thẳng theo "Tổng số" tới đủ."""
     started = time.time()
     seen: set = set()
     out: List[Dict[str, Any]] = []
     fetched: List[Dict[str, int]] = []
 
-    def add(page_no: int) -> str:
-        html_text = _fetch_page(driver, page_no, day_filter)
+    def add(page_no: int, html_text: Optional[str] = None) -> str:
+        via = "ajax" if html_text is None else "trang_emr"
+        if html_text is None:
+            html_text = _fetch_page(driver, page_no, day_filter)
         rows, before = rows_from_html(html_text), len(out)
         for r in rows:
             key = r["khambenhid"] or (r["ma_bn"], r["thoi_gian"])
             if key not in seen:
                 seen.add(key)
                 out.append(r)
-        fetched.append({"page": page_no, "so_dong": len(rows), "moi": len(out) - before})
+        fetched.append({"page": page_no, "so_dong": len(rows), "moi": len(out) - before, "cach": via})
         return html_text
 
     first = add(0)
     pages, total = page_count(first), total_count(first)
+    want = pages if total is None else max(pages, math.ceil(total / max(fetched[0]["so_dong"], 1)))
+    ui_all = False
+    if ui_pager and (total is None or len(out) < total):
+        ui_all = True
+        for idx in range(1, min(want, MAX_PAGES)):
+            html_text = _ui_page(driver, idx)
+            if html_text is None:
+                ui_all = False
+                break
+            add(idx, html_text)
+            if total is not None and len(out) >= total:
+                break
     if total is None:
-        for page in range(1, min(pages, MAX_PAGES)):
+        for page in range(1, min(pages, MAX_PAGES) if not ui_all else 1):
             add(page)
     else:
-        page = 1
-        while len(out) < total and page <= min(pages, MAX_PAGES):
+        # Ô "Trang x/y" có lúc tính theo cỡ trang đã gửi (500) nên ghi 1 trang dù EMR chia 18 dòng/trang:
+        # đọc theo "Tổng số" tới đủ. Số trang có thể tính từ 0 hoặc 1 nên cho phép một trang trùng;
+        # hai trang liền không thêm ai thì dừng, không gọi EMR mãi.
+        last = min(max(pages, math.ceil(total / max(fetched[0]["so_dong"], 1))), MAX_PAGES)
+        page, empty = 1, 0
+        while len(out) < total and page <= last:
             add(page)
+            empty = empty + 1 if fetched[-1]["moi"] == 0 else 0
+            if empty >= 2:
+                break
             page += 1
         if len(out) < total:
             print(f"[CLINIC-MONITOR] [WARN] Danh sách EMR ghi tổng số {total} lượt, mới đọc được {len(out)}.")
@@ -1112,7 +1177,7 @@ class Monitor:
             try:
                 day_filter = list_filter(self.list_date, _now().date())
                 self._show_day(day_filter)
-                return fetch_today_rows(self.driver, day_filter)
+                return fetch_today_rows(self.driver, day_filter, ui_pager=self.shown_filter == day_filter)
             except ListUnavailable as e:
                 last = e
                 print(f"[CLINIC-MONITOR] Không đọc được danh sách ({e}); mở lại trang / đăng nhập lại (lần {attempt + 1}).")
