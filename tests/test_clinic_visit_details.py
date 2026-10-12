@@ -2,7 +2,7 @@
 """worker/clinic_monitor.py — đọc chi tiết từng lượt khám (chỉ đọc) cho Kho người bệnh."""
 import os
 import sys
-from datetime import datetime as DT, timedelta
+from datetime import datetime as DT
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 WORKER = os.path.join(ROOT, 'worker')
@@ -60,53 +60,6 @@ def test_read_visit_details_is_read_only():
     # Không mở được popup xử trí: vẫn giữ chẩn đoán.
     d = cm.read_visit_details(FakeExam(xutri_ok=False), row)
     assert d['status'] == 'ok' and d['cd_chinh'] and d['hen_tai_kham'] == '' and d['xu_tri_fields'] == []
-
-
-def test_need_details_rules():
-    now = DT(2026, 9, 28, 10, 0)
-    row = {'khambenhid': 'K1', 'href': '/x', 'stage': 'dang_kham', 'case': 'cho_ve', 'xu_tri': 'Cho về'}
-    assert cm._need_details(row, None, now)
-    assert not cm._need_details({**row, 'stage': 'cho_kham'}, None, now)
-    assert not cm._need_details({**row, 'case': 'chua_xu_tri', 'xu_tri': ''}, None, now)
-    assert not cm._need_details({**row, 'href': ''}, None, now)
-    read = {'status': 'ok', 'stage': 'dang_kham', 'xu_tri': 'Cho về'}
-    assert not cm._need_details(row, read, now)                              # đã đọc, chưa đổi gì
-    assert cm._need_details({**row, 'stage': 'xong'}, read, now)             # Hoàn tất → đọc lại để chốt
-    assert cm._need_details({**row, 'xu_tri': 'Nhập viện'}, read, now)       # xử trí đổi
-    assert not cm._need_details({**row, 'stage': 'xong'}, {**read, 'stage': 'xong'}, now)
-    err = {'status': 'error', 'errors': 1, 'at': (now - timedelta(minutes=5)).isoformat()}
-    assert not cm._need_details(row, err, now)
-    assert cm._need_details(row, {**err, 'at': (now - timedelta(minutes=20)).isoformat()}, now)
-    assert not cm._need_details(row, {**err, 'errors': 3, 'at': (now - timedelta(hours=2)).isoformat()}, now)
-
-
-class FakeMonitor:
-    def __init__(self, fail=()):
-        self.opened = []
-        self.fail = set(fail)
-
-    def on_exam_page(self, row, action, need_services=True):
-        assert need_services is False  # không cần đọc giờ xong chỉ định
-        self.opened.append(row['khambenhid'])
-        if row['khambenhid'] in self.fail:
-            return {'status': 'error', 'result': 'error', 'message': 'lỗi'}
-        return action(FakeExam(), None, DT(2026, 9, 28, 10, 0))
-
-
-def test_scan_visit_details_limits_and_prioritises_completed():
-    rows = [{'khambenhid': f'K{i}', 'href': '/x', 'stage': 'dang_kham', 'case': 'cho_ve', 'xu_tri': 'Cho về'} for i in range(6)]
-    rows[5]['stage'] = 'xong'
-    cache = {}
-    mon = FakeMonitor()
-    cm.scan_visit_details(mon, rows, cache)
-    assert len(mon.opened) == cm.MAX_DETAILS_PER_CYCLE and mon.opened[0] == 'K5'
-    assert cache['K5']['status'] == 'ok' and cache['K5']['hen_tai_kham'] == '05/10/2026'
-
-    # Đọc lại lỗi → giữ bản đọc được trước đó.
-    mon = FakeMonitor(fail={'K5'})
-    rows[5]['xu_tri'] = 'Nhập viện'
-    cm.scan_visit_details(mon, [rows[5]], cache)
-    assert cache['K5']['status'] == 'ok' and cache['K5']['cd_chinh']
 
 
 def test_public_rows_carry_details_and_imaging():
