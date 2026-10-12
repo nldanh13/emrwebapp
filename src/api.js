@@ -881,6 +881,33 @@ export const submitRecordsCheckSubmission = (payload = {}) => post('/api/hchanh/
 export const markRecordsCheckSubmissionReturned = (payload = {}) => post('/api/hchanh/records-check/submissions/returned', payload);
 export const removeRecordsCheckSubmissionItems = (payload = {}) => post('/api/hchanh/records-check/submissions/remove', payload);
 export const exportRecordsCheckSubmissionPdf = (payload = {}) => post('/api/hchanh/records-check/submissions/export-pdf', payload);
+
+// Tab chờ cho PDF: phải mở ngay lúc bấm nút (trước mọi await), nếu không trình duyệt chặn cửa sổ bật lên.
+export function openPendingPdfTab() {
+  const popup = typeof window !== 'undefined' ? window.open('', '_blank') : null;
+  try {
+    popup?.document.write('<!doctype html><meta charset="utf-8"><title>Đang tạo PDF...</title><body>Đang tạo PDF, vui lòng chờ...</body>');
+    popup?.document.close();
+  } catch {}
+  return popup;
+}
+
+// Mở PDF Trả HSBA vừa xuất. Không mở thẳng đường dẫn /api/... vì tab mới không mang mã đăng nhập
+// (máy chủ bật đăng nhập sẽ trả 401); tải kèm mã đăng nhập rồi mở bản tải về.
+export async function openRecordsCheckPdf(url, popup = null) {
+  let blob;
+  try {
+    ({ blob } = await downloadBlob(url, 'ho_so.pdf'));
+  } catch (err) {
+    try { popup?.close(); } catch {}
+    throw err;
+  }
+  const blobUrl = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+  if (popup) popup.location.replace(blobUrl);
+  else if (typeof window !== 'undefined') window.open(blobUrl, '_blank');
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 5 * 60 * 1000);
+  return { blobUrl };
+}
 export const addRecordsCheckSubmissionDiscrepancy = (payload = {}) => post('/api/hchanh/records-check/submissions/discrepancy', payload);
 export const scanRecordsCheckCompleted = (options = {}) => {
   const hasHeadless = Object.prototype.hasOwnProperty.call(options || {}, 'headless')

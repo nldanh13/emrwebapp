@@ -8,7 +8,7 @@ import { Btn, Spinner } from '../shared.jsx';
 import RecordsSubmissionTab from './RecordsSubmissionTab.jsx';
 import useIsMobile from '../../hooks/useIsMobile.js';
 import { PAPER_ISSUE_STATES, applyGoogleSheetValidation, buildGoogleSheetIndex, buildUnlinkedSheetIssues, paperFilterMatches } from './googleSheetValidation.mjs';
-import { exportRecordsCheckPdf, getRecordsCheckDashboard, getRecordsCheckGoogleSheet, getRecordsCheckSubmissions, scanRecordsCheckCompleted, setRecordsCheckChecked, setRecordsCheckPaperChecklist, startRecordsCheckFetchBatch, stopRecordsCheckFetchBatch, syncRecordsCheckGoogleSheet, updateRecordsCheckGoogleSheetRow } from '../../api.js';
+import { exportRecordsCheckPdf, openPendingPdfTab, openRecordsCheckPdf, getRecordsCheckDashboard, getRecordsCheckGoogleSheet, getRecordsCheckSubmissions, scanRecordsCheckCompleted, setRecordsCheckChecked, setRecordsCheckPaperChecklist, startRecordsCheckFetchBatch, stopRecordsCheckFetchBatch, syncRecordsCheckGoogleSheet, updateRecordsCheckGoogleSheetRow } from '../../api.js';
 import { useOnTabReturn } from '../../hooks/useTabActivity.js';
 import { useRealtimeConnected, useScreenChanged } from '../../hooks/useRealtimeStatus.js';
 import { SkeletonScreen } from '../Skeleton.jsx';
@@ -1504,12 +1504,15 @@ export default function RecordsCheckTab({ toast, workDateRange }) {
       toast?.('Chưa có hồ sơ được đánh dấu “Đã kiểm” để xuất PDF.', 'warn');
       return;
     }
+    const popup = openPendingPdfTab();
     try {
       const out = await exportRecordsCheckPdf({ rows: rowsForPdf });
       const url = String(out?.url || '').trim();
-      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+      if (url) await openRecordsCheckPdf(url, popup);
+      else { try { popup?.close(); } catch {} }
       toast?.(`Đã xuất PDF ${Number(out?.count || rowsForPdf.length)} hồ sơ đã kiểm.`, 'ok');
     } catch (err) {
+      try { popup?.close(); } catch {}
       toast?.(`Không xuất được PDF: ${String(err.message || err)}`, 'error');
     }
   }

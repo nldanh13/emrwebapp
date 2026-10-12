@@ -11,6 +11,8 @@ import {
   markRecordsCheckSubmissionReturned,
   removeRecordsCheckSubmissionItems,
   exportRecordsCheckSubmissionPdf,
+  openPendingPdfTab,
+  openRecordsCheckPdf,
   addRecordsCheckSubmissionDiscrepancy,
 } from '../../api.js';
 import { SkeletonScreen } from '../Skeleton.jsx';
@@ -432,17 +434,19 @@ Các hồ sơ này sẽ biến mất khỏi danh sách chờ xếp ngày nộp. 
       toast?.('Ngày nộp này chưa có hồ sơ để xuất file.', 'warn');
       return;
     }
+    const popup = openPendingPdfTab();
     setBusy(true);
     try {
       const out = await exportRecordsCheckSubmissionPdf({ batch_id: selectedBatch.id, rows, delivered_by: deliveredBy.trim() });
       applyDashboard(out);
       const url = out?.url || '';
-      if (!url) throw new Error('Backend chưa trả về đường dẫn PDF.');
-      window.open(url, '_blank', 'noopener,noreferrer');
+      if (!url) throw new Error('Máy chủ chưa trả về file PDF. Hãy bấm xuất lại.');
+      await openRecordsCheckPdf(url, popup);
       if (!selectedBatch.locked) {
         toast?.('Đã xuất danh sách. Đợt vẫn đang chuẩn bị; hãy xác nhận KHTH đã nhận để chốt sau khi nộp thực tế.', 'ok');
       }
     } catch (err) {
+      try { popup?.close(); } catch {}
       toast?.(`Không xuất được file theo ngày nộp: ${String(err.message || err)}`, 'error');
     } finally {
       setBusy(false);
