@@ -102,6 +102,33 @@ def test_fetch_reads_all_pages_with_large_page_size():
     assert all(c['pageSize'] == cm.PAGE_SIZE for c in driver.calls)
 
 
+def _table_total(*rows, pages, shown, total):
+    return (HEAD + ''.join(rows) + '</tbody></table>' + f'<div>Tổng số: {shown}/ {total}</div>'
+            + f'<ul class="pagination"><li><a>Trang 1/{pages}</a></li></ul>')
+
+
+def test_fetch_gets_page_two_when_emr_pages_are_one_based():
+    """EMR thật: trang 1 "Tổng số: 18/ 32", trang 2 mất. Số trang trong lệnh tìm kiếm tính từ 1 thì
+    page=0 và page=1 cùng trả trang 1 → đọc tiếp page=2 cho đủ tổng số."""
+    a = _row('a', 1, '<a>A</a>', BHYT, 'Đang thực hiện', '', 'Cho về')
+    b = _row('b', 2, '<a>B</a>', BHYT, 'Đang thực hiện', '', 'Nhập viện')
+    p1 = _table_total(a, pages=2, shown=1, total=2)
+    p2 = _table_total(b, pages=2, shown=1, total=2)
+    driver = FakeDriver([{'ok': True, 'html': p1}, {'ok': True, 'html': p1}, {'ok': True, 'html': p2}])
+    rows = cm.fetch_today_rows(driver)
+    assert [r['khambenhid'] for r in rows] == ['a', 'b']
+    assert [c['page'] for c in driver.calls] == [0, 1, 2]
+
+    # Số trang tính từ 0: đủ tổng số sau page=1 thì dừng, không gọi thêm.
+    driver = FakeDriver([{'ok': True, 'html': p1}, {'ok': True, 'html': p2}])
+    assert [r['khambenhid'] for r in cm.fetch_today_rows(driver)] == ['a', 'b']
+    assert [c['page'] for c in driver.calls] == [0, 1]
+
+    # Một trang đủ người: không gọi thêm.
+    driver = FakeDriver([{'ok': True, 'html': _table_total(a, b, pages=1, shown=2, total=2)}])
+    assert len(cm.fetch_today_rows(driver)) == 2 and len(driver.calls) == 1
+
+
 def test_monitor_relogins_when_emr_session_expires(monkeypatch):
     html = _table(_row('a', 1, '<a>A</a>', BHYT, 'Đang thực hiện', '', 'Cho về'))
     driver = FakeDriver([{'ok': False, 'reason': 'no_page'}, {'ok': True, 'html': html}])

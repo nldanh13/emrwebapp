@@ -57,6 +57,7 @@ MAX_RELOGIN_ATTEMPTS = 2
 BHYT_CODE_RE = re.compile(r"\b[A-Z]{2}\d{10,}\b")
 CHO_DOC_KQ_RE = re.compile(r"\(\s*ch[oờ]\s*đ?[oọ]c\s*k\s*q\s*\)", re.I)
 PAGE_INFO_RE = re.compile(r"Trang\s*(\d+)\s*/\s*(\d+)", re.I)
+TOTAL_RE = re.compile(r"Tổng số:\s*(\d+)\s*/\s*(\d+)", re.I)
 SERVICE_LABELS = {"CDHA": "CĐHA", "XN": "XN", "TT": "TT", "TDCN": "TDCN", "PT": "PT", "KB": "KB"}
 
 # Gọi đúng hàm trang Danh sách Khám bệnh dùng trong FilterChange(), chỉ thay cỡ trang/số trang.
@@ -276,6 +277,12 @@ def rows_from_html(html_text: str) -> List[Dict[str, Any]]:
 def page_count(html_text: str) -> int:
     m = PAGE_INFO_RE.search(html_text or "")
     return int(m.group(2)) if m else 1
+
+
+def total_count(html_text: str) -> Optional[int]:
+    """Tổng số lượt khám EMR ghi dưới bảng ("Tổng số: 18/ 32" → 32); không có thì None."""
+    m = TOTAL_RE.search(html_text or "")
+    return int(m.group(2)) if m else None
 
 
 # ── Điều kiện hoàn tất khám (tính thuần, không đụng EMR) ─────────────────────
@@ -952,17 +959,31 @@ def _fetch_page(driver: Any, page: int, day_filter: Optional[Dict[str, str]] = N
 
 
 def fetch_today_rows(driver: Any, day_filter: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
+    """Đọc mọi trang. EMR có thể bỏ qua cỡ trang lớn và đánh số trang từ 1 (page=0 và page=1 cùng là
+    trang 1), nên khi biết tổng số ("Tổng số: x/ y") thì đọc tiếp tới khi đủ, thử tới page=số trang."""
     first = _fetch_page(driver, 0, day_filter)
-    rows = rows_from_html(first)
-    for page in range(1, min(page_count(first), MAX_PAGES)):
-        rows.extend(rows_from_html(_fetch_page(driver, page, day_filter)))
-    seen, out = set(), []
-    for r in rows:
-        key = r["khambenhid"] or (r["ma_bn"], r["thoi_gian"])
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(r)
+    seen: set = set()
+    out: List[Dict[str, Any]] = []
+
+    def add(html_text: str) -> None:
+        for r in rows_from_html(html_text):
+            key = r["khambenhid"] or (r["ma_bn"], r["thoi_gian"])
+            if key not in seen:
+                seen.add(key)
+                out.append(r)
+
+    add(first)
+    pages, total = page_count(first), total_count(first)
+    if total is None:
+        for page in range(1, min(pages, MAX_PAGES)):
+            add(_fetch_page(driver, page, day_filter))
+        return out
+    page = 1
+    while len(out) < total and page <= min(pages, MAX_PAGES):
+        add(_fetch_page(driver, page, day_filter))
+        page += 1
+    if len(out) < total:
+        print(f"[CLINIC-MONITOR] [WARN] Danh sách EMR ghi tổng số {total} lượt, mới đọc được {len(out)}.")
     return out
 
 
