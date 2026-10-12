@@ -368,3 +368,41 @@ def test_dien_thong_tin_uses_typed_vitals_and_usual_values_for_blank(monkeypatch
     assert typed["txtMachTrenlan"] == "92"
     assert typed["txtNhietDo"] == "37" and typed["txtNhipTho"] == "20"
     assert typed["txtHuyetAp"] in {"120/80", "110/70", "130/80"}
+
+
+def test_ward_sheet_creator_is_oncall_nurse_from_schedule(monkeypatch):
+    import clinic_input_care as cic
+
+    cfg = {"ten_dieu_duong": {"Default": {"work": ["ĐD Ca Làm"], "oncall": ["ĐD Trực"]}}}
+    assert cic.ward_oncall_nurse(cfg, "09:04 12/10/2026") == "ĐD Trực"
+
+    calls = []
+    monkeypatch.setattr(cic, "_input_one", lambda ws, row, nurses, *a, **k: calls.append(nurses) or {"success": True})
+    sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026"})
+    sheets[1]["nurses"] = ["ĐD Trực"]
+    assert cic._input_patient(object(), {}, ["ĐD Phòng Khám"], sheets, False)["success"] is True
+    assert calls == [["ĐD Phòng Khám"], ["ĐD Trực"]]
+
+    calls.clear()
+    sheets[1]["nurses"] = []
+    res = cic._input_patient(object(), {}, ["ĐD Phòng Khám"], sheets, False)
+    assert res["success"] is False and "chưa có người trực" in res["error"] and calls == []
+
+
+def test_input_one_renames_creator_to_scheduled_nurse_after_complete(monkeypatch):
+    import clinic_input_care as cic
+
+    monkeypatch.setattr(cic, "scan_cham_soc_cache", lambda driver, ngay, hours_needed=None: ({}, []))
+    monkeypatch.setattr(cic, "kiem_tra_bang_cached", lambda *a, **k: ("MISSING", None, None))
+    monkeypatch.setattr(cic, "_open_care_page", lambda driver, wait, row: None)
+    monkeypatch.setattr(cic, "set_thoi_gian_lap", lambda driver, time_str, max_retry=2: True)
+    monkeypatch.setattr(cic, "dien_thong_tin", lambda *a, **k: True)
+    monkeypatch.setattr(cic, "check_trang_thai_badge", lambda driver: "Hoàn tất")
+    monkeypatch.setattr(cic, "handle_popups", lambda driver: None)
+    monkeypatch.setattr(cic, "doc_nguoi_lap_hien_tai", lambda driver: "Chủ Tài Khoản")
+    renamed = []
+    monkeypatch.setattr(cic, "doi_nguoi_lap_sau_hoan_tat", lambda driver, name: renamed.append(name) or True)
+
+    row = {"ma_bn": "BN001", "ho_ten": "A", "care_time_str": "09:04 15/09/2026"}
+    res = cic._input_one(_FakeWS(), row, ["ĐD Trực"], "Nhận HS", "Khoa nhận", True)
+    assert res["success"] is True and renamed == ["ĐD Trực"]

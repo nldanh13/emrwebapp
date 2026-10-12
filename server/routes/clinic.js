@@ -751,6 +751,8 @@ function sanitizeClinicCareRequest(body = {}, { requireRows = false } = {}) {
         .map(k => [k, String(r.vitals?.[k] || '').trim().slice(0, 12)])),
       sheets_done:         { kham: r.sheets_done?.kham === true, khoa: r.sheets_done?.khoa === true },
       saved_for_input:     r.saved_for_input === true || r.savedForInput === true,
+      // Gửi đủ người đã kiểm tra lúc tìm để mã kiểm tra khớp; nhap=false (đã đủ phiếu, bỏ chọn) thì worker bỏ qua.
+      nhap:                r.nhap !== false,
       source:              'inpatient_list_clinic_care',
     }));
 
@@ -763,10 +765,11 @@ function sanitizeClinicCareRequest(body = {}, { requireRows = false } = {}) {
   if (requireRows && rows.some(r => !r.saved_for_input)) {
     throw new Error('Còn người bệnh chưa được lưu diễn biến để nhập.');
   }
-  if (requireRows && rows.some(r => !r.dien_bien)) {
+  if (requireRows && !rows.some(r => r.nhap)) throw new Error('Không có người bệnh nào cần nhập chăm sóc.');
+  if (requireRows && rows.some(r => r.nhap && !r.dien_bien)) {
     throw new Error('Diễn biến của từng người bệnh không được để trống.');
   }
-  if (requireRows && rows.some(r => (!r.sheets_done.kham && !r.cham_soc) || (!r.sheets_done.khoa && (!r.dien_bien_khoa || !r.cham_soc_khoa)))) {
+  if (requireRows && rows.some(r => r.nhap && ((!r.sheets_done.kham && !r.cham_soc) || (!r.sheets_done.khoa && (!r.dien_bien_khoa || !r.cham_soc_khoa))))) {
     throw new Error('Diễn biến và chăm sóc của cả 2 phiếu không được để trống.');
   }
 

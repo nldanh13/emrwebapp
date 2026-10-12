@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  bothDone, CLINIC_CARE, rowProblems, rowsToInput, setClinicDienBien, vitalsErrors, WARD_CARE, wardDienBien, wardTime, withSheetDefaults,
+  bothDone, CLINIC_CARE, inputPayloadRows, rowProblems, rowsToInput, setClinicDienBien, vitalsErrors, WARD_CARE, wardDienBien, wardTime, withSheetDefaults,
 } from './careSheets.js';
 
 const DB = 'Phòng khám Chấn thương chỉnh hình - Thần kinh nhận\nNgười bệnh tỉnh';
@@ -42,5 +42,15 @@ describe('careSheets', () => {
     expect(rowProblems(wardDone)).toEqual([]);
     const bad = base({ ma_bn: '3', vitals: { ...VITALS, huyet_ap: '120' } });
     expect(rowsToInput([done, wardDone, skipped, ready, bad])).toEqual([wardDone, ready]);
+  });
+
+  it('bước nhập gửi đủ người đã kiểm tra lúc tìm (mã kiểm tra khớp), người không nhập thì nhap=false', () => {
+    const done = base({ ma_bn: '1', sheets_done: { kham: true, khoa: true } });
+    const skipped = base({ ma_bn: '2', skip: true });
+    const ready = base({ ma_bn: '3' });
+    const noLink = base({ ma_bn: '4', can_input: false });
+    const sent = inputPayloadRows([done, skipped, ready, noLink]);
+    expect(sent.map(r => [r.ma_bn, r.nhap])).toEqual([['1', false], ['2', false], ['3', true]]);
+    expect(sent.every(r => r.saved_for_input)).toBe(true);
   });
 });

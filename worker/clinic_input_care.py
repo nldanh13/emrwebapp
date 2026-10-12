@@ -61,7 +61,9 @@ try:
         kiem_tra_bang_cached,
         open_cham_soc_by_id,
     )
-    from care_form_actions import set_thoi_gian_lap, dien_thong_tin
+    from care_form_actions import (
+        set_thoi_gian_lap, dien_thong_tin, doc_nguoi_lap_hien_tai, cung_nguoi_lap, doi_nguoi_lap_sau_hoan_tat,
+    )
     from care_web_actions import (
         check_trang_thai_badge,
         click_thu_hoi_va_xoa,
@@ -70,6 +72,7 @@ try:
 except Exception:  # pragma: no cover - chỉ xảy ra ở môi trường test thiếu Selenium
     scan_cham_soc_cache = kiem_tra_bang_cached = None  # type: ignore
     open_cham_soc_by_id = set_thoi_gian_lap = dien_thong_tin = None  # type: ignore
+    doc_nguoi_lap_hien_tai = cung_nguoi_lap = doi_nguoi_lap_sau_hoan_tat = None  # type: ignore
     check_trang_thai_badge = click_thu_hoi_va_xoa = click_thu_hoi_cham_soc = None  # type: ignore
 
 
@@ -981,6 +984,13 @@ def vitals_errors(vitals: Any) -> List[str]:
     return out
 
 
+def ward_oncall_nurse(config: Dict[str, Any], time_str: str) -> str:
+    """Người nhận bệnh ở phiếu Khoa nhận = người trực theo Lịch điều dưỡng lúc đó."""
+    if not time_str:
+        return ""
+    return _compact(get_nurse_by_shift(time_str, config.get("ten_dieu_duong") or {}, force_shift="oncall"))
+
+
 def care_sheets(row: Dict[str, Any]) -> List[Dict[str, Any]]:
     """2 phiếu cần có của người bệnh, theo nội dung người dùng đã sửa (thiếu thì theo mẫu)."""
     time_str, _, hour = _parse_admission_time(row.get("care_time_str") or row.get("tg_vao"))
@@ -1031,6 +1041,7 @@ def _preview(req: Dict[str, Any], output_path: str) -> int:
         nurses = _effective_nurses(req, config, row.get("care_time_str") or row.get("tg_vao") or care_date, fallback_nurses)
         public_row["dieu_duong"] = nurses[0] if nurses else ""
         public_row["can_input"] = bool(row.get("nursing_url") and nurses)
+        public_row["nguoi_nhan"] = ward_oncall_nurse(config, ward_time(row.get("care_time_str") or row.get("tg_vao")))
         public_rows.append(public_row)
     result = {
         "status": "ok",
@@ -1267,6 +1278,13 @@ def _input_one(
             time.sleep(2.0)
             handle_popups(driver)
             if "Hoàn tất" in check_trang_thai_badge(driver):
+                # EMR tự để Người lập = chủ tài khoản đang đăng nhập; khác người theo lịch (vd người trực
+                # nhận bệnh) thì Thu hồi → đổi Người lập → Hoàn tất, như phiếu chăm sóc bệnh phòng.
+                current = doc_nguoi_lap_hien_tai(driver) if doc_nguoi_lap_hien_tai else ""
+                if current and expected_creator and not cung_nguoi_lap(current, expected_creator):
+                    if not doi_nguoi_lap_sau_hoan_tat(driver, expected_creator):
+                        return {"success": False, "time_str": time_str,
+                                "error": f"{time_str}: đã Hoàn tất dưới tên {current} nhưng không đổi được Người lập sang {expected_creator}."}
                 return {"success": True, "error": None, "time_str": time_str, "nurse": nurses}
 
         return {"success": False, "error": f"{time_str}: Không lưu/hoàn tất được phiếu chăm sóc."}
@@ -1283,6 +1301,8 @@ def _input_patient(ws: Any, fresh: Dict[str, Any], nurses: List[str], sheets: Li
     phiếu đầu lỗi thì không lập phiếu sau."""
     # Kiểm tra cả 2 phiếu trước khi ghi gì lên EMR.
     for sheet in sheets:
+        if sheet.get("nurses") == [] and not sheet.get("expect_done"):
+            return {"success": False, "error": f"{sheet['label']}: chưa có người trực trong Lịch điều dưỡng lúc {sheet['time_str']}."}
         if not sheet.get("time_str"):
             return {"success": False, "error": f"{sheet['label']}: giờ lập phiếu không hợp lệ."}
         if sheet["key"] == "khoa" and not _after(sheet["time_str"], sheets[0]["time_str"]):
@@ -1295,7 +1315,7 @@ def _input_patient(ws: Any, fresh: Dict[str, Any], nurses: List[str], sheets: Li
     all_skipped = True
     for sheet in sheets:
         res = _input_one(
-            ws, {**fresh, "care_time_str": sheet["time_str"]}, nurses, sheet["cham_soc"], sheet["dien_bien"],
+            ws, {**fresh, "care_time_str": sheet["time_str"]}, sheet.get("nurses") or nurses, sheet["cham_soc"], sheet["dien_bien"],
             needs_vitals or sheet.get("vitals") is not None,
             vitals=None if sheet.get("expect_done") else {k: v for k, v in (sheet.get("vitals") or {}).items() if v},
             done_check=lambda entries, sh=sheet: sheet_done(entries, sh), require_done=bool(sheet.get("expect_done")),
@@ -1346,6 +1366,9 @@ def _input(req: Dict[str, Any], result_path: str) -> int:
                 requested.get("care_time_str") or requested.get("tg_vao")
             )
             result_key = f"{code}::{requested_time or requested_date or idx}"
+            if requested.get("nhap") is False:
+                ws.mark_skipped(result_key, "Không cần nhập (đã đủ phiếu hoặc người dùng bỏ chọn).")
+                continue
             if requested_date != care_date:
                 ws.mark_failed(result_key, "T/G vào không cùng ngày đã chọn.")
                 continue
@@ -1364,6 +1387,8 @@ def _input(req: Dict[str, Any], result_path: str) -> int:
                 "dien_bien": _row_dien_bien(requested, dien_bien),
                 "cham_soc": requested.get("cham_soc") or care_content,
             })
+            oncall = ward_oncall_nurse(config, sheets[1]["time_str"])
+            sheets[1]["nurses"] = [oncall] if oncall else []
             try:
                 ws.results[result_key] = _input_patient(ws, fresh, nurses, sheets, needs_vitals)
             except Exception as exc:

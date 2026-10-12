@@ -102,3 +102,10 @@ export function rowProblems(row) {
 export function rowsToInput(rows = []) {
   return rows.filter(r => r.can_input && !r.skip && !bothDone(r) && !rowProblems(r).length);
 }
+
+// Danh sách gửi bước nhập: đúng mọi người bệnh bước tìm đã cấp xác nhận kiểm tra (nhập được), để mã kiểm tra khớp;
+// người không cần nhập (đã đủ 2 phiếu, bỏ chọn, còn thiếu) vẫn gửi nhưng nhap=false, worker bỏ qua.
+export function inputPayloadRows(rows = []) {
+  const chosen = new Set(rowsToInput(rows));
+  return rows.filter(r => r.can_input).map(r => ({ ...r, nhap: chosen.has(r), saved_for_input: true }));
+}
