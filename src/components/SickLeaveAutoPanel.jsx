@@ -1,9 +1,9 @@
 // Nhập nghỉ ốm lên cổng BHXH tự động (tab Nghỉ ốm). Người dùng chỉ gõ mã CAPTCHA: máy chủ điền tài
-// khoản cổng đã lưu, đăng nhập EMR cho công cụ, rồi công cụ (tools/bhyt_selenium_app, cổng 5005) tự
+// khoản cổng đã lưu, đăng nhập EMR cho công cụ, rồi công cụ (tools/bhyt_selenium_app, gọi qua máy chủ) tự
 // quét Danh sách Khám bệnh (phiếu nghỉ) và người bệnh ra viện (giấy ra viện), nhập thật lên cổng các
 // hồ sơ đủ dữ liệu. Ca thẻ DN chưa ghi nghỉ ốm chờ người dùng hỏi người bệnh (Có nghỉ / Không nghỉ).
 // Trạng thái lượt chạy giữ ở công cụ, giao diện chỉ đọc lại. Xem tools/bhyt_selenium_app/bhyt/auto_run.py.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IconCheck, IconLogin, IconPlayerPlay, IconPlayerStop, IconRefresh, IconX } from '@tabler/icons-react';
 import { C, FS } from '../tokens.js';
 import { Badge, Btn } from './shared.jsx';
@@ -14,24 +14,9 @@ import {
   DOC_GRV, DOC_PHIEU, GROUP_LABELS, countGroups, listByDoc, recordProblem, runSummaryLines,
 } from '../utils/sickLeaveAuto.js';
 
-const TOOL = 'http://127.0.0.1:5005';
-
-async function tool(path, options = {}) {
-  let res;
-  try {
-    res = await fetch(`${TOOL}${path}`, options);
-  } catch {
-    throw new Error('Công cụ nhập cổng BHXH chưa chạy. Bấm "Lấy mã CAPTCHA" để khởi động.');
-  }
-  let data = {};
-  try { data = await res.json(); } catch { /* không phải JSON */ }
-  if (!res.ok) throw new Error(data.error || `Công cụ nhập cổng báo lỗi (mã ${res.status}).`);
-  return data;
-}
-
-const postJson = (path, body) => tool(path, {
-  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}),
-});
+// Mọi lời gọi công cụ nhập cổng đi qua máy chủ (/api/bhyt-tool/...), xem server/services/bhyt_tool.js.
+const tool = (path) => api.getBhytTool(path);
+const postJson = (path, body) => api.postBhytTool(path, body);
 
 function todayIso() {
   const d = new Date();
@@ -217,6 +202,7 @@ export default function SickLeaveAutoPanel({ toast }) {
   }, [toast]);
 
   // Danh sách hồ sơ + trạng thái lượt chạy từ công cụ. Công cụ chưa chạy thì giữ nguyên màn hình.
+  const lastToolError = useRef('');
   const refresh = useCallback(async () => {
     try {
       const [summary, list] = await Promise.all([tool('/api/summary'), tool('/api/records')]);
@@ -224,8 +210,10 @@ export default function SickLeaveAutoPanel({ toast }) {
       setAuto(summary.auto || null);
       setWorker(summary.worker || { running: false });
       setRecords(Array.isArray(list.records) ? list.records : []);
+      lastToolError.current = '';
       return true;
-    } catch {
+    } catch (err) {
+      lastToolError.current = String(err?.message || '');
       setAvailable(false);
       return false;
     }
@@ -256,7 +244,7 @@ export default function SickLeaveAutoPanel({ toast }) {
 
   const running = Boolean(auto?.running || worker?.running);
   // ux-rules: polling-ok — chỉ hỏi công cụ khi lượt nhập đang chạy.
-  // ux-rules: no-realtime — công cụ nhập cổng chạy riêng ở cổng 5005, máy chủ app không theo dõi được.
+  // ux-rules: no-realtime — công cụ nhập cổng là tiến trình riêng, máy chủ app chỉ chuyển tiếp, không đẩy tiến độ.
   useEffect(() => {
     if (!running) return undefined;
     const id = setInterval(() => { refresh(); }, 2000);
@@ -275,7 +263,7 @@ export default function SickLeaveAutoPanel({ toast }) {
           await new Promise(res => setTimeout(res, 500));
           ok = await refresh();
         }
-        if (!ok) throw new Error('Công cụ nhập cổng BHXH chưa sẵn sàng. Thử lại sau giây lát.');
+        if (!ok) throw new Error(lastToolError.current || 'Công cụ nhập cổng BHXH chưa sẵn sàng. Thử lại sau giây lát.');
         loadSessions();
       }
       const d = fresh ? await postJson('/api/browser/refresh-captcha') : await tool('/api/browser/captcha');

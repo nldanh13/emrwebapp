@@ -4,7 +4,7 @@
 
 const assert = require('assert');
 const { EventEmitter } = require('events');
-const { launchFailureMessage, waitForLaunch } = require('../server/services/bhyt_tool_launch');
+const { launchFailureMessage, waitForLaunch, forwardToTool } = require('../server/services/bhyt_tool');
 
 // Thiếu thư viện Python
 {
@@ -80,5 +80,46 @@ assert.match(launchFailureMessage('', { exited: false }), /khởi động lâu h
     assert.match(r.message, /lâu hơn bình thường/);
   }
 
-  console.log('bhyt_tool_launch_test: OK');
+  // Trình duyệt gọi công cụ qua máy chủ chính (/api/bhyt-tool/...), không gọi thẳng cổng 5005.
+  {
+    const seen = [];
+    const ok = await forwardToTool({
+      method: 'GET', path: '/api/summary',
+      fetchImpl: async (url, opts) => { seen.push([url, opts.method]); return { ok: true, status: 200, json: async () => ({ auto: null }) }; },
+    });
+    assert.deepStrictEqual(ok, { status: 200, body: { auto: null } });
+    assert.deepStrictEqual(seen, [['http://127.0.0.1:5005/api/summary', 'GET']]);
+
+    const post = await forwardToTool({
+      method: 'POST', path: '/api/records/12/sick-leave', body: { answer: 'co' },
+      fetchImpl: async (_url, opts) => ({ ok: true, status: 200, json: async () => JSON.parse(opts.body) }),
+    });
+    assert.deepStrictEqual(post.body, { answer: 'co' });
+  }
+  // Đường có mật khẩu (đăng nhập) hoặc ngoài danh sách thì không chuyển tiếp.
+  for (const [method, p] of [['POST', '/api/browser/login'], ['POST', '/api/emr/login'], ['GET', '/api/logs'], ['POST', '/api/summary']]) {
+    const r = await forwardToTool({ method, path: p, fetchImpl: async () => { throw new Error('không được gọi'); } });
+    assert.strictEqual(r.status, 404, `${method} ${p}`);
+    assert.match(r.body.message, /không hỗ trợ/);
+  }
+  // Công cụ chưa chạy
+  {
+    const r = await forwardToTool({ method: 'GET', path: '/api/summary', fetchImpl: async () => { throw new Error('ECONNREFUSED'); } });
+    assert.strictEqual(r.status, 503);
+    assert.strictEqual(r.body.code, 'BHYT_TOOL_DOWN');
+    assert.match(r.body.message, /chưa chạy/);
+  }
+  // Công cụ báo lỗi bằng JSON → giữ nguyên lời báo; lỗi trang HTML → câu tiếng Việt, không "500 Internal Server Error"
+  {
+    const j = await forwardToTool({ method: 'GET', path: '/api/records',
+      fetchImpl: async () => ({ ok: false, status: 400, json: async () => ({ error: 'Chưa đăng nhập cổng' }) }) });
+    assert.deepStrictEqual(j, { status: 400, body: { status: 'error', message: 'Chưa đăng nhập cổng' } });
+    const h = await forwardToTool({ method: 'GET', path: '/api/records',
+      fetchImpl: async () => ({ ok: false, status: 500, json: async () => { throw new SyntaxError('html'); } }) });
+    assert.strictEqual(h.status, 502);
+    assert.match(h.body.message, /Công cụ nhập cổng BHXH bị lỗi khi xử lý/);
+    assert.doesNotMatch(h.body.message, /Internal Server Error/);
+  }
+
+  console.log('bhyt_tool_test: OK');
 })().catch(err => { console.error(err); process.exit(1); });

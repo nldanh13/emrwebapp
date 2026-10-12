@@ -7,22 +7,7 @@
 
 'use strict';
 
-const BHYT_TOOL_URL = 'http://127.0.0.1:5005';
-
-async function callTool(fetchImpl, path, body) {
-  let res;
-  try {
-    res = await fetchImpl(`${BHYT_TOOL_URL}${path}`, body === undefined ? {} : {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-    });
-  } catch (_) {
-    throw new Error('Công cụ nhập cổng BHXH chưa chạy. Bấm "Lấy mã CAPTCHA" để khởi động lại.');
-  }
-  let data = {};
-  try { data = await res.json(); } catch (_) { /* không phải JSON */ }
-  if (!res.ok) throw new Error(data.error || `Công cụ nhập cổng báo lỗi (mã ${res.status}).`);
-  return data;
-}
+const { BHYT_TOOL_URL, callTool } = require('./bhyt_tool');
 
 /**
  * @param {object} opts
