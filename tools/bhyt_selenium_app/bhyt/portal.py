@@ -43,6 +43,33 @@ class PortalError(RuntimeError):
     pass
 
 
+# Tìm ảnh/ô CAPTCHA khi id cấu hình không khớp (findCaptcha). Trả phần tử hoặc null.
+_FIND_CAPTCHA_JS = r"""
+/* findCaptcha */
+const kind = arguments[0];
+const re = /captcha|capcha|ma_?xac_?nhan|maxacnhan/i;
+const visible = el => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+const marks = el => [el.id, el.getAttribute('name'), el.getAttribute('src'), el.getAttribute('alt'),
+  el.getAttribute('title'), el.className && String(el.className), el.getAttribute('placeholder')]
+  .filter(Boolean).join(' ');
+if (kind === 'input') {
+  const boxes = [...document.querySelectorAll('input:not([type=hidden]):not([type=password])')]
+    .filter(el => visible(el) && re.test(marks(el)));
+  return boxes[0] || null;
+}
+const imgs = [...document.querySelectorAll('img, canvas')].filter(visible);
+const hit = imgs.find(el => re.test(marks(el)));
+if (hit) return hit;
+// Không có dấu hiệu: lấy ảnh nằm cùng khối với ô nhập CAPTCHA.
+const box = [...document.querySelectorAll('input')].find(el => re.test(marks(el)));
+for (let node = box && box.parentElement, i = 0; node && i < 4; node = node.parentElement, i += 1) {
+  const near = [...node.querySelectorAll('img, canvas')].find(visible);
+  if (near) return near;
+}
+return null;
+"""
+
+
 class BhytPortal:
     def __init__(self, profile_dir: str | Path, timeout: int = 40,
                  headless: bool = True, selectors: dict[str, str] | None = None,
@@ -54,6 +81,8 @@ class BhytPortal:
         self.debug_dir = Path(debug_dir).resolve() if debug_dir else None
         self.driver: webdriver.Chrome | None = None
         self._lock = threading.RLock()
+        # Ảnh CAPTCHA có thể hiện sau khi trang tải xong: chờ tối đa chừng này giây.
+        self.captcha_wait = 8.0
 
     def sel(self, key: str) -> str:
         return self.selectors.get(key, DEFAULT_SELECTORS.get(key, key))
@@ -147,6 +176,36 @@ class BhytPortal:
             driver.get(BASE_URL)
             WebDriverWait(driver, self.timeout).until(has_fields)
 
+    def _find_captcha(self, driver, kind: str):
+        """Ảnh (kind="image") hoặc ô nhập (kind="input") CAPTCHA: theo id cấu hình trước, không
+        có thì tìm trong trang phần tử có chữ "captcha" (id/name/src/alt/class), cuối cùng là
+        ảnh nằm gần ô nhập CAPTCHA. Cổng đổi id thì vẫn chạy được, không phải sửa config."""
+        key = "captcha_image" if kind == "image" else "captcha_input"
+        els = driver.find_elements(By.ID, self.sel(key))
+        if els:
+            return els[0]
+        try:
+            return driver.execute_script(_FIND_CAPTCHA_JS, kind) or None
+        except WebDriverException:
+            return None
+
+    def _wait_captcha_image(self, driver):
+        deadline = time.time() + max(0.0, float(self.captcha_wait))
+        while True:
+            el = self._find_captcha(driver, "image")
+            if el is not None or time.time() >= deadline:
+                return el
+            time.sleep(0.25)
+
+    def _captcha_missing_error(self) -> PortalError:
+        where = ""
+        try:
+            saved = self.dump_page("dang-nhap-cong")
+            where = f" Đã lưu trang đăng nhập vào {saved['html']}, gửi file đó cho kỹ thuật để khớp lại."
+        except Exception:  # noqa: BLE001 — lưu trang chỉ để hỗ trợ, không che lỗi chính
+            pass
+        return PortalError("Không thấy ảnh CAPTCHA trên trang đăng nhập cổng BHXH." + where)
+
     def get_captcha_image(self) -> dict[str, Any]:
         """Trả ảnh CAPTCHA dạng data URL (PNG base64) để hiện trong Data Hub."""
         with self._lock:
@@ -154,13 +213,10 @@ class BhytPortal:
                 self.start()
             self._ensure_login_page()
             driver = self._require_driver()
-            els = driver.find_elements(By.ID, self.sel("captcha_image"))
-            if not els:
-                raise PortalError(
-                    f"Không thấy ảnh CAPTCHA (id {self.sel('captcha_image')}). "
-                    "Cổng có thể đã đổi giao diện — bấm 'Lưu trang để gửi kỹ thuật' rồi gửi file."
-                )
-            png = els[0].screenshot_as_png
+            el = self._wait_captcha_image(driver)
+            if el is None:
+                raise self._captcha_missing_error()
+            png = el.screenshot_as_png
             return {"image": "data:image/png;base64," + base64.b64encode(png).decode("ascii"),
                     "logged_in": False}
 
@@ -172,6 +228,12 @@ class BhytPortal:
                 try:
                     els[0].click()
                     time.sleep(0.6)
+                except WebDriverException:
+                    pass
+            else:
+                # Không thấy nút đổi mã: tải lại trang đăng nhập để có mã mới.
+                try:
+                    driver.refresh()
                 except WebDriverException:
                     pass
             return self.get_captcha_image()
@@ -209,13 +271,19 @@ class BhytPortal:
                 self.start()
             self._ensure_login_page()
             driver = self._require_driver()
+            labels = {"facility_code": "Mã cơ sở KCB", "username": "Tên đăng nhập",
+                      "password": "Mật khẩu", "captcha_input": "Mã CAPTCHA"}
             for key, value in (("facility_code", facility_code), ("username", username),
                                ("password", password), ("captcha_input", captcha)):
-                els = driver.find_elements(By.ID, self.sel(key))
-                if not els:
-                    raise PortalError(f"Không thấy ô {key} (id {self.sel(key)}) trên trang đăng nhập.")
-                els[0].clear()
-                els[0].send_keys(value)
+                if key == "captcha_input":
+                    el = self._find_captcha(driver, "input")
+                else:
+                    found = driver.find_elements(By.ID, self.sel(key))
+                    el = found[0] if found else None
+                if el is None:
+                    raise PortalError(f"Không thấy ô {labels[key]} trên trang đăng nhập cổng BHXH.")
+                el.clear()
+                el.send_keys(value)
             if not self._click_login(driver):
                 raise PortalError("Không bấm được nút Đăng nhập — cổng có thể đã đổi giao diện.")
             # Chờ hoặc là rời trang đăng nhập (đăng nhập được) hoặc hiện thông báo lỗi.
