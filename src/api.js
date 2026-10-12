@@ -153,6 +153,17 @@ function apiActionLabel(method, url) {
     'POST /api/sick-leave-import': 'nhập danh sách BHXH (.xlsx) để rà soát nghỉ ốm/ra viện',
     'POST /api/sick-leave-import/delete-row': 'xoá dòng đã nhập trong danh sách BHXH',
     'POST /api/sick-leave-launch-bhyt-tool': 'tự khởi động công cụ nhập cổng BHXH',
+    'GET /api/bhyt-tool/api/summary': 'tải trạng thái công cụ nhập cổng BHXH',
+    'GET /api/bhyt-tool/api/records': 'tải hồ sơ nghỉ ốm của công cụ nhập cổng',
+    'GET /api/bhyt-tool/api/browser/status': 'kiểm tra phiên cổng BHXH',
+    'GET /api/bhyt-tool/api/browser/captcha': 'lấy mã CAPTCHA cổng BHXH',
+    'POST /api/bhyt-tool/api/browser/refresh-captcha': 'đổi mã CAPTCHA cổng BHXH',
+    'GET /api/bhyt-tool/api/emr/status': 'kiểm tra phiên EMR của công cụ nhập cổng',
+    'GET /api/bhyt-tool/api/emr/grv-defaults': 'tải khoa/bác sĩ mặc định cho giấy ra viện',
+    'POST /api/bhyt-tool/api/emr/grv-defaults': 'lưu khoa/bác sĩ mặc định cho giấy ra viện',
+    'POST /api/bhyt-tool/api/auto-run': 'chạy quét và nhập nghỉ ốm tự động',
+    'POST /api/bhyt-tool/api/run': 'nhập hồ sơ nghỉ ốm lên cổng BHXH',
+    'POST /api/bhyt-tool/api/stop': 'dừng nhập cổng BHXH',
     'GET /api/sick-leave-bhyt-account': 'tải tài khoản cổng BHXH đã lưu',
     'POST /api/sick-leave-bhyt-account': 'lưu tài khoản cổng BHXH',
     'POST /api/sick-leave-bhyt-login': 'đăng nhập cổng BHXH bằng mã CAPTCHA',
@@ -810,6 +821,9 @@ export const getSickLeaveImport = () => get('/api/sick-leave-import');
 export const importSickLeaveList = (payload) => post('/api/sick-leave-import', payload);
 export const deleteSickLeaveImportRow = (payload) => post('/api/sick-leave-import/delete-row', payload);
 export const launchBhytTool = () => post('/api/sick-leave-launch-bhyt-tool', {});
+// Công cụ nhập cổng BHXH (tools/bhyt_selenium_app): gọi qua máy chủ, không gọi thẳng cổng 5005.
+export const getBhytTool = (path) => get(`/api/bhyt-tool${path}`);
+export const postBhytTool = (path, body) => post(`/api/bhyt-tool${path}`, body || {});
 export const getBhytPortalAccount = () => get('/api/sick-leave-bhyt-account');
 export const saveBhytPortalAccount = (account) => post('/api/sick-leave-bhyt-account', account);
 export const loginBhytPortal = (captcha) => post('/api/sick-leave-bhyt-login', { captcha });

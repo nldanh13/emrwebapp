@@ -10,8 +10,26 @@ const RECORDS = [
     issues: [], fields: { tu_ngay: '10/10/2026', den_ngay: '12/10/2026' } },
 ];
 let TOOL_UP = true;
+let TOOL_ERROR = '';
 const calls = [];
+// Công cụ giả, gọi qua máy chủ (/api/bhyt-tool/...): trình duyệt không gọi thẳng cổng 5005.
+async function fakeTool(method, path, body) {
+  calls.push([method, path, body ?? null]);
+  if (TOOL_ERROR) throw new Error(TOOL_ERROR);
+  if (!TOOL_UP) throw new Error('Công cụ nhập cổng BHXH chưa chạy. Bấm "Lấy mã CAPTCHA" để khởi động.');
+  return {
+    '/api/summary': { summary: {}, worker: { running: false }, auto: null },
+    '/api/records': { records: RECORDS },
+    '/api/browser/status': { logged_in: false },
+    '/api/emr/status': { logged_in: false },
+    '/api/emr/grv-defaults': { ma_khoa: 'K24', doctor_text: 'Nguyễn Lê Hoan', doctors: ['Nguyễn Lê Hoan'] },
+    '/api/browser/captcha': { image: 'data:image/png;base64,AAAA' },
+    '/api/auto-run': { running: true, phase: 'clinic', results: {} },
+  }[path.split('?')[0]] || {};
+}
 vi.mock('../api.js', () => ({
+  getBhytTool: vi.fn((path) => fakeTool('GET', path)),
+  postBhytTool: vi.fn((path, body) => fakeTool('POST', path, body || {})),
   getBhytPortalAccount: vi.fn(async () => ({ status: 'ok', account: { ready: true, username: 'bv', facility_code: '92001', has_password: true } })),
   getClinicDoctorAccounts: vi.fn(async () => ({ status: 'ok', doctors: [] })),
   saveBhytPortalAccount: vi.fn(),
@@ -26,21 +44,8 @@ let host; let root;
 beforeEach(() => {
   calls.length = 0;
   TOOL_UP = true;
-  globalThis.fetch = vi.fn(async (url, opts = {}) => {
-    const path = url.replace('http://127.0.0.1:5005', '');
-    calls.push([opts.method || 'GET', path, opts.body ? JSON.parse(opts.body) : null]);
-    if (!TOOL_UP) throw new Error('ECONNREFUSED');
-    const data = {
-      '/api/summary': { summary: {}, worker: { running: false }, auto: null },
-      '/api/records': { records: RECORDS },
-      '/api/browser/status': { logged_in: false },
-      '/api/emr/status': { logged_in: false },
-      '/api/emr/grv-defaults': { ma_khoa: 'K24', doctor_text: 'Nguyễn Lê Hoan', doctors: ['Nguyễn Lê Hoan'] },
-      '/api/browser/captcha': { image: 'data:image/png;base64,AAAA' },
-      '/api/auto-run': { running: true, phase: 'clinic', results: {} },
-    }[path.split('?')[0]] || {};
-    return { ok: true, status: 200, json: async () => data };
-  });
+  TOOL_ERROR = '';
+  globalThis.fetch = vi.fn(async () => { throw new Error('không được gọi thẳng công cụ'); });
   host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host);
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); });
@@ -83,5 +88,25 @@ describe('Nghỉ ốm tự động', () => {
     await act(async () => { root.render(createElement(SickLeaveAutoPanel, { toast: () => {} })); });
     await flush();
     expect(host.textContent).toContain('Công cụ nhập cổng chưa chạy');
+  });
+
+  it('công cụ lỗi sau khi khởi động: báo đúng lý do, không báo chung "chưa sẵn sàng"', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      TOOL_ERROR = 'Công cụ nhập cổng BHXH bị lỗi khi xử lý (mã 500). Xem cửa sổ "BHYT Selenium".';
+      const toasts = [];
+      await act(async () => { root.render(createElement(SickLeaveAutoPanel, { toast: (m) => toasts.push(m) })); });
+      await flush();
+      await act(async () => { button('Lấy mã CAPTCHA').click(); });
+      for (let i = 0; i < 12; i += 1) {
+        await act(async () => { vi.advanceTimersByTime(600); });
+        await flush();
+      }
+      expect(api.launchBhytTool).toHaveBeenCalled();
+      expect(toasts.at(-1)).toContain('bị lỗi khi xử lý (mã 500)');
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

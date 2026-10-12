@@ -16,7 +16,7 @@ const { getRuntimePaths } = require('../services/session');
 const { runScript, fmtPyError } = require('../services/python_runner');
 const { readJsonSafe, writeJsonAtomic, safeUnlink } = require('../utils/file');
 const { ROOT_DIR } = require('../constants');
-const { waitForLaunch } = require('../services/bhyt_tool_launch');
+const { forwardToTool, isBhytToolRunning, waitForLaunch } = require('../services/bhyt_tool');
 // GET/POST /sick-leave-import dùng chung 1 path — áp riêng heavyTaskLimiter (spawn Python)
 // chỉ cho POST ở đây, thay vì đăng ký cả path vào HEAVY_TASK_ROUTES trong index.js
 // (sẽ giới hạn nhầm cả GET đọc lại, vốn chỉ đọc file JSON đã lưu).
@@ -192,22 +192,12 @@ router.post('/sick-leave-import/delete-row', (req, res) => {
 // Chạy trên cùng máy với browser của người dùng — vì cổng BHYT bắt CAPTCHA/
 // OTP, tool đó bắt buộc mở Chrome hiển thị ngay trên máy đang thao tác.
 const BHYT_TOOL_DIR = path.join(ROOT_DIR, 'tools', 'bhyt_selenium_app');
-const BHYT_TOOL_URL = 'http://127.0.0.1:5005';
 
 function bhytToolPythonBin() {
   const candidates = process.platform === 'win32'
     ? [path.join(BHYT_TOOL_DIR, '.venv', 'Scripts', 'python.exe')]
     : [path.join(BHYT_TOOL_DIR, '.venv', 'bin', 'python')];
   return candidates.find(p => fs.existsSync(p)) || '';
-}
-
-async function isBhytToolRunning() {
-  try {
-    const res = await fetch(`${BHYT_TOOL_URL}/api/summary`, { signal: AbortSignal.timeout(1500) });
-    return res.ok;
-  } catch (_) {
-    return false;
-  }
 }
 
 router.post('/sick-leave-launch-bhyt-tool', async (req, res) => {
@@ -246,13 +236,21 @@ router.post('/sick-leave-launch-bhyt-tool', async (req, res) => {
   // Chờ công cụ lắng nghe; tắt ngay thì báo lý do đọc từ phần log của lần khởi động này.
   const result = await waitForLaunch({
     child,
-    isRunning: isBhytToolRunning,
+    isRunning: () => isBhytToolRunning(),
     readLog: () => {
       try { return fs.readFileSync(logFile).subarray(logStart).toString('utf8'); } catch (_) { return ''; }
     },
   });
   if (!result.ok) return res.status(503).json({ status: 'error', message: result.message });
   return res.json({ status: 'ok', already_running: false });
+});
+
+// ── /api/bhyt-tool/* → công cụ nhập cổng BHXH ────────────────────────────────
+// Tab Nghỉ ốm gọi công cụ qua đây thay vì gọi thẳng 127.0.0.1:5005 từ trình duyệt: một đường duy
+// nhất, lỗi tiếng Việt, đường có mật khẩu không mở ra trình duyệt. Xem server/services/bhyt_tool.js.
+router.all(/^\/bhyt-tool(\/api\/.+)$/, async (req, res) => {
+  const r = await forwardToTool({ method: req.method, path: req.params[0], body: req.body });
+  return res.status(r.status).json(r.body);
 });
 
 // ── Tài khoản cổng BHXH + đăng nhập chỉ bằng CAPTCHA ─────────────────────────
