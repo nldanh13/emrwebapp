@@ -179,9 +179,12 @@ def dien_thong_tin(driver, gio, time_str, content, list_ten_dieu_duong, dien_bie
             nhip_tho = "20"; nhiet_do = "37"; mach = str(random.randint(75, 85))
             huyet_ap = random.choice(["120/80", "110/70", "130/80"])
             if vitals:
-                # Sinh hiệu người dùng đã đo (phiếu Khoa nhận của Phòng khám): dùng đúng số đó.
-                nhip_tho, nhiet_do = str(vitals["nhip_tho"]), str(vitals["nhiet_do"])
-                mach, huyet_ap = str(vitals["mach"]), str(vitals["huyet_ap"])
+                # Ô sinh hiệu người dùng đã gõ (phiếu Khoa nhận của Phòng khám) thay cho số mặc định;
+                # ô để trống thì giữ cách điền như phiếu chăm sóc thường.
+                nhip_tho = str(vitals.get("nhip_tho") or nhip_tho)
+                nhiet_do = str(vitals.get("nhiet_do") or nhiet_do)
+                mach = str(vitals.get("mach") or mach)
+                huyet_ap = str(vitals.get("huyet_ap") or huyet_ap)
             cac_truong = [("txtNhipTho", nhip_tho), ("txtNhietDo", nhiet_do), 
                           ("txtMachTrenlan", mach), ("txtHuyetAp", huyet_ap), ("txtHuyetApk", huyet_ap)]
             for id_o, gia_tri in cac_truong:
