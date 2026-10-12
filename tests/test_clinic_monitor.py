@@ -1084,18 +1084,19 @@ def test_missing_emr_template_reports_available_names_instead_of_picking_first()
 
 
 def test_xu_tri_is_done_only_when_status_is_hoan_tat():
-    """Người dùng 12/10: có xử trí + Trạng thái Hoàn tất mới là xong; có xử trí mà chưa Hoàn tất
-    (kể cả "Đã tất toán", "Chờ thực hiện") thì cần hoàn tất."""
+    """Người dùng 12/10: có xử trí + Trạng thái Hoàn tất (hoặc Đã tất toán = đã hoàn tất và đóng tiền) là xong;
+    có xử trí mà chưa hoàn tất (vd. "Chờ thực hiện") thì cần hoàn tất."""
     rows = _classified(_table(
         _row('a', 1, '<a>A</a>', BHYT, 'Hoàn tất', '', 'Cho về'),
         _row('b', 2, '<a>B</a>', BHYT, 'Đã tất toán', '', 'Cho về'),
         _row('c', 3, '<a>C</a>', BHYT, 'Chờ thực hiện', '', 'Cho về'),
-        _row('d', 4, '<a>D</a>', BHYT, 'Đã tất toán', '', 'Chuyển khám chuyên khoa'),
+        _row('d', 4, '<a>D</a>', BHYT, 'Đang thực hiện', '', 'Chuyển khám chuyên khoa'),
         _row('e', 5, '<a>E</a>', BHYT, 'Chờ thực hiện', '', ''),
         _row('f', 6, '<a>F</a>', BHYT, 'Hoàn tất', '', 'Nhập viện'),
     ))
     assert rows['a']['stage'] == 'xong' and rows['a']['next_action'] == 'Đã xong'
-    for k in ('b', 'c'):
+    assert rows['b']['stage'] == 'xong' and not cm.eligible_for_completion(rows['b'])
+    for k in ('c',):
         assert rows[k]['stage'] != 'xong' and rows[k]['ready'] is True, k
         assert rows[k]['next_action'] == 'Hoàn tất khám', k
         assert cm.eligible_for_completion(rows[k]), k

@@ -157,10 +157,8 @@ class ListUnavailable(RuntimeError):
 
 def _stage(trang_thai: str) -> str:
     t = norm(trang_thai)
-    if t == "hoan tat":
-        return "xong"
-    if t == "da tat toan":
-        return "tat_toan"  # đã tất toán nhưng chưa Hoàn tất khám: vẫn cần hoàn tất
+    if t in {"hoan tat", "da tat toan"}:
+        return "xong"  # Đã tất toán = đã hoàn tất khám và đóng tiền xong (người dùng xác nhận 12/10)
     if t == "cho thuc hien":
         return "cho_kham"
     if t == "dang thuc hien":
@@ -229,7 +227,7 @@ def classify_row(row: Dict[str, Any]) -> Dict[str, Any]:
     stage = _stage(trang_thai)
     case = _case(xu_tri, trang_thai)
     if xu_tri and stage in {"cho_kham", "khac"}:
-        # Có xử trí thì chỉ Trạng thái "Hoàn tất" mới là xong; còn lại là chưa hoàn tất, cần hoàn tất.
+        # Có xử trí thì chỉ "Hoàn tất" / "Đã tất toán" mới là xong; còn lại là chưa hoàn tất, cần hoàn tất.
         stage = "chua_hoan_tat"
     tt = next((s for s in services if s["code"] == "TT"), None)
     has_tt = bool(tt and tt["total"] > 0)
@@ -377,7 +375,7 @@ def _trace_actions(entries: List[Dict[str, Any]]) -> None:
 MIN_EXAM_MINUTES = 3
 AFTER_SERVICES_MINUTES = 1
 EMR_DT_RE = re.compile(r"(\d{1,2}):(\d{2})\s+(\d{1,2})/(\d{1,2})/(\d{4})")
-ACTIVE_STAGES = {"dang_kham", "dang_lam_dv", "chua_hoan_tat", "tat_toan"}
+ACTIVE_STAGES = {"dang_kham", "dang_lam_dv", "chua_hoan_tat"}
 
 
 def parse_emr_dt(value: Any) -> Optional[datetime]:
