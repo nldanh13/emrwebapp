@@ -22,6 +22,7 @@ import os
 import re
 import sys
 import time
+import unicodedata
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urljoin
@@ -833,6 +834,38 @@ def report_box(before: Dict[str, str], after: Dict[str, str]) -> str:
     return next(iter(after)) if len(after) == 1 else ""
 
 
+SELECT_OPTIONS_JS = r"""
+var sel = document.getElementById(arguments[0]);
+if (!sel || !sel.options) return [];
+var out = [];
+for (var i = 0; i < sel.options.length; i++) {
+  var t = String(sel.options[i].text || '').trim();
+  if (t && sel.options[i].value !== '' && sel.options[i].value !== '0' && sel.options[i].value !== '-1') out.push(t);
+}
+return out;
+"""
+
+
+def _loose(text: Any) -> str:
+    """So tên mẫu bỏ dấu, bỏ hoa/thường, bỏ khoảng trắng và gạch nối ("CTCH - Thay băng" = "CTCH-thay băng")."""
+    raw = unicodedata.normalize("NFD", str(text or "")).replace("đ", "d").replace("Đ", "D")
+    return re.sub(r"[^a-z0-9]", "", "".join(c for c in raw if unicodedata.category(c) != "Mn").lower())
+
+
+def match_emr_option(wanted: str, options: List[str]) -> Optional[str]:
+    """Chữ đúng của ô chọn EMR khớp tên mẫu: trùng hẳn trước, rồi mới chứa nhau. Không khớp thì None."""
+    key = _loose(wanted)
+    if not key:
+        return None
+    for opt in options:
+        if _loose(opt) == key:
+            return opt
+    for opt in options:
+        if key in _loose(opt) or (_loose(opt) and _loose(opt) in key):
+            return opt
+    return None
+
+
 class ProcedurePage:
     """Nhập 1 thủ thuật trên D/s Thủ thuật. Dùng lại cách tìm dòng / điền form của
     input_procedures.py nhưng tự bấm Lưu / Hoàn tất để không tự đồng ý hộp xác nhận."""
@@ -889,7 +922,8 @@ class ProcedurePage:
         if not ok and not ip._pick_select2_text(self.driver, self.wait, "cbbTTChinh", staff, allow_first=False):
             raise ExamStepError(f"Không chọn được thủ thuật viên: {staff}")
         before = self.dialogs.js(REPORT_BOXES_JS) or {}
-        if not ip._pick_select2_text(self.driver, self.wait, "cbbMauTuongTrinh", template, allow_first=True):
+        template = self.emr_template_name(template)
+        if not ip._pick_select2_text(self.driver, self.wait, "cbbMauTuongTrinh", template, allow_first=False):
             raise ExamStepError(f"Không chọn được mẫu tường trình: {template}")
         if report:
             self.pause(1.0)
@@ -900,6 +934,23 @@ class ProcedurePage:
         })
         if errors:
             raise ExamStepError("Điền phiếu thủ thuật chưa đúng: " + "; ".join(errors))
+
+    def emr_template_name(self, wanted: str) -> str:
+        """Tên mẫu tường trình đúng như trên EMR. Danh sách mẫu có thể nạp chậm sau khi bấm Vào thực hiện
+        nên chờ tối đa vài giây. EMR không có mẫu đó thì báo kèm các mẫu EMR đang có để sửa mẫu thủ thuật,
+        không chọn bừa mẫu đầu tiên."""
+        options: List[str] = []
+        for _ in range(10):
+            options = [compact(o) for o in (self.dialogs.js(SELECT_OPTIONS_JS, "cbbMauTuongTrinh") or [])]
+            found = match_emr_option(wanted, options)
+            if found:
+                return found
+            self.pause(0.5)
+        if not options:
+            return wanted  # không đọc được danh sách: để ô chọn tự tìm như trước
+        shown = ", ".join(options[:15]) + ("…" if len(options) > 15 else "")
+        raise ExamStepError(f"Trên EMR không có mẫu tường trình \"{wanted}\" cho tài khoản này. "
+                            f"Các mẫu EMR có: {shown}. Sửa ô \"Mẫu tường trình EMR\" trong Mẫu thủ thuật – PT cho đúng tên.")
 
     def write_report(self, before: Dict[str, str], report: str) -> None:
         """Ghi nội dung tường trình của mẫu vào ô EMR vừa tự điền khi chọn mẫu tường trình (ô đổi nội dung
@@ -1131,9 +1182,15 @@ class Monitor:
         self.login_count = 0
         self.list_date = ""  # rỗng = hôm nay; yyyy-mm-dd = ngày đã qua người dùng chọn để xem lại
         self.shown_filter: Dict[str, str] = {"loai": "0"}  # bộ lọc đang hiện trên trang EMR (mở trang = "Trong ngày")
+        # URL Danh sách Khám bệnh dựng 1 lần sau đăng nhập. Không dựng lại từ trang đang mở: trang D/s Thủ thuật
+        # có tham số riêng (tg=7, tungay, keyword…) bị mang theo làm danh sách đọc ra 0 người.
+        self.list_page_url = ""
+        self.last_count = 0
 
     def _open_list(self) -> None:
-        self.driver.get(_build_clinic_url(self.driver.current_url, self.list_url))
+        if not self.list_page_url:
+            self.list_page_url = _build_clinic_url(self.driver.current_url, self.list_url)
+        self.driver.get(self.list_page_url)
         wait_page(self.driver, 1.0)
         self.shown_filter = {"loai": "0"}
 
@@ -1157,6 +1214,7 @@ class Monitor:
             print(f">>> Mở Chrome theo dõi phòng khám: headless={self.headless}")
             self.driver, self.wait = init_driver(headless=self.headless)
         login_emr(self.driver, self.wait, self.config)
+        self.list_page_url = ""  # phiên mới: dựng lại URL danh sách theo usid/st mới
         self.login_count += 1
         trace("dang_nhap", lan=self.login_count)
         self._open_list()
@@ -1177,7 +1235,16 @@ class Monitor:
             try:
                 day_filter = list_filter(self.list_date, _now().date())
                 self._show_day(day_filter)
-                return fetch_today_rows(self.driver, day_filter, ui_pager=self.shown_filter == day_filter)
+                rows = fetch_today_rows(self.driver, day_filter, ui_pager=self.shown_filter == day_filter)
+                if not rows and self.last_count:
+                    # Vừa có người mà nay ra 0: thường do trang EMR đang ở trạng thái lạ (vừa nhập thủ thuật…).
+                    # Mở lại danh sách và đọc lại 1 lần trước khi tin.
+                    trace("doc_lai_danh_sach", ly_do="đọc ra 0 người", truoc_do=self.last_count)
+                    self._open_list()
+                    self._show_day(day_filter)
+                    rows = fetch_today_rows(self.driver, day_filter, ui_pager=self.shown_filter == day_filter)
+                self.last_count = len(rows)
+                return rows
             except ListUnavailable as e:
                 last = e
                 print(f"[CLINIC-MONITOR] Không đọc được danh sách ({e}); mở lại trang / đăng nhập lại (lần {attempt + 1}).")

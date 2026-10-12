@@ -236,6 +236,55 @@ def test_monitor_relogins_when_emr_session_expires(monkeypatch):
     assert mon.login_count == 1
 
 
+class NavDriver(FakeDriver):
+    def __init__(self, responses, url):
+        super().__init__(responses)
+        self.current_url = url
+        self.visited = []
+
+    def get(self, url):
+        self.visited.append(url)
+        self.current_url = url
+
+
+def test_open_list_after_procedures_uses_clean_list_url(monkeypatch):
+    """Nhật ký 12/10: sau khi nhập thủ thuật, danh sách đọc ra 0 người mãi. Mở lại danh sách dựng URL từ
+    URL trang thủ thuật nên mang theo tham số của trang đó. Phải dùng lại URL danh sách sạch sau đăng nhập."""
+    monkeypatch.setattr(cm, 'wait_page', lambda *a, **k: None)
+    driver = NavDriver([], 'https://emr/home.aspx?scope=sys&usid=U1&st=S1')
+    mon = cm.Monitor({}, 'https://emr/home.aspx?wpid=khambenhdanhsachdraw', True)
+    mon.driver = driver
+    mon._open_list()
+    clean = driver.visited[-1]
+    assert 'usid=U1' in clean and 'wpid=khambenhdanhsachdraw' in clean
+
+    driver.current_url = 'https://emr/home.aspx?scope=sys&usid=U1&st=S1&wpid=thuthuat&loai=7&khambenhid=999'
+    mon._open_list()
+    assert driver.visited[-1] == clean
+
+    # Đăng nhập lại (phiên mới) thì dựng lại URL theo phiên mới.
+    mon.list_page_url = ''
+    driver.current_url = 'https://emr/home.aspx?scope=sys&usid=U2&st=S2'
+    mon._open_list()
+    assert 'usid=U2' in driver.visited[-1] and 'khambenhid' not in driver.visited[-1]
+
+
+def test_read_reopens_list_once_when_it_suddenly_reads_empty(monkeypatch):
+    """Vừa đọc được 79 người, lần sau ra 0: mở lại trang danh sách và đọc lại một lần trước khi tin."""
+    monkeypatch.setattr(cm, 'wait_page', lambda *a, **k: None)
+    a = _row('a', 1, '<a>A</a>', BHYT, 'Đang thực hiện', '', 'Cho về')
+    full = _table_total(a, pages=1, shown=1, total=1)
+    empty = _table_total(pages=1, shown=0, total=0)
+    driver = NavDriver([{'ok': True, 'html': full}, {'ok': True, 'html': empty}, {'ok': True, 'html': full},
+                        {'ok': True, 'html': empty}, {'ok': True, 'html': empty}],
+                       'https://emr/home.aspx?usid=U1&st=S1&wpid=khambenhdanhsachdraw')
+    mon = cm.Monitor({}, 'https://emr/home.aspx?wpid=khambenhdanhsachdraw', True)
+    mon.driver = driver
+    assert len(mon.read()) == 1
+    assert len(mon.read()) == 1 and len(driver.visited) == 1  # đọc 0 → mở lại → đọc lại được 1
+    assert mon.read() == [] and len(driver.visited) == 2  # thật sự 0 (vd. đổi ngày): chấp nhận sau 1 lần thử
+
+
 def test_run_monitor_writes_state_deletes_request_and_stops(monkeypatch, tmp_path):
     req = tmp_path / 'req.json'
     state = tmp_path / 'state.json'
@@ -997,3 +1046,37 @@ def test_vien_phi_does_not_press_thuc_hien_before_procedures():
     assert cm.ready_for_procedures(Page(), row, None, NOW)['status'] == 'ready' and Page.pressed is False
     cm.ready_for_procedures(Page(), {**row, 'has_bhyt': True}, None, NOW)
     assert Page.pressed is True
+
+
+def test_match_emr_template_name_loosely():
+    opts = ['CTCH - Thay băng', 'Cắt chỉ vết thương', 'Khâu vết thương']
+    assert cm.match_emr_option('CTCH-thay băng', opts) == 'CTCH - Thay băng'
+    assert cm.match_emr_option('khau vet thuong', opts) == 'Khâu vết thương'
+    assert cm.match_emr_option('Nắn trật khớp', opts) is None
+
+
+class _Dialogs:
+    def __init__(self, options):
+        self.options = options
+
+    def js(self, script, *args):
+        return self.options if script is cm.SELECT_OPTIONS_JS else None
+
+
+def _proc_page(options):
+    page = cm.ProcedurePage.__new__(cm.ProcedurePage)
+    page.dialogs, page.pause = _Dialogs(options), (lambda s: None)
+    return page
+
+
+def test_missing_emr_template_reports_available_names_instead_of_picking_first():
+    """Nhật ký 12/10: "Không chọn được mẫu tường trình: CTCH-thay băng" rồi chọn bừa mẫu đầu → sai mẫu.
+    Nay báo rõ các mẫu EMR đang có để sửa Mẫu thủ thuật."""
+    page = _proc_page(['Mẫu A', 'Mẫu B'])
+    try:
+        page.emr_template_name('CTCH-thay băng')
+        assert False, 'phải báo lỗi'
+    except cm.ExamStepError as e:
+        assert 'CTCH-thay băng' in str(e) and 'Mẫu A, Mẫu B' in str(e)
+    assert _proc_page(['CTCH - Thay băng']).emr_template_name('CTCH-thay băng') == 'CTCH - Thay băng'
+    assert _proc_page([]).emr_template_name('CTCH-thay băng') == 'CTCH-thay băng'
