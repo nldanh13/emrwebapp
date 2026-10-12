@@ -25,12 +25,12 @@ describe('careSheets', () => {
     expect(setClinicDienBien(r, DB).dien_bien_khoa).toBe('Khoa nhận riêng');
   });
 
-  it('sinh hiệu phải nhập đủ, không tự điền', () => {
+  it('sinh hiệu: ô trống điền như phiếu chăm sóc thường, ô đã gõ phải đúng dạng', () => {
+    expect(vitalsErrors({})).toEqual([]);
     expect(vitalsErrors(VITALS)).toEqual([]);
-    expect(vitalsErrors({ ...VITALS, nhiet_do: '' })).toEqual(['thiếu Nhiệt độ']);
-    expect(rowProblems(base())).toContain('thiếu Mạch');
-    expect(rowProblems(base({ vitals: VITALS }))).toEqual([]);
-    expect(rowProblems(base({ vitals: VITALS, khoa_time_str: '08:30 12/10/2026' }))).toContain('giờ phiếu 2 phải sau T/G vào');
+    expect(vitalsErrors({ ...VITALS, mach: '8' })).toEqual(['Mạch "8" không hợp lệ']);
+    expect(rowProblems(base())).toEqual([]);
+    expect(rowProblems(base({ khoa_time_str: '08:30 12/10/2026' }))).toContain('giờ phiếu 2 phải sau T/G vào');
   });
 
   it('bỏ ca không cần nhập: đã đủ 2 phiếu hoặc người dùng bỏ qua', () => {
@@ -40,7 +40,7 @@ describe('careSheets', () => {
     const ready = base({ ma_bn: '2', vitals: VITALS });
     expect(bothDone(done)).toBe(true);
     expect(rowProblems(wardDone)).toEqual([]);
-    expect(rowsToInput([done, wardDone, skipped, ready, base()]).map(r => r.ma_bn)).toEqual(['1', '2']);
-    expect(rowsToInput([done, wardDone, skipped, ready])).toEqual([wardDone, ready]);
+    const bad = base({ ma_bn: '3', vitals: { ...VITALS, huyet_ap: '120' } });
+    expect(rowsToInput([done, wardDone, skipped, ready, bad])).toEqual([wardDone, ready]);
   });
 });

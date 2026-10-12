@@ -99,7 +99,7 @@ export default function ClinicAdmissionCare({ creds, toast }) {
 
   const input = async () => {
     const n = inputRows.length;
-    if (!window.confirm(`Nhập phiếu chăm sóc cho ${n} người bệnh nhập viện trên EMR?\n\nMỗi người 2 phiếu: Khoa Khám Bệnh chuyển (đúng T/G vào) và ${WARD_NAME} nhận (giờ và sinh hiệu như đã nhập). Người lập theo Lịch Phòng khám. Phiếu đã Hoàn tất thì giữ nguyên.`)) return;
+    if (!window.confirm(`Nhập phiếu chăm sóc cho ${n} người bệnh nhập viện trên EMR?\n\nMỗi người 2 phiếu: Khoa Khám Bệnh chuyển (đúng T/G vào) và ${WARD_NAME} nhận (giờ và sinh hiệu như đã nhập). Người lập theo Lịch Phòng khám. Sinh hiệu phiếu 2: ô đã gõ dùng số đó, ô trống điền như phiếu chăm sóc thường. Phiếu đã Hoàn tất thì giữ nguyên.`)) return;
     setBusy('input');
     try {
       const r = await api.runClinicInputCare({
@@ -128,7 +128,7 @@ export default function ClinicAdmissionCare({ creds, toast }) {
           <div style={{ fontSize: FS.md, fontWeight: 700 }}>Nhập viện · nhập chăm sóc</div>
           <div style={{ fontSize: FS.sm, color: C.text2 }}>
             Tìm người bệnh có Khoa chuyển đến = Khoa Khám Bệnh và T/G vào đúng ngày chọn. Mỗi người 2 phiếu:
-            Khoa Khám Bệnh chuyển và {WARD_NAME} nhận (nhập sinh hiệu đã đo). Ca đã đủ 2 phiếu thì không cần nhập.
+            Khoa Khám Bệnh chuyển và {WARD_NAME} nhận (có sinh hiệu như phiếu chăm sóc thường). Ca đã đủ 2 phiếu thì không cần nhập.
           </div>
         </div>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: FS.sm, color: C.text2, fontWeight: 600 }}>
@@ -228,11 +228,12 @@ function PatientCard({ row: r, res, disabled, onChange }) {
               <label style={labelStyle}>Chăm sóc
                 <textarea value={r.cham_soc_khoa} onChange={set('cham_soc_khoa')} rows={5} disabled={disabled} aria-label={`Chăm sóc phiếu 2 của ${r.ho_ten}`} style={boxStyle} />
               </label>
+              <div style={{ fontSize: FS.xs, color: C.text2 }}>Sinh hiệu: để trống thì điền như phiếu chăm sóc thường; gõ số nếu đã đo khác.</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {VITAL_FIELDS.map(([key, label, unit]) => (
                   <label key={key} style={{ ...labelStyle, flex: '1 1 80px' }}>{`${label} (${unit})`}
                     <input value={r.vitals?.[key] || ''} onChange={setVital(key)} disabled={disabled} inputMode={key === 'huyet_ap' ? 'text' : 'decimal'}
-                      placeholder={key === 'huyet_ap' ? '120/80' : ''} aria-label={`${label} của ${r.ho_ten}`}
+                      placeholder="tự điền" aria-label={`${label} của ${r.ho_ten}`}
                       style={{ height: 28, padding: '0 6px', border: `1px solid ${C.border}`, borderRadius: 5, fontFamily: 'inherit', fontSize: FS.sm }} />
                   </label>
                 ))}

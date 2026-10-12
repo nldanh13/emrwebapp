@@ -245,12 +245,13 @@ def test_care_sheets_builds_clinic_and_ward_sheet_with_user_vitals():
     assert khoa["vitals"]["huyet_ap"] == "120/80"
 
 
-def test_vitals_are_required_and_never_invented():
+def test_ward_vitals_blank_uses_usual_care_fill_but_typed_values_must_be_valid():
     import clinic_input_care as cic
 
+    assert cic.vitals_errors({}) == []  # trống: điền như phiếu chăm sóc thường
     assert cic.vitals_errors({"mach": "80", "nhiet_do": "37,5", "huyet_ap": "120/80", "nhip_tho": "20"}) == []
     errors = cic.vitals_errors({"mach": "8", "nhiet_do": "", "huyet_ap": "120", "nhip_tho": "20"})
-    assert "thiếu Nhiệt độ" in errors and any("Mạch" in e for e in errors) and any("Huyết áp" in e for e in errors)
+    assert len(errors) == 2 and any("Mạch" in e for e in errors) and any("Huyết áp" in e for e in errors)
 
 
 def test_sheet_done_only_for_completed_sheets():
@@ -285,23 +286,32 @@ def test_input_patient_enters_both_sheets_and_skips_completed_one(monkeypatch):
     res = cic._input_patient(object(), {"ma_bn": "1"}, ["ĐD A"], sheets, False)
     assert res["success"] is True and not res.get("skipped")
     assert [c[0] for c in calls] == ["08:49 12/10/2026", "09:04 12/10/2026"]
-    assert calls[0][2] is None and calls[1][2] == vitals
+    assert calls[0][2] == {} and calls[1][2] == vitals
     assert res["sheets"][0].endswith("đã có") and res["sheets"][1].endswith("đã nhập")
 
 
-def test_input_patient_stops_before_emr_when_ward_vitals_missing_or_time_before_admission(monkeypatch):
+def test_input_patient_stops_before_emr_when_ward_vitals_wrong_or_time_before_admission(monkeypatch):
     import clinic_input_care as cic
 
     calls = []
-    monkeypatch.setattr(cic, "_input_one", lambda *a, **k: calls.append(a) or {"success": True})
-    sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026"})
+    monkeypatch.setattr(cic, "_input_one", lambda *a, **k: calls.append((a, k)) or {"success": True})
+    sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026", "vitals": {"mach": "8"}})
     res = cic._input_patient(object(), {}, ["ĐD A"], sheets, False)
-    assert res["success"] is False and "thiếu Mạch" in res["error"] and calls == []  # không ghi phiếu nào
-    calls.clear()
-    sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026", "khoa_time_str": "08:30 12/10/2026",
-                              "vitals": {"mach": "80", "nhiet_do": "37", "huyet_ap": "120/80", "nhip_tho": "20"}})
+    assert res["success"] is False and "Mạch" in res["error"] and calls == []  # không ghi phiếu nào
+    sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026", "khoa_time_str": "08:30 12/10/2026"})
     res = cic._input_patient(object(), {}, ["ĐD A"], sheets, False)
     assert res["success"] is False and "phải sau T/G vào" in res["error"] and calls == []
+
+
+def test_ward_sheet_with_blank_vitals_asks_usual_vitals_fill(monkeypatch):
+    import clinic_input_care as cic
+
+    calls = []
+    monkeypatch.setattr(cic, "_input_one", lambda *a, **k: calls.append((a[5], k["vitals"])) or {"success": True})
+    sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026", "vitals": {"mach": "90"}})
+    assert cic._input_patient(object(), {}, ["ĐD A"], sheets, False)["success"] is True
+    # phiếu 1 không sinh hiệu; phiếu 2 có sinh hiệu: mạch người dùng gõ, còn lại điền như phiếu thường
+    assert calls == [(False, {}), (True, {"mach": "90"})]
 
 
 def test_ward_sheet_seen_done_at_search_needs_no_vitals_but_is_never_written_blind(monkeypatch):
@@ -318,3 +328,43 @@ def test_ward_sheet_seen_done_at_search_needs_no_vitals_but_is_never_written_bli
     res = cic._input_patient(object(), {}, ["ĐD A"], sheets, False)
     assert res["success"] is True
     assert calls[1] == ("09:04 12/10/2026", None, True)
+
+
+def test_dien_thong_tin_uses_typed_vitals_and_usual_values_for_blank(monkeypatch):
+    import care_form_actions as actions
+
+    typed = {}
+
+    class El:
+        def __init__(self, key):
+            self.key = key
+
+        def is_displayed(self):
+            return True
+
+        def clear(self):
+            pass
+
+        def click(self):
+            pass
+
+        def send_keys(self, value):
+            if isinstance(value, str) and self.key not in typed:
+                typed[self.key] = value
+
+    class Driver:
+        def find_element(self, _by, key):
+            return El(key)
+
+        def execute_script(self, *a, **k):
+            return None
+
+        class switch_to:
+            active_element = El("active")
+
+    monkeypatch.setattr(actions.time, "sleep", lambda *_a: None)
+    actions.dien_thong_tin(Driver(), 9, "09:04 12/10/2026", "Nhận HS", ["ĐD A"], "Khoa nhận",
+                           needs_vitals=True, vitals={"mach": "92"})
+    assert typed["txtMachTrenlan"] == "92"
+    assert typed["txtNhietDo"] == "37" and typed["txtNhipTho"] == "20"
+    assert typed["txtHuyetAp"] in {"120/80", "110/70", "130/80"}

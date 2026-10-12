@@ -1,7 +1,8 @@
 // src/components/clinic/careSheets.js — 2 phiếu chăm sóc của người bệnh nhập viện từ Phòng khám
 // (cùng quy tắc với worker/clinic_input_care.py: care_sheets, ward_time, ward_dien_bien, vitals_errors).
 //   Phiếu 1 · Khoa Khám Bệnh chuyển: đúng T/G vào, chăm sóc "Kính chuyển … nhận / Hồ sơ".
-//   Phiếu 2 · Khoa nhận: sau T/G vào 15 phút (sửa được), chăm sóc nhận người bệnh, sinh hiệu người dùng nhập.
+//   Phiếu 2 · Khoa nhận: sau T/G vào 15 phút (sửa được), chăm sóc nhận người bệnh, có sinh hiệu: ô nào gõ thì
+//   dùng số đó, ô trống thì điền như phiếu chăm sóc thường.
 
 export const WARD_NAME = 'Khoa Chấn Thương chỉnh hình - Thần kinh';
 export const WARD_MINUTES = 15;
@@ -48,8 +49,7 @@ export function vitalsErrors(v = {}) {
   const out = [];
   for (const [key, label] of VITAL_FIELDS) {
     const value = String(v?.[key] || '').trim();
-    if (!value) out.push(`thiếu ${label}`);
-    else if (!checks[key](value)) out.push(`${label} "${value}" không hợp lệ`);
+    if (value && !checks[key](value)) out.push(`${label} "${value}" không hợp lệ`);
   }
   return out;
 }

@@ -76,8 +76,8 @@ except Exception:  # pragma: no cover - chỉ xảy ra ở môi trường test t
 DEFAULT_TARGET_DEPARTMENT = "Khoa Khám Bệnh"
 # Mỗi người bệnh nhập viện có 2 phiếu chăm sóc:
 #   1. Khoa Khám Bệnh chuyển — lập đúng T/G vào, diễn biến "Phòng khám … nhận", chăm sóc "Kính chuyển … / Hồ sơ".
-#   2. Khoa nhận — sau T/G vào WARD_MINUTES phút, diễn biến "Khoa … nhận", chăm sóc nhận người bệnh, có sinh hiệu
-#      người dùng nhập (không tự đặt số).
+#   2. Khoa nhận — sau T/G vào WARD_MINUTES phút, diễn biến "Khoa … nhận", chăm sóc nhận người bệnh, có sinh hiệu:
+#      ô người dùng gõ thì dùng số đó, ô trống thì điền như phiếu chăm sóc thường (dien_thong_tin, needs_vitals).
 WARD_NAME = "Khoa Chấn Thương chỉnh hình - Thần kinh"
 DEFAULT_CARE_CONTENT = "\n".join([f"Kính chuyển {WARD_NAME} nhận", "Hồ sơ"])
 DEFAULT_WARD_CARE = "\n".join([
@@ -965,7 +965,7 @@ def ward_dien_bien(dien_bien: Any) -> str:
 
 
 def vitals_errors(vitals: Any) -> List[str]:
-    """Sinh hiệu phiếu Khoa nhận do người dùng nhập; thiếu hoặc sai dạng thì báo, không tự điền."""
+    """Ô sinh hiệu người dùng đã gõ mà sai dạng thì báo. Ô trống được: điền như phiếu chăm sóc thường."""
     v = vitals if isinstance(vitals, dict) else {}
     out: List[str] = []
     checks = {
@@ -976,9 +976,7 @@ def vitals_errors(vitals: Any) -> List[str]:
     }
     for key, label in VITAL_FIELDS:
         value = _compact(v.get(key))
-        if not value:
-            out.append(f"thiếu {label}")
-        elif not checks[key](value):
+        if value and not checks[key](value):
             out.append(f"{label} \"{value}\" không hợp lệ")
     return out
 
@@ -1298,7 +1296,8 @@ def _input_patient(ws: Any, fresh: Dict[str, Any], nurses: List[str], sheets: Li
     for sheet in sheets:
         res = _input_one(
             ws, {**fresh, "care_time_str": sheet["time_str"]}, nurses, sheet["cham_soc"], sheet["dien_bien"],
-            needs_vitals, vitals=None if sheet.get("expect_done") else sheet.get("vitals"),
+            needs_vitals or sheet.get("vitals") is not None,
+            vitals=None if sheet.get("expect_done") else {k: v for k, v in (sheet.get("vitals") or {}).items() if v},
             done_check=lambda entries, sh=sheet: sheet_done(entries, sh), require_done=bool(sheet.get("expect_done")),
         )
         if not res.get("success"):
