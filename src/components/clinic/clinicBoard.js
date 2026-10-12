@@ -148,3 +148,9 @@ export function rowInGroup(r, group) {
   if (group === 'bbhc') return Boolean(r?.bbhc?.length);
   return g === group;
 }
+
+// Người bệnh BHYT có thủ thuật / phẫu thuật đã xong: nút "In tường trình BHYT" lấy phiếu của những người này
+// (cùng điều kiện với clinic_reports.report_patients phía worker).
+export function reportPatients(rows = []) {
+  return rows.filter(r => r?.has_bhyt && (r.services || []).some(s => (s.code === 'TT' || s.code === 'PT') && Number(s.done) > 0));
+}

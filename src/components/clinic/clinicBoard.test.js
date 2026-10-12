@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  completionGroups, dayTotals, drugLabel, isoDay, monitorDay, rowInGroup, SHORT_LIST_LIMIT, shortList, stageCounts, todoCounts, todoItems,
+  completionGroups, dayTotals, drugLabel, isoDay, monitorDay, reportPatients, rowInGroup, SHORT_LIST_LIMIT, shortList, stageCounts, todoCounts, todoItems,
 } from './clinicBoard.js';
 
 const row = (over = {}) => ({
@@ -9,6 +9,17 @@ const row = (over = {}) => ({
 });
 
 describe('clinicBoard', () => {
+  it('in tường trình: chỉ người BHYT có thủ thuật / phẫu thuật đã xong', () => {
+    const sv = (code, total, done) => ({ code, total, done });
+    const rows = [
+      row({ khambenhid: 'a', has_bhyt: true, services: [sv('TT', 2, 1)] }),
+      row({ khambenhid: 'b', has_bhyt: true, services: [sv('PT', 1, 1)] }),
+      row({ khambenhid: 'c', has_bhyt: false, services: [sv('TT', 1, 1)] }),
+      row({ khambenhid: 'd', has_bhyt: true, services: [sv('TT', 1, 0), sv('KB', 1, 1)] }),
+    ];
+    expect(reportPatients(rows).map(r => r.khambenhid)).toEqual(['a', 'b']);
+  });
+
   it('đếm lượt khám theo 3 nhóm và cộng lại khớp tổng', () => {
     const c = stageCounts([row({ stage: 'cho_kham' }), row({ stage: 'dang_lam_dv' }), row({ stage: 'chua_hoan_tat' }), row({ stage: 'xong' })]);
     expect(c).toEqual({ cho_kham: 1, dang: 2, xong: 1, total: 4 });

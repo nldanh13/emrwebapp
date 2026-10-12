@@ -541,6 +541,28 @@ router.post('/clinic/monitor/bbhc/run', (req, res) => {
   return res.json({ status: 'ok', message: `Đang lập ${count} Sổ biên bản hội chẩn.` });
 });
 
+// In tường trình thủ thuật / phẫu thuật BHYT trong ngày đang xem (chỉ đọc EMR, xem lại ngày cũ cũng in được).
+router.post('/clinic/monitor/tuongtrinh/run', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  if (!monitors.get(ctx.sid)?.running) {
+    return res.status(409).json({ status: 'error', message: 'Chưa bắt đầu theo dõi.' });
+  }
+  writeControl(ctx, { printReportsNow: Date.now() });
+  appendActivity(ctx, { kind: 'workflow.clinic.monitor.tuongtrinh_print' });
+  return res.json({ status: 'ok', message: 'Đang lấy phiếu tường trình thủ thuật, phẫu thuật BHYT trên EMR.' });
+});
+
+router.get('/clinic/monitor/tuongtrinh/pdf', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  const state = readJsonSafe(monitorPaths(ctx).state, null);
+  const file = String(state?.tuongtrinh_pdf?.file || '');
+  const missing = { status: 'error', message: 'Chưa có file in tường trình. Bấm "In tường trình BHYT" trước.' };
+  if (!/^clinic_tuongtrinh_\d{8}\.pdf$/.test(file)) return res.status(404).json(missing);
+  const full = path.join(ctx.dir, file);
+  if (!fs.existsSync(full)) return res.status(404).json(missing);
+  return res.download(full, file, { dotfiles: 'allow' });
+});
+
 router.get('/clinic/monitor/bbhc/pdf', (req, res) => {
   const ctx = getRuntimePaths(req);
   const state = readJsonSafe(monitorPaths(ctx).state, null);

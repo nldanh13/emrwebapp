@@ -12,6 +12,7 @@ import * as api from '../api.js';
 import ClinicAdmissionCare from './ClinicAdmissionCare.jsx';
 import ClinicAccountPicker, { clinicLoginPayload, hasClinicLogin } from './ClinicAccountPicker.jsx';
 import ClinicBbhc from './ClinicBbhc.jsx';
+import ClinicReports from './clinic/ClinicReports.jsx';
 import { useOnTabReturn, useTabActive } from '../hooks/useTabActivity.js';
 import { revalidate, useServerData } from '../hooks/useServerData.js';
 import { useRealtimeConnected } from '../hooks/useRealtimeStatus.js';
@@ -457,6 +458,7 @@ export default function ClinicTab({ toast }) {
               autoTasks={autoTasks} onRunTasks={runTasks} onToggleAuto={toggleAuto}
               ngoaitruCount={ngoaitruRows.length} onRunNgoaiTru={runNgoaiTru}>
               <ClinicBbhc monitor={canAct ? monitor : { ...monitor, running: false }} toast={toast} onChanged={loadState} />
+              <ClinicReports monitor={monitor} rows={allRows} toast={toast} onChanged={loadState} />
             </TodoPanel>
           </div>
 
