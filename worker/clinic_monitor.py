@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import sys
@@ -52,7 +53,7 @@ except Exception:
     pass
 
 PAGE_SIZE = 500
-MAX_PAGES = 10
+MAX_PAGES = 30
 MAX_RELOGIN_ATTEMPTS = 2
 
 BHYT_CODE_RE = re.compile(r"\b[A-Z]{2}\d{10,}\b")
@@ -1021,8 +1022,8 @@ def _fetch_page(driver: Any, page: int, day_filter: Optional[Dict[str, str]] = N
 
 
 def fetch_today_rows(driver: Any, day_filter: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
-    """Đọc mọi trang. EMR có thể bỏ qua cỡ trang lớn và đánh số trang từ 1 (page=0 và page=1 cùng là
-    trang 1), nên khi biết tổng số ("Tổng số: x/ y") thì đọc tiếp tới khi đủ, thử tới page=số trang."""
+    """Đọc mọi trang. EMR bỏ qua cỡ trang lớn (18 dòng/trang) và ô "Trang x/y" có thể ghi sai số trang,
+    nên khi biết tổng số ("Tổng số: x/ y") thì đọc tiếp tới khi đủ, tối đa MAX_PAGES trang."""
     started = time.time()
     seen: set = set()
     out: List[Dict[str, Any]] = []
@@ -1045,9 +1046,16 @@ def fetch_today_rows(driver: Any, day_filter: Optional[Dict[str, str]] = None) -
         for page in range(1, min(pages, MAX_PAGES)):
             add(page)
     else:
-        page = 1
-        while len(out) < total and page <= min(pages, MAX_PAGES):
+        # Ô "Trang x/y" có lúc tính theo cỡ trang đã gửi (500) nên ghi 1 trang dù EMR chia 18 dòng/trang:
+        # đọc theo "Tổng số" tới đủ. Số trang có thể tính từ 0 hoặc 1 nên cho phép một trang trùng;
+        # hai trang liền không thêm ai thì dừng, không gọi EMR mãi.
+        last = min(max(pages, math.ceil(total / max(fetched[0]["so_dong"], 1))), MAX_PAGES)
+        page, empty = 1, 0
+        while len(out) < total and page <= last:
             add(page)
+            empty = empty + 1 if fetched[-1]["moi"] == 0 else 0
+            if empty >= 2:
+                break
             page += 1
         if len(out) < total:
             print(f"[CLINIC-MONITOR] [WARN] Danh sách EMR ghi tổng số {total} lượt, mới đọc được {len(out)}.")

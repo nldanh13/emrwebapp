@@ -129,6 +129,48 @@ def test_fetch_gets_page_two_when_emr_pages_are_one_based():
     assert len(cm.fetch_today_rows(driver)) == 2 and len(driver.calls) == 1
 
 
+def _emr_pages(n_rows, per_page, info_pages, extra_html=''):
+    """Danh sách EMR chia trang thật (số trang tính từ 0) nhưng ô "Trang 1/x" ghi sai số trang."""
+    rows = [_row(f'k{i}', i + 1, f'<a>N{i}</a>', BHYT, 'Đang thực hiện', '', 'Cho về') for i in range(n_rows)]
+    pages = [rows[i:i + per_page] for i in range(0, n_rows, per_page)]
+    out = []
+    for idx, chunk in enumerate(pages):
+        shown = min(n_rows, (idx + 1) * per_page)
+        out.append(_table_total(*chunk, pages=info_pages, shown=shown, total=n_rows) + extra_html)
+    return out
+
+
+class PagedDriver(FakeDriver):
+    """Trả trang theo số page được gọi; quá trang cuối thì EMR trả lại trang cuối."""
+
+    def __init__(self, pages):
+        super().__init__([])
+        self.pages = pages
+
+    def execute_script(self, script, args):
+        self.calls.append(args)
+        return {'ok': True, 'html': self.pages[min(args['page'], len(self.pages) - 1)]}
+
+
+def test_fetch_reads_all_79_rows_when_page_info_is_wrong():
+    """EMR thật: 79 lượt, 18 dòng/trang (5 trang), nhưng phản hồi ghi "Trang 1/1" (tính theo cỡ trang
+    500 đã gửi) → trước đây chỉ đọc page 0 và 1 = 36 lượt. Phải đọc theo "Tổng số" tới đủ 79."""
+    driver = PagedDriver(_emr_pages(79, 18, info_pages=1))
+    rows = cm.fetch_today_rows(driver)
+    assert len(rows) == 79
+    assert [c['page'] for c in driver.calls] == [0, 1, 2, 3, 4]
+
+
+def test_fetch_stops_when_pages_bring_nothing_new():
+    """Tổng số ghi nhiều hơn số dòng EMR thật sự trả (ví dụ vừa có người bị huỷ): không gọi mãi."""
+    pages = _emr_pages(40, 18, info_pages=1)
+    pages = [p.replace('/ 40<', '/ 60<') for p in pages]
+    driver = PagedDriver(pages)
+    rows = cm.fetch_today_rows(driver)
+    assert len(rows) == 40
+    assert len(driver.calls) <= 5
+
+
 def test_monitor_relogins_when_emr_session_expires(monkeypatch):
     html = _table(_row('a', 1, '<a>A</a>', BHYT, 'Đang thực hiện', '', 'Cho về'))
     driver = FakeDriver([{'ok': False, 'reason': 'no_page'}, {'ok': True, 'html': html}])
