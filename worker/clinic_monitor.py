@@ -157,8 +157,10 @@ class ListUnavailable(RuntimeError):
 
 def _stage(trang_thai: str) -> str:
     t = norm(trang_thai)
-    if t in {"hoan tat", "da tat toan"}:
+    if t == "hoan tat":
         return "xong"
+    if t == "da tat toan":
+        return "tat_toan"  # đã tất toán nhưng chưa Hoàn tất khám: vẫn cần hoàn tất
     if t == "cho thuc hien":
         return "cho_kham"
     if t == "dang thuc hien":
@@ -193,7 +195,7 @@ NEXT_ACTION = {
     "cho_ve": "Hoàn tất khám",
     "nhap_vien": "Nhập chăm sóc",
     "chuyen_vien": "Hoàn tất khám, lập SBBHC",
-    "chuyen_kham_ck": "Không cần làm",
+    "chuyen_kham_ck": "Hoàn tất cuối ngày",
     "ngoai_tru": "Làm ở D/s điều trị ngoại trú",
     "chua_xu_tri": "Chờ bác sĩ xử trí",
     "khac": "Xem trên EMR",
@@ -226,6 +228,9 @@ def classify_row(row: Dict[str, Any]) -> Dict[str, Any]:
     xu_tri = compact(row.get("xu_tri"))
     stage = _stage(trang_thai)
     case = _case(xu_tri, trang_thai)
+    if xu_tri and stage in {"cho_kham", "khac"}:
+        # Có xử trí thì chỉ Trạng thái "Hoàn tất" mới là xong; còn lại là chưa hoàn tất, cần hoàn tất.
+        stage = "chua_hoan_tat"
     tt = next((s for s in services if s["code"] == "TT"), None)
     has_tt = bool(tt and tt["total"] > 0)
 
@@ -372,7 +377,7 @@ def _trace_actions(entries: List[Dict[str, Any]]) -> None:
 MIN_EXAM_MINUTES = 3
 AFTER_SERVICES_MINUTES = 1
 EMR_DT_RE = re.compile(r"(\d{1,2}):(\d{2})\s+(\d{1,2})/(\d{1,2})/(\d{4})")
-ACTIVE_STAGES = {"dang_kham", "dang_lam_dv", "chua_hoan_tat"}
+ACTIVE_STAGES = {"dang_kham", "dang_lam_dv", "chua_hoan_tat", "tat_toan"}
 
 
 def parse_emr_dt(value: Any) -> Optional[datetime]:
@@ -1150,6 +1155,8 @@ def fetch_today_rows(driver: Any, day_filter: Optional[Dict[str, str]] = None,
             add(idx, html_text)
             if total is not None and len(out) >= total:
                 break
+        if any(f.get("cach") == "trang_emr" for f in fetched):
+            _ui_page(driver, 0)  # đọc xong đưa trang EMR về trang 1 như lúc mở, không để nằm ở trang cuối
     if total is None:
         for page in range(1, min(pages, MAX_PAGES) if not ui_all else 1):
             add(page)
