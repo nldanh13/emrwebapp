@@ -451,3 +451,31 @@ def test_missing_nurse_account_blocks_before_any_emr_write(monkeypatch):
     res = cic._input_patient(ws, {}, ["ĐD Phòng Khám"], sheets, False)
     assert res["success"] is False and "không đăng nhập được tài khoản EMR của ĐD Trực" in res["error"]
     assert len(calls) == 1  # phiếu 1 đã lập bằng tài khoản ĐD phòng khám, phiếu 2 không lập dưới tên người khác
+
+
+def test_open_care_page_uses_current_login_session_after_switching_account(monkeypatch):
+    """Link hồ sơ quét bằng tài khoản bác sĩ mang usid/st của phiên đó; đổi sang tài khoản điều dưỡng
+    (Chrome mới) mà mở nguyên link cũ thì EMR đẩy về trang đăng nhập."""
+    import clinic_input_care as cic
+
+    monkeypatch.setattr(cic, "wait_after_action", lambda *a, **k: None)
+    monkeypatch.setattr(cic, "_verify_opened_patient", lambda driver, row: True)
+
+    class Driver:
+        current_url = "http://emr/home.aspx?scope=sys&lang=vi&usid=NEW_SID&st=NEW_ST&wpid=homedraw"
+
+        def __init__(self):
+            self.opened = []
+
+        def get(self, url):
+            self.opened.append(url)
+
+        def find_elements(self, *_a):
+            return [object()]
+
+    d = Driver()
+    row = {"nursing_url": "http://emr/home.aspx?scope=sys&lang=vi&usid=OLD_SID&st=OLD_ST&wpid=dieuduongdraw&noitruid=42"}
+    cic._open_care_page(d, None, row)
+    q = dict(cic.parse_qsl(cic.urlparse(d.opened[0]).query))
+    assert q["usid"] == "NEW_SID" and q["st"] == "NEW_ST"
+    assert q["wpid"] == "dieuduongdraw" and q["noitruid"] == "42"
