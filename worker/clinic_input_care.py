@@ -25,7 +25,7 @@ import time
 import unicodedata
 from datetime import datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Tuple
-from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
@@ -1075,11 +1075,27 @@ def _verify_opened_patient(driver: Any, row: Dict[str, Any]) -> bool:
     return False
 
 
+_SESSION_KEYS = {"usid", "st"}
+
+
+def _with_current_session(saved_url: str, current_url: str) -> str:
+    """Link hồ sơ quét lúc đầu mang usid/st của phiên đã quét (tài khoản bác sĩ). Sau khi đổi sang
+    tài khoản điều dưỡng (Chrome mới, phiên mới) phải thay bằng usid/st của phiên đang đăng nhập,
+    không thì EMR đẩy về trang đăng nhập."""
+    cur = dict(parse_qsl(urlparse(current_url or "").query, keep_blank_values=True))
+    fresh = {k: v for k, v in cur.items() if k.lower() in _SESSION_KEYS and v}
+    if not fresh:
+        return saved_url
+    p = urlparse(saved_url)
+    query = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True) if k.lower() not in _SESSION_KEYS]
+    return urlunparse((p.scheme, p.netloc, p.path, p.params, urlencode(query + list(fresh.items())), p.fragment))
+
+
 def _open_care_page(driver: Any, wait: Any, row: Dict[str, Any]) -> None:
     url = _compact(row.get("nursing_url") or "")
     if not url:
         raise RuntimeError("Dòng người bệnh không có liên kết điều dưỡng.")
-    driver.get(url)
+    driver.get(_with_current_session(url, str(getattr(driver, "current_url", "") or "")))
     wait_after_action(driver, 0.8, ready_timeout=12)
     if not _verify_opened_patient(driver, row):
         raise RuntimeError("Không xác nhận được đúng mã/tên người bệnh sau khi mở hồ sơ điều dưỡng.")
