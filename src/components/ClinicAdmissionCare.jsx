@@ -10,7 +10,7 @@ import { Btn } from './shared.jsx';
 import { clinicLoginPayload, hasClinicLogin } from './ClinicAccountPicker.jsx';
 import * as api from '../api.js';
 import {
-  bothDone, CLINIC_CARE, rowProblems, rowsToInput, setClinicDienBien, VITAL_FIELDS, WARD_NAME, withSheetDefaults,
+  bothDone, CLINIC_CARE, inputPayloadRows, rowProblems, rowsToInput, setClinicDienBien, VITAL_FIELDS, WARD_NAME, withSheetDefaults,
 } from './clinic/careSheets.js';
 const DEFAULT_DIEN_BIEN = [
   'Phòng khám Chấn thương chỉnh hình - Thần kinh nhận',
@@ -99,13 +99,13 @@ export default function ClinicAdmissionCare({ creds, toast }) {
 
   const input = async () => {
     const n = inputRows.length;
-    if (!window.confirm(`Nhập phiếu chăm sóc cho ${n} người bệnh nhập viện trên EMR?\n\nMỗi người 2 phiếu: Khoa Khám Bệnh chuyển (đúng T/G vào) và ${WARD_NAME} nhận (giờ và sinh hiệu như đã nhập). Người lập theo Lịch Phòng khám. Sinh hiệu phiếu 2: ô đã gõ dùng số đó, ô trống điền như phiếu chăm sóc thường. Phiếu đã Hoàn tất thì giữ nguyên.`)) return;
+    if (!window.confirm(`Nhập phiếu chăm sóc cho ${n} người bệnh nhập viện trên EMR?\n\nMỗi người 2 phiếu: Khoa Khám Bệnh chuyển (đúng T/G vào, người lập theo Lịch Phòng khám) và ${WARD_NAME} nhận (giờ như đã nhập, người lập là người trực theo Lịch điều dưỡng). Sinh hiệu phiếu 2: ô đã gõ dùng số đó, ô trống điền như phiếu chăm sóc thường. Phiếu đã Hoàn tất thì giữ nguyên.`)) return;
     setBusy('input');
     try {
       const r = await api.runClinicInputCare({
         ...base(),
         precheck_token: preview?.precheck_token,
-        rows: inputRows.map(row => ({ ...row, saved_for_input: true })),
+        rows: inputPayloadRows(rows),
       });
       setResult(r.result || null);
       toast?.(r.message, r.status === 'ok' ? 'ok' : 'error');
@@ -195,7 +195,8 @@ function PatientCard({ row: r, res, disabled, onChange }) {
         <b style={{ fontSize: FS.md }}>{r.ho_ten}</b>
         <span style={{ color: C.text2, fontVariantNumeric: 'tabular-nums' }}>{r.ma_bn}</span>
         <span style={{ color: C.text2 }}>T/G vào {r.care_time_str}</span>
-        <span>Người lập: {r.dieu_duong || <span style={{ color: C.red }}>Chưa có lịch</span>}</span>
+        <span>Người lập phiếu 1: {r.dieu_duong || <span style={{ color: C.red }}>Chưa có lịch</span>}</span>
+        <span>Người nhận (trực): {r.nguoi_nhan || <span style={{ color: C.red }}>Chưa có lịch trực</span>}</span>
         {res && <span style={{ marginLeft: 'auto', color: res.tone, fontWeight: 600 }}>{res.text}</span>}
       </div>
       {!r.can_input ? (
