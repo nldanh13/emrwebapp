@@ -83,6 +83,10 @@ export function rowProblems(row) {
   const out = [];
   if (!row?.can_input) return ['không nhập được'];
   const done = row.sheets_done || {};
+  // Mỗi phiếu lập bằng chính tài khoản EMR của người lập (EMR không cho Thu hồi để đổi Người lập).
+  const noAccount = new Set(row.thieu_tai_khoan || []);
+  if (!done.kham && noAccount.has(row.dieu_duong)) out.push(`tài khoản EMR của ${row.dieu_duong}`);
+  if (!done.khoa && noAccount.has(row.nguoi_nhan)) out.push(`tài khoản EMR của ${row.nguoi_nhan}`);
   if (!done.kham) {
     if (!String(row.dien_bien || '').trim()) out.push('diễn biến phiếu 1');
     if (!String(row.cham_soc || '').trim()) out.push('chăm sóc phiếu 1');

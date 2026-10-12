@@ -34,6 +34,7 @@ except Exception:
 
 from utils import load_config, login_emr, handle_popups, get_nurse_by_shift
 from shared.worker_session import open_session
+from nurse_emr_accounts import get_emr_account_for_nurse
 from selenium_emr_helpers import (
     goto_inpatient_list,
     set_time_range_filter,
@@ -62,7 +63,7 @@ try:
         open_cham_soc_by_id,
     )
     from care_form_actions import (
-        set_thoi_gian_lap, dien_thong_tin, doc_nguoi_lap_hien_tai, cung_nguoi_lap, doi_nguoi_lap_sau_hoan_tat,
+        set_thoi_gian_lap, dien_thong_tin,
     )
     from care_web_actions import (
         check_trang_thai_badge,
@@ -72,7 +73,6 @@ try:
 except Exception:  # pragma: no cover - chỉ xảy ra ở môi trường test thiếu Selenium
     scan_cham_soc_cache = kiem_tra_bang_cached = None  # type: ignore
     open_cham_soc_by_id = set_thoi_gian_lap = dien_thong_tin = None  # type: ignore
-    doc_nguoi_lap_hien_tai = cung_nguoi_lap = doi_nguoi_lap_sau_hoan_tat = None  # type: ignore
     check_trang_thai_badge = click_thu_hoi_va_xoa = click_thu_hoi_cham_soc = None  # type: ignore
 
 
@@ -1042,6 +1042,8 @@ def _preview(req: Dict[str, Any], output_path: str) -> int:
         public_row["dieu_duong"] = nurses[0] if nurses else ""
         public_row["can_input"] = bool(row.get("nursing_url") and nurses)
         public_row["nguoi_nhan"] = ward_oncall_nurse(config, ward_time(row.get("care_time_str") or row.get("tg_vao")))
+        public_row["thieu_tai_khoan"] = [n for n in (public_row["dieu_duong"], public_row["nguoi_nhan"])
+                                         if n and not get_emr_account_for_nurse(n)]
         public_rows.append(public_row)
     result = {
         "status": "ok",
@@ -1278,13 +1280,6 @@ def _input_one(
             time.sleep(2.0)
             handle_popups(driver)
             if "Hoàn tất" in check_trang_thai_badge(driver):
-                # EMR tự để Người lập = chủ tài khoản đang đăng nhập; khác người theo lịch (vd người trực
-                # nhận bệnh) thì Thu hồi → đổi Người lập → Hoàn tất, như phiếu chăm sóc bệnh phòng.
-                current = doc_nguoi_lap_hien_tai(driver) if doc_nguoi_lap_hien_tai else ""
-                if current and expected_creator and not cung_nguoi_lap(current, expected_creator):
-                    if not doi_nguoi_lap_sau_hoan_tat(driver, expected_creator):
-                        return {"success": False, "time_str": time_str,
-                                "error": f"{time_str}: đã Hoàn tất dưới tên {current} nhưng không đổi được Người lập sang {expected_creator}."}
                 return {"success": True, "error": None, "time_str": time_str, "nurse": nurses}
 
         return {"success": False, "error": f"{time_str}: Không lưu/hoàn tất được phiếu chăm sóc."}
@@ -1298,11 +1293,16 @@ def _input_one(
 def _input_patient(ws: Any, fresh: Dict[str, Any], nurses: List[str], sheets: List[Dict[str, Any]],
                    needs_vitals: bool) -> Dict[str, Any]:
     """Nhập lần lượt 2 phiếu (Khám bệnh chuyển, Khoa nhận). Phiếu đã Hoàn tất thì bỏ qua;
-    phiếu đầu lỗi thì không lập phiếu sau."""
+    phiếu đầu lỗi thì không lập phiếu sau. Phiếu nào lập bằng chính tài khoản EMR của người lập
+    phiếu đó (EMR không cho Thu hồi để đổi Người lập nữa)."""
     # Kiểm tra cả 2 phiếu trước khi ghi gì lên EMR.
     for sheet in sheets:
         if sheet.get("nurses") == [] and not sheet.get("expect_done"):
             return {"success": False, "error": f"{sheet['label']}: chưa có người trực trong Lịch điều dưỡng lúc {sheet['time_str']}."}
+        owner = (sheet.get("nurses") or nurses or [""])[0]
+        if not sheet.get("expect_done") and not get_emr_account_for_nurse(owner):
+            return {"success": False, "error": f"{sheet['label']}: chưa có tài khoản EMR của {owner or 'người lập'} "
+                                               "(Cài đặt → Thiết lập tài khoản), không nhập để tránh sai người lập."}
         if not sheet.get("time_str"):
             return {"success": False, "error": f"{sheet['label']}: giờ lập phiếu không hợp lệ."}
         if sheet["key"] == "khoa" and not _after(sheet["time_str"], sheets[0]["time_str"]):
@@ -1314,6 +1314,11 @@ def _input_patient(ws: Any, fresh: Dict[str, Any], nurses: List[str], sheets: Li
     notes: List[str] = []
     all_skipped = True
     for sheet in sheets:
+        owner = (sheet.get("nurses") or nurses)[0]
+        if not sheet.get("expect_done") and not ws.switch_to_creator_account(
+                owner, fresh.get("ma_bn"), reopen=lambda w, _ma_bn: _open_care_page(w.driver, w.wait, fresh)):
+            return {"success": False, "error": f"{sheet['label']}: không đăng nhập được tài khoản EMR của {owner}.",
+                    "time_str": sheets[0]["time_str"]}
         res = _input_one(
             ws, {**fresh, "care_time_str": sheet["time_str"]}, sheet.get("nurses") or nurses, sheet["cham_soc"], sheet["dien_bien"],
             needs_vitals or sheet.get("vitals") is not None,
