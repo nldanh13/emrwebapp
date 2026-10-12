@@ -113,3 +113,38 @@ export function shortList(rows = [], expanded = false, limit = SHORT_LIST_LIMIT)
   if (expanded || rows.length <= limit) return { shown: rows, hidden: 0 };
   return { shown: rows.slice(0, limit), hidden: rows.length - limit };
 }
+
+// Tổng cả ngày ở một chỗ: số chỉ định thủ thuật / phẫu thuật (và đã xong), số chuyển viện, nhập viện.
+export function dayTotals(rows = []) {
+  const out = { tt: { total: 0, done: 0 }, pt: { total: 0, done: 0 }, chuyen_vien: 0, nhap_vien: 0 };
+  for (const r of rows) {
+    for (const s of r?.services || []) {
+      const k = s.code === 'TT' ? 'tt' : s.code === 'PT' ? 'pt' : '';
+      if (!k) continue;
+      out[k].total += Number(s.total) || 0;
+      out[k].done += Number(s.done) || 0;
+    }
+    if (r?.case === 'chuyen_vien') out.chuyen_vien += 1;
+    if (r?.case === 'nhap_vien') out.nhap_vien += 1;
+  }
+  return out;
+}
+
+// Nhóm của 1 dòng trong bảng Danh sách khám bệnh và bộ lọc theo nhóm. Mặc định "Chưa hoàn tất":
+// người đã Hoàn tất / Đã tất toán không cần theo dõi nữa (xem ở "Đã xong" hoặc "Tất cả").
+export const ACTIONABLE_CASES = new Set(['cho_ve', 'nhap_vien', 'chuyen_vien']);
+
+export function rowGroup(r) {
+  if (r?.stage === 'xong') return 'xong';
+  if (r?.stage === 'cho_kham') return 'cho_kham';
+  return r?.case;
+}
+
+export function rowInGroup(r, group) {
+  const g = rowGroup(r);
+  if (group === 'all') return true;
+  if (group === 'chua_xong') return g !== 'xong';
+  if (group === 'can_lam') return ACTIONABLE_CASES.has(g);
+  if (group === 'bbhc') return Boolean(r?.bbhc?.length);
+  return g === group;
+}

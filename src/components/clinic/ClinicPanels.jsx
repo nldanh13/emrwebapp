@@ -6,7 +6,7 @@ import { IconChecks } from '@tabler/icons-react';
 import { C, FS } from '../../tokens.js';
 import { Btn } from '../shared.jsx';
 import {
-  completionGroups, drugLabel, SHORT_LIST_LIMIT, shortList, stageCounts, todoCounts, todoItems,
+  completionGroups, dayTotals, drugLabel, SHORT_LIST_LIMIT, shortList, stageCounts, todoCounts, todoItems,
 } from './clinicBoard.js';
 
 const TONE_COLOR = { ok: C.green, warn: C.amber, error: C.red, muted: C.text2 };
@@ -70,6 +70,7 @@ function Empty({ children }) {
 
 export function VisitPanel({ rows, running, busy, actionRunning, onComplete, onEndOfDay, renderCompletion, dayText = 'hôm nay' }) {
   const counts = useMemo(() => stageCounts(rows), [rows]);
+  const totals = useMemo(() => dayTotals(rows), [rows]);
   const groups = useMemo(() => completionGroups(rows), [rows]);
   const waitingList = [...groups.noDrug, ...groups.pending];
   const openCount = counts.dang;
@@ -81,6 +82,12 @@ export function VisitPanel({ rows, running, busy, actionRunning, onComplete, onE
         <Stat label="Hoàn tất khám" value={counts.xong} tone="green" />
       </div>
       <div style={{ fontSize: FS.xs, color: C.text2 }}>Đếm theo lượt khám, cộng lại = {counts.total} lượt.</div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <Stat label="Thủ thuật (đã xong / chỉ định)" value={`${totals.tt.done}/${totals.tt.total}`} />
+        <Stat label="Phẫu thuật (đã xong / chỉ định)" value={`${totals.pt.done}/${totals.pt.total}`} />
+        <Stat label="Chuyển viện" value={totals.chuyen_vien} />
+        <Stat label="Nhập viện" value={totals.nhap_vien} />
+      </div>
 
       <div>
         <div style={{ fontSize: FS.sm, fontWeight: 600, color: C.text, marginBottom: 4 }}>

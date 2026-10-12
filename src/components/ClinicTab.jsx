@@ -19,7 +19,7 @@ import { useEmrUrlDefault } from '../hooks/useEmrUrlDefault.js';
 import { SkeletonTable } from './Skeleton.jsx';
 import { loadClinicConfig as loadConfig, saveClinicConfig as saveConfig } from '../utils/clinicLogin.js';
 import { Panel, TodoPanel, VisitPanel } from './clinic/ClinicPanels.jsx';
-import { isoDay, monitorDay } from './clinic/clinicBoard.js';
+import { ACTIONABLE_CASES, isoDay, monitorDay, rowGroup, rowInGroup } from './clinic/clinicBoard.js';
 
 const CLINIC_MONITOR_KEY = 'screen:clinic-monitor';
 
@@ -32,7 +32,6 @@ const CASE_LABELS = {
   chua_xu_tri: 'Chưa xử trí',
   khac: 'Khác',
 };
-const ACTIONABLE_CASES = new Set(['cho_ve', 'nhap_vien', 'chuyen_vien']);
 
 function hhmm(iso, withSeconds = false) {
   if (!iso) return '—';
@@ -41,11 +40,6 @@ function hhmm(iso, withSeconds = false) {
   return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', ...(withSeconds ? { second: '2-digit' } : {}) });
 }
 
-function rowGroup(r) {
-  if (r.stage === 'xong') return 'xong';
-  if (r.stage === 'cho_kham') return 'cho_kham';
-  return r.case;
-}
 
 const inputStyle = {
   width: '100%', height: 32, padding: '0 8px', boxSizing: 'border-box', border: `1px solid ${C.border}`,
@@ -136,7 +130,7 @@ export default function ClinicTab({ toast }) {
   const [cfg, setCfg] = useState(loadConfig);
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState('');
-  const [group, setGroup] = useState('can_lam');
+  const [group, setGroup] = useState('chua_xong');
   const [onlyBhyt, setOnlyBhyt] = useState(true);
 
   const setField = (key) => (e) => {
@@ -338,8 +332,9 @@ export default function ClinicTab({ toast }) {
   const allRows = useMemo(() => monitor?.rows || [], [monitor?.rows]);
   const rows = useMemo(() => allRows.filter(r => !onlyBhyt || r.has_bhyt), [allRows, onlyBhyt]);
   const counts = useMemo(() => {
-    const c = { can_lam: 0, all: rows.length, bbhc: 0 };
+    const c = { can_lam: 0, all: rows.length, bbhc: 0, chua_xong: 0 };
     for (const r of rows) {
+      if (rowInGroup(r, 'chua_xong')) c.chua_xong += 1;
       if (r.bbhc?.length) c.bbhc += 1;
       const g = rowGroup(r);
       c[g] = (c[g] || 0) + 1;
@@ -347,15 +342,10 @@ export default function ClinicTab({ toast }) {
     }
     return c;
   }, [rows]);
-  const visible = useMemo(() => rows.filter(r => {
-    const g = rowGroup(r);
-    if (group === 'all') return true;
-    if (group === 'can_lam') return ACTIONABLE_CASES.has(g);
-    if (group === 'bbhc') return Boolean(r.bbhc?.length);
-    return g === group;
-  }), [rows, group]);
+  const visible = useMemo(() => rows.filter(r => rowInGroup(r, group)), [rows, group]);
 
   const groupOptions = [
+    { value: 'chua_xong', label: `Chưa hoàn tất (${counts.chua_xong})` },
     { value: 'can_lam', label: `Cần làm (${counts.can_lam})` },
     ...['cho_ve', 'nhap_vien', 'chuyen_vien', 'chuyen_kham_ck', 'ngoai_tru', 'chua_xu_tri']
       .map(k => ({ value: k, label: `${CASE_LABELS[k]} (${counts[k] || 0})` })),
