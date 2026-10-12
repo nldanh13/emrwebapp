@@ -1033,9 +1033,16 @@ def sheet_done(entries: Iterable[Dict[str, Any]], sheet: Dict[str, Any]) -> bool
             return True
         if sheet.get("key") == "khoa" and _compact(e.get("date")) == day:
             first = _norm((str(e.get("dien_bien") or "").splitlines() or [""])[0])
-            if "nhan hs" in _norm(e.get("cham_soc")) or (first.startswith("khoa") and "nhan" in first):
+            if _is_receive_care(e.get("cham_soc")) or (first.startswith("khoa") and "nhan" in first):
                 return True
     return False
+
+
+def _is_receive_care(cham_soc: Any) -> bool:
+    """Chăm sóc của phiếu nhận bệnh: một ý bắt đầu bằng "Nhận HS" / "Nhận hồ sơ" (tool lập hoặc khoa tự lập,
+    vd "Nhận hồ sơ + 1XQ; Lấy dấu hiệu sinh tồn"). Phiếu 1 "Kính chuyển … nhận / Hồ sơ" không tính."""
+    parts = re.split(r"[;\n]+", str(cham_soc or ""))
+    return any(re.match(r"nhan (hs|ho so)\b", _norm(p)) for p in parts)
 
 
 def _preview(req: Dict[str, Any], output_path: str) -> int:
