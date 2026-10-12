@@ -139,6 +139,28 @@ class _FakeWS:
         self._switch_account_to(original_username, original_password, ma_bn, reopen)
 
 
+class _NurseWS(_FakeWS):
+    """Mọi điều dưỡng đều có tài khoản EMR; ghi lại lần lượt đã đăng nhập tài khoản của ai."""
+
+    def __init__(self, missing=()):
+        super().__init__()
+        self.logged_in_as = []
+        self.missing = set(missing)
+
+    def switch_to_creator_account(self, creator, ma_bn, reopen=None):
+        if creator in self.missing:
+            return False
+        self.logged_in_as.append(creator)
+        return True
+
+
+def _nurse_ws(monkeypatch, no_account=(), cannot_login=()):
+    import clinic_input_care as cic
+    monkeypatch.setattr(cic, "get_emr_account_for_nurse",
+                        lambda name: None if name in no_account else {"username": name, "password": "pw"})
+    return _NurseWS(missing=cannot_login)
+
+
 def test_input_one_switches_to_old_creator_account_to_delete_then_restores(monkeypatch):
     """EMR hiện chỉ cho đúng tài khoản người tạo phiếu tự sửa/xóa phiếu của họ.
     Khi cần thu hồi/xóa phiếu cũ (EDIT) do người khác lập, _input_one phải đổi
@@ -283,7 +305,7 @@ def test_input_patient_enters_both_sheets_and_skips_completed_one(monkeypatch):
     monkeypatch.setattr(cic, "_input_one", fake_input_one)
     vitals = {"mach": "80", "nhiet_do": "37", "huyet_ap": "120/80", "nhip_tho": "20"}
     sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026", "vitals": vitals})
-    res = cic._input_patient(object(), {"ma_bn": "1"}, ["ĐD A"], sheets, False)
+    res = cic._input_patient(_nurse_ws(monkeypatch), {"ma_bn": "1"}, ["ĐD A"], sheets, False)
     assert res["success"] is True and not res.get("skipped")
     assert [c[0] for c in calls] == ["08:49 12/10/2026", "09:04 12/10/2026"]
     assert calls[0][2] == {} and calls[1][2] == vitals
@@ -296,10 +318,10 @@ def test_input_patient_stops_before_emr_when_ward_vitals_wrong_or_time_before_ad
     calls = []
     monkeypatch.setattr(cic, "_input_one", lambda *a, **k: calls.append((a, k)) or {"success": True})
     sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026", "vitals": {"mach": "8"}})
-    res = cic._input_patient(object(), {}, ["ĐD A"], sheets, False)
+    res = cic._input_patient(_nurse_ws(monkeypatch), {}, ["ĐD A"], sheets, False)
     assert res["success"] is False and "Mạch" in res["error"] and calls == []  # không ghi phiếu nào
     sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026", "khoa_time_str": "08:30 12/10/2026"})
-    res = cic._input_patient(object(), {}, ["ĐD A"], sheets, False)
+    res = cic._input_patient(_nurse_ws(monkeypatch), {}, ["ĐD A"], sheets, False)
     assert res["success"] is False and "phải sau T/G vào" in res["error"] and calls == []
 
 
@@ -309,7 +331,7 @@ def test_ward_sheet_with_blank_vitals_asks_usual_vitals_fill(monkeypatch):
     calls = []
     monkeypatch.setattr(cic, "_input_one", lambda *a, **k: calls.append((a[5], k["vitals"])) or {"success": True})
     sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026", "vitals": {"mach": "90"}})
-    assert cic._input_patient(object(), {}, ["ĐD A"], sheets, False)["success"] is True
+    assert cic._input_patient(_nurse_ws(monkeypatch), {}, ["ĐD A"], sheets, False)["success"] is True
     # phiếu 1 không sinh hiệu; phiếu 2 có sinh hiệu: mạch người dùng gõ, còn lại điền như phiếu thường
     assert calls == [(False, {}), (True, {"mach": "90"})]
 
@@ -325,7 +347,7 @@ def test_ward_sheet_seen_done_at_search_needs_no_vitals_but_is_never_written_bli
 
     monkeypatch.setattr(cic, "_input_one", fake_input_one)
     sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026", "sheets_done": {"kham": False, "khoa": True}})
-    res = cic._input_patient(object(), {}, ["ĐD A"], sheets, False)
+    res = cic._input_patient(_nurse_ws(monkeypatch), {}, ["ĐD A"], sheets, False)
     assert res["success"] is True
     assert calls[1] == ("09:04 12/10/2026", None, True)
 
@@ -380,29 +402,52 @@ def test_ward_sheet_creator_is_oncall_nurse_from_schedule(monkeypatch):
     monkeypatch.setattr(cic, "_input_one", lambda ws, row, nurses, *a, **k: calls.append(nurses) or {"success": True})
     sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026"})
     sheets[1]["nurses"] = ["ĐD Trực"]
-    assert cic._input_patient(object(), {}, ["ĐD Phòng Khám"], sheets, False)["success"] is True
+    assert cic._input_patient(_nurse_ws(monkeypatch), {}, ["ĐD Phòng Khám"], sheets, False)["success"] is True
     assert calls == [["ĐD Phòng Khám"], ["ĐD Trực"]]
 
     calls.clear()
     sheets[1]["nurses"] = []
-    res = cic._input_patient(object(), {}, ["ĐD Phòng Khám"], sheets, False)
+    res = cic._input_patient(_nurse_ws(monkeypatch), {}, ["ĐD Phòng Khám"], sheets, False)
     assert res["success"] is False and "chưa có người trực" in res["error"] and calls == []
 
 
-def test_input_one_renames_creator_to_scheduled_nurse_after_complete(monkeypatch):
+def test_each_sheet_is_entered_with_its_own_nurse_account(monkeypatch):
+    """EMR không cho Thu hồi để đổi Người lập: phiếu 1 lập bằng tài khoản ĐD phòng khám, phiếu 2 bằng tài khoản người trực."""
     import clinic_input_care as cic
 
-    monkeypatch.setattr(cic, "scan_cham_soc_cache", lambda driver, ngay, hours_needed=None: ({}, []))
-    monkeypatch.setattr(cic, "kiem_tra_bang_cached", lambda *a, **k: ("MISSING", None, None))
-    monkeypatch.setattr(cic, "_open_care_page", lambda driver, wait, row: None)
-    monkeypatch.setattr(cic, "set_thoi_gian_lap", lambda driver, time_str, max_retry=2: True)
-    monkeypatch.setattr(cic, "dien_thong_tin", lambda *a, **k: True)
-    monkeypatch.setattr(cic, "check_trang_thai_badge", lambda driver: "Hoàn tất")
-    monkeypatch.setattr(cic, "handle_popups", lambda driver: None)
-    monkeypatch.setattr(cic, "doc_nguoi_lap_hien_tai", lambda driver: "Chủ Tài Khoản")
-    renamed = []
-    monkeypatch.setattr(cic, "doi_nguoi_lap_sau_hoan_tat", lambda driver, name: renamed.append(name) or True)
+    ws = _nurse_ws(monkeypatch)
+    order = []
+    monkeypatch.setattr(cic, "_input_one", lambda w, row, nurses, *a, **k: order.append((list(w.logged_in_as), nurses)) or {"success": True})
+    sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026"})
+    sheets[1]["nurses"] = ["ĐD Trực"]
+    assert cic._input_patient(ws, {"ma_bn": "1"}, ["ĐD Phòng Khám"], sheets, False)["success"] is True
+    assert order == [(["ĐD Phòng Khám"], ["ĐD Phòng Khám"]), (["ĐD Phòng Khám", "ĐD Trực"], ["ĐD Trực"])]
 
-    row = {"ma_bn": "BN001", "ho_ten": "A", "care_time_str": "09:04 15/09/2026"}
-    res = cic._input_one(_FakeWS(), row, ["ĐD Trực"], "Nhận HS", "Khoa nhận", True)
-    assert res["success"] is True and renamed == ["ĐD Trực"]
+
+def test_sheet_already_done_does_not_switch_account(monkeypatch):
+    import clinic_input_care as cic
+
+    ws = _nurse_ws(monkeypatch, no_account={"ĐD Trực"})
+    monkeypatch.setattr(cic, "_input_one", lambda *a, **k: {"success": True, "skipped": True})
+    sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026", "sheets_done": {"kham": False, "khoa": True}})
+    sheets[1]["nurses"] = ["ĐD Trực"]
+    assert cic._input_patient(ws, {}, ["ĐD Phòng Khám"], sheets, False)["success"] is True
+    assert ws.logged_in_as == ["ĐD Phòng Khám"]
+
+
+def test_missing_nurse_account_blocks_before_any_emr_write(monkeypatch):
+    import clinic_input_care as cic
+
+    calls = []
+    monkeypatch.setattr(cic, "_input_one", lambda *a, **k: calls.append(a) or {"success": True})
+    sheets = cic.care_sheets({"care_time_str": "08:49 12/10/2026"})
+    sheets[1]["nurses"] = ["ĐD Trực"]
+    ws = _nurse_ws(monkeypatch, no_account={"ĐD Trực"})
+    res = cic._input_patient(ws, {}, ["ĐD Phòng Khám"], sheets, False)
+    assert res["success"] is False and "chưa có tài khoản EMR của ĐD Trực" in res["error"]
+    assert calls == [] and ws.logged_in_as == []  # không ghi phiếu 1 rồi mới báo thiếu phiếu 2
+
+    ws = _nurse_ws(monkeypatch, cannot_login={"ĐD Trực"})
+    res = cic._input_patient(ws, {}, ["ĐD Phòng Khám"], sheets, False)
+    assert res["success"] is False and "không đăng nhập được tài khoản EMR của ĐD Trực" in res["error"]
+    assert len(calls) == 1  # phiếu 1 đã lập bằng tài khoản ĐD phòng khám, phiếu 2 không lập dưới tên người khác

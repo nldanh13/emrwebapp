@@ -182,6 +182,8 @@ function PatientCard({ row: r, res, disabled, onChange }) {
   const done = r.sheets_done || {};
   const problems = r.can_input && !r.skip ? rowProblems(r) : [];
   const set = key => e => onChange(row => ({ ...row, [key]: e.target.value }));
+  const noAccount = name => name && (r.thieu_tai_khoan || []).includes(name)
+    ? <span style={{ color: C.red }}> · chưa có tài khoản EMR (Cài đặt → Thiết lập tài khoản)</span> : null;
   const setVital = key => e => onChange(row => ({ ...row, vitals: { ...row.vitals, [key]: e.target.value } }));
   return (
     <div style={{ border: `1px solid ${C.border2}`, borderRadius: 8, padding: 10, display: 'flex', flexDirection: 'column', gap: 8, opacity: r.skip ? 0.6 : 1 }}>
@@ -195,8 +197,8 @@ function PatientCard({ row: r, res, disabled, onChange }) {
         <b style={{ fontSize: FS.md }}>{r.ho_ten}</b>
         <span style={{ color: C.text2, fontVariantNumeric: 'tabular-nums' }}>{r.ma_bn}</span>
         <span style={{ color: C.text2 }}>T/G vào {r.care_time_str}</span>
-        <span>Người lập phiếu 1: {r.dieu_duong || <span style={{ color: C.red }}>Chưa có lịch</span>}</span>
-        <span>Người nhận (trực): {r.nguoi_nhan || <span style={{ color: C.red }}>Chưa có lịch trực</span>}</span>
+        <span>Người lập phiếu 1: {r.dieu_duong || <span style={{ color: C.red }}>Chưa có lịch</span>}{noAccount(r.dieu_duong)}</span>
+        <span>Người nhận (trực): {r.nguoi_nhan || <span style={{ color: C.red }}>Chưa có lịch trực</span>}{noAccount(r.nguoi_nhan)}</span>
         {res && <span style={{ marginLeft: 'auto', color: res.tone, fontWeight: 600 }}>{res.text}</span>}
       </div>
       {!r.can_input ? (

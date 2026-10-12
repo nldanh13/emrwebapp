@@ -44,6 +44,13 @@ describe('careSheets', () => {
     expect(rowsToInput([done, wardDone, skipped, ready, bad])).toEqual([wardDone, ready]);
   });
 
+  it('thiếu tài khoản EMR của người lập phiếu chưa xong thì không nhập', () => {
+    const r = base({ dieu_duong: 'ĐD A', nguoi_nhan: 'ĐD Trực', thieu_tai_khoan: ['ĐD Trực'] });
+    expect(rowProblems(r)).toEqual(['tài khoản EMR của ĐD Trực']);
+    expect(rowProblems({ ...r, sheets_done: { kham: false, khoa: true } })).toEqual([]);
+    expect(rowsToInput([r])).toEqual([]);
+  });
+
   it('bước nhập gửi đủ người đã kiểm tra lúc tìm (mã kiểm tra khớp), người không nhập thì nhap=false', () => {
     const done = base({ ma_bn: '1', sheets_done: { kham: true, khoa: true } });
     const skipped = base({ ma_bn: '2', skip: true });
