@@ -171,6 +171,47 @@ def test_fetch_stops_when_pages_bring_nothing_new():
     assert len(driver.calls) <= 5
 
 
+class EmrListDriver(FakeDriver):
+    """Giống EMR thật hôm 12/10: lệnh đọc thẳng page=0 → trang 1, page=1 → trang 2, page >= 2 lại trả
+    trang 2 (không thêm ai). Bấm NextPage(n) trên trang thì khung danh sách hiện đúng trang n+1."""
+
+    def __init__(self, pages, has_pager=True):
+        super().__init__([])
+        self.pages = pages
+        self.shown = 0
+        self.has_pager = has_pager
+
+    def execute_script(self, script, args):
+        self.calls.append(args)
+        if script is cm.UI_PAGE_JS:
+            if not self.has_pager:
+                return {'ok': False, 'reason': 'no_pager'}
+            self.shown = args
+            return {'ok': True}
+        if script is cm.READ_LIST_BOX_JS:
+            return self.pages[self.shown]
+        return {'ok': True, 'html': self.pages[min(args['page'], 1)]}
+
+
+def test_fetch_turns_emr_pages_like_the_user_when_direct_read_stalls():
+    """Tái hiện: EMR "Tổng số: 18/ 79", "Trang 1/5"; app chỉ đọc được 36. Lật trang bằng NextPage → đủ 79."""
+    pages = _emr_pages(79, 18, info_pages=5)
+    pages = [p.replace('Trang 1/5', f'Trang {i + 1}/5') for i, p in enumerate(pages)]
+
+    stalled = EmrListDriver(pages)
+    assert len(cm.fetch_today_rows(stalled)) == 36  # chỉ đọc thẳng: lỗi người dùng gặp
+
+    driver = EmrListDriver(pages)
+    rows = cm.fetch_today_rows(driver, ui_pager=True)
+    assert len(rows) == 79
+    assert [a for a in driver.calls if isinstance(a, int)] == [1, 2, 3, 4]
+    assert not any(isinstance(a, dict) and a.get('page', 0) > 0 for a in driver.calls)
+
+    # Trang EMR không có nút lật trang: quay về đọc thẳng như cũ, không lỗi.
+    driver = EmrListDriver(pages, has_pager=False)
+    assert len(cm.fetch_today_rows(driver, ui_pager=True)) == 36
+
+
 def test_monitor_relogins_when_emr_session_expires(monkeypatch):
     html = _table(_row('a', 1, '<a>A</a>', BHYT, 'Đang thực hiện', '', 'Cho về'))
     driver = FakeDriver([{'ok': False, 'reason': 'no_page'}, {'ok': True, 'html': html}])
