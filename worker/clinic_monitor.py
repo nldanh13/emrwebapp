@@ -57,6 +57,7 @@ MAX_RELOGIN_ATTEMPTS = 2
 BHYT_CODE_RE = re.compile(r"\b[A-Z]{2}\d{10,}\b")
 CHO_DOC_KQ_RE = re.compile(r"\(\s*ch[oờ]\s*đ?[oọ]c\s*k\s*q\s*\)", re.I)
 PAGE_INFO_RE = re.compile(r"Trang\s*(\d+)\s*/\s*(\d+)", re.I)
+TOTAL_RE = re.compile(r"Tổng số:\s*(\d+)\s*/\s*(\d+)", re.I)
 SERVICE_LABELS = {"CDHA": "CĐHA", "XN": "XN", "TT": "TT", "TDCN": "TDCN", "PT": "PT", "KB": "KB"}
 
 # Gọi đúng hàm trang Danh sách Khám bệnh dùng trong FilterChange(), chỉ thay cỡ trang/số trang.
@@ -276,6 +277,12 @@ def rows_from_html(html_text: str) -> List[Dict[str, Any]]:
 def page_count(html_text: str) -> int:
     m = PAGE_INFO_RE.search(html_text or "")
     return int(m.group(2)) if m else 1
+
+
+def total_count(html_text: str) -> Optional[int]:
+    """Tổng số lượt khám EMR ghi dưới bảng ("Tổng số: 18/ 32" → 32); không có thì None."""
+    m = TOTAL_RE.search(html_text or "")
+    return int(m.group(2)) if m else None
 
 
 # ── Điều kiện hoàn tất khám (tính thuần, không đụng EMR) ─────────────────────
@@ -952,17 +959,31 @@ def _fetch_page(driver: Any, page: int, day_filter: Optional[Dict[str, str]] = N
 
 
 def fetch_today_rows(driver: Any, day_filter: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
+    """Đọc mọi trang. EMR có thể bỏ qua cỡ trang lớn và đánh số trang từ 1 (page=0 và page=1 cùng là
+    trang 1), nên khi biết tổng số ("Tổng số: x/ y") thì đọc tiếp tới khi đủ, thử tới page=số trang."""
     first = _fetch_page(driver, 0, day_filter)
-    rows = rows_from_html(first)
-    for page in range(1, min(page_count(first), MAX_PAGES)):
-        rows.extend(rows_from_html(_fetch_page(driver, page, day_filter)))
-    seen, out = set(), []
-    for r in rows:
-        key = r["khambenhid"] or (r["ma_bn"], r["thoi_gian"])
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(r)
+    seen: set = set()
+    out: List[Dict[str, Any]] = []
+
+    def add(html_text: str) -> None:
+        for r in rows_from_html(html_text):
+            key = r["khambenhid"] or (r["ma_bn"], r["thoi_gian"])
+            if key not in seen:
+                seen.add(key)
+                out.append(r)
+
+    add(first)
+    pages, total = page_count(first), total_count(first)
+    if total is None:
+        for page in range(1, min(pages, MAX_PAGES)):
+            add(_fetch_page(driver, page, day_filter))
+        return out
+    page = 1
+    while len(out) < total and page <= min(pages, MAX_PAGES):
+        add(_fetch_page(driver, page, day_filter))
+        page += 1
+    if len(out) < total:
+        print(f"[CLINIC-MONITOR] [WARN] Danh sách EMR ghi tổng số {total} lượt, mới đọc được {len(out)}.")
     return out
 
 
@@ -1175,14 +1196,11 @@ def scan_imaging(monitor: "Monitor", rows: List[Dict[str, Any]], cache: Dict[str
             print(f"[CLINIC-MONITOR] [WARN] STT {row.get('stt')}: {e}")
 
 
-# ── Kho người bệnh: chi tiết từng lượt khám (chỉ đọc) ──────────────────────────
-# Mỗi lượt đã có xử trí được mở màn khám 1 lần để đọc chẩn đoán, lý do khám, chi tiết xử trí và
-# ngày hẹn tái khám; khi lượt chuyển sang Hoàn tất thì đọc lại 1 lần nữa để chốt (dữ liệu gốc).
-# Máy chủ ghi kết quả vào Kho người bệnh. Không bấm nút nào trên EMR.
+# ── Chi tiết lượt khám (chỉ đọc) ─────────────────────────────────────────────
+# Trạng thái từng người đã có ở Danh sách Khám bệnh, nên vòng theo dõi không mở màn khám từng người
+# chỉ để xem (người đã Hoàn tất càng không). Các hàm dưới đây đọc chẩn đoán, chi tiết xử trí, ngày hẹn
+# tái khám khi đã ở sẵn màn khám của một việc cần làm. Không bấm nút nào trên EMR.
 
-MAX_DETAILS_PER_CYCLE = 4
-DETAIL_RETRY_AFTER = timedelta(minutes=15)
-DETAIL_MAX_ERRORS = 3
 HEN_RE = re.compile(r"\bhen\b|tai kham")
 
 
@@ -1227,41 +1245,6 @@ def read_visit_details(page: "ExamPage", row: Dict[str, Any]) -> Dict[str, Any]:
         "xu_tri_fields": [{"label": compact(f.get("label")), "value": compact(f.get("value"))}
                           for f in fields if compact(f.get("value")) and f.get("label") != f.get("id")],
     }
-
-
-def _need_details(row: Dict[str, Any], cached: Optional[Dict[str, Any]], now: datetime) -> bool:
-    if not row.get("khambenhid") or not row.get("href") or row.get("stage") == "cho_kham":
-        return False
-    if row.get("case") == "chua_xu_tri" and row.get("stage") != "xong":
-        return False  # bác sĩ chưa xử trí: chưa có gì để đọc
-    if not cached:
-        return True
-    if cached.get("status") != "ok":
-        if int(cached.get("errors") or 0) >= DETAIL_MAX_ERRORS:
-            return False
-        return now - datetime.fromisoformat(cached["at"]) >= DETAIL_RETRY_AFTER
-    # Đã đọc lúc còn đang khám → đọc lại khi Hoàn tất hoặc khi xử trí đổi.
-    return (cached.get("stage") != "xong" and row.get("stage") == "xong") or cached.get("xu_tri") != row.get("xu_tri")
-
-
-def scan_visit_details(monitor: "Monitor", rows: List[Dict[str, Any]], cache: Dict[str, Dict[str, Any]]) -> None:
-    """Đọc chi tiết tối đa MAX_DETAILS_PER_CYCLE lượt mỗi chu kỳ; lượt đã Hoàn tất được ưu tiên."""
-    todo = [r for r in rows if _need_details(r, cache.get(r.get("khambenhid") or ""), _now())]
-    todo.sort(key=lambda r: 0 if r.get("stage") == "xong" else 1)
-    for row in todo[:MAX_DETAILS_PER_CYCLE]:
-        key = row["khambenhid"]
-        res = monitor.on_exam_page(row, lambda page, _done, _now_: read_visit_details(page, row), need_services=False)
-        if res.get("status") == "ok":
-            cache[key] = {**res, "at": _now().isoformat()}
-        else:
-            prev = cache.get(key) or {}
-            errors = int(prev.get("errors") or 0) + 1 if prev.get("status") != "ok" else 1
-            # Lỗi lần đọc lại: giữ bản đã đọc được trước đó.
-            cache[key] = prev if prev.get("status") == "ok" else {"status": res.get("status") or "error", "message": res.get("message"),
-                                                                   "errors": errors, "at": _now().isoformat()}
-            print(f"[CLINIC-MONITOR] [WARN] STT {row.get('stt')}: không đọc được chi tiết lượt khám: {res.get('message')}")
-        if res.get("status") == "session":
-            break
 
 
 # ── TH4: soạn và lập SBBHC ───────────────────────────────────────────────────
@@ -1733,7 +1716,6 @@ def run_monitor(req_path: str, state_path: str, control_path: str) -> None:
                         state["action_running"] = False
                         state["last_action_at"] = _now().isoformat()
                         rows = monitor.read()
-                scan_visit_details(monitor, rows, visit_details)
                 state.update({
                     "status": "running",
                     "rows": public_rows(rows, checks, weights, imaging, bbhc, ngoaitru_state, visit_details, task_state),
