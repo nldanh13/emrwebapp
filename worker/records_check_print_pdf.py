@@ -24,6 +24,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+from xml.sax.saxutils import escape
 from typing import Any, Dict, List
 
 from reportlab.lib import colors
@@ -74,6 +75,12 @@ def register_fonts() -> tuple[str, str]:
 
 def clean_text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
+
+
+def para_text(value: Any) -> str:
+    """Chữ đưa vào Paragraph của ReportLab: Paragraph đọc < > & như thẻ định dạng, nên ghi chú
+    kiểu "Nợ KQ <b..." hay "KSĐ & GPB" làm hỏng cả file PDF. Thoát ký tự trước khi in."""
+    return escape(clean_text(value))
 
 
 def as_int(value: Any) -> int:
@@ -197,7 +204,7 @@ def make_pdf(input_path: str, out_path: str) -> None:
         title="Kiểm hồ sơ",
     )
 
-    story = [Paragraph(title or "DANH SÁCH KIỂM HỒ SƠ ĐÃ KIỂM", title_style)]
+    story = [Paragraph(para_text(title or "DANH SÁCH KIỂM HỒ SƠ ĐÃ KIỂM"), title_style)]
     if subtitle:
         subtitle_style = ParagraphStyle(
             "SubtitleVN",
@@ -208,7 +215,7 @@ def make_pdf(input_path: str, out_path: str) -> None:
             alignment=TA_CENTER,
             spaceAfter=2 * mm,
         )
-        story.append(Paragraph(subtitle, subtitle_style))
+        story.append(Paragraph(para_text(subtitle), subtitle_style))
     story.append(Spacer(1, 2 * mm))
     headers = [
         "STT", "Họ và tên", "Số lưu trữ", "Ngày ra viện", "Hạn 48h",
@@ -220,17 +227,17 @@ def make_pdf(input_path: str, out_path: str) -> None:
     for idx, row in enumerate(rows, start=1):
         data.append([
             Paragraph(str(idx), center_style),
-            Paragraph(clean_text(row.get("ho_ten") or row.get("name")), cell_style),
-            Paragraph(storage_print(row), center_style),
-            Paragraph(clean_text(row.get("discharge_date") or row.get("ngay_ra_vien")), center_style),
-            Paragraph(format_deadline(row.get("handover_deadline")), center_style),
+            Paragraph(para_text(row.get("ho_ten") or row.get("name")), cell_style),
+            Paragraph(para_text(storage_print(row)), center_style),
+            Paragraph(para_text(row.get("discharge_date") or row.get("ngay_ra_vien")), center_style),
+            Paragraph(para_text(format_deadline(row.get("handover_deadline"))), center_style),
             Paragraph(str(as_int(row.get("xq") or row.get("so_xq"))), center_style),
             Paragraph(str(as_int(row.get("ct") or row.get("so_ct"))), center_style),
             Paragraph(str(as_int(row.get("mri") or row.get("so_mri"))), center_style),
             Paragraph(ksd_gpb_label(row.get("ksd_status")), center_style),
             Paragraph(ksd_gpb_label(row.get("gpb_status")), center_style),
-            Paragraph(clean_text(row.get("cover_note")), cell_style),
-            Paragraph(clean_text(row.get("delivered_by")) or delivered_by, center_style),
+            Paragraph(para_text(row.get("cover_note")), cell_style),
+            Paragraph(para_text(row.get("delivered_by")) or para_text(delivered_by), center_style),
             Paragraph("", center_style),
         ])
 
