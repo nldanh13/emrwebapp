@@ -551,6 +551,25 @@ router.get('/clinic/monitor/bbhc/pdf', (req, res) => {
   return res.download(full, file, { dotfiles: 'allow' });
 });
 
+// Nhật ký quét của worker (clinic_trace_YYYYMMDD.jsonl, không họ tên / mã BN): ngày yêu cầu, mặc định file mới nhất.
+const TRACE_FILE_RE = /^clinic_trace_(\d{8})\.jsonl$/;
+function clinicTraceFile(dir, day = '') {
+  const want = String(day || '').replace(/-/g, '');
+  let names = [];
+  try { names = fs.readdirSync(dir).filter(n => TRACE_FILE_RE.test(n)).sort(); } catch (_) { names = []; }
+  if (want) return names.includes(`clinic_trace_${want}.jsonl`) ? `clinic_trace_${want}.jsonl` : '';
+  return names[names.length - 1] || '';
+}
+
+router.get('/clinic/monitor/trace', (req, res) => {
+  const ctx = getRuntimePaths(req);
+  const file = clinicTraceFile(ctx.dir, req.query?.day);
+  if (!file) {
+    return res.status(404).json({ status: 'error', message: 'Chưa có nhật ký quét. Bắt đầu theo dõi Phòng khám, chờ vài chu kỳ rồi tải lại.' });
+  }
+  return res.download(path.join(ctx.dir, file), file, { dotfiles: 'allow' });
+});
+
 router.get('/clinic/monitor/state', (req, res) => {
   const ctx = getRuntimePaths(req);
   watchScreen({
@@ -941,6 +960,7 @@ module.exports.withDoctorAccount = withDoctorAccount;
 module.exports.scheduledClinicDoctor = scheduledClinicDoctor;
 module.exports.sanitizeSickLeavePatient = sanitizeSickLeavePatient;
 module.exports.pruneSickLeave = pruneSickLeave;
+module.exports.clinicTraceFile = clinicTraceFile;
 module.exports.resolveEmrUrls = resolveEmrUrls;
 module.exports.emrUrlDefaults = emrUrlDefaults;
 module.exports.pastListDate = pastListDate;

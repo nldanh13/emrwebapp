@@ -23,6 +23,7 @@ vi.mock('../api.js', () => ({
   runClinicTasks: vi.fn(async () => ({ status: 'ok', message: 'ok' })),
   setClinicAutoTasks: vi.fn(async () => ({ status: 'ok', message: 'ok' })),
   completeReadyClinicPatients: vi.fn(async () => ({ status: 'ok', message: 'ok' })),
+  downloadClinicTrace: vi.fn(async () => ({ blob: new Blob(['{}']), filename: 'clinic_trace_20261012.jsonl' })),
 }));
 const api = await import('../api.js');
 const { default: ClinicTab } = await import('./ClinicTab.jsx');
@@ -72,6 +73,18 @@ describe('Phòng khám: các khung', () => {
     await flush();
     expect(api.completeReadyClinicPatients).toHaveBeenLastCalledWith(true);
     expect(button('Tìm người nhập viện')).toBeTruthy();
+  });
+
+  it('Tải nhật ký quét tải file nhật ký của worker', async () => {
+    URL.createObjectURL = vi.fn(() => 'blob:x');
+    URL.revokeObjectURL = vi.fn();
+    __resetServerData();
+    await act(async () => { root.render(createElement(ClinicTab, { toast: () => {} })); });
+    await flush();
+    await act(async () => { button('Tải nhật ký quét').click(); });
+    await flush();
+    expect(api.downloadClinicTrace).toHaveBeenCalledTimes(1);
+    expect(URL.createObjectURL).toHaveBeenCalled();
   });
 
   it('không hỏi URL khi máy chủ đã khai địa chỉ EMR; chưa khai thì chỉ hỏi địa chỉ đăng nhập', async () => {

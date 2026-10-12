@@ -128,6 +128,7 @@ function apiActionLabel(method, url) {
     'POST /api/clinic/monitor/stop': 'dừng theo dõi phòng khám',
     'POST /api/clinic/monitor/refresh': 'làm mới danh sách phòng khám',
     'GET /api/clinic/monitor/state': 'đọc danh sách phòng khám',
+    'GET /api/clinic/monitor/trace': 'tải nhật ký quét phòng khám',
     'POST /api/clinic/monitor/complete': 'hoàn tất khám các người bệnh đã sẵn sàng',
     'POST /api/clinic/monitor/weight': 'ghi cân nặng người bệnh',
     'POST /api/clinic/monitor/tasks': 'nhập thủ thuật đã có chỉ định',
@@ -792,6 +793,7 @@ export const prepareClinicBbhc = () => post('/api/clinic/monitor/bbhc/prepare', 
 export const runClinicNgoaiTru = () => post('/api/clinic/monitor/ngoaitru', {});
 export const runClinicBbhc = (drafts) => post('/api/clinic/monitor/bbhc/run', { drafts });
 export const downloadClinicBbhcPdf = () => downloadBlob('/api/clinic/monitor/bbhc/pdf', 'so_bien_ban_hoi_chan.pdf');
+export const downloadClinicTrace = () => downloadBlob('/api/clinic/monitor/trace', 'nhat_ky_quet_phong_kham.jsonl');
 export const runClinicCarePreview = (payload) => post('/api/clinic/care-preview', payload);
 export const runClinicCareOrderSeeds = (payload) => post('/api/clinic/care-order-seeds', payload);
 export const runClinicInputCare = (payload) => post('/api/clinic/input-care', payload);
