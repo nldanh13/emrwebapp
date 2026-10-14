@@ -14,6 +14,8 @@ const { readJsonSafe, writeJsonAtomic } = require('../utils/file');
 const { getRuntimePaths } = require('../services/session');
 const { appendActivity } = require('../services/activity_logger');
 const { CONFIG_DIR } = require('../constants');
+const CTCH_CATALOG = require('../../config/procedure_templates.ctch_neuro.suggestions.json');
+const CTCH_BY_CODE = new Map(CTCH_CATALOG.suggestions.map(item => [item.code, item]));
 
 const TEMPLATES_PATH = path.join(CONFIG_DIR, 'procedure_templates.json');
 const DEFAULT_PATH = path.join(CONFIG_DIR, 'procedure_templates.default.json');
@@ -55,6 +57,10 @@ function sanitizeTemplate(raw = {}) {
   const emrTemplate = line(raw.emr_template, 200);
   const report = block(raw.report, 8000);
   const method = line(raw.phuong_phap, 200);
+  const listed = catalogCode ? CTCH_BY_CODE.get(catalogCode) : null;
+  if (catalogCode && (!listed || fold(name) !== fold(listed.name) || kind !== listed.kind)) {
+    throw new Error('Mã hoặc tên DVKT CTCH không còn khớp danh mục gợi ý. Hãy tạo lại bản nháp đúng mã.');
+  }
   if (catalogCode && reviewed && (
     !name || !keywords.length || keywords.some(k => fold(k) !== fold(name)) ||
     !report || (kind === 'thu_thuat' && !emrTemplate) ||
@@ -88,12 +94,22 @@ function sanitizeTemplates(list) {
   if (!Array.isArray(list)) throw new Error('Dữ liệu mẫu không đúng dạng danh sách. Tải lại trang rồi sửa lại.');
   if (list.length > MAX_TEMPLATES) throw new Error(`Tối đa ${MAX_TEMPLATES} mẫu. Xoá bớt mẫu không dùng rồi lưu lại.`);
   const seen = new Set();
-  return list.map((raw) => {
+  const cleaned = list.map((raw) => {
     const tpl = sanitizeTemplate(raw && typeof raw === 'object' ? raw : {});
     while (seen.has(tpl.id)) tpl.id = `${tpl.id}-${crypto.randomBytes(2).toString('hex')}`;
     seen.add(tpl.id);
     return tpl;
   });
+  for (const tpl of cleaned) {
+    if (!(tpl.catalog_code && tpl.reviewed && tpl.enabled && tpl.auto)) continue;
+    const keys = new Set(tpl.keywords.map(fold));
+    const duplicate = cleaned.find(other => other.id !== tpl.id && other.kind === tpl.kind &&
+      other.enabled !== false && other.keywords.some(k => keys.has(fold(k))));
+    if (duplicate) {
+      throw new Error(`Mẫu "${tpl.name}" trùng từ khóa với "${duplicate.name}". Tắt hoặc sửa mẫu cũ trước khi bật tự nhập.`);
+    }
+  }
+  return cleaned;
 }
 
 function loadTemplates(file = TEMPLATES_PATH, defaultFile = DEFAULT_PATH) {
