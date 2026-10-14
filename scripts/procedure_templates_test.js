@@ -51,6 +51,41 @@ try {
   assert.strictEqual(again.templates.length, 1);
   assert.strictEqual(again.templates[0].name, 'Cắt chỉ');
   assert.ok(again.updated_at);
+  // Source catalog is NOT auto-installed or active. Every draft needs review.
+  const catalog = require('../config/procedure_templates.ctch_neuro.suggestions.json');
+  assert.strictEqual(catalog.suggestions.length, 40);
+  assert.strictEqual(catalog.suggestions.filter(t => t.priority === 'A').length, 16);
+  assert.strictEqual(new Set(catalog.suggestions.map(t => t.code)).size, 40);
+  const item = catalog.suggestions.find(t => t.code === '2.349');
+  const draft = {
+    id: 'ctch-2-349', kind: item.kind, name: item.name, keywords: [item.name],
+    catalog_code: item.code, reviewed: false,
+    performer: 'bac_si', report: '', emr_template: '',
+    auto: true, enabled: true,
+  };
+  const [disabled] = sanitizeTemplates([draft]);
+  assert.strictEqual(disabled.enabled, false);
+  assert.strictEqual(disabled.auto, false);
+  assert.strictEqual(disabled.reviewed, false);
+  assert.strictEqual(disabled.catalog_code, '2.349');
+  const stored = saveTemplates([draft], file);
+  assert.strictEqual(stored.templates[0].enabled, false);
+  assert.strictEqual(loadTemplates(file, defaults).templates[0].reviewed, false);
+  assert.throws(() => sanitizeTemplates([{ ...draft, reviewed: true }]), /chưa có đủ/);
+  assert.throws(() => sanitizeTemplates([{ ...draft, catalog_code: '2.9999' }]), /không còn khớp/);
+  assert.throws(() => sanitizeTemplates([{ ...draft, name: 'Tiêm khớp gối' }]), /không còn khớp/);
+  const approved = {
+    ...draft, reviewed: true, report: 'Nội dung do bệnh viện duyệt.',
+    emr_template: 'Mẫu EMR đã đối chiếu', auto: true, enabled: true,
+  };
+  assert.strictEqual(sanitizeTemplates([approved])[0].enabled, true);
+  assert.throws(() => sanitizeTemplates([
+    approved,
+    { id: 'legacy', kind: 'thu_thuat', name: 'Hút dịch khớp gối cũ',
+      keywords: ['Hút dịch khớp gối'], auto: true, enabled: true },
+  ]), /trùng từ khóa/);
+  // Existing hand-crafted templates retain prior behavior.
+  assert.strictEqual(sanitizeTemplates([{ id: 'legacy', kind: 'thu_thuat', name: 'Mẫu cũ' }])[0].enabled, true);
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
 }
