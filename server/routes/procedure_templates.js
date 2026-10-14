@@ -40,27 +40,47 @@ function keywordsOf(value) {
   return out.slice(0, 30);
 }
 
+function fold(value) {
+  return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
 function sanitizeTemplate(raw = {}) {
   const kind = KINDS.has(raw.kind) ? raw.kind : 'thu_thuat';
   const minutes = Number.parseInt(raw.minutes, 10);
+  const catalogCode = line(raw.catalog_code, 40);
+  const reviewed = raw.reviewed === true;
+  const keywords = keywordsOf(raw.keywords);
+  const name = line(raw.name, 160);
+  const emrTemplate = line(raw.emr_template, 200);
+  const report = block(raw.report, 8000);
+  const method = line(raw.phuong_phap, 200);
+  if (catalogCode && reviewed && (
+    !name || !keywords.length || keywords.some(k => fold(k) !== fold(name)) ||
+    !report || (kind === 'thu_thuat' && !emrTemplate) ||
+    (kind === 'phau_thuat' && !method)
+  )) {
+    throw new Error('Mẫu từ danh mục CTCH chưa có đủ tên DVKT chính xác, tường trình và phương pháp/mẫu EMR để duyệt.');
+  }
   return {
     id: String(raw.id || crypto.randomUUID()).trim().replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 80),
     kind,
-    name: line(raw.name, 160),
-    keywords: keywordsOf(raw.keywords),
+    name,
+    keywords,
     performer: PERFORMERS.has(raw.performer) ? raw.performer : (kind === 'phau_thuat' ? 'bac_si' : 'dieu_duong'),
     minutes: Number.isFinite(minutes) ? Math.min(Math.max(minutes, 1), 240) : (kind === 'phau_thuat' ? 15 : 10),
     anesthesia: line(raw.anesthesia, 120),
     position: line(raw.position, 120),
-    emr_template: line(raw.emr_template, 200),
-    phuong_phap: line(raw.phuong_phap, 200),
+    emr_template: emrTemplate,
+    phuong_phap: method,
     mo_ta: block(raw.mo_ta, 4000),
-    report: block(raw.report, 8000),
+    report,
     dan_do: block(raw.dan_do, 4000),
     applies_to: SCOPES.has(raw.applies_to) ? raw.applies_to : 'all',
-    auto: raw.auto !== false,
-    enabled: raw.enabled !== false,
+    auto: catalogCode && !reviewed ? false : raw.auto !== false,
+    enabled: catalogCode && !reviewed ? false : raw.enabled !== false,
     note: line(raw.note, 500),
+    ...(catalogCode ? { catalog_code: catalogCode, reviewed } : {}),
   };
 }
 
