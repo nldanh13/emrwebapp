@@ -51,17 +51,27 @@ def match_template(templates: List[Dict[str, Any]], kind: str, service_text: str
     best: Optional[Dict[str, Any]] = None
     best_len = 0
     fallback: Optional[Dict[str, Any]] = None
+    reserved_by_inactive_catalog = False
     for tpl in templates:
-        if tpl.get("enabled") is False or tpl.get("kind") != kind or not applies(tpl, has_bhyt):
+        if tpl.get("kind") != kind or not applies(tpl, has_bhyt):
             continue
         keys = [norm(k) for k in tpl.get("keywords") or [] if norm(k)]
+        # Imported catalog names are full EMR service names; they must never
+        # match a longer/different technique by substring (e.g. PRP variants).
+        is_catalog = bool(tpl.get("catalog_code"))
+        if is_catalog and text in keys and (tpl.get("enabled") is False or tpl.get("reviewed") is not True):
+            reserved_by_inactive_catalog = True
+        if tpl.get("enabled") is False or (is_catalog and tpl.get("reviewed") is not True):
+            continue
         if not keys:
             fallback = fallback or tpl
             continue
-        hit = max((len(k) for k in keys if k in text), default=0)
+        hit = max((len(k) for k in keys if (k == text if is_catalog else k in text)), default=0)
         if hit > best_len:
             best, best_len = tpl, hit
-    return best or fallback
+    # An unapproved catalog DVKT must not silently fall through to a generic
+    # surgery/procedure auto template, unless an existing explicit rule matched.
+    return best or (None if reserved_by_inactive_catalog else fallback)
 
 
 def minutes_of(template: Dict[str, Any], default: int) -> int:

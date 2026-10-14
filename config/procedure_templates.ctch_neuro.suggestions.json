@@ -1,0 +1,328 @@
+{
+  "version": 1,
+  "title": "Gợi ý DVKT CTCH – Thần kinh",
+  "source": "DMKT_MauThuThuat_CTCH_ThanKinh_UuTien_ThucTe.xlsx (đối chiếu TOAN-BO-DMKT_DAYDU.xlsx)",
+  "review_notice": "Chưa xác minh phạm vi bệnh viện phê duyệt hoặc DVKT tại EMR. Chỉ là bản nháp; không được tự nhập.",
+  "suggestions": [
+    {
+      "code": "10.1274",
+      "name": "Thay băng",
+      "kind": "thu_thuat",
+      "group": "Chăm sóc vết thương",
+      "priority": "A",
+      "note": "Không gộp thay băng phức tạp."
+    },
+    {
+      "code": "10.1275",
+      "name": "Cắt chỉ",
+      "kind": "thu_thuat",
+      "group": "Chăm sóc vết thương",
+      "priority": "A",
+      "note": "Phân biệt chăm sóc vết thương khác."
+    },
+    {
+      "code": "1.275",
+      "name": "Băng bó vết thương",
+      "kind": "thu_thuat",
+      "group": "Chăm sóc vết thương",
+      "priority": "B",
+      "note": "Chỉ sử dụng nếu đúng DVKT thực tế."
+    },
+    {
+      "code": "10.1032",
+      "name": "Nẹp bột các loại, không nắn",
+      "kind": "thu_thuat",
+      "group": "Bó bột / nẹp bột",
+      "priority": "A",
+      "note": "Không dùng thay cho nắn chỉnh, bó bột có nắn."
+    },
+    {
+      "code": "3.929",
+      "name": "Nẹp bột cẳng bàn chân",
+      "kind": "thu_thuat",
+      "group": "Bó bột / nẹp bột",
+      "priority": "B",
+      "note": "Đối chiếu kỹ thuật được phép triển khai."
+    },
+    {
+      "code": "3.930",
+      "name": "Nẹp bột đùi cẳng bàn chân",
+      "kind": "thu_thuat",
+      "group": "Bó bột / nẹp bột",
+      "priority": "B",
+      "note": "Đối chiếu kỹ thuật được phép triển khai."
+    },
+    {
+      "code": "3.931",
+      "name": "Nẹp bột cẳng bàn tay",
+      "kind": "thu_thuat",
+      "group": "Bó bột / nẹp bột",
+      "priority": "B",
+      "note": "Đối chiếu kỹ thuật được phép triển khai."
+    },
+    {
+      "code": "3.932",
+      "name": "Nẹp bột cánh cẳng bàn tay",
+      "kind": "thu_thuat",
+      "group": "Bó bột / nẹp bột",
+      "priority": "B",
+      "note": "Đối chiếu kỹ thuật được phép triển khai."
+    },
+    {
+      "code": "10.1008",
+      "name": "Nắn, bó bột gãy Pouteau - Colles",
+      "kind": "thu_thuat",
+      "group": "Bó bột / nẹp bột",
+      "priority": "B",
+      "note": "Khác nẹp bột không nắn."
+    },
+    {
+      "code": "10.1009",
+      "name": "Nắn, bó bột gãy xương bàn, ngón tay",
+      "kind": "thu_thuat",
+      "group": "Bó bột / nẹp bột",
+      "priority": "B",
+      "note": "Khác nẹp bột không nắn."
+    },
+    {
+      "code": "10.1028",
+      "name": "Nắn, bó bột gãy xương bàn chân",
+      "kind": "thu_thuat",
+      "group": "Bó bột / nẹp bột",
+      "priority": "B",
+      "note": "Chỉ khi phòng khám có đủ phạm vi thực hiện."
+    },
+    {
+      "code": "2.349",
+      "name": "Hút dịch khớp gối",
+      "kind": "thu_thuat",
+      "group": "Chọc hút khớp / ổ viêm",
+      "priority": "A",
+      "note": "Không gộp với tiêm khớp."
+    },
+    {
+      "code": "2.363",
+      "name": "Hút ổ viêm/áp xe phần mềm",
+      "kind": "thu_thuat",
+      "group": "Chọc hút khớp / ổ viêm",
+      "priority": "A",
+      "note": "Khác trích rạch/dẫn lưu."
+    },
+    {
+      "code": "2.364",
+      "name": "Hút ổ viêm/áp xe phần mềm dưới hướng dẫn của siêu âm",
+      "kind": "thu_thuat",
+      "group": "Chọc hút khớp / ổ viêm",
+      "priority": "B",
+      "note": "Phân biệt với hút không siêu âm."
+    },
+    {
+      "code": "3.3909",
+      "name": "Trích rạch áp xe nhỏ",
+      "kind": "thu_thuat",
+      "group": "Chọc hút khớp / ổ viêm",
+      "priority": "B",
+      "note": "Không thay cho hút ổ viêm."
+    },
+    {
+      "code": "3.3898",
+      "name": "Trích rạch áp xe lớn, dẫn lưu",
+      "kind": "thu_thuat",
+      "group": "Chọc hút khớp / ổ viêm",
+      "priority": "B",
+      "note": "Chỉ khi kỹ thuật có trong phạm vi được phép."
+    },
+    {
+      "code": "2.381",
+      "name": "Tiêm khớp gối",
+      "kind": "thu_thuat",
+      "group": "Tiêm khớp / gân",
+      "priority": "A",
+      "note": "Khác hút dịch gối và tiêm PRP."
+    },
+    {
+      "code": "2.401",
+      "name": "Tiêm gân gấp ngón tay",
+      "kind": "thu_thuat",
+      "group": "Tiêm khớp / gân",
+      "priority": "A",
+      "note": "Khác phẫu thuật điều trị ngón tay cò súng."
+    },
+    {
+      "code": "2.396",
+      "name": "Tiêm điểm bám gân mỏm trâm quay (mỏm trâm trụ)",
+      "kind": "thu_thuat",
+      "group": "Tiêm khớp / gân",
+      "priority": "B",
+      "note": "Đối chiếu đúng vị trí và tên DVKT."
+    },
+    {
+      "code": "2.397",
+      "name": "Tiêm điểm bám gân lồi cầu trong (lồi cầu ngoài) xương cánh tay",
+      "kind": "thu_thuat",
+      "group": "Tiêm khớp / gân",
+      "priority": "B",
+      "note": "Đối chiếu đúng vị trí và tên DVKT."
+    },
+    {
+      "code": "2.398",
+      "name": "Tiêm điểm bám gân quanh khớp gối",
+      "kind": "thu_thuat",
+      "group": "Tiêm khớp / gân",
+      "priority": "B",
+      "note": "Đối chiếu đúng vị trí và tên DVKT."
+    },
+    {
+      "code": "2.399",
+      "name": "Tiêm hội chứng DeQuervain",
+      "kind": "thu_thuat",
+      "group": "Tiêm khớp / gân",
+      "priority": "B",
+      "note": "Khác phẫu thuật De Quervain."
+    },
+    {
+      "code": "2.402",
+      "name": "Tiêm gân nhị đầu khớp vai",
+      "kind": "thu_thuat",
+      "group": "Tiêm khớp / gân",
+      "priority": "B",
+      "note": "Đối chiếu tên DVKT."
+    },
+    {
+      "code": "2.403",
+      "name": "Tiêm gân trên gai (dưới gai, gân bao xoay khớp vai)",
+      "kind": "thu_thuat",
+      "group": "Tiêm khớp / gân",
+      "priority": "B",
+      "note": "Đối chiếu tên DVKT."
+    },
+    {
+      "code": "2.406",
+      "name": "Tiêm gân gót",
+      "kind": "thu_thuat",
+      "group": "Tiêm khớp / gân",
+      "priority": "B",
+      "note": "Đối chiếu tên DVKT."
+    },
+    {
+      "code": "2.407",
+      "name": "Tiêm cân gan chân",
+      "kind": "thu_thuat",
+      "group": "Tiêm khớp / gân",
+      "priority": "B",
+      "note": "Đối chiếu tên DVKT."
+    },
+    {
+      "code": "5.68",
+      "name": "Phẫu thuật điều trị móng chọc thịt",
+      "kind": "phau_thuat",
+      "group": "Móng quặp / móng chọc thịt",
+      "priority": "A",
+      "note": "Không đồng nhất với móng cuộn/quặp."
+    },
+    {
+      "code": "5.69",
+      "name": "Phẫu thuật điều trị móng cuộn, móng quặp",
+      "kind": "phau_thuat",
+      "group": "Móng quặp / móng chọc thịt",
+      "priority": "A",
+      "note": "Mã riêng cho móng cuộn/quặp."
+    },
+    {
+      "code": "3.3030",
+      "name": "Phẫu thuật móng: bóc móng, móng chọc thịt, móng cuộn...",
+      "kind": "phau_thuat",
+      "group": "Móng quặp / móng chọc thịt",
+      "priority": "B",
+      "note": "Có nguy cơ trùng với mã 5.68 và 5.69."
+    },
+    {
+      "code": "3.3045",
+      "name": "Điều trị mắt cá chân bằng đốt điện, plasma, Laser, nitơ lỏng",
+      "kind": "thu_thuat",
+      "group": "Mắt cá / chai chân",
+      "priority": "A",
+      "note": "Mắt cá/chai da, không phải phẫu thuật gãy mắt cá cổ chân."
+    },
+    {
+      "code": "3.3046",
+      "name": "Điều trị chai chân bằng đốt điện, plasma, Laser, nitơ lỏng",
+      "kind": "thu_thuat",
+      "group": "Mắt cá / chai chân",
+      "priority": "A",
+      "note": "Gọt thủ công có thể là DVKT khác."
+    },
+    {
+      "code": "7.233",
+      "name": "Gọt chai chân (gọt nốt chai) trên người bệnh đái tháo đường",
+      "kind": "thu_thuat",
+      "group": "Mắt cá / chai chân",
+      "priority": "B",
+      "note": "Không dùng làm mã gọt chai chân chung."
+    },
+    {
+      "code": "3.3706",
+      "name": "Phẫu thuật điều trị ngón tay cò súng",
+      "kind": "phau_thuat",
+      "group": "Ngón tay cò súng",
+      "priority": "A",
+      "note": "Khác tiêm gân gấp."
+    },
+    {
+      "code": "10.843",
+      "name": "Phẫu thuật điều trị bệnh DE QUER VAIN và ngón tay cò súng",
+      "kind": "phau_thuat",
+      "group": "Ngón tay cò súng",
+      "priority": "B",
+      "note": "Đối chiếu với kỹ thuật 3.3706."
+    },
+    {
+      "code": "3.3827",
+      "name": "Khâu vết thương phần mềm dài dưới 10 cm",
+      "kind": "thu_thuat",
+      "group": "Khâu vết thương",
+      "priority": "A",
+      "note": "Chỉ dùng đúng chiều dài/tên DVKT."
+    },
+    {
+      "code": "3.3825",
+      "name": "Khâu vết thương phần mềm dài trên 10 cm",
+      "kind": "thu_thuat",
+      "group": "Khâu vết thương",
+      "priority": "A",
+      "note": "Chỉ dùng đúng chiều dài/tên DVKT."
+    },
+    {
+      "code": "10.1276",
+      "name": "Khâu vết thương phần mềm dài trên 10 cm",
+      "kind": "thu_thuat",
+      "group": "Khâu vết thương",
+      "priority": "B",
+      "note": "Tên trùng mã 3.3825; đối chiếu mã EMR."
+    },
+    {
+      "code": "2.511",
+      "name": "Điều trị thoái hóa khớp bằng huyết tương giàu tiểu cầu",
+      "kind": "thu_thuat",
+      "group": "Tiêm PRP",
+      "priority": "A",
+      "note": "Không dùng làm mẫu chung cho mọi PRP."
+    },
+    {
+      "code": "2.513",
+      "name": "Tiêm huyết tương giàu tiểu cầu (PRP) tự thân điều trị một số bệnh lý phần mềm quanh khớp",
+      "kind": "thu_thuat",
+      "group": "Tiêm PRP",
+      "priority": "A",
+      "note": "Phân biệt điều trị quanh khớp với thoái hóa khớp."
+    },
+    {
+      "code": "22.478",
+      "name": "Điều chế huyết tương giàu tiểu cầu",
+      "kind": "thu_thuat",
+      "group": "Tiêm PRP",
+      "priority": "B",
+      "note": "Điều chế PRP là kỹ thuật khác tiêm PRP."
+    }
+  ]
+}

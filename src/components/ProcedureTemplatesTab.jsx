@@ -4,6 +4,7 @@
 // Sửa xong tự lưu (~0,8 giây); rời tab khi còn thay đổi thì lưu ngay.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IconCopy, IconPlus, IconRefresh, IconTrash } from '@tabler/icons-react';
+import ctchCatalog from '../../config/procedure_templates.ctch_neuro.suggestions.json';
 import { C, FS, R } from '../tokens.js';
 import { Btn, Segmented } from './shared.jsx';
 import { SkeletonTable } from './Skeleton.jsx';
@@ -13,6 +14,7 @@ import useIsMobile from '../hooks/useIsMobile.js';
 import {
   KIND_OPTIONS, PERFORMER_OPTIONS, SCOPE_OPTIONS,
   cleanKeywords, defaultTemplates, keywordConflicts, newTemplate, summary, templateFromMissing, uncoveredMissing,
+  foldText, catalogAlreadyAdded, catalogDraft, catalogReviewIssues,
 } from './procedureTemplates/templateModel.js';
 
 const TAB_ID = 'procedure-templates';
@@ -107,9 +109,77 @@ function MissingList({ items, onCreate }) {
   );
 }
 
-function TemplateEditor({ template, templates, onChange, onDuplicate, onDelete }) {
+function CatalogSuggestions({ templates, onAdd, onAddPriority }) {
+  const [query, setQuery] = useState('');
+  const [level, setLevel] = useState('A');
+  const rows = useMemo(() => ctchCatalog.suggestions.filter(t =>
+    (level === 'all' || t.priority === level) &&
+    (!query.trim() || foldText(`${t.name} ${t.code} ${t.group}`).includes(foldText(query)))
+  ), [query, level]);
+  const added = ctchCatalog.suggestions.filter(t => catalogAlreadyAdded(templates, t)).length;
+  return (
+    <section aria-label="Danh mục gợi ý CTCH – Thần kinh" style={{
+      border: `1px solid ${C.blueBorder}`, borderRadius: R.md, background: C.surface, padding: 12,
+      display: 'flex', flexDirection: 'column', gap: 10,
+    }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontSize: FS.lg, fontWeight: 700, color: C.text }}>Kỹ thuật gợi ý CTCH – Thần kinh</div>
+          <div style={{ fontSize: FS.sm, color: C.text3 }}>
+            {ctchCatalog.suggestions.length} kỹ thuật · {added} đã có mẫu · 16 ưu tiên theo công việc thực tế
+          </div>
+        </div>
+        <Btn icon={IconPlus} onClick={onAddPriority} disabled={ctchCatalog.suggestions.filter(t => t.priority === 'A' && !catalogAlreadyAdded(templates, t)).length === 0}>
+          Thêm các mẫu ưu tiên chưa có
+        </Btn>
+      </div>
+      <Note tone="warn">
+        Chỉ là danh mục để đối chiếu, chưa xác nhận kỹ thuật được bệnh viện phê duyệt.
+        Thêm vào chỉ tạo <b>bản nháp đang tắt</b>; cần duyệt mã DVKT, người thực hiện, mẫu EMR và nội dung tường trình trước khi bật tự nhập.
+        Các kỹ thuật trùng hoặc gần giống nhau phải chọn đúng mã trên EMR.
+      </Note>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+        <input style={{ ...fieldStyle, flex: '1 1 230px', width: 'auto' }} aria-label="Tìm kỹ thuật CTCH"
+          value={query} onChange={e => setQuery(e.target.value)} placeholder="Tìm tên hoặc mã DVKT, nhóm..." />
+        <select aria-label="Mức gợi ý" style={{ ...fieldStyle, flex: '0 0 210px', width: 'auto' }}
+          value={level} onChange={e => setLevel(e.target.value)}>
+          <option value="A">Ưu tiên theo công việc (16)</option>
+          <option value="B">Kỹ thuật cần đối chiếu (24)</option>
+          <option value="all">Tất cả (40)</option>
+        </select>
+      </div>
+      <div style={{ maxHeight: 325, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {rows.map(item => {
+          const isAdded = catalogAlreadyAdded(templates, item);
+          return (
+            <div key={item.code} style={{
+              display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+              border: `1px solid ${C.border2}`, borderRadius: R.sm, padding: '8px 10px',
+            }}>
+              <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                <div style={{ fontSize: FS.md, color: C.text, fontWeight: 600 }}>{item.name}</div>
+                <div style={{ fontSize: FS.xs, color: C.text3 }}>
+                  Mã {item.code} · {item.group} · {item.kind === 'phau_thuat' ? 'Phẫu thuật' : 'Thủ thuật'}
+                </div>
+                <div style={{ fontSize: FS.xs, color: C.text2 }}>{item.note}</div>
+              </div>
+              <Btn icon={isAdded ? undefined : IconPlus} disabled={isAdded} onClick={() => onAdd(item)}>
+                {isAdded ? 'Đã có mẫu' : 'Thêm bản nháp'}
+              </Btn>
+            </div>
+          );
+        })}
+        {!rows.length ? <div style={{ padding: 8, fontSize: FS.sm, color: C.text3 }}>Không tìm thấy kỹ thuật trong danh mục gợi ý.</div> : null}
+      </div>
+    </section>
+  );
+}
+
+function TemplateEditor({ template, templates, onChange, onDuplicate, onDelete, onReview }) {
   const set = (key) => (e) => onChange({ [key]: e.target.value });
   const pt = template.kind === 'phau_thuat';
+  const requiresReview = !!template.catalog_code && template.reviewed !== true;
+  const reviewIssues = catalogReviewIssues(template);
   const conflicts = keywordConflicts(templates, template);
   const isDefault = !cleanKeywords(template).length;
   const defaults = defaultTemplates(templates, template.kind);
@@ -120,10 +190,11 @@ function TemplateEditor({ template, templates, onChange, onDuplicate, onDelete }
     <section aria-label="Sửa mẫu" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={grid}>
         <Field label="Tên mẫu">
-          <input style={fieldStyle} value={template.name} onChange={set('name')} placeholder={pt ? 'vd. Cắt u bã đậu' : 'vd. Thay băng vết thương'} />
+          <input style={fieldStyle} value={template.name} readOnly={!!template.catalog_code} onChange={set('name')} placeholder={pt ? 'vd. Cắt u bã đậu' : 'vd. Thay băng vết thương'} />
         </Field>
         <Field label="Loại">
-          <Segmented label="Loại" value={template.kind} options={KIND_OPTIONS} onChange={v => onChange({ kind: v })} />
+          {template.catalog_code ? <span style={{ fontSize: FS.md }}>{pt ? 'Phẫu thuật' : 'Thủ thuật'} (theo DMKT)</span> :
+            <Segmented label="Loại" value={template.kind} options={KIND_OPTIONS} onChange={v => onChange({ kind: v })} />}
         </Field>
       </div>
 
@@ -178,11 +249,11 @@ function TemplateEditor({ template, templates, onChange, onDuplicate, onDelete }
         <Field label="Cách nhập">
           <span style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', minHeight: 32, fontSize: FS.md, color: C.text }}>
             <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-              <input type="checkbox" checked={template.auto !== false} onChange={e => onChange({ auto: e.target.checked })} aria-label="Tự nhập" />
+              <input type="checkbox" checked={template.auto !== false} disabled={requiresReview} onChange={e => onChange({ auto: e.target.checked })} aria-label="Tự nhập" />
               Tự nhập
             </span>
             <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-              <input type="checkbox" checked={template.enabled !== false} onChange={e => onChange({ enabled: e.target.checked })} aria-label="Đang dùng" />
+              <input type="checkbox" checked={template.enabled !== false} disabled={requiresReview} onChange={e => onChange({ enabled: e.target.checked })} aria-label="Đang dùng" />
               Đang dùng
             </span>
           </span>
@@ -219,6 +290,20 @@ function TemplateEditor({ template, templates, onChange, onDuplicate, onDelete }
       <Field label="Ghi chú">
         <input style={fieldStyle} value={template.note} onChange={set('note')} />
       </Field>
+      {template.catalog_code ? (
+        <Note tone={requiresReview ? 'warn' : 'info'}>
+          Mã DMKT tham khảo: <b>{template.catalog_code}</b>.
+          {requiresReview ? (
+            <>
+              {' '}Mẫu đang tắt và chưa được duyệt. Kiểm tra kỹ thuật được phép triển khai, tên DVKT trên EMR, người thực hiện, nội dung tường trình.
+              {reviewIssues.length ? <div style={{ marginTop: 4 }}>Cần hoàn thành: {reviewIssues.join(' ')}</div> : null}
+              <div style={{ marginTop: 8 }}>
+                <Btn disabled={reviewIssues.length > 0} onClick={onReview}>Xác nhận đã duyệt mẫu</Btn>
+              </div>
+            </>
+          ) : ' Đã duyệt cấu hình; chỉ hoạt động khi bạn bật “Đang dùng” và “Tự nhập”. Sửa nội dung chuyên môn sẽ tự tắt mẫu và yêu cầu duyệt lại.'}
+        </Note>
+      ) : null}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <Btn icon={IconCopy} onClick={onDuplicate}>Nhân bản mẫu</Btn>
@@ -237,6 +322,7 @@ export default function ProcedureTemplatesTab({ toast }) {
   const [save, setSave] = useState({ state: '', at: '', message: '' });
   const [editVersion, setEditVersion] = useState(0);
   const [missing, setMissing] = useState([]);
+  const [catalogVisible, setCatalogVisible] = useState(true);
   const templatesRef = useRef(null);
   const pendingRef = useRef(false);
 
@@ -314,7 +400,14 @@ export default function ProcedureTemplatesTab({ toast }) {
 
   const update = (patch) => {
     if (!selected) return;
-    commit(templatesRef.current.map(t => (t.id === selected.id ? { ...t, ...patch } : t)));
+    const protectedFields = [
+      'keywords', 'report', 'emr_template', 'phuong_phap', 'minutes',
+      'performer', 'anesthesia', 'position', 'mo_ta', 'dan_do', 'applies_to',
+    ];
+    const needsReapproval = selected.catalog_code && selected.reviewed === true &&
+      protectedFields.some(key => Object.hasOwn(patch, key) && JSON.stringify(patch[key]) !== JSON.stringify(selected[key]));
+    const nextPatch = needsReapproval ? { ...patch, reviewed: false, auto: false, enabled: false } : patch;
+    commit(templatesRef.current.map(t => (t.id === selected.id ? { ...t, ...nextPatch } : t)));
     if (patch.kind && patch.kind !== kind) setKind(patch.kind);
   };
   const createFromMissing = (m) => {
@@ -323,6 +416,51 @@ export default function ProcedureTemplatesTab({ toast }) {
     setKind(tpl.kind);
     setSelectedId(tpl.id);
   };
+  const addSuggested = (suggestion) => {
+    if (catalogAlreadyAdded(templatesRef.current || [], suggestion)) {
+      toast?.('Kỹ thuật này đã có mẫu. Hãy chọn mẫu hiện có để tránh trùng từ khóa.', 'info');
+      return;
+    }
+    if ((templatesRef.current || []).length >= 300) {
+      toast?.('Đã đạt giới hạn 300 mẫu. Hãy rà soát lại mẫu hiện có trước khi thêm.', 'error');
+      return;
+    }
+    const tpl = catalogDraft(suggestion);
+    commit([...(templatesRef.current || []), tpl]);
+    setKind(tpl.kind);
+    setSelectedId(tpl.id);
+  };
+  const addPriority = () => {
+    const existing = templatesRef.current || [];
+    const additions = ctchCatalog.suggestions.filter(item =>
+      item.priority === 'A' && !catalogAlreadyAdded(existing, item)
+    ).map(catalogDraft);
+    if (!additions.length) return;
+    if (existing.length + additions.length > 300) {
+      toast?.('Thêm các mẫu ưu tiên sẽ vượt giới hạn 300 mẫu.', 'error');
+      return;
+    }
+    if (!window.confirm(`Thêm ${additions.length} mẫu ưu tiên dạng BẢN NHÁP ĐANG TẮT? Các mẫu đang sử dụng sẽ được giữ nguyên.`)) return;
+    commit([...existing, ...additions]);
+    setKind('thu_thuat');
+    setSelectedId(additions[0].id);
+  };
+  const reviewSelected = () => {
+    if (!selected?.catalog_code || selected.reviewed === true) return;
+    const issues = catalogReviewIssues(selected);
+    if (issues.length) {
+      toast?.(issues.join(' '), 'error');
+      return;
+    }
+    const conflicts = keywordConflicts(templatesRef.current || [], selected);
+    if (conflicts.length) {
+      toast?.(`Từ khóa trùng mẫu đang dùng: ${conflicts.map(c => c.other).join(', ')}. Hãy tắt mẫu cũ trước khi duyệt.`, 'error');
+      return;
+    }
+    if (!window.confirm(`Xác nhận kỹ thuật "${selected.name}" (mã ${selected.catalog_code}) đã có trong danh mục bệnh viện được phép thực hiện, đúng DVKT trên EMR, đã kiểm tra người thực hiện và tường trình? Mẫu vẫn ở trạng thái TẮT sau khi duyệt.`)) return;
+    commit(templatesRef.current.map(t => t.id === selected.id ? { ...t, reviewed: true, auto: false, enabled: false } : t));
+    toast?.('Đã duyệt cấu hình mẫu. Bạn có thể bật Đang dùng và Tự nhập khi sẵn sàng.', 'success');
+  };
   const add = () => {
     const tpl = newTemplate(kind);
     commit([...(templatesRef.current || []), tpl]);
@@ -330,7 +468,11 @@ export default function ProcedureTemplatesTab({ toast }) {
   };
   const duplicate = () => {
     if (!selected) return;
-    const copy = { ...selected, id: `tpl-${Date.now().toString(36)}`, name: `${selected.name || 'Mẫu'} (bản sao)` };
+    const { catalog_code: catalogCode, reviewed: ignoredReview, ...safeCopy } = selected;
+    const copy = {
+      ...safeCopy, id: `tpl-${Date.now().toString(36)}`, name: `${selected.name || 'Mẫu'} (bản sao)`,
+      ...(catalogCode ? { auto: false, enabled: false } : {}),
+    };
     commit([...templatesRef.current, copy]);
     setSelectedId(copy.id);
   };
@@ -366,6 +508,12 @@ export default function ProcedureTemplatesTab({ toast }) {
         </span>
         {save.state === 'error' ? <Btn icon={IconRefresh} onClick={saveNow}>Lưu lại</Btn> : null}
       </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Btn onClick={() => setCatalogVisible(v => !v)}>
+          {catalogVisible ? 'Ẩn danh mục gợi ý CTCH – Thần kinh' : 'Hiện danh mục gợi ý CTCH – Thần kinh'}
+        </Btn>
+      </div>
+      {catalogVisible ? <CatalogSuggestions templates={templates} onAdd={addSuggested} onAddPriority={addPriority} /> : null}
       <MissingList items={uncoveredMissing(missing, templates)} onCreate={createFromMissing} />
       <div style={{ fontSize: FS.sm, color: C.text3 }}>
         Phòng khám chọn mẫu theo tên DVKT lúc nhập {kind === 'phau_thuat' ? 'kết thúc mổ' : 'thủ thuật'}. DVKT không khớp mẫu nào thì bỏ qua (nhập các thủ thuật khác) và hiện ở khung "DVKT chưa có mẫu" phía trên.
@@ -376,7 +524,7 @@ export default function ProcedureTemplatesTab({ toast }) {
         </div>
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: R.md, padding: 16 }}>
           {selected ? (
-            <TemplateEditor template={selected} templates={templates} onChange={update} onDuplicate={duplicate} onDelete={remove} />
+            <TemplateEditor template={selected} templates={templates} onChange={update} onDuplicate={duplicate} onDelete={remove} onReview={reviewSelected} />
           ) : (
             <div style={{ fontSize: FS.sm, color: C.text3 }}>Chọn một mẫu bên trái hoặc bấm "Thêm mẫu".</div>
           )}

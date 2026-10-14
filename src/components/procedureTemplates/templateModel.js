@@ -71,3 +71,52 @@ export function uncoveredMissing(missing = [], templates = []) {
 export function templateFromMissing(missing, id) {
   return { ...newTemplate(missing.kind, id), name: missing.name, keywords: [missing.name] };
 }
+
+
+// Suggested CTCH – Neurology catalog never modifies active templates by itself.
+// Catalog match is exact on the normalized complete EMR DVKT name, not substrings.
+export function catalogAlreadyAdded(templates, suggestion) {
+  return (templates || []).some(t => t.catalog_code === suggestion.code ||
+    (t.kind === suggestion.kind && (
+      foldText(t.name) === foldText(suggestion.name) ||
+      cleanKeywords(t).some(k => foldText(k) === foldText(suggestion.name))
+    )));
+}
+
+export function catalogDraft(suggestion) {
+  const kind = suggestion.kind === 'phau_thuat' ? 'phau_thuat' : 'thu_thuat';
+  return {
+    ...newTemplate(kind, `ctch-${String(suggestion.code).replace(/[^a-zA-Z0-9]+/g, '-')}`),
+    name: suggestion.name,
+    keywords: [suggestion.name],
+    performer: 'bac_si', // Chờ xác nhận BS/điều dưỡng phụ trách.
+    anesthesia: '',
+    position: '',
+    minutes: kind === 'phau_thuat' ? 15 : 10,
+    emr_template: '',
+    phuong_phap: '',
+    report: '',
+    auto: false,
+    enabled: false,
+    catalog_code: String(suggestion.code),
+    reviewed: false,
+    note: `[Danh mục CTCH – Thần kinh · mã ${suggestion.code}] ${suggestion.note || 'Chờ đối chiếu DVKT tại EMR và phê duyệt kỹ thuật.'}`,
+  };
+}
+
+export function catalogReviewIssues(template) {
+  if (!template?.catalog_code) return [];
+  const problems = [];
+  if (!cleanKeywords(template).length ||
+      cleanKeywords(template).some(k => foldText(k) !== foldText(template.name))) {
+    problems.push('Từ khóa phải là tên DVKT đầy đủ, không dùng từ khóa bao trùm.');
+  }
+  if (!String(template.report || '').trim()) problems.push('Chưa có nội dung tường trình đã duyệt.');
+  if (template.kind === 'thu_thuat' && !String(template.emr_template || '').trim()) {
+    problems.push('Chưa chọn mẫu tường trình tương ứng trên EMR.');
+  }
+  if (template.kind === 'phau_thuat' && !String(template.phuong_phap || '').trim()) {
+    problems.push('Chưa xác nhận phương pháp phẫu thuật.');
+  }
+  return problems;
+}

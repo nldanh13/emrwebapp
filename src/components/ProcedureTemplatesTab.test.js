@@ -85,6 +85,58 @@ describe('Mẫu thủ thuật – PT', () => {
     expect(saved[2]).toMatchObject({ kind: 'thu_thuat', name: 'Khâu vết thương phần mềm', keywords: ['Khâu vết thương phần mềm'] });
   });
 
+  it('gợi ý 40 kỹ thuật, thêm từng mẫu dưới dạng bản nháp không tự nhập', async () => {
+    await open();
+    expect(host.textContent).toContain('40 kỹ thuật');
+    expect(host.textContent).toContain('Hút dịch khớp gối');
+    const firstAdd = [...host.querySelectorAll('button')].find(b => b.textContent === 'Thêm bản nháp');
+    await act(async () => { firstAdd.click(); });
+    await act(async () => { vi.advanceTimersByTime(900); });
+    await flush();
+    const saved = api.saveProcedureTemplates.mock.calls.at(-1)[0];
+    const draft = saved.find(t => t.catalog_code);
+    expect(draft).toMatchObject({ name: 'Cắt chỉ', catalog_code: '10.1275',
+      reviewed: false, enabled: false, auto: false });
+    expect(host.textContent).toContain('Mẫu đang tắt và chưa được duyệt');
+    const autoToggle = host.querySelector('input[aria-label="Tự nhập"]');
+    expect(autoToggle.disabled).toBe(true);
+  });
+
+  it('duyệt mẫu phải có tường trình và mẫu EMR, sửa lại sau duyệt thì tự tắt', async () => {
+    await open();
+    await act(async () => {
+      [...host.querySelectorAll('button')].find(b => b.textContent === 'Thêm bản nháp').click();
+    });
+    const review = [...host.querySelectorAll('button')].find(b => b.textContent.includes('Xác nhận đã duyệt mẫu'));
+    expect(review.disabled).toBe(true);
+    const report = [...host.querySelectorAll('label')].find(l => l.textContent.startsWith('Nội dung tường trình')).querySelector('textarea');
+    const emr = [...host.querySelectorAll('label')].find(l => l.textContent.startsWith('Mẫu tường trình EMR')).querySelector('input');
+    await act(async () => {
+      typeInto(report, 'Nội dung đã được phê duyệt');
+      typeInto(emr, 'Mẫu CTCH trên EMR');
+    });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    try {
+      const button = [...host.querySelectorAll('button')].find(b => b.textContent.includes('Xác nhận đã duyệt mẫu'));
+      expect(button.disabled).toBe(false);
+      await act(async () => { button.click(); });
+      await act(async () => { vi.advanceTimersByTime(900); });
+      await flush();
+      const approved = api.saveProcedureTemplates.mock.calls.at(-1)[0].find(t => t.catalog_code);
+      expect(approved).toMatchObject({ reviewed: true, enabled: false, auto: false });
+      await act(async () => {
+        typeInto(report, 'Đã sửa nội dung sau khi duyệt');
+      });
+      await act(async () => { vi.advanceTimersByTime(900); });
+      await flush();
+      const revised = api.saveProcedureTemplates.mock.calls.at(-1)[0].find(t => t.catalog_code);
+      expect(revised).toMatchObject({ reviewed: false, enabled: false, auto: false });
+      expect(confirm).toHaveBeenCalled();
+    } finally {
+      confirm.mockRestore();
+    }
+  });
+
   it('báo từ khoá trùng giữa hai mẫu cùng loại (không phân biệt dấu)', () => {
     const other = { ...TEMPLATES[0], id: 'x', name: 'Thay băng lớn', keywords: ['THAY BANG'] };
     expect(keywordConflicts([TEMPLATES[0], other], TEMPLATES[0])).toEqual([{ keyword: 'thay băng', other: 'Thay băng lớn' }]);
