@@ -190,10 +190,11 @@ function TemplateEditor({ template, templates, onChange, onDuplicate, onDelete, 
     <section aria-label="Sửa mẫu" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={grid}>
         <Field label="Tên mẫu">
-          <input style={fieldStyle} value={template.name} onChange={set('name')} placeholder={pt ? 'vd. Cắt u bã đậu' : 'vd. Thay băng vết thương'} />
+          <input style={fieldStyle} value={template.name} readOnly={!!template.catalog_code} onChange={set('name')} placeholder={pt ? 'vd. Cắt u bã đậu' : 'vd. Thay băng vết thương'} />
         </Field>
         <Field label="Loại">
-          <Segmented label="Loại" value={template.kind} options={KIND_OPTIONS} onChange={v => onChange({ kind: v })} />
+          {template.catalog_code ? <span style={{ fontSize: FS.md }}>{pt ? 'Phẫu thuật' : 'Thủ thuật'} (theo DMKT)</span> :
+            <Segmented label="Loại" value={template.kind} options={KIND_OPTIONS} onChange={v => onChange({ kind: v })} />}
         </Field>
       </div>
 
@@ -300,7 +301,7 @@ function TemplateEditor({ template, templates, onChange, onDuplicate, onDelete, 
                 <Btn disabled={reviewIssues.length > 0} onClick={onReview}>Xác nhận đã duyệt mẫu</Btn>
               </div>
             </>
-          ) : ' Đã duyệt cấu hình; chỉ hoạt động khi bạn bật “Đang dùng” và “Tự nhập”.'}
+          ) : ' Đã duyệt cấu hình; chỉ hoạt động khi bạn bật “Đang dùng” và “Tự nhập”. Sửa nội dung chuyên môn sẽ tự tắt mẫu và yêu cầu duyệt lại.'}
         </Note>
       ) : null}
 
@@ -399,7 +400,14 @@ export default function ProcedureTemplatesTab({ toast }) {
 
   const update = (patch) => {
     if (!selected) return;
-    commit(templatesRef.current.map(t => (t.id === selected.id ? { ...t, ...patch } : t)));
+    const protectedFields = [
+      'keywords', 'report', 'emr_template', 'phuong_phap', 'minutes',
+      'performer', 'anesthesia', 'position', 'mo_ta', 'dan_do', 'applies_to',
+    ];
+    const needsReapproval = selected.catalog_code && selected.reviewed === true &&
+      protectedFields.some(key => Object.hasOwn(patch, key) && JSON.stringify(patch[key]) !== JSON.stringify(selected[key]));
+    const nextPatch = needsReapproval ? { ...patch, reviewed: false, auto: false, enabled: false } : patch;
+    commit(templatesRef.current.map(t => (t.id === selected.id ? { ...t, ...nextPatch } : t)));
     if (patch.kind && patch.kind !== kind) setKind(patch.kind);
   };
   const createFromMissing = (m) => {
@@ -460,7 +468,11 @@ export default function ProcedureTemplatesTab({ toast }) {
   };
   const duplicate = () => {
     if (!selected) return;
-    const copy = { ...selected, id: `tpl-${Date.now().toString(36)}`, name: `${selected.name || 'Mẫu'} (bản sao)` };
+    const { catalog_code: catalogCode, reviewed: ignoredReview, ...safeCopy } = selected;
+    const copy = {
+      ...safeCopy, id: `tpl-${Date.now().toString(36)}`, name: `${selected.name || 'Mẫu'} (bản sao)`,
+      ...(catalogCode ? { auto: false, enabled: false } : {}),
+    };
     commit([...templatesRef.current, copy]);
     setSelectedId(copy.id);
   };
