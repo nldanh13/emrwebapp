@@ -24,7 +24,11 @@ def test_medication_processing_matches_golden():
     corrected = current[corrected_case]['thuoc']
     assert corrected['dich_truyen'] == [], 'TMC không được tự biến thành phiếu truyền'
     injections = corrected['thuoc_tiem']
-    assert len(injections) == len(golden[corrected_case]['thuoc']['dich_truyen'])
+    # TMC giữ một y lệnh có ba giờ; chuyển thành ba phiếu truyền từng giờ
+    # chính là hồi quy cần loại bỏ, không phải điều kiện đúng của thuốc tiêm.
+    assert len(injections) == 1
+    assert all(hour in str(injections[0].get('duong_dung_goc') or '')
+               for hour in ('8 giờ', '16 giờ', '23 giờ')), 'Không được mất lịch giờ TMC'
     assert all('tĩnh mạch chậm' in str(d.get('duong_dung_goc') or '').lower()
                for d in injections), 'Bắt buộc giữ nguyên đường tiêm TMC'
     assert all(not d.get('dung_moi') and not d.get('tui_dich_truyen_ml')
