@@ -29,7 +29,7 @@ export default function HospitalDrugReferencePanel({ medications, onSetup, onEdi
         <div>
           Danh mục này <b>chỉ để tra cứu</b>, không được tự dùng để kê thuốc hoặc tạo phiếu tiêm/truyền.
           Tên, hàm lượng, đường dùng ghi trong danh sách nguồn phải đối chiếu tại bệnh viện.
-          <b> Tồn kho và đơn giá là số liệu tại thời điểm sao chép, không phải số liệu hiện tại.</b>
+          <b> Số liệu tồn kho/đơn giá không được lưu vào Web App vì thay đổi liên tục và không cần cho cấu hình thuốc.</b>
         </div>
         <div>
           Bấm <b>Tạo cấu hình</b> chỉ mở biểu mẫu để bạn kiểm tra rồi tự lưu; không tự suy ra đường TMC/TTM,
