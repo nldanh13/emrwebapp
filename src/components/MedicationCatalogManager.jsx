@@ -619,7 +619,7 @@ export default function MedicationCatalogManager() {
   // Chỉ tải nguồn hoặc công cụ đang xem, không chạy các bước phân tích
   // khi người dùng chỉ mở danh mục thuốc; không phát sinh yêu cầu EMR.
   useEffect(() => {
-    if (tab !== 'drugs' && !(tab === 'tools' && toolTab === 'check')) return;
+    if (loading || (tab !== 'drugs' && !(tab === 'tools' && toolTab === 'check'))) return;
     let valid = true;
     api.checkMedicationDilution({ include_catalog: true })
       .then(info => {
@@ -628,7 +628,7 @@ export default function MedicationCatalogManager() {
         if (valid) setDilutionInfo({ catalog: {}, builtin: [], failed: true });
       });
     return () => { valid = false; };
-  }, [tab, toolTab, items]);
+  }, [tab, toolTab, items, loading]);
 
   useEffect(() => {
     if (tab !== 'sources') return;
