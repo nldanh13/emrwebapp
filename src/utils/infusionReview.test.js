@@ -30,5 +30,7 @@ describe('infusion review safeguards', () => {
     expect(groups.unresolved).toHaveLength(1);
     expect(groups.scheduled).toHaveLength(1);
     expect(groups.unresolved[0].review.needsReview).toBe(true);
+    const missingRate = infusionReview({ missing_infusion_rate: true, the_tich: 100 });
+    expect(missingRate.concerns.join(' ')).toMatch(/tốc độ/);
   });
 });
