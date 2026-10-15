@@ -30,4 +30,22 @@ assert.equal(selected[0].thuoc.dich_truyen[0].toc_do_inferred, false);
 assert.equal(selected[0].thuoc.dich_truyen[0].infusion_schedule_stale, true);
 assert.equal(selected[0].thuoc.dich_truyen[0].tg_ket_thuc, '09:07 15/10/2026');
 assert.ok(infusionItemKey(example).includes('test-drug'));
+const { validateInfusionTargetsComplete } = require('../server/routes/patients');
+const simulated = infusion => [{
+  ma_bn: 'FAKE001', ngay_lam: '15/10/2026', thuoc: {dich_truyen: [infusion]},
+}];
+const scoped = {patientIds: ['FAKE001'], selectedDates: ['15/10/2026']};
+const valid = {the_tich:100,toc_do:30,tg_bat_dau:'08:00 15/10/2026'};
+assert.equal(validateInfusionTargetsComplete(simulated(valid), scoped).ok, true);
+for (const [change, expected] of [
+  [{...valid, toc_do_inferred:true}, 'Tốc độ'],
+  [{...valid, infusion_schedule_stale:true}, 'Lịch'],
+  [{...valid, tg_bat_dau:''}, 'giờ'],
+  [{...valid, the_tich:0}, 'thể tích'],
+]) {
+  const check = validateInfusionTargetsComplete(simulated(change), scoped);
+  assert.equal(check.ok, false, 'blocked unsafe infusion scenario');
+  assert.match(check.message, new RegExp(expected,'i'));
+  assert.equal(check.details.length, 1);
+}
 console.log('infusion edit safety: OK');
