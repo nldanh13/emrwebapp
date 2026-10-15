@@ -52,7 +52,11 @@ def test_catalog_active_ingredient_lets_brand_use_dilution_rule(catalog):
     drug = {'ten_thuoc': 'VANCOTEX 1G', 'dang': 'Lọ', 'so_luong': '1', 'gio_dung': '8 giờ',
             'duong_dung_goc': 'Tiêm tĩnh mạch chậm (8 giờ)'}
     infusions, injections = infer_and_reclassify_diluents([], [drug])
-    assert injections == [] and infusions[0]['dung_moi'] == 'NACL_0.9'
+    # Chỉnh hành vi cũ không an toàn: TMC rõ ràng không được biến thành TTM
+    # chỉ vì hoạt chất có luật pha truyền sẵn.
+    assert infusions == []
+    assert len(injections) == 1
+    assert injections[0]['duong_dung_goc'].startswith('Tiêm tĩnh mạch chậm')
 
 
 def test_catalog_own_solvent_flag_skips_water_tag(catalog):
@@ -60,3 +64,14 @@ def test_catalog_own_solvent_flag_skips_water_tag(catalog):
     catalog([{'canonical': 'ABC THUOC', 'co_dung_moi_di_kem': True}])
     assert _catalog_has_own_solvent({'ten_thuoc': 'ABC THUOC 40MG'}) is True
     assert _catalog_has_own_solvent({'ten_thuoc': 'XYZ'}) is False
+
+
+def test_catalog_active_ingredient_still_supports_explicit_infusion(catalog):
+    from processing.diluent_resolver import infer_and_reclassify_diluents
+    catalog([{'canonical': 'VANCOTEX', 'active_ingredients': ['Vancomycin']}])
+    drug = {'ten_thuoc': 'VANCOTEX 1G', 'dang': 'Lọ', 'so_luong': '1',
+            'gio_dung': '8 giờ', 'duong_dung_goc': 'Truyền tĩnh mạch (8 giờ)'}
+    infusions, injections = infer_and_reclassify_diluents([], [drug])
+    assert injections == []
+    assert len(infusions) == 1
+    assert infusions[0]['dung_moi'] == 'NACL_0.9'
