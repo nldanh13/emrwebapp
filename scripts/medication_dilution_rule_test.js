@@ -3,7 +3,7 @@
 // Quy tắc pha thuốc trong Danh mục thuốc: máy chủ chỉ lưu dữ liệu đúng dạng worker đọc được
 // (worker/processing/medication_catalog.py catalog_dilution_rule), báo lỗi tiếng Việt khi sai.
 const assert = require('assert');
-const { normalizeDilution, cleanCheckItems, runDilutionCheck, computeDilutionStats } = require('../server/routes/medication_catalog');
+const { normalizeDilution, normalizePreparationMetadata, cleanCheckItems, runDilutionCheck, computeDilutionStats } = require('../server/routes/medication_catalog');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -32,6 +32,39 @@ test('sai dung môi/thể tích → lỗi 400 tiếng Việt', () => {
   assert.throws(() => normalizeDilution({ solvent: 'RINGER' }), e => e.status === 400 && /Dung môi pha không hợp lệ/.test(e.message));
   assert.throws(() => normalizeDilution({ solvent: 'NACL_0.9', volume_ml: 5000 }), e => e.status === 400 && /1 đến 1000/.test(e.message));
   assert.throws(() => normalizeDilution('abc'), e => e.status === 400);
+});
+
+test('ống 2 ml lưu như thể tích chế phẩm, không bị đưa vào cấu hình truyền', () => {
+  const metadata = normalizePreparationMetadata({
+    strength_text: '20mg/ống', dosage_form: 'Dung dịch tiêm',
+    package_volume_ml: '2',
+  });
+  assert.strictEqual(metadata.strength_text, '20mg/ống');
+  assert.strictEqual(metadata.package_volume_ml, 2);
+  assert.strictEqual(metadata.dosage_form, 'Dung dịch tiêm');
+  assert.strictEqual(metadata.reconstitution, undefined);
+  assert.ok(!('default_volume_ml' in metadata));
+});
+
+test('kháng sinh bột chỉ có hàm lượng; hoàn nguyên được giữ tách khỏi pha truyền', () => {
+  const metadata = normalizePreparationMetadata({
+    strength_text: '0,5 g/lọ', dosage_form: 'Bột pha tiêm',
+    package_volume_ml: '',
+    reconstitution: { solvent_text: 'Theo hướng dẫn đã phê duyệt', note: 'Cần đối chiếu' },
+  });
+  assert.strictEqual(metadata.package_volume_ml, undefined);
+  assert.deepStrictEqual(metadata.reconstitution, {
+    solvent_text: 'Theo hướng dẫn đã phê duyệt', note: 'Cần đối chiếu',
+  });
+  assert.ok(!('dilution' in metadata));
+  assert.throws(
+    () => normalizePreparationMetadata({ package_volume_ml: -2 }),
+    e => e.status === 400 && /Thể tích gốc/.test(e.message),
+  );
+  assert.throws(
+    () => normalizePreparationMetadata({ reconstitution: { volume_ml: 'không rõ' } }),
+    e => e.status === 400 && /hoàn nguyên/.test(e.message),
+  );
 });
 
 test('tốc độ truyền 1–300 giọt/phút', () => {
