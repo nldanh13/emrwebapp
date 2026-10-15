@@ -14,7 +14,7 @@ const { readDoneState, markDoneKeys, fingerprintRecords, baseDoneKey, hashValue 
 const { parseDmy, normalizeDmy }                           = require('../utils/validation');
 const { readConfig }                                       = require('../utils/nurse_config');
 const { ROOT_DIR, ALLOW_INPUT_WITHOUT_PRECHECK }             = require('../constants');
-const { infusionItemKey, parsePositiveInfusionValue, matchAndUpdateInfusions } = require('../utils/infusion_edit_validation');
+const { parsePositiveInfusionValue, matchAndUpdateInfusions } = require('../utils/infusion_edit_validation');
 const { hasRole }                                             = require('../services/authz');
 const {
   buildPatientDayBundle,
@@ -408,7 +408,7 @@ function findIncompleteInfusionEntries(processedRows, targets) {
             : item?.missing_infusion_time ? 'Chưa có giờ dùng rõ ràng'
             : item?.infusion_schedule_stale ? 'Lịch tính trước khi sửa thể tích/tốc độ, cần xử lý lại'
             : item?.toc_do_inferred ? 'Tốc độ 30 giọt/phút là giá trị phần mềm tự đoán, chưa xác nhận'
-            : !(Number(String(item?.toc_do ?? '').replace(',', '.')) > 0) ? 'Thiếu tốc độ truyền hợp lệ'
+            : !(parseFloat(String(item?.toc_do ?? '').replace(',', '.')) > 0) ? 'Thiếu tốc độ truyền hợp lệ'
             : '';
           if (!reason) continue;
           entries.push({
