@@ -49,6 +49,12 @@ function emptyForm() {
     aliases: '',
     semantic_aliases: '',
     category: '',
+    strength_text: '',
+    dosage_form: '',
+    package_volume_ml: '',
+    reconstitution_solvent: '',
+    reconstitution_volume_ml: '',
+    reconstitution_note: '',
     default_volume_ml: '',
     default_rate: '',
     default_route: '',
@@ -70,6 +76,12 @@ function formFromMedication(med) {
     aliases: joinList(med.aliases),
     semantic_aliases: joinList(med.semantic_aliases),
     category: med.category || (med.default_route ? routeCategory(med.default_route) : ''),
+    strength_text: med.strength_text || '',
+    dosage_form: med.dosage_form || '',
+    package_volume_ml: med.package_volume_ml ?? '',
+    reconstitution_solvent: med.reconstitution?.solvent_text || '',
+    reconstitution_volume_ml: med.reconstitution?.volume_ml ?? '',
+    reconstitution_note: med.reconstitution?.note || '',
     default_volume_ml: med.default_volume_ml ?? '',
     default_rate: med.default_rate ?? '',
     default_route: normalizeRouteCode(med.default_route) || med.default_route || '',
@@ -269,7 +281,7 @@ function DilutionFields({ form, set, setForm, effective, routes = [] }) {
         {solvent === 'KHONG_PHA' && 'Không tự gắn túi Natri clorid cho thuốc này (chai/túi đã pha sẵn). Y lệnh ghi rõ dung môi vẫn được giữ.'}
         {solvent === 'NACL_0.9' && (form.dilution_apply === 'infusion_only'
           ? 'Chỉ khi y lệnh ghi truyền/TTM: chuyển sang dịch truyền với thể tích này. Y lệnh tiêm tĩnh mạch chậm giữ nguyên.'
-          : 'Luôn chuyển thuốc này sang dịch truyền pha Natri clorid 0.9% với thể tích này, kể cả khi y lệnh chỉ ghi "tiêm tĩnh mạch" (trừ tiêm bắp, tiêm dưới da).')}
+          : 'Có thể gợi ý pha truyền cho y lệnh chưa rõ đường dùng. Nếu y lệnh ghi rõ TMC thì phải giữ là thuốc tiêm, không tự đổi sang truyền.')}
         {(solvent === 'GLUCOSE_5' || solvent === 'NUOC_CAT') && 'Ghi lên báo cáo ca trực để đối chiếu khi chuẩn bị thuốc; hệ thống không tự đổi dung môi.'}
         {solvent && ' Y lệnh ghi rõ dung môi/thể tích luôn được ưu tiên hơn quy tắc này.'}
       </div>
@@ -296,6 +308,18 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
       setError('Thể tích mặc định phải là số.');
       return;
     }
+    const packageVolume = String(form.package_volume_ml ?? '').trim();
+    const reconVolume = String(form.reconstitution_volume_ml ?? '').trim();
+    for (const [value, label] of [
+      [packageVolume, 'Thể tích gốc của ống/chai'],
+      [reconVolume, 'Thể tích hoàn nguyên'],
+    ]) {
+      const n = Number(value.replace(',', '.'));
+      if (value && (!Number.isFinite(n) || n <= 0 || n > 1000)) {
+        setError(`${label} phải là số ml lớn hơn 0 và không vượt 1000.`);
+        return;
+      }
+    }
     const dilution = dilutionFromForm(form);
     if (dilution.error) {
       setError(dilution.error);
@@ -314,6 +338,14 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
         aliases: parseList(form.aliases),
         semantic_aliases: parseList(form.semantic_aliases),
         category: form.category.trim(),
+        strength_text: form.strength_text.trim(),
+        dosage_form: form.dosage_form.trim(),
+        package_volume_ml: packageVolume,
+        reconstitution: {
+          solvent_text: form.reconstitution_solvent.trim(),
+          volume_ml: reconVolume,
+          note: form.reconstitution_note.trim(),
+        },
         default_volume_ml: form.default_volume_ml,
         default_rate: form.default_rate,
         default_route: form.default_route.trim(),
@@ -360,6 +392,52 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
             <textarea value={form.aliases} onChange={set('aliases')} rows={3}
               placeholder="Các tên có thể xuất hiện trong EMR, cách nhau bằng dấu phẩy hoặc xuống dòng" style={{ ...INPUT_STYLE, resize: 'vertical' }} />
           </Field>
+          <div style={{ border: `1px solid ${C.border2}`, background: C.surface2, borderRadius: 6,
+            padding: 10, display: 'grid', gap: 9 }}>
+            <div style={{ fontSize: FS.sm, fontWeight: 700, color: C.text }}>
+              Thông tin chế phẩm gốc (không dùng để tính thể tích truyền)
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+              <Field label="Hàm lượng / lọ hoặc ống">
+                <input value={form.strength_text} onChange={set('strength_text')}
+                  placeholder="VD: 20 mg/ống hoặc 0,5 g/lọ" style={INPUT_STYLE} />
+              </Field>
+              <Field label="Dạng bào chế">
+                <select value={form.dosage_form} onChange={set('dosage_form')} style={INPUT_STYLE}>
+                  <option value="">Chưa khai báo</option>
+                  <option value="Dung dịch tiêm">Dung dịch tiêm</option>
+                  <option value="Bột pha tiêm">Bột pha tiêm</option>
+                  <option value="Dung dịch truyền pha sẵn">Dung dịch truyền pha sẵn</option>
+                  {form.dosage_form && !['Dung dịch tiêm', 'Bột pha tiêm', 'Dung dịch truyền pha sẵn'].includes(form.dosage_form)
+                    && <option value={form.dosage_form}>{form.dosage_form}</option>}
+                </select>
+              </Field>
+              <Field label="Thể tích thuốc gốc (ml/ống hoặc chai)">
+                <input value={form.package_volume_ml} onChange={set('package_volume_ml')}
+                  inputMode="decimal" placeholder="VD: 2; lọ bột thì để trống" style={INPUT_STYLE} />
+              </Field>
+            </div>
+            <div style={{ fontSize: FS.sm, fontWeight: 600, color: C.text }}>Hoàn nguyên lọ bột (chỉ ghi chú đối chiếu)</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+              <Field label="Dung môi hoàn nguyên theo hướng dẫn đã duyệt">
+                <input value={form.reconstitution_solvent} onChange={set('reconstitution_solvent')}
+                  placeholder="Để trống nếu chưa xác minh" style={INPUT_STYLE} />
+              </Field>
+              <Field label="Thể tích hoàn nguyên (ml)">
+                <input value={form.reconstitution_volume_ml} onChange={set('reconstitution_volume_ml')}
+                  inputMode="decimal" placeholder="Chưa xác minh thì để trống" style={INPUT_STYLE} />
+              </Field>
+            </div>
+            <Field label="Ghi chú hoàn nguyên / nồng độ sau hoàn nguyên">
+              <input value={form.reconstitution_note} onChange={set('reconstitution_note')}
+                placeholder="Chỉ ghi khi đã đối chiếu hướng dẫn chế phẩm" style={INPUT_STYLE} />
+            </Field>
+            <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.5 }}>
+              Ví dụ Nefopam 20 mg/2 ml: thể tích gốc 2 ml, không nhập 2 ml vào “thể tích dịch truyền”.
+              Lọ bột 0,5 g không có thể tích gốc cố định; thể tích hoàn nguyên và pha truyền là hai bước riêng.
+              Các thông tin chế phẩm/hoàn nguyên tại đây không tự ra lệnh pha hay truyền trên EMR.
+            </div>
+          </div>
           <Field label="Tên hiển thị chuẩn (tuỳ chọn — dùng ở bản xem trước Nhập dịch truyền)">
             <input value={form.ten_hien_thi} onChange={set('ten_hien_thi')} placeholder="VD: Paracetamol" style={INPUT_STYLE} />
           </Field>
@@ -396,9 +474,16 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
             </div>
           </Field>
 
+          {form.routes.includes('TMC') && form.routes.includes('TTM') && (
+            <div style={{ fontSize: FS.sm, color: C.text2, border: `1px solid ${C.border2}`,
+              padding: 8, borderRadius: 6 }}>
+              Thuốc có cả TMC và TTM: nên để Đường dùng mặc định trống, tránh điền tốc độ/thể tích
+              truyền chung. Chỉ cấu hình quy tắc pha cho y lệnh ghi TTM; đường TMC không được tự đổi sang TTM.
+            </div>
+          )}
           {(INFUSION_ROUTES.has(form.default_route) || form.category === 'dich_truyen') && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
-              <Field label="Thể tích mặc định (ml)">
+              <Field label="Thể tích DỊCH TRUYỀN mặc định (ml) — không phải ml của ống">
                 <input value={form.default_volume_ml} onChange={set('default_volume_ml')} inputMode="decimal" placeholder="VD: 100" style={INPUT_STYLE} />
               </Field>
               <Field label={form.default_route === 'SE' ? 'Tốc độ mặc định (ml/giờ)' : 'Tốc độ mặc định (giọt/phút)'}>

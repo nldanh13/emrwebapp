@@ -447,13 +447,21 @@ _NACL_SOLVENT_RE = re.compile(
 
 
 def _has_explicit_non_infusion_route(text):
-    """Ghi rõ là tiêm (TMC/TB/TDD/TTD) hoặc uống, không có dấu hiệu truyền/pha NaCl."""
-    routes = set(mentioned_routes(text))
-    if 'UONG' in routes:
+    """Y lệnh ghi *rõ* TMC/TB/TDD/TTD/uống: không lấy mặc định truyền.
+
+    'Pha NaCl' có thể là hoàn nguyên/pha loãng để TIÊM; không đồng nghĩa
+    với y lệnh truyền. Nếu ghi mâu thuẫn cả TMC và TTM, không suy đoán
+    đường dùng từ danh mục; phải xác nhận lại y lệnh.
+    """
+    strong = set(mentioned_routes(text, strong_only=True))
+    if 'UONG' in strong:
         return True
+    if strong & {'TMC', 'TB', 'TDD', 'TTD'}:
+        return True
+    # Giữ nhánh cũ cho tiêm ghi mơ hồ nếu không có dấu hiệu truyền.
+    routes = set(mentioned_routes(text))
     has_infusion_hint = bool(routes & INFUSION_ROUTES) or bool(_NACL_SOLVENT_RE.search(str(text or '')))
-    has_injection_hint = bool(routes & {'TMC', 'TB', 'TDD', 'TTD'})
-    return has_injection_hint and not has_infusion_hint
+    return bool(routes & {'TMC', 'TB', 'TDD', 'TTD'}) and not has_infusion_hint
 
 
 def _is_oral_solid_form(drug):
