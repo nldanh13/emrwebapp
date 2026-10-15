@@ -28,6 +28,7 @@ import MedicationBuiltinPanel from './MedicationBuiltinPanel.jsx';
 import HospitalDrugReferencePanel from './HospitalDrugReferencePanel.jsx';
 import { referenceMedicationDraft } from '../utils/hospitalDrugReference.js';
 import { fillEmptyFields } from '../utils/medicationBuiltin.js';
+import { MAIN_SECTIONS, SOURCE_SECTIONS, TOOL_SECTIONS, SECTION_DESCRIPTIONS, SOURCE_DESCRIPTIONS } from '../utils/medicationCatalogNavigation.js';
 
 function routeOptions(table) {
   const categories = table.categories || [];
@@ -567,6 +568,18 @@ function RouteCell({ item }) {
 
 export default function MedicationCatalogManager() {
   const [tab, setTab] = useState('drugs');
+  const [sourceTab, setSourceTab] = useState('hospital');
+  const [toolTab, setToolTab] = useState('check');
+  const [seenSources, setSeenSources] = useState(() => new Set(['hospital']));
+  const [seenTools, setSeenTools] = useState(() => new Set(['check']));
+  const chooseSource = value => {
+    setSourceTab(value);
+    setSeenSources(prev => new Set([...prev, value]));
+  };
+  const chooseTool = value => {
+    setToolTab(value);
+    setSeenTools(prev => new Set([...prev, value]));
+  };
   const { categoryLabel: CATEGORY_LABEL } = routeOptions(useRouteTable());
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -592,24 +605,51 @@ export default function MedicationCatalogManager() {
     try {
       const data = await api.getMedicationCatalog();
       setItems(data.medications || []);
-      // Quy tắc pha đang áp dụng cho từng thuốc (gồm luật sẵn có) — tải sau, không chặn bảng.
-      api.checkMedicationDilution({ include_catalog: true })
-        .then(info => setDilutionInfo({ catalog: info.catalog || {}, builtin: info.builtin || [] }))
-        .catch(() => setDilutionInfo({ catalog: {}, builtin: [], failed: true }));
-      loadNewDrugs();
-      api.getCatalogCleanup().then(r => setCleanupPlan(r.plan || [])).catch(() => setCleanupPlan([]));
-      api.getMedicationBuiltin()
-        .then(r => { setBuiltin(r.builtin || {}); setBuiltinError(''); })
-        .catch(e => setBuiltinError('Không tải được kiến thức sẵn có: ' + String(e.message || e)));
     } catch (e) {
       showToast('Lỗi tải danh mục thuốc: ' + String(e.message || e));
     } finally {
       setLoading(false);
     }
-  }, [loadNewDrugs]);
+  }, []);
+
+  const loadCleanup = useCallback(() => api.getCatalogCleanup()
+    .then(r => setCleanupPlan(r.plan || []))
+    .catch(e => showToast('Không kiểm tra được mục trùng: ' + String(e.message || e))), []);
+
+  // Chỉ tải nguồn hoặc công cụ đang xem, không chạy các bước phân tích
+  // khi người dùng chỉ mở danh mục thuốc; không phát sinh yêu cầu EMR.
+  useEffect(() => {
+    if (tab !== 'drugs' && !(tab === 'tools' && toolTab === 'check')) return;
+    let valid = true;
+    api.checkMedicationDilution({ include_catalog: true })
+      .then(info => {
+        if (valid) setDilutionInfo({ catalog: info.catalog || {}, builtin: info.builtin || [] });
+      }).catch(() => {
+        if (valid) setDilutionInfo({ catalog: {}, builtin: [], failed: true });
+      });
+    return () => { valid = false; };
+  }, [tab, toolTab, items]);
+
+  useEffect(() => {
+    if (tab !== 'sources') return;
+    if (sourceTab === 'new') loadNewDrugs();
+    if (sourceTab === 'builtin') {
+      api.getMedicationBuiltin()
+        .then(r => { setBuiltin(r.builtin || {}); setBuiltinError(''); })
+        .catch(e => setBuiltinError('Không tải được kiến thức sẵn có: ' + String(e.message || e)));
+    }
+  }, [tab, sourceTab, loadNewDrugs]);
+
+  useEffect(() => {
+    if (tab === 'tools' && toolTab === 'cleanup') loadCleanup();
+  }, [tab, toolTab, loadCleanup]);
 
   useEffect(() => { load(); }, [load]);
-  useOnTabReturn(() => load());
+  useOnTabReturn(() => {
+    load();
+    if (tab === 'sources' && sourceTab === 'new') loadNewDrugs();
+    if (tab === 'tools' && toolTab === 'cleanup') loadCleanup();
+  });
 
   const handleCreate = async (payload) => {
     await api.createMedicationCatalog(payload);
