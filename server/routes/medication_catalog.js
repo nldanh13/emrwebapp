@@ -38,6 +38,19 @@ const { archiveRunsDir } = require('../research/store_paths');
 const { resolveArchiveRunId } = require('../research/run_registry');
 
 const CATALOG_PATH = path.join(__dirname, '..', '..', 'config', 'medication_catalog.json');
+// Source snapshot, not an executable EMR medication/dilution/route configuration.
+const HOSPITAL_DRUG_REFERENCE = require('../../config/hospital_drug_reference.json');
+const HOSPITAL_DRUG_CODES = new Map(HOSPITAL_DRUG_REFERENCE.medications.map(m => [m.code, m]));
+
+function validateHospitalReference(codeRaw, canonical) {
+  const code = String(codeRaw || '').trim();
+  if (!code) return '';
+  const row = HOSPITAL_DRUG_CODES.get(code);
+  if (!row || row.name.trim().toLocaleLowerCase('vi-VN') !== String(canonical || '').trim().toLocaleLowerCase('vi-VN')) {
+    throw badRequest('Mã thuốc bệnh viện không khớp tên chế phẩm; vui lòng chọn lại từ danh mục tham khảo.');
+  }
+  return code;
+}
 
 function loadCatalog() {
   const data = readJsonSafe(CATALOG_PATH, null);
@@ -325,10 +338,15 @@ router.post('/medication-catalog', (req, res) => {
       return res.status(409).json({ status: 'error', message: duplicateNameMessage(canonical) });
     }
 
+    const hospitalCode = validateHospitalReference(body.hospital_code, canonical);
+    if (hospitalCode && data.medications.some(m => m.hospital_code === hospitalCode)) {
+      return res.status(409).json({ status: 'error', message: 'Mã thuốc bệnh viện đã được thêm vào danh mục.' });
+    }
     const volumeRaw = body.default_volume_ml;
     const volumeNum = Number(volumeRaw);
     const med = pruneEmpty({
       canonical,
+      ...(hospitalCode ? { hospital_code: hospitalCode } : {}),
       active_ingredients: normalizeStringList(body.active_ingredients ?? body.active_ingredient),
       aliases: normalizeStringList(body.aliases),
       semantic_aliases: normalizeStringList(body.semantic_aliases),
@@ -586,6 +604,21 @@ router.patch('/medication-catalog/:key', (req, res) => {
       if (clashes) return res.status(409).json({ status: 'error', message: duplicateNameMessage(nextCanonical) });
       med.canonical = nextCanonical;
     }
+    // Never silently change an existing hospital-linked medicine to a different
+    // code or name. To change identity, review the source and create a new entry.
+    if (med.hospital_code) {
+      const targetCode = body.hospital_code === undefined ? med.hospital_code : body.hospital_code;
+      if (targetCode !== med.hospital_code) {
+        throw badRequest('Không được đổi mã thuốc bệnh viện của mục đã liên kết.');
+      }
+      validateHospitalReference(med.hospital_code, med.canonical);
+    } else if (body.hospital_code) {
+      const code = validateHospitalReference(body.hospital_code, med.canonical);
+      if (data.medications.some((m, i) => i !== idx && m.hospital_code === code)) {
+        return res.status(409).json({ status: 'error', message: 'Mã thuốc bệnh viện đã được liên kết.' });
+      }
+      med.hospital_code = code;
+    }
     if (body.active_ingredients !== undefined || body.active_ingredient !== undefined) {
       med.active_ingredients = normalizeStringList(body.active_ingredients ?? body.active_ingredient);
       delete med.active_ingredient;
@@ -669,3 +702,6 @@ module.exports.computeNewDrugs = computeNewDrugs;
 module.exports.normalizePresentations = normalizePresentations;
 module.exports.normalizeStringList = normalizeStringList;
 module.exports.DILUTION_SOLVENTS = DILUTION_SOLVENTS;
+
+module.exports.validateHospitalReference = validateHospitalReference;
+module.exports.HOSPITAL_DRUG_REFERENCE = HOSPITAL_DRUG_REFERENCE;
