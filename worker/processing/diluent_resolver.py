@@ -573,6 +573,18 @@ def infer_and_reclassify_diluents(raw_dich_truyen, raw_thuoc_tiem):
         route_l = (drug.get("duong_dung_goc") or "").lower()
         dang_u = _norm_upper(drug.get("dang", ""))
 
+        # Y lệnh TMC là thuốc TIÊM, kể cả khi tên/hoạt chất có luật
+        # pha truyền mặc định (NEFOPAM, kháng sinh...). Không tự đổi sang
+        # phiếu truyền chỉ vì thuốc dùng được cả TMC và TTM.
+        # Nếu cùng dòng ghi cả hai đường, giữ nguyên để người dùng kiểm tra.
+        from processing.route_table import mentioned_routes
+        explicit_routes = set(mentioned_routes(route_l, strong_only=True))
+        if 'TMC' in explicit_routes:
+            if explicit_routes & {'TTM', 'SE'}:
+                drug['can_xac_nhan_duong_dung'] = True
+                drug['ly_do_xac_nhan_duong_dung'] = 'Y lệnh ghi đồng thời tiêm mạch chậm và truyền; cần xác nhận.'
+            return False
+
         # loại trừ: bản thân là túi/chai NaCl
         if any(k in name_u for k in ["NATRI CLORID", "SODIUM CHLORIDE", "NACL"]):
             return False
