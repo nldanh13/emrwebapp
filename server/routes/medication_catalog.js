@@ -140,6 +140,42 @@ function normalizeDilution(value) {
   return out;
 }
 
+// Thông tin chế phẩm/hoàn nguyên chỉ để tham khảo, không phải thể tích
+// truyền hoặc tốc độ tự nhập vào hồ sơ người bệnh.
+function optionalPositiveVolume(value, label) {
+  if (value == null || String(value).trim() === '') return undefined;
+  const n = Number(String(value).replace(',', '.'));
+  if (!Number.isFinite(n) || n <= 0 || n > 1000) {
+    throw badRequest(`${label}: phải là số ml lớn hơn 0 và không vượt 1000.`);
+  }
+  return n;
+}
+
+function normalizeReconstitution(value) {
+  if (value == null || value === '') return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw badRequest('Thông tin hoàn nguyên không hợp lệ.');
+  }
+  const solvent_text = String(value.solvent_text || '').trim().slice(0, 160);
+  const volume_ml = optionalPositiveVolume(value.volume_ml, 'Thể tích hoàn nguyên');
+  const note = String(value.note || '').trim().slice(0, 300);
+  if (!solvent_text && volume_ml === undefined && !note) return undefined;
+  return {
+    ...(solvent_text ? { solvent_text } : {}),
+    ...(volume_ml !== undefined ? { volume_ml } : {}),
+    ...(note ? { note } : {}),
+  };
+}
+
+function normalizePreparationMetadata(body) {
+  return {
+    strength_text: String(body.strength_text || '').trim().slice(0, 120) || undefined,
+    dosage_form: String(body.dosage_form || '').trim().slice(0, 100) || undefined,
+    package_volume_ml: optionalPositiveVolume(body.package_volume_ml, 'Thể tích gốc của ống/chai'),
+    reconstitution: normalizeReconstitution(body.reconstitution),
+  };
+}
+
 const ROUTE_CODE = /^[A-Z_]{1,20}$/;
 
 // Một "cách pha" có điều kiện (đường dùng và/hoặc khoảng liều mỗi lần, mg). Worker chọn cách khớp
@@ -299,6 +335,7 @@ router.post('/medication-catalog', (req, res) => {
       aliases: normalizeStringList(body.aliases),
       semantic_aliases: normalizeStringList(body.semantic_aliases),
       category: String(body.category || '').trim(),
+      ...normalizePreparationMetadata(body),
       default_route: normalizeDefaultRoute(body.default_route),
       routes: normalizeRouteList(body.routes),
       default_route_text: String(body.default_route_text || '').trim(),
@@ -558,6 +595,12 @@ router.patch('/medication-catalog/:key', (req, res) => {
     if (body.aliases !== undefined) med.aliases = normalizeStringList(body.aliases);
     if (body.semantic_aliases !== undefined) med.semantic_aliases = normalizeStringList(body.semantic_aliases);
     if (body.category !== undefined) med.category = String(body.category || '').trim();
+    for (const key of ['strength_text', 'dosage_form', 'package_volume_ml', 'reconstitution']) {
+      if (!Object.hasOwn(body, key)) continue;
+      const normalized = normalizePreparationMetadata({ [key]: body[key] })[key];
+      if (normalized === undefined) delete med[key];
+      else med[key] = normalized;
+    }
     if (body.default_route !== undefined) med.default_route = normalizeDefaultRoute(body.default_route);
     if (body.routes !== undefined) med.routes = normalizeRouteList(body.routes);
     if (body.default_route_text !== undefined) med.default_route_text = String(body.default_route_text || '').trim();
@@ -621,6 +664,7 @@ router.delete('/medication-catalog/:key', (req, res) => {
 
 module.exports = router;
 module.exports.normalizeDilution = normalizeDilution;
+module.exports.normalizePreparationMetadata = normalizePreparationMetadata;
 module.exports.cleanCheckItems = cleanCheckItems;
 module.exports.runDilutionCheck = runDilutionCheck;
 module.exports.computeDilutionStats = computeDilutionStats;
