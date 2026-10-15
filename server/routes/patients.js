@@ -409,7 +409,8 @@ function findIncompleteInfusionEntries(processedRows, targets) {
             : !String(item?.tg_bat_dau || '').trim() ? 'Thiếu giờ bắt đầu'
             : item?.missing_infusion_time ? 'Chưa có giờ dùng rõ ràng'
             : item?.infusion_schedule_stale ? 'Lịch tính trước khi sửa thể tích/tốc độ, cần xử lý lại'
-            : item?.toc_do_inferred ? 'Tốc độ 30 giọt/phút là giá trị phần mềm tự đoán, chưa xác nhận'
+            : item?.toc_do_inferred ? 'Tốc độ truyền là giá trị phần mềm tự đoán, chưa xác nhận'
+            : item?.missing_infusion_rate ? 'Thiếu tốc độ truyền được xác nhận'
             : !(parseFloat(String(item?.toc_do ?? '').replace(',', '.')) > 0) ? 'Thiếu tốc độ truyền hợp lệ'
             : '';
           if (!reason) continue;
