@@ -36,3 +36,21 @@ def test_explicit_infusion_still_supported():
     infusions, injections = infer_and_reclassify_diluents([], [drug])
     assert not injections
     assert len(infusions) == 1
+
+
+def test_dual_route_medicine_without_explicit_route_requires_confirmation(monkeypatch):
+    from processing import medication_catalog as mc
+
+    def lookup(drug, **kwargs):
+        if 'DUALROUTE' in drug.get('ten_thuoc', ''):
+            return {'canonical': 'DUALROUTE', 'routes': ['TMC', 'TTM'],
+                    'default_route': ''}, {}
+        return None, None
+
+    monkeypatch.setattr(mc, 'lookup_medication_with_meta', lookup)
+    drug = {'ten_thuoc': 'DUALROUTE 20 mg/2 ml', 'duong_dung_goc': '',
+            'gio_dung': '8 giờ', 'so_luong': '1', 'dang': 'Ống'}
+    infusions, injections = infer_and_reclassify_diluents([], [drug])
+    assert not infusions
+    assert len(injections) == 1
+    assert injections[0].get('can_xac_nhan_duong_dung') is True
