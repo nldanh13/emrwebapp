@@ -388,7 +388,14 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
             <b style={{ fontSize: FS.md }}>Thông tin chế phẩm — không phải thể tích truyền</b>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(185px, 1fr))', gap: 8 }}>
               <Field label="Dạng bào chế">
-                <select value={form.dosage_form} onChange={set('dosage_form')} style={INPUT_STYLE}>
+                <select value={form.dosage_form} onChange={e => {
+                  const next = e.target.value;
+                  setForm(prev => ({
+                    ...prev, dosage_form: next,
+                    original_volume_ml: next === 'powder' ? '' : prev.original_volume_ml,
+                    reconstitution_volume_ml: next === 'powder' ? prev.reconstitution_volume_ml : '',
+                  }));
+                }} style={INPUT_STYLE}>
                   <option value="">Chưa khai báo</option>
                   <option value="solution">Dung dịch tiêm (ống/lọ)</option>
                   <option value="powder">Bột pha tiêm (lọ)</option>
