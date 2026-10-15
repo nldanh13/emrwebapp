@@ -110,8 +110,8 @@ tệp HTML Select2 người dùng cung cấp. Bản gốc có 252 dòng hiển t
 67 dòng là bản lặp cùng mã và 185 mã khác nhau. Giữ nguyên từng mã, tên, ĐVT,
 hàm lượng, hoạt chất mô tả, quy cách và **nhãn đường dùng gốc**. Các tên lặp
 nhưng có mã khác (như Truxima 100mg/10ml và 500mg/50ml; Natri clorid 100ml/500ml)
-vẫn là các mục tra cứu riêng. Giá/tồn trong bản sao là ảnh chụp, không phải tồn
-kho hay giá hiện thời của EMR.
+vẫn là các mục tra cứu riêng. Tồn kho và đơn giá từ nguồn **không** được lưu
+vào mã nguồn vì không cần cho cấu hình thuốc và dễ lỗi thời.
 
 - **Xem và tìm kiếm** trong tab không truy cập EMR, không tự tạo/sửa thuốc cấu hình.
 - Nút **Tạo cấu hình** mở form tạo thuốc theo tên/mã nguồn, lưu mã BV vào
