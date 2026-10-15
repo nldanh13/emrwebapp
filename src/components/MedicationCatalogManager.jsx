@@ -680,7 +680,7 @@ export default function MedicationCatalogManager() {
   const q = query.trim().toLowerCase();
   const hasRule = item => Boolean(item.dilution || dilutionInfo?.catalog?.[item.canonical]?.rule);
   const filtered = filterCatalog(
-    items.filter(item => !q || `${item.canonical} ${joinList(item.active_ingredients)} ${item.active_ingredient || ''} ${joinList(item.aliases)} ${item.category || ''}`.toLowerCase().includes(q)),
+    items.filter(item => !q || `${item.canonical} ${item.hospital_code || ''} ${item.preparation?.strength || ''} ${joinList(item.active_ingredients)} ${item.active_ingredient || ''} ${joinList(item.aliases)} ${item.category || ''}`.toLowerCase().includes(q)),
     ruleFilter, { hasRule, routeCategoryOf: routeCategory },
   );
   const issueCount = filterCatalog(items, 'issues').length;
