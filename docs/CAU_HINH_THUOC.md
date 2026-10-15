@@ -35,6 +35,21 @@ trước một thuốc sẽ được xử lý thế nào.
 - `tests/test_medication_golden.py` so kết quả xử lý của 62 y lệnh mẫu với file mốc. Sau khi gom,
   kết quả không đổi.
 
+## Thuốc dùng nhiều đường: ống 2 ml và lọ bột 0,5 g
+
+Trong **Danh mục thuốc → Thuốc**, tách riêng các trường sau (không tự suy diễn thể tích/tốc độ chuẩn bị):
+- **Hàm lượng / lọ hoặc ống:** ví dụ `20 mg/ống`, `0,5 g/lọ`. Không phải thể tích dung dịch.
+- **Dạng bào chế:** dung dịch tiêm, bột pha tiêm, dung dịch truyền pha sẵn.
+- **Thể tích thuốc gốc:** ví dụ `2 ml/ống`; lọ bột chưa hoàn nguyên thì **để trống**, tuyệt đối không lấy số gam làm ml.
+- **Hoàn nguyên lọ bột:** dung môi, thể tích hoàn nguyên và ghi chú dựa trên đúng nhãn thuốc/quy trình được phê duyệt. **Chỉ là metadata tham khảo**, không tự nhập y lệnh và không thay thế quy tắc pha truyền.
+- **Thể tích dịch truyền mặc định** và **Quy tắc pha thuốc:** là một nhóm **khác**. Không nhập `2` của ống Nefopam vào ô thể tích dịch truyền. Không tự đoán dung môi hoặc số ml cho lọ bột.
+
+Nếu cùng chế phẩm được **phê duyệt** dùng cả `TMC` (tiêm tĩnh mạch chậm) và `TTM` (truyền tĩnh mạch): khai **một** danh mục thuốc; chọn cả hai ở **Đường dùng cho phép**; để trống đường dùng mặc định nếu có thể, vì phải dựa vào y lệnh cụ thể; cấu hình pha truyền với **Khi nào pha → Chỉ khi y lệnh ghi truyền**, sau khi kiểm chứng thông tin chế phẩm tại cơ sở. Không sao chép một tốc độ truyền chung cho cả hai đường.
+
+**Bảo vệ ở worker:** y lệnh ghi rõ TMC/TB/TDD/TTD phải giữ là **thuốc tiêm**, kể cả tên thuốc có luật pha NaCl theo hoạt chất hoặc ghi pha loãng NaCl; không tự chuyển thành TTM. Y lệnh ghi TTM rõ ràng vẫn được xử lý theo luật truyền hiện có. Trường hợp thiếu/mâu thuẫn đường dùng cần được kiểm tra thủ công, không nên tự nhập vào EMR.
+
+**Tương thích dữ liệu cũ:** bốn trường `strength_text`, `dosage_form`, `package_volume_ml`, `reconstitution` đều tùy chọn; thuốc đã cài không bị chuyển đổi tự động. Thông tin mới **không** được nối trực tiếp vào `default_volume_ml`, `tui_dich_truyen_ml` hay tốc độ. Các cấu hình suy luận từ luật sẵn có vẫn cần người vận hành rà soát theo danh mục được duyệt.
+
 ## Nhiều cách pha, cần xác nhận, thống kê thực tế
 
 - **Nhiều cách pha cho một thuốc.** Trong "Quy tắc pha thuốc" có:
