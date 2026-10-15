@@ -60,7 +60,7 @@ describe('Danh mục thuốc – luồng thống nhất', () => {
     expect(radio('Thuốc đã cấu hình')?.getAttribute('aria-checked')).toBe('true');
     expect(radio('Tìm & thêm thuốc')).toBeTruthy();
     expect(radio('Công cụ')).toBeTruthy();
-    expect(host.textContent).toContain('Thể tích truyền');
+    expect(host.textContent).toContain('NEFOPAM MEDISOL 20MG/2ML');
     expect(host.querySelectorAll('th')).toHaveLength(5);
     expect(host.textContent).not.toContain('185 mã thuốc tham khảo');
     expect(api.getMedicationCatalog).toHaveBeenCalledTimes(1);
@@ -88,11 +88,11 @@ describe('Danh mục thuốc – luồng thống nhất', () => {
   it('tạo cấu hình từ danh mục BV là thao tác rõ ràng, chưa bấm Lưu thì không ghi', async () => {
     await open();
     await click(radio('Tìm & thêm thuốc'));
-    await enter(host.querySelector('input[aria-label="Tìm danh mục thuốc bệnh viện"]'), '26.328.726');
-    expect(host.textContent).toContain('NEFOPAM MEDISOL 20MG/2ML');
+    await enter(host.querySelector('input[aria-label="Tìm danh mục thuốc bệnh viện"]'), '26.328.357');
+    expect(host.textContent).toContain('Mizapenem 0,5g');
     await click([...host.querySelectorAll('button')].find(b => b.textContent === 'Tạo cấu hình'));
     expect(host.textContent).toContain('Mã thuốc BV:');
-    expect(host.textContent).toContain('26.328.726');
+    expect(host.textContent).toContain('26.328.357');
     expect(host.textContent).toContain('Thông tin chế phẩm — không phải thể tích truyền');
     expect(api.createMedicationCatalog).not.toHaveBeenCalled();
     await click([...host.querySelectorAll('button')].find(b => b.textContent === 'Hủy'));
