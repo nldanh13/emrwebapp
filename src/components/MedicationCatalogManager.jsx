@@ -49,6 +49,7 @@ function emptyForm() {
     aliases: '',
     semantic_aliases: '',
     category: '',
+    dosage_form: '', strength: '', original_volume_ml: '', reconstitution_volume_ml: '', reconstitution_note: '',
     default_volume_ml: '',
     default_rate: '',
     default_route: '',
@@ -70,6 +71,11 @@ function formFromMedication(med) {
     aliases: joinList(med.aliases),
     semantic_aliases: joinList(med.semantic_aliases),
     category: med.category || (med.default_route ? routeCategory(med.default_route) : ''),
+    dosage_form: med.preparation?.dosage_form || '',
+    strength: med.preparation?.strength || '',
+    original_volume_ml: med.preparation?.original_volume_ml ?? '',
+    reconstitution_volume_ml: med.preparation?.reconstitution_volume_ml ?? '',
+    reconstitution_note: med.preparation?.reconstitution_note || '',
     default_volume_ml: med.default_volume_ml ?? '',
     default_rate: med.default_rate ?? '',
     default_route: normalizeRouteCode(med.default_route) || med.default_route || '',
@@ -306,6 +312,14 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
       setError(presentations.error);
       return;
     }
+    if (form.dosage_form === 'powder' && String(form.original_volume_ml).trim()) {
+      setError('Lọ bột không có thể tích thuốc gốc; hãy khai báo hoàn nguyên riêng.');
+      return;
+    }
+    if (form.dosage_form !== 'powder' && String(form.reconstitution_volume_ml).trim()) {
+      setError('Thể tích hoàn nguyên chỉ dành cho thuốc bột.');
+      return;
+    }
     setSaving(true);
     try {
       await onSave({
@@ -314,6 +328,12 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
         aliases: parseList(form.aliases),
         semantic_aliases: parseList(form.semantic_aliases),
         category: form.category.trim(),
+        preparation: {
+          dosage_form: form.dosage_form, strength: form.strength,
+          original_volume_ml: form.original_volume_ml,
+          reconstitution_volume_ml: form.reconstitution_volume_ml,
+          reconstitution_note: form.reconstitution_note,
+        },
         default_volume_ml: form.default_volume_ml,
         default_rate: form.default_rate,
         default_route: form.default_route.trim(),
@@ -364,6 +384,41 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
             <input value={form.ten_hien_thi} onChange={set('ten_hien_thi')} placeholder="VD: Paracetamol" style={INPUT_STYLE} />
           </Field>
 
+          <div style={{ display: 'grid', gap: 8, padding: 10, border: `1px solid ${C.border2}`, borderRadius: 6 }}>
+            <b style={{ fontSize: FS.md }}>Thông tin chế phẩm — không phải thể tích truyền</b>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(185px, 1fr))', gap: 8 }}>
+              <Field label="Dạng bào chế">
+                <select value={form.dosage_form} onChange={set('dosage_form')} style={INPUT_STYLE}>
+                  <option value="">Chưa khai báo</option>
+                  <option value="solution">Dung dịch tiêm (ống/lọ)</option>
+                  <option value="powder">Bột pha tiêm (lọ)</option>
+                  <option value="ready_infusion">Chai/túi truyền pha sẵn</option>
+                  <option value="other">Dạng khác</option>
+                </select>
+              </Field>
+              <Field label="Hàm lượng / nồng độ ghi trên nhãn">
+                <input value={form.strength} onChange={set('strength')} style={INPUT_STYLE}
+                  placeholder="VD: 20 mg/2 ml hoặc 0,5 g/lọ" />
+              </Field>
+              {form.dosage_form !== 'powder' && <Field label="Thể tích thuốc gốc trong ống/lọ (ml)">
+                <input value={form.original_volume_ml} onChange={set('original_volume_ml')} style={INPUT_STYLE}
+                  inputMode="decimal" placeholder="VD: 2 (không phải túi truyền)" />
+              </Field>}
+              {form.dosage_form === 'powder' && <Field label="Thể tích dung môi hoàn nguyên (ml, nếu đã xác nhận)">
+                <input value={form.reconstitution_volume_ml} onChange={set('reconstitution_volume_ml')}
+                  style={INPUT_STYLE} inputMode="decimal" placeholder="Không đoán từ hàm lượng 0,5 g" />
+              </Field>}
+            </div>
+            <Field label="Ghi chú hoàn nguyên/chuẩn bị đã duyệt (không tự áp dụng)">
+              <input value={form.reconstitution_note} onChange={set('reconstitution_note')}
+                style={INPUT_STYLE} placeholder="Thông tin theo hướng dẫn của chế phẩm và bệnh viện" />
+            </Field>
+            <div style={{ fontSize: FS.xs, color: C.text3 }}>
+              Thể tích thuốc gốc và thể tích hoàn nguyên chỉ để tham khảo; KHÔNG tự tính thời gian
+              truyền hoặc tạo phiếu truyền. Thể tích/tốc độ pha truyền nằm ở Quy tắc pha thuốc.
+            </div>
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
             <Field label="Đường dùng mặc định">
               <select value={form.default_route} onChange={e => {
@@ -386,6 +441,11 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
 
           <Field label="Đường dùng cho phép (y lệnh ghi đường khác → cảnh báo)">
             <RoutePicker routes={ROUTES} value={form.routes} onChange={routes => setForm(prev => ({ ...prev, routes }))} />
+            {form.routes.includes('TMC') && form.routes.includes('TTM') && <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 4 }}>
+              Thuốc dùng cả tiêm mạch chậm và truyền: nên để trống đường mặc định và thể tích/tốc độ
+              truyền mặc định; dùng quy tắc pha “Chỉ khi y lệnh ghi truyền”. Chỉ chọn TMC/TTM
+              khi đúng hướng dẫn của chế phẩm đã được bệnh viện duyệt.
+            </div>}
             <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 4, lineHeight: 1.45 }}>
               {form.routes.length
                 ? `Chấp nhận: ${[...new Set([form.default_route, ...form.routes].filter(Boolean))].map(routeShort).join(', ')}.`
@@ -398,7 +458,7 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
 
           {(INFUSION_ROUTES.has(form.default_route) || form.category === 'dich_truyen') && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
-              <Field label="Thể tích mặc định (ml)">
+              <Field label="Thể tích dịch truyền mặc định (ml) — KHÔNG phải thể tích thuốc gốc">
                 <input value={form.default_volume_ml} onChange={set('default_volume_ml')} inputMode="decimal" placeholder="VD: 100" style={INPUT_STYLE} />
               </Field>
               <Field label={form.default_route === 'SE' ? 'Tốc độ mặc định (ml/giờ)' : 'Tốc độ mặc định (giọt/phút)'}>
