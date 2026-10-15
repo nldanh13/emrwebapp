@@ -395,7 +395,9 @@ function findIncompleteInfusionEntries(processedRows, targets) {
   const patientDates = targets?.patientDates && typeof targets.patientDates === 'object' ? targets.patientDates : {};
   const entries = [];
   for (const patientId of (Array.isArray(targets?.patientIds) ? targets.patientIds : [])) {
-    const dates = Array.isArray(patientDates[patientId]) ? patientDates[patientId] : [];
+    const dates = Array.isArray(patientDates[patientId]) && patientDates[patientId].length
+      ? patientDates[patientId]
+      : (Array.isArray(targets?.selectedDates) ? targets.selectedDates : []);
     for (const date of dates) {
       const rowsForDay = processedRows.filter(r => rowPatientId(r) === patientId && rowWorkDate(r) === date);
       if (!rowsForDay.length) continue;
@@ -437,8 +439,10 @@ function validateInfusionTargetsComplete(processedRows, targets) {
   const filteredPatientIds = [];
   const filteredPatientDates = {};
   for (const patientId of (Array.isArray(targets?.patientIds) ? targets.patientIds : [])) {
-    const dates = (Array.isArray(patientDates[patientId]) ? patientDates[patientId] : [])
-      .filter(date => !blockedKeys.has(`${patientId}::${date}`));
+    const sourceDates = Array.isArray(patientDates[patientId]) && patientDates[patientId].length
+      ? patientDates[patientId]
+      : (Array.isArray(targets?.selectedDates) ? targets.selectedDates : []);
+    const dates = sourceDates.filter(date => !blockedKeys.has(`${patientId}::${date}`));
     if (dates.length) {
       filteredPatientIds.push(patientId);
       filteredPatientDates[patientId] = dates;
@@ -1697,3 +1701,5 @@ router.post('/run-input-care', async (req, res) => {
 });
 
 module.exports = router;
+// Pure review gate exported for offline regression tests; no EMR access.
+module.exports.validateInfusionTargetsComplete = validateInfusionTargetsComplete;
