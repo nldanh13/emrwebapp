@@ -661,6 +661,7 @@ router.delete('/medication-catalog/:key', (req, res) => {
 
 module.exports = router;
 module.exports.normalizeDilution = normalizeDilution;
+module.exports.normalizePreparation = normalizePreparation;
 module.exports.cleanCheckItems = cleanCheckItems;
 module.exports.runDilutionCheck = runDilutionCheck;
 module.exports.computeDilutionStats = computeDilutionStats;
