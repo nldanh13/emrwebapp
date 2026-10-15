@@ -14,6 +14,7 @@ const { readDoneState, markDoneKeys, fingerprintRecords, baseDoneKey, hashValue 
 const { parseDmy, normalizeDmy }                           = require('../utils/validation');
 const { readConfig }                                       = require('../utils/nurse_config');
 const { ROOT_DIR, ALLOW_INPUT_WITHOUT_PRECHECK }             = require('../constants');
+const { infusionItemKey, parsePositiveInfusionValue, matchAndUpdateInfusions } = require('../utils/infusion_edit_validation');
 const { hasRole }                                             = require('../services/authz');
 const {
   buildPatientDayBundle,
@@ -388,8 +389,8 @@ function rowWorkDate(row) {
   return String(row?.ngay_lam || row?.ngay_y_lenh || row?.ngay || row?.date || '').trim();
 }
 
-// Không cho nhập dịch truyền khi còn dòng thiếu thể tích trong phạm vi đang
-// nhập — nếu không worker sẽ mặc định 0ml khi ghi vào EMR (xem input_infusions.py).
+// Không cho nhập dịch truyền khi thiếu thể tích/giờ/tốc độ hoặc khi lịch tính
+// theo giá trị cũ đã mất hiệu lực. Ngăn worker tự điền 30 giọt/phút thiếu căn cứ.
 function findIncompleteInfusionEntries(processedRows, targets) {
   const patientDates = targets?.patientDates && typeof targets.patientDates === 'object' ? targets.patientDates : {};
   const entries = [];
@@ -402,8 +403,16 @@ function findIncompleteInfusionEntries(processedRows, targets) {
       for (const row of rowsForDay) {
         const list = Array.isArray(row?.thuoc?.dich_truyen) ? row.thuoc.dich_truyen : [];
         for (const item of list) {
-          if (hasValidVolume(item)) continue;
+          const reason = !hasValidVolume(item) ? 'Thiếu thể tích'
+            : !String(item?.tg_bat_dau || '').trim() ? 'Thiếu giờ bắt đầu'
+            : item?.missing_infusion_time ? 'Chưa có giờ dùng rõ ràng'
+            : item?.infusion_schedule_stale ? 'Lịch tính trước khi sửa thể tích/tốc độ, cần xử lý lại'
+            : item?.toc_do_inferred ? 'Tốc độ 30 giọt/phút là giá trị phần mềm tự đoán, chưa xác nhận'
+            : !(Number(String(item?.toc_do ?? '').replace(',', '.')) > 0) ? 'Thiếu tốc độ truyền hợp lệ'
+            : '';
+          if (!reason) continue;
           entries.push({
+            reason,
             ma_bn: patientId,
             ho_ten: ten,
             ngay_lam: date,
@@ -437,13 +446,13 @@ function validateInfusionTargetsComplete(processedRows, targets) {
   }
 
   const preview = missing.slice(0, 8)
-    .map(m => `${m.ho_ten} (${m.ma_bn}) ${m.ngay_lam} — ${m.ten_thuoc}${m.tg_bat_dau ? ` lúc ${m.tg_bat_dau}` : ''}`)
+    .map(m => `${m.ho_ten} (${m.ma_bn}) ${m.ngay_lam} — ${m.ten_thuoc}: ${m.reason}`)
     .join('; ');
-  const skipMessage = `Đã bỏ qua ${missing.length} dòng dịch truyền thiếu thể tích (CHƯA nhập): ${preview}${missing.length > 8 ? '…' : ''}. `
-    + 'Vào tab "Sửa dịch truyền" để nhập thể tích trước.';
+  const skipMessage = `Đã loại các BN/ngày có ${missing.length} dòng dịch truyền thiếu hoặc chưa được xác nhận (CHƯA nhập): ${preview}${missing.length > 8 ? '…' : ''}. `
+    + 'Đối chiếu Y lệnh gốc; cập nhật đúng cấu hình hoặc xử lý lại lịch dịch truyền trước khi nhập EMR.';
 
   if (!filteredPatientIds.length) {
-    return { ok: false, details: missing, message: `Tất cả dịch truyền trong phạm vi đã chọn đều thiếu thể tích nên CHƯA cho phép nhập. ${skipMessage}` };
+    return { ok: false, details: missing, message: `Chưa thể nhập dịch truyền trong phạm vi đã chọn. ${skipMessage}` };
   }
 
   return {
@@ -457,23 +466,6 @@ function validateInfusionTargetsComplete(processedRows, targets) {
 // ── POST /api/update-infusion-item ───────────────────────────────────────────
 // Sửa thể tích/tốc độ MỘT dòng dịch truyền đã thu thập, chỉ trên dữ liệu cục bộ
 // (PROCESSED_PATH). Không gọi worker, không ghi ngược EMR.
-
-function infusionItemKey(item = {}) {
-  return [
-    String(item.ten_thuoc || '').trim().toLowerCase(),
-    String(item.bac_si || '').trim().toLowerCase(),
-    String(item.tg_bat_dau || item.gio_dung || '').trim(),
-    String(item.tg_ket_thuc || '').trim(),
-    String(item.the_tich ?? '').trim(),
-    String(item.toc_do ?? '').trim(),
-  ].join('|');
-}
-
-function coerceInfusionNumber(value) {
-  const text = String(value).trim().replace(',', '.');
-  const num = Number(text);
-  return text !== '' && Number.isFinite(num) ? num : text;
-}
 
 router.post('/update-infusion-item', (req, res) => {
   const ctx = getRuntimePaths(req);
@@ -496,27 +488,25 @@ router.post('/update-infusion-item', (req, res) => {
     return res.status(400).json({ status: 'error', message: 'Không có giá trị mới để lưu.' });
   }
 
-  const targetKey = infusionItemKey(match);
-  const rows = readJsonSafe(ctx.PROCESSED_PATH, []);
-  let updatedCount = 0;
-
-  for (const row of (Array.isArray(rows) ? rows : [])) {
-    if (rowPatientId(row) !== patientId || rowWorkDate(row) !== workDate) continue;
-    const list = Array.isArray(row?.thuoc?.dich_truyen) ? row.thuoc.dich_truyen : [];
-    for (const item of list) {
-      if (infusionItemKey(item) !== targetKey) continue;
-      if (hasTheTich) item.the_tich = coerceInfusionNumber(updates.the_tich);
-      if (hasTocDo) item.toc_do = coerceInfusionNumber(updates.toc_do);
-      updatedCount += 1;
-    }
+  const changed = {};
+  try {
+    if (hasTheTich) changed.the_tich = parsePositiveInfusionValue(updates.the_tich, 'Thể tích');
+    if (hasTocDo) changed.toc_do = parsePositiveInfusionValue(updates.toc_do, 'Tốc độ');
+  } catch (e) {
+    return res.status(400).json({ status: 'error', message: e.message });
   }
 
-  if (!updatedCount) {
+  const rows = readJsonSafe(ctx.PROCESSED_PATH, []);
+  const result = matchAndUpdateInfusions(rows, patientId, workDate, match, changed, rowPatientId, rowWorkDate);
+  if (result.matched !== 1) {
     return res.status(409).json({
       status: 'error',
-      message: 'Không tìm thấy dòng dịch truyền này trong dữ liệu hiện tại (có thể vừa được cập nhật). Vui lòng tải lại danh sách rồi thử lại.',
+      message: result.matched > 1
+        ? 'Có nhiều dòng dịch truyền giống nhau: không thể sửa an toàn. Cần đối chiếu y lệnh gốc và xử lý lại dữ liệu.'
+        : 'Không tìm thấy đúng dòng dịch truyền (dữ liệu có thể đã thay đổi). Tải lại và thử lại.',
     });
   }
+  const updatedCount = 1;
 
   writeJsonAtomic(ctx.PROCESSED_PATH, rows);
   appendActivity(ctx, {
@@ -528,7 +518,10 @@ router.post('/update-infusion-item', (req, res) => {
     toc_do: hasTocDo ? updates.toc_do : undefined,
   });
 
-  return res.json({ status: 'ok', updated_count: updatedCount });
+  return res.json({ status: 'ok', updated_count: updatedCount,
+    requires_schedule_review: true,
+    message: 'Đã lưu vào dữ liệu cục bộ. Giờ kết thúc và lịch các lần truyền liên quan có thể cần tính lại; chưa cho nhập EMR đến khi xử lý lại.',
+  });
 });
 
 function dmyStamp(s) {
