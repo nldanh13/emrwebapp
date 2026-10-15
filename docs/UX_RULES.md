@@ -96,6 +96,10 @@ kế hoạch của Thu thập tự động (`planCollection`) để chắc phầ
 `single_login`, và `WorkerSession.switch_account` từ chối đổi. Việc cần tên người khác thì làm trên
 phiếu (đổi Người lập). Việc EMR không cho thì báo để xử lý tay.
 *Vì:* log cũ đăng nhập qua lại lndieu → vtynhi → lndieu nhiều lần trong một lượt.
+**Ngoại lệ: nhập chăm sóc (bệnh phòng và phòng khám).** EMR không còn cho Thu hồi để đổi Người lập,
+nên mỗi phiếu lập bằng tài khoản EMR của chính người phụ trách giờ đó. Bệnh phòng đăng nhập lần lượt
+từng tài khoản (ca làm trước, ca trực sau), mỗi tài khoản một lần cho cả lượt; người chưa có tài khoản
+EMR thì không nhập phiếu của người đó và báo rõ (`worker/care_owner_accounts.py`).
 
 4.4 **Nhập liệu đăng nhập bằng tài khoản người ca làm theo lịch**, không dùng tài khoản mặc định.
 - Dùng `EntryAccountResolver` (`worker/nurse_emr_accounts.py`) và `ws.use_entry_account(...)`.

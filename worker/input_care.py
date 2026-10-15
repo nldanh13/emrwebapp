@@ -33,8 +33,8 @@ from utils import (
 from shared.worker_session import WorkerSession, open_session
 from shared.json_io import read_json_critical
 from shared.logging_utils import make_worker_logger
-from nurse_emr_accounts import EntryAccountResolver, get_nurse_name_for_username
-from care_deferred import DeferredCreatorJobs
+from nurse_emr_accounts import EntryAccountResolver, get_emr_account_for_nurse
+from care_owner_accounts import group_jobs_by_owner_account
 
 from selenium_emr_helpers import (
     build_inpatient_url as _build_inpatient_url,
@@ -80,8 +80,7 @@ from care_cache import (
 )
 from care_form_actions import (
     set_thoi_gian_lap, dien_thong_tin, set_log_context as set_care_form_log_context,
-    doi_nguoi_lap_sau_hoan_tat, doc_nguoi_lap_hien_tai, cung_nguoi_lap, luu_va_hoan_tat,
-    dat_nguoi_lap_ve_chu_tai_khoan,
+    doc_nguoi_lap_hien_tai, cung_nguoi_lap, luu_va_hoan_tat,
 )
 
 # ==============================================================================
@@ -791,42 +790,28 @@ def main():
     def _after_login(ws: WorkerSession) -> None:
         ws.ensure_inpatient_list()
 
-    # Nhập liệu đăng nhập MỘT lần bằng tài khoản EMR của điều dưỡng CA LÀM theo
-    # lịch của ngày đầu tiên (không dùng tài khoản mặc định; người ca làm chưa có
-    # tài khoản thì dùng tài khoản mặc định + cảnh báo) và nhập hết cả lượt bằng
-    # phiên đó. Phiếu cần đứng tên người khác (ca trực, ca làm ngày khác) thì
-    # Hoàn tất → Thu hồi → đổi Người lập → Hoàn tất ngay trên phiếu, như macro.
-    entry_accounts = EntryAccountResolver(CONFIG, schedule=CONFIG_TEN_GOC or {})
+    # Phiếu của ai lập bằng tài khoản EMR của người đó (EMR không cho Thu hồi để
+    # đổi Người lập nữa): mở phiên bằng tài khoản ca làm của ngày đầu tiên, rồi
+    # Phase 2 đăng nhập lần lượt từng tài khoản người lập (ca làm trước, ca trực
+    # sau). Phiếu của người chưa có tài khoản EMR thì không nhập, ghi lỗi rõ.
+    entry_accounts = EntryAccountResolver(CONFIG, schedule=CONFIG_TEN_GOC or {}, warn=lambda _m: None)
     _first_work_date = sorted(
         (k[1] for k in patient_data.keys()),
         key=lambda d: (str(d)[6:10], str(d)[3:5], str(d)[0:2]) if re.match(r"\d{2}/\d{2}/\d{4}", str(d)) else (str(d), "", ""),
     )[0]
     login_config = entry_accounts.login_config(CONFIG, _first_work_date)
-    run_account = entry_accounts.run_account
+    # Lượt nhập chăm sóc phải đổi được sang tài khoản từng người lập.
+    login_config.pop("single_login", None)
 
     with open_session(result_path, config=login_config, post_login=_after_login) as ws:
         driver, wait = ws.driver, ws.wait
-        ws._result_kwargs.setdefault("warnings", entry_accounts.warnings)
 
         count = 0
-        default_emr_username = str(CONFIG.get("username") or "").strip()
-        # Tên chủ tài khoản mặc định (tra từ secrets/nurse_emr_accounts.json) — chỉ
-        # dùng khi người ca làm chưa có tài khoản EMR và phải nhập bằng tài khoản mặc định.
-        default_owner_name = get_nurse_name_for_username(default_emr_username)
-        # Tên chủ tài khoản đang đăng nhập (Người lập EMR tự điền khi tạo phiếu).
-        account_owner_name = (
-            run_account.get("nurse_name") if run_account.get("source") == "schedule" else default_owner_name
-        ) or ""
+        # Tên chủ từng tài khoản EMR dùng để nhập (= người lập phiếu của tài khoản đó).
+        account_owner_names = {}
 
         def owner_name_for_account(username_x):
-            # Tài khoản của lượt: tên theo lịch; tài khoản người lập ở lượt cuối: tra theo tài khoản.
-            if username_x == run_account.get("username"):
-                return account_owner_name
-            return get_nurse_name_for_username(username_x) or ""
-
-        # Phiếu tài khoản ca làm không sửa/Hoàn tất được → gom theo người lập, cuối
-        # lượt đăng nhập tài khoản đó MỘT lần (người dùng chọn "Cuối lượt mới đổi").
-        deferred_jobs = DeferredCreatorJobs()
+            return account_owner_names.get(username_x) or ""
 
         # ── PHASE 1: tính toán (KHÔNG mở trình duyệt) danh sách care_jobs của
         # từng bệnh nhân, rồi nhóm theo tài khoản EMR cần đăng nhập (điều dưỡng
@@ -842,15 +827,6 @@ def main():
         oncall_account_order = []
         other_account_order = []
         account_passwords = {}
-
-        def _shift_kind_for_hour(h):
-            """'work' (07-10h, 13-16h) hoặc 'oncall' (còn lại) — khớp đúng quy
-            tắc ca trong get_nurse_by_shift() ở worker/utils.py."""
-            try:
-                h = int(h)
-            except Exception:
-                return "work"
-            return "work" if (7 <= h <= 10 or 13 <= h <= 16) else "oncall"
 
         for patient_key, info in patient_data.items():
             ma_bn = info.get("ma_bn") or patient_key[0]
@@ -1139,46 +1115,32 @@ def main():
 
             care_jobs = sorted(care_jobs, key=_care_job_sort_key)
 
-            # Mọi phiếu (mọi ngày, ca làm lẫn ca trực) nhập bằng tài khoản của lượt
-            # (run_account — đăng nhập một lần). Phiếu đứng tên người khác được tạo
-            # + Hoàn tất dưới tên chủ tài khoản trước, rồi mới Thu hồi đổi Người lập
-            # — EMR báo lỗi nếu đổi tên ngay lúc tạo phiếu.
-            jobs_by_account = {}
-            for job in care_jobs:
-                h_g = int(job.get("hour") or 0)
-                time_str_g = job.get("time_str") or tao_thoi_gian_lap(h_g, ngay_lam_viec)
-                try:
-                    nurse_name_g = get_nurse_by_shift(time_str_g, CONFIG_TEN_GOC or {})
-                except Exception:
-                    nurse_name_g = ""
-                if run_account.get("source") == "schedule":
-                    owner_name_g = run_account["nurse_name"]
-                else:
-                    owner_name_g = default_owner_name
-                if not owner_name_g:
-                    try:
-                        owner_name_g = get_nurse_by_shift(time_str_g, CONFIG_TEN_GOC or {}, force_shift="work")
-                    except Exception:
-                        owner_name_g = ""
-                if (nurse_name_g and owner_name_g
-                        and chuan_hoa_unicode(nurse_name_g) != chuan_hoa_unicode(owner_name_g)):
-                    job["nguoi_lap_tam"] = owner_name_g
-                    job["nguoi_lap_cuoi"] = nurse_name_g
-                username_g = run_account["username"]
-                jobs_by_account.setdefault(username_g, []).append(job)
-                account_passwords.setdefault(username_g, run_account["password"])
-                shift_kind_g = _shift_kind_for_hour(h_g)
-                target_order_g = work_account_order if shift_kind_g == "work" else oncall_account_order
-                if username_g not in target_order_g:
-                    target_order_g.append(username_g)
+            # Mỗi phiếu nhập bằng tài khoản EMR của chính người phụ trách giờ đó
+            # (ca làm/ca trực theo lịch). Chưa có tài khoản thì không nhập phiếu đó.
+            def _owner_for_time(time_str_g):
+                return get_nurse_by_shift(time_str_g, CONFIG_TEN_GOC or {})
 
-            if not jobs_by_account:
+            grouped = group_jobs_by_owner_account(care_jobs, _owner_for_time, get_emr_account_for_nurse)
+            jobs_by_account = grouped["jobs_by_account"]
+            blocked_jobs = list(grouped["blocked"])
+            for msg_blocked in blocked_jobs:
+                print(f"   [CHẶN] {msg_blocked}")
+                LOG.warning(_ctx_prefix() + f"[no_owner_account] {msg_blocked}")
+            account_passwords.update(grouped["passwords"])
+            account_owner_names.update(grouped["owners"])
+            for username_g, kinds_g in grouped["shift_kinds"].items():
+                for kind_g in kinds_g:
+                    target_order_g = work_account_order if kind_g == "work" else oncall_account_order
+                    if username_g not in target_order_g:
+                        target_order_g.append(username_g)
+
+            if not jobs_by_account and not blocked_jobs:
                 # Không có job cụ thể nào (vd: toàn bộ giờ bị lọc do đang đi mổ) nhưng
                 # vẫn cần 1 lượt mở hồ sơ để dọn phiếu dư/kiểm tra trạng thái — dùng
-                # tài khoản của lượt, không có job để nhập.
-                _day_user = run_account["username"]
+                # tài khoản đang đăng nhập, không có job để nhập.
+                _day_user = str(ws.config.get("username") or "").strip()
                 jobs_by_account[_day_user] = []
-                account_passwords.setdefault(_day_user, run_account["password"])
+                account_passwords.setdefault(_day_user, str(ws.config.get("password") or ""))
                 if (_day_user not in work_account_order
                         and _day_user not in oncall_account_order
                         and _day_user not in other_account_order):
@@ -1202,7 +1164,7 @@ def main():
                 "surgery_cutoff_text": surgery_cutoff_text,
                 "receive_time_key": receive_time_key,
                 "jobs_by_account": jobs_by_account,
-                "job_failures": [],
+                "job_failures": blocked_jobs,
                 "job_skip_reasons": [],
             })
 
@@ -1227,18 +1189,16 @@ def main():
             password = account_passwords.get(username) or ""
             prev_emr_username = str(ws.config.get("username") or "").strip()
             if username and username != prev_emr_username:
-                if deferred_jobs.is_deferred_account(username):
-                    print(f"\n>>> CUỐI LƯỢT: đăng nhập {username} một lần để sửa + Hoàn tất các phiếu đứng tên người này.")
-                switched_ok = ws.switch_account(
-                    username, password, end_of_run=deferred_jobs.is_deferred_account(username)
-                )
+                print(f"\n>>> Đăng nhập tài khoản EMR của {owner_name_for_account(username) or username} để nhập các phiếu đứng tên người này.")
+                switched_ok = ws.switch_account(username, password)
                 if not switched_ok:
-                    msg_sw = f"Không đổi được tài khoản EMR ({username}); bỏ qua lượt của tài khoản này."
+                    msg_sw = (f"Không đăng nhập được tài khoản EMR của {owner_name_for_account(username) or username}; "
+                              "chưa nhập các phiếu của người này. Kiểm tra mật khẩu trong Thiết lập tài khoản.")
                     print(f"   [WARN] {msg_sw}")
                     LOG.warning(f"[switch_account_failed] {msg_sw}")
                     for plan in patient_plans:
-                        if username in plan["jobs_by_account"]:
-                            plan["job_skip_reasons"].append(msg_sw)
+                        if plan["jobs_by_account"].get(username):
+                            plan["job_failures"].append(msg_sw)
                     continue
             driver, wait = ws.driver, ws.wait
             current_owner_name = owner_name_for_account(username)
@@ -1307,19 +1267,8 @@ def main():
                     protect_before_time_key=receive_time_key if is_postop_receive_day else None,
                     remove_tool_rows_at_or_after_time_key=surgery_cutoff_text if surgery_active else None,
                     allow_completed=is_discharge_day,
-                    keep_moi_time_keys=plan.get("deferred_time_keys"),
                 )
                 driver, wait = ws.driver, ws.wait
-
-                def _defer(job, time_str, existing_creator):
-                    # Không đổi tài khoản giữa chừng: gom phiếu này cho lượt cuối của người lập.
-                    if not deferred_jobs.defer(plan, job, existing_creator, username, time_str,
-                                               account_order, account_passwords):
-                        return False
-                    keep_moi_time_keys.add(time_str)
-                    print(f"-> ĐỂ CUỐI LƯỢT: tài khoản {username} không làm được, sẽ đăng nhập tài khoản của {existing_creator} một lần ở cuối lượt.")
-                    LOG.info(_ctx_prefix() + f"[deferred_to_creator] {time_str} creator={existing_creator}")
-                    return True
 
                 def _process_job(job):
                     nonlocal driver, wait
@@ -1428,10 +1377,15 @@ def main():
                         LOG.warning(_ctx_prefix() + f"[job_uneditable] {msg_skip}")
                         return
 
-                    # Sửa/xóa phiếu cũ: làm bằng tài khoản đang dùng trước (đúng macro
-                    # người dùng — tài khoản ca làm tự Thu hồi/sửa/Hoàn tất); chỉ khi EMR
-                    # không cho mới đổi sang tài khoản người lập phiếu đó.
+                    # EMR không cho đổi Người lập nữa: phiếu cũ đứng tên người khác thì
+                    # xóa (bằng tài khoản đang dùng, không được thì tài khoản người lập
+                    # cũ) rồi lập lại bằng tài khoản của người phụ trách giờ này. Phiếu
+                    # cũ của chính người này thì sửa tại chỗ.
                     switched_for_edit = False
+                    if stt == "UPDATE" and existing_creator and current_owner_name \
+                            and not cung_nguoi_lap(existing_creator, current_owner_name):
+                        print(f"-> Phiếu cũ đứng tên {existing_creator}, cần tên {current_owner_name}.", end=" ")
+                        stt = "EDIT"
                     if stt == "UPDATE":
                         print("-> [ACTION] SỬA PHIẾU CŨ: Sửa → Thu hồi → cập nhật → Hoàn tất.", end=" ")
 
@@ -1455,23 +1409,12 @@ def main():
                                 time.sleep(1)
                             except Exception as _e:
                                 LOG.debug(f"[except] {_e}")
-                            if _defer(job, time_str, existing_creator):
-                                return
-                            msg_sw2 = (
-                                f"{time_str}: tài khoản đang dùng không sửa được phiếu cũ của "
-                                f"'{existing_creator}' và không có tài khoản người lập để làm nốt cuối lượt"
-                            )
+                            msg_sw2 = f"{time_str}: không mở khóa được phiếu cũ để sửa; không tạo trùng, cần kiểm tra tay"
                             print(f"-> [WARN] {msg_sw2}")
                             job_failures.append(msg_sw2)
                             LOG.warning(_ctx_prefix() + f"[edit_not_allowed] {msg_sw2}")
                             return
                         driver, wait = ws.driver, ws.wait
-                        # Phiếu cũ đứng tên người khác (vd 'Mới' tên người trực do bản cũ để
-                        # lại): đưa Người lập về chủ tài khoản để Hoàn tất được; nếu cần tên
-                        # người khác thì bước sau Thu hồi → đổi Người lập → Hoàn tất (macro).
-                        if existing_creator and not switched_for_edit and current_owner_name:
-                            if not dat_nguoi_lap_ve_chu_tai_khoan(driver, current_owner_name):
-                                print(f"[WARN] Không đưa được Người lập về {current_owner_name}.", end=" ")
                     elif stt == "EDIT":
                         print("-> [ACTION] THU HỒI/XÓA PHIẾU CŨ.", end=" ")
 
@@ -1487,9 +1430,9 @@ def main():
                                 return False
 
                         # Tài khoản đang dùng trước; không được mới nhờ tài khoản người lập,
-                        # xong tự đổi lại để phiếu mới tạo đúng tài khoản ca làm.
+                        # xong tự đổi lại để phiếu mới tạo đúng tài khoản người phụ trách.
                         if not ws.run_with_creator_fallback(existing_creator, ma_bn, _xoa_phieu_cu, allow_completed=is_discharge_day):
-                            # Không xóa được phiếu cũ thì không tạo thêm (tránh trùng): để cuối lượt.
+                            # Không xóa được phiếu cũ thì không tạo thêm (tránh trùng).
                             driver, wait = ws.driver, ws.wait
                             try:
                                 _ve_danh_sach = driver.find_element(By.XPATH, "//a[contains(@onclick, 'fnbackFormChamSoc')]")
@@ -1497,8 +1440,12 @@ def main():
                                 time.sleep(1)
                             except Exception as _e:
                                 LOG.debug(f"[except] {_e}")
-                            if _defer(job, time_str, existing_creator):
-                                return
+                            msg_del = (f"{time_str}: không xóa được phiếu cũ đứng tên {existing_creator or 'người khác'} "
+                                       f"(cả bằng tài khoản người lập cũ); không tạo trùng, cần xóa tay rồi nhập lại")
+                            print(f"-> [WARN] {msg_del}")
+                            job_failures.append(msg_del)
+                            LOG.warning(_ctx_prefix() + f"[delete_not_allowed] {msg_del}")
+                            return
                         driver, wait = ws.driver, ws.wait
                         print("-> TẠO LẠI.", end=" ")
                         _safe_js_click(driver, wait.until(EC.element_to_be_clickable((By.ID, "btnThemCS"))))
@@ -1552,40 +1499,18 @@ def main():
                                 success = True
                                 break
 
-                    # Tool không chọn ô Người lập lúc tạo phiếu (EMR tự điền theo tài
-                    # khoản đang đăng nhập). Phiếu đã Hoàn tất mà tên chưa phải người
-                    # phụ trách giờ đó (vd ca trực) thì Thu hồi → đổi tên → Hoàn tất.
-                    nguoi_lap_cuoi = None
-                    nguoi_lap_tam = ""
+                    # Phiếu tạo bằng tài khoản của chính người phụ trách nên EMR tự điền
+                    # đúng Người lập. Kiểm lại: khác tên thì báo để xử lý tay (EMR không
+                    # cho Thu hồi để đổi Người lập).
                     if success and expected_creator:
-                        nguoi_lap_tam = doc_nguoi_lap_hien_tai(driver)
-                        if nguoi_lap_tam:
-                            if not cung_nguoi_lap(nguoi_lap_tam, expected_creator):
-                                nguoi_lap_cuoi = expected_creator
-                        elif job.get("nguoi_lap_cuoi"):
-                            nguoi_lap_tam = job.get("nguoi_lap_tam") or "chủ tài khoản"
-                            nguoi_lap_cuoi = job.get("nguoi_lap_cuoi")
-                    if success and nguoi_lap_cuoi:
-                        # Cùng tài khoản ca làm: Thu hồi → đổi Người lập sang người
-                        # trực → Hoàn tất ngay (đúng macro người dùng ghi lại), không
-                        # đăng nhập tài khoản người trực.
-                        print(f"   -> Thu hồi, đổi Người lập sang {nguoi_lap_cuoi}, Hoàn tất.", end=" ")
-                        if doi_nguoi_lap_sau_hoan_tat(driver, nguoi_lap_cuoi):
-                            print("-> [RESULT] XONG.")
-                        else:
-                            msg_rename = (
-                                f"{time_str}: đã Hoàn tất dưới tên {nguoi_lap_tam} nhưng không "
-                                f"Thu hồi/đổi được Người lập sang {nguoi_lap_cuoi}"
-                            )
-                            print(" -> FAIL đổi tên.")
-                            job_failures.append(msg_rename)
-                            LOG.warning(_ctx_prefix() + f"[rename_failed] {msg_rename}")
+                        nguoi_lap_hien_tai = doc_nguoi_lap_hien_tai(driver)
+                        if nguoi_lap_hien_tai and not cung_nguoi_lap(nguoi_lap_hien_tai, expected_creator):
+                            msg_owner = (f"{time_str}: đã Hoàn tất nhưng Người lập là {nguoi_lap_hien_tai}, "
+                                         f"không phải {expected_creator} theo lịch; cần kiểm tra tay")
+                            job_failures.append(msg_owner)
+                            LOG.warning(_ctx_prefix() + f"[owner_mismatch] {msg_owner}")
 
-                    deferred_now = False
-                    if not success and stt == "UPDATE" and existing_creator \
-                            and not cung_nguoi_lap(existing_creator, current_owner_name):
-                        deferred_now = _defer(job, time_str, existing_creator)
-                    if not success and not deferred_now:
+                    if not success:
                         msg_fail = f"{time_str}: không lưu/hoàn tất được phiếu chăm sóc"
                         job_failures.append(msg_fail)
                         print(" -> FAIL.")
@@ -1604,7 +1529,6 @@ def main():
                         # đổi lại đúng tài khoản của nhóm job này trước khi xử lý job kế.
                         _restore_group_account()
 
-                keep_moi_time_keys = set(plan.get("deferred_time_keys") or ())
                 for job in jobs:
                     _process_job(job)
 
@@ -1622,7 +1546,6 @@ def main():
                         protect_before_time_key=receive_time_key if is_postop_receive_day else None,
                         remove_tool_rows_at_or_after_time_key=surgery_cutoff_text if surgery_active else None,
                         allow_completed=is_discharge_day,
-                        keep_moi_time_keys=keep_moi_time_keys,
                     )
                     driver, wait = ws.driver, ws.wait
 

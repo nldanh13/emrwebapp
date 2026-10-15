@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Phiếu ca trực: tạo + Hoàn tất dưới tên chủ tài khoản, rồi mới Thu hồi đổi
-Người lập (EMR báo lỗi nếu đổi tên ngay lúc tạo phiếu)."""
+"""Hàm đổi Người lập sau Hoàn tất (Thu hồi → chọn tên → Hoàn tất).
+
+Nhập chăm sóc bệnh phòng và phòng khám không dùng nữa (EMR không cho Thu hồi để
+đổi Người lập; mỗi phiếu lập bằng tài khoản của chính người lập — xem
+tests/test_care_owner_accounts.py). Giữ test cho hàm vì vẫn còn trong care_form_actions."""
 import sys
 from pathlib import Path
 
@@ -66,26 +69,6 @@ def test_rename_only_save_mode_still_available(monkeypatch):
     assert calls == ["thu_hoi", ("chon", "Điều Dưỡng B"), "luu"]
 
 
-def test_input_care_renames_and_completes_without_switching_account():
-    """Macro người dùng: tài khoản ca làm Thu hồi, đổi Người lập sang người trực
-    rồi Hoàn tất luôn — không đăng nhập tài khoản người trực."""
-    source = (WORKER / "input_care.py").read_text(encoding="utf-8")
-    assert "doi_nguoi_lap_sau_hoan_tat(driver, nguoi_lap_cuoi)" in source
-    assert "hoan_tat=False" not in source
-    assert "PHASE 2b" not in source
-    assert "pending_hoan_tat" not in source
-    assert "get_emr_account_for_nurse(nguoi_lap_cuoi)" not in source
-
-
-def test_input_care_renames_only_after_hoan_tat():
-    source = (WORKER / "input_care.py").read_text(encoding="utf-8")
-    fill = source.index("form_ok = dien_thong_tin(")
-    hoan_tat = source.index('By.ID, "btnPopupHOANTAT"', fill)
-    rename = source.index("doi_nguoi_lap_sau_hoan_tat(driver, nguoi_lap_cuoi)")
-    assert fill < hoan_tat < rename
-    assert "nguoi_lap=" not in source[fill:hoan_tat]
-
-
 # Log 05/10/2026: phiếu 05:00/06:00 06/10 còn 'Mới' đứng tên Võ Thị Yến Nhi (bản cũ để lại),
 # tài khoản ca làm (tttda) sửa rồi Lưu/Hoàn tất thất bại 3 lần. Làm như macro: đưa Người lập về
 # chủ tài khoản → Hoàn tất → Thu hồi → đổi Người lập sang người trực → Hoàn tất.
@@ -105,11 +88,3 @@ def test_reset_creator_noop_when_already_owner_or_owner_unknown(monkeypatch):
     assert actions.dat_nguoi_lap_ve_chu_tai_khoan(object(), "Thạch Thị Thúy Đa") is True
     assert actions.dat_nguoi_lap_ve_chu_tai_khoan(object(), "") is False
     assert calls == []
-
-
-def test_input_care_update_resets_creator_before_filling():
-    source = (WORKER / "input_care.py").read_text(encoding="utf-8")
-    update = source.index('if stt == "UPDATE":')
-    reset = source.index("dat_nguoi_lap_ve_chu_tai_khoan(driver, current_owner_name)", update)
-    fill = source.index("form_ok = dien_thong_tin(", update)
-    assert reset < fill
