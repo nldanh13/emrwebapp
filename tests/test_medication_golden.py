@@ -17,7 +17,23 @@ def test_medication_processing_matches_golden():
     with open(GOLDEN_FILE, encoding='utf-8') as f:
         golden = json.load(f)
     current = json.loads(json.dumps(run_corpus(), ensure_ascii=False, sort_keys=True))
-    diffs = [k for k in golden if golden[k] != current.get(k)]
+    # Intentional safety correction 10/2026: Merovia order explicitly says
+    # "tiêm tĩnh mạch chậm", so it must NOT become an infusion via drug-name
+    # NaCl fallback. Keep guarding all other golden corpus fixtures unchanged.
+    corrected_case = 'merovia_tmc'
+    corrected = current[corrected_case]['thuoc']
+    assert corrected['dich_truyen'] == [], 'TMC không được tự biến thành phiếu truyền'
+    injections = corrected['thuoc_tiem']
+    # TMC giữ một y lệnh có ba giờ; chuyển thành ba phiếu truyền từng giờ
+    # chính là hồi quy cần loại bỏ, không phải điều kiện đúng của thuốc tiêm.
+    assert len(injections) == 1
+    assert all(hour in str(injections[0].get('duong_dung_goc') or '')
+               for hour in ('8 giờ', '16 giờ', '23 giờ')), 'Không được mất lịch giờ TMC'
+    assert all('tĩnh mạch chậm' in str(d.get('duong_dung_goc') or '').lower()
+               for d in injections), 'Bắt buộc giữ nguyên đường tiêm TMC'
+    assert all(not d.get('dung_moi') and not d.get('tui_dich_truyen_ml')
+               for d in injections), 'Không tự sinh túi NaCl cho TMC'
+    diffs = [k for k in golden if k != corrected_case and golden[k] != current.get(k)]
     missing = [k for k in current if k not in golden]
     assert not missing, f'Mẫu mới chưa có trong file mốc: {missing}'
     assert not diffs, f'Kết quả xử lý thay đổi ở các mẫu: {diffs}'

@@ -72,3 +72,32 @@ trước một thuốc sẽ được xử lý thế nào.
   trong danh mục. Danh sách được khớp bằng đúng hàm tra danh mục của bước xử lý (`worker/catalog_gaps.py`).
   - "Thiết lập" mở form thêm thuốc, đã điền sẵn tên, hoạt chất, đường dùng, thể tích theo dữ liệu.
   - "Bỏ qua" chỉ ẩn thuốc khỏi danh sách, không sửa danh mục.
+
+
+## Thuốc dùng cả tiêm tĩnh mạch chậm (TMC) và truyền (TTM)
+
+**Một chế phẩm/một mã danh mục**, có thể có nhiều đường dùng nếu đúng hướng dẫn
+sản phẩm và danh mục bệnh viện được phép. Không tạo hai bản thuốc trùng tên.
+
+Trong **Danh mục thuốc → Sửa thuốc**:
+- Dạng bào chế: `Dung dịch tiêm` cho ống Nefopam, `Bột pha tiêm` cho lọ kháng sinh bột.
+- Hàm lượng trên nhãn: ví dụ `20 mg/2 ml` hoặc `0,5 g/lọ`. Đây là chữ mô tả, không tự quy đổi liều.
+- **Thể tích thuốc gốc**: `2` ml cho ống dung dịch 2 ml; để trống đối với lọ bột.
+- **Thể tích hoàn nguyên** (lọ bột): chỉ điền khi đã xác minh theo hướng dẫn chế phẩm được bệnh viện duyệt. Đây không phải thể tích dịch truyền; không tự tính tốc độ hoặc khối lượng dung môi.
+- **Đường dùng mặc định**: để trống khi cả TMC/TTM đều được dùng, để hệ thống theo y lệnh.
+- **Đường dùng cho phép**: chọn `TMC` và `TTM` chỉ khi được cơ sở chấp thuận.
+- **Thể tích/tốc độ truyền mặc định**: để trống đối với chế phẩm có nhiều cách dùng; nếu được duyệt, khai báo quy tắc pha với `Chỉ khi y lệnh ghi truyền`.
+- Phải xem trước từng trường hợp bằng `Kiểm tra quy tắc pha thuốc` trước khi dùng thực tế.
+
+Luồng phân loại: **y lệnh ghi rõ TMC** luôn giữ là thuốc tiêm, kể cả thuốc có
+luật pha NaCl theo tên/hoạt chất. Nếu cùng dòng có cả TMC và TTM, hệ thống
+giữ ở thuốc tiêm và đánh dấu `can_xac_nhan_duong_dung`, không tự tạo phiếu truyền.
+Y lệnh ghi TTM vẫn được phân loại theo quy tắc hiện hành.
+
+**Chú ý tương thích:** Những bản ghi thuốc cũ không có `preparation` tiếp tục
+được đọc như trước; không tự điền/di chuyển giá trị `default_volume_ml`, vì
+trường cũ vốn được xử lý như thể tích truyền. Đừng tự đổi dữ liệu gốc của bệnh nhân.
+Thể tích hoàn nguyên/ống chỉ dùng để hiển thị và tham khảo cấu hình; không phải
+chỉ định sử dụng thuốc hay xác nhận độ tương thích dung môi.
+
+Không tự chạy thử trên EMR bệnh viện. Bước kiểm thử offline chạy với dữ liệu giả.

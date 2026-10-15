@@ -52,7 +52,9 @@ def test_catalog_active_ingredient_lets_brand_use_dilution_rule(catalog):
     drug = {'ten_thuoc': 'VANCOTEX 1G', 'dang': 'Lọ', 'so_luong': '1', 'gio_dung': '8 giờ',
             'duong_dung_goc': 'Tiêm tĩnh mạch chậm (8 giờ)'}
     infusions, injections = infer_and_reclassify_diluents([], [drug])
-    assert injections == [] and infusions[0]['dung_moi'] == 'NACL_0.9'
+    # Một tên thương mại có luật pha truyền KHÔNG được đổi y lệnh TMC thành TTM.
+    assert infusions == [] and len(injections) == 1
+    assert injections[0]['duong_dung_goc'].startswith('Tiêm tĩnh mạch chậm')
 
 
 def test_catalog_own_solvent_flag_skips_water_tag(catalog):

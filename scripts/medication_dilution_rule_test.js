@@ -3,7 +3,7 @@
 // Quy tắc pha thuốc trong Danh mục thuốc: máy chủ chỉ lưu dữ liệu đúng dạng worker đọc được
 // (worker/processing/medication_catalog.py catalog_dilution_rule), báo lỗi tiếng Việt khi sai.
 const assert = require('assert');
-const { normalizeDilution, cleanCheckItems, runDilutionCheck, computeDilutionStats } = require('../server/routes/medication_catalog');
+const { normalizeDilution, normalizePreparation, cleanCheckItems, runDilutionCheck, computeDilutionStats } = require('../server/routes/medication_catalog');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -12,6 +12,21 @@ let failed = 0;
 const test = (name, fn) => { try { fn(); console.log(`  ok - ${name}`); } catch (e) { failed += 1; console.error(`  FAIL - ${name}\n`, e); } };
 console.log('medication_dilution_rule_test');
 
+test('ống tiêm 2 ml là thể tích chế phẩm, không phải pha truyền', () => {
+  assert.deepStrictEqual(normalizePreparation({
+    dosage_form: 'solution', strength: '20 mg/2 ml', original_volume_ml: '2',
+  }), { dosage_form: 'solution', strength: '20 mg/2 ml', original_volume_ml: 2 });
+  assert.strictEqual(normalizePreparation({}), undefined);
+});
+test('lọ bột 0,5 g không có thể tích gốc và có bước hoàn nguyên riêng', () => {
+  assert.deepStrictEqual(normalizePreparation({
+    dosage_form: 'powder', strength: '0,5 g/lọ', reconstitution_note: 'Theo chế phẩm đã duyệt',
+  }), { dosage_form: 'powder', strength: '0,5 g/lọ', reconstitution_note: 'Theo chế phẩm đã duyệt' });
+  assert.throws(() => normalizePreparation({ dosage_form: 'powder', original_volume_ml: 2 }), /không có thể tích/);
+  assert.throws(() => normalizePreparation({ dosage_form: 'solution', reconstitution_volume_ml: 5 }), /chỉ dành cho thuốc dạng bột/);
+  assert.throws(() => normalizePreparation({ dosage_form: 'powder', reconstitution_volume_ml: -1 }), /số dương/);
+  assert.throws(() => normalizePreparation({ dosage_form: 'powder', original_volume_ml: 'NaCl 100ml' }), /số dương/);
+});
 test('rỗng → bỏ quy tắc', () => {
   assert.strictEqual(normalizeDilution(null), undefined);
   assert.strictEqual(normalizeDilution(''), undefined);

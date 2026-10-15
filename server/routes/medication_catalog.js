@@ -207,6 +207,40 @@ function duplicateNameMessage(name) {
     + 'thể tích mới ở mục "Quy cách khác"; hoặc đặt tên kèm thể tích, vd. "' + name + ' 500ml".';
 }
 
+// Các trường chế phẩm chỉ mô tả thành phẩm và hoàn nguyên, KHÔNG phải thể tích dịch truyền.
+// Không sử dụng chúng trong tính giờ/tốc độ hoặc quyết định tiêm chậm → truyền.
+function normalizePreparation(value) {
+  if (value == null || value === '') return undefined;
+  if (typeof value !== 'object' || Array.isArray(value)) throw badRequest('Thông tin chế phẩm không hợp lệ.');
+  const dosageForm = String(value.dosage_form || '').trim();
+  if (dosageForm && !['solution', 'powder', 'ready_infusion', 'other'].includes(dosageForm)) {
+    throw badRequest('Dạng bào chế không hợp lệ.');
+  }
+  const strength = String(value.strength || '').trim().slice(0, 100);
+  const note = String(value.reconstitution_note || '').trim().slice(0, 500);
+  const positive = (raw, field) => {
+    if (raw == null || raw === '') return undefined;
+    const n = Number(String(raw).replace(',', '.'));
+    if (!Number.isFinite(n) || n <= 0 || n > 5000) throw badRequest(field + ' phải là số dương (tối đa 5000 ml).');
+    return n;
+  };
+  const originalVolume = positive(value.original_volume_ml, 'Thể tích thuốc trong ống/chai');
+  const reconstitutionVolume = positive(value.reconstitution_volume_ml, 'Thể tích dung môi hoàn nguyên');
+  if (dosageForm === 'powder' && originalVolume !== undefined) {
+    throw badRequest('Lọ bột chưa hoàn nguyên không có thể tích thuốc gốc tính bằng ml.');
+  }
+  if (dosageForm !== 'powder' && reconstitutionVolume !== undefined) {
+    throw badRequest('Thể tích hoàn nguyên chỉ dành cho thuốc dạng bột.');
+  }
+  const out = {};
+  if (dosageForm) out.dosage_form = dosageForm;
+  if (strength) out.strength = strength;
+  if (originalVolume !== undefined) out.original_volume_ml = originalVolume;
+  if (reconstitutionVolume !== undefined) out.reconstitution_volume_ml = reconstitutionVolume;
+  if (note) out.reconstitution_note = note;
+  return Object.keys(out).length ? out : undefined;
+}
+
 function pruneEmpty(med) {
   for (const k of Object.keys(med)) {
     const v = med[k];
@@ -307,6 +341,7 @@ router.post('/medication-catalog', (req, res) => {
       default_rate_text: String(body.default_rate_text || '').trim(),
       schedule_rule: String(body.schedule_rule || '').trim(),
       dilution: normalizeDilution(body.dilution),
+      preparation: normalizePreparation(body.preparation),
       ten_hien_thi: String(body.ten_hien_thi || '').trim().slice(0, 200),
       co_dung_moi_di_kem: body.co_dung_moi_di_kem === true ? true : undefined,
       quy_cach: normalizePresentations(body.quy_cach, volumeNum),
@@ -577,6 +612,11 @@ router.patch('/medication-catalog/:key', (req, res) => {
       if (dilution) med.dilution = dilution; else delete med.dilution;
     }
 
+    if (body.preparation !== undefined) {
+      const preparation = normalizePreparation(body.preparation);
+      if (preparation) med.preparation = preparation; else delete med.preparation;
+    }
+
     if (body.quy_cach !== undefined) {
       const list = normalizePresentations(body.quy_cach, med.default_volume_ml);
       if (list) med.quy_cach = list; else delete med.quy_cach;
@@ -621,6 +661,7 @@ router.delete('/medication-catalog/:key', (req, res) => {
 
 module.exports = router;
 module.exports.normalizeDilution = normalizeDilution;
+module.exports.normalizePreparation = normalizePreparation;
 module.exports.cleanCheckItems = cleanCheckItems;
 module.exports.runDilutionCheck = runDilutionCheck;
 module.exports.computeDilutionStats = computeDilutionStats;
