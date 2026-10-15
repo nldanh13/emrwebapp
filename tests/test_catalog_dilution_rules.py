@@ -38,7 +38,7 @@ def test_rule_always_nacl_moves_vial_to_infusion_with_catalog_volume(catalog):
     catalog([{'canonical': 'TAZOCIN', 'aliases': ['TAZOCIN 4.5G'],
               'dilution': {'solvent': 'NACL_0.9', 'volume_ml': 250, 'apply': 'always'}}])
 
-    infusions, injections = infer_and_reclassify_diluents([], [_vial('TAZOCIN 4.5G', 'Abc')])
+    infusions, injections = infer_and_reclassify_diluents([], [_vial('TAZOCIN 4.5G', 'Abc', 'Tiêm truyền TM (8 giờ)')])
     assert injections == []
     assert len(infusions) == 1
     out = infusions[0]
@@ -111,12 +111,12 @@ def test_rule_matches_by_single_active_ingredient(catalog):
 def test_source_and_rate_are_recorded(catalog):
     from processing.diluent_resolver import infer_and_reclassify_diluents
     catalog([{'canonical': 'TAZOCIN', 'dilution': {'solvent': 'NACL_0.9', 'volume_ml': 250, 'rate': 40, 'apply': 'always'}}])
-    infusions, _ = infer_and_reclassify_diluents([], [_vial('TAZOCIN 4.5G', 'Abc')])
+    infusions, _ = infer_and_reclassify_diluents([], [_vial('TAZOCIN 4.5G', 'Abc', 'Tiêm truyền TM (8 giờ)')])
     assert infusions[0]['nguon_pha'] == 'danh_muc'
     assert infusions[0]['toc_do'] == '40' and infusions[0]['toc_do_nguon'] == 'danh_muc'
 
     catalog([])
-    infusions, _ = infer_and_reclassify_diluents([], [_vial('MEROVIA 1G', 'Meropenem')])
+    infusions, _ = infer_and_reclassify_diluents([], [_vial('MEROVIA 1G', 'Meropenem', 'Tiêm truyền TM (8 giờ)')])
     assert infusions[0]['nguon_pha'] == 'luat_san_co'
 
     drug = _vial('MEROVIA 1G', 'Meropenem', 'Pha Natri clorid 0.9% lấy đủ 50ml truyền TM (8 giờ)')
@@ -128,7 +128,10 @@ def test_source_and_rate_are_recorded(catalog):
 def test_check_script_uses_processing_functions(catalog, tmp_path):
     import dilution_check
     catalog([{'canonical': 'TAZOCIN', 'dilution': {'solvent': 'NACL_0.9', 'volume_ml': 250, 'apply': 'always'}}])
-    res = dilution_check.check_item({'ten_thuoc': 'TAZOCIN 4.5G', 'dang': 'Lọ', 'duong_dung_goc': 'Tiêm TMC'})
+    # TMC là tiêm chậm dù quy tắc pha có apply=always; không tự đổi đường dùng.
+    slow = dilution_check.check_item({'ten_thuoc': 'TAZOCIN 4.5G', 'dang': 'Lọ', 'duong_dung_goc': 'Tiêm TMC'})
+    assert slow['moved_to_infusion'] is False
+    res = dilution_check.check_item({'ten_thuoc': 'TAZOCIN 4.5G', 'dang': 'Lọ', 'duong_dung_goc': 'Tiêm truyền TM'})
     assert res['moved_to_infusion'] is True
     assert res['the_tich'] == 250.0 and res['nguon_pha'] == 'danh_muc' and res['rule_source'] == 'danh_muc'
     assert dilution_check.check_item({'ten_thuoc': ''})['error']
