@@ -74,15 +74,24 @@ def _dedup_dicts(seq, key_func):
     return out
 
 def _merge_multiline(texts):
-    seen = set()
+    """Gộp nhiều đoạn văn bản (mỗi đoạn một block y lệnh/diễn biến).
+
+    Chỉ bỏ đoạn trùng nguyên văn và dòng lặp liền kề. Không bỏ dòng trùng ở chỗ khác:
+    hai thuốc khác nhau có thể cùng dòng hướng dẫn "Uống mỗi ngày, sáng 1 viên(6 giờ).",
+    bỏ đi thì thuốc sau mất cách dùng.
+    """
+    seen_blocks = set()
     out_lines = []
     for t in (texts or []):
-        for ln in str(t or "").splitlines():
-            s = ln.strip()
-            if not s or s in seen:
+        lines = [ln.rstrip() for ln in str(t or "").splitlines() if ln.strip()]
+        block_key = "\n".join(ln.strip() for ln in lines)
+        if not block_key or block_key in seen_blocks:
+            continue
+        seen_blocks.add(block_key)
+        for ln in lines:
+            if out_lines and out_lines[-1].strip() == ln.strip():
                 continue
-            seen.add(s)
-            out_lines.append(ln.rstrip())
+            out_lines.append(ln)
     return "\n".join(out_lines)
 
 def cleanup_record_v12(rec: dict) -> dict:
