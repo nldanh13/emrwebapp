@@ -101,3 +101,35 @@ Thể tích hoàn nguyên/ống chỉ dùng để hiển thị và tham khảo c
 chỉ định sử dụng thuốc hay xác nhận độ tương thích dung môi.
 
 Không tự chạy thử trên EMR bệnh viện. Bước kiểm thử offline chạy với dữ liệu giả.
+
+
+## Danh mục thuốc bệnh viện từ bảng Select2 (15/10/2026)
+
+Tab **Danh mục thuốc → Thuốc BV (185 mã)** chứa bản sao **offline, chỉ đọc** của
+tệp HTML Select2 người dùng cung cấp. Bản gốc có 252 dòng hiển thị, trong đó
+67 dòng là bản lặp cùng mã và 185 mã khác nhau. Giữ nguyên từng mã, tên, ĐVT,
+hàm lượng, hoạt chất mô tả, quy cách và **nhãn đường dùng gốc**. Các tên lặp
+nhưng có mã khác (như Truxima 100mg/10ml và 500mg/50ml; Natri clorid 100ml/500ml)
+vẫn là các mục tra cứu riêng. Tồn kho và đơn giá từ nguồn **không** được lưu
+vào mã nguồn vì không cần cho cấu hình thuốc và dễ lỗi thời.
+
+- **Xem và tìm kiếm** trong tab không truy cập EMR, không tự tạo/sửa thuốc cấu hình.
+- Nút **Tạo cấu hình** mở form tạo thuốc theo tên/mã nguồn, lưu mã BV vào
+  `hospital_code` chỉ khi người dùng chủ động kiểm tra và bấm Lưu.
+- **Không tự điền đường dùng**, kể cả nguồn ghi `Tiêm`, `Tiêm truyền` hoặc
+  `Truyền tĩnh mạch`: những mô tả này không xác nhận TMC, TTM, tốc độ,
+  liều hay kỹ thuật được cơ sở phê duyệt. Hoạt chất gốc cũng **chỉ hiển thị
+  để đối chiếu**, không tự biến thành alias/hoạt chất suy luận của worker.
+- Có thể sao chép **hàm lượng nguyên văn** nếu đủ ngắn. Không tự suy ra
+  thể tích gốc từ 20mg/2ml, không coi 0,5g bột là số ml và không tự đặt
+  hoàn nguyên/dung môi/thể tích/tốc độ truyền.
+- Nếu danh mục đang có tên thuốc trùng, hiển thị **Xem cấu hình cũ**
+  thay vì ghi đè hoặc gộp các mã BV. Không nhập hàng loạt trực tiếp vào
+  cấu hình đang xử lý y lệnh; việc đó có thể làm thay đổi suy luận thuốc.
+- Tên thuốc đã liên kết với mã BV không được tự đổi sang tên của mã khác.
+  Chỉ người vận hành có quyền cấu hình mới có thể lưu theo API hiện có.
+
+**Đường lui:** Phần tra cứu chỉ đọc nên có thể tắt tab mà không ảnh hưởng
+các thuốc đang dùng. Các mục thuốc đã được lưu thủ công vẫn nằm trong
+`config/medication_catalog.json`; cần sao lưu/kiểm tra riêng trước khi chỉnh
+hoặc xóa. Không chạy tải thực tế trên EMR bệnh viện để xác thực bản sao.

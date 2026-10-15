@@ -3,7 +3,7 @@
 // Quy tắc pha thuốc trong Danh mục thuốc: máy chủ chỉ lưu dữ liệu đúng dạng worker đọc được
 // (worker/processing/medication_catalog.py catalog_dilution_rule), báo lỗi tiếng Việt khi sai.
 const assert = require('assert');
-const { normalizeDilution, normalizePreparation, cleanCheckItems, runDilutionCheck, computeDilutionStats } = require('../server/routes/medication_catalog');
+const { normalizeDilution, normalizePreparation, validateHospitalReference, HOSPITAL_DRUG_REFERENCE, cleanCheckItems, runDilutionCheck, computeDilutionStats } = require('../server/routes/medication_catalog');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -12,6 +12,16 @@ let failed = 0;
 const test = (name, fn) => { try { fn(); console.log(`  ok - ${name}`); } catch (e) { failed += 1; console.error(`  FAIL - ${name}\n`, e); } };
 console.log('medication_dilution_rule_test');
 
+test('mã bệnh viện chỉ gắn với đúng tên chế phẩm và không suy ra đường dùng', () => {
+  assert.strictEqual(HOSPITAL_DRUG_REFERENCE.medications.length, 185);
+  assert.strictEqual(validateHospitalReference('26.328.726', 'NEFOPAM MEDISOL 20MG/2ML'), '26.328.726');
+  assert.strictEqual(validateHospitalReference('', 'NEFOPAM MEDISOL 20MG/2ML'), '');
+  assert.throws(() => validateHospitalReference('26.328.726', 'Natri clorid 0,9%'), /không khớp/);
+  assert.throws(() => validateHospitalReference('nonexistent', 'NEFOPAM MEDISOL 20MG/2ML'), /không khớp/);
+  const truxima = HOSPITAL_DRUG_REFERENCE.medications.filter(m => m.name === 'Truxima');
+  assert.strictEqual(truxima.length, 2);
+  assert.notStrictEqual(truxima[0].code, truxima[1].code);
+});
 test('ống tiêm 2 ml là thể tích chế phẩm, không phải pha truyền', () => {
   assert.deepStrictEqual(normalizePreparation({
     dosage_form: 'solution', strength: '20 mg/2 ml', original_volume_ml: '2',

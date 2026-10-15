@@ -25,6 +25,8 @@ import { catalogIssues, filterCatalog } from '../utils/catalogIssues.js';
 import { presentationsForm, presentationsFromForm, volumesText } from '../utils/presentations.js';
 import { parseList as parseListText } from '../utils/listText.js';
 import MedicationBuiltinPanel from './MedicationBuiltinPanel.jsx';
+import HospitalDrugReferencePanel from './HospitalDrugReferencePanel.jsx';
+import { referenceMedicationDraft } from '../utils/hospitalDrugReference.js';
 import { fillEmptyFields } from '../utils/medicationBuiltin.js';
 
 function routeOptions(table) {
@@ -45,6 +47,7 @@ const parseList = parseListText;
 function emptyForm() {
   return {
     canonical: '',
+    hospital_code: '',
     active_ingredients: '',
     aliases: '',
     semantic_aliases: '',
@@ -67,6 +70,7 @@ function emptyForm() {
 function formFromMedication(med) {
   return {
     canonical: med.canonical || '',
+    hospital_code: med.hospital_code || '',
     active_ingredients: joinList(med.active_ingredients || (med.active_ingredient ? [med.active_ingredient] : [])),
     aliases: joinList(med.aliases),
     semantic_aliases: joinList(med.semantic_aliases),
@@ -324,6 +328,7 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
     try {
       await onSave({
         canonical: form.canonical.trim(),
+        hospital_code: form.hospital_code,
         active_ingredients: parseList(form.active_ingredients),
         aliases: parseList(form.aliases),
         semantic_aliases: parseList(form.semantic_aliases),
@@ -367,8 +372,13 @@ function EditModal({ mode, initial, effective, onClose, onSave }) {
 
         <div style={{ display: 'grid', gap: 10 }}>
           <Field label="Tên chuẩn / tên chế phẩm *">
-            <input value={form.canonical} onChange={set('canonical')} placeholder="VD: CLASTIZOL" style={INPUT_STYLE} />
+            <input value={form.canonical} onChange={set('canonical')} placeholder="VD: CLASTIZOL"
+              readOnly={Boolean(form.hospital_code)} style={INPUT_STYLE} />
           </Field>
+          {form.hospital_code && <div style={{ fontSize: FS.sm, color: C.text2 }}>
+            Mã thuốc BV: <b>{form.hospital_code}</b>. Đã liên kết với tên chế phẩm từ danh mục tham khảo.
+            Nếu mã/tên chưa đúng, hãy huỷ và chọn lại; thông tin đường dùng/chế phẩm vẫn phải được bạn xác nhận.
+          </div>}
           <Field label="Hoạt chất (có thể nhiều hoạt chất; cách nhau bằng dấu phẩy hoặc xuống dòng)">
             <textarea value={form.active_ingredients} onChange={set('active_ingredients')} rows={2}
               placeholder="VD: Acid Zoledronic" style={{ ...INPUT_STYLE, resize: 'vertical' }} />
@@ -645,6 +655,8 @@ export default function MedicationCatalogManager() {
               ? 'Khai báo chế phẩm, hoạt chất và các tên thương mại/cách viết trong EMR. Nhiều chế phẩm có thể cùng một hoạt chất để nghiên cứu gom chung.'
               : tab === 'new'
               ? 'Thuốc gặp trong y lệnh nhưng chưa có trong danh mục — thiết lập để bước xử lý dữ liệu nhận đúng thuốc.'
+              : tab === 'hospital'
+              ? 'Danh mục thuốc bệnh viện bạn cung cấp: tra cứu mã, hàm lượng, quy cách và chọn thuốc để tự tạo cấu hình sau khi kiểm tra.'
               : tab === 'builtin'
               ? 'Kiến thức thuốc đi kèm phần mềm: luật pha, thể tích mặc định, hoạt chất của tên thương mại, tên hiển thị. Chép vào danh mục để sửa.'
               : tab === 'ingredients'
@@ -653,10 +665,19 @@ export default function MedicationCatalogManager() {
           </div>
         </div>
         <Segmented label="Mục danh mục" value={tab} onChange={setTab}
-          options={[{ value: 'drugs', label: 'Thuốc' }, { value: 'new', label: `Thuốc mới${newDrugs?.pending ? ` (${newDrugs.pending})` : ''}` }, { value: 'builtin', label: 'Sẵn có' }, { value: 'ingredients', label: 'Gắn hoạt chất' }, { value: 'routes', label: 'Đường dùng' }]} />
+          options={[{ value: 'drugs', label: 'Thuốc' }, { value: 'hospital', label: 'Thuốc BV (185 mã)' }, { value: 'new', label: `Thuốc mới${newDrugs?.pending ? ` (${newDrugs.pending})` : ''}` }, { value: 'builtin', label: 'Sẵn có' }, { value: 'ingredients', label: 'Gắn hoạt chất' }, { value: 'routes', label: 'Đường dùng' }]} />
       </div>
 
       {tab === 'routes' ? <RouteDesigner onSaved={showToast} />
+        : tab === 'hospital' ? <HospitalDrugReferencePanel medications={items}
+          onEdit={med => setEditing({ mode: 'edit', key: med.key, form: formFromMedication(med) })}
+          onSetup={row => {
+            const draft = referenceMedicationDraft(row);
+            setEditing({ mode: 'create', key: '', form: {
+              ...emptyForm(), ...draft,
+              strength: draft.preparation.strength, dosage_form: '', original_volume_ml: '',
+            } });
+          }} />
         : tab === 'new' ? <NewDrugsPanel data={newDrugs} error={newDrugsError} onChanged={loadNewDrugs}
             onSetup={prefill => setEditing({ mode: 'create', key: '', form: { ...emptyForm(), ...prefill } })} />
         : tab === 'builtin' ? <MedicationBuiltinPanel builtin={builtin} error={builtinError}
