@@ -10,6 +10,7 @@ export function infusionReview(item = {}, workDate = '') {
   const concerns = [];
   if (missingTime) concerns.push('Thiếu giờ bắt đầu đã xác nhận');
   if (inferredRate) concerns.push('Tốc độ có thể được phần mềm tự điền; chưa xác nhận');
+  else if (item.missing_infusion_rate) concerns.push('Y lệnh chưa có tốc độ truyền được xác nhận');
   if (stale) concerns.push('Lịch sau khi sửa thể tích/tốc độ chưa được tính lại');
   if (item.can_xac_nhan_pha || item.can_xac_nhan_duong_dung)
     concerns.push('Cách pha/đường dùng cần xác nhận');
