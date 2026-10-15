@@ -75,3 +75,39 @@ def test_incomplete_or_ambiguous_injection_route_keeps_manual_review():
     infusions, injections = infer_and_reclassify_diluents([], [row])
     assert not infusions
     assert len(injections) == 1
+
+
+def test_catalog_product_metadata_never_overwrites_explicit_slow_iv(monkeypatch, tmp_path):
+    import json
+    from processing import medication_catalog as catalog
+    catalog_file = tmp_path / "catalog.json"
+    catalog_file.write_text(json.dumps({"medications": [{
+        "canonical": "FAKE DUAL ROUTE DRUG",
+        "category": "thuoc_tiem",
+        "routes": ["TMC", "TTM"],
+        "strength_text": "20mg/ống",
+        "package_volume_ml": 2,
+        "default_route": "TTM",
+        "default_volume_ml": 100,  # Synthetic legacy infusion default.
+        "reconstitution": {"volume_ml": 3},  # Different informational field.
+    }]}), encoding="utf-8")
+    monkeypatch.setattr(catalog, "MEDICATION_CATALOG_FILE", str(catalog_file))
+    catalog.load_medication_catalog.cache_clear()
+    try:
+        source = {
+            "ten_thuoc": "FAKE DUAL ROUTE DRUG",
+            "duong_dung_goc": "TMC pha NaCl 0,9%",
+            "the_tich": 2,
+        }
+        result, med = catalog.complete_medication_from_catalog(source)
+        assert result == source and med is None
+        assert "tui_dich_truyen_ml" not in result
+        infusion, matched = catalog.complete_medication_from_catalog({
+            "ten_thuoc": "FAKE DUAL ROUTE DRUG", "duong_dung_goc": "TTM",
+        })
+        assert matched is not None
+        assert infusion["the_tich"] == 100
+        assert infusion["the_tich"] != matched["package_volume_ml"]
+        assert infusion["the_tich"] != matched["reconstitution"]["volume_ml"]
+    finally:
+        catalog.load_medication_catalog.cache_clear()
