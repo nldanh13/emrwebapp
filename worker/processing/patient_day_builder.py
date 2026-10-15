@@ -1169,6 +1169,11 @@ def build_patient_day_records(data):
                 # Bỏ qua section header trùng lặp liên tiếp
                 # (EMR đôi khi sinh "+ Thuốc:" 2 lần liền → tạo nhóm thuốc rỗng)
                 _is_section = bool(re.match(r'^\+\s+\S', line))
+                # EMR ghi mỗi thuốc tự túc trong "+ Y lệnh khác:" thành một dòng "+ (TT) ...".
+                # Dòng đó là thuốc, không phải tiêu đề nhóm: bỏ dấu "+" rồi xử lý như thuốc (TT)/(CS).
+                if _is_section and _match_self_paid_prefix(re.sub(r'^\+\s+', '', line)):
+                    line = re.sub(r'^\+\s+', '', line)
+                    _is_section = False
                 if _is_section and line == _prev_line:
                     continue
                 _prev_line = line

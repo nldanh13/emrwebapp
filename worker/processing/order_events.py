@@ -9,7 +9,11 @@ def classify_raw_order_line(line):
     if not low.strip():
         return 'empty'
     if re.match(r'^\+\s+', low):
-        return 'section'
+        body = re.sub(r'^\+\s+', '', low)
+        # "+ (TT) Thuốc ..." trong "+ Y lệnh khác:" là một dòng thuốc tự túc, không phải tiêu đề nhóm.
+        if not re.match(r'^\(+\s*(?:tt|cs)(?:\s*\)|[0o]\)?|\s+)', body):
+            return 'section'
+        low = body
     if 'ngưng' in low or 'ngung' in low:
         return 'stop'
     if any(k in low for k in ['tiêm truyền', 'truyền tĩnh mạch', 'ttm', 'giọt/ph', 'g/ph']):
