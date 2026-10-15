@@ -7,16 +7,17 @@
   rồi nhập hết cả lượt (mọi người bệnh, mọi ngày) bằng phiên đó. Tài khoản lấy từ Thiết lập tài khoản → Tài khoản EMR
   (`secrets/nurse_emr_accounts.json`, xem `SECRETS.md`). Phiên được đánh dấu `single_login`:
   `WorkerSession.switch_account` từ chối đổi tài khoản giữa chừng.
-  - Chăm sóc: phiếu đứng tên người khác (ca trực, ca làm của ngày khác) được tạo và Hoàn tất,
-    rồi Thu hồi → đổi Người lập → Hoàn tất ngay trên phiếu. Các bước này theo đúng macro người dùng ghi lại.
+  - **Chăm sóc (ngoại lệ, 10/2026):** EMR không còn cho Thu hồi để đổi Người lập. Mỗi phiếu lập bằng
+    tài khoản EMR của chính điều dưỡng phụ trách giờ đó (`worker/care_owner_accounts.py`): phiên
+    chăm sóc không có `single_login`, đăng nhập lần lượt từng tài khoản (ca làm trước, ca trực sau),
+    mỗi tài khoản một lần cho cả lượt. Người phụ trách chưa có tài khoản EMR thì không nhập phiếu đó,
+    ghi lỗi "chưa có tài khoản EMR của … (Cài đặt → Thiết lập tài khoản)".
   - Dịch truyền, thủ thuật: tên điều dưỡng/thủ thuật viên trên phiếu vẫn theo lịch từng giờ.
 - **Sửa/xóa phiếu cũ** (dọn phiếu "Mới", phiếu sai giờ, phiếu sau mổ, phiếu thủ thuật sai, dịch truyền
   thừa) làm bằng tài khoản đang dùng.
-  - **Chăm sóc:** phiếu cũ đứng tên người khác mà tài khoản ca làm không sửa/Hoàn tất được thì
-    **để cuối lượt** (`worker/care_deferred.py`).
-    - Hết lượt chính, công cụ đăng nhập tài khoản của người lập đó **một lần**
-      (`switch_account(..., end_of_run=True)`) để sửa và Hoàn tất hết các phiếu đứng tên người đó.
-    - Người lập chưa có tài khoản EMR thì ghi lỗi để xử lý tay.
+  - **Chăm sóc:** phiếu cũ đứng tên người khác với người phụ trách giờ đó thì xóa (tài khoản đang
+    dùng, không được thì tài khoản người lập cũ) rồi lập lại bằng tài khoản người phụ trách. Không
+    xóa được thì không tạo thêm (tránh trùng), ghi lỗi để xử lý tay.
   - **Việc khác** (thủ thuật, dịch truyền, dọn phiếu): EMR không cho thì ghi lỗi và cảnh báo
     "Giữ nguyên một phiên đăng nhập… cần xử lý tay".
 - Người ca làm **chưa có tài khoản EMR** hoặc ngày đó **chưa xếp lịch**: dùng tài khoản mặc định

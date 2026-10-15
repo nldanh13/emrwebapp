@@ -171,4 +171,5 @@ def test_input_workers_do_not_switch_per_date():
         assert 'use_entry_account(' not in _src(rel), rel
     care = _src('worker/input_care.py')
     assert 'day_account = entry_accounts.for_date(ngay_lam_viec)' not in care
-    assert 'username_g = run_account["username"]' in care
+    # Chăm sóc: phiếu nhóm theo tài khoản của chính người lập (EMR không cho đổi Người lập).
+    assert 'group_jobs_by_owner_account(care_jobs' in care
