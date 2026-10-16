@@ -56,7 +56,7 @@ def test_adapter_keeps_medicines_separate_from_vtyt_and_services():
     text = build_classification_text([form])
     assert "Nefopam 20mg/2ml" in text
     assert "TTM" in text
-    assert "Thuốc pha: Natri clorid" in text
+    assert "Natri clorid 0,9% 100ml" in text
     assert "Bơm tiêm" not in text
     assert "+ Chỉ định DVKT:\n- Thay băng vết thương" in text
     assert "Mời hội chẩn" in text
@@ -187,3 +187,63 @@ def test_standalone_nacl_ttm_remains_classifiable_infusion():
     text = build_classification_text([form])
     assert "Natri clorid 0,9% 500ml x 1 (Chai)" in text
     assert "TTM 40 giọt/phút (9 giờ)" in text
+
+
+
+def test_structured_infusion_schedule_uses_dose_times_not_vial_count():
+    """Two vials per saline bag is one infusion session, not two bags."""
+    data = [
+        {
+            "ma_bn": "TEST_IV_SCHED", "ho_ten": "BỆNH NHÂN THỬ",
+            "ngay_lam": "16/10/2026", "bac_si": "Bác sĩ A",
+            "Diễn biến": "Dự trù thuốc", "Y lệnh": "",
+            "order_history": [{
+                "id": "full-drug-order", "trang_thai_y_lenh": "Hoàn tất",
+                "so_phieu": "999002", "gio_y_lenh": "05:00 16/10/2026",
+                "ngay_lam": "16/10/2026", "bac_si": "Bác sĩ A",
+                "dien_bien_benh": "Dự trù thuốc",
+                "thuoc": [
+                    {
+                        "ten_duoc": "Paracetamol 10mg/ml (Paracetamol)",
+                        "so_luong": "3.00", "don_vi": "Túi",
+                        "cach_dung": "TTM 100g/p(8 giờ, 16 giờ, 22 giờ)",
+                    },
+                    {
+                        "ten_duoc": "Vinphacine (Amikacin)",
+                        "so_luong": "2.00", "don_vi": "Ống",
+                        "cach_dung": "TTM 30g/ph 8h",
+                        "thuoc_pha": "Natri clorid 0,9%",
+                    },
+                    {
+                        "ten_duoc": "Mizapenem 0,5g (Meropenem)",
+                        "so_luong": "6.00", "don_vi": "Lọ",
+                        "cach_dung": "pha Natri Clorid 0,9% 100ml (TTM) 30g/p sáng 2 lọ, chiều 2 lọ, tối 2 lọ(8 giờ, 16 giờ, 23 giờ)",
+                        "thuoc_pha": "Natri clorid 0,9%",
+                    },
+                    {
+                        "ten_duoc": "Natri clorid 0,9% 100ml", "so_luong": "1.00", "don_vi": "Túi",
+                        "cach_dung": "pha vinphacin",
+                    },
+                    {
+                        "ten_duoc": "Natri clorid 0,9% 100ml", "so_luong": "3.00", "don_vi": "Túi",
+                        "cach_dung": "pha mizapenem",
+                    },
+                ]
+            }]
+        }
+    ]
+    result = build_patient_day_records(data)
+    assert len(result) == 1
+    rec = result[0]
+    infusions = rec.get("thuoc", {}).get("dich_truyen", [])
+    names = [(d.get("ten_thuoc") or "").lower() for d in infusions]
+    assert all("natri clorid" not in name for name in names), infusions
+    para = [d for d in infusions if "paracetamol" in (d.get("ten_thuoc") or "").lower()]
+    vina = [d for d in infusions if "vinphacine" in (d.get("ten_thuoc") or "").lower()]
+    miza = [d for d in infusions if "mizapenem" in (d.get("ten_thuoc") or "").lower()]
+    assert (len(para), len(vina), len(miza)) == (3, 1, 3), [
+        (d.get("ten_thuoc"), d.get("gio_dung"), d.get("tg_bat_dau"), d.get("the_tich"),
+         d.get("so_lo_moi_lan"), d.get("dang")) for d in infusions
+    ]
+    assert rec.get("emr_order_source", {}).get("order_count") == 1
+    assert len(rec["emr_order_source"]["medications"]) == 5
