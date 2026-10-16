@@ -109,7 +109,10 @@ def calculate_infusion_times(dich_truyen_list, ngay_mac_dinh=None):
     def _is_container_infusion(drug):
         """Các chai/túi truyền phải nhập từng chai, không gộp thể tích."""
         dang = _norm_upper(drug.get("dang", ""))
-        name = _norm_upper((drug.get("ten_thuoc") or "") + " " + (drug.get("ten_hien_thi") or ""))
+        # ten_hien_thi có thể đã được gắn '+ Natri clorid 0,9%' làm
+        # DUNG MÔI. Không nhận nhầm ống/lọ thuốc chính thành túi dịch để
+        # tách một lần truyền cho MỖI ống/lọ.
+        name = _norm_upper(drug.get("ten_thuoc") or "")
         raw = _norm_upper((drug.get("raw_text") or "") + " " + (drug.get("raw_drug_part") or ""))
         route = _norm_upper((drug.get("duong_dung") or "") + " " + (drug.get("duong_dung_goc") or ""))
         if any(unit in dang for unit in ("CHAI", "TUI", "TÚI", "BOTTLE", "BAG")):
@@ -366,9 +369,23 @@ def calculate_infusion_times(dich_truyen_list, ngay_mac_dinh=None):
                 drug_template = new_drug.copy()
                 base_volume = float(new_drug.get("the_tich") or 0)
                 if split_count <= 1 and qty_this_hour and qty_this_hour != 1:
-                    # Không phải chai/túi truyền độc lập: giữ hành vi cũ là tính theo tổng thể tích cữ đó.
                     drug_template["so_lo_moi_lan"] = qty_this_hour
-                    if base_volume > 0:
+                    # Khi 2 lọ/ống thuốc được PHA CHUNG vào một túi NaCl
+                    # có thể tích đã được chỉ định rõ, số lọ không phải số
+                    # túi truyền. Không nhân đôi thể tích túi trong một cữ.
+                    # Nếu thiếu dữ kiện túi pha, giữ cách xử lý cũ và không
+                    # tự đoán số lượng túi từ số lọ.
+                    has_specified_bag_volume = bool(
+                        new_drug.get("tui_dich_truyen_ml")
+                        or new_drug.get("the_tich_pha_du_ml")
+                    )
+                    is_drug_vial = _norm_upper(new_drug.get("dang") or "") in (
+                        "ỐNG", "ONG", "LỌ", "LO", "VIAL", "AMPOULE"
+                    )
+                    if is_drug_vial and has_specified_bag_volume and new_drug.get("dung_moi"):
+                        drug_template["so_lo_pha_mot_tui"] = qty_this_hour
+                        drug_template["pha_nhieu_lo_mot_tui"] = True
+                    elif base_volume > 0:
                         drug_template["the_tich"] = base_volume * qty_this_hour
                 elif split_count > 1:
                     # Chai/túi truyền độc lập: không gộp thể tích; sẽ nhập từng chai nối tiếp.
