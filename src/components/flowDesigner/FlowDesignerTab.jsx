@@ -10,16 +10,47 @@ import { IconArrowDown, IconArrowLeft, IconArrowUp, IconDownload, IconPlus, Icon
 import { C, FS, FW, R, SP } from '../../tokens.js';
 import { Btn, Segmented } from '../shared.jsx';
 import FlowScreenView, { INPUT_STYLE } from './FlowScreenView.jsx';
+import FlowTreeView from './FlowTreeView.jsx';
 import {
-  ELEMENT_TYPES, ELEMENT_TYPE_ORDER, addElement, addScreen, checkFlow, createSampleFlow, flowLinks,
+  ELEMENT_TYPES, ELEMENT_TYPE_ORDER, addElement, addScreen, checkFlow, flowLinks, screenSteps,
   moveElement, removeElement, removeScreen, setStartScreen, updateElement, updateScreen,
 } from './flowModel.js';
+import { createFullAppFlow } from './appFlowSpec.js';
 import { loadStoredFlow, parseFlowFile, saveStoredFlow } from './flowStorage.js';
 import { useUnsavedChangesGuard } from '../../hooks/useTabActivity.js';
 
 const AUTOSAVE_MS = 800;
 const panel = { border: `1px solid ${C.border}`, borderRadius: R.lg, background: C.surface, padding: SP[3], display: 'grid', gap: SP[2], alignContent: 'start' };
 const fieldLabel = { display: 'grid', gap: 3, fontSize: FS.xs, color: C.text2 };
+
+// Các bước của màn hình: máy làm gì và người dùng thao tác gì, đánh số theo thứ tự.
+function StepList({ screen }) {
+  const steps = screenSteps(screen);
+  return (
+    <aside aria-label="Các bước ở màn hình này" style={{ ...panel, background: C.surface2 }}>
+      <div style={{ fontSize: FS.sm, fontWeight: FW.semibold, color: C.text }}>Các bước ở màn hình này</div>
+      {steps.length ? (
+        <ol style={{ margin: 0, paddingLeft: 20, display: 'grid', gap: SP[1], fontSize: FS.sm, color: C.text, lineHeight: 1.45 }}>
+          {steps.map((step, i) => <li key={i}>{step.replace(/^\d+\.\s*/, '')}</li>)}
+        </ol>
+      ) : (
+        <div style={{ fontSize: FS.sm, color: C.text3 }}>Chưa ghi bước nào. Ghi ở phần Thiết kế, mỗi dòng một bước.</div>
+      )}
+    </aside>
+  );
+}
+
+// Danh sách màn hình xếp theo nhóm (thứ tự nhóm theo lần xuất hiện đầu tiên).
+function groupScreens(screens) {
+  const groups = [];
+  for (const s of screens) {
+    let g = groups.find(x => x.name === s.group);
+    if (!g) { g = { name: s.group, screens: [] }; groups.push(g); }
+    g.screens.push(s);
+  }
+  return groups;
+}
+
 const hhmm = d => d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 
 function ElementEditor({ el, screens, onChange, onMove, onRemove }) {
@@ -63,10 +94,10 @@ function ElementEditor({ el, screens, onChange, onMove, onRemove }) {
 }
 
 export default function FlowDesignerTab({ toast }) {
-  const [flow, setFlow] = useState(() => loadStoredFlow() || createSampleFlow());
+  const [flow, setFlow] = useState(() => loadStoredFlow() || createFullAppFlow());
   const [screenId, setScreenId] = useState(() => flow.startId);
   const [elementId, setElementId] = useState('');
-  const [mode, setMode] = useState('design');
+  const [mode, setMode] = useState('tree'); // tree = Sơ đồ, design = Thiết kế, run = Chạy thử
   const [history, setHistory] = useState([]); // màn hình đã đi qua khi Chạy thử
   const [saveState, setSaveState] = useState({ dirty: false, at: null, failed: false });
   const fileRef = useRef(null);
@@ -110,6 +141,12 @@ export default function FlowDesignerTab({ toast }) {
   const runOpen = (id) => { if (!flow.screens.some(s => s.id === id)) return; setHistory(h => [...h, screen.id]); setScreenId(id); };
   const runBack = () => { if (!history.length) return; setScreenId(history[history.length - 1]); setHistory(history.slice(0, -1)); };
 
+  const onLoadFull = () => {
+    if (!window.confirm('Nạp luồng đầy đủ các chức năng Data Hub? Luồng đang thiết kế sẽ bị thay. Nên bấm "Xuất tệp" trước nếu cần giữ.')) return;
+    const full = createFullAppFlow();
+    setFlow(full); pickScreen(full.startId); setMode('design');
+  };
+
   const onExport = () => {
     const blob = new Blob([JSON.stringify(flow, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
@@ -139,22 +176,28 @@ export default function FlowDesignerTab({ toast }) {
             style={{ ...INPUT_STYLE, border: '1px solid transparent', padding: '2px 4px', fontSize: FS.xl, fontWeight: FW.bold, background: 'transparent' }} />
           <div role="status" style={{ fontSize: FS.xs, color: saveState.failed ? C.red : C.text3, paddingLeft: 4 }}>{saveText}</div>
         </div>
-        <Segmented label="Chế độ" value={mode} onChange={v => (v === 'run' ? startRun() : setMode('design'))}
-          options={[{ value: 'design', label: 'Thiết kế' }, { value: 'run', label: 'Chạy thử' }]} />
+        <Segmented label="Chế độ" value={mode} onChange={v => (v === 'run' ? startRun() : setMode(v))}
+          options={[{ value: 'tree', label: 'Sơ đồ' }, { value: 'design', label: 'Thiết kế' }, { value: 'run', label: 'Chạy thử' }]} />
+        <Btn onClick={onLoadFull}>Nạp luồng đầy đủ</Btn>
         <Btn icon={IconDownload} onClick={onExport}>Xuất tệp</Btn>
         <Btn icon={IconUpload} onClick={() => fileRef.current?.click()}>Nhập tệp</Btn>
         <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={e => { onImport(e.target.files?.[0]); e.target.value = ''; }} />
       </header>
 
-      {mode === 'run' ? (
-        <section aria-label="Chạy thử" style={{ ...panel, maxWidth: 720, width: '100%', justifySelf: 'center', padding: SP[4] }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: SP[2] }}>
-            <Btn icon={IconArrowLeft} onClick={runBack} disabled={!history.length}>Quay lại</Btn>
-            <div style={{ flex: 1, fontSize: FS.xs, color: C.text3 }}>{[...history, screen.id].map(screenName).join(' › ')}</div>
-          </div>
-          <h2 style={{ margin: 0, fontSize: FS.xl, fontWeight: FW.bold, color: C.text }}>{screen.name}</h2>
-          <FlowScreenView screen={screen} screenName={screenName} onOpen={runOpen} />
-        </section>
+      {mode === 'tree' ? (
+        <FlowTreeView flow={flow} onEdit={(id) => { pickScreen(id); setMode('design'); }} />
+      ) : mode === 'run' ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: SP[3], alignItems: 'start' }}>
+          <section aria-label="Chạy thử" style={{ ...panel, gridColumn: 'span 2', minWidth: 0, padding: SP[4] }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: SP[2] }}>
+              <Btn icon={IconArrowLeft} onClick={runBack} disabled={!history.length}>Quay lại</Btn>
+              <div style={{ flex: 1, fontSize: FS.xs, color: C.text3 }}>{[...history, screen.id].map(screenName).join(' › ')}</div>
+            </div>
+            <h2 style={{ margin: 0, fontSize: FS.xl, fontWeight: FW.bold, color: C.text }}>{screen.name}</h2>
+            <FlowScreenView screen={screen} screenName={screenName} onOpen={runOpen} />
+          </section>
+          <StepList screen={screen} />
+        </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: SP[3], alignItems: 'start' }}>
           <section aria-label="Các màn hình" style={panel}>
@@ -162,8 +205,11 @@ export default function FlowDesignerTab({ toast }) {
               <h2 style={{ margin: 0, flex: 1, fontSize: FS.lg, fontWeight: FW.bold, color: C.text }}>Màn hình</h2>
               <Btn icon={IconPlus} onClick={onAddScreen}>Thêm</Btn>
             </div>
+            {groupScreens(flow.screens).map(g => (
+            <div key={g.name || '_'} role="group" aria-label={g.name || 'Màn hình'} style={{ display: 'grid', gap: 2 }}>
+            {g.name && <div style={{ fontSize: FS.xs, fontWeight: FW.semibold, color: C.text3, textTransform: 'uppercase', paddingTop: SP[1] }}>{g.name}</div>}
             <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 2 }}>
-              {flow.screens.map(s => (
+              {g.screens.map(s => (
                 <li key={s.id}>
                   <button type="button" onClick={() => pickScreen(s.id)} aria-current={s.id === screen.id} style={{
                     width: '100%', textAlign: 'left', padding: '6px 8px', borderRadius: R.sm, cursor: 'pointer', fontSize: FS.md,
@@ -178,6 +224,8 @@ export default function FlowDesignerTab({ toast }) {
                 </li>
               ))}
             </ul>
+            </div>
+            ))}
             {problems.length > 0 && (
               <div role="note" style={{ padding: SP[2], borderRadius: R.md, background: C.amberBg, border: `1px solid ${C.amberBorder}`, color: C.amber, fontSize: FS.xs, display: 'grid', gap: 2 }}>
                 {problems.map(p => <div key={p}>{p}</div>)}
@@ -192,6 +240,15 @@ export default function FlowDesignerTab({ toast }) {
               </label>
               <Btn onClick={() => setFlow(f => setStartScreen(f, screen.id))} disabled={screen.id === flow.startId}>Đặt làm màn hình bắt đầu</Btn>
               <Btn icon={IconTrash} onClick={onRemoveScreen}>Xóa màn hình</Btn>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 1fr) 3fr', gap: SP[2] }}>
+              <label style={fieldLabel}>Nhóm
+                <input style={INPUT_STYLE} value={screen.group} placeholder="vd. Điều dưỡng" onChange={e => setFlow(f => updateScreen(f, screen.id, { group: e.target.value }))} />
+              </label>
+              <label style={fieldLabel}>Các bước ở màn hình này (mỗi dòng một bước: máy làm gì, người dùng thao tác gì)
+                <textarea rows={4} style={{ ...INPUT_STYLE, resize: 'vertical' }} value={screen.note}
+                  onChange={e => setFlow(f => updateScreen(f, screen.id, { note: e.target.value }))} />
+              </label>
             </div>
             <div style={{ display: 'flex', gap: SP[1], flexWrap: 'wrap' }}>
               {ELEMENT_TYPE_ORDER.map(t => <Btn key={t} icon={IconPlus} onClick={() => onAddElement(t)}>{ELEMENT_TYPES[t].label}</Btn>)}
