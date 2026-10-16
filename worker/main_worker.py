@@ -603,11 +603,14 @@ def _extract_discharge_datetime_from_html(html: str, default_year: Optional[str]
     except Exception:
         txt = html
 
-    m = re.search(r"Ngày\s+ra\s+viện\s*(\d{1,2}:\d{2}\s+\d{1,2}[-/]\d{1,2}[-/]\d{2,4})", txt, flags=re.IGNORECASE)
+    # Chỉ nhận giá trị nằm ngay sau nhãn "Ngày ra viện".
+    # KHÔNG lấy mốc thời gian đầu tiên của trang vì có thể đó là giờ VÀO
+    # khoa; menu "Ra viện" ở chỗ khác không chứng minh ngày đã ra viện.
+    m = re.search(
+        r"Ngày\s+ra\s+viện\s*[:：-]?\s*(\d{1,2}:\d{2}\s+\d{1,2}[-/]\d{1,2}[-/]\d{2,4})",
+        txt, flags=re.IGNORECASE,
+    )
     if m:
-        return _normalize_discharge_datetime(m.group(1), default_year=default_year)
-    m = re.search(r"(\d{1,2}:\d{2}\s+\d{1,2}[-/]\d{1,2}[-/]\d{2,4})", txt)
-    if m and "ra viện" in txt.lower():
         return _normalize_discharge_datetime(m.group(1), default_year=default_year)
     return ""
 
@@ -1959,14 +1962,21 @@ class AutoWorker:
                     # nội dung từng phiếu. Tránh ghi sai/tạo bản ghi rỗng.
                     if self.driver.find_elements(By.CSS_SELECTOR, "#tbodyylenh tr[id^='tr']"):
                         from completed_order_reader import read_completed_forms
-                        completed_days = read_completed_forms(self.driver, timeline_dates)
-                        for d in timeline_dates:
+                        # Phiếu dự trù thuốc lúc 05:00 được tính đúng ngày lập,
+                        # không cộng một ngày và không nối ngược về ca trước.
+                        # Phiếu khác giữ giới hạn nối ca trước 07:00.
+                        completed_days = read_completed_forms(
+                            self.driver, timeline_dates,
+                            bridge_end_date=bridge_end_date, work_dates=dates
+                        )
+                        for d in dates:
                             item = completed_days.get(d)
                             if not item:
                                 continue
                             rec = _build_record(
                                 bn, d, item, ho_ten=ho_ten, vitri=vitri,
-                                bridge_end_date=bridge_end_date,
+                                # d ở đây ĐÃ là ngày làm tính theo từng phiếu.
+                                bridge_end_date=None,
                             )
                             rec["order_history"] = item["order_history"]
                             records.append(rec)
