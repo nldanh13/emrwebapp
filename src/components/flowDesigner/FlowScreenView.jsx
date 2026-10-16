@@ -40,13 +40,20 @@ export default function FlowScreenView({ screen, screenName, onOpen, selectedId,
             <select style={INPUT_STYLE} disabled={Boolean(onSelect)}>{(el.options.length ? el.options : ['(chưa có lựa chọn)']).map(o => <option key={o}>{o}</option>)}</select>
           </label>
         );
-      case 'button':
-        return (
+      case 'button': {
+        const btn = (
           <button type="button" onClick={open(el)} title={el.target ? `Mở "${screenName(el.target)}"` : 'Nút chưa nối màn hình nào'} style={{
             height: 32, padding: '0 14px', borderRadius: R.sm, fontSize: FS.sm, fontWeight: FW.semibold, cursor: 'pointer',
             border: `1px solid ${el.target ? C.blue : C.border}`, background: el.target ? C.blue : C.surface, color: el.target ? '#fff' : C.text,
           }}>{el.label}{onSelect && el.target ? ` → ${screenName(el.target)}` : ''}</button>
         );
+        return el.hint ? (
+          <div style={{ display: 'grid', gap: 2, justifyItems: 'start' }}>
+            {btn}
+            <div style={{ fontSize: FS.xs, color: C.text3 }}>Bấm thì: {el.hint}</div>
+          </div>
+        ) : btn;
+      }
       case 'tile':
         return (
           <button type="button" onClick={open(el)} style={{
