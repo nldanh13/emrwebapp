@@ -69,3 +69,53 @@ def test_group_header_prevents_misclassifying_medical_supplies_as_drugs():
     result = parse_order_popup(_fixture())
     assert all("ten_vat_tu" in item for item in result["vat_tu_y_te"])
     assert all("ten_duoc" in item for item in result["thuoc"])
+
+
+
+def test_other_orders_keep_multiline_text_and_structured_service_orders():
+    page = _fixture().replace(
+        "<textarea id=\"txtYLenhKhacThamKham\">Theo dõi dấu hiệu sinh tồn</textarea>",
+        '<textarea id="txtYLenhKhacThamKham">Mời chuyên khoa khám\n'
+        'Thực hiện chỉ định đã cho</textarea>'
+        '<textarea id="txtYLenhTheoDoiThamKham">Theo dõi mạch\n'
+        'Theo dõi nhiệt độ</textarea>'
+        '<div id="divYLenhKhoaPhongDtPhoiHops"><p>Khám phối hợp Nội tim mạch</p></div>'
+        '<div id="divDichVu"><table><thead><tr><th>Tên dịch vụ</th><th>Trạng thái</th></tr></thead>'
+        '<tbody><tr id="svc1"><td>Siêu âm</td><td>Đã chỉ định</td></tr></tbody></table></div>'
+        '<div id="divDichVuXetNghiem"><p>Công thức máu</p></div>'
+        '<div id="divTruyenMau"><p>Truyền khối hồng cầu</p></div>'
+        '<div id="divXNTruyenMau"><p>Định nhóm máu</p></div>'
+        '<div id="divDinhDuong_V2"><table><thead><tr><th>Bữa</th></tr></thead>'
+        '<tbody><tr><td>Ăn sáng</td></tr></tbody></table></div>'
+    )
+    result = parse_order_popup(page)
+    assert result["y_lenh_khac_muc"] == ["Mời chuyên khoa khám", "Thực hiện chỉ định đã cho"]
+    assert result["y_lenh_theo_doi_muc"] == ["Theo dõi mạch", "Theo dõi nhiệt độ"]
+    sections = result["chi_dinh_khac"]
+    assert "Khám phối hợp Nội tim mạch" in sections["dieu_tri_phoi_hop"]["noi_dung"]
+    assert sections["dich_vu_ky_thuat"]["bang"][0]["dong"][0]["gia_tri"] == ["Siêu âm", "Đã chỉ định"]
+    assert "Công thức máu" in sections["xet_nghiem"]["noi_dung"]
+    assert "Truyền khối hồng cầu" in sections["truyen_mau"]["noi_dung"]
+    assert "Định nhóm máu" in sections["xet_nghiem_truyen_mau"]["noi_dung"]
+    assert sections["dinh_duong_chi_tiet"]["bang"][0]["dong"][0]["gia_tri"] == ["Ăn sáng"]
+    summary = _compose_order_text(result)
+    assert "Mời chuyên khoa khám" in summary
+    assert "Chỉ định DVKT:\nSiêu âm | Đã chỉ định" in summary
+    assert "Chỉ định xét nghiệm:\nCông thức máu" in summary
+    assert "Truyền khối hồng cầu" in summary
+    assert result["so_thuoc"] == 2
+    assert result["so_vat_tu_y_te"] == 2
+
+
+def test_empty_order_sections_are_not_fabricated():
+    page = _fixture().replace(
+        '<table id="tblThuoc">',
+        '<div id="divDichVu"></div><div id="divTruyenMau"></div>'
+        '<div id="divDinhDuong_V2"><table><thead><tr><th>Giờ</th></tr></thead>'
+        '<tbody></tbody></table><span>Năng lượng cung cấp: 0</span></div>'
+        '<table id="tblThuoc">'
+    )
+    result = parse_order_popup(page)
+    assert result["chi_dinh_khac"] == {}
+    assert result["y_lenh_khac_muc"] == ["Theo dõi dấu hiệu sinh tồn"]
+    assert "Chỉ định DVKT:" not in _compose_order_text(result)
