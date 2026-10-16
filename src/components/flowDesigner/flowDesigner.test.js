@@ -79,6 +79,21 @@ describe('luồng đầy đủ Data Hub', () => {
     const ids = full.screens.flatMap(s => s.elements.map(e => e.id));
     expect(new Set(ids).size).toBe(ids.length);
   });
+  it('có nhánh "Trên EMR": mỗi bước ghi rõ chỉ đọc hay ghi, chức năng ghi EMR đều dẫn tới thao tác EMR', () => {
+    const emr = full.screens.filter(s => s.group === 'Trên EMR');
+    expect(emr.map(s => s.id)).toEqual(expect.arrayContaining(['emr_login', 'emr_list', 'emr_care_form', 'emr_infusion', 'emr_vtyt', 'emr_procedures', 'emr_exam', 'emr_cert']));
+    for (const s of emr) expect(screenSteps(s).some(t => /^\((GHI|đọc)\)/.test(t)), s.name).toBe(true);
+    const care = full.screens.find(s => s.id === 'emr_care_form');
+    expect(care.note).toContain('txtThoiGianLap');
+    expect(care.note).toContain('không bấm Lưu lần hai');
+    const linksTo = (from, to) => full.screens.find(s => s.id === from).elements.some(e => e.target === to);
+    expect(linksTo('ward_running', 'emr_nursing')).toBe(true);
+    expect(linksTo('cl_finish', 'emr_exam')).toBe(true);
+    expect(linksTo('vt_review', 'emr_vtyt')).toBe(true);
+    expect(linksTo('sl', 'emr_cert')).toBe(true);
+    // Chỉ đọc thì không có bước ghi.
+    expect(screenSteps(full.screens.find(s => s.id === 'emr_cert')).some(t => t.startsWith('(GHI)'))).toBe(false);
+  });
 });
 
 describe('flowStorage', () => {
@@ -143,6 +158,21 @@ describe('FlowDesignerTab', () => {
     expect(tree.textContent).toContain('(đã có ở nhánh khác)');
     click(button('Mở hết'));
     expect([...tree.querySelectorAll('details')].every(d => d.open)).toBe(true);
+  });
+
+  it('sơ đồ hiện thao tác trên EMR: Đang nhập lên EMR → Màn hình điều dưỡng → Phiếu chăm sóc, từng bước có nhãn Ghi EMR / Chỉ đọc', () => {
+    mount();
+    click(button('Mở hết'));
+    const tree = host.querySelector('[aria-label="Sơ đồ luồng"]');
+    const nursing = tree.querySelector('#flow-tree-emr_nursing');
+    expect(nursing).not.toBeNull();
+    expect(nursing.querySelector('summary').textContent).toContain('Trên EMR');
+    const form = tree.querySelector('#flow-tree-emr_care_form');
+    expect(form.querySelector('summary').textContent).toContain('Có ghi EMR');
+    const steps = form.querySelector('[aria-label="Thao tác máy làm trên EMR"]');
+    expect(steps.textContent).toContain('Ghi EMR');
+    expect(steps.textContent).toContain('btnPopupHOANTAT');
+    expect(tree.querySelector('#flow-tree-emr_cert summary').textContent).toContain('Chỉ đọc');
   });
 
   it('nạp lại luồng đầy đủ sau khi luồng đã bị đổi', () => {
