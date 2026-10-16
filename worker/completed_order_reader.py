@@ -240,21 +240,12 @@ def _bridge_order_allowed(order_date, bridge_end_date, *time_sources):
     return False
 
 
-def _next_calendar_date(dmy):
-    from datetime import datetime, timedelta
-    try:
-        return (datetime.strptime(dmy, "%d/%m/%Y") + timedelta(days=1)).strftime("%d/%m/%Y")
-    except (ValueError, TypeError):
-        return ""
-
-
 def resolve_order_work_date(order, bridge_end_date=None):
     """Derive actual work day per slip, separate from the EMR creation date.
 
-    A 05:00 'Dự trù thuốc' order is planned for NEXT calendar day,
-    including cases where the list displays 07:00 but the form's original
-    indication time is 05:00. Other next-day orders use the existing
-    early-morning (<07:00) shift bridge.
+    A 05:00 'Dự trù thuốc' order belongs to its ORIGINAL calendar day,
+    including cases where the list displays 07:00 but original indication
+    time is 05:00. Other orders retain the early-morning (<07:00) shift bridge.
     """
     source_date = str(order.get("ngay_y_lenh") or "").strip()
     if not source_date:
@@ -272,7 +263,7 @@ def resolve_order_work_date(order, bridge_end_date=None):
     if is_drug_reservation and original_match and (
         int(original_match.group(1)), int(original_match.group(2))
     ) == (5, 0):
-        return _next_calendar_date(source_date), "draft_05_next_day"
+        return source_date, "draft_05_same_day"
     if bridge_end_date and source_date == bridge_end_date:
         if not _bridge_order_allowed(
             source_date, bridge_end_date, order.get("gio_y_lenh"),
