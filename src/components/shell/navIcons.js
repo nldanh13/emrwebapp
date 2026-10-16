@@ -20,6 +20,7 @@ import {
   IconTimeline,
   IconUserCog,
   IconCalendarOff,
+  IconSitemap,
 } from '@tabler/icons-react';
 
 const NAV_ICONS = {
@@ -34,6 +35,7 @@ const NAV_ICONS = {
   'records-check': IconChecklist,
   'sick-leave': IconCalendarOff,
   clinic: IconStethoscope,
+  'flow-designer': IconSitemap,
   'procedure-templates': IconTemplate,
   'patient-journey': IconTimeline,
   research: IconDatabaseSearch,

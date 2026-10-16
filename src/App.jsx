@@ -34,6 +34,7 @@ const ResearchTab = lazy(() => import('./components/ResearchTab.jsx'));
 const PatientJourneyTab = lazy(() => import('./components/PatientJourneyTab.jsx'));
 const ReportTab = lazy(() => import('./components/ReportTab.jsx'));
 const FunctionHubTab = lazy(() => import('./components/FunctionHubTab.jsx'));
+const FlowDesignerTab = lazy(() => import('./components/flowDesigner/FlowDesignerTab.jsx'));
 
 function safeText(value, max = 140) {
   const s = String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -305,6 +306,7 @@ export default function App() {
             ['procedure-templates', () => <ProcedureTemplatesTab toast={toast} />],
             ['nurse', () => <NurseTab toast={toast} />],
             ['report', () => <ReportTab toast={toast} workDateRange={workDateRange} />],
+            ['flow-designer', () => <FlowDesignerTab toast={toast} />],
           ].map(([id, render]) => (visitedTabs.has(id) ? (
             <KeepAliveTab key={id} id={id} active={tab === id}>{render()}</KeepAliveTab>
           ) : null))}
