@@ -478,13 +478,14 @@ export const getRoomMismatches = () => get('/api/room-mismatches');
 export const fixRooms = (patientIds = []) => post('/api/fix-rooms', { patientIds });
 
 // ── Details (fetch Y lệnh per patient) ───────────────────────────────────────
-export function runDetails(sortedRows, { dateFrom, dateTo, rooms, partial = false, scope = '' } = {}) {
+export function runDetails(sortedRows, { dateFrom, dateTo, rooms, partial = false, scope = '', showChrome = false } = {}) {
   const params = new URLSearchParams();
   if (dateFrom) params.set('date_from', dateFrom);
   if (dateTo) params.set('date_to', dateTo);
   if (rooms?.length) params.set('rooms', rooms.join(','));
   if (partial) params.set('partial', '1');
   if (scope) params.set('scope', scope);
+  if (showChrome) params.set('show_chrome', '1');
   return post(`/api/run-details?${params}`, sortedRows);
 }
 export const removeDetailsRooms = (rooms = []) => post('/api/remove-details-rooms', { rooms });

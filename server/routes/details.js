@@ -271,7 +271,7 @@ router.post('/run-details', async (req, res) => {
   const removedByScan = requestedRows.length - sortedData.length;
   console.log(`>>> [${ctx.sid}] Nhận ${requestedRows.length} BN để lấy chi tiết.` + (removedByScan > 0 ? ` Đã bỏ ${removedByScan} BN không còn trong danh sách scan mới.` : ''));
 
-  const { date_from: dateFrom = '', date_to: dateTo = '', rooms = '', partial = '', scope = '' } = req.query;
+  const { date_from: dateFrom = '', date_to: dateTo = '', rooms = '', partial = '', scope = '', show_chrome: showChrome = '' } = req.query;
   const partialMode = partial === '1' || partial === 'true';
 
   if (dateFrom && !isValidDmy(dateFrom)) return res.status(400).json({ status: 'error', message: 'date_from không đúng định dạng dd/mm/yyyy' });
@@ -310,7 +310,7 @@ router.post('/run-details', async (req, res) => {
       // song song (server/services/details_parallel.js). Chế độ cầu nối tab EMR chỉ có một phiên
       // trình duyệt nên luôn chạy một worker như cũ.
       let parallel = null;
-      if (!bridgeModeEnabled()) {
+      if (!bridgeModeEnabled() && showChrome !== '1') {
         parallel = await runDetailsInPartsForRequest(ctx, sortedData, dateArgs);
         if (parallel?.cancelled) {
           return res.status(409).json({ status: 'error', message: 'Đã dừng lấy chi tiết. Dữ liệu cũ vẫn giữ nguyên.' });
@@ -327,6 +327,7 @@ router.post('/run-details', async (req, res) => {
       let result = { code: 0 };
       if (!parallel) {
         const args = ['--input', detailsInputPath, '--out', detailsOutPath, ...dateArgs];
+        if (showChrome === '1') args.push('--headed');
         try {
           result = await runWorker('details', args, {
             onSpawn: killFn => registerCancel(ctx.sid, killFn),
