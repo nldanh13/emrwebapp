@@ -23,7 +23,12 @@ class FakeSess:
         return True
 
     def scan_all_inpatients(self):
-        return [], {"BN1": "/view/1", "BN3": "/view/3"}
+        # A real HTTP scan supplies both the link and the admission-time row.
+        # The worker must verify this before fetching patient details.
+        return [
+            {"Mã BN": "BN1", "T/G vào": "08:00 01/10/2026", "Trạng thái": "Đang thực hiện"},
+            {"Mã BN": "BN3", "T/G vào": "08:00 01/10/2026", "Trạng thái": "Đang thực hiện"},
+        ], {"BN1": "/view/1", "BN3": "/view/3"}
 
     def fetch_patient_page(self, view_url, denngay=None):
         self.fetched.append(view_url)
@@ -81,7 +86,7 @@ def _run(tmp_path, monkeypatch, *, skip_v2=True, force_http=True):
     worker.wait = None
     opened = []
 
-    def fake_open(ma_bn, denngay=None, row=None):
+    def fake_open(ma_bn, denngay=None, row=None, **_kwargs):
         opened.append(ma_bn)
         return False  # không mở được: bỏ qua, không ghi gì cho ca này
 
