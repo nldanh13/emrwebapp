@@ -69,6 +69,7 @@ function getActiveDay(patient, activeDate, availableDates) {
 }
 
 const DETAIL_TABS = [
+  { id: 'history', label: 'Lịch sử y lệnh' },
   { id: 'timeline', label: 'Timeline y lệnh' },
   { id: 'preview', label: 'Xem trước khi nhập' },
   { id: 'meds', label: 'Sửa dịch truyền', needsInfusion: true },
@@ -188,6 +189,56 @@ function PatientHeader({ patient, activeDay, status, subTab, setSubTab, availabl
 }
 
 const TIME_CELL = { fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: C.text };
+
+// Read-only table modeled after the EMR Thuốc/T-VT order list.
+// Show source attributes only; do not reinterpret '2A' as two infusions.
+function OrderHistoryTable({ patientDay = {} }) {
+  const events = Array.isArray(patientDay.raw_order_events) ? patientDay.raw_order_events : [];
+  const rows = events.filter(e => e && (e.text || e.ten_thuoc || e.ten_duoc || e.ten || e.raw));
+  const columns = ['STT', 'Loại kê', 'Tên dược / nội dung y lệnh gốc', 'Hàm lượng', 'ĐVT', 'Đường dùng', 'SL', 'Cách dùng', 'Đối tượng', 'Trạng thái'];
+  const value = (event, ...fields) => {
+    for (const field of fields) {
+      const candidate = event[field];
+      if (candidate !== null && candidate !== undefined && String(candidate).trim()) return String(candidate);
+    }
+    return '—';
+  };
+  const td = { padding: '8px 9px', verticalAlign: 'top', borderBottom: `1px solid ${C.border2}`, fontSize: FS.sm, color: C.text };
+  return (
+    <section aria-label="Lịch sử y lệnh thuốc" style={{ border: `1px solid ${C.border}`, background: C.surface, borderRadius: 7, overflow: 'hidden' }}>
+      <div style={{ padding: '10px 12px', background: C.surface2, borderBottom: `1px solid ${C.border2}` }}>
+        <strong>Lịch sử y lệnh · {rows.length} dòng gốc</strong>
+        <div style={{ color: C.text2, fontSize: FS.xs, marginTop: 3 }}>Dữ liệu đã thu thập, chỉ xem. Chọn ngày phía trên để xem từng ngày. Không tự gộp hay tách thuốc, ống/lọ và túi dịch.</div>
+      </div>
+      {!rows.length ? (
+        <p style={{ padding: 14, color: C.text2 }}>Chưa có dữ liệu y lệnh gốc dạng dòng cho ngày này. Hãy cập nhật y lệnh nếu cần.</p>
+      ) : (
+        <div className="emr-hscroll" style={{ overflowX: 'auto' }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1050 }}>
+            <thead><tr>{columns.map(c => <th key={c} scope="col" style={{ ...td, textAlign: c === 'STT' || c === 'SL' ? 'center' : 'left', background: C.surface2, fontWeight: 700, whiteSpace: 'nowrap' }}>{c}</th>)}</tr></thead>
+            <tbody>{rows.map((e, idx) => (
+              <tr key={`${e.line_no ?? idx}-${idx}`}>
+                <td style={{ ...td, textAlign: 'center' }}>{idx + 1}</td>
+                <td style={td}>{value(e, 'loai_ke')}</td>
+                <td style={{ ...td, minWidth: 270, whiteSpace: 'pre-wrap' }}>
+                  {value(e, 'ten_duoc', 'ten_thuoc', 'ten', 'text', 'raw')}
+                  {e.gio_y_lenh && <div style={{ color: C.text2, fontSize: FS.xs }}>Giờ y lệnh: {e.gio_y_lenh}</div>}
+                </td>
+                <td style={td}>{value(e, 'ham_luong')}</td>
+                <td style={td}>{value(e, 'dvt', 'don_vi_tinh', 'don_vi')}</td>
+                <td style={td}>{value(e, 'duong_dung_goc', 'duong_dung')}</td>
+                <td style={{ ...td, textAlign: 'center' }}>{value(e, 'so_luong', 'sl')}</td>
+                <td style={{ ...td, minWidth: 220, whiteSpace: 'pre-wrap' }}>{value(e, 'cach_dung', 'huong_dan_su_dung')}</td>
+                <td style={td}>{value(e, 'doi_tuong')}</td>
+                <td style={td}>{value(e, 'trang_thai')}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
 
 function RawOrdersPanel({ patientDay = {} }) {
   const warnings = Array.isArray(patientDay.processing_warnings) ? patientDay.processing_warnings : [];
@@ -462,7 +513,7 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
 }
 
 export default function PatientDetail({ patient, onClose, onInputCare, onInputInfusion, onInputProcedure, onInputVtyt, onRefreshDetails, onPrintDischargeBundle, onInfusionUpdated, running, toast }) {
-  const [subTab, setSubTab] = useState('timeline');
+  const [subTab, setSubTab] = useState('history');
   const p = patient;
   const st = STATUS[p.status] || STATUS.gray;
   const availableDates = useMemo(() => getAvailableDates(p), [p.available_dates, p.ngay_lam]);
@@ -569,7 +620,9 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
 
       <div style={{ flex: isMobile ? 'none' : 1, overflow: isMobile ? 'visible' : 'auto', padding: '12px 16px 16px', background: C.bg }}>
         <div style={{ maxWidth: 1220, width: '100%', margin: '0 auto 0 0' }}>
-          {subTab === 'timeline'
+          {subTab === 'history'
+            ? <OrderHistoryTable patientDay={activeDay} />
+            : subTab === 'timeline'
             ? <>
                 <p style={{ margin: '0 0 10px', color: C.text2, fontSize: FS.xs, lineHeight: 1.45 }}>
                   Timeline dự kiến. Khi nhập, hệ thống tự đối chiếu HIS và chỉ sửa khi đủ điều kiện an toàn.
