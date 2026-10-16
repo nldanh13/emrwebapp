@@ -108,20 +108,69 @@ def parse_order_popup(html):
     result["so_thuoc"] = len(medications)
     result["so_vat_tu_y_te"] = len(supplies)
     result["so_dong_thuoc_vtyt"] = len(medications) + len(supplies)
-    # Các khung này không nhất thiết có dữ liệu trên mọi phiếu.
-    for key, element_id in (
+    result["y_lenh_khac_muc"] = _meaningful_lines(result["y_lenh_khac"])
+    result["y_lenh_theo_doi_muc"] = _meaningful_lines(result["y_lenh_theo_doi"])
+    result["chi_dinh_khac"] = _read_other_order_sections(soup)
+    return result
+
+
+def _meaningful_lines(value):
+    """Preserve source wording while exposing individual lines for classification."""
+    return [line.strip() for line in (value or "").splitlines() if line.strip()]
+
+
+def _parse_order_section(soup, element_id):
+    """Read a non-medication order section, retaining table rows and plain text.
+
+    The EMR fills these containers dynamically. Headings alone are not orders.
+    """
+    panel = soup.find(id=element_id)
+    if panel is None:
+        return None
+    tables = []
+    for table in panel.find_all("table"):
+        # Nested tables are unusual but should not duplicate the inner rows.
+        if table.find_parent("table") is not None:
+            continue
+        headers = [th.get_text(" ", strip=True) for th in table.select("thead th")]
+        rows = []
+        for tr in table.select("tbody > tr"):
+            cells = tr.find_all("td", recursive=False)
+            if not cells:
+                continue
+            values = [td.get_text("\n", strip=True) for td in cells]
+            if not any(values):
+                continue
+            rows.append({"id": tr.get("id", ""), "gia_tri": values})
+        if rows:
+            tables.append({"cot": headers, "dong": rows})
+    # Also retain instructions rendered as paragraphs, links or list items outside tables.
+    text_soup = BeautifulSoup(str(panel), "html.parser")
+    for el in text_soup.select("table, script, style, button, select, input, textarea"):
+        el.decompose()
+    free_text = text_soup.get_text("\n", strip=True)
+    if not tables and not free_text:
+        return None
+    return {"bang": tables, "noi_dung": free_text}
+
+
+def _read_other_order_sections(soup):
+    """Known EMR non-medication sections. Absent/empty sections are omitted."""
+    result = {}
+    for key, panel_id in (
+        ("dieu_tri_phoi_hop", "divYLenhKhoaPhongDtPhoiHops"),
         ("dich_vu_ky_thuat", "divDichVu"),
         ("xet_nghiem", "divDichVuXetNghiem"),
         ("truyen_mau", "divTruyenMau"),
+        ("xet_nghiem_truyen_mau", "divXNTruyenMau"),
         ("dinh_duong_chi_tiet", "divDinhDuong_V2"),
     ):
-        panel = soup.find(id=element_id)
-        if panel:
-            result[key] = [
-                [cell.get_text(" ", strip=True) for cell in r.find_all("td", recursive=False)]
-                for r in panel.select("table tbody > tr")
-                if r.find_all("td", recursive=False)
-            ]
+        value = _parse_order_section(soup, panel_id)
+        # dinh_duong_V2 contains static totals and column headers without orders.
+        if key == "dinh_duong_chi_tiet" and value and not value["bang"]:
+            continue
+        if value:
+            result[key] = value
     return result
 
 
@@ -134,6 +183,26 @@ def _compose_order_text(order):
     ):
         if value:
             lines.append(label + ": " + value)
+    for key, label in (
+        ("dieu_tri_phoi_hop", "Điều trị phối hợp"),
+        ("dich_vu_ky_thuat", "Chỉ định DVKT"),
+        ("xet_nghiem", "Chỉ định xét nghiệm"),
+        ("truyen_mau", "Chỉ định truyền máu"),
+        ("xet_nghiem_truyen_mau", "Xét nghiệm truyền máu"),
+        ("dinh_duong_chi_tiet", "Chỉ định dinh dưỡng"),
+    ):
+        section = (order.get("chi_dinh_khac") or {}).get(key)
+        if not section:
+            continue
+        records = []
+        if section.get("noi_dung"):
+            records.append(section["noi_dung"])
+        for table in section.get("bang", []):
+            for row in table.get("dong", []):
+                records.append(" | ".join(str(x) for x in row.get("gia_tri", []) if str(x).strip()))
+        if records:
+            lines.append(label + ":")
+            lines.extend(records)
     for section, rows, name_key in (
         ("+ Thuốc:", order.get("thuoc", []), "ten_duoc"),
         ("+ Vật tư y tế:", order.get("vat_tu_y_te", []), "ten_vat_tu"),
