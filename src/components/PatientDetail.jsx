@@ -69,6 +69,7 @@ function getActiveDay(patient, activeDate, availableDates) {
 }
 
 const DETAIL_TABS = [
+  { id: 'history', label: 'Lịch sử y lệnh' },
   { id: 'timeline', label: 'Timeline y lệnh' },
   { id: 'preview', label: 'Xem trước khi nhập' },
   { id: 'meds', label: 'Sửa dịch truyền', needsInfusion: true },
@@ -188,6 +189,106 @@ function PatientHeader({ patient, activeDay, status, subTab, setSubTab, availabl
 }
 
 const TIME_CELL = { fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: C.text };
+
+// Read-only table modeled after the EMR Thuốc/T-VT order list.
+// Show source attributes only; do not reinterpret '2A' as two infusions.
+// Display only order-specific medication rows with a confirmed completed order.
+// The EMR "Hoàn tất" order badge is distinct from "Trạng thái thuốc".
+function OrderHistoryTable({ patientDay = {} }) {
+  const events = Array.isArray(patientDay.raw_order_events) ? patientDay.raw_order_events : [];
+  const orders = Array.isArray(patientDay.order_history) ? patientDay.order_history
+    : Array.isArray(patientDay.y_lenh_history) ? patientDay.y_lenh_history : [];
+  const [selectedId, setSelectedId] = useState('');
+  const text = (row, ...keys) => keys.map(k => row?.[k]).find(v => v !== null && v !== undefined && String(v).trim()) ?? '';
+  const idOf = row => String(text(row, 'order_id', 'y_lenh_id', 'id', 'ma_y_lenh'));
+  const completed = row => {
+    const status = String(text(row, 'order_status', 'trang_thai_y_lenh', 'trang_thai')).trim().toLowerCase();
+    return ['hoàn tất', 'hoan tat', 'completed'].includes(status);
+  };
+  const selected = orders.find(o => idOf(o) && idOf(o) === selectedId);
+  const rows = selected && completed(selected)
+    ? (Array.isArray(selected.thuoc) ? selected.thuoc : Array.isArray(selected.medications) ? selected.medications
+      : events.filter(e => idOf(e) && idOf(e) === selectedId && /thuoc|thuốc|medication/i.test(String(text(e, 'kind', 'type')))))
+    : [];
+  const cols = ['STT', 'Loại kê', 'Tên dược / nội dung gốc', 'Hàm lượng', 'ĐVT', 'Đường dùng', 'SL', 'Cách dùng', 'Đối tượng', 'Trạng thái thuốc'];
+  // Preserve the complete order context, not just its medication list.
+  // This mirrors the original workflow: clinical notes, service results,
+  // other instructions, nursing and nutritional orders remain visible.
+  const otherFields = [
+    ['Diễn biến bệnh', ['dien_bien_benh', 'dien_bien']],
+    ['Kết quả dịch vụ', ['ket_qua_dich_vu', 'ket_qua_dv']],
+    ['Y lệnh khác', ['y_lenh_khac', 'ylenh_khac']],
+    ['Chỉ định chăm sóc', ['chi_dinh_cham_soc', 'cd_cs']],
+    ['Chỉ định dinh dưỡng', ['chi_dinh_dinh_duong', 'cd_dd']],
+    ['Dịch vụ', ['dich_vu', 'services']],
+    ['Vật tư y tế', ['vat_tu_y_te', 'vtyt']],
+  ];
+  const formatOrderDetail = value => typeof value === 'string' ? value
+    : Array.isArray(value) ? value.map(v => typeof v === 'string' ? v : JSON.stringify(v)).join('\n')
+      : value && typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value ?? '');
+  const cell = { borderBottom: `1px solid ${C.border2}`, padding: '8px 9px', fontSize: FS.sm, verticalAlign: 'top', color: C.text };
+  const display = (row, ...keys) => String(text(row, ...keys) || '—');
+  return (
+    <section aria-label="Lịch sử y lệnh" style={{ border: `1px solid ${C.border}`, borderRadius: 7, overflow: 'hidden', background: C.surface }}>
+      <div style={{ padding: '10px 12px', background: C.surface2 }}>
+        <strong>Lịch sử y lệnh theo phiếu</strong>
+        <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 4 }}>Ngày được quét gồm tất cả phiếu y lệnh trong ngày. Chọn từng phiếu Hoàn tất để xem toàn bộ thông tin, gồm thuốc và y lệnh khác. Trạng thái thuốc không quyết định trạng thái phiếu.</div>
+      </div>
+      {!orders.length ? <p style={{ margin: 0, padding: 14, color: C.text2 }}>
+        Chưa có lịch sử từng phiếu và trạng thái Hoàn tất được xác thực trong dữ liệu đã thu thập. Không thể mở bảng thuốc theo phiếu từ văn bản y lệnh tổng hợp; cần bổ sung thu thập ID phiếu, ngày, giờ, trạng thái y lệnh và danh sách thuốc của từng phiếu từ EMR.
+      </p> : (
+        <>
+          <div className="emr-hscroll" style={{ overflowX: 'auto' }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 720 }}>
+              <thead><tr>{['Số phiếu', 'Giờ y lệnh', 'Bác sĩ', 'Trạng thái y lệnh', 'Xem'].map(label => <th key={label} scope="col" style={{ ...cell, background: C.surface2, textAlign: 'left' }}>{label}</th>)}</tr></thead>
+              <tbody>{orders.map((o, i) => {
+                const id = idOf(o);
+                const ok = completed(o);
+                return <tr key={id || i}>
+                  <td style={cell}>{display(o, 'so_phieu', 'ma_phieu')}</td>
+                  <td style={cell}>{display(o, 'gio_y_lenh', 'thoi_gian_y_lenh')}</td>
+                  <td style={cell}>{display(o, 'bac_si', 'ten_bac_si')}</td>
+                  <td style={cell}>{display(o, 'order_status', 'trang_thai_y_lenh', 'trang_thai')}</td>
+                  <td style={cell}><button type="button" disabled={!ok || !id} onClick={() => setSelectedId(id)} aria-label={`Xem thuốc phiếu ${display(o, 'so_phieu', 'ma_phieu')}`} title={ok ? 'Xem thuốc thuộc đúng phiếu này' : 'Chỉ xem khi trạng thái y lệnh đã Hoàn tất'}>Xem thuốc</button></td>
+                </tr>;
+              })}</tbody>
+            </table>
+          </div>
+          {selected && completed(selected) && (
+            <div className="emr-hscroll" style={{ overflowX: 'auto', paddingTop: 12 }}>
+              <div style={{ padding: '0 12px 8px', fontWeight: 700 }}>Thuốc của phiếu {display(selected, 'so_phieu', 'ma_phieu')}</div>
+              <div style={{ padding: '0 12px 12px', display: 'grid', gap: 8 }}>
+                {otherFields.map(([label, keys]) => {
+                  const found = keys.map(k => selected[k]).find(v => v !== undefined && v !== null && String(v).trim());
+                  return found ? <section key={label} style={{ border: `1px solid ${C.border2}`, borderRadius: 5, padding: 9 }}>
+                    <strong style={{ fontSize: FS.sm }}>{label}</strong>
+                    <div style={{ whiteSpace: 'pre-wrap', fontSize: FS.sm, marginTop: 4 }}>{formatOrderDetail(found)}</div>
+                  </section> : null;
+                })}
+              </div>
+              {!rows.length ? <p style={{ padding: '0 12px', color: C.text2 }}>Phiếu này chưa có dữ liệu thuốc gốc được liên kết theo ID phiếu. Các loại y lệnh khác vẫn được hiển thị khi có dữ liệu.</p>
+                : <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1050 }}>
+                  <thead><tr>{cols.map(col => <th key={col} style={{ ...cell, background: C.surface2, textAlign: 'left' }}>{col}</th>)}</tr></thead>
+                  <tbody>{rows.map((m, i) => <tr key={String(text(m, 'id', 'line_no') || i)}>
+                    <td style={cell}>{i + 1}</td>
+                    <td style={cell}>{display(m, 'loai_ke')}</td>
+                    <td style={{ ...cell, whiteSpace: 'pre-wrap' }}>{display(m, 'ten_duoc', 'ten_thuoc', 'text', 'raw')}</td>
+                    <td style={cell}>{display(m, 'ham_luong')}</td>
+                    <td style={cell}>{display(m, 'dvt', 'don_vi_tinh')}</td>
+                    <td style={cell}>{display(m, 'duong_dung_goc', 'duong_dung')}</td>
+                    <td style={cell}>{display(m, 'so_luong', 'sl')}</td>
+                    <td style={{ ...cell, whiteSpace: 'pre-wrap' }}>{display(m, 'cach_dung')}</td>
+                    <td style={cell}>{display(m, 'doi_tuong')}</td>
+                    <td style={cell}>{display(m, 'trang_thai_thuoc')}</td>
+                  </tr>)}</tbody>
+                </table>}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
 
 function RawOrdersPanel({ patientDay = {} }) {
   const warnings = Array.isArray(patientDay.processing_warnings) ? patientDay.processing_warnings : [];
@@ -462,7 +563,7 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
 }
 
 export default function PatientDetail({ patient, onClose, onInputCare, onInputInfusion, onInputProcedure, onInputVtyt, onRefreshDetails, onPrintDischargeBundle, onInfusionUpdated, running, toast }) {
-  const [subTab, setSubTab] = useState('timeline');
+  const [subTab, setSubTab] = useState('history');
   const p = patient;
   const st = STATUS[p.status] || STATUS.gray;
   const availableDates = useMemo(() => getAvailableDates(p), [p.available_dates, p.ngay_lam]);
@@ -569,7 +670,9 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
 
       <div style={{ flex: isMobile ? 'none' : 1, overflow: isMobile ? 'visible' : 'auto', padding: '12px 16px 16px', background: C.bg }}>
         <div style={{ maxWidth: 1220, width: '100%', margin: '0 auto 0 0' }}>
-          {subTab === 'timeline'
+          {subTab === 'history'
+            ? <OrderHistoryTable patientDay={activeDay} />
+            : subTab === 'timeline'
             ? <>
                 <p style={{ margin: '0 0 10px', color: C.text2, fontSize: FS.xs, lineHeight: 1.45 }}>
                   Timeline dự kiến. Khi nhập, hệ thống tự đối chiếu HIS và chỉ sửa khi đủ điều kiện an toàn.
