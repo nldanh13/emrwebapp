@@ -170,7 +170,8 @@ def test_nacl_marked_to_mix_two_drugs_is_not_third_infusion():
     form = {"gio_y_lenh": "05:00 16/10/2026", "bac_si": "Bác sĩ A",
             "trang_thai_y_lenh": "Hoàn tất", "id": "f001", "thuoc": meds}
     text = build_classification_text([form])
-    assert text.count("Natri clorid 0,9% 100ml") == 0
+    assert "\\nNatri clorid 0,9% 100ml x" not in text
+    assert "Thuốc pha: Natri clorid 0,9% 100ml" in text
     assert "pha vinphacin" not in text
     assert "pha mizapenem" not in text
     assert "Mizapenem" in text and "Vinphacine" in text
