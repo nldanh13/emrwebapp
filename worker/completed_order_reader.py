@@ -225,7 +225,60 @@ def _compose_order_text(order):
     return "\n".join(lines)
 
 
-def read_completed_forms(driver, allowed_dates):
+def _bridge_order_allowed(order_date, bridge_end_date, *time_sources):
+    """Ngày nối ca chỉ nhận mốc 00:00 đến 06:59.
+
+    Không suy đoán giờ khi trang EMR thiếu thông tin; tránh gán y lệnh
+    của ca sáng hôm sau vào ngày làm việc trước.
+    """
+    if not bridge_end_date or order_date != bridge_end_date:
+        return True
+    for value in time_sources:
+        match = re.search(r"(?<!\d)([01]?\d|2[0-3]):([0-5]\d)(?!\d)", str(value or ""))
+        if match:
+            return int(match.group(1)) < 7
+    return False
+
+
+def resolve_order_work_date(order, bridge_end_date=None):
+    """Derive actual work day per slip, separate from the EMR creation date.
+
+    A 05:00 'Dự trù thuốc' order belongs to its ORIGINAL calendar day,
+    including cases where the list displays 07:00 but original indication
+    time is 05:00. Other orders retain the early-morning (<07:00) shift bridge.
+    """
+    source_date = str(order.get("ngay_y_lenh") or "").strip()
+    if not source_date:
+        return "", "missing_source_date"
+    original_time = str(
+        order.get("thoi_gian_chi_dinh")
+        or order.get("thoi_gian_y_lenh_goc")
+        or order.get("gio_y_lenh")
+        or ""
+    )
+    is_drug_reservation = bool(re.fullmatch(
+        r"\s*dự trù thuốc\s*", str(order.get("dien_bien_benh") or ""), re.IGNORECASE
+    ))
+    original_match = re.match(r"^\s*(\d{1,2}):(\d{2})(?!\d)", original_time)
+    if is_drug_reservation and original_match and (
+        int(original_match.group(1)), int(original_match.group(2))
+    ) == (5, 0):
+        return source_date, "draft_05_same_day"
+    if bridge_end_date and source_date == bridge_end_date:
+        if not _bridge_order_allowed(
+            source_date, bridge_end_date, order.get("gio_y_lenh"),
+            order.get("thoi_gian_y_lenh_goc"), order.get("thoi_gian_chi_dinh")
+        ):
+            return "", "outside_bridge_time"
+        from datetime import datetime, timedelta
+        return (
+            (datetime.strptime(source_date, "%d/%m/%Y") - timedelta(days=1)).strftime("%d/%m/%Y"),
+            "bridge_before_07"
+        )
+    return source_date, "same_day"
+
+
+def read_completed_forms(driver, allowed_dates, bridge_end_date=None, work_dates=None):
     driver.execute_script("""
         const count = document.getElementById('soLuongHienThi');
         const status = document.getElementById('trangthaiylenh');
@@ -268,7 +321,7 @@ def read_completed_forms(driver, allowed_dates):
             "bac_si": text(5), "dien_bien_benh": tooltip(6),
             "ket_qua_dich_vu": text(7), "y_lenh_khac": tooltip(8),
             "chi_dinh_cham_soc": text(9), "chi_dinh_dinh_duong": tooltip(10),
-            "trang_thai_y_lenh": "Hoàn tất",
+            "trang_thai_y_lenh": "Hoàn tất", "ngay_y_lenh": date,
         }
         try:
             # Khác nút con mắt: bấm vào SỐ PHIẾU để mở trang y lệnh bác sĩ.
@@ -328,8 +381,17 @@ def read_completed_forms(driver, allowed_dates):
             # when a popup textarea is empty. Preserve each original newline.
             order["y_lenh_khac_muc"] = _meaningful_lines(order.get("y_lenh_khac"))
             order["y_lenh_theo_doi_muc"] = _meaningful_lines(order.get("y_lenh_theo_doi"))
-            print("LOG: Phiếu %s: %s thuốc; %s VTYT; %s mục Y lệnh khác; %s nhóm chỉ định khác" % (
-                order["so_phieu"], order["so_thuoc"], order["so_vat_tu_y_te"],
+            effective_date, date_rule = resolve_order_work_date(order, bridge_end_date)
+            order["ngay_lam"] = effective_date
+            order["quy_tac_ngay"] = date_rule
+            if not effective_date or (work_dates is not None and effective_date not in work_dates):
+                print("LOG: Bỏ phiếu %s (%s) do ngày thực tế %s ngoài khoảng chọn | quy tắc=%s" % (
+                    order["so_phieu"], date, effective_date or "không xác định", date_rule
+                ))
+                continue
+            print("LOG: Phiếu %s: ngày lập %s, ngày làm %s (%s) | thuốc=%s; VTYT=%s; Y lệnh khác=%s; nhóm khác=%s" % (
+                order["so_phieu"], date, effective_date, date_rule,
+                order["so_thuoc"], order["so_vat_tu_y_te"],
                 len(order["y_lenh_khac_muc"]), len(order.get("chi_dinh_khac") or {})
             ))
         except Exception as err:
@@ -343,7 +405,7 @@ def read_completed_forms(driver, allowed_dates):
             except Exception:
                 print("LOG: Không quay được lịch sử sau phiếu %s" % order_id)
                 raise
-        day = days.setdefault(date, {
+        day = days.setdefault(effective_date, {
             "Y lệnh": "", "Diễn biến": "", "Bác sĩ": "", "order_history": []
         })
         day["order_history"].append(order)
