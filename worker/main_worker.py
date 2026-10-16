@@ -1731,15 +1731,22 @@ class AutoWorker:
         """Đọc y lệnh của MỘT người bệnh qua HTTP. Ca không đọc được qua HTTP thì ném
         _HttpPatientFallback để nơi gọi chỉ mở Chrome cho riêng ca này."""
         _list_row = list_row_by_ma.get(str(ma_bn).strip())
-        if _list_row:
-            expected_status = _list_row.get("trang_thai") or _list_row.get("Trạng thái") or "Đang thực hiện"
-            accepted, reason = _check_inpatient_before_open(
-                _list_row, bn, expected_status, date_from_full, date_to_full
-            )
-            if not accepted:
-                print(f"LOG(HTTP): Bỏ qua BN {ma_bn} trước khi mở hồ sơ: {reason}")
-                return []
-            _merge_admin_from_list_row(bn, _list_row)
+        if not _list_row:
+            # HTTP có thể chỉ quét được một số trạng thái, chuyển riêng ca
+            # này sang Selenium để xác minh T/G vào trên danh sách thật.
+            raise _HttpPatientFallback(f"Chưa có dòng danh sách để xác minh T/G vào của BN {ma_bn}")
+        expected_status = _list_row.get("trang_thai") or _list_row.get("Trạng thái") or "Đang thực hiện"
+        accepted, reason = _check_inpatient_before_open(
+            _list_row, bn, expected_status, date_from_full, date_to_full
+        )
+        if not accepted:
+            if reason.startswith(("Không đọc được", "Không xác định được")):
+                raise _HttpPatientFallback(
+                    f"Chưa đủ dữ liệu T/G vào qua HTTP cho BN {ma_bn}; cần kiểm tra trực tiếp"
+                )
+            print(f"LOG(HTTP): Bỏ qua BN {ma_bn} trước khi mở hồ sơ: {reason}")
+            return []
+        _merge_admin_from_list_row(bn, _list_row)
 
         view_url = link_map.get(str(ma_bn).strip())
         if not view_url:
