@@ -2028,6 +2028,7 @@ def build_arg_parser():
     p_det.add_argument("--to", dest="date_to", default=None, help="dd/mm hoặc dd/mm/yyyy")
     p_det.add_argument("--rooms", default="", help="P01,P02 hoặc 01,02")
     p_det.add_argument("--skip-empty", action="store_true")
+    p_det.add_argument("--headed", action="store_true", help="Hiện Chrome trong lần lấy chi tiết hiện tại")
 
     return p
 
@@ -2050,6 +2051,9 @@ if __name__ == "__main__":
             date_to=getattr(args, "date_to", ""),
         )
     elif args.cmd == "details":
+        if bool(getattr(args, "headed", False)):
+            w.config["data_read_headless"] = False
+            w.config["read_headless"] = False
         rooms = [x.strip() for x in (args.rooms or "").split(",") if x.strip()]
         w.task_details(
             input_path=args.input,

@@ -70,6 +70,7 @@ export default function DataProcessingTab({ toast, workDateRange }) {
   const [running, setRunning] = useState('');
   const [showPicker, setShowPicker] = useState(false);
   const [detailsScope, setDetailsScope] = useState('all');
+  const [showChromeOnce, setShowChromeOnce] = useState(false);
   const [selectedRooms, setSelectedRooms] = useState([]);
   const [removeRooms, setRemoveRooms] = useState([]);
   const recoveryAttemptedRef = useRef(false);
@@ -207,6 +208,7 @@ export default function DataProcessingTab({ toast, workDateRange }) {
         rooms: detailsScope === 'rooms' ? selectedRooms : [],
         partial: detailsScope !== 'all',
         scope: detailsScope,
+        showChrome: showChromeOnce,
       });
       if (r.status === 'ok' && r.warning) {
         toast?.(r.warning, 'warn');
@@ -221,8 +223,9 @@ export default function DataProcessingTab({ toast, workDateRange }) {
       toast?.(String(e.message || e), 'error');
     } finally {
       setRunning('');
+      setShowChromeOnce(false);
     }
-  }, [rowsForDetails, targetRowsForDetails, detailsScope, selectedRooms, dmyRange, rangeLabel, toast, load]);
+  }, [rowsForDetails, targetRowsForDetails, detailsScope, selectedRooms, dmyRange, rangeLabel, toast, load, showChromeOnce]);
 
   const handleRemoveRooms = useCallback(async () => {
     if (!removeRooms.length) {
@@ -324,6 +327,10 @@ export default function DataProcessingTab({ toast, workDateRange }) {
                 {selectedRooms.length > 0 && <Btn onClick={clearRooms} style={{ height: 32 }}>Bỏ hết</Btn>}
               </div>
             )}
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: FS.sm, color: C.text2 }}>
+              <input type="checkbox" checked={showChromeOnce} disabled={!!running} onChange={e => setShowChromeOnce(e.target.checked)} />
+              Hiện Chrome khi lấy chi tiết (chỉ lần này; chạy một phiên để dễ quan sát)
+            </label>
             <HelpersPanel />
           </Step>
           <Step
