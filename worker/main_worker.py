@@ -1962,14 +1962,25 @@ class AutoWorker:
                     # nội dung từng phiếu. Tránh ghi sai/tạo bản ghi rỗng.
                     if self.driver.find_elements(By.CSS_SELECTOR, "#tbodyylenh tr[id^='tr']"):
                         from completed_order_reader import read_completed_forms
-                        completed_days = read_completed_forms(self.driver, timeline_dates, bridge_end_date=bridge_end_date)
-                        for d in timeline_dates:
+                        # Dự trù thuốc lúc 05:00 thuộc NGÀY HÔM SAU:
+                        # đọc thêm ngày trước date_from để không bỏ sót dự trù
+                        # dành cho ngày đầu tiên. Vẫn chỉ xuất work_dates.
+                        previous_date = add_days_dmy(work_dates[0], -1) if work_dates else None
+                        order_source_dates = list(dict.fromkeys(
+                            ([previous_date] if previous_date else []) + timeline_dates
+                        ))
+                        completed_days = read_completed_forms(
+                            self.driver, order_source_dates,
+                            bridge_end_date=bridge_end_date, work_dates=work_dates
+                        )
+                        for d in work_dates:
                             item = completed_days.get(d)
                             if not item:
                                 continue
                             rec = _build_record(
                                 bn, d, item, ho_ten=ho_ten, vitri=vitri,
-                                bridge_end_date=bridge_end_date,
+                                # d ở đây ĐÃ là ngày làm tính theo từng phiếu.
+                                bridge_end_date=None,
                             )
                             rec["order_history"] = item["order_history"]
                             records.append(rec)
