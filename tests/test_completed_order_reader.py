@@ -119,3 +119,27 @@ def test_empty_order_sections_are_not_fabricated():
     assert result["chi_dinh_khac"] == {}
     assert result["y_lenh_khac_muc"] == ["Theo dõi dấu hiệu sinh tồn"]
     assert "Chỉ định DVKT:" not in _compose_order_text(result)
+
+
+
+def test_next_day_bridge_accepts_only_orders_before_0700():
+    from completed_order_reader import _bridge_order_allowed
+
+    assert _bridge_order_allowed("19/10/2026", "19/10/2026", "00:00")
+    assert _bridge_order_allowed("19/10/2026", "19/10/2026", "06:59 19/10/2026")
+    assert not _bridge_order_allowed("19/10/2026", "19/10/2026", "07:00")
+    assert not _bridge_order_allowed("19/10/2026", "19/10/2026", "08:15")
+    assert not _bridge_order_allowed("19/10/2026", "19/10/2026", "")
+    assert not _bridge_order_allowed("19/10/2026", "19/10/2026", "không xác định")
+    assert _bridge_order_allowed("18/10/2026", "19/10/2026", "23:30")
+    assert _bridge_order_allowed("19/10/2026", None, "23:30")
+
+
+def test_next_day_bridge_uses_fallback_hour_when_list_is_blank():
+    from completed_order_reader import _bridge_order_allowed
+
+    assert _bridge_order_allowed("19/10/2026", "19/10/2026", "", "05:00 19/10/2026")
+    assert not _bridge_order_allowed("19/10/2026", "19/10/2026", "", "07:05 19/10/2026")
+    # List-level time wins over popup fallback to prevent incorrect interpretation
+    # of a scheduled-time field.
+    assert not _bridge_order_allowed("19/10/2026", "19/10/2026", "12:00", "05:00")
