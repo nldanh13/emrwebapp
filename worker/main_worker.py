@@ -1599,8 +1599,10 @@ class AutoWorker:
         return True
 
     def _click_ylenh_tab(self) -> bool:
-        """Mở tab Lịch sử/Y lệnh và chờ timeline render."""
+        """Mở Lịch sử y lệnh trong hồ sơ điều trị và chờ danh sách phiếu."""
         candidates = [
+            (By.ID, "showDsYLenh"),
+            (By.CSS_SELECTOR, "a[onclick*=\"onshowDsYLenh\"]"),
             (By.ID, "btnLSYLenh"),
             (By.CSS_SELECTOR, "#btnLSYLenh"),
             (By.XPATH, "//a[contains(@id,'YLenh') or contains(@href,'YLenh') or contains(@onclick,'YLenh')]"),
@@ -1625,19 +1627,19 @@ class AutoWorker:
             print(f"LOG: Không click được tab Y lệnh: {last_err}")
             return False
 
-        # Chờ timeline hoặc nội dung y lệnh xuất hiện sau AJAX.
+        # Hồ sơ mở bằng tên BN trả về danh sách phiếu theo ngày, không có
+        # vertical-timeline-block của trang điều dưỡng. Chờ đúng bảng EMR.
         try:
-            WebDriverWait(self.driver, 15).until(
+            WebDriverWait(self.driver, 20).until(
                 lambda d: (
-                    "vertical-timeline-block" in (d.page_source or "")
-                    or "Bác sĩ:" in (d.page_source or "")
-                    or "+ Thuốc" in (d.page_source or "")
-                    or "+ Y lệnh" in (d.page_source or "")
+                    d.find_elements(By.CSS_SELECTOR, "#tbodyylenh tr[id^='tr']")
+                    or d.find_elements(By.CSS_SELECTOR, "#tblYLenh tbody tr[id^='tr']")
+                    or "vertical-timeline-block" in (d.page_source or "")
                 )
             )
         except Exception:
-            _debug_page(self.driver, "details_ylenh_timeline_not_loaded")
-            print("LOG: Đã bấm tab Y lệnh nhưng timeline chưa render")
+            _debug_page(self.driver, "details_order_list_not_loaded")
+            print("LOG: Đã bấm Lịch sử y lệnh nhưng danh sách phiếu chưa tải")
             return False
 
         time.sleep(0.5)
@@ -1952,6 +1954,14 @@ class AutoWorker:
 
                     _attach_ward_admission_history(bn, self.driver.page_source or "")
                     _clear_stale_discharge_for_current_visit(bn)
+                    # Bảng danh sách là danh sách phiếu; không được chuyển mỗi dòng
+                    # thành y lệnh điều trị khi chưa kiểm tra badge Hoàn tất và xem
+                    # nội dung từng phiếu. Tránh ghi sai/tạo bản ghi rỗng.
+                    if self.driver.find_elements(By.CSS_SELECTOR, "#tbodyylenh tr[id^='tr']"):
+                        _debug_page(self.driver, f"details_order_list_requires_per_order_reader_{ma_bn}")
+                        print(f"LOG: BN {ma_bn}: đã mở đúng Lịch sử y lệnh, nhưng chưa có bộ đọc chi tiết từng phiếu Hoàn tất; không dùng parser timeline điều dưỡng.")
+                        continue
+
                     timeline_map, doctor_from_page = self._extract_timeline_map(bridge_end_date=bridge_end_date, start_boundary_date=None)
                     if not timeline_map:
                         _debug_page(self.driver, f"details_empty_timeline_{ma_bn}")
