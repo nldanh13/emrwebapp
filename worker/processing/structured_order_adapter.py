@@ -104,6 +104,27 @@ def _classification_quantity(med):
     return value
 
 
+def _explicit_mixing_bag_volume(med, meds):
+    """Read volume from a uniquely matching EMR solvent row, without guessing."""
+    name = _clean(med.get("ten_duoc"))
+    brand = name.split("(", 1)[0].split(" ", 1)[0].casefold()
+    if len(brand) < 5:
+        return ""
+    volumes = []
+    for saline in meds:
+        if not isinstance(saline, dict) or not _is_diluent_only_row(saline):
+            continue
+        note = _clean(saline.get("cach_dung")).casefold()
+        target = re.sub(r"^(?:dùng\s+để\s+)?pha\s+", "", note).split(" ", 1)[0]
+        if len(target) < 5 or not (brand.startswith(target) or target.startswith(brand)):
+            continue
+        text = " ".join(_clean(saline.get(k)) for k in ("ten_duoc", "ham_luong"))
+        matches = re.findall(r"(?<!\d)(\d{2,4})\s*ml\b", text, re.IGNORECASE)
+        if len(set(matches)) == 1:
+            volumes.append(matches[0])
+    return volumes[0] if len(volumes) == 1 else ""
+
+
 def build_classification_text(forms):
     """Produce per-slip medication/other-order blocks; exclude VTYT completely."""
     blocks = []
