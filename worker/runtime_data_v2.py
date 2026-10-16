@@ -356,6 +356,14 @@ def merge_order_records(records: Any, *, skip_empty: bool = False) -> List[Dict[
             continue
 
         _append_unique_segment(existing, segment)
+        # Giữ mọi phiếu cùng ngày, không ghi mất thuốc/VTYT của phiếu tiếp theo.
+        if isinstance(rec.get("order_history"), list):
+            forms = existing.setdefault("order_history", [])
+            known = {str(x.get("id", "")) for x in forms if isinstance(x, dict)}
+            for form in rec["order_history"]:
+                if isinstance(form, dict) and str(form.get("id", "")) not in known:
+                    forms.append(form)
+                    known.add(str(form.get("id", "")))
         if empty:
             continue
 

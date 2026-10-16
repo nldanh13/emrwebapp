@@ -810,7 +810,7 @@ def _canonical_patient_row_for_runtime(row: Dict[str, Any], *, include_order_tex
             out[key] = row.get(key)
 
     if include_order_text:
-        for key in ["Y lệnh", "Diễn biến", "source_segments"]:
+        for key in ["Y lệnh", "Diễn biến", "source_segments", "order_history"]:
             if key in row and row.get(key) not in (None, "", [], {}):
                 out[key] = row.get(key)
 
