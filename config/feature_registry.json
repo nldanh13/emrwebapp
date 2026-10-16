@@ -180,6 +180,16 @@
       "order": 145,
       "compact": true,
       "usesDateRange": false
+    },
+    {
+      "id": "flow-designer",
+      "label": "Thiết kế luồng",
+      "icon": "⇢",
+      "group": "Thiết kế",
+      "hint": "Vẽ luồng chức năng: các màn hình, các ô và màn hình mở ra khi bấm",
+      "order": 120,
+      "compact": true,
+      "usesDateRange": false
     }
   ],
   "functions": [
