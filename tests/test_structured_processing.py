@@ -247,3 +247,7 @@ def test_structured_infusion_schedule_uses_dose_times_not_vial_count():
     ]
     assert rec.get("emr_order_source", {}).get("order_count") == 1
     assert len(rec["emr_order_source"]["medications"]) == 5
+    assert vina[0]["the_tich"] == 100.0
+    assert vina[0].get("so_lo_pha_mot_tui") == 2
+    assert all(x["the_tich"] == 100.0 for x in miza)
+    assert all(x.get("so_lo_pha_mot_tui") == 2 for x in miza)
