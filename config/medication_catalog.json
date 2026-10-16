@@ -279,7 +279,64 @@
       ],
       "category": "thuoc_boi",
       "default_route": "BOI"
+    },
+    {
+      "canonical": "MIZAPENEM 0,5G",
+      "active_ingredients": [
+        "MIZAPENEM 0,5G"
+      ],
+      "aliases": [
+        "MIZAPENEM 0,5G"
+      ],
+      "category": "dich_truyen",
+      "default_route": "TTM",
+      "default_volume_ml": 100,
+      "default_rate": "100",
+      "dilution": {
+        "solvent": "NACL_0.9",
+        "volume_ml": 100,
+        "apply": "always",
+        "rate": 30
+      },
+      "ten_hien_thi": "MIZAPENEM 0,5G",
+      "sua_tay": true
+    },
+    {
+      "canonical": "VINPHACINE",
+      "active_ingredients": [
+        "VINPHACINE"
+      ],
+      "aliases": [
+        "VINPHACINE"
+      ],
+      "category": "dich_truyen",
+      "default_route": "TTM",
+      "dilution": {
+        "solvent": "NACL_0.9",
+        "volume_ml": 100,
+        "apply": "always",
+        "rate": 30
+      },
+      "ten_hien_thi": "VINPHACINE",
+      "sua_tay": true,
+      "default_volume_ml": 100,
+      "preparation": {
+        "dosage_form": "solution"
+      }
+    },
+    {
+      "canonical": "BETALOC ZOK 25MG",
+      "active_ingredients": [
+        "BETALOC ZOK 25MG"
+      ],
+      "aliases": [
+        "BETALOC ZOK 25MG"
+      ],
+      "category": "thuoc_uong",
+      "default_route": "UONG",
+      "ten_hien_thi": "BETALOC ZOK 25MG",
+      "sua_tay": true
     }
   ],
-  "_updated": "2026-10-06"
+  "_updated": "2026-10-15"
 }
