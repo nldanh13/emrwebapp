@@ -28,6 +28,7 @@ import MedicationBuiltinPanel from './MedicationBuiltinPanel.jsx';
 import HospitalDrugReferencePanel from './HospitalDrugReferencePanel.jsx';
 import { referenceMedicationDraft } from '../utils/hospitalDrugReference.js';
 import { fillEmptyFields } from '../utils/medicationBuiltin.js';
+import { MAIN_SECTIONS, SOURCE_SECTIONS, TOOL_SECTIONS, SECTION_DESCRIPTIONS, SOURCE_DESCRIPTIONS } from '../utils/medicationCatalogNavigation.js';
 
 function routeOptions(table) {
   const categories = table.categories || [];
@@ -567,6 +568,18 @@ function RouteCell({ item }) {
 
 export default function MedicationCatalogManager() {
   const [tab, setTab] = useState('drugs');
+  const [sourceTab, setSourceTab] = useState('hospital');
+  const [toolTab, setToolTab] = useState('check');
+  const [seenSources, setSeenSources] = useState(() => new Set(['hospital']));
+  const [seenTools, setSeenTools] = useState(() => new Set(['check']));
+  const chooseSource = value => {
+    setSourceTab(value);
+    setSeenSources(prev => new Set([...prev, value]));
+  };
+  const chooseTool = value => {
+    setToolTab(value);
+    setSeenTools(prev => new Set([...prev, value]));
+  };
   const { categoryLabel: CATEGORY_LABEL } = routeOptions(useRouteTable());
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -592,24 +605,51 @@ export default function MedicationCatalogManager() {
     try {
       const data = await api.getMedicationCatalog();
       setItems(data.medications || []);
-      // Quy tắc pha đang áp dụng cho từng thuốc (gồm luật sẵn có) — tải sau, không chặn bảng.
-      api.checkMedicationDilution({ include_catalog: true })
-        .then(info => setDilutionInfo({ catalog: info.catalog || {}, builtin: info.builtin || [] }))
-        .catch(() => setDilutionInfo({ catalog: {}, builtin: [], failed: true }));
-      loadNewDrugs();
-      api.getCatalogCleanup().then(r => setCleanupPlan(r.plan || [])).catch(() => setCleanupPlan([]));
-      api.getMedicationBuiltin()
-        .then(r => { setBuiltin(r.builtin || {}); setBuiltinError(''); })
-        .catch(e => setBuiltinError('Không tải được kiến thức sẵn có: ' + String(e.message || e)));
     } catch (e) {
       showToast('Lỗi tải danh mục thuốc: ' + String(e.message || e));
     } finally {
       setLoading(false);
     }
-  }, [loadNewDrugs]);
+  }, []);
+
+  const loadCleanup = useCallback(() => api.getCatalogCleanup()
+    .then(r => setCleanupPlan(r.plan || []))
+    .catch(e => showToast('Không kiểm tra được mục trùng: ' + String(e.message || e))), []);
+
+  // Chỉ tải nguồn hoặc công cụ đang xem, không chạy các bước phân tích
+  // khi người dùng chỉ mở danh mục thuốc; không phát sinh yêu cầu EMR.
+  useEffect(() => {
+    if (loading || (tab !== 'drugs' && !(tab === 'tools' && toolTab === 'check'))) return;
+    let valid = true;
+    api.checkMedicationDilution({ include_catalog: true })
+      .then(info => {
+        if (valid) setDilutionInfo({ catalog: info.catalog || {}, builtin: info.builtin || [] });
+      }).catch(() => {
+        if (valid) setDilutionInfo({ catalog: {}, builtin: [], failed: true });
+      });
+    return () => { valid = false; };
+  }, [tab, toolTab, items, loading]);
+
+  useEffect(() => {
+    if (tab !== 'sources') return;
+    if (sourceTab === 'new') loadNewDrugs();
+    if (sourceTab === 'builtin') {
+      api.getMedicationBuiltin()
+        .then(r => { setBuiltin(r.builtin || {}); setBuiltinError(''); })
+        .catch(e => setBuiltinError('Không tải được kiến thức sẵn có: ' + String(e.message || e)));
+    }
+  }, [tab, sourceTab, loadNewDrugs]);
+
+  useEffect(() => {
+    if (tab === 'tools' && toolTab === 'cleanup') loadCleanup();
+  }, [tab, toolTab, loadCleanup]);
 
   useEffect(() => { load(); }, [load]);
-  useOnTabReturn(() => load());
+  useOnTabReturn(() => {
+    load();
+    if (tab === 'sources' && sourceTab === 'new') loadNewDrugs();
+    if (tab === 'tools' && toolTab === 'cleanup') loadCleanup();
+  });
 
   const handleCreate = async (payload) => {
     await api.createMedicationCatalog(payload);
@@ -640,156 +680,222 @@ export default function MedicationCatalogManager() {
   const q = query.trim().toLowerCase();
   const hasRule = item => Boolean(item.dilution || dilutionInfo?.catalog?.[item.canonical]?.rule);
   const filtered = filterCatalog(
-    items.filter(item => !q || `${item.canonical} ${joinList(item.active_ingredients)} ${item.active_ingredient || ''} ${joinList(item.aliases)} ${item.category || ''}`.toLowerCase().includes(q)),
+    items.filter(item => !q || `${item.canonical} ${item.hospital_code || ''} ${item.preparation?.strength || ''} ${joinList(item.active_ingredients)} ${item.active_ingredient || ''} ${joinList(item.aliases)} ${item.category || ''}`.toLowerCase().includes(q)),
     ruleFilter, { hasRule, routeCategoryOf: routeCategory },
   );
   const issueCount = filterCatalog(items, 'issues').length;
+  const unmatchedIngredientCount = filterCatalog(items, 'no_ingredient').length;
 
   return (
-    <div style={{ padding: 12, maxWidth: 1180, margin: '0 auto' }}>
-      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
-        <div>
-          <div style={{ fontSize: FS.xl, fontWeight: 700, color: C.text }}>Danh mục thuốc</div>
-          <div style={{ fontSize: FS.sm, color: C.text2, marginTop: 4 }}>
-            {tab === 'drugs'
-              ? 'Khai báo chế phẩm, hoạt chất và các tên thương mại/cách viết trong EMR. Nhiều chế phẩm có thể cùng một hoạt chất để nghiên cứu gom chung.'
-              : tab === 'new'
-              ? 'Thuốc gặp trong y lệnh nhưng chưa có trong danh mục — thiết lập để bước xử lý dữ liệu nhận đúng thuốc.'
-              : tab === 'hospital'
-              ? 'Danh mục thuốc bệnh viện bạn cung cấp: tra cứu mã, hàm lượng, quy cách và chọn thuốc để tự tạo cấu hình sau khi kiểm tra.'
-              : tab === 'builtin'
-              ? 'Kiến thức thuốc đi kèm phần mềm: luật pha, thể tích mặc định, hoạt chất của tên thương mại, tên hiển thị. Chép vào danh mục để sửa.'
-              : tab === 'ingredients'
-              ? 'Tên thuốc (tên thương mại) đang có trong y lệnh của kho: gắn hoạt chất để tạo nghiên cứu theo hoạt chất.'
-              : 'Tự thiết kế đường dùng: tên, nhãn, chuyên mục, cách hiện trên báo cáo ca trực và từ khoá nhận diện.'}
+    <div style={{ padding: 12, maxWidth: 1180, margin: '0 auto', display: 'grid', gap: 12 }}>
+      <div style={{ display: 'grid', gap: 8 }}>
+        <div style={{ fontSize: FS.xl, fontWeight: 700, color: C.text }}>Danh mục thuốc</div>
+        <Segmented label="Khu vực quản lý thuốc" value={tab} onChange={setTab} options={MAIN_SECTIONS} />
+        <div style={{ fontSize: FS.sm, color: C.text2, lineHeight: 1.5 }}>
+          {SECTION_DESCRIPTIONS[tab]}
+        </div>
+      </div>
+
+      {tab === 'drugs' && (
+        <section aria-label="Thuốc đã cấu hình" style={{ display: 'grid', gap: 12 }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 12, flexWrap: 'wrap', padding: 12, border: `1px solid ${C.border2}`,
+            borderRadius: 7, background: C.surface,
+          }}>
+            <div style={{ minWidth: 0, display: 'grid', gap: 3 }}>
+              <div style={{ color: C.text, fontSize: FS.md, fontWeight: 600 }}>
+                {items.length} thuốc đang được cấu hình
+              </div>
+              <div style={{ color: C.text2, fontSize: FS.sm }}>
+                {issueCount ? `${issueCount} mục có dấu hiệu cần kiểm tra · ` : ''}
+                {unmatchedIngredientCount} mục thiếu hoạt chất.
+                Thuốc đang cấu hình được dùng khi phân tích y lệnh; không đồng nghĩa đã thực hiện thuốc.
+              </div>
+            </div>
+            <Btn variant="solidPrimary" onClick={() => setEditing({ mode: 'create', key: '', form: emptyForm() })}>
+              + Thêm thuốc
+            </Btn>
           </div>
-        </div>
-        <Segmented label="Mục danh mục" value={tab} onChange={setTab}
-          options={[{ value: 'drugs', label: 'Thuốc' }, { value: 'hospital', label: 'Thuốc BV (185 mã)' }, { value: 'new', label: `Thuốc mới${newDrugs?.pending ? ` (${newDrugs.pending})` : ''}` }, { value: 'builtin', label: 'Sẵn có' }, { value: 'ingredients', label: 'Gắn hoạt chất' }, { value: 'routes', label: 'Đường dùng' }]} />
-      </div>
 
-      {tab === 'routes' ? <RouteDesigner onSaved={showToast} />
-        : tab === 'hospital' ? <HospitalDrugReferencePanel medications={items}
-          onEdit={med => setEditing({ mode: 'edit', key: med.key, form: formFromMedication(med) })}
-          onSetup={row => {
-            const draft = referenceMedicationDraft(row);
-            setEditing({ mode: 'create', key: '', form: {
-              ...emptyForm(), ...draft,
-              strength: draft.preparation.strength, dosage_form: '', original_volume_ml: '',
-            } });
-          }} />
-        : tab === 'new' ? <NewDrugsPanel data={newDrugs} error={newDrugsError} onChanged={loadNewDrugs}
-            onSetup={prefill => setEditing({ mode: 'create', key: '', form: { ...emptyForm(), ...prefill } })} />
-        : tab === 'builtin' ? <MedicationBuiltinPanel builtin={builtin} error={builtinError}
-            catalogNames={new Set(items.map(m => String(m.canonical || '').toLowerCase()))}
-            onCopy={prefill => {
-              const existing = items.find(m => String(m.canonical || '').toLowerCase() === String(prefill.canonical || '').toLowerCase());
-              setEditing(existing
-                ? { mode: 'edit', key: existing.key, form: fillEmptyFields(formFromMedication(existing), prefill) }
-                : { mode: 'create', key: '', form: { ...emptyForm(), ...prefill } });
-            }} />
-        : tab === 'ingredients' ? <DrugNameIngredientPanel medications={items} onChanged={load} /> : <>
-      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
-        <Btn variant="primary" onClick={() => setEditing({ mode: 'create', key: '', form: emptyForm() })}>+ Thêm thuốc</Btn>
-      </div>
+          {dilutionInfo?.failed && (
+            <div role="alert" style={{ fontSize: FS.sm, color: C.amber }}>
+              Chưa kiểm tra được quy tắc pha từ worker. Thông tin pha bên dưới có thể chưa đầy đủ; kiểm tra kết nối máy chủ trước khi áp dụng.
+            </div>
+          )}
 
-      <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 7,
-        background: C.blueBg, border: `1px solid ${C.blueBorder}`, fontSize: FS.sm, color: C.text2, lineHeight: 1.5 }}>
-        <b>Hoạt chất dùng cho nghiên cứu.</b> Mỗi chế phẩm/tên thương mại nên khai báo đúng hoạt chất (nhanh nhất: mục <b>Gắn hoạt chất</b> liệt kê sẵn tên thuốc trong kho chưa có hoạt chất). Nếu cùng một hoạt chất có nhiều tên thương mại, có thể tạo nhiều thuốc hoặc thêm tên vào mục "Tên khác". Hệ thống giữ tên gốc để truy vết; việc có y lệnh không tự động được coi là đã thực hiện thuốc.
-      </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input aria-label="Tìm thuốc đang cấu hình" value={query} onChange={e => setQuery(e.target.value)}
+              placeholder="Tìm thuốc, hoạt chất, tên khác, mã BV..."
+              style={{ ...INPUT_STYLE, flex: '1 1 270px', width: 'auto' }} />
+            <Segmented label="Lọc cấu hình thuốc" value={ruleFilter} onChange={setRuleFilter} options={[
+              { value: 'all', label: 'Tất cả' },
+              { value: 'no_rule', label: 'Chưa có quy tắc pha' },
+              { value: 'no_ingredient', label: 'Thiếu hoạt chất' },
+              { value: 'issues', label: `Cần rà soát${issueCount ? ` (${issueCount})` : ''}` },
+              { value: 'has_rule', label: 'Có quy tắc pha' },
+            ]} />
+          </div>
 
-      <CatalogCleanupPanel plan={cleanupPlan} onDone={msg => { showToast(msg); load(); }} />
-      <DilutionCheckPanel builtin={dilutionInfo?.builtin || []} />
-      {dilutionInfo?.failed && (
-        <div role="alert" style={{ marginBottom: 10, fontSize: FS.sm, color: C.amber }}>
-          Chưa tính được quy tắc pha đang áp dụng (cột "Quy tắc pha" chỉ hiện quy tắc đặt trong danh mục). Tải lại trang; nếu vẫn vậy, khởi động lại máy chủ.
-        </div>
-      )}
-
-      <div style={{ marginBottom: 14, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input value={query} onChange={e => setQuery(e.target.value)}
-          placeholder="Tìm theo chế phẩm, hoạt chất, tên thương mại, chuyên mục..." style={{ ...INPUT_STYLE, maxWidth: 460 }} />
-        <Segmented label="Lọc theo quy tắc pha" value={ruleFilter} onChange={setRuleFilter} options={[
-          { value: 'all', label: 'Tất cả' },
-          { value: 'has_rule', label: 'Có quy tắc pha' },
-          { value: 'no_rule', label: 'Cần pha, chưa có quy tắc' },
-          { value: 'no_ingredient', label: 'Thiếu hoạt chất' },
-          { value: 'issues', label: `Có thể sai${issueCount ? ` (${issueCount})` : ''}` },
-        ]} />
-      </div>
-
-      {loading && !items.length ? (
-        <div role="status" aria-busy="true" aria-label="Đang tải danh mục thuốc" style={{ padding: 14 }}><SkeletonTable rows={8} cols={5} /></div>
-      ) : !filtered.length ? (
-        <div style={{ color: C.text3, padding: 20, textAlign: 'center' }}>
-          {!items.length ? 'Danh mục thuốc đang trống.'
-            : ruleFilter === 'no_rule' ? 'Mọi thuốc tiêm cần pha đều đã có quy tắc (chai/túi truyền pha sẵn không cần).'
-            : ruleFilter === 'issues' ? 'Không thấy mục nào có dấu hiệu sai.'
-            : ruleFilter === 'no_ingredient' ? 'Mọi thuốc đều đã có hoạt chất.'
-            : 'Không tìm thấy thuốc phù hợp.'}
-        </div>
-      ) : (
-        <div style={{ background: C.surface, borderTop: `1px solid ${C.border2}`, overflow: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: C.surface2 }}>
-                {['Tên chuẩn / chế phẩm', 'Hoạt chất', 'Tên khác / thương mại', 'Đường dùng', 'Chuyên mục', 'Thể tích (ml)', 'Tốc độ', 'Quy tắc pha', 'Tác vụ'].map(h => (
-                  <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: FS.xs,
-                    fontWeight: 700, color: C.text2, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((item, i) => (
-                <tr key={item.key} style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${C.border2}` : 'none' }}>
-                  <td style={{ padding: '10px 12px', fontSize: FS.md, color: C.text, fontWeight: 500 }}>
-                    {txt(item.canonical)}
-                    {catalogIssues(item, items).map((msg, k) => (
-                      <div key={k} style={{ fontSize: FS.xs, color: C.amber, fontWeight: 400, marginTop: 2, maxWidth: 280 }}>⚠ {msg}</div>
+          {loading && !items.length ? (
+            <div role="status" aria-busy="true" aria-label="Đang tải danh mục thuốc">
+              <SkeletonTable rows={8} cols={5} />
+            </div>
+          ) : !filtered.length ? (
+            <div style={{ padding: 20, color: C.text3, background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 7 }}>
+              {!items.length ? 'Chưa có thuốc được cấu hình. Có thể thêm thuốc hoặc tìm từ nguồn tham khảo.'
+                : 'Không có thuốc phù hợp với từ khóa hoặc bộ lọc đang chọn.'}
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto', background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 7 }}>
+              <table style={{ width: '100%', minWidth: 670, borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: C.surface2 }}>
+                    {['Thuốc / mã tham chiếu', 'Hoạt chất', 'Đường dùng', 'Quy tắc pha', 'Thao tác'].map(h => (
+                      <th key={h} style={{ padding: '9px 10px', textAlign: 'left',
+                        fontSize: FS.xs, fontWeight: 700, color: C.text2, borderBottom: `1px solid ${C.border}` }}>{h}</th>
                     ))}
-                  </td>
-                  <td style={{ padding: '10px 12px', fontSize: FS.xs, color: C.text2, maxWidth: 220 }}>
-                    {(item.active_ingredients?.length || item.active_ingredient)
-                      ? joinList(item.active_ingredients || [item.active_ingredient])
-                      : <span style={{ color: C.text3 }}>—</span>}
-                  </td>
-                  <td style={{ padding: '10px 12px', fontSize: FS.xs, color: C.text2, maxWidth: 320 }}>
-                    {item.aliases?.length ? joinList(item.aliases) : <span style={{ color: C.text3 }}>—</span>}
-                  </td>
-                  <td style={{ padding: '10px 12px', fontSize: FS.sm, color: C.text2 }}><RouteCell item={item} /></td>
-                  <td style={{ padding: '10px 12px', fontSize: FS.sm, color: C.text2 }}>{txt(CATEGORY_LABEL[item.category] || item.category)}</td>
-                  <td style={{ padding: '10px 12px', fontSize: FS.sm }}><code style={{ color: C.blue }}>{txt(volumesText(item))}</code></td>
-                  <td style={{ padding: '10px 12px', fontSize: FS.sm }}><code style={{ color: C.text2 }}>{txt(item.default_rate)}</code></td>
-                  <td style={{ padding: '10px 12px', fontSize: FS.xs, color: C.text2, maxWidth: 220 }}><DilutionCell item={item} info={dilutionInfo} /></td>
-                  <td style={{ padding: '10px 12px' }}>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <Btn variant="secondary" onClick={() => setEditing({ mode: 'edit', key: item.key, form: formFromMedication(item) })}
-                        style={{ fontSize: FS.xs, padding: '2px 10px' }}>Sửa</Btn>
-                      <Btn variant="default" disabled={deleting === item.key} onClick={() => handleDelete(item)}
-                        style={{ fontSize: FS.xs, padding: '2px 10px', color: C.red }}>
-                        {deleting === item.key ? <Spinner size={10} /> : 'Xoá'}
-                      </Btn>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((item, i) => (
+                    <tr key={item.key} style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${C.border2}` : 'none' }}>
+                      <td style={{ padding: '10px', minWidth: 185, verticalAlign: 'top' }}>
+                        <div style={{ fontSize: FS.md, fontWeight: 600, color: C.text }}>{txt(item.canonical)}</div>
+                        {(item.preparation?.strength || item.hospital_code || item.aliases?.length > 0) && (
+                          <div style={{ fontSize: FS.xs, color: C.text3, marginTop: 3 }}>
+                            {[
+                              item.preparation?.strength,
+                              item.hospital_code ? `Mã BV ${item.hospital_code}` : '',
+                              item.aliases?.length ? `${item.aliases.length} tên khác` : '',
+                            ].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
+                        {catalogIssues(item, items).map((msg, k) => (
+                          <div key={k} style={{ fontSize: FS.xs, color: C.amber, marginTop: 4, maxWidth: 280 }}>{msg}</div>
+                        ))}
+                      </td>
+                      <td style={{ padding: '10px', fontSize: FS.sm, color: C.text2, maxWidth: 180, verticalAlign: 'top' }}>
+                        {(item.active_ingredients?.length || item.active_ingredient)
+                          ? joinList(item.active_ingredients || [item.active_ingredient]) : 'Chưa khai báo'}
+                      </td>
+                      <td style={{ padding: '10px', fontSize: FS.sm, verticalAlign: 'top' }}>
+                        <RouteCell item={item} />
+                      </td>
+                      <td style={{ padding: '10px', fontSize: FS.xs, color: C.text2, minWidth: 160, verticalAlign: 'top' }}>
+                        <DilutionCell item={item} info={dilutionInfo} />
+                        {(item.default_volume_ml || item.default_rate) && (
+                          <div style={{ marginTop: 3, color: C.text3 }}>
+                            {item.default_volume_ml ? `Thể tích truyền: ${volumesText(item)} ml` : ''}
+                            {item.default_volume_ml && item.default_rate ? ' · ' : ''}
+                            {item.default_rate ? `Tốc độ: ${item.default_rate}` : ''}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: '10px', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          <Btn variant="secondary" onClick={() => setEditing({ mode: 'edit', key: item.key, form: formFromMedication(item) })}>
+                            Sửa
+                          </Btn>
+                          <Btn variant="default" disabled={deleting === item.key} onClick={() => handleDelete(item)}
+                            style={{ color: C.red }}>
+                            {deleting === item.key ? <Spinner size={10} /> : 'Xóa'}
+                          </Btn>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       )}
 
-      </>}
+      {tab === 'sources' && (
+        <section aria-label="Tra cứu và thêm thuốc" style={{ display: 'grid', gap: 12 }}>
+          <Segmented label="Nguồn tra cứu thuốc" value={sourceTab} onChange={chooseSource} options={SOURCE_SECTIONS} />
+          <div style={{ fontSize: FS.sm, color: C.text2, lineHeight: 1.5 }}>
+            {SOURCE_DESCRIPTIONS[sourceTab]}
+          </div>
+          {seenSources.has('hospital') && (
+            <div style={{ display: sourceTab === 'hospital' ? 'block' : 'none' }}>
+              <HospitalDrugReferencePanel medications={items}
+                onEdit={med => setEditing({ mode: 'edit', key: med.key, form: formFromMedication(med) })}
+                onSetup={row => {
+                  const draft = referenceMedicationDraft(row);
+                  setEditing({ mode: 'create', key: '', form: {
+                    ...emptyForm(), ...draft,
+                    strength: draft.preparation.strength, dosage_form: '', original_volume_ml: '',
+                  } });
+                }} />
+            </div>
+          )}
+          {seenSources.has('new') && (
+            <div style={{ display: sourceTab === 'new' ? 'block' : 'none' }}>
+              <NewDrugsPanel data={newDrugs} error={newDrugsError} onChanged={loadNewDrugs}
+                onSetup={prefill => setEditing({ mode: 'create', key: '', form: { ...emptyForm(), ...prefill } })} />
+            </div>
+          )}
+          {seenSources.has('builtin') && (
+            <div style={{ display: sourceTab === 'builtin' ? 'block' : 'none' }}>
+              <MedicationBuiltinPanel builtin={builtin} error={builtinError}
+                catalogNames={new Set(items.map(m => String(m.canonical || '').toLowerCase()))}
+                onCopy={prefill => {
+                  const existing = items.find(m => String(m.canonical || '').toLowerCase() === String(prefill.canonical || '').toLowerCase());
+                  setEditing(existing
+                    ? { mode: 'edit', key: existing.key, form: fillEmptyFields(formFromMedication(existing), prefill) }
+                    : { mode: 'create', key: '', form: { ...emptyForm(), ...prefill } });
+                }} />
+            </div>
+          )}
+        </section>
+      )}
+
+      {tab === 'tools' && (
+        <section aria-label="Công cụ quản lý thuốc" style={{ display: 'grid', gap: 12 }}>
+          <Segmented label="Nhóm công cụ quản lý thuốc" value={toolTab} onChange={chooseTool} options={TOOL_SECTIONS} />
+          {seenTools.has('check') && <div style={{ display: toolTab === 'check' ? 'block' : 'none' }}>
+            <div style={{ fontSize: FS.sm, color: C.text2, marginBottom: 8 }}>
+              Nhập y lệnh giả định để xem worker sẽ nhận là thuốc tiêm hay dịch truyền; thao tác này không ghi EMR.
+            </div>
+            <DilutionCheckPanel builtin={dilutionInfo?.builtin || []} startOpen />
+          </div>}
+          {seenTools.has('ingredients') && <div style={{ display: toolTab === 'ingredients' ? 'block' : 'none' }}>
+            <DrugNameIngredientPanel medications={items} onChanged={load} />
+          </div>}
+          {seenTools.has('cleanup') && <div style={{ display: toolTab === 'cleanup' ? 'block' : 'none' }}>
+            <div style={{ fontSize: FS.sm, color: C.text2, marginBottom: 8 }}>
+              Rà soát các thuốc trùng do bản cũ ghép tên thuốc với dung môi. Chỉ dọn sau khi xem trước và xác nhận.
+            </div>
+            {cleanupPlan.length ? <CatalogCleanupPanel plan={cleanupPlan} onDone={msg => {
+              showToast(msg);
+              load();
+              loadCleanup();
+            }} /> : (
+              <div style={{ padding: 12, border: `1px solid ${C.border2}`, borderRadius: 7,
+                background: C.surface, color: C.text2, fontSize: FS.sm }}>
+                Không thấy mục trùng dạng “thuốc + dung môi” trong danh mục hiện tại.
+              </div>
+            )}
+          </div>}
+          {seenTools.has('routes') && <div style={{ display: toolTab === 'routes' ? 'block' : 'none' }}>
+            <RouteDesigner onSaved={showToast} />
+          </div>}
+        </section>
+      )}
 
       {toast && (
-        <div style={{ position: 'fixed', bottom: 24, right: 24, maxWidth: 380, padding: '10px 18px',
+        <div role="status" style={{ position: 'fixed', bottom: 24, right: 24, maxWidth: 380, padding: '10px 18px',
           borderRadius: 8, background: C.surface, border: `1px solid ${C.border}`,
           color: C.text, fontSize: FS.md, lineHeight: 1.5, boxShadow: C.shadow2, zIndex: 100 }}>{toast}</div>
       )}
 
       {editing && (
         <EditModal mode={editing.mode} initial={editing.form}
-          effective={editing.mode === 'edit' ? dilutionInfo?.catalog?.[editing.form.canonical] : null} onClose={() => setEditing(null)}
-          onSave={(payload) => editing.mode === 'create' ? handleCreate(payload) : handleUpdate(editing.key, payload)} />
+          effective={editing.mode === 'edit' ? dilutionInfo?.catalog?.[editing.form.canonical] : null}
+          onClose={() => setEditing(null)}
+          onSave={payload => editing.mode === 'create' ? handleCreate(payload) : handleUpdate(editing.key, payload)} />
       )}
     </div>
   );

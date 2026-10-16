@@ -283,14 +283,22 @@ def calculate_infusion_times(dich_truyen_list, ngay_mac_dinh=None):
         new_drug = drug.copy()
         if "ten_hien_thi" not in new_drug: new_drug["ten_hien_thi"] = normalize_name(drug["ten_thuoc"])
         
-        toc_do_str = drug.get('toc_do', '0'); the_tich = float(new_drug.get('the_tich', 0)); gio_dung_str = drug.get('gio_dung', '')
-        # Fallback: nếu không có tốc độ nhưng có dung môi pha truyền (tui_dich_truyen_ml > 0),
-        # dùng 30 g/p mặc định thay vì bỏ qua — trường hợp y lệnh ghi "Tiêm mỗi ngày..." không kèm XXX g/p
-        if not toc_do_str and new_drug.get('tui_dich_truyen_ml', 0) and the_tich > 0:
-            toc_do_str = '30'
-            new_drug['toc_do'] = '30'
-            new_drug['toc_do_inferred'] = True  # đánh dấu để biết đây là suy luận, không từ y lệnh
-        if not toc_do_str or the_tich == 0: processed_final.append(new_drug); continue
+        toc_do_str = str(drug.get('toc_do') or '').strip()
+        the_tich = float(new_drug.get('the_tich', 0))
+        gio_dung_str = drug.get('gio_dung', '')
+        # Never prescribe 30 giọt/phút simply because an IV bag has volume.
+        # Without a verified rate, a duration (and every following time)
+        # is unknowable. Keep the medication visible but UNSCHEDULED.
+        if not toc_do_str or toc_do_str == '0' or new_drug.get('toc_do_inferred'):
+            new_drug['missing_infusion_rate'] = True
+            new_drug['missing_rate_reason'] = (
+                'Y lệnh không có tốc độ truyền được xác nhận; không tự điền 30 giọt/phút.'
+            )
+            processed_final.append(new_drug)
+            continue
+        if the_tich <= 0:
+            processed_final.append(new_drug)
+            continue
         
         try:
             toc_do = float(re.search(r'\d+', str(toc_do_str)).group())

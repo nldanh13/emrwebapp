@@ -24,10 +24,18 @@ describe('bộ lọc Danh mục thuốc', () => {
     expect(filterCatalog(ITEMS, 'no_ingredient').some(i => i.canonical === 'CLASTIZOL')).toBe(false);
   });
   it('có thể sai: mục cũ + dung môi, dịch truyền < 50 ml, trùng NaCl/Sodium chloride', () => {
-    expect(catalogIssues(ITEMS[2], ITEMS)[0]).toMatch(/Xem và dọn/);
+    expect(catalogIssues(ITEMS[2], ITEMS)[0]).toMatch(/Công cụ → Dọn trùng/);
     expect(catalogIssues(ITEMS[3], ITEMS)[0]).toMatch(/thể tích 2 ml — có phải thuốc tiêm/);
     expect(catalogIssues(ITEMS[4], ITEMS)[0]).toMatch(/Trùng với "SODIUM CHLORIDE 0,9%"/);
     expect(catalogIssues(ITEMS[0], ITEMS)).toEqual([]);
     expect(filterCatalog(ITEMS, 'issues').length).toBe(4);
+  });
+  it('trùng tên nhưng khác mã BV không được gợi ý gộp', () => {
+    const products = [
+      { canonical: 'Truxima', hospital_code: '26.328.442', preparation: { strength: '100mg/10ml' } },
+      { canonical: 'Truxima', hospital_code: '26.328.443', preparation: { strength: '500mg/50ml' } },
+    ];
+    expect(catalogIssues(products[0], products).join(' ')).toMatch(/khác mã BV/);
+    expect(catalogIssues(products[0], products).join(' ')).toMatch(/không tự gộp/);
   });
 });

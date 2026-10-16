@@ -14,8 +14,8 @@ const INPUT = {
 };
 const FORMS = ['Lọ', 'Ống', 'Chai', 'Túi', 'Bột pha tiêm'];
 
-export default function DilutionCheckPanel({ builtin = [] }) {
-  const [open, setOpen] = useState(false);
+export default function DilutionCheckPanel({ builtin = [], startOpen = false }) {
+  const [open, setOpen] = useState(startOpen);
   const [form, setForm] = useState({ ten_thuoc: '', dang: 'Lọ', duong_dung_goc: '', so_luong: '', gio_dung: '' });
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState(null);

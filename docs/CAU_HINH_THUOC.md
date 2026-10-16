@@ -133,3 +133,49 @@ vào mã nguồn vì không cần cho cấu hình thuốc và dễ lỗi thời.
 các thuốc đang dùng. Các mục thuốc đã được lưu thủ công vẫn nằm trong
 `config/medication_catalog.json`; cần sao lưu/kiểm tra riêng trước khi chỉnh
 hoặc xóa. Không chạy tải thực tế trên EMR bệnh viện để xác thực bản sao.
+
+## Cách sử dụng giao diện danh mục thống nhất (15/10/2026)
+
+Màn hình **Danh mục thuốc** được gom thành **3 khu vực** để tránh hiểu nhầm có
+nhiều danh mục cùng hoạt động:
+
+1. **Thuốc đã cấu hình** là danh sách **duy nhất** nằm trong
+   `config/medication_catalog.json`. Worker tra danh sách này để nhận diện
+   thuốc, hoạt chất/alias, kiểm tra đường dùng, thể tích, tốc độ và cách pha
+   khi y lệnh không ghi đủ. Y lệnh có thông tin rõ ràng vẫn cần được tôn trọng
+   theo các quy tắc an toàn về TMC/TTM; không suy diễn liều hay đường dùng.
+   Bảng chính chỉ hiển thị tên, hoạt chất, đường dùng, quy tắc pha và thao tác.
+   Trong **Sửa**, giữ đầy đủ thể tích gốc/hoàn nguyên, quy cách, dung môi và tốc độ.
+
+2. **Tìm & thêm thuốc** chứa **3 nguồn tham khảo**, không phải danh mục
+   thuốc đang dùng:
+   - **Danh mục bệnh viện:** 185 mã từ bảng được cung cấp, chỉ đọc. Chọn
+     **Tạo cấu hình** để kiểm tra từng thuốc rồi lưu thủ công.
+   - **Chưa nhận diện:** tên thuốc đã gặp trong y lệnh lưu tại ứng dụng
+     nhưng chưa tìm thấy trong danh mục; chọn **Thiết lập** để xem xét rồi lưu.
+   - **Kiến thức sẵn có:** luật gợi ý đi kèm phiên bản phần mềm, chỉ đọc;
+     chỉ khi bấm **Chép vào danh mục** rồi **Lưu** mới đổi cấu hình ưu tiên.
+   Mở những tab này không tự ghi dữ liệu EMR hay tự cài 185 thuốc.
+
+3. **Công cụ** dành cho thao tác ít dùng: **Kiểm tra tiêm/truyền** với y
+   lệnh giả định, **Gắn hoạt chất** (có thể tạo/cập nhật thuốc trong danh mục;
+   phải kiểm tra trước khi bấm), **Dọn trùng** (xem trước và xác nhận, máy
+   chủ sao lưu) và **Thiết kế đường dùng**. Các công cụ chỉ tải dữ liệu khi
+   người dùng chọn, giảm việc gọi lại cùng các API khi mở màn hình chính.
+
+### Luồng chuẩn cho một thuốc
+
+`Tìm nguồn → Chọn thuốc → Kiểm tra tên/mã, chế phẩm, đường dùng, quy tắc pha
+→ Lưu vào "Thuốc đã cấu hình" → Kiểm tra bằng dữ liệu giả → Sử dụng theo
+quy trình của bệnh viện`.
+
+Nếu thuốc đã có, sửa thuốc đó thay vì tạo bản tên giống hệt. Tên thuốc
+trùng nhưng mã BV/hàm lượng khác phải được đối chiếu riêng, không tự gộp.
+Tuyệt đối không nhầm `default_volume_ml` (thể tích truyền mặc định)
+với thể tích thuốc gốc hay hoàn nguyên của lọ bột.
+
+**Tương thích:** đây là thay đổi cách hiển thị/nhóm và thời điểm gọi
+API, không thay đổi schema, dữ liệu thuốc cũ, luật xử lý y lệnh, tài
+khoản, hay logic ghi EMR. Khi quay lại tab hệ thống đọc lại danh mục;
+bản nhập chưa lưu trong hộp thoại được giữ nguyên khi chuyển nhóm.
+Không yêu cầu đăng nhập EMR để duyệt nguồn thuốc offline.

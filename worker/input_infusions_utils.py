@@ -451,12 +451,10 @@ def chuan_bi_du_lieu_json(json_path, patient_ids=None, date_from=None, date_to=N
                 _full_name = _build_display_med_name(item)
                 _search_name = _build_search_med_name(item)
 
-                # Tốc độ truyền: chỉ đặt mặc định 30 giọt/phút khi là TTM.
-                # TMC (tiêm mạch chậm) không có tốc độ giọt/phút — để trống tránh nhập sai.
+                # Missing IV drip rate is NOT 30 giọt/phút by default.
+                # This value must come from a verified order/approved rule.
+                # Server precheck rejects such incomplete dates before EMR writes.
                 _toc_do_raw = str(item.get('toc_do') or '').strip()
-                _duong_dung = normalize_route_code(item.get('duong_dung'))
-                if not _toc_do_raw and _duong_dung == 'TTM':
-                    _toc_do_raw = '30'
 
                 final_data.setdefault(ma_bn, [])
                 final_data[ma_bn].append({

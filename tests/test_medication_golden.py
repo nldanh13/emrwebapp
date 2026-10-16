@@ -33,7 +33,41 @@ def test_medication_processing_matches_golden():
                for d in injections), 'Bắt buộc giữ nguyên đường tiêm TMC'
     assert all(not d.get('dung_moi') and not d.get('tui_dich_truyen_ml')
                for d in injections), 'Không tự sinh túi NaCl cho TMC'
-    diffs = [k for k in golden if k != corrected_case and golden[k] != current.get(k)]
+    # Explicit safety correction: ten historical golden cases relied on an
+    # invented 30 drops/minute, subsequently fabricating scheduled timestamps.
+    # Preserve the medicine identity/diluent/volume and all other categories,
+    # but require the new results to remain UNSCHEDULED pending real order rate.
+    cases_without_verified_rate = {
+        'acupan', 'albumin', 'colistimed', 'colistin', 'levo_no_vol',
+        'merovia', 'nacl_pha_two', 'tazobactam_only', 'tazocin', 'vecmid',
+    }
+    for case in cases_without_verified_rate:
+        old = golden[case]
+        actual = current[case]
+        assert {k: v for k, v in actual.items() if k != 'thuoc'} == {
+            k: v for k, v in old.items() if k != 'thuoc'
+        }, f'{case}: changed data beyond medication schedule'
+        assert {k: v for k, v in actual['thuoc'].items() if k != 'dich_truyen'} == {
+            k: v for k, v in old['thuoc'].items() if k != 'dich_truyen'
+        }, f'{case}: unexpectedly changed non-infusion medication'
+        previous = old['thuoc']['dich_truyen']
+        updated = actual['thuoc']['dich_truyen']
+        assert previous and updated, f'{case}: accidentally dropped an infusion'
+        for field in ('ten_thuoc', 'the_tich', 'dung_moi', 'duong_dung'):
+            old_values = {str(row.get(field, '')) for row in previous}
+            new_values = {str(row.get(field, '')) for row in updated}
+            assert old_values == new_values, f'{case}: changed {field} instead of only removing guessed rate'
+        assert all(row.get('missing_infusion_rate') is True for row in updated), (
+            f'{case}: missing-rate infusions must require review'
+        )
+        assert all(not row.get('tg_bat_dau') and not row.get('tg_ket_thuc') for row in updated), (
+            f'{case}: never invent start/end times without verified rate'
+        )
+        assert all(str(row.get('toc_do') or '') in ('', '0') for row in updated), (
+            f'{case}: invalid old 30 drops/minute fallback still present'
+        )
+    allowed = cases_without_verified_rate | {corrected_case}
+    diffs = [k for k in golden if k not in allowed and golden[k] != current.get(k)]
     missing = [k for k in current if k not in golden]
     assert not missing, f'Mẫu mới chưa có trong file mốc: {missing}'
-    assert not diffs, f'Kết quả xử lý thay đổi ở các mẫu: {diffs}'
+    assert not diffs, f'Kết quả xử lý thay đổi ở các mẫu ngoài phạm vi an toàn: {diffs}'

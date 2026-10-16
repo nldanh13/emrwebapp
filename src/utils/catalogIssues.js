@@ -26,14 +26,20 @@ export function hasIngredient(item) {
 export function catalogIssues(item, all = []) {
   const out = [];
   const name = String(item?.canonical || '');
-  if (SOLVENT_SUFFIX.test(name)) out.push('Mục cũ "thuốc + dung môi" — bấm "Xem và dọn" phía trên để gộp về thuốc gốc.');
+  if (SOLVENT_SUFFIX.test(name)) out.push('Mục cũ "thuốc + dung môi" — vào Công cụ → Dọn trùng để kiểm tra trước khi xử lý.');
   const vol = volumeOf(item);
   if (item?.category === 'dich_truyen' && vol > 0 && vol < 50) {
     out.push(`Xếp "Dịch truyền" nhưng thể tích ${vol} ml — có phải thuốc tiêm? Nếu pha truyền thì đặt quy tắc pha.`);
   }
   const key = normKey(name);
   const twin = (all || []).find(o => o !== item && o?.canonical && normKey(o.canonical) === key);
-  if (twin) out.push(`Trùng với "${twin.canonical}" — gộp thành một thuốc: thêm tên vào "Tên khác", thể tích khác vào "Quy cách khác".`);
+  if (twin) {
+    if (item?.hospital_code && twin?.hospital_code && item.hospital_code !== twin.hospital_code) {
+      out.push(`Trùng tên với "${twin.canonical}" nhưng khác mã BV — kiểm tra mã/hàm lượng; không tự gộp hai chế phẩm.`);
+    } else {
+      out.push(`Trùng với "${twin.canonical}" — đối chiếu mã, hàm lượng và quy cách trước khi quyết định gộp.`);
+    }
+  }
   return out;
 }
 
