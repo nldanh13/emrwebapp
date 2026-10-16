@@ -77,6 +77,33 @@ def _service_rows(form):
     return result
 
 
+def _is_diluent_only_row(med):
+    """An explicitly labeled NaCl mixing bag is not a standalone infusion.
+
+    Leave its original quantity/volume in emr_order_source. Do not guess
+    that *any* NaCl bag is a solvent: standalone NaCl with TTM must remain.
+    """
+    name = _clean(med.get("ten_duoc")).casefold()
+    is_saline = any(x in name for x in (
+        "natri clorid", "natri chlorid", "sodium chloride", "nacl"
+    ))
+    if not is_saline:
+        return False
+    usage = _clean(med.get("cach_dung")).casefold()
+    return bool(
+        re.match(r"^(?:dùng\s+để\s+)?pha\s+\S", usage)
+        and not re.search(r"\b(?:ttm|truyền|truyen|giờ|gio)\b", usage)
+    )
+
+
+def _classification_quantity(med):
+    """Strip redundant .00 in the generated TEXT only; raw EMR stays intact."""
+    value = _clean(med.get("so_luong"))
+    if re.fullmatch(r"\d+[.,]0+", value):
+        return value.split(".")[0].split(",")[0]
+    return value
+
+
 def build_classification_text(forms):
     """Produce per-slip medication/other-order blocks; exclude VTYT completely."""
     blocks = []
@@ -97,25 +124,25 @@ def build_classification_text(forms):
             if not isinstance(med, dict):
                 continue
             name = _clean(med.get("ten_duoc"))
-            if not name:
+            if not name or _is_diluent_only_row(med):
                 continue
-            qty = _clean(med.get("so_luong"))
+            qty = _classification_quantity(med)
             unit = _clean(med.get("don_vi"))
+            # The old processor expects a drug heading followed by a usage
+            # line. Appending '- strength | route' to the quantity line
+            # previously broke the quantity/route parser for EMR v2 slips.
             drug_line = name
             if qty:
                 drug_line += f" x {qty}"
             if unit:
                 drug_line += f" ({unit})"
-            strength = _clean(med.get("ham_luong"))
-            if strength:
-                drug_line += f" - {strength}"
+            lines.append(drug_line)
             usage = _clean(med.get("cach_dung")) or _clean(med.get("duong_dung"))
             mixing = _clean(med.get("thuoc_pha"))
-            if mixing:
+            if mixing and mixing.casefold() not in usage.casefold():
                 usage = (usage + " | " if usage else "") + "Thuốc pha: " + mixing
             if usage:
-                drug_line += " | " + usage
-            lines.append(drug_line)
+                lines.append(usage)
         other = form.get("y_lenh_khac_muc")
         if not isinstance(other, list):
             other = _clean(form.get("y_lenh_khac")).splitlines()
