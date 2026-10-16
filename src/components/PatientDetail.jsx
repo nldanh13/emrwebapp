@@ -211,13 +211,28 @@ function OrderHistoryTable({ patientDay = {} }) {
       : events.filter(e => idOf(e) && idOf(e) === selectedId && /thuoc|thuốc|medication/i.test(String(text(e, 'kind', 'type')))))
     : [];
   const cols = ['STT', 'Loại kê', 'Tên dược / nội dung gốc', 'Hàm lượng', 'ĐVT', 'Đường dùng', 'SL', 'Cách dùng', 'Đối tượng', 'Trạng thái thuốc'];
+  // Preserve the complete order context, not just its medication list.
+  // This mirrors the original workflow: clinical notes, service results,
+  // other instructions, nursing and nutritional orders remain visible.
+  const otherFields = [
+    ['Diễn biến bệnh', ['dien_bien_benh', 'dien_bien']],
+    ['Kết quả dịch vụ', ['ket_qua_dich_vu', 'ket_qua_dv']],
+    ['Y lệnh khác', ['y_lenh_khac', 'ylenh_khac']],
+    ['Chỉ định chăm sóc', ['chi_dinh_cham_soc', 'cd_cs']],
+    ['Chỉ định dinh dưỡng', ['chi_dinh_dinh_duong', 'cd_dd']],
+    ['Dịch vụ', ['dich_vu', 'services']],
+    ['Vật tư y tế', ['vat_tu_y_te', 'vtyt']],
+  ];
+  const formatOrderDetail = value => typeof value === 'string' ? value
+    : Array.isArray(value) ? value.map(v => typeof v === 'string' ? v : JSON.stringify(v)).join('\n')
+      : value && typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value ?? '');
   const cell = { borderBottom: `1px solid ${C.border2}`, padding: '8px 9px', fontSize: FS.sm, verticalAlign: 'top', color: C.text };
   const display = (row, ...keys) => String(text(row, ...keys) || '—');
   return (
     <section aria-label="Lịch sử y lệnh" style={{ border: `1px solid ${C.border}`, borderRadius: 7, overflow: 'hidden', background: C.surface }}>
       <div style={{ padding: '10px 12px', background: C.surface2 }}>
         <strong>Lịch sử y lệnh theo phiếu</strong>
-        <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 4 }}>Chọn ngày ở phía trên, sau đó chọn phiếu đã Hoàn tất để xem thuốc. Trạng thái thuốc không quyết định trạng thái phiếu.</div>
+        <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 4 }}>Ngày được quét gồm tất cả phiếu y lệnh trong ngày. Chọn từng phiếu Hoàn tất để xem toàn bộ thông tin, gồm thuốc và y lệnh khác. Trạng thái thuốc không quyết định trạng thái phiếu.</div>
       </div>
       {!orders.length ? <p style={{ margin: 0, padding: 14, color: C.text2 }}>
         Chưa có lịch sử từng phiếu và trạng thái Hoàn tất được xác thực trong dữ liệu đã thu thập. Không thể mở bảng thuốc theo phiếu từ văn bản y lệnh tổng hợp; cần bổ sung thu thập ID phiếu, ngày, giờ, trạng thái y lệnh và danh sách thuốc của từng phiếu từ EMR.
@@ -242,7 +257,16 @@ function OrderHistoryTable({ patientDay = {} }) {
           {selected && completed(selected) && (
             <div className="emr-hscroll" style={{ overflowX: 'auto', paddingTop: 12 }}>
               <div style={{ padding: '0 12px 8px', fontWeight: 700 }}>Thuốc của phiếu {display(selected, 'so_phieu', 'ma_phieu')}</div>
-              {!rows.length ? <p style={{ padding: '0 12px', color: C.text2 }}>Phiếu này chưa có dữ liệu thuốc gốc được liên kết theo ID phiếu.</p>
+              <div style={{ padding: '0 12px 12px', display: 'grid', gap: 8 }}>
+                {otherFields.map(([label, keys]) => {
+                  const found = keys.map(k => selected[k]).find(v => v !== undefined && v !== null && String(v).trim());
+                  return found ? <section key={label} style={{ border: `1px solid ${C.border2}`, borderRadius: 5, padding: 9 }}>
+                    <strong style={{ fontSize: FS.sm }}>{label}</strong>
+                    <div style={{ whiteSpace: 'pre-wrap', fontSize: FS.sm, marginTop: 4 }}>{formatOrderDetail(found)}</div>
+                  </section> : null;
+                })}
+              </div>
+              {!rows.length ? <p style={{ padding: '0 12px', color: C.text2 }}>Phiếu này chưa có dữ liệu thuốc gốc được liên kết theo ID phiếu. Các loại y lệnh khác vẫn được hiển thị khi có dữ liệu.</p>
                 : <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1050 }}>
                   <thead><tr>{cols.map(col => <th key={col} style={{ ...cell, background: C.surface2, textAlign: 'left' }}>{col}</th>)}</tr></thead>
                   <tbody>{rows.map((m, i) => <tr key={String(text(m, 'id', 'line_no') || i)}>
