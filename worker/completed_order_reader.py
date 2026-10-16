@@ -5,6 +5,157 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
 
+def _form_value(soup, element_id):
+    node = soup.find(id=element_id)
+    if node is None:
+        return ""
+    if node.name == "select":
+        selected = node.select("option[selected]")
+        return "; ".join(option.get_text(" ", strip=True) for option in selected)
+    if node.name in ("input", "textarea"):
+        return node.get("value", "") if node.name == "input" else node.get_text(" ", strip=True)
+    return node.get_text(" ", strip=True)
+
+
+def parse_order_popup(html):
+    """Parse one full doctor order popup; medicines and supplies share tblThuoc."""
+    soup = BeautifulSoup(html or "", "html.parser")
+    badge = soup.select_one("#divStatusPopup")
+    if not badge or badge.get_text(" ", strip=True).casefold() != "hoàn tất":
+        raise ValueError("Phiếu không có trạng thái Hoàn tất")
+
+    result = {
+        "thoi_gian_chi_dinh": _form_value(soup, "txtThoigianThamKham"),
+        "thoi_gian_y_lenh_goc": (
+            soup.find(id="txtThoigianThamKham") or {}
+        ).get("data-value", ""),
+        "thoi_gian_thuc_hien": _form_value(soup, "txtThoigianThucHienThamKham"),
+        "bac_si_chi_dinh": _form_value(soup, "cboBacSiThamKham"),
+        "dien_bien_benh": _form_value(soup, "txtDienBienYLenhThamKham"),
+        "y_lenh_theo_doi": _form_value(soup, "txtYLenhTheoDoiThamKham"),
+        "y_lenh_khac": _form_value(soup, "txtYLenhKhacThamKham"),
+        "chan_doan": _form_value(soup, "txtChanDoanSoBoThamKham"),
+        "benh_chinh": _form_value(soup, "cboBenhChinhThamKham"),
+        "mo_ta_benh_chinh": _form_value(soup, "txtMoTaBenhChinhThamKham"),
+        "benh_kem_theo": _form_value(soup, "cboBenhKemTheoThamKham"),
+        "cap_do_cham_soc": _form_value(soup, "cboCapDoChamSocThamKham"),
+        "muc_do_phu_thuoc_cham_soc": _form_value(soup, "cboMucDoPhuThuocChamSoc"),
+        "dinh_duong": _form_value(soup, "cbbCheDoDinhDuongTK"),
+    }
+
+    table = soup.select_one("#tblThuoc")
+    if table is None:
+        raise ValueError("Thiếu bảng thuốc/VTYT #tblThuoc; không thể xác nhận đã lấy đủ phiếu")
+
+    medications, supplies = [], []
+    group = ""
+    for row in table.select("tbody > tr"):
+        cells = row.find_all("td", recursive=False)
+        if len(cells) == 1 and cells[0].get("colspan"):
+            group = cells[0].get_text(" ", strip=True)
+            continue
+        if len(cells) < 13:
+            continue
+        classes = set(row.get("class", []))
+        label = group.casefold()
+        is_supply = any(term in label for term in ("vtyt", "vật tư", "vat tu"))
+        is_drug = "thuốc" in label and not is_supply
+        # Không đoán VTYT từ đơn vị (ống, cái...), tránh nhầm thuốc và vật tư.
+        if not (is_supply or is_drug):
+            if "groupthuocbs" in classes:
+                is_drug = True
+            else:
+                raise ValueError("Không phân loại được nhóm thuốc/VTYT của dòng %s" % row.get("id", ""))
+
+        name_cell = cells[4]
+        notes = [i.get_text(" ", strip=True) for i in name_cell.find_all("i")]
+        # Những dòng in nghiêng là lời chú thích, không phải thành phần tên dược.
+        name_soup = BeautifulSoup(str(name_cell), "html.parser")
+        for italic in name_soup.find_all("i"):
+            italic.decompose()
+        name = name_soup.get_text(" ", strip=True)
+        strength = cells[5].get("title", "").strip() or cells[5].get_text(" ", strip=True)
+        mix_note = next((n.split(":", 1)[1].strip() for n in notes
+                         if n.casefold().startswith("thuốc pha:")), "")
+        payer_note = any("người bệnh tự trả" in n.casefold() for n in notes)
+        base = {
+            "id": row.get("id", ""), "nhom": group,
+            "stt": cells[2].get_text(" ", strip=True),
+            "loai_ke": cells[3].get_text(" ", strip=True),
+            "ham_luong": strength,
+            "don_vi": cells[6].get_text(" ", strip=True),
+            "duong_dung": cells[7].get_text(" ", strip=True),
+            "so_luong": cells[8].get_text(" ", strip=True),
+            "so_luong_thua": cells[9].get_text(" ", strip=True),
+            "cach_dung": cells[10].get_text(" ", strip=True),
+            "doi_tuong": cells[11].get_text(" ", strip=True),
+            "trang_thai": cells[12].get_text(" ", strip=True),
+            "nguoi_benh_tu_tra": payer_note,
+        }
+        if is_supply:
+            base["ten_vat_tu"] = name
+            base["trang_thai_vat_tu"] = base["trang_thai"]
+            supplies.append(base)
+        else:
+            base["ten_duoc"] = name
+            base["trang_thai_thuoc"] = base["trang_thai"]
+            base["thuoc_pha"] = mix_note
+            base["thanh_phan_pha"] = [p.strip() for p in mix_note.split(" + ") if p.strip()] if mix_note else []
+            medications.append(base)
+
+    result["thuoc"] = medications
+    result["vat_tu_y_te"] = supplies
+    result["so_thuoc"] = len(medications)
+    result["so_vat_tu_y_te"] = len(supplies)
+    result["so_dong_thuoc_vtyt"] = len(medications) + len(supplies)
+    # Các khung này không nhất thiết có dữ liệu trên mọi phiếu.
+    for key, element_id in (
+        ("dich_vu_ky_thuat", "divDichVu"),
+        ("xet_nghiem", "divDichVuXetNghiem"),
+        ("truyen_mau", "divTruyenMau"),
+        ("dinh_duong_chi_tiet", "divDinhDuong_V2"),
+    ):
+        panel = soup.find(id=element_id)
+        if panel:
+            result[key] = [
+                [cell.get_text(" ", strip=True) for cell in r.find_all("td", recursive=False)]
+                for r in panel.select("table tbody > tr")
+                if r.find_all("td", recursive=False)
+            ]
+    return result
+
+
+def _compose_order_text(order):
+    """Keep a legible order text for the downstream legacy parser."""
+    lines = []
+    for label, value in (
+        ("Y lệnh theo dõi", order.get("y_lenh_theo_doi")),
+        ("Y lệnh khác", order.get("y_lenh_khac")),
+    ):
+        if value:
+            lines.append(label + ": " + value)
+    for section, rows, name_key in (
+        ("+ Thuốc:", order.get("thuoc", []), "ten_duoc"),
+        ("+ Vật tư y tế:", order.get("vat_tu_y_te", []), "ten_vat_tu"),
+    ):
+        if rows:
+            lines.append(section)
+        for item in rows:
+            text = "{name} x {qty} ({unit})".format(
+                name=item.get(name_key, ""),
+                qty=item.get("so_luong", ""),
+                unit=item.get("don_vi", ""),
+            )
+            if item.get("ham_luong"):
+                text += " - " + item["ham_luong"]
+            if item.get("thuoc_pha"):
+                text += " | Thuốc pha: " + item["thuoc_pha"]
+            if item.get("cach_dung"):
+                text += " | " + item["cach_dung"]
+            lines.append(text)
+    return "\n".join(lines)
+
+
 def read_completed_forms(driver, allowed_dates):
     driver.execute_script("""
         const count = document.getElementById('soLuongHienThi');
@@ -63,72 +214,11 @@ def read_completed_forms(driver, allowed_dates):
             status = detail.select_one("#divStatusPopup")
             if not status or status.get_text(" ", strip=True).casefold() != "hoàn tất":
                 raise RuntimeError("Trạng thái phiếu khác Hoàn tất")
-            order["chi_tiet_goc"] = detail.get_text("\n", strip=True)
-            def field(cid):
-                el = detail.find(id=cid)
-                if el is None:
-                    return ""
-                if el.name == "textarea":
-                    return el.get_text(" ", strip=True)
-                if el.name == "select":
-                    selected = el.select("option[selected]")
-                    return "; ".join(o.get_text(" ", strip=True) for o in selected)
-                return el.get("value", "") if el.name == "input" else el.get_text(" ", strip=True)
-            order["dien_bien_benh"] = field("txtDienBienYLenhThamKham") or order["dien_bien_benh"]
-            order["y_lenh_theo_doi"] = field("txtYLenhTheoDoiThamKham")
-            order["y_lenh_khac"] = field("txtYLenhKhacThamKham") or order["y_lenh_khac"]
-            order["chan_doan"] = field("txtChanDoanSoBoThamKham")
-            order["benh_chinh"] = field("cboBenhChinhThamKham")
-            order["benh_kem_theo"] = field("cboBenhKemTheoThamKham")
-            order["cap_do_cham_soc"] = field("cboCapDoChamSocThamKham")
-            order["thoi_gian_thuc_hien"] = field("txtThoigianThucHienThamKham")
-
-            def table_rows(table):
-                result = []
-                for tr_med in table.select("tbody tr"):
-                    tds = tr_med.find_all("td", recursive=False)
-                    if len(tds) < 5:
-                        continue
-                    values = [td.get("title", "").strip() or td.get_text(" ", strip=True) for td in tds]
-                    result.append({"id": tr_med.get("id", ""), "cells": values})
-                return result
-
-            # BẢNG THUỐC BẮT BUỘC: đọc theo cột cụ thể, không phải toàn bộ text.
-            drug_table = detail.find("table", id="tblThuoc")
-            if drug_table is None:
-                raise RuntimeError("Không thấy bảng thuốc #tblThuoc trong phiếu")
-            medications = []
-            for med in table_rows(drug_table):
-                cells_med = med["cells"]
-                if len(cells_med) < 13:
-                    continue
-                medications.append({
-                    "id": med["id"], "stt": cells_med[2],
-                    "loai_ke": cells_med[3], "ten_duoc": cells_med[4],
-                    "ham_luong": cells_med[5], "don_vi": cells_med[6],
-                    "duong_dung": cells_med[7], "so_luong": cells_med[8],
-                    "cach_dung": cells_med[10], "doi_tuong": cells_med[11],
-                    "trang_thai_thuoc": cells_med[12],
-                })
-            order["thuoc"] = medications
-            order["so_thuoc"] = len(medications)
-
-            # VTYT có thể được render ở table riêng hoặc trong panel riêng.
-            # Giữ từng dòng cấu trúc, không lẫn thuốc vào vật tư.
-            supplies = []
-            for table in detail.find_all("table"):
-                tid = str(table.get("id", "")).lower()
-                panel = table.find_parent(id=True)
-                parent_id = str(panel.get("id", "")).lower() if panel else ""
-                if table is drug_table:
-                    continue
-                headings = " ".join(th.get_text(" ", strip=True) for th in table.select("th")).casefold()
-                if any(key in (tid + " " + parent_id + " " + headings) for key in ("vtyt", "vật tư", "vat tu")):
-                    supplies.extend(table_rows(table))
-            order["vat_tu_y_te"] = supplies
-            order["so_vat_tu_y_te"] = len(supplies)
-            order["dinh_duong"] = field("cbbCheDoDinhDuongTK")
-            print("LOG: Phiếu %s: %s thuốc; %s VTYT" % (order["so_phieu"], len(medications), len(supplies)))
+            parsed = parse_order_popup(popup_html)
+            order.update({k: v for k, v in parsed.items() if v not in ("", None)})
+            print("LOG: Phiếu %s: %s thuốc; %s VTYT" % (
+                order["so_phieu"], order["so_thuoc"], order["so_vat_tu_y_te"]
+            ))
         except Exception as err:
             print("LOG: Không đọc đủ phiếu %s (%s): %s" % (order["so_phieu"], order_id, err))
             continue
@@ -145,7 +235,7 @@ def read_completed_forms(driver, allowed_dates):
         })
         day["order_history"].append(order)
         day["Bác sĩ"] = day["Bác sĩ"] or order["bac_si"]
-        content = order["y_lenh_khac"] or order.get("chi_tiet_goc", "")
+        content = _compose_order_text(order)
         if content:
             day["Y lệnh"] += ("\n" if day["Y lệnh"] else "") + content
         if order["dien_bien_benh"]:
