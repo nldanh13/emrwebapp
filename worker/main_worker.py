@@ -1959,7 +1959,7 @@ class AutoWorker:
                     # nội dung từng phiếu. Tránh ghi sai/tạo bản ghi rỗng.
                     if self.driver.find_elements(By.CSS_SELECTOR, "#tbodyylenh tr[id^='tr']"):
                         from completed_order_reader import read_completed_forms
-                        completed_days = read_completed_forms(self.driver, timeline_dates)
+                        completed_days = read_completed_forms(self.driver, timeline_dates, bridge_end_date=bridge_end_date)
                         for d in timeline_dates:
                             item = completed_days.get(d)
                             if not item:
