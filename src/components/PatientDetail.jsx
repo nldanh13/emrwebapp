@@ -192,49 +192,75 @@ const TIME_CELL = { fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: 
 
 // Read-only table modeled after the EMR Thuốc/T-VT order list.
 // Show source attributes only; do not reinterpret '2A' as two infusions.
+// Display only order-specific medication rows with a confirmed completed order.
+// The EMR "Hoàn tất" order badge is distinct from "Trạng thái thuốc".
 function OrderHistoryTable({ patientDay = {} }) {
   const events = Array.isArray(patientDay.raw_order_events) ? patientDay.raw_order_events : [];
-  const rows = events.filter(e => e && (e.text || e.ten_thuoc || e.ten_duoc || e.ten || e.raw));
-  const columns = ['STT', 'Loại kê', 'Tên dược / nội dung y lệnh gốc', 'Hàm lượng', 'ĐVT', 'Đường dùng', 'SL', 'Cách dùng', 'Đối tượng', 'Trạng thái'];
-  const value = (event, ...fields) => {
-    for (const field of fields) {
-      const candidate = event[field];
-      if (candidate !== null && candidate !== undefined && String(candidate).trim()) return String(candidate);
-    }
-    return '—';
+  const orders = Array.isArray(patientDay.order_history) ? patientDay.order_history
+    : Array.isArray(patientDay.y_lenh_history) ? patientDay.y_lenh_history : [];
+  const [selectedId, setSelectedId] = useState('');
+  const text = (row, ...keys) => keys.map(k => row?.[k]).find(v => v !== null && v !== undefined && String(v).trim()) ?? '';
+  const idOf = row => String(text(row, 'order_id', 'y_lenh_id', 'id', 'ma_y_lenh'));
+  const completed = row => {
+    const status = String(text(row, 'order_status', 'trang_thai_y_lenh', 'trang_thai')).trim().toLowerCase();
+    return ['hoàn tất', 'hoan tat', 'completed'].includes(status);
   };
-  const td = { padding: '8px 9px', verticalAlign: 'top', borderBottom: `1px solid ${C.border2}`, fontSize: FS.sm, color: C.text };
+  const selected = orders.find(o => idOf(o) && idOf(o) === selectedId);
+  const rows = selected && completed(selected)
+    ? (Array.isArray(selected.thuoc) ? selected.thuoc : Array.isArray(selected.medications) ? selected.medications
+      : events.filter(e => idOf(e) && idOf(e) === selectedId && /thuoc|thuốc|medication/i.test(String(text(e, 'kind', 'type')))))
+    : [];
+  const cols = ['STT', 'Loại kê', 'Tên dược / nội dung gốc', 'Hàm lượng', 'ĐVT', 'Đường dùng', 'SL', 'Cách dùng', 'Đối tượng', 'Trạng thái thuốc'];
+  const cell = { borderBottom: `1px solid ${C.border2}`, padding: '8px 9px', fontSize: FS.sm, verticalAlign: 'top', color: C.text };
+  const display = (row, ...keys) => String(text(row, ...keys) || '—');
   return (
-    <section aria-label="Lịch sử y lệnh thuốc" style={{ border: `1px solid ${C.border}`, background: C.surface, borderRadius: 7, overflow: 'hidden' }}>
-      <div style={{ padding: '10px 12px', background: C.surface2, borderBottom: `1px solid ${C.border2}` }}>
-        <strong>Lịch sử y lệnh · {rows.length} dòng gốc</strong>
-        <div style={{ color: C.text2, fontSize: FS.xs, marginTop: 3 }}>Dữ liệu đã thu thập, chỉ xem. Chọn ngày phía trên để xem từng ngày. Không tự gộp hay tách thuốc, ống/lọ và túi dịch.</div>
+    <section aria-label="Lịch sử y lệnh" style={{ border: `1px solid ${C.border}`, borderRadius: 7, overflow: 'hidden', background: C.surface }}>
+      <div style={{ padding: '10px 12px', background: C.surface2 }}>
+        <strong>Lịch sử y lệnh theo phiếu</strong>
+        <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 4 }}>Chọn ngày ở phía trên, sau đó chọn phiếu đã Hoàn tất để xem thuốc. Trạng thái thuốc không quyết định trạng thái phiếu.</div>
       </div>
-      {!rows.length ? (
-        <p style={{ padding: 14, color: C.text2 }}>Chưa có dữ liệu y lệnh gốc dạng dòng cho ngày này. Hãy cập nhật y lệnh nếu cần.</p>
-      ) : (
-        <div className="emr-hscroll" style={{ overflowX: 'auto' }}>
-          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1050 }}>
-            <thead><tr>{columns.map(c => <th key={c} scope="col" style={{ ...td, textAlign: c === 'STT' || c === 'SL' ? 'center' : 'left', background: C.surface2, fontWeight: 700, whiteSpace: 'nowrap' }}>{c}</th>)}</tr></thead>
-            <tbody>{rows.map((e, idx) => (
-              <tr key={`${e.line_no ?? idx}-${idx}`}>
-                <td style={{ ...td, textAlign: 'center' }}>{idx + 1}</td>
-                <td style={td}>{value(e, 'loai_ke')}</td>
-                <td style={{ ...td, minWidth: 270, whiteSpace: 'pre-wrap' }}>
-                  {value(e, 'ten_duoc', 'ten_thuoc', 'ten', 'text', 'raw')}
-                  {e.gio_y_lenh && <div style={{ color: C.text2, fontSize: FS.xs }}>Giờ y lệnh: {e.gio_y_lenh}</div>}
-                </td>
-                <td style={td}>{value(e, 'ham_luong')}</td>
-                <td style={td}>{value(e, 'dvt', 'don_vi_tinh', 'don_vi')}</td>
-                <td style={td}>{value(e, 'duong_dung_goc', 'duong_dung')}</td>
-                <td style={{ ...td, textAlign: 'center' }}>{value(e, 'so_luong', 'sl')}</td>
-                <td style={{ ...td, minWidth: 220, whiteSpace: 'pre-wrap' }}>{value(e, 'cach_dung', 'huong_dan_su_dung')}</td>
-                <td style={td}>{value(e, 'doi_tuong')}</td>
-                <td style={td}>{value(e, 'trang_thai')}</td>
-              </tr>
-            ))}</tbody>
-          </table>
-        </div>
+      {!orders.length ? <p style={{ margin: 0, padding: 14, color: C.text2 }}>
+        Chưa có lịch sử từng phiếu và trạng thái Hoàn tất được xác thực trong dữ liệu đã thu thập. Không thể mở bảng thuốc theo phiếu từ văn bản y lệnh tổng hợp; cần bổ sung thu thập ID phiếu, ngày, giờ, trạng thái y lệnh và danh sách thuốc của từng phiếu từ EMR.
+      </p> : (
+        <>
+          <div className="emr-hscroll" style={{ overflowX: 'auto' }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 720 }}>
+              <thead><tr>{['Số phiếu', 'Giờ y lệnh', 'Bác sĩ', 'Trạng thái y lệnh', 'Xem'].map(label => <th key={label} scope="col" style={{ ...cell, background: C.surface2, textAlign: 'left' }}>{label}</th>)}</tr></thead>
+              <tbody>{orders.map((o, i) => {
+                const id = idOf(o);
+                const ok = completed(o);
+                return <tr key={id || i}>
+                  <td style={cell}>{display(o, 'so_phieu', 'ma_phieu')}</td>
+                  <td style={cell}>{display(o, 'gio_y_lenh', 'thoi_gian_y_lenh')}</td>
+                  <td style={cell}>{display(o, 'bac_si', 'ten_bac_si')}</td>
+                  <td style={cell}>{display(o, 'order_status', 'trang_thai_y_lenh', 'trang_thai')}</td>
+                  <td style={cell}><button type="button" disabled={!ok || !id} onClick={() => setSelectedId(id)} aria-label={`Xem thuốc phiếu ${display(o, 'so_phieu', 'ma_phieu')}`} title={ok ? 'Xem thuốc thuộc đúng phiếu này' : 'Chỉ xem khi trạng thái y lệnh đã Hoàn tất'}>Xem thuốc</button></td>
+                </tr>;
+              })}</tbody>
+            </table>
+          </div>
+          {selected && completed(selected) && (
+            <div className="emr-hscroll" style={{ overflowX: 'auto', paddingTop: 12 }}>
+              <div style={{ padding: '0 12px 8px', fontWeight: 700 }}>Thuốc của phiếu {display(selected, 'so_phieu', 'ma_phieu')}</div>
+              {!rows.length ? <p style={{ padding: '0 12px', color: C.text2 }}>Phiếu này chưa có dữ liệu thuốc gốc được liên kết theo ID phiếu.</p>
+                : <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1050 }}>
+                  <thead><tr>{cols.map(col => <th key={col} style={{ ...cell, background: C.surface2, textAlign: 'left' }}>{col}</th>)}</tr></thead>
+                  <tbody>{rows.map((m, i) => <tr key={String(text(m, 'id', 'line_no') || i)}>
+                    <td style={cell}>{i + 1}</td>
+                    <td style={cell}>{display(m, 'loai_ke')}</td>
+                    <td style={{ ...cell, whiteSpace: 'pre-wrap' }}>{display(m, 'ten_duoc', 'ten_thuoc', 'text', 'raw')}</td>
+                    <td style={cell}>{display(m, 'ham_luong')}</td>
+                    <td style={cell}>{display(m, 'dvt', 'don_vi_tinh')}</td>
+                    <td style={cell}>{display(m, 'duong_dung_goc', 'duong_dung')}</td>
+                    <td style={cell}>{display(m, 'so_luong', 'sl')}</td>
+                    <td style={{ ...cell, whiteSpace: 'pre-wrap' }}>{display(m, 'cach_dung')}</td>
+                    <td style={cell}>{display(m, 'doi_tuong')}</td>
+                    <td style={cell}>{display(m, 'trang_thai_thuoc')}</td>
+                  </tr>)}</tbody>
+                </table>}
+            </div>
+          )}
+        </>
       )}
     </section>
   );
