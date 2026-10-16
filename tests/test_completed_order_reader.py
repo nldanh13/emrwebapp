@@ -143,3 +143,34 @@ def test_next_day_bridge_uses_fallback_hour_when_list_is_blank():
     # List-level time wins over popup fallback to prevent incorrect interpretation
     # of a scheduled-time field.
     assert not _bridge_order_allowed("19/10/2026", "19/10/2026", "12:00", "05:00")
+
+
+def test_discharge_date_is_not_guessed_from_first_admission_time():
+    from main_worker import _extract_discharge_datetime_from_html
+
+    html = (
+        "<html><body><a>Ra viện</a>"
+        "<p>Ngày vào khoa: 14:25 15/10/2026</p>"
+        "<span>Trạng thái: Đang thực hiện</span></body></html>"
+    )
+    assert _extract_discharge_datetime_from_html(html, default_year="2026") == ""
+
+
+def test_discharge_date_matches_only_a_labeled_timestamp():
+    from main_worker import _extract_discharge_datetime_from_html
+
+    html = (
+        "<html><body><p>Ngày vào khoa: 14:25 15/10/2026</p>"
+        "<p>Ngày ra viện: 16:30 18/10/2026</p></body></html>"
+    )
+    assert _extract_discharge_datetime_from_html(html, default_year="2026") == "16:30 18/10/2026"
+
+
+def test_discharge_date_prefers_explicit_emr_label():
+    from main_worker import _extract_discharge_datetime_from_html
+
+    html = (
+        "<html><body><p>Ngày vào khoa: 14:25 15/10/2026</p>"
+        '<span id="lblNgayRaVien">16:30 18/10/2026</span></body></html>'
+    )
+    assert _extract_discharge_datetime_from_html(html, default_year="2026") == "16:30 18/10/2026"
