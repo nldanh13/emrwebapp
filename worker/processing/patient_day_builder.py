@@ -75,6 +75,9 @@ from processing.infusion_scheduler import calculate_infusion_times, clean_and_me
 from processing.procedure_parser import extract_other_orders, extract_procedures_detailed
 from processing.medication_catalog import complete_medication_from_catalog, route_mismatch_warning
 from processing.order_events import build_raw_order_events
+from processing.structured_order_adapter import (
+    _order_forms, build_classification_text, extract_structured_source,
+)
 
 # ── Ngày làm việc mặc định ─────────────────────────────────────────────────────
 def _today_dmy() -> str:
@@ -810,10 +813,14 @@ def build_patient_day_records(data):
 
     time_map = CONFIG.get('gio_mac_dinh', {})
     FINAL_DATA = []
+    structured_sources = {}
 
     for p in patient_list:
+        if not isinstance(p, dict):
+            continue
         raw_db = p.get('Diễn biến', '')
-        raw_yl = p.get('Y lệnh', '')
+        raw_yl_original = p.get('Y lệnh', '')
+        raw_yl = raw_yl_original
 
         # Mỗi record trong KetQua_YLenh.json có thể là một ngày khác nhau.
         # Phải lấy ngày theo từng record, không dùng chung ngày của phần tử đầu tiên.
@@ -821,6 +828,29 @@ def build_patient_day_records(data):
             p.get('ngay_lam') or p.get('Ngày làm') or p.get('ngay') or p.get('date'),
             NGAY_CHINH_THUC,
         )
+
+        # JSON mới: phiếu Hoàn tất có thuốc, VTYT và dịch vụ riêng.
+        # Chỉ đưa THUỐC và Y lệnh khác vào parser thuốc; không để tên
+        # bơm tiêm, găng tay, DVKT bị bắt nhầm thành thuốc khi có "x 2".
+        forms = _order_forms(p)
+        if forms:
+            raw_yl = build_classification_text(forms)
+            source = extract_structured_source(p)
+            key = (str(p.get('ma_bn') or p.get('Mã BN') or ''), ngay_record)
+            if source and key[0]:
+                if key in structured_sources:
+                    existing_source = structured_sources[key]
+                    existing_ids = set(existing_source.get("order_ids") or [])
+                    for key_name in ("medications", "supplies", "services", "other_orders", "follow_up"):
+                        for item in source.get(key_name) or []:
+                            if item.get("order_id") not in existing_ids:
+                                existing_source[key_name].append(item)
+                    existing_source["order_ids"].extend(
+                        oid for oid in source.get("order_ids") or [] if oid not in existing_ids
+                    )
+                    existing_source["order_count"] = len(existing_source["order_ids"])
+                else:
+                    structured_sources[key] = source
 
         # Tách hồ sơ theo Bác sĩ
         default_doc_name = (p.get('Bác sĩ') or p.get('bac_si') or 'Không rõ')
@@ -835,7 +865,9 @@ def build_patient_day_records(data):
                 p,
                 ngay_lam=ngay_record,
                 raw_dien_bien=raw_db,
-                raw_y_lenh=raw_yl,
+                # Bảo toàn y lệnh nguyên bản cho nhận diện mốc chăm sóc,
+                # nhưng doc_content parse thuốc được dựng từ từng phiếu có cấu trúc.
+                raw_y_lenh=raw_yl_original,
                 doc_name=doc_name,
                 doc_content=doc_content,
                 order_header_time=order_header_time,
@@ -1454,6 +1486,28 @@ def build_patient_day_records(data):
 
     # DOCTOR-ONLY-IN-INFUSION: làm sạch lần cuối (bỏ bác sĩ cấp BN, gắn bác sĩ vào từng giờ dịch truyền)
     FINAL_DATA = [attach_doctor_into_dich_truyen_hours(x) for x in (FINAL_DATA or [])]
+
+    # Nguồn EMR đã xác thực theo từng phiếu: giữ nguyên thuốc/VTYT/DVKT và
+    # trạng thái tương ứng để đối chiếu. Không tự biến VTYT được EMR kê
+    # thành lệnh nhập VTYT mới (tránh trùng xuất kho/chi phí).
+    for _rec in FINAL_DATA:
+        _key = (str(_rec.get("ma_bn") or ""), str(_rec.get("ngay_lam") or ""))
+        _source = structured_sources.get(_key)
+        if _source is None:
+            continue
+        _rec["emr_order_source"] = _source
+        # Không đánh dấu "đã xử lý đủ" khi bộ phân loại cũ chưa nhận ra
+        # bất cứ thuốc nào nhưng phiếu nguồn có thuốc.
+        _classified_count = sum(
+            len((_rec.get("thuoc") or {}).get(c) or [])
+            for c in ("dich_truyen", "thuoc_tiem", "thuoc_uong", "thuoc_tra", "khac")
+        )
+        if _source["medications"] and not _classified_count:
+            _rec.setdefault("processing_warnings", []).append({
+                "code": "STRUCTURED_MEDICATIONS_NOT_CLASSIFIED",
+                "level": "warning",
+                "message": "Phiếu EMR có thuốc nhưng bộ phân loại chưa nhận được thuốc; cần kiểm tra.",
+            })
 
     # VTYT tự động: gắn kế hoạch vật tư vào từng record sau khi thuốc/y lệnh đã sạch và đã gộp.
     # Đây là nguồn chuẩn cho tab Điều dưỡng hành chánh và worker input_vtyt.py.
