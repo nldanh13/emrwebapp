@@ -603,11 +603,14 @@ def _extract_discharge_datetime_from_html(html: str, default_year: Optional[str]
     except Exception:
         txt = html
 
-    m = re.search(r"Ngày\s+ra\s+viện\s*(\d{1,2}:\d{2}\s+\d{1,2}[-/]\d{1,2}[-/]\d{2,4})", txt, flags=re.IGNORECASE)
+    # Chỉ nhận giá trị nằm ngay sau nhãn "Ngày ra viện".
+    # KHÔNG lấy mốc thời gian đầu tiên của trang vì có thể đó là giờ VÀO
+    # khoa; menu "Ra viện" ở chỗ khác không chứng minh ngày đã ra viện.
+    m = re.search(
+        r"Ngày\s+ra\s+viện\s*[:：-]?\s*(\d{1,2}:\d{2}\s+\d{1,2}[-/]\d{1,2}[-/]\d{2,4})",
+        txt, flags=re.IGNORECASE,
+    )
     if m:
-        return _normalize_discharge_datetime(m.group(1), default_year=default_year)
-    m = re.search(r"(\d{1,2}:\d{2}\s+\d{1,2}[-/]\d{1,2}[-/]\d{2,4})", txt)
-    if m and "ra viện" in txt.lower():
         return _normalize_discharge_datetime(m.group(1), default_year=default_year)
     return ""
 
