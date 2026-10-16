@@ -1532,50 +1532,62 @@ class AutoWorker:
                 row["surgery_out"] = True
                 row["surgery_out_reason"] = "Người bệnh đang ở trạng thái Đi mổ, chưa nhận lại khoa."
 
-        # Ưu tiên link/nút Xem trong bảng. Nếu không có chữ Xem thì lấy link có href hợp lệ ở dòng BN.
-        selectors = [
-            # Ưu tiên con mắt điều dưỡng, vì trang này có lblNgayRaVien.
-            f"//table[@id='tblNoiTru']//tbody//tr[.//*[contains(normalize-space(), '{code}')]]//a[contains(@href, 'wpid=dieuduongdraw')]",
-            f"//table[@id='tblNoiTru']//tbody//tr[.//*[contains(normalize-space(), '{code}')]]//a[i[contains(@class, 'fa-eye') or contains(@class, 'far')]]",
-            f"//table[@id='tblNoiTru']//tbody//tr[.//*[contains(normalize-space(), '{code}')]]//a[contains(normalize-space(), 'Xem') or contains(@title, 'Xem') or contains(@class, 'warning') or contains(@class, 'btn-outline')]",
-            f"//table[@id='tblNoiTru']//tbody//tr[.//*[contains(normalize-space(), '{code}')]]//a[@href]",
-        ]
-        candidates = []
-        for xp in selectors:
+        # Mở hồ sơ bằng link trên TÊN người bệnh, tuyệt đối không dùng
+        # nút con mắt điều dưỡng (wpid=dieuduongdraw) hoặc link bất kỳ trong dòng.
+        # Dòng phải khớp mã BN; link phải khớp tên BN để không mở nhầm người.
+        name = clean_name(
+            (row or {}).get("Họ tên") or (row or {}).get("ho_ten")
+            or (row or {}).get("Tên bệnh nhân") or ""
+        )
+        patient_rows = self.driver.find_elements(
+            By.XPATH, "//table[@id='tblNoiTru']//tbody//tr"
+        )
+        target_row = None
+        for tr in patient_rows:
             try:
-                candidates = self.driver.find_elements(By.XPATH, xp)
-                if candidates:
+                if code in (tr.text or ""):
+                    target_row = tr
                     break
             except Exception:
                 continue
-
-        if not candidates:
-            _debug_page(self.driver, f"details_no_view_link_{ma_bn}")
-            print(f"LOG: Không tìm thấy nút Xem cho BN {ma_bn}")
+        if target_row is None:
+            _debug_page(self.driver, f"details_no_patient_row_{ma_bn}")
+            print(f"LOG: Không thấy dòng BN {ma_bn}; không mở con mắt điều dưỡng")
             return False
 
-        href = ""
-        for a in candidates:
+        patient_name_link = None
+        for a in target_row.find_elements(By.TAG_NAME, "a"):
             try:
-                href = a.get_attribute("href") or ""
-                if href and "javascript:" not in href.lower():
-                    break
+                label = clean_name(a.text or "")
+                href_candidate = a.get_attribute("href") or ""
+                if "dieuduongdraw" in href_candidate.lower():
+                    continue
+                if not label or not name or label.casefold() != name.casefold():
+                    continue
+                patient_name_link = a
+                break
             except Exception:
-                href = ""
-
-        if not href:
-            _debug_page(self.driver, f"details_empty_href_{ma_bn}")
-            print(f"LOG: Nút Xem không có href cho BN {ma_bn}")
+                continue
+        if patient_name_link is None:
+            _debug_page(self.driver, f"details_no_patient_name_link_{ma_bn}")
+            print(f"LOG: Không thấy link đúng tên BN {ma_bn} ({name}); dừng thay vì mở con mắt điều dưỡng")
             return False
 
-        if "denngay=" in href:
-            new_url = re.sub(r"(denngay=)([^&]+)", f"denngay={denngay}", href)
+        href = patient_name_link.get_attribute("href") or ""
+        if href and not href.lower().startswith(("javascript:", "#")):
+            new_url = urljoin(self.driver.current_url, href)
+            # Chỉ thêm denngay cho đường dẫn GET hợp lệ.
+            if "denngay=" in new_url:
+                new_url = re.sub(r"(denngay=)([^&]+)", f"denngay={denngay}", new_url)
+            else:
+                sep = "&" if "?" in new_url else "?"
+                new_url += f"{sep}denngay={denngay}"
+            print(f"LOG: Mở bằng tên BN {ma_bn} đến ngày {denngay}")
+            _safe_driver_get(self.driver, new_url, f"hồ sơ BN {ma_bn}")
         else:
-            sep = "&" if "?" in href else "?"
-            new_url = href + f"{sep}denngay={denngay}"
-
-        print(f"LOG: Mở hồ sơ BN {ma_bn} đến ngày {denngay}")
-        _safe_driver_get(self.driver, new_url, f"hồ sơ BN {ma_bn}")
+            # EMR có thể dùng onclick để mở hồ sơ qua AJAX.
+            print(f"LOG: Click tên BN {ma_bn} để mở hồ sơ")
+            self.driver.execute_script("arguments[0].click();", patient_name_link)
         try:
             WebDriverWait(self.driver, 15).until(
                 lambda d: ("login.aspx" not in (d.current_url or "").lower()) and (
