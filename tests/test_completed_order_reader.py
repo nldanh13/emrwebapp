@@ -174,3 +174,76 @@ def test_discharge_date_prefers_explicit_emr_label():
         '<span id="lblNgayRaVien">16:30 18/10/2026</span></body></html>'
     )
     assert _extract_discharge_datetime_from_html(html, default_year="2026") == "16:30 18/10/2026"
+
+
+
+def test_0500_drug_reservation_belongs_to_next_day():
+    from completed_order_reader import resolve_order_work_date
+
+    day, rule = resolve_order_work_date({
+        "ngay_y_lenh": "16/10/2026",
+        "gio_y_lenh": "05:00 16/10/2026",
+        "thoi_gian_chi_dinh": "05:00 16/10/2026",
+        "dien_bien_benh": "Dự trù thuốc",
+    }, bridge_end_date="19/10/2026")
+    assert (day, rule) == ("17/10/2026", "draft_05_next_day")
+
+
+def test_reservation_0500_uses_original_order_time_even_if_list_displays_0700():
+    from completed_order_reader import resolve_order_work_date
+
+    day, rule = resolve_order_work_date({
+        "ngay_y_lenh": "18/10/2026",
+        "gio_y_lenh": "07:00 18/10/2026",
+        "thoi_gian_chi_dinh": "05:00 18/10/2026",
+        "dien_bien_benh": "Dự trù thuốc\n",
+    }, bridge_end_date="19/10/2026")
+    assert (day, rule) == ("19/10/2026", "draft_05_next_day")
+
+
+def test_reservation_0500_on_bridge_day_is_not_moved_backwards():
+    from completed_order_reader import resolve_order_work_date
+
+    day, rule = resolve_order_work_date({
+        "ngay_y_lenh": "19/10/2026",
+        "gio_y_lenh": "05:00 19/10/2026",
+        "thoi_gian_chi_dinh": "05:00 19/10/2026",
+        "dien_bien_benh": "Dự trù thuốc",
+    }, bridge_end_date="19/10/2026")
+    assert (day, rule) == ("20/10/2026", "draft_05_next_day")
+
+
+def test_0500_non_reservation_on_bridge_day_is_previous_shift():
+    from completed_order_reader import resolve_order_work_date
+
+    day, rule = resolve_order_work_date({
+        "ngay_y_lenh": "19/10/2026",
+        "gio_y_lenh": "05:00 19/10/2026",
+        "thoi_gian_chi_dinh": "05:00 19/10/2026",
+        "dien_bien_benh": "Theo dõi bệnh",
+    }, bridge_end_date="19/10/2026")
+    assert (day, rule) == ("18/10/2026", "bridge_before_07")
+
+
+def test_0700_normal_order_on_bridge_day_is_excluded():
+    from completed_order_reader import resolve_order_work_date
+
+    day, reason = resolve_order_work_date({
+        "ngay_y_lenh": "19/10/2026",
+        "gio_y_lenh": "07:00 19/10/2026",
+        "thoi_gian_chi_dinh": "05:00 19/10/2026",
+        "dien_bien_benh": "Chuyển mổ",
+    }, bridge_end_date="19/10/2026")
+    assert (day, reason) == ("", "outside_bridge_time")
+
+
+def test_0700_reserved_medication_without_0500_origin_stays_on_list_day():
+    from completed_order_reader import resolve_order_work_date
+
+    day, rule = resolve_order_work_date({
+        "ngay_y_lenh": "17/10/2026",
+        "gio_y_lenh": "07:00 17/10/2026",
+        "thoi_gian_chi_dinh": "07:00 17/10/2026",
+        "dien_bien_benh": "Dự trù thuốc",
+    }, bridge_end_date="19/10/2026")
+    assert (day, rule) == ("17/10/2026", "same_day")
