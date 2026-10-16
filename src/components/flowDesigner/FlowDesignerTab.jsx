@@ -10,6 +10,7 @@ import { IconArrowDown, IconArrowLeft, IconArrowUp, IconDownload, IconPlus, Icon
 import { C, FS, FW, R, SP } from '../../tokens.js';
 import { Btn, Segmented } from '../shared.jsx';
 import FlowScreenView, { INPUT_STYLE } from './FlowScreenView.jsx';
+import FlowTreeView from './FlowTreeView.jsx';
 import {
   ELEMENT_TYPES, ELEMENT_TYPE_ORDER, addElement, addScreen, checkFlow, flowLinks, screenSteps,
   moveElement, removeElement, removeScreen, setStartScreen, updateElement, updateScreen,
@@ -96,7 +97,7 @@ export default function FlowDesignerTab({ toast }) {
   const [flow, setFlow] = useState(() => loadStoredFlow() || createFullAppFlow());
   const [screenId, setScreenId] = useState(() => flow.startId);
   const [elementId, setElementId] = useState('');
-  const [mode, setMode] = useState('design');
+  const [mode, setMode] = useState('tree'); // tree = Sơ đồ, design = Thiết kế, run = Chạy thử
   const [history, setHistory] = useState([]); // màn hình đã đi qua khi Chạy thử
   const [saveState, setSaveState] = useState({ dirty: false, at: null, failed: false });
   const fileRef = useRef(null);
@@ -175,15 +176,17 @@ export default function FlowDesignerTab({ toast }) {
             style={{ ...INPUT_STYLE, border: '1px solid transparent', padding: '2px 4px', fontSize: FS.xl, fontWeight: FW.bold, background: 'transparent' }} />
           <div role="status" style={{ fontSize: FS.xs, color: saveState.failed ? C.red : C.text3, paddingLeft: 4 }}>{saveText}</div>
         </div>
-        <Segmented label="Chế độ" value={mode} onChange={v => (v === 'run' ? startRun() : setMode('design'))}
-          options={[{ value: 'design', label: 'Thiết kế' }, { value: 'run', label: 'Chạy thử' }]} />
+        <Segmented label="Chế độ" value={mode} onChange={v => (v === 'run' ? startRun() : setMode(v))}
+          options={[{ value: 'tree', label: 'Sơ đồ' }, { value: 'design', label: 'Thiết kế' }, { value: 'run', label: 'Chạy thử' }]} />
         <Btn onClick={onLoadFull}>Nạp luồng đầy đủ</Btn>
         <Btn icon={IconDownload} onClick={onExport}>Xuất tệp</Btn>
         <Btn icon={IconUpload} onClick={() => fileRef.current?.click()}>Nhập tệp</Btn>
         <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={e => { onImport(e.target.files?.[0]); e.target.value = ''; }} />
       </header>
 
-      {mode === 'run' ? (
+      {mode === 'tree' ? (
+        <FlowTreeView flow={flow} onEdit={(id) => { pickScreen(id); setMode('design'); }} />
+      ) : mode === 'run' ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: SP[3], alignItems: 'start' }}>
           <section aria-label="Chạy thử" style={{ ...panel, gridColumn: 'span 2', minWidth: 0, padding: SP[4] }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: SP[2] }}>

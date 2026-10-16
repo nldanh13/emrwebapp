@@ -182,3 +182,34 @@ export function checkFlow(flow) {
   }
   return problems;
 }
+
+// Sơ đồ cây của luồng: từ màn hình bắt đầu, mỗi màn hình liệt kê các ô bấm được và màn hình mở ra,
+// màn hình đó lại bung tiếp các ô của nó. Mỗi màn hình chỉ bung một lần, ở chỗ gần màn hình bắt đầu
+// nhất (duyệt theo chiều rộng); những chỗ khác dẫn tới nó ghi là "đã có ở nhánh khác".
+export function buildFlowTree(flow, startId = flow.startId) {
+  const byId = new Map(flow.screens.map(s => [s.id, s]));
+  if (!byId.has(startId)) return null;
+  const owner = new Map([[startId, null]]); // màn hình → ô (screenId:elementId) được bung nó
+  const queue = [startId];
+  while (queue.length) {
+    const s = byId.get(queue.shift());
+    for (const el of s.elements) {
+      if (el.target && byId.has(el.target) && !owner.has(el.target)) {
+        owner.set(el.target, `${s.id}:${el.id}`);
+        queue.push(el.target);
+      }
+    }
+  }
+  const build = (screen, depth) => ({
+    screen,
+    depth,
+    fields: screen.elements.filter(el => !ELEMENT_TYPES[el.type].linkable && el.type !== 'heading'),
+    actions: screen.elements.filter(el => ELEMENT_TYPES[el.type].linkable).map(el => {
+      const target = el.target && byId.get(el.target);
+      if (!target) return { element: el, target: null, child: null };
+      const expandHere = owner.get(target.id) === `${screen.id}:${el.id}`;
+      return { element: el, target, child: expandHere ? build(target, depth + 1) : null };
+    }),
+  });
+  return build(byId.get(startId), 0);
+}

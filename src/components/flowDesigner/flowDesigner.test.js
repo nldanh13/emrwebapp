@@ -113,7 +113,7 @@ describe('FlowDesignerTab', () => {
 
   it('mở lần đầu là luồng đầy đủ; chạy thử Đăng nhập → Trang chính → Nhập bệnh phòng, có các bước, quay lại được', () => {
     mount();
-    click(host.querySelector('[role="radio"]:nth-child(2)'));
+    click(button('Chạy thử'));
     expect(title()).toBe('Đăng nhập Data Hub');
     expect(host.querySelector('[aria-label="Các bước ở màn hình này"] ol').children.length).toBeGreaterThan(2);
     click(button('Đăng nhập'));
@@ -127,6 +127,24 @@ describe('FlowDesignerTab', () => {
     expect(title()).toBe('Nhập bệnh phòng');
   });
 
+  it('mở tab là Sơ đồ: Đăng nhập → nút Đăng nhập → Trang chính → ô Nhập bệnh phòng → nút Nhập hàng loạt', () => {
+    mount();
+    const tree = host.querySelector('[aria-label="Sơ đồ luồng"]');
+    expect(tree).not.toBeNull();
+    const login = tree.querySelector('#flow-tree-login');
+    expect(login.open).toBe(true);
+    const home = login.querySelector('#flow-tree-home');
+    expect(home).not.toBeNull();
+    const ward = home.querySelector('#flow-tree-ward');
+    expect(ward.textContent).toContain('Nhập hàng loạt');
+    expect(ward.querySelector('#flow-tree-ward_scope')).not.toBeNull();
+    // Màn hình chỉ bung một lần; chỗ khác dẫn tới thì ghi "đã có ở nhánh khác".
+    expect(tree.querySelectorAll('#flow-tree-home').length).toBe(1);
+    expect(tree.textContent).toContain('(đã có ở nhánh khác)');
+    click(button('Mở hết'));
+    expect([...tree.querySelectorAll('details')].every(d => d.open)).toBe(true);
+  });
+
   it('nạp lại luồng đầy đủ sau khi luồng đã bị đổi', () => {
     localStorage.setItem(FLOW_STORAGE_KEY, JSON.stringify(createSampleFlow()));
     mount();
@@ -138,6 +156,7 @@ describe('FlowDesignerTab', () => {
 
   it('thêm màn hình thì tự lưu và hiện "Đã tự lưu"', () => {
     mount();
+    click(button('Thiết kế'));
     click(button('Thêm'));
     expect(host.textContent).toContain('đang chờ tự lưu');
     act(() => { vi.advanceTimersByTime(1000); });
