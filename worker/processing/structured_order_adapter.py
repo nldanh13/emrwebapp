@@ -160,8 +160,16 @@ def build_classification_text(forms):
             lines.append(drug_line)
             usage = _clean(med.get("cach_dung")) or _clean(med.get("duong_dung"))
             mixing = _clean(med.get("thuoc_pha"))
+            bag_ml = _explicit_mixing_bag_volume(med, meds)
+            # Only add the value when a source NaCl row explicitly names this
+            # drug and specifies its volume. Retain the original input unchanged.
+            already_has_volume = bool(re.search(r"\d+\s*ml\b", usage, re.IGNORECASE))
+            if mixing and bag_ml and not already_has_volume:
+                mixing = mixing + " " + bag_ml + "ml"
             if mixing and mixing.casefold() not in usage.casefold():
                 usage = (usage + " | " if usage else "") + "Thuốc pha: " + mixing
+            elif mixing and bag_ml and not already_has_volume:
+                usage += " | Thuốc pha: " + mixing
             if usage:
                 lines.append(usage)
         other = form.get("y_lenh_khac_muc")
