@@ -177,7 +177,7 @@ def test_discharge_date_prefers_explicit_emr_label():
 
 
 
-def test_0500_drug_reservation_belongs_to_next_day():
+def test_0500_drug_reservation_belongs_to_same_day():
     from completed_order_reader import resolve_order_work_date
 
     day, rule = resolve_order_work_date({
@@ -186,7 +186,7 @@ def test_0500_drug_reservation_belongs_to_next_day():
         "thoi_gian_chi_dinh": "05:00 16/10/2026",
         "dien_bien_benh": "Dự trù thuốc",
     }, bridge_end_date="19/10/2026")
-    assert (day, rule) == ("17/10/2026", "draft_05_next_day")
+    assert (day, rule) == ("16/10/2026", "draft_05_same_day")
 
 
 def test_reservation_0500_uses_original_order_time_even_if_list_displays_0700():
@@ -198,10 +198,10 @@ def test_reservation_0500_uses_original_order_time_even_if_list_displays_0700():
         "thoi_gian_chi_dinh": "05:00 18/10/2026",
         "dien_bien_benh": "Dự trù thuốc\n",
     }, bridge_end_date="19/10/2026")
-    assert (day, rule) == ("19/10/2026", "draft_05_next_day")
+    assert (day, rule) == ("18/10/2026", "draft_05_same_day")
 
 
-def test_reservation_0500_on_bridge_day_is_not_moved_backwards():
+def test_reservation_0500_on_bridge_day_stays_on_original_day():
     from completed_order_reader import resolve_order_work_date
 
     day, rule = resolve_order_work_date({
@@ -210,7 +210,7 @@ def test_reservation_0500_on_bridge_day_is_not_moved_backwards():
         "thoi_gian_chi_dinh": "05:00 19/10/2026",
         "dien_bien_benh": "Dự trù thuốc",
     }, bridge_end_date="19/10/2026")
-    assert (day, rule) == ("20/10/2026", "draft_05_next_day")
+    assert (day, rule) == ("19/10/2026", "draft_05_same_day")
 
 
 def test_0500_non_reservation_on_bridge_day_is_previous_shift():
@@ -247,3 +247,15 @@ def test_0700_reserved_medication_without_0500_origin_stays_on_list_day():
         "dien_bien_benh": "Dự trù thuốc",
     }, bridge_end_date="19/10/2026")
     assert (day, rule) == ("17/10/2026", "same_day")
+
+
+def test_0500_reservation_15_oct_remains_on_15_oct():
+    from completed_order_reader import resolve_order_work_date
+
+    day, rule = resolve_order_work_date({
+        "ngay_y_lenh": "15/10/2026",
+        "gio_y_lenh": "05:00 15/10/2026",
+        "thoi_gian_chi_dinh": "05:00 15/10/2026",
+        "dien_bien_benh": "Dự trù thuốc",
+    }, bridge_end_date="19/10/2026")
+    assert (day, rule) == ("15/10/2026", "draft_05_same_day")
