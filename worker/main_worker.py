@@ -1104,6 +1104,47 @@ def _merge_admin_from_list_row(row: Dict[str, Any], list_row: Dict[str, Any]) ->
     return _normalize_admin_fields(row, overwrite=False)
 
 
+def _check_inpatient_before_open(list_row: Dict[str, Any], source_row: Dict[str, Any],
+                                 found_status: str, date_from: str, date_to: str) -> Tuple[bool, str]:
+    """Preflight the live inpatient-list admission time before opening a chart.
+
+    A completed/archived episode older than one day before the requested range
+    is not the active episode the user wants. Do not impose this age cutoff on
+    *active* long-stay admissions. Mismatched live vs input admissions likely
+    indicate a different encounter and must never be silently conflated.
+    """
+    if not isinstance(list_row, dict) or not list_row:
+        return False, "Không đọc được dòng BN hiện tại từ danh sách nội trú"
+    live = _get_first_admin_value(list_row, ADMIN_FIELD_ALIASES["tg_vao"])
+    if not live:
+        return False, "Không đọc được T/G vào ở danh sách nội trú"
+    list_admit = _dmy_sort_key(live)
+    from_dt, to_dt = _dmy_sort_key(date_from), _dmy_sort_key(date_to)
+    if list_admit is None or from_dt is None or to_dt is None:
+        return False, "Không xác định được ngày vào viện hoặc khoảng ngày cần quét"
+
+    saved = _get_first_admin_value(source_row or {}, ADMIN_FIELD_ALIASES["tg_vao"])
+    saved_dt = _dmy_sort_key(saved) if saved else None
+    if saved_dt and abs((list_admit - saved_dt).days) > 1:
+        return False, (
+            "Không khớp đợt điều trị: T/G vào lưu=%s, danh sách=%s" % (saved, live)
+        )
+    if list_admit > to_dt + timedelta(days=1):
+        return False, "T/G vào %s sau khoảng ngày cần quét" % live
+
+    status = _norm_text_no_accent(found_status)
+    completed = status in {"hoan tat", "da hoan tat"}
+    if completed and list_admit < from_dt - timedelta(days=1):
+        return False, (
+            "Hồ sơ Hoàn tất đã cũ: T/G vào %s, trước ngày quét %s quá 1 ngày"
+            % (live, date_from)
+        )
+    return True, (
+        "T/G vào %s; trạng thái %s; đã kiểm tra trước khi mở"
+        % (live, found_status)
+    )
+
+
 def _extract_list_row_for_patient_from_html(html: str, ma_bn: Any) -> Dict[str, Any]:
     """Lấy một dòng trong tblNoiTru theo mã BN từ HTML danh sách."""
     if not html or BeautifulSoup is None:
@@ -1457,7 +1498,8 @@ class AutoWorker:
     # ------------------------------
     # Helpers for details
     # ------------------------------
-    def _search_and_open_patient(self, ma_bn: str, denngay: str, row: Optional[Dict[str, Any]] = None) -> bool:
+    def _search_and_open_patient(self, ma_bn: str, denngay: str, row: Optional[Dict[str, Any]] = None,
+                                 date_from: str = "", date_to: str = "") -> bool:
         """
         Tìm BN trong danh sách nội trú, mở nút xem chi tiết đầu tiên và gắn denngay.
         Bản này chờ AJAX kỹ hơn và lưu log debug nếu không tìm thấy.
@@ -1502,6 +1544,23 @@ class AutoWorker:
             except Exception:
                 row_exists = code in (self.driver.page_source or "")
             if row_exists:
+                candidate = _extract_list_row_for_patient_from_html(self.driver.page_source or "", code)
+                # Chỉ nhận dòng có Mã BN/Mã YT khớp chính xác, không tìm theo
+                # substring trong cả trang (có thể gặp BN khác hoặc DOM cũ).
+                candidate_ids = {
+                    str(candidate.get(k) or "").strip()
+                    for k in ("Mã BN", "Mã YT", "ma_bn", "ma_yt")
+                    if candidate.get(k)
+                }
+                if code not in candidate_ids:
+                    print(f"LOG: Bỏ dòng tìm kiếm không khớp mã BN chính xác ở trạng thái {status_name}")
+                    continue
+                actual_status = _norm_text_no_accent(
+                    candidate.get("trang_thai") or candidate.get("Trạng thái")
+                )
+                if actual_status and actual_status != _norm_text_no_accent(status_name):
+                    print(f"LOG: Trạng thái dòng BN khác bộ lọc: {actual_status} != {status_name}; tiếp tục tìm")
+                    continue
                 found_status = status_name
                 break
 
@@ -1519,16 +1578,19 @@ class AutoWorker:
                 pass
             return False
 
-        if isinstance(row, dict):
-            # Lấy lại cột Xử trí ngay từ dòng danh sách hiện tại. Đây là nguồn có "Ra viện Đỡ giảm".
-            # Nếu bỏ qua bước này, trang chi tiết có thể chỉ trả "Đang thực hiện" và làm mất giờ ra viện.
-            try:
-                _list_row = _extract_list_row_for_patient_from_html(self.driver.page_source or "", code)
-                if _list_row:
-                    _merge_admin_from_list_row(row, _list_row)
-            except Exception:
-                pass
+        # Không mở tên BN trước khi kiểm tra T/G vào trên dòng danh sách
+        # EMR hiện tại (không tin chỉ dữ liệu đầu vào đã lưu từ lần quét cũ).
+        _list_row = _extract_list_row_for_patient_from_html(self.driver.page_source or "", code)
+        accepted, gate_reason = _check_inpatient_before_open(
+            _list_row, row or {}, found_status, date_from, date_to
+        )
+        if not accepted:
+            print(f"LOG: Bỏ qua BN {ma_bn} trước khi mở tên: {gate_reason}")
+            return False
+        print(f"LOG: Xác minh BN {ma_bn} trước khi mở tên: {gate_reason}")
 
+        if isinstance(row, dict):
+            _merge_admin_from_list_row(row, _list_row)
             row["trang_thai"] = found_status
             row["Trạng thái"] = found_status
             if found_status == "Đi mổ":
@@ -1663,14 +1725,28 @@ class AutoWorker:
 
     def _details_http_one_patient(
         self, sess: Any, bn: Dict[str, Any], link_map: Dict[str, str], list_row_by_ma: Dict[str, Dict[str, Any]], *,
-        ma_bn: str, ho_ten: str, vitri: str, fetch_until_date_full: str, date_to_full: str,
+        ma_bn: str, ho_ten: str, vitri: str, fetch_until_date_full: str, date_from_full: str, date_to_full: str,
         default_year: str, timeline_dates: List[str], bridge_end_date: Optional[str], skip_empty: bool,
     ) -> List[Dict[str, Any]]:
         """Đọc y lệnh của MỘT người bệnh qua HTTP. Ca không đọc được qua HTTP thì ném
         _HttpPatientFallback để nơi gọi chỉ mở Chrome cho riêng ca này."""
         _list_row = list_row_by_ma.get(str(ma_bn).strip())
-        if _list_row:
-            _merge_admin_from_list_row(bn, _list_row)
+        if not _list_row:
+            # HTTP có thể chỉ quét được một số trạng thái, chuyển riêng ca
+            # này sang Selenium để xác minh T/G vào trên danh sách thật.
+            raise _HttpPatientFallback(f"Chưa có dòng danh sách để xác minh T/G vào của BN {ma_bn}")
+        expected_status = _list_row.get("trang_thai") or _list_row.get("Trạng thái") or "Đang thực hiện"
+        accepted, reason = _check_inpatient_before_open(
+            _list_row, bn, expected_status, date_from_full, date_to_full
+        )
+        if not accepted:
+            if reason.startswith(("Không đọc được", "Không xác định được")):
+                raise _HttpPatientFallback(
+                    f"Chưa đủ dữ liệu T/G vào qua HTTP cho BN {ma_bn}; cần kiểm tra trực tiếp"
+                )
+            print(f"LOG(HTTP): Bỏ qua BN {ma_bn} trước khi mở hồ sơ: {reason}")
+            return []
+        _merge_admin_from_list_row(bn, _list_row)
 
         view_url = link_map.get(str(ma_bn).strip())
         if not view_url:
@@ -1836,7 +1912,7 @@ class AutoWorker:
                         patient_records = self._details_http_one_patient(
                             sess, bn, link_map, list_row_by_ma,
                             ma_bn=ma_bn, ho_ten=ho_ten, vitri=vitri,
-                            fetch_until_date_full=fetch_until_date_full, date_to_full=date_to_full,
+                            fetch_until_date_full=fetch_until_date_full, date_from_full=date_from_full, date_to_full=date_to_full,
                             default_year=default_year, timeline_dates=timeline_dates,
                             bridge_end_date=bridge_end_date, skip_empty=skip_empty,
                         )
@@ -1936,7 +2012,10 @@ class AutoWorker:
                 print(f"LOG: [{i+1}/{len(data)}] Xử lý: {ho_ten} ({ma_bn})")
 
                 try:
-                    opened = self._search_and_open_patient(str(ma_bn), denngay=fetch_until_date_full, row=bn)
+                    opened = self._search_and_open_patient(
+                        str(ma_bn), denngay=fetch_until_date_full, row=bn,
+                        date_from=date_from_full, date_to=date_to_full
+                    )
                     if not opened:
                         continue
 
