@@ -234,7 +234,7 @@ def _bridge_order_allowed(order_date, bridge_end_date, *time_sources):
     if not bridge_end_date or order_date != bridge_end_date:
         return True
     for value in time_sources:
-        match = re.search(r"(?<!\\d)([01]?\\d|2[0-3]):([0-5]\\d)(?!\\d)", str(value or ""))
+        match = re.search(r"(?<!\d)([01]?\d|2[0-3]):([0-5]\d)(?!\d)", str(value or ""))
         if match:
             return int(match.group(1)) < 7
     return False
