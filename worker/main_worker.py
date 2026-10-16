@@ -1958,8 +1958,20 @@ class AutoWorker:
                     # thành y lệnh điều trị khi chưa kiểm tra badge Hoàn tất và xem
                     # nội dung từng phiếu. Tránh ghi sai/tạo bản ghi rỗng.
                     if self.driver.find_elements(By.CSS_SELECTOR, "#tbodyylenh tr[id^='tr']"):
-                        _debug_page(self.driver, f"details_order_list_requires_per_order_reader_{ma_bn}")
-                        print(f"LOG: BN {ma_bn}: đã mở đúng Lịch sử y lệnh, nhưng chưa có bộ đọc chi tiết từng phiếu Hoàn tất; không dùng parser timeline điều dưỡng.")
+                        from completed_order_reader import read_completed_forms
+                        completed_days = read_completed_forms(self.driver, timeline_dates)
+                        for d in timeline_dates:
+                            item = completed_days.get(d)
+                            if not item:
+                                continue
+                            rec = _build_record(
+                                bn, d, item, ho_ten=ho_ten, vitri=vitri,
+                                bridge_end_date=bridge_end_date,
+                            )
+                            rec["order_history"] = item["order_history"]
+                            records.append(rec)
+                        _safe_driver_get(self.driver, nav_url, "quay lại danh sách sau khi đọc phiếu")
+                        self.wait.until(EC.presence_of_element_located((By.ID, "txtTimKiem")))
                         continue
 
                     timeline_map, doctor_from_page = self._extract_timeline_map(bridge_end_date=bridge_end_date, start_boundary_date=None)
