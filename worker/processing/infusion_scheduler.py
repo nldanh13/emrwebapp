@@ -107,18 +107,22 @@ def calculate_infusion_times(dich_truyen_list, ngay_mac_dinh=None):
         return 1.0
 
     def _is_container_infusion(drug):
-        """Các chai/túi truyền phải nhập từng chai, không gộp thể tích."""
+        """Only a standalone manufactured infusion container may be split.
+
+        A vial/ampoule mixed INTO a NaCl bag is a dose, not another bag.
+        Wording such as 'pha trong 1 chai NaCl' must not classify the drug
+        as a container. Use the actual product presentation, not directions.
+        """
         dang = _norm_upper(drug.get("dang", ""))
         name = _norm_upper((drug.get("ten_thuoc") or "") + " " + (drug.get("ten_hien_thi") or ""))
-        raw = _norm_upper((drug.get("raw_text") or "") + " " + (drug.get("raw_drug_part") or ""))
-        route = _norm_upper((drug.get("duong_dung") or "") + " " + (drug.get("duong_dung_goc") or ""))
+        if any(unit in dang for unit in ("ONG", "ỐNG", "AMPOULE", "LO", "LỌ", "VIAL")):
+            return False
         if any(unit in dang for unit in ("CHAI", "TUI", "TÚI", "BOTTLE", "BAG")):
             return True
-        if any(unit in raw for unit in ("CHAI", "TUI", "TÚI")) and any(k in route for k in ("TTM", "TRUYEN", "TRUYỀN")):
-            return True
-        # NaCl/Sodium chloride dạng truyền thường là chai/túi, đôi khi parser không lấy được 'dang'.
+        # Name-based fallback only for standalone ready-to-infuse saline.
+        # Never infer bag count from text about a diluent or an IV route.
         if any(k in name for k in ("NATRI CLORID", "NATRI CHLORID", "SODIUM CHLORIDE", "NACL")):
-            return True
+            return not bool(drug.get("tui_dich_truyen_ml"))
         return False
 
     def _split_count_for_container(drug, qty):
@@ -366,10 +370,9 @@ def calculate_infusion_times(dich_truyen_list, ngay_mac_dinh=None):
                 drug_template = new_drug.copy()
                 base_volume = float(new_drug.get("the_tich") or 0)
                 if split_count <= 1 and qty_this_hour and qty_this_hour != 1:
-                    # Không phải chai/túi truyền độc lập: giữ hành vi cũ là tính theo tổng thể tích cữ đó.
+                    # Số ống/lọ thuốc trong cùng một túi là liều, KHÔNG
+                    # nhân số túi hoặc thể tích dung môi theo số ống/lọ.
                     drug_template["so_lo_moi_lan"] = qty_this_hour
-                    if base_volume > 0:
-                        drug_template["the_tich"] = base_volume * qty_this_hour
                 elif split_count > 1:
                     # Chai/túi truyền độc lập: không gộp thể tích; sẽ nhập từng chai nối tiếp.
                     drug_template["so_lo_moi_lan"] = 1
