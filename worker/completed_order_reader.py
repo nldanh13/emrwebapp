@@ -225,7 +225,22 @@ def _compose_order_text(order):
     return "\n".join(lines)
 
 
-def read_completed_forms(driver, allowed_dates):
+def _bridge_order_allowed(order_date, bridge_end_date, *time_sources):
+    """Ngày nối ca chỉ nhận mốc 00:00 đến 06:59.
+
+    Không suy đoán giờ khi trang EMR thiếu thông tin; tránh gán y lệnh
+    của ca sáng hôm sau vào ngày làm việc trước.
+    """
+    if not bridge_end_date or order_date != bridge_end_date:
+        return True
+    for value in time_sources:
+        match = re.search(r"(?<!\\d)([01]?\\d|2[0-3]):([0-5]\\d)(?!\\d)", str(value or ""))
+        if match:
+            return int(match.group(1)) < 7
+    return False
+
+
+def read_completed_forms(driver, allowed_dates, bridge_end_date=None):
     driver.execute_script("""
         const count = document.getElementById('soLuongHienThi');
         const status = document.getElementById('trangthaiylenh');
@@ -268,7 +283,7 @@ def read_completed_forms(driver, allowed_dates):
             "bac_si": text(5), "dien_bien_benh": tooltip(6),
             "ket_qua_dich_vu": text(7), "y_lenh_khac": tooltip(8),
             "chi_dinh_cham_soc": text(9), "chi_dinh_dinh_duong": tooltip(10),
-            "trang_thai_y_lenh": "Hoàn tất",
+            "trang_thai_y_lenh": "Hoàn tất", "ngay_y_lenh": date,
         }
         try:
             # Khác nút con mắt: bấm vào SỐ PHIẾU để mở trang y lệnh bác sĩ.
@@ -328,8 +343,16 @@ def read_completed_forms(driver, allowed_dates):
             # when a popup textarea is empty. Preserve each original newline.
             order["y_lenh_khac_muc"] = _meaningful_lines(order.get("y_lenh_khac"))
             order["y_lenh_theo_doi_muc"] = _meaningful_lines(order.get("y_lenh_theo_doi"))
-            print("LOG: Phiếu %s: %s thuốc; %s VTYT; %s mục Y lệnh khác; %s nhóm chỉ định khác" % (
-                order["so_phieu"], order["so_thuoc"], order["so_vat_tu_y_te"],
+            if not _bridge_order_allowed(
+                date, bridge_end_date, order.get("gio_y_lenh"),
+                order.get("thoi_gian_y_lenh_goc"), order.get("thoi_gian_chi_dinh"),
+            ):
+                print("LOG: Bỏ phiếu nối ca %s ngày %s vì từ 07:00 trở đi hoặc không xác định được giờ"
+                      % (order["so_phieu"], date))
+                continue
+            print("LOG: Phiếu %s ngày %s (%s): %s thuốc; %s VTYT; %s mục Y lệnh khác; %s nhóm chỉ định khác" % (
+                order["so_phieu"], date, order.get("gio_y_lenh", ""),
+                order["so_thuoc"], order["so_vat_tu_y_te"],
                 len(order["y_lenh_khac_muc"]), len(order.get("chi_dinh_khac") or {})
             ))
         except Exception as err:
