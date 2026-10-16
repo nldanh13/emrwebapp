@@ -128,3 +128,62 @@ def test_same_medication_on_distinct_slips_keeps_both_provenances():
     assert len(source["medications"]) == 2
     assert {d["so_phieu"] for d in source["medications"]} == {"999101", "999102"}
     assert len(source["supplies"]) == 2
+
+
+
+def test_new_emr_text_keeps_drug_quantity_and_route_separate():
+    from processing.medication_parser import parse_drug_name, update_drug_usage
+    form = {
+        "gio_y_lenh": "05:00 16/10/2026", "bac_si": "Bác sĩ A",
+        "thuoc": [{
+            "ten_duoc": "Paracetamol 10mg/ml (Paracetamol)",
+            "so_luong": "3.00", "don_vi": "Túi", "ham_luong": "10mg/1ml",
+            "cach_dung": "TTM 100g/p(8 giờ, 16 giờ, 22 giờ)",
+        }],
+    }
+    lines = build_classification_text([form]).splitlines()
+    assert lines == [
+        "05:00 | Bác sĩ: Bác sĩ A", "+ Thuốc:",
+        "Paracetamol 10mg/ml (Paracetamol) x 3 (Túi)",
+        "TTM 100g/p(8 giờ, 16 giờ, 22 giờ)",
+    ]
+    drug = parse_drug_name(lines[2])
+    assert drug["so_luong"] == "3"
+    assert drug["dang"] == "Túi"
+    updated = update_drug_usage(drug, lines[3], {})
+    assert updated["toc_do"] == "100"
+    assert "TTM" in updated["duong_dung_goc"]
+
+
+def test_nacl_marked_to_mix_two_drugs_is_not_third_infusion():
+    meds = [
+        {"ten_duoc": "Vinphacine (Amikacin)", "so_luong": "2.00", "don_vi": "Ống",
+         "cach_dung": "TTM 30g/ph 8h", "thuoc_pha": "Natri clorid 0,9%"},
+        {"ten_duoc": "Mizapenem 0,5g (Meropenem)", "so_luong": "6.00", "don_vi": "Lọ",
+         "cach_dung": "pha Natri Clorid 0,9% 100ml (TTM) 30g/p sáng 2 lọ, chiều 2 lọ, tối 2 lọ(8 giờ, 16 giờ, 23 giờ)",
+         "thuoc_pha": "Natri clorid 0,9%"},
+        {"ten_duoc": "Natri clorid 0,9% 100ml", "so_luong": "1.00", "don_vi": "Túi",
+         "cach_dung": "pha vinphacin"},
+        {"ten_duoc": "Natri clorid 0,9% 100ml", "so_luong": "3.00", "don_vi": "Túi",
+         "cach_dung": "pha mizapenem"},
+    ]
+    form = {"gio_y_lenh": "05:00 16/10/2026", "bac_si": "Bác sĩ A",
+            "trang_thai_y_lenh": "Hoàn tất", "id": "f001", "thuoc": meds}
+    text = build_classification_text([form])
+    assert text.count("Natri clorid 0,9% 100ml") == 0
+    assert "pha vinphacin" not in text
+    assert "pha mizapenem" not in text
+    assert "Mizapenem" in text and "Vinphacine" in text
+    source = extract_structured_source({"order_history": [form]})
+    assert len(source["medications"]) == 4
+    assert [x["so_luong"] for x in source["medications"][2:]] == ["1.00", "3.00"]
+
+
+def test_standalone_nacl_ttm_remains_classifiable_infusion():
+    form = {"gio_y_lenh": "08:00 16/10/2026", "bac_si": "Bác sĩ A",
+            "thuoc": [{"ten_duoc": "Natri clorid 0,9% 500ml",
+                       "so_luong": "1.00", "don_vi": "Chai",
+                       "cach_dung": "TTM 40 giọt/phút (9 giờ)"}]}
+    text = build_classification_text([form])
+    assert "Natri clorid 0,9% 500ml x 1 (Chai)" in text
+    assert "TTM 40 giọt/phút (9 giờ)" in text
