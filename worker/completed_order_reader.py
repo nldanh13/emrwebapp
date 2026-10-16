@@ -276,13 +276,20 @@ def read_completed_forms(driver, allowed_dates):
             driver.execute_script("onDrawWebpartYLenh(arguments[0]);", order_id)
             WebDriverWait(driver, 20).until(lambda d: d.execute_script(
                 "const p=document.getElementById('divWebpartPopup');"
-                "return !!(p && p.querySelector('#divBodyWebpartPopup #formYLenh'));"
+                "return !!(p && p.querySelector('#divBodyWebpartPopup #formYLenh') "
+                "&& p.querySelector('#tblThuoc') && p.querySelector('#divStatusPopup'));"
             ))
             popup_html = driver.find_element(By.ID, "divWebpartPopup").get_attribute("outerHTML")
             detail = BeautifulSoup(popup_html or "", "html.parser")
             status = detail.select_one("#divStatusPopup")
             if not status or status.get_text(" ", strip=True).casefold() != "hoàn tất":
                 raise RuntimeError("Trạng thái phiếu khác Hoàn tất")
+            # Giữ đúng mã phiếu khi AJAX chậm; không dùng dữ liệu popup cũ.
+            popup_soup = BeautifulSoup(popup_html or "", "html.parser")
+            time_box = popup_soup.find(id="txtThoigianThamKham")
+            onblur = (time_box.get("onblur", "") if time_box else "")
+            if onblur and "CheckSuaThoiGianYLenh(" in onblur and order_id.lower() not in onblur.lower():
+                raise RuntimeError("Popup không khớp mã phiếu " + order_id)
             parsed = parse_order_popup(popup_html)
             # Một số trường được EMR điền bằng jQuery .val() sau khi render.
             # outerHTML có thể còn rỗng; lấy giá trị DOM sống để không mất dữ liệu.
