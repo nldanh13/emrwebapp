@@ -47,7 +47,10 @@ export function normalizeScreen(raw = {}) {
   return {
     id: String(raw.id || newId('sc')),
     name: String(raw.name ?? '').slice(0, 120) || 'Màn hình',
-    note: String(raw.note ?? '').slice(0, 1000),
+    // Nhóm để xếp danh sách màn hình theo menu (vd. "Điều dưỡng"); trống thì không nhóm.
+    group: String(raw.group ?? '').slice(0, 60),
+    // Các bước máy làm / người dùng thao tác ở màn hình này, mỗi dòng một bước.
+    note: String(raw.note ?? '').slice(0, 4000),
     elements: (Array.isArray(raw.elements) ? raw.elements : []).map(normalizeElement),
   };
 }
@@ -99,6 +102,10 @@ const mapScreen = (flow, screenId, fn) => ({ ...flow, screens: flow.screens.map(
 export function addScreen(flow, name = 'Màn hình mới') {
   const screen = normalizeScreen({ id: newId('sc'), name, elements: [] });
   return { flow: { ...flow, screens: [...flow.screens, screen] }, screenId: screen.id };
+}
+
+export function screenSteps(screen) {
+  return String(screen?.note || '').split('\n').map(line => line.trim()).filter(Boolean);
 }
 
 export function updateScreen(flow, screenId, patch) {

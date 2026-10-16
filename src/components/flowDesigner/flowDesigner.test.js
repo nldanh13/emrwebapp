@@ -4,8 +4,9 @@ import { createElement, act } from 'react';
 import { createRoot } from 'react-dom/client';
 import FlowDesignerTab from './FlowDesignerTab.jsx';
 import {
-  addElement, addScreen, checkFlow, createSampleFlow, flowLinks, moveElement, normalizeFlow, removeScreen, updateElement,
+  addElement, addScreen, checkFlow, createSampleFlow, flowLinks, moveElement, normalizeFlow, removeScreen, screenSteps, updateElement,
 } from './flowModel.js';
+import { createFullAppFlow } from './appFlowSpec.js';
 import { FLOW_STORAGE_KEY, loadStoredFlow, parseFlowFile, saveStoredFlow } from './flowStorage.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -57,6 +58,29 @@ describe('flowModel', () => {
   });
 });
 
+describe('luồng đầy đủ Data Hub', () => {
+  const full = createFullAppFlow();
+  it('mọi màn hình đi tới được từ Đăng nhập, không ô nào nối vào màn hình không có', () => {
+    expect(full.startId).toBe('login');
+    expect(checkFlow(full)).toEqual([]);
+  });
+  it('mọi tab trên menu đều có màn hình, mỗi màn hình đều ghi các bước và có ô', () => {
+    const names = full.screens.map(s => s.name);
+    for (const tab of ['Lấy dữ liệu', 'Xếp phòng', 'Nhập bệnh phòng', 'Ký tên ĐD HSBA', 'Lịch làm việc', 'Báo cáo ca trực',
+      'Kiểm HSBA', 'Nhập VTYT', 'Trả HSBA', 'Nghỉ ốm', 'Phòng khám', 'Mẫu thủ thuật – PT', 'Người bệnh & tái khám',
+      'Kho nghiên cứu', 'Danh mục VTYT', 'Danh mục thuốc', 'Kiểm tra cấu trúc EMR', 'Thiết lập tài khoản']) {
+      expect(names).toContain(tab);
+    }
+    for (const s of full.screens) {
+      expect(screenSteps(s).length, s.name).toBeGreaterThan(0);
+      expect(s.elements.length, s.name).toBeGreaterThan(0);
+      expect(s.group, s.name).not.toBe('');
+    }
+    const ids = full.screens.flatMap(s => s.elements.map(e => e.id));
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
 describe('flowStorage', () => {
   it('lưu rồi đọc lại đúng luồng; kho bị chặn thì báo không lưu được', () => {
     const mem = new Map();
@@ -84,17 +108,32 @@ describe('FlowDesignerTab', () => {
   const click = el => act(() => { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
   const button = text => [...host.querySelectorAll('button')].find(b => b.textContent.trim() === text);
 
-  it('chạy thử: Đăng nhập → Trang chính → Danh sách điều trị nội trú, quay lại được', () => {
+  const tile = text => [...host.querySelectorAll('button')].find(b => b.textContent.startsWith(text));
+  const title = () => host.querySelector('h2').textContent;
+
+  it('mở lần đầu là luồng đầy đủ; chạy thử Đăng nhập → Trang chính → Nhập bệnh phòng, có các bước, quay lại được', () => {
     mount();
     click(host.querySelector('[role="radio"]:nth-child(2)'));
-    expect(host.querySelector('h2').textContent).toBe('Đăng nhập');
+    expect(title()).toBe('Đăng nhập Data Hub');
+    expect(host.querySelector('[aria-label="Các bước ở màn hình này"] ol').children.length).toBeGreaterThan(2);
     click(button('Đăng nhập'));
-    expect(host.querySelector('h2').textContent).toBe('Trang chính');
-    click([...host.querySelectorAll('button')].find(b => b.textContent.startsWith('Danh sách điều trị nội trú')));
-    expect(host.querySelector('h2').textContent).toBe('Danh sách điều trị nội trú');
-    expect(host.textContent).toContain('Tên người bệnh');
+    expect(title()).toBe('Trang chính');
+    click(tile('Nhập bệnh phòng'));
+    expect(title()).toBe('Nhập bệnh phòng');
+    expect(host.textContent).toContain('Bấm thì: Chọn phạm vi rồi tiền kiểm.');
+    click(button('Nhập hàng loạt'));
+    expect(title()).toBe('Phạm vi nhập hàng loạt');
     click(button('Quay lại'));
-    expect(host.querySelector('h2').textContent).toBe('Trang chính');
+    expect(title()).toBe('Nhập bệnh phòng');
+  });
+
+  it('nạp lại luồng đầy đủ sau khi luồng đã bị đổi', () => {
+    localStorage.setItem(FLOW_STORAGE_KEY, JSON.stringify(createSampleFlow()));
+    mount();
+    expect(host.textContent).not.toContain('Kiểm HSBA');
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    click(button('Nạp luồng đầy đủ'));
+    expect(host.textContent).toContain('Kiểm HSBA');
   });
 
   it('thêm màn hình thì tự lưu và hiện "Đã tự lưu"', () => {
@@ -103,6 +142,6 @@ describe('FlowDesignerTab', () => {
     expect(host.textContent).toContain('đang chờ tự lưu');
     act(() => { vi.advanceTimersByTime(1000); });
     expect(host.textContent).toContain('Đã tự lưu lúc');
-    expect(JSON.parse(localStorage.getItem(FLOW_STORAGE_KEY)).screens).toHaveLength(5);
+    expect(JSON.parse(localStorage.getItem(FLOW_STORAGE_KEY)).screens).toHaveLength(createFullAppFlow().screens.length + 1);
   });
 });
