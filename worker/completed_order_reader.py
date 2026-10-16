@@ -13,7 +13,7 @@ def _form_value(soup, element_id):
         selected = node.select("option[selected]")
         return "; ".join(option.get_text(" ", strip=True) for option in selected)
     if node.name in ("input", "textarea"):
-        return node.get("value", "") if node.name == "input" else node.get_text(" ", strip=True)
+        return node.get("value", "") if node.name == "input" else node.get_text("", strip=True)
     return node.get_text(" ", strip=True)
 
 
@@ -317,8 +317,13 @@ def read_completed_forms(driver, allowed_dates):
                 if value:
                     parsed[key] = value
             order.update({k: v for k, v in parsed.items() if v not in ("", None)})
-            print("LOG: Phiếu %s: %s thuốc; %s VTYT" % (
-                order["so_phieu"], order["so_thuoc"], order["so_vat_tu_y_te"]
+            # Recompute after live-DOM override, or from the historical list
+            # when a popup textarea is empty. Preserve each original newline.
+            order["y_lenh_khac_muc"] = _meaningful_lines(order.get("y_lenh_khac"))
+            order["y_lenh_theo_doi_muc"] = _meaningful_lines(order.get("y_lenh_theo_doi"))
+            print("LOG: Phiếu %s: %s thuốc; %s VTYT; %s mục Y lệnh khác; %s nhóm chỉ định khác" % (
+                order["so_phieu"], order["so_thuoc"], order["so_vat_tu_y_te"],
+                len(order["y_lenh_khac_muc"]), len(order.get("chi_dinh_khac") or {})
             ))
         except Exception as err:
             print("LOG: Không đọc đủ phiếu %s (%s): %s" % (order["so_phieu"], order_id, err))
