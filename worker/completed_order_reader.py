@@ -215,6 +215,38 @@ def read_completed_forms(driver, allowed_dates):
             if not status or status.get_text(" ", strip=True).casefold() != "hoàn tất":
                 raise RuntimeError("Trạng thái phiếu khác Hoàn tất")
             parsed = parse_order_popup(popup_html)
+            # Một số trường được EMR điền bằng jQuery .val() sau khi render.
+            # outerHTML có thể còn rỗng; lấy giá trị DOM sống để không mất dữ liệu.
+            live_values = driver.execute_script("""
+                const pairs = {
+                    thoi_gian_chi_dinh: 'txtThoigianThamKham',
+                    thoi_gian_thuc_hien: 'txtThoigianThucHienThamKham',
+                    dien_bien_benh: 'txtDienBienYLenhThamKham',
+                    y_lenh_theo_doi: 'txtYLenhTheoDoiThamKham',
+                    y_lenh_khac: 'txtYLenhKhacThamKham',
+                    chan_doan: 'txtChanDoanSoBoThamKham',
+                    mo_ta_benh_chinh: 'txtMoTaBenhChinhThamKham',
+                    cap_do_cham_soc: 'cboCapDoChamSocThamKham',
+                    muc_do_phu_thuoc_cham_soc: 'cboMucDoPhuThuocChamSoc',
+                    dinh_duong: 'cbbCheDoDinhDuongTK'
+                };
+                const result = {};
+                for (const [key, id] of Object.entries(pairs)) {
+                    const el = document.getElementById(id);
+                    if (el) {
+                        if (el.tagName === 'SELECT') {
+                            result[key] = Array.from(el.selectedOptions || [])
+                                .map(opt => opt.textContent.trim()).filter(Boolean).join('; ');
+                        } else {
+                            result[key] = el.value || '';
+                        }
+                    }
+                }
+                return result;
+            """)
+            for key, value in (live_values or {}).items():
+                if value:
+                    parsed[key] = value
             order.update({k: v for k, v in parsed.items() if v not in ("", None)})
             print("LOG: Phiếu %s: %s thuốc; %s VTYT" % (
                 order["so_phieu"], order["so_thuoc"], order["so_vat_tu_y_te"]
