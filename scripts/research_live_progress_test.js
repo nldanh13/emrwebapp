@@ -37,4 +37,23 @@ test('chọn ca đang chạy MỚI NHẤT giữa vết XN và Hồ sơ/Y lệnh;
   assert.ok(age < 60, `tuổi tiến độ phải theo file mới nhất, thực tế ${age}s`);
 });
 
+test('đang chạy tác vụ khác (Quét danh sách): ca XN/CĐHA của lần chạy trước không được hiện là "đang lấy"', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'live_progress_since_'));
+  // Python ghi ts theo giờ máy, không có múi giờ.
+  const oldTs = new Date(Date.now() - 8 * 86400e3);
+  const pad = n => String(n).padStart(2, '0');
+  const naive = `${oldTs.getFullYear()}-${pad(oldTs.getMonth() + 1)}-${pad(oldTs.getDate())}T${pad(oldTs.getHours())}:${pad(oldTs.getMinutes())}:${pad(oldTs.getSeconds())}`;
+  fs.writeFileSync(path.join(dir, CASE_TRACE_CURRENT_JSON), JSON.stringify({ ma_bn: '26012256', ho_ten: 'CA CŨ', index: 19, total: 1030, ts: naive, events: [{ step: 'Đang tìm người bệnh trên danh sách Hoàn tất' }] }));
+  fs.writeFileSync(path.join(dir, 'progress.json'), '{}');
+  const since = new Date(Date.now() - 15 * 60e3).toISOString();
+  const p = readLiveProgress(dir, { since });
+  assert.strictEqual(p.ho_ten, '', 'không hiện ca của lần chạy trước');
+  assert.strictEqual(p.total, 0);
+  assert.strictEqual(p.step, '');
+  assert.ok(p.updated_at, 'vẫn báo giờ ghi tiến độ gần nhất');
+  // Đối chứng: ca bắt đầu sau giờ khóa vẫn hiện bình thường.
+  fs.writeFileSync(path.join(dir, CASE_TRACE_CURRENT_JSON), JSON.stringify({ ma_bn: '1', ho_ten: 'CA MỚI', index: 2, total: 5, ts: new Date().toISOString(), events: [{ step: 'Mở popup XN' }] }));
+  assert.strictEqual(readLiveProgress(dir, { since }).ho_ten, 'CA MỚI');
+});
+
 console.log(`\n${passed} test(s) passed.`);

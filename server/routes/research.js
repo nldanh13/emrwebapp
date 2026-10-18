@@ -478,7 +478,7 @@ router.use(require('./research_studies'));
 // Tác vụ đang chạy của kho và các nghiên cứu (nhẹ: đọc khóa trong bộ nhớ và file trạng thái).
 router.get('/research/running', (_req, res) => {
   try {
-    const running = listRunningResearch((key, lane) => {
+    const running = listRunningResearch((key, lane, lock) => {
       const studyId = key.startsWith('study:') ? key.slice(6) : '';
       // key là phạm vi (đã bỏ hậu tố làn); task chỉ là của Thu thập, tiến độ chuẩn hóa đọc riêng.
       let runDir = '';
@@ -502,7 +502,7 @@ router.get('/research/running', (_req, res) => {
         } : null,
         task: task && lane !== 'normalize' ? { label: task.label, status: task.status, message: task.message || '', summary: task.summary || {}, heartbeat_at: task.heartbeat_at || '' } : null,
         // Ca đang lấy + lần ghi tiến độ gần nhất (không phải câu thông báo lúc bắt đầu).
-        progress: runDir && lane !== 'normalize' ? readLiveProgress(runDir) : null,
+        progress: runDir && lane !== 'normalize' ? readLiveProgress(runDir, { since: lock?.since }) : null,
       };
     });
     return res.json({ status: 'ok', running, server_time: nowIso() });
@@ -878,10 +878,12 @@ lockedResearchRoute(router, 'post', '/research/archive/run', 'Lấy dữ liệu'
         }
 
         if (result.spawnError) return res.status(500).json({ status: 'error', message: `Không khởi động được Python: ${result.spawnError}` });
-      const normalizeCurrentArchiveRun = () => {
-        const currentRunDir = path.join(archiveRunsDir(), runId);
-        // Bước 1 vừa thay đổi du_lieu_ban_dau.csv: luôn dựng lại nguồn chuẩn trước
-        // khi normalize để progress/các bước sau không tiếp tục dùng mẫu cũ.
+      // Sau khi Python xong: Bước 1 vừa thay đổi du_lieu_ban_dau.csv nên dựng lại nguồn chuẩn
+      // (nhẹ) rồi xếp hàng Chuẩn hóa chạy nền ở tiến trình con. Trước đây chuẩn hóa chạy thẳng
+      // trong máy chủ khi vẫn giữ khóa "Lấy dữ liệu": máy chủ bị chặn, terminal đã báo
+      // "Phiên kết thúc" mà giao diện vẫn "Đang chạy: Lấy dữ liệu" với tiến độ cũ.
+      const currentRunDir = path.join(archiveRunsDir(), runId);
+      const scheduleArchiveNormalize = () => {
         if (!deep) {
           ensureResearchSourceRows(currentRunDir, {
             sourceRunId: runId,
@@ -889,19 +891,24 @@ lockedResearchRoute(router, 'post', '/research/archive/run', 'Lấy dữ liệu'
             force: true,
           });
         }
-        return normalizeRunOutputs(currentRunDir, { sourceRunId: runId });
+        runNormalizeJob({ kind: 'run', runDir: currentRunDir, options: { sourceRunId: runId }, scopeKey: 'archive' }, { reason: deep ? 'Sau lấy XN/CĐHA' : 'Sau quét danh sách' })
+          .then(() => updateArchive({ last_normalized_at: nowIso() }))
+          .catch((err) => {
+            console.error('[RESEARCH] Chuẩn hóa sau Lấy dữ liệu lỗi:', err.message);
+            appendResearchRunLog(currentRunDir, `[${new Date().toLocaleString('vi-VN')}] Chuẩn hóa sau Lấy dữ liệu lỗi: ${err.message}`);
+          });
       };
       if (result.killedByTimeout) return res.status(504).json({ status: 'error', message: deep ? 'Timeout khi cập nhật dữ liệu gốc. Tiến độ đã lưu, bấm Bước 3 để chạy tiếp.' : 'Timeout khi quét danh sách ban đầu. Tiến độ đã lưu, bấm Bước 1 để chạy tiếp.' });
       if (isStoppedRunResult(result)) {
-        const normalized = normalizeCurrentArchiveRun();
-        const updated = updateArchive({ last_run_id: runId, last_run_at: nowIso(), last_normalized_at: nowIso(), stopped_at: nowIso() });
-        return res.json({ status: 'ok', stopped: true, message: deep ? 'Đã dừng. Dữ liệu sâu đã commit vẫn được giữ; lần sau bấm Bước 3 để chạy tiếp.' : 'Đã dừng. Các trang đã quét xong đã lưu vào du_lieu_ban_dau.csv; lần sau bấm Bước 1 để quét lại và bỏ qua dòng đã có.', archive: updated, run_id: runId, normalized });
+        scheduleArchiveNormalize();
+        const updated = updateArchive({ last_run_id: runId, last_run_at: nowIso(), stopped_at: nowIso() });
+        return res.json({ status: 'ok', stopped: true, normalize_scheduled: true, message: deep ? 'Đã dừng. Dữ liệu sâu đã commit vẫn được giữ; lần sau bấm Bước 3 để chạy tiếp. Chuẩn hóa đang chạy nền.' : 'Đã dừng. Các trang đã quét xong đã lưu vào du_lieu_ban_dau.csv; lần sau bấm Bước 1 để quét lại và bỏ qua dòng đã có. Chuẩn hóa đang chạy nền.', archive: updated, run_id: runId });
       }
       if (result.code !== 0) return res.status(500).json({ status: 'error', message: fmtPyError(deep ? 'Python lỗi khi cập nhật dữ liệu gốc. Tiến độ đã lưu nếu đã chạy được một phần.' : 'Python lỗi khi quét dữ liệu ban đầu. Tiến độ đã lưu nếu đã chạy được một phần.', result) });
 
-      const normalized = normalizeCurrentArchiveRun();
-      const updated = updateArchive({ last_run_id: runId, last_run_at: nowIso(), last_normalized_at: nowIso(), active_run_id: '', active_mode: '' });
-        return res.json({ status: 'ok', message: deep ? 'Đã cập nhật dữ liệu gốc: lấy sâu từ du_lieu_ban_dau.csv, gộp/xóa các dòng đã nằm trong cùng đợt điều trị và chuẩn hóa.' : 'Đã quét dữ liệu ban đầu từ bảng Hoàn tất và chuẩn hóa dữ liệu gốc.', archive: updated, run_id: runId, normalized });
+      scheduleArchiveNormalize();
+      const updated = updateArchive({ last_run_id: runId, last_run_at: nowIso(), active_run_id: '', active_mode: '' });
+        return res.json({ status: 'ok', normalize_scheduled: true, message: deep ? 'Đã cập nhật dữ liệu gốc: lấy sâu từ du_lieu_ban_dau.csv, gộp/xóa các dòng đã nằm trong cùng đợt điều trị. Chuẩn hóa đang chạy nền.' : 'Đã quét dữ liệu ban đầu từ bảng Hoàn tất. Chuẩn hóa dữ liệu gốc đang chạy nền.', archive: updated, run_id: runId });
       } finally {
         updateArchive({ active_run_id: '', active_mode: '' });
       }
