@@ -68,6 +68,13 @@ function scopeKeyForJob(job) {
   return 'archive';
 }
 
+// Lần ghi nguồn do chính Chuẩn hóa thực hiện (repair raw PT); normalizeRunOutputsSafe trả ở
+// gốc, archive/study bọc trong counts.
+function normalizeOwnWrites(result) {
+  const repair = result?.surgery_raw_repair || result?.counts?.surgery_raw_repair;
+  return repair?.sha256_after ? [repair] : [];
+}
+
 function withIntegritySummary(result, integrity) {
   if (!result || typeof result !== 'object') return result;
   return {
@@ -113,7 +120,7 @@ function runNormalizeJob(job, { reason = '' } = {}) {
       catch (err) { console.warn('[RESEARCH][INTEGRITY] Không chụp được input sau normalize:', err.message); }
 
       try {
-        const integrity = evaluateNormalizationIntegrity(runDir, { beforeSnapshot, afterSnapshot });
+        const integrity = evaluateNormalizationIntegrity(runDir, { beforeSnapshot, afterSnapshot, ownWrites: normalizeOwnWrites(result) });
         return withIntegritySummary(result, integrity);
       } catch (err) {
         console.warn('[RESEARCH][INTEGRITY] Không chạy được integrity gate:', err.message);
@@ -133,4 +140,4 @@ function normalizeRunning(scopeKey = 'archive') {
   return RESEARCH_SCOPE_LOCKS.get(normalizeLockKey(scopeKey)) || null;
 }
 
-module.exports = { runNormalizeJob, normalizeRunning, normalizeLockKey, NORMALIZE_LANE };
+module.exports = { runNormalizeJob, normalizeRunning, normalizeLockKey, normalizeOwnWrites, NORMALIZE_LANE };
