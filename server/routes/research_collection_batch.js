@@ -238,7 +238,7 @@ async function handleBatch(req, res, studyIdParam = '') {
     RESEARCH_SCOPE_LOCKS.set(lockKey, lockToken);
 
     const body = { ...(req.body || {}) };
-    const requestedParts = collection.resolveCollectionParts({ requested: body.parts, study: sc.study });
+    const requestedParts = collection.resolveCollectionParts({ requested: body.parts });
     const headless = researchHeadlessFromBody(body);
 
     const task = beginResearchTask(sc.runDir, {

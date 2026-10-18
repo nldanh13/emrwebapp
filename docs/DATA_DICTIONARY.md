@@ -795,7 +795,7 @@ Bảng thô giữ nguyên dữ liệu EMR, **đều chứa định danh**, khôn
 | `hchanh_profile.csv` | Một dòng nguồn (Research key). | Lấy hành chánh — màn điều dưỡng (con mắt). | Mã BN, Họ tên, Ngày sinh, Địa chỉ, Điện thoại, Số CMND, Số thẻ BHYT |
 | `hchanh_discharge.csv` | Một dòng nguồn. | Lấy hành chánh — mục Ra khoa trên màn bác sĩ. | Mã BN, Họ tên, Số lưu trữ |
 | `hchanh_surgery.csv` | Một ca PT/TT. | Lấy hành chánh — D/s phẫu thuật. | Mã BN, Họ tên, Raw JSON |
-| `hchanh_billing.csv` | Một lần lấy bảng kê chi phí của một dòng nguồn (Research key). | Lấy hành chánh — trang Bảng kê chi phí (chiphichitietdraw): khối Tổng hợp chi phí + cộng dòng bảng kê. Chỉ lấy khi đề cương cần phần Chi phí. | Mã BN, Họ tên, URL |
+| `hchanh_billing.csv` | Một lần lấy bảng kê chi phí của một dòng nguồn (Research key). | Lấy hành chánh — trang Bảng kê chi phí (chiphichitietdraw): khối Tổng hợp chi phí + cộng dòng bảng kê. Lấy mặc định cùng hồ sơ nền/ra viện/phẫu thuật. | Mã BN, Họ tên, URL |
 | `hchanh_order_history.csv` | Một dòng lịch sử y lệnh. | Lấy hành chánh — Lịch sử y lệnh. | Mã BN, Họ tên, Bác sĩ (nhân viên), Raw JSON |
 
 ## Hạn chế đã biết

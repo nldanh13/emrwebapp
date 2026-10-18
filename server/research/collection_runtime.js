@@ -72,6 +72,7 @@ function readCollectionPartRows(runDir) {
     discharge: group('hchanh_discharge.csv', 'Research key'),
     surgery: group('hchanh_surgery.csv', 'Research key'),
     order_history: group('hchanh_order_history.csv', 'Research key'),
+    billing: group('hchanh_billing.csv', 'Research key'),
   };
 }
 
@@ -385,12 +386,11 @@ function collectionStatusSummary(ledger, keys) {
     const enc = ledger?.encounters?.[key];
     if (!enc) continue;
     let all = true;
-    for (const p of collection.ALL_PART_KEYS) {
+    for (const p of collection.PART_KEYS) {
       const st = enc.parts?.[p]?.status || 'pending';
       if (collection.isStale(enc, p)) parts[p].stale += 1;
       else parts[p][st] = (parts[p][st] || 0) + 1;
-      // Phần tùy chọn (Chi phí) không làm lượt thành "chưa đủ".
-      if (collection.PART_KEYS.includes(p) && !collection.partIsCurrent(enc, p)) all = false;
+      if (!collection.partIsCurrent(enc, p)) all = false;
     }
     if (all) complete += 1;
   }

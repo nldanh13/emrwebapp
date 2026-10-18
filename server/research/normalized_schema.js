@@ -53,7 +53,7 @@ const { TREATMENT_COST_COLUMNS } = require('./billing_summary');
 // v40: chuẩn hóa alias CBC; snapshot NEU/LYM/MONO chỉ lấy tỷ lệ %, số lượng tuyệt đối
 //      luôn nằm riêng ở lab_results, không trộn vào các cột snapshot không có đơn vị.
 // v41: analysis_ready thêm chi phí điều trị (cột cost_*): 16 ô Tổng hợp chi phí của EMR và tổng
-//      tự cộng từ dòng bảng kê; nguồn hchanh_billing.csv (phần Chi phí, tùy chọn).
+//      tự cộng từ dòng bảng kê; nguồn hchanh_billing.csv (phần Chi phí, lấy mặc định).
 const NORMALIZED_SCHEMA_VERSION = 41;
 
 const NORMALIZED_COLUMNS = {

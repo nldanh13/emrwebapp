@@ -103,10 +103,10 @@ async function handleCollectAuto(req, res, studyIdParam = '') {
       force: req.body?.force === true,
       refreshProvisional: req.body?.refreshProvisional === true,
       retryBlocked: req.body?.retryBlocked === true,
-      parts: collection.resolveCollectionParts({ requested: req.body?.parts, refreshParts: req.body?.refreshParts, study: sc.study }),
+      parts: collection.resolveCollectionParts({ requested: req.body?.parts }),
       limit: Number.isFinite(Number(req.body?.limit)) ? Math.max(0, Math.trunc(Number(req.body.limit))) : 0,
       // "Làm mới": người dùng chọn kiểm tra lại các phần này (tùy chọn chỉ vài lượt).
-      refreshParts: Array.isArray(req.body?.refreshParts) ? req.body.refreshParts.filter(p => collection.ALL_PART_KEYS.includes(p)) : [],
+      refreshParts: Array.isArray(req.body?.refreshParts) ? req.body.refreshParts.filter(p => collection.PART_KEYS.includes(p)) : [],
       refreshKeys: Array.isArray(req.body?.refreshKeys) && req.body.refreshKeys.length ? req.body.refreshKeys.map(String).slice(0, 20000) : null,
       refreshPolicy: sc.refreshPolicy,
       study: sc.study,

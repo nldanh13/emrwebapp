@@ -23,13 +23,12 @@ const BILLING_RAW_COLUMNS = [...BILLING_SUMMARY_FIELDS, ...BILLING_ITEMIZED_FIEL
 const VERIFIED_FETCH_WINDOW_VERSION = ORDER_HISTORY_FETCH_WINDOW_VERSION;
 
 function hchanhDefaultFiles(files) {
-  // billing (bảng kê chi phí) chỉ lấy khi được yêu cầu (đề cương cần phần Chi phí), không mặc định.
   const allowed = new Set(['profile', 'discharge', 'surgery', 'order_history', 'billing']);
   const requested = Array.isArray(files) ? files.map(x => String(x || '').trim()).filter(Boolean) : [];
   const filtered = requested.filter(x => allowed.has(x));
-  // Mặc định lấy profile + discharge + surgery (không lấy y lệnh vì không phải NC nào cũng cần).
-  // Nếu caller truyền order_history vào files thì gộp luôn vào 1 lần fetch.
-  return filtered.length ? filtered : ['profile', 'discharge', 'surgery'];
+  // Mặc định lấy profile + discharge + surgery + billing (bảng kê chi phí); không lấy y lệnh vì
+  // không phải NC nào cũng cần. Nếu caller truyền order_history vào files thì gộp luôn vào 1 lần fetch.
+  return filtered.length ? filtered : ['profile', 'discharge', 'surgery', 'billing'];
 }
 
 function orderHistoryDefaultFiles(files) {

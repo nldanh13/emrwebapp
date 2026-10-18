@@ -18,7 +18,7 @@ const INPUT_SNAPSHOT_FILE = 'normalize_input_snapshot.json';
 
 const VOLATILE_NORMALIZE_INPUTS = [
   'du_lieu_ban_dau.csv', 'mau_nghien_cuu.csv', 'du_lieu_goc.csv', 'thong_tin_benh_nhan_bo_sung.csv',
-  'hchanh_profile.csv', 'hchanh_discharge.csv', 'hchanh_surgery.csv', 'hchanh_order_history.csv',
+  'hchanh_profile.csv', 'hchanh_discharge.csv', 'hchanh_surgery.csv', 'hchanh_order_history.csv', 'hchanh_billing.csv',
   'lich_su_xn.csv', 'lich_su_cdha.csv', 'progress.json', 'hchanh_auto_progress.json', 'order_history_auto_progress.json',
 ];
 

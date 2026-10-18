@@ -199,15 +199,14 @@ async function handleCollectAccepted(req, res, studyIdParam = '') {
     RESEARCH_SCOPE_LOCKS.set(lockKey, lockToken);
 
     const body = { ...(req.body || {}) };
-    const refreshPartsRaw = Array.isArray(body.refreshParts) ? body.refreshParts : [];
-    const collectParts = collection.resolveCollectionParts({ requested: body.parts, refreshParts: refreshPartsRaw, study: sc.study });
+    const collectParts = collection.resolveCollectionParts({ requested: body.parts });
     const headless = researchHeadlessFromBody(body);
     const maxAttempts = maxAttemptsFrom(body, sc.study);
     const force = body.force === true;
     const refreshProvisional = body.refreshProvisional === true;
     const retryBlocked = body.retryBlocked === true;
     const limit = Number.isFinite(Number(body.limit)) ? Math.max(0, Math.trunc(Number(body.limit))) : 0;
-    const refreshParts = refreshPartsRaw.filter(p => collection.ALL_PART_KEYS.includes(p));
+    const refreshParts = Array.isArray(body.refreshParts) ? body.refreshParts.filter(p => collection.PART_KEYS.includes(p)) : [];
     const refreshKeys = Array.isArray(body.refreshKeys) && body.refreshKeys.length ? body.refreshKeys.map(String).slice(0, 20000) : null;
 
     const task = beginResearchTask(sc.runDir, {

@@ -4,7 +4,7 @@
 // Chi phí điều trị trong Kho nghiên cứu (dữ liệu giả lập, không có BN thật):
 //  1. Tổng từ bảng kê: 16 ô Tổng hợp chi phí của EMR + tổng tự cộng dòng bảng kê; "chưa có" ≠ 0.
 //  2. Bước ghi dòng thô và bước chuẩn hóa dùng chung một hàm: đọc lại dòng thô ra đúng số.
-//  3. Chi phí là phần tùy chọn: không vào phần mặc định, chỉ lấy khi đề cương cần.
+//  3. Chi phí lấy mặc định (không cần đánh dấu), cùng lô Chrome với hồ sơ nền/ra viện/phẫu thuật.
 //  4. Chuẩn hóa: cột cost_* của analysis_ready gắn đúng đợt; 2 đợt của cùng BN không lẫn số;
 //     dòng chuyển khoa dùng lại cùng bảng kê không bị cộng đôi; bảng kê khác nhau → để trống.
 // Chạy: node scripts/research_treatment_cost_test.js
@@ -104,37 +104,34 @@ test('Dòng thô hchanh_billing.csv đọc lại ra đúng số đã tính (cùn
   assert.strictEqual(hchanhFetchOutputToRows({ billing: { _fetch_status: 'error' } }, src, 'r').billingRows.length, 0);
 });
 
-test('Chi phí là phần tùy chọn: mặc định không lấy, đề cương cần thì lấy', () => {
-  assert.deepStrictEqual(collection.PART_KEYS, ['xn', 'cdha', 'profile', 'discharge', 'surgery', 'order_history']);
-  assert.ok(collection.ALL_PART_KEYS.includes('billing'));
-  assert.ok(!collection.collectionPartsForStudy(null).includes('billing'));
-  assert.ok(!collection.collectionPartsForStudy({}).includes('billing'));
-  assert.ok(collection.collectionPartsForStudy({ data_requirements: { parts: ['billing'] } }).includes('billing'));
+test('Chi phí lấy mặc định: không cần đánh dấu, đi chung lô hành chánh', () => {
+  assert.ok(collection.PART_KEYS.includes('billing'));
+  assert.ok(collection.requirementsFromStudy({}).parts.includes('billing'));
+  assert.ok(collection.resolveCollectionParts({}).includes('billing'));
+  assert.deepStrictEqual(collection.resolveCollectionParts({ requested: ['billing', 'bogus'] }), ['billing']);
+  // Đề cương chỉ chọn biến chi phí thì phần bắt buộc là Chi phí.
   const withCostVar = { variable_selection: { selected_variables: [{ id: 'analysis_ready.cost_total', table: 'analysis_ready', name: 'cost_total' }] } };
   assert.ok(collection.requirementsFromStudy(withCostVar).parts.includes('billing'));
-  assert.ok(collection.collectionPartsForStudy(withCostVar).includes('billing'));
-  assert.deepStrictEqual(collection.resolveCollectionParts({ requested: ['billing', 'bogus'] }), ['billing']);
-  assert.ok(collection.resolveCollectionParts({ refreshParts: ['billing'] }).includes('billing'));
-  assert.ok(!collection.resolveCollectionParts({}).includes('billing'));
-  const groups = collection.groupTasksByFetcher([{ key: 'k', parts: ['profile', 'billing'] }]);
-  assert.deepStrictEqual([...groups.hchanh.keys()], ['billing,profile']);
+  // Một lần gọi worker cho cả hồ sơ nền + chi phí (không mở Chrome riêng cho chi phí).
+  const groups = collection.groupTasksByFetcher([{ key: 'k', parts: ['profile', 'discharge', 'surgery', 'billing'] }]);
+  assert.deepStrictEqual([...groups.hchanh.keys()], ['billing,discharge,profile,surgery']);
 });
 
-test('Sổ thu thập ghi trạng thái Chi phí nhưng lượt đủ 6 phần vẫn là đủ', () => {
+test('Sổ thu thập: lượt cũ chưa có Chi phí chỉ lấy bổ sung phần Chi phí; đã có thì không lấy lại', () => {
   const src = { 'Research key': 'k1', 'Mã BN': '601', 'Mã NC': 'NC1', 'T/G vào': '08:00 01/03/2026' };
   const at = '2026-03-06T00:00:00Z';
   const okFile = rows => ({ fetch_status: 'ok', rows, at });
-  const ledger = collection.buildLedger({
+  const fileStatus = { profile: okFile(1), discharge: okFile(1), surgery: okFile(0) };
+  const build = extra => collection.buildLedger({
     sourceRows: [src],
     xnProgress: {},
-    hchanhProgress: { k1: { ma_bn: '601', file_status: { profile: okFile(1), discharge: okFile(1), surgery: okFile(0), billing: okFile(1) } } },
+    hchanhProgress: { k1: { ma_bn: '601', file_status: { ...fileStatus, ...extra } } },
   });
-  const enc = ledger.encounters.k1;
-  assert.strictEqual(enc.parts.billing.status, 'ok');
-  const plan = collection.planCollection(ledger, { parts: collection.PART_KEYS });
-  assert.ok(plan.tasks.every(t => !t.parts.includes('billing')), 'mặc định không giao phần Chi phí');
-  const planCost = collection.planCollection(ledger, { parts: ['billing'] });
-  assert.strictEqual(planCost.tasks.length, 0, 'đã có Chi phí thì không lấy lại');
+  const old = collection.planCollection(build({}), { parts: ['profile', 'discharge', 'surgery', 'billing'] });
+  assert.deepStrictEqual(old.tasks.map(t => t.parts), [['billing']]);
+  const done = build({ billing: okFile(1) });
+  assert.strictEqual(done.encounters.k1.parts.billing.status, 'ok');
+  assert.strictEqual(collection.planCollection(done, { parts: ['profile', 'discharge', 'surgery', 'billing'] }).tasks.length, 0);
 });
 
 test('Chuẩn hóa: cost_* gắn đúng đợt, không cộng đôi dòng chuyển khoa, bảng kê lệch → để trống', () => {

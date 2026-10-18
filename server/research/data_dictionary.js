@@ -594,7 +594,7 @@ const RAW_TABLES = {
   hchanh_profile: { file: 'hchanh_profile.csv', grain: 'Một dòng nguồn (Research key).', source: 'Lấy hành chánh — màn điều dưỡng (con mắt).', identifiers: ['Mã BN', 'Họ tên', 'Ngày sinh', 'Địa chỉ', 'Điện thoại', 'Số CMND', 'Số thẻ BHYT'] },
   hchanh_discharge: { file: 'hchanh_discharge.csv', grain: 'Một dòng nguồn.', source: 'Lấy hành chánh — mục Ra khoa trên màn bác sĩ.', identifiers: ['Mã BN', 'Họ tên', 'Số lưu trữ'] },
   hchanh_surgery: { file: 'hchanh_surgery.csv', grain: 'Một ca PT/TT.', source: 'Lấy hành chánh — D/s phẫu thuật.', identifiers: ['Mã BN', 'Họ tên', 'Raw JSON'] },
-  hchanh_billing: { file: 'hchanh_billing.csv', grain: 'Một lần lấy bảng kê chi phí của một dòng nguồn (Research key).', source: 'Lấy hành chánh — trang Bảng kê chi phí (chiphichitietdraw): khối Tổng hợp chi phí + cộng dòng bảng kê. Chỉ lấy khi đề cương cần phần Chi phí.', identifiers: ['Mã BN', 'Họ tên', 'URL'] },
+  hchanh_billing: { file: 'hchanh_billing.csv', grain: 'Một lần lấy bảng kê chi phí của một dòng nguồn (Research key).', source: 'Lấy hành chánh — trang Bảng kê chi phí (chiphichitietdraw): khối Tổng hợp chi phí + cộng dòng bảng kê. Lấy mặc định cùng hồ sơ nền/ra viện/phẫu thuật.', identifiers: ['Mã BN', 'Họ tên', 'URL'] },
   hchanh_order_history: { file: 'hchanh_order_history.csv', grain: 'Một dòng lịch sử y lệnh.', source: 'Lấy hành chánh — Lịch sử y lệnh.', identifiers: ['Mã BN', 'Họ tên', 'Bác sĩ (nhân viên)', 'Raw JSON'] },
 };
 
