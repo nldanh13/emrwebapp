@@ -107,7 +107,7 @@ function directPatientCodeFrom(req) {
 
 async function runDirectPatient(ctx, sc, rows, requestedParts, headless) {
   const wanted = requestedParts.length ? requestedParts : collection.PART_KEYS;
-  const hchanhFiles = wanted.filter(p => ['profile', 'discharge', 'surgery', 'order_history'].includes(p));
+  const hchanhFiles = wanted.filter(p => ['profile', 'discharge', 'surgery', 'order_history', 'billing'].includes(p));
   const xnCdhaParts = wanted.filter(p => ['xn', 'cdha'].includes(p));
   const results = {};
 
@@ -199,16 +199,15 @@ async function handleCollectAccepted(req, res, studyIdParam = '') {
     RESEARCH_SCOPE_LOCKS.set(lockKey, lockToken);
 
     const body = { ...(req.body || {}) };
-    const requestedParts = Array.isArray(body.parts)
-      ? body.parts.filter(p => collection.PART_KEYS.includes(p))
-      : [];
+    const refreshPartsRaw = Array.isArray(body.refreshParts) ? body.refreshParts : [];
+    const collectParts = collection.resolveCollectionParts({ requested: body.parts, refreshParts: refreshPartsRaw, study: sc.study });
     const headless = researchHeadlessFromBody(body);
     const maxAttempts = maxAttemptsFrom(body, sc.study);
     const force = body.force === true;
     const refreshProvisional = body.refreshProvisional === true;
     const retryBlocked = body.retryBlocked === true;
     const limit = Number.isFinite(Number(body.limit)) ? Math.max(0, Math.trunc(Number(body.limit))) : 0;
-    const refreshParts = Array.isArray(body.refreshParts) ? body.refreshParts.filter(p => collection.PART_KEYS.includes(p)) : [];
+    const refreshParts = refreshPartsRaw.filter(p => collection.ALL_PART_KEYS.includes(p));
     const refreshKeys = Array.isArray(body.refreshKeys) && body.refreshKeys.length ? body.refreshKeys.map(String).slice(0, 20000) : null;
 
     const task = beginResearchTask(sc.runDir, {
@@ -255,7 +254,7 @@ async function handleCollectAccepted(req, res, studyIdParam = '') {
       try {
         let result;
         if (directPatientCode) {
-          result = await runDirectPatient(ctx, sc, directRows, requestedParts, headless);
+          result = await runDirectPatient(ctx, sc, directRows, collectParts, headless);
         } else {
           const options = {
             runDir: sc.runDir,
@@ -270,7 +269,7 @@ async function handleCollectAccepted(req, res, studyIdParam = '') {
             force,
             refreshProvisional,
             retryBlocked,
-            parts: requestedParts.length ? requestedParts : collection.PART_KEYS,
+            parts: collectParts,
             limit,
             refreshParts,
             refreshKeys,

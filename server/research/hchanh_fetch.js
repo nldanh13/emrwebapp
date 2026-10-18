@@ -16,11 +16,15 @@ const { dedupeRowsByStableKey } = require('./dataset_store');
 const { runScript, fmtPyError } = require('../services/python_runner');
 const fs = require('fs');
 const { ORDER_HISTORY_FETCH_WINDOW_VERSION } = require('./fetch_versions');
+const { BILLING_SUMMARY_FIELDS, BILLING_ITEMIZED_FIELDS } = require('./billing_summary');
+
+const BILLING_RAW_COLUMNS = [...BILLING_SUMMARY_FIELDS, ...BILLING_ITEMIZED_FIELDS].map(f => f.label);
 
 const VERIFIED_FETCH_WINDOW_VERSION = ORDER_HISTORY_FETCH_WINDOW_VERSION;
 
 function hchanhDefaultFiles(files) {
-  const allowed = new Set(['profile', 'discharge', 'surgery', 'order_history']);
+  // billing (bảng kê chi phí) chỉ lấy khi được yêu cầu (đề cương cần phần Chi phí), không mặc định.
+  const allowed = new Set(['profile', 'discharge', 'surgery', 'order_history', 'billing']);
   const requested = Array.isArray(files) ? files.map(x => String(x || '').trim()).filter(Boolean) : [];
   const filtered = requested.filter(x => allowed.has(x));
   // Mặc định lấy profile + discharge + surgery (không lấy y lệnh vì không phải NC nào cũng cần).
@@ -177,6 +181,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
   let dischargeRows = readCsvTable(path.join(runPath, 'hchanh_discharge.csv'), Number.MAX_SAFE_INTEGER).rows;
   let surgeryRows = readCsvTable(path.join(runPath, 'hchanh_surgery.csv'), Number.MAX_SAFE_INTEGER).rows;
   let orderRows = readCsvTable(path.join(runPath, 'hchanh_order_history.csv'), Number.MAX_SAFE_INTEGER).rows;
+  let billingRows = readCsvTable(path.join(runPath, 'hchanh_billing.csv'), Number.MAX_SAFE_INTEGER).rows;
 
   // hchanh_fetch.py gộp nhiều BN vào 1 phiên Chrome/đăng nhập theo lô (xem
   // HCHANH_BATCH_SIZE bên dưới), giống cách script XN&CĐHA dùng lại 1 Chrome
@@ -248,6 +253,9 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
     writeCsvUnion(path.join(runPath, 'hchanh_discharge.csv'), dischargeRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Ngày vào viện', 'Ngày ra viện', 'Thời gian điều trị', 'Chẩn đoán', 'Chẩn đoán ra viện', 'Bệnh kèm', 'Biến chứng', 'Tai biến', 'Tình trạng ra', 'Research key']);
     writeCsvUnion(path.join(runPath, 'hchanh_surgery.csv'), surgeryRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Ngày vào viện', 'Ngày ra viện', 'Ngày phẫu thuật', 'Kết thúc phẫu thuật', 'Tên phẫu thuật', 'Đối tượng DV', 'Phương pháp phẫu thuật', 'PPVC', 'Phân loại PT', 'Trạng thái', 'ICD9', 'Chẩn đoán trước mổ', 'ICD10 trước mổ', 'Chẩn đoán sau mổ', 'ICD10 sau mổ', 'Mô tả PPPT', 'Trình tự phẫu thuật', 'Phẫu thuật viên chính', 'Bác sĩ gây mê chính', 'Phụ mổ 1', 'Phụ mổ 2', 'Điều dưỡng dụng cụ', 'KTV phụ mê', 'Diễn biến bệnh', 'Dặn dò sau PT', 'Bệnh kèm sau PT', 'Người hoàn tất', 'Phòng mổ', 'Research key']);
     writeCsvUnion(path.join(runPath, 'hchanh_order_history.csv'), orderRows, ['Mã NC', 'Mã BN', 'Họ tên', 'TG y lệnh', 'Ngày', 'Bác sĩ', 'Diễn biến', 'Tên y lệnh', 'Y lệnh khác', 'KQ', 'Trạng thái', 'Research key']);
+    if (billingRows.length || wantedFiles.includes('billing')) {
+      writeCsvUnion(path.join(runPath, 'hchanh_billing.csv'), billingRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Ngày vào viện', 'Ngày ra viện', ...BILLING_RAW_COLUMNS, 'Research key']);
+    }
   };
 
   let batchNo = 0;
@@ -359,8 +367,9 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
           if (flat.dischargeRows.length) dischargeRows = dedupeRowsByStableKey(removeResearchSourceKey(dischargeRows, key).concat(flat.dischargeRows), ['Research key', 'Mã BN', 'Ngày vào viện', 'Ngày ra viện', 'Chẩn đoán ra viện']);
           if (flat.surgeryRows.length) surgeryRows = dedupeRowsByStableKey(removeResearchSourceKey(surgeryRows, key).concat(flat.surgeryRows), ['Research key', 'Mã BN', 'Ngày phẫu thuật', 'Tên phẫu thuật', 'Phương pháp phẫu thuật']);
           if (flat.orderRows.length) orderRows = dedupeRowsByStableKey(removeResearchSourceKey(orderRows, key).concat(flat.orderRows), ['Research key', 'Mã BN', 'TG y lệnh', 'Tên y lệnh', 'Y lệnh khác']);
+          if (flat.billingRows.length) billingRows = removeResearchSourceKey(billingRows, key).concat(flat.billingRows);
           const sc = statusCountsFromHchanhOutput(reuse.output);
-          const reuseCounts = { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length };
+          const reuseCounts = { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length, billing: flat.billingRows.length };
           stats.processed += 1;
           stats.reused += 1;
           if (sc.attention) stats.attention += 1;
@@ -377,7 +386,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
             fetch_date_to: dateTo,
             // Dùng lại từ tab Hành chánh / Kiểm hồ sơ → dữ liệu tạm thời; lần quét lại của Kho nghiên cứu sẽ thay.
             provisional_files: reuse.provisional_files || [],
-            rows: { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length },
+            rows: { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length, billing: flat.billingRows.length },
           };
           chunkReused += 1;
           appendResearchRunLog(runPath, `[${logPrefix}] DÙNG LẠI ${display}: cùng đợt nằm viện ${reuse.from} → ${reuse.to} đã lấy ở ${String(reuse.sourceKey).startsWith('kho_hanh_chanh') ? 'tab Hành chánh / Kiểm hồ sơ (dữ liệu tạm thời)' : reuse.sourceKey === 'kho_nghien_cuu_goc' ? 'lần quét trước của Kho nghiên cứu (dữ liệu gốc)' : reuse.sourceKey}, không mở EMR lại.`);
@@ -520,7 +529,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
         const workerTrace = Array.isArray(output?._case_trace) ? output._case_trace : [];
         const flat = hchanhFetchOutputToRows(output, row, sourceRunId);
         const countForKey = rows => rows.filter(r => String(r?.['Research key'] || '') === String(key)).length;
-        const previousCounts = { profile: countForKey(profileRows), discharge: countForKey(dischargeRows), surgery: countForKey(surgeryRows), order_history: countForKey(orderRows) };
+        const previousCounts = { profile: countForKey(profileRows), discharge: countForKey(dischargeRows), surgery: countForKey(surgeryRows), order_history: countForKey(orderRows), billing: countForKey(billingRows) };
         // Chỉ thay dữ liệu cũ của case này khi lần fetch này THỰC SỰ có dòng mới
         // cho đúng bảng đó. Một lần scrape lỗi/rỗng (worker vẫn thoát code 0 nhưng
         // _fetch_status = empty/no_session/timeout) không được phép xóa mất dữ
@@ -530,6 +539,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
         if (flat.dischargeRows.length) dischargeRows = dedupeRowsByStableKey(removeResearchSourceKey(dischargeRows, key).concat(flat.dischargeRows), ['Research key', 'Mã BN', 'Ngày vào viện', 'Ngày ra viện', 'Chẩn đoán ra viện']);
         if (flat.surgeryRows.length) surgeryRows = dedupeRowsByStableKey(removeResearchSourceKey(surgeryRows, key).concat(flat.surgeryRows), ['Research key', 'Mã BN', 'Ngày phẫu thuật', 'Tên phẫu thuật', 'Phương pháp phẫu thuật']);
         if (flat.orderRows.length) orderRows = dedupeRowsByStableKey(removeResearchSourceKey(orderRows, key).concat(flat.orderRows), ['Research key', 'Mã BN', 'TG y lệnh', 'Tên y lệnh', 'Y lệnh khác']);
+        if (flat.billingRows.length) billingRows = removeResearchSourceKey(billingRows, key).concat(flat.billingRows);
 
         const sc = statusCountsFromHchanhOutput(output);
         const csvTraceEvents = [
@@ -542,7 +552,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
         if (sc.error && failureSignature) {
           failureCache[failKey] = {
             ts: nowIso(), reason: failureSignature, ma_bn: meta.ma_bn, ho_ten: meta.ho_ten, files: wantedFiles, source_key: key,
-            rows: { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length },
+            rows: { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length, billing: flat.billingRows.length },
           };
           writeJsonAtomic(failureCachePath, failureCache);
         } else if (!sc.error && failureCache[failKey]) {
@@ -562,7 +572,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
         const provisionalFromStore = item.storedFiles
           ? Object.keys(item.storedFiles).filter(k => !(fetchedOutput && fetchedOutput[k]) && item.storedTiers?.[k] !== 'goc')
           : [];
-        const rowCounts = { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length };
+        const rowCounts = { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length, billing: flat.billingRows.length };
         progress[key] = {
           ...progress[key], status: sc.error ? 'error' : (sc.attention ? 'partial' : 'done'),
           finished_at: nowIso(), output: path.basename(batchOutputPath), counts: sc,
@@ -592,11 +602,11 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
           mode: normalizedMode,
           status: progress[key].status,
           files: wantedFiles,
-          counts: { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length },
+          counts: { profile: flat.profileRows.length, discharge: flat.dischargeRows.length, surgery: flat.surgeryRows.length, order_history: flat.orderRows.length, billing: flat.billingRows.length },
           output: saveRaw ? batchOutputPath : path.basename(batchOutputPath),
         });
         appendResearchRunLog(runPath, `[TRACE][CASE.END] ${display}: ghi case trace ${savedTrace?.events?.length || 0} bước vào ${CASE_TRACE_RECENT_JSON}`);
-        appendResearchRunLog(runPath, `[${logPrefix}] Xong ${display}: status=${progress[key].status} | profile=${flat.profileRows.length}, discharge=${flat.dischargeRows.length}, surgery=${flat.surgeryRows.length}, order=${flat.orderRows.length}`);
+        appendResearchRunLog(runPath, `[${logPrefix}] Xong ${display}: status=${progress[key].status} | profile=${flat.profileRows.length}, discharge=${flat.dischargeRows.length}, surgery=${flat.surgeryRows.length}, order=${flat.orderRows.length}, billing=${flat.billingRows.length}`);
       }
 
       // CSV union được ghi 1 lần sau khi xử lý xong cả lô (đủ, vì mỗi ca trong lô đã

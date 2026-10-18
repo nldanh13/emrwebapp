@@ -129,7 +129,7 @@ function caseErrorsForBatch({ rows = [], hcProgress = {}, results = {}, runId = 
 
 async function runDirectPatientNoFinalize(ctx, sc, rows, requestedParts, headless, onStep = () => {}) {
   const wanted = requestedParts.length ? requestedParts : collection.PART_KEYS;
-  const hchanhFiles = wanted.filter(p => ['profile', 'discharge', 'surgery', 'order_history'].includes(p));
+  const hchanhFiles = wanted.filter(p => ['profile', 'discharge', 'surgery', 'order_history', 'billing'].includes(p));
   const xnCdhaParts = wanted.filter(p => ['xn', 'cdha'].includes(p));
   const results = {};
 
@@ -238,9 +238,7 @@ async function handleBatch(req, res, studyIdParam = '') {
     RESEARCH_SCOPE_LOCKS.set(lockKey, lockToken);
 
     const body = { ...(req.body || {}) };
-    const requestedParts = Array.isArray(body.parts)
-      ? body.parts.filter(p => collection.PART_KEYS.includes(p))
-      : [];
+    const requestedParts = collection.resolveCollectionParts({ requested: body.parts, study: sc.study });
     const headless = researchHeadlessFromBody(body);
 
     const task = beginResearchTask(sc.runDir, {

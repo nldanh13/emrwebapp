@@ -385,11 +385,12 @@ function collectionStatusSummary(ledger, keys) {
     const enc = ledger?.encounters?.[key];
     if (!enc) continue;
     let all = true;
-    for (const p of collection.PART_KEYS) {
+    for (const p of collection.ALL_PART_KEYS) {
       const st = enc.parts?.[p]?.status || 'pending';
       if (collection.isStale(enc, p)) parts[p].stale += 1;
       else parts[p][st] = (parts[p][st] || 0) + 1;
-      if (!collection.partIsCurrent(enc, p)) all = false;
+      // Phần tùy chọn (Chi phí) không làm lượt thành "chưa đủ".
+      if (collection.PART_KEYS.includes(p) && !collection.partIsCurrent(enc, p)) all = false;
     }
     if (all) complete += 1;
   }

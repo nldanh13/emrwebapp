@@ -1,5 +1,7 @@
 'use strict';
 
+const { TREATMENT_COST_COLUMNS } = require('./billing_summary');
+
 // Phiên bản schema và danh sách cột của các bảng chuẩn hóa (khớp server/research/data_dictionary.js).
 
 // v9: strict date parsing, typed numeric filters/custom fields 1/0, và bỏ
@@ -50,7 +52,9 @@
 // v39: ghép kết quả bằng khóa EMR treatment/admission/noitru khi khóa ánh xạ duy nhất tới encounter.
 // v40: chuẩn hóa alias CBC; snapshot NEU/LYM/MONO chỉ lấy tỷ lệ %, số lượng tuyệt đối
 //      luôn nằm riêng ở lab_results, không trộn vào các cột snapshot không có đơn vị.
-const NORMALIZED_SCHEMA_VERSION = 40;
+// v41: analysis_ready thêm chi phí điều trị (cột cost_*): 16 ô Tổng hợp chi phí của EMR và tổng
+//      tự cộng từ dòng bảng kê; nguồn hchanh_billing.csv (phần Chi phí, tùy chọn).
+const NORMALIZED_SCHEMA_VERSION = 41;
 
 const NORMALIZED_COLUMNS = {
   patients: [
@@ -138,6 +142,7 @@ const NORMALIZED_COLUMNS = {
     'surgery_name', 'surgery_method', 'anesthesia_method', 'comorbidity_text', 'complication_text',
     'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt',
     'lab_result_count', 'imaging_result_count',
+    ...TREATMENT_COST_COLUMNS,
     'needs_manual_review', 'source_run_id', 'row_hash',
   ],
   extract_status: [

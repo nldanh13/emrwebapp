@@ -1,6 +1,6 @@
 # Từ điển dữ liệu Kho nghiên cứu
 
-> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-07.2`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
+> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-18.1`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
 >
 > Mô tả được viết từ code chuẩn hóa hiện tại. Cột "Dùng" là đề xuất kỹ thuật; phạm vi dùng thực tế phải theo đề cương được hội đồng đạo đức/bệnh viện phê duyệt.
 
@@ -699,7 +699,7 @@
 
 **Khóa nối:** `encounter_id` → `encounters.encounter_id`; `patient_code` → `patients.patient_code`
 
-**Nguồn:** encounters; patients; lab_results; imaging_results; surgery_results
+**Nguồn:** encounters; patients; lab_results; imaging_results; surgery_results; hchanh_billing (chi phí)
 
 **Cách xử lý:** Một dòng mỗi đợt. Chỉ dữ liệu matched và is_within_encounter = 1 mới được dùng cho snapshot/tóm tắt phân tích; dữ liệu chưa đủ bằng chứng vẫn giữ nguyên ở bảng chi tiết. analysis_ready không chứa toàn bộ XN/CĐHA trong một ô: chi tiết đầy đủ nằm ở lab_results/imaging_results theo từng dòng; bảng rộng chỉ giữ số lượng và các snapshot/biến cần phân tích. Phẫu thuật lấy ca sớm nhất đã xác minh trong đợt; biến suy luận vẫn có thể dùng CĐHA hợp lệ trong bộ nhớ khi chuẩn hóa.
 
@@ -756,6 +756,28 @@
 | `plt` | chuỗi | Kết quả plt đầu tiên của đợt (result_raw nguyên văn). Cách tính: Lấy từ lab_results có test_name_norm tương ứng (platelet). Kết quả có lab_datetime sớm nhất trong đợt. | Đơn vị: theo lab_results.unit (không quy đổi) | Không có kết quả chỉ số này. | — | Được dùng |
 | `lab_result_count` | số nguyên | Tổng số dòng kết quả XN đã ghép chắc chắn và nằm trong đợt. Lưu ý: Chi tiết từng kết quả nằm ở lab_results.csv, không nhét lại vào một ô JSON. |  |  | — | Được dùng |
 | `imaging_result_count` | số nguyên | Tổng số dòng CĐHA đã ghép chắc chắn và nằm trong đợt. Lưu ý: Chi tiết từng kết quả nằm ở imaging_results.csv, không nhét lại vào một ô JSON/text. |  |  | — | Được dùng |
+| `cost_total` | số nguyên | Ô "Tổng chi phí" trong khối Tổng hợp chi phí của bảng kê EMR. Cách tính: Số EMR tự tính, đọc nguyên giá trị trên trang Bảng kê chi phí (div#divTongHopChiPhi). | Đơn vị: đồng | Chưa lấy bảng kê (phần Chi phí), EMR không hiện ô này, hoặc các bản bảng kê của cùng đợt khác nhau. | — | Được dùng |
+| `cost_bhyt` | số nguyên | Ô "Chi phí BHYT" trong khối Tổng hợp chi phí của bảng kê EMR. Cách tính: Số EMR tự tính, đọc nguyên giá trị trên trang Bảng kê chi phí (div#divTongHopChiPhi). | Đơn vị: đồng | Chưa lấy bảng kê (phần Chi phí), EMR không hiện ô này, hoặc các bản bảng kê của cùng đợt khác nhau. | — | Được dùng |
+| `cost_insurance_paid` | số nguyên | Ô "BH trả" trong khối Tổng hợp chi phí của bảng kê EMR. Cách tính: Số EMR tự tính, đọc nguyên giá trị trên trang Bảng kê chi phí (div#divTongHopChiPhi). | Đơn vị: đồng | Chưa lấy bảng kê (phần Chi phí), EMR không hiện ô này, hoặc các bản bảng kê của cùng đợt khác nhau. | — | Được dùng |
+| `cost_copay` | số nguyên | Ô "Cùng chi trả" trong khối Tổng hợp chi phí của bảng kê EMR. Cách tính: Số EMR tự tính, đọc nguyên giá trị trên trang Bảng kê chi phí (div#divTongHopChiPhi). | Đơn vị: đồng | Chưa lấy bảng kê (phần Chi phí), EMR không hiện ô này, hoặc các bản bảng kê của cùng đợt khác nhau. | — | Được dùng |
+| `cost_self_pay` | số nguyên | Ô "Tự trả" trong khối Tổng hợp chi phí của bảng kê EMR. Cách tính: Số EMR tự tính, đọc nguyên giá trị trên trang Bảng kê chi phí (div#divTongHopChiPhi). | Đơn vị: đồng | Chưa lấy bảng kê (phần Chi phí), EMR không hiện ô này, hoặc các bản bảng kê của cùng đợt khác nhau. | — | Được dùng |
+| `cost_other_source` | số nguyên | Ô "Nguồn khác" trong khối Tổng hợp chi phí của bảng kê EMR. Cách tính: Số EMR tự tính, đọc nguyên giá trị trên trang Bảng kê chi phí (div#divTongHopChiPhi). | Đơn vị: đồng | Chưa lấy bảng kê (phần Chi phí), EMR không hiện ô này, hoặc các bản bảng kê của cùng đợt khác nhau. | — | Được dùng |
+| `cost_price_difference` | số nguyên | Ô "Chênh lệch" trong khối Tổng hợp chi phí của bảng kê EMR. Cách tính: Số EMR tự tính, đọc nguyên giá trị trên trang Bảng kê chi phí (div#divTongHopChiPhi). | Đơn vị: đồng | Chưa lấy bảng kê (phần Chi phí), EMR không hiện ô này, hoặc các bản bảng kê của cùng đợt khác nhau. | — | Được dùng |
+| `cost_actual_collected` | số nguyên | Ô "Thực thu" trong khối Tổng hợp chi phí của bảng kê EMR. Cách tính: Số EMR tự tính, đọc nguyên giá trị trên trang Bảng kê chi phí (div#divTongHopChiPhi). | Đơn vị: đồng | Chưa lấy bảng kê (phần Chi phí), EMR không hiện ô này, hoặc các bản bảng kê của cùng đợt khác nhau. | — | Được dùng |
+| `cost_advance` | số nguyên | Ô "Tiền tạm ứng" trong khối Tổng hợp chi phí của bảng kê EMR. Cách tính: Số EMR tự tính, đọc nguyên giá trị trên trang Bảng kê chi phí (div#divTongHopChiPhi). | Đơn vị: đồng | Chưa lấy bảng kê (phần Chi phí), EMR không hiện ô này, hoặc các bản bảng kê của cùng đợt khác nhau. | — | Được dùng |
+| `cost_discount` | số nguyên | Ô "Miễn giảm" trong khối Tổng hợp chi phí của bảng kê EMR. Cách tính: Số EMR tự tính, đọc nguyên giá trị trên trang Bảng kê chi phí (div#divTongHopChiPhi). | Đơn vị: đồng | Chưa lấy bảng kê (phần Chi phí), EMR không hiện ô này, hoặc các bản bảng kê của cùng đợt khác nhau. | — | Được dùng |
+| `cost_fund_paid` | số nguyên | Ô "Tiền quỹ trả" trong khối Tổng hợp chi phí của bảng kê EMR. Cách tính: Số EMR tự tính, đọc nguyên giá trị trên trang Bảng kê chi phí (div#divTongHopChiPhi). | Đơn vị: đồng | Chưa lấy bảng kê (phần Chi phí), EMR không hiện ô này, hoặc các bản bảng kê của cùng đợt khác nhau. | — | Được dùng |
+| `cost_uncollected` | số nguyên | Ô "Thất thu" trong khối Tổng hợp chi phí của bảng kê EMR. Cách tính: Số EMR tự tính, đọc nguyên giá trị trên trang Bảng kê chi phí (div#divTongHopChiPhi). | Đơn vị: đồng | Chưa lấy bảng kê (phần Chi phí), EMR không hiện ô này, hoặc các bản bảng kê của cùng đợt khác nhau. | — | Được dùng |
+| `cost_refunded` | số nguyên | Ô "Tiền hoàn trả" trong khối Tổng hợp chi phí của bảng kê EMR. Cách tính: Số EMR tự tính, đọc nguyên giá trị trên trang Bảng kê chi phí (div#divTongHopChiPhi). | Đơn vị: đồng | Chưa lấy bảng kê (phần Chi phí), EMR không hiện ô này, hoặc các bản bảng kê của cùng đợt khác nhau. | — | Được dùng |
+| `cost_receipts` | số nguyên | Ô "Biên lai thu" trong khối Tổng hợp chi phí của bảng kê EMR. Cách tính: Số EMR tự tính, đọc nguyên giá trị trên trang Bảng kê chi phí (div#divTongHopChiPhi). | Đơn vị: đồng | Chưa lấy bảng kê (phần Chi phí), EMR không hiện ô này, hoặc các bản bảng kê của cùng đợt khác nhau. | — | Được dùng |
+| `cost_debt` | số nguyên | Ô "Ghi nợ" trong khối Tổng hợp chi phí của bảng kê EMR. Cách tính: Số EMR tự tính, đọc nguyên giá trị trên trang Bảng kê chi phí (div#divTongHopChiPhi). | Đơn vị: đồng | Chưa lấy bảng kê (phần Chi phí), EMR không hiện ô này, hoặc các bản bảng kê của cùng đợt khác nhau. | — | Được dùng |
+| `cost_patient_refund_due` | số nguyên | Ô "NB nhận lại" trong khối Tổng hợp chi phí của bảng kê EMR. Cách tính: Số EMR tự tính, đọc nguyên giá trị trên trang Bảng kê chi phí (div#divTongHopChiPhi). | Đơn vị: đồng | Chưa lấy bảng kê (phần Chi phí), EMR không hiện ô này, hoặc các bản bảng kê của cùng đợt khác nhau. | — | Được dùng |
+| `cost_itemized_total` | số nguyên | Tổng thành tiền bảng kê: tự cộng thành tiền (SL × đơn giá) các dòng bảng kê. Cách tính: Cộng từ dòng bảng kê theo cột Đối tượng (Bảo hiểm / Viện phí / Trong gói-miễn / khác). Không gồm chênh lệch giá; có thể khác "Tổng chi phí" của EMR. | Đơn vị: đồng | Chưa lấy bảng kê hoặc bảng kê không có dòng nào. | — | Được dùng |
+| `cost_itemized_bhyt` | số nguyên | Thành tiền đối tượng BHYT: tự cộng thành tiền (SL × đơn giá) các dòng bảng kê. Cách tính: Cộng từ dòng bảng kê theo cột Đối tượng (Bảo hiểm / Viện phí / Trong gói-miễn / khác). Không gồm chênh lệch giá; có thể khác "Tổng chi phí" của EMR. | Đơn vị: đồng | Chưa lấy bảng kê hoặc bảng kê không có dòng nào. | — | Được dùng |
+| `cost_itemized_self_pay` | số nguyên | Thành tiền viện phí/tự túc: tự cộng thành tiền (SL × đơn giá) các dòng bảng kê. Cách tính: Cộng từ dòng bảng kê theo cột Đối tượng (Bảo hiểm / Viện phí / Trong gói-miễn / khác). Không gồm chênh lệch giá; có thể khác "Tổng chi phí" của EMR. | Đơn vị: đồng | Chưa lấy bảng kê hoặc bảng kê không có dòng nào. | — | Được dùng |
+| `cost_itemized_exempt` | số nguyên | Thành tiền miễn/trong gói: tự cộng thành tiền (SL × đơn giá) các dòng bảng kê. Cách tính: Cộng từ dòng bảng kê theo cột Đối tượng (Bảo hiểm / Viện phí / Trong gói-miễn / khác). Không gồm chênh lệch giá; có thể khác "Tổng chi phí" của EMR. | Đơn vị: đồng | Chưa lấy bảng kê hoặc bảng kê không có dòng nào. | — | Được dùng |
+| `cost_itemized_other` | số nguyên | Thành tiền chưa phân loại: tự cộng thành tiền (SL × đơn giá) các dòng bảng kê. Cách tính: Cộng từ dòng bảng kê theo cột Đối tượng (Bảo hiểm / Viện phí / Trong gói-miễn / khác). Không gồm chênh lệch giá; có thể khác "Tổng chi phí" của EMR. | Đơn vị: đồng | Chưa lấy bảng kê hoặc bảng kê không có dòng nào. | — | Được dùng |
+| `cost_item_lines` | số nguyên | Số dòng khoản mục trên bảng kê (dịch vụ, thuốc, vật tư). Cách tính: Cộng từ dòng bảng kê theo cột Đối tượng (Bảo hiểm / Viện phí / Trong gói-miễn / khác). Không gồm chênh lệch giá; có thể khác "Tổng chi phí" của EMR. |  | Chưa lấy bảng kê hoặc bảng kê không có dòng nào. | — | Được dùng |
 | `needs_manual_review` | chuỗi | Lý do cần người kiểm tra, nối "; ". | Nhãn thiếu biến của preset (ví dụ "bên tổn thương", "ngày phẫu thuật") và cờ ghép đợt. |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
@@ -773,6 +795,7 @@ Bảng thô giữ nguyên dữ liệu EMR, **đều chứa định danh**, khôn
 | `hchanh_profile.csv` | Một dòng nguồn (Research key). | Lấy hành chánh — màn điều dưỡng (con mắt). | Mã BN, Họ tên, Ngày sinh, Địa chỉ, Điện thoại, Số CMND, Số thẻ BHYT |
 | `hchanh_discharge.csv` | Một dòng nguồn. | Lấy hành chánh — mục Ra khoa trên màn bác sĩ. | Mã BN, Họ tên, Số lưu trữ |
 | `hchanh_surgery.csv` | Một ca PT/TT. | Lấy hành chánh — D/s phẫu thuật. | Mã BN, Họ tên, Raw JSON |
+| `hchanh_billing.csv` | Một lần lấy bảng kê chi phí của một dòng nguồn (Research key). | Lấy hành chánh — trang Bảng kê chi phí (chiphichitietdraw): khối Tổng hợp chi phí + cộng dòng bảng kê. Chỉ lấy khi đề cương cần phần Chi phí. | Mã BN, Họ tên, URL |
 | `hchanh_order_history.csv` | Một dòng lịch sử y lệnh. | Lấy hành chánh — Lịch sử y lệnh. | Mã BN, Họ tên, Bác sĩ (nhân viên), Raw JSON |
 
 ## Hạn chế đã biết

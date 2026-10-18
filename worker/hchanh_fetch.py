@@ -2952,6 +2952,65 @@ def fetch_discharge(sess: Optional["EmrHttpSession"], ma_bn: str,
     return base
 
 
+# Khối "Tổng hợp chi phí" (div#divTongHopChiPhi) trên trang bảng kê: mỗi ô là
+# <label>Nhãn</label> + <input disabled value="26,117,752">. Đọc theo nhãn (bỏ dấu)
+# để không phụ thuộc thứ tự ô; nhãn không có trên trang thì để None (khác 0 đồng).
+BILLING_SUMMARY_FIELDS = (
+    ("tong_chi_phi",  "tong chi phi"),
+    ("chi_phi_bhyt",  "chi phi bhyt"),
+    ("bh_tra",        "bh tra"),
+    ("cung_chi_tra",  "cung chi tra"),
+    ("tu_tra",        "tu tra"),
+    ("nguon_khac",    "nguon khac"),
+    ("chenh_lech",    "chenh lech"),
+    ("thuc_thu",      "thuc thu"),
+    ("tien_tam_ung",  "tien tam ung"),
+    ("mien_giam",     "mien giam"),
+    ("tien_quy_tra",  "tien quy tra"),
+    ("that_thu",      "that thu"),
+    ("tien_hoan_tra", "tien hoan tra"),
+    ("bien_lai_thu",  "bien lai thu"),
+    ("ghi_no",        "ghi no"),
+    ("nb_nhan_lai",   "nb nhan lai"),
+)
+
+
+def _parse_money_value(raw: Any) -> Optional[float]:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    negative = text.startswith("-") or (text.startswith("(") and text.endswith(")"))
+    digits = re.sub(r"[^\d]", "", text)
+    if not digits:
+        return None
+    value = float(digits)
+    return -value if negative else value
+
+
+def parse_billing_summary(page_soup: Any) -> Dict[str, Optional[float]]:
+    """Đọc 16 ô của khối Tổng hợp chi phí. Không có khối → {} (không bịa số 0)."""
+    box = page_soup.select_one("div#divTongHopChiPhi") if page_soup is not None else None
+    if box is None:
+        return {}
+    by_label: Dict[str, Optional[float]] = {}
+    for label in box.find_all("label"):
+        name = _norm(label.get_text(" ", strip=True))
+        if not name or name in by_label:
+            continue
+        holder = label.parent
+        inp = None
+        while holder is not None and holder is not box and inp is None:
+            inp = holder.find("input")
+            holder = holder.parent if inp is None else holder
+        if inp is None:
+            continue
+        by_label[name] = _parse_money_value(inp.get("value"))
+    out: Dict[str, Optional[float]] = {}
+    for key, label in BILLING_SUMMARY_FIELDS:
+        out[key] = by_label.get(label)
+    return out
+
+
 # ── Fetcher: billing (bảng kê chi phí) ───────────────────────────────────────
 
 def fetch_billing(sess: Optional["EmrHttpSession"], ma_bn: str,
@@ -2982,6 +3041,7 @@ def fetch_billing(sess: Optional["EmrHttpSession"], ma_bn: str,
         "tong_tu_tuc": 0,
         "tong_mien":   0,
         "tong_cong":   0,
+        "tong_hop":    {},   # khối Tổng hợp chi phí của EMR (BH trả, tự trả, tạm ứng...)
         "_source":     "emr_chiphichitietdraw",
         "_fetch_status": "pending",
     }
@@ -3063,6 +3123,10 @@ def fetch_billing(sess: Optional["EmrHttpSession"], ma_bn: str,
             if clicked and clicked.get("html"):
                 soup = _soup(clicked["html"])
                 billing_tables = _collect_billing_tables(soup)
+
+        summary = parse_billing_summary(soup)
+        if summary:
+            base["tong_hop"] = summary
 
         if not billing_tables:
             base["_fetch_status"] = "no_table"

@@ -28,8 +28,15 @@ const PARTS = [
   { key: 'discharge', label: 'Ra viện', fetcher: 'hchanh' },
   { key: 'surgery', label: 'Phẫu thuật', fetcher: 'hchanh' },
   { key: 'order_history', label: 'Y lệnh', fetcher: 'order_history' },
+  // Bảng kê chi phí: phần TÙY CHỌN, chỉ lấy khi đề cương cần (yêu cầu dữ liệu hoặc biến chi phí)
+  // hoặc người dùng chọn rõ. Không nằm trong PART_KEYS nên không làm lượt cũ thành "chưa đủ"
+  // và không tự mở thêm trang EMR cho mọi đề cương.
+  { key: 'billing', label: 'Chi phí', fetcher: 'hchanh', optional: true },
 ];
-const PART_KEYS = PARTS.map(p => p.key);
+// Phần mặc định (bắt buộc khi đề cương không khai báo gì).
+const PART_KEYS = PARTS.filter(p => !p.optional).map(p => p.key);
+const OPTIONAL_PART_KEYS = PARTS.filter(p => p.optional).map(p => p.key);
+const ALL_PART_KEYS = PARTS.map(p => p.key);
 const DONE_STATUSES = new Set(['ok', 'empty']);
 
 const REASON_LABELS = {
@@ -704,6 +711,7 @@ function derivePartResults(source, xnMatches, hchanhProgress, orderProgress, orp
     discharge: hcFile('discharge'),
     surgery: hcFile('surgery'),
     order_history: orderHistory,
+    billing: hcFile('billing'),
   };
 }
 
@@ -763,7 +771,7 @@ function buildLedger({ sourceRows = [], units = null, xnProgress = {}, hchanhPro
 
     const derived = derivePartResults(src, xnMatches, hchanhProgress, orderProgress, orphanHc, orphanOh);
     const parts = {};
-    for (const key of PART_KEYS) {
+    for (const key of ALL_PART_KEYS) {
       const d = derived[key];
       const p = prev?.parts?.[key];
       const done = DONE_STATUSES.has(d.status);
@@ -1046,7 +1054,7 @@ function applyContentVersions({ before, after, targets = [], beforeRows = new Ma
 function sanitizeRefreshPolicy(input) {
   const src = input && typeof input === 'object' ? input : {};
   const out = {};
-  for (const k of PART_KEYS) {
+  for (const k of ALL_PART_KEYS) {
     const n = Number(src[k]);
     if (Number.isFinite(n) && n >= 1 && n <= 3650) out[k] = Math.trunc(n);
   }
@@ -1069,7 +1077,7 @@ function planCollection(ledger, {
   refreshPolicy = {}, refreshParts = [], refreshKeys = null, now = nowIso(),
 } = {}) {
   const policy = sanitizeRefreshPolicy(refreshPolicy);
-  const manual = new Set((refreshParts || []).filter(k => PART_KEYS.includes(k)));
+  const manual = new Set((refreshParts || []).filter(k => ALL_PART_KEYS.includes(k)));
   const manualKeys = refreshKeys ? new Set(refreshKeys) : null;
   const scope = keys ? [...keys] : Object.keys(ledger?.encounters || {}).filter(k => ledger.encounters[k].in_source !== false);
   const tasks = [];
@@ -1328,6 +1336,15 @@ const TABLE_PARTS = {
   patient_day: ['xn', 'cdha', 'order_history'],
 };
 
+// Biến chi phí nằm trong analysis_ready (cột cost_*): chọn biến này thì đề cương cần phần Chi phí.
+function variableParts(v) {
+  const table = String(v?.table || '');
+  const name = String(v?.name || v?.column || String(v?.id || '').split('.').pop() || '');
+  const parts = [...(TABLE_PARTS[table] || [])];
+  if (table === 'analysis_ready' && name.startsWith('cost_')) parts.push('billing');
+  return parts;
+}
+
 const ITEM_KINDS = {
   lab_item: { table: 'lab_results', part: 'xn', label: 'Xét nghiệm' },
   imaging_modality: { table: 'imaging_results', part: 'cdha', label: 'CĐHA' },
@@ -1338,7 +1355,7 @@ const ITEM_KINDS = {
 
 function sanitizeDataRequirements(input) {
   const src = input && typeof input === 'object' ? input : {};
-  const parts = Array.isArray(src.parts) ? [...new Set(src.parts.map(String).filter(p => PART_KEYS.includes(p)))] : [];
+  const parts = Array.isArray(src.parts) ? [...new Set(src.parts.map(String).filter(p => ALL_PART_KEYS.includes(p)))] : [];
   const items = Array.isArray(src.items) ? src.items.slice(0, 50).map(it => ({
     kind: ITEM_KINDS[String(it?.kind || '')] ? String(it.kind) : '',
     value: String(it?.value ?? '').trim().slice(0, 120),
@@ -1359,13 +1376,30 @@ function requirementsFromStudy(study) {
   if (variableSelection.hasActiveSelection(selection)) {
     const parts = new Set();
     for (const v of [...(selection.selected_variables || []), ...(selection.conditions || [])]) {
-      for (const p of TABLE_PARTS[String(v.table || '')] || []) parts.add(p);
+      for (const p of variableParts(v)) parts.add(p);
     }
     // Chỉ điều kiện chọn mẫu (không phải biến kết cục) mới đòi dữ liệu phải CÓ.
     const conditions = (selection.conditions || []).filter(c => c.table && TABLE_PARTS[c.table] && String(c.operator || '') !== 'empty');
     return { source: 'variables', parts: parts.size ? [...parts] : [...PART_KEYS], items: [], conditions };
   }
   return { source: 'default', parts: [...PART_KEYS], items: [], conditions: [] };
+}
+
+// Phần cần thu thập cho một đề cương: các phần mặc định + phần tùy chọn (Chi phí) khi đề cương
+// cần tới. Không có đề cương (kho gốc) thì chỉ phần mặc định.
+function collectionPartsForStudy(study) {
+  const required = study ? requirementsFromStudy(study).parts : [];
+  return [...PART_KEYS, ...OPTIONAL_PART_KEYS.filter(k => required.includes(k))];
+}
+
+// Phần giao cho một lần thu thập: người dùng chọn rõ thì đúng các phần đó; không thì phần của đề
+// cương, cộng phần tùy chọn người dùng vừa bấm "Làm mới ngay".
+function resolveCollectionParts({ requested = [], refreshParts = [], study = null } = {}) {
+  const pick = list => (Array.isArray(list) ? list.map(String).filter(k => ALL_PART_KEYS.includes(k)) : []);
+  const chosen = pick(requested);
+  if (chosen.length) return [...new Set(chosen)];
+  const base = collectionPartsForStudy(study);
+  return [...new Set([...base, ...pick(refreshParts).filter(k => OPTIONAL_PART_KEYS.includes(k))])];
 }
 
 function itemPresent(item, rows) {
@@ -1477,6 +1511,10 @@ module.exports = {
   ORDER_HISTORY_FETCH_WINDOW_VERSION,
   PARTS,
   PART_KEYS,
+  OPTIONAL_PART_KEYS,
+  ALL_PART_KEYS,
+  collectionPartsForStudy,
+  resolveCollectionParts,
   REASON_LABELS,
   DIAGNOSTIC_STAGE_LABELS,
   diagnosticFor,

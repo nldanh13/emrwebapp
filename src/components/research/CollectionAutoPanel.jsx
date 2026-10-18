@@ -11,6 +11,8 @@ import { Btn, Spinner } from '../shared.jsx';
 const COLLECTION_PARTS = [
   ['xn', 'Xét nghiệm'], ['cdha', 'CĐHA'], ['profile', 'Hồ sơ nền'],
   ['discharge', 'Ra viện'], ['surgery', 'Phẫu thuật'], ['order_history', 'Y lệnh'],
+  // Chi phí (bảng kê) là phần tùy chọn: chỉ lấy khi đánh dấu ở Yêu cầu dữ liệu hoặc chọn biến chi phí.
+  ['billing', 'Chi phí'],
 ];
 
 const COLLECTION_CATEGORY_LABEL = {
