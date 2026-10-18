@@ -98,6 +98,19 @@ const SUGGESTIONS = {
 
 let RUNNING = [];
 
+const FIELD_CATALOG = {
+  total_fields: 3, filled_fields: 1,
+  groups: [
+    { key: 'encounters', table: 'encounters', label: 'Đợt điều trị (vào viện, ra viện, sinh hiệu lúc vào)', unit: 'lượt', grain: 'Một đợt.', has_file: true, rows: 10, counted_rows: 10, limited: false, fields: [
+      { name: 'admission_pulse', meaning: 'Mạch lúc vào viện (Phiếu vào viện).', type: 'decimal', unit: 'lần/phút', use: 'allowed', technical: false, filled: 7 },
+      { name: 'row_hash', meaning: 'Mã băm nội dung dòng.', type: 'string', use: 'allowed', technical: true, filled: 10 },
+    ] },
+    { key: 'cost', table: 'analysis_ready', label: 'Chi phí điều trị (bảng kê)', unit: 'lượt', has_file: true, rows: 10, counted_rows: 10, limited: false, fields: [
+      { name: 'cost_total', meaning: 'Ô "Tổng chi phí" trong khối Tổng hợp chi phí của bảng kê EMR.', type: 'integer', unit: 'đồng', use: 'allowed', technical: false, filled: 0 },
+    ] },
+  ],
+};
+
 function responseFor(name, args = []) {
   if (name === 'getResearchRunning') return { status: 'ok', running: RUNNING, server_time: new Date().toISOString() };
   if (name === 'getResearchStudySuggestions') return { status: 'ok', ...SUGGESTIONS };
@@ -105,6 +118,7 @@ function responseFor(name, args = []) {
   if (name === 'getResearchStudyCrf') return { status: 'ok', ...CRF };
   if (name === 'saveResearchStudyCrfEntry') return { status: 'ok', message: 'Đã lưu phiếu NC0001.' };
   if (name === 'getResearchArchivePipeline') return { status: 'ok', pipeline: PIPELINE };
+  if (name === 'getResearchArchiveFieldCatalog') return { status: 'ok', catalog: FIELD_CATALOG };
   if (name === 'getResearchArchive') return { status: 'ok', archive: ARCHIVE };
   if (name === 'listResearchStudies') return { status: 'ok', studies: [NEW_STUDY, DONE_STUDY] };
   if (name === 'previewResearchArchiveVariables' || name === 'getResearchStudyVariableStats') return { status: 'ok', summary: STATS_SUMMARY, rows: [] };
@@ -201,6 +215,28 @@ describe('ResearchTab (khói)', () => {
     expect(text).not.toContain('Selenium');
     expect(text).not.toContain('NC0001');
     expect(container.querySelector('input[placeholder^="Tìm mã NC"]')).toBeNull();
+  });
+
+  it('Tổng quát liệt kê mọi trường dữ liệu theo nhóm, kèm số lượt đã có giá trị', async () => {
+    await clickText('Dữ liệu tổng quát');
+    let text = container.textContent;
+    expect(text).toContain('Các trường dữ liệu lấy được');
+    expect(text).toContain('Đợt điều trị (vào viện, ra viện, sinh hiệu lúc vào)');
+    expect(text).toContain('Chi phí điều trị (bảng kê)');
+    expect(text).toContain('Mạch lúc vào viện (Phiếu vào viện)');
+    expect(text).toContain('7 / 10 · 70%');
+    expect(text).toContain('Chưa có');
+    // Cột kỹ thuật ẩn mặc định, bật ô chọn thì hiện.
+    expect(text).not.toContain('row_hash');
+    const technical = [...container.querySelectorAll('input[type="checkbox"]')].find(el => el.parentElement.textContent.includes('cột kỹ thuật'));
+    await act(async () => { technical.click(); });
+    await flush();
+    expect(container.textContent).toContain('row_hash');
+    // Tìm theo tên tiếng Việt không dấu.
+    await setInput(container.querySelector('input[aria-label="Tìm trường dữ liệu"]'), 'chi phi');
+    text = container.textContent;
+    expect(text).toContain('Chi phí điều trị (bảng kê)');
+    expect(text).not.toContain('Mạch lúc vào viện');
   });
 
   it('Tổng quát hiện rõ nội dung lỗi chặn QA thay vì chỉ hiện số lượng', async () => {

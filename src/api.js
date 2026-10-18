@@ -548,6 +548,11 @@ export const getResearchArchiveVariableCatalog = ({ runId = 'latest' } = {}) => 
   if (runId) params.set('runId', runId);
   return get(`/api/research/archive/variable-catalog?${params}`);
 };
+export const getResearchArchiveFieldCatalog = ({ runId = 'latest' } = {}) => {
+  const params = new URLSearchParams();
+  if (runId) params.set('runId', runId);
+  return get(`/api/research/archive/field-catalog?${params}`);
+};
 export const previewResearchArchiveVariables = (payload = {}) => post('/api/research/archive/variable-preview', payload);
 export const exportResearchArchiveVariables = (payload = {}) => downloadBlob('/api/research/archive/variable-export', 'du_lieu_nghien_cuu.csv', { method: 'POST', body: payload });
 export const getResearchStudySuggestions = () => get('/api/research/archive/study-suggestions');
