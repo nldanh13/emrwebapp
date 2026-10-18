@@ -114,6 +114,7 @@ const SCREENS = [
     'Xong thì hiện danh sách; người mới so với lần trước được đánh dấu "Mới trong ca".',
   ], [
     ['list', 'Người bệnh đã quét', ['Mã BN', 'Họ tên', 'Vào khoa', 'Phòng', 'Mới trong ca']],
+    ['tile', 'Trên EMR: Danh sách điều trị nội trú', 'Xem máy đọc gì trên EMR', 'emr_list'],
     ['button', 'Tiếp: Lấy chi tiết y lệnh', '', 'acq_detail'],
     ['button', 'Quay lại', '', 'acquire'],
   ]),
@@ -126,6 +127,7 @@ const SCREENS = [
   ], [
     ['select', 'Phạm vi lấy chi tiết', ['Tất cả phòng', 'Chọn phòng', 'Mới trong ca']],
     ['list', 'Phòng đã xếp', ['Phòng', 'Số người', 'Chọn']],
+    ['tile', 'Trên EMR: Màn hình bác sĩ', 'Xem máy đọc y lệnh thế nào', 'emr_doctor'],
     ['button', 'Bắt đầu lấy chi tiết', 'Xếp tác vụ vào hàng đợi EMR.', 'acq_progress'],
     ['button', 'Quay lại', '', 'acquire'],
   ]),
@@ -253,6 +255,7 @@ const SCREENS = [
     'Người dùng xem lại rồi bấm Xác nhận; Hủy thì không ghi gì lên EMR.',
   ], [
     ['heading', 'Kết quả kiểm tra trước nhập'],
+    ['tile', 'Trên EMR: Đăng nhập', 'Tài khoản nào ghi phiếu nào', 'emr_login'],
     ['list', 'Thay đổi phát hiện', ['Người bệnh', 'Mục', 'Thay đổi']],
     ['button', 'Xác nhận nhập', 'Bắt đầu ghi lên EMR.', 'ward_running'],
     ['button', 'Đổi phạm vi', '', 'ward_scope'],
@@ -266,6 +269,8 @@ const SCREENS = [
     'Bấm Dừng thì dừng sau người bệnh đang làm.',
   ], [
     ['list', 'Tiến độ từng người bệnh', ['Người bệnh', 'CS', 'DT', 'TT', 'Tài khoản lập']],
+    ['tile', 'Trên EMR: Màn hình điều dưỡng', 'Phiếu chăm sóc, truyền dịch, VTYT', 'emr_nursing'],
+    ['tile', 'Trên EMR: Danh sách thủ thuật', 'Nhập và hoàn tất thủ thuật', 'emr_procedures'],
     ['button', 'Dừng'],
     ['button', 'Xong: xem kết quả', '', 'ward_result'],
   ]),
@@ -374,6 +379,7 @@ const SCREENS = [
     ['select', 'Trạng thái dữ liệu', ['Mọi trạng thái', 'Chưa lấy', 'Đủ dữ liệu', 'Cần xử lý', 'Lỗi máy']],
     ['select', 'Checklist', ['Mọi checklist', 'Chưa kiểm / cần kiểm lại', 'Có mục cần sửa', 'Đã kiểm xong']],
     ['list', 'Hồ sơ cần kiểm', ['Người bệnh', 'Ra viện', 'Bảng kê', 'Ngày giường', 'Phẫu thuật', 'Checklist']],
+    ['tile', 'Trên EMR: Đọc hồ sơ', 'Bảng kê, phẫu thuật, ra viện (chỉ đọc)', 'emr_records'],
     ['button', 'Mở một hồ sơ', '', 'hc_patient'],
     ['button', 'Cập nhật', 'Lấy lại dữ liệu EMR cho hồ sơ cần kiểm.', 'acq_progress'],
     ['button', 'Tác vụ khác', 'In bảng kê, phiếu sửa, sửa ngày giường.', 'hc_more'],
@@ -402,6 +408,7 @@ const SCREENS = [
     ['button', 'In bảng kê'],
     ['button', 'In phiếu sửa'],
     ['button', 'Sửa ngày giường', 'Tiền kiểm, xác nhận rồi mới ghi EMR.'],
+    ['tile', 'Trên EMR: Sửa buồng giường', 'Mở sẵn hộp sửa cho bạn', 'emr_bed_edit'],
     ['button', 'Quay lại', '', 'hc'],
   ]),
   S('vt', 'Công việc', 'Nhập VTYT', [
@@ -422,6 +429,7 @@ const SCREENS = [
   ], [
     ['list', 'Vật tư sẽ nhập', ['Người bệnh', 'Vật tư', 'SL', 'Mã']],
     ['list', 'Cần kiểm tra pha/truyền', ['Người bệnh', 'Thuốc', 'Vấn đề']],
+    ['tile', 'Trên EMR: Nhập thuốc, VTYT', 'Xem máy ghi vật tư thế nào', 'emr_vtyt'],
     ['button', 'Nhập VTYT', 'Tiền kiểm → ghi EMR → xác minh.', 'ward_precheck'],
     ['button', 'Sang Danh mục VTYT', '', 'vc'],
     ['button', 'Quay lại', '', 'vt'],
@@ -502,6 +510,7 @@ const SCREENS = [
     'Rà soát danh sách BHXH gửi về để đối chiếu kết quả.',
   ], [
     ['list', 'Giấy nghỉ ốm', ['Họ tên', 'Loại', 'Nghỉ từ', 'Đến', 'Trạng thái BHXH']],
+    ['tile', 'Trên EMR: Giấy nghỉ việc BHXH', 'Máy đọc 7 ô (chỉ đọc)', 'emr_cert'],
     ['button', 'Tài khoản cổng BHXH', '', 'sl_account'],
     ['button', 'Hỏi người bệnh thẻ DN', 'Giấy chưa ghi nghỉ ốm.', 'sl_ask'],
     ['button', 'Đăng nhập cổng BHXH', '', 'sl_login'],
@@ -568,6 +577,7 @@ const SCREENS = [
     ['button', 'Thiết lập', '', 'cl_setup'],
     ['list', 'Thống kê lượt bệnh', ['Chờ khám', 'Đang thực hiện', 'Hoàn tất khám', 'Chuyển viện', 'Nhập viện']],
     ['list', 'Danh sách khám', ['Mã BN', 'Họ tên', 'Trạng thái', 'Xử trí', 'Dịch vụ', 'Việc tiếp theo', 'Còn vướng', 'Hoàn tất khám']],
+    ['tile', 'Trên EMR: Danh sách Khám bệnh', 'Xem máy đọc gì mỗi vòng', 'emr_clinic_list'],
     ['tile', 'Việc cần làm', 'Thủ thuật, phẫu thuật, SBBHC', 'cl_todo'],
     ['tile', 'Hoàn tất khám', 'Người đã có thuốc', 'cl_finish'],
     ['tile', 'Nhập viện · nhập chăm sóc', 'Người nhập viện từ Khoa Khám Bệnh', 'cl_admit'],
@@ -593,6 +603,7 @@ const SCREENS = [
     'Phiếu kết quả thủ thuật và phiếu phẫu thuật đã hoàn tất gộp thành 1 file PDF.',
   ], [
     ['list', 'Việc cần làm', ['Người bệnh', 'Loại', 'DVKT', 'Chỉ định lúc', 'Trạng thái']],
+    ['tile', 'Trên EMR: Thực hiện thủ thuật', 'Xem máy bấm gì', 'emr_procedures'],
     ['button', 'Nhập ngay', 'Hỏi xác nhận rồi nhập lên EMR.'],
     ['select', 'Tự hoàn thành khi có chỉ định', ['Tắt', 'Bật']],
     ['button', 'Soạn nháp SBBHC'],
@@ -607,6 +618,7 @@ const SCREENS = [
     'Viện phí: thủ thuật BHYT làm trước, viện phí làm sau khi đã đóng tiền.',
   ], [
     ['list', 'Đủ điều kiện hoàn tất', ['Người bệnh', 'Có thuốc', 'Kiểm tra khi bấm Hoàn tất']],
+    ['tile', 'Trên EMR: Màn hình khám bệnh', 'Xem máy bấm Hoàn tất thế nào', 'emr_exam'],
     ['button', 'Hoàn tất khám', 'Hỏi xác nhận số người rồi làm lần lượt.'],
     ['button', 'Hoàn tất cuối ngày', 'Hỏi xác nhận.'],
     ['button', 'Quay lại', '', 'cl'],
@@ -618,6 +630,7 @@ const SCREENS = [
   ], [
     ['input', 'Ngày T/G vào'],
     ['list', 'Người bệnh nhập viện', ['Họ tên', 'T/G vào', 'Điều dưỡng theo lịch', 'Phiếu chăm sóc']],
+    ['tile', 'Trên EMR: Chăm sóc người nhập viện', 'Xem máy lập phiếu thế nào', 'emr_admit_care'],
     ['button', 'Nhập', 'Tiền kiểm, lập phiếu chăm sóc, xác minh.'],
     ['button', 'Quay lại', '', 'cl'],
   ]),
@@ -789,6 +802,204 @@ const SCREENS = [
     ['button', 'Duyệt'],
     ['button', 'Thu hồi'],
     ['button', 'Quay lại', '', 'ac'],
+  ]),
+  // ── Trên EMR ───────────────────────────────────────────────────────────────
+  // Những gì máy thật sự làm trên trang EMR (ONEMES HIS) khi chạy từng chức năng.
+  // (đọc) = chỉ xem, không đổi gì trên EMR. (GHI) = có lưu/hoàn tất/xóa trên EMR.
+  // Trong ngoặc vuông là mã ô trên trang EMR mà máy gõ/bấm, để đối chiếu khi cần.
+  S('emr_login', 'Trên EMR', 'EMR: Đăng nhập', [
+    '(đọc) Mở trang EMR của bệnh viện trong Chrome riêng của tác vụ (mỗi tác vụ một Chrome, không dùng chung).',
+    '(đọc) Gõ tên đăng nhập vào ô [txtLoginName], mật khẩu vào ô [txtPassword], bấm [btnLogin].',
+    'Việc chỉ đọc dùng tài khoản chung; việc ghi dùng tài khoản của điều dưỡng/bác sĩ theo Lịch làm việc hoặc Lịch phòng khám.',
+    'Mỗi lượt chạy đăng nhập một lần; riêng nhập chăm sóc thì đăng nhập lần lượt từng người đứng tên ca.',
+    'Sai mật khẩu hoặc EMR không vào được thì dừng và báo bằng tiếng Việt, không thử lại liên tục.',
+  ], [
+    ['input', 'Tên đăng nhập', '[txtLoginName]'],
+    ['input', 'Mật khẩu', '[txtPassword] · không bao giờ in ra màn hình hay nhật ký'],
+    ['button', 'Đăng nhập', '[btnLogin] → vào Danh sách điều trị nội trú', 'emr_list'],
+  ]),
+  S('emr_list', 'Trên EMR', 'EMR: Danh sách điều trị nội trú', [
+    '(đọc) Mở trang danh sách điều trị nội trú (wpid=danhsachdieutrinoitrudraw), bảng [tblNoiTru].',
+    '(đọc) Chọn trạng thái: Đang thực hiện / Hoàn tất / Đi mổ.',
+    '(đọc) Quét: chọn thời gian "Khoảng" từ ngày – đến ngày, bấm Tìm kiếm, đọc hết mọi trang.',
+    '(đọc) Tìm một người: gõ mã BN vào ô [txtTimKiem], bấm Tìm kiếm.',
+    'Người đang "Đi mổ" thì dừng, không nhập gì cho người đó.',
+    'Đọc bằng kết nối nhanh trước (không mở Chrome); không được mới mở Chrome ẩn. EMR báo quá tải (429/503) thì dừng.',
+  ], [
+    ['select', 'Trạng thái', ['Đang thực hiện', 'Hoàn tất', 'Đi mổ']],
+    ['input', 'Thời gian Khoảng', 'Từ ngày – đến ngày'],
+    ['input', 'Tìm kiếm', '[txtTimKiem] · mã BN'],
+    ['list', 'Bảng người bệnh [tblNoiTru]', ['Mã BN', 'Họ tên', 'T/G vào', 'Đợt điều trị', 'Giường']],
+    ['button', 'Bấm tên người bệnh', '(đọc) mở màn hình bác sĩ', 'emr_doctor'],
+    ['button', 'Bấm biểu tượng con mắt', '(đọc) mở màn hình điều dưỡng', 'emr_nursing'],
+    ['button', 'Hết phiên → đăng nhập lại', '', 'emr_login'],
+  ]),
+  S('emr_doctor', 'Trên EMR', 'EMR: Màn hình bác sĩ (y lệnh)', [
+    '(đọc) Trang bác sĩ (wpid=bacsidraw) của người bệnh vừa bấm tên.',
+    '(đọc) Mở tab Y lệnh / Lịch sử y lệnh, chọn hiện tất cả.',
+    '(đọc) Đọc từng phiếu y lệnh: thuốc, dịch truyền, thủ thuật, xét nghiệm, diễn biến, dấu "Hoàn tất".',
+    '(đọc) Quay về danh sách bằng địa chỉ cố định, sang người kế. Không bấm nút lưu nào.',
+  ], [
+    ['list', 'Phiếu y lệnh', ['Ngày giờ', 'Thuốc', 'Dịch truyền', 'Thủ thuật', 'Trạng thái']],
+    ['button', 'Về danh sách', '', 'emr_list'],
+  ]),
+  S('emr_records', 'Trên EMR', 'EMR: Đọc hồ sơ để Kiểm HSBA', [
+    '(đọc) Chi phí chi tiết (chiphichitietdraw): đọc bảng dịch vụ, thuốc, vật tư [dsDichVu] [dsThuoc] [dsVatTu].',
+    '(đọc) Danh sách phẫu thuật → từng phiếu: giờ bắt đầu [txtBatDauPT], kết thúc [txtKetThucPT], phương pháp [cbbPhuongPhapPT], ICD9 [cbbICD9].',
+    '(đọc) Trang ra viện: chẩn đoán [cboChanDoan], bảng chẩn đoán [tblChanDoan], xử trí, lời dặn, hẹn tái khám.',
+    '(đọc) Trang ngày giường và trang giấy tờ kèm theo.',
+    'Chỉ đọc qua kết nối nhanh, không lưu gì lên EMR. Phần đã có trong kho thì không đọc lại.',
+  ], [
+    ['list', 'Dữ liệu đọc về', ['Bảng kê', 'Phẫu thuật', 'Ra viện', 'Ngày giường', 'Giấy tờ']],
+    ['button', 'Về Kiểm HSBA', '', 'hc'],
+  ]),
+  S('emr_nursing', 'Trên EMR', 'EMR: Màn hình điều dưỡng', [
+    '(đọc) Trang điều dưỡng (wpid=dieuduongdraw) của người bệnh, mở bằng biểu tượng con mắt.',
+    'Từ đây máy đi vào: Thông tin chăm sóc, Phiếu truyền dịch, Nhập thuốc – VTYT, Buồng giường.',
+  ], [
+    ['button', 'TT chăm sóc', '[btnTTCS]', 'emr_care_list'],
+    ['button', 'Phiếu truyền dịch', '[btnPTD]', 'emr_infusion'],
+    ['button', 'Chăm sóc → Nhập thuốc, VTYT', 'menu Chăm sóc', 'emr_vtyt'],
+    ['button', 'Chăm sóc → Buồng giường', 'menu Chăm sóc', 'emr_bed_edit'],
+    ['button', 'Về danh sách', '', 'emr_list'],
+  ]),
+  S('emr_care_list', 'Trên EMR', 'EMR: Danh sách phiếu chăm sóc', [
+    '(đọc) Đọc các phiếu chăm sóc đã có: giờ lập, người lập, trạng thái.',
+    'Chưa có phiếu giờ đó → bấm Thêm [btnThemCS] để lập mới.',
+    'Có phiếu cùng người đứng tên → mở phiếu, (GHI) Thu hồi [btnPopupTHUHOI], sửa, rồi Hoàn tất lại.',
+    'Phiếu đứng tên người khác → (GHI) Thu hồi rồi Xóa (bằng tài khoản đang dùng, không được thì bằng tài khoản người lập), sau đó lập lại.',
+    'Không xóa được thì không lập thêm phiếu trùng, chỉ báo để kiểm tay.',
+  ], [
+    ['list', 'Phiếu chăm sóc', ['Giờ lập', 'Người lập', 'Trạng thái']],
+    ['button', 'Thêm', '[btnThemCS]', 'emr_care_form'],
+    ['button', 'Mở phiếu cũ', 'Thu hồi [btnPopupTHUHOI] rồi sửa', 'emr_care_form'],
+    ['button', 'Xóa phiếu sai người', '(GHI) Thu hồi + Xóa'],
+    ['button', 'Về màn hình điều dưỡng', '', 'emr_nursing'],
+  ]),
+  S('emr_care_form', 'Trên EMR', 'EMR: Phiếu chăm sóc', [
+    '(GHI) Gõ thời gian lập [txtThoiGianLap] trước, đọc lại để chắc đúng giờ.',
+    '(GHI) Sinh hiệu: mạch [txtMachTrenlan], nhiệt độ [txtNhietDo], huyết áp [txtHuyetAp]/[txtHuyetApk], nhịp thở [txtNhipTho].',
+    '(GHI) Diễn biến [txtDienBien], chăm sóc [txtChamSoc]; người lập [cbbNguoiLap] = chủ tài khoản đang đăng nhập.',
+    '(GHI) Bấm Lưu [btnSaveChamSocPopupDraw] → Hoàn tất [btnPopupHOANTAT] → đồng ý hộp xác nhận.',
+    'Hết giờ chờ hoặc mất kết nối: không bấm Lưu lần hai; đánh dấu "không rõ kết quả" để đọc lại kiểm.',
+  ], [
+    ['input', 'Thời gian lập', '[txtThoiGianLap]'],
+    ['input', 'Mạch · Nhiệt độ · Huyết áp · Nhịp thở', '[txtMachTrenlan] [txtNhietDo] [txtHuyetAp] [txtHuyetApk] [txtNhipTho]'],
+    ['input', 'Diễn biến', '[txtDienBien]'],
+    ['input', 'Chăm sóc', '[txtChamSoc]'],
+    ['select', 'Người lập', '[cbbNguoiLap]'],
+    ['button', 'Lưu', '(GHI) [btnSaveChamSocPopupDraw]'],
+    ['button', 'Hoàn tất', '(GHI) [btnPopupHOANTAT] rồi xác nhận', 'emr_care_list'],
+  ]),
+  S('emr_infusion', 'Trên EMR', 'EMR: Phiếu truyền dịch', [
+    '(đọc) Đọc hết mọi trang phiếu truyền dịch, so với y lệnh trong kho.',
+    'Dòng sai → (GHI) xóa (đổi sang tài khoản người lập nếu cần) rồi nhập lại.',
+    'Dòng thiếu → (GHI) chọn Y lệnh đúng ngày giờ → chọn lại Bác sĩ [cbbBacSi] → Y tá theo lịch → chọn thuốc [cbbThuoc] và dung dịch pha.',
+    '(GHI) Gõ tên, thể tích, tốc độ, thời gian bắt đầu – kết thúc → bấm Thêm.',
+    '(đọc) Cuối cùng đọc lại cả phiếu; còn thiếu thì thử thêm đúng một lần.',
+  ], [
+    ['select', 'Y lệnh', 'Đúng ngày giờ'],
+    ['select', 'Bác sĩ', '[cbbBacSi]'],
+    ['select', 'Y tá', 'Theo Lịch làm việc'],
+    ['select', 'Thuốc', '[cbbThuoc] + dung dịch pha'],
+    ['input', 'Thể tích · Tốc độ · Thời gian'],
+    ['button', 'Thêm', '(GHI) thêm dòng truyền dịch'],
+    ['button', 'Về màn hình điều dưỡng', '', 'emr_nursing'],
+  ]),
+  S('emr_vtyt', 'Trên EMR', 'EMR: Nhập thuốc, VTYT sử dụng', [
+    '(đọc) Menu Chăm sóc → Nhập thuốc, VTYT → Nhập thuốc/VTYT sử dụng.',
+    '(đọc) Đặt khoảng ngày y lệnh, Tìm kiếm, tick các y lệnh của ngày cần nhập.',
+    '(GHI) Đặt Thời gian nhập; với từng vật tư: chọn vật tư, gõ số lượng.',
+    'Vật tư không có trong danh mục EMR thì bỏ qua; dư quá 2 thì để người dùng kiểm tay.',
+    '(GHI) Bấm Xác nhận, đóng cửa sổ.',
+  ], [
+    ['input', 'Khoảng ngày y lệnh'],
+    ['list', 'Y lệnh của ngày', ['Chọn', 'Ngày', 'Thuốc']],
+    ['input', 'Thời gian nhập'],
+    ['select', 'Vật tư + số lượng'],
+    ['button', 'Xác nhận', '(GHI) lưu vật tư sử dụng'],
+    ['button', 'Về màn hình điều dưỡng', '', 'emr_nursing'],
+  ]),
+  S('emr_procedures', 'Trên EMR', 'EMR: Danh sách thủ thuật', [
+    '(đọc) Mở danh sách thủ thuật (wpid=danhsachthuthuatdraw), thời gian "Khoảng" theo ngày, tìm mã BN.',
+    '(đọc) Đọc từng dòng: ngày, dịch vụ kỹ thuật, trạng thái. Dòng đã Hoàn tất thì bỏ qua.',
+    '(GHI) Bấm tên → Vào thực hiện; giờ bắt đầu, giờ kết thúc = bắt đầu + 10 phút (trước giờ ra viện).',
+    '(GHI) Vô cảm: Không; thủ thuật viên theo lịch; chọn mẫu tường trình [cbbMauTuongTrinh], điền tường trình.',
+    '(GHI) Bấm Lưu rồi Hoàn tất. EMR báo lỗi hoặc hỏi xác nhận thì dừng ở người đó.',
+  ], [
+    ['input', 'Thời gian Khoảng · mã BN'],
+    ['list', 'Thủ thuật', ['Ngày', 'DVKT', 'Trạng thái']],
+    ['button', 'Vào thực hiện', '(GHI) mở phiếu thực hiện'],
+    ['select', 'Mẫu tường trình', '[cbbMauTuongTrinh]'],
+    ['button', 'Lưu', '(GHI)'],
+    ['button', 'Hoàn tất', '(GHI)'],
+    ['button', 'Về danh sách nội trú', '', 'emr_list'],
+  ]),
+  S('emr_clinic_list', 'Trên EMR', 'EMR: Danh sách Khám bệnh', [
+    '(đọc) Một Chrome đăng nhập bằng tài khoản bác sĩ theo Lịch phòng khám, giữ suốt buổi.',
+    '(đọc) Mỗi vòng đọc danh sách một lần với cỡ trang lớn, lọc theo ngày.',
+    '(đọc) Đọc trạng thái, xử trí, dịch vụ (vd. CĐHA 1/1, TT 0/1); bấm số TT để xem Lịch sử thủ thuật.',
+    'Mất phiên thì đăng nhập lại rồi đọc tiếp.',
+  ], [
+    ['input', 'Ngày'],
+    ['list', 'Danh sách khám', ['Mã BN', 'Họ tên', 'Trạng thái', 'Xử trí', 'Dịch vụ']],
+    ['button', 'Bấm tên người bệnh', 'mở màn hình khám', 'emr_exam'],
+    ['button', 'Thủ thuật còn Mới', '', 'emr_procedures'],
+    ['button', 'Mất phiên → đăng nhập lại', '', 'emr_login'],
+  ]),
+  S('emr_exam', 'Trên EMR', 'EMR: Màn hình khám bệnh', [
+    '(đọc) Mở giao diện khám (giaodienkhambenhdraw); kiểm trước khi bấm: số thuốc [tblThuoc], ô bắt buộc, giờ bắt đầu khám, dịch vụ đã xong.',
+    '(GHI) Bấm Vào khám [btnVAOKHAM] nếu cần; sửa Thời gian ra cho đúng.',
+    '(GHI) Bấm Hoàn tất [btnHOANTAT]. EMR nhắc cân nặng → lưu cân nặng → Hoàn tất lại.',
+    'EMR hiện hộp lỗi/hỏi khác thì dừng ở người đó, không bấm tiếp.',
+    'SBBHC: (GHI) Giấy tờ kèm theo → thêm SBBHC → điền ở tab mới → Hoàn tất → (đọc) tải phiếu in PDF để gộp.',
+  ], [
+    ['list', 'Đơn thuốc [tblThuoc]', ['Thuốc', 'SL']],
+    ['input', 'Thời gian ra'],
+    ['button', 'Vào khám', '(GHI) [btnVAOKHAM]'],
+    ['button', 'Hoàn tất', '(GHI) [btnHOANTAT]'],
+    ['button', 'Giấy tờ kèm theo → SBBHC', '(GHI) lập sổ biên bản hội chẩn'],
+    ['button', 'Điều trị ngoại trú', '', 'emr_ngoaitru'],
+    ['button', 'Về danh sách khám', '', 'emr_clinic_list'],
+  ]),
+  S('emr_ngoaitru', 'Trên EMR', 'EMR: Tiếp nhận điều trị ngoại trú', [
+    '(đọc) Mở D/s tiếp nhận ngoại trú, bảng [tblDS], tìm người bệnh.',
+    '(GHI) Thời gian vào khoa [txtThoiGianVaoKhoa] = giờ khám + 3 phút; người nhận [cboNguoiNhan].',
+    '(GHI) Bấm "Lưu tiếp nhận ngoại trú" [btnSave] rồi "Nhập khoa" [btnNHAPKHOA].',
+    '(GHI) Phẫu thuật làm từ D/s Phẫu thuật theo mẫu; cuối cùng đặt thời gian ra.',
+  ], [
+    ['input', 'Thời gian vào khoa', '[txtThoiGianVaoKhoa]'],
+    ['select', 'Người nhận', '[cboNguoiNhan]'],
+    ['button', 'Lưu tiếp nhận ngoại trú', '(GHI) [btnSave]'],
+    ['button', 'Nhập khoa', '(GHI) [btnNHAPKHOA]'],
+    ['button', 'Quay lại màn hình khám', '', 'emr_exam'],
+  ]),
+  S('emr_admit_care', 'Trên EMR', 'EMR: Chăm sóc người nhập viện', [
+    '(đọc) Danh sách nội trú lọc theo ngày T/G vào, đọc hết mọi trang, giữ người đúng khoa.',
+    '(đọc) Lịch sử y lệnh chọn hiện tất cả; đã có phiếu chăm sóc Hoàn tất thì bỏ qua.',
+    '(GHI) Lập phiếu chăm sóc bằng tài khoản điều dưỡng phòng khám theo Lịch phòng khám (giống phiếu chăm sóc nội trú).',
+  ], [
+    ['list', 'Người nhập viện', ['Họ tên', 'T/G vào', 'Phiếu chăm sóc']],
+    ['button', 'Lập phiếu chăm sóc', '', 'emr_care_form'],
+    ['button', 'Về danh sách nội trú', '', 'emr_list'],
+  ]),
+  S('emr_cert', 'Trên EMR', 'EMR: Giấy chứng nhận nghỉ việc BHXH', [
+    '(đọc) Đăng nhập → menu bên → Danh sách Khám bệnh.',
+    '(đọc) Gõ tên vào [txtTimKiem], bấm [btnTimKiem], chọn người bệnh.',
+    '(đọc) Menu → "Giấy chứng nhận nghỉ việc hưởng BHXH" → đọc 7 ô trong hộp: số ngày nghỉ [txtSoNgayNghi], đơn vị [txtDonViLamViec], mã BHXH [txtMaSoBHXH], thẻ BHYT [txtSoTheBHYT], ngày cấp [txtNgayCapGiay], nghỉ từ [txtNghiTuNgay], nghỉ đến [txtNghiDenNgay].',
+    'Chỉ đọc, không lưu gì trên EMR. Phải chạy ở máy trong bệnh viện.',
+  ], [
+    ['input', 'Tìm tên', '[txtTimKiem] + [btnTimKiem]'],
+    ['list', 'Hộp giấy nghỉ việc', ['Số ngày', 'Đơn vị', 'Mã BHXH', 'Thẻ BHYT', 'Ngày cấp', 'Từ', 'Đến']],
+    ['button', 'Về Nghỉ ốm', '', 'sl'],
+  ]),
+  S('emr_bed_edit', 'Trên EMR', 'EMR: Sửa buồng giường', [
+    '(đọc) Mở Chrome hiện (không ẩn), vào màn hình điều dưỡng của người bệnh bằng con mắt.',
+    '(đọc) Menu Chăm sóc → Buồng giường → bấm "Sửa thông tin".',
+    'Máy dừng ở hộp sửa để người dùng tự sửa và tự lưu; máy không bấm Lưu.',
+  ], [
+    ['heading', 'Hộp "Sửa thông tin" để người dùng tự sửa'],
+    ['button', 'Về Tác vụ khác', '', 'hc_more'],
   ]),
 ];
 

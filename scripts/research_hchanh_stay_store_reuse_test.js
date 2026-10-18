@@ -28,6 +28,7 @@ require.cache[runnerPath].exports = {
         profile: { _fetch_status: 'ok', ngay_vao_vien: '08:00 20/09/2026', bhyt_code: `EMR-${item.ma_bn}` },
         discharge: { _fetch_status: 'ok', ngay_ra: '28/09/2026', xu_tri: 'Ra viện (EMR)' },
         surgery: { _fetch_status: 'ok', surgeries: [] },
+        billing: { _fetch_status: 'ok', rows: [{ name: 'Ngày giường', thanh_tien: 100000, payment_group: 'bhyt' }], tong_hop: { tong_chi_phi: 100000 } },
       };
       out[item._progress_key] = Object.fromEntries(files.map(f => [f, all[f]]));
     }
@@ -41,11 +42,12 @@ const router = require('../server/routes/research');
 const fetchRun = router._fetchHchanhForResearchRun;
 
 (async () => {
-  // 333: tab Hành chánh đã lấy đủ 3 file; 444: Kiểm hồ sơ mới có ra viện.
+  // 333: tab Hành chánh đã lấy đủ 4 file (gồm bảng kê); 444: Kiểm hồ sơ mới có ra viện.
   store.recordHchanhFetch('333', {
     profile: { _fetch_status: 'ok', bhyt_code: 'HC-333' },
     discharge: { _fetch_status: 'ok', ngay_ra: '28/09/2026', tong_so_ngay_dt: '9', xu_tri: 'Ra viện (HC)' },
     surgery: { _fetch_status: 'ok', surgeries: [{ noi_dung_phau_thuat: 'Kết hợp xương' }] },
+    billing: { _fetch_status: 'ok', rows: [{ name: 'Ngày giường', thanh_tien: 300000, payment_group: 'bhyt' }], tong_hop: { tong_chi_phi: 300000 } },
   }, { admission: '08:00 20/09/2026', source: 'hanh_chanh' });
   store.recordHchanhFetch('444', {
     discharge: { _fetch_status: 'ok', ngay_ra: '28/09/2026', tong_so_ngay_dt: '9', xu_tri: 'Ra viện (KHS)' },
@@ -57,7 +59,7 @@ const fetchRun = router._fetchHchanhForResearchRun;
   const ctx = { sid: 'test_stay_store', dir: runDir, LOGS_DIR: path.join(runDir, 'logs') };
   const stats = await fetchRun(ctx, runDir, { sourceRows, sourceRunId: 'r1' });
 
-  assert.deepStrictEqual(spawned.sort(), ['444:profile+surgery', '555:profile+discharge+surgery'],
+  assert.deepStrictEqual(spawned.sort(), ['444:profile+surgery+billing', '555:profile+discharge+surgery+billing'],
     `Chỉ mở EMR cho phần còn thiếu, thực tế: ${spawned.join(', ')}`);
   assert.strictEqual(stats.reused, 1);
   assert.strictEqual(stats.error, 0);
@@ -75,7 +77,7 @@ const fetchRun = router._fetchHchanhForResearchRun;
   // Đánh dấu dữ liệu tạm thời: 333 dùng lại toàn bộ từ Hành chánh, 444 còn phần ra viện từ Kiểm hồ sơ.
   const progress = JSON.parse(fs.readFileSync(path.join(runDir, 'hchanh_auto_progress.json'), 'utf-8'));
   const byBn = bn => Object.values(progress).find(p => p.ma_bn === bn);
-  assert.deepStrictEqual(byBn('333').provisional_files, ['profile', 'discharge', 'surgery']);
+  assert.deepStrictEqual(byBn('333').provisional_files, ['profile', 'discharge', 'surgery', 'billing']);
   assert.deepStrictEqual(byBn('444').provisional_files, ['discharge']);
   assert.deepStrictEqual(byBn('555').provisional_files, []);
 
@@ -90,7 +92,7 @@ const fetchRun = router._fetchHchanhForResearchRun;
   // Quét lại dữ liệu tạm thời: chỉ 333 và 444 được mở EMR lại, 555 (đã là gốc) giữ nguyên.
   spawned.length = 0;
   await fetchRun(ctx, runDir, { sourceRows, sourceRunId: 'r1', refreshProvisional: true });
-  assert.deepStrictEqual(spawned.sort(), ['333:profile+discharge+surgery', '444:discharge'],
+  assert.deepStrictEqual(spawned.sort(), ['333:profile+discharge+surgery+billing', '444:discharge'],
     `Quét lại tạm thời, thực tế: ${spawned.join(', ')}`);
   const after = JSON.parse(fs.readFileSync(path.join(runDir, 'hchanh_auto_progress.json'), 'utf-8'));
   assert.ok(Object.values(after).every(p => (p.provisional_files || []).length === 0), 'sau khi quét lại không còn dữ liệu tạm thời');
@@ -99,7 +101,7 @@ const fetchRun = router._fetchHchanhForResearchRun;
   // force=true: bỏ qua kho, lấy lại toàn bộ từ EMR.
   spawned.length = 0;
   await fetchRun(ctx, runDir, { sourceRows: [row('333', 'NC3')], sourceRunId: 'r1', force: true });
-  assert.deepStrictEqual(spawned, ['333:profile+discharge+surgery']);
+  assert.deepStrictEqual(spawned, ['333:profile+discharge+surgery+billing']);
 
   fs.rmSync(RUNTIME_ROOT, { recursive: true, force: true });
   console.log('research_hchanh_stay_store_reuse_test: OK');

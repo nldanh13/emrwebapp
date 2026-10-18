@@ -46,7 +46,7 @@ function hcEntry(files, at = '2026-01-10T00:00:00Z', extra = {}) {
   return { status: 'done', files: Object.keys(files), file_status, finished_at: at, ...extra };
 }
 
-const OK_HC = { profile: { fetch_status: 'ok', rows: 1 }, discharge: { fetch_status: 'ok', rows: 1 }, surgery: { fetch_status: 'ok', rows: 0 } };
+const OK_HC = { profile: { fetch_status: 'ok', rows: 1 }, discharge: { fetch_status: 'ok', rows: 1 }, surgery: { fetch_status: 'ok', rows: 0 }, billing: { fetch_status: 'ok', rows: 1 } };
 const OK_OH = { order_history: { fetch_status: 'ok', rows: 12 } };
 const XN_OK = { status: { xn: 'done', cdha: 'empty' }, counts: { xn: 20, cdha: 0 }, saved: { xn: true, cdha: true }, committed: true };
 
@@ -163,18 +163,18 @@ test('Y lệnh v3 đã ok vẫn phải tự lấy lại một lần bằng parse
   assert.strictEqual(c.planCollection(fresh).tasks.length, 0);
 });
 
-test('Ca mới lấy đủ 6 phần; ca đã có mà thiếu một phần hành chánh chỉ lấy phần đó', () => {
+test('Ca mới lấy đủ mọi phần; ca đã có mà thiếu một phần hành chánh chỉ lấy phần đó', () => {
   const sources = [src('enc_a', 'NC0001', 'BN_A'), src('enc_new', 'NC0003', 'BN_N')];
   const { xn, hc, oh } = fullyCollected([sources[0]]);
-  hc.enc_a = hcEntry({ profile: OK_HC.profile, discharge: OK_HC.discharge, surgery: { fetch_status: 'timeout', rows: 0 } });
+  hc.enc_a = hcEntry({ profile: OK_HC.profile, discharge: OK_HC.discharge, billing: OK_HC.billing, surgery: { fetch_status: 'timeout', rows: 0 } });
   const ledger = c.buildLedger({ sourceRows: sources, xnProgress: xn, hchanhProgress: hc, orderProgress: oh });
   const plan = c.planCollection(ledger);
   const byKey = Object.fromEntries(plan.tasks.map(t => [t.key, t]));
   assert.deepStrictEqual(byKey.enc_a.parts, ['surgery']);
-  assert.strictEqual(byKey.enc_new.parts.length, 6);
+  assert.strictEqual(byKey.enc_new.parts.length, c.PART_KEYS.length);
   assert.strictEqual(byKey.enc_new.is_new, true);
   const groups = c.groupTasksByFetcher(plan.tasks);
-  assert.deepStrictEqual([...groups.hchanh.keys()].sort(), ['discharge,profile,surgery', 'surgery']);
+  assert.deepStrictEqual([...groups.hchanh.keys()].sort(), ['billing,discharge,profile,surgery', 'surgery']);
 });
 
 test('Danh sách EMR thay đổi → lấy lại; chỉ đổi họ tên/tuổi → chỉ lấy lại hồ sơ nền', () => {
@@ -187,7 +187,7 @@ test('Danh sách EMR thay đổi → lấy lại; chỉ đổi họ tên/tuổi 
   const second = c.buildLedger({ sourceRows: changed, xnProgress: xn, hchanhProgress: hc, orderProgress: oh, previous: first });
   const plan = c.planCollection(second);
   const byKey = Object.fromEntries(plan.tasks.map(t => [t.key, t]));
-  assert.strictEqual(byKey.enc_a.parts.length, 6);
+  assert.strictEqual(byKey.enc_a.parts.length, c.PART_KEYS.length);
   assert.ok(Object.values(byKey.enc_a.reasons).every(r => r === 'changed'));
   assert.deepStrictEqual(byKey.enc_b.parts, ['profile']);
 
@@ -210,7 +210,7 @@ test('Dòng bị gộp khỏi danh sách hoặc lần đầu có chữ ký thì 
   const transfer = src('enc_a', 'NC0001', 'BN_A', { 'T/G vào': '07/01/2026 10:00', 'Khoa chuyển đến': 'Hồi sức' });
   const merged = [{ ...sources[0], list_row_signatures: c.mergeSignatures(sources[0].list_row_signatures, transfer.list_row_signatures) }];
   const third = c.buildLedger({ sourceRows: merged, xnProgress: xn, hchanhProgress: hc, orderProgress: oh, previous: second });
-  assert.strictEqual(c.planCollection(third).tasks[0].parts.length, 6, 'thêm dòng chuyển khoa mới = EMR đã thay đổi');
+  assert.strictEqual(c.planCollection(third).tasks[0].parts.length, c.PART_KEYS.length, 'thêm dòng chuyển khoa mới = EMR đã thay đổi');
   const fourth = c.buildLedger({ sourceRows: sources, xnProgress: xn, hchanhProgress: hc, orderProgress: oh, previous: { ...third, encounters: { enc_a: { ...third.encounters.enc_a, change_seq: 0, parts: Object.fromEntries(Object.entries(third.encounters.enc_a.parts).map(([k, p]) => [k, { ...p, seen_seq: 0 }])) } } } });
   assert.strictEqual(c.planCollection(fourth).tasks.length, 0, 'dòng bị gộp khỏi file không phải là thay đổi');
 });
@@ -334,7 +334,7 @@ test('Báo cáo vận hành: số ca lấy, bỏ qua vì không đổi, phần l
   assert.strictEqual(report.skipped_unchanged, 1);
   assert.strictEqual(report.fetched_encounters, 2);
   assert.strictEqual(report.parts_backfilled, 1);
-  assert.strictEqual(report.parts_new, 5);
+  assert.strictEqual(report.parts_new, 6);
   assert.strictEqual(report.selenium_errors_open, 1);
   assert.strictEqual(report.exceptions[0].part, 'discharge');
 });
@@ -479,12 +479,12 @@ test('Kho cũ: các dòng chuyển khoa (không Mã nội trú) gom về 1 lư�
   const oh = { k3: hcEntry(OK_OH, '2026-01-10T00:00:00Z', { fetch_window_version: 4 }) };
   const ledger = c.buildLedger({ units, xnProgress: xn, hchanhProgress: hc, orderProgress: oh });
   const stay1 = ledger.encounters.enc_stay1;
-  assert.ok(c.PART_KEYS.every(k => c.partIsCurrent(stay1, k)), 'lượt đủ 6 phần dù tiến độ nằm ở các dòng khác nhau');
+  assert.ok(c.PART_KEYS.every(k => c.partIsCurrent(stay1, k)), 'lượt đủ mọi phần dù tiến độ nằm ở các dòng khác nhau');
   assert.ok(stay1.data_codes.includes('NC0007'), 'nhớ Mã NC script XN đã dùng để so dữ liệu thô');
   const plan = c.planCollection(ledger);
   assert.strictEqual(plan.summary.encounters, 2);
   assert.strictEqual(plan.summary.unchanged, 1);
-  assert.deepStrictEqual(plan.tasks.map(t => [t.key, t.parts.length]), [['enc_stay2', 6]]);
+  assert.deepStrictEqual(plan.tasks.map(t => [t.key, t.parts.length]), [['enc_stay2', c.PART_KEYS.length]]);
 });
 
 test('Lượt chưa có ngày ra (đang nằm/chưa lấy ra viện): dòng chuyển khoa ngày sau vẫn ghép, không lấn sang lượt sau', () => {

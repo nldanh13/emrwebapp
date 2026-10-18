@@ -1,6 +1,7 @@
 'use strict';
 
 const routeModel = require('../utils/routeModel');
+const { TREATMENT_COST_COLUMNS, BILLING_SUMMARY_FIELDS, BILLING_ITEMIZED_FIELDS } = require('./billing_summary');
 
 // Từ điển dữ liệu Kho nghiên cứu — nguồn DUY NHẤT mô tả từng bảng/cột.
 //
@@ -24,7 +25,7 @@ const routeModel = require('../utils/routeModel');
 //   excluded           — mặc định bị che khi xem/xuất (server/research/export_utils.js).
 // Phân loại "use" là đề xuất kỹ thuật; bệnh viện/hội đồng đạo đức phải xác nhận.
 
-const DICTIONARY_VERSION = '2026-10-07.2';
+const DICTIONARY_VERSION = '2026-10-18.1';
 
 const CONVENTIONS = {
   dates: 'Ngày dạng YYYY-MM-DD; thời điểm dạng YYYY-MM-DD HH:mm (giờ địa phương, không có múi giờ). Cột "ngày giờ" có thể chỉ có phần ngày nếu nguồn không có giờ.',
@@ -112,6 +113,20 @@ function withCommon(order, own) {
 }
 
 // Sinh hiệu lúc vào viện (Phiếu vào viện) — dùng chung cho encounters và analysis_ready.
+// Chi phí điều trị (analysis_ready.cost_*), sinh từ cùng danh sách trường với bước chuẩn hóa.
+const TREATMENT_COST_DICTIONARY = Object.fromEntries([
+  ...BILLING_SUMMARY_FIELDS.map(f => [f.column, col('integer', `Ô "${f.label}" trong khối Tổng hợp chi phí của bảng kê EMR.`, {
+    unit: 'đồng',
+    empty: 'Chưa lấy bảng kê (phần Chi phí), EMR không hiện ô này, hoặc các bản bảng kê của cùng đợt khác nhau.',
+    derivation: 'Số EMR tự tính, đọc nguyên giá trị trên trang Bảng kê chi phí (div#divTongHopChiPhi).',
+  })]),
+  ...BILLING_ITEMIZED_FIELDS.map(f => [f.column, col('integer', f.key === 'item_lines' ? 'Số dòng khoản mục trên bảng kê (dịch vụ, thuốc, vật tư).' : `${f.label}: tự cộng thành tiền (SL × đơn giá) các dòng bảng kê.`, {
+    ...(f.key === 'item_lines' ? {} : { unit: 'đồng' }),
+    empty: 'Chưa lấy bảng kê hoặc bảng kê không có dòng nào.',
+    derivation: 'Cộng từ dòng bảng kê theo cột Đối tượng (Bảo hiểm / Viện phí / Trong gói-miễn / khác). Không gồm chênh lệch giá; có thể khác "Tổng chi phí" của EMR.',
+  })]),
+]);
+
 const ADMISSION_VITAL_COLUMNS = {
   admission_pulse: col('decimal', 'Mạch lúc vào viện (Phiếu vào viện).', { unit: 'lần/phút', empty: 'Phiếu vào viện không ghi hoặc chưa lấy.' }),
   admission_temperature: col('decimal', 'Nhiệt độ lúc vào viện (Phiếu vào viện).', { unit: '°C', empty: 'Phiếu vào viện không ghi hoặc chưa lấy.' }),
@@ -527,7 +542,7 @@ TABLES.analysis_ready = {
   grain: 'Một đợt điều trị: bảng rộng sẵn để phân tích.',
   primary_key: ['encounter_id'],
   foreign_keys: [{ columns: ['encounter_id'], references: 'encounters.encounter_id' }, { columns: ['patient_code'], references: 'patients.patient_code' }],
-  sources: ['encounters', 'patients', 'lab_results', 'imaging_results', 'surgery_results'],
+  sources: ['encounters', 'patients', 'lab_results', 'imaging_results', 'surgery_results', 'hchanh_billing (chi phí)'],
   processing: 'Một dòng mỗi đợt. Chỉ dữ liệu matched và is_within_encounter = 1 mới được dùng cho snapshot/tóm tắt phân tích; dữ liệu chưa đủ bằng chứng vẫn giữ nguyên ở bảng chi tiết. analysis_ready không chứa toàn bộ XN/CĐHA trong một ô: chi tiết đầy đủ nằm ở lab_results/imaging_results theo từng dòng; bảng rộng chỉ giữ số lượng và các snapshot/biến cần phân tích. Phẫu thuật lấy ca sớm nhất đã xác minh trong đợt; biến suy luận vẫn có thể dùng CĐHA hợp lệ trong bộ nhớ khi chuẩn hóa.',
   inferred: true,
   quality: {
@@ -540,7 +555,7 @@ TABLES.analysis_ready = {
     inferred: 'Cột suy luận theo preset (ví dụ injury_side_suggested, hip_fracture_suggested, spine_involved, joint_type_suggested, neuro_deficit, stroke_type): suy từ văn bản chẩn đoán + CĐHA bằng từ khóa; ô trống = không tìm thấy từ khóa, KHÔNG có nghĩa là "không". Cần người xác nhận.',
     custom: 'Cột tự định nghĩa của nghiên cứu (custom_fields): so mẫu trên văn bản chẩn đoán đã bỏ dấu; cột boolean luôn là 1/0.',
   },
-  columns: withCommon(['research_code', 'encounter_id', 'patient_code', 'patient_key', 'patient_name', 'sex', 'birth_year', 'age', 'admission_date', 'surgery_date', 'discharge_date', 'hospital_stay_days', 'time_to_surgery_hours', 'diagnosis_raw', 'admission_pulse', 'admission_temperature', 'admission_bp_systolic', 'admission_bp_diastolic', 'admission_respiratory_rate', 'admission_weight_kg', 'admission_height_cm', 'surgery_name', 'surgery_method', 'anesthesia_method', 'comorbidity_text', 'complication_text', 'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt', 'lab_result_count', 'imaging_result_count', 'needs_manual_review', 'source_run_id', 'row_hash'], {
+  columns: withCommon(['research_code', 'encounter_id', 'patient_code', 'patient_key', 'patient_name', 'sex', 'birth_year', 'age', 'admission_date', 'surgery_date', 'discharge_date', 'hospital_stay_days', 'time_to_surgery_hours', 'diagnosis_raw', 'admission_pulse', 'admission_temperature', 'admission_bp_systolic', 'admission_bp_diastolic', 'admission_respiratory_rate', 'admission_weight_kg', 'admission_height_cm', 'surgery_name', 'surgery_method', 'anesthesia_method', 'comorbidity_text', 'complication_text', 'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt', 'lab_result_count', 'imaging_result_count', ...TREATMENT_COST_COLUMNS, 'needs_manual_review', 'source_run_id', 'row_hash'], {
     patient_name: col('string', 'Họ tên.', { identifier: 'direct', use: 'excluded' }),
     sex: col('enum', 'Giới tính.', { allowed: ['Nam', 'Nữ'], identifier: 'quasi' }),
     birth_year: col('integer', 'Năm sinh.', { identifier: 'quasi', use: 'approval_required' }),
@@ -565,6 +580,7 @@ TABLES.analysis_ready = {
       .map(([k, v]) => [k, { ...v, derivation: `${v.derivation} Kết quả có lab_datetime sớm nhất trong đợt.` }])),
     lab_result_count: col('integer', 'Tổng số dòng kết quả XN đã ghép chắc chắn và nằm trong đợt.', { note: 'Chi tiết từng kết quả nằm ở lab_results.csv, không nhét lại vào một ô JSON.' }),
     imaging_result_count: col('integer', 'Tổng số dòng CĐHA đã ghép chắc chắn và nằm trong đợt.', { note: 'Chi tiết từng kết quả nằm ở imaging_results.csv, không nhét lại vào một ô JSON/text.' }),
+    ...TREATMENT_COST_DICTIONARY,
     needs_manual_review: col('string', 'Lý do cần người kiểm tra, nối "; ".', { allowed: 'Nhãn thiếu biến của preset (ví dụ "bên tổn thương", "ngày phẫu thuật") và cờ ghép đợt.' }),
   }),
 };
@@ -578,6 +594,7 @@ const RAW_TABLES = {
   hchanh_profile: { file: 'hchanh_profile.csv', grain: 'Một dòng nguồn (Research key).', source: 'Lấy hành chánh — màn điều dưỡng (con mắt).', identifiers: ['Mã BN', 'Họ tên', 'Ngày sinh', 'Địa chỉ', 'Điện thoại', 'Số CMND', 'Số thẻ BHYT'] },
   hchanh_discharge: { file: 'hchanh_discharge.csv', grain: 'Một dòng nguồn.', source: 'Lấy hành chánh — mục Ra khoa trên màn bác sĩ.', identifiers: ['Mã BN', 'Họ tên', 'Số lưu trữ'] },
   hchanh_surgery: { file: 'hchanh_surgery.csv', grain: 'Một ca PT/TT.', source: 'Lấy hành chánh — D/s phẫu thuật.', identifiers: ['Mã BN', 'Họ tên', 'Raw JSON'] },
+  hchanh_billing: { file: 'hchanh_billing.csv', grain: 'Một lần lấy bảng kê chi phí của một dòng nguồn (Research key).', source: 'Lấy hành chánh — trang Bảng kê chi phí (chiphichitietdraw): khối Tổng hợp chi phí + cộng dòng bảng kê. Lấy mặc định cùng hồ sơ nền/ra viện/phẫu thuật.', identifiers: ['Mã BN', 'Họ tên', 'URL'] },
   hchanh_order_history: { file: 'hchanh_order_history.csv', grain: 'Một dòng lịch sử y lệnh.', source: 'Lấy hành chánh — Lịch sử y lệnh.', identifiers: ['Mã BN', 'Họ tên', 'Bác sĩ (nhân viên)', 'Raw JSON'] },
 };
 

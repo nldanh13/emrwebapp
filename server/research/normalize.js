@@ -24,6 +24,7 @@ const { normalizeSex, extractBirthYear, normalizeLabName, resultOperator, parseN
 const { dedupeRowsByHash, dedupeSurgeryRows, snapshotFinalDatasetIfUnsaved } = require('./dataset_store');
 const { firstSurgeryByEncounter, surgeryForMedicationContext } = require('./encounter_linkage');
 const { evaluateCustomFields } = require('./analysis_config');
+const { TREATMENT_COST_COLUMNS, billingTotalsFromRawRow, pickEncounterBilling, treatmentCostFields } = require('./billing_summary');
 const { medicationRowsFromOrderRow, dedupeOrderFields, extractClinicalEvents } = require('./order_note_parser');
 const { hchanhEntryFileStatus } = require('./progress_snapshot');
 const { loadPatientLink, patientLinkPath, applyPatientKeys, savePatientLink } = require('./patient_link');
@@ -69,6 +70,7 @@ const NORMALIZE_INPUT_FILES = [
   'hchanh_discharge.csv',
   'hchanh_surgery.csv',
   'hchanh_order_history.csv',
+  'hchanh_billing.csv',
   'lich_su_xn.csv',
   'lich_su_cdha.csv',
   'progress.json',
@@ -252,6 +254,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   const hchanhDischargeTable = readCsvTable(path.join(dir, 'hchanh_discharge.csv'), Number.MAX_SAFE_INTEGER);
   const hchanhSurgeryTable = readCsvTable(path.join(dir, 'hchanh_surgery.csv'), Number.MAX_SAFE_INTEGER);
   const hchanhOrderTable = readCsvTable(path.join(dir, 'hchanh_order_history.csv'), Number.MAX_SAFE_INTEGER);
+  const hchanhBillingTable = readCsvTable(path.join(dir, 'hchanh_billing.csv'), Number.MAX_SAFE_INTEGER);
 
   // Đợt 5 kho người bệnh: bổ sung / thay dữ liệu hành chánh từ kho chung (không sửa CSV thô).
   let khoOverlay = null;
@@ -260,11 +263,13 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     const overlaid = overlayHchanhFromPatientDb(dir, sourceTable.rows.length ? sourceTable.rows : initialTable.rows, runId, {
       profile: hchanhProfileTable.rows || [], discharge: hchanhDischargeTable.rows || [],
       surgery: hchanhSurgeryTable.rows || [], order_history: hchanhOrderTable.rows || [],
+      billing: hchanhBillingTable.rows || [],
     });
     hchanhProfileTable.rows = overlaid.tables.profile;
     hchanhDischargeTable.rows = overlaid.tables.discharge;
     hchanhSurgeryTable.rows = overlaid.tables.surgery;
     hchanhOrderTable.rows = overlaid.tables.order_history;
+    hchanhBillingTable.rows = overlaid.tables.billing || [];
     khoOverlay = overlaid.report;
     writeJsonAtomic(path.join(dir, KHO_OVERLAY_FILE), khoOverlay);
     const filled = Object.values(khoOverlay.filled).reduce((a, b) => a + b, 0);
@@ -282,12 +287,14 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   hchanhDischargeTable.rows = dropPlaceholderDischarge(hchanhDischargeTable.rows || [], fakeDischargeDays);
   hchanhSurgeryTable.rows = dropPlaceholderDischarge(hchanhSurgeryTable.rows || [], fakeDischargeDays);
   hchanhOrderTable.rows = dropPlaceholderDischarge(hchanhOrderTable.rows || [], fakeDischargeDays);
+  hchanhBillingTable.rows = dropPlaceholderDischarge(hchanhBillingTable.rows || [], fakeDischargeDays);
 
   // Mã NC cũ dùng chung cho nhiều Mã BN trong file hành chánh không được gắn vào đợt/dòng con.
   hchanhProfileTable.rows = dropSharedResearchCodes(hchanhProfileTable.rows || []);
   hchanhDischargeTable.rows = dropSharedResearchCodes(hchanhDischargeTable.rows || []);
   hchanhSurgeryTable.rows = dropSharedResearchCodes(hchanhSurgeryTable.rows || []);
   hchanhOrderTable.rows = dropSharedResearchCodes(hchanhOrderTable.rows || []);
+  hchanhBillingTable.rows = dropSharedResearchCodes(hchanhBillingTable.rows || []);
   hchanhDischargeTable.rows = repairSharedPlaceholderDischargeDates(hchanhProfileTable.rows || [], hchanhDischargeTable.rows || []);
 
   // Dùng ngày vào/ra thực tế EMR đã lấy được để chuẩn hóa các bảng con trong bộ nhớ.
@@ -327,6 +334,24 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   for (const row of extraTable.rows || []) mergeExtra(row, true);
   for (const row of hchanhProfileTable.rows || []) mergeExtra(row, true);
   for (const row of hchanhDischargeTable.rows || []) mergeExtra(row, false);
+  // Chi phí điều trị: một dòng tổng mỗi lần lấy bảng kê, gắn vào đúng đợt (encounter_id) như
+  // dữ liệu ra viện; không gắn theo Mã BN chung cho mọi đợt.
+  const billingCandidatesByEncounter = new Map();
+  for (const row of hchanhBillingTable.rows || []) {
+    const code = patientCode(row);
+    if (!code) continue;
+    const totals = billingTotalsFromRawRow(row);
+    const encId = totals ? contextForRow(ctxMap, row, code).encounter_id : '';
+    if (!encId) continue;
+    if (!billingCandidatesByEncounter.has(encId)) billingCandidatesByEncounter.set(encId, []);
+    billingCandidatesByEncounter.get(encId).push(totals);
+  }
+  let treatmentCostConflicts = 0;
+  function costForEncounter(encounterId) {
+    const picked = pickEncounterBilling(billingCandidatesByEncounter.get(encounterId));
+    if (picked.conflict) treatmentCostConflicts += 1;
+    return treatmentCostFields(picked.totals);
+  }
   function extraForContext(code, ctx) {
     return mergeRowsPreferFilled(demographicByPatient.get(code) || {}, extraByEncounter.get(ctx?.encounter_id) || {});
   }
@@ -1009,6 +1034,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       hb: labs.hb || '', hct: labs.hct || '', neutrophil: labs.neutrophil || '', lymphocyte: labs.lymphocyte || '', monocyte: labs.monocyte || '', rdw: labs.rdw || '', plt: labs.plt || '',
       lab_result_count: labByEncounter.get(enc.encounter_id)?.total || 0,
       imaging_result_count: imagingByEncounter.get(enc.encounter_id)?.total || 0,
+      ...costForEncounter(enc.encounter_id),
       needs_manual_review: reviewItems.join('; '),
       source_run_id: runId,
     };
@@ -1179,6 +1205,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     'surgery_name', 'surgery_method', 'anesthesia_method', 'comorbidity_text', 'complication_text',
     'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt',
     'lab_result_count', 'imaging_result_count',
+    ...TREATMENT_COST_COLUMNS,
     'needs_manual_review', 'source_run_id', 'row_hash',
   ];
   const analysisReadyCols = [...analysisReadyBaseCols, ...inferenceColKeys, ...customColKeys, ...analysisReadyTrailCols];
@@ -1225,6 +1252,9 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     hchanh_discharge: hchanhDischargeTable.rows.length,
     hchanh_surgery: hchanhSurgeryTable.rows.length,
     hchanh_order_history: hchanhOrderTable.rows.length,
+    hchanh_billing: hchanhBillingTable.rows.length,
+    treatment_cost_encounters: analysisReady.filter(r => String(r.cost_total ?? '') !== '' || String(r.cost_itemized_total ?? '') !== '').length,
+    treatment_cost_conflicts: treatmentCostConflicts,
     patients: patients.length,
     encounters: finalEncounters.length,
     diagnoses: diagnoses.length,

@@ -12,6 +12,7 @@ const { mergeSameStayRows, mergeRowsPreferFilled } = require('./source_merge');
 const fs = require('fs');
 const { rowResearchCode } = require('./progress_snapshot');
 const { nowIso } = require('./store_paths');
+const { billingTotalsFromPayload, billingRawFields } = require('./billing_summary');
 
 function hchanhProfileRow(payload, meta = {}) {
   const p = payload || {};
@@ -255,6 +256,7 @@ function hchanhFetchOutputToRows(output, sourceRow, sourceRunId = '') {
   const dischargeRows = [];
   const surgeryRows = [];
   const orderRows = [];
+  const billingRows = [];
   const payload = output && typeof output === 'object' ? output : {};
 
   // Một BN có thể xuất hiện nhiều dòng nguồn (ví dụ chuyển khoa). Khi worker đã mở
@@ -341,7 +343,18 @@ function hchanhFetchOutputToRows(output, sourceRow, sourceRunId = '') {
     }, meta, sourceRunId));
   }
 
-  return { profileRows, dischargeRows, surgeryRows, orderRows, meta };
+  // Bảng kê chi phí: một dòng tổng mỗi lần lấy (chi tiết từng khoản giữ trong Raw JSON của kho đợt).
+  const billingTotals = billingTotalsFromPayload(payload.billing);
+  if (billingTotals) {
+    billingRows.push(withResearchHchanhMeta({
+      'Mã BN': meta.ma_bn,
+      'Họ tên': meta.ho_ten || '',
+      ...billingRawFields(billingTotals),
+      'Nguồn': 'hchanh_auto_billing',
+    }, meta, sourceRunId));
+  }
+
+  return { profileRows, dischargeRows, surgeryRows, orderRows, billingRows, meta };
 }
 
 function runDateContext(runDir, defaults = {}) {

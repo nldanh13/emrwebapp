@@ -223,7 +223,7 @@ const opts = rows => ({ runDir, runId: 'collect_run', scope: 'du_lieu_goc', isAr
     assert.deepStrictEqual(fake.calls.xn, [['BNA:xn;cdha']]);
     assert.ok(fake.calls.hchanh.every(c => c.codes.join() === 'BNA'));
     assert.strictEqual(report.skipped_unchanged, 1, 'B không đổi; C còn lỗi nên không tính là không đổi');
-    assert.strictEqual(report.parts_backfilled, 6);
+    assert.strictEqual(report.parts_backfilled, 7, 'A lấy lại cả 7 phần (gồm Chi phí)');
   });
 
   await test('Đủ dùng theo nghiên cứu trên run thật: C thiếu Ra viện chỉ ảnh hưởng đề tài cần Ra viện', async () => {
