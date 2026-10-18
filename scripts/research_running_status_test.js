@@ -70,5 +70,19 @@ const fakeRes = (extra = {}) => ({ status() { return this; }, json(body) { this.
     assert.strictEqual(withScopeRunning({ ...snap, active_task: { status: 'running' } }, 'archive').stopped, null);
   });
 
+  await test('đang chạy tác vụ mới: ca trong file bắt đầu TRƯỚC giờ khóa là ca cũ; describeScope nhận khóa', async () => {
+    const d = deferred();
+    const pending = routes['/research/archive/run']({ params: {}, path: '/research/archive/run', body: {} }, fakeRes({ wait: d.wait }), () => {});
+    const oldCase = { ma_bn: '26012256', started_at: new Date(Date.now() - 8 * 86400e3).toISOString() };
+    assert.strictEqual(withScopeRunning({ current_case: oldCase }, 'archive').current_case.stale, true);
+    const newCase = { ma_bn: '1', started_at: new Date(Date.now() + 1000).toISOString() };
+    assert.strictEqual(withScopeRunning({ current_case: newCase }, 'archive').current_case.stale, false);
+    let seenLock = null;
+    listRunningResearch((_key, _lane, lock) => { seenLock = lock; return {}; });
+    assert.strictEqual(seenLock?.label, 'Lấy dữ liệu');
+    assert.ok(seenLock?.since);
+    d.resolve(); await pending;
+  });
+
   console.log(`\n${passed} test(s) passed.`);
 })();

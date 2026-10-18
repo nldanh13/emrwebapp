@@ -174,9 +174,15 @@ function readCurrentHchanhCase(runDir) {
 // máy vẫn chạy.
 const LIVE_PROGRESS_FILES = ['progress.json', 'hchanh_auto_progress.json', 'order_history_auto_progress.json'];
 
-function readLiveProgress(runDir) {
+// since: giờ bắt đầu tác vụ đang chạy (khóa của máy chủ). Ca bắt đầu TRƯỚC giờ đó là ca của lần
+// chạy trước (vd. Quét danh sách không ghi vết ca nên file vết vẫn là ca Lấy XN/CĐHA cũ), không
+// được hiện như "đang lấy".
+function readLiveProgress(runDir, { since = '' } = {}) {
   if (!runDir) return null;
-  const candidates = [readCurrentCaseTrace(runDir), readCurrentHchanhCase(runDir)].filter(Boolean);
+  const sinceMs = Date.parse(since || '') || 0;
+  const candidates = [readCurrentCaseTrace(runDir), readCurrentHchanhCase(runDir)]
+    .filter(Boolean)
+    .filter(c => !sinceMs || (Date.parse(c.started_at || '') || 0) >= sinceMs);
   candidates.sort((a, b) => (Date.parse(b.started_at || '') || 0) - (Date.parse(a.started_at || '') || 0));
   const current = candidates[0] || null;
   let updatedMs = 0;

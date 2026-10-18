@@ -158,7 +158,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     }
   }, [selectedId]);
 
-  // Dữ liệu tổng quát: MỘT gói cho cả màn hình (UX_RULES mục 9). Sáu nguồn được tải cùng lúc,
+  // Dữ liệu tổng quát: MỘT gói cho cả màn hình (UX_RULES mục 9). Bảy nguồn được tải cùng lúc,
   // tính xong mới thay một lần — không hiện từng ô một, không trộn số của hai thời điểm. Gói nằm
   // trong kho dùng chung (useServerData): quay lại tab hiện ngay bản cũ rồi cập nhật ngầm; máy chủ
   // báo số liệu đổi (kênh sự kiện) thì tải lại đúng gói này.
@@ -175,13 +175,15 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     const fetchTable = tableKey => api.getResearchArchiveData({ table: tableKey, runId: 'latest', redact: true });
     // Dùng cùng một snapshot backend cho số lượng và dùng extract_status đầy đủ
     // cho bảng theo dõi. Không trộn rows.length của dữ liệu đã redact với metadata.
-    const [patientRes0, encounterRes, statusRes, progressRes, coverageRes, pipelineRes] = await Promise.all([
+    const [patientRes0, encounterRes, statusRes, progressRes, coverageRes, pipelineRes, fieldCatalogRes] = await Promise.all([
       fetchTable('patient_master'),
       fetchTable('encounters'),
       fetchTable('extract_status'),
       api.getResearchArchiveProgress({ runId: 'latest' }),
       api.getResearchArchiveCoverage({ runId: 'latest' }),
       api.getResearchArchivePipeline().catch(() => null),
+      // Danh sách trường lấy được: lỗi thì chỉ ẩn khối này, không làm hỏng cả màn hình.
+      api.getResearchArchiveFieldCatalog({ runId: 'latest' }).catch(() => null),
     ]);
     let patientRes = patientRes0;
     if (!Array.isArray(patientRes?.rows) || !patientRes.rows.length) patientRes = await fetchTable('initial_list');
@@ -199,7 +201,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       patientCount: Number(patientRes?.count || 0),
       encounterCount: Number(encounterRes?.count || 0),
     });
-    return { overview, progress, coverage, pipeline: pipelineRes?.pipeline || null };
+    return { overview, progress, coverage, pipeline: pipelineRes?.pipeline || null, fieldCatalog: fieldCatalogRes?.catalog || null };
   }, { enabled: Boolean(overviewKey) });
   const generalOverview = overviewQuery.data?.overview || null;
   const generalOverviewLoading = overviewQuery.loading;
@@ -927,6 +929,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     if (archiveMode === 'overview') return <GeneralOverviewView
       {...{ generalOverview, generalOverviewLoading, pipeline, setArchiveMode }}
       collectionScreen={archiveScreen}
+      fieldCatalog={overviewQuery.data?.fieldCatalog || null}
       onNormalize={runNormalizeArchive}
       normalizeBusy={normalizeRequest.status === 'starting' || serverRunning.items.some(item => item.lane === 'normalize' && item.scope === 'archive')}
     />;
