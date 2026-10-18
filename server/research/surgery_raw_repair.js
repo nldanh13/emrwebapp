@@ -4,6 +4,7 @@
 // Chỉ dùng giá trị explicit đã có trong CSV/Raw JSON; tuyệt đối không suy diễn.
 // Mọi lần thay đổi raw đều tạo backup trước và ghi audit để có thể phục hồi/đối chiếu.
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { readCsvTable, writeCsv } = require('./table_io');
@@ -139,6 +140,10 @@ function rowDiff(before, after) {
   return diff;
 }
 
+function fileSha256(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
 function ensureBackup(runDir, filePath) {
   const backupPath = path.join(runDir, BACKUP_FILE);
   if (!fs.existsSync(backupPath)) fs.copyFileSync(filePath, backupPath);
@@ -156,7 +161,11 @@ function repairRawSurgeryCsv(runDir) {
   const filePath = path.join(dir, 'hchanh_surgery.csv');
   if (!fs.existsSync(filePath)) return { changed: 0, rows: 0, file: filePath, backup: '', audit: '' };
 
+  // Hash trước/sau lần đọc: nếu Thu thập ghi file đúng lúc này thì không ghi nhận
+  // sha256_before, để integrity gate vẫn coi đó là nguồn đổi giữa chừng.
+  const hashBeforeRead = fileSha256(filePath);
   const table = readCsvTable(filePath, Number.MAX_SAFE_INTEGER);
+  const hashAfterRead = fileSha256(filePath);
   const sourceRows = table.rows || [];
   if (!sourceRows.length) return { changed: 0, rows: 0, file: filePath, backup: '', audit: '' };
 
@@ -177,6 +186,7 @@ function repairRawSurgeryCsv(runDir) {
 
   let backupPath = '';
   let auditPath = '';
+  let sha256After = '';
   if (changes.length) {
     // Backup phải có trước lần ghi đầu tiên; không bao giờ ghi đè backup này.
     backupPath = ensureBackup(dir, filePath);
@@ -192,6 +202,7 @@ function repairRawSurgeryCsv(runDir) {
     const columns = [...new Set(preferred.filter(Boolean))];
     for (const row of rows) for (const key of Object.keys(row)) if (!columns.includes(key)) columns.push(key);
     writeCsv(filePath, columns, rows);
+    sha256After = fileSha256(filePath);
     auditPath = appendAudit(dir, {
       at: new Date().toISOString(),
       operation: 'repair_raw_surgery_csv',
@@ -201,7 +212,13 @@ function repairRawSurgeryCsv(runDir) {
       changes,
     });
   }
-  return { changed: changes.length, rows: rows.length, file: filePath, backup: backupPath, audit: auditPath };
+  return {
+    changed: changes.length, rows: rows.length, file: filePath, backup: backupPath, audit: auditPath,
+    // Chính bước repair đã ghi file: normalize_runner dùng cặp hash này để không báo
+    // nhầm input_changed_during_normalize cho lần ghi của chính Chuẩn hóa.
+    sha256_before: sha256After && hashBeforeRead === hashAfterRead ? hashBeforeRead : '',
+    sha256_after: sha256After,
+  };
 }
 
 module.exports = {
