@@ -138,7 +138,7 @@ function listRunningResearch(describeScope = () => ({}), now = Date.now()) {
     const lane = lock.lane || '';
     const scope = lane && key.endsWith(`:${lane}`) ? key.slice(0, -(lane.length + 1)) : key;
     let extra = {};
-    try { extra = describeScope(scope, lane) || {}; } catch (_) { extra = {}; }
+    try { extra = describeScope(scope, lane, lock) || {}; } catch (_) { extra = {}; }
     const sinceMs = Date.parse(lock.since);
     return {
       scope_key: key,
@@ -162,11 +162,15 @@ function withScopeRunning(progress, key) {
   if (!progress || typeof progress !== 'object') return progress;
   const lock = RESEARCH_SCOPE_LOCKS.get(key) || null;
   const running = Boolean(lock || progress.active_task);
+  // Ca bắt đầu trước giờ khóa hiện tại là ca của lần chạy trước, không phải ca đang quét.
+  const sinceMs = lock ? (Date.parse(lock.since || '') || 0) : 0;
+  const caseMs = Date.parse(progress.current_case?.started_at || '') || 0;
+  const caseBeforeLock = Boolean(sinceMs && caseMs && caseMs < sinceMs);
   return {
     ...progress,
     scope_running: lock ? { label: lock.label, since: lock.since } : null,
     stopped: running ? null : progress.stopped,
-    current_case: progress.current_case ? { ...progress.current_case, stale: !running } : progress.current_case,
+    current_case: progress.current_case ? { ...progress.current_case, stale: !running || caseBeforeLock } : progress.current_case,
   };
 }
 
