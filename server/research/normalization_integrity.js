@@ -69,13 +69,27 @@ function captureNormalizeInputs(runDir) {
   return { captured_at: nowIso(), files };
 }
 
-function changedNormalizeInputs(before, after) {
+// ownWrites: [{ file, sha256_before, sha256_after }] — các lần chính tiến trình Chuẩn hóa ghi
+// vào nguồn (vd. repair raw PT ghi lại hchanh_surgery.csv). Một file chỉ được bỏ qua khi hash
+// trước normalize đúng bằng hash bước repair đã đọc VÀ hash sau normalize đúng bằng hash nó đã
+// ghi; nếu Thu thập ghi chen vào trước hoặc sau thì hash lệch và file vẫn bị báo là đã đổi.
+function ownWriteExplains(name, a, b, ownWrites) {
+  return (ownWrites || []).some(w => w && path.basename(text(w.file)) === name
+    && text(w.sha256_before) && text(w.sha256_after)
+    && a.exists && b.exists
+    && text(a.sha256) === text(w.sha256_before)
+    && text(b.sha256) === text(w.sha256_after));
+}
+
+function changedNormalizeInputs(before, after, ownWrites = []) {
   const out = [];
   const names = new Set([...Object.keys(before?.files || {}), ...Object.keys(after?.files || {})]);
   for (const name of names) {
     const a = before?.files?.[name] || { exists: false };
     const b = after?.files?.[name] || { exists: false };
-    if (Boolean(a.exists) !== Boolean(b.exists) || text(a.sha256) !== text(b.sha256)) out.push(name);
+    if (Boolean(a.exists) === Boolean(b.exists) && text(a.sha256) === text(b.sha256)) continue;
+    if (ownWriteExplains(name, a, b, ownWrites)) continue;
+    out.push(name);
   }
   return out.sort();
 }
@@ -140,14 +154,14 @@ function mergeQaIssue(report, bucket, issue) {
   report[bucket] = list;
 }
 
-function evaluateNormalizationIntegrity(runDir, { beforeSnapshot = null, afterSnapshot = null } = {}) {
+function evaluateNormalizationIntegrity(runDir, { beforeSnapshot = null, afterSnapshot = null, ownWrites = [] } = {}) {
   const dir = path.resolve(runDir);
   const encounters = loadTable(dir, 'encounters.csv');
   const critical = []; const warnings = []; const byTable = {};
   strongIdIntegrity(encounters, critical);
   researchCodeIntegrity(encounters, critical);
   childIntegrity(dir, critical, warnings, byTable);
-  const changedInputs = beforeSnapshot && afterSnapshot ? changedNormalizeInputs(beforeSnapshot, afterSnapshot) : [];
+  const changedInputs = beforeSnapshot && afterSnapshot ? changedNormalizeInputs(beforeSnapshot, afterSnapshot, ownWrites) : [];
   if (changedInputs.length) addIssue(critical, 'input_changed_during_normalize', `Nguồn thu thập thay đổi trong lúc Chuẩn hóa (${changedInputs.length} file). Kết quả lần này không được coi là snapshot nhất quán.`, { count: changedInputs.length, files: changedInputs });
 
   const existingQa = readJsonSafe(path.join(dir, quality.QA_REPORT_FILE), {}) || {};

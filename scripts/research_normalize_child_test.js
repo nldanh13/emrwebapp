@@ -50,6 +50,33 @@ function writeCsv(file, cols, rows) {
   assert.ok(changedNormalizeInputs(snap1, snap2).includes('du_lieu_ban_dau.csv'));
   console.log('  ok - fingerprint phát hiện nguồn thu thập thay đổi giữa chừng');
 
+  // Bước repair raw PT trong chính tiến trình Chuẩn hóa ghi lại hchanh_surgery.csv. Lần ghi đó
+  // không phải "Thu thập đổi nguồn giữa chừng" nên không được thành lỗi chặn.
+  const surgeryDir = path.join(process.env.EMR_RUNTIME_ROOT, 'store', 'kho', 'runs', 'r_surgery');
+  fs.mkdirSync(surgeryDir, { recursive: true });
+  fs.copyFileSync(path.join(runDir, 'du_lieu_ban_dau.csv'), path.join(surgeryDir, 'du_lieu_ban_dau.csv'));
+  writeCsv(path.join(surgeryDir, 'hchanh_surgery.csv'), ['Mã BN', 'Ngày phẫu thuật', 'Raw JSON'], [
+    { 'Mã BN': '1000000', 'Ngày phẫu thuật': '08:15', 'Raw JSON': JSON.stringify({ thoi_gian: '05/02/2026 07:30', detail: { bat_dau: '08:15' } }) },
+  ]);
+  const surgeryBefore = captureNormalizeInputs(surgeryDir);
+  const surgeryResult = await runNormalizeJob({ kind: 'run', runDir: surgeryDir, options: { sourceRunId: 'r_surgery', force: true } });
+  assert.strictEqual(Number(surgeryResult.surgery_raw_repair?.changed), 1, 'repair raw PT đã ghi lại file nguồn');
+  assert.notStrictEqual(captureNormalizeInputs(surgeryDir).files['hchanh_surgery.csv'].sha256, surgeryBefore.files['hchanh_surgery.csv'].sha256);
+  const surgeryIntegrity = JSON.parse(fs.readFileSync(path.join(surgeryDir, 'integrity_report.json'), 'utf8'));
+  assert.ok(!surgeryIntegrity.critical.some(x => x.code === 'input_changed_during_normalize'),
+    `lần ghi của chính repair không bị báo là nguồn đổi: ${JSON.stringify(surgeryIntegrity.input_snapshot)}`);
+  assert.notStrictEqual(surgeryResult.integrity.status, 'failed_integrity');
+  console.log('  ok - repair raw PT trong Chuẩn hóa không tự gây lỗi chặn input_changed_during_normalize');
+
+  // Nhưng nếu Thu thập ghi chen vào sau bước repair thì hash sau khác hash repair đã ghi: vẫn chặn.
+  const repairWrite = { file: 'hchanh_surgery.csv', sha256_before: 'a', sha256_after: 'b' };
+  const snapA = { files: { 'hchanh_surgery.csv': { exists: true, sha256: 'a' } } };
+  assert.deepStrictEqual(changedNormalizeInputs(snapA, { files: { 'hchanh_surgery.csv': { exists: true, sha256: 'b' } } }, [repairWrite]), []);
+  assert.deepStrictEqual(changedNormalizeInputs(snapA, { files: { 'hchanh_surgery.csv': { exists: true, sha256: 'c' } } }, [repairWrite]), ['hchanh_surgery.csv']);
+  assert.deepStrictEqual(changedNormalizeInputs({ files: { 'hchanh_surgery.csv': { exists: true, sha256: 'x' } } }, { files: { 'hchanh_surgery.csv': { exists: true, sha256: 'b' } } }, [repairWrite]), ['hchanh_surgery.csv']);
+  assert.deepStrictEqual(changedNormalizeInputs(snapA, { files: { 'hchanh_surgery.csv': { exists: true, sha256: 'b' } } }, [{ ...repairWrite, sha256_before: '' }]), ['hchanh_surgery.csv']);
+  console.log('  ok - nguồn bị Thu thập ghi chen trước/sau bước repair vẫn bị báo đổi');
+
   const badDir = path.join(process.env.EMR_RUNTIME_ROOT, 'integrity_bad');
   fs.mkdirSync(badDir, { recursive: true });
   writeCsv(path.join(badDir, 'encounters.csv'), ['encounter_id', 'research_code', 'patient_code', 'admission_date', 'discharge_date', 'emr_treatment_id'], [
@@ -90,5 +117,5 @@ function writeCsv(file, cols, rows) {
   console.log('  ok - lỗi trong tiến trình con được báo lại cho máy chủ');
 
   fs.rmSync(process.env.EMR_RUNTIME_ROOT, { recursive: true, force: true });
-  console.log('\n5 nhóm kiểm thử pass.');
+  console.log('\n7 nhóm kiểm thử pass.');
 })().catch(err => { console.error(err); process.exitCode = 1; });
