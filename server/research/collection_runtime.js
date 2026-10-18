@@ -72,6 +72,7 @@ function readCollectionPartRows(runDir) {
     discharge: group('hchanh_discharge.csv', 'Research key'),
     surgery: group('hchanh_surgery.csv', 'Research key'),
     order_history: group('hchanh_order_history.csv', 'Research key'),
+    billing: group('hchanh_billing.csv', 'Research key'),
   };
 }
 

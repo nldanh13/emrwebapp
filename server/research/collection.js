@@ -28,6 +28,8 @@ const PARTS = [
   { key: 'discharge', label: 'Ra viện', fetcher: 'hchanh' },
   { key: 'surgery', label: 'Phẫu thuật', fetcher: 'hchanh' },
   { key: 'order_history', label: 'Y lệnh', fetcher: 'order_history' },
+  // Bảng kê chi phí: lấy mặc định cùng lô với hồ sơ nền/ra viện/phẫu thuật (một trang EMR mỗi lượt).
+  { key: 'billing', label: 'Chi phí', fetcher: 'hchanh' },
 ];
 const PART_KEYS = PARTS.map(p => p.key);
 const DONE_STATUSES = new Set(['ok', 'empty']);
@@ -704,6 +706,7 @@ function derivePartResults(source, xnMatches, hchanhProgress, orderProgress, orp
     discharge: hcFile('discharge'),
     surgery: hcFile('surgery'),
     order_history: orderHistory,
+    billing: hcFile('billing'),
   };
 }
 
@@ -1328,6 +1331,15 @@ const TABLE_PARTS = {
   patient_day: ['xn', 'cdha', 'order_history'],
 };
 
+// Biến chi phí nằm trong analysis_ready (cột cost_*): chọn biến này thì đề cương cần phần Chi phí.
+function variableParts(v) {
+  const table = String(v?.table || '');
+  const name = String(v?.name || v?.column || String(v?.id || '').split('.').pop() || '');
+  const parts = [...(TABLE_PARTS[table] || [])];
+  if (table === 'analysis_ready' && name.startsWith('cost_')) parts.push('billing');
+  return parts;
+}
+
 const ITEM_KINDS = {
   lab_item: { table: 'lab_results', part: 'xn', label: 'Xét nghiệm' },
   imaging_modality: { table: 'imaging_results', part: 'cdha', label: 'CĐHA' },
@@ -1359,13 +1371,19 @@ function requirementsFromStudy(study) {
   if (variableSelection.hasActiveSelection(selection)) {
     const parts = new Set();
     for (const v of [...(selection.selected_variables || []), ...(selection.conditions || [])]) {
-      for (const p of TABLE_PARTS[String(v.table || '')] || []) parts.add(p);
+      for (const p of variableParts(v)) parts.add(p);
     }
     // Chỉ điều kiện chọn mẫu (không phải biến kết cục) mới đòi dữ liệu phải CÓ.
     const conditions = (selection.conditions || []).filter(c => c.table && TABLE_PARTS[c.table] && String(c.operator || '') !== 'empty');
     return { source: 'variables', parts: parts.size ? [...parts] : [...PART_KEYS], items: [], conditions };
   }
   return { source: 'default', parts: [...PART_KEYS], items: [], conditions: [] };
+}
+
+// Phần giao cho một lần thu thập: người dùng chọn rõ thì đúng các phần đó, không thì mọi phần.
+function resolveCollectionParts({ requested = [] } = {}) {
+  const chosen = Array.isArray(requested) ? requested.map(String).filter(k => PART_KEYS.includes(k)) : [];
+  return chosen.length ? [...new Set(chosen)] : [...PART_KEYS];
 }
 
 function itemPresent(item, rows) {
@@ -1477,6 +1495,7 @@ module.exports = {
   ORDER_HISTORY_FETCH_WINDOW_VERSION,
   PARTS,
   PART_KEYS,
+  resolveCollectionParts,
   REASON_LABELS,
   DIAGNOSTIC_STAGE_LABELS,
   diagnosticFor,

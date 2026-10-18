@@ -107,7 +107,7 @@ function directPatientCodeFrom(req) {
 
 async function runDirectPatient(ctx, sc, rows, requestedParts, headless) {
   const wanted = requestedParts.length ? requestedParts : collection.PART_KEYS;
-  const hchanhFiles = wanted.filter(p => ['profile', 'discharge', 'surgery', 'order_history'].includes(p));
+  const hchanhFiles = wanted.filter(p => ['profile', 'discharge', 'surgery', 'order_history', 'billing'].includes(p));
   const xnCdhaParts = wanted.filter(p => ['xn', 'cdha'].includes(p));
   const results = {};
 
@@ -199,9 +199,7 @@ async function handleCollectAccepted(req, res, studyIdParam = '') {
     RESEARCH_SCOPE_LOCKS.set(lockKey, lockToken);
 
     const body = { ...(req.body || {}) };
-    const requestedParts = Array.isArray(body.parts)
-      ? body.parts.filter(p => collection.PART_KEYS.includes(p))
-      : [];
+    const collectParts = collection.resolveCollectionParts({ requested: body.parts });
     const headless = researchHeadlessFromBody(body);
     const maxAttempts = maxAttemptsFrom(body, sc.study);
     const force = body.force === true;
@@ -255,7 +253,7 @@ async function handleCollectAccepted(req, res, studyIdParam = '') {
       try {
         let result;
         if (directPatientCode) {
-          result = await runDirectPatient(ctx, sc, directRows, requestedParts, headless);
+          result = await runDirectPatient(ctx, sc, directRows, collectParts, headless);
         } else {
           const options = {
             runDir: sc.runDir,
@@ -270,7 +268,7 @@ async function handleCollectAccepted(req, res, studyIdParam = '') {
             force,
             refreshProvisional,
             retryBlocked,
-            parts: requestedParts.length ? requestedParts : collection.PART_KEYS,
+            parts: collectParts,
             limit,
             refreshParts,
             refreshKeys,

@@ -27,6 +27,8 @@ const KHO_OVERLAY_PARTS = [
   ['discharge', 'dischargeRows'],
   ['surgery', 'surgeryRows'],
   ['order_history', 'orderRows'],
+  // Bảng kê chi phí đã lấy ở tab Hành chánh / nghiên cứu khác: dùng lại, không mở EMR.
+  ['billing', 'billingRows'],
 ];
 
 // XN / CĐHA: ghi kết quả của lần quét vào Kho người bệnh (dữ liệu gốc), rồi với ca CHƯA có kết quả nào
@@ -219,8 +221,8 @@ function provisionalFilesFromProgress(dir) {
 function overlayHchanhFromPatientDb(dir, sourceRows, sourceRunId, tables) {
   const report = {
     at: nowIso(), available: patientDb.available(), cases_in_kho: 0,
-    filled: { profile: 0, discharge: 0, surgery: 0, order_history: 0 },
-    replaced_by_goc: { profile: 0, discharge: 0, surgery: 0, order_history: 0 },
+    filled: { profile: 0, discharge: 0, surgery: 0, order_history: 0, billing: 0 },
+    replaced_by_goc: { profile: 0, discharge: 0, surgery: 0, order_history: 0, billing: 0 },
     provisional: [],
   };
   if (!report.available) {

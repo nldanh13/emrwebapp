@@ -129,7 +129,8 @@ fs.writeFileSync(studyMetaPath(STUDY), JSON.stringify({ id: STUDY, name: 'Zol', 
     // Kho: XN có, CĐHA không có dòng, hồ sơ xong, ra viện lỗi. Fixture archive legacy
     // chưa có fetch_window_version cho Y lệnh nên phải lấy lại order_history một lần;
     // không được coi "có thuốc" đồng nghĩa parser/cửa sổ đã hiện hành.
-    assert.deepStrictEqual(plan.tasks[0].parts.filter(p => p !== 'surgery').sort(), ['discharge', 'order_history']);
+    // Fixture kho chưa có bảng kê chi phí nên phần Chi phí (lấy mặc định) cũng còn thiếu.
+    assert.deepStrictEqual(plan.tasks[0].parts.filter(p => p !== 'surgery').sort(), ['billing', 'discharge', 'order_history']);
     assert.strictEqual(plan.tasks[0].reasons.order_history, 'parser_migration');
   });
 

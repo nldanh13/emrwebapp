@@ -11,6 +11,7 @@ import { Btn, Spinner } from '../shared.jsx';
 const COLLECTION_PARTS = [
   ['xn', 'Xét nghiệm'], ['cdha', 'CĐHA'], ['profile', 'Hồ sơ nền'],
   ['discharge', 'Ra viện'], ['surgery', 'Phẫu thuật'], ['order_history', 'Y lệnh'],
+  ['billing', 'Chi phí'],
 ];
 
 const COLLECTION_CATEGORY_LABEL = {
@@ -268,7 +269,7 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
       {readiness && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
           <span style={{ fontSize: FS.xs, color: C.text3 }}>
-            Đủ dùng cho đề cương này ({readiness.requirements?.source === 'explicit' ? 'theo yêu cầu đã khai báo' : readiness.requirements?.source === 'variables' ? 'suy ra từ biến đã chọn' : 'mặc định: cần đủ 6 phần'}):
+            Đủ dùng cho đề cương này ({readiness.requirements?.source === 'explicit' ? 'theo yêu cầu đã khai báo' : readiness.requirements?.source === 'variables' ? 'suy ra từ biến đã chọn' : 'mặc định: cần đủ 7 phần'}):
           </span>
           {Object.entries(READINESS_LABEL).map(([k, [label, tone]]) => (
             <StatBadge key={k} label={label} value={readiness.counts?.[k] || 0} tone={readiness.counts?.[k] ? tone : 'neutral'} />
