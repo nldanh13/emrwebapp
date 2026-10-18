@@ -5,6 +5,7 @@ import { EmptyState, StatBadge } from './researchUi.jsx';
 import { Btn } from '../shared.jsx';
 import { SkeletonBlock, SkeletonLines } from '../Skeleton.jsx';
 import { normalizeSchemaOutdated } from './normalizePresentation.js';
+import { DataFieldList } from './DataFieldList.jsx';
 
 const card = { border: `1px solid ${C.border2}`, borderRadius: 8, background: C.surface, padding: '12px 14px' };
 
@@ -73,7 +74,7 @@ function QualityNotice({ pipeline, onNormalize, normalizeBusy = false, setArchiv
   );
 }
 
-export function GeneralOverviewView({ generalOverview, generalOverviewLoading, pipeline, collectionScreen = null, setArchiveMode, onNormalize, normalizeBusy = false }) {
+export function GeneralOverviewView({ generalOverview, generalOverviewLoading, fieldCatalog = null, pipeline, collectionScreen = null, setArchiveMode, onNormalize, normalizeBusy = false }) {
   const ov = generalOverview;
   const legacySummary = ov?.statusSummary || { total: 0, ready: 0, missingCount: 0, manualReview: 0, modules: [] };
   const collectionCounts = collectionScreen?.counts || null;
@@ -158,6 +159,8 @@ export function GeneralOverviewView({ generalOverview, generalOverviewLoading, p
       )}
 
       <QualityNotice pipeline={pipeline} setArchiveMode={setArchiveMode} onNormalize={onNormalize} normalizeBusy={normalizeBusy} />
+
+      <DataFieldList catalog={fieldCatalog} loading={generalOverviewLoading} />
     </div>
   );
 }

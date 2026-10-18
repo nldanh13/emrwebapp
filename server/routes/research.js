@@ -48,6 +48,7 @@ const { cleanResearchGenerated, cleanupStaleDatasetStaging, finalizeAnalysisData
 const { buildEncodedDataset } = require('../research/encoded_dataset');
 const { buildPatientHistory } = require('../research/patient_history');
 const { VARIABLE_CATALOG_MAX_ROWS, buildVariableCatalog, summarizeVariableColumns } = require('../research/variable_catalog');
+const { buildFieldCatalog } = require('../research/field_catalog');
 const { resolveStudyRunIdFast } = require('../research/run_registry');
 const { archiveTablePath, chooseArchiveRunIdForResume, isStoppedRunResult, readArchive, readArchiveProgressMeta, readStudy, resolveArchiveRunId, resolveArchiveRunIdFast, resolveArchiveRunIdForAction, resolveRunId, safeRunId, sortRowsForTable, updateArchive, updateStudy, validatePatientCsv } = require('../research/run_registry');
 const { ensureResearchSourceRows, flattenHchanhIntoResearchRun, normalizeResearchSourceRows, readResearchHchanhSourceRows, researchHchanhMeta } = require('../research/research_source');
@@ -282,6 +283,18 @@ router.get('/research/archive/variable-catalog', (req, res) => {
     const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
     const catalog = buildVariableCatalog(runDir, { redact });
     return res.json({ status: 'ok', run_id: runId || '', redacted: redact, catalog });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+// Mọi trường dữ liệu kho lấy được (theo từ điển dữ liệu) + số dòng đã có giá trị, cho tab Dữ liệu tổng quát.
+// Chỉ đọc CSV chuẩn hóa đã lưu; không mở EMR. Chưa có kho thì vẫn trả danh sách trường, không có số đếm.
+router.get('/research/archive/field-catalog', (req, res) => {
+  try {
+    const runId = resolveArchiveRunId(String(req.query.runId || 'latest'));
+    const runDir = runId ? path.join(archiveRunsDir(), runId) : '';
+    return res.json({ status: 'ok', catalog: buildFieldCatalog(runDir) });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }
