@@ -699,8 +699,14 @@ function derivePartResults(source, xnMatches, hchanhProgress, orderProgress, orp
   const hcs = members.map(m => hchanhProgress?.[m]).filter(Boolean).concat(orphanHc.get(source.key) || []);
   const ohs = members.map(m => orderProgress?.[m]).filter(Boolean).concat(orphanOh.get(source.key) || []);
   const hcFile = file => latestPreferDone(hcs.map(e => classifyHchanhFile(e, file)));
+  // Y lệnh có thể lấy ở tác vụ riêng (order_history_auto_progress) hoặc gộp trong lần lấy hành chánh
+  // khi lượt cần cả Phẫu thuật (y lệnh là bước dò mốc mổ). Bản ghi nào mới nhất (ưu tiên đã xong) thắng.
+  const hcWithOrder = hcs.filter(e => e?.file_status?.order_history);
   const orderHistory = ohs.length
-    ? latestPreferDone(ohs.map(e => classifyHchanhFile(e, 'order_history')))
+    ? latestPreferDone([
+      ...ohs.map(e => classifyHchanhFile(e, 'order_history')),
+      ...hcWithOrder.map(e => classifyHchanhFile(e, 'order_history', { trustEntryFetchWindowVersion: false })),
+    ])
     : latestPreferDone(hcs.map(e => classifyHchanhFile(e, 'order_history', { trustEntryFetchWindowVersion: false })));
   return {
     xn: latestPreferDone(xnEntries.map(e => classifyXnTab(e, 'xn'))),
@@ -1167,14 +1173,17 @@ function groupTasksByFetcher(tasks = []) {
   const groups = { xn_cdha: [], hchanh: new Map(), order_history: [] };
   for (const t of tasks) {
     const xnParts = t.parts.filter(p => fetcherOf[p] === 'xn_cdha');
-    const hcParts = t.parts.filter(p => fetcherOf[p] === 'hchanh').sort();
+    // Lấy Phẫu thuật thì worker đã phải lấy Lịch sử y lệnh trước để dò mốc mổ: gộp Y lệnh vào cùng
+    // lần đó (một Chrome, một lần tìm BN) thay vì lấy lại y hệt ở tác vụ Y lệnh riêng.
+    const mergeOrder = t.parts.includes('order_history') && t.parts.includes('surgery');
+    const hcParts = t.parts.filter(p => fetcherOf[p] === 'hchanh' || (mergeOrder && p === 'order_history')).sort();
     if (xnParts.length) groups.xn_cdha.push({ ...t, parts: xnParts });
     if (hcParts.length) {
       const sig = hcParts.join(',');
       if (!groups.hchanh.has(sig)) groups.hchanh.set(sig, []);
       groups.hchanh.get(sig).push({ ...t, parts: hcParts });
     }
-    if (t.parts.includes('order_history')) groups.order_history.push({ ...t, parts: ['order_history'] });
+    if (t.parts.includes('order_history') && !mergeOrder) groups.order_history.push({ ...t, parts: ['order_history'] });
   }
   return groups;
 }

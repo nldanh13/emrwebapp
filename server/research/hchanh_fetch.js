@@ -22,6 +22,10 @@ const BILLING_RAW_COLUMNS = [...BILLING_SUMMARY_FIELDS, ...BILLING_ITEMIZED_FIEL
 
 const VERIFIED_FETCH_WINDOW_VERSION = ORDER_HISTORY_FETCH_WINDOW_VERSION;
 
+function researchDirectLinksEnabled() {
+  return !['0', 'false', 'off', 'no'].includes(String(process.env.EMR_RESEARCH_DIRECT_LINKS || '').trim().toLowerCase());
+}
+
 function hchanhDefaultFiles(files) {
   const allowed = new Set(['profile', 'discharge', 'surgery', 'order_history', 'billing']);
   const requested = Array.isArray(files) ? files.map(x => String(x || '').trim()).filter(Boolean) : [];
@@ -241,6 +245,11 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
     list.push({ from, to, output, sourceKey: key });
     fetchedStays.set(meta.ma_bn, list);
   };
+  // Y lệnh gộp trong lần lấy hành chánh không dùng lại bản trong kho dùng chung: tác vụ Y lệnh riêng
+  // cũng không dùng lại bản kho cho lượt chưa có y lệnh bản mới (parser/cửa sổ đợt), nên giữ như vậy.
+  const reusableFromStore = (k, payload) => (k === 'order_history' && normalizedMode !== 'order_history_auto')
+    ? false
+    : hchanhPayloadComplete(k, payload);
   const findFetchedStay = (meta, { allowStored = true } = {}) => {
     const admission = isoDate(meta.admission_raw || '');
     if (!admission) return null;
@@ -251,7 +260,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
     // Bản lưu thiếu nội dung Kho nghiên cứu cần (sinh hiệu vào viện, Tổng hợp chi phí) không dùng lại
     // nguyên đợt; nhánh "dùng một phần" bên dưới chỉ lấy lại đúng phần thiếu.
     const stored = findStoredStay(meta.ma_bn, admission, wantedFiles, { onlyGoc: refreshProvisional });
-    return stored && wantedFiles.every(k => hchanhPayloadComplete(k, stored.output?.[k])) ? stored : null;
+    return stored && wantedFiles.every(k => reusableFromStore(k, stored.output?.[k])) ? stored : null;
   };
   const writeHchanhCsvs = () => {
     writeCsvUnion(path.join(runPath, 'hchanh_profile.csv'), profileRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Giới', 'Ngày sinh', 'Tuổi', 'Địa chỉ', 'Điện thoại', 'Số CMND', 'Đối tượng', 'Số thẻ', 'Ngày vào viện', 'Ngày ra viện', 'Chẩn đoán', 'Mạch vào viện', 'Nhiệt độ vào viện', 'HA tâm thu vào viện', 'HA tâm trương vào viện', 'Nhịp thở vào viện', 'Cân nặng vào viện', 'Chiều cao vào viện', 'Research key']);
@@ -415,7 +424,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
         let filesOverride = null;
         const storedPart = (force || windowNeedsRepair) ? null : findStoredStay(meta.ma_bn, isoDate(meta.admission_raw || ''), [], { onlyGoc: refreshProvisional });
         if (storedPart) {
-          const have = wantedFiles.filter(k => storedPart.output?.[k] && hchanhPayloadComplete(k, storedPart.output[k]));
+          const have = wantedFiles.filter(k => storedPart.output?.[k] && reusableFromStore(k, storedPart.output[k]));
           if (have.length) {
             storedFiles = Object.fromEntries(have.map(k => [k, storedPart.output[k]]));
             storedTiers = storedPart.tiers || {};
@@ -440,6 +449,10 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
       const batchPayload = batchItems.map(({ row, meta, key, dateFrom, dateTo, filesOverride }) => ({
         ...row,
         ...(filesOverride?.length ? { _files_override: filesOverride } : {}),
+        // Link bệnh án của đúng dòng đã quét: worker mở thẳng, không phải tìm lại BN trên D/s điều trị
+        // nội trú (lọc trạng thái, khoảng ngày, gõ mã) cho từng lượt. EMR_RESEARCH_DIRECT_LINKS=0 để tắt.
+        ...(researchDirectLinksEnabled() && meta.doctor_url ? { doctor_url: meta.doctor_url } : {}),
+        ...(researchDirectLinksEnabled() && meta.nursing_url ? { nursing_url: meta.nursing_url } : {}),
         ma_bn: meta.ma_bn,
         ho_ten: meta.ho_ten,
         research_code: meta.research_code,
