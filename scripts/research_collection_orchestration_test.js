@@ -21,7 +21,7 @@ process.env.EMR_RUNTIME_ROOT = RUNTIME_ROOT;
 const research = require('../server/routes/research');
 const R = research._test;
 const { redactCollectionRows } = require('../server/research/collection_runtime');
-const { ORDER_HISTORY_FETCH_WINDOW_VERSION } = require('../server/research/fetch_versions');
+const { HCHANH_CONTENT_VERSIONS, ORDER_HISTORY_FETCH_WINDOW_VERSION } = require('../server/research/fetch_versions');
 
 let passed = 0;
 async function test(name, fn) {
@@ -97,6 +97,7 @@ function fakeRunners(runDir, behavior) {
             const b = next(row['Mã BN'], f);
             fileStatus[f] = b === 'ok' ? { fetch_status: 'ok', rows: 2, at } : b === 'empty' ? { fetch_status: 'ok', rows: 0, at } : { fetch_status: 'timeout', rows: 0, at };
             if (f === 'order_history') fileStatus[f].fetch_window_version = ORDER_HISTORY_FETCH_WINDOW_VERSION;
+            if (HCHANH_CONTENT_VERSIONS[f]) fileStatus[f].payload_version = HCHANH_CONTENT_VERSIONS[f];
           }
           progress[key] = {
             ...(progress[key] || {}), status: 'done', files: [...new Set([...(progress[key]?.files || []), ...opts.files])],
@@ -276,11 +277,13 @@ const opts = rows => ({ runDir, runId: 'collect_run', scope: 'du_lieu_goc', isAr
           if (value === null) {
             fileStatus[f] = { fetch_status: 'timeout', rows: 0, at };
             if (f === 'order_history') fileStatus[f].fetch_window_version = ORDER_HISTORY_FETCH_WINDOW_VERSION;
+            if (HCHANH_CONTENT_VERSIONS[f]) fileStatus[f].payload_version = HCHANH_CONTENT_VERSIONS[f];
             continue;
           }
           writeCsv(csv, ['Research key', 'Mã BN', 'Giá trị'], [...others, { 'Research key': key, 'Mã BN': code, 'Giá trị': value }]);
           fileStatus[f] = { fetch_status: 'ok', rows: 1, at };
           if (f === 'order_history') fileStatus[f].fetch_window_version = ORDER_HISTORY_FETCH_WINDOW_VERSION;
+            if (HCHANH_CONTENT_VERSIONS[f]) fileStatus[f].payload_version = HCHANH_CONTENT_VERSIONS[f];
         }
         progress[key] = {
           ...(progress[key] || {}),
@@ -424,6 +427,7 @@ const opts = rows => ({ runDir, runId: 'collect_run', scope: 'du_lieu_goc', isAr
           for (const part of opts.files) {
             fileStatus[part] = { fetch_status: 'ok', rows: 1, at };
             if (part === 'order_history') fileStatus[part].fetch_window_version = ORDER_HISTORY_FETCH_WINDOW_VERSION;
+            if (HCHANH_CONTENT_VERSIONS[part]) fileStatus[part].payload_version = HCHANH_CONTENT_VERSIONS[part];
           }
           progress[key] = {
             ...(progress[key] || {}),

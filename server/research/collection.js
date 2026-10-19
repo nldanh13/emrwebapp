@@ -16,7 +16,7 @@
 
 const crypto = require('crypto');
 const variableSelection = require('./variable_selection');
-const { ORDER_HISTORY_FETCH_WINDOW_VERSION } = require('./fetch_versions');
+const { HCHANH_CONTENT_VERSIONS, ORDER_HISTORY_FETCH_WINDOW_VERSION } = require('./fetch_versions');
 
 const LEDGER_VERSION = 2;
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -39,6 +39,7 @@ const REASON_LABELS = {
   missing: 'Chưa lấy',
   changed: 'Dữ liệu trên EMR đã thay đổi',
   parser_migration: 'Y lệnh cần lấy lại bằng parser/cửa sổ mới',
+  content_migration: 'Bản cũ thiếu sinh hiệu vào viện hoặc khối Tổng hợp chi phí',
   retry: 'Thử lại sau lỗi kỹ thuật',
   interrupted: 'Lần trước dừng giữa chừng',
   legacy_empty_unverified: 'Bản cũ ghi 0 dòng, chưa chắc EMR không có',
@@ -378,9 +379,11 @@ function classifyHchanhFile(entry, file, { trustEntryFetchWindowVersion = true }
   const fetchWindowVersion = file === 'order_history'
     ? Number(fs?.fetch_window_version || (trustEntryFetchWindowVersion ? entry.fetch_window_version : 0) || 0)
     : 0;
+  // Hồ sơ nền / Chi phí: mức nội dung chỉ đọc trên file_status (bản cũ không có → 0, lấy lại một lần).
+  const payloadVersion = HCHANH_CONTENT_VERSIONS[file] ? Number(fs?.payload_version || 0) : null;
   const withVersion = value => file === 'order_history'
     ? { ...value, fetch_window_version: fetchWindowVersion }
-    : value;
+    : payloadVersion !== null ? { ...value, payload_version: payloadVersion } : value;
   if (fs && typeof fs === 'object') {
     const res = classifyFetchStatus(fs.fetch_status, fs.rows, fs.reason);
     if (fs.override_status) {
@@ -776,6 +779,7 @@ function buildLedger({ sourceRows = [], units = null, xnProgress = {}, hchanhPro
           result_at: d.result_at || '', attempts: d.status === 'failed' ? 1 : 0,
           seen_seq: changeSeq, seen_demo_seq: demoSeq,
           ...(key === 'order_history' ? { fetch_window_version: Number(d.fetch_window_version || 0) } : {}),
+          ...(HCHANH_CONTENT_VERSIONS[key] ? { payload_version: Number(d.payload_version || 0) } : {}),
         };
         continue;
       }
@@ -785,6 +789,7 @@ function buildLedger({ sourceRows = [], units = null, xnProgress = {}, hchanhPro
         parts[key] = {
           ...p,
           ...(key === 'order_history' ? { fetch_window_version: Number(d.fetch_window_version || p.fetch_window_version || 0) } : {}),
+          ...(HCHANH_CONTENT_VERSIONS[key] ? { payload_version: Number(d.payload_version || p.payload_version || 0) } : {}),
         };
         if (
           reopenLegacyXnCdhaNoResult
@@ -814,6 +819,7 @@ function buildLedger({ sourceRows = [], units = null, xnProgress = {}, hchanhPro
         seen_seq: done ? changeSeq : (Number(p.seen_seq) || 0),
         seen_demo_seq: done ? demoSeq : (Number(p.seen_demo_seq) || 0),
         ...(key === 'order_history' ? { fetch_window_version: Number(d.fetch_window_version || 0) } : {}),
+        ...(HCHANH_CONTENT_VERSIONS[key] ? { payload_version: Number(d.payload_version || 0) } : {}),
       };
     }
 
@@ -857,6 +863,9 @@ function staleReason(enc, key) {
   if (!p || !DONE_STATUSES.has(p.status)) return '';
   if (key === 'order_history' && Number(p.fetch_window_version || 0) < ORDER_HISTORY_FETCH_WINDOW_VERSION) {
     return 'parser_migration';
+  }
+  if (HCHANH_CONTENT_VERSIONS[key] && Number(p.payload_version || 0) < HCHANH_CONTENT_VERSIONS[key]) {
+    return 'content_migration';
   }
   if ((Number(p.seen_seq) || 0) < (Number(enc.change_seq) || 0)) return 'changed';
   if (key === 'profile' && (Number(p.seen_demo_seq) || 0) < (Number(enc.demo_seq) || 0)) return 'changed';
