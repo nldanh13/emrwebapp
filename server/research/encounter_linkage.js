@@ -23,4 +23,26 @@ function surgeryForMedicationContext(byEncounter, ctx) {
   return byEncounter?.get(encounterId) || null;
 }
 
-module.exports = { firstSurgeryByEncounter, surgeryForMedicationContext };
+// Gắn ngày ca mổ sớm nhất đã xác minh (ghép chắc chắn, nằm trong đợt) vào ngữ cảnh đợt điều trị,
+// để encounters.surgery_date và days_from_surgery của các bảng con có giá trị. Ngày đã có sẵn
+// trên ngữ cảnh (cột "Ngày mổ" của nguồn) được giữ nguyên.
+function applyVerifiedSurgeryDates(ctxMap, surgeryRows) {
+  const verified = (Array.isArray(surgeryRows) ? surgeryRows : [])
+    .filter(row => row?.encounter_match_status === 'matched' && row?.is_within_encounter === '1');
+  const byEncounter = firstSurgeryByEncounter(verified);
+  let applied = 0;
+  for (const [key, list] of ctxMap || []) {
+    if (!String(key).startsWith('patient:') || !Array.isArray(list)) continue;
+    for (const ctx of list) {
+      if (!ctx || ctx.surgery_date) continue;
+      const surg = byEncounter.get(String(ctx.encounter_id || '').trim());
+      const day = String(surg?.surgery_date || surg?.surgery_datetime || '').slice(0, 10);
+      if (!day) continue;
+      ctx.surgery_date = day;
+      applied += 1;
+    }
+  }
+  return applied;
+}
+
+module.exports = { applyVerifiedSurgeryDates, firstSurgeryByEncounter, surgeryForMedicationContext };

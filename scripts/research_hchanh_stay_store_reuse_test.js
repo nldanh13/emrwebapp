@@ -14,6 +14,7 @@ const RUNTIME_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'research_stay_store_
 process.env.EMR_RUNTIME_ROOT = RUNTIME_ROOT;
 
 const spawned = [];
+const payloads = [];
 const runnerPath = require.resolve('../server/services/python_runner');
 const realRunner = require(runnerPath);
 require.cache[runnerPath].exports = {
@@ -24,11 +25,13 @@ require.cache[runnerPath].exports = {
     for (const item of input) {
       const files = item._files_override || args[args.indexOf('--files') + 1].split(',');
       spawned.push(`${item.ma_bn}:${files.join('+')}`);
+      payloads.push(item);
       const all = {
-        profile: { _fetch_status: 'ok', ngay_vao_vien: '08:00 20/09/2026', bhyt_code: `EMR-${item.ma_bn}` },
+        profile: { _fetch_status: 'ok', ngay_vao_vien: '08:00 20/09/2026', bhyt_code: `EMR-${item.ma_bn}`, _admission_vitals_status: 'ok', mach_vao_vien: '80' },
         discharge: { _fetch_status: 'ok', ngay_ra: '28/09/2026', xu_tri: 'Ra viện (EMR)' },
         surgery: { _fetch_status: 'ok', surgeries: [] },
         billing: { _fetch_status: 'ok', rows: [{ name: 'Ngày giường', thanh_tien: 100000, payment_group: 'bhyt' }], tong_hop: { tong_chi_phi: 100000 } },
+        order_history: { _fetch_status: 'ok', rows: [] },
       };
       out[item._progress_key] = Object.fromEntries(files.map(f => [f, all[f]]));
     }
@@ -44,7 +47,7 @@ const fetchRun = router._fetchHchanhForResearchRun;
 (async () => {
   // 333: tab Hành chánh đã lấy đủ 4 file (gồm bảng kê); 444: Kiểm hồ sơ mới có ra viện.
   store.recordHchanhFetch('333', {
-    profile: { _fetch_status: 'ok', bhyt_code: 'HC-333' },
+    profile: { _fetch_status: 'ok', bhyt_code: 'HC-333', _admission_vitals_status: 'ok' },
     discharge: { _fetch_status: 'ok', ngay_ra: '28/09/2026', tong_so_ngay_dt: '9', xu_tri: 'Ra viện (HC)' },
     surgery: { _fetch_status: 'ok', surgeries: [{ noi_dung_phau_thuat: 'Kết hợp xương' }] },
     billing: { _fetch_status: 'ok', rows: [{ name: 'Ngày giường', thanh_tien: 300000, payment_group: 'bhyt' }], tong_hop: { tong_chi_phi: 300000 } },
@@ -102,6 +105,53 @@ const fetchRun = router._fetchHchanhForResearchRun;
   spawned.length = 0;
   await fetchRun(ctx, runDir, { sourceRows: [row('333', 'NC3')], sourceRunId: 'r1', force: true });
   assert.deepStrictEqual(spawned, ['333:profile+discharge+surgery+billing']);
+
+  // 666: tab Hành chánh lấy đủ 4 file nhưng bằng worker cũ: hồ sơ chưa đọc Phiếu vào viện (không có
+  // sinh hiệu), bảng kê chưa có khối Tổng hợp chi phí. Không được dùng lại hai phần đó; chỉ mở EMR
+  // lấy lại đúng hai phần, ra viện/phẫu thuật vẫn dùng lại.
+  store.recordHchanhFetch('666', {
+    profile: { _fetch_status: 'ok', bhyt_code: 'HC-666' },
+    discharge: { _fetch_status: 'ok', ngay_ra: '28/09/2026', tong_so_ngay_dt: '9', xu_tri: 'Ra viện (HC)' },
+    surgery: { _fetch_status: 'ok', surgeries: [] },
+    billing: { _fetch_status: 'ok', rows: [{ name: 'Ngày giường', thanh_tien: 300000, payment_group: 'bhyt' }] },
+  }, { admission: '08:00 20/09/2026', source: 'hanh_chanh' });
+  spawned.length = 0;
+  const runDir2 = fs.mkdtempSync(path.join(RUNTIME_ROOT, 'run_'));
+  await fetchRun({ ...ctx, dir: runDir2 }, runDir2, { sourceRows: [row('666', 'NC6')], sourceRunId: 'r2' });
+  assert.deepStrictEqual(spawned, ['666:profile+billing'], `Bản cũ thiếu sinh hiệu/Tổng hợp chi phí, thực tế: ${spawned.join(', ')}`);
+  const p666 = Object.values(JSON.parse(fs.readFileSync(path.join(runDir2, 'hchanh_auto_progress.json'), 'utf-8')))[0];
+  assert.strictEqual(p666.file_status.profile.payload_version, 2);
+  assert.strictEqual(p666.file_status.billing.payload_version, 2);
+  assert.ok(fs.readFileSync(path.join(runDir2, 'hchanh_profile.csv'), 'utf-8').includes('EMR-666'));
+
+  // 777: lượt cần cả Phẫu thuật và Y lệnh (Y lệnh gộp vào lần hành chánh). Kho dùng chung có đủ, nhưng
+  // Y lệnh trong kho không được dùng lại (tác vụ Y lệnh riêng cũng không dùng lại bản kho cho lượt mới).
+  store.recordHchanhFetch('777', {
+    profile: { _fetch_status: 'ok', bhyt_code: 'HC-777', _admission_vitals_status: 'ok' },
+    discharge: { _fetch_status: 'ok', ngay_ra: '28/09/2026', tong_so_ngay_dt: '9', xu_tri: 'Ra viện (HC)' },
+    surgery: { _fetch_status: 'ok', surgeries: [] },
+    billing: { _fetch_status: 'ok', rows: [{ name: 'Ngày giường', thanh_tien: 300000, payment_group: 'bhyt' }], tong_hop: { tong_chi_phi: 300000 } },
+    order_history: { _fetch_status: 'ok', rows: [] },
+  }, { admission: '08:00 20/09/2026', source: 'hanh_chanh' });
+  spawned.length = 0;
+  const runDir3 = fs.mkdtempSync(path.join(RUNTIME_ROOT, 'run_'));
+  await fetchRun({ ...ctx, dir: runDir3 }, runDir3, {
+    sourceRows: [row('777', 'NC7')], sourceRunId: 'r3', files: ['billing', 'discharge', 'order_history', 'profile', 'surgery'],
+  });
+  assert.deepStrictEqual(spawned, ['777:order_history'], `Y lệnh gộp không dùng bản kho, thực tế: ${spawned.join(', ')}`);
+  const p777 = Object.values(JSON.parse(fs.readFileSync(path.join(runDir3, 'hchanh_auto_progress.json'), 'utf-8')))[0];
+  assert.strictEqual(p777.file_status.order_history.fetch_window_version, 4);
+
+  // Dòng quét có link bệnh án: worker nhận doctor_url/nursing_url để mở thẳng, không tìm lại BN.
+  payloads.length = 0;
+  const runDir4 = fs.mkdtempSync(path.join(RUNTIME_ROOT, 'run_'));
+  await fetchRun({ ...ctx, dir: runDir4 }, runDir4, {
+    sourceRows: [{ ...row('888', 'NC8'), 'URL bác sĩ': 'http://emr/home.aspx?wpid=bacsidraw&noitruid=nt888', 'URL điều dưỡng': 'http://emr/home.aspx?wpid=dieuduongdraw&noitruid=nt888' }],
+    sourceRunId: 'r4',
+  });
+  assert.strictEqual(payloads.length, 1);
+  assert.strictEqual(payloads[0].doctor_url, 'http://emr/home.aspx?wpid=bacsidraw&noitruid=nt888');
+  assert.strictEqual(payloads[0].nursing_url, 'http://emr/home.aspx?wpid=dieuduongdraw&noitruid=nt888');
 
   fs.rmSync(RUNTIME_ROOT, { recursive: true, force: true });
   console.log('research_hchanh_stay_store_reuse_test: OK');

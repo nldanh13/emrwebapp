@@ -46,7 +46,7 @@ function hcEntry(files, at = '2026-01-10T00:00:00Z', extra = {}) {
   return { status: 'done', files: Object.keys(files), file_status, finished_at: at, ...extra };
 }
 
-const OK_HC = { profile: { fetch_status: 'ok', rows: 1 }, discharge: { fetch_status: 'ok', rows: 1 }, surgery: { fetch_status: 'ok', rows: 0 }, billing: { fetch_status: 'ok', rows: 1 } };
+const OK_HC = { profile: { fetch_status: 'ok', rows: 1, payload_version: 2 }, discharge: { fetch_status: 'ok', rows: 1 }, surgery: { fetch_status: 'ok', rows: 0 }, billing: { fetch_status: 'ok', rows: 1, payload_version: 2 } };
 const OK_OH = { order_history: { fetch_status: 'ok', rows: 12 } };
 const XN_OK = { status: { xn: 'done', cdha: 'empty' }, counts: { xn: 20, cdha: 0 }, saved: { xn: true, cdha: true }, committed: true };
 
@@ -132,6 +132,32 @@ test('Chỉ lấy lại đúng phần lỗi; ca đủ và không đổi thì b�
   assert.strictEqual(groups.order_history.length, 0);
 });
 
+test('Hồ sơ nền/Chi phí bản cũ (thiếu sinh hiệu vào viện, Tổng hợp chi phí) lấy lại đúng một lần', () => {
+  const sources = [src('enc_a', 'NC0001', 'BN_A')];
+  const { xn, hc, oh } = fullyCollected(sources);
+  // Progress cũ: không có payload_version (worker trước khi đọc Phiếu vào viện / khối Tổng hợp chi phí).
+  hc.enc_a = hcEntry({
+    ...OK_HC,
+    profile: { fetch_status: 'ok', rows: 1 },
+    billing: { fetch_status: 'ok', rows: 1 },
+  });
+  const legacy = c.buildLedger({ sourceRows: sources, xnProgress: xn, hchanhProgress: hc, orderProgress: oh });
+  const plan = c.planCollection(legacy);
+  assert.strictEqual(plan.tasks.length, 1);
+  assert.deepStrictEqual(plan.tasks[0].parts.slice().sort(), ['billing', 'profile']);
+  assert.strictEqual(plan.tasks[0].reasons.profile, 'content_migration');
+  assert.strictEqual(plan.tasks[0].reasons.billing, 'content_migration');
+  // Ra viện / phẫu thuật không bị lấy lại.
+  assert.ok(!plan.tasks[0].parts.includes('discharge'));
+
+  // Worker hiện tại ghi payload_version 2 → hết cũ, không lấy lặp.
+  const fresh = c.buildLedger({
+    sourceRows: sources, xnProgress: xn, orderProgress: oh, previous: legacy,
+    hchanhProgress: { enc_a: hcEntry(OK_HC, '2026-01-11T00:00:00Z') },
+  });
+  assert.strictEqual(c.planCollection(fresh).tasks.length, 0);
+});
+
 test('Y lệnh v3 đã ok vẫn phải tự lấy lại một lần bằng parser/cửa sổ v4', () => {
   const sources = [src('enc_a', 'NC0001', 'BN_A')];
   const { xn, hc, oh } = fullyCollected(sources);
@@ -174,7 +200,8 @@ test('Ca mới lấy đủ mọi phần; ca đã có mà thiếu một phần h�
   assert.strictEqual(byKey.enc_new.parts.length, c.PART_KEYS.length);
   assert.strictEqual(byKey.enc_new.is_new, true);
   const groups = c.groupTasksByFetcher(plan.tasks);
-  assert.deepStrictEqual([...groups.hchanh.keys()].sort(), ['billing,discharge,profile,surgery', 'surgery']);
+  assert.deepStrictEqual([...groups.hchanh.keys()].sort(), ['billing,discharge,order_history,profile,surgery', 'surgery']);
+  assert.strictEqual(groups.order_history.length, 0);
 });
 
 test('Danh sách EMR thay đổi → lấy lại; chỉ đổi họ tên/tuổi → chỉ lấy lại hồ sơ nền', () => {
@@ -620,6 +647,27 @@ test('Kế hoạch thu thập cộng lại đúng tổng: lấy + đủ + chờ 
     { to_fetch: 1, unchanged: 1, waiting: 1, unmatched: 1 },
   );
   assert.strictEqual(s.to_fetch + s.unchanged + s.waiting_encounters + s.unmatched_encounters, s.encounters);
+});
+
+test('Lượt cần cả Phẫu thuật và Y lệnh: Y lệnh gộp vào lần lấy hành chánh, không chạy tác vụ Y lệnh riêng', () => {
+  const groups = c.groupTasksByFetcher([
+    { key: 'moi', parts: ['xn', 'cdha', 'profile', 'discharge', 'surgery', 'order_history', 'billing'] },
+    { key: 'chi_y_lenh', parts: ['order_history'] },
+  ]);
+  assert.deepStrictEqual([...groups.hchanh.keys()], ['billing,discharge,order_history,profile,surgery']);
+  assert.deepStrictEqual(groups.order_history.map(t => t.key), ['chi_y_lenh']);
+  assert.deepStrictEqual(groups.xn_cdha.map(t => t.key), ['moi']);
+});
+
+test('Y lệnh lấy trong lần hành chánh (mới hơn bản tác vụ Y lệnh cũ) được sổ thu thập nhận là đã có', () => {
+  const sources = [src('enc_y', 'NC0100', 'BN_Y')];
+  const { xn, hc, oh } = fullyCollected(sources);
+  // Bản Y lệnh cũ (lỗi) ở tác vụ riêng; lần hành chánh sau đó đã lấy kèm Y lệnh bản mới.
+  oh.enc_y = hcEntry({ order_history: { fetch_status: 'timeout', rows: 0 } }, '2026-01-08T00:00:00Z', { status: 'error' });
+  hc.enc_y = hcEntry({ ...OK_HC, order_history: { fetch_status: 'ok', rows: 30, fetch_window_version: 4 } }, '2026-01-12T00:00:00Z');
+  const ledger = c.buildLedger({ sourceRows: sources, xnProgress: xn, hchanhProgress: hc, orderProgress: oh });
+  const plan = c.planCollection(ledger);
+  assert.strictEqual(plan.tasks.length, 0, JSON.stringify(plan.tasks));
 });
 
 console.log(`\n${passed} kịch bản pass.`);
