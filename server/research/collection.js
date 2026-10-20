@@ -16,7 +16,7 @@
 
 const crypto = require('crypto');
 const variableSelection = require('./variable_selection');
-const { ORDER_HISTORY_FETCH_WINDOW_VERSION } = require('./fetch_versions');
+const { HCHANH_CONTENT_VERSIONS, ORDER_HISTORY_FETCH_WINDOW_VERSION } = require('./fetch_versions');
 
 const LEDGER_VERSION = 2;
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -39,6 +39,7 @@ const REASON_LABELS = {
   missing: 'Chưa lấy',
   changed: 'Dữ liệu trên EMR đã thay đổi',
   parser_migration: 'Y lệnh cần lấy lại bằng parser/cửa sổ mới',
+  content_migration: 'Bản cũ thiếu sinh hiệu vào viện hoặc khối Tổng hợp chi phí',
   retry: 'Thử lại sau lỗi kỹ thuật',
   interrupted: 'Lần trước dừng giữa chừng',
   legacy_empty_unverified: 'Bản cũ ghi 0 dòng, chưa chắc EMR không có',
@@ -378,9 +379,11 @@ function classifyHchanhFile(entry, file, { trustEntryFetchWindowVersion = true }
   const fetchWindowVersion = file === 'order_history'
     ? Number(fs?.fetch_window_version || (trustEntryFetchWindowVersion ? entry.fetch_window_version : 0) || 0)
     : 0;
+  // Hồ sơ nền / Chi phí: mức nội dung chỉ đọc trên file_status (bản cũ không có → 0, lấy lại một lần).
+  const payloadVersion = HCHANH_CONTENT_VERSIONS[file] ? Number(fs?.payload_version || 0) : null;
   const withVersion = value => file === 'order_history'
     ? { ...value, fetch_window_version: fetchWindowVersion }
-    : value;
+    : payloadVersion !== null ? { ...value, payload_version: payloadVersion } : value;
   if (fs && typeof fs === 'object') {
     const res = classifyFetchStatus(fs.fetch_status, fs.rows, fs.reason);
     if (fs.override_status) {
@@ -696,8 +699,14 @@ function derivePartResults(source, xnMatches, hchanhProgress, orderProgress, orp
   const hcs = members.map(m => hchanhProgress?.[m]).filter(Boolean).concat(orphanHc.get(source.key) || []);
   const ohs = members.map(m => orderProgress?.[m]).filter(Boolean).concat(orphanOh.get(source.key) || []);
   const hcFile = file => latestPreferDone(hcs.map(e => classifyHchanhFile(e, file)));
+  // Y lệnh có thể lấy ở tác vụ riêng (order_history_auto_progress) hoặc gộp trong lần lấy hành chánh
+  // khi lượt cần cả Phẫu thuật (y lệnh là bước dò mốc mổ). Bản ghi nào mới nhất (ưu tiên đã xong) thắng.
+  const hcWithOrder = hcs.filter(e => e?.file_status?.order_history);
   const orderHistory = ohs.length
-    ? latestPreferDone(ohs.map(e => classifyHchanhFile(e, 'order_history')))
+    ? latestPreferDone([
+      ...ohs.map(e => classifyHchanhFile(e, 'order_history')),
+      ...hcWithOrder.map(e => classifyHchanhFile(e, 'order_history', { trustEntryFetchWindowVersion: false })),
+    ])
     : latestPreferDone(hcs.map(e => classifyHchanhFile(e, 'order_history', { trustEntryFetchWindowVersion: false })));
   return {
     xn: latestPreferDone(xnEntries.map(e => classifyXnTab(e, 'xn'))),
@@ -776,6 +785,7 @@ function buildLedger({ sourceRows = [], units = null, xnProgress = {}, hchanhPro
           result_at: d.result_at || '', attempts: d.status === 'failed' ? 1 : 0,
           seen_seq: changeSeq, seen_demo_seq: demoSeq,
           ...(key === 'order_history' ? { fetch_window_version: Number(d.fetch_window_version || 0) } : {}),
+          ...(HCHANH_CONTENT_VERSIONS[key] ? { payload_version: Number(d.payload_version || 0) } : {}),
         };
         continue;
       }
@@ -785,6 +795,7 @@ function buildLedger({ sourceRows = [], units = null, xnProgress = {}, hchanhPro
         parts[key] = {
           ...p,
           ...(key === 'order_history' ? { fetch_window_version: Number(d.fetch_window_version || p.fetch_window_version || 0) } : {}),
+          ...(HCHANH_CONTENT_VERSIONS[key] ? { payload_version: Number(d.payload_version || p.payload_version || 0) } : {}),
         };
         if (
           reopenLegacyXnCdhaNoResult
@@ -814,6 +825,7 @@ function buildLedger({ sourceRows = [], units = null, xnProgress = {}, hchanhPro
         seen_seq: done ? changeSeq : (Number(p.seen_seq) || 0),
         seen_demo_seq: done ? demoSeq : (Number(p.seen_demo_seq) || 0),
         ...(key === 'order_history' ? { fetch_window_version: Number(d.fetch_window_version || 0) } : {}),
+        ...(HCHANH_CONTENT_VERSIONS[key] ? { payload_version: Number(d.payload_version || 0) } : {}),
       };
     }
 
@@ -857,6 +869,9 @@ function staleReason(enc, key) {
   if (!p || !DONE_STATUSES.has(p.status)) return '';
   if (key === 'order_history' && Number(p.fetch_window_version || 0) < ORDER_HISTORY_FETCH_WINDOW_VERSION) {
     return 'parser_migration';
+  }
+  if (HCHANH_CONTENT_VERSIONS[key] && Number(p.payload_version || 0) < HCHANH_CONTENT_VERSIONS[key]) {
+    return 'content_migration';
   }
   if ((Number(p.seen_seq) || 0) < (Number(enc.change_seq) || 0)) return 'changed';
   if (key === 'profile' && (Number(p.seen_demo_seq) || 0) < (Number(enc.demo_seq) || 0)) return 'changed';
@@ -1158,14 +1173,17 @@ function groupTasksByFetcher(tasks = []) {
   const groups = { xn_cdha: [], hchanh: new Map(), order_history: [] };
   for (const t of tasks) {
     const xnParts = t.parts.filter(p => fetcherOf[p] === 'xn_cdha');
-    const hcParts = t.parts.filter(p => fetcherOf[p] === 'hchanh').sort();
+    // Lấy Phẫu thuật thì worker đã phải lấy Lịch sử y lệnh trước để dò mốc mổ: gộp Y lệnh vào cùng
+    // lần đó (một Chrome, một lần tìm BN) thay vì lấy lại y hệt ở tác vụ Y lệnh riêng.
+    const mergeOrder = t.parts.includes('order_history') && t.parts.includes('surgery');
+    const hcParts = t.parts.filter(p => fetcherOf[p] === 'hchanh' || (mergeOrder && p === 'order_history')).sort();
     if (xnParts.length) groups.xn_cdha.push({ ...t, parts: xnParts });
     if (hcParts.length) {
       const sig = hcParts.join(',');
       if (!groups.hchanh.has(sig)) groups.hchanh.set(sig, []);
       groups.hchanh.get(sig).push({ ...t, parts: hcParts });
     }
-    if (t.parts.includes('order_history')) groups.order_history.push({ ...t, parts: ['order_history'] });
+    if (t.parts.includes('order_history') && !mergeOrder) groups.order_history.push({ ...t, parts: ['order_history'] });
   }
   return groups;
 }

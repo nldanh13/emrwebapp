@@ -2068,6 +2068,49 @@ def _patient_page_url(link_map: Dict[str, str], ma_bn: str,
 
 
 
+def _read_admission_vitals_fields(driver: Any, mapping: Dict[str, str], timeout: float = 8.0,
+                                  fill_grace: float = 1.5, poll_interval: float = 0.3) -> Dict[str, str]:
+    """Đọc cùng lúc các ô sinh hiệu của Phiếu vào viện.
+
+    Trước đây chờ riêng từng ô (mỗi ô tối đa 4 giây), phiếu thiếu ô nào là mất thêm 4 giây ô đó.
+    Nay chờ tới khi có ít nhất một ô (tối đa ``timeout``), đọc cả 7 ô trong một lần gọi; nếu ô nào
+    cũng trống thì đọc lại trong ``fill_grace`` giây phòng EMR điền giá trị chậm hơn lúc tạo ô.
+    """
+    ids = list(mapping.values())
+    script = """
+        const out = {}; let present = 0;
+        for (const id of arguments[0]) {
+          const el = document.getElementById(id);
+          if (!el) continue;
+          present += 1;
+          out[id] = String(el.value || el.textContent || '').trim();
+        }
+        return {present: present, values: out};
+    """
+
+    def read_once() -> Tuple[int, Dict[str, str]]:
+        try:
+            res = driver.execute_script(script, ids)
+        except Exception:
+            return 0, {}
+        if not isinstance(res, dict):
+            return 0, {}
+        vals = res.get("values") if isinstance(res.get("values"), dict) else {}
+        return int(res.get("present") or 0), {k: _t(v) for k, v in vals.items()}
+
+    deadline = time.time() + max(0.5, float(timeout))
+    present, vals = read_once()
+    while not present and time.time() < deadline:
+        time.sleep(max(0.05, float(poll_interval)))
+        present, vals = read_once()
+    if present and not any(vals.values()):
+        grace_end = time.time() + max(0.0, float(fill_grace))
+        while time.time() < grace_end and not any(vals.values()):
+            time.sleep(max(0.05, float(poll_interval)))
+            _, vals = read_once()
+    return {key: vals.get(field_id, "") for key, field_id in mapping.items()}
+
+
 def _read_research_admission_vitals_by_click(
     sess: Optional["EmrHttpSession"],
     ma_bn: str,
@@ -2182,18 +2225,12 @@ def _read_research_admission_vitals_by_click(
             "can_nang_vao_vien": "txtCanNang",
             "chieu_cao_vao_vien": "txtChieuCao",
         }
+        values = _read_admission_vitals_fields(driver, mapping)
         found = 0
-        for key, field_id in mapping.items():
-            try:
-                el = WebDriverWait(driver, 4).until(
-                    EC.presence_of_element_located((By.ID, field_id))
-                )
-                value = _t(el.get_attribute("value") or el.get_attribute("textContent") or "")
-                out[key] = value
-                if value:
-                    found += 1
-            except Exception:
-                out[key] = ""
+        for key in mapping:
+            out[key] = values.get(key, "")
+            if out[key]:
+                found += 1
 
         out["_admission_vitals_status"] = "ok" if found else "empty"
         print(
@@ -4309,9 +4346,42 @@ def _pair_surgeries_with_postop_ward(surgeries: List[Dict[str, Any]], ward_admis
     return out
 
 
-def _wait_for_surgery_list_rows(driver: Any, ma_bn: str, timeout: float = 15.0) -> bool:
+def _surgery_list_table_signature(driver: Any) -> Optional[Tuple[int, int]]:
+    """(số dòng, độ dài chữ) của các bảng trên D/s Phẫu thuật; None nếu không đọc được hoặc còn AJAX."""
+    try:
+        sig = driver.execute_script(
+            """
+            const bodies = Array.from(document.querySelectorAll('table tbody'));
+            const rows = bodies.reduce((n, b) => n + b.querySelectorAll('tr').length, 0);
+            const text = bodies.reduce((n, b) => n + (b.textContent || '').length, 0);
+            const busy = (window.jQuery && typeof window.jQuery.active === 'number') ? Number(window.jQuery.active || 0) : 0;
+            return [rows, text, busy];
+            """
+        )
+        if isinstance(sig, (list, tuple)) and len(sig) >= 2:
+            if len(sig) > 2 and int(sig[2] or 0) > 0:
+                return None  # còn AJAX jQuery đang chạy: chưa coi là đứng yên
+            return int(sig[0] or 0), int(sig[1] or 0)
+    except Exception:
+        pass
+    return None
+
+
+def _wait_for_surgery_list_rows(driver: Any, ma_bn: str, timeout: float = 15.0,
+                                before_signature: Optional[Tuple[int, int]] = None,
+                                poll_interval: float = 0.35, stable_required: int = 4) -> bool:
+    """Chờ D/s Phẫu thuật trả kết quả tìm theo mã BN.
+
+    Có dòng của BN thì xong ngay. Không có dòng nào (BN không mổ) thì trước đây luôn chờ hết
+    ``timeout`` vì mã BN gõ bằng ``.value`` không hiện trong ``page_source``. Nay nếu biết bảng
+    trước khi bấm Tìm kiếm (``before_signature``), bảng đã đổi khác so với trước đó và đứng yên
+    ``stable_required`` nhịp liên tiếp thì coi là EMR đã trả kết quả. Bảng không đổi (không chắc
+    tìm đã chạy) thì vẫn chờ đủ ``timeout`` như cũ.
+    """
     deadline = time.time() + max(1.0, float(timeout or 15.0))
     code = str(ma_bn or "").strip()
+    previous: Optional[Tuple[int, int]] = None
+    stable = 0
     while time.time() < deadline:
         try:
             html = getattr(driver, "page_source", "") or ""
@@ -4320,7 +4390,16 @@ def _wait_for_surgery_list_rows(driver: Any, ma_bn: str, timeout: float = 15.0) 
                     return True
         except Exception:
             pass
-        time.sleep(0.35)
+        if before_signature is not None:
+            sig = _surgery_list_table_signature(driver)
+            if sig is not None and sig != before_signature:
+                stable = stable + 1 if sig == previous else 1
+            else:
+                stable = 0
+            previous = sig
+            if stable >= max(2, int(stable_required or 3)):
+                return False
+        time.sleep(max(0.05, float(poll_interval or 0.35)))
     return False
 
 
@@ -4637,6 +4716,7 @@ def fetch_surgery(sess: Optional["EmrHttpSession"], ma_bn: str,
             if den:
                 _set_input_value_js(driver, "#dtDenNgay", f"23:59 {den}")
             _set_input_value_js(driver, "#txtTimKiem", str(ma_bn))
+            before_signature = _surgery_list_table_signature(driver)
             try:
                 driver.execute_script("if (typeof FilterChange === 'function') { FilterChange(); return true; }")
             except Exception:
@@ -4654,7 +4734,7 @@ def fetch_surgery(sess: Optional["EmrHttpSession"], ma_bn: str,
                 _selenium_wait_after_action(driver, 1.0, ready_timeout=12)  # type: ignore[misc]
             except Exception:
                 time.sleep(1.0)
-            _wait_for_surgery_list_rows(driver, ma_bn, timeout=15)
+            _wait_for_surgery_list_rows(driver, ma_bn, timeout=15, before_signature=before_signature)
             found = _parse_surgery_list_rows(getattr(driver, "page_source", "") or "", ma_bn)
             trace_event(
                 "SURGERY.SEARCH_LIST",

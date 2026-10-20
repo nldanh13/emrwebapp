@@ -58,6 +58,10 @@ function buildRun() {
     { 'Mã BN': code, 'Ngày vào viện': '13:33 18/08/2026', 'Ngày ra viện': '2026-09-23', 'TG y lệnh': '05:00 19/08/2026', 'Tên y lệnh': 'Ibuprofen 400mg uống', 'Research key': 'enc_k1' },
     { 'Mã BN': code, 'Ngày vào viện': '13:58 17-08-2026', 'Ngày ra viện': '13:00 22/08/2026', 'TG y lệnh': '05:00 19/08/2026', 'Tên y lệnh': 'Ibuprofen 400mg uống', 'Research key': 'enc_k2' },
   ]);
+  // Xét nghiệm sau mổ 2 ngày: days_from_surgery phải tính từ ngày mổ của bảng phẫu thuật.
+  put(dir, 'lich_su_xn.csv', [
+    { 'Mã BN': code, 'TG chỉ định': '07:00 20/08/2026', 'Chỉ số': 'HGB', 'Kết quả': '120', 'Đơn vị': 'g/L' },
+  ]);
   R.normalizeRunOutputs(dir, { sourceRunId: 'r1', force: true });
   return dir;
 }
@@ -70,6 +74,19 @@ test('ngày ra viện lấy theo trang ra viện EMR (22/08), không theo khoả
   assert.strictEqual(enc.length, 1, JSON.stringify(enc.map(e => [e.admission_date, e.discharge_date])));
   assert.match(enc[0].discharge_date, /^2026-08-22/);
   assert.match(enc[0].admission_date, /^2026-08-17 13:58/);
+});
+
+test('ngày mổ của bảng phẫu thuật vào đợt điều trị và số ngày từ lúc mổ của xét nghiệm', () => {
+  // Danh sách quét EMR không có cột "Ngày mổ": trước đây encounters.surgery_date và
+  // days_from_surgery luôn trống dù bảng phẫu thuật có ca đã ghép chắc chắn.
+  const enc = rows('encounters.csv');
+  assert.strictEqual(enc[0].surgery_date, '2026-08-18');
+  const lab = rows('lab_results.csv').find(r => r.encounter_match_status === 'matched');
+  assert.ok(lab, 'có xét nghiệm đã ghép');
+  assert.strictEqual(lab.days_from_surgery, '2');
+  assert.strictEqual(lab.days_from_admission, '3');
+  // Bảng phân tích vẫn dùng ca mổ sớm nhất như trước.
+  assert.match(rows('analysis_ready.csv')[0].surgery_date, /^2026-08-18/);
 });
 
 test('giờ mổ bằng giờ lấy dữ liệu (sau ra viện) thì dùng ngày trong danh sách phẫu thuật và ghép vào đợt', () => {

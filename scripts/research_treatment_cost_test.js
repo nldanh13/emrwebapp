@@ -120,8 +120,8 @@ test('Chi phí lấy mặc định: không cần đánh dấu, đi chung lô hà
 test('Sổ thu thập: lượt cũ chưa có Chi phí chỉ lấy bổ sung phần Chi phí; đã có thì không lấy lại', () => {
   const src = { 'Research key': 'k1', 'Mã BN': '601', 'Mã NC': 'NC1', 'T/G vào': '08:00 01/03/2026' };
   const at = '2026-03-06T00:00:00Z';
-  const okFile = rows => ({ fetch_status: 'ok', rows, at });
-  const fileStatus = { profile: okFile(1), discharge: okFile(1), surgery: okFile(0) };
+  const okFile = (rows, extra = {}) => ({ fetch_status: 'ok', rows, at, ...extra });
+  const fileStatus = { profile: okFile(1, { payload_version: 2 }), discharge: okFile(1), surgery: okFile(0) };
   const build = extra => collection.buildLedger({
     sourceRows: [src],
     xnProgress: {},
@@ -129,7 +129,7 @@ test('Sổ thu thập: lượt cũ chưa có Chi phí chỉ lấy bổ sung ph�
   });
   const old = collection.planCollection(build({}), { parts: ['profile', 'discharge', 'surgery', 'billing'] });
   assert.deepStrictEqual(old.tasks.map(t => t.parts), [['billing']]);
-  const done = build({ billing: okFile(1) });
+  const done = build({ billing: okFile(1, { payload_version: 2 }) });
   assert.strictEqual(done.encounters.k1.parts.billing.status, 'ok');
   assert.strictEqual(collection.planCollection(done, { parts: ['profile', 'discharge', 'surgery', 'billing'] }).tasks.length, 0);
 });

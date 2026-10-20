@@ -118,7 +118,7 @@ fs.writeFileSync(studyMetaPath(STUDY), JSON.stringify({ id: STUDY, name: 'Zol', 
     assert.ok(fs.existsSync(path.join(sRun, 'analysis_selected.csv')), 'có bảng phân tích theo biến đã chọn');
   });
 
-  await test('"Thu thập tự động" chỉ lấy phần thiếu hoặc phần Y lệnh cần migration parser', async () => {
+  await test('"Thu thập tự động" chỉ lấy phần thiếu, phần Y lệnh cần migration parser và Hồ sơ nền bản cũ', async () => {
     const sRun = path.join(runsDir(STUDY), '20260301_000000');
     const { syncCollectionLedger } = require('../server/research/collection_runtime');
     const { readResearchHchanhSourceRows } = require('../server/research/research_source');
@@ -130,8 +130,11 @@ fs.writeFileSync(studyMetaPath(STUDY), JSON.stringify({ id: STUDY, name: 'Zol', 
     // chưa có fetch_window_version cho Y lệnh nên phải lấy lại order_history một lần;
     // không được coi "có thuốc" đồng nghĩa parser/cửa sổ đã hiện hành.
     // Fixture kho chưa có bảng kê chi phí nên phần Chi phí (lấy mặc định) cũng còn thiếu.
-    assert.deepStrictEqual(plan.tasks[0].parts.filter(p => p !== 'surgery').sort(), ['billing', 'discharge', 'order_history']);
+    // Hồ sơ nền của kho legacy chưa ghi mức nội dung (chưa chắc đã đọc sinh hiệu Phiếu vào viện)
+    // nên cũng lấy lại một lần, giống Y lệnh.
+    assert.deepStrictEqual(plan.tasks[0].parts.filter(p => p !== 'surgery').sort(), ['billing', 'discharge', 'order_history', 'profile']);
     assert.strictEqual(plan.tasks[0].reasons.order_history, 'parser_migration');
+    assert.strictEqual(plan.tasks[0].reasons.profile, 'content_migration');
   });
 
   await test('nghiên cứu không chọn mẫu từ kho: báo rõ, không tạo đợt chạy', async () => {

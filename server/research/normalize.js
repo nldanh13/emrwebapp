@@ -22,7 +22,7 @@ const { appendResearchRunLog } = require('./case_trace');
 const { combineEncounterSources, mergeRowsPreferFilled, dedupeByHash, byEncounterCount, buildVerifiedStayIndex, canonicalizeRowToVerifiedStay, dropSharedResearchCodes, dropPlaceholderDischarge, repairSharedPlaceholderDischargeDates, placeholderDischargeDays } = require('./source_merge');
 const { normalizeSex, extractBirthYear, normalizeLabName, resultOperator, parseNumeric, resultText, normalizeLabMeasurement, classifyLabMeasurement, normalizeFlag, modalityFromService, bodyRegionFromService, normalizeDrugName, classifyDrugGroup, normalizeRoute } = require('./value_normalizers');
 const { dedupeRowsByHash, dedupeSurgeryRows, snapshotFinalDatasetIfUnsaved } = require('./dataset_store');
-const { firstSurgeryByEncounter, surgeryForMedicationContext } = require('./encounter_linkage');
+const { applyVerifiedSurgeryDates, firstSurgeryByEncounter, surgeryForMedicationContext } = require('./encounter_linkage');
 const { evaluateCustomFields } = require('./analysis_config');
 const { TREATMENT_COST_COLUMNS, billingTotalsFromRawRow, pickEncounterBilling, treatmentCostFields } = require('./billing_summary');
 const { medicationRowsFromOrderRow, dedupeOrderFields, extractClinicalEvents } = require('./order_note_parser');
@@ -318,6 +318,93 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   const patientsRaw = encounterSourceRows.length ? encounterSourceRows : (patientTable.rows.length ? patientTable.rows : initialTable.rows);
 
   const ctxMap = buildContextMap(patientsRaw, runId);
+
+  // Phẫu thuật được ghép ngay sau khi có bản đồ đợt điều trị: ngày mổ sớm nhất đã xác minh của
+  // mỗi đợt cần có TRƯỚC khi dựng đợt điều trị, xét nghiệm, CĐHA (surgery_date, days_from_surgery).
+  // Trước đây ngày mổ chỉ lấy từ cột "Ngày mổ" của danh sách quét (danh sách EMR không có cột này)
+  // nên hai trường đó luôn trống dù bảng phẫu thuật có dữ liệu.
+  const surgeryRaw = [
+    ...hchanhSurgeryRowsCanonical,
+    ...readCsvTable(path.join(dir, 'lich_su_phau_thuat.csv'), Number.MAX_SAFE_INTEGER).rows,
+    ...readCsvTable(path.join(dir, 'phau_thuat.csv'), Number.MAX_SAFE_INTEGER).rows,
+  ];
+  let surgeryResults = surgeryRaw.map((rawRow, idx) => {
+    const code = patientCode(rawRow);
+    const SURGERY_TIME = ['Ngày phẫu thuật', 'Ngay phau thuat', 'Thời gian', 'Thoi gian', 'bat_dau', 'surgery_datetime', 'surgery_date'];
+    let dt = resolveDayMonthOrder(firstNonEmpty(rawRow, SURGERY_TIME), ctxMap.get(`patient:${code}`) || []);
+    let row = dt ? { ...rawRow, 'Ngày phẫu thuật': dt, surgery_datetime: '', surgery_date: '' } : rawRow;
+    let ctx = contextForRow(ctxMap, row, code);
+    let surgeryTimeSource = '';
+    if (!ctx.encounter_id) {
+      // EMR để trống giờ bắt đầu mổ thì trang chi tiết hiện giờ lúc mở (ca thật: 14:11 ngày lấy dữ liệu,
+      // sau ra viện cả tháng). Khi đó ngày trên danh sách phẫu thuật (thoi_gian) là mốc thật duy nhất:
+      // chỉ dùng nếu nó nằm trong một đợt; giữ ngày, bỏ giờ vì không biết giờ thật.
+      const listDate = isoDate(surgeryListDate(rawRow));
+      if (listDate && listDate !== isoDate(dt)) {
+        const altRow = { ...rawRow, 'Ngày phẫu thuật': listDate, surgery_datetime: '', surgery_date: '' };
+        const altCtx = contextForRow(ctxMap, altRow, code);
+        if (altCtx.encounter_id) {
+          dt = listDate;
+          row = altRow;
+          ctx = altCtx;
+          surgeryTimeSource = 'surgery_list_date';
+        }
+      }
+    }
+    const endRaw = firstNonEmpty(row, ['Kết thúc phẫu thuật', 'Ket thuc phau thuat', 'ket_thuc']);
+    let surgeryEndDatetime = isoDateTime(endRaw);
+    if (!surgeryEndDatetime && endRaw && isoDate(dt)) {
+      const mEnd = String(endRaw).match(/\b([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b/);
+      if (mEnd) surgeryEndDatetime = `${isoDate(dt)} ${mEnd[1].padStart(2, '0')}:${mEnd[2]}`;
+    }
+    const base = {
+      research_code: ctx.research_code || firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || '',
+      patient_code: code,
+      encounter_id: ctx.encounter_id || '',
+      encounter_match_status: encounterMatchStatus(ctx),
+      encounter_match_method: encounterMatchMethod(ctx),
+      encounter_match_reason: ctx.needs_manual_review || '',
+      // Không có giờ thật (EMR chỉ ghi ngày, hoặc ngày lấy từ danh sách phẫu thuật): để trống giờ, không ghi 00:00.
+      surgery_datetime: surgeryTimeSource !== 'surgery_list_date' && /\d{1,2}:\d{2}/.test(String(dt || '')) ? isoDateTime(dt) : '',
+      surgery_date: isoDate(dt),
+      surgery_end_datetime: surgeryEndDatetime,
+      surgery_name: firstNonEmpty(row, ['Tên phẫu thuật', 'Ten phau thuat', 'Dịch vụ phẫu thuật', 'Dich vu phau thuat', 'dich_vu_phau_thuat', 'noi_dung_phau_thuat']),
+      service_object: firstNonEmpty(row, ['Đối tượng DV', 'Doi tuong DV', 'doi_tuong_dv']),
+      surgery_method: firstNonEmpty(row, ['Phương pháp phẫu thuật', 'Phuong phap phau thuat', 'phuong_phap_pt', 'PPPT']),
+      anesthesia_method: firstNonEmpty(row, ['PPVC', 'Phương pháp vô cảm', 'Phuong phap vo cam', 'pp_vo_cam']),
+      surgery_class: firstNonEmpty(row, ['Phân loại PT', 'Phan loai PT', 'phan_loai_pt']),
+      status: firstNonEmpty(row, ['Trạng thái', 'Trang thai', 'status']),
+      icd9_code: firstNonEmpty(row, ['ICD9', 'icd9']),
+      preop_diagnosis: firstNonEmpty(row, ['Chẩn đoán trước mổ', 'Chan doan truoc mo', 'chan_doan_truoc_pt', 'chan_doan_truoc_mo']),
+      preop_icd10: firstNonEmpty(row, ['ICD10 trước mổ', 'ICD10 truoc mo', 'icd10_truoc_pt']),
+      postop_diagnosis: firstNonEmpty(row, ['Chẩn đoán sau mổ', 'Chan doan sau mo', 'chan_doan_sau_pt', 'chan_doan_sau_mo']),
+      postop_icd10: firstNonEmpty(row, ['ICD10 sau mổ', 'ICD10 sau mo', 'icd10_sau_pt']),
+      procedure_description: firstNonEmpty(row, ['Mô tả PPPT', 'Mo ta PPPT', 'mo_ta_pppt']),
+      surgery_sequence: firstNonEmpty(row, ['Trình tự phẫu thuật', 'Trinh tu phau thuat', 'trinh_tu_phau_thuat']),
+      primary_surgeon: firstNonEmpty(row, ['Phẫu thuật viên chính', 'Phau thuat vien chinh', 'bs_mo_chinh', 'ptv_chinh']),
+      primary_anesthesiologist: firstNonEmpty(row, ['Bác sĩ gây mê chính', 'Bac si gay me chinh', 'gay_me_chinh']),
+      assistant_surgeon_1: firstNonEmpty(row, ['Phụ mổ 1', 'Phu mo 1', 'ptv_phu_1']),
+      assistant_surgeon_2: firstNonEmpty(row, ['Phụ mổ 2', 'Phu mo 2', 'ptv_phu_2']),
+      scrub_nurse: firstNonEmpty(row, ['Điều dưỡng dụng cụ', 'Dieu duong dung cu', 'dd_dung_cu']),
+      anesthesia_technician: firstNonEmpty(row, ['KTV phụ mê', 'KTV phu me', 'ktv_phu_me']),
+      disease_course: firstNonEmpty(row, ['Diễn biến bệnh', 'Dien bien benh', 'dien_bien_benh']),
+      postop_instructions: firstNonEmpty(row, ['Dặn dò sau PT', 'Dan do sau PT', 'dan_do_sau_pt']),
+      postop_comorbidities: firstNonEmpty(row, ['Bệnh kèm sau PT', 'Benh kem sau PT', 'benh_kem_theo_sau_pt']),
+      completed_by: firstNonEmpty(row, ['Người hoàn tất', 'Nguoi hoan tat', 'hoan_tat_text']),
+      operating_room: firstNonEmpty(row, ['Phòng mổ', 'Phong mo', 'phong_mo']),
+      ...eventTemporalFields(ctx, dt),
+      surgery_time_source: surgeryTimeSource,
+      source: firstNonEmpty(row, ['Nguồn', 'source']) || 'surgery_raw',
+      source_run_id: runId,
+      ...provenanceFromRaw(row, 'surgery_raw'),
+    };
+    base.row_hash = stableHash(base);
+    base.surgery_id = `surg_${base.row_hash || stableHash([idx, base.patient_code])}`;
+    return base;
+    // Dòng chỉ có ngày, không tên/phương pháp (dấu mốc trống từ EMR) không phải một ca phẫu thuật.
+  }).filter(r => r.patient_code && (r.surgery_name || r.surgery_method));
+  surgeryResults = dedupeSurgeryRows(surgeryResults);
+  applyVerifiedSurgeryDates(ctxMap, surgeryResults);
   const demographicByPatient = new Map();
   const extraByEncounter = new Map();
   function mergeExtra(row, includePatientDemographics = false) {
@@ -600,87 +687,6 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   const diagnoses = dedupeByHash(diagnosisRows);
 
   markNormalizeStage(dir, 4, 'Phẫu thuật, y lệnh, diễn biến');
-  const surgeryRaw = [
-    ...hchanhSurgeryRowsCanonical,
-    ...readCsvTable(path.join(dir, 'lich_su_phau_thuat.csv'), Number.MAX_SAFE_INTEGER).rows,
-    ...readCsvTable(path.join(dir, 'phau_thuat.csv'), Number.MAX_SAFE_INTEGER).rows,
-  ];
-  let surgeryResults = surgeryRaw.map((rawRow, idx) => {
-    const code = patientCode(rawRow);
-    const SURGERY_TIME = ['Ngày phẫu thuật', 'Ngay phau thuat', 'Thời gian', 'Thoi gian', 'bat_dau', 'surgery_datetime', 'surgery_date'];
-    let dt = resolveDayMonthOrder(firstNonEmpty(rawRow, SURGERY_TIME), ctxMap.get(`patient:${code}`) || []);
-    let row = dt ? { ...rawRow, 'Ngày phẫu thuật': dt, surgery_datetime: '', surgery_date: '' } : rawRow;
-    let ctx = contextForRow(ctxMap, row, code);
-    let surgeryTimeSource = '';
-    if (!ctx.encounter_id) {
-      // EMR để trống giờ bắt đầu mổ thì trang chi tiết hiện giờ lúc mở (ca thật: 14:11 ngày lấy dữ liệu,
-      // sau ra viện cả tháng). Khi đó ngày trên danh sách phẫu thuật (thoi_gian) là mốc thật duy nhất:
-      // chỉ dùng nếu nó nằm trong một đợt; giữ ngày, bỏ giờ vì không biết giờ thật.
-      const listDate = isoDate(surgeryListDate(rawRow));
-      if (listDate && listDate !== isoDate(dt)) {
-        const altRow = { ...rawRow, 'Ngày phẫu thuật': listDate, surgery_datetime: '', surgery_date: '' };
-        const altCtx = contextForRow(ctxMap, altRow, code);
-        if (altCtx.encounter_id) {
-          dt = listDate;
-          row = altRow;
-          ctx = altCtx;
-          surgeryTimeSource = 'surgery_list_date';
-        }
-      }
-    }
-    const endRaw = firstNonEmpty(row, ['Kết thúc phẫu thuật', 'Ket thuc phau thuat', 'ket_thuc']);
-    let surgeryEndDatetime = isoDateTime(endRaw);
-    if (!surgeryEndDatetime && endRaw && isoDate(dt)) {
-      const mEnd = String(endRaw).match(/\b([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b/);
-      if (mEnd) surgeryEndDatetime = `${isoDate(dt)} ${mEnd[1].padStart(2, '0')}:${mEnd[2]}`;
-    }
-    const base = {
-      research_code: ctx.research_code || firstNonEmpty(row, ['Mã NC', 'Ma NC', 'research_code']) || '',
-      patient_code: code,
-      encounter_id: ctx.encounter_id || '',
-      encounter_match_status: encounterMatchStatus(ctx),
-      encounter_match_method: encounterMatchMethod(ctx),
-      encounter_match_reason: ctx.needs_manual_review || '',
-      // Không có giờ thật (EMR chỉ ghi ngày, hoặc ngày lấy từ danh sách phẫu thuật): để trống giờ, không ghi 00:00.
-      surgery_datetime: surgeryTimeSource !== 'surgery_list_date' && /\d{1,2}:\d{2}/.test(String(dt || '')) ? isoDateTime(dt) : '',
-      surgery_date: isoDate(dt),
-      surgery_end_datetime: surgeryEndDatetime,
-      surgery_name: firstNonEmpty(row, ['Tên phẫu thuật', 'Ten phau thuat', 'Dịch vụ phẫu thuật', 'Dich vu phau thuat', 'dich_vu_phau_thuat', 'noi_dung_phau_thuat']),
-      service_object: firstNonEmpty(row, ['Đối tượng DV', 'Doi tuong DV', 'doi_tuong_dv']),
-      surgery_method: firstNonEmpty(row, ['Phương pháp phẫu thuật', 'Phuong phap phau thuat', 'phuong_phap_pt', 'PPPT']),
-      anesthesia_method: firstNonEmpty(row, ['PPVC', 'Phương pháp vô cảm', 'Phuong phap vo cam', 'pp_vo_cam']),
-      surgery_class: firstNonEmpty(row, ['Phân loại PT', 'Phan loai PT', 'phan_loai_pt']),
-      status: firstNonEmpty(row, ['Trạng thái', 'Trang thai', 'status']),
-      icd9_code: firstNonEmpty(row, ['ICD9', 'icd9']),
-      preop_diagnosis: firstNonEmpty(row, ['Chẩn đoán trước mổ', 'Chan doan truoc mo', 'chan_doan_truoc_pt', 'chan_doan_truoc_mo']),
-      preop_icd10: firstNonEmpty(row, ['ICD10 trước mổ', 'ICD10 truoc mo', 'icd10_truoc_pt']),
-      postop_diagnosis: firstNonEmpty(row, ['Chẩn đoán sau mổ', 'Chan doan sau mo', 'chan_doan_sau_pt', 'chan_doan_sau_mo']),
-      postop_icd10: firstNonEmpty(row, ['ICD10 sau mổ', 'ICD10 sau mo', 'icd10_sau_pt']),
-      procedure_description: firstNonEmpty(row, ['Mô tả PPPT', 'Mo ta PPPT', 'mo_ta_pppt']),
-      surgery_sequence: firstNonEmpty(row, ['Trình tự phẫu thuật', 'Trinh tu phau thuat', 'trinh_tu_phau_thuat']),
-      primary_surgeon: firstNonEmpty(row, ['Phẫu thuật viên chính', 'Phau thuat vien chinh', 'bs_mo_chinh', 'ptv_chinh']),
-      primary_anesthesiologist: firstNonEmpty(row, ['Bác sĩ gây mê chính', 'Bac si gay me chinh', 'gay_me_chinh']),
-      assistant_surgeon_1: firstNonEmpty(row, ['Phụ mổ 1', 'Phu mo 1', 'ptv_phu_1']),
-      assistant_surgeon_2: firstNonEmpty(row, ['Phụ mổ 2', 'Phu mo 2', 'ptv_phu_2']),
-      scrub_nurse: firstNonEmpty(row, ['Điều dưỡng dụng cụ', 'Dieu duong dung cu', 'dd_dung_cu']),
-      anesthesia_technician: firstNonEmpty(row, ['KTV phụ mê', 'KTV phu me', 'ktv_phu_me']),
-      disease_course: firstNonEmpty(row, ['Diễn biến bệnh', 'Dien bien benh', 'dien_bien_benh']),
-      postop_instructions: firstNonEmpty(row, ['Dặn dò sau PT', 'Dan do sau PT', 'dan_do_sau_pt']),
-      postop_comorbidities: firstNonEmpty(row, ['Bệnh kèm sau PT', 'Benh kem sau PT', 'benh_kem_theo_sau_pt']),
-      completed_by: firstNonEmpty(row, ['Người hoàn tất', 'Nguoi hoan tat', 'hoan_tat_text']),
-      operating_room: firstNonEmpty(row, ['Phòng mổ', 'Phong mo', 'phong_mo']),
-      ...eventTemporalFields(ctx, dt),
-      surgery_time_source: surgeryTimeSource,
-      source: firstNonEmpty(row, ['Nguồn', 'source']) || 'surgery_raw',
-      source_run_id: runId,
-      ...provenanceFromRaw(row, 'surgery_raw'),
-    };
-    base.row_hash = stableHash(base);
-    base.surgery_id = `surg_${base.row_hash || stableHash([idx, base.patient_code])}`;
-    return base;
-    // Dòng chỉ có ngày, không tên/phương pháp (dấu mốc trống từ EMR) không phải một ca phẫu thuật.
-  }).filter(r => r.patient_code && (r.surgery_name || r.surgery_method));
-  surgeryResults = dedupeSurgeryRows(surgeryResults);
 
   // Chỉ index theo encounter đã ghép chắc chắn. Không dùng patient_code làm fallback:
   // một bệnh nhân có thể có nhiều đợt điều trị/phẫu thuật khác nhau.

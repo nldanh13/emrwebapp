@@ -17,7 +17,7 @@ process.env.EMR_RUNTIME_ROOT = RUNTIME_ROOT;
 
 const research = require('../server/routes/research');
 const R = research._test;
-const { ORDER_HISTORY_FETCH_WINDOW_VERSION } = require('../server/research/fetch_versions');
+const { HCHANH_CONTENT_VERSIONS, ORDER_HISTORY_FETCH_WINDOW_VERSION } = require('../server/research/fetch_versions');
 
 let passed = 0;
 async function test(name, fn) {
@@ -75,6 +75,7 @@ function makeEnv(name, { xnWritesProgress = true } = {}) {
         for (const f of opts.files) {
           fs0[f] = { fetch_status: 'ok', rows: 0, at };
           if (f === 'order_history') fs0[f].fetch_window_version = ORDER_HISTORY_FETCH_WINDOW_VERSION;
+          if (HCHANH_CONTENT_VERSIONS[f]) fs0[f].payload_version = HCHANH_CONTENT_VERSIONS[f];
         }
         const key = row['Research key'];
         progress[key] = {

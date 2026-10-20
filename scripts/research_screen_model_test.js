@@ -8,6 +8,7 @@
 
 const assert = require('assert');
 const c = require('../server/research/collection');
+const { HCHANH_CONTENT_VERSIONS } = require('../server/research/fetch_versions');
 const { buildCollectionScreen, encounterState } = require('../server/research/screen_model');
 
 let passed = 0;
@@ -20,6 +21,7 @@ const ok = (part = '') => ({
   seen_seq: 0,
   seen_demo_seq: 0,
   ...(part === 'order_history' ? { fetch_window_version: c.ORDER_HISTORY_FETCH_WINDOW_VERSION } : {}),
+  ...(HCHANH_CONTENT_VERSIONS[part] ? { payload_version: HCHANH_CONTENT_VERSIONS[part] } : {}),
 });
 function enc(key, overrides = {}, extra = {}) {
   const parts = Object.fromEntries(c.PART_KEYS.map(k => [k, ok(k)]));
