@@ -31,7 +31,7 @@ function formatCareDateTime(dt) {
   return `${hh}:${mi} ${dd}/${mm}/${yyyy}`;
 }
 
-function getDischargeCutoff(record = {}) {
+function getExactDischargeCutoff(record = {}) {
   const events = getSpecialCareEvents(record, SPECIAL_EVENT_TYPES.discharge);
   for (const ev of events) {
     const raw = ev.time_full || (ev.time_label && record.ngay_lam ? `${ev.time_label} ${record.ngay_lam}` : ev.time_label);
@@ -42,6 +42,48 @@ function getDischargeCutoff(record = {}) {
     ? `${record.gio_ra_vien} ${record.ngay_ra_vien_date || record.ngay_lam}`
     : '');
   return parseDateTime(raw);
+}
+
+// Mốc chăm sóc sớm nhất luôn được giữ trong ngày ra viện (cữ 08:00 như ngày ra viện có giờ).
+const DISCHARGE_DAY_MIN_EVIDENCE_HOUR = 8;
+
+// Ra viện đúng ngày đang làm nhưng EMR chỉ cho ngày, chưa rõ giờ. Không biết
+// người bệnh rời khoa lúc nào nên chỉ sinh mục tới mốc cuối cùng có căn cứ:
+// giờ y lệnh muộn nhất trong ngày (lệnh ra viện nằm trong đó), tối thiểu 08:00.
+// Trả về { lastEvidence, cutoff } với cutoff = lastEvidence + 1 phút để dùng
+// chung phép so "trước giờ ra viện" (mục đúng lastEvidence vẫn được giữ).
+// Cùng quy tắc với worker/discharge_cutoff.py (bước nhập EMR).
+function getInferredDischargeCutoff(record = {}) {
+  const ngayLam = normalizeDmy(record.ngay_lam);
+  if (!ngayLam) return null;
+  const timedDischargeEvent = getSpecialCareEvents(record, SPECIAL_EVENT_TYPES.discharge)
+    .some(ev => /\d{1,2}:\d{2}/.test(String(ev.time_full || ev.time_label || '')));
+  if (timedDischargeEvent) return null;
+  if ([record.ngay_ra_vien, record['Ngày ra viện'], record.gio_ra_vien].some(v => /\d{1,2}:\d{2}/.test(String(v || '')))) return null;
+  const dischargeDate = normalizeDmy(record.ngay_ra_vien_date || record.ngay_ra_vien || record['Ngày ra viện'])
+    || (record.ra_vien_hom_nay ? ngayLam : '');
+  if (!dischargeDate || dischargeDate !== ngayLam) return null;
+
+  let lastEvidence = parseDateTime(`${String(DISCHARGE_DAY_MIN_EVIDENCE_HOUR).padStart(2, '0')}:00 ${ngayLam}`);
+  for (const ev of (Array.isArray(record.raw_order_events) ? record.raw_order_events : [])) {
+    if (!ev || typeof ev !== 'object') continue;
+    const evDate = normalizeDmy(ev.ngay_lam || ev.work_date || ev.ngay) || ngayLam;
+    if (evDate !== ngayLam) continue;
+    const dt = parseDateTimeWithFallback(ev.gio_y_lenh || ev.time || ev.thoi_gian || ev.tg_ylenh || ev.tg_y_lenh, ngayLam);
+    if (dt && sameCalendarDate(dt, ngayLam) && dt > lastEvidence) lastEvidence = dt;
+  }
+  return { lastEvidence, cutoff: new Date(lastEvidence.getTime() + 60 * 1000) };
+}
+
+function getDischargeCutoffInfo(record = {}) {
+  const exact = getExactDischargeCutoff(record);
+  if (exact) return { cutoff: exact, inferred: false };
+  const inferred = getInferredDischargeCutoff(record);
+  return inferred ? { cutoff: inferred.cutoff, inferred: true } : { cutoff: null, inferred: false };
+}
+
+function getDischargeCutoff(record = {}) {
+  return getDischargeCutoffInfo(record).cutoff;
 }
 
 function sameCalendarDate(dt, ddmmyyyy) {
@@ -521,7 +563,7 @@ function buildCarePreview(record, nurseSchedule = {}) {
 }
 
 function buildInfusionPreview(dichTruyen = [], nurseSchedule = {}, record = {}) {
-  const cutoff = getDischargeCutoff(record);
+  const { cutoff, inferred: inferredCutoff } = getDischargeCutoffInfo(record);
   const surgeryCutoff = getSurgeryCutoff(record);
   return [...(dichTruyen || [])]
     .filter(item => {
@@ -529,7 +571,9 @@ function buildInfusionPreview(dichTruyen = [], nurseSchedule = {}, record = {}) 
       const end = String(item.tg_ket_thuc || '').trim();
       if (cutoff) {
         if (isAfterDischargeTime(start, cutoff, { allowEqual: true })) return false;
-        if (end && isAfterDischargeTime(end, cutoff)) return false;
+        // Giờ ra viện suy luận chỉ là mốc chắc chắn còn ở khoa, không phải giờ
+        // rời khoa thật, nên không dùng để loại chai đã bắt đầu trước đó.
+        if (!inferredCutoff && end && isAfterDischargeTime(end, cutoff)) return false;
       }
       if (surgeryCutoff) {
         if (isAfterSurgeryTime(start, surgeryCutoff, { allowEqual: true })) return false;
@@ -563,4 +607,4 @@ function buildPreview(record, allDichTruyen = [], nurseSchedule = {}) {
   };
 }
 
-module.exports = { buildCareTimeKey, formatCareDateTime, getDischargeCutoff, isAfterDischargeTime, isBeforeWorkStartOnSameDate, getSurgeryCutoff, isAfterSurgeryTime, collectMedicationPlan, extractCareActionsByHour, extractExplicitActionTimeByHour, parseCareTimeMinutes, getSpecialCareEvents, SPECIAL_EVENT_TYPES, ADMISSION_TYPES, getPostopReceiveEvents, getDischargeEvents, getAdmissionTransferEvents, defaultSpecialDienBien, defaultSpecialChamSoc, getNurseForSpecialEvent, buildCarePreview, buildInfusionPreview, buildPreview };
+module.exports = { buildCareTimeKey, formatCareDateTime, getDischargeCutoff, getDischargeCutoffInfo, getInferredDischargeCutoff, isAfterDischargeTime, isBeforeWorkStartOnSameDate, getSurgeryCutoff, isAfterSurgeryTime, collectMedicationPlan, extractCareActionsByHour, extractExplicitActionTimeByHour, parseCareTimeMinutes, getSpecialCareEvents, SPECIAL_EVENT_TYPES, ADMISSION_TYPES, getPostopReceiveEvents, getDischargeEvents, getAdmissionTransferEvents, defaultSpecialDienBien, defaultSpecialChamSoc, getNurseForSpecialEvent, buildCarePreview, buildInfusionPreview, buildPreview };

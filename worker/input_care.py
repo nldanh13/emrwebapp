@@ -58,6 +58,7 @@ except Exception:
     _surgery_cutoff = None
 
 # ── Import các hàm tiện ích thuần từ module con ───────────────────────────────
+from discharge_cutoff import inferred_discharge_cutoff
 from input_care_utils import (
     _norm_free_text, _canon_hhmm, _canon_time_key, _dt_from_time_key,
     _time_field_matches, kiem_tra_noi_dung_cham_soc, kiem_tra_ten_trung_khop,
@@ -869,6 +870,14 @@ def main():
             LOG_CTX.update({'bn': ma_bn, 'name': info.get('ho_ten', ''), 'date': ngay_lam_viec})
             set_care_form_log_context(ma_bn, info.get('ho_ten', ''), ngay_lam_viec)
             discharge_cutoff_dt = _discharge_cutoff_from_entry(entry_obj, special_events, ngay_lam_viec)
+            discharge_inferred = None
+            if discharge_cutoff_dt is None:
+                # Ra viện đúng ngày này nhưng chưa rõ giờ: không sinh phiếu sau mốc
+                # cuối cùng có căn cứ, và KHÔNG tạo phiếu ra viện ở giờ đoán.
+                discharge_inferred = inferred_discharge_cutoff(entry_obj, ngay_lam_viec)
+                if discharge_inferred:
+                    is_discharge_day = True
+                    LOG.info(_ctx_prefix() + f"[discharge_guard] unknown_discharge_time last_evidence={discharge_inferred['last_evidence'].strftime('%H:%M %d/%m/%Y')}")
             if discharge_cutoff_dt is not None and _same_calendar_date(discharge_cutoff_dt, ngay_lam_viec):
                 # Có ca chỉ có field ngay_ra_vien/gio_ra_vien, không có care_special_events.
                 # Vẫn xem là ngày ra viện để không tự sinh cữ 16:00/05:00 sau ra viện.
@@ -914,6 +923,8 @@ def main():
             if admission_start_dt is None:
                 admission_start_dt = admission_fallback_dt
 
+            if discharge_inferred:
+                discharge_dt = discharge_inferred["cutoff"]
             if discharge_cutoff_dt is not None:
                 discharge_dt = discharge_dt or discharge_cutoff_dt
                 discharge_minutes = discharge_minutes if discharge_minutes is not None else (discharge_cutoff_dt.hour * 60 + discharge_cutoff_dt.minute)
@@ -984,7 +995,11 @@ def main():
                     else:
                         skipped_after_discharge.append(_h)
                 if skipped_after_discharge:
-                    discharge_rule_reason = f"Người bệnh đã ra viện lúc {discharge_dt.strftime('%H:%M %d/%m/%Y')}"
+                    discharge_rule_reason = (
+                        f"Người bệnh ra viện ngày {ngay_lam_viec} (chưa rõ giờ), không nhập sau {discharge_inferred['last_evidence'].strftime('%H:%M %d/%m/%Y')}"
+                        if discharge_inferred else
+                        f"Người bệnh đã ra viện lúc {discharge_dt.strftime('%H:%M %d/%m/%Y')}"
+                    )
                     LOG.info(_ctx_prefix() + f"[discharge_guard] skip_hours_after_discharge={sorted(skipped_after_discharge)} cutoff={discharge_dt.strftime('%H:%M %d/%m/%Y')}")
                     print(f"   [RULE] {discharge_rule_reason} → bỏ giờ: {sorted(skipped_after_discharge)}")
                 all_hours = kept_hours

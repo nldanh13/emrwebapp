@@ -14,6 +14,7 @@ import unicodedata
 from urllib.parse import urlparse, urlencode, parse_qsl, urlunparse
 from datetime import datetime, timedelta
 from shared.json_io import read_json_critical
+from discharge_cutoff import inferred_discharge_cutoff
 from processing.route_table import INFUSION_ROUTES, mentioned_routes, normalize_route_code
 try:
     from selenium import webdriver
@@ -244,13 +245,31 @@ def _resolve_discharge_dt(entry, entry_date_key=''):
     return None
 
 
-def _infusion_after_discharge_decision(item, discharge_dt, entry_date_key=''):
-    """True nếu dịch truyền nằm sau giờ ra viện hoặc chạy lố qua mốc ra viện."""
-    if not discharge_dt or not isinstance(item, dict):
+def _resolve_inferred_discharge(entry, entry_date_key=''):
+    """Ra viện đúng ngày nhưng chưa rõ giờ → mốc cuối cùng có căn cứ (xem discharge_cutoff.py)."""
+    return inferred_discharge_cutoff(entry, entry_date_key)
+
+
+def _infusion_after_discharge_decision(item, discharge_dt, entry_date_key='', inferred=None):
+    """True nếu dịch truyền nằm sau giờ ra viện hoặc chạy lố qua mốc ra viện.
+
+    ``inferred``: kết quả ``inferred_discharge_cutoff`` khi chỉ biết ngày ra viện.
+    Khi đó chỉ bỏ chai bắt đầu sau mốc cuối cùng có căn cứ; chai đã bắt đầu trước
+    đó vẫn nhập vì mốc này không phải giờ rời khoa thật.
+    """
+    if not isinstance(item, dict):
+        return False, ''
+    med_name = item.get('ten_hien_thi') or item.get('ten_thuoc') or ''
+    if not discharge_dt and inferred:
+        start_dt = _parse_any_dt(item.get('tg_bat_dau') or item.get('gio_dung'), fallback_date=entry_date_key)
+        if start_dt and start_dt >= inferred['cutoff']:
+            last = inferred['last_evidence'].strftime('%H:%M %d/%m/%Y')
+            return True, f"Người bệnh ra viện trong ngày (chưa rõ giờ), không thực hiện truyền dịch sau {last}: {med_name}"
+        return False, ''
+    if not discharge_dt:
         return False, ''
     start_dt = _parse_any_dt(item.get('tg_bat_dau') or item.get('gio_dung'), fallback_date=entry_date_key)
     end_dt = _parse_any_dt(item.get('tg_ket_thuc'), fallback_date=entry_date_key)
-    med_name = item.get('ten_hien_thi') or item.get('ten_thuoc') or ''
     cutoff = discharge_dt.strftime('%H:%M %d/%m/%Y')
     if start_dt and start_dt >= discharge_dt:
         return True, f"Sau giờ ra viện {cutoff}, không thực hiện truyền dịch: {med_name}"
@@ -308,6 +327,7 @@ def chuan_bi_du_lieu_json(json_path, patient_ids=None, date_from=None, date_to=N
 
             thuoc_obj = entry.get('thuoc') or {}
             discharge_dt = _resolve_discharge_dt(entry, entry_date_key)
+            discharge_inferred = None if discharge_dt else _resolve_inferred_discharge(entry, entry_date_key)
 
             # Đánh dấu ngày mà script được quyền quản lý phiếu truyền dịch.
             # Dùng để dọn các dòng cũ/thừa trên EMR không còn nằm trong dữ liệu chuẩn
@@ -381,9 +401,13 @@ def chuan_bi_du_lieu_json(json_path, patient_ids=None, date_from=None, date_to=N
                         )
                         continue
 
-                skip_discharge, discharge_reason = _infusion_after_discharge_decision(item, discharge_dt, entry_date_key)
+                skip_discharge, discharge_reason = _infusion_after_discharge_decision(item, discharge_dt, entry_date_key, inferred=discharge_inferred)
                 if skip_discharge:
                     _log(f"[RULE][SKIP_INFUSION_DISCHARGE] {discharge_reason}")
+                    if not discharge_dt:
+                        # Mốc suy luận (chưa rõ giờ ra viện): chỉ không nhập mới, không
+                        # tự xoá bản đã có trên EMR vì người bệnh có thể còn ở khoa lúc đó.
+                        continue
                     _append_cleanup_tasks(
                         final_data,
                         ma_bn,
