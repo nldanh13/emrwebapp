@@ -52,12 +52,27 @@ class FakeDriver:
         }
         self.login_btn = El()
         self.by_css = {"#btnLogin": [self.login_btn]}
+        self.fallback = {}
+        self.appear_after = {}
+        self.page_source = "<html><body>trang đăng nhập</body></html>"
+        self.captcha_box = None
 
     def find_elements(self, by, value):
         if by == By.ID:
+            pending = self.appear_after.get(value)
+            if pending:
+                n, el = pending
+                if n <= 1:
+                    self.by_id[value] = el
+                    del self.appear_after[value]
+                else:
+                    self.appear_after[value] = (n - 1, el)
             el = self.by_id.get(value)
             return [el] if el else []
         return self.by_css.get(value, [])
+
+    def save_screenshot(self, _path):
+        return False
 
     def find_element(self, by, value):
         return self.by_id[value]
@@ -65,9 +80,13 @@ class FakeDriver:
     def get(self, url):
         self.current_url = url
 
-    def execute_script(self, _script, *_a):
+    def execute_script(self, script, *args):
+        # Tìm ảnh/ô CAPTCHA dự phòng (khi id cấu hình không khớp).
+        if "findCaptcha" in script:
+            return self.fallback.get(args[0])
         # session_status() hỏi đã đăng nhập chưa: đúng khi đã bấm nút với CAPTCHA đúng.
-        if self.login_btn.clicked and self.by_id["Captcha_TB_I"].value == self.good_captcha:
+        box = self.captcha_box or self.by_id.get("Captcha_TB_I")
+        if self.login_btn.clicked and box is not None and box.value == self.good_captcha:
             self.current_url = "https://gdbhyt.baohiemxahoi.gov.vn/Home/Index"
             return True
         return False
@@ -112,11 +131,59 @@ class HeadlessLoginTests(unittest.TestCase):
     def test_missing_captcha_image_element_raises_clear_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = make_portal(tmp)
+            p.captcha_wait = 0.2
             d = FakeDriver()
             del d.by_id["Captcha_IMG"]
             p.driver = d
             with self.assertRaises(PortalError):
                 p.get_captcha_image()
+
+    def test_captcha_image_found_by_fallback_when_id_differs(self):
+        # Cổng không dùng id Captcha_IMG: vẫn tìm ảnh CAPTCHA theo dấu hiệu "captcha" trong trang.
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_portal(tmp)
+            d = FakeDriver()
+            del d.by_id["Captcha_IMG"]
+            d.fallback = {"image": El(png=b"OTHERPNG")}
+            p.driver = d
+            out = p.get_captcha_image()
+        self.assertTrue(out["image"].startswith("data:image/png;base64,"))
+
+    def test_captcha_image_appearing_late_is_waited_for(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_portal(tmp)
+            d = FakeDriver()
+            img = d.by_id.pop("Captcha_IMG")
+            d.appear_after = {"Captcha_IMG": (2, img)}
+            p.driver = d
+            out = p.get_captcha_image()
+        self.assertTrue(out["image"].startswith("data:image/png;base64,"))
+
+    def test_missing_captcha_saves_page_and_says_where(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_portal(tmp, debug_dir=Path(tmp) / "debug")
+            p.captcha_wait = 0.2
+            d = FakeDriver()
+            del d.by_id["Captcha_IMG"]
+            p.driver = d
+            with self.assertRaises(PortalError) as ctx:
+                p.get_captcha_image()
+            saved = Path(tmp) / "debug" / "dang-nhap-cong.html"
+            self.assertTrue(saved.exists())
+        self.assertIn("dang-nhap-cong.html", str(ctx.exception))
+        self.assertNotIn("Lưu trang để gửi kỹ thuật", str(ctx.exception))
+
+    def test_submit_login_finds_captcha_input_by_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_portal(tmp)
+            d = FakeDriver(good_captcha="K7MN")
+            box = d.by_id.pop("Captcha_TB_I")
+            d.fallback = {"input": box}
+            d.captcha_box = box
+            p.driver = d
+            res = p.submit_login("92115", "nguoidung", "matkhau", "K7MN")
+        self.assertTrue(res["logged_in"])
+        self.assertEqual(box.value, "K7MN")
 
     def test_selectors_overridable_from_config(self):
         with tempfile.TemporaryDirectory() as tmp:
