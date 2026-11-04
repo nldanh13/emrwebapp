@@ -488,3 +488,40 @@ def parse_noitru_page(html: str, base_url: str) -> Tuple[List[Dict[str, Any]], D
                 break
 
     return rows_out, link_map, next_url
+
+
+_DRUG_SECTION_RE = re.compile(r"^\+\s*thu[oố]c\s*:?\s*$", re.IGNORECASE)
+_SECTION_RE = re.compile(r"^\+\s+\S")
+
+
+def order_text_has_drugs(yl_text: str) -> bool:
+    """True nếu y lệnh có ít nhất một dòng thuốc dưới "+ Thuốc:".
+
+    Không tính "+ Thuốc trả:" vì đó là thuốc trả lại, không phải thuốc dùng tiếp.
+    """
+    in_drugs = False
+    for raw in str(yl_text or "").splitlines():
+        line = raw.strip()
+        if not line or line == "---":
+            continue
+        if _DRUG_SECTION_RE.match(line):
+            in_drugs = True
+            continue
+        if _SECTION_RE.match(line) or re.match(r"^\d{1,2}:\d{2}\s*\|", line):
+            in_drugs = False
+            continue
+        if in_drugs:
+            return True
+    return False
+
+
+def dates_with_drug_orders(html: str) -> set:
+    """Các ngày (dd/mm/yyyy) trên timeline Y lệnh có kê thuốc.
+
+    Dùng để xác nhận ra viện: ngày sau còn kê thuốc thì người bệnh chưa ra viện.
+    """
+    try:
+        timeline, _ = extract_timeline_map_from_html(html or "")
+    except Exception:
+        return set()
+    return {d for d, item in timeline.items() if order_text_has_drugs(item.get("Y lệnh", ""))}

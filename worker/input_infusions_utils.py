@@ -245,6 +245,22 @@ def _resolve_discharge_dt(entry, entry_date_key=''):
     return None
 
 
+def _resolve_estimated_discharge_dt(entry, entry_date_key=''):
+    """Mốc ra viện ước tính (diễn biến ghi xuất viện, chưa có Thời gian ra).
+
+    clinical_rules đặt mốc này không sớm hơn 08:30 để vẫn làm cữ 08:00.
+    """
+    if not isinstance(entry, dict):
+        return None
+    for ev in entry.get('care_special_events') or []:
+        if not isinstance(ev, dict) or ev.get('type') != 'discharge' or not ev.get('time_estimated'):
+            continue
+        dt = _parse_any_dt(ev.get('time_full') or ev.get('time_label'), fallback_date=entry_date_key)
+        if dt:
+            return dt
+    return None
+
+
 def _resolve_inferred_discharge(entry, entry_date_key=''):
     """Ra viện đúng ngày nhưng chưa rõ giờ → mốc cuối cùng có căn cứ (xem discharge_cutoff.py)."""
     return inferred_discharge_cutoff(entry, entry_date_key)
@@ -327,6 +343,9 @@ def chuan_bi_du_lieu_json(json_path, patient_ids=None, date_from=None, date_to=N
 
             thuoc_obj = entry.get('thuoc') or {}
             discharge_dt = _resolve_discharge_dt(entry, entry_date_key)
+            # Chưa có giờ ra thật: chỉ không nhập mới chai bắt đầu từ mốc ước tính,
+            # không tạo task xoá trên EMR vì người bệnh có thể còn ở khoa.
+            estimated_discharge_dt = None if discharge_dt else _resolve_estimated_discharge_dt(entry, entry_date_key)
             discharge_inferred = None if discharge_dt else _resolve_inferred_discharge(entry, entry_date_key)
 
             # Đánh dấu ngày mà script được quyền quản lý phiếu truyền dịch.
@@ -401,6 +420,15 @@ def chuan_bi_du_lieu_json(json_path, patient_ids=None, date_from=None, date_to=N
                         )
                         continue
 
+                if estimated_discharge_dt is not None:
+                    _est_start = _parse_any_dt(item.get('tg_bat_dau') or item.get('gio_dung'), fallback_date=entry_date_key)
+                    if _est_start and _est_start >= estimated_discharge_dt:
+                        _log(
+                            f"[RULE][SKIP_INFUSION_DISCHARGE_ESTIMATED] Sau mốc ra viện ước tính "
+                            f"{estimated_discharge_dt.strftime('%H:%M %d/%m/%Y')}, không nhập: "
+                            f"{item.get('ten_hien_thi') or item.get('ten_thuoc') or ''}"
+                        )
+                        continue
                 skip_discharge, discharge_reason = _infusion_after_discharge_decision(item, discharge_dt, entry_date_key, inferred=discharge_inferred)
                 if skip_discharge:
                     _log(f"[RULE][SKIP_INFUSION_DISCHARGE] {discharge_reason}")
