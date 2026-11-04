@@ -119,3 +119,40 @@ def _fmt_num(x):
 
 def _fmt_hours(hours):
     return ", ".join(f"{h}h" for h in hours)
+
+
+def split_discharge_prescription(record):
+    """Tách toa ra viện khỏi thuốc uống trong viện của phiếu xuất viện.
+
+    Thuốc uống trong phiếu bác sĩ cho xuất viện mà số lượng nhiều hơn số cữ
+    một ngày (vd CEFUROXIM x 10 viên, sáng 1 tối 1) là thuốc mang về, không
+    sinh cữ trong ngày. Chuyển sang record["toa_ra_vien"]. Trả về số thuốc đã tách.
+    """
+    thuoc = (record or {}).get("thuoc") or {}
+    oral = thuoc.get("thuoc_uong") or []
+    keep, moved = [], []
+    for drug in oral:
+        if not isinstance(drug, dict):
+            keep.append(drug)
+            continue
+        qty = _qty(drug.get("so_luong"))
+        per_day = len(parse_hours_from_gio_dung(drug.get("gio_dung", ""))) or 1
+        if qty is not None and qty > per_day:
+            drug["toa_ra_vien"] = True
+            moved.append(drug)
+        else:
+            keep.append(drug)
+    if not moved:
+        return 0
+    thuoc["thuoc_uong"] = keep
+    toa = record.setdefault("toa_ra_vien", [])
+    toa.extend(moved)
+    record.setdefault("processing_warnings", []).append({
+        "code": "DISCHARGE_PRESCRIPTION_SPLIT",
+        "level": "info",
+        "message": "Toa ra viện, không sinh cữ trong ngày: " + ", ".join(
+            f"{d.get('ten_thuoc') or ''} x {d.get('so_luong') or ''}".strip() for d in moved
+        ),
+        "gio_y_lenh": moved[0].get("gio_y_lenh", ""),
+    })
+    return len(moved)

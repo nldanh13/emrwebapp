@@ -942,6 +942,18 @@ def _discharge_timeline_block_is_actual(block: Dict[str, Any], rules: Dict[str, 
     return False, ""
 
 
+def discharge_order_times_from_dien_bien(raw_dien_bien: Any, ngay_lam: str = "") -> set:
+    """Giờ (HH:MM) các phiếu diễn biến bác sĩ cho xuất viện trong ngày."""
+    return {
+        ev.get("doctor_time") for ev in _extract_discharge_special_events_from_timeline(raw_dien_bien, ngay_lam)
+        if ev.get("doctor_time")
+    }
+
+
+# Chưa có Thời gian ra: giữ tới cữ 08:00, phiếu Ra viện đặt sau cữ đó.
+DISCHARGE_ESTIMATED_MIN_TIME = "08:30"
+
+
 def _extract_discharge_special_events_from_timeline(raw_dien_bien: Any, ngay_lam: str = "") -> List[Dict[str, Any]]:
     rules = load_clinical_rules().get("discharge_rules") or {}
     if rules.get("enabled") is False:
@@ -952,12 +964,19 @@ def _extract_discharge_special_events_from_timeline(raw_dien_bien: Any, ngay_lam
         ok, pat = _discharge_timeline_block_is_actual(block, rules)
         if not ok:
             continue
-        hhmm = block.get("time") or ""
-        mins = _hhmm_to_minutes(hhmm)
-        if not hhmm or mins is None:
+        doctor_hhmm = block.get("time") or ""
+        doctor_mins = _hhmm_to_minutes(doctor_hhmm)
+        if not doctor_hhmm or doctor_mins is None:
             continue
+        # Giờ bác sĩ ghi diễn biến "Xuất viện" chưa phải giờ ra viện thật
+        # (ô Thời gian ra của tổng kết ra khoa). Người bệnh vẫn được làm cữ 08:00,
+        # nên mốc ước tính không sớm hơn DISCHARGE_ESTIMATED_MIN_TIME.
+        mins = max(doctor_mins, _hhmm_to_minutes(DISCHARGE_ESTIMATED_MIN_TIME))
+        hhmm = f"{mins // 60:02d}:{mins % 60:02d}"
         out.append({
             "type": "discharge",
+            "time_estimated": True,
+            "doctor_time": doctor_hhmm,
             "source_date": record_date,
             "time_full": f"{hhmm} {record_date}" if record_date else hhmm,
             "time_label": hhmm,
@@ -1023,6 +1042,41 @@ def _make_discharge_special_event(record: Dict[str, Any]) -> Optional[Dict[str, 
     }
 
 
+def _add_warning_once(record: Dict[str, Any], warning: Dict[str, Any]) -> None:
+    warns = record.setdefault("processing_warnings", [])
+    if not any(isinstance(w, dict) and w.get("code") == warning.get("code") for w in warns):
+        warns.append(warning)
+
+
+def _confirm_estimated_discharge_events(record: Dict[str, Any], special_events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Ra viện suy từ diễn biến (chưa có Thời gian ra) cần thêm căn cứ.
+
+    - Ngày sau còn kê thuốc → chưa ra viện ngày này: bỏ phiếu ra viện ước tính.
+    - Còn lại: giữ mốc ước tính (không sớm hơn 08:30) và cảnh báo chưa có giờ ra.
+    """
+    estimated = [ev for ev in special_events if ev.get("type") == "discharge" and ev.get("time_estimated")]
+    if not estimated:
+        return special_events
+    if record.get("co_thuoc_ngay_sau") is True:
+        _add_warning_once(record, {
+            "code": "DISCHARGE_NOT_CONFIRMED_NEXT_DAY_DRUGS",
+            "level": "warning",
+            "message": "Diễn biến ghi xuất viện nhưng ngày sau vẫn còn y lệnh thuốc, chưa coi là ra viện. Kiểm tra lại trên EMR.",
+        })
+        return [ev for ev in special_events if not (ev.get("type") == "discharge" and ev.get("time_estimated"))]
+    ev = estimated[0]
+    _add_warning_once(record, {
+        "code": "DISCHARGE_TIME_ESTIMATED",
+        "level": "warning",
+        "message": (
+            f"Diễn biến {ev.get('doctor_time') or ''} ghi xuất viện nhưng chưa có Thời gian ra trên EMR. "
+            f"Webapp giữ tới cữ 08:00, đặt phiếu Ra viện lúc {ev.get('time_label')}. "
+            "Khi EMR có Thời gian ra thì lấy lại dữ liệu."
+        ),
+    })
+    return special_events
+
+
 def apply_clinical_rules_to_record(record: Dict[str, Any]) -> Dict[str, Any]:
     """Lọc thuốc/y lệnh theo rule và ghi log thuốc bị bỏ vào record['rule_log']."""
     if not isinstance(record, dict):
@@ -1044,6 +1098,11 @@ def apply_clinical_rules_to_record(record: Dict[str, Any]) -> Dict[str, Any]:
             )
         ]
         special_events.append(discharge_ev)
+
+    _before = len(special_events)
+    special_events = _confirm_estimated_discharge_events(record, special_events)
+    if len(special_events) != _before:
+        record["care_special_events"] = list(special_events)
 
     # Dữ liệu cũ có thể đã lưu đồng thời:
     # - interdepartment_receive từ cột T/G vào

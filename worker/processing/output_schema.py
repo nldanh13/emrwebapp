@@ -99,6 +99,7 @@ def make_patient_day_record(
         "gio_ra_vien": patient.get('gio_ra_vien') or '',
         "ngay_ra_vien_date": patient.get('ngay_ra_vien_date') or '',
         "ra_vien_hom_nay": bool(patient.get('ra_vien_hom_nay')),
+        "co_thuoc_ngay_sau": patient.get('co_thuoc_ngay_sau'),
         "bac_si": doc_name,
         "bac_si_theo_gio": patient.get('bac_si_theo_gio') or {},
         "nhap_cham_soc": {

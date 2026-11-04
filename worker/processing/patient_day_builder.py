@@ -47,9 +47,11 @@ from xu_ly_merge import (
 try:
     from clinical_rules import apply_clinical_rules_to_record, extract_care_special_events, extract_admission_transfer_events
     from clinical_rules import reconcile_receive_events_with_ward_history
+    from clinical_rules import discharge_order_times_from_dien_bien
 except Exception:
     apply_clinical_rules_to_record = None
     extract_care_special_events = None
+    discharge_order_times_from_dien_bien = None
     extract_admission_transfer_events = None
     reconcile_receive_events_with_ward_history = None
 
@@ -72,7 +74,7 @@ from processing.medication_parser import (
     update_drug_usage,
 )
 from processing.infusion_scheduler import calculate_infusion_times, clean_and_merge_injections
-from processing.returned_doses import trim_returned_doses
+from processing.returned_doses import split_discharge_prescription, trim_returned_doses
 from processing.procedure_parser import extract_other_orders, extract_procedures_detailed
 from processing.medication_catalog import complete_medication_from_catalog, route_mismatch_warning
 from processing.order_events import build_raw_order_events
@@ -860,6 +862,11 @@ def build_patient_day_records(data):
         # Chữ "Dự trù thuốc" thường nằm bên ô Diễn biến, cùng giờ với ô Y lệnh.
         # Tạo lookup theo giờ/bác sĩ để không gán nhầm tất cả y lệnh sau đó là thuốc thêm.
         reserve_lookup = build_reserve_context_from_dien_bien(raw_db, default_doc_name=default_doc_name)
+        # Giờ các phiếu bác sĩ cho xuất viện: thuốc kê nhiều ngày trong phiếu đó là toa ra viện.
+        discharge_order_times = (
+            discharge_order_times_from_dien_bien(raw_db, ngay_record)
+            if discharge_order_times_from_dien_bien else set()
+        )
         
         for doc_name, doc_content, order_header_time in split_yl:
             new_p = make_patient_day_record(
@@ -1387,6 +1394,12 @@ def build_patient_day_records(data):
                 for _lst in [raw_dich_truyen, raw_thuoc_tiem] + _oral_lists:
                     for _d in _lst:
                         all_hours.update(int(h) for h in parse_hours_from_gio_dung(_d.get("gio_dung", "")))
+            if (order_header_time or "").strip() in discharge_order_times:
+                if split_discharge_prescription(new_p):
+                    all_hours = set()
+                    for _lst in [raw_dich_truyen, raw_thuoc_tiem] + _oral_lists:
+                        for _d in _lst:
+                            all_hours.update(int(h) for h in parse_hours_from_gio_dung(_d.get("gio_dung", "")))
             new_p["tong_hop_gio_dung"] = sorted(list(all_hours))
             new_p["y_lenh_khac"] = extract_other_orders(doc_content)
             # Gợi ý/đính kèm dung môi NaCl theo cùng giờ (NEFOPAM/TRAMADOL và các thuốc hay pha truyền)
