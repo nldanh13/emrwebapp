@@ -25,6 +25,7 @@ def _get_http_session(config: Dict[str, Any]):
 from emr_parsers import extract_timeline_map_from_html, extract_ward_admissions_from_html, dates_with_drug_orders
 from date_utils import add_days_dmy, work_date_for_timeline_date
 from runtime_data_v2 import merge_order_records, write_json_compact, generate_runtime_v2_files
+from ra_khoa_reader import read_ra_khoa_time
 try:
     from selenium import webdriver
     from selenium.webdriver.common.by import By
@@ -629,6 +630,19 @@ def _extract_discharge_datetime_from_html(html: str, default_year: Optional[str]
     return ""
 
 
+def _set_discharge_datetime(row: Dict[str, Any], discharge_dt: str, date_to_full: str, source: str) -> None:
+    row["ngay_ra_vien"] = discharge_dt
+    row["gio_ra_vien"] = _time_part_from_discharge_datetime(discharge_dt)
+    row["ngay_ra_vien_date"] = _date_part_from_discharge_datetime(discharge_dt)
+    row["ra_vien_hom_nay"] = bool(row["ngay_ra_vien_date"] and row["ngay_ra_vien_date"] == date_to_full)
+    print(f"LOG: BN {row.get('Mã BN') or row.get('Mã YT') or row.get('ma_bn') or ''} có xử trí ra viện | Ngày ra viện: {discharge_dt} ({source}) | hôm nay={row['ra_vien_hom_nay']}")
+
+
+def _needs_ra_khoa_time(row: Dict[str, Any]) -> bool:
+    """Xử trí ra viện nhưng chưa có giờ ra: cần đọc Tổng kết → Ra Khoa."""
+    return isinstance(row, dict) and _has_discharge_disposition(row) and not str(row.get("gio_ra_vien") or "").strip()
+
+
 def _attach_discharge_info(row: Dict[str, Any], html: str, date_to_full: str, default_year: Optional[str] = None) -> None:
     """Nếu cột Xử trí có ra viện thì đọc ngày ra viện trên trang ĐD và gắn vào row."""
     if not isinstance(row, dict) or not _has_discharge_disposition(row):
@@ -637,11 +651,7 @@ def _attach_discharge_info(row: Dict[str, Any], html: str, date_to_full: str, de
     row["xu_tri"] = str(raw_xu_tri or "").strip()
     discharge_dt = _extract_discharge_datetime_from_html(html, default_year=default_year)
     if discharge_dt:
-        row["ngay_ra_vien"] = discharge_dt
-        row["gio_ra_vien"] = _time_part_from_discharge_datetime(discharge_dt)
-        row["ngay_ra_vien_date"] = _date_part_from_discharge_datetime(discharge_dt)
-        row["ra_vien_hom_nay"] = bool(row["ngay_ra_vien_date"] and row["ngay_ra_vien_date"] == date_to_full)
-        print(f"LOG: BN {row.get('Mã BN') or row.get('Mã YT') or row.get('ma_bn') or ''} có xử trí ra viện | Ngày ra viện: {discharge_dt} | hôm nay={row['ra_vien_hom_nay']}")
+        _set_discharge_datetime(row, discharge_dt, date_to_full, "lblNgayRaVien")
     else:
         row["ra_vien_hom_nay"] = False
         print(f"LOG: Có xử trí ra viện nhưng chưa đọc được lblNgayRaVien cho BN {row.get('Mã BN') or row.get('Mã YT') or row.get('ma_bn') or ''}")
@@ -1772,6 +1782,9 @@ class AutoWorker:
         _merge_patient_admin_info(bn, patient_html, overwrite=True)
         if _has_discharge_disposition(bn):
             _attach_discharge_info(bn, patient_html, date_to_full, default_year=default_year)
+            if getattr(self, "_ra_khoa_chrome_ok", False) and _needs_ra_khoa_time(bn):
+                # Giờ ra chỉ có ở Tổng kết → Ra Khoa (menu JS), HTTP không mở được.
+                raise _HttpPatientFallback(f"BN {ma_bn} có xử trí ra viện nhưng chưa có giờ ra; cần đọc Tổng kết → Ra Khoa bằng Chrome")
         ylenh_pair = sess.try_get_ylenh_html(patient_html, patient_url)
         if not ylenh_pair:
             raise _HttpPatientFallback(f"Không tìm thấy HTML tab Y lệnh qua HTTP cho BN {ma_bn}")
@@ -1894,6 +1907,9 @@ class AutoWorker:
         # Máy góp sức: worker đọc EMR qua tab của một người (cầu nối), không mở được Chrome. Ca nào
         # không đọc được qua tab thì ghi vào <out>.skipped.json để máy chủ giao cho máy mở được Chrome.
         helper_mode = (os.environ.get("DETAILS_SKIP_UNREADABLE") or "").strip() == "1"
+        # Ca ra viện chưa có giờ: chuyển sang Chrome để đọc Tổng kết → Ra Khoa,
+        # chỉ khi máy này được phép mở Chrome đọc.
+        self._ra_khoa_chrome_ok = bool(allow_selenium_fallback and not helper_mode)
 
         if _http_read_enabled(self.config) or helper_mode:
             try:
@@ -2044,6 +2060,12 @@ class AutoWorker:
                         except Exception:
                             pass
                         _attach_discharge_info(bn, self.driver.page_source or "", date_to_full, default_year=default_year)
+                        if _needs_ra_khoa_time(bn):
+                            ra_khoa_dt = read_ra_khoa_time(self.driver, default_year=default_year)
+                            if ra_khoa_dt:
+                                _set_discharge_datetime(bn, ra_khoa_dt, date_to_full, "Tổng kết → Ra Khoa")
+                            else:
+                                print(f"LOG: BN {ma_bn} có xử trí ra viện nhưng Tổng kết → Ra Khoa chưa có giờ ra")
 
                     if not self._click_ylenh_tab():
                         print(f"LOG: Bỏ qua BN {ma_bn} vì không mở/không tải được tab Y lệnh")
