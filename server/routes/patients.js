@@ -367,6 +367,7 @@ router.get('/get-patients', (req, res) => {
       thuoc:     active.thuoc,
       ncs:       active.ncs,
       cs_extra:  active.cs_extra,
+      dressing_without_dvkt: Boolean(active.dressing_without_dvkt),
       input_progress: progressForPatient(progress, id),
     });
   }

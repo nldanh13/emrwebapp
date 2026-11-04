@@ -473,6 +473,12 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     setManualInputPatientIds(new Set());
     setExcludedInputPatientIds(new Set());
   }, []);
+  // Bỏ chọn tất cả: chuyển sang chọn tay với danh sách rỗng để tích lại từng người.
+  const clearAllInputPatients = useCallback(() => {
+    setInputMode('manual');
+    setManualInputPatientIds(new Set());
+    setExcludedInputPatientIds(new Set());
+  }, []);
   const toggleInputPatient = useCallback((patient) => {
     const id = patientIdOf(patient);
     if (!id) return;
@@ -1044,7 +1050,7 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
     selectedInputRooms, selectedInputPatients, inputRoomPatientCounts,
     inputMode, manualInputPatientIds, excludedInputPatientIds,
     toggleInputRoom, selectAllInputRooms, selectOnlyInputRoom, clearInputRooms,
-    setInputMode: setInputModeSafe, clearPatientInputScope, toggleInputPatient, isPatientInInputScope,
+    setInputMode: setInputModeSafe, clearPatientInputScope, clearAllInputPatients, toggleInputPatient, isPatientInInputScope,
     bulkTargetOptions,
     stats, loading, running, showPicker, setShowPicker, toolbarProps,
     handlePostprocess, handleInputCare, handleInputInfusion, handleInputProcedure, handleInputVtyt, handleRefreshDetailsOne, handlePrintDischargeBundle, handlePrintDischargeBundleAll,
