@@ -72,6 +72,7 @@ from processing.medication_parser import (
     update_drug_usage,
 )
 from processing.infusion_scheduler import calculate_infusion_times, clean_and_merge_injections
+from processing.returned_doses import trim_returned_doses
 from processing.procedure_parser import extract_other_orders, extract_procedures_detailed
 from processing.medication_catalog import complete_medication_from_catalog, route_mismatch_warning
 from processing.order_events import build_raw_order_events
@@ -1375,6 +1376,17 @@ def build_patient_day_records(data):
                             LOG.debug("Handled xu_ly fallback exception", exc_info=True)
                 else:
                     _push_unparsed_drug(current_drug)
+            # "+ Thuốc trả": số "x N" là số còn lại, bỏ cữ sau của thuốc đã trả bớt.
+            _oral_lists = [v for k, v in new_p["thuoc"].items() if k not in ("thuoc_tra", "khac", "dich_truyen", "thuoc_tiem") and isinstance(v, list)]
+            if trim_returned_doses(
+                [raw_dich_truyen, raw_thuoc_tiem] + _oral_lists,
+                new_p["thuoc"].get("thuoc_tra"),
+                new_p.setdefault("processing_warnings", []),
+            ):
+                all_hours = set()
+                for _lst in [raw_dich_truyen, raw_thuoc_tiem] + _oral_lists:
+                    for _d in _lst:
+                        all_hours.update(int(h) for h in parse_hours_from_gio_dung(_d.get("gio_dung", "")))
             new_p["tong_hop_gio_dung"] = sorted(list(all_hours))
             new_p["y_lenh_khac"] = extract_other_orders(doc_content)
             # Gợi ý/đính kèm dung môi NaCl theo cùng giờ (NEFOPAM/TRAMADOL và các thuốc hay pha truyền)
