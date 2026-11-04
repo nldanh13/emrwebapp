@@ -79,7 +79,7 @@ from processing.procedure_parser import extract_other_orders, extract_procedures
 from processing.medication_catalog import complete_medication_from_catalog, route_mismatch_warning
 from processing.order_events import build_raw_order_events
 from processing.structured_order_adapter import (
-    _order_forms, build_classification_text, extract_structured_source,
+    _order_forms, build_classification_text, build_dien_bien_text, extract_structured_source,
 )
 
 # ── Ngày làm việc mặc định ─────────────────────────────────────────────────────
@@ -838,6 +838,7 @@ def build_patient_day_records(data):
         forms = _order_forms(p)
         if forms:
             raw_yl = build_classification_text(forms)
+            raw_db = build_dien_bien_text(forms) or raw_db
             source = extract_structured_source(p)
             key = (str(p.get('ma_bn') or p.get('Mã BN') or ''), ngay_record)
             if source and key[0]:
