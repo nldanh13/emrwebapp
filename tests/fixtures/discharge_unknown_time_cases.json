@@ -1,0 +1,42 @@
+{
+  "_mo_ta": "Ca dùng chung cho test JS (xem trước) và Python (worker nhập EMR): ra viện chỉ có ngày, chưa rõ giờ. last_evidence là mốc giờ cuối cùng còn được sinh mục; null nghĩa là không áp dụng mốc suy luận.",
+  "cases": [
+    {
+      "name": "chi co ngay ra vien, khong co y lenh co gio",
+      "record": { "ngay_lam": "20/10/2026", "ngay_ra_vien": "20/10/2026", "ngay_ra_vien_date": "20/10/2026", "xu_tri": "Ra viện" },
+      "last_evidence": "08:00 20/10/2026"
+    },
+    {
+      "name": "y lenh ra vien luc 09:30 cung ngay",
+      "record": {
+        "ngay_lam": "20/10/2026", "ngay_ra_vien": "20/10/2026", "xu_tri": "Xuất viện",
+        "raw_order_events": [
+          { "ngay_lam": "20/10/2026", "gio_y_lenh": "07:15 20/10/2026", "text": "Thay băng" },
+          { "ngay_lam": "20/10/2026", "gio_y_lenh": "09:30 20/10/2026", "text": "Cho ra viện" },
+          { "ngay_lam": "21/10/2026", "gio_y_lenh": "08:00 21/10/2026", "text": "Không thuộc ngày này" }
+        ]
+      },
+      "last_evidence": "09:30 20/10/2026"
+    },
+    {
+      "name": "ra_vien_hom_nay khong co ngay va gio",
+      "record": { "ngay_lam": "20/10/2026", "ra_vien_hom_nay": true },
+      "last_evidence": "08:00 20/10/2026"
+    },
+    {
+      "name": "da co gio ra vien thi dung gio that, khong suy luan",
+      "record": { "ngay_lam": "20/10/2026", "ngay_ra_vien": "10:00 20/10/2026" },
+      "last_evidence": null
+    },
+    {
+      "name": "ngay ra vien khac ngay dang lam",
+      "record": { "ngay_lam": "19/10/2026", "ngay_ra_vien": "20/10/2026" },
+      "last_evidence": null
+    },
+    {
+      "name": "chi co xu tri ra vien, khong co ngay",
+      "record": { "ngay_lam": "20/10/2026", "xu_tri": "Ra viện" },
+      "last_evidence": null
+    }
+  ]
+}
