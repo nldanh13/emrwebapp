@@ -336,7 +336,21 @@
       "default_route": "UONG",
       "ten_hien_thi": "BETALOC ZOK 25MG",
       "sua_tay": true
+    },
+    {
+      "canonical": "NATRI CLORID 3%",
+      "category": "dich_truyen",
+      "default_volume_ml": 100,
+      "default_rate": "30",
+      "active_ingredients": [
+        "NATRI CLORID 3%"
+      ],
+      "aliases": [
+        "NATRI CLORID 3%"
+      ],
+      "ten_hien_thi": "NATRI CLORID 3%",
+      "sua_tay": true
     }
   ],
-  "_updated": "2026-10-15"
+  "_updated": "2026-10-30"
 }
