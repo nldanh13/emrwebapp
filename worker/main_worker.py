@@ -22,7 +22,7 @@ def _get_http_session(config: Dict[str, Any]):
         print(f"[HTTP READ] Không thể khởi tạo HTTP session: {e} -> fallback Selenium")
         return None
 
-from emr_parsers import extract_timeline_map_from_html, extract_ward_admissions_from_html
+from emr_parsers import extract_timeline_map_from_html, extract_ward_admissions_from_html, dates_with_drug_orders
 from date_utils import add_days_dmy, work_date_for_timeline_date
 from runtime_data_v2 import merge_order_records, write_json_compact, generate_runtime_v2_files
 try:
@@ -151,6 +151,7 @@ DETAIL_RECORD_KEYS = [
     "trang_thai", "Vi_Tri",
     "surgery_out", "surgery_out_time", "surgery_out_reason",
     "ngay_ra_vien", "gio_ra_vien", "ngay_ra_vien_date", "ra_vien_hom_nay",
+    "co_thuoc_ngay_sau",
 ]
 
 
@@ -253,6 +254,19 @@ def _clear_stale_discharge_for_current_visit(row: Dict[str, Any]) -> bool:
         _clear_discharge_fields(row, reason=f"ngày ra viện {discharge_dt.strftime('%d/%m/%Y')} trước mốc vào khoa {admission_dt.strftime('%d/%m/%Y')}")
         return True
     return False
+
+
+def _mark_next_day_drug_orders(records: List[Dict[str, Any]], html: str) -> None:
+    """Gắn co_thuoc_ngay_sau: ngày sau ngày làm còn kê thuốc thì chưa ra viện ngày làm."""
+    if not records:
+        return
+    drug_dates = dates_with_drug_orders(html)
+    for rec in records:
+        if not isinstance(rec, dict):
+            continue
+        next_day = add_days_dmy(rec.get("ngay_lam") or "", 1)
+        if next_day:
+            rec["co_thuoc_ngay_sau"] = next_day in drug_dates
 
 
 def _build_record(
@@ -806,7 +820,7 @@ def _canonical_patient_row_for_runtime(row: Dict[str, Any], *, include_order_tex
     # Các cờ/trạng thái nghiệp vụ cần giữ lại.
     for key in [
         "surgery_out", "surgery_out_time", "surgery_out_reason",
-        "ngay_ra_vien", "gio_ra_vien", "ngay_ra_vien_date", "ra_vien_hom_nay",
+        "ngay_ra_vien", "gio_ra_vien", "ngay_ra_vien_date", "ra_vien_hom_nay", "co_thuoc_ngay_sau",
         "ngay_tu", "ngay_den", "ngay_lam", "source_date", "bridge_source_date", "bridge_work_date",
     ]:
         if key in row and row.get(key) not in (None, "", [], {}):
@@ -1783,6 +1797,7 @@ class AutoWorker:
                 doctor_from_page=doctor_from_page or "",
                 bridge_end_date=bridge_end_date,
             ))
+        _mark_next_day_drug_orders(out, y_html)
         return out
 
     # --- TASK 2: DETAILS (Standard B: 1 record / BN / day) ---
@@ -2070,6 +2085,7 @@ class AutoWorker:
                         continue
 
                     print(f"LOG: Đọc được timeline {len(timeline_map)} ngày cho BN {ma_bn}: {', '.join(sorted(timeline_map.keys()))}")
+                    _patient_records_start = len(records)
 
                     for d in timeline_dates:
                         item = timeline_map.get(d, {"Y lệnh": "", "Diễn biến": "", "Bác sĩ": ""})
@@ -2088,6 +2104,7 @@ class AutoWorker:
                             bridge_end_date=bridge_end_date,
                         )
                         records.append(rec)
+                    _mark_next_day_drug_orders(records[_patient_records_start:], self.driver.page_source)
 
                     # Quay về danh sách bằng URL cố định thay vì driver.back() để tránh lệch history stack.
                     try:

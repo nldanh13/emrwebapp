@@ -429,6 +429,14 @@ def merge_records_by_patient_v12(records: list) -> list:
             dv.extend(x.get("chi_dinh_dvkt", []) or [])
         base["chi_dinh_dvkt"] = _dedup_dicts(dv, lambda d: (str(d.get("ten","")).strip().lower(), str(d.get("gio","")).strip()))
 
+        # Cảnh báo và toa ra viện của mọi block (không chỉ block đầu).
+        for list_key in ("processing_warnings", "toa_ra_vien"):
+            items = []
+            for x in lst:
+                items.extend(x.get(list_key) or [])
+            if items:
+                base[list_key] = _dedup_dicts(items, lambda d: json.dumps(d, ensure_ascii=False, sort_keys=True, default=str))
+
         base = cleanup_record_v12(base)
         base = attach_doctor_into_dich_truyen_hours(base)
         base["phan_loai_bn"] = phan_loai_benh_nhan(base)
