@@ -79,3 +79,52 @@ def test_dates_with_drug_orders():
     assert dates_with_drug_orders(html) == {"03/11/2026", "04/11/2026"}
     assert not order_text_has_drugs("+ Thuốc:\n+ Thuốc trả:\n-Paracetamol x 2 Túi")
     assert order_text_has_drugs("+ Thuốc:\nPARACETAMOL x 1 (Túi)")
+
+
+def _structured_forms():
+    """Hai phiếu ngày 04/11 như đọc từ Lịch sử y lệnh (order_history)."""
+    return [
+        {
+            "id": "a", "gio_y_lenh": "05:00 04/11/2026", "bac_si": "BS TEST",
+            "trang_thai_y_lenh": "Hoàn tất", "dien_bien_benh": "Dự trù thuốc",
+            "thuoc": [
+                {"ten_duoc": "PARACETAMOL 10MG/ML (Paracetamol)", "so_luong": "3", "don_vi": "Túi",
+                 "cach_dung": "TTM C g/p 8h - 16h - 22h."},
+                {"ten_duoc": "ESOMEPRAZOL 40MG (Esomeprazol)", "so_luong": "1", "don_vi": "Viên",
+                 "cach_dung": "Uống mỗi ngày, sáng 1 viên(8 giờ)."},
+            ],
+        },
+        {
+            "id": "b", "gio_y_lenh": "07:30 04/11/2026", "bac_si": "BS TEST",
+            "trang_thai_y_lenh": "Hoàn tất",
+            "dien_bien_benh": "Bệnh tỉnh\nHiện tại bệnh tạm ổn => Xuất viện",
+            "y_lenh_khac_muc": ["Hoàn thuốc tiêm truyền cử chiều tối", "Uống thuốc theo toa"],
+            "thuoc": [
+                {"ten_duoc": "LIGABA 75 (Pregabalin)", "so_luong": "5", "don_vi": "Viên",
+                 "cach_dung": "Uống mỗi ngày, tối 1 viên 20h."},
+            ],
+        },
+    ]
+
+
+def test_structured_order_history_detects_discharge():
+    # Lỗi cũ: diễn biến ghép từ phiếu không có "HH:MM | Bác sĩ" nên không nhận
+    # ra "=> Xuất viện" → xem trước vẫn sinh chăm sóc 16:00.
+    forms = _structured_forms()
+    rec = {
+        "Mã BN": "TEST_XV2", "Họ tên": "BN TEST", "Bác sĩ": "BS TEST", "Vi_Tri": "P11",
+        "ngay_lam": "04/11/2026", "order_history": forms,
+        "Diễn biến": "\n".join(f["dien_bien_benh"] for f in forms), "Y lệnh": "",
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        in_path = os.path.join(tmp, "in.json")
+        out_path = os.path.join(tmp, "out.json")
+        with open(in_path, "w", encoding="utf-8") as f:
+            json.dump([rec], f, ensure_ascii=False)
+        process_all(in_path, output_file=out_path)
+        with open(out_path, encoding="utf-8") as f:
+            out = json.load(f)[0]
+    events = [e for e in out.get("care_special_events") or [] if e["type"] == "discharge"]
+    assert [e["time_label"] for e in events] == ["08:30"]
+    assert out["care_mode"] == "discharge_day"
+    assert "LIGABA 75" in [d["ten_thuoc"] for d in out.get("toa_ra_vien") or []]

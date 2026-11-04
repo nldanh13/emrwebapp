@@ -2096,6 +2096,10 @@ class AutoWorker:
                             )
                             rec["order_history"] = item["order_history"]
                             records.append(rec)
+                            _next_day = add_days_dmy(rec.get("ngay_lam") or d, 1)
+                            _next_item = completed_days.get(_next_day) or {}
+                            if any(o.get("thuoc") for o in (_next_item.get("order_history") or [])):
+                                rec["co_thuoc_ngay_sau"] = True
                         _safe_driver_get(self.driver, nav_url, "quay lại danh sách sau khi đọc phiếu")
                         self.wait.until(EC.presence_of_element_located((By.ID, "txtTimKiem")))
                         continue
