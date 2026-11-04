@@ -473,7 +473,12 @@ def test_discharge_detected_from_progress_note_even_when_xu_tri_status_only():
     record = result[0]
     assert record.get("care_mode") == "discharge_day"
     events = record.get("care_special_events") or []
-    assert any(ev.get("type") == "discharge" and ev.get("time_full") == "08:00 05/05/2026" for ev in events)
+    # Chưa có Thời gian ra: giữ cữ 08:00, phiếu Ra viện ước tính 08:30 (giờ bác sĩ ghi giữ ở doctor_time).
+    assert any(
+        ev.get("type") == "discharge" and ev.get("time_full") == "08:30 05/05/2026"
+        and ev.get("doctor_time") == "08:00" and ev.get("time_estimated")
+        for ev in events
+    )
 
 
 def test_list_discharge_disposition_is_not_overwritten_by_status_like_detail_value():

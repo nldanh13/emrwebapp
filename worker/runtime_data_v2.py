@@ -39,7 +39,7 @@ PATIENT_META_KEYS = {
     "lich_su_khoa_dieu_tri", "khoa_dieu_tri_history", "ward_admissions",
     "Xử trí", "xu_tri", "disposition",
     "Trạng thái", "trang_thai", "TrangThai", "status", "tinh_trang",
-    "ngay_ra_vien", "gio_ra_vien", "ngay_ra_vien_date", "ra_vien_hom_nay",
+    "ngay_ra_vien", "gio_ra_vien", "ngay_ra_vien_date", "ra_vien_hom_nay", "co_thuoc_ngay_sau",
     "surgery_out", "surgery_out_time", "surgery_out_reason",
 }
 
@@ -188,7 +188,7 @@ def canonical_legacy_row(row: Mapping[str, Any], *, include_order_text: bool = F
 
     for key in [
         "surgery_out", "surgery_out_time", "surgery_out_reason",
-        "ngay_ra_vien", "gio_ra_vien", "ngay_ra_vien_date", "ra_vien_hom_nay",
+        "ngay_ra_vien", "gio_ra_vien", "ngay_ra_vien_date", "ra_vien_hom_nay", "co_thuoc_ngay_sau",
         "ngay_tu", "ngay_den", "ngay_lam", "source_date", "bridge_source_date", "bridge_work_date",
     ]:
         if key in row and row.get(key) not in (None, "", [], {}):
