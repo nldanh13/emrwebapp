@@ -26,6 +26,7 @@ export default function InputRoomSelector({
   manualPatientCount = 0,
   excludedPatientCount = 0,
   onClearPatientScope,
+  onDeselectAll,
 }) {
   const [open, setOpen] = useState(false);
   const selectedSet = new Set(selectedRooms || []);
@@ -56,6 +57,9 @@ export default function InputRoomSelector({
         </div>
         {currentRoom && !isManual && !(currentRoomSelected && selectedRooms.length === 1) && (
           <Btn onClick={() => onSelectOnlyCurrent?.(currentRoom)}>Chỉ phòng {currentRoom}</Btn>
+        )}
+        {!empty && onDeselectAll && (
+          <Btn onClick={onDeselectAll}>Bỏ chọn tất cả</Btn>
         )}
         <Btn icon={open ? IconChevronUp : IconChevronDown} onClick={() => setOpen(v => !v)} aria-expanded={open}>
           Đổi phạm vi

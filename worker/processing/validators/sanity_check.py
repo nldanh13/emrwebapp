@@ -152,7 +152,9 @@ def run_sanity_checks(records):
         if _has_any(txt, _PROCEDURE_HINTS):
             tb = chi.get('thay_bang_cat_chi') or []
             dm = chi.get('duong_mau_mao_mach') or []
-            if ('thay băng' in txt or 'cắt chỉ' in txt) and not tb:
+            # Thay băng chưa lên mã DVKT đã có cảnh báo riêng (canh_bao), không báo trùng.
+            uncoded_dressing = any('chưa lên mã' in str(w or '').lower() for w in (chi.get('canh_bao') or []))
+            if ('thay băng' in txt or 'cắt chỉ' in txt) and not tb and not uncoded_dressing:
                 warnings.append(_warning(record, 'DRESSING_TEXT_BUT_EMPTY', 'Có thay băng/cắt chỉ trong y lệnh nhưng danh sách thay_bang_cat_chi rỗng.'))
             if ('đường máu mao mạch' in txt or 'đmmm' in txt) and not dm:
                 warnings.append(_warning(record, 'GLUCOSE_TEXT_BUT_EMPTY', 'Có ĐMMM trong y lệnh nhưng danh sách duong_mau_mao_mach rỗng.'))

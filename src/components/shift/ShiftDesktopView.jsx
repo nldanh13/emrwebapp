@@ -57,7 +57,7 @@ export default function ShiftDesktopView({
   selectedInputRooms, selectedInputPatients, inputRoomPatientCounts,
   inputMode, manualInputPatientIds, excludedInputPatientIds,
   toggleInputRoom, selectAllInputRooms, selectOnlyInputRoom, clearInputRooms,
-  setInputMode, clearPatientInputScope, toggleInputPatient, isPatientInInputScope,
+  setInputMode, clearPatientInputScope, clearAllInputPatients, toggleInputPatient, isPatientInInputScope,
   bulkTargetOptions,
   stats, loading, running, showPicker, setShowPicker, toolbarProps,
   handlePostprocess, handleInputCare, handleInputInfusion, handleInputProcedure, handleInputVtyt, handleRefreshDetailsOne, handlePrintDischargeBundle, handlePrintDischargeBundleAll,
@@ -149,6 +149,7 @@ export default function ShiftDesktopView({
                   manualPatientCount={manualInputPatientIds?.size || 0}
                   excludedPatientCount={excludedInputPatientIds?.size || 0}
                   onClearPatientScope={clearPatientInputScope}
+                  onDeselectAll={clearAllInputPatients}
                   onToggleRoom={toggleInputRoom}
                   onSelectAll={selectAllInputRooms}
                   onSelectOnlyCurrent={selectOnlyInputRoom}
