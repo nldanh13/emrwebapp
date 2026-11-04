@@ -195,6 +195,25 @@ def build_classification_text(forms):
     return "\n".join(blocks)
 
 
+def build_dien_bien_text(forms):
+    """Diễn biến từng phiếu có tiêu đề "HH:MM | Bác sĩ: ..." như timeline.
+
+    Bản ghi đọc từ Lịch sử y lệnh nối diễn biến các phiếu không kèm giờ, nên
+    nhận diện ra viện ("=> Xuất viện" lúc 07:30) và dự trù theo giờ không chạy.
+    """
+    blocks = []
+    for form in forms or []:
+        body = _clean(form.get("dien_bien_benh"))
+        if not body:
+            continue
+        m = re.search(r"(?<!\d)(\d{1,2}:\d{2})(?!\d)", _clean(form.get("gio_y_lenh")))
+        if not m:
+            continue
+        doc = " ".join((_clean(form.get("bac_si_chi_dinh") or form.get("bac_si")) or "Không rõ").splitlines())
+        blocks.append(f"{m.group(1)} | Bác sĩ: {doc}\n{body}")
+    return "\n---\n".join(blocks)
+
+
 def extract_structured_source(record):
     """Do not change the shape of old records; retain full original source rows."""
     forms = _order_forms(record)
