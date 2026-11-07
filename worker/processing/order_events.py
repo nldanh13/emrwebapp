@@ -46,3 +46,42 @@ def build_raw_order_events(doc_content, *, doc_name='', order_header_time='', ng
             'text': line,
         })
     return events
+
+
+_OTHER_ORDER_HEADER_RE = re.compile(r'^\+\s*y\s*l[ệe]nh\s*kh[áa]c\s*:?\s*(.*)$', re.IGNORECASE)
+
+
+def extract_other_order_block(doc_content, *, doc_name='', order_header_time=''):
+    """Lấy nguyên văn mục "+ Y lệnh khác:" (ô Y lệnh khác trên phiếu EMR) của một phiếu.
+
+    Trả về list 0 hoặc 1 phần tử {gio_y_lenh, bac_si, noi_dung}; dùng cho báo cáo
+    in riêng "Y lệnh khác", không qua bộ phân loại thuốc.
+    """
+    lines = []
+    in_section = False
+    for raw in str(doc_content or '').splitlines():
+        line = str(raw or '').strip()
+        if not line:
+            continue
+        header = _OTHER_ORDER_HEADER_RE.match(line)
+        if header:
+            in_section = True
+            if header.group(1).strip():
+                lines.append(header.group(1).strip())
+            continue
+        if not in_section:
+            continue
+        if line.startswith('---') or classify_raw_order_line(line) == 'section':
+            in_section = False
+            continue
+        if re.match(r'^\s*(?:\[\s*)?\d{1,2}(?::|h)\d{0,2}[^\n]*?(?:BS|B(?:Á|A)C\s*S(?:Ĩ|I))\s*:\s*.+$', line, re.IGNORECASE):
+            in_section = False
+            continue
+        lines.append(line)
+    if not lines:
+        return []
+    return [{
+        'gio_y_lenh': str(order_header_time or '').strip(),
+        'bac_si': str(doc_name or '').strip(),
+        'noi_dung': '\n'.join(lines),
+    }]

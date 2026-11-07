@@ -10,6 +10,8 @@ import {
   collectDrugRows, routeCounts, summarize, isOddHour,
 } from './report/reportUtils.js';
 import { SelectBox, SummaryTable, DutyReport } from './report/ReportSections.jsx';
+import OtherOrderTable from './report/OtherOrderTable.jsx';
+import { collectOtherOrderRows, buildOtherOrderPrintHtml } from './report/otherOrderReport.js';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
 import { SkeletonTable } from './Skeleton.jsx';
 
@@ -61,6 +63,9 @@ export default function ReportTab({ toast, workDateRange }) {
   }, [patients, date]);
 
   const allRows = useMemo(() => collectDrugRows(wardPatients, date), [wardPatients, date]);
+
+  const otherOrderRows = useMemo(() => collectOtherOrderRows(wardPatients, date), [wardPatients, date]);
+  const isOtherView = view === 'other';
 
   const nextDate = useMemo(() => addDaysDmy(date, 1), [date]);
   const nextWardPatients = useMemo(() => {
@@ -128,7 +133,26 @@ export default function ReportTab({ toast, workDateRange }) {
 
   const clearRouteSelection = () => setSelectedRoutes([]);
 
+  // In "Y lệnh khác" ngay trên trình duyệt từ đúng các dòng đang xem.
+  const printOtherOrders = () => {
+    const frame = document.createElement('iframe');
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+    document.body.appendChild(frame);
+    const doc = frame.contentWindow.document;
+    doc.open();
+    doc.write(buildOtherOrderPrintHtml(otherOrderRows, date));
+    doc.close();
+    frame.contentWindow.focus();
+    frame.contentWindow.print();
+    setTimeout(() => frame.remove(), 60000);
+  };
+
   const handlePrintReport = async () => {
+    if (isOtherView) {
+      try { printOtherOrders(); } catch (e) { toast?.(`Không mở được hộp thoại in: ${e.message || e}`, 'error'); }
+      return;
+    }
     setPrinting(true);
     try {
       const url = await api.reportUrl({ date, rows: routeFilteredRows, source: 'ward', start: 0, end: 23, no0: false });
@@ -166,12 +190,12 @@ export default function ReportTab({ toast, workDateRange }) {
             label="Kiểu xem"
             value={view}
             onChange={setView}
-            options={[{ value: 'duty', label: 'Phiếu bàn giao ca' }, { value: 'summary', label: 'Thống kê số lượng' }]}
+            options={[{ value: 'duty', label: 'Phiếu bàn giao ca' }, { value: 'summary', label: 'Thống kê số lượng' }, { value: 'other', label: 'Y lệnh khác' }]}
           />
           <span style={{ flex: '1 1 0' }} />
           <Btn icon={IconRefresh} loading={loading} onClick={load} disabled={loading}>Tải lại</Btn>
-          <Btn variant="solidPrimary" icon={IconPrinter} loading={printing} onClick={handlePrintReport} disabled={loading || printing || !allRows.length}>
-            {printing ? 'Đang tạo phiếu…' : 'In phiếu'}
+          <Btn variant="solidPrimary" icon={IconPrinter} loading={printing} onClick={handlePrintReport} disabled={loading || printing || !(isOtherView ? otherOrderRows.length : allRows.length)}>
+            {printing ? 'Đang tạo phiếu…' : isOtherView ? 'In Y lệnh khác' : 'In phiếu'}
           </Btn>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '2px 14px', color: C.text2, fontSize: FS.sm }}>
@@ -184,7 +208,11 @@ export default function ReportTab({ toast, workDateRange }) {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
-        {loading && !allRows.length ? (
+        {isOtherView ? (
+          loading && !otherOrderRows.length
+            ? <div role="status" aria-busy="true" aria-label="Đang tải Y lệnh khác" style={{ background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 7, padding: 14 }}><SkeletonTable rows={8} cols={4} /></div>
+            : <OtherOrderTable rows={otherOrderRows} />
+        ) : loading && !allRows.length ? (
           <div role="status" aria-busy="true" aria-label="Đang tải dữ liệu báo cáo" style={{ background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 7, padding: 14 }}>
             <SkeletonTable rows={8} cols={6} />
           </div>

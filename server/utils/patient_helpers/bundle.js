@@ -84,6 +84,23 @@ function stripUncodedDressing(records) {
   return { rows, warning };
 }
 
+// Nguyên văn ô "Y lệnh khác" từng phiếu trong ngày (Báo cáo in riêng), theo giờ phiếu.
+function collectOtherOrderText(records) {
+  const seen = new Set();
+  const out = [];
+  for (const item of collectRecordList(records, 'y_lenh_khac_goc')) {
+    const noiDung = String(item?.noi_dung || '').trim();
+    if (!noiDung) continue;
+    const gio = String(item?.gio_y_lenh || '').trim();
+    const bacSi = String(item?.bac_si || '').trim();
+    const key = `${gio}\u0001${bacSi}\u0001${noiDung}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ gio_y_lenh: gio, bac_si: bacSi, noi_dung: noiDung });
+  }
+  return out.sort((a, b) => (a.gio_y_lenh || '99:99').localeCompare(b.gio_y_lenh || '99:99'));
+}
+
 function warningCount(records) {
   return collectRecordList(records, 'processing_warnings').length + collectRecordList(records, 'unparsed_orders').length;
 }
@@ -254,6 +271,7 @@ function buildPatientDayBundle(records, patientId, date, nurseSchedule, doneStat
     timeline: buildTimeline(allDichTruyen, allThuocTiem, allThuocUong, allThuocTra, rows),
     preview,
     raw_order_events: rawOrderEvents,
+    y_lenh_khac_goc: collectOtherOrderText(rows),
     unparsed_orders: unparsedOrders,
     processing_warnings: [...processingWarnings, ...infusionVolumeWarnings],
     vtyt: vtytPlan,
@@ -272,4 +290,4 @@ function buildPatientDayBundle(records, patientId, date, nurseSchedule, doneStat
   };
 }
 
-module.exports = { stripUncodedDressing, collectMedicationCategory, collectExtraMedicationCategories, collectRecordList, hasTargetProcedure, hasValidVolume, buildInfusionVolumeWarnings, buildPatientDayBundle };
+module.exports = { collectOtherOrderText, stripUncodedDressing, collectMedicationCategory, collectExtraMedicationCategories, collectRecordList, hasTargetProcedure, hasValidVolume, buildInfusionVolumeWarnings, buildPatientDayBundle };
