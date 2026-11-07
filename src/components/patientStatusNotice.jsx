@@ -124,6 +124,7 @@ function mergeSources(patient = {}, activeDay = null) {
     surgery_out_time: day.surgery_out_time || patient.surgery_out_time,
     surgery_out_reason: day.surgery_out_reason || patient.surgery_out_reason,
     care_special_events: events,
+    dressing_without_dvkt: activeDay ? Boolean(day.dressing_without_dvkt) : Boolean(patient.dressing_without_dvkt),
   };
 }
 
@@ -184,6 +185,11 @@ export function getPatientNotices(patient = {}, activeDay = null) {
     /\b(chuyen khoa|nhan khoa|nhan benh|chuyen den)\b/.test(statusText)
   ) {
     addNotice(notices, 'ward_transfer', 'Chuyển khoa', eventTime(events, 'ward_receive') || eventTime(events, 'interdepartment_receive'), C.greenBg, C.green);
+  }
+
+  if (source.dressing_without_dvkt) {
+    // Y lệnh thay băng chưa lên mã DVKT: chỉ cảnh báo, không ghi vào phiếu chăm sóc.
+    addNotice(notices, 'dressing_without_dvkt', 'Thay băng chưa lên mã', '', C.redBg, C.red);
   }
 
   if (eventTypes.has('clinic_admission')) {

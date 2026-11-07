@@ -364,6 +364,12 @@ def _same_calendar_date(dt_obj, ddmmyyyy):
         return False
 
 
+def _is_uncoded_dressing(item):
+    """Mục giữ chỗ 'Thay băng vết mổ (CHƯA LÊN MÃ)' của bộ phân loại cũ."""
+    name = item.get("ten") if isinstance(item, dict) else item
+    return bool(re.search(r"ch[ưu]a\s+l[êe]n\s+m[ãa]", str(name or ""), flags=re.IGNORECASE))
+
+
 def _discharge_cutoff_from_entry(entry_obj, special_events=None, work_date=None):
     """Lấy mốc ra viện từ event đặc biệt hoặc từ các trường ngay_ra_vien/gio_ra_vien.
 
@@ -658,6 +664,13 @@ def main():
         if not isinstance(chi_dinh_khac, dict):
             return chi_dinh_khac or {}
         cleaned = dict(chi_dinh_khac)
+        # Dữ liệu cũ còn mục giữ chỗ "Thay băng vết mổ (CHƯA LÊN MÃ)": không ghi vào
+        # phiếu chăm sóc (cùng quy tắc với server/utils/patient_helpers/bundle.js).
+        if isinstance(cleaned.get('thay_bang_cat_chi'), list):
+            cleaned['thay_bang_cat_chi'] = [
+                item for item in cleaned['thay_bang_cat_chi']
+                if not _is_uncoded_dressing(item)
+            ]
         for key in ('thay_bang_cat_chi', 'duong_mau_mao_mach'):
             items = cleaned.get(key)
             if not isinstance(items, list):

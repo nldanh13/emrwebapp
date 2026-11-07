@@ -52,6 +52,38 @@ function hasTargetProcedure(records) {
   return false;
 }
 
+// Y lệnh có chữ "thay băng" nhưng bác sĩ chưa lên mã DVKT: bộ phân loại cũ để
+// lại mục giữ chỗ "Thay băng vết mổ (CHƯA LÊN MÃ)". Không đưa mục này vào phiếu
+// chăm sóc/thủ thuật; chỉ báo cảnh báo bên ngoài (worker/input_care.py cùng quy tắc).
+const UNCODED_DRESSING_RE = /ch(ư|u)a\s+l(ê|e)n\s+m(ã|a)/i;
+
+function isUncodedDressingItem(item) {
+  return UNCODED_DRESSING_RE.test(String(item?.ten || item?.name || item || ''));
+}
+
+function stripUncodedDressing(records) {
+  let found = false;
+  const rows = (Array.isArray(records) ? records : []).map(rec => {
+    const items = rec?.chi_dinh_khac?.thay_bang_cat_chi;
+    if (!Array.isArray(items) || !items.some(isUncodedDressingItem)) return rec;
+    found = true;
+    return { ...rec, chi_dinh_khac: { ...rec.chi_dinh_khac, thay_bang_cat_chi: items.filter(x => !isUncodedDressingItem(x)) } };
+  });
+  // Dữ liệu xử lý theo bộ phân loại mới chỉ còn dòng cảnh báo, không còn mục giữ chỗ.
+  if (!found) {
+    found = rows.some(rec => (Array.isArray(rec?.chi_dinh_khac?.canh_bao) ? rec.chi_dinh_khac.canh_bao : [])
+      .some(isUncodedDressingItem));
+  }
+  if (!found) return { rows, warning: null };
+  const codedDressing = rows.some(rec => (Array.isArray(rec?.chi_dinh_dvkt) ? rec.chi_dinh_dvkt : [])
+    .some(item => /(thay bang|cat chi)/.test(normText(item?.ten || item?.name || item))));
+  const warning = codedDressing ? null : {
+    code: 'dressing_without_dvkt',
+    message: 'Có y lệnh thay băng nhưng chưa lên mã DVKT. Không ghi vào phiếu chăm sóc; nhờ bác sĩ lên mã nếu cần.',
+  };
+  return { rows, warning };
+}
+
 function warningCount(records) {
   return collectRecordList(records, 'processing_warnings').length + collectRecordList(records, 'unparsed_orders').length;
 }
@@ -114,7 +146,9 @@ function taskDoneInfo(doneStates = {}, key, hash, taskName) {
 // ── Build patient day bundle ───────────────────────────────────────────────────
 
 function buildPatientDayBundle(records, patientId, date, nurseSchedule, doneStates = {}) {
-  const rows = Array.isArray(records) ? records : [];
+  // Dấu vân tay "đã nhập" vẫn tính trên bản ghi gốc để không làm mọi ngày cũ thành "YL mới".
+  const sourceRows = Array.isArray(records) ? records : [];
+  const { rows, warning: dressingWarning } = stripUncodedDressing(sourceRows);
   const r    = rows[0] || {};
 
   const knownMedicationKeys = new Set(['dich_truyen', 'thuoc_tiem', 'thuoc_uong', 'thuoc_tra', 'khac']);
@@ -127,15 +161,16 @@ function buildPatientDayBundle(records, patientId, date, nurseSchedule, doneStat
   const rawOrderEvents = collectRecordList(rows, 'raw_order_events');
   const unparsedOrders = collectRecordList(rows, 'unparsed_orders');
   const processingWarnings = collectRecordList(rows, 'processing_warnings');
+  if (dressingWarning) processingWarnings.push(dressingWarning);
   const hasInfusion   = allDichTruyen.length > 0;
   const hasProcedure  = hasTargetProcedure(rows);
 
   const doneK = doneKey(patientId, date);
   const hashes = {
-    care: fingerprintRecords(rows, 'care'),
-    infusions: fingerprintRecords(rows, 'infusions'),
-    procedures: fingerprintRecords(rows, 'procedures'),
-    vtyt: fingerprintRecords(rows, 'vtyt'),
+    care: fingerprintRecords(sourceRows, 'care'),
+    infusions: fingerprintRecords(sourceRows, 'infusions'),
+    procedures: fingerprintRecords(sourceRows, 'procedures'),
+    vtyt: fingerprintRecords(sourceRows, 'vtyt'),
   };
 
   const careInfo = taskDoneInfo(doneStates, doneK, hashes.care, 'care');
@@ -163,7 +198,7 @@ function buildPatientDayBundle(records, patientId, date, nurseSchedule, doneStat
 
   const preview = buildPreview(r, dtWithNurse, nurseSchedule);
   const careRequired = Array.isArray(preview.care) && preview.care.length > 0;
-  const warnCount = warningCount(rows) + infusionVolumeWarnings.length;
+  const warnCount = warningCount(rows) + infusionVolumeWarnings.length + (dressingWarning ? 1 : 0);
   const vtytPlan = collectVtytPlan(rows);
 
   const doneEnough = (!careRequired || care_done) && (!hasInfusion || infus_done) && (!hasProcedure || proc_done);
@@ -233,7 +268,8 @@ function buildPatientDayBundle(records, patientId, date, nurseSchedule, doneStat
     },
     ncs:      { ...(r.nhap_cham_soc || {}), dieu_duong: dieu_duong_cs },
     cs_extra: r.chi_dinh_khac || {},
+    dressing_without_dvkt: Boolean(dressingWarning),
   };
 }
 
-module.exports = { collectMedicationCategory, collectExtraMedicationCategories, collectRecordList, hasTargetProcedure, hasValidVolume, buildInfusionVolumeWarnings, buildPatientDayBundle };
+module.exports = { stripUncodedDressing, collectMedicationCategory, collectExtraMedicationCategories, collectRecordList, hasTargetProcedure, hasValidVolume, buildInfusionVolumeWarnings, buildPatientDayBundle };

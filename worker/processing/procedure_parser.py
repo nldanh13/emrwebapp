@@ -224,9 +224,14 @@ def extract_procedures_detailed(raw_y_lenh, patient_data, ngay_mac_dinh=None):
         if len(found_services) >= 2:
             actions.append({"ten": found_services[1], "gio": f"16:00 {ngay_lam_viec}"})
     elif "thay băng" in text_lower or "rửa vết thương" in text_lower:
-        msg = "⚠ CẢNH BÁO: Có y lệnh 'Thay băng' nhưng chưa lên Mã DVKT!"
-        chi_dinh_khac["canh_bao"].append(msg)
-        actions.append({"ten": "Thay băng vết mổ (CHƯA LÊN MÃ)", "gio": f"08:00 {ngay_lam_viec}", "note": msg})
+        # Chưa lên mã DVKT: chỉ cảnh báo, không tạo mục giữ chỗ để khỏi ghi
+        # "Thay băng vết mổ (CHƯA LÊN MÃ)" vào phiếu chăm sóc/thủ thuật.
+        has_coded_dressing = any(
+            re.search(r"thay\s*băng|cắt\s*chỉ", str((it or {}).get("ten") or ""), flags=re.IGNORECASE)
+            for it in (dvkt_list or []) if isinstance(it, dict)
+        )
+        if not has_coded_dressing:
+            chi_dinh_khac["canh_bao"].append("⚠ CẢNH BÁO: Có y lệnh 'Thay băng' nhưng chưa lên Mã DVKT!")
 
     chi_dinh_khac["thay_bang_cat_chi"] = actions
 
