@@ -379,6 +379,19 @@ def merge_records_by_patient_v12(records: list) -> list:
             "khac": _dedup_preserve_order(yk["khac"]),
         }
 
+        # Nguyên văn ô "Y lệnh khác" từng phiếu (Báo cáo in riêng): gộp đủ mọi phiếu trong ngày.
+        ylk_goc, seen_ylk = [], set()
+        for x in lst:
+            for item in x.get("y_lenh_khac_goc") or []:
+                if not isinstance(item, dict):
+                    continue
+                k = (item.get("gio_y_lenh"), item.get("bac_si"), item.get("noi_dung"))
+                if k in seen_ylk:
+                    continue
+                seen_ylk.add(k)
+                ylk_goc.append(item)
+        base["y_lenh_khac_goc"] = ylk_goc
+
         # merge thuoc
         # Lưu ý: phải gộp cả thuoc_tra. Trước đây khi một BN có nhiều block y lệnh
         # trong ngày, các dòng sau "+ Thuốc trả:" được parse ở từng block nhưng bị rơi

@@ -213,6 +213,7 @@ function rowsFromClassifiedDays(ctx) {
       chi_dinh_khac: day.other_orders || {},
       vtyt: day.supplies || { items: [], warnings: [], source: 'runtime_v2' },
       processing_warnings: Array.isArray(day.warnings) ? day.warnings : [],
+      y_lenh_khac_goc: Array.isArray(day.other_order_text) ? day.other_order_text : [],
       _source: 'runtime_v2.classified_days',
     };
   });

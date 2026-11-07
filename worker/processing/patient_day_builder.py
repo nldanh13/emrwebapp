@@ -77,7 +77,7 @@ from processing.infusion_scheduler import calculate_infusion_times, clean_and_me
 from processing.returned_doses import split_discharge_prescription, trim_returned_doses
 from processing.procedure_parser import extract_other_orders, extract_procedures_detailed
 from processing.medication_catalog import complete_medication_from_catalog, route_mismatch_warning
-from processing.order_events import build_raw_order_events
+from processing.order_events import build_raw_order_events, extract_other_order_block
 from processing.structured_order_adapter import (
     _order_forms, build_classification_text, build_dien_bien_text, extract_structured_source,
 )
@@ -890,6 +890,12 @@ def build_patient_day_records(data):
                 doc_name=doc_name,
                 order_header_time=order_header_time,
                 ngay_lam=ngay_record,
+            )
+            # Nguyên văn ô "Y lệnh khác" của phiếu, để Báo cáo in riêng.
+            new_p["y_lenh_khac_goc"] = extract_other_order_block(
+                doc_content,
+                doc_name=doc_name,
+                order_header_time=order_header_time,
             )
             new_p.setdefault("unparsed_orders", [])
             new_p.setdefault("processing_warnings", [])

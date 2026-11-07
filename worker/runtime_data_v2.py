@@ -529,6 +529,7 @@ def _compact_classified_record(row: Mapping[str, Any]) -> Dict[str, Any]:
         "other_orders": copy.deepcopy(row.get("chi_dinh_khac") or row.get("y_lenh_khac") or {}),
         "supplies": copy.deepcopy(row.get("vtyt") or {"items": [], "warnings": [], "source": "pending_after_merge"}),
         "warnings": copy.deepcopy(row.get("processing_warnings") or []),
+        "other_order_text": copy.deepcopy(row.get("y_lenh_khac_goc") or []),
     }
     # Giữ một số trường nghiệp vụ tổng hợp nhưng bỏ metadata người bệnh/debug thô.
     for key2 in ["tong_hop_gio_dung", "loai_benh_nhan", "rule_log"]:
