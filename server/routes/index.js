@@ -21,6 +21,7 @@ const HEAVY_TASK_ROUTES = [
   '/run-scan',
   '/run-emr-structure-scan',
   '/inspect-emr-page',
+  '/run-emr-case-probe',
   '/run-details',
   '/run-details-one',
   '/run-postprocess',
@@ -62,7 +63,7 @@ router.use(HEAVY_TASK_ROUTES, heavyTaskLimiter);
 router.use('/research', researchReadLimiter);
 
 // Endpoint đọc/ghi nhẹ — giới hạn 60 lần/phút/session
-router.use(['/data', '/save', '/get-raw', '/get-patients', '/has-processed', '/data-info', '/nurse-settings', '/admin-nurse-state', '/sick-leave-state', '/sick-leave-import', '/sick-leave-launch-bhyt-tool', '/sick-leave-bhyt-account', '/sick-leave-bhyt-login', '/export-data', '/import-data', '/cancel', '/session-logs', '/data-sessions', '/workspace', '/fetch-accounts', '/emr-accounts', '/hchanh', '/features', '/workflows', '/artifacts', '/report-token', '/clinic/care-draft', '/clinic/monitor', '/kho'], readWriteLimiter);
+router.use(['/data', '/save', '/get-raw', '/get-patients', '/has-processed', '/data-info', '/nurse-settings', '/admin-nurse-state', '/sick-leave-state', '/sick-leave-import', '/sick-leave-launch-bhyt-tool', '/sick-leave-bhyt-account', '/sick-leave-bhyt-login', '/export-data', '/import-data', '/cancel', '/session-logs', '/data-sessions', '/workspace', '/fetch-accounts', '/emr-accounts', '/hchanh', '/features', '/workflows', '/artifacts', '/report-token', '/clinic/care-draft', '/clinic/monitor', '/kho', '/emr-case-probe'], readWriteLimiter);
 router.use('/client-log', clientLogLimiter);
 // Health/diagnostics nhẹ — vẫn yêu cầu token nếu EMR_APP_TOKEN được bật.
 router.use(['/health', '/diagnostics'], readWriteLimiter);

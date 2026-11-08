@@ -124,3 +124,23 @@ tự suy đoán cho các bản cài đặt chưa xác nhận.
 - Kết quả "còn đúng" (✓ OK) không đồng nghĩa "đã xác minh toàn bộ trang" — chỉ nghĩa là
   các field/bảng đã khai báo trong manifest vẫn tồn tại; nếu EMR thêm field mới không
   ảnh hưởng field cũ, tool này sẽ không phát hiện được thay đổi đó.
+
+## Dò theo ca
+
+Phần trên chỉ cho biết trang còn bảng/ô hay không. Mục **Dò theo ca** (cùng màn hình Kiểm tra
+cấu trúc EMR) trả lời câu "lấy dữ liệu có còn vào đúng chỗ không" cho những người bệnh cụ thể:
+
+1. Nhập 1–3 Mã BN; ca đã ra viện thì đánh dấu "Đã ra viện" và điền ngày vào/ra.
+2. Máy chủ chạy **đúng worker lấy dữ liệu thật** (`hchanh_fetch.py` qua `hchanh_fetch_entry.py`,
+   cùng nhánh Kho nghiên cứu) với đủ các phần: hồ sơ, ra viện, bảng kê, ngày giường, lịch sử y
+   lệnh, phẫu thuật, cận lâm sàng, giấy tờ. Cả lô dùng một Chrome, chạy trong hàng đợi tác vụ nặng.
+3. Mỗi màn hình được đếm số dòng/ô đọc được rồi so với đợt đã có trong Kho người bệnh:
+   - **Đọc được**: có dữ liệu, không ít hơn hẳn kho.
+   - **Không có dữ liệu**: đọc ra 0 và kho cũng chưa có; mở EMR xem ca đó có dữ liệu ở đây không.
+   - **Nghi hỏng**: kho có mà lần này đọc ra 0, hoặc ít hơn một nửa → nghi bộ đọc không còn vào đúng chỗ.
+   - **Hỏng**: worker không vào được màn hình (không có đường dẫn, lỗi, hết giờ, không đăng nhập).
+
+An toàn: chỉ đọc EMR, không ghi gì vào kho; dữ liệu bệnh án thô bị xoá khi xong, báo cáo
+(`emr_case_probe_report.json` trong runtime) chỉ giữ số đếm, trạng thái và tên bước lỗi. Bấm
+**Dừng** sẽ dừng worker như mọi tác vụ khác. Logic nằm ở `server/services/emr_case_probe.js`,
+test ở `scripts/emr_case_probe_test.js`.
