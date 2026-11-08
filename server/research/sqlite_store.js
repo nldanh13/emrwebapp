@@ -77,7 +77,12 @@ function syncResearchDatabase({
   ensureDir(paths.dir);
 
   const current = databaseInfo(paths.dir);
+  // DB cũ còn bảng không còn được yêu cầu (ví dụ bảng thô đã bỏ khỏi SQLite) → dựng lại cho gọn.
+  const wantedTables = new Set((Array.isArray(tables) ? tables : []).map(t => String(t?.table_name || '')));
+  const hasExtraTables = (Array.isArray(current.tables) ? current.tables : [])
+    .some(t => t && t.table_name && !wantedTables.has(String(t.table_name)));
   if (!force
+      && !hasExtraTables
       && current.exists
       && String(current.run_id || '') === String(runId || '')
       && String(current.input_signature || '') === String(inputSignature || '')
