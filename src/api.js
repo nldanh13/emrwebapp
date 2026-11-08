@@ -77,6 +77,8 @@ function apiActionLabel(method, url) {
     'GET /api/run-scan': 'quét danh sách bệnh nhân',
     'GET /api/run-emr-structure-scan': 'dò cấu trúc EMR',
     'GET /api/inspect-emr-page': 'dò cấu trúc 1 trang EMR',
+    'POST /api/run-emr-case-probe': 'dò theo ca trên EMR',
+    'GET /api/emr-case-probe': 'tải báo cáo dò theo ca',
     'GET /api/get-raw': 'tải dữ liệu thô',
     'GET /api/data': 'tải danh sách xếp phòng',
     'POST /api/save': 'lưu xếp phòng',
@@ -468,6 +470,8 @@ async function patch(url, body) {
 // ── Scan ──────────────────────────────────────────────────────────────────────
 export const runScan = () => get('/api/run-scan');
 export const runEmrStructureScan = () => get('/api/run-emr-structure-scan');
+export const runEmrCaseProbe = (cases) => post('/api/run-emr-case-probe', { cases });
+export const getEmrCaseProbe = () => get('/api/emr-case-probe');
 export const inspectEmrPage = (url) => get(`/api/inspect-emr-page?url=${encodeURIComponent(url)}`);
 export const getRaw = () => get('/api/get-raw');
 

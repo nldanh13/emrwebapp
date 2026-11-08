@@ -8,6 +8,7 @@ import { useState, useCallback } from 'react';
 import { C, FS } from '../tokens.js';
 import { Btn, Spinner } from './shared.jsx';
 import * as api from '../api.js';
+import EmrCaseProbeSection from './EmrCaseProbeSection.jsx';
 
 function StatusDot({ status }) {
   const map = {
@@ -199,6 +200,8 @@ export default function EmrStructureScanTab() {
           Không bấm/gửi form nào — chỉ tải trang để đọc cấu trúc. Không tự sửa code.
         </div>
       </div>
+
+      <EmrCaseProbeSection />
 
       <Btn variant="primary" onClick={runScan} disabled={running} style={{ marginBottom: 16 }}>
         {running ? <><Spinner size={11} /> Đang dò cấu trúc EMR...</> : '🔍 Dò cấu trúc EMR ngay'}
