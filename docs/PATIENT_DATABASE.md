@@ -72,7 +72,9 @@ Màn hình **Người bệnh & tái khám** (nhóm Nghiên cứu) có 3 phần:
 
 ## Nguồn ghi vào kho
 
-- **Hành chánh, Kiểm hồ sơ, Kho nghiên cứu:** mỗi lần lấy dữ liệu hành chánh, `recordHchanhFetch` ghi kết quả vào kho dùng chung (`hchanh_stays`) rồi chép sang kho người bệnh.
+- **Hành chánh, Kiểm hồ sơ, Kho nghiên cứu:** mỗi lần lấy dữ liệu hành chánh, `recordHchanhFetch` ghi kết quả thẳng vào kho người bệnh, chỉ 1 nơi.
+  - File JSON `hchanh_stays` không còn được ghi thêm, trừ 3 trường hợp để không mất dữ liệu: kho tắt (Node cũ), kho lỗi, hoặc không xếp được đợt (`can_xem_dot`). Kết quả trả về khi đó có `reason` tương ứng (`kho_tat`, `loi_kho`, `can_xem_dot`).
+  - Dữ liệu tạm thời lấy sau vẫn được lưu thô, nhưng loại dữ liệu nào đã có bản gốc thì không thay được (`kept_goc: true`).
   - Dữ liệu đã lấy từ trước: Hành chánh → Công cụ → "Góp dữ liệu đã lấy vào kho nghiên cứu", hoặc gọi `POST /api/kho/dong-bo`.
 - **Phòng khám:** trong lúc theo dõi, máy chủ chép `clinic_monitor_state.json` sang kho mỗi phút, khi dừng và trước khi bắt đầu lần theo dõi mới. Trước đây file này bị ghi đè mỗi chu kỳ nên không còn lịch sử.
   - Worker mở màn khám (chỉ đọc, không bấm nút) của lượt đã có xử trí để đọc chẩn đoán, lý do khám, chi tiết xử trí và ngày hẹn tái khám.
