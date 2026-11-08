@@ -669,6 +669,109 @@ function recordInpatient(maBn, files, { from = '', to = '', source = 'hanh_chanh
   });
 }
 
+// ── Tách đợt nằm viện bị gộp nhầm (dữ liệu ghi trước quy tắc giờ vào viện) ─────────────
+//
+// Trước 08/11/2026 đợt nội trú được ghép theo khoảng NGÀY giao nhau, nên 2 đợt khác giờ vào viện
+// (ví dụ ra viện sáng, nhập viện lại chiều) có thể nằm chung 1 lượt. Mỗi lần ghi của recordInpatient
+// là 1 "mẻ" lan_quet cùng (lay_luc, nguon, muc); giờ vào viện của mẻ đọc lại từ profile/discharge
+// trong mẻ, đúng công thức recordInpatient. Lượt có từ 2 giờ vào viện (đến phút) trở lên là gộp nhầm.
+// Tách: đợt vào sớm nhất giữ lượt cũ, mỗi giờ vào viện khác thành 1 lượt mới; chỉ đổi luot_id của
+// lan_quet, nội dung thô giữ nguyên. Mẻ không có giờ vào viện: chuyển theo ngày nếu khớp đúng 1 đợt,
+// còn lại để ở lượt cũ và báo trong kết quả.
+
+function parseScanData(raw) {
+  try { return JSON.parse(raw) || {}; } catch (_) { return {}; }
+}
+
+function batchTimes(scans) {
+  const byLoai = {};
+  for (const s of scans) if (!byLoai[s.loai]) byLoai[s.loai] = parseScanData(s.du_lieu);
+  const profile = byLoai.profile || {};
+  const discharge = byLoai.discharge || {};
+  return {
+    admit: isoTime(profile.ngay_vao_vien || profile.ngay_vao || discharge.ngay_vao_vien || discharge.ngay_vao),
+    out: isoTime(discharge.raw_time) || isoTime([discharge.gio_ra, discharge.ngay_ra].filter(Boolean).join(' ')),
+  };
+}
+
+function planStaySplit(conn, luot) {
+  const scans = conn.prepare('SELECT id, loai, nguon, muc, lay_luc, du_lieu FROM lan_quet WHERE luot_id = ? ORDER BY lay_luc, id').all(luot.id);
+  const batches = new Map();
+  for (const s of scans) {
+    const key = `${s.lay_luc}|${s.nguon}|${s.muc}`;
+    if (!batches.has(key)) batches.set(key, []);
+    batches.get(key).push(s);
+  }
+  const groups = new Map();
+  const loose = [];
+  for (const list of batches.values()) {
+    const t = batchTimes(list);
+    const ids = list.map(s => s.id);
+    if (!hasClock(t.admit)) { loose.push({ ids, ...t }); continue; }
+    if (!groups.has(t.admit)) groups.set(t.admit, { admit: t.admit, out: '', ids: [] });
+    const g = groups.get(t.admit);
+    g.ids.push(...ids);
+    g.out = laterTime(g.out, t.out);
+  }
+  if (groups.size < 2) return null;
+  const ordered = [...groups.values()].sort((a, b) => a.admit.localeCompare(b.admit));
+  // Khoảng ngày của mỗi đợt: từ ngày vào đến ngày ra; chưa biết ngày ra thì đến trước ngày vào đợt sau.
+  ordered.forEach((g, i) => {
+    g.fromDay = dayOf(g.admit);
+    g.toDay = dayOf(g.out) || (ordered[i + 1] ? dayOf(ordered[i + 1].admit) : '9999-12-31');
+  });
+  let unresolved = 0;
+  for (const b of loose) {
+    const day = dayOf(b.out) || dayOf(b.admit);
+    const hits = day ? ordered.filter(g => g.fromDay <= day && day <= g.toDay) : [];
+    if (hits.length === 1) hits[0].ids.push(...b.ids);
+    else unresolved += b.ids.length;
+  }
+  return { luot_id: luot.id, ma_bn: luot.ma_bn, groups: ordered, unresolved_scans: unresolved };
+}
+
+/**
+ * Đếm (mặc định) hoặc tách (apply: true) các đợt nội trú bị gộp nhầm.
+ * Gọi khi apply: sao lưu kho trước (backupTo) — hàm này không tự sao lưu.
+ * @returns {{ so_luot_gop_nham, so_dot_sau_tach, so_ban_chua_xac_dinh, so_nguoi_benh, da_tach, luot_moi }}
+ */
+function splitMergedStays({ apply = false, now = new Date().toISOString() } = {}) {
+  const conn = open();
+  const stays = conn.prepare('SELECT * FROM luot WHERE loai = ? AND khoa_emr IS NULL ORDER BY id').all(LOAI_NOI_TRU);
+  const plans = stays.map(l => planStaySplit(conn, l)).filter(Boolean);
+  const report = {
+    so_luot_gop_nham: plans.length,
+    so_dot_sau_tach: plans.reduce((n, p) => n + p.groups.length, 0),
+    so_ban_chua_xac_dinh: plans.reduce((n, p) => n + p.unresolved_scans, 0),
+    so_nguoi_benh: new Set(plans.map(p => p.ma_bn)).size,
+    da_tach: false,
+    luot_moi: [],
+  };
+  if (!apply || !plans.length) return report;
+  tx(c => {
+    const move = c.prepare('UPDATE lan_quet SET luot_id = ? WHERE id = ?');
+    const setTimes = c.prepare('UPDATE luot SET gio_vao = ?, gio_ra = ?, trang_thai = ?, cap_nhat_luc = ? WHERE id = ?');
+    const insert = c.prepare(`INSERT INTO luot (ma_bn, loai, khoa_emr, gio_vao, gio_ra, trang_thai, tao_luc, cap_nhat_luc)
+      VALUES (?, ?, NULL, ?, ?, ?, ?, ?)`);
+    for (const plan of plans) {
+      const [first, ...rest] = plan.groups;
+      setTimes.run(first.admit, first.out, first.out ? 'da_ket_thuc' : 'dang_dieu_tri', now, plan.luot_id);
+      const touched = [plan.luot_id];
+      for (const g of rest) {
+        const res = insert.run(plan.ma_bn, LOAI_NOI_TRU, g.admit, g.out, g.out ? 'da_ket_thuc' : 'dang_dieu_tri', now, now);
+        const id = Number(res.lastInsertRowid);
+        for (const scanId of g.ids) move.run(id, scanId);
+        touched.push(id);
+        report.luot_moi.push(id);
+      }
+      for (const id of touched) rebuildLuot(c, id, now);
+      rebuildLinks(c, plan.ma_bn);
+    }
+  });
+  report.da_tach = true;
+  return report;
+}
+
 // Bỏ các trường chỉ phục vụ màn hình, đổi liên tục (không phải dữ liệu người bệnh).
 const VOLATILE_ROW_KEYS = ['check', 'blockers', 'next_action', 'ready', 'eligible', 'weight_entered', 'bbhc_state', 'ngoaitru_state', 'details', 'stt'];
 
@@ -1099,7 +1202,7 @@ function searchPatients(query, limit = 30) {
 module.exports = {
   available, unavailableReason, open, close,
   recordInpatient, recordClinicVisit, recordAction, recordResults, resultRows, findStay, patientContext, dataVersion,
-  summary, integrityCheck, backupTo, patientJourney, listVisits, searchPatients, appointmentReport, readmissionReport,
+  summary, integrityCheck, backupTo, splitMergedStays, patientJourney, listVisits, searchPatients, appointmentReport, readmissionReport,
   HEN_LECH_TOI_DA, TAI_NHAP_VIEN_NGAY,
   isoTime, splitIcd, contentHash,
   TIER_GOC, TIER_TAM_THOI, LOAI_KHAM, LOAI_NOI_TRU,
