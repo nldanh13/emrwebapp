@@ -1,10 +1,12 @@
 // server/services/hchanh_stay_store.js — kho dùng chung các đợt nằm viện đã lấy dữ liệu hành chánh.
 //
-// Mỗi lần tab Hành chánh / Kiểm hồ sơ lấy dữ liệu từ EMR, kết quả từng file (thông tin nền, ra viện,
-// phẫu thuật, y lệnh, …) được góp vào đây theo mã BN + đợt nằm viện. Kho nghiên cứu (lấy hành chánh
-// tự động) tra kho này trước khi mở EMR: đợt nào đã có đủ file thì dùng lại, không quét lại.
+// Mỗi lần tab Hành chánh / Kiểm hồ sơ / Kho nghiên cứu lấy dữ liệu từ EMR, kết quả từng file (thông tin
+// nền, ra viện, phẫu thuật, y lệnh, …) được ghi vào Kho người bệnh (SQLite, patient_db) — chỉ 1 nơi.
+// Kho nghiên cứu tra kho đó trước khi mở EMR: đợt nào đã có đủ file thì dùng lại, không quét lại.
 //
-// Vị trí: <RESEARCH_STORE_DIR>/hchanh_stays/<mã BN>.json
+// File JSON <RESEARCH_STORE_DIR>/hchanh_stays/<mã BN>.json là kho cũ: chỉ còn được ĐỌC (dữ liệu lấy trước
+// đây) và được GHI khi Kho người bệnh tắt (Node cũ), lỗi, hoặc không xếp được đợt (khớp 2 đợt) — để
+// không mất dữ liệu. Cấu trúc:
 // { ma_bn, updated_at, stays: [{ from, to, updated_at, sources: [...], files: { key: { data, status, fetched_at, source, tier } } }] }
 //
 // Mức tin cậy (tier) của từng file:
@@ -86,7 +88,8 @@ function overlaps(a, b) {
  * @param {string} maBn
  * @param {object} output  { profile, discharge, surgery, order_history, ... } như worker hchanh_fetch.py trả về
  * @param {{ admission?: string, source?: string, now?: string }} opts
- * @returns {{ saved: boolean, from?: string, to?: string, files?: string[] }}
+ * @returns {{ saved: boolean, from?: string, to?: string, files?: string[], luot_id?: number, reason?: string }}
+ *   reason có giá trị khi dữ liệu được giữ tạm trong JSON: 'kho_tat' | 'loi_kho' | 'can_xem_dot'.
  */
 function recordHchanhFetch(maBn, output, { admission = '', source = 'hanh_chanh', now = new Date().toISOString() } = {}) {
   const code = String(maBn || '').trim();
@@ -98,6 +101,33 @@ function recordHchanhFetch(maBn, output, { admission = '', source = 'hanh_chanh'
   }
   if (!Object.keys(incoming).length) return { saved: false };
 
+  const range = stayRange(incoming, admission);
+  if (!range.from && !range.to) return { saved: false };
+
+  let fallbackReason = patientDb.available() ? '' : 'kho_tat';
+  if (!fallbackReason) {
+    try {
+      const res = patientDb.recordInpatient(code, incoming, { from: range.from, to: range.to, source, now });
+      if (res.saved) {
+        // Dữ liệu tạm thời (Hành chánh / Kiểm hồ sơ) không thay được dữ liệu gốc của Kho nghiên cứu.
+        const kept = new Set(res.kept_goc_files || []);
+        const used = Object.keys(incoming).filter(k => !kept.has(k));
+        const base = { from: range.from, to: range.to, files: used, luot_id: res.luot_id, new_scans: res.new_scans };
+        return used.length ? { saved: true, ...base } : { saved: false, ...base, kept_goc: true };
+      }
+      if (res.reason !== 'can_xem_dot') return { saved: false };
+      fallbackReason = res.reason;
+      console.warn(`[patient_db] Không xếp được đợt nằm viện (khớp ${res.candidates?.length || 2} đợt); giữ tạm trong hchanh_stays.`);
+    } catch (err) {
+      fallbackReason = 'loi_kho';
+      console.warn(`[patient_db] Không ghi được đợt nằm viện vào kho, giữ tạm trong hchanh_stays: ${err.message}`);
+    }
+  }
+  return { ...writeJsonStay(code, incoming, { admission, source, now }), reason: fallbackReason };
+}
+
+// Kho JSON cũ: chỉ dùng khi Kho người bệnh không nhận được dữ liệu (xem đầu file).
+function writeJsonStay(code, incoming, { admission, source, now }) {
   const store = readStore(code);
   let range = stayRange(incoming, admission);
   // Chưa có ngày ra (vd chỉ lấy thông tin nền): gắn vào đợt đang mở cùng ngày vào nếu có.
@@ -116,7 +146,6 @@ function recordHchanhFetch(maBn, output, { admission = '', source = 'hanh_chanh'
     written.push(key);
   }
   if (!written.length) {
-    mirrorToPatientDb(code, incoming, stay, source, now);
     return { saved: false, from: stay.from, to: stay.to, files: [], kept_goc: true };
   }
   range = stayRange(Object.fromEntries(Object.entries(stay.files).map(([k, v]) => [k, v.data])), admission || stay.from);
@@ -128,20 +157,9 @@ function recordHchanhFetch(maBn, output, { admission = '', source = 'hanh_chanh'
   store.updated_at = now;
   store.stays.sort((a, b) => String(a.from).localeCompare(String(b.from)));
   writeJsonAtomic(storePath(code), store);
-  mirrorToPatientDb(code, incoming, stay, source, now);
   return { saved: true, from: stay.from, to: stay.to, files: written };
 }
 
-// Chép sang Kho người bệnh (SQLite). Kho đó giữ mọi bản quét kèm mức gốc/tạm thời nên ghi cả khi
-// dữ liệu tạm thời không được nhận ở đây. Lỗi kho không được làm hỏng việc lấy dữ liệu.
-function mirrorToPatientDb(maBn, files, stay, source, now) {
-  if (!patientDb.available()) return;
-  try {
-    patientDb.recordInpatient(maBn, files, { from: stay.from, to: stay.to, source, now });
-  } catch (err) {
-    console.warn(`[patient_db] Không ghi được đợt nằm viện vào kho: ${err.message}`);
-  }
-}
 
 /** Chép toàn bộ kho đợt nằm viện (hchanh_stays) sang Kho người bệnh — dùng cho dữ liệu đã lấy từ trước. */
 function syncAllToPatientDb() {
@@ -228,7 +246,19 @@ function storeSummary() {
     stays += data.stays.length;
     closed += data.stays.filter(s => s.to).length;
   }
-  return { dir, patients, stays, closed_stays: closed };
+  const json = { patients, stays, closed_stays: closed };
+  // Kho người bệnh là nơi ghi chính: đếm theo kho đó; số của file JSON cũ đi kèm để đối chiếu.
+  if (patientDb.available()) {
+    try {
+      const conn = patientDb.open();
+      const row = conn.prepare(`SELECT COUNT(DISTINCT ma_bn) patients, COUNT(*) stays,
+        SUM(CASE WHEN gio_ra IS NOT NULL AND gio_ra <> '' THEN 1 ELSE 0 END) closed FROM luot WHERE loai = ?`).get(patientDb.LOAI_NOI_TRU);
+      return { dir, source: 'kho_benh_nhan', patients: Number(row.patients) || 0, stays: Number(row.stays) || 0, closed_stays: Number(row.closed) || 0, json };
+    } catch (err) {
+      console.warn(`[patient_db] Không đọc được kho người bệnh để tóm tắt: ${err.message}`);
+    }
+  }
+  return { dir, source: 'hchanh_stays', ...json, json };
 }
 
 module.exports = { recordHchanhFetch, findStoredStay, findStoredStayJson, storeSummary, syncAllToPatientDb, stayRange, isoDay, STAY_FILES, TIER_GOC, TIER_TAM_THOI };

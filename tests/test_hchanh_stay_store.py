@@ -29,7 +29,10 @@ def test_record_then_reuse_when_all_files_present(tmp_path):
       console.log(JSON.stringify({first,needSurgery,enough:enough&&{from:enough.from,to:enough.to,keys:Object.keys(enough.output),src:enough.sourceKey},
         outside,full:full&&{keys:Object.keys(full.output).sort(),src:full.sourceKey},summary:s.storeSummary().stays}));
     """)
-    assert res['first'] == {'saved': True, 'from': '2026-09-17', 'to': '2026-09-28', 'files': ['profile', 'discharge']}
+    first = {k: res['first'][k] for k in ('saved', 'from', 'to', 'files')}
+    assert first == {'saved': True, 'from': '2026-09-17', 'to': '2026-09-28', 'files': ['profile', 'discharge']}
+    # Ghi thẳng vào Kho người bệnh (có mã đợt), không qua file JSON.
+    assert res['first']['luot_id'] and 'reason' not in res['first']
     assert res['needSurgery'] is None
     assert res['enough'] == {'from': '2026-09-17', 'to': '2026-09-28', 'keys': ['profile', 'discharge'], 'src': 'kho_hanh_chanh:hanh_chanh'}
     assert res['outside'] is None

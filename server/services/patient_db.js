@@ -668,7 +668,10 @@ function recordInpatient(maBn, files, { from = '', to = '', source = 'hanh_chanh
     }
     rebuildLuot(conn, luot.id, now);
     rebuildLinks(conn, code);
-    return { saved: true, luot_id: luot.id, new_scans: added };
+    // Bản tạm thời vẫn được lưu thô, nhưng loại dữ liệu nào đã có bản gốc thì bản gốc vẫn được dùng.
+    const best = muc === TIER_GOC ? {} : bestScans(conn, luot.id);
+    const keptGoc = usable.filter(k => best[k]?.muc === TIER_GOC);
+    return { saved: true, luot_id: luot.id, new_scans: added, kept_goc_files: keptGoc };
   });
 }
 
