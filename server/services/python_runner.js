@@ -67,10 +67,12 @@ function terminateProcessTree(child, { force = false } = {}) {
  * @param {object}   opts
  * @param {string}   [opts.cwd]       - working directory (default: ROOT_DIR)
  * @param {number}   [opts.timeoutMs] - timeout (default: PY_TIMEOUT_MS)
+ * @param {number}   [opts.idleTimeoutMs] - dừng nếu tiến trình im lặng (không in stdout/stderr) quá lâu; 0 = tắt.
+ *                                          Kết quả có timeoutKind = 'idle' | 'total' khi bị dừng vì hết giờ.
  * @param {Function} [opts.onSpawn]   - gọi với killFn ngay khi process spawn xong
  * @param {object}   [opts.extraEnv]  - env vars bổ sung
  */
-function runPython(args, { cwd, timeoutMs, onSpawn, extraEnv = {}, runtimeDir } = {}) {
+function runPython(args, { cwd, timeoutMs, idleTimeoutMs = 0, onSpawn, extraEnv = {}, runtimeDir } = {}) {
   return new Promise((resolve) => {
     const effectiveCwd = cwd || ROOT_DIR;
     const runtimeConfigPath = runtimeDir ? path.join(runtimeDir, 'config.json') : '';
@@ -128,12 +130,31 @@ function runPython(args, { cwd, timeoutMs, onSpawn, extraEnv = {}, runtimeDir } 
       onSpawn(() => terminateProcessTree(py));
     }
 
+    let timeoutKind = '';
     const timer = setTimeout(() => {
       killedByTimeout = true;
+      timeoutKind = timeoutKind || 'total';
       terminateProcessTree(py);
     }, Math.max(5_000, timeoutMs || PY_TIMEOUT_MS));
+    // Hẹn giờ "im lặng": mỗi dòng in ra là còn sống, đặt lại hẹn giờ. Dùng cho lô dài (nhiều ca)
+    // để không giết lô đang chạy bình thường chỉ vì tổng thời gian vượt mức cố định.
+    let idleTimer = null;
+    const idleMs = Number(idleTimeoutMs) > 0 ? Math.max(5_000, Number(idleTimeoutMs)) : 0;
+    const touch = () => {
+      if (!idleMs) return;
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        killedByTimeout = true;
+        timeoutKind = timeoutKind || 'idle';
+        terminateProcessTree(py);
+      }, idleMs);
+      idleTimer.unref?.();
+    };
+    touch();
+    const clearTimers = () => { clearTimeout(timer); if (idleTimer) clearTimeout(idleTimer); };
 
     py.stdout.on('data', d => {
+      touch();
       const safeLines = [];
       for (const line of d.toString().split('\n')) {
         const l = line.trimEnd();
@@ -143,6 +164,7 @@ function runPython(args, { cwd, timeoutMs, onSpawn, extraEnv = {}, runtimeDir } 
       if (safeLines.length) console.log(safeLines.map(l => `[PY] ${l}`).join('\n'));
     });
     py.stderr.on('data', d => {
+      touch();
       const text = d.toString();
       const safeLines = [];
       // Gom stderr vào buffer, lọc dòng nhạy cảm trước khi log và trả về UI.
@@ -158,14 +180,14 @@ function runPython(args, { cwd, timeoutMs, onSpawn, extraEnv = {}, runtimeDir } 
     });
 
     py.on('error', err => {
-      clearTimeout(timer);
+      clearTimers();
       console.error(`[PY SPAWN ERROR] ${err.message} (bin=${PYTHON_BIN})`);
       safeResolve({ code: -1, killedByTimeout: false, spawnError: err.message, stderrTail: [] });
     });
 
     py.on('close', code => {
-      clearTimeout(timer);
-      safeResolve({ code: Number(code ?? -1), killedByTimeout, stderrTail: stderrLines.slice(-20) });
+      clearTimers();
+      safeResolve({ code: Number(code ?? -1), killedByTimeout, timeoutKind, stderrTail: stderrLines.slice(-20) });
     });
   });
 }
@@ -240,7 +262,8 @@ function runScript(scriptName, args = [], opts = {}) {
   if (!fs.existsSync(scriptPath)) throw new Error(`Thiếu script: worker/${effectiveScriptName}`);
   console.log(`>>> [NODE] Script: ${effectiveScriptName} ${argsForLog(args)}`);
   return runPython(['-u', scriptPath, ...args], {
-    timeoutMs: PY_TIMEOUT_MS,
+    timeoutMs: opts.timeoutMs || PY_TIMEOUT_MS,
+    idleTimeoutMs: opts.idleTimeoutMs || 0,
     cwd:       opts.cwd,
     onSpawn:   opts.onSpawn,
     runtimeDir: opts.runtimeDir,

@@ -39,6 +39,17 @@ describe('buildCaseTraceView', () => {
     expect(b.mode).toBe('Xét nghiệm / CĐHA');
   });
 
+  it('đường dẫn file code không hiện như màn hình EMR; ca chưa tới lượt không tô đỏ', () => {
+    const [c] = buildCaseTraceView([{ case_id: 'k3', status: 'pending_refetch', events: [
+      { tag: 'CASE.START', step: 'Bắt đầu xử lý case', screen: 'server/routes/research.js', sees: '98/386' },
+      { tag: 'ERROR', step: 'Worker báo lỗi', screen: 'worker/hchanh_fetch.py', sees: 'timeout' },
+      { tag: 'ORDER_HISTORY.MARKERS_FINAL', step: 'Dùng y lệnh đã lấy', screen: 'output.order_history.rows', sees: 'rows=3' },
+    ] }]);
+    expect(c.steps.map(s => s.screen)).toEqual(['', '', '']);
+    expect(c.status).toBe('Chưa tới lượt, lần sau lấy tiếp');
+    expect(buildCaseTraceView([{ status: 'pending_refetch', events: [] }])[0].tone).toBe('warn');
+  });
+
   it('không có dữ liệu thì trả mảng rỗng', () => {
     expect(buildCaseTraceView(undefined)).toEqual([]);
     expect(buildCaseTraceView([null])).toEqual([]);
