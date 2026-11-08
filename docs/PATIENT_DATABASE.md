@@ -11,7 +11,16 @@ Một file SQLite gom mọi lượt khám và mọi đợt nằm viện của t�
 1. **Người bệnh = Mã BN.** Không ghép theo họ tên.
 2. **Lượt = 1 lần tiếp xúc.**
    - `kham`: 1 dòng Danh sách Khám bệnh, khoá `kb:<khambenhid>`.
-   - `noi_tru`: 1 đợt nằm viện. Các lần quét của cùng Mã BN có khoảng ngày giao nhau được ghép vào cùng một đợt.
+   - `noi_tru`: 1 đợt nằm viện, phân biệt bằng **giờ vào viện** và **giờ ra viện** (không phải giờ vào khoa: chuyển khoa vẫn cùng đợt).
+     - Cùng giờ vào viện (đến phút) là cùng đợt. Khác giờ vào viện là khác đợt, kể cả ra viện sáng rồi nhập viện lại chiều cùng ngày.
+     - Đợt đang lưu chỉ có ngày vào: lần quét có giờ vào viện cùng ngày (và sau giờ ra viện của đợt khác) được ghép vào và nâng lên có giờ.
+     - Bản không có giờ vào viện: ghép theo giờ ra viện trùng khớp, rồi theo khoảng ngày vào–ra chứa nó.
+     - Khớp từ 2 đợt trở lên thì không tự gộp: `recordInpatient` trả `reason: 'can_xem_dot'` và không lưu.
+   - **Đợt bị gộp nhầm từ trước** (dữ liệu ghi khi còn ghép theo ngày giao nhau): `npm run patient-db:tach-dot` đếm, thêm `-- --tach` để sao lưu kho rồi tách.
+     - Mỗi lần ghi cũ được xếp vào đợt theo giờ vào viện trong hồ sơ/phiếu ra viện của chính lần ghi đó. Đợt vào sớm nhất giữ mã lượt cũ.
+     - Lần ghi không có giờ vào viện: theo ngày ra viện nếu khớp đúng 1 đợt; không xác định được thì giữ ở đợt vào sớm nhất và được báo số lượng.
+     - Chỉ đổi `luot_id` của `lan_quet`, không sửa nội dung thô. Chạy lại lần 2 không tách thêm.
+     - Quay lại: tắt máy chủ, chép file `kho-truoc-tach-dot-*.sqlite3` trong `.runtime/backups/kho_benh_nhan/` đè lên `kho.sqlite3`.
 3. **Dữ liệu thô không bao giờ bị sửa hay xoá.** Bảng `lan_quet` lưu từng file lấy từ EMR nguyên văn, kèm nguồn, mức tin cậy và thời điểm lấy. Nội dung trùng (cùng hash, không tính `_meta`) thì không lưu lại.
 4. **Mức tin cậy:**
    - `goc`: lượt đã kết thúc và được quét để chốt (Kho nghiên cứu; lượt khám đã Hoàn tất).
