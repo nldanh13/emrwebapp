@@ -12,6 +12,8 @@ import {
 import { SelectBox, SummaryTable, DutyReport } from './report/ReportSections.jsx';
 import OtherOrderTable from './report/OtherOrderTable.jsx';
 import { collectOtherOrderRows, buildOtherOrderPrintHtml } from './report/otherOrderReport.js';
+import AdmissionListTable from './report/AdmissionListTable.jsx';
+import { collectAdmissionRows, buildAdmissionListPrintHtml } from './report/admissionListReport.js';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
 import { SkeletonTable } from './Skeleton.jsx';
 
@@ -66,6 +68,9 @@ export default function ReportTab({ toast, workDateRange }) {
 
   const otherOrderRows = useMemo(() => collectOtherOrderRows(wardPatients, date), [wardPatients, date]);
   const isOtherView = view === 'other';
+  const admissionRows = useMemo(() => collectAdmissionRows(wardPatients, date), [wardPatients, date]);
+  const isAdmissionView = view === 'admission';
+  const isBrowserPrintView = isOtherView || isAdmissionView;
 
   const nextDate = useMemo(() => addDaysDmy(date, 1), [date]);
   const nextWardPatients = useMemo(() => {
@@ -133,15 +138,15 @@ export default function ReportTab({ toast, workDateRange }) {
 
   const clearRouteSelection = () => setSelectedRoutes([]);
 
-  // In "Y lệnh khác" ngay trên trình duyệt từ đúng các dòng đang xem.
-  const printOtherOrders = () => {
+  // In "Y lệnh khác" / "Danh sách người bệnh" ngay trên trình duyệt từ đúng các dòng đang xem.
+  const printHtml = html => {
     const frame = document.createElement('iframe');
     frame.setAttribute('aria-hidden', 'true');
     frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
     document.body.appendChild(frame);
     const doc = frame.contentWindow.document;
     doc.open();
-    doc.write(buildOtherOrderPrintHtml(otherOrderRows, date));
+    doc.write(html);
     doc.close();
     frame.contentWindow.focus();
     frame.contentWindow.print();
@@ -149,8 +154,10 @@ export default function ReportTab({ toast, workDateRange }) {
   };
 
   const handlePrintReport = async () => {
-    if (isOtherView) {
-      try { printOtherOrders(); } catch (e) { toast?.(`Không mở được hộp thoại in: ${e.message || e}`, 'error'); }
+    if (isBrowserPrintView) {
+      try {
+        printHtml(isAdmissionView ? buildAdmissionListPrintHtml(admissionRows, date) : buildOtherOrderPrintHtml(otherOrderRows, date));
+      } catch (e) { toast?.(`Không mở được hộp thoại in: ${e.message || e}`, 'error'); }
       return;
     }
     setPrinting(true);
@@ -171,7 +178,7 @@ export default function ReportTab({ toast, workDateRange }) {
     }
   };
 
-  const uniquePatients = new Set(filteredRows.map(x => x.patientId || x.patientName)).size;
+  const uniquePatients = isAdmissionView ? admissionRows.length : new Set(filteredRows.map(x => x.patientId || x.patientName)).size;
   const uniqueDrugTypes = total.length;
   const oddRowsCount = filteredRows.filter(isOddHour).length;
   const routeSummary = selectedRoutes.length ? `Đang lọc: ${selectedRoutes.join(' + ')}` : ([...new Set(filteredRows.map(x => x.route).filter(Boolean))].join(' · ') || '—');
@@ -190,12 +197,12 @@ export default function ReportTab({ toast, workDateRange }) {
             label="Kiểu xem"
             value={view}
             onChange={setView}
-            options={[{ value: 'duty', label: 'Phiếu bàn giao ca' }, { value: 'summary', label: 'Thống kê số lượng' }, { value: 'other', label: 'Y lệnh khác' }]}
+            options={[{ value: 'duty', label: 'Phiếu bàn giao ca' }, { value: 'summary', label: 'Thống kê số lượng' }, { value: 'other', label: 'Y lệnh khác' }, { value: 'admission', label: 'Danh sách người bệnh' }]}
           />
           <span style={{ flex: '1 1 0' }} />
           <Btn icon={IconRefresh} loading={loading} onClick={load} disabled={loading}>Tải lại</Btn>
-          <Btn variant="solidPrimary" icon={IconPrinter} loading={printing} onClick={handlePrintReport} disabled={loading || printing || !(isOtherView ? otherOrderRows.length : allRows.length)}>
-            {printing ? 'Đang tạo phiếu…' : isOtherView ? 'In Y lệnh khác' : 'In phiếu'}
+          <Btn variant="solidPrimary" icon={IconPrinter} loading={printing} onClick={handlePrintReport} disabled={loading || printing || !(isAdmissionView ? admissionRows.length : isOtherView ? otherOrderRows.length : allRows.length)}>
+            {printing ? 'Đang tạo phiếu…' : isAdmissionView ? 'In danh sách' : isOtherView ? 'In Y lệnh khác' : 'In phiếu'}
           </Btn>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '2px 14px', color: C.text2, fontSize: FS.sm }}>
@@ -208,7 +215,11 @@ export default function ReportTab({ toast, workDateRange }) {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
-        {isOtherView ? (
+        {isAdmissionView ? (
+          loading && !admissionRows.length
+            ? <div role="status" aria-busy="true" aria-label="Đang tải danh sách người bệnh" style={{ background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 7, padding: 14 }}><SkeletonTable rows={8} cols={4} /></div>
+            : <AdmissionListTable rows={admissionRows} />
+        ) : isOtherView ? (
           loading && !otherOrderRows.length
             ? <div role="status" aria-busy="true" aria-label="Đang tải Y lệnh khác" style={{ background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 7, padding: 14 }}><SkeletonTable rows={8} cols={4} /></div>
             : <OtherOrderTable rows={otherOrderRows} />
