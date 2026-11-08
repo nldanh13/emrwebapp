@@ -9,6 +9,7 @@ import { encounterPeriod, countOutsideStay, medicationRouteLabel } from './encou
 import { SkeletonBlock, SkeletonLines } from '../Skeleton.jsx';
 import { Spinner, Btn } from '../shared.jsx';
 import { groupLabRows, groupImagingRows } from './patientHistoryGrouping.js';
+import { buildCaseTraceView } from './caseTraceModel.js';
 
 function ModuleProgressCard({ part }) {
   const total = Number(part.total || 0);
@@ -439,7 +440,64 @@ function ResearchOperationDashboard({ screen, loading = false, error = null, aut
   );
 }
 
+// Đường đi lấy dữ liệu của các ca gần nhất: để người dùng tự xem máy có vào đúng màn hình EMR không.
+// Chỉ hiển thị gói nhận qua props (UX_RULES 9.2); gói lấy ở CollectionWorkspace.
+const TRACE_TONE = { ok: C.green, warn: C.amber, error: C.red };
+
+function CaseTracePanel({ trace, loading = false, error = null, onRefresh }) {
+  if (!trace) {
+    if (error) {
+      return (
+        <div role="alert" style={{ fontSize: FS.sm, color: C.red, padding: 10 }}>
+          Không tải được đường đi lấy dữ liệu: {String(error.message || error)}
+          {onRefresh && <Btn onClick={onRefresh} style={{ marginLeft: 8, height: 26, fontSize: FS.xs }}>Thử lại</Btn>}
+        </div>
+      );
+    }
+    return <SkeletonLines lines={4} />;
+  }
+  const cases = buildCaseTraceView(trace.cases);
+  if (!cases.length) {
+    return <div style={{ fontSize: FS.sm, color: C.text3, padding: '6px 2px' }}>Chưa có ca nào được lấy trong đợt này. Bấm lấy dữ liệu, các ca vừa lấy sẽ hiện ở đây.</div>;
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: FS.xs, color: C.text3 }}>
+        <span>{cases.length} ca gần nhất · bấm vào một ca để xem từng bước{trace.redacted ? ' · đã che tên và mã BN' : ''}</span>
+        {onRefresh && (
+          <Btn onClick={onRefresh} disabled={loading} style={{ marginLeft: 'auto', height: 26, padding: '0 9px', fontSize: FS.xs }}>
+            {loading ? <><Spinner size={8} /> Đang tải</> : 'Tải lại'}
+          </Btn>
+        )}
+      </div>
+      {cases.map(c => (
+        <details key={c.id} style={{ borderLeft: `3px solid ${TRACE_TONE[c.tone] || C.border2}`, background: C.surface, padding: '6px 10px', borderRadius: 4 }}>
+          <summary style={{ cursor: 'pointer', fontSize: FS.sm, color: C.text, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'baseline' }}>
+            <b>{c.title}</b>
+            <span style={{ color: C.text3 }}>{c.mode}</span>
+            {c.stay && <span style={{ color: C.text3 }}>đợt {c.stay}</span>}
+            <span style={{ color: TRACE_TONE[c.tone] || C.text3, fontWeight: 700 }}>{c.status}{c.errors ? ` · ${c.errors} bước lỗi` : ''}</span>
+            {c.when && <span style={{ marginLeft: 'auto', color: C.text3, fontSize: FS.xs }}>{formatWhen(c.when)}</span>}
+          </summary>
+          <ol style={{ margin: '8px 0 2px', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {c.steps.map((s, i) => (
+              <li key={i} style={{ fontSize: FS.xs, color: C.text }}>
+                <div style={{ color: TRACE_TONE[s.tone] || C.text, fontWeight: 700 }}>{s.hint || s.step}</div>
+                {s.screen && <div><span style={{ color: C.text3 }}>Màn hình EMR:</span> {s.screen}</div>}
+                {s.sees && <div><span style={{ color: C.text3 }}>Thấy:</span> {s.sees}</div>}
+                {s.takes && <div><span style={{ color: C.text3 }}>Lấy:</span> {s.takes}</div>}
+              </li>
+            ))}
+            {!c.steps.length && <li style={{ fontSize: FS.xs, color: C.text3 }}>Ca này không ghi bước nào.</li>}
+          </ol>
+        </details>
+      ))}
+    </div>
+  );
+}
+
 export {
+  CaseTracePanel,
   ModuleProgressCard,
   MiniPartStatus,
   ResearchMonitorTable,
