@@ -11,7 +11,7 @@ import { todayInputDate } from './researchScope.js';
 import { inp } from './researchUi.jsx';
 import { CollectionAutoPanel } from './CollectionAutoPanel.jsx';
 import EmrBridgeStatus from '../EmrBridgeStatus.jsx';
-import { ResearchOperationDashboard } from './ResearchMonitor.jsx';
+import { ResearchOperationDashboard, CaseTracePanel } from './ResearchMonitor.jsx';
 import * as api from '../../api.js';
 import { useServerData } from '../../hooks/useServerData.js';
 
@@ -92,6 +92,11 @@ export function CollectionWorkspace({
   const screenKey = hasRun ? `research:${isArchive ? 'archive' : selectedId}:collection-screen` : '';
   const screenQuery = useServerData(screenKey, () => api.getResearchCollectionScreen(isArchive ? '' : selectedId), { enabled: Boolean(screenKey) });
   const screen = screenQuery.data?.screen || null;
+  // Đường đi lấy dữ liệu (vết ca) cùng phạm vi: kênh sự kiện invalidate 'research:<phạm vi>:' tải lại cả hai.
+  const traceKey = hasRun ? `research:${isArchive ? 'archive' : selectedId}:case-trace` : '';
+  const traceQuery = useServerData(traceKey, () => (isArchive
+    ? api.getResearchArchiveCaseTrace({ limit: 10 })
+    : api.getResearchStudyCaseTrace(selectedId, { limit: 10 })), { enabled: Boolean(traceKey) });
   const onCollected = async () => {
     await Promise.all([loadSummary(), loadProgressSnapshot(selectedId, { silent: true }), screenQuery.refresh()]);
   };
@@ -198,6 +203,18 @@ export function CollectionWorkspace({
             error={screenQuery.error}
             autoRunning={Boolean(scopeRunning)}
             onRefresh={screenQuery.refresh}
+          />
+        </section>
+      )}
+
+      {hasRun && (
+        <section>
+          <StepHeader number={++step} title="Đường đi lấy dữ liệu" hint="Các ca vừa lấy: máy vào màn hình EMR nào, thấy gì, lấy gì. Bước lỗi tô đỏ." />
+          <CaseTracePanel
+            trace={traceQuery.data}
+            loading={traceQuery.refreshing}
+            error={traceQuery.error}
+            onRefresh={traceQuery.refresh}
           />
         </section>
       )}
