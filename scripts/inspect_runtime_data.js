@@ -90,6 +90,32 @@ function emit(depth, text) {
   lines.push(`${'  '.repeat(depth)}${text}`);
 }
 
+// Tên file/thư mục có thể chứa mã BN (dãy ≥ 6 chữ số) hoặc họ tên có dấu
+// (ví dụ IN_RA_VIEN_<mã BN>_<HỌ_TÊN>.pdf, KetQua_YLenh_one_<mã BN>.json).
+// Những tên này không được in: gộp theo phần đầu trước chữ số đầu tiên.
+// Trả về null nếu tên an toàn để in nguyên văn.
+function sensitiveGroupKey(name) {
+  const hasLongDigits = /\d{6,}/.test(name);
+  const hasNonAscii = /[^\x00-\x7F]/.test(name);
+  if (!hasLongDigits && !hasNonAscii) return null;
+  const ext = path.extname(name);
+  if (hasNonAscii && !/^[\x00-\x7F]*\d/.test(name)) return `[tên có dấu]${ext}`;
+  const prefix = name.slice(0, name.search(/\d/));
+  if (/[^\x00-\x7F]/.test(prefix)) return `[tên có dấu]${ext}`;
+  return `${prefix}…${ext}`;
+}
+
+function dirLabel(full) {
+  const info = dirSizeApprox(full);
+  return `~${humanSize(info.total)}${info.truncated ? ' (ước lượng)' : ''}, ${info.count} file`;
+}
+
+function emitGroups(depth, groups, icon) {
+  for (const [key, g] of [...groups.entries()].sort()) {
+    emit(depth, `${icon} [${g.count} ${icon === '📁' ? 'thư mục' : 'file'} ${key} — đã ẩn tên] tổng ~${humanSize(g.size)}${g.files ? `, ${g.files} file bên trong` : ''}`);
+  }
+}
+
 function walk(dir, depth) {
   const entries = safeReaddir(dir);
   if (!entries) { emit(depth, '(không đọc được thư mục)'); return; }
@@ -100,21 +126,44 @@ function walk(dir, depth) {
   const treatAsFanout = dirs.length >= FANOUT_THRESHOLD || looksLikeIdentifierPattern(dirs);
 
   if (treatAsFanout && dirs.length) {
-    const sizeInfo = dirSizeApprox(dir);
+    const sizeInfo = { total: 0, count: 0, truncated: false };
+    for (const name of dirs) {
+      const info = dirSizeApprox(path.join(dir, name));
+      sizeInfo.total += info.total; sizeInfo.count += info.count; sizeInfo.truncated ||= info.truncated;
+    }
     emit(depth, `📁 [${dirs.length} thư mục con — dạng bản ghi lặp lại, đã ẩn tên] tổng ~${humanSize(sizeInfo.total)}${sizeInfo.truncated ? ' (ước lượng, đã cắt bớt khi quét)' : ''}, ${sizeInfo.count} file bên trong`);
   } else {
+    const hiddenDirs = new Map();
     for (const name of dirs) {
       const full = path.join(dir, name);
-      emit(depth, `📁 ${name}/`);
+      const key = sensitiveGroupKey(name);
+      if (key) {
+        const info = dirSizeApprox(full);
+        const g = hiddenDirs.get(key) || { count: 0, size: 0, files: 0 };
+        g.count += 1; g.size += info.total; g.files += info.count;
+        hiddenDirs.set(key, g);
+        continue;
+      }
+      emit(depth, `📁 ${name}/ (${dirLabel(full)})`);
       if (depth + 1 < MAX_DEPTH) walk(full, depth + 1);
       else emit(depth + 1, '… (đã đạt giới hạn độ sâu, dùng --depth để xem thêm)');
     }
+    emitGroups(depth, hiddenDirs, '📁');
   }
 
+  const hiddenFiles = new Map();
   for (const name of files) {
     const size = safeStatSize(path.join(dir, name));
+    const key = sensitiveGroupKey(name);
+    if (key) {
+      const g = hiddenFiles.get(key) || { count: 0, size: 0 };
+      g.count += 1; g.size += size;
+      hiddenFiles.set(key, g);
+      continue;
+    }
     emit(depth, `📄 ${name} (${humanSize(size)})`);
   }
+  emitGroups(depth, hiddenFiles, '📄');
 }
 
 console.log(`RUNTIME_ROOT: ${RUNTIME_ROOT}`);
@@ -130,5 +179,6 @@ console.log(lines.join('\n'));
 
 console.log('\n--- Gợi ý ---');
 console.log('- Thư mục có nhiều bản ghi lặp lại (mã BN, case_key, run_id...) được gộp lại thành 1 dòng đếm, không in tên thật.');
-console.log('- Dán toàn bộ output này ra là an toàn để chia sẻ (không có nội dung bệnh nhân).');
+console.log('- Tên file/thư mục có dãy từ 6 chữ số trở lên hoặc có chữ có dấu (mã BN, họ tên) được gộp theo phần đầu, không in tên thật.');
+console.log('- Output không in nội dung file. Họ tên viết không dấu và không kèm số vẫn có thể lọt qua: đọc lại trước khi gửi ra ngoài.');
 console.log('- Tăng --depth=N nếu muốn xem sâu hơn ở các thư mục không phải dạng bản ghi lặp lại.');
