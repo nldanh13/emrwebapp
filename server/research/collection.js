@@ -976,6 +976,48 @@ function diffRowSets(oldRows, newRows) {
   return { added, removed };
 }
 
+// Dòng thêm/bớt giữa hai tập dòng (đếm theo bội, so bằng rowFingerprint như contentHash).
+function rowSetDelta(oldRows, newRows) {
+  const left = new Map();
+  for (const r of oldRows || []) {
+    const f = rowFingerprint(r);
+    if (!left.has(f)) left.set(f, []);
+    left.get(f).push(r);
+  }
+  const added = [];
+  for (const r of newRows || []) {
+    const bucket = left.get(rowFingerprint(r));
+    if (bucket && bucket.length) bucket.shift();
+    else added.push(r);
+  }
+  const removed = [];
+  for (const bucket of left.values()) removed.push(...bucket);
+  return { added, removed };
+}
+
+// Dựng lại các dòng của một phần ở phiên bản `version` từ các bản ghi lịch sử
+// (collection_versions.jsonl). Bản có `rows` là bản đầy đủ (gồm mọi bản của định dạng cũ);
+// bản `storage: 'delta'` áp phần thêm/bớt lên bản base_version. Thiếu mắt xích → null.
+function rowsAtVersion(versions, key, part, version, _depth = 0) {
+  if (_depth > 10000) return null;
+  const v = (versions || []).find(x => x && x.key === key && x.part === part && Number(x.version) === Number(version));
+  if (!v) return null;
+  if (Array.isArray(v.rows)) return v.rows;
+  if (v.storage !== 'delta') return null;
+  const base = rowsAtVersion(versions, key, part, v.base_version, _depth + 1);
+  if (!base) return null;
+  const drop = new Map();
+  for (const r of v.rows_removed || []) { const f = rowFingerprint(r); drop.set(f, (drop.get(f) || 0) + 1); }
+  const kept = [];
+  for (const r of base) {
+    const f = rowFingerprint(r);
+    const n = drop.get(f) || 0;
+    if (n > 0) drop.set(f, n - 1);
+    else kept.push(r);
+  }
+  return [...kept, ...(v.rows_added || [])];
+}
+
 // targets: [{key, part}] đã giao cho worker. beforeRows/afterRows: Map "key|part" → rows
 // (dữ liệu của phần đó ngay trước và sau khi lấy). Sửa trực tiếp các phần trong `after`.
 // Khóa định danh ổn định: cùng lượt + phần + số phiên bản + nội dung → cùng id. Chạy lại
@@ -1033,7 +1075,13 @@ function applyContentVersions({ before, after, targets = [], beforeRows = new Ma
       const v = { ...common, version: baseVersion, content_hash: prevHash, captured_at: pb?.last_check_at || pb?.result_at || '', role: 'before_change', rows: oldRows };
       out.versions.push({ version_id: versionId(v), ...v });
     }
-    const vNew = { ...common, version: nextVersion, content_hash: newHash, captured_at: checkedAt, role: 'after_change', rows: newRows };
+    // Bản trước đã nằm trong lịch sử (vừa ghi ở trên hoặc từ lần trước): bản mới chỉ lưu phần
+    // khác so với nó. Dựng lại bằng rowsAtVersion; content_hash dùng để đối chiếu.
+    const delta = rowSetDelta(oldRows, newRows);
+    const vNew = {
+      ...common, version: nextVersion, content_hash: newHash, captured_at: checkedAt, role: 'after_change',
+      storage: 'delta', base_version: baseVersion, base_hash: prevHash, rows_added: delta.added, rows_removed: delta.removed,
+    };
     out.versions.push({ version_id: versionId(vNew), ...vNew });
     const diff = diffRowSets(oldRows, newRows);
     const change = {
@@ -1540,6 +1588,8 @@ module.exports = {
   diffRowSets,
   applyContentVersions,
   versionId,
+  rowSetDelta,
+  rowsAtVersion,
   changeId,
   planCollection,
   groupTasksByFetcher,

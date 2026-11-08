@@ -10,6 +10,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const { rowsAtVersion } = require('../server/research/collection');
 const os = require('os');
 
 const RUNTIME_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'research_collection_crash_test_'));
@@ -148,7 +149,7 @@ function makeEnv(name, { xnWritesProgress = true } = {}) {
 function assertConsistentAfterChange(env) {
   const cVersions = env.versions().filter(v => v.research_code === env.codeOf('BNC') && v.part === 'xn');
   assert.deepStrictEqual(
-    cVersions.map(v => [v.version, v.role, v.rows.map(r => r['Kết quả']).join()]),
+    cVersions.map(v => [v.version, v.role, rowsAtVersion(cVersions, v.key, v.part, v.version).map(r => r['Kết quả']).join()]),
     [[1, 'before_change', '5'], [2, 'after_change', '50']],
     'lịch sử: đúng 1 bản cũ (5) + 1 bản mới (50), không trùng',
   );

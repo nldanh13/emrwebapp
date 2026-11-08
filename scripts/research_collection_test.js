@@ -454,7 +454,10 @@ test('Lấy lại: không đổi thì giữ nguyên phiên bản; đổi thì l�
   });
   assert.strictEqual(r2.changes.length, 1);
   assert.deepStrictEqual([r2.changes[0].from_version, r2.changes[0].to_version, r2.changes[0].rows_added, r2.changes[0].rows_removed, r2.changes[0].trigger], [1, 2, 1, 1, 'refresh_due']);
-  assert.deepStrictEqual(r2.versions.map(v => [v.version, v.role, v.rows.length]), [[1, 'before_change', 2], [2, 'after_change', 2]]);
+  // Bản sau chỉ lưu phần khác; dựng lại phải đủ 2 dòng, đúng nội dung đã sửa.
+  assert.deepStrictEqual(r2.versions.map(v => [v.version, v.role, c.rowsAtVersion(r2.versions, v.key, v.part, v.version).length]), [[1, 'before_change', 2], [2, 'after_change', 2]]);
+  assert.deepStrictEqual([r2.versions[1].rows, r2.versions[1].rows_added.length, r2.versions[1].rows_removed.length], [undefined, 1, 1]);
+  assert.strictEqual(c.contentHash(c.rowsAtVersion(r2.versions, 'enc_a', 'xn', 2)), c.contentHash(edited));
   const pxn = changed.encounters.enc_a.parts.xn;
   assert.deepStrictEqual([pxn.content_version, pxn.last_check_outcome, pxn.content_changed_at], [2, 'changed', '2026-03-01T00:00:00Z']);
   // 3) Dựng lại sổ không làm mất thông tin phiên bản.

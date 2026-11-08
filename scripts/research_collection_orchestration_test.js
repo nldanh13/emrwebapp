@@ -13,6 +13,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const { rowsAtVersion } = require('../server/research/collection');
 const os = require('os');
 
 const RUNTIME_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'research_collection_orch_test_'));
@@ -355,7 +356,7 @@ const opts = rows => ({ runDir, runId: 'collect_run', scope: 'du_lieu_goc', isAr
     const encC = Object.values(ledger.encounters).find(e => e.patient_code === 'BNC');
     assert.deepStrictEqual([encC.parts.xn.content_version, encC.parts.xn.last_check_outcome], [2, 'changed']);
     const versions = fs.readFileSync(path.join(run2, 'collection_versions.jsonl'), 'utf-8').trim().split('\n').map(l => JSON.parse(l));
-    assert.deepStrictEqual(versions.map(v => [v.part, v.version, v.role, v.rows[0]['Kết quả']]), [['xn', 1, 'before_change', '5'], ['xn', 2, 'after_change', '50']]);
+    assert.deepStrictEqual(versions.map(v => [v.part, v.version, v.role, rowsAtVersion(versions, v.key, v.part, v.version)[0]['Kết quả']]), [['xn', 1, 'before_change', '5'], ['xn', 2, 'after_change', '50']]);
     const changesCsv = fs.readFileSync(path.join(run2, 'collection_changes.csv'), 'utf-8');
     assert.ok(changesCsv.includes(codeOf('BNC')) && !changesCsv.includes('BNC'), 'file thay đổi chỉ có Mã NC, không có Mã BN');
     // Lần kế tiếp (1 ngày sau): vừa kiểm tra xong, chưa quá hạn 30 ngày → không lấy lại.

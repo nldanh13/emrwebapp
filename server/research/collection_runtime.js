@@ -6,7 +6,7 @@ const { readCsvTable, writeCsv, patientCode, writeCsvUnion } = require('./table_
 const path = require('path');
 const fs = require('fs');
 const collection = require('./collection');
-const { writeJsonAtomic, nowFileStamp, readJsonSafe, ensureDir } = require('../utils/file');
+const { writeJsonAtomic, nowFileStamp, readJsonSafe, ensureDir, forEachLineSync } = require('../utils/file');
 const crypto = require('crypto');
 const { nowIso, archiveMetaPath } = require('./store_paths');
 const { RESEARCH_PROCESS_INSTANCE_ID, readProgressMapSafe } = require('./progress_snapshot');
@@ -95,14 +95,18 @@ function partRowsMap(index, ledger, targets) {
 function readCollectionVersionIds(runDir) {
   const file = path.join(runDir, COLLECTION_VERSIONS_FILE);
   const ids = new Set();
-  if (!fs.existsSync(file)) return ids;
-  for (const line of fs.readFileSync(file, 'utf-8').split('\n')) {
-    if (!line.trim()) continue;
+  // Đọc theo khúc: file chỉ thêm, đã tới hàng trăm MB trên máy vận hành.
+  forEachLineSync(file, line => {
+    // version_id luôn là khóa đầu tiên (collection.applyContentVersions): đọc nhanh, khỏi parse cả dòng.
+    const m = line.match(/^\{"version_id":("(?:[^"\\]|\\.)*")/);
+    if (m) {
+      try { ids.add(JSON.parse(m[1])); return; } catch (_) { /* rơi xuống parse cả dòng */ }
+    }
     try {
       const v = JSON.parse(line);
       ids.add(v.version_id || collection.versionId(v));
     } catch (_) { /* dòng dở dang */ }
-  }
+  });
   return ids;
 }
 

@@ -105,4 +105,39 @@ function safeFilePart(s) {
   return String(s || '').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80);
 }
 
-module.exports = { ensureDir, readJsonSafe, readJsonCritical, CriticalJsonError, writeFileAtomic, writeJsonAtomic, safeUnlink, firstExistingPath, nowFileStamp, safeFilePart };
+// Đọc file văn bản theo từng dòng bằng các khúc nhỏ, không đọc cả file thành một chuỗi
+// (Node giới hạn một chuỗi khoảng 512 MB). Dòng cuối không có "\n" vẫn được trả về.
+// Trả về số dòng không rỗng; file không tồn tại → 0.
+function forEachLineSync(filePath, onLine, chunkBytes = 1024 * 1024) {
+  let fd;
+  try { fd = fs.openSync(filePath, 'r'); } catch (_) { return 0; }
+  let count = 0;
+  try {
+    const buf = Buffer.alloc(chunkBytes);
+    let pending = [];
+    const emit = parts => {
+      const line = Buffer.concat(parts).toString('utf-8').replace(/\r$/, '');
+      if (!line.trim()) return;
+      count += 1;
+      if (onLine) onLine(line);
+    };
+    for (;;) {
+      const n = fs.readSync(fd, buf, 0, chunkBytes, null);
+      if (n <= 0) break;
+      let start = 0;
+      for (let i = buf.indexOf(10, 0); i !== -1 && i < n; i = buf.indexOf(10, i + 1)) {
+        pending.push(Buffer.from(buf.subarray(start, i)));
+        emit(pending);
+        pending = [];
+        start = i + 1;
+      }
+      if (start < n) pending.push(Buffer.from(buf.subarray(start, n)));
+    }
+    if (pending.length) emit(pending);
+  } finally {
+    fs.closeSync(fd);
+  }
+  return count;
+}
+
+module.exports = { ensureDir, readJsonSafe, readJsonCritical, CriticalJsonError, writeFileAtomic, writeJsonAtomic, safeUnlink, firstExistingPath, nowFileStamp, safeFilePart, forEachLineSync };
