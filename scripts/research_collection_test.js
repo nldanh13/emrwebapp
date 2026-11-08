@@ -7,6 +7,7 @@
 
 const assert = require('assert');
 const c = require('../server/research/collection');
+const { HCHANH_CONTENT_VERSIONS: CV } = require('../server/research/fetch_versions');
 
 let passed = 0;
 function test(name, fn) {
@@ -46,7 +47,7 @@ function hcEntry(files, at = '2026-01-10T00:00:00Z', extra = {}) {
   return { status: 'done', files: Object.keys(files), file_status, finished_at: at, ...extra };
 }
 
-const OK_HC = { profile: { fetch_status: 'ok', rows: 1, payload_version: 2 }, discharge: { fetch_status: 'ok', rows: 1 }, surgery: { fetch_status: 'ok', rows: 0 }, billing: { fetch_status: 'ok', rows: 1, payload_version: 2 } };
+const OK_HC = { profile: { fetch_status: 'ok', rows: 1, payload_version: CV.profile }, discharge: { fetch_status: 'ok', rows: 1 }, surgery: { fetch_status: 'ok', rows: 0 }, billing: { fetch_status: 'ok', rows: 1, payload_version: CV.billing } };
 const OK_OH = { order_history: { fetch_status: 'ok', rows: 12 } };
 const XN_OK = { status: { xn: 'done', cdha: 'empty' }, counts: { xn: 20, cdha: 0 }, saved: { xn: true, cdha: true }, committed: true };
 
@@ -150,7 +151,7 @@ test('Hồ sơ nền/Chi phí bản cũ (thiếu sinh hiệu vào viện, Tổng
   // Ra viện / phẫu thuật không bị lấy lại.
   assert.ok(!plan.tasks[0].parts.includes('discharge'));
 
-  // Worker hiện tại ghi payload_version 2 → hết cũ, không lấy lặp.
+  // Worker hiện tại ghi payload_version mới nhất → hết cũ, không lấy lặp.
   const fresh = c.buildLedger({
     sourceRows: sources, xnProgress: xn, orderProgress: oh, previous: legacy,
     hchanhProgress: { enc_a: hcEntry(OK_HC, '2026-01-11T00:00:00Z') },

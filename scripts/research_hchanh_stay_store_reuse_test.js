@@ -120,8 +120,8 @@ const fetchRun = router._fetchHchanhForResearchRun;
   await fetchRun({ ...ctx, dir: runDir2 }, runDir2, { sourceRows: [row('666', 'NC6')], sourceRunId: 'r2' });
   assert.deepStrictEqual(spawned, ['666:profile+billing'], `Bản cũ thiếu sinh hiệu/Tổng hợp chi phí, thực tế: ${spawned.join(', ')}`);
   const p666 = Object.values(JSON.parse(fs.readFileSync(path.join(runDir2, 'hchanh_auto_progress.json'), 'utf-8')))[0];
-  assert.strictEqual(p666.file_status.profile.payload_version, 2);
-  assert.strictEqual(p666.file_status.billing.payload_version, 2);
+  assert.strictEqual(p666.file_status.profile.payload_version, require('../server/research/fetch_versions').HCHANH_CONTENT_VERSIONS.profile);
+  assert.strictEqual(p666.file_status.billing.payload_version, require('../server/research/fetch_versions').HCHANH_CONTENT_VERSIONS.billing);
   assert.ok(fs.readFileSync(path.join(runDir2, 'hchanh_profile.csv'), 'utf-8').includes('EMR-666'));
 
   // 777: lượt cần cả Phẫu thuật và Y lệnh (Y lệnh gộp vào lần hành chánh). Kho dùng chung có đủ, nhưng

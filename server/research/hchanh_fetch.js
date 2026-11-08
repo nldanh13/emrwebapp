@@ -14,6 +14,7 @@ const { isCancelRequested, registerCancel, unregisterCancel } = require('../serv
 const { nowIso } = require('./store_paths');
 const { dedupeRowsByStableKey } = require('./dataset_store');
 const { runScript, fmtPyError } = require('../services/python_runner');
+const { PY_TIMEOUT_MS } = require('../constants');
 const fs = require('fs');
 const { HCHANH_CONTENT_VERSIONS, ORDER_HISTORY_FETCH_WINDOW_VERSION, hchanhPayloadComplete, hchanhPayloadContentVersion } = require('./fetch_versions');
 const { BILLING_SUMMARY_FIELDS, BILLING_ITEMIZED_FIELDS } = require('./billing_summary');
@@ -155,6 +156,41 @@ function hchanhFileStatusPatch(output, rowCounts, wantedFiles, previousCounts, a
     out[f] = entry;
   }
   return out;
+}
+
+// ── Hết giờ của một lô ──────────────────────────────────────────────────────
+// Trước đây cả lô (mặc định 25 ca, 1 Chrome) chỉ có MỘT mức 30 phút cố định (PY_TIMEOUT_MS). EMR chậm
+// ~75 giây/ca là lô vượt 30 phút, máy tắt worker giữa chừng và các ca cuối lô bị ghi "timeout" dù
+// không ca nào treo. Giờ: tổng thời gian tính theo số ca, cộng hẹn giờ "im lặng" (worker không in gì
+// quá lâu mới là treo thật).
+const MINUTE = 60 * 1000;
+const envMs = (name, fallback) => {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n >= 5000 ? n : fallback;
+};
+
+function hchanhBatchTimeouts(caseCount) {
+  const perCase = envMs('EMR_HCHANH_CASE_TIMEOUT_MS', 6 * MINUTE);
+  return {
+    timeoutMs: Math.max(PY_TIMEOUT_MS, Math.max(1, Number(caseCount) || 1) * perCase),
+    idleTimeoutMs: envMs('EMR_HCHANH_IDLE_TIMEOUT_MS', 10 * MINUTE),
+  };
+}
+
+/**
+ * Ca không có kết quả sau khi lô bị dừng vì hết giờ.
+ * - Ca worker đang làm dở (status 'running' trong file tiến độ) → lỗi hết giờ, ghi rõ vì sao.
+ * - Ca chưa tới lượt → 'pending_refetch': không phải lỗi của ca, lần chạy sau lấy tiếp.
+ */
+function hchanhTimeoutOutcome({ timeoutKind = '', wasRunning = false, timeouts = {} } = {}) {
+  const minutes = ms => Math.round((Number(ms) || 0) / MINUTE);
+  if (!wasRunning) {
+    return { status: 'pending_refetch', message: 'Chưa tới lượt: lô dừng vì hết giờ trước khi tới ca này. Lần chạy sau sẽ lấy tiếp.' };
+  }
+  const why = timeoutKind === 'idle'
+    ? `EMR không phản hồi quá ${minutes(timeouts.idleTimeoutMs)} phút ở ca này`
+    : `lô chạy quá ${minutes(timeouts.timeoutMs)} phút`;
+  return { status: 'error', message: `Hết giờ chờ: ${why}. Ca sẽ được thử lại ở lần chạy sau.` };
 }
 
 async function fetchHchanhForResearchRun(ctx, runDir, {
@@ -368,7 +404,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
           appendResearchCaseTrace(runPath, {
             case_id: key, source_key: key, index: idx + 1, total: selectedRows.length, ma_bn: meta.ma_bn, ho_ten: meta.ho_ten, research_code: meta.research_code, date_from: meta.date_from || fallbackDateFrom || '', date_to: meta.date_to || fallbackDateTo || '', files: wantedFiles, mode: normalizedMode,
           }, [
-            { ts: nowIso(), tag: 'CASE.START', step: 'Bắt đầu case nhưng phát hiện lỗi lặp gần đây', screen: 'server/routes/research.js', sees: display, takes: wantedFiles.join(','), writes: 'skip case', target: progressPath },
+            { ts: nowIso(), tag: 'CASE.START', step: 'Bắt đầu case nhưng phát hiện lỗi lặp gần đây', screen: '', sees: display, takes: wantedFiles.join(','), writes: 'skip case', target: progressPath },
             { ts: nowIso(), tag: 'WARN', step: 'Dời vào danh sách chờ tìm lại: BN từng không tìm thấy trên HIS', screen: 'failure_cache', sees: `reason=${previousFailure.reason}; previous=${previousFailure.ts}`, takes: 'failure cache', writes: 'progress.status=skipped_recent_failure', target: failureCachePath },
           ], { mode: normalizedMode, status: 'skipped_recent_failure', files: wantedFiles, counts: {} });
           continue;
@@ -490,10 +526,12 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
 
       let result;
       const chromeCycleStartedAt = Date.now();
+      const batchTimeouts = hchanhBatchTimeouts(batchItems.length);
       try {
         result = await runScript('hchanh_fetch.py', args, {
           onSpawn: killFn => registerCancel(ctx.sid, killFn),
           runtimeDir: ctx.dir,
+          ...batchTimeouts,
         });
       } finally {
         unregisterCancel(ctx.sid);
@@ -506,6 +544,11 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
 
       const cancelRequested = isCancelRequested(ctx.sid);
       const batchOutput = readJsonSafe(batchOutputPath, {}) || {};
+      // Worker tự ghi 'running' vào file tiến độ khi bắt đầu từng ca: biết ca nào đang dở lúc hết giờ.
+      const workerProgress = result.killedByTimeout ? (readJsonSafe(progressPath, {}) || {}) : {};
+      if (result.killedByTimeout) {
+        appendResearchRunLog(runPath, `[${logPrefix}] Lô ${batchNo} dừng vì hết giờ (${result.timeoutKind === 'idle' ? 'worker im lặng quá lâu' : 'quá tổng thời gian của lô'}); ${Object.keys(batchOutput).length}/${batchItems.length} ca đã có kết quả.`);
+      }
       if (!saveRaw) {
         try { fs.rmSync(batchInputPath, { force: true }); } catch (_) {}
         try { fs.rmSync(batchOutputPath, { force: true }); } catch (_) {}
@@ -526,6 +569,32 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
           continue;
         }
 
+        if (!output && result.killedByTimeout && !result.spawnError) {
+          const outcome = hchanhTimeoutOutcome({ timeoutKind: result.timeoutKind, wasRunning: workerProgress[key]?.status === 'running', timeouts: batchTimeouts });
+          const caseMeta = {
+            case_id: key, source_key: key, index: idx + 1, total: selectedRows.length, ma_bn: meta.ma_bn, ho_ten: meta.ho_ten, research_code: meta.research_code, date_from: dateFrom, date_to: dateTo, files: wantedFiles, mode: normalizedMode,
+          };
+          if (outcome.status === 'pending_refetch') {
+            progress[key] = { ...progress[key], status: 'pending_refetch', finished_at: nowIso(), error: '' };
+            appendResearchRunLog(runPath, `[${logPrefix}] CHƯA TỚI LƯỢT ${display}: lô hết giờ, để lần chạy sau.`);
+            appendResearchCaseTrace(runPath, caseMeta, [
+              { ts: nowIso(), tag: 'WARN', step: outcome.message, sees: display, takes: wantedFiles.join(','), writes: 'progress.status=pending_refetch', target: progressPath },
+            ], { mode: normalizedMode, status: 'pending_refetch', files: wantedFiles, counts: {} });
+          } else {
+            stats.error += 1;
+            progress[key] = {
+              ...progress[key], status: 'error', finished_at: nowIso(), error: outcome.message,
+              file_status: { ...(progress[key]?.file_status || {}), ...hchanhFileStatusPatch(null, {}, wantedFiles, {}, nowIso(), 'timeout') },
+            };
+            appendResearchRunLog(runPath, `[${logPrefix}] LỖI ${display}: ${outcome.message}`);
+            appendResearchCaseTrace(runPath, caseMeta, [
+              { ts: nowIso(), tag: 'ERROR', step: outcome.message, sees: display, takes: wantedFiles.join(','), writes: 'progress.status=error', target: progressPath },
+            ], { mode: normalizedMode, status: 'error', files: wantedFiles, counts: {} });
+          }
+          writeJsonAtomic(progressPath, progress);
+          continue;
+        }
+
         if (!output) {
           stats.error += 1;
           const message = result.spawnError || (result.killedByTimeout ? 'timeout' : (result.code !== 0 ? fmtPyError('hchanh_fetch.py lỗi', result) : 'không có kết quả trong output lô (worker có thể đã dừng giữa chừng)'));
@@ -537,8 +606,8 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
           appendResearchCaseTrace(runPath, {
             case_id: key, source_key: key, index: idx + 1, total: selectedRows.length, ma_bn: meta.ma_bn, ho_ten: meta.ho_ten, research_code: meta.research_code, date_from: dateFrom, date_to: dateTo, files: wantedFiles, mode: normalizedMode,
           }, [
-            { ts: nowIso(), tag: 'CASE.START', step: 'Bắt đầu xử lý case nhưng worker lỗi', screen: 'server/routes/research.js', sees: display, takes: wantedFiles.join(','), writes: 'progress error', target: progressPath },
-            { ts: nowIso(), tag: 'ERROR', step: 'hchanh_fetch.py (lô) trả lỗi', screen: 'worker/hchanh_fetch.py', sees: String(message).split('\n')[0], takes: 'stderr/stdout', writes: 'progress.status=error', target: progressPath },
+            { ts: nowIso(), tag: 'CASE.START', step: 'Bắt đầu xử lý ca nhưng worker lỗi', screen: '', sees: display, takes: wantedFiles.join(','), writes: 'progress error', target: progressPath },
+            { ts: nowIso(), tag: 'ERROR', step: 'Worker lấy hành chánh (lô) báo lỗi', screen: '', sees: String(message).split('\n')[0], takes: 'stderr/stdout', writes: 'progress.status=error', target: progressPath },
           ], { mode: normalizedMode, status: 'error', files: wantedFiles, counts: {} });
           writeJsonAtomic(progressPath, progress);
           continue;
@@ -561,10 +630,10 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
 
         const sc = statusCountsFromHchanhOutput(output);
         const csvTraceEvents = [
-          { ts: nowIso(), tag: 'OUTPUT.WRITE_CSV', step: 'Backend ghi bảng hchanh_profile.csv', screen: 'server/routes/research.js', sees: `profileRows=${flat.profileRows.length}; total=${profileRows.length}`, takes: 'output.profile', writes: 'hchanh_profile.csv', target: path.join(runPath, 'hchanh_profile.csv') },
-          { ts: nowIso(), tag: 'OUTPUT.WRITE_CSV', step: 'Backend ghi bảng hchanh_discharge.csv', screen: 'server/routes/research.js', sees: `dischargeRows=${flat.dischargeRows.length}; total=${dischargeRows.length}`, takes: 'output.discharge', writes: 'hchanh_discharge.csv', target: path.join(runPath, 'hchanh_discharge.csv') },
-          { ts: nowIso(), tag: 'OUTPUT.WRITE_CSV', step: 'Backend ghi bảng hchanh_surgery.csv', screen: 'server/routes/research.js', sees: `surgeryRows=${flat.surgeryRows.length}; total=${surgeryRows.length}`, takes: 'output.surgery.surgeries', writes: 'hchanh_surgery.csv', target: path.join(runPath, 'hchanh_surgery.csv') },
-          { ts: nowIso(), tag: 'OUTPUT.WRITE_CSV', step: 'Backend ghi bảng hchanh_order_history.csv', screen: 'server/routes/research.js', sees: `orderRows=${flat.orderRows.length}; total=${orderRows.length}`, takes: 'output.order_history.rows', writes: 'hchanh_order_history.csv', target: path.join(runPath, 'hchanh_order_history.csv') },
+          { ts: nowIso(), tag: 'OUTPUT.WRITE_CSV', step: 'Backend ghi bảng hchanh_profile.csv', screen: '', sees: `profileRows=${flat.profileRows.length}; total=${profileRows.length}`, takes: 'output.profile', writes: 'hchanh_profile.csv', target: path.join(runPath, 'hchanh_profile.csv') },
+          { ts: nowIso(), tag: 'OUTPUT.WRITE_CSV', step: 'Backend ghi bảng hchanh_discharge.csv', screen: '', sees: `dischargeRows=${flat.dischargeRows.length}; total=${dischargeRows.length}`, takes: 'output.discharge', writes: 'hchanh_discharge.csv', target: path.join(runPath, 'hchanh_discharge.csv') },
+          { ts: nowIso(), tag: 'OUTPUT.WRITE_CSV', step: 'Backend ghi bảng hchanh_surgery.csv', screen: '', sees: `surgeryRows=${flat.surgeryRows.length}; total=${surgeryRows.length}`, takes: 'output.surgery.surgeries', writes: 'hchanh_surgery.csv', target: path.join(runPath, 'hchanh_surgery.csv') },
+          { ts: nowIso(), tag: 'OUTPUT.WRITE_CSV', step: 'Backend ghi bảng hchanh_order_history.csv', screen: '', sees: `orderRows=${flat.orderRows.length}; total=${orderRows.length}`, takes: 'output.order_history.rows', writes: 'hchanh_order_history.csv', target: path.join(runPath, 'hchanh_order_history.csv') },
         ];
         const failureSignature = hchanhFailureSignatureFromTrace(workerTrace, output);
         if (sc.error && failureSignature) {
@@ -688,6 +757,8 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
 }
 
 module.exports = {
+  hchanhBatchTimeouts,
+  hchanhTimeoutOutcome,
   hchanhDefaultFiles,
   orderHistoryDefaultFiles,
   orderHistoryRunLabel,
