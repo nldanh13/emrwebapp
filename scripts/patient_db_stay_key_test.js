@@ -57,6 +57,24 @@ try {
     assert.strictEqual(stays('BNB')[0].gio_vao, '2026-09-10 07:30', 'không làm mất giờ vào viện');
   });
 
+  test('Ra viện sáng, nhập lại chiều cùng ngày → tính là tái nhập viện 0 ngày', () => {
+    const l = stays('BNA');
+    const links = patientDb.open().prepare("SELECT luot_truoc, luot_sau, so_ngay FROM lien_ket_luot WHERE ma_bn = 'BNA' AND loai = 'tai_nhap_vien_30'").all();
+    assert.deepStrictEqual(links.map(x => [x.luot_truoc, x.luot_sau, x.so_ngay]), [[l[0].id, l[1].id, 0]]);
+    const report = patientDb.readmissionReport({ tu: '2026-09-05', den: '2026-09-05', homNay: '2026-11-08' });
+    assert.strictEqual(report.tong_ket.tai_nhap_vien, 1);
+  });
+
+  test('Vào viện trước giờ ra viện của đợt khác (dữ liệu chồng giờ) → không tính tái nhập', () => {
+    patientDb.recordInpatient('BND', { profile: profile('08:00 01/10/2026'), discharge: discharge('16:00 03/10/2026') },
+      { from: '2026-10-01', to: '2026-10-03', source: 'hanh_chanh', now: '2026-10-03T17:00:00Z' });
+    patientDb.recordInpatient('BND', { profile: profile('10:00 03/10/2026'), discharge: discharge('09:00 06/10/2026') },
+      { from: '2026-10-03', to: '2026-10-06', source: 'hanh_chanh', now: '2026-10-06T10:00:00Z' });
+    assert.strictEqual(stays('BND').length, 2);
+    const n = patientDb.open().prepare("SELECT COUNT(*) n FROM lien_ket_luot WHERE ma_bn = 'BND' AND loai = 'tai_nhap_vien_30'").get().n;
+    assert.strictEqual(Number(n), 0);
+  });
+
   test('Bản chỉ có ngày mà ngày đó thuộc 2 đợt → không tự gộp, báo cần xem', () => {
     const before = stays('BNA').length;
     const res = patientDb.recordInpatient('BNA', { discharge: discharge('05/09/2026', { chan_doan_chinh: 'Không rõ đợt' }) },

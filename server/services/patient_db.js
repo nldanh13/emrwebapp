@@ -550,9 +550,11 @@ function rebuildLinks(conn, maBn) {
       }
     }
 
-    // Tái nhập viện trong 30 ngày sau ra viện.
+    // Tái nhập viện trong 30 ngày sau ra viện. Có giờ ở cả hai mốc thì so đến phút, nên ra viện sáng
+    // rồi nhập lại chiều cùng ngày vẫn được tính (0 ngày); thiếu giờ thì so theo ngày như cũ.
     if (a.loai === LOAI_NOI_TRU && dayOf(a.gio_ra)) {
-      const next = later.find(v => v.loai === LOAI_NOI_TRU);
+      const next = visits.find(v => v.id !== a.id && v.loai === LOAI_NOI_TRU && (
+        hasClock(v.gio_vao) && hasClock(a.gio_ra) ? txt(v.gio_vao) > txt(a.gio_ra) : v.start > a.end));
       const gap = next ? daysBetween(a.end, next.start) : null;
       if (next && gap !== null && gap <= TAI_NHAP_VIEN_NGAY) ins.run(code, a.id, next.id, 'tai_nhap_vien_30', gap, null, null);
     }
