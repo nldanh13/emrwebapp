@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS luot (
   id INTEGER PRIMARY KEY,
   ma_bn TEXT NOT NULL,
   loai TEXT NOT NULL,
-  khoa_emr TEXT UNIQUE,            -- 'kb:<khambenhid>' cho lượt khám; nội trú ghép theo khoảng ngày
+  khoa_emr TEXT UNIQUE,            -- 'kb:<khambenhid>' cho lượt khám; nội trú phân biệt bằng giờ vào/ra viện
   khoa TEXT, gio_vao TEXT, gio_ra TEXT,
   trang_thai TEXT,                 -- 'dang_dieu_tri' | 'da_ket_thuc'
   trang_thai_emr TEXT, xu_tri TEXT, co_bhyt INTEGER, doi_tuong TEXT, ly_do TEXT,
@@ -321,6 +321,47 @@ function findOrCreateLuot(conn, { maBn, loai, khoaEmr = '', from = '', to = '', 
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(maBn, loai, khoaEmr || null, from, to, to ? 'da_ket_thuc' : 'dang_dieu_tri', now, now);
   return conn.prepare('SELECT * FROM luot WHERE id = ?').get(Number(res.lastInsertRowid));
+}
+
+const hasClock = value => txt(value).length > 10;
+
+// Giờ muộn hơn giữa 2 mốc; cùng ngày thì lấy bản có giờ.
+function laterTime(a, b) {
+  if (!a) return b || '';
+  if (!b) return a;
+  if (a.slice(0, 10) === b.slice(0, 10)) return a.length >= b.length ? a : b;
+  return a > b ? a : b;
+}
+
+// Đợt nằm viện được phân biệt bằng giờ vào viện và giờ ra viện (không ghép theo ngày giao nhau):
+//   - Cùng giờ vào viện (đến phút) → cùng đợt. Khác giờ vào viện → khác đợt, kể cả cùng ngày.
+//   - Đợt đang lưu chỉ có ngày vào: cùng ngày, và chưa ra viện trước giờ vào này → cùng đợt (nâng lên có giờ).
+//   - Bản không có giờ vào viện: ghép theo giờ ra viện trùng khớp, rồi theo khoảng ngày vào–ra chứa nó.
+//   - Khớp từ 2 đợt trở lên → không tự gộp, trả { ambiguous } để người xem.
+function matchInpatientStay(conn, maBn, { admit = '', out = '', fromDay = '', toDay = '' }) {
+  const stays = conn.prepare('SELECT * FROM luot WHERE ma_bn = ? AND loai = ? AND khoa_emr IS NULL ORDER BY gio_vao, id').all(maBn, LOAI_NOI_TRU);
+  const pick = list => (list.length === 1 ? { luot: list[0] } : list.length > 1 ? { ambiguous: list.map(l => l.id) } : null);
+  if (hasClock(admit)) {
+    const exact = stays.filter(l => txt(l.gio_vao) === admit);
+    if (exact.length) return pick(exact);
+    const sameDayNoClock = stays.filter(l => !hasClock(l.gio_vao) && dayOf(l.gio_vao) === dayOf(admit)
+      && !(hasClock(l.gio_ra) && txt(l.gio_ra) <= admit));
+    return pick(sameDayNoClock) || { luot: null };
+  }
+  if (hasClock(out)) {
+    const exactOut = stays.filter(l => txt(l.gio_ra) === out);
+    if (exactOut.length) return pick(exactOut);
+  }
+  const aFrom = dayOf(admit) || fromDay;
+  const aTo = dayOf(out) || toDay || aFrom;
+  if (!aFrom) return { luot: null };
+  const overlapping = stays.filter(l => {
+    const bFrom = dayOf(l.gio_vao);
+    if (!bFrom) return false;
+    const bTo = dayOf(l.gio_ra) || bFrom;
+    return aFrom <= bTo && bFrom <= aTo;
+  });
+  return pick(overlapping) || { luot: null };
 }
 
 function insertScan(conn, { maBn, luotId, loai, nguon, muc, now, data }) {
@@ -602,11 +643,22 @@ function recordInpatient(maBn, files, { from = '', to = '', source = 'hanh_chanh
       ho_ten: profile.ho_ten, ngay_sinh: profile.ngay_sinh, tuoi: profile.tuoi, gioi_tinh: profile.gioi_tinh,
       dia_chi: profile.dia_chi, sdt: profile.sdt || profile.dien_thoai, the_bhyt: profile.bhyt_code,
     }, { tier: muc, now });
-    const luot = findOrCreateLuot(conn, { maBn: code, loai: LOAI_NOI_TRU, from: start, to: dayOf(to), now });
-    // Đợt đã biết rộng hơn (vd lần sau biết ngày vào sớm hơn): nới khoảng ngày.
-    const newFrom = [txt(luot.gio_vao), start].filter(Boolean).sort()[0];
-    const newTo = [txt(luot.gio_ra), dayOf(to)].filter(Boolean).sort().pop() || '';
-    conn.prepare('UPDATE luot SET gio_vao = ?, gio_ra = ? WHERE id = ?').run(newFrom, newTo, luot.id);
+    const discharge = files.discharge || {};
+    const admit = isoTime(profile.ngay_vao_vien || profile.ngay_vao || discharge.ngay_vao_vien || discharge.ngay_vao) || start;
+    const out = isoTime(discharge.raw_time) || isoTime([discharge.gio_ra, discharge.ngay_ra].filter(Boolean).join(' ')) || dayOf(to);
+    const match = matchInpatientStay(conn, code, { admit, out, fromDay: start, toDay: dayOf(to) });
+    if (match.ambiguous) return { saved: false, reason: 'can_xem_dot', candidates: match.ambiguous };
+    let luot = match.luot;
+    if (!luot) {
+      const res = conn.prepare(`INSERT INTO luot (ma_bn, loai, khoa_emr, gio_vao, gio_ra, trang_thai, tao_luc, cap_nhat_luc)
+        VALUES (?, ?, NULL, ?, ?, ?, ?, ?)`).run(code, LOAI_NOI_TRU, admit, out, out ? 'da_ket_thuc' : 'dang_dieu_tri', now, now);
+      luot = conn.prepare('SELECT * FROM luot WHERE id = ?').get(Number(res.lastInsertRowid));
+    } else {
+      // Biết thêm: giờ vào viện đến phút thay cho bản chỉ có ngày; giờ ra viện khi đợt kết thúc.
+      const newFrom = hasClock(admit) ? admit : (txt(luot.gio_vao) || admit);
+      const newTo = laterTime(txt(luot.gio_ra), out);
+      conn.prepare('UPDATE luot SET gio_vao = ?, gio_ra = ? WHERE id = ?').run(newFrom, newTo, luot.id);
+    }
     let added = 0;
     for (const key of usable) {
       if (insertScan(conn, { maBn: code, luotId: luot.id, loai: key, nguon: source, muc, now, data: files[key] })) added += 1;
