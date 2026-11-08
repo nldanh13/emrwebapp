@@ -92,10 +92,14 @@ class FakeSess:
         return self.html, 200
 
 
-def test_fetch_billing_reads_ttcp_table_not_old_15_column_layout():
+def test_fetch_billing_reads_ttcp_table_not_old_15_column_layout(monkeypatch):
     code = "BN900001"
     link_map = {core._patient_link_key(code, "doctor"): "https://emr.example/home.aspx?wpid=x&tiepnhanid=00000000-0000-0000-0000-000000000001"}
-    out = core.fetch_billing(FakeSess(TTCP_PAGE), code, link_map, {})
+    monkeypatch.setattr(core, "_fetch_hchanh_html_by_click", lambda *a, **k: {"html": TTCP_PAGE})
+    sess = FakeSess("<html></html>")
+    out = core.fetch_billing(sess, code, link_map, {})
+    # Không mở trang chiphichitietdraw (màn Sửa chi phí) bằng HTTP dù có tiepnhanid.
+    assert sess.urls == []
     assert out["_fetch_status"] == "ok"
     assert len(out["rows"]) == 4
     assert out["tong_cong"] == 2234567
@@ -105,18 +109,10 @@ def test_fetch_billing_reads_ttcp_table_not_old_15_column_layout():
     assert out["_source"] == "emr_tong_ket_chi_phi"
 
 
-def test_fetch_billing_opens_tong_ket_when_http_page_is_not_billing(monkeypatch):
-    # Ca Hoàn tất: URL "Sửa chi phí" không ra bảng kê, chỉ có bảng khác trên trang.
-    not_billing = '<table><tr><td>a</td></tr><tr><td>b</td></tr></table>'
-    calls = []
-
-    def fake_click(sess, ma_bn, config, entry_kind, action="", *a, **k):
-        calls.append(action)
-        return {"html": TTCP_PAGE}
-
-    monkeypatch.setattr(core, "_fetch_hchanh_html_by_click", fake_click)
+def test_fetch_billing_reports_error_when_draw_fails(monkeypatch):
+    monkeypatch.setattr(core, "_fetch_hchanh_html_by_click", lambda *a, **k: None)
     code = "BN900002"
-    link_map = {core._patient_link_key(code, "doctor"): "https://emr.example/home.aspx?wpid=x&tiepnhanid=00000000-0000-0000-0000-000000000002"}
-    out = core.fetch_billing(FakeSess(not_billing), code, link_map, {})
-    assert calls == ["billing"]
-    assert out["_fetch_status"] == "ok" and len(out["rows"]) == 4
+    link_map = {core._patient_link_key(code, "doctor"): "https://emr.example/home.aspx?wpid=x"}
+    out = core.fetch_billing(FakeSess(""), code, link_map, {})
+    assert out["_fetch_status"] == "error" and out["_reason"] == "no_billing_view"
+    assert out["rows"] == []
