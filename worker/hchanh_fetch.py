@@ -758,9 +758,12 @@ def _selenium_click_js(driver: Any, element: Any) -> None:
         driver.execute_script("arguments[0].click();", element)
 
 
-BILLING_PAGE_MARKERS = ('id="dsDichVu"', 'id="dsThuoc"', 'id="dsVatTu"', 'id="divTongHopChiPhi"')
+# dataTableYeuCau: bảng chi phí mở từ Tổng kết → Chi phí (onShowTTCP) — đường dùng cho ca đã Hoàn tất.
+# dsDichVu/dsThuoc/dsVatTu: trang chiphichitietdraw (mở bằng URL có tiepnhanid).
+BILLING_PAGE_MARKERS = ('id="dataTableYeuCau"', 'id="dsDichVu"', 'id="dsThuoc"', 'id="dsVatTu"', 'id="divTongHopChiPhi"')
 _BILLING_ROWS_JS = (
-    "return document.querySelectorAll('#dsDichVu table tr td, #dsThuoc table tr td, #dsVatTu table tr td').length;"
+    "return document.querySelectorAll('#dataTableYeuCau tbody tr td, #dsDichVu table tr td, "
+    "#dsThuoc table tr td, #dsVatTu table tr td').length;"
 )
 
 
@@ -1341,6 +1344,53 @@ def _click_bed_days_action(driver: Any) -> bool:
     print(f"WARN [hchanh-click] Không bấm được Chăm sóc → Buồng giường: {last_err}", file=sys.stderr)
     return False
 
+# Bảng kê: menu "Tổng kết" → "Chi phí" (<a onclick="onShowTTCP(this);">) hiện bảng chi phí ngay trên trang
+# người bệnh (người dùng xác nhận trên EMR 11/2026). Không dùng nút "Sửa chi phí" (btnSuaChiPhi): đó là màn
+# sửa và onclick còn gọi onSaveHistory('Sửa chi phí') nên mỗi lần bấm EMR ghi thêm một dòng lịch sử.
+_OPEN_BILLING_JS = r"""
+const a = Array.from(document.querySelectorAll('a')).find(x => (x.getAttribute('onclick') || '').includes('onShowTTCP'))
+  || Array.from(document.querySelectorAll('li.accordion-header-only > a')).find(x => (x.textContent || '').trim() === 'Chi phí');
+if (!a) return false;
+if (typeof onShowTTCP === 'function') { onShowTTCP(a); } else { a.click(); }
+return true;
+"""
+_BILLING_DIAG_JS = r"""
+const ids = Array.from(document.querySelectorAll('div[id]')).map(d => d.id)
+  .filter(id => /chiphi|dichvu|thuoc|vattu|ttcp|bangke/i.test(id));
+return ids.slice(0, 20).join(',');
+"""
+
+
+def _open_billing_by_js(driver: Any) -> Optional[bool]:
+    """Mở bảng chi phí qua menu Tổng kết → Chi phí (CHỈ ĐỌC, không ghi lịch sử EMR).
+
+    Trả None khi trang không có mục này, True/False là kết quả đã thử một lần.
+    """
+    try:
+        before_handles = list(getattr(driver, "window_handles", []) or [])
+        if not driver.execute_script(_OPEN_BILLING_JS):
+            return None
+    except Exception:
+        return None
+    switched = _switch_to_new_tab_if_any(driver, before_handles, timeout=2.0)
+    try:
+        _selenium_wait_after_action(driver, 1.2, ready_timeout=12)  # type: ignore[misc]
+    except Exception:
+        time.sleep(1.2)
+    ok = _wait_for_hchanh_action_content(driver, "billing", timeout=15)
+    if not ok:
+        try:
+            ids = str(driver.execute_script(_BILLING_DIAG_JS) or "")
+        except Exception:
+            ids = ""
+        print(
+            f"WARN [billing] Đã mở Tổng kết → Chi phí nhưng chưa thấy khối bảng kê "
+            f"(tab mới={'có' if switched else 'không'}; khối liên quan: {ids or 'không có'}).",
+            file=sys.stderr,
+        )
+    return ok
+
+
 def _click_hchanh_action(driver: Any, action: str) -> bool:
     """Bấm tab/nút con sau khi đã mở hồ sơ.
 
@@ -1361,6 +1411,10 @@ def _click_hchanh_action(driver: Any, action: str) -> bool:
         return _click_discharge_action(driver)
     if act == "bed_days":
         return _click_bed_days_action(driver)
+    if act == "billing":
+        opened = _open_billing_by_js(driver)
+        if opened is not None:
+            return opened
 
     xpath_map = {
         "bed_days": [
@@ -1373,12 +1427,11 @@ def _click_hchanh_action(driver: Any, action: str) -> bool:
             "//*[self::a or self::button or self::span or self::li][contains(normalize-space(),'VTYT')]",
             "//*[self::a or self::button or self::span or self::li][contains(normalize-space(),'Thêm thuốc')]",
         ],
+        # Không bấm btnSuaChiPhi / OnSuaChiPhi: màn sửa, có ghi lịch sử EMR (xem _OPEN_BILLING_JS).
         "billing": [
-            "//*[@id='btnSuaChiPhi']",
-            "//*[contains(@onclick,'OnSuaChiPhi')]",
+            "//a[contains(@onclick,'onShowTTCP')]",
             "//*[contains(@onclick,'XEMCHIPHI')]",
             "//*[self::a or self::button or self::span or self::li][contains(normalize-space(),'Xem chi phí')]",
-            "//*[self::a or self::button or self::span or self::li][contains(normalize-space(),'Chi phí')]",
         ],
         "documents": [
             "//*[contains(@onclick,'onShowGiayToKemTheo')]",
@@ -1421,7 +1474,6 @@ def _click_hchanh_action(driver: Any, action: str) -> bool:
     js_map = {
         "documents": "const a = Array.from(document.querySelectorAll('a')).find(x => (x.getAttribute('onclick')||'').includes('onShowGiayToKemTheo') || (x.textContent||'').includes('Giấy tờ kèm theo')); if (a && typeof onShowGiayToKemTheo === 'function') { onShowGiayToKemTheo(a); return true; } if (a) { a.click(); return true; } return false;",
         "discharge": "const a = Array.from(document.querySelectorAll('a')).find(x => ((x.getAttribute('onclick')||'').includes('onShowXuTri') || (x.textContent||'').trim().includes('Ra Khoa'))); if (a && typeof onShowXuTri === 'function') { onShowXuTri(a); return true; } if (a) { a.click(); return true; } return false;",
-        "billing": "if (typeof OnSuaChiPhi === 'function') { OnSuaChiPhi(); return true; } return false;",
     }
     if act in js_map:
         try:
@@ -3129,6 +3181,90 @@ def parse_billing_summary(page_soup: Any) -> Dict[str, Optional[float]]:
 
 # ── Fetcher: billing (bảng kê chi phí) ───────────────────────────────────────
 
+def _billing_payment_group(doi_tuong: str, don_gia: float) -> str:
+    dt_norm = _norm(doi_tuong)
+    if any(k in dt_norm for k in ("bao hiem", "bhyt")):
+        return "bhyt"
+    if any(k in dt_norm for k in ("vien phi", "tu tuc", "dich vu", "ngoai bhyt", "tt0")):
+        return "self_pay"
+    if any(k in dt_norm for k in ("trong goi", "mien", "khong thu")) or don_gia == 0:
+        return "zero"
+    return "unknown"
+
+
+def _parse_vn_number(text: Any) -> float:
+    """Số trên bảng chi phí EMR: dấu phẩy ngăn nghìn, dấu chấm thập phân (vd 12,345.00)."""
+    raw = re.sub(r"[^\d.\-]", "", str(text or ""))
+    try:
+        return float(raw) if raw not in {"", ".", "-"} else 0.0
+    except ValueError:
+        return 0.0
+
+
+# Cột của bảng Tổng kết → Chi phí (table#dataTableYeuCau), theo hàng tiêu đề 2 tầng của EMR:
+# STT | Tên chi phí | ĐT | MH (%) | ĐVT | SL | Đơn giá BV | Đơn giá BH | TLTTDV (%) | Thành tiền BV |
+# TLTT (%) | Thành tiền BH | Nguồn thanh toán: Quỹ BHYT, B/N CCT, Khác, B/N tự trả | Phụ thu
+_TTCP_COLUMNS = (
+    "stt", "name", "doi_tuong", "muc_huong", "dvt", "sl", "don_gia", "don_gia_bh", "ty_le_tt_dv",
+    "thanh_tien", "ty_le_tt", "thanh_tien_bh", "quy_bhyt", "bn_cung_chi_tra", "nguon_khac",
+    "bn_tu_tra", "phu_thu",
+)
+_TTCP_NUMBER_COLUMNS = {
+    "sl", "don_gia", "don_gia_bh", "thanh_tien", "thanh_tien_bh", "quy_bhyt", "bn_cung_chi_tra",
+    "nguon_khac", "bn_tu_tra", "phu_thu",
+}
+
+
+def parse_billing_ttcp_rows(table: Any) -> List[Dict[str, Any]]:
+    """Đọc dòng chi tiết của bảng Tổng kết → Chi phí.
+
+    Dòng chỉ có 1 ô (colspan) là dòng nhóm: có nền màu = đối tượng ("Đối tượng bảo hiểm y tế"),
+    có link thu/mở = khoa phòng, còn lại (chữ đậm) = loại chi phí (Xét nghiệm, Thuốc, Ngày giường...).
+    """
+    rows: List[Dict[str, Any]] = []
+    nhom_doi_tuong = loai_yc = khoa = ""
+    body = table.find("tbody") or table
+    for tr in body.find_all("tr"):
+        if tr.find("th") is not None:
+            continue
+        tds = tr.find_all("td", recursive=False)
+        if not tds:
+            continue
+        if len(tds) == 1:
+            td = tds[0]
+            txt = td.get_text(" ", strip=True)
+            style = str(td.get("style") or "").lower()
+            if "background" in style:
+                nhom_doi_tuong, loai_yc, khoa = txt, "", ""
+            elif td.find("a") is not None:
+                khoa = txt
+            else:
+                loai_yc, khoa = txt, ""
+            continue
+        if len(tds) < len(_TTCP_COLUMNS):
+            continue
+        cells = {key: tds[i].get_text(" ", strip=True) for i, key in enumerate(_TTCP_COLUMNS)}
+        if not cells["name"]:
+            continue
+        row: Dict[str, Any] = {
+            "loai_yc": loai_yc,
+            "khoa": khoa,
+            "nhom_doi_tuong": nhom_doi_tuong,
+        }
+        for key, value in cells.items():
+            row[key] = _parse_vn_number(value) if key in _TTCP_NUMBER_COLUMNS else value
+        if not row["sl"]:
+            row["sl"] = 1.0
+        row["payment_group"] = _billing_payment_group(row["doi_tuong"], row["don_gia"])
+        # Giữ các khóa của bộ đọc cũ cho các phần dùng chung (QA ra viện, soát BHYT).
+        # Bảng này không có mã DV / thời gian y lệnh / số thẻ: để trống, không đoán.
+        for key in ("ma_dv", "tg_ylenh", "chi_tiet", "so_the_bh"):
+            row.setdefault(key, "")
+        row["chenh_lech"] = max(0.0, row["don_gia"] - row["don_gia_bh"]) if row["payment_group"] == "bhyt" else 0.0
+        rows.append(row)
+    return rows
+
+
 def _billing_fetch_status(rows: List[Dict[str, Any]], tong_hop: Dict[str, Any], is_billing_page: bool) -> str:
     """Trạng thái thật của 1 lần đọc bảng kê.
     - Có dòng → 'ok'.
@@ -3243,8 +3379,9 @@ def fetch_billing(sess: Optional["EmrHttpSession"], ma_bn: str,
         _BILLING_TABLE_CONTAINERS = ("dsDichVu", "dsThuoc", "dsVatTu")
 
         def _is_billing_page(page_soup: Any) -> bool:
-            return any(page_soup.select_one(f"div#{cid}") is not None
-                       for cid in _BILLING_TABLE_CONTAINERS + ("divTongHopChiPhi",))
+            return page_soup.select_one("#dataTableYeuCau") is not None or any(
+                page_soup.select_one(f"div#{cid}") is not None
+                for cid in _BILLING_TABLE_CONTAINERS + ("divTongHopChiPhi",))
 
         def _collect_billing_tables(page_soup: Any) -> List[Any]:
             found = [t for cid in _BILLING_TABLE_CONTAINERS
@@ -3256,23 +3393,42 @@ def fetch_billing(sess: Optional["EmrHttpSession"], ma_bn: str,
             return [max(tables, key=lambda t: len(t.find_all("tr")))] if tables else []
 
         billing_tables = _collect_billing_tables(soup)
+        ttcp_table = soup.select_one("table#dataTableYeuCau")
 
-        if not billing_tables:
+        # Trang đọc được không phải bảng kê (vd ca Hoàn tất: màn "Sửa chi phí" không mở được) thì bảng
+        # "lớn nhất" ở trên chỉ là bảng bất kỳ → mở Tổng kết → Chi phí bằng Chrome.
+        if ttcp_table is None and (not billing_tables or not _is_billing_page(soup)):
             clicked = _fetch_hchanh_html_by_click(sess, ma_bn, config, "doctor", "billing")
             if clicked and clicked.get("html"):
                 soup = _soup(clicked["html"])
                 billing_tables = _collect_billing_tables(soup)
+                ttcp_table = soup.select_one("table#dataTableYeuCau")
 
         summary = parse_billing_summary(soup)
         if summary:
             base["tong_hop"] = summary
 
-        if not billing_tables:
+        if ttcp_table is not None:
+            # Bảng Tổng kết → Chi phí có cấu trúc cột riêng; KHÔNG đọc bằng bộ đọc 15 cột bên dưới
+            # (bảng lớn nhất trang chính là bảng này → lệch cột).
+            billing_tables = []
+        elif not billing_tables:
             base["_fetch_status"] = "no_table"
             return base
 
         rows_out = []
         tong_bhyt = tong_tt = tong_mien = tong_cong = 0.0
+        if ttcp_table is not None:
+            rows_out = parse_billing_ttcp_rows(ttcp_table)
+            for r in rows_out:
+                tong_cong += r["thanh_tien"]
+                if r["payment_group"] == "bhyt":
+                    tong_bhyt += r["thanh_tien"]
+                elif r["payment_group"] == "self_pay":
+                    tong_tt += r["thanh_tien"]
+                elif r["payment_group"] == "zero":
+                    tong_mien += r["thanh_tien"]
+            base["_source"] = "emr_tong_ket_chi_phi"
 
         for table in billing_tables:
             current_loai_yc = ""

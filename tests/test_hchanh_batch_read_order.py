@@ -126,3 +126,54 @@ def test_short_selenium_error_drops_backtrace():
     assert core._short_selenium_error(raw) == "hết giờ chờ phần tử trên trang EMR"
     other = Exception("Message: no such element\nStacktrace:\n(No symbol) [0x1]")
     assert core._short_selenium_error(other) == "no such element"
+
+
+class FakeMenuDriver:
+    """Tổng kết → Chi phí (onShowTTCP) đổ bảng chi phí ngay trên trang người bệnh (AJAX, không mở tab).
+    find_elements = đi tìm nút để bấm (vd nút "Sửa chi phí" có ghi lịch sử EMR) — không được xảy ra."""
+
+    def __init__(self, has_menu=True):
+        self.has_menu = has_menu
+        self.window_handles = ["main"]
+        self.shown = False
+        self.clicked_button = False
+        self.current_url = "https://emr.example/home.aspx?wpid=benhnhan"
+
+    @property
+    def page_source(self):
+        return PATIENT_PAGE + (BILLING_PAGE if self.shown else "")
+
+    def execute_script(self, script, *args):
+        if "onShowTTCP" in script:
+            assert "OnSuaChiPhi" not in script
+            if not self.has_menu:
+                return False
+            self.shown = True
+            return True
+        if "querySelectorAll" in script and "dsDichVu" in script:
+            return 3 if self.shown else 0
+        return "complete"
+
+    def find_elements(self, by, value):
+        self.clicked_button = True
+        return []
+
+
+def test_billing_opened_from_tong_ket_chi_phi_menu(monkeypatch):
+    monkeypatch.setattr(core, "_selenium_wait_after_action", lambda *a, **k: None, raising=False)
+    driver = FakeMenuDriver()
+    assert core._click_hchanh_action(driver, "billing") is True
+    assert driver.shown
+    assert not driver.clicked_button
+
+
+def test_billing_never_uses_sua_chi_phi_button():
+    import inspect
+    src = inspect.getsource(core._click_hchanh_action)
+    assert "btnSuaChiPhi']" not in src and "OnSuaChiPhi()" not in src
+    assert "OnSuaChiPhi" not in core._OPEN_BILLING_JS
+
+
+def test_billing_menu_missing_falls_back_to_other_ways(monkeypatch):
+    monkeypatch.setattr(core, "_selenium_wait_after_action", lambda *a, **k: None, raising=False)
+    assert core._open_billing_by_js(FakeMenuDriver(has_menu=False)) is None
