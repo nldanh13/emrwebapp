@@ -54,7 +54,9 @@ const { TREATMENT_COST_COLUMNS } = require('./billing_summary');
 //      luôn nằm riêng ở lab_results, không trộn vào các cột snapshot không có đơn vị.
 // v41: analysis_ready thêm chi phí điều trị (cột cost_*): 16 ô Tổng hợp chi phí của EMR và tổng
 //      tự cộng từ dòng bảng kê; nguồn hchanh_billing.csv (phần Chi phí, lấy mặc định).
-const NORMALIZED_SCHEMA_VERSION = 41;
+// v42: medication_orders thêm thuốc từ bảng kê chi phí của đợt (order_action=billed, source=hchanh_billing,
+//      tên + tổng số lượng cả đợt, không có ngày giờ): Lịch sử y lệnh thường chỉ ghi "Dự trù thuốc".
+const NORMALIZED_SCHEMA_VERSION = 42;
 
 const NORMALIZED_COLUMNS = {
   patients: [
