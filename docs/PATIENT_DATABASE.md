@@ -51,7 +51,7 @@ Mỗi khi một lượt thay đổi, `rebuildLinks` tính lại các mối nối
 |---|---|
 | `tai_kham_dung_hen` | Lượt có ngày hẹn → lượt sau gần ngày hẹn nhất, lệch không quá ±3 ngày. Nếu cùng ngày có cả lượt khám và đợt nội trú, lấy lượt khám |
 | `tai_kham_tre_hen` | Không có lượt trong ±3 ngày → lượt đầu tiên sau hạn (quá ngày hẹn + 3 ngày) |
-| `tai_nhap_vien_30` | Đợt nội trú đã ra viện → đợt nội trú kế tiếp bắt đầu trong 30 ngày |
+| `tai_nhap_vien_30` | Đợt nội trú đã ra viện → đợt nội trú kế tiếp bắt đầu trong 30 ngày. Có giờ ở cả giờ ra và giờ vào thì so đến phút: ra viện sáng, nhập lại chiều cùng ngày là tái nhập 0 ngày |
 | `kham_nhap_vien` | Lượt khám có xử trí Nhập viện → đợt nội trú bắt đầu trong 2 ngày |
 
 Trạng thái hẹn tính theo ngày hôm nay, không lưu vào kho:
