@@ -65,6 +65,15 @@ try {
     assert.strictEqual(report.tong_ket.tai_nhap_vien, 1);
   });
 
+  test('Kho từ bản trước (schema 3) mở lại → tự tính lại mối nối tái nhập cùng ngày', () => {
+    const c = patientDb.open();
+    c.prepare("DELETE FROM lien_ket_luot WHERE ma_bn = 'BNA'").run();
+    c.prepare("UPDATE meta SET value = '3' WHERE key = 'schema_version'").run();
+    patientDb.close();
+    const n = patientDb.open().prepare("SELECT COUNT(*) n FROM lien_ket_luot WHERE ma_bn = 'BNA' AND loai = 'tai_nhap_vien_30'").get().n;
+    assert.strictEqual(Number(n), 1);
+  });
+
   test('Vào viện trước giờ ra viện của đợt khác (dữ liệu chồng giờ) → không tính tái nhập', () => {
     patientDb.recordInpatient('BND', { profile: profile('08:00 01/10/2026'), discharge: discharge('16:00 03/10/2026') },
       { from: '2026-10-01', to: '2026-10-03', source: 'hanh_chanh', now: '2026-10-03T17:00:00Z' });

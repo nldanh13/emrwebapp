@@ -22,7 +22,7 @@ const fs = require('fs');
 const path = require('path');
 const { RUNTIME_ROOT } = require('../constants');
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 // Tái khám đúng hẹn: lệch tối đa ±3 ngày so với ngày hẹn. Tái nhập viện: trong 30 ngày sau ra viện.
 const HEN_LECH_TOI_DA = 3;
 const TAI_NHAP_VIEN_NGAY = 30;
@@ -195,8 +195,9 @@ function open() {
   const previous = hadMeta ? Number(db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get()?.value) || 0 : SCHEMA_VERSION;
   db.exec(SCHEMA);
   db.prepare('INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)').run('schema_version', String(SCHEMA_VERSION));
-  // Kho tạo từ bản trước chưa có bảng nối lượt: tính cho toàn bộ người bệnh 1 lần.
-  if (previous < 2) rebuildAllLinks(db);
+  // Tính lại mối nối cho toàn bộ người bệnh 1 lần: bản < 2 chưa có bảng nối lượt; bản < 4 chưa tính
+  // tái nhập viện cùng ngày theo giờ.
+  if (previous < 4) rebuildAllLinks(db);
   return db;
 }
 
