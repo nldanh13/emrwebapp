@@ -89,6 +89,41 @@ function billingTotalsFromPayload(payload) {
   return out;
 }
 
+// Thuốc trong bảng kê: Lịch sử y lệnh EMR thường chỉ ghi "Dự trù thuốc" / "Thực hiện y lệnh thuốc đã có",
+// tên thuốc nằm trong phiếu thuốc (TT) chưa lấy. Bảng kê chi phí có đủ tên + số lượng thuốc đã dùng
+// trong đợt (không có ngày giờ dùng). Cột JSON gọn này đi theo dòng hchanh_billing.csv của đợt.
+const BILLING_DRUGS_COLUMN = 'Thuốc trong bảng kê (JSON)';
+const plainVi = v => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase();
+
+function billingDrugLines(payload) {
+  const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+  const out = [];
+  for (const r of rows) {
+    if (!/\bthuoc\b/.test(plainVi(r?.loai_yc))) continue;
+    const name = String(r?.name || '').trim();
+    if (!name) continue;
+    out.push({
+      name: name.slice(0, 200),
+      qty: Number(r?.sl) || 0,
+      unit: String(r?.dvt || '').trim(),
+      doi_tuong: String(r?.doi_tuong || '').trim(),
+      khoa: String(r?.khoa || '').trim(),
+    });
+  }
+  return out;
+}
+
+function billingDrugLinesFromRawRow(row) {
+  const raw = row?.[BILLING_DRUGS_COLUMN];
+  if (!raw) return [];
+  try {
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list.filter(x => x && x.name) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
 const cellText = v => (v === null || v === undefined ? '' : String(v));
 
 // Cột của dòng thô hchanh_billing.csv (nhãn tiếng Việt như trên EMR).
@@ -129,6 +164,9 @@ module.exports = {
   TREATMENT_COST_COLUMNS,
   billingTotalsFromPayload,
   billingRawFields,
+  BILLING_DRUGS_COLUMN,
+  billingDrugLines,
+  billingDrugLinesFromRawRow,
   billingTotalsFromRawRow,
   treatmentCostFields,
   pickEncounterBilling,

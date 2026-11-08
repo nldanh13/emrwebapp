@@ -24,7 +24,7 @@ const { normalizeSex, extractBirthYear, normalizeLabName, resultOperator, parseN
 const { dedupeRowsByHash, dedupeSurgeryRows, snapshotFinalDatasetIfUnsaved } = require('./dataset_store');
 const { applyVerifiedSurgeryDates, firstSurgeryByEncounter, surgeryForMedicationContext } = require('./encounter_linkage');
 const { evaluateCustomFields } = require('./analysis_config');
-const { TREATMENT_COST_COLUMNS, billingTotalsFromRawRow, pickEncounterBilling, treatmentCostFields } = require('./billing_summary');
+const { TREATMENT_COST_COLUMNS, billingTotalsFromRawRow, pickEncounterBilling, treatmentCostFields, BILLING_DRUGS_COLUMN, billingDrugLinesFromRawRow } = require('./billing_summary');
 const { medicationRowsFromOrderRow, dedupeOrderFields, extractClinicalEvents } = require('./order_note_parser');
 const { hchanhEntryFileStatus } = require('./progress_snapshot');
 const { loadPatientLink, patientLinkPath, applyPatientKeys, savePatientLink } = require('./patient_link');
@@ -699,11 +699,49 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       medicationRowsFromHistory.push({ ...parsed });
     }
   }
+  // Thuốc từ bảng kê chi phí của đợt: tên + tổng số lượng cả đợt, KHÔNG có ngày giờ dùng (để trống,
+  // không đoán). Lịch sử y lệnh thường chỉ ghi "Dự trù thuốc" nên đây là nguồn tên thuốc chính.
+  // Ghép đợt bằng chính dòng bảng kê (cùng cách ghép chi phí điều trị).
+  // Nhiều dòng khoa của cùng một đợt mang cùng một bảng kê: mỗi đợt chỉ lấy một lần. Trong một bảng kê,
+  // cùng thuốc + đơn vị + đối tượng ở nhiều khoa được cộng số lượng thành một dòng.
+  const medicationRowsFromBilling = [];
+  const billingDrugSeen = new Set();
+  for (const row of hchanhBillingTable.rows || []) {
+    const drugs = billingDrugLinesFromRawRow(row);
+    if (!drugs.length) continue;
+    const code = patientCode(row);
+    const encId = contextForRow(ctxMap, row, code).encounter_id || '';
+    const seenKey = `${code}|${encId || firstNonEmpty(row, ['Research key'])}|${row[BILLING_DRUGS_COLUMN]}`;
+    if (billingDrugSeen.has(seenKey)) continue;
+    billingDrugSeen.add(seenKey);
+    const grouped = new Map();
+    for (const d of drugs) {
+      const key = [d.name, d.unit || '', d.doi_tuong || ''].join('|');
+      const g = grouped.get(key) || { ...d, qty: 0 };
+      g.qty += Number(d.qty) || 0;
+      grouped.set(key, g);
+    }
+    const { [BILLING_DRUGS_COLUMN]: _drugs, ...context } = row;
+    for (const d of grouped.values()) {
+      const qty = Math.round((Number(d.qty) || 0) * 1000) / 1000;
+      medicationRowsFromBilling.push({
+        ...context,
+        drug_name_raw: d.name,
+        raw_line: `${d.name} — tổng ${qty ? `${qty} ${d.unit || ''}`.trim() : 'không rõ số lượng'} cả đợt${d.doi_tuong ? ` (${d.doi_tuong})` : ''}`,
+        dose_raw: '',
+        order_action: 'billed',
+        parser_confidence: 'high',
+        source_field: 'billing',
+        source: 'hchanh_billing',
+      });
+    }
+  }
   const medSourceRows = [
     // medication_orders.csv là output chuẩn hóa; không feed lại chính nó để tránh nhân đôi mỗi lần normalize.
     // Chỉ giữ các dòng legacy/raw nếu file cũ chưa có med_order_id và source_run_id.
     ...existingMedRows.filter(r => !r.med_order_id && !r.source_run_id && firstNonEmpty(r, ['drug_name_raw', 'raw_line', 'Tên thuốc', 'Ten thuoc'])),
     ...medicationRowsFromHistory,
+    ...medicationRowsFromBilling,
   ];
   let medicationOrders = medSourceRows.map((row, idx) => {
     const code = patientCode(row);
@@ -747,7 +785,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       ...eventTemporalFields(ctx, rawTime),
       source: firstNonEmpty(row, ['source', 'Nguồn']) || 'hchanh_order_history',
       source_run_id: runId,
-      ...provenanceFromRaw(row, 'hchanh_order_history.csv'),
+      ...provenanceFromRaw(row, row.source === 'hchanh_billing' ? 'hchanh_billing.csv' : 'hchanh_order_history.csv'),
     };
     base.row_hash = stableHash(base);
     base.med_order_id = `med_${base.row_hash || stableHash([idx, base.patient_code])}`;

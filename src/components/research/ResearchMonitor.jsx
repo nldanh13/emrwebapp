@@ -188,6 +188,29 @@ function GroupedHistoryRows({ groups = [], columns, max = 80, unit = 'dòng' }) 
   );
 }
 
+// Thuốc lấy từ bảng kê chi phí: không có ngày giờ dùng, chỉ có tổng số lượng cả đợt.
+const isBilledDrug = row => row?.order_action === 'billed' || row?.source === 'hchanh_billing';
+function medicationTimeCell(row) {
+  if (row?.order_datetime) return row.order_datetime;
+  if (isBilledDrug(row)) return 'Cả đợt (bảng kê)';
+  return row?.order_date || '—';
+}
+function medicationDoseCell(row) {
+  if (row?.dose_raw) return row.dose_raw;
+  if (isBilledDrug(row)) {
+    const m = String(row.raw_line || '').match(/—\s*(.+)$/);
+    return m ? m[1] : '—';
+  }
+  return '—';
+}
+
+// EMR không ghi giờ mổ (hoặc chỉ biết ngày từ danh sách phẫu thuật) thì vẫn hiện ngày, kèm "(chưa rõ giờ)".
+function surgeryStartCell(row) {
+  if (row?.surgery_datetime) return row.surgery_datetime;
+  if (row?.surgery_date) return `${row.surgery_date} (chưa rõ giờ)`;
+  return '—';
+}
+
 function EncounterHistoryCard({ enc, index }) {
   const [expanded, setExpanded] = useState(false);
   const outsideStay = countOutsideStay(enc);
@@ -228,8 +251,8 @@ function EncounterHistoryCard({ enc, index }) {
           </div>
           <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Xét nghiệm ({enc.counts?.labs || 0})</summary><GroupedHistoryRows groups={groupLabRows(enc.labs || [])} max={120} unit="chỉ số" columns={[{key:'encounter_match_method',label:'Giai đoạn',render:periodCell}, {key:'lab_datetime',label:'Thời gian'}, {key:'test_name_raw',label:'Chỉ số'}, {key:'result_raw',label:'KQ'}, {key:'unit',label:'Đơn vị'}]} /></details>
           <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>CĐHA ({enc.counts?.imaging || 0})</summary><GroupedHistoryRows groups={groupImagingRows(enc.imaging || [])} max={80} unit="kết quả" columns={[{key:'encounter_match_method',label:'Giai đoạn',render:periodCell}, {key:'ordered_at',label:'Thời gian'}, {key:'body_region',label:'Vùng'}, {key:'service_name_raw',label:'Dịch vụ'}, {key:'conclusion_text',label:'Kết luận', long:true}]} /></details>
-          <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Thuốc / y lệnh ({enc.counts?.medications || 0})</summary><SmallRowsTable max={120} rows={enc.medications || []} columns={[{key:'encounter_match_method',label:'Giai đoạn',render:periodCell}, {key:'order_datetime',label:'Thời gian'}, {key:'drug_name_raw',label:'Thuốc'}, {key:'dose_raw',label:'Liều'}, {key:'route_norm',label:'Đường',render:row => medicationRouteLabel(row) || '—'}]} /></details>
-          <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Phẫu thuật / thủ thuật ({enc.counts?.surgeries || 0})</summary><SmallRowsTable max={60} rows={enc.surgeries || []} columns={[{key:'encounter_match_method',label:'Giai đoạn',render:periodCell}, {key:'surgery_datetime',label:'Bắt đầu'}, {key:'surgery_end_datetime',label:'Kết thúc'}, {key:'surgery_name',label:'Tên PT/TT'}, {key:'surgery_method',label:'Phương pháp'}, {key:'anesthesia_method',label:'Vô cảm'}, {key:'primary_surgeon',label:'PTV chính'}, {key:'preop_icd10',label:'ICD trước'}, {key:'postop_icd10',label:'ICD sau'}, {key:'surgery_sequence',label:'Trình tự',long:true}]} /></details>
+          <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Thuốc / y lệnh ({enc.counts?.medications || 0})</summary><SmallRowsTable max={120} rows={enc.medications || []} columns={[{key:'encounter_match_method',label:'Giai đoạn',render:periodCell}, {key:'order_datetime',label:'Thời gian',render:medicationTimeCell}, {key:'drug_name_raw',label:'Thuốc'}, {key:'dose_raw',label:'Liều / số lượng',render:medicationDoseCell}, {key:'route_norm',label:'Đường',render:row => medicationRouteLabel(row) || '—'}]} /></details>
+          <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Phẫu thuật / thủ thuật ({enc.counts?.surgeries || 0})</summary><SmallRowsTable max={60} rows={enc.surgeries || []} columns={[{key:'encounter_match_method',label:'Giai đoạn',render:periodCell}, {key:'surgery_datetime',label:'Bắt đầu',render:surgeryStartCell}, {key:'surgery_end_datetime',label:'Kết thúc'}, {key:'surgery_name',label:'Tên PT/TT'}, {key:'surgery_method',label:'Phương pháp'}, {key:'anesthesia_method',label:'Vô cảm'}, {key:'primary_surgeon',label:'PTV chính'}, {key:'preop_icd10',label:'ICD trước'}, {key:'postop_icd10',label:'ICD sau'}, {key:'surgery_sequence',label:'Trình tự',long:true}]} /></details>
         </div>
       )}
     </div>
@@ -502,5 +525,8 @@ export {
   MiniPartStatus,
   ResearchMonitorTable,
   EncounterHistoryCard,
+  surgeryStartCell,
+  medicationTimeCell,
+  medicationDoseCell,
   ResearchOperationDashboard,
 };

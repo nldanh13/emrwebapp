@@ -177,9 +177,14 @@ function withRate(r) {
 }
 
 // archive / emr: { encounter, labs, imaging, medications, surgeries } của MỘT đợt.
+// Thuốc lấy từ bảng kê chi phí (không có ngày giờ) không nằm trong lần đối chiếu: lần lấy lại để
+// đối chiếu chỉ mở Lịch sử y lệnh, không mở bảng kê, nên nếu so sẽ báo "kho thừa" sai.
+const isBilledDrug = r => String(r?.order_action || '') === 'billed' || String(r?.source || '') === 'hchanh_billing';
+const comparableRows = (kind, rows) => (kind === 'medications' ? (rows || []).filter(r => !isBilledDrug(r)) : (rows || []));
+
 function compareCase(archive = {}, emr = {}) {
   const kinds = [withRate(compareEncounter(archive.encounter, emr.encounter))];
-  for (const kind of KINDS) kinds.push(withRate(compareRows(kind, archive[kind] || [], emr[kind] || [])));
+  for (const kind of KINDS) kinds.push(withRate(compareRows(kind, comparableRows(kind, archive[kind]), comparableRows(kind, emr[kind]))));
   const totals = kinds.reduce((s, r) => ({
     matched: s.matched + r.matched, mismatched: s.mismatched + r.mismatched,
     archive_only: s.archive_only + r.archive_only, emr_only: s.emr_only + r.emr_only,

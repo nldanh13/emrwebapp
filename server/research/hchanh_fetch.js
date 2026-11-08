@@ -17,7 +17,7 @@ const { runScript, fmtPyError } = require('../services/python_runner');
 const { PY_TIMEOUT_MS } = require('../constants');
 const fs = require('fs');
 const { HCHANH_CONTENT_VERSIONS, ORDER_HISTORY_FETCH_WINDOW_VERSION, hchanhPayloadComplete, hchanhPayloadContentVersion } = require('./fetch_versions');
-const { BILLING_SUMMARY_FIELDS, BILLING_ITEMIZED_FIELDS } = require('./billing_summary');
+const { BILLING_SUMMARY_FIELDS, BILLING_ITEMIZED_FIELDS, BILLING_DRUGS_COLUMN } = require('./billing_summary');
 
 const BILLING_RAW_COLUMNS = [...BILLING_SUMMARY_FIELDS, ...BILLING_ITEMIZED_FIELDS].map(f => f.label);
 
@@ -304,7 +304,7 @@ async function fetchHchanhForResearchRun(ctx, runDir, {
     writeCsvUnion(path.join(runPath, 'hchanh_surgery.csv'), surgeryRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Ngày vào viện', 'Ngày ra viện', 'Ngày phẫu thuật', 'Kết thúc phẫu thuật', 'Tên phẫu thuật', 'Đối tượng DV', 'Phương pháp phẫu thuật', 'PPVC', 'Phân loại PT', 'Trạng thái', 'ICD9', 'Chẩn đoán trước mổ', 'ICD10 trước mổ', 'Chẩn đoán sau mổ', 'ICD10 sau mổ', 'Mô tả PPPT', 'Trình tự phẫu thuật', 'Phẫu thuật viên chính', 'Bác sĩ gây mê chính', 'Phụ mổ 1', 'Phụ mổ 2', 'Điều dưỡng dụng cụ', 'KTV phụ mê', 'Diễn biến bệnh', 'Dặn dò sau PT', 'Bệnh kèm sau PT', 'Người hoàn tất', 'Phòng mổ', 'Research key']);
     writeCsvUnion(path.join(runPath, 'hchanh_order_history.csv'), orderRows, ['Mã NC', 'Mã BN', 'Họ tên', 'TG y lệnh', 'Ngày', 'Bác sĩ', 'Diễn biến', 'Tên y lệnh', 'Y lệnh khác', 'KQ', 'Trạng thái', 'Research key']);
     if (billingRows.length || wantedFiles.includes('billing')) {
-      writeCsvUnion(path.join(runPath, 'hchanh_billing.csv'), billingRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Ngày vào viện', 'Ngày ra viện', ...BILLING_RAW_COLUMNS, 'Research key']);
+      writeCsvUnion(path.join(runPath, 'hchanh_billing.csv'), billingRows, ['Mã NC', 'Mã BN', 'Họ tên', 'Ngày vào viện', 'Ngày ra viện', ...BILLING_RAW_COLUMNS, BILLING_DRUGS_COLUMN, 'Research key']);
     }
   };
 

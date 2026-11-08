@@ -12,7 +12,7 @@ const { mergeSameStayRows, mergeRowsPreferFilled } = require('./source_merge');
 const fs = require('fs');
 const { rowResearchCode } = require('./progress_snapshot');
 const { nowIso } = require('./store_paths');
-const { billingTotalsFromPayload, billingRawFields } = require('./billing_summary');
+const { billingTotalsFromPayload, billingRawFields, BILLING_DRUGS_COLUMN, billingDrugLines } = require('./billing_summary');
 
 function hchanhProfileRow(payload, meta = {}) {
   const p = payload || {};
@@ -350,6 +350,7 @@ function hchanhFetchOutputToRows(output, sourceRow, sourceRunId = '') {
       'Mã BN': meta.ma_bn,
       'Họ tên': meta.ho_ten || '',
       ...billingRawFields(billingTotals),
+      [BILLING_DRUGS_COLUMN]: (() => { const d = billingDrugLines(payload.billing); return d.length ? JSON.stringify(d) : ''; })(),
       'Nguồn': 'hchanh_auto_billing',
     }, meta, sourceRunId));
   }
