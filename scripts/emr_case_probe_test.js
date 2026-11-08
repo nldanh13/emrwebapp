@@ -31,13 +31,13 @@ test('kiểm tra ca nhập vào: tối đa 3 ca, không trùng, mã và ngày h�
 });
 
 test('đếm dữ liệu: bỏ khóa kỹ thuật, đếm dòng trong danh sách và ô có chữ', () => {
-  const m = probe.measurePayload({
+  const m = probe.measurePayload('rows', {
     _fetch_status: 'ok', ma_bn: 'X', matched_inpatient_status: 'Hoàn tất',
     ho_ten: 'A', chan_doan: '', tong_tien: 0,
     rows: [1, 2, 3], groups: { dich_vu: [1], thuoc: [1, 2] },
   });
-  assert.deepStrictEqual(m, { lists: { rows: 3, 'groups.dich_vu': 1, 'groups.thuoc': 2 }, rows: 6, fields: 2 });
-  assert.deepStrictEqual(probe.measurePayload(null), { lists: {}, rows: 0, fields: 0 });
+  assert.deepStrictEqual(m, { lists: { rows: 3, 'groups.dich_vu': 1, 'groups.thuoc': 2 }, rows: 3, fields: 2 });
+  assert.deepStrictEqual(probe.measurePayload('rows', null), { lists: {}, rows: 0, fields: 0 });
 });
 
 test('đánh giá màn hình: đọc được, hỏng, chưa chạy, không có dữ liệu', () => {
@@ -126,6 +126,53 @@ test('chạy trọn một lượt với worker giả: đúng tham số, so với
   assert.ok(!fs.existsSync(path.join(dir, 'emr_case_probe')), 'dữ liệu bệnh án thô phải bị xoá');
   assert.ok(!JSON.stringify(report).includes('"ho_ten"'), 'báo cáo chỉ giữ số đếm, không giữ nội dung bệnh án');
   assert.strictEqual(probe.readReport(dir).status, 'done');
+});
+
+test('đếm đúng danh sách chính của từng màn hình, không cộng danh sách phụ', () => {
+  const surgery = probe.judgeScreen(screen('surgery'), {
+    _fetch_status: 'ok', surgeries: [1], phan_loai_pt_list: [1], order_history_surgery_markers: [1, 2, 3],
+    ward_admissions: [1, 2, 3], postop_ward_admissions: [1],
+  }, null);
+  assert.strictEqual(surgery.rows, 1);
+  const orders = probe.judgeScreen(screen('order_history'), { _fetch_status: 'ok', rows: new Array(51).fill(1), khoa_list: [1, 2, 3], ward_admissions: [1, 2, 3] }, null);
+  assert.strictEqual(orders.rows, 51);
+  assert.strictEqual(probe.judgeScreen(screen('cls'), { _fetch_status: 'ok', results: [1, 2] }, null).rows, 2);
+  // Hồ sơ / ra viện không có danh sách chính: chỉ đếm ô có dữ liệu (danh sách khác rỗng tính là một ô).
+  const discharge = probe.judgeScreen(screen('discharge'), { _fetch_status: 'ok', ngay_ra: '09/05/2026', benh_kem: [1, 2], chan_doan_vao_list: [] }, null);
+  assert.deepStrictEqual([discharge.rows, discharge.fields, discharge.verdict], [0, 2, 'ok']);
+});
+
+test('ngày vào viện dạng "HH:MM dd-mm-yyyy" của EMR vẫn tìm được đợt trong kho để so', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'case_probe_'));
+  const cases = probe.normalizeCases([{ ma_bn: 'BN9' }]);
+  probe.beginReport(dir, cases);
+  const runScript = async (_s, args) => {
+    fs.writeFileSync(args[args.indexOf('--out') + 1], JSON.stringify({
+      BN9: { profile: { _fetch_status: 'ok', ngay_vao_vien: '08:00 20-09-2026' }, billing: { _fetch_status: 'error', _reason: 'not_billing_page', rows: [] } },
+    }));
+    return { code: 0 };
+  };
+  const lookups = [];
+  const report = await probe.runCaseProbe(dir, cases, {
+    runScript, findStored: (m, d) => { lookups.push(d); return { billing: { rows: [1, 2, 3] } }; },
+  });
+  assert.deepStrictEqual(lookups, ['2026-09-20']);
+  const billing = report.cases[0].screens.find(s => s.key === 'billing');
+  assert.strictEqual(billing.stored_rows, 3);
+  assert.strictEqual(report.cases[0].compared_with_store, true);
+});
+
+test('không có ngày vào thì dùng ngày ra viện để tìm đợt trong kho', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'case_probe_'));
+  const cases = probe.normalizeCases([{ ma_bn: 'BN8' }]);
+  probe.beginReport(dir, cases);
+  const runScript = async (_s, args) => {
+    fs.writeFileSync(args[args.indexOf('--out') + 1], JSON.stringify({ BN8: { discharge: { _fetch_status: 'ok', ngay_ra: '10:15 25-09-2026' } } }));
+    return { code: 0 };
+  };
+  const lookups = [];
+  await probe.runCaseProbe(dir, cases, { runScript, findStored: (m, d) => { lookups.push(d); return null; } });
+  assert.deepStrictEqual(lookups, ['2026-09-25']);
 });
 
 test('worker không khởi động được / lần dò bị bỏ dở được báo rõ', async () => {

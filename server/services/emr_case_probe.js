@@ -26,16 +26,18 @@ const PROGRESS_FILE = 'hchanh_auto_progress.json';
 const STATUS_INPATIENT = 'Đang thực hiện';
 const STATUS_DISCHARGED = 'Hoàn tất';
 
-// Thứ tự = thứ tự worker đi qua các màn hình.
+// Thứ tự = thứ tự worker đi qua các màn hình. list = danh sách chính của màn hình (đếm "dòng");
+// các danh sách phụ (khoa_list, ward_admissions, marker PT...) chỉ để xem chi tiết, không cộng vào.
+// Hồ sơ / ra viện không có danh sách chính: chỉ đếm ô có dữ liệu.
 const PROBE_SCREENS = [
-  { key: 'profile', label: 'Hồ sơ người bệnh', where: 'Trang bác sĩ / điều dưỡng của người bệnh' },
-  { key: 'discharge', label: 'Ra viện / Xử trí', where: 'Nhóm Ra viện → Xử trí' },
-  { key: 'billing', label: 'Bảng kê chi phí', where: 'Bảng kê chi phí (Dịch vụ / Thuốc / Vật tư)' },
-  { key: 'bed_days', label: 'Ngày giường', where: 'Chăm sóc → Ngày giường' },
-  { key: 'order_history', label: 'Lịch sử y lệnh', where: 'Lịch sử y lệnh (hiển thị Tất cả)' },
-  { key: 'surgery', label: 'Phẫu thuật', where: 'Danh sách phẫu thuật → Chi tiết phẫu thuật' },
-  { key: 'cls', label: 'Kết quả cận lâm sàng', where: 'Kết quả → tab Chẩn đoán hình ảnh' },
-  { key: 'documents', label: 'Giấy tờ kèm theo', where: 'Giấy tờ / tài liệu kèm theo' },
+  { key: 'profile', list: null, label: 'Hồ sơ người bệnh', where: 'Trang bác sĩ / điều dưỡng của người bệnh' },
+  { key: 'discharge', list: null, label: 'Ra viện / Xử trí', where: 'Nhóm Ra viện → Xử trí' },
+  { key: 'billing', list: 'rows', label: 'Bảng kê chi phí', where: 'Bảng kê chi phí (Dịch vụ / Thuốc / Vật tư)' },
+  { key: 'bed_days', list: 'rows', label: 'Ngày giường', where: 'Chăm sóc → Ngày giường' },
+  { key: 'order_history', list: 'rows', label: 'Lịch sử y lệnh', where: 'Lịch sử y lệnh (hiển thị Tất cả)' },
+  { key: 'surgery', list: 'surgeries', label: 'Phẫu thuật', where: 'Danh sách phẫu thuật → Chi tiết phẫu thuật' },
+  { key: 'cls', list: 'results', label: 'Kết quả cận lâm sàng', where: 'Kết quả → tab Chẩn đoán hình ảnh' },
+  { key: 'documents', list: 'rows', label: 'Giấy tờ kèm theo', where: 'Giấy tờ / tài liệu kèm theo' },
 ];
 const PROBE_FILES = PROBE_SCREENS.map(s => s.key);
 
@@ -52,10 +54,11 @@ function cleanCode(value) {
   return /^[A-Za-z0-9._-]{1,40}$/.test(code) ? code : '';
 }
 
-// Lấy ngày trong chuỗi có kèm giờ: "13:00 28/09/2026", "28/09/2026 13:00", "2026-09-28".
+// Lấy ngày trong chuỗi có kèm giờ: "13:00 28/09/2026", "08:00 20-09-2026" (dạng EMR trả ở hồ sơ),
+// "28/09/2026 13:00", "2026-09-28".
 function dayOf(value) {
   const s = text(value);
-  let m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  let m = s.match(/(?:^|\D)(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?!\d)/);
   if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
   m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
   return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
@@ -97,15 +100,21 @@ function normalizeCases(cases) {
   });
 }
 
-/** Đếm dữ liệu thật trong một phần output của worker: số dòng trong các danh sách + số ô có chữ. */
-function measurePayload(data) {
+/**
+ * Đếm dữ liệu thật trong một phần output của worker.
+ * rows = số dòng của danh sách chính (listKey); fields = số ô có chữ, kể cả danh sách khác rỗng ở
+ * màn hình không có danh sách chính. lists = mọi danh sách và độ dài, để xem chi tiết.
+ */
+function measurePayload(listKey, data) {
   const lists = {};
   let fields = 0;
   if (!data || typeof data !== 'object' || Array.isArray(data)) return { lists, rows: 0, fields: 0 };
   for (const [key, value] of Object.entries(data)) {
     if (key.startsWith('_') || META_KEYS.has(key)) continue;
-    if (Array.isArray(value)) lists[key] = value.length;
-    else if (value && typeof value === 'object') {
+    if (Array.isArray(value)) {
+      lists[key] = value.length;
+      if (!listKey && value.length) fields += 1;
+    } else if (value && typeof value === 'object') {
       for (const [subKey, sub] of Object.entries(value)) {
         if (Array.isArray(sub)) lists[`${key}.${subKey}`] = sub.length;
       }
@@ -113,7 +122,7 @@ function measurePayload(data) {
       fields += 1;
     }
   }
-  const rows = Object.values(lists).reduce((a, b) => a + b, 0);
+  const rows = listKey && Array.isArray(data[listKey]) ? data[listKey].length : 0;
   return { lists, rows, fields };
 }
 
@@ -138,8 +147,8 @@ function brokenMessage(status, data) {
  */
 function judgeScreen(screen, fresh, stored) {
   const status = fetchStatus(fresh);
-  const got = measurePayload(fresh);
-  const before = stored ? measurePayload(stored) : null;
+  const got = measurePayload(screen.list, fresh);
+  const before = stored ? measurePayload(screen.list, stored) : null;
   const base = {
     key: screen.key, label: screen.label, where: screen.where, fetch_status: status,
     rows: got.rows, fields: got.fields, lists: got.lists,
@@ -315,7 +324,9 @@ async function runCaseProbe(runtimeDir, cases, { headless = true, runScript, fin
     const fresh = outputs[c.ma_bn] || null;
     let stored = null;
     if (fresh && typeof findStored === 'function') {
-      const day = dayOf(fresh.profile?.ngay_vao_vien || fresh.profile?.ngay_vao) || c.admission;
+      // Ngày nào trong đợt cũng tìm được đợt: ưu tiên ngày vào, rồi ngày người dùng nhập, rồi ngày ra viện.
+      const day = dayOf(fresh.profile?.ngay_vao_vien || fresh.profile?.ngay_vao) || c.admission
+        || dayOf(fresh.discharge?.ngay_ra) || c.discharge;
       try { stored = day ? findStored(c.ma_bn, day) : null; } catch (_) { stored = null; }
     }
     return summarizeCase(c, fresh, stored);
