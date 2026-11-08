@@ -22,6 +22,7 @@ const R = research._test;
 const billing = require('../server/research/billing_summary');
 const { hchanhFetchOutputToRows } = require('../server/research/research_source');
 const collection = require('../server/research/collection');
+const { HCHANH_CONTENT_VERSIONS } = require('../server/research/fetch_versions');
 const { readCsvTable } = require('../server/research/table_io');
 const { NORMALIZED_COLUMNS } = require('../server/research/normalized_schema');
 
@@ -121,7 +122,7 @@ test('Sổ thu thập: lượt cũ chưa có Chi phí chỉ lấy bổ sung ph�
   const src = { 'Research key': 'k1', 'Mã BN': '601', 'Mã NC': 'NC1', 'T/G vào': '08:00 01/03/2026' };
   const at = '2026-03-06T00:00:00Z';
   const okFile = (rows, extra = {}) => ({ fetch_status: 'ok', rows, at, ...extra });
-  const fileStatus = { profile: okFile(1, { payload_version: 2 }), discharge: okFile(1), surgery: okFile(0) };
+  const fileStatus = { profile: okFile(1, { payload_version: HCHANH_CONTENT_VERSIONS.profile }), discharge: okFile(1), surgery: okFile(0) };
   const build = extra => collection.buildLedger({
     sourceRows: [src],
     xnProgress: {},
@@ -130,6 +131,9 @@ test('Sổ thu thập: lượt cũ chưa có Chi phí chỉ lấy bổ sung ph�
   const old = collection.planCollection(build({}), { parts: ['profile', 'discharge', 'surgery', 'billing'] });
   assert.deepStrictEqual(old.tasks.map(t => t.parts), [['billing']]);
   const done = build({ billing: okFile(1, { payload_version: 2 }) });
+  // Bảng kê mức cũ (2) có dòng chi tiết thì giữ; bảng kê mức cũ 0 dòng (đọc nhầm trang) thì lấy lại.
+  const emptyOld = build({ billing: okFile(0, { payload_version: 2 }) });
+  assert.deepStrictEqual(collection.planCollection(emptyOld, { parts: ['profile', 'discharge', 'surgery', 'billing'] }).tasks.map(t => t.parts), [['billing']]);
   assert.strictEqual(done.encounters.k1.parts.billing.status, 'ok');
   assert.strictEqual(collection.planCollection(done, { parts: ['profile', 'discharge', 'surgery', 'billing'] }).tasks.length, 0);
 });

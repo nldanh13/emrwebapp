@@ -871,7 +871,10 @@ function staleReason(enc, key) {
     return 'parser_migration';
   }
   if (HCHANH_CONTENT_VERSIONS[key] && Number(p.payload_version || 0) < HCHANH_CONTENT_VERSIONS[key]) {
-    return 'content_migration';
+    // Bảng kê mức 2 đã có dòng chi tiết là đã đọc đúng trang bảng kê: không lấy lại. Chỉ bản 0 dòng
+    // (có thể đọc nhầm trang người bệnh trước khi bảng kê mở) mới phải lấy lại.
+    const billingAlreadyRead = key === 'billing' && Number(p.payload_version || 0) >= 2 && Number(p.rows || 0) > 0;
+    if (!billingAlreadyRead) return 'content_migration';
   }
   if ((Number(p.seen_seq) || 0) < (Number(enc.change_seq) || 0)) return 'changed';
   if (key === 'profile' && (Number(p.seen_demo_seq) || 0) < (Number(enc.demo_seq) || 0)) return 'changed';

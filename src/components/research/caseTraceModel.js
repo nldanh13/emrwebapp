@@ -17,6 +17,7 @@ const STATUS_LABELS = {
   error: ['Lỗi', 'error'],
   fatal: ['Lỗi', 'error'],
   incomplete: ['Chưa xong', 'error'],
+  pending_refetch: ['Chưa tới lượt, lần sau lấy tiếp', 'warn'],
 };
 
 // Thẻ lỗi của worker → câu tiếng Việt nói thẳng chuyện gì xảy ra.
@@ -38,6 +39,15 @@ const ERROR_HINTS = {
 
 const txt = v => (v == null ? '' : String(v).replace(/\s+/g, ' ').trim());
 
+// Vết cũ ghi cả tên file code / trường dữ liệu vào ô màn hình (vd "server/routes/research.js",
+// "output.order_history.rows"): đó không phải màn hình EMR, không hiện dưới nhãn "Màn hình EMR".
+function emrScreen(value) {
+  const s = txt(value);
+  if (!s) return '';
+  if (/^(server|worker|src|research)\//.test(s) || /\.(js|py|json|csv|txt)\b/i.test(s) || /^output\./.test(s)) return '';
+  return s;
+}
+
 function stepTone(tag) {
   const t = txt(tag).toUpperCase();
   if (t.startsWith('ERROR') || t === 'FETCH.NO_URL') return 'error';
@@ -54,7 +64,7 @@ export function buildCaseTraceView(cases = []) {
     const events = Array.isArray(c.events) ? c.events : [];
     const steps = events
       // Bước chỉ đánh dấu bắt đầu/kết thúc mà không vào màn hình nào thì bỏ cho gọn.
-      .filter(ev => txt(ev.screen) || txt(ev.sees) || txt(ev.takes) || stepTone(ev.tag) !== 'ok')
+      .filter(ev => emrScreen(ev.screen) || txt(ev.sees) || txt(ev.takes) || stepTone(ev.tag) !== 'ok')
       .map(ev => {
         const tone = stepTone(ev.tag);
         const tag = txt(ev.tag).toUpperCase();
@@ -63,7 +73,7 @@ export function buildCaseTraceView(cases = []) {
           tone,
           step: txt(ev.step),
           hint: tone === 'error' ? (ERROR_HINTS[tag] || '') : '',
-          screen: txt(ev.screen),
+          screen: emrScreen(ev.screen),
           sees: txt(ev.sees),
           takes: txt(ev.takes),
           writes: txt(ev.writes),

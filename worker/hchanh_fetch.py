@@ -758,11 +758,27 @@ def _selenium_click_js(driver: Any, element: Any) -> None:
         driver.execute_script("arguments[0].click();", element)
 
 
+BILLING_PAGE_MARKERS = ('id="dsDichVu"', 'id="dsThuoc"', 'id="dsVatTu"', 'id="divTongHopChiPhi"')
+_BILLING_ROWS_JS = (
+    "return document.querySelectorAll('#dsDichVu table tr td, #dsThuoc table tr td, #dsVatTu table tr td').length;"
+)
+
+
+def _billing_cells_loaded(driver: Any) -> int:
+    try:
+        return int(driver.execute_script(_BILLING_ROWS_JS) or 0)
+    except Exception:
+        return 0
+
+
 def _hchanh_action_markers(action: str) -> List[str]:
     act = str(action or "").strip().lower()
     return {
         "documents": ["divContentHSKT", "GetUrlBienBan", "Giấy tờ kèm theo", "GiayToKemTheo"],
-        "billing": ["btnSuaChiPhi", "Tổng", "BHYT", "Viện phí"],
+        # Bảng kê: KHÔNG chờ theo "btnSuaChiPhi"/"Tổng"/"BHYT" — các chữ đó có sẵn trên trang người
+        # bệnh trước khi bấm, nên trước đây đọc trang ngay lúc chưa mở bảng kê và ca nào cũng ra 0 dòng.
+        # Chờ đúng các khối của trang bảng kê (dịch vụ / thuốc / vật tư / tổng hợp chi phí).
+        "billing": list(BILLING_PAGE_MARKERS),
         # Với bed_days không được chờ theo chữ "Buồng giường" hoặc id btnBG vì
         # các marker đó đã có sẵn ở menu trước khi click. Phải chờ vùng kết quả
         # sau AJAX: div#vertical-timeline / tiêu đề "Thông tin buồng giường".
@@ -797,6 +813,12 @@ def _wait_for_hchanh_action_content(driver: Any, action: str, timeout: float = 1
         try:
             html = getattr(driver, "page_source", "") or ""
             if _has_hchanh_action_content(driver, action):
+                if str(action or "").strip().lower() == "billing":
+                    # Khung bảng kê có trước, dòng dịch vụ/thuốc đổ vào sau (AJAX): chờ thêm tới khi
+                    # có ô dữ liệu, tối đa 8 giây. Bảng kê thật sự trống vẫn trả True để ghi nhận.
+                    rows_deadline = time.time() + 8.0
+                    while time.time() < rows_deadline and _billing_cells_loaded(driver) == 0:
+                        time.sleep(0.35)
                 return True
             if not _hchanh_action_markers(action) and len(html) != last_len:
                 return True
@@ -2111,6 +2133,54 @@ def _read_admission_vitals_fields(driver: Any, mapping: Dict[str, str], timeout:
     return {key: vals.get(field_id, "") for key, field_id in mapping.items()}
 
 
+ADMISSION_LINK_MISSING_MSG = "không thấy mục \"Phiếu vào viện\" trên trang điều dưỡng sau khi tải lại (bỏ qua sinh hiệu vào viện của ca này)"
+_ADMISSION_LINK_XPATH = "//a[contains(normalize-space(.), 'Phiếu vào viện')]"
+
+
+def _short_selenium_error(e: Any) -> str:
+    """Lỗi Selenium gọn một dòng, bỏ phần "Stacktrace"/backtrace của ChromeDriver."""
+    name = type(e).__name__
+    msg = str(getattr(e, "msg", None) or e or "")
+    msg = re.split(r"\n\s*(?:Stacktrace|Symbols not available|Backtrace)", msg, maxsplit=1)[0]
+    msg = re.sub(r"^\s*Message:\s*", "", msg).strip().splitlines()[0:1]
+    text = msg[0].strip() if msg else ""
+    if name == "TimeoutException" and not text:
+        return "hết giờ chờ phần tử trên trang EMR"
+    return (text or name)[:200]
+
+
+def _open_nursing_page(driver: Any, nursing_url: str, force: bool = False) -> None:
+    if not nursing_url:
+        return
+    try:
+        driver.switch_to.default_content()
+    except Exception:
+        pass
+    current = str(getattr(driver, "current_url", "") or "")
+    if force or current != nursing_url:
+        driver.get(nursing_url)
+        time.sleep(0.8)
+
+
+def _find_admission_form_link(driver: Any, timeout: float = 8.0) -> Any:
+    """Tìm mục "Phiếu vào viện" (chữ có thể kèm khoảng trắng/biểu tượng). Không thấy thì trả None."""
+    deadline = time.time() + max(0.5, float(timeout or 8.0))
+    while True:
+        try:
+            from selenium.webdriver.common.by import By  # type: ignore
+            for el in driver.find_elements(By.XPATH, _ADMISSION_LINK_XPATH) or []:
+                try:
+                    if el.is_displayed():
+                        return el
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        if time.time() >= deadline:
+            return None
+        time.sleep(0.3)
+
+
 def _read_research_admission_vitals_by_click(
     sess: Optional["EmrHttpSession"],
     ma_bn: str,
@@ -2163,15 +2233,12 @@ def _read_research_admission_vitals_by_click(
         from selenium.webdriver.support import expected_conditions as EC  # type: ignore
 
         # Đảm bảo đang ở đúng hồ sơ điều dưỡng của BN hiện tại trước khi thao tác.
+        # Trước đây chỉ mở lại trang khi URL không chứa "dieuduongdraw". Nhưng sau khi đọc bảng kê /
+        # y lệnh (bấm menu, nội dung đổi bằng AJAX) URL vẫn giữ nguyên, nên trang đang hiện bảng kê,
+        # không còn mục "Phiếu vào viện" → chờ 8 giây rồi lỗi ở mọi ca. Nay luôn mở lại đúng link mắt
+        # điều dưỡng của người bệnh này trước khi tìm mục.
         nursing_url = _t((ctx.get("links") or {}).get("nursing"))
-        if nursing_url:
-            try:
-                driver.switch_to.default_content()
-            except Exception:
-                pass
-            if "wpid=dieuduongdraw" not in str(getattr(driver, "current_url", "") or "").lower():
-                driver.get(nursing_url)
-                time.sleep(0.8)
+        _open_nursing_page(driver, nursing_url)
 
         # Bước iframe theo recorder: chỉ bấm khi đúng panel tồn tại.
         try:
@@ -2207,9 +2274,16 @@ def _read_research_admission_vitals_by_click(
             driver.switch_to.default_content()
         except Exception:
             pass
-        link = WebDriverWait(driver, 8).until(
-            EC.element_to_be_clickable((By.LINK_TEXT, "Phiếu vào viện"))
-        )
+        link = _find_admission_form_link(driver, timeout=8)
+        if link is None and nursing_url:
+            # Thử lại một lần sau khi tải lại trang điều dưỡng (trang có thể chưa vẽ xong menu).
+            _open_nursing_page(driver, nursing_url, force=True)
+            link = _find_admission_form_link(driver, timeout=8)
+        if link is None:
+            out["_admission_vitals_status"] = "no_link"
+            out["_admission_vitals_error"] = ADMISSION_LINK_MISSING_MSG
+            print(f"WARN [research-admission] {ma_bn}: {ADMISSION_LINK_MISSING_MSG}", file=sys.stderr)
+            return out
         try:
             link.click()
         except Exception:
@@ -2239,8 +2313,11 @@ def _read_research_admission_vitals_by_click(
         )
     except Exception as e:
         out["_admission_vitals_status"] = "error"
-        out["_admission_vitals_error"] = str(e)
-        print(f"WARN [research-admission] {ma_bn}: không đọc được Phiếu vào viện: {e}", file=sys.stderr)
+        out["_admission_vitals_error"] = _short_selenium_error(e)
+        print(
+            f"WARN [research-admission] {ma_bn}: không đọc được Phiếu vào viện: {_short_selenium_error(e)}",
+            file=sys.stderr,
+        )
         try:
             driver.switch_to.default_content()
         except Exception:
@@ -2394,6 +2471,8 @@ def fetch_profile(sess: Optional["EmrHttpSession"], ma_bn: str,
                 if vitals.get(key) not in (None, ""):
                     base[key] = vitals.get(key)
             base["_admission_vitals_status"] = vitals.get("_admission_vitals_status", "")
+            # Đánh dấu bản đọc sau khi sửa lỗi "không thấy Phiếu vào viện" (xem fetch_versions.js).
+            base["_admission_vitals_read"] = 2
             if vitals.get("_admission_vitals_error"):
                 base["_admission_vitals_error"] = vitals.get("_admission_vitals_error")
 
@@ -3050,6 +3129,25 @@ def parse_billing_summary(page_soup: Any) -> Dict[str, Optional[float]]:
 
 # ── Fetcher: billing (bảng kê chi phí) ───────────────────────────────────────
 
+def _billing_fetch_status(rows: List[Dict[str, Any]], tong_hop: Dict[str, Any], is_billing_page: bool) -> str:
+    """Trạng thái thật của 1 lần đọc bảng kê.
+    - Có dòng → 'ok'.
+    - Không phải trang bảng kê (vd. đọc nhầm trang người bệnh vì chưa mở xong) → 'not_billing_page'.
+    - Khối Tổng hợp chi phí có tiền nhưng 0 dòng chi tiết → 'not_loaded' (dòng chưa đổ xong).
+    - Trang bảng kê thật, không có dòng và tổng = 0 → 'empty'.
+    Trước đây mọi trường hợp 0 dòng đều ghi 'ok', nên lỗi đọc nhầm trang bị coi là "Lấy xong"."""
+    if rows:
+        return "ok"
+    if not is_billing_page:
+        return "not_billing_page"
+    total = 0.0
+    try:
+        total = float((tong_hop or {}).get("tong_chi_phi") or 0)
+    except Exception:
+        total = 0.0
+    return "not_loaded" if total > 0 else "empty"
+
+
 def fetch_billing(sess: Optional["EmrHttpSession"], ma_bn: str,
                   link_map: Dict[str, str], config: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -3143,6 +3241,10 @@ def fetch_billing(sess: Optional["EmrHttpSession"], ma_bn: str,
         # đọc div#dsDichVu nên bỏ sót toàn bộ dòng thuốc/VTYT của bảng kê, khiến
         # tong_cong/tong_bhyt thiếu và Tầng 5/6 BHYT pre-audit không có gì để soi.
         _BILLING_TABLE_CONTAINERS = ("dsDichVu", "dsThuoc", "dsVatTu")
+
+        def _is_billing_page(page_soup: Any) -> bool:
+            return any(page_soup.select_one(f"div#{cid}") is not None
+                       for cid in _BILLING_TABLE_CONTAINERS + ("divTongHopChiPhi",))
 
         def _collect_billing_tables(page_soup: Any) -> List[Any]:
             found = [t for cid in _BILLING_TABLE_CONTAINERS
@@ -3254,7 +3356,19 @@ def fetch_billing(sess: Optional["EmrHttpSession"], ma_bn: str,
         base["tong_tu_tuc"] = round(tong_tt,     0)
         base["tong_mien"]   = round(tong_mien,   0)
         base["tong_cong"]   = round(tong_cong,   0)
-        base["_fetch_status"] = "ok"
+        on_billing_page = _is_billing_page(soup)
+        # Đánh dấu đã kiểm đúng trang bảng kê (xem fetch_versions.js: bản cũ 0 dòng được lấy lại).
+        base["_billing_page_checked"] = bool(on_billing_page)
+        base["_fetch_status"] = _billing_fetch_status(rows_out, base.get("tong_hop") or {}, on_billing_page)
+        if base["_fetch_status"] != "ok":
+            base["_error"] = {
+                "not_billing_page": "Trang đọc được không phải bảng kê chi phí (có thể chưa mở xong); sẽ lấy lại.",
+                "not_loaded": "Bảng kê có tổng chi phí nhưng chưa đổ dòng chi tiết; sẽ lấy lại.",
+                "empty": "",
+            }.get(base["_fetch_status"], "")
+            if base["_fetch_status"] == "not_billing_page" or base["_fetch_status"] == "not_loaded":
+                base["_reason"] = base["_fetch_status"]
+                base["_fetch_status"] = "error"
         print(f"LOG [billing] {ma_bn}: {len(rows_out)} dòng | "
               f"BHYT={tong_bhyt:,.0f} | ViênPhí={tong_tt:,.0f} | Miễn={tong_mien:,.0f} | Tổng={tong_cong:,.0f}")
 
@@ -6015,6 +6129,17 @@ def fetch_documents(sess: Optional["EmrHttpSession"], ma_bn: str,
     return base
 
 
+# Hồ sơ nền (profile) và ra viện (discharge) cho biết ngày vào/ra thật của lượt điều trị; các phần
+# khác (bảng kê, y lệnh, phẫu thuật...) dùng khoảng ngày đó. Trước đây chạy theo thứ tự server gửi
+# (vd "billing,profile") nên bảng kê đọc theo khoảng ngày quét thô, chưa được sửa.
+_HCHANH_WINDOW_FIRST = ("profile", "discharge")
+
+
+def _order_hchanh_files(files: List[str]) -> List[str]:
+    first = [f for f in _HCHANH_WINDOW_FIRST if f in files]
+    return first + [f for f in files if f not in _HCHANH_WINDOW_FIRST]
+
+
 def _run_hchanh_fetch_core(patient_row: Dict[str, Any], scope: str, files: List[str],
                            date_from: str, date_to: str, inpatient_status: str,
                            headless: bool, batch_size: int = 1,
@@ -6227,7 +6352,7 @@ def _run_hchanh_fetch_core(patient_row: Dict[str, Any], scope: str, files: List[
             return "×"
         return "·"
 
-    for file_key in files:
+    for file_key in _order_hchanh_files(files):
         if file_key in output:
             print(f"LOG:   Bỏ qua [{file_key}] vì đã lấy trước đó.")
             trace_event("ORDER_HISTORY.REUSE_EXISTING", f"Bỏ qua {file_key} vì đã lấy trước trong cùng case", sees="output đã có key", takes=file_key, writes="không gọi lại fetcher", target="output")
