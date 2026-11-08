@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const { RUNTIME_ROOT } = require('../constants');
-const { readJsonSafe } = require('../utils/file');
+const { readJsonSafe, forEachLineSync } = require('../utils/file');
 const { NORMALIZED_SCHEMA_VERSION } = require('./normalized_schema');
 
 function relPath(p) {
@@ -34,8 +34,9 @@ function tailJsonl(filePath, limit = 5) {
   }
 }
 
+// Đếm theo khúc: collection_versions.jsonl có thể lớn hàng trăm MB.
 function countLines(filePath) {
-  try { return fs.readFileSync(filePath, 'utf8').split('\n').filter(Boolean).length; } catch (_) { return 0; }
+  try { return forEachLineSync(filePath, null); } catch (_) { return 0; }
 }
 
 // Bảng chính được ghi sau chuẩn hóa: khóa trong normalized_outputs → tên hiển thị + file CSV.
@@ -180,3 +181,4 @@ function buildPipelineInfo(scopeDir, runDir) {
 }
 
 module.exports = { buildPipelineInfo };
+module.exports._test = { countLines };

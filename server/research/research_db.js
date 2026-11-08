@@ -46,10 +46,21 @@ function datasetIdentityFromRunDir(runDir) {
   };
 }
 
+// Bảng KHÔNG chép vào research.sqlite3. CSV của run vẫn là nguồn chính và vẫn đầy đủ; các bảng
+// này không màn hình nào truy vấn qua SQLite, chép thêm chỉ làm file DB phình to (trên máy vận
+// hành 567 MB, riêng y lệnh thô 226 MB). Bảng thô XN/CĐHA vẫn giữ vì patient_history.js truy vấn.
+const SQLITE_SKIPPED_TABLE_KEYS = Object.freeze([
+  'initial_list', 'research_source', 'deep_source', 'patient_extra', 'patients',
+  'hchanh_profile', 'hchanh_discharge', 'hchanh_surgery', 'hchanh_order_history',
+  'analysis_ready_encoded', 'analysis_selected_encoded', 'lab_results_encoded', 'imaging_results_encoded',
+  'medication_orders_encoded', 'diagnoses_encoded', 'surgery_results_encoded',
+]);
+
 function databaseTableSpecsForRun(runDir) {
   const dir = path.resolve(runDir);
   const { datasetDir } = datasetIdentityFromRunDir(dir);
-  return Object.entries(TABLES).map(([key, spec]) => {
+  const skipped = new Set(SQLITE_SKIPPED_TABLE_KEYS);
+  return Object.entries(TABLES).filter(([key]) => !skipped.has(key)).map(([key, spec]) => {
     const filePath = spec.root === 'study'
       ? path.join(datasetDir, spec.file)
       : path.join(dir, spec.file);
@@ -110,6 +121,7 @@ function forceSyncDatabaseAfterDerivedOutput(runDir) {
 
 module.exports = {
   DATABASE_TABLE_NAME_OVERRIDES,
+  SQLITE_SKIPPED_TABLE_KEYS,
   datasetDirFromRunDir,
   datasetIdentityFromRunDir,
   databaseTableSpecsForRun,

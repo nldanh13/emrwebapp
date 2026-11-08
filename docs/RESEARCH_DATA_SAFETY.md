@@ -169,8 +169,15 @@ Các trạng thái:
   - Dữ liệu mới được so với bản trước. Các cột kỹ thuật như run, nguồn, URL phiên không
     được tính vào so sánh.
   - Nếu giống, phần đó chỉ được ghi "đã kiểm tra, không đổi"; phiên bản giữ nguyên.
-  - Nếu khác, phiên bản tăng lên và **cả bản cũ lẫn bản mới** được ghi vào
-    `collection_versions.jsonl`. File này chỉ thêm, không ghi đè.
+  - Nếu khác, phiên bản tăng lên và được ghi vào `collection_versions.jsonl`. File này chỉ
+    thêm, không ghi đè.
+    - Bản đầu tiên của một phần được lưu đủ mọi dòng.
+    - Các bản sau chỉ lưu phần khác so với bản trước: `rows_added`, `rows_removed`,
+      `base_version`, `base_hash` (`storage: "delta"`). Dựng lại bằng
+      `rowsAtVersion` trong `server/research/collection.js`; `content_hash` để đối chiếu.
+    - Dòng ghi theo định dạng cũ (bản sau cũng lưu đủ `rows`) vẫn đọc được như trước.
+    - Máy chủ đọc file theo từng khúc, không đọc cả file một lần, nên file lớn hàng trăm MB
+      không làm dừng thu thập.
   - Mỗi thay đổi được ghi một dòng vào `collection_changes.csv`: phần nào, phiên bản
     nào, thêm/bớt bao nhiêu dòng, do quá hạn hay do bấm Làm mới. File này chỉ có Mã NC,
     không có Mã BN.

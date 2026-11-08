@@ -36,7 +36,12 @@ research.sqlite3.manifest.json
 - `analysis_ready`
 - `analysis_selected` nếu có
 - `analysis_final` nếu đã chốt dataset
-- các bảng raw và encoded nếu file nguồn tồn tại
+- bảng thô XN/CĐHA (`raw_lab_results`, `raw_imaging_results`), `cohort`, `crf`, `extraction_errors`, `extract_status` và các bảng từ điển (`*_dictionary`) nếu file nguồn tồn tại
+
+Không chép vào SQLite (vẫn có đủ trong CSV của run, đọc bằng Excel/pandas): bảng thô hành chánh
+(`hchanh_*.csv`, gồm y lệnh thô), danh sách quét ban đầu, nguồn chuẩn, `mau_nghien_cuu.csv` và các bảng
+`*_encoded.csv`. Danh sách nằm ở `SQLITE_SKIPPED_TABLE_KEYS` trong `server/research/research_db.js`.
+File SQLite cũ nhỏ lại ở lần Chuẩn hóa kế tiếp, vì mỗi lần Chuẩn hóa dựng lại file từ đầu.
 
 Các bảng kỹ thuật:
 
