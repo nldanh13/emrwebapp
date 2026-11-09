@@ -1,0 +1,30 @@
+[
+  {
+    "ma_bn": "BN_GIA_001",
+    "ho_ten": "Người bệnh giả",
+    "ngay_lam": "09/11/2026",
+    "chi_dinh_dvkt": [
+      {"ten": "Tổng phân tích tế bào máu ngoại vi", "gio": "07:00 09/11/2026"}
+    ],
+    "chi_dinh_khac": {
+      "thay_bang_cat_chi": [
+        {"ten": "Thay băng, cắt chỉ vết mổ [chiều dài ≤ 15cm]", "gio": "08:00 09/11/2026"}
+      ],
+      "duong_mau_mao_mach": [
+        {"ten": "Xét nghiệm đường máu mao mạch tại giường (một lần)[Nội trú]", "gio": "16:00 09/11/2026"}
+      ]
+    },
+    "y_lenh_khac": {"moi_hoi_chan": [], "khac": []},
+    "thuoc": {
+      "dich_truyen": [
+        {"ten_thuoc": "Levofloxacin 750", "ten_hien_thi": "LEVOFLOXACIN 750MG", "gio_dung": "8 giờ",
+         "tg_bat_dau": "08:00 09/11/2026", "tg_ket_thuc": "09:40 09/11/2026", "the_tich": 150, "toc_do": 30}
+      ],
+      "thuoc_tiem": [],
+      "thuoc_uong": [
+        {"ten_thuoc": "Paracetamol 500mg", "gio_dung": "8 giờ, 20 giờ"}
+      ]
+    },
+    "tong_hop_gio_dung": [8, 20]
+  }
+]

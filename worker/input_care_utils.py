@@ -261,6 +261,60 @@ def build_regular_care_hours(
     return hours, has_regular_signal
 
 
+CARE_PREVIEW_PLAN_SOURCE = "preview.care"
+
+
+def regular_care_jobs_from_preview(plan, actions_by_hour=None):
+    """Tạo job chăm sóc thường quy từ đúng danh sách của màn "Xem trước khi nhập".
+
+    Máy chủ gắn ``care_preview_plan`` (= preview.care, cùng hàm dựng màn hình)
+    vào từng dòng dữ liệu gửi cho worker. Khi có kế hoạch này, worker nhập đúng
+    giờ, diễn biến và chăm sóc đã hiển thị thay vì tự tính lại.
+
+    Trả về ``None`` khi không có kế hoạch hợp lệ (dữ liệu cũ) để worker dùng
+    cách tính cũ. Danh sách rỗng nghĩa là Xem trước không có phiếu thường quy.
+    Phiếu đặc biệt (nhận bệnh, ra viện, hậu phẫu) vẫn do sự kiện đặc biệt tạo.
+    """
+    if not isinstance(plan, dict) or plan.get("source") != CARE_PREVIEW_PLAN_SOURCE:
+        return None
+    items = plan.get("items")
+    if not isinstance(items, list):
+        return None
+
+    jobs = []
+    seen = set()
+    for item in items:
+        if not isinstance(item, dict) or str(item.get("special_type") or "").strip():
+            continue
+        dt = _dt_from_time_key(item.get("time_full"))
+        if dt is None:
+            LOG.warning(f"[preview_plan] bỏ mục không đọc được giờ: {str(item.get('time_full') or '')[:40]}")
+            continue
+        time_str = dt.strftime("%H:%M %d/%m/%Y")
+        if time_str in seen:
+            continue
+        seen.add(time_str)
+        hour = dt.hour
+        jobs.append({
+            "kind": "regular",
+            "from_preview": True,
+            "time_str": time_str,
+            "hour": hour,
+            "needs_vitals": False,
+            # Chỉ dùng cho guard "vết mổ/sau mổ"; nội dung lấy nguyên từ Xem trước.
+            "actions_set": set((actions_by_hour or {}).get(hour, set()) or set()),
+            "action_care_labels": {},
+            "preview_care": str(item.get("cham_soc") or "").strip(),
+            "preview_dien_bien": str(item.get("dien_bien") or "").strip() or "Người bệnh tỉnh",
+        })
+    return jobs
+
+
+def preview_care_job_dt(job):
+    """Datetime của job lấy từ Xem trước (None nếu không đọc được)."""
+    return _dt_from_time_key((job or {}).get("time_str"))
+
+
 # ── Sự kiện đặc biệt (nhập viện / ra viện / chuyển khoa) ─────────────────────
 
 def _special_event_time_full(ev: dict, ngay_lam_viec: str) -> str:

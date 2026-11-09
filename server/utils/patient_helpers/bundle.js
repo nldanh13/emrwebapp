@@ -290,4 +290,53 @@ function buildPatientDayBundle(records, patientId, date, nurseSchedule, doneStat
   };
 }
 
-module.exports = { collectOtherOrderText, stripUncodedDressing, collectMedicationCategory, collectExtraMedicationCategories, collectRecordList, hasTargetProcedure, hasValidVolume, buildInfusionVolumeWarnings, buildPatientDayBundle };
+// ── Kế hoạch chăm sóc cho worker nhập EMR ─────────────────────────────────────
+//
+// Màn "Xem trước khi nhập" và worker/input_care.py phải ra CÙNG một danh sách
+// phiếu (giờ, diễn biến, chăm sóc). Trước đây worker tự tính lại bằng Python nên
+// thiếu "Thực hiện cận lâm sàng", "Xét nghiệm đường máu mao mạch…", "Mời bác sĩ
+// khám"… và lệch giờ thuốc. Nay máy chủ gắn đúng preview.care (lấy qua chính
+// buildPatientDayBundle mà màn hình dùng) vào dữ liệu gửi cho worker.
+const CARE_PREVIEW_PLAN_SOURCE = 'preview.care';
+const CARE_PREVIEW_PLAN_VERSION = 1;
+
+function carePreviewPlanForDay(dayRecords, patientId, date, nurseSchedule = {}) {
+  const bundle = buildPatientDayBundle(dayRecords, patientId, date, nurseSchedule, {});
+  const items = Array.isArray(bundle?.preview?.care) ? bundle.preview.care : [];
+  return {
+    source: CARE_PREVIEW_PLAN_SOURCE,
+    version: CARE_PREVIEW_PLAN_VERSION,
+    items: items.map(item => ({
+      time_full: String(item.time_full || ''),
+      time_label: String(item.time_label || ''),
+      dien_bien: String(item.dien_bien || ''),
+      cham_soc: String(item.cham_soc || ''),
+      ...(item.special_type ? { special_type: String(item.special_type), needs_vitals: item.needs_vitals !== false } : {}),
+    })),
+  };
+}
+
+// Trả về bản sao các dòng, mỗi dòng có `care_preview_plan` của BN/ngày đó.
+// Nhóm giống hệt route /get-patients (theo ma_bn rồi ngay_lam) để dòng đầu
+// của ngày là cùng một dòng màn hình dùng dựng Xem trước.
+function attachCarePreviewPlans(rows, nurseSchedule = {}) {
+  const list = Array.isArray(rows) ? rows : [];
+  const groups = new Map();
+  for (const row of list) {
+    const id = String(row?.ma_bn || '').trim();
+    const date = String(row?.ngay_lam || '').trim();
+    if (!id || !date) continue;
+    const key = `${id}::${date}`;
+    if (!groups.has(key)) groups.set(key, { id, date, rows: [] });
+    groups.get(key).rows.push(row);
+  }
+  const plans = new Map();
+  for (const [key, g] of groups) plans.set(key, carePreviewPlanForDay(g.rows, g.id, g.date, nurseSchedule));
+  return list.map(row => {
+    const key = `${String(row?.ma_bn || '').trim()}::${String(row?.ngay_lam || '').trim()}`;
+    const plan = plans.get(key);
+    return plan ? { ...row, care_preview_plan: plan } : row;
+  });
+}
+
+module.exports = { collectOtherOrderText, stripUncodedDressing, collectMedicationCategory, collectExtraMedicationCategories, collectRecordList, hasTargetProcedure, hasValidVolume, buildInfusionVolumeWarnings, buildPatientDayBundle, carePreviewPlanForDay, attachCarePreviewPlans, CARE_PREVIEW_PLAN_SOURCE };
