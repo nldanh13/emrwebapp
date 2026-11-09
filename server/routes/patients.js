@@ -508,7 +508,10 @@ router.post('/update-infusion-item', (req, res) => {
 
   const hasTheTich = updates?.the_tich !== undefined && String(updates.the_tich).trim() !== '';
   const hasTocDo = updates?.toc_do !== undefined && String(updates.toc_do).trim() !== '';
-  const hasStart = updates?.tg_bat_dau !== undefined && String(updates.tg_bat_dau).trim() !== '';
+  const startInput = Array.isArray(updates?.tg_bat_dau)
+    ? updates.tg_bat_dau.map(v => String(v ?? '').trim()).filter(Boolean)
+    : (updates?.tg_bat_dau !== undefined && String(updates.tg_bat_dau).trim() !== '' ? [String(updates.tg_bat_dau)] : []);
+  const hasStart = startInput.length > 0;
   if (!hasTheTich && !hasTocDo && !hasStart) {
     return res.status(400).json({ status: 'error', message: 'Không có giá trị mới để lưu.' });
   }
@@ -517,7 +520,12 @@ router.post('/update-infusion-item', (req, res) => {
   try {
     if (hasTheTich) changed.the_tich = parsePositiveInfusionValue(updates.the_tich, 'Thể tích');
     if (hasTocDo) changed.toc_do = parsePositiveInfusionValue(updates.toc_do, 'Tốc độ');
-    if (hasStart) changed.tg_bat_dau = parseManualStart(updates.tg_bat_dau, workDate);
+    if (startInput.length > 6) throw new Error('Tối đa 6 cữ truyền trong một lần bổ sung giờ.');
+    if (hasStart) {
+      const starts = startInput.map(v => parseManualStart(v, workDate));
+      if (new Set(starts).size !== starts.length) throw new Error('Có hai cữ trùng cùng một giờ bắt đầu.');
+      changed.tg_bat_dau = starts.length === 1 ? starts[0] : starts;
+    }
   } catch (e) {
     return res.status(400).json({ status: 'error', message: e.message });
   }
@@ -549,14 +557,16 @@ router.post('/update-infusion-item', (req, res) => {
   });
 
   if (result.schedule) {
+    const schedules = result.schedules || [result.schedule];
+    const lines = schedules.map(p => (p.noi_tiep_sau
+      ? `${p.tg_bat_dau} → ${p.tg_ket_thuc} (lúc ${p.gio_chon.slice(0, 5)} đang truyền ${p.noi_tiep_sau}, nối tiếp ngay sau)`
+      : `${p.tg_bat_dau} → ${p.tg_ket_thuc}`));
     return res.json({ status: 'ok', updated_count: updatedCount,
       requires_schedule_review: false,
       schedule: result.schedule,
-      message: (result.schedule.noi_tiep_sau
-        ? `Lúc ${result.schedule.gio_chon} đang truyền ${result.schedule.noi_tiep_sau}, nên nối tiếp ngay sau. `
-        : '')
-        + `Đã bổ sung giờ: ${result.schedule.tg_bat_dau} → ${result.schedule.tg_ket_thuc} `
-        + `(${result.schedule.thoi_gian_chay_phut} phút). Dòng này đã sẵn sàng nhập EMR, không cần lấy lại dữ liệu.`,
+      schedules,
+      message: `Đã bổ sung ${schedules.length > 1 ? `${schedules.length} cữ` : 'giờ'}: ${lines.join('; ')}. `
+        + `Mỗi cữ ${result.schedule.thoi_gian_chay_phut} phút. Đã sẵn sàng nhập EMR, không cần lấy lại dữ liệu.`,
     });
   }
 

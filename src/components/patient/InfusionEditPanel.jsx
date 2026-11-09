@@ -25,14 +25,24 @@ function nextDayDmy(dmy) {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
+// Số cữ/ngày gợi ý khi y lệnh không ghi giờ: "100ml x2 TTM", "02 lọ x 2" → 2.
+// Chỉ là gợi ý để hiện đủ ô giờ; người dùng thêm/bớt cữ theo Y lệnh gốc.
+export function suggestedDoseCount(item = {}) {
+  const usage = String(item.raw_usage_line || item.duong_dung_goc || '').split('|')[0];
+  const m = usage.match(/\bx\s*0?([1-6])\b/i);
+  return m ? Number(m[1]) : 1;
+}
+
 const validPositive = value => /^\d+(?:[.,]\d+)?$/.test(String(value ?? '').trim())
   && Number(String(value).trim().replace(',', '.')) > 0;
 
 function InfusionEditRow({ item, review, patientId, ngayLam, toast, onSaved }) {
   const [theTich, setTheTich] = useState(item.the_tich ?? '');
   const [tocDo, setTocDo] = useState(item.toc_do ?? '');
-  const [startTime, setStartTime] = useState('');
-  const [startDate, setStartDate] = useState(ngayLam || '');
+  const suggestedDoses = suggestedDoseCount(item);
+  const emptyStarts = n => Array.from({ length: n }, () => ({ time: '', date: ngayLam || '' }));
+  const [starts, setStarts] = useState(() => emptyStarts(suggestedDoses));
+  const setStart = (i, patch) => setStarts(list => list.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const [saving, setSaving] = useState(false);
   const [localNotice, setLocalNotice] = useState('');
   // Chỉ dòng chưa có giờ bắt đầu mới cho bổ sung giờ (y lệnh không ghi giờ dùng).
@@ -41,7 +51,8 @@ function InfusionEditRow({ item, review, patientId, ngayLam, toast, onSaved }) {
 
   const valuesDirty = String(theTich ?? '').trim() !== String(item.the_tich ?? '').trim()
     || String(tocDo ?? '').trim() !== String(item.toc_do ?? '').trim();
-  const startDirty = canAddStart && !!startTime;
+  const filledStarts = starts.filter(x => x.time);
+  const startDirty = canAddStart && filledStarts.length > 0;
   const dirty = valuesDirty || startDirty;
   // Server refreshes should update unmodified inputs, but never overwrite a
   // field the user is in the middle of correcting.
@@ -53,7 +64,7 @@ function InfusionEditRow({ item, review, patientId, ngayLam, toast, onSaved }) {
   }, [item.the_tich, item.toc_do, dirty, saving]);
 
   const invalid = dirty && (!validPositive(theTich) || !validPositive(tocDo)
-    || (startDirty && !/^\d{2}:\d{2}$/.test(startTime)));
+    || (startDirty && !starts.every(x => /^\d{2}:\d{2}$/.test(x.time))));
   const handleSave = async () => {
     if (!dirty || saving || invalid) return;
     setSaving(true);
@@ -62,11 +73,14 @@ function InfusionEditRow({ item, review, patientId, ngayLam, toast, onSaved }) {
       const updates = {};
       if (String(theTich ?? '').trim() !== String(item.the_tich ?? '').trim()) updates.the_tich = theTich;
       if (String(tocDo ?? '').trim() !== String(item.toc_do ?? '').trim()) updates.toc_do = tocDo;
-      if (startDirty) updates.tg_bat_dau = `${startTime} ${startDate || ngayLam}`;
+      if (startDirty) {
+        const list = starts.map(x => `${x.time} ${x.date || ngayLam}`);
+        updates.tg_bat_dau = list.length === 1 ? list[0] : list;
+      }
       const r = await api.updateInfusionItem(patientId, ngayLam, infusionMatchOf(item), updates);
       if (r?.status === 'ok' && r.schedule) {
         setLocalNotice(r.message);
-        setStartTime('');
+        setStarts(emptyStarts(suggestedDoses));
         toast?.(r.message, 'success');
         await onSaved?.();
       } else if (r?.status === 'ok') {
@@ -137,28 +151,48 @@ function InfusionEditRow({ item, review, patientId, ngayLam, toast, onSaved }) {
               fontVariantNumeric: 'tabular-nums', color: C.text, background: C.surface }} />
         </label>
         {canAddStart && (
-          <label style={{ display: 'grid', gap: 3 }}>
-            <span style={{ fontSize: FS.xs, color: C.text2, fontWeight: 600 }}>Giờ bắt đầu theo y lệnh</span>
-            <span style={{ display: 'flex', gap: 6 }}>
-              <input type="time" aria-label="Giờ bắt đầu truyền"
-                value={startTime} onChange={e => setStartTime(e.target.value)}
-                style={{ padding: '5px 8px', borderRadius: 5, border: `1px solid ${C.border}`,
-                  fontSize: FS.md, fontVariantNumeric: 'tabular-nums', color: C.text, background: C.surface }} />
-              <select aria-label="Ngày bắt đầu truyền" value={startDate}
-                onChange={e => setStartDate(e.target.value)}
-                style={{ padding: '5px 6px', borderRadius: 5, border: `1px solid ${C.border}`,
-                  fontSize: FS.sm, color: C.text, background: C.surface }}>
-                <option value={ngayLam}>{ngayLam}</option>
-                {nextDay && <option value={nextDay}>{nextDay} (hôm sau)</option>}
-              </select>
+          <div style={{ display: 'grid', gap: 4 }}>
+            <span style={{ fontSize: FS.xs, color: C.text2, fontWeight: 600 }}>
+              Giờ bắt đầu theo y lệnh{starts.length > 1 ? ` (${starts.length} cữ)` : ''}
             </span>
-          </label>
+            {starts.map((st, i) => (
+              <span key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input type="time" aria-label={`Giờ bắt đầu truyền cữ ${i + 1}`}
+                  value={st.time} onChange={e => setStart(i, { time: e.target.value })}
+                  style={{ padding: '5px 8px', borderRadius: 5, border: `1px solid ${C.border}`,
+                    fontSize: FS.md, fontVariantNumeric: 'tabular-nums', color: C.text, background: C.surface }} />
+                <select aria-label={`Ngày bắt đầu truyền cữ ${i + 1}`} value={st.date}
+                  onChange={e => setStart(i, { date: e.target.value })}
+                  style={{ padding: '5px 6px', borderRadius: 5, border: `1px solid ${C.border}`,
+                    fontSize: FS.sm, color: C.text, background: C.surface }}>
+                  <option value={ngayLam}>{ngayLam}</option>
+                  {nextDay && <option value={nextDay}>{nextDay} (hôm sau)</option>}
+                </select>
+                {starts.length > 1 && (
+                  <Btn variant="secondary" aria-label={`Bỏ cữ ${i + 1}`}
+                    onClick={() => setStarts(list => list.filter((_, j) => j !== i))}>Bỏ</Btn>
+                )}
+              </span>
+            ))}
+            <span style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              {starts.length < 6 && (
+                <Btn variant="secondary" onClick={() => setStarts(list => [...list, { time: '', date: ngayLam || '' }])}>
+                  + Thêm cữ
+                </Btn>
+              )}
+              {suggestedDoses > 1 && (
+                <span style={{ fontSize: FS.xs, color: C.text2 }}>
+                  Y lệnh ghi x{suggestedDoses}: gợi ý {suggestedDoses} cữ, đối chiếu lại Y lệnh gốc.
+                </span>
+              )}
+            </span>
+          </div>
         )}
         <Btn variant="primary" disabled={!dirty || invalid || saving} onClick={handleSave}>
           {saving ? <><Spinner size={13} /> Đang lưu</> : (startDirty ? 'Bổ sung giờ' : 'Lưu cục bộ')}
         </Btn>
         {dirty && <span style={{ fontSize: FS.xs, color: invalid ? C.red : C.amber }}>
-          {invalid ? 'Cần nhập số dương cho thể tích, tốc độ và giờ bắt đầu hợp lệ.' : 'Chưa lưu thay đổi'}
+          {invalid ? 'Cần nhập số dương cho thể tích, tốc độ và đủ giờ cho mọi cữ.' : 'Chưa lưu thay đổi'}
         </span>}
       </div>
       {localNotice && <div role="status" style={{ fontSize: FS.sm, color: C.amber }}>{localNotice}</div>}

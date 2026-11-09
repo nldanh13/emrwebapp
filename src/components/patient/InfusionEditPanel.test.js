@@ -65,7 +65,7 @@ describe('InfusionEditPanel', () => {
         }));
       });
       const time = host.querySelector('input[type="time"]');
-      const select = host.querySelector('select[aria-label="Ngày bắt đầu truyền"]');
+      const select = host.querySelector('select[aria-label="Ngày bắt đầu truyền cữ 1"]');
       expect([...select.options].map(o => o.value)).toEqual(['15/10/2026', '16/10/2026']);
       const setValue = (el, value) => {
         const proto = el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
@@ -82,6 +82,39 @@ describe('InfusionEditPanel', () => {
       expect([bn, day, match.ten_thuoc]).toEqual(['FAKE001', '15/10/2026', 'TEST-WITHOUT-HOUR']);
       expect(updates).toEqual({ tg_bat_dau: '01:30 16/10/2026' });
       expect(onSaved).toHaveBeenCalled();
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  });
+
+  it('y lệnh x2 không ghi giờ: hiện 2 ô giờ và gửi đủ 2 cữ', async () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    api.updateInfusionItem.mockReset();
+    api.updateInfusionItem.mockResolvedValue({ status: 'ok', schedule: {}, schedules: [{}, {}], message: 'ok' });
+    const day = { thuoc: { dich_truyen: [{ ten_thuoc: 'TEST-X2', gio_dung: '', the_tich: 100, toc_do: 30,
+      missing_infusion_time: true, raw_usage_line: 'Pha Natriclorid 0.9% 100ml x2 TTM 30g/ph | Thuốc pha: Natri clorid 0,9%' }] } };
+    try {
+      await act(async () => {
+        root.render(createElement(InfusionEditPanel, {
+          patientDay: day, patientId: 'FAKE001', ngayLam: '15/10/2026', toast: () => {}, onSaved: () => {},
+        }));
+      });
+      const times = host.querySelectorAll('input[type="time"]');
+      expect(times.length).toBe(2);
+      expect(host.textContent).toContain('gợi ý 2 cữ');
+      const setValue = (el, value) => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, value);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      };
+      await act(async () => { setValue(times[0], '08:00'); });
+      const btn = () => [...host.querySelectorAll('button')].find(b => b.textContent.includes('Bổ sung giờ'));
+      expect(btn().disabled).toBe(true);
+      await act(async () => { setValue(times[1], '20:00'); });
+      await act(async () => { btn().click(); });
+      expect(api.updateInfusionItem.mock.calls[0][3]).toEqual({ tg_bat_dau: ['08:00 15/10/2026', '20:00 15/10/2026'] });
     } finally {
       await act(async () => root.unmount());
       host.remove();

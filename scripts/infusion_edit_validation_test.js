@@ -142,4 +142,34 @@ assert.equal(validateInfusionTargetsComplete(noRateRows, scoped).ok, true);
 const inferred = () => ({ ...nef(), toc_do_inferred: true });
 assert.match(matchAndUpdateInfusions([row([inferred()])], 'FAKE001', '15/10/2026', inferred(),
   {tg_bat_dau: '09:00 15/10/2026'}, id, date).error, /tự đoán/);
+
+// Lỗi 09/11/2026: NEFOPAM "x 2 (Ống) ... 100ml x2 TTM 30g/ph" (2 cữ/ngày, không ghi giờ)
+// bổ sung giờ chỉ ra 1 cữ. Nhập nhiều giờ → tách thành đủ số cữ, mỗi cữ một dòng.
+const nef2 = () => ({ ...nef(), so_luong: '2', raw_usage_line: 'Pha Natriclorid 0.9% 100ml x2 TTM 30g/ph' });
+const twoRows = [row([nef2(), {...other}])];
+const two = matchAndUpdateInfusions(twoRows, 'FAKE001', '15/10/2026', nef2(),
+  {tg_bat_dau: ['20:00 15/10/2026', '08:00 15/10/2026']}, id, date);
+assert.equal(two.updated, true, two.error);
+const doses = twoRows[0].thuoc.dich_truyen.filter(d => d.ten_thuoc === 'NEFOPAM');
+assert.equal(doses.length, 2);
+assert.deepEqual(doses.map(d => [d.tg_bat_dau, d.tg_ket_thuc, d.gio_dung]), [
+  ['08:40 15/10/2026', '09:46 15/10/2026', '8 giờ'],
+  ['20:00 15/10/2026', '21:06 15/10/2026', '20 giờ'],
+]);
+assert.ok(doses.every(d => !d.missing_infusion_time && d.the_tich === 100));
+assert.equal(two.schedules.length, 2);
+assert.equal(validateInfusionTargetsComplete(twoRows, scoped).ok, true);
+// Hai giờ chồng nhau của chính thuốc này → cữ sau nối tiếp cữ trước.
+const seqRows = [row([nef2()])];
+matchAndUpdateInfusions(seqRows, 'FAKE001', '15/10/2026', nef2(),
+  {tg_bat_dau: ['08:00 15/10/2026', '08:30 15/10/2026']}, id, date);
+assert.deepEqual(seqRows[0].thuoc.dich_truyen.map(d => d.tg_bat_dau), ['08:00 15/10/2026', '09:06 15/10/2026']);
+// Một giờ lỗi → không ghi cữ nào.
+const badRows = [row([nef2(), {...other}])];
+const bad = matchAndUpdateInfusions(badRows, 'FAKE001', '15/10/2026', nef2(),
+  {tg_bat_dau: ['20:00 15/10/2026', '07:30 15/10/2026']}, id, date);
+assert.equal(bad.updated, false);
+assert.equal(badRows[0].thuoc.dich_truyen.length, 2);
+assert.equal(badRows[0].thuoc.dich_truyen[0].tg_bat_dau, undefined);
+assert.throws(() => parseManualStart(['08:00 15/10/2026'], '15/10/2026'));
 console.log('infusion edit safety: OK');

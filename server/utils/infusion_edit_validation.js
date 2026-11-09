@@ -44,6 +44,7 @@ function formatHmDmy(d) {
 // Giờ bắt đầu do điều dưỡng bổ sung khi y lệnh không ghi giờ dùng.
 // Chỉ nhận "HH:MM dd/mm/yyyy" thuộc ngày làm việc hoặc ngày kế tiếp (ca đêm).
 function parseManualStart(value, workDate) {
+  if (typeof value !== 'string') throw new Error('Giờ bắt đầu không hợp lệ.');
   const start = parseDmyHm(value);
   if (!start) throw new Error('Giờ bắt đầu phải có dạng giờ:phút và ngày, ví dụ 08:00 09/11/2026.');
   const day = parseDmyHm(`00:00 ${String(workDate || '').trim()}`);
@@ -90,23 +91,61 @@ function overlappingInfusion(siblings, target, startText, endText) {
   return null;
 }
 
+// Xếp một cữ: nối tiếp sau dịch đang truyền lúc giờ đã chọn (giống worker xếp lịch
+// cùng cữ, last_end_time_map). Nếu lấn sang một dịch bắt đầu SAU giờ chọn thì từ chối
+// và gợi ý giờ trống, không tự dời xa.
+function planOneDose(draft, others, startText) {
+  let plan = scheduleFromManualStart(draft, startText);
+  if (plan.error) return plan;
+  const chosen = plan.tg_bat_dau;
+  let after = null;
+  for (let guard = 0; guard < 50; guard++) {
+    const clash = overlappingInfusion(others, null, plan.tg_bat_dau, plan.tg_ket_thuc);
+    if (!clash) break;
+    const clashName = clash.ten_hien_thi || clash.ten_thuoc || 'dịch truyền khác';
+    if (parseDmyHm(clash.tg_bat_dau) <= parseDmyHm(plan.tg_bat_dau)) {
+      plan = scheduleFromManualStart(draft, clash.tg_ket_thuc);
+      after = clashName;
+      continue;
+    }
+    let free = scheduleFromManualStart(draft, clash.tg_ket_thuc);
+    for (let g = 0; g < 50; g++) {
+      const c = overlappingInfusion(others, null, free.tg_bat_dau, free.tg_ket_thuc);
+      if (!c) break;
+      free = scheduleFromManualStart(draft, c.tg_ket_thuc);
+    }
+    return { error:
+      `Bắt đầu ${plan.tg_bat_dau} thì dịch này chạy đến ${plan.tg_ket_thuc}, lấn sang ${clashName} `
+      + `(${clash.tg_bat_dau} → ${clash.tg_ket_thuc}). Chọn giờ sớm hơn hoặc từ ${free.tg_bat_dau}.` };
+  }
+  if (after) {
+    plan.noi_tiep_sau = after;
+    plan.gio_chon = chosen;
+  }
+  return plan;
+}
+
 function matchAndUpdateInfusions(rows, patientId, workDate, match, updates, rowPatientId, rowWorkDate) {
   const key = infusionItemKey(match);
   const targets = [];
   const siblings = [];
   for (const row of (Array.isArray(rows) ? rows : [])) {
     if (rowPatientId(row) !== patientId || rowWorkDate(row) !== workDate) continue;
-    for (const item of (Array.isArray(row?.thuoc?.dich_truyen) ? row.thuoc.dich_truyen : [])) {
+    const list = Array.isArray(row?.thuoc?.dich_truyen) ? row.thuoc.dich_truyen : [];
+    for (const item of list) {
       siblings.push(item);
-      if (infusionItemKey(item) === key) targets.push(item);
+      if (infusionItemKey(item) === key) targets.push({ item, list });
     }
   }
   if (targets.length !== 1) return { matched: targets.length, updated: false };
-  const target = targets[0];
+  const { item: target, list: targetList } = targets[0];
   const { tg_bat_dau: manualStart, ...valueUpdates } = updates || {};
 
   if (manualStart) {
-    // Kiểm tra trên bản nháp; chỉ ghi khi toàn bộ hợp lệ.
+    // Một hoặc nhiều cữ (y lệnh "x2" không ghi giờ → 2 cữ). Kiểm tra toàn bộ trên
+    // bản nháp; chỉ ghi khi mọi cữ đều hợp lệ.
+    const starts = (Array.isArray(manualStart) ? manualStart : [manualStart])
+      .slice().sort((x, y) => parseDmyHm(x) - parseDmyHm(y));
     const draft = { ...target, ...valueUpdates };
     if (Object.hasOwn(valueUpdates, 'toc_do')) {
       draft.toc_do_inferred = false;
@@ -114,50 +153,47 @@ function matchAndUpdateInfusions(rows, patientId, workDate, match, updates, rowP
       return { matched: 1, updated: false,
         error: 'Y lệnh chưa có tốc độ truyền được xác nhận; nhập tốc độ theo y lệnh cùng lúc với giờ bắt đầu.' };
     }
-    let plan = scheduleFromManualStart(draft, manualStart);
-    if (plan.error) return { matched: 1, updated: false, error: plan.error };
-    // Cùng cữ: dịch nào đang truyền lúc giờ đã chọn thì nối tiếp ngay sau nó, giống
-    // worker xếp lịch (last_end_time_map). Nếu dịch mới chạy lấn sang một dịch đã có
-    // lịch bắt đầu SAU giờ chọn thì từ chối và gợi ý giờ trống, không tự dời xa.
-    const chosen = plan.tg_bat_dau;
-    let after = null;
-    for (let guard = 0; guard < 50; guard++) {
-      const clash = overlappingInfusion(siblings, target, plan.tg_bat_dau, plan.tg_ket_thuc);
-      if (!clash) break;
-      const clashName = clash.ten_hien_thi || clash.ten_thuoc || 'dịch truyền khác';
-      if (parseDmyHm(clash.tg_bat_dau) <= parseDmyHm(plan.tg_bat_dau)) {
-        plan = scheduleFromManualStart(draft, clash.tg_ket_thuc);
-        after = clashName;
-        continue;
+    const others = siblings.filter(x => x !== target);
+    const plans = [];
+    for (const start of starts) {
+      const plan = planOneDose(draft, others, start);
+      if (plan.error) {
+        return { matched: 1, updated: false,
+          error: starts.length > 1 ? `Cữ ${start.slice(0, 5)}: ${plan.error}` : plan.error };
       }
-      let free = scheduleFromManualStart(draft, clash.tg_ket_thuc);
-      for (let g = 0; g < 50; g++) {
-        const c = overlappingInfusion(siblings, target, free.tg_bat_dau, free.tg_ket_thuc);
-        if (!c) break;
-        free = scheduleFromManualStart(draft, c.tg_ket_thuc);
-      }
-      return { matched: 1, updated: false, error:
-        `Bắt đầu ${plan.tg_bat_dau} thì dịch này chạy đến ${plan.tg_ket_thuc}, lấn sang ${clashName} `
-        + `(${clash.tg_bat_dau} → ${clash.tg_ket_thuc}). Chọn giờ sớm hơn hoặc từ ${free.tg_bat_dau}.` };
+      plans.push(plan);
+      // Cữ sau của chính thuốc này cũng không được chồng lên cữ trước.
+      others.push({ ten_thuoc: draft.ten_hien_thi || draft.ten_thuoc,
+        tg_bat_dau: plan.tg_bat_dau, tg_ket_thuc: plan.tg_ket_thuc });
     }
-    if (after) {
-      plan.noi_tiep_sau = after;
-      plan.gio_chon = chosen;
-    }
-    const { noi_tiep_sau: _n, gio_chon: _g, ...schedule } = plan;
-    Object.assign(target, valueUpdates, schedule);
+
+    const base = { ...target, ...valueUpdates };
     if (Object.hasOwn(valueUpdates, 'toc_do')) {
-      target.toc_do_inferred = false;
-      delete target.missing_infusion_rate;
+      base.toc_do_inferred = false;
+      delete base.missing_infusion_rate;
     }
-    if (!String(target.gio_dung || '').trim()) {
-      target.gio_dung = `${Number(chosen.slice(0, 2))} giờ`;
-    }
-    delete target.missing_infusion_time;
-    target.tg_bat_dau_nhap_tay = true;
-    // Giờ kết thúc vừa tính từ chính thể tích/tốc độ đã xác nhận: lịch dòng này hợp lệ.
-    target.infusion_schedule_stale = false;
-    return { matched: 1, updated: true, schedule: plan };
+    delete base.missing_infusion_time;
+    base.tg_bat_dau_nhap_tay = true;
+    // Giờ kết thúc vừa tính từ chính thể tích/tốc độ đã xác nhận: lịch hợp lệ.
+    base.infusion_schedule_stale = false;
+    const hadOrderHour = !!String(target.gio_dung || '').trim();
+    const doses = plans.map((plan, i) => {
+      const { noi_tiep_sau: _n, gio_chon: _g, ...schedule } = plan;
+      const dose = { ...base, ...schedule };
+      const chosen = plan.gio_chon || plan.tg_bat_dau;
+      if (!hadOrderHour || plans.length > 1) dose.gio_dung = `${Number(chosen.slice(0, 2))} giờ`;
+      if (plans.length > 1) {
+        dose.tach_cu_nhap_tay = true;
+        dose.thu_tu_cu = i + 1;
+        dose.tong_so_cu = plans.length;
+      }
+      return dose;
+    });
+    // Giữ nguyên object đầu (tham chiếu cũ), chèn các cữ còn lại ngay sau.
+    for (const k of Object.keys(target)) delete target[k];
+    Object.assign(target, doses[0]);
+    targetList.splice(targetList.indexOf(target) + 1, 0, ...doses.slice(1));
+    return { matched: 1, updated: true, schedule: plans[0], schedules: plans };
   }
 
   Object.assign(target, valueUpdates);
