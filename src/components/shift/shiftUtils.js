@@ -198,3 +198,13 @@ export function filterPatientsByRoom(patients, room) {
 export function patientsInRoom(patients, room) {
   return (patients || []).filter(p => patientRoom(p) === room);
 }
+
+// BN đang mở chi tiết là một bản chụp lúc bấm chọn. Sau khi tải lại danh sách (vd. vừa
+// lưu "Bổ sung giờ"), phải thay bằng bản mới cùng mã BN, nếu không chi tiết vẫn hiện
+// dữ liệu cũ dù đã lưu (lỗi 09/11/2026). Giữ bản cũ khi BN không còn trong danh sách.
+export function refreshSelectedPatient(prev, list = []) {
+  if (!prev) return prev;
+  const id = patientIdOf(prev);
+  if (!id) return prev;
+  return (Array.isArray(list) ? list : []).find(p => patientIdOf(p) === id) || prev;
+}

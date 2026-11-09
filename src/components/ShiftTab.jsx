@@ -19,6 +19,7 @@ import {
   getShiftStats,
   normalizeClockTime,
   useWindowWidth,
+  refreshSelectedPatient,
 } from './shift/shiftUtils.js';
 import { inputDateToDmy, sanitizeWorkDateRange, workDateRangeToDmy, workDateRangeLabel } from '../utils/workDateRange.js';
 import { getPatientWorkflowDates, scopePatientToDates, withPatientWorkflowScope } from '../utils/patientScope.js';
@@ -390,6 +391,10 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
   const rooms = getRooms(patients);
   const filtered = filterPatientsByRoom(patients, selRoom);
   const roomsKey = rooms.join('\u0001');
+  // Sau khi tải lại danh sách, chi tiết BN đang mở phải dùng dữ liệu mới.
+  useEffect(() => {
+    setSelPx(prev => refreshSelectedPatient(prev, patients));
+  }, [allPatients]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const previousRooms = previousInputRoomsRef.current || [];
