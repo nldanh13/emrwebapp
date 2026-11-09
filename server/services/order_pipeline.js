@@ -5,6 +5,8 @@
 const { runScript, fmtPyError } = require('./python_runner');
 const { registerCancel, unregisterCancel } = require('./task_queue');
 const { refreshRuntimeV2 } = require('./runtime_v2');
+const { readJsonSafe, writeJsonAtomic } = require('../utils/file');
+const { collectManualStarts, reapplyManualStarts } = require('../utils/manual_infusion_starts');
 
 function pipelineError(message, { status = 500, code = 'ORDER_POSTPROCESS_FAILED', details = null } = {}) {
   const err = new Error(message);
@@ -15,6 +17,9 @@ function pipelineError(message, { status = 500, code = 'ORDER_POSTPROCESS_FAILED
 }
 
 async function postprocessOrders(ctx, { reason = 'postprocess' } = {}) {
+  // Giờ "Bổ sung giờ" nằm trong dữ liệu đã xử lý; post_process.py tạo lại file này nên
+  // phải giữ lại trước và khôi phục sau, nếu không bấm nhập (tiền kiểm thấy YL mới) sẽ mất giờ.
+  const manualStarts = ctx.PROCESSED_PATH ? collectManualStarts(readJsonSafe(ctx.PROCESSED_PATH, [])) : new Map();
   let result;
   try {
     result = await runScript('post_process.py', [], {
@@ -46,6 +51,13 @@ async function postprocessOrders(ctx, { reason = 'postprocess' } = {}) {
     });
   }
 
+  let manualRestore = null;
+  if (manualStarts.size) {
+    const rows = readJsonSafe(ctx.PROCESSED_PATH, []);
+    manualRestore = reapplyManualStarts(rows, manualStarts);
+    if (manualRestore.restored.length) writeJsonAtomic(ctx.PROCESSED_PATH, rows);
+  }
+
   const v2 = await refreshRuntimeV2(ctx, reason);
   return {
     status: 'succeeded',
@@ -53,6 +65,9 @@ async function postprocessOrders(ctx, { reason = 'postprocess' } = {}) {
     worker_code: result.code,
     v2: v2?.indexes || null,
     v2_ok: Boolean(v2?.ok),
+    manual_infusion_starts: manualRestore
+      ? { restored: manualRestore.restored.length, skipped: manualRestore.skipped }
+      : null,
   };
 }
 

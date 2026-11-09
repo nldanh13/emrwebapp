@@ -168,6 +168,8 @@ function matchAndUpdateInfusions(rows, patientId, workDate, match, updates, rowP
       const { noi_tiep_sau: _n, gio_chon: _g, chay_chong: _c, ...schedule } = plan;
       const dose = { ...base, ...schedule };
       const chosen = plan.gio_chon || plan.tg_bat_dau;
+      // Giờ người dùng chọn (trước khi nối tiếp) — để khôi phục khi xử lý lại y lệnh.
+      dose.gio_bat_dau_chon = chosen;
       if (!hadOrderHour || plans.length > 1) dose.gio_dung = `${Number(chosen.slice(0, 2))} giờ`;
       if (plans.length > 1) {
         dose.tach_cu_nhap_tay = true;
