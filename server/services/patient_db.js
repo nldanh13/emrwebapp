@@ -22,7 +22,7 @@ const fs = require('fs');
 const path = require('path');
 const { RUNTIME_ROOT } = require('../constants');
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 // Tái khám đúng hẹn: lệch tối đa ±3 ngày so với ngày hẹn. Tái nhập viện: trong 30 ngày sau ra viện.
 const HEN_LECH_TOI_DA = 3;
 const TAI_NHAP_VIEN_NGAY = 30;
@@ -198,6 +198,8 @@ function open() {
   // Tính lại mối nối cho toàn bộ người bệnh 1 lần: bản < 2 chưa có bảng nối lượt; bản < 4 chưa tính
   // tái nhập viện cùng ngày theo giờ.
   if (previous < 4) rebuildAllLinks(db);
+  // Bản < 5: giờ ra viện có thể đang là giờ ra một khoa (bản ra viện mới hơn nhưng không có tổng số ngày điều trị).
+  if (previous < 5) rebuildWardExitDischarges(db);
   return db;
 }
 
@@ -376,6 +378,11 @@ function insertScan(conn, { maBn, luotId, loai, nguon, muc, now, data }) {
 // Bản tốt nhất của 1 loại dữ liệu trong 1 lượt: gốc trước, rồi bản mới nhất.
 // scanCache (tùy chọn, Map): dùng chung trong MỘT lần dựng màn hình để cùng một đợt không bị đọc và
 // giải mã lại nhiều lần (mỗi loại file gọi findStay riêng). Không giữ qua các yêu cầu.
+// Bản ra viện của cả lần nằm viện: EMR ghi tổng số ngày điều trị. Bản đọc theo khoa để trống ô này.
+function isHospitalDischarge(data) {
+  return !!(data && typeof data === 'object' && txt(data.tong_so_ngay_dt));
+}
+
 function bestScans(conn, luotId, { onlyGoc = false, scanCache = null } = {}) {
   const cacheKey = `${luotId}|${onlyGoc ? 'goc' : 'all'}`;
   if (scanCache?.has(cacheKey)) return scanCache.get(cacheKey);
@@ -384,12 +391,22 @@ function bestScans(conn, luotId, { onlyGoc = false, scanCache = null } = {}) {
   const rows = conn.prepare(`SELECT id, loai, nguon, muc, lay_luc FROM lan_quet WHERE luot_id = ? ${onlyGoc ? "AND muc = 'goc'" : ''}
     ORDER BY CASE muc WHEN 'goc' THEN 0 ELSE 1 END, lay_luc DESC, id DESC`).all(luotId);
   const readData = conn.prepare('SELECT du_lieu FROM lan_quet WHERE id = ?');
+  const parse = r => { try { return JSON.parse(readData.get(r.id)?.du_lieu); } catch (_) { return null; } };
   const out = {};
   for (const r of rows) {
     if (out[r.loai]) continue;
-    let data = null;
-    try { data = JSON.parse(readData.get(r.id)?.du_lieu); } catch (_) {}
+    const data = parse(r);
     out[r.loai] = { id: r.id, nguon: r.nguon, muc: r.muc, lay_luc: r.lay_luc, data };
+  }
+  // Trang ra viện đọc theo một khoa (giờ chuyển khoa, không có tổng số ngày điều trị) không thay được
+  // bản ra viện thật đã có: ca thật, lần lấy lại ghi 20/08 12:11 (ra khoa Gây mê) đè lên 22/08 13:00.
+  if (out.discharge && !isHospitalDischarge(out.discharge.data)) {
+    for (const r of rows) {
+      // Cùng mức dữ liệu: bản tạm thời không thay được bản gốc.
+      if (r.loai !== 'discharge' || r.id === out.discharge.id || r.muc !== out.discharge.muc) continue;
+      const data = parse(r);
+      if (isHospitalDischarge(data)) { out.discharge = { id: r.id, nguon: r.nguon, muc: r.muc, lay_luc: r.lay_luc, data }; break; }
+    }
   }
   scanCache?.set(cacheKey, out);
   return out;
@@ -622,6 +639,29 @@ function rebuildAllLinks(conn) {
     try { conn.exec('ROLLBACK'); } catch (_) {}
     throw err;
   }
+}
+
+// Lượt nội trú có từ 2 bản ra viện: dựng lại theo bản ra viện thật (xem bestScans). Trả số lượt đã đổi giờ ra.
+function rebuildWardExitDischarges(conn, now = new Date().toISOString()) {
+  const ids = conn.prepare(`SELECT l.id, l.ma_bn, l.gio_ra FROM luot l
+    WHERE l.loai = '${LOAI_NOI_TRU}' AND (SELECT COUNT(*) FROM lan_quet q WHERE q.luot_id = l.id AND q.loai = 'discharge') >= 2`).all();
+  if (!ids.length) return 0;
+  let changed = 0;
+  conn.exec('BEGIN IMMEDIATE');
+  try {
+    const codes = new Set();
+    for (const l of ids) {
+      rebuildLuot(conn, l.id, now);
+      const after = conn.prepare('SELECT gio_ra FROM luot WHERE id = ?').get(l.id)?.gio_ra;
+      if (txt(after) !== txt(l.gio_ra)) { changed += 1; codes.add(l.ma_bn); }
+    }
+    for (const code of codes) rebuildLinks(conn, code);
+    conn.exec('COMMIT');
+  } catch (err) {
+    try { conn.exec('ROLLBACK'); } catch (_) {}
+    throw err;
+  }
+  return changed;
 }
 
 // ── Ghi từ các module ─────────────────────────────────────────────────────────

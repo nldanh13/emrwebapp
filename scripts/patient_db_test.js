@@ -341,6 +341,29 @@ async function main() {
     }
   });
 
+  await test('Giờ ra một khoa (không có tổng số ngày điều trị) không đè giờ ra viện thật đã có', () => {
+    // Ca thật: lấy lại hồ sơ đọc giờ chuyển khỏi khoa Gây mê (20/08 12:11) và đè lên giờ ra viện 22/08 13:00,
+    // nên y lệnh 21–22/08 rơi ra ngoài đợt.
+    const vao = { ngay_vao_vien: '10:11 19/08/2026' };
+    patientDb.recordInpatient('BN990001', { profile: vao, discharge: { raw_time: '13:00 22/08/2026', tong_so_ngay_dt: '4', xu_tri: 'Ra viện' } },
+      { from: '2026-08-19', to: '2026-08-22', source: 'kho_nghien_cuu', now: '2026-10-06T10:00:00Z' });
+    patientDb.recordInpatient('BN990001', { profile: vao, discharge: { raw_time: '12:11 20/08/2026', tong_so_ngay_dt: '' } },
+      { from: '2026-08-19', to: '2026-08-22', source: 'kho_nghien_cuu', now: '2026-10-20T12:11:00Z' });
+    const visits = conn().prepare("SELECT * FROM luot WHERE ma_bn = 'BN990001'").all();
+    assert.strictEqual(visits.length, 1);
+    assert.strictEqual(visits[0].gio_ra, '2026-08-22 13:00');
+    const stay = patientDb.findStay('BN990001', '2026-08-19', ['discharge']);
+    assert.strictEqual(stay.output.discharge.raw_time, '13:00 22/08/2026');
+  });
+
+  await test('Kho bản cũ (< 5) đang lưu giờ ra một khoa → mở lại tự sửa về giờ ra viện thật', () => {
+    conn().prepare("UPDATE luot SET gio_ra = '2026-08-20 12:11' WHERE ma_bn = 'BN990001'").run();
+    conn().prepare("UPDATE meta SET value = '4' WHERE key = 'schema_version'").run();
+    patientDb.close();
+    const l = conn().prepare("SELECT gio_ra FROM luot WHERE ma_bn = 'BN990001'").get();
+    assert.strictEqual(l.gio_ra, '2026-08-22 13:00');
+  });
+
   patientDb.close();
   fs.rmSync(RUNTIME_ROOT, { recursive: true, force: true });
   console.log(`\n${passed} kịch bản pass.`);

@@ -111,6 +111,17 @@ test('ngưng thuốc: nhận action stop và vẫn tách được tên thuốc',
   assert.strictEqual(p.drug_name_raw, 'Aspirin');
 });
 
+test('ngưng thuốc tiêm truyền: chỉ có đường dùng, không thành thuốc tên "tiêm"', () => {
+  // Ca thật: "Ngưng y lệnh thuốc tiêm truyền" lưu thành thuốc drug_name_norm = "tiem".
+  for (const line of ['Ngưng y lệnh thuốc tiêm truyền', 'Ngừng thuốc uống', 'Ngưng y lệnh thuốc tiêm, truyền']) {
+    const p = parser.parseMedicationLine(line);
+    assert.ok(p, line);
+    assert.strictEqual(p.order_action, 'stop');
+    assert.strictEqual(p.drug_name_raw, '', line);
+    assert.strictEqual(p.drug_name_norm, '', line);
+  }
+});
+
 test('duy trì kháng sinh mơ hồ không tự dựng tên thuốc', () => {
   assert.strictEqual(parser.parseMedicationLine('Duy trì y lệnh kháng sinh truyền tĩnh mạch trong ngày'), null);
 });

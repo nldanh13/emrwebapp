@@ -123,7 +123,7 @@ function parseSchedule(text) {
 
 function stripMedicationPrefix(line, action) {
   let text = cleanText(line).replace(/^\((?:TT|CS)\)\s*/i, '');
-  if (action === 'stop') text = text.replace(/^(?:Ngưng|Dung|Dừng)\s+(?:y lệnh\s+)?(?:thuốc\s+)?/i, '');
+  if (action === 'stop') text = text.replace(/^(?:Ngưng|Ngừng|Ngung|Dung|Dừng)\s+(?:y lệnh\s+)?(?:thuốc\s+)?/i, '');
   if (action === 'continue') text = text.replace(/^(?:Duy trì|Tiếp tục)\s+(?:y lệnh\s+)?/i, '');
   return text.trim();
 }
@@ -135,6 +135,8 @@ function parseDrugName(line, action = 'order') {
   const cut = text.search(/\s+(?=\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)*\s*(?:mg|mcg|g|ml|iu|ui|đv|dv)(?![\p{L}\d])|\d+\s*(?:v|viên|vien|ống|ong|chai|lọ|lo|gói|goi)(?![\p{L}\d])|x\s*\d+(?!\d)|\((?:u|t|ttm|tdt|tdd)\)|(?:uống|uong|tiêm|tiem|truyền|truyen|ttm|tdt|tdd)(?![\p{L}\d]))/iu);
   const candidate = (cut >= 0 ? text.slice(0, cut) : text).replace(/[,:;\-]+$/g, '').trim();
   if (!candidate || /^(?:y lenh|thuoc|khang sinh)$/i.test(comparableText(candidate))) return '';
+  // Chỉ còn từ đường dùng ("Ngưng y lệnh thuốc tiêm truyền" → "tiêm"): không phải tên thuốc.
+  if (/^(?:(?:thuoc|dich|uong|tiem|truyen|tinh mach|ttm|tdt|tdd|tb|tm|bap|duoi da|xit|hit|bom|boi|nho|dat)[\s,/+&-]*|va\s+)+$/i.test(comparableText(candidate))) return '';
   return candidate.slice(0, 180);
 }
 

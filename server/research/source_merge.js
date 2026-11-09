@@ -67,6 +67,27 @@ function verifiedStayKey(patientCodeValue, admissionValue, dischargeValue) {
   return `verified_stay:${code}|${admission}|${discharge}`;
 }
 
+// Giờ ra sớm hơn giờ vào trên cùng một dòng: trang ra viện đọc theo một khoa (vd "vào 15:10 20/08,
+// ra 12:11 20/08" = vào khoa sau, ra khoa trước). Mốc ra đó không phải giờ ra viện.
+function dischargeBeforeAdmission(row) {
+  const admissionRaw = firstNonEmpty(row, ['Ngày vào viện', 'Ngay vao vien', 'Ngày nhập viện', 'Ngay nhap vien', 'T/G vào', 'TG vao', 'admission_date']);
+  const dischargeRaw = firstNonEmpty(row, ['Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien', 'discharge_date']);
+  const admission = parseAnyDate(admissionRaw);
+  const discharge = parseAnyDate(dischargeRaw);
+  if (!admission || !discharge) return false;
+  const clock = v => /\d{1,2}:\d{2}/.test(String(v || ''));
+  if (clock(admissionRaw) && clock(dischargeRaw)) return discharge.getTime() < admission.getTime();
+  const day = d => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  return day(discharge) < day(admission);
+}
+
+function withoutDischarge(row) {
+  const out = { ...(row || {}) };
+  for (const f of ['Ngày ra viện', 'Ngay ra vien', 'Ngày xuất viện', 'Ngay xuat vien', 'discharge_date']) if (f in out) out[f] = '';
+  out.__dropped_ward_discharge = 'discharge_before_admission';
+  return out;
+}
+
 function buildVerifiedStayIndex(profileRows = [], dischargeRows = []) {
   const byResearchKey = new Map();
   const touch = row => {
@@ -82,6 +103,7 @@ function buildVerifiedStayIndex(profileRows = [], dischargeRows = []) {
   // Profile có ngày vào và ngày ra đọc từ hồ sơ hành chánh gốc. Dùng ngày ra ở đây làm fallback
   // khi trang ra viện chưa có ngày; dữ liệu ngày ra từ discharge vẫn được ưu tiên bên dưới.
   for (const row of profileRows || []) {
+    if (dischargeBeforeAdmission(row)) row = withoutDischarge(row);
     const bucket = touch(row);
     if (!bucket) continue;
     const admission = rowAdmissionTime(row);
@@ -91,6 +113,7 @@ function buildVerifiedStayIndex(profileRows = [], dischargeRows = []) {
   }
   // Discharge là nguồn ưu tiên cho ngày ra thực tế nếu worker đã đọc được.
   for (const row of dischargeRows || []) {
+    if (dischargeBeforeAdmission(row)) continue;
     const bucket = touch(row);
     if (!bucket) continue;
     const discharge = rowDischargeTime(row);
@@ -500,6 +523,31 @@ function extendStaysWithEvidence(rows, evidenceRows = []) {
   return out.map(item => item.row);
 }
 
+// Y lệnh của chính lần nằm viện ghi SAU giờ ra đang có: giờ ra đó là lúc chuyển khỏi một khoa (ca thật:
+// ra 20/08 12:11 ở khoa Gây mê, y lệnh tới 07:57 22/08, ra viện 22/08 13:00). Khoảng bằng chứng phải
+// phủ tới y lệnh: lấy ngày ra ghi trên dòng y lệnh nếu nó không sớm hơn y lệnh, không thì lấy cả ngày
+// của y lệnh (không biết giờ ra thật). Y lệnh nằm trong đợt thì giữ nguyên ngày ra đã xác minh.
+const ORDER_TIME_FIELDS = ['TG y lệnh', 'TG y lenh', 'tg_ylenh'];
+
+function evidenceCoveringOrderTime(row, original) {
+  const orderRaw = firstNonEmpty(row, ORDER_TIME_FIELDS);
+  const order = parseAnyDate(orderRaw);
+  const bounds = stayBounds(row);
+  if (!order || !bounds || bounds.end == null || order.getTime() <= bounds.end) return row;
+  if (order.getTime() < bounds.start) return row;
+  const ownRaw = firstNonEmpty(original, DISCHARGE_FIELDS);
+  const ownBounds = ownRaw ? stayBounds({ ...original }) : null;
+  const pad = n => String(n).padStart(2, '0');
+  const orderDay = `${order.getFullYear()}-${pad(order.getMonth() + 1)}-${pad(order.getDate())}`;
+  const discharge = ownBounds && ownBounds.end != null && ownBounds.end >= order.getTime() ? ownRaw : orderDay;
+  const out = { ...row };
+  let set = false;
+  for (const f of DISCHARGE_FIELDS) if (String(out[f] ?? '').trim()) { out[f] = discharge; set = true; }
+  if (!set) out['Ngày ra viện'] = discharge;
+  out.__evidence_after_discharge = orderRaw;
+  return out;
+}
+
 function combineEncounterSources({ initialRows = [], deepRows = [], patientRows = [], hchanhProfileRows = [], hchanhDischargeRows = [], stayEvidenceRows = [], sourceRunId = '' } = {}) {
   const map = new Map();
   const verifiedIndex = buildVerifiedStayIndex(hchanhProfileRows, hchanhDischargeRows);
@@ -577,7 +625,7 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
   }
 
   function add(row, sourceStatus) {
-    const canonicalRow = canonicalizeRowToVerifiedStay(row, verifiedIndex);
+    const canonicalRow = canonicalizeRowToVerifiedStay(dischargeBeforeAdmission(row) ? withoutDischarge(row) : row, verifiedIndex);
     const code = patientCode(canonicalRow);
     if (!code) return;
     let withStatus = { ...canonicalRow };
@@ -640,11 +688,13 @@ function combineEncounterSources({ initialRows = [], deepRows = [], patientRows 
     const code = normalizedIdentity(patientCode(row));
     const researchKey = normalizedIdentity(firstNonEmpty(row, ['Research key', 'research_key']));
     const stay = code && researchKey ? verifiedIndex.direct.get(`${code}|${researchKey}`) : null;
-    if (!stay) return row;
-    const out = { ...row };
-    for (const f of DISCHARGE_FIELDS) if (String(out[f] ?? '').trim()) out[f] = stay.discharge;
-    if (!firstNonEmpty(out, DISCHARGE_FIELDS)) out['Ngày ra viện'] = stay.discharge;
-    return out;
+    let out = row;
+    if (stay) {
+      out = { ...row };
+      for (const f of DISCHARGE_FIELDS) if (String(out[f] ?? '').trim()) out[f] = stay.discharge;
+      if (!firstNonEmpty(out, DISCHARGE_FIELDS)) out['Ngày ra viện'] = stay.discharge;
+    }
+    return evidenceCoveringOrderTime(out, row);
   });
   return mergeOverlappingStays(extendStaysWithEvidence(mergeOverlappingStays(Array.from(map.values())), evidence)).sort((a, b) => {
     const da = parseDateTimeCell(firstNonEmpty(a, ['Ngày vào viện', 'Ngay vao vien', 'T/G vào', 'TG vao', 'ngay_vao_vien', 'ngay_vao']));
@@ -669,6 +719,8 @@ function dedupeByHash(rows) {
 }
 
 module.exports = {
+  dischargeBeforeAdmission,
+  evidenceCoveringOrderTime,
   dropPlaceholderDischarge,
   repairSharedPlaceholderDischargeDates,
   placeholderDischargeDays,
