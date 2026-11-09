@@ -56,7 +56,9 @@ const { TREATMENT_COST_COLUMNS } = require('./billing_summary');
 //      tự cộng từ dòng bảng kê; nguồn hchanh_billing.csv (phần Chi phí, lấy mặc định).
 // v42: medication_orders thêm thuốc từ bảng kê chi phí của đợt (order_action=billed, source=hchanh_billing,
 //      tên + tổng số lượng cả đợt, không có ngày giờ): Lịch sử y lệnh thường chỉ ghi "Dự trù thuốc".
-const NORMALIZED_SCHEMA_VERSION = 42;
+// v43: giờ ra một khoa (ra trước vào, hoặc còn y lệnh của chính lần nằm viện sau mốc đó) không còn được
+// lấy làm giờ ra viện; dòng "Ngưng y lệnh thuốc tiêm truyền" không còn thành thuốc tên "tiêm".
+const NORMALIZED_SCHEMA_VERSION = 43;
 
 const NORMALIZED_COLUMNS = {
   patients: [

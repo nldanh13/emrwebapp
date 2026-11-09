@@ -185,6 +185,44 @@ describe('research encounter anti-duplicate aliases', () => {
     expect(rows.filter(r => r['Mã BN'] === 'BN4')).toHaveLength(1);
   });
 
+  it('giờ ra một khoa không phải giờ ra viện: y lệnh sau mốc đó kéo đợt tới ngày y lệnh cuối', () => {
+    // Ca thật: hồ sơ lấy lại ghi ra 20/08 12:11 (lúc chuyển khỏi khoa Gây mê); y lệnh tiếp tục tới 22/08,
+    // trang ra viện (theo khoa) ghi "vào 15:10 20/08, ra 12:11 20/08" (ra trước vào).
+    const rows = combineEncounterSources({
+      initialRows: [
+        { 'Mã BN': 'BN990002', 'T/G vào': '10:11 19/08/2026', 'Ngày ra viện': '12:11 20/08/2026', 'Research key': 'RK2' },
+        { 'Mã BN': 'BN990002', 'T/G vào': '15:10 20/08/2026', 'Research key': 'RK3' },
+      ],
+      hchanhProfileRows: [
+        { 'Mã BN': 'BN990002', 'Research key': 'RK2', 'Ngày vào viện': '10:11 19/08/2026', 'Ngày ra viện': '12:11 20/08/2026' },
+      ],
+      hchanhDischargeRows: [
+        { 'Mã BN': 'BN990002', 'Research key': 'RK2', 'Ngày vào viện': '15:10 20/08/2026', 'Ngày ra viện': '12:11 20/08/2026' },
+      ],
+      stayEvidenceRows: [
+        { 'Mã BN': 'BN990002', 'Research key': 'RK2', 'Ngày vào viện': '10:11 19/08/2026', 'Ngày ra viện': '12:11 20/08/2026', 'TG y lệnh': '10:17 19/08/2026' },
+        { 'Mã BN': 'BN990002', 'Research key': 'RK2', 'Ngày vào viện': '10:11 19/08/2026', 'Ngày ra viện': '12:11 20/08/2026', 'TG y lệnh': '07:57 22/08/2026' },
+      ],
+    });
+    const stays = rows.filter(r => r['Mã BN'] === 'BN990002');
+    expect(stays).toHaveLength(1);
+    expect(String(stays[0]['Ngày ra viện'])).toMatch(/2026-08-22|22\/08\/2026/);
+  });
+
+  it('y lệnh trong đợt (trước giờ ra viện) không làm đổi giờ ra viện', () => {
+    const rows = combineEncounterSources({
+      initialRows: [{ 'Mã BN': 'BN990003', 'T/G vào': '08:00 01/03/2026', 'Ngày ra viện': '10:00 05/03/2026', 'Research key': 'RK4' }],
+      hchanhProfileRows: [{ 'Mã BN': 'BN990003', 'Research key': 'RK4', 'Ngày vào viện': '08:00 01/03/2026', 'Ngày ra viện': '10:00 05/03/2026' }],
+      hchanhDischargeRows: [{ 'Mã BN': 'BN990003', 'Research key': 'RK4', 'Ngày vào viện': '08:00 01/03/2026', 'Ngày ra viện': '10:00 05/03/2026' }],
+      stayEvidenceRows: [
+        { 'Mã BN': 'BN990003', 'Research key': 'RK4', 'Ngày vào viện': '08:00 01/03/2026', 'Ngày ra viện': '23/03/2026', 'TG y lệnh': '07:00 05/03/2026' },
+      ],
+    });
+    const stays = rows.filter(r => r['Mã BN'] === 'BN990003');
+    expect(stays).toHaveLength(1);
+    expect(String(stays[0]['Ngày ra viện'])).toMatch(/05\/03\/2026|2026-03-05/);
+  });
+
   it('khoảng vào–ra trên dòng y lệnh phủ hai đợt liền nhau (cách ≤ 1 ngày, chuyển khoa): một lần nằm viện', () => {
     // Dữ liệu thật: y lệnh/diễn biến nằm giữa hai đợt, cách đợt gần nhất ≤ 1 ngày (4.129 dòng).
     const rows = combineEncounterSources({
