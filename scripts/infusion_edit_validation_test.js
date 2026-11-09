@@ -71,4 +71,53 @@ assert.match(bothCheck.message, /tốc độ/i);
 const notScheduled = {the_tich: 100, toc_do: '30', gio_dung: '8 giờ', tg_bat_dau: ''};
 assert.match(validateInfusionTargetsComplete(simulated(notScheduled), scoped).message,
   /Chưa tính được giờ bắt đầu/);
+
+// Bổ sung giờ bắt đầu khi y lệnh không ghi giờ dùng: tự tính giờ kết thúc,
+// dòng qua được kiểm tra trước khi nhập mà không cần lấy lại dữ liệu.
+const { parseManualStart } = require('../server/utils/infusion_edit_validation');
+assert.equal(parseManualStart('8:05 15/10/2026', '15/10/2026'), '08:05 15/10/2026');
+assert.equal(parseManualStart('01:30 16/10/2026', '15/10/2026'), '01:30 16/10/2026');
+for (const bad of ['08:00', '25:00 15/10/2026', '08:00 14/10/2026', '08:00 17/10/2026', '08:00 31/02/2026']) {
+  assert.throws(() => parseManualStart(bad, '15/10/2026'), undefined, bad);
+}
+const nef = () => ({ ten_thuoc: 'NEFOPAM', gio_dung: '', the_tich: 100, toc_do: '30',
+  missing_infusion_time: true, raw_usage_line: 'TTM khi đau' });
+const other = { ten_thuoc: 'PARACETAMOL', tg_bat_dau: '08:00 15/10/2026', tg_ket_thuc: '08:40 15/10/2026',
+  the_tich: 100, toc_do: 50, gio_dung: '8 giờ' };
+const addRows = () => [row([nef(), {...other}])];
+const okRows = addRows();
+const added = matchAndUpdateInfusions(okRows, 'FAKE001', '15/10/2026', nef(),
+  {tg_bat_dau: '09:00 15/10/2026'}, id, date);
+assert.equal(added.updated, true);
+const fixed = okRows[0].thuoc.dich_truyen[0];
+assert.equal(fixed.tg_bat_dau, '09:00 15/10/2026');
+assert.equal(fixed.tg_ket_thuc, '10:06 15/10/2026', '100 ml × 20 / 30 giọt = 66 phút');
+assert.equal(fixed.missing_infusion_time, undefined);
+assert.equal(fixed.infusion_schedule_stale, false);
+assert.equal(fixed.tg_bat_dau_nhap_tay, true);
+assert.equal(fixed.gio_dung, '9 giờ');
+assert.equal(validateInfusionTargetsComplete(okRows, scoped).ok, true);
+assert.equal(validateInfusionTargetsComplete(okRows, scoped).skipped.length, 0);
+// Trùng giờ với dịch khác → từ chối, không ghi gì.
+const clashRows = addRows();
+const clash = matchAndUpdateInfusions(clashRows, 'FAKE001', '15/10/2026', nef(),
+  {tg_bat_dau: '08:20 15/10/2026'}, id, date);
+assert.equal(clash.updated, false);
+assert.match(clash.error, /Trùng giờ với PARACETAMOL/);
+assert.equal(clashRows[0].thuoc.dich_truyen[0].tg_bat_dau, undefined);
+// Tốc độ chưa xác nhận → phải nhập tốc độ cùng lúc.
+const noRate = () => ({ ...nef(), toc_do: '', missing_infusion_rate: true });
+const noRateRows = [row([noRate()])];
+const refused = matchAndUpdateInfusions(noRateRows, 'FAKE001', '15/10/2026', noRate(),
+  {tg_bat_dau: '09:00 15/10/2026'}, id, date);
+assert.equal(refused.updated, false);
+assert.match(refused.error, /tốc độ/);
+const withRate = matchAndUpdateInfusions(noRateRows, 'FAKE001', '15/10/2026', noRate(),
+  {tg_bat_dau: '09:00 15/10/2026', toc_do: 40}, id, date);
+assert.equal(withRate.updated, true);
+assert.equal(noRateRows[0].thuoc.dich_truyen[0].tg_ket_thuc, '09:50 15/10/2026');
+assert.equal(validateInfusionTargetsComplete(noRateRows, scoped).ok, true);
+const inferred = () => ({ ...nef(), toc_do_inferred: true });
+assert.match(matchAndUpdateInfusions([row([inferred()])], 'FAKE001', '15/10/2026', inferred(),
+  {tg_bat_dau: '09:00 15/10/2026'}, id, date).error, /tự đoán/);
 console.log('infusion edit safety: OK');

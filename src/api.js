@@ -90,7 +90,7 @@ function apiActionLabel(method, url) {
     'GET /api/run-postprocess': 'xử lý và phân loại dữ liệu',
     'GET /api/has-processed': 'kiểm tra dữ liệu đã xử lý',
     'GET /api/get-patients': 'tải danh sách người bệnh đã xử lý',
-    'POST /api/update-infusion-item': 'sửa thể tích/tốc độ dịch truyền',
+    'POST /api/update-infusion-item': 'sửa thể tích/tốc độ/giờ bắt đầu dịch truyền',
     'GET /api/medication-catalog': 'tải danh mục thuốc',
     'POST /api/medication-catalog': 'thêm thuốc vào danh mục',
     'POST /api/check-input-changes': 'kiểm tra y lệnh mới trước khi nhập',
