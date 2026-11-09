@@ -496,7 +496,54 @@ function redactCollectionRows(rows, redact, { keepPatientCode = false } = {}) {
   }));
 }
 
-async function runXnCdhaSubsetForCollection(ctx, { runDir, runId, scope, isArchive, rows, fromDate, toDate, headless }) {
+// Một lô XN/CĐHA phải chạy xong trong giới hạn thời gian: trước đây cả ~1.000 lượt giao trong một
+// tiến trình 30 phút, worker chỉ kịp ~50 ca rồi bị dừng, và các ca chưa tới lượt bị ghi "Worker không
+// trả kết quả" (ca thật nằm ở dòng 590–768 nên 5 lần lấy đều không tới).
+const MINUTE = 60 * 1000;
+function xnBatchSize() {
+  return Math.max(1, Math.min(500, Number(process.env.EMR_XN_BATCH_SIZE) || 30));
+}
+function xnBatchTimeouts(caseCount) {
+  const { PY_TIMEOUT_MS } = require('../constants');
+  const perCase = Number(process.env.EMR_XN_CASE_TIMEOUT_MS) > 0 ? Number(process.env.EMR_XN_CASE_TIMEOUT_MS) : 3 * MINUTE;
+  const idle = Number(process.env.EMR_XN_IDLE_TIMEOUT_MS) > 0 ? Number(process.env.EMR_XN_IDLE_TIMEOUT_MS) : 10 * MINUTE;
+  return { timeoutMs: Math.max(PY_TIMEOUT_MS, Math.max(1, Number(caseCount) || 1) * perCase), idleTimeoutMs: idle };
+}
+
+/**
+ * Chạy XN/CĐHA theo từng lô nhỏ. Lô lỗi/hết giờ chỉ đánh dấu các lượt của lô đó; lô sau vẫn chạy
+ * (trừ khi người dùng dừng hoặc Python không khởi động được). Lượt chưa tới lượt khi dừng: không tính gì.
+ * @returns {{ done_keys: string[], failures: {keys: string[], error: string}[], stopped: boolean }}
+ */
+async function runXnCdhaInBatches(rows, { batchSize = xnBatchSize(), runBatch, isCancelled = () => false } = {}) {
+  const out = { done_keys: [], failures: [], stopped: false };
+  const keyOf = r => String(r?.__collect_key || '');
+  for (let i = 0; i < rows.length; i += batchSize) {
+    if (isCancelled()) { out.stopped = true; break; }
+    const batch = rows.slice(i, i + batchSize);
+    let r;
+    try {
+      r = await runBatch(batch, { index: i / batchSize, total: Math.ceil(rows.length / batchSize) });
+    } catch (err) {
+      r = { error: String(err?.message || err) };
+    }
+    if (r?.error) {
+      out.failures.push({ keys: batch.map(keyOf), error: String(r.error), fatal: Boolean(r.fatal) });
+      // Không khởi động được Python: các lô sau cũng sẽ hỏng y hệt → dừng, để lần sau thử lại.
+      if (r.fatal) {
+        const rest = rows.slice(i + batchSize);
+        if (rest.length) out.failures.push({ keys: rest.map(keyOf), error: String(r.error), fatal: true });
+        break;
+      }
+      continue;
+    }
+    out.done_keys.push(...batch.map(keyOf));
+    if (r?.stopped) { out.stopped = true; break; }
+  }
+  return out;
+}
+
+async function runXnCdhaOneBatch(ctx, { runDir, runId, scope, isArchive, rows, fromDate, toDate, headless }) {
   const inputDir = path.join(runDir, 'input');
   ensureDir(inputDir);
   const subsetPath = path.join(inputDir, `collect_xn_cdha_${nowFileStamp()}.csv`);
@@ -510,20 +557,42 @@ async function runXnCdhaSubsetForCollection(ctx, { runDir, runId, scope, isArchi
   if (fromDate) args.push('--from-date', fromDate);
   if (toDate) args.push('--to-date', toDate);
   if (headless) args.push('--headless');
+  const timeouts = xnBatchTimeouts(rows.length);
   let result;
   try {
     result = await runPython(args, {
       cwd: ROOT_DIR,
+      timeoutMs: timeouts.timeoutMs,
+      idleTimeoutMs: timeouts.idleTimeoutMs,
       onSpawn: killFn => registerCancel(ctx.sid, killFn),
       extraEnv: { RESEARCH_INPUT_NAME: path.basename(subsetPath), RESEARCH_REFETCH_MISSING: '1' },
     });
   } finally {
     unregisterCancel(ctx.sid);
   }
-  if (result.spawnError) return { error: `Không khởi động được Python: ${result.spawnError}` };
-  if (result.killedByTimeout) return { error: 'timeout' };
+  if (result.spawnError) return { error: `Không khởi động được Python: ${result.spawnError}`, fatal: true };
+  if (result.killedByTimeout) {
+    const min = Math.round((result.timeoutKind === 'idle' ? timeouts.idleTimeoutMs : timeouts.timeoutMs) / MINUTE);
+    return { error: result.timeoutKind === 'idle'
+      ? `Hết giờ chờ: EMR không phản hồi quá ${min} phút. Lô sẽ được thử lại ở lần chạy sau.`
+      : `Hết giờ chờ: lô ${rows.length} lượt chạy quá ${min} phút. Lô sẽ được thử lại ở lần chạy sau.` };
+  }
   if (result.code !== 0 && !isStoppedRunResult(result)) return { error: fmtPyError('Lấy XN/CĐHA lỗi', result) };
   return { ok: true, stopped: isStoppedRunResult(result) };
+}
+
+async function runXnCdhaSubsetForCollection(ctx, opts) {
+  const rows = opts.rows || [];
+  const res = await runXnCdhaInBatches(rows, {
+    runBatch: (batch, { index, total }) => {
+      if (total > 1 && opts.runDir) {
+        try { appendResearchRunLog(opts.runDir, `[${new Date().toLocaleString('vi-VN')}] XN/CĐHA: lô ${index + 1}/${total} (${batch.length} lượt).`); } catch (_) {}
+      }
+      return runXnCdhaOneBatch(ctx, { ...opts, rows: batch });
+    },
+    isCancelled: () => Boolean(ctx?.sid && isCancelRequested(ctx.sid)),
+  });
+  return { ok: true, batched: true, ...res };
 }
 
 const DEFAULT_COLLECTION_RUNNERS = {
@@ -655,7 +724,7 @@ async function runCollectionOrchestration(ctx, {
         const rows = groups.xn_cdha
           .map(t => {
             const row = rowByKey.get(t.key);
-            return row ? { ...row, refetch_parts: t.parts.join(';') } : null;
+            return row ? { ...row, refetch_parts: t.parts.join(';'), __collect_key: t.key } : null;
           })
           .filter(Boolean);
         let r;
@@ -666,7 +735,20 @@ async function runCollectionOrchestration(ctx, {
         } catch (err) {
           workerError = String(err?.message || err);
         }
-        if (workerError) {
+        if (!workerError && r?.batched) {
+          // Theo từng lô: lô xong → đã giao (không có kết quả mới mới tính no_result); lô lỗi/hết giờ →
+          // lỗi kỹ thuật của lô, không tiêu hao lượt thử của ca; lô chưa tới khi dừng → không tính gì.
+          const byKey = new Map(groups.xn_cdha.map(t => [t.key, t]));
+          const done = new Set(r.done_keys || []);
+          for (const t of groups.xn_cdha) if (done.has(t.key)) for (const pk of t.parts) dispatched.push({ key: t.key, part: pk });
+          for (const f of r.failures || []) {
+            errors.push(`XN/CĐHA (${f.keys.length} lượt): ${String(f.error).split('\n')[0]}`);
+            for (const k of f.keys) for (const pk of byKey.get(k)?.parts || []) dispatchFailures.push({
+              key: k, part: pk, reason: /hết giờ/i.test(f.error) ? 'timeout' : 'worker_error', detail: f.error, at: nowIso(),
+            });
+          }
+          if (r.stopped) cancelled = true;
+        } else if (workerError) {
           errors.push(`XN/CĐHA: ${workerError.split('\n')[0]}`);
           for (const t of groups.xn_cdha) for (const pk of t.parts) dispatchFailures.push({
             key: t.key, part: pk, reason: 'worker_error', detail: workerError, at: nowIso(),
@@ -798,6 +880,8 @@ function studyReadinessForRun(study, runDir, sourceRows, { write = false, maxAtt
 }
 
 module.exports = {
+  runXnCdhaInBatches,
+  xnBatchTimeouts,
   COLLECTION_LEDGER_FILE,
   COLLECTION_REPORT_FILE,
   COLLECTION_HISTORY_FILE,
