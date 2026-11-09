@@ -98,13 +98,35 @@ assert.equal(fixed.tg_bat_dau_nhap_tay, true);
 assert.equal(fixed.gio_dung, '9 giờ');
 assert.equal(validateInfusionTargetsComplete(okRows, scoped).ok, true);
 assert.equal(validateInfusionTargetsComplete(okRows, scoped).skipped.length, 0);
-// Trùng giờ với dịch khác → từ chối, không ghi gì.
+// Lỗi 09/11/2026: chọn 08:00 trùng Paracetamol 08:00→08:20 bị từ chối. Cùng cữ thì
+// nối tiếp sau dịch đang truyền (như worker xếp lịch), không bắt người dùng tự tính.
 const clashRows = addRows();
-const clash = matchAndUpdateInfusions(clashRows, 'FAKE001', '15/10/2026', nef(),
-  {tg_bat_dau: '08:20 15/10/2026'}, id, date);
-assert.equal(clash.updated, false);
-assert.match(clash.error, /Trùng giờ với PARACETAMOL/);
-assert.equal(clashRows[0].thuoc.dich_truyen[0].tg_bat_dau, undefined);
+const queued = matchAndUpdateInfusions(clashRows, 'FAKE001', '15/10/2026', nef(),
+  {tg_bat_dau: '08:00 15/10/2026'}, id, date);
+assert.equal(queued.updated, true);
+const q = clashRows[0].thuoc.dich_truyen[0];
+assert.equal(q.tg_bat_dau, '08:40 15/10/2026');
+assert.equal(q.tg_ket_thuc, '09:46 15/10/2026');
+assert.equal(q.gio_dung, '8 giờ', 'giữ cữ người dùng chọn');
+assert.equal(queued.schedule.noi_tiep_sau, 'PARACETAMOL');
+assert.equal(queued.schedule.gio_chon, '08:00 15/10/2026');
+// Nối tiếp qua nhiều dịch liên tiếp.
+const chainRows = [row([nef(), {...other}, { ten_thuoc: 'CEFAZOLIN', tg_bat_dau: '08:40 15/10/2026',
+  tg_ket_thuc: '09:00 15/10/2026', the_tich: 100, toc_do: 100, gio_dung: '8 giờ' }])];
+matchAndUpdateInfusions(chainRows, 'FAKE001', '15/10/2026', nef(), {tg_bat_dau: '08:10 15/10/2026'}, id, date);
+assert.equal(chainRows[0].thuoc.dich_truyen[0].tg_bat_dau, '09:00 15/10/2026');
+// Giờ trống thì giữ nguyên, không ghi chú nối tiếp.
+const freeRows = addRows();
+const free = matchAndUpdateInfusions(freeRows, 'FAKE001', '15/10/2026', nef(), {tg_bat_dau: '06:30 15/10/2026'}, id, date);
+assert.equal(freeRows[0].thuoc.dich_truyen[0].tg_bat_dau, '06:30 15/10/2026');
+assert.equal(free.schedule.noi_tiep_sau, undefined);
+// Bắt đầu lúc trống nhưng chạy lấn sang dịch đã có lịch sau đó → từ chối, gợi ý giờ trống.
+const intoRows = addRows();
+const into = matchAndUpdateInfusions(intoRows, 'FAKE001', '15/10/2026', nef(), {tg_bat_dau: '07:30 15/10/2026'}, id, date);
+assert.equal(into.updated, false);
+assert.match(into.error, /PARACETAMOL/);
+assert.match(into.error, /08:40 15\/10\/2026/);
+assert.equal(intoRows[0].thuoc.dich_truyen[0].tg_bat_dau, undefined);
 // Tốc độ chưa xác nhận → phải nhập tốc độ cùng lúc.
 const noRate = () => ({ ...nef(), toc_do: '', missing_infusion_rate: true });
 const noRateRows = [row([noRate()])];
