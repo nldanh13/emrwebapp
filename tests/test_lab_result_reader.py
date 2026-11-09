@@ -59,7 +59,7 @@ def test_listing_unknown_layout_is_error_not_empty():
 def test_detail_rows_keep_value_unit_reference_and_flag_abnormal():
     rows = lr.parse_lab_detail(DETAIL_P1)
     assert rows == [
-        {"chi_so": "WBC", "ket_qua": "15.2", "tham_chieu": "4 - 10", "don_vi": "G/L", "bat_thuong": "bat_thuong"},
+        {"chi_so": "WBC", "ket_qua": "15.2", "tham_chieu": "4 - 10", "don_vi": "G/L", "bat_thuong": "cao"},
         {"chi_so": "HGB", "ket_qua": "132", "tham_chieu": "120 - 160", "don_vi": "g/L", "bat_thuong": ""},
     ]
 
@@ -151,3 +151,64 @@ def test_day_without_slips_is_none(monkeypatch):
     driver = FakeDriver({})
     out = lr.read_lab_results_for_day(driver, "01/01/2026")
     assert out["status"] == lr.STATUS_NONE and out["phieu"] == []
+
+
+# Bố cục thật trên EMR (ảnh 09/11/2026): ô đầu trống, rồi STT, tên, kết quả, khoảng bình thường.
+# Bản đọc 1 coi ô trống là ô STT nên tên XN rơi vào cột "Kết quả" và kết quả rơi vào "Tham chiếu".
+DETAIL_EMR_NO_HEADER = """
+<div id="divDsChiSoContent"><table>
+  <tr><td></td><td>1</td><td>FT4 (Free Thyroxine)</td><td>3.01</td><td>0.92 - 1.68</td></tr>
+  <tr><td></td><td>2</td><td>TSH</td><td>3.20</td><td>0.35 - 4.94</td></tr>
+  <tr><td></td><td>3</td><td>WBC</td><td>36.17</td><td>4.0 - 9.0</td><td>G/L</td></tr>
+  <tr><td></td><td>4</td><td>EOS%</td><td>0.3</td><td>0.0 6.0</td></tr>
+  <tr><td></td><td>5</td><td>CRP</td><td>44.5</td><td>&lt; 5.0</td></tr>
+  <tr><td></td><td>6</td><td>RBC</td><td>3.31</td><td>3.8 - 5.3</td></tr>
+  <tr><td></td><td>7</td><td>HbsAg</td><td>Âm tính</td><td>Âm tính</td></tr>
+</table></div>
+"""
+
+
+def test_emr_layout_with_blank_and_index_cells_reads_name_then_value():
+    rows = {r["chi_so"]: r for r in lr.parse_lab_detail(DETAIL_EMR_NO_HEADER)}
+    assert list(rows) == ["FT4 (Free Thyroxine)", "TSH", "WBC", "EOS%", "CRP", "RBC", "HbsAg"]
+    assert rows["FT4 (Free Thyroxine)"]["ket_qua"] == "3.01"
+    assert rows["FT4 (Free Thyroxine)"]["tham_chieu"] == "0.92 - 1.68"
+    assert rows["WBC"]["don_vi"] == "G/L"
+    assert rows["CRP"]["tham_chieu"] == "< 5.0"
+
+
+def test_abnormal_is_computed_from_reference_when_emr_does_not_color():
+    rows = {r["chi_so"]: r["bat_thuong"] for r in lr.parse_lab_detail(DETAIL_EMR_NO_HEADER)}
+    assert rows == {
+        "FT4 (Free Thyroxine)": "cao", "TSH": "", "WBC": "cao", "EOS%": "",
+        "CRP": "cao", "RBC": "thap", "HbsAg": "",
+    }
+
+
+def test_header_row_decides_column_order():
+    html = """<div id="divDsChiSoContent"><table>
+      <tr><th>STT</th><th>Tên xét nghiệm</th><th>Chỉ số bình thường</th><th>Kết quả</th><th>Đơn vị</th></tr>
+      <tr><td>1</td><td>Glucose</td><td>3.9 - 6.4</td><td>8.2</td><td>mmol/L</td></tr>
+    </table></div>"""
+    assert lr.parse_lab_detail(html) == [
+        {"chi_so": "Glucose", "ket_qua": "8.2", "tham_chieu": "3.9 - 6.4", "don_vi": "mmol/L", "bat_thuong": "cao"},
+    ]
+
+
+def test_out_of_range_edges():
+    assert lr.out_of_range("6.4", "3.9 - 6.4") == ""
+    assert lr.out_of_range("3,1", "3.8 - 5.3") == "thap"
+    assert lr.out_of_range("12", "> 60") == "thap"
+    assert lr.out_of_range("Dương tính", "Âm tính") == ""
+    assert lr.out_of_range("5", "") == ""
+
+
+def test_bedside_glucose_row_value_with_unit_in_one_cell():
+    # Ảnh 09/11/2026: bản cũ hiện STT ở "Chỉ số", tên ở "Kết quả", 6.5 mmol/l ở "Tham chiếu".
+    html = """<div id="divDsChiSoContent"><table>
+      <tr><td></td><td>1</td><td>Xét nghiệm đường máu mao mạch tại giường (một lần)</td><td>6.5 mmol/l</td><td></td></tr>
+    </table></div>"""
+    assert lr.parse_lab_detail(html) == [{
+        "chi_so": "Xét nghiệm đường máu mao mạch tại giường (một lần)", "ket_qua": "6.5 mmol/l",
+        "tham_chieu": "", "don_vi": "", "bat_thuong": "",
+    }]

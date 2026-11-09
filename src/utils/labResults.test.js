@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { labChip, labSummary, patientLabEntry } from './labResults.js';
+import { abnormalRows, labChip, labSummary, patientLabEntry } from './labResults.js';
 
-const okEntry = (phieu) => ({ status: 'ok', phieu });
+const okEntry = (phieu) => ({ status: 'ok', parser: 2, phieu });
 
 describe('kết quả xét nghiệm trong ngày', () => {
   it('lấy đúng người bệnh theo mã', () => {
@@ -26,5 +26,17 @@ describe('kết quả xét nghiệm trong ngày', () => {
     expect(labChip({ status: 'none', phieu: [] })).toBeNull();
     expect(labChip(null)).toBeNull();
     expect(labChip({ status: 'error', error: 'x' })).toMatchObject({ tone: 'amber' });
+  });
+
+  it('kết quả đọc bằng bản cũ (lệch cột) thì chip báo cần lấy lại', () => {
+    expect(labChip({ status: 'ok', phieu: [{ hoan_tat: true, ket_qua: [{}] }] })).toMatchObject({ text: 'XN cần lấy lại', tone: 'amber' });
+  });
+
+  it('gom chỉ số bất thường kèm tên phiếu, bỏ phiếu chưa có kết quả', () => {
+    const rows = abnormalRows(okEntry([
+      { loai_xn: 'Huyết học', hoan_tat: true, ket_qua: [{ chi_so: 'WBC', bat_thuong: 'cao' }, { chi_so: 'HGB', bat_thuong: '' }] },
+      { loai_xn: 'Sinh hóa', hoan_tat: false, ket_qua: [{ chi_so: 'CRP', bat_thuong: 'cao' }] },
+    ]));
+    expect(rows).toEqual([{ chi_so: 'WBC', bat_thuong: 'cao', loai_xn: 'Huyết học' }]);
   });
 });

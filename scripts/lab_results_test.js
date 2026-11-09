@@ -38,7 +38,7 @@ require.cache[pythonRunnerPath] = {
         if (workerBehaviour === 'error') { results[id] = { status: 'error', phieu: [], error: 'Không mở được cửa sổ Xem kết quả', fetched_at: new Date().toISOString() }; continue; }
         results[id] = id === 'BN_NONE'
           ? { status: 'none', phieu: [], fetched_at: new Date().toISOString() }
-          : { status: 'ok', fetched_at: new Date().toISOString(), phieu: [
+          : { status: 'ok', parser: 2, fetched_at: new Date().toISOString(), phieu: [
             { ma_phieu: `${id}-1`, tg_chi_dinh: '07:00 09/11/2026', hoan_tat: true, ket_qua: [{ chi_so: 'WBC', ket_qua: '15', bat_thuong: 'bat_thuong' }] },
             ...(id === 'BN_PENDING' ? [{ ma_phieu: `${id}-2`, tg_chi_dinh: '07:00 09/11/2026', hoan_tat: false, ket_qua: [] }] : []),
           ] };
@@ -73,10 +73,11 @@ function call(server, method, url, body) {
   const NOW = Date.parse('2026-11-09T12:00:00');
 
   await test('needsFetch: đủ kết quả không đọc lại; còn chờ, lỗi, chưa có thì đọc', () => {
-    const done = { status: 'ok', phieu: [{ hoan_tat: true }] };
+    const done = { status: 'ok', parser: store.PARSER_VERSION, phieu: [{ hoan_tat: true }] };
+    assert.strictEqual(store.needsFetch({ status: 'ok', phieu: [{ hoan_tat: true }] }, { now: NOW }), true, 'đọc bằng bản cũ (lệch cột) thì đọc lại');
     assert.strictEqual(store.needsFetch(done, { now: NOW }), false);
     assert.strictEqual(store.needsFetch(done, { now: NOW, force: true }), true);
-    assert.strictEqual(store.needsFetch({ status: 'ok', phieu: [{ hoan_tat: true }, { hoan_tat: false }] }, { now: NOW }), true);
+    assert.strictEqual(store.needsFetch({ status: 'ok', parser: store.PARSER_VERSION, phieu: [{ hoan_tat: true }, { hoan_tat: false }] }, { now: NOW }), true);
     assert.strictEqual(store.needsFetch({ status: 'error' }, { now: NOW }), true);
     assert.strictEqual(store.needsFetch(null, { now: NOW }), true);
     assert.strictEqual(store.needsFetch({ status: 'none', fetched_at: '2026-11-09T11:30:00' }, { now: NOW }), false);
