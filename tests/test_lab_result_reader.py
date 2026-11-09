@@ -201,3 +201,14 @@ def test_out_of_range_edges():
     assert lr.out_of_range("12", "> 60") == "thap"
     assert lr.out_of_range("Dương tính", "Âm tính") == ""
     assert lr.out_of_range("5", "") == ""
+
+
+def test_bedside_glucose_row_value_with_unit_in_one_cell():
+    # Ảnh 09/11/2026: bản cũ hiện STT ở "Chỉ số", tên ở "Kết quả", 6.5 mmol/l ở "Tham chiếu".
+    html = """<div id="divDsChiSoContent"><table>
+      <tr><td></td><td>1</td><td>Xét nghiệm đường máu mao mạch tại giường (một lần)</td><td>6.5 mmol/l</td><td></td></tr>
+    </table></div>"""
+    assert lr.parse_lab_detail(html) == [{
+        "chi_so": "Xét nghiệm đường máu mao mạch tại giường (một lần)", "ket_qua": "6.5 mmol/l",
+        "tham_chieu": "", "don_vi": "", "bat_thuong": "",
+    }]
