@@ -17,6 +17,9 @@ const { readJsonSafe, writeJsonAtomic } = require('../utils/file');
 const FILE_NAME = 'lab_results_by_day.json';
 const KEEP_DAYS = 14;
 const NONE_RECHECK_MS = 60 * 60 * 1000;
+// Khớp PARSER_VERSION ở worker/lab_result_reader.py. Kết quả đọc bằng bản cũ hơn bị coi là
+// chưa đọc (bản 1 lệch cột chi tiết), lần bấm sau đọc lại.
+const PARSER_VERSION = 2;
 
 function storePath(ctx) {
   return path.join(ctx.dir, FILE_NAME);
@@ -51,7 +54,7 @@ function pendingCount(entry) {
 // Có cần mở EMR để đọc người bệnh này không. now: số mili giây (để test).
 function needsFetch(entry, { force = false, now = Date.now() } = {}) {
   if (force || !entry) return true;
-  if (entry.status === 'ok') return pendingCount(entry) > 0;
+  if (entry.status === 'ok') return Number(entry.parser || 1) < PARSER_VERSION || pendingCount(entry) > 0;
   if (entry.status === 'none') {
     const at = Date.parse(entry.fetched_at || '');
     return !Number.isFinite(at) || now - at >= NONE_RECHECK_MS;
@@ -83,6 +86,7 @@ function mergeResults(store, day, results, { now = new Date() } = {}) {
       status: ['ok', 'none', 'error'].includes(fresh.status) ? fresh.status : 'error',
       phieu: Array.isArray(fresh.phieu) ? fresh.phieu : [],
       tom_tat: fresh.tom_tat || null,
+      parser: Number(fresh.parser || 1),
       error: String(fresh.error || ''),
       fetched_at: fresh.fetched_at || now.toISOString(),
     };
@@ -100,6 +104,7 @@ function writeStore(ctx, store) {
 module.exports = {
   FILE_NAME,
   NONE_RECHECK_MS,
+  PARSER_VERSION,
   dmyKey,
   readStore,
   writeStore,

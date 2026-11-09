@@ -118,70 +118,166 @@ def parse_lab_listing(html: str, day: str) -> List[Dict[str, Any]]:
     return items
 
 
-def _abnormal(td: Any) -> str:
+# Tăng khi cách đọc chi tiết đổi: máy chủ đọc lại các ca đã lưu bằng bản cũ.
+# 2: nhận cột theo dòng tiêu đề / bỏ ô trống + STT đầu dòng (bản 1 lệch cột khi dòng
+#    bắt đầu bằng ô trống: tên XN rơi vào cột Kết quả); tự so kết quả với tham chiếu.
+PARSER_VERSION = 2
+
+_NUM = r"[-+]?\d+(?:[.,]\d+)?"
+
+
+def _num(value: str) -> Optional[float]:
+    try:
+        return float(value.replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
+def _style_flag(td: Any) -> str:
+    if td is None:
+        return ""
     style = str(td.get("style", "")).lower()
     css = " ".join(td.get("class") or []).lower()
-    combined = style + " " + css
-    if "red" in combined or "danger" in combined:
+    inner = " ".join(str(x.get("style", "")) + " " + " ".join(x.get("class") or []) for x in td.find_all(True)).lower()
+    combined = " ".join([style, css, inner])
+    if "red" in combined or "danger" in combined or "#f00" in combined or "#ff0000" in combined:
         return "bat_thuong"
-    if "blue" in combined:
+    return ""
+
+
+def _is_reference(value: str) -> bool:
+    v = _text(value)
+    return bool(
+        re.fullmatch(r"(?:<=?|>=?|≤|≥)\s*" + _NUM, v)
+        or re.fullmatch(_NUM + r"\s*(?:-|–|—|\s)\s*" + _NUM, v)
+    )
+
+
+def out_of_range(result: Any, reference: Any) -> str:
+    """'cao' / 'thap' khi kết quả số nằm ngoài khoảng tham chiếu số; '' khi không so được."""
+    r = _text(result)
+    if not re.fullmatch(_NUM, r):
+        return ""
+    value = _num(r)
+    ref = _text(reference)
+    low = high = None
+    m = re.fullmatch(r"(" + _NUM + r")\s*(?:-|–|—|\s)\s*(" + _NUM + r")", ref)
+    if m:
+        low, high = _num(m.group(1)), _num(m.group(2))
+    else:
+        m = re.fullmatch(r"(<=?|≤)\s*(" + _NUM + r")", ref)
+        if m:
+            high = _num(m.group(2))
+        m2 = re.fullmatch(r"(>=?|≥)\s*(" + _NUM + r")", ref)
+        if m2:
+            low = _num(m2.group(2))
+    if value is None:
+        return ""
+    if high is not None and value > high:
+        return "cao"
+    if low is not None and value < low:
         return "thap"
     return ""
 
 
-_HEADER_NAMES = {
-    "chi so", "xet nghiem", "ten xet nghiem", "ket qua", "don vi", "tham chieu",
-    "khoang tham chieu", "chi so binh thuong",
-}
-
-
 def _is_unit(value: str) -> bool:
     v = _text(value).lower().replace("μ", "µ")
-    if not v:
+    if not v or _is_reference(v) or re.fullmatch(_NUM, v):
         return False
-    if v in {"%", "fl", "pl", "pg", "g", "mg", "s", "sec", "u/l", "iu/l"}:
+    if v in {"%", "fl", "pl", "pg", "g", "mg", "s", "sec", "u/l", "iu/l", "giây"}:
         return True
-    return "/" in v and not re.fullmatch(r"[-+]?\d+(?:[.,]\d+)?\s*/\s*[-+]?\d+(?:[.,]\d+)?", v)
+    return "/" in v and not re.fullmatch(_NUM + r"\s*/\s*" + _NUM, v)
+
+
+def _header_map(cells: List[str]) -> Dict[str, int]:
+    """Vị trí cột theo dòng tiêu đề, vd. STT | Tên xét nghiệm | Kết quả | Chỉ số bình thường | Đơn vị."""
+    folded = [_fold(c) for c in cells]
+    if not any("ket qua" in f for f in folded):
+        return {}
+    cols: Dict[str, int] = {}
+    for i, f in enumerate(folded):
+        if not f:
+            continue
+        if "ket qua" in f and "result" not in cols:
+            cols["result"] = i
+        elif ("binh thuong" in f or "tham chieu" in f) and "ref" not in cols:
+            cols["ref"] = i
+        elif "don vi" in f and "unit" not in cols:
+            cols["unit"] = i
+        elif ("ten" in f.split() or f in {"chi so", "xet nghiem", "ten xet nghiem", "ten chi so", "dich vu"}) and "name" not in cols:
+            cols["name"] = i
+    return cols if "result" in cols and "name" in cols else {}
+
+
+def _row_without_header(cells: List[str], tds: List[Any]) -> Optional[Tuple[str, str, str, str, Any]]:
+    # Bỏ các ô đầu dòng trống hoặc chỉ là số thứ tự (ô chọn, STT).
+    start = 0
+    while start < len(cells) - 2 and start < 2 and (not cells[start] or re.fullmatch(r"\d+[.)]?", cells[start])):
+        start += 1
+    if len(cells) - start < 2:
+        return None
+    name, result = cells[start], cells[start + 1]
+    ref = unit = ""
+    for extra in cells[start + 2:]:
+        if not extra:
+            continue
+        if not ref and _is_reference(extra):
+            ref = extra
+        elif not unit and _is_unit(extra):
+            unit = extra
+        elif not ref:
+            ref = extra
+    return name, result, ref, unit, tds[start + 1]
+
+
+_HEADER_NAMES = {
+    "chi so", "xet nghiem", "ten xet nghiem", "ket qua", "don vi", "tham chieu",
+    "khoang tham chieu", "chi so binh thuong", "stt",
+}
 
 
 def parse_lab_detail(html: str) -> List[Dict[str, str]]:
     """Chỉ số của một phiếu XN (khung #divDsChiSoContent).
 
-    Dòng có 2–5+ ô; có thể có ô STT ở đầu. Giữ nguyên chữ của ô kết quả.
+    Có dòng tiêu đề thì nhận cột theo tiêu đề; không có thì bỏ ô trống/STT đầu dòng,
+    lấy tên rồi kết quả, các ô sau là tham chiếu/đơn vị. ``bat_thuong``: 'cao'/'thap'
+    khi kết quả số ngoài khoảng tham chiếu, 'bat_thuong' khi EMR tô đỏ, '' khi bình thường.
     """
     soup = BeautifulSoup(html or "", "html.parser")
     box = soup.find(id="divDsChiSoContent") or soup
     rows: List[Dict[str, str]] = []
+    cols: Dict[str, int] = {}
     for tr in box.find_all("tr"):
-        tds = tr.find_all("td")
+        tds = tr.find_all(["td", "th"])
         cells = [_text(td.get_text(" ", strip=True)) for td in tds]
         if len(cells) < 2:
             continue
-        has_index = bool(re.fullmatch(r"\d+[.)]?", cells[0])) or (not cells[0] and len(cells) >= 3)
-        if has_index:
-            if len(cells) < 3:
+        header = _header_map(cells)
+        if header:
+            cols = header
+            continue
+        if cols:
+            if len(cells) <= max(cols.values()):
                 continue
-            name, result, rest, result_td = cells[1], cells[2], cells[3:], tds[2]
+            name, result = cells[cols["name"]], cells[cols["result"]]
+            ref = cells[cols["ref"]] if "ref" in cols else ""
+            unit = cells[cols["unit"]] if "unit" in cols else ""
+            result_td = tds[cols["result"]]
         else:
-            name, result, rest, result_td = cells[0], cells[1], cells[2:], tds[1]
-        if not name or not result:
+            parsed = _row_without_header(cells, tds)
+            if not parsed:
+                continue
+            name, result, ref, unit, result_td = parsed
+        if not name or not result or re.fullmatch(r"\d+[.)]?", name):
             continue
         if _fold(name) in _HEADER_NAMES or _fold(result) in _HEADER_NAMES:
             continue
-        ref, unit = "", ""
-        if len(rest) >= 2:
-            ref, unit = rest[0], rest[1]
-        elif len(rest) == 1:
-            if _is_unit(rest[0]):
-                unit = rest[0]
-            else:
-                ref = rest[0]
         rows.append({
             "chi_so": name,
             "ket_qua": result,
             "tham_chieu": ref,
             "don_vi": unit,
-            "bat_thuong": _abnormal(result_td),
+            "bat_thuong": out_of_range(result, ref) or _style_flag(result_td),
         })
     return rows
 
@@ -315,7 +411,7 @@ def read_lab_results_for_day(driver: Any, day: str) -> Dict[str, Any]:
 
     Trả {status, phieu, tom_tat, error}. ``status`` là ok/none/error.
     """
-    out: Dict[str, Any] = {"status": STATUS_ERROR, "phieu": [], "tom_tat": summarize([]), "error": ""}
+    out: Dict[str, Any] = {"status": STATUS_ERROR, "phieu": [], "tom_tat": summarize([]), "error": "", "parser": PARSER_VERSION}
     try:
         if not _open_results_popup(driver):
             out["error"] = "Không mở được cửa sổ Xem kết quả"
