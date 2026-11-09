@@ -121,7 +121,7 @@ export default function ShiftDesktopView({
               onInputCare={handleInputCare} onInputInfusion={handleInputInfusion}
               onInputProcedure={handleInputProcedure} onInputVtyt={handleInputVtyt}
               onRefreshDetails={handleRefreshDetailsOne} onPrintDischargeBundle={handlePrintDischargeBundle} running={running}
-              onInfusionUpdated={onInfusionUpdated} toast={toast}
+              onInfusionUpdated={onInfusionUpdated} toast={toast} dayPatients={selectedInputPatients}
             />
           ) : (
             <EmptyDetail running={running}

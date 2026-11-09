@@ -2173,6 +2173,86 @@ class AutoWorker:
 
 
 
+    # --- TASK 3: KẾT QUẢ XÉT NGHIỆM TRONG NGÀY (chỉ đọc) ---
+    def task_lab_day(self, input_path: str, out_path: str, day: str) -> None:
+        """Đọc kết quả XN trong ``day`` cho từng người bệnh trong ``input_path``.
+
+        Mỗi người bệnh: tìm trên danh sách nội trú (khớp đúng mã BN, kiểm T/G vào
+        như Lấy chi tiết), mở hồ sơ bằng tên, Thăm khám → Xem kết quả → Lịch sử XN.
+        Ghi kết quả sau từng người để dừng giữa chừng vẫn giữ phần đã đọc.
+        """
+        from lab_result_reader import read_lab_results_for_day, normalize_day, STATUS_ERROR
+
+        target_day = normalize_day(day)
+        if not target_day:
+            raise RuntimeError("Ngày đọc xét nghiệm không đúng dạng dd/mm/yyyy")
+        with open(input_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, list):
+            raise RuntimeError("Danh sách người bệnh đọc xét nghiệm phải là list")
+        for row in data:
+            if isinstance(row, dict):
+                _normalize_admin_fields(row, overwrite=False)
+
+        results: Dict[str, Any] = {}
+        payload = {"ngay": target_day, "results": results}
+        write_json_compact(out_path, payload)
+
+        is_headless = _read_selenium_headless(self.config)
+        print(f"[XN] Đọc kết quả xét nghiệm ngày {target_day} cho {len(data)} người bệnh (headless={is_headless})")
+        ws = WorkerSession(_with_worker_headless(self.config, is_headless), "/dev/null")
+        ws.__enter__()
+        self.driver, self.wait = ws.driver, ws.wait
+        try:
+            wpid = self.config.get("inpatient_wpid", "danhsachdieutrinoitrudraw")
+            nav_url = _build_inpatient_url(self.driver.current_url, wpid)
+            _safe_driver_get(self.driver, nav_url, "danh sách nội trú (XN)")
+            self.wait.until(EC.presence_of_element_located((By.ID, "txtTimKiem")))
+
+            for i, bn in enumerate(data):
+                if not isinstance(bn, dict):
+                    continue
+                ma_bn = str(bn.get("Mã BN") or bn.get("Mã YT") or bn.get("ma_bn") or "").strip()
+                if not ma_bn:
+                    continue
+                print(f"LOG: [XN {i+1}/{len(data)}] Mở hồ sơ BN {ma_bn}")
+                entry: Dict[str, Any]
+                try:
+                    opened = self._search_and_open_patient(
+                        ma_bn, denngay=target_day, row=bn, date_from=target_day, date_to=target_day
+                    )
+                    if not opened:
+                        entry = {"status": STATUS_ERROR, "phieu": [], "error": "Không mở được đúng hồ sơ người bệnh trên EMR"}
+                    else:
+                        entry = read_lab_results_for_day(self.driver, target_day)
+                        if entry.get("status") == STATUS_ERROR:
+                            _debug_page(self.driver, f"lab_day_error_{ma_bn}")
+                except Exception as e:
+                    entry = {"status": STATUS_ERROR, "phieu": [], "error": f"{type(e).__name__}: {e}"}
+                entry["fetched_at"] = datetime.now().isoformat(timespec="seconds")
+                results[ma_bn] = entry
+                summary = entry.get("tom_tat") or {}
+                print(
+                    f"LOG: [XN] BN {ma_bn}: {entry.get('status')} | phiếu={summary.get('so_phieu', 0)} "
+                    f"hoàn tất={summary.get('so_phieu_hoan_tat', 0)} chỉ số={summary.get('so_chi_so', 0)}"
+                    + (f" | {entry.get('error')}" if entry.get("error") else "")
+                )
+                write_json_compact(out_path, payload)
+                try:
+                    _safe_driver_get(self.driver, nav_url, "quay lại danh sách (XN)")
+                    self.wait.until(EC.presence_of_element_located((By.ID, "txtTimKiem")))
+                except Exception:
+                    _debug_page(self.driver, f"lab_day_return_list_failed_{ma_bn}")
+                    raise RuntimeError("Không quay lại được danh sách nội trú; dừng để không mở nhầm người bệnh")
+            ok = sum(1 for r in results.values() if r.get("status") != STATUS_ERROR)
+            print(f"SUCCESS: Đọc xong xét nghiệm {ok}/{len(results)} người bệnh -> {out_path}")
+        finally:
+            try:
+                ws.__exit__(None, None, None)
+            except Exception:
+                pass
+
+
 def build_arg_parser():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -2195,6 +2275,11 @@ def build_arg_parser():
     p_det.add_argument("--rooms", default="", help="P01,P02 hoặc 01,02")
     p_det.add_argument("--skip-empty", action="store_true")
     p_det.add_argument("--headed", action="store_true", help="Hiện Chrome trong lần lấy chi tiết hiện tại")
+
+    p_lab = sub.add_parser("lab-day", help="Đọc kết quả xét nghiệm trong một ngày (chỉ đọc)")
+    p_lab.add_argument("--input", required=True)
+    p_lab.add_argument("--out", required=True)
+    p_lab.add_argument("--day", required=True, help="dd/mm/yyyy")
 
     return p
 
@@ -2229,3 +2314,5 @@ if __name__ == "__main__":
             rooms=rooms if rooms else None,
             skip_empty=bool(args.skip_empty),
         )
+    elif args.cmd == "lab-day":
+        w.task_lab_day(input_path=args.input, out_path=args.out, day=args.day)

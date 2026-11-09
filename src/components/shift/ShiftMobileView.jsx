@@ -52,7 +52,7 @@ export default function ShiftMobileView({
           onInputCare={handleInputCare} onInputInfusion={handleInputInfusion}
           onInputProcedure={handleInputProcedure} onInputVtyt={handleInputVtyt}
               onRefreshDetails={handleRefreshDetailsOne} onPrintDischargeBundle={handlePrintDischargeBundle} running={running}
-              onInfusionUpdated={onInfusionUpdated} toast={toast}
+              onInfusionUpdated={onInfusionUpdated} toast={toast} dayPatients={selectedInputPatients}
         />
         {showPicker && (
           <SessionPicker onUseSession={handleUseSession} onFetchNew={handleFetchNew}

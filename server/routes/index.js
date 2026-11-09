@@ -24,6 +24,7 @@ const HEAVY_TASK_ROUTES = [
   '/run-emr-case-probe',
   '/run-details',
   '/run-details-one',
+  '/lab-results/fetch',
   '/run-postprocess',
   '/check-input-changes',
   '/run-input-care',
@@ -100,6 +101,7 @@ router.use(require('./workspace'));
 router.use(require('./cancel_scope'));
 router.use(require('./details'));
 router.use(require('./patients'));
+router.use(require('./lab_results'));
 router.use(require('./nurse'));
 router.use(require('./nurse_emr_accounts'));
 router.use(require('./fetch_accounts'));

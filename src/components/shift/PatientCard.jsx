@@ -2,6 +2,8 @@ import { IconAlertTriangle, IconCheck } from '@tabler/icons-react';
 import { C, FS, STATUS, FLAG } from '../../tokens.js';
 import { Mono } from '../shared.jsx';
 import { getPatientNotices, PatientNoticePills } from '../patientStatusNotice.jsx';
+import { useLabResultsDay } from '../patient/LabResultsPanel.jsx';
+import { labChip, patientLabEntry } from '../../utils/labResults.js';
 
 function getWardAdmissionTime(p) {
   return String(p?.thoi_gian_vao_khoa ?? p?.tg_vao ?? p?.admission_time ?? '').trim();
@@ -29,9 +31,9 @@ function TaskChip({ label, title, done, stale, total, count }) {
   );
 }
 
-function Chip({ text, bg, color, border, icon: Icon = null }) {
+function Chip({ text, bg, color, border, icon: Icon = null, title }) {
   return (
-    <span style={{
+    <span title={title} style={{
       display: 'inline-flex', alignItems: 'center', gap: 3, height: 22, padding: '0 7px', borderRadius: 4,
       background: bg, color, border: `1px solid ${border || bg}`, fontSize: FS.xs, fontWeight: 600, whiteSpace: 'nowrap',
     }}>
@@ -51,6 +53,10 @@ export default function PatientCard({ p, selected, onClick, showInputToggle = fa
     ? 'Đánh dấu để đưa người bệnh này vào nhập hàng loạt'
     : 'Bỏ tích để loại người bệnh này khỏi nhập hàng loạt của phòng';
   const hasInfusion = p.has_inf || p.has_infusion;
+  const labDate = (Array.isArray(p.available_dates) && p.available_dates[0]) || p.ngay_lam || '';
+  const { data: labData } = useLabResultsDay(labDate);
+  const lab = labChip(patientLabEntry(labData, p));
+  const labTone = lab && ({ red: [C.redBg, C.red, C.redBorder], amber: [C.amberBg, C.amber, C.amberBorder], green: [C.greenBg, C.green, C.greenBorder] })[lab.tone];
 
   const onKeyDown = (event) => {
     if (event.target !== event.currentTarget) return;
@@ -115,6 +121,7 @@ export default function PatientCard({ p, selected, onClick, showInputToggle = fa
             : <TaskChip label="DT" title="Dịch truyền" done={p.infus_done} stale={p.infus_stale_count > 0} total={p.infusion_total_dates} count={p.infus_done_count} />)}
           {p.has_procedure && <TaskChip label="TT" title="Thủ thuật" done={p.procedure_done} stale={p.procedure_stale_count > 0} total={p.procedure_total_dates} count={p.procedure_done_count} />}
           {p.workflow_scope === 'unknown' && <Chip text="Cần xem phân luồng" bg={C.amberBg} color={C.amber} border={C.amberBorder} />}
+          {lab && <Chip text={lab.text} title={lab.title} bg={labTone[0]} color={labTone[1]} border={labTone[2]} icon={lab.tone === 'red' ? IconAlertTriangle : null} />}
           {p.warning_count > 0 && <Chip text={`${p.warning_count} cảnh báo`} bg={C.amberBg} color={C.amber} border={C.amberBorder} icon={IconAlertTriangle} />}
           {(p.flags || []).map(f => { const fl = FLAG[f]; return fl ? <Chip key={f} text={fl.text} bg={fl.bg} color={fl.color} /> : null; })}
         </div>
