@@ -1721,6 +1721,13 @@ def _switch_hchanh_click_context_on_open_driver(
         return None
 
 
+def _day_key(value: Any) -> str:
+    """Ngày (dd/mm/yyyy) của một mốc, bỏ giờ: '10:11 19/08/2026', '2026-08-19' → '19/08/2026'."""
+    text = _date_to_dmy(str(value or "").strip()) or str(value or "")
+    m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", text)
+    return f"{int(m.group(1)):02d}/{int(m.group(2)):02d}/{m.group(3)}" if m else ""
+
+
 def _ensure_hchanh_click_context(sess: Optional["EmrHttpSession"], ma_bn: str,
                                  config: Dict[str, Any], date_to: str = "",
                                  reason: str = "click",
@@ -1759,10 +1766,19 @@ def _ensure_hchanh_click_context(sess: Optional["EmrHttpSession"], ma_bn: str,
         _t(cached_config.get("username")) == _t(hchanh_config_for_switch.get("username"))
         and str(cached_config.get("password") or "") == str(hchanh_config_for_switch.get("password") or "")
     )
+    # Cùng BN, cùng đợt (cùng ngày vào, hoặc phần sau không truyền ngày như Bảng kê): dùng lại hồ sơ
+    # đang mở. Trước đây chỉ khác "đến ngày" (y lệnh, bảng kê) là quay về danh sách, đặt lại bộ lọc
+    # và tìm lại đúng BN đó — mỗi ca đi lại đường cũ nhiều lần. Ngày vào khác = đợt khác → vẫn tìm lại.
+    cached_from = str(_HCHANH_CLICK_CACHE.get("date_from") or "")
+    same_stay_dates = (
+        (not wanted_from and not wanted_to)
+        or (_HCHANH_CLICK_CACHE.get("date_from") == wanted_from and _HCHANH_CLICK_CACHE.get("date_to") == wanted_to)
+        or (bool(_day_key(wanted_from)) and _day_key(cached_from) == _day_key(wanted_from))
+    )
     if (existing is not None and _HCHANH_CLICK_CACHE.get("ma_bn") == code
             and _HCHANH_CLICK_CACHE.get("inpatient_status") == wanted_status
-            and _HCHANH_CLICK_CACHE.get("date_from") == wanted_from
-            and _HCHANH_CLICK_CACHE.get("date_to") == wanted_to
+            and same_stay_dates
+            and _HCHANH_CLICK_CACHE.get("links")
             and (not direct_links_cfg or cache_same_direct)
             and same_account
             and _is_driver_alive(existing)):
