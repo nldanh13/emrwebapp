@@ -68,6 +68,7 @@ from input_care_utils import (
     _special_event_nurse_shift_override, _care_job_sort_key,
     _has_surgical_context, _sanitize_postop_text,
     _has_postop_receive_context, POSTOP_RECEIVE_CARE,
+    regular_care_jobs_from_preview, preview_care_job_dt,
 )
 
 from task_progress_writer import mark_task_status, progress_path_from_input
@@ -1078,6 +1079,35 @@ def main():
             sorted_hours = sorted(list(all_hours))
             special_time_keys = [_special_event_time_full(ev, ngay_lam_viec) for ev in special_events if isinstance(ev, dict)]
             special_time_keys = [x for x in special_time_keys if x]
+
+            # Có kế hoạch từ màn "Xem trước khi nhập" (máy chủ gắn vào dữ liệu) thì
+            # nhập đúng các phiếu thường quy đã hiển thị. Guard ra viện/nhận khoa/
+            # hậu phẫu/đi mổ của worker vẫn chạy nhưng chỉ được BỎ phiếu, không thêm.
+            preview_jobs = regular_care_jobs_from_preview(entry_obj.get("care_preview_plan"), actions_by_hour)
+            if preview_jobs is not None:
+                kept_preview_jobs = []
+                for _job in preview_jobs:
+                    _dt = preview_care_job_dt(_job)
+                    _why = ""
+                    if discharge_dt is not None and not _is_time_before_discharge(_job["time_str"], discharge_dt, allow_equal=False):
+                        _why = "sau giờ ra viện"
+                    elif is_admission_transfer_day and admission_start_dt is not None and _dt is not None and _dt < admission_start_dt:
+                        _why = "trước giờ khoa nhận người bệnh"
+                    elif is_postop_receive_day and receive_dt is not None and _dt is not None and _dt < receive_dt:
+                        _why = "trước giờ nhận hậu phẫu"
+                    if _why:
+                        print(f"   [KHÁC XEM TRƯỚC] Không nhập phiếu {_job['time_str']}: {_why}.")
+                        LOG.warning(_ctx_prefix() + f"[preview_plan] drop time={_job['time_str']} reason={_why}")
+                        continue
+                    kept_preview_jobs.append(_job)
+                preview_jobs = kept_preview_jobs
+                sorted_hours = sorted({int(j["hour"]) for j in preview_jobs})
+                # Phiếu thường quy lệch phút (vd 08:30 theo giờ thay băng) phải được
+                # coi là hợp lệ khi dọn phiếu dư.
+                for _job in preview_jobs:
+                    if not _job["time_str"].startswith(f"{int(_job['hour']):02d}:00 ") and _job["time_str"] not in special_time_keys:
+                        special_time_keys.append(_job["time_str"])
+                LOG.info(_ctx_prefix() + f"[preview_plan] regular_jobs={[j['time_str'] for j in preview_jobs]}")
             scan_targets = list(sorted_hours) + special_time_keys
 
             print(f"\n[IDENTIFY] BN {ma_bn} ({info['ho_ten']}) | Ngày: {ngay_lam_viec} | Giờ: {sorted_hours} | Phiếu đặc biệt: {special_time_keys}")
@@ -1117,7 +1147,9 @@ def main():
                     "actions_set": set(),
                 })
 
-            for h in sorted_hours:
+            if preview_jobs is not None:
+                care_jobs.extend(preview_jobs)
+            for h in (sorted_hours if preview_jobs is None else []):
                 care_jobs.append({
                     "kind": "regular",
                     "time_str": tao_thoi_gian_lap(h, ngay_lam_viec),
@@ -1309,6 +1341,16 @@ def main():
                     if job.get("kind") == "special":
                         final_care_content = str(job.get("care") or "").strip()
                         dien_bien_text = str(job.get("dien_bien") or "").strip() or "Người bệnh tỉnh"
+                    elif job.get("from_preview"):
+                        # Nội dung nguyên văn như màn "Xem trước khi nhập".
+                        final_care_content = str(job.get("preview_care") or "").strip()
+                        dien_bien_text = str(job.get("preview_dien_bien") or "").strip() or "Người bệnh tỉnh"
+                        if final_care_content and (("vết mổ" in final_care_content.lower()) or ("sau mổ" in final_care_content.lower())):
+                            has_ctx = _has_surgical_context(entry_obj, actions_set)
+                            if not has_ctx:
+                                before = final_care_content
+                                final_care_content = _sanitize_postop_text(final_care_content)
+                                LOG.warning(_ctx_prefix() + f"[sanitize_postop] preview_plan before='{before[:120]}' after='{final_care_content[:120]}'")
                     else:
                         # Chăm sóc: xử lý toàn bộ giờ có trong dữ liệu/tập giờ tính toán
                         care_parts = []

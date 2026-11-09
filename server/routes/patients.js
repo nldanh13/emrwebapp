@@ -18,6 +18,7 @@ const { parsePositiveInfusionValue, matchAndUpdateInfusions, parseManualStart } 
 const { hasRole }                                             = require('../services/authz');
 const {
   buildPatientDayBundle,
+  attachCarePreviewPlans,
   normalizeInputTargets,
   patientIdOfTarget,
   hasValidVolume,
@@ -219,6 +220,10 @@ function rowsFromClassifiedDays(ctx) {
   });
 }
 
+function readNurseScheduleSafe(req) {
+  try { return readConfig(req).ten_dieu_duong || {}; } catch (_) { return {}; }
+}
+
 router.get('/get-patients', (req, res) => {
   const ctx       = getRuntimePaths(req);
   let processed = sanitizeStaleDischargeRows(enrichRowsWithCurrentRooms(readJsonSafe(ctx.PROCESSED_PATH, []), ctx));
@@ -237,9 +242,7 @@ router.get('/get-patients', (req, res) => {
   };
   const progress  = readProgress(ctx.TASK_PROGRESS_PATH);
 
-  const nurseSchedule = (() => {
-    try { return readConfig(req).ten_dieu_duong || {}; } catch (_) { return {}; }
-  })();
+  const nurseSchedule = readNurseScheduleSafe(req);
 
   const byPatient = new Map();
   for (const row of processed) {
@@ -1247,7 +1250,12 @@ async function runInputTask(req, res, ctx, { scriptName, taskName, targetsFilePr
   if (processedPathForWorker === ctx.PROCESSED_PATH) {
     const sanitizedPath = path.join(path.dirname(ctx.PROCESSED_PATH), `${targetsFilePrefix}_processed_sanitized_${Date.now()}.json`);
     try {
-      writeJsonAtomic(sanitizedPath, processedRows);
+      // Nhập chăm sóc: gắn đúng danh sách phiếu của màn Xem trước để worker
+      // nhập y hệt những gì điều dưỡng đã xem (không tự tính lại bằng Python).
+      const rowsForWorker = (taskName || scriptName) === 'input_care'
+        ? attachCarePreviewPlans(processedRows, readNurseScheduleSafe(req))
+        : processedRows;
+      writeJsonAtomic(sanitizedPath, rowsForWorker);
       processedPathForWorker = sanitizedPath;
     } catch (err) {
       updateInputScopeAudit(auditPath, { status: 'failed', error: 'Không tạo được dữ liệu tạm đã chuẩn hoá trước khi nhập.' });
