@@ -561,12 +561,15 @@ router.post('/update-infusion-item', (req, res) => {
     const lines = schedules.map(p => (p.noi_tiep_sau
       ? `${p.tg_bat_dau} → ${p.tg_ket_thuc} (lúc ${p.gio_chon.slice(0, 5)} đang truyền ${p.noi_tiep_sau}, nối tiếp ngay sau)`
       : `${p.tg_bat_dau} → ${p.tg_ket_thuc}`));
+    const overlapNotes = schedules.flatMap(p => (p.chay_chong || []).map(o => `cữ ${p.tg_bat_dau.slice(0, 5)} với ${o}`));
     return res.json({ status: 'ok', updated_count: updatedCount,
       requires_schedule_review: false,
       schedule: result.schedule,
       schedules,
       message: `Đã bổ sung ${schedules.length > 1 ? `${schedules.length} cữ` : 'giờ'}: ${lines.join('; ')}. `
-        + `Mỗi cữ ${result.schedule.thoi_gian_chay_phut} phút. Đã sẵn sàng nhập EMR, không cần lấy lại dữ liệu.`,
+        + `Mỗi cữ ${result.schedule.thoi_gian_chay_phut} phút. Đã sẵn sàng nhập EMR, không cần lấy lại dữ liệu.`
+        + (overlapNotes.length ? ` Lưu ý chạy chồng: ${overlapNotes.join('; ')}. Đối chiếu Y lệnh gốc nếu cần đổi giờ.` : ''),
+      overlaps: overlapNotes,
     });
   }
 
