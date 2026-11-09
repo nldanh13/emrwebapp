@@ -17,17 +17,32 @@ function infusionMatchOf(item = {}) {
   };
 }
 
+function nextDayDmy(dmy) {
+  const m = String(dmy || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return '';
+  const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]) + 1);
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
 const validPositive = value => /^\d+(?:[.,]\d+)?$/.test(String(value ?? '').trim())
   && Number(String(value).trim().replace(',', '.')) > 0;
 
 function InfusionEditRow({ item, review, patientId, ngayLam, toast, onSaved }) {
   const [theTich, setTheTich] = useState(item.the_tich ?? '');
   const [tocDo, setTocDo] = useState(item.toc_do ?? '');
+  const [startTime, setStartTime] = useState('');
+  const [startDate, setStartDate] = useState(ngayLam || '');
   const [saving, setSaving] = useState(false);
   const [localNotice, setLocalNotice] = useState('');
+  // Chỉ dòng chưa có giờ bắt đầu mới cho bổ sung giờ (y lệnh không ghi giờ dùng).
+  const canAddStart = review.missingTime;
+  const nextDay = nextDayDmy(ngayLam);
 
-  const dirty = String(theTich ?? '').trim() !== String(item.the_tich ?? '').trim()
+  const valuesDirty = String(theTich ?? '').trim() !== String(item.the_tich ?? '').trim()
     || String(tocDo ?? '').trim() !== String(item.toc_do ?? '').trim();
+  const startDirty = canAddStart && !!startTime;
+  const dirty = valuesDirty || startDirty;
   // Server refreshes should update unmodified inputs, but never overwrite a
   // field the user is in the middle of correcting.
   useEffect(() => {
@@ -37,7 +52,8 @@ function InfusionEditRow({ item, review, patientId, ngayLam, toast, onSaved }) {
     }
   }, [item.the_tich, item.toc_do, dirty, saving]);
 
-  const invalid = dirty && (!validPositive(theTich) || !validPositive(tocDo));
+  const invalid = dirty && (!validPositive(theTich) || !validPositive(tocDo)
+    || (startDirty && !/^\d{2}:\d{2}$/.test(startTime)));
   const handleSave = async () => {
     if (!dirty || saving || invalid) return;
     setSaving(true);
@@ -46,8 +62,14 @@ function InfusionEditRow({ item, review, patientId, ngayLam, toast, onSaved }) {
       const updates = {};
       if (String(theTich ?? '').trim() !== String(item.the_tich ?? '').trim()) updates.the_tich = theTich;
       if (String(tocDo ?? '').trim() !== String(item.toc_do ?? '').trim()) updates.toc_do = tocDo;
+      if (startDirty) updates.tg_bat_dau = `${startTime} ${startDate || ngayLam}`;
       const r = await api.updateInfusionItem(patientId, ngayLam, infusionMatchOf(item), updates);
-      if (r?.status === 'ok') {
+      if (r?.status === 'ok' && r.schedule) {
+        setLocalNotice(r.message);
+        setStartTime('');
+        toast?.(r.message, 'success');
+        await onSaved?.();
+      } else if (r?.status === 'ok') {
         setLocalNotice(r.message || 'Đã lưu cục bộ; cần đối chiếu và tính lại lịch truyền.');
         toast?.('Đã lưu cục bộ. Cần kiểm tra lại lịch truyền trước khi nhập EMR.', 'warn');
         await onSaved?.();
@@ -114,11 +136,29 @@ function InfusionEditRow({ item, review, patientId, ngayLam, toast, onSaved }) {
               border: `1px solid ${C.border}`, fontSize: FS.md,
               fontVariantNumeric: 'tabular-nums', color: C.text, background: C.surface }} />
         </label>
+        {canAddStart && (
+          <label style={{ display: 'grid', gap: 3 }}>
+            <span style={{ fontSize: FS.xs, color: C.text2, fontWeight: 600 }}>Giờ bắt đầu theo y lệnh</span>
+            <span style={{ display: 'flex', gap: 6 }}>
+              <input type="time" aria-label="Giờ bắt đầu truyền"
+                value={startTime} onChange={e => setStartTime(e.target.value)}
+                style={{ padding: '5px 8px', borderRadius: 5, border: `1px solid ${C.border}`,
+                  fontSize: FS.md, fontVariantNumeric: 'tabular-nums', color: C.text, background: C.surface }} />
+              <select aria-label="Ngày bắt đầu truyền" value={startDate}
+                onChange={e => setStartDate(e.target.value)}
+                style={{ padding: '5px 6px', borderRadius: 5, border: `1px solid ${C.border}`,
+                  fontSize: FS.sm, color: C.text, background: C.surface }}>
+                <option value={ngayLam}>{ngayLam}</option>
+                {nextDay && <option value={nextDay}>{nextDay} (hôm sau)</option>}
+              </select>
+            </span>
+          </label>
+        )}
         <Btn variant="primary" disabled={!dirty || invalid || saving} onClick={handleSave}>
-          {saving ? <><Spinner size={13} /> Đang lưu</> : 'Lưu cục bộ'}
+          {saving ? <><Spinner size={13} /> Đang lưu</> : (startDirty ? 'Bổ sung giờ' : 'Lưu cục bộ')}
         </Btn>
         {dirty && <span style={{ fontSize: FS.xs, color: invalid ? C.red : C.amber }}>
-          {invalid ? 'Cần nhập số dương cho cả thể tích và tốc độ.' : 'Chưa lưu thay đổi'}
+          {invalid ? 'Cần nhập số dương cho thể tích, tốc độ và giờ bắt đầu hợp lệ.' : 'Chưa lưu thay đổi'}
         </span>}
       </div>
       {localNotice && <div role="status" style={{ fontSize: FS.sm, color: C.amber }}>{localNotice}</div>}
@@ -152,6 +192,8 @@ export default function InfusionEditPanel({ patientDay, patientId, ngayLam, toas
         <div>Đây là dữ liệu đã xử lý cục bộ, <b>không phải lịch truyền đã xác nhận</b>.
           Giờ bắt đầu có thể được phần mềm xếp lại theo thời lượng; giờ gần nửa đêm có thể sang ngày hôm sau.
           Sửa thể tích/tốc độ sẽ không tự tính lại toàn bộ lịch truyền liên quan.
+          Dòng chưa có giờ (y lệnh không ghi giờ dùng): nhập giờ bắt đầu theo y lệnh rồi bấm <b>Bổ sung giờ</b>,
+          phần mềm tự tính giờ kết thúc, không cần lấy lại dữ liệu.
           Cần đối chiếu <b>Y lệnh gốc</b> và chạy xử lý lại trước khi nhập EMR.</div>
         <div style={{ marginTop: 4 }}>
           {items.length} dòng · {unresolved.length} chưa có giờ bắt đầu · {inferredCount} tốc độ phần mềm tự gán

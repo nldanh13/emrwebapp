@@ -14,7 +14,7 @@ const { readDoneState, markDoneKeys, fingerprintRecords, baseDoneKey, hashValue 
 const { parseDmy, normalizeDmy }                           = require('../utils/validation');
 const { readConfig }                                       = require('../utils/nurse_config');
 const { ROOT_DIR, ALLOW_INPUT_WITHOUT_PRECHECK }             = require('../constants');
-const { parsePositiveInfusionValue, matchAndUpdateInfusions } = require('../utils/infusion_edit_validation');
+const { parsePositiveInfusionValue, matchAndUpdateInfusions, parseManualStart } = require('../utils/infusion_edit_validation');
 const { hasRole }                                             = require('../services/authz');
 const {
   buildPatientDayBundle,
@@ -391,6 +391,29 @@ function rowWorkDate(row) {
   return String(row?.ngay_lam || row?.ngay_y_lenh || row?.ngay || row?.date || '').trim();
 }
 
+// Nêu NGUYÊN NHÂN cụ thể (giờ dùng/tốc độ/thể tích) thay vì chỉ "thiếu giờ bắt đầu":
+// giờ bắt đầu chỉ là hệ quả — worker không xếp lịch khi y lệnh thiếu giờ dùng hoặc
+// tốc độ, nên kiểm tra tg_bat_dau trước sẽ che mất lý do thật (lỗi 09/11/2026).
+function incompleteInfusionReason(item) {
+  if (!hasValidVolume(item)) return 'Thiếu thể tích';
+  const reasons = [];
+  const start = String(item?.tg_bat_dau || '').trim();
+  const orderHour = String(item?.gio_dung || '').trim();
+  const usage = String(item?.raw_usage_line || item?.duong_dung_goc || '').trim();
+  const rateValue = parseFloat(String(item?.toc_do ?? '').replace(',', '.'));
+  if (item?.missing_infusion_time || (!start && !orderHour)) {
+    reasons.push(usage
+      ? `Y lệnh không ghi giờ dùng (y lệnh: "${usage.slice(0, 80)}")`
+      : 'Y lệnh không ghi giờ dùng');
+  }
+  if (item?.toc_do_inferred) reasons.push('Tốc độ truyền là giá trị phần mềm tự đoán, chưa xác nhận');
+  else if (item?.missing_infusion_rate) reasons.push('Y lệnh không có tốc độ truyền được xác nhận');
+  else if (!(rateValue > 0)) reasons.push('Thiếu tốc độ truyền hợp lệ');
+  if (item?.infusion_schedule_stale) reasons.push('Lịch tính trước khi sửa thể tích/tốc độ, cần xử lý lại');
+  if (!reasons.length && !start) reasons.push('Chưa tính được giờ bắt đầu, cần xử lý lại lịch dịch truyền');
+  return reasons.join('; ');
+}
+
 // Không cho nhập dịch truyền khi thiếu thể tích/giờ/tốc độ hoặc khi lịch tính
 // theo giá trị cũ đã mất hiệu lực. Ngăn worker tự điền 30 giọt/phút thiếu căn cứ.
 function findIncompleteInfusionEntries(processedRows, targets) {
@@ -407,14 +430,7 @@ function findIncompleteInfusionEntries(processedRows, targets) {
       for (const row of rowsForDay) {
         const list = Array.isArray(row?.thuoc?.dich_truyen) ? row.thuoc.dich_truyen : [];
         for (const item of list) {
-          const reason = !hasValidVolume(item) ? 'Thiếu thể tích'
-            : !String(item?.tg_bat_dau || '').trim() ? 'Thiếu giờ bắt đầu'
-            : item?.missing_infusion_time ? 'Chưa có giờ dùng rõ ràng'
-            : item?.infusion_schedule_stale ? 'Lịch tính trước khi sửa thể tích/tốc độ, cần xử lý lại'
-            : item?.toc_do_inferred ? 'Tốc độ truyền là giá trị phần mềm tự đoán, chưa xác nhận'
-            : item?.missing_infusion_rate ? 'Thiếu tốc độ truyền được xác nhận'
-            : !(parseFloat(String(item?.toc_do ?? '').replace(',', '.')) > 0) ? 'Thiếu tốc độ truyền hợp lệ'
-            : '';
+          const reason = incompleteInfusionReason(item);
           if (!reason) continue;
           entries.push({
             reason,
@@ -456,7 +472,8 @@ function validateInfusionTargetsComplete(processedRows, targets) {
     .map(m => `${m.ho_ten} (${m.ma_bn}) ${m.ngay_lam} — ${m.ten_thuoc}: ${m.reason}`)
     .join('; ');
   const skipMessage = `Đã loại các BN/ngày có ${missing.length} dòng dịch truyền thiếu hoặc chưa được xác nhận (CHƯA nhập): ${preview}${missing.length > 8 ? '…' : ''}. `
-    + 'Đối chiếu Y lệnh gốc; cập nhật đúng cấu hình hoặc xử lý lại lịch dịch truyền trước khi nhập EMR.';
+    + 'Đối chiếu Y lệnh gốc; dòng thiếu giờ dùng có thể bổ sung giờ bắt đầu ở mục "Sửa dịch truyền" của BN, '
+    + 'hoặc cập nhật đúng cấu hình/xử lý lại lịch dịch truyền trước khi nhập EMR.';
 
   if (!filteredPatientIds.length) {
     return { ok: false, details: missing, message: `Chưa thể nhập dịch truyền trong phạm vi đã chọn. ${skipMessage}` };
@@ -491,7 +508,8 @@ router.post('/update-infusion-item', (req, res) => {
 
   const hasTheTich = updates?.the_tich !== undefined && String(updates.the_tich).trim() !== '';
   const hasTocDo = updates?.toc_do !== undefined && String(updates.toc_do).trim() !== '';
-  if (!hasTheTich && !hasTocDo) {
+  const hasStart = updates?.tg_bat_dau !== undefined && String(updates.tg_bat_dau).trim() !== '';
+  if (!hasTheTich && !hasTocDo && !hasStart) {
     return res.status(400).json({ status: 'error', message: 'Không có giá trị mới để lưu.' });
   }
 
@@ -499,12 +517,16 @@ router.post('/update-infusion-item', (req, res) => {
   try {
     if (hasTheTich) changed.the_tich = parsePositiveInfusionValue(updates.the_tich, 'Thể tích');
     if (hasTocDo) changed.toc_do = parsePositiveInfusionValue(updates.toc_do, 'Tốc độ');
+    if (hasStart) changed.tg_bat_dau = parseManualStart(updates.tg_bat_dau, workDate);
   } catch (e) {
     return res.status(400).json({ status: 'error', message: e.message });
   }
 
   const rows = readJsonSafe(ctx.PROCESSED_PATH, []);
   const result = matchAndUpdateInfusions(rows, patientId, workDate, match, changed, rowPatientId, rowWorkDate);
+  if (result.error) {
+    return res.status(400).json({ status: 'error', message: result.error });
+  }
   if (result.matched !== 1) {
     return res.status(409).json({
       status: 'error',
@@ -523,7 +545,17 @@ router.post('/update-infusion-item', (req, res) => {
     updated_count: updatedCount,
     the_tich: hasTheTich ? updates.the_tich : undefined,
     toc_do: hasTocDo ? updates.toc_do : undefined,
+    tg_bat_dau: hasStart ? changed.tg_bat_dau : undefined,
   });
+
+  if (result.schedule) {
+    return res.json({ status: 'ok', updated_count: updatedCount,
+      requires_schedule_review: false,
+      schedule: result.schedule,
+      message: `Đã bổ sung giờ: ${result.schedule.tg_bat_dau} → ${result.schedule.tg_ket_thuc} `
+        + `(${result.schedule.thoi_gian_chay_phut} phút). Dòng này đã sẵn sàng nhập EMR, không cần lấy lại dữ liệu.`,
+    });
+  }
 
   return res.json({ status: 'ok', updated_count: updatedCount,
     requires_schedule_review: true,
