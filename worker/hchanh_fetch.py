@@ -758,7 +758,7 @@ def _selenium_click_js(driver: Any, element: Any) -> None:
         driver.execute_script("arguments[0].click();", element)
 
 
-# dataTableYeuCau: bảng chi phí mở từ Tổng kết → Chi phí (onShowTTCP) — đường dùng cho ca đã Hoàn tất.
+# dataTableYeuCau: bảng chi phí do hàm vẽ ServerSideDrawThongTinChiPhi trả về (xem _OPEN_BILLING_JS).
 # dsDichVu/dsThuoc/dsVatTu: trang chiphichitietdraw (mở bằng URL có tiepnhanid).
 BILLING_PAGE_MARKERS = ('id="dataTableYeuCau"', 'id="dsDichVu"', 'id="dsThuoc"', 'id="dsVatTu"', 'id="divTongHopChiPhi"')
 _BILLING_ROWS_JS = (
@@ -1344,15 +1344,31 @@ def _click_bed_days_action(driver: Any) -> bool:
     print(f"WARN [hchanh-click] Không bấm được Chăm sóc → Buồng giường: {last_err}", file=sys.stderr)
     return False
 
-# Bảng kê: menu "Tổng kết" → "Chi phí" (<a onclick="onShowTTCP(this);">) hiện bảng chi phí ngay trên trang
-# người bệnh (người dùng xác nhận trên EMR 11/2026). Không dùng nút "Sửa chi phí" (btnSuaChiPhi): đó là màn
-# sửa và onclick còn gọi onSaveHistory('Sửa chi phí') nên mỗi lần bấm EMR ghi thêm một dòng lịch sử.
+# Bảng kê: KHÔNG gọi onShowTTCP (menu Tổng kết → Chi phí) và KHÔNG bấm nút "Sửa chi phí".
+# - onShowTTCP gọi BacSiDraw.ServerSideTinhLaiChiPhi(RenderInfo,_dangkyid,HasKTC) TRƯỚC khi vẽ bảng:
+#   mỗi lần mở là EMR tính lại chi phí của đợt (thao tác ghi; Lịch sử thao tác không ghi lại).
+# - btnSuaChiPhi gọi OnSuaChiPhi();onSaveHistory('Sửa chi phí') (ghi lịch sử, màn sửa).
+# Chỉ gọi hàm VẼ: ServerSideDrawThongTinChiPhi(RenderInfo, noitruid).value.HtmlContent trả đúng
+# #dataTableYeuCau + #divTongHopChiPhi (đã thử trên EMR thật 11/2026). HTML được đặt vào một khung
+# riêng trong trang (chỉ trên trình duyệt, không gửi gì về EMR) để bộ đọc bảng kê đọc.
 _OPEN_BILLING_JS = r"""
-const a = Array.from(document.querySelectorAll('a')).find(x => (x.getAttribute('onclick') || '').includes('onShowTTCP'))
-  || Array.from(document.querySelectorAll('li.accordion-header-only > a')).find(x => (x.textContent || '').trim() === 'Chi phí');
-if (!a) return false;
-if (typeof onShowTTCP === 'function') { onShowTTCP(a); } else { a.click(); }
-return true;
+var ns = window.ONEMES3 && ONEMES3.DT && ONEMES3.DT.BVDK && ONEMES3.DT.BVDK.WebParts && ONEMES3.DT.BVDK.WebParts.BacSiDraw;
+if (!ns || typeof ns.ServerSideDrawThongTinChiPhi !== 'function' || typeof RenderInfo === 'undefined') return 'no_api';
+var id = (typeof noitruid !== 'undefined' && noitruid) ? String(noitruid) : '';
+if (!id) { var m = location.search.match(/[?&]noitruid=([^&#]+)/i); if (m) id = decodeURIComponent(m[1]); }
+if (!id) {
+  var el = document.querySelector('[onclick*="showAllTrangThaiYLenh"]');
+  var mm = el && String(el.getAttribute('onclick') || '').match(/showAllTrangThaiYLenh\('([^']+)'\)/);
+  if (mm) id = mm[1];
+}
+if (!id) return 'no_id';
+var r = ns.ServerSideDrawThongTinChiPhi(RenderInfo, id);
+var html = r && r.value && r.value.HtmlContent;
+if (!html) return 'empty';
+var box = document.getElementById('emrwebappBillingView');
+if (!box) { box = document.createElement('div'); box.id = 'emrwebappBillingView'; box.style.display = 'none'; document.body.appendChild(box); }
+box.innerHTML = html;
+return 'ok';
 """
 _BILLING_DIAG_JS = r"""
 const ids = Array.from(document.querySelectorAll('div[id]')).map(d => d.id)
@@ -1361,33 +1377,35 @@ return ids.slice(0, 20).join(',');
 """
 
 
-def _open_billing_by_js(driver: Any) -> Optional[bool]:
-    """Mở bảng chi phí qua menu Tổng kết → Chi phí (CHỈ ĐỌC, không ghi lịch sử EMR).
+_BILLING_DRAW_MESSAGES = {
+    "no_api": "trang không có hàm vẽ bảng chi phí (ServerSideDrawThongTinChiPhi)",
+    "no_id": "không tìm được mã đợt nội trú (noitruid) trên trang",
+    "empty": "EMR trả bảng chi phí rỗng",
+}
 
-    Trả None khi trang không có mục này, True/False là kết quả đã thử một lần.
+
+def _open_billing_by_js(driver: Any) -> bool:
+    """Vẽ bảng chi phí bằng hàm CHỈ ĐỌC ServerSideDrawThongTinChiPhi (xem _OPEN_BILLING_JS).
+
+    Không có đường dự phòng bấm menu/nút: các đường đó đều ghi lên EMR. Không vẽ được thì trả False
+    để ca báo lỗi và được lấy lại sau.
     """
     try:
-        before_handles = list(getattr(driver, "window_handles", []) or [])
-        if not driver.execute_script(_OPEN_BILLING_JS):
-            return None
-    except Exception:
-        return None
-    switched = _switch_to_new_tab_if_any(driver, before_handles, timeout=2.0)
-    try:
-        _selenium_wait_after_action(driver, 1.2, ready_timeout=12)  # type: ignore[misc]
-    except Exception:
-        time.sleep(1.2)
-    ok = _wait_for_hchanh_action_content(driver, "billing", timeout=15)
+        status = str(driver.execute_script(_OPEN_BILLING_JS) or "")
+    except Exception as e:
+        status = ""
+        print(f"WARN [billing] Không gọi được hàm vẽ bảng chi phí: {_short_selenium_error(e)}", file=sys.stderr)
+    if status != "ok":
+        if status:
+            print(f"WARN [billing] Không vẽ được bảng chi phí: {_BILLING_DRAW_MESSAGES.get(status, status)}.", file=sys.stderr)
+        return False
+    ok = _wait_for_hchanh_action_content(driver, "billing", timeout=10)
     if not ok:
         try:
             ids = str(driver.execute_script(_BILLING_DIAG_JS) or "")
         except Exception:
             ids = ""
-        print(
-            f"WARN [billing] Đã mở Tổng kết → Chi phí nhưng chưa thấy khối bảng kê "
-            f"(tab mới={'có' if switched else 'không'}; khối liên quan: {ids or 'không có'}).",
-            file=sys.stderr,
-        )
+        print(f"WARN [billing] Đã vẽ bảng chi phí nhưng chưa thấy khối bảng kê (khối liên quan: {ids or 'không có'}).", file=sys.stderr)
     return ok
 
 
@@ -1412,9 +1430,8 @@ def _click_hchanh_action(driver: Any, action: str) -> bool:
     if act == "bed_days":
         return _click_bed_days_action(driver)
     if act == "billing":
-        opened = _open_billing_by_js(driver)
-        if opened is not None:
-            return opened
+        # Chỉ một đường chỉ-đọc; không rơi xuống các xpath/JS bấm menu bên dưới.
+        return _open_billing_by_js(driver)
 
     xpath_map = {
         "bed_days": [
@@ -1427,12 +1444,8 @@ def _click_hchanh_action(driver: Any, action: str) -> bool:
             "//*[self::a or self::button or self::span or self::li][contains(normalize-space(),'VTYT')]",
             "//*[self::a or self::button or self::span or self::li][contains(normalize-space(),'Thêm thuốc')]",
         ],
-        # Không bấm btnSuaChiPhi / OnSuaChiPhi: màn sửa, có ghi lịch sử EMR (xem _OPEN_BILLING_JS).
-        "billing": [
-            "//a[contains(@onclick,'onShowTTCP')]",
-            "//*[contains(@onclick,'XEMCHIPHI')]",
-            "//*[self::a or self::button or self::span or self::li][contains(normalize-space(),'Xem chi phí')]",
-        ],
+        # "billing" không có ở đây: chỉ dùng _open_billing_by_js (hàm vẽ chỉ-đọc). Bấm menu Chi phí
+        # (onShowTTCP) làm EMR tính lại chi phí; nút Sửa chi phí ghi lịch sử.
         "documents": [
             "//*[contains(@onclick,'onShowGiayToKemTheo')]",
             "//*[contains(@onclick,'GiayToKemTheo')]",
@@ -3287,15 +3300,15 @@ def _billing_fetch_status(rows: List[Dict[str, Any]], tong_hop: Dict[str, Any], 
 def fetch_billing(sess: Optional["EmrHttpSession"], ma_bn: str,
                   link_map: Dict[str, str], config: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Lấy bảng kê chi phí từ trang chiphichitietdraw (tab mới).
+    Lấy bảng kê chi phí (CHỈ ĐỌC).
 
-    Cách truy cập (đã xác nhận từ EMR thực tế):
-    - Trang BN có nút <button id="btnSuaChiPhi" onclick="OnSuaChiPhi()">
-    - Hàm OnSuaChiPhi() mở tab mới với URL:
-        home.aspx?...&wpid=chiphichitietdraw&tiepnhanid={tiepnhanid}&...
-    - tiepnhanid lấy từ link_map hoặc patient_row
-    - Worker tự build URL từ base_origin + tiepnhanid
+    Cách lấy (11/2026, đã thử trên EMR thật): mở trang người bệnh bằng Chrome rồi gọi hàm vẽ
+    BacSiDraw.ServerSideDrawThongTinChiPhi(RenderInfo, noitruid) → table#dataTableYeuCau +
+    div#divTongHopChiPhi (xem _OPEN_BILLING_JS). KHÔNG dùng: menu Tổng kết → Chi phí (onShowTTCP,
+    gọi ServerSideTinhLaiChiPhi = tính lại chi phí), nút Sửa chi phí / trang chiphichitietdraw
+    (OnSuaChiPhi + onSaveHistory).
 
+    Bộ đọc cũ cho layout chiphichitietdraw (giữ để đọc dữ liệu cũ):
     Cấu trúc bảng (div#dsDichVu > table):
     - Cột: checkbox | STT | Thời gian y lệnh | Thời gian thực hiện | Mã DV |
             Tên DV | Chi tiết | Đối tượng | Thẻ BHYT | SL | Đơn giá |
@@ -3313,7 +3326,7 @@ def fetch_billing(sess: Optional["EmrHttpSession"], ma_bn: str,
         "tong_mien":   0,
         "tong_cong":   0,
         "tong_hop":    {},   # khối Tổng hợp chi phí của EMR (BH trả, tự trả, tạm ứng...)
-        "_source":     "emr_chiphichitietdraw",
+        "_source":     "emr_draw_thong_tin_chi_phi",
         "_fetch_status": "pending",
     }
 
@@ -3332,44 +3345,18 @@ def fetch_billing(sess: Optional["EmrHttpSession"], ma_bn: str,
             base["_fetch_status"] = "no_url"
             return base
 
-        # Lấy tiepnhanid từ URL trang BN (query param) hoặc từ onclick của btnSuaChiPhi
-        tiepnhan_id = ""
-        parsed = urlparse(view_url)
-        qs = dict(parse_qsl(parsed.query))
-        tiepnhan_id = qs.get("tiepnhanid") or qs.get("tiepnhan") or ""
-
-        if not tiepnhan_id:
-            # Đọc trang BN để tìm tiepnhanid từ onclick btnSuaChiPhi
-            html0, _ = sess.get_html(view_url)
-            soup0 = _soup(html0)
-            btn = soup0.find("button", id="btnSuaChiPhi") or \
-                  soup0.find("button", string=re.compile(r"Sửa chi phí", re.I))
-            if btn:
-                onclick = btn.get("onclick", "")
-                m = re.search(r"['\"]([0-9a-f-]{36})['\"]", onclick)
-                if m:
-                    tiepnhan_id = m.group(1)
-
-        if not tiepnhan_id:
-            # Bảng kê thường chỉ hiện sau khi bấm tên người bệnh rồi bấm nút chi phí.
-            print(f"WARN [billing] Không tìm được tiepnhanid bằng HTTP cho BN {ma_bn}; chuyển sang bấm thật bằng Chrome.", file=sys.stderr)
-            clicked = _fetch_hchanh_html_by_click(sess, ma_bn, config, "doctor", "billing")
-            if clicked and clicked.get("html"):
-                html = clicked["html"]
-                soup = _soup(html)
-                print(f"LOG [billing] {ma_bn}: đã lấy HTML bảng kê sau khi bấm nút chi phí.")
-            else:
-                base["_fetch_status"] = "no_tiepnhanid"
-                return base
-        else:
-            # Build URL trang chiphichitietdraw
-            billing_url = _upsert_query(view_url,
-                                        wpid="chiphichitietdraw",
-                                        tiepnhanid=tiepnhan_id)
-            print(f"LOG [billing] {ma_bn}: URL = {billing_url}")
-
-            html, _ = sess.get_html(billing_url)
+        # Chỉ một đường chỉ-đọc: mở trang người bệnh bằng Chrome rồi gọi hàm VẼ bảng chi phí
+        # (ServerSideDrawThongTinChiPhi). Không mở trang chiphichitietdraw (màn "Sửa chi phí") bằng HTTP,
+        # không gọi onShowTTCP: cả hai đều có thể làm EMR tính lại / ghi chi phí.
+        clicked = _fetch_hchanh_html_by_click(sess, ma_bn, config, "doctor", "billing")
+        if clicked and clicked.get("html"):
+            html = clicked["html"]
             soup = _soup(html)
+        else:
+            base["_fetch_status"] = "error"
+            base["_reason"] = "no_billing_view"
+            base["_error"] = "Không vẽ được bảng chi phí trên EMR (chỉ đọc); sẽ lấy lại."
+            return base
 
         # Bảng kê thực tế tách thành 3 khối riêng biệt (xác nhận từ HTML thực tế của
         # EMR): Dịch vụ kỹ thuật (div#dsDichVu), Thuốc (div#dsThuoc), Vật tư/VTYT
@@ -3395,14 +3382,6 @@ def fetch_billing(sess: Optional["EmrHttpSession"], ma_bn: str,
         billing_tables = _collect_billing_tables(soup)
         ttcp_table = soup.select_one("table#dataTableYeuCau")
 
-        # Trang đọc được không phải bảng kê (vd ca Hoàn tất: màn "Sửa chi phí" không mở được) thì bảng
-        # "lớn nhất" ở trên chỉ là bảng bất kỳ → mở Tổng kết → Chi phí bằng Chrome.
-        if ttcp_table is None and (not billing_tables or not _is_billing_page(soup)):
-            clicked = _fetch_hchanh_html_by_click(sess, ma_bn, config, "doctor", "billing")
-            if clicked and clicked.get("html"):
-                soup = _soup(clicked["html"])
-                billing_tables = _collect_billing_tables(soup)
-                ttcp_table = soup.select_one("table#dataTableYeuCau")
 
         summary = parse_billing_summary(soup)
         if summary:
