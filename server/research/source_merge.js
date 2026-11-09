@@ -117,7 +117,19 @@ function buildVerifiedStayIndex(profileRows = [], dischargeRows = []) {
     const bucket = touch(row);
     if (!bucket) continue;
     const discharge = rowDischargeTime(row);
-    if (discharge) bucket.discharge = discharge;
+    if (discharge) {
+      bucket.discharge = discharge;
+      bucket.dischargeAdmission = rowAdmissionTime(row) || '';
+    }
+  }
+  // Trang hồ sơ có thể ghi giờ vào của đợt mới nhất cho mọi đợt (ca thật: đợt 07/08 → 12/08 có hồ sơ
+  // ghi vào 19/08). Khoảng "vào sau ra" là vô lý: dùng giờ vào trên chính trang ra viện, không thì bỏ.
+  for (const bucket of byResearchKey.values()) {
+    const a = parseAnyDate(bucket.admission);
+    const d = parseAnyDate(bucket.discharge);
+    if (!a || !d || d.getTime() >= a.getTime()) continue;
+    const own = parseAnyDate(bucket.dischargeAdmission);
+    bucket.admission = own && own.getTime() <= d.getTime() ? bucket.dischargeAdmission : '';
   }
 
   const direct = new Map();
@@ -135,12 +147,25 @@ function buildVerifiedStayIndex(profileRows = [], dischargeRows = []) {
   return { direct, byPatient };
 }
 
+function rowInsideStay(row, stay) {
+  const own = parseAnyDate(rowAdmissionTime(row));
+  if (!own) return true;
+  const from = parseAnyDate(stay.admission);
+  const to = parseAnyDate(stay.discharge);
+  if (!from || !to) return true;
+  const day = d => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  return day(own) >= day(from) && day(own) <= day(to);
+}
+
 function canonicalizeRowToVerifiedStay(row, verifiedIndex) {
   const code = normalizedIdentity(patientCode(row));
   if (!code || !verifiedIndex) return { ...(row || {}) };
 
   const researchKey = normalizedIdentity(firstNonEmpty(row, ['Research key', 'research_key']));
   let stay = researchKey ? verifiedIndex.direct.get(`${code}|${researchKey}`) : null;
+  // Dòng mang giờ vào nằm ngoài khoảng của đợt cùng key (hồ sơ của đợt khác bị gắn nhầm key): không
+  // kéo về đợt đó, để dòng tự ghép theo giờ vào của chính nó.
+  if (stay && !rowInsideStay(row, stay)) stay = null;
 
   if (!stay) {
     const admission = parseAnyDate(rowAdmissionTime(row));

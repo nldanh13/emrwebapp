@@ -74,5 +74,36 @@ test('y lệnh rơi vào đợt sau (cách xa) không nối hai đợt', () => {
   assert.strictEqual(rows.filter(r => r['Mã BN'] === 'BN990005').length, 2);
 });
 
+test('hồ sơ ghi giờ vào của đợt sau cho đợt trước: đợt trước vẫn tách riêng, không nhuộm đợt sau', () => {
+  // Ca thật: 4 dòng hồ sơ (kể cả của đợt 07/08) đều ghi vào 10:11 19/08 (trang hồ sơ mở đợt mới nhất);
+  // trang ra viện của đợt 07/08 đúng: 07/08 12:12 → 12/08 13:00. Trước đây khoảng "đã xác minh" thành
+  // 19/08 → 12/08, đợt 07/08 biến mất và khoa / chẩn đoán của nó dính sang đợt 19/08.
+  const rows = combineEncounterSources({
+    initialRows: [
+      { 'Mã BN': 'BN990006', 'T/G vào': '12:12 07/08/2026', 'Khoa': 'Cấp cứu', 'Research key': 'S1' },
+      { 'Mã BN': 'BN990006', 'T/G vào': '13:52 10/08/2026', 'Khoa': 'Gây mê', 'Research key': 'S2' },
+      { 'Mã BN': 'BN990006', 'T/G vào': '10:11 19/08/2026', 'Khoa': 'Khám bệnh', 'Research key': 'S3' },
+    ],
+    hchanhProfileRows: [
+      { 'Mã BN': 'BN990006', 'Research key': 'H1', 'Ngày vào viện': '10:11 19/08/2026', 'Ngày ra viện': '13:00 22/08/2026' },
+      { 'Mã BN': 'BN990006', 'Research key': 'H3', 'Ngày vào viện': '10:11 19/08/2026', 'Ngày ra viện': '13:00 22/08/2026' },
+    ],
+    hchanhDischargeRows: [
+      { 'Mã BN': 'BN990006', 'Research key': 'H1', 'Ngày vào viện': '12:12 07/08/2026', 'Ngày ra viện': '13:00 12/08/2026', 'Chẩn đoán ra viện': 'S42.20' },
+      { 'Mã BN': 'BN990006', 'Research key': 'H3', 'Ngày vào viện': '15:10 20/08/2026', 'Ngày ra viện': '12:11 20/08/2026', 'Chẩn đoán ra viện': 'Z09.4' },
+    ],
+  });
+  const full = rows.filter(r => r['Mã BN'] === 'BN990006');
+  const stays = full.map(r => [String(r['Ngày vào viện'] || r['T/G vào']), String(r['Ngày ra viện'] || '')]);
+  assert.strictEqual(stays.length, 2, JSON.stringify(stays));
+  assert.match(stays[0][0], /07\/08\/2026|2026-08-07/);
+  assert.match(stays[0][1], /12\/08\/2026|2026-08-12/);
+  assert.match(stays[1][0], /19\/08\/2026|2026-08-19/);
+  assert.match(stays[1][1], /22\/08\/2026|2026-08-22/);
+  assert.notStrictEqual(full[1]['Chẩn đoán ra viện'], 'S42.20', 'chẩn đoán đợt 07/08 không dính sang đợt 19/08');
+  assert.notStrictEqual(full[1]['Khoa'], 'Cấp cứu', 'khoa đợt 07/08 không dính sang đợt 19/08');
+  assert.strictEqual(full[0]['Chẩn đoán ra viện'], 'S42.20');
+});
+
 console.log(`research_ward_exit_discharge_test: ${passed} test(s) passed`);
 if (process.exitCode) process.exit(1);
