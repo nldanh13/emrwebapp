@@ -496,5 +496,55 @@ const opts = rows => ({ runDir, runId: 'collect_run', scope: 'du_lieu_goc', isAr
     assert.ok(report.exceptions.every(e => e.detail.includes('lỗi khởi tạo Chrome')));
   });
 
+  await test('XN/CĐHA chạy theo lô: lô hết giờ chỉ ghi lỗi kỹ thuật cho lượt của lô đó, không thành "Worker không trả kết quả"', async () => {
+    // Ca thật: ~1.000 lượt giao trong một tiến trình 30 phút; worker chỉ kịp ~50 ca rồi bị dừng, ca ở dòng
+    // 590–768 bị ghi no_result cả 5 lần dù worker chưa từng tới.
+    const { runXnCdhaInBatches } = require('../server/research/collection_runtime');
+    const rows = Array.from({ length: 7 }, (_, i) => ({ __collect_key: `k${i}` }));
+    const seen = [];
+    const res = await runXnCdhaInBatches(rows, {
+      batchSize: 3,
+      runBatch: async batch => {
+        seen.push(batch.map(r => r.__collect_key));
+        return seen.length === 2 ? { error: 'Hết giờ chờ: lô 3 lượt chạy quá 30 phút.' } : { ok: true };
+      },
+    });
+    assert.deepStrictEqual(seen, [['k0', 'k1', 'k2'], ['k3', 'k4', 'k5'], ['k6']]);
+    assert.deepStrictEqual(res.done_keys, ['k0', 'k1', 'k2', 'k6']);
+    assert.deepStrictEqual(res.failures.map(f => f.keys), [['k3', 'k4', 'k5']]);
+
+    const fatal = await runXnCdhaInBatches(rows, { batchSize: 3, runBatch: async () => ({ error: 'Không khởi động được Python: ENOENT', fatal: true }) });
+    assert.deepStrictEqual(fatal.done_keys, []);
+    assert.strictEqual(fatal.failures.flatMap(f => f.keys).length, 7, 'Python hỏng: mọi lượt là lỗi kỹ thuật, chỉ gọi 1 lần');
+
+    let cancelAfter = 1;
+    const stopped = await runXnCdhaInBatches(rows, { batchSize: 3, runBatch: async () => ({ ok: true }), isCancelled: () => cancelAfter-- <= 0 });
+    assert.strictEqual(stopped.stopped, true);
+    assert.deepStrictEqual(stopped.done_keys, ['k0', 'k1', 'k2']);
+
+    // Qua điều phối: lô lỗi → timeout/worker_error, không đốt lượt thử, không có no_result.
+    const run5 = path.join(RUNTIME_ROOT, 'fixture', 'xn_batched_timeout');
+    fs.mkdirSync(run5, { recursive: true });
+    writeCsv(path.join(run5, 'du_lieu_ban_dau.csv'), INITIAL_COLS, initialRows().slice(0, 2));
+    const rows5 = R.ensureResearchSourceRows(run5, {
+      sourceRunId: 'xn_batched_timeout', dateDefaults: { from_date: '2026-03-01', to_date: '2026-03-31' }, force: true,
+    }).rows;
+    const batched = {
+      xnCdha: async (_ctx, opts) => ({
+        ok: true, batched: true, done_keys: [], stopped: false,
+        failures: [{ keys: opts.rows.map(r => r.__collect_key), error: 'Hết giờ chờ: lô 2 lượt chạy quá 30 phút.' }],
+      }),
+    };
+    const { report, ledger } = await R.runCollectionOrchestration(CTX, {
+      runDir: run5, runId: 'xn_batched_timeout', scope: 'du_lieu_goc', isArchive: true,
+      sourceRows: rows5, parts: ['xn', 'cdha'], maxAttempts: 3, maxPasses: 1,
+    }, batched);
+    const parts = Object.values(ledger.encounters).flatMap(enc => [enc.parts.xn, enc.parts.cdha]);
+    assert.strictEqual(parts.length, 4);
+    assert.ok(parts.every(p => p.status === 'failed' && p.reason === 'timeout'), JSON.stringify(parts));
+    assert.ok(parts.every(p => Number(p.attempts || 0) === 0));
+    assert.ok(!report.exceptions.some(e => e.reason === 'no_result'));
+  });
+
   console.log(`\n${passed} kịch bản pass.`);
 })();
