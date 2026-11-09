@@ -552,7 +552,10 @@ router.post('/update-infusion-item', (req, res) => {
     return res.json({ status: 'ok', updated_count: updatedCount,
       requires_schedule_review: false,
       schedule: result.schedule,
-      message: `Đã bổ sung giờ: ${result.schedule.tg_bat_dau} → ${result.schedule.tg_ket_thuc} `
+      message: (result.schedule.noi_tiep_sau
+        ? `Lúc ${result.schedule.gio_chon} đang truyền ${result.schedule.noi_tiep_sau}, nên nối tiếp ngay sau. `
+        : '')
+        + `Đã bổ sung giờ: ${result.schedule.tg_bat_dau} → ${result.schedule.tg_ket_thuc} `
         + `(${result.schedule.thoi_gian_chay_phut} phút). Dòng này đã sẵn sàng nhập EMR, không cần lấy lại dữ liệu.`,
     });
   }
