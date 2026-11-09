@@ -10,6 +10,8 @@ import PatientTimeline from './patient/PatientTimeline.jsx';
 import PatientPreview from './patient/PatientPreview.jsx';
 import InfusionEditPanel from './patient/InfusionEditPanel.jsx';
 import PatientLogModal from './patient/PatientLogModal.jsx';
+import LabResultsPanel, { useLabResultsDay } from './patient/LabResultsPanel.jsx';
+import { labChip, patientLabEntry } from '../utils/labResults.js';
 import { getPatientNotices, PatientNoticePills } from './patientStatusNotice.jsx';
 import { isDischargePrintPatientOnDates } from '../utils/dischargePrint.js';
 import { wardVtytItems, manualVtytKey } from '../utils/patientScope.js';
@@ -72,6 +74,7 @@ const DETAIL_TABS = [
   { id: 'history', label: 'Lịch sử y lệnh' },
   { id: 'timeline', label: 'Timeline y lệnh' },
   { id: 'preview', label: 'Xem trước khi nhập' },
+  { id: 'lab', label: 'Kết quả XN' },
   { id: 'meds', label: 'Sửa dịch truyền', needsInfusion: true },
   { id: 'raw', label: 'Y lệnh gốc' },
 ];
@@ -562,7 +565,7 @@ function PatientActions({ patient, activeDate, availableDates, activeHasInfusion
   );
 }
 
-export default function PatientDetail({ patient, onClose, onInputCare, onInputInfusion, onInputProcedure, onInputVtyt, onRefreshDetails, onPrintDischargeBundle, onInfusionUpdated, running, toast }) {
+export default function PatientDetail({ patient, onClose, onInputCare, onInputInfusion, onInputProcedure, onInputVtyt, onRefreshDetails, onPrintDischargeBundle, onInfusionUpdated, running, toast, dayPatients = [] }) {
   const [subTab, setSubTab] = useState('history');
   const p = patient;
   const st = STATUS[p.status] || STATUS.gray;
@@ -615,12 +618,17 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
   // Cùng ngưỡng với ShiftTab: dưới 640px dùng giao diện điện thoại.
   const isMobile = useIsMobile(640);
 
+  // Kết quả XN đã lưu của ngày đang xem (một gói cho cả ngày, không mở EMR).
+  const { data: labData } = useLabResultsDay(activeDate);
+  const labInfo = labChip(patientLabEntry(labData, p));
+
   // Chip tiến độ ở đầu khung: đổi viết tắt CS/DT/TT sang chữ đầy đủ.
   const progress = [
     { label: careBadge.replace(/^CS:/, 'Chăm sóc:'), tone: p.care_stale_count > 0 ? 'amber' : (p.care_done ? 'green' : 'gray') },
     ...(hasInfusionAny ? [{ label: infusionBadge.replace(/^DT:/, 'Dịch truyền:'), tone: p.has_infusion_incomplete ? 'red' : (p.infus_stale_count > 0 ? 'amber' : (p.infus_done ? 'green' : 'gray')) }] : []),
     ...(hasProcedureAny ? [{ label: procedureBadge.replace(/^TT:/, 'Thủ thuật:'), tone: p.procedure_stale_count > 0 ? 'amber' : (p.procedure_done ? 'green' : 'gray') }] : []),
     ...(p.warning_count > 0 ? [{ label: `Cảnh báo: ${p.warning_count}`, tone: 'amber' }] : []),
+    ...(labInfo ? [{ label: labInfo.text, tone: labInfo.tone }] : []),
   ];
 
   const actions = (
@@ -679,6 +687,8 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
                 </p>
                 <PatientTimeline items={activeDay.timeline || []} thuoc={activeDay.thuoc} />
               </>
+            : subTab === 'lab'
+            ? <LabResultsPanel patient={p} date={activeDate} dayPatients={dayPatients} toast={toast} />
             : subTab === 'raw'
               ? <RawOrdersPanel patientDay={activeDay} />
               : subTab === 'meds'

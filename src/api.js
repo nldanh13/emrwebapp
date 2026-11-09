@@ -87,6 +87,8 @@ function apiActionLabel(method, url) {
     'POST /api/run-details': 'lấy y lệnh/dữ liệu chi tiết',
     'POST /api/remove-details-rooms': 'xoá dữ liệu y lệnh đã lấy nhầm phòng',
     'POST /api/run-details-one': 'cập nhật y lệnh một người bệnh',
+    'GET /api/lab-results': 'tải kết quả xét nghiệm đã lưu',
+    'POST /api/lab-results/fetch': 'lấy kết quả xét nghiệm trong ngày',
     'GET /api/run-postprocess': 'xử lý và phân loại dữ liệu',
     'GET /api/has-processed': 'kiểm tra dữ liệu đã xử lý',
     'GET /api/get-patients': 'tải danh sách người bệnh đã xử lý',
@@ -505,6 +507,21 @@ export function runDetailsOne(patient, { dateFrom, dateTo, selectedDates } = {})
     dateFrom,
     dateTo,
     selectedDates,
+  });
+}
+
+// ── Kết quả xét nghiệm trong ngày (chỉ đọc EMR) ─────────────────────────────
+export const getLabResults = date => get(`/api/lab-results?date=${encodeURIComponent(date || '')}`);
+export function fetchLabResults(date, patients = [], { forceIds = [] } = {}) {
+  return post('/api/lab-results/fetch', {
+    date,
+    force_ids: forceIds,
+    patients: patients.map(p => ({
+      ma_bn: p?.ma_bn || p?.id || p?.['Mã BN'] || p?.['Mã YT'],
+      ho_ten: p?.ho_ten || p?.name || p?.['Họ tên'],
+      so_phong: p?.so_phong || p?.room || p?.Vi_Tri,
+      thoi_gian_vao_khoa: p?.thoi_gian_vao_khoa || p?.tg_vao || p?.['T/G vào'] || p?.admission_time,
+    })),
   });
 }
 
