@@ -81,7 +81,7 @@ function InfusionEditRow({ item, review, patientId, ngayLam, toast, onSaved }) {
       if (r?.status === 'ok' && r.schedule) {
         setLocalNotice(r.message);
         setStarts(emptyStarts(suggestedDoses));
-        toast?.(r.message, 'success');
+        toast?.(r.message, r.overlaps?.length ? 'warn' : 'success');
         await onSaved?.();
       } else if (r?.status === 'ok') {
         setLocalNotice(r.message || 'Đã lưu cục bộ; cần đối chiếu và tính lại lịch truyền.');

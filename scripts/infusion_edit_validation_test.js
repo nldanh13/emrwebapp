@@ -120,13 +120,15 @@ const freeRows = addRows();
 const free = matchAndUpdateInfusions(freeRows, 'FAKE001', '15/10/2026', nef(), {tg_bat_dau: '06:30 15/10/2026'}, id, date);
 assert.equal(freeRows[0].thuoc.dich_truyen[0].tg_bat_dau, '06:30 15/10/2026');
 assert.equal(free.schedule.noi_tiep_sau, undefined);
-// Bắt đầu lúc trống nhưng chạy lấn sang dịch đã có lịch sau đó → từ chối, gợi ý giờ trống.
+// Lỗi 09/11/2026 (ảnh): cữ 20:00 nối sau Vancomycin 20:00→21:06 thành 21:06→22:12, chạy
+// chồng Paracetamol cữ 22:00 → bị từ chối. Worker chỉ nối tiếp trong cùng cữ, không chặn
+// dịch của cữ sau → cho lưu, chỉ cảnh báo chạy chồng để điều dưỡng đối chiếu.
 const intoRows = addRows();
 const into = matchAndUpdateInfusions(intoRows, 'FAKE001', '15/10/2026', nef(), {tg_bat_dau: '07:30 15/10/2026'}, id, date);
-assert.equal(into.updated, false);
-assert.match(into.error, /PARACETAMOL/);
-assert.match(into.error, /08:40 15\/10\/2026/);
-assert.equal(intoRows[0].thuoc.dich_truyen[0].tg_bat_dau, undefined);
+assert.equal(into.updated, true, into.error);
+assert.equal(intoRows[0].thuoc.dich_truyen[0].tg_bat_dau, '07:30 15/10/2026');
+assert.match(into.schedule.chay_chong.join(' '), /PARACETAMOL/);
+
 // Tốc độ chưa xác nhận → phải nhập tốc độ cùng lúc.
 const noRate = () => ({ ...nef(), toc_do: '', missing_infusion_rate: true });
 const noRateRows = [row([noRate()])];
@@ -167,9 +169,20 @@ assert.deepEqual(seqRows[0].thuoc.dich_truyen.map(d => d.tg_bat_dau), ['08:00 15
 // Một giờ lỗi → không ghi cữ nào.
 const badRows = [row([nef2(), {...other}])];
 const bad = matchAndUpdateInfusions(badRows, 'FAKE001', '15/10/2026', nef2(),
-  {tg_bat_dau: ['20:00 15/10/2026', '07:30 15/10/2026']}, id, date);
+  {tg_bat_dau: ['20:00 15/10/2026', 'không phải giờ']}, id, date);
 assert.equal(bad.updated, false);
 assert.equal(badRows[0].thuoc.dich_truyen.length, 2);
 assert.equal(badRows[0].thuoc.dich_truyen[0].tg_bat_dau, undefined);
 assert.throws(() => parseManualStart(['08:00 15/10/2026'], '15/10/2026'));
+const eveningRows = [row([nef2(),
+  { ten_thuoc: 'Vancomycin', tg_bat_dau: '20:00 15/10/2026', tg_ket_thuc: '21:06 15/10/2026', the_tich: 100, toc_do: 30, gio_dung: '20 giờ' },
+  { ten_thuoc: 'Paracetamol 10mg/ml', tg_bat_dau: '22:00 15/10/2026', tg_ket_thuc: '22:20 15/10/2026', the_tich: 100, toc_do: 100, gio_dung: '22 giờ' }])];
+const evening = matchAndUpdateInfusions(eveningRows, 'FAKE001', '15/10/2026', nef2(),
+  {tg_bat_dau: ['08:00 15/10/2026', '20:00 15/10/2026']}, id, date);
+assert.equal(evening.updated, true, evening.error);
+const eveDose = eveningRows[0].thuoc.dich_truyen.find(d => d.gio_dung === '20 giờ' && d.ten_thuoc === 'NEFOPAM');
+assert.deepEqual([eveDose.tg_bat_dau, eveDose.tg_ket_thuc], ['21:06 15/10/2026', '22:12 15/10/2026']);
+assert.equal(evening.schedules[1].noi_tiep_sau, 'Vancomycin');
+assert.match(evening.schedules[1].chay_chong.join(' '), /Paracetamol 10mg\/ml \(22:00/);
+assert.equal(validateInfusionTargetsComplete(eveningRows, scoped).ok, true);
 console.log('infusion edit safety: OK');
