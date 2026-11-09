@@ -391,6 +391,29 @@ function rowWorkDate(row) {
   return String(row?.ngay_lam || row?.ngay_y_lenh || row?.ngay || row?.date || '').trim();
 }
 
+// Nêu NGUYÊN NHÂN cụ thể (giờ dùng/tốc độ/thể tích) thay vì chỉ "thiếu giờ bắt đầu":
+// giờ bắt đầu chỉ là hệ quả — worker không xếp lịch khi y lệnh thiếu giờ dùng hoặc
+// tốc độ, nên kiểm tra tg_bat_dau trước sẽ che mất lý do thật (lỗi 09/11/2026).
+function incompleteInfusionReason(item) {
+  if (!hasValidVolume(item)) return 'Thiếu thể tích';
+  const reasons = [];
+  const start = String(item?.tg_bat_dau || '').trim();
+  const orderHour = String(item?.gio_dung || '').trim();
+  const usage = String(item?.raw_usage_line || item?.duong_dung_goc || '').trim();
+  const rateValue = parseFloat(String(item?.toc_do ?? '').replace(',', '.'));
+  if (item?.missing_infusion_time || (!start && !orderHour)) {
+    reasons.push(usage
+      ? `Y lệnh không ghi giờ dùng (y lệnh: "${usage.slice(0, 80)}")`
+      : 'Y lệnh không ghi giờ dùng');
+  }
+  if (item?.toc_do_inferred) reasons.push('Tốc độ truyền là giá trị phần mềm tự đoán, chưa xác nhận');
+  else if (item?.missing_infusion_rate) reasons.push('Y lệnh không có tốc độ truyền được xác nhận');
+  else if (!(rateValue > 0)) reasons.push('Thiếu tốc độ truyền hợp lệ');
+  if (item?.infusion_schedule_stale) reasons.push('Lịch tính trước khi sửa thể tích/tốc độ, cần xử lý lại');
+  if (!reasons.length && !start) reasons.push('Chưa tính được giờ bắt đầu, cần xử lý lại lịch dịch truyền');
+  return reasons.join('; ');
+}
+
 // Không cho nhập dịch truyền khi thiếu thể tích/giờ/tốc độ hoặc khi lịch tính
 // theo giá trị cũ đã mất hiệu lực. Ngăn worker tự điền 30 giọt/phút thiếu căn cứ.
 function findIncompleteInfusionEntries(processedRows, targets) {
@@ -407,14 +430,7 @@ function findIncompleteInfusionEntries(processedRows, targets) {
       for (const row of rowsForDay) {
         const list = Array.isArray(row?.thuoc?.dich_truyen) ? row.thuoc.dich_truyen : [];
         for (const item of list) {
-          const reason = !hasValidVolume(item) ? 'Thiếu thể tích'
-            : !String(item?.tg_bat_dau || '').trim() ? 'Thiếu giờ bắt đầu'
-            : item?.missing_infusion_time ? 'Chưa có giờ dùng rõ ràng'
-            : item?.infusion_schedule_stale ? 'Lịch tính trước khi sửa thể tích/tốc độ, cần xử lý lại'
-            : item?.toc_do_inferred ? 'Tốc độ truyền là giá trị phần mềm tự đoán, chưa xác nhận'
-            : item?.missing_infusion_rate ? 'Thiếu tốc độ truyền được xác nhận'
-            : !(parseFloat(String(item?.toc_do ?? '').replace(',', '.')) > 0) ? 'Thiếu tốc độ truyền hợp lệ'
-            : '';
+          const reason = incompleteInfusionReason(item);
           if (!reason) continue;
           entries.push({
             reason,

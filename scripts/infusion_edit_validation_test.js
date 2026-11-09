@@ -48,4 +48,27 @@ for (const [change, expected] of [
   assert.match(check.message, new RegExp(expected,'i'));
   assert.equal(check.details.length, 1);
 }
+// Lỗi 09/11/2026: NEFOPAM có cờ missing_infusion_time (y lệnh không ghi giờ dùng)
+// nhưng thông báo chỉ nói chung chung "Thiếu giờ bắt đầu", che mất nguyên nhân thật.
+const noOrderHour = {
+  ten_thuoc: 'NEFOPAM MEDISOL 20MG/2ML', the_tich: 100, toc_do: '30', gio_dung: '',
+  missing_infusion_time: true, raw_usage_line: 'TTM khi đau',
+};
+const noHourCheck = validateInfusionTargetsComplete(simulated(noOrderHour), scoped);
+assert.equal(noHourCheck.ok, false);
+assert.match(noHourCheck.message, /Y lệnh không ghi giờ dùng/);
+assert.match(noHourCheck.message, /TTM khi đau/, 'phải trích dòng y lệnh gốc để đối chiếu');
+assert.doesNotMatch(noHourCheck.message, /Thiếu giờ bắt đầu/);
+// Thiếu cả giờ dùng lẫn tốc độ: phải nói đủ cả hai, không chỉ một.
+const noHourNoRate = {
+  ten_thuoc: 'NEFOPAM MEDISOL 20MG/2ML', the_tich: 100, toc_do: '', gio_dung: '',
+  missing_infusion_rate: true, raw_usage_line: 'Pha natri clorid 0,9% 100ml TTM',
+};
+const bothCheck = validateInfusionTargetsComplete(simulated(noHourNoRate), scoped);
+assert.match(bothCheck.message, /Y lệnh không ghi giờ dùng/);
+assert.match(bothCheck.message, /tốc độ/i);
+// Có giờ dùng + tốc độ nhưng vẫn không có giờ bắt đầu → lịch chưa được tính.
+const notScheduled = {the_tich: 100, toc_do: '30', gio_dung: '8 giờ', tg_bat_dau: ''};
+assert.match(validateInfusionTargetsComplete(simulated(notScheduled), scoped).message,
+  /Chưa tính được giờ bắt đầu/);
 console.log('infusion edit safety: OK');
