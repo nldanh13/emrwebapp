@@ -369,10 +369,22 @@
       "sua_tay": true
     },
     {
-      "canonical": "Levofloxacin/cooper solution for infusion 500mg/100ml",
+      "canonical": "Levofloxacin",
       "category": "dich_truyen",
+      "default_route": "TTM",
+      "routes": [
+        "TTM"
+      ],
       "default_volume_ml": 100,
-      "default_rate": "30"
+      "default_rate": "30",
+      "ten_hien_thi": "Levofloxacin",
+      "sua_tay": true,
+      "aliases": [
+        "Levofloxacin/cooper solution for infusion 500mg/100ml"
+      ],
+      "dilution": {
+        "solvent": "KHONG_PHA"
+      }
     }
   ],
   "_updated": "2026-11-10"
