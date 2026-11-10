@@ -350,7 +350,13 @@
       ],
       "ten_hien_thi": "NATRI CLORID 3%",
       "sua_tay": true
+    },
+    {
+      "canonical": "Levofloxacin/cooper solution for infusion 500mg/100ml",
+      "category": "dich_truyen",
+      "default_volume_ml": 100.0,
+      "default_rate": "30"
     }
   ],
-  "_updated": "2026-10-30"
+  "_updated": "2026-11-10"
 }
