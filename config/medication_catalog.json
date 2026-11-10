@@ -206,7 +206,17 @@
     {
       "canonical": "GEMAPAXANE",
       "category": "thuoc_tiem",
-      "default_route": "TDD"
+      "default_route": "TDD",
+      "active_ingredients": [
+        "Gemapaxane"
+      ],
+      "aliases": [
+        "Gemapaxane"
+      ],
+      "routes": [
+        "TDD"
+      ],
+      "sua_tay": true
     },
     {
       "canonical": "VIBATAZOL 1G/0,5G",
