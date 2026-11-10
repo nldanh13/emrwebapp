@@ -28,6 +28,7 @@ import { useFeatureStates } from '../features/runtime.js';
 import { getDaySchedule, toIsoDate, weekdayLabelFromIso } from './nurse/nurseScheduleUtils.js';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
 import { SkeletonScreen } from './Skeleton.jsx';
+import { durationText, endTimeOf, entryVitalsFor, formKey, readTransfusionForms, saveTransfusionStart } from './report/bloodTransfusion.js';
 
 function LoadingState() {
   return (
@@ -717,9 +718,13 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
       return;
     }
 
-    // Hỏi giờ nhận máu theo từng BN/ngày để không áp nhầm sang ngày khác của cùng BN.
+    // Hỏi giờ BẮT ĐẦU truyền máu theo từng BN/ngày để không áp nhầm sang ngày khác của cùng BN.
+    // Mốc chăm sóc (10 phút trước → kết thúc) và sinh hiệu lấy theo mẫu chung với bảng Truyền máu ở
+    // Phiếu bàn giao ca (config/blood_transfusion_care.json, src/components/report/bloodTransfusion.js).
     const arr = Array.isArray(items) ? items : [items];
     const truyen_mau_times = {};
+    const truyen_mau_vitals = {};
+    const transfusionForms = readTransfusionForms();
     for (const item of arr) {
       const id = patientIdOf(item);
       if (!id) continue;
@@ -731,10 +736,13 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
         const day = date ? (item?.day_map?.[date] || item) : item;
         if (!day?.cs_extra?.truyen_mau?.co_truyen_mau) continue;
         const ten = item.ho_ten || item.ma_bn || 'Bệnh nhân';
+        const savedStart = date ? String(transfusionForms[formKey(date, id)]?.start || '') : '';
         const gio = window.prompt(
           `🩸 ${ten}${date ? ` ngày ${date}` : ''} có dự trù truyền máu.
 ` +
-          `Nhập giờ nhận máu (HH:MM) — để trống nếu BN đi mổ hoặc chưa truyền:`
+          `Nhập giờ BẮT ĐẦU truyền máu (HH:MM). Phiếu chăm sóc lập lúc 10 phút trước, bắt đầu, sau 15 phút, ` +
+          `mỗi giờ và kết thúc (tự tính sau ${durationText()}). Để trống nếu BN đi mổ hoặc chưa truyền:`,
+          savedStart,
         );
         const rawTime = (gio || '').trim();
         const cleaned = normalizeClockTime(rawTime);
@@ -744,11 +752,18 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
         }
         if (cleaned) {
           truyen_mau_times[date ? `${id}::${date}` : id] = cleaned;
+          if (date) {
+            // Sinh hiệu đúng như bảng Truyền máu đang hiện (số người làm đã sửa, hoặc số mặc định cố định).
+            truyen_mau_vitals[`${id}::${date}`] = entryVitalsFor(date, id, cleaned, transfusionForms);
+            saveTransfusionStart(date, id, cleaned);
+            toast?.(`${ten}: truyền máu ${cleaned} → ${endTimeOf(cleaned)}.`, 'info');
+          }
         }
       }
     }
     if (Object.keys(truyen_mau_times).length > 0) {
       targets.truyen_mau_times = truyen_mau_times;
+      targets.truyen_mau_vitals = truyen_mau_vitals;
     }
 
     setRunning('care');

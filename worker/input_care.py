@@ -259,31 +259,53 @@ def _debug_page(driver, label="debug"):
 # 2b. TRUYỀN MÁU — Sinh phiếu chăm sóc từ giờ nhận máu
 # ==============================================================================
 
-def _build_truyen_mau_events(gio_nhan_mau: str, ngay_lam_viec: str) -> list:
-    """Tạo 4 phiếu chăm sóc truyền máu tại T, T+1h, T+2h, T+3h53m.
+_VITAL_RULES = {
+    "mach": lambda x: re.fullmatch(r"\d{2,3}", x) and 30 <= int(x) <= 220,
+    "nhiet_do": lambda x: re.fullmatch(r"\d{2}([.,]\d)?", x) and 34 <= float(x.replace(",", ".")) <= 43,
+    "huyet_ap": lambda x: re.fullmatch(r"\d{2,3}/\d{2,3}", x),
+    "nhip_tho": lambda x: re.fullmatch(r"\d{1,2}", x) and 6 <= int(x) <= 60,
+}
+
+
+def _clean_truyen_mau_vitals(raw) -> dict:
+    """Giữ các ô sinh hiệu hợp lệ do giao diện gửi; ô sai/thiếu thì bỏ để worker điền mặc định."""
+    out = {}
+    if not isinstance(raw, dict):
+        return out
+    for key, ok in _VITAL_RULES.items():
+        val = str(raw.get(key) or "").strip()
+        if val and ok(val):
+            out[key] = val
+    return out
+
+
+def _build_truyen_mau_events(gio_bat_dau: str, ngay_lam_viec: str, vitals_by_slot=None) -> list:
+    """Tạo phiếu chăm sóc truyền máu theo mẫu config/blood_transfusion_care.json.
 
     Args:
-        gio_nhan_mau:   Giờ nhận máu dạng "HH:MM" do điều dưỡng nhập từ UI.
-        ngay_lam_viec:  Ngày làm việc dạng "dd/mm/yyyy".
+        gio_bat_dau:    Giờ BẮT ĐẦU truyền máu "HH:MM" do điều dưỡng nhập từ UI.
+        ngay_lam_viec:  Ngày làm việc "dd/mm/yyyy".
+        vitals_by_slot: {key mốc: {mach, huyet_ap, nhip_tho, nhiet_do}} — đúng số đang hiện trên
+                        bảng Truyền máu ở Phiếu bàn giao ca. Không có thì worker điền mặc định.
 
     Returns:
         Danh sách dict special_event tương thích với hệ thống input_care.
     """
     from datetime import datetime, timedelta
 
-    gio_nhan_mau = str(gio_nhan_mau or "").strip()
+    gio_bat_dau = str(gio_bat_dau or "").strip()
     ngay_lam_viec = str(ngay_lam_viec or "").strip()
+    vitals_by_slot = vitals_by_slot if isinstance(vitals_by_slot, dict) else {}
 
-    # Parse giờ nhận máu
-    m = re.match(r"^(\d{1,2}):(\d{2})$", gio_nhan_mau)
+    m = re.match(r"^(\d{1,2}):(\d{2})$", gio_bat_dau)
     if not m:
-        print(f"   [WARN] truyen_mau: giờ nhận máu không hợp lệ '{gio_nhan_mau}' — bỏ qua phiếu truyền máu.")
+        print(f"   [WARN] truyen_mau: giờ bắt đầu truyền máu không hợp lệ '{gio_bat_dau}' — bỏ qua phiếu truyền máu.")
         return []
 
     try:
         base_dt = datetime.strptime(f"{m.group(1).zfill(2)}:{m.group(2)} {ngay_lam_viec}", "%H:%M %d/%m/%Y")
     except ValueError:
-        print(f"   [WARN] truyen_mau: không parse được datetime từ '{gio_nhan_mau} {ngay_lam_viec}' — bỏ qua.")
+        print(f"   [WARN] truyen_mau: không parse được datetime từ '{gio_bat_dau} {ngay_lam_viec}' — bỏ qua.")
         return []
 
     events = []
@@ -294,8 +316,9 @@ def _build_truyen_mau_events(gio_nhan_mau: str, ngay_lam_viec: str) -> list:
         time_full = f"{hhmm} {ngay}"
         total_min = slot_dt.hour * 60 + slot_dt.minute
 
-        events.append({
+        ev = {
             "type":          "truyen_mau",
+            "slot_key":      slot["key"],
             "label":         slot["label"],
             "source_date":   ngay_lam_viec,
             "time_full":     time_full,
@@ -303,11 +326,14 @@ def _build_truyen_mau_events(gio_nhan_mau: str, ngay_lam_viec: str) -> list:
             "time_minutes":  total_min,
             "dien_bien":     slot["dien_bien"],
             "cham_soc":      slot["cham_soc"],
-            "needs_vitals":  True,
-        })
+            "needs_vitals":  slot["needs_vitals"],
+        }
+        if slot["needs_vitals"]:
+            vitals = _clean_truyen_mau_vitals(vitals_by_slot.get(slot["key"]))
+            if vitals:
+                ev["vitals"] = vitals
+        events.append(ev)
     return events
-
-
 
 
 def _parse_care_datetime(raw, default_date=None):
@@ -574,6 +600,8 @@ def main():
     # Giờ nhận máu do điều dưỡng nhập từ UI, ưu tiên dạng {"ma_bn::ngay_lam": "HH:MM"}.
     # Vẫn nhận legacy {ma_bn: "HH:MM"} cho dữ liệu/phiên cũ.
     truyen_mau_times = targets.get('truyen_mau_times') if isinstance(targets.get('truyen_mau_times'), dict) else {}
+    # Sinh hiệu theo mốc truyền máu, cùng khóa "ma_bn::ngay_lam" (bảng Truyền máu ở Phiếu bàn giao ca).
+    truyen_mau_vitals = targets.get('truyen_mau_vitals') if isinstance(targets.get('truyen_mau_vitals'), dict) else {}
 
     direct_emr_sync = bool(targets.get('directEmrSync') or targets.get('direct_emr_sync'))
     visible_browser = bool(targets.get('visibleBrowser') or targets.get('visible_browser'))
@@ -761,7 +789,8 @@ def main():
         if _truyen_mau_info.get("co_truyen_mau"):
             _gio_nhan_mau = _get_truyen_mau_time(ma_bn, ngay_chuan)
             if _gio_nhan_mau:
-                _tm_events = _build_truyen_mau_events(_gio_nhan_mau, ngay_chuan)
+                _tm_vitals = (truyen_mau_vitals or {}).get(f"{str(ma_bn or '').strip()}::{str(ngay_chuan or '').strip()}")
+                _tm_events = _build_truyen_mau_events(_gio_nhan_mau, ngay_chuan, _tm_vitals)
                 for _ev in _tm_events:
                     _ev_key = (_ev.get("type"), _ev.get("time_full"))
                     _existed = any(
@@ -1143,6 +1172,7 @@ def main():
                     "dien_bien": str(ev.get("dien_bien") or "").strip() or _special_event_default_dien_bien(ev),
                     "care": ev_care,
                     "needs_vitals": bool(ev.get("needs_vitals", False if ev.get("type") == "discharge" else True)),
+                    "vitals": ev.get("vitals") if isinstance(ev.get("vitals"), dict) else None,
                     "nurse_shift_override": _special_event_nurse_shift_override(ev),
                     "actions_set": set(),
                 })
@@ -1539,6 +1569,7 @@ def main():
                         form_ok = dien_thong_tin(
                             driver, h, time_str, final_care_content, LIST_NURSE, dien_bien_text,
                             needs_vitals=needs_vitals, config_ten_goc=CONFIG_TEN_GOC,
+                            vitals=(job.get("vitals") if needs_vitals else None),
                         )
                         if not form_ok:
                             print("[Sai Người lập] -> Retry.", end=" ")
