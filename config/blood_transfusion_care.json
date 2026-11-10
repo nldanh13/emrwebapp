@@ -1,0 +1,13 @@
+{
+  "_ghi_chu": "Mẫu mốc chăm sóc truyền máu. Màn Phiếu bàn giao ca (src/components/report/bloodTransfusion.js) và nhập chăm sóc (worker/input_care.py) đọc chung file này. offset_minutes tính từ giờ bắt đầu truyền.",
+  "duration_minutes": 153,
+  "slots": [
+    { "key": "pre", "offset_minutes": -10, "label": "Trước truyền 10 phút", "dien_bien": ["Người bệnh tỉnh", "Tiếp xúc tốt", "Da niêm nhợt"], "cham_soc": ["Thử phản ứng thuận hợp tại giường", "Lấy dấu hiệu sinh tồn", "Trình Bs"], "needs_vitals": true },
+    { "key": "start", "offset_minutes": 0, "label": "Bắt đầu truyền máu", "dien_bien": ["Người bệnh tỉnh"], "cham_soc": ["Bắt đầu truyền máu"], "needs_vitals": false },
+    { "key": "m15", "offset_minutes": 15, "label": "Sau 15 phút", "dien_bien": ["Người bệnh tỉnh"], "cham_soc": ["Chưa xảy ra phản ứng lạ", "Lấy dấu hiệu sinh tồn"], "needs_vitals": true },
+    { "key": "h1", "offset_minutes": 60, "label": "Sau 1 giờ", "dien_bien": ["Người bệnh tỉnh"], "cham_soc": ["Chưa xảy ra phản ứng lạ", "Lấy dấu hiệu sinh tồn"], "needs_vitals": true },
+    { "key": "h2", "offset_minutes": 120, "label": "Sau 2 giờ", "dien_bien": ["Người bệnh tỉnh"], "cham_soc": ["Chưa xảy ra phản ứng lạ", "Lấy dấu hiệu sinh tồn"], "needs_vitals": true },
+    { "key": "end", "offset_minutes": 153, "label": "Kết thúc truyền máu", "dien_bien": ["Người bệnh tỉnh"], "cham_soc": ["Kết thúc truyền máu", "Lấy dấu hiệu sinh tồn"], "needs_vitals": true }
+  ],
+  "default_vitals": { "nhip_tho": "20", "nhiet_do": "37", "mach_min": 75, "mach_max": 85, "huyet_ap": ["120/80", "110/70", "130/80"] }
+}

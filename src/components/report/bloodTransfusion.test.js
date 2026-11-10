@@ -3,7 +3,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createElement, act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { bloodKind, buildCareText, buildTransfusionPrintHtml, buildTransfusionTimeline, groupTransfusions } from './bloodTransfusion.js';
+import {
+  bloodKind, buildCareText, buildTransfusionPrintHtml, buildTransfusionTimeline, defaultVitals, endTimeOf, entryVitalsFor,
+  formKey, groupTransfusions, readTransfusionForms, saveTransfusionStart, seedBaseOf, slotValues, writeTransfusionForms,
+} from './bloodTransfusion.js';
+import FIXTURE from '../../../tests/fixtures/blood_transfusion_times.json' with { type: 'json' };
 import { DutyReport } from './DutyReport.jsx';
 
 describe('bloodKind', () => {
@@ -22,36 +26,67 @@ describe('bloodKind', () => {
 });
 
 describe('buildTransfusionTimeline', () => {
-  it('đúng các mốc của ví dụ 14:00 → 16:33', () => {
-    const { slots, endMissing } = buildTransfusionTimeline('14:00', '16:33');
-    expect(endMissing).toBe(false);
+  it('đúng các mốc của ví dụ: bắt đầu 14:00, truyền 2 giờ 33 phút', () => {
+    const slots = buildTransfusionTimeline('14:00');
     expect(slots.map(s => s.time)).toEqual(['13:50', '14:00', '14:15', '15:00', '16:00', '16:33']);
     expect(slots.map(s => s.kind)).toEqual(['pre', 'start', 'check', 'check', 'check', 'end']);
+    expect(endTimeOf('14:00')).toBe('16:33');
   });
-  it('mốc theo giờ không vượt quá giờ kết thúc', () => {
-    expect(buildTransfusionTimeline('14:00', '15:00').slots.map(s => s.time)).toEqual(['13:50', '14:00', '14:15', '15:00']);
-    expect(buildTransfusionTimeline('14:00', '14:10').slots.map(s => s.time)).toEqual(['13:50', '14:00', '14:10']);
-  });
-  it('truyền qua nửa đêm', () => {
-    const { slots } = buildTransfusionTimeline('23:30', '01:00');
-    expect(slots.map(s => s.time)).toEqual(['23:20', '23:30', '23:45', '00:30', '01:00']);
-    expect(slots.at(-1).dayOffset).toBe(1);
-  });
-  it('chưa có giờ kết thúc: chỉ các mốc trong 4 giờ, không có mốc kết thúc', () => {
-    const { slots, endMissing } = buildTransfusionTimeline('14:00', '');
-    expect(endMissing).toBe(true);
-    expect(slots.map(s => s.time)).toEqual(['13:50', '14:00', '14:15', '15:00', '16:00', '17:00']);
+  it('cùng mốc giờ với worker nhập chăm sóc (fixture chung)', () => {
+    const addDays = (dmy, n) => {
+      const [d, m, y] = dmy.split('/').map(Number);
+      const dt = new Date(y, m - 1, d + n);
+      return `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}/${dt.getFullYear()}`;
+    };
+    for (const c of FIXTURE.cases) {
+      const got = buildTransfusionTimeline(c.start).map(s => `${s.time} ${addDays(c.date, s.dayOffset)}`);
+      expect(got).toEqual(c.times);
+    }
   });
   it('giờ bắt đầu sai thì không tạo mốc', () => {
-    expect(buildTransfusionTimeline('', '16:00').slots).toEqual([]);
-    expect(buildTransfusionTimeline('25:00', '').slots).toEqual([]);
+    expect(buildTransfusionTimeline('')).toEqual([]);
+    expect(buildTransfusionTimeline('25:00')).toEqual([]);
+  });
+});
+
+describe('sinh hiệu', () => {
+  afterEach(() => localStorage.clear());
+  it('số mặc định cố định theo người bệnh/ngày/giờ/mốc, trong dải worker', () => {
+    const a = defaultVitals('p1|10/11/2026|14:00|pre');
+    expect(defaultVitals('p1|10/11/2026|14:00|pre')).toEqual(a);
+    expect(a.resp).toBe('20');
+    expect(a.temp).toBe('37');
+    expect(Number(a.pulse)).toBeGreaterThanOrEqual(75);
+    expect(Number(a.pulse)).toBeLessThanOrEqual(85);
+    expect(['120/80', '110/70', '130/80']).toContain(a.bp);
+  });
+  it('mốc không lấy sinh hiệu thì để trống, ô đã sửa thì dùng số đã sửa', () => {
+    const [pre, start] = buildTransfusionTimeline('14:00');
+    expect(slotValues(start, {}, 'x')).toMatchObject({ resp: '', pulse: '', bp: '', temp: '' });
+    expect(slotValues(pre, { pre: { pulse: '96' } }, 'x').pulse).toBe('96');
+  });
+  it('dữ liệu gửi nhập EMR đúng bằng số trên bảng', () => {
+    const date = '10/11/2026';
+    writeTransfusionForms({ [formKey(date, 'p1')]: { start: '14:00', cells: { m15: { bp: '100/60' } } } });
+    const vit = entryVitalsFor(date, 'p1', '14:00');
+    expect(Object.keys(vit)).toEqual(['pre', 'm15', 'h1', 'h2', 'end']);
+    const forms = readTransfusionForms();
+    const seed = seedBaseOf(date, 'p1', '14:00');
+    for (const slot of buildTransfusionTimeline('14:00').filter(s => s.needsVitals)) {
+      const v = slotValues(slot, forms[formKey(date, 'p1')].cells, seed);
+      expect(vit[slot.key]).toEqual({ nhip_tho: v.resp, nhiet_do: v.temp, mach: v.pulse, huyet_ap: v.bp });
+    }
+    expect(vit.m15.huyet_ap).toBe('100/60');
+  });
+  it('giờ bắt đầu nhập ở Nhập chăm sóc được lưu cho bảng', () => {
+    saveTransfusionStart('10/11/2026', 'p1', '09:30');
+    expect(readTransfusionForms()[formKey('10/11/2026', 'p1')].start).toBe('09:30');
   });
 });
 
 describe('buildCareText', () => {
   it('đúng định dạng khoa đang ghi', () => {
-    const { slots } = buildTransfusionTimeline('14:00', '16:33');
-    expect(buildCareText(slots)).toBe([
+    expect(buildCareText(buildTransfusionTimeline('14:00'))).toBe([
       '13:50', 'Diễn biến:', 'Người bệnh tỉnh', 'Tiếp xúc tốt', 'Da niêm nhợt',
       'Chăm sóc:', 'Thử phản ứng thuận hợp tại giường', 'Lấy dấu hiệu sinh tồn', 'Trình Bs',
       '14:00', 'Người bệnh tỉnh -> Bắt đầu truyền máu',
@@ -62,19 +97,21 @@ describe('buildCareText', () => {
     ].join('\n'));
   });
   it('dùng chữ người làm đã sửa', () => {
-    const { slots } = buildTransfusionTimeline('14:00', '14:30');
-    expect(buildCareText(slots, { m15: { note: 'Người bệnh lạnh run -> Ngừng truyền, báo Bs' } })).toContain('14:15\nNgười bệnh lạnh run -> Ngừng truyền, báo Bs');
+    expect(buildCareText(buildTransfusionTimeline('14:00'), { m15: { note: 'Người bệnh lạnh run -> Ngừng truyền, báo Bs' } }))
+      .toContain('14:15\nNgười bệnh lạnh run -> Ngừng truyền, báo Bs');
   });
 });
 
 describe('phiếu in và màn hình dùng chung mốc giờ', () => {
-  it('phiếu in có đủ các mốc và chỉ số đã nhập', () => {
-    const group = { room: 'P10', patientName: 'NGƯỜI BỆNH A', products: [{ drugName: 'Khối hồng cầu 350ml' }], tests: [] };
-    const html = buildTransfusionPrintHtml(group, { start: '14:00', end: '16:33', cells: { start: { pulse: '88', bp: '120/70' } } }, '10/11/2026');
-    for (const t of buildTransfusionTimeline('14:00', '16:33').slots.map(s => s.time)) expect(html).toContain(`>${t}<`);
+  it('phiếu in có đủ các mốc và chỉ số', () => {
+    const group = { room: 'P10', patientId: 'p1', patientName: 'NGƯỜI BỆNH A', products: [{ drugName: 'Khối hồng cầu 350ml' }], tests: [] };
+    const html = buildTransfusionPrintHtml(group, { start: '14:00', cells: { start: { pulse: '88', bp: '120/70' } } }, '10/11/2026');
+    for (const t of buildTransfusionTimeline('14:00').map(s => s.time)) expect(html).toContain(`>${t}<`);
     expect(html).toContain('PHẦN II. THEO DÕI TRUYỀN MÁU LÂM SÀNG');
     expect(html).toContain('<td>88</td>');
     expect(html).toContain('120/70');
+    const pre = defaultVitals(`${seedBaseOf('10/11/2026', 'p1', '14:00')}|pre`);
+    expect(html).toContain(`<td>${pre.pulse}</td>`);
     expect(html).toContain('<b>16:33</b> giờ, ngày <b>10</b> tháng <b>11</b> năm <b>2026</b>');
   });
   it('escape tên người bệnh', () => {
@@ -125,7 +162,7 @@ describe('DutyReport: truyền máu không bàn giao', () => {
     });
   }
 
-  it('nhập giờ bắt đầu và kết thúc thì hiện bảng mốc, và tự lưu', () => {
+  it('nhập giờ bắt đầu thì giờ ngừng tự tính, hiện bảng mốc và sinh hiệu, và tự lưu', () => {
     localStorage.setItem('emr_report_role_v1', JSON.stringify('work'));
     act(() => root.render(createElement(DutyReport, { date: DATE, rows, nurseState: {} })));
     const setValue = (el, value) => {
@@ -134,10 +171,12 @@ describe('DutyReport: truyền máu không bàn giao', () => {
       el.dispatchEvent(new Event('input', { bubbles: true }));
     };
     act(() => setValue(host.querySelector('input[aria-label="Giờ bắt đầu truyền máu"]'), '14:00'));
-    act(() => setValue(host.querySelector('input[aria-label="Giờ ngừng truyền máu"]'), '16:33'));
+    expect(host.querySelector('[aria-label="Giờ ngừng truyền máu"]').textContent).toBe('16:33');
     const times = [...host.querySelectorAll('tbody tr td:first-child')].map(td => td.textContent);
     expect(times).toEqual(['13:50', '14:00', '14:15', '15:00', '16:00', '16:33']);
     const saved = JSON.parse(localStorage.getItem('emr_report_blood_transfusion_v1'));
-    expect(saved[`${DATE}|p1`]).toMatchObject({ start: '14:00', end: '16:33' });
+    expect(saved[`${DATE}|p1`]).toMatchObject({ start: '14:00' });
+    const pulse = host.querySelector('input[aria-label="Mạch (l/ph) lúc 13:50"]').value;
+    expect(pulse).toBe(entryVitalsFor(DATE, 'p1', '14:00').pre.mach);
   });
 });

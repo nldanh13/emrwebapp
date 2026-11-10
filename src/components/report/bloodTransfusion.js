@@ -8,16 +8,16 @@
 //
 // Màn hình, nút "Sao chép chăm sóc" và phiếu in dùng chung buildTransfusionTimeline.
 
-import { stripVN } from './reportBaseUtils.js';
+import { parseDmy, stripVN } from './reportBaseUtils.js';
+
+import CARE from '../../../config/blood_transfusion_care.json' with { type: 'json' };
 
 const DAY = 24 * 60;
-// Mốc đo trước truyền: 10 phút trước giờ bắt đầu.
-export const PRE_CHECK_MINUTES = 10;
-// Mốc đầu sau khi bắt đầu: 15 phút; sau đó mỗi giờ một lần đến khi kết thúc.
-export const FIRST_CHECK_MINUTES = 15;
-export const HOURLY_MINUTES = 60;
-// Chưa nhập giờ kết thúc: chỉ dựng các mốc trong 4 giờ (một đơn vị máu truyền không quá 4 giờ).
-export const MAX_DURATION_MINUTES = 4 * 60;
+// Thời gian truyền mặc định (phút): giờ ngừng truyền tự tính = giờ bắt đầu + chừng này.
+export const DURATION_MINUTES = Number(CARE.duration_minutes) || 153;
+export const CARE_SLOTS = CARE.slots;
+export const STORAGE_KEY = 'emr_report_blood_transfusion_v1';
+const KEEP_DAYS = 14;
 
 const PRODUCT_RE = /\bkhoi\s+(?:hong\s+cau|tieu\s+cau|bach\s+cau)\b|\bhong\s+cau\s+(?:lang|rua|loc)\b|\bhuyet\s+tuong\b|\btua\s+lanh\b|\bmau\s+toan\s+phan\b/;
 const TEST_RE = /\bdinh\s+nhom\s+mau\b|\bphan\s+ung\s+(?:hoa|thuan)\s+hop\b|\bphan\s+ung\s+cheo\b/;
@@ -39,7 +39,7 @@ export function isBloodRow(row) {
 }
 
 export function transfusionKey(date, row) {
-  return `${date}|${String(row?.patientId || row?.patientName || '').trim()}`;
+  return formKey(date, row?.patientId || row?.patientName);
 }
 
 // Gom dòng truyền máu theo người bệnh. Người bệnh có y lệnh chế phẩm máu thì có phiếu theo dõi;
@@ -82,34 +82,132 @@ export function formatClock(minutes) {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
+function kindOf(key) {
+  if (key === 'pre' || key === 'start' || key === 'end') return key;
+  return 'check';
+}
+
 /**
- * Các mốc chăm sóc của một lần truyền máu.
- * @param {string} start giờ bắt đầu "HH:MM"
- * @param {string} [end] giờ kết thúc "HH:MM"; nhỏ hơn giờ bắt đầu = sang ngày hôm sau
- * @returns {{ slots: Array, endMissing: boolean }} mỗi mốc: { key, time, dayOffset, kind, dienBien[], chamSoc[] }
+ * Các mốc chăm sóc của một lần truyền máu theo mẫu config/blood_transfusion_care.json
+ * (worker/input_care.py dùng cùng mẫu khi nhập chăm sóc vào EMR).
+ * @param {string} start giờ bắt đầu truyền "HH:MM"
+ * @returns {Array} mỗi mốc: { key, time, dayOffset, minutes, kind, label, dienBien[], chamSoc[], needsVitals }
  */
-export function buildTransfusionTimeline(start, end) {
+export function buildTransfusionTimeline(start) {
   const s = parseClock(start);
-  if (s == null) return { slots: [], endMissing: true };
-  let e = parseClock(end);
-  if (e != null && e <= s) e += DAY;
-  const limit = e ?? s + MAX_DURATION_MINUTES;
-  const slot = (key, abs, kind, dienBien, chamSoc) => ({
-    key, time: formatClock(abs), dayOffset: Math.floor(abs / DAY), minutes: abs, kind, dienBien, chamSoc,
+  if (s == null) return [];
+  return CARE_SLOTS.map(slot => {
+    const abs = s + Number(slot.offset_minutes || 0);
+    return {
+      key: slot.key,
+      time: formatClock(abs),
+      dayOffset: Math.floor(abs / DAY),
+      minutes: abs,
+      kind: kindOf(slot.key),
+      label: slot.label,
+      dienBien: [...slot.dien_bien],
+      chamSoc: [...slot.cham_soc],
+      needsVitals: Boolean(slot.needs_vitals),
+    };
   });
-  const slots = [
-    slot('pre', s - PRE_CHECK_MINUTES, 'pre',
-      ['Người bệnh tỉnh', 'Tiếp xúc tốt', 'Da niêm nhợt'],
-      ['Thử phản ứng thuận hợp tại giường', 'Lấy dấu hiệu sinh tồn', 'Trình Bs']),
-    slot('start', s, 'start', ['Người bệnh tỉnh'], ['Bắt đầu truyền máu']),
-  ];
-  const check = ['Chưa xảy ra phản ứng lạ', 'Lấy dấu hiệu sinh tồn'];
-  if (s + FIRST_CHECK_MINUTES < limit) slots.push(slot('m15', s + FIRST_CHECK_MINUTES, 'check', ['Người bệnh tỉnh'], check));
-  for (let k = 1; s + k * HOURLY_MINUTES < limit; k += 1) {
-    slots.push(slot(`h${k}`, s + k * HOURLY_MINUTES, 'check', ['Người bệnh tỉnh'], check));
+}
+
+export function endTimeOf(start) {
+  const s = parseClock(start);
+  return s == null ? '' : formatClock(s + DURATION_MINUTES);
+}
+
+export function durationText(minutes = DURATION_MINUTES) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return [h ? `${h} giờ` : '', m ? `${m} phút` : ''].filter(Boolean).join(' ');
+}
+
+// Số sinh hiệu mặc định của một mốc: cố định theo người bệnh + ngày + giờ bắt đầu + mốc, để bảng
+// trên màn hình, phiếu in và phiếu chăm sóc nhập vào EMR ra CÙNG một số (không random mỗi lần mở).
+// Dải số giống mặc định của worker (care_form_actions.dien_thong_tin). Người làm sửa được trong bảng.
+function hash32(text) {
+  let h = 0x811c9dc5;
+  for (const ch of String(text)) {
+    h ^= ch.codePointAt(0);
+    h = Math.imul(h, 0x01000193) >>> 0;
   }
-  if (e != null) slots.push(slot('end', e, 'end', ['Người bệnh tỉnh'], ['Kết thúc truyền máu', 'Lấy dấu hiệu sinh tồn']));
-  return { slots, endMissing: e == null };
+  return h >>> 0;
+}
+
+export function defaultVitals(seed) {
+  const cfg = CARE.default_vitals || {};
+  const h = hash32(seed);
+  const min = Number(cfg.mach_min ?? 75);
+  const max = Number(cfg.mach_max ?? 85);
+  const bpList = Array.isArray(cfg.huyet_ap) && cfg.huyet_ap.length ? cfg.huyet_ap : ['120/80'];
+  return {
+    resp: String(cfg.nhip_tho ?? '20'),
+    pulse: String(min + (h % (max - min + 1))),
+    bp: bpList[(h >>> 8) % bpList.length],
+    temp: String(cfg.nhiet_do ?? '37'),
+  };
+}
+
+export const VITAL_KEYS = ['resp', 'pulse', 'bp', 'temp'];
+
+// Giá trị hiện trong một ô: người làm đã gõ thì lấy chữ đó, chưa gõ thì số mặc định (chỉ mốc có
+// lấy dấu hiệu sinh tồn). Màn hình, phiếu in và dữ liệu gửi nhập EMR đều đi qua hàm này.
+export function slotValues(slot, cells = {}, seedBase = '') {
+  const c = cells?.[slot.key] || {};
+  const defaults = slot.needsVitals ? defaultVitals(`${seedBase}|${slot.key}`) : {};
+  const out = { rate: c.rate ?? '', skin: c.skin ?? '' };
+  for (const k of VITAL_KEYS) out[k] = c[k] ?? defaults[k] ?? '';
+  return out;
+}
+
+export function seedBaseOf(date, patientId, start) {
+  return `${String(patientId || '').trim()}|${date}|${start}`;
+}
+
+// ── Lưu trên máy (localStorage), dùng chung cho Phiếu bàn giao ca và Nhập chăm sóc ───────────
+
+export function formKey(date, patientId) {
+  return `${date}|${String(patientId || '').trim()}`;
+}
+
+export function readTransfusionForms() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '') || {}; } catch { return {}; }
+}
+
+export function writeTransfusionForms(forms) {
+  // Bỏ phiếu cũ hơn KEEP_DAYS ngày để bộ nhớ trình duyệt không phình mãi.
+  const cutoff = Date.now() - KEEP_DAYS * 86400000;
+  const kept = Object.fromEntries(Object.entries(forms || {}).filter(([key]) => {
+    const d = parseDmy(key.split('|')[0]);
+    return !d || d.getTime() >= cutoff;
+  }));
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(kept)); return true; } catch { return false; }
+}
+
+export const SAVED_EVENT = 'emr:blood-transfusion-saved';
+
+// Giờ bắt đầu nhập ở Nhập chăm sóc → bảng ở Phiếu bàn giao ca hiện cùng giờ (và ngược lại).
+export function saveTransfusionStart(date, patientId, start) {
+  const forms = readTransfusionForms();
+  const key = formKey(date, patientId);
+  forms[key] = { ...(forms[key] || {}), start };
+  const ok = writeTransfusionForms(forms);
+  try { window.dispatchEvent(new CustomEvent(SAVED_EVENT)); } catch { /* không có window (test node) */ }
+  return ok;
+}
+
+// Sinh hiệu theo từng mốc để worker nhập đúng số đang hiện trên bảng:
+// { pre: { nhip_tho, nhiet_do, mach, huyet_ap }, m15: {...}, ... } (chỉ mốc cần sinh hiệu).
+export function entryVitalsFor(date, patientId, start, forms = readTransfusionForms()) {
+  const cells = forms?.[formKey(date, patientId)]?.cells || {};
+  const out = {};
+  for (const slot of buildTransfusionTimeline(start)) {
+    if (!slot.needsVitals) continue;
+    const v = slotValues(slot, cells, seedBaseOf(date, patientId, start));
+    out[slot.key] = { nhip_tho: v.resp, nhiet_do: v.temp, mach: v.pulse, huyet_ap: v.bp };
+  }
+  return out;
 }
 
 // Chữ "Những diễn biến khác" mặc định của một mốc (người làm sửa được).
@@ -142,7 +240,8 @@ const dots = (value, width = '30mm') => (String(value || '').trim()
 
 // Phiếu in "Phần II. Theo dõi truyền máu lâm sàng" theo mẫu giấy của khoa.
 export function buildTransfusionPrintHtml(group, form = {}, date = '') {
-  const { slots } = buildTransfusionTimeline(form.start, form.end);
+  const slots = buildTransfusionTimeline(form.start);
+  const seedBase = seedBaseOf(date, group.patientId || group.patientName, form.start);
   const [dd, mm, yyyy] = String(date || '').split('/');
   const dayText = (abs, time) => {
     if (!time) return `giờ${dots('', '14mm')} ngày${dots('', '10mm')} tháng${dots('', '10mm')} năm 20${dots('', '8mm')}`;
@@ -155,7 +254,8 @@ export function buildTransfusionPrintHtml(group, form = {}, date = '') {
   const cells = form.cells || {};
   const body = slots.map(slot => {
     const c = cells[slot.key] || {};
-    return `<tr><td class="t">${esc(slot.time)}</td><td>${esc(c.rate)}</td><td>${esc(c.skin)}</td><td>${esc(c.resp)}</td><td>${esc(c.pulse)}</td><td>${esc(c.bp)}</td><td>${esc(c.temp)}</td><td class="note">${esc(String(c.note ?? '').trim() || slotNoteText(slot))}</td></tr>`;
+    const v = slotValues(slot, cells, seedBase);
+    return `<tr><td class="t">${esc(slot.time)}</td><td>${esc(v.rate)}</td><td>${esc(v.skin)}</td><td>${esc(v.resp)}</td><td>${esc(v.pulse)}</td><td>${esc(v.bp)}</td><td>${esc(v.temp)}</td><td class="note">${esc(String(c.note ?? '').trim() || slotNoteText(slot))}</td></tr>`;
   }).join('\n');
   const products = group.products.map(r => r.drugName).join('; ');
   return `<!doctype html>

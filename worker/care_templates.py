@@ -508,34 +508,32 @@ def extend_care_parts(care_parts: List[str], actions_set: Set[str]) -> List[str]
 
 
 # ==============================================================================
-# TRUYỀN MÁU — Template 4 mốc chăm sóc
+# TRUYỀN MÁU — Mẫu mốc chăm sóc
 # ==============================================================================
-# offset_minutes: số phút tính từ giờ nhận máu
-# Mốc cuối (3h53p = 233 phút) là kết thúc truyền túi 350 ml ở tốc độ 30 giọt/phút.
+# Mẫu nằm ở config/blood_transfusion_care.json, dùng CHUNG với bảng Truyền máu ở Phiếu bàn giao ca
+# (src/components/report/bloodTransfusion.js) để giờ trên bảng và giờ phiếu chăm sóc trên EMR khớp
+# nhau. offset_minutes tính từ giờ BẮT ĐẦU truyền: 10 phút trước, bắt đầu, sau 15 phút, sau 1 giờ,
+# sau 2 giờ, kết thúc (mặc định 2 giờ 33 phút).
 
+def _load_truyen_mau_config():
+    import json as _json
+    import os as _os
+    base_dir = _os.path.dirname(_os.path.abspath(__file__))
+    cfg_path = _os.path.normpath(_os.path.join(base_dir, "..", "config", "blood_transfusion_care.json"))
+    with open(cfg_path, "r", encoding="utf-8") as f:
+        return _json.load(f)
+
+
+TRUYEN_MAU_CONFIG = _load_truyen_mau_config()
 TRUYEN_MAU_CARE_SLOTS = [
     {
-        "offset_minutes": 0,
-        "label": "Nhận máu",
-        "dien_bien": "Người bệnh tỉnh",
-        "cham_soc": "Lấy dấu hiệu sinh tồn + Thử phản ứng thuận hợp tại giường + Trình Bác sĩ trực sau 15p",
-    },
-    {
-        "offset_minutes": 60,
-        "label": "Sau 1h truyền máu",
-        "dien_bien": "Người bệnh tỉnh",
-        "cham_soc": "Lấy dấu hiệu sinh tồn",
-    },
-    {
-        "offset_minutes": 120,
-        "label": "Sau 2h truyền máu",
-        "dien_bien": "Người bệnh tỉnh",
-        "cham_soc": "Lấy dấu hiệu sinh tồn",
-    },
-    {
-        "offset_minutes": 233,
-        "label": "Kết thúc truyền máu",
-        "dien_bien": "Người bệnh tỉnh",
-        "cham_soc": "Lấy dấu hiệu sinh tồn + Kết thúc truyền máu",
-    },
+        "key": str(slot["key"]),
+        "offset_minutes": int(slot["offset_minutes"]),
+        "label": str(slot.get("label") or ""),
+        # Diễn biến ghi liền một dòng, chăm sóc nối " + " như các phiếu chăm sóc khác.
+        "dien_bien": ", ".join(str(x) for x in slot.get("dien_bien") or []),
+        "cham_soc": " + ".join(str(x) for x in slot.get("cham_soc") or []),
+        "needs_vitals": bool(slot.get("needs_vitals")),
+    }
+    for slot in TRUYEN_MAU_CONFIG.get("slots") or []
 ]
