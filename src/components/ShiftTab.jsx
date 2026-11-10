@@ -28,7 +28,7 @@ import { useFeatureStates } from '../features/runtime.js';
 import { getDaySchedule, toIsoDate, weekdayLabelFromIso } from './nurse/nurseScheduleUtils.js';
 import { useOnTabReturn } from '../hooks/useTabActivity.js';
 import { SkeletonScreen } from './Skeleton.jsx';
-import { durationText, endTimeOf, entryVitalsFor, formKey, readTransfusionForms, saveTransfusionStart } from './report/bloodTransfusion.js';
+import { durationText, endTimeOf, entryVitalsFor, formKey, readTransfusionForms, saveTransfusionStart, statusOf } from './report/bloodTransfusion.js';
 
 function LoadingState() {
   return (
@@ -736,7 +736,13 @@ export default function ShiftTab({ toast, mode = 'combined', workDateRange, setW
         const day = date ? (item?.day_map?.[date] || item) : item;
         if (!day?.cs_extra?.truyen_mau?.co_truyen_mau) continue;
         const ten = item.ho_ten || item.ma_bn || 'Bệnh nhân';
-        const savedStart = date ? String(transfusionForms[formKey(date, id)]?.start || '') : '';
+        const savedForm = date ? transfusionForms[formKey(date, id)] : null;
+        // Tab Truyền máu đã ghi "Dự trù máu, chưa truyền" → không hỏi, không tạo phiếu truyền máu.
+        if (savedForm?.status === 'reserve') {
+          toast?.(`${ten}: đang ghi dự trù máu, chưa truyền, nên không tạo phiếu truyền máu. Khi truyền, chọn Truyền máu ở Báo cáo → Truyền máu.`, 'info');
+          continue;
+        }
+        const savedStart = statusOf(savedForm || {}) === 'transfuse' ? String(savedForm?.start || '') : '';
         const gio = window.prompt(
           `🩸 ${ten}${date ? ` ngày ${date}` : ''} có dự trù truyền máu.
 ` +
