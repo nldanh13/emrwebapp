@@ -10,6 +10,7 @@ import {
   collectDrugRows, routeCounts, summarize, isOddHour,
 } from './report/reportUtils.js';
 import { SelectBox, SummaryTable, DutyReport } from './report/ReportSections.jsx';
+import { flaggedTransfusionPatients } from './report/bloodTransfusion.js';
 import OtherOrderTable from './report/OtherOrderTable.jsx';
 import { collectOtherOrderRows, buildOtherOrderPrintHtml } from './report/otherOrderReport.js';
 import AdmissionListTable from './report/AdmissionListTable.jsx';
@@ -71,6 +72,8 @@ export default function ReportTab({ toast, workDateRange }) {
   const admissionRows = useMemo(() => collectAdmissionRows(wardPatients, date), [wardPatients, date]);
   const isAdmissionView = view === 'admission';
   const isBrowserPrintView = isOtherView || isAdmissionView;
+  // Người bệnh có dự trù máu trong y lệnh: dòng nhắc Truyền máu ở Phiếu bàn giao ca.
+  const bloodFlagged = useMemo(() => flaggedTransfusionPatients(wardPatients, date), [wardPatients, date]);
 
   const nextDate = useMemo(() => addDaysDmy(date, 1), [date]);
   const nextWardPatients = useMemo(() => {
@@ -244,6 +247,7 @@ export default function ReportTab({ toast, workDateRange }) {
             selectedRoutes={selectedRoutes}
             onToggleRoute={toggleRoute}
             onClearRoutes={clearRouteSelection}
+            bloodFlagged={bloodFlagged}
           />
         )}
       </div>

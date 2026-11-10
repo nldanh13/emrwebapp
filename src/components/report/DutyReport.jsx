@@ -6,8 +6,7 @@ import { addDaysDmy, getDaySchedule, parseDmy, todayDmy } from './reportUtils.js
 import { EmptyFilter, RouteBadge, SelectBox, TuTucMark, formatQty } from './ReportShared.jsx';
 import { RouteFilterStrip } from './RouteFilters.jsx';
 import { absMinutes, buildDutyPlan, isAdmittedDuringDuty, isWeekend } from './dutyPlan.js';
-import { isBloodRow } from './bloodTransfusion.js';
-import { BloodTransfusionSection } from './BloodTransfusionSection.jsx';
+import { groupTransfusions, isBloodRow } from './bloodTransfusion.js';
 
 const WEEKDAY_VI = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 const REST_STORAGE_KEY = 'emr_report_rest_days_v1';
@@ -185,7 +184,7 @@ function PastToggle({ rows, date }) {
 
 // ── Màn chính ───────────────────────────────────────────────────────────────
 
-function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState, routeOptions, selectedRoutes, onToggleRoute, onClearRoutes }) {
+function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState, routeOptions, selectedRoutes, onToggleRoute, onClearRoutes, bloodFlagged = [] }) {
   const schedule = nurseState?.schedule || {};
   const nextDate = addDaysDmy(date, 1);
   const isToday = date === todayDmy();
@@ -228,7 +227,9 @@ function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState,
     .map(([key]) => key)), [admissions, date, todayRest]);
 
   // Truyền máu: người làm tự theo dõi đến hết, không bàn giao → tách khỏi các mục theo cữ.
-  const bloodRows = useMemo(() => byRoom(rows).filter(row => row.date === date && isBloodRow(row)), [rows, date, roomFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  const bloodPatients = useMemo(() => groupTransfusions(
+    byRoom(rows).filter(row => row.date === date && isBloodRow(row)), date, byRoom(bloodFlagged),
+  ).length, [rows, date, roomFilter, bloodFlagged]); // eslint-disable-line react-hooks/exhaustive-deps
   const plan = useMemo(() => buildDutyPlan({
     date, rows: byRoom(rows).filter(row => !isBloodRow(row)), nextDayRows: byRoom(nextDayRows).filter(row => !isBloodRow(row)), role, todayRest, tomorrowRest,
     nowMinutes: now, isToday, newPatientKeys,
@@ -279,7 +280,12 @@ function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState,
         <RouteFilterStrip options={routeOptions || []} selectedRoutes={selectedRoutes || []} onToggle={onToggleRoute} onClear={onClearRoutes} />
       </div>
 
-      <BloodTransfusionSection rows={bloodRows} date={date} />
+      {bloodPatients > 0 && (
+        // Truyền máu không bàn giao: các dòng này nằm ở tab Truyền máu, ở đây chỉ nhắc để không bị sót.
+        <div role="note" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', border: `1px solid ${C.redBorder}`, background: C.redBg, borderRadius: 7, padding: '8px 12px', fontSize: FS.sm, color: C.text }}>
+          <span><b style={{ color: C.red }}>Truyền máu:</b> {bloodPatients} người bệnh có dự trù hoặc truyền máu. Người làm tự theo dõi, không bàn giao. Nhập giờ bắt đầu truyền ở <b>Nhập bệnh phòng</b> → chọn người bệnh → tab <b>Truyền máu</b>.</span>
+        </div>
+      )}
 
       {role === 'work' ? (
         <div className="emr-duty-grid">

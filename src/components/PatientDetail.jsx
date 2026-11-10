@@ -15,6 +15,9 @@ import { labChip, patientLabEntry } from '../utils/labResults.js';
 import { getPatientNotices, PatientNoticePills } from './patientStatusNotice.jsx';
 import { isDischargePrintPatientOnDates } from '../utils/dischargePrint.js';
 import { wardVtytItems, manualVtytKey } from '../utils/patientScope.js';
+import { BloodTransfusionSection } from './report/BloodTransfusionSection.jsx';
+import { bloodKind, flaggedTransfusionPatients } from './report/bloodTransfusion.js';
+import { collectDrugRows } from './report/reportMedicationCollect.js';
 
 
 function getWardAdmissionTime(patient, activeDay = {}) {
@@ -76,6 +79,7 @@ const DETAIL_TABS = [
   { id: 'preview', label: 'Xem trước khi nhập' },
   { id: 'lab', label: 'Kết quả XN' },
   { id: 'meds', label: 'Sửa dịch truyền', needsInfusion: true },
+  { id: 'blood', label: 'Truyền máu', needsBlood: true },
   { id: 'raw', label: 'Y lệnh gốc' },
 ];
 
@@ -97,7 +101,7 @@ function ProgressChip({ label, tone = 'gray' }) {
   );
 }
 
-function PatientHeader({ patient, activeDay, status, subTab, setSubTab, availableDates, activeDate, setActiveDate, progress = [], hasInfusionAny, onClose, showClose = true }) {
+function PatientHeader({ patient, activeDay, status, subTab, setSubTab, availableDates, activeDate, setActiveDate, progress = [], hasInfusionAny, hasBlood = false, onClose, showClose = true }) {
   const p = patient;
   const notices = getPatientNotices(p, activeDay);
   const admissionTime = getWardAdmissionTime(p, activeDay);
@@ -109,7 +113,7 @@ function PatientHeader({ patient, activeDay, status, subTab, setSubTab, availabl
     p.bac_si || p.doc,
     [p.bed && `Giường ${p.bed}`, room && `Phòng ${room}`].filter(Boolean).join(' / '),
   ].filter(Boolean).join(' · ');
-  const tabs = DETAIL_TABS.filter(t => !t.needsInfusion || hasInfusionAny);
+  const tabs = DETAIL_TABS.filter(t => (!t.needsInfusion || hasInfusionAny) && (!t.needsBlood || hasBlood));
   return (
     <div style={{ padding: '12px 16px 0', borderBottom: `1px solid ${C.border}`, background: C.surface, flexShrink: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
@@ -601,6 +605,17 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
   const hasVtytAny = Boolean(p.has_vtyt || p.vtyt_done);
   const activeInfusionIncomplete = Boolean(activeDay?.infus_incomplete);
 
+  // Truyền máu: chỉ người bệnh có chỉ định truyền máu ngày đang xem (dự trù khối hồng cầu trong y lệnh,
+  // hoặc dòng chế phẩm máu) mới có tab để nhập giờ bắt đầu truyền.
+  const bloodRows = useMemo(() => (activeDate
+    ? collectDrugRows([p], activeDate).filter(row => row.date === activeDate && bloodKind(row))
+    : []), [p, activeDate]);
+  const bloodFlagged = useMemo(() => flaggedTransfusionPatients([p], activeDate), [p, activeDate]);
+  const hasBlood = bloodFlagged.length > 0 || bloodRows.some(row => bloodKind(row) === 'product');
+  useEffect(() => {
+    if (subTab === 'blood' && !hasBlood) setSubTab('history');
+  }, [subTab, hasBlood]);
+
   const careTotal = Number.isFinite(p.care_total_dates) ? p.care_total_dates : (p.total_dates || 1);
   const careBadge = p.care_stale_count > 0 ? `CS: YL mới ${p.care_stale_count}` : (careTotal > 1
     ? `CS: ${p.care_done_count || 0}/${careTotal}`
@@ -671,6 +686,7 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
         setActiveDate={setActiveDate}
         progress={progress}
         hasInfusionAny={hasInfusionAny}
+        hasBlood={hasBlood}
         onClose={onClose}
         showClose={!isMobile}
       />
@@ -687,6 +703,8 @@ export default function PatientDetail({ patient, onClose, onInputCare, onInputIn
                 </p>
                 <PatientTimeline items={activeDay.timeline || []} thuoc={activeDay.thuoc} />
               </>
+            : subTab === 'blood'
+            ? <BloodTransfusionSection rows={bloodRows} flagged={bloodFlagged} date={activeDate} />
             : subTab === 'lab'
             ? <LabResultsPanel patient={p} date={activeDate} dayPatients={dayPatients} toast={toast} />
             : subTab === 'raw'

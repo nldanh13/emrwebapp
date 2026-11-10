@@ -42,30 +42,62 @@ export function transfusionKey(date, row) {
   return formKey(date, row?.patientId || row?.patientName);
 }
 
-// Gom dòng truyền máu theo người bệnh. Người bệnh có y lệnh chế phẩm máu thì có phiếu theo dõi;
-// người bệnh chỉ có xét nghiệm (chưa có chế phẩm) vẫn hiện để không mất dòng nào.
-export function groupTransfusions(rows = [], date) {
+// Người bệnh có dự trù khối hồng cầu trong y lệnh (worker: chi_dinh_khac.truyen_mau → cs_extra), kể
+// cả khi danh sách thuốc không có dòng chế phẩm máu.
+export function flaggedTransfusionPatients(patients = [], date) {
+  const out = [];
+  for (const p of patients || []) {
+    const day = p?.day_map?.[date] || (p?.ngay_lam === date ? p : null);
+    const info = day?.cs_extra?.truyen_mau || day?.chi_dinh_khac?.truyen_mau;
+    if (!info?.co_truyen_mau) continue;
+    out.push({
+      patientId: String(p.ma_bn || '').trim(),
+      patientName: String(p.ho_ten || '').trim() || '—',
+      room: String(day?.so_phong || p.so_phong || '').trim() || '—',
+    });
+  }
+  return out;
+}
+
+// Gom theo người bệnh: dòng chế phẩm máu, xét nghiệm đi kèm, và người bệnh có dự trù máu trong y lệnh.
+// Người bệnh chỉ có xét nghiệm (chưa có chế phẩm) vẫn hiện để không mất dòng nào.
+export function groupTransfusions(rows = [], date, flagged = []) {
   const map = new Map();
-  for (const row of rows) {
-    const kind = bloodKind(row);
-    if (!kind) continue;
-    const key = transfusionKey(date, row);
+  const ensure = (src) => {
+    const key = transfusionKey(date, src);
     if (!map.has(key)) {
       map.set(key, {
         key,
-        room: String(row.room || '—').trim() || '—',
-        patientName: row.patientName,
-        patientId: row.patientId || '',
+        room: String(src.room || '—').trim() || '—',
+        patientName: src.patientName,
+        patientId: src.patientId || '',
         products: [],
         tests: [],
+        reserved: false,
       });
     }
-    const group = map.get(key);
+    return map.get(key);
+  };
+  for (const row of rows) {
+    const kind = bloodKind(row);
+    if (!kind) continue;
+    const group = ensure(row);
     const list = kind === 'product' ? group.products : group.tests;
     if (!list.some(r => r.drugName === row.drugName)) list.push(row);
   }
+  for (const p of flagged || []) {
+    if (!p?.patientId && !p?.patientName) continue;
+    ensure(p).reserved = true;
+  }
   return [...map.values()]
     .sort((a, b) => a.room.localeCompare(b.room, 'vi', { numeric: true }) || String(a.patientName).localeCompare(String(b.patientName), 'vi'));
+}
+
+// Trạng thái của một người bệnh trong ngày: 'reserve' = mới dự trù máu, chưa truyền (không lập phiếu
+// chăm sóc truyền máu); 'transfuse' = có truyền, theo giờ bắt đầu. Phiếu cũ có giờ bắt đầu = đang truyền.
+export function statusOf(form = {}) {
+  if (form.status === 'reserve' || form.status === 'transfuse') return form.status;
+  return form.start ? 'transfuse' : 'reserve';
 }
 
 export function parseClock(value) {
@@ -191,7 +223,7 @@ export const SAVED_EVENT = 'emr:blood-transfusion-saved';
 export function saveTransfusionStart(date, patientId, start) {
   const forms = readTransfusionForms();
   const key = formKey(date, patientId);
-  forms[key] = { ...(forms[key] || {}), start };
+  forms[key] = { ...(forms[key] || {}), start, status: 'transfuse' };
   const ok = writeTransfusionForms(forms);
   try { window.dispatchEvent(new CustomEvent(SAVED_EVENT)); } catch { /* không có window (test node) */ }
   return ok;

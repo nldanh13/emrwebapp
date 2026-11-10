@@ -5,8 +5,10 @@ import { createElement, act } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   bloodKind, buildCareText, buildTransfusionPrintHtml, buildTransfusionTimeline, defaultVitals, endTimeOf, entryVitalsFor,
-  formKey, groupTransfusions, readTransfusionForms, saveTransfusionStart, seedBaseOf, slotValues, writeTransfusionForms,
+  flaggedTransfusionPatients, formKey, groupTransfusions, readTransfusionForms, saveTransfusionStart, seedBaseOf, slotValues,
+  statusOf, writeTransfusionForms,
 } from './bloodTransfusion.js';
+import { BloodTransfusionSection } from './BloodTransfusionSection.jsx';
 import FIXTURE from '../../../tests/fixtures/blood_transfusion_times.json' with { type: 'json' };
 import { DutyReport } from './DutyReport.jsx';
 
@@ -80,7 +82,7 @@ describe('sinh hiệu', () => {
   });
   it('giờ bắt đầu nhập ở Nhập chăm sóc được lưu cho bảng', () => {
     saveTransfusionStart('10/11/2026', 'p1', '09:30');
-    expect(readTransfusionForms()[formKey('10/11/2026', 'p1')].start).toBe('09:30');
+    expect(readTransfusionForms()[formKey('10/11/2026', 'p1')]).toMatchObject({ start: '09:30', status: 'transfuse' });
   });
 });
 
@@ -149,34 +151,84 @@ describe('DutyReport: truyền máu không bàn giao', () => {
   const sectionText = title => [...host.querySelectorAll('section')].find(s => s.querySelector('h3')?.textContent === title)?.textContent || '';
 
   for (const role of ['work', 'duty']) {
-    it(`vai trò ${role}`, () => {
+    it(`vai trò ${role}: không còn ở các mục theo cữ, chỉ còn dòng nhắc nhập ở Nhập bệnh phòng`, () => {
       localStorage.setItem('emr_report_role_v1', JSON.stringify(role));
       act(() => root.render(createElement(DutyReport, { date: DATE, rows, nurseState: {} })));
       const headings = [...host.querySelectorAll('h3')].map(h => h.textContent);
-      expect(headings).toContain('Truyền máu');
       expect(headings).not.toContain('Chưa rõ giờ');
-      expect(sectionText('Truyền máu')).toContain('Khối hồng cầu');
-      for (const h of headings.filter(h => h !== 'Truyền máu')) {
-        expect(sectionText(h)).not.toMatch(/Khối hồng cầu|Định nhóm máu|Phản ứng hòa hợp/);
-      }
+      for (const h of headings) expect(sectionText(h)).not.toMatch(/Khối hồng cầu|Định nhóm máu|Phản ứng hòa hợp/);
+      const note = host.querySelector('[role="note"]');
+      expect(note.textContent).toContain('1 người bệnh');
+      expect(note.textContent).toContain('Nhập bệnh phòng');
     });
   }
 
-  it('nhập giờ bắt đầu thì giờ ngừng tự tính, hiện bảng mốc và sinh hiệu, và tự lưu', () => {
+  it('người bệnh chỉ có dự trù máu trong y lệnh vẫn được nhắc', () => {
     localStorage.setItem('emr_report_role_v1', JSON.stringify('work'));
-    act(() => root.render(createElement(DutyReport, { date: DATE, rows, nurseState: {} })));
-    const setValue = (el, value) => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-      setter.call(el, value);
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-    };
+    const plain = rows.filter(r => r.id === 'a');
+    act(() => root.render(createElement(DutyReport, { date: DATE, rows: plain, nurseState: {}, bloodFlagged: [{ patientId: 'p2', patientName: 'B', room: 'P10' }] })));
+    expect(host.querySelector('[role="note"]').textContent).toContain('1 người bệnh');
+  });
+});
+
+describe('Tab Truyền máu', () => {
+  let host; let root;
+  beforeEach(() => { host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host); });
+  afterEach(() => { act(() => root.unmount()); host.remove(); localStorage.clear(); });
+
+  const DATE = '10/11/2026';
+  const rows = [
+    { id: 'b', date: DATE, time: '—', noTime: true, patientId: 'p1', patientName: 'A', room: 'P10', drugName: 'Khối hồng cầu từ 350ml máu toàn phần', route: 'Khác', quantity: 1, unit: '' },
+  ];
+  const setValue = (el, value) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const radio = label => [...host.querySelectorAll('[role="radio"]')].find(b => b.textContent === label);
+
+  it('mặc định là dự trù máu: chưa có ô giờ, chưa có bảng', () => {
+    act(() => root.render(createElement(BloodTransfusionSection, { date: DATE, rows })));
+    expect(radio('Dự trù máu, chưa truyền').getAttribute('aria-checked')).toBe('true');
+    expect(host.querySelector('input[aria-label="Giờ bắt đầu truyền máu"]')).toBeNull();
+    expect(host.querySelector('table')).toBeNull();
+  });
+
+  it('người bệnh chỉ có dự trù trong y lệnh (không có dòng thuốc) vẫn hiện', () => {
+    act(() => root.render(createElement(BloodTransfusionSection, { date: DATE, rows: [], flagged: [{ patientId: 'p9', patientName: 'C', room: 'P04' }] })));
+    expect(host.textContent).toContain('Dự trù khối hồng cầu (theo y lệnh)');
+  });
+
+  it('không có ai thì hiện chữ trống', () => {
+    act(() => root.render(createElement(BloodTransfusionSection, { date: DATE, rows: [], empty: createElement('p', null, 'Không có') })));
+    expect(host.textContent).toBe('Không có');
+  });
+
+  it('chọn Truyền máu, nhập giờ bắt đầu thì giờ ngừng tự tính, hiện bảng mốc và sinh hiệu, và tự lưu', () => {
+    act(() => root.render(createElement(BloodTransfusionSection, { date: DATE, rows })));
+    act(() => radio('Truyền máu').click());
     act(() => setValue(host.querySelector('input[aria-label="Giờ bắt đầu truyền máu"]'), '14:00'));
     expect(host.querySelector('[aria-label="Giờ ngừng truyền máu"]').textContent).toBe('16:33');
     const times = [...host.querySelectorAll('tbody tr td:first-child')].map(td => td.textContent);
     expect(times).toEqual(['13:50', '14:00', '14:15', '15:00', '16:00', '16:33']);
     const saved = JSON.parse(localStorage.getItem('emr_report_blood_transfusion_v1'));
-    expect(saved[`${DATE}|p1`]).toMatchObject({ start: '14:00' });
+    expect(saved[`${DATE}|p1`]).toMatchObject({ start: '14:00', status: 'transfuse' });
     const pulse = host.querySelector('input[aria-label="Mạch (l/ph) lúc 13:50"]').value;
     expect(pulse).toBe(entryVitalsFor(DATE, 'p1', '14:00').pre.mach);
+  });
+});
+
+describe('statusOf / flaggedTransfusionPatients', () => {
+  it('trạng thái mặc định và tương thích phiếu cũ', () => {
+    expect(statusOf({})).toBe('reserve');
+    expect(statusOf({ start: '14:00' })).toBe('transfuse');
+    expect(statusOf({ start: '14:00', status: 'reserve' })).toBe('reserve');
+  });
+  it('đọc dự trù máu từ y lệnh đã xử lý', () => {
+    const patients = [
+      { ma_bn: 'p1', ho_ten: 'A', so_phong: 'P10', day_map: { '10/11/2026': { cs_extra: { truyen_mau: { co_truyen_mau: true } } } } },
+      { ma_bn: 'p2', ho_ten: 'B', so_phong: 'P10', day_map: { '10/11/2026': { cs_extra: { truyen_mau: { co_truyen_mau: false } } } } },
+    ];
+    expect(flaggedTransfusionPatients(patients, '10/11/2026')).toEqual([{ patientId: 'p1', patientName: 'A', room: 'P10' }]);
   });
 });

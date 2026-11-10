@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { IconCopy, IconPrinter } from '@tabler/icons-react';
 import { C, FS } from '../../tokens.js';
-import { Btn } from '../shared.jsx';
+import { Btn, Segmented } from '../shared.jsx';
 import {
   DURATION_MINUTES, buildCareText, buildTransfusionPrintHtml, buildTransfusionTimeline, durationText, endTimeOf,
-  SAVED_EVENT, groupTransfusions, readTransfusionForms, seedBaseOf, slotNoteText, slotValues, writeTransfusionForms,
+  SAVED_EVENT, groupTransfusions, readTransfusionForms, statusOf, seedBaseOf, slotNoteText, slotValues, writeTransfusionForms,
 } from './bloodTransfusion.js';
 
 function printHtml(html) {
@@ -53,6 +53,7 @@ function TransfusionCard({ group, form, onChange, date }) {
   const cells = form.cells || {};
   const seedBase = seedBaseOf(date, group.patientId || group.patientName, form.start);
   const endTime = endTimeOf(form.start);
+  const status = statusOf(form);
   const set = (field, value) => onChange({ ...form, [field]: value });
   const setCell = (slotKey, field, value) => onChange({ ...form, cells: { ...cells, [slotKey]: { ...(cells[slotKey] || {}), [field]: value } } });
 
@@ -73,11 +74,29 @@ function TransfusionCard({ group, form, onChange, date }) {
       <div style={{ display: 'flex', gap: '4px 12px', flexWrap: 'wrap', alignItems: 'baseline' }}>
         <b style={{ fontSize: FS.md }}>{group.room}</b>
         <b style={{ fontSize: FS.md }}>{group.patientName}</b>
-        <span style={{ fontSize: FS.md, color: C.text }}>{group.products.map(r => r.drugName).join('; ') || <span style={{ color: C.amber }}>Chưa có y lệnh chế phẩm máu</span>}</span>
+        <span style={{ fontSize: FS.md, color: C.text }}>
+          {group.products.map(r => r.drugName).join('; ') || (group.reserved
+            ? 'Dự trù khối hồng cầu (theo y lệnh)'
+            : <span style={{ color: C.amber }}>Chưa có y lệnh chế phẩm máu</span>)}
+        </span>
         {group.tests.length > 0 && <span style={{ fontSize: FS.xs, color: C.text2 }}>Xét nghiệm: {group.tests.map(r => r.drugName).join('; ')}</span>}
       </div>
 
-      {group.products.length > 0 && <>
+      <Segmented
+        label={`Trạng thái truyền máu của ${group.patientName}`}
+        value={status}
+        onChange={value => onChange({ ...form, status: value })}
+        options={[{ value: 'reserve', label: 'Dự trù máu, chưa truyền' }, { value: 'transfuse', label: 'Truyền máu' }]}
+      />
+
+      {status === 'reserve' && (
+        <div style={{ fontSize: FS.sm, color: C.text2, lineHeight: 1.5 }}>
+          Mới dự trù máu: chưa có bảng theo dõi, và Nhập chăm sóc sẽ không hỏi giờ hay tạo phiếu truyền máu cho người bệnh này.
+          Khi bắt đầu truyền, chọn <b style={{ color: C.text }}>Truyền máu</b> rồi nhập giờ bắt đầu.
+        </div>
+      )}
+
+      {status === 'transfuse' && <>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
           <Field label="Bắt đầu truyền"><input type="time" aria-label="Giờ bắt đầu truyền máu" value={form.start || ''} onChange={e => set('start', e.target.value)} style={inputStyle} /></Field>
           <Field label={`Ngừng truyền (tự tính, ${durationText(DURATION_MINUTES)})`}>
@@ -152,8 +171,8 @@ function TransfusionCard({ group, form, onChange, date }) {
   );
 }
 
-export function BloodTransfusionSection({ rows, date }) {
-  const groups = useMemo(() => groupTransfusions(rows, date), [rows, date]);
+export function BloodTransfusionSection({ rows, date, flagged = [], empty = null }) {
+  const groups = useMemo(() => groupTransfusions(rows, date, flagged), [rows, date, flagged]);
   const [forms, setForms] = useState(readTransfusionForms);
   const [saveError, setSaveError] = useState(false);
   // Nhập chăm sóc lưu giờ bắt đầu truyền → đọc lại để bảng hiện đúng giờ đó.
@@ -162,7 +181,7 @@ export function BloodTransfusionSection({ rows, date }) {
     window.addEventListener(SAVED_EVENT, reload);
     return () => window.removeEventListener(SAVED_EVENT, reload);
   }, []);
-  if (!groups.length) return null;
+  if (!groups.length) return empty;
 
   const update = (key, form) => setForms(prev => {
     const next = { ...prev, [key]: form };
@@ -178,7 +197,7 @@ export function BloodTransfusionSection({ rows, date }) {
           <span style={{ fontSize: FS.sm, color: C.text2 }}>{groups.length} người bệnh</span>
         </div>
         <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 2 }}>
-          Người làm tự theo dõi đến khi kết thúc, không bàn giao. Nhập giờ bắt đầu truyền: giờ ngừng và các mốc chăm sóc tự tính, Nhập chăm sóc dùng đúng các mốc này.
+          Người làm tự theo dõi đến khi kết thúc, không bàn giao. Mặc định là dự trù máu; khi truyền, chọn Truyền máu và nhập giờ bắt đầu: giờ ngừng và các mốc chăm sóc tự tính, Nhập chăm sóc dùng đúng giờ và các mốc này (không hỏi lại).
           {saveError
             ? <span style={{ color: C.red, fontWeight: 600 }}> Không lưu được trên máy này (trình duyệt chặn bộ nhớ): in hoặc sao chép trước khi tải lại trang.</span>
             : ' Nội dung đã nhập tự lưu trên máy này.'}
