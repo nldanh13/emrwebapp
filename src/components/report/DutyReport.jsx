@@ -6,6 +6,8 @@ import { addDaysDmy, getDaySchedule, parseDmy, todayDmy } from './reportUtils.js
 import { EmptyFilter, RouteBadge, SelectBox, TuTucMark, formatQty } from './ReportShared.jsx';
 import { RouteFilterStrip } from './RouteFilters.jsx';
 import { absMinutes, buildDutyPlan, isAdmittedDuringDuty, isWeekend } from './dutyPlan.js';
+import { isBloodRow } from './bloodTransfusion.js';
+import { BloodTransfusionSection } from './BloodTransfusionSection.jsx';
 
 const WEEKDAY_VI = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 const REST_STORAGE_KEY = 'emr_report_rest_days_v1';
@@ -225,8 +227,10 @@ function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState,
     .filter(([, value]) => isAdmittedDuringDuty(value, date, todayRest))
     .map(([key]) => key)), [admissions, date, todayRest]);
 
+  // Truyền máu: người làm tự theo dõi đến hết, không bàn giao → tách khỏi các mục theo cữ.
+  const bloodRows = useMemo(() => byRoom(rows).filter(row => row.date === date && isBloodRow(row)), [rows, date, roomFilter]); // eslint-disable-line react-hooks/exhaustive-deps
   const plan = useMemo(() => buildDutyPlan({
-    date, rows: byRoom(rows), nextDayRows: byRoom(nextDayRows), role, todayRest, tomorrowRest,
+    date, rows: byRoom(rows).filter(row => !isBloodRow(row)), nextDayRows: byRoom(nextDayRows).filter(row => !isBloodRow(row)), role, todayRest, tomorrowRest,
     nowMinutes: now, isToday, newPatientKeys,
   }), [date, rows, nextDayRows, role, todayRest, tomorrowRest, now, isToday, newPatientKeys, roomFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -274,6 +278,8 @@ function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState,
         </div>
         <RouteFilterStrip options={routeOptions || []} selectedRoutes={selectedRoutes || []} onToggle={onToggleRoute} onClear={onClearRoutes} />
       </div>
+
+      <BloodTransfusionSection rows={bloodRows} date={date} />
 
       {role === 'work' ? (
         <div className="emr-duty-grid">
