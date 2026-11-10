@@ -151,17 +151,15 @@ describe('DutyReport: truyền máu không bàn giao', () => {
   const sectionText = title => [...host.querySelectorAll('section')].find(s => s.querySelector('h3')?.textContent === title)?.textContent || '';
 
   for (const role of ['work', 'duty']) {
-    it(`vai trò ${role}: không còn ở các mục theo cữ, chỉ còn dòng nhắc mở tab Truyền máu`, () => {
+    it(`vai trò ${role}: không còn ở các mục theo cữ, chỉ còn dòng nhắc nhập ở Nhập bệnh phòng`, () => {
       localStorage.setItem('emr_report_role_v1', JSON.stringify(role));
-      const onOpenBlood = vi.fn();
-      act(() => root.render(createElement(DutyReport, { date: DATE, rows, nurseState: {}, onOpenBlood })));
+      act(() => root.render(createElement(DutyReport, { date: DATE, rows, nurseState: {} })));
       const headings = [...host.querySelectorAll('h3')].map(h => h.textContent);
       expect(headings).not.toContain('Chưa rõ giờ');
       for (const h of headings) expect(sectionText(h)).not.toMatch(/Khối hồng cầu|Định nhóm máu|Phản ứng hòa hợp/);
       const note = host.querySelector('[role="note"]');
       expect(note.textContent).toContain('1 người bệnh');
-      act(() => note.querySelector('button').click());
-      expect(onOpenBlood).toHaveBeenCalled();
+      expect(note.textContent).toContain('Nhập bệnh phòng');
     });
   }
 

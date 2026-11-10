@@ -10,8 +10,7 @@ import {
   collectDrugRows, routeCounts, summarize, isOddHour,
 } from './report/reportUtils.js';
 import { SelectBox, SummaryTable, DutyReport } from './report/ReportSections.jsx';
-import { BloodTransfusionSection } from './report/BloodTransfusionSection.jsx';
-import { flaggedTransfusionPatients, isBloodRow } from './report/bloodTransfusion.js';
+import { flaggedTransfusionPatients } from './report/bloodTransfusion.js';
 import OtherOrderTable from './report/OtherOrderTable.jsx';
 import { collectOtherOrderRows, buildOtherOrderPrintHtml } from './report/otherOrderReport.js';
 import AdmissionListTable from './report/AdmissionListTable.jsx';
@@ -73,9 +72,7 @@ export default function ReportTab({ toast, workDateRange }) {
   const admissionRows = useMemo(() => collectAdmissionRows(wardPatients, date), [wardPatients, date]);
   const isAdmissionView = view === 'admission';
   const isBrowserPrintView = isOtherView || isAdmissionView;
-  const isBloodView = view === 'blood';
-  // Truyền máu: dòng chế phẩm máu/xét nghiệm đi kèm (mọi đường dùng) + người bệnh có dự trù máu trong y lệnh.
-  const bloodRows = useMemo(() => allRows.filter(row => row.date === date && isBloodRow(row)), [allRows, date]);
+  // Người bệnh có dự trù máu trong y lệnh: dòng nhắc Truyền máu ở Phiếu bàn giao ca.
   const bloodFlagged = useMemo(() => flaggedTransfusionPatients(wardPatients, date), [wardPatients, date]);
 
   const nextDate = useMemo(() => addDaysDmy(date, 1), [date]);
@@ -203,13 +200,13 @@ export default function ReportTab({ toast, workDateRange }) {
             label="Kiểu xem"
             value={view}
             onChange={setView}
-            options={[{ value: 'duty', label: 'Phiếu bàn giao ca' }, { value: 'blood', label: 'Truyền máu' }, { value: 'summary', label: 'Thống kê số lượng' }, { value: 'other', label: 'Y lệnh khác' }, { value: 'admission', label: 'Danh sách người bệnh' }]}
+            options={[{ value: 'duty', label: 'Phiếu bàn giao ca' }, { value: 'summary', label: 'Thống kê số lượng' }, { value: 'other', label: 'Y lệnh khác' }, { value: 'admission', label: 'Danh sách người bệnh' }]}
           />
           <span style={{ flex: '1 1 0' }} />
           <Btn icon={IconRefresh} loading={loading} onClick={load} disabled={loading}>Tải lại</Btn>
-          {!isBloodView && <Btn variant="solidPrimary" icon={IconPrinter} loading={printing} onClick={handlePrintReport} disabled={loading || printing || !(isAdmissionView ? admissionRows.length : isOtherView ? otherOrderRows.length : allRows.length)}>
+          <Btn variant="solidPrimary" icon={IconPrinter} loading={printing} onClick={handlePrintReport} disabled={loading || printing || !(isAdmissionView ? admissionRows.length : isOtherView ? otherOrderRows.length : allRows.length)}>
             {printing ? 'Đang tạo phiếu…' : isAdmissionView ? 'In danh sách' : isOtherView ? 'In Y lệnh khác' : 'In phiếu'}
-          </Btn>}
+          </Btn>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '2px 14px', color: C.text2, fontSize: FS.sm }}>
           <span><b style={{ color: C.text, fontVariantNumeric: 'tabular-nums' }}>{uniquePatients}</b> người bệnh</span>
@@ -221,16 +218,7 @@ export default function ReportTab({ toast, workDateRange }) {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
-        {isBloodView ? (
-          loading && !bloodRows.length && !bloodFlagged.length
-            ? <div role="status" aria-busy="true" aria-label="Đang tải Truyền máu" style={{ background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 7, padding: 14 }}><SkeletonTable rows={4} cols={4} /></div>
-            : <BloodTransfusionSection
-                rows={bloodRows}
-                flagged={bloodFlagged}
-                date={date}
-                empty={<div style={{ color: C.text2, fontSize: FS.md, padding: 20, background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 7 }}>Ngày {date} không có người bệnh dự trù hay truyền máu.</div>}
-              />
-        ) : isAdmissionView ? (
+        {isAdmissionView ? (
           loading && !admissionRows.length
             ? <div role="status" aria-busy="true" aria-label="Đang tải danh sách người bệnh" style={{ background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 7, padding: 14 }}><SkeletonTable rows={8} cols={4} /></div>
             : <AdmissionListTable rows={admissionRows} />
@@ -259,7 +247,6 @@ export default function ReportTab({ toast, workDateRange }) {
             selectedRoutes={selectedRoutes}
             onToggleRoute={toggleRoute}
             onClearRoutes={clearRouteSelection}
-            onOpenBlood={() => setView('blood')}
             bloodFlagged={bloodFlagged}
           />
         )}

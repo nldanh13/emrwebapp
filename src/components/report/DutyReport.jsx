@@ -184,7 +184,7 @@ function PastToggle({ rows, date }) {
 
 // ── Màn chính ───────────────────────────────────────────────────────────────
 
-function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState, routeOptions, selectedRoutes, onToggleRoute, onClearRoutes, onOpenBlood, bloodFlagged = [] }) {
+function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState, routeOptions, selectedRoutes, onToggleRoute, onClearRoutes, bloodFlagged = [] }) {
   const schedule = nurseState?.schedule || {};
   const nextDate = addDaysDmy(date, 1);
   const isToday = date === todayDmy();
@@ -283,12 +283,7 @@ function DutyReport({ date, rows, nextDayRows = [], admissions = {}, nurseState,
       {bloodPatients > 0 && (
         // Truyền máu không bàn giao: các dòng này nằm ở tab Truyền máu, ở đây chỉ nhắc để không bị sót.
         <div role="note" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', border: `1px solid ${C.redBorder}`, background: C.redBg, borderRadius: 7, padding: '8px 12px', fontSize: FS.sm, color: C.text }}>
-          <span><b style={{ color: C.red }}>Truyền máu:</b> {bloodPatients} người bệnh có dự trù hoặc truyền máu. Người làm tự theo dõi, không bàn giao.</span>
-          {onOpenBlood && (
-            <button type="button" onClick={onOpenBlood} style={{ border: `1px solid ${C.redBorder}`, background: C.surface, color: C.red, borderRadius: 5, minHeight: 28, padding: '0 10px', fontWeight: 600, fontSize: FS.sm, cursor: 'pointer', fontFamily: 'inherit' }}>
-              Mở tab Truyền máu
-            </button>
-          )}
+          <span><b style={{ color: C.red }}>Truyền máu:</b> {bloodPatients} người bệnh có dự trù hoặc truyền máu. Người làm tự theo dõi, không bàn giao. Nhập giờ bắt đầu truyền ở <b>Nhập bệnh phòng</b> → chọn người bệnh → tab <b>Truyền máu</b>.</span>
         </div>
       )}
 

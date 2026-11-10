@@ -197,7 +197,7 @@ export function BloodTransfusionSection({ rows, date, flagged = [], empty = null
           <span style={{ fontSize: FS.sm, color: C.text2 }}>{groups.length} người bệnh</span>
         </div>
         <div style={{ fontSize: FS.xs, color: C.text2, marginTop: 2 }}>
-          Người làm tự theo dõi đến khi kết thúc, không bàn giao. Mặc định là dự trù máu; khi truyền, chọn Truyền máu và nhập giờ bắt đầu: giờ ngừng và các mốc chăm sóc tự tính, Nhập chăm sóc dùng đúng các mốc này.
+          Người làm tự theo dõi đến khi kết thúc, không bàn giao. Mặc định là dự trù máu; khi truyền, chọn Truyền máu và nhập giờ bắt đầu: giờ ngừng và các mốc chăm sóc tự tính, Nhập chăm sóc dùng đúng giờ và các mốc này (không hỏi lại).
           {saveError
             ? <span style={{ color: C.red, fontWeight: 600 }}> Không lưu được trên máy này (trình duyệt chặn bộ nhớ): in hoặc sao chép trước khi tải lại trang.</span>
             : ' Nội dung đã nhập tự lưu trên máy này.'}
