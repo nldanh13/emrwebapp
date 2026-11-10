@@ -138,7 +138,10 @@
         "apply": "infusion_only",
         "rate": 30
       },
-      "sua_tay": true
+      "sua_tay": true,
+      "active_ingredients": [
+        "NEFOPAM"
+      ]
     },
     {
       "canonical": "LACTATED RINGER'S",
@@ -174,7 +177,11 @@
       "sua_tay": true,
       "dilution": {
         "solvent": "KHONG_PHA"
-      }
+      },
+      "default_route": "TTM",
+      "routes": [
+        "TTM"
+      ]
     },
     {
       "canonical": "CLASTIZOL",
@@ -354,7 +361,7 @@
     {
       "canonical": "Levofloxacin/cooper solution for infusion 500mg/100ml",
       "category": "dich_truyen",
-      "default_volume_ml": 100.0,
+      "default_volume_ml": 100,
       "default_rate": "30"
     }
   ],
