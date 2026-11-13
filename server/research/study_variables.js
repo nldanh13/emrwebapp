@@ -7,12 +7,10 @@
 const fs = require('fs');
 const path = require('path');
 const { readStudy, resolveRunId, updateStudy } = require('./run_registry');
-const { runsDir, TABLES, EXPORT_SENSITIVE_COLUMNS } = require('./store_paths');
-const { readCsvTable, safeDownloadName } = require('./table_io');
+const { runsDir, TABLES } = require('./store_paths');
+const { readCsvTable } = require('./table_io');
 const { activeVariableSelectionFromStudy, sanitizeVariableSelection, loadRunTablesForSelection, buildSelectedAnalysisForRun } = require('./selection_runtime');
 const { snapshotFinalDatasetIfUnsaved } = require('./dataset_store');
-const { redactCsvTable } = require('./export_utils');
-const { buildSpssSyntax } = require('./spss_syntax');
 
 function fail(message, status = 400) {
   const err = new Error(message);
@@ -105,24 +103,6 @@ function buildStudyCodebook(study) {
   return { rows: out, columns: ['cot', 'ma_bien_nguon', 'nhan', 'kieu', 'don_vi', 'cach_lay', 'ma_hoa', 'co_du_lieu', 'thieu'], encounters: rows.length };
 }
 
-// Cú pháp SPSS cho file "Biến đã chọn" sẽ xuất. Cột lấy theo đúng cách ẩn định danh của nút Xuất CSV
-// (sendCsvFile), tên file CSV trùng tên file xuất, nhãn lấy từ Từ điển biến của cùng file.
-function buildStudySpssSyntax(study, { redact = true } = {}) {
-  const book = buildStudyCodebook(study);
-  const runId = resolveRunId(study.id, 'latest');
-  const selected = readCsvTable(path.join(runsDir(study.id), runId, 'analysis_selected.csv'), Number.MAX_SAFE_INTEGER);
-  const columns = redact ? redactCsvTable(selected.columns || [], [], EXPORT_SENSITIVE_COLUMNS).columns : (selected.columns || []);
-  const exportBase = `${study.id}_${runId}_analysis_selected`;
-  const syntax = buildSpssSyntax({
-    columns,
-    rows: selected.rows || [],
-    codebook: book.rows,
-    csvFilename: `${safeDownloadName(exportBase)}.csv`,
-    studyName: study.name || study.id,
-  });
-  return { syntax, base_name: exportBase, columns };
-}
-
 function updateStudyVariables(studyId, selectedVariables) {
   const study = readStudy(studyId);
   if (!study) fail('Không tìm thấy nghiên cứu.', 404);
@@ -146,4 +126,4 @@ function updateStudyVariables(studyId, selectedVariables) {
   };
 }
 
-module.exports = { updateStudyVariables, rebuildStudySelected, buildStudyCodebook, buildStudySpssSyntax };
+module.exports = { updateStudyVariables, rebuildStudySelected, buildStudyCodebook };

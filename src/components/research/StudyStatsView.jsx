@@ -113,18 +113,6 @@ export function StudyStatsView({ study, toast, onStudyChanged }) {
       setExporting('');
     }
   };
-  const exportSpss = async () => {
-    setExporting('__spss__');
-    try {
-      const r = await api.downloadResearchStudySpssSyntax(studyId, { redact: hideSensitive });
-      saveBlob(r.filename || `${studyId}_spss.sps`, r.blob);
-      toast?.('Đã xuất cú pháp SPSS. Đặt cùng thư mục với file CSV xuất cùng chế độ ẩn định danh, sửa đường dẫn ở dòng FILE HANDLE rồi chạy.', 'ok');
-    } catch (e) {
-      toast?.(String(e.message || e), 'error');
-    } finally {
-      setExporting('');
-    }
-  };
   return (
     <div style={{ padding: '10px 12px 16px', display: 'grid', gap: 14 }}>
       <section style={card}>
@@ -176,13 +164,11 @@ export function StudyStatsView({ study, toast, onStudyChanged }) {
               Dữ liệu nghiên cứu <span style={{ fontWeight: 500, color: C.text3, fontVariantNumeric: 'tabular-nums' }}>· {compactNumber(analyzed)} lượt × {compactNumber(variableCount)} biến</span>
             </div>
             <div style={{ fontSize: FS.xs, color: C.text3 }}>
-              Mỗi lượt đạt điều kiện một dòng, đúng các lượt ở thống kê trên. Kèm Từ điển biến (nhãn, đơn vị, cách lấy giá trị, mã hóa) và cú pháp SPSS đọc sẵn file CSV với nhãn biến, nhãn giá trị.
+              Mỗi lượt đạt điều kiện một dòng, đúng các lượt ở thống kê trên. Kèm Từ điển biến (nhãn, đơn vị, cách lấy giá trị, mã hóa) để nhập SPSS/R/Stata.
             </div>
           </div>
           <Btn variant="solidSuccess" onClick={() => exportTable('analysis_selected')} disabled={!analyzed || Boolean(exporting)} loading={exporting === 'analysis_selected'} style={{ height: 30 }}>Xuất CSV</Btn>
           <Btn variant="success" onClick={exportCodebook} disabled={!analyzed || Boolean(exporting)} loading={exporting === '__codebook__'} style={{ height: 30 }}>Từ điển biến</Btn>
-          <Btn variant="success" onClick={exportSpss} disabled={!analyzed || Boolean(exporting)} loading={exporting === '__spss__'}
-            title="File cú pháp SPSS đọc đúng file CSV trên, kèm nhãn biến và nhãn giá trị (0 = Không, 1 = Có)" style={{ height: 30 }}>Cú pháp SPSS</Btn>
         </div>
         <div style={{ fontSize: FS.xs, color: C.text3, lineHeight: 1.5 }}>
           Xét nghiệm lặp: “Biến đã chọn” gộp theo Cách lấy ở cấu hình; “Liệt kê giá trị” giữ nhiều kết quả trong một ô dạng chữ. Chọn bảng “Xét nghiệm” bên dưới để xem từng kết quả riêng theo từng dòng.

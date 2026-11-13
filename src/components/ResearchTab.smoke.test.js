@@ -340,14 +340,13 @@ describe('ResearchTab (khói)', () => {
     expect(text).not.toContain('Dataset cuối');
   });
 
-  it('nghiên cứu: có danh sách ca còn thiếu dữ liệu và nút Cú pháp SPSS', async () => {
+  it('nghiên cứu: có danh sách ca còn thiếu dữ liệu', async () => {
     await clickText(DONE_STUDY.name);
     const text = container.textContent;
     expect(text).toContain('Ca còn thiếu dữ liệu');
     expect(text).toContain('1 / 30 lượt còn thiếu ít nhất một biến');
     expect(text).toContain('NC0007');
     expect(text).toContain('Xuất danh sách ca thiếu');
-    expect(text).toContain('Cú pháp SPSS');
   });
 
   it('nghiên cứu chưa có dữ liệu: lấy thẳng từ kho, không mở EMR, không có Thu thập', async () => {
