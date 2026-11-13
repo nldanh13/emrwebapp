@@ -296,6 +296,9 @@ Một ca thiếu CT vẫn `usable` cho đề tài không cần CT.
   nghiên cứu không ghi vào thư mục nghiên cứu khác.
 - Xóa nghiên cứu: chỉ admin, thư mục được chuyển vào `research_store/_deleted/`
   (có audit `research.study_deleted`), không xóa vĩnh viễn.
+- **Ca còn thiếu dữ liệu** (`summary.missing_by_case` của thống kê nghiên cứu): tính từ cùng
+  dataset với thống kê, mỗi lượt thiếu biến một dòng gồm Mã NC, số biến thiếu, tên biến thiếu và
+  cờ cần xem lại. Không có giá trị lâm sàng, Mã BN hay họ tên. Tối đa 2.000 ca, kèm tổng số thật.
 
 ## 6. Sao lưu và khôi phục
 

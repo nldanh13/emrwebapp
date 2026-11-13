@@ -10,6 +10,7 @@ import { compactNumber, saveBlob } from './researchFormat.js';
 import { STUDY_TABLES, datasetCount, tableLabel } from './researchScope.js';
 import { CohortSummary, VariableStatsTable } from './researchStats.jsx';
 import { StudyVariableEditor } from './StudyVariableEditor.jsx';
+import { MissingByCaseList } from './MissingByCaseList.jsx';
 
 // File xuất chính là "Biến đã chọn" (đúng các lượt đạt điều kiện, như thống kê) + Từ điển biến.
 // Bảng không còn dùng ở nghiên cứu: phiếu nhập tay (đã bỏ), dataset cuối (bước chốt dataset đã bỏ).
@@ -140,6 +141,14 @@ export function StudyStatsView({ study, toast, onStudyChanged }) {
         </div>
         {!!summary?.variables?.length && <VariableStatsTable variables={summary.variables} />}
       </section>
+
+      {!!summary?.variables?.length && (
+        <section style={{ ...card, display: 'grid', gap: 8 }}>
+          <span style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Ca còn thiếu dữ liệu</span>
+          <MissingByCaseList cases={summary.missing_by_case || []} total={Number(summary.missing_by_case_total || 0)}
+            encounters={analyzed} fileBase={`${studyId}_ca_thieu_du_lieu`} />
+        </section>
+      )}
 
       <section style={{ ...card, display: 'grid', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
