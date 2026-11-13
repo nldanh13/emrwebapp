@@ -1,6 +1,6 @@
 // Danh sách ca thiếu dữ liệu xuất ra CSV: chỉ Mã NC, số biến thiếu, tên biến thiếu, cờ cần xem lại.
 import { describe, it, expect } from 'vitest';
-import { rowsToCsvText } from './missingByCase.js';
+import { rowsToCsvText, valueIssuesToCsvText } from './missingByCase.js';
 
 describe('rowsToCsvText', () => {
   it('mỗi ca một dòng, tên biến nối bằng "; " và được đặt trong nháy', () => {
@@ -17,5 +17,12 @@ describe('rowsToCsvText', () => {
   });
   it('thoát dấu nháy kép trong tên biến', () => {
     expect(rowsToCsvText([{ research_code: 'A', missing_count: 1, missing: ['Đau "nhiều"'] }])).toContain('"Đau ""nhiều"""');
+  });
+});
+
+describe('valueIssuesToCsvText', () => {
+  it('Mã NC, cột, biến, giá trị, lý do; ô có dấu ; được đặt trong nháy', () => {
+    const csv = valueIssuesToCsvText([{ research_code: 'NC900', column: 'hb', label: 'Hb', value: '120; 98', reason: 'Nhiều giá trị trong một ô' }]);
+    expect(csv.split('\r\n')).toEqual(['ma_nc,cot,bien,gia_tri,ly_do', 'NC900,hb,Hb,"120; 98",Nhiều giá trị trong một ô', '']);
   });
 });

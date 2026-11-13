@@ -4,7 +4,7 @@
 //   3 Điều kiện chọn mẫu (không bắt buộc)
 //   4 Kiểm tra & xuất: sàng lọc mẫu theo từng điều kiện, thống kê mô tả, Xuất CSV ngay;
 //     "Lưu thành nghiên cứu" khi cần theo dõi tiếp hoặc lấy bổ sung từ EMR.
-// Màn hình chỉ hiện thống kê, không hiện dữ liệu từng lượt.
+// Màn hình chỉ hiện thống kê; riêng giá trị bất thường hiện kèm Mã NC (giả danh) để kiểm lại hồ sơ.
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../../api.js';
 import { C, FS } from '../../tokens.js';
@@ -14,6 +14,7 @@ import { inp, EmptyState } from './researchUi.jsx';
 import { ANCHOR_AGGREGATIONS, defaultAggregationFor, isPresenceVariable, VARIABLE_AGGREGATIONS, matchSurveyLines, operatorLabel, variableTypeLabel } from './variableCatalogModel.js';
 import { CohortSummary, FillBar, VariableStatsTable } from './researchStats.jsx';
 import { SampleSizePanel } from './SampleSizePanel.jsx';
+import { ValueIssuesList } from './ValueIssuesList.jsx';
 import { ReadinessChecklist, downloadCodebook, readinessItems } from './studyReadiness.jsx';
 
 const STEPS = ['Thông tin & phiếu', 'Ghép biến', 'Điều kiện chọn mẫu', 'Kiểm tra & xuất dữ liệu'];
@@ -605,6 +606,10 @@ function StepReview(props) {
           <section>
             <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text, margin: '2px 0 8px' }}>Đo lường từng biến</div>
             <VariableStatsTable variables={summary.variables || []} />
+          </section>
+          <section>
+            <div style={{ fontSize: FS.md, fontWeight: 700, color: C.text, margin: '2px 0 8px' }}>Giá trị cần kiểm lại</div>
+            <ValueIssuesList summary={summary} fileBase="gia_tri_can_kiem_lai" />
           </section>
         </>
       )}

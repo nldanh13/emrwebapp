@@ -299,6 +299,13 @@ Một ca thiếu CT vẫn `usable` cho đề tài không cần CT.
 - **Ca còn thiếu dữ liệu** (`summary.missing_by_case` của thống kê nghiên cứu): tính từ cùng
   dataset với thống kê, mỗi lượt thiếu biến một dòng gồm Mã NC, số biến thiếu, tên biến thiếu và
   cờ cần xem lại. Không có giá trị lâm sàng, Mã BN hay họ tên. Tối đa 2.000 ca, kèm tổng số thật.
+- **Giá trị cần kiểm lại** (`summary.value_issues` của thống kê và xem trước, code
+  `server/research/value_checks.js`): tính từ cùng dataset với thống kê và file xuất. Báo tuổi
+  ngoài 0–120, năm sinh vô lý, số ngày nằm viện âm hoặc trên 365, ngày ra trước ngày vào, ngày ở
+  tương lai, ô không đọc được thành số, nhiều giá trị trong một ô, và giá trị ngoài
+  Q1 − 3×IQR … Q3 + 3×IQR (cần ít nhất 20 giá trị). **Chỉ báo, không tự sửa hay bỏ giá trị.**
+  Mỗi dòng gồm Mã NC, cột, nhãn biến, giá trị, lý do; không có Mã BN/họ tên, và biến định danh
+  (ngày sinh, số điện thoại...) bị bỏ qua hẳn. Tối đa 2.000 dòng, kèm tổng số thật.
 
 ## 6. Sao lưu và khôi phục
 

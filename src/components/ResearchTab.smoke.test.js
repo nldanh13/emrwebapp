@@ -46,6 +46,10 @@ const STATS_SUMMARY = {
   variables: [{ id: 'analysis_ready.age', survey_label: 'Tuổi', output_column: 'var_age', filled: 30, missing: 0, fill_rate: 100, stats: { kind: 'number', n: 30, n_numeric: 30, mean: 61.2, sd: 12.4, median: 63, q1: 52, q3: 71, min: 25, max: 90 } }],
   missing_by_case: [{ research_code: 'NC0007', missing_count: 1, missing: ['Tuổi'], needs_review: false }],
   missing_by_case_total: 1,
+  value_issues: [{ research_code: 'NC0009', column: 'age', label: 'Tuổi lúc vào viện', value: '206', reason: 'Tuổi ngoài khoảng 0–120' }],
+  value_issues_total: 1,
+  value_issues_cases: 1,
+  value_issues_by_variable: [{ label: 'Tuổi lúc vào viện', count: 1 }],
 };
 
 const PIPELINE = {
@@ -347,6 +351,10 @@ describe('ResearchTab (khói)', () => {
     expect(text).toContain('1 / 30 lượt còn thiếu ít nhất một biến');
     expect(text).toContain('NC0007');
     expect(text).toContain('Xuất danh sách ca thiếu');
+    expect(text).toContain('Giá trị cần kiểm lại');
+    expect(text).toContain('1 giá trị ở 1 lượt cần xem lại hồ sơ');
+    expect(text).toContain('Tuổi ngoài khoảng 0–120');
+    expect(text).toContain('Xuất danh sách cần kiểm');
   });
 
   it('nghiên cứu chưa có dữ liệu: lấy thẳng từ kho, không mở EMR, không có Thu thập', async () => {

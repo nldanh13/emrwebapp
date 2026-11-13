@@ -11,6 +11,7 @@ import { STUDY_TABLES, datasetCount, tableLabel } from './researchScope.js';
 import { CohortSummary, VariableStatsTable } from './researchStats.jsx';
 import { StudyVariableEditor } from './StudyVariableEditor.jsx';
 import { MissingByCaseList } from './MissingByCaseList.jsx';
+import { ValueIssuesList } from './ValueIssuesList.jsx';
 
 // File xuất chính là "Biến đã chọn" (đúng các lượt đạt điều kiện, như thống kê) + Từ điển biến.
 // Bảng không còn dùng ở nghiên cứu: phiếu nhập tay (đã bỏ), dataset cuối (bước chốt dataset đã bỏ).
@@ -147,6 +148,13 @@ export function StudyStatsView({ study, toast, onStudyChanged }) {
           <span style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Ca còn thiếu dữ liệu</span>
           <MissingByCaseList cases={summary.missing_by_case || []} total={Number(summary.missing_by_case_total || 0)}
             encounters={analyzed} fileBase={`${studyId}_ca_thieu_du_lieu`} />
+        </section>
+      )}
+
+      {!!summary?.variables?.length && (
+        <section style={{ ...card, display: 'grid', gap: 8 }}>
+          <span style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Giá trị cần kiểm lại</span>
+          <ValueIssuesList summary={summary} fileBase={`${studyId}_gia_tri_can_kiem_lai`} />
         </section>
       )}
 

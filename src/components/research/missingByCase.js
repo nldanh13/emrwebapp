@@ -11,3 +11,10 @@ export function rowsToCsvText(cases = []) {
   }
   return `${lines.join('\r\n')}\r\n`;
 }
+
+// CSV danh sách giá trị cần kiểm lại: Mã NC, cột, biến, giá trị, lý do (không có Mã BN/họ tên).
+export function valueIssuesToCsvText(issues = []) {
+  const lines = [['ma_nc', 'cot', 'bien', 'gia_tri', 'ly_do'].join(',')];
+  for (const i of issues) lines.push([i.research_code, i.column, i.label, i.value, i.reason].map(csvCell).join(','));
+  return `${lines.join('\r\n')}\r\n`;
+}
