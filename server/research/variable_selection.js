@@ -1,6 +1,7 @@
 'use strict';
 
 const { extractTScoresBySite, classifyLabMeasurement } = require('./value_normalizers');
+const { checkSelectedValues } = require('./value_checks');
 
 function stripMarks(value) {
   return String(value ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
@@ -964,6 +965,7 @@ function summarizeSelectedDataset(dataset) {
     if (hasValue(row?.needs_manual_review) || !hasValue(row?.encounter_id)) review += 1;
   }
   const missingByCase = missingVariablesByCase(rows, variables);
+  const valueChecks = checkSelectedValues(rows, variables);
   return {
     total: rows.length,
     complete,
@@ -988,6 +990,10 @@ function summarizeSelectedDataset(dataset) {
     cohort: describeCohort(rows),
     missing_by_case: missingByCase.cases,
     missing_by_case_total: missingByCase.total,
+    value_issues: valueChecks.issues,
+    value_issues_total: valueChecks.total,
+    value_issues_cases: valueChecks.cases,
+    value_issues_by_variable: valueChecks.by_variable,
     ...(dataset?.manifest?.anchor ? {
       anchor: {
         ...dataset.manifest.anchor,
