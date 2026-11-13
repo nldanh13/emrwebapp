@@ -296,6 +296,15 @@ Một ca thiếu CT vẫn `usable` cho đề tài không cần CT.
   nghiên cứu không ghi vào thư mục nghiên cứu khác.
 - Xóa nghiên cứu: chỉ admin, thư mục được chuyển vào `research_store/_deleted/`
   (có audit `research.study_deleted`), không xóa vĩnh viễn.
+- **Cú pháp SPSS** (`GET /api/research/studies/<id>/spss-syntax`, code
+  `server/research/spss_syntax.js`): file `.sps` đọc file "Biến đã chọn" với đúng thứ tự cột
+  của nút Xuất CSV (dựng lại file và ẩn định danh bằng cùng hàm), gắn nhãn biến và nhãn giá trị
+  từ Từ điển biến. File chỉ có tên cột, kiểu, nhãn, không có giá trị người bệnh. Xin bản có định
+  danh đi qua cùng kiểm tra quyền như xuất CSV. Cột chỉ đọc dạng số khi mọi ô có giá trị đều là
+  số, để ô kiểu "5; 6" không bị SPSS đọc thành trống.
+- **Ca còn thiếu dữ liệu** (`summary.missing_by_case` của thống kê nghiên cứu): tính từ cùng
+  dataset với thống kê, mỗi lượt thiếu biến một dòng gồm Mã NC, số biến thiếu, tên biến thiếu và
+  cờ cần xem lại. Không có giá trị lâm sàng, Mã BN hay họ tên. Tối đa 2.000 ca, kèm tổng số thật.
 
 ## 6. Sao lưu và khôi phục
 

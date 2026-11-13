@@ -44,6 +44,8 @@ const STATS_SUMMARY = {
   total: 30, complete: 20, partial: 8, empty: 2, review: 0,
   cohort: { encounters: 30, patients: 28, age: { kind: 'number', n: 30, n_numeric: 30, mean: 61.2, sd: 12.4, median: 63, q1: 52, q3: 71, min: 25, max: 90 }, sex: { kind: 'category', n: 30, top: [{ value: 'Nam', count: 16, pct: 53.3 }, { value: 'Nữ', count: 14, pct: 46.7 }] }, hospital_stay_days: { kind: 'number', n: 30, n_numeric: 30, median: 6, q1: 4, q3: 9 } },
   variables: [{ id: 'analysis_ready.age', survey_label: 'Tuổi', output_column: 'var_age', filled: 30, missing: 0, fill_rate: 100, stats: { kind: 'number', n: 30, n_numeric: 30, mean: 61.2, sd: 12.4, median: 63, q1: 52, q3: 71, min: 25, max: 90 } }],
+  missing_by_case: [{ research_code: 'NC0007', missing_count: 1, missing: ['Tuổi'], needs_review: false }],
+  missing_by_case_total: 1,
 };
 
 const PIPELINE = {
@@ -336,6 +338,16 @@ describe('ResearchTab (khói)', () => {
     expect(text).toContain('Dữ liệu nghiên cứu · 30 lượt × 1 biến');
     expect(text).toContain('Từ điển biến');
     expect(text).not.toContain('Dataset cuối');
+  });
+
+  it('nghiên cứu: có danh sách ca còn thiếu dữ liệu và nút Cú pháp SPSS', async () => {
+    await clickText(DONE_STUDY.name);
+    const text = container.textContent;
+    expect(text).toContain('Ca còn thiếu dữ liệu');
+    expect(text).toContain('1 / 30 lượt còn thiếu ít nhất một biến');
+    expect(text).toContain('NC0007');
+    expect(text).toContain('Xuất danh sách ca thiếu');
+    expect(text).toContain('Cú pháp SPSS');
   });
 
   it('nghiên cứu chưa có dữ liệu: lấy thẳng từ kho, không mở EMR, không có Thu thập', async () => {

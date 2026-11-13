@@ -928,6 +928,26 @@ function describeCohort(rows) {
   };
 }
 
+// Ca còn thiếu dữ liệu: mỗi lượt thiếu ít nhất một biến một dòng, chỉ gồm Mã NC (giả danh) và tên
+// các biến thiếu, không có giá trị lâm sàng hay định danh. Ca thiếu nhiều biến lên trước.
+const MISSING_BY_CASE_LIMIT = 2000;
+function missingVariablesByCase(rows, variables, limit = MISSING_BY_CASE_LIMIT) {
+  const hasValue = value => String(value ?? '').trim() !== '';
+  const cases = [];
+  for (const row of rows || []) {
+    const missing = (variables || []).filter(v => !hasValue(row?.[v.output_column]));
+    if (!missing.length) continue;
+    cases.push({
+      research_code: String(row?.research_code ?? '').trim(),
+      missing_count: missing.length,
+      missing: missing.map(v => v.survey_label || v.label || v.name || v.output_column),
+      needs_review: hasValue(row?.needs_manual_review) && String(row.needs_manual_review).trim() !== '0',
+    });
+  }
+  cases.sort((a, b) => b.missing_count - a.missing_count || a.research_code.localeCompare(b.research_code));
+  return { total: cases.length, cases: cases.slice(0, limit) };
+}
+
 function summarizeSelectedDataset(dataset) {
   const rows = Array.isArray(dataset?.rows) ? dataset.rows : [];
   const variables = Array.isArray(dataset?.manifest?.variables) ? dataset.manifest.variables : [];
@@ -943,6 +963,7 @@ function summarizeSelectedDataset(dataset) {
     else empty += 1;
     if (hasValue(row?.needs_manual_review) || !hasValue(row?.encounter_id)) review += 1;
   }
+  const missingByCase = missingVariablesByCase(rows, variables);
   return {
     total: rows.length,
     complete,
@@ -965,6 +986,8 @@ function summarizeSelectedDataset(dataset) {
       };
     }),
     cohort: describeCohort(rows),
+    missing_by_case: missingByCase.cases,
+    missing_by_case_total: missingByCase.total,
     ...(dataset?.manifest?.anchor ? {
       anchor: {
         ...dataset.manifest.anchor,
@@ -976,6 +999,7 @@ function summarizeSelectedDataset(dataset) {
 }
 
 module.exports = {
+  missingVariablesByCase,
   normalizeText,
   normalizedKey,
   getCell,

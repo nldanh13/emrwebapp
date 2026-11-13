@@ -20,7 +20,7 @@ const { firstNonEmpty } = require('../research/encounter_context');
 const { importArchiveToStudy, normalizeRunOutputs } = require('../research/normalize');
 const { runNormalizeJob, normalizeRunning } = require('../research/normalize_runner');
 const { seedStudyRunFromArchive } = require('../research/study_from_archive');
-const { readCsvTable, countCsvRows, writeCsv } = require('../research/table_io');
+const { readCsvTable, countCsvRows, writeCsv, safeDownloadName } = require('../research/table_io');
 const crfStore = require('../research/crf_store');
 const { researchCode } = require('../research/variable_selection');
 const { redactCsvTable } = require('../research/export_utils');
@@ -445,6 +445,24 @@ router.get('/research/studies/:studyId/codebook', (req, res) => {
     const file = path.join(runsDir(study.id), runId, 'analysis_codebook.csv');
     writeCsv(file, book.columns, book.rows);
     return sendCsvFile(res, file, `${study.id}_${runId}_tu_dien_bien`, { redact: false });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+// Cú pháp SPSS (.sps) cho đúng file "Biến đã chọn" mà nút Xuất CSV trả về: cùng cách dựng lại
+// file, cùng cách ẩn định danh, nên thứ tự cột trong cú pháp luôn khớp header của CSV.
+router.get('/research/studies/:studyId/spss-syntax', (req, res) => {
+  try {
+    const study = readStudy(req.params.studyId);
+    if (!study) return res.status(404).json({ status: 'error', message: 'Không tìm thấy nghiên cứu.' });
+    const redact = researchResponseShouldRedact(req);
+    const { buildStudySpssSyntax } = require('../research/study_variables');
+    const out = buildStudySpssSyntax(study, { redact });
+    const filename = `${safeDownloadName(out.base_name)}.sps`;
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    return res.send(`﻿${out.syntax}`);
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }
