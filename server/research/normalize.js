@@ -25,6 +25,7 @@ const { dedupeRowsByHash, dedupeSurgeryRows, snapshotFinalDatasetIfUnsaved } = r
 const { applyVerifiedSurgeryDates, firstSurgeryByEncounter, surgeryForMedicationContext } = require('./encounter_linkage');
 const { evaluateCustomFields } = require('./analysis_config');
 const { TREATMENT_COST_COLUMNS, billingTotalsFromRawRow, pickEncounterBilling, treatmentCostFields, BILLING_DRUGS_COLUMN, billingDrugLinesFromRawRow } = require('./billing_summary');
+const { CONSULT_COLUMNS, consultFieldsForEncounter } = require('./consult_summary');
 const { medicationRowsFromOrderRow, dedupeOrderFields, extractClinicalEvents } = require('./order_note_parser');
 const { hchanhEntryFileStatus } = require('./progress_snapshot');
 const { loadPatientLink, patientLinkPath, applyPatientKeys, savePatientLink } = require('./patient_link');
@@ -71,6 +72,7 @@ const NORMALIZE_INPUT_FILES = [
   'hchanh_surgery.csv',
   'hchanh_order_history.csv',
   'hchanh_billing.csv',
+  'hchanh_consult.csv',
   'lich_su_xn.csv',
   'lich_su_cdha.csv',
   'progress.json',
@@ -255,6 +257,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   const hchanhSurgeryTable = readCsvTable(path.join(dir, 'hchanh_surgery.csv'), Number.MAX_SAFE_INTEGER);
   const hchanhOrderTable = readCsvTable(path.join(dir, 'hchanh_order_history.csv'), Number.MAX_SAFE_INTEGER);
   const hchanhBillingTable = readCsvTable(path.join(dir, 'hchanh_billing.csv'), Number.MAX_SAFE_INTEGER);
+  const hchanhConsultTable = readCsvTable(path.join(dir, 'hchanh_consult.csv'), Number.MAX_SAFE_INTEGER);
 
   // Đợt 5 kho người bệnh: bổ sung / thay dữ liệu hành chánh từ kho chung (không sửa CSV thô).
   let khoOverlay = null;
@@ -288,6 +291,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   hchanhSurgeryTable.rows = dropPlaceholderDischarge(hchanhSurgeryTable.rows || [], fakeDischargeDays);
   hchanhOrderTable.rows = dropPlaceholderDischarge(hchanhOrderTable.rows || [], fakeDischargeDays);
   hchanhBillingTable.rows = dropPlaceholderDischarge(hchanhBillingTable.rows || [], fakeDischargeDays);
+  hchanhConsultTable.rows = dropPlaceholderDischarge(hchanhConsultTable.rows || [], fakeDischargeDays);
 
   // Mã NC cũ dùng chung cho nhiều Mã BN trong file hành chánh không được gắn vào đợt/dòng con.
   hchanhProfileTable.rows = dropSharedResearchCodes(hchanhProfileTable.rows || []);
@@ -295,6 +299,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   hchanhSurgeryTable.rows = dropSharedResearchCodes(hchanhSurgeryTable.rows || []);
   hchanhOrderTable.rows = dropSharedResearchCodes(hchanhOrderTable.rows || []);
   hchanhBillingTable.rows = dropSharedResearchCodes(hchanhBillingTable.rows || []);
+  hchanhConsultTable.rows = dropSharedResearchCodes(hchanhConsultTable.rows || []);
   hchanhDischargeTable.rows = repairSharedPlaceholderDischargeDates(hchanhProfileTable.rows || [], hchanhDischargeTable.rows || []);
 
   // Dùng ngày vào/ra thực tế EMR đã lấy được để chuẩn hóa các bảng con trong bộ nhớ.
@@ -438,6 +443,17 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     const picked = pickEncounterBilling(billingCandidatesByEncounter.get(encounterId));
     if (picked.conflict) treatmentCostConflicts += 1;
     return treatmentCostFields(picked.totals);
+  }
+  // Sổ biên bản hội chẩn: mỗi SBBHC một dòng, gắn vào đúng đợt như bảng kê (không gắn theo Mã BN
+  // chung cho mọi đợt); một đợt nhiều SBBHC thì nối theo thời gian hội chẩn.
+  const consultRowsByEncounter = new Map();
+  for (const row of hchanhConsultTable.rows || []) {
+    const code = patientCode(row);
+    if (!code) continue;
+    const encId = contextForRow(ctxMap, row, code).encounter_id;
+    if (!encId) continue;
+    if (!consultRowsByEncounter.has(encId)) consultRowsByEncounter.set(encId, []);
+    consultRowsByEncounter.get(encId).push(row);
   }
   function extraForContext(code, ctx) {
     return mergeRowsPreferFilled(demographicByPatient.get(code) || {}, extraByEncounter.get(ctx?.encounter_id) || {});
@@ -1079,6 +1095,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       lab_result_count: labByEncounter.get(enc.encounter_id)?.total || 0,
       imaging_result_count: imagingByEncounter.get(enc.encounter_id)?.total || 0,
       ...costForEncounter(enc.encounter_id),
+      ...consultFieldsForEncounter(consultRowsByEncounter.get(enc.encounter_id)),
       needs_manual_review: reviewItems.join('; '),
       source_run_id: runId,
     };
@@ -1250,6 +1267,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt',
     'lab_result_count', 'imaging_result_count',
     ...TREATMENT_COST_COLUMNS,
+    ...CONSULT_COLUMNS,
     'needs_manual_review', 'source_run_id', 'row_hash',
   ];
   const analysisReadyCols = [...analysisReadyBaseCols, ...inferenceColKeys, ...customColKeys, ...analysisReadyTrailCols];
@@ -1297,6 +1315,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
     hchanh_surgery: hchanhSurgeryTable.rows.length,
     hchanh_order_history: hchanhOrderTable.rows.length,
     hchanh_billing: hchanhBillingTable.rows.length,
+    hchanh_consult: hchanhConsultTable.rows.length,
     treatment_cost_encounters: analysisReady.filter(r => String(r.cost_total ?? '') !== '' || String(r.cost_itemized_total ?? '') !== '').length,
     treatment_cost_conflicts: treatmentCostConflicts,
     patients: patients.length,

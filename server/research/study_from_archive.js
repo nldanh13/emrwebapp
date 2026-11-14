@@ -28,6 +28,7 @@ const RAW_FILES = [
   'hchanh_surgery.csv',
   'hchanh_order_history.csv',
   'hchanh_billing.csv',
+  'hchanh_consult.csv',
   'lich_su_xn.csv',
   'lich_su_cdha.csv',
 ];

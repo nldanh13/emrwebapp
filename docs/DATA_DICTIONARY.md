@@ -1,6 +1,6 @@
 # Từ điển dữ liệu Kho nghiên cứu
 
-> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-10-18.1`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
+> File này được sinh tự động từ `server/research/data_dictionary.js` (phiên bản `2026-11-14.1`). Đừng sửa tay: sửa file nguồn rồi chạy `node scripts/build_data_dictionary.js`.
 >
 > Mô tả được viết từ code chuẩn hóa hiện tại. Cột "Dùng" là đề xuất kỹ thuật; phạm vi dùng thực tế phải theo đề cương được hội đồng đạo đức/bệnh viện phê duyệt.
 
@@ -699,7 +699,7 @@
 
 **Khóa nối:** `encounter_id` → `encounters.encounter_id`; `patient_code` → `patients.patient_code`
 
-**Nguồn:** encounters; patients; lab_results; imaging_results; surgery_results; hchanh_billing (chi phí)
+**Nguồn:** encounters; patients; lab_results; imaging_results; surgery_results; hchanh_billing (chi phí); hchanh_consult (hội chẩn)
 
 **Cách xử lý:** Một dòng mỗi đợt. Chỉ dữ liệu matched và is_within_encounter = 1 mới được dùng cho snapshot/tóm tắt phân tích; dữ liệu chưa đủ bằng chứng vẫn giữ nguyên ở bảng chi tiết. analysis_ready không chứa toàn bộ XN/CĐHA trong một ô: chi tiết đầy đủ nằm ở lab_results/imaging_results theo từng dòng; bảng rộng chỉ giữ số lượng và các snapshot/biến cần phân tích. Phẫu thuật lấy ca sớm nhất đã xác minh trong đợt; biến suy luận vẫn có thể dùng CĐHA hợp lệ trong bộ nhớ khi chuẩn hóa.
 
@@ -778,6 +778,20 @@
 | `cost_itemized_exempt` | số nguyên | Thành tiền miễn/trong gói: tự cộng thành tiền (SL × đơn giá) các dòng bảng kê. Cách tính: Cộng từ dòng bảng kê theo cột Đối tượng (Bảo hiểm / Viện phí / Trong gói-miễn / khác). Không gồm chênh lệch giá; có thể khác "Tổng chi phí" của EMR. | Đơn vị: đồng | Chưa lấy bảng kê hoặc bảng kê không có dòng nào. | — | Được dùng |
 | `cost_itemized_other` | số nguyên | Thành tiền chưa phân loại: tự cộng thành tiền (SL × đơn giá) các dòng bảng kê. Cách tính: Cộng từ dòng bảng kê theo cột Đối tượng (Bảo hiểm / Viện phí / Trong gói-miễn / khác). Không gồm chênh lệch giá; có thể khác "Tổng chi phí" của EMR. | Đơn vị: đồng | Chưa lấy bảng kê hoặc bảng kê không có dòng nào. | — | Được dùng |
 | `cost_item_lines` | số nguyên | Số dòng khoản mục trên bảng kê (dịch vụ, thuốc, vật tư). Cách tính: Cộng từ dòng bảng kê theo cột Đối tượng (Bảo hiểm / Viện phí / Trong gói-miễn / khác). Không gồm chênh lệch giá; có thể khác "Tổng chi phí" của EMR. |  | Chưa lấy bảng kê hoặc bảng kê không có dòng nào. | — | Được dùng |
+| `consult_count` | số nguyên | Số Sổ biên bản hội chẩn (SBBHC) đã hoàn tất trong đợt. Cách tính: Đếm phiếu SBBHC trong Giấy tờ kèm theo của đợt, mỗi mã hồ sơ một lần. |  | Đợt không có SBBHC đã hoàn tất, phiếu không ghi ô này, hoặc chưa lấy phần Hội chẩn (phần tùy chọn). | — | Được dùng |
+| `consult_first_time` | ngày giờ | Thời gian hội chẩn sớm nhất trong đợt. |  | Đợt không có SBBHC đã hoàn tất, phiếu không ghi ô này, hoặc chưa lấy phần Hội chẩn (phần tùy chọn). | — | Được dùng |
+| `consult_last_time` | ngày giờ | Thời gian hội chẩn muộn nhất trong đợt. |  | Đợt không có SBBHC đã hoàn tất, phiếu không ghi ô này, hoặc chưa lấy phần Hội chẩn (phần tùy chọn). | — | Được dùng |
+| `consult_times` | văn bản | Thời gian hội chẩn (nguyên văn SBBHC). Nhiều phiếu trong đợt nối bằng " \| " theo thứ tự thời gian hội chẩn. |  | Đợt không có SBBHC đã hoàn tất, phiếu không ghi ô này, hoặc chưa lấy phần Hội chẩn (phần tùy chọn). | Văn bản tự do | Cần đề cương duyệt |
+| `consult_places` | văn bản | Nơi họp hội chẩn (nguyên văn SBBHC). Nhiều phiếu trong đợt nối bằng " \| " theo thứ tự thời gian hội chẩn. |  | Đợt không có SBBHC đã hoàn tất, phiếu không ghi ô này, hoặc chưa lấy phần Hội chẩn (phần tùy chọn). | Văn bản tự do | Cần đề cương duyệt |
+| `consult_requests` | văn bản | Yêu cầu hội chẩn (nguyên văn SBBHC). Nhiều phiếu trong đợt nối bằng " \| " theo thứ tự thời gian hội chẩn. |  | Đợt không có SBBHC đã hoàn tất, phiếu không ghi ô này, hoặc chưa lấy phần Hội chẩn (phần tùy chọn). | Văn bản tự do | Cần đề cương duyệt |
+| `consult_summaries` | văn bản | Tóm tắt (ô Tóm tắt của SBBHC) (nguyên văn SBBHC). Nhiều phiếu trong đợt nối bằng " \| " theo thứ tự thời gian hội chẩn. |  | Đợt không có SBBHC đã hoàn tất, phiếu không ghi ô này, hoặc chưa lấy phần Hội chẩn (phần tùy chọn). | Văn bản tự do | Cần đề cương duyệt |
+| `consult_status_text` | văn bản | Tình trạng người bệnh lúc hội chẩn (nguyên văn SBBHC). Nhiều phiếu trong đợt nối bằng " \| " theo thứ tự thời gian hội chẩn. |  | Đợt không có SBBHC đã hoàn tất, phiếu không ghi ô này, hoặc chưa lấy phần Hội chẩn (phần tùy chọn). | Văn bản tự do | Cần đề cương duyệt |
+| `consult_diagnoses` | văn bản | Chẩn đoán ghi trong SBBHC (nguyên văn SBBHC). Nhiều phiếu trong đợt nối bằng " \| " theo thứ tự thời gian hội chẩn. |  | Đợt không có SBBHC đã hoàn tất, phiếu không ghi ô này, hoặc chưa lấy phần Hội chẩn (phần tùy chọn). | Văn bản tự do | Cần đề cương duyệt |
+| `consult_case_summaries` | văn bản | Tóm tắt bệnh án (nguyên văn SBBHC). Nhiều phiếu trong đợt nối bằng " \| " theo thứ tự thời gian hội chẩn. |  | Đợt không có SBBHC đã hoàn tất, phiếu không ghi ô này, hoặc chưa lấy phần Hội chẩn (phần tùy chọn). | Văn bản tự do | Cần đề cương duyệt |
+| `consult_causes` | văn bản | Nguyên nhân (nguyên văn SBBHC). Nhiều phiếu trong đợt nối bằng " \| " theo thứ tự thời gian hội chẩn. |  | Đợt không có SBBHC đã hoàn tất, phiếu không ghi ô này, hoặc chưa lấy phần Hội chẩn (phần tùy chọn). | Văn bản tự do | Cần đề cương duyệt |
+| `consult_treatments` | văn bản | Hướng điều trị (nguyên văn SBBHC). Nhiều phiếu trong đợt nối bằng " \| " theo thứ tự thời gian hội chẩn. |  | Đợt không có SBBHC đã hoàn tất, phiếu không ghi ô này, hoặc chưa lấy phần Hội chẩn (phần tùy chọn). | Văn bản tự do | Cần đề cương duyệt |
+| `consult_care` | văn bản | Chăm sóc (nguyên văn SBBHC). Nhiều phiếu trong đợt nối bằng " \| " theo thứ tự thời gian hội chẩn. |  | Đợt không có SBBHC đã hoàn tất, phiếu không ghi ô này, hoặc chưa lấy phần Hội chẩn (phần tùy chọn). | Văn bản tự do | Cần đề cương duyệt |
+| `consult_conclusions` | văn bản | Kết luận hội chẩn (nguyên văn SBBHC). Nhiều phiếu trong đợt nối bằng " \| " theo thứ tự thời gian hội chẩn. |  | Đợt không có SBBHC đã hoàn tất, phiếu không ghi ô này, hoặc chưa lấy phần Hội chẩn (phần tùy chọn). | Văn bản tự do | Cần đề cương duyệt |
 | `needs_manual_review` | chuỗi | Lý do cần người kiểm tra, nối "; ". | Nhãn thiếu biến của preset (ví dụ "bên tổn thương", "ngày phẫu thuật") và cờ ghép đợt. |  | — | Được dùng |
 | `source_run_id` | chuỗi | Mã đợt dữ liệu (run) đã tạo ra dòng này. |  |  | — | Được dùng |
 | `row_hash` | chuỗi | Mã băm nội dung dòng (16 ký tự hex), để phát hiện trùng/thay đổi giữa các lần chuẩn hóa. |  |  | — | Được dùng |
@@ -795,6 +809,7 @@ Bảng thô giữ nguyên dữ liệu EMR, **đều chứa định danh**, khôn
 | `hchanh_profile.csv` | Một dòng nguồn (Research key). | Lấy hành chánh — màn điều dưỡng (con mắt). | Mã BN, Họ tên, Ngày sinh, Địa chỉ, Điện thoại, Số CMND, Số thẻ BHYT |
 | `hchanh_discharge.csv` | Một dòng nguồn. | Lấy hành chánh — mục Ra khoa trên màn bác sĩ. | Mã BN, Họ tên, Số lưu trữ |
 | `hchanh_surgery.csv` | Một ca PT/TT. | Lấy hành chánh — D/s phẫu thuật. | Mã BN, Họ tên, Raw JSON |
+| `hchanh_consult.csv` | Một Sổ biên bản hội chẩn (SBBHC) đã hoàn tất của một dòng nguồn (Research key). | Lấy hành chánh — Giấy tờ kèm theo → SBBHC (chỉ đọc form, không Lưu/Hoàn tất). Phần tùy chọn Hội chẩn. | Mã BN, Họ tên, URL |
 | `hchanh_billing.csv` | Một lần lấy bảng kê chi phí của một dòng nguồn (Research key). | Lấy hành chánh — trang Bảng kê chi phí (chiphichitietdraw): khối Tổng hợp chi phí + cộng dòng bảng kê. Lấy mặc định cùng hồ sơ nền/ra viện/phẫu thuật. | Mã BN, Họ tên, URL |
 | `hchanh_order_history.csv` | Một dòng lịch sử y lệnh. | Lấy hành chánh — Lịch sử y lệnh. | Mã BN, Họ tên, Bác sĩ (nhân viên), Raw JSON |
 
