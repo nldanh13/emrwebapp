@@ -103,10 +103,19 @@ async function handleCollectAuto(req, res, studyIdParam = '') {
       force: req.body?.force === true,
       refreshProvisional: req.body?.refreshProvisional === true,
       retryBlocked: req.body?.retryBlocked === true,
-      parts: collection.resolveCollectionParts({ requested: req.body?.parts }),
+      // Phần tùy chọn (Hội chẩn SBBHC): người dùng bật ở khung thu thập, hoặc đề cương nghiên cứu cần.
+      parts: collection.resolveCollectionParts({
+        requested: req.body?.parts,
+        optional: [
+          ...(Array.isArray(req.body?.optionalParts) ? req.body.optionalParts : []),
+          // Bấm "Làm mới" phần tùy chọn (Hội chẩn) cũng là yêu cầu lấy phần đó.
+          ...(Array.isArray(req.body?.refreshParts) ? req.body.refreshParts : []),
+          ...(sc.study ? collection.requirementsFromStudy(sc.study).parts.filter(p => collection.OPTIONAL_PART_KEYS.includes(p)) : []),
+        ],
+      }),
       limit: Number.isFinite(Number(req.body?.limit)) ? Math.max(0, Math.trunc(Number(req.body.limit))) : 0,
       // "Làm mới": người dùng chọn kiểm tra lại các phần này (tùy chọn chỉ vài lượt).
-      refreshParts: Array.isArray(req.body?.refreshParts) ? req.body.refreshParts.filter(p => collection.PART_KEYS.includes(p)) : [],
+      refreshParts: Array.isArray(req.body?.refreshParts) ? req.body.refreshParts.filter(p => collection.ALL_PART_KEYS.includes(p)) : [],
       refreshKeys: Array.isArray(req.body?.refreshKeys) && req.body.refreshKeys.length ? req.body.refreshKeys.map(String).slice(0, 20000) : null,
       refreshPolicy: sc.refreshPolicy,
       study: sc.study,

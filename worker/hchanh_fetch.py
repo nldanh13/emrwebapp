@@ -6249,6 +6249,14 @@ def fetch_documents(sess: Optional["EmrHttpSession"], ma_bn: str,
                                              hosoid=hosoid,
                                              **({} if not noitruid else {"noitruid": noitruid}))
 
+            # URL mở form của phiếu (GET, chỉ đọc) — dùng để đọc nội dung SBBHC cho nghiên cứu.
+            form_url = ""
+            if hosoid:
+                parsed_f = urlparse(view_url)
+                noitruid_f = dict(parse_qsl(parsed_f.query)).get("noitruid") or ""
+                form_url = _upsert_query(view_url, wpid="loadformdongdraw", hosoid=hosoid,
+                                         **({} if not noitruid_f else {"noitruid": noitruid_f}))
+
             rows_out.append({
                 "khoa":        current_khoa,
                 "loai_phieu":  loai_phieu,
@@ -6258,6 +6266,7 @@ def fetch_documents(sess: Optional["EmrHttpSession"], ma_bn: str,
                 "hosoid":      hosoid,
                 "hoan_tat":    has_print,
                 "hoantat_url": hoantat_url,
+                "form_url":    form_url,
             })
 
         chua_ht_rows = [r for r in rows_out if not r["hoan_tat"]]
@@ -6277,6 +6286,142 @@ def fetch_documents(sess: Optional["EmrHttpSession"], ma_bn: str,
         base["_fetch_status"] = "error"
         base["_error"] = str(e)
 
+    return base
+
+
+# ── Sổ biên bản hội chẩn (SBBHC) cho Kho nghiên cứu ─────────────────────────
+# CHỈ ĐỌC: lấy danh sách Giấy tờ kèm theo (fetch_documents), lọc phiếu SBBHC đã hoàn tất, rồi
+# GET trang form của từng phiếu và đọc giá trị các ô. Không bấm Lưu / Hoàn tất / Thu hồi,
+# không POST. Phiếu chưa hoàn tất bị bỏ qua (nội dung có thể còn đang sửa).
+SBBHC_FIELDS = [
+    ("ThoiGianHoiChan", "Thời gian hội chẩn"),
+    ("HopTai", "Họp tại"),
+    ("YeuCau", "Yêu cầu hội chẩn"),
+    ("TomTat", "Tóm tắt"),
+    ("TinhTrang", "Tình trạng"),
+    ("ChanDoanTuyenDuoi", "Chẩn đoán"),
+    ("TomTatBenhAn", "Tóm tắt bệnh án"),
+    ("NguyenNhan", "Nguyên nhân"),
+    ("HuongDieuTri", "Hướng điều trị"),
+    ("ChamSoc", "Chăm sóc"),
+    ("KetLuan", "Kết luận"),
+]
+SBBHC_MAX_FORMS_PER_STAY = 10
+
+
+def _fold_text(value: Any) -> str:
+    import unicodedata
+    s = unicodedata.normalize("NFKD", _t(value)).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"\s+", " ", s.replace("đ", "d").replace("Đ", "D")).strip().lower()
+
+
+def is_sbbhc_row(row: Dict[str, Any]) -> bool:
+    """Phiếu thuộc loại Sổ biên bản hội chẩn (theo cột Loại phiếu hoặc Mô tả)."""
+    text = _fold_text(f"{row.get('loai_phieu') or ''} {row.get('mo_ta') or ''}")
+    return "sbbhc" in text or "bien ban hoi chan" in text
+
+
+def _js_string_value(html: str, key: str) -> Optional[str]:
+    """Giá trị chuỗi của khóa trong object JS/JSON nhúng trong trang (vd _obj = {"YeuCau":"..."})."""
+    m = re.search(r'["\']?' + re.escape(key) + r'["\']?\s*:\s*"((?:[^"\\]|\\.)*)"', html or "", re.I)
+    if not m:
+        return None
+    raw = m.group(1)
+    try:
+        return json.loads(f'"{raw}"')
+    except Exception:
+        return raw.replace('\\"', '"')
+
+
+def parse_sbbhc_form(html: str) -> Dict[str, str]:
+    """Đọc các ô của form SBBHC: ưu tiên ô trên trang (input/textarea/select theo id), sau đó
+    giá trị trong object JS nhúng. Trả về {id ô: giá trị}; ô không thấy thì không có khóa."""
+    soup = _soup(html or "")
+    out: Dict[str, str] = {}
+    keys = [k for k, _ in SBBHC_FIELDS] + ["ThuKy"]
+    for key in keys:
+        value: Optional[str] = None
+        el = soup.find(id=key) if soup is not None else None
+        if el is not None:
+            name = (el.name or "").lower()
+            if name == "textarea":
+                value = el.get_text()
+            elif name == "select":
+                opt = el.find("option", selected=True)
+                value = opt.get_text(" ", strip=True) if opt is not None else ""
+            elif name == "input":
+                value = el.get("value") or ""
+            else:
+                value = el.get_text(" ", strip=True)
+        if not _t(value):
+            js_value = _js_string_value(html, key)
+            if js_value is not None:
+                value = js_value
+        if value is not None:
+            out[key] = re.sub(r"[ \t]+", " ", str(value)).strip()
+    return out
+
+
+def fetch_consults(sess: Optional["EmrHttpSession"], ma_bn: str,
+                   link_map: Dict[str, str], config: Dict[str, Any]) -> Dict[str, Any]:
+    """Sổ biên bản hội chẩn đã hoàn tất của lượt nội trú (chỉ đọc)."""
+    base: Dict[str, Any] = {"ma_bn": ma_bn, "rows": [], "skipped_unfinished": 0,
+                            "_source": "emr_giaytokemtheo_sbbhc", "_fetch_status": "pending"}
+    docs = fetch_documents(sess, ma_bn, link_map, config)
+    status = _t(docs.get("_fetch_status"))
+    if status != "ok":
+        base["_fetch_status"] = status or "error"
+        if docs.get("_error"):
+            base["_error"] = docs.get("_error")
+        return base
+    sbbhc = [r for r in (docs.get("rows") or []) if is_sbbhc_row(r)]
+    finished = [r for r in sbbhc if r.get("hoan_tat") and r.get("form_url")]
+    base["skipped_unfinished"] = len(sbbhc) - len(finished)
+    base["total_sbbhc"] = len(sbbhc)
+    if not finished:
+        # Lượt không có SBBHC đã hoàn tất là kết quả hợp lệ (đã lấy, 0 phiếu), không phải lỗi:
+        # ledger ghi "Không có" và không mở EMR lấy lại.
+        base["_fetch_status"] = "ok"
+        print(f"LOG [consult] {ma_bn}: không có SBBHC đã hoàn tất (tổng SBBHC={len(sbbhc)})")
+        return base
+    rows: List[Dict[str, Any]] = []
+    unreadable = 0
+    for doc in finished[:SBBHC_MAX_FORMS_PER_STAY]:
+        try:
+            html, _ = sess.get_html(doc["form_url"])
+        except Exception as e:
+            print(f"ERROR [consult] {ma_bn}: không mở được SBBHC {doc.get('hosoid')}: {e}", file=sys.stderr)
+            unreadable += 1
+            continue
+        fields = parse_sbbhc_form(html)
+        if not any(_t(fields.get(k)) for k, _ in SBBHC_FIELDS):
+            unreadable += 1
+            try:
+                debug_dir = os.path.join(str(config.get("runtime_dir") or ".runtime"), "hchanh_debug")
+                os.makedirs(debug_dir, exist_ok=True)
+                with open(os.path.join(debug_dir, f"sbbhc_{ma_bn}_{doc.get('hosoid')}.html"), "w", encoding="utf-8") as f:
+                    f.write(html or "")
+                print(f"WARN [consult] {ma_bn}: không đọc được ô nào của SBBHC {doc.get('hosoid')}; đã lưu HTML debug.", file=sys.stderr)
+            except Exception:
+                pass
+            continue
+        rows.append({
+            "hosoid": doc.get("hosoid") or "",
+            "khoa": doc.get("khoa") or "",
+            "ngay_tao": doc.get("ngay_tao") or "",
+            "nguoi_tao": doc.get("nguoi_tao") or "",
+            **{k: fields.get(k, "") for k, _ in SBBHC_FIELDS},
+            "ThuKy": fields.get("ThuKy", ""),
+        })
+    base["rows"] = rows
+    base["unreadable"] = unreadable
+    base["over_limit"] = max(0, len(finished) - SBBHC_MAX_FORMS_PER_STAY)
+    if rows:
+        base["_fetch_status"] = "partial" if unreadable else "ok"
+    else:
+        base["_fetch_status"] = "error"
+        base["_error"] = "Không đọc được nội dung SBBHC (đã lưu HTML để kiểm tra)."
+    print(f"LOG [consult] {ma_bn}: đọc {len(rows)}/{len(finished)} SBBHC đã hoàn tất; không đọc được={unreadable}")
     return base
 
 
@@ -6574,6 +6719,8 @@ def _run_hchanh_fetch_core(patient_row: Dict[str, Any], scope: str, files: List[
                 result = fetch_order_history(sess, ma_bn, date_from, date_to, link_map, config)
             elif file_key == "documents":
                 result = fetch_documents(sess, ma_bn, link_map, config)
+            elif file_key == "consult":
+                result = fetch_consults(sess, ma_bn, link_map, config)
             else:
                 print(f"WARN: Không có fetcher cho '{file_key}', bỏ qua.", file=sys.stderr)
                 continue

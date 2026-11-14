@@ -114,6 +114,14 @@ tự động" trong `server/routes/research.js`.
 **Trạng thái riêng từng phần của từng lượt** (XN, CĐHA, Hồ sơ nền, Ra viện, Phẫu
 thuật, Y lệnh) được lưu ở `collection_ledger.json`.
 
+**Hội chẩn (SBBHC) là phần tùy chọn.** Mặc định không lấy và không tính vào "đủ dữ liệu",
+nên kho cũ không bị coi là thiếu. Phần này chỉ được lấy khi bật ô **Lấy thêm Hội chẩn
+(SBBHC)** ở khung Thu thập tự động, khi đề cương chọn biến `consult_*`, hoặc khi đánh dấu
+là phần bắt buộc. Worker mở Giấy tờ kèm theo của lượt và chỉ đọc (GET) những Sổ biên bản
+hội chẩn đã hoàn tất, tối đa 10 phiếu mỗi lượt. Worker không bấm Lưu, Hoàn tất hay Thu hồi.
+Lượt không có SBBHC được ghi `empty` và không mở lại. Nếu mở được phiếu mà không đọc được
+ô nào, HTML được lưu vào `.runtime/hchanh_debug/` để kiểm tra.
+
 **Đơn vị theo dõi là lượt điều trị, không phải dòng danh sách.** Các dòng chuyển khoa của
 cùng một lượt được gom về lượt đã chuẩn hóa (`encounters.csv`), theo thứ tự ưu tiên:
 
@@ -261,6 +269,11 @@ Một ca thiếu CT vẫn `usable` cho đề tài không cần CT.
   `patient_link.csv` (bảng liên kết của kho).
 - Xem/xuất mặc định **đã che** theo tên cột (`server/research/export_utils.js`),
   gồm cả Mã nội trú, số lưu trữ và URL EMR (URL chứa `keyword=<Mã BN>`).
+- Cột văn bản tự do của SBBHC (`consult_summaries`, `consult_case_summaries`,
+  `consult_conclusions`…) chép nguyên văn từ phiếu. Chúng được xếp "Cần đề cương duyệt"
+  nhưng **không tự bị bỏ** khi xuất ẩn danh. Nội dung có thể chứa tên người, tên bác sĩ
+  hay chi tiết nhận ra được người bệnh, nên chỉ chọn các biến này khi đề cương cho phép
+  và cần đọc lại trước khi chia sẻ. Thư ký (`ThuKy`) không đưa vào bảng phân tích.
 - Xem/xuất có định danh cần đồng thời: `identified=1`, vai trò supervisor/admin, và
   `EMR_ALLOW_IDENTIFIED_RESEARCH_EXPORT=1`. Mỗi lần được phép ghi sự kiện
   `research.identified_access` vào `.runtime/audit/security_audit_YYYYMM.jsonl`

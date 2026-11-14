@@ -30,8 +30,15 @@ const PARTS = [
   { key: 'order_history', label: 'Y lệnh', fetcher: 'order_history' },
   // Bảng kê chi phí: lấy mặc định cùng lô với hồ sơ nền/ra viện/phẫu thuật (một trang EMR mỗi lượt).
   { key: 'billing', label: 'Chi phí', fetcher: 'hchanh' },
+  // Sổ biên bản hội chẩn (Giấy tờ kèm theo → SBBHC): phần TÙY CHỌN, chỉ lấy khi người dùng bật
+  // hoặc đề cương cần. Không tính vào "đủ phần" mặc định để kho cũ không bị coi là thiếu và
+  // không tự mở EMR cho mọi lượt.
+  { key: 'consult', label: 'Hội chẩn (SBBHC)', fetcher: 'hchanh', optional: true },
 ];
-const PART_KEYS = PARTS.map(p => p.key);
+// Phần mặc định: tính vào độ đầy đủ và tự lấy. Phần tùy chọn chỉ lấy khi được yêu cầu rõ.
+const PART_KEYS = PARTS.filter(p => !p.optional).map(p => p.key);
+const OPTIONAL_PART_KEYS = PARTS.filter(p => p.optional).map(p => p.key);
+const ALL_PART_KEYS = PARTS.map(p => p.key);
 const DONE_STATUSES = new Set(['ok', 'empty']);
 
 const REASON_LABELS = {
@@ -716,6 +723,7 @@ function derivePartResults(source, xnMatches, hchanhProgress, orderProgress, orp
     surgery: hcFile('surgery'),
     order_history: orderHistory,
     billing: hcFile('billing'),
+    consult: hcFile('consult'),
   };
 }
 
@@ -775,7 +783,7 @@ function buildLedger({ sourceRows = [], units = null, xnProgress = {}, hchanhPro
 
     const derived = derivePartResults(src, xnMatches, hchanhProgress, orderProgress, orphanHc, orphanOh);
     const parts = {};
-    for (const key of PART_KEYS) {
+    for (const key of ALL_PART_KEYS) {
       const d = derived[key];
       const p = prev?.parts?.[key];
       const done = DONE_STATUSES.has(d.status);
@@ -1115,7 +1123,7 @@ function applyContentVersions({ before, after, targets = [], beforeRows = new Ma
 function sanitizeRefreshPolicy(input) {
   const src = input && typeof input === 'object' ? input : {};
   const out = {};
-  for (const k of PART_KEYS) {
+  for (const k of ALL_PART_KEYS) {
     const n = Number(src[k]);
     if (Number.isFinite(n) && n >= 1 && n <= 3650) out[k] = Math.trunc(n);
   }
@@ -1138,7 +1146,7 @@ function planCollection(ledger, {
   refreshPolicy = {}, refreshParts = [], refreshKeys = null, now = nowIso(),
 } = {}) {
   const policy = sanitizeRefreshPolicy(refreshPolicy);
-  const manual = new Set((refreshParts || []).filter(k => PART_KEYS.includes(k)));
+  const manual = new Set((refreshParts || []).filter(k => ALL_PART_KEYS.includes(k)));
   const manualKeys = refreshKeys ? new Set(refreshKeys) : null;
   const scope = keys ? [...keys] : Object.keys(ledger?.encounters || {}).filter(k => ledger.encounters[k].in_source !== false);
   const tasks = [];
@@ -1267,7 +1275,7 @@ function exceptionRows(ledger, { keys = null, maxAttempts = DEFAULT_MAX_ATTEMPTS
         updated_at: '',
       });
     }
-    for (const k of PART_KEYS) {
+    for (const k of ALL_PART_KEYS) {
       const p = enc.parts?.[k];
       if (!p || !['failed', 'blocked'].includes(p.status)) continue;
       const exhausted = p.status === 'failed' && (Number(p.attempts) || 0) >= maxAttempts;
@@ -1406,6 +1414,7 @@ function variableParts(v) {
   const name = String(v?.name || v?.column || String(v?.id || '').split('.').pop() || '');
   const parts = [...(TABLE_PARTS[table] || [])];
   if (table === 'analysis_ready' && name.startsWith('cost_')) parts.push('billing');
+  if (table === 'analysis_ready' && name.startsWith('consult_')) parts.push('consult');
   return parts;
 }
 
@@ -1419,7 +1428,7 @@ const ITEM_KINDS = {
 
 function sanitizeDataRequirements(input) {
   const src = input && typeof input === 'object' ? input : {};
-  const parts = Array.isArray(src.parts) ? [...new Set(src.parts.map(String).filter(p => PART_KEYS.includes(p)))] : [];
+  const parts = Array.isArray(src.parts) ? [...new Set(src.parts.map(String).filter(p => ALL_PART_KEYS.includes(p)))] : [];
   const items = Array.isArray(src.items) ? src.items.slice(0, 50).map(it => ({
     kind: ITEM_KINDS[String(it?.kind || '')] ? String(it.kind) : '',
     value: String(it?.value ?? '').trim().slice(0, 120),
@@ -1450,9 +1459,12 @@ function requirementsFromStudy(study) {
 }
 
 // Phần giao cho một lần thu thập: người dùng chọn rõ thì đúng các phần đó, không thì mọi phần.
-function resolveCollectionParts({ requested = [] } = {}) {
-  const chosen = Array.isArray(requested) ? requested.map(String).filter(k => PART_KEYS.includes(k)) : [];
-  return chosen.length ? [...new Set(chosen)] : [...PART_KEYS];
+// Phần tùy chọn (vd Hội chẩn) chỉ thêm khi người dùng bật (optional) hoặc chọn rõ (requested).
+function resolveCollectionParts({ requested = [], optional = [] } = {}) {
+  const chosen = Array.isArray(requested) ? requested.map(String).filter(k => ALL_PART_KEYS.includes(k)) : [];
+  if (chosen.length) return [...new Set(chosen)];
+  const extra = Array.isArray(optional) ? optional.map(String).filter(k => OPTIONAL_PART_KEYS.includes(k)) : [];
+  return [...new Set([...PART_KEYS, ...extra])];
 }
 
 function itemPresent(item, rows) {
@@ -1564,6 +1576,8 @@ module.exports = {
   ORDER_HISTORY_FETCH_WINDOW_VERSION,
   PARTS,
   PART_KEYS,
+  OPTIONAL_PART_KEYS,
+  ALL_PART_KEYS,
   resolveCollectionParts,
   REASON_LABELS,
   DIAGNOSTIC_STAGE_LABELS,

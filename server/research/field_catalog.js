@@ -11,6 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const dict = require('./data_dictionary');
 const { TREATMENT_COST_COLUMNS } = require('./billing_summary');
+const { CONSULT_COLUMNS } = require('./consult_summary');
 const { readCsvFileRows } = require('./csv_reader');
 
 // Số dòng tối đa đọc để đếm ô có giá trị mỗi bảng; bảng lớn hơn thì đếm trên phần đầu và ghi rõ.
@@ -24,6 +25,8 @@ const TECHNICAL_COLUMNS = new Set([
 ]);
 
 const COST_COLUMNS = new Set(TREATMENT_COST_COLUMNS);
+const CONSULT_COLUMN_SET = new Set(CONSULT_COLUMNS);
+const NOT_GENERAL_COLUMNS = new Set([...TREATMENT_COST_COLUMNS, ...CONSULT_COLUMNS]);
 
 // Thứ tự và tên nhóm cho người dùng. Bảng có trong từ điển mà chưa có ở đây vẫn hiện (cuối danh sách).
 const GROUPS = [
@@ -32,6 +35,7 @@ const GROUPS = [
   { key: 'diagnoses', table: 'diagnoses', label: 'Chẩn đoán', unit: 'dòng' },
   { key: 'surgery_results', table: 'surgery_results', label: 'Phẫu thuật / thủ thuật', unit: 'ca' },
   { key: 'cost', table: 'analysis_ready', label: 'Chi phí điều trị (bảng kê)', unit: 'lượt', only: COST_COLUMNS },
+  { key: 'consult', table: 'analysis_ready', label: 'Hội chẩn (Sổ biên bản hội chẩn)', unit: 'lượt', only: CONSULT_COLUMN_SET },
   { key: 'medication_orders', table: 'medication_orders', label: 'Thuốc / y lệnh', unit: 'dòng thuốc' },
   { key: 'medication_day_summary', table: 'medication_day_summary', label: 'Thuốc tổng hợp theo ngày', unit: 'ngày' },
   { key: 'clinical_notes', table: 'clinical_notes', label: 'Diễn biến & y lệnh gốc', unit: 'dòng' },
@@ -39,7 +43,7 @@ const GROUPS = [
   { key: 'lab_results', table: 'lab_results', label: 'Xét nghiệm', unit: 'kết quả' },
   { key: 'imaging_results', table: 'imaging_results', label: 'Chẩn đoán hình ảnh (CĐHA)', unit: 'kết quả' },
   { key: 'patient_day', table: 'patient_day', label: 'Hoạt động theo ngày', unit: 'ngày' },
-  { key: 'analysis_ready', table: 'analysis_ready', label: 'Bảng phân tích theo lượt (biến tổng hợp)', unit: 'lượt', exclude: COST_COLUMNS },
+  { key: 'analysis_ready', table: 'analysis_ready', label: 'Bảng phân tích theo lượt (biến tổng hợp)', unit: 'lượt', exclude: NOT_GENERAL_COLUMNS },
   { key: 'extract_status', table: 'extract_status', label: 'Tiến độ lấy dữ liệu', unit: 'lượt' },
 ];
 
