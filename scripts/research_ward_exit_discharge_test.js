@@ -105,5 +105,35 @@ test('hồ sơ ghi giờ vào của đợt sau cho đợt trước: đợt trư�
   assert.strictEqual(full[0]['Chẩn đoán ra viện'], 'S42.20');
 });
 
+// Ca thật (BN đã ẩn): đợt nhiễm trùng 14/01 → 28/01 (A41) hiện chẩn đoán ra "M81.8 loãng xương" của đợt
+// 06/07 → 08/07. Trang ra viện lấy cho lượt tháng 01 mang giờ vào 14/01 của lượt yêu cầu nhưng ngày ra
+// 08/07 và chẩn đoán của đợt tháng 07; trước đây dòng đó ghép theo giờ vào vào đợt tháng 01.
+test('trang ra viện mang giờ vào đợt trước nhưng ngày ra + chẩn đoán đợt sau → về đợt sau', () => {
+  const BN = 'BN990010';
+  const src = [['S7', '08:38 06/07/2026'], ['S22', '21:10 22/01/2026'], ['S19', '20:40 19/01/2026'], ['S15', '18:52 15/01/2026'], ['S14', '09:00 14/01/2026']];
+  const initialRows = src.map(([k, t]) => ({ 'Mã BN': BN, 'Research key': k, 'T/G vào': t }));
+  const jan = ['O1', 'O2', 'O3', 'O4'];
+  const julOther = ['P5', 'P6', 'P7', 'P8', 'P9', 'P10', 'P11', 'P12'];
+  const hchanhProfileRows = [
+    ...jan.map(k => ({ 'Mã BN': BN, 'Research key': k, 'Ngày vào viện': '09:00 14-01-2026', 'Ngày ra viện': '13:00 28-01-2026', 'Chẩn đoán': 'Nhiễm trùng khác (A41)' })),
+    ...[...julOther, 'S22', 'S19', 'S15', 'S7', 'S14'].map(k => ({ 'Mã BN': BN, 'Research key': k, 'Ngày vào viện': '08:38 06-07-2026', 'Ngày ra viện': '13:00 08-07-2026', 'Chẩn đoán': 'Loãng xương tự phát (M81.5)' })),
+  ];
+  const janT = ['21:10 22/01/2026', '20:40 19/01/2026', '18:52 15/01/2026', '09:00 14/01/2026'];
+  const mixT = [...janT, '21:10 22/01/2026', '20:40 19/01/2026', '09:00 14/01/2026'];
+  const M818 = 'M81.8- Các bệnh loãng xương khác';
+  const hchanhDischargeRows = [
+    ...jan.map((k, i) => ({ 'Mã BN': BN, 'Research key': k, 'Ngày vào viện': janT[i], 'Ngày ra viện': '2026-06-08', 'Chẩn đoán ra viện': 'A41- Nhiễm trùng khác' })),
+    ...julOther.slice(0, 7).map((k, i) => ({ 'Mã BN': BN, 'Research key': k, 'Ngày vào viện': mixT[i], 'Ngày ra viện': '13:00 08/07/2026', 'Chẩn đoán ra viện': M818 })),
+    ...['P12', 'S22', 'S19', 'S15', 'S7', 'S14'].map(k => ({ 'Mã BN': BN, 'Research key': k, 'Ngày vào viện': '08:38 06-07-2026', 'Ngày ra viện': '13:00 08/07/2026', 'Chẩn đoán ra viện': M818 })),
+  ];
+  const rows = combineEncounterSources({ initialRows, hchanhProfileRows, hchanhDischargeRows }).filter(r => r['Mã BN'] === BN);
+  assert.strictEqual(rows.length, 2, JSON.stringify(rows.map(r => r['Ngày vào viện'])));
+  const [janStay, julStay] = rows;
+  assert.match(String(janStay['Ngày vào viện']), /2026-01-14|14\/01\/2026/);
+  assert.strictEqual(janStay['Chẩn đoán ra viện'], 'A41- Nhiễm trùng khác', 'đợt nhiễm trùng không mang chẩn đoán loãng xương');
+  assert.match(String(julStay['Ngày vào viện']), /2026-07-06|06\/07\/2026/);
+  assert.strictEqual(julStay['Chẩn đoán ra viện'], M818);
+});
+
 console.log(`research_ward_exit_discharge_test: ${passed} test(s) passed`);
 if (process.exitCode) process.exit(1);
