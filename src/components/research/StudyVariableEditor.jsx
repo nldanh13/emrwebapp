@@ -6,7 +6,7 @@ import * as api from '../../api.js';
 import { C, FS } from '../../tokens.js';
 import { Btn } from '../shared.jsx';
 import { SkeletonLines } from '../Skeleton.jsx';
-import { ANCHOR_AGGREGATIONS, VARIABLE_AGGREGATIONS, dedupeWideTableVariables, enhanceCatalogVariable, isPresenceVariable } from './variableCatalogModel.js';
+import { ANCHOR_AGGREGATIONS, VARIABLE_AGGREGATIONS, browsableCatalogVariables, enhanceCatalogVariable, isPresenceVariable } from './variableCatalogModel.js';
 
 const lower = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd');
 
@@ -74,7 +74,7 @@ export function StudyVariableEditor({ study, toast, onSaved }) {
 
   const browse = useMemo(() => {
     const all = (catalog?.groups || []).flatMap(g => (g.variables || []).map(v => enhanceCatalogVariable(v, g)));
-    return dedupeWideTableVariables(all).filter(v => !v.technical_or_identity);
+    return browsableCatalogVariables(all);
   }, [catalog]);
 
   const chosen = new Set(draft.map(v => v.id));
