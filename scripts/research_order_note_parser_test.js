@@ -178,4 +178,29 @@ test('table_io: raw giữ nguyên, getCell mới dedupe cho parser', () => {
   assert.strictEqual(fs.readFileSync(file, 'utf8'), before, 'raw CSV trên đĩa phải giữ nguyên');
 });
 
+test('Một y lệnh ghi thuốc hai lần (dòng y lệnh + dòng "TT ...") chỉ là một lần dùng thuốc', () => {
+  // Ca thật: Zoruxa 07/07 05:00 hiện hai dòng, dòng thứ hai mang đường dùng "tt zoruxa 5mg 100ml".
+  for (const row of [
+    { 'Tên y lệnh': 'Zoruxa 5mg/100ml (TTM)', 'Y lệnh khác': 'TT Zoruxa 5mg 100ml' },
+    { 'Tên y lệnh': 'Zoruxa 5mg truyền tĩnh mạch\nTT Zoruxa 5mg 100ml' },
+  ]) {
+    const meds = parser.medicationRowsFromOrderRow(row);
+    assert.strictEqual(meds.length, 1, JSON.stringify(meds.map(m => m.raw_line)));
+    assert.strictEqual(meds[0].drug_name_norm, 'zoruxa');
+    assert.strictEqual(meds[0].route_norm, 'truyền_tĩnh_mạch', 'giữ đường dùng của dòng có ghi đường');
+  }
+  // "TT" đứng đầu là ký hiệu loại y lệnh, không phải một phần tên thuốc.
+  assert.strictEqual(parser.medicationRowsFromOrderRow({ 'Tên y lệnh': 'TT Zoruxa 5mg 100ml' })[0].drug_name_raw, 'Zoruxa');
+  // Hai thuốc khác nhau, hoặc cùng thuốc khác hàm lượng, vẫn là hai dòng.
+  assert.strictEqual(parser.medicationRowsFromOrderRow({ 'Tên y lệnh': 'Paracetamol 1g truyền\nCefazolin 1g tiêm' }).length, 2);
+  assert.strictEqual(parser.medicationRowsFromOrderRow({ 'Tên y lệnh': 'Paracetamol 500mg uống\nParacetamol 1g truyền' }).length, 2);
+  // Cùng thuốc, cùng hàm lượng, cả hai dòng đều ghi đủ đường dùng: hai lần dùng.
+  assert.strictEqual(parser.medicationRowsFromOrderRow({ 'Tên y lệnh': 'Paracetamol 500mg uống 8h\nParacetamol 500mg uống 20h' }).length, 2);
+});
+
+test('Không có đường dùng thì để trống, không lấy cả câu y lệnh làm đường dùng', () => {
+  assert.strictEqual(normalizers.routeFromText('TT Zoruxa 5mg 100ml'), '');
+  assert.strictEqual(normalizers.routeFromText('Paracetamol 500mg uống'), normalizers.normalizeRoute('uống'));
+});
+
 console.log(`${passed} test(s) passed`);

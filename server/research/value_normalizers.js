@@ -277,6 +277,12 @@ function normalizeRoute(value) {
   return s ? normalizeToken(value) : '';
 }
 
+// Đường dùng nhận ra được trong một câu y lệnh; không nhận ra thì để trống (không biến cả câu thành
+// "đường dùng" kiểu tt_zoruxa_5mg_100ml).
+function routeFromText(value) {
+  return routeModel.detectRouteCode(value) ? normalizeRoute(value) : '';
+}
+
 function classifyDrugGroup(value) {
   const s = normalizeSimple(value);
   if (!s) return '';
@@ -291,6 +297,7 @@ function classifyDrugGroup(value) {
 }
 
 module.exports = {
+  routeFromText,
   normalizeSex,
   extractBirthYear,
   normalizeLabName,

@@ -20,7 +20,7 @@ const { readCsvTable, patientCode, writeCsv, countCsvRows, getCell } = require('
 const { overlayHchanhFromPatientDb, KHO_OVERLAY_FILE, overlayResultsFromPatientDb } = require('./patient_db_overlay');
 const { appendResearchRunLog } = require('./case_trace');
 const { combineEncounterSources, mergeRowsPreferFilled, dedupeByHash, byEncounterCount, buildVerifiedStayIndex, canonicalizeRowToVerifiedStay, dropSharedResearchCodes, dropPlaceholderDischarge, repairSharedPlaceholderDischargeDates, placeholderDischargeDays } = require('./source_merge');
-const { normalizeSex, extractBirthYear, normalizeLabName, resultOperator, parseNumeric, resultText, normalizeLabMeasurement, classifyLabMeasurement, normalizeFlag, modalityFromService, bodyRegionFromService, normalizeDrugName, classifyDrugGroup, normalizeRoute } = require('./value_normalizers');
+const { normalizeSex, extractBirthYear, normalizeLabName, resultOperator, parseNumeric, resultText, normalizeLabMeasurement, classifyLabMeasurement, normalizeFlag, modalityFromService, bodyRegionFromService, normalizeDrugName, classifyDrugGroup, normalizeRoute, routeFromText } = require('./value_normalizers');
 const { dedupeRowsByHash, dedupeSurgeryRows, snapshotFinalDatasetIfUnsaved } = require('./dataset_store');
 const { applyVerifiedSurgeryDates, firstSurgeryByEncounter, surgeryForMedicationContext } = require('./encounter_linkage');
 const { evaluateCustomFields } = require('./analysis_config');
@@ -790,7 +790,7 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
       drug_group_guess: classifyDrugGroup(drug || rawLine),
       active_ingredient: firstNonEmpty(row, ['active_ingredient', 'Hoạt chất', 'Hoat chat']),
       route_raw: firstNonEmpty(row, ['route_raw', 'Đường dùng', 'Duong dung']) || '',
-      route_norm: firstNonEmpty(row, ['route_norm']) || normalizeRoute(firstNonEmpty(row, ['route_raw', 'Đường dùng', 'Duong dung']) || rawLine),
+      route_norm: firstNonEmpty(row, ['route_norm']) || (firstNonEmpty(row, ['route_raw', 'Đường dùng', 'Duong dung']) ? normalizeRoute(firstNonEmpty(row, ['route_raw', 'Đường dùng', 'Duong dung'])) : routeFromText(rawLine)),
       dose_raw: firstNonEmpty(row, ['dose_raw', 'strength_raw', 'Liều', 'Lieu']) || '',
       times_per_day: firstNonEmpty(row, ['times_per_day', 'Số lần', 'So lan']),
       schedule: firstNonEmpty(row, ['schedule']),
