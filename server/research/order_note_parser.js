@@ -122,7 +122,8 @@ function parseSchedule(text) {
 }
 
 function stripMedicationPrefix(line, action) {
-  let text = cleanText(line).replace(/^\((?:TT|CS)\)\s*/i, '');
+  // "(TT)"/"(CS)" hoặc "TT "/"CS " đầu dòng là ký hiệu loại y lệnh, không thuộc tên thuốc.
+  let text = cleanText(line).replace(/^\((?:TT|CS)\)\s*/i, '').replace(/^(?:TT|CS)\s+(?=\S)/i, '');
   if (action === 'stop') text = text.replace(/^(?:Ngưng|Ngừng|Ngung|Dung|Dừng)\s+(?:y lệnh\s+)?(?:thuốc\s+)?/i, '');
   if (action === 'continue') text = text.replace(/^(?:Duy trì|Tiếp tục)\s+(?:y lệnh\s+)?/i, '');
   return text.trim();
@@ -168,10 +169,29 @@ function parseMedicationLine(line, sourceField = 'order') {
 function medicationRowsFromOrderRow(row) {
   const { order_blocks: blocks } = dedupeOrderFields(row);
   const rows = [];
+  // Cùng một y lệnh hay ghi thuốc hai lần (dòng y lệnh + dòng thực hiện "TT Zoruxa 5mg 100ml"):
+  // cùng thuốc, cùng hàm lượng, cùng loại thao tác là một lần dùng; giữ dòng ghi đủ hơn (có đường dùng).
+  const byKey = new Map();
   for (const item of splitOrderLines(blocks)) {
     const parsed = parseMedicationLine(item.text, item.source_field);
     // Stop event cần được giữ để timeline biết thuốc đã ngưng; các câu reference không tạo thuốc giả.
-    if (parsed) rows.push({ ...row, ...parsed });
+    if (!parsed) continue;
+    const key = parsed.drug_name_norm
+      ? [parsed.drug_name_norm, comparableText(parsed.strength_raw).replace(/\s+/g, ''), parsed.order_action].join('|')
+      : '';
+    const prev = key ? byKey.get(key) : null;
+    // Chỉ gộp khi một trong hai là bản ghi lại thiếu chi tiết (không có đường dùng) và lịch dùng không
+    // mâu thuẫn. Hai dòng cùng thuốc đều ghi đủ (vd. uống 8h và uống 20h) vẫn là hai lần dùng.
+    const sameSchedule = !prev || !prev.schedule || !parsed.schedule || prev.schedule === parsed.schedule;
+    if (prev && (!prev.route_norm || !parsed.route_norm) && sameSchedule) {
+      for (const field of ['route_raw', 'route_norm', 'times_per_day', 'schedule']) {
+        if (!String(prev[field] || '').trim() && String(parsed[field] || '').trim()) prev[field] = parsed[field];
+      }
+      continue;
+    }
+    const out = { ...row, ...parsed };
+    if (key) byKey.set(key, out);
+    rows.push(out);
   }
   return rows;
 }
