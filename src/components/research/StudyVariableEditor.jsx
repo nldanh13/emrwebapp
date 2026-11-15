@@ -83,7 +83,16 @@ export function StudyVariableEditor({ study, toast, onSaved }) {
     ? browse.filter(v => !chosen.has(v.id) && lower(`${v.display_label} ${v.clinical_group_label} ${v.raw_name}`).includes(q)).slice(0, 40)
     : [];
   const dirty = draft.map(variableKey).join('|') !== saved.map(variableKey).join('|');
-  const setAggregation = (id, aggregation) => setDraft(d => d.map(v => (v.id === id ? { ...v, aggregation } : v)));
+  const setAggregation = (index, aggregation) => setDraft(d => d.map((v, i) => (i === index ? { ...v, aggregation } : v)));
+  // Thêm một cách lấy khác cho cùng biến (vd. Creatinin lần đầu + cao nhất): mỗi cách một cột khi xuất.
+  const addAggregation = index => setDraft(d => {
+    const v = d[index];
+    const taken = new Set(d.filter(x => x.id === v.id).map(x => x.aggregation || 'list'));
+    const next = options.map(([key]) => key).find(key => key !== 'list' && !taken.has(key));
+    if (!next) return d;
+    return [...d.slice(0, index + 1), { ...v, aggregation: next }, ...d.slice(index + 1)];
+  });
+  const duplicateChoice = draft.some((v, i) => draft.findIndex(x => variableKey(x) === variableKey(v)) !== i);
   // Biến bảng dài đang "liệt kê" nhiều giá trị → không phân tích số được; nhắc chọn một giá trị.
   const listing = draft.filter(v => needsAggregationChoice(v) && String(v.aggregation || 'list') === 'list');
 
@@ -128,18 +137,23 @@ export function StudyVariableEditor({ study, toast, onSaved }) {
         </div>
       )}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {draft.map(v => (
-          <span key={v.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 4px 3px 10px', borderRadius: 999, background: C.surface3, border: `1px solid ${C.blueBorder}`, fontSize: FS.sm, color: C.text }}>
+        {draft.map((v, index) => (
+          <span key={`${v.id}_${index}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 4px 3px 10px', borderRadius: 999, background: C.surface3, border: `1px solid ${C.blueBorder}`, fontSize: FS.sm, color: C.text }}>
             {v.label || v.name}
             {needsAggregationChoice(v) && (
-              <select value={v.aggregation || 'list'} onChange={e => setAggregation(v.id, e.target.value)} aria-label={`Cách lấy giá trị: ${v.label || v.name}`}
+              <select value={v.aggregation || 'list'} onChange={e => setAggregation(index, e.target.value)} aria-label={`Cách lấy giá trị: ${v.label || v.name}`}
                 title="Cách lấy giá trị khi một lượt có nhiều kết quả"
                 style={{ height: 22, borderRadius: 4, border: `1px solid ${String(v.aggregation || 'list') === 'list' ? C.amberBorder : C.border}`, background: C.surface, color: C.text2, fontSize: FS.xs, fontFamily: 'inherit' }}>
                 {options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}
               </select>
             )}
+            {needsAggregationChoice(v) && (
+              <button type="button" onClick={() => addAggregation(index)} aria-label={`Thêm cách lấy khác cho ${v.label || v.name}`}
+                title="Lấy thêm một giá trị khác của biến này (vd. lần đầu và cao nhất), mỗi cách một cột"
+                style={{ border: `1px solid ${C.border}`, background: C.surface, color: C.text2, borderRadius: 4, height: 22, padding: '0 6px', fontSize: FS.xs, cursor: 'pointer', fontFamily: 'inherit' }}>+ cách lấy</button>
+            )}
             <button type="button" aria-label={`Bỏ biến ${v.label || v.name}`} title={draft.length <= 1 ? 'Nghiên cứu cần ít nhất 1 biến' : 'Bỏ biến'}
-              disabled={draft.length <= 1} onClick={() => setDraft(d => d.filter(x => x.id !== v.id))}
+              disabled={draft.length <= 1} onClick={() => setDraft(d => d.filter((_, i) => i !== index))}
               style={{ border: 0, background: 'transparent', color: C.text2, cursor: draft.length <= 1 ? 'default' : 'pointer', fontSize: FS.md, lineHeight: 1, padding: '0 4px' }}>×</button>
           </span>
         ))}
@@ -164,9 +178,13 @@ export function StudyVariableEditor({ study, toast, onSaved }) {
           </div>
         )}
       </div>
+      {duplicateChoice && (
+        <div role="alert" style={{ fontSize: FS.xs, color: C.red }}>Có biến được chọn hai lần với cùng một cách lấy. Đổi cách lấy của một trong hai, hoặc bỏ bớt, rồi lưu.</div>
+      )}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         <Btn onClick={() => { setDraft(saved); setQuery(''); setOpen(false); }} disabled={saving}>{dirty ? 'Hủy thay đổi' : 'Đóng'}</Btn>
-        <Btn variant="solidPrimary" onClick={save} disabled={!dirty || saving} loading={saving}>Lưu danh sách biến</Btn>
+        <Btn variant="solidPrimary" onClick={save} disabled={!dirty || saving || duplicateChoice} loading={saving}
+          title={duplicateChoice ? 'Có biến chọn trùng cách lấy, đổi một cách lấy trước khi lưu' : undefined}>Lưu danh sách biến</Btn>
       </div>
     </div>
   );

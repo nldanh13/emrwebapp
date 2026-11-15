@@ -713,6 +713,47 @@ function variableValue(variable, row) {
     || getCell(row, ['result_num', 'result_raw', 'result_text', 'conclusion_text', 'drug_name_raw', 'surgery_method', 'surgery_name', 'modality', 'diagnosis_text']);
 }
 
+// Hậu tố cột và nhãn khi cùng một biến lấy theo nhiều cách.
+const AGGREGATION_SUFFIX = {
+  list: ['ds', 'liệt kê'],
+  first: ['dau', 'lần đầu'],
+  last: ['cuoi', 'lần cuối'],
+  min: ['min', 'nhỏ nhất'],
+  max: ['max', 'lớn nhất'],
+  mean: ['tb', 'trung bình'],
+  count: ['so_lan', 'số lần'],
+  any: ['co', 'có/không'],
+  closest_before_surgery: ['truoc_mo', 'gần trước mổ'],
+  closest_after_surgery: ['sau_mo', 'gần sau mổ'],
+  closest_before_anchor: ['truoc_moc', 'gần trước mốc'],
+  closest_after_anchor: ['sau_moc', 'gần sau mốc'],
+};
+
+// Cùng một bản ghi bị lấy lặp (vd. XN của đợt lấy lại ở nhiều dòng chuyển khoa, hoặc vừa lấy từ EMR
+// vừa lấy từ kho người bệnh): nội dung giống hệt (cùng đợt, thời điểm, chỉ số, kết quả, mã phiếu) là
+// một lần xét nghiệm, chỉ tính một lần. Chỉ bỏ qua các cột nguồn/mã dòng khi so.
+// Hai lần XN khác thời điểm (dù cùng kết quả) vẫn là hai giá trị.
+const PROVENANCE_FIELDS = new Set([
+  'row_hash', 'lab_result_id', 'imaging_id', 'med_order_id', 'surgery_id', 'note_id', 'event_id',
+  'source', 'source_type', 'source_quality', 'source_file', 'source_run_id',
+]);
+function recordContentKey(row) {
+  if (!row || typeof row !== 'object') return '';
+  const keys = Object.keys(row).filter(k => !PROVENANCE_FIELDS.has(k) && !k.startsWith('_')).sort();
+  return keys.map(k => `${k}=${String(row[k] ?? '').trim()}`).join('\u0001');
+}
+function dropRepeatedRecords(rows) {
+  if (rows.length < 2) return rows;
+  const seen = new Set();
+  return rows.filter(row => {
+    const key = recordContentKey(row);
+    if (!key) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function summarizeVariableValue(variable, rows, identity = {}) {
   const candidates = Array.isArray(rows) ? rows : [];
   const aggregation = String(variable?.aggregation || 'list').trim().toLowerCase();
@@ -727,6 +768,7 @@ function summarizeVariableValue(variable, rows, identity = {}) {
   if (windowed) {
     matched = matched.filter(row => insideAnchorWindow(coerceComparable(eventTime(row)).time, identity.anchor_time, variable.window_from_days, variable.window_to_days));
   }
+  matched = dropRepeatedRecords(matched);
   if (aggregation === 'count') return String(matched.length);
   if (aggregation === 'any') return matched.length ? '1' : '0';
   if (!matched.length) return '';
@@ -799,7 +841,27 @@ function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByK
   // Có mốc thời gian thì xuất thêm cột thời điểm mốc của từng lượt (vd. giờ truyền thuốc).
   if (anchor) baseColumns.splice(baseColumns.indexOf('discharge_date') + 1, 0, 'anchor_datetime');
   const used = new Set(baseColumns);
-  const variableColumns = selected.map(variable => ({ ...variable, output_column: selectedColumnName(variable, used) }));
+  // Cùng một biến được chọn nhiều lần với cách lấy khác nhau (vd. Creatinin lần đầu + cao nhất):
+  // mỗi lần một cột, tên cột và nhãn ghi rõ cách lấy để không lẫn.
+  const idCount = new Map();
+  for (const v of selected) idCount.set(v.id, (idCount.get(v.id) || 0) + 1);
+  const variableColumns = selected.map(variable => {
+    if ((idCount.get(variable.id) || 0) < 2) return { ...variable, output_column: selectedColumnName(variable, used) };
+    const agg = String(variable.aggregation || 'list').toLowerCase();
+    const [slug, aggLabel] = AGGREGATION_SUFFIX[agg] || [variableColumnSlug(agg), agg];
+    const label = variable.label || variable.name;
+    const named = {
+      ...variable,
+      label: `${label} (${aggLabel})`,
+      survey_label: `${variable.survey_label || label} (${aggLabel})`,
+    };
+    const base = selectedColumnName(variable, new Set());
+    let col = `${base}_${slug}`.slice(0, 90);
+    let i = 2;
+    while (used.has(col)) col = `${base}_${slug}_${i++}`.slice(0, 90);
+    used.add(col);
+    return { ...named, output_column: col };
+  });
   const columns = [...baseColumns, ...variableColumns.map(v => v.output_column)];
   const relatedCache = new Map();
   const rows = (analysisRows || []).map(row => {
