@@ -722,11 +722,17 @@ function normalizeRunOutputsInner(runDir, { sourceRunId = '', force = false, pre
   // cùng thuốc + đơn vị + đối tượng ở nhiều khoa được cộng số lượng thành một dòng.
   const medicationRowsFromBilling = [];
   const billingDrugSeen = new Set();
-  for (const row of hchanhBillingTable.rows || []) {
+  const billingDrugRows = (hchanhBillingTable.rows || []).map(row => {
+    const code = patientCode(row);
+    return { row, code, encId: contextForRow(ctxMap, row, code).encounter_id || '' };
+  });
+  // Bảng kê đã gắn được vào một đợt của Mã BN: bản y hệt ở dòng không ghép được đợt (dòng chuyển khoa,
+  // dòng chưa ghép của cùng đợt) là trùng, không đưa thêm vào "chưa xác định đợt".
+  const matchedBillingDrugs = new Set(billingDrugRows.filter(x => x.encId).map(x => `${x.code}|${x.row[BILLING_DRUGS_COLUMN]}`));
+  for (const { row, code, encId } of billingDrugRows) {
     const drugs = billingDrugLinesFromRawRow(row);
     if (!drugs.length) continue;
-    const code = patientCode(row);
-    const encId = contextForRow(ctxMap, row, code).encounter_id || '';
+    if (!encId && matchedBillingDrugs.has(`${code}|${row[BILLING_DRUGS_COLUMN]}`)) continue;
     const seenKey = `${code}|${encId || firstNonEmpty(row, ['Research key'])}|${row[BILLING_DRUGS_COLUMN]}`;
     if (billingDrugSeen.has(seenKey)) continue;
     billingDrugSeen.add(seenKey);

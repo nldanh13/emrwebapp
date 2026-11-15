@@ -10,6 +10,7 @@ import { SkeletonBlock, SkeletonLines } from '../Skeleton.jsx';
 import { Spinner, Btn } from '../shared.jsx';
 import { groupLabRows, groupImagingRows } from './patientHistoryGrouping.js';
 import { buildCaseTraceView } from './caseTraceModel.js';
+import { needsPeriodColumn, pivotLabRows, shortWhen, surgeryTimeRange, surgeryIcd, matchReasonLabel } from './encounterHistoryView.js';
 
 function ModuleProgressCard({ part }) {
   const total = Number(part.total || 0);
@@ -211,48 +212,173 @@ function surgeryStartCell(row) {
   return '—';
 }
 
+function HistorySection({ title, count, children }) {
+  if (!count) {
+    return <div style={{ fontSize: FS.xs, color: C.text3, padding: '2px 0' }}><b style={{ color: C.text3 }}>{title}</b>: không có</div>;
+  }
+  return (
+    <details>
+      <summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>{title} ({count})</summary>
+      <div style={{ marginTop: 6, display: 'grid', gap: 7 }}>{children}</div>
+    </details>
+  );
+}
+
+const periodColumn = { key: 'encounter_match_method', label: 'Giai đoạn', render: periodCell };
+const withPeriod = (rows, columns) => (needsPeriodColumn(rows) ? [periodColumn, ...columns] : columns);
+
+// Xét nghiệm: mỗi nhóm một bảng chỉ số × thời điểm (không lặp thời gian ở từng dòng).
+function LabPivot({ rows = [] }) {
+  return groupLabRows(rows).map(group => {
+    const pivot = pivotLabRows(group.rows);
+    return (
+      <section key={group.label} style={{ border: `1px solid ${C.border2}`, borderRadius: 7, overflow: 'hidden', background: C.surface }}>
+        <div style={{ padding: '5px 9px', background: C.surface2, borderBottom: `1px solid ${C.border2}`, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+          <b style={{ fontSize: FS.xs, color: C.text }}>{group.label}</b>
+          <span style={{ fontSize: FS.xs, color: C.text3 }}>{pivot.rows.length} chỉ số · {pivot.columns.length} lần</span>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ borderCollapse: 'collapse', fontSize: FS.xs, width: '100%' }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', padding: '4px 8px', color: C.text3, whiteSpace: 'nowrap' }}>Chỉ số</th>
+                <th style={{ textAlign: 'left', padding: '4px 8px', color: C.text3, whiteSpace: 'nowrap' }}>Đơn vị</th>
+                {pivot.columns.map(col => (
+                  <th key={col.key} title={[col.title, col.period].filter(Boolean).join(' · ')} style={{ textAlign: 'right', padding: '4px 8px', whiteSpace: 'nowrap', color: col.outside ? C.amber : C.text3, fontVariantNumeric: 'tabular-nums' }}>
+                    {col.label}{col.period ? ' *' : ''}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {pivot.rows.map(row => (
+                <tr key={row.key} style={{ borderTop: `1px solid ${C.border2}` }}>
+                  <td style={{ padding: '3px 8px', color: C.text, whiteSpace: 'nowrap' }}>{row.name}</td>
+                  <td style={{ padding: '3px 8px', color: C.text3, whiteSpace: 'nowrap' }}>{row.unit || ''}</td>
+                  {pivot.columns.map(col => (
+                    <td key={col.key} style={{ padding: '3px 8px', textAlign: 'right', color: C.text2, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{row.values[col.key] || ''}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {pivot.columns.some(c => c.period) && (
+          <div style={{ padding: '4px 9px', fontSize: FS.xs, color: C.amber, borderTop: `1px solid ${C.border2}` }}>* Lấy mẫu ngoài khoảng nằm viện (rê chuột lên cột để xem).</div>
+        )}
+      </section>
+    );
+  });
+}
+
+// Trình tự phẫu thuật dài: hiện 2 dòng, bấm để xem đủ.
+function LongText({ value }) {
+  const [open, setOpen] = useState(false);
+  const s = text(value);
+  if (!s) return '—';
+  return (
+    <span onClick={() => setOpen(v => !v)} title={open ? 'Bấm để thu gọn' : 'Bấm để xem đủ'} style={{
+      cursor: 'pointer', whiteSpace: 'pre-wrap', display: open ? 'block' : '-webkit-box',
+      WebkitLineClamp: open ? 'unset' : 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', minWidth: 220,
+    }}>{s}</span>
+  );
+}
+
+function surgeryNameCell(row) {
+  const name = text(row.surgery_name);
+  const method = text(row.surgery_method);
+  return (
+    <div style={{ whiteSpace: 'normal', minWidth: 180 }}>
+      <div style={{ color: C.text }}>{name || method || '—'}</div>
+      {method && name && method !== name && <div style={{ color: C.text3 }}>{method}</div>}
+    </div>
+  );
+}
+
 function EncounterHistoryCard({ enc, index }) {
   const [expanded, setExpanded] = useState(false);
   const outsideStay = countOutsideStay(enc);
+  const meds = enc.medications || [];
+  const orderedMeds = meds.filter(r => !isBilledDrug(r));
+  const billedMeds = meds.filter(isBilledDrug);
+  const surgeries = enc.surgeries || [];
+  const reasons = [...new Set((enc.match_reasons || []).map(matchReasonLabel))];
+  const meta = [
+    enc.treatment_duration && `${enc.treatment_duration} ngày`,
+    [enc.department, enc.room_bed].filter(Boolean).join(' · '),
+    enc.surgery_date && `mổ ${enc.surgery_date}`,
+    !enc.unmatched && enc.research_code && `Mã NC ${enc.research_code}`,
+  ].filter(Boolean);
   return (
-    <div style={{ border: `1px solid ${C.border2}`, borderRadius: 8, background: C.bg, padding: 9 }}>
-      <button type="button" onClick={() => setExpanded(v => !v)} style={{
+    <div style={{ border: `1px solid ${enc.unmatched ? C.amberBorder : C.border2}`, borderRadius: 8, background: C.bg, padding: 9 }}>
+      <button type="button" onClick={() => setExpanded(v => !v)} aria-expanded={expanded} style={{
         width: '100%', border: 0, background: 'transparent', padding: 0, cursor: 'pointer',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, textAlign: 'left',
+        display: 'flex', alignItems: 'baseline', gap: 10, textAlign: 'left', flexWrap: 'wrap',
       }}>
-        <span style={{ fontSize: FS.xs, fontWeight: 700, color: enc.unmatched ? C.amber : C.blue }}>
+        <span style={{ fontSize: FS.sm, fontWeight: 700, color: enc.unmatched ? C.amber : C.blue }}>
           {enc.unmatched
             ? 'Chưa xác định đợt điều trị'
             : `Đợt ${index + 1}: ${enc.admission_date || '—'} → ${enc.discharge_date || '—'}`}
         </span>
-        <span style={{ fontSize: FS.xs, color: C.text3 }}>{expanded ? 'Thu gọn' : 'Xem chi tiết'}</span>
+        {!!meta.length && <span style={{ fontSize: FS.xs, color: C.text3 }}>{meta.join(' · ')}</span>}
+        <span style={{ fontSize: FS.xs, color: C.text3, marginLeft: 'auto' }}>{expanded ? 'Thu gọn' : 'Xem chi tiết'}</span>
       </button>
-      <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-        <span style={{ fontSize: FS.xs, color: C.text2, flex: '1 1 280px' }}>{enc.diagnosis_raw || 'Chưa có chẩn đoán'}</span>
+      <div style={{ marginTop: 5, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        {!enc.unmatched && <span style={{ fontSize: FS.xs, color: C.text, flex: '1 1 280px' }}>{enc.diagnosis_raw || 'Chưa có chẩn đoán'}</span>}
+        {enc.unmatched && <span style={{ fontSize: FS.xs, color: C.amber, flex: '1 1 280px' }}>
+          Có dữ liệu của Mã BN này nhưng chưa đủ bằng chứng để gắn vào một đợt{reasons.length ? `: ${reasons.join('; ')}` : ''}.
+        </span>}
+        <StatBadge label="PT/TT" value={enc.counts?.surgeries || 0} tone="neutral" />
         <StatBadge label="XN" value={enc.counts?.labs || 0} tone="neutral" />
         <StatBadge label="CĐHA" value={enc.counts?.imaging || 0} tone="neutral" />
         <StatBadge label="Thuốc" value={enc.counts?.medications || 0} tone="neutral" />
-        <StatBadge label="PT/TT" value={enc.counts?.surgeries || 0} tone="neutral" />
         {outsideStay > 0 && <StatBadge label="Trước/sau đợt" value={outsideStay} tone="warn" />}
       </div>
-      {enc.unmatched && !!enc.match_reasons?.length && (
-        <div style={{ marginTop: 6, fontSize: FS.xs, color: C.amber }}>
-          <b>Lý do chưa ghép:</b> {enc.match_reasons.join(' · ')}
-        </div>
-      )}
 
       {expanded && (
-        <div style={{ marginTop: 9, display: 'grid', gap: 8 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 6, fontSize: FS.xs, color: C.text2 }}>
-            <div><b>Khoa/phòng:</b> {[enc.department, enc.room_bed].filter(Boolean).join(' · ') || '—'}</div>
-            <div><b>Ngày mổ:</b> {enc.surgery_date || '—'}</div>
-            <div><b>Số ngày điều trị:</b> {enc.treatment_duration || '—'}</div>
-            {!enc.unmatched && <div><b>Mã NC:</b> {enc.research_code || '—'}</div>}
-          </div>
-          <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Xét nghiệm ({enc.counts?.labs || 0})</summary><GroupedHistoryRows groups={groupLabRows(enc.labs || [])} max={120} unit="chỉ số" columns={[{key:'encounter_match_method',label:'Giai đoạn',render:periodCell}, {key:'lab_datetime',label:'Thời gian'}, {key:'test_name_raw',label:'Chỉ số'}, {key:'result_raw',label:'KQ'}, {key:'unit',label:'Đơn vị'}]} /></details>
-          <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>CĐHA ({enc.counts?.imaging || 0})</summary><GroupedHistoryRows groups={groupImagingRows(enc.imaging || [])} max={80} unit="kết quả" columns={[{key:'encounter_match_method',label:'Giai đoạn',render:periodCell}, {key:'ordered_at',label:'Thời gian'}, {key:'body_region',label:'Vùng'}, {key:'service_name_raw',label:'Dịch vụ'}, {key:'conclusion_text',label:'Kết luận', long:true}]} /></details>
-          <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Thuốc / y lệnh ({enc.counts?.medications || 0})</summary><SmallRowsTable max={120} rows={enc.medications || []} columns={[{key:'encounter_match_method',label:'Giai đoạn',render:periodCell}, {key:'order_datetime',label:'Thời gian',render:medicationTimeCell}, {key:'drug_name_raw',label:'Thuốc'}, {key:'dose_raw',label:'Liều / số lượng',render:medicationDoseCell}, {key:'route_norm',label:'Đường',render:row => medicationRouteLabel(row) || '—'}]} /></details>
-          <details><summary style={{ cursor: 'pointer', fontSize: FS.xs, fontWeight: 700, color: C.text2 }}>Phẫu thuật / thủ thuật ({enc.counts?.surgeries || 0})</summary><SmallRowsTable max={60} rows={enc.surgeries || []} columns={[{key:'encounter_match_method',label:'Giai đoạn',render:periodCell}, {key:'surgery_datetime',label:'Bắt đầu',render:surgeryStartCell}, {key:'surgery_end_datetime',label:'Kết thúc'}, {key:'surgery_name',label:'Tên PT/TT'}, {key:'surgery_method',label:'Phương pháp'}, {key:'anesthesia_method',label:'Vô cảm'}, {key:'primary_surgeon',label:'PTV chính'}, {key:'preop_icd10',label:'ICD trước'}, {key:'postop_icd10',label:'ICD sau'}, {key:'surgery_sequence',label:'Trình tự',long:true}]} /></details>
+        <div style={{ marginTop: 9, display: 'grid', gap: 6 }}>
+          <HistorySection title="Phẫu thuật / thủ thuật" count={enc.counts?.surgeries || surgeries.length}>
+            <SmallRowsTable max={60} rows={surgeries} columns={withPeriod(surgeries, [
+              { key: 'surgery_datetime', label: 'Thời gian', render: surgeryTimeRange },
+              { key: 'surgery_name', label: 'PT/TT', render: surgeryNameCell },
+              { key: 'anesthesia_method', label: 'Vô cảm' },
+              { key: 'primary_surgeon', label: 'PTV chính' },
+              { key: 'preop_icd10', label: 'ICD', render: surgeryIcd },
+              { key: 'surgery_sequence', label: 'Trình tự', render: row => <LongText value={row.surgery_sequence} /> },
+            ])} />
+          </HistorySection>
+          <HistorySection title="Xét nghiệm" count={enc.counts?.labs || 0}>
+            <LabPivot rows={enc.labs || []} />
+          </HistorySection>
+          <HistorySection title="CĐHA" count={enc.counts?.imaging || 0}>
+            <GroupedHistoryRows groups={groupImagingRows(enc.imaging || [])} max={80} unit="kết quả" columns={withPeriod(enc.imaging || [], [
+              { key: 'ordered_at', label: 'Thời gian', render: row => shortWhen(row.ordered_at || row.order_date) || '—' },
+              { key: 'service_name_raw', label: 'Dịch vụ' },
+              { key: 'conclusion_text', label: 'Kết luận', long: true },
+            ])} />
+          </HistorySection>
+          <HistorySection title="Thuốc" count={enc.counts?.medications || 0}>
+            {!!billedMeds.length && (
+              <div>
+                <div style={{ fontSize: FS.xs, color: C.text3, margin: '0 0 3px' }}>Theo bảng kê chi phí (tổng cả đợt)</div>
+                <SmallRowsTable max={120} rows={billedMeds} columns={withPeriod(billedMeds, [
+                  { key: 'drug_name_raw', label: 'Thuốc' },
+                  { key: 'dose_raw', label: 'Tổng số lượng', render: medicationDoseCell },
+                ])} />
+              </div>
+            )}
+            {!!orderedMeds.length && (
+              <div>
+                <div style={{ fontSize: FS.xs, color: C.text3, margin: '0 0 3px' }}>Theo y lệnh</div>
+                <SmallRowsTable max={120} rows={orderedMeds} columns={withPeriod(orderedMeds, [
+                  { key: 'order_datetime', label: 'Thời gian', render: row => shortWhen(medicationTimeCell(row)) },
+                  { key: 'drug_name_raw', label: 'Thuốc' },
+                  { key: 'dose_raw', label: 'Liều', render: medicationDoseCell },
+                  { key: 'route_norm', label: 'Đường', render: row => medicationRouteLabel(row) || '—' },
+                ])} />
+              </div>
+            )}
+          </HistorySection>
         </div>
       )}
     </div>

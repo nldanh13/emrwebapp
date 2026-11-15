@@ -86,6 +86,28 @@ test('Chuẩn hóa: thuốc bảng kê vào đúng đợt, không nhân đôi, c
   assert.ok(!meds.some(m => /Bông giả|Xét nghiệm giả/.test(m.drug_name_raw)), 'vật tư/xét nghiệm không phải thuốc');
 });
 
+test('Cùng bảng kê ở một dòng không ghép được đợt: không nhân đôi thuốc vào "chưa xác định đợt"', () => {
+  // Ca thật: thuốc bảng kê của đợt 2 hiện lại y nguyên ở mục "Chưa xác định đợt điều trị" vì một dòng
+  // nguồn khác (chuyển khoa/chưa ghép) của cùng đợt mang cùng bảng kê mà không ghép được đợt.
+  const runDir = path.join(RUNTIME_ROOT, 'fixture', 'r2');
+  fs.mkdirSync(runDir, { recursive: true });
+  writeCsv(path.join(runDir, 'du_lieu_ban_dau.csv'), ['T/G vào', 'Mã BN', 'Họ tên', 'Ngày ra viện'], [
+    { 'T/G vào': '08:00 01/03/2026', 'Mã BN': '990002', 'Họ tên': 'BN GIA LAP G', 'Ngày ra viện': '05/03/2026' },
+    { 'T/G vào': '08:00 01/05/2026', 'Mã BN': '990002', 'Họ tên': 'BN GIA LAP G', 'Ngày ra viện': '04/05/2026' },
+  ]);
+  const raw = (from, to, key) => ({
+    ...hchanhFetchOutputToRows({ billing: BILL }, { 'Mã BN': '990002', 'Research key': key }, 'r').billingRows[0],
+    'Mã BN': '990002', 'Ngày vào viện': from, 'Ngày ra viện': to, 'Research key': key,
+  });
+  // Dòng thứ hai: mốc vào không khớp đợt nào và bảng kê không có giờ → không ghép được.
+  const rows = [raw('08:00 01/03/2026', '05/03/2026', 'kB1'), raw('', '', 'kB2')];
+  writeCsv(path.join(runDir, 'hchanh_billing.csv'), Object.keys(rows[0]), rows);
+  R.normalizeRunOutputs(runDir, { sourceRunId: 'r', force: true });
+  const meds = readCsvTable(path.join(runDir, 'medication_orders.csv'), 1000).rows.filter(r => r.order_action === 'billed');
+  assert.strictEqual(meds.length, 2, JSON.stringify(meds.map(m => [m.encounter_id, m.raw_line])));
+  assert.ok(meds.every(m => m.encounter_id), 'không còn bản thuốc nào ở "chưa xác định đợt"');
+});
+
 test('Đối chiếu lấy lại không tính thuốc bảng kê là kho thừa', () => {
   const billed = { order_action: 'billed', source: 'hchanh_billing', drug_name_raw: 'Thuốc giả X', order_datetime: '' };
   const res = compareCase({ medications: [billed] }, { medications: [] });

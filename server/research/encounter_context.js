@@ -285,6 +285,10 @@ function matchedContextForRow(ctx, row, code, method, ctxMap = null) {
     if (eventInsideContext(eventDate, ctx, { emergency: true }) && !others.some(other => eventInsideContext(eventDate, other))) {
       return matchedContext(ctx, 'emergency_before_ward');
     }
+    // Dòng mang mốc vào/ra của một đợt (vd. danh sách PT/TT lấy lúc mở đợt 2 có cả ca mổ của đợt 1)
+    // nhưng thời gian nằm trọn trong đúng MỘT đợt khác của cùng Mã BN: thuộc đợt đó.
+    const inOther = others.filter(other => eventInsideContext(eventDate, other));
+    if (inOther.length === 1) return matchedContext(inOther[0], 'event_date_range');
     const peri = nearestPeriEncounter(eventDate, ctxMap?.get(`patient:${code}`) || [ctx]);
     if (peri) return peri;
     return unresolvedContext(code, [ctx], 'encounter_match_outside_time');
