@@ -2,6 +2,7 @@
 
 const { extractTScoresBySite, classifyLabMeasurement } = require('./value_normalizers');
 const { checkSelectedValues } = require('./value_checks');
+const derivedVariables = require('./derived_variables');
 
 function stripMarks(value) {
   return String(value ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
@@ -286,6 +287,9 @@ function sanitizeVariableSelection(input) {
     ...(sanitizePeriod(src.period) ? { period: sanitizePeriod(src.period) } : {}),
     ...(src.one_per_patient === true || src.one_per_patient === 'true' ? { one_per_patient: true } : {}),
     ...(sanitizeSampleSize(src.sample_size) ? { sample_size: sanitizeSampleSize(src.sample_size) } : {}),
+    ...(Array.isArray(src.derived_variables) && src.derived_variables.length
+      ? { derived_variables: derivedVariables.sanitizeDerivedVariables(src.derived_variables) }
+      : {}),
   };
 }
 
@@ -386,7 +390,8 @@ function hasActiveSelection(selection) {
   return Boolean(selection && typeof selection === 'object' && (
     (Array.isArray(selection.selected_variables) && selection.selected_variables.length) ||
     (Array.isArray(selection.conditions) && selection.conditions.length) ||
-    selection.period || selection.one_per_patient
+    selection.period || selection.one_per_patient ||
+    (Array.isArray(selection.derived_variables) && selection.derived_variables.length)
   ));
 }
 
@@ -862,7 +867,22 @@ function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByK
     used.add(col);
     return { ...named, output_column: col };
   });
-  const columns = [...baseColumns, ...variableColumns.map(v => v.output_column)];
+  // Biến tự định nghĩa đứng sau các biến đã chọn; tên cột không trùng cột đã có.
+  const derived = (selection.derived_variables || []).map(d => {
+    let col = d.name;
+    let i = 2;
+    while (used.has(col)) col = `${d.name}_${i++}`;
+    used.add(col);
+    return { ...d, name: col };
+  });
+  // Tên bị đổi vì trùng cột đã có: các biến tự định nghĩa sau trỏ theo tên mới.
+  const renames = new Map();
+  (selection.derived_variables || []).forEach((d, i) => {
+    if (renames.size) derived[i] = derivedVariables.renameDerivedRefs(derived[i], renames);
+    if (derived[i].name !== d.name) renames.set(d.name, derived[i].name);
+  });
+  const columns = [...baseColumns, ...variableColumns.map(v => v.output_column), ...derived.map(d => d.name)];
+  const needsNotes = derived.some(d => d.kind === 'note_number');
   const relatedCache = new Map();
   const rows = (analysisRows || []).map(row => {
     const identity = {
@@ -890,6 +910,13 @@ function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByK
       }
       out[variable.output_column] = summarizeVariableValue(variable, rowsForVariable, identity);
     }
+    if (derived.length) {
+      derivedVariables.applyDerivedVariables(derived, out, {
+        notes: needsNotes ? relatedRows(tableRowsByKey?.clinical_notes || [], identity) : [],
+        admission_date: identity.admission_date,
+        surgery_date: identity.surgery_date,
+      });
+    }
     return out;
   });
   return {
@@ -914,7 +941,24 @@ function buildSelectedAnalysisDataset(analysisRows, selectionInput, tableRowsByK
         aggregation: v.aggregation || 'list',
         ...(v.window_from_days != null || v.window_to_days != null ? { window_from_days: v.window_from_days, window_to_days: v.window_to_days } : {}),
         output_column: v.output_column,
-      })),
+      })).concat(derived.map(d => ({
+        id: d.id,
+        table: 'derived',
+        name: d.name,
+        label: d.label,
+        survey_label: d.label,
+        type: derivedVariables.derivedType(d),
+        derived: true,
+        derived_kind: d.kind,
+        source_note: derivedVariables.describeDerived(d),
+        aggregation: 'derived',
+        output_column: d.name,
+      }))),
+      ...(derived.length ? {
+        derived_variables: derived.map(d => ({
+          id: d.id, name: d.name, kind: d.kind, params: d.params, label: d.label, output_column: d.name,
+        })),
+      } : {}),
       conditions: selection.conditions || [],
       ...(anchor ? { anchor } : {}),
     },
