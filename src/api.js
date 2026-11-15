@@ -1131,6 +1131,12 @@ export const emrBridgeHello       = (body) => bridgeCall('/api/emr-bridge/hello'
 export const emrBridgePoll        = (id)   => bridgeCall('/api/emr-bridge/poll', { bridge_id: id });
 export const emrBridgeResult      = (body) => bridgeCall('/api/emr-bridge/result', body);
 export const emrBridgeDisconnect  = (id)   => bridgeCall('/api/emr-bridge/disconnect', { bridge_id: id });
-export const updateResearchStudyVariables = (studyId, selectedVariables) =>
-  post(`/api/research/studies/${encodeURIComponent(studyId)}/variables`, { selected_variables: selectedVariables });
+// derivedVariables bỏ trống (undefined) thì máy chủ giữ nguyên biến tự định nghĩa đang có.
+export const updateResearchStudyVariables = (studyId, selectedVariables, derivedVariables) =>
+  post(`/api/research/studies/${encodeURIComponent(studyId)}/variables`, {
+    selected_variables: selectedVariables,
+    ...(derivedVariables !== undefined ? { derived_variables: derivedVariables } : {}),
+  });
+export const previewResearchStudyDerived = (studyId, derivedVariables) =>
+  post(`/api/research/studies/${encodeURIComponent(studyId)}/derived-preview`, { derived_variables: derivedVariables });
 export const downloadResearchStudyCodebook = (studyId) => downloadBlob(`/api/research/studies/${encodeURIComponent(studyId)}/codebook`, `${studyId}_tu_dien_bien.csv`);

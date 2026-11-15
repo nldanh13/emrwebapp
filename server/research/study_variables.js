@@ -10,7 +10,9 @@ const { readStudy, resolveRunId, updateStudy } = require('./run_registry');
 const { runsDir, TABLES } = require('./store_paths');
 const { readCsvTable } = require('./table_io');
 const { activeVariableSelectionFromStudy, sanitizeVariableSelection, loadRunTablesForSelection, buildSelectedAnalysisForRun } = require('./selection_runtime');
+const { buildSelectedAnalysisDataset, selectCohortRows, summarizeSelectedDataset } = require('./variable_selection');
 const { snapshotFinalDatasetIfUnsaved } = require('./dataset_store');
+const derivedVariables = require('./derived_variables');
 
 function fail(message, status = 400) {
   const err = new Error(message);
@@ -85,6 +87,9 @@ function buildStudyCodebook(study) {
       const [label, kind, unit] = BASE_COLUMN_TEXT[col] || [col, ''];
       return { cot: col, ma_bien_nguon: col, nhan: label, kieu: kind, don_vi: unit || '', cach_lay: 'Thông tin chung của lượt', ma_hoa: col === 'needs_manual_review' ? '1 = cần xem lại' : '', co_du_lieu: n, thieu: rows.length - n };
     }
+    if (v.derived) {
+      return { cot: col, ma_bien_nguon: v.id, nhan: v.survey_label || v.label, kieu: TYPE_TEXT[String(v.type || '')] || '', don_vi: '', cach_lay: `Biến tự định nghĩa. ${v.source_note || ''}`.trim(), ma_hoa: '', co_du_lieu: n, thieu: rows.length - n };
+    }
     const presence = String(v.aggregation || '') === 'any';
     const windowText = v.window_from_days != null || v.window_to_days != null
       ? ` (từ ngày ${v.window_from_days ?? '…'} đến ngày ${v.window_to_days ?? '…'} so với mốc)` : '';
@@ -103,14 +108,34 @@ function buildStudyCodebook(study) {
   return { rows: out, columns: ['cot', 'ma_bien_nguon', 'nhan', 'kieu', 'don_vi', 'cach_lay', 'ma_hoa', 'co_du_lieu', 'thieu'], encounters: rows.length };
 }
 
-function updateStudyVariables(studyId, selectedVariables) {
+// Cột có thể dùng làm nguồn cho biến tự định nghĩa: cột chung của lượt + cột của các biến đã chọn.
+function availableColumnsForSelection(selection) {
+  const probe = buildSelectedAnalysisDataset([], { ...selection, derived_variables: [] }, {});
+  return probe.columns;
+}
+
+/**
+ * Đổi danh sách biến và/hoặc biến tự định nghĩa của nghiên cứu.
+ * derivedVariables === undefined: giữ nguyên biến tự định nghĩa đang có.
+ */
+function updateStudyVariables(studyId, selectedVariables, derivedInput) {
   const study = readStudy(studyId);
   if (!study) fail('Không tìm thấy nghiên cứu.', 404);
   if (!Array.isArray(selectedVariables) || !selectedVariables.length) fail('Chọn ít nhất 1 biến.');
   const current = activeVariableSelectionFromStudy(study) || {};
   // Giữ nguyên tiêu chuẩn chọn mẫu, mốc, thời gian nghiên cứu — chỉ thay danh sách biến.
-  const next = sanitizeVariableSelection({ ...current, selected_variables: selectedVariables });
+  const derivedList = derivedInput === undefined ? (current.derived_variables || []) : derivedInput;
+  if (derivedList != null && !Array.isArray(derivedList)) fail('Biến tự định nghĩa không hợp lệ. Tải lại trang rồi thử lại.');
+  const next = sanitizeVariableSelection({ ...current, selected_variables: selectedVariables, derived_variables: derivedList || [] });
   if (!next.selected_variables.length) fail('Biến không hợp lệ. Tải lại trang rồi chọn lại.');
+  if (next.derived_variables?.length) {
+    const errors = derivedVariables.validateDerivedVariables(next.derived_variables, availableColumnsForSelection(next));
+    if (errors.length) {
+      fail(derivedInput === undefined
+        ? `Chưa lưu: biến tự định nghĩa đang dùng cột của biến bị bỏ. Sửa hoặc xóa biến tự định nghĩa trước. ${errors.slice(0, 5).join(' ')}`
+        : `Chưa lưu biến tự định nghĩa: ${errors.slice(0, 5).join(' ')}`);
+    }
+  }
 
   const updated = updateStudy(study.id, {
     variable_selection: next,
@@ -123,7 +148,31 @@ function updateStudyVariables(studyId, selectedVariables) {
     run_id: rebuilt?.run_id || '',
     rows: rebuilt?.rows || 0,
     variables: next.selected_variables.length,
+    derived_variables: next.derived_variables?.length || 0,
   };
 }
 
-module.exports = { updateStudyVariables, rebuildStudySelected, buildStudyCodebook };
+// Xem trước biến tự định nghĩa trên dữ liệu run mới nhất, không lưu gì. Dùng đúng hàm dựng file
+// "Biến đã chọn" như khi lưu/xuất, nên số liệu xem trước khớp file xuất.
+function previewStudyDerived(studyId, derivedInput) {
+  const study = readStudy(studyId);
+  if (!study) fail('Không tìm thấy nghiên cứu.', 404);
+  if (!Array.isArray(derivedInput) || !derivedInput.length) fail('Chưa có biến tự định nghĩa nào để xem trước.');
+  const current = activeVariableSelectionFromStudy(study);
+  if (!current?.selected_variables?.length) fail('Nghiên cứu chưa có biến nào. Chọn biến trước rồi mới tạo biến tự định nghĩa.');
+  const selection = sanitizeVariableSelection({ ...current, derived_variables: derivedInput });
+  const errors = derivedVariables.validateDerivedVariables(selection.derived_variables || [], availableColumnsForSelection(selection));
+  if (errors.length) return { ok: false, errors, variables: [] };
+  const runId = resolveRunId(study.id, 'latest');
+  const runDir = runId ? path.join(runsDir(study.id), runId) : '';
+  const readyFile = runDir ? path.join(runDir, TABLES.analysis_ready.file) : '';
+  if (!readyFile || !fs.existsSync(readyFile)) fail('Nghiên cứu chưa có dữ liệu. Lấy dữ liệu từ kho trước.');
+  const ready = readCsvTable(readyFile, Number.MAX_SAFE_INTEGER).rows || [];
+  const tables = { ...loadRunTablesForSelection(runDir, selection), analysis_ready: ready };
+  const dataset = buildSelectedAnalysisDataset(selectCohortRows(ready, selection, tables), selection, tables);
+  const summary = summarizeSelectedDataset(dataset);
+  const derivedCols = new Set((dataset.manifest.derived_variables || []).map(d => d.output_column));
+  return { ok: true, errors: [], total: summary.total, variables: summary.variables.filter(v => derivedCols.has(v.output_column)) };
+}
+
+module.exports = { previewStudyDerived, updateStudyVariables, rebuildStudySelected, buildStudyCodebook, availableColumnsForSelection };

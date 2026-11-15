@@ -46,6 +46,9 @@ function loadRunTablesForSelection(runDir, selection, fallbackRows = [], maxRows
     keys.add('clinical_notes');
   }
 
+  // Biến tự định nghĩa "số trong tờ điều trị" đọc Diễn biến/Y lệnh.
+  if ((selection?.derived_variables || []).some(d => d?.kind === 'note_number')) keys.add('clinical_notes');
+
   for (const key of keys) out[key] = readRunRowsForSelection(runDir, key, fallbackRows, maxRows);
 
   if (needsMedication) {

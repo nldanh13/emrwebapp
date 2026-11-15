@@ -10,6 +10,7 @@ import { compactNumber, saveBlob } from './researchFormat.js';
 import { STUDY_TABLES, datasetCount, tableLabel } from './researchScope.js';
 import { CohortSummary, VariableStatsTable } from './researchStats.jsx';
 import { StudyVariableEditor } from './StudyVariableEditor.jsx';
+import { DerivedVariablesEditor } from './DerivedVariablesEditor.jsx';
 import { MissingByCaseList } from './MissingByCaseList.jsx';
 import { ValueIssuesList } from './ValueIssuesList.jsx';
 
@@ -139,6 +140,7 @@ export function StudyStatsView({ study, toast, onStudyChanged }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ fontSize: FS.md, fontWeight: 700, color: C.text }}>Đo lường từng biến</span>
           <StudyVariableEditor study={study} toast={toast} onSaved={afterVariablesSaved} />
+          <DerivedVariablesEditor study={study} statsVariables={summary?.variables || []} toast={toast} onSaved={afterVariablesSaved} />
         </div>
         {!!summary?.variables?.length && <VariableStatsTable variables={summary.variables} />}
       </section>

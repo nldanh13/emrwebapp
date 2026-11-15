@@ -11,7 +11,7 @@ process.env.EMR_RUNTIME_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'study_vars
 const { writeCsv, readCsvTable } = require('../server/research/table_io');
 const { archiveRunsDir, ensureArchiveStore, studyMetaPath, runsDir, studyDir } = require('../server/research/store_paths');
 const { readStudy } = require('../server/research/run_registry');
-const { updateStudyVariables, buildStudyCodebook } = require('../server/research/study_variables');
+const { updateStudyVariables, buildStudyCodebook, previewStudyDerived } = require('../server/research/study_variables');
 const { summarizeSelectionForRun } = require('../server/research/selection_runtime');
 
 let failed = 0;
@@ -104,6 +104,35 @@ test('từ điển biến: mỗi cột của file xuất một dòng, nhãn/ki�
   assert.ok(!book.rows.some(r => /ho_ten|patient_name/i.test(r.cot)), 'không có họ tên');
 });
 
+// Biến tự định nghĩa: xem trước (không lưu) và lưu dùng chung hàm dựng file, số liệu phải khớp.
+const nhomTuoi = { name: 'nhom_tuoi', label: 'Nhóm tuổi', kind: 'cut', params: { source: 'tuoi', breaks: '68', labels: '<68; ≥68' } };
+test('xem trước biến tự định nghĩa không lưu gì, khớp kết quả sau khi lưu', () => {
+  const before = fs.readFileSync(studyMetaPath(STUDY), 'utf8');
+  const p = previewStudyDerived(STUDY, [nhomTuoi]);
+  assert.strictEqual(p.ok, true, JSON.stringify(p.errors));
+  assert.strictEqual(fs.readFileSync(studyMetaPath(STUDY), 'utf8'), before, 'xem trước không ghi nghiên cứu');
+  const pv = p.variables.find(v => v.output_column === 'nhom_tuoi');
+  assert.strictEqual(pv.filled, 2);
+  const r = updateStudyVariables(STUDY, [ageVar], [nhomTuoi]);
+  assert.strictEqual(r.derived_variables, 1);
+  const selected = readCsvTable(path.join(runDir, 'analysis_selected.csv'), 100);
+  const counts = {};
+  for (const row of selected.rows) counts[row.nhom_tuoi] = (counts[row.nhom_tuoi] || 0) + 1;
+  assert.deepStrictEqual(counts, Object.fromEntries(pv.stats.top.map(t => [t.value, t.count])));
+  const book = buildStudyCodebook(readStudy(STUDY));
+  assert.match(book.rows.find(row => row.cot === 'nhom_tuoi').cach_lay, /Biến tự định nghĩa\. Chia nhóm theo ngưỡng/);
+});
+
+test('đổi danh sách biến không gửi biến tự định nghĩa → giữ nguyên; bỏ cột nguồn → báo lỗi, không ghi', () => {
+  updateStudyVariables(STUDY, [ageVar]);
+  assert.strictEqual(readStudy(STUDY).variable_selection.derived_variables.length, 1);
+  assert.throws(() => updateStudyVariables(STUDY, [sexVar]), /không có cột "tuoi"/);
+  assert.deepStrictEqual(readStudy(STUDY).variable_selection.selected_variables.map(v => v.id), ['analysis_ready.age']);
+  assert.throws(() => updateStudyVariables(STUDY, [ageVar], [{ name: 'x', kind: 'formula', params: { expression: 'tuoi *' } }]), /Chưa lưu biến tự định nghĩa/);
+  updateStudyVariables(STUDY, [ageVar], []);
+  assert.ok(!readStudy(STUDY).variable_selection.derived_variables, 'xóa hết biến tự định nghĩa');
+});
+
 test('không còn biến nào → báo lỗi tiếng Việt, không ghi', () => {
   assert.throws(() => updateStudyVariables(STUDY, []), /Chọn ít nhất 1 biến/);
   assert.strictEqual(readStudy(STUDY).variable_selection.selected_variables.length, 1);
@@ -114,4 +143,4 @@ test('kho dữ liệu gốc không bị đụng tới', () => {
 });
 
 if (failed) process.exit(1);
-console.log('8 test(s) passed.');
+console.log('10 test(s) passed.');

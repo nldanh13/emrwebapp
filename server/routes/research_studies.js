@@ -248,8 +248,20 @@ router.post('/research/studies/:studyId/variables', (req, res) => {
   try {
     if (String(req.params.studyId) === ARCHIVE_ID) return res.status(400).json({ status: 'error', message: 'Kho dữ liệu gốc không có danh sách biến riêng.' });
     const { updateStudyVariables } = require('../research/study_variables');
-    const r = updateStudyVariables(req.params.studyId, req.body?.selected_variables);
-    return res.json({ status: 'ok', message: `Đã lưu ${r.variables} biến${r.run_id ? ` và cập nhật ${r.rows} lượt` : ''}.`, ...r });
+    const r = updateStudyVariables(req.params.studyId, req.body?.selected_variables, req.body?.derived_variables);
+    const derivedText = r.derived_variables ? `, ${r.derived_variables} biến tự định nghĩa` : '';
+    return res.json({ status: 'ok', message: `Đã lưu ${r.variables} biến${derivedText}${r.run_id ? ` và cập nhật ${r.rows} lượt` : ''}.`, ...r });
+  } catch (err) {
+    return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
+  }
+});
+
+// Xem trước biến tự định nghĩa (không lưu): số lượt có giá trị và phân bố, cùng hàm với file xuất.
+router.post('/research/studies/:studyId/derived-preview', (req, res) => {
+  try {
+    if (String(req.params.studyId) === ARCHIVE_ID) return res.status(400).json({ status: 'error', message: 'Kho dữ liệu gốc không có biến tự định nghĩa.' });
+    const { previewStudyDerived } = require('../research/study_variables');
+    return res.json({ status: 'ok', ...previewStudyDerived(req.params.studyId, req.body?.derived_variables) });
   } catch (err) {
     return res.status(err.status || 400).json({ status: 'error', message: String(err.message || err) });
   }
