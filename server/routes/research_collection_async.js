@@ -107,7 +107,7 @@ function directPatientCodeFrom(req) {
 
 async function runDirectPatient(ctx, sc, rows, requestedParts, headless) {
   const wanted = requestedParts.length ? requestedParts : collection.PART_KEYS;
-  const hchanhFiles = wanted.filter(p => ['profile', 'discharge', 'surgery', 'order_history', 'billing'].includes(p));
+  const hchanhFiles = wanted.filter(p => ['profile', 'discharge', 'surgery', 'order_history', 'billing', 'consult'].includes(p));
   const xnCdhaParts = wanted.filter(p => ['xn', 'cdha'].includes(p));
   const results = {};
 

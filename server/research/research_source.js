@@ -13,6 +13,7 @@ const fs = require('fs');
 const { rowResearchCode } = require('./progress_snapshot');
 const { nowIso } = require('./store_paths');
 const { billingTotalsFromPayload, billingRawFields, BILLING_DRUGS_COLUMN, billingDrugLines } = require('./billing_summary');
+const { consultRawRows } = require('./consult_summary');
 
 function hchanhProfileRow(payload, meta = {}) {
   const p = payload || {};
@@ -257,6 +258,7 @@ function hchanhFetchOutputToRows(output, sourceRow, sourceRunId = '') {
   const surgeryRows = [];
   const orderRows = [];
   const billingRows = [];
+  const consultRows = [];
   const payload = output && typeof output === 'object' ? output : {};
 
   // Một BN có thể xuất hiện nhiều dòng nguồn (ví dụ chuyển khoa). Khi worker đã mở
@@ -355,7 +357,17 @@ function hchanhFetchOutputToRows(output, sourceRow, sourceRunId = '') {
     }, meta, sourceRunId));
   }
 
-  return { profileRows, dischargeRows, surgeryRows, orderRows, billingRows, meta };
+  // Sổ biên bản hội chẩn: một dòng mỗi SBBHC đã hoàn tất (phần Hội chẩn, chỉ khi người dùng bật).
+  for (const raw of consultRawRows(payload.consult)) {
+    consultRows.push(withResearchHchanhMeta({
+      'Mã BN': meta.ma_bn,
+      'Họ tên': meta.ho_ten || '',
+      ...raw,
+      'Nguồn': 'hchanh_auto_consult',
+    }, meta, sourceRunId));
+  }
+
+  return { profileRows, dischargeRows, surgeryRows, orderRows, billingRows, consultRows, meta };
 }
 
 function runDateContext(runDir, defaults = {}) {

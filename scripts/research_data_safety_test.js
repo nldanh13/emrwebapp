@@ -210,6 +210,26 @@ test('Kết quả chỉ thuộc đợt khi thời gian nằm trong khoảng vào
   assert.strictEqual(dateOnlySameDay.encounter_id, buildEncounterId(rows[0]), 'khi nguồn chỉ có ngày thì chỉ có thể xác nhận theo ngày lịch');
 });
 
+test('Dòng mang mốc vào/ra của đợt sau nhưng thời gian nằm trong đợt trước: gắn đợt trước, không bỏ vào "chưa xác định đợt"', () => {
+  // Ca thật: danh sách PT/TT của BN lấy lúc mở đợt 2 có cả các ca mổ tháng 1 (thuộc đợt 1). Dòng mang
+  // Ngày vào/ra của đợt 2 nên trước đây ghép thẳng vào đợt 2, thấy giờ mổ nằm ngoài rồi bỏ lơ lửng.
+  const rows = [
+    { 'Mã BN': '558', 'T/G vào': '09:00 14/01/2026', 'Ngày ra viện': '28/01/2026' },
+    { 'Mã BN': '558', 'T/G vào': '08:38 06/07/2026', 'Ngày ra viện': '08/07/2026' },
+  ];
+  const map = R.buildContextMap(rows, 'r');
+  const meta = { 'Mã BN': '558', 'Ngày vào viện': '08:38 06/07/2026', 'Ngày ra viện': '08/07/2026' };
+  const jan = R.contextForRow(map, { ...meta, 'Ngày phẫu thuật': '13:30 15/01/2026' }, '558');
+  assert.strictEqual(jan.encounter_id, buildEncounterId(rows[0]), 'ca mổ 15/01 thuộc đợt 1');
+  assert.strictEqual(R.encounterMatchMethod(jan), 'event_date_range');
+  const jul = R.contextForRow(map, { ...meta, 'Ngày phẫu thuật': '10:00 07/07/2026' }, '558');
+  assert.strictEqual(jul.encounter_id, buildEncounterId(rows[1]), 'ca trong đợt 2 vẫn thuộc đợt 2');
+  // Ngoài mọi đợt thì vẫn để "chưa xác định", không đoán.
+  const oct = R.contextForRow(map, { ...meta, 'Ngày phẫu thuật': '19:41 05/10/2026' }, '558');
+  assert.strictEqual(oct.encounter_id, '');
+  assert.strictEqual(oct.needs_manual_review, 'encounter_match_outside_time');
+});
+
 test('Một đợt tính từ lúc nhận Cấp cứu đến hết ngày ra viện, không chỉ từ lúc vào khoa', () => {
   // Chỉ có giờ vào khoa (danh sách nội trú), chưa có giờ nhận vào viện: kết quả làm ở Cấp cứu
   // trong 24 giờ trước khi vào khoa vẫn thuộc đợt, ghi cách ghép riêng để lọc được.

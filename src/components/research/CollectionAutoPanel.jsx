@@ -11,8 +11,18 @@ import { Btn, Spinner } from '../shared.jsx';
 const COLLECTION_PARTS = [
   ['xn', 'Xét nghiệm'], ['cdha', 'CĐHA'], ['profile', 'Hồ sơ nền'],
   ['discharge', 'Ra viện'], ['surgery', 'Phẫu thuật'], ['order_history', 'Y lệnh'],
-  ['billing', 'Chi phí'],
+  ['billing', 'Chi phí'], ['consult', 'Hội chẩn (SBBHC)'],
 ];
+
+// Hội chẩn (SBBHC) là phần tùy chọn: mở thêm từng phiếu trong Giấy tờ kèm theo nên mặc định tắt.
+// Nhớ lựa chọn theo từng đề cương trên máy này (chỉ là tiện ích, không lưu được cũng không sao).
+function consultPrefKey(studyId) { return `research.collect.consult.${studyId || 'none'}`; }
+function readConsultPref(studyId) {
+  try { return window.localStorage.getItem(consultPrefKey(studyId)) === '1'; } catch { return false; }
+}
+function writeConsultPref(studyId, on) {
+  try { window.localStorage.setItem(consultPrefKey(studyId), on ? '1' : '0'); } catch { /* bỏ qua */ }
+}
 
 const COLLECTION_CATEGORY_LABEL = {
   unmatched: 'Không ghép chắc lượt',
@@ -57,6 +67,8 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
   const [policy, setPolicy] = useState({});
   const [refreshParts, setRefreshParts] = useState([]);
   const [changes, setChanges] = useState(null);
+  const [withConsult, setWithConsult] = useState(() => readConsultPref(studyId));
+  useEffect(() => { setWithConsult(readConsultPref(studyId)); }, [studyId]);
   const t = (msg, type) => { if (toast) toast(msg, type); };
 
   const load = useCallback(async () => {
@@ -96,6 +108,7 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
         fromDate: options.fromDate || '',
         toDate: options.toDate || todayInputDate(),
         refreshParts: manualParts,
+        optionalParts: withConsult ? ['consult'] : [],
       });
       t(r.message || 'Đã thu thập tự động.', r.cancelled ? 'info' : 'ok');
       await load();
@@ -214,6 +227,12 @@ function CollectionAutoPanel({ studyId = '', options = {}, disabled = false, onD
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
           <Btn onClick={() => setShowRefresh(v => !v)} style={{ height: 26, padding: '0 9px', fontSize: FS.xs }}>{showRefresh ? 'Đóng làm mới' : 'Làm mới…'}</Btn>
+          <label title="Mở thêm Sổ biên bản hội chẩn đã hoàn tất trong Giấy tờ kèm theo (chỉ đọc, tối đa 10 phiếu mỗi lượt). Lượt đã lấy rồi thì không mở lại."
+            style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: FS.xs, color: C.text2, cursor: 'pointer' }}>
+            <input type="checkbox" checked={withConsult} disabled={busy}
+              onChange={e => { setWithConsult(e.target.checked); writeConsultPref(studyId, e.target.checked); }} />
+            Lấy thêm Hội chẩn (SBBHC)
+          </label>
           <Btn variant="solidPrimary" onClick={() => run([])} disabled={busy} style={{ height: 30, padding: '0 14px', fontSize: FS.sm }}>
             {runningLabel ? <><Spinner size={9} /> {runningLabel}</> : 'Thu thập tự động'}
           </Btn>

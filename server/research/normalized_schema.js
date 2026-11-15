@@ -1,6 +1,7 @@
 'use strict';
 
 const { TREATMENT_COST_COLUMNS } = require('./billing_summary');
+const { CONSULT_COLUMNS } = require('./consult_summary');
 
 // Phiên bản schema và danh sách cột của các bảng chuẩn hóa (khớp server/research/data_dictionary.js).
 
@@ -58,7 +59,9 @@ const { TREATMENT_COST_COLUMNS } = require('./billing_summary');
 //      tên + tổng số lượng cả đợt, không có ngày giờ): Lịch sử y lệnh thường chỉ ghi "Dự trù thuốc".
 // v43: giờ ra một khoa (ra trước vào, hoặc còn y lệnh của chính lần nằm viện sau mốc đó) không còn được
 // lấy làm giờ ra viện; dòng "Ngưng y lệnh thuốc tiêm truyền" không còn thành thuốc tên "tiêm".
-const NORMALIZED_SCHEMA_VERSION = 43;
+// v44: analysis_ready thêm Sổ biên bản hội chẩn của đợt (cột consult_*): số lần, thời gian đầu/cuối và
+//      các ô của SBBHC đã hoàn tất, nhiều phiếu nối " | "; nguồn hchanh_consult.csv (phần tùy chọn Hội chẩn).
+const NORMALIZED_SCHEMA_VERSION = 44;
 
 const NORMALIZED_COLUMNS = {
   patients: [
@@ -147,6 +150,7 @@ const NORMALIZED_COLUMNS = {
     'hb', 'hct', 'neutrophil', 'lymphocyte', 'monocyte', 'rdw', 'plt',
     'lab_result_count', 'imaging_result_count',
     ...TREATMENT_COST_COLUMNS,
+    ...CONSULT_COLUMNS,
     'needs_manual_review', 'source_run_id', 'row_hash',
   ],
   extract_status: [
