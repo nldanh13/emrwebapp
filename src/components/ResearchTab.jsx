@@ -16,7 +16,7 @@ import { Btn, Spinner } from './shared.jsx';
 import * as api from '../api.js';
 import { compactNumber, lower, saveBlob, text } from './research/researchFormat.js';
 import { ARCHIVE_API_SCOPE, ARCHIVE_SCOPE, datasetCount, todayInputDate } from './research/researchScope.js';
-import { ANCHOR_AGGREGATIONS, defaultAggregationFor, VARIABLE_CLINICAL_GROUPS, dedupeWideTableVariables, enhanceCatalogVariable, groupVariablesBySection, matchesCatalogQuery } from './research/variableCatalogModel.js';
+import { ANCHOR_AGGREGATIONS, defaultAggregationFor, VARIABLE_CLINICAL_GROUPS, browsableCatalogVariables, enhanceCatalogVariable, groupVariablesBySection, isSearchOnlyVariable, matchesCatalogQuery } from './research/variableCatalogModel.js';
 import { buildGeneralOverviewModel, summarizeStatusRows } from './research/researchStatusModel.js';
 import { ModeButton, SectionHead, SideItem, StatBadge, actionBtn, inp } from './research/researchUi.jsx';
 import { CollectionWorkspace } from './research/CollectionWorkspace.jsx';
@@ -622,12 +622,13 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
   // Danh sách để duyệt/chọn: không lặp biến chung giữa các bảng rộng, không có biến định danh/kỹ
   // thuật. allCatalogVariables vẫn giữ đủ để nhận ra biến đã chọn từ trước (vd. patients.sex).
   const browseCatalogVariables = useMemo(
-    () => dedupeWideTableVariables(allCatalogVariables).filter(v => !v.technical_or_identity),
+    () => browsableCatalogVariables(allCatalogVariables),
     [allCatalogVariables]
   );
   const catalogGroupOptions = useMemo(() => {
     const counts = new Map();
     for (const v of browseCatalogVariables) {
+      if (isSearchOnlyVariable(v)) continue;
       const key = v.clinical_group_key || v.group_key || 'other';
       counts.set(key, (counts.get(key) || 0) + 1);
     }
@@ -635,9 +636,14 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
       .map(g => ({ ...g, count: counts.get(g.key) || 0 }))
       .filter(g => g.count > 0 && g.key !== 'technical');
   }, [browseCatalogVariables]);
+  // Biến "Phẫu thuật/TT: <tên>" chỉ hiện khi gõ tìm, để danh sách không dài hàng trăm dòng.
+  const hiddenSearchOnlyCount = useMemo(() => (text(variableQuery) ? 0 : browseCatalogVariables.filter(v => (
+    isSearchOnlyVariable(v) && (variableGroupFilter === 'all' || v.clinical_group_key === variableGroupFilter)
+  )).length), [browseCatalogVariables, variableQuery, variableGroupFilter]);
   const filteredCatalogVariables = useMemo(() => {
     const q = text(variableQuery);
     const filtered = browseCatalogVariables.filter(v => {
+      if (!q && isSearchOnlyVariable(v)) return false;
       if (variableGroupFilter !== 'all' && v.clinical_group_key !== variableGroupFilter) return false;
       const rate = Number(v.fill_rate || 0);
       if (variableFillFilter === 'high' && rate < 80) return false;
@@ -939,7 +945,7 @@ export default function ResearchTab({ toast, active: tabActive = true, onRunning
     }} />;
     if (archiveMode === 'create') return <CreateStudyView {...{
       variableCatalog, variableCatalogLoading, variableCatalogError,
-      catalogGroupOptions, filteredCatalogVariables, allCatalogVariables, browseCatalogVariables,
+      catalogGroupOptions, filteredCatalogVariables, hiddenSearchOnlyCount, allCatalogVariables, browseCatalogVariables,
       variableQuery, setVariableQuery, variableGroupFilter, setVariableGroupFilter, variableFillFilter, setVariableFillFilter,
       questionnaireVariables, setQuestionnaireVariables,
       selectedVariableIds, setSelectedVariableIds, selectedVariables, toggleVariable, addVariables, addCoreVariables,

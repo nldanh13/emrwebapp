@@ -102,6 +102,125 @@ const VARIABLE_FRIENDLY_LABELS = {
   source_table: 'Bảng nguồn',
   source_row_id: 'ID dòng nguồn',
   row_hash: 'Mã kiểm tra dòng',
+  // Cột còn tên tiếng Anh trên danh mục (ảnh 15/11/2026).
+  birth_date: 'Ngày sinh',
+  treatment_duration: 'Thời gian điều trị',
+  room_bed: 'Phòng/giường',
+  discharge_status: 'Tình trạng ra viện',
+  diagnosis_date: 'Ngày chẩn đoán',
+  icd_code: 'Mã ICD',
+  lab_date: 'Ngày xét nghiệm',
+  lab_group: 'Nhóm xét nghiệm',
+  result_operator: 'Dấu so sánh của kết quả (<, >)',
+  result_num_norm: 'Kết quả số đã quy đổi đơn vị',
+  unit_norm: 'Đơn vị đã quy đổi',
+  unit_conversion_status: 'Trạng thái quy đổi đơn vị',
+  ref_range_raw: 'Khoảng tham chiếu gốc',
+  order_date: 'Ngày y lệnh',
+  body_region: 'Vùng cơ thể',
+  status: 'Trạng thái',
+  surgery_end_datetime: 'Thời gian kết thúc phẫu thuật',
+  service_object: 'Đối tượng dịch vụ',
+  surgery_class: 'Phân loại phẫu thuật',
+  icd9_code: 'Mã ICD-9 (thủ thuật)',
+  preop_diagnosis: 'Chẩn đoán trước mổ',
+  preop_icd10: 'Mã ICD-10 trước mổ',
+  postop_diagnosis: 'Chẩn đoán sau mổ',
+  postop_icd10: 'Mã ICD-10 sau mổ',
+  procedure_description: 'Mô tả phương pháp phẫu thuật',
+  surgery_sequence: 'Trình tự phẫu thuật',
+  primary_surgeon: 'Phẫu thuật viên chính',
+  primary_anesthesiologist: 'Bác sĩ gây mê chính',
+  assistant_surgeon_1: 'Phụ mổ 1',
+  assistant_surgeon_2: 'Phụ mổ 2',
+  scrub_nurse: 'Điều dưỡng dụng cụ',
+  anesthesia_technician: 'Kỹ thuật viên phụ mê',
+  completed_by: 'Người hoàn tất phiếu mổ',
+  doctor_name: 'Tên bác sĩ',
+  disease_course: 'Diễn biến bệnh (phiếu mổ)',
+  postop_instructions: 'Dặn dò sau phẫu thuật',
+  postop_comorbidities: 'Bệnh kèm sau phẫu thuật',
+  operating_room: 'Phòng mổ',
+  surgery_time_source: 'Nguồn thời gian phẫu thuật',
+  times_per_day: 'Số lần dùng mỗi ngày',
+  schedule: 'Lịch dùng thuốc',
+  order_action: 'Hành động y lệnh (kê/ngưng/duy trì)',
+  parser_confidence: 'Độ tin cậy khi tách y lệnh',
+  raw_line: 'Dòng y lệnh gốc',
+  surgery_datetime_ref: 'Thời gian phẫu thuật dùng để tính ngày hậu phẫu',
+  surgery_date_ref: 'Ngày phẫu thuật dùng để tính ngày hậu phẫu',
+  drug_count: 'Số thuốc trong ngày',
+  route_set: 'Các đường dùng trong ngày',
+  drugs_display: 'Danh sách thuốc trong ngày',
+  drugs_json: 'Danh sách thuốc (dạng máy đọc)',
+  note_datetime: 'Thời gian tờ điều trị',
+  note_date: 'Ngày tờ điều trị',
+  note_type: 'Loại tờ điều trị',
+  clinical_text: 'Diễn biến',
+  order_text: 'Y lệnh',
+  event_datetime: 'Thời gian sự kiện',
+  event_date: 'Ngày sự kiện',
+  event_type: 'Loại sự kiện lâm sàng',
+  event_subtype: 'Chi tiết sự kiện',
+  value_raw: 'Giá trị gốc',
+  value_norm: 'Giá trị chuẩn hóa',
+  negated: 'Phủ định (ghi "không …")',
+  certainty: 'Mức chắc chắn',
+  parser_rule: 'Quy tắc tách',
+  confidence: 'Độ tin cậy',
+  date: 'Ngày',
+  hospital_day: 'Ngày nằm viện thứ',
+  has_lab: 'Có xét nghiệm trong ngày',
+  has_imaging: 'Có CĐHA trong ngày',
+  has_surgery: 'Có phẫu thuật trong ngày',
+  has_medication: 'Có thuốc trong ngày',
+  lab_count: 'Số xét nghiệm',
+  imaging_count: 'Số CĐHA',
+  surgery_count: 'Số lần phẫu thuật',
+  medication_count: 'Số dòng thuốc',
+  lab_result_count: 'Số kết quả xét nghiệm',
+  imaging_result_count: 'Số kết quả CĐHA',
+  cost_total: 'Tổng chi phí',
+  cost_copay: 'BHYT chi trả',
+  cost_self_pay: 'Người bệnh tự trả',
+  cost_other_source: 'Nguồn khác chi trả',
+  cost_price_difference: 'Chênh lệch giá',
+  cost_actual_collected: 'Thực thu',
+  cost_advance: 'Tạm ứng',
+  cost_discount: 'Miễn giảm',
+  cost_fund_paid: 'Quỹ hỗ trợ chi trả',
+  cost_uncollected: 'Chưa thu',
+  cost_refunded: 'Đã hoàn trả',
+  cost_receipts: 'Số tiền theo biên lai',
+  cost_debt: 'Công nợ',
+  cost_patient_refund_due: 'Còn phải trả lại người bệnh',
+  cost_itemized_total: 'Tổng chi phí theo bảng kê',
+  cost_itemized_self_pay: 'Tự trả theo bảng kê',
+  cost_itemized_exempt: 'Miễn phí theo bảng kê',
+  cost_itemized_other: 'Nguồn khác theo bảng kê',
+  cost_item_lines: 'Số dòng trong bảng kê',
+  consult_count: 'Số lần hội chẩn',
+  consult_first_time: 'Thời gian hội chẩn đầu tiên',
+  consult_last_time: 'Thời gian hội chẩn cuối cùng',
+  consult_times: 'Các thời điểm hội chẩn',
+  consult_places: 'Nơi hội chẩn',
+  consult_requests: 'Lý do/yêu cầu hội chẩn',
+  consult_summaries: 'Tóm tắt hội chẩn',
+  consult_status_text: 'Tình trạng lúc hội chẩn',
+  consult_diagnoses: 'Chẩn đoán khi hội chẩn',
+  consult_case_summaries: 'Tóm tắt bệnh án khi hội chẩn',
+  consult_causes: 'Nguyên nhân (hội chẩn)',
+  consult_treatments: 'Hướng điều trị (hội chẩn)',
+  consult_care: 'Chăm sóc (hội chẩn)',
+  consult_conclusions: 'Kết luận hội chẩn',
+  popup_status: 'Trạng thái lấy thông tin nền',
+  xn_status: 'Trạng thái lấy XN/CĐHA',
+  profile_status: 'Trạng thái lấy hồ sơ hành chánh',
+  surgery_status: 'Trạng thái lấy phiếu mổ',
+  order_history_status: 'Trạng thái lấy y lệnh',
+  completion_level: 'Mức đầy đủ dữ liệu',
+  missing_required: 'Phần bắt buộc còn thiếu',
+  last_error: 'Lỗi gần nhất khi lấy dữ liệu',
 };
 
 const LAB_FRIENDLY_LABELS = {
@@ -142,9 +261,11 @@ const LAB_FRIENDLY_LABELS = {
   aptt: 'Thời gian thromboplastin từng phần hoạt hóa (APTT)', inr: 'INR', fibrinogen: 'Fibrinogen',
 };
 
-const VARIABLE_TECHNICAL_RE = /(^row_|_hash$|hash|source_|raw_row|debug|internal|session|cookie|token|password|secret|(^|_)id$|patient_key|encounter_id|lab_result_id|imaging_id|med_order_id|diagnosis_id|surgery_id)/i;
+// Cột kỹ thuật (đối chiếu/ghép đợt, nguồn, tách y lệnh): không dùng làm biến nghiên cứu, ẩn khỏi danh mục.
+const VARIABLE_TECHNICAL_RE = /(^row_|_hash$|hash|source_|raw_row|debug|internal|session|cookie|token|password|secret|(^|_)id$|patient_key|encounter_id|lab_result_id|imaging_id|med_order_id|diagnosis_id|surgery_id|^encounter_match_(method|status|reason)$|^is_within_encounter$|^source$|_source$|_ref$|^parser_|^confidence$|^certainty$|_json$|^unit_conversion_status$|^popup_status$|^last_error$)/i;
 
-const VARIABLE_IDENTITY_RE = /(patient_name|patient_code|patient_codes|phone|citizen|cccd|cmnd|address|dia_chi|bhyt|insurance|research_code|emr_admission_id|emr_treatment_id|so_benh_an|medical_record)/i;
+// Định danh người bệnh và tên nhân viên y tế (phẫu thuật viên, gây mê, điều dưỡng…): không đưa vào dữ liệu nghiên cứu.
+const VARIABLE_IDENTITY_RE = /(patient_name|patient_code|patient_codes|phone|citizen|cccd|cmnd|address|dia_chi|bhyt|insurance|research_code|emr_admission_id|emr_treatment_id|so_benh_an|medical_record|surgeon|anesthesiologist|scrub_nurse|anesthesia_technician|completed_by|doctor_name)/i;
 
 const VARIABLE_RECOMMENDED_TABLES = new Set(['analysis_ready', 'encounters', 'lab_results', 'imaging_results', 'medication_orders', 'diagnoses', 'surgery_results']);
 
@@ -245,6 +366,8 @@ const VARIABLE_CLINICAL_GROUPS = [
   { key: 'imaging', label: 'CĐHA', hint: 'X-quang, CT, MRI, siêu âm, điện tim và kết luận hình ảnh.', order: 50 },
   { key: 'medication', label: 'Thuốc/y lệnh', hint: 'Tên thuốc, nhóm thuốc, liều, đường dùng, thời điểm y lệnh.', order: 60 },
   { key: 'surgery', label: 'Phẫu thuật/thủ thuật', hint: 'Ngày mổ, tên/phương pháp phẫu thuật, vô cảm.', order: 70 },
+  { key: 'consult', label: 'Hội chẩn', hint: 'Số lần, thời điểm, nội dung và kết luận hội chẩn.', order: 72 },
+  { key: 'cost', label: 'Chi phí', hint: 'Tổng chi phí, BHYT chi trả, người bệnh tự trả, bảng kê.', order: 75 },
   { key: 'quality', label: 'Kiểm tra dữ liệu', hint: 'Cờ đủ dữ liệu, cần kiểm tra tay, trạng thái trích xuất.', order: 80 },
   { key: 'technical', label: 'Kỹ thuật/định danh', hint: 'Mã nguồn, khóa, định danh và biến debug; mặc định ẩn.', order: 90 },
   { key: 'other', label: 'Khác', hint: 'Các biến chưa phân loại.', order: 99 },
@@ -282,10 +405,18 @@ function clinicalInfoForVariable(variable) {
   const role = variableRole(variable);
   if (role === 'technical' || role === 'identity') return { key: 'technical', section: 'Kỹ thuật/định danh', order: 900 };
   if (/ready_for_analysis|needs_manual_review|overall_status|source_status|encounter_match_ambiguous/.test(textAll)) return { key: 'quality', section: 'Kiểm tra dữ liệu', order: 800 };
+  if (/^cost_/.test(name)) return { key: 'cost', section: 'Chi phí điều trị', order: 750 };
+  if (/^consult_/.test(name)) return { key: 'consult', section: 'Hội chẩn', order: 720 };
+  if (/_status$|^completion_level$|^missing_required$/.test(name) && table === 'extract_status') return { key: 'quality', section: 'Kiểm tra dữ liệu', order: 800 };
+  // Bảng dài theo loại dữ liệu: cột chung như "Số ngày từ lúc phẫu thuật" của bảng xét nghiệm
+  // thuộc nhóm Xét nghiệm, không lẫn vào Phẫu thuật.
+  if (table === 'lab_results') return { key: 'lab', section: labSubgroupFromName(textAll), order: 400 };
+  if (table === 'imaging_results') return { key: 'imaging', section: imagingSubgroupFromName(textAll), order: 500 };
+  if (table === 'medication_orders' || table === 'medication_day_summary') return { key: 'medication', section: 'Thuốc / y lệnh', order: 600 };
   if (table === 'patients' || /sex|birth|age|tuổi|giới|insurance|address/.test(textAll)) return { key: 'admin', section: 'Thông tin hành chánh', order: 100 };
   if (table === 'encounters' || /admission|discharge|hospital_stay|treatment_duration|department|ward|bed|khoa|phòng|giường/.test(textAll)) return { key: 'encounter', section: 'Đợt điều trị / nhập viện', order: 200 };
   if (table === 'diagnoses' || /diagnosis|icd|chẩn đoán|chan doan|comorbidity|complication/.test(textAll)) return { key: 'diagnosis', section: 'Chẩn đoán và bệnh kèm', order: 300 };
-  if (table === 'surgery_results' || /surgery|procedure|anesthesia|phẫu thuật|thuật|vô cảm|time_to_surgery/.test(textAll)) return { key: 'surgery', section: 'Phẫu thuật / thủ thuật', order: 700 };
+  if (table === 'surgery_results' || /surgery|procedure|anesthesia|phẫu thuật|thủ thuật|vô cảm|time_to_surgery/.test(textAll)) return { key: 'surgery', section: 'Phẫu thuật / thủ thuật', order: 700 };
   if (table === 'lab_results' || role === 'lab') return { key: 'lab', section: labSubgroupFromName(textAll), order: 400 };
   if (table === 'imaging_results' || role === 'imaging') return { key: 'imaging', section: imagingSubgroupFromName(textAll), order: 500 };
   if (table === 'medication_orders' || role === 'medication') return { key: 'medication', section: 'Thuốc / y lệnh', order: 600 };
@@ -375,6 +506,40 @@ function dedupeWideTableVariables(variables) {
     if (kept && kept.id === v.id) out.push(kept);
   }
   return out;
+}
+
+// Biến "có làm phẫu thuật/TT: <tên>" (mỗi tên mổ một biến, hơn trăm biến, phần lớn 0–9% số đợt):
+// không liệt kê sẵn, chỉ hiện khi gõ tìm tên phẫu thuật. Muốn có một cột "loại PT" thì dùng
+// Biến tự định nghĩa → Gom nhóm theo từ khóa.
+export const isSearchOnlyVariable = (v) => v?.virtual_kind === 'procedure_item';
+
+const TABLE_SCOPE_TEXT = {
+  analysis_ready: 'theo đợt', encounters: 'theo đợt', patients: 'theo người bệnh',
+  surgery_results: 'từng ca mổ', lab_results: 'bảng xét nghiệm', imaging_results: 'bảng CĐHA',
+  medication_orders: 'bảng thuốc', medication_day_summary: 'thuốc theo ngày', clinical_notes: 'tờ điều trị',
+  clinical_events: 'sự kiện lâm sàng', patient_day: 'theo ngày', diagnoses: 'bảng chẩn đoán', extract_status: 'trạng thái lấy dữ liệu',
+};
+
+// Cùng một nhãn ở nhiều bảng (vd. "Ngày phẫu thuật" theo đợt 73% và từng ca mổ 100%): ghi rõ phạm vi
+// sau nhãn để không tưởng là biến trùng; % đầy đủ của mỗi bảng tính trên số dòng của bảng đó.
+function disambiguateLabels(variables) {
+  const tablesByLabel = new Map();
+  for (const v of variables) {
+    const key = lower(v.display_label);
+    if (!tablesByLabel.has(key)) tablesByLabel.set(key, new Set());
+    tablesByLabel.get(key).add(v.table);
+  }
+  return variables.map(v => {
+    if ((tablesByLabel.get(lower(v.display_label))?.size || 0) < 2) return v;
+    const scope = TABLE_SCOPE_TEXT[v.table] || v.source_group_label || v.table;
+    return scope ? { ...v, display_label: `${v.display_label} (${scope})` } : v;
+  });
+}
+
+// Danh sách để duyệt/chọn biến: bỏ biến lặp giữa các bảng rộng, bỏ định danh/kỹ thuật, ghi rõ phạm vi
+// khi trùng nhãn.
+function browsableCatalogVariables(variables) {
+  return disambiguateLabels(dedupeWideTableVariables(variables).filter(v => !v.technical_or_identity));
 }
 
 function variableRoleLabel(role) {
@@ -502,6 +667,8 @@ function matchesCatalogQuery(variable, query) {
 }
 
 export {
+  browsableCatalogVariables,
+  disambiguateLabels,
   matchSurveyLines,
   matchesCatalogQuery,
   surveyKey,

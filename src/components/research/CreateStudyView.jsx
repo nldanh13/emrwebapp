@@ -265,7 +265,7 @@ function SurveyMapping({ surveyMatches, addVariables, setVariableSurveyLabels, s
 function StepVariables(props) {
   const {
     variableCatalog, variableCatalogLoading, variableCatalogError,
-    catalogGroupOptions, filteredCatalogVariables, surveyMatches,
+    catalogGroupOptions, filteredCatalogVariables, hiddenSearchOnlyCount = 0, surveyMatches,
     variableQuery, setVariableQuery, variableGroupFilter, setVariableGroupFilter, variableFillFilter, setVariableFillFilter,
     selectedVariableIds, selectedVariables, toggleVariable, addVariables, addCoreVariables,
     variableAggregations, setVariableAggregations, variableSurveyLabels, setVariableSurveyLabels,
@@ -311,6 +311,9 @@ function StepVariables(props) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: FS.xs, color: C.text3 }}>
           <span>{compactNumber(filteredCatalogVariables.length)} biến</span>
+          {hiddenSearchOnlyCount > 0 && (
+            <span>· {compactNumber(hiddenSearchOnlyCount)} biến “có làm phẫu thuật/TT: tên mổ” chỉ hiện khi gõ tên mổ vào ô tìm. Muốn một cột “loại phẫu thuật”, dùng Biến tự định nghĩa → Gom nhóm theo từ khóa.</span>
+          )}
           <Btn onClick={addCoreVariables} style={{ height: 28, fontSize: FS.xs, marginLeft: 'auto' }}>+ Biến nền (tuổi, giới, ngày vào/ra, chẩn đoán)</Btn>
         </div>
         {labCatalogGroup && (
