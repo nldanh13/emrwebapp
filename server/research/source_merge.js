@@ -157,6 +157,15 @@ function rowInsideStay(row, stay) {
   return day(own) >= day(from) && day(own) <= day(to);
 }
 
+function dischargeInsideStay(row, stay) {
+  const own = parseAnyDate(rowDischargeTime(row));
+  const from = parseAnyDate(stay.admission);
+  const to = parseAnyDate(stay.discharge);
+  if (!own || !from || !to) return false;
+  const day = d => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  return day(own) >= day(from) && day(own) <= day(to);
+}
+
 function canonicalizeRowToVerifiedStay(row, verifiedIndex) {
   const code = normalizedIdentity(patientCode(row));
   if (!code || !verifiedIndex) return { ...(row || {}) };
@@ -165,7 +174,10 @@ function canonicalizeRowToVerifiedStay(row, verifiedIndex) {
   let stay = researchKey ? verifiedIndex.direct.get(`${code}|${researchKey}`) : null;
   // Dòng mang giờ vào nằm ngoài khoảng của đợt cùng key (hồ sơ của đợt khác bị gắn nhầm key): không
   // kéo về đợt đó, để dòng tự ghép theo giờ vào của chính nó.
-  if (stay && !rowInsideStay(row, stay)) stay = null;
+  // Ngoại lệ: dòng có ngày ra nằm trong đợt cùng key thì vẫn thuộc đợt đó. Trang ra viện có thể mang giờ
+  // vào của lượt đã yêu cầu (đợt trước) trong khi ngày ra và chẩn đoán ra là của đợt EMR thực mở (ca thật:
+  // vào 14/01, ra 08/07, chẩn đoán loãng xương của đợt 07 bị gắn vào đợt nhiễm trùng tháng 01).
+  if (stay && !rowInsideStay(row, stay) && !dischargeInsideStay(row, stay)) stay = null;
 
   if (!stay) {
     const admission = parseAnyDate(rowAdmissionTime(row));
